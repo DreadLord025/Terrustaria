@@ -50,7 +50,16 @@ fn use_golem_altar(app: &mut App) -> bool {
                 if app.inventory[slot].count == 0 {
                     app.inventory[slot].kind = 0;
                 }
-                app.audio.play("Roar_0");
+                // W4-e10 — `Player.cs:32782`: `PlaySound(15,
+                // (int)position.X, (int)position.Y, 0)` — case 15 slot 0
+                // (the playing guard, no draws), at the player's
+                // TOP-LEFT, BEFORE `NPC.SpawnOnPlayer(245)` (`:32785`).
+                let (plx, ply) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.x, p.y))
+                    .unwrap_or((0.0, 0.0));
+                app.audio.play_roar(0, plx, ply);
                 spawn_golem_on_altar(app);
                 break;
             }
@@ -185,6 +194,44 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     {
         return use_golem_altar(app);
     }
+    // W4-e10 gap census — the sign arm (`TileInteractionsUse`'s
+    // `Main.tileSign[type]` branch, `Player.cs:32693-32723`): a re-click
+    // on the OPEN sign closes it WITH the cue (`CloseSign()` `:32699`,
+    // the `:33537` site); otherwise single-player opens locally
+    // (`OpenSign(Sign.ReadSign)` `:32706` — create-if-missing, the
+    // `:33547` Menu_Open) and the MP client asks the host with `46`
+    // (`:32720`, the origin decode `:32710-32718` is `signs::origin`'s
+    // frame probe). The arm consumes the click either way (`flag2`).
+    // Sign kinds are disjoint from the furniture dispatch below, so the
+    // branch sits ahead of `interact_at` like the altar's. The C# gates
+    // on the CLICKED tile's kind (`Main.tileSign[type]` `:32693`) — the
+    // origin probe alone could decode a non-sign cell onto a sign.
+    let clicked_sign = app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && matches!(t.kind, 55 | 85 | 425 | 573));
+    if clicked_sign {
+        if let Some((sx, sy)) = crate::signs::origin(&app.world, tx, ty) {
+            let current = app.player.as_ref().map_or(-1, |p| p.sign);
+            let same = app
+                .world
+                .signs
+                .iter()
+                .position(|r| r.x == sx && r.y == sy)
+                .is_some_and(|i| i as i32 == current);
+            if same {
+                crate::signs::close_sign(app, false); // `:32699`
+            } else if let crate::app::NetRole::Client(client) = &app.net {
+                client.send(&crate::net::C2s::SignRequest(crate::net::SignRequest {
+                    x: sx as i16,
+                    y: sy as i16,
+                })); // `:32720` — the host answers `47`, the client arm opens
+            } else if let Some(idx) = crate::signs::find_or_create(&mut app.world.signs, sx, sy) {
+                crate::signs::open_sign(app, idx as i32); // `:32706`
+            }
+        }
+        return true;
+    }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
     // closing column must be free of the player and NPCs. Disjoint field
@@ -204,7 +251,9 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         // (`:33516-33525`); the close keeps the inventory open (the C#
         // never touches it here — the STORE-1 pair-close deviation is
         // gone). The prologue's sign/talk/chat clears (:33087-33096) are
-        // the shop close, the world route's mapping (chest.rs:525).
+        // the shop close, the world route's mapping (chest.rs:525);
+        // W4-e10: the prologue's `CloseSign()` (`:33087`, quiet=false).
+        crate::signs::close_sign(app, false);
         app.close_shop();
         let (ox, oy) = crate::chest::bank_open_origin(&app.world, tx, ty);
         let sound = crate::chest::toggle_open(app, ox, oy, bank);
@@ -338,6 +387,102 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
+        edit::TileInteraction::RightClickToggle { x, y, kind } => {
+            // W4-e10 — the five right-click toggle arms
+            // (`Player.cs:32228-32284`): ALL play `PlaySound(28,
+            // myX * 16, myY * 16, 0)` at the CLICKED cell's top-left
+            // BEFORE the toggle — the Mech-28 seam (case 28,
+            // `LegacySoundPlayer.cs:995-1009`: the slot-0 playing guard,
+            // then ONE `Next(-10, 11) * 0.01` pitch draw on
+            // `UpdatePlayers` — the tile use runs in `Player.ItemCheck`,
+            // `Main.cs:17754`).
+            app.audio.play_switch_click(
+                *x as f32 * TILE_PX,
+                *y as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            let frame = app
+                .world
+                .tile(*x, *y)
+                .map(|t| (t.frame_x, t.frame_y))
+                .unwrap_or((0, 0));
+            match kind {
+                // `:32232`: `WorldGen.SwitchMB` — the 2×2 frameX flip.
+                139 => app.wiring.switch_mb(&mut app.world, *x, *y, frame.0, frame.1),
+                // `:32269`: `WorldGen.SwitchFountain` — the 2×4 frameY flip.
+                207 => {
+                    app.wiring
+                        .switch_fountain(&mut app.world, *x, *y, frame.0, frame.1)
+                }
+                // `:32276`: `WorldGen.SwitchMonolith` (the
+                // `GamepadEnableGrappleCooldown` at `:32275` is a gamepad
+                // input seam — no port).
+                410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733 => {
+                    app.wiring
+                        .switch_monolith(&mut app.world, *x, *y, *kind, frame.0, frame.1)
+                }
+                // `:32283`: `BirthdayParty.ToggleManualParty`
+                // (`BirthdayParty.cs:145-163`): the flag flip, then the
+                // up-state edge credits THROW_A_PARTY (25) — the same
+                // request the wiring case-455 arm drains.
+                455 => {
+                    let was_up = crate::world_events::party_is_up(&app.world_events);
+                    app.world_events.manual_party = !app.world_events.manual_party;
+                    if !was_up && crate::world_events::party_is_up(&app.world_events) {
+                        let _ = app.achievements.notify_progression(25);
+                    }
+                }
+                // The campfire's frameY flip already ran in the core
+                // dispatch (`edit::interact_at`'s inline arm).
+                _ => {}
+            }
+            app.world_key = None;
+            return true;
+        }
+        edit::TileInteraction::BuffStation { kind } => {
+            // W4-e10 — the buff-station family (`Player.cs:32594-32634`): the
+            // seven right-click buff tiles. Each arm sets `flag2 = true`,
+            // grants its buff for the fixed duration (`AddBuff`), THEN plays
+            // its `SoundID.ItemNN` style at `base.position` (the player's
+            // TOP-LEFT, not the tile). The buff→style pair is the C# chain's
+            // own (the style index is `soundid::SOUND_STYLES`' `ItemNN` row).
+            // The interaction runs in `Player.ItemCheck` — the `UpdatePlayers`
+            // stream (`Main.cs:17754`); the style façade's `GetRandomPitch`
+            // NextFloat is audio-only, the case-2 pitch draw rides the stream
+            // after the attenuation gate (the dial's Item4 seam, `:32642`).
+            let (buff, time, style_name) = match kind {
+                125 => (29, 108000, "Item4"),   // Crystal Ball — Clairvoyance
+                621 => (192, 7200, "Item2"),    // Slice of Cake — Sugar Rush
+                464 => (348, 108000, "Item4"),  // War Table
+                699 => (366, 108000, "Item179"),// Dead Cells Potion Station
+                377 => (159, 108000, "Item37"), // Sharpening Station
+                354 => (150, 108000, "Item4"),  // Bewitching Table
+                287 => (93, 108000, "Item149"), // Ammo Box
+                _ => unreachable!("the dispatch only yields the seven station kinds"),
+            };
+            let (plx, ply) = app
+                .player
+                .as_ref()
+                .map(|p| (p.x, p.y))
+                .unwrap_or((0.0, 0.0));
+            if let Some(p) = app.player.as_mut() {
+                p.buffs.add_buff(buff, time); // `:32597`/`:32603`/… the AddBuff
+            }
+            if let Some(idx) = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.name == style_name)
+            {
+                app.audio.play_use_sound(
+                    idx as u16,
+                    plx,
+                    ply,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            app.world_key = None;
+            return true;
+        }
         edit::TileInteraction::StationInteract { kind } => {
             // `Player.cs:33279-33284` (the `TileInteractionsUse` tail): the
             // clicked tile's filter lands in `CraftingUI._lastFilter` via
@@ -374,6 +519,25 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             "Door_Closed" => {
                 app.audio
                     .play_door_sound(false, tx as f32 * TILE_PX, ty as f32 * TILE_PX, rng);
+            }
+            // W4-e10 — the dials' `SoundID.Item4` (`Player.cs:32642`/
+            // `:32652`) is a STYLE play at `base.position` (the player's
+            // TOP-LEFT, not the tile): the wave-A façade — the
+            // `GetRandomPitch` NextFloat audio-only, then case 2's one
+            // `Next(-6, 7) * 0.01` pitch draw on `UpdatePlayers` after
+            // the gate. The tile-corner `play_at` stand-in is retired.
+            "Item_4" => {
+                let (plx, ply) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.x, p.y))
+                    .unwrap_or((0.0, 0.0));
+                if let Some(idx) = crate::soundid::SOUND_STYLES
+                    .iter()
+                    .position(|s| s.name == "Item4")
+                {
+                    app.audio.play_use_sound(idx as u16, plx, ply, 0.0, rng);
+                }
             }
             _ => {
                 app.audio
@@ -425,6 +589,9 @@ fn interaction_events(
         // The furniture interactions are consumed in `interact_tile` ahead of
         // this mapping; the arms only keep the match exhaustive.
         edit::TileInteraction::CandleToggled => (None, Vec::new()),
+        // The right-click toggle family (the Mech-28 click + the wiring
+        // halves) is consumed in `interact_tile` ahead of this mapping.
+        edit::TileInteraction::RightClickToggle { .. } => (None, Vec::new()),
         // The switch trip is consumed in `interact_tile` ahead of this
         // mapping — no cue, no drops.
         edit::TileInteraction::HitSwitch { .. } => (None, Vec::new()),
@@ -439,6 +606,10 @@ fn interaction_events(
         // mapping — no cue, no drops (the C# plays the craft-open sound 10
         // inside `OpenCloseFilter`'s non-quiet path, `NewCraftingUI.cs:894`).
         edit::TileInteraction::StationInteract { .. } => (None, Vec::new()),
+        // W4-e10 — the buff-station family is consumed in `interact_tile` ahead
+        // of this mapping (the buff grant + the `SoundID.ItemNN` style play run
+        // there, `Player.cs:32594-32634`); the arms kill no tiles, so no drops.
+        edit::TileInteraction::BuffStation { .. } => (None, Vec::new()),
         // M7-EXTRACT-1: the extractinator is NOT a click-edge interaction in
         // vanilla — `PlaceThing_ItemInExtractinator` runs inside the held-item
         // swing (`Player.cs:39591`, `:41665`), so the press edge falls through
@@ -604,6 +775,160 @@ mod tests {
         player.y = 918.0;
         app.player = Some(player);
         app
+    }
+
+    /// W4-e10 — the golem altar's roar rides the case-15 slot-0 seam
+    /// (`Player.cs:32782`: `PlaySound(15, (int)position.X, (int)position.Y,
+    /// 0)`): one play, NO `UpdatePlayers` draw, before the spawn.
+    #[test]
+    fn w4_e10_the_golem_altar_roar_draws_nothing() {
+        let mut w = object_world();
+        // The altar's origin cell (frameX 18 / frameY 0, `:32770`'s scan).
+        set_tile(&mut w, 12, 19, 237);
+        let i = w.index(12, 19);
+        w.tiles[i].frame_x = 18;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.world.hard_mode = true;
+        app.world.downed_plant_boss = true;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 17.0 * TILE_PX;
+        app.player = Some(player);
+        app.inventory[0] = ItemSlot {
+            kind: 1293,
+            name: "Lihzahrd Power Cell".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        assert!(use_golem_altar(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the altar's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golem && n.hp > 0),
+            "the Golem spawned"
+        );
+    }
+
+    /// W4-e10 — the dial cue is the `SoundID.Item4` style façade at the
+    /// player's top-left (`Player.cs:32642`/`:32652`): exactly ONE case-2
+    /// `Next(-6, 7)` pitch draw on `UpdatePlayers` after the gate (the
+    /// façade's `GetRandomPitch` NextFloat is audio-only).
+    #[test]
+    fn w4_e10_the_dial_cue_spends_one_case2_pitch_draw() {
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, 356); // the Enchanted Sundial
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 9.0 * TILE_PX;
+        player.y = 17.0 * TILE_PX;
+        app.player = Some(player);
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-6, 7);
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the sundial fires");
+        assert_eq!(app.audio.played_count(), before + 1, "the Item4 chime");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror,
+            "the one case-2 pitch draw, nothing else"
+        );
+    }
+
+    /// W4-e10 — the right-click toggle family's Mech-28 click
+    /// (`Player.cs:32231`/`:32237`/`:32268`/`:32274`/`:32281`:
+    /// `PlaySound(28, myX * 16, myY * 16, 0)`): ONE case-28
+    /// `Next(-10, 11)` pitch draw on `UpdatePlayers` after the gate, at
+    /// the CLICKED cell — and the toggle runs (the fountain's frameY
+    /// flip; the party centre's flag + the THROW_A_PARTY up-edge).
+    #[test]
+    fn w4_e10_the_right_click_toggles_play_one_mech_draw_each() {
+        // The fountain: a full 2×4 at (10..12, 16..20), frameY (y-16)*18.
+        let mut w = object_world();
+        for x in 10..12 {
+            for y in 16..20 {
+                set_tile(&mut w, x, y, 207);
+                let i = w.index(x, y);
+                w.tiles[i].frame_x = ((x - 10) * 18) as i16;
+                w.tiles[i].frame_y = ((y - 16) * 18) as i16;
+            }
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 18.0 * TILE_PX;
+        app.player = Some(player);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (10.0 * TILE_PX, 18.0 * TILE_PX),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let _ = mirror.next_range(-10, 11); // the one case-28 pitch draw
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 18), "the fountain fires");
+        assert_eq!(app.audio.played_count(), before + 1, "the Mech-28 click");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror,
+            "one case-28 draw, nothing else"
+        );
+        assert_eq!(app.world.tile_frame_y(10, 16), 72, "SwitchFountain flipped");
+        // The party centre: the click flips the manual flag and the
+        // up-edge credits THROW_A_PARTY — one more Mech draw.
+        set_tile(&mut app.world, 12, 19, 455);
+        let _ = mirror.next_range(-10, 11);
+        let before = app.audio.played_count();
+        assert!(!app.world_events.manual_party);
+        assert!(interact_tile(&mut app, 12, 19), "the party centre fires");
+        assert!(app.world_events.manual_party, "ToggleManualParty");
+        assert_eq!(app.audio.played_count(), before + 1);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            mirror
+        );
+        assert!(
+            app.achievements.take_completed_events().contains(&"THROW_A_PARTY"),
+            "the up-edge credits the party achievement"
+        );
+        // The silent twin: the gate refuses before the draw — the toggle
+        // still runs (the C# plays no sound at volume 0, the state moves).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        let mut w2 = object_world();
+        set_tile(&mut w2, 12, 19, 455);
+        app2.world = w2;
+        app2.player = Some(Player::spawn(&app2.world));
+        app2.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let rng_before = app2.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before2 = app2.audio.played_count();
+        assert!(interact_tile(&mut app2, 12, 19));
+        assert!(app2.world_events.manual_party, "the toggle is not audio-gated");
+        assert_eq!(app2.audio.played_count(), before2, "silent: no play");
+        assert_eq!(
+            *app2.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "the muted Mech click is draw-free"
+        );
     }
 
     #[test]
@@ -1093,6 +1418,139 @@ mod tests {
                 .iter()
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
+        );
+    }
+
+    /// W4-e10 — the buff-station family (`Player.cs:32594-32634`): each of the
+    /// seven right-click buff tiles grants its buff for the fixed duration,
+    /// THEN plays its `SoundID.ItemNN` style at the player's TOP-LEFT — ONE
+    /// case-2 `Next(-6, 7)` pitch draw on `UpdatePlayers` after the gate (the
+    /// façade's `GetRandomPitch` NextFloat is audio-only). The buff→style pair
+    /// is the C# chain's own; the click is consumed whether or not the player
+    /// is present (`flag2 = true`).
+    #[test]
+    fn w4_e10_the_buff_stations_grant_and_play_one_case2_draw_each() {
+        // (tile kind, buff id, buff duration, style name) — the C# chain order.
+        let stations: [(u16, i32, i32, &str); 7] = [
+            (125, 29, 108000, "Item4"),    // Crystal Ball — Clairvoyance
+            (621, 192, 7200, "Item2"),     // Slice of Cake — Sugar Rush
+            (464, 348, 108000, "Item4"),   // War Table
+            (699, 366, 108000, "Item179"), // Dead Cells Potion Station
+            (377, 159, 108000, "Item37"),  // Sharpening Station
+            (354, 150, 108000, "Item4"),   // Bewitching Table
+            (287, 93, 108000, "Item149"),  // Ammo Box
+        ];
+        for (kind, buff, time, _style) in stations {
+            let mut w = object_world();
+            set_tile(&mut w, 10, 19, kind);
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = w;
+            let mut player = Player::spawn(&app.world);
+            player.x = 9.0 * TILE_PX;
+            player.y = 17.0 * TILE_PX;
+            app.player = Some(player);
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (9.0 * TILE_PX, 17.0 * TILE_PX),
+                sound_volume: 1.0,
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+            let mut mirror = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let _ = mirror.next_range(-6, 7); // the one case-2 pitch draw
+            let before = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} fires");
+            assert_eq!(app.audio.played_count(), before + 1, "tile {kind}'s chime");
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                mirror,
+                "tile {kind}: the one case-2 pitch draw, nothing else"
+            );
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the buff granted");
+            assert_eq!(p.buffs.buff_time[slot], time, "tile {kind}'s duration");
+        }
+        // 699 also counts as a Bone Welder (`TileCountsAs` 699→13), but the
+        // buff arm wins the click BEFORE the crafting-station tail — the
+        // craft filter stays unset.
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, 699);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        assert!(interact_tile(&mut app, 10, 19));
+        assert!(app.craft_filter.is_none(), "the buff arm wins over the station tail");
+        // The silent twin: volume 0 refuses the draw, but the buff still lands
+        // (the C# `AddBuff` runs before the play, `:32597` < `:32598`).
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, 125);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 0.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.audio.played_count(), before, "volume 0 plays nothing");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "the gate refuses before the draw"
+        );
+        assert!(
+            app.player.as_ref().unwrap().buffs.find_buff_index(29).is_some(),
+            "the buff still lands at volume 0"
+        );
+    }
+
+    /// W4-e10 gap census — the sign arm (`Player.cs:32693-32723`): the
+    /// right-click on a sign tile opens it single-player (`OpenSign(
+    /// Sign.ReadSign)` `:32706` — create-if-missing, ONE Menu_Open
+    /// `:33547`, the record's text into the chat line); a re-click on the
+    /// OPEN sign closes it with ONE Menu_Close (`:32699` → `:33537`).
+    /// Both consume the click; neither draws gameplay RNG.
+    #[test]
+    fn w4_e10_the_sign_arm_opens_then_closes_with_one_menu_cue_each() {
+        let mut w = object_world();
+        // A 2-wide sign at (10, 18)/(11, 18).
+        for x in [10, 11] {
+            set_tile(&mut w, x, 18, 55);
+            let i = w.index(x, 18);
+            w.tiles[i].frame_x = if x == 10 { 0 } else { 18 };
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 18.0 * TILE_PX;
+        app.player = Some(player);
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before = app.audio.played_count();
+        // The right half's click decodes the same origin (`signs::origin`).
+        assert!(interact_tile(&mut app, 11, 18), "the sign consumes the click");
+        assert_eq!(app.audio.played_count(), before + 1, "`:33547` Menu_Open");
+        assert_eq!(app.player.as_ref().unwrap().sign, 0, "the latch");
+        assert_eq!(app.world.signs.len(), 1, "ReadSign create-if-missing");
+        assert!(app.npc_chat_text.is_empty(), "the fresh record's text");
+        // The re-click closes (the same-sign probe), ONE Menu_Close.
+        let mid = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 18));
+        assert_eq!(app.audio.played_count(), mid + 1, "`:33537` Menu_Close");
+        assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:32699`");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "the menu cues draw no gameplay RNG"
         );
     }
 }

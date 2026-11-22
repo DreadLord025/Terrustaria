@@ -308,6 +308,13 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
+    /// W4-e10 — the creation screen's voice-picker audio seam (the pitch
+    /// bar's Menu_Tick + the `PlayVoicePreview` hurt cue). The other screens
+    /// leave it untouched.
+    pub(crate) audio: &'a mut crate::audio::Audio,
+    /// W4-e10 — the bare-`Main.rand` stand-in for the creation screen's voice
+    /// plays (the front end runs outside every world swap).
+    pub(crate) rng_global: &'a mut tr_core::UnifiedRandom,
 }
 
 /// The five front screens' behaviour surface — the C# `UIState` shape: the
@@ -386,6 +393,36 @@ fn world_play_click(app: &mut App, i: usize) -> Option<FlowClick> {
     }
 }
 
+/// W4-e10 — `PlayVoicePreview`'s audio drain (`UICharacterCreation.cs:1517-
+/// 1527`): resolve the draft's voice through the SAME `PlayHurtSound` tail
+/// the world drain uses ([`ui::char_creation::preview_voice`]) and play it
+/// unpositioned (`(-1,-1)`, the C#'s position swap). The gameplay draws ride
+/// the bare-`Main.rand` stand-in (the creation screen runs outside every
+/// world swap); the style façades' `GetRandomPitch` NextFloat rides the
+/// audio-only stream inside `play_voice_style`. Shared by the draw-side
+/// debounce preview and the click-side cycle/play/gender previews.
+pub(crate) fn drain_voice_preview(
+    audio: &mut crate::audio::Audio,
+    rng: &mut tr_core::UnifiedRandom,
+    draft: &ui::char_creation::NewPlayerDraft,
+) {
+    match ui::char_creation::preview_voice(draft) {
+        Some(crate::player::HurtVoice::Male(pitch)) => {
+            audio.play_hurt_sound(pitch, rng);
+        }
+        Some(crate::player::HurtVoice::Female(pitch)) => {
+            audio.play_female_hurt_sound(pitch, rng);
+        }
+        Some(crate::player::HurtVoice::Style(name, pitch)) => {
+            audio.play_voice_style(name, -1.0, -1.0, pitch, rng);
+        }
+        // A fresh draft never reaches the stoned/override/mount/chicken/Npc
+        // arms (`preview_voice` runs only the default tail); an unhandled
+        // variant falls through silently like the C#.
+        _ => {}
+    }
+}
+
 impl FrontScreenBehaviours for FrontScreen {
     fn header(&self) -> String {
         match self {
@@ -437,7 +474,7 @@ impl FrontScreenBehaviours for FrontScreen {
                 // categories, the one middle menu, Back/Create and the hover
                 // tooltip. The HSL drag runs inside (the `CurrentLockedSlider`
                 // latch) off `front_mouse_down`.
-                ui::char_creation::draw(
+                let cues = ui::char_creation::draw(
                     d.renderer,
                     d.lookups,
                     d.player_assets,
@@ -447,6 +484,16 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.mouse,
                     d.front_mouse_down,
                 );
+                // W4-e10 — the voice-picker cues: the pitch bar's Menu_Tick
+                // (12) and the `PlayVoicePreview` hurt cue (`:1517-1527`),
+                // both on the bare-`Main.rand` stand-in (the front end runs
+                // outside every world swap).
+                if cues.menu_tick {
+                    d.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+                }
+                if cues.preview {
+                    drain_voice_preview(d.audio, d.rng_global, &state.draft);
+                }
             }
             FrontScreen::WorldCreation(draft) => {
                 // `Main.MenuUI.Draw`'s `UIWorldCreation` state (`:1024-1033`,
@@ -613,6 +660,11 @@ impl FrontScreenBehaviours for FrontScreen {
                     Create(ui::char_creation::CreationState),
                     Back(ui::char_creation::CreationState),
                 }
+                // W4-e10 — the voice-preview request the click arms raise
+                // (the cycle/play/gender handlers); drained after the borrow
+                // through the audio seam. The per-frame latch lives on the
+                // state (`play_voice_preview`).
+                let mut voice_preview = false;
                 let nav = {
                     let Some(FrontScreen::CharCreation(state)) = app.front.as_mut() else {
                         return None;
@@ -642,8 +694,11 @@ impl FrontScreenBehaviours for FrontScreen {
                         }
                         // `Click_CharClothStyle` (`:1277-1291`): the armor
                         // guard is out of scope (no armor preview); the
-                        // variant lands and the hair auto-assigns while
-                        // untouched (`TryAutoAssigningHair`, `:630-637`).
+                        // variant lands, the hair auto-assigns while
+                        // untouched (`TryAutoAssigningHair`, `:630-637`), the
+                        // Menu_Tick (12) plays (`:1288`) and
+                        // `UpdateSelectedGender` (`:1290`) runs the voice
+                        // auto-switch + preview (W4-e10).
                         ui::char_creation::Click::ClothStyle(v) => {
                             state.draft.skin_variant = v;
                             if !state.hair_picked {
@@ -653,6 +708,38 @@ impl FrontScreenBehaviours for FrontScreen {
                                     state.draft.hair = hair;
                                 }
                             }
+                            app.audio.play("Menu_Tick"); // `:1288`
+                            ui::char_creation::update_selected_gender(
+                                &mut state.draft,
+                                &mut state.old_male_for_voice,
+                            );
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        // W4-e10 — `Click_VoiceCycleBack`/`Forward`
+                        // (`:1529-1539`): `CycleVoiceStyle(±1)` + the preview.
+                        ui::char_creation::Click::VoicePrev => {
+                            state.draft.voice_variant =
+                                ui::char_creation::cycle_voice_style(state.draft.voice_variant, -1);
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        ui::char_creation::Click::VoiceNext => {
+                            state.draft.voice_variant =
+                                ui::char_creation::cycle_voice_style(state.draft.voice_variant, 1);
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        // W4-e10 — `Click_VoicePlay` (`:1512-1515`): the
+                        // preview alone.
+                        ui::char_creation::Click::VoicePlay => {
+                            voice_preview = ui::char_creation::play_voice_preview(state);
+                            Nav::None
+                        }
+                        // W4-e10 — `Click_VoicePitch` (`:1040-1043`): one
+                        // Menu_Tick; the drag runs in the draw pass.
+                        ui::char_creation::Click::VoicePitch => {
+                            app.audio.play("Menu_Tick"); // `:1042`
                             Nav::None
                         }
                         ui::char_creation::Click::Name => Nav::Name(state.clone()),
@@ -711,16 +798,28 @@ impl FrontScreenBehaviours for FrontScreen {
                             // `Click_RandomizePlayer` runs on the front end —
                             // outside every world swap: the bare-`Main.rand`
                             // stand-in (`app/rng.rs`'s `global`).
+                            app.audio.play("Menu_Tick"); // `:1547`
                             ui::char_creation::randomize_player(
                                 app.rngs.global(),
                                 &mut state.draft,
                                 &mut state.hair_picked,
                             );
+                            // The tail (`:1653-1656`): `Click_CharClothStyle`'s
+                            // `UpdateSelectedGender` + the preview (W4-e10).
+                            ui::char_creation::randomize_player_voice_tail(state);
+                            voice_preview = ui::char_creation::play_voice_preview(state);
                             Nav::None
                         }
                         ui::char_creation::Click::None => Nav::None,
                     }
                 };
+                // W4-e10 — drain the click-side voice preview after the
+                // borrow (the audio seam needs `app` free).
+                if voice_preview {
+                    if let Some(FrontScreen::CharCreation(state)) = app.front.as_ref() {
+                        drain_voice_preview(&mut app.audio, app.rngs.global(), &state.draft);
+                    }
+                }
                 match nav {
                     Nav::None => {}
                     Nav::Name(state) => {
@@ -2538,6 +2637,8 @@ pub(crate) mod front_flow_tests {
                 inventory,
                 inv_favorites: 0,
                 last_saved_binary: 0,
+                voice_variant: 1,
+                voice_pitch_offset: 0.0,
             },
         )
         .unwrap();

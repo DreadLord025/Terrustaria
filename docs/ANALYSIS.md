@@ -2436,6 +2436,211 @@ and is multiplied by the caller's `volumeScale`. `audio.rs` applies the pan to a
 source (the far channel is attenuated); the listener is refreshed each frame from the
 camera centre and the three volume sliders.
 
+### The player-voice wave (W4-e10, `Player.PlayHurtSound`/`PlayDeathSound`)
+
+`Player.cs:38569-38746`'s hurt/death decision trees are ported table-complete
+(`player.rs::hurt_voice`/`death_voice`, drained in `world_sim/player.rs`): stoned →
+`voiceOverride` (the 19 voice-accessory arms) → mount (52/54/55/56/61) → werewolf →
+Frost/Necro armor → Don't-Starve world → `voiceVariant`, in the C#'s exact priority
+order. The producers land with it: the voice accessory's `Item.voiceSlot`
+(`voice_slot_of`), the wolf-shell grants + the buff-28 night arm, the
+`ApplyArmorSoundAndDustChanges` Necro/Frost slot-id derivation, and the
+`UpdateBootVisualEffects` vanity boot tiers. The female case-20 play, the voice style
+façade (case 2/42) and the mount/armor NPC int arms (case 3/4) join `audio.rs`; the
+`Female_Hit_0..2` / `NPC_Hit_5`/`47` / `Item_35` rows and the player-voice trackables
+join the bank. The wing/rocket cues (`:26889`/`:26894` boot trigger, `:27154`/`:29478`
+wings-4, `:30172` wings-45) drain on `UpdatePlayers` — the `WingFrame` cue before the
+boot cue, the C# order.
+
+Deviations:
+* **The voice picker + `.plr` voice pair landed (W4-e10 deviation wave).** The
+  char-creation voice row (`UICharacterCreation.cs:452-528`) is ported: the prev/next
+  `TexturePackButtons` cycle `voiceVariant` through `PlayerVoiceID.VariantOrder` {1,2,3}
+  (`Main.CycleVoiceStyle`, `Main.cs:52377-52395`), the play button + the pitch slider's
+  3-tick debounce run `PlayVoicePreview` (`:1517-1527`) through the SAME
+  `default_voice_hurt` tail the world drain uses (`Player.cs:38694-38712`), and
+  `UpdateSelectedGender` (`:1305-1329`) auto-switches variant 1↔2 on a gender flip.
+  The pitch slider quantizes to 1/20 steps with banker's `Math.Round` (`:680-684`) and
+  remaps ±1 → ±0.7 (`:38699-38700`); the per-variant icon tint is
+  `PlayerVoiceID.Sets.Colors` (`ID/PlayerVoiceID.cs:16`). The `.plr` writer emits the
+  picked pair at `Player.cs:54924-54925` and the reader walks it at `:55730`/`:55740`
+  (gates 280/281, the `<280` gender default `:55735`, the `LoadPlayer_LastMinuteFixes`
+  clamp 1..4 `:55831`). **Seam CLOSED (W4-e10 seal, 2026-11-21):** the live-Player
+  hydration landed on f44 (`5c8bbb160`, research/132 §4's e10c receipt at `0d1ee2045`)
+  on the cast-seam published below — `Player::hydrate_from_file` applies
+  `voice_variant as i32` + the direct pitch copy; the merge folds our transport diff
+  onto f44's u8 walk and keeps our consumers (research/W4-e10-voice-seal.md §1). The
+  creation draft's pick rides the session card + the saved file, and the preview plays
+  it. `skinVariant` coupling is the landed Male-set (`PlayerVariantID.Sets.Male`
+  {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`) the `is_male`/`alt_gender_reference`
+  tables already mirror.
+* **The hurt/death plays drain at the pass tail**, not mid-`Hurt`/`KillMe` (the
+  S1-E-21c batch convention) — the gameplay draws still ride `UpdatePlayers` in the
+  C# order relative to the other drained cues.
+* **The wing frame machines stay visual seams** — only the wings-4/45 rocket SOUND +
+  `rocketDelay2` cadence land; the per-wing frame tables and the `:27154` glide-path
+  twin (a separate movement branch) are deferred.
+* **The trackable voice cues pin the first variation** (`_0` for the multi-variation
+  DST families), the standing D3 pin — the C#'s `LegacySoundStyle.Random` variation
+  pick is an audio-only stream.
+* **The D4 instance stop/re-create pool stands** — the voice plays spawn a fresh
+  source per play (no `SoundInstancePlayerHit`/`FemaleHit` slot tracking).
+
+#### The final PlaySound census re-sweep (W4-e10 final phase)
+
+The 211-site `Player.cs` `SoundEngine.PlaySound` census (S1-E-21f's base) was
+re-swept mechanically against every port citation (`tools/_e10_final_census.py`:
+full `Player.cs:NNNN[-NNNN]` cites + short `:NNNN` cites resolved against the
+most recent full `*.cs` name in the same comment block, wrapped ranges joined).
+**Final state: 160 claimed, 51 unclaimed — every unclaimed site's mechanic is
+unported (deferred), no portable remainder is left.** The wave's own landings
+(hurt/death trees, wing/rocket, the concurrent roar/menu/doors/extract/cart/
+mana-full/stoned-transition/hive-landing arms) plus this phase's two additions
+account for the claim growth:
+
+* **The buff-station family landed (7 sites, `Player.cs:32594-32634`).** The
+  seven right-click buff tiles — Crystal Ball 125 (Clairvoyance 29, Item4),
+  Slice of Cake 621 (Sugar Rush 192, Item2), War Table 464 (348, Item4), Dead
+  Cells Potion Station 699 (366, Item179), Sharpening Station 377 (159, Item37),
+  Bewitching Table 354 (150, Item4), Ammo Box 287 (93, Item149) — route a new
+  `edit::TileInteraction::BuffStation { kind }` BEFORE the dial branches
+  (`:32636`) and the crafting-station tail (`:33279`), the C# chain order (699
+  also counts as a Bone Welder via `TileCountsAs` 699→13, but the buff arm wins
+  the click first). The app half (`doors.rs::interact_tile`) grants the buff for
+  the fixed duration THEN plays the `SoundID.ItemNN` style at the player's
+  TOP-LEFT — one case-2 `Next(-6,7)` pitch draw on `UpdatePlayers` after the
+  attenuation gate (the dial's Item4 seam). The Sugar Rush 192 buff effect
+  (`:9935-9938`, pickSpeed −0.2 / moveSpeed +0.2) and the `deadCellsPotionStation`
+  366 derivation (`:10185-10188`, the ×1.2 potion-duration flag, `ResetEffects`
+  clear `:18362`) land with it so the grants are observable. `Item_149`/`Item_179`
+  join the bank.
+* **The smart-cursor hold-mode twin (`:28827`) citation-swept.** The toggle-mode
+  press (`:28820`) and the hold-mode press (`:28827`) play the SAME `PlaySound(12)`
+  Menu_Tick cue; the port's single press-edge play (`loop.rs`) covers the pair —
+  the citation now names both sites.
+
+The 51 deferred sites, by family (mechanic unported, the maths table-complete
+where a seam exists): loadout-switch 12 (`:5673`, no loadout system); music-box
+record Item166 (`:15612`) + Wilson beard Item60 (`:15991`); Scrying Orb spectate
+Item197/198 (`:17116`/`:17120`/`:43702`/`:43706`, no spectate); pet/light-pet
+grant UseSound (`:17306`/`:17338`, the `UpdatePet` arms unported); shimmer-
+emergence splash (`:18306`); WOF tongue NPC_Killed_10 (`:22287`, `WOFTongue`
+unported); gravity-flip Item8 ×4 (`:26703-26730`, `gravDir` unported); DST
+accessory recharge Item28/30/20 (`:28333`/`:28396`/`:28401`/`:28406`, the
+`Update_TimerCrit`/`Update_SnappingStone` machines unported); held-item swap
+(`:31637`, the `ItemCheck_ManageRightClickFeatures` swap unported — the
+`ItemSlot.TryItemSwap` UI path is a different site); shield-parry MaxMana
+(`:31724`); snowball-launcher Item11 (`:32134`, tile 212 unported); Chillet
+petting Joy (`:33354`, no petting system); sign open/close 10/11
+(`:33537`/`:33547`, no sign UI); nebula/Mana-Cloak pickup chimes
+(`:35047`/`:35082`, the consume arms unported); Foxparks attack (`:43364`, the
+ability unported); bucket splashes ×5 (`:46374-46493`, `ItemCheck_UseBuckets`
+unported); instruments Item26/35/47 (`:46543`/`:46572`) + the guitar/drums
+family (`:46681-46746`, `ItemCheck_PlayInstruments`/`PlayGuitarChord`/`PlayDrums`
+unported — **the S1-E-21f census mislabelled these as "rocket-boot/wing"; they
+are the music instruments**).
+
+**Gap-census update (W4-e10, 2026-11-21, code-only —
+research/W4-e10-gap-census.md):** FOUR of the 51 PORTED — the pet/light-pet
+grant arms (`:17306`/`:17338`: `Player::update_pet_grant`/
+`update_light_pet_grant`, the `:25573-25574` seam after `UpdateBuffs`; the
+fairy-27 alias ladder + the one-`Next(3)` `SelectRandom` pick; the
+Carrot-603 `runningCollectorsEdition` gate folds TRUE — the retail copy
+ships the CE content, no `CheckBunny` probe) and the sign open/close
+menu-tails (`:33537`/`:33547`: `signs.rs::open_sign`/`close_sign` + the
+`Player.sign` latch — the doors.rs sign arm, the case-47 client tail, the
+Escape `ToggleInv` arm, the map-open quiet prologue, the chest/dresser/bank
+prologues, the chat Close button, the per-tick range close; the dense-store
+sign-index probe is the recorded `Main.sign[num58] != null` mapping — the
+port splices dead records where the C# keeps null holes). The sign EDITOR
+(`Main.editSign`/`InputTextSign`) + the chat panel's sign-draw half stay
+S1-E-26. Census FINAL 211/164/47; the remaining 47 are unported-CALLER
+deferrals with owner-contracts (the instrument-use seam 18 sites — 16
+strict d79 47-52/53-62 seeds; 63/64/65/66 contribute zero Player.cs sites,
+c24's Journey animation already plays 63/64; the f3 65-seam DST quartet;
+the d79/f49 pickup keep-ones; the 23-site backlog table). 10 witnesses
+WRITTEN NOT RUN.
+
+#### The voice hydration cast-seam (published for f44 — CONSUMED, research/132 §4)
+
+The `.plr` voice pair transport is complete on this branch (the write
+`Player.cs:54924-54925`, the read `:55730`/`:55740`, gates 280/281, the `<280`
+gender default, the `LoadPlayer_LastMinuteFixes` clamp 1..4 `:55831` — all in
+`player_file.rs::finish_player_file`). **The seam is CLOSED (W4-e10 seal):** f44's
+SEAL-phase port (`5c8bbb160`, receipt `0d1ee2045`) landed the full-walk live-Player
+restore — `CharPlay` parks the card's `.plr`, `App::new` runs
+`Player::hydrate_from_file` before the sidecar restore — and its voice hunk matches
+the predicted cast-seam below verbatim (the mutual receipt:
+research/W4-e10-voice-seal.md §1). The published hunk (the clean cast-seam, no
+textual overlap — the file field is `u8`, the live field is `i32`):
+
+```rust
+// f44 full-walk live-Player restore (research/132 §4): the file's voice
+// variant is already clamped 1..4 by finish_player_file (:55831); widen the
+// u8 to the live i32, copy the pitch straight. The consumers (hurt_voice /
+// death_voice / default_voice_hurt) read the pair with no further transform.
+p.voice_variant = file.voice_variant as i32;
+p.voice_pitch_offset = file.voice_pitch_offset;
+```
+
+The save direction casts back (`file.voice_variant = p.voice_variant as u8`,
+`:54924`) when the exit-save lane lands — the one remaining shared remainder.
+The consumer-side contract is pinned by
+`w4_e10_the_hydrated_voice_pair_drives_the_default_voice_tail` (a hydrated
+variant-3/+0.5 pair drives the `DefaultPlayerHurt` trackable at the remapped
+pitch; variant 4 falls through the switch silently, the C# `:38701-38712` has
+no case 4). e10 owns the CONSUMERS, f44 owns the TRANSPORT + the HYDRATION —
+the merge deletes our `player_file.rs` diff onto f44's u8 walk and keeps our
+picker/trees/drain wholesale (132 §3-L1 rule 7, the voice-seal §1/§5 bible).
+
+#### The mount voice-override census (complete)
+
+The hurt tree's mount block (`Player.cs:38651-38678`) covers EXACTLY
+{52, 54, 55, 56, 61}: Wolf 52 → NPC_Hit_6, Velociraptor 54 → NPC_Hit_47, Rat 55 /
+Bat 56 → NPC_Killed_4, Pixie 61 → NPC_Hit_5. Every OTHER mount falls through to
+the werewolf/armor/DST/voiceVariant tail — in particular the whole
+`MountID.Sets.Cart` family (the base Minecart 6, the Coffin/Hellwizard Minecart
+38, `MountID.cs:43`/`:129`): **a cart rider keeps the DEFAULT voice, there is no
+cart voice-override.** The death tree (`:38715-38746`) has NO mount block at all.
+Pinned by `w4_e10_the_mount_voice_override_census_is_complete` (the five arms
+incl. the Bat-56 twin, the cart-6/38 + Bunny-1 fall-through, the death tree's
+mount-independence, the voiceOverride-over-mount priority).
+
+#### The foreign cart-cue cross-note
+
+The concurrent session's cart-cue drain upgrade (the wave-A style façade for
+`Player.cs:19870`/`:19928` Item55 + `DelegateMethods.cs:250`/`:255` Item53/56)
+landed on this branch as **781d1d6cd** — verified present (the
+`world_sim/player.rs` drain + the `w4_e10_the_cart_cues_ride_the_style_facade_on_update_players`
+witness). It is the concurrent session's work, committed by it; this phase
+leaves it untouched (cross-note only).
+
+#### The VOICE SEAL receipts (W4-e10 seal phase, research/W4-e10-voice-seal.md)
+
+The seal pass published the four mutual receipts + the voice-family bible
+(`docs/research/W4-e10-voice-seal.md`, docs-only over the DONE tip
+`8e0d951fc`): **(1)** the f44g hydration closure — f44's `0d1ee2045`/
+`5c8bbb160` consumed the cast-seam above verbatim (`hydrate_from_file`),
+the OPEN-BOTH hunk is CLOSED by f44, e10 owes no hydration code; the
+transport keep-one (f44's u8 walk) + the picker/session `as u8` re-point
+stand. **(2)** The d79 rewire hunks — our +10 prod menu sites (flow.rs
+:492/:711/:742/:801, loop.rs :710/:719/:726/:765/:778/:833 + the
+smart-cursor :800 twin) rewire onto `play_menu`; the −7 Roar sites keep
+either side's identical `play_roar(0, …)` hunk (all seven C# calls carry
+the explicit 0 — the Roar_0→Roar_1 fix is g21's Destroyer `NPC.cs:50093`
+default-Style-1 site, NOT ours); the cart fallback DELETES onto d79's
+drain; MaxMana d79's pool wins the play, our mana-blade expiry PRODUCER
+keeps (re-pointed at `play_single_voice`); Hungry keeps both producers on
+our one façade; the voice picker keeps wholesale over d79's variant-1
+stand-in. **(3)** The g21 disjointness — BuffStation
+(`edit.rs`/`doors.rs`) untouched by g21's diff; their chat pair DELETES
+onto d79's phase-7 seams; the loop.rs hunks are adjacent, not colliding.
+**(4)** The mount compose-note — our voice census reads only
+`mount.kind()`, never the offset getters; f3's 65-seam re-siting cannot
+change a voice outcome; portableStool stays deferred WITH the seam (not a
+mount, no voice arm). The stale f44c/f44e "routing-only" notes are
+re-stamped to the closure across ANALYSIS/PORT_MAP/ROADMAP/anchors.
+
 ### Ambience emitters (`tr-app/ambient_sound.rs`, M6-AUDIO-1)
 
 The ambience *audio* of 1.4.5.8 is five emitters; `Main.Ambience` (the waterfall/lavafall

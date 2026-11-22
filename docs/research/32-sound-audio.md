@@ -168,7 +168,8 @@ ambience emitters) — plus `crates/tr-content/src/sound.rs` (43, the `.xnb` PCM
 | --- | --- | --- | --- |
 | Item use / pickup | `SoundGrab` `:177`, `SoundItem[]` `:241-244`, `SoundCoin[]` `:211-214` | `play_use_sound` (wave A) + `play_pickup_sound`/`play_coin_ping` (S1-E-21f: cases 7/38, `Coin_0..4` id 38, the GetItem chimes + the revenge moneyPing; the chest transfers on the bare stream) | PORTED (code-only, tests not run — the starGame arm off, the per-fill chime collapse; ANALYSIS "The player-sounds wave") |
 | NPC hit / killed | `SoundNpcHit[]` `:245-248`, `SoundNpcKilled[]` `:249-252` | `play_npc_hit_sound`/`play_npc_death_sound` (case 3/4 maths + pitch + pools, S1-E-21c-npchit) | PORTED (the trackable `_0` pin remains) |
-| Player hurt / death | `SoundPlayerHit[]` `:195-197`, `SoundFemaleHit[]`, `SoundPlayerKilled` `:201` | `play_hurt_sound`/`play_death_sound` (S1-E-21f: case 1's `Next(3)` slot pick `Player_Hit_0..2`, case 5 at the top-left `:38745`; the S1-E-21b queues drain on `UpdatePlayers`) | PORTED (code-only — the voice variants beyond 1 deferred) |
+| Player hurt / death | `SoundPlayerHit[]` `:195-197`, `SoundFemaleHit[]`, `SoundPlayerKilled` `:201` | `play_hurt_sound`/`play_death_sound` (S1-E-21f: case 1's `Next(3)` slot pick `Player_Hit_0..2`, case 5 at the top-left `:38745`; the S1-E-21b queues drain on `UpdatePlayers`) + `player.rs::hurt_voice`/`death_voice` (W4-e10: the WHOLE decision tree — stoned → voiceOverride 19 arms → mount 52/54/55/56/61 → werewolf → Frost/Necro → DST-world → voiceVariant; the char-creation picker + the `.plr` voice pair) | SEALED (W4-e10 voice seal 2026-11-21 — the full voice tree code-only; the live-Player hydration CLOSED by f44 `5c8bbb160` on the published cast-seam, the merger bible `W4-e10-voice-seal.md`; the mount census complete, cart-6/38 fall through) |
+| Buff-station right-click cues | `Player.cs:32594-32634` (the seven buff tiles' `SoundID.Item4/2/179/37/149`) | `edit::TileInteraction::BuffStation` + `doors.rs::interact_tile` (the buff grant + the style façade at the player top-left) + the Sugar Rush 192 / deadCellsPotionStation 366 buff arms | SEALED (W4-e10 final phase 2026-11-21, code-only — the 211-site census re-sweep's one portable remainder; witnesses written not run; the g21 routing-disjointness receipt `W4-e10-voice-seal.md` §3) |
 | Player movement sounds (jumps/splash/flap/drown/grapple) | `Player.cs:20793-21004` (16), `:20846` (Item16), `:27772-27944` (19 + wetCount), `:26835-26858` (Item32), `:23257` (23), `:6408` (UseSound) | `player.rs` queues + `play_double_jump_sound`/`play_splash_sound`/`play_drown_sound` + the Item16/Item32 façades + `grapple::quick_grapple_item_kind` (S1-E-21f, code-only — tests written not run; the wing default-machine stand-in + the any-liquid splash union documented) | PORTED |
 | Tile break / dig | `SoundDig[0..2]` `:179-181`, case 0 `:440-452` | `Dig_0/1/2` (`editing.rs`) | PARTIAL (no instance reuse, no pitch) |
 | Footsteps / run | `SoundRun` `:236` | `audio.rs::play_step_sound` + `player.rs::spawn_fast_run_particles` | PORTED (S1-E-21 wave D, 2026-11-18 — vanilla has no per-tile-type footstep cues; the fast-run `hermesStepSound` only, `Player.cs:20212-20216`/`:35947-35964`) |
@@ -186,6 +187,49 @@ ambience emitters) — plus `crates/tr-content/src/sound.rs` (43, the `.xnb` PCM
 | Front-end title music | `Main.cs:12455-12532` | `update_menu_music` | PORTED |
 | Tracked sounds | `SoundPlayer`/`ActiveSound` | — | MISSING |
 | Custom music packs (.mp3/.ogg/.wav) | `LegacyAudioSystem.cs:82-122` | — | MISSING |
+
+## The W4-e10 voice seal (2026-11-21)
+
+The Player.cs voice lane is SEALED: the 211-site `SoundEngine.PlaySound`
+census re-swept (`tools/_e10_final_census.py`: 160 claimed / 51 deferred-
+unported, no portable remainder), the hurt/death decision trees + the
+char-creation picker + the `.plr` voice pair + the buff-station family +
+the roar/menu/cart/mana/stoned/hive arms landed code-only on
+`task/W4-e10-player-sounds-wave` (tip `8e0d951fc`). The merger contracts
+live in **`W4-e10-voice-seal.md`** (the four mutual receipts: the f44g
+hydration closure — f44 `5c8bbb160` consumed the published cast-seam, the
+u8-transport keep-one; the d79 §F4 rewire hunks — +10 menu → `play_menu`,
+−7 Roar keep-either, MaxMana d79-pool-wins/e10-producer-keeps, the voice
+picker wholesale-keep; the g21 BuffStation-disjointness; the f3
+HeightOffset-seam compose-note) + the voice-family bible (§5, the fold
+order). The stale MISSING rows above (D1-D6 pitch/pool/variation) are
+d79/d80's lanes — the voice façades already ride the faithful per-case
+paths on this branch.
+
+## The W4-e10 gap-census addendum (2026-11-21, code-only)
+
+The 51 deferred sites re-swept and dispositioned
+(**`W4-e10-gap-census.md`** — the full 51-row table, the d79 cross-check,
+the owner-contracts): **4 PORTED** — the pet/light-pet grant arms
+(`Player.cs:17306`/`:17338`, `UpdatePet`/`UpdatePetLight` →
+`player.rs::update_pet_grant`/`update_light_pet_grant`, the fairy-27
+`SelectRandom` one-`Next(3)` pick + the wave-A UseSound façade,
+`91a266876`/`966d2b34f`) and the sign open/close menu-tails
+(`:33537`/`:33547`, `OpenSign`/`CloseSign` → `signs.rs` + the
+`Player.sign` latch, all seven close callers + the case-47 net tail +
+the range close, `158a5b529`). Census FINAL: **211 / 164 / 47**. The
+d79 out-of-band cross-check: **16 of the 51 are the strict 47-52/53-62
+instrument seeds** (18 seam-wide with the two `ItemCheck_PlayInstruments`
+use-cues); 63/64/65/66 contribute ZERO Player.cs sites (other-file
+callers — c24's Journey animation ALREADY plays 63/64; the QueenSlime
+65 / type-75 66 contracts are seeded for d33/d43 and d8 with the exact
+draw orders, incl. case 66's pick-before-guards quirk). The remaining 47
+are unported-CALLER deferrals with owner-contracts (the instrument-use
+seam, the f3 65-seam DST quartet, the d79/f49 pickup keep-ones, the
+23-site e10-backlog table). 10 witnesses WRITTEN NOT RUN; the recorded
+deviations: the Carrot-603 CE gate folds true, the dense-store sign
+index probe. The sign EDITOR stays S1-E-26; the voice lane stays SEALED
+(no voice-family site among the 51).
 
 ## Tests
 

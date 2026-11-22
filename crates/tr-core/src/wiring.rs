@@ -2767,8 +2767,10 @@ impl Wiring {
 
     /// `WorldGen.SwitchMB` (`WorldGen.cs:50958-50988`): the music box's 2×2
     /// sprite flips its frameX ±36; the `Wiring.running` gate wraps the
-    /// `SkipWire` calls (`:50983-50987`).
-    fn switch_mb(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
+    /// `SkipWire` calls (`:50983-50987`). Public for the right-click arm
+    /// (`Player.cs:32232` calls it directly, outside any wire run — the
+    /// `running` flag is down, so no skips land).
+    pub fn switch_mb(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
         let mut num3 = i32::from(frame_y / 18);
         while num3 >= 2 {
             num3 -= 2;
@@ -2804,8 +2806,9 @@ impl Wiring {
 
     /// `WorldGen.SwitchFountain` (`WorldGen.cs:51150-51193`): the fountain's
     /// 2×4 sprite flips its frameY ±72; the `Wiring.running` gate wraps the
-    /// `SkipWire` calls (`:51177-51187`).
-    fn switch_fountain(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
+    /// `SkipWire` calls (`:51177-51187`). Public for the right-click arm
+    /// (`Player.cs:32269`).
+    pub fn switch_fountain(&mut self, world: &mut World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
         let mut num3 = i32::from(frame_x / 18);
         while num3 >= 2 {
             num3 -= 2;
@@ -2840,7 +2843,8 @@ impl Wiring {
     /// sprite (2×3, 3×3 for the 733 Moon-Lord one) flips its frameY — ±56
     /// for the 410, ±54 for the rest, the 658 wraps by 162; the
     /// `Wiring.running` gate wraps the `SkipWire` calls (`:51137-51146`).
-    fn switch_monolith(
+    /// Public for the right-click arm (`Player.cs:32276`).
+    pub fn switch_monolith(
         &mut self,
         world: &mut World,
         i: i32,

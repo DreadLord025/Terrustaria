@@ -69,10 +69,32 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The legacy "Player Killed" id 5 (`Player.PlayDeathSound`,
     // `Player.cs:38745`) — the `Sounds/Player_Killed.xnb` asset.
     ("Player_Killed", 5),
+    // W4-e10 — the female hurt family (`SoundFemaleHit[3]`,
+    // `LegacySoundPlayer.cs:50`/:198-200): case 20 (`:911-923`) picks
+    // `Female_Hit_<Next(3)>` — the `voiceOverride 2` / `voiceVariant 2`
+    // arms (`Player.cs:38587`/:38707).
+    ("Female_Hit_0", 20),
+    ("Female_Hit_1", 20),
+    ("Female_Hit_2", 20),
+    // W4-e10 — the hurt voice's mount/armor int arms (`Player.cs:38655-
+    // :38691`): `PlaySound(3, vector, 6/47/5/2)` (the Unicorn 52, the
+    // Velociraptor 54, the Basilisk 61, the werewolf, the Necro set) and
+    // `PlaySound(4, vector, 4)` (the Goat 55 / Wall Slime 56).
+    ("NPC_Hit_5", 3),
+    ("NPC_Hit_47", 3),
+    // W4-e10 — `SoundID.BellHurt` (`SoundID.cs`, id 2 style 35): the
+    // cowbell voice's hurt/death cue (`Player.cs:38599`/:38730) — the
+    // case-2 style-35 music-pitch arm (`LegacySoundPlayer.cs:635-639`).
+    ("Item_35", 2),
     // S1-E-21f — the drowning gasp (`Player.CheckDrowning`'s breath-zero
     // arm, `Player.cs:23257`): `SoundID.Drown = 23` (`SoundID.cs:68`),
     // case 23 (`LegacySoundPlayer.cs:947-956`) — Volume/Pan only, no draws.
     ("Drown", 23),
+    // W4-e10 — the full-mana chime (`SoundID.MaxMana = 25`,
+    // `Sounds/MaxMana.xnb`, `LegacySoundPlayer.cs:239`): case 25
+    // (`:963-968`) — Volume/Pan only, no draws. The full-bar regen trigger
+    // (`Player.cs:19552`) and `EmitMaxManaEffect` (`:49800`).
+    ("MaxMana", 25),
     ("NPC_Hit_1", 3),
     // The NPC hit family (the C#'s sound id 3, `LegacySoundPlayer.cs:646`):
     // the per-kind hit cues (`NPC.HitSound`, `NPC.cs:6475`) — the Skeletron's
@@ -319,12 +341,19 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_117", 2),
     ("Item_128", 2),
     ("Item_130", 2),
+    // W4-e10 — the buff-station family's cues (`Player.cs:32616`/:32634):
+    // the Dead Cells Potion Station 699 plays `SoundID.Item179`, the Ammo
+    // Box 287 plays `SoundID.Item149` (`Sounds/Item_179.xnb`/:`Item_149.xnb`).
+    ("Item_149", 2),
     ("Item_151", 2),
     ("Item_152", 2),
     ("Item_156", 2),
     ("Item_157", 2),
     ("Item_158", 2),
     ("Item_174", 2),
+    // W4-e10 — the Dead Cells Potion Station 699's cue (`Player.cs:32616`,
+    // `SoundID.Item179`; `Sounds/Item_179.xnb`, volume 0.6).
+    ("Item_179", 2),
     ("Item_181", 2),
     ("Item_183", 2),
     ("Item_184", 2),
@@ -512,6 +541,38 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
 /// One variation, pinned like the item-use trackables.
 pub(crate) const MOUNT_CUSTOM_CUES: &[&str] = &["pal_chillet"];
 
+/// W4-e10 — the `Sounds/Custom/` trackables the player-voice system plays
+/// (`Player.PlayHurtSound` `Player.cs:38569-38712` / `PlayDeathSound`
+/// `:38715-38746`): the DST hurt pair, the default hurt, the animal/retro
+/// hurt family and the retro/balloon death cues (`SoundID.cs`'s
+/// `CreateTrackable` rows, the generated `soundid.rs` `trackable` field).
+/// Like [`NPC_CUSTOM_CUES`] the port pins the first variation (`_0`) of the
+/// multi-variation DST families; the single-variation cues play bare.
+pub(crate) const PLAYER_VOICE_CUES: &[&str] = &[
+    "dst_male_hit_0",
+    "dst_female_hit_0",
+    "player_hit_default",
+    "player_hit_chicken",
+    "player_hit_chicken_rare",
+    "player_hit_frog",
+    "player_hit_goat",
+    "player_hit_retro",
+    "player_hit_cat",
+    "player_hit_dog",
+    "player_hit_turkey",
+    "player_hit_goblin",
+    "player_hit_crow",
+    "player_hit_balloon",
+    "player_hit_undead",
+    "player_hit_vampire",
+    "player_hit_fairy",
+    "player_death_retro",
+    // W4-e10 — the hunger transition's cue (`SoundID.Hungry`,
+    // `SoundID.cs`'s `CreateTrackable("hungry")`, one variation):
+    // `UpdateHungerBuffs`' 333-expiry arm (`Player.cs:12138`).
+    "hungry",
+];
+
 /// Whether the cue name is in the SFX bank (the item-use coverage test's
 /// seam, S1-E-21 wave A).
 pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
@@ -551,7 +612,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PLAYER_VOICE_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }
@@ -703,6 +764,7 @@ impl Audio {
                     .chain(NPC_CUSTOM_CUES.iter())
                     .chain(ITEM_CUSTOM_CUES.iter())
                     .chain(MOUNT_CUSTOM_CUES.iter())
+                    .chain(PLAYER_VOICE_CUES.iter())
                 {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
@@ -1099,11 +1161,14 @@ impl Audio {
             )
         };
         // Resolve against the loaded bank's static names (the cue is always
-        // in SFX_CUES/ITEM_CUSTOM_CUES — an unregistered name is a bank gap).
+        // in SFX_CUES/ITEM_CUSTOM_CUES/PLAYER_VOICE_CUES — an unregistered
+        // name is a bank gap). W4-e10: the player-voice trackables join the
+        // resolution chain (the hurt/death style arms ride this façade).
         let name = SFX_CUES
             .iter()
             .map(|(n, _)| *n)
             .chain(ITEM_CUSTOM_CUES.iter().copied())
+            .chain(PLAYER_VOICE_CUES.iter().copied())
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
@@ -1729,6 +1794,101 @@ impl Audio {
         Some(cue)
     }
 
+    /// The shared case-20 (female hurt) tail: the attenuation gate
+    /// (`LegacySoundPlayer.cs:369-436`), the ONE `Main.rand.Next(3)` slot
+    /// pick (`:913` — `Female_Hit_<n>`, Volume/Pan only, NO pitch draw),
+    /// the caller's `pitchOffset` clamp (`:1410`) and the emit. The
+    /// `SoundInstanceFemaleHit[n]` Stop + re-create (`:914-918`) is the
+    /// standing D4 deviation. W4-e10.
+    fn female_hit_play(
+        &mut self,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound::play_sound(20, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let slot = rng.next_range(0, 3);
+        let cue = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, 1.0, pitch_offset.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// W4-e10 — the female-voice hurt play (`Player.PlayHurtSound`'s
+    /// `voiceOverride 2` arm `Player.cs:38587` / the `voiceVariant 2`
+    /// default arm `:38707`): case 20, unpositioned for the local player
+    /// (`:38572-38575`), the one `Next(3)` draw rides the `UpdatePlayers`
+    /// stream after the gate. The int overload draws no `GetRandomPitch`.
+    pub fn play_female_hurt_sound(
+        &mut self,
+        pitch_offset: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        self.female_hit_play(-1.0, -1.0, pitch_offset, rng)
+    }
+
+    /// W4-e10 — one player-voice STYLE play (`Player.PlayHurtSound`'s
+    /// `SoundID.*` arms `Player.cs:38590-38648`/`:38686`/`:38696` and
+    /// `PlayDeathSound`'s `:38724-38736`): the wave-A façade
+    /// (`SoundEngine.cs:93-99` — the `GetRandomPitch` NextFloat on the
+    /// audio-only stream, the gate, then case 2 for the id-2 rows
+    /// (BellHurt) or case 42 for the trackables — the pinned first
+    /// variation, no gameplay draw). `pitch_offset` is the C# call's
+    /// offset (the DST world arm and the default-voice arm pass the
+    /// remapped `voicePitchOffset`; the override arms pass 0).
+    pub fn play_voice_style(
+        &mut self,
+        style_name: &str,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let idx = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == style_name)?;
+        self.play_use_sound(idx as u16, x, y, pitch_offset, rng)
+    }
+
+    /// W4-e10 — one player-hurt NPC-family play (`Player.PlayHurtSound`'s
+    /// mount/armor arms, `Player.cs:38655`/`:38660`/`:38665`/`:38670`/
+    /// `:38675`/`:38681`/`:38691`: `PlaySound(3|4, vector, style)` — the
+    /// int overload, NO `GetRandomPitch`). Case 3 (`LegacySoundPlayer.cs:
+    /// 646-672`): the 20..54/55/56 ×0.5 volume arms (the Basilisk's 47 and
+    /// the Goat/Slime's 4), the ONE `Next(-10, 11) * 0.01` pitch draw
+    /// (`:670`) on the `UpdatePlayers` stream after the gate, the slot
+    /// Stop + re-create (`:663-667`).
+    pub fn play_hurt_npc_int(
+        &mut self,
+        sound_id: u16,
+        style_num: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let cue = match (sound_id, style_num) {
+            (3, 2) => "NPC_Hit_2",
+            (3, 5) => "NPC_Hit_5",
+            (3, 6) => "NPC_Hit_6",
+            (3, 47) => "NPC_Hit_47",
+            (4, 4) => "NPC_Killed_4",
+            _ => return None,
+        };
+        let style = npc_sound_style(cue, if sound_id == 3 { "NPC_Hit_" } else { "NPC_Killed_" }, sound_id as u8)?;
+        if sound_id == 3 {
+            self.npc_hit_play(cue, style, 0.0, x, y, rng)
+        } else {
+            self.npc_death_play(cue, style, 0.0, x, y, rng)
+        }
+    }
+
     /// S1-E-21f — the player-death play (`Player.PlayDeathSound`,
     /// `Player.cs:38715-38746`: the default arm `PlaySound(5,
     /// base.position)` `:38745` — the TOP-LEFT position, not the centre).
@@ -1947,6 +2107,22 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("Drown", -1.0, -1.0, 1.0, 0.0);
         Some("Drown")
+    }
+
+    /// W4-e10 — the full-mana chime (`Player.cs:19552`'s full-bar regen
+    /// trigger and `EmitMaxManaEffect` `:49800`: `PlaySound(25)` —
+    /// UNPOSITIONED). Case 25 (`LegacySoundPlayer.cs:963-968`):
+    /// Volume/Pan only — NO draws, no pitch; the int overload draws no
+    /// `GetRandomPitch`. The `SoundInstanceMaxMana` re-create is the
+    /// standing D4 deviation. Returns the cue; `None` when the gate
+    /// refused.
+    pub fn play_max_mana_sound(&mut self) -> Option<&'static str> {
+        if sound::play_sound(25, -1.0, -1.0, self.listener, 1.0).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("MaxMana", -1.0, -1.0, 1.0, 0.0);
+        Some("MaxMana")
     }
 
     /// S1-E-21h — one projectile-family cue play: the AI arms' first-tick
@@ -4356,6 +4532,63 @@ mod tests {
             let name = format!("Coin_{n}");
             assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
         }
+    }
+
+    /// W4-e10 — the player-voice plays' RNG contract: case 20 (female hurt)
+    /// draws exactly ONE `Next(3)` slot pick (`LegacySoundPlayer.cs:913`),
+    /// the chicken-rare pick draws ONE `Next(5)` (`Player.cs:38602`) then the
+    /// style façade draws NO gameplay roll (the trackable case 42), the
+    /// mount/armor NPC int arms draw ONE `Next(-10, 11)` pitch (case 3/4);
+    /// a muted gate refuses before any draw. The style façade's
+    /// `GetRandomPitch` NextFloat rides the audio-only stream, never the
+    /// passed gameplay stream.
+    #[test]
+    fn w4_e10_the_voice_plays_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 20: one Next(0, 3) — the Female_Hit_<n> slot pick.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_female_hurt_sound(0.0, &mut rng);
+        let want = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // The chicken-rare pick: one Next(0, 5), then the trackable façade
+        // draws nothing on the gameplay stream.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let rare = witness.next_range(0, 5) == 0;
+        let roll = rng.next_range(0, 5);
+        let name = if roll == 0 { "ChickenHurtRare" } else { "ChickenHurt" };
+        audio.play_voice_style(name, -1.0, -1.0, 0.0, &mut rng);
+        assert_eq!(rare, roll == 0);
+        assert_eq!(rng.peek(), witness.peek(), "the façade draws no gameplay roll");
+        // The mount/armor NPC int arms: one Next(-10, 11) pitch (case 3).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        witness.next_range(-10, 11);
+        audio.play_hurt_npc_int(3, 6, -1.0, -1.0, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "case 3 draws one pitch");
+        // Muted: the gate precedes every draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_female_hurt_sound(0.0, &mut rng), None);
+        assert_eq!(audio.play_hurt_npc_int(3, 6, -1.0, -1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted voice plays are draw-free");
+        // The bank rows resolve.
+        assert_eq!(sound_type("Female_Hit_1"), 20);
+        assert_eq!(sound_type("NPC_Hit_47"), 3);
+        assert_eq!(sound_type("Item_35"), 2);
+        assert_eq!(sound_type("player_hit_chicken"), 42);
+        assert_eq!(sound_type("dst_male_hit_0"), 42);
     }
 
     /// S1-E-21f — the double-jump and splash plays: case 16 draws one

@@ -267,6 +267,9 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
         // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
         last_saved_binary: 0,
+        // W4-e10 — the picked voice pair (`Player.cs:54924-54925`).
+        voice_variant: draft.voice_variant,
+        voice_pitch_offset: draft.voice_pitch_offset,
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

@@ -137,6 +137,87 @@ impl ExtraJump {
     }
 }
 
+/// W4-e10 — one resolved `Player.PlayHurtSound` play (`Player.cs:38569-
+/// 38712`). The decision tree picks the family; the drain runs the matching
+/// façade on the `UpdatePlayers` stream (the chicken-rare `Next(5)` roll
+/// rides it, `:38602`). `Int` is the legacy int overload (cases 0/1/20 —
+/// NO `GetRandomPitch`); `Style` is a `SoundID` façade (the NextFloat on the
+/// audio-only stream); `Npc` is the mount/armor `PlaySound(3|4, pos, style)`
+/// int arm (case 3/4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum HurtVoice {
+    /// `PlaySound(0, vector)` — the stoned arm (`:38578`), case 0 Dig.
+    Stoned,
+    /// `PlaySound(1, vector[, 1, pitch])` — the male voice (override 1
+    /// `:38584` / variant 1 `:38704`), case 1.
+    Male(f32),
+    /// `PlaySound(20, vector[, 1, pitch])` — the female voice (override 2
+    /// `:38587` / variant 2 `:38707`), case 20.
+    Female(f32),
+    /// A `SoundID` style façade — the DST/default/animal/retro/frost arms
+    /// (`:38590-38648`, `:38686`, `:38696`) and the variant-3 default
+    /// (`:38710`). Carries the style name + the pitch offset.
+    Style(&'static str, f32),
+    /// The chicken voice (override 6, `:38601-38610`): `Next(5) == 0` picks
+    /// `ChickenHurtRare`, else `ChickenHurt` — the roll rides the drain.
+    Chicken,
+    /// `PlaySound(3|4, vector, style)` — the mount/werewolf/Necro arms
+    /// (`:38655-38691`), case 3/4. Carries (sound_id, style).
+    Npc(u16, i32),
+}
+
+/// W4-e10 — one resolved `Player.PlayDeathSound` play (`Player.cs:38715-
+/// 38746`), at `base.position` (the TOP-LEFT, `:38721` et al.).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum DeathVoice {
+    /// `PlaySound(5, base.position)` — the default / override 1|2 arm
+    /// (`:38721`/`:38745`), case 5 (no draws).
+    Killed,
+    /// A `SoundID` style façade — the DST/bell/retro/balloon arms
+    /// (`:38724-38736`) and the DST-world arm (`:38741`).
+    Style(&'static str),
+}
+
+/// W4-e10 — `Utils.Remap(voicePitchOffset, -1, 1, -0.7, 0.7)`
+/// (`Player.cs:38699-38700`): the clamped lerp the default-voice arms ride.
+/// Shared by [`default_voice_hurt`] (the world drain + the char-creation
+/// preview).
+pub(crate) fn voice_pitch_remap(voice_pitch_offset: f32) -> f32 {
+    let t = ((voice_pitch_offset + 1.0) / 2.0).clamp(0.0, 1.0);
+    -0.7 + 1.4 * t
+}
+
+/// W4-e10 — `PlayHurtSound`'s tail (`Player.cs:38694-38712`): the DST-world
+/// arm (not remix) then the default `voiceVariant` switch with the remapped
+/// pitch. Extracted so the char-creation `PlayVoicePreview`
+/// (`UICharacterCreation.cs:1517-1527`) runs the SAME decision tree over the
+/// draft's voice fields — a fresh `PendingPlayer` has no stoned buff, no
+/// voiceOverride, no mount/werewolf/armor, so those arms never fire there.
+/// Returns `None` for an unhandled variant (the C# falls through silently).
+pub(crate) fn default_voice_hurt(
+    voice_variant: i32,
+    voice_pitch_offset: f32,
+    male: bool,
+    dont_starve: bool,
+    remix: bool,
+) -> Option<HurtVoice> {
+    // `:38694-38698` — the DST-world arm (not remix).
+    if dont_starve && !remix {
+        return Some(HurtVoice::Style(
+            if male { "DSTMaleHurt" } else { "DSTFemaleHurt" },
+            0.0,
+        ));
+    }
+    // `:38699-38712` — the default voiceVariant switch.
+    let pitch = voice_pitch_remap(voice_pitch_offset);
+    match voice_variant {
+        1 => Some(HurtVoice::Male(pitch)),
+        2 => Some(HurtVoice::Female(pitch)),
+        3 => Some(HurtVoice::Style("DefaultPlayerHurt", pitch)),
+        _ => None,
+    }
+}
+
 #[derive(Default, Clone, Copy)]
 pub struct PlayerInput {
     pub left: bool,
@@ -1046,8 +1127,10 @@ pub struct Player {
     /// `Player.hideMisc` (`Player.cs:1710` — a `BitsByte`; only bits 0/1
     /// have writers, the pet/light-pet hides `:17344`/`:17353` and the
     /// buff-bar cancel `Main.cs:43401`). The port models the two live bits
-    /// as a bool pair; the pet-grant arms (`:17303`/`:17318`) are unported,
-    /// so no consumer re-shows the visual yet (ANALYSIS).
+    /// as a bool pair; the pet-grant arms (`:17303`/`:17318`, W4-e10 gap
+    /// census — `update_pet_grants`) READ them, but the `TogglePet`/
+    /// `ToggleLight` re-show halves (`:17342-17363`) stay unported, so
+    /// nothing clears a hide once set (ANALYSIS).
     pub hide_misc: [bool; 2],
     /// `UpdateDyes`' `c*` cache (`Player.cs:9587-9757`) — the dye pass each
     /// draw layer applies (the `DrawData.shader` source, 0 = plain). The port
@@ -1083,6 +1166,12 @@ pub struct Player {
     /// `:33524-33525`), the per-tick range close's probe point.
     pub chest_x: i32,
     pub chest_y: i32,
+    /// `Player.sign` (`Player.cs:1440`, init -1): the open sign's
+    /// `Main.sign[]` index — the port's `World.signs` store index
+    /// (`signs.rs`). W4-e10 gap census: the open/close latch + cues
+    /// (`OpenSign`/`CloseSign` `:33528-33551`) land here; the sign EDITOR
+    /// (`Main.editSign`/`InputTextSign`) stays S1-E-26's.
+    pub sign: i32,
     /// `Player.editedChestName` (`Player.cs:1442`): the MP client's rename
     /// flag — `ChestUI.RenameChestSubmit` sets it on a write under netMode 1
     /// (`ChestUI.cs:855-859`), and the next `33 SyncPlayerChest` send carries
@@ -1874,6 +1963,25 @@ pub struct Player {
     /// arm, `Player.cs:23257`: `PlaySound(23)` — unpositioned). A bare flag:
     /// the case draws nothing, the drain plays `Drown` on no stream.
     pending_drown_sound: bool,
+    /// W4-e10 — the full-bar mana trigger (`Player.UpdateManaRegen`'s
+    /// last-point arm, `Player.cs:19550-19559`: `PlaySound(25)` —
+    /// UNPOSITIONED, case 25 no draws — then 5 type-45 dust with the
+    /// `Next(20, 26) * 0.1` scale rolls). A bare flag: the drain plays
+    /// `MaxMana` and spawns the dust on `UpdatePlayers` (the
+    /// `pending_drown_sound` convention).
+    pending_mana_full: bool,
+    /// W4-e10 — the petrification transition (`Player.cs:25219-25233`):
+    /// `stoned != lastStoned` plays `PlaySound(0, position)` (case 0 Dig,
+    /// positioned at the top-left) and spawns 20 type-1 dust, each with a
+    /// `Next(2) == 0` noGravity roll. The flag carries the transition
+    /// EDGE (both directions — the C# plays on the un-stone too); the
+    /// drain owns the audio device, the dust pool and `UpdatePlayers`.
+    pending_stoned_transition: bool,
+    /// W4-e10 — the hive/honey landing cue (`Player.MakeFloorDust`'s
+    /// Falling arm, `Player.cs:23830`: `PlaySound(SoundID.Item177,
+    /// (int)Center.X, (int)Bottom.Y)`) — `(x, y)` truncated in the drain;
+    /// the style façade's case-2 pitch draw rides `UpdatePlayers`.
+    pending_honey_land_sound: Option<(f32, f32)>,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -1889,6 +1997,68 @@ pub struct Player {
     /// wave-A façade (the `GetRandomPitch` NextFloat rides the audio-only
     /// stream; `Item32`'s variance is 0, the draw is still consumed).
     pending_flap_sound: Option<(u16, f32, f32)>,
+    /// W4-e10 — `Player.voiceVariant` (`Player.cs:1346`, ctor default 1
+    /// `:56045`): the default hurt-voice family (1 = the legacy id-1 male,
+    /// 2 = the id-20 female, 3 = the `DefaultPlayerHurt` trackable). The
+    /// char-creation picker cycles it (`UICharacterCreation.cs:452-528`) and
+    /// the `.plr` persists it (`:54924`/`:55730`); the live in-world Player's
+    /// hydration is CLOSED by f44's SEAL port (`Player::hydrate_from_file`,
+    /// research/132 §4 + W4-e10-voice-seal.md §1); till the fold merges,
+    /// `CharPlay` stays routing-only (spec §9.4) at the ctor's 1.
+    pub voice_variant: i32,
+    /// `Player.voicePitchOffset` (`Player.cs:1348`, default 0): the
+    /// per-character pitch the default-voice arms remap through
+    /// `Utils.Remap(-1, 1, -0.7, 0.7)` (`:38699-38700`).
+    pub voice_pitch_offset: f32,
+    /// `Player.voiceOverride` (`Player.cs:1706`, default 0): the voice
+    /// accessory's slot (`Item.voiceSlot`), re-derived per tick by
+    /// `ApplyEquipFunctional` (`:14382-14385`) and cleared by
+    /// `ResetVisibleAccessories` (`:31146`). Takes priority over the
+    /// mount/armor/default arms in `PlayHurtSound`/`PlayDeathSound`.
+    pub voice_override: i32,
+    /// `Player.skinVariant` (`Player.cs`, the `Male` getter
+    /// `:3405-3410` reads `PlayerVariantID.Sets.Male` = {0,1,2,3,8,10},
+    /// `PlayerVariantID.cs:20`): the DST-world hurt/death gender pick.
+    pub skin_variant: u8,
+    /// `Player.wereWolf` (`Player.cs:2344`): the buff-28 night
+    /// transformation (`:11893-11910`); the hurt voice's werewolf arm
+    /// (`:38679-38683`) reads it with `forceWerewolf`/`hideWolf`.
+    pub were_wolf: bool,
+    /// `Player.forceWerewolf` (`Player.cs:2354`): the Moon-Charm /
+    /// Celestial-Shell / Wolf-Shell vanity force (`:14205-14208`).
+    pub force_werewolf: bool,
+    /// `Player.hideWolf` (`Player.cs:2350`): the hidden-accessory wolf
+    /// suppress (`:15138-15142`/`:15185-15188`/`:15406-15410`).
+    pub hide_wolf: bool,
+    /// `Player.wolfAcc` (`Player.cs`): the shell accessory grant
+    /// (861/3110/485) the night werewolf-buff check reads (`:25601`).
+    wolf_acc: bool,
+    /// `Player.frostArmor` (`Player.cs:1378`): the Frost set
+    /// (head 46 / body 27 / legs 26, `ApplyArmorSoundAndDustChanges`
+    /// `:38182-38185`); the hurt voice's Item-27 arm (`:38684-38688`).
+    pub frost_armor: bool,
+    /// `Player.boneArmor` (`Player.cs:1376`): the Necro set
+    /// (head 75|7 / body 7 / legs 7, `:38178-38181`); the hurt voice's
+    /// `PlaySound(3, vector, 2)` arm (`:38689-38693`).
+    pub bone_armor: bool,
+    /// `Player.vanityRocketBoots` (`Player.cs`, `UpdateBootVisualEffects`
+    /// `:36704-36750`): the boot LOOK tier the rocket-sound cadence reads
+    /// (`:26886-26895`) — distinct from the gameplay `rocketBoots` tier.
+    pub vanity_rocket_boots: i32,
+    /// `Player.rocketSoundDelay` (`Player.cs:2752`): the rocket-boot cue
+    /// cooldown — set to 30 (tier 1/5) or 15 (tier 2/3/4/6) on the play
+    /// (`:26888`/`:26893`), decremented per tick (`:26903-26906`).
+    rocket_sound_delay: i32,
+    /// W4-e10 — the rocket-boot trigger cue (`SoundID.Item13`/`Item24`,
+    /// `Player.cs:26889`/`:26894`): `(style_index, position.X,
+    /// position.Y)` — the wave-A façade, gated by `rocketSoundDelay`.
+    pending_rocket_sound: Option<(u16, f32, f32)>,
+    /// W4-e10 — the `WingFrame` rocket cue (the jetpack wings-4's
+    /// `SoundID.Item13` `Player.cs:27154`/`:29478` and the wings-45's
+    /// `SoundID.Item24` `:30172`): `(style_index, position.X,
+    /// position.Y)` — drained BEFORE the boot cue (the C# `WingFrame`
+    /// `:26820` runs ahead of the rocket trigger `:26867`).
+    pending_wing_rocket_sound: Option<(u16, f32, f32)>,
     /// `Player.ManaEffect` (`Player.cs:4531-4538`): the mana-restore combat
     /// text the cuffs arm queues from `Hurt` (`:38291-38303`) — the caller
     /// owns `Main.combatText`, so the Player hands the amount over (the
@@ -2694,6 +2864,7 @@ impl Player {
             chest: crate::bank::CHEST_CLOSED,
             chest_x: 0,
             chest_y: 0,
+            sign: -1,
             edited_chest_name: false,
             prev_synced_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
@@ -2869,10 +3040,27 @@ impl Player {
             pending_splash_sound: None,
             wet_count: 0,
             pending_drown_sound: false,
+            pending_mana_full: false,
+            pending_stoned_transition: false,
+            pending_honey_land_sound: None,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
             pending_flap_sound: None,
+            voice_variant: 1,
+            voice_pitch_offset: 0.0,
+            voice_override: 0,
+            skin_variant: 0,
+            were_wolf: false,
+            force_werewolf: false,
+            hide_wolf: false,
+            wolf_acc: false,
+            frost_armor: false,
+            bone_armor: false,
+            vanity_rocket_boots: 0,
+            rocket_sound_delay: 0,
+            pending_rocket_sound: None,
+            pending_wing_rocket_sound: None,
             pending_mana_effect: None,
             pending_heal_effect: None,
             pending_retaliate: None,
@@ -3357,10 +3545,137 @@ impl Player {
         std::mem::take(&mut self.pending_drown_sound)
     }
 
+    /// W4-e10 — takes the full-bar mana flag (`Player.cs:19552`,
+    /// `PlaySound(25)` — unpositioned, no draws; the 5-dust burst rides
+    /// the drain's `UpdatePlayers` stream).
+    pub(crate) fn take_mana_full(&mut self) -> bool {
+        std::mem::take(&mut self.pending_mana_full)
+    }
+
+    /// W4-e10 — takes the petrification-transition flag
+    /// (`Player.cs:25225`, `PlaySound(0, position)` + the 20-dust burst).
+    pub(crate) fn take_stoned_transition(&mut self) -> bool {
+        std::mem::take(&mut self.pending_stoned_transition)
+    }
+
+    /// W4-e10 — takes the hive/honey landing cue
+    /// (`Player.cs:23830`, `SoundID.Item177` at `(Center.X, Bottom.Y)`).
+    pub(crate) fn take_honey_land_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_honey_land_sound.take()
+    }
+
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
     /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
     pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
         self.pending_flap_sound.take()
+    }
+
+    /// W4-e10 — takes the rocket-boot trigger cue (`Player.cs:26889`/
+    /// `:26894`) — `(style_index, position.X, position.Y)`.
+    pub(crate) fn take_rocket_sound(&mut self) -> Option<(u16, f32, f32)> {
+        self.pending_rocket_sound.take()
+    }
+
+    /// W4-e10 — takes the `WingFrame` rocket cue (`Player.cs:27154`/
+    /// `:29478`/`:30172`) — `(style_index, position.X, position.Y)`.
+    pub(crate) fn take_wing_rocket_sound(&mut self) -> Option<(u16, f32, f32)> {
+        self.pending_wing_rocket_sound.take()
+    }
+
+    /// W4-e10 — `Player.Male` (`Player.cs:3405-3410`): the
+    /// `PlayerVariantID.Sets.Male` membership ({0,1,2,3,8,10},
+    /// `PlayerVariantID.cs:20`).
+    pub(crate) fn male(&self) -> bool {
+        matches!(self.skin_variant, 0 | 1 | 2 | 3 | 8 | 10)
+    }
+
+    /// W4-e10 — `Player.PlayHurtSound`'s decision tree (`Player.cs:38569-
+    /// 38712`), in the C#'s exact priority order: stoned → voiceOverride →
+    /// mount → werewolf → frostArmor → boneArmor → DST-world → voiceVariant.
+    /// The local player's cue is unpositioned (`:38572-38575`); the drain
+    /// plays it at `(-1, -1)`. Returns `None` only for an unhandled
+    /// voiceVariant (the C# falls through silently, `:38701-38712`).
+    pub(crate) fn hurt_voice(&self, dont_starve: bool, remix: bool) -> Option<HurtVoice> {
+        // `:38576-38580` — the stoned arm wins over everything.
+        if self.buffs.find_buff_index(156).is_some() {
+            return Some(HurtVoice::Stoned);
+        }
+        // `:38581-38650` — the voiceOverride switch.
+        match self.voice_override {
+            1 => return Some(HurtVoice::Male(0.0)),
+            2 => return Some(HurtVoice::Female(0.0)),
+            3 => return Some(HurtVoice::Style("DSTMaleHurt", 0.0)),
+            4 => return Some(HurtVoice::Style("DSTFemaleHurt", 0.0)),
+            20 => return Some(HurtVoice::Style("DefaultPlayerHurt", 0.0)),
+            5 => return Some(HurtVoice::Style("BellHurt", 0.0)),
+            6 => return Some(HurtVoice::Chicken),
+            7 => return Some(HurtVoice::Style("FrogHurt", 0.0)),
+            8 => return Some(HurtVoice::Style("GoatHurt", 0.0)),
+            9 => return Some(HurtVoice::Style("RetroHurt", 0.0)),
+            10 => return Some(HurtVoice::Style("CatHurt", 0.0)),
+            11 => return Some(HurtVoice::Style("DogHurt", 0.0)),
+            12 => return Some(HurtVoice::Style("TurkeyHurt", 0.0)),
+            13 => return Some(HurtVoice::Style("GoblinHurt", 0.0)),
+            14 => return Some(HurtVoice::Style("CrowHurt", 0.0)),
+            15 => return Some(HurtVoice::Style("BalloonHurt", 0.0)),
+            16 => return Some(HurtVoice::Style("UndeadHurt", 0.0)),
+            17 => return Some(HurtVoice::Style("VampireHurt", 0.0)),
+            18 => return Some(HurtVoice::Style("FairyHurt", 0.0)),
+            19 => return Some(HurtVoice::Style("Item16", 0.0)),
+            _ => {}
+        }
+        // `:38651-38678` — the mount arms.
+        if self.mount.is_active() {
+            match self.mount.kind() {
+                52 => return Some(HurtVoice::Npc(3, 6)),
+                54 => return Some(HurtVoice::Npc(3, 47)),
+                55 | 56 => return Some(HurtVoice::Npc(4, 4)),
+                61 => return Some(HurtVoice::Npc(3, 5)),
+                _ => {}
+            }
+        }
+        // `:38679-38683` — the werewolf arm.
+        if (self.were_wolf || self.force_werewolf) && !self.hide_wolf {
+            return Some(HurtVoice::Npc(3, 6));
+        }
+        // `:38684-38688` — the Frost set's Item-27 arm.
+        if self.frost_armor {
+            return Some(HurtVoice::Style("Item27", 0.0));
+        }
+        // `:38689-38693` — the Necro set's NPC_Hit_2 arm.
+        if self.bone_armor {
+            return Some(HurtVoice::Npc(3, 2));
+        }
+        // `:38694-38712` — the DST-world arm + the default voiceVariant switch,
+        // shared with the char-creation preview (`default_voice_hurt`).
+        default_voice_hurt(
+            self.voice_variant,
+            self.voice_pitch_offset,
+            self.male(),
+            dont_starve,
+            remix,
+        )
+    }
+
+    /// W4-e10 — `Player.PlayDeathSound`'s decision tree (`Player.cs:38715-
+    /// 38746`): voiceOverride → the DST/anniversary world arm → the default
+    /// `PlaySound(5, base.position)`.
+    pub(crate) fn death_voice(&self, dont_starve: bool, tenth_anniversary: bool) -> DeathVoice {
+        match self.voice_override {
+            1 | 2 => return DeathVoice::Killed,
+            3 => return DeathVoice::Style("DSTMaleHurt"),
+            4 => return DeathVoice::Style("DSTFemaleHurt"),
+            5 => return DeathVoice::Style("BellHurt"),
+            9 => return DeathVoice::Style("RetroDeath"),
+            15 => return DeathVoice::Style("BalloonDeath"),
+            _ => {}
+        }
+        // `:38739-38742` — the DST / tenth-anniversary world arm.
+        if dont_starve || tenth_anniversary {
+            return DeathVoice::Style(if self.male() { "DSTMaleHurt" } else { "DSTFemaleHurt" });
+        }
+        // `:38743-38746` — the default.
+        DeathVoice::Killed
     }
 
     /// S1-P-i41 — takes the Chillet mount's `SoundID.PalChillet` play
@@ -3650,7 +3965,12 @@ impl Player {
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
+        self.pending_mana_full = false;
+        self.pending_stoned_transition = false;
+        self.pending_honey_land_sound = None;
         self.pending_flap_sound = None;
+        self.pending_rocket_sound = None;
+        self.pending_wing_rocket_sound = None;
         self.pending_dismount = false;
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
@@ -3888,6 +4208,78 @@ impl Player {
                 self.hide_misc[slot] = true;
             }
         }
+    }
+
+    /// `Player.UpdatePet` (`Player.cs:17298-17309`, called at `:25573`
+    /// right after `UpdateBuffs` in the `myPlayer` block): the equipped
+    /// vanity pet's buff re-grants (3600 ticks) whenever it is absent —
+    /// the `vanityPet || lightPet` table gate, the `hideMisc[0]` refusal
+    /// and the Carrot-603 collector's-edition gate (`:17303`). Returns
+    /// the item's `UseSound` style index to play at `base.position`
+    /// (`:17306`, the position overload's `pitchOffset` default 0 —
+    /// NOT `useSoundPitch`); `None` when no grant fired. The sound plays
+    /// even when `AddBuff` itself refused (immune) — the C# call order.
+    /// `Main.runningCollectorsEdition` folds TRUE (the retail copy ships
+    /// the CE content; the port has no `CheckBunny` registry probe —
+    /// ANALYSIS, the W4-e10 gap-census phase).
+    pub fn update_pet_grant(&mut self, pet: &ItemSlot) -> Option<u16> {
+        let d = registry::get(pet.kind)?;
+        if pet.count < 1 || d.buff_type < 1 {
+            return None; // `:17300`
+        }
+        let num = d.buff_type;
+        // `:17303` — the table gate, the hide refusal, the 603 CE gate
+        // (folded true) and the absent-buff test.
+        if !(crate::buffs::is_vanity_pet(num) || crate::buffs::is_light_pet(num))
+            || self.hide_misc[0]
+            || self.buffs.find_buff_index(num).is_some()
+        {
+            return None;
+        }
+        self.buffs.add_buff(num, 3600); // `:17305`
+        d.use_sound // `:17306` — PlaySound(item.UseSound, base.position)
+    }
+
+    /// `Player.UpdatePetLight` (`Player.cs:17311-17340`, called at
+    /// `:25574` right after `UpdatePet`): the light-pet twin, plus the
+    /// Fairy Bell's legacy `buffType == 27` alias — an existing 102/101
+    /// fairy counts as the buff (`:17323-17330`), and a fresh grant picks
+    /// one of {27, 102, 101} via `Utils.SelectRandom` (`:17335`, ONE
+    /// `Next(3)` on the caller's stream — `Player.Update` runs under the
+    /// `Main.cs:17754` `UpdatePlayers` swap). Returns the `UseSound`
+    /// style index for `base.position` (`:17338`); `None` when silent.
+    pub fn update_light_pet_grant(
+        &mut self,
+        pet: &ItemSlot,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<u16> {
+        let d = registry::get(pet.kind)?;
+        if pet.count < 1 || d.buff_type < 1 {
+            return None; // `:17313`
+        }
+        let mut num = d.buff_type;
+        if !(crate::buffs::is_vanity_pet(num) || crate::buffs::is_light_pet(num))
+            || self.hide_misc[1]
+        {
+            return None; // `:17318` (the 603 CE gate folds true)
+        }
+        // `:17322-17330` — the fairy alias ladder.
+        let mut found = self.buffs.find_buff_index(num).is_some();
+        if num == 27 && !found {
+            found = self.buffs.find_buff_index(102).is_some();
+        }
+        if num == 27 && !found {
+            found = self.buffs.find_buff_index(101).is_some();
+        }
+        if found {
+            return None;
+        }
+        if num == 27 {
+            // `:17335` — Utils.SelectRandom(Main.rand, 27, 102, 101).
+            num = [27, 102, 101][rng.next_range(0, 3) as usize];
+        }
+        self.buffs.add_buff(num, 3600); // `:17337`
+        d.use_sound // `:17338`
     }
 
     /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
@@ -4960,13 +5352,82 @@ impl Player {
         }
     }
 
+    /// W4-e10 — `Player.ApplyArmorSoundAndDustChanges` (`Player.cs:38167-
+    /// 38186`): the effective armor SLOT ids (vanity 10/11/12 over armor
+    /// 0/1/2), the werewolf look override, then the Necro/Frost set flags.
+    /// `GetEffectiveArmor(k)` collapses to `equipped[k]` (no loadouts).
+    fn apply_armor_sound_and_dust_changes(&mut self) {
+        let slot_of = |kind: u16, which: u8| -> i32 {
+            crate::registry::get(kind).map_or(-1, |d| match which {
+                0 => i32::from(d.head_slot),
+                1 => i32::from(d.body_slot),
+                _ => i32::from(d.leg_slot),
+            })
+        };
+        // `:38169-38171` — the vanity slot wins when it carries a piece.
+        let vanity_head = slot_of(self.equipped[10], 0);
+        let vanity_body = slot_of(self.equipped[11], 1);
+        let vanity_legs = slot_of(self.equipped[12], 2);
+        let mut head = if vanity_head >= 0 { vanity_head } else { slot_of(self.equipped[0], 0) };
+        let mut body = if vanity_body >= 0 { vanity_body } else { slot_of(self.equipped[1], 1) };
+        let mut legs = if vanity_legs >= 0 { vanity_legs } else { slot_of(self.equipped[2], 2) };
+        // `:38172-38177` — the werewolf look override.
+        if (self.were_wolf || self.force_werewolf) && !self.hide_wolf {
+            legs = 20;
+            body = 21;
+            head = 38;
+        }
+        // `:38178-38181` — the Necro set (head 75|7, body 7, legs 7).
+        if (head == 75 || head == 7) && body == 7 && legs == 7 {
+            self.bone_armor = true;
+        }
+        // `:38182-38185` — the Frost set (body 27, head 46, legs 26).
+        if body == 27 && head == 46 && legs == 26 {
+            self.frost_armor = true;
+        }
+    }
+
+    /// W4-e10 — `Item.voiceSlot` for the voice-override accessories
+    /// (`Item.cs`'s `DefaultToVoiceOverrideAccessory` callers): the Whoopie
+    /// Cushion 215 → 19 (`:4049`), the Cowbell 5484 → 5 (`:43216`), the
+    /// Chicken Feet 5485 → 6 (`:43220`), the animal voices 5499-5509 →
+    /// `7 + type - 5499` (`:43362`) and the Fairy 5534 → 18 (`:43618`).
+    fn voice_slot_of(kind: u16) -> Option<i32> {
+        match kind {
+            215 => Some(19),
+            5484 => Some(5),
+            5485 => Some(6),
+            5499..=5509 => Some(7 + i32::from(kind) - 5499),
+            5534 => Some(18),
+            _ => None,
+        }
+    }
+
+    /// W4-e10 — `Player.UpdateBootVisualEffects` (`Player.cs:36704-36750`):
+    /// the boot LOOK tier (`vanityRocketBoots`) the rocket-sound cadence
+    /// reads (`:26886-26895`). The run-visual cancels are draw seams; only
+    /// the tier writes land. The functional boot rows also set the tier
+    /// inline (`:15023`/`:15222`/`:15380`/`:15386`/`:15393`/`:15400`) — the
+    /// C# writes it twice to the same value; this head is the canonical one.
+    fn update_boot_visual_effects(&mut self, kind: u16) {
+        match kind {
+            128 => self.vanity_rocket_boots = 1,
+            405 | 898 | 3993 => self.vanity_rocket_boots = 2,
+            1862 => self.vanity_rocket_boots = 3,
+            5000 => self.vanity_rocket_boots = 4,
+            4874 => self.vanity_rocket_boots = 5,
+            _ => {}
+        }
+    }
+
     /// `Player.ApplyEquipFunctional` (`Player.cs:14368-15560`): the per-kind
     /// grant chain for one functional accessory slot. The ported arms keep
-    /// the C#'s grants; the visual half (`UpdateBootVisualEffects`/bobber/
-    /// voice, `:14378-14390`) and the `hideVisibleAccessory` gate are draw
-    /// seams, out of scope. `_item_slot` is the C# `itemSlot` (the visibility
-    /// lookups only).
-    fn apply_equip_functional(&mut self, _item_slot: usize, kind: u16) {
+    /// the C#'s grants. W4-e10 ports the visibility-gated head
+    /// (`:14378-14390`): `UpdateBootVisualEffects`' rocket-boot LOOK tier,
+    /// the `voiceSlot` override and the wolf-force pair — the hurt/death
+    /// voice and the rocket-sound cadence read them. `item_slot` is the C#
+    /// `itemSlot` (the `hideVisibleAccessory` lookups).
+    fn apply_equip_functional(&mut self, item_slot: usize, kind: u16) {
         // S1-C-12 wave E — the combat/damage family has ONE grant path:
         // `accessory_combat::apply_combat_accessory` claims its kinds here
         // and the former inline arms (489/490/491/2998/935/897/936/1343/
@@ -4976,6 +5437,22 @@ impl Player {
         // 15450`), so claiming them before the match is order-identical.
         if crate::accessory_combat::apply_combat_accessory(kind, self) {
             return;
+        }
+        // W4-e10 — the `!hideVisibleAccessory[itemSlot]` head (`:14378-
+        // 14390`): the boot LOOK tier (`UpdateBootVisualEffects`), the voice
+        // override (`:14382-14385`) and the wolf-force pair (`:14205-14208`,
+        // the `ApplyEquipVanity` head the functional path mirrors).
+        if !self.hide_visible_accessory[item_slot] {
+            self.update_boot_visual_effects(kind);
+            if let Some(voice) = Self::voice_slot_of(kind) {
+                self.voice_override = voice;
+            }
+            // `:14205-14208` — Moon Charm 861 / Celestial Shell 3110 /
+            // Wolf Shell 485 force the werewolf look (hideWolf clears).
+            if matches!(kind, 861 | 3110 | 485) {
+                self.hide_wolf = false;
+                self.force_werewolf = true;
+            }
         }
         // `ApplyEquipFunctional`'s mana stat switch (`Player.cs:14922-14935`,
         // a `switch` INDEPENDENT of the per-type `if` chain the match below
@@ -5240,9 +5717,27 @@ impl Player {
             // `:15402-15410` Celestial Shell 3110, `:15566-15573` Neptune's
             // Shell 497): `accMerman` arms the wet transformation the flight
             // gates read (`CanUseWingAbilities` `:3994`, `WingAirLogicTweaks`
-            // `:26496`). The `wolfAcc`/`hideMerman` halves are the werewolf /
-            // visibility families (out of flight scope).
-            861 | 3110 | 497 => self.acc_merman = true,
+            // `:26496`). W4-e10: the `wolfAcc` half (861/3110, `:15137`/
+            // `:15405`) arms the night werewolf-buff check (`:25601`); the
+            // hidden-accessory `hideWolf`/`hideMerman` pair (`:15138-15142`/
+            // `:15406-15410`) suppresses the wolf voice. Neptune's Shell 497
+            // grants NO wolf (`:15566-15573`).
+            861 | 3110 => {
+                self.acc_merman = true;
+                self.wolf_acc = true;
+                if self.hide_visible_accessory[item_slot] {
+                    self.hide_wolf = true;
+                }
+            }
+            497 => self.acc_merman = true,
+            // W4-e10 — the Wolf Shell 485 (`:15182-15189`): `wolfAcc` + the
+            // hidden-accessory `hideWolf` (no merman half).
+            485 => {
+                self.wolf_acc = true;
+                if self.hide_visible_accessory[item_slot] {
+                    self.hide_wolf = true;
+                }
+            }
             // The penetration rows: the Shark Tooth Necklace (3212,
             // `:13286-13289`) and the Honey Comb (4007, `:14485-14489`)
             // add a flat 5 each.
@@ -5966,6 +6461,18 @@ impl Player {
         self.space_gun = false;
         self.shadow_armor = false;
         self.frost_burn = false;
+        // W4-e10 — `ResetEffects`' voice/armor/boot clears (`Player.cs:18350`
+        // boneArmor, `:18352` frostArmor, `:18354` vanityRocketBoots,
+        // `:18691` wereWolf): the `ApplyArmorSoundAndDustChanges` seam and
+        // the buff-28 / boot-visual arms re-grant them per tick. The
+        // `voiceOverride` clear is `ResetVisibleAccessories` (`:31146`),
+        // run at the `PlayerFrame` position (`:25624`) — the equip pass
+        // re-arms it from the worn voice accessory.
+        self.bone_armor = false;
+        self.frost_armor = false;
+        self.vanity_rocket_boots = 0;
+        self.were_wolf = false;
+        self.voice_override = 0;
         // S1-P-i10 — `ResetEffects`' on-hit accessory flag clears
         // (`Player.cs:18608` catalystBand, `:18610` magmaStone): the
         // `apply_equip_functional` arms (1322/1343/6178/6185) re-grant
@@ -6121,6 +6628,10 @@ impl Player {
         // (`Update_SentryBackpack`, `:28428-28434`).
         self.acc_sentry_backpack = false;
         self.ballista_panic = false;
+        // W4-e10 — `ResetEffects` clears `deadCellsPotionStation`
+        // (`Player.cs:18362`); the buff-366 arm below re-derives it per tick
+        // (the Dead Cells Potion Station 699's grant, `:10185-10188`).
+        self.buffs.dead_cells_potion_station = false;
         // S1-P-i35 — `ResetEffects`' fishing clears (`Player.cs:18507-18513`):
         // the skill and the six accessory/potion flags re-derive in the buff
         // loop (121/122/123) and the equip grants below. The bobber override
@@ -6425,6 +6936,14 @@ impl Player {
                 self.dash_type = set.dash_type;
             }
         }
+        // W4-e10 — `Player.ApplyArmorSoundAndDustChanges` (`Player.cs:38167-
+        // 38186`, called from `UpdateArmorSets` `:16312`): the effective
+        // head/body/leg SLOT ids (the vanity slot 10/11/12 overrides the
+        // armor slot 0/1/2 when it carries a piece), the werewolf override
+        // (head 38 / body 21 / legs 20), then the Necro (`boneArmor`) and
+        // Frost (`frostArmor`) set flags the hurt voice reads (`:38684-
+        // 38693`). `ResetEffects` clears both flags (`:18350`/`:18352`).
+        self.apply_armor_sound_and_dust_changes();
         for bt in self.buffs.active_types() {
             match bt {
                 // S1-E-7 wave A — the potion-buff block, in the C# chain's
@@ -6536,6 +7055,27 @@ impl Player {
                     self.mana_max += 20;
                     self.mana_cost -= 0.02;
                 }
+                // W4-e10 — `BuffID.Werewolf` (28, `:11893-11910`): night +
+                // Moon Charm (`wolfAcc`) + not merman grants the wolf stats
+                // and `wereWolf`; else the buff dies (the slot rescan `j--`
+                // is the `buff_effects_misc` accumulator's concern — the
+                // port's `active_types` snapshot re-reads next tick). The
+                // hurt voice's werewolf arm (`:38679`) reads `wereWolf`.
+                28 => {
+                    if !world.day_time && self.wolf_acc && !self.merman {
+                        self.were_wolf = true;
+                        self.melee_crit += 2;
+                        self.melee_damage += 0.051;
+                        self.melee_speed_bonus += 0.051;
+                        self.stat_defense += 3;
+                        self.move_speed += 0.05;
+                    } else {
+                        // `:11907` — `DelBuff(j)`: drop the live slot.
+                        if let Some(i) = self.buffs.find_buff_index(28) {
+                            self.buffs.del_buff(i);
+                        }
+                    }
+                }
                 33 => {
                     self.weak_stacks += 1; // `BuffID.Weak`
                     self.melee_damage -= 0.051;
@@ -6612,6 +7152,18 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
+                // W4-e10 — `:9935-9938`: Sugar Rush (192, the Slice of Cake
+                // 621's buff): `pickSpeed -= 0.2f` (the port's positive bonus
+                // convention) + `moveSpeed += 0.2f`, per slot.
+                192 => {
+                    self.pick_speed_bonus += 0.2;
+                    self.move_speed += 0.2;
+                }
+                // W4-e10 — `:10185-10188`: the Dead Cells Potion Station buff
+                // (366, the tile-699 grant) arms `deadCellsPotionStation`, the
+                // ×1.2 potion-duration extension `AddBuff_DetermineBuffTimeToAdd`
+                // reads (`:5430`). `ResetEffects` clears it (`:18362`).
+                366 => self.buffs.dead_cells_potion_station = true,
                 // (Gate resync take-one: the Mana Sickness 94 arm lives ONCE
                 // above through `potions::apply_mana_sickness_arm` — the i37
                 // canonical fn; the i19 inline copy was identical maths
@@ -6777,6 +7329,16 @@ impl Player {
         // the shell grants below re-arm it. `merman` itself is re-derived
         // per tick (`:25577-25589`), not reset here.
         self.acc_merman = false;
+        // W4-e10 — `:25601-25607`: the night werewolf-buff grant reads the
+        // PREVIOUS tick's `wolfAcc` (the shell grants below re-arm it for
+        // next tick), then `wolfAcc`/`hideWolf`/`forceWerewolf` clear. The
+        // buff-28 arm in the buff loop reads `wereWolf`'s grant next tick.
+        if self.wolf_acc && !self.merman && !world.day_time && !self.were_wolf {
+            self.buffs.add_buff(28, 60);
+        }
+        self.wolf_acc = false;
+        self.hide_wolf = false;
+        self.force_werewolf = false;
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
@@ -7500,6 +8062,11 @@ impl Player {
         // tell "moved onto the plate" from "stands on it".
         self.old_x = self.x;
         self.old_y = self.y;
+        // W4-e10 — `Player.cs:28073-28081`: the `falling` latch reads the
+        // post-gravity PRE-collision velocity (the gravity adds ran above,
+        // `:26805`/`:27032`); `FloorVisuals(falling)` (`:28271`) forwards
+        // it to `MakeFloorDust`'s hive-landing cue (`:23830`).
+        let falling = self.vy > gravity || self.vy < -gravity;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -7514,12 +8081,18 @@ impl Player {
             self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
         }
 
-        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
+        // `Player.cs:25219-25233`: the tick petrification lands, a flat hit —
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
+        // W4-e10: the transition EDGE (both directions) queues the case-0
+        // Dig play at the top-left + the 20-dust burst (`:25225-25232`)
+        // for the drain (the audio/dust/stream owner).
         let stoned = self.buffs.find_buff_index(156).is_some();
-        if stoned && !self.last_stoned {
-            let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+        if stoned != self.last_stoned {
+            if stoned {
+                let cx = self.x + self.width * 0.5;
+                self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            }
+            self.pending_stoned_transition = true;
         }
         self.last_stoned = stoned;
 
@@ -7610,7 +8183,7 @@ impl Player {
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
         // the movement block reads the flags next tick (one tick stale).
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world);
+            self.floor_visuals(world, falling);
         }
 
         self.update_survival(world, rng);
@@ -8352,6 +8925,17 @@ impl Player {
             return true;
         }
         false
+    }
+
+    /// W4-e10 — `Player.ShouldDrawWingsThatAreAlwaysAnimated`
+    /// (`Player.cs:30737-30748`): airborne, not grappling, not floating in
+    /// water, and the mount allows wings. The wings-45 rocket cue gates on
+    /// it (`:30165`).
+    fn should_draw_wings_always_animated(&self) -> bool {
+        self.vy != 0.0
+            && !self.grappling_active
+            && (!self.wet || !self.should_float_in_water())
+            && self.mount.can_use_wings()
     }
 
     /// `PlayerFrame()`'s item-use branch (`Player.cs:36312-36444`): the body
@@ -9730,6 +10314,40 @@ impl Player {
                 self.wing_frame = 0;
             }
         }
+        // W4-e10 — the `WingFrame` rocket cues, in the C# arm order (they
+        // run INSIDE `WingFrame` `:26820`, ahead of the rocket trigger
+        // `:26867`, so they drain first). The jetpack wings-4's Item13
+        // (`:29471-29480`, wingFlap || jump > 0, rocketDelay2 cadence 60)
+        // and the wings-45's Item24 (`:30165-30174`, the always-animated
+        // gate + wingTime > 0, cadence 30). The frame machines themselves
+        // are visual seams; only the sound + cadence land.
+        if self.wings_logic == 4 && (flag19 || self.jump > 0) {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                if let Some(idx) = crate::soundid::SOUND_STYLES
+                    .iter()
+                    .position(|s| s.name == "Item13")
+                {
+                    self.pending_wing_rocket_sound = Some((idx as u16, self.x, self.y));
+                }
+                self.rocket_delay2 = 60;
+            }
+        }
+        if self.wings_logic == 45
+            && self.should_draw_wings_always_animated()
+            && self.wing_time > 0.0
+        {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                if let Some(idx) = crate::soundid::SOUND_STYLES
+                    .iter()
+                    .position(|s| s.name == "Item24")
+                {
+                    self.pending_wing_rocket_sound = Some((idx as u16, self.x, self.y));
+                }
+                self.rocket_delay2 = 30;
+            }
+        }
         // `:26825-26834`: with both equipped the rocket fuel converts into
         // wing time (capped past the max) — AFTER WingMovement drained this
         // tick's point, in the C# order.
@@ -9787,12 +10405,33 @@ impl Player {
                     // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
-                // `:26884-26896`: the rocketSoundDelay cue (Item13/Item24 per
-                // vanity tier) is an audio seam — the port's rocket sound
-                // rides the S1-E-21 family, not this block.
+                // W4-e10 — `:26884-26896`: the rocketSoundDelay cue — the
+                // vanity tier picks Item13 (1/5, cooldown 30) or Item24
+                // (2/3/4/6, cooldown 15), at `base.position`. The façade
+                // draw rides the drain's `UpdatePlayers` stream.
+                if self.rocket_sound_delay <= 0 {
+                    let style = match self.vanity_rocket_boots {
+                        1 | 5 => Some(("Item13", 30)),
+                        2 | 3 | 4 | 6 => Some(("Item24", 15)),
+                        _ => None,
+                    };
+                    if let Some((name, cooldown)) = style {
+                        self.rocket_sound_delay = cooldown;
+                        if let Some(idx) = crate::soundid::SOUND_STYLES
+                            .iter()
+                            .position(|s| s.name == name)
+                        {
+                            self.pending_rocket_sound = Some((idx as u16, self.x, self.y));
+                        }
+                    }
+                }
             } else {
                 self.can_rocket = false;
             }
+        }
+        // W4-e10 — `:26903-26906`: the rocket-sound cooldown ticks every tick.
+        if self.rocket_sound_delay > 0 {
+            self.rocket_sound_delay -= 1;
         }
         // `:26907-26910`: the flame cadence delay ticks every tick.
         if self.rocket_delay2 > 0 {
@@ -10514,7 +11153,7 @@ impl Player {
     /// (`:23755-23783`): the tile row at the feet, center column first, then
     /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
     /// the slope dust carve-out stay with the particle tasks.
-    fn floor_visuals(&mut self, world: &World) {
+    fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
@@ -10546,6 +11185,23 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+        // W4-e10 — `MakeFloorDust`'s hive-landing cue (`Player.cs:23825-
+        // 23831`): the `Falling` arm on the Hive 666 / Honey Block 712
+        // plays `SoundID.Item177` at `((int)Center.X, (int)Bottom.Y)`.
+        // The `!wet && !mount.Cart` gate is `FloorVisuals`' own
+        // (`:23740`); the slope carve-out (`:23736-23739`) zeroes the
+        // type before the call — the port's floor scan has no slope
+        // read yet, so the carve-out folds out with the dust visuals
+        // (the particle task). The style façade's case-2 pitch draw
+        // rides `UpdatePlayers` in the drain.
+        if falling
+            && matches!(kind, 666 | 712)
+            && !self.wet
+            && !(self.mount.is_active() && crate::mount::is_cart(self.mount.kind()))
+        {
+            let (cx, _) = self.center();
+            self.pending_honey_land_sound = Some((cx, self.y + self.height));
+        }
     }
 
     /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read
@@ -11176,14 +11832,19 @@ impl Player {
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(
+            if update_mana_regen(
                 &mut self.regen,
                 &in_,
                 &mut self.mana,
                 crate::regen::ManaRegenFlags {
                     item_in_use: self.mana_regen_item_in_use,
                 },
-            );
+            ) {
+                // W4-e10 — `Player.cs:19550-19559`: the last-point chunk
+                // queues the full-bar chime + dust (the drain owns the
+                // audio device and the UpdatePlayers stream).
+                self.pending_mana_full = true;
+            }
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -15054,6 +15715,214 @@ mod tests {
         // The death queues its own cue (`Player.cs:38868`).
         p.start_death(&w, false, false);
         assert_eq!(p.take_death_sound(), Some("Player_Killed"));
+    }
+
+    /// W4-e10 — `Player.PlayHurtSound`'s decision tree (`Player.cs:38569-
+    /// 38712`), in the C#'s exact priority order: stoned → voiceOverride →
+    /// mount → werewolf → frost/bone armor → DST-world → voiceVariant.
+    #[test]
+    fn w4_e10_the_hurt_voice_follows_the_c_priority_order() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The default voiceVariant 1 (`:56045`), pitch 0 → Male(0).
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        // voiceVariant 2/3 → Female / DefaultPlayerHurt (`:38707`/:38710).
+        p.voice_variant = 2;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Female(0.0)));
+        p.voice_variant = 3;
+        assert_eq!(
+            p.hurt_voice(false, false),
+            Some(HurtVoice::Style("DefaultPlayerHurt", 0.0))
+        );
+        p.voice_variant = 1;
+        // The voicePitchOffset remap (`:38699-38700`): +1 → +0.7, -1 → -0.7.
+        p.voice_pitch_offset = 1.0;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.7)));
+        p.voice_pitch_offset = -1.0;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(-0.7)));
+        p.voice_pitch_offset = 0.0;
+        // voiceOverride wins over the variant (`:38581-38650`).
+        p.voice_override = 6;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Chicken));
+        p.voice_override = 19;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Style("Item16", 0.0)));
+        p.voice_override = 5;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Style("BellHurt", 0.0)));
+        p.voice_override = 0;
+        // The mount arms (`:38651-38678`): Unicorn 52 → NPC_Hit_6,
+        // Velociraptor 54 → NPC_Hit_47, Goat 55 → NPC_Killed_4, Basilisk 61
+        // → NPC_Hit_5.
+        p.mount.set_mount(52, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 6)));
+        p.mount.set_mount(54, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 47)));
+        p.mount.set_mount(55, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(4, 4)));
+        p.mount.set_mount(61, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 5)));
+        p.mount.dismount();
+        // The werewolf arm (`:38679-38683`).
+        p.were_wolf = true;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 6)));
+        p.hide_wolf = true;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        p.hide_wolf = false;
+        p.were_wolf = false;
+        // The Frost / Necro armor arms (`:38684-38693`).
+        p.frost_armor = true;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Style("Item27", 0.0)));
+        p.frost_armor = false;
+        p.bone_armor = true;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 2)));
+        p.bone_armor = false;
+        // The DST-world arm (`:38694-38698`), gender by skinVariant.
+        p.skin_variant = 0; // male
+        assert_eq!(p.hurt_voice(true, false), Some(HurtVoice::Style("DSTMaleHurt", 0.0)));
+        p.skin_variant = 4; // female
+        assert_eq!(p.hurt_voice(true, false), Some(HurtVoice::Style("DSTFemaleHurt", 0.0)));
+        // Remix suppresses the DST arm (`:38694` `!Main.remixWorld`).
+        assert_eq!(p.hurt_voice(true, true), Some(HurtVoice::Male(0.0)));
+        // Stoned wins over everything (`:38576-38580`).
+        p.voice_override = 6;
+        p.buffs.add_buff(156, 60);
+        assert_eq!(p.hurt_voice(true, false), Some(HurtVoice::Stoned));
+    }
+
+    /// W4-e10 — `Player.PlayDeathSound`'s decision tree (`Player.cs:38715-
+    /// 38746`): voiceOverride → the DST/anniversary world arm → the default.
+    #[test]
+    fn w4_e10_the_death_voice_follows_the_c_priority_order() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The default (`:38745`).
+        assert_eq!(p.death_voice(false, false), DeathVoice::Killed);
+        // voiceOverride 1|2 → Killed; 3/4/5/9/15 → the style arms.
+        p.voice_override = 1;
+        assert_eq!(p.death_voice(false, false), DeathVoice::Killed);
+        p.voice_override = 3;
+        assert_eq!(p.death_voice(false, false), DeathVoice::Style("DSTMaleHurt"));
+        p.voice_override = 5;
+        assert_eq!(p.death_voice(false, false), DeathVoice::Style("BellHurt"));
+        p.voice_override = 9;
+        assert_eq!(p.death_voice(false, false), DeathVoice::Style("RetroDeath"));
+        p.voice_override = 15;
+        assert_eq!(p.death_voice(false, false), DeathVoice::Style("BalloonDeath"));
+        p.voice_override = 0;
+        // The DST / tenth-anniversary world arm (`:38739-38742`), gender pick.
+        p.skin_variant = 0;
+        assert_eq!(p.death_voice(true, false), DeathVoice::Style("DSTMaleHurt"));
+        p.skin_variant = 4;
+        assert_eq!(p.death_voice(false, true), DeathVoice::Style("DSTFemaleHurt"));
+        // The override wins over the world arm.
+        p.voice_override = 9;
+        assert_eq!(p.death_voice(true, true), DeathVoice::Style("RetroDeath"));
+    }
+
+    /// W4-e10 — the mount voice-override census (`Player.cs:38651-38678`):
+    /// the hurt tree's mount block covers EXACTLY {52, 54, 55, 56, 61} — the
+    /// Wolf 52 → NPC_Hit_6, Velociraptor 54 → NPC_Hit_47, Rat 55 / Bat 56 →
+    /// NPC_Killed_4, Pixie 61 → NPC_Hit_5. Every OTHER mount falls through to
+    /// the werewolf/armor/DST/voiceVariant tail — in particular the whole
+    /// `MountID.Sets.Cart` family (the base Minecart 6, the Coffin/Hellwizard
+    /// Minecart 38, `MountID.cs:43`/`:129`): a cart rider keeps the DEFAULT
+    /// voice, there is no cart voice-override. The death tree
+    /// (`:38715-38746`) has NO mount block at all — every mount dies with the
+    /// voiceOverride/DST/default decision.
+    #[test]
+    fn w4_e10_the_mount_voice_override_census_is_complete() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The five override arms, including the Bat 56 twin of the Rat 55.
+        p.mount.set_mount(52, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 6)));
+        p.mount.set_mount(54, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 47)));
+        p.mount.set_mount(55, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(4, 4)));
+        p.mount.set_mount(56, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(4, 4)));
+        p.mount.set_mount(61, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 5)));
+        // The cart family falls through to the default voice (no override):
+        // the base Minecart 6 and the Coffin Minecart 38.
+        p.mount.set_mount(6, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        p.mount.set_mount(38, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        // A non-cart, non-override mount (the Unicorn's neighbour the Bunny 1)
+        // also falls through.
+        p.mount.set_mount(1, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        // The death tree has no mount block: even the five override mounts die
+        // with the default Killed cue (`:38743-38746`).
+        p.voice_override = 0;
+        for m in [52, 54, 55, 56, 61, 6, 38] {
+            p.mount.set_mount(m, false);
+            assert_eq!(p.death_voice(false, false), DeathVoice::Killed, "mount {m}");
+        }
+        // The voiceOverride still wins over the mount block (`:38581` < `:38651`).
+        p.mount.set_mount(52, false);
+        p.voice_override = 6;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Chicken));
+    }
+
+    /// W4-e10 — `Player.Male` (`Player.cs:3405-3410`) reads
+    /// `PlayerVariantID.Sets.Male` = {0,1,2,3,8,10} (`PlayerVariantID.cs:20`).
+    #[test]
+    fn w4_e10_the_male_set_matches_the_variant_table() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        for v in 0..12u8 {
+            p.skin_variant = v;
+            assert_eq!(p.male(), matches!(v, 0 | 1 | 2 | 3 | 8 | 10), "variant {v}");
+        }
+    }
+
+    /// W4-e10 — the voice hydration cast-seam contract (research/132 §4): the
+    /// `.plr` reader's `finish_player_file` clamps `voice_variant` to 1..4 and
+    /// the live `Player.voice_variant` is `i32` — f44's full-walk restore
+    /// (`hydrate_from_file`) hydrates `p.voice_variant = file.voice_variant as i32`
+    /// and `p.voice_pitch_offset = file.voice_pitch_offset` (the pitch is a
+    /// direct f32 copy). This witness pins the CONSUMER side: a hydrated pair
+    /// drives the default-voice tail exactly as the picker's draft does, so
+    /// the cast-seam needs no further transform. The save direction casts back
+    /// (`file.voice_variant = p.voice_variant as u8`, `Player.cs:54924`).
+    #[test]
+    fn w4_e10_the_hydrated_voice_pair_drives_the_default_voice_tail() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The f44 hydration hunk (the cast-seam, research/132 §4): the file's
+        // u8 variant (already clamped 1..4 on the read) widens to the live i32;
+        // the pitch copies straight. Simulate a loaded variant-3 / +0.5 file.
+        let file_voice_variant: u8 = 3;
+        let file_voice_pitch_offset: f32 = 0.5;
+        p.voice_variant = file_voice_variant as i32;
+        p.voice_pitch_offset = file_voice_pitch_offset;
+        // The default-voice tail reads the hydrated pair: variant 3 → the
+        // DefaultPlayerHurt trackable, the +0.5 pitch remaps through
+        // `Utils.Remap(-1, 1, -0.7, 0.7)` (`:38699-38700`) — the same f32 path
+        // the drain runs (the literal 0.35 is not the f32 product).
+        let expect_pitch = crate::player::voice_pitch_remap(0.5);
+        assert_eq!(
+            p.hurt_voice(false, false),
+            Some(HurtVoice::Style("DefaultPlayerHurt", expect_pitch))
+        );
+        // The save direction casts back to the u8 slot (`:54924`).
+        assert_eq!(p.voice_variant as u8, file_voice_variant);
+        // A variant-2 (female) / -1 file hydrates to the id-20 female at the
+        // remapped -1 pitch.
+        p.voice_variant = 2u8 as i32;
+        p.voice_pitch_offset = -1.0;
+        assert_eq!(
+            p.hurt_voice(false, false),
+            Some(HurtVoice::Female(crate::player::voice_pitch_remap(-1.0)))
+        );
+        // The clamp is the reader's job (`finish_player_file`, `:55831`): a
+        // hydrated 4 (the clamp ceiling) falls through the variant switch
+        // silently (the C# `:38701-38712` has no case 4).
+        p.voice_variant = 4u8 as i32;
+        p.voice_pitch_offset = 0.0;
+        assert_eq!(p.hurt_voice(false, false), None);
     }
 
     /// S1-E-21 wave D — the fast-run footstep queue

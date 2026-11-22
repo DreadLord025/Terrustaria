@@ -704,8 +704,36 @@ impl App {
                     if let Some(m) = self.map.as_mut() {
                         m.set_open(false);
                     }
+                    // W4-e10 — `Player.ToggleInv`'s map-close arm plays the
+                    // menu close (`SoundEngine.PlaySound(11)`,
+                    // `Player.cs:4976`).
+                    self.audio.play("Menu_Close");
+                } else if self.talk_npc.is_some() {
+                    // W4-e10 — `ToggleInv`'s talk arm (`Player.cs:5005-
+                    // 5015`): `SetTalkNPC(-1)`, the chat text clears,
+                    // `PlaySound(11)` (`:5010`) and `playerInventory =
+                    // false` — the press is consumed, no inventory toggle.
+                    // (`npcChatCornerItem` has no port field.)
+                    self.talk_npc = None;
+                    self.npc_chat_text.clear();
+                    self.audio.play("Menu_Close");
+                    self.inventory_open = false;
+                } else if self.player.as_ref().is_some_and(|p| p.sign >= 0) {
+                    // W4-e10 gap census — `ToggleInv`'s sign arm
+                    // (`Player.cs:5017-5020`): `CloseSign()` — the latch
+                    // clears, the chat text empties, `PlaySound(11)`
+                    // (`:33537`); the press is consumed (no toggle).
+                    crate::signs::close_sign(self, false);
                 } else {
                     self.inventory_open = !self.inventory_open;
+                    // W4-e10 — `ToggleInv`'s close arm plays 11
+                    // (`Player.cs:5056`); the open arm's `OpenInventory()`
+                    // plays 10 (`Player.cs:5087`, `quiet` false).
+                    self.audio.play(if self.inventory_open {
+                        "Menu_Open"
+                    } else {
+                        "Menu_Close"
+                    });
                 }
             }
             KeyCode::F1 => self.debug = !self.debug,
@@ -735,7 +763,40 @@ impl App {
                 if self.settings.map_enabled {
                     if let Some(m) = self.map.as_mut() {
                         let open = !m.open;
+                        if open {
+                            // W4-e10 gap census — the open prologue
+                            // (`TryOpeningFullscreenMap`,
+                            // `Player.cs:29107-29110`): the inventory
+                            // closes, `CloseSign(quiet: true)` (NO cue),
+                            // the talk latch + the chat text clear — then
+                            // the `PlaySound(10)` (`:29111`).
+                            self.inventory_open = false;
+                            crate::signs::close_sign(self, true); // `:29108`
+                            self.talk_npc = None;
+                            self.npc_chat_text.clear();
+                        }
                         m.set_open(open);
+                        // W4-e10 — the close arm plays 11
+                        // (`Player.cs:24973`); the open arm rides
+                        // `TryOpeningFullscreenMap`'s `PlaySound(10)`
+                        // (`Player.cs:29111`).
+                        self.audio.play(if open { "Menu_Open" } else { "Menu_Close" });
+                    }
+                }
+            }
+            _ if self.is_map_bound(crate::input_map::MapAction::Style, code) => {
+                // W4-e10 — the map-style cycle (`Player.cs:24949-24965`,
+                // `Main.cMapStyle`, default Tab): the press edge plays
+                // `PlaySound(12)` (`:24953`) and cycles `Main.mapStyle`
+                // 0→1→2→0. The C# arm sits in the NOT-fullscreen branch
+                // (`:24909`'s else) — the fullscreen map eats the movement
+                // keys but the style row still runs after it; the port's
+                // press-edge `world_key` stands in for `releaseMapStyle`.
+                if !self.map.as_ref().is_some_and(|m| m.open) {
+                    self.audio.play("Menu_Tick");
+                    self.map_style += 1;
+                    if self.map_style > 2 {
+                        self.map_style = 0;
                     }
                 }
             }
@@ -749,7 +810,11 @@ impl App {
                 // `App.smart_cursor_used` (`Main.cs:2011`, default false); the
                 // persisted setting is never read as the state.
                 //
-                // `SoundEngine.PlaySound(12)` (`:28818`), the port's 12 cue.
+                // `SoundEngine.PlaySound(12)` — BOTH the toggle-mode press
+                // (`Player.cs:28820`) and the hold-mode press (`Player.cs:28827`)
+                // play the same Menu_Tick cue; the port's single press-edge play
+                // covers the pair (the hold mode's state tracks the key, the
+                // release arm in `window_event` clears it).
                 self.audio.play("Menu_Tick");
                 if self.settings.smart_cursor_toggle {
                     self.smart_cursor_used = !self.smart_cursor_used;
@@ -781,6 +846,13 @@ impl App {
             // so only a *different* key takes this arm.
             _ if self.is_bound(crate::input_map::Action::Inventory, code) => {
                 self.inventory_open = !self.inventory_open;
+                // W4-e10 — the rebound `cInv` key rides the same ToggleInv
+                // arms: open 10 (`Player.cs:5087`), close 11 (`:5056`).
+                self.audio.play(if self.inventory_open {
+                    "Menu_Open"
+                } else {
+                    "Menu_Close"
+                });
             }
             _ => {}
         }
@@ -915,6 +987,101 @@ mod tests {
         assert!(app.inventory_open, "I toggles the inventory now");
         app.world_key(KeyCode::KeyI);
         assert!(!app.inventory_open);
+    }
+
+    /// W4-e10 — the ToggleInv/menu sound witnesses: the inventory open plays
+    /// 10 (`Player.OpenInventory`, `Player.cs:5087`), the close plays 11
+    /// (`ToggleInv`'s close arm, `:5056`); the fullscreen-map open rides
+    /// `TryOpeningFullscreenMap`'s 10 (`:29111`) and the closes play 11
+    /// (`ToggleInv`'s map arm `:4976`, the `cMapFull` close `:24973`).
+    #[test]
+    fn w4_e10_the_inventory_toggle_plays_open_and_close() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Escape); // open
+        assert!(app.inventory_open);
+        assert_eq!(app.audio.played_count(), before + 1, "the open chime");
+        app.world_key(KeyCode::Escape); // close
+        assert!(!app.inventory_open);
+        assert_eq!(app.audio.played_count(), before + 2, "the close chime");
+        // The rebound `cInv` key rides the same arms.
+        app.settings.keybinds[crate::input_map::Action::Inventory.index()] = "I".into();
+        app.apply_settings();
+        app.world_key(KeyCode::KeyI);
+        assert_eq!(app.audio.played_count(), before + 3, "the rebound open chime");
+    }
+
+    #[test]
+    fn w4_e10_the_map_toggles_play_their_menu_cues() {
+        let mut app = map_app(); // the map live and OPEN
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Escape); // ToggleInv's map-close arm, `:4976`
+        assert!(!app.map.as_ref().is_some_and(|m| m.open));
+        assert_eq!(app.audio.played_count(), before + 1, "the map close chime");
+        app.world_key(KeyCode::KeyM); // TryOpeningFullscreenMap, `:29111`
+        assert!(app.map.as_ref().is_some_and(|m| m.open));
+        assert_eq!(app.audio.played_count(), before + 2, "the map open chime");
+        app.world_key(KeyCode::KeyM); // the cMapFull close, `:24973`
+        assert_eq!(app.audio.played_count(), before + 3, "the cMapFull close chime");
+    }
+
+    /// W4-e10 gap census — `ToggleInv`'s sign arm (`Player.cs:5017-5020`):
+    /// with a live sign latch (and no map/talk ahead of it), Escape runs
+    /// `CloseSign()` — ONE Menu_Close (`:33537`), the latch clears, the
+    /// chat text empties, the inventory does NOT toggle. The map-open
+    /// prologue's `CloseSign(quiet: true)` (`:29108`) clears the latch
+    /// with NO extra cue (only the map's own 10 plays).
+    #[test]
+    fn w4_e10_the_escape_sign_arm_closes_with_one_menu_close() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.world.signs.push(tr_core::wld::sections::WldSign {
+            text: "note".into(),
+            x: 3,
+            y: 3,
+        });
+        crate::signs::open_sign(&mut app, 0);
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Escape);
+        assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:5019`");
+        assert!(app.npc_chat_text.is_empty(), "`:33534`");
+        assert!(!app.inventory_open, "the press is consumed");
+        assert_eq!(app.audio.played_count(), before + 1, "`:33537` once");
+        // The map-open prologue: quiet sign close + the map's own 10.
+        crate::signs::open_sign(&mut app, 0);
+        app.map = Some(WorldMap::new(&app.world));
+        let mid = app.audio.played_count();
+        app.world_key(KeyCode::KeyM);
+        assert!(app.map.as_ref().is_some_and(|m| m.open));
+        assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:29108` quiet");
+        assert_eq!(app.audio.played_count(), mid + 1, "only the map's `:29111`");
+    }
+
+    /// W4-e10 — the map-style cycle key (`Main.cMapStyle`, default Tab,
+    /// `Player.cs:24949-24965`): each press plays 12 and cycles
+    /// `Main.mapStyle` 0→1→2→0; the fullscreen map parks the row (the C#
+    /// arm sits in the not-fullscreen branch, `:24909`'s else).
+    #[test]
+    fn w4_e10_the_map_style_key_cycles_with_the_tick() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.map_style = 1;
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Tab); // 1 -> 2
+        assert_eq!(app.map_style, 2);
+        assert_eq!(app.audio.played_count(), before + 1, "the 12 tick");
+        app.world_key(KeyCode::Tab); // 2 -> 0 (the wrap)
+        assert_eq!(app.map_style, 0);
+        app.world_key(KeyCode::Tab); // 0 -> 1
+        assert_eq!(app.map_style, 1);
+        assert_eq!(app.audio.played_count(), before + 3);
+        // The fullscreen map parks the style row.
+        app.map = Some(WorldMap::new(&app.world));
+        if let Some(m) = app.map.as_mut() {
+            m.set_open(true);
+        }
+        app.world_key(KeyCode::Tab);
+        assert_eq!(app.map_style, 1, "the fullscreen branch keeps the style");
+        assert_eq!(app.audio.played_count(), before + 3, "no tick under the map");
     }
 
     #[test]

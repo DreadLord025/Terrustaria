@@ -241,6 +241,18 @@ pub enum TileInteraction {
     /// changes and no sound plays. No object drops — the dial arms kill no
     /// tiles.
     DialRefused,
+    /// W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
+    /// right-click buff tiles (Crystal Ball 125, Slice of Cake 621, War Table
+    /// 464, Dead Cells Potion Station 699, Sharpening Station 377, Bewitching
+    /// Table 354, Ammo Box 287). Each arm sets `flag2 = true`, grants its buff
+    /// for the fixed duration, then plays its `SoundID.ItemNN` style at
+    /// `base.position` (the player's TOP-LEFT). The buff grant + cue are
+    /// app-side (the core has no player); this variant carries the tile kind.
+    /// The arms kill no tiles, so there are never drops. The C# chain tests
+    /// these kind literals BEFORE the dial branches (`:32636`) and the
+    /// crafting-station tail (`:33279`) — 699 also counts as a Bone Welder
+    /// (`TileCountsAs` 699→13), but the buff arm wins the click first.
+    BuffStation { kind: u16 },
     /// The Extractinator branch (tiles 219/642) ran: the clicked tile is an
     /// extractinator and the held item decides the rest (`Player.cs:41665-41697`
     /// — the C# arm is item-anchored inside `PlaceThing`, so it rides the
@@ -249,6 +261,17 @@ pub enum TileInteraction {
     /// the consumption). No world write here — the extraction only consumes the
     /// held item and spawns the output.
     Extractinator,
+    /// The right-click toggle family (`Player.cs:32228-32284`): the music
+    /// box 139 (`SwitchMB`), the `TileID.Sets.Campfires` set (the 3×2
+    /// frameY ±36 flip), the fountain 207 (`SwitchFountain`), the nine
+    /// monolith kinds (`SwitchMonolith`) and the party centre 455
+    /// (`BirthdayParty.ToggleManualParty`). ALL five arms play
+    /// `SoundEngine.PlaySound(28, myX * 16, myY * 16, 0)` BEFORE the
+    /// toggle (`:32231`/`:32237`/`:32268`/`:32274`/`:32281` — W4-e10);
+    /// the wiring halves are app-side (the core has no wiring state), so
+    /// the interaction carries the clicked cell + the kind. The campfire
+    /// flip is pure tile state — the core runs it here.
+    RightClickToggle { x: i32, y: i32, kind: u16 },
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
@@ -283,12 +306,74 @@ pub fn interact_at(
     if matches!(t.kind, 132 | 136 | 144) {
         return TileInteraction::HitSwitch { x: i, y: j };
     }
+    // W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
+    // right-click buff tiles, tested as kind literals BEFORE the dial branches
+    // (`:32636`) and the crafting-station tail (`:33279`), exactly the C# chain
+    // order. The buff grant + the `SoundID.ItemNN` style play are app-side (the
+    // core has no player); the variant carries the kind. 699 also counts as a
+    // Bone Welder (`TileCountsAs` 699→13), but the buff arm wins the click first.
+    if matches!(t.kind, 125 | 621 | 464 | 699 | 377 | 354 | 287) {
+        return TileInteraction::BuffStation { kind: t.kind };
+    }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
     // defs for 356/663 (they place through the legacy single-tile route), so
     // this arm reads the kind the same way, before the registry lookup.
     if t.kind == 356 || t.kind == 663 {
         return dial_interaction(world, t.kind == 356);
+    }
+    // The right-click toggle family (`Player.cs:32228-32284`), in the C#
+    // chain order: the music box 139, the Campfires set, the fountain 207,
+    // the monolith kinds, the party centre 455. All play the Mech-28 click
+    // at the CLICKED cell before the toggle (the app half); the wiring
+    // halves are app-side (`RightClickToggle` carries the cell), the
+    // campfire's 3×2 frameY flip is pure tile state and runs here.
+    if t.kind == 139
+        || crate::tiledata::SET_CAMPFIRES.has(t.kind)
+        || t.kind == 207
+        || matches!(t.kind, 410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733)
+        || t.kind == 455
+    {
+        if crate::tiledata::SET_CAMPFIRES.has(t.kind) {
+            // `Player.cs:32238-32262`: the 3×2 anchor from the frame mods,
+            // the all-active-and-same-kind validation (the inline shape —
+            // the right-click arm does NOT kill mismatched cells, unlike
+            // `ValidateTileSquareIsActiveAndOfType`'s door use), then the
+            // ±36 frameY flip on every matching cell.
+            let num19 = i32::from(t.frame_x) % (3 * 18) / 18;
+            let num20 = i32::from(t.frame_y) % (2 * 18) / 18;
+            let (num21, num22) = (i - num19, j - num20);
+            let mut valid = true;
+            for x in num21..num21 + 3 {
+                for y in num22..num22 + 2 {
+                    if !world
+                        .tile(x, y)
+                        .is_some_and(|c| c.active() && c.kind == t.kind)
+                    {
+                        valid = false;
+                    }
+                }
+            }
+            if valid {
+                let step: i32 = if world.tile_frame_y(num21, num22) >= 36 {
+                    -36
+                } else {
+                    36
+                };
+                for x in num21..num21 + 3 {
+                    for y in num22..num22 + 2 {
+                        if world
+                            .tile(x, y)
+                            .is_some_and(|c| c.active() && c.kind == t.kind)
+                        {
+                            let f = world.tile_frame_y(x, y);
+                            world.set_tile_frame_y(x, y, f + step);
+                        }
+                    }
+                }
+            }
+        }
+        return TileInteraction::RightClickToggle { x: i, y: j, kind: t.kind };
     }
     // The bank tiles (tiles 29/97/463/491, `Player.cs:33056-33138`): the
     // num73 switch maps 29 -> -2, 97 -> -3, 463 -> -4, 491 -> -5. The
@@ -2052,6 +2137,105 @@ mod tests {
         assert!(!w.fast_forward_to_dawn && !w.fast_forward_to_dusk);
         assert_eq!(w.sundial_cooldown, 0);
         assert_eq!(w.moondial_cooldown, 0);
+    }
+
+    /// W4-e10 — the right-click toggle family (`Player.cs:32228-32284`):
+    /// the music box 139, the campfire 215, the fountain 207, the monolith
+    /// 410 and the party centre 455 all answer `RightClickToggle` with the
+    /// CLICKED cell (the Mech-28 click's position, the app half plays it).
+    /// The campfire's 3×2 frameY flip is the core's; a partial campfire
+    /// keeps its frames (the inline validation refuses, no kills).
+    #[test]
+    fn w4_e10_the_right_click_toggle_family_routes_with_the_clicked_cell() {
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        for kind in [139u16, 207, 410, 455] {
+            let mut w = object_world();
+            set_active(&mut w, 10, 19, kind);
+            match interact_at(&mut w, 10, 19, 1, &blocked) {
+                TileInteraction::RightClickToggle { x, y, kind: k } => {
+                    assert_eq!((x, y, k), (10, 19, kind));
+                }
+                other => panic!("kind {kind}: expected RightClickToggle, got {other:?}"),
+            }
+        }
+        // The campfire: a full 3×2 at (9..12, 18..20), lit (anchor frameY
+        // 0), each cell carrying its sprite frame (frameX (x-9)*18,
+        // frameY (y-18)*18) — the click on the middle cell (10, 19)
+        // decodes the anchor (9, 18) and flips every cell's frameY +36.
+        let mut w = object_world();
+        for x in 9..12 {
+            for y in 18..20 {
+                set_active(&mut w, x, y, 215);
+                let i = w.index(x, y);
+                w.tiles[i].frame_x = ((x - 9) * 18) as i16;
+                w.tiles[i].frame_y = ((y - 18) * 18) as i16;
+            }
+        }
+        match interact_at(&mut w, 10, 19, 1, &blocked) {
+            TileInteraction::RightClickToggle { kind: 215, .. } => {}
+            other => panic!("campfire: expected RightClickToggle, got {other:?}"),
+        }
+        for x in 9..12 {
+            for y in 18..20 {
+                assert_eq!(
+                    w.tile_frame_y(x, y),
+                    (y - 18) * 18 + 36,
+                    "the lit->unlit flip ({x},{y})"
+                );
+            }
+        }
+        // The re-click flips back (`frameY >= 36` -> -36).
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &blocked),
+            TileInteraction::RightClickToggle { kind: 215, .. }
+        ));
+        assert_eq!(w.tile_frame_y(9, 18), 0);
+        // A partial campfire (one cell missing): consumed, frames untouched.
+        let mut w2 = object_world();
+        for x in 9..12 {
+            for y in 18..20 {
+                if (x, y) != (11, 19) {
+                    set_active(&mut w2, x, y, 215);
+                    let i = w2.index(x, y);
+                    w2.tiles[i].frame_x = ((x - 9) * 18) as i16;
+                    w2.tiles[i].frame_y = ((y - 18) * 18) as i16;
+                }
+            }
+        }
+        assert!(matches!(
+            interact_at(&mut w2, 10, 19, 1, &blocked),
+            TileInteraction::RightClickToggle { kind: 215, .. }
+        ));
+        assert_eq!(w2.tile_frame_y(9, 18), 0, "the invalid square keeps its frames");
+    }
+
+    /// W4-e10 — the buff-station family (`Player.cs:32594-32634`): the seven
+    /// right-click buff tiles answer `BuffStation` with their kind, BEFORE the
+    /// dial branches (`:32636`) and the crafting-station tail (`:33279`). 699
+    /// also counts as a Bone Welder (`TileCountsAs` 699→13), but the buff arm
+    /// wins the click first — it never reaches the station tail.
+    #[test]
+    fn w4_e10_the_buff_station_family_routes_before_the_station_tail() {
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        for kind in [125u16, 621, 464, 699, 377, 354, 287] {
+            let mut w = object_world();
+            set_active(&mut w, 10, 19, kind);
+            match interact_at(&mut w, 10, 19, 1, &blocked) {
+                TileInteraction::BuffStation { kind: k } => assert_eq!(k, kind),
+                other => panic!("kind {kind}: expected BuffStation, got {other:?}"),
+            }
+        }
+        // An inactive station cell is invisible (`TileInteractionsCheck`).
+        let mut w = object_world();
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 125,
+            ..Default::default()
+        };
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &blocked),
+            TileInteraction::None
+        ));
     }
 
     #[test]
