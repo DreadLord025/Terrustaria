@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 351 | Gore-sites family bible + the e5-vs-f10 HitEffect keep-one (W4-e5: the 1578-site census re-verified 1345/165/36/32/0; the 551 flipped-twin overlap RESOLVED — e5 drops :82206-82215, f10 keeps its betsy_flipped_death; the 5th hit-half :82045 found, g62 emit-at-wiring; the d55 compose + the registry-150 free-number take; code-only) — renumbered 304→351 per FROZEN registry-150 §8.7 | `351-gore-sites-family-bible.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

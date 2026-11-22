@@ -50,8 +50,9 @@ fn scale_color(c: Color, s: f32) -> Color {
 }
 
 /// XNA `Color.Lerp` (`MonoGame Color.cs`): `MathHelper.Lerp` per channel, then
-/// the ctor's truncating cast.
-fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+/// the ctor's truncating cast. Public since W4-e5 (the HitEffect wave-B
+/// `AI_121_QueenSlime_GetDustColor` port reuses it).
+pub fn lerp_color(a: Color, b: Color, t: f32) -> Color {
     let ch = |x: u8, y: u8| {
         let (x, y) = (x as f32, y as f32);
         byte((x + (y - x) * t) as i32)

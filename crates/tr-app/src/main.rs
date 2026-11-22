@@ -161,6 +161,9 @@ mod npc_target;
 // the first 30 death sites (NPC.cs:81660-81941); the StrikeNPC_Inner
 // dispatch claim is the wiring wave (the npc_ai_style39 precedent).
 mod npc_hit_effect_a;
+// W4-e5 (gore table wave B): UNWIRED NPC.HitEffect tail — the next 40
+// death sites (NPC.cs:81942-82240); appended to wave A's dispatch.
+mod npc_hit_effect_b;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;

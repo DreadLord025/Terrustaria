@@ -252,6 +252,11 @@ pub struct HitEffectOutcome {
     /// `AI_113_WindyBalloon_GetSlaveNPC()` and, when found, zeroes its
     /// `ai[0]`, lifts `position.Y` by 10 and flags `netUpdate`.
     pub windy_balloon_slave_release: bool,
+    /// W4-e5 (wave B): the 551 crystal's `DD2Event.CheckProgress(551)`
+    /// (`NPC.cs:82174-82177`) — fires when the strike crossed a whole-life
+    /// percent AND `life > 0` (netMode != 1: the single-player port runs
+    /// it). The caller runs the ported `world_sim/npcs.rs:2561` walk.
+    pub dd2_crystal_check_progress: bool,
 }
 
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — ONE `NextFloat`; the
@@ -285,8 +290,9 @@ fn bottom(npc: &Npc) -> Vec2 {
     Vec2::new(npc.x + w / 2.0, npc.y + h)
 }
 
-/// `Entity.Center` (`Entity.cs:50-60`).
-fn center(npc: &Npc) -> Vec2 {
+/// `Entity.Center` (`Entity.cs:50-60`). `pub(crate)` since W4-e5 (wave B's
+/// 572-575 anchors reuse it).
+pub(crate) fn center(npc: &Npc) -> Vec2 {
     let (w, h) = npc.size();
     Vec2::new(npc.x + w / 2.0, npc.y + h / 2.0)
 }
@@ -484,6 +490,29 @@ fn empress_first_gore(
     );
 }
 
+/// The Empress 636 death's gore TAIL (`NPC.cs:81942-81949`, wave-B sites
+/// 31-38): the remaining 8 body gores at velocity ×0.6, in source order.
+/// The caller runs [`empress_hit_dust_draws`] + [`empress_first_gore`]
+/// first (the C# order).
+pub(crate) fn empress_tail_gores(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let vector5 = Vec2::new(npc.vx, npc.vy) * 0.6;
+    let p = Vec2::new(npc.x, npc.y);
+    let s = npc.scale;
+    gore.new_gore(rng, world, p + Vec2::new(10.0, 40.0), vector5, 1263, s); // :81942
+    gore.new_gore(rng, world, p + Vec2::new(50.0, 20.0), vector5, 1264, s); // :81943
+    gore.new_gore(rng, world, p + Vec2::new(-10.0, -20.0), vector5, 1265, s); // :81944
+    gore.new_gore(rng, world, p, vector5, 1266, s); // :81945
+    gore.new_gore(rng, world, p + Vec2::new(-20.0, -20.0), vector5, 1267, s); // :81946
+    gore.new_gore(rng, world, p + Vec2::new(-20.0, 10.0), vector5, 1268, s); // :81947
+    gore.new_gore(rng, world, p + Vec2::new(60.0, -20.0), vector5, 1267, s); // :81948
+    gore.new_gore(rng, world, p + Vec2::new(60.0, 10.0), vector5, 1268, s); // :81949
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654-81958`) — wave A:
 /// the first 30 gore sites in source order. `npc.hp` is `this.life` AT
 /// THE CALL (the strike writes it before calling, `:81488`); `dmg` rides
@@ -498,6 +527,7 @@ pub fn hit_effect(
     npc: &mut Npc,
     npc_type: i32,
     inputs: &HitEffectInputs,
+    hit_direction: i32,
     dmg: f64,
     gore: &mut GorePool,
     dust: &mut DustPool,
@@ -506,6 +536,7 @@ pub fn hit_effect(
     world: &World,
 ) -> HitEffectOutcome {
     let _ = dmg; // the death halves use flat counts; the hit halves are wave B
+    let _ = hit_direction; // wave A's arms read no hitDirection; wave B's do
     let mut outcome = HitEffectOutcome::default();
     // `:81660-81729` — the party-hat block (sites 1-14).
     party_hat_block(npc, npc_type, inputs, gore, rng, world);
@@ -542,6 +573,12 @@ pub fn hit_effect(
         empress_hit_dust_draws(rng, w as i32, h as i32);
         empress_first_gore(npc, gore, rng, world);
     }
+    // W4-e5 (wave B): the 636 tail (sites 31-38) then the 657/658-660/667
+    // + DD2 arms — the same `life <= 0` gates, source order.
+    if npc_type == 636 && npc.hp <= 0 {
+        empress_tail_gores(npc, gore, rng, world);
+    }
+    crate::npc_hit_effect_b::hit_effect_b(npc, npc_type, hit_direction, dmg, gore, dust, dust_ctx, rng, world, &mut outcome);
     outcome
 }
 
@@ -716,7 +753,7 @@ mod tests {
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(5);
         let out = hit_effect(
-            &mut n, 686, &HitEffectInputs::default(), 10.0,
+            &mut n, 686, &HitEffectInputs::default(), 1, 10.0,
             &mut gore, &mut dust, &ctx(), &mut rng, &w,
         );
         assert!(out.unlock_slime_purple);

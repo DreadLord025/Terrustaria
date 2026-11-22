@@ -39302,3 +39302,91 @@ Wiring remainder: the `StrikeNPC_Inner` `:81482`/`:81488` dispatch + the
 AI-arm `HitEffect()` calls (`:22309` etc.), the roster seams (the daybreak
 sweep, the 594 slave), the World unlock flag, and waves B/C (the rest of
 the 636 arm + `:81956` onward).
+
+# The NPC HitEffect gore table (W4-e5, wave B, code-only)
+
+Wave B (`crates/tr-app/src/npc_hit_effect_b.rs`) continues wave A
+(`npc_hit_effect_a.rs`, ec78d152) with the 40-site `NPC.cs:81942-82205`
+window (the f5 seal's e5 claim, research/111 §5.2), appended to wave
+A's dispatch (`hit_effect_b` runs after wave A's last arm):
+
+- the 636 Empress 8-gore tail (`:81942-81949`, sites 31-38) -
+  `npc_hit_effect_a::empress_tail_gores`, types 1263-1268 (+the 1267/
+  1268 twins), velocity x0.6, kicks only;
+- the 657 Queen Slime death (`:81956-81958`, sites 39-41): 2x1259 at
+  scale 0.8 (the second at `position + Size*0.5`) + 1258 at
+  `this.scale`, BEFORE the 150-dust type-4 burst; per dust the
+  `AI_121_QueenSlime_GetDustColor` pair (`NPC.cs:45121-45124`, ported
+  as `queen_slime_dust_color` - the INNER lerp amount draws first, C#
+  argument order; `Color.Lerp` through `tr_core::dust_table::
+  lerp_color`, now pub), then `8*NextFloatDirection` /
+  `-2+6*NextFloatDirection` / `1+NextFloat*0.5`, the pool rolls, the
+  x0.65/+velocity x0.5 writes and the `Next(5)==0` noGravity gate;
+- the 658-660 crystal family (`:81991-82024`, sites 42-43): only the
+  660 death spawns gores (2x1260), BEFORE the shared dust loop (7 hit /
+  40 death; type 4/243; colours (78,136,255,150)/default/(150,100,200,
+  150); alpha 80; `Next(3)!=0` noGravity). The hit half's dust loop
+  runs here (no gore sites, but its draws precede later arms);
+- the 667 death (`:82035-82039`, sites 44-51): 8x1218 at
+  `(position.X, Center.Y-10)`, velocity Zero, then the slot velocity
+  OVERWRITE (`Next(1,10)*0.3*2.5*hitDirection`, `-(3+Next(4)*0.3)`)
+  - the NewGore kicks draw first and are discarded; the 40-dust type-10
+  loop runs after. The hit arm's 3-gore twin (`:82045-82046`) is the
+  g62 emit-at-wiring hand-off (research/351 §4), NOT wave C;
+- the DD2 goblin/javeliner/kobold deaths (`:82079-82171`, sites 52-66):
+  the shared 20-dust type-5 death preamble (`dd2_death_dust`) then the
+  per-family gore rows - goblin 552-554 base 983/1067/1071 (+3/+2 at
+  Y+20, +1 twins at Y+34), javeliner 561-563 base 987/1055/1061 (the +3
+  LEADS, 4 rows at Y+20, +1 twins at Y+34), kobold 555-557 base
+  1031/1034/1037 (the 3-gore staircase);
+- the 551 DD2Betsy (`:82172-82218`, sites 67-76): the
+  `DD2Event.CheckProgress` percent-crossing gate on the hit path
+  (`dd2_crystal_crossed_percent`, returned) and the 10-gore body on
+  death - the `spriteDirection != -1` arm ONLY (sites 67-76),
+  types 1079/1080x2/1081/1082/1083/1084/1085x2/1086 at the cited
+  offsets. The `-1` mirrored twin (`:82206-82215`, the old sites 77-86)
+  is DROPPED - KEEP-ONE, see below. NPCID 551 = DD2Betsy; the
+  `dd2_crystal_*` names are an internal misnomer for the same kind f10
+  calls "Betsy" (the Eternia Crystal is 548/522).
+
+KEEP-ONE (research/351, the e5-vs-f10 HitEffect overlap): e5's module
+originally ported BOTH spriteDirection arms of the 551 death (sites
+67-86, `:82193-82215`), but the f5 seal's window census (research/111
+§5.2) assigns e5 `:81942-82205` (40 sites) and f10 `:82206-85559` (the
+legit 385). The flipped twin `:82206-82215` is f10's `betsy_flipped_death`
+(its sites 71-80), explicitly KEPT by the seal §8 and f10's own
+overrun-delete `afea4c0fc`. So e5 DROPS its flipped else-arm: the dispatch
+now gates the whole `dd2_crystal_death` body (the shared 20-dust preamble
++ the 10 gores) on `sprite_dir != -1`, the exact complement of f10's
+`sprite_dir == -1` gate - the preamble runs exactly ONCE per death
+(e5 owns it for != -1, f10's own copy for == -1). Dropping f10's instead
+would cut its legit 385 to 375 and break the 1578 reconciliation; dropping
+e5's keeps both windows exact. The flipped-twin witness is replaced by
+`w4_e5_the_flipped_crystal_death_is_f10s_claim` (the -1 death draws NOTHING
+in e5 - no gores, no dust - while the != -1 body keeps its full census).
+
+CENSUS CORRECTION (research/351 §3): the seal's death/hit split
+(1300 death + 4 hit) walked only f5's window; the full-window brace-walk
+finds a FIFTH hit-half site, `:82045` (the 667 GoldenSlime hit arm's
+3-gore twin, `else` of `:82031 life <= 0`), inside e5's window. The
+NPC HitEffect split is 1299 death + 5 hit = 1304; e5's 40 = 39 death +
+1 hit. The `:82045` body is UNPORTED (g62 draws the 3x(Next(1,10)+Next(4))
+overwrite pairs only, NOT the NewGore kicks) - a g62 EMIT-AT-WIRING
+hand-off, the seal §7 pattern extended (research/351 §4): the emit must
+insert the 3x2 kicks BEFORE each overwrite pair (+6 draws to g62's
+discard census). The 1578 total and the zero-unowned verdict are
+unchanged - only the death/hit partition moves by one site.
+
+Deviations / stand-ins (cited at their sites): `hitDirection`/`dmg`
+ride explicit parameters (wave A's `hit_effect` gained them, the C#
+defaults 0/10.0); the hit-half dmg-scaled dust loops stay with the wiring
+wave's dust pass (wave A's convention) EXCEPT the 658-660 shared loop and
+the 551 `DD2Event.CheckProgress` gate (the pure
+`dd2_crystal_crossed_percent` predicate - the float-100 before cast,
+the double/(float)lifeMax after cast - RETURNED as
+`HitEffectOutcome::dd2_crystal_check_progress`; the caller runs the
+ported walk, `world_sim/npcs.rs:2561`); the 636 dust loop keeps wave
+A's draw-census skip.
+
+RNG: the strike's stream, wave A's contract; the witnesses replay the
+cited draws on twin streams (WRITTEN, NOT RUN - code-only mode).
