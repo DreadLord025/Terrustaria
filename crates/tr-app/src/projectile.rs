@@ -14886,6 +14886,15 @@ pub struct ProjectilePool {
     /// 12/955 trail's second `SelectRandom` re-pick. The App feeds it per
     /// tick (the world's seed flag); default false.
     anniversary: bool,
+    /// W4-g65 — the per-kind `Kill()` death-dust SNAPSHOTS this tick
+    /// (`Projectile.cs:70642-77262`'s per-type bursts). The death hook records
+    /// the dying slot's corpse (kind/pos/box/velocity/scale) — NO draws there;
+    /// the world-sim pass drains them at its tail onto the real
+    /// `DustPool::new_dust` on the live `UpdateProjectiles` stream, taking every
+    /// explicit C# draw + the `new_dust` internals in order (the gallop-dust
+    /// queue→drain convention — the pool cannot borrow the App's dust pool or
+    /// hold the live stream alongside its `rng` parameter).
+    death_dust: Vec<crate::projectile_death_dust::DeathSnapshot>,
 }
 
 impl Default for ProjectilePool {
@@ -15278,6 +15287,7 @@ impl ProjectilePool {
             gore_pool: None,
             trail_screen: None,
             anniversary: false,
+            death_dust: Vec::new(),
         }
     }
 
@@ -16623,6 +16633,15 @@ impl ProjectilePool {
     /// `update` (the `drain_mark_spawns` shape).
     pub fn drain_golf_effects(&mut self) -> Vec<crate::projectile_ai_golf::GolfEffect> {
         std::mem::take(&mut self.golf_effects)
+    }
+
+    /// W4-g65 — the per-kind `Kill()` death-dust snapshots, drained by the
+    /// world-sim pass after `update` onto the real `DustPool` on the live
+    /// `UpdateProjectiles` stream (the `drain_golf_effects` shape). The death
+    /// hook only recorded the corpse; the drain takes every explicit C# draw
+    /// + the `new_dust` internals (the gallop-dust pass-tail deviation).
+    pub fn drain_death_dust(&mut self) -> Vec<crate::projectile_death_dust::DeathSnapshot> {
+        std::mem::take(&mut self.death_dust)
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -20560,6 +20579,27 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                    // W4-g65 — `Kill()`'s per-kind DEATH dust bursts
+                    // (`Projectile.cs:70642-77262`). The death hook only
+                    // SNAPSHOTS the dying corpse (kind/pos/box/velocity/scale)
+                    // before any other hook mutates the slot; the world-sim
+                    // pass drains the snapshots at its tail onto the DustPool
+                    // on the live `UpdateProjectiles` stream, taking every
+                    // explicit C# draw + the `new_dust` internals in order (the
+                    // gallop-dust queue→drain convention). The out-of-world
+                    // guard's direct deactivate (`:16696`, no `Kill()`) never
+                    // reaches here — same gate as the channel cancel above.
+                    let mut death_snap =
+                        crate::projectile_death_dust::DeathSnapshot::of(&self.slots[i]);
+                    // The 664-family DD2 burst reads the owner's
+                    // setApprenticeT3 (`:71832`); the pool only dispatches
+                    // locally-owned slots so the owner folds to the local
+                    // player (the beenade owner-gate precedent).
+                    death_snap.apprentice_t3 = player
+                        .as_deref()
+                        .map(|p| p.set_apprentice_t3)
+                        .unwrap_or(false);
+                    self.death_dust.push(death_snap);
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
@@ -20604,14 +20644,14 @@ impl ProjectilePool {
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
                 self.floating_turret_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
-                // S1-D-4 unarmed styles: the 932's death-dust census
-                // (`:71109-71147`) and the Celebration rockets' Kill arm
+                // S1-D-4 unarmed styles: the Celebration rockets' Kill arm
                 // (`:73632-73645` resize + Damage + explosion, plus the
                 // 716/718 `Kill_ExplodeTiles` tile break `:77297-77365`).
-                // C# body order: the 932 dust chain precedes the 715 arm.
-                if self.slots[i].kind == 932 {
-                    crate::projectile_ai_misc::fairy_queen_death_draws(rng);
-                }
+                // The 932's death-dust census (`:71109-71147`) was DEDUPED
+                // onto the W4-g65 death-dust drain (batch 30) — the drain
+                // runs the real bodies + the same draws on the same stream
+                // (the keep-one rule, the firework precedent), so the old
+                // `fairy_queen_death_draws` call here is removed.
                 self.celeb2_death(
                     i,
                     world,
@@ -20775,24 +20815,16 @@ impl ProjectilePool {
             );
         } else if matches!(kind, 167..=170) {
             // `:76464-76674` — the aiStyle-34 fireworks burst: the sound
-            // (Item14, the cue skip), the per-variant dust census. The
-            // remote owner's timeLeft = 60 (`:76466-76469`) is the
-            // local-only pool's no-op.
-            if kind == 169 {
-                // `:76548-76551` — the star burst's four draws.
-                let _ = rng.next_float(); // the rotation (`NextDouble`)
-                let _ = rng.next_range(5, 9); // the spoke count
-                let _ = rng.next_range(12, 17); // the speed
-                let _ = rng.next_range(3, 7); // the inner speed
-                // The dust loops draw nothing explicit (`:76553-76605`).
-            } else if kind == 170 {
-                // `:76609-76673` — the 400-dust loop: one `Next(3)` gate
-                // per dust (`:76668`).
-                for _ in 0..400 {
-                    let _ = rng.next_range(0, 3);
-                }
-            }
-            // 167/168's dust loops (`:76473-76544`) draw nothing explicit.
+            // (Item14, the cue skip). The dust BODIES and every explicit
+            // draw (the 169's NextDouble + Next(5,9)/Next(12,17)/Next(3,7),
+            // the 170's 400 Next(3) gates) moved to the W4-g65 death-dust
+            // drain (`projectile_death_dust.rs`, the ring batch) — the old
+            // draw census here was DEDUPED onto it (the keep-one rule: the
+            // drain runs the real bodies + the same draws on the same
+            // stream). The remote owner's timeLeft = 60 (`:76466-76469`)
+            // is the local-only pool's no-op; the 192×192 resize + Damage
+            // (`:76857-76864`) stay unported state (the pool's PVE walk
+            // already ran on the dying box — recorded).
         }
     }
 

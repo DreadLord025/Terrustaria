@@ -40654,3 +40654,943 @@ graphify invoked**. Witness convention: twin `UnifiedRandom` + twin
 exact draw sequence,
 `assert_eq!(rng, twin_rng)` + `assert_eq!(dust.slots(), twin.slots())`
 (+ `assert_eq!(gore.slots(), twin_gore.slots())`).
+## The projectile death dust (W4-g65, task/W4-g65-proj-death-dust, code-only)
+
+The per-kind dust bursts inside `Projectile.Kill()`
+(`Projectile.cs:70642-77262`) — the dust that fires ONCE when a slot dies,
+distinct from the per-tick TRAIL dust (the g63/g64 lanes) and from the i17/i18
+special-arrow/bullet deaths (which stay with their main-landed modules). Only
+UNCLAIMED arms are ported, in ~10-kind commits.
+
+### The seam (the gallop-dust queue→drain convention)
+
+`crates/tr-app/src/projectile_death_dust.rs` owns the per-kind arms. The pool
+cannot borrow the App's `DustPool` or hold the live `UpdateProjectiles` stream
+alongside its `rng: &mut dyn DropRng` parameter (the pool-only tests pass a
+`FastRandom`), so the wiring splits exactly like the Horseman gallop dust
+(`world_sim/npcs.rs`, "W-10 unicorn tails"):
+
+* **Death hook** (`projectile.rs`, the `!active` block, inside the
+  `!died_out_of_world` gate beside the channel cancel): SNAPSHOTS the dying
+  corpse (`DeathSnapshot::of` — kind/pos/box/velocity/scale) into
+  `ProjectilePool::death_dust`. NO draws there; the snapshot is taken before
+  any other death hook (gem/turret resize) mutates the slot, matching the C#
+  `Kill()` reading the live slot throughout its body. The out-of-world guard's
+  direct deactivate (`:16696`, no `Kill()`) never snapshots — same gate as the
+  channel cancel.
+* **Pass-tail drain** (`world_sim/projectiles.rs`, after the golf writeback):
+  `drain_death_dust()` hands the snapshots to `projectile_death_dust::drain`,
+  which resolves each C# arm onto the real `DustPool::new_dust` on the LIVE
+  `UpdateProjectiles` stream (`app.rngs.stream`), with the App's `spawn_ctx`
+  (the `Dust.cs:77-101` guards/cull). Every explicit `Main.rand` draw the arm
+  takes AND the `new_dust` internals run there, in C# order, per death in slot
+  order.
+
+### Deviations (recorded)
+
+* **Pass-tail draw placement.** The C# rolls the death dust mid-`Kill()`; the
+  port defers ALL death-dust draws (explicit + internals) to the pass tail —
+  the same recorded deviation as the gallop dust and the golf/celeb2 sound
+  drains. Stream-neutral for the port's per-consumer streams; the
+  `UpdateProjectiles` stream advances by the same total draw count, just at the
+  tail rather than mid-walk.
+* **The DustPool contract** (`origin/task/W4-d50-dust-type-table`): the bodies
+  ride the verbatim `new_dust` family (guards, cull, pressure bands, default
+  block, ChildSafety re-type, per-type tweak chain). The module only resolves
+  the arm's arguments + post-spawn writes (`noGravity`, `velocity *=`,
+  `scale *=`, `fadeIn`); the drain applies them to whatever slot `new_dust`
+  returned — the sentinel 6000 included (the C# writes `Main.dust[6000]` too).
+* **Sounds/gore skipped.** The `SoundEngine.PlaySound` cues and `Gore.NewGore`
+  bodies in the death arms are the sound/gore lanes' (the pool-wide skip); only
+  the dust is ported here. Where a gore draw sits BETWEEN dust draws in the C#
+  body, the arm is deferred to a later commit that ports the gore census too
+  (none in batch 1 — every batch-1 arm is dust-only).
+
+### Batch 1 (10 kinds, the plain `:76170-76297` bursts)
+
+17 (5× dust-0), 31/42 (5× dust-32 vel×0.6), 39 (5× dust-38 vel×0.6), 71 (5×
+dust-53 vel×0.6), 179 (5× dust-149 vel×0.6), 40 (5× dust-36 vel×0.6), 109 (5×
+dust-51 scale 0.6 vel×0.6), 21/471/532/1111 (10× dust-26 scale 0.8), 24 (10×
+dust-1 speed vel×0.1 scale 0.75), 38 (10× dust-42 speed vel×0.1). Every arm is
+dust-only with NO explicit `Main.rand` draw — the randomness is entirely the
+`new_dust` internals, so the death hook is stream-neutral and the drain spends
+the stream inside `new_dust`. Witnesses: `projectile_death_dust.rs::tests`
+(the burst counts/types/velocity writes, the unclaimed-kind inertness, the
+determinism pair) — WRITTEN NOT RUN (code-only mode).
+
+### Batch 2 (10 kinds, the explicit-draw `:74236-75680` bursts)
+
+103 (20× dust-75 alpha 100, `Next(2)` gate → scale×2.5/noGravity/vel×5), 278
+(20× dust-169 alpha 100, `Next(2)` gate → scale×1.5/noGravity/vel×5), 5 (60×
+dust, `Next(3)` type pick {15,57,58}, speed vel×0.5 alpha 150 scale 1.5), 93
+(10× dust-57 alpha 100, noGravity/fadeIn 1/vel×2 then `NextFloat()*1.5` Y kick),
+318 (10× dust-30, `Next(2)` gate → noGravity), 378 (10× dust-30, same gate),
+346 (20× dust, type 10 or 4 when ai[1]==1, noGravity), 335 (20× dust, type
+90−(int)ai[1], noLight/scale 0.8), 76/77/78 (5× dust-27 alpha 80 scale 1.5
+noGravity), 55/719 (5× dust-18 scale 1.5 noGravity). The gate/pick/kick draws
+ride the drain's `rng` AFTER each `new_dust` (the C# rolls them after the
+spawn); the 5's type pick rides BEFORE its spawn. The `DeathSnapshot` gains
+`old_vel`/`ai1` for the ai[1]-driven picks (the 346/335). Witnesses: the
+gated-burst stream census (internals + 20 gates), the Jesters type-pick set,
+the 93 Y kick, the ai[1] picks + noGravity bursts — WRITTEN NOT RUN.
+
+### Batch 3 (10 kinds, the velocity-subtract + plain `:74752-75667` bursts)
+
+158/159/160/161 (10× dust-9/11/19/11, noGravity + velocity −= vel×0.5), 1124
+(5× dust-26), 2/82 (10× dust-6 alpha 100), 51/267 (5× dust-0 scale 0.7),
+3/48/54/599/909 (10× dust-1 speed vel×0.1 scale 0.75), 330 (10× dust-0 speed
+vel×0.4 scale 0.75), 4 (10× dust-14 alpha 150 scale 1.1). All dust-only, no
+explicit draw (the velocity-subtract family's randomness is the internals).
+Witnesses: the velocity-subtract witness-pool comparison + stream-neutrality,
+the batch-3 plain-burst counts/types — WRITTEN NOT RUN.
+
+### Batch 4 (10 kinds, the multi-loop dust pairs `:73583-76307`)
+
+15/321 (20× dust-6 pair: scale 2 noGravity vel×2 + scale 1 vel×2, speed
+−vel×0.2 alpha 100), 253 (the pair, dust-135), 95/96 (the pair, dust-75, scales
+2×scale/1×scale), 27 (30× dust-172 pair: noGravity + scale 0.5, speed vel×0.1),
+44/45 (30× dust-27 pair: scale 1.7 noGravity + scale 1, speed vel full), 495
+(15× dust-27 at Center 10×10, noGravity −= oldVel×0.3), 497 (the same + vel×2 +
+`Next(150)*0.001` scale), 729 (10× dust-279 Direct, noGravity + vel.X×2), 731
+(15× dust-226 Direct, `Next(3)` gate ≠0 → noGravity/scale×1.5/vel×0.5), 337
+(10× dust-197 noGravity). The 497/731 explicit draws ride the drain rng after
+each spawn. Witnesses: the pair counts/noGravity alternation, the 495/497
+centre bursts, the 729/731/337 bursts — WRITTEN NOT RUN.
+
+### Batch 5 (10 kinds, the SelectRandom + crystal-spark `:72374-73337` bursts)
+
+581 (30× SelectRandom{229,229,161}, noGravity/scale 1.25+NextFloat/fadeIn
+0.25/vel×2/noLight), 671 (30× SelectRandom{27,27,62}, same), 811/814 (30×
+dust-5, scale 1.25+NextFloat/vel×2), 819 (20× dust-5, scale 1+NextFloat×0.5/
+vel×1.5), 675 (40× SelectRandom{27,242,73,72,71,255,255,255}, noGravity/scale/
+fadeIn/vel×3/noLight), 572 (15× dust-40 alpha 100, vel×3/noGravity/scale 1.25/
+position=(Center+pos)/2), 658 (10× dust-269, `Next(3)` gate → fadeIn/scale/
+type++ else scale; noGravity/vel×1.25 −= oldVel/10), 522 (the 658 shape,
+dust-254), 520 (10× dust-252 scale 0.75, noGravity −= oldVel/3). The
+SelectRandom pick rides BEFORE the spawn; the crystal-spark gate + branch
+range draws ride AFTER. Witnesses: the SelectRandom choice-set membership, the
+crystal-spark type++ branch, the 811/819/572 bursts — WRITTEN NOT RUN.
+
+### Batch 6 (10 kinds, the walking-position + plain `:73952-74333` bursts)
+
+384/386 (20× dust-212 speed direction×2 alpha 100 scale 1.4,
+Lerp(CornflowerBlue,White,0.3) colour, noGravity), 507/508 (20× dust-81 walking
+from pos+norm(oldVel)×16 back ×8, position=(dustPos+Center)/2, vel += oldVel×0.4
+then ×0.5, noGravity), 598 (the walk, dir=(rot−π/2), vel += dir×2), 971 (6×
+dust-4 walking ×8/×4, colour (10,10,10,150), vel += dir then ×0.5), 1/81/98/
+980/1073 (10× dust-7), 336/345 (6× dust-196 noGravity scale=proj.scale), 344
+(8× dust-197 alpha 50 noGravity vel×0.75 −= vel×0.025), 349 (3× dust-76
+noGravity/noLight/scale 0.7), 184/195 (5× dust-7), 275/276 (5× dust-7). All
+dust-only, no explicit draw. The `DeathSnapshot` gains `rot`/`direction`; the
+module gains `lerp_color`/`safe_normalize`/`rotation_vector` helpers. Witnesses:
+the walking-position counts/noGravity, the 384 lerp colour, the 336/344/349 +
+plain-7 bursts — WRITTEN NOT RUN.
+
+### Batch 7 (10 kinds, the old-velocity-kick + bee `:74384-74564` bursts)
+
+265 (15× dust-163 alpha 100 scale 1.2, noGravity/vel×1.2 −= oldVel×0.3), 355
+(the shape, dust-205), 304 (3× dust-182 scale 0.8, same writes), 263 (15×
+dust-92 speed vel, alpha Next(0,101) + scale 1+Next(40)*0.01 BEFORE the spawn,
+noGravity/vel×2), 261 (15× dust-148 Direct vel×2/Y−=0.4 + 3× dust-228 Direct
+vel×2/noLight/scale×0.8/Y−=0.3), 928 (25× dust-5 speed vel White scale 1.3),
+227 (15× dust-157 noGravity + vel += oldVel×NextFloat + scale 1.5), 120 (10×
+dust-67 at pos−vel speed vel alpha 100, first 5 noGravity, all vel×0.2),
+181/189/566 (6× dust-150 speed vel alpha 50 noGravity scale 1), 206/225 (5×
+dust-40, gated `type != 206 || alpha < 255`). The `DeathSnapshot` gains `alpha`;
+the 263 alpha/scale draws ride BEFORE the spawn, the 227 NextFloat AFTER.
+Witnesses: the old-vel-kick counts, the 263 draws, the 206 alpha gate, the
+261/928/227/120/181 bursts — WRITTEN NOT RUN.
+
+### Batch 8 (10 kinds, the center-lerp + count-draw `:72543-73572` bursts)
+
+444 (Next(5,9) dust-171 at Center, vel×0.8 + Lerp→Center 0.5 + noGravity; the
+i14 bullet release stays with i14), 435 (Next(5,10) dust-226, vel×1.6/Y−−/
+Lerp/noGravity), 436 (the shape, dust-220), 462 (the shape, dust-229, position
+−= One×4 before Lerp), 732 (Next(5,10) dust-226, vel = vel×0.5 + baseVel×(i/
+count)×0.7), 631 (Next(5,10) dust-229, −= One×4 + Lerp), 684 (Next(15,25)
+dust-60 colour (255,255,255,0), vel×8×(0.3+0.7×NextFloat) + fadeIn 1.3+NextFloat
+×0.2 + noLight/noGravity + position += vel×4), 625-628 (6× dust-135 alpha 100
+scale 2 noGravity/noLight), 472 (20× dust-30 noGravity vel×0.45 += baseVel×0.9),
+440/606 (Next(3,7) dust-135/182 at Center−vel/2, vel×2/×1.5 noGravity). The
+module gains `lerp_vec`/`center_lerp_burst` helpers; the count draws ride BEFORE
+the spawns, the 684 NextFloats AFTER. Witnesses: the center-lerp count ranges +
+noGravity, the 684 noLight, the 625/472/440/606 bursts — WRITTEN NOT RUN.
+
+### Batch 9 (10 kinds, the gated + circular-velocity `:74475-76392` bursts)
+
+177 (20× dust-137, alpha Next(0,101) + scale 1+Next(-20,40)*0.01 BEFORE spawn,
+vel −= oldVel×0.2, Next(3) gate → scale×0.8/vel×0.5 else noGravity), 119/118/
+128/359 (dust-92, count 20 for 119/359 else 10, Next(3) gate ≠0 → vel×2/
+noGravity/scale×1.75 else scale×0.5), 309 (10× dust-185, Next(2) gate → vel×2/
+noGravity/scale×1.75), 308 (80× dust-185 at pos+(0,16) box h−16, vel×2/
+noGravity/scale×1.15), 967 (20× dust-219 speed vel, scale 0.5+Next(-20,40)*0.01
+BEFORE, noGravity + vel = NextVector2Circular(6,6)), 1026 (20× dust-2, scale
+1.2+Next(-20,40)*0.01 BEFORE, alpha 50/fadeIn 0.5/noGravity + vel =
+NextVector2Circular(5,5)), 239/245/264 (gated vel.Y>0, 1 dust-154/114/54 at
+pos+(0,h−2) 2×2, position.X−=2/alpha 38/vel×0.1 += −oldVel×0.25/scale 0.95,
+245/264 noGravity), 306 (20× dust-184 scale×1.1/noGravity + 30× dust-184
+vel×2.5/scale×0.8/noGravity). The module gains `next_vector2_circular`/
+`bottom_dust` helpers. Witnesses: the 177/119/309 counts, the 967/1026 circular
+bursts, the bottom-edge vel.Y gate, the 308/306 counts — WRITTEN NOT RUN.
+
+### Batch 10 (10 kinds, the trail-position + ring `:73745-77160` bursts)
+
+115 (27× dust-27 pair at pos−oldVel×(30/i) box 8×8, scale 1.4 noGravity vel×0.5
++ scale 0.9 vel×0.5), 114 (the pair, gated per-i Next(128) >= alpha), 116 (27×
+dust-64 pair, scale 1.8/1.4 both noGravity), 173 (20× dust Next(3){15,57,58} at
+pos−oldVel×(30/i) speed oldVel×0.2 scale 1.8 vel×1.5 noGravity), 132 (27×
+dust-107 pair at oldPos−oldVel×(30/i), scale 1.8 noGravity vel×0.5 + scale 1.4
+vel×0.05), 156 (27× dust-73 pair at oldPos alpha 255, scale 1.8 noGravity vel×0.5
++ scale 1.4 vel×0.05 noGravity), 157 (27× dust-107 at pos speed oldVel scale 1.8
+noGravity vel×0.5), 343 (27× dust-197 at oldPos−oldVel×(30/i) scale 1.2 noGravity
+vel×0.5), 408 (15× dust-5 at Center−One×10 box 50×50 speed (0,−2) vel/=2), 385
+(36× dust-172 ring at Center+rotated(norm(vel)×(w/2,h)×0.75), speed offset×2
+scale 1.4 noGravity/noLight vel=offset). The `DeathSnapshot` gains `old_pos`; the
+module gains `trail_pair`/`trail_pair_oldpos`/`rotate_vec` helpers. The 114 gate
++ 173 type pick draw per iteration; the rest are internals-only. Witnesses: the
+trail pair counts (27×2), the 114 alpha-0 gate, the 173 pick set, the 157/343
+single trails, the 408/385 bursts — WRITTEN NOT RUN.
+
+### Batch 11 (10 kinds, the firework/star RINGS `:71490-76855` + `:74817`)
+
+The deferred big circular bursts. 167 (400× dust-130 ring kicks, speed
+4/8/12/16 by band, damp 0.5, scale 1.3/noGravity), 168 (400× dust-131, speed
+2×(i/100)→10→13, >200 kicks ×1.25/×0.75, i>100 scale/noGravity), 169 (the
+star: NextDouble heading + Next(5,9) spokes + Next(12,17)/Next(3,7) speeds,
+TWO 2-side×20-step Lerp spoke passes (second at half speed) of dust-133 +
+100 dust-132 ring-kick tail), 170 (400× dust-133/134 by band, per-dust
+Next(3) gate → scale 1.3/noGravity), 415 (NextDouble + Next(5,9) spokes +
+Next(10,15)×0.66/Next(4,7)/2, heading rotates every 30th particle INCLUDING
+i=0, 30×spokes dust-130 + 100 ring kicks), 416 (the spiral: Next(3,6)×2
+spokes + Next(2) sign, base rotates every 20th, working vector by
+τ/(20×spokes)×sign×3 otherwise, scale-flag alternates), 417 (TWO NextDouble
+angles + TWO NextDouble radii, 150× dust-132/133 by band, own-velocity
+Normalize×speed with the >50/>100 axis-squash + rotate), 418 (Next(5,12)
+spokes, 2-side×15-step SmoothStep spoke passes of dust-134 + 120 ring kicks
+damp 0.2), 1024 (12× dust-306 Direct, scale 0.8+NextFloat×1.7 BEFORE, vel =
+SafeNormalize(vel).RotatedBy(τ×i/12)×8×(0.1+NextFloat×1.2) AFTER, colour
+Lerp(White,(140,234,180),i/10)), 873 (20× dust-267 NewDustPerfect ring,
+heading = vel.ToRotation() + i×τ/20, i%4/i%2 speed/scale bands, colour
+Lerp(AI_171_GetColor,White,NextFloat×0.4)). The module gains
+`rotated_by`/`to_rotation`/`lerp_f32`/`smooth_step_f32`/`smooth_step_vec`/
+`ring_kick` helpers. **The i16 firework draw census is DEDUPED onto this
+batch** (`projectile.rs::dart_electro_firework_kill`'s 169 four draws + 170
+400 gates removed — the drain runs the real bodies + the same draws on the
+same stream; the 192×192 resize + Damage `:76857-76864` stay unported
+state, recorded). The 873 enrage gate reads `ShouldEmpressBeEnraged`
+(`NPC.cs:45925-45951`): non-remix = `world.day_time`; the remix arm scans
+for a live 636 and the port has NO live Empress (the `npc_ai_empress`
+wiring remainder), so the scan finds none → not enraged (recorded).
+Witnesses: the 167/168/170 counts/bands, the 169 spoke-count formula, the
+415/416/418 counts, the 417 150-count/bands + determinism, the 1024 colour,
+the 873 centre/scale bands — WRITTEN NOT RUN.
+
+### Batch 12 (10 kinds, the spoke/queen-slime/sparkle/terraspark RINGS)
+
+659 (the Spirit Flame ring, gated ai[0]>=0: resize 80×80 centred, 30×
+dust-27 scale 2+NextFloat×0.5 noGravity — first 15 the RING at Centre vel =
+UnitY.RotatedBy((i+1)/15×τ)×(5+NextFloat×1.5) fadeIn 1.5+NextFloat×0.5,
+last 15 scatter UnitY.RotatedByRandom(π)×NextFloat×w/3 fadeIn 0.5+NextFloat
+×0.5 vel×2; + 10× dust-31 scatter UnitX.RotatedByRandom(π).RotatedBy(vel
+rot)×w/3 fadeIn 0.5+NextFloat×0.5 noGravity vel×1.5), 1012 (the First
+Fractal: 40× UnitY.RotatedBy(i×τ)×(2+NextFloat×0.5)+vel×NextFloat spoke,
+Next(3) gate 0 → dust-284 Direct colour Next(3) 3-way scale NextFloat+1
+position−=vel fadeIn 1, else spoke×0.3 → dust-138 Direct scale NextFloat×
+0.3+0.6 position−=vel), 920 (6× dust-4 box 4×4 pos+Size×NextVector2Square
+spoke UnitY.RotatedBy(i×τ+NextFloat×τ×0.5)×(2+NextFloat×0.5) alpha 80
+(78,136,255,150) scale 1.5 noGravity), 921 (12× dust-243 box 6×6 the 920
+shape speed 3+NextFloat×0.5), 926 (22× dust-31 pos−(8,8) box (w+16)×(h+16)
+the 921 spoke alpha 40 QueenSlime_GetDustColor scale 1.5 noGravity), 937
+(12× the 926 shape), 818 (the Stellar Tune: TWO f32-step rings num+=0.34,
+dust-278 Perfect pos+Size×NextVector2Square spoke UnitY.RotatedBy(num×τ+
+NextFloat×τ×0.5)×(2+NextFloat×0.5)/(1+NextFloat×0.5) alpha 150 Lerp(White,
+Gold/OurFavoriteColor,NextFloat) scale 0.4/0.7 noGravity), 856 (the Sparkle
+Guitar: 6× dust-58 alpha 150 scale 0.8 + TWO num+=0.34 rings dust-278
+Perfect at Centre spoke×(4+NextFloat×2)/(2+NextFloat×1) alpha 150 Lerp
+(White,HotPink/Orange,NextFloat×0.5+0.5) noGravity), 728 (the Star Veil: 7×
+dust-58 speed vel×0.1 alpha 150 scale 0.8 + num+=0.125 ring dust-278 Perfect
+spoke×(4+NextFloat×4) CornflowerBlue + num+=0.25 ring spoke×(2+NextFloat×3)
+Gold alpha 150 noGravity), 985 (the Terraspark fan, gated localAI[1]!=1:
+THREE passes 20/10/10 dust-107 Perfect, NextFloatDirection → 1−|dir|, angle
+= rot+dir×(π/2)×0.9, pos = Center+angle vec×Remap(NextFloat,0,1,rmin,rmax)×
+scale − rot vec×pull×70×scale, DISCARDED colour NextFloat, vel = baseVel.
+RotatedBy(dir×π/4)×0.2×NextFloat alpha 100 scale 1.4×(1−|dir|), position−=
+vel×NextFloat×3, scale×=1−pull; pass pulls NextFloat / 0.2+NextFloat×0.25 /
+0.5+NextFloat×0.25, radii 60/85, 70/85, 60/75). The `DeathSnapshot` gains
+`ai0` (the 659 gate) + `local_ai1` (the 985 gate); the module gains
+`next_vector2_square`/`rotated_by_random`/`queen_slime_dust_color`/`remap_f32`
+helpers. The 659/856 resize + Damage stay unported state; the 856/728 gore
+stays the gore lane's. Witnesses: the 659 gate + ring/scatter split, the
+1012 40-count, the queen-slime counts/types, the sparkle f32-step counts,
+the 985 gate + 40-count — WRITTEN NOT RUN.
+
+### Batch 13 (10 kinds, the DD2 explosion bursts `:71652-72154`)
+
+710 (the ballista: resize 40×40 centred — position=Center OLD box then
+Center=position NEW box, the centre stays; 2× dust-31 alpha 100 scale 1.5
+scatter UnitY.RotatedByRandom(π)×NextDouble×w/2 GRAVITY ON, 10× dust-6
+alpha 0 scale 2.5 same scatter noGravity vel×2, 5× dust-31 alpha 0 scale
+1.5 UnitX.RotatedByRandom(π).RotatedBy(vel rot)×w/2 noGravity vel×2; the
+ai[1]=-1 + Damage stay unported state), 662/685 (the flame trail: dir =
+oldVelocity.SafeNormalize(Zero), walk from pos+dir×16, 16 steps each a
+Next(2) coin — 0 skips but STILL steps back 8 — else dust-11 Direct
+position=(own+Center)/2 vel+=oldVel×0.4 then ×0.5 noGravity), 680 (the
+662 trail + one dust-11 Direct Red scale 1.6 noGravity), 664/666/668/706
+(the apprentice explosion: the T3 flag doubles the burst — base 4/20/20/
+10/20 dust + 4 gore vs T3 8/40/50/5/30 + 8 gore, box 96 vs 208, mid dust 6
+vs 270, fadeIn 1.5 vs 2.0; the resize centred on the OLD centre; five dust
+loops 31-scatter/6-jet(Y>−2→×−0.4)/mid/6-X/31-X then the trailing gore loop
+consumed as a DRAWS-ONLY census in C# order — the Next(100) X/Y pair, the
+Next(61,64) TYPE argument BEFORE the NewGore kicks Next(10,31) Y then
+Next(-20,21) X (`Gore.cs:1327-1328`), the RotatedByRandom+NextDouble
+scatter, the Next(2) lift gate, the two Next(-10,11) nudges — the beenade
+precedent, bodies stay the gore lane's), 669 (12× dust-4 Direct alpha 100
+(255,255,255,110) scale 1.1 vel×1.5 + 80 PAIRS dust-4 alpha 50
+(245,200,30,155): scale 1.2 noGravity vel×=Next(10,71)×0.1 then scale 0.8
+gravity vel×=Next(10,41)×0.1, all at Center−(15,15) box 30×30; the 144
+resize + buffs + Damage AFTER the dust stay unported state), 614 (10×
+dust-229 defaults noGravity vel×3). The `DeathSnapshot` gains
+`apprentice_t3`, populated at the death hook from the local player (the
+pool only dispatches locally-owned slots, owner==myPlayer folds — the
+beenade precedent; no player → false). The module gains the shared
+`dd2_explosion_dust` helper (the four kinds share the C# arm). The 711
+oldPos-ring trail stays deferred (needs the oldPos[10] ring in the
+snapshot). Witnesses: the 710 17-count/gravity split, the 662/685/680
+trail caps + Red + determinism, the 664-family 74/133 counts + type splits
++ determinism (gore census included), the 669 172-count/pair bands, the
+614 10-count — WRITTEN NOT RUN.
+
+### Batch 14 (10 kinds, the lunar/nebula/portal bursts `:71995-72502`)
+
+634/635 (the lunar flare: resize 50×50 centred; kick = (rot−π/2).
+ToRotationVector2()×|vel|×MaxUpdates, 635 ×0.5; the head SelectRandom
+rolls the 5-set for BOTH kinds then the 635 RE-rolls the 3-set — two head
+draws for the 635, same per pair; 40 pairs of big dust alpha 200 scale
+1.7/3.7 Y-scatter noGravity vel×3+kick×NextFloat + mid dust 255/88 alpha
+100 scale 0.8/1.5 vel×2 fadeIn 1 Crimson×0.5+kick×NextFloat; 20 tail mid
+type alpha 0 scale 2/2.2 X-scatter÷3 vel×0.5+kick×(0.6+0.6×NextFloat)),
+645 (flag8 = SolidTile(pos/16); 4× dust-31 alpha 100 + 4 pairs dust-229
+(alpha 0 scale 2.5 vel×3 / alpha 100 scale 1.5 vel×2) noGravity, flag8 →
+noLight; ONE gore draws-only census), 661 (the nebula blaze: resize
+160×160 centred but the spawn box stays Center−(20,20) 40×40, scatter
+radius 20; 4× dust-240 gravity + 20 pairs dust-62 (3.7 noLight vel×3 +
+DirectionTo×(2+NextFloat×4) / 1.5 fadeIn 1 Crimson×0.5 noLight +
+DirectionTo×8) + 20 dust-62 X vel×3+DirectionTo×2 + 70 dust-240 X vel×3+
+DirectionTo×3, all noGravity; DirectionTo = Normalize(dest−Center),
+`Entity.cs:207`), 617 (the nebula arcanum: resize 176×176 centred; 4×
+dust-240 gravity + 30 pairs 62/90 (Crimson×0.5 fadeIn 1) + 10 dust-62 X +
+10 dust-240 X, 2 gores scatter-no-lift; the owner-gated 618 chain-kill +
+620 spawn burst `:72327-72372` stay unported state — their draws NOT
+consumed here, the spawn lane owns them), 620/618 (the nebula spark: the
+crystal-spark shape at (int)ai[0] — the 618's ai[0]=86 write precedes the
+dust so the arm folds 86, the snapshot ai0 is pre-write), 619 (20× the
+spark shape fadeIn 1.1/scale 0.35/big 1.2/vel×2.5; the owner-gated 620
+spawn burst `:72438-72452` stays the spawn lane's), 601 (the portal:
+GetPortalColor(owner,(int)ai[0]) A=255 — single-player portal!=0 →
+hsl(0.52,1,0.6) else hsl(0.12,1,0.5), `PortalHelper.cs:378-392`; 6×
+dust-263 at Center 0×0, kick UnitY.RotatedByRandom(τ)×(3×NextFloat)
+BEFORE the spawn, vel=kick+vel/5 scale 2 noLight noGravity), 596 (resize
+60×60 centred; 4× dust-31 gravity + 20× dust-27 noGravity vel×2 + 10×
+dust-31 X noGravity vel×2; the expert damage 22/30 + Damage stay unported
+state). The `DeathSnapshot` gains `max_updates` (extra_updates+1). The
+module gains `scatter_y_dust`/`scatter_x_dust` (the resize-explosion
+scatter shapes), `gore_census` (the shared draws-only gore loop — the DD2
+helper refactored onto it), `crimson_half` (XNA Crimson×0.5 truncation =
+(110,10,30,127)) and `portal_color`. Witnesses: the 634/635 100-count/set
+membership/Crimson mids, the 645 12-count, the 661 134-count/type split,
+the 617 84-count/90-mids, the nebula spark counts/types (618 folds 86),
+the 601 centre/colour arms, the 596 34-count — WRITTEN NOT RUN.
+
+### Batch 15 (10 kinds, the mid-Kill bursts `:72565-73045`)
+
+539 (resize 80×80 centred; 4× dust-31 gravity + 20× dust-176 alpha 200
+scale 3.7 Y + 20× dust-180 X + 10× dust-31 X, all noGravity vel×3), 585
+(20 pairs dust-26 alpha 100 noGravity vel×1.2 scale 1.3 −= oldVel×0.3 +
+dust-27 at pos+(4,4) box (w−8)×(h−8) scale 2 noGravity vel×3), 590 (10×
+dust-165/31 by ai[2]==1 alpha 50 scale 1.5 vel×2 noGravity; ONE shared
+NextFloat gore scale then THREE gores 375-377/61-63 draws-only — the two
+kick draws each), 587 (hslToRgb(ai[1],1,0.5) A=200; the NPC slime-tint
+scan unported state no draws; 10 pairs dust-76 colour scale 0.9/1.1),
+676 (120× SelectRandom(4,256) alpha 100 scale 0.8+NextFloat×0.6 fadeIn
+0.5 vel×4.5 noLight, Y>0 → ×−0.5, type 4 → (80,170,40,120); 50
+gore-Direct rows 10×1024/1025/1026 + 20×1026 — NewGoreDirect wraps
+NewGore (`Gore.cs:1281-1284`) so the two kick draws per gore stay, plus
+the two velocity NextFloats), 405/410 (the chlorophyte ring: 20/10×
+dust-212 at Center−(r,r) box 2r, r=10 / (int)(10×ai[1]); dir =
+Normalize(own−Center), position = Center+dir×r×scale, vel = dir×|own
+vel| (the <30 branch always taken), colour Lerp(hsl((float)(0.4+
+NextDouble×0.2),0.9,0.5),White,0.3) — the hue sum stays FULL double
+before the f32 cast — noGravity scale 0.7; shared `chlorophyte_ring`
+helper), 501 (the box inflates +20/side BEFORE the dust; 20× dust-188
+alpha 100 scale 1.5 vel×0.5 gravity ON; 5 gores at pos+(Next(w),Next(h))
+Next(435,438) draws-only; the second +40 inflate + Damage unported), 452
+(Resize(144,144) centred — `Projectile.cs:22353-22359` the same
+centre-preserving shape; 4× dust-31 NO scatter gravity + 40 pairs
+dust-229; one gore; the Resize(30,30)+Damage AFTER unported), 454
+(resize 208×208 centred; 7× dust-31 gravity + 60 pairs dust-229 vel×1,
+each position = Center + (w/2,0).RotatedBy(τ×NextDouble)×NextDouble —
+the FULL double angle into cos/sin, radius draw AFTER the angle; 3
+gores). The `DeathSnapshot` gains `ai2` (the 590 gate). Witnesses: the
+539 54-count, the 585/587 pair splits, the 590 ai2 gate, the 676
+120-count/Y-flip invariant, the 405/410 radius (zero-normalize edge
+tolerated), the 501 20-count, the 452/454 84/127 counts — WRITTEN NOT
+RUN.
+
+### Batch 16 (10 kinds, the late-mid Kill bursts `:73046-73441`)
+
+467/468 (resize 176×176 centred; 4× dust-31 gravity Y-scatter + 30/20
+pairs dust-6/27 (mid fadeIn 2.5) + 10 dust-6/27 X + 10 dust-31 X, 2 gores
+scatter-no-lift), 485 (15× dust-6 noGravity vel −= oldVel×Next(20,60)×
+0.01), 484 (5× dust-78 noGravity vel −= oldVel/5 scale 0.85), 483 (the
+owner-gated 484 homing-spawn burst `:73162-73221` stays the spawn lane's
+draws; 20× dust-78 noGravity vel×4 + 7× dust-31 vel×0.9 scale 0.9 gravity
++ 3 pairs dust-6 (second keeps GRAVITY) + ONE gore at pos with the
+Next(-1,2) X/Y nudges instead of the ×0.05 ones; the owner-gated +100
+inflate + Damage unported), 523 (25× dust-256 noGravity position=(own+
+pos)/2 vel=Normalize(Next(−100,101) pair)×Next(1,30)×0.1 alpha=corpse
+alpha), 521 (20× the crystal-spark shape at 254 fadeIn 1.1/0.35/1.2/
+vel×2.5; the owner-gated 522 spawn burst stays the spawn lane's), 459/709
+(scale>=1 → resize 144×144 + 7/30 counts + 2 gores, else 3/10/0 on the
+original box; dust-31 gravity + dust-226 noGravity vel×1, position =
+Center + (w/2,0).RotatedBy(τ×NextDouble)×NextDouble — the shared
+`double_angle_ring_pos` helper, the 454 refactored onto it, INTEGER w/2;
+the 709's owner-gated 1110 pull unported state no draws), 639 (the
+moonlord arrow dust RECLAIMED from the moonlord module's census skip —
+the hook never consumed the draw; Next(5,10)× dust-220 at Center 0×0
+alpha 100 scale 0.5 vel×1.6 Y−− position=Lerp(own,Center,0.5) noGravity;
+the 640 ghost spawn stays `moonlord_arrow_kill`'s; the module doc note
+updated). Witnesses: the 467/468 84/64 counts + fadeIn mids, the 485/484
+counts, the 483 33-count/gravity split, the 523 alpha/speed cap, the 521
+20-count, the 459/709 scale-gate 13/37 counts, the 639/640 Next(5,10)
+count — WRITTEN NOT RUN.
+
+### Batch 17 (10 kinds, the small bursts + the 424-family `:73431-73861`)
+
+640 (the moonlord ghost — the same dust arm as the 639, split into its
+own match arm), 682 (22× dust-272 at Center 0×0 scale 0.5 vel×1.6 Y−−
+position=Lerp(own,Center,0.5) — GRAVITY ON, unlike the 639), 449
+(Next(3,7)× dust-228 at Center−vel/2 alpha 100 scale 2.1 vel×2
+noGravity), 448 (resize 112×112 centred; 4× dust-31 gravity NO scatter +
+40 pairs dust-228; one gore), 616 (resize 80×80 centred; 4× dust-31
+gravity + 40 pairs dust-229 BOTH alpha 200 (vel×2 / ×1.2); one gore),
+836 (3× dust-31 alpha 50 White scale 0.8 vel×0.5 noGravity), 1092 (6×
+dust-269 Direct at base.Left box w×4 White scale 1.2 noLight), 424/425/
+426 (the box recentres at (int)(128×scale); 8× dust-31 gravity + 32 pairs
+dust-6 alpha 100 + 2 gores; the owner-gated localAI[1]=−1 + Damage
+unported state no draws; THEN 5× SelectRandom(6,259,158) speed
+(2.5×direction,−2.5) alpha 200 vel×2.4 scale+=NextFloat — the type
+argument draws BEFORE the spawn internals). The 868/869/996 arms stay
+DEFERRED: their WorldGen.RandomizeTreeStyle/Background/MoonState draws
+are state-bearing and unported (no port of the randomizers exists).
+Witnesses: the 682 gravity-on 22-count, the 449 Next(3,7) count, the
+448/616 84-counts + the 616 alpha-200 pairs, the 836/1092 colours, the
+424-family 77-count/segment split — WRITTEN NOT RUN.
+
+### Batch 18 (10 kinds, the smoke/cursed-flame/gem-adjacent bursts `:73862-74302`)
+
+1037/1049 (the cursed-flame death: the box inflates to (int)(192×scale)
+centred then Resize(64/112) recentres AGAIN — the final box 64/112 at the
+old centre; 6× dust-31 gravity + 3 gores with the NextVector2Circular
+(25,25) scatter (two NextFloat AFTER the kicks) + the `!wet`-gated 24
+pairs dust-6 + 4 SelectRandom(6,259,158) alpha 200 fan; shared
+`cursed_flame_death` helper; the owner-gated localAI[1]=−1 + Damage
+unported state), 399 (5× dust-12 Red + 10× dust-31 vel×1.4 + 20 pairs
+dust-6 (vel×5 noGravity / vel×3 GRAVITY) at Center−(10,10) box 20×20;
+the owner-gated 6-shard spawn burst stays the spawn lane's), 358/406/
+1042 (the smoke puff: velocity REWRITTEN to oldVel×0.2 first; 50/40/50×
+dust-211/4/324 alpha 75/175/75 scale 1.2/1.6/1.25; THREE Next(2) alpha+25
+gates + a Next(2) scale-0.6/0.6/0.8 ELSE noGravity gate; vel×0.3 +=
+newVel×1/1/0.8, ×=1+Next(−100,101)×0.01, X/Y += Next(−50,51)×0.015;
+position=Center; the 1042 adds the trailing Next(6) 4-way colour pick;
+shared `smoke_puff` helper), 323 (20× dust-7, Next(2) gate → noGravity
+scale 1.3 vel×1.5−=oldVel×0.5×1.5 else vel×0.75−=oldVel×0.25 scale 0.8),
+589 (the ai1 EXACT-equality colour ladder Red/Green/Purple/Gold/White
+A=100; 30× dust-11 vel×=1+NextFloat, first 10 noGravity vel×0.5), 311/
+316 (5× dust-189/195 scale 0.85 noGravity vel+=baseVel×0.5). The
+`DeathSnapshot` gains `wet` (the pool's centre-cell probe stand-in).
+Witnesses: the 1037/1049 dry 58/wet 6 + determinism, the 399 55-count,
+the smoke-puff centre/alpha-ladder/scale-or-gravity invariants, the 323
+gate split, the 589 colour ladder + exact-equality edge, the 311/316
+5-counts — WRITTEN NOT RUN.
+
+### Batch 19 (10 kinds, the confetti/trail-walk bursts `:74311-74733`)
+
+1097 (6× dust-6; the owner-gated ai[1]==1 eight-child spawn burst stays
+the spawn lane's), 270/837 (the 585 pair shape — 20 pairs dust-26 +
+dust-5 scale 1.5 (270) / dust-6 scale 2 (837) at pos+(4,4) box (w−8);
+the 837 penetrate sound gate draws nothing), 229 (the owner-gated
+32-shard spawn burst stays the spawn lane's; 25× dust-157 noGravity
+vel×1.5 scale 1.5), 178/289 (the confetti: 85/30× Next(139,143) type
+argument BEFORE the spawn, speed baseVel scale 1.2, the X/Y nudge ladder
+(+= ×0.01, ×= 1+×0.01, += ×0.05) + scale ×= 1+Next(−30,31)×0.01; then
+40/15 gore rows draws-only — Next(276,283) type, the kicks, the same
+ladder with scale ×= 1+Next(−20,21)×0.01 BEFORE the final nudges; shared
+`confetti_burst` helper), 475/505/506/171 (the trail walk: gated ai[1]<
+10, count = (int)(30×min(1,ai[0]/17)), the gravity ramp 0.4×min(1,ai[0]/
+30) accumulates per step, dir rescaled to 5.6 with the |x|+|y|<1 damp,
+step > ai[1] → FOUR dust of 3/239/30/129 at the walk point noGravity
+vel×0.3; the discarded Math.Atan2 draws nothing; shared `trail_walk_burst`
+helper). Witnesses: the 1097/229 counts, the 270/837 pair splits, the
+178/289 confetti counts + determinism (gore census included), the trail
+walks' 116-count + ai1>=10 gate — WRITTEN NOT RUN.
+
+### Batch 20 (10 kinds, the 99-family default + small bursts `:74734-74937`)
+
+117 (10× dust-26; the owner-gated 2-shard spawn burst stays the spawn
+lane's), 166 (10× dust-76 noGravity vel −= oldVel×0.25), 99/1013/727/
+1014/1021/1048 (the 99-family DEFAULT arm: the dust type is the kind
+switch 1013→243/727→40/1014→12/1021→323/1048→322/else 1; 30× that dust,
+a Next(2) gate → scale×1.4; the per-dust `base.velocity *= 1.9` is a
+dead-corpse mutation feeding nothing observable — the dust spawns at
+speed 0 — recorded; the 1014 item drop + the 1048 dirt delegate draw
+nothing here, the delegate is unported state), 1054 (20× dust-30 speed
+(0,−1)), 1055 (50× dust-192 at pos+(4,4) box (w−8) speed vel×0.5 alpha
+100 (100,100,100,100) scale×1.5 vel×2 noGravity). The 1053 lava-boulder
+arm stays DEFERRED to a later batch (its 64-resize burst + 4-gore census
++ the 31-resize; `LavaBoulderExplosion` draws nothing — PlaceLiquid only,
+`Projectile.cs:70538-70552`). The 1124 was found ALREADY landed (the
+plain_burst row) — the duplicate arm was removed before commit.
+Witnesses: the 117/166 counts, the 99-family type switch + scale range
+(the spawn's default scale is randomized, so a range not an equality),
+the 1054/1055 counts/colour — WRITTEN NOT RUN.
+
+### Batch 21 (10 kinds, the geode/boulder/star bursts `:74877-75210`)
+
+1005 (10× dust-1, Next(2) scale×1.1 gate, the dead base.velocity×1.6
+mutation), 772 (the geode: 6× dust-1 + 20+7 dust-NextFromList(86-90)
+Direct scale 0.7 noGravity vel×2.9 Y×0.8 fadeIn 1.1, last 7 noLight; the
+owner-gated DropGeodeGems loot `:78561-78572` draws FOUR — Next(7)/
+Next(3,7)/Next(6)/Next(3,7) — consumed as the loot census, bodies the
+loot lane's), 763 (4× dust-40, Next(2) scale×0.8 gate, noGravity), 723
+(10× dust-88 Direct alpha 150 scale 1.2 noGravity X×2 + 3 gore-Direct
+SelectRandom(16,17,17) census rows; the ai[2]==1 item request draws
+nothing), 724/725/726/907/1133 (10× dust-58/57 alpha 150 scale 1.2, 907
+vel×0.75; 3 gore Next(16,18) census rows, 907 vel×0.5 body skipped),
+1053 (the lava boulder: resize 64×64 centred; 25× dust-31 alpha 100
+scale 2 vel×1.4 gravity + 40 pairs dust-6 (scale 3 noGravity vel×5 /
+scale 2 vel×3 GRAVITY) + 4 gores at Center−(24,24) census; the 31-resize
++ LavaBoulderExplosion PlaceLiquid-only unported). The 655/91/92 arms
+stay DEFERRED (state-bearing NPC-spawn / falling-star draws). Witnesses:
+the 1005/763 counts, the 772 33-count + gem split + loot determinism, the
+723-family counts + gore determinism, the 1053 105-count/gravity split —
+WRITTEN NOT RUN.
+
+### Batch 22 (10 kinds, the head-block sparkle/Perfect rings `:70749-71098`)
+
+1098/1123 (50× dust-306 Direct (100,210,255,127) vel×2 X×0.5), 1020/1105
+(15× dust-31 Direct Transparent scale 0.8 fadeIn 0 vel×0.5 + 5 pairs
+dust-228 + 3× dust-226, all Transparent; the 2×2 corner Next(5)==0 gore-
+Direct census; the 1020 achievement/sound-stop draw nothing), 1085 (the
+broken mirror: oldVel×0.2 THEN position −= oldVel — the dust reads the
+shifted box; 10× dust-330 vel −= oldVel + 4 fixed-type gores 1394-1397
+kicks census; the bad-luck buff unported), 1080 (30× dust-329 at Center
+box 1×1 vel×0.8 Y×0.2 Y−=NextFloat×3, the Next(2) scale gate; the buff +
+active=false/return unported), 1038 (4× dust-166 Perfect at Center+
+Circular(10,10)×scale vel Zero scale 1.5+NextFloat×0.25 noGravity), 1036
+(3× dust-5 Perfect Circular(4,4) scale 1.5 noGravity), 756/961 (the
+f32-step trail rings num+=0.025/0.25 → 40/4 iters, dust-5/16 Perfect at
+Center+Circular(16,16)×scale+vel.SafeNormalize(UnitY)×num×200×scale, vel
+=Circular(3,3) Y−=0.3 +=baseVel×0.2 scale 1 alpha 100; the SafeNormalize
+UnitY fallback on zero). The 1116 (CloneDust) + 962 + 1084/949 (the
+TorchID.Dust table + Main.DiscoR/G/B App-frame colour, not in the drain's
+World/SpawnCtx) stay DEFERRED. Witnesses: the 1098/1123 colour, the
+1020/1105 28-count/Transparent/gravity split + determinism, the 1085/
+1080 counts, the Perfect-ring counts/flags — WRITTEN NOT RUN.
+
+### Batch 23 (10 kinds, the gem bolts + sparkle bursts `:75425-75532`)
+
+121-126/597 (the gem bolts: dust type kind−121+86, 597 → 262; dir =
+vel.SafeNormalize(Zero) zeroed when |vel|<1; 15× that dust speed dir
+alpha 50 scale 1.2 noGravity scale×1.25 vel×2.2 += dir×1.5 vel×=NextFloat;
+the AoeExplosion feature (ai[0] bit 3, `GemStaffFeatures::from_ai`) adds
+30× more — noGravity=Next(5)!=0, scale×=1+NextFloat, vel×4.2, the gravity
+ones scale×0.6 fadeIn 0 noLight, vel×=NextFloat. The AoE DAMAGE half —
+the 160/22 resizes + Damage — is `gem_bolt_aoe`'s (projectile.rs), the
+dust here reads the ORIGINAL box since the C# dust precedes the resize;
+the gem module's dust-skip is RECLAIMED here), 1115 (count = 10+(int)(20×
+Remap(ai0,0,60,0,1)); count× dust-197 vel×=1+t×2 += baseVel×NextFloat×t
+noGravity), 379/377 (5× dust-171 alpha 100 scale Next(1,10)×0.1 noGravity
+fadeIn 1.5 vel×0.75). Witnesses: the gem 15/45 counts + type ladder + AoE
+gate, the 1115 ai0 count ladder, the 379/377 scale range — WRITTEN NOT
+RUN.
+
+### Batch 24 (10 kinds, the bomb/sparkle bursts `:75749-76204`)
+
+281 (the bomb/dynamite: gated ai[0]!=−3; TWO leading gores 76/77 each a
+Next(−20,21) X/Y velocity pair + kicks; 20× dust-31 vel×1.4 + 10 pairs
+dust-6 (vel×5 noGravity / vel×3 GRAVITY) + 4 corner gores Next(61,64);
+the damage>0 128-resize + Damage unported), 162 (resize 64×64 centred
+BEFORE the dust; 20× dust-31 vel×2.5 + 50× dust-6 noGravity vel×=
+Next(50,151)×0.1 + 10× dust-6 vel×3 Y−− GRAVITY + 4 corner gores; the
+144-resize + Damage AFTER unported), 240 (the 281 dust shape on the
+ORIGINAL box + 4 corner gores; the 96-resize + Damage AFTER unported),
+282 (10× dust-171 scale Next(1,10)×0.1 noGravity fadeIn 1.5 vel×0.75),
+660 (Next(4,10)× dust-180 at Center 0×0 vel×1.6 Y−− += −baseVel×
+(NextFloat×2−1)×0.5 scale 2 fadeIn 0.5 noGravity), 638 (the moonlord
+bullet RECLAIMED from the moonlord module's census skip — Next(2,5)×
+dust-229 at Center 0×0 vel×1.6 Y−− position−=(4,4) then Lerp(own,Center,
+0.5) noGravity; the module doc note updated), 411-414 (dust type 9 /
+412,414→11 / 413→19; 5× speed (0,vel.Y/2) noGravity vel −= baseVel×0.5).
+The 712 (the gore-scale NextFloatDirection census) stays deferred to a
+later batch. Witnesses: the 281/240 40-count + ai0 gate, the 162
+80-count, the 282 10-count, the 660/638 Next-count probes, the 411-414
+type ladder — WRITTEN NOT RUN.
+
+### Batch 25 (10 kinds, the flower/sparkle/gore bursts `:76096-77192`)
+
+583/584 (10× dust-4 alpha 100 scale 0.8, green (20,250,20,240) / pink
+(250,20,120,240)), 514 (10× dust-31 vel×1.4 + 6 iterations of dust-6
+(scale 2.1 noGravity vel×4.6 / scale 1.3 vel×3.3 GRAVITY / a Next(2)==0
+third dust-6 scale 1.1 vel×2.7); the owner-gated 112-resize + ai[0]=2 +
+Damage unported), 69/70/621 (5× dust-13 + 30× dust-33/52/266 speed (0,−2)
+scale 1.1 alpha 100 X×1.5 vel×3), 712 (Next(6,12)× dust-15 at Center 0×0
+vel×1.6 Y−− += −baseVel×(NextFloat×2−1)×0.5 scale 1 fadeIn 1.5 noGravity
+colour (255,255,255,0)×0.3 vel×0.7 position+=vel×5; 3 gore-Direct 1008
+rows — the NextFloatDirection scale + kicks census), 962 (20× dust-16
+Perfect at Center+Circular(16,16)×scale vel=Circular(2,2)+=baseVel×0.1
+scale 1 alpha 100), 370/371 (5× dust-13 + 30 gore rows draws-only — the
+Next(−10,11) X/Y direction pair, Next(4,9) speed, Next(40,141)/
+Next(20,100) scale, the 371's Next(435,438) type, the kicks; the 370's
+type 331 fixed). Witnesses: the 583/584 colours, the 514 12-18 sixes
+range, the 69/70/621 35-counts, the 712 Next-count + determinism, the
+962 20-count, the 370/371 5-count + gore determinism — WRITTEN NOT RUN.
+
+### Batch 26 (10 kinds, the barrel/meteor/sparkle bursts `:74983-77208`)
+
+1023 (the Dead Cells barrel: resize 192×192 centred; 8 gore-Direct rows
+— the Circular(192,192)×0.125 position two NextFloat, the 61+Next(3)
+type, the kicks, the NextFloat velocity scale; 40× dust-31 Direct vel =
+DirectionTo(own).SafeNormalize(Zero)×NextFloat×8; the ParticleOrchestrator
++ Damage unported), 312 (resize 22×22 centred BEFORE the dust; 30×
+dust-31 vel×1.4 + 20 pairs dust-6 (vel×7 noGravity / vel×3 GRAVITY) +
+2×4 corner gores; the 128-resize + Damage AFTER unported), 936 (20 pairs
+dust-4 alpha 150, each a hslToRgb(0.7+0.2×NextFloat,1,0.7/0.5) colour
+A/=2; first vel×1.5 gravity, second scale 1.8 vel×3 noGravity), 1078
+(the meteor: a Next(16)==0 loot gate → Next(2,7) stack; a Next(1,4)
+sound-count no draws; the double resize 192×scale→64 centred; 6× dust-31
++ the !wet-gated 24 pairs dust-6 + 4 SelectRandom fan; THEN 3 circular-
+scatter gores — the gore loop AFTER the dust, unlike the 1037; the
+owner-gated Damage unported), 80 (gated ai[0]>=0, 10× dust-67; the
+KillTile(127) unported no draws), 474/172 (20× dust-26 scale 0.9 /
+dust-135 alpha 100), 9/503 (the else-branch: 10/40× dust-58 speed vel×0.1
+alpha 150 scale 1.2, 503 vel/=2; 3/2 gore rows Next(16,18), 503 fixed 16
+no draw), 12 (the sparkle ring: 7× dust-58 + num+=0.125 ring 8 dust-278
+CornflowerBlue (tenth-anniversary seed → HotPink A/=2) + num+=0.25 ring
+4 Gold; the screen-gated 7-gore loop folds on-screen for the local pool
+— recorded; the damage<100 extra burst 10 dust-57 + 3 gores). The
+`DeathSnapshot` gains `damage` (the 12 gate). The 955 (the 12 shape
+without the extra burst) + 246/249 (the owner-gated 249 spawn burst) stay
+deferred. Witnesses: the 1023/312 counts + determinism, the 936 40-count,
+the 1078 dry 58/wet 6 + determinism, the 80 gate, the 9/503/12 counts +
+the 12 damage gate — WRITTEN NOT RUN.
+
+### Batch 27 (8 kinds, the reclaimed special-bullet/arrow + molotov dust)
+
+283 (the VenomBullet: THREE 10-dust-171 loops alpha 100 scale Next(1,10)×
+0.1 noGravity fadeIn 1.5 — loop 1 vel×0.75, loop 2 += oldVel×0.5×
+NextFloat, loop 3 vel×1.5 += oldVel×1.5×NextFloat; the debuff-spread
+Damage is `venom_burst_spread`'s, the dust reclaimed from the i18
+module's documented skip), 284 (the PartyBullet confetti: 10×
+Next(139,143) speed −vel×0.3 scale 1.2 + the nudge ladder + 5 gore rows
+Next(276,283) + the ladder; the whole arm was a no-state documented skip
+— reclaimed), 286 (the ExplodingBullet: 7× dust-31 + 3 pairs dust-6 +
+ONE gore at pos−(10,10) with the Next(−10,11)×0.05 nudges; the AoE Damage
+is `exploding_bullet_burst`'s), 41 (the Hellfire: 10× dust-31 + 5 pairs
+dust-6 + 2 gores with the Next(−10,11)×0.1 nudges; the resize + Damage is
+`hellfire_kill_resize`'s, the dust/gore reclaimed from the i17 module's
+skip), 955 (the 12 sparkle ring WITHOUT the damage<100 extra burst),
+1116 (4× dust-306 Perfect at Center+Circular(10,10)×scale scale 1.5+
+NextFloat×0.25 noGravity (50,170,255) vel=baseVel×0.4 scale×=Remap(alpha,
+0,255,1,0) + a CloneDust White scale×0.3 — the first `clone_dust` use),
+246/249 (the molotov/greek-fire: 10/7× dust-31 vel×0.9/0.8 + 5/2 pairs
+dust-6 + ONE gore with the Next(−1,2) nudges; the 150/100-resize + Damage
++ the 246's owner-gated 249 spawn burst stay unported / the spawn lane's).
+The 337/731/76/77/78/55/719/51/267 were found ALREADY landed — the
+duplicate arms removed before commit. The 89/91/92 (state-bearing
+split/star draws inline in the i17/i18 hooks), 183 (the beenade gore+bee
+census already in `beenade_death`), 655 (NPC-spawn draws), 1084/949 (the
+TorchID.Dust + Main.DiscoR/G/B App-frame colour) stay DEFERRED.
+Witnesses: the 283 30-count, the 284 confetti, the 286 13-count, the 41
+20-count, the 955 19-count, the 1116 8-count + clones, the 246/249
+counts + determinism — WRITTEN NOT RUN.
+
+### Batch 28 (6 kinds, the oldPos trail-ring family `:71149-71488`)
+
+The `DeathSnapshot` gains `old_pos_ring: [Vec2; 10]` (the C# `oldPos`
+`Projectile.cs:388` is a `[10]` ring; the pool arms it via
+`shift_trailing_history` for `trailing_mode >= 0` kinds — an un trailed
+kind's ring stays ZERO so its trail loop breaks immediately, the C#'s own
+"no entry" shape). 931/1039 (the fairy-queen/constellation trail: colour
+hsl((ai1+0.5)%1,1,0.5)×Opacity — the default non-dev-name path of
+GetFairyQueenWeaponsColor/GetConstellationColor; one head NextFloat; walk
+the ring break-on-ZERO, count Next(1,3) with the 0.3/0.75 decrements,
+ramp Lerp(0.3,1,GetLerpValue(10,0,i)); per dust a dust-267 colour
+vel×=NextFloat×0.8 noGravity scale 0.9+NextFloat×1.2 fadeIn NextFloat×1.2×
+ramp scale×=ramp + a CloneDust scale/2 fadeIn×0.85 White; the discarded
+DirectionTo draws nothing), 1047/79 (the rainbow trail-ring — shared
+`rainbow_trail_ring` helper: one head NextFloat hue base, per entry
+hsl((base+lerp)%1,1,0.65), count Next(1,4) with the 0.3/0.65/0.85
+decrements −1/−2/−3, per dust dust-267 vel+=dir×6 position=Lerp(ring+
+Size/2,own,lerp) + CloneDust fadeIn×0.85; then 14× dust-66 hsl(NextFloat,
+1,0.5) scale 1.7 noGravity vel×3; the 79's 128-resize+Damage+restore
+precedes the dust, the ParticleOrchestrator draws nothing), 16 (the
+128-resize trail: per entry hsl(4/9+NextFloat×2/9,1,0.65), count Next(1,4)
+0.3/0.75; per iteration Next(3)==0 → dust-267 scale NextFloat×0.8 +
+CloneDust fadeIn/2 ELSE dust-15 Direct speed −vel×0.2 alpha 100 with a
+DISCARDED Next(2), noGravity vel×2+=dir×9 fadeIn (0.6+NextFloat×0.4)×ramp
+noLight; then 20 pairs dust-15 Direct), 34 (the 96-resize trail: per entry
+hsl(NextFloat×1/9,1,0.5), count Next(1,5) 0.3/0.75; Next(3)==0 → dust-267
+scale NextFloat fadeIn NextFloat×2 vel+=dir×8 + CloneDust fadeIn/2 ELSE
+dust-6 Direct speed −vel×0.2 alpha 100 Next(2)==0 → noGravity scale×2.5,
+vel×2+=dir×6 noLight; then 20 pairs dust-6 Direct). The 932 stays
+`fairy_queen_death_draws`' census (porting its body needs that census
+deduped — deferred). The 711/636/686/502 oldPos arms (different shapes)
+stay deferred. Witnesses: the ZERO-ring emptiness + filled-ring dust-267
++ determinism for all six, the 1047 14-dust-66 tail, the 16/34 40-dust
+tails — WRITTEN NOT RUN.
+
+### Batch 29 (4 kinds, the remaining oldPos trail arms `:71680-73687`)
+
+711 (the DD2 dark-mage flame: loop 1 over oldPos[0,2,4] 2 dust each
+SelectRandom(6,55,158) speed (direction,−2.5) alpha 200 vel×2.4 scale+=
+NextFloat−0.5, type 55 → Lerp((128,0,180,128),Gold,NextFloat) noLight;
+loop 2 (i=10 step 2 < 10) NEVER runs on the [10] ring; loop 3 over
+oldPos[5..10] a Next(3)!=0 gate → dust-55 alpha 80 vel×0.3+=vel×0.5
+Lerp(Purple,Black) noLight; then 20× Next(3)!=0 dust-228 + 20× Next(3)!=0
+dust-55 (0,0,220,128) noGravity scale 1.25+NextFloat fadeIn 1.5 vel×6
+noLight; the owner-gated 140-resize + Damage unported; NO break-on-ZERO —
+a ZERO entry spawns at (0,0)), 636 (loop over oldPos[0,3] 5 dust each
+SelectRandom(6,259,158) speed (2.5×direction,−2.5) alpha 200 vel×2.4
+scale+=NextFloat; the owner-gated 953 spawn stays the spawn lane's), 686
+(the 711 shape but loop 1 = 3 dust, type 55 → Lerp(Red,Gold), loop 3 NO
+Next(3) gate, the tail 30× dust-228 ungated), 502 (walk the ring skip-
+ZERO no-break, per entry a dust-66 at ring+Size/2 box 0×0 alpha 150
+Transparent scale 0.7 colour hsl(NextFloat,1,0.5) noGravity). The
+`SelectRandom(&[55])` single-element pick still draws one Next(1) (the
+C# `Next(choices.Length)` shape). Witnesses: the 636 10-count, the 502
+10-count + ZERO-ring emptiness, the 711/686 tail counts + determinism —
+WRITTEN NOT RUN.
+
+### Batch 30 (1 kind, the 932 fairy-queen weapon — the census dedupe)
+
+932 (the fairy-queen weapon death: colour GetFairyQueenWeaponsColor =
+hsl((ai1+0.5)%1,1,0.5)×Opacity on the default non-dev-name path; one head
+NextFloat; a 10-step trail at pos − vel×step — NOT the oldPos ring, so it
+spawns even with a ZERO ring; count Next(1,3) with the 0.3/0.75
+decrements, ramp Lerp(0.3,1,GetLerpValue(10,0,step)); per dust a dust-267
+colour vel×=NextFloat×0.8 noGravity scale 0.9+NextFloat×1.2 fadeIn
+NextFloat×1.2×ramp scale×=ramp + a CloneDust scale/2 fadeIn×0.85 White).
+**The i16 `fairy_queen_death_draws` census is DEDUPED onto this arm** —
+the production hook (`projectile.rs:20027`) no longer rolls those draws
+(the keep-one rule, the firework precedent); the census fn stays
+`#[cfg(test)]` as the shape witness. This was the LAST reclaimable dust
+arm with a consumed census. Witness: the 932 dust-267 + White clones +
+determinism — WRITTEN NOT RUN.
+
+### Batch 31 (2 kinds, the last free dust arms `:71902` / `:75374`)
+
+681 (the DD2 goblin bomb: resize 22×22 centred BEFORE the dust; 10
+iterations of dust-31 vel×1.4 gravity + dust-6 vel×1.4 noGravity fadeIn
+2; 10 pairs dust-6 (vel×5 noGravity / vel×3 GRAVITY); 4 corner gores; the
+80-resize + Damage AFTER unported), 1120 (the gem-bolt shape at dust-170
+— the num669=87 then =170 overwrite; dir SafeNormalize zeroed |vel|<1;
+15× scale×1.15 vel×1.8 += dir×1.5 vel×=NextFloat + 30× noGravity=
+Next(12)!=0 scale×=1+0.6×NextFloat vel×4.2 gravity ones scale×0.4 fadeIn
+0 noLight; the 112/22 resizes + Damage AFTER the dust unported — the dust
+reads the ORIGINAL box). A full Kill-body type-condition sweep confirmed
+these were the last two FREE dust arms. Witnesses: the 681 40-count +
+fadeIn-2 split, the 1120 45-count — WRITTEN NOT RUN.
+
+### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
+
+A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
+cross-referenced against the 104 landed arms, the d12 explosion family
+(`9152b259`: the aiStyle-117 tick-1 census `:34502-34636` + the 608 Solar
+Counter Kill `:72177-72225`), the i17/i18 main-landed special-arrow/bullet
+deaths (`special_arrows.rs`/`projectile_special_bullets.rs`), the g16 gore
+census (165 sites, gore-only — the dust beside a gore site is NOT g16's),
+and the in-tree draw-census hooks (`celeb2_death`/`celeb2_explosion` for
+715-718, `fairy_queen_death_draws` for 932, `rainbow_crystal_explosion_draws`
+for 644, `gem_bolt_aoe` for the gem bolts, `dart_electro_firework_kill` for
+442/478/167-170). The remaining UNCLAIMED dust arms (the exact list, by
+C# line): the head-block 1098/1123 (`:70749`), 1020/1105 (`:70855`), 1085
+(`:70902`), 1080 (`:70926`), 1084 (`:70956`), 949 (`:70976`), 985 (`:70996`),
+1038 (`:71043`), 1116 (`:71052`), 1036 (`:71068`), 756 (`:71077`), 961
+(`:71088`), 962 (`:71099`); the fairy-queen/rainbow trails 931/1039
+(`:71149`), 1047 (`:71192`), 79 (`:71257`), 16 (`:71329`), 34 (`:71409`);
+the queen-slime/sparkle 1012 (`:71524`), 920 (`:71551`), 921 (`:71560`), 926
+(`:71569`), 937 (`:71578`), 818 (`:71587`), 856 (`:71598`); the DD2 710
+(`:71652`), 711 (`:71680`), 662/685 (`:71780`), 680 (`:71800`), 664/666/668/
+706 (`:71821`), 681 (`:71902`), 669 (`:71952`), 634/635 (`:71995`), 645
+(`:72094`), 636 (`:72126`), 614 (`:72146`), 661 (`:72226`), 617 (`:72278`);
+the nebula 620/618 (`:72394`), 619 (`:72418`); 601 (`:72454`), 596
+(`:72470`), 659 (`:72503`), 539 (`:72565`), 585 (`:72599`), 590 (`:72614`),
+587 (`:72641`), 676 (`:72737`), 686 (`:72781`), 405 (`:72849`), 501
+(`:72874`), 410 (`:72919`), 452 (`:72987`), 454 (`:73014`), 467 (`:73046`),
+468 (`:73093`), 485 (`:73140`), 484 (`:73149`), 483 (`:73159`), 523
+(`:73257`), 521 (`:73292`), 459/709 (`:73338`), 639/640 (`:73431`), 682
+(`:73492`), 449 (`:73573`), 448 (`:73603`), 616 (`:73646`), 502 (`:73675`),
+868/869/996 (`:73705`), 836 (`:73729`), 1092 (`:73738`), 424-426 (`:73819`),
+1037/1049 (`:73862`), 399 (`:73921`), 358 (`:74029`), 406 (`:74063`), 1042
+(`:74099`), 323 (`:74182`), 589 (`:74204`), 311 (`:74283`), 316 (`:74293`),
+1097 (`:74311`), 270/837 (`:74348`), 229 (`:74450`), 178 (`:74565`), 289
+(`:74590`), 475/505/506 (`:74615`), 171 (`:74679`), 117 (`:74734`), 166
+(`:74760`), 99/1013/727/1014/1021/1048/1053/1054/1055/1057 (`:74841`), 1005
+(`:74970`), 1078 (`:74983`), 772 (`:75037`), 763 (`:75067`), 655 (`:75080`),
+728 (`:75125`), 723/724/725/726/907/1133 (`:75159`), 91/92 (`:75212`), 89
+(`:75250`), 969 (`:75298`), 1120 (`:75374`), 121-126/597 (`:75425`), 1115
+(`:75500`), 379/377 (`:75522`), 80 (`:75533`), 477/479 (`:75585`), 474
+(`:75600`), 172 (`:75608`), 9/12/503/955 (`:75681`), 281 (`:75749`), 162
+(`:75804`), 240 (`:75855`), 282 (`:75899`), 660 (`:76067`), 712 (`:76096`),
+638 (`:76119`), 411-414 (`:76187`), 583 (`:76258`), 584 (`:76266`), 41
+(`:76308`), 514 (`:76343`), 183 (`:76431`), 1023 (`:76866`), 312 (`:76890`),
+246 (`:76944`), 249 (`:76987`), 69 (`:77016`), 70 (`:77031`), 621
+(`:77046`), 370 (`:77161`), 371 (`:77176`), 936 (`:77193`). The
+gore-adjacent arms (a gore draw sits BETWEEN dust draws) stay deferred to
+the gore-census companion; the pure-dust arms port in the batches below.
+
+### Census completeness (batches 11-31 landed — the final accounting)
+
+A dust-line → owning-arm mapping over the whole Kill body
+(`Projectile.cs:70642-77262`, 406 `Dust.NewDust*`/`CloneDust` sites)
+cross-referenced against the drain's 309 distinct kind arms confirms
+every dust arm is now PORTED or explicitly accounted for:
+
+**Ported in batches 11-31** (the re-census list above, minus the deferred
+set below): the firework/star rings 167-170/415-418/1024/873 (b11), the
+spoke/queen-slime/sparkle/terraspark rings 659/1012/920/921/926/937/818/
+856/728/985 (b12), the DD2 explosions 710/662/685/680/664/666/668/706/
+669/614 (b13), the lunar/nebula/portal 634/635/645/661/617/620/618/619/
+601/596 (b14), the mid-Kill 539/585/590/587/676/405/501/410/452/454
+(b15), the late-mid 467/468/485/484/483/523/521/459/709/639 (b16), the
+small + 424-family 640/682/449/448/616/836/1092/424/425/426 (b17), the
+smoke/cursed-flame 1037/1049/399/358/406/1042/323/589/311/316 (b18), the
+confetti/trail-walk 1097/270/837/229/178/289/475/505/506/171 (b19), the
+99-family 117/166/99/1013/727/1014/1021/1048/1054/1055 (b20), the
+geode/boulder/star 1005/772/763/723/724/725/726/907/1133/1053 (b21), the
+head-block sparkle 1098/1123/1020/1105/1085/1080/1038/1036/756/961
+(b22), the gem bolts 121-126/597/1115/379/377 (b23), the bomb/sparkle
+281/162/240/282/660/638/411-414 (b24), the flower/gore 583/584/514/69/
+70/621/712/962/370/371 (b25), the barrel/meteor 1023/312/936/1078/80/
+474/172/9/503/12 (b26), the reclaimed special-bullet/arrow 283/284/286/
+41/955/1116/246/249 (b27), the oldPos trail-ring 931/1039/1047/79/16/34
+(b28), the remaining oldPos 711/636/686/502 (b29), the 932 census dedupe
+(b30), the last free 681/1120 (b31).
+
+**Claimed by other lanes (NOT ported here, by design):**
+- d12 (`origin/task/W4-d12-proj-ai-111-120`, `projectile_ai_explosions.rs`):
+  the aiStyle-117 tick-1 dust censuses incl. 624's 200-ring (`:34459-
+  34637`) + the 608 Solar Counter Kill burst (`:72177-72225`).
+- i16 (`dart_electro_firework_kill`): the 442 electrosphere (`:73528-
+  73552`) + 478 flame (`:75578`) death spawns (the 167-170 firework dust
+  was DEDUPED onto b11).
+- celeb2 (`celeb2_death`/`celeb2_explosion`): the 715-718 Celebration
+  rockets' Kill resize + Damage + explosion census.
+- floating-turret (`floating_turret_kill`/`rainbow_crystal_explosion_draws`):
+  the 644/641/643 turret/crystal/shard arms.
+- g16 (`origin/task/W4-g16-gore-projectile-sites`): the gore BODIES/draws
+  (165 sites) — the dust beside a gore site is NOT g16's; this lane took
+  the gore DRAWS as census where they interleave with dust.
+
+**Deferred — state-bearing draws consumed inline by other hooks (porting
+the dust needs a cross-seam dedupe of those spawn/split draws):**
+- 89 CrystalBullet (`:75250`): the 5 dust-68 precede the 2-shard split
+  whose 8 draws ride `special_bullet_kill` inline.
+- 91/92 Holy/Falling star (`:75212`): the 10 dust-58 + 3 gores precede
+  the star spawn whose draws ride `special_arrow_kill` inline.
+- 183 Beenade (`:76431`): the 20 dust-31 sit BETWEEN the 4 gore rows and
+  the bee burst whose draws ride `beenade_death` (the G3 census).
+- 655 (`:75080`): the 30 dust-147 precede the wet-item / NPC-spawn draws.
+- 246's owner-gated 249 spawn burst (`:76973`): the dust ported (b27),
+  the spawn draws stay the spawn lane's.
+
+**Deferred — App-frame state not in the drain's World/SpawnCtx:**
+- 1084/949 (`:70956`/`:70976`): the TorchID.Dust table pick + the
+  `Main.DiscoR/G/B` rainbow-torch colour (the App's frame-cycle state).
+- 868/869/996 (`:73705`): the 15 dust-13 precede the
+  WorldGen.RandomizeTreeStyle/Background/MoonState draws (unported
+  state-bearing randomizers).
+
+**No dust to port (particle-orchestrator-only / sound-only / state-only /
+empty-loop arms):** 1122/1091/1117/981/1006/1057 (ParticleOrchestrator
+only), 969/704/651/761/762 (sound-stop / item-drop only), 291/295/237/
+243/441/629/567/568/453/290/14/191-194/510 (state/spawn/gore-only — the
+510/191-194 gore draws are g16's), 1134/477/479 (empty loops).
+
+The `DeathSnapshot` grew `ai0`/`ai2`/`local_ai1`/`apprentice_t3`/
+`max_updates`/`wet`/`damage`/`old_pos_ring` across the batches; the module
+gained the `rotated_by`/`to_rotation`/`smooth_step`/`ring_kick`/
+`next_vector2_square`/`rotated_by_random`/`queen_slime_dust_color`/
+`remap_f32`/`scatter_y_dust`/`scatter_x_dust`/`gore_census`/`crimson_half`/
+`portal_color`/`double_angle_ring_pos`/`chlorophyte_ring`/`smoke_puff`/
+`cursed_flame_death`/`confetti_burst`/`trail_walk_burst`/`dd2_explosion_dust`/
+`rainbow_trail_ring` helpers. Every witness WRITTEN NOT RUN (code-only).
+
+### The FINAL seal (research/346, 2026-11-21)
+
+The lane is SEALED: `Kill-remainder-309-distinct-kinds-ALL-406-Dust.
+NewDust-sites-ported-or-accounted` landed (22 commits
+`7f0dc8649..b0842907c`, batches 11-31 + the accounting; the module
++6200/−656). **Number correction**: the FINAL drain carries **241 match
+arms → 316 distinct kinds** (mechanical scan, ranges expanded, zero
+duplicates) — the accounting's "309" was the batch-28 (`4dc2df3d9`)
+census, 26i's "317" a +1 miscount; batches 29-31 added the last 7 kinds
+(711/636/686/502/932/681/1120). The 406-site closure re-verified by
+independent scan at the seal: 393 drain-covered + 6 other-lane (442-i16,
+608-d12) + 7 documented-deferred = 406, **0 unclaimed**.
+
+The keep-one adjudication re-verified at CURRENT tips (research/346 §2):
+d78 moved `fd59c51a`→`7ea64ff75` (docs-only SEAL; the dust-free
+`damage_evp_boxed`/`hostile_death_blast` unchanged — g65's 452/454/448
+bodies KEEP); g1 moved `e43c62879`→`ef671cf2b` and EXECUTED the d78 fold
+itself (the three hostile hooks + `death_burst_player_hit` already
+dropped — the 26i g1-drop hunks CONSUMED); d77 `5f10560b` + g3 `8568ef37`
+unchanged, every pinned census call re-read line-exact. The FINAL merger
+drop-hunk table (14 census hunks incl. the NEW g1 census drops: the 932
+fairy census `projectile.rs:20047`, the 522/521/459|709/80 censuses) lives
+in research/346 §2a; the swept-618 INLINE census KEEPS until the sweep
+rewire (26i §3 hunk 4). **PLUS the gun smoke-dup verdict** (g63-298 §3.3,
+research/346 §2b / 26i §5): d6-SURVIVES-g65-DROPS — g65's 358/406/1042
+arms `:2786-2794`, the `smoke_puff` helper `:4834-4885` and the witness
+`:6616-6634` DROP at the d6+g65 merge (d6's hook has the true
+old_velocity latch + the scale-death ×5 base + the corpse p.vel write);
+post-drop drain 313 kinds, closure 390+9+7=406. 17 drop-hunks total.
+
+**The g16 gore compose** (research/346 §2c, g16 tip `72e4cae20`): g16 wired
+its 165 gore sites into real `GorePool` spawns — `gore_death_arms`
+(`projectile.rs:21482`) + the 41/91-92/284/286/183 gore rows inside
+`special_arrow_kill`/`special_bullet_kill`/`thrown_consumable_death`, ALL
+Kill-side once-per-death on the same `!active` seam g65 snapshots. The
+POOLS are disjoint (GorePool vs DustPool, no kind's dust duplicated) but
+the STREAM is shared (`RngKey::UpdateProjectiles`): g65's `gore_census` +
+inline gore loops are draws-only stand-ins that DOUBLE-FEED once g16's
+bodies are live. Draw-equivalence verified per row (every overlapping gore
+type 61-63/16-17/276-282 is SAFE_GORE + special_ai 0 + non-drip, so
+`new_gore`'s only draws are the kick pair the census replicates). 12 more
+drop-hunks (18-29, **29 total**): the 645/617/452/454/448/240/284/286/41/
+955/681/178 censuses DROP whole; the shared arms drop PER-KIND (the DD2
+census gates to the 706, the 459|709 to the 709, the 9|503 to the 503, the
+confetti helper's 178 caller passes gores=0) — g16's unrowed-host deferral
+list matches the KEEP set kind-for-kind (the 12's two loops KEEP,
+`kill12_low_damage_gores` unwired). The bomb family needs NO drop:
+`explode_bomb`'s gore rows ride the pass stream, the frozen zero-rng
+`FastRandom::new(0)` Damage walk stays (M4-PROJ-9, no double-feed), and no
+bomb kind (28/29/30/37/397/516/517/519) has a drain arm. **The 503 stream
+fix**: the `9|503` arm gated the gore type draw on `kind != 503` — the C#
+`:75729-75733` rolls `Next(16,18)` UNCONDITIONALLY and only overrides the
+result to 16 (g16's `kill9_503_gores` rolls-then-overrides); the 503's two
+rows were 2 draws behind. Fixed + witnessed
+(`w4_g65_the_503_gore_census_draws_the_type_it_overrides`) — 117 witnesses.
+
+The 7 deferred sites are task-seeded to owner lanes (research/346 §4):
+S1-P-i58 (1084/949 — the TorchID.Dust table + App disco feed), S1-P-i59
+(868/869/996 — the WorldGen randomizer lane), S1-P-i60 (655 — the
+NPC-spawn/item-drop seam); 89/91+92/183 fold as prefixes into the
+main-landed `special_bullet_kill`/`special_arrow_kill`/`beenade_death`
+(no new lane). The family declaration (g63/g64 trail ≤400/≥401, g65
+death CANONICAL for its 316-kind roster minus the d6 gun trio,
+d53→e3→f5 per-tick batches, i16/i17/i18/celeb2/floating-turret/d12
+special hosts, g16 gore, the cue/state lanes) is research/346 §5. New
+seal witness `w4_g65_seal_the_deferred_kinds_are_inert` (the 10 deferred
+kinds draw nothing through the drain) — WRITTEN NOT RUN with the other
+115.
