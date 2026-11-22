@@ -85,6 +85,9 @@ per `docs/superpowers` agreements).
 | 147 | The quicksell SHIFT-click UI-hint census (W4-e19 final + SHIMMER SEAL: the C# mouse hint IS the cursor-10 icon; the override draw ported; the g86e-cursor-170-sites COMPOSE published — cursorOverride layer 36 vs cursorItemIcon layer 40, keep BOTH, the two reset clocks separate) | `147-quicksell-ui-hint-census.md` | ✅ compose published |
 | 148 | W4-e19 research FINAL (SEALED: the full arc + the SHIMMER-seal round — the arbiter consume, the repin execution, the aether boundary, the cursor compose, the shimmer-family bible in ANALYSIS; the witness ledger, the five merge contracts, the standing deviations) | `148-e19-research-final.md` | ✅ SEALED |
 
+| 224 | Gem-moss biome gen census + fidelity port (W4-c29: Spread.Gem duplicate-visit redraw / the 178 PlaceTile anchor gate / neonMossBiome clamps / moss arm A ledger + arm F live sweep vs WorldGen.cs; g41 co-lane claim check; code-only) — renumbered 95 → 224 per registry 150 (c42 keeps 95) | `224-gem-moss-census.md` | 🟡 |
+| 260 | DOC-SWEEP lane 40 gem/moss residuals (W4-c29 sweep: gemsparkle DRAW d60-claimed / moss PAINT f25-C8-wired / extraction faithful / neon CONVERT d103 / 627 no-def refuted; the REAL gap = the gem/moss per-cell break-drop slice ported 55555fb9b; code-only) — SEALED + the gem-family bible + the dead-man's-chest re-census (FAITHFUL); renumbered 130 → 260 per registry 150 (f28 keeps 130) | `260-doc-sweep-gem-moss.md` | ✅ SEALED |
+
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

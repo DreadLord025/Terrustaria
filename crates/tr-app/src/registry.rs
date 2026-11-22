@@ -247,6 +247,24 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         80 => Some(276),
         // `case 78: dropItem = 222;` (`WorldGen.cs:64711-64713`).
         78 => Some(222),
+        // The gem-stone blocks 63-68 drop the GEM item, not the stone block
+        // (`KillTile_GetItemDrops`, `WorldGen.cs:64945-64952`:
+        // `dropItem = tileCache.type - 63 + 177`). The `by_tile` fallback
+        // would leak the placing stone-block item (4640-4645).
+        63..=68 => Some(tile - 63 + 177),
+        // The amber stone block 566 drops the Amber 999
+        // (`WorldGen.cs:64953-64955`: `dropItem = 999`), not the block 4646.
+        566 => Some(999),
+        // The moss tiles drop the Stone Block 3 (`WorldGen.cs:63999-64011`:
+        // 179/180/181/182/183/381/534/536/539/625/627 → `dropItem = 3`). The
+        // moss is a conversion of stone, so breaking it returns stone — the
+        // `by_tile` fallback would leak the moss item (4349-5128).
+        179 | 180 | 181 | 182 | 183 | 381 | 534 | 536 | 539 | 625 | 627 => Some(3),
+        // The moss bricks drop the Gray Brick 129 (`WorldGen.cs:64012-64024`:
+        // 512/513/514/515/516/517/535/537/540/626/628 → `dropItem = 129`).
+        // No item places a moss brick (conversion-only), so the `by_tile`
+        // fallback drops NOTHING — the brick's gray-brick drop was lost.
+        512 | 513 | 514 | 515 | 516 | 517 | 535 | 537 | 540 | 626 | 628 => Some(129),
         // `case 380: dropItem = 3215 + tileCache.frameY / 18;` (:65211-65213).
         380 => Some((3215 + i32::from(frame_y) / 18) as u16),
         // `case 135` (`WorldGen.cs:65569-65599`): the standard pressure plate
@@ -298,6 +316,13 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         // resolved app-side as `TreeDropEvent::Gem`/`Mushroom`) — never the
         // `by_tile` fallback (S1-P-i30).
         72 | 583..=589 => None,
+        // The exposed-gems tile 178 drops by `frameX / 18`
+        // (`WorldGen.cs:65493-65518`), which this frame_y-only accessor cannot
+        // read — the per-cell `cell_drops` arm carries it (the hit cell's
+        // `frame_x`). The `by_tile` fallback would leak the Sapphire 177 for
+        // every style; this row refuses so the cascade/record paths (which
+        // pass frame 0) drop nothing rather than the wrong gem.
+        178 => None,
         // The demon/crimson altar (`KillTile_GetItemDrops`'s empty case 26
         // group, `WorldGen.cs:65758` → `:66090`): the altar is destroyed, not
         // dropped — the `by_tile` fallback would leak the Journey-mode item
@@ -621,6 +646,58 @@ mod tests {
         }
         assert_eq!(tile_drop(82, 0), None, "by_tile(82) must not yield 307");
         assert_eq!(by_tile(82), Some(307), "the fallback itself is intact");
+    }
+
+    // W4-c29 doc-sweep lane 40: the gem/moss per-cell break-drop slice
+    // (`KillTile_GetItemDrops`, `WorldGen.cs:63999-64024`/`:64945-64955`).
+    #[test]
+    fn test_w4_c29_tile_drop_gem_stone_blocks_drop_the_gem() {
+        // `case 63-68: dropItem = tileCache.type - 63 + 177;`
+        // (`WorldGen.cs:64945-64952`) — the gem-stone blocks drop the GEM,
+        // not the placing stone-block item (4640-4645).
+        for tile in 63..=68u16 {
+            assert_eq!(tile_drop(tile, 0), Some(tile - 63 + 177), "gem-stone {tile}");
+        }
+        // `case 566: dropItem = 999;` (:64953-64955) — the amber stone block.
+        assert_eq!(tile_drop(566, 0), Some(999));
+        // The `by_tile` fallback would leak the stone-block items.
+        assert_eq!(by_tile(63), Some(4642), "the fallback itself is intact");
+        assert_eq!(by_tile(566), Some(4646));
+    }
+
+    #[test]
+    fn test_w4_c29_tile_drop_moss_tiles_drop_stone() {
+        // `case 179/180/181/182/183/381/534/536/539/625/627: dropItem = 3;`
+        // (`WorldGen.cs:63999-64011`) — the moss tiles drop the Stone Block 3.
+        for tile in [179, 180, 181, 182, 183, 381, 534, 536, 539, 625, 627] {
+            assert_eq!(tile_drop(tile, 0), Some(3), "moss {tile}");
+        }
+        // The `by_tile` fallback would leak the moss items (4349-5128).
+        assert_eq!(by_tile(179), Some(4349), "the fallback itself is intact");
+        assert_eq!(by_tile(627), Some(5128));
+    }
+
+    #[test]
+    fn test_w4_c29_tile_drop_moss_bricks_drop_gray_brick() {
+        // `case 512/513/514/515/516/517/535/537/540/626/628: dropItem = 129;`
+        // (`WorldGen.cs:64012-64024`) — the moss bricks drop the Gray Brick 129.
+        for tile in [512, 513, 514, 515, 516, 517, 535, 537, 540, 626, 628] {
+            assert_eq!(tile_drop(tile, 0), Some(129), "moss brick {tile}");
+        }
+        // No item places a moss brick (conversion-only) — the `by_tile`
+        // fallback dropped NOTHING, losing the brick's gray-brick drop.
+        assert_eq!(by_tile(512), None);
+        assert_eq!(by_tile(628), None);
+    }
+
+    #[test]
+    fn test_w4_c29_tile_drop_exposed_gems_refuses_the_frame_y_only_path() {
+        // The exposed-gems tile 178 drops by `frameX / 18`
+        // (`WorldGen.cs:65493-65518`), which the frame_y-only `tile_drop`
+        // cannot read — it refuses (the per-cell `cell_drops` arm carries it).
+        // The `by_tile` fallback would leak the Sapphire 177 for every style.
+        assert_eq!(tile_drop(178, 0), None);
+        assert_eq!(by_tile(178), Some(177), "the fallback itself is intact");
     }
 
     // DW-2.3: the M4-PROJ-6 corrections of the GenItemData placeholder band.

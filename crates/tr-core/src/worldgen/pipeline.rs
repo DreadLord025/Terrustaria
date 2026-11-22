@@ -1316,10 +1316,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("lihzahrd temple", "Jungle Temple", step_temple),
     step!("temple part 2", "Temple", step_temple_part2),
     step!("cave houses", "Buried Chests", step_cave_houses),
+    // The vanilla slot (`WorldGen.cs:20916-20938`): the Micro Biomes
+    // pass's dead-man's-chest block runs FIRST among the port's grouped
+    // micro steps — before the thin-ice block (`:20941`) — W4-c29's
+    // `DeadMansChestBiome` port.
+    step!("dead man's chests", "Micro Biomes", step_dead_mans_chests),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
-    // pass's thin-ice block runs FIRST among the port's grouped micro
-    // steps — after the dead-man's-chest block (`:20922`, unported) and
-    // before the sword shrines (`:20979`) — S1-K-2 wave C's
+    // pass's thin-ice block runs after the dead-man's-chest block
+    // (`:20922`) and before the sword shrines (`:20979`) — S1-K-2 wave C's
     // `ThinIceBiome` port.
     step!("thin ice", "Micro Biomes", step_thin_ice),
     step!("campsites", "Micro Biomes", step_campsites),
@@ -2325,6 +2329,34 @@ fn step_campsites(
     mini_biomes::pass_campsites(world, &mut streams.srng);
 }
 
+fn step_dead_mans_chests(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `WorldGen.cs:20916`: the `actuallyNoTrapsForRealIMeanIt` veto — and
+    // NOTHING else (the dead-man's-chest block has no notTheBees gate,
+    // unlike the explosives block at `:21063`). The `num *= 3.0` trap-world
+    // multiplier (`:20918-20921`) scales only the progress denominator.
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS)
+    {
+        return;
+    }
+    // `:20922-20924`: the candidate scan runs FIRST, then the DeadManChests
+    // config roll (Min 10 / Max 20 / WorldWidth) — the pass draws the count
+    // itself after the scan (the C# order). The step reads its own "Micro
+    // Biomes" section and draws from a fresh `pass_rng("Micro Biomes")`
+    // copy — the per-pass re-seed model (the wave-C thin-ice precedent).
+    let pass_config = super::config::WorldGenConfig::parse().pass("Micro Biomes");
+    let mut rng = streams.pass_rng("Micro Biomes");
+    mini_biomes::pass_dead_mans_chests(world, pass_config.get_range("DeadManChests"), &mut rng);
+}
+
 fn step_thin_ice(
     world: &mut World,
     gv: &mut GenVars,
@@ -2780,6 +2812,10 @@ pub(crate) fn boot_statics(world: &mut World) {
     // Lihzahrd brick 226 is not (bricks auto-frame).
     world.frame_important[137] = true;
     world.frame_important[237] = true;
+    // The boulder 138 (`Main.cs:7432`, W4-c29): frame-important — the
+    // framer keeps the stored frames the dead-man's-chest `Place2x2`
+    // write leaves (`DeadMansChestBiome.cs:612`).
+    world.frame_important[138] = true;
     // The mining-explosives pair (S1-K-2 wave B): the explosives 141
     // (`Main.cs:7750`) and the detonator 411 (`Main.cs:8314`) are
     // frame-important — the framer keeps the stored frames the
@@ -2793,6 +2829,12 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
+    // The exposed gems 178 and the long moss 184 (`Main.cs:7413-7414`,
+    // W4-c29): frame-important — the framer keeps the stored frames the gem
+    // pass's 178 arm writes (`frameX = style*18`, `frameY = Next(3)*18`,
+    // `WorldGen.cs:59698-59699`) instead of autotiling them.
+    world.frame_important[178] = true;
+    world.frame_important[184] = true;
     world.frame_important[380] = true;
     // The ocean tiles the ocean passes write — the palm trunk 323, the
     // coral 81, the beach piles 324, the shell piles 495, the sea oats 529
@@ -3143,7 +3185,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-c29: + `dead man's chests` (vanilla "Micro Biomes",
+        // `WorldGen.cs:20916`) before `thin ice` (the block runs first).
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3218,6 +3262,7 @@ mod tests {
                 "lihzahrd temple",
                 "temple part 2",
                 "cave houses",
+                "dead man's chests",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3431,15 +3476,29 @@ mod tests {
     /// slot — the thin-ice block (`WorldGen.cs:20941`) runs before the
     /// sword shrines (`:20979`), the campsites (`:21031`) and the
     /// mahogany block (`:21105`); the port groups it right after the
-    /// cave houses, ahead of `campsites`.
+    /// dead man's chests, ahead of `campsites`.
     #[test]
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("cave houses") + 1);
+        assert_eq!(pos("thin ice"), pos("dead man's chests") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-c29: `dead man's chests` sits in the Micro Biomes pass's FIRST
+    /// vanilla slot — the block (`WorldGen.cs:20916-20938`) runs before
+    /// the thin ice (`:20941`); the port groups it right after the cave
+    /// houses.
+    #[test]
+    fn w4_c29_the_dead_mans_chests_step_leads_the_micro_group() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dead man's chests"), pos("cave houses") + 1);
+        assert_eq!(pos("dead man's chests") + 1, pos("thin ice"));
+        assert!(pos("dead man's chests") < pos("mining explosives"));
+        assert!(pos("dead man's chests") < pos("mahogany trees"));
     }
 
     #[test]

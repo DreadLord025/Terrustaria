@@ -10149,6 +10149,102 @@ The micro-biome decorators over the finished world:
   cannot pass in the compact terrain вЂ” the snow band is a one-row skin
   over the ice shell (`terrain.rs:320-330`), so the biome would be dead
   code until the faithful `Generate Ice Biome` pass lands.
+- **The dead man's chests** (`DeadMansChestBiome`, `DeadMansChestBiome.cs:
+  10-625` — W4-c29, 2026-11-21, **code-only mode: written NOT run**): the
+  faithful port of the Micro Biomes pass's dead-man's-chest block
+  (`WorldGen.cs:20916-20938`) — the `actuallyNoTrapsForRealIMeanIt` veto
+  rides the step adapter (there is NO notTheBees gate here, unlike the
+  explosives block; the `num *= 3.0` trap-world multiplier scales only
+  the progress denominator). The candidate scan
+  (`GetPossibleChestsToTrapify`, `:411-448`) runs FIRST — every chest
+  record whose anchor passes `IsAGoodSpot` (`:450-482`: the 50-fluff
+  bounds, the oceanDepths veto, the style-1 gold chest tile 21
+  `frameX/36 == 1` — the port's `frame_x/18 == 1` convention, the
+  clearable floor two rows down, the 20-tile four-colour `countWires`
+  exclusion, the >=40-cell `countTiles(jungle: false, lavaOk: true)`
+  pocket at maxTileCount 3500) AND whose boulder+dart finds satisfy
+  `AreThereEnoughTraps` (`:163-170`: (boulder OR explosive) AND dart —
+  the explosive finder does NOT run in the scan) AND the 1×1
+  `StructureMap.CanPlace` (padding 10) over the widened
+  `GeneralPlacementTiles` set (21/467/138/664/712/713/714/715 re-allowed,
+  `:419-426`). The finder draws consume the stream even for rejected
+  candidates — the C# order is load-bearing. THEN the `DeadManChests`
+  config roll (Min 10 / Max 20 / WorldWidth,
+  `worldgen_configuration.json:191-195`) draws AFTER the scan
+  (`:20923-20924`), then the pick loop: `Next(candidates.Count)` per
+  iteration, the 3000-attempt budget decremented BEFORE the `<= 0` break
+  (2999 picks max), `Place` at the chest anchor, the counter advances
+  even on a failed Place (`:20936` — the C# ignores the return), the
+  picked index is removed. The Place body (`:102-136`): the good-spot
+  gate, the three finders in the exact draw order — boulder
+  (`FindBoulderTrapSpots`, `:180-220`: the `Next(2,5)` count + step rolls,
+  the left-shifted scan line `Y-6`, the 50-up first-active find, the
+  `CheckSpot` 2×5 solid histogram with the un-clearable/container veto +
+  the 4×4 active ceiling ring + the not-both-active floor pair + the 6×6
+  container/12/665/639 exclusion + the dominant-kind first-max pick,
+  `:236-296`; the min/max-x wire run + the 7-step drop wire), dart
+  (`FindDartTrapSpots`, `:298-334`: the `Next(3,7)` count, the `Next(2)`
+  direction, the alternating-direction walk stepping up, the 20-cell
+  side find with the >=5 / non-actuated / non-frame-important / clearable
+  gates, the vertical wire over the last successful index — the -1
+  sentinel runs nothing), explosive (`FindExplosiveTrapSpots`,
+  `:336-395`: the centre pair, the right 4-band and the left 4-band
+  picks, each `Next(list.Count)` over its good spots — the C# clears
+  `list` ONLY after the centre pick (`:355`), so the right and left bands
+  ACCUMULATE, ported verbatim; the spots append left, centre, right) —
+  the enough-traps gate, then `TurnGoldChestIntoDeadMansChest`
+  (`:484-519`: the 2×2 retype to 467 style 4, `frameX = 144 + i*18`,
+  `frameY = j*18` — the `IsChestRigged` style, `netglue.rs:57-58`; the
+  `Next(3) == 0` Dead Man's Sweater 5007 insert at slot 1: the occupied
+  slots `len-2 ..= 1` copy DOWN one — the DeepClone loop, the stale
+  sources survive; the port's compressed slot vec materializes to the
+  40-slot maxItems first), then the four placement loops in the C# order
+  (darts `:521-537` — the 137 retype, `frameX = 18` when firing left else
+  0, slope/half-brick cleared, the wire run; wires `:539-545` — the
+  inclusive `0..=steps` red-wire walk; boulders `:547-614` — the 2-wide
+  column, the top/bottom 2 rows cleared, the 5 body rows filled with the
+  dominant kind, wired + actuated when solid, the 6×6 seat box retypes
+  non-boulder kinds to stone 1 with wired cells gaining the actuator,
+  the boulder 138 `PlaceTile` → `Place2x2` and the drop wire; explosives
+  `:616-624` — the 141 retype, frames 0/0) + `PlaceWiresForExplosives`
+  (`:138-161`: the vertical wire from the chest down to the FIRST
+  explosive's row, then the horizontal run across the min/max x of ALL
+  explosive spots at that row). The shared `Place2x2` helper
+  (`place_2x2_floor_tile`, generalized from the wave-B detonator 411
+  site) now carries the `tileTable` floor alternative (`:51371-51378`)
+  and the `nactive()` floor gate (`Tile.cs:240-247` — active AND not
+  actuated); the boulder site adds the `PlaceTile` wrapper's
+  `Collision.EmptyTile` origin gate (`:59373` — 138 is tileSolid
+  `Main.cs:7462`, not forced; the wave-B detonator called `forced: true`
+  and skipped it). The 138 frame-important boot bit (`Main.cs:7432`)
+  landed in `boot_statics`; 137/141/21/467 were already booted. The step
+  draws from a fresh `pass_rng("Micro Biomes")` copy (the per-pass
+  re-seed model — the wave-C thin-ice precedent) and sits FIRST in the
+  port's grouped Micro Biomes slot (the vanilla block order: dead man's
+  chests `:20916` → thin ice `:20941` → shrines `:20979` → campsites
+  `:21031` → explosives `:21066` → mahogany `:21105`). **Pins: both
+  UNCHANGED** — `generate()` (no chest-stock hook) leaves `world.chests`
+  empty (`chest_stock.rs:238-240`), so the scan finds no candidates and
+  the block draws ONLY the config roll on its own fresh stream: no tile
+  writes, no other step's ledger shifts; `SEED42_512` and
+  `DEFAULT_WORLD` stay (the S1-P-i33 deferral stands; the gate re-pins
+  sequentially). The stocked tr-app path traps chests by design — that
+  moves the app-side world, not the tr-core pins. Deviations: the
+  `TileFrame` re-frame calls ride the post-pipeline framing seam (137 is
+  frame-important, so the stored frames survive); the `dualDungeons`
+  veto inside `CanBeClearedDuringGeneration` is deferred with the seed
+  (the `ocean.rs:620` precedent); the boulder do/while always exits after
+  one iteration (the fill activates an inactive cell, an active cell
+  passes the while test immediately — no observable difference); the
+  pass-local protected list is empty (the port's micro steps register no
+  shared StructureMap boxes — the wave-B idiom). **Tests written NOT
+  run** (8 new: the good-spot gates + no-draw proof, the full trap
+  placement over a 12-seed sweep with the sweater split, the DeepClone
+  shift, the accumulating explosive bands, the enough-traps gate, the
+  boulder wrapper's empty-origin veto, the scan→roll→pick stream-order
+  replay, the no-records inert path + the pass determinism) + the
+  pipeline order/count tests updated (67 steps) + the Gen(76) progress
+  arm.
 
 Deviations: the HouseBuilder room variants (the biome walls, the furniture
 sets) are the shape-level approximation; the spike tiles and the sword
@@ -13132,6 +13228,80 @@ Deliberate deviations, all in the module header:
 - **`Plain` counts**: `count_tiles` is an explicit-stack rewrite of the recursive `nextCount` (the fill carries no RNG, so the traversal order is free), and `Spread.*` walks the frontier lists rather than the C#'s per-level `List`/`HashSet` pair вЂ” the visited-set semantics and the `SolidTile`/wall gate are the C#'s.
 
 Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
+
+### Gem-moss fidelity (W4-c29, 2026-11-21 — code-only mode: written NOT run)
+
+The unclaimed gem-fidelity row the g41 spider-cave census handed off
+(`docs/research/93-spider-cave-census.md` "Census deviations recorded, NOT
+changed": "`Spread.Gem`'s duplicate-visit redraw … left for the gem-fidelity
+row"). Scope check against the pushed co-lane claims: g41 took the spider
+residuals (egg-sac validator chain, webs/honey arms, wall coverage) and left
+`pass_moss`/`spread_gem` untouched; d105's lane-5 range claim owns the
+`Random Gems` (`:20729`) and `Moss Grass` (`:20769`) PASSES (not these
+fidelity fixes); the gem-moss placement residuals below are unclaimed.
+
+- **`Spread.Gem`'s duplicate-visit redraw** (`WorldGen.cs:3617`): the C#'s
+  `hashSet.Add(item)` IGNORES its return — a cell two open neighbours enqueue
+  in one wave is processed on EVERY visit, and the solid branch's
+  `randGemTile` conversions re-draw each time (the second visit reads the
+  freshly painted gem wall and takes the solid branch). The M5-STRUCT-5
+  draft's `if !seen.insert(item) { continue; }` dedup dropped those draws —
+  a real RNG deviation. The insert now ignores its result like the C#.
+  (`Spread.Moss`'s duplicates are draw-free idempotent writes, so its dedup
+  stays faithful — the g41 census's own note.)
+- **The exposed-gem write is `PlaceTile`'s 178 arm** (`:59691-59701`): the
+  `CheckAndAdjustMultiDirectionalTile` anchor gate (`:60314-60366`) — the
+  four slope-allowing face anchors (`SolidTileAllowTopSlope` `:70320`,
+  `SolidTileAllowBottomSlope` `:70167`, `SolidTileAllowLeftSlope` `:70340`,
+  `SolidTileAllowRightSlope` `:70360`, ported beside their landed bottom
+  sibling in `edit/kill.rs`), the boulder/door veto (`:60299`), the priority
+  pick below(0) → left(2) → right(3) → above(1) each requiring solid-not-
+  solidTop — then `frameX = style*18`, `frameY = genRand.Next(3)*18`. The
+  draft's `place_framed` write carried NEITHER the gate nor the draw: it
+  filled the deep pocket interior (no anchor) and never drew the frame row.
+  The style draw (`randGem()`) happens BEFORE the gate (the C# argument
+  order, `:3655`), so a refused placement still consumes it.
+- **`neonMossBiome`'s classic clamps** (`:9843-9858`): the rock-line clamp
+  rides `num6` (the ellipse's TOP edge), not the bottom — the draft clamped
+  `ymax`, inverting the gate; the clamps SET the drift to ±5.0 (`:9848`,
+  `:9856`), the draft nudged ±2.0 (a different walker trajectory after the
+  first clamped step); the step budget `num2` stays a scaled double
+  (`:9800-9807`, the `while (num2 > 0.0)` runs ceil iterations on a sub-4200
+  world), the draft truncated it; the paint loops are EXCLUSIVE on the high
+  edges (`k < num5`, `l < num7`, `:9860-9862`), the draft painted the
+  inclusive rim. The remix clamp (`Main.remixWorld`, `:9832-9842`) stays
+  unported with the other remix draw schedules.
+- **The moss pass's arm A reject ledger** (`:17554-17566`): a rejected anchor
+  bumps `num2` (the consecutive-reject streak) and only advances `num3` (the
+  placed count) once the streak passes `maxTilesX`; an accepted anchor RESETS
+  `num2` and advances `num3` at once. The draft advanced the placed count on
+  every attempt, so a reject-heavy world placed fewer biomes than the C#.
+  The exclusion scan now carries `Main.tileDungeon` (`:17545`, the six bricks
+  41/43/44/677/678/679 — the draft omitted them).
+- **Arm F walks the map LIVE column-major over `Main.tileMoss`**
+  (`:17659-17698`): the generated `TILE_MOSS` set carries the rainbow moss
+  627 (`Main.cs:7031`) beside the five + neon + lava moss. The draft
+  snapshotted a ROW-major list without 627 — a different visit order (the
+  sweep's conversions feed later cells) and a missed family.
+- **The 178/184 frame-important boot statics** (`Main.cs:7413-7414`): the
+  framer keeps the stored gem frames (`frameX = style*18`,
+  `frameY = Next(3)*18`) through the load-time re-frame instead of autotiling
+  them.
+
+RNG / hash contract: every new draw rides the EXISTING world-pass slots
+(`pass_rng("Gem Caves")` via `Spread.Gem` → the 178 arm; `pass_rng("Moss")`
+via arm A/F) — no new stream slot. The draw COUNTS and the painted tiles
+change, so `DEFAULT_WORLD` moves by design (arm A places 2 neon biomes on the
+4200 world, the gem/moss cave passes find pockets); `SEED42_512`'s bands
+collapse on the compact 512 terrain (arm A's `width/2100` rounds to 0), so
+whether it moves depends on the 512 pockets. Both re-pins are DEFERRED to the
+merge gate (no compiler on this branch — the S1-K-2 wave B / g41 precedent);
+the `a == b` determinism halves stay green. 5 witnesses written NOT run
+(`w4_c29_spread_gem_duplicate_visits_redraw_deterministically`,
+`w4_c29_the_exposed_gem_anchor_gate_and_frame_row`,
+`w4_c29_the_neon_moss_blob_stays_under_the_rock_line`,
+`w4_c29_the_moss_arm_a_ledger_and_dungeon_exclusion`,
+`w4_c29_the_moss_arm_f_sweeps_the_rainbow_moss_live`).
 
 ## The pillar shards (M4-EVENT-9)
 
@@ -39976,3 +40146,84 @@ already-ported liquids/cracks/special-tiles/pylons/vines/foliage passes.
   +4/-2 margins here are C#'s loop bounds, the wiring step keeps the
   `WorldFrameKey` intact. 15 witness tests WRITTEN NOT RUN - no
   cargo/rustc/rustfmt/tests/graphify invoked.
+
+## DOC-SWEEP lane 40: the gem/moss break-drop slice (W4-c29 sweep, 2026-11-21, code-only)
+
+Branch `task/W4-c29-deadmans-chest-biome` (sweep phase, stacked on the
+gem-moss fidelity DONE `bf90f6e7`). The five-item gem/moss residual
+census lives in `docs/research/260-doc-sweep-gem-moss.md` (renumbered
+130 → 260 per the d54 registry 150); four items
+resolved as claimed-and-faithful (d60 gemsparkle dust, f25 C8 moss
+colour + its WIRED case-184 consumer, the extractinator gems arm, the
+growth-tick moss conversion + d103's underground twin) or refuted
+premises (no gem AddLight anywhere; no `addTile(627)` — moss is a solid
+block). The ONE real gap, unclaimed on all 354 pushed W4 branches: the
+gem/moss per-cell arms of `WorldGen.KillTile_GetItemDrops`.
+
+**The fix (`55555fb9b`).** `registry::tile_drop` gains four arms: the
+gem-stone blocks 63-68 drop the GEM (`type - 63 + 177`,
+`WorldGen.cs:64945-64952`), the amber stone block 566 drops Amber 999
+(`:64953-64955`), the eleven moss tiles drop Stone Block 3
+(`:63999-64011`), the eleven moss bricks drop Gray Brick 129
+(`:64012-64024`). Pre-fix, the `by_tile` fallback leaked the placing
+items (the gem-stone BLOCKS 4640-4646, the moss items 4349-5128) and
+dropped NOTHING for the moss bricks (no item places them —
+conversion-only). The exposed-gems tile 178 drops the gem of its style
+column (`frameX / 18` → 181/180/177/179/178/182/999, `:65493-65518`):
+the per-cell `cell_drops` arm reads the hit cell's `frame_x` (the C#
+`tileCache`, captured pre-kill); `tile_drop(178)` refuses — the
+frame_y-only accessor cannot read the column, and the style-0
+cascade/record paths drop nothing rather than the wrong gem (the C#
+`dropItem > 0` gate `:63953` for an unset column). The moss-block items
+687-692 → 5439-5444 (`:64219-64236`) were already correct through
+`by_tile` — verified, no arm needed.
+
+**RNG**: every arm is a pure table lookup — zero draws, no stream
+order change, no world-hash pin movement (runtime-only), `a == b`
+halves untouched.
+
+**Deferred-with-owner (NOT this lane)**: the `Main.tileGlowMask` TABLE
+pass (`TileDrawing.cs:1178-1342`, incl. the moss glow colours
+`:1210-1239` and the 627 disco) — g31 research/136 row 14 pins it as the
+table-pass lane's bind contract (f15's `d5d550c6` out-of-scope note);
+the d60 particle-battery wiring (the `DrawSingleTile` `:965-968` entry
+gate, g85's orb-family precedent); the growth-tick 184-spray bare-write
+approximation (d103's commit note, the growth-wiring wave).
+
+Verification: code-only — NO cargo/rustc/rustfmt/tests/dotnet/graphify
+invoked. 6 witnesses WRITTEN NOT RUN (`registry.rs::test_w4_c29_*` ×4,
+`editing.rs::test_w4_c29_*` ×2), each pinning the C# line it restores
+and the `by_tile` fallback it displaces; the existing drop suites
+(`test_DW_3_1_tile_drop_map`, `test_DW_3_2_*`) untouched — the new arms
+only displace fallback rows no existing test pins.
+
+### SEAL (c29d retire executed, 2026-11-21)
+
+The sweep doc is SEALED under its registry number: **research/130 →
+research/260** and the fidelity census **research/95 → research/224**,
+both per the d54 research-number registry 150 (tip `72226e500`, §3/§6.2
+c29 rows — c42 keeps 95, f28 keeps 130; both assigned numbers verified
+free on every origin tip at the seal fetch). The c29d-retire dispatch
+was verified NOT executed at dispatch time (no c29d commit on any ref,
+neither number consumed) and is executed by this seal. research/260
+gains the **gem-family bible** (the nine-surface owner table: gen =
+M5-STRUCT-5 + c29 fidelity `12a1fc973`; break-drop = c29 sweep
+`55555fb9b`; sparkle DRAW = d60 UNWIRED-pending-wiring-wave; moss paint
+= f25 C8 WIRED; extraction = M7-EXTRACT-1 base; growth convert = base +
+d103; 627 = no-def refuted, glow TABLE pass deferred-with-owner g31
+research/136) and the merger keep-one notes (the four `tile_drop` arms
++ the 178 `cell_drops` arm are c29's exclusive write-set; the
+`world_hash.rs` comment blocks resolve KEEP-BOTH per the d105 R1
+precedent). The **dead-man's-chest re-census** re-read the whole class
+(`DeadMansChestBiome.cs:10-625` + the block `WorldGen.cs:20916-20938` +
+`countWires :9515-9544` / `oceanDepths :10963-10974` / `countTiles
+:9546-9635` / `CanBeClearedDuringGeneration :80168-80175` / `Place2x2
+:51330-51423` / `nactive Tile.cs:240-247` / `SolidTile2 :70134-70151` /
+`IsChestRigged :35746-35753` / `StructureMap.CanPlace :24-52`) against
+`dbc93e9bc`: **FAITHFUL line-for-line, no fix needed**; the two chest
+frame conventions compose (generation `place_chest` writes 18·style
+and `dead_mans_good_spot` reads /18; the retype writes the C#-literal
+`144+i*18` and `is_rigged` reads /36==4); no co-lane claimant (the
+all-361-tip grep for `pass_dead_mans_chests`/`place_dead_mans_chest`/
+`turn_gold_into_dead_mans` returns only this branch). Doc-only seal —
+no code change, the witnesses stay WRITTEN NOT RUN (code-only lane).
