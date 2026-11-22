@@ -1193,6 +1193,9 @@ pub(crate) fn update_brain_state(app: &mut App) {
 }
 
 pub(crate) fn update_worms(app: &mut App) {
+    // W4-d127 — the leech entry burst's ctx is captured BEFORE the stream
+    // borrow (`spawn_ctx` takes `&self`; the helper borrows `app` immutably).
+    let dust_ctx = app.spawn_ctx();
     // `AI_006_Worms` runs inside each NPC's `Update` — the `UpdateNPCs`
     // swap's stream (`Main.cs:17767-17769`).
     let rng = app.rngs.stream(RngKey::UpdateNpcs);
@@ -1209,11 +1212,18 @@ pub(crate) fn update_worms(app: &mut App) {
         zone_corrupt: app.scene_metrics.zone_corrupt,
         zone_crimson: app.scene_metrics.zone_crimson,
     });
-    update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id);
+    update_worms_ctx(
+        world,
+        ctx,
+        &mut app.npcs,
+        rng,
+        &mut app.next_worm_id,
+        Some(&mut app.dust),
+        &dust_ctx,
+    );
     // W4-g59 DOC-SWEEP — the EoW spawn fade (`AI_006_Worms`'s tail,
     // `NPC.cs:52251-52271`), a post-pass after the chain movement (the
     // pool-pass deviation — the C# interleaves it in slot order).
-    let dust_ctx = app.spawn_ctx();
     eow_spawn_fade(&app.world, &dust_ctx, &mut app.npcs, &mut app.dust, rng);
     // S1-E-21g — the worm pass's queued plays (the leech entry burst,
     // the dig roars): the same drain as the per-NPC loop, after the
@@ -1684,7 +1694,18 @@ pub(crate) fn update_worms_in(
         zone_corrupt: false,
         zone_crimson: false,
     });
-    update_worms_ctx(world, ctx, npcs, rng, next_worm_id);
+    // The dust-free seam: the budget/chain witnesses pin the init ledger
+    // without the entry burst's draws (W4-d127 — the burst is additive and
+    // rides the same stream; production threads the real pool below).
+    update_worms_ctx(
+        world,
+        ctx,
+        npcs,
+        rng,
+        next_worm_id,
+        None,
+        &tr_core::particles::SpawnCtx::default(),
+    );
 }
 
 fn update_worms_ctx(
@@ -1693,6 +1714,12 @@ fn update_worms_ctx(
     npcs: &mut Vec<Npc>,
     mut rng: &mut UnifiedRandom,
     next_worm_id: &mut u32,
+    // W4-d127 — the leech entry burst's pool + spawn ctx (`NPC.cs:50969-
+    // 50977`). Production threads the real `Main.dust` + the frame's
+    // `Dust.NewDust` ctx; `None` keeps the chain-init ledger dust-free for
+    // the budget witnesses (the W-A2-1 stream pins).
+    mut dust: Option<&mut tr_core::particles::DustPool>,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     // The init loop: the links spawn their children (the chain assembles
     // front to back — the Vec order visits the head, then each child as it
@@ -1716,8 +1743,6 @@ fn update_worms_ctx(
         // S1-E-21g — `NPC.cs:50965-50968`: the leech head's (117)
         // tunnel-entry burst — `localAI[1]` 0 → 1 latched at the chain
         // init, `SoundID.NPCDeath13` at base.position (the style façade).
-        // The 20-gore/dust burst behind it draws Main.rand — SKIPPED
-        // (the port's gore/dust deviation, ANALYSIS wave G).
         if kind == NpcKind::LeechHead && npcs[i].local_ai[1] == 0.0 {
             npcs[i].local_ai[1] = 1.0;
             // E0502 gate fix: read the position before the mutable push.
@@ -1727,6 +1752,39 @@ fn update_worms_ctx(
                 x: sx,
                 y: sy,
             });
+            // W4-d127 — `NPC.cs:50969-50977`: the 20-dust entry burst.
+            // `num = 1` (or -1 when velocity.X < 0, `:50970-50973`); each
+            // `Dust.NewDust((pos.X - 20, pos.Y - 20), width + 40,
+            // height + 40, 5, num * 8, -1f)` (`:50976`) rolls the shared
+            // `UpdateNPCs` stream through the verbatim allocator (the
+            // Everscream/saucer precedent — the dust draws ride the SAME
+            // stream the AI draws do, `Main.cs:17767-17769`). C# order:
+            // the burst draws FIRST (`:50965` opens `AI_006_Worms`), the
+            // budget roll (`:51310`) follows in the same first tick — the
+            // port keeps that order (burst here, roll below). The old
+            // "SKIPPED (wave G)" deviation is retired: production threads
+            // the real pool + ctx; the `None` seam isolates the chain-init
+            // budget ledger for the W-A2-1 witnesses (dust-free by design).
+            if let Some(dust) = dust.as_deref_mut() {
+                let num = if npcs[i].vx < 0.0 { -1 } else { 1 };
+                let (bw, bh) = npcs[i].size();
+                for _ in 0..20 {
+                    dust.new_dust(
+                        rng,
+                        dust_ctx,
+                        world,
+                        Vec2::new(sx - 20.0, sy - 20.0),
+                        bw as i32 + 40,
+                        bh as i32 + 40,
+                        5,
+                        num as f32 * 8.0,
+                        -1.0,
+                        0,
+                        tr_core::particles::Color::default(),
+                        1.0,
+                    );
+                }
+            }
         }
         // The tails (9/12/15) sit outside the chain-spawn lists
         // (`:51393`/`:51436`) — they end the chain.
@@ -2263,6 +2321,30 @@ fn worm_head_step(
         }
     }
     let (num45, num46) = npc.kind.worm_tunables();
+    // W4-d127 — the leech head's WoF-hp speed ladder (`NPC.cs:51745-51763`).
+    // `type == 117 && Main.wofNPCIndex >= 0`: the FLOAT ratio
+    // `(float)life / (float)lifeMax` (`:51747`) gates three cumulative
+    // bumps — <0.5 → +1 speed/+0.1 accel, <0.25 → +1/+0.1, <0.1 → +2/+0.1.
+    // The base 8/0.07 (`:51670-51671`) rides `worm_tunables`' default row;
+    // the presence gate is `world.wof_npc_index >= 0` (the sim's
+    // `Main.wofNPCIndex` mirror, `world_sim/npcs.rs`'s wall write-back).
+    // No wall → no ladder (the head keeps the base tunables).
+    let (mut num45, mut num46) = (num45, num46);
+    if npc.kind == NpcKind::LeechHead && world.wof_npc_index >= 0 {
+        let num47 = world.wof_life as f32 / world.wof_life_max as f32;
+        if num47 < 0.5 {
+            num45 += 1.0;
+            num46 += 0.1;
+        }
+        if num47 < 0.25 {
+            num45 += 1.0;
+            num46 += 0.1;
+        }
+        if num47 < 0.1 {
+            num45 += 2.0;
+            num46 += 0.1;
+        }
+    }
     let mut despawn_chain = false;
     if !flag3 {
         // The air stumble (`:51927-51973`) — the stand-in steer (T1b's
@@ -4855,6 +4937,63 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             n.target_zone_graveyard = zone_graveyard;
         }
     }
+    // W4-d127 — the aiStyle-24 birds' ambient pre-stamps: `Main.cloudAlpha`
+    // (the owl's day/rain perch flush + the night-roost gate,
+    // `NPC.cs:25343`/`:25373` — the port's Rain.visual_alpha clamp keeps
+    // the gates' zero-ness exact: the arm tests only == 0 / > 0) and the
+    // owl's roost neighbour scan (`NPC.cs:25345-25367`, the whole pool in
+    // slot order with the per-slot `is_self` flag — the twin_time_lefts
+    // carrier precedent). No kind carries ai_style 24 until the roster
+    // co-lanes merge (74=d35, 297/298=d38, 442=d40, 611=d42, 671-675/689=
+    // d43), so the pass is a no-op today; the axis arm is merge-ready.
+    {
+        let cloud = app.rain.visual_alpha();
+        let any_bird = app.npcs.iter().any(|n| n.kind.ai_style() == 24 && n.hp > 0);
+        if any_bird {
+            let snap: Vec<(bool, i32, f32, f32, f32, i32, i32, bool)> = app
+                .npcs
+                .iter()
+                .map(|n| {
+                    let (nw, nh) = n.size();
+                    (
+                        n.hp > 0,
+                        n.kind.cs_id() as i32,
+                        n.ai[0],
+                        n.x,
+                        n.y,
+                        nw as i32,
+                        nh as i32,
+                        // `Main.npc[i].townNPC` (`:25351`) — the port's
+                        // resident-kind flag (the SetDefaults row).
+                        n.kind.is_town_resident(),
+                    )
+                })
+                .collect();
+            for i in 0..app.npcs.len() {
+                if app.npcs[i].kind.ai_style() != 24 || app.npcs[i].hp <= 0 {
+                    continue;
+                }
+                app.npcs[i].cloud_alpha = cloud;
+                app.npcs[i].style24_neighbors = snap
+                    .iter()
+                    .enumerate()
+                    .map(|(j, &(active, ty, ai0, x, y, w, h, town))| {
+                        crate::npc_ai_style24::NeighborNpc {
+                            is_self: j == i,
+                            active,
+                            town_npc: town,
+                            ty,
+                            ai0,
+                            x,
+                            y,
+                            width: w,
+                            height: h,
+                        }
+                    })
+                    .collect();
+            }
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
@@ -5454,12 +5593,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // draws — the table's rolls, then the legacy family's
                     // slot/pitch draws. The C#'s `Main.netMode == 2` gate
                     // (`NPC.cs:92245`) is the dedicated server's; the port
-                    // has none. W4-c10 roster tail: the table's members
-                    // are now ported (442's chirp ladder, 445's croak,
-                    // 447's squeak — `NPC.cs:92264-92312`); the key is
-                    // the VANILLA id (`cs_id` — `to_u16` is the port's
-                    // protocol space, the waterfowl 602/603 rows already
-                    // ride it correctly only because those ids coincide).
+                    // has none. W4-d127 FINAL: the key is `cs_id()` (the
+                    // C# net id the table tests, `NPC.cs:92249`+), NOT
+                    // `to_u16()` (the port-local protocol space) — the
+                    // MERGER-L7 mis-route: GolemHead's protocol id 74
+                    // collides with the Bird 74 chirp arm, so the old key
+                    // made the Golem's head chirp by day. The bird kinds
+                    // (74/297/298/442/611/671-675/689) land on the roster
+                    // co-lanes (d35/d38/d40/d42/d43); until then no ported
+                    // kind's cs_id matches the table, so the emitter stays
+                    // silent — the arms are census-complete on main
+                    // (`critter_sound_cue`/`critter_legacy_voice`), NOT
+                    // e9/f2 (those port the IdleSounds ladder + water
+                    // splash, a different table).
                     let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
                     let cue = crate::ambient_sound::critter_sound_cue(
                         n.kind.cs_id() as i32,
@@ -7364,6 +7510,31 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let Some(player) = player_ref {
             for i in 0..npcs.len() {
                 if let Some(ty) = npcs[i].wants_transform {
+                    // W4-d127 — the OwlMimic's `Transform(317)`
+                    // (`NPC.cs:25333`): the style-24 module ALREADY ran
+                    // `transform_core` in-place mid-arm (the ±height
+                    // reposition, the ai/localAI reset, the 30x32
+                    // override, lifeMax 75, the integer life rescale —
+                    // `NPC.cs:81092-81110`), so this drain is
+                    // COMPLETION-ONLY: the kind swap that makes the NEXT
+                    // tick dispatch on DemonEyeOwl's aiStyle 2 (the b2
+                    // eye axis arm). NO second `transform_to_kind` — it
+                    // would reposition (+2) and rescale the life twice.
+                    // `kind_from_net_id` resolves through the bestiary
+                    // row: `None` until the d38 roster merge lands
+                    // net_id 317 (`bestiary.rs:2310` on its tip); the
+                    // observable subset the core applied keeps the slot
+                    // faithful meanwhile (the merge gate, ANALYSIS).
+                    if ty == 317 {
+                        if let Some((kind, _)) = crate::npc::kind_from_net_id(317) {
+                            npcs[i].kind = kind;
+                            // The kind's own 30x32 box (`NPC.cs:13009-
+                            // 13010`) replaces the core's override.
+                            npcs[i].size_override = None;
+                        }
+                        npcs[i].wants_transform = None;
+                        continue;
+                    }
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
@@ -8431,7 +8602,7 @@ mod tests {
         let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
         assert_eq!(
             crate::ambient_sound::critter_sound_cue(
-                NpcKind::Zombie.to_u16() as i32,
+                NpcKind::Zombie.cs_id() as i32,
                 true,
                 1000.0,
                 3000.0,
@@ -8447,6 +8618,54 @@ mod tests {
             UnifiedRandom::new(0),
             "out-of-table types consume no draws"
         );
+    }
+
+    /// W4-d127 FINAL — the critter-emitter KEY census (the MERGER-L7
+    /// mis-route fix): the table tests the C# NET ID (`cs_id`), not the
+    /// port-local protocol id (`to_u16`). GolemHead's protocol id 74
+    /// collides with the Bird 74 chirp arm (`NPC.cs:92277`), so the old
+    /// `to_u16` key made the Golem's head chirp by day; its `cs_id` 245
+    /// (the bestiary Golem fold) is outside every table arm and draws
+    /// nothing. The bird kinds' cs_id rows (74/297/298/442/611/671-675/
+    /// 689) are the ones the emitter must read once the roster co-lanes
+    /// land them. WRITTEN NOT RUN.
+    #[test]
+    fn the_critter_emitter_keys_cs_id_not_protocol_id() {
+        // The mis-route: GolemHead's protocol id IS a bird-table id.
+        assert_eq!(NpcKind::GolemHead.to_u16(), 74, "the protocol collision");
+        // Its net id is the Golem fold (245), outside the table.
+        assert_eq!(NpcKind::GolemHead.cs_id(), 245, "the bestiary Golem fold");
+        // Under the OLD key the head would chirp by day (Next(400)==0 →
+        // the 74 arm's Next(3) pick → legacy 32); under the FIXED key it
+        // is silent and draws nothing.
+        let mut old_rng = UnifiedRandom::new(5);
+        let mut old_roll = |hi: u32| old_rng.next_max(hi as i32) as u32;
+        let old = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true, 1000.0, 3000.0, 3000.0, 0.0, &mut old_roll,
+        );
+        // The 74 arm fires on a Next(400)==0; seed 5 may or may not hit,
+        // but the KEY POINT is the arm is REACHABLE under the old key.
+        // Force the gate roll to 0 to prove the mis-route concretely.
+        let mut forced = |hi: u32| if hi == 400 { 0 } else { 1 };
+        let misroute = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true, 1000.0, 3000.0, 3000.0, 0.0, &mut forced,
+        );
+        assert_eq!(misroute, Some((32, 14.0)), "the old key chirps the Golem head");
+        let _ = old;
+        // The fixed key: cs_id 245 is outside the table, no draw.
+        let mut rng = UnifiedRandom::new(5);
+        let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+        assert_eq!(
+            crate::ambient_sound::critter_sound_cue(
+                NpcKind::GolemHead.cs_id() as i32,
+                true, 1000.0, 3000.0, 3000.0, 0.0, &mut hi_roll,
+            ),
+            None,
+            "the fixed key silences the Golem head"
+        );
+        assert_eq!(rng, UnifiedRandom::new(5), "no draw under the fixed key");
     }
 
     /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
@@ -15922,6 +16141,175 @@ mod worm_tests {
             let _ = oracle.next_max(100);
         }
         assert_eq!(rng.next(), oracle.next(), "the leech still draws");
+    }
+
+    /// W4-d127 — the leech head's WoF-hp speed ladder (`NPC.cs:51745-51763`).
+    /// The head starts in the air with `vy` above every cap, so the stumble's
+    /// `vy = (vy + 0.11).min(num45)` (`:51929`) clamps to EXACTLY `num45`, and
+    /// the `vy == num45` arm's `vx += num46` (`:51941`, player to the right)
+    /// lands EXACTLY `num46` — both tunables pinned per hp band. The base
+    /// 8/0.07 (`:51670-51671`) plus the three cumulative bumps.
+    #[test]
+    fn the_leech_head_speeds_up_with_the_walls_missing_hp() {
+        // (wof_life fraction of 8000, expected speed, expected accel). The
+        // accel is rebuilt with the SAME f32 adds the arm runs so the pin is
+        // bit-exact (0.07 + 0.1 + … rounds like the C#).
+        let bands: [(i32, f32, f32); 4] = [
+            (8000, 8.0, 0.07),                          // full hp: no bump
+            (3200, 9.0, 0.07 + 0.1),                    // 0.4 < 0.5
+            (1600, 10.0, 0.07 + 0.1 + 0.1),             // 0.2 < 0.25
+            (400, 12.0, 0.07 + 0.1 + 0.1 + 0.1),        // 0.05 < 0.1
+        ];
+        for (life, speed, accel) in bands {
+            let mut world = World::new("t".into(), 64, 800);
+            world.world_surface = 120.0; // 1920 px; the player sits below it
+            world.wof_npc_index = 0; // a wall lives (`Main.wofNPCIndex >= 0`)
+            world.wof_life = life;
+            world.wof_life_max = 8000;
+            let mut head = Npc::new(NpcKind::LeechHead, 160.0, 1600.0, 1, 0.0);
+            head.hp = head.max_hp;
+            head.worm_inited = true; // isolate the head machine (no chain roll)
+            head.worm_id = 99;
+            head.vy = 20.0; // above every cap → the min clamps to num45
+            let mut npcs = vec![head];
+            let mut rng = UnifiedRandom::new(5);
+            let mut next_id = 1u32;
+            // Player deep (below the surface gate) and to the RIGHT, within
+            // 1000 px so the dig override stays off (air stumble runs).
+            update_worms_in(&world, Some((400.0, 2000.0)), &mut npcs, &mut rng, &mut next_id);
+            assert_eq!(npcs[0].vy, speed, "life {life}: the speed cap (:51748-51762)");
+            assert_eq!(npcs[0].vx, accel, "life {life}: the accel (:51751-51761)");
+        }
+    }
+
+    /// W4-d127 — no wall (`Main.wofNPCIndex < 0`): the ladder is gated off and
+    /// the leech keeps the base 8/0.07 even at 1 hp (`NPC.cs:51745`'s
+    /// `Main.wofNPCIndex >= 0` term).
+    #[test]
+    fn the_leech_head_keeps_base_speed_with_no_wall() {
+        let mut world = World::new("t".into(), 64, 800);
+        world.world_surface = 120.0;
+        world.wof_npc_index = -1; // no wall
+        world.wof_life = 1;
+        world.wof_life_max = 8000;
+        let mut head = Npc::new(NpcKind::LeechHead, 160.0, 1600.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 99;
+        head.vy = 20.0;
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(5);
+        let mut next_id = 1u32;
+        update_worms_in(&world, Some((400.0, 2000.0)), &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(npcs[0].vy, 8.0, "the base cap, no wall");
+        assert_eq!(npcs[0].vx, 0.07, "the base accel, no wall");
+    }
+
+    /// W4-d127 — the leech entry burst's stream ledger (`NPC.cs:50969-50977`).
+    /// With a real pool threaded in, the 20 `Dust.NewDust` calls draw the
+    /// shared stream BEFORE the budget roll (the C#'s `:50965` opens
+    /// `AI_006_Worms`, `:51310` follows in the same first tick). ChildSafety
+    /// is off by default (`ChildSafety.cs:33`) and the empty pool puts every
+    /// spawn in the low pressure band (no band draw), so each `NewDust` draws
+    /// EXACTLY the default block's six (`Dust.cs:153-193`): position.x/y
+    /// `Next(50)`, velocity.x/y `Next(-20,21)`, frame_y `Next(3)`, scale
+    /// `Next(-20,21)`. The oracle replays that ledger then the budget pair —
+    /// the post-pass stream position must match.
+    #[test]
+    fn the_leech_entry_burst_draws_before_the_budget_roll() {
+        let world = World::new("t".into(), 64, 800);
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.vx = 8.0; // num = +1 (the WallOfFlesh's direction * 8 slide)
+        let mut npcs = vec![head];
+        let mut rng = UnifiedRandom::new(11);
+        let mut oracle = UnifiedRandom::new(11);
+        let mut dust = tr_core::particles::DustPool::new();
+        // Oracle: 20 NewDust default-block ledgers, then Next(8,13)+Next(3,6).
+        for _ in 0..20 {
+            let _ = oracle.next_max(50); // position.x (width 54 - 4)
+            let _ = oracle.next_max(50); // position.y
+            let _ = oracle.next_range(-20, 21); // velocity.x
+            let _ = oracle.next_range(-20, 21); // velocity.y
+            let _ = oracle.next_max(3); // frame_y
+            let _ = oracle.next_range(-20, 21); // scale
+        }
+        let _ = oracle.next_range(8, 13);
+        let _ = oracle.next_range(3, 6);
+        let mut next_id = 1u32;
+        update_worms_ctx(
+            &world,
+            None,
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+            Some(&mut dust),
+            &dust_ctx,
+        );
+        assert_eq!(npcs[0].local_ai[1], 1.0, "the entry latch");
+        assert_eq!(rng.next(), oracle.next(), "burst draws precede the budget roll");
+        // The pool holds the burst's live dust (type 5, the +8 x-slide bias).
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 20, "20 dust spawned");
+        assert!(live.iter().all(|d| d.dust_type == 5), "type 5 (:50976)");
+        assert!(
+            live.iter().all(|d| d.velocity.x >= 6.0 && d.velocity.x <= 10.0),
+            "the +8 x-slide (num*8 ± the ±2 jitter)"
+        );
+    }
+
+    /// W4-d127 re-verify — the `Option<&mut DustPool>` REBORROW shape
+    /// (`update_worms_ctx`'s `mut dust` param + `dust.as_deref_mut()` inside
+    /// the init `while` loop) keeps the pool alive across iterations: two
+    /// leech heads initialised in ONE pass each burst 20 dust into the SAME
+    /// pool (40 total), and the caller still owns the pool afterwards. A
+    /// consuming `if let Some(dust) = dust` would move the `Option` on the
+    /// first head and fail to compile / drop the second burst; `as_deref_mut`
+    /// reborrows `&mut DustPool` per iteration instead. This pins that the
+    /// reborrow (not a move) is what the loop runs.
+    #[test]
+    fn the_dust_reborrow_survives_two_leech_heads_in_one_pass() {
+        let world = World::new("t".into(), 64, 800);
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head_a = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+        head_a.hp = head_a.max_hp;
+        head_a.vx = 8.0;
+        let mut head_b = Npc::new(NpcKind::LeechHead, 400.0, 160.0, 1, 0.0);
+        head_b.hp = head_b.max_hp;
+        head_b.vx = 8.0;
+        let mut npcs = vec![head_a, head_b];
+        let mut rng = UnifiedRandom::new(11);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut next_id = 1u32;
+        update_worms_ctx(
+            &world,
+            None,
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+            Some(&mut dust),
+            &dust_ctx,
+        );
+        assert_eq!(npcs[0].local_ai[1], 1.0, "head A latched");
+        assert_eq!(npcs[1].local_ai[1], 1.0, "head B latched (the loop reached it)");
+        // Both bursts landed in the one pool the caller still owns.
+        let live = dust.slots().iter().filter(|d| d.active).count();
+        assert_eq!(live, 40, "two 20-dust bursts share the reborrowed pool");
     }
 
     #[test]

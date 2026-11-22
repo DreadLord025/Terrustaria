@@ -2187,6 +2187,21 @@ pub struct Npc {
     /// `app.scene_metrics`. False until the sim stamps it (the solo/test
     /// path keeps the legacy zero-draw short-circuit).
     pub target_zone_graveyard: bool,
+    /// `Main.cloudAlpha` as of the tick start — the aiStyle-24 owl's
+    /// day/rain perch flush + night-roost gate reads it (`NPC.cs:25343`/
+    /// `:25373`). The AI's `&World` borrow cannot reach `app.rain`, so
+    /// the sim pre-stamps it (the `wind_speed_current` convention).
+    /// The solo `update_rng` wrapper reads the 0.0 stock (a clear sky).
+    /// W4-d127.
+    pub cloud_alpha: f32,
+    /// The owl's night-roost neighbour scan (`NPC.cs:25345-25367`), in
+    /// `Main.npc` slot order, self included (`is_self` carries the
+    /// `num328 == whoAmI` skip). `Npc::update_rng` cannot see its
+    /// siblings, so the sim pre-pass stamps the slice before each tick
+    /// (the `twin_time_lefts` carrier precedent); outside the sim it
+    /// stays empty (the solo scan reads no roost — the module's solo
+    /// witnesses). W4-d127.
+    pub style24_neighbors: Vec<crate::npc_ai_style24::NeighborNpc>,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -3623,6 +3638,10 @@ impl Npc {
             wants_critter_light: None,
             frame_slope: 0,
             target_zone_graveyard: false,
+            // `Main.cloudAlpha`'s clear-sky stock — the sim pre-stamps
+            // the live value each tick for the aiStyle-24 owls (W4-d127).
+            cloud_alpha: 0.0,
+            style24_neighbors: Vec::new(),
             twin_time_lefts: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
@@ -5588,6 +5607,66 @@ impl Npc {
             // new module's arm; the unported 112/666/516 branches wait
             // on their kinds (the pure helpers are pinned there).
             9 => self.ai_009_sphere_family(world, player, rng, dust, dust_ctx),
+            // `else if (this.aiStyle == 24)` (`NPC.cs:25313-25537`) — the
+            // bird family (74/297/298/442/611/671-675/689). W4-d127: the
+            // AXIS claim (the c8 pattern) — the faithful
+            // `npc_ai_style24::ai_style_24` covers ALL 11 kinds including
+            // the owl roost/perch states (`:25326-25369`, `:25370-25398`).
+            // The kinds land on the roster co-lanes (74=d35, 297/298=d38,
+            // 442=d40, 611=d42, 671-675/689=d43); until then no kind
+            // carries ai_style 24 and this arm is the merge-ready claim.
+            // The d38 tip's kind-keyed `update_bird` is the SAME module
+            // through a kind arm — at the merge the axis wins (the FIRST
+            // match arm) and the kind arm retires (one live arm per style,
+            // S1-D-4c). RNG: the poop gate's RollOnlyBadLuckExtreme(50)
+            // draws ONLY for a negative-luck player (the module census).
+            //
+            // =========================================================
+            // W4-d127 FINAL item 5 — the d38 RETIRE-HUNK (publish for the
+            // merger). At the d38 merge the axis arm above wins FIRST-
+            // match for ai_style 24, so d38's kind-keyed `update_bird`
+            // path is DEAD and must be RETIRED (not merged alongside).
+            // The exact d38-tip (6f9dd02db) hunks to DELETE in npc.rs:
+            //
+            // (A) the two kind arms in `update_kind_ai` (d38 npc.rs:
+            //     6530-6533, the `// W4-d38 b4 — aiStyle 24` comments +
+            //     the arms):
+            //         // W4-d38 b4 — aiStyle 24, NPC.cs:25313-25537.
+            //         NpcKind::BirdBlue => self.update_bird(world, player, rng),
+            //         // W4-d38 b4 — aiStyle 24.
+            //         NpcKind::BirdRed => self.update_bird(world, player, rng),
+            //     RETIRE both: BirdBlue/BirdRed carry ai_style 24 (d38
+            //     data.rs:2647-2648), so the axis arm routes them. Keep
+            //     the KINDS + their data rows (cs_id 297/298, size 14×14,
+            //     ai_style 24, the catch_item 2016/2017 rows) — only the
+            //     dispatch arms retire. The s1_d_4c one-arm-per-kind
+            //     witness (d38 npc.rs:20722) stays green: each kind keeps
+            //     exactly one arm (the axis), the kind arms are gone.
+            //
+            // (B) the whole `fn update_bird` (d38 npc.rs:12312-12376, the
+            //     doc comment + the fn body). RETIRE it: this lane's
+            //     `ai_024_bird_family` is the SUPERSET — same module call
+            //     (`npc_ai_style24::ai_style_24(self, self.kind.cs_id()...)`)
+            //     but feeding LIVE `player.luck()` (d38 hardcodes 0.0),
+            //     the sim-stamped `cloud_alpha` + `style24_neighbors`
+            //     (d38 passes 0.0 / &[]), the 317 transform completion
+            //     drain (d38 IGNORES out.transform), and the gravity gate
+            //     on out.no_gravity + the wet 0.2/7 row + the dead-band
+            //     snap (d38's tail has none of these). d38's tail is the
+            //     bare X-then-Y collision stand-in; this lane's tail is
+            //     the full C# UpdateNPC own. Nothing in d38's update_bird
+            //     survives the merge — delete the fn wholesale.
+            //
+            // MERGE ORDER: land d38's KINDS + data rows first (the axis
+            // arm is dormant until a kind carries ai_style 24), THEN
+            // retire hunks (A)+(B) in the same merge resolution so no
+            // tick dispatches the dead kind arm. The axis arm + the
+            // ai_024_bird_family fn + the sim pre-pass + the 317 drain
+            // are THIS lane's, already landed. Do NOT keep both arms
+            // (the FIRST-match would shadow the kind arm silently — the
+            // S1-D-4c duplicate-arm hazard the one-arm witness pins).
+            // =========================================================
+            24 => self.ai_024_bird_family(world, player, rng),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -6074,6 +6153,119 @@ impl Npc {
         // other kind rides the world-free hook unchanged.
         self.find_frame_world(world);
         self.contact(player, rng);
+    }
+
+    /// W4-d127 — the aiStyle-24 family arm (`NPC.AI()`'s
+    /// `else if (this.aiStyle == 24)` block, `NPC.cs:25313-25537`): the
+    /// 11 birds (74/297/298/442/611/671-675/689). The faithful machine
+    /// lives in `npc_ai_style24.rs` (`ai_style_24`, the S1-D-3 census-
+    /// complete port); this seam feeds the session player (luck live,
+    /// `is_cenx` false — the sim player carries no name field, ANALYSIS),
+    /// the sim-stamped `cloud_alpha` + roost neighbours, the slot's own
+    /// `release_owner`, ticker 0 (the zombie convention) and the vanilla
+    /// `cs_id`. The mid-arm mimic Transform rides `transform_core`
+    /// in-place; the kind-swap completion queues on `wants_transform`
+    /// (the sim drain, chain item 1). The integration tail is the C#'s
+    /// `UpdateNPC` own: the DEFAULT depth-scaled 0.3 gravity / 10 cap
+    /// (`UpdateNPC_UpdateGravity` `:90877-90955` — the birds have no
+    /// per-type gravity arm; the wet 0.2/7 water row) gated by the arm's
+    /// last `noGravity` write, the dead-band X snap (`:90473-90476`) and
+    /// the ground UpdateCollision stand-in (the d38 `update_bird` tail's
+    /// shape — collide flags reset, X then Y, snap-to-tile). RNG: only
+    /// the poop gate's roll draws (negative luck only), on the caller's
+    /// `UpdateNPCs` stream.
+    fn ai_024_bird_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        let p = crate::npc_ai_style24::Style24Player {
+            candidate: cand,
+            luck: player.luck(),
+            // `Player.IsThisCenx` reads `Player.name` (`Player.cs:826`);
+            // the sim player carries no name field — false until the
+            // profile seam lands (the d38 update_bird convention).
+            is_cenx: false,
+        };
+        let neighbors = self.style24_neighbors.clone();
+        let ctx = crate::npc_ai_style24::Style24Ctx {
+            players: &[p],
+            neighbors: &neighbors,
+            net_mode: 0,
+            cloud_alpha: self.cloud_alpha,
+            day_time: world.day_time,
+            release_owner: self.release_owner as i32,
+            ticker: 0,
+        };
+        let out =
+            crate::npc_ai_style24::ai_style_24(self, self.kind.cs_id() as i32, world, &ctx, rng);
+        // The poop shot (1080 BirdDroppings, zero velocity/damage).
+        if let Some((x, y)) = out.poop_shot {
+            self.wants_hostile_shot.push((1080, x, y, 0.0, 0.0, 0));
+        }
+        // The mimic reveal's kind-swap completion (the module applied
+        // the observable Transform subset in-place already).
+        if let Some(ty) = out.transform {
+            self.wants_transform = Some(ty);
+        }
+        // `NPC.UpdateNPC`'s tail (`NPC.cs:90465-90498`): the gravity
+        // term gated by the arm's LAST noGravity write (it reads the
+        // PREVIOUS tick's wet — the C#'s UpdateCollision wet stamp
+        // `:92525` runs AFTER `UpdateNPC_UpdateGravity` `:90465`), the
+        // dead-band X snap, then the ground collision integration
+        // (noTileCollide false) with the wet re-stamp at its position.
+        let (w, h) = self.size();
+        if !out.no_gravity {
+            // `UpdateNPC_UpdateGravity` (`NPC.cs:90877-90955`): the
+            // DEFAULT 0.3 depth-scaled (`body_gravity`), maxFallSpeed
+            // 10; the wet water row 0.2/7 (`:90946-90950` — honey/
+            // shimmer unmodelled, the is_wet stand-in is water-only).
+            if self.wet {
+                self.vy = (self.vy + 0.2).min(7.0);
+            } else {
+                self.vy = (self.vy
+                    + crate::npc_ai_golem::body_gravity(
+                        self.y,
+                        world.width as i32,
+                        world.world_surface,
+                    ))
+                .min(10.0);
+            }
+        }
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `:92525` — the UpdateCollision wet stamp runs BEFORE the
+        // move (Collision_WaterCollision reads the pre-move position);
+        // the NEXT tick's AI wet tail and gravity term read it.
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        // `:92538-92540` — oldVelocity latch + the collide-flag reset,
+        // then UpdateCollision's X-then-Y stand-in (the d38 tail).
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+            self.collide_x = true;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.collide_y = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+            self.collide_y = true;
+        }
     }
 
     /// The Martian Officer's bubble lifecycle — `AI_003_Fighters`'s

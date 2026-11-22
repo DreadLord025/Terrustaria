@@ -74,9 +74,13 @@ pub const STYLE24_BIRDS: &[BirdDefaults] = &[
 
 /// `NPCID.Sets.BirdThatCanPoop` (`NPCID.cs:10435`):
 /// `CreateBoolSet(74, 297, 298, 442, 363, 365, 603, 609, 671, 672, 673,
-/// 674, 675)` — note it includes the four non-style-24 birds (Cardinal 363,
-/// BlueJay 365, Seagull 603, Cormorant 609) and EXCLUDES Owl 611 / OwlMimic
-/// 689 (the owls never poop).
+/// 674, 675)` — note it includes the four non-style-24 waterfowl (Duck2 363,
+/// DuckWhite2 365, Seagull2 603, Grebe2 609 — the aiStyle-68 swimming forms,
+/// `NPCID.cs:11403`/`:11407`/`:11883`/`:11895`, the `npc_ai_style68.rs`
+/// family) and EXCLUDES Owl 611 / OwlMimic 689 (the owls never poop).
+/// (W4-d127 census fix: the prior note mislabelled these "Cardinal 363 /
+/// BlueJay 365 / Seagull 603 / Cormorant 609" — Cardinal is 298 and BlueJay
+/// 297, both style-24 members of THIS family, `NPCID.cs:12394-12395`.)
 pub fn bird_that_can_poop(ty: i32) -> bool {
     matches!(ty, 74 | 297 | 298 | 442 | 363 | 365 | 603 | 609 | 671 | 672 | 673 | 674 | 675)
 }
@@ -1003,6 +1007,112 @@ mod tests {
         assert_eq!(out2.transform, None);
     }
 
+    /// W4-d127 FINAL item 4 — the owl-mimic Transform TARGET-KIND census:
+    /// the 689 reveal targets **317 DemonEyeOwl** (aiStyle 2, the eye
+    /// family), NOT 473 BigMimicCorruption. `NPCID.cs:11311` DemonEyeOwl
+    /// = 317, `:11619` BigMimicCorruption = 473 — distinct kinds. The
+    /// C#'s ONLY 689 Transform is `Transform(317)` (`NPC.cs:25333`); 473
+    /// appears solely as a corrupt-biome SPAWN (`:3738`, the big-mimic
+    /// ladder), never a transform target of the owl. The chain is ROWED
+    /// on the pushed co-lane tips: d38 (6f9dd02db) carries the 317 row
+    /// (data.rs:590/:969 cs_id both ways, ai_style 2 :2645, 30×32 :3231,
+    /// 75 HP :3924, bestiary net_id 317, `DemonEyeOwl => update_eye`);
+    /// b2 (6f275c133) claims the `2 => ai_002_eye_family` axis (npc.rs:
+    /// 4665, the faithful npc_ai_eye re-port). This lane's completion
+    /// drain (`world_sim/npcs.rs`, the 317 COMPLETION-ONLY kind swap)
+    /// closes the chain at the merge. WRITTEN NOT RUN.
+    #[test]
+    fn the_mimic_transform_target_is_317_not_473() {
+        // The target-kind constants (NPCID.cs).
+        let demon_eye_owl: i32 = 317; // :11311
+        let big_mimic_corruption: i32 = 473; // :11619
+        assert_ne!(demon_eye_owl, big_mimic_corruption, "distinct kinds");
+        // The reveal's request is 317, the eye-family kind (aiStyle 2).
+        let w = air();
+        let players = [player(1000.0, 1000.0, 0.0, false)];
+        let mut c = ctx(&players, &[]);
+        c.day_time = false;
+        let mut n = bird(689, 1000.0, 1000.0);
+        n.ai[0] = 1.0;
+        n.local_ai[0] = 1.0;
+        let out = ai_style_24(&mut n, 689, &w, &c, &mut UnifiedRandom::new(1));
+        assert_eq!(out.transform, Some(demon_eye_owl), "the target is 317");
+        assert_ne!(out.transform, Some(big_mimic_corruption), "NOT the 473 mimic");
+        // The transform_core's observable row IS the 317 DemonEyeOwl
+        // SetDefaults (NPC.cs:13007-13019): 30×32, aiStyle 2, 75 HP —
+        // the eye family's stats, not a big mimic's (473 is 28×44,
+        // aiStyle 87, 3500 HP, the chest-mimic machine, :14508-14520).
+        assert_eq!(n.size(), (30.0, 32.0), "the 317 box, not a 473 box");
+        assert_eq!(n.max_hp, 75, "the 317 lifeMax (:13014)");
+        // Neither 689 nor 317 is catchable — the reveal is combat-only
+        // (the 473 big mimic is a chest, also not npcCatchable, but it
+        // is NOT this chain's target).
+        assert!(!crate::bug_net::npc_catchable(317));
+        assert!(!crate::bug_net::npc_catchable(689));
+    }
+
+    /// W4-d127 census — the family is EXACTLY the 11 `SetDefaults aiStyle = 24`
+    /// types (9 assignment sites: 74/297/298 share `NPC.cs:9751`), and the
+    /// poop set's four extra members are the aiStyle-68 WATERFOWL, not birds
+    /// of this arm. Pins the doc-fix: Cardinal is 298 and BlueJay 297 (both
+    /// style-24 members HERE, `NPCID.cs:12394-12395`), while 363/365/603/609
+    /// are Duck2/DuckWhite2/Seagull2/Grebe2 (`NPCID.cs:11403`/`:11407`/
+    /// `:11883`/`:11895`) — the old note's "Cardinal 363 / BlueJay 365" was a
+    /// mislabel. The owls 611/689 are style-24 but outside `BirdThatCanPoop`.
+    #[test]
+    fn the_census_splits_the_eleven_birds_from_the_four_waterfowl() {
+        let members: Vec<i32> = STYLE24_BIRDS.iter().map(|r| r.ty).collect();
+        assert_eq!(
+            members,
+            vec![74, 297, 298, 442, 611, 671, 672, 673, 674, 675, 689],
+            "the 11 aiStyle-24 SetDefaults members (NPC.cs:9751/14251/16850/\
+             17500/17514/17528/17542/17556/17671)"
+        );
+        // The four waterfowl are in the poop set but NOT style-24 members.
+        for ty in [363, 365, 603, 609] {
+            assert!(bird_that_can_poop(ty), "waterfowl {ty} poops (NPCID.cs:10435)");
+            assert!(!members.contains(&ty), "waterfowl {ty} is aiStyle-68, not 24");
+        }
+        // Cardinal 298 / BlueJay 297 ARE style-24 members (the doc-fix).
+        assert!(members.contains(&298), "Cardinal 298 is a style-24 bird");
+        assert!(members.contains(&297), "BlueJay 297 is a style-24 bird");
+        // The owls are style-24 but never poop.
+        assert!(members.contains(&611) && members.contains(&689));
+        assert!(!bird_that_can_poop(611) && !bird_that_can_poop(689));
+    }
+
+    /// W4-d127 — the owl's day/night perch gate (`NPC.cs:25373-25376`): a
+    /// perched owl (ai[0] == 0, already initialised) flushes to flight on
+    /// DAY or RAIN, and stays perched on a clear NIGHT. The perched owl is
+    /// exempt from the proximity flutter (`:25386`'s `type != 611 && != 689`),
+    /// so the day/night term is the ONLY take-off trigger at rest.
+    #[test]
+    fn the_perched_owl_flushes_by_day_or_rain_and_roosts_by_night() {
+        let w = air();
+        let players = [player(2000.0, 1000.0, 0.0, false)];
+        // Clear night: the owl keeps its perch (ai[0] stays 0).
+        let night = Style24Ctx { day_time: false, cloud_alpha: 0.0, ..ctx(&players, &[]) };
+        let mut n = bird(611, 1000.0, 1000.0);
+        n.ai[0] = 0.0;
+        n.local_ai[0] = 1.0; // skip the init; sit on the perch arm
+        ai_style_24(&mut n, 611, &w, &night, &mut UnifiedRandom::new(1));
+        assert_eq!(n.ai[0], 0.0, "a clear night keeps the owl perched");
+        // Day: the flush lifts it to flight.
+        let day = Style24Ctx { day_time: true, ..ctx(&players, &[]) };
+        let mut n2 = bird(611, 1000.0, 1000.0);
+        n2.ai[0] = 0.0;
+        n2.local_ai[0] = 1.0;
+        ai_style_24(&mut n2, 611, &w, &day, &mut UnifiedRandom::new(1));
+        assert_eq!(n2.ai[0], 1.0, "daytime flushes the owl (:25373-25376)");
+        // Rain (cloudAlpha > 0) at night: the flush lifts it too.
+        let rain = Style24Ctx { day_time: false, cloud_alpha: 0.5, ..ctx(&players, &[]) };
+        let mut n3 = bird(611, 1000.0, 1000.0);
+        n3.ai[0] = 0.0;
+        n3.local_ai[0] = 1.0;
+        ai_style_24(&mut n3, 611, &w, &rain, &mut UnifiedRandom::new(1));
+        assert_eq!(n3.ai[0], 1.0, "rain flushes the owl (:25373's cloudAlpha arm)");
+    }
+
     /// `NPC.cs:25336-25342` — the owl init: localAI[0] == 0 targets, sets
     /// ai[0] = 1, latches localAI[0] and arms netUpdate exactly once.
     #[test]
@@ -1017,5 +1127,242 @@ mod tests {
         assert_eq!(n.local_ai[0], 1.0);
         assert!(n.net_update);
         assert_eq!(n.target, 0, "the init TargetClosest (:25338)");
+    }
+
+    /// W4-d127 chain-verify — the 317 completion contract: the module's
+    /// `transform_core` applies the FULL observable Transform subset
+    /// in-place (`NPC.cs:81092-81110`), so the sim's drain must be
+    /// completion-ONLY (the kind swap via `kind_from_net_id(317)`, the
+    /// override clear) — a second `transform_to_kind` would reposition
+    /// and rescale twice. Pins the exact post-core state the drain
+    /// receives: +2 net reposition, the 30x32 override, 75 lifeMax, the
+    /// integer rescale floored at 1, the zeroed ai/localAI + re-armed
+    /// owl init, netUpdate true, target re-picked. WRITTEN NOT RUN.
+    #[test]
+    fn the_transform_core_state_is_the_drains_whole_input() {
+        let w = air();
+        let players = [player(1000.0, 1000.0, 0.0, false)];
+        let mut c = ctx(&players, &[]);
+        c.day_time = false;
+        let mut n = bird(689, 1000.0, 1000.0);
+        n.ai[0] = 1.0;
+        n.local_ai[0] = 1.0;
+        n.hp = 1; // the floor: 1 * 75 / 5 = 15 (no floor needed)
+        let out = ai_style_24(&mut n, 689, &w, &c, &mut UnifiedRandom::new(1));
+        assert_eq!(out.transform, Some(317), "the drain request");
+        // The drain's completion writes are exactly: kind swap +
+        // override clear. Everything else is ALREADY C#-faithful:
+        assert_eq!(n.y, 1002.0, "the ±height reposition ran ONCE (:81094/:81099)");
+        assert_eq!(n.size_override, Some((30.0, 32.0)));
+        assert_eq!(n.max_hp, 75, "the 317 row (:13014)");
+        assert_eq!(n.hp, 15, "1 * 75 / 5 — integer (:81106)");
+        assert_eq!(n.local_ai, [1.0, 0.0, 0.0, 0.0], "reset then owl init re-arm");
+        assert!(n.net_update);
+        assert_eq!(n.target, 0, "the Transform TargetClosest (:81101)");
+        // The life floor: hp 0 cannot occur (life > 0 gate), but the
+        // rescale of a 1-hp 5-max slot into a 5-max target floors at 1
+        // (`:81108-81109`) — the core's `.max(1)` mirrors it.
+        let mut m = bird(689, 1000.0, 1000.0);
+        m.ai[0] = 1.0;
+        m.local_ai[0] = 1.0;
+        m.hp = 1;
+        m.max_hp = 500; // synthetic: 1 * 75 / 500 = 0 → floor 1
+        transform_core(&mut m, &w, &cands_of(&players), 7);
+        assert_eq!(m.hp, 1, "the rescale floors at 1 (:81108-81109)");
+    }
+
+    fn cands_of(players: &[Style24Player]) -> Vec<TargetCandidate> {
+        players.iter().map(|p| p.candidate).collect()
+    }
+
+    /// W4-d127 chain-verify — the 317 row census (the d38 tip's rows,
+    /// `NPC.cs:13007-13019`): DemonEyeOwl is ROWED on the pushed
+    /// `task/W4-d38-npc-kinds-281-350` tip (data.rs:590/:969 cs_id both
+    /// ways, ai_style 2, bestiary net_id 317) and routes to the eye
+    /// machine (its `update_kind_ai` arm `DemonEyeOwl => update_eye`;
+    /// the b2 tip claims the `2 => ai_002_eye_family` axis). The port's
+    /// own roster (this branch) has no 317 row — the chain's merge gate
+    /// is the d38 landing, NOT a re-row here (one row per kind, the
+    /// census ownership rule). Pins the ROW the transform targets so a
+    /// d38 drift breaks THIS lane's witness too. WRITTEN NOT RUN.
+    #[test]
+    fn the_demon_eye_owl_row_matches_the_d38_census() {
+        // NPC.cs:13007-13019 — 30x32, aiStyle 2, dmg 16, def 6, 75 HP,
+        // kb 0.7, value 100, NPCHit1/NPCDeath1. The transform_core's
+        // observable subset reads exactly these two stat rows:
+        let (w, h) = (30.0f32, 32.0f32); // :13009-13010
+        let life_max = 75; // :13014
+        let mut n = bird(689, 0.0, 0.0);
+        n.hp = 5;
+        let players: [Style24Player; 0] = [];
+        transform_core(&mut n, &air(), &cands_of(&players), 0);
+        assert_eq!(n.size(), (w, h));
+        assert_eq!(n.max_hp, life_max);
+        // The mimic keeps NO catchItem (STYLE24_BIRDS row 689) — the
+        // reveal is combat-only; 317 is not npcCatchable either
+        // (`Main.cs:9326-9418` has no 317), so the friendly refresh
+        // the c8 head added reads false on both sides.
+        assert!(!crate::bug_net::npc_catchable(317));
+        assert!(!crate::bug_net::npc_catchable(689));
+    }
+
+    /// W4-d127 chain item 2 — the AXIS claim source pin (the c8
+    /// pattern): `update_rng_dust`'s style match carries EXACTLY ONE
+    /// `24 =>` arm routing to `ai_024_bird_family`, and the family fn
+    /// calls the faithful module with the sim-stamped cloud_alpha +
+    /// neighbours, the slot's release_owner and the vanilla cs_id.
+    /// Scanned from source like `s1_d_4c_every_kind_has_exactly_one_arm`
+    /// — a duplicate arm is dead code (the FIRST wins), so the count
+    /// pin keeps the claim single. WRITTEN NOT RUN.
+    #[test]
+    fn the_axis_24_claim_is_single_and_routes_the_family() {
+        let src = include_str!("npc.rs");
+        let axis = src.find("match self.kind.ai_style()").expect("the style axis");
+        let rest = &src[axis..];
+        let end = rest.find("_ => self.update_kind_ai").expect("the axis fallthrough");
+        let body = &rest[..end];
+        let arms: Vec<&str> = body
+            .lines()
+            .map(|l| l.trim_start())
+            .filter(|l| l.starts_with("24 =>"))
+            .collect();
+        assert_eq!(arms.len(), 1, "one live axis-24 arm (S1-D-4c)");
+        assert!(arms[0].contains("ai_024_bird_family"), "the arm routes the family fn");
+        // The family fn feeds the module (the call site exists) and
+        // queues BOTH out-requests (the poop shot + the transform).
+        let fam = src.find("fn ai_024_bird_family").expect("the family fn");
+        let frest = &src[fam..];
+        let fend = frest.find("\n    }").expect("the fn's close");
+        let fbody = &frest[..fend];
+        assert!(fbody.contains("npc_ai_style24::ai_style_24(self, self.kind.cs_id()"));
+        assert!(fbody.contains("cloud_alpha: self.cloud_alpha"));
+        assert!(fbody.contains("neighbors: &neighbors"));
+        assert!(fbody.contains("release_owner: self.release_owner as i32"));
+        assert!(fbody.contains("wants_hostile_shot.push((1080"));
+        assert!(fbody.contains("wants_transform = Some(ty)"));
+        // The integration tail: the gravity gate reads the outcome's
+        // noGravity, the depth-scaled body_gravity + the wet 0.2/7 row,
+        // the dead-band snap, the oldVelocity latch.
+        assert!(fbody.contains("if !out.no_gravity"));
+        assert!(fbody.contains("npc_ai_golem::body_gravity"));
+        assert!(fbody.contains("(self.vy + 0.2).min(7.0)"));
+        assert!(fbody.contains("(self.vx as f64) < 0.005"));
+        assert!(fbody.contains("self.old_vx = self.vx"));
+    }
+
+    /// W4-d127 FINAL item 5 — the d38 RETIRE-HUNK publication pin: the
+    /// axis-24 arm carries the merger-facing retire contract naming the
+    /// exact d38-tip hunks to delete (the two BirdBlue/BirdRed kind arms
+    /// + the whole `fn update_bird`), and THIS lane's `ai_024_bird_family`
+    /// is the superset that survives (live luck, the sim stamps, the 317
+    /// drain, the gravity gate). The contract is a doc comment on the
+    /// arm; this pin keeps it present so a merge that drops it breaks
+    /// the witness. WRITTEN NOT RUN.
+    #[test]
+    fn the_d38_retire_hunk_is_published_on_the_axis_arm() {
+        let src = include_str!("npc.rs");
+        // The retire contract sits on the axis-24 arm.
+        let arm = src.find("24 => self.ai_024_bird_family").expect("the axis arm");
+        // Walk back to the arm's comment block head (the else-if cite).
+        let head = src[..arm].rfind("else if (this.aiStyle == 24)").expect("the arm's doc head");
+        let block = &src[head..arm];
+        assert!(block.contains("W4-d127 FINAL item 5"), "the retire-hunk header");
+        assert!(block.contains("the d38 RETIRE-HUNK"), "the contract title");
+        // Hunk (A): the two kind arms, named verbatim.
+        assert!(block.contains("NpcKind::BirdBlue => self.update_bird"));
+        assert!(block.contains("NpcKind::BirdRed => self.update_bird"));
+        assert!(block.contains("6530-6533"), "the d38 kind-arm line span");
+        // Hunk (B): the whole update_bird fn, named with its span.
+        assert!(block.contains("fn update_bird"), "the fn retire");
+        assert!(block.contains("12312-12376"), "the d38 fn line span");
+        // The superset rationale: live luck vs d38's hardcoded 0.0, the
+        // 317 drain d38 ignores, the gravity gate d38's tail lacks.
+        assert!(block.contains("player.luck()"), "the live-luck superset");
+        assert!(block.contains("out.transform"), "the 317 drain d38 ignores");
+        assert!(block.contains("out.no_gravity"), "the gravity gate d38 lacks");
+        // The merge order: kinds first, then retire (A)+(B) together.
+        assert!(block.contains("MERGE ORDER"), "the merge-order note");
+        assert!(block.contains("S1-D-4c"), "the one-live-arm rule");
+        // The surviving fn is THIS lane's superset (the axis-claim pin
+        // above already scans its body; here just confirm it exists).
+        assert!(src.contains("fn ai_024_bird_family"), "the surviving family fn");
+    }
+
+    /// W4-d127 chain item 2 — the sim-stamp source pin: the pre-pass
+    /// stamps `cloud_alpha` (Rain.visual_alpha) and the slot-order
+    /// roost neighbours with the per-slot `is_self` flag for EVERY
+    /// living ai_style-24 kind (all 11 — the owls' scan is not
+    /// special-cased away), gated by the any-bird probe. WRITTEN NOT
+    /// RUN.
+    #[test]
+    fn the_sim_stamps_reach_every_style24_kind() {
+        let src = include_str!("world_sim/npcs.rs");
+        let start = src.find("the aiStyle-24 birds' ambient pre-stamps").expect("the pre-pass");
+        let rest = &src[start..];
+        let end = rest.find("// The Twins' shared-despawn seam").expect("the next pre-pass");
+        let body = &rest[..end];
+        assert!(body.contains("app.rain.visual_alpha()"), "the live cloudAlpha");
+        assert!(body.contains("n.kind.ai_style() == 24"), "the style gate covers ALL 11 kinds");
+        assert!(body.contains("is_self: j == i"), "the whoAmI skip rides the slot index");
+        assert!(body.contains("n.kind.is_town_resident()"), "the townNPC row (:25351)");
+        assert!(body.contains("cloud_alpha = cloud"));
+        assert!(body.contains("style24_neighbors = snap"));
+        // The stamp fields exist on the Npc ctor (the merge-ready
+        // claim: no kind carries style 24 yet, so the pass no-ops).
+        let npc_src = include_str!("npc.rs");
+        assert!(npc_src.contains("cloud_alpha: 0.0,"), "the clear-sky stock");
+        assert!(npc_src.contains("style24_neighbors: Vec::new(),"));
+    }
+
+    /// W4-d127 chain item 2 — the family arm's behaviour on a carrier
+    /// slot (no style-24 kind exists on this branch — the census
+    /// ownership rule): a perched carrier bird with the row's box,
+    /// stamped neighbours and a negative-luck player runs the WHOLE
+    /// seam shape the axis arm applies: the module call, the gravity
+    /// tail (perched → gravity ON, the depth-scaled term), the dead-
+    /// band snap and the ground landing. Drives the module + tail
+    /// pieces directly (the private fn's shape is pinned by the source
+    /// witness above). WRITTEN NOT RUN.
+    #[test]
+    fn the_perched_bird_lands_under_the_depth_scaled_gravity() {
+        let mut w = air();
+        // A floor at row 70 (top y 1120): the bird at y 1110 (feet
+        // 1124, INSIDE the floor row) snaps out on the first tail pass.
+        for c in 0..200 {
+            let i = w.index(c, 70);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.world_surface = 60.0;
+        let players = [player(2000.0, 1000.0, 0.0, false)];
+        let c = ctx(&players, &[]);
+        let mut n = bird(74, 100.0, 1110.0);
+        n.ai[0] = 0.0; // perched
+        n.local_ai[0] = 1.0;
+        let out = ai_style_24(&mut n, 74, &w, &c, &mut UnifiedRandom::new(1));
+        assert!(!out.no_gravity, "the perch arm returns gravity (:25372)");
+        // The tail's gravity term: depth-scaled 0.3 (y/16 = 68.75, the
+        // 60+10*num² floor with width 200 → num² tiny → num2 clamps
+        // 0.25 → 0.075), capped 10.
+        let g = crate::npc_ai_golem::body_gravity(n.y, w.width as i32, w.world_surface);
+        assert!(g > 0.0 && g <= 0.3);
+        n.vy = (n.vy + g).min(10.0);
+        let vy0 = n.vy;
+        assert!(vy0 > 0.0, "the perched bird starts falling");
+        // The ground snap (the tail's shape): feet (y + 14) cross row
+        // 70's top (1120) → snap to 1120 - 14 and zero vy.
+        let ny = n.y + n.vy;
+        let feet_row = ((ny + 14.0) / 16.0).floor() as i32;
+        let blocked = w
+            .tile((n.x / 16.0) as i32, feet_row)
+            .map_or(false, |t| t.active() && !t.inactive() && TILE_SOLID.has(t.kind));
+        assert!(blocked, "the feet cross the floor row");
+        if blocked && n.vy > 0.0 {
+            n.y = feet_row as f32 * 16.0 - 14.0;
+            n.vy = 0.0;
+        }
+        // The snap landed the bird EXACTLY on the floor top.
+        assert_eq!(n.y + 14.0, 1120.0, "the ground snap anchors the feet");
+        assert_eq!(n.vy, 0.0, "the landing zeroes vy");
     }
 }

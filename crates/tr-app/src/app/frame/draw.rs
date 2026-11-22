@@ -1237,6 +1237,42 @@ impl App {
                         // (the waterfall convention).
                         back_gore: WorldFrameKey::back_gore_key(gore),
                         world_revision: world.revision,
+                        // W4-d127 — the WoF draw inputs inside the cached
+                        // world range (`Main.DrawWoF`, `Main.cs:38377-38525`):
+                        // the mouth clock, the band statics and the tongue
+                        // gate. Non-zero only while a wall lives, so wall-free
+                        // worlds keep the pre-wiring cache behaviour. The
+                        // clock is the NEXT value `draw_tiles` will tick to
+                        // (it advances inside the pass, `:38427`), so the key
+                        // matches the frame the pass actually draws.
+                        wof_key: if world.wof_present {
+                            let next_idx = if game_paused_for_specials {
+                                scratch.wof_draw_frame_index
+                            } else {
+                                (scratch.wof_draw_frame_index + 1) % 18
+                            };
+                            let tongue = player.as_ref().is_some_and(|p| p.tongued && !p.dead);
+                            // W4-d127 re-verify (by inspection): the four fields
+                            // occupy disjoint bit ranges — clock [0,8), band top
+                            // [8,24), band bottom [24,40), tongue [40,41). The
+                            // band statics are i32 but ALWAYS valid while a wall
+                            // lives: the first style27_step initialises them
+                            // (ease_band's -1 -> target branch) in the update
+                            // half, which runs ahead of this draw half, and the
+                            // clamps hold them in [underworld+10, +80]*16 (max
+                            // 2400*16 = 38400 < 2^16). So the sign-extended
+                            // `as i64 as u64` shift never sees a negative and the
+                            // fields never overlap — the pack is injective over
+                            // reachable states (the wof_key_field_layout witness
+                            // pins it). The clock is the NEXT value draw_tiles
+                            // ticks to, so the key matches the drawn frame.
+                            (next_idx as u64)
+                                | ((world.wof_draw_top as i64 as u64) << 8)
+                                | ((world.wof_draw_bottom as i64 as u64) << 24)
+                                | ((tongue as u64) << 40)
+                        } else {
+                            0
+                        },
                     };
                     let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
                     if reuse_world {
@@ -1451,6 +1487,9 @@ impl App {
                             dust,
                             &mut orb_rand,
                             &orb_ctx,
+                            game_paused_for_specials,
+                            // W4-d127: the WoF mouth clock's pause gate
+                            // (`Main.cs:38427`).
                             game_paused_for_specials,
                         );
                         world.frame_rng = orb_rand;

@@ -1650,6 +1650,12 @@ impl Audio {
         let cue = match style_num {
             3 => "NPC_Killed_3",
             6 => "NPC_Killed_6",
+            // S1-D-3 W-1d — the WoF's roar / abandonment death cry
+            // (`NPC.cs:25720`/`:25942`, `PlaySound(4, pos, 10)`): the
+            // case-4 style-10 playing guard (`LegacySoundPlayer.cs:686-
+            // 689`) refuses a second play while the first lives, BEFORE
+            // the pitch draw.
+            10 => "NPC_Killed_10",
             22 => "NPC_Killed_22",
             _ => return None,
         };
@@ -3583,6 +3589,35 @@ mod tests {
         assert_eq!(audio.play_npc_death_int(6, 0.0, 0.0, &mut rng), None);
         assert_eq!(audio.play_npc_death_style(13, 0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted plays are draw-free");
+    }
+
+    /// S1-D-3 W-1d — the WoF roar's style-10 int play (`NPC.cs:25720`/
+    /// `:25942`, `PlaySound(4, pos, 10)`): one case-4 pitch draw on the
+    /// passed stream, no NextFloat; the style-10 playing guard
+    /// (`LegacySoundPlayer.cs:686-689`) refuses a live-slot second play
+    /// BEFORE the draw (headless the slots never play, so both pass —
+    /// the fresh-slot convention).
+    #[test]
+    fn s1_d_3_w_1d_the_wof_roar_style_10_draws_one_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let style_before = audio.sound_style_random.clone();
+        assert_eq!(
+            audio.play_npc_death_int(10, 0.0, 0.0, &mut rng),
+            Some("NPC_Killed_10")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "one gameplay draw");
+        assert_eq!(
+            audio.sound_style_random, style_before,
+            "the int overload draws no NextFloat"
+        );
+        // An unrowed style still resolves to nothing, draw-free.
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_death_int(99, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 
     /// S1-E-21g — the caster Item8 puff rides wave A's case-2 path: the

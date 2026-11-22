@@ -88,6 +88,11 @@ pub(crate) struct DrawScratch {
     /// stream per frame); the fused default leaves it false — every fused
     /// call re-seeds from `sparkle_seed` and never touches the slot.
     pub(crate) leaf_rng_shared: bool,
+    /// W4-d127 — `Main.wofDrawFrameIndex` (`Main.cs:761`): the WoF body's
+    /// 18-tick mouth clock (`DrawWOFBody`, `:38426-38430`). Advances once
+    /// per frame unless paused; feeds `WorldFrameKey.wof_key` so the
+    /// cached world range rebuilds while a wall lives.
+    pub(crate) wof_draw_frame_index: i32,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -489,8 +494,15 @@ pub(crate) fn draw_tiles(
     orb_main_rand: &mut tr_core::UnifiedRandom,
     orb_ctx: &tr_core::particles::SpawnCtx,
     game_paused: bool,
+    // W4-d127 — `Main.gamePaused` for the WoF mouth clock's advance gate
+    // (`DrawWOFBody`, `Main.cs:38427`).
+    game_paused: bool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
+    // W4-d127 — `Main.wofDrawFrameIndex`'s per-frame tick (`Main.cs:38427-
+    // 38430`): advance unless paused, wrap at 18. Runs BEFORE the body draw
+    // (the counter feeds the key and the pass reads the fresh value).
+    crate::render::wof::tick_wof_frame_index(&mut scratch.wof_draw_frame_index, game_paused);
     // `TileDrawing._rand` (`TileDrawing.cs:104,191`): ONE `UnifiedRandom`
     // lives across every `Draw`/`PostDrawTiles` call. The fused default
     // keeps the frozen per-frame pin (re-seed each call); the gated halves
@@ -722,6 +734,28 @@ pub(crate) fn draw_tiles(
     if tile_filter == TileFilter::All {
         draw_wall_layer(
             r, world, lookups, atlas, light, style, anim_time, x0, y0, x1, y1, &mut stats,
+        );
+    }
+
+    // W4-d127 — `Main.DrawWoF` (`Main.cs:38377-38398`): the wall's body
+    // sweep + the Hungry rope leashes + the tongue chains. The C# runs it
+    // AFTER `DoDraw_WallsAndBlacks` and BEFORE the behind-tiles NPC pass
+    // (`Main.cs:63272-63279`); the port's fused pass draws the walls above,
+    // so the seam sits here, ahead of `npcs_behind_tiles`.
+    {
+        let sheets = crate::render::wof::WofSheets {
+            body: npc_assets.wof_body,
+            chain12: npc_assets.wof_chain12,
+            chain4: npc_assets.wof_chain4,
+        };
+        let wof_ctx = crate::render::wof::WofDrawCtx {
+            world,
+            npcs,
+            player,
+            frame_index: scratch.wof_draw_frame_index,
+        };
+        stats.quads += crate::render::wof::draw_wof(
+            r, &sheets, &wof_ctx, light, style, anim_time, camera, zoom, screen,
         );
     }
 

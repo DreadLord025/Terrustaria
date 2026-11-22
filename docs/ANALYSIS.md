@@ -6881,6 +6881,104 @@ cleared (11 Hungries re-spawn every tick). The 2026-11-19 wiring round
   The noTileCollide integration (`NPC.cs:90495-90498`) rides the family
   wrappers (the modules leave the step to the caller).
 
+### The WoF draw pass + the leech's missing pieces (W4-d127, code-only mode)
+
+**Code-only mode**: no compiler invoked — no cargo, no tests run, no
+graphify refresh. The witness tests are WRITTEN NOT RUN; every claim is
+verified by reading the C# and the Rust side by side.
+
+**The task-brief premise was wrong, corrected by the census**: the brief
+named "aiStyle-24 / AI_024" for the Wall of Flesh. aiStyle 24 is the BIRD
+family (`NPC.cs:25313-25537`, already ported as `npc_ai_style24.rs`); there
+is no `AI_024` WoF function. The Wall of Flesh is **aiStyle 27** (the body,
+`NPC.cs:25635-26052`), its mirror eye **aiStyle 28** (`:26053-26208`), the
+Hungry **aiStyle 29** (`:26209-26404`) and the leeches **aiStyle 6** (the
+worm engine, `AI_006_Worms` `:50963-52090`). All four AI arms were already
+landed WIRED (S1-D-3 W-1: `npc_ai_style27/28/29.rs` + `worm_head_step`).
+The census found THREE genuinely missing pieces, landed here:
+
+* **A — the leech head's WoF-hp speed ladder** (`NPC.cs:51745-51763`).
+  `worm_head_step` read only the base `worm_tunables` (8/0.07); the C#'s
+  `type == 117 && Main.wofNPCIndex >= 0` block bumps the speed/accel by the
+  FLOAT ratio `(float)life / (float)lifeMax` — <0.5 → +1/+0.1, <0.25 →
+  +1/+0.1, <0.1 → +2/+0.1 (cumulative). The port gates on
+  `world.wof_npc_index >= 0` and reads `wof_life`/`wof_life_max` (the sim's
+  wall mirror). 2 witnesses pin the four hp-band caps + the no-wall base.
+* **B — the leech entry dust burst** (`NPC.cs:50969-50977`). The chain-init
+  latch (`localAI[1]` 0→1 + `NPCDeath13`) was landed but the 20-dust burst
+  behind it was SKIPPED ("wave G"). Now the verbatim `DustPool::new_dust`
+  runs on the `UpdateNPCs` stream — `num = ±1` from `velocity.X`, the
+  `(pos-20, width+40, height+40, type 5, num*8, -1)` payload — BEFORE the
+  `:51310` budget roll (the C#'s `:50965` opens `AI_006_Worms`). The pool +
+  ctx thread through `update_worms_ctx`; the dust-free `None` seam keeps the
+  W-A2-1 budget witnesses' ledger intact. 1 witness pins the
+  burst-before-budget stream order (the 6-draw default-block ledger ×20).
+* **C — `Main.DrawWoF`** (`Main.cs:38377-38525`), the whole dedicated draw
+  pass, landed as `render/wof.rs`:
+  - `DrawWOFBody` (`:38400-38446`): the `TextureAssets.Wof` sheet (190x420,
+    measured; `num = Height()/3` = 140-px rows) tiles from the band top to
+    the screen bottom in 16-px slices; the mouth row is
+    `wofDrawFrameIndex / 6` (the 18-tick draw clock, `:38426-38430`), the
+    column at the wall's X (−80 when `direction > 0`), flipped on
+    `spriteDirection == 1`; the `num4 > 12` early-out + the row alignment
+    (`top -= num4 * num`) are the pure `body_row_start` helper.
+  - `DrawWOFRopeToTheHungry` (`:38448-38496`): every live aiStyle-29 slot
+    gets a Chain12 leash from its centre-X / scaled-half-height anchor to
+    the band anchor `wofDrawAreaTop + (bottom - top) * ai[0]` (the SAME
+    anchor the Hungry's AI chases, `NPC.cs:26283`); the link step is
+    `28 * scale`, the final link truncates to `(int)dist - (int)(40*scale) +
+    28`, the flip alternates per link starting from `frameCounter > 7`.
+  - `DrawWOFTongueToPlayer` (`:38498-38525`): every active+tongued+living
+    player gets a chain from its FLOAT centre to the wall's INTEGER-half
+    centre; the 40-px partial link is dropped, every link `SpriteEffects.None`.
+  - The seam sits between the wall pass and `npcs_behind_tiles` in
+    `draw_tiles` (the C#'s `:63272-63279` order). The sheets
+    (`WallOfFlesh`/`Chain12`/`Chain4`) pack through `STATIC_SHEET_NAMES`;
+    the mouth clock lives in `DrawScratch.wof_draw_frame_index` and feeds
+    `WorldFrameKey.wof_key` (clock + band statics + tongue gate, zero
+    wall-free so the G6 cache stays bit-identical without a wall).
+  - 4 witnesses: the mouth clock's 18-wrap + pause, the rope's final-link
+    truncation, the body row alignment, the pass gate/order (source-inspection).
+
+**Deviations (documented)**: `Lighting.GetColor` is the port's
+`light.get` + `style.shade` (the NPC pass convention); the link/body tints
+use the C#'s INTEGER tile coords (`(int)x / 16`). The C# draws at
+`position - screenPosition`; the port's world-range pipeline draws in world
+pixels with `snap_to_screen` rounding. The link quads rotate about their
+centres (`push_sprite_origin_rot`, origin = half the SCALED size — XNA's
+`origin` is source pixels × scale). The tongue's `Main.player[i]` 255-slot
+scan is the one session player. The mouth clock advances once per frame in
+`draw_tiles` (the C# increments inside the body draw); the key uses the
+NEXT tick value so the cached range matches the frame drawn. The leech
+burst's `Dust.NewDust` rides the same `UpdateNPCs` stream as the AI draws
+(the Everscream/saucer precedent) — the dust-free `None` seam is a
+test-isolation convenience, not a behavioural fork.
+
+**W4-d127 compile-risk re-verify (2026-11-21, by inspection — no compiler):**
+the two flagged spots were re-read and are CORRECT; no behaviour change.
+1. **`Option<&mut DustPool>` reborrow** (`world_sim/npcs.rs::update_worms_ctx`):
+   the `mut dust: Option<&mut DustPool>` param + `if let Some(dust) =
+   dust.as_deref_mut()` inside the init `while` loop is the reborrow-in-loop
+   shape — `as_deref_mut()` yields `Option<&mut DustPool>` WITHOUT consuming the
+   outer `Option`, so each iteration re-borrows the pool (a consuming
+   `if let Some(dust) = dust` would move it on the first head). The inner
+   `dust.new_dust(rng, …)` matches the 13-arg `DustPool::new_dust` signature
+   (`UnifiedRandom: DustRng`). A consuming form would not compile; this one
+   does. Witness `the_dust_reborrow_survives_two_leech_heads_in_one_pass` pins
+   two heads bursting 40 dust into the one caller-owned pool in a single pass.
+2. **`wof_key` bit-pack** (`app/frame/draw.rs`): the four fields occupy disjoint
+   ranges — clock [0,8), band top [8,24), band bottom [24,40), tongue [40,41).
+   The band statics are i32 but ALWAYS valid while a wall lives: the first
+   `style27_step` initialises them (`ease_band`'s −1→target branch) in the update
+   half, which runs ahead of the draw half, and the clamps hold them in
+   `[underworld+10, +80]*16` (max `2400*16 = 38400 < 2^16`). So the sign-extended
+   `as i64 as u64` shift never sees a negative and the fields never overlap — the
+   pack is injective over reachable states (the `-1` sentinel is unreachable at
+   draw time). The mouth clock's NEXT-tick value keeps the key always-different
+   while a wall lives (no stale cache hit) and holds while paused. The computation
+   is left UNCHANGED (the G6 `WorldFrameKey` contents are frozen); witness
+   `wof_key_field_layout_is_injective_over_the_band_range` pins the layout.
+
 ## The Eye of Cthulhu (M4-BOSS-1)
 
 The first boss lands through the aiStyle-4 block's classic path
@@ -31878,6 +31976,131 @@ style-axis arm, the 1080 projectile, the full Transform) is the merge step.
   default), `noGravity` (returned in `Style24Outcome`), the poop shot and the
   transform (requests, the `wants_hostile_shot` pattern), the player's
   `IsThisCenx` answer (pre-computed by the wiring from the profile name).
+- **W4-d127 census re-audit (2026-11-21, code-only)**: the arm re-read line-by-line
+  against `NPC.cs:25313-25537` is a COMPLETE 1:1 port вЂ” every gate present (poop
+  column/LoS/roll-or-Cenx, owl night-reveal + roost scan, the day/rain perch flush
+  `:25373-25376`, the startle `(double)vy>0.3` widen, the flutter grown-100 rect,
+  the descent, the flight bounces/steering/15-row probe, the wet tail). The census
+  is EXACTLY 11 types across 9 `aiStyle = 24` sites (74/297/298 share `:9751`);
+  there is NO walk arm (the "cardinal walk" premise does not apply вЂ” Cardinal 298
+  is a perching/flying bird). One doc defect fixed: the four non-style-24 poop
+  members are the aiStyle-68 WATERFOWL Duck2 363 / DuckWhite2 365 / Seagull2 603 /
+  Grebe2 609 (`NPCID.cs:11403`/`:11407`/`:11883`/`:11895`), NOT "Cardinal 363 /
+  BlueJay 365 / Seagull 603 / Cormorant 609" (Cardinal is 298, BlueJay 297 вЂ” both
+  style-24 members HERE). Two witnesses added (the 11-vs-4 census split, the owl
+  day/rain/night perch gate). WIRING ownership stays with the kind-roster co-lanes:
+  Bird 74 = W4-d35 (data-only, AI no-op), BirdBlue 297 / BirdRed 298 = W4-d38
+  (`update_bird` feeds this module + the 1080 droppings drain), GoldBird 442 =
+  W4-d40, Owl 611 = W4-d42, the jungle five 671-675 + OwlMimic 689 = W4-d43; the
+  1080 BirdDroppings projectile machine = W4-d20. This lane adds no `NpcKind` (the
+  g8-g10 kind-wire co-lanes carry no style-24 row вЂ” verified on their tips).
+- **W4-d127 chain-verify (2026-11-21, code-only)**: the four chain gaps audited
+  against the pushed co-lane tips; two closed with code, two census-complete.
+  (1) **Owl 317**: ROWED on the d38 tip (`data.rs:590`/`:969` cs_id both ways,
+  ai_style 2, the `NPC.cs:13007-13019` stats verbatim - 30x32/dmg 16/def 6/75 HP/
+  kb 0.7/value 100, bestiary `net_id: 317`, `update_kind_ai` routes
+  `DemonEyeOwl => update_eye`; the b2 tip owns the `2 => ai_002_eye_family`
+  axis) - NO re-row here. The MISSING piece was the completion seam: the sim's
+  Transform drain (`world_sim/npcs.rs`) now handles 317 COMPLETION-ONLY (the
+  `kind_from_net_id(317)` swap + `size_override` clear) because the module's
+  `transform_core` already applied the full observable `NPC.cs:81092-81110`
+  subset in-place mid-arm - a second `transform_to_kind` would reposition (+2)
+  and rescale the life TWICE. `kind_from_net_id` reads `None` until the d38
+  roster merge lands the bestiary row (the merge gate; the core's observable
+  subset keeps the slot faithful meanwhile). OwlMimic 689: NO catchItem
+  (`:17667-17679`), not npcCatchable - the reveal is the night <80px LoS
+  `Transform(317)` (`:25328-25335`), chain closed.
+  (2) **Axis-24**: NO pushed branch claims ai_style 24 in `update_rng_dust`'s
+  style axis (the only `ai_style_24` caller anywhere is d38's kind-keyed
+  `update_bird`, 297/298 only, ignoring `out.transform`/`out.no_gravity`).
+  This lane lands the claim (the c8 pattern): `24 => ai_024_bird_family`
+  covers ALL 11 kinds incl the owl roost/perch states; new `Npc` fields
+  `cloud_alpha`/`style24_neighbors` (the `wind_speed_current`/`twin_time_lefts`
+  pre-stamp convention, the any-bird-gated sim pre-pass), live `player.luck()`,
+  `is_cenx` false (the sim player has no name field - the d38 convention),
+  the 1080 poop + 317 transform drains. The integration tail is the C#
+  `UpdateNPC` own: the depth-scaled 0.3/10 gravity (`body_gravity`,
+  `:90877-90955`) gated by the arm's LAST noGravity write, the wet 0.2/7 row
+  reading the PREVIOUS tick's wet (the `:92525` stamp runs after the `:90465`
+  gravity), the dead-band X snap `:90473-90476`, the oldVelocity latch
+  `:92538`, the ground X-then-Y stand-in + the pre-move wet re-stamp. At the
+  merge the axis arm wins FIRST-match and d38's kind arm retires (S1-D-4c
+  one-live-arm; the merge resolves it, NOT a duplicate here).
+  (3) **Catch chain**: census-COMPLETE on this branch - the `catch_item` rows
+  (74/297/298/442/611/671-675), all 10 `itemdata` rows with the `make_npc`
+  round-trip + tile 724, the `npc_catchable` whitelist, and all 10
+  Terrarium+critter->cage recipes (station-free) verified; 2 witnesses pin it.
+  (4) **Spawn gates**: g61 owns spawn DUST only (its tip touches
+  `npc_spawn_visuals.rs`, not the pool ladder); NO branch wires the bird
+  spawn gates. The census lands as pure merge-ready helpers in `spawner.rs`
+  (`bird_spawn_owl_pick` `NPC.cs:2437-2447`, `bird_spawn_day_pick`
+  `:2449-2470` - the Next(4) pick BEFORE the gold RollLuck(400),
+  `bird_spawn_jungle_pick` `:3801-3829` - the 43200.00064373016 double
+  cutoff, the SpawnFrog fallback NOT a bird; the mud-tile twin `:2336-2361`)
+  plus the full `Luck.RollLuck`/`RollBadLuckExtreme` ports (`Luck.cs:5-16`/
+  `:40-51`, the nested inner-before-outer draw order). The ladder wiring is
+  the roster co-lanes' merge step. 9 witnesses WRITTEN NOT RUN across the
+  four items.
+- **W4-d127 FINAL (2026-11-21, code-only)**: the five-item final phase, each
+  committed separately. (1) **Spawn-ladder WIRING**: the g61 spawn-wiring tip
+  (`b4e40449`/origin `a96289284`) carries NO NPC-spawn ladder seam — its
+  `spawner.rs` diff vs main is EMPTY (its two seams are the bug-net catch poof
+  + the play_sound caller-stream/teleport fields, both `npc_spawn_visuals.rs`
+  dust-lane). So there is no g61 seam to attach to; the ATTACH-CONTRACT is
+  published in `spawner.rs`: the C# general surface else-if chain's
+  `spawnFriendly` block (`:2096-2322`) RETURNS before the bird bands; when
+  spawnFriendly is false the `switch(tileType)` case 2/109/477/492
+  (`:2372-2576`) carries FOUR bird bands — owl (`:2437`), day-bird (`:2449`),
+  stinkbug/butterfly/windy (`:2471`/`:2484`/`:2504`), and the ANYTIME band
+  (`:2532-2553`) the prior census MISSED. NEW `bird_spawn_anytime_pick` ports
+  the fourth band (Next(2) gate, no day/time/weather term; Next(4) pick THEN
+  gold RollLuck(400); the `& flag10` both-sides draw order — the pick+gold run
+  even on a non-surface roll). The jungle gate is a LATER else-if (`:3803`,
+  NOT `:3801` — that line is the preceding 359 arm; citations corrected). The
+  stream dependencies the merger must land first are pinned: `setFireFlyChance`
+  (`NPC.cs:93352-93399`, UNPORTED — `World.butterfly_chance` ctor-0 never
+  written, no firefly/stinkbug slot), the wind gates, the bird kinds. Until
+  those land the bands stay pure helpers (wiring now would shift the frozen
+  slime/zombie stream). (2) **Bird AMBIENT sounds**: census verdict CLAIMED BY
+  MAIN — the chirp idle arms (`NPC.cs:92249` owl night Next(700)→46,
+  `:92271-92335` the day family Next(400)→32/67/68/69 incl the 442 Next(5)
+  switch) are already `ambient_sound::critter_sound_cue`/`critter_legacy_voice`
+  on main, wired at the `NPC.cs:90323` seam; e9/f2 port a DIFFERENT table (the
+  IdleSounds ladder `:90079-90206` + water splash), NOT the chirps — no
+  unclaimed arm to port. The GAP fixed: the emitter keyed `to_u16()` (protocol)
+  not `cs_id()` (net id) — the MERGER-L7 mis-route made GolemHead (protocol 74)
+  chirp as Bird 74 by day; `cs_id` 245 (the Golem fold) is outside the table.
+  Re-keyed to `cs_id()` (the e9 idle-emitter convention). (3) **GoldBird-442
+  sparkle**: the c8 GoldWorm co-lane pattern — the `UpdateNPC_CastLights`
+  `IsGoldCritter` arm (`NPC.cs:92345-92368`, before AI() at `:90320`); the gate
+  `gold_worm_sparkle` is on main (kind-agnostic, unwired), the c8 tip adds the
+  dust-spawn half + wires it GoldWorm-448-only. The `IsGoldCritter` set
+  (`NPCID.cs:10126`, 14 ids) includes 442. PORTED `is_gold_critter` (the
+  membership predicate, generalises the c8 kind test) + `gold_worm_sparkle_dust`
+  (the c8 spawn half verbatim: ONE dust 43, netOffset position, alpha 254, pure
+  yellow, scale 0.5, velocity zeroed). The sim CastLights wiring is the c8/d40
+  merge step (442=d40, 448=c8); dormant until then. (4) **Owl-mimic 689
+  Transform-target VERIFY**: the target is **317 DemonEyeOwl** (aiStyle 2, the
+  eye family), NOT 473 BigMimicCorruption (`NPCID.cs:11311` vs `:11619`); the
+  C#'s only 689 Transform is `Transform(317)` (`:25333`), 473 is a corrupt-biome
+  SPAWN (`:3738`, 28×44/aiStyle87/3500HP `:14508-14520`), never a transform
+  target — the "mimic-473-band" premise does not apply. The chain is ROWED:
+  d38 (`6f9dd02db`) the 317 row (data.rs:590/:969 cs_id, ai_style 2 :2645,
+  30×32 :3231, 75HP :3924, bestiary net_id 317, `DemonEyeOwl => update_eye`),
+  b2 (`6f275c133`) the `2 => ai_002_eye_family` axis (npc.rs:4665); this lane's
+  `transform_core` + the 317 COMPLETION-ONLY drain close it at the merge.
+  (5) **Axis-24 vs d38-update_bird RETIRE-HUNK**: published on the axis arm in
+  `npc.rs` — at the d38 merge the axis wins FIRST-match, so d38's kind-keyed
+  path retires: hunk (A) the two `update_kind_ai` kind arms (d38 npc.rs:
+  6530-6533, BirdBlue/BirdRed => update_bird) — retire the arms, KEEP the kinds
+  + data rows; hunk (B) the whole `fn update_bird` (d38 npc.rs:12312-12376) —
+  retire wholesale, `ai_024_bird_family` is the SUPERSET (live luck vs d38's
+  0.0, the sim stamps vs 0.0/&[], the 317 drain d38 ignores, the gravity gate +
+  wet row + dead-band snap d38's bare tail lacks). MERGE ORDER: kinds+data
+  first, then retire (A)+(B) together (S1-D-4c one-live-arm; the s1_d_4c
+  one-arm-per-kind witness stays green). 6 witnesses WRITTEN NOT RUN across the
+  five items (the anytime band, the cs_id key mis-route, the gold-critter set +
+  the dust spawn, the 317-vs-473 target, the retire-contract pin).
 ## The WoF Eye's aiStyle-28 arm (S1-D-3 aiStyle-28, 2026-11-18, code-only mode)
 `crates/tr-app/src/npc_ai_style28.rs` ports `NPC.AI()`'s
 `else if (this.aiStyle == 28)` block (`NPC.cs:26053-26208`) as a pure
