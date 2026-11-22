@@ -10,12 +10,16 @@
 //!
 //! The C# gate is `(whoAmI == Main.myPlayer && ImmunityCooldownID.Sets.
 //! Retaliate[cooldownCounter]) & flag` (`:38401`) — `flag` is the PRE-hit
-//! not-immune state (`:38208`). `hurt_inner` only queues on an accepted hit
-//! (the `flag` half) and its `retaliate_lane` argument carries the set
-//! membership: the contact/projectile/fall/petrify lanes ride General (a
-//! Retaliate member, `ImmunityCooldownID.cs:49`), the lava (`Lava`) and
-//! tile-contact (`TileContactDamage`) lanes pass false — vanilla lava/spike
-//! hits never retaliate.
+//! per-counter state (`:38208`). `hurt_inner` queues only when the flag
+//! held AND the counter is a Retaliate member (M4-HAZARD-1: the membership
+//! reads `id_tables::immunity_retaliate(cooldown_counter)` — the S1-C-7
+//! wave B `retaliate_lane` bool is retired): the contact/projectile/
+//! fall/petrify lanes ride General or BossNoCheese (members,
+//! `ImmunityCooldownID.cs:49`), the lava (`Lava`), tile-contact
+//! (`TileContactDamage`) and bug-net (`WrongBugNet`) lanes are not —
+//! vanilla lava/spike hits never retaliate. A cooldown-active
+//! PaladinsShield hit (the `:38210` exemption) reaches the tail with flag
+//! false and queues nothing.
 //!
 //! Deviations (ANALYSIS "The hurt modifiers (S1-C-7 wave B)"): the retaliate
 //! block's `Main.rand` draws drain at the hitting pass's tail rather than

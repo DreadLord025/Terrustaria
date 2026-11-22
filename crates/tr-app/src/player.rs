@@ -1225,6 +1225,24 @@ pub struct Player {
     /// (`Item.legSlot`). The Moon Lord carve-out (`140`) and the sitting
     /// carve-out (`217`) read it; `0` = the default legs sheet.
     pub legs_armor: i32,
+    /// `Player.neck` (`Player.cs:1686`, init −1): the visible neck
+    /// accessory's `Item.neckSlot` (`ArmorIDs.Neck`, 1..14). W4-d115
+    /// wiring round — the Acc_Neck layer family's sim half:
+    /// `ResetVisibleAccessories` (`:31135`, called from `ResetEffects`
+    /// `:25624`) clears it to −1 each tick, `UpdateVisibleAccessories`
+    /// (`:36753-36805`, called from `PlayerFrame` `:35770` while alive)
+    /// re-derives it: the LAST visible slot with `neckSlot > 0` wins
+    /// (`UpdateVisibleAccessory` `:36927-36930` — functional slots 3..10
+    /// gated `!hideVisibleAccessory[i]`, then vanity slots 13..20
+    /// unconditionally). The draw layer (`DrawPlayer_20_NeckAcc`,
+    /// `PlayerDrawLayers.cs:2026-2034`) gates `0 < neck < 15`.
+    pub neck: i32,
+    /// `Player.cNeck` (`Player.cs:2938`): the neck layer's dye shader —
+    /// `UpdateItemDye`'s `neckSlot` arm (`:9683-9686`) stamps the slot's
+    /// dye; the port derives it beside `neck` (the hidden functional
+    /// slot's early-return `:9628-9631` keeps its dye out, the vanity
+    /// slot's dye overrides).
+    pub c_neck: u32,
     /// The held-item half of `PlayerFrame()` - the C# reads
     /// `inventory[selectedItem]` directly, the port feeds the summary in from
     /// the app before the tick (`world_sim/player.rs`).
@@ -1395,6 +1413,20 @@ pub struct Player {
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// `Player.hurtCooldowns` (`Player.cs:3160`): the per-source immunity
+    /// counters, `new int[ImmunityCooldownID.Count]` — six slots indexed by
+    /// the `IMMUNITY_*` ids 0..5 (`id_tables.rs`; General's −1 lives OUTSIDE
+    /// the array on the `immune`/`immune_time` pair, `Hurt` `:38208`).
+    /// M4-HAZARD-1: the boss/hazard lanes (BossNoCheese, TileContactDamage,
+    /// WrongBugNet, Lava, PaladinsShield) gate and re-arm on their OWN slot,
+    /// so they land THROUGH the General i-frames (`:38208-38212`). The
+    /// collapsed `hurt_cd` stays as the General lane's seconds mirror (the
+    /// existing witnesses' contract); this array is the C#'s own state.
+    /// Writers: `Hurt`'s per-counter arm (`:38391-38393`, only while the slot
+    /// is 0), `SetImmuneTimeForAllTypes` (`:38017-38020`, all six) and the
+    /// `UpdateImmunity` decay (`:18887-18893`). `Spawn` never clears it (the
+    /// C# field census: no respawn write) — the counters ride through death.
+    pub hurt_cooldowns: [i32; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize],
     /// The dodge-family flags (`Player.blackBelt`/`mysticSashDodge`/
     /// `brainOfConfusionItem`/`shadowDodge`/`longInvince`, `Player.cs:1178-
     /// 1184,2402`): armed per tick in the fold from items 963/984
@@ -1410,6 +1442,16 @@ pub struct Player {
     pub brain_of_confusion: bool,
     pub shadow_dodge: bool,
     pub long_invince: bool,
+    /// `Player.onHitDodge` (`Player.cs:1170`): the Hallowed / Ancient
+    /// Hallowed set bonus's strike-grant flag ("Holy Protection" — buff 59's
+    /// display name, `Terraria.Localization.Content.en-US.Game.json`
+    /// `BuffName.ShadowDodge`). `ArmorSetBonuses.Benefits.Hallowed`
+    /// (`ArmorSetBonuses.cs:231-234`) and `HallowedSummoner`'s second half
+    /// (`:225-229`) arm it per tick; `ResetEffects` clears it (`:18443`).
+    /// `Player.OnHit` (`:6938-6941`) grants buff 59 for 1800 ticks while
+    /// `shadowDodgeTimer == 0` — the buff arms `shadow_dodge` through the
+    /// buff scan (`:10074-10077`) and the next `Hurt` dodges. W4-d115.
+    pub on_hit_dodge: bool,
     /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
     /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
     /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
@@ -1487,11 +1529,25 @@ pub struct Player {
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
     pub shadow_dodge_timer: i32,
+    /// `Player.shadowDodgeCount` (`Player.cs:1166`): the shadow-dodge
+    /// afterimage spread — DRAW-owned. Full-tree writer census (W4-d115
+    /// wiring round): the field declaration `Player.cs:1166` is the ONLY
+    /// `shadowDodgeCount` mention in Player.cs — no dodge proc sets it
+    /// (Holy Protection/Titanium ride the buff-59 grant `:6938-6941`, the
+    /// brain rides the animation counter `:38049`); the sole writer is
+    /// `LegacyPlayerRenderer.cs:433-448` (±1 per DRAW frame, cap 30 /
+    /// floor 0, keyed on the buff-scan `shadowDodge` flag `:10076`;
+    /// `ResetEffects` never touches it). The port's writer is
+    /// `App::step_dodge_draw_counters` at the draw seam (`app/frame/
+    /// draw.rs`), stepping through `player_dodge_draw::
+    /// step_shadow_dodge_count` — the sim tick never steps it.
+    pub shadow_dodge_count: f32,
     /// `Player.brainOfConfusionDodgeAnimationCounter` (`Player.cs:1158`): the
     /// 300-tick animation window a brain dodge opens (`:38049`); decayed in
     /// `ResetEffects` (`:18794-18797`), zeroed on death (`UpdateDead`,
-    /// `:16932`). No render consumer yet — carried for state parity (the
-    /// S1-A-9 dead-slot convention).
+    /// `:16932`). The ghost-ring maths are ported in `player_dodge_draw`
+    /// (`LegacyPlayerRenderer.cs:455-467`, W4-d115 lane 19); the draw pass
+    /// consumes it through `draw_dodge_afterimages` (the wiring round).
     pub brain_of_confusion_dodge_animation_counter: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
@@ -1907,9 +1963,10 @@ pub struct Player {
     /// velocity BEFORE the knockback `:38519`) and the drain
     /// (`hurt_modifiers::drain_retaliate`, the `world_sim` seams) rolls the
     /// block on the hit lane's stream — the `pending_mana_effect` convention.
-    /// The C# gates on the PRE-hit `flag` (not immune) AND the Retaliate-set
-    /// membership of the cooldown counter; `hurt_inner`'s `retaliate_lane`
-    /// carries the membership (the lava/tile lanes pass false).
+    /// The C# gates on the PRE-hit `flag` (the per-counter not-immune
+    /// state) AND the Retaliate-set membership of the cooldown counter;
+    /// `hurt_inner` reads both from the counter (M4-HAZARD-1 — the
+    /// lava/tile/bug-net lanes are not members).
     pending_retaliate: Option<crate::hurt_modifiers::RetaliateRequest>,
     /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
     /// the damage source was a projectile of `ProjectileID.Sets.
@@ -1917,6 +1974,14 @@ pub struct Player {
     /// mount is active. `Mount.TryDismount` needs `&World`, so the tick hands
     /// the request over (the `pending_switch_trip` convention).
     pending_dismount: bool,
+    /// W4-d115 — the `62 SyncDodge` send queue (`Player.NinjaDodge`'s
+    /// `NetMessage.SendData(62, -1, -1, null, whoAmI, 1f)`,
+    /// `Player.cs:38161-38164`, and the Shadow `:38038` / Brain `:38053` /
+    /// Sash `:38115` twins): the handlers run inside the sim lanes, so the
+    /// send hands over to the net tick (the `pending_hurt_sound`
+    /// convention). The net-apply path (`apply_net_dodge`, W4-c27) never
+    /// queues — the C# reader does not re-send (`MessageBuffer.cs:2887-2902`).
+    pending_dodge_sends: Vec<u8>,
     /// S1-P-i41 — the Chillet mount's `SoundID.PalChillet` play
     /// (`Mount.SetMount` `Mount.cs:6283-6286`, `SoundEngine.PlaySound(
     /// SoundID.PalChillet, mountedPlayer.Center)`): `(position.X,
@@ -2649,6 +2714,8 @@ impl Player {
             sand_storm: false,
             carpet_frame: -1,
             legs_armor: 0,
+            neck: -1,
+            c_neck: 0,
             frame_inputs: FrameInputs::default(),
             melee_npc_hit_cooldown: std::collections::HashMap::new(),
             wet: false,
@@ -2743,11 +2810,14 @@ impl Player {
             mana_regen_item_in_use: false,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
+            // `Player.cs:3160` — the field initializer zeroes all six slots.
+            hurt_cooldowns: [0; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize],
             black_belt: false,
             mystic_sash_dodge: false,
             brain_of_confusion: false,
             shadow_dodge: false,
             long_invince: false,
+            on_hit_dodge: false,
             magic_cuffs: false,
             gold_ring: false,
             has_lucky_coin: false,
@@ -2763,6 +2833,7 @@ impl Player {
             honey_comb: false,
             strong_bees: false,
             shadow_dodge_timer: 0,
+            shadow_dodge_count: 0.0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
             breath_cd: 0,
@@ -2877,6 +2948,7 @@ impl Player {
             pending_heal_effect: None,
             pending_retaliate: None,
             pending_dismount: false,
+            pending_dodge_sends: Vec::new(),
             pending_chillet_sound: None,
             pending_no_space_sound: None,
             pending_no_space_teleport: false,
@@ -3320,6 +3392,16 @@ impl Player {
         self.pending_hurt_sound.take()
     }
 
+    /// W4-d115 — takes the queued `62 SyncDodge` sends (the dodge handlers'
+    /// `NetMessage.SendData(62, .., whoAmI, kind)`, `Player.cs:38038/:38053/
+    /// :38115/:38163`). The net tick drains them through the `C2s`/`S2c`
+    /// `SyncDodge` wires (the `take_hurt_sound` convention); the net-apply
+    /// path (`apply_net_dodge`) never queues, so a relayed dodge is not
+    /// re-sent (the C# reader, `MessageBuffer.cs:2887-2902`, does not send).
+    pub(crate) fn take_dodge_sends(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.pending_dodge_sends)
+    }
+
     /// Takes the queued death cue (`Player.PlayDeathSound`,
     /// `Player.cs:38868`).
     pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
@@ -3607,6 +3689,12 @@ impl Player {
         self.immune_time = 180;
         self.immune_no_blink = true;
         self.hurt_cd = 0.0;
+        // M4-HAZARD-1 writer census: the C# `Spawn` never writes
+        // `hurtCooldowns` (the field's only mentions are `Player.cs:3160`
+        // decl, `:18887-18891` decay, `:27679` lava gate, `:31395` thorns
+        // flag, `:38017-38019` all-types, `:38208/:38391-38393` Hurt) — the
+        // per-source counters ride through death untouched, exactly like
+        // the source. No clear here.
         // `UpdateDead`'s brain-counter zero (`Player.cs:16932`): the death tail
         // clears the animation window with the rest of the per-life state.
         self.brain_of_confusion_dodge_animation_counter = 0;
@@ -3652,6 +3740,7 @@ impl Player {
         self.pending_drown_sound = false;
         self.pending_flap_sound = None;
         self.pending_dismount = false;
+        self.pending_dodge_sends.clear();
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
         // keeps the counter across a revive too.
@@ -4166,7 +4255,43 @@ impl Player {
         // `:28981`, fall/petrify `:25223/:25352/:25370`); the projectile lane
         // (`Projectile.cs:14868`, also `Crit: false`) carries its type through
         // `hurt_with_source` for the dismount-on-hit gate (`:38396-38400`).
-        self.hurt_inner(amount, from_x, true, rng, dodgeable, false, None, true)
+        // The default `cooldownCounter = -1` (`:38197`) is General.
+        self.hurt_inner(
+            amount,
+            from_x,
+            true,
+            rng,
+            dodgeable,
+            false,
+            None,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
+    }
+
+    /// The counter-carrying `Hurt` entry (`Player.cs:38197`'s
+    /// `cooldownCounter` parameter): the boss/hazard lanes pass their
+    /// `ImmunityCooldownID` (the `IMMUNITY_*` constants, `id_tables.rs`) and
+    /// gate/re-arm on their own `hurt_cooldowns` slot — the M4-HAZARD-1
+    /// split-contract entry d125's Empress contact uses
+    /// (`IMMUNITY_BOSS_NO_CHEESE`). `hurt` above is the General default.
+    pub(crate) fn hurt_cooldown(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        cooldown_counter: i32,
+    ) -> bool {
+        self.hurt_inner(
+            amount,
+            from_x,
+            true,
+            rng,
+            dodgeable,
+            false,
+            None,
+            cooldown_counter,
+        )
     }
 
     /// The projectile-source `Hurt` (`PlayerDeathReason.ByProjectile`,
@@ -4182,6 +4307,29 @@ impl Player {
         dodgeable: bool,
         source_projectile: u16,
     ) -> bool {
+        self.hurt_with_source_cooldown(
+            amount,
+            from_x,
+            rng,
+            dodgeable,
+            source_projectile,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
+    }
+
+    /// The counter-carrying projectile-source `Hurt`
+    /// (`Projectile.cs:14868`'s `num` cooldownCounter — the `Damage_EVP`
+    /// BossNoCheese shot kinds, `:14779-14796`): identical to
+    /// [`Player::hurt_with_source`] plus the lane's counter.
+    pub(crate) fn hurt_with_source_cooldown(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        source_projectile: u16,
+        cooldown_counter: i32,
+    ) -> bool {
         self.hurt_inner(
             amount,
             from_x,
@@ -4190,29 +4338,37 @@ impl Player {
             dodgeable,
             false,
             Some(source_projectile),
-            true,
+            cooldown_counter,
         )
     }
 
     /// `Player.SetImmuneTimeForAllTypes` (`Player.cs:38013-38021`): the whole
     /// write rides the port's fields — `immune = true` + `immuneTime = time`
     /// (the fields R-03-5 ported; `immuneNoBlink` stays untouched, like the
-    /// C#) and the per-cooldown array collapsed onto the one `hurt_cd` (the
-    /// M4-HAZARD-1 admission). The dodge handlers pass the 120/80 pair
+    /// C#) and ALL SIX per-cooldown slots (`:38017-38020`, the M4-HAZARD-1
+    /// array — a dodge's i-frames cover every source, boss lanes included).
+    /// `hurt_cd` keeps mirroring the General window in seconds for the
+    /// collapsed-lane witnesses. The dodge handlers pass the 120/80 pair
     /// directly; `iframes_for` (the normal-hurt window) is not involved.
     /// `pub(crate)`: the Strange Brew's bonus i-frames (`ApplyLifeAndOrMana`,
     /// `Player.cs:51912-51915`) call it from `potions.rs` (S1-P-i37).
     pub(crate) fn set_immune_time_for_all_types(&mut self, time: i32) {
         self.immune = true;
         self.immune_time = time;
+        // `Player.cs:38017-38020` — the unconditional all-slot write.
+        for cd in self.hurt_cooldowns.iter_mut() {
+            *cd = time;
+        }
         self.hurt_cd = time as f32 / 60.0;
     }
 
-    /// `Player.ShadowDodge` (`Player.cs:38023-38042`) minus the NetMessage:
-    /// the 120/80 immunity, buff 59 deleted by the same single-pass `for` with
-    /// `DelBuff`'s compaction (`:38030-38040`), the Hallowed set-bonus
-    /// cooldown armed (`PutHallowedArmorSetBonusOnCooldown` `:38037-38039` —
-    /// it keeps the 30 s buff-59 cycle from re-granting).
+    /// `Player.ShadowDodge` (`Player.cs:38023-38044`): the 120/80 immunity,
+    /// buff 59 deleted by the same single-pass `for` with `DelBuff`'s
+    /// compaction (`:38030-38036`), the Hallowed set-bonus cooldown armed
+    /// (`PutHallowedArmorSetBonusOnCooldown` `:38041-38044` — it keeps the
+    /// 30 s buff-59 cycle from re-granting). The `SendData(62, .., 2f)` tail
+    /// (`:38038`) queues at the `Hurt` caller (`hurt_inner`'s shadow arm) —
+    /// the 62 reader shares this handler and never re-sends (W4-c27/W4-d115).
     fn do_shadow_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
         for i in 0..crate::buffs::MAX_BUFFS {
@@ -4223,39 +4379,110 @@ impl Player {
         self.shadow_dodge_timer = 1800;
     }
 
-    /// `Player.BrainOfConfusionDodge` (`Player.cs:38046-38055`) minus the
-    /// NetMessage: the 120/80 immunity, the 300-tick animation window and the
-    /// brain's own cooldown buff 321 (240 ticks — the roll's
-    /// `FindBuffIndex(321)` gate).
+    /// `Player.BrainOfConfusionDodge` (`Player.cs:38046-38055`): the 120/80
+    /// immunity, the 300-tick animation window and the brain's own cooldown
+    /// buff 321 (240 ticks — the roll's `FindBuffIndex(321)` gate). The
+    /// `SendData(62, .., 4f)` tail (`:38053`) queues at the `Hurt` caller
+    /// (`hurt_inner`'s brain arm) — the 62 reader shares this handler and
+    /// never re-sends (W4-c27/W4-d115).
     fn brain_of_confusion_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
         self.brain_of_confusion_dodge_animation_counter = 300;
         self.buffs.add_buff(321, 240);
     }
 
-    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38059`): the 120/80
-    /// immunity; the 50x dust + gore burst is deferred to S1-E-1.
+    /// `Player.OnHit`'s Hallowed arm (`Player.cs:6938-6941`): `if (this.
+    /// onHitDodge && this.shadowDodgeTimer == 0) this.AddBuff(59, 1800)` —
+    /// the "Holy Protection" strike-grant. The buff arms `shadow_dodge`
+    /// through the buff scan (`:10074-10077`) and the next `Hurt` dodges
+    /// deterministically; `ShadowDodge` strips the buff and sets the 1800
+    /// cooldown, so the grant cannot re-fire until it decays. The arm is
+    /// RNG-free. The other `OnHit` arms (titanium storm `:6928-6937`, regen
+    /// `:6942-6945`, stardust/petal/crystal-leaf) are unported families;
+    /// the statue/Mimic `flag` only gates the titanium arm, not this one.
+    /// W4-d115.
+    pub(crate) fn on_hit_dodge_grant(&mut self) {
+        if self.on_hit_dodge && self.shadow_dodge_timer == 0 {
+            self.buffs.add_buff(59, 1800);
+        }
+    }
+
+    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38117`): the 120/80
+    /// immunity; the 50x dust + gore burst is deferred to S1-E-1 (the W4-g17
+    /// wave-C port). The `SendData(62, .., 5f)` tail (`:38113-38116`) queues
+    /// at the `Hurt` caller (`hurt_inner`'s sash arm) — the 62 reader shares
+    /// this handler and never re-sends (W4-c27/W4-d115).
     fn do_mystic_sash_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
-    /// `Player.NinjaDodge` (`Player.cs:38119-38121`): the 120/80 immunity; the
-    /// 100x dust + gore burst is deferred to S1-E-1.
+    /// `Player.NinjaDodge` (`Player.cs:38119-38165`): the 120/80 immunity; the
+    /// 100x dust + gore burst is deferred to S1-E-1 (the W4-g17 wave-C port).
+    /// The `SendData(62, .., 1f)` tail (`:38161-38164`) queues at the `Hurt`
+    /// caller (`hurt_inner`'s belt arm) — the 62 reader shares this handler
+    /// and never re-sends (W4-c27/W4-d115).
     fn ninja_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
-    /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
+    /// The `62 SyncDodge` reader's switch on ourselves
+    /// (`MessageBuffer.cs:2887-2902`): kind 1 Ninja, 2 Shadow, 4
+    /// BrainOfConfusion, 5 MysticSash — four independent `if`s in the C#
+    /// order (3, the retired Holy dodge, has no arm; any other kind falls
+    /// through). The send-back inside each handler is the SEND path's
+    /// (S1-I-4), not the reader's — the reader never re-sends. W4-c27.
+    pub(crate) fn apply_net_dodge(&mut self, kind: u8) {
+        if kind == 1 {
+            self.ninja_dodge(); // `:2889`
+        }
+        if kind == 2 {
+            self.do_shadow_dodge(); // `:2893`
+        }
+        if kind == 4 {
+            self.brain_of_confusion_dodge(); // `:2897`
+        }
+        if kind == 5 {
+            self.do_mystic_sash_dodge(); // `:2901`
+        }
+    }
+
+    /// `LegacyPlayerRenderer.DrawPlayerFull`'s counter step
+    /// (`LegacyPlayerRenderer.cs:433-448`) — the DRAW-owned writer of
+    /// `shadowDodgeCount`: +1 while the buff-scan `shadowDodge` flag is
+    /// armed (cap 30), −1 otherwise (floor 0), once per rendered frame.
+    /// Writer census (W4-d115 wiring round): the C# field has NO sim
+    /// writer — `Player.cs:1166` is the only Player.cs mention; the dodge
+    /// procs arm the FLAG (`:10076` buff 59) or the brain counter
+    /// (`:38049`), never the count. The port calls this from the draw
+    /// orchestrator (`App::draw_region`, before the render clone), NOT
+    /// from the fixed step — `update`/`respawn` never touch the field.
+    pub fn step_shadow_dodge_draw_counter(&mut self) {
+        self.shadow_dodge_count = crate::player_dodge_draw::step_shadow_dodge_count(
+            self.shadow_dodge_count,
+            self.shadow_dodge,
+        );
+    }
+
+    /// `Player.UpdateImmunity` (`Player.cs:18856-18894`): the i-frame
     /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
     /// the `immuneAlpha` blinkVisual half is draw-side and stays out.
     /// (R-03-5's port; the dodge handlers above write the same fields via
     /// `SetImmuneTimeForAllTypes`, so both windows decay through here.)
+    /// M4-HAZARD-1: the tail loop (`:18887-18893`) decrements EVERY
+    /// `hurtCooldowns` slot one per tick, independent of the `immune` flag —
+    /// the per-source counters run down while the General window is live.
     pub fn update_immunity(&mut self) {
         if self.immune {
             self.immune_time -= 1;
             if self.immune_time <= 0 {
                 self.immune = false;
                 self.immune_no_blink = false;
+            }
+        }
+        // `Player.cs:18887-18893` — outside the `if (this.immune)` block.
+        for cd in self.hurt_cooldowns.iter_mut() {
+            if *cd > 0 {
+                *cd -= 1;
             }
         }
     }
@@ -4300,7 +4527,7 @@ impl Player {
         dodgeable: bool,
         crit: bool,
         source_projectile: Option<u16>,
-        retaliate_lane: bool,
+        cooldown_counter: i32,
     ) -> bool {
         // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
         // journey godmode power swallows the hit outright — before the
@@ -4308,18 +4535,41 @@ impl Player {
         if self.creative_god_mode {
             return false;
         }
-        // `Player.Hurt`'s General-cooldown gate (`Player.cs:38210-38216`):
-        // the port's single damage lane rides `ImmunityCooldownID.General`,
-        // whose flag is `!immune` — the spawn i-frames swallow the hit.
-        if self.immune {
+        // M4-HAZARD-1 — the per-source gate (`Player.cs:38208`):
+        // `flag = (cooldownCounter == General) ? !immune
+        //        : hurtCooldowns[cooldownCounter] <= 0`.
+        // General rides the `immune`/`immune_time` pair; the six array lanes
+        // read their OWN slot, so a boss/hazard hit lands THROUGH the General
+        // i-frames while its own counter is free. `hurt_cd` stays the
+        // collapsed General lane's seconds mirror (the existing witnesses'
+        // contract — the dodge-window tests clear it directly), so the
+        // General arm keeps it beside the C# flag.
+        let flag = if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+            !self.immune && self.hurt_cd <= 0.0
+        } else {
+            self.hurt_cooldowns[cooldown_counter as usize] <= 0
+        };
+        // `Player.cs:38210-38212`: the early-return skips ONLY when the
+        // counter is NOT an `ImmuneTimerOnlyLimitsEffects` member.
+        // PaladinsShield (5) is the set's sole member (`ImmunityCooldownID.cs:
+        // 52`): a cooldown-active shield hit runs the whole body — the DAMAGE
+        // STILL LANDS (`:38383`); only the cooldown re-arm (`:38391`'s `== 0`
+        // gate) and the retaliate (`:38401`'s `& flag`) are limited. The
+        // `flag2` remote-player arm is MP-only (`whoAmI != myPlayer && !pvp`)
+        // and collapses false in the single-player port.
+        if !flag
+            && !crate::id_tables::immunity_timer_only_limits_effects(cooldown_counter)
+        {
             return false;
         }
-        if self.hurt_cd > 0.0 || self.hp <= 0 {
+        // `Player.Hurt`'s dead gate: the port's `hp <= 0` refusal (the C#
+        // callers gate `!dead`; the fall/petrify lanes reach `Hurt` alive).
+        if self.hp <= 0 {
             return false;
         }
-        // The dodge roll block (`Player.cs:38214-38241`), slotted after the
-        // cooldown early-return (the port's `hurt_cd`-gate IS the C# `flag`
-        // for the General counter) and before the defense reduction.
+        // The dodge roll block (`Player.cs:38214-38236`), slotted after the
+        // per-counter gate (the `flag` above IS the C# `:38208` state) and
+        // before the defense reduction.
         // `whoAmI == Main.myPlayer` collapses in the single-player port. The
         // roll order is sash -> belt -> brain -> shadow; each `Next` draws
         // only while its source is armed and the previous source did not
@@ -4330,10 +4580,24 @@ impl Player {
         if dodgeable {
             if self.mystic_sash_dodge && rng.next_range(0, 10) == 0 {
                 self.do_mystic_sash_dodge();
+                // `Player.DoMysticSashDodge`'s tail (`Player.cs:38113-38116`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 5f)` — the
+                // queue drains in the net tick; the 62 reader shares the
+                // handler and never re-sends (W4-c27/W4-d115). This closes
+                // the family's send census: kinds 1/2/4/5 all queue at their
+                // `Hurt` arms.
+                self.pending_dodge_sends.push(5);
                 return false;
             }
             if self.black_belt && rng.next_range(0, 10) == 0 {
                 self.ninja_dodge();
+                // `Player.NinjaDodge`'s tail (`Player.cs:38161-38164`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 1f)` — the
+                // send queues for the net tick (the `pending_hurt_sound`
+                // convention). It sits at the HURT caller, not inside the
+                // handler: `apply_net_dodge` (the 62 reader, W4-c27) shares
+                // the handler and must not re-send. W4-d115.
+                self.pending_dodge_sends.push(1);
                 return false;
             }
             if self.brain_of_confusion
@@ -4341,10 +4605,23 @@ impl Player {
                 && self.buffs.find_buff_index(321).is_none()
             {
                 self.brain_of_confusion_dodge();
+                // `Player.BrainOfConfusionDodge`'s `whoAmI == Main.myPlayer`
+                // tail (`Player.cs:38050-38054`): the buff-321 add rides in
+                // the handler, the `SendData(62, .., 4f)` (`:38053`) queues
+                // here — the 62 reader shares the handler and never re-sends
+                // (W4-c27/W4-d115, the belt arm's convention).
+                self.pending_dodge_sends.push(4);
                 return false;
             }
             if self.shadow_dodge {
                 self.do_shadow_dodge();
+                // `Player.ShadowDodge`'s tail (`Player.cs:38038`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 2f)` — the
+                // `whoAmI != Main.myPlayer` early-return (`:38026-38029`)
+                // folds to the local player here; the queue drains in the
+                // net tick. The 62 reader shares the handler and never
+                // re-sends (W4-c27/W4-d115).
+                self.pending_dodge_sends.push(2);
                 return false;
             }
         }
@@ -4386,18 +4663,26 @@ impl Player {
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
-        // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
+        // `Player.Hurt`'s immunity window (`Player.cs:38382-38394`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
-        // : (this.longInvince ? 40 : 20)));` then, on the General lane,
-        // `this.immune = true; this.immuneTime = num7;`. The write lands on
-        // the same `immune`/`immuneTime` fields the dodge handlers arm, so
-        // `UpdateImmunity` (`:18856-18869`) runs the window down. PVP 8 is
-        // unreachable in single-player. `hurt_cd` keeps carrying the window
-        // in seconds for the single collapsed damage lane.
+        // : (this.longInvince ? 40 : 20)));` then the per-counter write:
+        // General (`:38386-38390`) arms `immune`/`immuneTime` — the same
+        // fields the dodge handlers write, so `UpdateImmunity`
+        // (`:18856-18894`) runs the window down; every other counter
+        // (`:38391-38393`) re-arms its OWN array slot with num7, and ONLY
+        // while the slot is exactly 0 — a cooldown-active PaladinsShield hit
+        // lands its damage but never extends the running counter (the `|
+        // flag2` remote arm is MP-only). PVP 8 is unreachable in
+        // single-player. `hurt_cd` keeps mirroring the General window in
+        // seconds for the collapsed-lane witnesses.
         let iframes = tr_core::damage::iframes_for(amount, false, self.long_invince);
-        self.immune = true;
-        self.immune_time = iframes;
-        self.hurt_cd = iframes as f32 / 60.0;
+        if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+            self.immune = true;
+            self.immune_time = iframes;
+            self.hurt_cd = iframes as f32 / 60.0;
+        } else if self.hurt_cooldowns[cooldown_counter as usize] == 0 {
+            self.hurt_cooldowns[cooldown_counter as usize] = iframes;
+        }
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
         // `Player.cs:38396-38400`: the dismount-on-hit — the damage source's
@@ -4413,18 +4698,19 @@ impl Player {
         }
         // `Player.cs:38401`: `(whoAmI == Main.myPlayer && ImmunityCooldownID.
         // Sets.Retaliate[cooldownCounter]) & flag` — `flag` is the PRE-hit
-        // not-immune state (`:38208`), which holds for every hit that reaches
-        // this tail. The Retaliate set is {General, BossNoCheese,
-        // PaladinsShield} (`ImmunityCooldownID.cs:49`); the port's collapsed
-        // lane keeps the membership through `retaliate_lane` — the contact
-        // and projectile lanes (General/BossNoCheese) and the fall/petrify
-        // defaults pass true, the lava (`Lava`, `:27708`) and tile-contact
-        // (`TileContactDamage`, `:28981`) lanes pass false (NOT members —
-        // vanilla lava/spike hits never retaliate). The block needs the NPC
-        // list + projectile pool + the hit lane's RNG: `hurt_modifiers::
-        // drain_retaliate` rolls it at the `world_sim` seams with the final
-        // post-floor damage (the C# `num2` after `:38378-38381`).
-        if retaliate_lane {
+        // per-counter state (`:38208`, captured above). The Retaliate set is
+        // {General, BossNoCheese, PaladinsShield} (`ImmunityCooldownID.cs:
+        // 49`); M4-HAZARD-1 reads the membership from the counter itself
+        // (`id_tables::immunity_retaliate`) — the lava (`Lava`), tile-contact
+        // (`TileContactDamage`) and bug-net (`WrongBugNet`) lanes are NOT
+        // members (vanilla lava/spike hits never retaliate). A
+        // cooldown-active PaladinsShield hit reaches here with flag false
+        // (the `:38210` skip exemption) and queues nothing. The block needs
+        // the NPC list + projectile pool + the hit lane's RNG:
+        // `hurt_modifiers::drain_retaliate` rolls it at the `world_sim` seams
+        // with the final post-floor damage (the C# `num2` after
+        // `:38378-38381`).
+        if crate::id_tables::immunity_retaliate(cooldown_counter) && flag {
             // The hit-moment snapshot: the C# block runs BEFORE `Hurt`'s own
             // knockback (`:38519-38524`), so the dart's `velocity * 0.3`, the
             // stars' aim and the bees' spawn read the pre-knockback state.
@@ -4483,8 +4769,17 @@ impl Player {
         let cx = self.x + self.width * 0.5;
         // The landing hit keeps `Hurt`'s default `dodgeable = true` — a
         // black-belt dodge eats fall damage in the vanilla (research S1-C-1
-        // §1.4).
-        self.hurt_inner(amount, cx, false, rng, true, false, None, true)
+        // §1.4). General counter (`Player.cs:25370`'s default).
+        self.hurt_inner(
+            amount,
+            cx,
+            false,
+            rng,
+            true,
+            false,
+            None,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
     }
 
     /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
@@ -6169,6 +6464,15 @@ impl Player {
         self.black_belt = false;
         self.mystic_sash_dodge = false;
         self.long_invince = false;
+        // W4-d115 wiring round — `ResetVisibleAccessories`' neck clear
+        // (`Player.cs:25624` → `:31135`, `neck = -1`) and `UpdateDyes`'
+        // `cNeck = 0` (`:9590`): the Acc_Neck layer's per-tick reset;
+        // `update_visible_neck_accessory` re-derives both in PlayerFrame.
+        self.neck = -1;
+        self.c_neck = 0;
+        // W4-d115 — `ResetEffects`' `onHitDodge = false` (`Player.cs:18443`):
+        // the Hallowed set rows re-arm it in `apply_armor_set_bonuses`.
+        self.on_hit_dodge = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
@@ -6508,11 +6812,28 @@ impl Player {
                 160 => self.dazed = true,
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
-                // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10075-
-                // 10077`): the Hallowed set's buff 59 arms `shadowDodge` for
-                // the tick; the buff is granted by the set bonus's
-                // `onHitDodge` scan, which is an armor-set row (out of scope).
+                // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10074-
+                // 10077`): buff 59 ("Holy Protection") arms `shadowDodge` for
+                // the tick. The buff is granted by the Hallowed set's
+                // `OnHit` arm (`:6938-6941`, W4-d115 — `on_hit_dodge_grant`).
                 59 => self.shadow_dodge = true,
+                // W4-d115 lane 19 — `Player.cs:9940-9947`: buff 321
+                // (BrainOfConfusionBuff, the brain dodge's own 240-tick
+                // cooldown) grants +10 crit to all three non-summon
+                // classes and +0.10 minion damage (`int num = 10;
+                // meleeCrit/rangedCrit/magicCrit += num; minionDamage +=
+                // num / 100f`). Per-slot adds like the C# chain (the
+                // dodge gate keeps one live slot, but the scan matches
+                // the source). The aura's NPC-confuse half is the
+                // RETALIATE block (`:38403-38431`, `hurt_modifiers::
+                // drain_retaliate` — Confused 31 on nearby hostiles +
+                // the dart 565), NOT this buff.
+                321 => {
+                    self.melee_crit += 10;
+                    self.ranged_crit += 10;
+                    self.magic_crit += 10;
+                    self.minion_damage += 0.1;
+                }
                 // `:10138-10141` — Heartreach (105): `lifeMagnet = true`
                 // (S1-P-i52 — the heart grab-range bonus + the 15/5 pull).
                 105 => self.life_magnet = true,
@@ -6877,6 +7198,15 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // W4-d115 — `Player.cs:25705-25708`: `if (this.shadowDodge && !this.
+        // onHitDodge) this.ClearBuff(59)` — right after `UpdateArmorSets`
+        // (`:25685`). A buff-59 granted WITHOUT the Hallowed set (debug/net)
+        // is stripped the same tick the set comes off; with the set armed
+        // the buff survives until `ShadowDodge` deletes it. The flag itself
+        // stays armed for this tick (the C# clears it in `ResetEffects`).
+        if self.shadow_dodge && !self.on_hit_dodge {
+            self.buffs.clear_buff(59);
+        }
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
@@ -7519,7 +7849,17 @@ impl Player {
         let stoned = self.buffs.find_buff_index(156).is_some();
         if stoned && !self.last_stoned {
             let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            // `Player.cs:25223` — the default General counter.
+            self.hurt_inner(
+                20,
+                cx,
+                false,
+                rng,
+                true,
+                false,
+                None,
+                crate::id_tables::IMMUNITY_GENERAL,
+            );
         }
         self.last_stoned = stoned;
 
@@ -7579,7 +7919,17 @@ impl Player {
                 let dmg = (fell - 2) * 20;
                 if dmg > 0 {
                     let cx = self.x + self.width * 0.5;
-                    self.hurt_inner(dmg, cx, false, rng, true, false, None, true);
+                    // `Player.cs:25352` — the default General counter.
+                    self.hurt_inner(
+                        dmg,
+                        cx,
+                        false,
+                        rng,
+                        true,
+                        false,
+                        None,
+                        crate::id_tables::IMMUNITY_GENERAL,
+                    );
                     self.hurt_cd = 0.0;
                 }
             } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
@@ -7694,6 +8044,62 @@ impl Player {
         }
     }
 
+    /// W4-d115 wiring round — the Acc_Neck layer family's sim half:
+    /// `Player.UpdateVisibleAccessories` (`Player.cs:36753-36805`)'s neck
+    /// arm. The functional loop (slots 3..10, `IsItemSlotUnlockedAndUsable`
+    /// gated, `!hideVisibleAccessory[i]` at `:36790-36793`) then the vanity
+    /// loop (slots 13..20, unconditional `:36795-36805`) each call
+    /// `UpdateVisibleAccessory`, whose `neckSlot > 0` arm (`:36927-36930`)
+    /// overwrites `neck` — LAST visible slot wins. `ItemIsVisuallyIncompatible`
+    /// (`:36835-36858`) never rejects a neck item (its five gates read
+    /// shield/back/shoe/balloon slots only). The dye mirrors `UpdateItemDye`'s
+    /// neck arm (`:9683-9686`) with the hidden-functional early-return
+    /// (`:9628-9631` — a neck item is never a wing/934/4341/5126/4563/1987,
+    /// so `flag = isNotInVanitySlot & isSetToHidden` skips its dye); the
+    /// vanity slot's dye overrides. `ResetEffects`' `ResetVisibleAccessories`
+    /// (`:25624` → `:31135`) clears `neck = -1` each tick and `UpdateDyes`
+    /// (`:9590`) zeroes `cNeck` — the port clears both at the fold head.
+    fn update_visible_neck_accessory(&mut self) {
+        // The per-slot fold: (slot, dye-slot index, hidden-gate). The
+        // functional slots read `hide_visible_accessory[slot]`; the vanity
+        // slots (13..20 → dye index slot−10) never hide (`:36795-36805`
+        // has no hide gate, `UpdateItemDye`'s `isSetToHidden` is
+        // `hideVisibleAccessory[num]` but `isNotInVanitySlot` is false).
+        let mut pick = |kind: u16, dye_kind: u16, hidden_functional: bool, neck: &mut i32, c: &mut u32| {
+            let slot = crate::id_tables::item_neck_slot(kind);
+            if slot > 0 {
+                *neck = slot;
+                if !hidden_functional {
+                    *c = dye::shader_id_for(dye_kind);
+                }
+            }
+        };
+        let mut neck = -1;
+        let mut c_neck = 0;
+        for i in 3..10 {
+            if !self.is_item_slot_unlocked_and_usable(i) {
+                continue;
+            }
+            let kind = self.equipped[i];
+            if kind == 0 {
+                continue;
+            }
+            pick(kind, self.dye_slots[i], self.hide_visible_accessory[i], &mut neck, &mut c_neck);
+        }
+        for j in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(j) {
+                continue;
+            }
+            let kind = self.equipped[j];
+            if kind == 0 {
+                continue;
+            }
+            pick(kind, self.dye_slots[j - 10], false, &mut neck, &mut c_neck);
+        }
+        self.neck = neck;
+        self.c_neck = c_neck;
+    }
+
     /// `PlayerFrame()` (`Player.cs:35755-36647`) — the legs and body rows of
     /// every pose. The chain order is the vanilla one: the swim window, the
     /// mount animator (`flag7` plus `DoesNotOverrideLegFrames`), the leg rows,
@@ -7711,6 +8117,14 @@ impl Player {
     /// pulley/rope item (`pulley`) and the raised shield (`shield_raised`).
     fn update_frames(&mut self, world: &World) {
         let held = self.frame_inputs;
+        // W4-d115 wiring round — `PlayerFrame`'s visible-accessory call
+        // (`Player.cs:35768-35771`): `if (!dead) UpdateVisibleAccessories()`.
+        // The port's neck half re-derives `neck`/`c_neck` here; the rest
+        // of the family (wings/shoe/waist/shield/face/balloon/back) waits
+        // for its draw layers (the Acc_Neck census, ANALYSIS).
+        if !self.dead {
+            self.update_visible_neck_accessory();
+        }
         // `:35947-35949`: `PlayerFrame` re-derives the fast-run footstep cue
         // every frame — the default is the legacy Run (17, style -1, cooldown
         // 9); the Moon Lord legs (140) swap in the Item-24 click at cooldown 6
@@ -11196,38 +11610,63 @@ impl Player {
         // `Player.cs:27676`: `flag25 && !lavaImmune` — ObsidianSkin (buff 1)
         // keeps the flag true, so the drain/hit arm is skipped AND `flag26`
         // stays true (the budget refills while standing in lava).
+        // `Player.cs:27674-27719`: `flag26` starts true and clears only while
+        // standing in lava without immunity — the refill arm below reads it
+        // (the budget does NOT refill in lava, even while the Lava counter
+        // gates the drain/hit arm off).
+        let mut lava_refill = true;
         if self.in_lava && !self.lava_immune {
-            if self.lava_time > 0 {
-                self.lava_time -= 1;
-            } else if self.hurt_cd <= 0.0 {
-                let cx = self.x + self.width * 0.5;
-                // `Player.cs:27687-27707`: the hit's damage/burn pair —
-                // 80/420 classic, halved by the Ash Wood set
-                // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
-                // `:27694-27702`, S1-C-12 wave D). The remix-world
-                // variants (`:27689-27693`, `:27696-27699`) and the
-                // `lavaRose` halves (`:27703-27707`) have no port fields
-                // and stay out (ANALYSIS "S1-C-12 wave D").
-                let (mut num79, mut num80) = (80, 420);
-                if self.ash_wood_bonus {
-                    num79 /= 2;
-                    num80 -= 210;
-                }
-                // The lava hit rolls the dodge block like any `Hurt` — the
-                // stream rides in from the `UpdatePlayers` stage through the
-                // update chain, `dodgeable` keeps `Hurt`'s default `true`
-                // (research S1-C-1 §1.4). `Crit: false` and the
-                // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) — Lava
-                // is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so
-                // the S1-C-7 wave B retaliate lane stays off.
-                if self.hurt_inner(num79, cx, true, rng, true, false, None, false) {
-                    // The Hurt return `num81 > 0.0` gates the OnFire grant
-                    // (`Player.cs:27709-27711`). `AddBuff` applies the expert
-                    // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
-                    self.buffs.add_buff(24, num80);
+            lava_refill = false;
+            // `Player.cs:27679`: `hurtCooldowns[ImmunityCooldownID.Lava] <= 0`
+            // gates the WHOLE arm — the budget drain AND the hit (M4-HAZARD-1:
+            // the Lava lane's own slot, not the General window; a contact
+            // hit's i-frames no longer pause the lava budget).
+            if self.hurt_cooldowns[crate::id_tables::IMMUNITY_LAVA as usize] <= 0 {
+                if self.lava_time > 0 {
+                    self.lava_time -= 1;
+                } else {
+                    let cx = self.x + self.width * 0.5;
+                    // `Player.cs:27687-27707`: the hit's damage/burn pair —
+                    // 80/420 classic, halved by the Ash Wood set
+                    // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
+                    // `:27694-27702`, S1-C-12 wave D). The remix-world
+                    // variants (`:27689-27693`, `:27696-27699`) and the
+                    // `lavaRose` halves (`:27703-27707`) have no port fields
+                    // and stay out (ANALYSIS "S1-C-12 wave D").
+                    let (mut num79, mut num80) = (80, 420);
+                    if self.ash_wood_bonus {
+                        num79 /= 2;
+                        num80 -= 210;
+                    }
+                    // The lava hit rolls the dodge block like any `Hurt` — the
+                    // stream rides in from the `UpdatePlayers` stage through the
+                    // update chain, `dodgeable` keeps `Hurt`'s default `true`
+                    // (research S1-C-1 §1.4). `Crit: false` and the
+                    // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) —
+                    // Lava is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:
+                    // 49`), so the counter-based retaliate gate never queues.
+                    if self.hurt_inner(
+                        num79,
+                        cx,
+                        true,
+                        rng,
+                        true,
+                        false,
+                        None,
+                        crate::id_tables::IMMUNITY_LAVA,
+                    ) {
+                        // The Hurt return `num81 > 0.0` gates the OnFire grant
+                        // (`Player.cs:27709-27711`). `AddBuff` applies the expert
+                        // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
+                        self.buffs.add_buff(24, num80);
+                    }
                 }
             }
-        } else if self.lava_time < self.lava_max {
+        }
+        // `Player.cs:27716-27719`: `if (flag26 && lavaTime < lavaMax)
+        // lavaTime++` — outside the counter gate, so the refill only rides
+        // the not-in-lava (or lava-immune) state.
+        if lava_refill && self.lava_time < self.lava_max {
             self.lava_time += 1;
         }
         if self.lava_time > self.lava_max {
@@ -11445,6 +11884,17 @@ impl Player {
         // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
         // invalidate the cached range or the offset animation freezes.
         h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
+        // W4-d115 wiring round: the dodge afterimages' pixel inputs —
+        // the shadow counter steps ±1 per draw frame
+        // (`LegacyPlayerRenderer.cs:433-448`) and the brain ring reads the
+        // sim counter; both change the ghosts' pixels inside the cached
+        // world range, so they ride the key. The per-frame alpha rolls'
+        // frame-count term is mixed in by the draw orchestrator while
+        // the shadow counter is live (the vine-grid gate convention: a
+        // ghost-free frame keeps the pre-wiring key bit-for-bit).
+        h ^= self.shadow_dodge_count.to_bits().wrapping_mul(0x51ED_2701);
+        h ^= (self.brain_of_confusion_dodge_animation_counter as u32)
+            .wrapping_mul(0x85EB_CA77);
         // The mount's animator state feeds the mount sprites' pixels
         // (`Mount.Draw`'s frame rect + the per-frame player offset).
         if self.mount.is_active() {
@@ -12448,7 +12898,7 @@ mod tests {
             true,
             false,
             None,
-            true,
+            crate::id_tables::IMMUNITY_GENERAL,
         );
         assert_eq!(p.hp, 70, "the cut, not the raw 40");
         // A 1-damage hit past 25% endurance truncates to 0, then the
@@ -12464,7 +12914,7 @@ mod tests {
             true,
             false,
             None,
-            true,
+            crate::id_tables::IMMUNITY_GENERAL,
         );
         assert_eq!(p.hp, 69, "the sub-one hit floors to 1, not 0");
     }
@@ -12490,7 +12940,7 @@ mod tests {
             true,
             false,
             None,
-            true
+            crate::id_tables::IMMUNITY_GENERAL
         ));
         assert_eq!(p.hp, 99, "the hit lands for the floored 1, not 0");
         assert!(
@@ -15248,7 +15698,7 @@ mod tests {
             true,
             true, // Crit
             None,
-            true
+            crate::id_tables::IMMUNITY_GENERAL
         ));
         assert_eq!(p.hp, hp - 15, "num2 used the pre-crit Damage");
         assert_eq!(p.mana, 40, "the cuffs restore the crit-doubled num");
@@ -15455,7 +15905,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, crate::id_tables::IMMUNITY_GENERAL));
         assert_eq!(p.vx, 0.0, "the shield eats the knockback");
         // Without the shield: the knockback lands.
         let mut p = player_with_accessory(0);
@@ -15463,7 +15913,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, crate::id_tables::IMMUNITY_GENERAL));
         assert!(p.vx != 0.0);
     }
 
@@ -18901,13 +19351,15 @@ mod tests {
 
     /// Runs the dodge window out the way `UpdateImmunity` does in the C# —
     /// the dodge's `SetImmuneTimeForAllTypes` writes `immune`/`immuneTime`
-    /// (R-03-5's ported fields, now gating `hurt_inner`'s General flag), so a
-    /// next hit in these tests needs the expired window, not just a cleared
-    /// `hurt_cd`.
+    /// (R-03-5's ported fields, now gating `hurt_inner`'s General flag) AND
+    /// all six `hurtCooldowns` slots (M4-HAZARD-1, `Player.cs:38017-38020`),
+    /// so a next hit in these tests needs the expired window on every lane,
+    /// not just a cleared `hurt_cd`.
     fn expire_dodge_window(p: &mut Player) {
         p.immune = false;
         p.immune_time = 0;
         p.hurt_cd = 0.0;
+        p.hurt_cooldowns = [0; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize];
     }
 
     #[test]
@@ -18970,6 +19422,22 @@ mod tests {
         assert!(p.hp < hp);
     }
 
+    /// W4-d115 — the Mystic Arts Sash dodge queues the `62 SyncDodge`
+    /// kind-5 send (`Player.cs:38113-38116`); the reader never re-sends.
+    /// With this the family's send census is complete: kinds 1/2/4/5.
+    #[test]
+    fn w4_d115_sash_dodge_queues_the_kind_5_send() {
+        let mut p = dodge_player_with(&[6189]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the sash dodges");
+        assert_eq!(rng.draws, vec![(0, 10)]);
+        assert_eq!(p.take_dodge_sends(), vec![5], "kind 5 = MysticSash (:38115)");
+        expire_dodge_window(&mut p);
+        p.apply_net_dodge(5);
+        assert!(p.immune);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
+    }
+
     #[test]
     fn s1_c_1_dw_1_2_belt_roll_dodges_on_next_10_zero() {
         // `blackBelt && Main.rand.Next(10) == 0` -> `NinjaDodge()`
@@ -18987,6 +19455,37 @@ mod tests {
         let mut rng = DodgeRng::with_rolls(&[1]);
         assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
         assert!(p.hp < hp);
+    }
+
+    /// W4-d115 — the Black Belt / Master Ninja Gear dodge queues the
+    /// `62 SyncDodge` kind-1 send (`Player.NinjaDodge`'s tail,
+    /// `Player.cs:38161-38164`); the 62 reader (`apply_net_dodge`, W4-c27)
+    /// shares the handler and never re-sends. Both 963 and 984 arm the belt.
+    #[test]
+    fn w4_d115_ninja_dodge_queues_the_kind_1_send_and_the_reader_does_not() {
+        for kind in [963u16, 984] {
+            let mut p = dodge_player_with(&[kind]);
+            assert!(p.take_dodge_sends().is_empty(), "nothing queued pre-hit");
+            let mut rng = DodgeRng::with_rolls(&[0]);
+            assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodges");
+            assert_eq!(rng.draws, vec![(0, 10)], "exactly the belt Next(10)");
+            assert_eq!(p.take_dodge_sends(), vec![1], "kind 1 = NinjaDodge (:38163)");
+            assert!(p.take_dodge_sends().is_empty(), "the take is one-shot");
+            // The reader's own-id apply runs the SAME handler but queues no
+            // send (the C# reader does not SendData, `MessageBuffer.cs:2889`).
+            expire_dodge_window(&mut p);
+            p.apply_net_dodge(1);
+            assert!(p.immune, "the reader still arms the i-frames");
+            assert!(
+                p.take_dodge_sends().is_empty(),
+                "the net-apply path never re-sends"
+            );
+        }
+        // A missed roll lands the hit and queues nothing.
+        let mut p = dodge_player_with(&[963]);
+        let mut rng = DodgeRng::with_rolls(&[1]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.take_dodge_sends().is_empty(), "no dodge, no send");
     }
 
     #[test]
@@ -19067,6 +19566,113 @@ mod tests {
         assert_eq!(rng.draws, vec![(0, 10)]);
     }
 
+    /// W4-d115 lane 19 — the full four-source stacking order
+    /// (`Player.cs:38216-38235`): sash → belt → brain → shadow, each
+    /// `Next` drawn ONLY while its source is armed and no earlier
+    /// source dodged; shadow (the deterministic tail) draws nothing.
+    /// All four armed + a never-hitting stream draws exactly
+    /// `[(0,10), (0,10), (0,6)]` and the shadow fallback then catches
+    /// the hit with zero further draws.
+    #[test]
+    fn w4_d115_lane19_the_four_source_stack_rolls_sash_belt_brain_then_shadow_falls_back() {
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        p.buffs.add_buff(59, 1800);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 armed the shadow tail");
+        let hp = p.hp;
+        // Rolls 1,1,1 miss all three Nexts; the shadow tail dodges.
+        let mut rng = DodgeRng::with_rolls(&[1, 1, 1]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow fallback");
+        assert_eq!(
+            rng.draws,
+            vec![(0, 10), (0, 10), (0, 6)],
+            "sash Next(10) -> belt Next(10) -> brain Next(6), shadow draws none"
+        );
+        assert_eq!(p.hp, hp, "the shadow dodge kept the hp");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2 = ShadowDodge");
+        assert_eq!(p.shadow_dodge_timer, 1800, "the Hallowed cooldown armed");
+    }
+
+    /// W4-d115 lane 19 — the cumulative dodge chance the roll order
+    /// implies (`Player.cs:38216-38235`): each miss multiplies through,
+    /// so belt+brain alone is `1 − (9/10)(5/6) = 1/4`, the three rolled
+    /// sources `1 − (9/10)(9/10)(5/6) = 0.325`, and the shadow tail
+    /// makes the four-source stack 100% while buff 59 lives. Verified
+    /// on the port's actual gate chain by walking the roll tree.
+    #[test]
+    fn w4_d115_lane19_the_stacked_dodge_chance_is_cumulative_not_additive() {
+        // Belt alone: 1/10.
+        let mut hit = 0;
+        for roll in 0..10 {
+            let mut p = dodge_player_with(&[963]);
+            let mut rng = DodgeRng::with_rolls(&[roll]);
+            if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                hit += 1;
+            }
+        }
+        assert_eq!(hit, 9, "belt: 9/10 hits land");
+        // Belt + brain: the brain roll only happens on the belt miss.
+        let mut hit = 0;
+        for belt in 0..10 {
+            for brain in 0..6 {
+                let mut p = dodge_player_with(&[963, 3223]);
+                let mut rng = DodgeRng::with_rolls(&[belt, brain]);
+                if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                    hit += 1;
+                }
+            }
+        }
+        // 60 combinations, 45 land: 1 − 0.75 = the cumulative 25%.
+        assert_eq!(hit, 45, "belt+brain: 1 − (9/10)(5/6) = 1/4 dodge");
+        // Sash + belt + brain: 600 combinations, 405 land (0.675).
+        let mut hit = 0;
+        for sash in 0..10 {
+            for belt in 0..10 {
+                for brain in 0..6 {
+                    let mut p = dodge_player_with(&[6189, 963, 3223]);
+                    let mut rng = DodgeRng::with_rolls(&[sash, belt, brain]);
+                    if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                        hit += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(hit, 405, "three sources: 1 − (9/10)^2(5/6) = 0.325 dodge");
+        // The shadow tail closes the gap: every miss dodges.
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        p.buffs.add_buff(59, 1800);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        let mut rng = DodgeRng::with_rolls(&[9, 9, 5]);
+        assert!(
+            !p.hurt(20, p.x + 100.0, &mut rng, true),
+            "the four-source stack dodges 100% while buff 59 lives"
+        );
+    }
+
+    /// W4-d115 lane 19 — the brain's buff-321 gate sits AFTER its
+    /// `Next(6)` in the C# `&&` chain (`:38226`), so an armed brain
+    /// with 321 active still consumes the draw and the SHADOW tail
+    /// behind it still fires — the gate skips the brain dodge, not the
+    /// rest of the chain.
+    #[test]
+    fn w4_d115_lane19_the_brain_gate_skips_only_the_brain_not_the_shadow_tail() {
+        let mut p = dodge_player_with(&[3223]);
+        p.buffs.add_buff(59, 1800);
+        p.buffs.add_buff(321, 240);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow tail dodges");
+        assert_eq!(rng.draws, vec![(0, 6)], "the brain draw still happened");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2, not 4");
+        // The 321 buff was NOT re-added (the gated dodge never ran).
+        let count = p.buffs.active_types().iter().filter(|&&b| b == 321).count();
+        assert_eq!(count, 1, "one 321 slot — the gated dodge added none");
+    }
+
     #[test]
     fn s1_c_1_dw_1_3_dodge_sets_the_80_tick_window_and_leaves_hp() {
         // The handlers' `SetImmuneTimeForAllTypes(longInvince ? 120 : 80)`
@@ -19108,6 +19714,32 @@ mod tests {
         assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
     }
 
+    /// W4-d115 — the Brain of Confusion dodge queues the `62 SyncDodge`
+    /// kind-4 send (`Player.cs:38053`); the buff-321 gate still draws the
+    /// `Next(6)` but a gated dodge queues nothing, and the reader never
+    /// re-sends.
+    #[test]
+    fn w4_d115_brain_dodge_queues_the_kind_4_send_only_on_a_dodge() {
+        let mut p = dodge_player_with(&[3223]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodges");
+        assert_eq!(rng.draws, vec![(0, 6)]);
+        assert_eq!(p.take_dodge_sends(), vec![4], "kind 4 = BrainOfConfusion (:38053)");
+        // Buff 321 now active: the roll is still drawn (C# && order) but the
+        // dodge is gated, the hit lands and nothing queues.
+        expire_dodge_window(&mut p);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "buff 321 gates the dodge");
+        assert_eq!(rng.draws, vec![(0, 6)], "the draw happened anyway");
+        assert!(p.take_dodge_sends().is_empty(), "no dodge, no send");
+        // The reader's kind-4 apply runs the handler, queues no send.
+        expire_dodge_window(&mut p);
+        p.buffs.clear_buff(321);
+        p.apply_net_dodge(4);
+        assert!(p.immune);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
+    }
+
     #[test]
     fn s1_c_1_dw_1_3_shadow_dodge_bookkeeping_runs_exactly_once() {
         // `ShadowDodge` (`:38023-38042`): buff 59 deleted, the Hallowed
@@ -19122,6 +19754,29 @@ mod tests {
         assert_eq!(p.buffs.find_buff_index(59), None, "buff 59 deleted");
         assert_eq!(p.shadow_dodge_timer, 1800);
         assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+    }
+
+    /// W4-d115 — the ShadowDodge queues the `62 SyncDodge` kind-2 send
+    /// (`Player.cs:38038`); the dodge is deterministic (no roll) and the
+    /// reader's kind-2 apply never re-sends.
+    #[test]
+    fn w4_d115_shadow_dodge_queues_the_kind_2_send_without_a_roll() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 1800);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow dodge");
+        assert!(rng.draws.is_empty(), "the shadow dodge draws nothing");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2 = ShadowDodge (:38038)");
+        assert!(p.take_dodge_sends().is_empty(), "the take is one-shot");
+        // The reader's kind-2 apply runs the handler, queues no send.
+        expire_dodge_window(&mut p);
+        p.apply_net_dodge(2);
+        assert!(p.immune);
+        assert_eq!(p.shadow_dodge_timer, 1800);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
     }
 
     #[test]
@@ -19251,6 +19906,514 @@ mod tests {
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 299);
         p.respawn();
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 0);
+    }
+
+    /// W4-d115 lane 19 — the buff-321 scan arm (`Player.cs:9940-9947`):
+    /// a brain dodge's own cooldown buff grants +10 crit ×3 + 0.10
+    /// minion damage every tick it lives, and the per-tick reset drops
+    /// them when it expires. The NPC-confuse aura is the RETALIATE
+    /// block's job (`:38403-38431`, `drain_retaliate`), not this buff's.
+    #[test]
+    fn w4_d115_lane19_the_brain_dodge_buff_grants_crit_and_minion_damage() {
+        let mut p = dodge_player_with(&[3223]);
+        // Baseline after the equip fold: crit 4, minion 1.0.
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.minion_damage - 1.0).abs() < 1e-6);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodges");
+        assert!(p.buffs.find_buff_index(321).is_some(), "the dodge armed 321");
+        // The next tick's scan grants the stats on top of the reset.
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.melee_crit, 14, "+10 (:9943)");
+        assert_eq!(p.ranged_crit, 14, "+10 (:9944)");
+        assert_eq!(p.magic_crit, 14, "+10 (:9945)");
+        assert!((p.minion_damage - 1.1).abs() < 1e-6, "+0.10 (:9946)");
+        // The buff expires: the reset drops the grants back to base.
+        p.buffs.clear_buff(321);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.minion_damage - 1.0).abs() < 1e-6);
+    }
+
+    /// W4-d115 lane 19 — `shadowDodgeCount` is DRAW-owned
+    /// (`LegacyPlayerRenderer.cs:433-448` is its only writer): the sim
+    /// tick and the respawn never touch it (`Player.cs:1166` has no
+    /// other write site; `ResetEffects`/`UpdateDead` carry no clear).
+    #[test]
+    fn w4_d115_lane19_the_shadow_dodge_count_is_draw_owned_not_sim_owned() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shadow_dodge_count = 17.0;
+        p.shadow_dodge = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shadow_dodge_count, 17.0, "the sim tick never steps it");
+        p.respawn();
+        assert_eq!(p.shadow_dodge_count, 17.0, "the respawn never clears it");
+        // The renderer's step is the ported pure fn (player_dodge_draw).
+        assert_eq!(
+            crate::player_dodge_draw::step_shadow_dodge_count(p.shadow_dodge_count, true),
+            18.0
+        );
+    }
+
+    /// W4-d115 wiring round — the writer census as a witness: NO dodge
+    /// proc writes `shadowDodgeCount` (`Player.cs:1166` is the field's
+    /// only Player.cs mention). All four handlers (the Hurt arms and the
+    /// 62 net-apply) plus the Holy Protection strike-grant leave a
+    /// pre-set count untouched; only the draw step moves it.
+    #[test]
+    fn w4_d115_wiring_no_dodge_proc_writes_the_shadow_count() {
+        // The four Hurt dodge arms: sash 5 / belt 1 / brain 4 / shadow 2.
+        for (kind, item) in [(5u8, 6189u16), (1, 963), (4, 3223)] {
+            let mut p = dodge_player_with(&[item]);
+            p.shadow_dodge_count = 9.0;
+            let mut rng = DodgeRng::with_rolls(&[0, 0, 0, 0]);
+            assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "kind {kind} dodges");
+            assert_eq!(p.shadow_dodge_count, 9.0, "kind {kind}: the proc never writes it");
+            // The 62 reader shares the handler — same census.
+            p.apply_net_dodge(kind);
+            assert_eq!(p.shadow_dodge_count, 9.0, "kind {kind}: the net-apply neither");
+        }
+        // The shadow arm (buff 59) and the Holy Protection strike-grant.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 arms the FLAG (:10076)");
+        p.shadow_dodge_count = 9.0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow dodge fires");
+        assert_eq!(p.shadow_dodge_count, 9.0, "ShadowDodge never writes the count");
+        let mut p = dodge_player_with(&[]);
+        p.on_hit_dodge = true;
+        p.shadow_dodge_count = 9.0;
+        p.on_hit_dodge_grant(); // the :6938-6941 buff-59 grant
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        assert_eq!(p.shadow_dodge_count, 9.0, "the grant arms the flag, not the count");
+        // The DRAW step is the only writer: +1 armed, −1 disarmed.
+        p.step_shadow_dodge_draw_counter();
+        assert_eq!(p.shadow_dodge_count, 10.0);
+        p.shadow_dodge = false;
+        p.step_shadow_dodge_draw_counter();
+        assert_eq!(p.shadow_dodge_count, 9.0);
+    }
+
+    /// W4-d115 wiring round — source census: outside the test module the
+    /// ONLY `self.shadow_dodge_count =` write in player.rs is the draw
+    /// step method (the renderer's `:433-448` port); the sim tick and the
+    /// respawn carry no write, matching the C#'s single-writer field.
+    /// (The needle is split so this witness's own literals do not count.)
+    #[test]
+    fn w4_d115_wiring_the_draw_step_is_the_fields_only_sim_side_writer() {
+        let src = include_str!("player.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let needle = concat!("self.shadow_dodge_count", " =");
+        let writes: Vec<_> = body.match_indices(needle).collect();
+        assert_eq!(writes.len(), 1, "exactly one write site outside the tests");
+        let tail = &body[writes[0].0..];
+        assert!(
+            tail.starts_with(concat!(
+                "self.shadow_dodge_count",
+                " = crate::player_dodge_draw::step_shadow_dodge_count("
+            )),
+            "the write is the draw step (LegacyPlayerRenderer.cs:433-448)"
+        );
+        // The step method lives OUTSIDE `update`/`respawn` — it is called
+        // from the draw orchestrator (witnessed in tiles.rs's scan).
+        let method = body.find("pub fn step_shadow_dodge_draw_counter").unwrap();
+        assert!(method < writes[0].0, "the write sits inside the step method");
+    }
+
+    /// W4-d115 wiring round — the ghosts' pixel inputs ride the G6 key:
+    /// a counter step or a brain-window tick invalidates the cached
+    /// world range (the ghosts draw inside it).
+    #[test]
+    fn w4_d115_wiring_the_dodge_counters_ride_the_render_key() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let base = p.render_key();
+        p.shadow_dodge_count = 1.0;
+        assert_ne!(p.render_key(), base, "the shadow counter rides the key");
+        p.shadow_dodge_count = 0.0;
+        p.brain_of_confusion_dodge_animation_counter = 300;
+        assert_ne!(p.render_key(), base, "the brain counter rides the key");
+        p.brain_of_confusion_dodge_animation_counter = 0;
+        assert_eq!(p.render_key(), base, "a ghost-free player keeps the old key");
+    }
+
+    // ---- W4-d115 wiring round: M4-HAZARD-1, the per-source hurtCooldowns ----
+    // (WRITTEN NOT RUN — code-only mode. Every assert cites the C# line.)
+
+    /// M4-HAZARD-1 — the boss lane lands THROUGH the General i-frames
+    /// (`Player.cs:38208`): `flag = (counter == General) ? !immune :
+    /// hurtCooldowns[counter] <= 0`. A General hit arms `immune`/
+    /// `immuneTime` (`:38386-38390`); the BossNoCheese hit reads only its
+    /// own slot, lands, and re-arms slot 1 with num7 (`:38391-38393`) —
+    /// the General window is untouched. A second boss hit inside its own
+    /// 40-tick window is swallowed (`:38210`, BossNoCheese is not an
+    /// ImmuneTimerOnlyLimitsEffects member).
+    #[test]
+    fn w4_d115_m4_hazard_the_boss_lane_lands_through_the_general_iframes() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stat_defense = 0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        // The General hit arms the 40-tick window.
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.immune);
+        assert_eq!(p.immune_time, 40);
+        assert_eq!(p.hurt_cooldowns, [0; 6], "General writes no array slot");
+        let hp = p.hp;
+        // The boss hit lands through it and arms slot 1 only.
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+        assert_eq!(p.hp, hp - 20, "the boss damage landed through the i-frames");
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize],
+            40,
+            "num7 = 40 on the lane's own slot (:38391-38393)"
+        );
+        assert_eq!(p.immune_time, 40, "the General window is untouched");
+        assert!(p.immune);
+        // The second boss hit inside its own window is swallowed.
+        let hp = p.hp;
+        assert!(!p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+        assert_eq!(p.hp, hp);
+        // The General hit is still swallowed by its own window.
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        // Both windows decay one per tick (`UpdateImmunity`,
+        // `:18860` + `:18887-18893` — the array loop is OUTSIDE the
+        // `if (immune)` block, so the boss slot runs down regardless).
+        p.update_immunity();
+        assert_eq!(p.immune_time, 39);
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize],
+            39
+        );
+        for _ in 0..39 {
+            p.update_immunity();
+        }
+        assert!(!p.immune, "the General window expired");
+        assert_eq!(p.hurt_cooldowns, [0; 6], "the boss slot expired with it");
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+    }
+
+    /// M4-HAZARD-1 — the dodge's `SetImmuneTimeForAllTypes` covers EVERY
+    /// lane (`Player.cs:38017-38020`): the belt dodge writes all six slots
+    /// with the 80-tick pair, so boss/lava/tile/bug-net hits are all
+    /// swallowed inside the dodge window — and all land once it expires.
+    #[test]
+    fn w4_d115_m4_hazard_the_dodge_window_covers_every_lane() {
+        let mut p = dodge_player_with(&[963]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(p.immune_time, 80);
+        assert_eq!(p.hurt_cooldowns, [80; 6], "the all-types write (:38017-38020)");
+        let hp = p.hp;
+        for counter in [
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE,
+            crate::id_tables::IMMUNITY_LAVA,
+            crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            crate::id_tables::IMMUNITY_WRONG_BUG_NET,
+        ] {
+            assert!(
+                !p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter),
+                "counter {counter} is covered by the dodge window"
+            );
+        }
+        assert_eq!(p.hp, hp);
+        // The decay runs every slot down; at expiry every lane lands again.
+        for _ in 0..80 {
+            p.update_immunity();
+        }
+        assert!(!p.immune);
+        assert_eq!(p.hurt_cooldowns, [0; 6]);
+        let mut rng = DodgeRng::with_rolls(&[1]); // the belt misses
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+    }
+
+    /// M4-HAZARD-1 — the PaladinsShield semantics (`Player.cs:38210` +
+    /// `ImmunityCooldownID.cs:52`): the sole ImmuneTimerOnlyLimitsEffects
+    /// member skips the early-return, so a cooldown-active hit STILL DEALS
+    /// ITS DAMAGE (`:38383`); only the re-arm (`:38391`'s `== 0` gate) and
+    /// the retaliate (`:38401`'s `& flag`) are limited. A non-member lane
+    /// (Lava) with a live counter is swallowed outright.
+    #[test]
+    fn w4_d115_m4_hazard_paladins_shield_damage_lands_while_the_cooldown_runs() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stat_defense = 0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        let shield = crate::id_tables::IMMUNITY_PALADINS_SHIELD;
+        // The first shield hit lands and arms slot 5 with 40.
+        assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, shield));
+        assert_eq!(p.hurt_cooldowns[shield as usize], 40);
+        assert!(!p.immune, "the shield lane never touches the General pair");
+        assert!(p.take_retaliate().is_some(), "flag held: the first hit retaliates");
+        // The second hit inside the window: damage STILL lands, the
+        // counter does NOT extend, no retaliate queues (flag false).
+        let hp = p.hp;
+        assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, shield));
+        assert_eq!(p.hp, hp - 20, "the damage lands through the live counter");
+        assert_eq!(
+            p.hurt_cooldowns[shield as usize],
+            40,
+            "the == 0 gate refuses the re-arm (:38391)"
+        );
+        assert!(
+            p.take_retaliate().is_none(),
+            "the :38401 & flag gates the retaliate off"
+        );
+        // The contrast: a live LAVA counter swallows the hit outright
+        // (Lava is not an ImmuneTimerOnlyLimitsEffects member).
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_LAVA
+        ));
+        let hp = p.hp;
+        assert!(!p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_LAVA
+        ));
+        assert_eq!(p.hp, hp, "the lava lane's early-return holds (:38210)");
+    }
+
+    /// M4-HAZARD-1 — the retaliate gate reads the counter's set membership
+    /// (`Player.cs:38401`, `ImmunityCooldownID.cs:49`): General and
+    /// BossNoCheese queue on an accepted hit; Lava, TileContactDamage and
+    /// WrongBugNet never do (not Retaliate members).
+    #[test]
+    fn w4_d115_m4_hazard_the_retaliate_gate_reads_the_counter_membership() {
+        let w = ground_world();
+        let mut rng = DodgeRng::with_rolls(&[]);
+        for counter in [
+            crate::id_tables::IMMUNITY_GENERAL,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE,
+        ] {
+            let mut p = Player::spawn(&w);
+            assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter));
+            assert!(
+                p.take_retaliate().is_some(),
+                "counter {counter} is a Retaliate member"
+            );
+        }
+        for counter in [
+            crate::id_tables::IMMUNITY_LAVA,
+            crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            crate::id_tables::IMMUNITY_WRONG_BUG_NET,
+        ] {
+            let mut p = Player::spawn(&w);
+            assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter));
+            assert!(
+                p.take_retaliate().is_none(),
+                "counter {counter} is NOT a Retaliate member"
+            );
+        }
+    }
+
+    /// M4-HAZARD-1 — the lava budget gates on its OWN counter
+    /// (`Player.cs:27679`): the drain/hit arm reads
+    /// `hurtCooldowns[Lava] <= 0`, NOT the General window — a contact
+    /// hit's i-frames no longer pause the budget. While the Lava counter
+    /// runs, neither the drain nor the hit fires, and the budget does not
+    /// refill in lava (`flag26`, `:27674/:27716`).
+    #[test]
+    fn w4_d115_m4_hazard_the_lava_budget_gates_on_its_own_counter() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.lava_max = 420;
+        p.lava_time = 5;
+        p.hp = 500;
+        p.max_hp = 500;
+        // The General window is LIVE — the budget still drains (the C#
+        // gate reads only the Lava slot).
+        p.immune = true;
+        p.immune_time = 600;
+        p.hurt_cd = 10.0;
+        p.in_lava = true;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 4, "the drain ignores the General i-frames");
+        // Empty the budget: the hit lands despite the General window and
+        // arms the Lava slot with 40.
+        p.lava_time = 0;
+        let hp = p.hp;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[1]));
+        assert_eq!(p.hp, hp - 80, "the lava hit lands through the i-frames");
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_LAVA as usize],
+            40
+        );
+        assert!(p.buffs.find_buff_index(24).is_some(), "OnFire granted");
+        // Inside the Lava window: no drain, no hit, no refill.
+        p.lava_time = 5;
+        let hp = p.hp;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 5, "the counter gates the drain off (:27679)");
+        assert_eq!(p.hp, hp, "no second hit inside the Lava window");
+        // Out of the lava the budget refills (flag26 true, :27716).
+        p.in_lava = false;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 6, "the refill rides the not-in-lava state");
+    }
+
+    /// M4-HAZARD-1 — the respawn census: the C# `Spawn` never writes
+    /// `hurtCooldowns` (the field's only mentions are the `:3160` decl,
+    /// the `:18887-18893` decay, the `:27679` lava gate, the `:31395`
+    /// thorns flag, the `:38017-38019` all-types write and the
+    /// `:38208/:38391-38393` Hurt arms) — the counters ride through death
+    /// untouched, while the General pair re-arms its 180-tick revive
+    /// window (`:37658-37666`).
+    #[test]
+    fn w4_d115_m4_hazard_the_counters_ride_through_death_untouched() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hurt_cooldowns = [11, 22, 33, 44, 55, 66];
+        p.start_death(&w, false, false);
+        p.respawn();
+        assert_eq!(
+            p.hurt_cooldowns,
+            [11, 22, 33, 44, 55, 66],
+            "Spawn carries no array write (the C# field census)"
+        );
+        assert!(p.immune, "the revive arms the General window");
+        assert_eq!(p.immune_time, 180);
+        assert_eq!(p.hurt_cd, 0.0, "the collapsed mirror clears on respawn");
+    }
+
+    /// M4-HAZARD-1 — source census: outside the test module the array's
+    /// writers are exactly the four C# sites — the spawn initializer
+    /// (`:3160`), the `UpdateImmunity` decay (`:18887-18893`), the
+    /// `SetImmuneTimeForAllTypes` all-slot write (`:38017-38020`) and
+    /// `Hurt`'s per-counter re-arm (`:38391-38393`). The respawn body
+    /// carries none. (Needles split so this witness's own literals do
+    /// not count.)
+    #[test]
+    fn w4_d115_m4_hazard_the_array_writer_census_matches_the_csharp() {
+        let src = include_str!("player.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        // The respawn body: from its signature to the next method.
+        let respawn = body.find("pub fn respawn(&mut self)").unwrap();
+        let respawn_end = body[respawn + 10..].find("\n    pub ").unwrap() + respawn + 10;
+        let respawn_body = &body[respawn..respawn_end];
+        assert!(
+            !respawn_body.contains(concat!("hurt_", "cooldowns")),
+            "Spawn never writes the array (the C# field census)"
+        );
+        // The decay loop lives inside update_immunity.
+        let ui = body.find("pub fn update_immunity").unwrap();
+        let ui_end = body[ui + 10..].find("\n    pub ").unwrap() + ui + 10;
+        assert!(
+            body[ui..ui_end].contains(concat!("for cd in self.hurt_", "cooldowns.iter_mut()")),
+            "the :18887-18893 decay loop"
+        );
+        // The all-types write lives inside set_immune_time_for_all_types.
+        let st = body.find("fn set_immune_time_for_all_types").unwrap();
+        let st_end = body[st + 10..].find("\n    pub ").unwrap() + st + 10;
+        assert!(
+            body[st..st_end].contains(concat!("*cd = ", "time;")),
+            "the :38017-38020 all-slot write"
+        );
+        // Hurt's re-arm is the == 0-gated per-counter write.
+        assert!(body.contains(concat!(
+            "} else if self.hurt_",
+            "cooldowns[cooldown_counter as usize] == 0 {"
+        )));
+    }
+
+    /// W4-d115 wiring round — the Acc_Neck sim half: the Cross Necklace
+    /// 554 arms `neck = 2` (`Item.cs:7992` → `UpdateVisibleAccessory`
+    /// `:36927-36930`), the LAST visible slot wins (`:36755-36805`'s two
+    /// loops), the hide flag drops the functional slot, the vanity slot
+    /// overrides unconditionally, and the per-tick reset clears to −1
+    /// when the item comes off (`ResetVisibleAccessories` `:31135`).
+    #[test]
+    fn w4_d115_wiring_the_neck_slot_rederives_from_the_visible_slots() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.neck, -1, "the spawn default (Player.cs:1686)");
+        p.equipped[3] = 554; // the Cross Necklace, neckSlot 2
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "554 → neckSlot 2 (Item.cs:7992)");
+        // A second neck item in a later slot wins (last-write, :36929).
+        p.equipped[4] = 3212; // Shark Tooth Necklace, neckSlot 7
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 7, "the later slot overwrites (:36927-36930)");
+        // Hiding the later slot falls back to the earlier one.
+        p.hide_visible_accessory[4] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "the hidden slot is skipped (:36790)");
+        // The vanity slot (13..20) overrides unconditionally (:36795-36805).
+        p.equipped[13] = 1303; // Jellyfish Necklace, neckSlot 1
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 1, "the vanity loop runs after the functional one");
+        // Taking everything off resets to −1 (ResetVisibleAccessories).
+        p.equipped = [0; 20];
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, -1, "the per-tick reset clears (:31135)");
+        // A non-neck accessory never arms the layer.
+        p.equipped[3] = 963; // the Black Belt — no neckSlot
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, -1);
+    }
+
+    /// W4-d115 wiring round — the neck dye mirrors `UpdateItemDye`'s
+    /// neck arm (`Player.cs:9683-9686`): the visible slot's dye stamps
+    /// `cNeck`, the hidden functional slot's early-return (`:9628-9631`)
+    /// keeps its dye out, the vanity slot's dye overrides.
+    #[test]
+    fn w4_d115_wiring_the_neck_dye_follows_the_visible_slot() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.dye_slots[3] = 1007; // Red Dye (the update_dye_cache witness's kind)
+        p.update(&w, PlayerInput::default());
+        let dyed = p.c_neck;
+        assert!(dyed != 0, "the visible slot's dye stamps cNeck (:9685)");
+        // Hidden: the dye stays out (the :9628-9631 early-return).
+        p.hide_visible_accessory[3] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.c_neck, 0, "the hidden functional slot keeps its dye out");
+        assert_eq!(p.neck, -1, "and the layer itself hides");
+        // The vanity slot's dye overrides even while the functional hides.
+        p.equipped[13] = 554;
+        p.dye_slots[3] = 1015; // Blue Dye on the vanity slot (13 − 10 = 3)
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "the vanity neck shows");
+        assert!(p.c_neck != 0 && p.c_neck != dyed, "the vanity dye overrides");
     }
 
     // -- S1-P-i41: mount item use + data witnesses ---------------------------

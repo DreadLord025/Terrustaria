@@ -1427,9 +1427,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // (`Player.cs:38401-38517`): those hits run inside
                 // `Player.Update` under the `UpdatePlayers` swap
                 // (`Main.cs:17754`) on the General counter (a Retaliate
-                // member), so the drain rides the same stream. The lava/tile
-                // lanes pass `retaliate_lane = false` (their counters are not
-                // Retaliate members) and never queue.
+                // member), so the drain rides the same stream. The lava/tile/
+                // bug-net lanes' counters are not Retaliate members
+                // (M4-HAZARD-1: `hurt_inner` reads the membership from the
+                // counter) and never queue.
                 let expert = p.buffs.expert_mode;
                 crate::hurt_modifiers::drain_retaliate(
                     p,

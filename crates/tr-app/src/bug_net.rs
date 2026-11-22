@@ -686,14 +686,13 @@ pub(crate) fn update_bug_net(app: &mut App) -> bool {
             CatchVerdict::LavaHurt { hit_dir } => {
                 // `Player.cs:44723-44726`: `Hurt(ByNPC(i), 1, hitDir,
                 // cooldownCounter: WrongBugNet) > 0 && !dead` → buff 24
-                // (On Fire!) 300 ticks. The port's single damage lane
-                // stands in for the WrongBugNet counter (ANALYSIS);
-                // WrongBugNet is NOT in `Sets.Retaliate`
-                // (`ImmunityCooldownID.cs:49`), so the retaliate lane
-                // stays off — the lava lane's precedent
-                // (`player.rs`'s `hurt_inner(..., false)`). The dodge
-                // rolls ride the `UpdatePlayers` stream like every other
-                // hazard hurt. `hit_dir` signs the knockback side: the
+                // (On Fire!) 300 ticks. M4-HAZARD-1: the lane rides its own
+                // `hurt_cooldowns[IMMUNITY_WRONG_BUG_NET]` slot (the C#'s
+                // per-source array); WrongBugNet is NOT in `Sets.Retaliate`
+                // (`ImmunityCooldownID.cs:49`), so the counter-based
+                // retaliate gate never queues — the lava lane's precedent.
+                // The dodge rolls ride the `UpdatePlayers` stream like every
+                // other hazard hurt. `hit_dir` signs the knockback side: the
                 // C# `hitDirection` pushes AWAY from the NPC, so the
                 // `from_x` anchor sits on the NPC's side.
                 let from_x = if hit_dir > 0 {
@@ -703,7 +702,16 @@ pub(crate) fn update_bug_net(app: &mut App) -> bool {
                 };
                 let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 let landed = if let Some(p) = app.player.as_mut() {
-                    p.hurt_inner(1, from_x, true, rng, true, false, None, false)
+                    p.hurt_inner(
+                        1,
+                        from_x,
+                        true,
+                        rng,
+                        true,
+                        false,
+                        None,
+                        crate::id_tables::IMMUNITY_WRONG_BUG_NET,
+                    )
                 } else {
                     false
                 };

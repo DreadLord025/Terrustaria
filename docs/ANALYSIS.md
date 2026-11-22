@@ -18439,8 +18439,10 @@ the caller's stream (`&mut dyn DropRng`, the `damage_var` parameter pattern)
 only while its source is armed and no earlier source dodged; a dodge returns
 `false` (hp untouched) after `SetImmuneTimeForAllTypes`'s write вЂ”
 `immune = true` + `immuneTime = time` on the fields R-03-5 ported
-(`immuneNoBlink` untouched, like the C#) plus the collapsed `hurtCooldowns` в†’
-`hurt_cd = (long_invince ? 120 : 80)/60` вЂ” the 120/80 pair is its own value
+(`immuneNoBlink` untouched, like the C#) plus the `hurt_cd` seconds mirror
+(the W4-d115 wiring round ported the full `hurtCooldowns` array — the
+all-types write covers all six slots, `:38017-38020`; see the wiring-round
+addendum) — the 120/80 pair is its own value
 set, `iframes_for` (the normal 40/20 window) is not involved. The brain's
 `Next(6)` precedes the `FindBuffIndex(321)` check in the C# `&&` chain, so the
 draw happens whenever item 3223 is armed even while buff 321 is active (buff
@@ -18496,6 +18498,195 @@ Documented gaps, all deliberate:
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
 
+### W4-d115 addendum — the send seams + HolyProtection (2026-11-21)
+
+**Code-only mode**: no cargo/rustc/tests were run on this branch — the 9
+witness tests are WRITTEN, NOT RUN. The branch is stacked on W4-c27 batch 4
+(`412b6bc0`, the `62 SyncDodge` reader/relay + `Player.apply_net_dodge`);
+the handlers are REUSED, not re-ported.
+
+1. **The `SendData(62)` send census is complete** (kinds 1/2/4/5). Each
+   handler's C# tail (`NinjaDodge` `:38161-38164` kind 1, `ShadowDodge`
+   `:38038` kind 2, `BrainOfConfusionDodge` `:38050-38054` kind 4,
+   `DoMysticSashDodge` `:38113-38116` kind 5) queues its kind byte on
+   `Player.pending_dodge_sends` **at the `hurt_inner` roll arm**, NOT inside
+   the shared handler — c27's `apply_net_dodge` reader calls the same
+   handlers and the C# reader never re-sends (`MessageBuffer.cs:2887-2902`).
+   `net_tick` drains the queue EVERY tick ahead of the 10 Hz state batch
+   (the C# send is inline in `Hurt`; the `take_hurt_sound` convention):
+   host → `S2c::SyncDodge` broadcast, client → `C2s::SyncDodge` (the host
+   forces the id to the sender, `:2885`); `NetRole::Off` takes-and-drops
+   (`NetMessage.SendData`'s netMode gate, `NetMessage.cs:83-86`). The
+   respawn pending-strip clears the queue. One dodge per commit:
+   `ebb149c3` (ninja), `9cc68501` (brain), `26f81b71` (shadow),
+   `7141a837` (sash).
+2. **HolyProtection = the Hallowed `onHitDodge` grant chain** (`947e0b44`).
+   Buff 59's display name IS "Holy Protection" (`BuffName.ShadowDodge`,
+   en-US Game.json:700) — there is no separate Holy-dodge handler in 1.4.5.8
+   (the retired kind-3 wire arm has no C# body). Landed: `Player.on_hit_dodge`
+   (`Player.cs:1170`) + the `ResetEffects` clear (`:18443`);
+   `SetFlag::OnHitDodge` + the 24 `Hallowed` (`ArmorSetBonuses.cs:473`,
+   heads {558,553,559,4898,4897,4896} × bodies {551,4900} × legs {552,4901})
+   and 8 `HallowedSummoner` (`:472`, heads {4873,4899}) cartesian rows in the
+   app-side flag table (the head ids are disjoint across the two sets, so
+   the plain `complete_set` scan stays correct despite the shared body/leg
+   ids; the `maxMinions += 2` stat half stays tr-core's, S1-P-i25);
+   `Player.on_hit_dodge_grant` = `OnHit`'s arm verbatim (`:6938-6941`:
+   `onHitDodge && shadowDodgeTimer == 0 → AddBuff(59, 1800)`, RNG-free);
+   the `:25705-25708` `shadowDodge && !onHitDodge → ClearBuff(59)` right
+   after `UpdateArmorSets`; the two `OnHit` call seams — melee
+   `ProcessHitAgainstNPC` (`:44392-44395`, `life > 5` gate, after
+   StatusToNPC before the nano-flask boost) and projectile
+   `TryDoingOnHitEffects` (`Projectile.cs:13585-13588` → `:15128-15141`,
+   the 221/227/614/729/908/977 refuse list verbatim).
+3. **Deviations, all deliberate**: the `OnHit` arms other than `onHitDodge`
+   (titanium storm `:6928-6937`, regen `:6942-6945`, stardust `:6946-6963`,
+   petal `:6964-6982`, crystal leaf `:6983+`) are unported families — their
+   slots stay open at the same seams; the statue/Mimic `flag` (`:6919-6923`)
+   only gates the titanium arm, so its absence does not touch this grant.
+   The melee seam runs inside the `enchant_flags` `if let` (the port always
+   has a player there — the `Some(flags)` fold); the dash/`CollideWithNPCs`
+   `OnHit` callers (`:20443`/`:21093`) ride the port's stand-in dash arm
+   (no `ApplyDamageToNPC` seam yet). The send queue's drain latency is one
+   fixed step at most (the `net_tick` runs in the same step's net phase);
+   the remote-copy apply stays parked with c27 (no peer hurt lane).
+
+### W4-d115 lane 19 addendum — the doc-sweep (2026-11-21)
+
+**Code-only**: 16 more witnesses WRITTEN NOT RUN across five items
+(research/97-doc-sweep-dodge.md; commits `709b537b`, `e486e533`,
+`04da95f7`, `6c5a1c57`, `fcb4b17c`).
+
+1. **The dodge afterimages** (`LegacyPlayerRenderer.cs:433-467`) port as
+   pure fns in `player_dodge_draw.rs` (UNWIRED — the `entities.rs` draw
+   wiring is the follow-up round, the g17 precedent): the
+   `shadowDodgeCount` ±1/frame step (cap 30 / floor 0, DRAW-owned — the
+   missing `Player.shadow_dodge_count` field lands, no sim writer), the
+   two ±count shadow ghosts (one `Next(-10,11)` alpha roll each, +count
+   first), the brain six-ghost ring (UNclamped `GetLerpValue(300,270)`
+   gate — only the window's first 30 ticks show, `Lerp(2,120)` radius,
+   π/3 float accumulator). The dust/gore bursts stay g17-owned
+   (`player_gore_c.rs` `3ff14a0a`, censused not touched).
+2. **ImmunityCooldownID** (`ID/ImmunityCooldownID.cs:47-82`) lands in
+   `id_tables.rs`: the 7-id table + Count 6 + the four Sets membership
+   fns. Census verdict: no missing C# ids (`LegacyUnused2` has zero
+   consumers); the port's gap is the M4-HAZARD-1 per-counter collapse —
+   BossNoCheese's land-through-General-iframes semantics and
+   PaladinsShield's effects-only arm (`:38210`) stay unported (recorded).
+3. **The Cross Necklace draws no shield** — `neckSlot = 2`
+   (`Item.cs:7992`) rides the unported Acc_Neck layer family; its only
+   combat write is `longInvince` (f48 `41323c7c`). The shield-raise
+   visual is the Squire/Brand layer (machine f48-owned): the draw halves
+   port in `player_dodge_draw.rs` — the `:36770-36777` first-shieldSlot
+   pick (eocDash twin folded), the `:2965-2976` width swap + flip mirror
+   (the `+= 0` decompilation artifact at `:2971` recorded), the `:2992`
+   int-truncated anchor, the raise/orbit/breathe/parry-ghost pulses
+   (`:2961-3018`).
+4. **Buff 321's stat arm was MISSING** — `Player.cs:9940-9947` (+10
+   melee/ranged/magic crit + 0.10 minionDamage per slot) lands live in
+   the `player.rs` buff scan + the `buff_effects.rs` table mirror. The
+   NPC-confuse aura is NOT the buff's job: it is the retaliate block
+   (`:38403-38431`, `drain_retaliate`, already S1-C-7 wave B). The dart
+   565's aiStyle-104 machine (`Projectile.cs:33478-33511`) stays an
+   unported projectile family (the raw spawn rides the pool).
+5. **The stacking order VERIFIED** — `hurt_inner`'s roll block matches
+   `Player.cs:38216-38235` verbatim (sash → belt → brain → shadow, the
+   brain's Next(6) before the 321 gate, shadow RNG-free). New witnesses:
+   the four-source shadow fallback, the cumulative-not-additive chance
+   walk (1/10, 1/4, 0.325, 100% with buff 59), the brain-gate-skips-
+   only-the-brain case. No defect found, no roll-block change.
+
+### W4-d115 wiring round addendum (2026-11-21)
+
+**Code-only**: four mechanics landed on `task/W4-d115-dodge-family`
+(commits `7ac8bd29` shadow-count writer, `ed229899` afterimage draw
+wiring, `c9fcc717` Acc_Neck family, this round's M4-HAZARD-1 commit);
+witnesses WRITTEN NOT RUN throughout.
+
+1. **shadow_dodge_count writer census + wiring** — the C# field has NO
+   sim writer (`Player.cs:1166` is its only Player.cs mention; the dodge
+   procs arm the buff-59 FLAG `:10076` or the brain counter `:38049`).
+   The sole writer is `LegacyPlayerRenderer.cs:433-448` (±1 per DRAW
+   frame, cap 30 / floor 0). Port: `Player::step_shadow_dodge_draw_counter`
+   called from `App::draw_region` before the render clone — the sim tick
+   and respawn never touch it (the draw-owned witness keeps passing).
+2. **The afterimage draw wiring** — `render::entities::draw_dodge_afterimages`
+   draws the shadow pair + the brain ring BEFORE the main copy
+   (`LegacyPlayerRenderer.cs:433-467` precedes `:468-475`) in the
+   `tiles.rs` player pass; each ghost is a full composite assembly at
+   position+offset (`draw_player` split into `player_draw_layers` + push
+   so the ghost alpha tints every layer pre-push). The two `Next(-10,11)`
+   rolls ride a frame-pinned `UnifiedRandom` (the sparkle-seed
+   convention, +count copy first); the brain ring is RNG-free. The G6
+   `render_key` gains the shadow-count + brain-counter terms and the
+   orchestrator mixes the frame count only while the counter is live —
+   ghost-free frames keep the old key bit-for-bit. Recorded deviation:
+   the unported `immuneAlpha`/shimmer base stays 1
+   (`GetImmuneAlphaPure` `:54184-54196`'s `color *= 1-shadow` rides).
+3. **The Acc_Neck layer family** — self-contained port: the generated
+   `ItemDef` carries no neck slot, so the hand-written `ITEM_NECK_SLOT`
+   table lives in `id_tables.rs` (the `ARMOR_NECK` convention; all 14
+   `Item.cs` assignments → slots 1..14 exactly once). Sim:
+   `Player.neck/c_neck` re-derived per tick in
+   `update_visible_neck_accessory` (`Player.cs:35768-35771` call,
+   `:36927-36930` last-visible-wins, the `:9628-9631`/`:9683-9686` dye
+   arms, `ResetVisibleAccessories` −1). Draw: `PlayerPart::NeckAcc`
+   between Shirt and Head (`PlayerDrawLayers.cs:2026-2034`, the torso
+   anchor `LegacyPlayerRenderer.cs:208-214`), `colorArmorBody` tint +
+   flip + `cNeck` dye. `Acc_Neck_1..14` packed (all .xnb verified, slot 0
+   file-less).
+4. **M4-HAZARD-1 CLOSED — the per-source `hurtCooldowns` array.**
+   `Player.hurt_cooldowns: [i32; 6]` (`Player.cs:3160`) lands with its
+   four C# writers: the spawn initializer, the `UpdateImmunity` tail
+   decay (`:18887-18893`, OUTSIDE the `if (immune)` block),
+   `SetImmuneTimeForAllTypes`' all-six write (`:38017-38020` — a dodge's
+   i-frames cover every lane) and `Hurt`'s `== 0`-gated per-counter
+   re-arm (`:38391-38393`). `Spawn` carries NO array write (the C# field
+   census) — the counters ride through death untouched. `hurt_inner`'s
+   gate is the C# `:38208` flag verbatim: General reads
+   `!immune` (the port keeps the `hurt_cd` seconds mirror beside it for
+   the collapsed-lane witnesses), the six array lanes read their own
+   slot — **boss/hazard hits land THROUGH the General i-frames**. The
+   `:38210` early-return skips for `ImmuneTimerOnlyLimitsEffects`
+   members: a cooldown-active **PaladinsShield** hit still deals its
+   damage (`:38383`); only the re-arm and the retaliate are limited.
+   The retaliate gate now reads `immunity_retaliate(cooldown_counter)
+   && flag` — the S1-C-7 wave B `retaliate_lane` bool is RETIRED (the
+   counter carries both halves). Lane wiring: `npc.rs` contact picks
+   BossNoCheese for 396/397/398/400/401 (`:31335-31341`; the thorns
+   flag4 `:31392-31396` reads the lane's own pre-hit state),
+   `projectile.rs` `damage_player` picks it for 452/454/455/462 +
+   871-874/919/923/924 (`Projectile.cs:14779-14796`), the lava lane
+   gates its budget drain AND hit on `hurtCooldowns[Lava]` (`:27679`,
+   the `flag26` refill stays outside), `touch_damage.rs` + the Don't
+   Starve cactus chop (`Player.cs:45723`) ride TileContactDamage,
+   `bug_net.rs` rides WrongBugNet. New entries: `hurt_cooldown` /
+   `hurt_with_source_cooldown` (the counter-carrying `Hurt`);
+   `hurt`/`hurt_with_source` keep the General default. Remaining
+   unported: the MP team-share redirect itself (`:38338-38368`), the
+   Solar Flare `Sets.Counter` consume (`:38305`, unported set family).
+
+**The d115/d125 split-contract (M4-HAZARD-1 × Empress r7):**
+- **d115 owns the TABLE side**: the `hurt_cooldowns` array, its four
+  writers, the `hurt_inner` per-counter gate/re-arm/retaliate, the
+  `IMMUNITY_*` constants + membership fns (`id_tables.rs`), and the
+  counter-carrying entries `Player::hurt_cooldown(amount, from_x, rng,
+  dodgeable, cooldown_counter)` /
+  `Player::hurt_with_source_cooldown(.., source_projectile,
+  cooldown_counter)` — both `pub(crate)`, stable signatures.
+- **d125 owns the SET side**: the Empress (636) `NpcKind` + its
+  `empress_dodgeable` stamp / `is_damage_dodgeable()` arm. Its contact
+  path switches the plain `player.hurt(..)` call to
+  `player.hurt_cooldown(dmg, cx, rng, self.is_damage_dodgeable(),
+  crate::id_tables::IMMUNITY_BOSS_NO_CHEESE)` and adds the `:31342-31348`
+  `ai[0] == 0f || ai[0] == 10f` no-contact skip BEFORE the collision
+  body (the C# `continue`). No array ownership, no gate changes — the
+  table side already implements the land-through semantics.
+- Merge order is free: d125's branch compiles against d115's entries
+  once both land; neither touches the other's files beyond the one
+  contact call site (`npc.rs::contact`, d115's counter pick precedes
+  d125's kind arm — a semantic merge keeps both).
+
 ## The magic cuffs (S1-C-7 wave A, 2026-11-18)
 
 `Player.Hurt`'s `magicCuffs` arm (`Player.cs:38291-38303`) lands in
@@ -18544,15 +18735,18 @@ verification is by C#-source comparison and inspection only.
 `player.rs::hurt_inner` + the new `crates/tr-app/src/hurt_modifiers.rs`.
 
 - **The gate** (`:38401`): `(whoAmI == Main.myPlayer && ImmunityCooldownID.
-  Sets.Retaliate[cooldownCounter]) & flag`. `flag` is the PRE-hit not-immune
-  state (`:38208`); `hurt_inner` only reaches the queue on an accepted hit, so
-  that half is the queue itself. The Retaliate set is {General, BossNoCheese,
-  PaladinsShield} (`ImmunityCooldownID.cs:49`): the port's `retaliate_lane`
-  argument carries the membership вЂ” the contact (`:31423`), projectile
-  (`Projectile.cs:14868`) and fall/petrify lanes pass true (General), the lava
-  (`ImmunityCooldownID.Lava`, `:27708`) and tile-contact
-  (`TileContactDamage`, `:28981`) lanes pass false вЂ” vanilla lava/spike hits
-  never retaliate.
+  Sets.Retaliate[cooldownCounter]) & flag`. `flag` is the PRE-hit per-counter
+  state (`:38208`). The Retaliate set is {General, BossNoCheese,
+  PaladinsShield} (`ImmunityCooldownID.cs:49`): the S1-C-7 wave B
+  `retaliate_lane` argument carried the membership — **the W4-d115 wiring
+  round (M4-HAZARD-1) retired it**: `hurt_inner` now reads
+  `immunity_retaliate(cooldown_counter) && flag` directly. The contact
+  (`:31423`), projectile (`Projectile.cs:14868`) and fall/petrify lanes ride
+  General/BossNoCheese (members), the lava (`ImmunityCooldownID.Lava`,
+  `:27708`), tile-contact (`TileContactDamage`, `:28981`) and bug-net
+  (`WrongBugNet`, `:44723`) lanes are not — vanilla lava/spike hits never
+  retaliate. A cooldown-active PaladinsShield hit (the `:38210` exemption)
+  reaches the tail with flag false and queues nothing.
 - **The queue**: `hurt_inner` records a `RetaliateRequest` вЂ” the final
   post-floor `num2` (`:38378-38383`) plus the hit-moment position/center/
   velocity, captured BEFORE `Hurt`'s own knockback (`:38519-38524`) overwrites
@@ -20153,9 +20347,10 @@ Deliberate deviations:
 3. `Player.TouchedTiles` (the movement-traced fallback in `GetHurtTile`)
    is still not modelled вЂ” the port's box scan covers the same area with the
    source's own В±1 margin.
-4. `ImmunityCooldownID.TileContactDamage` collapses into the port's single
-   `hurt_cd` (the port carries one immunity window, not the C#'s per-source
-   array).
+4. ~~`ImmunityCooldownID.TileContactDamage` collapses into the port's single
+   `hurt_cd`~~ **CLOSED by the W4-d115 wiring round (M4-HAZARD-1)**: the
+   lane rides its own `Player.hurt_cooldowns` slot — the C#'s per-source
+   array is ported (see "W4-d115 wiring round addendum").
 5. The bleeding duration's roll rides the port's `item_rng` stream (the C#'s
    `Main.rand`), the same stream the damage roll already used.
 
@@ -36673,10 +36868,12 @@ exactly one draw, mirrored replay).
 
 **Deviations (deliberate).**
 
-* The `WrongBugNet` immunity counter collapses onto the port's single
-  damage lane (the M4-HAZARD-1 admission); it is NOT in `Sets.Retaliate`
-  (`ImmunityCooldownID.cs:49`), so the lava lane's
-  `hurt_inner(..., retaliate=false)` precedent applies.
+* ~~The `WrongBugNet` immunity counter collapses onto the port's single
+  damage lane (the M4-HAZARD-1 admission)~~ **CLOSED by the W4-d115
+  wiring round**: the lane rides its own
+  `hurt_cooldowns[IMMUNITY_WRONG_BUG_NET]` slot; it is NOT in
+  `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so the counter-based
+  retaliate gate never queues (the lava lane's precedent).
 * The `Utils.PoofOfSmoke` visuals (`Utils.cs:1078-1093`, the `Next(3,7)`
   gore burst + dust) are skipped with the standing gore/dust gap — the
   statue-poof and frog arms lose their draws; the `106` smoke broadcast

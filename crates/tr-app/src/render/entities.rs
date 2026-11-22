@@ -50,6 +50,13 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// W4-d115 wiring round — the Acc_Neck layer family
+    /// (`TextureAssets.AccNeck[n]` = `Images/Acc_Neck_{n}`,
+    /// `AssetInitializer.cs:223-226`), indexed by `ArmorIDs.Neck` slot
+    /// 1..14 (`ARMOR_NECK_COUNT` = 15; index 0 is the empty slot — the
+    /// layer gates `neck > 0`, `PlayerDrawLayers.cs:2028`). The Cross
+    /// Necklace 554 rides slot 2 (`Item.cs:7992`).
+    pub(crate) acc_neck: [Option<BgTex>; 15],
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
@@ -76,6 +83,7 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            acc_neck: [None; 15],
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
         }
@@ -127,6 +135,17 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
             body
         },
         armor_legs: armor_sheets("Armor_Legs"),
+        // W4-d115 wiring round — the Acc_Neck strips (`AssetInitializer.cs:
+        // 223-226`): the file number is the neck slot, 1..14 (index 0 has
+        // no file — the empty slot). A missing file stays `None` and the
+        // layer skips it.
+        acc_neck: std::array::from_fn(|slot| {
+            if slot == 0 {
+                None
+            } else {
+                sky_tex(atlas, &format!("Acc_Neck_{slot}"), None)
+            }
+        }),
         // The mount strips resolve by the rows' own sheet names (`Mount.cs:
         // 696-2567`); a missing file stays `None` and the draw skips it.
         mount_back: std::array::from_fn(|i| {
@@ -1604,6 +1623,27 @@ pub(crate) fn draw_player(
     zoom: f32,
     screen: Vec2,
 ) -> u32 {
+    let layers = player_draw_layers(
+        assets, lookups, player, held, armor, light, style, anim_time,
+    );
+    push_layers(r, &layers, camera, zoom, screen)
+}
+
+/// The composite layer set [`draw_player`] pushes — split out so the
+/// dodge-afterimage pass (W4-d115 wiring round) can tint the whole set
+/// with the ghost alpha (`GetImmuneAlphaPure`'s `alphaReduction`,
+/// `Player.cs:54184-54196`) before pushing, exactly like the C#
+/// `BoringSetup` multiplies each layer colour by the shadow factor.
+pub(crate) fn player_draw_layers(
+    assets: &PlayerAssets,
+    lookups: &assets::Lookups,
+    player: &Player,
+    held: Option<(u16, f32, u16)>,
+    armor: ArmorKinds,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+) -> Vec<LayerSprite> {
     let (cx, cy) = player.center();
     let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
     let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
@@ -1685,6 +1725,10 @@ pub(crate) fn draw_player(
         head_armor,
         body_armor,
         leg_armor,
+        // W4-d115 wiring round — the Acc_Neck layer's inputs: the sim's
+        // `update_visible_neck_accessory` re-derives both per tick.
+        neck: player.neck,
+        c_neck: player.c_neck,
         // The live `Player.compositeFrontArm`/`compositeBackArm`
         // (`Player.cs:1906`) — the sim assigns them per `useStyle`/`holdStyle`
         // (the S1-G-16 swing parity); the renderer's composite machine
@@ -1728,7 +1772,90 @@ pub(crate) fn draw_player(
         ];
         super::player_layers::apply_player_rotation(&mut layers, pivot, state.full_rotation);
     }
-    push_layers(r, &layers, camera, zoom, screen)
+    layers
+}
+
+/// W4-d115 wiring round — the dodge afterimage block
+/// (`LegacyPlayerRenderer.cs:433-467`): the shadow-dodge pair and the
+/// brain-of-confusion ring draw BEFORE the main copy (`:468-475`), each a
+/// full `DrawPlayer` at `position + netOffset + offset` with the ghost
+/// alpha as the `shadow` parameter. The maths ride `player_dodge_draw`'s
+/// pure fns; this fn is their render seam — the ghost copies reuse the
+/// live composite assembly at the offset origin, tinted by
+/// `GetImmuneAlphaPure`'s `alphaReduction` factor (`Player.cs:54184-54196`:
+/// `color *= 1 - shadow`; the port's `immuneAlpha` blink visual is
+/// unported, so the `(255 - immuneAlpha)/255` base is 1 and the shimmer
+/// term is 0 — recorded deviation, ANALYSIS "The dodge afterimages").
+///
+/// RNG contract (`:452-453`): ONE `Next(-10,11)` per shadow ghost, the
+/// +count copy first. The port pins the stream per frame like the
+/// sparkle draws (`Main.rand` is a global stream the port cannot share
+/// across passes; the frame-pinned seed keeps two identical runs
+/// SHA256-equal). The brain ring is RNG-free.
+///
+/// The C# calls the step (`:433-448`) inside the same block; the port
+/// steps the live field in `App::draw_region` before the render clone
+/// (`Player::step_shadow_dodge_draw_counter`), so this fn only READS the
+/// stepped counter.
+pub(crate) fn draw_dodge_afterimages(
+    r: &mut SpriteRenderer,
+    assets: &PlayerAssets,
+    lookups: &assets::Lookups,
+    player: &Player,
+    held: Option<(u16, f32, u16)>,
+    armor: ArmorKinds,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    // The frame's pinned seed (the sparkle convention — the caller feeds
+    // `frame_count`-derived bits so the alpha rolls replay per frame).
+    ghost_seed: u64,
+) -> u32 {
+    let mut ghosts: Vec<crate::player_dodge_draw::DodgeGhost> = Vec::new();
+    if player.shadow_dodge_count > 0.0 {
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(ghost_seed as i32);
+        if let Some(pair) = crate::player_dodge_draw::shadow_dodge_ghosts(
+            player.shadow_dodge_count,
+            &mut rng,
+        ) {
+            ghosts.extend(pair);
+        }
+    }
+    ghosts.extend(crate::player_dodge_draw::brain_dodge_ghosts(
+        player.brain_of_confusion_dodge_animation_counter,
+    ));
+    if ghosts.is_empty() {
+        return 0;
+    }
+    let mut quads = 0;
+    for g in ghosts {
+        // `GetImmuneAlphaPure`'s factor (`:54186-54190`): the base
+        // `(255 - immuneAlpha)/255` is 1 (the blink visual is unported)
+        // and `alphaReduction > 0` multiplies `1 - shadow`.
+        let factor = if g.shadow > 0.0 { 1.0 - g.shadow } else { 1.0 };
+        let mut copy = player.clone();
+        copy.x += g.offset.x;
+        copy.y += g.offset.y;
+        // The ghost is a full DrawPlayer at the offset position — the
+        // composite assembly runs unchanged (its light sample re-reads
+        // the GHOST tile, `PlayerDrawSet.cs:440-454`); the tint factor
+        // lands on every layer colour before the push (the C# multiplies
+        // each layer's colour inside BoringSetup).
+        let mut layers = player_draw_layers(
+            assets, lookups, &copy, held, armor, light, style, anim_time,
+        );
+        for l in &mut layers {
+            l.color[0] *= factor;
+            l.color[1] *= factor;
+            l.color[2] *= factor;
+            l.color[3] *= factor;
+        }
+        quads += push_layers(r, &layers, camera, zoom, screen);
+    }
+    quads
 }
 
 /// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the
@@ -3700,6 +3827,13 @@ mod anchor_tests {
             ML_EYE_SHEET,
         ] {
             assert!(packed(name), "{name} is asked for by the Moon Lord's parts");
+        }
+        // W4-d115 wiring round: `make_player_assets` asks `Acc_Neck_{1..14}`
+        // for the neck layer (AssetInitializer.cs:223-226, ArmorIDs.Neck.Count
+        // = 15 with slot 0 the empty file-less index).
+        for slot in 1..crate::id_tables::ARMOR_NECK_COUNT {
+            let name = format!("Acc_Neck_{slot}");
+            assert!(packed(&name), "{name} is asked for by the neck layer but never packed");
         }
         // Every lunar kind must resolve to a sheet the pillar set carries —
         // `npc_sheet(texture_net_id(kind))` is the draw's only source.

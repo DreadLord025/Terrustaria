@@ -173,6 +173,11 @@ mod hurt_modifiers;
 // Player.cs:6502-6617) — wired at world_sim/editing.rs's pre-strike site.
 mod melee_on_hit;
 mod player;
+// W4-d115 lane 19: the dodge family's DRAW maths (LegacyPlayerRenderer
+// :433-467 afterimages + PlayerDrawLayers :2954-3024 shield pulses) —
+// UNWIRED pure functions; the entities.rs draw claims are the follow-up
+// round (the W4-g17 player_gore_c precedent; dust side g17-owned).
+mod player_dodge_draw;
 mod player_file;
 mod potions;
 mod prefix;
