@@ -251,7 +251,6 @@ impl App {
                     sunflower_wind_counter,
                     sunflower_wind_step,
                     vine_wind_counter,
-                    leaves,
                     items,
                     swing,
                     projectiles,
@@ -682,10 +681,13 @@ impl App {
                     // the tile pass and its `AddLight` list feeds the light compute.
                     // Running it unconditionally (not only on world-range rebuilds)
                     // keeps the light feed a pure function of the frame index.
-                    let mut leaf_spawns = Vec::new();
-                    let mut leaf_rng = tr_core::tile_light::FastRandom::new(
-                        (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
-                    );
+                    // W4-g68: the leaf spawns go straight into `App.gore`
+                    // (`Main.gore`) during the tile/foliage passes — no
+                    // intermediate Vec. The `Main.rand` stand-in for the
+                    // draw-side `NewGore*` internals is the bare global
+                    // stream (the C# `DrawTiles_EmitParticles` runs outside
+                    // every SwapRandom block; the per-frame pinning of the
+                    // gate stream stays below in `draw_tiles`).
                     if !crate::env::no_waterfall() {
                         // `Main.screenPosition` / `screenWidth` / `screenHeight`
                         // for both ambience scans and the rain-arm view cull
@@ -948,7 +950,11 @@ impl App {
                         wind.wind_grid.set_size(vx1 - vx0, vy1 - vy0);
                         wind.wind_grid.update();
                         if wind.sway_enabled {
-                            if let Some(p) = player.as_ref() {
+                            // `WindGrid.cs:91`: the `!player.active || player.dead`
+                            // head gates — a dead player's corpse drift must not
+                            // stamp gusts (W4-g68 final-phase census fix; the
+                            // active half is the `Some(p)` itself).
+                            if let Some(p) = player.as_ref().filter(|p| !p.dead) {
                                 wind.scan_player(
                                     world,
                                     (p.x, p.y),
@@ -1306,7 +1312,13 @@ impl App {
                             *grass_wind_counter,
                             *tree_wind_counter,
                             *sunflower_wind_counter,
-                            &mut leaf_spawns,
+                            // W4-g68: the leaf spawns land in the gore pool
+                            // directly; `Main.rand` is the bare global stream
+                            // (the tile-draw emission runs outside every
+                            // SwapRandom block in the C#).
+                            gore,
+                            self.rngs.global(),
+                            !game_paused_for_specials && !crate::env::no_wind(),
                             *vine_wind_counter,
                             // S1-F-9 slice B: the engine-driven DrawData cases'
                             // inputs (plates 428, party 455, echo sight 541).
@@ -1343,6 +1355,51 @@ impl App {
                         mine_crack_style,
                         mine_crack_target,
                     );
+                    // W4-g68 wiring: `TileDrawing.EmitLiquidDrops`
+                    // (`TileDrawing.cs:7594-7674`, the `Draw` switch arm
+                    // `:688-694`) — the vine-tip/stalactite/shimmer-candle
+                    // drips. Like the crack overlay it rides the per-frame
+                    // world range OUTSIDE the G6-cached tile pass (the
+                    // `WorldFrameKey` is untouched): the C# rolls its
+                    // `Next(num*2)` gate per DRAW, so a cached rebuild
+                    // cadence would starve the drips in a calm world.
+                    // The gate stream is the App's persistent
+                    // `TileDrawing._rand` stand-in (`tile_draw_rand`); the
+                    // spawn internals ride the bare global `Main.rand`
+                    // (outside every SwapRandom block). The g30
+                    // tile-pass-attach contract (UNION-CONTRACT-tilepass
+                    // §5) feeds the same cells once the g-family lands —
+                    // until then the driver rescans the draw area.
+                    // Gate: the `emit_effects` stand-in the leaf arm uses
+                    // (`!game_paused && !TR_NO_WIND`, the A/B switch).
+                    // The exact C# `_isActiveAndNotPaused` is the
+                    // DrawnThisUpdate flag (`FocusHelper.cs:27`), NOT
+                    // `!gamePaused` — the port's stepper already carries
+                    // the flag (`world.rs:90/:688`), but its set-site is
+                    // the draw half's HEAD, so reading it here would be
+                    // vacuously true; the flag-gate reconciliation is the
+                    // d60 wiring wave's contract (ANALYSIS "The wind leaf
+                    // particles", deferred-2).
+                    if !game_paused_for_specials && !crate::env::no_wind() {
+                        let mut water_style =
+                            crate::biome::calculate_water_style(world, *camera) as i32;
+                        if let Some(n) = crate::env::water_style() {
+                            water_style = n.min(14) as i32;
+                        }
+                        crate::render::foliage::emit_liquid_drops_area(
+                            world,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            water_style,
+                            self.scene_metrics.zone_corrupt,
+                            self.scene_metrics.zone_crimson,
+                            self.scene_metrics.zone_hallow,
+                            &mut self.tile_draw_rand,
+                            self.rngs.global(),
+                            gore,
+                        );
+                    }
                     // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
                     // false)`'s pylon / trophy / void-lens passes
                     // (`TileDrawing.cs:423-425`). The sprites ride the
@@ -1376,23 +1433,13 @@ impl App {
                         );
                     }
 
-                    // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
-                    // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
-                    // world-effect range like the rain (world content — under the map
-                    // batches and the interface). `TR_NO_WIND` is the A/B switch for
-                    // the whole wind feature, spawns included.
-                    let wind_ab_on = !crate::env::no_wind();
-                    let drained: Vec<_> = leaf_spawns.drain(..).collect();
-                    for s in drained.into_iter().take_while(|_| wind_ab_on) {
-                        if leaves.len() >= 400 {
-                            break;
-                        }
-                        leaves.push(crate::render::foliage::LeafGore::from_spawn(
-                            s,
-                            &mut leaf_rng,
-                        ));
-                    }
-                    crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
+                    // W4-g68: the leaf gores live in `App.gore` now — the
+                    // foliage/tile passes spawned them during the world
+                    // pass, `Gore_UpdateLeaf` ticks them in the `gores`
+                    // phase (`Main.cs:17971`), and `Main.DrawGore` below
+                    // draws them in the world-effect range like the rain.
+                    // The old private 400-cap `LeafGore` Vec and its
+                    // draw-time tick are retired.
 
                     draw_phase("rain");
                     rain.draw(
@@ -1430,9 +1477,6 @@ impl App {
                     // (`Main.cs:38968-39018`), the same world-content range
                     // (W4-d130).
                     crate::snow::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
-                    crate::render::foliage::draw_leaves(
-                        renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
-                    );
                     // `Main.DrawWires` (`Main.cs:57028-57030`): the wire overlay
                     // rides the tile batch after the liquids, under the
                     // over-wire entities (the port draws it before the
@@ -2397,6 +2441,30 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+
+    /// W4-g68 final-phase census: the WindGrid scan call site carries the
+    /// `WindGrid.cs:91` dead-player gate — `!player.active || player.dead`
+    /// refuses the stamp (a drifting corpse must not push grass/vines).
+    /// The `active` half is the `Option` itself; the `dead` half is the
+    /// `.filter(|p| !p.dead)` on the scan's player borrow. Source pin (the
+    /// `tiles.rs` include_str convention — the draw pass needs a GPU).
+    #[test]
+    fn w4_g68_the_wind_grid_scan_gates_the_dead_player() {
+        let src = include_str!("draw.rs");
+        let scan = &src[src.find("wind.scan_player(").unwrap()..];
+        let head = &src[..src.find("wind.scan_player(").unwrap()];
+        let borrow = &head[head.rfind("if let Some(p) = player.as_ref()").unwrap()..];
+        assert!(
+            borrow.contains(".filter(|p| !p.dead)"),
+            "the scan's player borrow filters the dead (WindGrid.cs:91)"
+        );
+        // The gate sits INSIDE the sway-enabled arm (the C# ScanPlayers
+        // runs under SettingsEnabled_TilesSwayInWind, WindGrid.cs:35-38).
+        let sway = head.rfind("if wind.sway_enabled").unwrap();
+        let filt = head.rfind(".filter(|p| !p.dead)").unwrap();
+        assert!(sway < filt && filt < head.len(), "the gate order");
+        assert!(scan.starts_with("wind.scan_player("));
     }
 }
 

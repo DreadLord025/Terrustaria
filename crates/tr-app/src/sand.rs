@@ -800,6 +800,52 @@ mod tests {
         }
     }
 
+    /// W4-g68 (the desert-debris wind coupling) — the flying sand's X
+    /// velocity is the wind recipe (`Sandstorm.cs:226-228`):
+    /// `num3 = sign(wind) * Lerp(0.9, 1, |wind|)`, then
+    /// `vel.X = (num3*5 + NextFloat()) + num3*num13*20`, scaled by
+    /// `(1 + num12*0.5) * (1 + num12) * num5` with
+    /// `num12 = Lerp(0.2, 0.35, severity)`, `num13 = Lerp(0.5, 0.7, severity)`.
+    /// The sign flip mirrors the drift; dead calm spawns nothing (`:153`).
+    #[test]
+    fn w4_g68_the_desert_debris_rides_the_wind_sign_and_strength() {
+        let w = sand_world();
+        let m = metrics_with(&[(53, 2000)], 500);
+        let severity = 0.8_f32;
+        let num12 = 0.2 + 0.15 * severity;
+        let num13 = 0.5 + 0.2 * severity;
+        // desert_sand 500 → num4 = 4, num5 = clamp(3/4, 0.77, 1) = 0.77.
+        let num5 = (3.0_f32 / 4.0).clamp(0.77, 1.0);
+        for wind in [0.6_f32, -0.6] {
+            let mut s = Sand::new(11);
+            let mut pool = DustPool::new();
+            s.emit_dust(&m, severity, true, wind, &sand_ctx(), &w, &mut pool);
+            let n = live_268(&pool);
+            assert!(n > 0, "the storm threw sand at wind {wind}");
+            let num3 = wind.signum() * (0.9 + 0.1 * wind.abs());
+            for d in &pool.slots()[..DUST_SENTINEL] {
+                if !d.active || d.dust_type != 268 {
+                    continue;
+                }
+                // The NextFloat() jitter is [0, 1); bound the recipe.
+                let base = num3 * 5.0 + num3 * num13 * 20.0;
+                let lo = base * (1.0 + num12 * 0.5) * (1.0 + num12) * num5;
+                let hi = (base + 1.0) * (1.0 + num12 * 0.5) * (1.0 + num12) * num5;
+                assert!(
+                    d.velocity.x >= lo.min(hi) - 1e-3 && d.velocity.x <= lo.max(hi) + 1e-3,
+                    "vel.x {} outside the wind recipe [{lo}, {hi}] at wind {wind}",
+                    d.velocity.x
+                );
+                assert_eq!(d.velocity.x.signum(), wind.signum(), "the drift mirrors the wind");
+            }
+        }
+        // Dead calm: the :153 gate refuses every spawn.
+        let mut s = Sand::new(11);
+        let mut pool = DustPool::new();
+        s.emit_dust(&m, severity, true, 0.005, &sand_ctx(), &w, &mut pool);
+        assert_eq!(live_268(&pool), 0, "dead calm throws no debris");
+    }
+
     /// DW-2.5 (the sand site) — the recorded enumeration, pinned by stream
     /// step count: one minimal emit (one attempt — `20 × 0.05` — one
     /// dust, the shuffle stopping on its first gate roll) consumes exactly 15

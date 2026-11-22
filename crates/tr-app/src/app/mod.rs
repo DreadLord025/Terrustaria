@@ -716,6 +716,15 @@ pub(crate) struct App {
     /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
     /// (determinism rule, ANALYSIS "The tile-crack overlay").
     pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
+    /// `TileDrawing._rand` (`TileDrawing.cs:104`, seeded `:191`): the
+    /// renderer-lifetime gate stream. W4-g68 wiring: the per-frame drip
+    /// emission (`foliage::emit_liquid_drops_area`) rolls its `Next(num*2)`
+    /// gates here — PERSISTENT across frames, unlike the per-frame
+    /// `FastRandom` pin the cached leaf arm still uses (the documented
+    /// determinism stand-in until the d60 wiring reconciles it). The C#
+    /// parameterless ctor is clock-seeded (`UnifiedRandom.cs:18-21`); the
+    /// port seeds the world seed (the `mine_crack_rng` deviation class).
+    pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -977,8 +986,6 @@ pub(crate) struct App {
     /// advances it in the same `TileDrawing.Update` as the sunflower's, so
     /// it rides the same 60 Hz accumulator (S1-G-1).
     pub(crate) vine_wind_counter: f32,
-    /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
-    pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
     /// `UpdateWorld_Gores` (`Main.cs:17971-17996`) after the NPCs and before
     /// the projectiles (`:17767-17775`). Its collision probes are injected once
@@ -3614,6 +3621,14 @@ impl App {
         // (`Main.cs:67199`); `frame.rs`'s per-frame sync replaces it from the
         // live settings, so this is only the pre-first-frame value.
         let cursor_mouse_color = settings.mouse_color;
+        // W4-g68: snapshot the packed `Gore_<id>` sheet sizes BEFORE the
+        // struct literal moves `lookups` into its field — the gore pool's
+        // `Width`/`Height` asset seam reads them (`Gore.cs:44-66`).
+        let gore_texture_sizes: std::collections::HashMap<i32, (u32, u32)> = lookups
+            .gore_sheets
+            .iter()
+            .map(|(&id, r)| (id as i32, (r.width, r.height)))
+            .collect();
         let mut app = App {
             window: None,
             talk_npc: None,
@@ -3990,6 +4005,7 @@ impl App {
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
+            tile_draw_rand: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
@@ -4105,11 +4121,18 @@ impl App {
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             vine_wind_counter: 0.0,
-            leaves: Vec::new(),
             // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
             // slots plus the refuse sentinel; `goreTime` seeds its 600
-            // (`Gore.cs:1507-1510`).
-            gore: tr_core::gore::GorePool::new(),
+            // (`Gore.cs:1507-1510`). W4-g68: the packed `Gore_<id>` sheet
+            // sizes answer the `TextureAssets.Gore[type].IsLoaded` getters
+            // (`Width`/`Height`, `Gore.cs:44-66`) — the falling-leaf liquid
+            // probe centres on the source-rect half-size, not the 1f
+            // fallback.
+            gore: {
+                let mut gore = tr_core::gore::GorePool::new();
+                gore.set_texture_sizes(gore_texture_sizes);
+                gore
+            },
             entity_lights: crate::entity_lights::EntityLights::default(),
             // `Main.cs:66673-66674` — `essScale = 1f; essDir = -1;`.
             ess_scale: 1.0,

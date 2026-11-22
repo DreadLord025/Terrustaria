@@ -22,18 +22,29 @@
 //! `Next(10, 31)` (the velocity.Y kick, `Gore.cs:1327`), `Next(-20, 21)`
 //! (the velocity.X kick, `:1328`), and only when the ChildSafety gate is
 //! armed *and* the type is dangerous: `Next(11, 14)` (the safe re-type,
-//! `:1336`) then `NextFloat()` (the re-scaled size, `:1338`). Nothing else
-//! rolls: the remaining arms (`:1355-1429`) draw no random numbers.
+//! `:1336`) then `NextFloat()` (the re-scaled size, `:1338`). Then the
+//! per-type arms in order: 1225's `Next(6)` (`:1382`, unconditional),
+//! SpecialAI-3's four draws (`:1393-1401`), SpecialAI-1's two
+//! (`:1405`), the LOADED-GATED 411-430 arm's four (+1 when `goreTime==0`,
+//! `:1411-1419`), 907-909's two (`:1426-1427`), the LOADED-GATED
+//! SpecialAI-2 arm's one (`:1439`). W4-g68 wiring-2 opened the two
+//! loaded-texture gates: an id in [`GorePool::set_texture_sizes`]' map
+//! rolls the arm's extra randoms AND shifts the spawn position (the
+//! A/B witness pins both branches); an absent id keeps the unloaded
+//! behaviour — no draws, no shift.
 //!
 //! Documented drops (each at its site below): the `Main.rand == null` re-seed
 //! (`Gore.cs:1300-1303`; streams are caller-owned and never null), the
-//! `Main.netMode == 2` server guard (`:1288-1291`; single-player port), and
-//! the texture-dependent arms — the port has no texture tracking in `tr-core`,
-//! so every `TextureAssets.Gore[...].IsLoaded` test is `false` (the geometry
-//! fallbacks are exact, the position-adjust arms are no-ops until the asset
-//! seam lands). The `GoreID.Sets` tables (`GoreID.cs:20-23`) are ported in
-//! [`crate::gore_id`], so the arms gated on them (`:1355-1360`, `:1390-1456`)
-//! run.
+//! `Main.netMode == 2` server guard (`:1288-1291`; single-player port).
+//! The texture-dependent arms are WIRED (W4-g68): the `Width`/`Height`
+//! asset seam ([`GorePool::set_texture_sizes`]: an id in the map is the C#'s
+//! `IsLoaded == true` branch, an absent id keeps the `1f` fallback) and the
+//! spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`,
+//! `:1433-1440`) behind the same gate — the position terms read the RAW
+//! asset size (`Utils.cs:1301-1316`), not the framed cell, with the C#'s
+//! integer `Width()/2` division kept. The `GoreID.Sets`
+//! tables (`GoreID.cs:20-23`) are ported in [`crate::gore_id`], so the arms
+//! gated on them (`:1355-1360`, `:1390-1456`) run.
 
 use crate::unified_random::UnifiedRandom;
 use crate::world::World;
@@ -65,6 +76,26 @@ impl GoreRng for UnifiedRandom {
     }
     fn next_float_direction(&mut self) -> f32 {
         UnifiedRandom::next_float_direction(self)
+    }
+}
+
+/// The dust-spawn adapter (W4-g68): the C#'s `Gore_UpdateLeaf` lava arm calls
+/// `Dust.NewDust` on the SAME `Main.rand` the gore walk rolls (both sit inside
+/// `Main.SwapRandom("UpdateGores")`, `Main.cs:17771-17774`), so the gore
+/// stream feeds the dust pool directly — [`GoreRng`]'s three draw kinds are
+/// exactly [`crate::particles::DustRng`]'s. One adapter borrow per spawn; no
+/// new stream instance (the S1-E-1 seam rule).
+struct DustFromGore<'a, R: GoreRng>(&'a mut R);
+
+impl<R: GoreRng> crate::particles::DustRng for DustFromGore<'_, R> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_max(max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
     }
 }
 
@@ -194,6 +225,21 @@ impl SpriteFrame {
             row_count: rows,
         }
     }
+
+    /// `SpriteFrame.GetSourceRectangle`'s size half (`SpriteFrame.cs:72-77`):
+    /// the cell is `texture / count` (integer division), minus the 2 px
+    /// padding on an axis with more than one cell. The `max(1)` guards only
+    /// fire on a zero-count frame the pool never produces (`Gore.Frame`
+    /// starts at `new SpriteFrame(1, 1)`, `Gore.cs:42`). The draw pass keeps
+    /// its own copy with the cursor offsets (`render/gore.rs::source_rect`).
+    pub fn source_size(&self, tex_w: u32, tex_h: u32) -> (i32, i32) {
+        let num = (tex_w / self.column_count.max(1) as u32) as i32;
+        let num2 = (tex_h / self.row_count.max(1) as u32) as i32;
+        (
+            num - if self.column_count != 1 { 2 } else { 0 },
+            num2 - if self.row_count != 1 { 2 } else { 0 },
+        )
+    }
 }
 
 /// One gore record — `Gore.cs:14-42` with the static `goreTime` carried by the
@@ -226,6 +272,12 @@ pub struct Gore {
     pub frame_counter: u8,
     /// `Gore.Frame` (`Gore.cs:42`) — `new SpriteFrame(1, 1)` by default.
     pub frame: SpriteFrame,
+    /// The port-side `TextureAssets.Gore[type]` size (W4-g68): `Some` when
+    /// the sheet is packed (the `IsLoaded == true` branch of
+    /// `Width`/`Height`/`AABBRectangle`), `None` = unloaded, the C#'s `1f`
+    /// fallback. The pool refreshes it from its injected size map at spawn
+    /// and per update tick (the type can re-type inside `NewGore`).
+    pub texture_size: Option<(u32, u32)>,
 }
 
 impl Gore {
@@ -242,22 +294,42 @@ impl Gore {
     }
 
     /// `Gore.Width` (`Gore.cs:44-54`): with the texture unloaded the C#
-    /// returns `1f` — and the port has no texture tracking yet, so the
-    /// fallback is the only path until the asset seam lands (see the module
-    /// drops).
+    /// returns `1f`; a loaded sheet gives `scale * source-rect width`.
+    /// W4-g68: the App injects the packed sheet sizes
+    /// ([`GorePool::set_texture_sizes`]) — an id absent from the map is the
+    /// unloaded fallback, exactly the C#'s `IsLoaded` test.
     pub fn width(&self) -> f32 {
-        1.0
+        match self.texture_size {
+            Some((w, h)) => self.scale * self.frame.source_size(w, h).0 as f32,
+            None => 1.0,
+        }
     }
 
-    /// `Gore.Height` (`Gore.cs:56-66`): the `1f` fallback, as [`Gore::width`].
+    /// `Gore.Height` (`Gore.cs:56-66`): as [`Gore::width`].
     pub fn height(&self) -> f32 {
-        1.0
+        match self.texture_size {
+            Some((w, h)) => self.scale * self.frame.source_size(w, h).1 as f32,
+            None => 1.0,
+        }
     }
 
-    /// `Gore.AABBRectangle` (`Gore.cs:68-79`): the texture-unloaded fallback
-    /// `new Rectangle(0, 0, 1, 1)` — see [`Gore::width`].
+    /// `Gore.AABBRectangle` (`Gore.cs:68-79`): with the sheet packed (the
+    /// W4-g68 seam) `(int)position` plus the `(int)(sourceRect * scale)`
+    /// size — note the size casts truncate the PRODUCT, unlike
+    /// `Width`/`Height`'s float getters. Unloaded: `(0, 0, 1, 1)`.
     pub fn aabb_rectangle(&self) -> (i32, i32, i32, i32) {
-        (0, 0, 1, 1)
+        match self.texture_size {
+            Some((w, h)) => {
+                let (sw, sh) = self.frame.source_size(w, h);
+                (
+                    self.position.x as i32,
+                    self.position.y as i32,
+                    (sw as f32 * self.scale) as i32,
+                    (sh as f32 * self.scale) as i32,
+                )
+            }
+            None => (0, 0, 1, 1),
+        }
     }
 }
 
@@ -270,6 +342,11 @@ pub struct GorePool {
     pub gore_time: i32,
     /// The blood gate; `disabled` defaults `true` (`ChildSafety.cs:33`).
     pub child_safety: ChildSafety,
+    /// The `TextureAssets.Gore[type]` sizes (W4-g68 asset seam): the App
+    /// injects its packed `Gore_<id>` sheet sizes once; an absent id is the
+    /// C#'s unloaded-texture branch (`Width`/`Height` → `1f`). Empty by
+    /// default, so pool-only consumers keep the recorded fallback.
+    texture_sizes: std::collections::HashMap<i32, (u32, u32)>,
 }
 
 impl Default for GorePool {
@@ -291,7 +368,28 @@ impl GorePool {
             slots,
             gore_time,
             child_safety: ChildSafety::default(),
+            texture_sizes: std::collections::HashMap::new(),
         }
+    }
+
+    /// The W4-g68 asset seam: inject the packed `Gore_<id>` sheet sizes (the
+    /// App's `Lookups::gore_sheets`). Ids present here answer the C#'s
+    /// `TextureAssets.Gore[type].IsLoaded == true` branch; absent ids keep
+    /// the `1f` fallback. Refreshes every live slot's cached size at once.
+    pub fn set_texture_sizes(&mut self, sizes: std::collections::HashMap<i32, (u32, u32)>) {
+        self.texture_sizes = sizes;
+        for num in 0..=GORE_SENTINEL {
+            self.refresh_texture_size(num);
+        }
+    }
+
+    /// Re-read the slot's `texture_size` from the injected map (the type may
+    /// have re-typed inside `NewGore`'s ChildSafety or 411-430 arms).
+    fn refresh_texture_size(&mut self, num: usize) {
+        self.slots[num].texture_size = self
+            .texture_sizes
+            .get(&self.slots[num].gore_type)
+            .copied();
     }
 
     /// The whole slot array, sentinel included (`Main.gore`).
@@ -457,15 +555,24 @@ impl GorePool {
             // `Gore.cs:1375-1378`.
             self.slot_mut(num).frame = SpriteFrame::new(1, 3);
         }
-        // `Gore.cs:1379-1389` (type 1225): every field write is inside
-        // `TextureAssets.Gore[Type].IsLoaded` except the `timeLeft` roll
-        // (`:1382`) and the two flags — ported exactly, position adjustment
-        // waits for the asset seam (module drops).
+        // `Gore.cs:1379-1389` (type 1225): the frame/timeLeft/sticky writes
+        // are unconditional; the position adjust rides the loaded-texture
+        // gate (W4-g68 wiring-2: `texture_sizes` IS the `IsLoaded` test).
+        // The C# reads the RAW asset `Width()/Height()` (`Utils.cs:1301-
+        // 1316`), NOT the framed cell — and `Width()/2` is INTEGER division
+        // before the float cast, while the Y term is `Height()*Scale/2f`.
+        // Both terms use the `Position`/`Scale` ARGUMENTS (a ChildSafety
+        // re-scale wrote `gore.scale`, not `Scale`).
         if gore_type == 1225 {
             let gore = self.slot_mut(num);
             gore.frame = SpriteFrame::new(1, 3);
             gore.time_left = 10 + rng.next_max(6);
             gore.sticky = false;
+            if let Some(&(w, h)) = self.texture_sizes.get(&gore_type) {
+                let gore = self.slot_mut(num);
+                gore.position.x = position.x - (w / 2) as f32 * scale;
+                gore.position.y = position.y - h as f32 * scale / 2.0;
+            }
         }
         // `GoreID.Sets.SpecialAI` arms (`Gore.cs:1390-1406`), the 411-430
         // (`:1407-1421`), 907-909 (`:1422-1429`) and SpecialAI == 2
@@ -503,9 +610,39 @@ impl GorePool {
             let vel_y = rng.next_float() * (std::f32::consts::PI * 2.0);
             self.slot_mut(num).velocity = Vec2::new(vel_x, vel_y);
         }
-        // The 411-430 arm (`Gore.cs:1407-1421`) is gated on
-        // `TextureAssets.Gore[Type].IsLoaded` — the port has no texture
-        // tracking, so it draws no random numbers (module drops).
+        // The 411-430 arm (`Gore.cs:1407-1421`), behind the loaded-texture
+        // gate (W4-g68 wiring-2). The C# order: the X/Y position adjusts
+        // (Y is the FULL height, not half), the velocity.Y then velocity.X
+        // scale rolls, the `Next(4)*5` type bump, the timeLeft roll — and
+        // ONLY when `goreTime == 0` a FIFTH draw (`Next(150, 600)`)
+        // overwrites timeLeft. The gate reads the ORIGINAL `Type` (a
+        // ChildSafety re-type to 11-13 never lands in 411-430 anyway); the
+        // type bump can push past 430 (428+15=443) — the later
+        // `refresh_texture_size` re-reads the FINAL type's sheet, exactly
+        // the C#'s lazy `TextureAssets.Gore[type]` reads at draw time.
+        if (411..=430).contains(&gore_type) {
+            if let Some(&(w, h)) = self.texture_sizes.get(&gore_type) {
+                let vy_scale = rng.next_range(90, 150) as f32 * 0.01;
+                let vx_scale = rng.next_range(40, 90) as f32 * 0.01;
+                let bump = rng.next_max(4) * 5;
+                let gore_time = self.gore_time;
+                let life = rng.next_range(gore_time / 2, gore_time * 2);
+                let gore = self.slot_mut(num);
+                gore.position.x = position.x - (w / 2) as f32 * scale;
+                gore.position.y = position.y - h as f32 * scale;
+                gore.velocity.y *= vy_scale;
+                gore.velocity.x *= vx_scale;
+                gore.gore_type += bump;
+                gore.time_left = life;
+                gore.sticky = true;
+                if gore_time == 0 {
+                    // `:1417-1420`: the fifth draw, only in the zero-time
+                    // branch (the roll above still fired).
+                    let life = rng.next_range(150, 600);
+                    self.slot_mut(num).time_left = life;
+                }
+            }
+        }
         if (907..=909).contains(&gore_type) {
             // `Gore.cs:1422-1429`: the sheet row, then the frame counter.
             let row = rng.next_max(3);
@@ -518,10 +655,24 @@ impl GorePool {
             gore.rotation = 0.0;
         }
         if special_ai == 2 {
-            // `Gore.cs:1430-1441`: only the sticky flag is unconditional — the
-            // alpha/velocity/position/timeLeft writes sit behind
-            // `TextureAssets.Gore[Type].IsLoaded` (module drops).
+            // `Gore.cs:1430-1441`: the sticky flag is unconditional; the
+            // alpha/velocity/position/timeLeft writes + the ONE timeLeft
+            // roll sit behind `TextureAssets.Gore[Type].IsLoaded`
+            // (W4-g68 wiring-2). The velocity resets to the ARGUMENT
+            // (the default-block kick is discarded), the position adjusts
+            // read the raw asset halves (X integer-divided first), and
+            // `Next(goreTime/2, goreTime+1)` is the arm's only draw.
             self.slot_mut(num).sticky = false;
+            if let Some(&(w, h)) = self.texture_sizes.get(&gore_type) {
+                let gore_time = self.gore_time;
+                let life = rng.next_range(gore_time / 2, gore_time + 1);
+                let gore = self.slot_mut(num);
+                gore.alpha = 150;
+                gore.velocity = velocity;
+                gore.position.x = position.x - (w / 2) as f32 * scale;
+                gore.position.y = position.y - h as f32 * scale / 2.0;
+                gore.time_left = life;
+            }
         }
         match special_ai {
             // `Gore.cs:1442-1456`: the 4/5/6 rows.
@@ -547,6 +698,9 @@ impl GorePool {
         if self.deactivate_if_outside_of_world(num, world) {
             return GORE_SENTINEL;
         }
+        // The W4-g68 asset seam: the final type (post ChildSafety re-type)
+        // picks the texture size the `Width`/`Height` getters read.
+        self.refresh_texture_size(num);
         num
     }
 
@@ -606,29 +760,39 @@ fn rect_intersects(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {
 impl GorePool {
     /// `Main.UpdateWorld_Gores` (`Main.cs:17971-17996`) — the per-frame walk
     /// over the 600 live slots (the sentinel 600 is never updated).
+    ///
+    /// W4-g68: the dust seam — `dust`/`dust_ctx` carry the App's `Main.dust`
+    /// pool and the per-call `Dust.NewDust` inputs; `None` keeps the recorded
+    /// dust-seam drops (the lava leaf puff, the 1218 coin burst) inactive.
+    /// When present, the spawns roll the SAME stage stream (`rng`) the gore
+    /// walk does — the C# runs both inside `SwapRandom("UpdateGores")`.
     pub fn update<R: GoreRng>(
         &mut self,
         rng: &mut R,
         world: &World,
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
+        mut dust: Option<(&mut crate::particles::DustPool, &crate::particles::SpawnCtx)>,
     ) {
         for num in 0..GORE_SLOTS {
             if !self.slots[num].active {
                 continue;
             }
-            self.update_slot(rng, world, collision, wind_for_visuals, num);
+            let dust_slot = dust.as_mut().map(|(p, c)| (&mut **p, &**c));
+            self.update_slot(rng, world, collision, wind_for_visuals, num, dust_slot);
         }
     }
 
     /// `Gore.Update` (`Gore.cs:308-1083`) — one gore's frame.
     ///
     /// Documented drops (the port has no texture tracking, no entity lights
-    /// and no player/dust/sound seams in `tr-core`): the texture-gated
+    /// and no player/sound seams in `tr-core`): the texture-gated
     /// position/light/player/dust writes (`Gore.cs:794-806`, `:825-841`,
     /// `:850-864`, `:883-911`, `:1064-1082`) and the drip's sound and ripple
     /// (`:953`, `:965-968`). None of them draws a random number, so the
-    /// stream order is untouched.
+    /// stream order is untouched. The lava leaf's five-dust puff
+    /// (`:1119-1122`) IS wired (W4-g68): it fires when the caller hands the
+    /// `dust` seam in, on the same stage stream.
     fn update_slot<R: GoreRng>(
         &mut self,
         rng: &mut R,
@@ -636,9 +800,15 @@ impl GorePool {
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
         num: usize,
+        dust: Option<(&mut crate::particles::DustPool, &crate::particles::SpawnCtx)>,
     ) {
         // `Gore.cs:314-325`: the sticky clamp — the world check first, then
         // the speed cap.
+        // W4-g68: re-read the texture size each tick — callers may re-type a
+        // slot through `slot_mut` (the drip rows' paint swaps etc.), and the
+        // C#'s `Width`/`Height` getters re-evaluate `TextureAssets.Gore[type]`
+        // on every read.
+        self.refresh_texture_size(num);
         if self.slots[num].sticky {
             if self.deactivate_if_outside_of_world(num, world) {
                 return;
@@ -862,7 +1032,7 @@ impl GorePool {
         if special_ai == 1 {
             self.update_sail(world, collision, num);
         } else if special_ai == 3 {
-            self.update_leaf(world, collision, wind_for_visuals, num);
+            self.update_leaf(world, collision, wind_for_visuals, num, rng, dust);
         } else {
             let velocity = self.slots[num].velocity;
             self.slots[num].position += velocity;
@@ -1368,12 +1538,14 @@ impl GorePool {
 
     /// `Gore.Gore_UpdateLeaf` (`Gore.cs:1085-1209`) — the falling leaf: the
     /// rising half, then the flutter with the slope pass.
-    fn update_leaf(
+    fn update_leaf<R: GoreRng>(
         &mut self,
         world: &World,
         collision: &dyn GoreCollision,
         wind_for_visuals: f32,
         num: usize,
+        rng: &mut R,
+        dust: Option<(&mut crate::particles::DustPool, &crate::particles::SpawnCtx)>,
     ) {
         // `:1087-1089` — the leaf's own origin, 4 px right and 4 px down of
         // its pivot's top edge.
@@ -1403,9 +1575,33 @@ impl GorePool {
             if flag {
                 match tile.liquid_kind() {
                     crate::tile::LiquidKind::Honey => vector3.x = 0.0,
-                    // `:1116-1123` — the lava arm deactivates; its five-dust
-                    // puff (`:1119-1122`) waits for the dust seam.
-                    crate::tile::LiquidKind::Lava => self.slots[num].active = false,
+                    // `:1116-1123` — the lava arm deactivates, then the five
+                    // dust-31 puffs at the leaf's position (`NewDust(position,
+                    // 3, 3, 31, 0f, -0.2f)`), rolled on the stage stream
+                    // (W4-g68 dust seam). The leaf keeps falling through the
+                    // rest of the tick — the C# does not return here.
+                    crate::tile::LiquidKind::Lava => {
+                        self.slots[num].active = false;
+                        if let Some((pool, ctx)) = dust {
+                            let position = self.slots[num].position;
+                            for _ in 0..5 {
+                                pool.new_dust(
+                                    &mut DustFromGore(&mut *rng),
+                                    ctx,
+                                    world,
+                                    position,
+                                    num_v,
+                                    num_v,
+                                    31,
+                                    0.0,
+                                    -0.2,
+                                    0,
+                                    crate::particles::Color::default(),
+                                    1.0,
+                                );
+                            }
+                        }
+                    }
                     _ => vector3.x = wind_for_visuals,
                 }
                 if self.slots[num].position.y as f64 > world.world_surface * 16.0 {
@@ -1467,7 +1663,9 @@ impl GorePool {
         if vector4 != vector5 {
             self.slots[num].velocity.y = -1.0;
         }
-        // `:1180` — `(Width, Height) * 0.5f + position`, the 1x1 fallback.
+        // `:1180` — `(Width, Height) * 0.5f + position`: the source-rect
+        // half-size when the sheet is packed (the W4-g68 asset seam), the
+        // C#'s `1f` fallback otherwise.
         let point2 = to_tile_coordinates(
             Vec2::new(self.slots[num].width(), self.slots[num].height()) * 0.5
                 + self.slots[num].position,
@@ -1764,7 +1962,7 @@ mod tests {
         // (`Gore.cs:1017`): 2 + 255 ticks to the `alpha >= 255` kill
         // (`:1055-1058`).
         for tick in 0..257 {
-            pool.update(&mut rng, &world, &collisions, 0.0);
+            pool.update(&mut rng, &world, &collisions, 0.0, None);
             if tick < 2 {
                 assert_eq!(pool.slot(0).time_left, 1 - tick as i32);
                 assert_eq!(pool.slot(0).alpha, 0, "the life runs out before the fade");
@@ -1774,7 +1972,7 @@ mod tests {
         }
         assert!(!pool.slot(0).active, "alpha 255 deactivates the gore");
         // The inactive slot is skipped from now on (`Gore.cs:310-313`).
-        pool.update(&mut rng, &world, &collisions, 0.0);
+        pool.update(&mut rng, &world, &collisions, 0.0, None);
         assert_eq!(pool.slot(0).alpha, 255);
     }
 
@@ -1792,11 +1990,11 @@ mod tests {
         pool.slot_mut(0).sticky = false;
         let collisions = NoCollision;
         for _ in 0..127 {
-            pool.update(&mut rng, &world, &collisions, 0.0);
+            pool.update(&mut rng, &world, &collisions, 0.0, None);
         }
         assert!(pool.slot(0).active);
         assert_eq!(pool.slot(0).alpha, 254);
-        pool.update(&mut rng, &world, &collisions, 0.0);
+        pool.update(&mut rng, &world, &collisions, 0.0, None);
         assert!(!pool.slot(0).active);
     }
 
@@ -1819,13 +2017,514 @@ mod tests {
         pool.slot_mut(0).alpha = 0;
         pool.slot_mut(0).time_left = 2;
         let collisions = NoCollision;
-        pool.update(&mut rng, &world, &collisions, 2.5);
+        pool.update(&mut rng, &world, &collisions, 2.5, None);
         let gore = pool.slot(0);
         assert_eq!(gore.velocity.x, 0.4 * 2.5);
         assert_eq!(gore.time_left, 1);
         assert!(gore.active);
-        pool.update(&mut rng, &world, &collisions, 2.5);
+        pool.update(&mut rng, &world, &collisions, 2.5, None);
         assert_eq!(pool.slot(0).time_left, 0);
         assert!(!pool.slot(0).active, "an empty timeLeft deactivates the cloud");
+    }
+
+    // ---- W4-g68: Gore_UpdateLeaf, the leaf physics the foliage shed now
+    // rides (WRITTEN NOT RUN — code-only mode). ----
+
+    /// A pass-through collision seam: both probes return their inputs, so
+    /// the leaf's own velocity math is observable without tile interference.
+    struct FreeCollision;
+    impl GoreCollision for FreeCollision {
+        fn tile_collision(
+            &self,
+            _world: &World,
+            _position: Vec2,
+            velocity: Vec2,
+            _width: f32,
+            _height: f32,
+        ) -> Vec2 {
+            velocity
+        }
+        fn wet_collision(&self, _world: &World, _position: Vec2, _w: f32, _h: f32) -> bool {
+            false
+        }
+        fn slope_collision(
+            &self,
+            _world: &World,
+            position: Vec2,
+            velocity: Vec2,
+            _w: f32,
+            _h: f32,
+            _gravity: f32,
+            _fall: bool,
+        ) -> (Vec2, Vec2) {
+            (position, velocity)
+        }
+    }
+
+    /// A seam whose `TileCollision` brakes X to 0 (a wall) — the
+    /// `vector4 != vector5` rest switch (`Gore.cs:1176-1179`).
+    struct WallCollision;
+    impl GoreCollision for WallCollision {
+        fn tile_collision(
+            &self,
+            _world: &World,
+            _position: Vec2,
+            velocity: Vec2,
+            _width: f32,
+            _height: f32,
+        ) -> Vec2 {
+            Vec2::new(0.0, velocity.y)
+        }
+        fn wet_collision(&self, _world: &World, _position: Vec2, _w: f32, _h: f32) -> bool {
+            false
+        }
+        fn slope_collision(
+            &self,
+            _world: &World,
+            position: Vec2,
+            velocity: Vec2,
+            _w: f32,
+            _h: f32,
+            _gravity: f32,
+            _fall: bool,
+        ) -> (Vec2, Vec2) {
+            (position, velocity)
+        }
+    }
+
+    /// A 64x64 world whose surface sits BELOW every test position, so the
+    /// `position.Y < worldSurface * 16` wind term applies.
+    fn leaf_physics_world() -> World {
+        let mut w = World::new("leafphys".into(), 64, 64);
+        w.world_surface = 1000.0;
+        w
+    }
+
+    fn spawn_leaf(pool: &mut GorePool, world: &World, pos: Vec2) {
+        let mut rng = VecRng::new(vec![10, 20, 50, 60, 3, 4]);
+        let idx = pool.new_gore(&mut rng, world, pos, Vec2::ZERO, 910, 1.0);
+        assert_eq!(idx, 0);
+        // Pin the sway angle to 0 so the rotated unit vector is (0, 1).
+        pool.slot_mut(0).velocity = Vec2::new(0.0, 0.0);
+    }
+
+    /// The falling half (`Gore.cs:1161-1167`): the angle grows π/180 per
+    /// tick, the velocity is `(-sin θ, |cos θ|)`, and above the surface the
+    /// wind adds `WindForVisuals * 4` to X. The position moves by the
+    /// resolved velocity (`:1199`), the rotation is `atan2 + π/2` (`:1200`).
+    #[test]
+    fn w4_g68_the_leaf_fall_sways_and_rides_the_wind() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        let wind = 0.5_f32;
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
+        let g = pool.slot(0);
+        let theta = std::f32::consts::PI / 180.0;
+        assert_eq!(g.velocity.y, theta, "the angle grows one degree per tick");
+        let want_x = -theta.sin() + wind * 4.0;
+        let want_y = theta.cos().abs();
+        assert!((g.position.x - (500.0 + want_x)).abs() < 1e-4);
+        assert!((g.position.y - (300.0 + want_y)).abs() < 1e-4);
+        assert!(
+            (g.rotation - (want_y.atan2(want_x) + std::f32::consts::FRAC_PI_2)).abs() < 1e-4
+        );
+        assert_eq!(g.time_left, GORE_TIME_DEFAULT - 1, "one life point per tick");
+    }
+
+    /// Below the surface the wind term is dropped (`Gore.cs:1164-1167`).
+    #[test]
+    fn w4_g68_underground_leaves_get_no_wind_push() {
+        let mut world = leaf_physics_world();
+        world.world_surface = 0.0; // every position is underground
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
+        let g = pool.slot(0);
+        let theta = std::f32::consts::PI / 180.0;
+        assert!((g.position.x - (500.0 - theta.sin())).abs() < 1e-4);
+    }
+
+    /// A collision that changes the velocity flips the leaf to the rest
+    /// phase: `velocity.Y = -1` (`Gore.cs:1176-1179`).
+    #[test]
+    fn w4_g68_a_blocked_fall_switches_to_rest() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        pool.update(&mut VecRng::new(vec![]), &world, &WallCollision, 0.5, None);
+        assert_eq!(pool.slot(0).velocity.y, -1.0, "the rest-phase sentinel");
+    }
+
+    /// The rest phase in WATER (`Gore.cs:1124-1131`): X becomes the wind,
+    /// the collision passes it through, then ×0.94; the leaf drifts by the
+    /// result and the rotation follows the velocity. Underground the wind
+    /// is zeroed first (`:1128-1131`).
+    #[test]
+    fn w4_g68_the_rest_phase_drifts_on_water_with_the_wind() {
+        let mut world = leaf_physics_world();
+        // The rest probe: vector = pos + (4, 0); point = (vector + 1.5) >> 4.
+        // pos (160, 160) → vector (164, 160) → point (10, 10). The liquid
+        // rect is `(x*16, y*16 + liquid/16, 16, 16 - liquid/16)` — liquid
+        // 100 gives top 166, height 10, intersecting the 3x3 probe at
+        // (164, 166) (`Gore.cs:1107-1109`).
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 100;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        let wind = 0.5_f32;
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
+        let g = pool.slot(0);
+        assert!((g.velocity.x - wind * 0.94).abs() < 1e-5, "the 0.94 decay");
+        assert!((g.position.x - (160.0 + wind * 0.94)).abs() < 1e-4);
+        assert_eq!(g.position.y, 160.0, "the rest phase only moves X");
+        // Underground: the wind zeroes, then the |x| < 0.01 cut zeroes X.
+        world.world_surface = 0.0;
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.slot_mut(0).position = Vec2::new(160.0, 160.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, wind, None);
+        assert_eq!(pool.slot(0).velocity.x, 0.0);
+    }
+
+    /// HONEY freezes the rest drift (`Gore.cs:1112-1115`): X = 0 regardless
+    /// of the wind.
+    #[test]
+    fn w4_g68_honey_freezes_the_rest_drift() {
+        let mut world = leaf_physics_world();
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 100;
+        world.tiles[i].flags |= crate::tile::FLAG_LIQUID_HONEY;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
+        assert_eq!(pool.slot(0).velocity.x, 0.0);
+        assert_eq!(pool.slot(0).position.x, 160.0);
+    }
+
+    /// LAVA burns the leaf up (`Gore.cs:1116-1123`): the slot deactivates.
+    /// Without the dust seam the five-dust puff stays dropped (the recorded
+    /// S1-E-4 behaviour); the seam-on witness below pins the puffs.
+    #[test]
+    fn w4_g68_lava_burns_the_leaf() {
+        let mut world = leaf_physics_world();
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 100;
+        world.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.5, None);
+        assert!(!pool.slot(0).active, "the lava arm deactivates at once");
+    }
+
+    /// The W4-g68 dust seam: the lava arm's five `Dust.NewDust(position, 3,
+    /// 3, 31, 0f, -0.2f)` puffs (`Gore.cs:1119-1122`) roll the SAME stream
+    /// the gore walk does (`SwapRandom("UpdateGores")`, `Main.cs:17771`).
+    /// Each `NewDust` consumes six draws in `Dust.cs:170-190` order:
+    /// `Next(1)` X-offset, `Next(1)` Y-offset (the 3×3 box clamps to 5×5,
+    /// so `num - 4 = 1`), `Next(-20, 21)` vel-X, `Next(-20, 21)` vel-Y,
+    /// `Next(3)` frame row, `Next(-20, 21)` scale; the type-31 tweak chain
+    /// draws NOTHING (31 is in no arm, `Dust.cs:214-252`).
+    #[test]
+    fn w4_g68_the_lava_arm_puffs_five_dust_on_the_gore_stream() {
+        let mut world = leaf_physics_world();
+        let i = world.index(10, 10);
+        world.tiles[i].liquid = 100;
+        world.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        let mut dust = crate::particles::DustPool::new();
+        let ctx = crate::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::new(0.0, 0.0),
+            screen_size: Vec2::new(640.0, 480.0),
+            max_dust_to_draw: 6000,
+        };
+        // Six draws per puff × five puffs; the offsets pinned to 0, the
+        // velocity rolls to +1.0/+0.5, the frame row to 1, the scale to
+        // 1 + 10*0.01 = 1.1.
+        let mut draws = Vec::new();
+        for _ in 0..5 {
+            draws.extend_from_slice(&[0, 0, 10, 5, 1, 10]);
+        }
+        let mut rng = VecRng::new(draws);
+        pool.update(
+            &mut rng,
+            &world,
+            &FreeCollision,
+            0.5,
+            Some((&mut dust, &ctx)),
+        );
+        assert_eq!(rng.idx, 30, "six stream draws per puff, five puffs");
+        assert!(!pool.slot(0).active);
+        let live: Vec<_> = (0..crate::particles::DUST_SENTINEL)
+            .filter(|&i| dust.slot(i).active)
+            .collect();
+        assert_eq!(live.len(), 5, "five dust-31 puffs");
+        for &i in &live {
+            let d = dust.slot(i);
+            assert_eq!(d.dust_type, 31);
+            // The 5×5 clamp: offset Next(1)=0 + 4 → position + 4 on both axes.
+            assert_eq!(d.position, Vec2::new(164.0, 164.0));
+            assert_eq!(d.velocity, Vec2::new(1.0, 0.5 - 0.2), "the -0.2 Y kick");
+            assert_eq!(d.frame_y, 10, "the Next(3)=1 row");
+            assert!((d.scale - 1.1).abs() < 1e-5);
+            assert_eq!(d.alpha, 0);
+        }
+    }
+
+    /// The W4-g68 asset seam (`Gore.cs:44-66` + `SpriteFrame.cs:72-77`):
+    /// a packed 32-column × 8-row leaf sheet gives the source-rect size
+    /// `(w/32 − 2, h/8 − 2)`; `Width`/`Height` scale it, `AABBRectangle`
+    /// truncates the scaled product and anchors at `(int)position`. An
+    /// absent id keeps the `1f` / `(0,0,1,1)` unloaded fallbacks.
+    #[test]
+    fn w4_g68_width_height_read_the_packed_sheet_cell() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        // Gore_910's retail sheet is 448x112: cell 14x14 − 2 padding = 12x12.
+        pool.set_texture_sizes(std::collections::HashMap::from([(910, (448, 112))]));
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        let g = pool.slot(0);
+        assert_eq!(g.texture_size, Some((448, 112)));
+        assert_eq!(g.width(), 12.0, "scale 1 × (448/32 − 2)");
+        assert_eq!(g.height(), 12.0, "scale 1 × (112/8 − 2)");
+        assert_eq!(g.aabb_rectangle(), (160, 160, 12, 12));
+        pool.slot_mut(0).scale = 0.5;
+        assert_eq!(pool.slot(0).width(), 6.0);
+        assert_eq!(pool.slot(0).aabb_rectangle(), (160, 160, 6, 6));
+        // A type with no sheet keeps the C#'s unloaded fallbacks.
+        let n = pool.new_gore(
+            &mut VecRng::new(vec![10, 20]),
+            &world,
+            Vec2::new(200.0, 200.0),
+            Vec2::ZERO,
+            1,
+            1.0,
+        );
+        assert_eq!(pool.slot(n).texture_size, None);
+        assert_eq!(pool.slot(n).width(), 1.0);
+        assert_eq!(pool.slot(n).height(), 1.0);
+        assert_eq!(pool.slot(n).aabb_rectangle(), (0, 0, 1, 1));
+    }
+
+    /// W4-g68 wiring-2 A/B: the 1225 position-adjust arm
+    /// (`Gore.cs:1384-1388`). LOADED (id in `set_texture_sizes`): X shifts
+    /// by the INTEGER-halved raw width × scale, Y by the raw height ×
+    /// scale / 2 — the frame/timeLeft/sticky writes are unconditional and
+    /// the `Next(6)` rolls on BOTH branches. UNLOADED: no shift, same
+    /// draws (the A/B stream equality is the witness).
+    #[test]
+    fn w4_g68_the_1225_position_adjust_rides_the_loaded_gate() {
+        let world = world();
+        // Sheet 21x30 (odd width pins the integer halving: 21/2 = 10).
+        let mut loaded = GorePool::new();
+        loaded.set_texture_sizes(std::collections::HashMap::from([(1225, (21, 30))]));
+        let mut rng = VecRng::new(vec![10, 20, 3]);
+        let n = loaded.new_gore(
+            &mut rng, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 1225, 2.0,
+        );
+        assert_eq!(rng.idx, 3, "kick x2 + Next(6)");
+        let g = loaded.slot(n);
+        assert_eq!(g.position, Vec2::new(100.0 - 10.0 * 2.0, 100.0 - 30.0 * 2.0 / 2.0));
+        assert_eq!(g.time_left, 13);
+        assert!(!g.sticky);
+        assert_eq!(g.frame.row_count, 3);
+        // UNLOADED: identical stream consumption, no position shift.
+        let mut bare = GorePool::new();
+        let mut rng_b = VecRng::new(vec![10, 20, 3]);
+        let n = bare.new_gore(
+            &mut rng_b, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 1225, 2.0,
+        );
+        assert_eq!(rng_b.idx, 3, "the Next(6) is unconditional");
+        assert_eq!(bare.slot(n).position, Vec2::new(100.0, 100.0));
+        assert_eq!(bare.slot(n).time_left, 13);
+    }
+
+    /// W4-g68 wiring-2 A/B: the 411-430 arm (`Gore.cs:1407-1421`) — the
+    /// unloaded-extra-RNG census. LOADED: FOUR extra draws
+    /// (`Next(90,150)`, `Next(40,90)`, `Next(4)`, `Next(goreTime/2,
+    /// goreTime*2)`), the position adjusts (Y is the FULL height), the
+    /// velocity scales, the `+Next(4)*5` type bump and sticky=true.
+    /// UNLOADED: only the two kick draws — the A/B delta is exactly 4.
+    /// `goreTime == 0` adds a FIFTH draw (`Next(150,600)`).
+    #[test]
+    fn w4_g68_the_pages_arm_rolls_four_extra_draws_when_loaded() {
+        let world = world();
+        let mut loaded = GorePool::new();
+        loaded.set_texture_sizes(std::collections::HashMap::from([(411, (16, 20))]));
+        // kick(10,20), vy Next(90,150)=120 → 1.2, vx Next(40,90)=50 → 0.5,
+        // bump Next(4)=2 → +10 (type 421), life Next(300,1200)=777.
+        let mut rng = VecRng::new(vec![10, 20, 120, 50, 2, 777]);
+        let n = loaded.new_gore(
+            &mut rng, &world, Vec2::new(100.0, 100.0), Vec2::new(4.0, 6.0), 411, 1.0,
+        );
+        assert_eq!(rng.idx, 6, "2 kicks + the arm's 4 draws");
+        let g = loaded.slot(n);
+        assert_eq!(g.gore_type, 421, "the +10 bump");
+        assert_eq!(g.position, Vec2::new(100.0 - 8.0, 100.0 - 20.0), "Y is the FULL height");
+        // The kick wrote velocity (4+2, 6-1) = (6, 5); the arm scales it.
+        // The expected product re-derives the C# float shape (120f * 0.01f
+        // is NOT the 1.2 literal — one ulp apart).
+        assert_eq!(g.velocity, Vec2::new(6.0 * (50.0_f32 * 0.01), 5.0 * (120.0_f32 * 0.01)));
+        assert_eq!(g.time_left, 777);
+        assert!(g.sticky);
+        // The bump's final type picks the texture size (421 absent here —
+        // the C#'s lazy read at draw time; the ARM gate read 411).
+        assert_eq!(g.texture_size, None);
+        // UNLOADED: two draws only, no shift, no bump, generic sticky chain.
+        let mut bare = GorePool::new();
+        let mut rng_b = VecRng::new(vec![10, 20]);
+        let n = bare.new_gore(
+            &mut rng_b, &world, Vec2::new(100.0, 100.0), Vec2::new(4.0, 6.0), 411, 1.0,
+        );
+        assert_eq!(rng_b.idx, 2, "the unloaded branch draws NOTHING extra");
+        let g = bare.slot(n);
+        assert_eq!(g.gore_type, 411);
+        assert_eq!(g.position, Vec2::new(100.0, 100.0));
+        assert_eq!(g.velocity, Vec2::new(6.0, 5.0));
+        assert_eq!(g.time_left, GORE_TIME_DEFAULT);
+        // goreTime == 0: the fifth draw fires (Next(150,600)) and the
+        // sticky chain's first arm (goreTime==0 → sticky=false) is
+        // overwritten by the loaded arm's sticky=true. The life roll is
+        // Next(0, 0) — the C# STILL draws a sample for an empty range
+        // (`UnifiedRandom.cs:126-130`), so the census uses a real stream
+        // twin (VecRng's bounds assert cannot express the empty range).
+        let mut zero = GorePool::new();
+        zero.gore_time = 0;
+        zero.set_texture_sizes(std::collections::HashMap::from([(411, (16, 20))]));
+        let mut rng_z = UnifiedRandom::new(9);
+        let n = zero.new_gore(
+            &mut rng_z, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 411, 1.0,
+        );
+        let mut twin = UnifiedRandom::new(9);
+        twin.next_range(10, 31);
+        twin.next_range(-20, 21);
+        twin.next_range(90, 150);
+        twin.next_range(40, 90);
+        twin.next_max(4);
+        twin.next_range(0, 0); // the empty-range life roll still draws
+        let life2 = twin.next_range(150, 600);
+        assert_eq!(rng_z, twin, "the zero-time branch adds the fifth draw");
+        assert_eq!(zero.slot(n).time_left, life2);
+        assert!(zero.slot(n).sticky);
+    }
+
+    /// W4-g68 wiring-2 A/B: the SpecialAI-2 arm (`Gore.cs:1430-1441`,
+    /// types 825-827). LOADED: ONE extra draw (`Next(goreTime/2,
+    /// goreTime+1)`), alpha 150, velocity reset to the ARGUMENT (the kick
+    /// discarded), the raw-half position adjust, sticky false. UNLOADED:
+    /// sticky false only — the A/B delta is exactly 1 draw.
+    #[test]
+    fn w4_g68_the_smoke_arm_rolls_one_extra_draw_when_loaded() {
+        let world = world();
+        let mut loaded = GorePool::new();
+        loaded.set_texture_sizes(std::collections::HashMap::from([(825, (24, 24))]));
+        let mut rng = VecRng::new(vec![10, 20, 450]);
+        let n = loaded.new_gore(
+            &mut rng, &world, Vec2::new(100.0, 100.0), Vec2::new(1.5, -0.5), 825, 1.0,
+        );
+        assert_eq!(rng.idx, 3, "2 kicks + the arm's 1 draw");
+        let g = loaded.slot(n);
+        assert_eq!(g.alpha, 150);
+        assert_eq!(g.velocity, Vec2::new(1.5, -0.5), "the argument velocity survives");
+        assert_eq!(g.position, Vec2::new(100.0 - 12.0, 100.0 - 12.0));
+        assert_eq!(g.time_left, 450);
+        assert!(!g.sticky);
+        // UNLOADED: the kick velocity stays, alpha 0, no shift.
+        let mut bare = GorePool::new();
+        let mut rng_b = VecRng::new(vec![10, 20]);
+        let n = bare.new_gore(
+            &mut rng_b, &world, Vec2::new(100.0, 100.0), Vec2::new(1.5, -0.5), 825, 1.0,
+        );
+        assert_eq!(rng_b.idx, 2, "the unloaded branch draws NOTHING extra");
+        let g = bare.slot(n);
+        assert_eq!(g.alpha, 0);
+        assert_eq!(g.velocity, Vec2::new(3.5, -1.5));
+        assert_eq!(g.position, Vec2::new(100.0, 100.0));
+        assert!(!g.sticky, "the sticky flag is unconditional");
+    }
+
+    /// The falling-leaf liquid probe (`Gore.cs:1180`) centres on
+    /// `(Width, Height) * 0.5 + position`. Use a 1-column × 1-row sheet
+    /// (12×12, no padding cut) so the half-size is 6: pos.x 170.1 − the
+    /// tick's −sin(π/180) drift + 6 ≈ 176.08 → tile 11, while the 1f
+    /// fallback's +0.5 stays in tile 10. The liquid in THAT cell flips
+    /// `velocity.Y` to −1 (the rest sentinel).
+    #[test]
+    fn w4_g68_the_fall_probe_uses_the_sheet_half_size() {
+        let mut world = leaf_physics_world();
+        // The probe box is `(vector.x, vector.y + 6, 4, 4)` with
+        // vector = pos + (4, 0) → (174, 306..310); tile 11 spans x
+        // 176..192 (overlap) and the liquid rect must reach y < 310:
+        // liquid 16 → top 304 + 1 = 305 (the fd9415f3 fixture lesson).
+        let i = world.index(11, 19);
+        world.tiles[i].liquid = 16;
+        let mut pool = GorePool::new();
+        pool.set_texture_sizes(std::collections::HashMap::from([(910, (12, 12))]));
+        spawn_leaf(&mut pool, &world, Vec2::new(170.1, 300.0));
+        // The leaf frame is 32×8; pin it to 1×1 for this probe witness (the
+        // C# reads whatever frame the slot carries — a paint-swapped leaf
+        // can ride any cell shape).
+        pool.slot_mut(0).frame = SpriteFrame::new(1, 1);
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        assert_eq!(
+            pool.slot(0).velocity.y,
+            -1.0,
+            "the sheet-sized probe found the liquid at tile 11"
+        );
+        // Without the seam the probe reads tile 10 (dry) and keeps falling.
+        let mut bare = GorePool::new();
+        spawn_leaf(&mut bare, &world, Vec2::new(170.1, 300.0));
+        bare.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        assert!(bare.slot(0).velocity.y > 0.0);
+    }
+
+    /// The ground freeing up under a resting leaf resumes the fall
+    /// (`Gore.cs:1133-1138`): `velocity.Y = 0.1`, `timeLeft = 0`,
+    /// `alpha += 20` — then the same tick's fade tail (`:1149-1156`) adds
+    /// one `DisappearSpeedAlpha` point (timeLeft is already 0), so the
+    /// observable alpha after the tick is 21.
+    #[test]
+    fn w4_g68_open_ground_resumes_the_fall_and_starts_the_fade() {
+        let world = leaf_physics_world(); // no solid under the probe
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(160.0, 160.0));
+        pool.slot_mut(0).velocity = Vec2::new(0.0, -1.0);
+        pool.slot_mut(0).alpha = 0;
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        let g = pool.slot(0);
+        assert_eq!(g.velocity.y, 0.1);
+        assert_eq!(g.time_left, 0);
+        assert_eq!(g.alpha, 21, "the +20 resume plus the same-tick fade point");
+    }
+
+    /// The fade tail (`Gore.cs:1201-1208` + `:1055-1058`): one
+    /// `DisappearSpeed` point per tick while `timeLeft > 0`, then one alpha
+    /// point per tick; `alpha >= 255` deactivates.
+    #[test]
+    fn w4_g68_the_leaf_fade_counts_down_then_dies() {
+        let world = leaf_physics_world();
+        let mut pool = GorePool::new();
+        spawn_leaf(&mut pool, &world, Vec2::new(500.0, 300.0));
+        pool.slot_mut(0).time_left = 1;
+        // Keep the leaf falling in open air; the FreeCollision seam never
+        // brakes, so the rest switch never fires.
+        pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+        assert_eq!(pool.slot(0).time_left, 0);
+        assert_eq!(pool.slot(0).alpha, 0);
+        for tick in 1..=255 {
+            pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
+            if tick < 255 {
+                assert!(pool.slot(0).active);
+                assert_eq!(pool.slot(0).alpha, tick);
+            }
+        }
+        assert!(!pool.slot(0).active, "alpha 255 kills the leaf");
     }
 }

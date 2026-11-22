@@ -39,11 +39,12 @@ use crate::assets::{self, Lookups};
 pub(crate) fn source_rect(frame: &SpriteFrame, tex_w: u32, tex_h: u32) -> [i32; 4] {
     let num = (tex_w / frame.column_count.max(1) as u32) as i32;
     let num2 = (tex_h / frame.row_count.max(1) as u32) as i32;
+    let (w, h) = frame.source_size(tex_w, tex_h);
     [
         frame.current_column as i32 * num,
         frame.current_row as i32 * num2,
-        num - if frame.column_count != 1 { 2 } else { 0 },
-        num2 - if frame.row_count != 1 { 2 } else { 0 },
+        w,
+        h,
     ]
 }
 

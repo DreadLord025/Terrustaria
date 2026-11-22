@@ -42033,3 +42033,421 @@ BOTH-sides keep-one agreement is mutual (§9.1). The c39 2-hunk graft
 last open ledger — verified OPEN at `af3ebc1a`, folded by the seal
 (§9.2, the "Rain and weather" SEAL paragraph above). No weather fold
 remains open on ANY family lane.
+## The wind leaf particles (W4-g68, 2026-11-20, code-only)
+
+The wind-driven leaf layer now rides the real gore machinery end to end:
+spawn (`TileDrawing.EmitTreeLeaves` `TileDrawing.cs:7779-7891` and
+`EmitLivingTreeLeaf`/`_Below`/`_Sideways` `:7549-7592`), physics
+(`Gore_UpdateLeaf` `Gore.cs:1085-1209`, the S1-E-4 `GorePool::update_leaf`)
+and draw (`Main.DrawGore` `Main.cs:21873-21907`, the S1-E-4b
+`render/gore.rs` pass). CODE-ONLY MODE: no compiler invoked; the 17
+witnesses (8 foliage + 8 tr-core leaf physics + 1 sand wind coupling) are
+WRITTEN NOT RUN.
+
+**The d60-flagged 192-leaf deviation is reconciled.** The W4-d60 census
+(77429fe1) flagged the inline `render/tiles.rs` arm: it gated on
+`wind.sway_enabled` (the C# does NOT), drew the sideways `Next(2)` only
+when the wind pick was non-zero (the C# draws it UNCONDITIONALLY after
+the below-spawn), used a one-cell downwind probe (the C# needs TWO open
+cells), dropped the paint column and never handled type 384. The arm now
+calls the faithful `emit_living_tree_leaf` trio in `render/foliage.rs`
+(the same body d60's unwired `tile_draw_particles.rs` carries — when that
+module lands, the wiring wave dedupes onto one copy):
+
+* the gate is `emit_effects && kind in {192, 384}` then
+  `_rand.Next(leafFrequency / 4) == 0` (`:6848-6855`); 192 sheds gore 910,
+  384 sheds 914;
+* below (`:7558-7569`): the tile under must be non-strict-solid and dry;
+  wind < −0.2 needs (x−1, x−2) open at y+1, wind > 0.2 needs (x+1, x+2);
+  `NewGorePerfect` at `(x*16, y*16+16)`, zero velocity, scale 1;
+* sideways (`:7571-7592`): the unconditional `Next(2)`; `num` = the wind
+  sign above 0.2 else 0 (dead wind probes the tile's OWN cell — a 192
+  block is walk-through, so both gores spawn); the −10 px left-shift
+  quirk; position `(x*16 + 8 + 4*num + num2, y*16 + 8)`;
+* both writes set `Frame.CurrentColumn = tile.color()` (the paint column
+  the `Main.DrawGore` framed source rect reads).
+
+**The private leaf pool is retired.** The old `LeafGore` Vec (400-cap,
+`App.leaves`) with its draw-time `tick_leaves` approximation is deleted:
+its fall/rest math re-derived `Gore_UpdateLeaf` with a simplified probe
+(no liquid-rect intersection, no honey/lava arms, no `DisappearSpeed`
+rows, a floor() tile probe instead of the `(int)x >> 4` shift). Every
+leaf is now a `GorePool` slot: the 600-slot pressure (`Gore.NewGore`'s
+first-inactive scan + refuse sentinel) replaces the 400-cap drain, the
+`gores` phase (`Main.cs:17971`, between NPCs and projectiles) ticks the
+faithful physics, and `Main.DrawGore` draws it with `Gore.GetAlpha` and
+the 32-column paint frame. `App.leaves`, `foliage::draw_leaves`,
+`Lookups::leaf_gores/leaf_sheet/leaf_uv/leaf_frame` are removed (the
+`gore_sheets` map already carries every `Gore_<id>` sheet, 914 included).
+
+**RNG census — two streams kept separate (the d60 precedent).** The gate
+draws (`Next(frequency)`, the 192/384 `Next(maxValue)`, the sideways
+`Next(2)`) ride `TileDrawing._rand` — the port's per-frame pinned
+`FastRandom` stand-in (`sparkle_seed ^ 0x9E37…`, the TILE-DRAW-3
+convention). The `Main.rand` draws ride the App's bare global
+`UnifiedRandom` (`NamedRngs::global`): the C# tile-draw emission runs
+OUTSIDE every `SwapRandom` block (`Main.cs:17811-17812` sits after the
+`UpdateServerOrClient` wrapper closes), so the global stream is the
+faithful home. In C# order: `EmitTreeLeaves`' hallowed height pick
+`Next(0, 28)` (`:7884` — previously mis-rolled on the gate stream), then
+the `NewGoreDirect` ARGUMENT draws `RandomVector2(Main.rand, −2, 2)`
+(two `NextFloat`, X then Y, `Utils.cs:2431-2434`) and the scale roll
+`0.7 + NextFloat()*0.6` (`:7889`), then `NewGore`'s internals
+(`Gore.cs:1327-1328` velocity jitter, the SpecialAI-3 four-draw leaf
+init `:1393-1401`). The `RandomVector2` velocity is DISCARDED by the
+leaf init but its draws still fire (argument evaluation precedes the
+call). `NewGorePerfect` (the living-wood arms) burns the same internals
+then overwrites position/velocity — zero velocity survives.
+
+**Deliberate deviations / deferred seams.**
+* The emission gate `_isActiveAndNotPaused`
+  (`FocusHelper.AllowTileDrawingToEmitEffects`, `TileDrawing.cs:469`)
+  reads `!game_paused && !TR_NO_WIND` — the focus gate is unported; the
+  A/B switch keeps the whole wind feature screenshotable. **The exact C#
+  contract (W4-g68 deferred-2 census): the gate is NOT `!gamePaused`** —
+  `FocusHelper.cs:27` reads `!WorldUpdateStepper.DrawnThisUpdate`, a flag
+  cleared at the top of every world update (`Main.cs:17747`) and set at
+  the END of the first draw after it (`Main.cs:62478`, inside `DoDraw`).
+  So vanilla emits on the FIRST DRAW PER WORLD UPDATE — at 60 Hz update +
+  60 Hz draw that is once per frame; at a 144 Hz display the extra draws
+  emit NOTHING (the flag is already set); during a multi-update catch-up
+  frame only the draws after the LAST update's clear can emit. Pause is
+  orthogonal: a paused game still draws, but `ShouldUpdateWorld` gates
+  the update, so the flag stays set and emission stops — the port's
+  `!game_paused` approximates the steady state, not the mechanism.
+* **The per-rebuild emission cadence — the exact d60 wiring contract
+  (W4-g68 deferred-2; site 1's leaf arm GATED by wiring-3, 2026-11-21).**
+  C# runs the emission bodies from THREE draw-pass
+  sites, each with its own cadence:
+  1. `DrawSingleTile` (`TileDrawing.cs:965-968`): the
+     `_isActiveAndNotPaused && (!Lighting.UpdateEveryFrame ||
+     FastRandom(Main.TileFrameSeed).WithModifier(x,y).Next(4)==0)` gate.
+     `Lighting.UpdateEveryFrame` (`Lighting.cs:77-87`) is FALSE whenever
+     render targets are required (the normal path) — so the quarter-roll
+     normally APPLIES: each tile emits on ~1/4 of the eligible draws.
+     `TileFrameSeed` re-seeds every FIFTH draw (`Main.cs:61719-61723`,
+     `_drawCycleCounter % 5`, `Utils.RandomNextSeed`), so the eligible
+     tile set rotates on a 5-draw cycle. The roll is a THROWAWAY
+     `FastRandom` per tile — it does NOT step `TileDrawing._rand`.
+  2. `DrawGrass`/`DrawAnyDirectionalGrass` (`:8346-8352`, `:8403-8409`)
+     and the two multi-tile-grass-in-wind passes (`:8974-8980`,
+     `:9485-9491`): `flag = _rand.Next(4)==0` — a REAL `_rand` draw per
+     special-point tile per draw, then `_isActiveAndNotPaused & flag`.
+     These ride the `PostDrawTiles(solidLayer: false)` chain
+     (`:414-434`), NOT the G6-cacheable tile range.
+  3. `EmitTreeLeaves` (`:7779-7891`, from `DrawTrees` `:8121/8166/8214`):
+     NO quarter-roll — only `_isActiveAndNotPaused` (`:7781`) plus its
+     own `Next(frequency)` gate (`:7830`). `DrawTrees` also rides
+     `PostDrawTiles` (`:428`).
+  The port fires all three from the G6-cached `draw_tiles` rebuild
+  (`render/tiles.rs` + `foliage.rs`), so the shed cadence is per-REBUILD:
+  a windy world rebuilds every frame (the sway counters ride the key) and
+  the cadence approximates vanilla's; a CALM world caches and emits only
+  on camera/liquid/light changes — vanilla would still shed at
+  1/14000-per-tile-draw in dead calm. `_leafFrequency` itself is ticked
+  per world update in C# (`TilesRenderer.Update()`, `Main.cs:17812`,
+  `TileDrawing.cs:376`); the port re-derives it from the live wind each
+  call (`wind::leaf_frequency`) — same value, no state. **Contract for
+  the d60 wiring wave:** move the emission calls OUT of the cached range
+  into a per-frame pass (the `tile_cracks.rs` precedent, `draw.rs:1198-
+  1206`: per-frame world-range overlay, `WorldFrameKey` untouched), gate
+  site 1 on the throwaway `FastRandom(tile_frame_seed).with_modifier
+  (x,y).next(4)==0` with the 5-draw seed cycle, sites 2/3 on their own
+  gates; the `_rand` stand-in must then become a PERSISTENT stream (C#
+  `TileDrawing._rand` is one `UnifiedRandom` for the renderer's lifetime,
+  `:191` — the port's per-frame `FastRandom` pin is a determinism
+  stand-in, not the C# stream), and the `DrawnThisUpdate` flag needs a
+  port field cleared per world tick / set after the first draw. Do NOT
+  widen the G6 key to force per-frame rebuilds — that re-tiles the whole
+  world every frame (the cache exists to avoid exactly that).
+  **Wiring-3 cadence verify (2026-11-21):** the frequency chain is 1:1 —
+  `wind::leaf_frequency` matches `UpdateLeafFrequency`
+  (`TileDrawing.cs:7719-7771`) band-for-band incl. the ×7, and
+  `emit_tree_leaves`' hallowed /2 → height-10000 → branch ×3 order matches
+  `:7816-7833` exactly (`Main.WindForVisuals` = `windSpeedCurrent`,
+  `Main.cs:2823`, so the live re-derivation equals the per-update tick).
+  The DIVERGENCE found + fixed: the inline 192/384 arm lacked site 1's
+  quarter-roll — the C# wraps the whole `DrawTiles_EmitParticles` call
+  (the leaf arms included) in the throwaway
+  `FastRandom(TileFrameSeed).WithModifier(x,y).Next(4)==0` gate
+  (`:965-968`), so the port shed 4× too often. The arm now carries the
+  gate (the `flame::tile_frame_seed_at` 5-draw-cycle schedule, the
+  throwaway roll never steps `leaf_rng`); the witness pins the gate
+  order + the 1/14000 dead-calm rate + the seed schedule. STILL the
+  d60 wiring wave's: the per-frame pass move (the cached-range cadence
+  deviation above), the persistent `_rand` for the leaf gates (the drip
+  arm's `App.tile_draw_rand` is the precedent), and the DrawnThisUpdate
+  flag gate.
+* ~~`Gore_UpdateLeaf`'s lava arm five-dust puff stays dropped~~ —
+  **WIRED (W4-g68 deferred-1).** `GorePool::update` now takes the
+  `DustPool` + `SpawnCtx` seam (`None` keeps the drop for pool-only
+  consumers); the lava arm rolls its five `Dust.NewDust(position, 3, 3,
+  31, 0, −0.2)` puffs on the SAME `UpdateGores` stage stream via the
+  `DustFromGore` adapter — the C# runs both inside
+  `SwapRandom("UpdateGores")` (`Main.cs:17771-17774`), so no stream split.
+  Six draws per puff (`Dust.cs:170-190`: the 5×5-clamped offsets, two
+  velocity rolls, the frame row, the scale roll; type 31 is in no tweak
+  arm). `gores_phase` hands `App.dust` + `spawn_ctx()` in.
+* ~~`Gore.Width/Height` read the 1f fallback~~ — **WIRED (W4-g68
+  deferred-3).** `GorePool::set_texture_sizes` injects the packed
+  `Gore_<id>` sheet sizes (`App::new` feeds `Lookups.gore_sheets`);
+  `width()/height()` = `scale × (tex/count − 2px padding on multi-cell
+  axes)` (`Gore.cs:44-66` + `SpriteFrame.cs:72-77` — the render-side
+  `source_rect` math was verified 1:1 and now shares
+  `SpriteFrame::source_size`), `aabb_rectangle` truncates the scaled
+  product; absent ids keep the C# unloaded fallbacks. The falling-leaf
+  liquid probe (`:1180`) centres on the sheet half-size. ~~STILL DROPPED:
+  the spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`,
+  `:1433-1440`)~~ — **WIRED (W4-g68 wiring-2, 2026-11-21).** All three
+  arms now ride the same loaded-texture gate (`texture_sizes.get(&type)`
+  IS the C# `TextureAssets.Gore[Type].IsLoaded` test — the App injects
+  the real packed sizes, so the gate is open in-game):
+  * 1225 (`:1384-1388`): X −= `(Width()/2) * Scale` (the INTEGER halving
+    precedes the float cast — `Utils.cs:1301-1316` reads the RAW asset,
+    not the framed cell), Y −= `Height() * Scale / 2f`. No extra draws
+    (the `Next(6)` was already unconditional).
+  * 411-430 (`:1407-1420`): the unloaded-extra-RNG arm — FOUR draws when
+    loaded (`Next(90,150)` vy-scale, `Next(40,90)` vx-scale, `Next(4)*5`
+    type bump, `Next(goreTime/2, goreTime*2)` life) plus a FIFTH
+    (`Next(150,600)`) only when `goreTime == 0`; Y shifts by the FULL
+    height; `sticky = true` overwrites the zero-time chain's false; the
+    type bump can push past 430 (the C#'s own shape — the later
+    `refresh_texture_size` reads the FINAL type). The velocity scales
+    multiply the POST-KICK velocity (the kick draws fired first).
+  * SpecialAI-2 / 825-827 (`:1433-1440`): ONE draw
+    (`Next(goreTime/2, goreTime+1)`), alpha 150, velocity reset to the
+    ARGUMENT (kick discarded), raw-half position adjust; `sticky=false`
+    stays unconditional.
+  The A/B witnesses pin BOTH branches per arm: the loaded spawn's
+  position/velocity/type/life AND the exact stream delta (0 / 4(+1) / 1
+  extra draws vs the unloaded spawn), so a regression that opens the
+  gate without the draws (or vice versa) fails the census. The
+  `goreTime==0` census uses a real `UnifiedRandom` twin — the empty-range
+  `Next(0,0)` life roll STILL consumes a sample (`UnifiedRandom.cs:126-
+  130`), which the VecRng bounds-assert stand-in cannot express.
+* **The remaining tile-draw emission arms (W4-g68 deferred-4 census).**
+  The `:7779-7891` region is exactly `EmitTreeLeaves` — no flower-petal
+  or vine-drip arm hides there. The full `TileDrawing` emission census:
+  the lantern petals / herb blooms / chimney smoke / star clouds /
+  pumpkin tiers / torch smoke / rubble gate are d60's
+  `tile_draw_particles.rs` (unwired, claimed); the danger/spelunker/
+  biome-sight vision dust (`:911-962`, `:8481-8552`) is d56's
+  `animated_tiles.rs` (claimed); the special-point collection is g30's
+  `special_points.rs` (unwired, records `liquid_drop_cells`). The ONE
+  unclaimed body was `EmitLiquidDrops` (`:7594-7674`, the vine-tip /
+  stalactite / shimmer-candle drips, called from the `Draw` switch
+  `:688-694` then `continue`) — now ported UNWIRED as
+  `foliage.rs::emit_liquid_drops`: the wet-tile refusal precedes the
+  `Next(num*2)` gate (60/120/180 by kind 373/374/375+461), the
+  anti-cluster box (x−34..+50, y−100..+300) scans the 600 slots for live
+  `IsDrip` gores, the water-style pick (13/14→706, 12→1147, >1→705+style)
+  then the kind overrides (374→716, 375→717, 709→1383, 461→943 with the
+  corrupt/crimson/hallow tints 1160/1161/1162, LAST zone wins), and the
+  `NewGore` + `velocity *= 0` tail on `Main.rand`. ~~The wiring wave feeds
+  it g30's recorded cells on the reconciled cadence above.~~ **WIRED
+  (W4-g68 wiring wave, 2026-11-21):** `foliage::emit_liquid_drops_area`
+  runs per-frame in `frame/draw.rs` right after the tile-cracks overlay
+  (the same per-frame-world-range precedent — the `WorldFrameKey` is
+  untouched, so the G6 cache keeps its calm-world hits while the drips
+  still roll their `Next(num*2)` gate every DRAW like the C# `Draw`
+  switch). The driver rescans the `draw_tiles` view rect (camera ±
+  screen/2/zoom ±1 tile, clamped 4..max−5 — the C# `GetScreenDrawArea`
+  clamps at `:6558-6573`; the ±4-row/±2-col offscreen margin is the
+  recorded deviation, the wind-grid port's convention) row-major for
+  active 373/374/375/461/709 tiles — the five kinds are non-solid (no
+  `tileSolid` write, no `DrawTileInSolidLayer` row), so the C# arm rides
+  the `solidLayer: false` `Draw` pass and the port's fused scan IS that
+  arm. **The g30 attach-contract still holds:** UNION-CONTRACT-tilepass
+  §5 (d60 row, `task/W4-g31` tip `c3027a38`) binds g30's
+  `SpecialPoints.liquid_drop_cells` (`special_points.rs:110`, recorded at
+  `:394-396` for exactly these kinds) to this body; when the g-family
+  lands on main the wiring wave swaps the rescan for the recorded cells
+  — the body, its RNG order and the per-frame cadence are unchanged
+  either way. **The gate stream is now PERSISTENT:** `App.tile_draw_rand`
+  (`UnifiedRandom`, world-seeded — the `mine_crack_rng` deviation class)
+  is the `TileDrawing._rand` stand-in (`:104/:191`, one stream for the
+  renderer's lifetime); the drip witnesses moved from the per-frame
+  `FastRandom` pin to it. The cached leaf arm's per-frame pin stays as
+  documented until the d60 wiring reconciles it. The emission gate is
+  the leaf arm's `emit_effects` stand-in (`!game_paused && !TR_NO_WIND`);
+  the exact `DrawnThisUpdate` mechanism (the port's stepper flag is set
+  at the draw half's HEAD, `world.rs:688`, so a read inside the draw
+  region would be vacuously true) stays the d60 wiring wave's contract.
+  Water style + the three zone flags come from the live frame state
+  (`calculate_water_style(draw_cam)` + `TR_WATER_STYLE`,
+  `scene_metrics.zone_*`).
+* The desert debris (`Sandstorm.EmitDust`, `sand.rs`) already landed with
+  S1-E-1/E-3; W4-g68 adds the wind-coupling witness (the
+  `sign(wind)*Lerp(0.9,1,|wind|)` drift, the `num13*20` push, the
+  severity scales, the dead-calm refusal) — no behaviour change.
+
+**The d60 G6-contract cross-note (W4-g68 wiring-4, 2026-11-21).** Read
+`origin/task/W4-d60-tile-draw-particles` tip `77429fe1` (the module
+`tile_draw_particles.rs`, 2086 ln, 22 `#[test]`, UNWIRED) against the
+three-site cadence contract above. Verdict per clause:
+* **Site 1 (the throwaway quarter-roll): FOLLOWS.** The module doc
+  (`:18-21`) states the exact gate — `_isActiveAndNotPaused` and
+  (`!Lighting.UpdateEveryFrame` or the per-tile
+  `FastRandom(TileFrameSeed).WithModifier(x,y).Next(4)==0`) — and
+  explicitly assigns it to the CALLER ("the caller owns that gate; this
+  module is the body"). The body's 192/384 arms roll only
+  `Next(leaf_frequency/4)` (`ctx.leaf_frequency / 4`, `:490`), never the
+  quarter-roll — no double-gate, no missing gate. The ANALYSIS diff
+  repeats the obligation verbatim. The port's inline arm now carries
+  the same gate (wiring-3), so the two copies agree at the wiring merge.
+* **Site 2 (the grass passes' REAL `_rand.Next(4)`): SILENT —
+  legitimate deferral, one flag.** The module is the
+  `DrawTiles_EmitParticles` BODY; the four grass-pass call sites
+  (`:8346-8352`, `:8403-8409`, `:8974-8980`, `:9485-9491`) roll
+  `flag = _rand.Next(4)==0` BEFORE the call and pass
+  `_isActiveAndNotPaused & flag` — the module neither ports nor claims
+  those drivers (they are the g31 drain lane's `can_do_dust` seam,
+  UNION-CONTRACT §1.4: "the binding must not re-roll"). No violation in
+  the body; the wiring wave must keep the flag ALREADY-CONSUMED.
+* **Site 3 (EmitTreeLeaves' bare gate): FOLLOWS.** d60's
+  `emit_living_tree_leaf` trio is the same faithful body g68 landed
+  (unconditional sideways `Next(2)`, two-open-cell gate, −10 shift,
+  paint column); the module doc flags the OLD inline deviation for
+  reconciliation — g68 already reconciled it, and the wiring-3
+  quarter-roll now matches d60's caller-owns-gate design. At the merge
+  the two `emit_living_tree_leaf` copies dedupe (g68's is wired; d60's
+  doc says "the wiring wave dedupes onto one copy").
+* **The per-frame pass move / persistent `_rand` / DrawnThisUpdate:
+  SILENT — deferred, not violated.** d60 documents the two-stream
+  census (`rand` = `_rand`, `main_rand` = `Main.rand`) and the
+  caller-owned gate, but says nothing about the G6 cached range, the
+  per-frame move, the persistent stream or the flag mechanism. That is
+  the wiring wave's obligation per its own doc; g68's drip wiring
+  (wiring-1) is the precedent: the per-frame seam beside tile_cracks +
+  `App.tile_draw_rand`.
+* **One factual flag (not a code violation):** d60's module doc
+  (`:75-77`) and ANALYSIS say `EmitLiquidDrops` "is called from
+  `CacheSpecialDraws` (`:693`)" — the C# `:693` call sits in
+  `TileDrawing.Draw` (`:465`, the per-draw tile walk), NOT
+  `CacheSpecialDraws_Part1/Part2` (`:4152`/`:4287`, the
+  `DrawSingleTile` special-point cache helpers). The distinction
+  matters for the cadence: `Draw` runs per draw (the drip gate rolls
+  per draw), while the cache helpers ride the cached tile range. g68's
+  wiring-1 ported the arm at the per-frame seam accordingly; the g30
+  `liquid_drop_cells` attach-contract (UNION-CONTRACT §5) records the
+  cells during the classify walk — the wiring wave must feed them
+  per-frame, not per-rebuild.
+* **Stream-order pins verified against the C#:** the 215 `Next(3)`
+  before the `frameY==0` re-test (`:6780`), the 592/406/452 else-if
+  chain (`:6796-6847`), the 192/384 arms BEFORE the rubble gate
+  (`:6848` vs `:6901` — the 77429fe1 fix), the chimney's
+  `Next(825,828)` type roll then the 1/4→1/2→else scale tiers
+  (`:6820-6832`), the lantern petals' `Next(570,573)` + two ±50%
+  jitters + the 572/571 X shifts (`:6966-6979`), the herb styles'
+  per-style gates (`:9605-9655`) — all match the ported bodies
+  verbatim. No emission-cadence violation found in d60's scope.
+
+Verification: 23 witness tests WRITTEN NOT RUN (no cargo/rustc invoked) —
+`render/foliage.rs` 11 (the dead-wind double shed, the sideways miss, the
+two-open-cell gate, the −10 left shift, the paint column, the liquid
+refusal, the two-stream census with the gate-stream step pin, the paused
+gate, + the 3 drip witnesses: the 706 vine drip with the 15-row/3×-life
+sheet, the kind/water-style/shimmer-zone type overrides, the wet refusal
++ anti-cluster box), `tr-core/gore.rs` 11 (the π/180 sway + wind*4 surface
+term, the underground drop, the collision rest switch, the water drift
+×0.94 + underground zero, honey freeze, lava burn-up, the open-ground
+resume 0.1/0/α+20 (then the same-tick fade point → 21), the 600+255 fade,
++ the lava five-puff seam census (30 stream draws, the 5×5 clamp, the
+−0.2 Y kick), the packed-sheet Width/Height/AABB math, the sheet-half
+fall probe), `sand.rs` 1 (the wind recipe bounds).
+
+## The wind seal (W4-g68, 2026-11-21, code-only) — research/328 SEALED
+
+The g68-side close of the d130 WEATHER-FAMILY bible (research/83 §9.4,
+`b8f655708`): **g68 is the SINGLE wind-flag owner** — `tr-core/wind.rs`'s
+`Wind` is the only integrator of `windSpeedCurrent`/`windSpeedTarget`,
+every family consumer read-only (d130 rain velocity `wind*18,14`, the
+folded g67 Eyebrella drip `wind*3,9`, c40's wind-only Sandstorm severity,
+g68's own leaf cadence `WindForVisuals == windSpeedCurrent`
+`Main.cs:2823`). The full receipts + the wind-family bible live in
+`docs/research/328-g68-wind-seal.md` (registry 328 FINAL per §9.2 —
+renumbered from provisional 247, d10 EXECUTED keeps 247).
+
+**The final-phase missing arms (landed `32ee28ca5` + `2075c3aaa`):** the
+in-flight dirty state at resume was g68's OWN stale work (co-lane probe:
+no live writer, mtimes ~4.5 h old, every hunk cites W4-g68 — NOT an
+alive-advancing foreign co-lane). Adjudicated hunk-by-hunk:
+* **KEPT (wind.rs, g68-unique, hunk-disjoint from d130's `lanterns_up`
+  graft):** (1) the remix branch of `UpdateWindyDayState`
+  (`Main.cs:13021-13027` — remix clears the STORM flag, leaves windy-day
+  alone; non-remix clears windy-day; the old port cleared windy-day
+  unconditionally); (2) `Wind::windy_enough_for_kite_drops`
+  (`Main.cs:2907`, `|windSpeedTarget| >= _maxWind 0.4`, a distinct
+  property from the butterfly gate) **FED** into `spawn_loot`'s live
+  `LootFlags.windy` (was `Default::default()` false — the 8 kite rows
+  `loot_db_gen.rs` were dead); (3) `InAPlaceWithWind`'s `InWorld` skip
+  (`WorldGen.cs:86868` fluff 0 — an out-of-bounds cell is SKIPPED, not a
+  refusal; the old `return false` refused every map-edge probe, the
+  sunflower 2×5 window + the player `wind_here`). 3 witnesses WRITTEN
+  NOT RUN (31 total on the lane, grep-verified — the seal's 33 was an
+  arithmetic slip, the per-file rows sum to 31).
+* **RETIRED (player.rs, the push-chain copy): a c40-DUPLICATE.** c40
+  pushed the SAME `windPushed` chain FIRST (`fa3717be1`/`bdd039802`/
+  `7fc862c91`) as the STRICT SUPERSET (the `Auras.sandstorm_wind` →
+  `AddBuff(194,2)` grant `Player.cs:25556-25559`, the bottle-jump
+  lifecycle, 8 witnesses). The g68 copy had no grant and used
+  `f32::signum()` (±1.0 at ±0.0, never 0 — dead-calm would push +0.06
+  where C# `Math.Sign(0f)=0` pushes nothing; c40's explicit sign is
+  faithful). Keep-one = **c40 CANONICAL** (the `b46556b2d` precedent);
+  the g68 copy's three UNIQUE refinements survive as the exact graft
+  ledger (research/328 §5.1): **G1** the `isLockedToATile`
+  sitting/sleeping gate (`Player.cs:4020-4030`, c40 says "unported
+  constant false"), **G2** the `windPushed` term in BOTH
+  `GetIntendedGroundedFrame` copies (`Mount.cs:4550` — the `:36216`
+  Update site AND `try_landing`; the g68 dirty diff patched only the
+  first), **G3** the walk-cycle rest row (`Player.cs:36250`). Apply at
+  the c40 merge; the retired state is reconstructible from c40's tip +
+  the grafts, nothing lost.
+* **The c40 ONE-WAY gate confirmed** (`SceneMetrics.cs:698-703` re-read:
+  `ZoneSandstorm` clears `ZoneRain`, rain never gates the storm) —
+  already base-landed (`scene.rs:786-790`, the
+  `zone_sandstorm_suppresses_zone_rain` witness). One cite correction
+  for c40: the port comment says `:704-707`, the actual lines are
+  `:698-703` (comment-only). c40's `ResetEffects` cite `:16970` is
+  actually `UpdateDead`; the `ResetEffects` clear is `:18739` (both real
+  C# clears; the `UpdateDead` arm is a c40-lane remainder).
+
+The d130 `lanterns_up` wind.rs graft composes HUNK-DISJOINT (zero shared
+lines, both keep); g67 touches none of g68's four files (wind/foliage/
+gore/sand); the c40c bolt-geometry checkpoint (`5552a3266`, unregistered
+modules) is c40's own remainder, orthogonal to the wind flag. Gate
+command (the merger's verify): `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` — judge only by the `test result:
+ok` lines; every witness WRITTEN NOT RUN (code-only, no cargo/rustc
+invoked on this lane).
+
+**The final-phase addendum (research/328 §8, post-seal):** §8.1 closes
+the wind-SYSTEM census — every `UpdateWeather` wind arm (`Main.cs:
+58830-58950`) verified 1:1 against `wind.rs::update_rain`, ONE missing
+arm found + fixed: the WindGrid scan's `WindGrid.cs:91` dead-player
+gate (`f5a65c7da`, `.filter(|p| !p.dead)` on the `draw.rs` borrow — a
+drifting corpse no longer stamps gust cells). The cloud-count tail
+(`:58952-59036`) is the g69 lane's, documented unported; the
+creative-freeze fold + the sway-counter cadence split are pre-existing
+documented deviations. 32 witnesses on the lane (the seal's 33 was an
+arithmetic slip, corrected `08a4c3bb0`; +1 the dead-player pin).
+
+**The addendum's keep-one recommendations (§8.2-§8.5, for the merger):**
+* the wind-PARTICLE census is COMPLETE (§8.2) — all 8 families owned,
+  the one cross-family seam (leaf water-rest drift vs rain spawn)
+  shares the live flag but no stream;
+* the leaf GORE chain (emit → GorePool SpecialAI-3 → update_leaf →
+  front-pass draw) is CLOSED (§8.3); the passStyle TABLE keep-one =
+  **g17's `tr-core/tree.rs::tree_leaf`** (both hallow tables incl
+  style-20 + height_add 5; g68's `tree_leaf_pass_style` twin lacks
+  style-20 and its "unreachable today" comment is wrong — a loaded
+  `.wld` with `hallow_bg_style` 2/3 reaches it); the exact rebind for
+  `foliage.rs:526` is published;
+* the tree-shake interplay (§8.4) composes with the wind shed on
+  cadence/streams/types with NO conflict (g17's loot ladder owns the
+  loot, the FX tail is RNG-free in position);
+* the drip DRIVER keep-one = **the union direct-bind** (g31 §8.5 at
+  `36b5f2d78`, the per-cell CAD arm; g68's `emit_liquid_drops_area`
+  rescan call DROPS at the bind — keeping both double-rolls the gate;
+  the body stays g68's wholesale, the per-drip witnesses survive, the
+  area-driver witness retires with the fn).

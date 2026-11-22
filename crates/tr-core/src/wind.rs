@@ -129,7 +129,10 @@ impl Wind {
     /// windy-day / storm music flags. `cloud_alpha` is `Main.cloudAlpha`,
     /// `time` is `Main.time`, `day_time` is `Main.dayTime`. Inside the
     /// hysteresis bands both flags *hold* their previous value. The remixWorld
-    /// override (`:13022-13024`) belongs to a seed the port does not generate.
+    /// override (`:13021-13024`) is wired: a remix world clears the STORM flag
+    /// instead of the windy-day flag when the sky is not fully clear (W4-g68
+    /// final-phase missing-arm port; `remix_world` rides the seed flag,
+    /// `app/mod.rs:3407`).
     pub fn update_windy_day_state(&mut self, cloud_alpha: f32, time: f64, day_time: bool) {
         // `Main._minWind = 0.34f; _maxWind = 0.4f; _minRain = 0.4f;
         // _maxRain = 0.5f;` (`Main.cs:67224-67227`).
@@ -155,16 +158,32 @@ impl Wind {
             } else if cloud_alpha >= MAX_RAIN && self.speed_target.abs() >= MAX_WIND {
                 self.storming = true;
             }
-            // The original's remix branch (`:13022-13024`) would keep storming
-            // false; non-remix worlds clear the windy-day flag whenever the
-            // sky is not fully clear (`:13025-13027`).
-            self.happy_windy_day = false;
+            // The remix branch (`:13021-13024`): a remix world clears the
+            // STORM flag and leaves the windy-day flag alone; non-remix
+            // worlds clear the windy-day flag whenever the sky is not fully
+            // clear (`:13025-13027`).
+            if self.remix_world {
+                self.storming = false;
+            } else {
+                self.happy_windy_day = false;
+            }
         }
     }
 
     /// `NPC.TooWindyForButterflies` (`NPC.cs:6885`): a pure threshold on the
     /// wind *target*.
     pub fn too_windy_for_butterflies(&self) -> bool {
+        self.speed_target.abs() >= 0.4
+    }
+
+    /// `Main.WindyEnoughForKiteDrops` (`Main.cs:2907`):
+    /// `|windSpeedTarget| >= _maxWind` (`_maxWind = 0.4f`, `Main.cs:67226`).
+    /// The kite-drop loot condition (`loot.rs`'s
+    /// `Cond::WindyEnoughForKiteDrops`, the Wyvern/Harpy/Sand-Elemental
+    /// kite rows) reads it. Same 0.4 threshold as the butterfly gate, but a
+    /// distinct C# property — kept separate so a future `_maxWind` change
+    /// moves only this one.
+    pub fn windy_enough_for_kite_drops(&self) -> bool {
         self.speed_target.abs() >= 0.4
     }
 
@@ -351,7 +370,15 @@ impl Wind {
 
     /// `WorldGen.InAPlaceWithWind` (`WorldGen.cs:86858-86879`): the region is
     /// at a wind-blown height and none of its cells holds liquid or a
-    /// wind-blocking wall.
+    /// wind-blocking wall. The C# wraps each cell read in `InWorld(x+i, y+j)`
+    /// (`:86868`, fluff 0 — `WorldGen.cs:9688-9695`): an OUT-OF-BOUNDS cell is
+    /// SKIPPED, not a refusal — only a null tile inside the world refuses
+    /// (`:86871-86874`). The port's `World::tile` returns `None` exactly for
+    /// out-of-bounds cells (the dense grid has no interior nulls), so the
+    /// `None` arm continues the scan (W4-g68 final-phase missing-arm port:
+    /// the old `return false` refused every probe that touched the world
+    /// edge — the sunflower's 2x5 window at the map border, the player's
+    /// `wind_here` at the edge).
     pub fn in_a_place_with_wind(&self, world: &World, x: i32, y: i32, w: i32, h: i32) -> bool {
         if !self.blows_at_height(y) {
             return false;
@@ -359,7 +386,9 @@ impl Wind {
         for i in 0..w {
             for j in 0..h {
                 let Some(tile) = world.tile(x + i, y + j) else {
-                    return false;
+                    // `InWorld` false (`:86868`): the cell is outside the
+                    // world — the C# skips it, the scan continues.
+                    continue;
                 };
                 if tile.liquid > 0
                     || (tile.wall > 0 && !wall_allows_wind(tile.wall))
@@ -1193,6 +1222,91 @@ mod tests {
         assert!(!w.too_windy_for_butterflies());
         w.speed_target = -0.4;
         assert!(w.too_windy_for_butterflies());
+    }
+
+    /// W4-g68 final-phase — the remix branch of `UpdateWindyDayState`
+    /// (`Main.cs:13021-13027`): when the sky is NOT fully clear a remix world
+    /// clears the STORM flag and leaves the windy-day flag alone, while a
+    /// non-remix world clears the windy-day flag. Written, NOT run (code-only).
+    #[test]
+    fn w4_g68_the_remix_branch_clears_storm_not_windy_day() {
+        // Non-remix: rain >= 0.5 + wind >= 0.4 arms the storm, then the
+        // `:13025-13027` else clears the windy-day flag (storm stays).
+        let mut classic = Wind::new(1);
+        classic.speed_target = 0.45;
+        classic.happy_windy_day = true;
+        classic.update_windy_day_state(0.5, 20000.0, true);
+        assert!(classic.storming, "the storm band armed it");
+        assert!(!classic.happy_windy_day, "non-remix clears windy-day");
+
+        // Remix: the same band arms the storm, but `:13021-13024` clears the
+        // STORM flag instead and the windy-day flag is left untouched.
+        let mut remix = Wind::new(1);
+        remix.remix_world = true;
+        remix.speed_target = 0.45;
+        remix.happy_windy_day = true;
+        remix.update_windy_day_state(0.5, 20000.0, true);
+        assert!(!remix.storming, "remix clears the storm flag");
+        assert!(remix.happy_windy_day, "remix leaves windy-day alone");
+    }
+
+    /// W4-g68 final-phase — `Main.WindyEnoughForKiteDrops` (`Main.cs:2907`) is
+    /// a pure |windSpeedTarget| >= `_maxWind` (0.4) threshold, the same value
+    /// as the butterfly gate but a DISTINCT property (kept separate so a
+    /// future `_maxWind` change moves only this one). Written, NOT run.
+    #[test]
+    fn w4_g68_the_kite_drop_gate_is_a_pure_target_threshold() {
+        let mut w = Wind::new(1);
+        w.speed_target = 0.399999;
+        assert!(!w.windy_enough_for_kite_drops());
+        w.speed_target = 0.4;
+        assert!(w.windy_enough_for_kite_drops());
+        // The sign is irrelevant (Math.Abs), mirroring the butterfly gate.
+        w.speed_target = -0.4;
+        assert!(w.windy_enough_for_kite_drops());
+        // It reads the TARGET, not the current speed.
+        w.speed_target = 0.0;
+        w.speed_current = 0.9;
+        assert!(!w.windy_enough_for_kite_drops());
+    }
+
+    /// W4-g68 final-phase — `WorldGen.InAPlaceWithWind` (`WorldGen.cs:86858-
+    /// 86879`): an OUT-OF-BOUNDS cell is SKIPPED (`InWorld` false, `:86868`),
+    /// not a refusal — only an in-world liquid / wind-blocking wall refuses.
+    /// The old `return false` on `None` wrongly refused every probe touching
+    /// the map edge (the sunflower's 2x5 window, the player's `wind_here`).
+    /// Written, NOT run (code-only).
+    #[test]
+    fn w4_g68_in_a_place_with_wind_skips_out_of_bounds_cells() {
+        let mut w = Wind::new(1);
+        w.world_surface = 100.0; // y < 100 is wind-blown height
+        let mut world = World::new("t".into(), 20, 30);
+
+        // A 2x5 window whose right column hangs off the map edge (x=19..20,
+        // width 20): the out-of-bounds column is skipped, the in-bounds cells
+        // are dry + wall-free, so the probe PASSES (the old code refused).
+        assert!(
+            w.in_a_place_with_wind(&world, 19, 10, 2, 5),
+            "the edge column is skipped, not a refusal"
+        );
+        // Fully out of bounds on x: every cell skipped -> still passes.
+        assert!(w.in_a_place_with_wind(&world, 25, 10, 2, 5));
+
+        // An in-world liquid cell still refuses (`:86875`).
+        world.tile_mut(5, 10).unwrap().liquid = 10;
+        assert!(!w.in_a_place_with_wind(&world, 4, 10, 2, 1));
+        world.tile_mut(5, 10).unwrap().liquid = 0;
+
+        // An in-world wind-blocking wall still refuses; an AllowsWind wall
+        // (150) does not (`WallID.Sets.AllowsWind`, `:86875`).
+        world.tile_mut(5, 10).unwrap().wall = 1; // blocks
+        assert!(!w.in_a_place_with_wind(&world, 5, 10, 1, 1));
+        world.tile_mut(5, 10).unwrap().wall = 150; // allows wind
+        assert!(w.in_a_place_with_wind(&world, 5, 10, 1, 1));
+
+        // Below the wind-blown height the whole probe refuses up front
+        // (`DoesWindBlowAtThisHeight`, `:86860-86863`).
+        assert!(!w.in_a_place_with_wind(&world, 5, 150, 1, 1));
     }
 }
 

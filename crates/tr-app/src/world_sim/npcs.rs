@@ -7528,6 +7528,11 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             // `IsChristmas`/`XmasPresentDrop` conditions read these.
             halloween: app.world.halloween,
             xmas: app.world.xmas,
+            // W4-g68: `Main.WindyEnoughForKiteDrops` (`Main.cs:2907`) — the
+            // kite-drop rows (`Cond::WindyEnoughForKiteDrops`, loot.rs:1719)
+            // read the live wind target through the wind-flag owner's getter
+            // (`wind.rs`, `|windSpeedTarget| >= _maxWind 0.4`).
+            windy: app.wind.windy_enough_for_kite_drops(),
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
