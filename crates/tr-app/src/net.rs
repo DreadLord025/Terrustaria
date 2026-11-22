@@ -257,6 +257,25 @@ pub mod id {
     /// 4490`, with 25/26/44/67/83/93) accepts and ignores it.
     pub const UNKNOWN_15: u8 = 15;
 
+    // ---- S1-I-1 wave D94: the projectile family's support ids (2nd half) ----
+    // The projectile-driven messages outside the 27/29 state sync (d93's
+    // first half): the Moon Leech heal (66), the minion target pair (99/115),
+    // the NPC portal teleport (100), the tower shields (101), the smoke poof
+    // (106) and the cannon redirect (108). Bodies + codecs only; the
+    // apply/relay arms are S1-I-4. Census vs MessageID.cs: d93 landed
+    // 27/28/29/95; 142 SyncProjectileTrackers already rides the wave-A block
+    // above; the portal-teleport player twin (96) is the player half's.
+    /// `66 Unknown66` (`MessageID.cs:145`) — the Moon Leech Clot's owner heal
+    /// (`Projectile.cs:28524`, `NetMessage.cs:1110-1113`;
+    /// `MessageBuffer.cs:3036-3055` applies + relays).
+    pub const HEAL_PLAYER: u8 = 66;
+    pub const MINION_REST_TARGET: u8 = 99; // MessageID.cs:212 / NetMessage.cs:1353-1356 / MessageBuffer.cs:3570-3583
+    pub const NPC_PORTAL_TELEPORT: u8 = 100; // MessageID.cs:214 / NetMessage.cs:1361-1369 / MessageBuffer.cs:3598-3610
+    pub const TOWER_SHIELDS: u8 = 101; // MessageID.cs:216 / NetMessage.cs:1371-1376 / MessageBuffer.cs:3611-3651
+    pub const POOF_OF_SMOKE: u8 = 106; // MessageID.cs:226 / NetMessage.cs:1400-1402 / MessageBuffer.cs:3742-3751
+    pub const WIRED_CANNON_SHOT: u8 = 108; // MessageID.cs:230 / NetMessage.cs:1403-1411 / MessageBuffer.cs:3758-3773
+    pub const MINION_ATTACK_TARGET: u8 = 115; // MessageID.cs:244 / NetMessage.cs:1357-1360 / MessageBuffer.cs:3584-3597
+
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
     /// before the slot is fully in-world (State 10) — exactly what those
@@ -1945,6 +1964,193 @@ pub struct TilePicking {
     pub damage: u8,
 }
 
+// ---- S1-I-1 wave D94: the projectile family's support bodies (2nd half) ----
+
+/// `msg 66 Unknown66`'s body (`NetMessage.cs:1110-1113`): the player id then
+/// the heal amount as a `short`. Sent by the Moon Leech Clot's contact arm
+/// (`Projectile.cs:28513-28524`: `HealEffect` + `statLife` clamp + the send);
+/// the host applies the same clamp and relays (`MessageBuffer.cs:3036-3055`,
+/// the `num71 > 0` gate lives in the apply arm, not the codec).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HealPlayer {
+    pub player_id: u8,
+    pub heal: i16,
+}
+
+/// `msg 99 MinionRestTargetUpdate`'s body (`NetMessage.cs:1353-1356`): the
+/// player id then `Player.MinionRestTargetPoint` as a `Vector2` (two `float`s,
+/// `Player.cs:3006`). Sent when the local point drifts from the last-synced
+/// copy (`Main.cs:17678-17681`); the server overrides the id to the sender
+/// and relays (`MessageBuffer.cs:3570-3583`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MinionRestTarget {
+    pub player_id: u8,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// `msg 115 MinionAttackTargetUpdate`'s body (`NetMessage.cs:1357-1360`): the
+/// player id then `Player.MinionAttackTargetNPC` as a `short`
+/// (`Player.cs:3008`, `-1` = none). Sent on change (`Main.cs:17682-17685`);
+/// the server overrides the id and relays (`MessageBuffer.cs:3584-3597`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MinionAttackTarget {
+    pub player_id: u8,
+    pub npc: i16,
+}
+
+/// `msg 101 UpdateTowerShieldStrengths`'s body (`NetMessage.cs:1371-1376`):
+/// the four `NPC.ShieldStrengthTower*` statics as `ushort`s in the written
+/// order Solar, Vortex, Nebula, Stardust. Sent by the 629 bolt's shield chip
+/// (`Projectile.cs:72944-72978`), the apocalypse start (`WorldGen.cs:86689`)
+/// and the join push (`MessageBuffer.cs:869`). The reader clamps each to
+/// `0..LunarShieldPowerMax` (= 100, `NPC.cs:95252`) — that clamp is the apply
+/// arm's job (`MessageBuffer.cs:3611-3651`, parked for S1-I-4); the codec
+/// carries the raw ushorts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TowerShields {
+    pub solar: u16,
+    pub vortex: u16,
+    pub nebula: u16,
+    pub stardust: u16,
+}
+
+/// `HalfTypeHelper.Convert(float)` — the FNA/XNA float32→float16 pack
+/// (FNA `src/Graphics/PackedVector/HalfTypeHelper.cs`, the code Terraria's
+/// `HalfVector2` rides; not in the decompiled trees, which stop at the game
+/// assemblies). Verbatim: the round-to-nearest-even mantissa adds and the
+/// subnormal/overflow arms, sign in bit 15.
+pub fn half_pack(f: f32) -> u16 {
+    let i = f.to_bits() as i32;
+    let s = (i >> 16) & 0x0000_8000;
+    let mut e = ((i >> 23) & 0x0000_00ff) - (127 - 15);
+    let mut m = i & 0x007f_ffff;
+    if e <= 0 {
+        if e < -10 {
+            return s as u16;
+        }
+        m |= 0x0080_0000;
+        let t = 14 - e;
+        let a = (1 << (t - 1)) - 1;
+        let b = (m >> t) & 1;
+        m = (m + a + b) >> t;
+        (s | m) as u16
+    } else if e == 0xff - (127 - 15) {
+        if m == 0 {
+            (s | 0x7c00) as u16
+        } else {
+            m >>= 13;
+            (s | 0x7c00 | m | if m == 0 { 1 } else { 0 }) as u16
+        }
+    } else {
+        m += 0x0000_0fff + ((m >> 13) & 1);
+        if (m & 0x0080_0000) != 0 {
+            m = 0;
+            e += 1;
+        }
+        if e > 30 {
+            return (s | 0x7c00) as u16;
+        }
+        (s | (e << 10) | (m >> 13)) as u16
+    }
+}
+
+/// `HalfTypeHelper.Convert(ushort)` — the float16→float32 expand, verbatim
+/// (the subnormal normalize loop, `exp` starting at -14). Inf/NaN expand
+/// bit-for-bit (exp field 31 → 0xff, the payload rides the mantissa shift).
+pub fn half_unpack(value: u16) -> f32 {
+    let mut mantissa = (value & 1023) as u32;
+    let mut exp: u32 = 0xffff_fff2; // -14
+    let rst = if (value & 0x7c00) == 0 {
+        if mantissa != 0 {
+            while (mantissa & 1024) == 0 {
+                exp = exp.wrapping_sub(1);
+                mantissa <<= 1;
+            }
+            mantissa &= 0xffff_fbff;
+            (((value as u32 & 0x8000) << 16) | (exp.wrapping_add(127) << 23))
+                | (mantissa << 13)
+        } else {
+            (value as u32 & 0x8000) << 16
+        }
+    } else {
+        (((value as u32 & 0x8000) << 16)
+            | (((((value as u32 >> 10) & 0x1f).wrapping_sub(15)).wrapping_add(127)) << 23))
+            | (mantissa << 13)
+    };
+    f32::from_bits(rst)
+}
+
+/// `HalfVector2.PackHelper` (`HalfVector2.cs:94-97` in the FNA tree): x in
+/// the low 16 bits, y in the high 16.
+pub fn pack_half_vector2(x: f32, y: f32) -> u32 {
+    half_pack(x) as u32 | ((half_pack(y) as u32) << 16)
+}
+
+/// `HalfVector2.ToVector2` (`HalfVector2.cs:37-43`): the inverse split.
+pub fn unpack_half_vector2(packed: u32) -> (f32, f32) {
+    (
+        half_unpack(packed as u16),
+        half_unpack((packed >> 16) as u16),
+    )
+}
+
+/// `msg 106 PoofOfSmoke`'s body (`NetMessage.cs:1400-1402`): one `uint` —
+/// `new HalfVector2(number, number2).PackedValue`, the poof position in two
+/// float16s. Sent by the host at the slime-transform poof
+/// (`Projectile.cs:14742-14746`), the critter poof (`NPC.cs:79882-79887`)
+/// and the wiring lamps (`Wiring.cs:826`, `:2276`, `:2330`, `:2398`); the
+/// client replays `Utils.PoofOfSmoke` (`MessageBuffer.cs:3742-3751`,
+/// `Utils.cs:1078-1093` — the gore/dust burst, parked for S1-I-4). The
+/// payload keeps the packed bits so the wire is byte-exact; use
+/// [`pack_half_vector2`]/[`unpack_half_vector2`] at the seams.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PoofOfSmoke {
+    pub packed: u32,
+}
+
+/// `msg 100 TeleportNPCThroughPortal`'s body (`NetMessage.cs:1361-1369`):
+/// `(ushort)number` (the NPC slot), `(short)number4` (the portal color index
+/// `owner * 2 + ai[1]`, `PortalHelper.cs:181`), `number2`/`number3` (the
+/// destination floats) then `WriteVector2(nPC2.velocity)` — the NPC's
+/// *current* velocity, read from the live entity at send time, NOT the
+/// destination floats echoed back. The host sends it after the portal-gun
+/// (type 602) pulls an NPC through (`PortalHelper.cs:195-204`, followed by a
+/// `23` NPCInfo push); the client flips the color parity
+/// (`num145 + (num145 % 2 == 0 ? 1 : -1)`), teleports with style 4, overwrites
+/// the velocity and zeroes `netOffset` (`MessageBuffer.cs:3598-3610` — the
+/// apply arm, parked for S1-I-4). Server→client only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcPortalTeleport {
+    pub npc: u16,
+    pub color_index: i16,
+    pub x: f32,
+    pub y: f32,
+    pub velocity_x: f32,
+    pub velocity_y: f32,
+}
+
+/// `msg 108 WiredCannonShot`'s body (`NetMessage.cs:1403-1411`):
+/// `(short)number` (damage), `number2` (knockback float), `(short)number3`
+/// (tile x), `(short)number4` (tile y), `(short)number5` (the cannon angle
+/// 0..8), `(short)number6` (the ammo id) then `(byte)number7` (the owner
+/// player). Sent by the host when a wire fires a cannon / bunny cannon
+/// (ammo 4/5) owned by a remote player — `WorldGen.ShootFromCannon`
+/// redirects instead of spawning (`WorldGen.cs:50689-50692`); the owning
+/// client checks `num75 == Main.myPlayer` and replays the shot locally with
+/// `fromWire: true` (`MessageBuffer.cs:3758-3773`, parked for S1-I-4).
+/// Server→client only, addressed to one owner (`remoteClient = owner`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WiredCannonShot {
+    pub damage: i16,
+    pub knockback: f32,
+    pub x: i16,
+    pub y: i16,
+    pub angle: i16,
+    pub ammo: i16,
+    pub owner: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2105,6 +2311,18 @@ pub enum C2s {
         section_x: u16,
         section_y: u16,
     },
+    /// `66 Unknown66` - this client's Moon Leech Clot healed its owner
+    /// (`Projectile.cs:28524`); the host clamps + relays
+    /// (`MessageBuffer.cs:3036-3055`).
+    HealPlayer(HealPlayer),
+    /// `99 MinionRestTargetUpdate` - this client's minion rest point moved
+    /// (`Main.cs:17678-17681`); the host overrides the id + relays
+    /// (`MessageBuffer.cs:3570-3583`).
+    MinionRestTarget(MinionRestTarget),
+    /// `115 MinionAttackTargetUpdate` - this client's minion attack target
+    /// changed (`Main.cs:17682-17685`); the host overrides + relays
+    /// (`MessageBuffer.cs:3584-3597`).
+    MinionAttackTarget(MinionAttackTarget),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2250,6 +2468,31 @@ pub enum S2c {
     /// by the host (`MessageBuffer.cs:3458`); the client assigns + moneyPings
     /// (`:3450-3454`).
     NpcExtraValue(NpcExtraValue),
+    /// `66 Unknown66` - a peer's Moon Leech heal, relayed by the host
+    /// (`MessageBuffer.cs:3051`).
+    HealPlayer(HealPlayer),
+    /// `99 MinionRestTargetUpdate` - a peer's minion rest point, relayed
+    /// (`MessageBuffer.cs:3580`).
+    MinionRestTarget(MinionRestTarget),
+    /// `115 MinionAttackTargetUpdate` - a peer's minion attack target,
+    /// relayed (`MessageBuffer.cs:3594`).
+    MinionAttackTarget(MinionAttackTarget),
+    /// `101 UpdateTowerShieldStrengths` - the four tower shields
+    /// (`Projectile.cs:72978`, `WorldGen.cs:86689`, join push
+    /// `MessageBuffer.cs:869`; client clamps `:3611-3651`).
+    TowerShields(TowerShields),
+    /// `106 PoofOfSmoke` - a smoke poof at a half-float position
+    /// (`Projectile.cs:14746`, `NPC.cs:79887`, `Wiring.cs:826` et al.;
+    /// client replays `Utils.PoofOfSmoke`, `MessageBuffer.cs:3742-3751`).
+    PoofOfSmoke(PoofOfSmoke),
+    /// `100 TeleportNPCThroughPortal` - the portal-gun pulled an NPC
+    /// through (`PortalHelper.cs:202`; client teleports style 4 + zeroes
+    /// `netOffset`, `MessageBuffer.cs:3598-3610`).
+    NpcPortalTeleport(NpcPortalTeleport),
+    /// `108 WiredCannonShot` - a wire-fired cannon shot redirected to its
+    /// remote owner (`WorldGen.cs:50691`; owner replays
+    /// `ShootFromCannon(fromWire: true)`, `MessageBuffer.cs:3758-3773`).
+    WiredCannonShot(WiredCannonShot),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2383,6 +2626,9 @@ impl C2s {
             Self::TilePicking(_) => id::TILE_PICKING,
             Self::TeamChangeUi(_) => id::TEAM_CHANGE_UI,
             Self::SectionRequest { .. } => id::SECTION_REQUEST,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
+            Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2489,6 +2735,12 @@ impl C2s {
                 section_x,
                 section_y,
             } => w.u16(*section_x).u16(*section_y),
+            // `NetMessage.cs:1110-1113`: (byte)number + (short)number2.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2.
+            Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
+            // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
+            Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2685,6 +2937,19 @@ impl C2s {
                 section_x: r.u16()?,
                 section_y: r.u16()?,
             },
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
+            id::MINION_REST_TARGET => Self::MinionRestTarget(MinionRestTarget {
+                player_id: r.u8()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
+                player_id: r.u8()?,
+                npc: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2864,6 +3129,13 @@ impl S2c {
             Self::WallPaint(_) => id::WALL_PAINT,
             Self::TilePicking(_) => id::TILE_PICKING,
             Self::ExtraSpawnLoaded { .. } => id::EXTRA_SPAWN_LOADED,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::MinionRestTarget(_) => id::MINION_REST_TARGET,
+            Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
+            Self::TowerShields(_) => id::TOWER_SHIELDS,
+            Self::PoofOfSmoke(_) => id::POOF_OF_SMOKE,
+            Self::NpcPortalTeleport(_) => id::NPC_PORTAL_TELEPORT,
+            Self::WiredCannonShot(_) => id::WIRED_CANNON_SHOT,
         }
     }
 
@@ -3059,6 +3331,36 @@ impl S2c {
             Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
             // `NetMessage.cs:1659-1661`: one byte.
             Self::ExtraSpawnLoaded { player_id } => w.u8(*player_id),
+            // `NetMessage.cs:1110-1113`: (byte)number + (short)number2.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2.
+            Self::MinionRestTarget(m) => w.u8(m.player_id).f32(m.x).f32(m.y),
+            // `NetMessage.cs:1357-1360`: (byte)number + (short)target.
+            Self::MinionAttackTarget(m) => w.u8(m.player_id).i16(m.npc),
+            // `NetMessage.cs:1371-1376`: four ushorts, Solar/Vortex/Nebula/
+            // Stardust order.
+            Self::TowerShields(t) => w.u16(t.solar).u16(t.vortex).u16(t.nebula).u16(t.stardust),
+            // `NetMessage.cs:1400-1402`: the HalfVector2's PackedValue.
+            Self::PoofOfSmoke(p) => w.u32(p.packed),
+            // `NetMessage.cs:1361-1369`: (ushort)npc + (short)color + the
+            // destination floats + WriteVector2(the NPC's live velocity).
+            Self::NpcPortalTeleport(p) => w
+                .u16(p.npc)
+                .i16(p.color_index)
+                .f32(p.x)
+                .f32(p.y)
+                .f32(p.velocity_x)
+                .f32(p.velocity_y),
+            // `NetMessage.cs:1403-1411`: (short)damage + float knockback +
+            // (short)x/y/angle/ammo + (byte)owner.
+            Self::WiredCannonShot(c) => w
+                .i16(c.damage)
+                .f32(c.knockback)
+                .i16(c.x)
+                .i16(c.y)
+                .i16(c.angle)
+                .i16(c.ammo)
+                .u8(c.owner),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3355,6 +3657,43 @@ impl S2c {
             id::EXTRA_SPAWN_LOADED => Self::ExtraSpawnLoaded {
                 player_id: r.u8()?,
             },
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
+            id::MINION_REST_TARGET => Self::MinionRestTarget(MinionRestTarget {
+                player_id: r.u8()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
+            id::MINION_ATTACK_TARGET => Self::MinionAttackTarget(MinionAttackTarget {
+                player_id: r.u8()?,
+                npc: r.i16()?,
+            }),
+            id::TOWER_SHIELDS => Self::TowerShields(TowerShields {
+                solar: r.u16()?,
+                vortex: r.u16()?,
+                nebula: r.u16()?,
+                stardust: r.u16()?,
+            }),
+            id::POOF_OF_SMOKE => Self::PoofOfSmoke(PoofOfSmoke { packed: r.u32()? }),
+            id::NPC_PORTAL_TELEPORT => Self::NpcPortalTeleport(NpcPortalTeleport {
+                npc: r.u16()?,
+                color_index: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+                velocity_x: r.f32()?,
+                velocity_y: r.f32()?,
+            }),
+            id::WIRED_CANNON_SHOT => Self::WiredCannonShot(WiredCannonShot {
+                damage: r.i16()?,
+                knockback: r.f32()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                angle: r.i16()?,
+                ammo: r.i16()?,
+                owner: r.u8()?,
+            }),
             _ => return None,
         })
     }
@@ -6356,5 +6695,233 @@ mod tests {
         assert_eq!(section_y(1100), 7);
         // Truncated body must not decode.
         assert!(C2s::decode(159, &mut NetReader::new(&body[..3])).is_none());
+    }
+
+    // ---- S1-I-1 wave D94: the projectile family's support ids (2nd half) ----
+    // Same convention as wave A: pin the frame's id byte, the exact C# body
+    // bytes (`NetMessage.cs`'s writer arms) and both decode round trips.
+
+    #[test]
+    fn s1_i_1_d94_heal_player_round_trips() {
+        // `NetMessage.cs:1110-1113`: (byte)number + (short)number2 — the
+        // Moon Leech Clot's heal (`Projectile.cs:28524`).
+        let h = HealPlayer {
+            player_id: 2,
+            heal: 37,
+        };
+        let f = S2c::HealPlayer(h).encode();
+        assert_eq!(f[2], 66);
+        let mut body = vec![2];
+        body.extend_from_slice(&37i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+        let c = C2s::HealPlayer(h).encode();
+        assert_eq!(c[2], 66);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_minion_rest_target_round_trips() {
+        // `NetMessage.cs:1353-1356`: (byte)number + WriteVector2 — the two
+        // floats little-endian (`Player.MinionRestTargetPoint`).
+        let m = MinionRestTarget {
+            player_id: 5,
+            x: 1234.5,
+            y: -678.25,
+        };
+        let f = S2c::MinionRestTarget(m).encode();
+        assert_eq!(f[2], 99);
+        let mut body = vec![5];
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-678.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MinionRestTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 99, got {:?}", other.msg_id()),
+        }
+        let c = C2s::MinionRestTarget(m).encode();
+        assert_eq!(c[2], 99);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MinionRestTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 99, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_minion_attack_target_round_trips() {
+        // `NetMessage.cs:1357-1360`: (byte)number + (short)target; -1 is the
+        // no-target default (`Player.cs:3008`).
+        let m = MinionAttackTarget {
+            player_id: 1,
+            npc: -1,
+        };
+        let f = S2c::MinionAttackTarget(m).encode();
+        assert_eq!(f[2], 115);
+        let mut body = vec![1];
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MinionAttackTarget(d) => assert_eq!(d, m),
+            other => panic!("expected 115, got {:?}", other.msg_id()),
+        }
+        let m2 = MinionAttackTarget {
+            player_id: 3,
+            npc: 199,
+        };
+        let c = C2s::MinionAttackTarget(m2).encode();
+        assert_eq!(c[2], 115);
+        let mut body2 = vec![3];
+        body2.extend_from_slice(&199i16.to_le_bytes());
+        assert_eq!(&c[3..], &body2);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MinionAttackTarget(d) => assert_eq!(d, m2),
+            other => panic!("expected 115, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_tower_shields_round_trips() {
+        // `NetMessage.cs:1371-1376`: four ushorts in the written order —
+        // Solar, Vortex, Nebula, Stardust (`NPC.ShieldStrengthTower*`).
+        let t = TowerShields {
+            solar: 100,
+            vortex: 63,
+            nebula: 0,
+            stardust: 42,
+        };
+        let f = S2c::TowerShields(t).encode();
+        assert_eq!(f[2], 101);
+        let mut body = Vec::new();
+        for v in [100u16, 63, 0, 42] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TowerShields(d) => assert_eq!(d, t),
+            other => panic!("expected 101, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_poof_of_smoke_round_trips() {
+        // `NetMessage.cs:1400-1402`: one uint, the HalfVector2 PackedValue.
+        // 1024.0 packs to 0x6400, -2.5 to 0xc100 (sign|exp|mantissa fields).
+        let packed = pack_half_vector2(1024.0, -2.5);
+        assert_eq!(packed, 0x6400 | (0xc100u32 << 16));
+        let p = PoofOfSmoke { packed };
+        let f = S2c::PoofOfSmoke(p).encode();
+        assert_eq!(f[2], 106);
+        assert_eq!(&f[3..], &packed.to_le_bytes());
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PoofOfSmoke(d) => assert_eq!(d, p),
+            other => panic!("expected 106, got {:?}", other.msg_id()),
+        }
+        assert_eq!(unpack_half_vector2(packed), (1024.0, -2.5));
+    }
+
+    #[test]
+    fn s1_i_1_d94_half_codec_pins() {
+        // HalfTypeHelper.Convert both ways (FNA's verbatim tables):
+        // exact powers, the round-to-nearest-even tie, subnormals, zero,
+        // overflow-to-inf and NaN-keep.
+        assert_eq!(half_pack(0.0), 0x0000);
+        assert_eq!(half_pack(-0.0), 0x8000);
+        assert_eq!(half_pack(1.0), 0x3c00);
+        assert_eq!(half_pack(-2.0), 0xc000);
+        assert_eq!(half_pack(0.5), 0x3800);
+        assert_eq!(half_pack(65504.0), 0x7bff); // the largest finite half
+        assert_eq!(half_pack(65536.0), 0x7c00); // overflow -> +inf
+        assert_eq!(half_pack(f32::INFINITY), 0x7c00);
+        assert_eq!(half_pack(f32::NEG_INFINITY), 0xfc00);
+        assert!(half_pack(f32::NAN) & 0x7c00 == 0x7c00); // stays NaN
+        assert_ne!(half_pack(f32::NAN) & 0x03ff, 0); // payload kept
+        // The smallest positive subnormal: 2^-24 -> 0x0001; half of it ties
+        // to even (down to 0), 1.5x of it ties up to 0x0002.
+        let tiny = f32::from_bits((127 - 24) << 23); // 2^-24
+        assert_eq!(half_pack(tiny), 0x0001);
+        assert_eq!(half_pack(tiny * 0.5), 0x0000); // tie -> even
+        assert_eq!(half_pack(tiny * 1.5), 0x0002); // tie -> even
+        assert_eq!(half_pack(tiny * 0.25), 0x0000); // below half, flush
+        // Round trips on every finite half bit pattern.
+        for bits in 0u16..=0xffff {
+            if bits & 0x7c00 == 0x7c00 {
+                continue; // inf/NaN: not finite, compared by bits below
+            }
+            let f = half_unpack(bits);
+            assert_eq!(half_pack(f), bits, "half round trip {bits:#06x}");
+        }
+        // Inf/NaN expand to the exact float bit patterns.
+        assert_eq!(half_unpack(0x7c00).to_bits(), f32::INFINITY.to_bits());
+        assert_eq!(half_unpack(0xfc00).to_bits(), f32::NEG_INFINITY.to_bits());
+        assert!(half_unpack(0x7e00).is_nan());
+    }
+
+    #[test]
+    fn s1_i_1_d94_npc_portal_teleport_round_trips() {
+        // `NetMessage.cs:1361-1369` (case 100), verbatim field order:
+        // (ushort)number (npc slot), (short)number4 (color index), number2
+        // (x), number3 (y), WriteVector2(nPC2.velocity) — the velocity is
+        // the NPC's live one, deliberately different from the destination
+        // so a swapped pair cannot pass. Server→client only
+        // (`PortalHelper.cs:200-203`, host side).
+        let p = NpcPortalTeleport {
+            npc: 300,
+            color_index: 5, // owner 2 * 2 + ai[1] 1 (`PortalHelper.cs:181`)
+            x: 4096.5,
+            y: -128.25,
+            velocity_x: 3.5,
+            velocity_y: -0.1, // the `ent.velocity.Y = -num * 0.1f` floor
+        };
+        let f = S2c::NpcPortalTeleport(p).encode();
+        assert_eq!(f[2], 100);
+        let mut body = Vec::new();
+        body.extend_from_slice(&300u16.to_le_bytes());
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&4096.5f32.to_le_bytes());
+        body.extend_from_slice(&(-128.25f32).to_le_bytes());
+        body.extend_from_slice(&3.5f32.to_le_bytes());
+        body.extend_from_slice(&(-0.1f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::NpcPortalTeleport(d) => assert_eq!(d, p),
+            other => panic!("expected 100, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1_d94_wired_cannon_shot_round_trips() {
+        // `NetMessage.cs:1403-1411` (case 108), verbatim field order:
+        // (short)damage, float knockback, (short)x, (short)y, (short)angle,
+        // (short)ammo, (byte)owner — the `SendData(108, owner, ..)` argument
+        // order at `WorldGen.cs:50691`. Server→client, one addressee.
+        let c = WiredCannonShot {
+            damage: 300,
+            knockback: 11.0,
+            x: 1200,
+            y: 450,
+            angle: 4, // straight up (`WorldGen.cs`'s angle ladder 0..8)
+            ammo: 5,  // the bunny cannon redirect gate is ammo 4 || 5
+            owner: 2,
+        };
+        let f = S2c::WiredCannonShot(c).encode();
+        assert_eq!(f[2], 108);
+        let mut body = Vec::new();
+        body.extend_from_slice(&300i16.to_le_bytes());
+        body.extend_from_slice(&11.0f32.to_le_bytes());
+        for v in [1200i16, 450, 4, 5] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.push(2);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::WiredCannonShot(d) => assert_eq!(d, c),
+            other => panic!("expected 108, got {:?}", other.msg_id()),
+        }
     }
 }
