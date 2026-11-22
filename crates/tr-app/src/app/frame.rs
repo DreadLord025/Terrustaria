@@ -98,6 +98,14 @@ impl App {
     /// `(dt, anim_time)`: the frame step (the `TR_SHOT` pin) and the animation
     /// clock snapshot the draw passes key on.
     fn frame_head(&mut self, now: Instant) -> (f32, f32) {
+        // W4-g86 research/244 phase 1 — the `DoUpdate` head's ONCE-per-frame
+        // `Main.LocalPlayer.cursorItemIconReversed = false` (`Main.cs:16842`,
+        // after the showSplash return :16832-16840, before the capture gate
+        // :16886). NOT part of `MouseOversClear` (:46503-46513) — the two
+        // clears ride different clocks (§3.2): Reversed resets every frame
+        // including menus/pauses, the ID/Text/Push quad only on the in-world
+        // update tick (`frame()`'s world branch).
+        self.cursor_item_icon_reversed = false;
         // `Lang.InitGlobalSubstitutions` (S1-L-12b): refresh live `{Name}` values
         // before any UI/text resolves them this frame (`Lang.cs:100-167`).
         crate::lang::refresh_global_substitutions(self);
@@ -468,6 +476,20 @@ impl App {
         // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
         // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
+            // W4-g86 research/244 phase 1 — `Main.MouseOversClear`
+            // (`Main.cs:17035` → `:46503-46513`), the FULL cursor-icon quad:
+            // `enabled = false; ID = 0; Text = ""; Push = 0` (:46507-46510),
+            // ahead of the player pass that re-arms them in reach. The
+            // `_mouseTextCache` pair (:46505-46506) has no port cache; the
+            // `signHover = -1`/`signBubble = false` pair (:46511-46512) rides
+            // the unported sign-hover lane (f22's neighbour, research/244
+            // §4.4). `cursorItemIconReversed` is NOT cleared here — it resets
+            // once per frame at the `DoUpdate` head (:16842, `frame_head`).
+            // S1-W4-g81 carried the enabled-only clear; the quad completes it.
+            self.cursor_item_icon_enabled = false;
+            self.cursor_item_icon_id = 0;
+            self.cursor_item_icon_text.clear();
+            self.cursor_item_icon_push = 0;
             // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
             // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
             // return; }` — while a capture renders the ENTIRE game update
@@ -1750,6 +1772,57 @@ mod tests {
         );
     }
 
+    /// W4-g86 research/244 phase 1 — the four cursorItemIcon fields start
+    /// at the C# defaults (`Player.cs:1852-1858`: Reversed false, ID 0,
+    /// Push 0, Text "") beside g81's enabled latch. WRITTEN NOT RUN
+    /// (code-only lane).
+    #[test]
+    fn w4_g86_the_cursor_item_icon_fields_default_to_the_csharp_values() {
+        let app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        assert!(!app.cursor_item_icon_enabled, "Player.cs:1850 bool default");
+        assert_eq!(app.cursor_item_icon_id, 0, "Player.cs:1854 int default");
+        assert_eq!(app.cursor_item_icon_text, "", "Player.cs:1858 = \"\"");
+        assert_eq!(app.cursor_item_icon_push, 0, "Player.cs:1856 int default");
+        assert!(!app.cursor_item_icon_reversed, "Player.cs:1852 bool default");
+    }
+
+    /// W4-g86 research/244 phase 1 — the two clears ride DIFFERENT clocks
+    /// (§3.2): `frame_head` resets Reversed ONCE per frame (`Main.cs:16842`,
+    /// every frame — menus included), while the `MouseOversClear` quad
+    /// (enabled/ID/Text/Push, `:46503-46513` via `:17035`) runs only on the
+    /// in-world update tick, BEFORE the player pass re-arms it. A front-end
+    /// frame clears Reversed but leaves the quad's stale values standing;
+    /// an in-world frame clears all five. WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_clear_quad_and_the_reversed_once_per_frame_order() {
+        let mut app = in_world_app();
+        // Arm every field like a hover pass did last tick.
+        app.cursor_item_icon_enabled = true;
+        app.cursor_item_icon_id = 6135;
+        app.cursor_item_icon_text = "Chest".into();
+        app.cursor_item_icon_push = 6;
+        app.cursor_item_icon_reversed = true;
+        // A front-end frame: the head's :16842 clear fires, the world
+        // branch's MouseOversClear does NOT (Main.cs:17166 returns first).
+        app.front = Some(FrontScreen::CharSelect);
+        app.frame();
+        assert!(!app.cursor_item_icon_reversed, ":16842 clears every frame");
+        assert!(app.cursor_item_icon_enabled, "the quad waits for the world tick");
+        assert_eq!(app.cursor_item_icon_id, 6135, "ID survives a menu frame");
+        assert_eq!(app.cursor_item_icon_text, "Chest", "Text survives a menu frame");
+        assert_eq!(app.cursor_item_icon_push, 6, "Push survives a menu frame");
+        // Back in-world: the full quad clears ahead of the player pass
+        // (nothing re-arms it in this fixture — no tool, no hovered altar).
+        app.front = None;
+        app.cursor_item_icon_reversed = true;
+        app.frame();
+        assert!(!app.cursor_item_icon_enabled, ":46507");
+        assert_eq!(app.cursor_item_icon_id, 0, ":46508");
+        assert_eq!(app.cursor_item_icon_text, "", ":46509");
+        assert_eq!(app.cursor_item_icon_push, 0, ":46510");
+        assert!(!app.cursor_item_icon_reversed, ":16842 again this frame");
+    }
+
     /// S1-B-8 DW-1.3 — the setup's inline 1600x900 fallback (not
     /// `App::screen_size()`'s 1280x720) is what the whole frame draws into,
     /// and `m_h` comes from that fallback: with a live minimap the setup
@@ -2187,6 +2260,62 @@ mod tests {
         assert_eq!(key_block.matches("anim_key()").count(), 1);
         // The draw call feeds the animator mutably (the flag rides it).
         assert!(draw.contains("&mut self.cage_anim,"));
+    }
+
+    // ---- W4-g86 research/244 phase 1: the cursorItemIcon clears ------------
+    // WRITTEN NOT RUN (code-only lane): the two clears ride DIFFERENT clocks
+    // (`Main.MouseOversClear` on the in-world update tick, `Reversed` at the
+    // `DoUpdate` head) — these witnesses pin both halves + the order.
+
+    /// `Main.MouseOversClear` (`Main.cs:46503-46513`, called at `:17035`
+    /// ahead of the `gameMenu` return `:17166`): the FULL quad — enabled
+    /// false, ID 0, Text "", Push 0 — clears on the in-world update, while
+    /// `Reversed` (NOT part of the quad, `:16842`) survives it. The
+    /// `_mouseTextCache` pair (`:46505-46506`) and the sign pair
+    /// (`:46511-46512`) have no port fields yet (research/244 §3.2).
+    #[test]
+    fn w4_g86_the_mouse_overs_clear_quad_runs_on_the_world_update() {
+        let mut app = in_world_app();
+        // Arm every field the quad clears + Reversed, which it must NOT.
+        app.cursor_item_icon_enabled = true;
+        app.cursor_item_icon_id = 6135;
+        app.cursor_item_icon_text = "Chest".into();
+        app.cursor_item_icon_push = 6;
+        app.cursor_item_icon_reversed = true;
+        app.frame();
+        assert!(!app.cursor_item_icon_enabled, "enabled clears (:46507)");
+        assert_eq!(app.cursor_item_icon_id, 0, "ID clears (:46508)");
+        assert!(app.cursor_item_icon_text.is_empty(), "Text clears (:46509)");
+        assert_eq!(app.cursor_item_icon_push, 0, "Push clears (:46510)");
+        // `frame_head` runs FIRST (:16842 clears Reversed every frame), so
+        // after a whole frame Reversed is false too — but through its OWN
+        // clear, not the quad's. The next witness pins the split.
+        assert!(!app.cursor_item_icon_reversed, "the frame head cleared it");
+    }
+
+    /// The clock split (`Main.cs:16842` vs `:46503-46513`): while a
+    /// front-end screen owns the frame the world branch is gated
+    /// (`frame()`'s `menu.is_none() && front.is_none()`), so the quad does
+    /// NOT run — but the `DoUpdate` head's `Reversed` clear runs every
+    /// frame including menus (it sits before the `gameMenu` return at
+    /// `:17166`). Deviation (research/244 §4.1): the C# `MouseOversClear`
+    /// call itself (`:17035`) precedes the menu return, so vanilla clears
+    /// the quad under menus too; the port keeps g81's world-branch
+    /// placement — no tile-hover writer runs behind a menu, so no stale
+    /// icon can reach a draw (the layer-40 draw is world-gated as well).
+    #[test]
+    fn w4_g86_reversed_clears_every_frame_the_quad_only_in_world() {
+        let mut app = in_world_app();
+        app.menu = Some(crate::menu::Menu::new(app.settings.clone(), "flow".into()));
+        app.cursor_item_icon_id = 1293;
+        app.cursor_item_icon_text = "kept".into();
+        app.cursor_item_icon_push = 10;
+        app.cursor_item_icon_reversed = true;
+        app.frame();
+        assert!(!app.cursor_item_icon_reversed, ":16842 runs under menus");
+        assert_eq!(app.cursor_item_icon_id, 1293, "the quad is world-gated");
+        assert_eq!(app.cursor_item_icon_text, "kept");
+        assert_eq!(app.cursor_item_icon_push, 10);
     }
 }
 

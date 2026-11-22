@@ -59,6 +59,12 @@ pub(crate) mod tile_draw_pass;
 // TILE-DRAW-2 (W4-f15): the DrawSingleTile glow bind (:1343-1403) — the
 // second GetTileDrawData switch's record drawn after the cell sprite.
 pub(crate) mod tile_glow;
+// W4-g86: the smart-cursor tile-outline overlay (GetTileOutlineInfo,
+// TileDrawing.cs:4478-4489) — WIRED: the SmartInteractTileCoords feed
+// (world_sim/smart_interact.rs) + the HighlightMask atlas pack (assets.rs);
+// the altar 26 is the motivating HasOutlines tile. See the module's census
+// header.
+pub(crate) mod tile_outlines;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;

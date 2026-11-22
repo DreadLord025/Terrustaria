@@ -2386,11 +2386,171 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
         None => (tx, ty),
     };
+    // `Player.cs:25447` — `SmartInteractLookup` runs right after the
+    // smart-cursor lookup (W4-g86): the interactable-object scan fills
+    // `Main.SmartInteractTileCoords`/`…Selected` + the interaction rect,
+    // the feed of the tile-outline overlay (`render/tile_outlines.rs`).
+    // The tile target it reads is the POST-re-point cell (the C# pair
+    // runs back-to-back inside `Player.Update`).
+    super::smart_interact::smart_interact_lookup(app, (world_pos.x, world_pos.y), (tx, ty));
     #[cfg(test)]
     if std::env::var("AMMO_TRACE").is_ok() {
         eprintln!("[trace] past the reach gate");
     }
     let held = app.inventory[app.selected];
+    // W4-g86 research/244 phase 1 — the tile-hover pass head
+    // (`Player.LookForTileInteractions` → `TileInteractionsCheck` →
+    // `TileInteractionsMouseOver`, `Player.cs:27430`/`:32039`/`:33587`,
+    // runs BEFORE `ItemCheck` `:31827` in `Player.Update`): the altar arms
+    // (batch 1, `:34524-34536` tile 26 / `:34309-34314` tile 237) decode the
+    // POST-repoint target cell every tick — the C# gates
+    // `myX/myY == tileTargetX/Y` (`:33589`), which the repointed (tx, ty)
+    // IS. On a hit: `noThrow = 2` + `enabled = true` BEFORE the ID write
+    // (both arms' order). The remaining ~99 arms are the research/244 §4.3
+    // seed (≤10 arms/commit); the long-distance pass + the minecart-track
+    // hover are §4.4.
+    if let Some(tile) = app.world.tile(tx, ty).filter(|t| t.active()) {
+        let (kind, fx, fy) = (tile.kind, tile.frame_x, tile.frame_y);
+        if let Some(id) = super::cursor_item_icon::altar_hover_icon(kind, fx) {
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = i32::from(id);
+        }
+        // W4-g86 batch 3 (§5 arms 1-6/9-10): the bed/pylon/constant/candle
+        // arms + the fake-chest icons (`Player.cs:33593-33682`/
+        // `:33691-33732`). The C# arms are SEPARATE `if`s (not else-if) —
+        // a kind matches at most one, so the port's match dispatch is
+        // equivalent. `arm_writes == false` = the bed's out-of-snap top
+        // side (nothing written); `id == 0` = the fake chests' icon-0
+        // refusal (noThrow fired, enabled/ID stay).
+        if let Some(p) = app.player.as_ref() {
+            if let Some((id, arm_writes)) =
+                super::cursor_item_icon::hover_icon_simple(kind, fx, fy, p, tx, ty)
+            {
+                if arm_writes {
+                    app.no_throw = 2;
+                    if id != 0 {
+                        app.cursor_item_icon_enabled = true;
+                        app.cursor_item_icon_id = i32::from(id);
+                    }
+                }
+            }
+        }
+        // W4-g86 batch 3 (§5 arms 7-8): the container TEXT arms 21/467
+        // (`Player.cs:33683-33690` → `TileInteractionsMouseOver_Containers`
+        // `:34755-34813`). The chest-name read + the style-name collapse
+        // → the icon (the 3988→306 remap); `hoveredChestIndex` has no port
+        // field yet (the returned index is dropped — the open path uses
+        // its own find). noThrow = 2 always fires (`:34802`).
+        if kind == 21 || kind == 467 {
+            let (id, text, enabled, _hovered) =
+                super::cursor_item_icon::container_hover(kind, fx, fy, tx, ty, &app.world_chests);
+            app.no_throw = 2;
+            app.cursor_item_icon_id = id;
+            app.cursor_item_icon_text = text;
+            // The C# writes `enabled = true` in the name arms + the icon
+            // arm; the out-of-range-unnamed case leaves it (the per-update
+            // clear already false). The port assigns the computed value —
+            // identical for every reachable state.
+            app.cursor_item_icon_enabled = enabled;
+        }
+        // W4-g86 batch 4 (§5 arms 13-16/18-20): the clocks 104 + the
+        // constant arms (`Player.cs:33802-33825`/`:33859-33892`). All
+        // write noThrow = 2 + enabled + the ID.
+        if let Some(id) = super::cursor_item_icon::hover_icon_constants(kind, fx, fy) {
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = i32::from(id);
+        }
+        // W4-g86 batch 4 (§5 arm 17): the Cannon 209
+        // (`Player.cs:33826-33858`) — the frameX-band ID + the Reversed
+        // flag. noThrow/enabled fire even when the band ladder ends
+        // (frameX >= 360, ID stays 0).
+        if kind == 209 {
+            let (id, reversed) = super::cursor_item_icon::cannon_hover(fx);
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            if id != 0 {
+                app.cursor_item_icon_id = i32::from(id);
+            }
+            app.cursor_item_icon_reversed = reversed;
+        }
+        // W4-g86 batch 4 (§5 arm 12): the doors 10/11
+        // (`Player.cs:33772-33801`) — the style decode + GetDoorItem + the
+        // style-11 Temple Key override; icon 0 leaves enabled/ID (noThrow
+        // still 2, `:33775`).
+        if kind == 10 || kind == 11 {
+            let id = super::cursor_item_icon::door_hover_icon(kind, fx, fy);
+            app.no_throw = 2;
+            if id != 0 {
+                app.cursor_item_icon_enabled = true;
+                app.cursor_item_icon_id = i32::from(id);
+            }
+        }
+        // W4-g86 batch 4 (§5 arm 11): the dresser 88 TEXT arm
+        // (`Player.cs:33733-33771`) — the 3x2 origin + FindChest, the
+        // style-name collapse → dresserTypeToIcon, the lower-half 269.
+        // noThrow = 2 + enabled always (`:33764-33765`).
+        if kind == 88 {
+            let (id, text) =
+                super::cursor_item_icon::dresser_hover(fx, fy, tx, ty, &app.world_chests);
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = id;
+            app.cursor_item_icon_text = text;
+        }
+    }
+    // S1-W4-g81 residuals — the wiring tools' cursor-icon latch
+    // (`Player.ItemCheck_UseWiringTools`, `Player.cs:46752-46760`): the
+    // tool in reach arms `cursorItemIconEnabled` + `ItemIconCacheUpdate`
+    // BEFORE the use gates — the icon shows while hovering, not only while
+    // placing. The reach is `IsInTileInteractionRange(Simple, tileBoost +
+    // blockRange)`; the port's `mining_tile_range` carries the same
+    // journey/accessory/Toolbox grants (blockRange has no port field — 0).
+    // The mining tools' twin latch (`:45620-45624`) rides the same seam.
+    {
+        let tool_kind = held.kind;
+        let is_wiring = matches!(tool_kind, 509 | 510 | 849 | 850 | 851 | 3612 | 3620 | 3625);
+        let is_mining = crate::registry::get(tool_kind)
+            .is_some_and(|d| d.pick > 0 || d.axe > 0 || d.hammer > 0);
+        if held.count > 0 && (is_wiring || is_mining) {
+            let tb = crate::registry::get(tool_kind).map_or(0, |d| d.tile_boost);
+            let (rx, ry) = mining_tile_range(app);
+            let in_reach = app.player.as_ref().is_some_and(|p| {
+                tile_in_reach_rect(p, tx, ty, rx, ry, tb)
+            });
+            if in_reach {
+                app.cursor_item_icon_enabled = true;
+                app.item_icon_cache_update(tool_kind);
+            }
+        }
+    }
+    // W4-g86 research/244 phase 1 — the `ItemCheck` head's bait/solution
+    // icon arms (`Player.cs:42615-42650`, the local-player block `:42608`):
+    // AFTER the CCed gate (`:42598`, the tick head above) and BEFORE
+    // `ItemCheck_HandleMount` (`:42652`, the port's early-dismount head
+    // below). The pure decode is batch 2's `item_check_head_icon`; on
+    // `Some((id, push))` the writes ride the C# order: `enabled = true`,
+    // `ID = id`, `Push = push` (`:42620-42622`/`:42631-42633`). NO
+    // `ItemIconCacheUpdate` — these arms never arm the linger (only the
+    // tool latches do). Both arms gate `!enabled` inside the fn: the
+    // tile-hover pass above (the C# `LookForTileInteractions`,
+    // `Player.cs:27430`, runs BEFORE `ItemCheck` `:31827`) and the tool
+    // latch win over an idle-cursor icon.
+    {
+        let held = app.inventory[app.selected];
+        if let Some((id, push)) = super::cursor_item_icon::item_check_head_icon(
+            held,
+            &app.inventory,
+            &app.equip.coins,
+            &app.equip.ammo,
+            app.cursor_item_icon_enabled,
+        ) {
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = i32::from(id);
+            app.cursor_item_icon_push = push;
+        }
+    }
     #[cfg(test)]
     eprintln!(
         "[flow-dbg] reached: kind={} mine_down={}",
@@ -12331,6 +12491,40 @@ mod tests {
         assert_eq!(live_mines, 20, "the cap holds at 20");
     }
 
+    /// The wiring/mining tools' cursor-icon latch (`Player.ItemCheck_UseWiringTools`
+    /// `Player.cs:46752-46760` + `ItemCheck_UseMiningTools` `:45620-45624`,
+    /// the g81 carry): a tool in reach arms `cursorItemIconEnabled` + the
+    /// 10-frame cache BEFORE the use gates — the icon shows while hovering,
+    /// not only while placing. WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g81_the_tool_in_reach_arms_the_icon_latch_and_cache() {
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        // The Iron Pickaxe (kind 1, pick 40) is the rig's held tool; the
+        // camera + screen-centre mouse point at (30, 260), inside the
+        // player's reach (the player stands at tile (33, 260)).
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(app.cursor_item_icon_enabled, "the mining latch (:45622)");
+        assert_eq!(app.item_icon_cache_kind, 1, "the cache tool kind");
+        assert_eq!(app.item_icon_cache_time, 10, "ItemIconCacheUpdate");
+        assert_eq!(app.item_icon_cache_pos, app.mouse_pos, "the cache pos");
+        // The wiring tools ride the same seam (:46756-46760): the Wrench
+        // 509 (tileBoost 20) latches the same way.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        app.inventory[app.selected].kind = 509;
+        app.inventory[app.selected].count = 1;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(app.cursor_item_icon_enabled, "the wiring latch (:46758)");
+        assert_eq!(app.item_icon_cache_kind, 509);
+        // A non-tool held item never latches (the pick/axe/hammer + wiring
+        // kind gates): dirt blocks stay quiet.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        app.inventory[app.selected].kind = 2;
+        app.inventory[app.selected].count = 50;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(!app.cursor_item_icon_enabled, "no tool, no latch");
+        assert_eq!(app.item_icon_cache_time, 0, "no cache re-arm");
+    }
+
     pub(super) fn mining_app(world: World, tx: i32, ty: i32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
@@ -12534,6 +12728,152 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.compute_column_surface();
         mining_app(w, tx, ty)
+    }
+
+    /// W4-g86 research/244 phase 1 — the WIRED altar hover arm: the mouse
+    /// over a demon altar cell (26, frameX 0) arms `noThrow = 2` +
+    /// `cursorItemIconEnabled` + `cursorItemIconID = 6135`
+    /// (`Player.cs:34526-34535`) at the tile-hover head, every tick the
+    /// cursor stays; the Lihzahrd altar 237 arms 1293 (`:34311-34313`).
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_altar_hover_wires_the_cursor_icon_id() {
+        let mut app = pick_world_at(26, 30, 260);
+        // The pickaxe is a mining tool — swap to an empty hand so ONLY the
+        // hover arm can light the icon (the tool latch would also enable).
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 6135, "the demon altar's group-0 icon");
+        assert!(app.cursor_item_icon_enabled, ":34527 enabled before the ID");
+        assert_eq!(app.no_throw, 2, ":34526 noThrow = 2");
+        assert_eq!(app.cursor_item_icon_push, 0, "the altar arms never push");
+        // The Lihzahrd altar rides its own arm — always the Power Cell.
+        let mut app = pick_world_at(237, 30, 260);
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 1293, ":34313");
+        assert!(app.cursor_item_icon_enabled);
+        assert_eq!(app.no_throw, 2, ":34311");
+    }
+
+    /// W4-g86 research/244 phase 1 — the WIRED ItemCheck-head arms: a held
+    /// Golden Fishing Rod 2294 with ammo-row bait draws the bait id with
+    /// push 6 (`Player.cs:42615-42624`); a hovered altar (the tile pass runs
+    /// FIRST, `Player.cs:27430` before `:31827`) blocks the head arm — the
+    /// `!cursorItemIconEnabled` gate keeps the hover icon. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g86_the_pole_head_icon_wires_after_the_hover_pass() {
+        // A plain stone cell under the cursor: no altar arm fires, so the
+        // idle cursor takes the pole's bait icon.
+        let mut app = pick_world_at(1, 30, 260);
+        app.mine_down = false;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 2294,
+            name: "Golden Fishing Rod",
+            count: 1,
+            prefix: 0,
+        };
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 2675,
+            name: "Journeyman Bait",
+            count: 5,
+            prefix: 0,
+        };
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 2675, "the bait id (:42621)");
+        assert_eq!(app.cursor_item_icon_push, 6, "the pole push (:42622)");
+        assert!(app.cursor_item_icon_enabled, ":42620");
+        assert_eq!(app.item_icon_cache_time, 0, "NO linger on the head arms");
+        // The altar under the cursor: the hover arm wins, the head refuses.
+        let mut app = pick_world_at(26, 30, 260);
+        app.mine_down = false;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 2294,
+            name: "Golden Fishing Rod",
+            count: 1,
+            prefix: 0,
+        };
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 2675,
+            name: "Journeyman Bait",
+            count: 5,
+            prefix: 0,
+        };
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 6135, "the hover icon survives");
+        assert_eq!(app.cursor_item_icon_push, 0, "the head arm never fired");
+    }
+
+    /// W4-g86 batch 3 — the WIRED container hover arm: an unnamed chest
+    /// (21, style 1) under the cursor collapses its style name to the Gold
+    /// Chest icon 306 (`Player.cs:34796-34810`), `noThrow = 2`, text "";
+    /// a NAMED chest keeps its name + the -1 sentinel. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g86_the_container_hover_wires_the_icon_collapse() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // An unnamed chest at the cursor tile (30, 260), style 1 (frameX 36).
+        let mut app = pick_world_at(21, 30, 260);
+        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        app.world_chests.push(crate::chest::WorldChest {
+            tile: (30, 260),
+            ..Default::default()
+        });
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 306, "the style-1 icon collapse");
+        assert!(app.cursor_item_icon_text.is_empty(), "the collapse clears text");
+        assert!(app.cursor_item_icon_enabled);
+        assert_eq!(app.no_throw, 2, ":34802");
+        // A named chest keeps its name, ID stays -1.
+        let mut app = pick_world_at(21, 30, 260);
+        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        app.world_chests.push(crate::chest::WorldChest {
+            tile: (30, 260),
+            name: "My Stash".into(),
+            ..Default::default()
+        });
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, -1, "the named chest keeps the sentinel");
+        assert_eq!(app.cursor_item_icon_text, "My Stash");
+        assert!(app.cursor_item_icon_enabled);
+    }
+
+    /// W4-g86 batch 4 — the WIRED door + Cannon hover arms: a door (10,
+    /// style 0) draws the Wooden Door 25; the Cannon (209, frameX 0) draws
+    /// 928 + Reversed (`Player.cs:33772-33801`/`:33826-33858`). WRITTEN
+    /// NOT RUN.
+    #[test]
+    fn w4_g86_the_door_and_cannon_hover_wire() {
+        // Door 10, frameX/frameY 0 → style 0 → 25.
+        let mut app = pick_world_at(10, 30, 260);
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 25, "GetDoorItem(0)");
+        assert!(app.cursor_item_icon_enabled);
+        assert_eq!(app.no_throw, 2);
+        // Cannon 209, frameX 0 → 928 + Reversed.
+        let mut app = pick_world_at(209, 30, 260);
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 928, "the cannon band 0");
+        assert!(app.cursor_item_icon_reversed, "(0/18)%4 = 0 < 2");
+        assert!(app.cursor_item_icon_enabled);
+        // Cannon frameX 36 → 928, NOT Reversed.
+        let mut app = pick_world_at(209, 30, 260);
+        app.world.tiles[app.world.index(30, 260)].frame_x = 36;
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 928);
+        assert!(!app.cursor_item_icon_reversed, "(36/18)%4 = 2 !< 2");
     }
 
     /// The `HitTile` damage at a cell (0 when no slot tracks it).

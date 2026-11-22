@@ -55741,3 +55741,527 @@ armed-zombie swing-before-flip + >=32 row-hold). All WRITTEN NOT RUN —
 no cargo/rustc/tests invoked on this branch (code-only mode). The
 module-side witnesses (13 high2 + 15 extra2 + 12 extra3 + 14 extra4)
 ride their cherry-picked port commits unchanged.
+
+## The demon/crimson altar draw census (W4-g86, 2026-11-21, code-only)
+Branch `task/W4-g86-altar-draw` @ base a725acb0. The lane brief: "Demon/crimson
+altar draw per C# TileDrawing (altar frames/glow/hardmode hammer damage —
+census landed, port MISSING verbatim)". The in-flight probe (g84/g85/g87 at
+base with zero commits; d60 particles, g14 dust, g77 cracks pushed) split the
+altar's draw surface into four pieces; three were census-verified PORTED or
+owned by a pushed sibling, one was genuinely MISSING and is ported here.
+### The census (per-piece, C#-cited)
+The altar family is tile **26** (`TileID.DemonAltar`, `TileID.cs:681`) and its
+replica **695** (`TileID.DemonAltarReplica`, `:2019`); the crimson flavour is
+tile 26's frame columns 54+ (`frameX >= 54`), NOT a second tile id.
+1. **Frames — PORTED.** The height-18 group `TileDrawing.cs:4880-4908`
+   (`case 16/17/26/…/695/…: tileHeight = 18;`) is `drawdata.rs:327-347`'s
+   27-label alternation (the d61 batch 9 / d62 batch 2 census verdicts PORTED,
+   label-exact). Tile 26 has NO `Main.tileFrame` animation — no `AnimateTiles`
+   case, no first/second-switch stride — so the static 16x18 rect is the whole
+   frame story; the base `addFrY = tileFrame*38` default is 0 for 26.
+2. **Glow — PORTED (the scanner seed IS the glow).** There is no
+   `tileGlowMask[26]`/`[695]` row (`Main.cs:10024-10068` census) and no
+   glow-switch case (`TileDrawing.cs:6049-6507`). The altar's coloured light is
+   the `TileLightScanner` seed `TileLightScanner.cs:2965-2983` (the shared
+   `case 26/31/695/696`: the `frameX >= 54` crimson-lamp arm
+   `R=0.5+n*2, G=0.2+n, B=0.1` vs the purple demon arm `R=0.31+n, G=0.1,
+   B=0.44+n*2`, one `localRandom.Next(-5,6)*0.0025` draw each), ported verbatim
+   at `tile_light/scanner.rs:1051-1061`. `tileLighted[26]`/`[695]`
+   (`Main.cs:7573-7574`) is in the generated `TILE_LIGHTED` set, so the seed
+   arm is reachable.
+3. **Ambient particles — IN FLIGHT (W4-d60, keep-one).** The
+   `DrawTiles_EmitParticles` altar arm `TileDrawing.cs:7348-7361`
+   (`(typeCache==26||695) && _rand.Next(20)==0`: the `frameX>=54` dust-5
+   scale-1.5/noGravity/velocity*0.75 arm vs the dust-14 arm) is ported in the
+   pushed `task/W4-d60-tile-draw-particles` `tile_draw_particles.rs` (UNWIRED).
+   This lane does NOT duplicate it — the merge keeps d60's.
+4. **Hardmode hammer damage — PORTED gate + IN FLIGHT dust (W4-g14).** The
+   ≥80-power/hardmode refusal + the `Hurt(ByOther(4), statLife/2, -direction)`
+   self-hit + the `HitTile` accumulation + the `SmashAltar`/BEGONE_EVIL seam are
+   landed (S1-P-i31, `editing.rs::hammer_tile_hit`, `Player.cs:45665-45704`).
+   The fail-tick dust TYPE ladder (`WorldGen.cs:68970-68973`: the `frameX>=54`
+   dust-5 short-circuit vs the `genRand.Next(2)` dust-1/14 pick) is ported in
+   the pushed `task/W4-g14-dust-worldgen-sites` `worldgen_dust_tile.rs`. The
+   altar is NOT `tileSolid` (no `tileSolid[26]` in the `Main.cs` init census),
+   so `DrawTileCracks` (`Main.cs:61577`'s `tileSolid && !tileSolidTop` gate)
+   NEVER cracks it — the hammer-damage visual is the dust, not a crack overlay
+   (g77's crack lane correctly skips 26).
+### The MISSING verbatim piece — the smart-cursor selection outline
+`TileDrawing.GetTileOutlineInfo` (`TileDrawing.cs:4478-4489`) + its draw tail
+(`:1404-1408`), gated by `TileID.Sets.HasOutlines` (`TileID.cs:551`) and fed by
+`Main.InSmartCursorHighlightArea` (`Main.cs:3945-3957`). Tile **26 IS** in
+`HasOutlines` (the `…, 16, 17, 18, 26, 77, …` tail); **695 is NOT** (replicas
+never outline). The port had NO `GetTileOutlineInfo` counterpart (research/09
+row "Dangerous-tile outline / GetTileOutlineInfo … MISSING"; the pylon pass
+feeds `selection_mode = 0`, `pylons.rs:35`). The outline texture
+`Images/Misc/TileOutlines/Tiles_26` exists (`AssetInitializer.cs:356-360`).
+**Ported** as `crates/tr-app/src/render/tile_outlines.rs` (WIRED — see the
+feed-seam section below):
+* `in_smart_cursor_highlight_area` — `Main.cs:3945-3957` verbatim: the
+  selected-membership out-param computed FIRST (before every gate), `hideUI`
+  refuses, the `Collision.InTileBounds` interaction-rect gate (reusing
+  `smart_cursor::in_tile_bounds`) then the coords membership.
+* `selection_glow_color_bytes` — `Colors.cs:89-92`'s integer halves/thirds as
+  XNA bytes (the pylon pass carries the f32 form; this is the byte form the
+  `Color` ctor needs).
+* `tile_outline_quad` — the `HasOutlines` gate (`:893`) → the highlight-area
+  test → the `(R+G+B)/3` integer average → the `> 10` gate (`:4483`) → the
+  `OutlineQuad` record (the `HighlightMask[type]` sheet name, the framed
+  full-height rect `:1406`, the tint). Returns `None` on every refusal.
+### Deviations / feed seams — WIRED in the follow-up commits
+The two seams the first commit left open are now landed (60970eee feed,
+54698e53 atlas+draw):
+* **Seam 1 — the SmartInteractTileCoords feed.** The lists are NOT filled by
+  `SmartCursorHelper.SmartCursorLookup` (the g79-landed tool lookup,
+  `tr_core::smart_cursor` — that one re-points `Main.SmartCursorX/Y`); they
+  are filled by the OTHER half of the `Player.cs:25446-25447` pair,
+  `Player.SmartInteractLookup` (`:17374-17398`) →
+  `SmartInteractSystem.RunQuery` (`SmartInteractSystem.cs:31-61`) →
+  `TileSmartInteractCandidateProvider` (`:63-480`). Ported as
+  `crates/tr-app/src/world_sim/smart_interact.rs` and called from
+  `world_sim/editing.rs` right after the smart-cursor re-point (the port's
+  `Player.Update` seam). Verbatim: `ClearSmartInteract` (`Main.cs:48054-48062`),
+  the `!SmartCursorIsUsed || !mouseItem.IsAir` gate (`:17381`), the Simple
+  reach region + the 10-tile clamps (`:17402-17407`), the
+  `BlockBecauseYouAreOverAnImportantTile` provider (InWorld fluff 10 +
+  `DisableSmartInteract`, `TileID.cs:510`), `FillPotentialTargetTiles`'
+  campfire/`TileUsedInRecipes`/`CountsAsWaterForCrafting`/57-id-literal/
+  6-conditional arms (`:359-480` — chairs 15/toilets 497 within 40 px of the
+  feet (`IsWithinSnappngRangeToTile`, `Player.cs:17365-17372`), LihzahrdAltar
+  237 with item 1293, SnowballLauncher 212 with item 949, Sundial 356 /
+  Moondial 663 off cooldown), `ProvideCandidate`'s size switch (`:115-289`,
+  the `(w, h, pad)` rows + the campfire (3,2) override), the top-left anchor
+  modulo (`:299-300`), the closest-vote `<=` tie (`:92`, LATER targets win),
+  the first-selected-only list fill (`:312-337`) and `WinCandidacy`'s
+  reach±10 interaction rect (`:52-55`).
+  *Unported providers (documented):* the Potion-of-Return gate, the
+  interactable-projectile list and the town-NPC scan
+  (`SmartInteractSystem.cs:15-17`) — **NOW PORTED** (the provider-chain
+  follow-up, see below). `UILinkPointNavigator`/gamepad
+  hints are false (no gamepad UI), so `DemandOnlyZeroDistanceTargets` is
+  false and the strict zero-distance arm never runs. `Main.hideUI` has no
+  port state — the outline gate reads false.
+* **Seam 2 — the HighlightMask atlas pack + draw call.** `assets.rs` packs
+  one `Misc/TileOutlines/Tiles_{kind}` sheet per `HasOutlines` id
+  (`AssetInitializer.cs:356-362`, 95 sheets; the content dir's two extra
+  files Tiles_14/Tiles_469 are NOT in the set and stay unpacked).
+  `draw_tile_outlines` walks the coords list, resolves each cell through the
+  tile pass's drawdata chain (`draw_data` → `apply_world_corrections` →
+  `case_draw_data` → `apply_cases_a`, the `tiles.rs:653-734` inputs) and
+  pushes the `:1404-1408` quad (the plain `tileTop` anchor — NO half-brick
+  shift, NO `draw_dx/dy` nudge; the C# tail builds its own vector) into the
+  always-rebuilt world-effect range right after the cached tile pass
+  (`frame/draw.rs`, the crack/pylon convention). **Contested-seam note:**
+  the C# tail draws per-tile at the END of `DrawSingleTile`; the port defers
+  to the post-pass overlay because the highlight lists change every tick
+  and cannot ride the G6-cached range — the same documented z-order
+  approximation the pylon pass keeps (nothing but entities draws between).
+  The `WorldFrameKey` is untouched.
+* **RNG: ZERO draws** — `GetTileOutlineInfo`, `InSmartCursorHighlightArea`,
+  `GetSelectionGlowColor` and the whole `SmartInteractLookup` scan are pure
+  reads/integer maths; neither seam touches a stream.
+### The HasOutlines feed census (seam 3 — which outline tiles have no feed?)
+The full `TileID.Sets.HasOutlines` set (`TileID.cs:551`) is **95 ids**.
+Cross-referenced against `FillPotentialTargetTiles`' feed arms and
+`ProvideCandidate`'s size switch (decoded from the generated
+`SET_HAS_OUTLINES` bitset + the ported recipe station set):
+* **Every one of the 95 has BOTH a feed arm and a size arm — there is NO
+  orphan outline tile.** The feed reaches them three ways:
+  - 56 via the literal switch (`:385-444`) or the campfire/water sets;
+  - 6 via the conditional arms (15, 497, 237, 212, 356, 663);
+  - **33 via `Recipe.TileUsedInRecipes` ONLY** (the recipe stations absent
+    from the literal switch): 16, 17, 18, **26**, 77, 86, 94, 96, 101, 106,
+    114, 133, 134, 217, 218, 220, 228, 243, 247, 283, 300, 301, 302, 303,
+    304, 305, 306, 307, 308, 355, 412, 499, 622. The altar 26's feed is the
+    recipe-station arm (`Recipe.cs:9166` et al., `requiredTile = 26` — the
+    boss summons / night items); 77/133/134/302/304/355/17/96 inherit
+    through the `TileCountsAs` chains (`Recipe.cs:559-571`).
+* **Five ids are sized but NOT outlined** (they feed the interact machinery
+  but draw no outline): 14 Tables, 469 Tables2, 491 VoidVault, 573
+  TatteredWoodSign, 597 TeleportationPylon. 491/597 carry their own
+  selection glow in the pylon/void-lens pass (`pylons.rs`, the
+  `selection_mode` seam — **NOW WIRED** in the follow-up:
+  `tile_outlines::selection_mode` reads the same highlight area, the
+  `Extra_93`/column-2 masks were already packed).
+* The content dir carries 97 `Tiles_*.xnb` files — the 95 set members plus
+  the two non-set leftovers (14, 469); every set member has its file.
+Code-only: every piece re-read against the cited C# windows; the referenced
+Rust symbols checked by read/grep (`td::SET_HAS_OUTLINES`, `TileSet::has`,
+`smart_cursor::in_tile_bounds` — all `pub`). The 6 `w4_g86_*` witnesses
+(`tile_outlines.rs`) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/
+graphify invoked**. The HasOutlines membership (26 yes / 695 no) and the
+TILE_SOLID/TILE_LIGHTED bits were re-derived from the generated bitsets by a
+direct decode (26/695/31/696 all non-solid, all lighted).
+The wiring commits add 6 feed witnesses (`smart_interact.rs`
+`w4_g86_feed_tests`: the altar's six-cell fill + selection + the reach±10
+rect, the off-object coords-only fill, the runtime-flag/mouse-item gates,
+the DisableSmartInteract block, the size-switch rows, the all-95-have-a-
+size-arm census) and 1 wiring witness (`tile_outlines.rs`
+`w4_g86_the_atlas_pack_and_the_draw_hook_are_wired`: the pack gate, the
+draw-hook position between the cached range and the pylon pass, the
+repoint→feed call order) — all WRITTEN NOT RUN, same code-only mode. The
+feed census (95/95 covered, 33 recipe-only, 5 sized-not-outlined, 97 files
+vs 95 set members) was derived by a direct set decode over
+`recipes_gen.rs`'s station lists + the `TileCountsAs` pairs.
+### The provider chain — the vote re-verified (W4-g86 follow-up)
+The first feed commit ran ONLY the tile provider and noted "its candidate
+always wins". That was true only while the other three providers were
+unported. The follow-up ports all four and re-verifies the vote against
+`SmartInteractSystem.RunQuery` (`SmartInteractSystem.cs:31-61`):
+* **Priority order** (`:15-18`): Potion-of-Return → Projectile → NPC →
+  Tile. A provider returning NO candidate does NOT stop the chain
+  (`:43`'s `if`); only a `DistanceFromCursor == 0f` candidate BREAKS it
+  (`:46-49`). The vote (`:52-59`) is a STRICT `>` — the FIRST
+  (highest-priority) candidate wins ties.
+* **The NPC provider** (`NPCSmartInteractCandidateProvider.cs:34-78`):
+  the closest `townNPC` whose hitbox intersects the Simple WORLD region
+  (`TileReachCheckSettings.GetWorldRegion`, `:62-77` — the tile region
+  ×16 with the +15 Right/Bottom corrections, UNCLAMPED), distance =
+  `Rectangle.Distance(mouse)` (`Utils.cs:1507-1542`), a zero-distance hit
+  breaks the NPC scan (`:58-64`). The win sets `SmartInteractNPC` +
+  `SmartInteractShowingGenuine` (`:14-18`) and NEVER the interaction rect.
+  The port's `is_town_resident` set (`npc/data.rs:923-954`) is the
+  `npc.townNPC` flag. **Vote integration:** the talk open-arm
+  (`world_sim/npcs.rs::talk_to_npc`, `Main.cs:43017`/`:43048`) now reads
+  the pick — `SmartInteractShowingGenuine && SmartInteractNPC == i` lets
+  the talk reach an NPC the mouse is not directly over.
+* **The projectile provider**
+  (`ProjectileSmartInteractCandidateProvider.cs:34-79`): the closest
+  interactable projectile over
+  `Player.GetListOfProjectilesToInteractWithHack` (`:31908-31911`), the
+  list rebuilt per tick by `UpdateNearbyInteractableProjectilesList`
+  (`Player.cs:23135-23151`, the `Player.cs:25440` seam) gated by
+  `CurrentFrameFlags.HadAnActiveInteractableProjectile`. That flag is
+  raised by exactly three AI arms — aiStyle 97's flying piggy bank 525
+  (`Projectile.cs:33070`, the only `aiStyle = 97` kind `:5953-5961`),
+  `AI_154_VoidLens` 734 (`:52156`) and `AI_026`'s Chester 960 arm
+  (`:58182-58186`) — and reset every frame (`Main.cs:18000`); the port
+  derives it from the live pool (those AIs run every tick while active).
+  `IsInteractable` (`Projectile.cs:78828-78846`) is the 10-id switch
+  525/734/960/1093/1094/1098/1112/1113/1118/1123 — **NO grappling hook**
+  (the Palworld/ClayPot minions are interactable but raise no flag, the
+  C# quirk the derivation keeps). The interactable kinds have no ported
+  spawners yet, so the list is empty in practice — the scan is faithful
+  either way. The win sets `SmartInteractProj` (`:14-18`), never the rect.
+* **The potion provider**
+  (`PotionOfReturnSmartInteractCandidateProvider.cs:30-47`): the gate
+  hitbox (`PotionOfReturnHelper.TryGetGateHitbox`, `:7-17` — home +
+  (0,−21) centred 24×40, `Utils.CenteredRectangle` `:947-950`), the
+  closest point's distance + tile, refused when the tile leaves the scan
+  region. The win sets `SmartInteractPotionOfReturn` (`:11-15`). The
+  RETURN-leg interaction (`PotionOfReturnGateInteractionChecker` →
+  `DoPotionOfReturnReturnToOriginalUsePosition`, `Teleport` style 8) rides
+  the unported `Player.Teleport` system (the recall_teleport.rs
+  follow-up) — the gate + vote are ported, the teleport is not.
+* **The outline consequence (the corrected note):** a zero-distance
+  potion/proj/NPC win short-circuits the chain BEFORE the tile provider —
+  the lists stay EMPTY. A non-zero NPC/proj/potion win still lets the tile
+  provider fill the lists, but the winner's `WinCandidacy` never sets the
+  interaction rect (it stays −1 from `ClearSelfAndPrepareForCheck`), so
+  `InSmartCursorHighlightArea`'s rect gate refuses every cell — the
+  outlines are suppressed exactly as in the C#. The earlier "no
+  outline-list effect either way" was WRONG for the rect: the NPC/proj
+  wins DO suppress the outlines via the −1 rect.
+* **The double-pad correction:** the tile candidate's `Reuse` (`:352`)
+  passes `settings.LX-10`… and `WinCandidacy` (`:52-55`) subtracts/adds 10
+  AGAIN — the final interaction rect is the reach ± **20**, not ±10. The
+  single-provider port had folded the double-pad to one; the faithful
+  chain restores it (the altar witness now expects (10,17,61,65)).
+* **Gamepad arms PARKED** (no gamepad UI): the `UILinkPointNavigator`/
+  `UsingGamepad && HoveringOverAnNPC` selected-clear (`Player.cs:17377`),
+  `ShowGamepadHints` (`:17381`/`:17389`), the tile provider's strict
+  zero-distance arm (`:339-347`, `num3/num4` fed by `flag3` `:303-307`) +
+  its `SmartInteractShowingFake` win (`:44-47`), the NPC/proj
+  `DemandOnlyZeroDistanceTargets && !flag` refusals (`:67-70`/`:68-71`).
+* **`Main.DrawSmartInteract`** (`Main.cs:46660-46691`, the aimed-cell
+  MagicPixel marker) has NO call site in the 1.4.5.8 decompile — dead
+  code, deliberately not ported.
+* **RNG: ZERO draws** — every provider is integer/float maths.
+Witnesses (`smart_interact.rs` `w4_g86_feed_tests`, WRITTEN NOT RUN): the
+rect-distance maths, the closer-NPC zero-break (empty lists + −1 rect),
+the non-zero-NPC win (lists filled + −1 rect), the closer-tile win (the
+double-padded rect), the potion-gate zero-break, the interactable-set
+switch; plus `npc_chat.rs`
+`w4_g86_the_smart_interact_npc_pick_opens_the_talk_outside_the_region`.
+### The selection_mode seam — WIRED (W4-g86 follow-up)
+The pylon/void-lens pass (`pylons.rs`) ported the selection-glow arms but
+fed `selection_mode = 0` (the highlight area was unported at the time).
+The follow-up wires it: `tile_outlines::selection_mode(area, x, y)`
+returns 0/1/2 from `InSmartCursorHighlightArea` at the special point's
+ANCHOR cell — exactly `TileDrawing.cs:8687-8695` (pylon) / `:8721-8729`
+(void lens). `draw_pylons_trophies_void` now takes the `HighlightArea`
+(the same `self.smart_interact` lists + rect the outline pass reads,
+`frame/draw.rs`), so the pylon's column-2 mask (`Extra_181`) and the void
+lens's `Extra_93` mask glow when the smart cursor selects them. The
+trophy pass has no selection arm (the C# `DrawMasterTrophies` has none).
+Witness: `tile_outlines.rs`
+`w4_g86_the_selection_mode_follows_the_highlight_area` (0/1/2 + hideUI).
+### The altar-26 SUMMON-USE chain — census (W4-g86 altar-draw lane)
+The lane name "altar-draw" raised the question: do boss-summon items USE
+at the altar (tile 26), and is there an outline-highlight → summon-use
+feedback gap? The census answers NO on both — the chain is already landed
+and there is no tile-26 use gate to wire:
+* **Boss-summon items have NO altar proximity gate.**
+  `ItemCheck_UseBossSpawners` (`Player.cs:43751-43919`) gates each item on
+  `ItemTimeIsZero && itemAnimation > 0` + the item-id list +
+  `SummonItemCheck` (`:42162-42174`, the item's own boss not already
+  alive) + a per-item biome/clock gate (43/544/556/557 night, 70
+  ZoneCorrupt, 1331 ZoneCrimson, 4988 ZoneHallow, 5120 ZoneSnow; 560/1133
+  ungated). NONE reads tile 26 or any altar proximity. The port's
+  `use_boss_summon_item` (`editing.rs:15967`) + `use_suspicious_looking_eye`
+  (`:16218`) carry exactly these gates — already landed (the wave-3
+  magic+summon lane). The altar 26's role is a CRAFTING station
+  (`Recipe.TileUsedInRecipes[26]`, the boss-summon recipes), NOT a use
+  proximity gate — that is why it feeds the outline list (the recipe-station
+  arm) but has no summon-use interaction.
+* **The altar summon-use that DOES exist is tile 237 (LihzahrdAltar) +
+  Power Cell 1293**, not tile 26: `TileInteractionsUse`'s `type == 237`
+  arm (`Player.cs:32760-32792`) — `!NPC.AnyNPCs(245) && hardMode &&
+  downedPlantBoss`, the 58-slot inventory scan consumes one 1293, the roar
+  (15) + `NPC.SpawnOnPlayer(245)`. Ported verbatim at
+  `editing/doors.rs::use_golem_altar` (`:37-60`) + `spawn_golem_on_altar`
+  (`:71-127`, the `NPC.cs:80475-80531` altar-origin scan), wired through
+  `interact_tile` (`:181-187`) at the `editing.rs:4630` right-click seam.
+  The smart-interact FEED already gates tile 237 on `HasItem(1293)`
+  (`FillPotentialTargetTiles` `:453-457`, the port's `has_1293` arm), so
+  the altar outlines only when the player holds a Power Cell — the
+  outline-highlight → summon-use pairing is complete.
+* **Tile 26's only right-click feedback is the hover cursor icon**
+  (`TileInteractionsMouseOver` `:34524-34536`): `noThrow = 2`,
+  `cursorItemIconEnabled = true`, `cursorItemIconID = 6135` (demon, frame
+  column 0) / `6136` (crimson, column ≥ 1) — the `frameX/18` column decode
+  (`num41 > 2` subtract-3 loop). Tile 237's hover icon is 1293
+  (`:34309-34314`). The whole `cursorItemIcon*` system (170 write sites in
+  Player.cs, the `DrawCursor` icon draw) is UNPORTED — a separate large
+  system, out of this lane's scope. The outline (the smart-cursor
+  highlight) IS ported and is the altar's selection feedback; the cursor
+  icon is a distinct, deferred overlay. NO gap to wire in the summon-use
+  chain itself. (W4-g86 cursor-item-icon follow-up: the "170" is exactly
+  169 `cursorItemIconID` writes; the system is now censused + seeded at
+  research/244, the two altar arms ported-unwired at
+  `world_sim/cursor_item_icon.rs::altar_hover_icon` — see "The
+  cursorItemIcon system — census + seed" below.)
+* **f35 co-lane read** (`task/W4-f35-expert-drop-trees`, tip `06ac4b480`):
+  the expert/master boss-BAG open trees (`boss_bags::open_boss_bag` +
+  `clicks::open_boss_bag_click`, the 19 bag grant tables) — ZERO
+  summon-use / altar claims, no overlap with this lane. The bag-open is
+  the inventory right-click on a boss bag item, not a tile interaction.
+### Gamepad arms — PARKED (W4-g86, per convention)
+No gamepad UI in the port, so every gamepad-gated arm is parked (false
+input), documented at its site:
+* `Player.SmartInteractLookup`'s `UILinkPointNavigator.InUse ||
+  (PlayerInput.UsingGamepad && Main.HoveringOverAnNPC)` selected-clear
+  (`Player.cs:17377-17380`) — the port never clears the selected list
+  here (the gamepad/navigator state is false).
+* `ShowGamepadHints` in the lookup gate (`:17381`) and
+  `DemandOnlyZeroDistanceTargets = ShowGamepadHints && !SmartCursorIsUsed`
+  (`:17389`) — false, so the lookup gates on `SmartCursorIsUsed` alone and
+  every provider runs its full-interaction arm.
+* The tile provider's strict zero-distance arm
+  (`TileSmartInteractCandidateProvider.cs:339-347`): `num3/num4` fed by
+  `flag3` (`:303-307`, the mouse-tile-in-object test), the
+  `strictSettings: true` Reuse + the `SmartInteractShowingFake` win
+  (`:44-47`). The port computes `_flag3` (kept for the citation) but never
+  builds the strict candidate.
+* The NPC/proj providers' `DemandOnlyZeroDistanceTargets && !flag`
+  refusals (`NPCSmartInteractCandidateProvider.cs:67-70`,
+  `ProjectileSmartInteractCandidateProvider.cs:68-71`).
+* `Main.SmartInteractShowingFake` has no port consumer (the fake-highlight
+  draw is gamepad-only). The field is carried on `SmartInteractState` for
+  layout fidelity, always false.
+### The cursorItemIcon system — census + seed (W4-g86 cursor-item-icon lane)
+The owed-pool `cursorItemIcon-170-sites` row (the dead g86d session). Full
+census + the exact 101-arm site-list + the owner contract:
+`docs/research/244-cursor-item-icon-seed.md`. The headline facts:
+* **g86d landed NOTHING** — zero `cursor_item_icon` hits in the tree, no
+  g86d commits. The "~170 sites" is exactly **169 `cursorItemIconID` writes
+  in Player.cs** (326 cursor writes there; 357 writes / 386 lines across 7
+  files: Player/Main/Mount/TileDrawing/PotionOfReturnGateInteractionChecker/
+  WiresUI/CommonResourceBarMethods).
+* **The only code claim is g81** (`task/W4-g81-wire-draw-overlay`, tip
+  `ebb5308a0`): the layer-40 held-kind draw + the 10-frame cache + the
+  `cursorItemIconEnabled` latch + the wiring/mining tool latches. Its own
+  comment declares the `cursorItemIconID != 0` override arm UNPORTED. The
+  ID/Text/Push/Reversed fields, the MouseOversClear ID/Text/Push clears, the
+  ~150 tile-hover arms and the override draw are UNCLAIMED — a large
+  render/sim system, SEEDED (research/244 §4) rather than ported onto g81's
+  in-flight fields.
+* **This lane's self-contained batches** (PORTED-UNWIRED, the
+  `IsHopperInRangeOf` precedent — pure decode fns, the wiring contract
+  documented per fn, zero RNG):
+  * Batch 1 (`835e89a65`): `world_sim/cursor_item_icon.rs::altar_hover_icon`
+    — the tile-26 arm (`Player.cs:34524-34536`, the `frameX/18` column +
+    the verbatim subtract-3 group loop: group 0 → Demon Altar 6135, later →
+    Crimson 6136) + the tile-237 arm (`:34309-34314`, always Power Cell
+    1293). 4 write sites, 3 witnesses WRITTEN NOT RUN.
+  * Batch 2 (`90efad638`): `fishing_get_bait` (`:42254-42280`, ammo 54-57
+    first then grid 0-49) + `item_check_head_icon` (`:42615-42650`, the
+    `!cursorItemIconEnabled` gate, the pole's bait icon push 6, the
+    Clentaminator 779/Terraformer 5134 solution icon push 10 — the solution
+    scan's `j < 54` INCLUDES the coin rows, unlike the bait scan's
+    `j < 50`; the port's grid/coins/ammo split documented). 9 write sites,
+    3 witnesses WRITTEN NOT RUN. NO `ItemIconCacheUpdate` on these arms.
+* **The altar-draw keep-one (g86 vs g34-cage vs g43-temple): DISJOINT.**
+  g86 = the selection OUTLINE (draw layer), g34 = the altar-26 break-drop
+  (Check3x2 sweeps, NO drop — the SmashAltar ore-seeding is app-wired) +
+  the cage animator, g43 = the 237 summon-USE fidelity (`doors.rs`
+  `377e0604` superseding the base `610ea0bf` g86 cited — g43's doors.rs is
+  the keep-one survivor; g86 never touched it). The only merge work: the
+  `frame/draw.rs` :1183-1220 interleave (g34's cage-key WorldFrameKey
+  contribution + g86's post-pass outline hook — both survive) and taking
+  g43's doors.rs wholesale. No duplicated body across the three lanes.
+### The cursorItemIcon phase 1 — the state fields + the two clears (W4-g86)
+research/244 §4.1 landed. The g81 halves were CARRIED first (`2174f0fbb`,
+the cherry-pick-no-commit of g81's `18e53dd0f` — g81 is unmerged on
+origin/main; the seed contract's "keep g81's bodies" needs its surface on
+this branch, the eventual merge dedupes): the layer-40 held-kind draw
+(`ui/mod.rs::draw_hud`, context-21 no-clamp icon at
+`mouse+(10,10)+hitbox*cursorScale/2`), `ItemIconCacheUpdate/Verification`
+(`Main.cs:46515-46540`), the enabled-only `MouseOversClear` clear, and the
+wiring+mining in-reach latches (`Player.cs:46752-46760`/`:45620-45624`,
+the `editing.rs` seam after the smart-interact lookup). The carry's
+compile gap (g81's own branch never compiled its tests): `flow_app` is a
+FULL App literal — both it and `App::new` gained the new field rows.
+Phase 1 adds the four remaining `Player.cursorItemIcon*` fields
+(`Player.cs:1852-1858`): `cursor_item_icon_id: i32` (the `-1` sign
+sentinel needs the signed type), `cursor_item_icon_text: String`,
+`cursor_item_icon_push: i32`, `cursor_item_icon_reversed: bool`. The
+clears ride TWO clocks, exactly like the C#:
+* **`Main.MouseOversClear`** (`Main.cs:46503-46513`, called `:17035`):
+  the full quad `enabled=false; ID=0; Text=""; Push=0` at `frame()`'s
+  world-branch head, ahead of the player pass that re-arms.
+  **Deviation**: the C# call precedes the `gameMenu` return (`:17166`),
+  so vanilla clears the quad under menus too — the port keeps g81's
+  world-branch gate; no hover writer and no layer-40 draw runs behind a
+  menu, so no stale icon can reach a frame. The `_mouseTextCache` pair
+  (`:46505-46506`) has no port cache; the `signHover/signBubble` pair
+  (`:46511-46512`) rides the unported sign-hover lane (f22's neighbour).
+* **`cursorItemIconReversed`** (`Main.cs:16842`): NOT part of
+  MouseOversClear — the `DoUpdate` head clears it ONCE per frame
+  INCLUDING menus/pauses, after the showSplash return (`:16832-16840`).
+  The port's `frame_head` runs it before every other frame work.
+Witnesses (WRITTEN NOT RUN, code-only lane, zero RNG): the field defaults
++ the clear quad + the menu-gated split (`frame.rs::w4_g86_*`, 4), the
+cache pair's four arms (`app/mod.rs::w4_g86_icon_cache_tests` — the
+still-mouse hold, the exactly-4-px decrement vs the >4 zero, the
+kind-switch zero, the re-arm pin), the tool latch
+(`editing.rs::w4_g81_the_tool_in_reach_arms_the_icon_latch_and_cache`
+— pickaxe + Wrench 509 + the non-tool refusal). The g53c cross-note (the
+flagging lane's handover) lives at research/244 §6.1.
+**The layer-40 override draw + the B1/B2 wiring (research/244 §4.2,
+landed with phase 1).** `ui/mod.rs::interact_icon_kind` is the pure
+kind-selection arm (`Main.cs:45057-45063`): a non-zero
+`cursorItemIconID` REPLACES the held kind (independent of the held
+stack), the live gate is `enabled && num != 0 && MouseDisplayItem.IsAir`
+(the port folds IsAir to `mouse_item.kind == 0 || count == 0`,
+`Item.cs:385`; the linger's OWN gate `:45063` is `mouseItem.type < 1` —
+kind only — so the fn takes the two air flags separately), the linger
+draws the CACHED kind (the `:45067-45071` /
+`:45111-45114` swap pair is net-zero on the field, so the port reads the
+cache directly), and only `num > 0` draws (`:45087` — the sign arm's -1
+sentinel draws nothing). The draw block adds the `10 + Push` offset
+(`:45089`), the Reversed UV mirror (`:45083-45086`), the Text
+`draw_mouse_text` arm (`:45102-45105`) and the head gate (`:45039`):
+`bubble_npc` (the `HoveringOverAnNPC` stand-in) OR `minimap_hover` OR the
+closed-hotbar `hovered_slot`. The block rides AFTER `cursor::draw` — the
+C# layer list (`:44889-44913`) draws 40 after 36/37/38/39, the
+e19-draw_override compose-note's layer-40 position (the icon overlays
+whatever cursor is on screen). **Deferred halves** (documented at the
+block, no feed on this branch): the UsingBiomeTorches 8/966 swap
+(`:45045-45056`), TryGetAmmo (`:45093-45100`/`:45117-45144`), the
+painted-held overlay (`:45106-45110` — the port's ItemSlot has no
+per-item color), GetItemLight (`:45081`) + GetAlpha/GetColor
+(`:45072-45073` — plain white, the g81 stand-in). **Deviation**: the
+open-panel slot hover has no pre-draw resolution (the panel hit-tests
+inside `inventory::draw`), so the head gate covers the closed hotbar +
+minimap only. The g81 carry's per-draw
+`item_icon_cache_verification()` call was INLINED over the disjoint
+fields in `frame/draw.rs` (a whole-`self` method call cannot compile
+inside the `let App {…} = self` destructure's live field borrows; the
+method stays for the cache witnesses). The B1 altar arms (26/237) are WIRED at `update_editing`'s
+tile-hover head (after the repoint/smart-interact lookup — the
+POST-repoint target IS `tileTargetX/Y`, the `:33589` gate; `noThrow=2` +
+`enabled` BEFORE the ID), the B2 head arms after the tool latch with the
+`!enabled` gate keeping the hover icon — the C# order
+`LookForTileInteractions` (`Player.cs:27430`) before `ItemCheck`
+(`:31827`). **Deviation**: the wiring seam sits behind `update_editing`'s
+map/minimap/HUD/reach early returns, so the hover icon arms only inside
+the port's circular reach stand-in — the C# gates the same pass on its
+Simple reach rect (`Player.cs:31962-31965`); the long-distance pass
+(§4.4) covers the out-of-reach hover when it lands. 5 more witnesses
+(3 draw + 2 wiring). The remaining ~99
+hover arms stay the §4.3 ≤10/commit seed; the styled `GetItemDrop_*`
+tables are NOT in `registry::tile_drop` (style-0 slice only) — the
+styled arms port their tables fresh.
+### The cursorItemIcon batch 3 — the first 10 hover arms (W4-g86)
+research/244 §5 arms 1-10 landed + WIRED at `update_editing`'s tile-hover
+head (the same seam as B1, after the altar arms). The pure decoders in
+`world_sim/cursor_item_icon.rs`:
+* **The styled drop tables** (ported fresh — `registry::tile_drop` is the
+  style-0 slice only): `item_drop_beds` (`WorldGen.cs:39905-40087`),
+  `item_drop_candles` (`:39724-39903`), `item_drop_chests`
+  (`:41554-41839`, the base/second families), `chest_icon`
+  (`GetChestIcon` `:57989-58004` + the `Chest.Initialize` overrides
+  `Chest.cs:236-251`: base 2/36/38/40→327, 4→329, 23..27→1533..1537;
+  second 13→4714; the bounds are the icon-array lengths 52/38).
+* **`hover_icon_simple`** — the bed 79 (`Player.cs:33593-33610`: the
+  `bed_bottom_side` test `:33327-33337` splits the style-item draw from
+  the snap-96 Sleeping Icon 5013; out-of-snap writes NOTHING), the pylon
+  597 (`:33611-33658` — the override chain returns the base switch's own
+  ids, so `PylonType::item_id` is the whole decode), the constants
+  621/464/699, the candles 33, the fake chests 441/468 (`GetChestIcon`,
+  icon 0 → noThrow fires but enabled/ID stay).
+* **`container_hover`** — the 21/467 TEXT arm
+  (`TileInteractionsMouseOver_Containers` `:34755-34813`): the 2x2 origin
+  decode + `FindChest`, the -1 sentinel, the no-chest/named/style-default
+  text arms, the style-name collapse → the icon (the text clears EVEN
+  when the icon is 0 — the C# clears before the `num5 > 0` gate), the
+  3988→306 Dead Man's Chest remap (`:34805-34807`). The style names read
+  `chest::default_chest_name`'s live-localization + fallback chain.
+  `hoveredChestIndex` (`:34812`) has no port field — the returned index
+  is dropped (the open path uses its own find).
+* **`within_snapping_range`** (`Player.cs:17365-17372`) — the snap-range
+  helper the bed/chair/bench/toilet arms share (ported once, the §4.3
+  contract).
+9 witnesses WRITTEN NOT RUN (8 decode + 1 wiring), zero RNG. The
+container witnesses pin the lang lock + English init (the
+`default_chest_name_matches_the_chestui_chain` precedent). The remaining
+~89 hover arms stay the §4.3 ≤10/commit seed.
+### The cursorItemIcon batch 4 — hover arms 11-21 (W4-g86)
+research/244 §5 arms 11-21 landed + WIRED at the tile-hover head. The
+pure decoders in `world_sim/cursor_item_icon.rs`:
+* **`dresser_hover`** — the 88 TEXT arm (`Player.cs:33733-33771`): the
+  3x2 origin (`frameX%54/18`, `frameY%36`) + `FindChest`, the -1
+  sentinel, the no-chest `dresserType[0]` / named / style-default text
+  arms, the style-name collapse → `dresserTypeToIcon[style]`
+  (`GetItemDrop_Dressers`), the lower-half (`frameY > 0`) generic Dresser
+  269 + text "" (`:33766-33770`). noThrow/enabled always fire.
+* **`door_hover_icon`** — the 10/11 arm (`:33772-33801`): the subtract-54
+  style loop + `36*(frameX/54)` (tile 10) / `36*(frameX/72)` (tile 11),
+  `GetDoorItem(style)`, the style-11 Temple Key 1141 override
+  (`:33792-33795`), the icon-0 refusal (noThrow still 2).
+* **`hover_icon_constants`** — clocks 104 (`GetItemDrop_Clocks(frameX/36)`)
+  + 356→3064 / 663→5381 / 377→3198 / 216→`970 + frameY/40` (the
+  subtract-40 loop) / 387-386→3239 (the `GetTopLeftAndStyles` call is
+  dead) / 389-388→3240 / 335→2700.
+* **`cannon_hover`** — the 209 Cannon (`:33826-33858`): the frameX-band
+  ID (928/1337/3369/3664, 0 past 360) + the Reversed flag
+  (`(frameX/18) mod 4 < 2`, the verbatim subtract-4 loop). noThrow/enabled
+  fire even at ID 0.
+* **The styled tables**: `item_drop_clocks` (`WorldGen.cs:40089-40167`),
+  `door_item` (`:69200-69407`, style 11 has NO arm — the hover override),
+  `item_drop_dressers` (`:49855-50037` = `Chest.dresserTypeToIcon`).
+8 witnesses WRITTEN NOT RUN (7 decode + 1 wiring), zero RNG. The dresser
+witness pins the lang lock + English init. The remaining ~80 hover arms
+stay the §4.3 ≤10/commit seed.
+**The remaining-sites handover**: research/244 §5.1 categorizes every open
+site (the ~80 hover arms + the §4.4 feeds) by owning lane — chests/storage,
+crafting stations, furniture/snap-range, torch/campfire, wiring, minecart,
+extractinator/golf/misc, TileEntity reads, signs, statues, NPC/proj/mount
+hover, the §4.4 latches, the text-hover clears — with the prerequisite
+each lane owns. This lane keeps the pure-decode + wiring contract (the
+B3/B4 shape: a `cursor_item_icon.rs` decoder wired at the tile-hover head,
+the `noThrow=2 + enabled BEFORE the ID` order + the per-update clear are
+the landed phase-1 surface); the owning lane supplies the prerequisite and
+the merge re-homes a decoder if it lands its own copy. The g53c cross-note
+(the flagging lane's handover) is research/244 §6.1.

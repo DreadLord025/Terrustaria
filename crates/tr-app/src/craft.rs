@@ -492,7 +492,10 @@ pub(crate) fn get_crafting_filter_for_tile(kind: u16) -> Option<CraftingFilter> 
 /// `Recipe.TileUsedInRecipes` + `UpdateInheritedTilesUsedInRecipes`
 /// (`Recipe.cs:577-600`, the fill at `:16732`): the recipes' own
 /// `requiredTile` set, inherited through the `TileCountsAs` chains.
-fn tile_used_in_recipes(kind: u16) -> bool {
+/// W4-g86: `pub(crate)` — the smart-interact target scan
+/// (`world_sim/smart_interact.rs`, `TileSmartInteractCandidateProvider.cs:375`)
+/// reads the same set.
+pub(crate) fn tile_used_in_recipes(kind: u16) -> bool {
     RECIPES.iter().any(|r| r.stations.contains(&kind))
         || TILE_COUNTS_AS
             .iter()

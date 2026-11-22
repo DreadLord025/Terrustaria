@@ -33,8 +33,10 @@
 //!   `AnimateTiles`' wrap-at-64/40 counters) are stood in by
 //!   `game_update_count % 64` / `% 40` — the animator is unported
 //!   (`drawdata.rs`'s `tile_frame ≡ 0` note), the cadence and wrap match,
-//! * the smart-cursor selection glow arms are ported but the hook passes
-//!   `selection_mode = 0`: `Main.InSmartCursorHighlightArea` is unported.
+//! * the smart-cursor selection glow arms read `selection_mode` off the
+//!   smart-interact highlight area (`Main.InSmartCursorHighlightArea`,
+//!   `TileDrawing.cs:8687-8695`/`:8721-8729`) — the W4-g86 follow-up wired
+//!   the seam the first pass left at 0 (`tile_outlines::selection_mode`).
 
 use glam::Vec2;
 use tr_core::lighting::LightStyle;
@@ -606,6 +608,9 @@ fn pylon_dust_box(
 /// (`VoidLensHelper.cs:40-75`, sites 48/63) on the bare `Main.rand`
 /// (`global_rand`). Both gate on `!game_paused` (the `_isActiveAndNotPaused`
 /// / `Main.gamePaused` reads). `dust`/`ctx` are the pool + spawn context.
+/// `area` is the smart-interact highlight state — the pylon/void-lens
+/// selection glow reads `selection_mode` off it (`TileDrawing.cs:8687-8695`
+/// / `:8721-8729`), the W4-g86 `selection_mode = 0` follow-up.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_pylons_trophies_void(
     r: &mut SpriteRenderer,
@@ -623,6 +628,7 @@ pub(crate) fn draw_pylons_trophies_void(
     global_rand: &mut tr_core::UnifiedRandom,
     dust: &mut tr_core::particles::DustPool,
     ctx: &tr_core::particles::SpawnCtx,
+    area: &crate::render::tile_outlines::HighlightArea<'_>,
 ) -> u32 {
     // The sheet frame sizes from the atlas (`Utils.Frame`'s integer divide).
     let sheet_px = |name: &str| -> Option<[f32; 2]> {
@@ -664,7 +670,8 @@ pub(crate) fn draw_pylons_trophies_void(
                 continue;
             };
             match special_kind(tile) {
-                // `selection_mode = 0`: the smart cursor is unported.
+                // `selection_mode` off the smart-interact highlight area
+                // (`TileDrawing.cs:8721-8729`, the W4-g86 follow-up).
                 Some(491) => {
                     // `TileDrawing.cs:8717-8720`: `Update` (the light half +
                     // `SpawnVoidLensDust`) runs only when `!Main.gamePaused`;
@@ -695,7 +702,7 @@ pub(crate) fn draw_pylons_trophies_void(
                         &sizes,
                         tx,
                         ty,
-                        0,
+                        crate::render::tile_outlines::selection_mode(area, tx, ty),
                     ));
                 }
                 Some(597) => {
@@ -723,7 +730,7 @@ pub(crate) fn draw_pylons_trophies_void(
                         &sizes,
                         tx,
                         ty,
-                        0,
+                        crate::render::tile_outlines::selection_mode(area, tx, ty),
                     ));
                 }
                 Some(617) => sprites.extend(trophy_sprites(

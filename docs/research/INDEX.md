@@ -144,6 +144,8 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 
 | 274 | VOID-FAMILY BIBLE + the g56 RETIRE verdicts (the `.trvault` two-seam retire gate vs f44 bank4/g88 v11, e19 disjoint + the 16-box repin receipt, g88 persist zero-touch, SetGlowForChest keep-one g56; renumbered 239→274 per registry-150 §6.3 `72226e500` — 239 belongs to d42's earlier push 12:55:30) | `274-void-family-bible.md` | ✅ |
 
+| 244 | The cursorItemIcon system census + task-seed + owner contract (W4-g86: 357 writes / 169 ID-writes in Player.cs; g81 owns the held-kind draw + cache + enabled latch; the altar hover + ItemCheck-head batches ported-unwired; the g34/g43 altar keep-one = disjoint layers) | `244-cursor-item-icon-seed.md` | seeded |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

@@ -3605,6 +3605,19 @@ pub(crate) mod front_flow_tests {
             pointer_event: None,
             mouse_pos: Vec2::ZERO,
             cursor: ui::cursor::CursorState::default(),
+            // S1-W4-g81 carry — the cursor-icon latch + cache triple start
+            // clear (`App::new`'s twin entries); `flow_app` is a full App
+            // literal, so the four fields need their rows here too.
+            cursor_item_icon_enabled: false,
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
+            // W4-g86 research/244 phase 1 — the four cursorItemIcon fields
+            // (`Player.cs:1852-1858`, the C# defaults 0/""/0/false).
+            cursor_item_icon_id: 0,
+            cursor_item_icon_text: String::new(),
+            cursor_item_icon_push: 0,
+            cursor_item_icon_reversed: false,
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
@@ -3627,6 +3640,7 @@ pub(crate) mod front_flow_tests {
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
+            smart_interact: Default::default(),
             ingame_options: crate::ui::ingame_options::IngameOptions::new(),
             world_path: PathBuf::new(),
             dev_break: None,
