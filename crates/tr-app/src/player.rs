@@ -1484,6 +1484,17 @@ pub struct Player {
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
     pub hurt_cd: f32,
+    /// `Player.hurtCooldowns` (`Player.cs:3160`: `new
+    /// int[ImmunityCooldownID.Count]`, Count = 6, `ImmunityCooldownID.cs:81`)
+    /// — the per-cooldown i-frame counters, indexed by the cooldown id
+    /// (0 TileContactDamage … 5 PaladinsShield; General = −1 rides the
+    /// `immune`/`immune_time` pair instead, `Player.cs:38208`). W4-d78: the
+    /// hostile EVP death-blasts (452/454) ride `BossNoCheese` (1), which
+    /// bypasses the spawn i-frames — the M4-HAZARD-1 single-lane collapse
+    /// keeps every OTHER lane on `hurt_cd` exactly as before; only the
+    /// BossNoCheese lane reads/writes this array. `UpdateImmunity`
+    /// (`Player.cs:18887-18893`) decays every positive entry once per tick.
+    pub hurt_cooldowns: [i32; 6],
     /// The dodge-family flags (`Player.blackBelt`/`mysticSashDodge`/
     /// `brainOfConfusionItem`/`shadowDodge`/`longInvince`, `Player.cs:1178-
     /// 1184,2402`): armed per tick in the fold from items 963/984
@@ -2914,6 +2925,7 @@ impl Player {
             mana_regen_item_in_use: false,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
+            hurt_cooldowns: [0; 6],
             black_belt: false,
             mystic_sash_dodge: false,
             brain_of_confusion: false,
@@ -4598,6 +4610,11 @@ impl Player {
         self.immune = true;
         self.immune_time = time;
         self.hurt_cd = time as f32 / 60.0;
+        // `Player.cs:38017-38020` — the per-cooldown array rides the same
+        // write (W4-d78: the array is live for the BossNoCheese lane).
+        for cd in &mut self.hurt_cooldowns {
+            *cd = time;
+        }
     }
 
     /// `Player.ShadowDodge` (`Player.cs:38023-38042`) minus the NetMessage:
@@ -4650,6 +4667,13 @@ impl Player {
                 self.immune_no_blink = false;
             }
         }
+        // `Player.cs:18887-18893` — every positive per-cooldown counter
+        // decays once per tick (W4-d78: the BossNoCheese lane's window).
+        for cd in &mut self.hurt_cooldowns {
+            if *cd > 0 {
+                *cd -= 1;
+            }
+        }
     }
 
     /// The shared hurt body. `knock_back` mirrors the original's
@@ -4694,20 +4718,69 @@ impl Player {
         source_projectile: Option<u16>,
         retaliate_lane: bool,
     ) -> bool {
+        // The collapsed General lane (the M4-HAZARD-1 admission): every
+        // pre-W4-d78 caller keeps its exact gate/iframe behaviour through
+        // the `None` cooldown counter.
+        self.hurt_inner_cooldown(
+            amount,
+            from_x,
+            knock_back,
+            rng,
+            dodgeable,
+            crit,
+            source_projectile,
+            retaliate_lane,
+            None,
+        )
+    }
+
+    /// W4-d78 — `Player.Hurt` with the C# `cooldownCounter`
+    /// (`Player.cs:38197`): `None` = the port's collapsed General lane
+    /// (`immune`/`hurt_cd`, the pre-existing behaviour); `Some(id)` = the
+    /// per-cooldown array lane (`hurtCooldowns[id]`, `Player.cs:38208`'s
+    /// `flag = hurtCooldowns[cooldownCounter] <= 0` — the spawn i-frames do
+    /// NOT gate it). The BossNoCheese (1) hostile EVP death-blasts are the
+    /// first live consumer; `Sets.ImmuneTimerOnlyLimitsEffects` holds only
+    /// PaladinsShield (5, `ImmunityCooldownID.cs:52`), which no ported lane
+    /// passes, so the `!flag` early-return (`:38210-38213`) stands for
+    /// every reachable counter.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn hurt_inner_cooldown(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        knock_back: bool,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        crit: bool,
+        source_projectile: Option<u16>,
+        retaliate_lane: bool,
+        cooldown_counter: Option<usize>,
+    ) -> bool {
         // `Player.Hurt`'s creative-godmode arm (`Player.cs:38203-38206`): the
         // journey godmode power swallows the hit outright — before the
         // iframes, the defense reduction and the knockback.
         if self.creative_god_mode {
             return false;
         }
-        // `Player.Hurt`'s General-cooldown gate (`Player.cs:38210-38216`):
-        // the port's single damage lane rides `ImmunityCooldownID.General`,
-        // whose flag is `!immune` — the spawn i-frames swallow the hit.
-        if self.immune {
-            return false;
-        }
-        if self.hurt_cd > 0.0 || self.hp <= 0 {
-            return false;
+        // `Player.Hurt`'s cooldown gate (`Player.cs:38208-38216`): General
+        // (the collapsed lane) rides `!immune` + `hurt_cd`; a per-cooldown
+        // counter rides ONLY its own array entry — the spawn i-frames and
+        // the General window do not gate it (the BossNoCheese point).
+        match cooldown_counter {
+            None => {
+                if self.immune {
+                    return false;
+                }
+                if self.hurt_cd > 0.0 || self.hp <= 0 {
+                    return false;
+                }
+            }
+            Some(id) => {
+                if self.hurt_cooldowns[id] > 0 || self.hp <= 0 {
+                    return false;
+                }
+            }
         }
         // The dodge roll block (`Player.cs:38214-38241`), slotted after the
         // cooldown early-return (the port's `hurt_cd`-gate IS the C# `flag`
@@ -4787,9 +4860,24 @@ impl Player {
         // unreachable in single-player. `hurt_cd` keeps carrying the window
         // in seconds for the single collapsed damage lane.
         let iframes = tr_core::damage::iframes_for(amount, false, self.long_invince);
-        self.immune = true;
-        self.immune_time = iframes;
-        self.hurt_cd = iframes as f32 / 60.0;
+        // `Player.cs:38386-38394`: General arms `immune`/`immuneTime`; a
+        // per-cooldown counter arms ONLY its own array entry, and only when
+        // it reads exactly 0 (`hurtCooldowns[cooldownCounter] == 0`, the
+        // MP `flag2` half is unreachable single-player). The BossNoCheese
+        // blast leaves the General window untouched — a second blast inside
+        // the 40 ticks still lands once the array entry drains.
+        match cooldown_counter {
+            None => {
+                self.immune = true;
+                self.immune_time = iframes;
+                self.hurt_cd = iframes as f32 / 60.0;
+            }
+            Some(id) => {
+                if self.hurt_cooldowns[id] == 0 {
+                    self.hurt_cooldowns[id] = iframes;
+                }
+            }
+        }
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
         // `Player.cs:38396-38400`: the dismount-on-hit — the damage source's

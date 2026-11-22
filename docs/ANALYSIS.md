@@ -40687,3 +40687,296 @@ The 5 new witnesses (`s1_e_21h_d77_the_betsy_arrow_kill_bursts_at_forty`,
 `s1_e_21h_d77_the_jellyfish_cry_rides_the_case4_int_facade`) are WRITTEN,
 NOT RUN — **no compiler invoked**. Commit `0573b70f` on
 `task/W4-d77-proj-sounds-3` (pushed, unmerged).
+## The projectile Kill death-effect wave, part 1 (W4-d78, 2026-11-21, code-only mode)
+
+**Scope recovery.** The branch `task/W4-d78-ui-sounds-menus` carried no claim
+doc and no ROADMAP row (0 commits ahead of `a725acb0`), and the UI/menu
+`PlaySound` sites are consumed inline by the ui-element/screen lanes
+(d81-d88, g53-g58, f22/f23 port their own MenuTick/MenuOpen/MenuClose cues),
+so a separate ui-sounds lane would conflict. Per the Lead's fallback the lane
+takes the **next unclaimed `Projectile.cs` `Kill()`/death-effect sites**, with
+the `PlaySound` plays inside `Kill()` explicitly OUT (the d75-d77 line-order
+split owns them: d77 = sites 241-437, `:70978`-the `Kill()` tail).
+
+**In-flight probe (the claim census).** The `Kill()` tail's effect layers are
+already claimed by sibling lanes: the death DUST by `g65-proj-death-dust`
+(+ the d53/e3/f5 AI-side dust lanes), the death GORE by `g16-gore-projectile-sites`
+(+ d55/e5), the death SOUND by d75/d76/d77 (+ f1), the death LIGHT by c19/e6/f7.
+`e3` is actively writing `projectile_dust.rs` (AI-side sites 41-80, NOT Kill).
+So this lane takes the **non-sound, non-dust, non-gore, non-light GAMEPLAY
+death effects** вЂ” the resize + `Damage()` death-blast boxes, the child
+`NewProjectile` spawns, the tile/item death effects вЂ” that are unclaimed and
+unlanded.
+
+**This batch ports the friendly magic resize-blast family** (6 kinds, all
+rowed on main, all verified MISSING вЂ” no existing Kill hook touched them):
+
+| kind | C# arm | blast box | restore |
+| --- | --- | --- | --- |
+| 79 RainbowRodBullet | `:71257-71265` | `Resize(128,128)` | yes (`Resize(old,old)`) |
+| 16 MagicMissile | `:71329-71337` | `Resize(128,128)` | yes |
+| 34 Flamelash | `:71409-71417` | `Resize(96,96)` | yes |
+| 634/635 NebulaBlaze | `:72015-72021` | manual recentre 50Г—50 | NO (corpse keeps it) |
+| 661 OnyxBlaster black bolt | `:72226-72233` | manual recentre 160Г—160 | NO |
+
+`projectile.rs::magic_death_blast` ports the shared shape verbatim:
+`Resize(blast,blast)` keeps the centre (`Entity.cs` Center get/set:
+`pos = oldCentre в€’ new/2`), `maxPenetrate = penetrate = -1`, then `Damage()`
+through the resized box via the landed `damage_pve_boxed` seam (the rectangle
+walk, DamageVar + defence/crit + the per-type immunity arms вЂ” the Magic
+Missile's 8-tick window `:14032-14035` rides it). The 79/16/34 arms run the
+trailing `Resize(old,old)` (the C# saved the pre-blast BOX, so the restore
+keeps the same centre); the 634/635/661 arms have NO trailing restore. The
+call sits in the pool's once-per-death `!active` hook ahead of `gem_bolt_aoe`
+(the C# body order: `:71257`/`:71995`/`:72226` all precede `:75425`), kind- and
+owner-gated (`Damage()`'s PVE half runs only for `owner == Main.myPlayer`,
+`:12504`).
+
+**Deliberate skips (the sibling lanes', cited at the arm):** the dust/gore/
+sound bodies interleaved with these arms вЂ” the 79/16/34 oldPos dust trails
+(`:71266-71487`), the blaze `Utils.SelectRandom` dust-type picks
+(`:71997`/`:72009`/`:72024-72048`), the 661 dust rings (`:72234-72276`) and
+every `PlaySound` вЂ” are SKIPPED with their draws, the `gem_bolt_aoe` /
+`special_bullet_kill` convention (the dust lanes owe the draw re-adds at their
+bodies). No gameplay draw is added, removed or reordered: the blast's only
+draws are the `damage_pve_boxed` per-hit crit/DamageVar rolls, which fire only
+on a landed hit, in the C# order, on the pass's `UpdateProjectiles` stream.
+
+**Deferred (the next batches / other lanes):** the hostile resize-blasts
+452/454/448 (`:72987-73045`/`:73603-73631`) need `Damage()`'s EVP/player half
+(a different seam than the friendly PVE box); the child-spawn death arms
+(617 NebulaArcanum's 620-shard fan `:72278-72373`, 246 Stynger's 249 shrapnel
+`:76944-76986`, 117 BoneArrow's 1124 pair `:74734-74751`) need their unrowed
+child kinds' `proj_data` rows first; the tile/item death effects
+(`Kill_ExplodeTiles`' snow placement, the bobber/pot drops) are the g24/g25
+sound lanes' neighbours and stay out.
+
+**Verification.** Code-only: every arm re-read against its C# block (the
+Resize centre-keep, the penetrate open, the restore/no-restore split, the
+owner gate), the seam checked against `gem_bolt_aoe`/`damage_pve_boxed`, the
+six rows confirmed on main. The 5 `w4_d78_*` witness tests (the resize+restore
+reach, the no-restore corpse box, the foreign-owner zero-draw refusal, the
+unrelated-kind no-op, the Magic Missile 8-tick immunity) are WRITTEN, NOT RUN
+вЂ” **no cargo/rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, part 2a (W4-d78, 2026-11-21, code-only mode)
+
+**The hostile EVP resize-blasts** (3 kinds, all rowed on main, all verified
+MISSING - no existing Kill hook touched them):
+
+| kind | C# arm | blast box | Damage box | restore |
+| --- | --- | --- | --- | --- |
+| 452 PhantasmalEye | `:72987-73013` | Resize(144,144) | Resize(30,30) BEFORE Damage | corpse keeps 30 |
+| 454 PhantasmalSphere | `:73014-73045` | manual recentre 208x208 | 208 | NO |
+| 448 SaucerMissile | `:73603-73631` | manual recentre 112x112 | 112 | NO |
+
+`projectile.rs::hostile_death_blast` ports the resize shapes verbatim (the
+452's double-resize quirk kept: the 144 ring is dust-only - the g65 lane's -
+and `Damage()` walks the SMALL 30-box), then `Damage()`'s halves in C#
+order: the PVE box walk (owner-gated `:12505`, unreachable for the port's
+owner-255 hostile seam but kept for the shape) and the NEW
+`damage_evp_boxed` seam - `Damage_EVP` (`:14773-14900`) through the
+resized box: the hostile/damage/SkipDamage_EVP gate, the cooldown-counter
+pick (452/454 BossNoCheese, 448 General), the `!dead && (!immune || num !=
+General)` gate, `Colliding`'s per-kind state gates (the 452's `ai[0] < 2`
+warm-up `:15447`, the 454's `0 <= ai[0] < 60 && ai[1] != -1` spawn
+protection `:15408`), the rectangle overlap, `DamageVar(damage,
+-owner.luck)` (owner 255 reads 0), the hostileDamageScaling difficulty
+sample (the identity line on [0.5,3], `GameDifficultyData.cs:85` - the
+port's expert mirror is 2, classic 1; journey/master/legendary unported),
+the EVP x2, then `Hurt` through the cooldown lane. The call sits in the
+once-per-death hook right after `magic_death_blast` (C# body order:
+:72987/:73014/:73603 all precede the gem arm :75425).
+
+**The player cooldown lane** (`player.rs`): `hurtCooldowns[6]`
+(`Player.cs:3160`, Count 6 `ImmunityCooldownID.cs:81`) joins the Player;
+`hurt_inner` keeps its 8-arg signature as a General-lane wrapper over the
+new `hurt_inner_cooldown` (9th arg `Option<usize>`: None = the collapsed
+`immune`/`hurt_cd` lane - every pre-existing caller byte-identical;
+Some(1) = BossNoCheese, gated ONLY by its own array entry `:38208`, armed
+only when it reads 0 `:38391-38393`). `update_immunity` decays every
+positive entry (`:18887-18893`); `set_immune_time_for_all_types` writes
+the array too (`:38017-38020`). The M4-HAZARD-1 single-lane collapse stays
+for every OTHER lane - only BossNoCheese reads the array.
+
+**Deliberate skips (cited at the seam):** the dust/gore bodies (the g65/g16
+lanes', skipped WITH their draws - the `special_arrows` convention), every
+`PlaySound` (d75-d77), `CanParryAgainst` (no parry seam -
+`shieldParryTimeLeft` unported, reads false), the banner effect /
+resistCold / deadMansSweater / reflected multipliers (no port fields; the
+scaling sample stands for `!reflected`), `StatusPlayer` (NO arm names
+452/454/448 in the `:12108-12400` census - a no-op), the trap tail and the
+435/436/681/437/682 penetrate tail (other kinds). No gameplay draw added,
+removed or reordered: the blast's only draws are the landed hit's DamageVar
++ the hurt's dodge rolls, in C# order, on the pass's UpdateProjectiles
+stream; every refusal draws NOTHING.
+
+**Verification.** Code-only: every arm re-read against its C# block (the
+double-resize order, the cooldown sets, the Colliding gates, the DamageVar
+luck sign, the x2-after-scaling order), the hurt seam checked against every
+`hurt_inner` caller (all keep the None lane). The 6 `w4_d78_b2_*` witness
+tests are WRITTEN, NOT RUN - **no cargo/rustc/rustfmt/tests/graphify
+invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, part 2b (W4-d78, 2026-11-21, code-only mode)
+
+**The child-kind rows** (4 kinds, verified MISSING on main — `proj_data`
+declined every one, so a future Kill-arm spawn would silently vanish):
+
+| kind | C# SetDefaults | box | style | pen | life | extra | alpha | scale | class | frames |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 246 Stynger | `:3289-3298` | 10x10 | 1 | 1 | 3600 | 1 | 255 | 1 | ranged | 1 |
+| 249 StyngerShrapnel | `:3314-3321` | 12x12 | 2 | 1 | 3600 | 0 | 0 | 1 | ranged | 5 |
+| 620 NebulaArcanumExplosionShotShard | `:6681-6690` | 8x8 | 29 | 1 | 3600 | 0 | 255 | 1 | magic | 1 |
+| 1124 BoneShard | `:10514-10527` | 6x6 | 1 | 1 | 600 | 1 | 0 | 0.95 | ranged | 2 |
+
+Every row is the `SetDefaults` body verbatim: the stock penetrate 1 /
+timeLeft 3600 / tileCollide true come from the `:774-775`/`:787` resets
+(the arms write no override); the 1124's `scale = 1.2f` (`:10521`) then
+`scale = 0.95f` (`:10525`) double-set keeps the LAST write. The class
+flags join the ranged/magic censuses (`:3295`/`:3320`/`:10523`/`:6687`);
+`proj_frames` gains 249=5 (`Main.cs:8610`) and 1124=2 (`:8562`), 246/620
+keep the stock 1. The 620's `ai[0]` payload is the 617 Kill arm's
+dust-type pick (86/90) — a dust id, NOT gem-staff feature bits; the
+AI_029 kind-gate (part 2c) reads it as the dust type only.
+
+**Verification.** Code-only: each row re-read against its C# block, the
+class censuses extended, the frame counts against `Main.cs`. The
+`w4_d78_b2_the_child_spawn_family_rows_match_set_defaults` witness plus
+the census-test extensions are WRITTEN, NOT RUN — **no cargo/rustc/
+rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, part 2c (W4-d78, 2026-11-21, code-only mode)
+
+**The child-spawn Kill arms** (`projectile.rs::child_spawn_kill`, wired in
+the once-per-death hook after `hostile_death_blast`):
+
+| parent | C# arm | resize | penetration | children | damage |
+| --- | --- | --- | --- | --- | --- |
+| 617 NebulaArcanum | `:72278-72373` | 176×176 | max=pen=−1 | 620 ×(Next(5,9)+Next(5,9)) | (int)(dmg×0.65 double), kb×0.8 |
+| 246 Stynger | `:76944-76986` | 150×150 | pen=−1, max=0 | 249 ×Next(2,6) | full dmg/kb, child max=0 |
+| 249 StyngerShrapnel | `:76987-77015` | 100×100 | pen=−1 (NO max write) | none (own blast) | — |
+| 117 BoneArrow | `:74734-74751` | none | none | 1124 ×2 | (int)(dmg×0.25f), kb 0 |
+
+The 617 arm also sweeps every active 618 subshot whose `ai[1]` matches the
+dying bolt's key (`:72329-72335`, the `f32::from_bits(key)` bit-match — the
+618 spawn's `ai1: this.key` `:34737`); a 618's Kill is dust-only (`:72394`,
+the g65 lane's), so `pool.kill` is the exact deactivate. The 617 fans draw
+per shard: `RandomVector2(-30,30)` = 2 NextDouble, the direction pair
+`Next(-100,101)` ×2 with the while-both-zero redraw, Normalize, the Y-flip
+(fan 1 at 0.2 / fan 2 at 0.4), then the speed `Next(70,101)` / `Next(40,81)`
+×0.1; the dust-type pick `SelectRandom(86,90)` = `Next(2)` (`Utils.cs:2459`)
+rides fan 1, the opposite type fan 2. The 246's per-shrapnel jitter keeps
+the ±0.01 float round-trip quirk verbatim and the `8f/(float)Math.Sqrt`
+speed scale (float products, double sqrt, float quotient); the spawn sits
+at `Centre − oldVelocity`. The 117's per-shard velocity is
+`SafeNormalize(UnitX).RotatedBy(π).RotatedByRandom(0.5235987901687622)` ×
+`(1 + NextFloat×2)` — the π literal is the float-rounded
+3.1415927410125732 (NOT the double π), the RotatedByRandom is TWO
+NextDouble draws (left operand first), and the aiStyle-1 spawn clamp
+(`:10895-10902`, the ×0.97 decay) applies to the 1124 child. Every child
+spawn recentres by its row's box (the C# `NewProjectile` takes the CENTRE,
+`:10876`); the corpse-flag lift (`special_arrow_kill`'s bee precedent)
+keeps the dying slot out of `GetNextSlot`.
+
+**The child AI arms**: the 620 rides a NEW AI_029 kind-gate
+(`ai_nebula_shard`, `:37672-37704` — ai[1] ages, >40 kills with NO return,
+vy+=0.2 cap 18, vx×0.98; its ai[0] is the dust-type pick 86/90, NOT gem
+feature bits, so the gem arm would misread it) + the `HandleMovement`
+522/620 full-axis bounce (`:18796-18806`, no penetrate spend). The 246
+rides `ai_stynger` (`AI_001` `:57129-57141` — alpha−20 floor 0, ai[0]≥60
+pins at 60 + vy+=0.15). The 1124 rides `ai_bone_shard` (`:54016-54020` the
+first-tick `frame = Next(2)` latch — a behaviour draw on the pass stream,
+the 909 precedent — + the generic 15-tick gravity + `:57582-57585` the
+spin tail `rotation += (|vx|+|vy|)×0.05` REPLACING the default rotation).
+The 249's aiStyle-2 arm (`:23495-23502`, the always-on +0.25 fall) was
+already ported. The 1124's `Colliding` gate (`:15413-15418`, ai[0]<15
+refuses) joins the plain PVE walk; the 246/249's 7-tick per-type immunity
+(`:14024-14031`) joins BOTH walks' ladders.
+
+**Deliberate skips (cited at the seams):** the dust/gore bodies + the
+Item14/sound-0 cues (the g65/g16/d77 lanes', skipped WITH their draws —
+the 617's 4+30×2+10+10 dust loops, the 2-gore `Next(61,64)` + kicks, the
+246/249's gore `Next(61,64)` + `Next(-1,2)` ×2); the 620's dust-scale fade
+factor `(60−ai[1])/60` (dust-only); the bounce-block tile-cut prologue's
+`Next(3)` (`:17948`, no tile-cut layer — the `dd2_sentry_step` precedent).
+No gameplay draw added/removed/reordered: the bursts' draws are the
+landed-blast DamageVar + the spawn rolls, in C# order, on the pass's
+UpdateProjectiles stream; every refusal draws NOTHING.
+
+**Verification.** Code-only: every arm re-read against its C# block (the
+resize/penetration pairs, the draw orders, the float/double precision, the
+π literal, the key bit-match, the Colliding/immunity gates), the dispatch
+gates checked kind-disjoint from A/B/C/riders/frost/moonlord/special-arrows.
+The 10 `w4_d78_b2c_*` witness tests are WRITTEN, NOT RUN — **no cargo/
+rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+## The projectile Kill death-effect wave, FINAL adjudication (W4-d78, 2026-11-21, code-only mode)
+
+**The merger-facing dedupe publish** (`docs/research/372-d78-final-kill-dedupe.md`
+— the full tables, every claim re-probed at the LATEST pushed tips). Four
+adjudications close the lane:
+
+1. **g1-dup (452/454/448): d78 KEEPS.** g1's port is LOCAL-ONLY in
+   TR-W4-g1 (untracked `projectile_kill_hooks_a.rs` + uncommitted pool
+   diffs; the pushed tip `5bd68ce2` is the 26d census doc alone). Its EVP
+   hit rides `hurt_with_source` with RAW damage — no DamageVar, no
+   hostileDamageScaling, no ×2, no BossNoCheese cooldown (its own
+   "standing deviation" note) — and its General-lane immune gate would
+   refuse the 452/454 boss blasts through spawn i-frames, which the C#
+   `:14799` lands. d78's `damage_evp_boxed` ports `:14773-14900` verbatim.
+   g1 drops its three hostile hooks + censuses (g65's LOCAL bodies carry
+   the same draws), keeps its UNIQUE 459/521/522/80.
+2. **g3 keep-g3 (79/16/34/634/635/661): CONFIRMED — d78's batch-1
+   `magic_death_blast` DROPS at merge.** g3's `aimed_spell_kill` +
+   `nebula_spirit_onyx_kill` are strict supersets (same resize/pen/Damage/
+   restore state + the Item10/14 cues + the trail-death draw censuses);
+   the 659 arm is g3-unique. Exact drop-hunks pinned in research/372 §2
+   (fn :21513-21586, call :20102-20114 keeping the `luck` let, tests
+   :26004-26201, anchors :899). Two merger notes published: the g3 blaze
+   cue plays post-recentre where the C# `:72015` plays PRE-snap — keep-one
+   the cues onto d77's `kill_tail_cue` (all six positions correct there);
+   the g3 census calls drop per-kind as g65's dust bodies push.
+3. **The 620-fans d77 co-claim: d77 WINS the 617 whole arm.** d77's
+   Kill-host wave (`0573b70f`, pushed 12:01 — AFTER d78 2c) ports the SAME
+   C# site (`:72278-72373`) as d78's `child_spawn_kill` 617 arm, plus the
+   Item14 cue, the dust/gore census, the swept-618 INLINE Kill (the C#
+   `:72333` runs immediately — d78's `pool.kill` deferred it) and the
+   620 row/AI (byte-identical row, pinned by the new
+   `w4_d78_final_the_shard_row_matches_the_d77_co_claim` witness). d78
+   drops its 617 arm (:21832-21941), its 620 row/const/AI/dispatch and the
+   three 617/620 witnesses; `child_spawn_kill` KEEPS the 246/249/117 arms
+   — d78-UNIQUE, no other tip ports them. The owner-gate deviation is
+   recorded: d77 (and the C#) gate only the child block at `:72327`, d78
+   had folded the gate ahead of the resize — d77's C#-faithful shape
+   survives.
+4. **The batch-1 census question: keep-g3 does NOT drop 2b/2c.** The g3
+   verdict covers only the batch-1 kinds; 2b's 246/249/1124 rows + 2c's
+   246/249/117 arms + the child AI (`ai_stynger`/`ai_bone_shard`) + the
+   1124 Colliding gate + the 246/249 7-tick immunity ladder arms are
+   d78-UNIQUE and KEEP (d77's boxed ladder has no 246/249 arm — verified
+   at its tip). Only the 620 row/AI overlaps (adjudication 3). The full
+   per-hunk drop-vs-keep table is research/372 §4.
+
+**Verification.** Code-only: the g1/g65 worktrees probed READ-ONLY
+(`git status`/`git diff`/direct file reads — no writes, no junction
+recursion); every branch tip re-fetched at adjudication time (the d77
+12:01 push caught by the final re-probe); the C# arms re-read whole in
+≤100-line windows. 1 new witness
+(`w4_d78_final_the_shard_row_matches_the_d77_co_claim`) WRITTEN, NOT RUN —
+**no cargo/rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
+
+**SEAL (the resume pass).** The FINAL commit `fd59c51a0` landed AND pushed
+before the prior session died (ls-remote confirmed). research/372 (renumbered from 26f per registry §10.2) is SEALED
+with §6 addenda: (6a) the g1-drop-hunks refreshed against g1's LIVE 602-line
+local hooks file (was 535 at adjudication — R3-g1-resume grew the witness
+suite; verdict unchanged, exact drop/keep pins republished); (6b) the
+d78-side MUTUAL RECEIPT of the d77-617-drop (d77 `nebula_arcanum_kill`
+:20577-20684 superset at tip `5f10560b`; d78's 617 arm :21832-21941 + 620
+row/const/AI/dispatch + 3 witnesses drop at merge — d77d mirrors);
+(6c) the g3-cue-position-fix hunks (drop g3's cue pushes :21823-21832 /
+:21884-21890 — the 634/635 push reads post-recentre vs the C# :72015
+PRE-snap, re-verified by direct read; keep-d77 `kill_tail_cue` :20250 owns
+every cue); (6d) the blasts-family bible — the sealed per-family
+state/cue/census/body ownership table. d78's branch stays frozen; every
+DROP executes at merge or on the sibling's own branch.

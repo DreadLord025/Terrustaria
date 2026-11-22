@@ -7577,21 +7577,28 @@ impl Projectile {
         self.kill_step(world);
     }
 
-    /// S1-E-21h d77 — `AI_029_GemStaffs`'s 620 shard arm
+    /// S1-E-21h d77 + W4-d78 batch 2 (the merge compose — identical bodies,
+    /// the union doc) — `AI_029_GemStaffs`'s 620 shard arm
     /// (`Projectile.cs:37672-37704`): the Nebula Arcanum's death-scatter
-    /// shard. The `ai[1]` age counter kills past 40 (the C# `Kill()` has
-    /// NO early return — the velocity writes below land on the dead slot
-    /// too, the `ai_falling_star` daylight-kill precedent), then the
-    /// 0.2 gravity with the 18 cap and the ×0.98 X drag. The dust loops
+    /// shard. `ai[0]` is the dust-type pick (86/90, the 617 Kill arm's
+    /// `SelectRandom`) — a DUST id, not gem-staff feature bits. The `ai[1]`
+    /// age counter kills past 40 (the C# `Kill()` has NO early return —
+    /// the velocity writes below land on the dead slot too, the
+    /// `ai_falling_star` daylight-kill precedent), then the 0.2 gravity
+    /// with the 18 cap and the ×0.98 X drag. The dust loops
     /// (`:37687-37703`, the `(int)ai[0]` type + the `(60-ai[1])/60` fade)
     /// are the plain `NewDust` overload — ZERO explicit draws, the bodies
-    /// skip with the dust pool. The movement is `HandleMovement`'s
-    /// 522/620 arm (`:18796-18806`): a blocked axis reflects at −1 (the
-    /// `ai_nebula_arcanum` probe shape, no restitution), then the
-    /// integrate. The shard's `Kill()` dust census rides the death hook
+    /// skip with the dust pool (the g65 lane's). The movement is
+    /// `HandleMovement`'s 522/620 arm (`:18796-18806`): a blocked axis
+    /// reflects at −1 (full speed, no penetrate spend — the shard keeps
+    /// its 1), then `UpdatePosition` integrates (`:19858`). The tile-cut
+    /// prologue's `Next(3)` draw (`:17948`) is SKIPPED — the pool has no
+    /// tile-cut layer (the `dd2_sentry_step` precedent, ANALYSIS). The
+    /// shard's `Kill()` dust census rides the death hook
     /// (`betsy_arcanum_kill`, `:72394-72417`).
     fn ai_nebula_shard(&mut self, world: &World) {
-        // `:37675-37680` — the counter + the 40-tick kill.
+        // `:37674-37680` — the dust-type read (skipped), the counter + the
+        // 40-tick kill (no return).
         self.ai[1] += 1.0;
         if self.ai[1] > 40.0 {
             self.kill();
@@ -7602,20 +7609,22 @@ impl Projectile {
             self.vel.y = 18.0;
         }
         self.vel.x *= 0.98;
-        // `HandleMovement`'s 620 arm (`:18796-18806`): the blocked-axis
-        // reflection, then the post-reflection integrate (`:19858`).
-        if self.tile_collide {
-            let last = self.vel;
-            let hit_x =
-                crate::player::collides_rect(world, self.pos.x + self.vel.x, self.pos.y, self.w, self.h);
-            let hit_y =
-                crate::player::collides_rect(world, self.pos.x, self.pos.y + self.vel.y, self.w, self.h);
-            if hit_x {
-                self.vel.x = -last.x;
-            }
-            if hit_y {
-                self.vel.y = -last.y;
-            }
+        // `HandleMovement`'s 522/620 arm (`:18796-18806`): the blocked
+        // axis reverses at full speed. The port's per-axis destination-box
+        // probe is the `TileCollision` stand-in (the `gem_bolt_move`
+        // convention); the free move integrates (`UpdatePosition`).
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let last = self.vel;
+        let hit_x = crate::player::collides_rect(world, self.pos.x + last.x, self.pos.y, self.w, self.h);
+        let hit_y = crate::player::collides_rect(world, self.pos.x, self.pos.y + last.y, self.w, self.h);
+        if hit_x {
+            self.vel.x = -last.x;
+        }
+        if hit_y {
+            self.vel.y = -last.y;
         }
         self.pos += self.vel;
     }
@@ -9355,6 +9364,68 @@ impl Projectile {
         self.frame = self.ai[1] as i32;
         // `:57748-57751` + `:57764-57767` — the rotation tail and the clamp.
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.kill_step(world);
+    }
+
+    /// W4-d78 batch 2 — `AI_001`'s Stynger bolt arm (`Projectile.cs:57129-
+    /// 57141`): the 246 fades in (`alpha -= 20`, floor 0) and from
+    /// `ai[0] >= 60` pins the counter at 60 and falls at 0.15/tick. The
+    /// counter runs (`flag3` true — the 246 is absent from the `:55947`
+    /// skip list), the rotation tail (`:57748-57751`) and the +16 clamp
+    /// (`:57764-57767`) follow, then the tile-kill movement. The 246's
+    /// `AI_001` block has NO `Main.rand` draw — the arm is RNG-free.
+    fn ai_stynger(&mut self, world: &World) {
+        // `:56038-56041` — `flag3` true: the counter runs.
+        self.ai[0] += 1.0;
+        // `:57131-57135` — the fade-in.
+        self.alpha = (self.alpha - 20).max(0);
+        // `:57136-57140` — the 60-tick gravity arm (mutually exclusive
+        // with the generic `ai[0] >= 15f` tail, `:57568`).
+        if self.ai[0] >= 60.0 {
+            self.ai[0] = 60.0;
+            self.vel.y += 0.15;
+        }
+        // `:57748-57751` + `:57764-57767` — the rotation tail and the clamp.
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.vel.y > 16.0 {
+            self.vel.y = 16.0;
+        }
+        self.kill_step(world);
+    }
+
+    /// W4-d78 batch 2 — `AI_001`'s Bone Shard arm (`Projectile.cs:54016-
+    /// 54020` the first-tick frame roll, `:57568-57579` the generic gravity,
+    /// `:57582-57585` the spin tail): the 1124 latches `localAI[0] = 1` and
+    /// rolls `frame = Next(2)` once (the 2-frame sheet, `Main.cs:8562`),
+    /// then rides the GENERIC arrow flight (the counter, the 15-tick
+    /// gravity) with the spin REPLACING the default rotation tail
+    /// (`rotation += (|vx|+|vy|) * 0.05f`). `rng` is the update pass's
+    /// stream — the frame roll is a behaviour draw (it pins the sheet row),
+    /// so it rides here in the C#'s order (the 909 frame-roll precedent).
+    fn ai_bone_shard(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:54016-54020` — the first-tick frame roll (the `localAI[0]`
+        // latch gates it to one play).
+        if self.local_ai[0] == 0.0 {
+            self.local_ai[0] = 1.0;
+            self.frame = rng.next_range(0, 2);
+        }
+        // `:56038-56041` — `flag3` true: the counter runs.
+        self.ai[0] += 1.0;
+        // `:57568-57579` — the generic gravity arm (the 1124 has no
+        // per-kind branch in the `:56888-57580` chain). The C# pins
+        // `ai[0]` at 15; the port's generic flight keeps the counter
+        // advancing (the documented generic-path convention, the
+        // `ai_style1_flight` stand-in).
+        if self.ai[0] >= 15.0 {
+            self.vel.y += 0.1;
+        }
+        // `:57582-57585` — the spin tail (the 1124 is in the 921/926/937/
+        // 1124 arm), REPLACING the default rotation.
+        self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.05;
+        // `:57764-57767` — the +16 clamp.
         if self.vel.y > 16.0 {
             self.vel.y = 16.0;
         }
@@ -17580,6 +17651,20 @@ impl ProjectilePool {
                                 self.slots[i].ai_arrow(world);
                                 self.slots[i].barrel_bounce(world, last, life);
                             }
+                            // W4-d78 batch 2 — the Kill child-spawn family's
+                            // aiStyle-1 arms: the Stynger bolt 246 (`AI_001`
+                            // `:57129-57141`, the fade + the 60-tick gravity)
+                            // and the Bone Shard 1124 (`:54016-54020` the
+                            // first-tick frame roll + `:57582-57585` the spin
+                            // tail). Kind-disjoint from A/B/C, the riders,
+                            // the frost/empress sets, the moon-lord shots and
+                            // the special arrows (the 117 parent rides
+                            // `special_arrows`, the 1124 child does NOT), so
+                            // the gate order never double-applies. The 1124's
+                            // frame roll is a behaviour draw — it rides the
+                            // pass stream here (the 909 precedent).
+                            STYNGER => self.slots[i].ai_stynger(world),
+                            BONE_SHARD => self.slots[i].ai_bone_shard(world, rng),
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => {
@@ -18438,10 +18523,15 @@ impl ProjectilePool {
                             // is the `else` branch, `:37823-37826`).
                             if self.slots[i].kind == CRYSTAL_PULSE {
                                 self.slots[i].ai_crystal_pulse(world);
-                            // S1-E-21h d77 — the 620 Nebula shard's own arm
-                            // (`:37672-37704`): the 40-tick counter, the
-                            // gravity/drag, the blocked-axis reflection.
-                            } else if self.slots[i].kind == NEBULA_ARCANUM_SHARD {
+                            // S1-E-21h d77 + W4-d78 batch 2 (the merge dedupe
+                            // — the two lanes' 620 constants alias one kind)
+                            // — the Arcanum's death shard has its OWN AI_029
+                            // arm (`:37672-37704`): the 40-tick kill + the
+                            // fall/drag + the full blocked-axis reflection.
+                            // Its `ai[0]` is a dust-type pick (86/90), NOT
+                            // gem-staff feature bits, so the gem arm would
+                            // misread it — the kind-gate routes it here.
+                            } else if self.slots[i].kind == NEBULA_ARCANUM_EXPLOSION_SHOT_SHARD {
                                 self.slots[i].ai_nebula_shard(world);
                             } else {
                                 self.slots[i].ai_gem_staff(world, npcs, owner, player.as_deref())
@@ -20689,17 +20779,36 @@ impl ProjectilePool {
                 // dropped — main's i16 `dart_electro_firework_kill` below
                 // owns the 442 arm (:73528-73552), keeping both would
                 // double-spawn the sphere.)
+                // The merge compose (d77 Kill-host wave × d78 batch 2):
+                // the C# body order is 710 < 79/16/34 < 634/635 < 617 <
+                // 661 < 452/454 < 448 < 117 < gem < 246/249; the kinds are
+                // DISJOINT across the hooks, so the grouping below is
+                // unobservable. The 617's full burst (cue + census +
+                // sweep + fans) rides d77's `nebula_arcanum_kill` — d78's
+                // `child_spawn_kill` 617 arm is the SAME writes minus the
+                // cue/census (keep-one: the fuller d77 arm wins; the 246/
+                // 249/117 arms stay d78's). The luck read is hoisted above
+                // the Kill-host arms — same value.
+                let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
                 // S1-E-21h d77 — `Kill()`'s 710 Betsy Arrow burst
                 // (`Projectile.cs:71652-71679`): the ai[1] latch, the
                 // 40-box centre-snap, `Damage()` through it, the Item14
                 // cue at the post-resize position and the dust census.
-                // C# body order: ahead of the 634/635/661/617 blasts
-                // (d78's `magic_death_blast` / g3's `nebula_spirit_onyx_kill`
-                // land their hooks here at the merge) and the gem arm.
-                let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
                 if !died_out_of_world {
                     self.betsy_arrow_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 }
+                // W4-d78 — `Kill()`'s magic resize-blast family (the C#
+                // body order: 79/16/34 `:71257-71488` and the 634/635/661
+                // blasts `:71995-72233` all precede the gem arm `:75425`):
+                // the guided spells' death explodes through the resized box.
+                self.magic_death_blast(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    rng,
+                    luck,
+                    local_owner,
+                );
                 // S1-E-21h d77 — `Kill()`'s 617 Nebula Arcanum burst
                 // (`Projectile.cs:72278-72373`): the 176-box centre-snap,
                 // the penetration open, `Damage()`, the Item14 cue at the
@@ -20708,6 +20817,20 @@ impl ProjectilePool {
                 if !died_out_of_world {
                     self.nebula_arcanum_kill(i, npcs, doll_flags(player.as_deref()), rng, luck, local_owner);
                 }
+                // W4-d78 batch 2 — `Kill()`'s hostile resize-blasts: the
+                // 452/454 arms (`:72987`/`:73014`) and the 448 shell
+                // (`:73603`) sit between the 661 arm (`:72226`) and the
+                // gem arm (`:75425`) in the C# body — the EVP half of
+                // `Damage()` hurts the local player through the blast box.
+                self.hostile_death_blast(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    player.as_deref_mut(),
+                    rng,
+                    luck,
+                    local_owner,
+                );
                 // S1-E-21h d77 — `Kill()`'s 618/620 Nebula subshot/shard
                 // dust census (`Projectile.cs:72394-72417`): the 618's
                 // `ai[0] = 86` latch (`:72398`) + the ten-dust `Next(3)`
@@ -20720,10 +20843,25 @@ impl ProjectilePool {
                     }
                     crate::projectile_ai_misc::nebula_shard_kill_draws(rng);
                 }
+                // W4-d78 batch 2 — `Kill()`'s child-spawn family: the 246
+                // Stynger (`:76944`) + its 249 shrapnel's own blast
+                // (`:76987`), and the 117 Bone Arrow (`:74734`). The 617
+                // arm FOLDED into d77's `nebula_arcanum_kill` above (the
+                // keep-one: the fuller cue+census half wins). The 246/249
+                // arms resize + `Damage()` through the box then spawn the
+                // children; the 117 arm is spawn-only.
+                self.child_spawn_kill(
+                    i,
+                    npcs,
+                    doll_flags(player.as_deref()),
+                    old_velocity,
+                    rng,
+                    luck,
+                    local_owner,
+                );
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
-                // runs at the same death hook the blast does. (The luck read
-                // hoisted above the d77 Kill-host arms — same value.)
+                // runs at the same death hook the blast does.
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
@@ -22606,6 +22744,479 @@ impl ProjectilePool {
         p.pos = Vec2::new(cx - 11.0, cy - 11.0);
     }
 
+    /// W4-d78 — `Kill()`'s magic resize-blast family: the guided spells'
+    /// death explodes through a temporarily (or permanently) resized box.
+    /// The C# arms, in body order:
+    /// - 79 RainbowRodBullet (`Projectile.cs:71257-71265`): `Resize(128,128)`,
+    ///   `maxPenetrate = penetrate = -1`, `Damage()`, `Resize(old, old)`.
+    /// - 16 MagicMissile (`:71329-71337`): the same shape at 128×128.
+    /// - 34 Flamelash (`:71409-71417`): the same shape at 96×96.
+    /// - 634/635 NebulaBlaze (`:72015-72021`): the manual
+    ///   `position = Center; width = height = 50; Center = position`
+    ///   (the `Resize(50,50)` centre-keep), `maxPenetrate = penetrate = -1`,
+    ///   `Damage()` — NO trailing restore, the corpse keeps the 50-box.
+    /// - 661 OnyxBlaster's black bolt (`:72226-72233`): the same manual
+    ///   recentre at 160×160, `maxPenetrate = penetrate = -1`, `Damage()`,
+    ///   no restore.
+    /// `Resize` (`:22353-22359`) keeps the centre: `position = Center`,
+    /// the new box, `Center = position` → `pos = oldCentre − new/2`.
+    /// The dust/gore/sound bodies interleaved with these arms (the 79/16/34
+    /// oldPos trails `:71266-71487`, the blaze `SelectRandom` dust-type picks
+    /// `:71997`/`:72009`/`:72024-72048`, the 661 rings `:72234-72276`) are the
+    /// g65/d77/g16 lanes' — SKIPPED with their draws, the `gem_bolt_aoe`
+    /// convention (the dust lanes owe the draw re-adds at their bodies).
+    /// Kind-gated + owner-gated (`Damage()`'s PVE half runs only for
+    /// `owner == Main.myPlayer`, `:12504`); a dead slot never returns to
+    /// active, so the blast fires at most once per death.
+    fn magic_death_blast(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        // (blast side, restore the old box afterwards)
+        let (blast, restore) = match self.slots[slot].kind {
+            MAGIC_MISSILE | RAINBOW_ROD_BULLET => (128.0, true),
+            FLAMELASH => (96.0, true),
+            NEBULA_BLAZE_1 | NEBULA_BLAZE_2 => (50.0, false),
+            ONYX_BLACK_BOLT => (160.0, false),
+            _ => return,
+        };
+        if self.slots[slot].owner != local_owner {
+            return;
+        }
+        let (center, old_w, old_h) = {
+            let p = &self.slots[slot];
+            (
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                p.w,
+                p.h,
+            )
+        };
+        {
+            let p = &mut self.slots[slot];
+            // `Resize(blast, blast)` — the centre-keep.
+            p.w = blast;
+            p.h = blast;
+            p.pos = center - Vec2::splat(blast * 0.5);
+            p.max_penetrate = -1;
+            p.penetrate = -1;
+        }
+        // `Damage()` through the resized box (the gem-burst seam: the
+        // rectangle walk, DamageVar + defence/crit + the per-type immunity
+        // arms — the Magic Missile's 8-tick window included).
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        if restore {
+            // `Resize(newWidth, newHeight)` — the trailing restore keeps the
+            // SAME centre (the C# saved the pre-blast box, not the position).
+            let p = &mut self.slots[slot];
+            p.w = old_w;
+            p.h = old_h;
+            p.pos = center - Vec2::new(old_w * 0.5, old_h * 0.5);
+        }
+    }
+
+    /// W4-d78 batch 2 — `Kill()`'s HOSTILE resize-blast family: the Moon
+    /// Lord hand's eye volley / flood orb and the saucer cannon's shell
+    /// explode through a resized box whose `Damage()` rides the EVP
+    /// (enemy-vs-player) half, not the friendly PVE box. The C# arms, in
+    /// body order:
+    /// - 452 PhantasmalEye (`Projectile.cs:72987-73013`): `Resize(144,144)`
+    ///   (`:72990`, the centre-keep), the dust/gore bodies (SKIPPED — the
+    ///   g65/g16 lanes'), then `Resize(30,30)` (`:73011`) BEFORE `Damage()`
+    ///   (`:73012`) — the blast walks the SMALL 30-box, not the 144 ring.
+    /// - 454 PhantasmalSphere (`:73014-73045`): the manual recentre
+    ///   `position = Center; width = height = 208; position -= size/2`
+    ///   (`:73017-73020`), dust/gore SKIPPED, `Damage()` (`:73044`) — no
+    ///   restore, the corpse keeps the 208-box.
+    /// - 448 SaucerMissile (`:73603-73631`): the same manual recentre at
+    ///   112×112 (`:73606-73609`), dust/gore SKIPPED, `Damage()`
+    ///   (`:73630`) — no restore.
+    /// `Damage()` (`:12487-12516`) for these kinds: `Damage_CanDealDamage`
+    /// passes (none of the `:12448` refusal arms names 452/454/448 or their
+    /// aiStyles 82/83/80), `CutTiles` needs `friendly` (false), the powders
+    /// arm names 10/11/463 only, the PVE/PVP halves need
+    /// `owner == Main.myPlayer` (the port's hostile seam spawns owner 255,
+    /// `spawn_hostile_ai` — unreachable, kept kind-gated for the shape),
+    /// and `Damage_EVP` runs (`netMode != 2`, single-player). Kind-gated,
+    /// once per death (a dead slot never returns to active).
+    fn hostile_death_blast(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        // (the visual blast box, the box `Damage()` actually walks)
+        let (blast, walk) = match self.slots[slot].kind {
+            PHANTASMAL_EYE => (144.0, 30.0),
+            PHANTASMAL_SPHERE => (208.0, 208.0),
+            SAUCER_MISSILE => (112.0, 112.0),
+            _ => return,
+        };
+        {
+            let p = &self.slots[slot];
+            let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            let p = &mut self.slots[slot];
+            // `Resize(blast, blast)` / the manual recentre — both keep the
+            // centre (`:22353-22359`). The dust/gore bodies between the two
+            // 452 resizes read the 144-box; they are the g65/g16 lanes'.
+            p.w = blast;
+            p.h = blast;
+            p.pos = center - Vec2::splat(blast * 0.5);
+            // `:73011` — the 452's trailing `Resize(30,30)` runs BEFORE
+            // `Damage()`; the 454/448 walk their blast box unchanged.
+            p.w = walk;
+            p.h = walk;
+            p.pos = center - Vec2::splat(walk * 0.5);
+        }
+        // `Damage()`'s PVE half (`:12505-12510`): owner-gated. The port's
+        // hostile seam spawns these kinds at owner 255, so the walk is
+        // unreachable today — kept for the C# shape (an owned-hostile
+        // spawn site would hit NPCs first, EVP second, in this order).
+        if self.slots[slot].owner == local_owner {
+            self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        }
+        // `Damage_EVP` (`:12513`, `netMode != 2`).
+        self.damage_evp_boxed(slot, player, rng, local_owner);
+    }
+
+    /// W4-d78 batch 2 — `Projectile.Damage_EVP` (`Projectile.cs:14773-
+    /// 14900`) through the dying slot's resized box: the hostile shot's
+    /// death-blast hurts the LOCAL player. The gate chain in C# order:
+    /// - `:14775`: `!hostile || myPlayer >= 255 || damage <= 0 ||
+    ///   SkipDamage_EVP[type]` — the port's `hostile` is `!friendly` (the
+    ///   `spawn_hostile_ai` convention), `myPlayer` is always 0, and the
+    ///   skip set is {108, 164, 1002} (`ProjectileID.cs:423`).
+    /// - `:14779-14797`: the cooldown counter — 452/454/455/462 and the
+    ///   871-874/919/923/924 boss family ride `BossNoCheese` (1), every
+    ///   other kind `General` (−1, the port's collapsed lane).
+    /// - `:14799`: `player.active && !dead && (!immune || num != General)`
+    ///   — the BossNoCheese blast lands THROUGH the spawn i-frames; the
+    ///   General blast (448) refuses while immune. The 281/1073/1078
+    ///   overrides name unported kinds.
+    /// - `:14816`: `Colliding(projRectangle, player.getRect())` — the
+    ///   per-kind state gates (`:15406-15412` the 454's spawn-protection
+    ///   window `0 <= ai[0] < 60 && ai[1] != -1`, `:15447-15450` the 452's
+    ///   `ai[0] < 2` warm-up) then the plain rectangle overlap
+    ///   (`:15888` — no other `Colliding` arm names these kinds/styles).
+    /// - `:14820-14821`: the hit direction from the centre compare — the
+    ///   port's `hurt` derives it from `from_x` (the blast centre).
+    /// - `:14822`: `CanParryAgainst` — `shieldParryTimeLeft` is unported
+    ///   (no parry seam), so false; the 1091 heal arm names an unported
+    ///   kind. `SpawnHitVisuals` (`:14397-14430`) names 916/1091/1093/1112
+    ///   only — a no-op here, no draws.
+    /// - `:14831`: `DamageVar(damage, -Main.player[owner].luck)` — the
+    ///   owner-255 dummy player's luck is 0; an owned shot reads the local
+    ///   player's luck (the `damage_pve` convention).
+    /// - `:14832-14848`: the banner effect (`bannerIdToRespondTo` — no
+    ///   port field), `resistCold && coldDamage` (no port fields) and the
+    ///   `deadMansSweater && trap` cap (no port field; these kinds are not
+    ///   traps) are SKIPPED; `!reflected` (no port field, always true)
+    ///   scales by `hostileDamageScaling.Sample(Difficulty)`
+    ///   (`GameDifficultyData.cs:85`: Journey 0.5→0.5, Master 3→3 — the
+    ///   identity line on [0.5, 3], so the sample IS the difficulty; the
+    ///   port's difficulty mirror is `buffs.expert_mode` → 2, else 1 —
+    ///   journey/master/legendary unported, recorded), then `num3 *= 2`.
+    /// - `:14850-14861`: the 961 damage-decay arm names an unported kind.
+    /// - `:14862-14871`: `Hurt(ByProjectile(-1, whoAmI), num4, dir, pvp:
+    ///   false, Crit: false, num, dodgeable)` — the cooldown counter rides
+    ///   the port's `hurt_inner_cooldown` lane; `> 0 && !dead` gates
+    ///   `StatusPlayer`, which has NO arm for 452/454/448 (the `:12108-
+    ///   12400` census) — a no-op. The trap tail (`:14872-14879`) and the
+    ///   435/436/681/437/682 penetrate tail (`:14881-14899`) name other
+    ///   kinds.
+    /// RNG: the `DamageVar` roll fires only on a landed overlap, on the
+    /// pass's `UpdateProjectiles` stream; the hurt's dodge rolls ride the
+    /// same stream inside `hurt` (the `damage_player` convention). A
+    /// refused blast draws NOTHING.
+    fn damage_evp_boxed(
+        &mut self,
+        slot: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+        local_owner: u8,
+    ) {
+        let p = &self.slots[slot];
+        // `:14775` — the hostile/damage/skip-set gate.
+        if p.friendly || p.damage <= 0 || matches!(p.kind, 108 | 164 | 1002) {
+            return;
+        }
+        // `:14779-14797` — the cooldown counter pick.
+        let cooldown = match p.kind {
+            452 | 454 | 455 | 462 | 871 | 872 | 873 | 874 | 919 | 923 | 924 => Some(1usize),
+            _ => None,
+        };
+        let Some(player) = player else {
+            return;
+        };
+        // `:14799` — active (the port's `Some` player) && !dead && the
+        // General-only immune gate.
+        if player.dead || (cooldown.is_none() && player.immune) {
+            return;
+        }
+        // `Colliding`'s per-kind state gates (`:15406-15412`/`:15447-15450`).
+        match p.kind {
+            PHANTASMAL_EYE if p.ai[0] < 2.0 => return,
+            PHANTASMAL_SPHERE if p.ai[0] >= 0.0 && p.ai[0] < 60.0 && p.ai[1] != -1.0 => return,
+            _ => {}
+        }
+        // `:14816` — the rectangle overlap with the player's live rect
+        // (the `damage_pve_boxed` float-overlap convention).
+        let hit = p.pos.x < player.x + player.width
+            && p.pos.x + p.w > player.x
+            && p.pos.y < player.y + player.height
+            && p.pos.y + p.h > player.y;
+        if !hit {
+            return;
+        }
+        // `:14820-14821` — the centre-compare hit direction rides `from_x`.
+        let from_x = p.pos.x + p.w * 0.5;
+        // `:14831` — the owner's luck (255 → the dummy player's 0).
+        let owner_luck = if p.owner == local_owner {
+            player.luck_state.luck
+        } else {
+            0.0
+        };
+        let mut dmg = tr_core::damage::damage_var(rng, p.damage as f32, -owner_luck);
+        // `:14842` — `hostileDamageScaling.Sample(Difficulty)`: the identity
+        // line on [0.5, 3] (`GameDifficultyData.cs:85`), the port's
+        // difficulty mirror is the expert flag (2) vs classic (1).
+        let difficulty = if player.buffs.expert_mode { 2.0 } else { 1.0 };
+        dmg = (dmg as f32 * difficulty) as i32;
+        // `:14844` — the EVP double.
+        dmg *= 2;
+        // `:14868` — the Hurt through the cooldown lane. `dodgeable` is
+        // `IsDamageDodgeable` (true for these kinds — the 9999 family is
+        // 871-874/919/923/924 only); `Crit: false`; the source kind rides
+        // the dismount gate; both General and BossNoCheese are Retaliate
+        // members (`ImmunityCooldownID.cs:49`).
+        let _landed = player.hurt_inner_cooldown(
+            dmg,
+            from_x,
+            true,
+            rng,
+            p.is_damage_dodgeable(),
+            false,
+            Some(p.kind),
+            true,
+            cooldown,
+        );
+        // `StatusPlayer` (`:14870`) has no arm for the blast kinds — the
+        // `landed && !dead` gate is a no-op here (the census above).
+    }
+
+    /// W4-d78 batch 2 — `Kill()`'s child-spawn family: the Stynger bolt
+    /// and the Bone Arrow die into a burst of child shots (the 249
+    /// shrapnel / the 1124 bone shard), and the Stynger shrapnel 249
+    /// carries its OWN death blast. The 617 Nebula Arcanum arm
+    /// (`Projectile.cs:72278-72373`) FOLDED at the merge into d77's
+    /// `nebula_arcanum_kill` (the keep-one, d78 FINAL research/372 §3/§6b
+    /// — d77's whole-arm port carries the cue + census + the inline
+    /// swept-618 Kill). The C# arms, in body order:
+    /// - 246 Stynger (`:76944-76986`, inside the `:75895` else block): the
+    ///   dust/gore bodies + Item14 SKIPPED (the gore's `Next(61,64)` +
+    ///   `Next(-1,2)` ×2 draws with them), the manual recentre at 150×150
+    ///   (`:76964-76969`), `penetrate = -1`, `maxPenetrate = 0`
+    ///   (`:76970-76971`), `Damage()` (`:76972`), then the owner-gated
+    ///   shrapnel count `Next(2,6)` and the per-shrapnel draws
+    ///   (`:76975-76984`).
+    /// - 249 StyngerShrapnel (`:76987-77015`): dust/gore SKIPPED, the
+    ///   manual recentre at 100×100 (`:77007-77012`), `penetrate = -1`
+    ///   (`:77013` — NO maxPenetrate write; the 246 spawn already pinned
+    ///   the child's `maxPenetrate = 0`, `:76983`), `Damage()` (`:77014`).
+    /// - 117 BoneArrow (`:74734-74751`): the sound-0 cue + the 10 dust-26
+    ///   SKIPPED, then the owner-gated 2-shard loop (`:74741-74750`).
+    /// `Damage()` (`:12487-12516`) for these kinds: `Damage_CanDealDamage`
+    /// passes (none of the `:12448` refusal arms names 617/246/249/117 or
+    /// their aiStyles 118/1/2), the PVE half needs `owner == Main.myPlayer`
+    /// (the `local_owner` gate), the EVP half refuses (`friendly` true).
+    /// The child spawns take the CENTRE in C# (`NewProjectile` subtracts
+    /// w/2, h/2, `:10876-10877`) — the port's spawn takes the top-left, so
+    /// each recentres by the child row's box (the xenopopper precedent).
+    /// The corpse-flag lift (`special_arrow_kill`'s bee-swarm precedent):
+    /// the C# `Kill()` runs the arms while the slot is STILL active
+    /// (`active = false` lands at `:77262`, after), so `GetNextSlot` skips
+    /// the dying slot — the port lifts `active` around the spawns, then
+    /// restores it. Kind-gated; a dead slot never returns to active, so
+    /// each burst fires at most once per death.
+    fn child_spawn_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        old_velocity: Vec2,
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        // The merge keep-one (d78 FINAL research/372 §3/§6b): the 617
+        // NEBULA_ARCANUM arm DROPPED — d77's `nebula_arcanum_kill` ports
+        // the SAME C# site `:72278-72373` WHOLE (the Item14 cue + the
+        // dust/gore census + the swept-618 INLINE Kill + the C#-order
+        // `:72327` owner gate) and runs at the same death hook above.
+        match self.slots[slot].kind {
+            STYNGER => {
+                // `Damage()`'s PVE half needs the local owner (`:12505`);
+                // the friendly 246's EVP half refuses. The gate folds
+                // ahead of the resize (the `magic_death_blast` convention).
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                // `:76964-76969` — the manual recentre at 150.
+                let center = {
+                    let p = &self.slots[slot];
+                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                };
+                {
+                    let p = &mut self.slots[slot];
+                    p.w = 150.0;
+                    p.h = 150.0;
+                    p.pos = center - Vec2::splat(75.0);
+                    // `:76970-76971` — penetrate -1, maxPenetrate 0.
+                    p.penetrate = -1;
+                    p.max_penetrate = 0;
+                }
+                // `:76972` — `Damage()` through the resized box.
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+                // `:76973` — the owner-gated child block (the gate above
+                // already passed; kept for the C# shape).
+                // `:76975` — the shrapnel count.
+                let count = rng.next_range(2, 6);
+                let (damage, kb, owner) = {
+                    let p = &self.slots[slot];
+                    (p.damage, p.knock_back, p.owner)
+                };
+                self.slots[slot].active = true;
+                for _ in 0..count {
+                    // `:76978-76980` — the velocity jitter, the ±0.01
+                    // quirk kept verbatim: `Next(-100,101) + 0.01f`, then
+                    // `Next(-100,101)`, then `-= 0.01f` (the float
+                    // round-trip is NOT a no-op — the C# keeps it).
+                    let mut x = rng.next_range(-100, 101) as f32 + 0.01;
+                    let y = rng.next_range(-100, 101) as f32;
+                    x -= 0.01;
+                    // `:76981` — `8f / (float)Math.Sqrt(num926*num926 +
+                    // num927*num927)`: the products/sum are FLOAT, the
+                    // double sqrt casts back to FLOAT, then the 8f divide
+                    // promotes to double and the result stores as float.
+                    let scale = (8.0f64 / (x * x + y * y).sqrt() as f64) as f32;
+                    // `:76982` — the spawn at `Centre - oldVelocity` (the
+                    // sub-step's start velocity, the pool passes it).
+                    let pos = center - old_velocity;
+                    let spawned = self.spawn_with_data_ai_owned(
+                        STYNGER_SHRAPNEL,
+                        owner,
+                        pos.x - 6.0,
+                        pos.y - 6.0,
+                        x * scale,
+                        y * scale,
+                        damage,
+                        kb,
+                        0.0,
+                        0.0,
+                    );
+                    if let Some(s) = spawned {
+                        // `:76983` — `maxPenetrate = 0` on the child (the
+                        // penetrate stays the row's 1).
+                        self.slots[s].max_penetrate = 0;
+                    }
+                }
+                self.slots[slot].active = false;
+            }
+            STYNGER_SHRAPNEL => {
+                // `Damage()`'s PVE half needs the local owner (`:12505`).
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                // `:77007-77012` — the manual recentre at 100, `:77013` —
+                // penetrate -1 (NO maxPenetrate write — the 246 spawn
+                // pinned it 0, `:76983`). No child spawn, no owner gate
+                // beyond `Damage()`'s PVE half.
+                let center = {
+                    let p = &self.slots[slot];
+                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                };
+                {
+                    let p = &mut self.slots[slot];
+                    p.w = 100.0;
+                    p.h = 100.0;
+                    p.pos = center - Vec2::splat(50.0);
+                    p.penetrate = -1;
+                }
+                // `:77014` — `Damage()` through the resized box.
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            }
+            BONE_ARROW => {
+                // `:74741` — the owner gate (the 117 arm has NO `Damage()`
+                // call — the burst is spawn-only).
+                if self.slots[slot].owner != local_owner {
+                    return;
+                }
+                let (center, vel, damage, owner) = {
+                    let p = &self.slots[slot];
+                    (
+                        Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                        p.vel,
+                        // `:74748` — `(int)((float)this.damage * 0.25f)`.
+                        (p.damage as f32 * 0.25) as i32,
+                        p.owner,
+                    )
+                };
+                self.slots[slot].active = true;
+                // `:74743-74749` — the 2-shard loop. Per shard:
+                // `velocity.SafeNormalize(UnitX).RotatedBy(π).
+                // RotatedByRandom(0.5235987901687622)` — the SafeNormalize
+                // default is UnitX (`Utils.cs:1837-1844`), the π spin
+                // (`Utils.cs:1675-1684`, float cos/sin of the double
+                // angle — the C# spells the float-rounded literal
+                // 3.1415927410125732, NOT the double π), then TWO
+                // NextDouble draws (`Utils.cs:1697-1700`, left operand
+                // first); `*= 1f + NextFloat()*2f`; the spawn at
+                // `Centre + v*5`, knockback 0.
+                for _ in 0..2 {
+                    let mut v = crate::bow_launch::rotated_by(
+                        safe_normalize_or(vel, Vec2::X),
+                        3.1415927410125732,
+                    );
+                    let angle = rng.next_double() * 0.5235987901687622
+                        - rng.next_double() * 0.5235987901687622;
+                    v = crate::bow_launch::rotated_by(v, angle);
+                    v *= 1.0 + rng.next_float() * 2.0;
+                    let pos = center + v * 5.0;
+                    // `NewProjectile`'s aiStyle-1 spawn clamp (`:10895-
+                    // 10902`): while any component sits at/beyond ±16 (Y
+                    // below −16), both decay ×0.97 (the ballista precedent).
+                    let (mut vx, mut vy) = (v.x, v.y);
+                    while vx >= 16.0 || vx <= -16.0 || vy >= 16.0 || vy < -16.0 {
+                        vx *= 0.97;
+                        vy *= 0.97;
+                    }
+                    let _ = self.spawn_with_data_ai_owned(
+                        BONE_SHARD,
+                        owner,
+                        pos.x - 3.0,
+                        pos.y - 3.0,
+                        vx,
+                        vy,
+                        damage,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                }
+                self.slots[slot].active = false;
+            }
+            _ => {}
+        }
+    }
+
     /// The dedupe scan (`:41428-41438`): every other slot of the same kind
     /// and owner with a shorter life and past 30 gets `timeLeft = 30`.
     fn magnet_sphere_dedupe(&mut self, slot: usize) {
@@ -23973,6 +24584,14 @@ impl ProjectilePool {
             if p.kind == 443 && !p.friendly {
                 continue;
             }
+            // W4-d78 batch 2 — `Colliding`'s type-1124 arm
+            // (`Projectile.cs:15413-15418`): the Bone Shard refuses every
+            // hit while `ai[0] < 15` (its spawn warm-up). The gate sits in
+            // `Colliding`, which `Damage_PVE_Inner` calls at `:12654` —
+            // ahead of the box test, so a warming shard deals nothing.
+            if p.kind == BONE_SHARD && p.ai[0] < 15.0 {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -24419,6 +25038,10 @@ impl ProjectilePool {
             } else if matches!(p.kind, NEBULA_BLAZE_1 | NEBULA_BLAZE_2 | SPIRIT_FLAME) {
                 // `:14016-14023` — the 634/635/659 per-type arm: 5 ticks.
                 npcs[idx].immune[owner_idx] = 5;
+            } else if matches!(p.kind, STYNGER | STYNGER_SHRAPNEL) {
+                // W4-d78 batch 2 — `:14024-14031` — the Stynger bolt/shrapnel
+                // (246/249) per-type arm: 7 ticks.
+                npcs[idx].immune[owner_idx] = 7;
             } else if p.kind == MAGIC_MISSILE {
                 // `:14032-14035` — the Magic Missile (16): 8 ticks.
                 npcs[idx].immune[owner_idx] = 8;
@@ -24735,6 +25358,8 @@ impl ProjectilePool {
                 npcs[idx].immune[owner] = 5;
             } else if matches!(p.kind, NEBULA_BLAZE_1 | NEBULA_BLAZE_2 | SPIRIT_FLAME) {
                 npcs[idx].immune[owner] = 5; // `:14016-14023`
+            } else if matches!(p.kind, STYNGER | STYNGER_SHRAPNEL) {
+                npcs[idx].immune[owner] = 7; // `:14024-14031` (W4-d78 batch 2)
             } else if p.kind == MAGIC_MISSILE {
                 npcs[idx].immune[owner] = 8; // `:14032-14035`
             } else if p.kind == TYPHOON {
@@ -28518,6 +29143,739 @@ mod tests {
         );
     }
 }
+
+/// W4-d78 — `Kill()`'s magic resize-blast family (the guided spells' death
+/// AoE). Tests-as-code: WRITTEN NOT RUN (the task's code-only mode). The
+/// six kinds' `SetDefaults` rows are on main; the blast arms
+/// (`Projectile.cs:71257-71488` / `:71995-72233`) were MISSING — the death
+/// hook now resizes the box, opens the penetration and walks `Damage()`
+/// through it (`magic_death_blast`).
+#[cfg(test)]
+mod w4_d78_magic_death_blast_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn ground() -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn one_npc(world: &World) -> Npc {
+        Npc::spawn_slime(world, 20).unwrap()
+    }
+
+    /// A dead slot of `kind` at the NPC's centre, damage 30, owner 0.
+    fn dead_at_npc(pool: &mut ProjectilePool, kind: u16, npc: &Npc) -> usize {
+        let slot = pool
+            .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 30, 5.0, 0.0, 0.0)
+            .unwrap();
+        // The death transition the pool's lifetime block performs.
+        pool.kill(slot);
+        slot
+    }
+
+    /// The 16/34/79 arms (`:71261-71265` / `:71333-71337` / `:71413-71417`):
+    /// the blast box is 128/128/96, the penetration opens to −1, `Damage()`
+    /// lands on an NPC the SMALL pre-blast box could not reach, and the
+    /// trailing `Resize(old, old)` restores the original box at the SAME
+    /// centre.
+    #[test]
+    fn w4_d78_the_guided_spells_blast_through_the_resized_box_and_restore() {
+        for kind in [MAGIC_MISSILE, RAINBOW_ROD_BULLET, FLAMELASH] {
+            let w = ground();
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = dead_at_npc(&mut pool, kind, &npc);
+            let (old_w, old_h) = {
+                let p = &pool.slots()[slot];
+                (p.w, p.h)
+            };
+            // Park the corpse 60 px LEFT of the NPC: the 32×32 box misses
+            // the slime's 24×18 rect, the blast box (half-side 64 for the
+            // 128 arms / 48 for the Flamelash's 96) reaches it.
+            let center = Vec2::new(npc.x - 60.0, npc.y + 9.0);
+            {
+                let p = &mut pool.slots_mut()[slot];
+                p.pos = center - Vec2::new(old_w * 0.5, old_h * 0.5);
+            }
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+            assert!(npc.hp < 10_000, "kind {kind}: the resized box reaches the NPC");
+            let p = &pool.slots()[slot];
+            assert_eq!((p.w, p.h), (old_w, old_h), "kind {kind}: the trailing Resize restores");
+            let got = p.pos + Vec2::new(p.w * 0.5, p.h * 0.5);
+            assert!((got - center).length() < 1e-4, "kind {kind}: the centre kept ({got:?})");
+            assert_eq!(p.penetrate, -1, "kind {kind}: the penetration opens");
+            assert_eq!(p.max_penetrate, -1, "kind {kind}");
+            assert!(!p.active, "kind {kind}: the corpse stays dead");
+        }
+    }
+
+    /// The 634/635 (`:72015-72021`) and 661 (`:72226-72233`) arms: the
+    /// manual recentre at 50/50/160, `maxPenetrate = penetrate = -1`,
+    /// `Damage()` — and NO trailing restore: the corpse keeps the blast box.
+    #[test]
+    fn w4_d78_the_blaze_and_black_bolt_keep_the_blast_box() {
+        for (kind, blast) in [(NEBULA_BLAZE_1, 50.0f32), (NEBULA_BLAZE_2, 50.0), (ONYX_BLACK_BOLT, 160.0)] {
+            let w = ground();
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = dead_at_npc(&mut pool, kind, &npc);
+            let center = Vec2::new(npc.x + 12.0, npc.y + 9.0);
+            {
+                let p = &mut pool.slots_mut()[slot];
+                p.pos = center - Vec2::new(p.w * 0.5, p.h * 0.5);
+            }
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+            assert!(npc.hp < 10_000, "kind {kind}: the blast lands");
+            let p = &pool.slots()[slot];
+            assert_eq!((p.w, p.h), (blast, blast), "kind {kind}: no trailing restore");
+            let got = p.pos + Vec2::splat(blast * 0.5);
+            assert!((got - center).length() < 1e-4, "kind {kind}: the centre kept ({got:?})");
+            assert_eq!(p.penetrate, -1, "kind {kind}");
+            assert_eq!(p.max_penetrate, -1, "kind {kind}");
+        }
+    }
+
+    /// The owner gate (`Damage()`'s PVE half, `:12504`): a foreign-owned
+    /// corpse rolls NOTHING — no strike, no draws, no resize.
+    #[test]
+    fn w4_d78_a_foreign_owned_corpse_blasts_nothing() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai_owned(MAGIC_MISSILE, 255, npc.x, npc.y, 0.0, 0.0, 30, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.kill(slot);
+        let (w0, h0, pos0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h, p.pos)
+        };
+        struct CountRng {
+            draws: usize,
+        }
+        impl tr_core::loot::DropRng for CountRng {
+            fn next_range(&mut self, _min: i32, max: i32) -> i32 {
+                self.draws += 1;
+                max - 1
+            }
+            fn next_float(&mut self) -> f32 {
+                self.draws += 1;
+                0.5
+            }
+        }
+        let mut rng = CountRng { draws: 0 };
+        pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+        assert_eq!(npc.hp, 10_000, "the foreign corpse never strikes");
+        assert_eq!(rng.draws, 0, "the foreign corpse draws nothing");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h, p.pos), (w0, h0, pos0), "no resize on the refusal");
+    }
+
+    /// The kind gate: an unrelated rowed kind (the wooden arrow) passes
+    /// through untouched — no resize, no strike, no draws.
+    #[test]
+    fn w4_d78_an_unrelated_kind_is_untouched() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = dead_at_npc(&mut pool, WOODEN_ARROW, &npc);
+        let (w0, h0, pos0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h, p.pos)
+        };
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+        assert_eq!(npc.hp, 10_000, "the arrow has no death blast");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h, p.pos), (w0, h0, pos0), "the arrow is untouched");
+    }
+
+    /// The Magic Missile's per-type immunity arm rides the blast's boxed
+    /// walk (`:14032-14035`, the W3-i11 census): the struck NPC carries the
+    /// 8-tick window, not the stock 10.
+    #[test]
+    fn w4_d78_the_missile_blast_carries_the_eight_tick_immunity() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = dead_at_npc(&mut pool, MAGIC_MISSILE, &npc);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.magic_death_blast(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0, 0);
+        assert!(npc.hp < 10_000, "the blast lands");
+        assert_eq!(npc.immune[0], 8, "the Magic Missile's per-type arm");
+    }
+}
+
+/// W4-d78 batch 2 — the hostile EVP death-blast witnesses (WRITTEN, NOT
+/// RUN — code-only mode). The 452/454/448 resize shapes, the BossNoCheese
+/// cooldown lane vs the General lane, the Colliding state gates and the
+/// zero-draw refusals.
+#[cfg(test)]
+mod w4_d78_hostile_death_blast_tests {
+    use super::*;
+
+    /// A hostile corpse of `kind` centred on the player, damage 30.
+    fn dead_hostile_at(pool: &mut ProjectilePool, kind: u16, player: &crate::player::Player) -> usize {
+        let row = proj_data(kind).unwrap();
+        let slot = pool
+            .spawn_hostile_ai(
+                kind,
+                Vec2::new(player.x + player.width * 0.5 - row.w * 0.5, player.y + 10.0),
+                Vec2::ZERO,
+                30,
+                0.0,
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        pool.kill(slot);
+        slot
+    }
+
+    /// The scripted stream (the s1_d_4b_3 `Script` shape): every draw is
+    /// recorded as (min, max) or (−1, −1) for the floats.
+    struct Script {
+        rolls: Vec<f32>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn new(rolls: &[f32]) -> Self {
+            Self { rolls: rolls.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.rolls.is_empty() {
+                return 0;
+            }
+            self.rolls.remove(0) as i32
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws.push((-1, -1));
+            if self.rolls.is_empty() {
+                return 0.0;
+            }
+            self.rolls.remove(0)
+        }
+    }
+
+    /// The 452 arm (`:72990`/`:73011-73012`): `Resize(144,144)` then
+    /// `Resize(30,30)` BEFORE `Damage()` — the corpse keeps the SMALL
+    /// 30-box, centred; the blast hurts the player through it.
+    #[test]
+    fn w4_d78_b2_the_eye_blast_walks_the_small_thirty_box() {
+        let w = World::new("t".into(), 64, 64);
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 400;
+        player.max_hp = 400;
+        let slot = dead_hostile_at(&mut pool, PHANTASMAL_EYE, &player);
+        // Park past the `ai[0] < 2` warm-up (`:15447`) so Colliding passes.
+        pool.slots_mut()[slot].ai[0] = 2.0;
+        let center = {
+            let p = &pool.slots()[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(
+            slot,
+            &mut [],
+            (false, false),
+            Some(&mut player),
+            &mut rng,
+            0.0,
+            0,
+        );
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (30.0, 30.0), "the trailing Resize(30,30) wins");
+        let got = p.pos + Vec2::splat(15.0);
+        assert!((got - center).length() < 1e-4, "the centre kept");
+        assert!(player.hp < 400, "the EVP blast lands");
+        // DamageVar(damage 30, luck 0) = one Next(-15,16); the hurt's dodge
+        // block draws nothing (no dodge accessories armed).
+        assert_eq!(rng.draws, vec![(-15, 16)], "the hit's DamageVar only");
+        // The BossNoCheese lane arms hurtCooldowns[1], NOT the General pair.
+        assert!(!player.immune, "the General window stays untouched");
+        assert!(player.hurt_cooldowns[1] > 0, "the BossNoCheese window");
+    }
+
+    /// The 454/448 arms (`:73017-73020`/`:73606-73609`): the manual recentre
+    /// at 208/112, NO trailing restore — the corpse keeps the blast box.
+    #[test]
+    fn w4_d78_b2_the_sphere_and_shell_keep_their_blast_boxes() {
+        for (kind, blast) in [(PHANTASMAL_SPHERE, 208.0f32), (SAUCER_MISSILE, 112.0)] {
+            let w = World::new("t".into(), 64, 64);
+            let mut pool = ProjectilePool::new();
+            let mut player = crate::player::Player::spawn(&w);
+            player.hp = 400;
+            player.max_hp = 400;
+            let slot = dead_hostile_at(&mut pool, kind, &player);
+            // The 454's spawn-protection window (`:15408`): ai[0] starts 0
+            // — park it past 60 so the Colliding gate passes.
+            pool.slots_mut()[slot].ai[0] = 60.0;
+            let center = {
+                let p = &pool.slots()[slot];
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            };
+            let mut rng = Script::new(&[]);
+            pool.hostile_death_blast(
+                slot,
+                &mut [],
+                (false, false),
+                Some(&mut player),
+                &mut rng,
+                0.0,
+                0,
+            );
+            let p = &pool.slots()[slot];
+            assert_eq!((p.w, p.h), (blast, blast), "kind {kind}: no restore");
+            let got = p.pos + Vec2::splat(blast * 0.5);
+            assert!((got - center).length() < 1e-4, "kind {kind}: centre kept");
+            assert!(player.hp < 400, "kind {kind}: the blast lands");
+            if kind == SAUCER_MISSILE {
+                // 448 is NOT in the BossNoCheese set — the General lane.
+                assert!(player.immune, "the General window arms");
+                assert_eq!(player.hurt_cooldowns[1], 0, "no BossNoCheese write");
+            } else {
+                assert!(player.hurt_cooldowns[1] > 0, "the BossNoCheese window");
+            }
+        }
+    }
+
+    /// The BossNoCheese point (`:14799`): the 452/454 blast lands THROUGH
+    /// the spawn i-frames (`immune = true`), the 448 General blast refuses.
+    #[test]
+    fn w4_d78_b2_boss_no_cheese_lands_through_the_spawn_iframes() {
+        for kind in [PHANTASMAL_EYE, PHANTASMAL_SPHERE, SAUCER_MISSILE] {
+            let w = World::new("t".into(), 64, 64);
+            let mut pool = ProjectilePool::new();
+            let mut player = crate::player::Player::spawn(&w);
+            player.hp = 400;
+            player.max_hp = 400;
+            player.immune = true;
+            player.immune_time = 60;
+            let slot = dead_hostile_at(&mut pool, kind, &player);
+            pool.slots_mut()[slot].ai[0] = 60.0;
+            let mut rng = Script::new(&[]);
+            pool.hostile_death_blast(
+                slot,
+                &mut [],
+                (false, false),
+                Some(&mut player),
+                &mut rng,
+                0.0,
+                0,
+            );
+            if kind == SAUCER_MISSILE {
+                assert_eq!(player.hp, 400, "the General blast refuses while immune");
+                assert!(rng.draws.is_empty(), "the refusal draws nothing");
+            } else {
+                assert!(player.hp < 400, "kind {kind}: BossNoCheese bypasses immune");
+            }
+        }
+    }
+
+    /// The Colliding state gates: the 452's `ai[0] < 2` warm-up
+    /// (`:15447`) and the 454's `0 <= ai[0] < 60 && ai[1] != -1` spawn
+    /// protection (`:15408`) refuse the blast with ZERO draws — but the
+    /// 454's released orb (`ai[1] == -1`) blasts inside the window.
+    #[test]
+    fn w4_d78_b2_the_colliding_state_gates_refuse_with_zero_draws() {
+        // The 452 warm-up.
+        let w = World::new("t".into(), 64, 64);
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 400;
+        let slot = dead_hostile_at(&mut pool, PHANTASMAL_EYE, &player);
+        pool.slots_mut()[slot].ai[0] = 1.0;
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert_eq!(player.hp, 400, "the ai[0] < 2 warm-up refuses");
+        assert!(rng.draws.is_empty());
+        // The 454 spawn protection.
+        let slot = dead_hostile_at(&mut pool, PHANTASMAL_SPHERE, &player);
+        pool.slots_mut()[slot].ai[0] = 30.0;
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert_eq!(player.hp, 400, "the 0 <= ai[0] < 60 window refuses");
+        assert!(rng.draws.is_empty());
+        // The released orb (ai[1] == -1) blasts inside the window.
+        pool.slots_mut()[slot].ai[1] = -1.0;
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert!(player.hp < 400, "the released orb's blast lands");
+    }
+
+    /// The kind gate: an unrelated hostile kind (the hostile wooden arrow)
+    /// passes through untouched — no resize, no hurt, no draws.
+    #[test]
+    fn w4_d78_b2_an_unrelated_hostile_kind_is_untouched() {
+        let w = World::new("t".into(), 64, 64);
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.hp = 400;
+        let slot = dead_hostile_at(&mut pool, WOODEN_ARROW_HOSTILE, &player);
+        let (w0, h0, pos0) = {
+            let p = &pool.slots()[slot];
+            (p.w, p.h, p.pos)
+        };
+        let mut rng = Script::new(&[]);
+        pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+        assert_eq!(player.hp, 400, "the arrow has no death blast");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h, p.pos), (w0, h0, pos0), "untouched");
+        assert!(rng.draws.is_empty());
+    }
+
+    /// The EVP damage maths (`:14831-14844`): DamageVar ±15% then the
+    /// difficulty scale then ×2, BEFORE `Hurt`'s defense reduction. With
+    /// the scripted roll 0 (variance ×1.0), damage 30 → 30 × 1 × 2 = 60;
+    /// defense 10 cuts 5 → 55. Expert doubles the scale: 30 × 2 × 2 = 120
+    /// → 115 past defense.
+    #[test]
+    fn w4_d78_b2_the_evp_damage_scales_by_difficulty_then_doubles() {
+        for (expert, expected) in [(false, 400 - 55), (true, 400 - 115)] {
+            let w = World::new("t".into(), 64, 64);
+            let mut pool = ProjectilePool::new();
+            let mut player = crate::player::Player::spawn(&w);
+            player.hp = 400;
+            player.max_hp = 400;
+            player.stat_defense = 10;
+            player.buffs.expert_mode = expert;
+            let slot = dead_hostile_at(&mut pool, SAUCER_MISSILE, &player);
+            let mut rng = Script::new(&[0.0]); // DamageVar's Next(-15,16) = 0
+            pool.hostile_death_blast(slot, &mut [], (false, false), Some(&mut player), &mut rng, 0.0, 0);
+            assert_eq!(player.hp, expected, "expert {expert}: the EVP maths");
+        }
+    }
+}
+
+/// W4-d78 batch 2 — the Kill child-spawn family witnesses (WRITTEN, NOT RUN
+/// — code-only mode). The 617/246/117 death bursts, the 249's own blast,
+/// the child AI arms and the Colliding/immunity gates.
+#[cfg(test)]
+mod w4_d78_child_spawn_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn ground() -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn one_npc(world: &World) -> Npc {
+        Npc::spawn_slime(world, 20).unwrap()
+    }
+
+    /// The scripted stream: integers feed `next_range`, floats feed
+    /// `next_float`/`next_double`; every draw records its (min, max) bounds
+    /// (−1,−1 for the floats, −2,−2 for the doubles).
+    struct Script {
+        ints: Vec<i32>,
+        floats: Vec<f64>,
+        draws: Vec<(i32, i32)>,
+    }
+    impl Script {
+        fn new(ints: &[i32], floats: &[f64]) -> Self {
+            Self { ints: ints.to_vec(), floats: floats.to_vec(), draws: Vec::new() }
+        }
+    }
+    impl tr_core::loot::DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            if self.ints.is_empty() { return min; }
+            self.ints.remove(0)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.draws.push((-1, -1));
+            if self.floats.is_empty() { return 0.0; }
+            self.floats.remove(0) as f32
+        }
+        fn next_double(&mut self) -> f64 {
+            self.draws.push((-2, -2));
+            if self.floats.is_empty() { return 0.0; }
+            self.floats.remove(0)
+        }
+    }
+
+    /// A dead friendly corpse of `kind` at (100,100), damage 30, kb 5, owner 0.
+    fn dead_at(pool: &mut ProjectilePool, kind: u16) -> usize {
+        let slot = pool
+            .spawn_with_data_ai(kind, 100.0, 100.0, 0.0, 0.0, 30, 5.0, 0.0, 0.0)
+            .unwrap();
+        pool.kill(slot);
+        slot
+    }
+
+    // (The merge keep-one, d78 FINAL research/372 §3/§6b: d78's two 617
+    // witnesses — the shard fans + the keyed-618 sweep — DROPPED; d77's
+    // `s1_e_21h_d77_the_nebula_arcanum_kill_bursts_at_176_and_scatters`
+    // covers the same state PLUS the cue/census and the zero-redraw gate.)
+
+    /// The 246 arm (`:76944-76986`): the 150-box resize, penetrate -1 /
+    /// maxPenetrate 0, `Damage()`, then Next(2,6) shrapnel at Centre −
+    /// oldVelocity, each with maxPenetrate 0. The ±0.01 jitter quirk and
+    /// the 8/sqrt speed scale ride verbatim.
+    #[test]
+    fn w4_d78_b2c_the_stynger_bolt_bursts_into_shrapnel() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 100.0;
+        npc.y = 100.0;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        let slot = dead_at(&mut pool, STYNGER);
+        let center = {
+            let p = &pool.slots()[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        // Script: crit 100 + DamageVar 0; count 3; per shrapnel x=3, y=4
+        // (the 3-4-5 triangle → scale 8/5 = 1.6, velocity (4.8, 6.4)).
+        let mut ints = vec![100, 0, 3];
+        for _ in 0..3 { ints.extend([3, 4]); }
+        let mut rng = Script::new(&ints, &[]);
+        let old_vel = Vec2::new(2.0, 0.0);
+        pool.child_spawn_kill(slot, std::slice::from_mut(&mut npc), (false, false), old_vel, &mut rng, 0.0, 0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (150.0, 150.0), "the 150 resize");
+        assert_eq!((p.penetrate, p.max_penetrate), (-1, 0), "the penetration pair");
+        assert!(!p.active);
+        assert!(npc.hp < 10_000, "the 150-box Damage() lands");
+        let shrapnel: Vec<&Projectile> = pool.slots().iter()
+            .filter(|s| s.active && s.kind == STYNGER_SHRAPNEL)
+            .collect();
+        assert_eq!(shrapnel.len(), 3, "Next(2,6) = 3");
+        for s in &shrapnel {
+            assert_eq!(s.damage, 30, "full damage");
+            assert_eq!(s.knock_back, 5.0, "full knockback");
+            assert_eq!(s.max_penetrate, 0, ":76983 the child's maxPenetrate");
+            assert_eq!(s.penetrate, 1, "the row's penetrate stays");
+            // The spawn at Centre − oldVelocity, recentred by the 12-box.
+            let want = center - old_vel - Vec2::splat(6.0);
+            assert!((s.pos - want).length() < 1e-3, "Centre − oldVelocity");
+            assert!((s.vel.x - 4.8).abs() < 1e-3 && (s.vel.y - 6.4).abs() < 1e-3,
+                "the 8/sqrt scale on the (3,4) jitter");
+        }
+    }
+
+    /// The 249 arm (`:76987-77015`): the 100-box resize, penetrate -1, NO
+    /// maxPenetrate write (the 246 spawn pinned it 0), `Damage()`, no child.
+    #[test]
+    fn w4_d78_b2c_the_shrapnel_blasts_a_hundred_box() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 100.0;
+        npc.y = 100.0;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        let slot = dead_at(&mut pool, STYNGER_SHRAPNEL);
+        // The 246 spawn's maxPenetrate pin.
+        pool.slots_mut()[slot].max_penetrate = 0;
+        let center = {
+            let p = &pool.slots()[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        let mut rng = Script::new(&[100, 0], &[]);
+        pool.child_spawn_kill(slot, std::slice::from_mut(&mut npc), (false, false), Vec2::ZERO, &mut rng, 0.0, 0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (100.0, 100.0), "the 100 resize");
+        assert!((p.pos + Vec2::splat(50.0) - center).length() < 1e-4, "the centre kept");
+        assert_eq!(p.penetrate, -1, "penetrate opens");
+        assert_eq!(p.max_penetrate, 0, "NO maxPenetrate write — the spawn's pin stays");
+        assert!(!p.active);
+        assert!(npc.hp < 10_000, "the 100-box Damage() lands");
+        assert!(!pool.slots().iter().any(|s| s.active && s.kind == STYNGER_SHRAPNEL),
+            "the 249 spawns no child");
+    }
+
+    /// The 117 arm (`:74734-74751`): two 1124 shards at Centre + v*5, the
+    /// velocity the SafeNormalize(UnitX).RotatedBy(π).RotatedByRandom spin
+    /// ×(1 + NextFloat*2), damage (int)(damage*0.25), knockback 0. With the
+    /// scripted doubles 0 the spin is the identity, so v = −normalize(vel)
+    /// at unit speed (the SafeNormalize returns the UNIT vector).
+    #[test]
+    fn w4_d78_b2c_the_bone_arrow_bursts_into_two_shards() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data_ai(BONE_ARROW, 100.0, 100.0, 4.0, 0.0, 40, 5.0, 0.0, 0.0).unwrap();
+        pool.kill(slot);
+        let center = {
+            let p = &pool.slots()[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        // Script: per shard the two RotatedByRandom doubles (0 → identity)
+        // and the NextFloat speed factor (0 → ×1). SafeNormalize(4,0) is the
+        // UNIT (1,0); RotatedBy(π) flips it to (−1, ~0) (cos(3.14159274) ≈
+        // −1, sin ≈ −8.74e-8); ×(1+0) keeps unit speed.
+        let mut rng = Script::new(&[], &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        pool.child_spawn_kill(slot, &mut [], (false, false), Vec2::ZERO, &mut rng, 0.0, 0);
+        let shards: Vec<&Projectile> = pool.slots().iter()
+            .filter(|s| s.active && s.kind == BONE_SHARD)
+            .collect();
+        assert_eq!(shards.len(), 2, "the 2-shard loop");
+        for s in &shards {
+            assert_eq!(s.damage, 10, "(int)(40 * 0.25) = 10");
+            assert_eq!(s.knock_back, 0.0, "knockback 0");
+            assert_eq!(s.owner, 0);
+            // v ≈ (−1, 8.74e-8), spawn at Centre + v*5, recentred by the 6-box.
+            assert!((s.vel.x + 1.0).abs() < 1e-4 && s.vel.y.abs() < 1e-4,
+                "the reversed UNIT velocity");
+            let want = center + s.vel * 5.0 - Vec2::splat(3.0);
+            assert!((s.pos - want).length() < 1e-3, "Centre + v*5");
+        }
+        // Per shard: double, double, float ×2.
+        assert_eq!(rng.draws, vec![(-2, -2), (-2, -2), (-1, -1), (-2, -2), (-2, -2), (-1, -1)]);
+    }
+
+    /// The owner gate: a foreign-owned 246/117 corpse refuses the whole
+    /// burst with ZERO draws (the `Damage()` PVE half needs the local
+    /// owner). The 617 left the list at the merge (d78 FINAL research/372
+    /// §3 — d77's `nebula_arcanum_kill` owns it, gating at `:72327` AFTER
+    /// the resize per the C#).
+    #[test]
+    fn w4_d78_b2c_a_foreign_owned_corpse_refuses_with_zero_draws() {
+        for kind in [STYNGER, BONE_ARROW] {
+            let w = ground();
+            let mut pool = ProjectilePool::new();
+            let slot = pool.spawn_with_data_ai_owned(kind, 255, 100.0, 100.0, 0.0, 0.0, 30, 5.0, 0.0, 0.0).unwrap();
+            pool.kill(slot);
+            let (w0, h0) = { let p = &pool.slots()[slot]; (p.w, p.h) };
+            let mut rng = Script::new(&[], &[]);
+            pool.child_spawn_kill(slot, &mut [], (false, false), Vec2::ZERO, &mut rng, 0.0, 0);
+            let p = &pool.slots()[slot];
+            assert_eq!((p.w, p.h), (w0, h0), "kind {kind}: no resize");
+            assert!(rng.draws.is_empty(), "kind {kind}: zero draws");
+            assert!(!pool.slots().iter().any(|s| s.active && s.kind != kind),
+                "kind {kind}: no child");
+        }
+    }
+
+    /// The 246 AI_001 arm (`:57129-57141`): the alpha fades 20/tick to 0,
+    /// the counter pins at 60 and the fall starts at 0.15/tick.
+    #[test]
+    fn w4_d78_b2c_the_stynger_fades_in_then_falls() {
+        let w = ground();
+        let mut p = Projectile::default();
+        p.kind = STYNGER;
+        p.alpha = 255;
+        p.ai[0] = 59.0;
+        p.vel = Vec2::new(3.0, 0.0);
+        p.tile_collide = false;
+        p.ai_stynger(&w);
+        // ai[0] 59 → 60, the pin fires, the fall starts.
+        assert_eq!(p.ai[0], 60.0, "the counter pins at 60");
+        assert_eq!(p.alpha, 235, "255 − 20");
+        assert!((p.vel.y - 0.15).abs() < 1e-6, "the 0.15 fall");
+        // A second tick: the counter stays pinned, the fade continues.
+        p.ai_stynger(&w);
+        assert_eq!(p.ai[0], 60.0);
+        assert_eq!(p.alpha, 215);
+        assert!((p.vel.y - 0.30).abs() < 1e-6);
+    }
+
+    /// The 1124 AI_001 arm (`:54016-54020` + `:57582-57585`): the first-tick
+    /// frame roll latches localAI[0], the spin tail accumulates (|vx|+|vy|)
+    /// ×0.05, and the Colliding gate refuses hits while ai[0] < 15.
+    #[test]
+    fn w4_d78_b2c_the_bone_shard_rolls_its_frame_and_spins() {
+        let w = ground();
+        let mut p = Projectile::default();
+        p.kind = BONE_SHARD;
+        p.vel = Vec2::new(3.0, 4.0);
+        p.tile_collide = false;
+        let mut rng = Script::new(&[1], &[]);
+        p.ai_bone_shard(&w, &mut rng);
+        assert_eq!(p.local_ai[0], 1.0, "the latch");
+        assert_eq!(p.frame, 1, "the Next(2) frame roll");
+        assert_eq!(rng.draws, vec![(0, 2)], "the frame roll is the only draw");
+        // The spin: (|3|+|4|)*0.05 = 0.35.
+        assert!((p.rot - 0.35).abs() < 1e-6, "the spin tail");
+        // A second tick: no re-roll (the latch holds).
+        let mut rng2 = Script::new(&[], &[]);
+        p.ai_bone_shard(&w, &mut rng2);
+        assert_eq!(p.frame, 1, "the frame stays");
+        assert!(rng2.draws.is_empty(), "no re-roll");
+    }
+
+    // (The merge keep-one, d78 FINAL research/372 §3: d78's 620 age/fall
+    // witness DROPPED — d77's
+    // `s1_e_21h_d77_the_nebula_shard_row_and_forty_tick_fuse` pins the same
+    // fuse/gravity/drag contract plus the row.)
+
+    /// The 246/249 7-tick immunity arm (`:14024-14031`) rides the boxed
+    /// walk: a landed Stynger hit arms immune[owner] = 7, not the stock 10.
+    #[test]
+    fn w4_d78_b2c_the_stynger_hit_carries_the_seven_tick_immunity() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 100.0;
+        npc.y = 100.0;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        npc.defense_override = Some(0);
+        // A live 249 at the NPC (penetrate 1, the row default).
+        let slot = pool.spawn_with_data_ai(STYNGER_SHRAPNEL, 100.0, 100.0, 0.0, 0.0, 30, 5.0, 0.0, 0.0).unwrap();
+        let mut rng = Script::new(&[100, 0], &[]);
+        pool.damage_pve_boxed(slot, std::slice::from_mut(&mut npc), (false, false), &mut rng, 0.0);
+        assert!(npc.hp < 10_000, "the hit lands");
+        assert_eq!(npc.immune[0], 7, "the 246/249 per-type arm");
+    }
+}
+
 #[cfg(test)]
 mod falling_tests {
     use super::*;
