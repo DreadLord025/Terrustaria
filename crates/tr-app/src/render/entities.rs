@@ -639,6 +639,25 @@ pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
             // local (`:56507`/`:58627-58640`/`:58824-58840`), none of
             // ours; the style-7 critters and the unwired 111-119 idle
             // stand-ins write none either.
+            // W4-c4 merge fold (the d40/d35 precedent): the style-44
+            // swimmers' tilts (the antlions' AI tilt `NPC.cs:30963`/
+            // `:30996`, the fish's FindFrame tilt `:74768`/`:74773`) +
+            // the style-16 swimmers' `vy * direction * 0.1` (`:24008-
+            // 24019`) / the Dolphin's leap tilt (`:23607-23615`). The
+            // canonical FlyingFish/CorruptGoldfish/BloodFeeder ride c4's
+            // machines now (the E8 keep-one) - their rows join here;
+            // Pufferfish/Orca join with d43.
+            | NpcKind::FlyingFish
+            | NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish
+            | NpcKind::CorruptGoldfish
+            | NpcKind::Arapaima
+            | NpcKind::BloodFeeder
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin
             | NpcKind::DD2LightningBug
             | NpcKind::GoldGoldfishWalker
             | NpcKind::Seagull2
@@ -760,6 +779,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(D40_SHEETS)
             .chain(D35_SHEETS)
             .chain(STYLE10_SHEETS)
+            .chain(STYLE44_SHEETS)
+            .chain(STYLE16_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1215,6 +1236,16 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         // NOT in the `:23214` support group's overwrite list, so the -6
         // stands alone.
         DD2JavelinT2 => num46 = -6.0,
+        // W4-c4 — the SAME `:23011-23013` row for the vanilla type 581
+        // (`NPCID.FlyingAntlion`, the Antlion Swarmer): the C# keys the
+        // nudge on the type id, and the port now carries a kind at 581
+        // (the javelin T2's row above is the historical mis-mapping —
+        // its real net id is 562; left untouched, the two kinds ride the
+        // same literal exactly like the C#'s single 581 arm). 581 is not
+        // in the `:23166` afterglow group's overwrite list either (the
+        // group draws its own arm — the cited draw-side skip), so the
+        // -6 stands alone here too.
+        FlyingAntlion => num46 = -6.0,
         // `:23038` — 612/613's `num46 -= 2` (the DD2 goblin T3 riders); the
         // port's T1/T2 pair is its stand-in.
         DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
@@ -1238,6 +1269,11 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
                 num46 += (16.0 * num48) as i32 as f32;
             }
         }
+        // W4-c4 merge (E8, research/148 carry-list): the Pufferfish 688
+        // `num46 += 10` (`Main.cs:23115-23117`) + the Orca 692 wet anchor
+        // `num46 = wet ? 6 : 10` (`:23072-23074`) arms RETIRE with the
+        // kinds - d43's merge re-lands them verbatim (the keeper receipt
+        // rides the chain-banner + research/148).
         // `:23077-23091` — the `num47` adds of the same switch.
         Plantera => num47 += 26.0,
         BrainOfCthulhu => num47 += 50.0 * n.scale,
@@ -1788,6 +1824,48 @@ pub(crate) const D35_SHEETS: &[u32] = &[
 /// WaterBoltMimic's NPC_694 is c3's own.
 pub(crate) const STYLE10_SHEETS: &[u32] = &[
     694, // the Water Bolt Mimic
+];
+
+/// W4-c4: the style-44 swimmers' own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `SMALL_KIND_SHEETS`. The FlyingFish's protocol id is the port-local
+/// 359 (d37's frozen-band row adopted; the original 354 retired — it
+/// collided d37's CochinealBeetle), but its DRAW sheet is the
+/// vanilla NPC_224 — `texture_net_id` rides `net_id()` (the bestiary row),
+/// which already carries 224, so no override arm is needed. Measured
+/// headroom (tools/atlas_sim.js's skyline packer over the real content
+/// dims): the four sheets (40×128, 138×522, 100×378, 40×128) lift the
+/// main set 7711 → 7757 px and the full gore+font set 8119 → 8143 px —
+/// both under the 8192 strict-GPU bound.
+pub(crate) const STYLE44_SHEETS: &[u32] = &[
+    // E8 merge: 224 rides d37's D37_SHEETS (the FlyingFish dedupe).
+    509, // the Giant Antlion Swarmer
+    581, // the Antlion Swarmer
+    587, // the Wandering Eye Fish
+];
+
+/// W4-c4: the style-16 swimmers' own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
+/// `STYLE44_SHEETS`. The CorruptGoldfish/Arapaima protocol ids are the
+/// port-local 405/406 (the free-port band; the original 229/237 squatted
+/// the reserved cs-owned holes), but
+/// their DRAW sheets are the vanilla NPC_57/NPC_157 — `texture_net_id`
+/// rides `net_id()` (the bestiary row), which carries 57/157, so no
+/// override arm is needed. Measured headroom (tools/_w4c4_headroom.js's
+/// skyline packer over the real content dims): the eight sheets lift the
+/// main set 7757 → 7762 px and the full gore+font set 8143 → 8150 px —
+/// both under the 8192 strict-GPU bound. The Orca's NPC_692 (136×992)
+/// OVERFLOWS the full set (8226) — its sheet is atlas-deferred (the
+/// wyvern precedent, ANALYSIS "The style-16 swimmers"); its AI + stats
+/// are fully wired and the draw arm skips until the repack.
+pub(crate) const STYLE16_SHEETS: &[u32] = &[
+    // E8 merge: 57/241 ride d34/d37's sheet consts; 688 lands with d43
+    // (the catchItem/anchor/module keepers stay wired on the vanilla id).
+    157, // the Arapaima
+    465, // the Vicious Goldfish
+    592, // the Gold Goldfish
+    607, // the Pupfish
+    615, // the Dolphin
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -4283,6 +4361,42 @@ pub(crate) fn draw_npcs(
             NpcKind::WaterBoltMimic => {
                 pumpkin_moon_draw(assets.npc_sheet(694), npc_rows(694), n, w, h)
             }
+            // W4-c4: the style-44 swimmers draw their own sheets
+            // (`STYLE44_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (`Main.cs:67082`:
+            // 224/587 four frames, 509/581 nine) with the generic centred
+            // anchor — the small-kinds arm's shape. All four rotate (the
+            // whitelist below): the antlions' AI tilt (`NPC.cs:30963`/
+            // `:30996`) and the fish's FindFrame tilt (`:74768`/`:74773`).
+            // E8 merge: FlyingFish's draw is d37's group arm above (the
+            // identical texture_net_id shape - keep-one).
+            NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-c4: the style-16 swimmers draw their own sheets
+            // (`STYLE16_SHEETS`) at `SetFrameSize`'s integer-division row
+            // height over `Main.npcFrameCount[type]` (`Main.cs:67082`:
+            // 57/157/241/465/592/607/688 six frames, 615 five, 692 sixteen)
+            // with the generic centred anchor — the style-44 arm's shape.
+            // All nine rotate (the whitelist below): the AI's
+            // `vy * direction * 0.1` tilt (`NPC.cs:24008-24019`), the
+            // Dolphin's leap tilt (`:23607-23615`) and the Orca's aim
+            // (`:23990-24007`). The Orca's sheet is atlas-deferred —
+            // `npc_sheet(692)` returns None and the draw skips (the wyvern
+            // precedent).
+            // E8 merge drops: CorruptGoldfish (d34's arm above),
+            // BloodFeeder (d37's group arm above), Pufferfish/Orca (d43).
+            NpcKind::Arapaima
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -5434,6 +5548,20 @@ mod anchor_tests {
         // compute their own anchors).
         for kind in [NpcKind::Slime, NpcKind::MartianSaucer, NpcKind::Deerclops] {
             assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?}");
+        }
+        // W4-c4 merge (E8): the Pufferfish/Orca anchor asserts retire
+        // with the kinds (d43 re-pins them - research/148's carry-list).
+        // The remaining fish have no anchor row (the default 0).
+        for kind in [
+            NpcKind::CorruptGoldfish,
+            NpcKind::Arapaima,
+            NpcKind::BloodFeeder,
+            NpcKind::CrimsonGoldfish,
+            NpcKind::GoldGoldfish,
+            NpcKind::Pupfish,
+            NpcKind::Dolphin,
+        ] {
+            assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?} no anchor row");
         }
     }
 

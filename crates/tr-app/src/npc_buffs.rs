@@ -238,6 +238,18 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => &[],
         // The swimmers: no debuff-immunity rows.
         NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => &[],
+        // W4-c4 (the style-16 swimmers): `Sets.DebuffImmunitySets` rows
+        // 57/157/241/465/592/607/615 are `{ SpecificallyImmuneTo: [31] }`
+        // (`NPCID.cs:6075+` — On Fire! immunity, the wyvern precedent);
+        // 688/692 have NO row (the null else-branch, `NPC.cs:17822-17828`).
+        // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+        // above own them), Pufferfish/Orca (d43 lands later - the null
+        // else-branch already covers their absence).
+        NpcKind::Arapaima
+        | NpcKind::CrimsonGoldfish
+        | NpcKind::GoldGoldfish
+        | NpcKind::Pupfish
+        | NpcKind::Dolphin => &[31],
         // The worms: no debuff-immunity rows.
         NpcKind::DevourerHead
         | NpcKind::DevourerBody
@@ -781,6 +793,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // { 20, 31 }` (`NPCID.cs:10066-10072`) - Poisoned + On Fire!;
         // the 34/289 rows are d34/d38's above (E8 keep-both).
         NpcKind::WaterBoltMimic => &[20, 31],
+        // W4-c4 (the style-44 swimmers): none of 224/509/581/587 has a
+        // `DebuffImmunitySets` row (`NPCID.cs:6075+`'s dictionary carries
+        // no such keys) — the null-row else-branch, no immunity.
+        NpcKind::FlyingFish
+        | NpcKind::GiantFlyingAntlion
+        | NpcKind::FlyingAntlion
+        | NpcKind::EyeballFlyingFish => &[],
     }
 }
 

@@ -17,6 +17,16 @@
 //! other ten are ported verbatim and reachable through [`ai_016_arm`]'s
 //! `ty` parameter (the witness tests drive them with a stand-in body).
 //!
+//! W4-c4 rosters NINE of the ten (CorruptGoldfish 57 / Arapaima 157 /
+//! BloodFeeder 241 / CrimsonGoldfish 465 / GoldGoldfish 592 / Pupfish 607 /
+//! Dolphin 615 / Pufferfish 688 / Orca 692) through the SAME
+//! `update_swimmer` family arm — [`vanilla_type`] maps each kind to its
+//! `cs_id`. The tenth, AnglerFish 102, is the W4-d35 roster lane (its
+//! lure-light [`Ai16Effects::light`] stays write-only until that kind
+//! lands). The Orca's DRAW sheet is atlas-deferred (the 136x992 strip
+//! overflows the 8192 bound — the wyvern precedent); its AI + stats are
+//! fully wired.
+//!
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
 //! `npc.rs::update_swimmer` routes the three kinds through [`ai_016_step`]
 //! (the `is_wet` pass + the session-player `Ai16Ctx`; `justHit` rides the
@@ -77,10 +87,12 @@ pub struct Ai16Ctx<'a> {
     /// `Main.player[target].wet` (`:23704`) — the candidate struct carries
     /// `dead` but not `wet`; the caller folds the session player's flag.
     pub player_wet: bool,
-    /// `NPC.justHit` (`:23502`/`:23518`) — the Pufferfish's puff latch. The
-    /// port's `Npc` has no `justHit` field yet (the strike path's `hurt_cd`
-    /// stand-in is a cooldown, not the one-tick flag) — the caller supplies
-    /// the flag at the wiring step.
+    /// `NPC.justHit` (`:23502`/`:23518`) — the Pufferfish's puff latch.
+    /// The ONE-TICK strike flag (`Npc::just_hit`, armed by `hurt` at
+    /// `NPC.cs:81274`, cleared at the update tail `:90516`) — NOT the
+    /// `hurt_cd` cooldown (the retired stand-in re-puffed through the
+    /// whole cooldown tail at the `:23518-23521` deflate boundary, the
+    /// W95 defect class; the W4-c4 follow-up wires the flag).
     pub just_hit: bool,
     /// `Main.EverLastingTicker` for the `targetSetFrame` stamp
     /// (`NPC.cs:77780`) — 0 until the ticker is plumbed (the S1-D-3p
@@ -96,8 +108,11 @@ pub struct Ai16Effects {
     pub light: Option<(i32, i32, [f32; 3])>,
 }
 
-/// The port's three aiStyle-16 kinds → their vanilla `NPC.type`
-/// (`npc/data.rs`'s net-id rows; `NPCID.cs:10787`/`:10793`/`:10807`).
+/// The port's aiStyle-16 kinds → their vanilla `NPC.type`
+/// (`npc/data.rs`'s cs_id rows; `NPCID.cs:10787`/`:10793`/`:10807` +
+/// W4-c4's nine: `:10791`/`:10991`/`:11159`/`:11603`/`:11861`/`:11891`/
+/// `:11907`/`:12053`/`:12061`). The AnglerFish (102) is the one unported
+/// member left — its kind is the W4-d35 roster lane.
 fn vanilla_type(kind: NpcKind) -> i32 {
     match kind {
         NpcKind::Goldfish => 55,
@@ -107,9 +122,18 @@ fn vanilla_type(kind: NpcKind) -> i32 {
         // C#'s type-57 branches are the shared wet/dry machine (no 57-only
         // arm; the critter exclusion `:23700` keeps it OUT, so it chases).
         NpcKind::CorruptGoldfish => 57,
-        // W4-d37 — the Blood Feeder (241) rides the generic aiStyle-16
+        // W4-d37 - the Blood Feeder (241) rides the generic aiStyle-16
         // wet/dry machine (`NPC.cs:23824-23961`, the 0.1/0.1 chase + bob).
         NpcKind::BloodFeeder => 241,
+        // W4-c4 merge (the superset-module fold): the five kept kinds
+        // route through the SAME family machine (the 157 asymmetric
+        // chase caps `:23774-23802`, the 615 idle-timer/leap machine
+        // `:23572-23697`, the critter exclusion `:23701`).
+        NpcKind::Arapaima => 157,
+        NpcKind::CrimsonGoldfish => 465,
+        NpcKind::GoldGoldfish => 592,
+        NpcKind::Pupfish => 607,
+        NpcKind::Dolphin => 615,
         _ => unreachable!("only aiStyle-16 kinds reach the family arm"),
     }
 }
@@ -664,6 +688,190 @@ pub fn ai_016_arm(
     fx
 }
 
+/// `NPC.FindFrame`'s type cases for the family. `frame` is the ROW index
+/// (the port's `Npc::frame` convention — the C# stores `frame.Y = row *
+/// frameHeight`), `frame_counter` the C# `frameCounter`, `frame_count`
+/// `Main.npcFrameCount[type]` (`Main.cs:67082`: 57/157/241/465/592/607/688
+/// = 6, 615 = 5, 692 = 16). The five cases:
+/// * 55/57/58/102/241/465/592/607 (`NPC.cs:74181-74226`) — the wet flap
+///   rows 0..3 at the 6-tick bands, the dry flop rows 4/5;
+/// * 157 (`:74134-74180`) — the Arapaima's 8-band 5-tick cycle (the dry
+///   tick double-counts);
+/// * 615 (`:74227-74243`) — the Dolphin's 7-tick strip over rows
+///   0..count-2, the dry leap pin row 4;
+/// * 688 (`:74244-74290`) — the Pufferfish's puff rows 4/5 (6-tick), dry
+///   flop rows 4/5 (12-tick), wet flap rows 0..3 (8-tick);
+/// * 692 (`:74693-74762`) — the Orca's two-half strip (the ai[0]==0 half
+///   offset), the wet 5/7-tick flap and the dry velocity-keyed row glide.
+///   The `!IsABestiaryIconDummy` sprite flip folds to always-flip (the
+///   port has no bestiary dummy — the wave-B documented skip).
+pub fn style16_find_frame(
+    npc_type: i32,
+    wet: bool,
+    vy: f32,
+    facing: i32,
+    ai0: f32,
+    ai2: f32,
+    frame_count: u32,
+    frame: &mut u32,
+    frame_counter: &mut f32,
+    sprite_dir: &mut i32,
+) {
+    match npc_type {
+        // `case 55/57/58/102/241/465/592/607` (`:74181-74226`).
+        55 | 57 | 58 | 102 | 241 | 465 | 592 | 607 => {
+            *sprite_dir = facing;
+            *frame_counter += 1.0;
+            if wet {
+                if *frame_counter < 6.0 {
+                    *frame = 0;
+                } else if *frame_counter < 12.0 {
+                    *frame = 1;
+                } else if *frame_counter < 18.0 {
+                    *frame = 2;
+                } else if *frame_counter < 24.0 {
+                    *frame = 3;
+                } else {
+                    *frame_counter = 0.0;
+                }
+            } else if *frame_counter < 6.0 {
+                *frame = 4;
+            } else if *frame_counter < 12.0 {
+                *frame = 5;
+            } else {
+                *frame_counter = 0.0;
+            }
+        }
+        // `case 157` (`:74134-74180`) — the Arapaima.
+        157 => {
+            *sprite_dir = facing;
+            *frame_counter += 1.0;
+            if !wet {
+                *frame_counter += 1.0;
+            }
+            let num50 = 5.0;
+            let c = *frame_counter;
+            if c < num50 {
+                *frame = 0;
+            } else if c < num50 * 2.0 {
+                *frame = 1;
+            } else if c < num50 * 3.0 {
+                *frame = 2;
+            } else if c < num50 * 4.0 {
+                *frame = 1;
+            } else if c < num50 * 5.0 {
+                *frame = 3;
+            } else if c < num50 * 6.0 {
+                *frame = 4;
+            } else if c < num50 * 7.0 {
+                *frame = 5;
+            } else if c < num50 * 8.0 {
+                *frame = 4;
+            } else {
+                *frame_counter = 0.0;
+            }
+        }
+        // `case 615` (`:74227-74243`) — the Dolphin.
+        615 => {
+            *sprite_dir = facing;
+            if !wet && ai2 == 1.0 {
+                *frame = 4;
+                return;
+            }
+            if !wet {
+                *frame_counter += 1.0;
+            }
+            *frame_counter += 1.0;
+            if *frame_counter >= (7 * (frame_count - 1)) as f32 {
+                *frame_counter = 0.0;
+            }
+            *frame = (*frame_counter / 7.0) as u32;
+        }
+        // `case 688` (`:74244-74290`) — the Pufferfish.
+        688 => {
+            *sprite_dir = facing;
+            if ai2 == 1.0 {
+                if *frame != 5 {
+                    *frame_counter += 1.0;
+                    if *frame_counter >= 6.0 {
+                        *frame_counter = 0.0;
+                        *frame += 1;
+                    }
+                }
+                if *frame < 4 || *frame > 5 {
+                    *frame = 4;
+                }
+            } else if !wet {
+                *frame_counter += 1.0;
+                if *frame_counter >= 12.0 {
+                    *frame_counter = 0.0;
+                    *frame += 1;
+                }
+                if *frame < 4 || *frame > 5 {
+                    *frame = 4;
+                }
+            } else {
+                *frame_counter += 1.0;
+                if *frame_counter >= 8.0 {
+                    *frame_counter = 0.0;
+                    *frame += 1;
+                }
+                if *frame > 3 {
+                    *frame = 0;
+                }
+            }
+        }
+        // `case 692` (`:74693-74762`) — the Orca.
+        692 => {
+            *sprite_dir = -facing;
+            let num34 = frame_count / 2;
+            let num35 = *frame;
+            let mut num36 = num35 % num34;
+            let flag3 = ai0 == 0.0;
+            let num37 = if flag3 { 5.0 } else { 7.0 };
+            if wet {
+                *frame_counter += 1.0;
+                if *frame_counter >= num37 {
+                    num36 += 1;
+                    if num36 >= num34 {
+                        num36 = 0;
+                    }
+                    *frame_counter = 0.0;
+                }
+            } else {
+                let num38 = if vy > 0.0 {
+                    7
+                } else if vy < 0.0 {
+                    3
+                } else {
+                    1
+                };
+                if num36 != num38 {
+                    *frame_counter += 1.0;
+                    if *frame_counter >= 4.0 {
+                        if num36 < num38 {
+                            num36 += 1;
+                        } else if num36 > num38 {
+                            num36 -= 1;
+                        }
+                        if num36 == num34 {
+                            num36 = num38;
+                        }
+                        *frame_counter = 0.0;
+                    }
+                }
+            }
+            if flag3 {
+                num36 += num34;
+            }
+            if num36 != num35 {
+                *frame = num36;
+            }
+        }
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Witness tests — WRITTEN, NOT RUN (code-only mode). Each pins one C#
@@ -1032,9 +1240,11 @@ mod tests {
         );
     }
 
-    /// The routing pin: the port's three swimmers carry aiStyle 16
+    /// The routing pin: the port's swimmers carry aiStyle 16
     /// (`npc/data.rs`'s row, `NPC.cs:9465`/`:9508`/`:9615`) and map to
-    /// their vanilla types (`NPCID.cs:10787`/`:10793`/`:10807`).
+    /// their vanilla types (`NPCID.cs:10787`/`:10793`/`:10807`). W4-c4
+    /// adds the nine style-16 swimmers (`NPC.cs:9494`/`:10995`/`:12111`/
+    /// `:14488`/`:16684`/`:16800`/`:16897`/`:17658`/`:17714`).
     #[test]
     fn the_swimmer_kinds_carry_style_16_and_their_vanilla_types() {
         assert_eq!(NpcKind::Goldfish.ai_style(), 16);
@@ -1043,5 +1253,126 @@ mod tests {
         assert_eq!(vanilla_type(NpcKind::Goldfish), 55);
         assert_eq!(vanilla_type(NpcKind::Piranha), 58);
         assert_eq!(vanilla_type(NpcKind::Shark), 65);
+        for (kind, ty) in [
+            (NpcKind::CorruptGoldfish, 57),
+            (NpcKind::Arapaima, 157),
+            (NpcKind::BloodFeeder, 241),
+            (NpcKind::CrimsonGoldfish, 465),
+            (NpcKind::GoldGoldfish, 592),
+            (NpcKind::Pupfish, 607),
+            (NpcKind::Dolphin, 615),
+            // E8 merge: Pufferfish/Orca drop with the kinds (d43 lands
+            // later; the module's 688/692 machines stay for its merge).
+        ] {
+            assert_eq!(kind.ai_style(), 16, "{kind:?} aiStyle");
+            assert_eq!(vanilla_type(kind), ty, "{kind:?} vanilla type");
+        }
+    }
+
+    /// `NPC.cs:74134-74180` — the Arapaima's 8-band 5-tick cycle: the wet
+    /// tick counts 1, the dry tick counts 2; the row ladder is
+    /// 0/1/2/1/3/4/5/4 then the counter resets at 40. WRITTEN, NOT RUN.
+    #[test]
+    fn the_arapaima_frame_walks_the_eight_band_cycle() {
+        let mut frame = 0u32;
+        let mut counter = 0.0f32;
+        let mut dir = 0i32;
+        // Wet: 40 ticks walk the full cycle, the row at each 5-tick band.
+        let want = [0, 1, 2, 1, 3, 4, 5, 4];
+        for t in 1..=40u32 {
+            style16_find_frame(157, true, 0.0, 1, 0.0, 0.0, 6, &mut frame, &mut counter, &mut dir);
+            let band = ((t - 1) / 5) as usize;
+            if t % 5 != 0 {
+                assert_eq!(frame, want[band] as u32, "wet tick {t}");
+            }
+        }
+        assert_eq!(counter, 0.0, "the 40-tick lap resets");
+        assert_eq!(dir, 1, "the sprite faces the direction");
+        // Dry: the double-count reaches the reset at tick 20.
+        let mut f2 = 0u32;
+        let mut c2 = 0.0f32;
+        for _ in 0..20 {
+            style16_find_frame(157, false, 0.0, 1, 0.0, 0.0, 6, &mut f2, &mut c2, &mut dir);
+        }
+        assert_eq!(c2, 0.0, "the dry double-count laps at 20");
+    }
+
+    /// `NPC.cs:74227-74243` — the Dolphin's 7-tick strip over rows
+    /// 0..count-2 (count 5 → rows 0..3, the 28-tick lap); the dry leap
+    /// (ai[2]==1) pins row 4. WRITTEN, NOT RUN.
+    #[test]
+    fn the_dolphin_frame_walks_the_seven_tick_strip() {
+        let mut frame = 0u32;
+        let mut counter = 0.0f32;
+        let mut dir = 0i32;
+        // Wet: the counter advances 1/tick, the row is counter/7.
+        for t in 1..=28u32 {
+            style16_find_frame(615, true, 0.0, 1, 0.0, 0.0, 5, &mut frame, &mut counter, &mut dir);
+            if t < 28 {
+                assert_eq!(frame, (t / 7) as u32, "wet tick {t}");
+            }
+        }
+        assert_eq!(counter, 0.0, "the 28-tick lap resets");
+        // The dry leap pins row 4 and returns (no counter advance).
+        let mut f2 = 0u32;
+        let mut c2 = 5.0f32;
+        style16_find_frame(615, false, 0.0, 1, 0.0, 1.0, 5, &mut f2, &mut c2, &mut dir);
+        assert_eq!(f2, 4, "the dry leap row (:74231)");
+        assert_eq!(c2, 5.0, "the leap return leaves the counter");
+    }
+
+    /// `NPC.cs:74244-74290` — the Pufferfish: the puff (ai[2]==1) walks
+    /// rows 4/5 on the 6-tick counter; the wet flap walks rows 0..3 on the
+    /// 8-tick counter. WRITTEN, NOT RUN.
+    #[test]
+    fn the_pufferfish_frame_puffs_and_flaps() {
+        // Puffed: from row 4, the 6-tick counter steps to row 5.
+        let mut frame = 4u32;
+        let mut counter = 0.0f32;
+        let mut dir = 0i32;
+        for _ in 0..6 {
+            style16_find_frame(688, false, 0.0, 1, 0.0, 1.0, 6, &mut frame, &mut counter, &mut dir);
+        }
+        assert_eq!(frame, 5, "the puff's second row (:74255)");
+        assert_eq!(counter, 0.0);
+        // A puffed frame outside 4/5 snaps to 4 (:74258-74261).
+        let mut f2 = 0u32;
+        let mut c2 = 0.0f32;
+        style16_find_frame(688, false, 0.0, 1, 0.0, 1.0, 6, &mut f2, &mut c2, &mut dir);
+        assert_eq!(f2, 4, "the puff snap");
+        // Wet flap: rows 0..3 on the 8-tick counter, wrap at row 4.
+        let mut f3 = 0u32;
+        let mut c3 = 0.0f32;
+        for t in 1..=32u32 {
+            style16_find_frame(688, true, 0.0, 1, 0.0, 0.0, 6, &mut f3, &mut c3, &mut dir);
+            assert!(f3 <= 3, "wet tick {t} row {f3} stays in 0..3");
+        }
+    }
+
+    /// `NPC.cs:74693-74762` — the Orca's two-half strip: the ai[0]==0 half
+    /// offsets by count/2 (8), the wet flap advances on the 5-tick counter
+    /// (ai[0]==0) or 7-tick (else); the sprite flips AGAINST the direction.
+    /// WRITTEN, NOT RUN.
+    #[test]
+    fn the_orca_frame_walks_the_two_half_strip() {
+        let mut frame = 0u32;
+        let mut counter = 0.0f32;
+        let mut dir = 0i32;
+        // ai[0]==0 (flag3): the wet 5-tick flap over the offset half 8..15.
+        style16_find_frame(692, true, 0.0, 1, 0.0, 0.0, 16, &mut frame, &mut counter, &mut dir);
+        assert_eq!(dir, -1, "the Orca flips against the direction (:74697)");
+        assert_eq!(counter, 1.0, "the first tick counts 1");
+        for _ in 0..4 {
+            style16_find_frame(692, true, 0.0, 1, 0.0, 0.0, 16, &mut frame, &mut counter, &mut dir);
+        }
+        assert_eq!(frame, 9, "the 5th tick flaps 8 → 9 (the offset half)");
+        assert_eq!(counter, 0.0, "the 5-tick lap resets");
+        // ai[0]!=0: the unoffset half 0..7 on the 7-tick counter.
+        let mut f2 = 0u32;
+        let mut c2 = 0.0f32;
+        for _ in 0..7 {
+            style16_find_frame(692, true, 0.0, 1, 1.0, 0.0, 16, &mut f2, &mut c2, &mut dir);
+        }
+        assert_eq!(f2, 1, "the unoffset half steps 0 → 1");
     }
 }

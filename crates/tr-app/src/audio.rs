@@ -136,6 +136,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_30", 3),
     ("NPC_Hit_36", 3),
     ("NPC_Hit_43", 3),
+    // W4-c4 merge dedupe: the antlion pair's NPCHit32 is the d42 row
+    // above; the BloodFeeder's NPCHit13 is the d37 row below (one bank
+    // row per cue - the spine-end precedent).
     ("NPC_Hit_39", 3),
     ("NPC_Hit_40", 3),
     ("NPC_Hit_42", 3),
@@ -209,6 +212,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // The Headless Horseman's death cue (`NPC.cs:12987`'s `NPCDeath18`,
     // S1-F-13b's row) — S1-E-21 wave C closes the bank gap.
     ("NPC_Killed_18", 4),
+    // W4-c4 merge dedupe: the BloodFeeder's NPCDeath19 is the d37 row
+    // below (one bank row per cue).
     // S1-D-3 W-9 fishron wiring — Duke Fishron's death cue
     // (`NPC.cs:13714`'s `NPCDeath20`) — the S1-E-21 bank-gap closure.
     ("NPC_Killed_20", 4),
@@ -245,6 +250,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // W4-c3 merge dedupe: the Water Bolt Mimic's NPCDeath52
     // (`NPC.cs:17746`) is already registered by the d35 (B) row above
     // (the spine-end precedent - one bank row per cue).
+    // W4-c4 merge dedupe: the antlion pair's NPCDeath35 is the d42 row
+    // above (one bank row per cue).
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
     // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the

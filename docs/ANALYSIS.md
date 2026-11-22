@@ -33252,6 +33252,528 @@ their SetDefaults rows + the dispatch claim together. Every other
 file is byte-identical except the one `mod` line in `main.rs` and
 the docs. 15 witness tests WRITTEN, NOT RUN — **no compiler invoked**
 (code-only mode).
+
+**WIRED by W4-c4 (2026-11-20, code-only mode).** The census commit
+(5c4c8311) landed the four `NpcKind` rows + the `SetDefaults` tables
+(the protocol ids: FlyingFish took the port-local **354** — the
+vanilla 224 slot is the WyvernLegs' band; 509/581/587 keep their
+vanilla ids; `cs_id()` maps kind → vanilla type for the arm. The 354
+was later RETIRED for d37's frozen-band **359** — the renumber
+execution section below). This
+round claims the dispatch:
+
+* **The sim pre-pass** (`world_sim/npcs.rs`, the style-56 seam): at
+  each swimmer's own slot turn the tick closure fills a `Style44Env`
+  from the live pool — `siblings` carries the VANILLA `cs_id` per slot
+  (a protocol-keyed scan would never match: the FlyingFish's 359 ≠
+  224), `player_wet` the session player's live flag, `dust`/`dust_ctx`
+  the shared `app.dust` + the frame's `spawn_ctx`, `rng` the
+  `UpdateNPCs` stream. The 587 materialize's rolls land in the shared
+  pool in slot order; `wants_no_gravity` is consumed as a no-op (the
+  port's flyer integration is kind-driven — `NpcKind::no_gravity`
+  carries the four, the `:30863` every-tick write).
+* **The axis' 44 arm** (`npc.rs`) owns the post-`AI()` movement: the
+  family is noGravity but NOT noTileCollide, so `UpdateNPC` runs
+  `UpdateCollision` (`NPC.cs:90490-90492`) — the bat/fish flyer
+  stand-in (`integrate_flyer_collision`, the `update_cave_bat` shape)
+  with the wet re-probe (`Collision_WaterCollision`, `:93063`; the
+  pre-AI `is_wet` pass feeds the arm's wet tail, the `update_swimmer`
+  convention). The documented granularity of that stand-in (the
+  snap-after-halving order, ANALYSIS "The bat/fish reconcile") applies
+  unchanged. The `update_kind_ai` arms are `unreachable!` markers (the
+  DungeonSpirit precedent).
+* **FindFrame**: the four kind arms ride `style44_find_frame` with
+  `cs_id()` + `rows()` (the sheet's `Main.npcFrameCount` — 4/9/9/4,
+  verified entry-by-entry against `Main.cs:67082` and the port's
+  verbatim `NPC_FRAME_COUNT` table).
+* **The draw**: `STYLE44_SHEETS` (224/509/581/587) packs the four own
+  sheets (`texture_net_id` rides `net_id()` — the bestiary rows carry
+  the vanilla ids, so the FlyingFish draws NPC_224 despite protocol
+  354); the draw arms use `pumpkin_moon_draw` (the integer-division
+  row height) and all four join the rotation whitelist (the antlions'
+  AI tilt + the fish's FindFrame tilt). The 581 anchor nudge
+  (`Main.cs:23011-23013`, `num46 = -6`) rides `npc_anchor_nudge` —
+  the same literal the historical DD2JavelinT2 row carries (the C#
+  keys on the type id; both kinds now sit at the C#'s single 581 arm).
+  The bestiary portraits rest the sheets' own row heights.
+  **Atlas headroom measured** (tools/atlas_sim.js's skyline packer
+  over the real content dims — NPC_224/587 40×128, NPC_509 138×522,
+  NPC_581 100×378): the main set lifts 7711 → 7757 px, the full
+  gore+font set 8119 → 8143 px — both under the 8192 strict-GPU bound
+  (the wyvern deferral does NOT apply here).
+* **Cited skips kept**: the 581 afterglow draw arm (`Main.cs:23166`/
+  `:23304-23308` — the DD2-style glow group the antlion swarmer rides
+  in the vanilla; the port's glow pass is the pillar/tower family
+  only), the ambient sound rolls, the death gore/dust, the platform
+  fall-through (the module header's census).
+
+2 wiring witnesses WRITTEN, NOT RUN (`w4_c4_the_axis_claims_style_44_and_the_frames_walk_their_strips`
+in `npc.rs` — the axis claim + the per-kind flap cadence through the
+port's tables; `w4_c4_the_style44_pre_pass_separates_the_swarm_and_materializes_the_eye`
+in `world_sim/npcs.rs` — the cs_id-keyed separation push, the
+pre-separation tilt latch, the shared-pool 587 burst, the sight-gate
+pin). **No compiler invoked** (code-only mode).
+
+## The style-16 swimmers (W4-c4, 2026-11-21, code-only mode)
+
+**The census.** The 44-adjacent swim/fly machines were censused against
+`NPC.cs`'s `SetDefaults` `aiStyle = 44/45/68` rows and the pushed branch
+claims: aiStyle 44 (224/509/581/587) is this branch's phase 1+2; aiStyle
+45 (the Golem 245) is rostered; aiStyle 68 (363/365/603/609) is CLAIMED
+by the pushed `task/W4-c10-style68-waterfowl` (skipped). The lead's
+508/582-586 guesses are aiStyle 3/112 (the fighter/fairy machines, not
+swim/fly); UmbrellaSlime is rostered (aiStyle 1). The genuine unrostered
+44-adjacent SWIM machine is **aiStyle 16** — the fish family
+(`NPC.AI`'s `if (this.aiStyle == 16)` block, `NPC.cs:23492-24021`), which
+rides the EXACT `integrate_flyer_collision` + `is_wet` seam the style-44
+wiring uses. `npc_ai_style16.rs` already ports all 13 vanilla members
+verbatim (the S1-D-3 bat/fish reconcile) but rosters only three
+(Goldfish 55 / Piranha 58 / Shark 65).
+
+**The nine unclaimed members** (a strict `NpcKind::` claim scan over
+every pushed task branch found ZERO claims; the AnglerFish 102 is the
+W4-d35 roster lane — skipped): CorruptGoldfish 57, Arapaima 157,
+BloodFeeder 241, CrimsonGoldfish 465, GoldGoldfish 592, Pupfish 607,
+Dolphin 615, Pufferfish 688, Orca 692. The walker twins GoldfishWalker
+230 / GoldGoldfishWalker 593 are aiStyle 7 (the W4-b3 town machine, a
+separate lane) — documented, not rostered; the rain transform
+(`FishTransformationDuringRain`, `NPC.cs:92883-92915`) and the evil
+conversion (`AttemptToConvertNPCToEvil`, `:91941-91951`) wait on that
+lane.
+
+**The wiring.** Unlike style-44, aiStyle-16 needs NO world-sim pre-pass
+(no sibling scan, no dust — the module's RNG census: the Dolphin idle
+timer `Next(300,1200)`/`Next(1,3)`/`Next(2)` + the dry flop triple are the
+only draws, both on the caller's `UpdateNPCs` stream). The nine kinds
+join the EXISTING `update_swimmer` kind arm (`npc.rs`), which runs
+`ai_016_step` keyed on `cs_id` (`vanilla_type` extended) + the
+`integrate_flyer_collision` tail — behaviour-frozen for the existing
+three. `find_frame` rides the new `style16_find_frame` helper (the five
+C# cases: the 55/57/58/102/241/465/592/607 six-row flap `:74181-74226`,
+the 157 Arapaima 8-band cycle `:74134-74180`, the 615 Dolphin 7-tick
+strip `:74227-74243`, the 688 Pufferfish puff/flop/flap `:74244-74290`,
+the 692 Orca two-half glide `:74693-74762`; the `!IsABestiaryIconDummy`
+flip folds to always-flip — the wave-B documented skip).
+
+**The protocol ids**: CorruptGoldfish takes port-local **405** (the
+vanilla 57 slot is the GoblinThief's), Arapaima **406** (the vanilla 157
+slot is the BoundWizard's) — the free-port band, renumbered off the
+original 229/237 reserved-hole squat (the execution section below);
+241/465/592/607/615/688/692 keep their
+vanilla ids (all free). `cs_id()` maps kind → vanilla type for the arm's
+type gates; `render_key` rides the same port-local band (the FlyingFish
+359 precedent).
+
+**The draw**: `STYLE16_SHEETS` packs EIGHT own sheets (57/157/241/465/
+592/607/615/688); the draw arms use `pumpkin_moon_draw` and all nine join
+the rotation whitelist (the generic `vy*direction*0.1` AI tilt
+`:24008-24019`, the Dolphin leap tilt, the Orca aim). The anchor nudges:
+the Pufferfish's `num46 += 10` (`Main.cs:23115-23117`, the same literal
+the historical DD2GoblinT1 row carries) and the Orca's wet-dependent
+`num46 = wet ? 6 : 10` (`:23072-23074`). **Atlas headroom measured**
+(tools/_w4c4_headroom.js's skyline packer over the real content dims):
+the eight sheets lift the main set 7757 → 7762 px and the full gore+font
+set 8143 → 8150 px — both under the 8192 strict-GPU bound. **The Orca's
+NPC_692 (136×992) OVERFLOWS the full set (8226)** — its sheet is
+atlas-deferred (the wyvern precedent); its AI + stats are fully wired and
+the draw arm skips until the repack (`npc_sheet(692)` returns None).
+
+**The debuff immunity**: 57/157/241/465/592/607/615 carry the
+`{ SpecificallyImmuneTo: [31] }` row (`NPCID.cs:6075+`, On Fire! — the
+wyvern precedent); 688/692 have NO row (the null else-branch). The
+bestiary display names ride `en-US NPCs.json` (465 is "Vicious Goldfish",
+NOT the credit-id spelling); the GoldGoldfish 592 keeps its OWN entry
+(only the UI provider folds it onto the Goldfish 55,
+`BestiaryDatabaseNPCsPopulator.cs:706`).
+
+6 witnesses WRITTEN, NOT RUN (`w4_c4_the_style16_defaults_match_the_csharp_rows`
++ `w4_c4_the_style16_swimmers_step_and_walk_their_strips` in `npc.rs`;
+the routing pin + the Arapaima/Dolphin/Pufferfish/Orca FindFrame witnesses
+in `npc_ai_style16.rs`). **No compiler invoked** (code-only mode).
+
+## The style-16 dup-check: keep-one verdicts (W4-c4 follow-up, 2026-11-21, code-only)
+
+The phase-3+4 claim-scan ("ZERO claims on the nine members") was WRONG:
+it scanned `NpcKind::` arms but missed the **kinds-coverage bands** that
+port the same vanilla types under port-local protocol ids. Re-derived
+against the pushed tips (git-show, read-only) + the d37 reconcile
+playbook `docs/research/108-roster-master-reconcile.md` (tip `08f7d25cf`).
+
+### BloodFeeder 241 — c4 × d37 `750d8e44` (DUPLICATE KIND)
+
+d37's 211-280 band ports BloodFeeder at **protocol 373** (the port-local
+354-399 corridor; `cs_id`/`net_id` carry the vanilla 241). c4 ports the
+SAME `NpcKind::BloodFeeder` at **protocol 241** (vanilla-free). Arm-by-arm:
+
+| Arm | d37 `750d8e44` | c4 `22cec16f` | Equal? |
+|---|---|---|---|
+| `to_u16`/`from_u16` | 373 | 241 | **DIFFERENT id** |
+| `cs_id` / bestiary `net_id` | 241 | 241 | yes |
+| `size` | 18×20 | 18×20 | yes |
+| `contact_damage`/`defense`/`max_hp` | 50/20/150 | 50/20/150 | yes |
+| `value` / `knock_back_resist` | 500 / 1.0 (no row, `:8533`) | 500 / 1.0 | yes |
+| `ai_style` / `no_gravity` | 16 / true | 16 / true | yes |
+| hit/death sounds | NPCHit13 / NPCDeath19 | NPCHit13 / NPCDeath19 | yes |
+| debuff immunity | `{31}` | `{31}` | yes |
+| AI routing | `update_swimmer` → `ai_016_step` (`vanilla_type` 241) | same | yes |
+| FindFrame | inline case-55 group (`npc.rs`, wet 6/12/18/24 rows 0..3, dry 6/12 rows 4/5) | `style16_find_frame` case `55\|57\|58\|102\|241\|465\|592\|607` (same bands) | **behaviour-identical**, two copies |
+| draw sheet | `D37_SHEETS` NPC_241 (36×180) | `STYLE16_SHEETS` NPC_241 | same name (loader dedupes) |
+
+**Verdict: KEEP d37's row (protocol 373), RETIRE c4's duplicate.**
+Rationale: (1) 373 sits inside d37's frozen 354-399 band — the 108 final
+union plan (§3) keeps every d37 pushed id untouched; (2) c4's 241 squats
+a **reserved cs-owned hole**: 108 §3 lists `229/237-249/251-265/276-280`
+as "cs-owned, never reassign" (241 = the BloodFeeder's own vanilla type,
+already owned by d37's kind at 373). Neither id is "free" — both are
+claimed; 373 is the safe survivor. The merge keeps ONE `BloodFeeder`
+variant at 373/cs 241, dedupes the FindFrame onto c4's `style16_find_frame`
+helper (drop d37's inline arm), and keeps c4's `vanilla_type` 241 row
+(d37 added the identical row). c4's `update_swimmer` wiring is the SAME
+base function d37 rides — no behavioural change.
+
+### CrimsonGoldfish 465 — c4 × d40 `ec05fbcc9` (DUPLICATE KIND, same id)
+
+d40's 421-490 band ports CrimsonGoldfish at **protocol 465** (vanilla-free)
+— the SAME id c4 uses. Pure kind-duplication (no wire-id collision). Two
+d40 defects vs c4:
+
+| Arm | d40 `ec05fbcc9` | c4 `22cec16f` | C# truth |
+|---|---|---|---|
+| `knock_back_resist` | **0.4** (the stock fallback) | **1.0** (no row) | `NPC.cs:14483-14495` writes NO kb row → the `:8533` reset 1f. **d40 WRONG** |
+| `vanilla_type` extension | **MISSING** (only 55/58/65) | 465 added | d40's `update_swimmer` → `ai_016_step` → `vanilla_type(CrimsonGoldfish)` hits `unreachable!` → **PANIC at runtime**. c4 works |
+| FindFrame | inline case-465 (wet/dry 6-band) | `style16_find_frame` (same bands) | identical |
+| stats/sounds/immunity/sheet | 18×20/31/7/110/500, 1/1, `{31}`, NPC_465 | same | equal |
+
+**Verdict: KEEP c4's implementation at the shared id 465, RETIRE d40's
+duplicate row.** c4 is correct on both counts (kb 1.0; the `vanilla_type`
+row that makes the swimmer arm reachable). d40's 465 is inside its frozen
+430-488 vanilla-free band, so the id stays 465; the merge drops d40's
+kind + its kb-0.4 arm + its inline FindFrame (dedupe onto c4's helper).
+**The exact drop-lines are PUBLISHED**: `docs/research/143-d40-crimsongoldfish-retire-hunk.md`
+(the merger/d40b contract — every line read from d40's tip `8fe1d6d31`,
+the group-alternant edits spelled out, the post-drop invariants listed).
+
+### 592/607/615/688/692 — c4 × d42/d43 (UNCLAIMED; c4 stands)
+
+Probed the local worktrees read-only (`git -C … log`/`status`/`diff`):
+- **d42** (`task/W4-d42-npc-kinds-561-630`): branch ABSENT on origin;
+  worktree `TR-W4-d42` tip == base `a725acb04` with **UNCOMMITTED WIP**
+  (`npc.rs` +58 / `npc/data.rs` +27) porting **578-587 only**
+  (DD2LightningBug…EyeballFlyingFish) at a port-local **354..404** band.
+  It does NOT touch 592/607/615/688/692. **LOCAL-ONLY — resume note:** the
+  WIP band 354..404 hard-collides with d37's pushed 354-399 AND c4's
+  FlyingFish 354, and its FlyingAntlion 581 / EyeballFlyingFish 587 rows
+  duplicate c4's kinds — the WIP is stale (written pre-d37-push) and must
+  renumber to the 108 §3 guidance (d42 vanilla-free 491-697) on resume.
+- **d43** (`task/W4-d43-npc-kinds-631-697`): worktree `TR-W4-d43` CLEAN,
+  tip == base, no work pushed or staged. 688/692 unclaimed.
+
+**Verdict: c4's vanilla-free 592/607/615/688/692 STAND** (no pushed or
+local claim). The 108 §3 guidance confirms protocol ≥489 is free for the
+d41/d42/d43 lanes, so these ids are safe.
+**SUPERSEDED for 592/607/615 (2026-11-21 final phase):** d42 PUSHED its
+full band (`9b22c091a`) with GoldGoldfish 366 / Pupfish 381 / Dolphin
+389 — duplicate kinds, keep-d42-ids retire-c4-rows AT MERGE (the
+renumber-execution section below). 688/692 still stand (d43 clean).
+
+### BONUS hard collision — FlyingFish 224: c4 proto 354 × d37 CochinealBeetle 354
+
+c4's phase-1 FlyingFish rides **protocol 354** (`data.rs:595`); d37's
+CochinealBeetle ALSO rides **354** (`750d8e44`, the band's first id). Both
+pushed → a **wire-id collision** (the S1-F-1 class) if merged naively, AND
+d37 ports its OWN FlyingFish at **359** (a duplicate kind). **Verdict:
+KEEP d37's FlyingFish id 359 (frozen band), RETIRE c4's 354.** c4's
+FlyingFish is the fully-wired one (the world-sim style-44 pre-pass); d37's
+is a solo `update_flying_fish` wrapper over the SAME base
+`npc_ai_style44` module. The merge keeps ONE FlyingFish at 359/cs 224 with
+c4's world-sim wiring (dedupe d37's solo wrapper). c4's 509/581/587
+(vanilla-free) are free on the pushed union (d41 absent; d42's 581/587 are
+local-only WIP) — they stand, pending the d42 resume renumber.
+
+### Secondary flag — c4's CorruptGoldfish 229 / Arapaima 237 squat reserved holes
+
+No other branch claims these two kinds, but their protocol ids sit in the
+108 §3 reserved cs-owned hole set: **229 = the Pirate's vanilla type**
+(d37 ports Pirate at 361), **237 = JungleCreeperWall's** (d37 at 369).
+Assigning them to OTHER kinds (CorruptGoldfish cs 57 / Arapaima cs 157)
+re-creates the cs/proto confusion the reservation exists to prevent.
+**Merge-wave action (EXECUTED — see the renumber section below):**
+renumber CorruptGoldfish/Arapaima to genuinely free port-local ids;
+their `cs_id`/`net_id`/sheets are unaffected. The all-tips census found
+the holes are now also claimed by d125 (EmpressOfLight 229 /
+PrismaticLacewing 237) — the squat became a hard collision, so this
+branch renumbered NOW (405/406) rather than leaving it to the merger.
+
+### Net merge guidance (this lane)
+
+The nine swimmers' AI/FindFrame/draw wiring in c4 is the keeper (d37/d40
+ride the same base `update_swimmer` + `npc_ai_style44`); the protocol ids
+reconcile to the 108 frozen bands: BloodFeeder→373, CrimsonGoldfish→465
+(shared), FlyingFish→359, the five critters/enemies keep vanilla-free
+592/607/615/688/692, CorruptGoldfish/Arapaima renumber off the reserved
+holes. Duplicate `NpcKind` variants + `to_u16`/`from_u16` arms dedupe at
+merge (the `deny(unreachable_patterns)` guard forces it). **The renumber
+is EXECUTED on this branch** (the execution section below): FlyingFish
+359 (d37's row adopted), CorruptGoldfish 405 / Arapaima 406; the
+witnesses below pin the corrected behaviour. Code-only: no compiler
+invoked.
+
+## The Orca sheet overflow — repack priority note (W4-c4 → d35c, 2026-11-21, code-only)
+
+The Orca's `NPC_692` is **136×992** (16 frames × 62 px; the widest/tallest
+fish strip in the wave). Re-measured with `tools/_w4c4_headroom.js` (the
+skyline packer over the real `.xnb` dims, current HEAD baseline):
+
+- baseline main **7762** / full gore+font **8150** (bound 8192);
+- the eight packed style-16 sheets (57/157/241/465/592/607/615/688) are
+  already in the baseline (+0 each — they fit the existing skyline);
+- adding **NPC_692 alone**: main 7762→**7844** (+82, fits) but full
+  8150→**8226** (+76, **OVERFLOW** by 34 px).
+
+So the Orca is the SINGLE sheet that tips the full set over the strict-GPU
+bound. Its AI + stats + FindFrame + anchor nudge (`num46 = wet?6:10`,
+`Main.cs:23072-23074`) are fully wired; only the draw is deferred —
+`STYLE16_SHEETS` omits 692, `npc_sheet(692)` returns None, the draw arm
+skips (the wyvern precedent). The bestiary portrait rides the same sheet,
+so it too is deferred until the repack.
+
+**Priority for the d35c repack lane** (the `docs/research/113-atlas-repack-plan.md`
+two-page form, tip `7d131be3`): NPC_692 is a **page-1 admission candidate**
+— its padded area (138×994 ≈ **137.2 kpx**, the 113 §4 union's unit) would
+rank **#10** in the padded-area-DESC merge-priority list — just above
+`NPC_109` (130.2 kpx) and below `NPC_243` (153.8 kpx, #9); a mid-upper
+consumer, well below the d70 sunflares (1052.7 kpx each).
+**SUPERSEDED (the final phase, research/144):** d35's ATLAS FINAL
+(`e5558b0a9`) regenerated the union to 490 names — the Orca inserts at
+**FINAL rank #16** (between NPC_243 #15 and NPC_109 #16), and the §10.6
+lazy-NPC contract replaces the page-1 ask: NPC_692 joins the world's
+NPC page (the census input), NOT the eager union. The dims-row +
+admission contract: `docs/research/144-orca-npc692-census-input.md`.
+It is NOT in the
+113 407-name union list (that census predates this lane's sheets phase), so
+the repack must ADD it: owner `W4-c4-style44-flying-fish`, dims 136×992,
+page 1. The 113 §4 priority order step (4)/(5) ("the remaining branches'
+additions append to page 1 as they merge") covers it — the Orca joins the
+c4 sheet set (NPC_224/509/581/587 already listed) on page 1. No single-page
+packer fits it (the 113 §1 finding: the merged union's padded AREA alone
+exceeds 8192); the second page is mandatory. **Action for d35c:** admit
+NPC_692 to page 1 with the c4 set, then re-enable `STYLE16_SHEETS` 692 +
+the portrait slot (the draw arm already handles the Some/None seam — no
+code change needed beyond the sheet admission). Code-only: measurement
+re-run, no compiler invoked.
+
+## The fish CATCH census (W4-c4 follow-up, 2026-11-21, code-only)
+
+**Question:** are the Dolphin 615 / Pufferfish 688 / Orca 692 catchable?
+Censused against the two C# catch surfaces + the fishing tables (the
+f35/f36 co-lanes read: `task/W4-f35-expert-drop-trees` touches only
+`boss_bags.rs`/`clicks.rs`, `task/W4-f36-ooa-medal-drops` only the OOA
+medal drop side — NEITHER touches `fishing.rs`/`projectile_bobber.rs`/
+`bug_net.rs`, so the catch tables are this lane's to pin).
+
+**Net catch (`NPC.catchItem` + `Main.npcCatchable`):**
+- GoldGoldfish 592 → item **4274** (`NPC.cs:16691`), Pupfish 607 → **4373**
+  (`:16807`), Pufferfish 688 → **5511** (`:17665`); all three are in
+  `Main.npcCatchable` (`Main.cs:9394-9410`). NET-caught + releaseable.
+- **Dolphin 615: NO catchItem row** (`:16892-16904` writes none → the
+  `:8446` reset 0) and **NOT in `Main.npcCatchable`** (the list jumps
+  614→616). **Orca 692: NO catchItem row** (`:17709-17722`) and **NOT in
+  the whitelist** (692 never appears). Neither is net-caught.
+- The five enemies (57/157/241/465) carry no catchItem either.
+
+**Fishing (`FishingCheck_RollEnemySpawns` + the item-drop populator):**
+- The blood-moon enemy roll (`Projectile.cs:20804-20835`) spawns ONLY
+  682/620/621/586/587/618 — **never 615/688/692**.
+- `GameContentFishDropPopulator.cs`'s Ocean/Desert arms drop fish ITEMS
+  (2341/2342/2438/2332/2316/2301/2300/2297 ocean; 5490/4393/4394/4410/
+  4402/4401 desert) — **no 4274/4373/5511 critter-NPC row**. The three
+  critters are NET-caught, not fished.
+
+**Port state:** `bug_net.rs::catch_item`/`npc_catchable` already carry the
+verbatim rows (592/607/688 present; 615/692 absent → 0/false). The W4-c4
+bestiary entries make `kind_from_net_id(592/607/688)` resolve, so
+`release_npc`'s roster gap no longer eats the three critters (the stale
+"only the Goldfish 55 is a ported catchable kind" comment is corrected).
+Witness `w4_c4_the_fish_catch_census_matches_the_two_csharp_surfaces`
+(bug_net.rs) pins both surfaces + the release round-trip + the empty
+fishing-item-table scan. WRITTEN, NOT RUN (code-only).
+
+## The Pufferfish puff-flag fix (W4-c4 follow-up, 2026-11-21, code-only)
+
+The puff state machine (`NPC.cs:23498-23571`) was already ported verbatim
+in `npc_ai_style16.rs` (the justHit latch ai[2]=1/localAI[0]=180, the
+countdown deflate/re-arm at 120, the 0.98 damp + water-line hover + the
+early return that skips the rotation tail) and the `num46 += 10` anchor
+(`Main.cs:23115-23117`) landed in `render/entities.rs`. The DEFECT was the
+wiring seam: `update_swimmer` fed `Ai16Ctx.just_hit` the **`hurt_cd > 0`
+cooldown stand-in** (the S1-D-3 reconcile's note "the port has no one-tick
+flag"). The one-tick `Npc::just_hit` flag NOW exists (armed by `hurt` at
+`NPC.cs:81274`, cleared at the update tail `:90516` — the Hungry/Creeper
+wiring). The cooldown (~11 ticks) outlives the flag, so at the deflate
+boundary (`:23518-23521`, `if (this.justHit) ai[2]=1`) the stand-in
+**re-puffed the Pufferfish through the whole cooldown tail** — the W95
+Creeper defect class.
+
+**Fix:** `update_swimmer` now passes `just_hit: self.just_hit` (the
+one-tick flag), matching `ai_029_hungry_family`/`ai_055_creeper_family`.
+The `Ai16Ctx.just_hit` doc + the `update_swimmer` doc are corrected.
+Witness `w4_c4_the_pufferfish_puff_reads_the_one_tick_flag_not_the_cooldown`
+(npc.rs): the strike tick puffs (ai[2]=1, localAI[0]=180), the tail clears
+the flag while the cooldown stays positive, and at the deflate boundary
+(localAI[0]=1→0) the still-running cooldown does NOT re-puff (ai[2] stays
+0, re-arm 120). WRITTEN, NOT RUN (code-only). The style-16 module is this
+lane's (unclaimed by d37/d40 beyond the duplicate kind rows above).
+
+## The proto-renumber EXECUTION (W4-c4 final phase, 2026-11-21, code-only)
+
+The dup-check verdicts above said "flagged, not executed". The lead's
+final phase orders the renumber NOW on this branch. Executed:
+
+**The census** (`tools/_w4c4_proto_census.js`, new): scripted extraction
+of every pushed tip's `to_u16`/`from_u16` arms (git-show, read-only;
+354 `origin/task/*` tips dedupe to 26 unique `npc/data.rs` blobs). Every
+tip verified bijective with zero intra-tip dups; the union carries 464
+distinct protocol ids and 79 cross-branch collision ids. The findings
+that force the renumber:
+
+| c4 id (old) | squats | pushed claimants found by the census |
+|---|---|---|
+| CorruptGoldfish **229** | the 108 §3 reserved cs hole (Pirate's vanilla type) | **d125** EmpressOfLight 229 (`d8047a109`) — a HARD collision now, not just a reservation |
+| Arapaima **237** | the reserved cs hole (JungleCreeperWall's vanilla type) | **d125** PrismaticLacewing 237 — same |
+| FlyingFish **354** | d37's frozen band head | d37 CochinealBeetle 354, d23 ManEater 354, d42 DD2LightningBug 354 (now PUSHED, `9b22c091a` — the dup-check's "local-only WIP" is stale), g8 Vulture 354 |
+| BloodFeeder **241** | the reserved cs hole | d120 SantaClaus 241 (`town-chatter`) — the dup-check's keep-d37-373 retire verdict stands, and the hole is contested besides |
+
+**The free-port band**: the census confirms **405-428 free on ALL 354
+pushed tips** (d37's frozen 354-399 + d42's pushed 354-404 fill the
+corridor below; d35/d40 occupy 429-488; 108 §3's d35 renumber target
+698-730 and the d36/d39 guidance 731-804 sit above). 405/406 are also
+cs-space-safe for the wire: `NPCID.StardustCellBig/Small` (405/406,
+`NPCID.cs:11487-11489`) belong to the lunar family the BASE already
+ports under OTHER protocol ids (the render_key's 402-427 rows) — the
+108 §2b cs-overlap class (a numbering constraint, never a wire bug),
+and unlike 229/237 these are not in the reserved-hole set.
+
+**The renumber** (this branch, `npc/data.rs` + `npc.rs`):
+- CorruptGoldfish **229 → 405**, Arapaima **237 → 406** (`to_u16` +
+  `from_u16` + `render_key`; `cs_id` 57/157, `net_id`, sheets NPC_57/
+  NPC_157, sounds, immunity all UNCHANGED — the protocol id is the only
+  surface that moves).
+- FlyingFish **354 → 359**: the row ADOPTS d37's frozen-band FlyingFish
+  id (the dup-check verdict: ONE FlyingFish at 359/cs 224, c4's
+  world-sim wiring is the keeper, d37's solo `update_flying_fish`
+  wrapper dedupes at merge). Adopting 359 now makes the two branches'
+  `to_u16`/`from_u16`/`render_key` arms IDENTICAL — the merge dedupe is
+  trivial and no intermediate save ever wrote c4's 354 (unmerged
+  branch, the S1-F-1 gate rule: only landed ids are frozen). The
+  world-sim pre-pass already keys siblings on `cs_id` (224), so the
+  wiring re-point is the protocol surface only.
+- BloodFeeder **241 stays until the merge** (the keep-d37-373 verdict):
+  retiring the variant NOW would break c4's exhaustive matches +
+  witnesses while d37's 373 row is not yet on this branch; the merge
+  drops c4's row onto d37's (the `deny(unreachable_patterns)` guard
+  forces the dedupe). The 241 hole is d120-contested — one more reason
+  the retire is the right survivor.
+- 509/581/587 + 465/592/607/615/688/692 STAND in protocol space (the
+  census: their ids are free on every pushed tip except c4's own rows;
+  d42's pushed 581/587 rows ride its port-local band — FlyingAntlion
+  357, EyeballFlyingFish 363 — so no wire-id collision remains).
+  **NEW dup-kind findings (the census supersedes the dup-check's
+  "UNCLAIMED" verdict)**: d42 is now PUSHED (`9b22c091a`, the full
+  561-630 band) and ports GoldGoldfish at **366**, Pupfish at **381**,
+  Dolphin at **389**, plus FlyingAntlion **357** / EyeballFlyingFish
+  **363** — five DUPLICATE KINDS vs c4's vanilla-free 592/607/615/
+  581/587 (the BloodFeeder class, not a wire bug: both id sets are
+  distinct). Verdict per the 108 §3 frozen-band principle: **keep
+  d42's port-local ids, retire c4's duplicate rows AT MERGE** (the
+  same treatment as BloodFeeder 241→373 — retiring the variants now
+  would break c4's exhaustive matches while d42's rows are not on
+  this branch); c4's `style16_find_frame`/`style44_find_frame` helpers
+  + the world-sim wiring are the keeper implementations (d42 DOES
+  extend `vanilla_type` 615/607/592 + route `update_swimmer` — unlike
+  d40's 465 defect — but its FindFrame arms are inline copies; the
+  arm-by-arm diff + the helper dedupe is the merger's, the d40-465
+  defect checklist applies). 688/692 remain
+  genuinely unclaimed (d43 tip == base `a725acb04`, re-verified) —
+  c4's rows STAND outright.
+
+**Witnesses updated**: `w4_c4_the_style16_defaults_match_the_csharp_rows`
+pins 405/406; `w4_c4_the_axis_claims_style_44_and_the_frames_walk_their_strips`
+gains the protocol pin (359 for 224, vanilla for the trio); the
+round-trip bijection test (`the_protocol_id_space_round_trips_every_kind`)
+guards the whole map. Mechanically verified on the working tree: 283
+`to_u16` arms ↔ 283 `from_u16` arms, zero mismatches, zero dup ids,
+229/237/354 decode `None`. Comments/citations in `npc.rs`,
+`npc/data.rs`, `world_sim/npcs.rs`, `render/entities.rs`, anchors.txt,
+PORT_MAP, ROADMAP re-pointed. WRITTEN, NOT RUN (code-only).
+
+## The FINAL style-44/16 band table (W4-c4 lane close, 2026-11-21, code-only)
+
+The lane-close declaration (the family-complete statement + the merger
+checklist + the d43-band 688/692 conditional):
+`docs/research/148-fish-family-declaration.md`.
+
+The lane's complete status after the renumber execution + the all-tips
+census (`tools/_w4c4_proto_census.js`, 354 tips). "Merge action" is the
+contract the merger/d40b/d42b lanes execute; every row's AI/FindFrame/
+draw implementation in c4 is the keeper unless noted.
+
+**RETIRE-PHASE SUPERSESSION (2026-11-21, research/145):** d42 pushed its
+reconcile `49346dba6` AFTER this table — renumbered to vanilla-free
+578-630 and DROPPED FlyingAntlion/EyeballFlyingFish/GoldGoldfish/Pupfish/
+Dolphin, ceding them to c4. The five "retire c4's row at merge" actions
+below are WITHDRAWN — those c4 rows STAND outright. CorruptGoldfish's
+"STANDS at 405" is corrected to the dup-kind verdict keep-d34@277 /
+retire-c4@405-at-merge (d34 phase-3 `5f3435a87`, research/145 §flags —
+d37d-E3 owns the final call). The claims-table addendum for d37d:
+`docs/research/145-d42-keep-d42-verdicts-addendum.md`.
+
+### aiStyle 44 — the flying swimmers (4 kinds, phases 1-2 DONE `5c4c8311`/`377660223`)
+
+| Kind | cs_id | c4 proto (final) | Pushed rival | Merge action |
+|---|---|---|---|---|
+| FlyingFish | 224 | **359** (was 354) | d37 FlyingFish 359 + CochinealBeetle 354; d23/d42/g8 also claim 354 | c4 ADOPTED 359 (`91293a3d2`) — identical-arm dedupe; keep c4's world-sim pre-pass wiring, drop d37's solo `update_flying_fish` wrapper |
+| GiantFlyingAntlion | 509 | **509** | none (d41 claim-only, 270 base arms) | STANDS |
+| FlyingAntlion | 581 | **581** | d42 FlyingAntlion 357 @`9b22c091a` — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 581 STANDS; the `style44_find_frame` + the 581 `num46=-6` nudge merge with no dedupe partner |
+| EyeballFlyingFish | 587 | **587** | d42 EyeballFlyingFish 363 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 587 STANDS; the 587 materialize pre-pass (the shared-pool dust) merges outright |
+
+### aiStyle 16 — the fish family (9 new kinds, phases 3-4 DONE `22cec16f7`; base 55/58/65 behaviour-frozen)
+
+| Kind | cs_id | c4 proto (final) | Pushed rival | Merge action |
+|---|---|---|---|---|
+| CorruptGoldfish | 57 | 405 (until merge) | d125 EmpressOfLight 229 (the vacated hole); **d34 CorruptGoldfish 277** (phase-3 `5f3435a87`) | renumber EXECUTED `91293a3d2`; ~~STANDS at 405~~ CORRECTED (research/145): dup-kind — keep d34@277 per E3's kinds-lane rule, retire c4@405 AT MERGE (d37d-E3 final call); c4's `style16_find_frame` group is the FindFrame keeper |
+| Arapaima | 157 | **406** (was 237) | d125 PrismaticLacewing 237 | renumber EXECUTED; STANDS at 406 |
+| BloodFeeder | 241 | 241 (until merge) | d37 BloodFeeder **373**; d120 SantaClaus 241 | keep d37's 373, RETIRE c4's 241 row at merge (the dup-check verdict; the row stays on-branch so c4's exhaustive matches compile) |
+| CrimsonGoldfish | 465 | **465** | d40 CrimsonGoldfish 465 (kb-0.4 + vanilla_type-missing defects) | KEEP c4, RETIRE d40's row — the exact drop-lines: **research/143** |
+| GoldGoldfish | 592 | **592** | d42 GoldGoldfish 366 — **DROPPED by d42 `49346dba6`** (ceded to c4) | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 592 STANDS; catchItem 4274 + the entry merge outright; d42's GoldGoldfishWalker 593 interim bestiary entry re-points its fold onto this row at merge |
+| Pupfish | 607 | **607** | d42 Pupfish 381 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 607 STANDS; catchItem 4373 keeper |
+| Dolphin | 615 | **615** | d42 Dolphin 389 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 615 STANDS; the leap-tilt + idle-timer RNG census keeper |
+| Pufferfish | 688 | 688 (until merge) | **d43 `fd6a544fc` rows it** (tip `0253bde90`; was tip==base at retire time) | ~~STANDS~~ conditional TRIGGERED (research/148 seal-verify receipt): retire c4's row AT MERGE onto d43's; the puff-flag fix (`17a241f6a`) + catchItem 5511 + the `num46 += 10` anchor are the keeper carry-list — d43's tip still reads the hurt_cd stand-in |
+| Orca | 692 | 692 (until merge) | **d43 `8fc608bcb` rows it** (same tip) | ~~STANDS~~ conditional TRIGGERED as 688 (research/148 receipt); the wet-anchor `num46 = wet ? 6 : 10` + FindFrame keepers carry over; the NPC_692 sheet atlas-deferred (136×992, the full-set overflow 8226) — the census-input for d35e: **research/144** |
+
+### The lane's skipped/deferred surfaces (unchanged)
+
+- AnglerFish 102: the d35 lane (proto 450 on its tip, the 108 §3
+  renumber target 698+); the walker twins GoldfishWalker 230 /
+  GoldGoldfishWalker 593: aiStyle 7 (d37 ports 230 at 362, d42 ports
+  593 at 367 — the town-walker lane, not this one).
+- The rain transform (`NPC.cs:92883-92915`) + the evil conversion
+  (`:91941-91951`): the aiStyle-7 lane's follow-up.
+- The 581 afterglow draw arm, the ambient sound rolls, the death
+  gore/dust, the platform fall-through: the module header's cited
+  skips (the style-44 census).
+- The Orca draw + bestiary portrait: deferred until the d35e repack
+  admits NPC_692 (the Some/None seam already handles it — no code
+  change beyond the sheet admission + the portrait slot).
+
+**Witness register (all WRITTEN, NOT RUN — code-only):** the style-44
+module's 15 + the 2 wiring witnesses (`npc.rs` axis claim + flap
+cadence, now with the 359 protocol pin; `world_sim/npcs.rs` separation
++ materialize), the style-16 defaults pin (405/406) + the strip-walk +
+the routing pin + the Arapaima/Dolphin/Pufferfish/Orca FindFrame
+witnesses (`npc_ai_style16.rs`), the catch-census witness
+(`bug_net.rs`), the puff-flag witness (`npc.rs`). The round-trip
+bijection test guards the whole 283-kind map.
+
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module

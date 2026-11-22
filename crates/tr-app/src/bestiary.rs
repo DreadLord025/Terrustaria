@@ -3073,15 +3073,71 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Zombie",
     },
-    // W4-d42 - the GoldGoldfishWalker's interim OWN entry: its vanilla
-    // credit folds onto the GoldGoldfish (592, `ContentSamples.cs:1049`),
-    // but 592 is c4b's unported kind — the d40 BoneThrowingSkeleton2/3
-    // unported-fold-target precedent. The merge folds it onto 592 once
-    // c4b lands (the `entry_for_npc` note).
+    // W4-c4 merge (148 item 5): the GoldGoldfishWalker's interim OWN
+    // entry RETIRED - its vanilla credit folds onto the GoldGoldfish
+    // (592, `ContentSamples.cs:1049`) now that c4's 592 entry landed;
+    // both resolvers carry the fold arm below.
+    // W4-c4 (the style-44 swimmers): the four kinds' own entries - the
+    // populator attaches info to all four
+    // (`BestiaryDatabaseNPCsPopulator.cs:1133`/`:1523`/`:629`/`:1164`).
+    // The display names ride `en-US NPCs.json` (581 is "Antlion
+    // Swarmer", 509 "Giant Antlion Swarmer", 587 "Wandering Eye Fish" —
+    // NOT the credit-id spellings).
+    // E8 merge: the FlyingFish 224 entry is d37's row above (dup drop).
     BestiaryEntryDef {
-        credit_id: "GoldGoldfishWalker",
-        net_id: 593,
-        kind: NpcKind::GoldGoldfishWalker,
+        credit_id: "GiantFlyingAntlion",
+        net_id: 509,
+        kind: NpcKind::GiantFlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Antlion Swarmer",
+    },
+    BestiaryEntryDef {
+        credit_id: "FlyingAntlion",
+        net_id: 581,
+        kind: NpcKind::FlyingAntlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion Swarmer",
+    },
+    BestiaryEntryDef {
+        credit_id: "EyeballFlyingFish",
+        net_id: 587,
+        kind: NpcKind::EyeballFlyingFish,
+        variant: None,
+        quick_unlock: false,
+        name: "Wandering Eye Fish",
+    },
+    // W4-c4 (the style-16 swimmers): the nine kinds' own entries — the
+    // populator attaches info to all of them
+    // (`BestiaryDatabaseNPCsPopulator.cs:1088`/`:1095`/`:1119`/`:1105`/
+    // `:1107`/`:1108`/`:1298`/`:2025`/`:1607`). The display names ride
+    // `en-US NPCs.json` (465 is "Vicious Goldfish" — NOT the credit-id
+    // spelling "CrimsonGoldfish"). The GoldGoldfish 592 keeps its OWN
+    // entry (its kill credit is "GoldGoldfish"); only the UI provider
+    // folds it onto the Goldfish 55 (`:706`'s GoldCritterUICollectionInfoProvider).
+    // E8 merge: the CorruptGoldfish 57 entry is d34's row above.
+    BestiaryEntryDef {
+        credit_id: "Arapaima",
+        net_id: 157,
+        kind: NpcKind::Arapaima,
+        variant: None,
+        quick_unlock: false,
+        name: "Arapaima",
+    },
+    // E8 merge: the BloodFeeder 241 entry is d37's row above.
+    BestiaryEntryDef {
+        credit_id: "CrimsonGoldfish",
+        net_id: 465,
+        kind: NpcKind::CrimsonGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Vicious Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGoldfish",
+        net_id: 592,
+        kind: NpcKind::GoldGoldfish,
         variant: None,
         quick_unlock: false,
         name: "Gold Goldfish",
@@ -3488,6 +3544,7 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Possessed Armor",
+    },
     // W4-c3 (the style-10 family): the WaterBoltMimic's own entry
     // (`BestiaryDatabaseNPCsPopulator.cs:1561` - the automated enemy
     // registration `:851-868`, not in the Hide exclusions; the credit id
@@ -3502,6 +3559,24 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Water Bolt Mimic",
     },
+    BestiaryEntryDef {
+        credit_id: "Pupfish",
+        net_id: 607,
+        kind: NpcKind::Pupfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pupfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Dolphin",
+        net_id: 615,
+        kind: NpcKind::Dolphin,
+        variant: None,
+        quick_unlock: false,
+        name: "Dolphin",
+    },
+    // E8 merge: the Pufferfish 688 / Orca 692 entries drop with the
+    // kinds (d43 rows them later - research/148's TRIGGERED conditional).
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -3675,7 +3750,10 @@ pub fn try_entry_for_npc(
         // `entry_for_npc`; `try_entry_for_npc` gets the same arms.
         NpcKind::BartenderUnconscious => NpcKind::DD2Bartender,
         NpcKind::ArmedTorchZombie => NpcKind::TorchZombie,
-        // (the fairy/balloon/dragonfly dups 583-585/594/595-601 dropped —
+        // W4-c4 merge (148 item 5): the walker's 593 credit folds onto
+        // the GoldGoldfish 592 (`ContentSamples.cs:1049`).
+        NpcKind::GoldGoldfishWalker => NpcKind::GoldGoldfish,
+        // (the fairy/balloon/dragonfly dups 583-585/594/595-601 dropped -
         // d33 owns them, d37 tables; their folds land with its splice.)
         NpcKind::Seagull2 => NpcKind::Seagull,
         NpcKind::Grebe2 => NpcKind::Grebe,
@@ -3802,11 +3880,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
         // one credit per family (the SleepingGolfer precedent).
         NpcKind::ArmedTorchZombie => NpcKind::TorchZombie,
-        // The GoldGoldfishWalker (593) folds onto the GoldGoldfish (592,
-        // `ContentSamples.cs:1049`); 592 is c4b's unported kind, so the
-        // walker keeps its OWN entry for now (the d40 BoneThrowingSkeleton2/3
-        // unported-fold-target precedent) — the merge re-points this arm at
-        // `NpcKind::GoldGoldfish` and drops the walker's entry once c4b lands.
+        // W4-c4 merge (148 item 5): the walker's 593 credit folds onto
+        // the GoldGoldfish 592 (`ContentSamples.cs:1049`) - c4's entry
+        // landed, the interim own-row retired.
+        NpcKind::GoldGoldfishWalker => NpcKind::GoldGoldfish,
         // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
         // one credit per family (the SleepingGolfer precedent).
         // (merge-side drop, d37 tables: the fairy/balloon/dragonfly dups

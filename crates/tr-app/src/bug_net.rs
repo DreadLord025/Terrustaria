@@ -1031,8 +1031,12 @@ pub(crate) fn release_npc(app: &mut App, x: i32, y: i32, ty: i32, style: i32, wh
     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
     let plan = release_plan(ty, style, player_dir, rng);
     let Some((kind, slime)) = crate::npc::kind_from_net_id(plan.spawn_type) else {
-        // The roster gap (only the Goldfish 55 is a ported catchable
-        // kind today) — the C# spawns; the port has no model. ANALYSIS.
+        // The roster gap: a type with no `NpcKind` spawns nothing (the
+        // C# spawns; the port has no model — ANALYSIS). The W4-c4
+        // style-16 wave closed the fish holes: 592/607/688 (the
+        // GoldGoldfish/Pupfish/Pufferfish) now resolve through their
+        // bestiary entries; the remaining gap is the non-fish critters
+        // (the birds/insects/rock critters of the d38/d40/d42 lanes).
         return;
     };
     // `NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80770`, `Entity.cs:128-131`):
@@ -1235,6 +1239,68 @@ mod tests {
         }
         assert!(!npc_catchable(22));
         assert!(!npc_catchable(1));
+    }
+
+    /// W4-c4 (the fish CATCH census): the nine style-16 swimmers against
+    /// the two C# catch surfaces. `NPC.SetDefaults`' `catchItem` rows:
+    /// ONLY the GoldGoldfish 592 (`NPC.cs:16691` → 4274), the Pupfish 607
+    /// (`:16807` → 4373) and the Pufferfish 688 (`:17665` → 5511) carry
+    /// one; the Dolphin 615 (`:16892-16904`) and the Orca 692
+    /// (`:17709-17722`) write NO catchItem row (the `:8446` reset's 0),
+    /// and neither is in `Main.npcCatchable` (`Main.cs:9326-9418` — the
+    /// list jumps 614 → 616, and 692 never appears). The five enemies
+    /// (57/157/241/465) carry none either. The fishing side never spawns
+    /// them: `FishingCheck_RollEnemySpawns` (`Projectile.cs:20804-20835`)
+    /// rolls only 682/620/621/586/587/618, and the item-drop populator
+    /// (`GameContentFishDropPopulator.cs`) has no 4274/4373/5511 row —
+    /// the three critters are NET-caught, not fished. WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c4_the_fish_catch_census_matches_the_two_csharp_surfaces() {
+        // The three critters: catchItem + the release whitelist.
+        for (t, item) in [(592, 4274), (607, 4373), (688, 5511)] {
+            assert_eq!(catch_item(t, 0.0), item, "{t} catchItem");
+            assert!(npc_catchable(t), "{t} is release-catchable");
+        }
+        // The Dolphin + the Orca: NO catch row, NOT release-catchable.
+        for t in [615, 692] {
+            assert_eq!(catch_item(t, 0.0), 0, "{t} has no catchItem row");
+            assert!(!npc_catchable(t), "{t} is NOT in Main.npcCatchable");
+        }
+        // The five enemies: no catch row either.
+        for t in [57, 157, 241, 465] {
+            assert_eq!(catch_item(t, 0.0), 0, "{t} has no catchItem row");
+            assert!(!npc_catchable(t), "{t} is NOT release-catchable");
+        }
+        // The release round-trip: the three critters' kinds resolve
+        // through the bestiary net ids (the W4-c4 entries), so
+        // `release_npc`'s roster gap no longer eats them; the release
+        // plan is the default arm (spawn + owner only, `NPC.cs:80160`).
+        let mut rng = UnifiedRandom::new(3);
+        for t in [592, 607, 688] {
+            let plan = release_plan(t, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, t);
+            assert_eq!(plan.ai2, None);
+            assert!(!plan.target_closest);
+            assert!(
+                crate::npc::kind_from_net_id(t).is_some(),
+                "{t} resolves to a ported kind (the release spawns)"
+            );
+        }
+        // The fishing side: the item-drop table carries NO critter row
+        // (4274/4373/5511 appear nowhere in `vanilla_drop_rules` — the
+        // populator's Ocean/Desert arms drop fish ITEMS, not the
+        // critter-NPC converters), and the enemy roll's pools are
+        // 682/620/621/586/587/618 (`roll_enemy_spawns`, the
+        // `Projectile.cs:20819-20833` table) — never 615/688/692.
+        let rules = tr_core::fishing::vanilla_drop_rules();
+        for rule in &rules.rules {
+            for &item in rule.items {
+                assert!(
+                    item != 4274 && item != 4373 && item != 5511,
+                    "the fishing item table has no critter-NPC row ({item})"
+                );
+            }
+        }
     }
 
     #[test]

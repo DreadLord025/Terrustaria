@@ -886,6 +886,48 @@ impl NpcKind {
             // GiantCursedSkull ports dropped per the d37 E8 tables
             // (research/329 s3) - d34@267 / d38@289 own them above.
             NpcKind::WaterBoltMimic => 694,
+            // W4-c4 (the style-44 swimmers): the FlyingFish's vanilla 224
+            // is the WyvernLegs' port-local slot above (`to_u16`'s
+            // bijection guard). Its original port-local 354 HARD-collided
+            // d37's pushed CochinealBeetle 354 (and d23/d42/g8 claim 354
+            // too) — RETIRED on this branch: the row adopts d37's
+            // FlyingFish id 359 (its frozen 354-399 band, research/108
+            // §3; the dup-check verdict keeps ONE FlyingFish at 359/cs
+            // 224 with c4's world-sim wiring — the identical arm dedupes
+            // at merge). 509/581/587 keep their vanilla ids (free on
+            // every pushed tip — tools/_w4c4_proto_census.js).
+            // `NPC.cs:11885-11897` / `:14841-14853` / `:14868-14880` /
+            // `:16623-16637`.
+            // E8 merge: FlyingFish 359 is d37's arm above (identical-id
+            // dedupe, c4's wiring keeps); GiantFlyingAntlion 509 c4's own.
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::EyeballFlyingFish => 587,
+            // W4-c4 (the style-16 swimmers): the CorruptGoldfish's vanilla
+            // 57 is the GoblinThief's port-local slot above and the
+            // Arapaima's 157 is the BoundWizard's (`to_u16`'s bijection
+            // guard). Their original port-local 229/237 squatted the 108
+            // §3 reserved cs-owned holes (the Pirate's/JungleCreeperWall's
+            // vanilla types — now also claimed by d125's EmpressOfLight/
+            // PrismaticLacewing), so they take the free-port band 405/406
+            // (above d37's frozen 354-399 + d42's pushed 354-404, below
+            // d35's 108 §3 renumber target 429-461; free on ALL 354 pushed
+            // tips — tools/_w4c4_proto_census.js). 241/465/592/607/615/
+            // 688/692 keep their vanilla ids; BloodFeeder 241 is the
+            // dup-check's merge-retire (d37's 373 survives — the row
+            // stays until the merge dedupe). `NPC.cs:9489-9501` /
+            // `:10989-11002` / `:12105-12118` / `:14483-14495` /
+            // `:16679-16693` / `:16795-16808` / `:16892-16904` /
+            // `:17653-17666` / `:17709-17722`.
+            // E8 merge drops: CorruptGoldfish 405 (d34@277 owns),
+            // BloodFeeder 241 (d37@373 owns), Pufferfish 688 / Orca 692
+            // (d43 rows them, lands later - the c4 impl retires per
+            // research/148's TRIGGERED conditional).
+            NpcKind::Arapaima => 406,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::Pupfish => 607,
+            NpcKind::Dolphin => 615,
         }
     }
 
@@ -1464,6 +1506,26 @@ impl NpcKind {
             // W4-c3: 694 keeps its vanilla id (`to_u16` above); the
             // 355/289 dup arms dropped per the d37 E8 tables (d34/d38 own).
             694 => NpcKind::WaterBoltMimic,
+            // W4-c4 (the style-44 swimmers): 359 is the FlyingFish's
+            // port-local id — d37's frozen-band row ADOPTED here (the
+            // original 354 is retired: d37's CochinealBeetle owns it);
+            // 509/581/587 keep their vanilla ids (`to_u16` above).
+            // E8 merge: 359 decodes at d37's arm above (identical-id).
+            509 => NpcKind::GiantFlyingAntlion,
+            581 => NpcKind::FlyingAntlion,
+            587 => NpcKind::EyeballFlyingFish,
+            // W4-c4 (the style-16 swimmers): 405/406 are the
+            // CorruptGoldfish/Arapaima port-local ids (the vanilla 57/157
+            // slots are the GoblinThief's/BoundWizard's; the original
+            // 229/237 squatted the reserved cs-owned holes — renumbered
+            // to the free-port band, `to_u16` above); 241/465/592/607/
+            // 615/688/692 keep their vanilla ids.
+            // E8 merge drops: 405/241/688/692 (d34/d37/d43 own).
+            406 => NpcKind::Arapaima,
+            465 => NpcKind::CrimsonGoldfish,
+            592 => NpcKind::GoldGoldfish,
+            607 => NpcKind::Pupfish,
+            615 => NpcKind::Dolphin,
             _ => return None,
         })
     }
@@ -2125,6 +2187,16 @@ impl NpcKind {
             NpcKind::Goldfish => "NPC_Hit_1",
             NpcKind::Piranha => "NPC_Hit_1",
             NpcKind::Shark => "NPC_Hit_1",
+            // W4-c4 (the style-16 swimmers): NPCHit1 for all but the
+            // BloodFeeder's NPCHit13 (`NPC.cs:9498`/`:10999`/`:12115`/
+            // `:14492`/`:16688`/`:16803`/`:16901`/`:17662`/`:17718`).
+            // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+            // above), Pufferfish/Orca (d43 lands later).
+            NpcKind::Arapaima
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin => "NPC_Hit_1",
             NpcKind::DevourerHead => "NPC_Hit_1",
             NpcKind::GiantWormHead => "NPC_Hit_1",
             NpcKind::Merchant => "NPC_Hit_1",
@@ -2506,6 +2578,11 @@ impl NpcKind {
             // `SoundID.cs:1676`; the `_0` pin, the DD2 families'
             // convention). The 34/289 NPCHit2 rows are d34/d38's above.
             NpcKind::WaterBoltMimic => "dd2_book_staff_cast_0",
+            // W4-c4 (the style-44 swimmers): 224/587 NPCHit1
+            // (`NPC.cs:11893`/`:16631`), 509/581 NPCHit32
+            // (`:14850`/`:14877`).
+            NpcKind::EyeballFlyingFish => "NPC_Hit_1",
+            NpcKind::GiantFlyingAntlion | NpcKind::FlyingAntlion => "NPC_Hit_32",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2684,6 +2761,16 @@ impl NpcKind {
             NpcKind::Goldfish => "NPC_Killed_1",
             NpcKind::Piranha => "NPC_Killed_1",
             NpcKind::Shark => "NPC_Killed_1",
+            // W4-c4 (the style-16 swimmers): NPCDeath1 for all but the
+            // BloodFeeder's NPCDeath19 (`NPC.cs:9499`/`:11000`/`:12116`/
+            // `:14493`/`:16689`/`:16804`/`:16902`/`:17663`/`:17719`).
+            // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+            // above), Pufferfish/Orca (d43 lands later).
+            NpcKind::Arapaima
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin => "NPC_Killed_1",
             NpcKind::DevourerHead => "NPC_Killed_1",
             NpcKind::GiantWormHead => "NPC_Killed_1",
             NpcKind::Merchant => "NPC_Killed_1",
@@ -3066,6 +3153,11 @@ impl NpcKind {
             // W4-c3: 694 NPCDeath52 (`NPC.cs:17746`); the 34/289
             // NPCDeath2 rows are d34/d38's above.
             NpcKind::WaterBoltMimic => "NPC_Killed_52",
+            // W4-c4 (the style-44 swimmers): 224/587 NPCDeath1
+            // (`NPC.cs:11895`/`:16633`), 509/581 NPCDeath35
+            // (`:14851`/`:14878`).
+            NpcKind::EyeballFlyingFish => "NPC_Killed_1",
+            NpcKind::GiantFlyingAntlion | NpcKind::FlyingAntlion => "NPC_Killed_35",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3289,6 +3381,18 @@ impl NpcKind {
             | NpcKind::BrainOfCthulhu
             | NpcKind::PlanterasHook
             | NpcKind::PlanterasTentacle => true,
+            // W4-c4 (the style-16 swimmers): every `SetDefaults` row writes
+            // `noGravity = true` (`NPC.cs:9491`/`:10992`/`:12108`/`:14485`/
+            // `:16681`/`:16797`/`:16894`/`:17655`/`:17711`); the kb rows
+            // are 1 (no row, the head's `:8533` reset) for 57/157/241/465
+            // and 0.5/0.7 for the critters/Orca.
+            // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+            // above), Pufferfish/Orca (d43 lands later).
+            NpcKind::Arapaima
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin => true,
             // The Stardust pillars' flyers: the Cell Big/Small (405/406,
             // `:15033`/`:15047`, kb 0.3/0.4), the Jellyfish Big (407,
             // `:15097`, kb 0.03), the Solar Corite (418, `:15378`, kb 0.2),
@@ -3413,6 +3517,13 @@ impl NpcKind {
             | NpcKind::BloodFeeder
             | NpcKind::Reaper
             | NpcKind::IchorSticker => true,
+            // W4-c4 (the style-44 swimmers) — the aiStyle-44 AI head sets
+            // `noGravity = true` every tick (`NPC.cs:30863`); kb 0.8/0.3/
+            // 0.5/0 (`:11894`/`:14849`/`:14876`/`:16632`).
+            // E8 merge: FlyingFish's row is d37's group above.
+            NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => true,
             _ => false,
         }
     }
@@ -3522,6 +3633,20 @@ impl NpcKind {
             NpcKind::KingSlime => 15,
             // aiStyle 16 - NPC.cs:9465, :9508, :9615
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => 16,
+            // aiStyle 16 — W4-c4 (the style-16 swimmers): NPC.cs:9494
+            // (the CorruptGoldfish 57), :10995 (the Arapaima 157), :12111
+            // (the BloodFeeder 241), :14488 (the CrimsonGoldfish 465),
+            // :16684 (the GoldGoldfish 592), :16800 (the Pupfish 607),
+            // :16897 (the Dolphin 615), :17658 (the Pufferfish 688),
+            // :17714 (the Orca 692). The AnglerFish 102 (`:10208`) is the
+            // tenth unported member — its kind is the W4-d35 roster lane.
+            // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+            // above), Pufferfish/Orca (d43 lands later).
+            NpcKind::Arapaima
+            | NpcKind::CrimsonGoldfish
+            | NpcKind::GoldGoldfish
+            | NpcKind::Pupfish
+            | NpcKind::Dolphin => 16,
             // aiStyle 22 - NPC.cs:13194
             NpcKind::Poltergeist => 22,
             // aiStyle 22 — the Drippler (S1-D-3z; `NPC.cs:14623`).
@@ -3952,6 +4077,14 @@ impl NpcKind {
             // (the WaterBoltMimic 694); the 34/289 aiStyle-10 rows are
             // d34/d38's above (E8 keep-both, same axis machine).
             NpcKind::WaterBoltMimic => 10,
+            // W4-c4 (the style-44 swimmers): aiStyle 44 - NPC.cs:11889
+            // (the FlyingFish 224), :14845 (the GiantFlyingAntlion 509),
+            // :14872 (the FlyingAntlion 581), :16627 (the EyeballFlyingFish
+            // 587) - the census is exactly these four.
+            // E8 merge: FlyingFish's 44 row is d37's above.
+            NpcKind::GiantFlyingAntlion
+            | NpcKind::FlyingAntlion
+            | NpcKind::EyeballFlyingFish => 44,
         }
     }
 
@@ -4461,6 +4594,16 @@ impl NpcKind {
             NpcKind::Goldfish => (20.0, 18.0),
             NpcKind::Piranha => (18.0, 20.0),
             NpcKind::Shark => (100.0, 24.0),
+            // W4-c4 (the style-16 swimmers): 57/241/465 18x20
+            // (`NPC.cs:9492-9493`/`:12109-12110`/`:14486-14487`), 157
+            // 74x20 (`:10993-10994`), 592/607/615 20x18 (`:16682-16683`/
+            // `:16798-16799`/`:16895-16896`), 688 32x16 (`:17656-17657`),
+            // 692 120x34 (`:17712-17713`).
+            // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+            // above), Pufferfish/Orca (d43 lands later).
+            NpcKind::CrimsonGoldfish => (18.0, 20.0),
+            NpcKind::Arapaima => (74.0, 20.0),
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => (20.0, 18.0),
             // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
             // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => (22.0, 22.0),
@@ -4804,6 +4947,12 @@ impl NpcKind {
             // W4-c3: 694 44x44 (`NPC.cs:17739-17740`); the 34/289 size
             // rows are d34/d38's above (identical values, E8 keep-both).
             NpcKind::WaterBoltMimic => (44.0, 44.0),
+            // W4-c4 (the style-44 swimmers): 224 32x18 (`NPC.cs:11887-
+            // 11888`), 509 40x31 (`:14843-14844`), 581 30x22 (`:14870-
+            // 14871`), 587 32x18 (`:16625-16626`).
+            NpcKind::EyeballFlyingFish => (32.0, 18.0),
+            NpcKind::GiantFlyingAntlion => (40.0, 31.0),
+            NpcKind::FlyingAntlion => (30.0, 22.0),
         }
     }
 
@@ -4942,6 +5091,16 @@ impl NpcKind {
             // superset-module rule - d38 carries no cs_id arm for it).
             NpcKind::GiantCursedSkull => 289,
             NpcKind::WaterBoltMimic => 694,
+            // W4-c4 (the style-44 swimmers): the vanilla `NPC.type` ids
+            // (`NPCID.cs:11125`/`:11695`/`:11839`/`:11851`). The
+            // FlyingFish's protocol id is port-local 359 (d37's
+            // frozen-band row adopted; the original 354 retired), so its
+            // C#-type consumers (the style-44 arm's type gates + the
+            // world-sim pre-pass's sibling scan) read 224 here.
+            NpcKind::FlyingFish => 224,
+            NpcKind::GiantFlyingAntlion => 509,
+            NpcKind::FlyingAntlion => 581,
+            NpcKind::EyeballFlyingFish => 587,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             // W4-d40: hand rows for the kinds with no bestiary entry
@@ -4957,6 +5116,20 @@ impl NpcKind {
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
+            // W4-c4 (the style-16 swimmers): the vanilla `NPC.type` ids
+            // (`NPCID.cs:10791`/`:10991`/`:11159`/`:11603`/`:11861`/
+            // `:11891`/`:11907`/`:12053`/`:12061`). The CorruptGoldfish/
+            // Arapaima protocol ids are port-local 405/406 (the free-port
+            // band; the original 229/237 reserved-hole squat retired),
+            // so the style-16 arm's type gates read 57/157 here.
+            // E8 merge drops: CorruptGoldfish (d34's 57 row above),
+            // BloodFeeder (d37's 241 - the ENTRIES fallback resolves),
+            // Pufferfish/Orca (d43 lands later).
+            NpcKind::Arapaima => 157,
+            NpcKind::CrimsonGoldfish => 465,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::Pupfish => 607,
+            NpcKind::Dolphin => 615,
             // The Plantera minion family (S1-D-3-wire-plantera-minions):
             // `NPCID.FungiSpore` 261 / `PlanterasHook` 263 /
             // `PlanterasTentacle` 264 / `Spore` 265 (`ID/NPCID.cs:11199`/
@@ -5526,6 +5699,15 @@ impl NpcKind {
             NpcKind::Goldfish => 5,
             NpcKind::Piranha => 30,
             NpcKind::Shark => 300,
+            // W4-c4 (the style-16 swimmers): 57 100 (`NPC.cs:9497`), 157
+            // 200 (`:10998`), 241 150 (`:12114`), 465 110 (`:14491`),
+            // 592/607/615/688 5 (`:16687`/`:16802`/`:16900`/`:17661`),
+            // 692 400 (`:17717`).
+            // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+            // above), Pufferfish/Orca (d43 lands later).
+            NpcKind::Arapaima => 200,
+            NpcKind::CrimsonGoldfish => 110,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 5,
             // The worms: the segment HP per family (`:8763`/`:8850`/`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 100,
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 30,
@@ -5878,6 +6060,12 @@ impl NpcKind {
             // W4-c3: 694 60 (`NPC.cs:17744`); the 34/289 lifeMax rows
             // are d34/d38's above (identical values, E8 keep-both).
             NpcKind::WaterBoltMimic => 60,
+            // W4-c4 (the style-44 swimmers): 224 20 (`NPC.cs:11892`),
+            // 509 90 (`:14848`), 581 60 (`:14875`), 587 300 (`:16630`).
+            // E8 merge: FlyingFish's 20 is d37's row above.
+            NpcKind::GiantFlyingAntlion => 90,
+            NpcKind::FlyingAntlion => 60,
+            NpcKind::EyeballFlyingFish => 300,
         }
     }
 
@@ -6129,6 +6317,15 @@ impl NpcKind {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 25,
             NpcKind::Shark => 40,
+            // W4-c4 (the style-16 swimmers): 57 30 (`NPC.cs:9495`), 157 75
+            // (`:10996`), 241 50 (`:12112`), 465 31 (`:14489`), 692 50
+            // (`:17715`); the critters 592/607/615/688 damage 0
+            // (`:16685`/`:16801`/`:16898`/`:17659`).
+            // E8 merge drops: CorruptGoldfish/BloodFeeder (d34/d37 rows
+            // above), Pufferfish/Orca (d43 lands later).
+            NpcKind::Arapaima => 75,
+            NpcKind::CrimsonGoldfish => 31,
+            NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 0,
             // The worms: the head hits hardest, the tail softest
             // (`:8763`'s 31/16/13, `:8850`'s 8/4/4, `:8903`'s 22/13/11).
             NpcKind::DevourerHead => 31,
@@ -6489,6 +6686,12 @@ impl NpcKind {
             // W4-c3: 694 20 (`NPC.cs:17742`); the 34/289 damage rows
             // are d34/d38's above (identical values, E8 keep-both).
             NpcKind::WaterBoltMimic => 20,
+            // W4-c4 (the style-44 swimmers): 224 9 (`NPC.cs:11890`),
+            // 509 34 (`:14846`), 581 29 (`:14873`), 587 35 (`:16628`).
+            // E8 merge: FlyingFish's 9 is d37's row above.
+            NpcKind::GiantFlyingAntlion => 34,
+            NpcKind::FlyingAntlion => 29,
+            NpcKind::EyeballFlyingFish => 35,
         }
     }
 }

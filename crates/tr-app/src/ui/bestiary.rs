@@ -1593,6 +1593,60 @@ fn portrait_data(
                 .unwrap_or(46.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // W4-c4: the style-44 swimmers' portraits — the sheet's own row
+        // height over `Main.npcFrameCount[type]` (224/587 four frames,
+        // 509/581 nine; `Main.cs:67082`), the frame width the sheet's own
+        // (NPC_224/587 40×128, NPC_509 138×522, NPC_581 100×378 — the
+        // small-kinds arms' shape).
+        // E8 merge: FlyingFish's portrait is d37's arm below.
+        (NpcKind::EyeballFlyingFish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::GiantFlyingAntlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(58.0);
+            (sheet_i, h, 138.0, h, white)
+        }
+        (NpcKind::FlyingAntlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(42.0);
+            (sheet_i, h, 100.0, h, white)
+        }
+        // W4-c4: the style-16 swimmers' portraits — the sheet's own row
+        // height over `Main.npcFrameCount[type]` (57/241/465/592/607 six
+        // frames, 157 six, 615 five, 688 six, 692 sixteen; `Main.cs:67082`),
+        // the frame width the sheet's own (NPC_57/465/592/607 38×168,
+        // NPC_241 36×180, NPC_157 84×168, NPC_615 66×210, NPC_688 46×252 —
+        // the style-44 arms' shape). The Orca's sheet is atlas-deferred —
+        // `entry_sheet` returns None and the portrait draw skips until the
+        // repack (the wyvern precedent); the 136×62 frame box stands.
+        // E8 merge: CorruptGoldfish's portrait is d34's arm below.
+        (NpcKind::CrimsonGoldfish | NpcKind::GoldGoldfish | NpcKind::Pupfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        // E8 merge: BloodFeeder's portrait is d37's arm below.
+        (NpcKind::Arapaima, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 84.0, h, white)
+        }
+        (NpcKind::Dolphin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(42.0);
+            (sheet_i, h, 66.0, h, white)
+        }
+        // E8 merge: the Pufferfish/Orca portraits drop with the kinds
+        // (d43 lands later; the NPC_692 census survives, research/144).
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
         (NpcKind::ZombieDoctor
