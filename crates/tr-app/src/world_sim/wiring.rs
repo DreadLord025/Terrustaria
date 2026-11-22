@@ -370,9 +370,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with
-    // the knockback 2f, `Wiring.cs:1990-1992`). The flame jet 187 (aiStyle 38)
-    // requests drop until M4-PROJ ports that AI; the trap darts, the spiky
-    // ball 185 and the spear 186 (aiStyle 14) spawn through the pool. The
+    // the knockback 2f, `Wiring.cs:1990-1992`). The trap darts, the spiky
+    // ball 185, the spear 186 (aiStyle 37) and the flame jet 187 (aiStyle
+    // 38) spawn through the pool since W4-d4 (the f19 F3 fix + the 38
+    // arm). The jet is stock friendly/hostile FALSE (`Projectile.cs
+    // :2741-2751`) — the spawn site flips the pool's friendly-true default
+    // off; its damage rides the 188 children. The
     // ceiling −7 arm emits one identical `Spear` request twice: the C#
     // evaluates its cap ONCE before both spawns, so identical requests share
     // one cap decision (and therefore one pool scan).
@@ -408,24 +411,37 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 vy,
                 kind,
                 damage,
-            } => spawn_device_kind(app, kind, x, y, vx, vy, damage, 2.0, 0.0, 0.0),
+            } => {
+                let slot = spawn_device_kind(app, kind, x, y, vx, vy, damage, 2.0, 0.0, 0.0);
+                // W4-d4 — the flame jet 187 is stock `friendly = false`
+                // (`Projectile.cs:2741-2751` sets neither flag); the pool's
+                // spawn defaults friendly true, so the site flips it off
+                // (the jet damages nothing itself — the 188 children do).
+                if kind == crate::projectile::FLAMETHROWER_TRAP {
+                    if let Some(s) = slot {
+                        app.projectiles.slots_mut()[s].friendly = false;
+                    }
+                }
+            }
             // The `count_kind` is the cap's counting type (F1: 0 on the
             // floor), NOT the spawn kind — every arm of the family fires the
             // spiky ball (185).
             tr_core::wiring::TrapRequest::Spear {
                 x, y, vx, vy, damage, ..
-            } => spawn_device_kind(
-                app,
-                crate::projectile::TRAP_SPIKY_BALL,
-                x,
-                y,
-                vx,
-                vy,
-                damage,
-                2.0,
-                0.0,
-                0.0,
-            ),
+            } => {
+                let _ = spawn_device_kind(
+                    app,
+                    crate::projectile::TRAP_SPIKY_BALL,
+                    x,
+                    y,
+                    vx,
+                    vy,
+                    damage,
+                    2.0,
+                    0.0,
+                    0.0,
+                );
+            }
         }
     }
     // The device shots spawn after the fixed step (`NewProjectile`,
@@ -448,7 +464,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         if shot.kind == crate::projectile::CANNON_BUNNY && !bunny_cannon_can_fire(app) {
             continue;
         }
-        spawn_device_kind(
+        let _ = spawn_device_kind(
             app,
             shot.kind,
             shot.x,
@@ -581,10 +597,12 @@ fn spawn_device_kind(
     knock_back: f32,
     ai0: f32,
     ai1: f32,
-) {
+) -> Option<usize> {
     if crate::projectile::proj_data(kind).is_some() {
         app.projectiles
-            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1);
+            .spawn_with_data_ai(kind, x, y, vx, vy, damage, knock_back, ai0, ai1)
+    } else {
+        None
     }
 }
 

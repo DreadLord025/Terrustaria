@@ -285,6 +285,12 @@ mod projectile_bobber;
 // projectile.rs / world_sim (module doc + docs/ANALYSIS.md "The boulder
 // family (W4-d3)").
 mod projectile_ai_boulder;
+// W4-d4 × W4-g82 union (research/26e): the rope-coil lane's EXTRAS — the
+// Kill() refund ladder (:77572-77615, WIRED at the pool's death hook + the
+// world-sim drain) and the trailing-chain placement preview
+// (Main.cs:28499-28669, the UNWIRED draw half — the g82b lane's contract).
+// d4's ai_rope_coil stays the single aiStyle-35 machine.
+mod projectile_rope_coil;
 // S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).

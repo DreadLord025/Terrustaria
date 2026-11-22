@@ -444,6 +444,9 @@ pub(crate) fn kill_hook(p: &mut Projectile, level: i32, rng: &mut dyn DropRng) -
 /// shimmer, the FULL box for lava. Writes the slot's four flags.
 /// `pub(crate)`: the aiStyle-25 boulder arm probes at its head the same way
 /// (the bobber's tick-head probe convention, W4-d3).
+/// `pub(crate)` since W4-d4: the beach-ball arm (aiStyle 32) reads the same
+/// probe at its tick head (the one-tick-lag convention, ANALYSIS "Fishing
+/// rod (S1-P-i35)").
 pub(crate) fn probe_wet(p: &mut Projectile, world: &World) {
     let (x, y, w, h) = (p.pos.x, p.pos.y, p.w, p.h);
     let wi = w as i32;

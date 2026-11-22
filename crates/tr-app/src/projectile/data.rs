@@ -709,11 +709,43 @@ pub const TRAP_SUPERDART: u16 = 184;
 pub const TRAP_SPIKY_BALL: u16 = 185;
 /// The Spear Trap's projectile (the C# `SpearTrap = 186`,
 /// `Projectile.cs:2728-2740`: **aiStyle 37**, 10×14, `tileCollide = false`,
-/// `ignoreWater`, `timeLeft = 300`). The port's row deliberately keeps the
-/// WIRE-1 legacy values (aiStyle 14, 14×14, 900 — the C# 185's row, a
-/// historical 185/186 swap); the faithful 37 row + `AI_037` port are a
-/// follow-up — ANALYSIS "The spiky ball's row fix (S1-D-4c)".
+/// `ignoreWater`, friendly AND hostile, `penetrate = -1`, `timeLeft = 300`,
+/// trap). W4-d4 landed the faithful row WITH the `ai_trap_spear` arm (the
+/// f19 F3 fix — the old 185 stand-in values are retired; correcting the row
+/// before the arm existed would have parked the spear in `_ => {}`).
 pub const TRAP_SPEAR: u16 = 186;
+/// The Flamethrower Trap's jet (`ProjectileID.FlamethrowerTrap = 187`,
+/// `Projectile.cs:2741-2751`: aiStyle 38, 6×6, `alpha = 255`,
+/// `tileCollide = false`, `ignoreWater`, `timeLeft = 60`, trap — NEITHER
+/// friendly nor hostile: the jet itself damages nothing, its 6-tick cycle
+/// spawns the 188 FlamesTrap children). W4-d4 landed the row with the
+/// `ai_flame_jet` arm.
+pub const FLAMETHROWER_TRAP: u16 = 187;
+/// The rope coils (aiStyle 35 — the `AI()` arm `Projectile.cs:27189-27291`):
+/// the Rope Coil 171 (`ProjectileID.cs:896`), the Vine Rope Coil 475
+/// (`:1504`), the Silk Rope Coil 505 (`:1564`) and the Web Rope Coil 506
+/// (`:1566`). Every row is 14×14, `penetrate = -1`, `tileCollide = false`,
+/// `timeLeft = 400` (`Projectile.cs:2570-2578` for 171/505/506,
+/// `:5496-5504` for 475); the AI's placement walk drops the per-kind rope
+/// tile (213/353/365/366). W4-d4.
+pub const ROPE_COIL: u16 = 171;
+pub const VINE_ROPE_COIL: u16 = 475;
+pub const SILK_ROPE_COIL: u16 = 505;
+pub const WEB_ROPE_COIL: u16 = 506;
+/// The Beach Ball (`ProjectileID.BeachBall = 155`, `Projectile.cs:2426-2433`:
+/// aiStyle 32, 44×44, friendly, netImportant). The bounce machine
+/// (`:26887-27048`) kicks off players/NPCs/projectiles; the type-155
+/// movement arm (`:18603-18618`) bounces ×−0.6 and broadcasts the
+/// `Game.BallBounceResult` chat above 10 bounces. W4-d4.
+pub const BEACH_BALL: u16 = 155;
+/// The Mechanical Piranha (`ProjectileID.MechanicalPiranha = 190`,
+/// `Projectile.cs:2779-2790`: aiStyle 39, 22×22, friendly, `penetrate = -1`,
+/// `alpha = 255`, ranged, `usesLocalNPCImmunity` with
+/// `localNPCHitCooldown = 14`). The Piranha Gun's shot — the chase/return
+/// state machine (`:27513-27779`). Its death never cancels the channel
+/// (`DontCancelChannelOnKill`, `ProjectileID.cs:524` — the port's
+/// `try_cancel_channel` already exempts 190). W4-d4.
+pub const MECHANICAL_PIRANHA: u16 = 190;
 /// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
 /// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
 pub const TRAP_VENOM_DART: u16 = 980;
@@ -1848,9 +1880,10 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
 }
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
-/// aiStyle 37) keeps a stand-in row (see its arm) and the flame jet (187,
-/// aiStyle 38) stays a passthrough — their AI families are M4-PROJ
-/// follow-ups. The magic (caster) families' (M4-PROJ-6) rows sit in
+/// aiStyle 37) carries its faithful row since W4-d4 (the arm landed with
+/// it — the f19 F3 fix); the flame jet (187, aiStyle 38) stays a
+/// passthrough until its own W4-d4 commit. The magic (caster) families'
+/// (M4-PROJ-6) rows sit in
 /// `ProjectileID` order at the end of the match: their `aiStyle` values
 /// declare the dispatch arm Phases 3-4 add.
 ///
@@ -2699,16 +2732,73 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
-            // `:2728-2740` — the Spear Trap's spear (186) is really 10x14,
-            // aiStyle **37**, tileCollide false, ignoreWater, friendly AND
-            // hostile, penetrate -1, timeLeft 300, trap. aiStyle 37
-            // (`AI()` `:27472`) has no ported dispatch arm, so the row keeps
-            // the 185 stand-in values (the `:2717-2727` spiky-ball arm the
-            // trap family shared before S1-D-5 split 185 out) — correcting
-            // the row to 37 would park the spear in `_ => {}` forever. The
-            // deviation is recorded in ANALYSIS "The projectile data-row
-            // deviations (S1-D-5)" with the aiStyle-37 port as the follow-up.
-            TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true, RESET_STATE),
+            // `:2728-2740` — the Spear Trap's spear (186): 10x14, aiStyle
+            // **37**, tileCollide false, ignoreWater (the overlay below),
+            // friendly AND hostile, penetrate -1, timeLeft 300, trap.
+            // W4-d4 landed the faithful row WITH the `ai_trap_spear` arm
+            // (the f19 F3 fix — the old 185 stand-in 14x14/14/900 is
+            // retired; the ANALYSIS S1-D-5 stand-in note is closed). The
+            // row shape carries neither friendly nor hostile (the 185
+            // convention — the spawn sites own the flags; the port's
+            // `spawn_with_data` defaults friendly true).
+            TRAP_SPEAR => (10.0, 14.0, 37, -1, 300, 0, false, false, true, RESET_STATE),
+            // `:2741-2751` — the Flamethrower Trap's jet (187): 6x6,
+            // aiStyle **38**, alpha 255, tileCollide false, ignoreWater
+            // (the overlay below), timeLeft 60, trap; the stock penetrate
+            // 1 (`:774` — the arm writes no override). NEITHER friendly
+            // nor hostile in the C# — the spawn site holds friendly false
+            // and the damage walks refuse the kind (the dungeon-debris
+            // precedent); the jet's damage rides its 188 children.
+            FLAMETHROWER_TRAP => (
+                6.0,
+                6.0,
+                38,
+                1,
+                60,
+                0,
+                false,
+                false,
+                true,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `:2570-2578` (171/505/506) / `:5496-5504` (475) — the rope
+            // coils: 14x14, aiStyle **35**, penetrate -1, tileCollide
+            // false, timeLeft 400. The stock friendly false (`:788`) —
+            // the coils damage nothing; the placement walk is the payload.
+            ROPE_COIL | VINE_ROPE_COIL | SILK_ROPE_COIL | WEB_ROPE_COIL => (
+                14.0,
+                14.0,
+                35,
+                -1,
+                400,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
+            ),
+            // `:2426-2433` — the Beach Ball (155): 44x44, aiStyle **32**,
+            // friendly, netImportant (the overlay below); the stock
+            // penetrate 1 / tileCollide true / timeLeft 3600 (the AI pins
+            // timeLeft = 10 every tick, `:26889`).
+            BEACH_BALL => (44.0, 44.0, 32, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:2779-2790` — the Mechanical Piranha (190): 22x22, aiStyle
+            // **39**, friendly, penetrate -1, alpha 255, ranged (the
+            // overlay below), the LOCAL-immunity 14 pair (`:2788-2789`);
+            // the stock tileCollide true / timeLeft 3600 (the arm flips
+            // tileCollide false in the chase/return states).
+            MECHANICAL_PIRANHA => (
+                22.0,
+                22.0,
+                39,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (true, 14, false, -1, 255, 1.0),
+            ),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
@@ -4833,7 +4923,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-d4 — `Projectile.cs:2428`: the Beach Ball (155) sets
+            // `netImportant = true`.
+            || kind == BEACH_BALL,
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4946,6 +5039,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d6 — `Projectile.cs:4495`/`:4876`/`:9856`: the three gun
             // streams ignore water.
             || matches!(kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM),
+            // W4-d4 — `Projectile.cs:2735`: the Spear Trap's spear (186)
+            // sets `ignoreWater = true` (the row landed with the 37 arm).
+            || kind == TRAP_SPEAR
+            // W4-d4 — `Projectile.cs:2748`: the flame jet (187) sets
+            // `ignoreWater = true` (the row landed with the 38 arm).
+            || kind == FLAMETHROWER_TRAP
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -5043,6 +5142,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d1 SEAL — `Projectile.cs:9351`: the SilverBullet's
             // `ranged = true`.
                 | SILVER_BULLET
+            // W4-d4 — `Projectile.cs:2787`: the Mechanical Piranha (190)
+            // sets `ranged = true`.
+                | MECHANICAL_PIRANHA
         ),
         magic: matches!(
             kind,
@@ -5434,6 +5536,9 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // index, not a sheet row).
         LIFE_CRYSTAL_BOULDER => 11,
         GHOULDER => 10,
+        // W4-d4 — the Mechanical Piranha's 4-frame sheet (`Main.cs:8592`)
+        // — the aiStyle-39 arm's 4-tick cycle wraps at 4 (`:27765-27774`).
+        MECHANICAL_PIRANHA => 4,
         // The Stardust Guardian's 19-frame sheet (`Main.cs:8497`) —
         // AI_120's idle machine wraps at 8 (`Projectile.cs:44693`), the
         // rest-hover at projFrames − 4 = 15 (`:44830`) and the dash at

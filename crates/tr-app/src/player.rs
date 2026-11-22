@@ -4716,6 +4716,35 @@ impl Player {
         self.center()
     }
 
+    /// `Player.ChangeDir(dir)` (`Player.cs:42091-42116`): the facing flip
+    /// plus the draw-state mirrors it carries — the composite-arm rotations
+    /// and `itemRotation` negate, `itemLocation.X` mirrors about the mounted
+    /// centre. The port keeps the facing + the two arm rotations +
+    /// itemRotation. The two folds are documented skips (W4-d4 DOC-SWEEP
+    /// census, `docs/research/26d`):
+    /// * the pulley snap (`:42097-42110`) — the `pulley`/`pulley_dir` FIELDS
+    ///   exist, but no sim source sets them: the rope-climb machine
+    ///   (`Player.cs:19690-19746`, the only `pulley = true` writers) is
+    ///   unported, so the `pulley && pulleyDir == 2` arm is unreachable.
+    ///   Porting the snap now would be dead code — it lands with the rope
+    ///   movement (its `Main.cameraX` shift is draw-time in the port anyway).
+    /// * the `itemLocation.X` mirror (`:42115`) — `itemLocation` is not a
+    ///   Player field here; the draw recomputes it per frame from `facing`
+    ///   (`melee_swing::swing_item_placement` / `player_layers`), so the
+    ///   facing flip above already mirrors every subsequent frame's item
+    ///   position — the write is observationally folded into the flip.
+    /// W4-d4 — the Mechanical Piranha's `flag18` facing write
+    /// (`Projectile.cs:27537-27547`) calls it.
+    pub fn change_dir(&mut self, dir: i32) {
+        if dir == self.facing {
+            return;
+        }
+        self.facing = dir;
+        self.composite_back.rotation *= -1.0;
+        self.composite_front.rotation *= -1.0;
+        self.item_rotation *= -1.0;
+    }
+
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
     /// `(position.X + width/2, position.Y + HeightOffsetHitboxCenter)`, or
     /// `Bottom.Y - HeightOffsetHitboxCenter` under reversed gravity. The port
@@ -15784,6 +15813,31 @@ mod tests {
         p.wings_logic = 22;
         p.update_frames(&w);
         assert_eq!(p.leg_frame, 0);
+    }
+
+    /// W4-d4 DOC-SWEEP item 5 — `Player.ChangeDir` (`Player.cs:42091-42116`):
+    /// the same-direction early return, then the facing flip + the three
+    /// rotation negates (compositeBackArm/compositeFrontArm/itemRotation).
+    /// The pulley snap and the itemLocation mirror are the documented folds
+    /// (no sim pulley source; itemLocation is draw-recomputed from facing).
+    #[test]
+    fn w4_d4_sweep_change_dir_flips_facing_and_negates_the_rotations() {
+        let (_w, mut p) = settled();
+        p.facing = 1;
+        p.composite_back.rotation = 0.4;
+        p.composite_front.rotation = -0.7;
+        p.item_rotation = 1.2;
+        // The same-direction call is a no-op (`:42093-42096`).
+        p.change_dir(1);
+        assert_eq!(p.facing, 1);
+        assert!((p.composite_back.rotation - 0.4).abs() < 1e-6, "no early flip");
+        assert!((p.item_rotation - 1.2).abs() < 1e-6);
+        // The flip negates all three rotations (`:42111-42114`).
+        p.change_dir(-1);
+        assert_eq!(p.facing, -1);
+        assert!((p.composite_back.rotation + 0.4).abs() < 1e-6);
+        assert!((p.composite_front.rotation - 0.7).abs() < 1e-6);
+        assert!((p.item_rotation + 1.2).abs() < 1e-6);
     }
 
     #[test]
