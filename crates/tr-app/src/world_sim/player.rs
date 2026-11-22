@@ -392,6 +392,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     if mana_edge {
         crate::potions::quick_mana(app);
     }
+    // W4-a5 — the B-key (`Main.cBuff`) buff hotkey: `TriggersSet.CopyInto`
+    // (`GameInput/TriggersSet.cs:801-804`) calls `Player.QuickBuff()` on
+    // the QuickBuff trigger (`Player.cs:5766-5846`). The port keeps the
+    // press-edge latch like `quick_mana_prev` above (the two-frame seam);
+    // the C# zeroes only the MOVEMENT controls under the open map
+    // (`:24794-24807`), so this key stays live there too.
+    let buff_key = app
+        .keys
+        .iter()
+        .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::QuickBuff, *k));
+    let buff_edge = buff_key && !app.quick_buff_prev;
+    app.quick_buff_prev = buff_key;
+    if buff_edge {
+        crate::potions::quick_buff(app);
+    }
     let (sw, sh) = app.screen_size();
     let mouse_world = Vec2::new(
         app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
@@ -3331,5 +3346,65 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    // ---- W4-a5: the QuickBuff B-key edge (WRITTEN NOT RUN) ------------------
+
+    /// W4-a5 — `TriggersSet.CopyInto` (`GameInput/TriggersSet.cs:801-804`)
+    /// fires `Player.QuickBuff` on the QuickBuff trigger; the port keeps
+    /// the press-edge latch (`quick_buff_prev`, the `quick_mana_prev`
+    /// precedent). Holding B does not re-buff; release + re-press does.
+    #[test]
+    fn w4_a5_the_quick_buff_key_buffs_once_per_press() {
+        let mut app = ammo_app();
+        app.inventory[4] = crate::item::ItemSlot {
+            kind: 292, // Ironskin Potion, buff 5
+            name: "Ironskin Potion",
+            count: 5,
+            prefix: 0,
+        };
+        // The silent listener: the tail use-sound draws nothing.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.keys.insert(KeyCode::KeyB); // the default cBuff bind
+        tick_ammo(&mut app);
+        assert!(
+            app.player
+                .as_ref()
+                .unwrap()
+                .buffs
+                .find_buff_index(5)
+                .is_some(),
+            "the press granted Ironskin"
+        );
+        assert_eq!(app.inventory[4].count, 4);
+        // Held: the latch dropped — no second consume (the standing buff
+        // would refuse anyway, so witness the STACK, not the buff).
+        for _ in 0..30 {
+            tick_ammo(&mut app);
+        }
+        assert_eq!(app.inventory[4].count, 4, "one use per press edge");
+        // Release + re-press: the latch re-arms. The buff still stands, so
+        // ShouldBother refuses — clear it first to see the second consume.
+        app.keys.remove(&KeyCode::KeyB);
+        tick_ammo(&mut app);
+        app.player.as_mut().unwrap().buffs.clear_buff(5);
+        app.keys.insert(KeyCode::KeyB);
+        tick_ammo(&mut app);
+        assert_eq!(app.inventory[4].count, 3, "the re-press buffed again");
+        assert!(app
+            .player
+            .as_ref()
+            .unwrap()
+            .buffs
+            .find_buff_index(5)
+            .is_some());
     }
 }
