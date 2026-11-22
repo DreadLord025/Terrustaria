@@ -40020,3 +40020,1463 @@ cross-checks, the zero-caller greps, the `Item_62` asset on disk. The two
 new `s1_e_21h_d76_sweep_*` witnesses + the updated queue-tuple / whip-tip
 / Lights Bane asserts are WRITTEN, NOT RUN — **no compiler invoked**.
 Anchors rows: `play_use_sound_scaled`, `kill_tail_cue`.
+## W4-f27 FindFrame extra wave 4 (2026-11-20, code-only mode)
+
+`crates/tr-app/src/npc_findframe_extra4.rs` — the NEXT 15 unclaimed
+missing `NPC.FindFrame` case ids (`NPC.cs:66684-77370`). The census
+re-derived mechanically from the pushed branches: every C# top-level
+`case` label of the switch on `this.type` (`NPC.cs:66705`, brace-depth
+filtered — the nested switches' labels excluded) = **602 ids**; the
+port's `npc.rs::find_frame` match arms (270 kinds) mapped through the
+`cs_id` hand rows (`npc/data.rs:2992`) + the bestiary net ids + the
+wave-A/B module rosters cover 248 of them (the folded segment families
+— the Destroyer 135, the Golem head 246/249, the Fishron hazards
+371/373 — resolve through their `find_frame` arms, not their bestiary
+folds); the d44-d49 claims subtract 75 more — **279 remain** (the e13
+base, re-confirmed). e13 owns the first 15 (121..202); e14's declared
+next-15 (203/204/205/209/217/218/219/220/221/224/226/229/230/231/232,
+the e13 ANALYSIS header) and f26's batch-2 declaration
+(201/202/203/204/205/209) overlap the same band — the union subtracts
+30, leaving 249 unclaimed. This wave owns the first 15 of those:
+**233/234/235/236/237/238/239/240/241/242/243/244/251/252/253**.
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 233 | HornetLeafy | `:74910` (the 42/231/232 hornet group) | 3 (`:67107`) |
+| 234 | HornetSpikey | `:74911` (the same group) | 3 (`:67107`) |
+| 235 | HornetStingy | `:74912` (the same group) | 3 (`:67107`) |
+| 236 | JungleCreeper | `:73084` (the 164/530 creeper group) | 5 (`:67107`) |
+| 237 | JungleCreeperWall | `:73113` (the 165/531 wall group) | 4 (`:67107`) |
+| 238 | BlackRecluseWall | `:73114` (the same wall group) | 4 (`:67107`) |
+| 239 | BloodCrawler | `:73085` (the creeper group) | 5 (`:67107`) |
+| 240 | BloodCrawlerWall | `:73115` (the wall group) | 4 (`:67108`) |
+| 241 | BloodFeeder | `:74185` (the fish group) | 6 (`:67108`) |
+| 242 | BloodJelly | `:73919` (the jellyfish group) | 7 (`:67108`) |
+| 243 | IceGolem | `:72995-73053` | 15 (`:67108`) |
+| 244 | RainbowSlime | `:72632-72651` | 4 (`:67108`) |
+| 251 | Eyezor | `:76335` (the case-3 zombie walker group) | 3 (`:67109`) |
+| 252 | Parrot | `:73558-73606` (the 301 pair, the 252 branch) | 5 (`:67109`) |
+| 253 | Reaper | `:74833` (the floater group) | 3 (`:67109`) |
+
+Shape (the `npc_findframe_extra3.rs` / f26 precedent): the kinds are
+NOT in `NpcKind` yet (the roster waves own them), so the machines land
+as pure fns over `FrameState`/`FrameInput` with
+`find_frame_kind_extra4` as the vanilla-id wiring seam; the bridge is
+the wiring round (no `npc.rs` hook this wave — the f26 shape, zero
+conflict surface with the in-flight e13/d45 hooks). **No RNG**: none
+of the 15 arms draws `Main.rand` — the floater group's only draw
+(`:74844`) is gated `type == 634`, not 253 — so the wiring cannot move
+a stream.
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **233/234/235 the leafy hornets** (`:74907-74934`): the 8-tick band
+  cycle — counter++ then <2 row 0, <4 row 1, <6 row 2, <8 row 1, else
+  the counter resets and the row HOLDS at 1 (the else writes no
+  frame). No sprite/rotation write; the wing flap ignores velocity.
+* **236/239 the creepers** (`:73083-73111`): the AIR tick zeroes the
+  counter and pins row 4 rising / row 0 falling (row 4 is air-only on
+  the 5-row sheet); the ground tick copies `direction`
+  UNCONDITIONALLY (0 included) and accumulates `|vx| * 1.1` — the
+  WHILE loop steps a row every 6 keeping the remainder (a fast tick
+  steps twice: vx 6 → 6.6/tick, the 10th tick carries 6.0 over),
+  wrapping past row 3 to 0. The SAME machine as d46's 164
+  WallCreeper — keep-one at the merge (the e14 penguin precedent).
+* **237/238/240 the wall crawlers** (`:73112-73145`): the
+  `(|vx| + |vy|) * 0.5` accumulator rides the <6/<12/<18/<24 bands
+  over rows 0/1/2/3; the >= 24 tail zeroes the counter and HOLDS the
+  row. The 531-only `num194 = 0.4` override (`:73119-73122`) is a
+  later wave's. No air split, no sprite write — the walls crawl in
+  every direction. The SAME machine as d46's 165 WallCreeperWall —
+  keep-one at the merge. (d46's 165 is the WALL arm; the walking
+  BlackRecluse 163 is its own `:73227` machine, not this one.)
+* **241 BloodFeeder** (`:74181-74226`): the fish group —
+  `spriteDirection = direction` unconditionally, then wet rows 0..3
+  at 6 ticks a band / dry rows 4/5; BOTH tails zero the counter and
+  HOLD the row (the row-hold quirk, the d44 goldfish / e14 102
+  AnglerFish precedent — the same machine, keep-one at the merge).
+* **242 BloodJelly** (`:73916-73960`): the pulse gate
+  (`(63/64/103/242) && ai[1] == 1`, `:73921` — 242 IS in the list,
+  256 is not) cycles rows 4..6 on the >4 counter with BOTH clamps
+  (the first pulse tick lifts any row into the band) and RETURNS
+  early; else the idle <6/<12/<18 bands over rows 0/1/2 with the
+  row-3 tail resetting at >= 23. The same machine as d44's 63/64 and
+  e14/d45's 103 — keep-one at the merge.
+* **243 IceGolem** (`:72995-73053`): the negative-counter landing
+  ladder — while counter < 0 the ground ticks climb +1 (< -12 pins
+  row 11, < -6 pins row 12, the < 0 tail snaps the counter to 0 and
+  pins row 11 — all three gated on row > 9, so a walk-band row is
+  never lifted); the AIR ticks re-pin the counter to -18 and write
+  row 14 rising / row 13 falling. The grounded walk copies direction
+  unconditionally, accumulates `|vx * 1.1|` stepping every >= 6 over
+  rows 0..9 with the > 9 wrap; the fast-air kick (vy < -2 or vy > 5)
+  re-arms the -18 ladder AFTER the walk step (`:73049-73052` — the
+  order matters: a kicked tick still steps the walk first).
+* **244 RainbowSlime** (`:72632-72651`): the counter feeds on the
+  `num2` motion class (`:66696-66704`) — +1 always, +1 more while
+  moving/airborne (num2 > 0), +1 more on the attack class (num2 == 4,
+  aiAction 1); the >= 8 step walks the FULL 4 rows with the >= count
+  wrap. Idle 8 ticks a step, moving 4, attacking 3 (8/3 rounded up).
+* **251 Eyezor** (`:76324-76391`): the zombie walker group — the
+  grounded flip writes only on direction ±1; the air OR the
+  facing-against-motion turn pins row 2 + zeroes the counter (the
+  3-row sheet's jump row); the idle snaps row 0; the walk
+  accumulates |vx| over the <8/<16/<24/<32 bands rows 0/1/2/1 with
+  the >= 32 tail zeroing the counter and HOLDING the row. The same
+  machine as the wave-A zombie arm (case 3) — keep-one at the merge.
+* **252 Parrot** (`:73558-73606`, the 301 pair): the 252 branch —
+  the |vx| > 0.5 velocity-sign flip (the 301 inverted ground flip +
+  air flip `:73560-73577` is 301's, skipped with cite), the
+  `vx * 0.1` tilt, the still-air idle snaps row 0 + zeroes the
+  counter; else the >4 counter steps a row and the `> 4 || == 0`
+  clamp lifts row 0 to row 1 / wraps row 5 to 1 — the strip cycles
+  rows 1..4, row 0 is idle-only.
+* **253 Reaper** (`:74823-74884`): the floater group — the vx-sign
+  flip (0 leaves it), the `vx * 0.1` tilt, the 6-tick strip over the
+  FULL 3 rows (253 is not in the `num292--` list 49/51/60/634, not
+  the type-48 `num291 = 5` override, not the 210/211
+  double-increment). The same machine as e13's 137/182 and f26's
+  182 — keep-one at the merge.
+
+Deliberate deviations / folds:
+
+* **Out-of-band case siblings skipped with cites**: the hornet
+  group's 42/231/232 (42 is the port's Hornet, 231/232 are e14's
+  declared band), the creeper group's 164 (d46) / 530 (later wave),
+  the wall group's 165 (d46) / 531 (later wave), the fish group's
+  55/57/58 (d44/port) / 102 (e14/d45) / 465/592/607 (later waves),
+  the jellyfish group's 63/64 (d44) / 103 (e14/d45) / 256 (later
+  wave), the zombie group's many wave-A / later-wave ids, the
+  floater group's 48/49/51/60/82/93/137/182/210/211/316/634/662/664.
+  No `IsABestiaryIconDummy` branch exists in any of the 15 arms.
+* **The keep-one twins**: 236/239 ≡ d46's 164, 237/238/240 ≡ d46's
+  165, 241 ≡ the d44 goldfish / e14 102 fish arm, 242 ≡ the d44
+  63/64 / e14 103 jellyfish arm, 251 ≡ the wave-A case-3 zombie arm,
+  253 ≡ the e13/f26 floater arm. The in-flight siblings' branches
+  compile alone; the merger dedupes to one shared arm per group (the
+  d49 scorpion / e14 penguin precedent).
+
+14 witnesses WRITTEN NOT RUN (code-only mode — no cargo/rustc/rustfmt/
+tests invoked): the count-table pin (cross-checked against the port's
+`NPC_FRAME_COUNT`), the hornet 8-tick band cycle + reset-tick
+row-hold, the creeper remainder stepper (the vx-6 double-step) + air
+pins + direction-0 copy, the wall-crawler half-speed bands + tail
+hold, the BloodFeeder wet/dry hold-tails, the BloodJelly pulse/idle
+bands + both clamps, the IceGolem landing ladder + air pins + walk
+wrap + fast-air kick + the row>9 gate, the RainbowSlime num2 feed
+rates, the Eyezor bands + air/turn pins + idle snap, the Parrot
+rows-1..4 cycle + still-air snap + sub-0.5 flip hold, the Reaper
+full-3 flap, the 15-kind strip sweep (5x3x3 vx/vy/direction grid x 3
+wet/ai1/aiAction variants, 40 ticks each, rows stay inside their
+sheets) and the seam's exact-set pin. The strip/band expectation
+tables were re-derived by mechanical replay of the ported machines
+(a Python transcription of the C# order), not by hand alone.
+
+## W4-f27 FindFrame extra wave 7 (slice 7 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-4 (ad79bbb7). The census re-derived
+mechanically against this branch's tree: every C# top-level case label
+of the switch on this.type (NPC.cs:66705, two-tab indent - the nested
+switches excluded) = 602 ids; the port's npc.rs::find_frame arms mapped
+through the cs_id hand rows (npc/data.rs:2992) + the bestiary net ids +
+the wave-A/B rosters + the extra-4 seam + the folded segments
+(135/246/249/371/373, their own find_frame arms) cover 263; the d44-d49
+claims subtract 75 more (disjoint from the covered set) = 264 e13-base
+(the f26 wave-5 header's 248/279 counted a narrower arm map - the
+recount here is the mechanical one); minus the e13/e14-declared 30 +
+f26 extra-3's 15 + f26 extra-5's 15 + f27 extra-4's 15 (the overlaps
+dedupe) = **219 unclaimed** (the f26 census number, re-confirmed).
+
+The 306..350 window: 44 case labels; 33 already port-covered (the
+Scarecrow/MourningWood/Pumpking walker group npc.rs:8592-8604, the
+holiday zombies via wave-A npc_findframe_a.rs:157-161, the ZombieElf
+trio npc.rs:8648, the Frost Moon bosses/flyers npc.rs:8664-8926); the
+11 unclaimed are **316/317/318/322/323/324/333/334/335/336/337**.
+f26c owns the 278-305 band (23 ids: 278..287/290..293/295/297/298/
+299/300/301/302/303/304). **This wave (f27 slice 7) claims the FIRST 15
+unclaimed of the 306+ band: 316/317/318/322/323/324/333/334/335/336/
+337/437/438/440/442** - the window's 11 plus the next 4 ascending
+(437 CultistTablet, 438 CultistDevote, 440 CultistBossClone, 442
+GoldBird). f26c stays below 306.
+
+Shape (the extra-4 precedent): pure machines over FrameState/
+FrameInput in crates/tr-app/src/npc_findframe_extra7.rs, the
+find_frame_kind_extra7 vanilla-id seam, no npc.rs hook this wave.
+5 kinds per commit, 3 batches. Zero RNG (the floater group's only
+Main.rand draw :74844 is 634-gated; the eye group's :74007 dust is
+23-gated - neither is 316/317/318). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT.
+
+### W4-f27 extra wave 7 — the per-case notes (slice complete, 15/15)
+
+`crates/tr-app/src/npc_findframe_extra7.rs` — the 15 arms landed in
+3 batches of 5 (b984ab0e / fc7a6671 / b062efbe), the
+`find_frame_kind_extra7` vanilla-id seam, the wave-B
+`humanoid_fighter_frame` pub(crate) lift (the extra-3 delegate
+precedent — the SAME one-line visibility change, keep-one at the
+merge). No `npc.rs` hook this wave (the f26/f27 shape, zero conflict
+surface with the in-flight g6/g7 wire hooks).
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 316 | Ghost | `:74834` (the floater group) | 4 (`:67115`) |
+| 317 | DemonEyeOwl | `:74003` (the eye group) | 2 (`:67115`) |
+| 318 | DemonEyeSpaceship | `:74004` (the same group) | 2 (`:67115`) |
+| 322 | SkeletonTopHat | `:68599` (the humanoid group) | 16 (`:67116`) |
+| 323 | SkeletonAstonaut | `:68600` (the same group) | **15** (`:67116` slot 3) |
+| 324 | SkeletonAlien | `:68601` (the same group) | 16 (`:67116`) |
+| 333 | SlimeRibbonWhite | `:70814` (the slime strip group) | 2 (`:67117`) |
+| 334 | SlimeRibbonYellow | `:70815` (the same group) | 2 (`:67117`) |
+| 335 | SlimeRibbonGreen | `:70816` (the same group) | 2 (`:67117`) |
+| 336 | SlimeRibbonRed | `:70817` (the same group) | 2 (`:67117`) |
+| 337 | BunnyXmas | `:76854` (the bunny hop group) | 7 (`:67117`) |
+| 437 | CultistTablet | `:71987-71996` | 4 (`:67127`) |
+| 438 | CultistDevote | `:71998-72015` | 4 (`:67127`) |
+| 440 | CultistBossClone | `:72018` (the 439/440 pose ladder) | 16 (`:67128`) |
+| 442 | GoldBird | `:73631` (the 74/297/298 bird group) | 5 (`:67128`) |
+
+Per-case notes (all verbatim, row-index convention — `num` cancels):
+
+* **316 the Ghost** (the floater group `:74823-74884`, shared with
+  48/49/51/60/82/93/137/182/210/211/253/634/662/664 — wave-B's Wraith
+  82 and extra-4's Reaper 253 are the SAME machine, keep-one at the
+  merge): the vx-sign flip (0 leaves it), the `vx * 0.1` tilt, the
+  6-tick strip over the FULL 4 rows. 316 is NOT in the `num292--`
+  list (49/51/60/634), not the type-48 `num291 = 5`, not the 210/211
+  double-increment. The group's only `Main.rand` draw (`:74844`) is
+  634-gated — the arm is RNG-free.
+* **317/318 the costume demon eyes** (the eye group `:73994-74059`,
+  shared with 2/23/121/169/190-194/660 — wave-A's five eye variants
+  keep-one): the FIRST aim branch (`:74019-74031`) carries 317/318 —
+  `spriteDirection` mirrors the flight sign, `rotation =
+  atan2(vy, vx)` with the literal `3.14f` (NOT PI) left offset; both
+  freeze at `vx == 0`. The 8-tick strip cycles the 2 rows. The
+  SECOND flip branch (`:74032-74043`) is unreachable for them (the
+  first branch's type list wins); the 23 dust and the 121/660
+  `localAI[0]` latch are other kinds'.
+* **322/323/324 the costume skeletons** (the humanoid group
+  `:68543-68634` → the fighter walk `:68647-69655`, the wave-B
+  `humanoid_fighter_frame` keep-one delegate): aiStyle-3 fighters
+  (`SetDefaults :13075-13114`, no townNPC), so `num57` = 0, the walk
+  wraps at the FULL count; the grounded ±1 flip, the idle row-0
+  snap, the lift-to-2 + `|vx| * 2 + 1` accumulator with the > 6
+  step, the air row 1 (NONE of the trio is in the `:69647` pin
+  list). The 323 astronaut is the ONE 15-row sheet (`Main.cs:67116`
+  slot 3) — its walk reaches row 14 before the wrap-to-2; the
+  322/324 16-row twins reach row 15.
+* **333-336 the ribbon slimes** (the slime strip group
+  `:70801-70846`, shared with 1/16/59/71/81/138/147/183/184/204/225/
+  302/304/535/537/658/659/667/676 — the port's Slime arm
+  `npc.rs:7772` + wave-A's slime roster keep-one): the num2-fed
+  counter (+1 always, +1 moving/air, +1 attack), the >= 8 step over
+  the FULL 2 rows. The 302/304 sprite snap (`:70824-70827`) is the
+  town slimes' — the ribbons never write spriteDirection.
+* **337 the Christmas bunny** (the bunny hop group `:76851-76904`,
+  shared with 46/47/303/443/464/540/614/646-652 — d44's 46/47
+  keep-one): the grounded ±1 flip (0 leaves it), the idle row-0
+  snap + counter zero, the `|vx| * 1 + 1` accumulator with the > 6
+  step over the FULL 7 rows (wrap to 0), the air pins row 4 rising
+  / row 6 falling (both zero the counter).
+* **437 the Cultist Tablet** (`:71987-71996`): counter++ then the
+  >= 20 reset runs BEFORE the band read — the row is
+  `(int)counter % 20 / 5`, four 5-tick bands over the 4 rows; tick
+  20 shows row 0. Velocity ignored, no sprite/rotation write.
+* **438 the Cultist Devote** (`:71998-72015`): the 49-tick MIRRORED
+  cycle — counter++ (+1 more while `ai[1] == 1`, the ritual chant),
+  the >= 49 reset, the band `(int)counter % 49 / 7` runs 0..6 and
+  the >= 4 tail mirrors (`6 - band`): rows 0/1/2/3/2/1/0, seven
+  ticks a band. The chant's +2/tick lands the 49 reset mid-cycle
+  (tick 25 from 0).
+* **440 the Cultist Boss Clone** (the 439/440 pose ladder
+  `:72017-72101`): `localAI[2]` (the AI_084 pose selector,
+  `:64616-64644`) picks the pose — 0/1/2 the idle poses (the
+  off-home-row bands 4-6 / 10-12 / 7-9, the >= 15 tail snaps the
+  home row 0/1/2 AND zeroes the counter), 10/11/12 the attack poses
+  (the SAME bands, the >= 15 tail only zeroes the counter — the row
+  keeps cycling), 13 the ritual (rows 13-15); any other selector
+  writes NO frame. The counter++ runs AFTER the switch (`:72100`).
+  The `IsABestiaryIconDummy` branch (`:72021-72032`) is a
+  display-only dummy path — skipped (the port has no bestiary-dummy
+  NPC entity). 439 itself is the port's AncientCultist (the
+  `npc.rs:7135` 1-frame stub — the wiring round's keep-one: the
+  stub is WRONG vs this ladder, recorded for the roster wave).
+* **442 the Gold Bird** (the bird group `:73628-73652`, shared with
+  74/297/298 — f26c's 297/298 keep-one): the UNCONDITIONAL
+  direction copy (0 included — NOT the humanoid ±1 gate), the
+  `vx * 0.1` tilt, the still-air (`vx == 0 && vy == 0`) snap to
+  row 4 + counter zero (the 5-row sheet's perch row), the 4-tick
+  strip over rows 0..count-2 (`num124` = count - 1 — row 4 is
+  perch-only on the flap; a perch-row state wraps to 0 on the
+  first moving tick).
+
+Witnesses: 12 tests WRITTEN NOT RUN (code-only mode) — the
+frame-count table cross-check (all 15 vs `NPC_FRAME_COUNT`), the
+Ghost full-4 flap + flip/tilt, the costume-eye atan2 aim + vx==0
+freeze, the skeleton fighter bands + the 15/16-row count-variant
+wrap, the ribbon num2 feed (idle 8 / moving 4 / attack 3 ticks a
+step), the bunny 7-row hop + air pins, the tablet 4-band cycle, the
+devote mirrored cycle + chant, the clone pose ladder (idle snap /
+attack cycle / ritual / unknown-selector no-write), the gold bird
+perch + unconditional copy, the 15-kind 5x3x3x3 strip sweep (40
+ticks, every row inside its sheet) and the exact-slice seam sweep.
+The strip/band expectation tables were re-derived by mechanical
+replay of the ported machines (a Python transcription of the C#
+order), not by hand alone. Frame counts cross-checked
+entry-by-entry: `Main.cs:67082`'s 697-entry initializer vs
+`render/entities.rs::NPC_FRAME_COUNT` — all 15 agree.
+
+## W4-f27 FindFrame extra wave 8 (slice 8 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-7 (9c1cfba9). The census re-derived
+mechanically against this branch's tree + the pushed roster lane
+`origin/task/W4-d40-npc-kinds-421-490` (8fe1d6d3, its `npc.rs::find_frame`
+arms + cs_id hand rows read via `git show`): every C# top-level case
+label of the switch on this.type (NPC.cs:66705, two-tab indent - the
+nested switches excluded) = 602 ids; the port's find_frame arms mapped
+through the cs_id hand rows + the bestiary net ids + the wave-A/B/e4/e7
+module rosters + the folded segments (135/246/249/371/373) cover 278
+(the slice-7 claim's 263 counted before the extra-7 seam landed); the
+d44-d49 claims subtract 72 more (disjoint - the wire-census research/68
+tables) = 252 e13-base; minus the deduped e13/e14/f26(3+5+6)/f27(4+7)
+claims = **200 unclaimed**. The f26 co-lane's pushed tip (9a4e3512)
+declares its slice 6 done (278..295) and the in-band remainder
+297..304 + the 351-365 band ride its slice 7 (f26d) - the band is
+RESERVED for f26d, untouched here (the 351..365 ids are d48 wave-C
+claimed anyway).
+
+The 443+ window: d40's roster lane adds NpcKind variants + SetDefaults
+rows for 443-454/460-463 but its find_frame arms split: the seven gold
+critters 443-448 + the clone 440 ride ROW-0 STUBS (`self.frame = 0`,
+d40 npc.rs:9527-9540 - the faithful machines still missing), the bone
+throwers 449-452 + the Creature 461 carry faithful inline arms, and
+453/460/462 ride `humanoid_town_frame` (the town-walk stand-in: the
+453 ExtraFramesCount-9 wrap is right, the 460/462 fighter wraps + the
+462 air rows 1/2 + the air row-1 pin are WRONG for them - d40's own
+merger note). **This wave (f27 slice 8) claims the FIRST 15 unclaimed
+ascending from 443: 443/444/445/446/447/448/449/450/451/452/453/454/
+460/461/462** - the six gold critters, the four bone-throwing
+skeletons, the Skeleton Merchant, the Cultist Dragon Head, the
+Butcher, the Creature From The Deep and Fritz. The keep-one twins for
+the merger: 443 = d44's 46/47 + f27's 337 bunny hop; 444/445/446/448 =
+d48 wave-C's 356/361/377/357 group machines (the C# groups the cases;
+444/448's ai[2]-bank / 444's colour shift are type-gated OFF); 447 =
+f26d's 300 mouse pair; 449-452/461 = d40's faithful inline arms
+(re-derived here as pure machines, the f26 keep-one shape); 453/460/
+462 = the humanoid-group walk (the 453 town wrap vs the 460/462
+fighter wraps split); 454 = d40's counter/2 head arm.
+
+ALSO this slice: the 439 stub FIX - `npc.rs:7135`'s AncientCultist
+1-frame pin (cs_id 439 via the bestiary net_id, `bestiary.rs:1714`) is
+WRONG vs the C#'s `case 439/440` shared pose ladder
+(`NPC.cs:72017-72101` - the case list carries BOTH ids; the slice-7
+440 machine is the same arm). The stub delegates to
+`npc_findframe_extra7`'s CultistBossClone ladder (the localAI[2] pose
+selector, the counter++ AFTER the switch), the towers keep their
+row-0 pin (422/493/507/517 have no FindFrame case - npcFrameCount 1).
+
+Shape (the extra-4/extra-7 precedent): pure machines over FrameState/
+FrameInput in crates/tr-app/src/npc_findframe_extra8.rs, the
+find_frame_kind_extra8 vanilla-id seam, no npc.rs hook for the 15 new
+kinds (the roster wave owns them; the 439 fix is the ONE npc.rs edit).
+5 kinds per commit, 3 batches. Zero RNG (verified mechanically per
+arm - a Main.rand/.Next(/NextFloat grep over all cited body ranges =
+ZERO; the humanoid group's town pose zones with their chat-bubble
+draws are the documented skip). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT.
+
+### The extra-8 per-case notes (the batches landed)
+
+`crates/tr-app/src/npc_findframe_extra8.rs` - the 15 arms verbatim
+(row-index convention - `num` cancels), 5 kinds per commit:
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 443 | GoldBunny | `:76855` (the bunny hop group) | 7 (`:67128`) |
+| 444 | GoldButterfly | `:72740` (the butterfly group) | 3 (`:67128`) |
+| 445 | GoldFrog | `:76619` (the frog group) | 13 (`:67128`) |
+| 446 | GoldGrasshopper | `:70959` (the grasshopper group) | 2 (`:67128`) |
+| 447 | GoldMouse | `:76514` (the mouse group) | 6 (`:67128`) |
+| 448 | GoldWorm | `:72775` (the worm group) | 2 (`:67128`) |
+| 449 | BoneThrowingSkeleton | `:71398-71453` | 19 (`:67128`) |
+| 450 | BoneThrowingSkeleton2 | `:71399` (the same group) | 19 (`:67129`) |
+| 451 | BoneThrowingSkeleton3 | `:71400` (the same group) | 19 (`:67129`) |
+| 452 | BoneThrowingSkeleton4 | `:71401` (the same group) | **20** (`:67129`) |
+| 453 | SkeletonMerchant | `:68610` (the humanoid TOWN group) | 26 (`:67129`) |
+| 454 | CultistDragonHead | `:70952-70957` | 3 (`:67129`) |
+| 460 | Butcher | `:68611` (the humanoid fighter group) | 16 (`:67130`) |
+| 461 | CreatureFromTheDeep | `:75315-75410` | 21 (`:67130`) |
+| 462 | Fritz | `:68612` (the humanoid group, 3 overrides) | 9 (`:67130`) |
+
+* **443 the Gold Bunny** (the bunny hop group `:76851-76904`, shared
+  with 46/47/303/337/464/540/614/646-652 - d44's 46/47 + extra-7's
+  337 keep-one): the grounded +/-1 flip (0 leaves it), the idle
+  row-0 snap + counter zero, the `|vx| * 1 + 1` accumulator with the
+  > 6 step over the FULL 7 rows (wrap to 0), the air pins row 4
+  rising / row 6 falling.
+* **444 the Gold Butterfly** (the flap group `:72739-72773`, shared
+  with 356/653/661 - d48 wave-C's 356 keep-one): the `vx * 0.3`
+  tilt, the UNCONDITIONAL direction copy, the velocity-fed counter
+  `+1 + (|vx| + |vy|) / 2`, the 7-tick bands rows 0/1/2/1 with the
+  reset at `7*4 - 1 = 27`. The colour bank (`:72768-72771`) is
+  type-gated `!= 444 && != 653 && != 661` - 444's 3-row sheet has
+  ONE bank, no `ai[2]` offset (the 356 24-row sheet's eight banks
+  are d48's).
+* **445 the Gold Frog** (the frog group `:76618-76685`, shared with
+  361/687 - d48's 361 keep-one): the unconditional copy; wet zeroes
+  the counter and the |vx| bands pick rows 10/11/12 (the 0.25/0.15
+  deadbands); the grounded idle's > 6 step walks rows 0..5 with the
+  `> num*5` wrap running EVERY tick (not only on the step); the
+  grounded walk rides the 6-tick bands 0/6/8/9 with the reset at
+  `6*4 - 1 = 23`; the air pins row 9 falling / row 8 rising.
+* **446 the Gold Grasshopper** (the group `:70958-70982`, shared
+  with 377 - d49 wave-D's 377 keep-one): the air row-1 / ground
+  row-0 pin + the unconditional copy on BOTH paths; the counter is
+  NEVER touched. The `IsABestiaryIconDummy` branch
+  (`:70960-70972`) is the display-only skip.
+* **447 the Gold Mouse** (the group `:76513-76565`, shared with 300
+  - f26d's 300 keep-one): the grounded +/-1 flip; the idle ticks
+  the counter and the > 8 step blinks rows 0/1 (the `> num*1` wrap
+  to 0); the walk (grounded OR air - the two tails are
+  byte-identical) accumulates `|vx| * 0.5 + 1`, the > 6 step walks
+  the FULL 6 rows wrapping to row 2 (rows 0/1 idle-only on the
+  walk). The air branch does NOT flip the sprite.
+* **448 the Gold Worm** (the group `:72774-72828`, shared with
+  357/484/606 - d48's 357 keep-one): the `localAI[0] = -2` pin
+  EVERY tick; the grounded tick zeroes the rotation, the idle pins
+  row 1 + zeroes the counter, the > 12 crawl alternates rows 1/0
+  (the `> num` wrap); the air pins row 1 and accumulates the
+  `direction * 0.1` spin. The slope override rides the
+  caller-resolved `FrameInput::slope` (the d48 precedent): slope 1
+  -> +0.785, slope 2 -> -0.785, both lifting the pin to 0.
+* **449-452 the bone throwers** (`:71398-71453`): the grounded +/-1
+  flip; the `ai[2] > 0` toss copies direction UNCONDITIONALLY and
+  picks row `count - 5 + band` off the `ai[1]` >= 50 / >= 43 /
+  >= 36 / >= 29 countdown (bands 1/2/3/4, else 0 - the C#'s
+  `50 - 7*k`), zeroing the counter and BREAKING; the idle snaps
+  row 0 with the counter UNTOUCHED; the walk lifts to 2 (the
+  doubled `if` at `:71429-71436` is idempotent), accumulates
+  `|vx| * 2` with NO +1, the > 6 step, and wraps at the LITERAL 15
+  back to 2 (`:71443` - rows 15+ are toss-only on EVERY sheet); the
+  air zeroes the counter and pins row 1. 452 is the ONE 20-row
+  sheet (`Main.cs:67129` slot 2) - its band-1 toss lands row 19,
+  the 19-row trio's lands 15; the walk band is the same.
+* **453 the Skeleton Merchant** (the humanoid TOWN member
+  `:68610`): `isLikeATownNPC` is the hard-coded type gate
+  (`NPC.cs:6860-6863` - NOT the townNPC flag; his SetDefaults row
+  `:14399-14413` sets aiStyle 7, no townNPC), so `num57` =
+  `ExtraFramesCount[453]` = 9 (`NPCID.cs:10464`) and the walk wraps
+  at 26 - 9 = 17 (rows 2..16 - the extra-3 Cyborg precedent). Idle
+  row 0, air row 1 (not in the `:69647` pin list). The town `ai[0]`
+  pose zones (`:68662-69488`, with their chat-bubble `Main.rand`
+  draws) are the documented skip.
+* **454 the Cultist Dragon Head** (`:70952-70957`): the row is
+  `(int)(frameCounter / 2)` - the counter is NEVER touched here
+  (the aiStyle-6 chain machine owns it); the 3-row sheet rides
+  counters 0-1/2-3/4-5. The bodies/tail 455-459 have NO FindFrame
+  case (npcFrameCount 1, out of the slice).
+* **460 the Butcher** (the humanoid fighter `:68611`, aiStyle 3
+  `:15498` no townNPC): the wave-B `humanoid_fighter_frame`
+  keep-one delegate - `num57` = 0, the FULL-16 wrap, idle row 0,
+  air row 1 (not in the pin list).
+* **461 the Creature From The Deep** (`:75315-75410`): WET - the
+  vx sign WRITES direction, a facing change mirrors the rotation
+  and copies the flip; the aim `atan2(vy*dir, vx*dir)` with the
+  literal 3.14/6.28 wrap-around, then the `(rot*4 + aim)/5` ease;
+  the `|velocity| + 1` counter's > 8 step walks rows 16..20 with
+  the `> 20` wrap to 16 and the `< 16` lift to **19** (the entry
+  quirk - a swimmer starting at row 0 lands 19). DRY - the > 3.14
+  rotation wrap, the +/-0.01 deadband snaps 0 ELSE the x0.9 decay;
+  the grounded +/-1 flip, the idle row-0 snap + counter zero, the
+  `|vx|*2 + 1` walk with the > 6 step and the `> 15` wrap to 2
+  (rows 16..20 swim-only); the air pins row 1.
+* **462 Fritz** (the humanoid group `:68612`, aiStyle 3 `:15524`):
+  THREE per-type overrides - the walk stride `num108` = 9
+  (`:69555-69558`, the > 9 step not the group's > 6), the air
+  branch pins row 1 rising / row 2 falling (`:69588-69600` - an
+  EARLY BREAK before the group's air tail, so the `:69647` pin
+  list is unreachable), and the 9-row sheet. The accumulator is
+  the group's `|vx|*2 + 1`, the lift-to-2 and the full-count
+  wrap-to-2 stand.
+
+**The 439 stub FIX** (`npc.rs:7135`): the v1 AncientCultist
+(cs_id 439 via the bestiary net_id `bestiary.rs:1714`, no hand row)
+1-frame pin was WRONG vs the C#'s `case 439/440` SHARED ladder
+(`NPC.cs:72017-72101` - the case list carries BOTH ids; the
+slice-7 note flagged it). The arm now delegates to the extra-7
+CultistBossClone machine (the `localAI[2]` pose selector, the
+counter++ AFTER the switch); only row/counter copy back (the
+ladder never writes sprite/rotation). The towers 422/493/507/517
+keep their row-0 pin (no FindFrame case, npcFrameCount 1).
+
+**The d40 merger notes**: the pushed roster lane
+`W4-d40-npc-kinds-421-490` (8fe1d6d3) carries row-0 stubs for
+443-448 (`npc.rs:9530-9540`) - THIS module's machines supersede
+them at the merge (the standard cs_id hook + bridge); its
+449-452/461 inline arms are faithful twins (keep-one either way);
+its 453/460/462 `humanoid_town_frame` stand-in is WRONG for
+460/462 (the town wrap counts `extra_frames_count` = 0 for them so
+the wrap is accidentally right, but the air branch never runs -
+the C# pins row 1 / the 462 pair) and right for 453 only if the
+kind's `humanoid_frame_count`/`extra_frames_count` rows are added
+(26/9) - this module's arms carry the counts internally, the
+merger takes them.
+
+Witnesses: 15 module tests + 1 npc.rs wiring test WRITTEN NOT RUN
+(code-only mode) - the count-table pin (all 15 vs
+`NPC_FRAME_COUNT`), the gold bunny hop + air pins, the butterfly
+velocity-fed bands + no-bank pin, the frog three gaits + wet
+deadbands, the grasshopper two-row pin + counter-hold, the mouse
+blink + stride + air-no-flip, the worm crawl + slope override, the
+bone-toss ladder + literal-15 wrap + the 452 count variant, the
+merchant town-17 wrap, the dragon-head counter/2 read, the butcher
+fighter bands, the creature swim entry quirk + aim ease + dry
+decay, the fritz > 9 stride + air pair, the 15-kind 5x3x3x3 strip
+sweep (40 ticks, every row inside its sheet) and the exact-slice
+seam sweep; the 439 wiring replay (pose 0 home-snap / pose 10
+cycle / ritual / unknown-selector / sprite-rotation hold / tower
+pin). The strip/band expectation tables were re-derived by
+mechanical replay of the ported machines (a Python transcription
+of the C# order), not by hand alone. Frame counts cross-checked
+entry-by-entry: `Main.cs:67082`'s 697-entry initializer vs
+`render/entities.rs::NPC_FRAME_COUNT` - all 15 agree. Zero RNG
+verified mechanically per arm (a `Main.rand`/`.Next(`/`NextFloat`
+grep over all cited body ranges = ZERO).
+## W4-f27 FindFrame extra wave 9 (slice 9 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-8 (72448094). The census re-derived
+mechanically against this branch's tree + the pushed roster lane
+`origin/task/W4-d40-npc-kinds-421-490` (tip STILL 8fe1d6d3 — the
+slice-8 tip, no new d40 batches) + the pushed f26 co-lane tip
+(`a2e47596a`, its extra-7c slice DONE at 494-506/508/509 — the f26e
+band starts at 494 exactly as briefed): every C# top-level case label
+of the switch on this.type (`NPC.cs:66705`, two-tab indent — the
+nested switches excluded) = **602 ids** (re-counted mechanically this
+slice, the slice-8 figure re-confirmed). The covered set (our tree's
+`npc.rs::find_frame` arms resolved through the cs_id hand rows + the
+bestiary net ids + the wave-A/B/e4/e7 module rosters + the d40 tip's
+landed arms incl its cs_id hand rows) = 316 (the slice-8 claim's 278
++ the 38-id d40-only delta — its roster kinds 443-488 that the
+slice-8 census counted as UNCLAIMED-but-claimed-by-f27/f26 instead
+of covered; the band arithmetic differs, the CLAIM SETS agree
+id-for-id, verified mechanically: `unc_s8 − unc_mine` is EXACTLY the
+38-id d40 delta and `unc_mine − unc_s8` is empty). The d44-d49
+claims subtract 72 more (disjoint) = 214 e13-base; minus the deduped
+e13/e14/f26(3+5+6)/f27(4+7) claims (52) = **162 unclaimed before
+slice 8's 15**. After the e8 seam + f26's pushed 7b (473-488) + 7c
+(494-506/508/509): **146 unclaimed** (the five folded segments
+135/246/249/371/373 are counted covered through their own arms, so
+no further subtraction). The 463-493 window is EMPTY of unclaimed
+ids — every id in it is either port-covered with a faithful arm,
+d40-covered (the fix candidates below), or f26-claimed.
+
+**The 463-472 re-census vs the d40 tip 8fe1d6d3 (the slice-8 scrutiny
+applied — its 443-448 row-0 stubs + 453/460/462 wrong stand-ins were
+the precedent):** the d40 arms read via `git show` (its npc.rs
+find_frame region :9684-9853 + its data.rs count helpers
+:3550-3613), each against the C# arm line-for-line:
+
+| id | kind | d40 arm (8fe1d6d3) | C# case | verdict |
+| --- | --- | --- | --- | --- |
+| 463 | Nailhead | `humanoid_town_frame` (`:9685`) | `:68613` (the humanoid fighter group) | **WRONG stand-in** — same defect as the slice-8 460/462: no grounded flip, no air tail at all (the vy!=0 path writes NOTHING), and `humanoid_frame_count` falls to `_ => 1` (d40 data.rs:3578 — Nailhead has NO row) so the walk wraps at 1−0=1: the walker never leaves row 2. FIX (extra9 module + the d40 merger note). |
+| 464 | CrimsonBunny | inline bunny hop (`:9691-9715`) | `:76856` (the 443 bunny group) | FAITHFUL — the ±1 flip, the idle row-0 snap, the \|vx\|+1 >6 step over the full 7 rows, the air 4/6 pins all match. EXCLUDE (cite `NPC.cs:76851-76904`; the e8 443 machine is the keep-one twin). |
+| 465 | CrimsonGoldfish | inline wet/dry 6-band (`:9716-9731`) | `:74186` (the 55/57/58/102/241 fish group) | FAITHFUL — the unconditional copy, the counter++, the wet rows 0..3 / dry rows 4/5 bands with the >=24 / >=12 counter-reset row-HOLD quirk all match. EXCLUDE (cite `NPC.cs:74181-74226`; the d44 57/241 fish keep-one). |
+| 466 | Psycho | inline stealth + stride (`:9732-9759`) | `:75466-75531` | FAITHFUL — the ai[2]<=0 stealth rows 0/1/2 off the ==0/<-8 bands (the IsABestiaryIconDummy disjunct is the display-only skip), the grounded lift-to-4 + \|vx\|*2+1 >7 step + the >17 wrap-to-4 + the <4 clamp, the air row 3 all match. EXCLUDE (cite `NPC.cs:75466-75531`). |
+| 467 | DeadlySphere | ROW-0 STUB (`:9760-9763`) | `:75069-75102` | **STUB** — the C# is a two-phase strip: ai[0]==1 winds UP rows 0..6 every >4 ticks and HOLDS at 6 (the bestiary-dummy reset is the display skip), else winds DOWN (the >3 clamp to 3 first) to 0. FIX. |
+| 468 | DrManFly | inline attack ladder + stride (`:9764-9794`) | `:71516-71577` | FAITHFUL — the grounded ±1 flip, the ai[2]>0 ladder rows 15+{-15,3,2,1,0} off the ai[1] <22/<28/<34/<40 bands + the unconditional copy + counter zero, the idle row-0 counter-HOLD (no zero — the C# `:71550-71553` writes only the row), the lift-to-2 + \|vx\|*2 NO-+1 >6 step + the literal-15 wrap, the air row 1 all match. EXCLUDE (cite `NPC.cs:71516-71577`; the f26 481 GreekSkeleton ladder twin). |
+| 469 | ThePossessed | inline lunge + stride (`:9795-9831`) | `:75665-75732` | FAITHFUL — the ai[2]==1 lunge (the atan2+1.57 tilt, the vx-sign direction WRITE, the \|velocity\| counter >11 step, the 2..5 both-clamps), the non-lunge rotation-0 snap, the grounded \|vx\|+1 >9 step over rows 6..11 with both clamps, the idle counter-zero-before-row order, the air row 1 all match. EXCLUDE (cite `NPC.cs:75665-75732`). |
+| 470 | CrimsonPenguin | inline evil-offset bands (`:9832-9853`) | `:76395-76456` | FAITHFUL — the localAI[0] 2/3/4 → +3/+6/+9 offset, the ±1 flip, the idle offset-row snap, the \|vx\| NO-+1 counter with the <6/<12/<15 bands + the >=15 reset-tick row-2+offset hold, the air row 2+offset (rise/fall identical) all match. EXCLUDE (cite `NPC.cs:76395-76456`; the d47 168 CorruptPenguin twin). |
+| 471 | GoblinSummoner | d40 has NO kind (out of its 421-490 band's NpcKind set — OUR tree owns it) | `:75532-75617` | **OUR npc.rs:7768 arm is a WRONG v1 stand-in** — the free `(vx!=0)+0.6 >=8` strip over 20 rows is NOT the C#'s ai[3] machine: the shadowflame phase (ai[3]<0) strides rows 17/18/19 on the \|velocity\|*0.5+1 counter with the <23 reset-tick row-18 hold, ai[3]==1 pins row 16 + zeroes, the grounded idle snaps row 0, the walk is \|vx\|*2+1 >7 over rows 2..15 with both clamps, the air pins row 1. FIX (the 439-fix precedent — our own kind, our own arm). |
+| 472 | ShadowFlameApparition | ROW-0 STUB (`:9760-9763`) | `:71369-71397` | **STUB** — the C# writes direction from the vx sign (0 → +1, the else), copies the sprite, tilts at atan2(vy*dir, vx*dir), and steps the 6-row strip every >4 ticks wrapping at >=6. FIX. |
+| 489 | BloodZombie | d40 has NO kind — OUR tree owns it | `:68614` (the humanoid group) | OUR `npc.rs:6418 blood_zombie_frame` FAITHFUL (the S1-D-3z arm: the idle-row-1 `:69510` pair, the num108=8 \|vx\|+0.5 stride `:69544-69549`, the full-9 wrap, the air-row-0 `:69647` pin). EXCLUDE with cite. |
+| 490 | Drippler | d40 has NO kind — OUR tree owns it | `:72521-72533` | OUR `npc.rs:6460 drippler_frame` FAITHFUL (the vx*0.15 tilt, the >6 step, the full-8 wrap). EXCLUDE with cite. |
+| 491 | PirateShip (FlyingDutchman) | no FindFrame case label at all | — (npcFrameCount 1, `Main.cs:67133`) | OUR `npc.rs:7741` row-0 pin CORRECT-BY-CONSTRUCTION (the 478 MothronEgg / tower precedent). EXCLUDE with cite. |
+| 492 | PirateShipCannon (FlyingDutchmanCannon) | no d40 kind — OUR tree owns it | `:71156-71158` | **OUR npc.rs:7744 arm is a WRONG v1 stand-in** — the free `(vx!=0)+0.6 >=8` strip over 9 rows is NOT the C#'s ONE-LINE `frame.Y = num * (int)ai[2]` (the aim-octant row the style75 machine owns — `NPC.cs:35789-35820` writes ai[2] 0..8, the port's `npc_ai_style75.rs:594-668` already ports that block verbatim). FIX. |
+| 493 | LunarTowerStardust | no FindFrame case label at all | — (npcFrameCount 1, `Main.cs:67133`) | OUR tower row-0 pin CORRECT-BY-CONSTRUCTION (the slice-8 439-fix note already pins 422/493/507/517). EXCLUDE with cite. |
+
+**THIS wave (f27 slice 9) claims the FIVE fix kinds: 463/467/471/472/
+492** — five machine ports (463/467/471/472/492 in
+`npc_findframe_extra9.rs`) + the two npc.rs arm FIXES for OUR OWN
+kinds (471 GoblinSummoner, 492 FlyingDutchmanCannon — the 439-fix
+precedent; 463/467/472 are d40 kinds, their wiring rides the roster
+merge). The 489-493 ascending probe found NO unclaimed case id (489/
+490 faithful, 491/493 no-case, 492 the fix above; f26e owns 494+ per
+its pushed 7c tip a2e47596a — no collision). The claim is 5 kinds
+(the brief's "up to 15" ceiling is not reachable — the band is
+exhausted; taking ANY id beyond it would collide with the f26e 494+
+band or the open 516+ tail that is NOT this slice's ascending window).
+
+Shape (the extra-8 precedent): pure machines over FrameState/
+FrameInput in `crates/tr-app/src/npc_findframe_extra9.rs`, the
+`find_frame_kind_extra9` vanilla-id seam; the ONE npc.rs edit pair is
+the 471/492 fixes (our own kinds — the 439-fix shape: copy the fields
+out, run one tick, copy back; 492's row is ai[2]-driven so only row
+copies back — the arm never touches the counter). 5 kinds per commit
+(the module lands in ONE batch — 5 kinds exactly). Zero RNG
+(verified mechanically per arm — a Main.rand/.Next(/NextFloat grep
+over all cited body ranges = ZERO: 467 `:75069-75102`, 471
+`:75532-75617`, 472 `:71369-71397`, 492 `:71156-71158`, 463's
+fighter head/tail `:68634-68661`/`:69489-69655` — the town pose
+zones with their chat-bubble draws are the documented skip, the
+463 fighter never enters them). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT (463=16
+`:67130` slot 3, 467=13 slot 7, 471=20 `:67131` slot 1, 472=6 slot
+2, 492=9 `:67133` slot 2 — all five agree with the port table).
+
+### The extra-9 per-case notes (the batch + the fixes landed)
+
+`crates/tr-app/src/npc_findframe_extra9.rs` — the 5 fix arms verbatim
+(row-index convention — `num` cancels), ONE batch of 5 kinds:
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 463 | Nailhead | `:68613` (the humanoid fighter group) | 16 (`:67130`) |
+| 467 | DeadlySphere | `:75069-75102` | 13 (`:67130`) |
+| 471 | GoblinSummoner | `:75532-75617` | 20 (`:67131`) |
+| 472 | ShadowFlameApparition | `:71369-71397` | 6 (`:67131`) |
+| 492 | PirateShipCannon | `:71156-71158` | 9 (`:67133`) |
+
+* **463 the Nailhead** (the humanoid-group case list `:68613` →
+  `:68647-69655`): the wave-B `humanoid_fighter_frame` keep-one
+  delegate (the extra-8 Butcher precedent). aiStyle 3 (`:15538`, no
+  townNPC) → `num57` = 0, the FULL-16 wrap; the grounded ±1 flip,
+  the idle row-0 snap, the `|vx| * 2 + 1` > 6 stride, the air row 1
+  (NOT in the `:69647` pin list, NOT the 140/489 idle-row-1 pair).
+  The d40 `humanoid_town_frame` stand-in is WRONG three ways: no
+  flip, no air tail (its vy != 0 path writes nothing), and its
+  `humanoid_frame_count` has no Nailhead row (falls to `_ => 1`,
+  d40 data.rs:3578) so the walk wraps at 1 − 0 = 1 and never leaves
+  row 2. The merger replaces the stand-in with this machine (the
+  slice-8 460/462 note's third instance).
+* **467 the Deadly Sphere** (`:75069-75102`): the two-phase strip.
+  `ai[0] == 1` winds UP — the counter++ every tick, the > 4 step
+  advances the row ONLY while row < 6; at 6+ the step zeroes the
+  counter but writes NO row (the hold — the sheet's rows 7..12 are
+  never reached by this arm). Else winds DOWN — the > 4 step FIRST
+  clamps any row > 3 to 3 (`:75092-75095`) THEN decrements while
+  row > 0: a sphere at row 9 lands **2** on its first step, not 8.
+  The `IsABestiaryIconDummy` disjunct (`:75070`) + its row-0 reset
+  (`:75081-75084`) are the display-only skip (the extra-7/8
+  precedent). No sprite/rotation/direction write. The d40 row-0
+  stub is superseded.
+* **471 the Goblin Summoner** (`:75532-75617`): the ai[3] phase
+  machine. SHADOWFLAME (`ai[3] < 0`): the ±1 flip, the
+  `|velocity| * 0.5 + 1` counter, the < 6 / < 12 / < 18 / < 23 bands
+  pick rows 17/18/19/18 — the >= 23 reset tick zeroes the counter
+  and HOLDS row 18 (the fourth band and the reset write the same
+  row, the MothronSpawn reset-tick quirk's cousin). SUMMONING
+  (`ai[3] == 1`): the row-16 pin + counter zero. GROUNDED: the ±1
+  flip, the idle row-0 snap, the `|vx| * 2 + 1` **> 7** walk (not
+  the fighter's > 6) over rows 2..15 with BOTH clamps AFTER the
+  step and NO lift-to-2 before the accumulate (a walk entered at
+  row 19 keeps its counter and clamps to 2). AIR: row 1 + counter
+  zero. No rotation write — the AI owns it (`:56520`'s ×0.9 decay,
+  `npc.rs:10648`). OUR kind: the v1 `npc.rs:7768` free
+  `(vx != 0) + 0.6 >= 8` strip was WRONG; the arm now delegates
+  (row/counter/sprite copy back, the 439-fix shape).
+* **472 the Shadowflame Apparition** (`:71369-71397`): the vx sign
+  WRITES direction (`:71370-71377` — the else covers vx == 0 → +1,
+  NOT a hold), the ±1 sprite copy, the tilt is
+  `atan2(vy * direction, vx * direction)` — the direction-folded
+  aim with NO wrap/ease (unlike the 461 wet swimmer's ±3.14/6.28
+  wrap + the /5 ease), the counter++ every tick with the > 4 step
+  over the 6-row sheet and the >= 6 wrap to 0. The d40 row-0 stub
+  is superseded. The wiring copies direction back too (the arm
+  writes it — the 461 wet-branch precedent).
+* **492 the Pirate Ship Cannon** (`:71156-71158`): the ONE-LINE
+  `frame.Y = num * (int)ai[2]` — the aim octant the aiStyle-75
+  machine owns (`NPC.cs:35789-35820`: the eight-ray closest-probe
+  + 1, the `spriteDirection == 1` → 9 − x mirror, the no-sight
+  clear to 0; the port's `npc_ai_style75.rs:594-668` ports that
+  block verbatim, so the row follows the LIVE aim). The counter/
+  sprite/rotation/direction are NEVER touched. OUR kind: the v1
+  `npc.rs:7744` free strip was WRONG; the arm now delegates (ONLY
+  row copies back). The 491 ship keeps its row-0 pin — NO
+  FindFrame case label, `npcFrameCount[491]` = 1 (`Main.cs:67133`),
+  correct-by-construction (the 478 MothronEgg / tower precedent).
+
+The d40 merger notes (the roster wave's arms this slice supersedes
+or confirms): 463's `humanoid_town_frame` stand-in → the extra-9
+Nailhead machine (the fighter delegate); 467/472's row-0 stubs →
+the extra-9 machines; 464/465/466/468/469/470's inline arms are
+FAITHFUL — keep the d40 inline arms at merge (the f26 7c
+Medusa/Hoplite/GraniteGolem keep-one precedent), the extra-9 module
+carries no arms for them (the verdict table's cites are the parity
+references). The 489/490/491/493 verdicts need no merger action
+(our arms stay).
+
+Zero RNG verified mechanically per arm (a `Main.rand`/`.Next(`/
+`NextFloat`/`NextDouble` grep over the cited body ranges
+`:75069-75102` / `:75532-75617` / `:71369-71397` / `:71156-71158` /
+`:68634-68661` + `:69489-69655` = ZERO; the humanoid group's town
+pose zones with their chat-bubble draws are the documented skip —
+the 463 fighter never enters them). Frame counts counted
+entry-by-entry out of `Main.cs:67082`'s initializer AND
+cross-checked against `render/entities.rs::NPC_FRAME_COUNT` — all
+5 agree. 8 module witnesses + 1 wiring witness WRITTEN NOT RUN
+(code-only), every replay vector re-derived by mechanical Python
+replay of line-for-line C# transcriptions + the 5-kind
+5x3x3x3 strip sweep (40 ticks per combo, every row asserted inside
+its own sheet).
+
+## W4-f27 FindFrame extra wave 10 (slice 10 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-9 (0e1874280). The brief's window: the NEXT
+unclaimed band ABOVE 530 (the f26g co-lane is active on 526-530 per its
+latest pushed claim read - origin/task/W4-f26-findframe-extra-3 tip
+63417edd7, its extra-7d slice DONE at 516/521/523/524/525; the 526/527
+ghoul twins + the 528/529/530 tail ride ITS next slice, this lane stays
+strictly above 530). The census re-derived mechanically against this
+branch's tree + ALL pushed tips:
+
+* every C# top-level case label of the FindFrame switch (`NPC.cs:66705`,
+  the body :66684-77370, two-tab indent - the nested switches excluded)
+  = **602 ids** (the slice-8/9 figure re-confirmed mechanically);
+* the pushed roster tips carry ZERO new arms: d41 tip 4ed22f0b3 is
+  CLAIM-only (its npc.rs find_frame region resolved through the cs_id
+  rows = the SAME 270-kind set as our tree, mechanical diff EMPTY),
+  d42 tip 88df58090 is the dead session's enum-only WIP checkpoint
+  (same 270-kind find_frame set, mechanical diff EMPTY), d43 tip =
+  a725acb04 (the wave-3 base, NO delta at all); d40 tip STILL 8fe1d6d3
+  (the slice-8/9 tip, no new batches); d33 tip dcb59b7f9 carries the
+  same 270-kind find_frame set (its style machines are AI, not frames);
+* the d44-d49 findframe lanes' seams re-read from their pushed tips
+  (low1 37-67 / low2 69-120 / mid1 150-165 / mid2 166-180 / c 2+355-366
+  / high2 367-434) = ZERO ids above 530;
+* our own module seams (a/b/e4/e7/e8/e9) + f26's pushed modules
+  (e3/e5/e6/e7b/e7c/e7d) = ZERO ids in [531..549] (mechanical grep).
+
+The >530 ascending probe (every id 531..549 checked against the C# arm
++ our tree + the pushed tips):
+
+| id | kind (`NPCID.cs`) | C# case | verdict |
+| --- | --- | --- | --- |
+| 531 | DesertScorpionWall (`:11739`) | `:73116` in the 165/237/238/240 wall-crawler group (`:73112-73145`) | UNCLAIMED - the e4 237/238/240 machine is the group twin but its `num194` is HARD-CODED 0.5 (e4 `:291-292`); 531's `type == 531` override sets **0.4** (`:73119-73122`) - a distinct machine, the e4 header itself flags "the 531-only 0.4 override is a later wave's" (e4 `:51-53`). CLAIM. |
+| 532 | DesertBeast (`:11741`) | `:70068` in the 508/580/582 walking-antlion group (`:70067-70103`) | UNCLAIMED - f26's 7c owns 508 (its seam has ONLY 508 of the group); 532/580/582 ride later slices per its own batch-3 note. CLAIM (532 only - 580/582 stay unclaimed for their lanes). |
+| 533 | DesertDjinn (`:11743`) | `:69978-69993` | EXCLUDE - OUR `npc.rs:8172` arm FAITHFUL: the `vy == 0 && direction != 0` sprite snap, the counter++ with the >= 48 reset, the `(int)(counter / 6)` row, the `ai[1] > 0` +8 bank (the port's `cast_windup` is the ai[1] mirror - `npc.rs:10804` `update_caster` folds it every tick). The 16-row sheet (`Main.cs:67136` slot 3) = 8 hover + 8 cast rows. |
+| 534 | DemonTaxCollector (`:11745`) | `:68615` in the humanoid group | UNCLAIMED - the C# walk has the **num108 = 12 override** (`:69528-69531`): the stride steps every > 12, NOT the wave-B fighter helper's hard-coded > 6 (the e8 Fritz num108 = 9 precedent - a distinct machine). aiStyle 3 (`:15817`), no townNPC -> num57 = 0, the FULL-8 wrap (`Main.cs:67137` slot 4). CLAIM. |
+| 535 | SlimeSpiked (`:11747`) | `:70818` in the num2-fed slime strip group (`:70801-70846`) | UNCLAIMED - the e7 ribbon-slime machine is the group twin (keep-one candidate at the wiring merge); the 2-row sheet (`Main.cs:67137` slot 5). CLAIM. |
+| 536 | TheBride (`:11749`) | `:76344` in the case-3 walker group (`:76324-76391`) | UNCLAIMED - the `npc.rs::walker_frame` / wave-A zombie machine is the group twin; the 3-row sheet (`:67137` slot 6). CLAIM. |
+| 537 | SandSlime (`:11751`) | `:70819` (the same slime strip group) | UNCLAIMED - the 3-row sheet (`:67137` slot 7). CLAIM. |
+| 538 | SquirrelRed (`:11753`) | `:76459` in the 299/639-645 squirrel group (`:76458-76512`) | UNCLAIMED - no pushed tip carries any squirrel-group arm (the d4x seams stop at 434, f26's at 525, our tree has no Squirrel kind). The aiStyle-3 backpedal branch (`:76478`) never fires for 538/539 (style 7, `:15877`/`:15889`) - carried as the documented dead branch. The 6-row sheet (`:67137` slot 8), the walk wraps at count-1 to row **1** (`:76497-76500`). CLAIM. |
+| 539 | SquirrelGold (`:11755`) | `:76460` (the same group) | UNCLAIMED - the 6-row twin (`:67137` slot 9). CLAIM. |
+| 540 | PartyBunny (`:11757`) | `:76857` in the 46/47/303/337/443/464 bunny group (`:76851-76904`) | UNCLAIMED - d44 owns 46/47, f26c 303, e7 337, e8 443, d40 464 (faithful); 540 rides none. The 7-row sheet (`:67138` slot 0). CLAIM. |
+| 541 | SandElemental (`:11759`) | `:69734-69772` | UNCLAIMED - the d33 claim row says "541-545 sand-elemental/sharks d33 rows" but that is its SETDEFAULTS/AI census (its pushed tip's find_frame = the same 270-kind set, NO SandElemental arm; the d41 claim's skip note refers to the same). The C# is the ai[0] attack ladder (rows 4 / 5-8 cycle / 9 / 10-12 / 1) + the `|velocity| * 0.1 + 1` double-promoted walk over rows 0..3. The 13-row sheet (`:67138` slot 1). CLAIM. |
+| 542 | SandShark (`:11761`) | `:74681-74692` (the 542-545 shark group) | UNCLAIMED (the same d33/d41 census-note situation). The unconditional direction copy + the counter++ with the >= 16 reset + the `(int)(counter / 4)` row over the 4-row sheet (`:67138` slot 2). CLAIM. |
+| 543 | SandsharkCorrupt (`:11763`) | `:74682` (the same group) | UNCLAIMED - the 4-row twin (`:67138` slot 3). CLAIM. |
+| 544 | SandsharkCrimson (`:11765`) | `:74683` (the same group) | UNCLAIMED - the 4-row twin (`:67138` slot 4). CLAIM. |
+| 545 | SandsharkHallow (`:11767`) | `:74684` (the same group) | UNCLAIMED - the 4-row twin (`:67138` slot 5). CLAIM (the 15th). |
+| 546 | Tumbleweed | NO case label in :66684-77370 | not a FindFrame kind (npcFrameCount 1, `Main.cs:67138` slot 6) - out of the probe. |
+| 547 | DD2AttackerTest | NO case label | the d41 claim's dd2-test skip; npcFrameCount 1 (`:67138` slot 7). |
+| 548 | DD2EterniaCrystal | NO case label | OUR `npc.rs:7724` row-0 pin correct-by-construction (npcFrameCount 1, `:67138` slot 8 - the 478 MothronEgg precedent). EXCLUDE. |
+| 549 | DD2LanePortal (`:11775`) | `:67980-67992` | **OUR npc.rs:7180 arm is a WRONG row-0 pin** - the comment claims "the machine here is 1-frame" but `Main.npcFrameCount[549]` = **8** (`:67138` slot 9) and the C# is the sprite=1 + rotation=0 snap + the `++counter >= 6` step over the FULL 8 rows. FIX (the 439/471/492 stub-fix precedent) - our own kind, our own arm, this lane's correction; rides the wiring commit (the slice-9 shape). |
+
+**THIS wave (f27 slice 10) claims the 14 unclaimed ids ascending from
+531: 531/532/534/535/536/537/538/539/540/541/542/543/544/545** plus
+**549** the lane-portal FIX as the 15th machine (its id is NOT
+unclaimed - our tree owns the kind - but its arm is WRONG and the fix
+is this lane's, the slice-9 471/492 precedent; the claim SET is the 14
+new ids + the 549 correction). The up-to-15 ceiling is reached exactly.
+533 excluded (faithful, cite above); 546/547/548 no-case 1-frame kinds.
+
+Census arithmetic: the slice-9 post-state was 146 unclaimed minus its
+5 fixes (463/467/472 were d40-covered, 471/492 our own - the unclaimed
+count unchanged at 146); f26's pushed 7d claims 5 more (516/521/523/
+524/525) = **141 unclaimed before this slice**; this slice's 14 new
+claims = **127 unclaimed after** (the 549 fix changes no claim count -
+the id was port-covered with a wrong arm).
+
+Shape (the extra-9 precedent): pure machines over FrameState/
+FrameInput in `crates/tr-app/src/npc_findframe_extra10.rs`, the
+`find_frame_kind_extra10` vanilla-id seam; the ONE npc.rs edit is the
+549 lane-portal fix (our own kind - the 439-fix shape: copy the fields
+out, run one tick, copy back; the arm writes sprite/rotation too).
+5 kinds per commit, 3 batches. Zero RNG (verified mechanically per
+cited range - a Main.rand/.Next(/NextFloat/NextDouble grep over ALL 11
+arm ranges = ZERO: :73116-73145, :70067-70103, :68634-68661 +
+:69489-69655, :70801-70846, :76324-76391, :76458-76512, :76851-76904,
+:69734-69772, :74681-74692, :67980-67992). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT (531=4 `:67137`
+slot 1, 532=8 slot 2, 534=8 slot 4, 535=2 slot 5, 536=3 slot 6, 537=3
+slot 7, 538/539=6 slots 8/9, 540=7 `:67138` slot 0, 541=13 slot 1,
+542-545=4 slots 2-5, 549=8 slot 9 - all fifteen agree with the port
+table, mechanical diff EMPTY over the full 697 entries).
+
+### The extra-10 per-case notes (the batches + the fix landed)
+
+`crates/tr-app/src/npc_findframe_extra10.rs` — the 15 arms verbatim
+(row-index convention — `num` cancels), 3 batches of 5 kinds
+(5d89e84f4 / 50d75da25 / 5c56766b2, the batch-1 compile fix e60009445
+adds the e8-style catch-all so every intermediate commit compiles),
+the `find_frame_kind_extra10` vanilla-id seam (the full 15-id set
+stable from batch 1, the e8 precedent). The ONE npc.rs edit is the
+549 fix (7b24b8de3, our own kind — the 439-fix shape).
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 531 | DesertScorpionWall | `:73116` (the wall-crawler group, the 0.4 override) | 4 (`:67137`) |
+| 532 | DesertBeast | `:70068` (the walking-antlion group) | 8 (`:67137`) |
+| 534 | DemonTaxCollector | `:68615` (the humanoid group, the num108 = 12 override) | 8 (`:67137`) |
+| 535 | SlimeSpiked | `:70818` (the num2-fed slime strip) | 2 (`:67137`) |
+| 536 | TheBride | `:76344` (the case-3 walker group) | 3 (`:67137`) |
+| 537 | SandSlime | `:70819` (the same slime strip) | 3 (`:67137`) |
+| 538 | SquirrelRed | `:76459` (the squirrel group) | 6 (`:67137`) |
+| 539 | SquirrelGold | `:76460` (the same group) | 6 (`:67137`) |
+| 540 | PartyBunny | `:76857` (the bunny hop group) | 7 (`:67138`) |
+| 541 | SandElemental | `:69734-69772` | 13 (`:67138`) |
+| 542 | SandShark | `:74681-74692` | 4 (`:67138`) |
+| 543 | SandsharkCorrupt | `:74682` (the same strip) | 4 (`:67138`) |
+| 544 | SandsharkCrimson | `:74683` (the same strip) | 4 (`:67138`) |
+| 545 | SandsharkHallow | `:74684` (the same strip) | 4 (`:67138`) |
+| 549 | DD2LanePortal | `:67980-67992` | 8 (`:67138`) |
+
+* **531 the Desert Scorpion (wall)** (the wall-crawler group
+  `:73116` → `:73117-73145`): the `(|vx| + |vy|) * num194`
+  accumulator with the **type-531 num194 = 0.4 override**
+  (`:73119-73122`) — the e4 237/238/240 machine hard-codes 0.5 (its
+  `:291-292`), so the scorpion crawls SLOWER than its spider twins
+  (vx 2 reaches row 1 at tick 8, not tick 6). The <6/<12/<18/<24
+  bands rows 0/1/2/3, the >= 24 tail zeroes the counter and HOLDS
+  the row (`:73140-73143` writes no frame). No air split — the
+  walls crawl in every direction. No sprite/rotation write.
+* **532 the Desert Beast** (the 508/580/582 walking-antlion group
+  `:70068` → `:70067-70103`): the air row-1 pin (`:70071-70075`)
+  and the idle row-0 pin (`:70076-70080`) BOTH leave the counter
+  ALONE (the f26 7c 508 note's counter-held pair); the SIGN-GATED
+  sprite copies (`:70081-70088` — direction AND vx must agree, the
+  mismatch keeps the old sprite); the row<2 lift-to-2
+  (`:70089-70092`), the `1 + |vx|/2` accumulator with the >6 step
+  (`:70093-70098`), the >= count wrap back to row 2
+  (`:70099-70102`). f26's 7c owns 508 only — 580/582 ride later
+  slices, this wave claims 532 only.
+* **534 the Demon Tax Collector** (the humanoid group `:68615` →
+  `:68647-69655`): the grounded ±1 flip, the idle row-0 snap
+  (`:69515-69519` — NOT the 140/489 row-1 pair), the walk with the
+  **num108 = 12 override** (`:69528-69531`) — the wave-B
+  `humanoid_fighter_frame` helper hard-codes >6, so the collector
+  strides at HALF the fighter cadence (vx 1 steps every 5th tick,
+  not 3rd; the e8 Fritz num108 = 9 precedent). The `|vx| * 2 + 1`
+  accumulator (`:69552-69553` — NOT the 489 |vx|+0.5 branch), the
+  lift-to-2, the FULL-8 wrap back to 2 (num57 = 0 — aiStyle 3
+  `:15817`, no townNPC); the air row 1 + counter zero
+  (`:69642-69646` — NOT in the `:69647` pin list). The town pose
+  zones are the documented skip.
+* **535/537 the spiked + sand slimes** (the num2-fed slime strip
+  `:70818`/`:70819` → `:70801-70846`): +1 always, +1 more while
+  moving/airborne (num2 > 0), +1 more on the attack class (num2 ==
+  4, aiAction 1 — the `:66696-66704` class seam); the >= 8 step
+  walks the FULL sheet (2 rows for 535, 3 for 537) with the >=
+  count wrap. The 302/304 town-slime sprite snap (`:70824-70827`)
+  is the town slimes', not these. The port's Slime arm + wave-A
+  roster + e7 ribbons are the same machine — keep-one at the
+  wiring merge.
+* **536 the Bride** (the case-3 walker group `:76344` →
+  `:76324-76391`): the grounded ±1 flip, the air-OR-backpedal
+  row-2 pin (`:76358-76363` — the direction/vx mismatch counts as
+  air), the idle row-0 snap, the |vx| accumulator with the
+  <8/<16/<24/<32 bands rows 0/1/2/1 and the >= 32 reset-tick
+  row-HOLD (`:76387-76390` writes no frame — the vx 2 lap holds
+  row 1 at tick 16, then the next tick's <8 band snaps 0). The
+  `npc.rs::walker_frame` / wave-A zombie machine is the same arm —
+  keep-one at the wiring merge.
+* **538/539 the squirrels** (the 299/639-645 squirrel group
+  `:76459`/`:76460` → `:76458-76512`): the grounded ±1 flip, the
+  idle row-0 snap, the `|vx| * 0.5 + 1` accumulator with the >6
+  step over rows 0..count-2 wrapping at **count-1 back to row 1**
+  (`:76497-76500` — NOT row 0: row 0 is the idle pose, the walk
+  rows are 1..4 on the 6-row sheet); the air row 2 rising / row 4
+  falling, both counter-zeroed. The aiStyle-3 backpedal branch
+  (`:76478-76483`) is DEAD for these (style 7, `:15877`/`:15889`)
+  — not carried, the documented dead branch (the 299/639-645
+  members' own wiring owns it).
+* **540 the Party Bunny** (the bunny hop group `:76857` →
+  `:76851-76904`): the grounded ±1 flip, the idle row-0 snap, the
+  `|vx| + 1` >6 step over the FULL 7 rows with the >= count wrap,
+  the air pins row 4 rising / row 6 falling. The d44 46/47 + e7
+  337 + e8 443 + d40 464 machines are the same arm — keep-one at
+  the wiring merge.
+* **541 the Sand Elemental** (`:69734-69772`): the ai[0] > 0
+  attack ladder — <6 → row 4, <105 → the `(int)(ai[0]/8 % 4 + 5)`
+  5-8 cycle, <114 → row 9, <135 → the
+  `(int)((ai[0]-99-15)/7 + 10)` 10-12 climb, else row 1 — with the
+  counter NEVER touched; else the `frameCounter +
+  (double)(|velocity| * 0.1f) + 1.0` hover walk (`:69761` — the
+  C# promotes the f32 Length product to double for the add; the
+  port keeps the f32 counter, the wave-B precedent — at these
+  magnitudes the >= 8 cadence compares identically, the f32
+  round-trip replay verified) with the >= 8 step over rows 0..3
+  wrapping at 4. No sprite/rotation write.
+* **542-545 the sand sharks** (`:74681-74692`): the UNCONDITIONAL
+  direction copy (0 included, `:74685`), the counter++ with the
+  >= 16 reset BEFORE the row read (`:74686-74690` — the reset tick
+  shows row 0), the `(int)(counter / 4)` row (`:74691`) over the
+  4-row sheet. No velocity read, no air split — the behindTiles
+  swimmers (`:15925`) animate at a fixed cadence.
+* **549 the lane portal** (`:67980-67992`): the spriteDirection = 1
+  + rotation = 0 snap EVERY tick (`:67981-67982` — the hold ticks
+  included), the `++frameCounter >= 6` step (`:67983-67991`) over
+  the FULL 8 rows with the >= count wrap. OUR `npc.rs:7180` row-0
+  pin was WRONG ("the machine here is 1-frame" — the sheet is 8
+  rows and the portal spins); the arm now delegates to the
+  machine (the 439-fix bridge shape — all four fields copy back).
+  cs_id 549 via the bestiary net_id row (`bestiary.rs:1601`) + the
+  world-hash hand row (`npc.rs:18376`).
+
+**The d40-quality verdicts for the new band-kinds** (the brief's
+step 4 — the pushed d41/d42/d43 tips carry NO FindFrame arms at all,
+so the verdicts are against OUR tree's arms + the group twins):
+533 DesertDjinn OUR arm FAITHFUL (the claim table's cite — the
+48-tick hover cycle + the cast_windup/ai[1] mirror); 549
+DD2LanePortal OUR row-0 pin WRONG → FIXED this slice; 548
+DD2EterniaCrystal OUR row-0 pin correct-by-construction (no case,
+npcFrameCount 1); the other 14 ids have NO arm on any pushed tip
+(the d41/d42/d43 find_frame regions are the SAME 270-kind set as
+our tree — mechanical diffs EMPTY) and NO NpcKind on our branch,
+so there is no stand-in to audit: the machines land pure, the
+roster merge wires them (the extra-8 precedent). The group-twin
+keep-one notes: 531 vs e4's 237/238/240 (the 0.4 override makes it
+a DISTINCT machine — NOT a keep-one), 532 vs f26 7c's 508 (the
+same group body, keep-one at the merge), 534 vs the wave-B fighter
+helper (the num108 = 12 override makes it DISTINCT — NOT a
+keep-one), 535/537 vs the port's Slime arm + e7 ribbons (keep-one),
+536 vs walker_frame + wave-A zombies (keep-one), 540 vs d44 46/47
++ e7 337 + e8 443 (keep-one).
+
+**Census count update:** 146 (the slice-9 post-state) − 5 (f26's
+pushed 7d claims 516/521/523/524/525) = **141 unclaimed before this
+slice**; − 14 (this slice's new claims) = **127 unclaimed after**
+(the 549 fix changes no count — the id was port-covered with a
+wrong arm). The f26g co-lane's 526-530 band stays reserved (its
+active claim read from the pushed 7d tip's own "526/527 ride a
+later slice" note); this lane's next ascending window starts at
+550 (the DD2 bartender/humanoid band — d41's claimed roster band,
+its FindFrame arms ride ITS wiring).
+
+Zero RNG: the mechanical grep over all 11 cited arm ranges
+(`:73116-73145`, `:70067-70103`, `:68634-68661` + `:69489-69655`,
+`:70801-70846`, `:76324-76391`, `:76458-76512`, `:76851-76904`,
+`:69734-69772`, `:74681-74692`, `:67980-67992`) = ZERO
+Main.rand/.Next(/NextFloat/NextDouble hits. Frame counts
+cross-checked against `render/entities.rs::NPC_FRAME_COUNT` — all
+15 agree (the full-697 mechanical diff EMPTY). 14 module witnesses
++ 1 wiring witness WRITTEN NOT RUN (code-only), every replay
+vector re-derived by mechanical Python replay of line-for-line C#
+transcriptions (the f32 round-trip replay verified identical to
+the double replay on every vector) + the 15-kind
+5x3x3x2x4 strip sweep (40 ticks per combo, every row asserted
+inside its own sheet — the Python sweep's 0 violations mirrored).
+
+## W4-f27 FindFrame extra wave 11 (slice 11 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-10 (1a24a133c). The brief's window: the
+550+ band (d41's roster claim) PLUS the LOWER-GAPS 435/436 (the
+d49-deferred armed-zombie tail). The census re-derived mechanically
+against this branch's tree + ALL pushed tips:
+
+* every C# top-level case label of the FindFrame switch (`NPC.cs:66705`,
+  the body :66684-77370, two-tab indent - the nested switches excluded)
+  = **602 ids** (the slice-8/9/10 figure re-confirmed mechanically);
+* **d41 tip 4ed22f0b3 is STILL CLAIM-only** - its npc.rs find_frame
+  region is the SAME 270-kind set as our tree (mechanical grep for the
+  550-563 ids + kind names = ZERO FindFrame arms; the roster rows it
+  adds are SetDefaults/AI, not frames). The 550-577 DD2 band's ARMS are
+  therefore NOT d41's - they are OUR tree's M4-EVENT-19 v1 stand-ins;
+* **d42 tip ADVANCED to 9b22c091** - the 578-630 roster landed WITH
+  FindFrame arms (its npc.rs find_frame carries ArmedTorchZombie 591,
+  the fairy/dragonfly/seagull/ladybug/maggot/grebe/rat/owl/
+  waterstrider/explosivebunny/dolphin/turtle/seahorse/dandelion/
+  icemimic/bloodmummy/goblinshark/bloodeel/gnome arms, `NPC.cs` cites
+  per kind). **EXCLUDE the whole 578-630 band** (49 case ids, minus
+  our-covered 588 Golfer + 589 SleepingGolfer = 47 d42-claimed);
+* **d49 tip dadfd8285** - its high2 seam owns 367/374/375/377/378/379/
+  380 + the armed zombies 430-434 ONLY (`find_frame_kind_high2` maps
+  exactly those 12); **435/436 are the d49-deferred tail** (its module
+  header: "The next gap (435 ArmedZombieTwiggy onward) rides a later
+  wave"), NO NpcKind for either on ANY pushed tip;
+* **f26's pushed 7f tip 7f38fd345** owns 531/532/534/535/536 - the SAME
+  five our extra-10 owns (the both-lanes dup, the keep-one note below);
+  its next-window note says 537-540 (our e10 already owns those).
+
+**The 550-577 ascending probe** (every id checked against the C# arm +
+our tree + the pushed tips). The DD2 band is PORT-COVERED by our own
+M4-EVENT-19 v1 stand-ins (`npc.rs:6986-7133` + `:7761` - the invented
+`(vx != 0) + 0.6 >= 8` free strips, identical to origin/main and d42's
+tree), so these are FIX candidates (the slice-9/10 471/492/549
+precedent), NOT new claims:
+
+| id | kind (`NPCID.cs`) | C# case | verdict |
+| --- | --- | --- | --- |
+| 550 | DD2Bartender (`:11777`) | `:68616` in the humanoid group | FIX - our v1 `|vx|+0.6 % 25` strip WRONG; the C# is the town walk (num57 = ExtraFramesCount[550] = 9, `NPCID.cs:10464`; townNPC true `:16263`, aiStyle 7; num108 = 6, num109 = row 2, the wrap at 25-9 = 16). The ai[0] pose zones `:68662-69488` the documented skip (the e8 SkeletonMerchant precedent). |
+| 551 | DD2Betsy (`:11779`) | `:67258-67450` | DEFER - the ai[0] 3/4/5/6 boss-phase ladder (the 60/40-tick breath cycles + the 8-tick fire ladder), a distinct large machine; our v1 `% 11` strip WRONG but the fix rides a later slice. |
+| 552/553/554 | DD2GoblinT1/T2/T3 (`:11781-11785`) | `:67452-67492` | FIX - our v1 `% 14` strip WRONG; the C# is the ai[0] > 0 attack ladder (rows 10-13, the ai[1] == 29 reset, the >= 6 step) + the grounded walk (air/backpedal row 8, idle row 9, the |vx| >= 64 reset + (int)(counter/8) row 0-7). |
+| 555/556/557 | DD2GoblinBomberT1/T2/T3 (`:11787-11791`) | `:67797-67837` | FIX - our v1 `% 14` strip WRONG; the ai[1] > 0 && ai[0] > 0 attack ladder (rows 10-16, the ai[1] == 41 reset, the >= 6 step) + the walk (air row 1, idle row 0, the |vx| >= 64 reset + (int)(counter/8)+2 row 2-9). |
+| 558/559/560 | DD2WyvernT1/T2/T3 (`:11793-11797`) | `:67838-67873` | FIX - our v1 dive-pin + `% 5` strip MISSES the sprite/rotation; the C# is the vx-sign sprite + the ToRotation aim (+PI when vx < 0, overridden to vx*0.1 when ai[0] != 2) + the ai[0] == 2 row-4 pin else the >= 6 step over rows 0-3. |
+| 561/562/563 | DD2JavelinstT1/T2/T3 (`:11799-11803`) | `:67756-67796` | FIX - our v1 `% 14` strip WRONG; the ai[1] > 0 && ai[0] > 0 attack ladder (rows 10-13, the ai[1] == 89 reset, the >= 6 step) + the walk (air row 8, idle row 9, the |vx| >= 64 reset + (int)(counter/8) row 0-7) - the goblin shape. |
+| 564/565 | DD2DarkMageT1/T3 (`:11805-11807`) | `:67998-68421` | DEFER - the ai[1] 0/1/2 attack ladders (rows 5-12 / 13-25 / 26-40, the 7/8-tick steps) + the |v|*0.1+1 hover walk; the frame.Width/Height = 80 override means the row indices run PAST npcFrameCount[564] = 9 (the sheet is 41 rows of 80px) - a distinct large machine, rides a later slice. |
+| 566/567 | DD2SkeletonT1/T3 (`:11809-11811`) | `:67559-67583` | DEFER - the grounded walk (air row 8, idle row 0, the |vx| >= 64 reset + (int)(counter/8) row 0-7); our v1 `% 14` strip WRONG but the materialize-cycle seam rides a later slice. |
+| 568/569 | DD2WitherBeastT2/T3 (`:11813-11815`) | `:67025-67257` | DEFER - the ai[0] > 0 aura ladder (rows 7-14, the 5-tick steps + the >= 270 counter-10 tail) + the walk (air row 4, idle row 6, the |vx| >= 56 reset); a distinct large machine. |
+| 570/571 | DD2DrakinT2/T3 (`:11817-11819`) | `:67711-67755` | DEFER - the ai[1] > 0 && ai[0] > 0 attack ladder (rows 10-15, the ai[1] == 59 reset, the row-14 num188 = 35 hold) + the walk (air row 1, idle row 9, the |vx| >= 64 reset + (int)(counter/8+2) row 2-9). |
+| 572/573 | DD2KoboldWalkerT2/T3 (`:11821-11823`) | `:67493-67558` | DEFER - the ai[0] > 0 && ai[1] == 0 lit-state row-8 pin carries an EmoteBubble.NewBubble side effect (`:67506`); the ai[1] == 1 sprint walk + the default walk; the emote seam rides a later slice. |
+| 574/575 | DD2KoboldFlyerT2/T3 (`:11825-11827`) | `:67887-67978` | DEFER - the AngleTowards rotation + the ai[0] != 0 altimeter walk (rows 2-9, the row-9 ignition dust burst `:67923-67931`) + the ai[0] >= 3 RNG dust (`Main.rand.Next(maxValue)` `:67959`); the dust/RNG seams ride a later slice. |
+| 576/577 | DD2OgreT2/T3 (`:11829-11831`) | `:67584-67709` | DEFER - the ai[1] 0/1/2 attack ladders (rows 11-20 / 21-38 / 37-47, the per-row variable strides) + the walk (air row 43, idle row 0, the |vx| >= 60 reset + 1+(int)(counter/6) row 1-10); a distinct large machine. |
+
+**The LOWER-GAPS probe (435/436):** the d49-deferred armed-zombie tail.
+`case 430..436/591` (`NPC.cs:70879-70951`) is ONE shared body; d49's
+high2 owns 430-434, **435/436 are unclaimed** (no NpcKind on any pushed
+tip, the d49 module header's own "rides a later wave" note). 591 is
+d42's (its ArmedTorchZombie arm, EXCLUDE). The machine is the VERBATIM
+d49 armed-zombie copy (the 7c ONE-group precedent): the ai[2] > 0 swing
+ladder rows 3/4/5/6 at the < 5/10/15 bands breaking BEFORE the flip, the
+grounded ±1 one-sided flips, the air-OR-counter-motion row-2 pin, the
+idle row-0 snap, the |vx| accumulator with the < 8/16/24/32 bands rows
+0/1/2/1 and the >= 32 reset-tick row-HOLD. The 7-row sheet
+(`Main.cs:67127`, 435/436 = 7). PORT both as pure machines (the extra-8
+precedent - no NpcKind, the wiring is the roster round).
+
+**THIS wave (f27 slice 11) claims:** the 2 NEW unclaimed ids **435/436**
+(pure machines) PLUS the 13 FIX kinds **550/552/553/554/555/556/557/
+558/559/560/561/562/563** (our own M4-EVENT-19 v1 stand-ins WRONG - the
+slice-9/10 471/492/549 precedent). 15 machines total, 5 kinds per
+commit, 3 batches. The 551/564-577 DD2 tail (14 ids) stays DEFERRED
+(the complex/RNG/emote/dust seams above, each cited). The 578-630 band
+is d42's (EXCLUDE). The claim SET is the 2 new ids + the 13 corrections.
+
+Census arithmetic: the slice-10 post-state was 127 unclaimed; f26's
+pushed 7e claims 526-530 (5 new) and its 7f claims 531/532/534/535/536
+(the SAME five our e10 already claimed - the both-lanes dup, the
+keep-one note below, NO new subtraction) = 127 - 5 = 122; d42's 578-630
+arms subtract 47 (49 case ids minus our-covered 588/589) = 75; this
+slice's 2 new claims (435/436) = **73 unclaimed after** (the 13 fixes
+change no claim count - those ids were port-covered with wrong arms).
+The d41 roster lane's 550-577 FindFrame arms are OURS to fix (its claim
+is roster-only, the arms ride this lane's corrections, the slice-10
+"next window starts at 550" note realized).
+
+**The f26h-dup dedupe note (531/532/534/535/536 both-lanes):** f26's
+pushed 7f tip 7f38fd345 (`npc_findframe_extra7f.rs`) and our extra-10
+(`npc_findframe_extra10.rs`) BOTH port 531/532/534/535/536. The machines
+are IDENTICAL (the 531 num194 = 0.4 wall-crawler bands + the >= 24
+reset-tick row-hold; the 532 counter-held air/idle pins + the sign-gated
+sprite + the 1+|vx|/2 lift-to-2 walk; the 534 num108 = 12 fighter stride;
+the 535 num2-fed slime strip; the 536 zombie-walker bands + the >= 32
+reset-tick row-hold) - the frame counts agree (4/8/8/2/3), the zero-RNG
+grep agrees. **KEEP-ONE at the merge: keep the f27 extra-10 arms** (the
+e10 module carries the 537-545 + 549 tail too, the wider claim; the f26
+7f module's five drop to parity references). The d44d master wire-status
+table records the dedupe (the 7c/7d/7e ONE-group precedent).
+
+Shape (the extra-10 precedent): pure machines over FrameState/
+FrameInput in `crates/tr-app/src/npc_findframe_extra11.rs`, the
+`find_frame_kind_extra11` vanilla-id seam; the 13 npc.rs edits are the
+DD2 v1-arm fixes (our own kinds - the 549-fix bridge shape: copy the
+fields out, run one tick, copy back). 435/436 land pure (no NpcKind, the
+roster round wires them). 5 kinds per commit, 3 batches. Zero RNG
+(verified mechanically per cited range - a Main.rand/.Next(/NextFloat/
+NextDouble grep over the 15 arm ranges = ZERO; the 574/575 RNG dust and
+the 572/573 emote are the DEFERRED kinds, not this wave's). Frame counts
+vs Main.cs:67082 entry-by-entry AND render/entities.rs NPC_FRAME_COUNT
+(435/436 = 7 `:67127`, 550 = 25 `:67139`, 552-554 = 14, 555-557 = 17,
+558-560 = 5, 561-563 = 14 `:67139-67140`).
+
+### W4-f27 extra wave 11 — the per-case notes (slice complete, 15/15)
+
+`crates/tr-app/src/npc_findframe_extra11.rs` — the 15 machines landed in
+3 batches of 5 (a8a7b1fc3 / 8422ebd82 / d75262387), the
+`find_frame_kind_extra11` vanilla-id seam; the 13 npc.rs edits are the
+DD2 v1-arm fixes (9db8ed0f9, the 549-fix bridge shape — the new
+`find_frame_extra11` helper copies row/counter/sprite_dir/rotation out
+and back). 435/436 land pure (no NpcKind, the roster round wires them).
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 435 | ArmedZombieTwiggy | `:70884` (the 430..436/591 group) | 7 (`:67127`) |
+| 436 | ArmedZombieCenx | `:70885` (the same group) | 7 (`:67127`) |
+| 550 | DD2Bartender | `:68616` (the humanoid town walk) | 25 (`:67139`) |
+| 552/553/554 | DD2GoblinT1/T2/T3 | `:67452-67454` | 14 (`:67139`) |
+| 555/556/557 | DD2GoblinBomberT1/T2/T3 | `:67797-67799` | 17 (`:67139`) |
+| 558/559/560 | DD2WyvernT1/T2/T3 | `:67838-67840` | 5 (`:67139`) |
+| 561/562/563 | DD2JavelinstT1/T2/T3 | `:67756-67758` | 14 (`:67140`) |
+
+* **435/436 the armed-zombie tail** (`:70879-70951`): the VERBATIM d49
+  group machine (the 7c ONE-group precedent) — the ai[2] > 0 swing
+  ladder rows 3/4/5/6 at the <5/<10/<15 bands BREAKS before the flip
+  (`:70887-70905`, the counter AND sprite untouched); the grounded ±1
+  one-sided flips (`:70907-70917`); the air-OR-counter-motion row-2 pin
+  (`:70918-70923`); the idle row-0 snap (`:70924-70929`); the |vx|
+  accumulator (`:70930`) with the <8/<16/<24/<32 bands rows 0/1/2/1 and
+  the >=32 tail zeroes the counter WITHOUT writing the row
+  (`:70947-70950` — the reset-tick row-HOLD quirk, the d49 verbatim).
+* **550 the bartender** (`:68616` → `:68647-69655`): the TOWN walk —
+  townNPC true (`:16263`, aiStyle 7) so num57 = ExtraFramesCount[550] =
+  9 (`NPCID.cs:10464`), the walk wraps at 25 − 9 = 16 (rows 2..15, the
+  e8 SkeletonMerchant precedent); num108 = 6 (the |vx|*2+1 >6 stride),
+  num109 = row 2, idle row 0 (not the 140/489 pair), air row 1 (not in
+  the `:69647` pin list). The ai[0] pose zones (`:68662-69488`, with
+  their chat-bubble Main.rand draws) are the documented skip.
+* **552-554 the goblins** (`:67452-67492`): the ai[0] > 0 attack ladder
+  — the UNCONDITIONAL sprite copy, the row outside 10..13 OR ai[1] == 29
+  resets to row 10 + counter 0, the ++counter >= 6 step gated on
+  row < 13 (at row 13 the counter keeps growing — the C# writes no reset
+  there); else the walk: the vy == 0 sprite copy, the air-OR-backpedal
+  row-8 pin, the idle row-9 snap, the |vx| accumulator with the >= 64
+  (or negative) reset and the `(int)(counter/8)` row 0-7.
+* **555-557 the bombers** (`:67797-67837`): the ai[1] > 0 && ai[0] > 0
+  attack ladder rows 10-16 (the ai[1] == 41 reset, the >= 6 step gated
+  on row < 16 — the row-16 counter-keep-growing quirk); else the walk:
+  air row 1, idle row 0, the |vx| >= 64 reset + `(int)(counter/8) + 2`
+  row 2-9 (the +2 strip offset vs the goblins' 0).
+* **558-560 the wyverns** (`:67838-67873`): the vx-sign sprite copies,
+  the `ToRotation` aim (`Utils.cs:1655` = atan2(vy, vx)) +
+  `(float)Math.PI` when vx < 0 (`:67853` — the REAL PI, not the eye
+  group's literal 3.14f), OVERRIDDEN to `vx * 0.1` when ai[0] != 2
+  (`:67855-67858`); the rotation write EVERY tick (`:67859`); the
+  ai[0] == 2 dive row-4 pin with the counter UNTOUCHED else the
+  ++counter >= 6 step over rows 0-3 with the >= 4 wrap. Our v1 arm
+  missed the sprite AND rotation writes entirely.
+* **561-563 the javelineers** (`:67756-67796`): the goblin shape with
+  the ai[1] > 0 && ai[0] > 0 attack gate (rows 10-13, the ai[1] == 89
+  reset) — the ai0-only gate differs from the goblins', ai0 alone falls
+  to the walk.
+
+**The d40-quality verdicts for the fix kinds** (the brief's step 4 —
+the pushed d41 tip carries NO FindFrame arms, so the verdicts are
+against OUR tree's M4-EVENT-19 v1 stand-ins): all 13 DD2 arms were the
+invented `(vx != 0) + 0.6 >= 8` free strips (the goblins/bombers/
+javelineers `% 14`, the bartender `% 25`, the wyverns the dive-pin +
+`% 5` missing the sprite/rotation) — WRONG vs the C#'s attack ladders +
+the >= 64 walk resets + the town wrap + the wyvern aim. FIXED this
+slice (the slice-9/10 471/492/549 precedent). The 551/564-577 DD2 tail
+(14 ids) stays DEFERRED with the per-kind seams cited in the claim
+table (Betsy's boss-phase ladder, the dark mage's 41-row sheet, the
+wither beast's aura ladder, the drakin's row-14 hold, the kobold
+walker's emote, the kobold flyer's RNG dust, the ogre's variable
+strides, the skeleton's materialize cycle). The group-twin keep-one
+notes: 435/436 vs d49's 430-434 (the SAME group body, keep-one at the
+merge — the d49 high2 module's five + our two ride one arm); 550 vs the
+e8 SkeletonMerchant / e10 DemonTaxCollector town/fighter walks (the
+num57/num108 overrides make each DISTINCT — NOT keep-ones); the
+goblins/javelineers share the walk shape but the attack gates differ
+(ai0-only vs ai1&&ai0) — DISTINCT machines.
+
+**The f26h-dup dedupe note (531/532/534/535/536 both-lanes) — PUBLISHED
+for d44d:** f26's pushed 7f tip 7f38fd345 (`npc_findframe_extra7f.rs`)
+and our extra-10 (`npc_findframe_extra10.rs`) BOTH port 531/532/534/
+535/536. The machines are IDENTICAL (verified line-for-line: the 531
+num194 = 0.4 wall-crawler bands + the >= 24 reset-tick row-hold; the 532
+counter-held air/idle pins + the sign-gated sprite + the 1+|vx|/2
+lift-to-2 walk; the 534 num108 = 12 fighter stride; the 535 num2-fed
+slime strip; the 536 zombie-walker bands + the >= 32 reset-tick
+row-hold) — the frame counts agree (4/8/8/2/3), the zero-RNG grep
+agrees. **KEEP-ONE at the merge: keep the f27 extra-10 arms** (the e10
+module carries the 537-545 + 549 tail too, the wider claim; the f26 7f
+module's five drop to parity references). The d44d master wire-status
+table records the dedupe (the 7c/7d/7e ONE-group precedent).
+
+**Census count update:** 127 (the slice-10 post-state) − 5 (f26's
+pushed 7e claims 526-530; its 7f claims 531/532/534/535/536 dedupe
+against our e10's same five — NO new subtraction) = 122; − 47 (d42's
+578-630 arms, 49 case ids minus our-covered 588/589) = 75; − 2 (this
+slice's new claims 435/436) = **73 unclaimed after** (the 13 fixes
+change no claim count — those ids were port-covered with wrong arms).
+The d41 roster lane's 550-577 FindFrame arms are OURS to fix (its claim
+is roster-only); the 551/564-577 DEFERRED tail (14 ids) stays unclaimed
+for the later slices. This lane's next ascending window starts at 551
+(Betsy) / 564 (the dark mage) — the DEFERRED DD2 tail.
+
+Zero RNG: the mechanical grep over the 15 cited arm ranges
+(`:70879-70951`, `:68647-68661` + `:69489-69655`, `:67452-67492`,
+`:67797-67837`, `:67838-67873`, `:67756-67796`) = ZERO
+Main.rand/.Next(/NextFloat/NextDouble hits (the 574/575 RNG dust
+`:67959` and the 572/573 emote `:67506` are the DEFERRED kinds, not
+this wave's). Frame counts cross-checked against
+`render/entities.rs::NPC_FRAME_COUNT` — all 15 agree (the full-697
+mechanical diff EMPTY). 9 module witnesses + 2 wiring witnesses WRITTEN
+NOT RUN (code-only), every replay vector re-derived by mechanical
+Python replay of line-for-line C# transcriptions (the integer
+accumulators exact in f32; the wyvern rotation the one f32
+transcendental, the sweep checks rows only) + the 15-kind
+5x3x3x3x5x5 strip sweep (40 ticks per combo, every row asserted inside
+its own sheet — the Python sweep's 0 violations mirrored).
+
+### W4-f27 extra wave 13 (slice 13) — the 4-kind micro + the census note
+
+`crates/tr-app/src/npc_findframe_extra13.rs` — the slice-11 DEFERRED
+tail's next pick-ups after slice 12's Betsy (551): **566/567 the DD2
+skeletons + 570/571 the DD2 drakins**, ported verbatim as pure machines
+(the extra-12 pattern) with the npc.rs v1-arm delegation (the 549-fix
+bridge shape, the new `find_frame_extra13` helper).
+
+* **566/567 the skeletons** (`NPC.cs:67559-67583`): the goblin-shape
+  WALK ONLY — no attack ladder, no ai reads at all. The vy == 0
+  UNCONDITIONAL sprite copy (`:67561-67564`), the air-OR-backpedal
+  row-8 pin (`:67565-67570`), the idle row-0 snap (`:67571-67576` —
+  NOT the goblins' row 9), the |vx| accumulator with the >= 64 (or
+  negative) reset (`:67577-67581`) and the `(int)(counter/8)` row
+  (`:67582`) over rows 0-7. The slice-11 "materialize-cycle seam"
+  deferral was the AI's spawn cycle, NOT this arm — the FindFrame body
+  is pure. The v1 `(vx != 0) + 0.6 >= 8` free strip was WRONG TWICE:
+  the strip AND the `% 14` count — the sheet is **9** rows
+  (`Main.cs:67140` slots 6/7), not the goblins' 14.
+* **570/571 the drakins** (`NPC.cs:67711-67755`): the ai[1] > 0 &&
+  ai[0] > 0 attack ladder rows 10-15 — the UNCONDITIONAL sprite copy
+  (`:67715`), the row outside 10..15 OR ai[1] == 59 reset (`:67716-
+  67720`), num188 = 5 EXCEPT row 14 where num188 = 35 (`:67721-67725`,
+  the long hold), the ++counter >= num188 step gated on row < 15
+  (`:67726-67730` — the row-15 counter-keep-growing quirk, the bomber
+  row-16 shape); else the walk: air row 1 (`:67737-67742`), idle
+  row 9 (`:67743-67748`), the |vx| >= 64 reset (`:67749-67753`) +
+  `(int)(counter/8 + 2)` row 2-9 (`:67754` — the +2 INSIDE the int
+  cast; for the non-negative post-reset counter it equals the bombers'
+  outside-+2). The 16-row sheet (`Main.cs:67141` slots 0/1). The v1
+  `% 16` free strip had the right count but the WRONG machine.
+
+Zero RNG: the mechanical grep over both cited ranges (70 lines) =
+ZERO Main.rand hits. Frame counts cross-checked against
+`render/entities.rs::NPC_FRAME_COUNT` (566/567 = 9, 570/571 = 16 — the
+697-slot table the slice-11 wave re-diffed with ZERO mismatches).
+2 module + 2 wiring witnesses WRITTEN NOT RUN (code-only), every
+replay vector re-derived by mechanical replay of the line-for-line
+C# transcription (integer accumulators exact in f32) + the 4-kind
+3x2x2x4 strip sweep (60 ticks per combo, every row asserted inside
+its own sheet). cs_id 566/567/570/571 via the bestiary net_id rows
+(`bestiary.rs:1545`/`:1553`/`:1651`/`:1659`).
+
+**Census count update:** 73 (the slice-11 post-state) − 1 (slice 12's
+551 Betsy, the DEFERRED tail's first pick-up) − 4 (this slice's
+566/567/570/571) = **68 unclaimed after**. The DEFERRED DD2 tail
+shrinks 14 → **10 ids**: 564/565 the dark mages (the 41-row 80px
+sheet, `:67998-68421`), 568/569 the wither beasts (the aura ladder,
+`:67025-67257`), 572/573 the kobold walkers (the emote seam,
+`:67493-67558`), 574/575 the kobold flyers (the RNG dust,
+`:67887-67978`), 576/577 the ogres (the variable strides,
+`:67584-67709`). This lane's next ascending window starts at 564
+(the dark mage) — the remaining DEFERRED tail.
+
+### W4-f27 extra wave 12 (slice 12) — the 551/564-577 DD2 tail (complete)
+
+`crates/tr-app/src/npc_findframe_extra12.rs` — the slice-11 DEFERRED
+551/564-577 window (14 ids) re-checked mechanically per cited range
+(a `Main.rand`/`.Next(`/`NextFloat`/`NextDouble`/`NewBubble`/
+`Dust.NewDust` grep). The verdict splits THREE ways:
+
+| id | kind | C# case | RNG grep | disposition |
+| --- | --- | --- | --- | --- |
+| 551 | DD2Betsy | `:67258-67451` | ZERO | ported + wired (the prior run `70762233d`/`01888909a`, the ai[0] phase ladders) |
+| 566/567 | DD2SkeletonT1/T3 | `:67559-67583` | ZERO | ported (batch 1) + wired (the concurrent slice-13 `af5d54b61`, the dup below) |
+| 568/569 | DD2WitherBeastT2/T3 | `:67025-67257` | ZERO | ported (batch 1) + wired THIS slice (`9b4ca40f7`) |
+| 570/571 | DD2DrakinT2/T3 | `:67711-67755` | ZERO | ported (batch 1) + wired (the concurrent slice-13, the dup below) |
+| 564/565 | DD2DarkMageT1/T3 | `:67998-68421` | ZERO | ported PURE (batch 2, the GRID-cell convention) — the wiring GATED on the grid-draw seam |
+| 576/577 | DD2OgreT2/T3 | `:67584-67709` | ZERO | ported PURE (batch 2, the GRID-cell convention) — the wiring GATED on the grid-draw seam |
+| 572/573 | DD2KoboldWalkerT2/T3 | `:67493-67558` | the `:67506` emote | DEFERRED — the emote-seam contract below |
+| 574/575 | DD2KoboldFlyerT2/T3 | `:67887-67978` | the `:67959` RNG dust | DEFERRED — the RNG-dust-seam contract below |
+
+**The per-case notes (the 6 strip + 4 grid machines):**
+
+* **566/567 the skeletons** (`:67559-67583`): the goblin-shape WALK
+  ONLY — the vy == 0 sprite copy, the air-OR-backpedal row-8 pin, the
+  idle row-0 snap (NOT the goblins' 9), the |vx| >= 64 reset +
+  `(int)(counter/8)` row 0-7. The 9-row sheet (`Main.cs:67140` slots
+  6/7). The slice-11 "materialize-cycle" deferral is AI-side
+  (localAI[3]), NOT this zero-RNG range.
+* **568/569 the wither beasts** (`:67025-67257`): the ai[0] > 0 aura
+  ladder — the UNCONDITIONAL sprite copy, the entry row-outside-5..16
+  LIVE counter-zero (the ++ follows, no overwrite), the base-7 row,
+  the ++counter, the 27-rung 5-tick ladder rows 8/9/10 (k 1-3) then
+  7/8/9/10 x5 (k 4-23) then 11/12/13/14 (k 24-27) (the ILSpy num60 +1
+  noise = the static 5*k thresholds, last-match-wins), the >= 270 tail
+  pinning row 14 + SUBTRACTING 10 (`:67227-67231` — the counter cycles
+  260..270 forever, never resets 0); else the walk air row 4 / idle
+  row 6 / the |vx| >= 56 reset + `(int)(counter/8)` row 0-6. The
+  17-row sheet (`:67140` slots 8/9).
+* **570/571 the drakins** (`:67711-67755`): the ai[1] > 0 && ai[0] > 0
+  attack ladder rows 10-15 (the ai[1] == 59 reset, num188 = 5 EXCEPT
+  row 14 = 35 the long hold, the ++counter >= num188 step gated
+  row < 15 — the row-15 counter-keep-growing quirk); else the walk
+  air row 1 / idle row 9 / the |vx| >= 64 reset + `(int)(counter/8+2)`
+  row 2-9 (the +2 INSIDE the cast). The 16-row sheet (`:67141` slots
+  0/1).
+* **564/565 the dark mages** (`:67998-68421`, the RAW-cell GRID): the
+  frame.Width/Height = 80 override (`:68002-68003`, draw-side); the
+  ai[0] > 0 && ai[1] == 0 summon ladder (7-tick, the 13 rungs rows
+  6/7 then 5/6/7 x2 then 8..12, the >= 98 reset-to-5 + counter 0), the
+  ai[1] == 1 attack ladder (8-tick, the 15 rungs rows 14..20 then
+  18/19/20 then 21..25, the >= 128 reset-to-14), the ai[1] == 2 gate
+  ladder (8-tick, the 22 rungs rows 27/28/29 then 26/27/28/29 x2 then
+  30..40, the >= 184 reset-to-26) — each the LIVE entry out-of-band
+  counter-zero + the UNCONDITIONAL sprite copy; else the hover walk
+  counter += |velocity|*0.1 + 1 (the one non-integer feed), the >= 40
+  reset, `(int)(counter/8)` rows 0-4. The cells run to 40 PAST
+  npcFrameCount[564] = 9 — the draw samples the 5x9 grid
+  (`Main.cs:23890`, `Frame(5, 9, y/9, y%9)`).
+* **576/577 the ogres** (`:67584-67709`, the RAW-cell GRID): the
+  frame.Width = 80 override (`:67588`, draw-side); the entry gate
+  reads the RAW cell (`num144 = frame.Y` `:67587`); the ai[1] == 0
+  stomp (cells 11-20, the variable strides 4 / 8 at 13/19 / 2 at
+  14/18, gated cell < 20), the ai[1] == 2 pound (the entry snap to 39
+  NOT 37, the strides 5 / 6 at 42 / 8 at 45 / 4 at 46 / 26 at 47 / 7
+  at 37-38, the counter-HOLD at 38 and at 46-while-airborne (flag10),
+  the >= 47 wrap-to-37 — the step NOT gated on advance), the ai[1] == 1
+  swipe (cells 21-38, the 5-tick step gated cell < 38); else the walk
+  air cell 43 (NO backpedal branch) / idle cell 0 / the |vx| >= 60
+  reset + `1 + (int)(counter/6)` cells 1-10. The cells run to 47 PAST
+  npcFrameCount[576] = 10 — the draw samples the 5x10 grid
+  (`Main.cs:23792`, `Frame(5, 10, y/10, y%10)`).
+
+**The GRID-DRAW SEAM CONTRACT (the wiring gate for 564/565/576/577):**
+the port's draw arms sample STRIPS (`t.h / 20` / `t.h / 10` rows,
+`render/entities.rs`'s dark_mage/dd2_ogres anchors) — wiring the
+raw-cell machines under the strip draw would sample the wrong pixels.
+The wire round must FIRST convert the four draw arms to grid sampling
+(the deerclops 5x5 `deerclops_frame_uv` precedent): dark mage
+`Frame(5, 9, cell/9, cell%9)` (`Main.cs:23890`, the origin-X 52/-52
+sprite flip + the origin-Y -10 + the localAI[3] materialize fade),
+ogre `Frame(5, 10, cell/10, cell%10)` (`:23792`, the origin-X 94 + the
+origin-Y -4). Until then the four machines ride PURE (the seam fn
+claims the ids; the npc.rs v1 strip arms stand — the 435/436
+pure-landing precedent). `FindFrameExtra12Kind::is_grid()` marks them.
+
+**The 572/573 kobold-walker EMOTE-SEAM CONTRACT (DEFERRED):** the
+lit-state pin (`NPC.cs:67495-67508`) — `ai[0] > 0 && ai[1] == 0`:
+the UNCONDITIONAL sprite copy, the row != 8 OR counter > 2 reset to
+row 8 + counter 0, then `if (counter == 0) { counter = 1;
+EmoteBubble.NewBubble(3, new WorldUIAnchor(this), 60); }` (`:67503-
+67507`). The emote is a SIDE EFFECT keyed on the counter-0 → 1
+transition (one bubble per lit-state entry, the 60-tick lifetime).
+The seam-fed wire round resolves the emote spawn bridge-side (the
+634 SporeBat resolved-draw precedent) and feeds the post-emote frame
+machine: the row-8 pin + the counter-1 latch, ZERO RNG. The rest of
+the case is pure: the ai[1] == 1 sprint walk (`:67510-67534`, air
+row 17 / idle row 8 / the |vx| >= 64 reset + `(int)(counter/8)+8`
+rows 8-15) + the default walk (`:67536-67557`, air row 16 / idle
+row 0 / the |vx| >= 64 reset + `(int)(counter/8)` rows 0-7). The
+18-row sheet (`Main.cs:67141` slots 2/3).
+
+**The 574/575 kobold-flyer RNG-DUST-SEAM CONTRACT (DEFERRED):** the
+case (`NPC.cs:67887-67978`) — the vx-sign sprite copies (`:67890-
+67897`), the `ToRotation` aim + `(float)Math.PI` when vx < 0
+(`:67898-67902`), the `rotation.AngleTowards(aim, 0.02f)` EVERY tick
+(`:67903`); the ai[0] != 0 altimeter walk (`:67904-67933`): the
+row < 2 lift-to-2 + counter 0, the num187 = 4 step (8 when row >= 5),
+the ++counter >= num187 step gated row < 9, the row-9 ignition burst
+(8 dusts, `:67923-67931` — `Dust.NewDustDirect` at the rotated
+`Center + (56*spriteDir, -30)` point, velocity*3, scale 0.6, fadeIn
+1.2, noGravity/noLight); then the ai[0] >= 3 RNG trail dust
+(`:67934-67967`): the maxValue ladder 5 / 4 at counter > 60 / 3 at
+> 180 / 2 at > 300 / 1 at > 600, the TWO `Main.rand.Next(maxValue)`
+draws (`:67957-67959`, n = 0/1) each gating a dust at
+`Lerp(oldPos[3]-offset, vector4, n/10+0.1)` (scale 0.3, fadeIn 1.5,
+noGravity/noLight); else the ai[0] == 0 idle flap (`:67969-67977`):
+the ++counter >= 6 step over rows 0-1 with the >= 2 wrap. The
+seam-fed wire round draws the TWO `Next(maxValue)` rolls bridge-side
+EVERY tick the ai[0] >= 3 && row >= 9 gate holds (the UpdateNPC order
+AI → FindFrame, the 634 precedent), feeds the RESOLVED booleans +
+the dust spawns, and the post-seam frame machine is ZERO RNG (the
+AngleTowards rotation the one transcendental, the e11 wyvern
+precedent — the sweep checks rows only). The 10-row sheet
+(`Main.cs:67141` slots 4/5).
+
+**The same-task race + the f27i-dup dedupe note (566/567/570/571
+both-modules) — PUBLISHED for the merger:** the concurrent slice-13
+commit `af5d54b61` (landed BETWEEN this slice's batch-1 and batch-2
+commits) ported + wired the skeletons 566/567 + drakins 570/571 to a
+NEW `npc_findframe_extra13.rs`. The machines are BYTE-IDENTICAL to
+this slice's extra-12 batch-1 ports (verified line-for-line: the
+skeleton walk + the drakin row-14 hold ladder, the same C#
+transcriptions, the same frame counts 9/16, the same zero-RNG grep).
+**KEEP-ONE at the merge: keep the f27 extra-12 arms** (the e12 module
+carries the wider 11-kind claim 551/564-571/576/577; the extra-13
+module's four drop to parity references — the f26h-dup keep-one
+precedent). The npc.rs skeleton/drakin arms currently delegate to
+extra-13 (the slice-13 wiring); the merger re-points them to extra-12
+(or keeps extra-13 as the parity twin — behaviour-identical either
+way). The wither beasts 568/569 are THIS slice's unique wiring
+(`9b4ca40f7`, untouched by slice 13).
+
+**Census count update (the MECHANICAL re-derivation at the CURRENT
+pushed tips — the slice-13 "73 − 5 = 68" note MIS-COUNTS):** the
+slice-11 "73 unclaimed" base itself mis-counted — it subtracted the
+d42 578-630 band as 47 ids and the f26 7e five, but the DD2 tail
+551/564-577 are INLINE-ARM (port-covered with the v1 stand-ins, the
+d44 master §2 table) — FIXING them changes NO claim count (the
+slice-9/10/11 fix precedent). The correct base is the d44 master
+wire-census §6 UNCLAIMED worklist at the refresh-4 vintage = **106**
+(the 130 refresh-2 base − the 24 f26 7d/7e/7f + f27 e10 claims
+516/521/523-532/534-545). Re-probed at the CURRENT tips
+(`git fetch origin --prune`, every claim grep'd against the pushed
+npc.rs/npc_findframe*.rs seams):
+
+| step | subtraction | remaining |
+| --- | --- | --- |
+| the d44 §6 refresh-4 base | — | 106 |
+| f26 7g (435/436 the e11 dup + 631/632/635) | 5 | 101 |
+| f26 7h (636/639-645) | 8 | 93 |
+| f26 7i (646-649) | 4 | 89 |
+| f26 7j (650-655) | 6 | 83 |
+| g10 town pets (637/638/656/670/678-684) | 11 | 72 |
+| c4 (581/587/592/607/615) | 5 | 67 |
+| c8 (606) | 1 | 66 |
+| e26 (604/605) | 2 | 64 |
+| d42 band arms (578/580/582-586/590/591/593-603/608-614/616-620/624-629, 38 case ids) | 38 | **26** |
+
+**26 unclaimed after** — the worklist: **634** (the RNG SporeBat, the
+f26 7h seam contract), **657-662** (6), **664** (1), **667** (1),
+**669** (1), **671-677** (7), **687-689** (3), **691-696** (6) =
+1+6+1+1+1+7+3+6 = **26**. This MATCHES the f26 7j addendum's
+independent 26-id derivation (the two lanes agree id-for-id). The
+551/564-577 DD2 tail is NOT in the unclaimed pool (INLINE-ARM
+throughout) — this slice's 11 ports + 7 wirings are QUALITY FIXES of
+port-covered arms (the 549/471/492 precedent), not new claims; the
+572-575 four stay DEFERRED (the emote/RNG seams above), still
+port-covered with the v1 stand-ins. The d41 tip ADVANCED
+(`4ed22f0b` → `1a1b07ff`, batches 3-6: the 508-512 antlions + the
+513-516/519 tomb/solar + the 522-526 orbs/ghouls + the 527-531
+lamias/poachers) — its new FindFrame arms (508/509/516/523/527-531)
+are all TWIN claims inside the f26/f27/e10 sets already subtracted
+(the d41 roster lane's arms ride the same machines), NO new
+subtraction. The d42 tip `bac408be0` (the doc-only finals) — the
+578-630 band arms stand (the 38 case ids above; 581/587/592/607/615
+ceded to c4, 604/605 to e26, 606 to c8, 588/589 base-reserved, the
+19 holes itemized in its research/239). The g10 tip `5dee2865`
+UNCHANGED (the 11 town pets). The f26 tip `b89812bf` (7j) — the
+650-655 claims above; 7k/7l NOT yet pushed at census time.
+
+**The post-push re-probe (the tips advanced DURING this slice — the
+push-time census):** after this slice's push (`fa82efb28`), the
+re-fetch shows f26 ADVANCED `b89812bf7` → `a2e43ef77` (**7k landed**:
+`fc4e2aaad` claims **657-662** the QueenSlime batch + EmpressButterfly
++ PirateGhost, `npc_findframe_extra7k.rs`'s seam grep-verified;
+`2ba235a17` the 661-on-653 butterfly-arm claim row; `808f57f9f` +
+`a2e43ef77` the frame-count/witness FIXes, no new ids; **7l NOT yet
+pushed**), d41 ADVANCED `1a1b07ff2` → `065efdf97` (batch 7: the
+532/534-537 basilisk/tortured-soul/slimes/bride — its new FindFrame
+arms DesertBeast 532 / DemonTaxCollector 534 / TheBride 536 /
+SlimeSpiked+SandSlime 535/537 are ALL twins inside our e10 claim set,
+NO new subtraction), d42 ADVANCED `bac408be0` → `adb304ab8` (the
+SEAL + SEAL-VERIFY doc receipts, no code delta), g10 ADVANCED
+`5dee28650` → `7414ba339` (the FINAL/SEAL docs + the mut lint-fix,
+the npc.rs/pet-module diff ZERO — no new ids). The 7k six subtract
+from the 26: **20 unclaimed at the push-time tips** — the worklist:
+**634** (the RNG SporeBat seam contract), **664** (1), **667** (1),
+**669** (1), **671-677** (7), **687-689** (3), **691-696** (6) =
+1+1+1+1+7+3+6 = **20**. This lane's next ascending window starts at
+664 (TorchGod — the floater group, the 662 twin f26 7k just claimed)
+after the 634 seam-contract kind; the 572-575 DD2 seam kinds stay
+port-covered-DEFERRED (not in the pool).
+
+Zero RNG: the mechanical grep over the 10 ported ranges
+(`:67258-67451`, `:67559-67583`, `:67025-67257`, `:67711-67755`,
+`:67998-68421`, `:67584-67709`) = ZERO Main.rand/.Next(/NextFloat/
+NextDouble hits (the 572/573 emote `:67506` and the 574/575 RNG dust
+`:67959` are the DEFERRED kinds, NOT ported). Frame counts
+cross-checked against `render/entities.rs::NPC_FRAME_COUNT` — all 11
+agree (551 = 11, 564/565 = 9, 566/567 = 9, 568/569 = 17, 570/571 = 16,
+576/577 = 10; the full-697 mechanical diff EMPTY). 7 module witnesses
++ 1 wiring witness WRITTEN NOT RUN (code-only), every replay vector
+re-derived by mechanical Python replay of line-for-line C#
+transcriptions (`tools/_f27_s12_replay.py`, the integer accumulators
+exact in f32; the dark-mage hover |v|*0.1+1 the one non-integer feed,
+f32-rounded, the reset at tick 31 for vx3).
