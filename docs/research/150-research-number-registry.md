@@ -1291,6 +1291,7 @@ g78-179 839c5257d / f47-277+278 5b8dbbf9c / g46-70fork-252 22584a2c4.
 **REGISTRY 100% EXECUTED: 69 renames total (§9 49 + §10 11 + 370/382 + round-1 7).
 The owed-list is EMPTY. Merger dedupes by final key per §9/§10 tables.**
 Newly noted (round-1, non-blocking): f6-65→191 (separate doc, dispatch when convenient).
+§10.5 Lead adjudication: d50's 243-dust-type-table-final self-pick contested (243=g58 per §9.1) → **d50 → 383**; execute when g58's batch lands or at cleanup. Free floor 384+.
 
 ### §9.4 — EXECUTION COMPLETE (49/49)
 
