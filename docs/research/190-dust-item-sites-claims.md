@@ -1,4 +1,9 @@
-# 65 — World-item dust sites (W4-g15): claim + census correction
+# 190 — World-item dust sites (W4-g15): claim + census correction
+
+> RENAME CHAIN: 65 → 190 (registry-150 §1/§3 round-1 assignment; 65 = W4-f17
+> `65-kinds-coverage-1.md` wins). Executed at the integration/batch-O merge
+> (merger dedupe per §9/§10); refs re-pointed (item_dust.rs header, ANALYSIS,
+> PORT_MAP, anchors, research/347 + 358).
 
 Status: CLAIM + CENSUS doc (W4-g15, `task/W4-g15-dust-item-sites`). Written
 early per the lane's coordination rule — the branch list is the claim record.

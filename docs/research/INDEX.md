@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -77,6 +77,8 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 358 | DOC-SWEEP lane 5: WorldItem/items entity census + port (W4-g15: merge/draw/lava/magnet verdicts + MakeAWish/CheckInWorld/TryFillBucket/ItemNoGravity/copper-slime/enemy-delay/hopper/hold-expiry ports; witnesses written not run) — SEALED: the 24-commit lane pushed (af7d97534), the g45-compose debt discharged, gaps seeded (39→d98 per 245, the 684-transform→post-merge), e19b/g52b skips receipted, the 145 16-box repin executed (8f04df01b); number per registry-150 §9.2 UNIFIED FINAL — chain 77→284(§7.3 target VOIDED: 284=g52)→358 | `358-doc-sweep-items.md` | ✅ SEALED code-only |
 | 347 | The item-dust-family bible (W4-g15 SEAL round: the WorldItem/Item dust+entity fold-table — g15 the 17-site DustSink keeper, e19 the splash/repulsion/16-box/wet-gravity keeper per 144/145, the f47+g15 splash dup-halves retire, g15==d98 msg-21 byte keep-one, the merge order + the post-merge seeds; number per registry-150 §8.7 FROZEN assignment — the 309 self-pick at `131961a73` contested, chain 309→347, d125-309 stands) | `347-item-dust-family-bible.md` | ✅ code-only |
+| 184 | Expert/master boss drop trees census + port (W4-f35, chain 65→184 per registry-150 §3 executed at batch-O merge: the bag OPEN side — OpenBossBag's 19 grant switches + TryGettingDevArmor + the money tail + the ItemSlot right-click open arm; the widened scope — the full 58-kind OpenableBag set: the 26 fishing crates + the presents + the misc bags + the death-heal feed; the death side already landed S1-E-14a; code-only) | `184-expert-drop-trees-census.md` | ✅ |
+| 195 | Bag-open mechanics + master-mode bag drop-rate census (W4-f35 DOC-SWEEP, chain 66→195 per registry-150 §3 executed at batch-O merge: the right-click open dispatch, the luck census — NO luck at open time, the death-side luck-free bag gate + the master pet/mount rule fixes, the master-mode relic/pet rates, the e25 value_multiplier boundary) | `195-bag-open-master-census.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

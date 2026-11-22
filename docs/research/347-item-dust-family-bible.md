@@ -20,7 +20,7 @@ target was voided, 284=g52).
 **This is the merger's single page for the WorldItem/Item
 dust+entity surface** — who owns which half, the keep-one rulings,
 the merge order. The per-lane records stay canonical for their own
-scope: research/65 (the dust-half census correction), research/358
+scope: research/190 (the dust-half census correction), research/358
 (the lane-5 entity census, SEALED), e19's research/144/145/148 (the
 splash keep-one + the 16-box seal), g45's research/69/104 (the
 liquid/bucket compose), g48's research/245 (the 39 ownership seed).

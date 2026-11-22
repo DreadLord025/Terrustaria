@@ -36078,7 +36078,7 @@ Mana Sickness (buff 94) — **not for weapons**:
 *definition* class. The item use/pickup/spawn dust lives in `WorldItem.cs`
 (the `Main.item[400]` world-drop entity), exactly as research/15's per-file
 table records (`WorldItem.cs | 17 | 1 | none | MISSING`). W4-g15 ports those
-17 dust sites; research/65 pins the census + the line-order map.
+17 dust sites; research/190 pins the census + the line-order map.
 
 **The port.** `crates/tr-app/src/item_dust.rs` carries the 17 sites behind a
 `DustSink` seam (disjoint field borrows: the `UpdateItems` stream, the shared
@@ -39386,3 +39386,278 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The expert/master boss bag open trees (W4-f35, code-only mode)
+
+The census (`docs/research/184-expert-drop-trees-census.md`) splits the
+boss loot into two trees. The DEATH side — `NPC.NPCLoot`
+(`NPC.cs:78830-78899`) → `NPCLoot_DropItems` (`:78925-78937`) → the
+`ItemDropDatabase` boss registrations, where `ItemDropRule.BossBag`
+(`ItemDropRule.cs:10-13`) is a `DropBasedOnExpertMode(DropNothing,
+DropLocalPerClientAndResetsNPCMoneyTo0)` (the bag ONLY in expert, its
+`CommonCode` zeroes `npc.value`) and the master relics/pets ride
+`Conditions.IsMasterMode` — already runs through `tr_core::loot` +
+`loot_db_gen` (S1-E-14a, 1599 registrations). This task ports the OTHER
+half: what OPENING the bag grants.
+
+### The port (`crates/tr-app/src/boss_bags.rs`)
+
+`open_boss_bag(bag, env, rng, out)` ports `Player.OpenBossBag`
+(`Player.cs:7202-7883`) verbatim for all 19 openable bags (3318-3332,
+3860, 4782, 4957, 5111). The C# keeps two sequential switches
+(`:7206-7674` and `:7675-7743`); they are disjoint per type, so one
+match keeps the same per-bag order. The grant-less Ogre/Dark Mage bags
+(3861/3862, in `ItemID.Sets.BossBag` but with no case) run only the
+money tail. Every grant rides `quick_spawn` = `QuickSpawnItem`
+(`Player.cs:7170-7180`): the `stack > 0` gate, then `SetDefaults` →
+`Prefix(-1)` (the natural roll, `Item.cs:504-618`, on the SAME stream)
+→ the stack write — so a prefixable grant's prefix draws interleave
+between the bag's chance rolls (the loot-slot RNG order).
+
+The verbatim details kept: the EoW/BoC DISCARDED `num5`/`num6` draws
+(`:7257`/`:7287`, the stream advances though the value is never read);
+the master-mode ore/ingot bumps (EoW `Next(110,136)`/`Next(30,51)` vs
+classic `Next(80,111)`/`Next(20,41)`, BoC the same on 880/1329); the
+King Slime do-while re-picks the SECOND piece (`:7218-7222`) while the
+Queen Slime re-picks the FIRST (`:7664-7669`) — the asymmetry; the Moon
+Lord `Next(count)`+`RemoveAt` two-distinct-weapon bundle (`:7734-7740`)
+and the `HasItem(3384)` Portal Gun gate (`:7726`); the WoF Demon Heart
+gated `!extraAccessory` (`:7380`); the Fishron remix-seed option-6 swap
+(Aqua Scepter 157 vs Bubble Gun 2623, `:7560-7567`); the EoC ore stack
+is THREE `Next(21)+10` draws summed in argument order (`:7250`).
+
+`try_getting_dev_armor` (`Player.cs:7885-8026`) leads the hardmode bags
+(3325-3332, 3860, 4782 — NOT the Queen Slime/Deerclops): the
+`Next(tenthAnniversary ? 8 : 16) == 0` gate, then `Next(21)` picks one
+of the 21 dev sets, each piece its own `QuickSpawnItem`; sets 10/11
+carry the torch tails (3024×4 / 3599×4).
+
+### The money tail and the e25 boundary
+
+`bag_money` (`Player.cs:7833-7882`) builds a FRESH `NPC.SetDefaults(num9)`
+— whose `ScaleStats` tail (`NPC.cs:17856`) scales `value` by the
+difficulty money curve in expert/master (×2.5, e25's lane, UNWIRED).
+`BagEnv::value_multiplier` is that seam: the wiring passes 1.0 (the
+classic world the port models today), and the `(int)` truncation of
+`ScaleStats_ByDifficulty` (`NPC.cs:18176`) is kept. The base values are
+the classic `SetDefaults` table (the census; `Item.buyPrice(0,g)` =
+`g*10000`, `Item.cs:49417-49420`). Then the ±20 % spread, the 1/5, 1/10,
+1/15, 1/20 bonus chains, and the platinum/gold/silver/copper split —
+NO >50 shrink rolls here (unlike `NPCLoot_DropMoney`), the `(int)`
+truncations and the copper `< 1 → 1` floor verbatim. The zero-value
+bosses (Betsy/Ogre/Dark Mage) draw the 5 gates and mint nothing.
+
+### The wiring (`app/clicks.rs::open_boss_bag_click` + `open_container_click`)
+
+The `ItemSlot.RightClick` `OpenableBag` arm (`UI/ItemSlot.cs:1660-1667`)
+fires on the press edge (`Main.mouseRightRelease`) with an air cursor or
+one that cannot stack with the cell, BEFORE the `HasItemSwap` cycle
+(`:1668`). The arm now covers ALL 58 `ItemID.Sets.OpenableBag` kinds
+(`ItemID.cs:1384`): the 21 boss bags dispatch to `open_boss_bag_click`,
+the other 37 (26 crates + 11 misc/present kinds) to
+`open_container_click`, which ports `TryOpenContainer_GrantItems`'
+else-if order (`:1806-1865`) — the fishing crates → the herb bag 3093 →
+the can of worms 4345 → the oyster 4410 → the goodie bag 1774 → the
+chillet egg 6142 → the Lock Box 3085 (the Golden Key 327 CONSUME gate,
+`ConsumeItem(327, reverseOrder: false, includeVoidBag: true)` — a miss
+returns false: NO decrement, NO sound, NO cooldown) → the Shadow
+Lockbox 4879 (the Shadow Key 329 PRESENCE gate,
+`HasItemInInventoryOrOpenVoidBag` — NOT consumed) → the Present 1869 →
+the legacy presents 599/600/601. `TryOpenContainer` (`:1786-1804`)
+grants FIRST, then the bag stack decrements (`:1795-1799`), sound 7
+(`:1800`), `stackSplit = 30` (`:1801`), `mouseRightRelease = false`
+(`:1802`) — the shared `finish_container_open` tail. Every grant rides
+`GetOrDropItem(PickupItemFromWorld)` (`Player.cs:7187-7199`): the
+`Player.GetItem` fill (the coin rows + `DoCoins` per fill for coins, the
+`deposit_pickup` ammo/occupied/hotbar/reverse-empty walk for non-coins —
+the shared `fill_quick_spawn_grants`), the void vault as the last
+resort (`GetItemSettings.cs:57`'s `CanGoIntoVoidVault`), the overflow a
+world drop at the player's centre (`Item.RequestNewItem`, `:7198`, the
+prefix preserved — no fresh roll). The whole open is a UI click OUTSIDE
+every `SwapRandom` block, so the bag rolls AND the fill chimes ride
+`NamedRngs::global()` (the bare-`Main.rand` stand-in, the
+`quick_transfer_from_slot` precedent); every named stage stream stays
+pristine.
+
+### The sibling opener families (the widened scope)
+
+Four modules share the `BagGrant`/`quick_spawn` seam (made `pub(crate)`):
+
+- `fishing_crates.rs` — `Player.OpenFishingCrate`
+  (`Player.cs:8028-9250`), the OPEN side only (the fishing-catch crate
+  roll is f36's lane). The three base crates (Wooden 2334/3979, Iron
+  2335/3980, Golden 2336/3981) return from their own retry-until-granted
+  while-loops; the other 20 ride the shared loop (`:8595-8914`, the
+  `maxValue = 1` biome-weapon gate always passes on the first pass) +
+  the shared tails (`:8915-9249`). The kept quirks: the wooden
+  `Next(4)`-over-six-cases dead picks (11/700 never land; the ore pick's
+  21/705/19/706 likewise), the wooden hardmode gate drawing NO pick on
+  a miss (`:8127`), the golden `continue` (`:8510-8512`), the two
+  SEPARATE Enchanted Sword 989 gates (1/30 pre-hardmode vs 1/15
+  hardmode, both always draw), the lava 174/175 re-types AFTER the pick
+  draws (`:8823`/`:8882` — the hardmode bar re-pick OVERWRITES the 174
+  but the ore's `Next(3)!=0` gate misses at zero so the 175 can stay),
+  the discarded `num14`/`num16` `Next(5)`s (`:8668`/`:8734`), the Ocean
+  `Next(4)` BEFORE the 1/10 Water Bolt gate (`:8601-8602`), the hallowed
+  3986 second-soul stack RE-DRAW (`:9237` discarded, `:9245` lands), the
+  Hallowed 3207/3986 weapon-arm ABSENCE in the shared loop.
+  `CrateEnv::skyblock_low_tiles` is the gen-time tile-census seam
+  (`WorldGen.cs:3209-3217`) — the wiring passes false.
+- `presents.rs` — `OpenPresent` (`:7031-7150`, the else-if chance chain;
+  the `Next(15)` hardmode gate DRAWS even pre-hardmode and a gated hit
+  falls through to the 1/30 Coal), `OpenLegacyPresent` (`:7152-7168`,
+  ONE `Next(14)`: 0+hardmode → Snow Globe 602, `<=7` including a
+  pre-hardmode 0 → Candy Cane Block 586, else 591), `OpenGoodieBag`
+  (`:9502-9585`, the two 1/150 early-returns Unlucky Yarn 1810 / Bat
+  Hook 1800, the 1/4 Rotten Egg 1809 ×10-40, the 1/10 `Next(1846,1851)`
+  painting pick, the 19-way costume switch — case 10 is the Witch set
+  (1766,1775,1776), NOT contiguous; case 18's 1851 also sits in the
+  painting range).
+- `misc_bags.rs` — `OpenHerbBag` (`:9367-9441`, the 2-4+1/3 count × the
+  14-herb pick × the 2-4 stack + the 1/3-gated 1-4 add — the add draw
+  only inside the gate), `OpenCanofWorms` (`:9443-9455`, the
+  `Next(10) < 3` boundary), `OpenOyster` (`:9457-9476`, the nested
+  1/4-gated pearl chain 4414/4413/4412 + the always-4411),
+  `OpenChilletEgg` (`:9491-9500`), `OpenLockBox` (`:9330-9365`, the
+  `Next(7)` 0-and-default-both-164 pick, the remix 157→2623 swap, the
+  getGoodWorld SHORT-CIRCUIT `Next(5)` gate — no draw when the flag is
+  down) + `OpenShadowLockbox` (`:9310-9328`, the remix 112→683 list
+  swap). Both lock-box openers are degenerate one-pass whiles in the
+  C#; the port keeps the single pass. `consume_item_loc` ports
+  `ConsumeItem`'s first-match scan (`Player.cs:9269-9308`) over the
+  58-slot carry view + the OPEN void bag.
+- `npc_death_heals.rs` — the g60-UNCLAIMED death item-drop lane (g60's
+  census covers the death DUST only): `NPCLoot_DropHeals`
+  (`NPC.cs:79098-79195`) + `NPCLoot_DropCommonLifeAndMana`
+  (`:79531-79557`) + `DoDeathEvents_DropBossPotionsAndHearts`
+  (`:78945-79016`) over the `DropRng`/`roll_luck` seam. The kept
+  quirks: the 16/121/81 netID exclusions (81 still runs the SECOND mana
+  roll), the mana-first `Next(2)` pick whose heart else-if DRAWS its
+  own `Next(2)` on a full-mana first hit, the 267/13-15 life-gated
+  arms, the 116-119 expert-only `Next(5)`, the boss potion chain's
+  `>113 && <222` mech band BEFORE the 636/245/262/370/395/439 arms
+  (222→1134, 398→3544), the EoC/WoF KilledToday Badger's Hat 5004
+  latch-and-reset. The 23-kind boss table = the 22 `SetDefaults`
+  `boss = true` rows + the EoW head's `DropEoWLoot` dynamic last-
+  segment latch (`:78414-78429`). The wiring: `spawn_heals` runs AFTER
+  `spawn_loot` in the death retain (the C# loot-before-heals order on
+  the shared `UpdateNPCs` stream; the f35-final fold retired the old
+  coins-before-loot deviation — the full order is now loot → coins →
+  heals, `NPC.cs:78855`/`:78897`/`:78898`), the latches live on
+  `World.eoc_killed_today`/`wof_killed_today` (the dusk transition
+  clears both, `Main.cs:65221` `ResetBadgerHatTime` — wired in
+  `world_sim/clock.rs`), every heal drop rides the `spawn_loot`
+  convention (the seasonal heart/star remap BEFORE the prefix/velocity
+  draws, `Item.cs:49668-49714`).
+
+### Deliberate deviations / out of scope
+
+- `master_mode`/`value_multiplier` stay classic (the World carries no
+  game mode — the recurring constants-off note: nurse `Main.cs:40086`,
+  spawner `NPC.cs:853`, dd2 `DD2Event.cs:1123`); the e25 scaling module
+  stays UNWIRED and untouched. The bag money reads the unscaled
+  `SetDefaults` value exactly like the C# classic path.
+- `crimson` stays false (the port persists no world-evil type, the
+  `shop.rs`/`loot.rs` `crimson_world` gap) — the EoC bag grants the
+  corruption ore/bar pair (56/59).
+- `CrateEnv::skyblock_low_tiles` stays false (the gen-time active-tile
+  census, `WorldGen.cs:3209-3217`, has no port) — the Sky crate's
+  Sky Mill 2197 tail never fires; the seam is one `Next(3)` when wired.
+- The death-heal feed's `expert` stays false (the same constants-off
+  note) — the Hungry 116-119 always drop their heart, the expert 1/5
+  gate never draws; `HealPlayer` reads the live `hp < max_hp` /
+  `mana < mana_max` (the `statLifeMax2` buff bumps are the equipment
+  pass's lane).
+- The death-feed order: the f35-final wiring runs the C# NPCLoot
+  sequence — `spawn_loot` (`:78855`) → `spawn_coins` (`:78897`) →
+  `spawn_heals` (`:78898`). The pre-final coins-before-loot fold is
+  RETIRED. `spawn_loot` returns `Option<bool>`: `None` when the entry
+  gate (`:78832`, the no-surface pre-Skeletron dungeon refusal + the
+  red-hat Dark Caster) or the statue gate (`:78849`) refuses the WHOLE
+  NPCLoot (the death retain skips coins+heals too); `Some(resets_money)`
+  feeds the boss-bag/master-pet CommonCode value zero into `spawn_coins`
+  (an expert boss death drops no coins — the bag carries them). The
+  Twins' first death (`DoDeathEvents_BeforeLoot` `:78916-78923`) also
+  zeroes value + clears boss (the first eye drops no coins/bag/potions).
+- The Skyblock recovery arms (`NPCLoot_DropAltar`/`DropDungeonStuff`/
+  `DropHellforge`/`DropLihzahrdStuff`/`DropTempleTraps`, `NPC.cs:79559-
+  79617`) stay OUT — the `WorldGen.Skyblock` latches (`noAltars`/
+  `noDungeon`/`noHellforge`/`noTemple`/`lowTiles`) have no port state
+  (the Skyblock worldgen pass is unported, the gates are constants-off).
+- The seasonal-boss downed flags (`downedHalloweenKing`/`Tree`,
+  `downedChristmasIceQueen`/`Santank`/`Tree`, `NPC.cs:79210-79239`) stay
+  unowned — no live World field; the wld glue writes false
+  (`wld/sections/flags.rs:146-150`), the lang substitutions answer false.
+- The `GetItem` favorite guard reads the port's slot-positional
+  `favorite_slots` (the S1-P-i47 model); the `newAndShiny` flag and the
+  `PopupText`/achievement pickup hooks are the standing UI deviations.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the seam
+call sites checked against the actual signatures by read/grep
+(`PrefixRandom`/`roll_prefix`, `deposit_pickup`, `carry_slots_mut`/
+`do_coins`, `void_vault_take`/`can_void_vault_accept`, `registry::get`/
+`name`/`max_stack`/`is_coin`/`coin_value`, `NamedRngs::global`/`stream`,
+`Player.extra_accessory`/`center`/`void_vault_enabled`/`banks`,
+`World.seeds`, `ItemSlot`/`EMPTY_SLOT`, `coin_slot.force_slot_state`,
+`DropRng`/`roll_luck`, `seasonal_pickup_kind`, `use_void_bag`,
+`entry_for_npc`, `contact_damage`). The witnesses (per-boss same-seed
+`UnifiedRandom` replays in `boss_bags.rs`, the crate/present/misc/heal
+family replays + scripted draw-census pins in the four new modules,
+and the wiring witnesses in `clicks.rs`) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
+### The LOOT FINAL wiring (f35-final, the full NPCLoot death census)
+
+The death-side `NPC.NPCLoot` (`NPC.cs:78830-78899`) is fully wired in
+`world_sim/npcs.rs`'s death retain, in the C# order: entry gate
+(`:78832`) → bestiary/banner credit → statue gate (`:78849`) →
+`DoDeathEvents_BeforeLoot` (`:78854`) → `NPCLoot_DropItems` (`:78855`) →
+`DoDeathEvents` (the Dungeon Spirit summon `:79200`) → `NPCLoot_DropMoney`
+(`:78897`) → `NPCLoot_DropHeals` (`:78898`).
+
+- `spawn_loot` returns `Option<bool>` — `None` on the entry/statue gate
+  refusal (the whole NPCLoot skipped), `Some(resets_money)` otherwise.
+  The entry gate ports the no-surface pre-Skeletron dungeon refusal
+  (`Main.isThereAWorldSurface` = `worldSurface > 50`, `Main.cs:2788`; the
+  nine kinds 31/294/295/296/32/34/71/693/694) + the red-hat Dark Caster
+  (`type == 32 && localAI[3] == 1`). The statue gate ports
+  `statue_loot_refused` + the two NPCID tables (`StatueSpawnedDropRarity`
+  `NPCID.cs:10445`, `NoEarlymodeLootWhenSpawnedFromStatue` `:10446`).
+- `DoDeathEvents_BeforeLoot` (`:78916-78923`): a Twin dying while its
+  sibling lives zeroes value + clears boss — the first eye drops no
+  coins/bag/trophy/potions; only the last eye (MissingTwin) carries them.
+- `spawn_loot`'s `LootFlags`/`LootNpc` are fully fed (the biome-key zones,
+  the soul NPC-depth band, LivingFlames/yoyo/pirate-map bands,
+  blood_moon/windy/moon-waves/downed flags, the Skyblock sickle scan, the
+  Mechdusa/MissingTwin AnyNPCs scans, the 23-kind boss table + EoW latch,
+  HasPlayerTarget, damage/defense/friendly).
+- `spawn_coins`' two g4c false stand-ins are LIVE: `midas =
+  npc.buffs.has_buff(72)` (the `:92017` latch), `blood_moon =
+  app.world.blood_moon`. The `resets_money`/`twin_first_death` value zero
+  feeds `drop_money` before it reads the base.
+- `summon_dungeon_spirit` (`DoDeathEvents_SummonDungeonSpirit`
+  `:79064-79078`): the post-Plantera hardmode dungeon RollLuck(13) +
+  dungeon-wall spawn 288, between loot and coins.
+- `DoDeathEvents_CelebrateBossDeath` (`:79018-79034`): the BossOrEvent
+  announcement in `spawn_heals`' boss arm (the Twins plural / MoonLord /
+  per-boss NPCName). `NPCDamageTracker.BossKilled` is unported (no RNG).
+- `DoDeathEvents_AdvanceSlimeRain` (`:79080-79095`): counts ONLY the blue
+  slime (`Main.slimeRainNPC[1]`, `Main.cs:8864`) — the pre-final port
+  counted every variant (fixed).
+- The rule-gate fixes: `SoulOfWhateverConditionCanDrop`
+  (`Conditions.cs:1579-1612`) is the full gate (boss/key/six-type
+  refusals + hardmode/lifeMax/friendly/value + the classic depth band,
+  remix drops only depth); `DownedPlantera` (`:322`) reads
+  `downedPlantBoss` (the phantom `downed_plantera` second flag retired).
+
+The Skyblock recovery arms (`:79559-79617`) stay OUT (the worldgen pass
+is unported, the latches constants-off); the seasonal-boss downed flags
+stay unowned (no live field). 11 f35-final witnesses WRITTEN NOT RUN (the
+soul-gate refusal table, the DownedPlantera complement, the statue
+table/draw-shape, the midas/blood-moon stream deltas, the statue
+early-mode refusal, the loot-coins-heals order twin, the Twins
+first-death zero, the entry-gate table, the boss-death announcement, the
+Dungeon Spirit summon, the blue-slime-only rain counter). The census +
+the loot-family declaration: `docs/research/184-expert-drop-trees-census.md`.

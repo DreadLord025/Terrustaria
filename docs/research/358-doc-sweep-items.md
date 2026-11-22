@@ -16,7 +16,7 @@ code-only 2026-11-21; seal round appended below — re-probe citations
 only, the census scope never re-opens). Scope: the item-ENTITY mechanics
 of `WorldItem.cs`
 (the `Main.item[400]` world drop) + `Main.DrawItem` that the dust half
-(research/65, a2911366) did not cover. Every mechanic below carries a C#
+(research/190, a2911366) did not cover. Every mechanic below carries a C#
 citation, a verdict (already-landed / ported-this-lane / documented gap /
 other-lane skip) and the port site. Witnesses are WRITTEN, NOT RUN
 (code-only swarm rule); no cargo/tests were executed this lane.
@@ -494,7 +494,7 @@ this seal round — number 347 per registry-150 §8.7 FROZEN assignment:
 the original 309 self-pick (`131961a73`, the free-block scan found the
 highest claimed key 308, 309+ unclaimed) missed §8's reservations and
 was contested — chain 309→347, d125-309 stands; 78 was NOT used — two
-prior forks already carry it, g78-sight + c40-weather). research/65 (the
+prior forks already carry it, g78-sight + c40-weather). research/190 (the
 dust-half census correction) and this doc stay the per-lane
 records; 347 is the merger's single page.
 
