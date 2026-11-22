@@ -1729,8 +1729,16 @@ impl SceneState {
     /// term land with their systems (M4 events / M2-BUFF shimmer); the active
     /// trigger is `metrics.ZoneShimmer` with its depth window.
     fn update_shimmer(&mut self, metrics: &SceneMetrics) {
-        let flag = metrics.zone_shimmer
+        // `SceneState.cs:285`: the four-term flag — the zone, the placed
+        // Shimmer Monolith (state 1 = on), the equipped one (the 5347 accessory
+        // shader, `Player.cs:14268-14269` — unported, reads false), or the
+        // perspective player shimmering inside the depth window.
+        let flag = metrics.shimmer_monolith_state == 1
+            || metrics.zone_shimmer
             || (metrics.player_shimmering && metrics.underground_for_shimmering);
+        // `SceneState.cs:286-289`: state 2 (the monolith's OFF toggle) wins
+        // over every term — the aether visuals stay down even in the zone.
+        let flag = flag && metrics.shimmer_monolith_state != 2;
         if flag {
             move_towards_impl(
                 self.skip_transitions,
@@ -3646,6 +3654,35 @@ mod tests {
         m.tile_center = (500, 400); // 200+84 < 400 < 1200-396
         m.calculate_zones(200.0, 1000, 135.0, 4200, 1200, false, false);
         assert!(m.zone_shimmer, "in the window");
+    }
+
+    /// W4-e19 aether arm — the monolith terms (`SceneState.cs:285-289`):
+    /// state 1 (the placed Shimmer Monolith's ON row, tile 658 frameY/54)
+    /// ramps the alpha WITHOUT the zone; state 2 (the OFF toggle) suppresses
+    /// every term, even inside the zone.
+    #[test]
+    fn w4_e19_the_shimmer_monolith_states_gate_the_ramp() {
+        let mut m = SceneMetrics::new();
+        m.shimmer_monolith_state = 1;
+        let mut st = SceneState::new();
+        for _ in 0..40 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha >= 0.99, "state 1 ramps: {}", st.shimmer_alpha);
+        // State 2 wins over the zone (`:286-289`).
+        m.zone_shimmer = true;
+        m.underground_for_shimmering = true;
+        m.shimmer_monolith_state = 2;
+        for _ in 0..80 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha < 0.05, "state 2 forces off: {}", st.shimmer_alpha);
+        // State 0 (no monolith) keeps the zone trigger.
+        m.shimmer_monolith_state = 0;
+        for _ in 0..40 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha >= 0.99, "the zone alone ramps: {}", st.shimmer_alpha);
     }
 }
 

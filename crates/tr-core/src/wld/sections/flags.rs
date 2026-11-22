@@ -66,7 +66,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.eclipse);
     w.i32(0); // dungeonX — unowned
     w.i32(0); // dungeonY — unowned
-    w.boolean(false); // WorldGen.crimson — the evil flavour is unowned state
+    w.boolean(world.crimson); // WorldGen.crimson (`WorldFile.cs:1281`) — W4-g69
     write_downed_flags(w, world);
     // WorldFile.cs:1299-1305: the orbs, the meteor, the altar count, the
     // hardmode switch and the post-plantera party.
@@ -396,7 +396,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.blood_moon = r.u8()? != 0;
     world.eclipse = r.u8()? != 0;
     r.skip(2 * 4)?; // dungeonX/Y
-    r.skip(1)?; // WorldGen.crimson
+    world.crimson = r.bool()?; // WorldGen.crimson (`WorldFile.cs:2080`) — W4-g69
                 // WorldFile.cs:2084-2102 — the boss flags (with `downedSlimeKing` gated at 118).
     world.downed_eoc = r.bool()?; // downedBoss1
     world.downed_eow = r.bool()?; // downedBoss2

@@ -50,7 +50,7 @@ use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::world::World;
 use tr_core::UnifiedRandom;
 
-use crate::item::{ItemDrop, SplashKind, SIZE};
+use crate::item::{ItemDrop, SIZE};
 
 /// `Color.CornflowerBlue` (MonoGame): `(100, 149, 237, 255)`.
 const CORNFLOWER_BLUE: Color = Color::new(100, 149, 237, 255);
@@ -288,96 +288,13 @@ pub(crate) fn boss_bag_sparkle(s: &mut DustSink, drop: &ItemDrop) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// The liquid entry/exit splash bursts.
+// The liquid entry/exit splash bursts — 347 §2.1 RETIRED at the e19 fold.
+// The g15 `splash_edge` free fn (the THIRD form) is dropped: the keeper is
+// e19's `world_sim/items.rs::item_splash` over `ItemSplash`/`take_splash`
+// (research/144 SHIMMER SEAL — the local-lava entry read + the truncated
+// sound-position ints). The three g15 splash witnesses retired with it;
+// e19's `w4_e19_the_*_splash_*` family covers the same window at the 16-box.
 // ---------------------------------------------------------------------------
-
-/// One liquid splash edge (`WorldItem.cs:879-1035`): the entry (`entry=true`)
-/// or exit (`entry=false`) burst for the resolved [`SplashKind`], plus the
-/// case-19 play. The dust box is `(pos.X - 6, pos.Y + height/2 - 8)` with
-/// `width + 12, 24` — EXCEPT the exit water arm (`:1011`) which drops the
-/// `- 8` (the C#'s own asymmetry, kept verbatim).
-///
-/// The sound styles: entry shimmer 4 (`:913`), exit shimmer 5 (`:992`),
-/// honey/lava/water the default 1 (`:926`/`:939`/`:953`/`:1005`/`:1018`/`:1032`).
-/// `water_style` is `Main.waterStyle` (`Main.cs:57475`, the draw-pass value)
-/// for the `dustWater()` pick.
-pub(crate) fn splash_edge(s: &mut DustSink, drop: &ItemDrop, entry: bool, kind: SplashKind, water_style: i32) {
-    let (w, h) = (SIZE as i32, SIZE as i32);
-    // The common box (`:892` etc.); the exit-water arm overrides the y below.
-    let mut pos = Vec2::new(drop.pos.x - 6.0, drop.pos.y + (h / 2) as f32 - 8.0);
-    let bw = w + 12;
-    let bh = 24;
-    match kind {
-        SplashKind::Shimmer => {
-            // `:890-913` entry / `:969-992` exit — 10 × type 308.
-            for _ in 0..10 {
-                let idx = s.dust.new_dust(
-                    s.rng, s.ctx, s.world, pos, bw, bh, 308, 0.0, 0.0, 0, Color::default(), 1.0,
-                );
-                let d = s.dust.slot_mut(idx);
-                d.velocity.y -= 4.0;
-                d.velocity.x *= 2.5;
-                d.scale = 0.8;
-                d.no_gravity = true;
-                let roll = s.rng.next_max(6);
-                s.dust.slot_mut(idx).color = shimmer_palette(roll);
-            }
-            // Entry style 4 (`:913`), exit style 5 (`:992`).
-            let style = if entry { 4 } else { 5 };
-            s.audio.play_splash_sound(style, drop.pos.x, drop.pos.y, s.rng);
-        }
-        SplashKind::Honey => {
-            // `:917-926` entry / `:996-1005` exit — 5 × type 152.
-            for _ in 0..5 {
-                let idx = s.dust.new_dust(
-                    s.rng, s.ctx, s.world, pos, bw, bh, 152, 0.0, 0.0, 0, Color::default(), 1.0,
-                );
-                let d = s.dust.slot_mut(idx);
-                d.velocity.y -= 1.0;
-                d.velocity.x *= 2.5;
-                d.scale = 1.3;
-                d.alpha = 100;
-                d.no_gravity = true;
-            }
-            s.audio.play_splash_sound(1, drop.pos.x, drop.pos.y, s.rng);
-        }
-        SplashKind::Water => {
-            // `:930-939` entry / `:1009-1018` exit — 10 × dustWater().
-            // The EXIT arm's box drops the `- 8` (`:1011`).
-            if !entry {
-                pos = Vec2::new(drop.pos.x - 6.0, drop.pos.y + (h / 2) as f32);
-            }
-            let ty = tr_core::particles::dust_water(water_style);
-            for _ in 0..10 {
-                let idx = s.dust.new_dust(
-                    s.rng, s.ctx, s.world, pos, bw, bh, ty, 0.0, 0.0, 0, Color::default(), 1.0,
-                );
-                let d = s.dust.slot_mut(idx);
-                d.velocity.y -= 4.0;
-                d.velocity.x *= 2.5;
-                d.scale *= 0.8;
-                d.alpha = 100;
-                d.no_gravity = true;
-            }
-            s.audio.play_splash_sound(1, drop.pos.x, drop.pos.y, s.rng);
-        }
-        SplashKind::Lava => {
-            // `:944-953` entry / `:1023-1032` exit — 5 × type 35.
-            for _ in 0..5 {
-                let idx = s.dust.new_dust(
-                    s.rng, s.ctx, s.world, pos, bw, bh, 35, 0.0, 0.0, 0, Color::default(), 1.0,
-                );
-                let d = s.dust.slot_mut(idx);
-                d.velocity.y -= 1.5;
-                d.velocity.x *= 2.5;
-                d.scale = 1.3;
-                d.alpha = 100;
-                d.no_gravity = true;
-            }
-            s.audio.play_splash_sound(1, drop.pos.x, drop.pos.y, s.rng);
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // The despawn burns (the caller airs the drop out on a `true` return).
@@ -788,79 +705,10 @@ mod tests {
         assert!(slot.no_gravity && slot.no_light);
     }
 
-    // --- The splash bursts (`:879-1035`). ---------------------------------
-
-    /// A water entry spawns 10 dust of `dustWater(style)` and plays case-19
-    /// style 1 (one pitch draw). The dust type follows the water style.
-    #[test]
-    fn w4_g15_water_entry_splash_count_and_type() {
-        let w = air();
-        let c = ctx();
-        let mut pool = DustPool::new();
-        let mut audio = crate::audio::Audio::new(None);
-        let mut rng = UnifiedRandom::new(7);
-        let d = drop_at(2, 100.0, 100.0);
-        {
-            let mut s = DustSink { rng: &mut rng, dust: &mut pool, world: &w, ctx: &c, audio: &mut audio };
-            splash_edge(&mut s, &d, true, SplashKind::Water, 0);
-        }
-        let active: Vec<_> = pool.slots().iter().filter(|p| p.active).collect();
-        assert_eq!(active.len(), 10, "10 water dust");
-        for p in &active {
-            assert_eq!(p.dust_type, tr_core::particles::dust_water(0));
-            assert!(p.no_gravity);
-            assert_eq!(p.alpha, 100);
-        }
-    }
-
-    /// A shimmer entry spawns 10 type-308 dust, each with a colour-pick draw,
-    /// and plays case-19 style 4 (the narrow pitch window).
-    #[test]
-    fn w4_g15_shimmer_entry_splash() {
-        let w = air();
-        let c = ctx();
-        let mut pool = DustPool::new();
-        let mut audio = crate::audio::Audio::new(None);
-        let mut rng = UnifiedRandom::new(7);
-        let d = drop_at(2, 100.0, 100.0);
-        {
-            let mut s = DustSink { rng: &mut rng, dust: &mut pool, world: &w, ctx: &c, audio: &mut audio };
-            splash_edge(&mut s, &d, true, SplashKind::Shimmer, 0);
-        }
-        let active: Vec<_> = pool.slots().iter().filter(|p| p.active).collect();
-        assert_eq!(active.len(), 10);
-        for p in &active {
-            assert_eq!(p.dust_type, 308);
-            assert!(p.no_gravity);
-            assert_eq!(p.scale, 0.8);
-        }
-    }
-
-    /// A lava exit spawns 5 type-35 dust; a honey entry spawns 5 type-152.
-    #[test]
-    fn w4_g15_lava_and_honey_splash_counts() {
-        let w = air();
-        let c = ctx();
-        for (kind, ty, entry, n) in [
-            (SplashKind::Lava, 35, false, 5),
-            (SplashKind::Honey, 152, true, 5),
-        ] {
-            let mut pool = DustPool::new();
-            let mut audio = crate::audio::Audio::new(None);
-            let mut rng = UnifiedRandom::new(7);
-            let d = drop_at(2, 100.0, 100.0);
-            {
-                let mut s = DustSink { rng: &mut rng, dust: &mut pool, world: &w, ctx: &c, audio: &mut audio };
-                splash_edge(&mut s, &d, entry, kind, 0);
-            }
-            let active: Vec<_> = pool.slots().iter().filter(|p| p.active).collect();
-            assert_eq!(active.len(), n, "{kind:?}");
-            for p in &active {
-                assert_eq!(p.dust_type, ty);
-                assert!(p.no_gravity);
-            }
-        }
-    }
+    // --- The splash bursts (`:879-1035`) — the three g15 splash witnesses
+    // RETIRED with the `splash_edge` third form (347 §2.1); e19's
+    // `w4_e19_the_*_splash_*` family in `world_sim/items.rs` covers the
+    // window at the 16-box with the keeper drain.
 
     // --- The despawn burns (`:639-679`). ----------------------------------
 

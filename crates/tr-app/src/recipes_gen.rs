@@ -566,6 +566,7 @@ Recipe {
     create: (5092, 1),
     required: &[Requirement::item(68, 8)],
     stations: &[96],
+    corruption: true,
     ..BASE
 },
 // 91: MonsterLasagna x1
@@ -573,6 +574,7 @@ Recipe {
     create: (5092, 1),
     required: &[Requirement::item(1330, 8)],
     stations: &[96],
+    crimson: true,
     ..BASE
 },
 // 92: FroggleBunwich x1
@@ -1364,6 +1366,7 @@ Recipe {
     required: &[Requirement::item(126, 1), Requirement::item(316, 1), Requirement::item(68, 1)],
     stations: &[13],
     alchemy: true,
+    corruption: true,
     ..BASE
 },
 // 202: BattlePotion x1
@@ -1372,6 +1375,7 @@ Recipe {
     required: &[Requirement::item(126, 1), Requirement::item(316, 1), Requirement::item(1330, 1)],
     stations: &[13],
     alchemy: true,
+    crimson: true,
     ..BASE
 },
 // 203: ThornsPotion x1
@@ -2048,12 +2052,14 @@ Recipe {
 Recipe {
     create: (287, 50),
     required: &[Requirement::item(279, 50), Requirement::item(67, 1)],
+    corruption: true,
     ..BASE
 },
 // 296: PoisonedKnife x50
 Recipe {
     create: (287, 50),
     required: &[Requirement::item(279, 50), Requirement::item(2886, 1)],
+    crimson: true,
     ..BASE
 },
 // 297: ConveyorBeltRight x1
@@ -14834,6 +14840,7 @@ Recipe {
     create: (5457, 1),
     required: &[Requirement::item(521, 10), Requirement::item(5322, 1), Requirement::item(68, 10)],
     stations: &[26],
+    corruption: true,
     ..BASE
 },
 // 2091: DeadCellsBeheadedHead x1
@@ -14841,6 +14848,7 @@ Recipe {
     create: (5457, 1),
     required: &[Requirement::item(521, 10), Requirement::item(5322, 1), Requirement::item(1330, 10)],
     stations: &[26],
+    crimson: true,
     ..BASE
 },
 // 2092: DeadCellsBeheadedBody x1
@@ -14904,6 +14912,7 @@ Recipe {
     create: (3266, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(86, 5)],
     stations: &[77],
+    corruption: true,
     ..BASE
 },
 // 2101: ObsidianShirt x1
@@ -14911,6 +14920,7 @@ Recipe {
     create: (3267, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(86, 10)],
     stations: &[77],
+    corruption: true,
     ..BASE
 },
 // 2102: ObsidianPants x1
@@ -14918,6 +14928,7 @@ Recipe {
     create: (3268, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(86, 5)],
     stations: &[77],
+    corruption: true,
     ..BASE
 },
 // 2103: ObsidianHelm x1
@@ -14925,6 +14936,7 @@ Recipe {
     create: (3266, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(1329, 5)],
     stations: &[77],
+    crimson: true,
     ..BASE
 },
 // 2104: ObsidianShirt x1
@@ -14932,6 +14944,7 @@ Recipe {
     create: (3267, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(1329, 10)],
     stations: &[77],
+    crimson: true,
     ..BASE
 },
 // 2105: ObsidianPants x1
@@ -14939,6 +14952,7 @@ Recipe {
     create: (3268, 1),
     required: &[Requirement::item(225, 10), Requirement::item(173, 20), Requirement::item(1329, 5)],
     stations: &[77],
+    crimson: true,
     ..BASE
 },
 // 2106: AmethystRobe x1
@@ -16669,6 +16683,7 @@ Recipe {
     required: &[Requirement::item(57, 3), Requirement::item(8, 1)],
     stations: &[18],
     need_graveyard: true,
+    corruption: true,
     ..BASE
 },
 // 2352: ShadowCandle x1
@@ -16677,6 +16692,7 @@ Recipe {
     required: &[Requirement::item(1257, 3), Requirement::item(8, 1)],
     stations: &[18],
     need_graveyard: true,
+    crimson: true,
     ..BASE
 },
 // 2353: Candelabra x1
@@ -17016,6 +17032,7 @@ Recipe {
     create: (5107, 1),
     required: &[Requirement::item(57, 12), Requirement::item(180, 5)],
     stations: &[16],
+    corruption: true,
     ..BASE
 },
 // 2402: CrimtaneBar x1
@@ -17114,6 +17131,7 @@ Recipe {
     create: (5107, 1),
     required: &[Requirement::item(1257, 12), Requirement::item(180, 5)],
     stations: &[16],
+    crimson: true,
     ..BASE
 },
 // 2416: GrapplingHook x1
@@ -17744,6 +17762,7 @@ Recipe {
     create: (273, 1),
     required: &[Requirement::item(46, 1), Requirement::item(155, 1), Requirement::item(190, 1), Requirement::item(121, 1)],
     stations: &[26],
+    corruption: true,
     ..BASE
 },
 // 2506: NightsEdge x1
@@ -17751,6 +17770,7 @@ Recipe {
     create: (273, 1),
     required: &[Requirement::item(795, 1), Requirement::item(155, 1), Requirement::item(190, 1), Requirement::item(121, 1)],
     stations: &[26],
+    crimson: true,
     ..BASE
 },
 // 2507: TrueNightsEdge x1
@@ -19425,6 +19445,7 @@ Recipe {
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::group(9, RecipeGroups::WOOD, 10), Requirement::item(68, 10)],
     stations: &[16],
     need_graveyard: true,
+    corruption: true,
     ..BASE
 },
 // 2746: CoffinMinecart x1
@@ -19433,6 +19454,7 @@ Recipe {
     required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::group(9, RecipeGroups::WOOD, 10), Requirement::item(1330, 10)],
     stations: &[16],
     need_graveyard: true,
+    crimson: true,
     ..BASE
 },
 // 2747: MinecartPowerup x1
@@ -22331,6 +22353,7 @@ Recipe {
     create: (5120, 1),
     required: &[Requirement::item(5070, 3), Requirement::item(56, 5), Requirement::item(38, 1)],
     stations: &[26],
+    corruption: true,
     ..BASE
 },
 // 3171: DeerThing x1
@@ -22338,6 +22361,7 @@ Recipe {
     create: (5120, 1),
     required: &[Requirement::item(5070, 3), Requirement::item(880, 5), Requirement::item(38, 1)],
     stations: &[26],
+    crimson: true,
     ..BASE
 },
 // 3172: VoidLens x1
@@ -22345,6 +22369,7 @@ Recipe {
     create: (4131, 1),
     required: &[Requirement::item(154, 30), Requirement::item(331, 15), Requirement::item(86, 30)],
     stations: &[26],
+    corruption: true,
     ..BASE
 },
 // 3173: VoidLens x1
@@ -22352,6 +22377,7 @@ Recipe {
     create: (4131, 1),
     required: &[Requirement::item(154, 30), Requirement::item(331, 15), Requirement::item(1329, 30)],
     stations: &[26],
+    crimson: true,
     ..BASE
 },
 // 3174: VoidVault x1
@@ -22359,6 +22385,7 @@ Recipe {
     create: (4076, 1),
     required: &[Requirement::item(154, 15), Requirement::item(331, 8), Requirement::item(1329, 15)],
     stations: &[26],
+    crimson: true,
     ..BASE
 },
 // 3175: VoidVault x1
@@ -22366,6 +22393,7 @@ Recipe {
     create: (4076, 1),
     required: &[Requirement::item(154, 15), Requirement::item(331, 8), Requirement::item(86, 15)],
     stations: &[26],
+    corruption: true,
     ..BASE
 },
 // 3176: WormFood x1
@@ -22414,6 +22442,7 @@ Recipe {
     create: (556, 1),
     required: &[Requirement::item(68, 6), Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::item(521, 6)],
     stations: &[134],
+    corruption: true,
     ..BASE
 },
 // 3183: MechanicalWorm x1
@@ -22421,6 +22450,7 @@ Recipe {
     create: (556, 1),
     required: &[Requirement::item(1330, 6), Requirement::group(22, RecipeGroups::IRON_BAR, 5), Requirement::item(521, 6)],
     stations: &[134],
+    crimson: true,
     ..BASE
 },
 // 3184: MechanicalSkull x1

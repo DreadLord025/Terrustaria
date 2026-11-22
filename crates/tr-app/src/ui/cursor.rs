@@ -107,6 +107,43 @@ pub fn draw(r: &mut SpriteRenderer, lookups: &assets::Lookups, state: &CursorSta
     r.push_ui_sprite(mouse.into(), [size[0] * scale, size[1] * scale], uv, color);
 }
 
+/// The cursor-override draw (`Main.cs:45269-45310`): while
+/// `Main.cursorOverride != -1` the override sheet replaces the normal cursor.
+/// Ids 3/6/7/8/9/10 (favourite/trash/unequip/from-chest/to-chest/sell —
+/// `ItemSlot.cs:213-218`) draw NO shadow (`flag = false`) in plain white at
+/// `cursorScale`; id 2 (the smart-interact grab) keeps the 0.7 scale + the
+/// (0.1, 0.1) origin offset and also skips the shadow. W4-e19 — the
+/// shift-quicksell SELL cursor (10) is the lane's hint: the C# has no text
+/// tooltip for the mouse path, the cursor icon IS the hint (the
+/// `gamepadHintText` Lang.misc[75] "Sell" string rides the gamepad-only
+/// `BuildCommand` chain, `ItemSlot.cs:4446`, unported).
+pub fn draw_override(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    state: &CursorState,
+    mouse: Vec2,
+    override_id: i32,
+) -> bool {
+    let Some(rect) = lookups.cursor_override(override_id) else {
+        return false;
+    };
+    let Some(uv) = lookups.hud_uv(Some(&rect)) else {
+        return false;
+    };
+    let size = [rect.width as f32, rect.height as f32];
+    // `Main.cs:45293-45301`: the 3/6/7/8/9/10 arm — white, no shadow,
+    // scale 1, origin default. (Id 2's 0.7/origin arm is the smart-interact
+    // grab, not an AlternateClickAction id — it stays with that lane.)
+    let scale = state.scale();
+    r.push_ui_sprite(
+        mouse.into(),
+        [size[0] * scale, size[1] * scale],
+        uv,
+        [1.0, 1.0, 1.0, 1.0],
+    );
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +225,31 @@ mod tests {
                 a * 0.3 + 0.7
             ]
         );
+    }
+
+    /// W4-e19 — the cursor-override id table (`Main.cs:45285-45309`,
+    /// `ItemSlot.cs:213-218`): 3/6/7/8/9/10 resolve their sheets, the
+    /// non-override ids (-1 none, 2 the smart grab, 4/5 unused) answer None.
+    #[test]
+    fn w4_e19_the_cursor_override_ids_resolve_their_sheets() {
+        let mut lk = assets::Lookups::default();
+        let rect = tr_render::SheetRect {
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 20,
+            plain_frame: (0, 0),
+        };
+        lk.cursor_overrides = [Some(rect); 6];
+        for id in [3, 6, 7, 8, 9, 10] {
+            assert!(lk.cursor_override(id).is_some(), "id {id} resolves");
+        }
+        for id in [-1, 0, 1, 2, 4, 5, 11] {
+            assert!(lk.cursor_override(id).is_none(), "id {id} is not an override");
+        }
+        // A missing sheet answers None (the draw falls back to the normal
+        // cursor — the `draw_override` false arm).
+        lk.cursor_overrides[5] = None;
+        assert!(lk.cursor_override(10).is_none(), "the sell sheet absent");
     }
 }

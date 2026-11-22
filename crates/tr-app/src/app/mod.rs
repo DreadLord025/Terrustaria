@@ -361,11 +361,11 @@ pub(crate) struct App {
     /// `Main.timesTriedToFastStack` (`Main.cs:1697`).
     pub(crate) times_tried_to_fast_stack: i32,
     /// `Main.cursorOverride` (`Main.cs:2047`): the hovered slot's
-    /// alternate-click cursor — 8 = transfer from the chest, 9 = transfer to
-    /// it (`ItemSlot.cs:213-218`) — or −1. Reset per interface frame
-    /// (`Main.cs:44941`), set by the chest hover evaluation (`ItemSlot.cs:
-    /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
-    /// phase-4 file scope excludes assets.rs/cursor.rs).
+    /// alternate-click cursor — 3 favourite, 6 trash, 8 transfer from the
+    /// chest, 9 transfer to it, 10 sell (`ItemSlot.cs:213-218`) — or −1.
+    /// Reset per interface frame (`Main.cs:44941`), set by the hover
+    /// evaluation (`ItemSlot.cs:599-627`); the override texture draw landed
+    /// W4-e19 (`ui::cursor::draw_override`, `Main.cs:45269-45310`).
     pub(crate) cursor_override: i32,
     /// `Main.defaultChestName` (`Main.cs:1753`) — the tile default captured
     /// at the rename keyboard's open (`IngameFancyUI.cs:103-123`); the

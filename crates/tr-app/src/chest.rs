@@ -1406,8 +1406,8 @@ fn in_interaction_range_to_multi_tile_hitbox(
 // arms and the bank-only `IsBlockedFromTransferIntoChest`, `ChestUI.cs:
 // 1291-1302`), the net messages 32/38 (`:1247`/:1258/:1283, `ItemSlot.cs:808`),
 // `DoCoins`' roll-over (`Player.cs:39567-39569`) landed with S1-P-i50
-// (`item.rs::do_coins`, wired at the transfer tails), the
-// cursor-override texture draw (see `App.cursor_override`).
+// (`item.rs::do_coins`, wired at the transfer tails). The cursor-override
+// texture draw landed W4-e19 (`ui::cursor::draw_override`).
 
 /// Reads chest slot `slot` of the store entry `idx` with the implicit-air
 /// encoding (decision #4): positions beyond `slots.len()` answer
