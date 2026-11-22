@@ -181,13 +181,16 @@ pub(crate) fn pass_cave_houses(
             (rng.range(5, 9), rng.range(3, 5))
         };
         // `:38-52`: the 25-tile exclusion — the chests and the wires nearby
-        // reject the spot.
+        // reject the spot. The chest probe is `TileID.Sets.BasicChest`
+        // {21, 467} (`CaveHouseBiome.cs:49`, `TileID.cs:570`) — the former
+        // 21-only read missed a Containers2 chest (W4-a2 / P0-3 audit; no
+        // placement pass writes 467 today, so the world output is unchanged).
         let mut blocked = false;
         for dx in -25..=25i32 {
             for dy in -25..=25i32 {
                 if world
                     .tile(x + dx, y + dy)
-                    .is_some_and(|t| t.active() && t.kind == 21)
+                    .is_some_and(|t| t.active() && (t.kind == 21 || t.kind == 467))
                 {
                     blocked = true;
                     break;

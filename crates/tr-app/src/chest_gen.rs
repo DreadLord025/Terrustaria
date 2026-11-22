@@ -35,8 +35,12 @@ use tr_core::save::{ChestItem, ChestRecord};
 use tr_core::tile::FLAG_ACTIVE;
 use tr_core::world::World;
 
-/// The chest tile kinds an anchor can carry (`craft::CHEST_TILES`).
-const CHEST_KINDS: [u16; 2] = [21, 341];
+/// The chest tile kinds an anchor can carry — `TileID.Sets.BasicChest`
+/// = {21 Containers, 467 Containers2} (`TileID.cs:570`), the same set
+/// `craft::CHEST_TILES` reads (S1-P-i46). The former second entry 341 is
+/// `LivingDemonFire` (`TileID.cs:1311`), a fire block — never a chest
+/// (W4-a2 / P0-3, the i46 follow-up).
+const CHEST_KINDS: [u16; 2] = [21, 467];
 /// `GenVars.hellChestItem` — the underwater-chest 939 override carries the
 /// water chests' item; the unused slot keeps the vanilla name.
 const UNDERWATER_ITEM: u16 = 939;
@@ -916,15 +920,15 @@ fn stock_chest(
             }
         }
     }
-    // The wooden-chest family tails (`:37384-47400`, the
+    // The wooden-chest family tails (`:37384-37470`, the
     // `itemIndex > 0 && chestTileType == 21` block — every band): the two
-    // style rows and the flag13 water pair. The mahogany-tile 467 block
-    // (`:47466-47500`) carries NONE of them — it repeats only the flag4 /
+    // style rows and the flag13 water pair. The Containers2-tile 467 block
+    // (`:37471-37532`) carries NONE of them — it repeats only the flag4 /
     // flag2 / flag12 rows, which land ungated in `stock_band` — so these
     // three arms gate on the anchor kind. The style rows landed once
     // (2026-11-09, `600dafdb`) and were dropped by a later merge's
     // resolution; restored with the citations intact.
-    // `:37453-47455` — the styles 23-27 pottery row at 1/2 (the sweep's
+    // `:37453-37455` — the styles 23-27 pottery row at 1/2 (the sweep's
     // `chest_style` off the anchor's `frame_x / 18`).
     if chest_kind == 21 && (23..=27).contains(&chest_style) && next(rng, 2) == 0 {
         rows.push(Row::plain(5234));
@@ -1054,9 +1058,10 @@ fn stock_chest_at(
 /// [`merge_store`] — the load half of `App::save_world`'s record build.
 ///
 /// The anchor cull is the vanilla `LoadChests` validity sweep
-/// (`WorldFile.cs:2723-2805`, `FixAgainstExploits`): a record survives only when
-/// its `(x, y)` is an active chest tile of kind 21/341 in the loaded world, so
-/// a hand-edited or stale save cannot resurrect a chest over plain air.
+/// (`WorldFile.cs:2723-2805`, `FixAgainstExploits`): a record survives only
+/// when its `(x, y)` is an active `BasicChest` tile of kind 21/467 in the
+/// loaded world (`TileID.cs:570`), so a hand-edited or stale save cannot
+/// resurrect a chest over plain air.
 ///
 /// Deviation: the vanilla writes a fixed `maxItems` (40) slots per chest; the
 /// port keeps the store's implicit-air compression (trailing airs dropped,
@@ -1438,6 +1443,40 @@ mod tests {
         assert_eq!(store[0].tile, (60, 194));
         assert_eq!(store[1].tile, (40, 199));
         assert_eq!(store[1].name, "Fixture");
+    }
+
+    /// W4-a2 / P0-3: the anchor cull's tile set is `TileID.Sets.BasicChest`
+    /// = {21, 467} (`TileID.cs:570`) — a kind-467 Containers2 anchor survives
+    /// the sweep, and a kind-341 `LivingDemonFire` (`TileID.cs:1311`) anchor
+    /// is culled exactly like plain air (the former `[21, 341]` pair admitted
+    /// the fire block and dropped every real Containers2 chest).
+    #[test]
+    fn the_record_cull_reads_the_basic_chest_kinds() {
+        assert_eq!(CHEST_KINDS, [21, 467], "TileID.Sets.BasicChest (TileID.cs:570)");
+        let mut w = rig();
+        put_chest(&mut w, 40, 198);
+        put_chest(&mut w, 60, 198);
+        put_chest(&mut w, 80, 198);
+        // Retype the second chest's quad to Containers2 (467) and the third
+        // to LivingDemonFire (341) — the same frames, only the kind changes.
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                let i = w.index(60 + dx, 198 + dy);
+                w.tiles[i].kind = 467;
+                let i = w.index(80 + dx, 198 + dy);
+                w.tiles[i].kind = 341;
+            }
+        }
+        let rec = |x: i32| ChestRecord {
+            x,
+            y: 198,
+            name: String::new(),
+            slots: vec![ChestItem { stack: 1, kind: 9, prefix: 0 }],
+        };
+        let store = store_from_records(&w, &[rec(40), rec(60), rec(80)]);
+        assert_eq!(store.len(), 2, "21 and 467 survive; the 341 fire block does not");
+        assert_eq!(store[0].tile, (40, 198));
+        assert_eq!(store[1].tile, (60, 198));
     }
     #[test]
     fn jungle_chests_stock_the_cycle_item() {
@@ -1833,8 +1872,8 @@ mod tests {
     #[test]
     fn the_21_block_rows_gate_on_the_chest_kind() {
         // The vanilla `itemIndex > 0 && chestTileType == 21` block's rows
-        // (`:37384-47400`) apply to the wooden chests only; the mahogany
-        // (467/341) block (`:47466-47500`) repeats just the flag4/flag2/
+        // (`:37384-37470`) apply to the wooden chests only; the Containers2
+        // (467) block (`:37471-37532`) repeats just the flag4/flag2/
         // flag12 rows. The port gates the 21-only rows on the anchor kind.
 
         // A dungeon-family anchor: the flag9 row (2192) rolls 1/8.
@@ -1858,7 +1897,7 @@ mod tests {
         assert!(hits > 0, "the 1/8 flag9 row fires on some stream ({hits})");
         assert!(hits < 600, "and not on every one — the 1/8 gate is real");
 
-        // A kind-341 (mahogany) anchor with a water + sky-25 context takes
+        // A kind-467 (Containers2) anchor with a water + sky-25 context takes
         // none of the 21-only rows, while a kind-21 anchor does.
         let mut w = rig();
         for dx in -2i32..=0 {
@@ -1867,17 +1906,19 @@ mod tests {
                 w.tiles[i].kind = 4869; // the water family's tile
             }
         }
-        // The mahogany chest tile 341 at the anchor.
+        // The Containers2 chest tile 467 at the anchor (`TileID.Sets.BasicChest`
+        // = {21, 467}, `TileID.cs:570`; the former plant used 341 —
+        // `LivingDemonFire`, `TileID.cs:1311` — never a chest tile).
         put_chest(&mut w, 100, 198);
         for dy in 0..2 {
             for dx in 0..2 {
                 let i = w.index(100 + dx, 198 + dy);
-                w.tiles[i].kind = 341;
+                w.tiles[i].kind = 467;
             }
         }
         let mut stock = ChestStock::new(3, false);
         let mut rng = tr_core::UnifiedRandom::new(3);
-        let mahog = stock_chest_at(&mut stock, &w, 100, 198, false, 25, 341, 0, &mut rng);
+        let mahog = stock_chest_at(&mut stock, &w, 100, 198, false, 25, 467, 0, &mut rng);
         assert!(
             !mahog.iter().any(|r| matches!(r.kind, 2766 | 2767 | 5234)),
             "the 21-only rows skip the mahogany anchor: {:?}",
