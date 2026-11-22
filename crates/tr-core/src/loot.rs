@@ -23,6 +23,18 @@ pub trait DropRng {
     fn next_double(&mut self) -> f64 {
         self.next_float() as f64
     }
+    /// `UnifiedRandom.Next(max)` (`UnifiedRandom.cs:134-141`) — one
+    /// `Sample()` draw, the SAME stream step `Next(0, max)` takes
+    /// (`Sample() * max + 0`), so the default is stream-exact for every
+    /// implementor (W4-g16 wiring: the gore site fns ride this seam).
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.next_range(0, max)
+    }
+    /// `Utils.NextFloatDirection` (`Utils.cs:1203-1206`) —
+    /// `NextDouble() as f32 * 2 - 1`, one `Sample()` draw (W4-g16).
+    fn next_float_direction(&mut self) -> f32 {
+        self.next_double() as f32 * 2.0 - 1.0
+    }
 }
 
 impl DropRng for crate::tile_light::FastRandom {

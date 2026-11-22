@@ -340,6 +340,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             .micro_seeds
             .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
     );
+    // W4-d3 — `Main.tileFrame[665]` as the aiStyle-25 1014 LifeCrystalBoulder's
+    // frame pin reads it (`Projectile.cs:26028`); the tile animator owns the
+    // row (`app.tile_anim`, S1-G-1f), the pool only reads it (the `set_disco`
+    // pattern).
+    let frame_665 = app.tile_anim.tile_frame[665];
+    app.projectiles.set_tile_frame_665(frame_665);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -391,8 +397,15 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(ctx) = golf_ctx {
         app.projectiles.set_golf_context(ctx);
     }
+    // W4-d3 — the boulder dust/gore lane's live seam (the W4-g64/g16 shapes):
+    // the frame's spawn ctx (`Main.screenPosition/width/height` + the gfx
+    // budget) captured BEFORE the step closure's field borrows, and the App's
+    // gore pool moved in for the step (the `golf_ctx` take/replace precedent).
+    let dust_spawn_ctx = app.spawn_ctx();
+    let gore_pool = std::mem::replace(&mut app.gore, tr_core::gore::GorePool::new());
+    app.projectiles.set_gore_pool(Some(gore_pool));
     app.projectile_step.tick(dt.min(0.25), |_| {
-        app.projectiles.update(
+        app.projectiles.update_dust(
             &mut app.world,
             &mut app.npcs,
             owner,
@@ -403,8 +416,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
             local_owner,
             hostile_local,
+            &mut app.dust,
+            &dust_spawn_ctx,
         );
     });
+    // W4-d3 — the gore pool writeback: the boulder Kill arms spawned into it.
+    if let Some(pool) = app.projectiles.take_gore_pool() {
+        app.gore = pool;
+    }
     app.projectile_step.cap_backlog();
     // S1-P-i55 — the golf context writeback: the arms mutated the clone
     // (RecordSwing / the cup scoring); the resolved state is authoritative
@@ -755,6 +774,91 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     }
                 }
             }
+        }
+    }
+    // W4-d3 — the aiStyle-25 boulder family's parked requests, drained at the
+    // pass tail (the `drain_mark_spawns` shape — the pool cannot borrow the
+    // App). The C# rolls the drops/bees and trips the switches inline under
+    // the `UpdateProjectiles` swap; the port defers the App-borrowing resolves
+    // here, keeping the rolls on this pass's stream (the stack/count/velocity
+    // rolls already ran in the kill hook / arm).
+    // The item drops (`Item.NewItem`, `Projectile.cs:74952`/`:74956`/`:75096`):
+    // the velocity/prefix draws ride the `UpdateItems` stream (`Main.cs:17779`
+    // — the bobber-catch precedent); the spawn point is the dying boulder's
+    // centre (`NewItem`'s `center` argument).
+    for (item, stack, x, y) in app.projectiles.drain_boulder_drops() {
+        if stack <= 0 {
+            continue;
+        }
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateItems),
+            item,
+            stack as u32,
+            Vec2::new(x, y),
+        );
+    }
+    // The 655 bee-hive death's bee spawns (`:75116-75118`): `NPC.NewNPC`'s
+    // Bottom placement (`NPC.cs:80769-80770` — the Queen-Bee volley precedent,
+    // `world_sim/npcs.rs:5507`), the rolled velocity kicks, `netUpdate`.
+    // `CanBeReplacedByOtherNPCs` has no port field — dropped (the volley's
+    // recorded fold).
+    let mut boulder_bees = Vec::new();
+    for (kind, x, y, vx, vy) in app.projectiles.drain_boulder_bees() {
+        let npc_kind = match kind {
+            210 => crate::npc::NpcKind::Bee,
+            211 => crate::npc::NpcKind::BeeSmall,
+            _ => unreachable!("the hive burst draws only 210/211"),
+        };
+        let (bw, bh) = npc_kind.size();
+        let mut bee = crate::npc::Npc::new(npc_kind, x - bw * 0.5, y - bh, 1, 0.0);
+        bee.hp = bee.max_hp;
+        bee.vx = vx;
+        bee.vy = vy;
+        bee.net_update = true;
+        boulder_bees.push(bee);
+    }
+    app.npcs.append(&mut boulder_bees);
+    // The `Collision.SwitchTiles` requests the arm parked (the `:17089`
+    // objType-3 plate scan, the `:19863`/`:17790` objType-4 pad calls). The
+    // scan's plate drops and Mech-28 clicks ride THIS pass's stream (the C#
+    // call sits inside `UpdateProjectiles`, `Main.cs:17775`); the `59` sends
+    // ride the outcome (the golf PadProbe precedent).
+    let boulder_switches: Vec<_> = app
+        .projectiles
+        .slots_mut()
+        .iter_mut()
+        .flat_map(|p| std::mem::take(&mut p.wants_boulder_switches))
+        .collect();
+    for (px, py, ox, oy, w, h, obj_type) in boulder_switches {
+        let outcome = crate::collision::switch_tiles(
+            &mut app.wiring,
+            &mut app.world,
+            px,
+            py,
+            ox,
+            oy,
+            w,
+            h,
+            obj_type,
+        );
+        if let Some((item, tx, ty)) = outcome.dropped {
+            crate::world_sim::items::spawn_item_drop_fields(
+                &mut app.items,
+                app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                item,
+                1,
+                tx,
+                ty,
+            );
+        }
+        app.send_switch_outcome(&outcome);
+        for (cx, cy) in app.wiring.take_switch_clicks() {
+            app.audio.play_switch_click(
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            );
         }
     }
 }

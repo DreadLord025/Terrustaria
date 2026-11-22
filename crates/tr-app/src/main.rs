@@ -264,6 +264,14 @@ mod projectile_ai_empress;
 // S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
 // orchestration (the pure roll engine is tr_core::fishing).
 mod projectile_bobber;
+// W4-d3: the aiStyle-25 boulder family (`AI()`'s inline block
+// Projectile.cs:26015-26415 + HandleMovement's bounce ladder :18941-19277 +
+// the RainbowBoulder machine :20024-20315 + the Shimmer arm :22504-22515 +
+// the Kill hooks). The 13 kinds' rows land in projectile/data.rs; the
+// dispatch claim, the death-hook drain and the statue wiring are wired in
+// projectile.rs / world_sim (module doc + docs/ANALYSIS.md "The boulder
+// family (W4-d3)").
+mod projectile_ai_boulder;
 // S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).

@@ -3820,6 +3820,45 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DIRTIEST_BLOCK => (16.0, 16.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
             BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
 
+            // ===== W4-d3: the aiStyle-25 boulder family (census 26b) =====
+            // `Projectile.cs:1833-1850` — the shared 31x31 trap block: 99
+            // Boulder / 727 RollingCactus / 1013 BouncyBoulder / 1014
+            // LifeCrystalBoulder / 1053 LavaBoulder / 1054 SpiderBoulder /
+            // 1055 Ghoulder / 1057 BoulderThatSpawnsPet. friendly + hostile
+            // (the hostile lane rides `projectile_ai_boulder::hurts_player`),
+            // penetrate −1, trap; the 1054 timeLeft 300 (`:1844`), the 1055
+            // 900 (`:1848`), the rest the stock 3600.
+            BOULDER | ROLLING_CACTUS | BOUNCY_BOULDER | LAVA_BOULDER
+            | LIFE_CRYSTAL_BOULDER | BOULDER_THAT_SPAWNS_PET => {
+                (31.0, 31.0, 25, -1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE)
+            }
+            SPIDER_BOULDER => (31.0, 31.0, 25, -1, 300, 0, true, false, true, RESET_STATE),
+            GHOULDER => (31.0, 31.0, 25, -1, 900, 0, true, false, true, RESET_STATE),
+            // `Projectile.cs:1851-1860` — the 1005 MiniBoulder: 15x15, the
+            // same trap flags (the getGoodWorld explosion's shard).
+            MINI_BOULDER => (15.0, 15.0, 25, -1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE),
+            // `Projectile.cs:1861-1870` — the 1021 MoonBoulder: 31x31,
+            // hostile-ONLY (no friendly flag — the arm holds the slot's
+            // friendly false, the debris precedent), penetrate −1,
+            // extraUpdates 1, `timeLeft *= 3` (3600 → 10800), NOT a trap.
+            MOON_BOULDER => (31.0, 31.0, 25, -1, TIME_LEFT_DEFAULT * 3, 1, true, false, false, RESET_STATE),
+            // `Projectile.cs:7038-7047` — the 655 BeeHive: 31x31, the shared
+            // trap flags.
+            BEE_HIVE => (31.0, 31.0, 25, -1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE),
+            // `Projectile.cs:9918-9927` — the 1047 RainbowBoulder: 31x31,
+            // friendly-only (NOT hostile, NOT trap), penetrate −1,
+            // timeLeft 3600, ignoreWater (the tail's `|| kind ==
+            // RAINBOW_BOULDER` arm below).
+            RAINBOW_BOULDER => (31.0, 31.0, 25, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9928-9937` — the 1048 Poulder: 31x31, the
+            // shared trap flags.
+            POULDER => (31.0, 31.0, 25, -1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE),
+            // `Projectile.cs:7855-7865` — the 763 RollingCactusSpike (the
+            // 727's bounce child): 10x10, hostile + friendly, penetrate −1,
+            // aiStyle 1 (the generic arrow flight), tileCollide true,
+            // extraUpdates 1.
+            ROLLING_CACTUS_SPIKE => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+
             // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
             // — aiStyle 67; these three arms set neither tileCollide nor
             // ignoreWater (the stock true / false).
@@ -4679,6 +4718,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d2 — the aiStyle-11 light pets' `ignoreWater = true`
             // (`Projectile.cs:1005`/`:1533`/`:1685`/`:1699`).
             || matches!(kind, SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY)
+            // W4-d3 — the 1047 RainbowBoulder sets `ignoreWater`
+            // (`Projectile.cs:9926`).
+            || kind == RAINBOW_BOULDER
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
@@ -4894,6 +4936,49 @@ pub const CRIMSON_HEART: u16 = 500;
 pub const DIRTIEST_BLOCK: u16 = 1018;
 /// `ProjectileID.BoulderPet` (`ProjectileID.cs:2666`).
 pub const BOULDER_PET: u16 = 1056;
+
+// ---- W4-d3: the aiStyle-25 boulder family (census 26b) -------------------
+// The 13 kinds the style's `SetDefaults` arms row (`Projectile.cs:1833-1870`,
+// `:7038-7047`, `:9918-9937`) plus the RollingCactus's bounce spike (763,
+// aiStyle 1, `:7855-7865`). The AI arm, the HandleMovement bounce ladder, the
+// RainbowBoulder smart-bounce machine and the Kill hooks live in
+// `crate::projectile_ai_boulder`.
+/// `ProjectileID.Boulder` (99) — the trap/statue boulder.
+pub const BOULDER: u16 = 99;
+/// `ProjectileID.RollingCactus` (727) — the bounce spawns 763 spikes.
+pub const ROLLING_CACTUS: u16 = 727;
+/// `ProjectileID.RollingCactusSpike` (763) — the 727's bounce child
+/// (aiStyle 1, extraUpdates 1, `Projectile.cs:7855-7865`).
+pub const ROLLING_CACTUS_SPIKE: u16 = 763;
+/// `ProjectileID.MiniBoulder` (1005) — the 15x15 getGoodWorld explosion shard.
+pub const MINI_BOULDER: u16 = 1005;
+/// `ProjectileID.BouncyBoulder` (1013).
+pub const BOUNCY_BOULDER: u16 = 1013;
+/// `ProjectileID.LifeCrystalBoulder` (1014) — the death drops the Life
+/// Crystal item 29; `frame` rides `Main.tileFrame[665]`.
+pub const LIFE_CRYSTAL_BOULDER: u16 = 1014;
+/// `ProjectileID.MoonBoulder` (1021) — hostile-ONLY (no friendly flag),
+/// extraUpdates 1, `timeLeft *= 3`.
+pub const MOON_BOULDER: u16 = 1021;
+/// `ProjectileID.RainbowBoulder` (1047) — friendly-only, ignoreWater, the
+/// smart-bounce treasure/enemy/player jump machine.
+pub const RAINBOW_BOULDER: u16 = 1047;
+/// `ProjectileID.Poulder` (1048) — the death spreads the poop pyramid (666).
+pub const POULDER: u16 = 1048;
+/// `ProjectileID.LavaBoulder` (1053) — the death floods lava.
+pub const LAVA_BOULDER: u16 = 1053;
+/// `ProjectileID.SpiderBoulder` (1054) — timeLeft 300, trails cobwebs (51),
+/// the death spawns a WallCreeper (164/165 — unported NPC kinds).
+pub const SPIDER_BOULDER: u16 = 1054;
+/// `ProjectileID.Ghoulder` (1055) — timeLeft 900, the bounce arms the
+/// player-chase flight (`ai[1] == 1`).
+pub const GHOULDER: u16 = 1055;
+/// `ProjectileID.BoulderThatSpawnsPet` (1057) — the landing kills, the death
+/// drops the Boulder Pet item 5523.
+pub const BOULDER_THAT_SPAWNS_PET: u16 = 1057;
+/// `ProjectileID.BeeHive` (655) — the death spawns bees (210/211) or drops
+/// honey (1124) when wet.
+pub const BEE_HIVE: u16 = 655;
 
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
@@ -5142,6 +5227,15 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN => 15,
         // The Vampire Frog's 24-frame sheet (`Main.cs:8631`).
         VAMPIRE_FROG => 24,
+        // W4-d3 — the boulder family's sheets (`Main.cs:8713-8714`): the
+        // 1014 LifeCrystalBoulder's 11 frames (its `frame` rides
+        // `Main.tileFrame[665]`, `Projectile.cs:26028`) and the 1055
+        // Ghoulder's 10 (the chase frame machine, `:26157-26236`). The
+        // 1047 RainbowBoulder's 100-frame hue sheet is unlisted in
+        // `Main.projFrames` (the stock 1 — the frame is a draw-layer hue
+        // index, not a sheet row).
+        LIFE_CRYSTAL_BOULDER => 11,
+        GHOULDER => 10,
         // The Stardust Guardian's 19-frame sheet (`Main.cs:8497`) —
         // AI_120's idle machine wraps at 8 (`Projectile.cs:44693`), the
         // rest-hover at projFrames − 4 = 15 (`:44830`) and the dash at

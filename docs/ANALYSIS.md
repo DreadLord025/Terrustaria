@@ -7833,10 +7833,11 @@ Deviations:
   app spawn drops them вЂ” `proj_data` has no row): the fireworks rockets
   167-174 and 415-418 (aiStyle 34), the fountains 419-422 (aiStyle 73), the
   cannonball 162 (aiStyle 2), the bunny 281 (aiStyle 49), the snowball 166
-  (aiStyle 2), the geyser 654 (aiStyle 126), the toilet 733 (aiStyle 153),
-  the boulder 99 (aiStyle 25) and the flame jet 187 (aiStyle 38). Landed
+  (aiStyle 2), the geyser 654 (aiStyle 126), the toilet 733 (aiStyle 153)
+  and the flame jet 187 (aiStyle 38). Landed
   rows: 108/164 (the aiStyle-16 blast family, the explosives/mine), 178 and
-  601 (the cannon's aiStyle-1 ammo) and 980 (the venom dart, aiStyle 1).
+  601 (the cannon's aiStyle-1 ammo), 980 (the venom dart, aiStyle 1) and
+  99 (the boulder statue, aiStyle 25 — W4-d3, "The boulder family").
 - **The cap/dedupe gates run app-side (decision D1)**: the spear's
   proximity scan, `BunnyCannonCanFire` and the fountain's anchored-projectile
   dedupe read the app's pools, so the engine emits the request with its roll
@@ -8876,6 +8877,147 @@ skipped for the unported kinds (the 682 pull still raises
 `unlockedSlimeRedSpawn`); the Duke Fishron (370) IS ported and spawns. The
 catch fill uses the port's `slot_for_pickup` seam and the overflow drop
 rides the pinned velocity-triplet-then-prefix order (`spawn_item_drop_px`).
+
+### The boulder family (W4-d3)
+
+The aiStyle-25 boulder family (`Projectile.cs:26015-26415` + HandleMovement's
+bounce ladder `:18941-19277` + the RainbowBoulder machine `:20024-20315` +
+the Shimmer arm `:22504-22515` + the Kill hooks) is ported in
+`crates/tr-app/src/projectile_ai_boulder.rs` (the slice-module precedent).
+The 13 kinds' rows land in `projectile/data.rs` (99/727/1013/1014/1053/1054/
+1055/1057/1005/1021/655/1047/1048) plus the 727's bounce child 763
+RollingCactusSpike (aiStyle 1). The dispatch arm, the death-hook drain, the
+world-sim drains and the boulder-statue wiring (`world_sim/wiring.rs`, the
+`StatueSpawn::Boulder` arm) are wired. The module doc carries the per-kind
+RNG census; the deliberate deviations:
+
+- **The wet flags probe at the arm head** (the bobber tick-head convention,
+  one-tick lag vs the C#'s post-AI `Update` probe `:16790-17007`). The 1047's
+  `ignoreWater` skips the probe.
+- **The 1047 trail ring is the port's fixed 10 entries** vs the C#'s
+  `TrailCacheLength[1047] = 25` (`ProjectileID.cs:522`) — the kill-arm draw
+  census walks the port ring (the 640 moonlord-trail precedent). The 1047/
+  1055 `TrailingMode` is 0 (`ProjectileID.cs:521`).
+- **The 1054 spider spawn drops** (`Kill_SpiderBoulder_SpawnSpider`
+  `:70618-70639`): the WallCreeper 164/165 are unported NPC kinds (the statue
+  precedent); the arm's own reads are RNG-free, so the drop is draw-safe.
+- **The bee-hive slot cap folds** `GetAvailableAmountOfNPCsToSpawnUpToSlot`
+  (`NPC.cs:80635-80654`) onto `100 - npcs.len()` (the port's Vec roster has
+  no 200-slot array). The bees spawn through `Npc::new`'s Bottom placement
+  (the Queen-Bee volley precedent); `CanBeReplacedByOtherNPCs` has no port
+  field — dropped.
+- **The player-contact lane** (`projectile_ai_boulder::player_contact`) is
+  the `damage_player` stand-in WITHOUT the single-hit kill (the boulders are
+  penetrate −1; `Damage_EVP` `:14773-14900` never kills the shot). The 12
+  friendly+hostile traps keep `friendly = true` (the PVE walk hits NPCs), so
+  the generic `!friendly` proxy cannot serve them — the `hurts_player` kind
+  set carries the `hostile` gate. The 1021 MoonBoulder is hostile-only
+  (`friendly = false`, the arm holds it) and is exempted from the kill-on-hit
+  proxy, routed through the no-kill lane; its PVE refusal is the kind-gated
+  `MOON_BOULDER && !friendly` continue (the DUNGEON_DEBRIS precedent). The
+  ×2 / hostileDamageScaling / deadMansSweater modifiers ride the port's
+  existing hurt lane unported, like `damage_player`.
+- **The 1057/1014/655 item drops park on the pool** and drain on the
+  `UpdateItems` stream (the bobber-catch precedent); the C# rolls them inline
+  under `UpdateProjectiles` — the stack rolls themselves stay on the arm's
+  stream. The bee spawns park and drain into the NPC vec.
+- **The `Collision.SwitchTiles` calls park as requests** (the `:17087`
+  objType-3 plate scan, the `:19863`/`:17790` objType-4 pad calls) and drain
+  through `crate::collision::switch_tiles` in the world-sim pass (the wiring
+  borrow). The hoik loop's per-step scans fold to the parked requests in
+  step order. The plate scan reads LAST sub-step's `oldPosition` latch (the
+  one-tick-lag convention).
+- **The dust/gore BODIES now spawn** (the W4-d3 bodies wave, the g64/g16
+  seams replicated): the 1053 ember trail (`:26031-26049`) + the 1048 flight
+  speck (`:26395-26399`), the two movement sites this task owns — the 1053
+  bounce 10×2 burst (`:18947-18956`) and the 1048 bounce 10-dust ring
+  (`:19242-19246`) — and the Kill-arm bodies (the family dust loop
+  `:74938`/`:74973`/`:75083` with the per-kind num599 type, the 1053 lava
+  25+80 dust + 4-gore `:74877-74913`, the 1054 20-dust `:74921`, the 1055
+  50-dust `:74928`, the 1047 rainbow ring + 14 hue dust `:71192-71255`, the
+  763 spike latch `:55518-55529` + kill `:75067-75078`). Every explicit
+  `Main.rand` gate/settings draw stays in C# order; the `NewDust`/`CloneDust`/
+  `NewGore` internal rolls now land at their C# positions inside the verbatim
+  `DustPool`/`GorePool` calls on the SAME `UpdateProjectiles` stream (the
+  `DustDraw` adapter + `GoreRng for dyn DropRng`). The wiring:
+  `ProjectilePool::update` is the scratch wrapper over `update_dust`; the
+  world-sim pass threads `app.dust` + `spawn_ctx` + the gore pool
+  (`set/take_gore_pool`). **GORE CENSUS:** the 1047 Kill arm spawns ZERO
+  `Gore.NewGore` — the "rainbow shards" are dust 267/66 + RainbowRodHit
+  particles; the family's only gore is the 1053 lava four (`:74898-74913`).
+  The `ParticleOrchestrator.RequestParticleSpawn` BODIES still skip (the
+  shadowbeam precedent — the port has no particle orchestration); their
+  settings draws stay. `Collision.HitTiles` (effect-only dust),
+  `Lighting.AddLight`/`CastLightOpen` and the sounds stay their layers (the
+  AI cues park on `wants_sound`, the death cues push straight into
+  `pending_proj_sounds`; the id-3/4/42 styles the `play_proj_sound` façade
+  does not serve drop at the drain ON THIS BRANCH — **SIBLING-CUED**: d75
+  `20b2cea61` lands the id-3 `(3,29)` / id-4 `(4,6)` style routes + the
+  `rainbow_boulder` trackable, audible after the merge; the SEAL receipt
+  + the id-4 style-vs-int overload split + the f1/d77 kill-map
+  double-play keep-one live in research/331 §2). The dust-free callers (the witnesses,
+  the `update` scratch entry) keep the census behaviour: the bodies do not
+  spawn and their internals do not draw — only the explicit gate draws ride
+  the stream; the gore census path (type pick + kicks) stands when
+  `gore_pool` is `None`.
+- **Verbatim quirks kept**: the 1054 `localAI[0]` never ages (the `:26022`
+  arm names only 1013/1048); the rainbow enemy pick keeps the FARTHEST
+  chaseable NPC (`num <= num3`); `JumpToPlayer` passes `player.position` as
+  the intercept lead (`targetVelocity`); the kill dust loops compound the
+  corpse velocity ×1.9/×1.6 per dust; the hoik path's slope pass keeps
+  `base.position` stationary via the `vector12 = base.position - vector`
+  offset trick (`UpdatePosition` integrates once at the tail).
+
+CODE-ONLY MODE: the module's 25 witnesses are WRITTEN NOT RUN (no compiler
+invoked on this branch); every expected value is hand-derived from the cited
+C# lines.
+
+### The boulder-family SEAL (W4-d3, 2026-11-21, code-only mode)
+
+The SEAL wave (research/331, renumbered 248→331 per registry-150 §9 —
+g82's published reservation wins the 248 key, d3's add POST-publish;
+originally 248 first free at the all-tip scan) closes the task with five
+receipts; the full evidence + the family bible (C# anchor → port → owner
+per layer) live in
+`docs/research/331-d3-boulder-family-seal.md`. Summary:
+
+1. **The landing wave SEALED** — the bodies wave above + the 763 spike
+   latch (`:55518-55529`, `spike_spawn_dust`) / kill (`:75067-75078`,
+   `spike_kill_dust`) + the rainbow-gore NONEXISTENT census (the 1047
+   Kill arm has zero `Gore.NewGore`; the family's only gore is the 1053
+   lava four) + the 21-30 band status, renumbered **26f → 170** per
+   registry-150 §3 (f20's overlays doc wins the 26f key; no external
+   refs at tip — the PORT_MAP row repointed).
+2. **The d75 sound layer SIBLING-CUED** (tip `b59e3a874`, part 4
+   `20b2cea61`): d3 queues every bounce/death intent itself (the dig
+   closure `(0,0)`, the 1048 `(2,177)`, the rainbow `(42,274)`, the
+   1054 `(3,29)` / 1055 `(4,6)` deaths, the 655 int `(4,1)`); d75 lands
+   the drain's id-3/id-4 STYLE routes + the `rainbow_boulder` trackable
+   (`ITEM_CUSTOM_CUES`) + `NPC_Hit_29`. Constants copied, machines NOT
+   re-ported — the split is clean. The merger keeps BOTH id-4 overload
+   paths (d3's `(4,6)` is the style call — f1's "int facade" label a
+   misread, d75 part 5's correction) and DROPS the f1/d77c kill-map
+   boulder-kind arms (they would DOUBLE-PLAY d3's mid-Kill pushes).
+3. **The g65 Kill-309 compose = keep-one d3** (tip `b0842907c`): g65's
+   snapshot→drain arms for the 99-family default (incl. 1048), 1053,
+   1054, 1055, 1005, 763 and the 1047 half of its `1047 | 79` trail-ring
+   duplicate d3's LIVE-slot bodies (the corpse-velocity compounds, the
+   1053 resize/restore + gore pool + lava flood, the 763 spawn latch are
+   d3-unique state). Draw orders agree — the fold is RNG-neutral; g65's
+   arms drop/re-pin at the union, its 79 half stays (research/331 §3's
+   per-kind table).
+4. **1023/1081 — d3 stopped short** (d75's part-4/5 flag): neither is
+   aiStyle-25; they only neighbour the bounce ladder. The SEAL re-probe
+   retires half the flag: **1081 is NOW ROWED+CUED on d1** (wave 3c
+   `e47181798`, tip `212516a82` — AFTER d75's `e271b5bc8` probe; the
+   falling arm queues the `:19845` Dig itself). **1023 stays unrowed at
+   every tip** — its Kill dust (g65 b26), gore (g16 wave K) and
+   particles (d54 b7) are staged, the row + AI/movement halves are the
+   gap: task-seeded **S1-P-i58** (research/331 §4; i57 is d53's
+   wetVelocity seed).
+5. **Witnesses stay WRITTEN NOT RUN** — this SEAL is doc + comment-only
+   (the module doc's sound/g65 notes refreshed); no cargo/tests/rustfmt/
+   graphify invoked.
 
 ## Growth ticks (M7-GROWTH-1)
 
