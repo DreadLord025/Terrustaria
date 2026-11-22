@@ -1117,6 +1117,37 @@ pub(crate) struct AmbiencePass<'a> {
     pub event_skies: &'a crate::event_skies::EventSkies,
     pub party_last: &'a mut f32,
     pub party_surface_px: f32,
+    /// W4-f39: the SlimeSky rides the same depth boundaries (the c39
+    /// `draw_balloons_band` shape) — `None` outside the event.
+    pub slime_sky: Option<&'a crate::slime_sky::SlimeSky>,
+}
+
+/// W4-f39: one `SkyManager.DrawDepthRange` boundary for BOTH sandwich
+/// members — the ambient entities (`AmbientSky`) and the SlimeSky's
+/// falling slimes. The tracker moves once, exactly like the C# manager's
+/// `_lastDepth` (`SkyManager.cs:53-60`); the two draws share the band.
+pub(crate) fn draw_sandwich_band(r: &mut SpriteRenderer, p: &mut AmbiencePass<'_>, min_depth: f32) {
+    if *p.last <= min_depth {
+        return;
+    }
+    // The band is (min, last] BEFORE the tracker moves — the C# manager
+    // draws every active sky over the same range (`DrawDepthRange`).
+    let band_max = *p.last;
+    crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, min_depth, p.last);
+    if let Some(sky) = p.slime_sky {
+        let origin = p.ctx.camera - p.ctx.screen * 0.5 / p.ctx.zoom;
+        sky.draw_band(
+            r,
+            &p.lookups.slime_sky_sheets,
+            p.ctx.camera,
+            p.ctx.zoom,
+            p.ctx.screen,
+            origin,
+            p.ctx.color_of_the_skies,
+            min_depth,
+            band_max,
+        );
+    }
 }
 
 /// One row of a `DrawSurfaceBG_*` chain (`Main.cs:59986-61370`).
@@ -1364,7 +1395,7 @@ pub(crate) fn draw_front_trees(
     }
     for l in layers {
         if let Some(p) = ambience.as_deref_mut() {
-            crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, l.depth, p.last);
+            draw_sandwich_band(r, p, l.depth);
             // W4-c39: the party balloons' band rides the same boundary.
             draw_party_band_min(r, p, l.depth);
         }
@@ -1390,7 +1421,7 @@ pub(crate) fn draw_front_trees(
     // The Snow/Mushroom chains close with `DrawToDepth(1f)`; the other biomes'
     // strata wait for the flush.
     if closes_with_one && let Some(p) = ambience.as_deref_mut() {
-        crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, 1.0, p.last);
+        draw_sandwich_band(r, p, 1.0);
         // W4-c39: the party balloons' band rides the closing boundary too.
         draw_party_band_min(r, p, 1.0);
     }

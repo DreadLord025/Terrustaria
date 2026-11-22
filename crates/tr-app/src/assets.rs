@@ -292,6 +292,17 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Star_1",
         "Star_2",
         "Star_3",
+        // W4-f39: the SlimeSky's falling-slime sheets
+        // (`SlimeSky.OnLoad`, `SlimeSky.cs:79-83` —
+        // `Images/Misc/Sky_Slime_1..4`; 1/2 the common pair, 3 the 1/30
+        // variant, 4 the 1/60 rare). Measured against the strict-GPU
+        // bound with tools/atlas_sim.js: full gore+mount+font set
+        // 8119 px → 8139 px with the four sheets (14x96, 14x120, 24x152,
+        // 36x152) — fits 8192.
+        "Misc/Sky_Slime_1",
+        "Misc/Sky_Slime_2",
+        "Misc/Sky_Slime_3",
+        "Misc/Sky_Slime_4",
         // The ambient-sky creature sheets (`Images/Backgrounds/Ambience/*`, the
         // textures `Main.Assets.Request`ed by the `AmbientSky` entity classes).
         // `BoneSerpant.xnb` is skipped: `AmbientSky.Spawn` has no BoneSerpent
@@ -1932,6 +1943,10 @@ pub struct Lookups {
     /// The `Images/Backgrounds/Ambience/*` creature sheets, keyed by the
     /// `Main.Assets.Request` name (`AmbientSky.cs`).
     pub ambience: HashMap<&'static str, AmbienceTex>,
+    /// W4-f39: the SlimeSky's four sheets (`Misc/Sky_Slime_1..4`) as
+    /// atlas UV quads — the sandwich draw reads them beside the ambience
+    /// entities (`render::bg::draw_sandwich_band`).
+    pub slime_sky_sheets: [Option<crate::render::BgTex>; 4],
     /// `Misc/water_0..14` sheets (water styles, lava, honey, shimmer).
     pub liquids: Vec<Option<tr_render::SheetRect>>,
     /// `LiquidSlope_0..14`: 4 diagonal masks (18 px stride) drawn behind slopes.
@@ -2359,6 +2374,20 @@ impl Lookups {
                 .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
                 .collect(),
             ambience: HashMap::new(),
+            slime_sky_sheets: std::array::from_fn(|i| {
+                atlas
+                    .sheet(&format!("Misc/Sky_Slime_{}", i + 1))
+                    .map(|r| crate::render::BgTex {
+                        uv: [
+                            r.x as f32 / atlas.width as f32,
+                            r.y as f32 / atlas.height as f32,
+                            (r.x + r.width) as f32 / atlas.width as f32,
+                            (r.y + r.height) as f32 / atlas.height as f32,
+                        ],
+                        w: r.width as f32,
+                        h: r.height as f32,
+                    })
+            }),
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),

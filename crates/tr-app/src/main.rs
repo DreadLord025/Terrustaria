@@ -264,6 +264,7 @@ mod tag_effects;
 mod settings;
 mod shop;
 mod shimmer;
+mod slime_sky;
 mod signs;
 mod sound;
 mod soundid;

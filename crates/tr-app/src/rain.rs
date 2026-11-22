@@ -364,7 +364,31 @@ impl Rain {
         self.raining = raining;
     }
 
-    /// Live drops (`Rain.active` slots) — the debug readout.
+    /// A test hook (not a behaviour): the Rain stream's raw state, for the
+    /// W4-f39 gate witnesses' draw-count pins (the stream is private).
+    #[cfg(test)]
+    pub(crate) fn rng_state_for_test(&self) -> u64 {
+        self.rng
+    }
+
+    /// A test hook (not a behaviour): arms a running rain event for the
+    /// W4-f39 ladder/lantern witnesses (`Main.raining`/`rainTime`/
+    /// `maxRaining` are private; the C# state is set by `StartRain`).
+    #[cfg(test)]
+    pub(crate) fn arm_raining_for_test(&mut self, rain_time: i32, target: f32) {
+        self.raining = true;
+        self.rain_time = rain_time;
+        self.target = target;
+    }
+
+    /// A test hook (not a behaviour): `Main.rainTime` for the W4-f39
+    /// lantern-stop witness (the field is private).
+    #[cfg(test)]
+    pub(crate) fn rain_time_for_test(&self) -> i32 {
+        self.rain_time
+    }
+
+    /// Live drops (`Rain.active` slots) - the debug readout.
     pub fn drop_count(&self) -> usize {
         self.drops.iter().filter(|d| d.active).count()
     }

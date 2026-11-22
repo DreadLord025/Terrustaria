@@ -501,6 +501,11 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    // W4-f39 census witness (written-not-run, code-only lane): the
+    // menu-return StopSlimeRain (Main.cs:48216-48219).
+    #[path = "saveglue_w4_f39.rs"]
+    mod saveglue_w4_f39;
+
     use super::*;
     use crate::app::WorldSections;
     use crate::app::flow::front_flow_tests::flow_app;

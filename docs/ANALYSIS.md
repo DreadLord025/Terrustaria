@@ -23992,6 +23992,256 @@ Three, all forced by the port's shape:
   (`TransformWorldOnBackgroundThread`, `:31721-31742`) and queues the chat/achievement
   follow-up back to the main thread. The port's `start_hardmode` transforms inline
 
+## The Slime Rain event (W4-f39, 2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked. The port was
+verified by re-reading the C# source in ≤100-line windows (`Main.cs:64742-64961`,
+`:65166-65176`, `:65504-65522`, `:48216-48219`, `:52242-52244`; `NPC.cs:5892-5955`,
+`:77902-77924`, `:79080-79096`, `:79405-79410`, `:7022-7029`; `Collision.cs:3455-3488`)
+and by hand-arithmetic on the witness tests (written, not run). The witnesses are the
+`weather_w4_f39.rs` / `npcs_w4_f39.rs` / `npcs_w4_f39_spawns.rs` / `saveglue_w4_f39.rs`
+`#[cfg(test)]` modules (the d129 `#[path]` convention).
+
+S1-E-37 landed the `StartSlimeRain`/`StopSlimeRain` entry points and the morning roll's
+draw shape. W4-f39 re-ports the **UpdateTime slots** and the **sky-fall spawn** to the
+C# statement order, fixing the deviations the census found:
+
+* **The `:64846` surface gate wraps the whole block.** `isThereAWorldSurface` is
+  `worldSurface > 50.0` (`Main.cs:2788`), EXCLUSIVE — the pre-fix port gated the slime
+  clock/roll on nothing (the clock decayed in a surface-less world). The gate now wraps
+  the clock, the rain section and the roll; `start_slime_rain`'s own `:64744` refusal
+  moves from `<= 0.0` to `<= 50.0` and gains the `remixWorld` arm (the port HAS the seed
+  flag now, `SeedFlags::REMIX`).
+* **The clock decays BEFORE the rain section** (`:64848-64863` ahead of `:64864`). The
+  pre-fix port ran the slime clock AFTER `Rain::update_time`; the expiry's
+  `StopSlimeRain` draw now precedes the rain section's draws on `UpdateTime`.
+* **The `:64864`/`:64890` ladder samples its arm ONCE.** The C# reads `Main.raining` at
+  the branch entry; a rain that expires INSIDE `Rain::update_time` (`:64880`) leaves the
+  tick in the raining arm — the start arms and the slime roll (`:64925`, inside the
+  else-if) stay closed until the next tick. The port now samples `was_raining` /
+  `slime_rain` / `lanterns_up` / `next_night_lanterns` at the entry (the lantern statics
+  are read BEFORE `LanternNight.UpdateTime` at `:64965` can move them).
+* **The lantern arms.** `:64868-64871`'s `LanternsUp → StopRain()` (no drain, no strength
+  roll) and `:64890`'s `!slimeRain && !LanternsUp && !NextNightIsLanternNight` gate on the
+  start arms — the pre-fix `Rain::update_time` folded all three to false.
+* **The kill counter's per-death gate** (`NPC.cs:79082`). `DoDeathEvents_AdvanceSlimeRain`
+  re-checks `slimeRain && slimeRainNPC[type] && !AnyNPCs(50)` for EACH death; the pre-fix
+  port checked `!AnyNPCs(50)` once before the loop, so a King spawned by an earlier death
+  in the same tick did not close the gate for later deaths. The check now lives inside
+  the loop. The `slimeRainNPC[1]` filter (`Main.cs:8864`) is the port's `Slime` kind —
+  every colour variant shares vanilla type 1.
+* **The sky-fall spawn** (`Spawner.SlimeRainSpawns`, `NPC.cs:5892-5955`) is re-ported
+  whole: the `position.Y` (TOP, not centre) depth gate, the `nearbyActiveNPCs` slot sum
+  with the 0.65 `slimeRainNPCSlots` discount (`Main.cs:66803`, `NPC.cs:77916-77918`), the
+  `45 + (int)(450f * (nearby/15))` truncated denominator, the `maxTilesX + 10` upper bound
+  (was `-10`), `Collision.SolidTiles(xt-3, xt+3, yt-5, yt+2)` + the `Main.wallHouse`
+  refusal (was folded), and the full four-arm kind chain — `Next(200)==0` → Pinky(-4),
+  `Next(10)==0` → Purple(-7), `Next(5)<2` → Green(-3), else Blue (the pre-fix port folded
+  the Pinky arm and mapped the `Next(10)` arm to Yellow).
+* **The menu-return stop** (`Main.cs:48216-48219`, `DrawMenu`'s `menuMode <= 1 &&
+  slimeRain → StopSlimeRain`). The port's `save_and_quit` is the in-world → menuMode-0
+  transition; the stop runs AFTER the save (the C# saves the live event, then the menu
+  frame stops it), on the bare `Main.rand` stand-in.
+
+**Documented folds (single-difficulty / port-absent systems):** the expert `×0.85`
+denominator and the `Next(7)`/`Next(3)` kind arms (`NPC.cs:5902-5905`/`:5935-5945`), the
+journey spawn-rate slider (`:5906-5913`), the `WorldGen.Skyblock.lowTiles` `/5` roll arm
+(`Main.cs:64931-64934` — `lowTiles` is skyblock-only, `WorldGen.cs:3215`), the
+`FreezeRainPower` gates, and the `netMode`/`SkyManager` arms. The King's `SpawnOnPlayer`
+tile-scan placement stays the S1-D-3g deviation (the port spawns at the player's column
++12, the C# scans a 500×50 off-screen area). The death-path loop split (the counter pass
+ahead of the boss-death `checkDead` pass) means a slime dying in the SAME tick as the King
+still counts — the C# interleaves per-NPC; recorded, not re-homed.
+
+**RNG argument:** the clock walk is RNG-free; the expiry's `StopSlimeRain` draws one
+`Next(3024, 6048)` on `UpdateTime` (the King-death caller draws `UpdateNpcs`, the
+menu-return caller the bare global); the morning roll draws one `Next(num3)` +
+`StartSlimeRain`'s `Next(32400, 54000)`; the sky-fall arm draws `Next(num2)` + the two
+window `Next(min, max)` + the kind chain (`Next(200)`, [`Next(10)`], [`Next(5)`]) on
+`SpawnNPC`. Every witness mirrors the sequence on a cloned `UnifiedRandom` and compares
+the full stream state.
+
+## The season/date gates (W4-f39 Phase B, 2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked. Verified by re-reading
+the C# in ≤100-line windows (`Main.cs:13118-13172`, `:10901-10937`, `:65389-65392`,
+`:65334-65337`, `:64664-64667`, `:65945-65948`; `WorldFile.cs:651-652`, `:1347-1351`,
+`:1386-1387`, `:2334-2340`; `NPC.cs:79210-79238`, `:6371-6379`; `Chest.cs:1558`/`:1655`/
+`:1903`/`:1966`/`:2027`/`:2249`/`:2667`/`:3436-3468`; `AmbienceServer.cs:130-137`;
+`Item.cs:49668-49714`) and hand-arithmetic on the witnesses (written, not run).
+
+**The user-flagged gap.** The port had NO calendar: `Main.halloween`/`Main.xMas` were stood
+in by the endless micro seeds alone, so the Oct/Dec windows never opened. Phase B ports the
+date decisions and wires every constants-off season consumer to the resolved flags.
+
+* **The pure date module** (`tr-core/src/season.rs`): `is_halloween_date` (Oct 10-31 + Nov 1,
+  `Main.cs:13141-13155`, both edges inclusive), `is_xmas_date` (Dec 15-31, `:13123`),
+  `check_xmas`/`check_halloween` (date OR force-today OR force-forever, `:13118-13172`), and
+  `moon_event_temporary_seasons` (`CheckForMoonEventsStartingTemporarySeasons`,
+  `:10901-10937` — wave >= 15 raises the today-flag, the forever seed suppresses its own).
+  Every decision takes a caller-pinned `(month, day)` — the **FixtureClock seam**
+  (`tools/WldFixtureHarness/Shims/FixtureClock.cs` precedent): the wall clock is injected,
+  never read inside the decision. `now_month_day()` is the ONLY runtime read (UTC
+  `SystemTime` → Hinnant `civil_from_days`, the `ui/world_select.rs` conversion). All
+  draw-free — the C# checks compare integers, they consume no `Main.rand`.
+* **The resolved statics** (`World.xmas`/`halloween`/`force_xmas_for_today`/
+  `force_halloween_for_today`): re-derived at every dawn by `World::refresh_seasons`
+  (`Main.cs:65389-65391`, BEFORE `stopMoonEvent` at `:65392` clears the moon state the
+  temporary-season check reads) and at world load (`enter_loaded_world`,
+  `WorldFile.cs:651-652`). The `*Forever` flags are the endless micro seeds
+  (`WorldGen.cs:572-578`). Runtime-only — the C# does not save the resolved flags (they
+  re-derive from the date + the saved force flags).
+* **The dawn seam** (`world_sim/clock.rs::advance_time` gains a `date: (u32, u32)` param):
+  the runtime caller (`advance_time_with_events`) passes `season::now_month_day()`; the
+  witnesses pin any date. The season trio runs in the dawn branch ahead of `stop_moon_event`.
+* **The five seasonal moon-boss downeds** (`World.downed_halloween_king`/`_tree`,
+  `downed_christmas_tree`/`_ice_queen`/`_santank`, `NPC.cs:6371-6379`): the `DoDeathEvents`
+  cases 325/327/344/345/346 (`NPC.cs:79210-79238`) raise them under the RUNNING event's own
+  flag. Persisted: the `.trwld` v18 tail (5 bytes) + the C# `.wld` flags block
+  (`WorldFile.cs:1347-1351`, tail offsets 1893-1897) + the `*ForToday` pair
+  (`WorldFile.cs:1386-1387`, offsets 2002-2003). NOTE: these do NOT gate the season flags —
+  `checkXMas`/`checkHalloween` read only the date + force flags (the task's "unlock" framing
+  is the emote-wheel/help-text readers, `UIEmotesMenu.cs:250-268`/`Main.cs:39752-39757`).
+* **The consumers wired to the resolved flags:** the loot flags (`world_sim/npcs.rs`
+  `LootFlags.halloween`/`xmas`), the heart/star pickup remap (`world_sim/wiring.rs` +
+  `items.rs::seasonal_pickup_kind`, i52), the spawner holiday arms (`SpawnFlags.halloween`/
+  `xmas` — the night zombie ladder `NPC.cs:4727-4735` + `GetBasicSlimeToSpawn` `:5644-5651`),
+  the shop holiday rows (`StockWhen::Halloween`/`Xmas` — the Arms Dealer/Dryad/Clothier/
+  Wizard/Dye Trader/Witch Doctor) and the Princess anniversary block
+  (`StockWhen::Anniversary*`, `Chest.cs:3436-3468`) + her arrival gate
+  (`town_arrival.rs`, `Main.cs:65945-65948`).
+* **The anniversary RNG gates** (date-independent, the seed): the blood-moon roll widens to
+  1-in-6 (`Main.cs:65334-65337`, `clock.rs` — same single `NextDouble`, only the threshold),
+  the coin-rain `RollLuck` range narrows 25→5 (`Main.cs:64664-64667`, `rain.rs::start_rain` —
+  same draw count at luck 0), the ambience `ResetSpawnTime` halves (`AmbienceServer.cs:133-136`,
+  `ambience.rs` — same `Next(600,7200)`, only the post-divide).
+
+**Documented folds:** the `*ForToday` pair is runtime-only in the `.trwld` (the port's moon
+event is itself unsaved, ANALYSIS "The moon-event wave machinery") but IS owned in the C#
+`.wld` round trip (the C# saves it). The Santa shop (index 25, `Chest.cs:2485-2494`'s xmas
+block) has no ported Santa kind yet — the `StockWhen::Xmas` gate is ready for it. The
+holiday spawner kinds (Raven 301, BunnySlimed 303, Ghost 316, the owl/spaceship eyes 317/318,
+the skeleton costumes 322-324, BunnyXmas 337) are unported — the holiday zombie/slime arms
+map to the ported kinds (the S1-D-3z convention). The `netMode == 1` temporary-season skip
+and the change-broadcast (`Misc.StartedVictory*`) are the host/UI seam.
+
+**RNG argument:** the date checks draw NOTHING (integer compares). The anniversary gates
+change a threshold/divisor, never the draw count or order — a same-seed twin with the seed
+forced differs only in state/outcome, never in stream position (the witnesses pin this).
+
+## The W4-f39 closeout (2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked in any closeout
+phase; witnesses WRITTEN NOT RUN, verified by re-reading the C# in ≤100-line windows and
+hand-arithmetic. The atlas budget was measured with the node harness (`tools/atlas_sim.js`),
+not cargo. Five items, one commit each on top of Phase B (`bd5a5a24a`):
+
+* **SlimeSky** (`746bd0037`): `GameContent/Skies/SlimeSky.cs` ported whole as
+  `slime_sky.rs` on the c39 `event_skies.rs` pattern — the `GenerateSlimes` scatter, the
+  generate/reset RNG-order asymmetry (speed-before-texture vs texture-before-speed), the
+  24-wrap frame counter, the surface-line reset/-100 respawn vs the `_isLeaving` drain,
+  and the `Draw` index walk's quirks kept verbatim (ascending depths 1.6..3.35 with
+  break-at-min empty every band ≥ 1.6 — the visible strata are the 1.0 front-row close +
+  the flush; `j < num2` excludes the nearest slime). The byte-truncated tint chain
+  (sky-lift × depth tier × 0.8) pinned in the witnesses. Activation edge-detects
+  `World.slime_rain` at the pause-gated ambience phase (the five Start/StopSlimeRain
+  SkyManager call sites' stand-in, load path covered); the private stream is
+  world-seed-pinned (the c39 deviation). `Sky_Slime_1..4` packed — atlas 8119→8139 px,
+  fits 8192. The draw rides a new depth-sandwich band (`render/bg.rs::draw_sandwich_band`,
+  `AmbiencePass.slime_sky`) threaded through `draw_sky`'s boundaries.
+* **KingSlime spawn-from-rain** (`c786ffb32`): the kill-150 threshold arm
+  (`NPC.cs:79092`) now calls a faithful `NPC.SpawnOnPlayer(plr,50)` port
+  (`spawner.rs::spawn_king_slime_on_player`, `NPC.cs:80475-80633`) instead of the
+  refusing surface-scan stand-in. Kept verbatim: the 500×50 attempts, the `m < 250`
+  `tile[num16, num16]` wall typo, the down-walk's safe-area gate, the King-only `m < 400`
+  `Collision.CanHit` headroom + line-of-sight pair, `HasTileSpawnSpace`,
+  `CheckNotSpawningOnScreen` (with `safeRangeX/Y` RAW as pixels per `:5444` — the ambient
+  helper's `* TILE_PX` is that lane's own deviation, NOT copied), the `flag`/`num10`/
+  `num11` stale-candidate carry across `m` and the `m == 499` relaxation. `SpawnBoss`
+  lands bottom-centre `(x*16+8, y*16)`, targets the player, `timeLeft = 937*20`; the
+  `Announcement.HasAwoken` broadcast rides `NewNPC`'s type-50 arm (`:80787-80790` — the
+  `SpawnBoss` switch's case-50 silence `:80705` is redundant). The scan draws the
+  `UpdateNPCs` stream via copy-out/write-back; the counter flip stays unconditional
+  (`:79093`). The witness rig widened to 400×400 (the 64-wide rig clamped the spawn area
+  shut).
+* **The event music tracks** (`cb9955257`): `flag24 = Main.slimeRain` (`Main.cs:12200`)
+  → SlimeRain 48 at `:12654` (gates `!ZoneGraveyard && (!bloodMoon || dayTime)` + the
+  surface band), seated between the eclipse and the shimmer where the C# chain has it;
+  and the moon-event tail `:12982-12989` (pumpkinMoon→30, snowMoon→32, gate
+  `screenPosition.Y/16 < worldSurface + 10 || remixWorld`) — two plain `if`s AFTER the
+  whole else-if chain that override even the boss pick on the surface band. The port's
+  early-return ladder kept the tail out of reach; `decide_new_music` now wraps
+  `decide_world_music` and runs the tail verbatim (the menu arm returns before it,
+  `:12531`; the music-box override still wins after). `MusicEnv` gains `slime_rain`/
+  `pumpkin_moon`/`snow_moon`/`remix_world`/`moon_tail_band` (the camera-centre →
+  screenPosition top-left conversion documented at the field).
+* **The seasonal emote/help-text gates** (`da058b714`):
+  `emotes.rs::seasonal_boss_emote_gates` ports `UIEmotesMenu.GetEmotesBosses`' five-event
+  tail (`UIEmotesMenu.cs:250-269`) reading the Phase-B World flags;
+  `seasonal_help_text_gate` ports the Guide hints' pure gates (`Main.cs:39752/:39757`,
+  helpText 1155/1156 → `GuideHelpTextSpecific.Help_1155/1156`, Town resource group) for
+  the future helpText machine (unported). **Co-lane hand-off:** this branch's wheel is
+  the flat `EMOTE_COUNT` roster; the gated wheel is W4-g54's `EmoteGates`, whose
+  `from_world` pins the five seasonal flags `false` — at the merge g54 reads the World
+  fields instead (field names identical). No second wheel ported here.
+* **The v18-claim input doc** (this commit): `docs/research/316-f39-v18-claim-input.md`
+  re-receipts registry row #8 at the closeout tip for the g71c union-final merger — the
+  five bytes unchanged (keep-one with c39, union seat [51..56] per 92 §1-FULL.2 A3), the
+  seven truncation-site families re-pinned (+5→+107, the six mid-record cuts re-arm),
+  the `.wld` force-today deference discharged. The closeout adds ZERO persist bytes.
+
+**Documented deviations (closeout):** the SlimeSky activation is an edge-detect at the
+ambience phase, not the five SkyManager call sites (the load path is covered by the
+same edge); the private RNG stream is world-seed-pinned (the c39 event_skies convention).
+The `SpawnOnPlayer` port duplicates `GetSpawnArea`'s arithmetic inline (the full
+`SpawnContext` needs ~24 fields the scan never reads) and inlines the
+`CheckNotSpawningOnScreen` rect test with the RAW safe ranges (the ambient helper's
+`* TILE_PX` stays that lane's deviation). The counter pass still runs BEFORE the
+boss-death `checkDead` pass (the Phase-A recorded deviation — a slime dying in the same
+tick as the King still counts). The music moon tail now overrides the boss pick on the
+surface band — the C# behaviour the early-return ladder had dropped (a behaviour FIX,
+not a deviation). The emote wheel/help-text machine stay unported on this branch (the
+g54 hand-off + the future helpText machine).
+
+## The W4-f39 SEAL (2026-11-21, code-only mode)
+
+**Code-only mode.** The seal (research/320, chain 282→320) adds ZERO code bytes — every item is a
+receipt over already-landed bodies, re-verified at tip `8704691a3` against the co-lane
+tips d130 `b8f65570` / c39 `7dd785dc5` / g48 `2b61530b4`.
+
+* **research/244 → 281 → 316 RENUMBERED** (`fec65992` + registry §9 round 4):
+  first leg — registry-150 first-pushed-wins:
+  g48's `244-c28-18-send-switch.md` first-add 14:30:16 beats this lane's 14:32:01;
+  both postdate the d54 refresh's final sweep, so the §6.3 cutoff rule applies
+  (losers take ≥281 after a fresh sweep — 386 tips / 22 694 rows, 247-300 empty,
+  281 first-free). Second leg — registry §9 UNIFIED FINAL (`b243c7086`, FROZEN
+  §8.1/§8.2): 281/282 are f26's §7.3 assignments, so f39's self-picks re-issue
+  to 316 (input doc, chain supersedes the unexecuted 299 row — 299 FREE) and
+  320 (seal doc). Content-preserving renames; ANALYSIS/ROADMAP/INDEX refs re-pointed.
+* **The d130 mutual receipt** (its research/83 §9): the five boundary gates
+  (music track 48, anniversary StartRain range-5, ResetSpawnTime `/2`, menu-return
+  StopSlimeRain, the slime-roll gates) are composed BOTH-ways — dedupe at merge.
+  The `slime_rain_roll` lowTiles `/5` arm takes **d130's ACTIVATED form**
+  (`World.skyblock_low_tiles`, the g67 R5 census); f39's documented-false stand-in
+  (`weather.rs:420-423`) is superseded, NOT a code gap. d130's zero-edits to
+  `world_sim/npcs.rs`/`render/sky.rs` + the absent `season.rs` re-verified by diff
+  against the merge-base `a725acb04` — the SlimeSky/kill-counter/season bodies stay
+  f39's. f39's audio WRAPPER (the moon tail 30/32) is the surviving audio.rs shape —
+  d130's inline 48-arm dedupes into `decide_world_music`.
+* **The c39 receipt** (its research/114 §16 DONE): the real-date Halloween/Xmas
+  gates are f39 Phase B's (`bd5a5a24a`) — c39 has NO calendar (season.rs absent,
+  grep-empty); its loot flags read the endless micro seeds alone (its
+  `npcs.rs:7004-7011`), f39's resolved `World.halloween`/`xmas` reads (`npcs.rs:968-
+  969`/`:7050`) are the strict superset and win the shared constructions at merge.
+  `LanternGates`/`lanterns_can_start` bodies byte-identical f39↔c39; c39's
+  `pub(crate)` export wins (the d130-graft rider; f39 has zero `world_events.rs`
+  edits since base). The v18 quintet keep-one stays research/316 §1.
+* **The SLIMERAIN-FAMILY bible**: research/320 §5 — d130 owns the weather tick +
+  the activated roll; f39 owns the event bodies (SlimeSky, sky-fall spawns, the
+  kill-counter + King scan, the season module, the emote/help gates, the music
+  wrapper); the persist story is research/316; g54 re-points its five pins; the
+  gate command is the workspace test run (all family witnesses WRITTEN NOT RUN).
+
 ## S1-D-3 вЂ” the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)
 
 **Code-only mode.** This slice landed under the Lead's code-only directive: no

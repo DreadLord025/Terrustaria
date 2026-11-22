@@ -893,6 +893,13 @@ pub(crate) fn unspawn_travel_npc(
 
 #[cfg(test)]
 mod tests {
+    // W4-f39 census witnesses (written-not-run, code-only lane): the
+    // UpdateTime slime-clock slots - the :64846 surface gate, the
+    // clock-before-rain order, the branch-entry ladder sampling, the
+    // lantern arms and the StartSlimeRain gate edges.
+    #[path = "weather_w4_f39.rs"]
+    mod weather_w4_f39;
+
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::rain::Rain;

@@ -2639,6 +2639,27 @@ pub struct MusicEnv {
     pub blood_moon: bool,
     /// `Main._shouldUseWindyDayMusic` (`:12961`).
     pub windy_music: bool,
+    // — the W4-f39 closeout inputs (the event tracks the census found
+    // missing from the ladder) —
+    /// `flag24 = Main.slimeRain` (`:12200`) — the SlimeRain track 48
+    /// (`:12654`), gated `!ZoneGraveyard && (!bloodMoon || dayTime)`
+    /// and the scene centre above the surface band.
+    pub slime_rain: bool,
+    /// `Main.pumpkinMoon` — the surface-gated tail override (`:12982`,
+    /// track 30). NOT an else-if arm: it runs AFTER the whole ladder,
+    /// even over the boss pick.
+    pub pumpkin_moon: bool,
+    /// `Main.snowMoon` — the tail's second override (`:12986`, track
+    /// 32), after the pumpkin one (snow wins if both are up).
+    pub snow_moon: bool,
+    /// `Main.remixWorld` — the moon tail's gate bypass (`:12982`/
+    /// `:12986`: the override applies at ANY depth on a remix world).
+    pub remix_world: bool,
+    /// The moon tail's depth gate (`:12982`): `screenPosition.Y / 16 <
+    /// worldSurface + 10`. The port's camera is the view CENTRE
+    /// (`camera.rs:114-117`), so the caller feeds
+    /// `(camera.y - screen.y/2) / 16 < worldSurface + 10`.
+    pub moon_tail_band: bool,
     // — the M6-AUDIO-2 inputs (`Main.cs:11076-11350`) —
     /// `SceneMetrics.ActiveMusicBox`: the box id playing, -1 = none.
     pub music_box: i32,
@@ -2881,8 +2902,10 @@ impl MusicSystem {
             .unwrap_or(self.last_music_played);
 
         // `if (Main.gameMenu)` (`Main.cs:12455-12532`) — the front-end
-        // ladder, an exclusive arm that returns. The vanilla's `netMode == 2`
-        // (`newMusic = 0`) tail is unreachable: the port is single-player.
+        // ladder, an exclusive arm that returns BEFORE the moon tail
+        // (the C# `return` at `:12531` skips it too). The vanilla's
+        // `netMode == 2` (`newMusic = 0`) tail is unreachable: the port
+        // is single-player.
         if env.menu {
             let flags = env.menu_flags;
             self.new_music = if flags.contains(tr_core::seeds::SeedFlags::DRUNK) {
@@ -2902,6 +2925,25 @@ impl MusicSystem {
             };
             return;
         }
+        self.decide_world_music(env);
+        // `:12982-12989` — the moon-event tail: two plain `if`s AFTER the
+        // whole else-if chain, so the event tracks override EVERY world
+        // pick including the bosses (the pumpking/ice-queen fight music
+        // 97/98 only plays once the view drops below the surface band).
+        // Gate: `screenPosition.Y/16 < worldSurface + 10 || remixWorld`.
+        // W4-f39 closeout: the port's early-return ladder kept these out
+        // of reach; the wrapper runs them verbatim.
+        if (env.moon_tail_band || env.remix_world) && env.pumpkin_moon {
+            self.new_music = 30;
+        }
+        if (env.moon_tail_band || env.remix_world) && env.snow_moon {
+            self.new_music = 32;
+        }
+    }
+
+    /// The world half of the ladder (`:12533-12980`) — every arm returns,
+    /// so the caller's moon tail (`:12982-12989`) runs over the pick.
+    fn decide_world_music(&mut self, env: MusicEnv) {
         if let Some(boss) = env.boss_music {
             // The boss-flag ladder (`:12560-12620`): the event tracks (DD2
             // 92, the frost/pumpkin moons 97/98, the mech bosses 34/24/57/58,
@@ -3686,6 +3728,11 @@ mod tests {
             underworld: false,
             blood_moon: false,
             windy_music: false,
+            slime_rain: false,
+            pumpkin_moon: false,
+            snow_moon: false,
+            remix_world: false,
+            moon_tail_band: false,
             music_box: -1,
             music_box_silence: false,
             space_band: false,
@@ -4055,6 +4102,129 @@ mod tests {
         // Shimmer halves BEFORE the cap (`:11571-11578`).
         e.shimmer_alpha = 0.5;
         assert!((ambience_wind_factor(&e) - 0.45).abs() < 1e-6);
+    }
+
+    // — W4-f39 closeout witnesses (written-not-run, code-only lane): the
+    // event tracks the census found missing — flag24's SlimeRain 48
+    // (`Main.cs:12200`/`:12654`) and the surface-gated moon tail 30/32
+    // (`:12982-12989`). —
+
+    #[test]
+    fn w4_f39_slime_rain_plays_48_on_the_surface_band() {
+        // `:12654`: flag24 && !graveyard && (!bloodMoon || dayTime) &&
+        // centre above the surface band → 48.
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "the SlimeRain track");
+        // Night + blood moon closes the gate (the blood-moon tail wins).
+        let mut m = system();
+        let mut e = env(false);
+        e.slime_rain = true;
+        e.blood_moon = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 2, "blood moon outranks the rain at night");
+        // Night WITHOUT the blood moon keeps 48.
+        let mut m = system();
+        let mut e = env(false);
+        e.slime_rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48);
+        // The graveyard cut.
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.graveyard = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 53);
+        // Below the surface band the arm misses (the underground pair).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.center_y = 1500.0; // > surface_band_px (1000)
+        e.underground = true;
+        m.decide_new_music(e);
+        assert!(matches!(m.new_music, 4 | 31));
+        // The eclipse still outranks the rain (`:12646` precedes `:12654`).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.eclipse = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 27);
+        // The boss scan outranks both (King Slime's 93).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93);
+    }
+
+    #[test]
+    fn w4_f39_the_moon_tail_overrides_the_whole_ladder_on_the_surface() {
+        // `:12982-12989`: two plain ifs AFTER the chain — the event
+        // tracks beat even the boss pick while the view is above
+        // `worldSurface + 10` tiles (the pumpking/ice-queen fight music
+        // only plays once the view drops below the band).
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        e.boss_music = Some(97); // the pumpking's own track
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 30, "the surface tail beats the boss");
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.snow_moon = true;
+        e.boss_music = Some(98);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 32);
+        // Snow runs after pumpkin — both up, snow wins (`:12986` last).
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        e.snow_moon = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 32);
+        // Below the band the boss track keeps its slot.
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = false;
+        e.pumpkin_moon = true;
+        e.boss_music = Some(97);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 97);
+        // The remix world bypasses the band gate at ANY depth.
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = false;
+        e.remix_world = true;
+        e.snow_moon = true;
+        e.boss_music = Some(98);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 32);
+        // The menu ladder returns BEFORE the tail (`:12531`).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "the title track, not the event");
+        // The music box still wins over the tail (the override pass runs
+        // after `decide_new_music` returns — `:11076+`).
+        let mut m = system();
+        let mut e = env(false);
+        e.moon_tail_band = true;
+        e.pumpkin_moon = true;
+        e.music_box = 42;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 42);
     }
 
     #[test]

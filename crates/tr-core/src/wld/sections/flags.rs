@@ -201,11 +201,13 @@ pub fn write(w: &mut Writer, world: &World) {
     for _ in 0..TREE_TOP_VARIATIONS {
         w.i32(0); // _variations
     }
-    // WorldFile.cs:1386-1391: the forced seasonal events (unowned), the four
+    // WorldFile.cs:1386-1391: the forced seasonal events, the four
     // pre-hardmode ore tiers (`World.ore_tiers`, `:1388-1391`) and the pets
-    // (unowned).
-    w.boolean(false); // forceHalloweenForToday
-    w.boolean(false); // forceXMasForToday
+    // (unowned). W4-f39: the `*ForToday` pair is World-owned (the moon-event
+    // temporary season, `Main.cs:10901-10937`); the C# saves it, so a `.wld`
+    // round trip keeps it.
+    w.boolean(world.force_halloween_for_today); // forceHalloweenForToday
+    w.boolean(world.force_xmas_for_today); // forceXMasForToday
     w.i32(world.ore_tiers.copper); // Copper
     w.i32(world.ore_tiers.iron); // Iron
     w.i32(world.ore_tiers.silver); // Silver
@@ -595,7 +597,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     // WorldFile.cs:2244-2278 — forced seasons, ore tiers, pets, post-1.4 bosses, the
     // unlocked spawns and the combat books.
     if version >= 212 {
-        r.skip(2)?; // forceHalloweenForToday, forceXMasForToday
+        // W4-f39: the moon-event temporary season (`Main.cs:10901-10937`).
+        world.force_halloween_for_today = r.bool()?; // forceHalloweenForToday
+        world.force_xmas_for_today = r.bool()?; // forceXMasForToday
     }
     if version >= 216 {
         // WorldFile.cs:2344-2347 — the pre-hardmode quartet.

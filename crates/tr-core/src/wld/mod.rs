@@ -1686,6 +1686,15 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-f39: the five seasonal moon-boss downeds + the force-today pair
+        // round-trip at non-default values.
+        world.downed_halloween_king = true;
+        world.downed_halloween_tree = true;
+        world.downed_christmas_ice_queen = true;
+        world.downed_christmas_santank = true;
+        world.downed_christmas_tree = true;
+        world.force_halloween_for_today = true;
+        world.force_xmas_for_today = true;
         world
     }
 
@@ -1913,6 +1922,35 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-f39: the seasonal moon-boss downeds + the force-today pair.
+        assert_eq!(
+            got.downed_halloween_king, want.downed_halloween_king,
+            "{context}: downedHalloweenKing"
+        );
+        assert_eq!(
+            got.downed_halloween_tree, want.downed_halloween_tree,
+            "{context}: downedHalloweenTree"
+        );
+        assert_eq!(
+            got.downed_christmas_ice_queen, want.downed_christmas_ice_queen,
+            "{context}: downedChristmasIceQueen"
+        );
+        assert_eq!(
+            got.downed_christmas_santank, want.downed_christmas_santank,
+            "{context}: downedChristmasSantank"
+        );
+        assert_eq!(
+            got.downed_christmas_tree, want.downed_christmas_tree,
+            "{context}: downedChristmasTree"
+        );
+        assert_eq!(
+            got.force_halloween_for_today, want.force_halloween_for_today,
+            "{context}: forceHalloweenForToday"
+        );
+        assert_eq!(
+            got.force_xmas_for_today, want.force_xmas_for_today,
+            "{context}: forceXMasForToday"
+        );
     }
 
     #[test]
@@ -2044,6 +2082,14 @@ mod tests {
         tail[1890] = u8::from(world.downed_martians); // downedMartians (`:1344`)
         // The four tower downeds + four actives + the apocalypse phase, after
         // the five seasonal bosses (1893..1897): 1898..1906.
+        // W4-f39: the five seasonal moon-boss downeds are World-owned now
+        // (`WorldFile.cs:1347-1351`): king@1893, tree@1894, iceQueen@1895,
+        // santank@1896, christmasTree@1897.
+        tail[1893] = u8::from(world.downed_halloween_king);
+        tail[1894] = u8::from(world.downed_halloween_tree);
+        tail[1895] = u8::from(world.downed_christmas_ice_queen);
+        tail[1896] = u8::from(world.downed_christmas_santank);
+        tail[1897] = u8::from(world.downed_christmas_tree);
         tail[1898] = u8::from(world.downed_tower_solar); // (`:1352`)
         tail[1899] = u8::from(world.downed_tower_vortex); // (`:1353`)
         tail[1900] = u8::from(world.downed_tower_nebula); // (`:1354`)
@@ -2055,6 +2101,11 @@ mod tests {
         tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
         tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
+        // W4-f39: the force-today pair sits right after the tree-top array
+        // (1939 combatBook + 7 lantern + 4+52 treeTops = 2002; the quartet
+        // ends at 2021, so the pair is at 2002..2003 — `WorldFile.cs:1386-1387`).
+        tail[2002] = u8::from(world.force_halloween_for_today);
+        tail[2003] = u8::from(world.force_xmas_for_today);
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)

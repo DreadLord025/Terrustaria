@@ -1144,10 +1144,12 @@ fn spawn_player_drop(
 /// `NextFromList` = `Next(len)` draw per remapped kind, `Utils.cs:1213-1216`),
 /// else halloween AND xMas (one `Next(2)`), else halloween alone (58→1734,
 /// 184→1735 — no draw) then xMas alone (58→1867, 184→1868 — no draw). Every
-/// other kind passes through untouched and draws NOTHING. The flags ride
-/// the port's standing seasonal stand-ins (`Main.halloween`/`Main.xMas` =
-/// the endless micro seeds, `world_sim/npcs.rs`'s loot-flag precedent; the
-/// calendar windows are unported).
+/// other kind passes through untouched and draws NOTHING. W4-f39: the flags
+/// ride the RESOLVED season statics (`Main.halloween`/`Main.xMas` =
+/// `World.halloween`/`xmas`, re-derived at dawn + load from the date windows
+/// + the force flags; the endless micro seeds feed them through
+/// `forceHalloweenForever`/`forceXMasForever`, `world_sim/npcs.rs`'s loot-flag
+/// precedent).
 pub fn seasonal_pickup_kind(
     kind: u16,
     tenth_anniversary: bool,
