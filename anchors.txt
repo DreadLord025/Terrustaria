@@ -520,6 +520,7 @@ crates/tr-app/src/item.rs|const FRICTION_X: f32 = 0.95|ITEMS-4 вЂ” WorldItem
 crates/tr-app/src/world_sim/editing.rs|mod item_mechanics|ITEMS-1/3 вЂ” the item-mechanics slice: KillTileв†’drop (WorldGen.cs:64057-64062, :63947-63958), pickupв†’stack, torch placement (Player.cs:39580)
 crates/tr-core/src/liquid.rs|set_skip|liquids - the Tile.skipLiquid port (Liquid.cs:586-587/:1083-1105/:1173)
 crates/tr-core/src/liquid.rs|liquid_sim|liquids - the flow verification suite (fall/spread/obsidian/mass)
+crates/tr-core/src/liquid.rs|mod liquid_merge_cadence|W4-c34 - the non-water cadence/evaporation witnesses: the lava 1-in-6 / honey 1-in-11 delay gates (Liquid.cs:484-490/:513-522), the quickFall bypass (:1083-1090), the underworld water evaporation (:466-474, min(2,liquid)/visit below UnderworldLayer, the >=0 fixture guard), the sub-24 down-arm drain (:1290-1298) and the shimmer+lava/honey 659 merges (:1395-1426); written not run
 crates/tr-app/src/render/entities.rs|fn generic_anchor_shift_y|offsets - the NPC and boss draw anchors follow the C# collapse (Main.cs:25511-25512: the Draw origin cancels halfSize, pivot-only) and the Zombie NPCAddHeight misattribution is removed (Main.cs:22037-22039 is the Devourer's 7/8/9)
 crates/tr-app/src/assets.rs|"Player_0_13",|player-draw: arm-stack sheets packed (Players[5]/[8]/[13])
 crates/tr-app/src/render/entities.rs|shirt: sky_tex(atlas, "Player_0_6", None)|player-draw: shirt sheet full-width for the FrontShirt arm cells
