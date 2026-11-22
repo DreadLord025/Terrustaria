@@ -7,7 +7,8 @@
 //! Pure module: reads the world and mutates only the position / velocity /
 //! last-boost the caller passes in. Player integration (riding, boost apply,
 //! dismount) is Phase 2 of M2-PHYS-7; wheel sparks + sounds Phase 3; track
-//! placement (`FrameTrack`) is a later follow-up. The mounted player is 20×52
+//! placement (`FrameTrack` non-pound + the hammer pound) landed with the
+//! research-71 §3b.4 follow-up. The mounted player is 20×52
 //! (`Mount.SetAsMinecart`, `Mount.cs:2747-2799`) and every function below is
 //! calibrated against the default `Minecart.Customization` (`Minecart.cs:29-34`).
 //!
@@ -292,6 +293,22 @@ pub(crate) const FIRST_LEFT_BOOST_FRAME: i16 = 31;
 /// (`Tile.cs:240-247`); the port follows the `liquid.rs:384` shape.
 fn is_track_tile(tile: &tr_core::Tile) -> bool {
     tile.active() && tile.flags & FLAG_INACTIVE == 0 && tile.kind == 314
+}
+
+/// `Minecart.IsPressurePlate` (`Minecart.cs:549-560`): an active tile 314
+/// whose FRONT frame is 20 or 21 — the two unpressed pressure-track fronts
+/// (`_trackType` 1 spans frames 20-23, but the pressed variants 22/23 do NOT
+/// count). The null-tile arm is the caller's `Option` (a missing tile is
+/// `false`). Sole consumer: `WorldGen.IsItATrigger` (`WorldGen.cs:26817-
+/// 26820`) inside the `ClearBrokenTraps` walk (`:26840-26958`, the
+/// `BrokenTrapCleanup` worldgen pass `:22121-22140`) — that pass has no port
+/// yet (the worldgen-passes lanes), so this rides `dead_code` until it lands;
+/// the cleanup's 314 arm sets `frameX = 1` instead of killing (`:26948-
+/// 26951`). NOT the ride's pressure trip — that reads `TrackCollision`'s
+/// flag3 over the whole type-1 range (`Minecart.cs:809-813` region).
+#[allow(dead_code)] // the BrokenTrapCleanup worldgen pass is the consumer
+pub(crate) fn is_pressure_plate(tile: Option<&tr_core::Tile>) -> bool {
+    tile.is_some_and(|t| t.active() && t.kind == 314 && (t.frame_x == 20 || t.frame_x == 21))
 }
 
 /// `Minecart.GetMagnetPosition` (`Minecart.cs:1290-1294`) with the default
@@ -1310,12 +1327,11 @@ pub(crate) fn minecart_bumper_sound(
 /// `right` (0→8, 1→0x10, 2→0x20); a dead-end side (−1) contributes 0. With
 /// fewer than 2 neighbour tracks the mask must match exactly; otherwise it
 /// must be a non-zero subset. `None` when no frame fits (the C# null array).
-/// Built ONCE from `TRACK_FRAMES` behind a `OnceLock` (the f11 cache shape
-/// merged over the e20 table, research/71 §3b.2 — the C# `Initialize` builds
-/// the table once; output identical, no per-hit Vec allocation).
+/// Built ONCE for all 64 masks (the C# `Initialize` loop; the W4-f11 OnceLock
+/// shape merged per research-71 §3b.2 — output identical, no per-hit Vec).
 fn track_switch_options(mask: u32) -> Option<&'static [i32]> {
     static OPTIONS: std::sync::OnceLock<Vec<Option<Vec<i32>>>> = std::sync::OnceLock::new();
-    let table = OPTIONS.get_or_init(|| {
+    OPTIONS.get_or_init(|| {
         (0..64u32)
             .map(|mask| {
                 let neighbour_count = mask.count_ones();
@@ -1346,8 +1362,8 @@ fn track_switch_options(mask: u32) -> Option<&'static [i32]> {
                 if options.is_empty() { None } else { Some(options) }
             })
             .collect()
-    });
-    table[mask as usize].as_deref()
+    })[mask as usize]
+        .as_deref()
 }
 
 /// `Minecart.GetNearbyTilesSetLookupIndex` (`Minecart.cs:1170-1198`): the
@@ -1375,25 +1391,48 @@ fn first_pressure_frame() -> i32 {
         .map_or(-1, |f| f as i32)
 }
 
-/// `Minecart.FrameTrack(i, j, pound: true, mute: true)` (`Minecart.cs:943-1168`,
-/// the pound branch `:1040-1108` + the write tail `:1110-1167`): re-frames a
-/// switch/booster track to the next compatible option. The wiring caller
-/// (`FlipSwitchTrack` case 2) always passes `pound: true, mute: true`, so the
-/// non-pound branch (`:976-1039`) and the `KillTile(fail)` sound (`:1163-1166`,
-/// gated on `!mute`) are unreachable here and not ported. Returns whether the
-/// frame was rewritten (the C# `bool`).
-fn frame_track_pound(world: &mut World, i: i32, j: i32) -> bool {
-    // `:955-958`: `mute && tile.type != 314` → false.
+/// `Minecart.FrameTrack(i, j, pound, mute)` (`Minecart.cs:943-1168`) — the
+/// FULL body (research-71 §3b.4 follow-up): the pound switch-cycle branch
+/// (`:1040-1108`), the non-pound placement-refit branch (`:976-1038`), the
+/// no-options reset (`:966-975`) and the `flag4` change census (`:1110-1142`)
+/// + write tail (`:1143-1162`). Returns `(reframed, fail_kill)`: `reframed`
+/// is the C# `bool`; `fail_kill` is the `(pound & flag4) && !mute` condition
+/// of `:1163-1166` — the C# calls `WorldGen.KillTile(i, j, fail: true)` there,
+/// whose 314 slice is the Item52 cue (`WorldGen.cs:66531-66533`) + the
+/// `SquareTileFrame` wake (`:63735`); the port hands the condition to the app
+/// caller (the sound/cascade seam lives app-side, the `edit::hammer`
+/// precedent). Callers: the wiring flip (`pound: true, mute: true`,
+/// `Minecart.cs:1315`), the hammer pound (`pound: true`, mute FALSE —
+/// `Player.cs:46058`) and the placement refit (`pound: false`,
+/// `WorldGen.cs:85292`, `TileFrameImportant` case 314).
+///
+/// The null-options arm (`:966-975`) is C#-defensive: every one of the 64
+/// masks has a fitting frame (each single-bit mask matches a dead-end ramp),
+/// so `_trackSwitchOptions[mask]` is never null — kept verbatim, pinned total
+/// by the table witness.
+fn frame_track(world: &mut World, i: i32, j: i32, pound: bool, mute: bool) -> (bool, bool) {
+    // `:955-958`: `mute && tile.type != 314` → false. (The C# null-tile arm
+    // `:950-954` allocates a fresh tile; the port's out-of-world read refuses.)
     let Some(tile) = world.tile(i, j).copied() else {
-        return false;
+        return (false, false);
     };
-    if tile.kind != 314 {
-        return false;
+    if mute && tile.kind != 314 {
+        return (false, false);
     }
     let options = match track_switch_options(nearby_track_mask(world, i, j)) {
         Some(o) => o,
-        // `:966-974`: a null option list with `pound` → false (no reset).
-        None => return false,
+        None => {
+            // `:966-975`: a null option list — pound refuses; the placement
+            // path resets the front/back to the lone-piece frames (0, −1).
+            if pound {
+                return (false, false);
+            }
+            if let Some(t) = world.tile_mut(i, j) {
+                t.frame_x = 0;
+                t.frame_y = -1;
+            }
+            return (false, false);
+        }
     };
     let front = i32::from(tile.frame_x); // `tile.FrontTrack()` (`:1632-1635`)
     let back = i32::from(tile.frame_y); // `tile.BackTrack()` (`:1642-1645`)
@@ -1402,88 +1441,140 @@ fn frame_track_pound(world: &mut World, i: i32, j: i32) -> bool {
     } else {
         0
     };
-    // `:1042-1052`: the front/back indices in the option list (−1 = absent).
-    let mut num4: i32 = -1;
-    let mut num5: i32 = -1;
-    for (l, &opt) in options.iter().enumerate() {
-        if front == opt { num4 = l as i32; }
-        if back == opt { num5 = l as i32; }
-    }
-    // `:1053-1068`: count the same-type options — through (both sides connected)
-    // vs dead-end (either side −1).
     let is_dead_end = |f: i32| {
         let d = &TRACK_FRAMES[f as usize];
         d.left_connection == -1 || d.right_connection == -1
     };
-    let mut through = 0;
-    let mut dead_end = 0;
-    for &opt in options {
-        if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type {
-            if is_dead_end(opt) { dead_end += 1; } else { through += 1; }
-        }
-    }
-    // `:1069-1072`: fewer than two of either kind → no flip.
-    if through < 2 && dead_end < 2 {
-        return false;
-    }
-    let flag2 = through == 0; // `:1073`: only dead-ends remain.
-    let mut flag3 = false;
-    // `:1075-1090`: with through options, advance the BACK index past the
-    // current front to the next through option with a different connection.
-    // The C# reads `array[num4]` here; a front frame absent from the option
-    // list leaves `num4 == -1` and the C# throws `IndexOutOfRangeException`
-    // (the module's out-of-range convention, `track_collision`'s doc).
-    if !flag2 {
-        assert!(num4 >= 0, "FrameTrack: front frame absent from the switch options (C# IndexOutOfRange)");
-        while !flag3 {
-            num5 += 1;
-            if num5 >= options.len() as i32 {
-                num5 = -1;
-                break;
+    // `:963-964`: the chosen front/back indices in the option list (−1 = absent).
+    let mut num4: i32 = -1;
+    let mut num5: i32 = -1;
+    if !pound {
+        // `:976-1038` — the placement refit: find the current front's index
+        // (`num4`, `flag` = it is a dead end) and the first same-type dead-end
+        // (`num6`) / through (`num7`) options; a through option WINS over a
+        // dead-end front (`:1017-1023`), else the front keeps or falls back to
+        // the first dead end — pressure/booster fronts without a same-type
+        // option refuse (`:1028-1034`).
+        let mut num6: i32 = -1;
+        let mut num7: i32 = -1;
+        let mut flag = false;
+        for (k, &opt) in options.iter().enumerate() {
+            if back == opt {
+                num5 = k as i32;
             }
-            let cand = options[num5 as usize];
-            let cur = options[num4 as usize];
-            let cd = &TRACK_FRAMES[cand as usize];
-            let ud = &TRACK_FRAMES[cur as usize];
-            if (cd.left_connection != ud.left_connection
-                || cd.right_connection != ud.right_connection)
-                && i32::from(cd.track_type) == front_type
-                && cd.left_connection != -1
-                && cd.right_connection != -1
-            {
-                flag3 = true;
+            if i32::from(TRACK_FRAMES[opt as usize].track_type) != front_type {
+                continue;
             }
-        }
-    }
-    // `:1091-1108`: otherwise advance the FRONT index to the next same-type
-    // option whose dead-end-ness matches `flag2` (wrapping once).
-    if !flag3 {
-        loop {
-            num4 += 1;
-            if num4 >= options.len() as i32 {
-                num4 = -1;
-                loop {
-                    num4 += 1;
-                    let opt = options[num4 as usize];
-                    if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type
-                        && is_dead_end(opt) == flag2
-                    {
-                        break;
-                    }
+            if is_dead_end(opt) {
+                if front == opt {
+                    num4 = k as i32;
+                    flag = true;
                 }
-                break;
+                if num6 == -1 {
+                    num6 = k as i32;
+                }
+            } else {
+                if front == opt {
+                    num4 = k as i32;
+                    flag = false;
+                }
+                if num7 == -1 {
+                    num7 = k as i32;
+                }
             }
-            let opt = options[num4 as usize];
-            if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type
-                && is_dead_end(opt) == flag2
-            {
-                break;
+        }
+        if num7 != -1 {
+            // `:1019` — the C# bitwise `|` on bools (both sides effect-free).
+            if (num4 == -1) | flag {
+                num4 = num7;
+            }
+        } else {
+            if num4 == -1 {
+                match front_type {
+                    1 | 2 => return (false, false),
+                    _ => {}
+                }
+                num4 = num6;
+            }
+            num5 = -1;
+        }
+    } else {
+        // `:1042-1052`: the front/back indices in the option list.
+        for (l, &opt) in options.iter().enumerate() {
+            if front == opt { num4 = l as i32; }
+            if back == opt { num5 = l as i32; }
+        }
+        // `:1053-1068`: count the same-type options — through (both sides
+        // connected) vs dead-end (either side −1).
+        let mut through = 0;
+        let mut dead_end = 0;
+        for &opt in options {
+            if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type {
+                if is_dead_end(opt) { dead_end += 1; } else { through += 1; }
+            }
+        }
+        // `:1069-1072`: fewer than two of either kind → no flip.
+        if through < 2 && dead_end < 2 {
+            return (false, false);
+        }
+        let flag2 = through == 0; // `:1073`: only dead-ends remain.
+        let mut flag3 = false;
+        // `:1075-1090`: with through options, advance the BACK index past the
+        // current front to the next through option with a different connection.
+        // The C# reads `array[num4]` here; a front frame absent from the option
+        // list leaves `num4 == -1` and the C# throws `IndexOutOfRangeException`
+        // (the module's out-of-range convention — NOT f11's `.max(0)` clamp,
+        // research-71 §3b.4).
+        if !flag2 {
+            assert!(num4 >= 0, "FrameTrack: front frame absent from the switch options (C# IndexOutOfRange)");
+            while !flag3 {
+                num5 += 1;
+                if num5 >= options.len() as i32 {
+                    num5 = -1;
+                    break;
+                }
+                let cand = options[num5 as usize];
+                let cur = options[num4 as usize];
+                let cd = &TRACK_FRAMES[cand as usize];
+                let ud = &TRACK_FRAMES[cur as usize];
+                if (cd.left_connection != ud.left_connection
+                    || cd.right_connection != ud.right_connection)
+                    && i32::from(cd.track_type) == front_type
+                    && cd.left_connection != -1
+                    && cd.right_connection != -1
+                {
+                    flag3 = true;
+                }
+            }
+        }
+        // `:1091-1108`: otherwise advance the FRONT index to the next same-type
+        // option whose dead-end-ness matches `flag2` (wrapping once).
+        if !flag3 {
+            loop {
+                num4 += 1;
+                if num4 >= options.len() as i32 {
+                    num4 = -1;
+                    loop {
+                        num4 += 1;
+                        let opt = options[num4 as usize];
+                        if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type
+                            && is_dead_end(opt) == flag2
+                        {
+                            break;
+                        }
+                    }
+                    break;
+                }
+                let opt = options[num4 as usize];
+                if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type
+                    && is_dead_end(opt) == flag2
+                {
+                    break;
+                }
             }
         }
     }
-    // `:1143-1162`: write the new front/back frames. num4 == −2 (pressure) and
-    // −1 (reset) are non-pound sentinels; the pound path keeps num4 ≥ 0 (the
-    // wrap loop always lands on a valid option), so the default arm applies.
+    // `:1110-1142` — `flag4`: did the front/back CHANGE? (the fail-tile gate).
     let new_front = if num4 == -2 {
         first_pressure_frame()
     } else if num4 == -1 {
@@ -1492,11 +1583,90 @@ fn frame_track_pound(world: &mut World, i: i32, j: i32) -> bool {
         options[num4 as usize]
     };
     let new_back = if num5 == -1 { -1 } else { options[num5 as usize] };
+    let flag4 = front != new_front || back != new_back;
+    // `:1143-1162`: write the new front/back frames.
     if let Some(t) = world.tile_mut(i, j) {
         t.frame_x = new_front as i16;
         t.frame_y = new_back as i16;
     }
-    true
+    // `:1163-1166`: `(pound & flag4) && !mute` → KillTile(fail: true) — the
+    // app caller runs the 314 fail slice (the Item52 cue + the SquareTileFrame
+    // wake + the case-314 non-pound refit, `WorldGen.cs:85290-85294`).
+    (true, pound && flag4 && !mute)
+}
+
+/// The wiring caller's slice — `FrameTrack(pound: true, mute: true)`
+/// (`Minecart.cs:1315`, `FlipSwitchTrack` case 2): the fail-kill tail is
+/// mute-suppressed, so only the C# bool matters.
+fn frame_track_pound(world: &mut World, i: i32, j: i32) -> bool {
+    frame_track(world, i, j, true, true).0
+}
+
+/// The hammer caller's slice — `FrameTrack(x, y, pound: true)` with mute
+/// FALSE (`Player.cs:46058`, `ItemCheck_UseMiningTools_TryPoundingTile`'s
+/// 314 arm). Returns the `fail_kill` condition: the app runs the
+/// `KillTile(fail: true)` 314 slice when true (the C# bool itself only feeds
+/// the `netMode == 1` SendData, `:46058-46061` — SP-discarded).
+pub(crate) fn frame_track_hammer(world: &mut World, i: i32, j: i32) -> bool {
+    frame_track(world, i, j, true, false).1
+}
+
+/// The placement/framing caller's slice — `FrameTrack(i, j, pound: false)`
+/// (`WorldGen.cs:85292`, `TileFrameImportant` case 314, reached from
+/// `PlaceTile`'s `SquareTileFrame` tail `:60261` and the fail-kill wake
+/// `:63735`): refit the front to the neighbourhood, preferring a through
+/// connection. The C# bool is unused at the call site; `HandleRopeEndFraming`
+/// (`:85293`) is the rope-framing seam (unported — the rope draw module reads
+/// the frames live).
+pub(crate) fn frame_track_place(world: &mut World, i: i32, j: i32) {
+    let _ = frame_track(world, i, j, false, false);
+}
+
+/// The `SquareTileFrame` wake's case-314 slice (`WorldGen.cs:80185-80196` →
+/// `TileFrame` → `TileFrameImportant` case 314 `:85290-85294`): the 3×3
+/// neighbourhood walk refits EVERY active track through
+/// `FrameTrack(pound: false)` — the placement tail (`PlaceTile` `:60261`)
+/// and the hammer fail-kill wake (`KillTile(fail)` `:63735`) both reach it.
+/// The port's `reframe_area` skips frame-important kinds, so this app seam
+/// carries the 314 arm (the `SQUARE_FRAME_ORDER` row-major walk, self last
+/// of its row — the refit is order-independent per cell: each reads the
+/// neighbours' KINDS only, `GetNearbyTilesSetLookupIndex` `:1170-1198`).
+/// `HandleRopeEndFraming` (`:85293`) is the rope-framing half — unported
+/// (the rope draw module reads the frames live).
+pub(crate) fn refit_tracks_around(world: &mut World, x: i32, y: i32) {
+    for (dx, dy) in [
+        (-1, -1), (-1, 0), (-1, 1),
+        (0, -1), (0, 0), (0, 1),
+        (1, -1), (1, 0), (1, 1),
+    ] {
+        let (cx, cy) = (x + dx, y + dy);
+        // `TileFrame`'s 5-tile edge guard (`WorldGen.cs:81330`).
+        if cx <= 5 || cy <= 5 || cx >= world.width - 5 || cy >= world.height - 5 {
+            continue;
+        }
+        if world.tile(cx, cy).is_some_and(|t| t.active() && t.kind == 314) {
+            frame_track_place(world, cx, cy);
+        }
+    }
+}
+
+/// `Minecart.GetTrackItem` (`Minecart.cs:1508-1517`): the item a track piece
+/// drops when broken — `_trackType[frameX]` 0 → 2340 (Minecart Track),
+/// 1 → 2492 (Pressure Track), 2 → 2739 (Booster Track), else 0. The C#
+/// indexes `frameX` UNGUARDED (a −1 front throws); the port's out-of-range
+/// read returns 0 (the drop-nothing arm — a −1 front only exists between
+/// `PlaceTrack` and its refit, never at break time).
+pub(crate) fn track_item(frame_x: i16) -> u16 {
+    let f = i32::from(frame_x);
+    if f < 0 || f as usize >= TRACK_FRAMES.len() {
+        return 0;
+    }
+    match TRACK_FRAMES[f as usize].track_type {
+        0 => 2340,
+        1 => 2492,
+        2 => 2739,
+        _ => 0,
+    }
 }
 
 /// `Minecart.FlipSwitchTrack` (`Minecart.cs:1296-1319`): the wired switch-track
@@ -1612,6 +1782,35 @@ mod tests {
         assert_eq!(w.tile(10, 10).unwrap().frame_x, 21);
     }
 
+    /// W4-e20 final census — `Minecart.IsPressurePlate`
+    /// (`Minecart.cs:549-560`): ONLY the unpressed fronts 20/21 count; the
+    /// pressed variants 22/23, every other frame, an inactive tile, a
+    /// non-314 kind and the null tile all refuse.
+    #[test]
+    fn dw_e20_is_pressure_plate_counts_only_the_unpressed_20_21_fronts() {
+        let mut w = track_world();
+        for fx in [20i16, 21] {
+            place_track(&mut w, 10, 10, fx, -1);
+            assert!(is_pressure_plate(w.tile(10, 10)), "front {fx} is a plate");
+        }
+        for fx in [22i16, 23, 0, 1, 30, 31, -1] {
+            place_track(&mut w, 10, 10, fx, -1);
+            assert!(!is_pressure_plate(w.tile(10, 10)), "front {fx} is not");
+        }
+        // The actuator-hidden tile still counts: C# reads `tile.active()`,
+        // NOT `nactive()` (`:555`).
+        place_track(&mut w, 10, 10, 20, -1);
+        w.tiles[w.index(10, 10)].flags |= FLAG_INACTIVE;
+        assert!(is_pressure_plate(w.tile(10, 10)), "active() ignores actuation");
+        // An inactive tile refuses; a non-314 kind refuses; null refuses.
+        w.tiles[w.index(10, 10)].flags &= !FLAG_ACTIVE;
+        assert!(!is_pressure_plate(w.tile(10, 10)));
+        w.tiles[w.index(10, 10)].flags |= FLAG_ACTIVE;
+        w.tiles[w.index(10, 10)].kind = 135;
+        assert!(!is_pressure_plate(w.tile(10, 10)), "the 135 plate is not 314");
+        assert!(!is_pressure_plate(None));
+    }
+
     #[test]
     fn flip_switch_track_booster_reframes_to_the_next_option() {
         // `Minecart.cs:1314-1317`: a booster (type 2) re-frames through
@@ -1633,12 +1832,129 @@ mod tests {
         assert_eq!(w.tile(10, 10).unwrap().frame_x, 30);
     }
 
-    /// The f11 table-sanity pin (research/71 §3c:
-    /// `w4_f11_the_track_tables_transcribe_the_isolated_and_straight_frames`,
-    /// re-pointed at the kept e20 `TRACK_FRAMES` superset). Frame 0 is the
+    /// Research-71 §3b.4 — the hammer pound (`Player.cs:46058`,
+    /// `FrameTrack(pound: true)` mute FALSE): a straight end with ONE left
+    /// neighbour (mask 2, options {3, 15, 23, 25}) pounds into the first
+    /// same-type dead end — frame 3 — and reports the fail-kill condition
+    /// (`Minecart.cs:1163-1166`); the bumper then cycles 3 → 15 → 25 → 3
+    /// (the front-index wrap, `:1091-1108`). The wake's non-pound refit
+    /// (`WorldGen.cs:85292`) keeps each dead end (no through option fits
+    /// mask 2 — `num7 == -1`, `:1024-1038`).
+    #[test]
+    fn dw_e20_the_hammer_pound_cycles_the_dead_end_bumpers() {
+        let mut w = track_world();
+        place_track(&mut w, 10, 10, 1, -1); // the straight front
+        place_track(&mut w, 9, 10, 1, -1); // the left neighbour (mask 2)
+        assert!(frame_track_hammer(&mut w, 10, 10), "1 → 3 changes the front");
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 3);
+        frame_track_place(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 3, "the refit keeps the dead end");
+        for want in [15i16, 25, 3] {
+            assert!(frame_track_hammer(&mut w, 10, 10));
+            assert_eq!(w.tile(10, 10).unwrap().frame_x, want);
+            frame_track_place(&mut w, 10, 10);
+            assert_eq!(w.tile(10, 10).unwrap().frame_x, want);
+        }
+        assert_eq!(w.tile(10, 10).unwrap().frame_y, -1, "no back through the cycle");
+    }
+
+    /// Research-71 §3b.4 — the placement refit (`FrameTrack(pound: false)`,
+    /// `Minecart.cs:976-1038`): a dead-end front BETWEEN two rails (mask 18)
+    /// prefers the through option (`num7`, `:1017-1023`) — bumper 3 refits to
+    /// the straight 1; the pound on that straight wraps the front to ITSELF
+    /// (the only same-type through option, `:1091-1108`) — `flag4` false, NO
+    /// fail-kill, the frame unchanged.
+    #[test]
+    fn dw_e20_the_refit_prefers_through_and_the_lone_straight_refuses() {
+        let mut w = track_world();
+        place_track(&mut w, 10, 10, 3, -1);
+        place_track(&mut w, 9, 10, 1, -1);
+        place_track(&mut w, 11, 10, 1, -1);
+        frame_track_place(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 1, "the through option wins");
+        assert!(!frame_track_hammer(&mut w, 10, 10), "the front wraps to itself — no change");
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 1, "nothing changed — no fail-kill");
+        // The booster between the same rails DOES cycle (two type-2 through
+        // options 30/31) and reports the fail-kill; the refit keeps 31.
+        place_track(&mut w, 10, 10, 30, -1);
+        assert!(frame_track_hammer(&mut w, 10, 10));
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 31);
+        frame_track_place(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 31);
+        // A pressure front (21) wraps to itself too — the only type-1 through
+        // option; no fail-kill.
+        place_track(&mut w, 10, 10, 21, -1);
+        assert!(!frame_track_hammer(&mut w, 10, 10));
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 21);
+    }
+
+    /// Research-71 §3b.4 — the option table is TOTAL: every one of the 64
+    /// masks has a fitting frame (each single-bit mask matches a dead-end
+    /// ramp), so the C# null-array reset (`Minecart.cs:966-975`) is
+    /// unreachable defensive code — ported verbatim, pinned here.
+    #[test]
+    fn dw_e20_the_switch_options_table_is_total_over_all_64_masks() {
+        for mask in 0..64u32 {
+            assert!(track_switch_options(mask).is_some(), "mask {mask} has options");
+        }
+    }
+
+    /// Research-71 §6 census — `Minecart.GetTrackItem`
+    /// (`Minecart.cs:1508-1517`): the break drop follows the FRONT frame's
+    /// type — the straight/bumper family (0/1/3/15/25) → 2340, the pressure
+    /// frames (20-23) → 2492, the boosters (30-35) → 2739; an unframed −1
+    /// front drops nothing (the port's guarded read; the C# would throw).
+    #[test]
+    fn dw_e20_get_track_item_maps_the_front_type_to_the_three_items() {
+        for f in [0i16, 1, 3, 15, 25] {
+            assert_eq!(track_item(f), 2340, "frame {f}");
+        }
+        for f in 20i16..=23 {
+            assert_eq!(track_item(f), 2492, "frame {f}");
+        }
+        for f in 30i16..=35 {
+            assert_eq!(track_item(f), 2739, "frame {f}");
+        }
+        assert_eq!(track_item(-1), 0);
+    }
+
+    /// Research-71 §6 census — the placement wake
+    /// (`WorldGen.cs:60261` → `:85290-85294`): `refit_tracks_around` refits
+    /// the placed −1 front AND its neighbours. A fresh piece between two
+    /// straights takes the through frame 1; the left neighbour's open-end
+    /// front (15, right −1) re-fits to the straight 1 against the new
+    /// right-side rail (the through preference, `Minecart.cs:1017-1023`).
+    /// The outer supports (8/12) sit OUTSIDE the 3×3 walk and keep their
+    /// frames — they give the inner neighbours their two-sided masks (18).
+    #[test]
+    fn dw_e20_the_placement_wake_refits_the_new_piece_and_its_neighbours() {
+        let mut w = track_world();
+        place_track(&mut w, 8, 10, 1, -1); // outer support, outside the walk
+        place_track(&mut w, 9, 10, 15, -1); // open end, right dead
+        place_track(&mut w, 11, 10, 1, -1);
+        place_track(&mut w, 12, 10, 1, -1); // outer support, outside the walk
+        // The placed piece: PlaceTrack's style-0 write (front −1, back −1).
+        place_track(&mut w, 10, 10, -1, -1);
+        refit_tracks_around(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 1, "the −1 front took the straight");
+        assert_eq!(w.tile(9, 10).unwrap().frame_x, 1, "the left neighbour re-fit through");
+        assert_eq!(w.tile(11, 10).unwrap().frame_x, 1, "the right straight keeps");
+        assert_eq!(w.tile(8, 10).unwrap().frame_x, 1, "outside the walk — untouched");
+        assert_eq!(w.tile(12, 10).unwrap().frame_x, 1, "outside the walk — untouched");
+        // A lone placed piece (no neighbours) refits to the isolated frame 0.
+        let mut w = track_world();
+        place_track(&mut w, 20, 20, -1, -1);
+        refit_tracks_around(&mut w, 20, 20);
+        assert_eq!(w.tile(20, 20).unwrap().frame_x, 0);
+        assert_eq!(w.tile(20, 20).unwrap().frame_y, -1);
+    }
+
+    /// W4-f11 port (research-71 §3c), re-pointed at the kept `TRACK_FRAMES`
+    /// superset: the connection tables' popcount sanity — frame 0 is the
     /// isolated rail (both sides −1), frame 1 the level straight (both 1);
-    /// the pressure frames 20..23 are type 1, the boosters 30..35 type 2.
-    /// WRITTEN NOT RUN (code-only).
+    /// the pressure frames start at 20, the boosters at 30 (30 boosts right,
+    /// 31 boosts left). Also pins the OnceLock cache against the direct fit
+    /// rule on the boundary masks (0 isolated, 18 two straight neighbours).
     #[test]
     fn w4_f11_the_track_tables_transcribe_the_isolated_and_straight_frames() {
         assert_eq!(TRACK_FRAMES[0].left_connection, -1);
@@ -1646,18 +1962,27 @@ mod tests {
         assert_eq!(TRACK_FRAMES[0].track_type, 0);
         assert_eq!(TRACK_FRAMES[1].left_connection, 1);
         assert_eq!(TRACK_FRAMES[1].right_connection, 1);
+        // The pressure frames 20..23 are type 1; the boosters 30..35 type 2.
         assert_eq!(TRACK_FRAMES[20].track_type, 1);
-        assert_eq!(first_pressure_frame(), 20);
+        assert_eq!(FIRST_PRESSURE_FRAME, 20);
         assert_eq!(TRACK_FRAMES[30].track_type, 2);
         assert!(!TRACK_FRAMES[30].boost_left);
         assert!(TRACK_FRAMES[31].boost_left);
+        // Mask 0 (no neighbours, popcount 0) needs an EXACT frame-mask match:
+        // only the isolated frame 0 (mask 0) fits.
+        assert_eq!(track_switch_options(0), Some(&[0i32][..]));
+        // Mask 18 (bits 2+16, popcount 2): the frame's mask must be a
+        // non-zero subset — frame 1 (2|16 = 18) fits; frame 0 (mask 0) never.
+        let opts = track_switch_options(18).expect("the straight fits");
+        assert!(opts.contains(&1) && !opts.contains(&0));
     }
 
     /// The f11 lookup-mask pin (research/71 §3c:
     /// `w4_f11_the_lookup_index_masks_the_six_track_neighbours`, re-pointed
-    /// at the kept e20 `nearby_track_mask`). `Minecart.cs:1170-1198`: the
-    /// six-neighbour mask, `kind == 314` with NO activity gate.
-    /// WRITTEN NOT RUN (code-only).
+    /// at the kept e20 `nearby_track_mask`; carried from the c42 union tree
+    /// at the batch-H merge — the witness union keeps c42's pins).
+    /// `Minecart.cs:1170-1198`: the six-neighbour mask, `kind == 314` with
+    /// NO activity gate. WRITTEN NOT RUN (code-only).
     #[test]
     fn w4_f11_the_lookup_index_masks_the_six_track_neighbours() {
         let mut w = track_world();

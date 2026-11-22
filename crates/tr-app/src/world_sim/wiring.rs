@@ -630,7 +630,8 @@ fn spear_cap_allows(app: &App, req: &tr_core::wiring::TrapRequest) -> bool {
 /// hopper's grab gate (`Wiring.cs:2612`/`:2667`). Same set as `chest.rs`'s
 /// `BANNED_IN_INVENTORY` (the save-side air rule). The W4-c42 final aliases
 /// the core copy (`wiring::ITEMS_THAT_SHOULD_NOT_BE_IN_INVENTORY`, the
-/// `is_hopper_in_range_of` port's gate — one copy, research/95 §8.9).
+/// `is_hopper_in_range_of` port's gate — one copy, research/95 §8.9; the
+/// e20 inline list dedupes to the alias at the batch-H merge).
 const HOPPER_BANNED: &[u16] = tr_core::wiring::ITEMS_THAT_SHOULD_NOT_BE_IN_INVENTORY;
 
 /// `Utils.CoinsCount` (`Utils.cs:1019-1046`): the copper-equivalent value of
@@ -673,7 +674,7 @@ fn try_move_coins_in_chest(
     drop_count: u32,
     // `&mut Vec`, not `&mut [_]`: the write-back grows the slot Vec
     // (`Chest.Resize`, `Chest.cs:118-130`) — a slice has no `resize`
-    // (the research/146 compile blocker; the e20 `a2d6cdad0` shape).
+    // (the research/266 compile blocker; the e20 `a2d6cdad0` shape).
     slots: &mut Vec<crate::item::ItemSlot>,
     max_items: usize,
 ) -> bool {
@@ -764,23 +765,22 @@ fn try_adding_to_stack(
 
 /// `Wiring.TryToPutItemInChest` (`Wiring.cs:2680-2701`): coins ride the coin
 /// arm; otherwise the first stack merge, then the first empty slot. Returns
-/// `(placed, remaining, filled_empty)` — `placed` is the C# bool (any merge
+/// `(placed, remaining, via_empty_slot)` — `placed` is the C# bool (any merge
 /// or empty-slot fill), `remaining` is the drop's leftover stack (the C#
 /// `worldItem.stack` after the partial merge; 0 when fully consumed /
-/// `TurnToAir`), `filled_empty` marks the `TryAddingToEmptySlot` path so the
-/// caller plays its `PlaySound(7)` (`:2765` — the f11 must-merge win,
-/// research/71 §3b.1: the pitch draw rides the wiring stream; nothing draws
-/// between the fill and the call-site play, order-identical).
+/// `TurnToAir`), `via_empty_slot` marks the `TryAddingToEmptySlot` arm so the
+/// caller runs its `PlaySound(7)` (`:2765`) on the wiring stream.
 fn try_put_item_in_chest(
     drop: &crate::item::ItemDrop,
-    // `&mut Vec` for the same `Chest.Resize` growth (research/146).
+    // `&mut Vec` for the same `Chest.Resize` growth (research/266).
     slots: &mut Vec<crate::item::ItemSlot>,
     max_items: usize,
 ) -> (bool, u32, bool) {
     if crate::registry::is_coin(drop.kind) {
         let placed = try_move_coins_in_chest(drop.kind, drop.count, slots, max_items);
         // `TryMoveCoinsInChest` always `TurnToAir`s the drop on success
-        // (`Wiring.cs:2755`); a failure leaves it untouched.
+        // (`Wiring.cs:2755`); a failure leaves it untouched. No cue on this
+        // arm — only `TryAddingToEmptySlot` plays (`:2765`).
         return (placed, if placed { 0 } else { drop.count }, false);
     }
     let mut left = drop.count;
@@ -791,7 +791,9 @@ fn try_put_item_in_chest(
             return (true, left, false);
         }
     }
-    // `:2693-2699`: the first empty slot takes the whole (remaining) drop.
+    // `:2693-2699`: the first empty slot takes the whole (remaining) drop —
+    // `TryAddingToEmptySlot` (`:2759-2770`): clone + `newAndShiny = false`
+    // fold + `PlaySound(7)` (the caller's cue, see the hopper).
     for idx in 0..max_items {
         let air = slots.get(idx).is_none_or(|s| s.kind == 0 || s.count == 0);
         if air {
@@ -865,13 +867,22 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
         if !crate::item::rects_intersect(drop.pos.x, drop.pos.y, crate::item::SIZE, crate::item::SIZE, gx, gy, 192.0, 192.0) {
             continue;
         }
-        // The chest's slot Vec directly — the empty-slot / coin arms grow it
-        // (`Chest.Resize`, `Chest.cs:118-130`); `chest_slots_mut` erases to a
-        // slice, which cannot resize (research/146, the e20 `a2d6cdad0`
+        // The chest's slot Vec directly (the empty-slot / coin arms grow it —
+        // `Chest.Resize`, `Chest.cs:118-130`); `chest_slots_mut` erases to a
+        // slice, which cannot resize (research/266, the e20 `a2d6cdad0`
         // routing). `find_chest` above returned this live index.
         let slots = &mut app.world_chests[idx].slots;
-        let (placed, remaining, filled_empty) = try_put_item_in_chest(drop, slots, max_items);
+        let (placed, remaining, via_empty_slot) = try_put_item_in_chest(drop, slots, max_items);
         if placed {
+            // `:2765` — `TryAddingToEmptySlot`'s `SoundEngine.PlaySound(7)`:
+            // the case-7 pitch draw (`Next(-10, 11) * 0.01`,
+            // `LegacySoundPlayer.cs:725`) rides the wiring stream (the
+            // `HitWireSingle` site's `Main.rand`, the S1-L-6c contract) —
+            // played only on the empty-slot fill, never on a stack merge or
+            // the coin arm (W4-f11 fidelity port, research-71 §3b.1).
+            if via_empty_slot {
+                app.audio.play_pickup_sound(false, app.wiring.rand_mut());
+            }
             // `:2669-2671`: the drop's stack carries the leftover (a partial
             // merge); `TurnToAir` only when it emptied. `SyncItem`/
             // `VisualizeChestTransfer` are net/draw effects (no port).
@@ -880,13 +891,6 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
                 drop.kind = 0;
             }
             pulled = true;
-            if filled_empty {
-                // `TryAddingToEmptySlot`'s `SoundEngine.PlaySound(7)`
-                // (`Wiring.cs:2765`): the case-7 pitch draw rides the
-                // wiring stream (the `HitWireSingle` site's `Main.rand`)
-                // — the f11 must-merge win (research/71 §3b.1).
-                app.audio.play_pickup_sound(false, app.wiring.rand_mut());
-            }
         }
     }
     // `:2674-2677`: a successful pull sorts the chest (no sync, no feedback).
@@ -1757,7 +1761,7 @@ mod tests {
         assert_eq!(slots[0].count, 9999, "the chest stack filled to maxStack");
     }
 
-    /// W4-c42 SEAL (research/146 re-pick receipt): the hopper slot arms take
+    /// W4-c42 SEAL (research/266 re-pick receipt): the hopper slot arms take
     /// `&mut Vec<ItemSlot>` and GROW it (`Chest.Resize`, `Chest.cs:118-130`) —
     /// the slice signatures could not `resize` (E0599, the compile blocker
     /// e20 fixed at `a2d6cdad0`). Both growth sites pinned directly: the
@@ -1771,8 +1775,8 @@ mod tests {
         // pass finds no room, slot 1 is air beyond len → resize(2) + write.
         let mut slots = vec![slot(2, 9999)];
         let drop = crate::item::ItemDrop::new(2, 5, 0, 0.0, 0.0, 0.0, 0.0, 0.0);
-        let (placed, remaining, filled_empty) = try_put_item_in_chest(&drop, &mut slots, 40);
-        assert!((placed, remaining, filled_empty) == (true, 0, true));
+        let (placed, remaining, via_empty_slot) = try_put_item_in_chest(&drop, &mut slots, 40);
+        assert!((placed, remaining, via_empty_slot) == (true, 0, true));
         assert_eq!(slots.len(), 2, "the empty-slot arm grew the Vec");
         assert_eq!((slots[1].kind, slots[1].count), (2, 5));
         // Coin arm: an EMPTY Vec, 100 copper → 1 silver at target 0 →
@@ -1816,10 +1820,61 @@ mod tests {
         assert!(app.items.is_empty(), "no drop from a mode -1 roll");
     }
 
-    /// The f11 coins-split pin (research/71 §3b.3:
-    /// `w4_f11_coins_split_matches_the_csharp_denominations`, re-pointed at
-    /// the kept e20 `coins_split`). `Utils.CoinsSplit` (`Utils.cs:1048-1060`):
-    /// 1234567 copper → [67, 45, 23, 1]. WRITTEN NOT RUN (code-only).
+    /// W4-f11 fidelity port (research-71 §3b.1): `TryAddingToEmptySlot`'s
+    /// `PlaySound(7)` (`Wiring.cs:2765`) — the empty-slot hopper fill draws
+    /// exactly ONE `Next(-10, 11)` pitch (`LegacySoundPlayer.cs:725`) on the
+    /// wiring stream; the stack-merge and coin arms draw nothing (no cue).
+    #[test]
+    fn w4_f11_the_hopper_empty_slot_fill_draws_the_case7_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        // Empty chest → the dirt drop enters via the empty-slot arm.
+        let mut app = app_with(21, 0, 0);
+        app.wiring.seed_rand(7);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5), "the dirt landed");
+        assert_eq!(
+            app.wiring.rand_mut().peek(),
+            witness.peek(),
+            "exactly one case-7 pitch draw on the wiring stream"
+        );
+        // The stack-merge arm plays no cue: a second same-kind drop merges
+        // into the landed stack without touching the stream.
+        let peek = app.wiring.rand_mut().peek();
+        app.items.push(crate::item::ItemDrop::new(
+            2, 3, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        // Drain the 60-tick hopper cooldown, then re-hit.
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 8), "the merge ran");
+        assert_eq!(app.wiring.rand_mut().peek(), peek, "the stack merge is draw-free");
+        // The coin arm plays no cue either (the coin merge is draw-free).
+        let peek = app.wiring.rand_mut().peek();
+        app.items.push(crate::item::ItemDrop::new(
+            71, 4, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 71 && s.count == 4), "the coins landed");
+        assert_eq!(app.wiring.rand_mut().peek(), peek, "the coin arm is draw-free");
+    }
+
+    /// W4-f11 port (research-71 §3b.3): `Utils.CoinsSplit`
+    /// (`Utils.cs:1048-1060`) — 1234567 copper → [67, 45, 23, 1]
+    /// (platinum 1, gold 23, silver 45, copper 67).
     #[test]
     fn w4_f11_coins_split_matches_the_csharp_denominations() {
         assert_eq!(coins_split(1_234_567), [67, 45, 23, 1]);
@@ -1828,32 +1883,48 @@ mod tests {
         assert_eq!(coins_split(1_000_000), [0, 0, 0, 1]);
     }
 
-    /// The f11 grab-rect pin (research/71 §3b.3:
-    /// `w4_f11_the_hopper_grab_rect_is_192_centred`). The hopper grab rect is
-    /// 192×192 centred on `(num*16+16, num2*16+16)` (`Wiring.cs:2660`,
-    /// `HopperGrabHitboxSize = 192`) — the e20 body's floored top-left.
-    /// WRITTEN NOT RUN (code-only).
+    /// W4-f11 port (research-71 §3b.3), re-pointed at the kept `hopper_pull`
+    /// body: the grab rect is 192×192 centred on `(ax*16+16, ay*16+16)`
+    /// (`Wiring.cs:2660`, `HopperGrabHitboxSize`; `Utils.CenteredRectangle`
+    /// floors the top-left). Anchor (10, 20) → centre (176, 336), box
+    /// [80, 272) × [240, 432); the strict-`<` test excludes the touching edge.
     #[test]
     fn w4_f11_the_hopper_grab_rect_is_192_centred() {
-        let (num, num2) = (10, 20);
-        let cx = num as f32 * 16.0 + 16.0;
-        let cy = num2 as f32 * 16.0 + 16.0;
-        // The e20 body: `(cx − 96.0) as i32` — CenteredRectangle's floor.
-        assert_eq!((cx - 96.0) as i32, 10 * 16 + 16 - 96);
-        assert_eq!((cy - 96.0) as i32, 20 * 16 + 16 - 96);
+        let (cx, cy) = (10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0);
+        assert_eq!((cx - 96.0, cy - 96.0), (80.0, 240.0), "the floored top-left");
+        // A 14×14 drop at x 258 reaches 272 — the last intersecting column.
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 258.0, 330.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the inside-edge drop was grabbed");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5));
+        // At x 272 the drop's left edge touches the box's right edge — the
+        // strict-`<` `Rectangle.Intersects` refuses (474bc8b5's rule).
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 272.0, 330.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 5, "the touching-edge drop stays out");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().all(|s| s.count == 0), "the chest stayed empty");
     }
 
-    /// The f11 locked-gate pin (research/71 §3b.3:
-    /// `w4_f11_a_locked_chest_refuses_the_hopper` — e20 lacks it). The
-    /// hopper's locked gate (`Wiring.cs:2651`): a locked chest (the golden
-    /// frames, frameX 72) refuses the grab; the drop stays.
-    /// WRITTEN NOT RUN (code-only).
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `hopper_pull`: the
+    /// locked gate (`Wiring.cs:2651`, `Chest.IsLocked`) — a golden chest
+    /// (frameX 72, `Chest.cs:301-313`) refuses the grab; the drop stays.
     #[test]
     fn w4_f11_a_locked_chest_refuses_the_hopper() {
-        let mut app = app_with(21, 72, 0); // frameX 72 = a locked golden chest
-        // The chest STORE entry only — the locked tile (frameX 72) must
-        // survive for the `is_locked` gate (`chest_at` would reset it).
-        let idx = crate::chest::create_chest(&mut app.world_chests, 10, 20);
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        // Lock the anchor tile (72 % 36 == 0 keeps the anchor at (10, 20)).
+        let i = app.world.index(10, 20);
+        app.world.tiles[i].frame_x = 72;
         app.items.push(crate::item::ItemDrop::new(
             2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
         ));
@@ -1863,156 +1934,180 @@ mod tests {
         assert!(slots.iter().all(|s| s.count == 0), "nothing entered");
     }
 
-    /// The f11 non-anchor hopper hit (research/71 §3b.3:
-    /// `w4_f11_the_hopper_resolves_its_2x2_anchor`, re-pointed at the kept
-    /// e20 app seam — the engine queues the HIT cell + kind, the app
-    /// resolves the anchor). `Wiring.cs:2643-2650`: `frameX % 36 != 0` →
-    /// x−1, `frameY % 36 != 0` → y−1. WRITTEN NOT RUN (code-only).
+    /// Re-route the fixture's red wire around the anchor cell (10, 20) so
+    /// ONLY the far cell (11, 21) is wired: 8→9 (row 20), up to row 19,
+    /// across to column 11, down to (11, 21). The non-anchor witnesses hit
+    /// the device through its bottom-right / centre cell alone.
+    fn wire_only_far_cell(app: &mut App) {
+        app.world.wires.set(10, 20, tr_core::wiring::WireColor::Red, false);
+        for (x, y) in [(9, 19), (10, 19), (11, 19), (11, 20), (11, 21)] {
+            app.world.wires.set(x, y, tr_core::wiring::WireColor::Red, true);
+        }
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `hopper_pull`: the 2×2
+    /// anchor (`Wiring.cs:2643-2650`) — hitting the bottom-right chest cell
+    /// (11, 21) with frameX/Y 18 (both mod-36 non-zero) resolves the anchor
+    /// (10, 20) and pulls into THAT chest.
     #[test]
     fn w4_f11_the_hopper_resolves_its_2x2_anchor() {
         let mut app = app_with(21, 0, 0);
-        // The 2×2 chest at (10, 20)..(11, 21); the wire hits ONLY the
-        // bottom-right cell (frameX 18, frameY 18) — the anchor is (10, 20).
-        // Re-route the wire around the anchor so the anchor cell itself is
-        // never hit (the discriminating fixture).
-        for x in [9, 10] {
-            app.world.wires.set(x, 20, tr_core::wiring::WireColor::Red, false);
-        }
-        for (x, y) in [(8, 21), (9, 21), (10, 21), (11, 21)] {
-            app.world.wires.set(x, y, tr_core::wiring::WireColor::Red, true);
-        }
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        // The bottom-right chest cell — the only wired device cell.
         let i = app.world.index(11, 21);
-        app.world.tiles[i] = tr_core::tile::Tile { kind: 21, frame_x: 18, frame_y: 18, ..Default::default() };
+        app.world.tiles[i] = Tile { kind: 21, frame_x: 18, frame_y: 18, ..Default::default() };
         app.world.tiles[i].flags |= FLAG_ACTIVE;
+        wire_only_far_cell(&mut app);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the non-anchor hit pulled the drop");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5), "the anchor chest took it");
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `extractinator_roll`:
+    /// the 3×3 anchor (`Wiring.cs:2557-2560`) — hitting the centre cell
+    /// (11, 21) with frameX/Y 18 resolves (10, 20) (`18 % 54 / 18 == 1`);
+    /// the kind rides the request (the 642 chlorophyte variant runs too).
+    /// Poop Block (5395, mode 4) always yields (the seed roll or the dirt
+    /// fallback, `ExtractinatorHelper.cs:269-288`), so the consume is
+    /// draw-independent.
+    #[test]
+    fn w4_f11_the_extractinator_resolves_its_3x3_anchor_and_kind() {
+        let mut app = app_with(219, 0, 0);
+        // Move the device to the centre cell (11, 21); anchor → (10, 20).
+        let old = app.world.index(10, 20);
+        app.world.tiles[old] = Tile::default();
+        let i = app.world.index(11, 21);
+        app.world.tiles[i] = Tile { kind: 219, frame_x: 18, frame_y: 18, ..Default::default() };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        wire_only_far_cell(&mut app);
+        let idx = chest_at(&mut app, 12, 20, vec![slot(5395, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the non-anchor hit consumed one input");
+        assert!(!app.items.is_empty(), "the roll spawned a drop");
+        // The chlorophyte variant (642) rides its own kind through the seam.
+        let mut app = app_with(642, 0, 0);
+        let idx = chest_at(&mut app, 12, 20, vec![slot(5395, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the 642 arm ran");
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at the e20 request seam:
+    /// the switch track's `CheckMech(5)` (`Wiring.cs:1744-1748`) blocks an
+    /// immediate re-hit, and AFTER expiry the flip runs again (the e20 core
+    /// witness pins the refusal only — this pins the post-expiry re-fire).
+    #[test]
+    fn w4_f11_the_switch_track_flips_and_the_cooldown_gates_the_rehit() {
+        let mut app = app_with(314, 1, 5);
+        trip_and_tick(&mut app);
+        assert_eq!(app.world.tile_frame_x(10, 20), 5, "front took the back");
+        assert_eq!(app.world.tile_frame_y(10, 20), 1, "back took the front");
+        // The mech is queued (5 ticks) — an immediate re-trip is refused.
+        trip_and_tick(&mut app);
+        assert_eq!(app.world.tile_frame_x(10, 20), 5, "the cooldown blocked the re-flip");
+        // Drain the cooldown, then re-trip — the flip runs again.
+        for _ in 0..5 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        assert_eq!(app.world.tile_frame_x(10, 20), 1, "after the cooldown the flip runs again");
+        assert_eq!(app.world.tile_frame_y(10, 20), 5);
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `hopper_pull`'s drain
+    /// gate: `CheckMech(60)` (`Wiring.cs:2651`) refuses an immediate re-hit;
+    /// after 60 ticks the pull runs again.
+    #[test]
+    fn w4_f11_the_hopper_cooldown_gates_the_rehit() {
+        let mut app = app_with(21, 0, 0);
         let idx = chest_at(&mut app, 10, 20, vec![]);
         app.items.push(crate::item::ItemDrop::new(
             2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
         ));
-        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
-        assert_eq!(app.items[0].count, 0, "the non-anchor hit resolved the chest");
-        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
-        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5), "the dirt landed");
-    }
-
-    /// The f11 non-anchor extractinator hit + kind ride (research/71 §3b.3:
-    /// `w4_f11_the_extractinator_resolves_its_3x3_anchor_and_kind`,
-    /// re-pointed at the kept e20 app seam). `Wiring.cs:2557-2560`:
-    /// `frameX % 54 / 18`, `frameY % 54 / 18` → the 3×3 top-left; the
-    /// chlorophyte variant (642) rides its own kind. WRITTEN NOT RUN.
-    #[test]
-    fn w4_f11_the_extractinator_resolves_its_3x3_anchor_and_kind() {
-        // The 3×3 extractinator at (10, 20)..(12, 22); hit the centre cell
-        // (frameX 18, frameY 18) → anchor (10, 20). The chest at (12, 20)
-        // is inside the ±2..+5 scan of the ANCHOR, not of the hit cell's
-        // own resolution — a wrong anchor misses it.
-        let mut app = app_with(642, 0, 0);
-        app.wiring.seed_rand(7);
-        // Re-route the wire around the anchor (10, 20) so ONLY the centre
-        // cell fires (the discriminating fixture).
-        for x in [9, 10] {
-            app.world.wires.set(x, 20, tr_core::wiring::WireColor::Red, false);
-        }
-        for (x, y) in [(8, 21), (9, 21), (10, 21), (11, 21)] {
-            app.world.wires.set(x, y, tr_core::wiring::WireColor::Red, true);
-        }
-        let i = app.world.index(11, 21);
-        app.world.tiles[i] = tr_core::tile::Tile { kind: 642, frame_x: 18, frame_y: 18, ..Default::default() };
-        app.world.tiles[i].flags |= FLAG_ACTIVE;
-        let idx = chest_at(&mut app, 12, 20, vec![slot(424, 3)]);
-        app.wiring.trip_wire(&mut app.world, 11, 21, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
-        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
-        assert_eq!(slots[0].count, 2, "one silt consumed through the resolved anchor");
-        assert!(!app.items.is_empty(), "the roll spawned a drop");
-    }
-
-    /// The f11 cooldown-EXPIRY re-fire pins (research/71 §3b.3 — e20 pins
-    /// the refusal but not the post-expiry re-fire): the 314 `CheckMech(5)`
-    /// and the hopper/extractinator `CheckMech(60)` gates block an
-    /// immediate re-hit, then expire. The wiring tick drains the requests
-    /// each update, so the expiry is driven on the core `Wiring::update`
-    /// with the app drain re-run. WRITTEN NOT RUN (code-only).
-    #[test]
-    fn w4_f11_the_switch_track_cooldown_expires_and_refires() {
-        let mut app = app_with(314, 1, 5);
         trip_and_tick(&mut app);
-        assert_eq!(app.world.tile_frame_x(10, 20), 5, "the first flip");
-        // The immediate re-hit is refused (the 5-tick mech).
-        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
-        assert_eq!(app.world.tile_frame_x(10, 20), 5, "the cooldown blocked");
-        // Five wiring updates tick the mech to expiry.
-        for _ in 0..5 {
-            app.wiring.update(&mut app.world);
-        }
-        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
-        assert_eq!(app.world.tile_frame_x(10, 20), 1, "after the cooldown the flip runs again");
-    }
-
-    /// The hopper's 60-tick cooldown expiry (research/71 §3b.3:
-    /// `w4_f11_the_hopper_cooldown_gates_the_rehit`, re-pointed at the app
-    /// seam — the gate lives in `hopper_pull`'s `check_mech(ax, ay, 60)`).
-    /// WRITTEN NOT RUN (code-only).
-    #[test]
-    fn w4_f11_the_hopper_cooldown_expires_and_refires() {
-        let mut app = app_with(21, 0, 0);
-        let idx = chest_at(&mut app, 10, 20, vec![]);
-        let drop_at_centre = |app: &mut App| {
-            app.items.push(crate::item::ItemDrop::new(
-                2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
-            ));
-        };
-        drop_at_centre(&mut app);
+        assert_eq!(app.items[0].count, 0, "the first pull ran");
+        // A second drop arrives inside the 60-tick window — refused.
+        app.items.push(crate::item::ItemDrop::new(
+            2, 7, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
         trip_and_tick(&mut app);
-        assert_eq!(app.items[0].count, 0, "the first pull");
-        // The immediate re-hit is refused — a fresh drop stays.
-        drop_at_centre(&mut app);
-        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
-        assert_eq!(app.items[1].count, 5, "the cooldown blocked the second pull");
+        assert_eq!(app.items[1].count, 7, "the cooldown blocked the second pull");
+        // Drain the cooldown — the same drop now enters.
         for _ in 0..60 {
-            app.wiring.update(&mut app.world);
+            update_wiring(&mut app, 1.0 / 60.0);
         }
-        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
+        trip_and_tick(&mut app);
         assert_eq!(app.items[1].count, 0, "after the cooldown the pull runs again");
         let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
-        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 10), "both pulls landed");
+        let dirt: u32 = slots.iter().filter(|s| s.kind == 2).map(|s| s.count).sum();
+        assert_eq!(dirt, 12, "both drops landed");
     }
 
-    /// The extractinator's 60-tick cooldown expiry (research/71 §3b.3:
-    /// `w4_f11_the_extractinator_cooldown_gates_the_rehit`, re-pointed).
-    /// WRITTEN NOT RUN (code-only).
+    /// W4-e20 research-71 §6 census — the hopper INPUT side is COMPLETE as
+    /// the ground-item scan: C# `Wiring.Hopper` (`Wiring.cs:2638-2678`) has
+    /// NO chest-above / container-input arm — its only input is the
+    /// `Main.item[400]` walk inside the 192×192 grab box (`:2663-2673`),
+    /// which `hopper_pull` ports verbatim. A drop resting ABOVE the chest
+    /// (outside the tile, inside the box) is pulled exactly like one at the
+    /// centre — the input is the box, not chest adjacency. The
+    /// `IsHopperInRangeOf` helper (`:2610-2636`, the `WireState::any`
+    /// consumer) is the MP-only reservation gate (`WorldItem.cs:237-247`:
+    /// `Main.netMode != 0` guards the whole arm) — SP-discarded, recorded.
     #[test]
-    fn w4_f11_the_extractinator_cooldown_expires_and_refires() {
-        let mut app = app_with(219, 0, 0);
-        app.wiring.seed_rand(7);
-        let idx = chest_at(&mut app, 12, 20, vec![slot(424, 3)]);
+    fn dw_e20_the_hopper_input_is_the_grab_box_not_chest_adjacency() {
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        // A drop one tile ABOVE the chest's top edge — y = 20*16 − 14 = 306,
+        // box rows [240, 432): well inside, no chest contact.
+        app.items.push(crate::item::ItemDrop::new(
+            2, 4, 0, 10.0 * 16.0 + 8.0, 20.0 * 16.0 - 14.0, 0.0, 0.0, 0.0,
+        ));
         trip_and_tick(&mut app);
-        let after_first = crate::chest::chest_slots(&app.world_chests, idx).unwrap()[0].count;
-        assert_eq!(after_first, 2, "one silt consumed");
-        // The immediate re-hit is refused.
-        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
-        assert_eq!(
-            crate::chest::chest_slots(&app.world_chests, idx).unwrap()[0].count,
-            2,
-            "the cooldown blocked the second roll"
-        );
+        assert_eq!(app.items[0].count, 0, "the above-chest drop was grabbed");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 4));
+        // A second chest stacked directly ABOVE the hopper chest contributes
+        // NOTHING — there is no container-input arm in the C# (the scan reads
+        // only `Main.item`, never another chest's slots).
+        let above = chest_at(&mut app, 10, 18, vec![slot(3, 50)]);
         for _ in 0..60 {
-            app.wiring.update(&mut app.world);
+            update_wiring(&mut app, 1.0 / 60.0);
         }
-        app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
-        update_wiring(&mut app, 1.0 / 60.0);
-        assert_eq!(
-            crate::chest::chest_slots(&app.world_chests, idx).unwrap()[0].count,
-            1,
-            "after the cooldown the roll runs again"
-        );
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, above).unwrap();
+        assert_eq!(slots[0].count, 50, "the chest above is untouched — no input arm");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        let stone: u32 = slots.iter().filter(|s| s.kind == 3).map(|s| s.count).sum();
+        assert_eq!(stone, 0, "nothing transferred chest-to-chest");
     }
 
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `extractinator_roll`'s
+    /// drain gate: `CheckMech(60)` (`Wiring.cs:2561`) refuses an immediate
+    /// re-hit; after 60 ticks the roll runs again. Poop Block (mode 4) always
+    /// yields, so the consume count is draw-independent.
+    #[test]
+    fn w4_f11_the_extractinator_cooldown_gates_the_rehit() {
+        let mut app = app_with(219, 0, 0);
+        let idx = chest_at(&mut app, 12, 20, vec![slot(5395, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the first roll consumed one");
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the cooldown blocked the second roll");
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 1, "after the cooldown the roll runs again");
+    }
+}
     /// W4-f11 (4) (fold-133) — `ConsumeItem`'s forward scan
     /// (`Player.cs:9280-9291`): the FIRST matching carry cell drains one; a
     /// zeroed cell turns to air. The coin/ammo slots ride after the 50 carry

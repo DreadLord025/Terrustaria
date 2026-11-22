@@ -1444,9 +1444,44 @@ fn try_pounding_tile_tick(
             app.world_key = None;
             app.pound_release = false;
         }
+        edit::PoundOutcome::TrackHammer => {
+            // `Player.cs:46056-46062` — `Minecart.FrameTrack(x, y, pound:
+            // true)` with mute FALSE (research-71 §3b.4): the app-side tables
+            // run the pound switch-cycle; the C# bool only feeds the
+            // SP-discarded `netMode == 1` SendData.
+            let fail_kill = crate::minecart::frame_track_hammer(&mut app.world, tx, ty);
+            if fail_kill {
+                // `Minecart.cs:1163-1166` — `(pound & flag4) && !mute` →
+                // `WorldGen.KillTile(i, j, fail: true)`. The 314 slice: the
+                // Item52 cue (`KillTile_PlaySounds`, `WorldGen.cs:66531-66533`
+                // — the style's `GetRandomPitch` NextFloat + the case-2 pitch
+                // draw ride the `UpdatePlayers` stream, the pound arm's
+                // convention), then the fail tail's `SquareTileFrame` wake
+                // (`:63735`; 314 is not shakeable/convertible, `:63711-63734`
+                // — the cascade's object drops ride the hammer-family
+                // precedent, discarded like `slope_tile`'s).
+                app.audio.play_place_sound(
+                    (2, 52),
+                    tx as f32 * TILE_PX,
+                    ty as f32 * TILE_PX,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+                let _ = edit::square_tile_frame_default(&mut app.world, tx, ty);
+                // `TileFrameImportant` case 314 (`WorldGen.cs:85290-85294`):
+                // the wake refits EVERY 3×3 track with `FrameTrack(pound:
+                // false)` (the SquareTileFrame walk, not just the hit cell);
+                // `HandleRopeEndFraming` is the rope-framing seam (the rope
+                // draw module reads the frames live — unported half).
+                crate::minecart::refit_tracks_around(&mut app.world, tx, ty);
+            }
+            app.queue_map_ring(tx, ty);
+            app.world_key = None;
+            // `:46310` — the latch clears on the 314 arm either way.
+            app.pound_release = false;
+        }
         edit::PoundOutcome::Framed | edit::PoundOutcome::Consumed => {
             // The frame arms carry no sound (`SendTileSquare` only); the
-            // Consumed seams (470/314) change nothing in the port. The
+            // Consumed seam (470) changes nothing in the port. The
             // frame writes replicate through `SendTileSquare` in the C# —
             // no port net kind yet (ANALYSIS); the local caches still wake.
             app.queue_map_ring(tx, ty);
@@ -6214,6 +6249,16 @@ fn cell_drops(
     let rolls: Vec<(u16, i32)> = match hit.kind {
         78 => vec![(222, 1)],
         380 => vec![((3215 + i32::from(hit.frame_y) / 18) as u16, 1)],
+        // `case 314: dropItem = Minecart.GetTrackItem(tileCache);`
+        // (`WorldGen.cs:64582-64584`, `Minecart.cs:1508-1517`): the track
+        // piece drops by its FRONT frame's type — 0 → 2340 Minecart Track,
+        // 1 → 2492 Pressure Track, 2 → 2739 Booster Track. The `by_tile`
+        // fallback would leak 2340 for every frame (the first placing item).
+        // Research-71 §6 census.
+        314 => match crate::minecart::track_item(hit.frame_x) {
+            0 => Vec::new(),
+            id => vec![(id, 1)],
+        },
         // S1-P-i30: the tree/cactus kinds drop through their per-cell kill
         // records (`TreeDropEvent`, resolved in `break_drop_events`) — the
         // hit cell included — so the generic per-cell arm must not double
@@ -7567,6 +7612,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // counter (`AchievementsHelper.cs:401-404`).
     if matches!(kind, 20 | 590 | 595 | 615) {
         let _ = app.achievements.notify_custom_int("Do", 1);
+    }
+    if kind == 314 {
+        // `WorldGen.PlaceTile`'s `SquareTileFrame` tail (`:60261`) →
+        // `TileFrameImportant` case 314 (`:85290-85294`): the 3×3 wake refits
+        // every track through `FrameTrack(pound: false)` — the placed −1
+        // front takes its neighbourhood frame, and the neighbours re-fit
+        // against the new piece (research-71 §6 census).
+        crate::minecart::refit_tracks_around(&mut app.world, tx, ty);
     }
     app.liquids.wake_around(&app.world, tx, ty, 3);
     // The placement cue: `tr_core::edit::place_tile_sound` is the
@@ -11777,6 +11830,90 @@ mod tests {
         assert!(app.pound_release, "the refused pound keeps the latch");
     }
 
+    /// W4-e20 research-71 §3b.4 — the track hammer arm
+    /// (`Player.cs:46056-46062` → `Minecart.FrameTrack(pound: true)`, mute
+    /// FALSE): a straight front with ONE left neighbour (mask 2, options
+    /// {3, 15, 23, 25}) pounds to the first same-type dead end — bumper 3 —
+    /// and the `(pound & flag4) && !mute` fail-kill (`Minecart.cs:1163-1166`)
+    /// fires: the Item52 cue draws EXACTLY ONE `Next(-6, 7)` pitch on the
+    /// caller's stream (`LegacySoundPlayer.cs:610-634` default arm; the
+    /// `GetRandomPitch` NextFloat rides the audio-only `sound_style_random`,
+    /// `SoundEngine.cs:99`). The latch clears (`:46310`). The cue pin runs
+    /// the seam directly on a fresh stream (the mining rig's swing draws
+    /// would mask the exact position); the press pin is behavioural.
+    #[test]
+    fn dw_e20_the_track_hammer_pounds_and_the_fail_kill_draws_the_item52_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut w = World::new("t".into(), 64, 800);
+        for (x, front) in [(30i32, 1i16), (29, 1)] {
+            let i = w.index(x, 260);
+            w.tiles[i] = Tile { kind: 314, frame_x: front, frame_y: -1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505; // the Copper Hammer
+        // The fail-kill cue's exact draw count, on the seam itself: one
+        // Next(-6, 7), nothing else (the twin mirrors only that draw). The
+        // rig's listener sits at (0, 0) — park it on the cell so the
+        // attenuation gate passes (the cue pin needs the audible path).
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (30.0 * TILE_PX + 8.0, 260.0 * TILE_PX + 8.0),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let mut rng = UnifiedRandom::new(11);
+        let mut twin = UnifiedRandom::new(11);
+        twin.next_range(-6, 7);
+        let cue = app.audio.play_place_sound(
+            (2, 52),
+            30.0 * TILE_PX,
+            260.0 * TILE_PX,
+            &mut rng,
+        );
+        assert_eq!(cue, Some("Item_52"), "the 314 fail cue is Item52");
+        assert_eq!(rng.peek(), twin.peek(), "exactly one Next(-6, 7) pitch draw");
+        // The press: the pound lands 1 → 3 and the latch clears.
+        app.mine_down = false;
+        mine_frames(&mut app, 2); // the release arms poundRelease (i12 latch)
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().frame_x, 3, "1 → 3, the dead-end bumper");
+        assert_eq!(app.world.tile(30, 260).unwrap().frame_y, -1);
+        assert!(!app.pound_release, "the 314 arm clears the latch");
+    }
+
+    /// W4-e20 research-71 §3b.4 — the unchanged pound draws NOTHING: an
+    /// isolated track (mask 0, options {0}) refuses at the count gate — one
+    /// same-type dead end, `through < 2 && dead_end < 2`
+    /// (`Minecart.cs:1069-1072`) — no write, `flag4` never reached, no
+    /// `KillTile(fail: true)`, no cue (`:1163`). The latch still clears
+    /// (`Player.cs:46310`). The no-cue condition is pinned at the module
+    /// seam (`frame_track_hammer == false`); the press is behavioural.
+    #[test]
+    fn dw_e20_the_unchanged_track_pound_is_draw_free() {
+        let mut w = World::new("t".into(), 64, 800);
+        let i = w.index(30, 260);
+        w.tiles[i] = Tile { kind: 314, frame_x: 0, frame_y: -1, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.compute_column_surface();
+        // The seam itself reports NO fail-kill on the isolated front.
+        assert!(!crate::minecart::frame_track_hammer(&mut w, 30, 260));
+        assert_eq!(w.tile(30, 260).unwrap().frame_x, 0, "the count gate refused — no write");
+        let mut app = mining_app(w, 30, 260);
+        app.inventory[app.selected].kind = 3505;
+        app.mine_down = false;
+        mine_frames(&mut app, 2);
+        app.mine_down = true;
+        mine_frames(&mut app, 3);
+        assert_eq!(app.world.tile(30, 260).unwrap().frame_x, 0);
+        assert!(!app.pound_release, "the latch clears either way");
+    }
+
     /// S1-P-i31 — the flatten player-push (`WorldGen.cs:80787-80795`): a
     /// player standing INSIDE the pounded cell rides to its top when the
     /// half brick clears (the un-half pound), the drop booked in gfxOffY.
@@ -12861,6 +12998,25 @@ mod tests {
         // Styles 2 and 6 have no window.
         assert!(!is_alchemy_plant_harvestable(2, 100, &day));
         assert!(!is_alchemy_plant_harvestable(6, 100, &day));
+    }
+
+    /// W4-e20 research-71 §6 census — the track break drop
+    /// (`WorldGen.cs:64582-64584` → `Minecart.GetTrackItem`
+    /// `Minecart.cs:1508-1517`): a pressure piece (front 21) drops 2492, a
+    /// booster (front 30) drops 2739, a plain rail (front 1) drops 2340 —
+    /// NOT the `by_tile` fallback's blanket 2340.
+    #[test]
+    fn dw_e20_the_track_break_drops_the_front_types_item() {
+        for (front, want) in [(1i16, 2340u16), (21, 2492), (30, 2739)] {
+            let mut w = World::new("t".into(), 64, 800);
+            let i = w.index(10, 19);
+            w.tiles[i] = Tile { kind: 314, frame_x: front, frame_y: -1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            let mut app = break_app(w, 0xABCD);
+            break_tile(&mut app, 10, 19);
+            let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
+            assert!(kinds.contains(&want), "front {front} drops {want} in {kinds:?}");
+        }
     }
 
     // DW-3.2: the observable break path — mining a blooming herb drops the
