@@ -39244,3 +39244,61 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+# The NPC HitEffect gore table (W4-d55, wave A, code-only)
+
+`NPC.HitEffect` (`NPC.cs:81654-82678+`) is the per-NPC death/hit gore+dust
+table. The pool (`tr_core::gore::GorePool`, S1-E-4) and the `GoreID.Sets`
+tables were already on main; the per-NPC spawn table was absent. Wave A
+(`crates/tr-app/src/npc_hit_effect_a.rs`) ports the FIRST 30 `Gore.NewGore*`
+sites in source order:
+
+- the party-hat block (`:81660-81729`): the 13 town head rows (927-938 /
+  1112, the shimmer twins 1298-1373 / 1311; 229 has no shimmer gore) + the
+  hat itself (926/939/940/941/942 by `GetPartyHatColor`'s name hash,
+  `:66636-66659`, ported verbatim incl. the `%5` sign quirk and the +5
+  once); `UsesPartyHat`/`IsShimmerVariant` ride `HitEffectInputs` (the port
+  has no variation-index field; the shimmer set resolves through
+  `npc_ai_town::shimmer_town_transform`, `NPCID.cs:10469`);
+- the 686 Queen Slime + 594 Windy Balloon bursts (`:81752-81812`): 3
+  `NewGorePerfect` of `base + Next(3)` + one 1146 crystal each; per gore
+  `Circular(15,15)` + `Circular(2,2)` + `Next(3)` + the pool kicks +
+  `NextFloat` Y-drop, then velocity x4 (the crystal uses `Circular(5,5)`).
+  The 594 base is `1125 + (int)(ai[2]-1)*3`;
+- the daybreak arm (`:81730-81751`): 20 `SelectRandom(6,259,158)` dusts
+  through the pool; the buff-189 proximity sweep is RETURNED
+  (`HitEffectOutcome::daybreak_add_buff`) - the roster seam is the wiring
+  wave's;
+- the 668 Deerclops death (`:81894-81909`): the 120-dust type-5 burst
+  (velocity = `Circular(4,4)`) then the 7 body gores 1274/1274/1272/1273/
+  1273/1270/1271 at velocity x0.6;
+- the 636 Empress death's dust census (`:81929-81939`, 50 x (Next(2) + the
+  6 NewDust default-block draws), emit skipped) + the FIRST gore 1262
+  (`:81941`). The 8-gore tail (`:81942-81949`) is wave B.
+
+Deviations / stand-ins (all cited at their sites in the module):
+
+- the `this.type` axis rides an explicit `npc_type` parameter (the
+  `Style39Type` precedent - the boss kinds 686/594/668/636 have no
+  `NpcKind` rows yet);
+- the 686 `Transform(680)` rides the existing `wants_transform` seam; the
+  `unlockedSlimePurpleSpawn` flag is RETURNED (the World carries the
+  sibling red/rainbow flags); the 594 slave release is RETURNED;
+- the 636 dust EMIT is the documented skip (draws consumed, the
+  `npc_ai_style50.rs` count-plan precedent) - the wiring wave feeds the
+  pool;
+- `hitDirection`/`dmg` hit-half loops (the dmg-scaled dust counts) are
+  wave B/C; the death halves here use the flat counts;
+- the `!active` gate is the caller's; netMode guards follow the pool's
+  single-player convention.
+
+RNG: the strike's stream (the `StrikeNPC_Inner` `:81488` call runs under
+the projectile/melee update's swap, NOT UpdateNPCs - the
+`npc_ai_style37.rs::probe_launch_on_hit` note). Every draw is cited per
+site in the module docs; the witnesses replay the cited draws on twin
+streams (WRITTEN, NOT RUN - code-only mode, no cargo/rustc/tests).
+
+Wiring remainder: the `StrikeNPC_Inner` `:81482`/`:81488` dispatch + the
+AI-arm `HitEffect()` calls (`:22309` etc.), the roster seams (the daybreak
+sweep, the 594 slave), the World unlock flag, and waves B/C (the rest of
+the 636 arm + `:81956` onward).
