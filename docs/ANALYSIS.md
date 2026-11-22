@@ -1854,6 +1854,120 @@ c40 sandstorm, g69 cloud draw, g68 wind sim, c39 lantern grafts), gate
 command `cargo test --workspace -- --skip
 migrates_version_2_kinds_to_item_ids`.
 
+**W4-g67 FINAL fn-census (2026-11-21)** — `Rain.cs` is 6 methods + 7 fields; the
+port covers every one: `ClearRain` → `clear_rain` (`rain.rs:325`, the packed-Vec
+`clear()` = deactivate-all), `MakeRain` → `spawn` (`:1052`), `GetRainFallVelocity`
+→ inlined at the spawn (`:1149`, live `wind*18, 14`) and the Eyebrella caller's
+`wind*3, 9` (`world_sim/player.rs:1403`), `Update` → `update_drops` (`:969`, all
+four arms: paused fold / menu `+2000` / remix `+100` / the combined
+solid‖below‖wet kill with the one `Next(100)` gate), `NewRainForced` →
+`new_rain_forced` (`:336`), `NewRain` → the spawn budget block (`:1084-1110`).
+Fields: `position/velocity/scale/rotation/type` ride `Drop`; `active` is the
+packed-Vec membership; **`alpha` is DEAD in the C#** — zero writers/readers
+outside the declaration (script census over `Rain.cs` + `Main.cs`), so its
+omission is faithful, not a gap. Two orchestration notes for the union: the C#
+spawns in `Main.Update` (`:17220-17223`, gated `FocusHelper.AllowRain &&
+cloudAlpha > 0`) and moves the drops in `DrawRain` (`:38819-38822`) — net
+spawn-then-move per cycle; d130's tick keeps that order (`spawn` then
+`update_drops`), g67's tick runs update-then-spawn (superseded — the union keeps
+d130's core wholesale, research/83 §3). The `spawn_acc` cadence and the
+budget-before-attempts early-out are the recorded g67 divergences (research/267
+"Deliberate divergences") — d130's float attempt loop is canonical.
+
+**W4-g67 FINAL visual-overlap census (2026-11-21)** — rain × blizzard ×
+sandstorm, per the C# and both ports:
+
+* **Blizzard.** Vanilla has NO biome gate on `MakeRain` — in a snow biome the
+  rain event still spawns `Rain` drops (the budget only shrinks via the
+  `(1-(snow/threshold)²)` suppression, `Rain.cs:181-182`), while
+  `Main.snowing()` (`:13032-13116`) runs on its own gates (`SnowTileCount > 0 &&
+  SurfaceAtmospherics`, NOT `ZoneRain`) — during a rain event the flake recipe
+  branches on `Main.raining` (`:13092`): the storm drift
+  `sqrt(|wind|)·sign(wind)·(cloudAlpha+0.5)·10` and the fall ×0.5
+  (`:13099-13100`). The blizzard visual is the raw `ZoneRain && ZoneSnow` pair
+  (`SceneState.cs:78`, ported at `scene_scan.rs:532` / `filters.rs:318`).
+  **d130 is canonical** (its `crate::snow` carries the verbatim `:13092` branch,
+  re-read at the tip `snow.rs:213-238`); g67's `snow_mode` biome gate
+  (`rain.rs` tick — snow REPLACES the drops, the `is_snow_biome` surface-kind
+  probe) is the recorded first-pass approximation, retired by the union
+  (research/83 §2 KEEP d130). No g67 code change — the divergence stays written
+  down, not folded.
+* **Sandstorm.** The zone gate is ONE-WAY: `ZoneSandstorm` clears `ZoneRain`
+  (`SceneMetrics.cs:698-703`, ported verbatim at `scene.rs:831-837` with the
+  `zone_sandstorm_suppresses_zone_rain` witness); rain never gates the storm
+  (`Sandstorm.cs` reads only wind — d130's `703370e6` census, re-confirmed).
+  g67's `spawn` reads `zone_rain` (`weather.rs:38`), so a happening storm stops
+  the drop spawns while the event flag/intensity ramp survive — the C# shape.
+* **Wind-slant draw angle.** The drop rotation is
+  `atan2(velocity.X, -velocity.Y)` (`Rain.cs:204`/`:161`) over the LIVE
+  `GetRainFallVelocity` (`wind*18, 14`, `:93`) — the slant IS the wind, no
+  separate draw-angle term; both ports compute it at spawn
+  (`rain.rs` `rot: vel.x.atan2(-vel.y)`) and the WGSL rotates about the
+  top-left origin exactly like XNA's `Vector2.Zero` (`sprite.wgsl:92-97`).
+  Dust rotation is a different lane: `dust.rotation += velocity.X * 0.5`
+  (`Dust.cs:2081`, the 79/268/304 exclusion) — the splash family rotates with
+  its own velocity in the shared tick, and the flying-sand 268 draw pins
+  rotation 0 (`GetVisualRotation`, `sand.rs:367` — the 268 exclusion means the
+  spawn-time 0 never advances). No wind-slant residual on either draw side.
+
+**W4-g67 RETIRE — the WEATHER merger instruction (2026-11-21, FINAL-FINAL).**
+The g67 branch is DONE (fold-source tip `e777b3e2`, retire commits
+`9159c15a`/`5afdb38b`/`52b2ef92`). The union decision stands: **the merger keeps
+d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale EXCEPT the
+folded hunks** (research/267 FINAL-FINAL, re-checked at d130 tip `97ed44f5`).
+d130 `16a792d5` already executed R1–R4 (`is_it_raining` + the five consumers,
+`clear_rain` + the save-and-quit call, the cull rect + else-kill — extended to
+`snow::draw` — and the `new_rain_forced` seam) plus the gameMenu kill-only arm
+(the earlier fold-out divergence is retired). The remaining d130f work-list:
+R5 (the skyblock snow threshold — d130 still reads the unconditional 1500),
+R6's Eyebrella caller, R7 (umbrella), and the 2-hunk fold-addendum for the
+draw commits that POST-DATE the fold (g67 `7aaf66f0` 09:02 > d130 `16a792d5`
+08:55): **A1** — d130's own `ea4863d9` already carried both draw fixes and its
+`rain_tint` dims alpha correctly (XNA `Color * 0.85f` scales A: 216 at full
+light, 162 under shimmer 0.25); g67's `rain_drop_tint` fn body agrees but its
+witness wrongly asserts alpha stays 255 — keep d130's copy + witness verbatim,
+the g67 assertions drop. **A2** — re-pin g67's light-tile geometry witness
+(`w4_g67_draw_rain_light_tile_is_pos_plus_four_shifted`) onto d130's inline
+`light_tile` closure; no code delta. g67's dup-halves carry
+DEPRECATED-BY-UNION banners (`5afdb38b`, comments-only); the unique
+eyebrella/umbrella/skyblock/drop-draw-fix content stays live as fold-source.
+The SEAL phase (2026-11-21) re-verified the d130 tip STILL `97ed44f5d`
+(d130f unlanded — the work-list stands, plus the c39 2-hunk graft), published
+the FINAL fold-source hash-list (R5 `f8c4b659c` / R6 `356a1ac0e` / R7
+`01ba6c7a9` / A2-only `7aaf66f00`), renamed the report 134 → 146 (f11 owns
+134 on origin; 145 double-claimed; d54 has no pushed research/150; 146 =
+max+1 provisional) and added the WEATHER-FAMILY bible (d130 canonical rain/
+snow + f39 slime-rain + c40 sandstorm one-way gate + g69 cloud draw +
+g68 wind/leaves single-owner + the c39 grafts) — all in research/267 (then
+numbered 146).
+
+**W4-g67 SEAL-VERIFY — the 146-collision renumber + the CLOSED mutual receipt
+(2026-11-21).** The report is renamed AGAIN 146 → 247 → **267 FINAL**
+(`267-g67-post-union-folds.md`, full chain 134 → 146 → 247 → 267): d54's
+registry-150 IS now pushed
+(`38bfd1d22`, its §3 predates the 146 wave and has no g67 row), and a fresh
+360-tip registry-150b refresh finds key 146 FOUR-way claimed — g24d
+`146-wg-sounds-final.md` (10:02:44, first-pushed WINS), e20f
+`146-c42-repick-critical.md` (10:22:27), g67 (10:32:09), e19
+`146-aether-biome-census.md` (12:08:42); g67 is the third claimant → loser →
+renames on its own branch (the 150b refresh provisionally took 247, then the
+lowest number ≥237 claimed by no tip — 237–246 all taken: e23/c8/d42/g61/
+g48/f21/g56/c42/g58/d53/g63/f39/d10). d54's REGISTRY-ROUND-3-FINAL
+(research/150 §7, `51a28d09e`) then re-issued 247 to d10 (its post-publish
+246 take lost to e23's reservation) and pinned the g67 chain
+134 → 146 → **267** (§6.2 self-rename reconciliation + §6.3 rename table) —
+267 is the FINAL number; every older 247-numbered citation means this doc.
+The d130 tip advanced `97ed44f5d` → `b8f655708` (research/83 s9 SEALED): its
+s9 records g67's seal tip `8b9a1ff46` verbatim — the mutual receipt is CLOSED
+from BOTH sides, ONE fn owner per body. Every d130f work-list row is closed:
+R5 folded `10ee539da`, R6+R7 folded `df28ea1ac`, A2 receipt `af3ebc1a`+s9,
+A1 NO-OP keep-d130-verbatim, and the c39 2-hunk graft DISCHARGED at
+`ec27d8cfd` (storm-deck head clamp + the full LanternsCanPersist gate, both
+verbatim per c39 research/114 §13). The 4-fold hash-list is CONSUMED — the
+merger drops g67's rain.rs + draw.rs census wiring wholesale and owes
+nothing further; the WEATHER-FAMILY bible FINAL (research/267 + d130 s9.4)
+stands as the family's one ownership map.
+
 ## Biomes
 
 The generator has three surface biomes plus beaches. The forest fills the centre, the snow
