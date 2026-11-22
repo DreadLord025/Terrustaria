@@ -3262,6 +3262,233 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Blood Mummy",
     },
+    // W4-d35: the 33 data-wave kinds' entries (73..140), id order.
+    // The Hide kinds (96/97/99/100/112) have NO own row - their
+    // credit folds onto the head (try_entry_for_npc/entry_for_npc).
+    BestiaryEntryDef {
+        credit_id: "GoblinScout",
+        net_id: 73,
+        kind: NpcKind::GoblinScout,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Scout",
+    },
+    BestiaryEntryDef {
+        credit_id: "Bird",
+        net_id: 74,
+        kind: NpcKind::Bird,
+        variant: None,
+        quick_unlock: false,
+        name: "Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "Pixie",
+        net_id: 75,
+        kind: NpcKind::Pixie,
+        variant: None,
+        quick_unlock: false,
+        name: "Pixie",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmoredSkeleton",
+        net_id: 77,
+        kind: NpcKind::ArmoredSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Armored Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mummy",
+        net_id: 78,
+        kind: NpcKind::Mummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "DarkMummy",
+        net_id: 79,
+        kind: NpcKind::DarkMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightMummy",
+        net_id: 80,
+        kind: NpcKind::LightMummy,
+        variant: None,
+        quick_unlock: false,
+        name: "Light Mummy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Wraith",
+        net_id: 82,
+        kind: NpcKind::Wraith,
+        variant: None,
+        quick_unlock: false,
+        name: "Wraith",
+    },
+    BestiaryEntryDef {
+        credit_id: "CursedHammer",
+        net_id: 83,
+        kind: NpcKind::CursedHammer,
+        variant: None,
+        quick_unlock: false,
+        name: "Cursed Hammer",
+    },
+    BestiaryEntryDef {
+        credit_id: "EnchantedSword",
+        net_id: 84,
+        kind: NpcKind::EnchantedSword,
+        variant: None,
+        quick_unlock: false,
+        name: "Enchanted Sword",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mimic",
+        net_id: 85,
+        kind: NpcKind::Mimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "Unicorn",
+        net_id: 86,
+        kind: NpcKind::Unicorn,
+        variant: None,
+        quick_unlock: false,
+        name: "Unicorn",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantBat",
+        net_id: 93,
+        kind: NpcKind::GiantBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "Corruptor",
+        net_id: 94,
+        kind: NpcKind::Corruptor,
+        variant: None,
+        quick_unlock: false,
+        name: "Corruptor",
+    },
+    BestiaryEntryDef {
+        credit_id: "DiggerHead",
+        net_id: 95,
+        kind: NpcKind::DiggerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Digger",
+    },
+    BestiaryEntryDef {
+        credit_id: "SeekerHead",
+        net_id: 98,
+        kind: NpcKind::SeekerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "World Feeder",
+    },
+    BestiaryEntryDef {
+        credit_id: "Clinger",
+        net_id: 101,
+        kind: NpcKind::Clinger,
+        variant: None,
+        quick_unlock: false,
+        name: "Clinger",
+    },
+    BestiaryEntryDef {
+        credit_id: "AnglerFish",
+        net_id: 102,
+        kind: NpcKind::AnglerFish,
+        variant: None,
+        quick_unlock: false,
+        name: "Angler Fish",
+    },
+    BestiaryEntryDef {
+        credit_id: "GreenJellyfish",
+        net_id: 103,
+        kind: NpcKind::GreenJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Green Jellyfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Werewolf",
+        net_id: 104,
+        kind: NpcKind::Werewolf,
+        variant: None,
+        quick_unlock: false,
+        name: "Werewolf",
+    },
+    BestiaryEntryDef {
+        credit_id: "Clown",
+        net_id: 109,
+        kind: NpcKind::Clown,
+        variant: None,
+        quick_unlock: false,
+        name: "Clown",
+    },
+    BestiaryEntryDef {
+        credit_id: "SkeletonArcher",
+        net_id: 110,
+        kind: NpcKind::SkeletonArcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "TheHungryII",
+        net_id: 116,
+        kind: NpcKind::TheHungryII,
+        variant: None,
+        quick_unlock: false,
+        name: "The Hungry",
+    },
+    BestiaryEntryDef {
+        credit_id: "ChaosElemental",
+        net_id: 120,
+        kind: NpcKind::ChaosElemental,
+        variant: None,
+        quick_unlock: false,
+        name: "Chaos Elemental",
+    },
+    BestiaryEntryDef {
+        credit_id: "Slimer",
+        net_id: 121,
+        kind: NpcKind::Slimer,
+        variant: None,
+        quick_unlock: false,
+        name: "Slimer",
+    },
+    BestiaryEntryDef {
+        credit_id: "Gastropod",
+        net_id: 122,
+        kind: NpcKind::Gastropod,
+        variant: None,
+        quick_unlock: false,
+        name: "Gastropod",
+    },
+    BestiaryEntryDef {
+        credit_id: "IlluminantBat",
+        net_id: 137,
+        kind: NpcKind::IlluminantBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Illuminant Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "PossessedArmor",
+        net_id: 140,
+        kind: NpcKind::PossessedArmor,
+        variant: None,
+        quick_unlock: false,
+        name: "Possessed Armor",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -3373,6 +3600,17 @@ pub fn try_entry_for_npc(
         | NpcKind::WyvernBody2
         | NpcKind::WyvernBody3
         | NpcKind::WyvernTail => NpcKind::WyvernHead,
+        // W4-d35 (F): the 112 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::VileSpit => NpcKind::Corruptor,
+        // W4-d35 (D): the 96/97/99/100 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::DiggerBody => NpcKind::DiggerHead,
+        NpcKind::DiggerTail => NpcKind::DiggerHead,
+        NpcKind::SeekerBody => NpcKind::SeekerHead,
+        NpcKind::SeekerTail => NpcKind::SeekerHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead
@@ -3465,6 +3703,17 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         | NpcKind::WyvernBody2
         | NpcKind::WyvernBody3
         | NpcKind::WyvernTail => NpcKind::WyvernHead,
+        // W4-d35 (F): the 112 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::VileSpit => NpcKind::Corruptor,
+        // W4-d35 (D): the 96/97/99/100 Hide=true kinds fold onto
+        // the head's entry (NPCID.cs DrawOffset Hide; the populator's
+        // GetExclusions skips them - the Wyvern-segment precedent).
+        NpcKind::DiggerBody => NpcKind::DiggerHead,
+        NpcKind::DiggerTail => NpcKind::DiggerHead,
+        NpcKind::SeekerBody => NpcKind::SeekerHead,
+        NpcKind::SeekerTail => NpcKind::SeekerHead,
         // The Golem's parts fold onto the body's entry (the Brain's
         // Creeper precedent — one credit per boss).
         NpcKind::GolemHead

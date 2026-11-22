@@ -228,6 +228,17 @@ const SFX_CUES: &[(&str, u32)] = &[
     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the
     // `Sounds/NPC_Killed_*.xnb` assets exist; the bank-gap close.
+    // W4-d35 (A): the 73/74/75/77/78 cues - NPCHit5/NPCDeath7 already
+    // landed with W4-d37 (the ice golem/beetles rows); dedupe keeps those.
+    // W4-d35 (B): the 79/80/82/83/84 hit/death cues (the Sounds/NPC_*.xnb
+    // assets ship; the S1-E-21 wave-C bank-gap close).
+    ("NPC_Hit_54", 3),
+    ("NPC_Killed_52", 4),
+    // W4-d35 (E): the 103 GreenJellyfish NPCDeath28 already landed with
+    // W4-d34 (the BlueJellyfish row); dedupe keeps that row.
+    // W4-d35 (F): the 110/112/116/120/121 hit/death cues (the Sounds/NPC_*.xnb
+    // assets ship; the S1-E-21 wave-C bank-gap close).
+    ("NPC_Killed_9", 4),
     ("NPC_Killed_33", 4),
     ("NPC_Killed_39", 4),
     ("NPC_Killed_45", 4),

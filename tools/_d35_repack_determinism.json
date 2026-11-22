@@ -1,0 +1,18 @@
+{
+ "infDeterministic": true,
+ "infHeight": 1684,
+ "capDeterministic": true,
+ "capHeight": 2048,
+ "capBound": true,
+ "tightDeterministic": true,
+ "tightHeight": 1398,
+ "tightBound": true,
+ "spillCount": 16,
+ "page1Deterministic": true,
+ "page1Height": 1684,
+ "page1Bound": true,
+ "page1AllPlaced": true,
+ "skyDeterministic": true,
+ "skyHeight": 1684,
+ "sheetCount": 784
+}

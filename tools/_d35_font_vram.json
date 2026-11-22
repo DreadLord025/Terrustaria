@@ -1,0 +1,12 @@
+{
+ "perFontPages": {
+  "Mouse_Text": 159,
+  "Item_Stack": 159,
+  "Death_Text": 159,
+  "Combat_Text": 160,
+  "Combat_Crit": 160
+ },
+ "totalPages": 797,
+ "fontLayers": 4,
+ "fontMB": 268.4
+}

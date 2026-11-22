@@ -1,0 +1,1580 @@
+{
+"missing": [
+73,
+74,
+75,
+76,
+77,
+78,
+79,
+80,
+82,
+83,
+84,
+85,
+86,
+93,
+94,
+95,
+96,
+97,
+98,
+99,
+100,
+101,
+102,
+103,
+104,
+109,
+110,
+112,
+116,
+120,
+121,
+122,
+137,
+140
+],
+"variant_ids": {
+"Slime": {
+"doc_ids": [],
+"doc": ""
+},
+"DemonEye": {
+"doc_ids": [],
+"doc": ""
+},
+"WanderingEye": {
+"doc_ids": [
+133
+],
+"doc": "/// `NPCID.WanderingEye` (133) \u2014 the same `aiStyle 2` machine, night /// hardmode spawn (`NPC.cs:4555-4558`)."
+},
+"Zombie": {
+"doc_ids": [],
+"doc": ""
+},
+"KingSlime": {
+"doc_ids": [],
+"doc": ""
+},
+"Guide": {
+"doc_ids": [
+22
+],
+"doc": "/// `NPCID.Guide` (22) \u2014 the first town NPC (`aiStyle 7`): the port's /// walker is the zombie machine minus the chase (the town NPC wanders)."
+},
+"Skeleton": {
+"doc_ids": [
+21
+],
+"doc": "/// `NPCID.Skeleton` (21) \u2014 the cave walker (`aiStyle 3`, the 15-frame /// humanoid strip)."
+},
+"UndeadMiner": {
+"doc_ids": [
+44
+],
+"doc": "/// `NPCID.UndeadMiner` (44) \u2014 the rare cave walker (`aiStyle 3`)."
+},
+"CaveBat": {
+"doc_ids": [
+49
+],
+"doc": "/// `NPCID.CaveBat` (49) \u2014 the cave flyer (`aiStyle 14`, the erratic /// flight, 5 frames)."
+},
+"JungleBat": {
+"doc_ids": [
+51
+],
+"doc": "/// `NPCID.JungleBat` (51) \u2014 the jungle flyer (`aiStyle 14`)."
+},
+"Hellbat": {
+"doc_ids": [
+60
+],
+"doc": "/// `NPCID.Hellbat` (60) \u2014 the underworld flyer (`aiStyle 14`)."
+},
+"VoodooDemon": {
+"doc_ids": [
+66
+],
+"doc": "/// `NPCID.VoodooDemon` (66) \u2014 the underworld flyer (`aiStyle 14`)."
+},
+"EaterOfSouls": {
+"doc_ids": [
+6
+],
+"doc": "/// `NPCID.EaterofSouls` (6) \u2014 the corruption hover (`aiStyle 5`)."
+},
+"Hornet": {
+"doc_ids": [
+42
+],
+"doc": "/// `NPCID.Hornet` (42) \u2014 the jungle hover (`aiStyle 5`)."
+},
+"MeteorHead": {
+"doc_ids": [
+23
+],
+"doc": "/// `NPCID.MeteorHead` (23) \u2014 the meteor hover (`aiStyle 5`)."
+},
+"GoblinThief": {
+"doc_ids": [
+27
+],
+"doc": "/// `NPCID.GoblinThief` (27) \u2014 the invasion runner (`NPC.cs`: 18\u00d738, /// aiStyle 3, dmg 12, def 4, 60 HP, kb 0.8, value 100)."
+},
+"GoblinWarrior": {
+"doc_ids": [
+28
+],
+"doc": "/// `NPCID.GoblinWarrior` (28) \u2014 the invasion fighter (`NPC.cs`: 18\u00d738, /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200)."
+},
+"GoblinArcher": {
+"doc_ids": [
+111
+],
+"doc": "/// `NPCID.GoblinArcher` (111) \u2014 the invasion archer (`NPC.cs`: 18\u00d738, /// aiStyle 3, dmg 25, def 8, 110 HP, kb 0.5, value 150; the arrows /// ride the projectile work)."
+},
+"GoblinPeon": {
+"doc_ids": [
+26
+],
+"doc": "/// `NPCID.GoblinPeon` (26) \u2014 the invasion grunt (`NPC.cs`: 18\u00d738, /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200)."
+},
+"GoblinSummoner": {
+"doc_ids": [
+471
+],
+"doc": "/// `NPCID.GoblinSummoner` (471) \u2014 the hardmode invasion caster /// (`NPC.cs`: 18\u00d738, aiStyle 3 (the summoner's cast arms ride the /// caster work), dmg 80, def 26, 2000 HP, kb 0.15, value 5000; /// `"
+},
+"SnowmanGangsta": {
+"doc_ids": [
+143
+],
+"doc": "/// `NPCID.SnowmanGangsta` (143) \u2014 the Frost Legion's bottle-thrower /// (`NPC.cs`: 26\u00d740, aiStyle 38 (the speed 3/accel 0.7), dmg 50, /// def 20, 200 HP, kb 0.6, value 400)."
+},
+"SnowBalla": {
+"doc_ids": [
+145
+],
+"doc": "/// Net 144 = `NPCID.MisterStabby` (`NPCID.cs:10965`) \u2014 the kicker /// (`NPC.cs`: 26\u00d740, aiStyle 38 (the default speed 4/accel 1), /// dmg 65, def 26, 240 HP, kb 0.6, value 400). The port's kind name "
+},
+"MysterySnowman": {
+"doc_ids": [
+145
+],
+"doc": "/// `NPCID.MysterySnowman` is not a 1.4.5 id \u2014 net 145 is /// `NPCID.SnowBalla` (`NPCID.cs:10967`), the snowball /// thrower (`NPC.cs`: 26\u00d740, aiStyle 38 (the speed 3.5/accel 0.8), /// dmg 55, def 22,"
+},
+"MartianOfficer": {
+"doc_ids": [
+383
+],
+"doc": "/// `NPCID.MartianOfficer` (383) \u2014 the martian officer (`NPC.cs`: 18\u00d740, /// aiStyle 3, dmg 75, def 50, 300 HP, kb 0.25, value 1200)."
+},
+"GrayGrunt": {
+"doc_ids": [
+385
+],
+"doc": "/// `NPCID.GrayGrunt` (385) \u2014 the martian grunt (`NPC.cs`: 18\u00d740, /// aiStyle 3, dmg 80, def 30, 750 HP, kb 0, value 600)."
+},
+"MartianEngineer": {
+"doc_ids": [
+386
+],
+"doc": "/// `NPCID.MartianEngineer` (386) \u2014 the martian engineer (`NPC.cs`: /// 18\u00d740, aiStyle 3, dmg 40, def 34, 400 HP, kb 0.4, value 1200)."
+},
+"GigaZapper": {
+"doc_ids": [
+389
+],
+"doc": "/// `NPCID.GigaZapper` (389) \u2014 the martian zapper (`NPC.cs`: 18\u00d740, /// aiStyle 3, dmg 75, def 38, 600 HP, kb 0.3, value 1200)."
+},
+"MartianWalker": {
+"doc_ids": [
+520
+],
+"doc": "/// `NPCID.MartianWalker` (520) \u2014 the martian walker (`NPC.cs`: 34\u00d7110, /// aiStyle 3, dmg 60, def 40, 2000 HP, kb 0)."
+},
+"MartianProbe": {
+"doc_ids": [
+399
+],
+"doc": "/// `NPCID.MartianProbe` (399) \u2014 the Martian Madness trigger (`NPC.cs`: /// 42\u00d772, aiStyle 80, dmg 5, def 5, 500 HP, kb 0, value 0, noGravity, /// chaseable false, rarity 1; the escape machine runs //"
+},
+"MartianDrone": {
+"doc_ids": [
+388
+],
+"doc": "/// `NPCID.MartianDrone` (388) \u2014 the Martian Madness sky flyer (`NPC.cs`: /// 40\u00d730, aiStyle 74, dmg 60, def 16, 300 HP, kb 0.4, value 1000, /// noTileCollide, noGravity, npcSlots 1.5, canGhostHeal fa"
+},
+"ForceBubble": {
+"doc_ids": [
+384
+],
+"doc": "/// `NPCID.ForceBubble` (384) \u2014 the Officer's shield bubble /// (`NPC.cs:13882-13894`: 18\u00d740, aiStyle 72, def 20, 1000 HP; no /// damage/kb/value rows \u2014 the head defaults 0/1f/0f /// (`NPC.cs:8563`/`:"
+},
+"MartianTurret": {
+"doc_ids": [],
+"doc": "/// `NPCID.MartianTurret` (387, the \"Tesla Turret\" \u2014 `NPCID.cs:12449`) /// \u2014 the Engineer's placed turret (`NPC.cs:13922-13934`: 20\u00d750, /// aiStyle 73, dmg 10, def 40, 200 HP, kb 0, canGhostHeal false"
+},
+"BrainScrambler": {
+"doc_ids": [
+381
+],
+"doc": "/// `NPCID.BrainScrambler` (381) \u2014 the martian ground shooter (`NPC.cs`: /// 18\u00d740, aiStyle 3, dmg 50, def 25, 350 HP, kb 0.35, value 1000; the /// stop-and-fire cycle fires the projectile 436)."
+},
+"RayGunner": {
+"doc_ids": [
+382
+],
+"doc": "/// `NPCID.RayGunner` (382) \u2014 the martian ground shooter (`NPC.cs`: the /// 381/382 grouped row \u2014 18\u00d740, aiStyle 3, dmg 50, def 25, 350 HP, /// kb 0.35, value 1000; fires the projectile 438 at its spe"
+},
+"ScutlixRider": {
+"doc_ids": [
+390
+],
+"doc": "/// `NPCID.ScutlixRider` (390) \u2014 the ray gunner mounted on a Scutlix /// (`NPC.cs:13966-13977`: 18\u00d740, aiStyle 75, dmg 65, def 30, 350 HP, /// value 1200, npcSlots 0.5; the mount machine carries the c"
+},
+"Scutlix": {
+"doc_ids": [
+391
+],
+"doc": "/// `NPCID.Scutlix` (391) \u2014 the walker carrier (`NPC.cs:13979-13991`: /// 60\u00d740, aiStyle 3, dmg 85, def 30, 600 HP, kb 0.1, value 1200; /// walks through the walker params 5/0.25/0.7)."
+},
+"MartianSaucer": {
+"doc_ids": [
+392
+],
+"doc": "/// `NPCID.MartianSaucer` (392) \u2014 the saucer shell (`NPC.cs:13993-14008`: /// 150\u00d780, aiStyle 75, dmg 50, def 100, 100 HP; rides the core and /// drives its phase state)."
+},
+"MartianSaucerTurret": {
+"doc_ids": [
+393
+],
+"doc": "/// `NPCID.MartianSaucerTurret` (393) \u2014 the saucer turret /// (`NPC.cs:14009-14024`: 40\u00d716, aiStyle 75, 5000 HP, def 20, dmg 60)."
+},
+"MartianSaucerCannon": {
+"doc_ids": [
+394
+],
+"doc": "/// `NPCID.MartianSaucerCannon` (394) \u2014 the saucer cannon /// (`NPC.cs:14025-14044`: 46\u00d736, aiStyle 75, 3500 HP, def 20, dmg 60)."
+},
+"FlyingDutchman": {
+"doc_ids": [
+491
+],
+"doc": "/// `NPCID.FlyingDutchman` (491) \u2014 the pirate invasion's ship /// (`NPC.cs:14632-14650`: 350\u00d7120, aiStyle 93, dmg 0, def 100, 50 HP, /// dontTakeDamage, value 0; the crew's 4 cannons fight for it)."
+},
+"DD2GoblinT1": {
+"doc_ids": [
+552
+],
+"doc": "/// `NPCID.DD2GoblinT1` (552) \u2014 the Old One's Army goblin /// (`NPC.cs:13891-13906`: 18\u00d740, aiStyle 107, dmg 18, def 14, 30 HP, /// kb 0.2, value 0, npcSlots 0, lavaImmune)."
+},
+"DD2GoblinT2": {
+"doc_ids": [
+553
+],
+"doc": "/// `NPCID.DD2GoblinT2` (553) \u2014 the tier-2 goblin (170 HP, dmg 46, /// def 20, the +0.01/+0.2 accel/speed)."
+},
+"DD2GoblinT3": {
+"doc_ids": [
+554
+],
+"doc": "/// `NPCID.DD2GoblinT3` (554) \u2014 the tier-3 goblin (560 HP, dmg 70, /// def 28, the +0.02/+0.4 accel/speed)."
+},
+"DD2GoblinBomberT1": {
+"doc_ids": [
+555
+],
+"doc": "/// `NPCID.DD2GoblinBomberT1` (555) \u2014 the kobold bomber (`NPC.cs`: /// 18\u00d740, aiStyle 107, dmg 26, def 16, 50 HP; the fuse death)."
+},
+"DD2GoblinBomberT2": {
+"doc_ids": [
+556
+],
+"doc": "/// `NPCID.DD2GoblinBomberT2` (556) \u2014 the tier-2 bomber (200 HP, /// dmg 55, def 26)."
+},
+"DD2GoblinBomberT3": {
+"doc_ids": [
+557
+],
+"doc": "/// `NPCID.DD2GoblinBomberT3` (557) \u2014 the tier-3 bomber (700 HP, /// dmg 75, def 34)."
+},
+"DD2JavelinT1": {
+"doc_ids": [
+561
+],
+"doc": "/// `NPCID.DD2JavelinstT1` (561) \u2014 the javelin thrower (`NPC.cs`: /// 26\u00d752, aiStyle 107, dmg 30, def 18, 60 HP)."
+},
+"DD2JavelinT2": {
+"doc_ids": [
+562
+],
+"doc": "/// `NPCID.DD2JavelinstT2` (562) \u2014 the tier-2 javelin (300 HP, /// dmg 60, def 28)."
+},
+"DD2JavelinT3": {
+"doc_ids": [
+563
+],
+"doc": "/// `NPCID.DD2JavelinstT3` (563) \u2014 the tier-3 javelin (1000 HP, /// dmg 80, def 38, the 685 spear)."
+},
+"DD2SkeletonT1": {
+"doc_ids": [
+566
+],
+"doc": "/// `NPCID.DD2SkeletonT1` (566) \u2014 the etherian skeleton (`NPC.cs`: /// 18\u00d740, aiStyle 107, dmg 18, def 12, 25 HP; materializes in)."
+},
+"DD2SkeletonT3": {
+"doc_ids": [
+567
+],
+"doc": "/// `NPCID.DD2SkeletonT3` (567) \u2014 the tier-3 skeleton (480 HP, /// dmg 70, def 22)."
+},
+"StardustTower": {
+"doc_ids": [
+493
+],
+"doc": "/// `NPCID.LunarTowerStardust` (493) \u2014 the Stardust Pillar /// (`NPC.cs:14988-15003`: 130\u00d7270, aiStyle 94, 20000 HP, dmg 0, /// def 20, noGravity, noTileCollide; the pillar's sheet NPC_493 is /// 174x"
+},
+"NebulaTower": {
+"doc_ids": [
+507
+],
+"doc": "/// `NPCID.TowerNebula` (507)."
+},
+"SolarTower": {
+"doc_ids": [
+517
+],
+"doc": "/// `NPCID.TowerSolar` (517) \u2014 the Solar Pillar (the same /// `SetDefaults` row as its siblings)."
+},
+"VortexTower": {
+"doc_ids": [
+422
+],
+"doc": "/// `NPCID.LunarTowerVortex` (422) \u2014 the Vortex Pillar: the fourth /// pillar `WorldGen.TriggerLunarApocalypse` spawns /// (`WorldGen.cs:86628`'s `{517, 422, 507, 493}` shuffle) and the /// port was m"
+},
+"DD2LanePortal": {
+"doc_ids": [
+549
+],
+"doc": "/// `NPCID.DD2LanePortal` (549) \u2014 the Old One's Army's lane gate /// (`NPC.cs:16033-16053`: 78\u00d7130, aiStyle 106, 5 HP, def 20, damage /// 0, noGravity/noTileCollide/dontTakeDamage, netAlways; `ai[2]` "
+},
+"DD2WyvernT1": {
+"doc_ids": [
+558
+],
+"doc": "/// `NPCID.DD2WyvernT1` (558) \u2014 the tier-1 etherian wyvern /// (`NPC.cs:16207-16223`: 38\u00d738, aiStyle 108, 60 HP, dmg 30, def 4, /// kb 0.2, noGravity/noTileCollide, netAlways)."
+},
+"DD2WyvernT2": {
+"doc_ids": [
+559
+],
+"doc": "/// `NPCID.DD2WyvernT2` (559) \u2014 the tier-2 wyvern (`:16225-16241`: /// 38\u00d738, aiStyle 108, 180 HP, dmg 75, def 16, kb 0.2)."
+},
+"DD2WyvernT3": {
+"doc_ids": [
+560
+],
+"doc": "/// `NPCID.DD2WyvernT3` (560) \u2014 the tier-3 wyvern (`:16243-16259`: /// 38\u00d738, aiStyle 108, 600 HP, dmg 100, def 30, kb 0.05)."
+},
+"DD2DarkMageT3": {
+"doc_ids": [
+565
+],
+"doc": "/// `NPCID.DD2DarkMageT3` (565) \u2014 the tier-3 Dark Mage /// (`NPC.cs:16463-16479`: 34\u00d762, aiStyle 109, 4000 HP, dmg 90, def 38, /// kb 0, noGravity, netAlways \u2014 the T1's 800-HP machine)."
+},
+"DD2WitherBeastT3": {
+"doc_ids": [
+569
+],
+"doc": "/// `NPCID.DD2WitherBeastT3` (569) \u2014 the tier-3 wither beast /// (`NPC.cs:16326-16342`: 18\u00d740, aiStyle 107, 1400 HP, dmg 80, def 40, /// kb 0.05 \u2014 the aura/heal walker)."
+},
+"DD2DrakinT2": {
+"doc_ids": [
+570
+],
+"doc": "/// `NPCID.DD2DrakinT2` (570) \u2014 the tier-2 drakin /// (`NPC.cs:16411-16427`: 42\u00d758, aiStyle 107, 900 HP, dmg 60, def 30, /// kb 0 \u2014 the stand-and-shoot ranger)."
+},
+"DD2DrakinT3": {
+"doc_ids": [
+571
+],
+"doc": "/// `NPCID.DD2DrakinT3` (571) \u2014 the tier-3 drakin (`:16428-16444`: /// 42\u00d758, aiStyle 107, 3000 HP, dmg 90, def 40, kb 0)."
+},
+"DD2KoboldWalkerT2": {
+"doc_ids": [
+572
+],
+"doc": "/// `NPCID.DD2KoboldWalkerT2` (572) \u2014 the tier-2 kobold walker /// (`NPC.cs:16377-16393`: 18\u00d740, aiStyle 107, 260 HP, dmg 60, def 26, /// kb 0.2 \u2014 the lit-kamikaze walker)."
+},
+"DD2KoboldWalkerT3": {
+"doc_ids": [
+573
+],
+"doc": "/// `NPCID.DD2KoboldWalkerT3` (573) \u2014 the tier-3 kobold walker /// (`:16394-16410`: 18\u00d740, aiStyle 107, 800 HP, dmg 80, def 32, kb 0.1)."
+},
+"DD2KoboldFlyerT2": {
+"doc_ids": [
+574
+],
+"doc": "/// `NPCID.DD2KoboldFlyerT2` (574) \u2014 the tier-2 kobold glider /// (`NPC.cs:16481-16497`: 38\u00d738, aiStyle 108, 170 HP, dmg 50, def 16, /// kb 0.4, noGravity/noTileCollide \u2014 the dive bomber)."
+},
+"DD2KoboldFlyerT3": {
+"doc_ids": [
+575
+],
+"doc": "/// `NPCID.DD2KoboldFlyerT3` (575) \u2014 the tier-3 kobold glider /// (`:16499-16515`: 38\u00d738, aiStyle 108, 580 HP, dmg 80, def 32, kb 0.25)."
+},
+"DD2OgreT2": {
+"doc_ids": [
+576
+],
+"doc": "/// `NPCID.DD2OgreT2` (576) \u2014 the tier-2 ogre (`NPC.cs:16275-16291`: /// 96\u00d7124, aiStyle 107, 5000 HP, dmg 70, def 34, kb 0 \u2014 the melee /// thrower with the ground pound)."
+},
+"DD2OgreT3": {
+"doc_ids": [
+577
+],
+"doc": "/// `NPCID.DD2OgreT3` (577) \u2014 the tier-3 ogre (`:16292-16308`: /// 96\u00d7124, aiStyle 107, 13000 HP, dmg 90, def 40, kb 0)."
+},
+"StardustCellBig": {
+"doc_ids": [
+405
+],
+"doc": "/// `NPCID.StardustCellBig` (405) \u2014 the stardust shard's grown form /// (`NPC.cs:15022-15035`: 44\u00d744, aiStyle 85, dmg 120, def 50, 300 HP, /// kb 0.3; the aiStyle-85 hover machine)."
+},
+"StardustCellSmall": {
+"doc_ids": [
+406
+],
+"doc": "/// `NPCID.StardustCellSmall` (406) \u2014 the stardust shard (`NPC.cs`: /// 22\u00d722, aiStyle 95, dmg 70, def 0; grows into 405 over 300 ticks)."
+},
+"StardustJellyfishBig": {
+"doc_ids": [
+407
+],
+"doc": "/// `NPCID.StardustJellyfishBig` (407) \u2014 the stardust floater /// (`NPC.cs:15087-15100`: 40\u00d760, aiStyle 96, dmg 70, def 38, 1500 HP, /// kb 0.03)."
+},
+"NebulaBeast": {
+"doc_ids": [
+423
+],
+"doc": "/// `NPCID.NebulaBeast` (423) \u2014 the nebula quadruped (`NPC.cs`: /// 50\u00d744, aiStyle 26, dmg 90, def 46, 850 HP, kb 0.2; the 575 shot)."
+},
+"VortexRifleman": {
+"doc_ids": [
+425
+],
+"doc": "/// `NPCID.VortexRifleman` (425) \u2014 the vortex rifleman (`NPC.cs`: /// 30\u00d756, aiStyle 3, dmg 100, def 40)."
+},
+"VortexSoldier": {
+"doc_ids": [
+429
+],
+"doc": "/// `NPCID.VortexSoldier` (429) \u2014 the vortex soldier (`NPC.cs`: /// 22\u00d756, aiStyle 3, dmg 90, def 34)."
+},
+"VortexHunter": {
+"doc_ids": [
+426
+],
+"doc": "/// `NPCID.VortexHunter` (426) \u2014 the vortex pillar's shooter /// (`NPC.cs:15214-15247`: 50\u00d762, aiStyle 3, 1000 HP, dmg 100, def 44, /// kb 0.3; the 581 battery and the 4/0.6/0.95 walk)."
+},
+"VortexAlien": {
+"doc_ids": [
+427
+],
+"doc": "/// `NPCID.VortexAlien` (427) \u2014 the hive's diver (`NPC.cs`: /// 15226-15235: 40\u00d728, aiStyle 3, 500 HP, dmg 75, def 20, kb 0.5; the /// 0.015/0.15 dive, the leap and the 1200-tick `Transform(426)`)."
+},
+"VortexHeadcrab": {
+"doc_ids": [
+428
+],
+"doc": "/// `NPCID.VortexHeadcrab` (428) \u2014 the crawler (`NPC.cs:15215-15222`: /// 24\u00d726, aiStyle 3, 200 HP, dmg 50, def 6, kb 1 (the class default); /// the rolling rotation and the 300-tick `Transform(427)`)"
+},
+"NebulaFloater": {
+"doc_ids": [
+420
+],
+"doc": "/// `NPCID.NebulaFloater` (420) \u2014 the nebula pillar's floater /// (`NPC.cs:15157-15171`: 40\u00d740, aiStyle 97, 1300 HP, dmg 75, def 20, /// kb 0.5; the 574 emission + the 480-tick teleport cycle)."
+},
+"BrainSuckler": {
+"doc_ids": [
+421
+],
+"doc": "/// `NPCID.BrainSuckler` (421) \u2014 the nebula leech (`NPC.cs:15130-15143`: /// 44\u00d744, aiStyle 85, 330 HP, dmg 70, def 34, kb 0.5; the aiStyle-85 /// hoverer with the <40-px attachment onto the player's "
+},
+"Predictor": {
+"doc_ids": [
+424
+],
+"doc": "/// `NPCID.Predictor` (424) \u2014 the nebula pillar's shooter (`NPC.cs`: /// 15144-15156: 22\u00d756, aiStyle 3, 700 HP, dmg 80, def 30, kb 0.6; the /// 573 fan)."
+},
+"StardustSpiderBig": {
+"doc_ids": [
+409
+],
+"doc": "/// `NPCID.StardustSpiderBig` (409) \u2014 the stardust pillar's spawner /// (`NPC.cs:15061-15075`: 34\u00d742, aiStyle 3, 800 HP, dmg 70, def 40, /// kb 0.4; its 60-tick cycle spawns the 410 rather than firing"
+},
+"StardustSpiderSmall": {
+"doc_ids": [
+410
+],
+"doc": "/// `NPCID.StardustSpiderSmall` (410) \u2014 the kamikaze spider /// (`NPC.cs:15074-15087`: 22\u00d722, aiStyle 26, 200 HP, dmg 80, def 10, /// kb 0.3; the 240-tick burst then self-destruct)."
+},
+"StardustSoldier": {
+"doc_ids": [
+411
+],
+"doc": "/// `NPCID.StardustSoldier` (411) \u2014 the stardust pillar's shooter /// (`NPC.cs:15049-15059`: 22\u00d756, aiStyle 3, 700 HP, dmg 80, def 34, /// kb 0.4; the 330-tick cycle's 537)."
+},
+"SolarDrakomire": {
+"doc_ids": [
+415
+],
+"doc": "/// `NPCID.SolarDrakomire` (415) \u2014 the solar pillar's mount /// (`NPC.cs:15319-15329`: 60\u00d740, aiStyle 3, 800 HP, dmg 55, def 32, /// kb 0.2; the 4/0.1/0.95 jump assist, hidden under a rider)."
+},
+"SolarDrakomireRider": {
+"doc_ids": [
+416
+],
+"doc": "/// `NPCID.SolarDrakomireRider` (416) \u2014 the rider (`NPC.cs:15331-15342`: /// 18\u00d740, aiStyle 75, 800 HP, dmg 80, def 28, kb 0.2; it spawns and /// rides the 415 mount, then `Transform(518)`s when it di"
+},
+"SolarSroller": {
+"doc_ids": [
+417
+],
+"doc": "/// `NPCID.SolarSroller` (417) \u2014 the solar pillar's roller-at (`NPC.cs` /// `:15355-15367`: 46\u00d752, aiStyle 39, 700 HP, dmg 80, def 34, kb 0; /// the ball state's \u00d71.8 damage and the doubled defense)."
+},
+"SolarCorite": {
+"doc_ids": [
+418
+],
+"doc": "/// `NPCID.SolarCorite` (418) \u2014 the solar pillar's charger /// (`NPC.cs:15368-15380`: 38\u00d738, aiStyle 74, 600 HP, dmg 70, def 26, /// kb 0.2; the approach/dash/implosion cycle)."
+},
+"SolarSelenian": {
+"doc_ids": [
+419
+],
+"doc": "/// `NPCID.SolarSolenian` (419) \u2014 the solar pillar's walker /// (`NPC.cs:15382-15392`: 22\u00d756, aiStyle 3, 800 HP, dmg 90, def 30, /// kb 0.4; the 6/0.15/0.85 walk)."
+},
+"SolarCrawltipedeHead": {
+"doc_ids": [
+412
+],
+"doc": "/// `NPCID.SolarCrawltipedeHead` (412) \u2014 the solar tower's crawltipede /// head (`NPC.cs:15265-15281`: 20\u00d720, aiStyle 6, 10000 HP, dmg 120, /// def 1000, kb 0, dontTakeDamage; the 30-segment chain)."
+},
+"SolarCrawltipedeBody": {
+"doc_ids": [
+413
+],
+"doc": "/// `NPCID.SolarCrawltipedeBody` (413) \u2014 the chain's bodies (`NPC.cs` /// `:15283-15299`: 20\u00d720, aiStyle 6, 10000 HP, dmg 80, def 1000, kb /// 0, dontCountMe/dontTakeDamage)."
+},
+"SolarCrawltipedeTail": {
+"doc_ids": [
+414
+],
+"doc": "/// `NPCID.SolarCrawltipedeTail` (414) \u2014 the chain's tail (`NPC.cs`: /// 15301-15317: 20\u00d720, aiStyle 6, 10000 HP, dmg 50, def 0, kb 0, /// dontCountMe, `takenDamageMultiplier = 10`)."
+},
+"StardustWormHead": {
+"doc_ids": [
+402
+],
+"doc": "/// `NPCID.StardustWormHead` (402) \u2014 the stardust tower's worm head /// (`NPC.cs:15004-15021`: 32\u00d732, aiStyle 6, 1200 HP, dmg 80, def 10, /// kb 0, noGravity/noTileCollide, netAlways; the mark fire)."
+},
+"SolarSpearman": {
+"doc_ids": [
+518
+],
+"doc": "/// `NPCID.SolarSpearman` (518) \u2014 the rider's unmounted form /// (`NPC.cs:15343-15353`: 22\u00d756, aiStyle 3, 1000 HP, dmg 80, def 28, /// kb 0.4; the 5/0.1/0.95 walk)."
+},
+"MoonLordHead": {
+"doc_ids": [
+396
+],
+"doc": "/// `NPCID.MoonLordHead` (396) \u2014 the Moon Lord's eye (`NPC.cs`: /// 14082-14100: 38\u00d756, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0, /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer)."
+},
+"MoonLordHand": {
+"doc_ids": [
+397
+],
+"doc": "/// `NPCID.MoonLordHand` (397) \u2014 the Moon Lord's hand (`NPC.cs`: /// 14101-14120: 46\u00d766, aiStyle 78, 25000 HP, dmg 0, def 40, kb 0, /// boss/hide/netAlways; `AI_078_MoonLordHands`, two of them)."
+},
+"MoonLordCore": {
+"doc_ids": [
+398
+],
+"doc": "/// `NPCID.MoonLordCore` (398) \u2014 the Moon Lord's heart (`NPC.cs`: /// 14120-14140: 46\u00d766, aiStyle 77, 50000 HP, dmg 0, def 70, kb 0, /// dontTakeDamage/boss/behindTiles/hide/netAlways; the `AI_077` //"
+},
+"MoonLordFreeEye": {
+"doc_ids": [
+400
+],
+"doc": "/// `NPCID.MoonLordFreeEye` (400) \u2014 the True Eye of Cthulhu /// (`NPC.cs:14141-14158`: 60\u00d760, aiStyle 81, 100 HP, dmg 60, def 0, /// dontTakeDamage/netAlways; a dying hand or head spawns one)."
+},
+"MoonLordLeechBlob": {
+"doc_ids": [
+401
+],
+"doc": "/// `NPCID.MoonLordLeechBlob` (401) \u2014 the Moon Leech Clot (`NPC.cs`: /// 14159-14175: 30\u00d730, aiStyle 82, 400 HP, dmg 0, def 0, hide; it /// drains 1000 hp from the head, the core and the hands)."
+},
+"AncientCultist": {
+"doc_ids": [
+439
+],
+"doc": "/// `NPCID.CultistBoss` (439) \u2014 the Lunar Events' summoner (the port's /// bestiary entry carried the Vortex Pillar's id 422 \u2014 corrected /// here and in the catalog; the port ships no NPC_439 sheet, s"
+},
+"DD2Bartender": {
+"doc_ids": [
+550
+],
+"doc": "/// `NPCID.DD2Bartender` (550) \u2014 the tavernkeeper (`NPC.cs`: /// 18\u00d740, aiStyle 7 town NPC, 250 HP, dmg 10, def 15, kb 0.5)."
+},
+"DD2EterniaCrystal": {
+"doc_ids": [
+548
+],
+"doc": "/// `NPCID.DD2EterniaCrystal` (548) \u2014 the Old One's Army's crystal /// (`NPC.cs:15998-16022`: 40\u00d740, aiStyle 105, def 14, 1000 HP, /// friendly, npcSlots 0, hide; the 180-tick spawn-in shield)."
+},
+"DD2WitherBeast": {
+"doc_ids": [
+568
+],
+"doc": "/// `NPCID.DD2WitherBeastT2` (568) \u2014 the Old One's Army's ethereal /// caster-beast (`NPC.cs`: 18\u00d740, aiStyle 107, 500 HP, dmg 50, def 30, /// kb 0.15; the aura + the self-heal + the 683 crystal shots"
+},
+"DD2Betsy": {
+"doc_ids": [
+551
+],
+"doc": "/// `NPCID.DD2Betsy` (551) \u2014 the Old One's Army's dragon boss /// (`NPC.cs:16400-16424`: 190\u00d790, aiStyle 110, 50000 HP, dmg 80, /// def 38, noGravity, noTileCollide, lavaImmune)."
+},
+"DD2DarkMage": {
+"doc_ids": [
+564
+],
+"doc": "/// `NPCID.DD2DarkMageT1` (564) \u2014 the Old One's Army caster (`NPC.cs` /// `:16445-16466`: 34\u00d762, aiStyle 109, 800 HP, dmg 40, def 18, kb 0, /// noGravity, lavaImmune; the summon/heal/shadowflame casts"
+},
+"FlyingDutchmanCannon": {
+"doc_ids": [
+492
+],
+"doc": "/// `NPCID.FlyingDutchmanCannon` (492) \u2014 the ship's manned cannon /// (`NPC.cs:14651-14666`: 30\u00d730, aiStyle 75, 2000 HP, def 20, dmg 30, /// hide; rides the ship and fires the 240 shots)."
+},
+"MartianSaucerCore": {
+"doc_ids": [
+395
+],
+"doc": "/// `NPCID.MartianSaucerCore` (395) \u2014 the saucer boss /// (`NPC.cs:14045-14060`: 120\u00d790, aiStyle 76, dmg 80, 10000 HP, /// def 0, dontTakeDamage, npcSlots 6)."
+},
+"PirateDeckhand": {
+"doc_ids": [
+212
+],
+"doc": "/// `NPCID.PirateDeckhand` (212) \u2014 the pirate grunt (`NPC.cs`: 18\u00d740, /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700)."
+},
+"PirateCaptainsMate": {
+"doc_ids": [
+213
+],
+"doc": "/// `NPCID.PirateCaptainsMate` (213) \u2014 the pirate bruiser (`NPC.cs`: /// 18\u00d740, aiStyle 3, dmg 50, def 22, 450 HP, kb 0.2, value 1000)."
+},
+"PirateArcher": {
+"doc_ids": [
+214
+],
+"doc": "/// `NPCID.PirateArcher` (214) \u2014 the pirate archer (`NPC.cs`: 18\u00d740, /// aiStyle 3, dmg 30, def 14, 225 HP, kb 0.3, value 1000; the arrows /// ride the projectile work)."
+},
+"PirateCorsair": {
+"doc_ids": [
+215
+],
+"doc": "/// `NPCID.PirateCorsair` (215) \u2014 the pirate elite (`NPC.cs`: 18\u00d740, /// aiStyle 3, dmg 35, def 20, 350 HP, kb 0.35, value 1500)."
+},
+"PirateCaptain": {
+"doc_ids": [
+216
+],
+"doc": "/// `NPCID.PirateCaptain` (216) \u2014 the pirate boss-minion (`NPC.cs`: /// 18\u00d740, aiStyle 3, dmg 70, def 30, 3000 HP, kb 0, value 50000; /// `GetNPCInvasionGroup`'s 5-point kill)."
+},
+"GoblinSorcerer": {
+"doc_ids": [
+29
+],
+"doc": "/// `NPCID.GoblinSorcerer` (29) \u2014 the goblin-invasion caster (`aiStyle 8`: /// 18x38, 40 HP)."
+},
+"Tim": {
+"doc_ids": [
+45
+],
+"doc": "/// `NPCID.Tim` (45) \u2014 the deep-cavern caster (`aiStyle 8`, `NPC.cs:9322`: /// 18x40, 200 HP, value 5000)."
+},
+"DarkCaster": {
+"doc_ids": [
+32
+],
+"doc": "/// `NPCID.DarkCaster` (32) \u2014 the dungeon caster (`aiStyle 8`, /// `NPC.cs:9121`: 18x40, 50 HP)."
+},
+"FireImp": {
+"doc_ids": [
+24
+],
+"doc": "/// `NPCID.FireImp` (24) \u2014 the underworld caster (`aiStyle 8`, /// `NPC.cs:9078`: 18x40, 70 HP, lava-immune)."
+},
+"DesertDjinn": {
+"doc_ids": [
+533
+],
+"doc": "/// `NPCID.DesertDjinn` (533) \u2014 the desert caster (`aiStyle 8`, /// `NPC.cs:14974-14987`: 28x62, 220 HP, damage 40, defense 20, kb 0, /// value 1200; emits light at `base.Top` with colour (0.6, 0.6, 0"
+},
+"ChaosBall": {
+"doc_ids": [
+30
+],
+"doc": "/// `NPCID.ChaosBall` (30) \u2014 the caster's sphere (`aiStyle 9`, 16x16, /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665 /// folds here (identical stats and name, `NPC.cs:17398`)."
+},
+"BurningSphere": {
+"doc_ids": [
+25
+],
+"doc": "/// `NPCID.BurningSphere` (25) \u2014 the Fire Imp's sphere (`aiStyle 9`, /// `NPC.cs:9093`)."
+},
+"WaterSphere": {
+"doc_ids": [
+33
+],
+"doc": "/// `NPCID.WaterSphere` (33) \u2014 the Dark Caster's sphere (`aiStyle 9`, /// `NPC.cs:9135`)."
+},
+"Goldfish": {
+"doc_ids": [
+55
+],
+"doc": "/// `NPCID.Goldfish` (55) \u2014 the passive water critter (`aiStyle 16`, /// `NPC.cs:9460`: 20x18, 5 HP, damage 0, the flag25 exclusion)."
+},
+"Piranha": {
+"doc_ids": [
+58
+],
+"doc": "/// `NPCID.Piranha` (58) \u2014 the jungle/deep-water fish (`aiStyle 16`, /// `NPC.cs:9502`: 18x20, 30 HP)."
+},
+"Shark": {
+"doc_ids": [
+65
+],
+"doc": "/// `NPCID.Shark` (65) \u2014 the ocean fish (`aiStyle 16`, `NPC.cs:9610`: /// 100x24, 300 HP)."
+},
+"DevourerHead": {
+"doc_ids": [
+7
+],
+"doc": "/// `NPCID.DevourerHead` (7) \u2014 the corruption worm's head (`aiStyle 6`, /// `NPC.cs:8763`). The body 8 and the tail 9 chain behind it."
+},
+"DevourerBody": {
+"doc_ids": [
+8
+],
+"doc": "/// `NPCID.DevourerBody` (8) \u2014 the middle segments (`NPC.cs:8792`)."
+},
+"DevourerTail": {
+"doc_ids": [
+9
+],
+"doc": "/// `NPCID.DevourerTail` (9) \u2014 the tail segment (`NPC.cs:8821`)."
+},
+"GiantWormHead": {
+"doc_ids": [
+10
+],
+"doc": "/// `NPCID.GiantWormHead` (10) \u2014 the cavern worm's head (`NPC.cs:8850`)."
+},
+"GiantWormBody": {
+"doc_ids": [
+11
+],
+"doc": "/// `NPCID.GiantWormBody` (11) \u2014 the middle segments (`NPC.cs:8867`)."
+},
+"GiantWormTail": {
+"doc_ids": [
+12
+],
+"doc": "/// `NPCID.GiantWormTail` (12) \u2014 the tail segment (`NPC.cs:8885`)."
+},
+"EaterOfWorldsHead": {
+"doc_ids": [
+13
+],
+"doc": "/// `NPCID.EaterofWorldsHead` (13) \u2014 the boss worm's head (`NPC.cs:8903`); /// the natural spawn waits for the orb-break summon work."
+},
+"EaterOfWorldsBody": {
+"doc_ids": [
+14
+],
+"doc": "/// `NPCID.EaterofWorldsBody` (14) \u2014 the middle segments (`NPC.cs:8923`)."
+},
+"EaterOfWorldsTail": {
+"doc_ids": [
+15
+],
+"doc": "/// `NPCID.EaterofWorldsTail` (15) \u2014 the tail segment (`NPC.cs:8943`)."
+},
+"WyvernHead": {
+"doc_ids": [
+87
+],
+"doc": "/// `NPCID.WyvernHead` (87) \u2014 the sky-serpent's head (`NPC.cs:9939-9956`: /// 32\u00d732, aiStyle 6, 4000 HP, dmg 80, def 10, kb 0, value 10000, /// npcSlots 5, noGravity/noTileCollide/netAlways; the fixed"
+},
+"WyvernLegs": {
+"doc_ids": [
+88
+],
+"doc": "/// `NPCID.WyvernLegs` (88) \u2014 the claw segments at chain indices 1/8 /// (`NPC.cs:9957-9974`: 32\u00d732, aiStyle 6, 4000 HP, dmg 40, def 20, /// kb 0, value 10000, dontCountMe; `:51167-51170`)."
+},
+"WyvernBody": {
+"doc_ids": [
+89
+],
+"doc": "/// `NPCID.WyvernBody` (89) \u2014 the default chain segment (`NPC.cs`: /// 9975-9992: 32\u00d732, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0, /// value **2000** \u2014 the one segment with a different coin row, /// d"
+},
+"WyvernBody2": {
+"doc_ids": [
+90
+],
+"doc": "/// `NPCID.WyvernBody2` (90) \u2014 the chain segment at index 11 (`NPC.cs`: /// 9993-10010: 32\u00d732, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0, /// value 10000, dontCountMe; `:51171-51173`)."
+},
+"WyvernBody3": {
+"doc_ids": [
+91
+],
+"doc": "/// `NPCID.WyvernBody3` (91) \u2014 the chain segment at index 12 (`NPC.cs`: /// 10011-10028: 32\u00d732, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0, /// value 10000, dontCountMe; `:51174-51176`)."
+},
+"WyvernTail": {
+"doc_ids": [
+92
+],
+"doc": "/// `NPCID.WyvernTail` (92) \u2014 the chain's tail at index 13 (`NPC.cs`: /// 10029-10046: 32\u00d732, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0, /// value 10000, dontCountMe; `:51177-51179`)."
+},
+"Merchant": {
+"doc_ids": [
+17
+],
+"doc": "/// `NPCID.Merchant` (17) \u2014 the second town NPC (`NPC.cs:8980`: 18x40, /// dmg 10, def 15, 250 HP; the shop index 1 through M4-TOWN-3's /// engine; the arrival `SpawnAllowed_Merchant`, `NPC.cs:7175`)."
+},
+"Dryad": {
+"doc_ids": [
+20
+],
+"doc": "/// `NPCID.Dryad` (20) \u2014 the nature town NPC (`NPC.cs:9022`: the town /// twin; the shop index 3; the arrival rides the downedBoss1 gate \u2014 /// the boss-downed tracking lands with the boss work)."
+},
+"Nurse": {
+"doc_ids": [
+18
+],
+"doc": "/// `NPCID.Nurse` (18) \u2014 the healer town NPC (`NPC.cs:8994`: the town /// twin; no shop \u2014 the heal interaction rides the right-click; the /// arrival `SpawnAllowed_Nurse`, `NPC.cs:7158`)."
+},
+"ArmsDealer": {
+"doc_ids": [
+19
+],
+"doc": "/// `NPCID.ArmsDealer` (19) \u2014 the ammo seller (`NPC.cs:9008`: the town /// twin; the shop index 2; the arrival `SpawnAllowed_ArmsDealer`, /// `NPC.cs:7092` \u2014 the bullets in the inventory)."
+},
+"Demolitionist": {
+"doc_ids": [
+38
+],
+"doc": "/// `NPCID.Demolitionist` (38) \u2014 the explosive seller (`NPC.cs:9211`: /// the town twin; the shop index 4; the arrival /// `SpawnAllowed_Demolitionist`, `NPC.cs:7067` \u2014 the bombs in the /// inventory)"
+},
+"Painter": {
+"doc_ids": [
+227
+],
+"doc": "/// `NPCID.Painter` (227) \u2014 the paint seller (`NPC.cs:11925`: the town /// twin; the shop index 15; the arrival = at least 2 other town NPCs)."
+},
+"WitchDoctor": {
+"doc_ids": [
+228
+],
+"doc": "/// `NPCID.WitchDoctor` (228) \u2014 the jungle shaman (`NPC.cs:11942`: the /// town twin; the shop index 16; the arrival rides the downedQueenBee /// gate \u2014 constants-off until the boss-downed tracking)."
+},
+"Clothier": {
+"doc_ids": [
+54
+],
+"doc": "/// `NPCID.Clothier` (54) \u2014 the tailor (`NPC.cs:9446`: the town twin; /// the shop index 5; the arrival rides the downedSkeletron gate \u2014 /// constants-off)."
+},
+"TravellingMerchant": {
+"doc_ids": [
+368
+],
+"doc": "/// `NPCID.TravellingMerchant` (368) \u2014 the travelling peddler /// (`NPC.cs:13673-13686`: the town twin 18x40, dmg 10, def 15, 250 HP, /// kb 0.5, aiStyle 7 \u2014 the town walker) who visits for one day on"
+},
+"Angler": {
+"doc_ids": [
+369
+],
+"doc": "/// `NPCID.Angler` (369) \u2014 the quest-giving town NPC (`NPC.cs:13687`: /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 \u2014 /// the town walker; `npcFrameCount[369]` = 23, `Main.cs:6712"
+},
+"SleepingAngler": {
+"doc_ids": [
+376
+],
+"doc": "/// `NPCID.SleepingAngler` (376) \u2014 the bound form found on the beach / /// in the ocean (`NPC.cs:13796`: 34x8, aiStyle 0 the bound stand, /// scale 0.9, rarity 1, `npcFrameCount[376]` = 2 \u2014 `Main.cs:6"
+},
+"Stylist": {
+"doc_ids": [
+353
+],
+"doc": "/// `NPCID.Stylist` (353) \u2014 the hair-dye seller (`NPC.cs:13488-13501`: /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7; /// `npcFrameCount[353]` = 23, `Main.cs:67119`) \u2014 the shop in"
+},
+"WebbedStylist": {
+"doc_ids": [
+354
+],
+"doc": "/// `NPCID.WebbedStylist` (354) \u2014 the spider-cavern tied Stylist /// (`NPC.cs:13502-13516`: 18x34, scale 0.9, aiStyle 0 the bound stand, /// rarity 1, `npcFrameCount[354]` = 1); the talk transforms 35"
+},
+"TaxCollector": {
+"doc_ids": [
+441
+],
+"doc": "/// `NPCID.TaxCollector` (441) \u2014 the coin collector (`NPC.cs:14704-14717`: /// the town twin, aiStyle 7; `npcFrameCount[441]` = 25, `Main.cs:67128`) /// \u2014 no shop: his tax timer rides the player's coi"
+},
+"Golfer": {
+"doc_ids": [
+588
+],
+"doc": "/// `NPCID.Golfer` (588) \u2014 the golf seller (`NPC.cs:16638-16651`: the /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7; /// `npcFrameCount[588]` = 25, `Main.cs:67142`) \u2014 the shop index 2"
+},
+"SleepingGolfer": {
+"doc_ids": [
+589
+],
+"doc": "/// `NPCID.GolferRescue` (589) \u2014 the underground-desert tied Golfer /// (`NPC.cs:16652-16665`: 18x34, aiStyle 0 the bound stand, rarity 1, /// `npcFrameCount[589]` = 13) \u2014 `Sets.BoundTownNPCs` /// (`N"
+},
+"Zoologist": {
+"doc_ids": [
+633
+],
+"doc": "/// `NPCID.BestiaryGirl` (633) \u2014 the bestiary seller (`NPC.cs:17147`: /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7; /// `npcFrameCount[633]` = 23, `Main.cs:67147`) \u2014 the shop ind"
+},
+"Princess": {
+"doc_ids": [
+663
+],
+"doc": "/// `NPCID.Princess` (663) \u2014 the last town NPC (`NPC.cs:17384-17397`: /// the town twin, aiStyle 7; `npcFrameCount[663]` = 23) \u2014 her arrival /// needs EVERY other town NPC present (`Main.cs:65944-6595"
+},
+"DyeTrader": {
+"doc_ids": [
+207
+],
+"doc": "/// `NPCID.DyeTrader` (207) \u2014 the dye seller (`NPC.cs:11654-11667`: the /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7; /// `npcFrameCount[207]` = 25, `Main.cs:67120`) \u2014 the shop index"
+},
+"PartyGirl": {
+"doc_ids": [
+208
+],
+"doc": "/// `NPCID.PartyGirl` (208) \u2014 the party starter (`NPC.cs:11668-11681`: /// the town twin; `npcFrameCount[208]` = 23) \u2014 the shop index 13 /// (`Chest.cs:case 13`) \u2014 M4-TOWN-20."
+},
+"Wizard": {
+"doc_ids": [
+108
+],
+"doc": "/// `NPCID.Wizard` (108) \u2014 the magic seller (`NPC.cs:10285-10298`: the /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 \u2014 the /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`)"
+},
+"BoundWizard": {
+"doc_ids": [
+106
+],
+"doc": "/// `NPCID.BoundWizard` (106) \u2014 the tied Wizard awaiting the rescue /// (`NPC.cs:10257-10270`: 18x40, aiStyle 0 the bound stand, rarity 1, /// `npcFrameCount[106]` = 1) \u2014 `Sets.BoundTownNPCs` /// (`NP"
+},
+"Mechanic": {
+"doc_ids": [
+124
+],
+"doc": "/// `NPCID.Mechanic` (124) \u2014 the wire seller (`NPC.cs:10508-10521`: the /// town twin, aiStyle 7; `npcFrameCount[124]` = 23) \u2014 M4-TOWN-16."
+},
+"BoundMechanic": {
+"doc_ids": [
+123
+],
+"doc": "/// `NPCID.BoundMechanic` (123) \u2014 the tied Mechanic awaiting the rescue /// (`NPC.cs:10493-10507`: 18x34, scale 0.9, aiStyle 0, rarity 1, /// `npcFrameCount[123]` = 1) \u2014 `Sets.BoundTownNPCs`; the talk"
+},
+"EyeOfCthulhu": {
+"doc_ids": [
+4
+],
+"doc": "/// `NPCID.EyeofCthulhu` (4) \u2014 the first boss (`NPC.cs:8703-8719`: /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the /// death sets `downed_eoc` and opens the Dryad's arrival). The fu"
+},
+"QueenBee": {
+"doc_ids": [
+222
+],
+"doc": "/// `NPCID.QueenBee` (222) \u2014 the jungle boss (`NPC.cs:11855-11872`: /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee` /// and opens the Witch Doctor's arrival)."
+},
+"Bee": {
+"doc_ids": [
+210
+],
+"doc": "/// `NPCID.Bee` (210) \u2014 the Queen Bee's state-1 volley minion /// (`NPC.cs:11696-11708`: 12x12, aiStyle 5, dmg 20, def 5, 20 HP, /// kb 0.5, noGravity; no `value` row \u2014 the SetDefaults default 0). ///"
+},
+"BeeSmall": {
+"doc_ids": [
+211
+],
+"doc": "/// `NPCID.BeeSmall` (211) \u2014 the small volley minion /// (`NPC.cs:11709-11721`: 8x8, aiStyle 5, dmg 15, def 2, 10 HP, /// kb 0.5, noGravity; value 0). Shares the Bee's AI branch."
+},
+"SkeletronHead": {
+"doc_ids": [
+35
+],
+"doc": "/// `NPCID.SkeletronHead` (35) \u2014 the dungeon gatekeeper /// (`NPC.cs:9166-9182`: 80x102, dmg 32, def 10, 4400 HP; the death /// sets `downed_skeletron` and opens the Clothier's arrival)."
+},
+"ServantOfCthulhu": {
+"doc_ids": [
+5
+],
+"doc": "/// `NPCID.ServantofCthulhu` (5) \u2014 the EoC minion (`NPC.cs:8717-8727`: /// 20\u00d720, aiStyle 5 (the generic hover, num 5 / num2 0.03 /// `NPC.cs:50299-50301`), damage 12, lifeMax 8, noGravity, /// noTile"
+},
+"WallOfFlesh": {
+"doc_ids": [
+113
+],
+"doc": "/// `NPCID.WallofFlesh` (113) \u2014 the underworld wall (`NPC.cs:10342`: /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode \u2014 /// `WorldGen.StartHardmode()`, `NPC.cs:79485`)."
+},
+"Hungry": {
+"doc_ids": [
+115
+],
+"doc": "/// `NPCID.TheHungry` (115) \u2014 the wall's minion (`NPC.cs:10363+`: /// 30\u00d730, aiStyle 29, dmg 30, def 10, 240 HP, noGravity, /// noTileCollide). The AI anchors to the wall's draw band /// (`Main.wofNPC"
+},
+"LeechHead": {
+"doc_ids": [
+117
+],
+"doc": "/// `NPCID.LeechHead` (117) \u2014 the tongue-phase worm head /// (`NPC.cs`: 14\u00d714, aiStyle 6 (the worm engine), dmg 26, def 2, /// 60 HP, noGravity/noTileCollide, behindTiles)."
+},
+"LeechBody": {
+"doc_ids": [
+118
+],
+"doc": "/// `NPCID.LeechBody` (118) \u2014 the worm's link (`NPC.cs`: 14\u00d714, /// aiStyle 6, dmg 22, def 6, 60 HP)."
+},
+"LeechTail": {
+"doc_ids": [
+119
+],
+"doc": "/// `NPCID.LeechTail` (119) \u2014 the chain's closing link (`NPC.cs: /// 10437-10452`: 14\u00d714, aiStyle 6, dmg 18, def 10, 60 HP, /// noGravity/noTileCollide, behindTiles). W-A2-3: the budget-exhausted /// "
+},
+"TheDestroyer": {
+"doc_ids": [
+134
+],
+"doc": "/// `NPCID.TheDestroyer` (134) \u2014 the mech worm's head (`NPC.cs:10659-10679`: /// 38\u00d738 scale 1.25, aiStyle 37, dmg 70, def 0, 80000 HP the whole chain /// shares via realLife, alpha 255 fade-in; S1-D-"
+},
+"TheDestroyerBody": {
+"doc_ids": [
+135
+],
+"doc": "/// `NPCID.TheDestroyerBody` (135) \u2014 the mech worm's link (`NPC.cs:10680-10699`: /// dmg 55, def 30, dontCountMe; the laser cadence `AI_037` `:49856-49882` /// and the probe launch `HitEffect` `:89266"
+},
+"TheDestroyerTail": {
+"doc_ids": [
+136
+],
+"doc": "/// `NPCID.TheDestroyerTail` (136) \u2014 the mech worm's last link /// (`NPC.cs:10700-10719`: dmg 40, def 35, dontCountMe; never fires)."
+},
+"Probe": {
+"doc_ids": [
+139
+],
+"doc": "/// `NPCID.Probe` (139) \u2014 the Destroyer body's launched drone /// (`NPC.cs:10720-10734`: 30\u00d730, aiStyle **5**, dmg 50, def 20, 200 HP, /// noGravity/noTileCollide, kb 0.8; the 120-tick laser `AI_005`'"
+},
+"SkeletronPrime": {
+"doc_ids": [
+127
+],
+"doc": "/// `NPCID.SkeletronPrime` (127) \u2014 the mech skull (`NPC.cs:10556+`, /// M4-BOSS-8)."
+},
+"Retinazer": {
+"doc_ids": [
+125
+],
+"doc": "/// `NPCID.Retinazer` (125) \u2014 the Twins' laser eye (`NPC.cs:10522+`, /// M4-BOSS-9)."
+},
+"Spazmatism": {
+"doc_ids": [
+126
+],
+"doc": "/// `NPCID.Spazmatism` (126) \u2014 the Twins' cursed eye (M4-BOSS-9)."
+},
+"Plantera": {
+"doc_ids": [
+262
+],
+"doc": "/// `NPCID.Plantera` (262) \u2014 the jungle bulb boss (`NPC.cs:12379+`, /// M4-BOSS-10)."
+},
+"FungiSpore": {
+"doc_ids": [
+261
+],
+"doc": "/// `NPCID.FungiSpore` (261) \u2014 the mushroom contact hazard /// (`SetDefaults` `NPC.cs:12364-12378`: 12x12, aiStyle 50, dmg 80, /// def 0, 1 HP, kb 0, npcSlots 0; dies on any tile contact). /// S1-D-3-"
+},
+"PlanterasHook": {
+"doc_ids": [
+263
+],
+"doc": "/// `NPCID.PlanterasHook` (263) \u2014 the boss's leash anchor /// (`SetDefaults` `NPC.cs:12396-12409`: 40x40, aiStyle 52, dmg 60, /// def 24, 4000 HP, dontTakeDamage, noGravity + noTileCollide). /// S1-D-"
+},
+"PlanterasTentacle": {
+"doc_ids": [
+264
+],
+"doc": "/// `NPCID.PlanterasTentacle` (264) \u2014 the phase-2 orbiting bite /// (`SetDefaults` `NPC.cs:12410-12422`: 24x24, aiStyle 53, dmg 60, /// def 20, 1000 HP, noGravity + noTileCollide). /// S1-D-3-wire-pla"
+},
+"Spore": {
+"doc_ids": [
+265
+],
+"doc": "/// `NPCID.Spore` (265) \u2014 the boss's launched spore (`SetDefaults` /// `NPC.cs:12423-12437`: 18x18, aiStyle 50, dmg 70, def 0, 1 HP, /// kb 0, npcSlots 0; flies through tiles). /// S1-D-3-wire-planter"
+},
+"BrainOfCthulhu": {
+"doc_ids": [
+266
+],
+"doc": "/// `NPCID.BrainofCthulhu` (266) \u2014 the crimson boss (`NPC.cs:12438`: /// 160x110, dmg 30, def 14, 1250 HP, dontTakeDamage in the phase 1; /// the death sets the downedBoss2 equivalent)."
+},
+"Creeper": {
+"doc_ids": [
+267
+],
+"doc": "/// `NPCID.Creeper` (267) \u2014 the Brain's satellite (`NPC.cs:12456`: /// 30x30, dmg 20, def 10, 100 HP)."
+},
+"BoundGoblin": {
+"doc_ids": [
+105
+],
+"doc": "/// `NPCID.BoundGoblin` (105) \u2014 the tied Tinkerer awaiting the rescue /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 \u2014 no /// movement, dmg 10, def 15, 250 HP, kb 0.5, friendly)."
+},
+"GoblinTinkerer": {
+"doc_ids": [
+107
+],
+"doc": "/// `NPCID.GoblinTinkerer` (107) \u2014 the freed Tinkerer (`SetDefaults` /// `NPC.cs:10271-10283`: 18x40, aiStyle 7 the town walker, 250 HP, /// def 15, kb 0.5)."
+},
+"Golem": {
+"doc_ids": [
+245
+],
+"doc": "/// `NPCID.Golem` (245) \u2014 the BODY (`SetDefaults` `NPC.cs:12163-12177`: /// 140x140, aiStyle 45, dmg 72, def 26, 15000 HP, kb 0, boss, value /// 15 gold). Its death is the fight's end (`:79346`'s even"
+},
+"GolemHead": {
+"doc_ids": [
+246
+],
+"doc": "/// `NPCID.GolemHead` (246) \u2014 the attached head (`:12178-12192`: 70x70, /// aiStyle 46, dmg 64, def 20, 25000 HP, the silent death \u2014 the head /// detaches rather than dies)."
+},
+"GolemFistLeft": {
+"doc_ids": [
+247
+],
+"doc": "/// `NPCID.GolemFistLeft` (247) \u2014 the lunging fist (`:12193-12206`: /// 40x30, aiStyle 47, dmg 59, def 28, 10000 HP)."
+},
+"GolemFistRight": {
+"doc_ids": [
+248
+],
+"doc": "/// `NPCID.GolemFistRight` (248) \u2014 the mirrored fist (the same stats)."
+},
+"GolemHeadFree": {
+"doc_ids": [
+249
+],
+"doc": "/// `NPCID.GolemHeadFree` (249) \u2014 the detached head (`:12207-12220`: /// 70x70, aiStyle 48, dmg 80, def 32, 16000 HP, `dontTakeDamage` \u2014 /// the spawn-shielded free-flying phase)."
+},
+"Deerclops": {
+"doc_ids": [
+668
+],
+"doc": "/// `NPCID.Deerclops` (668) \u2014 the frozen-boss (`SetDefaults` /// `NPC.cs:17449-17466`: 60x154, aiStyle 123, dmg 20, def 10, /// 7000 HP, kb 0, boss, noGravity, noTileCollide, 5 gold)."
+},
+"SkeletronHand": {
+"doc_ids": [
+36
+],
+"doc": "/// `NPCID.SkeletronHand` (36) \u2014 the Skeletron's tether hand (`aiStyle /// 12`, `NPC.cs:9183-9196`: 52x52, dmg 20, def 14, 600 HP, kb 0)."
+},
+"WallOfFleshEye": {
+"doc_ids": [
+114
+],
+"doc": "/// `NPCID.WallOfFleshEye` (114) \u2014 the WoF's mirror eye (`aiStyle 28`, /// `NPC.cs:10362-10377`: 100x100, def 0, mirrored life)."
+},
+"PrimeCannon": {
+"doc_ids": [
+128
+],
+"doc": "/// `NPCID.PrimeCannon` (128) \u2014 the Prime's bomb limb (`aiStyle 35`, /// `NPC.cs:10577-10591`: 52x52, dmg 30, def 23, 7000 HP)."
+},
+"PrimeSaw": {
+"doc_ids": [
+129
+],
+"doc": "/// `NPCID.PrimeSaw` (129) \u2014 the Prime's saw limb (`aiStyle 33`: /// 56 dmg, def 38, 9000 HP)."
+},
+"PrimeVice": {
+"doc_ids": [
+130
+],
+"doc": "/// `NPCID.PrimeVice` (130) \u2014 the Prime's vice limb (`aiStyle 34`: /// 52 dmg, def 34, 9000 HP)."
+},
+"PrimeLaser": {
+"doc_ids": [
+131
+],
+"doc": "/// `NPCID.PrimeLaser` (131) \u2014 the Prime's laser limb (`aiStyle 36`: /// 29 dmg, def 20, 6000 HP)."
+},
+"Scarecrow1": {
+"doc_ids": [
+305
+],
+"doc": "/// `NPCID.Scarecrow1` (305) \u2014 the scarecrow pair (305, 310): 18x40, /// aiStyle 3, dmg 60, def 18, 500 HP, kb 0.4, value 1200, npcSlots 0.5."
+},
+"Scarecrow2": {
+"doc_ids": [
+306
+],
+"doc": "/// `NPCID.Scarecrow2` (306) \u2014 the pair (306, 311): dmg 52, def 14, /// 400 HP, kb 0.2, scale 1.05."
+},
+"Scarecrow3": {
+"doc_ids": [
+307
+],
+"doc": "/// `NPCID.Scarecrow3` (307) \u2014 the pair (307, 312): dmg 78, def 16, /// 600 HP, kb 0.25, scale 0.9."
+},
+"Scarecrow4": {
+"doc_ids": [
+308
+],
+"doc": "/// `NPCID.Scarecrow4` (308) \u2014 the pair (308, 313): dmg 66, def 14, /// 650 HP, kb 0.35, scale 0.95."
+},
+"Scarecrow5": {
+"doc_ids": [
+309
+],
+"doc": "/// `NPCID.Scarecrow5` (309) \u2014 the pair (309, 314): dmg 52, def 26, /// 450 HP, kb 0.5, scale 1.1."
+},
+"Scarecrow6": {
+"doc_ids": [
+310
+],
+"doc": "/// `NPCID.Scarecrow6` (310) \u2014 the 305 twin: the C#'s if-chain gives the /// pair one row."
+},
+"Scarecrow7": {
+"doc_ids": [
+311
+],
+"doc": "/// `NPCID.Scarecrow7` (311) \u2014 the 306 twin."
+},
+"Scarecrow8": {
+"doc_ids": [
+312
+],
+"doc": "/// `NPCID.Scarecrow8` (312) \u2014 the 307 twin."
+},
+"Scarecrow9": {
+"doc_ids": [
+313
+],
+"doc": "/// `NPCID.Scarecrow9` (313) \u2014 the 308 twin."
+},
+"Scarecrow10": {
+"doc_ids": [
+314
+],
+"doc": "/// `NPCID.Scarecrow10` (314) \u2014 the 309 twin."
+},
+"HeadlessHorseman": {
+"doc_ids": [
+315
+],
+"doc": "/// `NPCID.HeadlessHorseman` (315) \u2014 the wave's flying boss (`aiStyle 26`): /// 74x70, dmg 130, def 40, 5000 HP, kb 0, value 10000; npcSlots rides the /// class default 1f, so it feeds `MOON_BOSS_SLOT"
+},
+"MourningWood": {
+"doc_ids": [
+325
+],
+"doc": "/// `NPCID.MourningWood` (325) \u2014 the walking boss (`aiStyle 57`): 164x154, /// dmg 120, def 34, 14000 HP, kb 0, value 10000, npcSlots 3."
+},
+"Splinterling": {
+"doc_ids": [
+326
+],
+"doc": "/// `NPCID.Splinterling` (326) \u2014 Splinterling's aiStyle-3 chaser (the wave /// walker): 18x40, dmg 100, def 32, 1200 HP, kb 0.2, value 2000."
+},
+"Pumpking": {
+"doc_ids": [
+327
+],
+"doc": "/// `NPCID.Pumpking` (327) \u2014 the flying boss (`aiStyle 58`): 100x100, /// dmg 50, def 40, 26000 HP, noGravity + noTileCollide, kb 0, value /// 50000, npcSlots 5."
+},
+"Hellhound": {
+"doc_ids": [
+329
+],
+"doc": "/// `NPCID.Hellhound` (329) \u2014 the wave's flyer (`aiStyle 26`): 46x30, /// dmg 80, def 38, 1800 HP, kb 0.3, value 3000."
+},
+"Poltergeist": {
+"doc_ids": [
+330
+],
+"doc": "/// `NPCID.Poltergeist` (330) \u2014 the wave's ghost (`aiStyle 22`, the /// dwell/dash machine \u2014 S1-F-13b2 slice C): 24x44, dmg 90, def 44, /// 1250 HP, noGravity + noTileCollide, alpha 100, kb 0.4, value"
+},
+"IceQueen": {
+"doc_ids": [
+345
+],
+"doc": "/// `NPCID.IceQueen` (345) \u2014 the wave's flying boss (`aiStyle 60`): /// 130x140, dmg 120, def 38, 34000 HP, kb 0, value 50000, noGravity + /// noTileCollide, npcSlots 5 (`NPC.cs:13369-13385`)."
+},
+"SantaNK1": {
+"doc_ids": [
+346
+],
+"doc": "/// `NPCID.SantaNK1` (346) \u2014 the wave's other boss (`aiStyle 61`): /// 112x140, dmg 120, def 56, 18000 HP, kb 0, value 10000, npcSlots 4; /// the AI itself sets noGravity + noTileCollide (`NPC.cs:3368"
+},
+"ElfCopter": {
+"doc_ids": [
+347
+],
+"doc": "/// `NPCID.ElfCopter` (347) \u2014 the wave's flyer (`aiStyle 62`): 50x50, /// dmg 60, def 28, 1200 HP, kb 0.4, value 1000, noGravity + /// noTileCollide, npcSlots 1.5 (`NPC.cs:13400-13415`)."
+},
+"Nutcracker": {
+"doc_ids": [
+348
+],
+"doc": "/// `NPCID.Nutcracker` (348) \u2014 the wave's aiStyle-3 walker: 28x76, /// dmg 80, def 26, 1800 HP, kb 0.4, value 1500, npcSlots 1.5 /// (`NPC.cs:13416-13429`)."
+},
+"NutcrackerSpinning": {
+"doc_ids": [
+349
+],
+"doc": "/// `NPCID.NutcrackerSpinning` (349) \u2014 the walker's spinning twin /// (`aiStyle 3`): 28x76, dmg 100, def 42, 1800 HP, kb 0.1, value 1500, /// npcSlots 1.5 (`NPC.cs:13430-13443`)."
+},
+"ElfArcher": {
+"doc_ids": [
+350
+],
+"doc": "/// `NPCID.ElfArcher` (350) \u2014 the wave's aiStyle-3 shooter: 18x40, /// dmg 70, def 30, 900 HP, kb 0.45, value 900; npcSlots rides the class /// default 1f (`NPC.cs:13444-13456`)."
+},
+"Krampus": {
+"doc_ids": [
+351
+],
+"doc": "/// `NPCID.Krampus` (351) \u2014 the wave's aiStyle-3 walker: 18x90, dmg 100, /// def 40, 2500 HP, kb 0.1, value 3000, npcSlots 1.75 /// (`NPC.cs:13457-13470`)."
+},
+"Flocko": {
+"doc_ids": [
+352
+],
+"doc": "/// `NPCID.Flocko` (352) \u2014 the wave's flyer (`aiStyle 63`): 54x54, /// dmg 75, def 8, 450 HP, kb 0.4, value 500, noGravity + noTileCollide, /// npcSlots 2 (`NPC.cs:13471-13487`)."
+},
+"MotherSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.MotherSlime` (16, `NPCID.cs:10709`) \u2014 the jungle slime /// (`SetDefaults` `NPC.cs:8963-8979`): 36x24, dmg 20, def 7, 90 HP, /// kb 0.6, value 75, alpha 120, scale 1.25, npcSlots 2."
+},
+"LavaSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.LavaSlime` (59, `NPCID.cs:10795`) \u2014 the underworld slime /// (`NPC.cs:9516-9537`): 24x18, dmg 15, def 10, 50 HP, value 120, /// scale 1.1, alpha 50, lavaImmune (the remixWorld override is /"
+},
+"DungeonSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.DungeonSlime` (71, `NPCID.cs:10819`) \u2014 the dungeon slime /// (`NPC.cs:9697-9713`): 36x24, dmg 30, def 7, 150 HP, kb 0.6, /// value 150, alpha 60, scale 1.25, rarity 1, npcSlots 2."
+},
+"CorruptSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.CorruptSlime` (81, `NPCID.cs:10839`) \u2014 the corruption slime /// (`NPC.cs:9838-9851`): 40x30, dmg 55, def 20, 170 HP, value 400, /// alpha 55, scale 1.1."
+},
+"IlluminantSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.IlluminantSlime` (138, `NPCID.cs:10953`) \u2014 the hallow slime /// (`NPC.cs:10748-10762`): 24x18, dmg 70, def 30, 180 HP, kb 0.85, /// value 400, alpha 100, scale 1.05, DeathSound 6."
+},
+"IceSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.IceSlime` (147, `NPCID.cs:10971`) \u2014 the snow slime /// (`NPC.cs:10847+`): 24x18, dmg 8, def 4, 30 HP, value 50, alpha 50, /// coldDamage."
+},
+"Crimslime": {
+"doc_ids": [],
+"doc": "/// `NPCID.Crimslime` (183, `NPCID.cs:11043`) \u2014 the crimson slime /// (`NPC.cs:11332+`): 40x30, dmg 60, def 26, 200 HP, value 400, /// alpha 55, scale 1.1."
+},
+"SpikedIceSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.SpikedIceSlime` (184, `NPCID.cs:11045`) \u2014 the spiked snow /// slime (`NPC.cs:11346+`): 24x18, dmg 12, def 8, 60 HP, value 200, /// scale 1.1, alpha 50, coldDamage."
+},
+"UmbrellaSlime": {
+"doc_ids": [],
+"doc": "/// `NPCID.UmbrellaSlime` (225, `NPCID.cs:11127`) \u2014 the umbrella slime /// (`NPC.cs:11898+`): 38x26, dmg 10, def 5, 35 HP, kb 0.75, value 200."
+},
+"CataractEye": {
+"doc_ids": [],
+"doc": "/// `NPCID.CataractEye` (190, `NPCID.cs:11057`) \u2014 the demon-eye variant /// (`NPC.cs:11427-11439`): 30x32, dmg 18, def 4, 65 HP, kb 0.7, /// value 75."
+},
+"SleepyEye": {
+"doc_ids": [],
+"doc": "/// `NPCID.SleepyEye` (191, `NPCID.cs:11059`) \u2014 (`NPC.cs:11440-11452`): /// 30x32, dmg 16, def 2, 60 HP, kb 0.85, value 75."
+},
+"DialatedEye": {
+"doc_ids": [],
+"doc": "/// `NPCID.DialatedEye` (192, `NPCID.cs:11061`) \u2014 (`NPC.cs:11453-11465`): /// 30x32, dmg 18, def 2, 50 HP, kb 0.8, value 75."
+},
+"GreenEye": {
+"doc_ids": [],
+"doc": "/// `NPCID.GreenEye` (193, `NPCID.cs:11063`) \u2014 (`NPC.cs:11466-11478`): /// 30x32, dmg 20, def 0, 60 HP, kb 0.8, value 75."
+},
+"PurpleEye": {
+"doc_ids": [],
+"doc": "/// `NPCID.PurpleEye` (194, `NPCID.cs:11065`) \u2014 (`NPC.cs:11479-11491`): /// 30x32, dmg 14, def 4, 60 HP, kb 0.8, value 75."
+},
+"DoctorBones": {
+"doc_ids": [],
+"doc": "/// `NPCID.DoctorBones` (52, `NPCID.cs:10781`) \u2014 the jungle rare walker /// (`NPC.cs:9418-9431`): 18x40, dmg 20, def 10, 500 HP, kb 0.5, /// value 1000, rarity 2."
+},
+"TheGroom": {
+"doc_ids": [],
+"doc": "/// `NPCID.TheGroom` (53, `NPCID.cs:10783`) \u2014 the blood-moon rare walker /// (`NPC.cs:9432-9445`): 18x40, dmg 14, def 8, 200 HP, kb 0.5, /// value 1000, rarity 2."
+},
+"BaldZombie": {
+"doc_ids": [],
+"doc": "/// `NPCID.BaldZombie` (132, `NPCID.cs:10941`) \u2014 (`NPC.cs:10633-10645`): /// 18x40, dmg 15, def 5, 40 HP, kb 0.5, value 65."
+},
+"ZombieEskimo": {
+"doc_ids": [],
+"doc": "/// `NPCID.ZombieEskimo` (161, `NPCID.cs:10999`) \u2014 the snow zombie /// (`NPC.cs:11017-11029`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, /// value 80."
+},
+"PincushionZombie": {
+"doc_ids": [],
+"doc": "/// `NPCID.PincushionZombie` (186, `NPCID.cs:11049`) \u2014 /// (`NPC.cs:11375-11387`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, /// value 65."
+},
+"SlimedZombie": {
+"doc_ids": [],
+"doc": "/// `NPCID.SlimedZombie` (187, `NPCID.cs:11051`) \u2014 /// (`NPC.cs:11388-11400`): 18x40, dmg 13, def 6, 40 HP, kb 0.55, /// value 55."
+},
+"SwampZombie": {
+"doc_ids": [],
+"doc": "/// `NPCID.SwampZombie` (188, `NPCID.cs:11053`) \u2014 /// (`NPC.cs:11401-11413`): 18x40, dmg 13, def 8, 45 HP, kb 0.45, /// value 80."
+},
+"TwiggyZombie": {
+"doc_ids": [],
+"doc": "/// `NPCID.TwiggyZombie` (189, `NPCID.cs:11055`) \u2014 /// (`NPC.cs:11414-11426`): 18x40, dmg 16, def 4, 45 HP, kb 0.55, /// value 70."
+},
+"FemaleZombie": {
+"doc_ids": [],
+"doc": "/// `NPCID.FemaleZombie` (200, `NPCID.cs:11077`) \u2014 /// (`NPC.cs:11559+`): 18x40, dmg 12, def 4, 38 HP, kb 0.6, value 65."
+},
+"ZombieRaincoat": {
+"doc_ids": [],
+"doc": "/// `NPCID.ZombieRaincoat` (223, `NPCID.cs:11123`) \u2014 the rain zombie /// (`NPC.cs:11872+`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, value 70."
+},
+"ZombieDoctor": {
+"doc_ids": [],
+"doc": "/// `NPCID.ZombieDoctor` (319, `NPCID.cs:11315`) \u2014 the halloween zombie /// (`NPC.cs:13033-13046`): 18x40, dmg 20, def 6, 40 HP, kb 0.6, /// value 85, scale 0.9."
+},
+"ZombieSuperman": {
+"doc_ids": [],
+"doc": "/// `NPCID.ZombieSuperman` (320, `NPCID.cs:11317`) \u2014 the halloween zombie /// (`NPC.cs:13047-13060`): 18x40, dmg 15, def 8, 60 HP, kb 0.5, /// value 105, scale 1.05."
+},
+"ZombiePixie": {
+"doc_ids": [],
+"doc": "/// `NPCID.ZombiePixie` (321, `NPCID.cs:11319`) \u2014 the halloween zombie /// (`NPC.cs:13061-13074`): 18x40, dmg 20, def 14, 34 HP, kb 0.3, /// value 120, scale 1.1."
+},
+"ZombieXmas": {
+"doc_ids": [],
+"doc": "/// `NPCID.ZombieXmas` (331, `NPCID.cs:11339`) \u2014 the xmas zombie /// (`NPC.cs:13204-13216`): 18x40, dmg 14, def 6, 45 HP, kb 0.5, /// value 60 (the base Zombie's stat twin, no scale row)."
+},
+"ZombieSweater": {
+"doc_ids": [],
+"doc": "/// `NPCID.ZombieSweater` (332, `NPCID.cs:11341`) \u2014 the xmas zombie /// (`NPC.cs:13217-13229`): 18x40, dmg 14, def 6, 45 HP, kb 0.5, /// value 60 (the base Zombie's stat twin, no scale row)."
+},
+"BloodZombie": {
+"doc_ids": [],
+"doc": "/// `NPCID.BloodZombie` (489, `NPCID.cs:11651`) \u2014 the blood-moon /// zombie (`NPC.cs:14605-14617`): 18x40, aiStyle 3, dmg 20, def 8, /// 75 HP, kb 0.4, NPCHit18/NPCDeath21, value 150. The `num107` cap"
+},
+"Drippler": {
+"doc_ids": [],
+"doc": "/// `NPCID.Drippler` (490, `NPCID.cs:11653`) \u2014 the blood-moon flyer /// (`NPC.cs:14618-14631`): noGravity, 28x30, aiStyle 22, dmg 28, /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The ///"
+},
+"ZombieElf": {
+"doc_ids": [
+338
+],
+"doc": "/// `NPCID.ZombieElf` (338) \u2014 the Frost Moon wave's walker (`aiStyle 3`): /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5 /// (`NPC.cs:13281-13296`)."
+},
+"ZombieElfBeard": {
+"doc_ids": [
+339
+],
+"doc": "/// `NPCID.ZombieElfBeard` (339) \u2014 the 338 sibling: dmg 52, def 24, /// 700 HP, kb 0.2, scale 1.05 (`NPC.cs:13297-13304`)."
+},
+"ZombieElfGirl": {
+"doc_ids": [
+340
+],
+"doc": "/// `NPCID.ZombieElfGirl` (340) \u2014 the 338 sibling: dmg 78, def 14, /// 500 HP, kb 0.25, scale 0.9 (`NPC.cs:13305-13312`)."
+},
+"PresentMimic": {
+"doc_ids": [
+341
+],
+"doc": "/// `NPCID.PresentMimic` (341) \u2014 the wave's chest machine (`aiStyle 25`): /// 24x24, dmg 100, def 32, 900 HP, kb 0.25, value 2000 /// (`Item.buyPrice(0, 0, 20)`, `NPC.cs:13314-13326`). The true machin"
+},
+"GingerbreadMan": {
+"doc_ids": [
+342
+],
+"doc": "/// `NPCID.GingerbreadMan` (342) \u2014 the wave walker (`aiStyle 3`): 18x40, /// dmg 90, def 26, 750 HP, kb 0.2, value 1800 (`NPC.cs:13327-13339`)."
+},
+"Yeti": {
+"doc_ids": [
+343
+],
+"doc": "/// `NPCID.Yeti` (343) \u2014 the wave's heavy walker (`aiStyle 3`): 38x78, /// dmg 140, def 50, 3500 HP, kb 0, value 3000, npcSlots 2, coldDamage /// (`NPC.cs:13340-13354`)."
+},
+"Everscream": {
+"doc_ids": [
+344
+],
+"doc": "/// `NPCID.Everscream` (344) \u2014 the Frost Moon boss (`aiStyle 57`): /// 172x130, dmg 110, def 38, 13000 HP, kb 0, value 10000, npcSlots 3 /// (`NPC.cs:13355-13368`). The true machine lands with the bes"
+},
+"DukeFishron": {
+"doc_ids": [],
+"doc": "/// `NPCID.DukeFishron` (370, `NPCID.cs:11417`) \u2014 the ocean boss /// (`NPC.cs:13701-13718`): 150x100, aiStyle 69, dmg 100, def 50, /// 60000 HP, kb 0, noTileCollide + noGravity, npcSlots 10, /// value"
+},
+"DetonatingBubble": {
+"doc_ids": [],
+"doc": "/// `NPCID.DetonatingBubble` (371, `NPCID.cs:11419`) \u2014 Fishron's /// hazard (`NPC.cs:13719-13733`): 36x36, aiStyle 70, dmg 100, def 0, /// 1 HP, kb 0, noGravity + noTileCollide, alpha 255. The faithfu"
+},
+"Sharkron": {
+"doc_ids": [],
+"doc": "/// `NPCID.Sharkron` (372, `NPCID.cs:11421`) \u2014 the Sharknado bolt's /// shark (`NPC.cs:13734-13747`): 120x24, aiStyle 71, dmg 100, /// def 100, 100 HP, kb 0, noGravity, alpha 255. The faithful /// `np"
+},
+"Sharkron2": {
+"doc_ids": [],
+"doc": "/// `NPCID.Sharkron2` (373, `NPCID.cs:11423`) \u2014 the Greater /// Sharknado's rising, swaying shark (`NPC.cs:13748-13761`): /// 100x24, dmg 120, the rest of the 372 row."
+},
+"BlazingWheel": {
+"doc_ids": [
+72
+],
+"doc": "/// `NPCID.BlazingWheel` (72) \u2014 the dungeon's ricochet trap /// (`aiStyle 21`): 34x34, dmg 24, def 100, 100 HP, kb 0, alpha 100, /// behindTiles, noGravity, dontTakeDamage, scale 1.2 /// (`NPC.cs:9714"
+},
+"AngryNimbus": {
+"doc_ids": [
+250
+],
+"doc": "/// `NPCID.AngryNimbus` (250) \u2014 the rain cloud (`aiStyle 49`): 34x26, /// dmg 50, def 24, 300 HP, kb 0.3, value 300 (`NPC.cs:12221-12233`). /// WIRED: the axis' 49 arm rides `npc_ai_style49::nimbus_st"
+},
+"DungeonSpirit": {
+"doc_ids": [
+288
+],
+"doc": "/// `NPCID.DungeonSpirit` (288) \u2014 the post-Plantera dungeon wisp /// (`aiStyle 56`): 20x20, dmg 70, def 30, 200 HP, kb 0.2, value 500, /// noTileCollide, noGravity (`NPC.cs:12738-12752`). WIRED: the /"
+}
+}
+}

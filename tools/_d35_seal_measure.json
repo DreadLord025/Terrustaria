@@ -1,0 +1,522 @@
+{
+ "scenarios": [
+  {
+   "scenario": "merged-407-base",
+   "note": "font + pushed(339) + d40(56) + d35deferred(12) - the section-7 base",
+   "sheets": 9904,
+   "missing": [],
+   "areaMpx": 74.72,
+   "areaBound": 9125,
+   "skyline": 9478,
+   "skyOver": 1286,
+   "pages": [
+    {
+     "height": 8192,
+     "n": 963
+    },
+    {
+     "height": 1298,
+     "n": 8941
+    }
+   ],
+   "atlasMB": 311
+  },
+  {
+   "scenario": "merged-final-630",
+   "note": "the SEAL re-extraction (65 branches / 630 names) on the 407 base - d125 tip now PUSHED (in the 630)",
+   "sheets": 10170,
+   "missing": [],
+   "areaMpx": 80.03,
+   "areaBound": 9775,
+   "skyline": 10232,
+   "skyOver": 2040,
+   "pages": [
+    {
+     "height": 8190,
+     "n": 712
+    },
+    {
+     "height": 2135,
+     "n": 9458
+    }
+   ],
+   "atlasMB": 338.3
+  },
+  {
+   "scenario": "merged-final-630+d42forecast29",
+   "note": "+ d42 FINAL-band 29 forecast names (the NO-PACK verdict, research/238 §4)",
+   "sheets": 10199,
+   "missing": [],
+   "areaMpx": 80.65,
+   "areaBound": 9849,
+   "skyline": 10325,
+   "skyOver": 2133,
+   "pages": [
+    {
+     "height": 8156,
+     "n": 690
+    },
+    {
+     "height": 2201,
+     "n": 9509
+    }
+   ],
+   "atlasMB": 339.4
+  },
+  {
+   "scenario": "merged-final-630+d42f29+deferred5",
+   "note": "d125 deferred overlay strips admitted (the SEAL merged WORST case)",
+   "sheets": 10204,
+   "missing": [],
+   "areaMpx": 81.82,
+   "areaBound": 9993,
+   "skyline": 10424,
+   "skyOver": 2232,
+   "pages": [
+    {
+     "height": 8191,
+     "n": 670
+    },
+    {
+     "height": 2377,
+     "n": 9534
+    }
+   ],
+   "atlasMB": 346.3
+  },
+  {
+   "scenario": "lazy-union-630-no-npc",
+   "note": "the 630 base minus every NPC_<id> (the section-10 lazy contract on the SEAL tips)",
+   "sheets": 9581,
+   "missing": [],
+   "areaMpx": 55.91,
+   "areaBound": 6829,
+   "skyline": 7256,
+   "skyOver": 0,
+   "pages": [
+    {
+     "height": 7256,
+     "n": 9581
+    }
+   ],
+   "atlasMB": 237.8
+  },
+  {
+   "scenario": "lazy-union-worst-no-npc",
+   "note": "the WORST base (630+deferred5) minus every NPC_<id> (lazy contract, worst union)",
+   "sheets": 9586,
+   "missing": [],
+   "areaMpx": 57.08,
+   "areaBound": 6972,
+   "skyline": 7423,
+   "skyOver": 0,
+   "pages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "atlasMB": 243.2
+  },
+  {
+   "scenario": "lazy-union-worst+Glow362",
+   "note": "the lazy worst union + Glow_362 (the g31 table-pass load obligation, section 16.3)",
+   "sheets": 9587,
+   "missing": [],
+   "areaMpx": 57.16,
+   "areaBound": 6982,
+   "skyline": 7447,
+   "skyOver": 0,
+   "pages": [
+    {
+     "height": 7447,
+     "n": 9587
+    }
+   ],
+   "atlasMB": 244
+  },
+  {
+   "scenario": "ownpage+town-ambient",
+   "note": "fresh-world NPC set, own page(s)",
+   "newSheets": 87,
+   "missing": [],
+   "areaMpx": 3.52,
+   "ownPages": [
+    {
+     "height": 1668,
+     "n": 87
+    }
+   ],
+   "atlasMB": 54.7
+  },
+  {
+   "scenario": "ownpage+long-lived",
+   "note": "long-lived NPC set, own page(s)",
+   "newSheets": 195,
+   "missing": [],
+   "areaMpx": 15.51,
+   "ownPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "atlasMB": 70.5
+  },
+  {
+   "scenario": "ownpage+bestiary-all",
+   "note": "bestiary-opened NPC set, own page(s)",
+   "newSheets": 289,
+   "missing": [],
+   "areaMpx": 19.73,
+   "ownPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "atlasMB": 84.1
+  },
+  {
+   "scenario": "ownpage+long-lived+newclaimants",
+   "note": "long-lived NPC set + retire-31 + SEAL census-new kinds (post-merge roster)",
+   "newSheets": 481,
+   "missing": [],
+   "areaMpx": 21.57,
+   "ownPages": [
+    {
+     "height": 2728,
+     "n": 481
+    }
+   ],
+   "atlasMB": 89.4
+  },
+  {
+   "scenario": "ownpage+bestiary+newclaimants",
+   "note": "bestiary-opened NPC set + retire-31 + SEAL census-new kinds (post-merge lifetime superset)",
+   "newSheets": 575,
+   "missing": [],
+   "areaMpx": 25.78,
+   "ownPages": [
+    {
+     "height": 3286,
+     "n": 575
+    }
+   ],
+   "atlasMB": 107.7
+  },
+  {
+   "scenario": "TOTAL-lazy630-fresh-seed42",
+   "unionPages": [
+    {
+     "height": 7256,
+     "n": 9581
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 1668,
+     "n": 87
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 536.5
+  },
+  {
+   "scenario": "TOTAL-lazy630-longlived-seed42",
+   "unionPages": [
+    {
+     "height": 7256,
+     "n": 9581
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 552.3
+  },
+  {
+   "scenario": "TOTAL-lazy630-bestiary-seed42",
+   "unionPages": [
+    {
+     "height": 7256,
+     "n": 9581
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 565.9
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-fresh-seed42",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 1668,
+     "n": 87
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 541.9
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-longlived-seed42",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 557.8
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiary-seed42",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 571.4
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-longlived-worstbg",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "totalPages": 4,
+   "atlasMB": 650.4
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiary-worstbg",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "totalPages": 4,
+   "atlasMB": 663.9
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-longlivedNEW-seed42",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2728,
+     "n": 481
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 576.7
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiaryNEW-seed42",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 3286,
+     "n": 575
+    }
+   ],
+   "totalPages": 3,
+   "atlasMB": 595
+  },
+  {
+   "scenario": "TOTAL-lazyWorst-bestiaryNEW-worstbg",
+   "unionPages": [
+    {
+     "height": 7423,
+     "n": 9586
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 3286,
+     "n": 575
+    }
+   ],
+   "totalPages": 4,
+   "atlasMB": 687.5
+  },
+  {
+   "scenario": "TOTAL-eager630-seed42",
+   "unionPages": [
+    {
+     "height": 8190,
+     "n": 712
+    },
+    {
+     "height": 2135,
+     "n": 9458
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [],
+   "totalPages": 3,
+   "atlasMB": 582.4
+  },
+  {
+   "scenario": "TOTAL-eager630-worstbg",
+   "unionPages": [
+    {
+     "height": 8190,
+     "n": 712
+    },
+    {
+     "height": 2135,
+     "n": 9458
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [],
+   "totalPages": 4,
+   "atlasMB": 675
+  }
+ ]
+}

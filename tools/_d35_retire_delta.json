@@ -1,0 +1,412 @@
+{
+ "newPushed": [
+  "Armor_Head_195",
+  "Chain16",
+  "Chain38",
+  "Chain39",
+  "Chains_4",
+  "Chains_5",
+  "Chains_6",
+  "Chains_7",
+  "Chat2",
+  "Extra_260",
+  "Extra_66",
+  "Flame",
+  "Ghost",
+  "Glow_294",
+  "MapBG13",
+  "MapBG20",
+  "MapBG21",
+  "MapBG22",
+  "MapBG23",
+  "MapBG24",
+  "MapBG26",
+  "MapBG27",
+  "MapBG28",
+  "MapBG29",
+  "MapBG30",
+  "MapBG31",
+  "MapBG34",
+  "MapBG35",
+  "MapBG36",
+  "MapBG37",
+  "MapBG38",
+  "MapBG39",
+  "MapBG40",
+  "MapBG41",
+  "MapBG42",
+  "MapBG5",
+  "MapBG6",
+  "MapBG7",
+  "MapBG8",
+  "MapBG9",
+  "NPC_172",
+  "NPC_356",
+  "NPC_366",
+  "NPC_367",
+  "NPC_377",
+  "NPC_454",
+  "NPC_455",
+  "NPC_456",
+  "NPC_457",
+  "NPC_458",
+  "NPC_459",
+  "NPC_494",
+  "NPC_495",
+  "NPC_496",
+  "NPC_497",
+  "NPC_516",
+  "NPC_521",
+  "NPC_546",
+  "NPC_580",
+  "NPC_595",
+  "NPC_596",
+  "NPC_597",
+  "NPC_598",
+  "NPC_599",
+  "NPC_600",
+  "NPC_601",
+  "NPC_619",
+  "NPC_630",
+  "NPC_666",
+  "NPC_676",
+  "NPC_693",
+  "NPC_79",
+  "NPC_80",
+  "OneDropLogo",
+  "Player_HairAlt_1",
+  "Shroom_Tops",
+  "UI/Bestiary/Stat_Gold",
+  "UI/Bestiary/Stat_Platinum",
+  "UI/Bestiary/Stat_Silver",
+  "UI/Scrollbar"
+ ],
+ "alreadyIn490": [
+  "NPC_454",
+  "NPC_455",
+  "NPC_456",
+  "NPC_457",
+  "NPC_458",
+  "NPC_459",
+  "NPC_79",
+  "NPC_80"
+ ],
+ "genuinelyNew": [
+  "Armor_Head_195",
+  "Chain16",
+  "Chain38",
+  "Chain39",
+  "Chains_4",
+  "Chains_5",
+  "Chains_6",
+  "Chains_7",
+  "Chat2",
+  "Extra_260",
+  "Extra_66",
+  "Flame",
+  "Ghost",
+  "Glow_294",
+  "MapBG13",
+  "MapBG20",
+  "MapBG21",
+  "MapBG22",
+  "MapBG23",
+  "MapBG24",
+  "MapBG26",
+  "MapBG27",
+  "MapBG28",
+  "MapBG29",
+  "MapBG30",
+  "MapBG31",
+  "MapBG34",
+  "MapBG35",
+  "MapBG36",
+  "MapBG37",
+  "MapBG38",
+  "MapBG39",
+  "MapBG40",
+  "MapBG41",
+  "MapBG42",
+  "MapBG5",
+  "MapBG6",
+  "MapBG7",
+  "MapBG8",
+  "MapBG9",
+  "NPC_172",
+  "NPC_356",
+  "NPC_366",
+  "NPC_367",
+  "NPC_377",
+  "NPC_494",
+  "NPC_495",
+  "NPC_496",
+  "NPC_497",
+  "NPC_516",
+  "NPC_521",
+  "NPC_546",
+  "NPC_580",
+  "NPC_595",
+  "NPC_596",
+  "NPC_597",
+  "NPC_598",
+  "NPC_599",
+  "NPC_600",
+  "NPC_601",
+  "NPC_619",
+  "NPC_630",
+  "NPC_666",
+  "NPC_676",
+  "NPC_693",
+  "OneDropLogo",
+  "Player_HairAlt_1",
+  "Shroom_Tops",
+  "UI/Bestiary/Stat_Gold",
+  "UI/Bestiary/Stat_Platinum",
+  "UI/Bestiary/Stat_Silver",
+  "UI/Scrollbar"
+ ],
+ "newUnionSize": 562,
+ "oldUnionSize": 490,
+ "owners": {
+  "Armor_Head_195": [
+   "W4-f41-birthday-party-2"
+  ],
+  "Chain16": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "Chain38": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "Chain39": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "Chains_4": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "Chains_5": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "Chains_6": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "Chains_7": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "Chat2": [
+   "W4-f22-ui-screens-4"
+  ],
+  "Extra_260": [
+   "W4-g84-plantera-bulb-draw"
+  ],
+  "Extra_66": [
+   "W4-d13-proj-ai-121-130"
+  ],
+  "Flame": [
+   "W4-c46-respawn-breath-drown"
+  ],
+  "Ghost": [
+   "W4-c46-respawn-breath-drown"
+  ],
+  "Glow_294": [
+   "W4-g84-plantera-bulb-draw"
+  ],
+  "MapBG13": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG20": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG21": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG22": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG23": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG24": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG26": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG27": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG28": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG29": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG30": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG31": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG34": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG35": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG36": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG37": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG38": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG39": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG40": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG41": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG42": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG5": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG6": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG7": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG8": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "MapBG9": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "NPC_172": [
+   "W4-g5-npc-style7-caster-doc"
+  ],
+  "NPC_356": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "NPC_366": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "NPC_367": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "NPC_377": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "NPC_454": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "NPC_455": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "NPC_456": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "NPC_457": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "NPC_458": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "NPC_459": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "NPC_494": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "NPC_495": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "NPC_496": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "NPC_497": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "NPC_516": [
+   "W4-d23-npc-ai-styles-9-14"
+  ],
+  "NPC_521": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "NPC_546": [
+   "W4-f42-sandstorm-2"
+  ],
+  "NPC_580": [
+   "W4-f42-sandstorm-2"
+  ],
+  "NPC_595": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "NPC_596": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "NPC_597": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "NPC_598": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "NPC_599": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "NPC_600": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "NPC_601": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "NPC_619": [
+   "W4-d11-proj-ai-101-110"
+  ],
+  "NPC_630": [
+   "W4-f42-sandstorm-2"
+  ],
+  "NPC_666": [
+   "W4-d23-npc-ai-styles-9-14"
+  ],
+  "NPC_676": [
+   "W4-f47-liquid-shimmer-2"
+  ],
+  "NPC_693": [
+   "W4-g5-npc-style7-caster-doc"
+  ],
+  "NPC_79": [
+   "W4-f42-sandstorm-2"
+  ],
+  "NPC_80": [
+   "W4-f42-sandstorm-2"
+  ],
+  "OneDropLogo": [
+   "W4-f28-tooltip-lines-2"
+  ],
+  "Player_HairAlt_1": [
+   "W4-f41-birthday-party-2"
+  ],
+  "Shroom_Tops": [
+   "W4-g12-dust-main-sites-2"
+  ],
+  "UI/Bestiary/Stat_Gold": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "UI/Bestiary/Stat_Platinum": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "UI/Bestiary/Stat_Silver": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "UI/Scrollbar": [
+   "W4-e23-bestiary-ui-grid"
+  ]
+ }
+}

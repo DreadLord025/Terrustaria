@@ -695,6 +695,74 @@ impl NpcKind {
             NpcKind::Buggy => 487,
             // W4-d40: TargetDummy keep their vanilla ids (free in the protocol space).
             NpcKind::TargetDummy => 488,
+            // W4-d35 (A): the 73/74/75/77/78 band - port-local protocol ids
+            // 698.. (MERGE-SIDE +269 renumber per 367 s1 E7 / d37 tables:
+            // 429-461 collided with d40's landed 430-488 band; the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::GoblinScout => 698,
+            NpcKind::Bird => 699,
+            NpcKind::Pixie => 700,
+            NpcKind::ArmoredSkeleton => 701,
+            NpcKind::Mummy => 702,
+            // W4-d35 (B): the 79/80/82/83/84 band - port-local protocol ids
+            // 698.. (MERGE-SIDE +269 renumber per 367 s1 E7 / d37 tables:
+            // 429-461 collided with d40's landed 430-488 band; the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::DarkMummy => 703,
+            NpcKind::LightMummy => 704,
+            NpcKind::Wraith => 705,
+            NpcKind::CursedHammer => 706,
+            NpcKind::EnchantedSword => 707,
+            // W4-d35 (C): the 85/86/93/94/95 band - port-local protocol ids
+            // 698.. (MERGE-SIDE +269 renumber per 367 s1 E7 / d37 tables:
+            // 429-461 collided with d40's landed 430-488 band; the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::Mimic => 708,
+            NpcKind::Unicorn => 709,
+            NpcKind::GiantBat => 710,
+            NpcKind::Corruptor => 711,
+            NpcKind::DiggerHead => 712,
+            // W4-d35 (D): the 96/97/98/99/100 band - port-local protocol ids
+            // 698.. (MERGE-SIDE +269 renumber per 367 s1 E7 / d37 tables:
+            // 429-461 collided with d40's landed 430-488 band; the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::DiggerBody => 713,
+            NpcKind::DiggerTail => 714,
+            NpcKind::SeekerHead => 715,
+            NpcKind::SeekerBody => 716,
+            NpcKind::SeekerTail => 717,
+            // W4-d35 (E): the 101/102/103/104/109 band - port-local protocol ids
+            // 698.. (MERGE-SIDE +269 renumber per 367 s1 E7 / d37 tables:
+            // 429-461 collided with d40's landed 430-488 band; the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::Clinger => 718,
+            NpcKind::AnglerFish => 719,
+            NpcKind::GreenJellyfish => 720,
+            NpcKind::Werewolf => 721,
+            NpcKind::Clown => 722,
+            // W4-d35 (F): the 110/112/116/120/121 band - port-local protocol ids
+            // 698.. (MERGE-SIDE +269 renumber per 367 s1 E7 / d37 tables:
+            // 429-461 collided with d40's landed 430-488 band; the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::SkeletonArcher => 723,
+            NpcKind::VileSpit => 724,
+            NpcKind::TheHungryII => 725,
+            NpcKind::ChaosElemental => 726,
+            NpcKind::Slimer => 727,
+            // W4-d35 (G): the 122/137/140 band - port-local protocol ids
+            // 698.. (MERGE-SIDE +269 renumber per 367 s1 E7 / d37 tables:
+            // 429-461 collided with d40's landed 430-488 band; the vanilla ids collide with the port-local space;
+            // the pirate/wyvern renumber precedent). The vanilla NPC.type
+            // rides cs_id/net_id, NOT these protocol ids.
+            NpcKind::Gastropod => 728,
+            NpcKind::IlluminantBat => 729,
+            NpcKind::PossessedArmor => 730,
             NpcKind::WyvernTail => 228,
             // W4-d34 kinds 1-70 coverage wave: the port-local 266..280 band
             // (free in to_u16/from_u16 AND render_key; the vanilla types ride
@@ -1251,6 +1319,39 @@ impl NpcKind {
             487 => NpcKind::Buggy,
             // W4-d40: the vanilla ids (`to_u16` above).
             488 => NpcKind::TargetDummy,
+            698 => NpcKind::GoblinScout,
+            699 => NpcKind::Bird,
+            700 => NpcKind::Pixie,
+            701 => NpcKind::ArmoredSkeleton,
+            702 => NpcKind::Mummy,
+            703 => NpcKind::DarkMummy,
+            704 => NpcKind::LightMummy,
+            705 => NpcKind::Wraith,
+            706 => NpcKind::CursedHammer,
+            707 => NpcKind::EnchantedSword,
+            708 => NpcKind::Mimic,
+            709 => NpcKind::Unicorn,
+            710 => NpcKind::GiantBat,
+            711 => NpcKind::Corruptor,
+            712 => NpcKind::DiggerHead,
+            713 => NpcKind::DiggerBody,
+            714 => NpcKind::DiggerTail,
+            715 => NpcKind::SeekerHead,
+            716 => NpcKind::SeekerBody,
+            717 => NpcKind::SeekerTail,
+            718 => NpcKind::Clinger,
+            719 => NpcKind::AnglerFish,
+            720 => NpcKind::GreenJellyfish,
+            721 => NpcKind::Werewolf,
+            722 => NpcKind::Clown,
+            723 => NpcKind::SkeletonArcher,
+            724 => NpcKind::VileSpit,
+            725 => NpcKind::TheHungryII,
+            726 => NpcKind::ChaosElemental,
+            727 => NpcKind::Slimer,
+            728 => NpcKind::Gastropod,
+            729 => NpcKind::IlluminantBat,
+            730 => NpcKind::PossessedArmor,
             228 => NpcKind::WyvernTail,
             266 => NpcKind::AngryBones,
             267 => NpcKind::CursedSkull,
@@ -1463,6 +1564,16 @@ impl NpcKind {
                 | NpcKind::WyvernBody
                 | NpcKind::WyvernBody2
                 | NpcKind::WyvernBody3
+                // W4-d35 (C): the 95 worm chain shares the
+                // head's life pool (NPC.cs:51305-51363). Inert until wiring.
+                | NpcKind::DiggerHead
+                // W4-d35 (D): the 96/97/98/99/100 worm chain shares the
+                // head's life pool (NPC.cs:51305-51363). Inert until wiring.
+                | NpcKind::DiggerBody
+                | NpcKind::DiggerTail
+                | NpcKind::SeekerHead
+                | NpcKind::SeekerBody
+                | NpcKind::SeekerTail
                 | NpcKind::WyvernTail
                 // W4-d34: the Bone Serpent shares the head's life pool
                 // (`NPC.cs:51307-51308`: ai[3]/realLife = whoAmI).
@@ -2478,6 +2589,45 @@ impl NpcKind {
             NpcKind::IceMimic => "NPC_Hit_4",
             // W4-d42 - the roster's HitSound rows.
             NpcKind::BloodMummy => "NPC_Hit_1",
+            // W4-d35 (G): the 122/137/140 HitSound rows.
+            NpcKind::Gastropod => "NPC_Hit_1",
+            NpcKind::IlluminantBat => "NPC_Hit_1",
+            NpcKind::PossessedArmor => "NPC_Hit_4",
+            // W4-d35 (F): the 110/112/116/120/121 HitSound rows.
+            NpcKind::SkeletonArcher => "NPC_Hit_2",
+            NpcKind::TheHungryII => "NPC_Hit_9",
+            NpcKind::ChaosElemental => "NPC_Hit_1",
+            NpcKind::Slimer => "NPC_Hit_1",
+            // W4-d35 (E): the 101/102/103/104/109 HitSound rows.
+            NpcKind::Clinger => "NPC_Hit_1",
+            NpcKind::AnglerFish => "NPC_Hit_1",
+            NpcKind::GreenJellyfish => "NPC_Hit_25",
+            NpcKind::Werewolf => "NPC_Hit_6",
+            NpcKind::Clown => "NPC_Hit_1",
+            // W4-d35 (D): the 96/97/98/99/100 HitSound rows.
+            NpcKind::DiggerBody => "NPC_Hit_1",
+            NpcKind::DiggerTail => "NPC_Hit_1",
+            NpcKind::SeekerHead => "NPC_Hit_1",
+            NpcKind::SeekerBody => "NPC_Hit_1",
+            NpcKind::SeekerTail => "NPC_Hit_1",
+            // W4-d35 (C): the 85/86/93/94/95 HitSound rows.
+            NpcKind::Mimic => "NPC_Hit_4",
+            NpcKind::Unicorn => "NPC_Hit_12",
+            NpcKind::GiantBat => "NPC_Hit_1",
+            NpcKind::Corruptor => "NPC_Hit_1",
+            NpcKind::DiggerHead => "NPC_Hit_1",
+            // W4-d35 (B): the 79/80/82/83/84 HitSound rows.
+            NpcKind::DarkMummy => "NPC_Hit_1",
+            NpcKind::LightMummy => "NPC_Hit_1",
+            NpcKind::Wraith => "NPC_Hit_54",
+            NpcKind::CursedHammer => "NPC_Hit_4",
+            NpcKind::EnchantedSword => "NPC_Hit_4",
+            // W4-d35 (A): the 73/74/75/77/78 HitSound rows.
+            NpcKind::GoblinScout => "NPC_Hit_1",
+            NpcKind::Bird => "NPC_Hit_1",
+            NpcKind::Pixie => "NPC_Hit_5",
+            NpcKind::ArmoredSkeleton => "NPC_Hit_2",
+            NpcKind::Mummy => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -3003,6 +3153,45 @@ impl NpcKind {
             // W4-d42 - the roster's DeathSound rows (614's null row
             // rides the None fall-through).
             NpcKind::BloodMummy => "NPC_Killed_6",
+            // W4-d35 (G): the 122/137/140 DeathSound rows.
+            NpcKind::Gastropod => "NPC_Killed_1",
+            NpcKind::IlluminantBat => "NPC_Killed_6",
+            NpcKind::PossessedArmor => "NPC_Killed_6",
+            // W4-d35 (F): the 110/112/116/120/121 DeathSound rows.
+            NpcKind::SkeletonArcher => "NPC_Killed_2",
+            NpcKind::VileSpit => "NPC_Killed_9",
+            NpcKind::TheHungryII => "NPC_Killed_12",
+            NpcKind::ChaosElemental => "NPC_Killed_6",
+            // W4-d35 (E): the 101/102/103/104/109 DeathSound rows.
+            NpcKind::Clinger => "NPC_Killed_1",
+            NpcKind::AnglerFish => "NPC_Killed_1",
+            NpcKind::GreenJellyfish => "NPC_Killed_28",
+            NpcKind::Werewolf => "NPC_Killed_1",
+            NpcKind::Clown => "NPC_Killed_2",
+            // W4-d35 (D): the 96/97/98/99/100 DeathSound rows.
+            NpcKind::DiggerBody => "NPC_Killed_1",
+            NpcKind::DiggerTail => "NPC_Killed_1",
+            NpcKind::SeekerHead => "NPC_Killed_1",
+            NpcKind::SeekerBody => "NPC_Killed_1",
+            NpcKind::SeekerTail => "NPC_Killed_1",
+            // W4-d35 (C): the 85/86/93/94/95 DeathSound rows.
+            NpcKind::Mimic => "NPC_Killed_6",
+            NpcKind::Unicorn => "NPC_Killed_18",
+            NpcKind::GiantBat => "NPC_Killed_4",
+            NpcKind::Corruptor => "NPC_Killed_1",
+            NpcKind::DiggerHead => "NPC_Killed_1",
+            // W4-d35 (B): the 79/80/82/83/84 DeathSound rows.
+            NpcKind::DarkMummy => "NPC_Killed_6",
+            NpcKind::LightMummy => "NPC_Killed_6",
+            NpcKind::Wraith => "NPC_Killed_52",
+            NpcKind::CursedHammer => "NPC_Killed_6",
+            NpcKind::EnchantedSword => "NPC_Killed_6",
+            // W4-d35 (A): the 73/74/75/77/78 DeathSound rows.
+            NpcKind::GoblinScout => "NPC_Killed_1",
+            NpcKind::Bird => "NPC_Killed_1",
+            NpcKind::Pixie => "NPC_Killed_7",
+            NpcKind::ArmoredSkeleton => "NPC_Killed_2",
+            NpcKind::Mummy => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -3137,6 +3326,22 @@ impl NpcKind {
             | NpcKind::BloodEelBody
             | NpcKind::BloodEelTail
             => true,
+            // W4-d35 (A): the 75 noGravity flyers (kb>0).
+            NpcKind::Pixie => true,
+            // W4-d35 (B): the 82 noGravity flyers (kb>0).
+            NpcKind::Wraith => true,
+            // W4-d35 (C): the 93/94 noGravity flyers (kb>0).
+            NpcKind::GiantBat
+            | NpcKind::Corruptor => true,
+            // W4-d35 (E): the 101/102/103 noGravity flyers (kb>0).
+            NpcKind::Clinger
+            | NpcKind::AnglerFish
+            | NpcKind::GreenJellyfish => true,
+            // W4-d35 (F): the 121 noGravity flyers (kb>0).
+            NpcKind::Slimer => true,
+            // W4-d35 (G): the 122/137 noGravity flyers (kb>0).
+            NpcKind::Gastropod
+            | NpcKind::IlluminantBat => true,
             NpcKind::AngryNimbus => true,
             // W4-d34: the Cursed Skull's `noGravity = true` (`NPC.cs:9160`,
             // kb 0.2 `:9163`). The ManEater (43) writes noGravity but kb 0
@@ -3505,6 +3710,62 @@ impl NpcKind {
             | NpcKind::Buggy => 66,
             // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
             NpcKind::TargetDummy => 92,
+            // aiStyle 3 - W4-d35 (A; NPC.cs :9732, :9786, :9799).
+            NpcKind::GoblinScout
+            | NpcKind::ArmoredSkeleton
+            | NpcKind::Mummy => 3,
+            // aiStyle 22 - W4-d35 (A; NPC.cs :9772).
+            NpcKind::Pixie => 22,
+            // aiStyle 24 - W4-d35 (A; NPC.cs :9747).
+            NpcKind::Bird => 24,
+            // aiStyle 3 - W4-d35 (B; NPC.cs :9812, :9825).
+            NpcKind::DarkMummy
+            | NpcKind::LightMummy => 3,
+            // aiStyle 22 - W4-d35 (B; NPC.cs :9852).
+            NpcKind::Wraith => 22,
+            // aiStyle 23 - W4-d35 (B; NPC.cs :9879, :9892).
+            NpcKind::CursedHammer
+            | NpcKind::EnchantedSword => 23,
+            // aiStyle 5 - W4-d35 (C; NPC.cs :10061).
+            NpcKind::Corruptor => 5,
+            // aiStyle 6 - W4-d35 (C; NPC.cs :10076).
+            NpcKind::DiggerHead => 6,
+            // aiStyle 14 - W4-d35 (C; NPC.cs :10047).
+            NpcKind::GiantBat => 14,
+            // aiStyle 25 - W4-d35 (C; NPC.cs :9905).
+            NpcKind::Mimic => 25,
+            // aiStyle 26 - W4-d35 (C; NPC.cs :9926).
+            NpcKind::Unicorn => 26,
+            // aiStyle 6 - W4-d35 (D; NPC.cs :10094, :10113, :10132, :10150, :10168).
+            NpcKind::DiggerBody
+            | NpcKind::DiggerTail
+            | NpcKind::SeekerHead
+            | NpcKind::SeekerBody
+            | NpcKind::SeekerTail => 6,
+            // aiStyle 3 - W4-d35 (E; NPC.cs :10230, :10299).
+            NpcKind::Werewolf
+            | NpcKind::Clown => 3,
+            // aiStyle 13 - W4-d35 (E; NPC.cs :10186).
+            NpcKind::Clinger => 13,
+            // aiStyle 16 - W4-d35 (E; NPC.cs :10202).
+            NpcKind::AnglerFish => 16,
+            // aiStyle 18 - W4-d35 (E; NPC.cs :10216).
+            NpcKind::GreenJellyfish => 18,
+            // aiStyle 2 - W4-d35 (F; NPC.cs :10393).
+            NpcKind::TheHungryII => 2,
+            // aiStyle 3 - W4-d35 (F; NPC.cs :10313, :10453).
+            NpcKind::SkeletonArcher
+            | NpcKind::ChaosElemental => 3,
+            // aiStyle 9 - W4-d35 (F; NPC.cs :10326).
+            NpcKind::VileSpit => 9,
+            // aiStyle 14 - W4-d35 (F; NPC.cs :10466).
+            NpcKind::Slimer => 14,
+            // aiStyle 3 - W4-d35 (G; NPC.cs :10763).
+            NpcKind::PossessedArmor => 3,
+            // aiStyle 14 - W4-d35 (G; NPC.cs :10735).
+            NpcKind::IlluminantBat => 14,
+            // aiStyle 22 - W4-d35 (G; NPC.cs :10479).
+            NpcKind::Gastropod => 22,
             NpcKind::DungeonSpirit => 56,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults aiStyle rows).
             NpcKind::AngryBones => 3,   // :9112
@@ -4330,6 +4591,46 @@ impl NpcKind {
             | NpcKind::Buggy => (10.0, 4.0),
             // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
             NpcKind::TargetDummy => (18.0, 40.0),
+            // W4-d35 (A): the 73/74/75/77/78 SetDefaults boxes.
+            NpcKind::GoblinScout => (18.0, 40.0),
+            NpcKind::Bird => (14.0, 14.0),
+            NpcKind::Pixie => (20.0, 20.0),
+            NpcKind::ArmoredSkeleton => (18.0, 40.0),
+            NpcKind::Mummy => (18.0, 40.0),
+            // W4-d35 (B): the 79/80/82/83/84 SetDefaults boxes.
+            NpcKind::DarkMummy => (18.0, 40.0),
+            NpcKind::LightMummy => (18.0, 40.0),
+            NpcKind::Wraith => (24.0, 44.0),
+            NpcKind::CursedHammer => (40.0, 40.0),
+            NpcKind::EnchantedSword => (40.0, 40.0),
+            // W4-d35 (C): the 85/86/93/94/95 SetDefaults boxes.
+            NpcKind::Mimic => (24.0, 24.0),
+            NpcKind::Unicorn => (46.0, 42.0),
+            NpcKind::GiantBat => (26.0, 20.0),
+            NpcKind::Corruptor => (44.0, 44.0),
+            NpcKind::DiggerHead => (22.0, 22.0),
+            // W4-d35 (D): the 96/97/98/99/100 SetDefaults boxes.
+            NpcKind::DiggerBody => (22.0, 22.0),
+            NpcKind::DiggerTail => (22.0, 22.0),
+            NpcKind::SeekerHead => (22.0, 22.0),
+            NpcKind::SeekerBody => (22.0, 22.0),
+            NpcKind::SeekerTail => (22.0, 22.0),
+            // W4-d35 (E): the 101/102/103/104/109 SetDefaults boxes.
+            NpcKind::Clinger => (30.0, 30.0),
+            NpcKind::AnglerFish => (18.0, 20.0),
+            NpcKind::GreenJellyfish => (26.0, 26.0),
+            NpcKind::Werewolf => (18.0, 40.0),
+            NpcKind::Clown => (34.0, 78.0),
+            // W4-d35 (F): the 110/112/116/120/121 SetDefaults boxes.
+            NpcKind::SkeletonArcher => (18.0, 40.0),
+            NpcKind::VileSpit => (16.0, 16.0),
+            NpcKind::TheHungryII => (30.0, 32.0),
+            NpcKind::ChaosElemental => (18.0, 40.0),
+            NpcKind::Slimer => (40.0, 30.0),
+            // W4-d35 (G): the 122/137/140 SetDefaults boxes.
+            NpcKind::Gastropod => (20.0, 20.0),
+            NpcKind::IlluminantBat => (26.0, 20.0),
+            NpcKind::PossessedArmor => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults width/height).
             NpcKind::AngryBones => (18.0, 40.0),  // :9110-9111
@@ -4548,6 +4849,41 @@ impl NpcKind {
             // `NPC.type` ids (`NPCID.cs:10821`/`:11177`/`:11253`/`:11445`).
             // The BlazingWheel's protocol id is port-local 353, so its
             // C#-type consumers (the AI arms' type gates) read 72 here.
+            // W4-d35 (A): the 73/74/75/77/78 vanilla NPC.type rows.
+            NpcKind::GoblinScout => 73,
+            NpcKind::Bird => 74,
+            NpcKind::Pixie => 75,
+            NpcKind::ArmoredSkeleton => 77,
+            NpcKind::Mummy => 78,
+            // W4-d35 (B): the 79/80/82/83/84 vanilla NPC.type rows.
+            NpcKind::DarkMummy => 79,
+            NpcKind::LightMummy => 80,
+            NpcKind::Wraith => 82,
+            NpcKind::CursedHammer => 83,
+            NpcKind::EnchantedSword => 84,
+            // W4-d35 (C): the 85/86/93/94/95 vanilla NPC.type rows.
+            NpcKind::Mimic => 85,
+            NpcKind::Unicorn => 86,
+            NpcKind::GiantBat => 93,
+            NpcKind::Corruptor => 94,
+            NpcKind::DiggerHead => 95,
+            // W4-d35 (D): the 98 vanilla NPC.type rows.
+            NpcKind::SeekerHead => 98,
+            // W4-d35 (E): the 101/102/103/104/109 vanilla NPC.type rows.
+            NpcKind::Clinger => 101,
+            NpcKind::AnglerFish => 102,
+            NpcKind::GreenJellyfish => 103,
+            NpcKind::Werewolf => 104,
+            NpcKind::Clown => 109,
+            // W4-d35 (F): the 110/116/120/121 vanilla NPC.type rows.
+            NpcKind::SkeletonArcher => 110,
+            NpcKind::TheHungryII => 116,
+            NpcKind::ChaosElemental => 120,
+            NpcKind::Slimer => 121,
+            // W4-d35 (G): the 122/137/140 vanilla NPC.type rows.
+            NpcKind::Gastropod => 122,
+            NpcKind::IlluminantBat => 137,
+            NpcKind::PossessedArmor => 140,
             NpcKind::BlazingWheel => 72,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
@@ -4825,6 +5161,16 @@ impl NpcKind {
                 | NpcKind::TheDestroyerTail
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
+                // W4-d35 (C): the 95 behindTiles rows.
+                | NpcKind::DiggerHead
+                // W4-d35 (D): the 96/97/98/99/100 behindTiles rows.
+                | NpcKind::DiggerBody
+                | NpcKind::DiggerTail
+                | NpcKind::SeekerHead
+                | NpcKind::SeekerBody
+                | NpcKind::SeekerTail
+                // W4-d35 (E): the 101 behindTiles rows.
+                | NpcKind::Clinger
                 | NpcKind::BlazingWheel
                 // W4-d34: the Bone Serpent's `behindTiles = true` rows
                 // (`NPC.cs:9240`/`:9257`/`:9275`).
@@ -5322,6 +5668,46 @@ impl NpcKind {
             NpcKind::Buggy => 5,
             // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
             NpcKind::TargetDummy => 1000,
+            // W4-d35 (A): the 73/74/75/77/78 lifeMax rows.
+            NpcKind::GoblinScout => 80,
+            NpcKind::Bird => 5,
+            NpcKind::Pixie => 150,
+            NpcKind::ArmoredSkeleton => 260,
+            NpcKind::Mummy => 130,
+            // W4-d35 (B): the 79/80/82/83/84 lifeMax rows.
+            NpcKind::DarkMummy => 180,
+            NpcKind::LightMummy => 200,
+            NpcKind::Wraith => 160,
+            NpcKind::CursedHammer => 200,
+            NpcKind::EnchantedSword => 200,
+            // W4-d35 (C): the 85/86/93/94/95 lifeMax rows.
+            NpcKind::Mimic => 500,
+            NpcKind::Unicorn => 400,
+            NpcKind::GiantBat => 100,
+            NpcKind::Corruptor => 230,
+            NpcKind::DiggerHead => 200,
+            // W4-d35 (D): the 96/97/98/99/100 lifeMax rows.
+            NpcKind::DiggerBody => 200,
+            NpcKind::DiggerTail => 200,
+            NpcKind::SeekerHead => 500,
+            NpcKind::SeekerBody => 500,
+            NpcKind::SeekerTail => 500,
+            // W4-d35 (E): the 101/102/103/104/109 lifeMax rows.
+            NpcKind::Clinger => 320,
+            NpcKind::AnglerFish => 90,
+            NpcKind::GreenJellyfish => 120,
+            NpcKind::Werewolf => 350,
+            NpcKind::Clown => 800,
+            // W4-d35 (F): the 110/112/116/120/121 lifeMax rows.
+            NpcKind::SkeletonArcher => 210,
+            NpcKind::VileSpit => 1,
+            NpcKind::TheHungryII => 80,
+            NpcKind::ChaosElemental => 370,
+            NpcKind::Slimer => 60,
+            // W4-d35 (G): the 122/137/140 lifeMax rows.
+            NpcKind::Gastropod => 220,
+            NpcKind::IlluminantBat => 200,
+            NpcKind::PossessedArmor => 260,
             NpcKind::DungeonSpirit => 200,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults lifeMax).
             NpcKind::AngryBones => 80,   // :9115
@@ -5886,6 +6272,46 @@ impl NpcKind {
             NpcKind::Buggy => 0,
             // W4-d40: the SetDefaults damage rows (`NPC.cs`).
             NpcKind::TargetDummy => 0,
+            // W4-d35 (A): the 73/74/75/77/78 damage rows.
+            NpcKind::GoblinScout => 20,
+            NpcKind::Bird => 0,
+            NpcKind::Pixie => 55,
+            NpcKind::ArmoredSkeleton => 40,
+            NpcKind::Mummy => 50,
+            // W4-d35 (B): the 79/80/82/83/84 damage rows.
+            NpcKind::DarkMummy => 60,
+            NpcKind::LightMummy => 55,
+            NpcKind::Wraith => 65,
+            NpcKind::CursedHammer => 80,
+            NpcKind::EnchantedSword => 80,
+            // W4-d35 (C): the 85/86/93/94/95 damage rows.
+            NpcKind::Mimic => 80,
+            NpcKind::Unicorn => 65,
+            NpcKind::GiantBat => 45,
+            NpcKind::Corruptor => 60,
+            NpcKind::DiggerHead => 45,
+            // W4-d35 (D): the 96/97/98/99/100 damage rows.
+            NpcKind::DiggerBody => 28,
+            NpcKind::DiggerTail => 26,
+            NpcKind::SeekerHead => 70,
+            NpcKind::SeekerBody => 55,
+            NpcKind::SeekerTail => 40,
+            // W4-d35 (E): the 101/102/103/104/109 damage rows.
+            NpcKind::Clinger => 70,
+            NpcKind::AnglerFish => 80,
+            NpcKind::GreenJellyfish => 80,
+            NpcKind::Werewolf => 70,
+            NpcKind::Clown => 60,
+            // W4-d35 (F): the 110/112/116/120/121 damage rows.
+            NpcKind::SkeletonArcher => 45,
+            NpcKind::VileSpit => 65,
+            NpcKind::TheHungryII => 30,
+            NpcKind::ChaosElemental => 40,
+            NpcKind::Slimer => 45,
+            // W4-d35 (G): the 122/137/140 damage rows.
+            NpcKind::Gastropod => 60,
+            NpcKind::IlluminantBat => 75,
+            NpcKind::PossessedArmor => 55,
             NpcKind::DungeonSpirit => 70,
             // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults damage).
             NpcKind::AngryBones => 26,   // :9113

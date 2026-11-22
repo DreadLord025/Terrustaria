@@ -736,6 +736,47 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (the mask loop is unmodelled - the documented gap; the
         // fairies' ImmuneToWhips rides `whip_immune`).
         NpcKind::BloodMummy => &[],
+        // W4-d35 (A): the 73/74/75/77/78 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::GoblinScout => &[],
+        NpcKind::Bird => &[31],
+        NpcKind::Pixie => &[],
+        NpcKind::ArmoredSkeleton => &[20],
+        // W4-d35 (B): the 79/80/82/83/84 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::DarkMummy => &[],
+        NpcKind::LightMummy => &[],
+        // 82: ImmuneToAllBuffsThatAreNotWhips - unmodelled mask, &[] (Poltergeist precedent).
+        NpcKind::Wraith => &[],
+        NpcKind::CursedHammer => &[20, 24, 31, 323],
+        // W4-d35 (C): the 85/86/93/94/95 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::Mimic => &[20, 31],
+        NpcKind::Unicorn => &[],
+        NpcKind::GiantBat => &[],
+        NpcKind::Corruptor => &[31],
+        // W4-d35 (D): the 96/97/98/99/100 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::DiggerBody => &[31],
+        NpcKind::DiggerTail => &[31],
+        NpcKind::SeekerHead => &[31],
+        NpcKind::SeekerBody => &[31],
+        // W4-d35 (E): the 101/102/103/104/109 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::Clinger => &[39, 31],
+        NpcKind::AnglerFish => &[31],
+        NpcKind::GreenJellyfish => &[31],
+        NpcKind::Werewolf => &[],
+        // W4-d35 (F): the 110/112/116/120/121 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::SkeletonArcher => &[20],
+        NpcKind::VileSpit => &[31],
+        NpcKind::TheHungryII => &[31],
+        NpcKind::ChaosElemental => &[20],
+        // W4-d35 (G): the 122/137/140 DebuffImmunitySets rows (NPCID.cs).
+        NpcKind::Gastropod => &[20, 31],
+        NpcKind::IlluminantBat => &[20],
+        NpcKind::PossessedArmor => &[20, 24, 323],
+        NpcKind::Slimer => &[20],
+        NpcKind::Clown => &[31],
+        NpcKind::SeekerTail => &[31],
+        NpcKind::DiggerHead => &[31],
+        NpcKind::EnchantedSword => &[20, 24, 31, 323],
+        NpcKind::Mummy => &[],
     }
 }
 

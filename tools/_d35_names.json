@@ -1,0 +1,167 @@
+{
+"73": {
+"name": "GoblinScout",
+"npcid_line": 10823,
+"display": "Goblin Scout"
+},
+"74": {
+"name": "Bird",
+"npcid_line": 10825,
+"display": "Bird"
+},
+"75": {
+"name": "Pixie",
+"npcid_line": 10827,
+"display": "Pixie"
+},
+"77": {
+"name": "ArmoredSkeleton",
+"npcid_line": 10831,
+"display": "Armored Skeleton"
+},
+"78": {
+"name": "Mummy",
+"npcid_line": 10833,
+"display": "Mummy"
+},
+"79": {
+"name": "DarkMummy",
+"npcid_line": 10835,
+"display": "Dark Mummy"
+},
+"80": {
+"name": "LightMummy",
+"npcid_line": 10837,
+"display": "Light Mummy"
+},
+"82": {
+"name": "Wraith",
+"npcid_line": 10841,
+"display": "Wraith"
+},
+"83": {
+"name": "CursedHammer",
+"npcid_line": 10843,
+"display": "Cursed Hammer"
+},
+"84": {
+"name": "EnchantedSword",
+"npcid_line": 10845,
+"display": "Enchanted Sword"
+},
+"85": {
+"name": "Mimic",
+"npcid_line": 10847,
+"display": "Mimic"
+},
+"86": {
+"name": "Unicorn",
+"npcid_line": 10849,
+"display": "Unicorn"
+},
+"93": {
+"name": "GiantBat",
+"npcid_line": 10863,
+"display": "Giant Bat"
+},
+"94": {
+"name": "Corruptor",
+"npcid_line": 10865,
+"display": "Corruptor"
+},
+"95": {
+"name": "DiggerHead",
+"npcid_line": 10867,
+"display": "Digger"
+},
+"96": {
+"name": "DiggerBody",
+"npcid_line": 10869,
+"display": "Digger"
+},
+"97": {
+"name": "DiggerTail",
+"npcid_line": 10871,
+"display": "Digger"
+},
+"98": {
+"name": "SeekerHead",
+"npcid_line": 10873,
+"display": "World Feeder"
+},
+"99": {
+"name": "SeekerBody",
+"npcid_line": 10875,
+"display": "World Feeder"
+},
+"100": {
+"name": "SeekerTail",
+"npcid_line": 10877,
+"display": "World Feeder"
+},
+"101": {
+"name": "Clinger",
+"npcid_line": 10879,
+"display": "Clinger"
+},
+"102": {
+"name": "AnglerFish",
+"npcid_line": 10881,
+"display": "Angler Fish"
+},
+"103": {
+"name": "GreenJellyfish",
+"npcid_line": 10883,
+"display": "Green Jellyfish"
+},
+"104": {
+"name": "Werewolf",
+"npcid_line": 10885,
+"display": "Werewolf"
+},
+"109": {
+"name": "Clown",
+"npcid_line": 10895,
+"display": "Clown"
+},
+"110": {
+"name": "SkeletonArcher",
+"npcid_line": 10897,
+"display": "Skeleton Archer"
+},
+"112": {
+"name": "VileSpit",
+"npcid_line": 10901,
+"display": "Vile Spit"
+},
+"116": {
+"name": "TheHungryII",
+"npcid_line": 10909,
+"display": "The Hungry"
+},
+"120": {
+"name": "ChaosElemental",
+"npcid_line": 10917,
+"display": "Chaos Elemental"
+},
+"121": {
+"name": "Slimer",
+"npcid_line": 10919,
+"display": "Slimer"
+},
+"122": {
+"name": "Gastropod",
+"npcid_line": 10921,
+"display": "Gastropod"
+},
+"137": {
+"name": "IlluminantBat",
+"npcid_line": 10951,
+"display": "Illuminant Bat"
+},
+"140": {
+"name": "PossessedArmor",
+"npcid_line": 10957,
+"display": "Possessed Armor"
+}
+}

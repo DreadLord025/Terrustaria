@@ -1,0 +1,194 @@
+[
+ {
+  "label": "base (HEAD, gore landed)",
+  "sheets": 9497,
+  "height": 8115,
+  "overflow": false
+ },
+ {
+  "label": "base + boot font",
+  "sheets": 9498,
+  "height": 8119,
+  "overflow": false
+ },
+ {
+  "label": "base + pushed union (198)",
+  "sheets": 9695,
+  "height": 8530,
+  "overflow": true
+ },
+ {
+  "label": "base + font + pushed union",
+  "sheets": 9696,
+  "height": 8530,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d35 through batch A (5)",
+  "sheets": 9502,
+  "height": 8191,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + font + d35 through batch A",
+  "sheets": 9503,
+  "height": 8191,
+  "overflow": false
+ },
+ {
+  "label": "SOLO base + d35 through batch B (10)",
+  "sheets": 9507,
+  "height": 8224,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + font + d35 through batch B",
+  "sheets": 9508,
+  "height": 8228,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d35 through batch C (15)",
+  "sheets": 9512,
+  "height": 8316,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + font + d35 through batch C",
+  "sheets": 9513,
+  "height": 8316,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d35 through batch D (20)",
+  "sheets": 9517,
+  "height": 8315,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + font + d35 through batch D",
+  "sheets": 9518,
+  "height": 8315,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d35 through batch E (25)",
+  "sheets": 9522,
+  "height": 8335,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + font + d35 through batch E",
+  "sheets": 9523,
+  "height": 8335,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d35 through batch F (30)",
+  "sheets": 9527,
+  "height": 8254,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + font + d35 through batch F",
+  "sheets": 9528,
+  "height": 8261,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + d35 through batch G (33)",
+  "sheets": 9530,
+  "height": 8267,
+  "overflow": true
+ },
+ {
+  "label": "SOLO base + font + d35 through batch G",
+  "sheets": 9531,
+  "height": 8272,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d35 through batch A (5 sheets)",
+  "sheets": 9700,
+  "height": 8574,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + d35 through batch A",
+  "sheets": 9701,
+  "height": 8574,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d35 through batch B (10 sheets)",
+  "sheets": 9705,
+  "height": 8559,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + d35 through batch B",
+  "sheets": 9706,
+  "height": 8559,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d35 through batch C (15 sheets)",
+  "sheets": 9710,
+  "height": 8694,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + d35 through batch C",
+  "sheets": 9711,
+  "height": 8696,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d35 through batch D (20 sheets)",
+  "sheets": 9715,
+  "height": 8702,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + d35 through batch D",
+  "sheets": 9716,
+  "height": 8702,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d35 through batch E (25 sheets)",
+  "sheets": 9720,
+  "height": 8724,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + d35 through batch E",
+  "sheets": 9721,
+  "height": 8732,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d35 through batch F (30 sheets)",
+  "sheets": 9725,
+  "height": 8738,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + d35 through batch F",
+  "sheets": 9726,
+  "height": 8739,
+  "overflow": true
+ },
+ {
+  "label": "+ pushed + d35 through batch G (33 sheets)",
+  "sheets": 9728,
+  "height": 8617,
+  "overflow": true
+ },
+ {
+  "label": "+ font + pushed + d35 through batch G",
+  "sheets": 9729,
+  "height": 8617,
+  "overflow": true
+ }
+]

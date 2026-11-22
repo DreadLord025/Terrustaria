@@ -3907,6 +3907,92 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d35 (A): the 73/77/78 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::GoblinScout
+        | crate::npc::NpcKind::ArmoredSkeleton
+        | crate::npc::NpcKind::Mummy => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (A): the 74/75 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::Bird
+        | crate::npc::NpcKind::Pixie => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d35 (B): the 79/80 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::DarkMummy
+        | crate::npc::NpcKind::LightMummy => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (B): the 82/83/84 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::Wraith
+        | crate::npc::NpcKind::CursedHammer
+        | crate::npc::NpcKind::EnchantedSword => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d35 (C): the 85/86 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::Mimic
+        | crate::npc::NpcKind::Unicorn => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (C): the 93/94/95 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::GiantBat
+        | crate::npc::NpcKind::Corruptor
+        | crate::npc::NpcKind::DiggerHead => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d35 (D): the 96/97/98/99/100 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::DiggerBody
+        | crate::npc::NpcKind::DiggerTail
+        | crate::npc::NpcKind::SeekerHead
+        | crate::npc::NpcKind::SeekerBody
+        | crate::npc::NpcKind::SeekerTail => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d35 (E): the 102/104/109 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::AnglerFish
+        | crate::npc::NpcKind::Werewolf
+        | crate::npc::NpcKind::Clown => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (E): the 101/103 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::Clinger
+        | crate::npc::NpcKind::GreenJellyfish => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d35 (F): the 110/120 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::SkeletonArcher
+        | crate::npc::NpcKind::ChaosElemental => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (F): the 112/116/121 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::VileSpit
+        | crate::npc::NpcKind::TheHungryII
+        | crate::npc::NpcKind::Slimer => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d35 (G): the 140 walkers plant feet on the
+        // column surface (the generic surface ctor; the family machine
+        // takes over on the first tick).
+        crate::npc::NpcKind::PossessedArmor => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-d35 (G): the 122/137 flyers ride the hover ctor
+        // (the net state overwrites the position below).
+        crate::npc::NpcKind::Gastropod
+        | crate::npc::NpcKind::IlluminantBat => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

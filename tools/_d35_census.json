@@ -1,0 +1,2219 @@
+{
+"missing": [
+73,
+74,
+75,
+76,
+77,
+78,
+79,
+80,
+82,
+83,
+84,
+85,
+86,
+88,
+89,
+90,
+91,
+92,
+93,
+94,
+95,
+96,
+97,
+98,
+99,
+100,
+101,
+102,
+103,
+104,
+105,
+109,
+110,
+112,
+116,
+118,
+119,
+120,
+121,
+122,
+135,
+136,
+137,
+139,
+140
+],
+"covered": {
+"133": [
+"WanderingEye"
+],
+"111": [
+"GoblinArcher"
+],
+"87": [
+"WyvernHead"
+],
+"108": [
+"Wizard"
+],
+"106": [
+"BoundWizard"
+],
+"124": [
+"Mechanic"
+],
+"123": [
+"BoundMechanic"
+],
+"113": [
+"WallOfFlesh"
+],
+"115": [
+"Hungry"
+],
+"117": [
+"LeechHead"
+],
+"134": [
+"TheDestroyer"
+],
+"127": [
+"SkeletronPrime"
+],
+"125": [
+"Retinazer"
+],
+"126": [
+"Spazmatism"
+],
+"107": [
+"GoblinTinkerer"
+],
+"114": [
+"WallOfFleshEye"
+],
+"128": [
+"PrimeCannon"
+],
+"129": [
+"PrimeSaw"
+],
+"130": [
+"PrimeVice"
+],
+"131": [
+"PrimeLaser"
+],
+"71": [
+"DungeonSlime"
+],
+"81": [
+"CorruptSlime"
+],
+"138": [
+"IlluminantSlime"
+],
+"132": [
+"BaldZombie"
+],
+"72": [
+"BlazingWheel"
+]
+},
+"id2name": {
+"0": [
+"None"
+],
+"1": [
+"BlueSlime"
+],
+"2": [
+"DemonEye"
+],
+"3": [
+"Zombie"
+],
+"4": [
+"EyeofCthulhu"
+],
+"5": [
+"ServantofCthulhu"
+],
+"6": [
+"EaterofSouls"
+],
+"7": [
+"DevourerHead"
+],
+"8": [
+"DevourerBody"
+],
+"9": [
+"DevourerTail"
+],
+"10": [
+"GiantWormHead"
+],
+"11": [
+"GiantWormBody"
+],
+"12": [
+"GiantWormTail"
+],
+"13": [
+"EaterofWorldsHead"
+],
+"14": [
+"EaterofWorldsBody"
+],
+"15": [
+"EaterofWorldsTail"
+],
+"16": [
+"MotherSlime"
+],
+"17": [
+"Merchant"
+],
+"18": [
+"Nurse"
+],
+"19": [
+"ArmsDealer"
+],
+"20": [
+"Dryad"
+],
+"21": [
+"Skeleton"
+],
+"22": [
+"Guide"
+],
+"23": [
+"MeteorHead"
+],
+"24": [
+"FireImp"
+],
+"25": [
+"BurningSphere"
+],
+"26": [
+"GoblinPeon"
+],
+"27": [
+"GoblinThief"
+],
+"28": [
+"GoblinWarrior"
+],
+"29": [
+"GoblinSorcerer"
+],
+"30": [
+"ChaosBall"
+],
+"31": [
+"AngryBones"
+],
+"32": [
+"DarkCaster"
+],
+"33": [
+"WaterSphere"
+],
+"34": [
+"CursedSkull"
+],
+"35": [
+"SkeletronHead"
+],
+"36": [
+"SkeletronHand"
+],
+"37": [
+"OldMan"
+],
+"38": [
+"Demolitionist"
+],
+"39": [
+"BoneSerpentHead"
+],
+"40": [
+"BoneSerpentBody"
+],
+"41": [
+"BoneSerpentTail"
+],
+"42": [
+"Hornet"
+],
+"43": [
+"ManEater"
+],
+"44": [
+"UndeadMiner"
+],
+"45": [
+"Tim"
+],
+"46": [
+"Bunny"
+],
+"47": [
+"CorruptBunny"
+],
+"48": [
+"Harpy"
+],
+"49": [
+"CaveBat"
+],
+"50": [
+"KingSlime"
+],
+"51": [
+"JungleBat"
+],
+"52": [
+"DoctorBones"
+],
+"53": [
+"TheGroom"
+],
+"54": [
+"Clothier"
+],
+"55": [
+"Goldfish"
+],
+"56": [
+"Snatcher"
+],
+"57": [
+"CorruptGoldfish"
+],
+"58": [
+"Piranha"
+],
+"59": [
+"LavaSlime"
+],
+"60": [
+"Hellbat"
+],
+"61": [
+"Vulture"
+],
+"62": [
+"Demon"
+],
+"63": [
+"BlueJellyfish"
+],
+"64": [
+"PinkJellyfish"
+],
+"65": [
+"Shark"
+],
+"66": [
+"VoodooDemon"
+],
+"67": [
+"Crab"
+],
+"68": [
+"DungeonGuardian"
+],
+"69": [
+"Antlion"
+],
+"70": [
+"SpikeBall"
+],
+"71": [
+"DungeonSlime"
+],
+"72": [
+"BlazingWheel"
+],
+"73": [
+"GoblinScout"
+],
+"74": [
+"Bird"
+],
+"75": [
+"Pixie"
+],
+"76": [
+"None2"
+],
+"77": [
+"ArmoredSkeleton"
+],
+"78": [
+"Mummy"
+],
+"79": [
+"DarkMummy"
+],
+"80": [
+"LightMummy"
+],
+"81": [
+"CorruptSlime"
+],
+"82": [
+"Wraith"
+],
+"83": [
+"CursedHammer"
+],
+"84": [
+"EnchantedSword"
+],
+"85": [
+"Mimic"
+],
+"86": [
+"Unicorn"
+],
+"87": [
+"WyvernHead"
+],
+"88": [
+"WyvernLegs"
+],
+"89": [
+"WyvernBody"
+],
+"90": [
+"WyvernBody2"
+],
+"91": [
+"WyvernBody3"
+],
+"92": [
+"WyvernTail"
+],
+"93": [
+"GiantBat"
+],
+"94": [
+"Corruptor"
+],
+"95": [
+"DiggerHead"
+],
+"96": [
+"DiggerBody"
+],
+"97": [
+"DiggerTail"
+],
+"98": [
+"SeekerHead"
+],
+"99": [
+"SeekerBody"
+],
+"100": [
+"SeekerTail"
+],
+"101": [
+"Clinger"
+],
+"102": [
+"AnglerFish"
+],
+"103": [
+"GreenJellyfish"
+],
+"104": [
+"Werewolf"
+],
+"105": [
+"BoundGoblin"
+],
+"106": [
+"BoundWizard"
+],
+"107": [
+"GoblinTinkerer"
+],
+"108": [
+"Wizard"
+],
+"109": [
+"Clown"
+],
+"110": [
+"SkeletonArcher"
+],
+"111": [
+"GoblinArcher"
+],
+"112": [
+"VileSpit"
+],
+"113": [
+"WallofFlesh"
+],
+"114": [
+"WallofFleshEye"
+],
+"115": [
+"TheHungry"
+],
+"116": [
+"TheHungryII"
+],
+"117": [
+"LeechHead"
+],
+"118": [
+"LeechBody"
+],
+"119": [
+"LeechTail"
+],
+"120": [
+"ChaosElemental"
+],
+"121": [
+"Slimer"
+],
+"122": [
+"Gastropod"
+],
+"123": [
+"BoundMechanic"
+],
+"124": [
+"Mechanic"
+],
+"125": [
+"Retinazer"
+],
+"126": [
+"Spazmatism"
+],
+"127": [
+"SkeletronPrime"
+],
+"128": [
+"PrimeCannon"
+],
+"129": [
+"PrimeSaw"
+],
+"130": [
+"PrimeVice"
+],
+"131": [
+"PrimeLaser"
+],
+"132": [
+"BaldZombie"
+],
+"133": [
+"WanderingEye"
+],
+"134": [
+"TheDestroyer"
+],
+"135": [
+"TheDestroyerBody"
+],
+"136": [
+"TheDestroyerTail"
+],
+"137": [
+"IlluminantBat"
+],
+"138": [
+"IlluminantSlime"
+],
+"139": [
+"Probe"
+],
+"140": [
+"PossessedArmor"
+],
+"141": [
+"ToxicSludge"
+],
+"142": [
+"SantaClaus"
+],
+"143": [
+"SnowmanGangsta"
+],
+"144": [
+"MisterStabby"
+],
+"145": [
+"SnowBalla"
+],
+"146": [
+"None3"
+],
+"147": [
+"IceSlime"
+],
+"148": [
+"Penguin"
+],
+"149": [
+"PenguinBlack"
+],
+"150": [
+"IceBat"
+],
+"151": [
+"Lavabat"
+],
+"152": [
+"GiantFlyingFox"
+],
+"153": [
+"GiantTortoise"
+],
+"154": [
+"IceTortoise"
+],
+"155": [
+"Wolf"
+],
+"156": [
+"RedDevil"
+],
+"157": [
+"Arapaima"
+],
+"158": [
+"VampireBat"
+],
+"159": [
+"Vampire"
+],
+"160": [
+"Truffle"
+],
+"161": [
+"ZombieEskimo"
+],
+"162": [
+"Frankenstein"
+],
+"163": [
+"BlackRecluse"
+],
+"164": [
+"WallCreeper"
+],
+"165": [
+"WallCreeperWall"
+],
+"166": [
+"SwampThing"
+],
+"167": [
+"UndeadViking"
+],
+"168": [
+"CorruptPenguin"
+],
+"169": [
+"IceElemental"
+],
+"170": [
+"PigronCorruption"
+],
+"171": [
+"PigronHallow"
+],
+"172": [
+"RuneWizard"
+],
+"173": [
+"Crimera"
+],
+"174": [
+"Herpling"
+],
+"175": [
+"AngryTrapper"
+],
+"176": [
+"MossHornet"
+],
+"177": [
+"Derpling"
+],
+"178": [
+"Steampunker"
+],
+"179": [
+"CrimsonAxe"
+],
+"180": [
+"PigronCrimson"
+],
+"181": [
+"FaceMonster"
+],
+"182": [
+"FloatyGross"
+],
+"183": [
+"Crimslime"
+],
+"184": [
+"SpikedIceSlime"
+],
+"185": [
+"SnowFlinx"
+],
+"186": [
+"PincushionZombie"
+],
+"187": [
+"SlimedZombie"
+],
+"188": [
+"SwampZombie"
+],
+"189": [
+"TwiggyZombie"
+],
+"190": [
+"CataractEye"
+],
+"191": [
+"SleepyEye"
+],
+"192": [
+"DialatedEye"
+],
+"193": [
+"GreenEye"
+],
+"194": [
+"PurpleEye"
+],
+"195": [
+"LostGirl"
+],
+"196": [
+"Nymph"
+],
+"197": [
+"ArmoredViking"
+],
+"198": [
+"Lihzahrd"
+],
+"199": [
+"LihzahrdCrawler"
+],
+"200": [
+"FemaleZombie"
+],
+"201": [
+"HeadacheSkeleton"
+],
+"202": [
+"MisassembledSkeleton"
+],
+"203": [
+"PantlessSkeleton"
+],
+"204": [
+"SpikedJungleSlime"
+],
+"205": [
+"Moth"
+],
+"206": [
+"IcyMerman"
+],
+"207": [
+"DyeTrader"
+],
+"208": [
+"PartyGirl"
+],
+"209": [
+"Cyborg"
+],
+"210": [
+"Bee"
+],
+"211": [
+"BeeSmall"
+],
+"212": [
+"PirateDeckhand"
+],
+"213": [
+"PirateCorsair"
+],
+"214": [
+"PirateDeadeye"
+],
+"215": [
+"PirateCrossbower"
+],
+"216": [
+"PirateCaptain"
+],
+"217": [
+"CochinealBeetle"
+],
+"218": [
+"CyanBeetle"
+],
+"219": [
+"LacBeetle"
+],
+"220": [
+"SeaSnail"
+],
+"221": [
+"Squid"
+],
+"222": [
+"QueenBee"
+],
+"223": [
+"ZombieRaincoat"
+],
+"224": [
+"FlyingFish"
+],
+"225": [
+"UmbrellaSlime"
+],
+"226": [
+"FlyingSnake"
+],
+"227": [
+"Painter"
+],
+"228": [
+"WitchDoctor"
+],
+"229": [
+"Pirate"
+],
+"230": [
+"GoldfishWalker"
+],
+"231": [
+"HornetFatty"
+],
+"232": [
+"HornetHoney"
+],
+"233": [
+"HornetLeafy"
+],
+"234": [
+"HornetSpikey"
+],
+"235": [
+"HornetStingy"
+],
+"236": [
+"JungleCreeper"
+],
+"237": [
+"JungleCreeperWall"
+],
+"238": [
+"BlackRecluseWall"
+],
+"239": [
+"BloodCrawler"
+],
+"240": [
+"BloodCrawlerWall"
+],
+"241": [
+"BloodFeeder"
+],
+"242": [
+"BloodJelly"
+],
+"243": [
+"IceGolem"
+],
+"244": [
+"RainbowSlime"
+],
+"245": [
+"Golem"
+],
+"246": [
+"GolemHead"
+],
+"247": [
+"GolemFistLeft"
+],
+"248": [
+"GolemFistRight"
+],
+"249": [
+"GolemHeadFree"
+],
+"250": [
+"AngryNimbus"
+],
+"251": [
+"Eyezor"
+],
+"252": [
+"Parrot"
+],
+"253": [
+"Reaper"
+],
+"254": [
+"ZombieMushroom"
+],
+"255": [
+"ZombieMushroomHat"
+],
+"256": [
+"FungoFish"
+],
+"257": [
+"AnomuraFungus"
+],
+"258": [
+"MushiLadybug"
+],
+"259": [
+"FungiBulb"
+],
+"260": [
+"GiantFungiBulb"
+],
+"261": [
+"FungiSpore"
+],
+"262": [
+"Plantera"
+],
+"263": [
+"PlanterasHook"
+],
+"264": [
+"PlanterasTentacle"
+],
+"265": [
+"Spore"
+],
+"266": [
+"BrainofCthulhu"
+],
+"267": [
+"Creeper"
+],
+"268": [
+"IchorSticker"
+],
+"269": [
+"RustyArmoredBonesAxe"
+],
+"270": [
+"RustyArmoredBonesFlail"
+],
+"271": [
+"RustyArmoredBonesSword"
+],
+"272": [
+"RustyArmoredBonesSwordNoArmor"
+],
+"273": [
+"BlueArmoredBones"
+],
+"274": [
+"BlueArmoredBonesMace"
+],
+"275": [
+"BlueArmoredBonesNoPants"
+],
+"276": [
+"BlueArmoredBonesSword"
+],
+"277": [
+"HellArmoredBones"
+],
+"278": [
+"HellArmoredBonesSpikeShield"
+],
+"279": [
+"HellArmoredBonesMace"
+],
+"280": [
+"HellArmoredBonesSword"
+],
+"281": [
+"RaggedCaster"
+],
+"282": [
+"RaggedCasterOpenCoat"
+],
+"283": [
+"Necromancer"
+],
+"284": [
+"NecromancerArmored"
+],
+"285": [
+"DiabolistRed"
+],
+"286": [
+"DiabolistWhite"
+],
+"287": [
+"BoneLee"
+],
+"288": [
+"DungeonSpirit"
+],
+"289": [
+"GiantCursedSkull"
+],
+"290": [
+"Paladin"
+],
+"291": [
+"SkeletonSniper"
+],
+"292": [
+"TacticalSkeleton"
+],
+"293": [
+"SkeletonCommando"
+],
+"294": [
+"AngryBonesBig"
+],
+"295": [
+"AngryBonesBigMuscle"
+],
+"296": [
+"AngryBonesBigHelmet"
+],
+"297": [
+"BirdBlue"
+],
+"298": [
+"BirdRed"
+],
+"299": [
+"Squirrel"
+],
+"300": [
+"Mouse"
+],
+"301": [
+"Raven"
+],
+"302": [
+"SlimeMasked"
+],
+"303": [
+"BunnySlimed"
+],
+"304": [
+"HoppinJack"
+],
+"305": [
+"Scarecrow1"
+],
+"306": [
+"Scarecrow2"
+],
+"307": [
+"Scarecrow3"
+],
+"308": [
+"Scarecrow4"
+],
+"309": [
+"Scarecrow5"
+],
+"310": [
+"Scarecrow6"
+],
+"311": [
+"Scarecrow7"
+],
+"312": [
+"Scarecrow8"
+],
+"313": [
+"Scarecrow9"
+],
+"314": [
+"Scarecrow10"
+],
+"315": [
+"HeadlessHorseman"
+],
+"316": [
+"Ghost"
+],
+"317": [
+"DemonEyeOwl"
+],
+"318": [
+"DemonEyeSpaceship"
+],
+"319": [
+"ZombieDoctor"
+],
+"320": [
+"ZombieSuperman"
+],
+"321": [
+"ZombiePixie"
+],
+"322": [
+"SkeletonTopHat"
+],
+"323": [
+"SkeletonAstonaut"
+],
+"324": [
+"SkeletonAlien"
+],
+"325": [
+"MourningWood"
+],
+"326": [
+"Splinterling"
+],
+"327": [
+"Pumpking"
+],
+"328": [
+"PumpkingBlade"
+],
+"329": [
+"Hellhound"
+],
+"330": [
+"Poltergeist"
+],
+"331": [
+"ZombieXmas"
+],
+"332": [
+"ZombieSweater"
+],
+"333": [
+"SlimeRibbonWhite"
+],
+"334": [
+"SlimeRibbonYellow"
+],
+"335": [
+"SlimeRibbonGreen"
+],
+"336": [
+"SlimeRibbonRed"
+],
+"337": [
+"BunnyXmas"
+],
+"338": [
+"ZombieElf"
+],
+"339": [
+"ZombieElfBeard"
+],
+"340": [
+"ZombieElfGirl"
+],
+"341": [
+"PresentMimic"
+],
+"342": [
+"GingerbreadMan"
+],
+"343": [
+"Yeti"
+],
+"344": [
+"Everscream"
+],
+"345": [
+"IceQueen"
+],
+"346": [
+"SantaNK1"
+],
+"347": [
+"ElfCopter"
+],
+"348": [
+"Nutcracker"
+],
+"349": [
+"NutcrackerSpinning"
+],
+"350": [
+"ElfArcher"
+],
+"351": [
+"Krampus"
+],
+"352": [
+"Flocko"
+],
+"353": [
+"Stylist"
+],
+"354": [
+"WebbedStylist"
+],
+"355": [
+"Firefly"
+],
+"356": [
+"Butterfly"
+],
+"357": [
+"Worm"
+],
+"358": [
+"LightningBug"
+],
+"359": [
+"Snail"
+],
+"360": [
+"GlowingSnail"
+],
+"361": [
+"Frog"
+],
+"362": [
+"Duck"
+],
+"363": [
+"Duck2"
+],
+"364": [
+"DuckWhite"
+],
+"365": [
+"DuckWhite2"
+],
+"366": [
+"ScorpionBlack"
+],
+"367": [
+"Scorpion"
+],
+"368": [
+"TravellingMerchant"
+],
+"369": [
+"Angler"
+],
+"370": [
+"DukeFishron"
+],
+"371": [
+"DetonatingBubble"
+],
+"372": [
+"Sharkron"
+],
+"373": [
+"Sharkron2"
+],
+"374": [
+"TruffleWorm"
+],
+"375": [
+"TruffleWormDigger"
+],
+"376": [
+"SleepingAngler"
+],
+"377": [
+"Grasshopper"
+],
+"378": [
+"ChatteringTeethBomb"
+],
+"379": [
+"CultistArcherBlue"
+],
+"380": [
+"CultistArcherWhite"
+],
+"381": [
+"BrainScrambler"
+],
+"382": [
+"RayGunner"
+],
+"383": [
+"MartianOfficer"
+],
+"384": [
+"ForceBubble"
+],
+"385": [
+"GrayGrunt"
+],
+"386": [
+"MartianEngineer"
+],
+"387": [
+"MartianTurret"
+],
+"388": [
+"MartianDrone"
+],
+"389": [
+"GigaZapper"
+],
+"390": [
+"ScutlixRider"
+],
+"391": [
+"Scutlix"
+],
+"392": [
+"MartianSaucer"
+],
+"393": [
+"MartianSaucerTurret"
+],
+"394": [
+"MartianSaucerCannon"
+],
+"395": [
+"MartianSaucerCore"
+],
+"396": [
+"MoonLordHead"
+],
+"397": [
+"MoonLordHand"
+],
+"398": [
+"MoonLordCore"
+],
+"399": [
+"MartianProbe"
+],
+"400": [
+"MoonLordFreeEye"
+],
+"401": [
+"MoonLordLeechBlob"
+],
+"402": [
+"StardustWormHead"
+],
+"403": [
+"StardustWormBody"
+],
+"404": [
+"StardustWormTail"
+],
+"405": [
+"StardustCellBig"
+],
+"406": [
+"StardustCellSmall"
+],
+"407": [
+"StardustJellyfishBig"
+],
+"408": [
+"StardustJellyfishSmall"
+],
+"409": [
+"StardustSpiderBig"
+],
+"410": [
+"StardustSpiderSmall"
+],
+"411": [
+"StardustSoldier"
+],
+"412": [
+"SolarCrawltipedeHead"
+],
+"413": [
+"SolarCrawltipedeBody"
+],
+"414": [
+"SolarCrawltipedeTail"
+],
+"415": [
+"SolarDrakomire"
+],
+"416": [
+"SolarDrakomireRider"
+],
+"417": [
+"SolarSroller"
+],
+"418": [
+"SolarCorite"
+],
+"419": [
+"SolarSolenian"
+],
+"420": [
+"NebulaBrain"
+],
+"421": [
+"NebulaHeadcrab"
+],
+"423": [
+"NebulaBeast"
+],
+"424": [
+"NebulaSoldier"
+],
+"425": [
+"VortexRifleman"
+],
+"426": [
+"VortexHornetQueen"
+],
+"427": [
+"VortexHornet"
+],
+"428": [
+"VortexLarva"
+],
+"429": [
+"VortexSoldier"
+],
+"430": [
+"ArmedZombie"
+],
+"431": [
+"ArmedZombieEskimo"
+],
+"432": [
+"ArmedZombiePincussion"
+],
+"433": [
+"ArmedZombieSlimed"
+],
+"434": [
+"ArmedZombieSwamp"
+],
+"435": [
+"ArmedZombieTwiggy"
+],
+"436": [
+"ArmedZombieCenx"
+],
+"437": [
+"CultistTablet"
+],
+"438": [
+"CultistDevote"
+],
+"439": [
+"CultistBoss"
+],
+"440": [
+"CultistBossClone"
+],
+"442": [
+"GoldBird"
+],
+"443": [
+"GoldBunny"
+],
+"444": [
+"GoldButterfly"
+],
+"445": [
+"GoldFrog"
+],
+"446": [
+"GoldGrasshopper"
+],
+"447": [
+"GoldMouse"
+],
+"448": [
+"GoldWorm"
+],
+"449": [
+"BoneThrowingSkeleton"
+],
+"450": [
+"BoneThrowingSkeleton2"
+],
+"451": [
+"BoneThrowingSkeleton3"
+],
+"452": [
+"BoneThrowingSkeleton4"
+],
+"453": [
+"SkeletonMerchant"
+],
+"454": [
+"CultistDragonHead"
+],
+"455": [
+"CultistDragonBody1"
+],
+"456": [
+"CultistDragonBody2"
+],
+"457": [
+"CultistDragonBody3"
+],
+"458": [
+"CultistDragonBody4"
+],
+"459": [
+"CultistDragonTail"
+],
+"460": [
+"Butcher"
+],
+"461": [
+"CreatureFromTheDeep"
+],
+"462": [
+"Fritz"
+],
+"463": [
+"Nailhead"
+],
+"464": [
+"CrimsonBunny"
+],
+"465": [
+"CrimsonGoldfish"
+],
+"466": [
+"Psycho"
+],
+"467": [
+"DeadlySphere"
+],
+"468": [
+"DrManFly"
+],
+"469": [
+"ThePossessed"
+],
+"470": [
+"CrimsonPenguin"
+],
+"471": [
+"GoblinSummoner"
+],
+"472": [
+"ShadowFlameApparition"
+],
+"473": [
+"BigMimicCorruption"
+],
+"474": [
+"BigMimicCrimson"
+],
+"475": [
+"BigMimicHallow"
+],
+"476": [
+"BigMimicJungle"
+],
+"477": [
+"Mothron"
+],
+"478": [
+"MothronEgg"
+],
+"479": [
+"MothronSpawn"
+],
+"480": [
+"Medusa"
+],
+"481": [
+"GreekSkeleton"
+],
+"482": [
+"GraniteGolem"
+],
+"483": [
+"GraniteFlyer"
+],
+"484": [
+"EnchantedNightcrawler"
+],
+"485": [
+"Grubby"
+],
+"486": [
+"Sluggy"
+],
+"487": [
+"Buggy"
+],
+"488": [
+"TargetDummy"
+],
+"489": [
+"BloodZombie"
+],
+"490": [
+"Drippler"
+],
+"491": [
+"PirateShip"
+],
+"492": [
+"PirateShipCannon"
+],
+"493": [
+"LunarTowerStardust"
+],
+"494": [
+"Crawdad"
+],
+"495": [
+"Crawdad2"
+],
+"496": [
+"GiantShelly"
+],
+"497": [
+"GiantShelly2"
+],
+"498": [
+"Salamander"
+],
+"499": [
+"Salamander2"
+],
+"500": [
+"Salamander3"
+],
+"501": [
+"Salamander4"
+],
+"502": [
+"Salamander5"
+],
+"503": [
+"Salamander6"
+],
+"504": [
+"Salamander7"
+],
+"505": [
+"Salamander8"
+],
+"506": [
+"Salamander9"
+],
+"507": [
+"LunarTowerNebula"
+],
+"422": [
+"LunarTowerVortex"
+],
+"441": [
+"TaxCollector"
+],
+"508": [
+"GiantWalkingAntlion"
+],
+"509": [
+"GiantFlyingAntlion"
+],
+"510": [
+"DuneSplicerHead"
+],
+"511": [
+"DuneSplicerBody"
+],
+"512": [
+"DuneSplicerTail"
+],
+"513": [
+"TombCrawlerHead"
+],
+"514": [
+"TombCrawlerBody"
+],
+"515": [
+"TombCrawlerTail"
+],
+"516": [
+"SolarFlare"
+],
+"517": [
+"LunarTowerSolar"
+],
+"518": [
+"SolarSpearman"
+],
+"519": [
+"SolarGoop"
+],
+"520": [
+"MartianWalker"
+],
+"521": [
+"AncientCultistSquidhead"
+],
+"522": [
+"AncientLight"
+],
+"523": [
+"AncientDoom"
+],
+"524": [
+"DesertGhoul"
+],
+"525": [
+"DesertGhoulCorruption"
+],
+"526": [
+"DesertGhoulCrimson"
+],
+"527": [
+"DesertGhoulHallow"
+],
+"528": [
+"DesertLamiaLight"
+],
+"529": [
+"DesertLamiaDark"
+],
+"530": [
+"DesertScorpionWalk"
+],
+"531": [
+"DesertScorpionWall"
+],
+"532": [
+"DesertBeast"
+],
+"533": [
+"DesertDjinn"
+],
+"534": [
+"DemonTaxCollector"
+],
+"535": [
+"SlimeSpiked"
+],
+"536": [
+"TheBride"
+],
+"537": [
+"SandSlime"
+],
+"538": [
+"SquirrelRed"
+],
+"539": [
+"SquirrelGold"
+],
+"540": [
+"PartyBunny"
+],
+"541": [
+"SandElemental"
+],
+"542": [
+"SandShark"
+],
+"543": [
+"SandsharkCorrupt"
+],
+"544": [
+"SandsharkCrimson"
+],
+"545": [
+"SandsharkHallow"
+],
+"546": [
+"Tumbleweed"
+],
+"547": [
+"DD2AttackerTest"
+],
+"548": [
+"DD2EterniaCrystal"
+],
+"549": [
+"DD2LanePortal"
+],
+"550": [
+"DD2Bartender"
+],
+"551": [
+"DD2Betsy"
+],
+"552": [
+"DD2GoblinT1"
+],
+"553": [
+"DD2GoblinT2"
+],
+"554": [
+"DD2GoblinT3"
+],
+"555": [
+"DD2GoblinBomberT1"
+],
+"556": [
+"DD2GoblinBomberT2"
+],
+"557": [
+"DD2GoblinBomberT3"
+],
+"558": [
+"DD2WyvernT1"
+],
+"559": [
+"DD2WyvernT2"
+],
+"560": [
+"DD2WyvernT3"
+],
+"561": [
+"DD2JavelinstT1"
+],
+"562": [
+"DD2JavelinstT2"
+],
+"563": [
+"DD2JavelinstT3"
+],
+"564": [
+"DD2DarkMageT1"
+],
+"565": [
+"DD2DarkMageT3"
+],
+"566": [
+"DD2SkeletonT1"
+],
+"567": [
+"DD2SkeletonT3"
+],
+"568": [
+"DD2WitherBeastT2"
+],
+"569": [
+"DD2WitherBeastT3"
+],
+"570": [
+"DD2DrakinT2"
+],
+"571": [
+"DD2DrakinT3"
+],
+"572": [
+"DD2KoboldWalkerT2"
+],
+"573": [
+"DD2KoboldWalkerT3"
+],
+"574": [
+"DD2KoboldFlyerT2"
+],
+"575": [
+"DD2KoboldFlyerT3"
+],
+"576": [
+"DD2OgreT2"
+],
+"577": [
+"DD2OgreT3"
+],
+"578": [
+"DD2LightningBugT3"
+],
+"579": [
+"BartenderUnconscious"
+],
+"580": [
+"WalkingAntlion"
+],
+"581": [
+"FlyingAntlion"
+],
+"582": [
+"LarvaeAntlion"
+],
+"583": [
+"FairyCritterPink"
+],
+"584": [
+"FairyCritterGreen"
+],
+"585": [
+"FairyCritterBlue"
+],
+"586": [
+"ZombieMerman"
+],
+"587": [
+"EyeballFlyingFish"
+],
+"588": [
+"Golfer"
+],
+"589": [
+"GolferRescue"
+],
+"590": [
+"TorchZombie"
+],
+"591": [
+"ArmedTorchZombie"
+],
+"592": [
+"GoldGoldfish"
+],
+"593": [
+"GoldGoldfishWalker"
+],
+"594": [
+"WindyBalloon"
+],
+"595": [
+"BlackDragonfly"
+],
+"596": [
+"BlueDragonfly"
+],
+"597": [
+"GreenDragonfly"
+],
+"598": [
+"OrangeDragonfly"
+],
+"599": [
+"RedDragonfly"
+],
+"600": [
+"YellowDragonfly"
+],
+"601": [
+"GoldDragonfly"
+],
+"602": [
+"Seagull"
+],
+"603": [
+"Seagull2"
+],
+"604": [
+"LadyBug"
+],
+"605": [
+"GoldLadyBug"
+],
+"606": [
+"Maggot"
+],
+"607": [
+"Pupfish"
+],
+"608": [
+"Grebe"
+],
+"609": [
+"Grebe2"
+],
+"610": [
+"Rat"
+],
+"611": [
+"Owl"
+],
+"612": [
+"WaterStrider"
+],
+"613": [
+"GoldWaterStrider"
+],
+"614": [
+"ExplosiveBunny"
+],
+"615": [
+"Dolphin"
+],
+"616": [
+"Turtle"
+],
+"617": [
+"TurtleJungle"
+],
+"618": [
+"BloodNautilus"
+],
+"619": [
+"BloodSquid"
+],
+"620": [
+"GoblinShark"
+],
+"621": [
+"BloodEelHead"
+],
+"622": [
+"BloodEelBody"
+],
+"623": [
+"BloodEelTail"
+],
+"624": [
+"Gnome"
+],
+"625": [
+"SeaTurtle"
+],
+"626": [
+"Seahorse"
+],
+"627": [
+"GoldSeahorse"
+],
+"628": [
+"Dandelion"
+],
+"629": [
+"IceMimic"
+],
+"630": [
+"BloodMummy"
+],
+"631": [
+"RockGolem"
+],
+"632": [
+"MaggotZombie"
+],
+"633": [
+"BestiaryGirl"
+],
+"634": [
+"SporeBat"
+],
+"635": [
+"SporeSkeleton"
+],
+"636": [
+"HallowBoss"
+],
+"637": [
+"TownCat"
+],
+"638": [
+"TownDog"
+],
+"639": [
+"GemSquirrelAmethyst"
+],
+"640": [
+"GemSquirrelTopaz"
+],
+"641": [
+"GemSquirrelSapphire"
+],
+"642": [
+"GemSquirrelEmerald"
+],
+"643": [
+"GemSquirrelRuby"
+],
+"644": [
+"GemSquirrelDiamond"
+],
+"645": [
+"GemSquirrelAmber"
+],
+"646": [
+"GemBunnyAmethyst"
+],
+"647": [
+"GemBunnyTopaz"
+],
+"648": [
+"GemBunnySapphire"
+],
+"649": [
+"GemBunnyEmerald"
+],
+"650": [
+"GemBunnyRuby"
+],
+"651": [
+"GemBunnyDiamond"
+],
+"652": [
+"GemBunnyAmber"
+],
+"653": [
+"HellButterfly"
+],
+"654": [
+"Lavafly"
+],
+"655": [
+"MagmaSnail"
+],
+"656": [
+"TownBunny"
+],
+"657": [
+"QueenSlimeBoss"
+],
+"658": [
+"QueenSlimeMinionBlue"
+],
+"659": [
+"QueenSlimeMinionPink"
+],
+"660": [
+"QueenSlimeMinionPurple"
+],
+"661": [
+"EmpressButterfly"
+],
+"662": [
+"PirateGhost"
+],
+"663": [
+"Princess"
+],
+"664": [
+"TorchGod"
+],
+"665": [
+"ChaosBallTim"
+],
+"666": [
+"VileSpitEaterOfWorlds"
+],
+"667": [
+"GoldenSlime"
+],
+"668": [
+"Deerclops"
+],
+"669": [
+"Stinkbug"
+],
+"670": [
+"TownSlimeBlue"
+],
+"671": [
+"ScarletMacaw"
+],
+"672": [
+"BlueMacaw"
+],
+"673": [
+"Toucan"
+],
+"674": [
+"YellowCockatiel"
+],
+"675": [
+"GrayCockatiel"
+],
+"676": [
+"ShimmerSlime"
+],
+"677": [
+"Shimmerfly"
+],
+"678": [
+"TownSlimeGreen"
+],
+"679": [
+"TownSlimeOld"
+],
+"680": [
+"TownSlimePurple"
+],
+"681": [
+"TownSlimeRainbow"
+],
+"682": [
+"TownSlimeRed"
+],
+"683": [
+"TownSlimeYellow"
+],
+"684": [
+"TownSlimeCopper"
+],
+"685": [
+"BoundTownSlimeOld"
+],
+"686": [
+"BoundTownSlimePurple"
+],
+"687": [
+"BoundTownSlimeYellow"
+],
+"688": [
+"Pufferfish"
+],
+"689": [
+"OwlMimic"
+],
+"690": [
+"StatueMimic"
+],
+"691": [
+"MossZombie"
+],
+"692": [
+"Orca"
+],
+"693": [
+"LibrarianSkeleton"
+],
+"694": [
+"WaterBoltMimic"
+],
+"695": [
+"PalworldCattivaDistressed"
+],
+"696": [
+"PalworldFoxsparksDistressed"
+]
+}
+}
