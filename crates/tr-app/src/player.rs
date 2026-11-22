@@ -304,6 +304,51 @@ pub fn offsets_player_headgear_y(row: usize) -> f32 {
     }
 }
 
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`): an active, fully
+/// solid tile — not a solid-top, not a half brick, no slope, not inactive.
+/// Out-of-world reads `false` (the C# catch arm). The wall-cling machines
+/// (`WallClimbMovement`/`WallslideMovement`, W4-e1) probe it; the house style
+/// keeps one private copy per module (grapple.rs/bug_net.rs's twins).
+fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && tr_core::tiledata::TILE_SOLID.has(t.kind)
+        && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
+/// `GameShaders.Hair.GetShaderIdFromItemId(type)` (`Item.cs:48716`): the
+/// 1-based hair-shader bind order (`DyeInitializer.cs:147-410`): 3259→1,
+/// 1977→2, 1978→3, 1979→4, 1980→5, 1981→6, 1982→7, 1983→8, 1984→9, 1985→10,
+/// 1986→11, 2863→12; unbound → −1. `Player.hairDye` stores this index; the
+/// team-dye puff gate (`:24270`) compares against `TeamDyeShaderIndex` = 9
+/// (the Party Hair Dye 1984 bind, `ContentSamples.cs:19`).
+pub(crate) fn hair_dye_shader_index(kind: u16) -> i32 {
+    match kind {
+        3259 => 1,
+        1977 => 2,
+        1978 => 3,
+        1979 => 4,
+        1980 => 5,
+        1981 => 6,
+        1982 => 7,
+        1983 => 8,
+        1984 => 9,
+        1985 => 10,
+        1986 => 11,
+        2863 => 12,
+        _ => -1,
+    }
+}
+
+/// `ContentSamples.DyeShaderIDs.TeamDyeShaderIndex` (`ContentSamples.cs:19`):
+/// `GameShaders.Hair.GetShaderIdFromItemId(1984)` = 9 (the 9th hair bind).
+pub(crate) const TEAM_DYE_SHADER_INDEX: i32 = 9;
+
 /// `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
 /// `atan2(aimY * direction, aimX * direction) - fullRotation`. The port keeps
 /// the aim as an angle, so the mirrored `atan2` is the angle + PI when the
@@ -728,9 +773,11 @@ pub struct Player {
     pub dead: bool,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
-    /// the facing-inheritance gate reads (`:77749`). The stealth armour
-    /// writers are unported (the Scout Sling's `aggro -= 400` half,
-    /// `Player.cs:14579`, still skips) — stock 0 until they land; the
+    /// the facing-inheritance gate reads (`:77749`). ResetEffects zeroes
+    /// it per tick (`:18377`); the Vortex stealth writer (`:25847`)
+    /// subtracts (W4-e1 reconcile). The Psycho-Knife/Shroomite writers
+    /// (`:25779`/`:25820`) are f3's machine; the Scout Sling's
+    /// `aggro -= 400` half (`Player.cs:14579`) still skips. The
     /// S1-D-3p wiring reads it through `npc_target::session_candidate`.
     pub aggro: i32,
     /// `Player.npcTypeNoAggro[NPCID.Count]` (`Player.cs:2994`, the bool
@@ -960,9 +1007,11 @@ pub struct Player {
     /// `Player.lavaVision` (`Player.cs`): the Lava Shark's (buff 305) grant
     /// (`:9910`); `ResetEffects` clears (`:18757`). Draw-side, flag only.
     pub lava_vision: bool,
-    /// `Player.spikedBoots` (`Player.cs`): the Rat mount's wall-slide grant
-    /// (`Mount.UpdateAfterEquips` `Mount.cs:3002`); `ResetEffects` clears
-    /// (`:18660`). The slide consumer is unported — flag only.
+    /// `Player.spikedBoots` (`Player.cs`): the Rat mount's +1
+    /// (`Mount.UpdateAfterEquips` `Mount.cs:3002`) plus the climbing
+    /// accessory grants (953/975 +1, 976 +2, 984 =2, the frog family
+    /// `:14426-14444`); `ResetEffects` clears (`:18660`). The
+    /// WallClimbMovement/WallslideMovement gates read the level (W4-e1).
     pub spiked_boots: i32,
     /// `Player.slideDir` (`Player.cs:28084` reset, `:28242-28252` writes):
     /// the slope-slide direction the Rat's rotation lerp reads
@@ -1355,6 +1404,48 @@ pub struct Player {
     /// mana-star pickups `:35071`/`:35087` — the S1-P-i52 lane owns those);
     /// drinking a mana potion grants NO ManaHeat, so the field stays 1.
     pub mana_heat: f32,
+    /// W4-e1 — `Player.yoraiz0rEye` (`Player.cs:1893`): the Yoraiz0r's Spell
+    /// (3580) vanity grant `itemSlot - 2` (`UpdateVisibleAccessory`
+    /// `:36969-36972`); ResetEffects zeroes it (`:18402`). The eye-trail
+    /// emitter (`Yoraiz0rEye` `:12446-12577`, site 12569) reads it at
+    /// `:25487`. The port grants from the functional accessory pass (the
+    /// vanity column's 3580 exception is `equip_swap.rs`'s — the grant here
+    /// covers the functional slot; ANALYSIS).
+    pub yoraiz0r_eye: i32,
+    /// W4-e1 — `Player.shadowDirection[1]` (`Player.cs:16583-16611`
+    /// `UpdateSocialShadow`): the PREVIOUS tick's facing — the eye trail's
+    /// old-point anchor (`:12495`). The full 3-slot shadow chain is a draw
+    /// seam; only [1] is read by a ported consumer.
+    pub shadow_direction_1: i32,
+    /// W4-e1 — `Player.shinyStone` (`Player.cs:14769`, the Shiny Stone 3337
+    /// grant): the regen sparkle gate (`UpdateLifeRegen` `:18945-18948`,
+    /// site 19273). ResetEffects clears; the accessory row re-arms.
+    pub shiny_stone: bool,
+    /// W4-e1 — `Player.teleportTime`/`teleportStyle` (`Player.cs:37490-37491`
+    /// `Teleport`'s tail): the teleport-visuals countdown + style
+    /// (`UpdateTeleportVisuals` `:16613-16670`, sites 16623/16633/16652).
+    pub teleport_time: f32,
+    pub teleport_style_id: i32,
+    /// W4-e1 — `Player.lastPortalColorIndex` (`Player.cs:37477-37480`,
+    /// style 4): the portal colour pick (`PortalHelper.GetPortalColor`).
+    pub last_portal_color_index: i32,
+    /// W4-e1 — `Player.setSolar`/`solarCounter`/`solarShields`
+    /// (`Player.cs:16366-16402` `ApplySetBonus_Solar`, site 16389): the
+    /// Solar Flare set's shield-charge machine. `set_solar` grants from the
+    /// armor-set row (2763/2764/2765); ResetEffects clears the shields
+    /// (`:18505`) and the set flag (`:25620` region).
+    pub set_solar: bool,
+    pub solar_counter: i32,
+    pub solar_shields: i32,
+    /// W4-e1 — `Player.setVortex` (`Player.cs:2818`, `Benefits.Vortex`
+    /// `ArmorSetBonuses.cs:42-45`): the Vortex stealth machine's gate
+    /// (`:25826-25894`, dust sites 25877/25887). ResetEffects clears; the
+    /// armor-set row re-arms.
+    pub set_vortex: bool,
+    /// W4-e1 — `Player.vortexStealthActive` (`Player.cs:2852`): the Vortex
+    /// stealth toggle (`KeyDoubleTap` `:56775-56778`). The stealth machine
+    /// (`:25829-25871`) ramps `stealth` down while active, up otherwise.
+    pub vortex_stealth_active: bool,
     /// `Player.pStone` (`Player.cs:2404`): the Philosopher's Stone family —
     /// 535 (`:15574-15577`), Charm of Myths 860 (`:15150-15153`), Catalyst
     /// Band 6185 (`:14615-14620`). `ResetEffects` clears (`:18720`), the
@@ -1955,6 +2046,43 @@ pub struct Player {
     /// the RNG order is unchanged (S1-A-10). The type-153 `velocity *= 0.1`
     /// and `noGravity` post-arms ride the drain too.
     pending_sticky_dust: Vec<StickyDust>,
+    /// W4-e1 — the second-batch dust queues (`player_dust2.rs`, the ledger
+    /// docs/research/64-dust-sites-player-2.md). Each is a snapshot taken at
+    /// the C# read moment; the world_sim seam drains them on the
+    /// `UpdatePlayers` stream in C# site order (the sticky-dust pattern —
+    /// disjoint `app.dust`/`app.rngs`/`&spawn_ctx`/`&app.world` borrows while
+    /// `p` is live). One Option per exclusive site; the multi-fire sites
+    /// (glass slipper per equipped slot, crimson per heal chunk) queue Vecs.
+    pending_yoraiz_eye_dust: Option<crate::player_dust2::YoraizEyeDust>,
+    pending_glass_slipper_dust: Vec<crate::player_dust2::GlassSlipperDust>,
+    pending_solar_burst_dust: Option<crate::player_dust2::SolarBurstDust>,
+    pending_teleport_visuals_dust: Option<crate::player_dust2::TeleportVisualsDust>,
+    pending_shiny_sparkle_dust: Option<crate::player_dust2::ShinySparkleDust>,
+    pending_crimson_heal_dust: Option<crate::player_dust2::CrimsonHealDust>,
+    pending_mana_full_dust: Option<crate::player_dust2::ManaFullDust>,
+    /// W4-e1 batch 2 — the Lawn Mower swing puff (20320), the wall-cling puffs
+    /// (21654/21678/21729/21790/21826, at most one per tick) and the
+    /// DoubleJumpVisuals arm (21901/21915/21934/21941/21962/21989/22005/22014).
+    pending_mow_lawn_dust: Option<crate::player_dust2::MowLawnDust>,
+    pending_wall_cling_dust: Option<crate::player_dust2::WallClingDust>,
+    pending_double_jump_visual_dust: Option<crate::player_dust2::DoubleJumpVisualDust>,
+    /// W4-e1 batch 3 — the drowning bubble (23316), the floor dust (23983),
+    /// the hair-dye puff (24274), the manaHeat ambient (24641/24654) and the
+    /// stoned-transition burst (25228).
+    pending_drown_bubble_dust: Option<crate::player_dust2::DrownBubbleDust>,
+    pending_floor_dust: Option<crate::player_dust2::FloorDust>,
+    pending_hair_dye_dust: Option<crate::player_dust2::HairDyeDust>,
+    pending_mana_heat_dust: Option<crate::player_dust2::ManaHeatDust>,
+    pending_stoned_burst_dust: Option<crate::player_dust2::StonedBurstDust>,
+    /// W4-e1 batch 4 — the Vortex stealth rings (25877/25887) and the liquid
+    /// entry/exit splash bursts (27785/27812/27825/27839/27879/27906/27919/27933).
+    pending_vortex_ring_dust: Option<crate::player_dust2::VortexRingDust>,
+    pending_liquid_splash_dust: Option<crate::player_dust2::LiquidSplashDust>,
+    /// W4-e1 — `Player.hairDye` (`Player.cs:2546`): the applied hair-dye shader
+    /// index (`ItemCheck` `:42863` grants `item.hairDye`, the post-processed
+    /// shader id). The team-dye puff gate (`:24270`) reads it against
+    /// `TeamDyeShaderIndex` (9, the Party Hair Dye 1984 shader).
+    pub hair_dye: i32,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2735,6 +2863,17 @@ impl Player {
             mana_sick: false,
             mana_sick_reduction: 0.0,
             mana_heat: 1.0,
+            yoraiz0r_eye: 0,
+            shadow_direction_1: 1,
+            shiny_stone: false,
+            teleport_time: 0.0,
+            teleport_style_id: 0,
+            last_portal_color_index: 0,
+            set_solar: false,
+            solar_counter: 0,
+            solar_shields: 0,
+            set_vortex: false,
+            vortex_stealth_active: false,
             p_stone: false,
             p_stone_prev: false,
             mana_max_base: 20,
@@ -2885,6 +3024,24 @@ impl Player {
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
+            pending_yoraiz_eye_dust: None,
+            pending_glass_slipper_dust: Vec::new(),
+            pending_solar_burst_dust: None,
+            pending_teleport_visuals_dust: None,
+            pending_shiny_sparkle_dust: None,
+            pending_crimson_heal_dust: None,
+            pending_mana_full_dust: None,
+            pending_mow_lawn_dust: None,
+            pending_wall_cling_dust: None,
+            pending_double_jump_visual_dust: None,
+            pending_drown_bubble_dust: None,
+            pending_floor_dust: None,
+            pending_hair_dye_dust: None,
+            pending_mana_heat_dust: None,
+            pending_stoned_burst_dust: None,
+            pending_vortex_ring_dust: None,
+            pending_liquid_splash_dust: None,
+            hair_dye: -1,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -2907,7 +3064,10 @@ impl Player {
             melee_enchant: 0,
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
-            stealth: 0.0,
+            // `Player.cs:1562`: `public float stealth = 1f` — the f3
+            // reconcile fix (the port's old 0.0 made the Vortex recovery
+            // ramp fire 25 ring ticks on the first equip).
+            stealth: 1.0,
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
@@ -3472,6 +3632,63 @@ impl Player {
     /// owns `Main.dust`.
     pub(crate) fn take_sticky_dust(&mut self) -> Vec<StickyDust> {
         std::mem::take(&mut self.pending_sticky_dust)
+    }
+
+    /// W4-e1 — the second-batch dust takes (`player_dust2.rs`). The caller
+    /// owns `Main.dust` + the `UpdatePlayers` stream; each drains through the
+    /// matching pure emitter in C# site order.
+    pub(crate) fn take_yoraiz_eye_dust(&mut self) -> Option<crate::player_dust2::YoraizEyeDust> {
+        self.pending_yoraiz_eye_dust.take()
+    }
+    pub(crate) fn take_glass_slipper_dust(&mut self) -> Vec<crate::player_dust2::GlassSlipperDust> {
+        std::mem::take(&mut self.pending_glass_slipper_dust)
+    }
+    pub(crate) fn take_solar_burst_dust(&mut self) -> Option<crate::player_dust2::SolarBurstDust> {
+        self.pending_solar_burst_dust.take()
+    }
+    pub(crate) fn take_teleport_visuals_dust(&mut self) -> Option<crate::player_dust2::TeleportVisualsDust> {
+        self.pending_teleport_visuals_dust.take()
+    }
+    pub(crate) fn take_shiny_sparkle_dust(&mut self) -> Option<crate::player_dust2::ShinySparkleDust> {
+        self.pending_shiny_sparkle_dust.take()
+    }
+    pub(crate) fn take_crimson_heal_dust(&mut self) -> Option<crate::player_dust2::CrimsonHealDust> {
+        self.pending_crimson_heal_dust.take()
+    }
+    pub(crate) fn take_mana_full_dust(&mut self) -> Option<crate::player_dust2::ManaFullDust> {
+        self.pending_mana_full_dust.take()
+    }
+    pub(crate) fn take_mow_lawn_dust(&mut self) -> Option<crate::player_dust2::MowLawnDust> {
+        self.pending_mow_lawn_dust.take()
+    }
+    pub(crate) fn take_wall_cling_dust(&mut self) -> Option<crate::player_dust2::WallClingDust> {
+        self.pending_wall_cling_dust.take()
+    }
+    pub(crate) fn take_double_jump_visual_dust(
+        &mut self,
+    ) -> Option<crate::player_dust2::DoubleJumpVisualDust> {
+        self.pending_double_jump_visual_dust.take()
+    }
+    pub(crate) fn take_drown_bubble_dust(&mut self) -> Option<crate::player_dust2::DrownBubbleDust> {
+        self.pending_drown_bubble_dust.take()
+    }
+    pub(crate) fn take_floor_dust(&mut self) -> Option<crate::player_dust2::FloorDust> {
+        self.pending_floor_dust.take()
+    }
+    pub(crate) fn take_hair_dye_dust(&mut self) -> Option<crate::player_dust2::HairDyeDust> {
+        self.pending_hair_dye_dust.take()
+    }
+    pub(crate) fn take_mana_heat_dust(&mut self) -> Option<crate::player_dust2::ManaHeatDust> {
+        self.pending_mana_heat_dust.take()
+    }
+    pub(crate) fn take_stoned_burst_dust(&mut self) -> Option<crate::player_dust2::StonedBurstDust> {
+        self.pending_stoned_burst_dust.take()
+    }
+    pub(crate) fn take_vortex_ring_dust(&mut self) -> Option<crate::player_dust2::VortexRingDust> {
+        self.pending_vortex_ring_dust.take()
+    }
+    pub(crate) fn take_liquid_splash_dust(&mut self) -> Option<crate::player_dust2::LiquidSplashDust> {
+        self.pending_liquid_splash_dust.take()
     }
 
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
@@ -4361,6 +4578,13 @@ impl Player {
         // callers are the PVP pair (`Player.cs:44098`, `Projectile.cs:14672`)
         // — unreachable here, so the port's callers all pass false and the
         // flag rides for parity + the maths test.
+        // `Player.cs:38245` — `stealth = 1f`: any landed hit reveals the
+        // player (the f3 reconcile row; the stealth machines re-fade from
+        // the top next tick). Runs AFTER the dodge early-returns, before
+        // the defense reduction — the C# position. CROSS-NOTE (keep-one):
+        // f50 `hurt_inner` carries the SAME write (its panic/squire head,
+        // f3-canonical per its own note) — at merge keep ONE copy.
+        self.stealth = 1.0;
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         let raw = if crit { raw * 2 } else { raw };
@@ -5236,6 +5460,15 @@ impl Player {
                 self.empress_brooch = true;
                 self.move_speed += 0.075;
             }
+            // W4-e1 — the Shiny Stone 3337 (`Player.cs:14767-14770`): the
+            // standing-still regen boost flag; the sparkle gate
+            // (`UpdateLifeRegen` `:18945`, site 19273) reads it.
+            3337 => self.shiny_stone = true,
+            // W4-e1 — Yoraiz0r's Spell 3580 (`Player.cs:36969-36972`,
+            // `UpdateVisibleAccessory`): `yoraiz0rEye = itemSlot - 2`. The
+            // functional-slot grant covers the common equip; the vanity
+            // column's 3580 exception is `equip_swap.rs`'s (ANALYSIS).
+            3580 => self.yoraiz0r_eye = _item_slot as i32 - 2,
             // The merman shells (`:15134-15143` Moon Charm 861,
             // `:15402-15410` Celestial Shell 3110, `:15566-15573` Neptune's
             // Shell 497): `accMerman` arms the wet transformation the flight
@@ -5332,9 +5565,39 @@ impl Player {
             963 => self.black_belt = true,
             984 => {
                 self.black_belt = true;
-                // `:15065`: the Tabi's dash. (`spikedBoots = 2` at `:15066`
-                // has no port field - the wall-cling is unported.)
+                // `:15065`: the Tabi's dash.
                 self.dash_type = 1;
+                // `:15066`: `spikedBoots = 2` (the ASSIGNMENT) — the
+                // wall-cling machines now consume it (W4-e1 reconcile).
+                self.spiked_boots = 2;
+            }
+            // W4-e1 reconcile — the climbing grants (`ApplyEquipFunctional`
+            // `:15038-15049`, the f3 rows): Climbing Claws 953 / Shoe Spikes
+            // 975 `spikedBoots++`, Tiger Climbing Gear 976 `+= 2`. The
+            // WallClimbMovement/WallslideMovement gates read the level.
+            953 | 975 => self.spiked_boots += 1,
+            976 => self.spiked_boots += 2,
+            // W4-e1 reconcile — the frog family (`:14426-14444`, the f3
+            // rows): the auto-jump + 1.6 jump-speed + 10 safe-fall bundle;
+            // 3994/3995 add `accFlipper`, 3995/3996 add `spikedBoots += 2`.
+            3994 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+            }
+            3995 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.acc_flipper = true;
+                self.spiked_boots += 2;
+            }
+            3996 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                self.spiked_boots += 2;
             }
             // The dash granters: the Tabi (`:15050-15053`, type 1) and the
             // Shield of Cthulhu (`:15054-15057`, type 2).
@@ -5549,9 +5812,9 @@ impl Player {
     /// staff's shot knockback takes the `minionKB` bonus FIRST (`:53348-53351`,
     /// `if (sItem.summon) KnockBack += this.minionKB`), then the melee glove's
     /// ×2 (`:53352-53355`), the Titan buff's ×1.5 (`:53356-53359`) and the
-    /// shroomite-stealth ranged scale (`:53360-53363`). The `setVortex` ranged
-    /// arm (`:53364-53367`) has no port field (the vortex stealth is unported)
-    /// and folds out. `ItemCheck_Shoot` calls this at `:47151` before the
+    /// shroomite-stealth ranged scale (`:53360-53363`) and the `setVortex`
+    /// ranged scale (`:53364-53367`, the W4-e1 reconcile row).
+    /// `ItemCheck_Shoot` calls this at `:47151` before the
     /// spawn, so the minion/sentry shots carry the bonus — the port's throw
     /// path previously passed the raw `fx_kb` and dropped it.
     pub fn weapon_knockback(&self, def: &registry::ItemDef, knock_back: f32) -> f32 {
@@ -5566,6 +5829,11 @@ impl Player {
             kb *= 1.5;
         }
         if def.ranged && self.shroomite_stealth {
+            kb *= 1.0 + (1.0 - self.stealth) * 0.5;
+        }
+        // `:53364-53367` — the Vortex set's ranged knockback scale (the f3
+        // reconcile row; the two ifs are independent in the C#).
+        if def.ranged && self.set_vortex {
             kb *= 1.0 + (1.0 - self.stealth) * 0.5;
         }
         kb
@@ -5803,6 +6071,24 @@ impl Player {
                 0 // `:27832`
             };
             self.pending_splash_sound = Some((style, self.x, self.y));
+            // W4-e1 — the entry splash dust (`:27783-27940`, sites
+            // 27785/27812/27825/27839). The liquid kind picks the burst; the
+            // water style feeds Dust.dustWater(). The C# runs the dust loop
+            // BEFORE PlaySound(19) within each arm — the world_sim seam
+            // drains the dust first, then this queued sound (the 141
+            // reconcile order; both queue here at the same read moment).
+            let liquid_kind = if now_lava { 1 } else if now_shimmer { 3 } else if now_honey { 2 } else { 0 };
+            self.pending_liquid_splash_dust = Some(crate::player_dust2::LiquidSplashDust {
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                liquid: liquid_kind,
+                entry: true,
+                water_dust: tr_core::particles::dust_water(
+                    crate::biome::calculate_water_style(world, Vec2::new(self.x, self.y)) as i32,
+                ),
+            });
         } else if !now_any_wet && was_any_wet {
             // `:27864` — the exit jump clamp (`jump > jumpHeight/5`) is a
             // movement seam, not a sound one; the splash gate stands alone.
@@ -5818,6 +6104,20 @@ impl Player {
                     0 // `:27926`
                 };
                 self.pending_splash_sound = Some((style, self.x, self.y));
+                // W4-e1 — the exit splash dust (`:27877-27939`, sites
+                // 27879/27906/27919/27933). The OLD wet flags pick the kind.
+                let liquid_kind = if self.lava_wet { 1 } else if self.shimmer_wet { 3 } else if self.honey_wet { 2 } else { 0 };
+                self.pending_liquid_splash_dust = Some(crate::player_dust2::LiquidSplashDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    liquid: liquid_kind,
+                    entry: false,
+                    water_dust: tr_core::particles::dust_water(
+                        crate::biome::calculate_water_style(world, Vec2::new(self.x, self.y)) as i32,
+                    ),
+                });
             }
         }
         self.wet = now_wet;
@@ -6183,6 +6483,11 @@ impl Player {
         self.melee_crit = 4;
         self.ranged_crit = 4;
         self.magic_crit = 4;
+        // `Player.cs:18377` — `aggro = 0`: ResetEffects zeroes it every
+        // tick; the Vortex stealth writer (`:25847`) subtracts from it per
+        // tick (the f3 reconcile row — without the reset the subtraction
+        // accumulates across ticks).
+        self.aggro = 0;
         // S1-C-12 wave E — the combat family's per-tick clears the wired
         // grants need: `minionKB = 0f` (`Player.cs:18347`) and `kbGlove
         // = false` (`:18709`). Without them the sky-stone bundle's
@@ -6727,6 +7032,46 @@ impl Player {
                 _ => {}
             }
         }
+        // W4-e1 — `UpdateBuffs`' Solar shield arm (`Player.cs:10373-10407`):
+        // the live 170-172 buff re-affirms its 5-tick timer and derives
+        // `solarShields = 1 + buffType - 170`; a tier change clears the old
+        // slots, and `!setSolar` drops the shield + buff. The C# walks the
+        // buff slots with a `j--` rescan after each DelBuff compaction — the
+        // port re-reads the slot after a delete to match.
+        {
+            let mut j = 0usize;
+            while j < crate::buffs::MAX_BUFFS {
+                let bt = self.buffs.buff_type[j];
+                if bt >= 170 && bt <= 172 && self.buffs.buff_time[j] > 0 {
+                    self.buffs.buff_time[j] = 5;
+                    let num9 = 1 + bt - 170;
+                    if self.solar_shields > 0 && self.solar_shields != num9 {
+                        if self.solar_shields > num9 {
+                            self.buffs.del_buff(j);
+                            j = j.saturating_sub(1);
+                        } else {
+                            let mut n = 0usize;
+                            while n < crate::buffs::MAX_BUFFS {
+                                if self.buffs.buff_type[n] >= 170
+                                    && self.buffs.buff_type[n] <= 170 + num9 - 1
+                                {
+                                    self.buffs.del_buff(n);
+                                    n = n.saturating_sub(1);
+                                }
+                                n += 1;
+                            }
+                        }
+                    }
+                    self.solar_shields = num9;
+                    if !self.set_solar {
+                        self.solar_shields = 0;
+                        self.buffs.del_buff(j);
+                        j = j.saturating_sub(1);
+                    }
+                }
+                j += 1;
+            }
+        }
         if self.slow {
             self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.5);
         }
@@ -6739,6 +7084,23 @@ impl Player {
             self.vx = 0.0;
             self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
         }
+        // W4-e1 — `Player.Update`'s pre-ResetEffects visual machines:
+        // `Yoraiz0rEye` (`:25487-25490`, site 12569) reads LAST tick's
+        // `yoraiz0rEye` grant (ResetEffects `:25491` clears it below);
+        // `UpdateSocialShadow` (`:24691`) shifts the facing history the eye
+        // trail's old anchor reads; `UpdateTeleportVisuals` (`:24692`, sites
+        // 16623/16633/16652) ticks the teleport countdown. All three queue
+        // dust for the drain (the `UpdatePlayers` stream).
+        if self.yoraiz0r_eye > 0 {
+            self.yoraiz0r_eye();
+        }
+        self.update_social_shadow();
+        self.update_teleport_visuals();
+        // W4-e1 — `Player.Update`'s hair-dye puff (`:24593`, site 24274) and
+        // the manaHeat ambient (`:24630-24662`, sites 24641/24654). Both queue
+        // dust for the drain; the hair-dye gate reads the live buff state.
+        self.update_hair_dye_dust();
+        self.mana_heat_ambient();
         // `ResetEffects`' equipment-flag clears (`Player.cs:18348-18788`) and
         // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
         // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :12946-12952):
@@ -6757,6 +7119,15 @@ impl Player {
         self.desert_boots = false;
         self.rocket_boots = 0;
         self.no_knockback = false;
+        // W4-e1 — `ResetEffects`' second-batch dust-host clears: `shinyStone`
+        // (`:18454`), `solarShields` (`:18505`), `yoraiz0rEye` (`:18402`),
+        // `setSolar` (`:25620`, the post-UpdateBuffs block). The equip /
+        // armor-set / buff passes below re-arm them per tick.
+        self.shiny_stone = false;
+        self.solar_shields = 0;
+        self.yoraiz0r_eye = 0;
+        self.set_solar = false;
+        self.set_vortex = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
         // clear lives in the ResetEffects block above (before the buff
@@ -6877,6 +7248,12 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // W4-e1 — `Player.cs:25826-25895`: the Vortex stealth machine (the
+        // setVortex arm of the stealth else-if chain). The stealth ramps
+        // ±0.04/tick; while it moves (flag11) the two ring dust sites
+        // (25877/25887) queue for the drain. The ranged damage/crit/aggro
+        // grants + the run-speed ×0.3 ride the live stealth.
+        self.update_vortex_stealth();
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
@@ -7157,6 +7534,13 @@ impl Player {
             // table; M2-MOUNT-3 bridges them).
             self.update_mount(world, raining, wind);
             self.horizontal_movement(input);
+            // W4-e1 — `Player.cs:20176-20179`: the Lawn Mower (4049) swing
+            // puff fires at the HorizontalMovement tail (the mount-collision
+            // block). The swing phase reads the frame inputs the world_sim
+            // seam fed before the tick.
+            if self.held_item_kind == 4049 {
+                self.mow_the_lawn(self.frame_inputs.swing_anim, self.frame_inputs.swing_anim_max);
+            }
         }
         // `Player.cs:19637-19641` (`UpdateJumpHeight`'s tail): Dazed (160)
         // divides the jump statics — height /5, speed /2 — after the sticky
@@ -7289,11 +7673,33 @@ impl Player {
         if !grappling {
             self.dash_movement(world, input);
         }
+        // W4-e1 — `Player.cs:26753-26767`: the jump==0 visual cancel, then the
+        // wall-cling machines (WallClimbMovement for the Rat mount, else
+        // WallslideMovement), then DoubleJumpVisuals. The C# order sits right
+        // after DashMovement and before the flight section. The whole block
+        // lives in the `grappling[0] == -1 && !tongued` movement arm
+        // (`:26494`, the f3 reconcile guard — a grappled/tongued player
+        // never wall-clings or trails the double-jump visuals).
+        if !grappling && !self.tongued {
+            if self.jump == 0 {
+                self.cancel_all_jump_visual_effects();
+            }
+            if self.mount.is_active() && self.mount.kind() == 55 {
+                self.wall_climb_movement(world, gravity);
+            } else {
+                self.wallslide_movement(world, gravity);
+            }
+            self.double_jump_visuals();
+        }
         // `Player.cs:26799-26812`: while CCed the mount dismounts and the
         // plain gravity takes over (the port's CC input zeroing and the
         // flight gate below already cover the rest of that branch).
         if !grappling && self.cced() && self.mount.is_active() {
             self.try_dismount(world);
+        }
+        // W4-e1 — `:26811`: the CCed arm cancels the jump visuals too.
+        if self.cced() {
+            self.cancel_all_jump_visual_effects();
         }
 
         // `Player.Update` → `GrappleMovement` (`Main` call order `:27653`,
@@ -7500,6 +7906,10 @@ impl Player {
         // tell "moved onto the plate" from "stands on it".
         self.old_x = self.x;
         self.old_y = self.y;
+        // W4-e1 — `Player.cs:28073-28081`: the `falling` flag — |vy| > gravity
+        // at the movement head (the pre-collision velocity), read by
+        // FloorVisuals (`:28271`) for MakeFloorDust's 20-dust landing burst.
+        let falling = self.vy > gravity || self.vy < -gravity;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -7514,12 +7924,26 @@ impl Player {
             self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
         }
 
-        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
-        // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
+        // `Player.cs:25219-25234`: the petrification TRANSITION — the Hurt is
+        // rising-edge + local-player only (`:25221`), but the Item0 dig sound
+        // and the 20-puff burst fire on EITHER edge (`stoned != lastStoned`).
+        // The difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
         let stoned = self.buffs.find_buff_index(156).is_some();
-        if stoned && !self.last_stoned {
-            let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+        if stoned != self.last_stoned {
+            if stoned {
+                let cx = self.x + self.width * 0.5;
+                self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            }
+            // W4-e1 — `:25225-25233`: the stoned-transition burst (site 25228)
+            // — the Item0 dig sound (no Main.rand draw in the int overload,
+            // the sound lane's) + 20 type-1 puffs with the per-puff Next(2)
+            // noGravity gate. The dust queues for the drain.
+            self.pending_stoned_burst_dust = Some(crate::player_dust2::StonedBurstDust {
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+            });
         }
         self.last_stoned = stoned;
 
@@ -7608,9 +8032,13 @@ impl Player {
         }
 
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
-        // the movement block reads the flags next tick (one tick stale).
+        // the movement block reads the flags next tick (one tick stale). The
+        // `falling` flag is the movement-head capture above (a landing tick
+        // arrives here with vy==0 but falling=true — the 20-dust burst fires;
+        // the TryBouncingBlocks caller `:23567`/`:28223` is the bounce lane's,
+        // unported — ANALYSIS).
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world);
+            self.floor_visuals(world, falling);
         }
 
         self.update_survival(world, rng);
@@ -7727,6 +8155,34 @@ impl Player {
             self.swim_time -= 1;
             if !self.wet {
                 self.swim_time = 0;
+            }
+        }
+        // W4-e1 — `PlayerFrame` → `UpdateVisibleAccessories` (`:35768-35770`,
+        // `:36753-36803`): the visible accessory slots 3..10 run
+        // `UpdateVisibleAccessory`, whose Glass Slipper (5077) arm calls
+        // `DoGlassSlipperSparkles` (`:14242`/`:14388`, sites 14291/14300).
+        // One snapshot per equipped slipper; the drain rolls both gates per
+        // snapshot on the `UpdatePlayers` stream. The `hideVisibleAccessory`
+        // gate (`:36789`) and the unlock gate (`:36756`) match the C#.
+        if !self.dead {
+            for slot in 3..10 {
+                if !self.is_item_slot_unlocked_and_usable(slot)
+                    || self.hide_visible_accessory[slot]
+                {
+                    continue;
+                }
+                if self.equipped[slot] == 5077 {
+                    let (cx, cy) = self.center();
+                    self.pending_glass_slipper_dust.push(
+                        crate::player_dust2::GlassSlipperDust {
+                            cx,
+                            cy,
+                            facing: self.facing,
+                            // `CanSpawnWalkingEffects` (`:35750-35753`).
+                            walking: self.vx.abs() + self.vy.abs() > 1.0,
+                        },
+                    );
+                }
             }
         }
         // `:36148-36240`: `flag7` — the mount owns the leg frames unless it is
@@ -8754,6 +9210,9 @@ impl Player {
             if self.dash <= 0 {
                 return;
             }
+            // `:21379` — an active dash cancels the Vortex stealth (the f3
+            // reconcile row; the door-helper call above it is unported).
+            self.vortex_stealth_active = false;
             if self.vx > threshold || self.vx < -threshold {
                 self.vx *= fast;
                 return;
@@ -9441,6 +9900,566 @@ impl Player {
         }
     }
 
+    /// W4-e1 — `Player.UpdateSocialShadow` (`Player.cs:16583-16611`): the
+    /// 3-slot facing history. Only `shadowDirection[1]` (the PREVIOUS tick's
+    /// facing) has a ported consumer — the Yoraiz0r eye trail's old-point
+    /// anchor (`:12495`). The full pos/rotation/origin shadow chain is a draw
+    /// seam; the facing shift is ported verbatim (`:16585-16589`).
+    fn update_social_shadow(&mut self) {
+        // `for (num = 2; num > 0; num--) shadowDirection[num] =
+        // shadowDirection[num-1]` — [1] takes the old [0]; [0] takes facing.
+        // The port keeps only [1] (the [0] slot is the live facing).
+        self.shadow_direction_1 = self.facing;
+    }
+
+    /// W4-e1 — `Player.Yoraiz0rEye` (`Player.cs:12446-12577`, site 12569):
+    /// the eye-trail geometry at the `:25487` read moment. The scale switch
+    /// (`:12527-12549`) picks `num4`; case 1 returns (no trail). The light
+    /// half (`:12550-12561`, `PlotTileLine`) is the lighting lane's — no
+    /// `Main.rand`, skipped. The trail dust queues for the drain.
+    fn yoraiz0r_eye(&mut self) {
+        let Some(scale) = crate::player_dust2::yoraiz_eye_scale(self.yoraiz0r_eye) else {
+            return; // `:12529-12530` — case 1 returns.
+        };
+        // `:12448-12457` — the headgear offset (X is 0 for every row,
+        // `Main.cs:66638-66660`), the mounted-center lift, the sitting offset.
+        // The port's `body_frame` is the ROW index (the C# `bodyFrame.Y / 56`).
+        let row = self.body_frame as usize;
+        let headgear_y = offsets_player_headgear_y(row);
+        let (mcx, mcy) = self.mounted_center();
+        let (cx, cy) = self.center();
+        let mut pos = Vec2::new(
+            (self.width as i32 / 2) as f32,
+            (self.height as i32 / 2) as f32 + headgear_y,
+        ) + Vec2::new(mcx - cx, mcy - cy);
+        pos += Vec2::new(self.seat_pos_offset.0, self.seat_pos_offset.1 + self.seat_y_offset as f32);
+        // `:12458-12465` — the face-19 / head-276 nudges. The port has no
+        // face/head slot fields (the vanity draw lane), so both fold away.
+        // `:12466-12492` — the mount head offsets.
+        if self.mount.is_active() {
+            match self.mount.kind() {
+                52 => {
+                    pos.x += 14.0 * self.facing as f32;
+                    pos.y -= 2.0;
+                }
+                54 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.x -= 14.0 * self.facing as f32;
+                }
+                56 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.x += 6.0 * self.facing as f32;
+                    pos.y -= 10.0;
+                }
+                55 => {
+                    pos = self.apply_head_offset_from_mount(pos);
+                    pos.y -= 8.0;
+                }
+                61 => {
+                    pos.x -= 2.0 * self.facing as f32;
+                    pos.y += 8.0;
+                }
+                _ => {}
+            }
+        }
+        // `:12493-12495` — the eye anchor + the shadow-direction old anchor.
+        let y = -11.5;
+        let facing = self.facing as f32;
+        let mut vector2 = Vec2::new(
+            3.0 * facing - if self.facing == 1 { 1.0 } else { 0.0 },
+            y,
+        ) + Vec2::new(0.0, self.gfx_off_y) + pos;
+        let mut vector3 = Vec2::new(
+            3.0 * self.shadow_direction_1 as f32 - if self.facing == 1 { 1.0 } else { 0.0 },
+            y,
+        ) + pos;
+        // `:12496-12511` — the track-rider lean + the sleeping bed offset.
+        let mut zero = Vec2::ZERO;
+        let track_rider = self.mount.is_active()
+            && self.mount.data().is_some_and(|d| d.minecart || d.can_ride_minecart_tracks);
+        if track_rider {
+            let mut num2 = self.vx.signum() as i32;
+            if num2 == 0 {
+                num2 = self.facing;
+            }
+            let t = self.full_rotation / (std::f32::consts::PI / 4.0);
+            // `MathHelper.Lerp(a,b,t) = a + (b-a)*t` (XNA).
+            let mut zero2 = Vec2::new(0.0 + (-8.0 - 0.0) * t, 0.0 + (2.0 - 0.0) * t.abs());
+            zero2 = crate::player_dust2::rotate_by(zero2, self.full_rotation as f64);
+            if num2 == self.full_rotation.signum() as i32 {
+                zero2 *= 1.0 + (0.6 - 1.0) * t.abs();
+            }
+            zero += zero2;
+        }
+        // The sleeping `visualOffsetOfBedBase` (`:12512-12515`) is the bed
+        // draw lane's — the port's sleep is a pose flag (no offset), folds 0.
+        // `:12516-12520` — the full-rotation pivot.
+        if self.full_rotation != 0.0 {
+            let origin = Vec2::new(self.full_rotation_origin.0, self.full_rotation_origin.1);
+            vector2 = crate::player_dust2::rotate_about(vector2, self.full_rotation as f64, origin);
+            vector3 = crate::player_dust2::rotate_about(vector3, self.full_rotation as f64, origin);
+        }
+        // `:12522-12525` — the endpoints (num3 = 0, the Y half-lift is 0).
+        let new_pt = Vec2::new(self.x, self.y) + vector2 + zero;
+        let old_pt = Vec2::new(self.old_x, self.old_y) + vector3 + zero;
+        self.pending_yoraiz_eye_dust = Some(crate::player_dust2::YoraizEyeDust {
+            new_pt,
+            old_pt,
+            cx,
+            cy,
+            scale,
+        });
+    }
+
+    /// W4-e1 — `Player.UpdateTeleportVisuals` (`Player.cs:16613-16670`, sites
+    /// 16623/16633/16652): the per-tick teleport countdown. The time
+    /// decrements + style-2/3 pin run here (the C# order); the gate draw +
+    /// spawn queue for the drain. Style 9 (pylon) queues the gate draw only.
+    fn update_teleport_visuals(&mut self) {
+        if !(self.teleport_time > 0.0) {
+            return;
+        }
+        // `:16639-16646` — styles 2/3 pin the time to 0.005 (no dust).
+        if self.teleport_style_id == 2 || self.teleport_style_id == 3 {
+            self.teleport_time = 0.005;
+        } else if self.teleport_style_id == 4 {
+            // `:16649` — style 4 decays 0.02 BEFORE the gate.
+            self.teleport_time -= 0.02;
+        }
+        // The gate + spawn queue (styles 0/1/4/9); the drain rolls the gate.
+        if matches!(self.teleport_style_id, 0 | 1 | 4 | 9) {
+            self.pending_teleport_visuals_dust =
+                Some(crate::player_dust2::TeleportVisualsDust {
+                    style: self.teleport_style_id,
+                    time: self.teleport_time,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    portal_color_index: self.last_portal_color_index,
+                });
+        }
+        // `:16669` — the universal tail decay.
+        self.teleport_time -= 0.005;
+    }
+
+    /// W4-e1 — `Player.ApplySetBonus_Solar` (`Player.cs:16366-16439`, site
+    /// 16389): the Solar Flare shield-charge machine. `setSolar` grants from
+    /// the armor-set row; the 180-tick counter charges a shield (buff
+    /// 170+shields, 5 ticks) and queues the 16-dust gain burst. The shield
+    /// POSITION orbit (`:16403-16428`) is a draw seam (no rand); the dashType
+    /// grant (`:16434-16438`) rides the live shields.
+    pub(crate) fn apply_set_bonus_solar(&mut self) {
+        self.endurance += 0.12;
+        self.set_solar = true;
+        self.solar_counter += 1;
+        let num = 180;
+        if self.solar_counter >= num {
+            // `:16374-16383` — a shield-tier change clears the old 170/171.
+            if self.solar_shields > 0 && self.solar_shields < 3 {
+                for i in 0..crate::buffs::MAX_BUFFS {
+                    if self.buffs.buff_type[i] >= 170 && self.buffs.buff_type[i] <= 171 {
+                        self.buffs.del_buff(i);
+                    }
+                }
+            }
+            if self.solar_shields < 3 {
+                self.buffs.add_buff(170 + self.solar_shields, 5);
+                // `:16387-16395` — the 16-dust gain burst queues for the drain.
+                self.pending_solar_burst_dust = Some(crate::player_dust2::SolarBurstDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                });
+                self.solar_counter = 0;
+            } else {
+                self.solar_counter = num;
+            }
+        }
+        // `:16434-16438` — the dash grant (solarDashing/dashDelay are the
+        // dash lane's; the shields>0 half grants dashType 3).
+        if self.solar_shields > 0 {
+            self.dash_type = 3;
+        }
+    }
+
+    /// W4-e1 — `Player.CancelAllJumpVisualEffects` (`Player.cs:36649-36662`):
+    /// the performing-jump visual flags clear. The port's single
+    /// `performing_jump` Option stands in for the six `isPerformingJump_*`
+    /// bools; `includeDownDash` is the Dead-Cells dash (unported, always
+    /// false). Called at `:26755` (jump==0), `:26811` (CCed), `:26135`
+    /// (pulley) and `:36493` (grappling).
+    fn cancel_all_jump_visual_effects(&mut self) {
+        self.performing_jump = None;
+    }
+
+    /// W4-e1 — `Player.WallClimbMovement` (`Player.cs:21607-21748`, sites
+    /// 21654/21678/21729): the Rat mount's (55) wall-cling. The spiked-boots
+    /// >=2 arm climbs up (controlUp, vy=−3) / down (controlDown, vy=4) / holds
+    /// (vy=−gravity+1e-5); the else arm slides (vy −2/4/0.5). Each fired puff
+    /// queues the shared wall-cling snapshot. `gravDir` folds to 1.
+    fn wall_climb_movement(&mut self, world: &World, gravity: f32) {
+        let mount55 = self.mount.is_active() && self.mount.kind() == 55;
+        if !mount55 {
+            return;
+        }
+        self.sliding = false;
+        if self.slide_dir == 0
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21619-21634` — the wall probe at the slide edge.
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let wall = solid_tile(world, (num / TILE_PX) as i32, (num2 / TILE_PX) as i32);
+        let flag3 = self.control_up; // gravDir 1
+        let flag4 = self.control_down;
+        // The puff box origin (`:21654`): the slide-edge centre.
+        let puff_x = self.x + (self.width as i32 / 2) as f32
+            + ((self.width as i32 / 2 - 4) * self.slide_dir) as f32;
+        let puff_y = self.y + (self.height as i32 / 2) as f32
+            + (self.height as i32 / 2 - 4) as f32;
+        let queue_puff = |p: &mut Player| {
+            p.pending_wall_cling_dust = Some(crate::player_dust2::WallClingDust {
+                x: puff_x,
+                y: puff_y,
+                slide_dir: p.slide_dir,
+                mount55: true,
+            });
+        };
+        if self.spiked_boots >= 2 {
+            // `:21639` — the climb gate. With gravDir folded to +1 the C#'s
+            // second velocity disjunct (`vy < gravity || gravDir != -1`) is
+            // vacuously true, so the gate reduces to wall + (a direction
+            // key or vy > 0) — the f3 reconcile reading (W4-e1 fixup).
+            if !wall || (!(flag3 | flag4) && !(self.vy > 0.0)) {
+                return;
+            }
+            let mut num3 = gravity;
+            if self.slow_fall {
+                num3 = if !self.trying_to_hover_up() { gravity / 3.0 } else { gravity / 10.0 };
+            }
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if flag3 {
+                self.vy = -3.0;
+                // `:21652` — the mount-55 solid probe ahead of the climb.
+                if !mount55 || !self.climb_probe_solid(world) {
+                    queue_puff(self);
+                }
+            } else if flag4 {
+                self.vy = 4.0;
+                if !mount55 || !self.climb_probe_solid(world) {
+                    queue_puff(self);
+                }
+            } else {
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else {
+            // `:21709` — the slide gate (the 0.5 threshold). The gravDir-1
+            // fold kills the `vy < -0.5` disjunct (it needs gravDir == -1);
+            // only `vy > 0.5` survives (the f3 reconcile reading).
+            if !wall || (!(flag3 | flag4) && !(self.vy > 0.5)) {
+                return;
+            }
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if self.control_up {
+                self.vy = -2.0;
+            } else if self.control_down {
+                self.vy = 4.0;
+            } else {
+                self.vy = 0.5;
+            }
+            self.sliding = true;
+            if !mount55 || !self.climb_probe_solid(world) {
+                queue_puff(self);
+            }
+        }
+    }
+
+    /// W4-e1 — the wall-climb ahead probe (`:21652`/`:21676`/`:21727`):
+    /// `SolidTile((Center + (0,vy).SafeNormalize(0)*10).ToTileCoordinates())`.
+    /// `ToTileCoordinates` is `(int)v >> 4` (`Utils.cs:1807-1810`) — the
+    /// truncation-then-arithmetic-shift, NOT a division (the f3 reconcile
+    /// fix: `/16` rounds differently for negatives).
+    fn climb_probe_solid(&self, world: &World) -> bool {
+        let (cx, cy) = self.center();
+        let dir = Vec2::new(0.0, self.vy);
+        let n = if dir.length() > 0.0 { dir / dir.length() } else { Vec2::ZERO };
+        let probe = Vec2::new(cx, cy) + n * 10.0;
+        solid_tile(world, (probe.x as i32) >> 4, (probe.y as i32) >> 4)
+    }
+
+    /// W4-e1 — `Player.WallslideMovement` (`Player.cs:21750-21840`, sites
+    /// 21790/21826): the spiked-boots wall-slide (no mount). The >=2 arm
+    /// slides down on controlDown (vy=4, puff); the else arm slides on
+    /// vy>0.5 (vy 4/0.5, puff). `gravDir` folds to 1.
+    fn wallslide_movement(&mut self, world: &World, gravity: f32) {
+        self.sliding = false;
+        if self.slide_dir == 0
+            || self.spiked_boots <= 0
+            || self.mount.is_active()
+            || ((!self.control_left || self.slide_dir != -1)
+                && (!self.control_right || self.slide_dir != 1))
+        {
+            return;
+        }
+        // `:21757-21774` — the two-tile wall probe.
+        let mut num = self.x;
+        if self.slide_dir == 1 {
+            num += self.width;
+        }
+        num += self.slide_dir as f32;
+        let num2 = self.y + self.height + 1.0;
+        let tx = (num / TILE_PX) as i32;
+        let ty = (num2 / TILE_PX) as i32;
+        let wall = solid_tile(world, tx, ty) && solid_tile(world, tx, ty - 1);
+        let puff_x = self.x + (self.width as i32 / 2) as f32
+            + ((self.width as i32 / 2 - 4) * self.slide_dir) as f32;
+        let puff_y = self.y + (self.height as i32 / 2) as f32
+            + (self.height as i32 / 2 - 4) as f32;
+        let queue_puff = |p: &mut Player| {
+            p.pending_wall_cling_dust = Some(crate::player_dust2::WallClingDust {
+                x: puff_x,
+                y: puff_y,
+                slide_dir: p.slide_dir,
+                mount55: false,
+            });
+        };
+        if self.spiked_boots >= 2 {
+            // `:21777` — the slide gate: gravDir 1 reduces to wall + vy > 0
+            // (the `vy < gravity` disjunct needs gravDir == -1 — dead).
+            if !wall || !(self.vy > 0.0) {
+                return;
+            }
+            let mut num3 = gravity;
+            if self.slow_fall {
+                num3 = if !self.trying_to_hover_up() { gravity / 3.0 } else { gravity / 10.0 };
+            }
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if self.control_down {
+                self.vy = 4.0;
+                queue_puff(self);
+            } else {
+                self.vy = -num3 + 1e-5;
+            }
+            self.sliding = true;
+        } else if wall && self.vy > 0.5 {
+            // `:21814` — the single-boot slide. The C# is
+            // `(flag && vy > 0.5 && gravDir == 1) || (vy < -0.5 && gravDir
+            // == -1)`; the second disjunct is dead at gravDir 1 (the earlier
+            // `|| self.vy < -0.5` fired without a wall — the f3 reconcile
+            // fix).
+            self.fall_start = (self.y / TILE_PX) as i32;
+            if self.control_down {
+                self.vy = 4.0;
+            } else {
+                self.vy = 0.5;
+            }
+            self.sliding = true;
+            queue_puff(self);
+        }
+    }
+
+    /// W4-e1 — `Player.DoubleJumpVisuals` (`Player.cs:21892-22021`, sites
+    /// 21901/21915/21934/21941/21962/21989/22005/22014): the per-tick
+    /// extra-jump visual chain. Each arm gates on its performing flag + the
+    /// option grant + the can-jump-again clear + the ascent velocity; the
+    /// fired arm queues its snapshot. The mount jumps have no arm here.
+    fn double_jump_visuals(&mut self) {
+        let Some(kind) = self.performing_jump else {
+            return;
+        };
+        let i = kind.index();
+        // The shared gate: performing && hasOption && !canJumpAgain && the
+        // ascent velocity (Sail uses the <1 threshold, the rest <0).
+        let ascent = if kind == ExtraJump::Sail { self.vy < 1.0 } else { self.vy < 0.0 };
+        if !self.has_jump_options[i] || self.can_jump_again[i] || !ascent {
+            return;
+        }
+        // The mount jumps (Santank/Goat/Basilisk) have no DoubleJumpVisuals
+        // arm — their visuals are the jump-chain burst (d51's lane).
+        if matches!(kind, ExtraJump::Santank | ExtraJump::WallOfFleshGoat | ExtraJump::Basilisk) {
+            return;
+        }
+        // `:21894` — the Cloud arm ALSO needs the Sandstorm option spent or
+        // absent (`canJumpAgain_Sandstorm || !hasJumpOption_Sandstorm`);
+        // an unspent Sandstorm suppresses the Cloud puff (the f3 reconcile
+        // reading — W4-e1 fixup).
+        if kind == ExtraJump::Cloud
+            && self.has_jump_options[ExtraJump::Sandstorm.index()]
+            && !self.can_jump_again[ExtraJump::Sandstorm.index()]
+        {
+            return;
+        }
+        self.pending_double_jump_visual_dust =
+            Some(crate::player_dust2::DoubleJumpVisualDust {
+                kind,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                jump: self.jump,
+                sandstorm_gore_gate: self.misc_counter % 3 == 0,
+            });
+        // `:21919` — the Sandstorm pose flag.
+        if kind == ExtraJump::Sandstorm {
+            self.sand_storm = true;
+        }
+    }
+
+    /// W4-e1 — `Player.MowTheLawn` (`Player.cs:20301-20346`, site 20320): the
+    /// Lawn Mower (4049) swing puff. The host gates the swing (miscCounter%2,
+    /// grounded, no grapple, itemAnimation>=1) and computes the lerp anchor;
+    /// the drain replays the single NewDustDirect. The NPC-collision +
+    /// tile-cut halves (`:20328-20345`) are the combat/editing lanes'.
+    fn mow_the_lawn(&mut self, swing_anim: f32, swing_anim_max: f32) {
+        // `:20303` — `itemAnimation < 1` is the INTEGER tick count; the port's
+        // swing timer is seconds, so convert (the `ticks_of` convention).
+        let anim_ticks = (swing_anim * 60.0).round() as i32;
+        if self.misc_counter % 2 != 0
+            || self.vy != 0.0
+            || self.grappling_active
+            || anim_ticks < 1
+        {
+            return;
+        }
+        // `:20307` — the mounted-center + direction*38 anchor.
+        let (mcx, mcy) = self.mounted_center();
+        let mut vector = Vec2::new(
+            mcx + self.facing as f32 * 38.0,
+            mcy + (self.height / 2.0 + 4.0),
+        );
+        // `:20308-20318` — the mount offsets (DontHoldItems / type 54).
+        if self.mount.is_active() {
+            let kind = self.mount.kind();
+            if crate::mount::dont_hold_items(kind) {
+                return;
+            }
+            if kind == 54 {
+                vector += Vec2::new(4.0 * self.facing as f32, 0.0);
+            }
+        }
+        // `:20319` — the swing phase.
+        let num = if swing_anim_max > 0.0 {
+            (1.0 - swing_anim / swing_anim_max) * 2.0
+        } else {
+            0.0
+        };
+        let d = self.facing as f32;
+        self.pending_mow_lawn_dust = Some(crate::player_dust2::MowLawnDust {
+            a: vector + Vec2::new(d * -16.0, -4.0),
+            b: vector + Vec2::new(d * -6.0, -4.0),
+            num,
+        });
+    }
+
+    /// W4-e1 — the Vortex stealth machine (`Player.cs:25826-25895`, sites
+    /// 25877/25887): the setVortex arm of the stealth else-if chain. The
+    /// stealth ramps ±0.04/tick (down while active, up otherwise); while it
+    /// moves (flag11) the two ring dust sites queue. The ranged damage/crit/
+    /// aggro grants + the run-speed ×0.3 ride the live stealth. The mount
+    /// cancels the active state (`:25850-25853`). The Psycho-Knife (3106)
+    /// and Shroomite arms (`:25733-25825`) + the `stealth = 1f` fallback
+    /// (`:25896-25899`) are the f3 machine's — this port keeps the Vortex
+    /// arm + the fallback (the f3 reconcile; the shroomite knockback scale
+    /// reads `stealth` at its 1f idle).
+    fn update_vortex_stealth(&mut self) {
+        if !self.set_vortex {
+            // `UpdateArmorSets_Always_Vortex` (`:16315-16321`): losing the set
+            // disarms the toggle.
+            self.vortex_stealth_active = false;
+            // `:25896-25899` — the stealth chain's final else: no stealth
+            // source pins `stealth = 1f`. The Psycho-Knife arm (`:25733`,
+            // held 3106) is f3's machine; when it lands its check goes
+            // ahead of this fallback (the reconcile doc's fold-hunk).
+            self.stealth = 1.0;
+            return;
+        }
+        let mut flag11 = false;
+        if self.vortex_stealth_active {
+            let num26 = self.stealth;
+            self.stealth -= 0.04;
+            if self.stealth < 0.0 {
+                self.stealth = 0.0;
+            } else {
+                flag11 = true;
+            }
+            let _ = num26; // the net-sync edge (`:25841`) is MP-only.
+            self.ranged_damage += (1.0 - self.stealth) * 0.8;
+            self.ranged_crit += ((1.0 - self.stealth) * 20.0) as i32;
+            self.aggro -= ((1.0 - self.stealth) * 1200.0) as i32;
+            self.acc_run_speed *= 0.3;
+            self.max_run_speed *= 0.3;
+            if self.mount.is_active() {
+                self.vortex_stealth_active = false;
+            }
+        } else {
+            self.stealth += 0.04;
+            if self.stealth > 1.0 {
+                self.stealth = 1.0;
+            } else {
+                flag11 = true;
+            }
+        }
+        if flag11 {
+            let (cx, cy) = self.center();
+            self.pending_vortex_ring_dust = Some(crate::player_dust2::VortexRingDust { cx, cy });
+        }
+    }
+
+    /// W4-e1 — `Player.UpdateHairDyeDust` (`Player.cs:24268-24295`, site
+    /// 24274): the team-dye puff. The gate is the team-dye shader state +
+    /// alive/not-stoned/not-frozen/not-ghost; the drain rolls the Next(45) +
+    /// the type roll + the jitter chain (and the gore sibling's gate draws).
+    fn update_hair_dye_dust(&mut self) {
+        if self.dead
+            || self.ghost_like()
+            || self.buffs.find_buff_index(156).is_some()
+            || self.frozen
+            || self.hair_dye != TEAM_DYE_SHADER_INDEX
+        {
+            return;
+        }
+        self.pending_hair_dye_dust = Some(crate::player_dust2::HairDyeDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            vx: self.vx,
+            vy: self.vy,
+        });
+    }
+
+    /// W4-e1 — the manaHeat ambient (`Player.Update :24630-24662`, sites
+    /// 24641/24654): the heat != 1 gate + the Remap-derived probability. The
+    /// drain rolls the two NextFloat*6 gates + the spawn/clone chain.
+    fn mana_heat_ambient(&mut self) {
+        if self.mana_heat == 1.0 {
+            return;
+        }
+        // `:24635` — num4 = Remap(manaHeat, 1.3, 1, 1, 0), clamped (the
+        // local-player arm; the port is single-player). Utils.Remap clamps
+        // the lerp t to [0,1] by default.
+        let t = ((self.mana_heat - 1.3) / (1.0 - 1.3)).clamp(0.0, 1.0);
+        let num4 = 1.0 + (0.0 - 1.0) * t;
+        self.pending_mana_heat_dust = Some(crate::player_dust2::ManaHeatDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            num4,
+        });
+    }
+
     /// `Player.Teleport` (`Player.cs:37414-37496`) — the movement-relevant
     /// core: `RemoveAllGrapplingHooks` (style != 10), `StopVanityActions`,
     /// the shimmer strip, the position write, the fall-origin reset and the
@@ -9448,6 +10467,15 @@ impl Player {
     /// The velocity is NOT zeroed here — the C# scan zeroes it before the
     /// call (`TeleportHelpers.cs:12`) and `Shellphone_Spawn` after (`:56175`).
     pub fn teleport_style(&mut self, new_x: f32, new_y: f32, style: i32) {
+        // W4-e1 — `:37490-37491`: the teleport-visuals countdown arms.
+        self.teleport_time = 1.0;
+        self.teleport_style_id = style;
+        // `:37477-37480` — style 4 records the portal colour index.
+        if style == 4 {
+            // `extraInfo` is the portal colour; the port's callers pass 0
+            // (the pylon/portal lane owns the index) — kept as the field.
+            self.last_portal_color_index = 0;
+        }
         // `:37420-37423` — every style but 10 removes the hooks.
         if style != 10 {
             self.release_grappling_hooks = true;
@@ -9471,6 +10499,13 @@ impl Player {
         self.fall_start = (new_y / TILE_PX) as i32;
         self.prev_x = new_x;
         self.prev_y = new_y;
+        // W4-e1 — `:37484-37487`: `ResetAdvancedShadows` + three
+        // `UpdateSocialShadow` calls re-pin the facing history at the new
+        // spot (the eye trail's old anchor reads [1]). The pos/rotation
+        // shadow chain is a draw seam; the facing shift is ported.
+        for _ in 0..3 {
+            self.update_social_shadow();
+        }
     }
 
     /// `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world-spawn
@@ -10146,6 +11181,9 @@ impl Player {
         // sitting/sleeping, so both run; petting has no field.
         self.sit_up();
         self.stop_sleeping();
+        // W4-e1 — `:36493` (PlayerFrame's grappling arm): the jump visuals
+        // cancel while hooked.
+        self.cancel_all_jump_visual_effects();
         // `:22620-22623` — a mount not in the `MountID.Sets.CanUseHooks` set
         // ({54, 57-60}) dismounts while the hooks are out.
         if self.mount.is_active() && !crate::mount::can_use_hooks(self.mount.kind()) {
@@ -10512,18 +11550,23 @@ impl Player {
 
     /// `Player.FloorVisuals` (`Player.cs:23708-23743`) + `GetFloorTile`
     /// (`:23755-23783`): the tile row at the feet, center column first, then
-    /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
-    /// the slope dust carve-out stay with the particle tasks.
-    fn floor_visuals(&mut self, world: &World) {
+    /// the neighbors, solid tiles only. W4-e1: the MakeFloorDust footstep
+    /// dust (site 23983) queues for the drain; the slope carve-out
+    /// (`:23736-23739`) and the wet/cart gate (`:23740`) match the C#.
+    fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
         let y = ((self.y + self.body_height()) / TILE_PX) as i32;
         let mut kind = None;
+        let mut floor_frame_y = 0i32;
+        let mut floor_paint = 0i32;
         for tx in [x, x - 1, x + 1] {
             if let Some(t) = world.tile(tx, y) {
                 if t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind) {
                     kind = Some(t.kind);
+                    floor_frame_y = t.frame_y as i32;
+                    floor_paint = t.paint() as i32;
                     break;
                 }
             }
@@ -10546,6 +11589,39 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+        // W4-e1 — `:23732-23735`: the Stinky tiles (666/712) grant buff 120
+        // for 180 ticks (the g66 reconcile row — `whoAmI == Main.myPlayer`
+        // is the port's single player). The grant reads the REAL tile, so
+        // it runs BEFORE the slope carve-out.
+        if kind == 666 || kind == 712 {
+            self.buffs.add_buff(120, 180);
+        }
+        // `:23736-23739`: the slope carve-out (a sloped tile in the
+        // three-tile window suppresses the dust kind). `:23740`: the C#
+        // `base.wet` is WetCollision — ANY liquid — so the gate is the
+        // four-flag union (the g66 reconcile row; the water-only `wet`
+        // let lava/honey/shimmer feet spawn floor dust).
+        let sloped = [x - 1, x, x + 1].iter().any(|&tx| {
+            world.tile(tx, y).is_some_and(|t| t.slope() != 0)
+        });
+        let dust_kind = if sloped { -1 } else { kind as i32 };
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        let cart = self.cart_mounted
+            || (self.mount.is_active() && crate::mount::is_cart(self.mount.kind()));
+        if !any_wet && !cart && dust_kind >= 0 {
+            self.pending_floor_dust = Some(crate::player_dust2::FloorDust {
+                tile: dust_kind,
+                frame_y: floor_frame_y,
+                paint: floor_paint,
+                falling,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+            });
+        }
     }
 
     /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read
@@ -10856,7 +11932,7 @@ impl Player {
     /// (`:56779-56786`). The `CommandForbiddenStorm` half (`:56784`) is the
     /// storm command's own lane (deferred, ANALYSIS — it spawns the 656
     /// projectile + pays mana). The Vortex stealth toggle (`:56775-56778`)
-    /// is the stealth system's lane (unported).
+    /// landed with the W4-e1 stealth machine.
     ///
     /// `reversed` is `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`):
     /// when true the set-bonus cardinal is UP (keyDir 1), so the DOWN
@@ -10866,6 +11942,10 @@ impl Player {
         // keyDir 0 (down) != num when reversed → early return (`:56771-56774`).
         if 0 != num {
             return;
+        }
+        // W4-e1 — `:56775-56778`: the Vortex set's stealth toggle (no mount).
+        if self.set_vortex && !self.mount.is_active() {
+            self.vortex_stealth_active = !self.vortex_stealth_active;
         }
         if self.set_forbidden {
             self.minion_rest_target_aim(world, mouse_world);
@@ -10978,6 +12058,24 @@ impl Player {
         } else {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
+        }
+        // W4-e1 — `:23283-23316`: the breath bubble (site 23316). The host
+        // gates ONLY `flag` (drowning) — the C# `||` chain draws the
+        // Next(20) BEFORE reading lavaWet/honeyWet, so the wet flags ride
+        // the snapshot and the drain refuses after its draw (the f3
+        // reconcile fix). The mouth anchor: direction*12 + the gravDir-1
+        // fold (num4=0, +4); the breathing-reed / mount-mouth adjustments
+        // are the accessory/mount lanes' (documented skip, the base stands).
+        if drowning {
+            let pos = Vec2::new(
+                self.x + 12.0 * self.facing as f32,
+                self.y + 4.0,
+            );
+            self.pending_drown_bubble_dust = Some(crate::player_dust2::DrownBubbleDust {
+                pos,
+                width: self.width,
+                lava_or_honey_wet: self.lava_wet || self.honey_wet,
+            });
         }
     }
 
@@ -11171,12 +12269,21 @@ impl Player {
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
+                // W4-e1 — the second-batch dust gates: the shiny-stone still
+                // sparkle (`:18945`, site 19273) and the crimson heal burst
+                // (`:19292`, site 19296). `itemAnimation == 0` is the port's
+                // `mana_regen_item_in_use` stand-in (the swing/reuse timers).
+                shiny_stone_still: self.shiny_stone
+                    && self.vx.abs() < 0.05
+                    && self.vy.abs() < 0.05
+                    && !self.mana_regen_item_in_use,
+                crimson_regen: self.crimson_regen,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
-            update_mana_regen(
+            let refilled = update_mana_regen(
                 &mut self.regen,
                 &in_,
                 &mut self.mana,
@@ -11184,6 +12291,42 @@ impl Player {
                     item_in_use: self.mana_regen_item_in_use,
                 },
             );
+            // W4-e1 — drain the regen dust events into the queues (the
+            // `UpdatePlayers` stream replays them in the world_sim seam).
+            // The shiny sparkle gate (`:19271`) recorded its time; the crimson
+            // chunks counted their bursts; the full-mana bar (`:19550`, site
+            // 19555) arms on the engine's `refilled` return.
+            if let Some(time) = self.regen.shiny_gate_time.take() {
+                self.pending_shiny_sparkle_dust =
+                    Some(crate::player_dust2::ShinySparkleDust {
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        cx: self.x + self.width * 0.5,
+                        cy: self.y + self.height * 0.5,
+                        regen_time: time,
+                    });
+            }
+            let bursts = std::mem::take(&mut self.regen.crimson_heal_bursts);
+            if bursts > 0 {
+                self.pending_crimson_heal_dust =
+                    Some(crate::player_dust2::CrimsonHealDust {
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        bursts,
+                    });
+            }
+            if refilled {
+                self.pending_mana_full_dust = Some(crate::player_dust2::ManaFullDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                });
+            }
         }
 
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
@@ -21649,5 +22792,379 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    // -----------------------------------------------------------------------
+    // W4-e1b — the f3-reconcile witnesses (research/141). Each pins one
+    // KEEP/DROP verdict row against the cited C# window. WRITTEN NOT RUN
+    // (code-only mode). The wall machines / vortex machine / stealth spawn
+    // are DROP-at-merge (f3-canonical); these witnesses keep e1's copy honest
+    // until the merge lifts f3's, and pin the KEEP-E1 rows (falling capture,
+    // drain order, the disjoint lanes' fidelity fixes).
+    // -----------------------------------------------------------------------
+
+    /// A wall column at tile x=30, rows 40..58, on the ground_world. The
+    /// player rests just left of it (right edge ≈ tile 30) at a row inside the
+    /// column, so the slide-edge probe (x+width+1 → tile 30) and the two-tile
+    /// wallslide probe both read solid. Returns (world, player at the wall).
+    fn wall_world_and_player() -> (World, Player) {
+        let mut w = ground_world();
+        for y in 40..58 {
+            let i = w.index(30, y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        // Right edge + slideDir(1) = 479 + 1 = 480 → tile 30; feet at row 51.
+        p.x = 459.0;
+        p.y = 780.0; // y + height + 1 = 823 → row 51 (inside the column)
+        p.vx = 0.0;
+        p.vy = 0.0;
+        (w, p)
+    }
+
+    /// DROP verdict (d) deviation 1 — the climb gate `:21639`. At gravDir 1
+    /// the C# `(!(vy < gravity) || gravDir != -1)` disjunct is vacuously true,
+    /// so a resting Rat (vy==0, no up/down key) RETURNS — no cling, no
+    /// `sliding`. e1's old `&& !(vy < gravity)` AND wrongly clung. The fixed
+    /// gate reduces to `wall + (a direction key or vy > 0)`.
+    #[test]
+    fn w4_e1b_climb_gate_resting_rat_returns() {
+        let (w, mut p) = wall_world_and_player();
+        assert!(p.set_mount(55, false), "the Rat mounts");
+        // The Rat's 14×14 size override shrinks the box; re-site the right
+        // edge at the wall (x+width+1 = 480 → tile 30, feet row 51).
+        p.x = 480.0 - p.width - 1.0;
+        p.y = 823.0 - p.height - 1.0;
+        p.spiked_boots = 2; // the climb arm
+        p.slide_dir = 1;
+        p.control_right = true; // slideDir 1 needs controlRight
+        p.control_up = false;
+        p.control_down = false;
+        p.vy = 0.0; // resting — no keys, vy not > 0
+        p.sliding = false;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(!p.sliding, "the resting Rat returns at :21639 (vacuous gravDir clause)");
+        // A direction key (controlUp → flag3) DOES cling: vy pins to -3.
+        p.control_up = true;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(p.sliding, "controlUp clings");
+        assert_eq!(p.vy, -3.0, ":21651 the climb-up impulse");
+    }
+
+    /// DROP verdict (d) deviation 2 — the level-1 slide gate `:21709`. The
+    /// `!(vy < -0.5) || gravDir != -1` disjunct is vacuous at gravDir 1; a
+    /// fast-RISING Rat (vy < -0.5, no keys) returns. Only `vy > 0.5` survives.
+    #[test]
+    fn w4_e1b_slide_gate_rising_rat_returns() {
+        let (w, mut p) = wall_world_and_player();
+        assert!(p.set_mount(55, false));
+        p.x = 480.0 - p.width - 1.0; // re-site after the 14×14 override
+        p.y = 823.0 - p.height - 1.0;
+        p.spiked_boots = 1; // the level-1 (else) arm
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.control_up = false;
+        p.control_down = false;
+        p.vy = -2.0; // rising fast — the old unguarded disjunct clung here
+        p.sliding = false;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(!p.sliding, "the rising Rat returns at :21709");
+        // Falling past 0.5 with no keys clings (vy pins to 0.5).
+        p.vy = 1.0;
+        p.wall_climb_movement(&w, GRAVITY);
+        assert!(p.sliding, "vy > 0.5 clings");
+        assert_eq!(p.vy, 0.5, ":21724 the no-key slide velocity");
+    }
+
+    /// DROP verdict (d) deviations 3+4 — the wallslide gates `:21777`/`:21814`.
+    /// The >=2 arm needs `wall && vy > 0` (the `vy < gravity` disjunct is dead
+    /// at gravDir 1); the single-boot arm needs `wall && vy > 0.5` — the old
+    /// unguarded `|| vy < -0.5` slid a rising player with NO wall.
+    #[test]
+    fn w4_e1b_wallslide_gates_need_wall_and_downward_vy() {
+        let (w, mut p) = wall_world_and_player();
+        p.slide_dir = 1;
+        p.control_right = true;
+        p.spiked_boots = 2;
+        p.vy = 0.0; // resting — the >=2 arm returns (vy not > 0)
+        p.sliding = false;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(!p.sliding, ":21777 the resting wallslide returns");
+        // Single-boot, rising, NO wall contact (slide_dir 0 → early return is
+        // separate; here keep the wall but vy < 0): the else-if must NOT fire.
+        p.spiked_boots = 1;
+        p.vy = -2.0;
+        p.sliding = false;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(!p.sliding, ":21814 the unguarded vy<-0.5 slide is gone");
+        // Falling past 0.5 against the wall: the single-boot slide fires.
+        p.vy = 1.0;
+        p.wallslide_movement(&w, GRAVITY);
+        assert!(p.sliding, "wall && vy>0.5 slides");
+        assert_eq!(p.vy, 0.5, ":21823 the no-down slide velocity");
+    }
+
+    /// DROP verdict (d) deviation 5 — `climb_probe_solid` uses
+    /// `(int)v >> 4` (`Utils.cs:1807-1810`), NOT `/16`. On a negative probe
+    /// coordinate the arithmetic shift floors where the division truncates
+    /// toward zero: probe.x = -1 → -1>>4 = -1, but (-1/16) as i32 = 0.
+    #[test]
+    fn w4_e1b_climb_probe_shifts_not_divides() {
+        let (w, mut p) = wall_world_and_player();
+        // The probe is center + (0,vy).SafeNormalize(0)*10 — vertical, so
+        // probe.x == center.x. Site the center at -15 to expose the negative
+        // rounding: (-15 as i32)>>4 = -1, but (-15/16) as i32 = 0.
+        p.x = -25.0; // center.x = -25 + width/2 = -15
+        p.y = 100.0;
+        p.vy = -3.0; // probe straight up
+        let probe_x = p.center().0;
+        assert_eq!(probe_x, -15.0, "the probe X is the center X");
+        assert_eq!(probe_x as i32 >> 4, -1, "the arithmetic shift floors -15/16 to -1");
+        assert_eq!((probe_x / TILE_PX) as i32, 0, "the old division truncated to 0");
+        // The probe reads the shifted tile (out-of-world → false), not tile 0.
+        assert!(!p.climb_probe_solid(&w), "the shifted probe reads out-of-world");
+    }
+
+    /// KEEP-E1 (verdict (f)) — the `falling` flag is captured at the movement
+    /// HEAD (`:28073-28081`, |vy| > gravity BEFORE the collision resolve), so
+    /// a landing tick reaches FloorVisuals with vy==0 but falling=true and the
+    /// 20-dust burst fires. f3's rest-path capture (vy==0 gate) never fires.
+    /// This pins the head-capture expression the port uses (`player.rs:7912`).
+    #[test]
+    fn w4_e1b_falling_head_capture_fires_on_landing() {
+        let gravity = GRAVITY;
+        // The head capture: |vy| > gravity at the pre-collision velocity.
+        let falling_head = |vy: f32| vy > gravity || vy < -gravity;
+        assert!(falling_head(1.0), "a fast fall captures falling=true");
+        assert!(falling_head(-1.0), "a fast rise captures falling=true");
+        assert!(!falling_head(0.0), "rest captures falling=false");
+        // The REST-path capture (f3's, the wrong one): gated on vy==0 first,
+        // so |vy|>gravity is always false there — the landing burst never fires.
+        let falling_rest = |vy: f32| vy == 0.0 && (vy > gravity || vy < -gravity);
+        assert!(!falling_rest(0.0), "the rest path can never capture falling");
+        // A landing tick: pre-collision vy=1.0 (falling=true captured), the
+        // resolve zeroes vy, FloorVisuals still sees falling=true → 20 puffs.
+        let pre_vy = 1.0;
+        let captured = falling_head(pre_vy);
+        let post_vy = 0.0; // the collision resolve
+        assert!(captured && post_vy == 0.0, "the landing tick fires the burst");
+    }
+
+    /// KEEP-E1 — the floor-dust gate `:23740` is `!base.wet && !mount.Cart`,
+    /// where `base.wet` is WetCollision (ANY liquid). The port's four-flag
+    /// union (water/lava/honey/shimmer) gates it; the old water-only `wet`
+    /// let lava/honey/shimmer feet spawn floor dust. The Stinky buff-120 grant
+    /// (`:23732`) reads the REAL tile BEFORE the slope carve-out.
+    #[test]
+    fn w4_e1b_floor_dust_any_wet_gate_and_stinky_buff() {
+        let mut w = ground_world();
+        // A Stinky tile (666) floor at the player's feet row.
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let fx = ((p.x + p.width * 0.5) / TILE_PX) as i32;
+        let fy = ((p.y + p.body_height()) / TILE_PX) as i32;
+        let i = w.index(fx, fy);
+        w.tiles[i] = Tile { kind: 666, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // Dry feet: the Stinky grant fires (buff 120, 180 ticks) and the dust
+        // queues (falling=false, but the snapshot exists).
+        p.wet = false;
+        p.lava_wet = false;
+        p.honey_wet = false;
+        p.shimmer_wet = false;
+        p.floor_visuals(&w, false);
+        assert!(p.buffs.find_buff_index(120).is_some(), ":23732 the Stinky buff-120 grant");
+        assert!(p.pending_floor_dust.is_some(), "dry feet queue the floor dust");
+        // Lava-wet feet: ANY liquid suppresses the dust (the union gate).
+        p.pending_floor_dust = None;
+        p.lava_wet = true;
+        p.floor_visuals(&w, false);
+        assert!(p.pending_floor_dust.is_none(), ":23740 lava-wet feet spawn no floor dust");
+        // A sloped tile in the window suppresses the dust KIND (not the buff).
+        p.lava_wet = false;
+        p.pending_floor_dust = None;
+        w.tiles[i].set_slope(1);
+        p.floor_visuals(&w, false);
+        assert!(p.pending_floor_dust.is_none(), ":23736 the slope carve-out suppresses the dust");
+        assert!(p.buffs.find_buff_index(120).is_some(), "the buff reads the real tile, pre-carve-out");
+    }
+
+    /// KEEP-E1 — the floor-dust falling chain `:24026` uses the INTEGER half
+    /// `(float)(base.width / 2)`. For an odd width the C# truncates: width 21
+    /// → 21/2 = 10 (not 10.5). The port's `(b.width as i32 / 2) as f32` matches.
+    #[test]
+    fn w4_e1b_floor_dust_integer_half_width() {
+        let width = 21.0f32;
+        let csharp_half = (width as i32 / 2) as f32; // (int)(21/2) = 10
+        assert_eq!(csharp_half, 10.0, "the integer half truncates 21/2 to 10");
+        assert_ne!(csharp_half, width / 2.0, "not the float half 10.5");
+    }
+
+    /// KEEP-E1 — the drown bubble `:23283` gate is
+    /// `!flag || Next(20) != 0 || lavaWet || honeyWet`: the Next(20) draw rides
+    /// whenever drowning, BEFORE the wet flags refuse. The host gates ONLY
+    /// `flag` (drowning); the wet flags ride the snapshot. This pins the
+    /// snapshot contract (the drain witness in player_dust2.rs pins the draw).
+    #[test]
+    fn w4_e1b_drown_bubble_host_gates_flag_only() {
+        let mut w = ground_world();
+        // Flood the head row so DrownCollision fires.
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.lava_wet = true; // wet — the OLD host gate skipped the snapshot
+        p.pending_drown_bubble_dust = None;
+        p.check_drowning(&w);
+        // The fixed host gates flag only: the snapshot EXISTS even while wet,
+        // carrying lava_or_honey_wet=true (the drain refuses AFTER its draw).
+        let b = p.pending_drown_bubble_dust.expect("the wet player still queues the snapshot");
+        assert!(b.lava_or_honey_wet, "the wet flags ride the snapshot");
+        assert_eq!(b.pos.x, p.x + 12.0 * p.facing as f32, "the mouth anchor :23292");
+    }
+
+    /// KEEP-E1 — the stealth spawn default is `1f` (`Player.cs:1562`), not
+    /// 0.0. e1's old 0.0 made the Vortex recovery ramp fire 25 ring ticks on
+    /// the first equip. DROP-at-merge (f3-canonical) but pinned here.
+    #[test]
+    fn w4_e1b_stealth_spawns_at_one() {
+        let w = ground_world();
+        let p = Player::spawn(&w);
+        assert_eq!(p.stealth, 1.0, ":1562 public float stealth = 1f");
+    }
+
+    /// KEEP-E1 — the Vortex stealth machine's final else (`:25896-25899`)
+    /// pins `stealth = 1f` when no stealth source is armed, and the set-loss
+    /// disarm (`:16315-16321`) clears the toggle. The ranged knockback scale
+    /// (`:53364-53367`) reads the live stealth.
+    #[test]
+    fn w4_e1b_vortex_final_else_and_set_loss_disarm() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stealth = 0.3;
+        p.set_vortex = false;
+        p.vortex_stealth_active = true;
+        p.update_vortex_stealth();
+        assert!(!p.vortex_stealth_active, ":16315 the set-loss disarms the toggle");
+        assert_eq!(p.stealth, 1.0, ":25896 the final else pins stealth=1f");
+        // With the set armed + active, the ramp fades and the rings queue.
+        p.set_vortex = true;
+        p.vortex_stealth_active = true;
+        p.stealth = 1.0;
+        p.pending_vortex_ring_dust = None;
+        p.update_vortex_stealth();
+        assert!((p.stealth - 0.96).abs() < 1e-5, ":25831 the -0.04 fade");
+        assert!(p.pending_vortex_ring_dust.is_some(), "flag11 queues the rings");
+        // The ranged kb scale: 1 + (1-stealth)*0.5 at stealth 0.5 → 1.25.
+        let ranged = crate::registry::get(435).unwrap();
+        p.set_vortex = true;
+        p.shroomite_stealth = false;
+        p.stealth = 0.5;
+        assert!((p.weapon_knockback(ranged, 4.0) - 5.0).abs() < 1e-5, ":53364 the Vortex kb scale");
+    }
+
+    /// KEEP-E1 — `ResetEffects` zeroes `aggro` per tick (`:18377`); the Vortex
+    /// stealth writer (`:25847`) subtracts from it. Without the reset the
+    /// subtraction accumulates across ticks.
+    #[test]
+    fn w4_e1b_aggro_resets_each_tick() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.aggro = -500;
+        p.update(&w, PlayerInput::default());
+        // ResetEffects zeroes it; no stealth source re-subtracts this tick.
+        assert_eq!(p.aggro, 0, ":18377 ResetEffects aggro = 0");
+    }
+
+    /// KEEP-E1 — the climbing grants (`:15038-15066`) and the frog family
+    /// (`:14426-14444`) arm `spiked_boots` (the wall machines' gate input).
+    /// 953/975 +1, 976 +2, 984 =2; 3995/3996 +2 (3994 none).
+    #[test]
+    fn w4_e1b_climbing_and_frog_grants_arm_spiked_boots() {
+        let w = ground_world();
+        let boots = |kind: u16| {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            p.spiked_boots
+        };
+        assert_eq!(boots(953), 1, ":15040 Climbing Claws ++");
+        assert_eq!(boots(975), 1, ":15044 Shoe Spikes ++");
+        assert_eq!(boots(976), 2, ":15048 Tiger Climbing Gear += 2");
+        assert_eq!(boots(984), 2, ":15066 Master Ninja Gear = 2");
+        assert_eq!(boots(3994), 0, ":14426 the Flipper bundle has no boots");
+        assert_eq!(boots(3995), 2, ":14437 the Frog Leg bundle += 2");
+        assert_eq!(boots(3996), 2, ":14443 the Tiger Frog bundle += 2");
+        // The frog bundle's auto-jump + jump-speed + safe-fall ride too.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3995;
+        p.update(&w, PlayerInput::default());
+        assert!(p.auto_jump && p.acc_flipper, ":14433-14436");
+        assert_eq!(p.extra_fall, 10, ":14435");
+    }
+
+    /// KEEP-E1 — the Cloud double-jump visual ALSO needs the Sandstorm option
+    /// spent or absent (`:21894` `canJumpAgain_Sandstorm || !hasJumpOption_Sandstorm`).
+    /// An unspent Sandstorm suppresses the Cloud puff.
+    #[test]
+    fn w4_e1b_cloud_visual_suppressed_by_unspent_sandstorm() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.performing_jump = Some(ExtraJump::Cloud);
+        p.has_jump_options[ExtraJump::Cloud.index()] = true;
+        p.can_jump_again[ExtraJump::Cloud.index()] = false;
+        p.vy = -2.0; // ascending
+        // Sandstorm armed AND unspent → the Cloud puff is suppressed.
+        p.has_jump_options[ExtraJump::Sandstorm.index()] = true;
+        p.can_jump_again[ExtraJump::Sandstorm.index()] = false;
+        p.pending_double_jump_visual_dust = None;
+        p.double_jump_visuals();
+        assert!(p.pending_double_jump_visual_dust.is_none(), ":21894 the unspent Sandstorm suppresses Cloud");
+        // Sandstorm spent → the Cloud puff fires.
+        p.can_jump_again[ExtraJump::Sandstorm.index()] = true;
+        p.double_jump_visuals();
+        assert!(p.pending_double_jump_visual_dust.is_some(), "the spent Sandstorm frees the Cloud puff");
+    }
+
+    /// KEEP-E1 — an active dash cancels the Vortex stealth (`:21379`).
+    #[test]
+    fn w4_e1b_active_dash_cancels_vortex_stealth() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.dash_type = 1;
+        p.dash = 1;
+        p.dash_delay = -1; // the active-dash arm
+        p.vx = 20.0; // past the threshold → the fast-decay early return
+        p.vortex_stealth_active = true;
+        p.dash_movement(&w, PlayerInput::default());
+        assert!(!p.vortex_stealth_active, ":21379 the active dash disarms the stealth");
+    }
+
+    /// KEEP-E1 — the wall-cling/double-jump-visual block lives in the
+    /// `grappling[0] == -1 && !tongued` movement arm (`:26494`): a tongued
+    /// player never wall-clings or runs the jump==0 visual cancel. The
+    /// differential: with jump==0 and a performing jump armed, the ungated
+    /// tick cancels it (`:26755`); the tongued tick skips the whole block.
+    #[test]
+    fn w4_e1b_wall_block_gated_on_grapple_and_tongue() {
+        let (w, mut p) = wall_world_and_player();
+        p.performing_jump = Some(ExtraJump::Cloud);
+        p.jump = 0; // the :26753 cancel trigger
+        p.tongued = false;
+        p.update(&w, PlayerInput::default());
+        assert!(p.performing_jump.is_none(), "the ungated tick cancels the jump visual (:26755)");
+        // Tongued: the block is skipped — the performing jump survives.
+        let (w2, mut q) = wall_world_and_player();
+        q.performing_jump = Some(ExtraJump::Cloud);
+        q.jump = 0;
+        q.tongued = true;
+        q.update(&w2, PlayerInput::default());
+        assert!(q.performing_jump.is_some(), "the tongued player skips the wall/visual block (:26494)");
     }
 }

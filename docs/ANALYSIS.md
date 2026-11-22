@@ -39244,3 +39244,63 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-e1 — Player.cs dust sites, second batch (task/W4-e1-dust-sites-player-2, 2026-11-21, code-only mode)
+
+40 `Dust.NewDust*` sites (lines 12569–27933) ported as pure emitters in
+`crates/tr-app/src/player_dust2.rs`, drained from `world_sim/player.rs`
+on the `UpdatePlayers` stream with the sticky-drain disjoint-borrow
+pattern. Full ledger + per-site folds: `docs/research/64-dust-sites-player-2.md`.
+
+Deliberate deviations beyond the ledger's per-site folds:
+
+- **Drain order follows C# EXECUTION order, not source line order**: the
+  hair-dye puff (`:24593`) and manaHeat ambient (`:24630`) drain before the
+  stoned burst (`:25219`), the Vortex rings (`:25872`, UpdateEquips tail),
+  the drowning bubble (`:27655`), the splash bursts (`:27772`) and the
+  floor dust (`:28271`). The floor dust drains after the splash-sound drain.
+  The e1b reconcile pass fixed two residual order bugs: the Lawn Mower puff
+  (MowTheLawn, HorizontalMovement's tail `:20178`) drains BEFORE the
+  jump-chain sounds (JumpMovement `:26744`), and the drown gasp (`:23257`)
+  drains inside CheckDrowning before the bubble — the full order + the
+  e1-keep/drop verdicts: `docs/research/141-player-dust-reconcile.md`.
+- **`falling` capture**: |vy| > gravity at the movement head
+  (`Player.cs:28073-28081`), BEFORE the collision resolve — a landing tick
+  reaches FloorVisuals with vy==0 but falling=true (the 20-dust burst).
+  The TryBouncingBlocks FloorVisuals caller (`:23567`/`:28223`) is the
+  bounce lane's (unported); only the grounded caller fires.
+- **Stoned transition**: the sound + 20-puff burst fire on EITHER edge
+  (`stoned != lastStoned`, `:25219`); only the Hurt is rising-edge-gated.
+- **manaHeat sites 24641/24654 are latent**: `mana_heat` stays 1.0 (no
+  writer — the buff-396 decay `:10328-10341` is unported); the machinery
+  (Remap gate, NewDustDirect 267, CloneDust white twin) is ported faithfully
+  so the buff lane only needs the writer.
+- **Vortex stealth**: the stealth-chain's final else (`stealth = 1`
+  without any stealth armor, `:25896-25899`) NOW LANDS in the port's
+  no-set fallback (the e1b reconcile — the constructor spawns
+  `stealth: 1.0` per `:1562`, was 0.0). The Psycho-Knife/Shroomite arms
+  (`:25733-25825`) are f3's machine; at the e1b-141 merge e1's
+  vortex-arm-only machine + rings DROP to f3's full chain
+  (`docs/research/141-player-dust-reconcile.md`). The set-loss disarm
+  (`UpdateArmorSets_Always_Vortex` `:16315-16321`) IS ported. The
+  KeyDoubleTap down toggle (`:56775-56778`) is wired in
+  `key_double_tap_down`. The hurt reveal `stealth = 1f` (`:38245`)
+  landed in `hurt_inner` (keep-one vs f50's copy at the merge).
+- **Hair dye**: `Player.hair_dye` stores the shader index
+  (`hair_dye_shader_index`, the DyeInitializer bind order); the team-dye
+  puff gate compares against TeamDyeShaderIndex=9 (`ID/ContentSamples.cs`,
+  item 1984). The use grant (`Player.cs:42858-42865`) lives in
+  `world_sim/editing.rs` after the potion seam — the press edge stands in
+  for ItemTimeIsZero; the Hair Dye Remover (1990) keeps 0 (`Item.cs:48714`).
+- **Breath bubble 23316**: the breathing-reed / mount-mouth (52/54) anchor
+  adjustments fold away (no port fields); the base mouth anchor stands.
+- **Splash dust before splash sound**: within the entry/exit block the C#
+  spawns the dust then plays Sound 19; the dust drain precedes the
+  `play_splash_sound` drain (which owns the pitch draw).
+
+Verification: code-only — every emitter re-read against the cited C#
+windows (argument draws before pool internals, post-writes after; sentinel
+slot 6000 takes writes). 26 draw-mirror witnesses in `player_dust2.rs`
++ 15 `w4_e1b_*` host witnesses in `player.rs` (the f3-reconcile folds,
+`docs/research/141-player-dust-reconcile.md`) WRITTEN NOT RUN; no
+cargo/tests/graphify invoked this task.

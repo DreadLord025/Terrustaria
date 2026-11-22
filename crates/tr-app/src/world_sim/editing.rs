@@ -2348,6 +2348,37 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if crate::potions::use_potion_item(app, held) {
             return;
         }
+        // W4-e1 — `Player.ItemCheck`'s hair-dye arm (`Player.cs:42858-42865`):
+        // `ItemTimeIsZero && itemAnimation > 0` + `item.hairDye >= 0` applies
+        // the dye (`hairDye = item.hairDye`, the post-processed shader index)
+        // and consumes one. The port's use-press edge stands in for the
+        // ItemTimeIsZero gate (one use per press). The shader index is the
+        // `GameShaders.Hair.GetShaderIdFromItemId` lookup (`Item.cs:48716`);
+        // the team-dye puff gate (`:24270`) reads it against TeamDyeShaderIndex.
+        if let Some(def) = registry::get(held.kind) {
+            if def.hair_dye >= 0 {
+                // `Item.cs:48714-48717`: the Hair Dye Remover (1990, raw
+                // hairDye 0) KEEPS 0 — the post-processing skips it; every
+                // other dye takes the shader index.
+                let shader = if def.hair_dye == 0 {
+                    0
+                } else {
+                    crate::player::hair_dye_shader_index(held.kind)
+                };
+                if let Some(p) = app.player.as_mut() {
+                    p.hair_dye = shader;
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                start_use_timers(app, held);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
         // dropped — the i37 `use_potion_item` seam above owns EVERY drink
         // (the mana potions are `healMana > 0` drinkables, `Item.cs:2680-

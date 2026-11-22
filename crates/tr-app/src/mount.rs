@@ -2005,6 +2005,13 @@ pub(crate) fn dont_dismount_when_cced(id: i32) -> bool {
     matches!(id, 55 | 56 | 61)
 }
 
+/// `MountID.Sets.DontHoldItems` (`MountID.cs:46`): the same Rat/Bat/Pixie
+/// trio hold no item — `MowTheLawn` (`Player.cs:20310`) and the visual-hold
+/// gate read it.
+pub(crate) fn dont_hold_items(id: i32) -> bool {
+    matches!(id, 55 | 56 | 61)
+}
+
 /// `Mount.DismountCheckResult` (`Mount.cs:268-273`) — the dismount gate's
 /// outcome; `QuickMount`'s no-space ladder reads it (`Player.cs:6049`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

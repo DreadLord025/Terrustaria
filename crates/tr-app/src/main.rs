@@ -173,6 +173,11 @@ mod hurt_modifiers;
 // Player.cs:6502-6617) — wired at world_sim/editing.rs's pre-strike site.
 mod melee_on_hit;
 mod player;
+// W4-e1: the Player.cs `Dust.NewDust` sites' SECOND batch (the first 26 are
+// W4-d51's `player_dust.rs`). The tick queues the box/velocity snapshot at the
+// C# read moment; this module replays each site on the `UpdatePlayers` stream.
+// Ledger: docs/research/64-dust-sites-player-2.md.
+mod player_dust2;
 mod player_file;
 mod potions;
 mod prefix;
