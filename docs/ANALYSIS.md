@@ -27660,7 +27660,7 @@ them.
 Branch `task/W4-d7-proj-ai-61-70`, **CODE-ONLY mode**: no cargo/rustc/rustfmt/
 test invocation ran; the witness tests are WRITTEN NOT RUN, verified by
 re-reading the cited C# blocks + hand arithmetic. This round landed the five
-kinds slice B deferred (research/26e F3): the **653 Companion Cube** and
+kinds slice B deferred (research/167 F3): the **653 Companion Cube** and
 **1090 Rainbow Boulder Pet** (the pets, `projectile_ai067_b.rs`), the
 **833-835 Storm Tigers** and **1036 Cob Whip spider** (the minions,
 `ai_freaking_pirates`' `flag3`/`flag7` arms). The `proj_data` rows
@@ -40678,7 +40678,7 @@ cargo/tests/rustfmt/graphify invoked.
 
 Branch `task/W4-d4-proj-ai-31-40` (worktree TR-W4-d4). **CODE-ONLY mode**:
 file reads/writes + git only — no cargo/rustc/rustfmt/tests/graphify invoked.
-The census (`docs/research/26d-projectile-ai-31-40-census.md`) found 5 of the
+The census (`docs/research/161-projectile-ai-31-40-census.md`) found 5 of the
 10 styles armed (31/33/34/36/40) and 5 MISSING (32/35/37/38/39); this task
 ported all five verbatim, one style per commit. The f19 F3 finding (the
 style-37 row was the recorded 185 stand-in) is resolved: the arm AND the row
@@ -40763,7 +40763,7 @@ the piranha's itemLocation mirror (no field), the rope-coil placement's
 The proj 31-40 residuals sweep (Lane 27), five items:
 
 1. **Rope-coil dup vs W4-g82 (`de797f45`)** — the arm-by-arm keep-one
-   comparison + union recommendation: `docs/research/26e-rope-coil-keep-one.md`.
+   comparison + union recommendation: `docs/research/169-rope-coil-keep-one.md`.
    d4's wired `ai_rope_coil` keeps the machine; g82's chain preview / Kill
    refund ladder / usability walk / framing arm are the keep-extras. The one
    behavioural gap: the coil `Kill()` refund (`Projectile.cs:77572-77615`)
@@ -40793,12 +40793,12 @@ the flame damage gate (4) are the behavioural changes; 1/2/5 are census/doc.
 
 ### The rope-coil lane extras (W4-d4 union, 2026-11-21, code-only)
 
-The g82-extras union per `docs/research/26e-rope-coil-keep-one.md` — d4's
+The g82-extras union per `docs/research/169-rope-coil-keep-one.md` — d4's
 `ai_rope_coil` + rows + wind-list stay the single aiStyle-35 machine; the
 g82 pieces d4 never claimed land in `crates/tr-app/src/projectile_rope_coil.rs`
 (ported from g82's `67c9a740`, minus the four duplicate fns).
 
-**The refund ladder — WIRED (the one behavioural gap 26e found).**
+**The refund ladder — WIRED (the one behavioural gap 169 found).**
 `coil_death_drop` (`Projectile.cs:77572-77615`): ai[1]==0 → one coil item
 (985/3005/3079/3080); 0<ai[1]<10 → `10−ai[1]` rope items (965/2996/3077/3078);
 ai[1]>=10 → nothing. The pool's once-per-death hook (`projectile.rs`, beside
@@ -40815,7 +40815,7 @@ the earlier drain drew the pair for the ball too, a misread of `:77622`;
 the 861 arm `:77626` shows the same explicit-Zero pattern). Both arms sit
 behind `!died_out_of_world`: the C#
 out-of-world guard (`:16696`) deactivates WITHOUT `Kill()`, so those deaths
-never refund. **RETIRE fix (`954824d0`, 26e FINAL-FINAL):** the ladder AND
+never refund. **RETIRE fix (`954824d0`, 169 FINAL-FINAL):** the ladder AND
 the ball return sit INSIDE `Kill_ExplodeTiles`, behind its `:77267` owner
 refusal (`owner != Main.myPlayer` returns BEFORE any type arm) AND the
 `:77367` `!noDropItem` head — a foreign coil/ball death or a noDropItem

@@ -213,7 +213,7 @@ mod projectile_ai_style42;
 mod projectile_ai_style43;
 mod projectile_ai_style46;
 mod projectile_ai_style49;
-// W4-d7: UNWIRED projectile aiStyle machines (research/26e) — the rows +
+// W4-d7: UNWIRED projectile aiStyle machines (research/167) — the rows +
 // dispatch arms are the wiring round (the d5 / npc_ai_style25 precedent).
 mod projectile_ai_style63;
 mod projectile_ai_style69;
@@ -299,7 +299,7 @@ mod projectile_bobber;
 // projectile.rs / world_sim (module doc + docs/ANALYSIS.md "The boulder
 // family (W4-d3)").
 mod projectile_ai_boulder;
-// W4-d4 × W4-g82 union (research/26e): the rope-coil lane's EXTRAS — the
+// W4-d4 × W4-g82 union (research/169): the rope-coil lane's EXTRAS — the
 // Kill() refund ladder (:77572-77615, WIRED at the pool's death hook + the
 // world-sim drain) and the trailing-chain placement preview
 // (Main.cs:28499-28669, the UNWIRED draw half — the g82b lane's contract).

@@ -7379,7 +7379,7 @@ fn is_blocked_by_lava(create_tile: u16, place_style: i32, target: &tr_core::tile
 }
 
 /// `Player.PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`),
-/// verbatim (the g82-extras union per research/26e, ported from g82's
+/// verbatim (the g82-extras union per research/169, ported from g82's
 /// `check_rope_usability`, `67c9a740`): when the held item places a rope
 /// AND the target is already a rope, walk DOWN the column (through ropes,
 /// track 314, platforms and planters 380) to find the first free cell —
@@ -7520,7 +7520,7 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     // walk retargets `Player.tileTargetY` BEFORE the lava gate / the
     // assorted cut rule / the placement read it (`:39727`'s `tile` re-read
     // and `:39743`'s gate both see the moved target). The g82-extras union
-    // per research/26e; `can_use` is the port's true (the C#'s only false
+    // per research/169; `can_use` is the port's true (the C#'s only false
     // return rides the unported `IsTileLoaded` arm).
     let (_, ty) = check_rope_usability(&app.world, kind, true, tx, ty);
     // `Item.placeStyle` — the `CustomPlace(type, placeStyle)` gate reads it
@@ -8480,7 +8480,7 @@ mod tests {
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// W4-d4 union item 2 — `PlaceThing_Tiles_CheckRopeUsability`
-    /// (`Player.cs:41506-41545`, the g82-extras union per research/26e):
+    /// (`Player.cs:41506-41545`, the g82-extras union per research/169):
     /// the rope-on-rope down-column walk. Written NOT run (code-only).
     #[test]
     fn w4_d4_union_the_usability_walk_descends_the_rope_column() {

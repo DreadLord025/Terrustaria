@@ -1,4 +1,4 @@
-//! W4-d4 × W4-g82 union — the rope-coil lane's EXTRAS (research/26e's
+//! W4-d4 × W4-g82 union — the rope-coil lane's EXTRAS (research/169's
 //! keep-one verdict: d4's `projectile.rs::ai_rope_coil` + the four
 //! `projectile/data.rs` rows + wind-list 35 stay the single aiStyle-35
 //! machine; g82's `coil_step`/`coil_proj_row`/`coil_rope_kind`/`is_rope_cell`

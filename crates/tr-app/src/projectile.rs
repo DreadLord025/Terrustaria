@@ -23428,7 +23428,7 @@ impl ProjectilePool {
                 // ladder is g82's `coil_death_drop` (`67c9a740`), drained
                 // here at the pool's once-per-death seam (every kill path —
                 // placement `:27290`, expiry, penetrate — reaches it).
-                // RETIRE fix (26e FINAL-FINAL, C# re-read): the ladder sits
+                // RETIRE fix (169 FINAL-FINAL, C# re-read): the ladder sits
                 // INSIDE `Kill_ExplodeTiles`, behind its owner refusal
                 // (`:77267` `owner != Main.myPlayer` return) AND the
                 // `!noDropItem` head (`:77367`) — a foreign coil's death or
@@ -31111,7 +31111,7 @@ mod arrow_tests {
     }
 
     /// W4-d4 union — `Kill()`'s refund ladder wire (`Projectile.cs:77572-
-    /// 77615`, the g82-extras union per research/26e): the placement kill
+    /// 77615`, the g82-extras union per research/169): the placement kill
     /// queues `10−ai[1]` rope items at the death hook, ONE coil item for an
     /// unplaced expiry, NOTHING at the full 10-link budget. Written NOT
     /// run (code-only).

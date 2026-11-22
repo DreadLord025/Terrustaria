@@ -4776,7 +4776,7 @@ impl Player {
     /// and `itemRotation` negate, `itemLocation.X` mirrors about the mounted
     /// centre. The port keeps the facing + the two arm rotations +
     /// itemRotation. The two folds are documented skips (W4-d4 DOC-SWEEP
-    /// census, `docs/research/26d`):
+    /// census, `docs/research/161`):
     /// * the pulley snap (`:42097-42110`) — the `pulley`/`pulley_dir` FIELDS
     ///   exist, but no sim source sets them: the rope-climb machine
     ///   (`Player.cs:19690-19746`, the only `pulley = true` writers) is
