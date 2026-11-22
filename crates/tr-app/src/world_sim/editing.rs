@@ -7964,11 +7964,13 @@ fn resolve_melee_strike(
                         // `NewItemOwnership.ReserveForLocalPlayer` →
                         // `enemyGrabDelayTime = DefaultGrabDelay = 100`
                         // (`Item.cs:49757-49760`, `WorldItem.cs:110`): the
-                        // monsters cannot suck it for 100 ticks; the port's
-                        // revenge arm has no enemy-delay field. The player
-                        // grab gate reads `grab_delay_time` (S1-P-i47/i51):
-                        // the enemy-delay is a separate C# clock, so the
-                        // drop stays player-grabbable immediately.
+                        // monsters cannot suck it for 100 ticks. W4-g15
+                        // lane 5 ports the clock (`apply_enemy_grab_delay`);
+                        // the player grab gate reads `grab_delay_time`
+                        // (S1-P-i47/i51) — the enemy-delay is a separate C#
+                        // clock, so the drop stays player-grabbable
+                        // immediately.
+                        coin.apply_enemy_grab_delay();
                         coin.age = 0.0;
                         app.items.push(coin);
                     }

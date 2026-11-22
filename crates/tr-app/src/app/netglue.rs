@@ -1593,6 +1593,9 @@ impl App {
                 }
                 drop.shimmered = d.shimmered;
                 drop.shimmer_time = d.shimmer_time;
+                // `MessageBuffer.cs:1487` — the `21`/`90` handler writes the
+                // enemy-grab delay from the conditional byte. W4-g15 lane 5.
+                drop.enemy_grab_delay_time = d.enemy_grab_delay as i32;
                 drop.age = 60.0;
                 self.net_items.insert(d.slot as i16, drop);
                 self.net_items_dirty = true;
@@ -2733,6 +2736,26 @@ impl App {
                 });
             }
             NetRole::Client(client) => {
+                // W4-g15 lane 5 — the client's `22 ItemOwner` reservation
+                // hold ticks down on the 10 Hz cadence (the C#'s
+                // `timeToKeepReservation` decrements per 60 Hz update,
+                // `WorldItem.cs:445-448`; the port's client reservation map
+                // is the `net_reserved` stand-in, so the hold decays 6 per
+                // cadence tick — the same 1 s grid the host's
+                // `net_play_counter` batches). An expired hold releases the
+                // reservation (the C#'s `FindOwner` re-reserves on the next
+                // tick; the port's client grab gate reads the map live).
+                let expired: Vec<i16> = self
+                    .net_reserved
+                    .iter_mut()
+                    .filter_map(|(slot, (_, hold))| {
+                        *hold = hold.saturating_sub(6);
+                        if *hold == 0 { Some(*slot) } else { None }
+                    })
+                    .collect();
+                for slot in expired {
+                    self.net_reserved.remove(&slot);
+                }
                 // S1-I-4d: the client's own projectiles already drained through
                 // `drain_proj_outbox` above (`Projectile.cs:17210-17244`'s owner
                 // machine → `27`, despawns → `29`).
@@ -2866,7 +2889,8 @@ impl App {
     }
 
     /// Builds the `21 ItemDrop` body for one live drop (`NetMessage.cs:646-669`
-    /// minus the ownership/enemy-delay bits the port does not carry yet).
+    /// minus the ownership bits the port does not carry yet; the enemy-delay
+    /// byte landed in W4-g15 lane 5).
     fn item_state_of(slot: i16, it: &item::ItemDrop) -> net::ItemState {
         net::ItemState {
             slot,
@@ -2879,6 +2903,8 @@ impl App {
             kind: it.kind as i16,
             shimmered: it.shimmered,
             shimmer_time: it.shimmer_time,
+            // `NetMessage.cs:667` — the clamp 0..255. W4-g15 lane 5.
+            enemy_grab_delay: it.enemy_grab_delay_time.clamp(0, 255) as u8,
         }
     }
 
@@ -4087,6 +4113,26 @@ mod handshake_tests {
         }
         assert_eq!(host_app.net_play_counter, 120);
         assert_eq!(host_app.last_item_update, 0);
+    }
+
+    /// W4-g15 lane 5 — the client's `22 ItemOwner` reservation hold ticks
+    /// down on the 10 Hz cadence (6 per tick, the `timeToKeepReservation`
+    /// 60 Hz clock's batched stand-in); an expired hold releases the
+    /// reservation so the grab gate re-opens.
+    #[test]
+    fn w4_g15_the_client_reservation_hold_expires() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Seed a reservation directly (the join burst's 22 carries 255, so
+        // the store starts empty; a live reservation is the host's
+        // ReserveFor announcement — the port's client map is the stand-in).
+        client_app.net_reserved.insert(0, (3, 12));
+        // One cadence tick: 12 - 6 = 6, still held.
+        client_app.net_tick(0.1);
+        assert_eq!(client_app.net_reserved.get(&0), Some(&(3, 6)), "the hold decayed 6");
+        // Another: 6 - 6 = 0, released.
+        client_app.net_tick(0.1);
+        assert!(!client_app.net_reserved.contains_key(&0), "the expired hold released");
+        let _ = host_app;
     }
 
     #[test]

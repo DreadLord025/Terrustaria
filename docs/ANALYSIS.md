@@ -11662,8 +11662,24 @@ Deliberate deviations and notes:
   C#'s `Main`-global (`NPC.unlockedSlimeRainbowSpawn`) вЂ” the save format does
   not carry it yet.
 - **The shimmered item's dust/light arms** (`WorldItem.cs:459-482`: dust 309 at
-  1/30 with the four colours, `AddLight` `(1 - shimmerTime) * 0.8`) are render
-  layer and skipped.
+  1/30 with the four colours, `AddLight` `(1 - shimmerTime) * 0.8`) — the dust
+  half landed in W4-g15 (`item_dust::shimmered_sparkle`); the `AddLight` half
+  is the render layer's.
+- **W4-g15 lane 5 census findings (the ramp's gates).** The port's
+  `update_shimmer` ramp (`item.rs`) gates on `shimmer_wet && !shimmered &&
+  over_shimmer(world)` but does NOT call `Item.CanShimmer`
+  (`Item.cs:49448-49464`) — the C#'s `CanShimmerAtPosition`
+  (`WorldItem.cs:756-768`) gates the ramp on it. A non-shimmerable item
+  (no transform / decraft / coin / makeNPC) therefore ramps in the port but
+  not in vanilla; the transform apply (`shimmer::apply_due_transforms`) does
+  gate on `can_shimmer`, so the ramp is cosmetic for those kinds (it never
+  transforms) — the deviation is the ramp itself, recorded here. The
+  `over_shimmer` probe reads the tile ABOVE the drop (`CanShimmerAtPosition`'s
+  `position.Y/16 - 1`), while the C#'s shimmered-float scan (`:493-504`) reads
+  the two cells at/below the centre — the port approximates both with the one
+  `over_shimmer` probe (the standing box-union convention). The shimmer
+  repulsion loop (`MoveInWorld` `:790-848`, the 50-neighbour ±0.1 push) is
+  e19b's (the shimmer lane) — skipped here.
 - **Out:** the player's В§7 rules (the buff 353 "Shimmering" frozen/emerge cycle,
   `ShimmerUnstuckHelper`'s unstuck вЂ” the helper is ported, the driver is not);
   `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
@@ -36055,6 +36071,131 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## World-item dust sites (W4-g15, code-only 2026-11-20)
+
+**Census correction.** The task brief names `Item.cs`, but a direct-file scan
+(49 981 lines) finds ZERO `Dust.NewDust*` sites there — `Item.cs` is the item
+*definition* class. The item use/pickup/spawn dust lives in `WorldItem.cs`
+(the `Main.item[400]` world-drop entity), exactly as research/15's per-file
+table records (`WorldItem.cs | 17 | 1 | none | MISSING`). W4-g15 ports those
+17 dust sites; research/65 pins the census + the line-order map.
+
+**The port.** `crates/tr-app/src/item_dust.rs` carries the 17 sites behind a
+`DustSink` seam (disjoint field borrows: the `UpdateItems` stream, the shared
+`DustPool`, the `World`, the `SpawnCtx`, the `Audio` — the
+`world_sim/npcs.rs` dust convention). Every spawn rides the verbatim
+`DustPool::new_dust` / `new_dust_perfect` (W4-d50, `Dust.cs:75-256` / `:54-63`);
+the sentinel (6000) is written through like the C# (`Main.dust[6000]`). The
+sites: the `UpdateShimmer` shimmered sparkle (`:461`, 1/30 gate), the three
+`DespawnIfMeetingConditions` burns (fallen-star 75 daytime `:649`, the 4143
+expiry `:661` with the CornflowerBlue→Indigo `Color.Lerp`, the 3822 DD2 despawn
+`:670` with the `Next(18,24)` count), the eight `MoveInWorld` wet entry/exit
+splashes (`:892`-`:1025`, shimmer 308 / honey 152 / water `dustWater()` / lava
+35, the exit-water box's dropped `−8` kept verbatim), the meteorite 116 1/250
+gate (`:1217`), the pixie-dust 501 1/6 gate (`:1299`), the fallen-star / boss-bag
+`% 12` `NewDustPerfect` sparkles (`:1629`/`:1641`, the `NextVector2CircularEdge`
++ two `NextFloat` argument order), and the `ShimmerEffect` transform burst
+(`:1671`, 20 × 309 + the Item176 play).
+
+**RNG (S1-A-10).** One slot per C# call-pass: every draw rides the
+`UpdateItems` stream (`Main.SwapRandom("UpdateItems")` wraps
+`WorldItem.UpdateItem`, `Main.cs:17779-17781`), in `Main.item` slot order. No
+new streams. The `ShimmerEffect` burst runs from `GetShimmered`'s shared tail
+(`:1846`) — still inside the same swap. The `ItemDrop.update` stays RNG-free;
+the `wet_edges` state machine arms a `splash_edge` marker the items-pass drain
+reads, and `tick_age` is the `timeSinceItemSpawned` tick at its C# position
+(AFTER `UpdateItem_VisualEffects`, `:437-440`, so the `% 12` / `> 300` gates read
+the pre-increment value).
+
+**Deliberate deviations.**
+- The `:653` `Gore.NewGore` sibling (the fallen-star burn's 16/17 gore ×3) is
+  the gore lane's (W4-d55/f10); its `Next(16,18)` draws are a documented skip,
+  exactly as the rest of the port treats unported gore.
+- The honey/shimmer wet flags ride the box scan (`box_in_liquid`) rather than
+  the `Collision.honey`/`Collision.shimmer` statics' last-write-wins — the
+  port has no per-probe static, so the box union approximates it (the splash
+  kind resolution is lava-first, then shimmer, then honey, else water, matching
+  the `:886-940` arm order).
+- The pixie-dust `this.color` is `Color::default()` (all-zero): the C# 501 row
+  sets no colour (`Item.cs:7349-7354`), so `SetDefaults`' `this.color = default`
+  (`Item.cs:49005`) stands — exact for the pixie dust. The port's `ItemDrop`
+  carries no per-item colour field yet.
+- The `ShimmerEffect` `netMode == 2` server branch (`:1663-1667`) is dropped
+  (single-player port).
+
+**Witnesses.** `item_dust.rs` carries `w4_g15_*` stream-mirror witnesses (the
+gate draws, the full NewDust draw sequence, the splash counts/types, the
+despawn gates, the palette/lerp rows, the sentinel write-through). WRITTEN,
+NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only
+lane). The two `world_sim/wiring.rs` `ItemDrop` struct literals gained the new
+fields; `item_lights.rs` / `entity_lights.rs` docs repointed to the landed dust
+halves.
+
+## World-item entity mechanics (DOC-SWEEP lane 5, W4-g15, code-only 2026-11-21)
+
+The full-method sweep of `WorldItem.cs` + `Main.DrawItem` beyond the dust
+half: research/358 (renumbered from 77 per registry-150 §9.2) pins the per-mechanic census (the six lane verdicts +
+the extra ports + the gap list). The ports: the treasureMagnet grants
+(`player.rs`), the DrawItem family (`item.rs` `shimmer_fade_color` /
+`aura_echo_offsets` / `mana_crystal_pulse` + the `render_key` coverage),
+the reservation gates (lava/combine/monster grabs via `net_reserved`),
+the client live GrabFlags, MakeAWish, CheckInWorld, TryFillBucket, the
+`ItemNoGravity` arm, the copper-slime unlock (flag + scan + save byte),
+the `enemyGrabDelayTime` clock + wire byte, `IsHopperInRangeOf`, and the
+client reservation-hold expiry.
+
+**Deliberate deviations (lane 5).**
+- The post-tick scan stand-ins: `TryGrantingMakeAWishSet` (the C# runs it
+  per-drop at `:414`) and the copper-slime flag write (the C# writes
+  in-loop at `NPC.cs:19171`) resolve AFTER the items closure — the
+  closure holds `world = &app.world`, so no helper may take `app`
+  wholesale inside it. The wish grant is draw-free (no stream moves) and
+  runs AFTER `apply_due_transforms` (the C#'s `UpdateShimmer :403`
+  precedes the grant `:414`; the grant's `swap_remove` would invalidate
+  the `shimmer_due` indices). The `copper_unlocked` latch makes a second
+  coin this tick see the lock the C#'s in-loop write would show.
+- `CheckInWorld` runs after the despawn burns (the C# order is `:419`
+  lava → `:422` in-world): the kinds are disjoint (a burning rare-0 drop
+  is never a boss bag), so the outcome is identical.
+- The client reservation hold decays 6 per 10 Hz cadence tick (the C#'s
+  `timeToKeepReservation` decrements 1 per 60 Hz update) — the batched
+  stand-in, the `net_play_counter` precedent.
+- The copper-slime pickup raises the flag but leaves the NPC: the
+  `Transform(684)` target (TownSlimeCopper) has no `NpcKind` row — the
+  town-slime roster gap, the `spawn_shimmer_release` precedent. The
+  `TownSlimeTransform` particle broadcast is the orchestrator lane's.
+- The revenge coin-suck keeps its pickup-time position (the i50 standing
+  coin-wallet deviation) but now reads the `:405` `enemyGrabDelayTime`
+  gate, so a freshly-dropped revenge coin is not re-sucked for 100 ticks.
+- `IsHopperInRangeOf` lands as a predicate only: the MP `FindOwner`
+  (`WorldItem.cs:243`) that consumes it is unported (the SP host owns
+  every drop), so nothing calls it in SP yet — the seam awaits the MP
+  lane.
+- Draw gaps (recorded, not ported): the glowmask pass, `GetItemLight`'s
+  draw-side call, the ground `frameCounter` frame-animation; the
+  `:38637` rand500 sparkle is g13's landed-but-unwired site.
+
+**Witnesses.** ~15 written across `world_sim/items.rs` (5 new test mods),
+`wiring.rs`, `netglue.rs`, `player.rs`, `item.rs`, `wld/mod.rs` — NOT RUN
+(code-only lane). 15 `anchors.txt` canary rows added (`527904546`).
+
+**SEAL (2026-11-21, code-only).** research/358 (renumbered from 77 per registry-150 §9.2) is SEALED (the S1-S5
+receipts there; the family bible is research/347 — the 309 self-pick
+renumbered per registry-150 §8.7). The seal round
+executed the research/145 SHIMMER-SEAL 16-box repin on this branch
+(`8f04df01b` — the shared inherited i47/i52 witness block ONLY: grab
+edge 42/43, magnet spawns 292/192, x-pin 289, y-pin 192; the explicit
+14×14 helper probes stay). Two merge-facing facts recorded: (1) the
+g15 `item_dust::splash_edge` + `splash_edge` marker are a THIRD form
+of the `WorldItem.cs:879-1035` window — the e19 keep-one (research/144
+SHIMMER SEAL) wins at the three-way merge, the g15 splash form
+retires with f47's dup-half (the other 16 dust sites are g15-unique
+and stay); (2) the copper-slime roster gap NARROWED — d43 `fd6a544fc`
+lands the `TownSlimeCopper` NpcKind row but no `TransformCopperSlime`
+consumer, so the post-merge seed is the pickup→`transform_to_kind`
+call + the town-arrival flag gates (`Main.cs:65940/:66070`) + msg
+140, NOT a roster port (research/347 §4).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
@@ -38332,12 +38473,13 @@ excluded, and the Player fields/clocks/scan arms it referenced landed.
   answers `can_take` for them (the C# predicate), so the seam is one
   dispatch arm wide.
 - The accessory margins (`goldRing`/`manaMagnet`/`lifeMagnet`/
-  `treasureMagnet`) ride the `GrabFlags` seam with false defaults - the
-  equipment grants are unported families (the `manaMagnet` note at
-  `player.rs:986`); the Journey far-range +240 reads the live
-  `far_placement_range` flag. `preventAllItemPickups` (the Encumbering
-  Stone) has no port flag - `CanAcceptItemIntoInventory` is
-  unconditional.
+  `treasureMagnet`) ride the `GrabFlags` seam. UPDATE (W4-g15 lane 5): the
+  grants are now LIVE — `goldRing` (S1-P-i50), `manaMagnet` (S1-P-i52),
+  `lifeMagnet` (buff 105), `treasureMagnet` (5010/5126, this lane) — and
+  BOTH grab halves (host + client optimistic) read the live flags; the
+  Journey far-range +240 reads `far_placement_range`.
+  `preventAllItemPickups` (the Encumbering Stone) has no port flag -
+  `CanAcceptItemIntoInventory` is unconditional.
 - The shimmer decay is now ungated on `!shimmered`
   (`WorldItem.cs:538-545`): a transformed drop's 1.0 ramp dries to 0 over
   100 ticks, which re-opens `GrabItems`' `shimmerTime != 0` gate

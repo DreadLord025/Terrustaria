@@ -674,12 +674,23 @@ const MAX_FALL: f32 = 7.0;
 const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
 
+/// `ItemID.Sets.ItemNoGravity` (`ItemID.cs:1320`):
+/// `CreateBoolSet(520, 521, 575, 549, 548, 547, 3453, 3454, 3455, 3456,
+/// 3457, 3458, 3459, 3580, 3581, 4143)` — the souls/essences/nebula/fragments
+/// that float instead of falling. `WorldItem.MoveInWorld`'s no-gravity arm
+/// (`WorldItem.cs:774-786`): both axes damp ×0.95 with the 0.1 rest snap,
+/// NO gravity, NO fall cap. W4-g15 lane 5.
+const ITEM_NO_GRAVITY: &[u16] = &[
+    520, 521, 575, 549, 548, 547, 3453, 3454, 3455, 3456, 3457, 3458, 3459, 3580, 3581, 4143,
+];
+
 /// The accessory flags `GetItemGrabRange`/`GrabItems` read
-/// (`Player.cs:35133-35151`/`:34943-34963`). The port's equipment pass has
-/// not landed the Mana Magnet / Treasure Magnet grants (the `manaMagnet`
-/// family is a recorded unported seam, `player.rs:986`); the Gold Ring's
-/// `gold_ring` flag is live (S1-P-i50); the Lifeforce buff's `lifeMagnet`
-/// (`buff_effects.rs:52`) wires here when the accumulator lands on Player.
+/// (`Player.cs:35133-35151`/`:34943-34963`). The Gold Ring's `gold_ring`
+/// flag is live (S1-P-i50); the Mana Magnet family landed in S1-P-i52
+/// (`player.rs` 2219/2220/2221/4000); the Treasure Magnet 5010 / Hand Of
+/// Creation 5126 grants landed in W4-g15 lane 5 (`player.rs`
+/// `treasure_magnet`); the Heartreach buff 105 arms `life_magnet`
+/// (`player.rs:6518`).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct GrabFlags {
     pub gold_ring: bool,
@@ -888,6 +899,51 @@ pub struct ItemDrop {
     /// `WorldItem.onConveyor` (`WorldItem.cs:864`'s stored bool): the belt
     /// contact suppresses the draw-side velocity spin (`Main.cs:38613`).
     pub on_conveyor: bool,
+    /// `Entity.wetCount` (`Entity.cs:32`) — the splash cooldown: the entry /
+    /// exit arms set 20 (`WorldItem.cs:885`/`:964`), the wet-half tail ticks
+    /// it down (`:1042-1045`). Gates the splash dust bursts (W4-g15).
+    pub wet_count: i32,
+    /// `Entity.wet` — `Collision.WetCollision`'s fresh probe this tick
+    /// (`WorldItem.cs:870`, the edge arms `:881`/`:959`), distinct from
+    /// [`Self::box_is_wet`] (the light-arm gate).
+    pub wet: bool,
+    /// `Entity.lavaWet` — `Collision.LavaCollision` (`WorldItem.cs:865-869`);
+    /// cleared when dry (`:1036-1041`).
+    pub lava_wet: bool,
+    /// `Entity.honeyWet` — `Collision.honey` (`WorldItem.cs:871-874`);
+    /// cleared when dry (`:1036-1041`).
+    pub honey_wet: bool,
+    /// `WorldItem.timeSinceItemSpawned`'s TICK counter (`WorldItem.cs:38`,
+    /// incremented at `:437-440` with the 2147483547 cap) — the `% 12`
+    /// fallen-star / boss-bag sparkle gate (`:1627`/`:1639`) and the 4143
+    /// expiry's `> 300` (`:657`). The seconds stand-in [`Self::age`] stays
+    /// for its own consumers.
+    pub age_ticks: i32,
+    /// W4-g15 — the splash edge the last non-grabbed update armed
+    /// (`WorldItem.cs:879-1035`): `Some((entry, kind))`, `None` no edge /
+    /// cooldown armed. The kind is resolved at edge time (the `:1036-1041`
+    /// dry-clear runs before the drain). [`crate::item_dust::splash_edge`]
+    /// drains it (the dust + the case-19 play) in the items pass.
+    pub splash_edge: Option<(bool, SplashKind)>,
+    /// `WorldItem.enemyGrabDelayTime` (`WorldItem.cs:28`): ticks the drop
+    /// refuses the MONSTER grab (`GetPickedUpByMonsters_Special`'s `:405`
+    /// gate); decremented per update (`:449-452`). The `ReserveForLocalPlayer`
+    /// / `GrabDelayForLocalPlayer` ownership arms set it to `DefaultGrabDelay`
+    /// (`Item.cs:49757-49760`). W4-g15 lane 5 — the port's monster grab (the
+    /// copper-slime pickup) reads it; the revenge coin-suck's own gate is the
+    /// `:405` row too. Distinct from [`Self::grab_delay_time`] (the PLAYER
+    /// grab clock).
+    pub enemy_grab_delay_time: i32,
+}
+
+/// The liquid kind a splash edge resolved to (`WorldItem.cs:886-954` entry /
+/// `:965-1033` exit): lava first, then shimmer, then honey, else water.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplashKind {
+    Water,
+    Lava,
+    Honey,
+    Shimmer,
 }
 
 impl ItemDrop {
@@ -917,6 +973,13 @@ impl ItemDrop {
             grab_delay_player: 255,
             being_grabbed: false,
             on_conveyor: false,
+            wet_count: 0,
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            age_ticks: 0,
+            splash_edge: None,
+            enemy_grab_delay_time: 0,
         }
     }
 
@@ -928,6 +991,17 @@ impl ItemDrop {
     pub fn apply_grab_delay(&mut self, player: u8) {
         self.grab_delay_time = DEFAULT_GRAB_DELAY;
         self.grab_delay_player = player;
+    }
+
+    /// `Item.NewItem`'s `enemyGrabDelayTime` arm (`Item.cs:49757-49760`):
+    /// the `ReserveForLocalPlayer` / `GrabDelayForLocalPlayer` ownership
+    /// sets the monster-grab clock to `DefaultGrabDelay` (100). W4-g15
+    /// lane 5 — the player-drop spawn calls it for the named-player arm
+    /// (the `GrabDelayForAllPlayers` arm does NOT set it, `:49757`'s
+    /// `ownership == ReserveForLocalPlayer || ownership ==
+    /// GrabDelayForLocalPlayer` gate).
+    pub fn apply_enemy_grab_delay(&mut self) {
+        self.enemy_grab_delay_time = DEFAULT_GRAB_DELAY;
     }
 
     pub fn center(&self) -> Vec2 {
@@ -1021,14 +1095,26 @@ impl ItemDrop {
     /// survivor (`:172-174`), and airs the drained source out. The gates:
     /// `shimmerTime == 0`, `CanPassivelyStackInWorld`, `stack < maxStack`
     /// (`:159`); per target `CanStack` + equal `shimmered` (`:167`). The
-    /// reservation equality is the net-only term (the host owns every drop
-    /// in the port). RNG-free. Returns the indices the caller must remove
+    /// reservation equality is the net-only term — the caller passes the
+    /// `net_reserved` answer (`reserved_elsewhere`, the `:159` gate; the
+    /// host owns every drop in SP so it is false there). RNG-free. Returns
+    /// the indices the caller must remove
     /// (descending — the caller `swap_remove`s them highest-first so the
     /// lower indices stay valid; the port's compaction deviation).
-    pub(crate) fn combine_nearby(drops: &mut [ItemDrop], i: usize) -> Vec<usize> {
+    /// W4-g15 lane 5 — the reservation gate `playerIndexTheItemIsReservedFor
+    /// != Main.myPlayer` (`WorldItem.cs:159`): a drop reserved for ANOTHER
+    /// peer does not combine. The port's host owns every drop in SP (the
+    /// gate is vacuous there); the MP reservation lives in `net_reserved`
+    /// and the caller passes the answer.
+    pub(crate) fn combine_nearby(
+        drops: &mut [ItemDrop],
+        i: usize,
+        reserved_elsewhere: bool,
+    ) -> Vec<usize> {
         let mut drained = Vec::new();
         let max = registry::max_stack(drops[i].kind);
-        if drops[i].shimmer_time != 0.0
+        if reserved_elsewhere
+            || drops[i].shimmer_time != 0.0
             || !can_passively_stack_in_world(drops[i].kind)
             || drops[i].count >= max
         {
@@ -1039,6 +1125,15 @@ impl ItemDrop {
             // survivor that filled mid-scan keeps "merging" 0 with
             // `amount = 0`, lerping its position onto each further
             // same-kind neighbour (`:169-174`, the vanilla quirk kept).
+            // `Item.CanStack` (`Item.cs:49865-49872`) is type + prefix
+            // equality; the `!IsAir` gate is `count > 0` (the port's list
+            // has no air slots, but a drained source keeps count 0 until
+            // the caller removes it). The reservation-equality term
+            // (`worldItem.playerIndexTheItemIsReservedFor == this.…`,
+            // `:167`) is the MP per-target gate — the port's host owns
+            // every drop in SP (all reserved for the local player), so it
+            // is vacuous there; the caller's `reserved_elsewhere` covers
+            // the survivor's own `:159` gate.
             let same = drops[j].count > 0
                 && drops[j].kind == drops[i].kind
                 && drops[j].prefix == drops[i].prefix
@@ -1072,11 +1167,22 @@ impl ItemDrop {
     /// `being_grabbed` skips the ground physics for the tick after a pull
     /// (`:425-435`): wet flags clear, the velocity applies raw
     /// (`ApplyMovement`, `:1074-1084`), the flag resets.
+    ///
+    /// **RNG-free** (W4-g15): the `UpdateShimmer` sparkle (`:459-481`) and the
+    /// splash bursts (`:879-1035`) draw `Main.rand`, so they run in the
+    /// dedicated `item_dust` drains at their C# positions, not here. This
+    /// method keeps the flag/cooldown arithmetic (`wet_edges` arms the
+    /// [`Self::splash_edge`] marker the drain reads).
     pub fn update(&mut self, world: &World, dt: f32) {
         self.age += dt;
+        self.splash_edge = None;
         if self.being_grabbed {
             // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`).
             self.shimmer_wet = false;
+            self.wet = false;
+            self.wet_count = 0;
+            self.lava_wet = false;
+            self.honey_wet = false;
             self.being_grabbed = false;
             self.on_conveyor = false;
             self.pos += self.vel;
@@ -1091,24 +1197,131 @@ impl ItemDrop {
             } else {
                 self.move_in_world(world);
             }
+            // `MoveInWorld`'s wet-flag head (`WorldItem.cs:865-878`): the
+            // fresh probes run AFTER the friction/belt half, BEFORE the
+            // splash edge arms. The port's probes are the player.rs pair
+            // (`Collision.cs:1572-1684`); the honey/shimmer kinds ride the
+            // box scan (the `Collision.honey`/`Collision.shimmer` statics'
+            // last-write-wins is approximated by the box union — ANALYSIS).
+            //
+            // W4-g15 — the wet half runs ONLY in this `!beingGrabbed` branch:
+            // the C#'s `MoveInWorld` (which carries the splash arms) is at
+            // `:413` inside the non-grabbed arm; the grabbed arm (`:425-435`)
+            // clears the flags and skips it. Being in this `else` already
+            // encodes that gate.
+            if crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE) {
+                self.lava_wet = true;
+            }
+            let now_wet =
+                crate::player::wet_collision(world, self.pos.x, self.pos.y, SIZE, SIZE);
+            if self.box_in_liquid(world, |t| {
+                t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Honey
+            }) {
+                self.honey_wet = true;
+            }
+            if self.box_in_liquid(world, |t| {
+                t.liquid > 0 && tr_core::shimmer::tile_is_shimmer(t)
+            }) {
+                self.shimmer_wet = true;
+            }
+            self.wet_edges(now_wet);
+            // `:1036-1041` — dry clears lava/honey/shimmerWet (NOT `wet`).
+            if !self.wet {
+                self.lava_wet = false;
+                self.honey_wet = false;
+                self.shimmer_wet = false;
+            }
+            // `:1042-1045` — the cooldown ticks at the wet half's tail.
+            if self.wet_count > 0 {
+                self.wet_count -= 1;
+            }
         }
         // `WorldItem.cs:441-444` — the grab delay ticks down every update,
         // grabbed or not.
         if self.grab_delay_time > 0 {
             self.grab_delay_time -= 1;
         }
+        // `WorldItem.cs:449-452` — the enemy-grab delay ticks down every
+        // update too (W4-g15 lane 5). The `timeToKeepReservation` decrement
+        // (`:445-448`) is the MP reservation clock — the port's host owns
+        // every drop in SP, so it has no live consumer (the net_reserved
+        // hold rides the client's `22 ItemOwner` handler).
+        if self.enemy_grab_delay_time > 0 {
+            self.enemy_grab_delay_time -= 1;
+        }
+    }
+
+    /// `WorldItem.cs:437-440` — the `timeSinceItemSpawned` tick (the cap
+    /// included). The C# runs it AFTER `UpdateItem_VisualEffects` (`:436`),
+    /// so the `% 12` sparkle gate and the 4143 `> 300` expiry read the
+    /// PRE-increment value this tick; the items pass calls this after the
+    /// visual drains (W4-g15).
+    pub fn tick_age(&mut self) {
+        if self.age_ticks < 2147483547 {
+            self.age_ticks += 1;
+        }
+    }
+
+    /// `MoveInWorld`'s wet-edge arms (`WorldItem.cs:879-1035`): the entry
+    /// (`:879-958`) and exit (`:959-1035`) cooldown gates. The dust bursts +
+    /// the case-19 plays are the [`Self::splash_edge`] drain
+    /// (`crate::item_dust::splash_edge`); the state machine stays here so the
+    /// physics-only callers keep the exact flag/cooldown arithmetic. The kind
+    /// resolves at edge time: lava first (`flag2`/`lavaWet`), then shimmer,
+    /// then honey, else water (the `:886-940` / `:965-1019` arm order).
+    fn wet_edges(&mut self, now_wet: bool) {
+        let kind = if self.lava_wet {
+            SplashKind::Lava
+        } else if self.shimmer_wet {
+            SplashKind::Shimmer
+        } else if self.honey_wet {
+            SplashKind::Honey
+        } else {
+            SplashKind::Water
+        };
+        if now_wet {
+            if !self.wet {
+                if self.wet_count == 0 {
+                    self.wet_count = 20;
+                    self.splash_edge = Some((true, kind));
+                }
+                self.wet = true;
+            }
+        } else if self.wet {
+            self.wet = false;
+            if self.wet_count == 0 {
+                self.wet_count = 20;
+                self.splash_edge = Some((false, kind));
+            }
+        }
     }
 
     /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
-    /// (`WorldItem.cs:849-864`) and the tile-collision pass.
+    /// (`WorldItem.cs:774-864`) and the tile-collision pass.
     fn move_in_world(&mut self, world: &World) {
-        // `WorldItem.cs:363-364` — the air gravity and the fall cap.
-        self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
-        // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap, both
-        // applied BEFORE the collision pass (`MoveInWorld`'s order).
-        self.vel.x *= FRICTION_X;
-        if self.vel.x.abs() < FRICTION_EPSILON {
-            self.vel.x = 0.0;
+        // `WorldItem.cs:774-786` — the ItemNoGravity arm (W4-g15 lane 5): a
+        // non-shimmered soul/essence/nebula/fragment damps BOTH axes ×0.95
+        // with the 0.1 rest snap, no gravity, no fall cap. The C# gates on
+        // `!shimmered && ItemNoGravity[type]`; the shimmered case never
+        // reaches here (update routes it to the float branch).
+        if !self.shimmered && ITEM_NO_GRAVITY.contains(&self.kind) {
+            self.vel.x *= FRICTION_X;
+            if self.vel.x.abs() < FRICTION_EPSILON {
+                self.vel.x = 0.0;
+            }
+            self.vel.y *= FRICTION_X;
+            if self.vel.y.abs() < FRICTION_EPSILON {
+                self.vel.y = 0.0;
+            }
+        } else {
+            // `WorldItem.cs:363-364` — the air gravity and the fall cap.
+            self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+            // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap,
+            // both applied BEFORE the collision pass (`MoveInWorld`'s order).
+            self.vel.x *= FRICTION_X;
+            if self.vel.x.abs() < FRICTION_EPSILON {
+                self.vel.x = 0.0;
+            }
         }
         // `WorldItem.cs:864`: the belt contacts bend the velocity before the
         // AABB pass. The C# stores the bool in `item.onConveyor`, which
@@ -1157,6 +1370,21 @@ impl ItemDrop {
     /// suppressed on a conveyor (`item.onConveyor`) or after a shimmer
     /// transform (`:38614-38617`). The rotation pivots on the frame centre
     /// (`vector = frame.Size()/2`, `:38610`). Returns the quad count.
+    ///
+    /// W4-g15 lane 5 — the draw-side family the single-quad pass skipped:
+    /// * the shimmer colour fade (`:38621-38634`): a `shimmered` drop draws
+    ///   `255*(1-shimmerTime)` on ALL channels; a ramping one scales its lit
+    ///   colour by `(1-shimmerTime)` (the per-channel byte truncation),
+    /// * the aura echo copies (`:38667-38721`): the boss bags / the fallen
+    ///   star / the mana-cloak star orbit tinted ghost copies (the
+    ///   `timeSinceItemSpawned/240 + GlobalTimeWrappedHourly*0.04` phase, the
+    ///   `%4`/`%5` triangle radius pulse),
+    /// * the mana-crystal pulse (`:38722-38726`): 1522-1527/3643 draw
+    ///   `(250,250,250, mouseTextColor/2)` at `mouseTextColor/1000 + 0.8`,
+    /// * the shimmered additive second copy (`:38732-38735`): alpha 0 rides
+    ///   the premultiplied pipeline as additive (the pylon-ring convention).
+    /// `mouse_text_color` is `Main.mouseTextColor`; `anim_time % 3600` is
+    /// `Main.GlobalTimeWrappedHourly` (the caller folds it).
     pub fn draw(
         &self,
         r: &mut tr_render::SpriteRenderer,
@@ -1164,6 +1392,7 @@ impl ItemDrop {
         light: &LightMap,
         style: &LightStyle,
         anim_time: f32,
+        mouse_text_color: u8,
     ) -> u32 {
         let uv = if let Some((uv, _, _)) = lookups.item_icon(self.kind) {
             Some(uv)
@@ -1191,38 +1420,240 @@ impl ItemDrop {
         } else {
             self.vel.x * 0.2
         };
-        if rot == 0.0 {
+        // `Main.cs:38621-38634` — the shimmer colour fade (the byte
+        // truncations ride `shimmer_fade_color`).
+        let mut col = shimmer_fade_color(c, self.shimmered, self.shimmer_time);
+        // `Main.cs:38722-38726` — the mana crystals (1522-1527) and the
+        // Celestial Starboard 3643 pulse. The scale rides the quad size +
+        // the rotation origin (the C#'s `Draw(..., scale)` about the frame
+        // centre).
+        let mut scale = 1.0f32;
+        if matches!(self.kind, 1522..=1527 | 3643) {
+            let (c2, s2) = mana_crystal_pulse(mouse_text_color, self.shimmer_time);
+            col = c2;
+            scale = s2;
+        }
+        let mut quads = 0u32;
+        // `Main.cs:38667-38721` — the aura echo copies, drawn BEFORE the
+        // main sprite (the offsets/tints ride `aura_echo_offsets`).
+        let anchor = [self.pos.x + 1.0 + SIZE * 0.5, self.pos.y + 1.0 + SIZE * 0.5];
+        for (off, col4) in aura_echo_offsets(self.kind, self.age_ticks, anim_time % 3600.0) {
+            let pos = [
+                anchor[0] + off[0] - SIZE * 0.5 * scale,
+                anchor[1] + off[1] - SIZE * 0.5 * scale,
+            ];
+            r.push_sprite_origin_rot(
+                pos,
+                [SIZE * scale, SIZE * scale],
+                uv,
+                col4,
+                rot,
+                [SIZE * 0.5 * scale, SIZE * 0.5 * scale],
+            );
+            quads += 1;
+        }
+        if self.kind == 4143 {
+            // `:38720` — the white 128-alpha copy at the anchor, BEFORE the
+            // lit main draw.
+            r.push_sprite_origin_rot(
+                [anchor[0] - SIZE * 0.5, anchor[1] - SIZE * 0.5],
+                [SIZE, SIZE],
+                uv,
+                [1.0, 1.0, 1.0, 128.0 / 255.0],
+                rot,
+                [SIZE * 0.5, SIZE * 0.5],
+            );
+            quads += 1;
+        }
+        if rot == 0.0 && scale == 1.0 {
             r.push_sprite(
                 [self.pos.x + 1.0, self.pos.y + 1.0],
                 [SIZE, SIZE],
                 uv,
-                [c[0], c[1], c[2], 1.0],
+                col,
             );
         } else {
             r.push_sprite_origin_rot(
                 [self.pos.x + 1.0, self.pos.y + 1.0],
-                [SIZE, SIZE],
+                [SIZE * scale, SIZE * scale],
                 uv,
-                [c[0], c[1], c[2], 1.0],
+                col,
                 rot,
-                [SIZE * 0.5, SIZE * 0.5],
+                [SIZE * 0.5 * scale, SIZE * 0.5 * scale],
             );
         }
-        1
+        quads += 1;
+        // `Main.cs:38732-38735` — the shimmered additive copy: the same
+        // tint with A=0 (the premultiplied pipeline adds it, the pylon
+        // glow-ring convention).
+        if self.shimmered {
+            let add = [col[0], col[1], col[2], 0.0];
+            if rot == 0.0 && scale == 1.0 {
+                r.push_sprite([self.pos.x + 1.0, self.pos.y + 1.0], [SIZE, SIZE], uv, add);
+            } else {
+                r.push_sprite_origin_rot(
+                    [self.pos.x + 1.0, self.pos.y + 1.0],
+                    [SIZE * scale, SIZE * scale],
+                    uv,
+                    add,
+                    rot,
+                    [SIZE * 0.5 * scale, SIZE * 0.5 * scale],
+                );
+            }
+            quads += 1;
+        }
+        quads
     }
+}
+
+/// `Main.DrawItem`'s shimmer colour fade (`Main.cs:38621-38634`), W4-g15
+/// lane 5. The C# writes BYTES: a `shimmered` drop replaces every channel
+/// with `(byte)(255f * (1 - shimmerTime))`; a ramping one scales the lit
+/// colour per channel with the same truncation. The port's tint is the
+/// 0..1 float the pipeline multiplies — the byte round-trip keeps the
+/// truncation (`(byte)(c*255)` then `*(1-t)` then `/255`). `lit` is the
+/// shaded RGB; the alpha stays 1 (the C# `GetAlpha` colour's A is 255 for
+/// a plain drop — the `item.alpha` rows are the unported GetAlpha family).
+pub(crate) fn shimmer_fade_color(lit: [f32; 3], shimmered: bool, shimmer_time: f32) -> [f32; 4] {
+    if shimmered {
+        let v = (255.0 * (1.0 - shimmer_time)) as u8 as f32 / 255.0;
+        [v, v, v, v]
+    } else if shimmer_time > 0.0 {
+        let mut col = [lit[0], lit[1], lit[2], 1.0];
+        for ch in col.iter_mut() {
+            let b = (*ch * 255.0) as u8;
+            *ch = (b as f32 * (1.0 - shimmer_time)) as u8 as f32 / 255.0;
+        }
+        col
+    } else {
+        [lit[0], lit[1], lit[2], 1.0]
+    }
+}
+
+/// `Main.DrawItem`'s mana-crystal pulse (`Main.cs:38722-38726`), W4-g15
+/// lane 5: kinds 1522-1527/3643 draw `(250, 250, 250, mouseTextColor/2)`
+/// (integer division) at scale `(int)mouseTextColor/1000 + 0.8`; a live
+/// shimmer ramp scales all four channels by `(1 - shimmerTime)` with the
+/// per-channel byte truncation (`:38724`). Returns (colour, scale).
+pub(crate) fn mana_crystal_pulse(mouse_text_color: u8, shimmer_time: f32) -> ([f32; 4], f32) {
+    let v = 250.0 / 255.0;
+    // `Main.mouseTextColor / 2` — INTEGER division (`:38724`).
+    let half = (mouse_text_color / 2) as f32;
+    let a = half / 255.0;
+    let col = if shimmer_time > 0.0 {
+        let f = 1.0 - shimmer_time;
+        let vb = (250.0 * f) as u8 as f32 / 255.0;
+        let ab = (half * f) as u8 as f32 / 255.0;
+        [vb, vb, vb, ab]
+    } else {
+        [v, v, v, a]
+    };
+    let scale = (mouse_text_color as i32 as f32) / 1000.0 + 0.8;
+    (col, scale)
+}
+
+/// `Main.DrawItem`'s aura echo copies (`Main.cs:38667-38721`), W4-g15
+/// lane 5: the boss bags (`ItemID.Sets.BossBag`), the fallen star 75 and
+/// the mana-cloak star 4143 orbit tinted ghost copies about the draw
+/// anchor. The phase is `timeSinceItemSpawned/240 +
+/// GlobalTimeWrappedHourly*0.04`; the radius pulse is the `%period/2`
+/// triangle folded to 0.5..1. Each copy sits at
+/// `(0, radius).RotatedBy((k + phase) * 2π) * pulse` with a FIXED colour
+/// (no light). Returns (offset, colour) pairs in draw order — the caller
+/// adds the anchor and spins each copy with the main sprite's `rot`.
+/// `gtw` is `Main.GlobalTimeWrappedHourly` (`anim_time % 3600`).
+pub(crate) fn aura_echo_offsets(kind: u16, age_ticks: i32, gtw: f32) -> Vec<([f32; 2], [f32; 4])> {
+    // (radius, k-step, pulse period, tint) per ring, in the C# draw order.
+    let rings: &[(f32, f32, f32, [u8; 4])] = if crate::entity_lights::BOSS_BAG.contains(&kind) {
+        // `:38676-38683` — 4 copies at radius 8 step 0.25, then 3 at
+        // radius 4 step 0.34; the `%4` triangle.
+        &[
+            (8.0, 0.25, 4.0, [90, 70, 255, 50]),
+            (4.0, 0.34, 4.0, [140, 120, 255, 77]),
+        ]
+    } else if kind == 75 {
+        // `:38694-38701` — the fallen star: the same two rings, the `%5`
+        // triangle, the blue tints.
+        &[
+            (8.0, 0.25, 5.0, [50, 50, 255, 50]),
+            (4.0, 0.34, 5.0, [120, 120, 255, 127]),
+        ]
+    } else if kind == 4143 {
+        // `:38712-38719` — the mana-cloak star: TWO 0.34 rings (8 then 4),
+        // the `%5` triangle (the white 128-alpha main copy is the caller's).
+        &[
+            (8.0, 0.34, 5.0, [30, 30, 155, 60]),
+            (4.0, 0.34, 5.0, [60, 60, 127, 57]),
+        ]
+    } else {
+        return Vec::new();
+    };
+    let phase = age_ticks as f32 / 240.0 + gtw * 0.04;
+    let mut out = Vec::with_capacity(7);
+    for &(radius, step, period, tint) in rings {
+        let mut pulse = gtw % period / 2.0;
+        if pulse >= 1.0 {
+            pulse = 2.0 - pulse;
+        }
+        pulse = pulse * 0.5 + 0.5;
+        let col = [
+            tint[0] as f32 / 255.0,
+            tint[1] as f32 / 255.0,
+            tint[2] as f32 / 255.0,
+            tint[3] as f32 / 255.0,
+        ];
+        // The C# `for (float k = 0f; k < 1f; k += step)` — the f32
+        // accumulation is load-bearing (0.34 lands 3 copies).
+        let mut k = 0.0f32;
+        while k < 1.0 {
+            // `(num6 + num4) * ((float)Math.PI * 2f)` — the f32 sum times
+            // the f32 2π; `RotatedBy` takes the double angle and casts its
+            // cos/sin to f32 (`Utils.cs:1675-1684`).
+            let ang = ((k + phase) * (std::f32::consts::PI * 2.0)) as f64;
+            // `(0, radius).RotatedBy(ang)`: `(-sin·r, cos·r)`.
+            let off = [
+                -(ang.sin() as f32) * radius * pulse,
+                (ang.cos() as f32) * radius * pulse,
+            ];
+            out.push((off, col));
+            k += step;
+        }
+    }
+    out
 }
 
 /// Hash of the item list for the G6 world-range key; includes the animation
 /// step and the velocity spin's source (`Main.cs:38613`'s `velocity.X *
 /// 0.2`) so a rolling drop redraws.
-pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
+///
+/// W4-g15 lane 5 — the new draw inputs ride the key ONLY when a drop
+/// consumes them (the waterfall/vine zero-when-absent convention):
+/// * `shimmer_time`'s bits while a fade is live (`:38621-38634`),
+/// * the aura families' `age_ticks` + the full `GlobalTimeWrappedHourly`
+///   (`anim_time % 3600`, the `:38669` phase / radius pulse) — a boss bag /
+///   fallen star / mana-cloak star on screen animates every frame, so the
+///   world range rebuilds every frame while one lies in view;
+/// * the mana-crystal pulse reads `mouseTextColor`, already covered by
+///   `light_params` (`LightParams::identity` hashes it).
+pub fn render_key(items: &[ItemDrop], anim_step: u32, anim_time: f32) -> u32 {
     let mut h = items.len() as u32 ^ (anim_step << 24);
+    let mut aura = false;
     for it in items {
         h = h.wrapping_mul(31).wrapping_add(it.kind as u32);
         h = h.wrapping_mul(31).wrapping_add(it.pos.x.to_bits());
         h = h.wrapping_mul(31).wrapping_add(it.pos.y.to_bits());
         h = h.wrapping_mul(31).wrapping_add(it.count);
         h = h.wrapping_mul(31).wrapping_add(it.vel.x.to_bits());
+        if it.shimmered || it.shimmer_time > 0.0 {
+            h = h.wrapping_mul(31).wrapping_add(it.shimmer_time.to_bits());
+        }
+        if it.kind == 75 || it.kind == 4143 || crate::entity_lights::BOSS_BAG.contains(&it.kind) {
+            aura = true;
+            h = h.wrapping_mul(31).wrapping_add(it.age_ticks as u32);
+        }
+    }
+    if aura {
+        h = h.wrapping_mul(31).wrapping_add((anim_time % 3600.0).to_bits());
     }
     h
 }
@@ -1231,6 +1662,122 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 mod tests {
     use super::*;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// W4-g15 lane 5 — `Main.DrawItem`'s shimmer fade (`Main.cs:38621-
+    /// 38634`): a shimmered drop replaces ALL channels with the byte
+    /// `(byte)(255*(1-t))`; a ramping drop scales the lit colour per
+    /// channel with the same truncation. At t=0.5 the shimmered colour is
+    /// `(byte)127.5 = 127` on every channel; a lit 1.0 channel ramps
+    /// `(byte)(255*0.5) = 127` too, a lit 0.5 channel `(byte)127.5 = 127`
+    /// then `(byte)63.5 = 63`.
+    #[test]
+    fn w4_g15_the_shimmer_fade_truncates_per_channel() {
+        let c = shimmer_fade_color([1.0, 0.5, 0.0], true, 0.5);
+        assert_eq!(c, [127.0 / 255.0; 4], "the shimmered flat fade");
+        let c = shimmer_fade_color([1.0, 0.5, 0.0], false, 0.5);
+        assert_eq!(c[0], 127.0 / 255.0);
+        assert_eq!(c[1], 63.0 / 255.0);
+        assert_eq!(c[2], 0.0);
+        assert_eq!(c[3], 1.0, "the ramp keeps A=1");
+        // t=0: the lit colour passes through untouched.
+        let c = shimmer_fade_color([0.2, 0.4, 0.6], false, 0.0);
+        assert_eq!(c, [0.2, 0.4, 0.6, 1.0]);
+        // t=1: the shimmered drop is fully transparent black.
+        assert_eq!(shimmer_fade_color([1.0; 3], true, 1.0), [0.0; 4]);
+    }
+
+    /// W4-g15 lane 5 — the mana-crystal pulse (`Main.cs:38722-38726`):
+    /// `(250,250,250, mouseTextColor/2)` at `mouseTextColor/1000 + 0.8`.
+    /// At 225: alpha `(byte)112` (225/2 integer division), scale 1.025.
+    /// The shimmer ramp scales all four channels (`:38724`).
+    #[test]
+    fn w4_g15_the_mana_crystal_pulse_reads_mouse_text_color() {
+        let (c, s) = mana_crystal_pulse(225, 0.0);
+        assert_eq!(c[0], 250.0 / 255.0);
+        assert_eq!(c[3], 112.0 / 255.0, "225/2 = 112 (int division)");
+        assert!((s - 1.025).abs() < 1e-6, "225/1000 + 0.8");
+        let (c, s) = mana_crystal_pulse(190, 0.0);
+        assert_eq!(c[3], 95.0 / 255.0);
+        assert!((s - 0.99).abs() < 1e-6);
+        // The shimmer ramp at t=0.5: RGB (byte)125, A (byte)(112.5*0.5)=56.
+        let (c, _) = mana_crystal_pulse(225, 0.5);
+        assert_eq!(c[0], 125.0 / 255.0);
+        assert_eq!(c[3], 56.0 / 255.0);
+    }
+
+    /// W4-g15 lane 5 — the aura echoes (`Main.cs:38667-38721`): the boss
+    /// bag draws 4+3 copies, the fallen star 4+3, the mana-cloak star 3+3;
+    /// every other kind draws none. At gtw=0/age=0 the phase is 0 and the
+    /// pulse is 0.5 (`0%4/2 = 0 → 0*0.5+0.5`), so the k=0 copy of the
+    /// radius-8 ring sits at `(0, 8*0.5) = (0, 4)` — straight DOWN from
+    /// the anchor (`(0,r).RotatedBy(0) = (0,r)`).
+    #[test]
+    fn w4_g15_the_aura_echo_rings_orbit_the_anchor() {
+        let e = aura_echo_offsets(3318, 0, 0.0);
+        assert_eq!(e.len(), 7, "the boss bag's 4 + 3 copies");
+        assert!((e[0].0[0]).abs() < 1e-6);
+        assert!((e[0].0[1] - 4.0).abs() < 1e-6, "k=0 at (0, 8*0.5)");
+        assert_eq!(e[0].1, [90.0 / 255.0, 70.0 / 255.0, 1.0, 50.0 / 255.0]);
+        // The k=0.25 copy: angle π/2 → (-8*0.5, 0) = (-4, 0) (left).
+        assert!((e[1].0[0] + 4.0).abs() < 1e-4);
+        assert!(e[1].0[1].abs() < 1e-4);
+        // The second ring's first copy: radius 4 → (0, 2).
+        assert!((e[4].0[1] - 2.0).abs() < 1e-6);
+        assert_eq!(e[4].1, [140.0 / 255.0, 120.0 / 255.0, 1.0, 77.0 / 255.0]);
+        // The fallen star: the same shape, the blue tints, the %5 pulse.
+        let e = aura_echo_offsets(75, 0, 0.0);
+        assert_eq!(e.len(), 7);
+        assert_eq!(e[0].1, [50.0 / 255.0, 50.0 / 255.0, 1.0, 50.0 / 255.0]);
+        // The mana-cloak star: 3 + 3 (both rings step 0.34).
+        let e = aura_echo_offsets(4143, 0, 0.0);
+        assert_eq!(e.len(), 6);
+        assert_eq!(e[0].1, [30.0 / 255.0, 30.0 / 255.0, 155.0 / 255.0, 60.0 / 255.0]);
+        // A plain drop: no echoes.
+        assert!(aura_echo_offsets(2, 0, 0.0).is_empty());
+        // The pulse triangle: gtw=2 → 2%4/2 = 1 → folded 2-1 = 1 →
+        // 1*0.5+0.5 = 1.0, so the k=0 copy sits at (0, 8).
+        let e = aura_echo_offsets(3318, 0, 2.0);
+        assert!((e[0].0[1] - 8.0).abs() < 1e-4, "the pulse peak");
+        // The age phase: age_ticks=240 → phase 1.0 → the k=0 copy wraps
+        // the full turn back to (0, 4) at gtw=0.
+        let e = aura_echo_offsets(3318, 240, 0.0);
+        assert!((e[0].0[0]).abs() < 1e-4);
+        assert!((e[0].0[1] - 4.0).abs() < 1e-4);
+    }
+
+    /// W4-g15 lane 5 — the G6 key coverage: an aura drop's `age_ticks` and
+    /// the wrapped clock ride `render_key` (the echoes animate every
+    /// frame); a plain-drop world's key ignores the clock (the
+    /// zero-when-absent convention keeps the old cache behaviour).
+    #[test]
+    fn w4_g15_the_render_key_covers_the_aura_inputs_only_when_present() {
+        let plain = vec![ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0)];
+        assert_eq!(
+            render_key(&plain, 0, 1.0),
+            render_key(&plain, 0, 2.0),
+            "a plain world ignores the clock"
+        );
+        let mut star = ItemDrop::new(75, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        let aura = vec![star.clone()];
+        assert_ne!(
+            render_key(&aura, 0, 1.0),
+            render_key(&aura, 0, 2.0),
+            "the fallen star's echoes read the clock"
+        );
+        star.age_ticks = 5;
+        assert_ne!(
+            render_key(&aura, 0, 1.0),
+            render_key(&[star], 0, 1.0),
+            "the age phase rides the key"
+        );
+        // The shimmer fade rides the key while live.
+        let mut sh = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        sh.shimmered = true;
+        sh.shimmer_time = 0.5;
+        let k1 = render_key(&[sh.clone()], 0, 1.0);
+        sh.shimmer_time = 0.4;
+        assert_ne!(k1, render_key(&[sh], 0, 1.0));
+    }
 
     /// S1-E-21 wave A — the per-site cue selection: `Item.UseSound` rows
     /// (`Item.cs`'s `SetDefaults` cases + the `DefaultTo*` helpers) resolve
@@ -1716,7 +2263,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 20, 0, 110.0, 105.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 5, 0, 200.0, 100.0, 0.0, 0.0, 0.0), // out of range
         ];
-        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        let drained = ItemDrop::combine_nearby(&mut drops, 0, false);
         assert!(drained.is_empty(), "the source kept 10 — no TurnToAir");
         assert_eq!(drops[0].count, 9999, "the cap");
         assert_eq!(drops[1].count, 11, "20 - 9");
@@ -1730,7 +2277,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 3, 0, 110.0, 100.0, 0.0, 0.0, 0.0),
         ];
-        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        let drained = ItemDrop::combine_nearby(&mut drops, 0, false);
         assert_eq!(drained, vec![1]);
         assert_eq!(drops[0].count, 8);
         // The Manhattan window: |dx| + |dy| <= 30 (`:167`).
@@ -1738,7 +2285,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 3, 0, 120.0, 111.0, 0.0, 0.0, 0.0), // 20+11=31
         ];
-        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        let drained = ItemDrop::combine_nearby(&mut drops, 0, false);
         assert!(drained.is_empty());
         assert_eq!(drops[0].count, 5, "31 > 30 — no merge");
         // A different prefix never stacks (`Item.CanStack`).
@@ -1746,7 +2293,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 3, 81, 105.0, 100.0, 0.0, 0.0, 0.0),
         ];
-        assert!(ItemDrop::combine_nearby(&mut drops, 0).is_empty());
+        assert!(ItemDrop::combine_nearby(&mut drops, 0, false).is_empty());
         assert_eq!(drops[0].count, 5);
         // The shimmering drop waits (`:159`'s shimmerTime gate).
         let mut drops = vec![
@@ -1754,7 +2301,47 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 3, 0, 105.0, 100.0, 0.0, 0.0, 0.0),
         ];
         drops[0].shimmer_time = 0.5;
-        assert!(ItemDrop::combine_nearby(&mut drops, 0).is_empty());
+        assert!(ItemDrop::combine_nearby(&mut drops, 0, false).is_empty());
+        // W4-g15 lane 5 — the reservation gate (`:159`): a drop reserved
+        // for another peer never combines, even inside the window.
+        drops[0].shimmer_time = 0.0;
+        assert!(ItemDrop::combine_nearby(&mut drops, 0, true).is_empty());
+        assert_eq!(drops[0].count, 5, "the reserved drop kept its stack");
+    }
+
+    /// W4-g15 lane 5 — `MoveInWorld`'s ItemNoGravity arm (`WorldItem.cs:774-
+    /// 786`): a soul/essence/nebula/fragment (the 16-kind set, `ItemID.cs:1320`)
+    /// damps BOTH axes ×0.95 with the 0.1 rest snap, no gravity, no fall cap.
+    /// A normal drop keeps the 0.1 gravity + 7 cap. The shimmered case routes
+    /// to the float branch (never here).
+    #[test]
+    fn w4_g15_the_no_gravity_kinds_damp_both_axes_without_falling() {
+        let mut w = World::new("float".into(), 32, 32);
+        w.compute_column_surface();
+        w.compute_chunks();
+        // A Soul of Light (520) with a diagonal velocity: both axes ×0.95,
+        // no gravity added.
+        let mut d = ItemDrop::new(520, 1, 0, 100.0, 100.0, 2.0, 3.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.x - 2.0 * 0.95).abs() < 1e-6, "X damped, got {}", d.vel.x);
+        assert!((d.vel.y - 3.0 * 0.95).abs() < 1e-6, "Y damped (no gravity), got {}", d.vel.y);
+        // The rest snap: a small velocity snaps to 0 on both axes.
+        let mut d = ItemDrop::new(521, 1, 0, 100.0, 100.0, 0.05, -0.05, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert_eq!(d.vel, Vec2::ZERO, "the 0.1 rest snap on both axes");
+        // A normal drop (dirt 2) keeps gravity: Y += 0.1 then the cap.
+        let mut d = ItemDrop::new(2, 1, 0, 100.0, 100.0, 2.0, 3.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.x - 2.0 * 0.95).abs() < 1e-6);
+        assert!((d.vel.y - (3.0 + 0.1)).abs() < 1e-6, "gravity added, got {}", d.vel.y);
+        // The fall cap: a fast-falling normal drop caps at 7.
+        let mut d = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 20.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert_eq!(d.vel.y, 7.0, "the fall cap");
+        // A no-gravity kind does NOT cap (it damps): 20 × 0.95 = 19.
+        let mut d = ItemDrop::new(4143, 1, 0, 100.0, 100.0, 0.0, 20.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.y - 19.0).abs() < 1e-6, "no cap on the float kinds");
     }
 
     /// `WorldItem.UpdateItem`'s grabbed arm (`:425-435` → `ApplyMovement`
@@ -1794,10 +2381,12 @@ mod s1_p_i47_tests {
     #[test]
     fn the_grab_rectangle_is_the_expanded_hitbox() {
         // The player at (100, 100) 20x42, range 42: the rect spans
-        // x 58..162, y 58..184. A 14x14 drop at x 44 (44+14 = 58) TOUCHES
-        // the left edge — no intersect; at 45 (45+14 = 59) it overlaps.
-        assert!(!grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(44.0, 100.0)));
-        assert!(grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(45.0, 100.0)));
+        // x 58..162, y 58..184. A 16x16 drop at x 42 (42+16 = 58) TOUCHES
+        // the left edge — no intersect; at 43 (43+16 = 59) it overlaps.
+        // (The 16-box repin per W4-e19 research/145 SHIMMER SEAL, rule 1 —
+        // `WorldItem.cs:138` `base.width = (base.height = 16)`.)
+        assert!(!grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(42.0, 100.0)));
+        assert!(grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(43.0, 100.0)));
         // The direct hitbox: strict overlap.
         assert!(rects_intersect(100.0, 100.0, 20.0, 42.0, 110.0, 120.0, 14.0, 14.0));
         assert!(!rects_intersect(100.0, 100.0, 20.0, 42.0, 120.0, 120.0, 14.0, 14.0));
@@ -1983,8 +2572,9 @@ mod s1_p_i47_tests {
     fn s1_p_i52_the_magnet_pull_blends_at_the_csharp_speed_and_acc() {
         let w = ground();
         let pc = Vec2::new(200.0, 200.0);
-        // centre at (300, 200) — pos = centre - 7 (the 14x14 box).
-        let mut heart = ItemDrop::new(58, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        // centre at (300, 200) — pos = centre - 8 (the 16x16 box; the
+        // research/145 SHIMMER SEAL repin, `WorldItem.cs:138`).
+        let mut heart = ItemDrop::new(58, 1, 0, 292.0, 192.0, 0.0, 0.0, 0.0);
         heart.being_grabbed = true;
         pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
         // f32: 15/100 is inexact, so the blend lands within an ulp of -3
@@ -1992,13 +2582,13 @@ mod s1_p_i47_tests {
         assert!((heart.vel.x - -3.0).abs() < 1e-4, "15/5 blend from rest: {}", heart.vel.x);
         assert_eq!(heart.vel.y, 0.0);
         heart.update(&w, 1.0 / 60.0);
-        assert!((heart.pos.x - 290.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
-        assert_eq!(heart.pos.y, 193.0);
+        assert!((heart.pos.x - 289.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
+        assert_eq!(heart.pos.y, 192.0);
         // The second tick blends again: (−3*4 + −15)/5 = −5.4.
         heart.being_grabbed = true;
         pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
         assert!((heart.vel.x - -5.4).abs() < 1e-4, "vel {}", heart.vel.x);
-        let mut star = ItemDrop::new(184, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        let mut star = ItemDrop::new(184, 1, 0, 292.0, 192.0, 0.0, 0.0, 0.0);
         star.being_grabbed = true;
         pull_item_pickup(star.center(), &mut star.vel, pc, 12.0, 5);
         assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);

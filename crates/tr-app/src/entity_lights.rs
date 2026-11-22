@@ -13,8 +13,8 @@
 //! the `Main.essScale` fragment arms (`:1206-1293`) live in
 //! [`crate::item_lights`] and feed the same list from the fixed step (their
 //! draws ride the `UpdateItems` stream); the dust-gated arms (116, 501 and
-//! the `% 12` halves of 75/`BossBag`) stay skipped wholesale — see that
-//! module's docs for the exact draw-free skips.
+//! the `% 12` halves of 75/`BossBag`) landed in [`crate::item_dust`] (W4-g15)
+//! — their light halves stay here / in `item_lights`, the dust halves there.
 //!
 //! The NPC family (`npc_lights.rs::npc_light`, `NPC.AI`'s aiStyle-8 light
 //! tail) and the Player family (`player_lights.rs::player_lights`, the
@@ -389,11 +389,12 @@ pub(crate) fn item_light(
         rgb = [0.15, 0.45, 0.9]; // `:1622`
     } else if kind == 75 {
         // `:1626` — the light half; the `timeSinceItemSpawned % 12` dust half
-        // draws `Main.rand` and is not ported.
+        // rides `item_dust::fallen_star_sparkle` (W4-g15).
         x = XAnchor::Right;
         rgb = [0.8, 0.7, 0.1];
     } else if BOSS_BAG.contains(&kind) {
-        // `:1638` — the light half, as above.
+        // `:1638` — the light half; the dust half rides
+        // `item_dust::boss_bag_sparkle` (W4-g15).
         x = XAnchor::Right;
         rgb = [0.4, 0.4, 0.4];
     } else {

@@ -504,6 +504,11 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
     "pal_summon",
     "deadcells_barrel_launcher_fire",
     "deadcells_mushroom_summon",
+    // W4-g15 lane 5 — `SoundID.RainbowBoulder = CreateTrackable("rainbow_boulder")`
+    // (`SoundID.cs:1709`, one variation): the Heroicis-set spawn cue
+    // (`ParticleOrchestrator.Spawn_HeroicisSetSpawnSound`,
+    // `ParticleOrchestrator.cs:897-900`, the `TryGrantingMakeAWishSet` grant).
+    "rainbow_boulder",
 ];
 
 /// S1-P-i41 — the `Sounds/Custom/` trackables the mount system plays:
@@ -1578,6 +1583,31 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("eow_dig", x, y, style.volume, pitch.clamp(-1.0, 1.0));
         Some("eow_dig")
+    }
+
+    /// W4-g15 lane 5 — the Heroicis-set spawn cue
+    /// (`ParticleOrchestrator.Spawn_HeroicisSetSpawnSound`,
+    /// `ParticleOrchestrator.cs:897-900`: `SoundEngine.PlaySound(SoundID.
+    /// RainbowBoulder, (int)PositionInWorld.X, (int)PositionInWorld.Y)`).
+    /// `SoundID.RainbowBoulder = CreateTrackable("rainbow_boulder")`
+    /// (`SoundID.cs:1709`, one variation, volume 1, variance 0) — case 42
+    /// (`LegacySoundPlayer.cs:1376-1381`): the façade's NextFloat rides the
+    /// audio-only stream, the gate, then NO gameplay draw. The int overload
+    /// truncates the position (`SoundEngine.cs:88-91`).
+    pub fn play_rainbow_boulder(&mut self, x: f32, y: f32) -> Option<&'static str> {
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.trackable == Some("rainbow_boulder"))?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(42, x, y, self.listener, style.volume).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit("rainbow_boulder", x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some("rainbow_boulder")
     }
 
     /// S1-E-21 wave B — one tile/wall-placement cue

@@ -26,6 +26,41 @@ use crate::npc::NpcKind;
 /// The C#'s helper keeps the last position per player; the port takes it as
 /// a parameter (the sim captures the player's `prev_x`/`prev_y` before the
 /// tick's movement — the same position the C#'s `PlayerLastPosition` holds).
+/// `Wiring.IsHopperInRangeOf` (`Wiring.cs:2610-2636`, W4-g15 lane 5): the
+/// drop's hitbox inflated by `HopperGrabHitboxSize/2` (192/2 = 96 per axis,
+/// `Wiring.cs:3429`) scanned for an active wired Hopper (tile 21/467 with
+/// `anyWire()`). A banned-in-inventory kind (`ItemID.cs:345`) never counts.
+/// The C#'s `FindOwner` (`WorldItem.cs:243`) uses it to drop the reservation
+/// when the nearest player's grab rect misses the drop but a hopper covers
+/// it — the MP ownership lane's input. The port's SP host owns every drop,
+/// so the predicate is the seam the MP `FindOwner` reads when it lands.
+pub(crate) fn is_hopper_in_range_of(world: &tr_core::world::World, drop: &crate::item::ItemDrop) -> bool {
+    if crate::chest::banned_in_inventory(drop.kind) {
+        return false;
+    }
+    // `hitbox.Inflate(96, 96)` — the box grows 96 per side.
+    let left = (drop.pos.x as i32) - 96;
+    let top = (drop.pos.y as i32) - 96;
+    let right = (drop.pos.x as i32) + crate::item::SIZE as i32 + 96;
+    let bottom = (drop.pos.y as i32) + crate::item::SIZE as i32 + 96;
+    // `TopLeft().ToTileCoordinates().ClampedInWorld()` — the int >>4 tile
+    // coords clamped to the world bounds.
+    let x0 = (left >> 4).clamp(0, world.width - 1);
+    let y0 = (top >> 4).clamp(0, world.height - 1);
+    let x1 = (right >> 4).clamp(0, world.width - 1);
+    let y1 = (bottom >> 4).clamp(0, world.height - 1);
+    for i in x0..=x1 {
+        for j in y0..=y1 {
+            if let Some(t) = world.tile(i, j) {
+                if t.active() && (t.kind == 21 || t.kind == 467) && world.wires.any_at(i, j) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 pub(crate) fn update_pressure_plates(
     wiring: &mut tr_core::wiring::Wiring,
     world: &mut tr_core::world::World,
@@ -203,6 +238,13 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         grab_delay_player: 255,
                         being_grabbed: false,
                         on_conveyor: false,
+                        wet_count: 0,
+                        wet: false,
+                        lava_wet: false,
+                        honey_wet: false,
+                        age_ticks: 0,
+                        splash_edge: None,
+                        enemy_grab_delay_time: 0,
                     });
                 }
                 tr_core::wiring::StatueSpawn::Teleport { x, y, roster } => {
@@ -610,6 +652,37 @@ mod tests {
         assert!(!wiring.plate_is_pressed(10, 19), "the plate released");
     }
 
+    /// W4-g15 lane 5 — `Wiring.IsHopperInRangeOf` (`Wiring.cs:2610-2636`):
+    /// a wired Hopper (21/467) inside the drop's 96-px-inflated box counts;
+    /// an unwired one, a non-hopper wired tile, or a banned-in-inventory
+    /// kind does not.
+    #[test]
+    fn w4_g15_the_hopper_range_scan_finds_wired_hoppers() {
+        let mut w = world();
+        // A wired Hopper (21) at tile (12, 20) — within 96 px of a drop at
+        // tile (10, 20) (the box spans 10*16-96 .. 10*16+14+96).
+        let i = w.index(12, 20);
+        w.tiles[i] = Tile { kind: 21, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.wires.set(12, 20, tr_core::wiring::WireColor::Red, true);
+        let d = crate::item::ItemDrop::new(2, 1, 0, 10.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0.0);
+        assert!(is_hopper_in_range_of(&w, &d), "the wired hopper counts");
+        // Unwire it: no count.
+        w.wires.set(12, 20, tr_core::wiring::WireColor::Red, false);
+        assert!(!is_hopper_in_range_of(&w, &d), "an unwired hopper does not count");
+        // A banned kind (58, the heart) never counts even over a wired hopper.
+        w.wires.set(12, 20, tr_core::wiring::WireColor::Red, true);
+        let heart = crate::item::ItemDrop::new(58, 1, 0, 10.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0.0);
+        assert!(!is_hopper_in_range_of(&w, &heart), "a banned kind refuses");
+        // A wired non-hopper (a chest 21 is the hopper; a torch 4 is not).
+        let i = w.index(12, 20);
+        w.tiles[i].kind = 4;
+        assert!(!is_hopper_in_range_of(&w, &d), "a wired torch is not a hopper");
+        // The 467 variant counts too.
+        w.tiles[i].kind = 467;
+        assert!(is_hopper_in_range_of(&w, &d), "the 467 hopper counts");
+    }
+
     /// The standard device rig: the device at (10, 20) with the given frame,
     /// the wired switch at (8, 20) and the red wire line between them.
     fn world_with_device(kind: u16, frame_x: i16, frame_y: i16) -> tr_core::world::World {
@@ -790,6 +863,13 @@ mod tests {
                 grab_delay_player: 255,
                 being_grabbed: false,
                 on_conveyor: false,
+                wet_count: 0,
+                wet: false,
+                lava_wet: false,
+                honey_wet: false,
+                age_ticks: 0,
+                splash_edge: None,
+                enemy_grab_delay_time: 0,
             });
         }
         trip_and_tick(&mut app);

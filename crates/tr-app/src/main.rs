@@ -47,6 +47,7 @@ mod luck;
 mod wiring_stub;
 mod yoyo_string;
 mod item;
+mod item_dust;
 mod itemdata;
 mod item_sorting;
 mod sortdata;

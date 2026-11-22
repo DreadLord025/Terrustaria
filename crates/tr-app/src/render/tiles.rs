@@ -1275,7 +1275,10 @@ pub(crate) fn draw_tiles(
     // projectiles → the players → the NPCs over the players → the items).
     draw_phase("items");
     for it in items {
-        stats.items += it.draw(r, lookups, light, style, anim_time);
+        // W4-g15 lane 5 — the mana-crystal pulse reads `Main.mouseTextColor`
+        // (`Main.cs:38724-38725`); it rides `params` (the same value the
+        // torch/lava light pulses read, already in the G6 `light_params`).
+        stats.items += it.draw(r, lookups, light, style, anim_time, params.mouse_text_color);
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.

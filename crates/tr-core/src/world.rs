@@ -305,6 +305,14 @@ pub struct World {
     /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
     /// same Main-global standing-in (S1-P-i35).
     pub unlocked_slime_red_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`WorldItem.GetPickedUpByMonsters_Special`
+    /// `WorldItem.cs:1091` — a dropped Copper Shortsword 89 / Chain Knife 3507
+    /// touching a convertible NPC raises it; `NPC.TransformCopperSlime`
+    /// `NPC.cs:19166-19180` gates on it) — the same Main-global standing-in
+    /// (W4-g15 lane 5). The transform target (684 TownSlimeCopper) has no
+    /// NpcKind row yet (the town-slime family is unported), so the flag is
+    /// the port's observable half; the NPC-side transform is the roster gap.
+    pub unlocked_slime_copper_spawn: bool,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
@@ -681,6 +689,7 @@ impl World {
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
+            unlocked_slime_copper_spawn: false,
             combat_book_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
