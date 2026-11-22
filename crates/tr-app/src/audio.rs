@@ -718,6 +718,10 @@ const TRACKED_CUES: &[&str] = &[
     "dd2_monk_staff_ground_impact_1",
     "dd2_monk_staff_ground_impact_2",
     "deadcells_mushroom_explode",
+    // W4-f12 — `SoundID.Hungry` (`SoundID.cs:1711`,
+    // `CreateTrackable("hungry")`): the 333-expiry cue the `UpdateBuffs`
+    // frame's hunger ladder plays (`Player.cs:12138`).
+    "hungry",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names
@@ -787,7 +791,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || TRACKED_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }

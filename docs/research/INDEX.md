@@ -46,7 +46,8 @@ per `docs/superpowers` agreements).
 | 25 | NPC AI families (aiStyle dispatch) | `25-npc-ai-audit.md` | в¬њ |
 | 26 | Projectile AI families (aiStyle dispatch) | `26-projectile-ai-audit.md` | в¬њ |
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
-| 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
+| 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | 🔒 SEALED → 28g |
+| 28g | The BUFF-FAMILY SEAL (registry FINAL: 270-id zero-dup + 400 icons landed; the f49-mana-seal 3-ASSIGN stub bridge + extra_regen-sum:11492 + items.rs-wholesale; Panic-63 canonical vs the f50/f48 THIRD copies with re-pinned drop-hunks; the owed merger-actions checklist; the buff-family bible) | `28g-buff-family-seal.md` | 🔒 SEALED, 5 witnesses written not run |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |
 | 30 | Achievements / bestiary | `30-achievements-bestiary.md` | в¬њ |
 | 31 | Golf / ball physics | `31-golf-ball-physics.md` | в¬њ |
@@ -128,6 +129,12 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 | 91-FC | The FIGHTER-CORRECTION receipt (W4-d22, the g4 seal e5915bfab consumed): the stale-probe timeline, the keep-one INVERTED (f35-owns-DropHeals, the census :39 disclaimer a BEFORE-this-task snapshot), the corrected merger instruction + the 2 cherry hunks with d22/f35 re-verified stand-ins, the Peon kill_tile keep, the 520 d41 task seed with the C# params re-read; the g4-side record `91-seal-keep-one.md` lives on origin/task/W4-g4-npc-style3-fighter | `91-fighter-family-bible.md` §0/§2/§6 + ANALYSIS 'The SEAL-receipt CORRECTION' | ✅ |
 
 | 111 | DOC-SWEEP screen-fx lane (W4-d70: the paladin peer loops, the lens-flare shadow offset + sun-scorch, the MoonlordDeathDrama producers, the screen-shader census; code-only) | `111-doc-sweep-screenfx.md` | ✅ |
+
+| W4-f12-sweep | The FULL 270-id UpdateBuffs stat-arm census (C# case-list vs every ownership set; 10 gaps closed inline; the nebula-twin f49 one-writer contract + the buff-321 d115 keep-one note; the final-phase g27 cross-verify appended) | `W4-f12-sweep-census.md` | ✅ set-diff EMPTY |
+| W4-f12-final | The buff-HUD final census (icon draw / tooltip lines / time display / debuff cancel / g27 canonical; the 94/396 tooltip arms restored, the icon-text font/scale/tint fixed; ANALYSIS "The buff-HUD final census") | `W4-f12-sweep-census.md` + ANALYSIS | ✅ 5 witnesses written not run |
+| W4-f12-closeout | The 5-item buff closeout (f49d status NOT-landed → the exact fold_orb bridge hunk published; the animation census — no Main.buffFrame exists, 400 static icons, Ice Barrier 62 the one wired frame anim; the stack-source census COMPLETE — xN is projectile counts, re-grant semantics per-buff; the FINAL keep-one re-sweep script — set-diff EMPTY + TWO NEW f50 cross-tree dups ruled (Panic-63 inline, the beetle/solar ladder re-derivation); ANALYSIS "The buff closeout") | `W4-f12-closeout.md` + `tools/w4_f12_closeout_sweep.py` | ✅ 4 witnesses written not run, script run green |
+| W4-f12-retire | The retire receipts (f50 tip ff56e6e51 retired NOTHING → both dup rulings RE-FLAGGED with exact drop-hunks :7010-7013 / :4606-4708+:4582+:7451-lift+:6203-6205-flag-fix + the two witness retargets; f49 6c0ee2aa2 R3-exec still NOT landed → both-halves bridge/deletion ranges pinned; d73 33c38000a ancestor + blob-identical boosters, sweep re-run set-diff EMPTY; the ONE-paragraph BUFF merger-instruction — f12-canonical + g27-orbs + d115-321-folds + f50-drops + f49-bridge) | `W4-f12-closeout.md` "RETIRE phase" | ✅ receipts recorded, script re-run green — the f49/f50 monitor notes SUPERSEDED by 28g |
+| W4-f12-seal | The BUFF SEAL on `task/W4-f12-buff-effects` (the five seal items: 270-ids-zero-dup + 400-icons landed; the f49-mana-seal — R3 EXECUTED at their SEALED 0d1f941af, the 3-ASSIGN stub bridge + the extra_regen SUM :11492 + items.rs wholesale; Panic-63 canonical — the f50 51eefdf84 / f48 e5b66bb06 THIRD copies drop with re-pinned hunks; the owed merger-actions; research FINAL registry 28g + the buff-family bible) | `28g-buff-family-seal.md` | 🔒 SEALED, 5 witnesses written not run, sweep re-run green |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
