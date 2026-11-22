@@ -48613,3 +48613,58 @@ anchors canary row). Verdict: the FINAL phase is CLOSED — no owed items
 on this branch; the remaining work is merger-owned (research/137 §4, the
 §8.3 split) or other-lane-owned (d56/d57/d60, reverse-vines 549 = g31's
 drain). The full receipt: research/137 §5.
+
+## W4-d114 - the TileObjectData hook-invocation + natural-rules consumers (2026-11-20)
+S1-F-7 wave B's unclaimed slice after W4-d112 (`resolve_tile_def`, the
+frameY `GetTileData(Tile)` overload :5196-5261), W4-d113 (`try_get_tile_bounds`
+:5163-5194, resolver-as-parameter) and W4-e11 (the Tile-based
+`CheckWaterDeath`/`CheckLavaDeath` :5083-5119). The registry data stays frozen
+(wave A, 389 tiles / 604 defs, `--check` green).
+Ported into `crates/tr-core/src/tileobject.rs` (all 1:1 with citations):
+* `call_post_placement_player_hook` (+ the `_with_def` body, split like
+  `place`/`place_with_def`) = `TileObjectData.CallPostPlacementPlayerHook`
+  (`TileObjectData.cs:5269-5283`): resolves `GetTileData(type, style,
+  data.alternate)`, subtracts the resolved def's `Origin` under
+  `processedCoordinates`, calls the hook and returns `result == badReturn`
+  VERBATIM - the C# quirk answers `true` when the chest hook FAILED
+  (`Chest.AfterPlacement_Hook` returns -1 on failure, `Chest.cs:559-567`;
+  both call sites `Player.cs:40144`/:45816 ignore the return). The standalone
+  `alternate` parameter is never read (the body reads `data.alternate`);
+  kept in the signature 1:1.
+* `origin_to_top_left` = `OriginToTopLeft` (:5285-5292), the
+  `Chest.AfterPlacement_Hook` opener (`Chest.cs:562`); `ref Point16` becomes
+  a returned value.
+* `check_water_death_for_style` / `check_lava_death_for_style` = the
+  (type, style) `CheckWaterDeath`/`CheckLavaDeath` overloads
+  (:5073-5081/:5097-5105) - the style-indexed readers of
+  `UsesGlobalLiquidChecks`, the flag `ApplyNaturalObjectRules` (:1847-1851)
+  sets on all 25 Initialize call sites (24 kinds + 6 sub-tile defs; census
+  pinned in the witness).
+Consumer wiring (the C# call sites, behaviour-frozen today):
+* `edit::place_item_tile` calls the hook after the successful `place` +
+  reframe (`Player.cs:40135-40144`'s `if (flag) { if (newObjectType) }` tail).
+* `world_sim::editing::try_replanting_tree` calls it in the `if (placed)`
+  tail (`Player.cs:45816`; kind 20's chain never assigns the hook,
+  `addTile(20)` :4909).
+Documented deviations:
+* Every generated hook body stays a wave-A documented callback
+  (`hook: None`, `PlacementHook::callback` carries the C# name) - the
+  invocation seam is a no-op for all 389 registry defs until the chest/TE
+  tasks install bodies. The `badReturn` quirk and the origin math are
+  witnessed with injected hook bodies (`_with_def`).
+* A negative style throws in C# (`GetTileData` :5132-5135); the port degrades
+  to `false` / unchanged-point / the global death table (the
+  `check_liquid_placement` precedent).
+* The (type, style) death checks are UNCALLED by the C# runtime (the only
+  consumers read the Tile overloads - e11's slice); they are ported as the
+  public API twin, witnesses only.
+Witnesses: `crates/tr-core/tests/tileobject_hooks_witness_d114.rs` (11 tests,
+WRITTEN NOT RUN - no cargo in this lane): the registry callback-metadata
+pins (21/88/395/378), the badReturn quirk both ways, processed-coordinates
+origin subtraction vs raw, `data.alternate` precedence, `OriginToTopLeft`
+shift/unresolved cases, def-vs-global death discriminators (405/646/372
+WaterDeath false-in-def but in `Main.tileWaterDeath`; 236 WaterDeath
+true-in-def but natural; 530/637 lava table inversions; torch style-8 and
+piano style-15 sub-tile flag flips), and the full 25-call-site
+`ApplyNaturalObjectRules` census incl. the 184 alternates and the
+233/185/165 sub-tiles.
