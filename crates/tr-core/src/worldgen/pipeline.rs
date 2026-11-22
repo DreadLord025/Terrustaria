@@ -35,6 +35,8 @@ use super::caves;
 use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
+use super::finish_no_traps;
+use super::finish_remix;
 use super::hive;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
@@ -43,6 +45,7 @@ use super::islands;
 use super::liquids;
 use super::living_trees;
 use super::micro_finish;
+use super::not_the_bees;
 use super::micro_grass;
 use super::micro_surface;
 use super::mini_biomes;
@@ -1518,17 +1521,37 @@ fn step_constant_lava_layer(
 /// `Finish*` passes (`finish_seeds`), each gated on its own flag.
 fn step_seed_finish(
     world: &mut World,
-    _gv: &mut GenVars,
+    gv: &mut GenVars,
     streams: &mut Streams,
     opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // The vanilla no-traps slot (`WorldGen.cs:22423-22426`): `FinishNoTraps`
+    // runs FIRST of the classic tails, before the anniversary tail —
+    // W4-g41's finish-gap port (the heart/statue/plate-chest re-wiring).
+    if opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS) {
+        finish_no_traps::finish_no_traps(world, streams, opts);
+    }
     if opts.flags.contains(crate::seeds::SeedFlags::DRUNK) {
         finish_seeds::finish_drunk_gen(world, streams, opts);
     }
+    // The vanilla NTB slot (`WorldGen.cs:22435-22439`): `NotTheBees()` then
+    // `FinishNotTheBees()`, BETWEEN the drunk and for-the-worthy tails —
+    // W4-g41's host port (the `spider_wall_remover` wiring). Each function
+    // carries its own seed/skyblock gate; a classic world reads no flag.
+    if opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES) {
+        not_the_bees::not_the_bees(world, gv, streams, opts);
+        not_the_bees::finish_not_the_bees(world, gv, streams, opts);
+    }
     if opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
         finish_seeds::finish_get_good_world(world, streams, opts);
+    }
+    // The vanilla remix slot (`WorldGen.cs:22444-22447`): `FinishRemixWorld`
+    // runs LAST of the classic tails, right after for-the-worthy — W4-g41's
+    // finish-gap port (d107 deferred this host; the census takes it).
+    if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        finish_remix::finish_remix_world(world, gv, streams, opts);
     }
     if opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY) {
         finish_seeds::finish_tenth_anniversary_world(world, streams, opts);
@@ -2973,6 +2996,10 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
+    // The stalactite 165 (`Main.cs:7407`) — W4-g41: the egg-sac validator
+    // (`spider_gem_moss.rs::check_stalactite`) writes/restyles the stored
+    // frames, so the framer must keep them instead of autotiling.
+    world.frame_important[165] = true;
     world.frame_important[380] = true;
     // The ocean tiles the ocean passes write — the palm trunk 323, the
     // coral 81, the beach piles 324, the shell piles 495, the sea oats 529

@@ -36,6 +36,7 @@ mod micro_grass;
 mod micro_surface;
 mod mini_biomes;
 mod noise;
+mod not_the_bees;
 mod ocean;
 pub mod pipeline;
 pub mod progress;
@@ -49,6 +50,8 @@ mod tile_runner;
 mod wavy;
 mod world_hash;
 mod finish_seeds;
+mod finish_no_traps;
+mod finish_remix;
 mod hive;
 
 use self::noise::{Noise, Rng};

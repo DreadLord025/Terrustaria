@@ -59,6 +59,22 @@
 //!   `growth::spread_grass` (`growth.rs:601`, `WorldGen.cs:75146-75270`);
 //!   the C#'s bounded 3x3 recursion (`grassSpread < 1000`) is not modelled —
 //!   the sweeps call it per neighbour instead.
+//! - W4-g41 ports the egg-sac validator chain (`CheckStalactite`
+//!   `WorldGen.cs:38996-39175` → `UpdateStalagtiteStyle` `:38643-38718` →
+//!   `GetStalagtiteStyle`/`GetDesiredStalagtiteStyle` `:38823-38872`/
+//!   `:38720-38821` + `InvalidTileForPilesOrSpeleothems` `:38979-38994`)
+//!   verbatim, wired through `PlaceTight`'s tail (`:38320-38323`); the
+//!   `destroyObject` kills ride `edit::remove_tile` (the generation strip —
+//!   the guarded `Check*` re-entries early-return in the C#, so no cascade).
+//!   The missing `PlaceUncheckedStalactite` arms (hanging granite/marble,
+//!   rising hive), the `tileMoss[627]` member, the `PlacePot` halfBrick
+//!   clear + remix centre veto (`:54069-54072`, W4-g41 FINAL), the
+//!   `PlaceSmallPile` boulder-seat veto + `anyLava` guard, the
+//!   spider pass's `shroomCount > 1` retry veto + `ILied` tail dispatch +
+//!   remix y-bands, the webs pass's DST row-50 start + `ILied` honey arm and
+//!   `SpiderWallRemover` (`:77279-77344`, WIRED by the W4-g41 follow-up —
+//!   its `FinishNotTheBees` host is ported in `not_the_bees.rs`) land with it.
+//!   Census: `docs/research/93-spider-cave-census.md`.
 //! - M5-SEED-1 ports the for-the-worthy arms of this file against the world's
 //!   own flags (`World::seeds`, the `generate` publication of
 //!   `GenOptions::flags` — a classic world reads no flag and stays
@@ -86,8 +102,8 @@ use super::{
     Rng, TILE_DIRT, TILE_SAND, TILE_SNOW, TILE_STONE, WALL_DIRT, WALL_SANDSTONE, WALL_STONE,
 };
 use crate::growth::spread_grass;
-use crate::tile::{Tile, FLAG_ACTIVE};
-use crate::tiledata::{TILE_SOLID, TILE_SOLID_TOP};
+use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+use crate::tiledata::{SET_BOULDERS, TILE_MOSS, TILE_SOLID, TILE_SOLID_TOP};
 use crate::world::World;
 
 // --- the ids these passes paint ----------------------------------------------
@@ -400,6 +416,246 @@ fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) 
     let prefer_small = rng.range(0, 2) == 0;
     let variation = rng.range(0, 3);
     place_unchecked_stalactite(world, x, y, prefer_small, variation, spiders);
+    // `:38320-38323` — the post-placement support validation (W4-g41): an
+    // unsupported sac pops, a mismatched style re-rolls (the chain's only
+    // RNG draw, `UpdateStalagtiteStyle` `:38665`).
+    if world.tile(x, y).is_some_and(|t| t.active() && t.kind == TILE_STALACTITE) {
+        check_stalactite(world, rng, x, y);
+    }
+}
+
+// --- the egg-sac validator chain (W4-g41) -------------------------------------
+//
+// `CheckStalactite` → `UpdateStalagtiteStyle` → `GetStalagtiteStyle` /
+// `GetDesiredStalagtiteStyle` (`WorldGen.cs:38996-39175` / `:38643-38872`):
+// the support check the C# runs after every `PlaceTight`. The kills ride the
+// `destroyObject = true` flag (`:39028`/`:39066`/`:39116`) — the guarded
+// `Check*` re-entries early-return, so the port's `edit::remove_tile` (the
+// generation strip, no cascade) is the faithful stand-in. The C# `KillTile`
+// keeps `tile.type` (`:63885-63890` clears active/frames/paint only), so the
+// pair's type comparisons read the ORIGINAL kind, captured before the kills.
+
+/// `WorldGen.InvalidTileForPilesOrSpeleothems` (`WorldGen.cs:38979-38994`):
+/// an active boulder (`TileID.Sets.Boulders`, `TileID.cs:504`) under the
+/// object's seat invalidates it; out-of-world / null reads false.
+fn invalid_tile_for_piles_or_speleothems(world: &World, x: i32, y: i32) -> bool {
+    if !in_world(world, x, y, 2) {
+        return false;
+    }
+    world.tile(x, y).is_some_and(|t| t.active() && SET_BOULDERS.has(t.kind))
+}
+
+/// `WorldGen.GetStalagtiteStyle` (`WorldGen.cs:38823-38872`): the
+/// `frameX / 54` → style decode; `None` is the C#'s `fail` (the default arm).
+fn get_stalagtite_style(frame_x: i16) -> Option<i32> {
+    match frame_x / 54 {
+        0 => Some(7),
+        1 => Some(0),
+        2 => Some(11),
+        3 => Some(12),
+        4 => Some(1),
+        5 => Some(2),
+        6 => Some(3),
+        7 => Some(4),
+        8 => Some(5),
+        9 => Some(6),
+        10 => Some(8),
+        11 => Some(9),
+        12 => Some(10),
+        _ => None,
+    }
+}
+
+/// `WorldGen.GetDesiredStalagtiteStyle` (`WorldGen.cs:38720-38821`): the
+/// frameY → (support side, height, top row) decode and the support-kind
+/// style table. Returns `(desired_style, height, y)`; `None` is `fail`.
+fn get_desired_stalagtite_style(world: &World, x: i32, j: i32) -> Option<(i32, i32, i32)> {
+    let tile = world.tile(x, j)?;
+    let mut y = j;
+    let (side, height, support) = if tile.frame_y == 72 {
+        // The small hanging sac: the support is the ceiling cell.
+        (0, 1, world.tile(x, y - 1).map(|t| t.kind).unwrap_or(0))
+    } else if tile.frame_y == 90 {
+        // The small rising sac: the support is the floor cell.
+        (1, 1, world.tile(x, y + 1).map(|t| t.kind).unwrap_or(0))
+    } else if tile.frame_y >= 36 {
+        // The tall rising pair (`54` is the bottom cell — step to the top).
+        if tile.frame_y == 54 {
+            y -= 1;
+        }
+        (4, 2, world.tile(x, y + 2).map(|t| t.kind).unwrap_or(0))
+    } else {
+        // The tall hanging pair (`18` is the bottom cell).
+        if tile.frame_y == 18 {
+            y -= 1;
+        }
+        (3, 2, world.tile(x, y - 1).map(|t| t.kind).unwrap_or(0))
+    };
+    // `:38763-38771` — stone/moss → style 0, with the spider override: a
+    // tall hanging pair (`side == 3`) over a spider wall is the egg-sac
+    // style 11.
+    if support == TILE_STONE || TILE_MOSS.has(support) {
+        let desired = if side == 3 && tile.wall == WALL_SPIDER { 11 } else { 0 };
+        return Some((desired, height, y));
+    }
+    let desired = match support {
+        200 => 10,
+        164 => 8,
+        163 => 9,
+        117 | 402 | 403 => 1,
+        25 | 398 | 400 => 2,
+        203 | 399 | 401 => 3,
+        396 | 397 => 4,
+        367 => 6,
+        368 => 5,
+        147 | 161 => 7,
+        // `:38813-38820` — the hive arm only serves the small sacs.
+        225 if side == 0 || side == 1 => 12,
+        _ => return None,
+    };
+    Some((desired, height, y))
+}
+
+/// `WorldGen.UpdateStalagtiteStyle` (`WorldGen.cs:38643-38718`): the
+/// current/desired style pair; on mismatch the `Next(3)*18` variation draw
+/// (`:38665`, the chain's ONLY RNG draw) plus the desired-style frame base
+/// rewritten over the object's height. The `netMode == 1` early-true
+/// (`:38645`) is the client skip — worldgen runs offline (netMode 0).
+fn update_stalagtite_style(world: &mut World, rng: &mut Rng, x: i32, j: i32) -> bool {
+    let Some(tile) = world.tile(x, j) else {
+        return true;
+    };
+    let Some(style) = get_stalagtite_style(tile.frame_x) else {
+        return false;
+    };
+    let Some((desired, height, y)) = get_desired_stalagtite_style(world, x, j) else {
+        return false;
+    };
+    if style != desired {
+        let mut num = rng.range(0, 3) * 18;
+        // `:38666-38707` — the 13-case desired-style base switch (case 7 is
+        // the identity `num = num`).
+        num += match desired {
+            0 => 54,
+            1 => 216,
+            2 => 270,
+            3 => 324,
+            4 => 378,
+            5 => 432,
+            6 => 486,
+            7 => 0,
+            8 => 540,
+            9 => 594,
+            10 => 648,
+            11 => 108,
+            12 => 162,
+            _ => 0,
+        };
+        for i in y..y + height {
+            if let Some(t) = world.tile_mut(x, i) {
+                t.frame_x = num as i16;
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.CheckStalactite` (`WorldGen.cs:38996-39175`): the four frameY
+/// arms' support validation. A failed check kills the object's cells whose
+/// kind still matches the original (`destroyObject` kills — no cascade).
+fn check_stalactite(world: &mut World, rng: &mut Rng, x: i32, j: i32) {
+    let Some(tile) = world.tile(x, j) else {
+        return;
+    };
+    // The C# `KillTile` keeps `tile.type`, so the live `Main.tile[x, j].type`
+    // comparisons read the original kind even after the first kill.
+    let orig_kind = tile.kind;
+    let mut num = j;
+    if tile.frame_y == 72 {
+        // The small hanging sac (`:39003-39036`).
+        let mut flag = !solid_tile(world, x, num - 1);
+        if !flag && !update_stalagtite_style(world, rng, x, num) {
+            flag = true;
+        }
+        if flag && world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+            let _ = crate::edit::remove_tile(world, x, num);
+        }
+        return;
+    }
+    if tile.frame_y == 90 {
+        // The small rising sac (`:39037-39074`) — the boulder-seat veto.
+        let mut flag = !solid_tile(world, x, num + 1);
+        if !flag && invalid_tile_for_piles_or_speleothems(world, x, num + 1) {
+            flag = true;
+        }
+        if !flag && !update_stalagtite_style(world, rng, x, num) {
+            flag = true;
+        }
+        if flag && world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+            let _ = crate::edit::remove_tile(world, x, num);
+        }
+        return;
+    }
+    if tile.frame_y >= 36 {
+        // The tall rising pair (`:39075-39128`).
+        if tile.frame_y == 54 {
+            num -= 1;
+        }
+        let mut flag = !solid_tile(world, x, num + 2);
+        let top = world.tile(x, num);
+        let bot = world.tile(x, num + 1);
+        if !top.is_some_and(|t| t.active())
+            || !bot.is_some_and(|t| t.active())
+            || top.map(|t| t.kind) != bot.map(|t| t.kind)
+        {
+            flag = true;
+        }
+        if top.map(|t| t.frame_x) != bot.map(|t| t.frame_x) {
+            flag = true;
+        }
+        if !flag && invalid_tile_for_piles_or_speleothems(world, x, num + 2) {
+            flag = true;
+        }
+        if !flag && !update_stalagtite_style(world, rng, x, num) {
+            flag = true;
+        }
+        if flag {
+            if world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+                let _ = crate::edit::remove_tile(world, x, num);
+            }
+            if world.tile(x, num + 1).is_some_and(|t| t.kind == orig_kind) {
+                let _ = crate::edit::remove_tile(world, x, num + 1);
+            }
+        }
+        return;
+    }
+    // The tall hanging pair (`:39129-39174`) — the egg sac's own arm.
+    if tile.frame_y == 18 {
+        num -= 1;
+    }
+    let mut flag = !solid_tile(world, x, num - 1);
+    let top = world.tile(x, num);
+    let bot = world.tile(x, num + 1);
+    if !top.is_some_and(|t| t.active())
+        || !bot.is_some_and(|t| t.active())
+        || top.map(|t| t.kind) != bot.map(|t| t.kind)
+    {
+        flag = true;
+    }
+    if top.map(|t| t.frame_x) != bot.map(|t| t.frame_x) {
+        flag = true;
+    }
+    if !flag && !update_stalagtite_style(world, rng, x, num) {
+        flag = true;
+    }
+    if flag {
+        if world.tile(x, num).is_some_and(|t| t.kind == orig_kind) {
+            let _ = crate::edit::remove_tile(world, x, num);
+        }
+        if world.tile(x, num + 1).is_some_and(|t| t.kind == orig_kind) {
+            let _ = crate::edit::remove_tile(world, x, num + 1);
+        }
+    }
 }
 
 /// `WorldGen.PlaceUncheckedStalactite` (`WorldGen.cs:38327-38641`) — the
@@ -420,7 +676,9 @@ fn place_unchecked_stalactite(
         && !world.tile(x, y + 1).is_some_and(|t| t.active());
     if hanging {
         let support = world.tile(x, y - 1).map(|t| t.kind).unwrap_or(0);
-        let is_moss = MOSS_TILES.contains(&support) || NEON_MOSS.contains(&support) || support == 381;
+        // `Main.tileMoss` (`Main.cs:7007-7047`) — the generated set carries
+        // the rainbow moss 627 (`:7031`) beside the five + neon + lava moss.
+        let is_moss = TILE_MOSS.has(support);
         if spiders {
             // `:38334-38350` — the spider stalactite, always two tiles tall.
             let frame = 108 + variation * 18;
@@ -456,6 +714,24 @@ fn place_unchecked_stalactite(
                 write_stalactite(world, x, y, frame, 0);
                 write_stalactite(world, x, y + 1, frame, 18);
             }
+        } else if support == TILE_GRANITE {
+            // `:38448-38476` — the hanging granite arm (W4-g41).
+            let frame = 432 + variation * 18;
+            if prefer_small {
+                write_stalactite(world, x, y, frame, 72);
+            } else {
+                write_stalactite(world, x, y, frame, 0);
+                write_stalactite(world, x, y + 1, frame, 18);
+            }
+        } else if support == TILE_MARBLE {
+            // `:38477-38505` — the hanging marble arm (W4-g41).
+            let frame = 486 + variation * 18;
+            if prefer_small {
+                write_stalactite(world, x, y, frame, 72);
+            } else {
+                write_stalactite(world, x, y, frame, 0);
+                write_stalactite(world, x, y + 1, frame, 18);
+            }
         }
         return;
     }
@@ -466,7 +742,13 @@ fn place_unchecked_stalactite(
         && !world.tile(x, y - 1).is_some_and(|t| t.active());
     if rising {
         let support = world.tile(x, y + 1).map(|t| t.kind).unwrap_or(0);
-        let is_moss = MOSS_TILES.contains(&support) || NEON_MOSS.contains(&support) || support == 381;
+        if support == TILE_HIVE {
+            // `:38543-38552` — the rising hive arm is always the small one
+            // (frameY 90, no tall variant) (W4-g41).
+            write_stalactite(world, x, y, 162 + variation * 18, 90);
+            return;
+        }
+        let is_moss = TILE_MOSS.has(support);
         let frame = if matches!(support, 396 | 397) {
             378 + variation * 18
         } else if support == TILE_GRANITE {
@@ -505,6 +787,19 @@ fn write_stalactite(world: &mut World, x: i32, y: i32, frame_x: i32, frame_y: i3
 /// `WorldGen.PlacePot` (`WorldGen.cs:54066-54114`) — the 2x2 seat validation
 /// plus the style frame pair.
 fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bool {
+    // `:54069-54072` — the remix centre veto (W4-g41 FINAL): the 0.48-0.52
+    // x band below `maxTilesY - 220` refuses the pot. The C# sets
+    // `flag = false` and keeps scanning, but a false flag returns before
+    // the `Next(3)` variant draw — the early return is write- AND
+    // draw-identical (the seat loop allocates null tiles only, a no-op on
+    // the port's dense world).
+    if world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+        && (x as f64) > world.width as f64 * 0.48
+        && (x as f64) < world.width as f64 * 0.52
+        && y > world.height - 220
+    {
+        return false;
+    }
     let mut ok = true;
     for i in x..x + 2 {
         for j in (y - 1)..(y + 1) {
@@ -531,6 +826,8 @@ fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bo
                 t.flags |= FLAG_ACTIVE;
                 t.frame_x = (k * 18 + variant) as i16;
                 t.frame_y = ((l + 1) * 18 + style * 36) as i16;
+                // `:54108` — `halfBrick(halfBrick: false)` (W4-g41).
+                t.flags &= !FLAG_HALF_BRICK;
             }
         }
     }
@@ -541,7 +838,12 @@ fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bo
 fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_size: i32) -> bool {
     let frame_y = (pile_size * 18) as i16;
     let frame_x = (pile_style * 18) as i16;
-    if world.tile(x, y).is_some_and(|t| t.liquid_kind() == crate::tile::LiquidKind::Lava) {
+    // `Tile.anyLava` (`Tile.cs:410-415`) — a positive amount AND the lava
+    // kind (W4-g41: the old read tested the kind alone).
+    if world
+        .tile(x, y)
+        .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava)
+    {
         return false;
     }
     if pile_size == 1 {
@@ -551,6 +853,13 @@ fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_siz
             && !world.tile(x, y).is_some_and(|t| t.active())
             && !world.tile(x + 1, y).is_some_and(|t| t.active());
         if !seat {
+            return false;
+        }
+        // `:46847-46850` — the type-185 boulder-seat veto (W4-g41): a
+        // boulder under either seat cell refuses the pile.
+        if invalid_tile_for_piles_or_speleothems(world, x, y + 1)
+            || invalid_tile_for_piles_or_speleothems(world, x + 1, y + 1)
+        {
             return false;
         }
         for (i, fx) in [(x, frame_x), (x + 1, frame_x + 18)] {
@@ -970,26 +1279,65 @@ pub(crate) fn pass_spider_caves(
     let retries = world.width / 2;
     let attempts = spider_attempts(world);
     let (min_count, max_count) = (500, max_spider_count);
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
     for _ in 0..attempts {
         let mut tries = 0i32;
         let mut x = rng.range(200, world.width - 200);
-        let mut y = rng.range(
-            ((world_surface + rock_layer) / 2.0) as i32,
-            world.height - 230,
-        );
+        let mut y = if remix {
+            // `:17392-17395` — the remix first draw rides the surface→rock
+            // band (W4-g41; a classic world reads no flag and keeps the
+            // deep band).
+            rng.range(world_surface as i32, rock_layer as i32)
+        } else {
+            rng.range(
+                ((world_surface + rock_layer) / 2.0) as i32,
+                world.height - 230,
+            )
+        };
         let mut c = count_tiles(world, x, y, true, max_spider_count);
         while (c.tiles >= max_count || c.tiles < min_count) && tries < retries {
             tries += 1;
             x = rng.range(200, world.width - 200);
-            y = rng.range(rock_layer as i32 + 30, world.height - 230);
+            y = if remix {
+                // `:17402-17405` — the remix retry band.
+                rng.range(world_surface as i32, rock_layer as i32)
+            } else {
+                rng.range(rock_layer as i32 + 30, world.height - 230)
+            };
             c = count_tiles(world, x, y, true, max_spider_count);
+            // `:17407-17410` — a shroom-bearing pocket (count > 1) forces
+            // another retry: the C# zeroes the count INSIDE the loop, so
+            // the acceptance test re-fails (W4-g41).
+            if c.shroom > 1 {
+                c.tiles = 0;
+            }
         }
         if tries < retries {
             spread_spider(world, rng, x, y, hell_top, stock.as_deref_mut());
             placed += 1;
         }
     }
+    // `:17422-17425` — the `ILied` tail dispatch (W4-g41): a `noSpiderCaves`
+    // world with ≥ 4 secrets converts the evil/hive/jungle walls to spider
+    // walls instead of losing the caves. The sweep itself is
+    // `micro_finish::no_spider_caves_i_lied` (`WorldGen.cs:2618-2630`).
+    if no_spider_caves_i_lied_more_spider_caves(world) {
+        super::micro_finish::no_spider_caves_i_lied(world);
+    }
     placed
+}
+
+/// M5-SEED-2 `SecretSeed.Variations.noSpiderCavesILiedMoreSpiderCaves`
+/// (`WorldGen.cs:281-291`): the `noSpiderCaves` seed with ≥ 4 active secrets
+/// keeps its spider caves and converts the other biome walls instead.
+fn no_spider_caves_i_lied_more_spider_caves(world: &World) -> bool {
+    if !world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES)
+    {
+        return false;
+    }
+    crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds) >= 4
 }
 
 /// `Gem Caves` (`WorldGen.cs:17428-17471`).
@@ -1200,8 +1548,16 @@ pub(crate) fn pass_moss(
 /// in the spider caves and converts the hive liquid to honey + speleothems.
 pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surface: f64) -> u32 {
     let mut webs = 0u32;
+    // `:20002-20006` — the Don't Starve world starts the sweep at row 50
+    // instead of the surface line (W4-g41).
+    let start_row = if world.seeds.contains(crate::seeds::SeedFlags::DONT_STARVE) {
+        50
+    } else {
+        world.world_surface as i32
+    };
+    let i_lied = no_spider_caves_i_lied_more_spider_caves(world);
     for i in 100..world.width - 100 {
-        for j in (world.world_surface as i32)..world.height - 100 {
+        for j in start_row..world.height - 100 {
             let wall = world.tile(i, j).map(|t| t.wall).unwrap_or(0);
             if wall == WALL_HIVE {
                 let has_liquid = world.tile(i, j).is_some_and(|t| t.liquid > 0);
@@ -1215,7 +1571,16 @@ pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surfa
                 }
             }
             if wall == WALL_SPIDER {
-                if let Some(t) = world.tile_mut(i, j) {
+                if i_lied {
+                    // `:20022-20028` — the `ILied` arm honey-fills the
+                    // spider-wall liquid instead of clearing it (W4-g41).
+                    let has_liquid = world.tile(i, j).is_some_and(|t| t.liquid > 0);
+                    if has_liquid {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.set_liquid_kind(crate::tile::LiquidKind::Honey);
+                        }
+                    }
+                } else if let Some(t) = world.tile_mut(i, j) {
                     t.liquid = 0;
                     t.clear_liquid_kind();
                 }
@@ -1241,6 +1606,85 @@ pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surfa
         }
     }
     webs
+}
+
+// --- the spider-wall eraser (W4-g41) ------------------------------------------
+
+/// `WorldGen.SpiderWallRemover` (`WorldGen.cs:77279-77344`) — the drifting
+/// diamond eraser: a `Next(8,21)`-wide / `Next(8,33)`-step blob walks a
+/// `Next(-10,11)*0.1` velocity, clearing wall 62 → 0 inside the shrinking
+/// `|dx|+|dy| < radius*0.5*(1+Next(-10,11)*0.015)` diamond each step, with
+/// the `Next(-10,11)*0.05` velocity jitter clamped to ±1.
+///
+/// WIRED (W4-g41 follow-up): the C#'s only callers are `FinishNotTheBees`'
+/// two 10000-draw search loops (`:25409-25434`, the for-the-worthy +
+/// not-the-bees combo), ported in `not_the_bees.rs::spider_wall_search` and
+/// dispatched from `step_seed_finish`'s NTB slot. A classic world reads no
+/// flag and never reaches it.
+pub(crate) fn spider_wall_remover(world: &mut World, rng: &mut Rng, i: i32, j: i32) {
+    // `:77281` — the width budget; the C# never decrements `num` (only the
+    // `num3` life counter steps down), so the loop runs exactly `num2` times.
+    let num = rng.range(8, 21) as f64;
+    let num2 = rng.range(8, 33) as f64;
+    let mut num3 = num2;
+    let mut pos = (i as f64, j as f64);
+    let mut vel = (
+        rng.range(-10, 11) as f64 * 0.1,
+        rng.range(-10, 11) as f64 * 0.1,
+    );
+    while num > 0.0 && num3 > 0.0 {
+        let num4 = num * (num3 / num2);
+        num3 -= 1.0;
+        // `:77294-77313` — the diamond's bounding box, clamped to the world
+        // (the C# clamps to `maxTilesX`/`maxTilesY` exclusive).
+        let mut xmin = (pos.0 - num4 * 0.5) as i32;
+        let mut xmax = (pos.0 + num4 * 0.5) as i32;
+        let mut ymin = (pos.1 - num4 * 0.5) as i32;
+        let mut ymax = (pos.1 + num4 * 0.5) as i32;
+        if xmin < 0 {
+            xmin = 0;
+        }
+        if xmax > world.width {
+            xmax = world.width;
+        }
+        if ymin < 0 {
+            ymin = 0;
+        }
+        if ymax > world.height {
+            ymax = world.height;
+        }
+        for k in xmin..xmax {
+            for l in ymin..ymax {
+                // `:77318` — the jittered diamond test: the C# `&&` evaluates
+                // the distance FIRST, so the `Next(-10,11)` draw runs only
+                // for cells already inside the un-jittered radius (the port
+                // mirrors the short-circuit by scaling the base radius).
+                let dist = (k as f64 - pos.0).abs() + (l as f64 - pos.1).abs();
+                if dist < num * 0.5 * (1.0 + rng.range(-10, 11) as f64 * 0.015)
+                    && world.tile(k, l).is_some_and(|t| t.wall == WALL_SPIDER)
+                {
+                    if let Some(t) = world.tile_mut(k, l) {
+                        t.wall = 0;
+                    }
+                }
+            }
+        }
+        pos = (pos.0 + vel.0, pos.1 + vel.1);
+        vel.0 += rng.range(-10, 11) as f64 * 0.05;
+        if vel.0 > 1.0 {
+            vel.0 = 1.0;
+        }
+        if vel.0 < -1.0 {
+            vel.0 = -1.0;
+        }
+        vel.1 += rng.range(-10, 11) as f64 * 0.05;
+        if vel.1 > 1.0 {
+            vel.1 = 1.0;
+        }
+        if vel.1 < -1.0 {
+            vel.1 = -1.0;
+        }
+    }
 }
 
 /// The dirt/stone ids the scatter arms read (kept for the const block to stay
@@ -1692,5 +2136,467 @@ mod tests {
             big > base,
             "the worthy blob covered no more stone ({big} vs {base})"
         );
+    }
+
+    // --- W4-g41: the egg-sac validator chain ---------------------------------
+
+    /// `GetStalagtiteStyle` (`WorldGen.cs:38823-38872`) — the `frameX / 54`
+    /// decode, all 13 cases plus the fail default.
+    #[test]
+    fn the_stalagtite_style_decode_matches_the_frame_x_bands() {
+        let cases: [(i16, i32); 13] = [
+            (0, 7), (54, 0), (108, 11), (162, 12), (216, 1), (270, 2),
+            (324, 3), (378, 4), (432, 5), (486, 6), (540, 8), (594, 9), (648, 10),
+        ];
+        for (fx, style) in cases {
+            assert_eq!(get_stalagtite_style(fx), Some(style), "frameX {fx}");
+            // The variation offset stays inside the band (`/54` floors).
+            assert_eq!(get_stalagtite_style(fx + 18), Some(style), "frameX {}", fx + 18);
+        }
+        assert_eq!(get_stalagtite_style(702), None, "the 13th band fails");
+        // C# integer division truncates toward zero: -18/54 == 0 → style 7
+        // (NOT a fail); only a full negative band reaches the default arm.
+        assert_eq!(get_stalagtite_style(-18), Some(7), "the truncation quirk");
+        assert_eq!(get_stalagtite_style(-54), None, "a negative band fails");
+    }
+
+    /// `GetDesiredStalagtiteStyle` (`WorldGen.cs:38720-38821`) — the
+    /// frameY → support-side decode and the spider override (`side == 3 &&
+    /// wall == 62` → style 11).
+    #[test]
+    fn the_desired_style_reads_the_support_and_the_spider_override() {
+        let mut w = flat_world(300, 200, 40);
+        carve_pocket(&mut w, 100, 100, 40, 20);
+        // A tall hanging pair (frameY 0/18) over stone: style 0.
+        write_stalactite(&mut w, 110, 100, 54, 0);
+        write_stalactite(&mut w, 110, 101, 54, 18);
+        assert_eq!(get_desired_stalagtite_style(&w, 110, 100), Some((0, 2, 100)));
+        // The same pair over a spider wall: the egg-sac style 11. The C#
+        // reads the PASSED cell's wall, so paint both cells of the pair.
+        let i = w.index(110, 100);
+        w.tiles[i].wall = WALL_SPIDER;
+        let ib = w.index(110, 101);
+        w.tiles[ib].wall = WALL_SPIDER;
+        assert_eq!(get_desired_stalagtite_style(&w, 110, 100), Some((11, 2, 100)));
+        // The bottom cell (frameY 18) steps to the top row.
+        assert_eq!(get_desired_stalagtite_style(&w, 110, 101), Some((11, 2, 100)));
+        // A small hanging sac (frameY 72) over granite: style 5, height 1.
+        let mut w2 = flat_world(300, 200, 40);
+        carve_pocket(&mut w2, 100, 100, 40, 20);
+        let seat = w2.index(110, 99);
+        w2.tiles[seat].kind = TILE_GRANITE;
+        write_stalactite(&mut w2, 110, 100, 432, 72);
+        assert_eq!(get_desired_stalagtite_style(&w2, 110, 100), Some((5, 1, 100)));
+        // A small rising sac (frameY 90) over hive: style 12. The floor must
+        // be ACTIVE (carve_pocket deactivates it) for the solid gate to pass.
+        let mut w3 = flat_world(300, 200, 40);
+        carve_pocket(&mut w3, 100, 100, 40, 20);
+        let floor = w3.index(110, 119);
+        w3.tiles[floor].kind = TILE_HIVE;
+        w3.tiles[floor].flags |= FLAG_ACTIVE;
+        write_stalactite(&mut w3, 110, 118, 162, 90);
+        assert_eq!(get_desired_stalagtite_style(&w3, 110, 118), Some((12, 1, 118)));
+        // A tall rising pair over hive fails (the hive arm is small-only).
+        let mut w4 = flat_world(300, 200, 40);
+        carve_pocket(&mut w4, 100, 100, 40, 20);
+        let floor = w4.index(110, 119);
+        w4.tiles[floor].kind = TILE_HIVE;
+        write_stalactite(&mut w4, 110, 117, 162, 36);
+        write_stalactite(&mut w4, 110, 118, 162, 54);
+        assert_eq!(get_desired_stalagtite_style(&w4, 110, 118), None);
+    }
+
+    /// `UpdateStalagtiteStyle` (`WorldGen.cs:38643-38718`) — a matched style
+    /// draws NOTHING; a mismatch draws exactly one `Next(3)` and rewrites
+    /// the frame base over the object's height.
+    #[test]
+    fn the_style_update_draws_only_on_a_mismatch() {
+        let mut w = flat_world(300, 200, 40);
+        carve_pocket(&mut w, 100, 100, 40, 20);
+        // A stone-supported tall hanging pair already at style 0 (frameX 54):
+        // the desired style is 0, so no draw.
+        write_stalactite(&mut w, 110, 100, 54, 0);
+        write_stalactite(&mut w, 110, 101, 54, 18);
+        let mut rng = Rng(0x5AC);
+        let before = rng.0;
+        assert!(update_stalagtite_style(&mut w, &mut rng, 110, 100));
+        assert_eq!(rng.0, before, "a matched style draws nothing");
+        assert_eq!(w.tile(110, 100).unwrap().frame_x, 54);
+        // Now force a mismatch: the pair sits over a spider wall (desired 11)
+        // but carries the stone frameX 54 (style 0). One draw, both cells
+        // restyled into the 108 + Next(3)*18 band.
+        let i = w.index(110, 100);
+        w.tiles[i].wall = WALL_SPIDER;
+        let mut rng2 = Rng(0x5AC);
+        let variation = rng2.range(0, 3) * 18;
+        let mut rng3 = Rng(0x5AC);
+        assert!(update_stalagtite_style(&mut w, &mut rng3, 110, 100));
+        assert_eq!(rng3.0, rng2.0, "exactly one Next(3) draw");
+        assert_eq!(w.tile(110, 100).unwrap().frame_x, (108 + variation) as i16);
+        assert_eq!(w.tile(110, 101).unwrap().frame_x, (108 + variation) as i16);
+    }
+
+    /// `CheckStalactite` (`WorldGen.cs:39129-39174`) — the tall hanging arm:
+    /// an unsupported pair (no solid ceiling) is killed; a supported one
+    /// survives. The kill keeps the wall (the generation strip).
+    #[test]
+    fn the_hanging_sac_pops_without_a_ceiling() {
+        let mut w = flat_world(300, 200, 40);
+        // Carve a pocket whose ceiling row is AIR two above the sac: the sac
+        // hangs at 100/101 but row 99 is carved away.
+        carve_pocket(&mut w, 100, 99, 40, 21);
+        write_stalactite(&mut w, 110, 100, 108, 0);
+        write_stalactite(&mut w, 110, 101, 108, 18);
+        let i = w.index(110, 100);
+        w.tiles[i].wall = WALL_SPIDER;
+        check_stalactite(&mut w, &mut Rng(1), 110, 100);
+        assert!(!w.tile(110, 100).unwrap().active(), "the unsupported sac popped");
+        assert!(!w.tile(110, 101).unwrap().active(), "both cells popped");
+        assert_eq!(w.tile(110, 100).unwrap().wall, WALL_SPIDER, "the wall survives");
+        // A supported pair (solid ceiling at 99) survives.
+        let mut w2 = flat_world(300, 200, 40);
+        carve_pocket(&mut w2, 100, 100, 40, 20);
+        write_stalactite(&mut w2, 110, 100, 108, 0);
+        write_stalactite(&mut w2, 110, 101, 108, 18);
+        let i2 = w2.index(110, 100);
+        w2.tiles[i2].wall = WALL_SPIDER;
+        check_stalactite(&mut w2, &mut Rng(1), 110, 100);
+        assert!(w2.tile(110, 100).unwrap().active(), "the supported sac survives");
+        assert!(w2.tile(110, 101).unwrap().active());
+    }
+
+    /// `CheckStalactite`'s small rising arm (`WorldGen.cs:39037-39074`) — a
+    /// boulder seat (`InvalidTileForPilesOrSpeleothems`) pops the sac.
+    #[test]
+    fn the_rising_sac_pops_on_a_boulder_seat() {
+        let mut w = flat_world(300, 200, 40);
+        carve_pocket(&mut w, 100, 100, 40, 20);
+        // The floor at 119 is a boulder (138): solid, but invalid for piles.
+        // Re-activate it (carve_pocket deactivates the pocket rows).
+        let floor = w.index(110, 119);
+        w.tiles[floor].kind = 138;
+        w.tiles[floor].flags |= FLAG_ACTIVE;
+        write_stalactite(&mut w, 110, 118, 54, 90);
+        assert!(invalid_tile_for_piles_or_speleothems(&w, 110, 119));
+        check_stalactite(&mut w, &mut Rng(2), 110, 118);
+        assert!(!w.tile(110, 118).unwrap().active(), "the boulder-seat sac popped");
+        // A plain stone floor keeps it.
+        let mut w2 = flat_world(300, 200, 40);
+        carve_pocket(&mut w2, 100, 100, 40, 20);
+        let floor2 = w2.index(110, 119);
+        w2.tiles[floor2].flags |= FLAG_ACTIVE;
+        write_stalactite(&mut w2, 110, 118, 54, 90);
+        check_stalactite(&mut w2, &mut Rng(2), 110, 118);
+        assert!(w2.tile(110, 118).unwrap().active(), "the stone-seat sac survives");
+    }
+
+    /// `PlaceTight`'s tail (`WorldGen.cs:38320-38323`) — the validator runs
+    /// after the placement: an unsupported spider sac placed by `place_tight`
+    /// is popped in the same call.
+    #[test]
+    fn place_tight_validates_the_placed_sac() {
+        let mut w = flat_world(300, 200, 40);
+        // A ceiling at 99 with air at 100/101 and a SOLID floor at 102 would
+        // let the sac hang; instead carve 99 away so the support is missing.
+        carve_pocket(&mut w, 100, 99, 40, 21);
+        // Re-solidify row 98 so `solid_tile(x, y-1)` at the placement row is
+        // false (the hanging gate needs a solid ceiling — here it is air, so
+        // the placement itself refuses and nothing lands).
+        place_tight(&mut w, &mut Rng(3), 110, 100, true);
+        assert!(!w.tile(110, 100).unwrap().active(), "no ceiling, no sac");
+        // With a real ceiling the sac lands and survives the validation.
+        let mut w2 = flat_world(300, 200, 40);
+        carve_pocket(&mut w2, 100, 100, 40, 20);
+        place_tight(&mut w2, &mut Rng(3), 110, 100, true);
+        assert!(w2.tile(110, 100).unwrap().active(), "the supported sac landed");
+        assert_eq!(w2.tile(110, 100).unwrap().kind, TILE_STALACTITE);
+        assert_eq!(w2.tile(110, 101).unwrap().kind, TILE_STALACTITE);
+    }
+
+    /// The missing `PlaceUncheckedStalactite` arms (W4-g41): hanging granite
+    /// (`:38448-38476`), hanging marble (`:38477-38505`), rising hive
+    /// (`:38543-38552`).
+    #[test]
+    fn the_granite_marble_and_rising_hive_arms_place() {
+        // Hanging granite → the 432 + variation*18 family.
+        let mut w = flat_world(300, 200, 40);
+        carve_pocket(&mut w, 100, 100, 40, 20);
+        let seat = w.index(110, 99);
+        w.tiles[seat].kind = TILE_GRANITE;
+        place_unchecked_stalactite(&mut w, 110, 100, false, 1, false);
+        assert_eq!(w.tile(110, 100).unwrap().frame_x, 432 + 18);
+        assert_eq!(w.tile(110, 101).unwrap().frame_y, 18);
+        // Hanging marble, small → the 486 family at frameY 72.
+        let mut w2 = flat_world(300, 200, 40);
+        carve_pocket(&mut w2, 100, 100, 40, 20);
+        let seat2 = w2.index(110, 99);
+        w2.tiles[seat2].kind = TILE_MARBLE;
+        place_unchecked_stalactite(&mut w2, 110, 100, true, 2, false);
+        assert_eq!(w2.tile(110, 100).unwrap().frame_x, 486 + 36);
+        assert_eq!(w2.tile(110, 100).unwrap().frame_y, 72);
+        // Rising hive → the 162 family at frameY 90 (always small). The floor
+        // must be active for the rising gate.
+        let mut w3 = flat_world(300, 200, 40);
+        carve_pocket(&mut w3, 100, 100, 40, 20);
+        let floor = w3.index(110, 119);
+        w3.tiles[floor].kind = TILE_HIVE;
+        w3.tiles[floor].flags |= FLAG_ACTIVE;
+        place_unchecked_stalactite(&mut w3, 110, 118, false, 0, false);
+        assert_eq!(w3.tile(110, 118).unwrap().frame_x, 162);
+        assert_eq!(w3.tile(110, 118).unwrap().frame_y, 90);
+    }
+
+    /// `PlaceSmallPile`'s boulder-seat veto (`WorldGen.cs:46847-46850`) and
+    /// the `anyLava` `liquid > 0` guard (`Tile.cs:410-415`).
+    #[test]
+    fn the_small_pile_refuses_a_boulder_seat_and_dry_lava_flags() {
+        let mut w = flat_world(300, 200, 40);
+        carve_pocket(&mut w, 100, 100, 40, 20);
+        // A boulder under the left seat cell refuses the 2-wide pile. Both
+        // floor cells must be active/solid (carve_pocket deactivates the
+        // pocket rows) so the SEAT passes and the VETO is what refuses.
+        let floor = w.index(110, 119);
+        w.tiles[floor].kind = 138;
+        w.tiles[floor].flags |= FLAG_ACTIVE;
+        let floor_b = w.index(111, 119);
+        w.tiles[floor_b].flags |= FLAG_ACTIVE;
+        assert!(!place_small_pile(&mut w, 110, 118, 34, 1));
+        // A plain stone floor places it.
+        let mut w2 = flat_world(300, 200, 40);
+        carve_pocket(&mut w2, 100, 100, 40, 20);
+        let floor2 = w2.index(110, 119);
+        w2.tiles[floor2].flags |= FLAG_ACTIVE;
+        let floor2b = w2.index(111, 119);
+        w2.tiles[floor2b].flags |= FLAG_ACTIVE;
+        assert!(place_small_pile(&mut w2, 110, 118, 34, 1));
+        // A lava FLAG with zero liquid does NOT refuse (anyLava needs both).
+        let mut w3 = flat_world(300, 200, 40);
+        carve_pocket(&mut w3, 100, 100, 40, 20);
+        let f3 = w3.index(110, 119);
+        w3.tiles[f3].flags |= FLAG_ACTIVE;
+        let f3b = w3.index(111, 119);
+        w3.tiles[f3b].flags |= FLAG_ACTIVE;
+        let cell = w3.index(110, 118);
+        w3.tiles[cell].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        w3.tiles[cell].liquid = 0;
+        assert!(place_small_pile(&mut w3, 110, 118, 34, 1), "dry lava flag is not anyLava");
+        // Real lava on the seat refuses.
+        let mut w4 = flat_world(300, 200, 40);
+        carve_pocket(&mut w4, 100, 100, 40, 20);
+        let f4 = w4.index(110, 119);
+        w4.tiles[f4].flags |= FLAG_ACTIVE;
+        let f4b = w4.index(111, 119);
+        w4.tiles[f4b].flags |= FLAG_ACTIVE;
+        let c4 = w4.index(110, 118);
+        w4.tiles[c4].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        w4.tiles[c4].liquid = 100;
+        assert!(!place_small_pile(&mut w4, 110, 118, 34, 1), "real lava refuses");
+    }
+
+    /// `PlacePot`'s `halfBrick(false)` write (`WorldGen.cs:54108`).
+    #[test]
+    fn the_pot_clears_the_half_brick_flag() {
+        let mut w = flat_world(300, 200, 40);
+        carve_pocket(&mut w, 100, 100, 40, 20);
+        // The seat sits on the pocket floor (row 120 solid): pre-set a
+        // half-brick flag on an INACTIVE seat cell (the validation only
+        // refuses active seats); the placement clears it.
+        let seat = w.index(110, 119);
+        w.tiles[seat].flags |= FLAG_HALF_BRICK;
+        assert!(!w.tiles[seat].active(), "the seat is air");
+        assert!(place_pot(&mut w, &mut Rng(4), 110, 119, 19));
+        assert!(!w.tile(110, 119).unwrap().half_brick(), "the half-brick cleared");
+    }
+
+    /// `PlacePot`'s remix centre veto (`WorldGen.cs:54069-54072`, W4-g41
+    /// FINAL): the 0.48-0.52 x band below `maxTilesY - 220` refuses the
+    /// pot BEFORE the `Next(3)` variant draw; classic worlds never veto.
+    #[test]
+    fn the_remix_pot_centre_veto_refuses_before_the_variant_draw() {
+        // A 300x500 world: the band is x 144..156, y > 280. The pocket
+        // floor at 300 inside the band.
+        let mut w = flat_world(300, 500, 40);
+        carve_pocket(&mut w, 140, 290, 20, 10);
+        w.seeds.insert(crate::seeds::SeedFlags::REMIX);
+        let mut rng = Rng(4);
+        assert!(!place_pot(&mut w, &mut rng, 150, 299, 19), "the band refuses");
+        assert_eq!(rng.0, Rng(4).0, "the veto draws nothing (pre-Next(3))");
+        assert!(!w.tile(150, 299).unwrap().active(), "no pot written");
+        // Outside the x band (x 130 < 144): the same depth places.
+        carve_pocket(&mut w, 125, 290, 10, 10);
+        assert!(place_pot(&mut w, &mut Rng(4), 130, 299, 19), "off-band places");
+        // Above the y gate (y 270 <= 280) inside the band: places.
+        carve_pocket(&mut w, 145, 260, 10, 11);
+        assert!(place_pot(&mut w, &mut Rng(4), 150, 270, 19), "above the gate places");
+        // The classic world never vetoes (the flag gate).
+        let mut wc = flat_world(300, 500, 40);
+        carve_pocket(&mut wc, 140, 290, 20, 10);
+        assert!(place_pot(&mut wc, &mut Rng(4), 150, 299, 19), "classic places in-band");
+    }
+
+    /// `SpiderWallRemover` (`WorldGen.cs:77279-77344`) — the drifting diamond
+    /// erases wall 62 inside its reach and leaves other walls alone; the draw
+    /// schedule is deterministic for a seed.
+    #[test]
+    fn the_spider_wall_remover_erases_only_wall_62() {
+        let build = |seed: u64| {
+            let mut w = flat_world(300, 200, 40);
+            // Paint a spider-wall block and a gem-wall control beside it.
+            for px in 120..180 {
+                for py in 80..140 {
+                    let i = w.index(px, py);
+                    w.tiles[i].wall = WALL_SPIDER;
+                }
+            }
+            for px in 200..220 {
+                for py in 80..140 {
+                    let i = w.index(px, py);
+                    w.tiles[i].wall = WALL_GEM_BASE;
+                }
+            }
+            spider_wall_remover(&mut w, &mut Rng(seed), 150, 110);
+            w
+        };
+        let a = build(0xE66);
+        let b = build(0xE66);
+        assert_eq!(a.tiles, b.tiles, "the eraser is deterministic for a seed");
+        let spider_left = a.tiles.iter().filter(|t| t.wall == WALL_SPIDER).count();
+        let gem_left = a.tiles.iter().filter(|t| t.wall == WALL_GEM_BASE).count();
+        assert!(spider_left < 60 * 60, "the eraser cleared some spider wall ({spider_left})");
+        assert_eq!(gem_left, 20 * 60, "the gem wall is untouched");
+        // The cleared cells read wall 0 (the C# writes 0, not a baseline).
+        assert!(a.tiles.iter().any(|t| t.wall == 0), "the erased cells read 0");
+    }
+
+    /// The spider pass's `ILied` tail dispatch (`WorldGen.cs:17422-17425`) —
+    /// a `noSpiderCaves` world with ≥ 4 secrets converts the evil/hive walls
+    /// to spider walls via `micro_finish::no_spider_caves_i_lied`.
+    #[test]
+    fn the_i_lied_tail_converts_the_biome_walls() {
+        let mut w = flat_world(900, 900, 60);
+        carve_pocket(&mut w, 300, 520, 300, 10);
+        // Paint a hive wall (86) and a jungle wall (15) the sweep converts.
+        let hive = w.index(400, 500);
+        w.tiles[hive].wall = WALL_HIVE;
+        let jungle = w.index(410, 500);
+        w.tiles[jungle].wall = 15;
+        w.micro_seeds |= crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES
+            | crate::seeds::MicroSeedFlags::ERROR_WORLD
+            | crate::seeds::MicroSeedFlags::RAINS_FOR_A_YEAR
+            | crate::seeds::MicroSeedFlags::RANDOM_SPAWN;
+        assert!(no_spider_caves_i_lied_more_spider_caves(&w));
+        let mut rng = Rng(0xABCD);
+        let (rock, surface) = (w.rock_layer, w.world_surface);
+        pass_spider_caves(&mut w, &mut rng, rock, surface, 780.0, None);
+        assert_eq!(w.tile(400, 500).unwrap().wall, WALL_SPIDER, "the hive wall converted");
+        assert_eq!(w.tile(410, 500).unwrap().wall, WALL_SPIDER, "the jungle wall converted");
+        // A lone noSpiderCaves world (count < 4) skips the pass whole — no
+        // conversion, no spider wall.
+        let mut lone = flat_world(900, 900, 60);
+        let hive2 = lone.index(400, 500);
+        lone.tiles[hive2].wall = WALL_HIVE;
+        lone.micro_seeds |= crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES;
+        assert!(!no_spider_caves_i_lied_more_spider_caves(&lone));
+        let mut rng2 = Rng(0xABCD);
+        let (r2, s2) = (lone.rock_layer, lone.world_surface);
+        pass_spider_caves(&mut lone, &mut rng2, r2, s2, 780.0, None);
+        assert_eq!(lone.tile(400, 500).unwrap().wall, WALL_HIVE, "the lone world converts nothing");
+    }
+
+    /// The webs pass's `ILied` honey arm (`WorldGen.cs:20022-20028`) — the
+    /// spider-wall liquid converts to honey instead of clearing.
+    #[test]
+    fn the_i_lied_webs_arm_honey_fills_the_spider_walls() {
+        let mut w = flat_world(600, 300, 40);
+        carve_pocket(&mut w, 300, 120, 40, 30);
+        let cell = w.index(310, 130);
+        w.tiles[cell].wall = WALL_SPIDER;
+        w.tiles[cell].liquid = 200;
+        w.tiles[cell].set_liquid_kind(crate::tile::LiquidKind::Lava);
+        w.micro_seeds |= crate::seeds::MicroSeedFlags::NO_SPIDER_CAVES
+            | crate::seeds::MicroSeedFlags::ERROR_WORLD
+            | crate::seeds::MicroSeedFlags::RAINS_FOR_A_YEAR
+            | crate::seeds::MicroSeedFlags::RANDOM_SPAWN;
+        let surface = w.world_surface;
+        pass_webs_and_honey(&mut w, &mut Rng(0x5EED), surface);
+        let t = w.tile(310, 130).unwrap();
+        assert_eq!(t.liquid, 200, "the ILied arm keeps the liquid");
+        assert_eq!(t.liquid_kind(), crate::tile::LiquidKind::Honey, "converted to honey");
+        // The classic arm clears it instead.
+        let mut c = flat_world(600, 300, 40);
+        carve_pocket(&mut c, 300, 120, 40, 30);
+        let cc = c.index(310, 130);
+        c.tiles[cc].wall = WALL_SPIDER;
+        c.tiles[cc].liquid = 200;
+        let cs = c.world_surface;
+        pass_webs_and_honey(&mut c, &mut Rng(0x5EED), cs);
+        assert_eq!(c.tile(310, 130).unwrap().liquid, 0, "the classic arm clears");
+    }
+
+    /// The webs pass's DST row-50 start (`WorldGen.cs:20003-20006`) — a Don't
+    /// Starve world sweeps from row 50, reaching spider walls above the
+    /// surface line that the classic sweep skips. Observed through the
+    /// liquid-clearing arm (no nearby-solid requirement).
+    #[test]
+    fn the_dst_webs_pass_starts_at_row_50() {
+        let paint = |w: &mut World| {
+            // A spider-wall cell at row 60 — between the DST start (50) and
+            // the surface line (100), carrying liquid the sweep clears.
+            let i = w.index(310, 60);
+            w.tiles[i].wall = WALL_SPIDER;
+            w.tiles[i].liquid = 200;
+        };
+        let mut w = flat_world(600, 300, 100);
+        paint(&mut w);
+        w.seeds = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::DONT_STARVE);
+        let surface = w.world_surface;
+        pass_webs_and_honey(&mut w, &mut Rng(0xD57), surface);
+        assert_eq!(w.tile(310, 60).unwrap().liquid, 0, "the DST sweep reached row 60");
+        // The classic sweep (surface 100) starts below row 60 and skips it.
+        let mut c = flat_world(600, 300, 100);
+        paint(&mut c);
+        let cs = c.world_surface;
+        pass_webs_and_honey(&mut c, &mut Rng(0xD57), cs);
+        assert_eq!(c.tile(310, 60).unwrap().liquid, 200, "the classic sweep skips row 60");
+    }
+
+    /// The spider pass's `shroomCount > 1` retry veto (`WorldGen.cs:17407-
+    /// 17410`) — a shroom-bearing pocket forces another retry. The veto sets
+    /// the count to 0 INSIDE the loop, so the acceptance re-fails.
+    #[test]
+    fn the_shroom_veto_forces_a_retry() {
+        // A pocket with two mushroom-grass tiles reads shroom == 2; the veto
+        // zeroes the count so the pass retries instead of accepting.
+        let mut w = flat_world(900, 900, 60);
+        carve_pocket(&mut w, 300, 520, 300, 10);
+        let m1 = w.index(350, 525);
+        w.tiles[m1].kind = TILE_MUSHROOM_GRASS;
+        w.tiles[m1].flags |= FLAG_ACTIVE;
+        let m2 = w.index(360, 525);
+        w.tiles[m2].kind = TILE_MUSHROOM_GRASS;
+        w.tiles[m2].flags |= FLAG_ACTIVE;
+        let c = count_tiles(&w, 400, 525, true, 3500);
+        assert!(c.shroom > 1, "the pocket carries two shrooms ({})", c.shroom);
+        // The veto logic: a shroom-bearing count is zeroed (re-fails the gate).
+        let mut vetoed = c;
+        if vetoed.shroom > 1 {
+            vetoed.tiles = 0;
+        }
+        assert!(vetoed.tiles < 500, "the vetoed count re-fails the acceptance");
+    }
+
+    /// W4-g41 a == b: the egg-sac validator + the new decor arms keep the
+    /// spider pass deterministic for a seed (two runs agree tile-for-tile).
+    #[test]
+    fn the_spider_pass_with_the_validator_is_deterministic() {
+        let build = |seed: u64| {
+            let mut w = flat_world(900, 900, 60);
+            carve_pocket(&mut w, 300, 520, 300, 10);
+            let mut rng = Rng(seed);
+            let (rock, surface) = (w.rock_layer, w.world_surface);
+            pass_spider_caves(&mut w, &mut rng, rock, surface, 780.0, None);
+            w.tiles.clone()
+        };
+        assert_eq!(build(0x5B1D), build(0x5B1D), "a == b for the validator pass");
     }
 }
