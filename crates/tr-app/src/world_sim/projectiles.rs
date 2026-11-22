@@ -899,7 +899,6 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             &ctx,
             &app.world,
         );
-        );
     }
     // W4-d4 — `Kill()`'s world-drop drain (`Projectile.cs:77572-77615` the
     // rope-coil refund ladder, `:77620-77623` the beach ball's return): the
