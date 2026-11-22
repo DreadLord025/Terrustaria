@@ -1095,30 +1095,6 @@ pub enum NpcKind {
     /// merge keep-one. The NPC_86 sheet is DEFERRED (the atlas full-set
     /// bound, the d35 precedent).
     Unicorn,
-    /// `NPCID.Wolf` (155, `NPCID.cs:10987`) — the hardmode snow-night
-    /// galloper (`aiStyle 26`): 46x30, dmg 65, def 30, 300 HP, kb 0.3,
-    /// value 1000, NPCHit1/NPCDeath1 (`NPC.cs:10961-10973`). W4-d25
-    /// WIRING: the axis' 26 arm rides `npc_ai_style26::ai_style26`
-    /// (the 155 hop-over `:62558-62564` + the 0.95 turnaround damping
-    /// `:62621-62631`). Protocol 355 is port-local (the vanilla 155
-    /// slot is PlanterasTentacle's). The NPC_155 sheet is DEFERRED
-    /// (8180 alone fits, but 8217 with NPC_86 overflows the full set).
-    Wolf,
-    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) — the sandstorm
-    /// tumbler (`aiStyle 26`): 30x30, dmg 30, def 6, 50 HP, kb 0.8,
-    /// value 100, NPCHit11/NPCDeath15 (`NPC.cs:15972-15984`). W4-d25
-    /// WIRING: the axis' 26 arm rides `npc_ai_style26::ai_style26`
-    /// (the num2=4 stuck bound + the same-type separation
-    /// `:62378-62408`, the FLOAT-centre hop + the (3,11) chirp
-    /// `:62565-62569`, the ZoneDesert despawn gate `:62570-62580`, the
-    /// wind-driven walk `:62703-62716`, the spriteDirection inversion
-    /// `:62865-62868` + the rotation tail `:62919-62923`). Protocol 546
-    /// is the vanilla id (free across the co-lanes). The sim pre-pass
-    /// stamps the wind/zone/sibling seams. The NPC_546 sheet is DEFERRED
-    /// (the full-set bound with NPC_86/155; the d35 precedent). The
-    /// natural sandstorm spawn (`NPC.cs:3949-4018`) is a documented
-    /// remainder — the desert zone-chain family is unported.
-    Tumbleweed,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1750,21 +1726,6 @@ pub struct Npc {
     /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
     /// borrow cannot reach `app.wind`; 0 until the sim stamps it.
     pub wind_speed_current: f32,
-    /// `Main.windSpeedTarget` pre-stamped by the sim (W4-d25 STYLE-26
-    /// wiring, the `wind_speed_current` convention) — the Tumbleweed's
-    /// wind-driven walk cap reads it (`NPC.cs:62703-62716`). The 86/155
-    /// paths never read it; 0 until the sim stamps it.
-    pub gallop_wind_speed_target: f32,
-    /// `Main.player[target].ZoneDesert` pre-stamped by the sim — the
-    /// Tumbleweed's despawn gate (`NPC.cs:62570-62580`). TRUE by default:
-    /// the 86/155 paths never read it, and a solo Tumbleweed outside the
-    /// sim keeps its machine's desert-gate witness default (the module
-    /// ctx fixture). The sim stamps the live scene value every tick.
-    pub gallop_zone_desert: bool,
-    /// `Main.player[target].ZoneSandstorm` pre-stamped by the sim — the
-    /// Tumbleweed's wind gate (`NPC.cs:62709-62712`: the cap term zeroes
-    /// outside the sandstorm). FALSE by default (the module ctx fixture).
-    pub gallop_zone_sandstorm: bool,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -1773,14 +1734,6 @@ pub struct Npc {
     /// tick (the Plantera hook-anchor carrier precedent); outside the
     /// sim it stays empty.
     pub twin_time_lefts: Vec<i32>,
-    /// The OTHER active same-type (546) NPCs' positions in slot order —
-    /// the Tumbleweed's separation scan (`NPC.cs:62382-62384`'s
-    /// `Main.npc` loop, `i != whoAmI && active && type == this.type`).
-    /// `Npc::update_rng` cannot see its siblings, so the sim's pre-pass
-    /// stamps this before each tick (the `twin_time_lefts` carrier
-    /// precedent); outside the sim it stays empty (the 86/155 paths
-    /// never read it — the separation is 546-only).
-    pub gallop_siblings: Vec<(f32, f32)>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -3142,11 +3095,7 @@ impl Npc {
             wants_fishron_trail: Vec::new(),
             wants_fishron_bolts: Vec::new(),
             wind_speed_current: 0.0,
-            gallop_wind_speed_target: 0.0,
-            gallop_zone_desert: true,
-            gallop_zone_sandstorm: false,
             twin_time_lefts: Vec::new(),
-            gallop_siblings: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -3589,11 +3538,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
-            // W4-d25 STYLE-26 wiring: 86/155 kb 0.3 (`NPC.cs:9936`/
-            // `:10971`), 546 kb 0.8 (`:15982`). The Unicorn row mirrors
-            // d35 (C).
-            NpcKind::Unicorn | NpcKind::Wolf => 0.3,
-            NpcKind::Tumbleweed => 0.8,
+            // W4-d25 STYLE-26 wiring: 86 kb 0.3 (`NPC.cs:9936`). The
+            // Unicorn row mirrors d35 (C). The Wolf/Tumbleweed rows
+            // DROPPED per the keep-one note f5f486c7c (d36/d41 own them).
+            NpcKind::Unicorn => 0.3,
             _ => 0.4,
         }
     }
@@ -3974,11 +3922,10 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
-            // W4-d25 STYLE-26 wiring: 86/155 def 30 (`NPC.cs:9932`/
-            // `:10967`), 546 def 6 (`:15978`). The Unicorn row mirrors
-            // d35 (C).
-            NpcKind::Unicorn | NpcKind::Wolf => 30,
-            NpcKind::Tumbleweed => 6,
+            // W4-d25 STYLE-26 wiring: 86 def 30 (`NPC.cs:9932`). The
+            // Unicorn row mirrors d35 (C). The Wolf/Tumbleweed rows
+            // DROPPED per the keep-one note f5f486c7c (d36/d41 own them).
+            NpcKind::Unicorn => 30,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4351,11 +4298,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
-            // W4-d25 STYLE-26 wiring: 86/155 value 1000 copper
-            // (`NPC.cs:9937`/`:10972`), 546 value 100 (`:15983`). The
-            // Unicorn row mirrors d35 (C).
-            NpcKind::Unicorn | NpcKind::Wolf => 1000.0,
-            NpcKind::Tumbleweed => 100.0,
+            // W4-d25 STYLE-26 wiring: 86 value 1000 copper
+            // (`NPC.cs:9937`). The Unicorn row mirrors d35 (C). The
+            // Wolf/Tumbleweed rows DROPPED per the keep-one note
+            // f5f486c7c (d36/d41 own them).
+            NpcKind::Unicorn => 1000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4759,12 +4706,14 @@ impl Npc {
             // UNCHANGED (verify-only — the S1-F-13b2/S1-D-4 W-10 unicorn
             // machine and the M4-EVENT-9 410/423 stand-ins, their
             // deviation notes ride those fns). W4-d25 WIRING: the
-            // Unicorn (86) + the Wolf (155) ride the verbatim
+            // Unicorn (86) rides the verbatim
             // `npc_ai_style26::ai_style26` core (RNG-free — the machine
-            // draws no `Main.rand` on these paths); the sim pre-pass
-            // stamps the 546 wind/zone seams (the Tumbleweed lands with
-            // its own commit). The caller owns the gravity + collision
-            // tail (`gallop_move_tail`, the npc_ai_unicorn convention).
+            // draws no `Main.rand` on this path). The caller owns the
+            // gravity + collision tail (`gallop_move_tail`, the
+            // npc_ai_unicorn convention). KEEP-ONE (f5f486c7c): the Wolf
+            // proto-355 + the Tumbleweed 546 DROPPED here — d36/d41 own
+            // those kinds; when they land, this arm extends kind-gated
+            // to their machines (ONE 26 arm, no second dispatch).
             26 => match self.kind {
                 NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
                     crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
@@ -4773,9 +4722,7 @@ impl Npc {
                     self.update_stardust_spider_small(world, player, rng)
                 }
                 NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
-                NpcKind::Unicorn | NpcKind::Wolf | NpcKind::Tumbleweed => {
-                    self.ai_026_gallop_family(world, player)
-                }
+                NpcKind::Unicorn => self.ai_026_gallop_family(world, player),
                 _ => unreachable!("only the ported aiStyle-26 kinds reach the axis arm"),
             },
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
@@ -5391,20 +5338,17 @@ impl Npc {
     }
 
     /// W4-d25 STYLE-26 wiring: the aiStyle-26 galloper arm — the Unicorn
-    /// (86), the Wolf (155) and the Tumbleweed (546) ride
-    /// `npc_ai_style26::ai_style26` (`AI_026_Unicorns`,
+    /// (86) rides `npc_ai_style26::ai_style26` (`AI_026_Unicorns`,
     /// `NPC.cs:62366-62924`; the 86 path has NO type branch — the generic
-    /// 6/0.07 core; the 155 path adds the hop-over `:62558-62564` + the
-    /// 0.95 turnaround damping `:62621-62631`; the 546 path adds the
-    /// separation/wind-cap/desert-gate/rotation tail). RNG-free by
-    /// construction: the machine's only draws are the 315/423 arms (the
-    /// other modules'), so the caller's stream is untouched. The seam
-    /// feeds the session player as slot 0 (the S1-D-3p convention),
-    /// ticker 0 (the `EverLastingTicker` stand-in, the zombie convention);
-    /// the 546-only wind/zone/sibling inputs ride the sim pre-pass stamps
-    /// (the `twin_time_lefts` carrier convention). The chirp is 546-only;
-    /// the `wants_sound` drain is wired for all three (the 86/155 paths
-    /// emit nothing).
+    /// 6/0.07 core). RNG-free by construction: the machine's only draws
+    /// are the 315/423 arms (the other modules'), so the caller's stream
+    /// is untouched. The seam feeds the session player as slot 0 (the
+    /// S1-D-3p convention), ticker 0 (the `EverLastingTicker` stand-in,
+    /// the zombie convention). KEEP-ONE (f5f486c7c): the Wolf/Tumbleweed
+    /// kinds + their 546-only carrier pre-pass DROPPED (d36/d41 own
+    /// them); the 86 path never reads the wind/zone/sibling inputs, so
+    /// the ctx carries the module-fixture defaults. The `wants_sound`
+    /// drain stays wired (the 86 path emits nothing).
     fn ai_026_gallop_family(&mut self, world: &World, player: &Player) {
         // `Entity.wet` (`Collision.WetCollision`) — the walk gate's wet
         // conjunct (`NPC.cs:62618`) and the case-86 sprite latch read
@@ -5413,24 +5357,17 @@ impl Npc {
         self.wet = is_wet(world, self.x, self.y, w, h);
         let players = [crate::npc_target::session_candidate(player)];
         // The 546-only ctx inputs (`wind_speed_target` / `zone_desert` /
-        // `zone_sandstorm` / `siblings`) ride the sim pre-pass stamps (the
-        // `twin_time_lefts` carrier convention — the AI's `&World` borrow
-        // cannot reach `app.wind` / `app.scene_metrics` / the pool). The
-        // pre-pass stamps the session player's live desert/sandstorm
-        // zones + `Main.windSpeedTarget` + the same-type sibling scan
-        // before each tick. The 86/155 paths never read them; outside the
-        // sim they keep the ctor defaults (the module ctx fixture).
-        // The sibling list is cloned out of `self` first — the ctx borrows
-        // it while the machine takes `self` mutably (the Retinazer twin
-        // list precedent, `ai_030_retinazer`).
-        let siblings = self.gallop_siblings.clone();
+        // `zone_sandstorm` / `siblings`) are never read on the 86 path —
+        // the module ctx fixture defaults stand (the keep-one drop
+        // f5f486c7c removed the Tumbleweed pre-pass + carrier fields;
+        // d41's splice owns the live stamps).
         let ctx = crate::npc_ai_style26::Ai26Ctx {
             players: &players,
             ticker: 0,
-            wind_speed_target: self.gallop_wind_speed_target,
-            zone_desert: self.gallop_zone_desert,
-            zone_sandstorm: self.gallop_zone_sandstorm,
-            siblings: &siblings,
+            wind_speed_target: 0.0,
+            zone_desert: true,
+            zone_sandstorm: false,
+            siblings: &[],
         };
         let ty = self.kind.cs_id() as i32;
         let fx = crate::npc_ai_style26::ai_style26(ty, self, world, &ctx);
@@ -6403,12 +6340,12 @@ impl Npc {
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
                 unreachable!("aiStyle 26 rides the style axis (W4-d25)")
             }
-            // W4-d25 STYLE-26 wiring: the Unicorn (86) + the Wolf (155)
-            // + the Tumbleweed (546) ride the axis' 26 arm
-            // (`ai_026_gallop_family` → `npc_ai_style26::ai_style26`) —
-            // these arms are unreachable through `update_rng` (the
-            // S1-D-3 W-1 precedent).
-            NpcKind::Unicorn | NpcKind::Wolf | NpcKind::Tumbleweed => {
+            // W4-d25 STYLE-26 wiring: the Unicorn (86) rides the axis'
+            // 26 arm (`ai_026_gallop_family` → `npc_ai_style26::ai_style26`)
+            // — this arm is unreachable through `update_rng` (the
+            // S1-D-3 W-1 precedent). The Wolf/Tumbleweed arms DROPPED
+            // per the keep-one note f5f486c7c (d36/d41 own them).
+            NpcKind::Unicorn => {
                 unreachable!("aiStyle 26 rides the style axis (W4-d25 STYLE-26 wiring)")
             }
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
@@ -9194,57 +9131,6 @@ impl Npc {
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
             }
-            // W4-d25 STYLE-26 wiring — `case 155` (`NPC.cs:74311-74374`):
-            // the Wolf's 13-row strip (`Main.npcFrameCount[155]` = 13,
-            // `Main.cs:67082`). The air rows 10/11 by the vy sign; the
-            // idle row 0; the |vx|<4 turnaround walks rows 0..2 on the
-            // >5 counter; the run rides the |vx|*0.4 accumulator, >8
-            // advances, the >9 wrap lands on 3. The bestiary-dummy
-            // floor (<3 → 3) is the icon path — unmodelled (the port's
-            // portrait reads row 0 off the sheet, the d35 convention).
-            NpcKind::Wolf => {
-                let mut row = self.frame;
-                if self.vy < 0.0 {
-                    row = 10;
-                } else if self.vy > 0.0 {
-                    row = 11;
-                } else if self.vx == 0.0 {
-                    row = 0;
-                    self.frame_counter = 0.0;
-                } else if ((self.facing > 0 && self.vx < 0.0)
-                    || (self.facing < 0 && self.vx > 0.0))
-                    && self.vx.abs() < 4.0
-                {
-                    self.sprite_dir = self.facing;
-                    if row > 2 {
-                        row = 0;
-                        self.frame_counter = 0.0;
-                    }
-                    if row < 2 {
-                        self.frame_counter += 1.0;
-                        if self.frame_counter > 5.0 {
-                            self.frame_counter = 0.0;
-                            row += 1;
-                        }
-                    } else {
-                        self.frame_counter = 0.0;
-                    }
-                } else {
-                    self.sprite_dir = if self.vx < 0.0 { -1 } else { 1 };
-                    self.frame_counter += self.vx.abs() * 0.4;
-                    if row == 10 || row == 11 {
-                        row = 12;
-                        self.frame_counter = 0.0;
-                    } else if self.frame_counter > 8.0 {
-                        self.frame_counter -= 8.0;
-                        row += 1;
-                        if row > 9 {
-                            row = 3;
-                        }
-                    }
-                }
-                self.frame = row;
-            }
             // W4-d25 STYLE-26 wiring — `case 86` (`NPC.cs:74404-74464`):
             // the Unicorn's 16-row strip (`Main.npcFrameCount[86]` = 16).
             // Grounded/wet latches the sprite (±2 deadband); the air row
@@ -9292,15 +9178,6 @@ impl Npc {
                         }
                     }
                 }
-            }
-            // W4-d25 STYLE-26 wiring — the Tumbleweed (546) has NO
-            // `FindFrame` case (`NPC.cs:66684-77370` has no `case 546`):
-            // `Main.npcFrameCount[546]` = 1 (`Main.cs:67082`), the single
-            // frame never advances (the ForceBubble row-0 precedent).
-            // The rotation rides the machine's tail (`:62919-62923`), not
-            // the frame.
-            NpcKind::Tumbleweed => {
-                self.frame = 0;
             }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
@@ -18932,14 +18809,12 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // W4-d25 STYLE-26 wiring: the protocol ids (to_u16's rows —
-            // 440 the Unicorn's d35-mirrored slot, 355 the Wolf's
-            // port-local one, 546 the Tumbleweed's vanilla id; the vanilla
-            // 86/155 collide with the RayGunner/PlanterasTentacle keys
-            // above). Injective either way.
+            // W4-d25 STYLE-26 wiring: the protocol id (to_u16's row —
+            // 440 the Unicorn's d35-mirrored slot; the vanilla 86
+            // collides with the RayGunner key above). Injective either
+            // way. The Wolf/Tumbleweed rows DROPPED per the keep-one
+            // note f5f486c7c (d36/d41 own them).
             NpcKind::Unicorn => 440,
-            NpcKind::Wolf => 355,
-            NpcKind::Tumbleweed => 546,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24008,7 +23883,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 273] = [
+    pub(super) const ALL_KINDS: [NpcKind; 271] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24287,10 +24162,9 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
-        // W4-d25 STYLE-26 wiring: the Unicorn + the Wolf + the Tumbleweed.
+        // W4-d25 STYLE-26 wiring: the Unicorn (the Wolf/Tumbleweed
+        // DROPPED per the keep-one note f5f486c7c — d36/d41 own them).
         NpcKind::Unicorn,
-        NpcKind::Wolf,
-        NpcKind::Tumbleweed,
     ];
 
     #[test]
@@ -27902,8 +27776,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            273,
-            "every decodable kind resolves (the wire roster's size - 273 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d25 STYLE-26 wiring's Unicorn/Wolf/Tumbleweed)"
+            271,
+            "every decodable kind resolves (the wire roster's size - 271 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d25 STYLE-26 wiring's Unicorn; the Wolf/Tumbleweed dropped per keep-one f5f486c7c)"
         );
         assert!(
             covered > 43,
@@ -31545,10 +31419,9 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
-        // W4-d25 STYLE-26 wiring (`NPC.cs:9930`/`:10965`/`:15976`).
+        // W4-d25 STYLE-26 wiring (`NPC.cs:9930`; the Wolf/Tumbleweed
+        // rows dropped per keep-one f5f486c7c).
         (NpcKind::Unicorn, 26),
-        (NpcKind::Wolf, 26),
-        (NpcKind::Tumbleweed, 26),
     ];
 
     #[test]
@@ -33964,9 +33837,9 @@ mod w4_d25_style25_census_tests {
 // vanilla members: the FOUR landed kinds (HeadlessHorseman 315 /
 // Hellhound 329 on `npc_ai_unicorn::unicorn_step`, StardustSpiderSmall
 // 410 / NebulaBeast 423 on their M4-EVENT-9 stand-ins) ride the
-// axis claim UNCHANGED (verify-only); the Unicorn 86 / Wolf 155 are
-// WIRED (the `w4_d25_style26_wiring_tests` module below); the
-// Tumbleweed 546 lands with the wiring's second commit.
+// axis claim UNCHANGED (verify-only); the Unicorn 86 is WIRED (the
+// `w4_d25_style26_wiring_tests` module below). KEEP-ONE (f5f486c7c):
+// the Wolf 155 + the Tumbleweed 546 DROPPED — d36/d41 own them.
 // =====================================================================
 #[cfg(test)]
 mod w4_d25_style26_census_tests {
@@ -34120,14 +33993,15 @@ mod w4_d25_style26_census_tests {
 }
 
 // =====================================================================
-// W4-d25 — STYLE-26 WIRING witnesses (the Unicorn 86 + the Wolf 155).
-// WRITTEN, NOT RUN (code-only mode). The kinds land with their
-// SetDefaults rows (the Unicorn mirrors d35 batch C 6ed8c22f verbatim;
-// the Wolf's protocol id is port-local 355), the axis' 26 arm rides
-// `ai_026_gallop_family` → `npc_ai_style26::ai_style26` + the
-// gravity/collision tail, and the spawner's snow-arm 155 roll spawns
-// the Wolf kind (the zombie stand-in retired). The 315/329/410/423
-// routes are UNCHANGED (the census module above re-pins them).
+// W4-d25 — STYLE-26 WIRING witnesses (the Unicorn 86).
+// WRITTEN, NOT RUN (code-only mode). The kind lands with its
+// SetDefaults rows (mirroring d35 batch C 6ed8c22f verbatim), the
+// axis' 26 arm rides `ai_026_gallop_family` →
+// `npc_ai_style26::ai_style26` + the gravity/collision tail. KEEP-ONE
+// (f5f486c7c): the Wolf proto-355 + the Tumbleweed 546 (and the snow
+// arm's Wolf spawn + the 546 sim pre-pass) DROPPED — d36/d41 own
+// them. The 315/329/410/423 routes are UNCHANGED (the census module
+// above re-pins them).
 // =====================================================================
 #[cfg(test)]
 mod w4_d25_style26_wiring_tests {
@@ -34149,20 +34023,17 @@ mod w4_d25_style26_wiring_tests {
         w
     }
 
-    /// The SetDefaults rows through the port's tables (`NPC.cs:9926-9938`
-    /// / `:10961-10973` / `:15972-15984`), the kind<->u16 round-trips (440
-    /// the d35-mirrored Unicorn slot, 355 the Wolf's port-local one, 546
-    /// the Tumbleweed's vanilla id), the sound rows, the DebuffImmunitySets
-    /// (`NPCID.cs:6599`/`:7041` null, `:9169` [31]) and the bestiary
-    /// entries (`BestiaryDatabaseNPCsPopulator.cs:1650`/`:1513`/`:1292`,
-    /// the en-US `NPCs.json:432`/`:93`/`:563` names).
+    /// The SetDefaults rows through the port's tables (`NPC.cs:9926-9938`),
+    /// the kind<->u16 round-trip (440 the d35-mirrored Unicorn slot), the
+    /// sound rows, the DebuffImmunitySets (`NPCID.cs:6599` null) and the
+    /// bestiary entry (`BestiaryDatabaseNPCsPopulator.cs:1650`, the en-US
+    /// `NPCs.json:432` name). The Wolf/Tumbleweed rows dropped per the
+    /// keep-one note f5f486c7c (d36/d41 own them).
     #[test]
     fn w4_d25_wiring_the_galloper_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, protocol id, w, h, dmg, def, life, kb, value)
         for (kind, ty, proto, w, h, dmg, def, life, kb, value) in [
             (NpcKind::Unicorn, 86u16, 440u16, 46.0, 42.0, 65, 30, 400, 0.3f32, 1000.0f32),
-            (NpcKind::Wolf, 155, 355, 46.0, 30.0, 65, 30, 300, 0.3, 1000.0),
-            (NpcKind::Tumbleweed, 546, 546, 30.0, 30.0, 30, 6, 50, 0.8, 100.0),
         ] {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
@@ -34187,33 +34058,13 @@ mod w4_d25_style26_wiring_tests {
         }
         assert_eq!(NpcKind::Unicorn.hit_sound(), Some("NPC_Hit_12"));
         assert_eq!(NpcKind::Unicorn.death_sound(), Some("NPC_Killed_18"));
-        assert_eq!(NpcKind::Wolf.hit_sound(), Some("NPC_Hit_1"));
-        assert_eq!(NpcKind::Wolf.death_sound(), Some("NPC_Killed_1"));
-        assert_eq!(NpcKind::Tumbleweed.hit_sound(), Some("NPC_Hit_11"));
-        assert_eq!(NpcKind::Tumbleweed.death_sound(), Some("NPC_Killed_15"));
-        for kind in [NpcKind::Unicorn, NpcKind::Wolf] {
+        for kind in [NpcKind::Unicorn] {
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(b.buff_immune.iter().all(|&i| !i), "{kind:?} null entry");
         }
-        // The Tumbleweed is SpecificallyImmuneTo[31] (Confused) only.
-        let b = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Tumbleweed);
-        assert!(b.buff_immune[31], "the Tumbleweed's Confused immunity");
-        assert_eq!(
-            b.buff_immune.iter().filter(|&&i| i).count(),
-            1,
-            "the Tumbleweed's only immunity is 31"
-        );
         assert_eq!(
             crate::bestiary::entry_for_npc(NpcKind::Unicorn, SlimeVariant::Blue).name,
             "Unicorn"
-        );
-        assert_eq!(
-            crate::bestiary::entry_for_npc(NpcKind::Wolf, SlimeVariant::Blue).name,
-            "Wolf"
-        );
-        assert_eq!(
-            crate::bestiary::entry_for_npc(NpcKind::Tumbleweed, SlimeVariant::Blue).name,
-            "Angry Tumbler"
         );
     }
 
@@ -34253,31 +34104,6 @@ mod w4_d25_style26_wiring_tests {
         assert_eq!(rng, witness, "the wired tick draws nothing");
     }
 
-    /// The Wolf's live axis tick: the 0.95 turnaround damping runs
-    /// BEFORE the shared accel (`NPC.cs:62621-62631`), then the hop-over
-    /// stays off (the player is far). Stream untouched.
-    #[test]
-    fn w4_d25_wiring_the_wolf_damps_the_turnaround_through_the_axis() {
-        let w = ground26();
-        let mut p = Player::spawn(&w);
-        p.x = 150.0 * TILE_PX;
-        p.y = 98.0 * TILE_PX;
-        let mut n = Npc::new(NpcKind::Wolf, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
-        n.hp = n.max_hp;
-        n.on_ground = true;
-        n.sprite_dir = 1;
-        n.target = 0;
-        n.old_target = 0;
-        n.unicorn_stuck_x = n.x - 1.0;
-        n.vx = -2.0; // rolling LEFT while facing RIGHT
-        let mut rng = UnifiedRandom::new(26);
-        let witness = rng.clone();
-        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
-        assert_eq!(n.vx, -2.0f32 * 0.95 + 0.07, "the damp then the accel");
-        assert_eq!(n.vy, 0.0, "no hop at 1400+ px");
-        assert_eq!(rng, witness, "the wired tick draws nothing");
-    }
-
     /// The kind-match arms are retired: calling `update_kind_ai`
     /// directly on a galloper panics (the census module's precedent).
     #[test]
@@ -34285,74 +34111,9 @@ mod w4_d25_style26_wiring_tests {
     fn w4_d25_wiring_the_galloper_kind_arms_are_retired() {
         let w = ground26();
         let mut p = Player::spawn(&w);
-        let mut n = Npc::new(NpcKind::Wolf, 0.0, 0.0, 1, 0.0);
+        let mut n = Npc::new(NpcKind::Unicorn, 0.0, 0.0, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
         n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
-    }
-
-    /// `FindFrame`'s `case 155` (`NPC.cs:74311-74374`): the air rows
-    /// 10/11, the idle 0, the |vx|<4 turnaround rows 0..2 on the >5
-    /// counter, the run's |vx|*0.4 accumulator with the >8 advance and
-    /// the >9 wrap to 3 — all inside the 13-row strip
-    /// (`Main.npcFrameCount[155]` = 13, `Main.cs:67082`).
-    #[test]
-    fn w4_d25_wiring_the_wolf_frames_walk_the_csharp_rows() {
-        let mut n = Npc::new(NpcKind::Wolf, 0.0, 0.0, 1, 0.0);
-        // The air rows by the vy sign.
-        n.vy = -1.0;
-        n.find_frame();
-        assert_eq!(n.frame, 10, "the rise row (:74320)");
-        n.vy = 1.0;
-        n.find_frame();
-        assert_eq!(n.frame, 11, "the fall row (:74324)");
-        // The landing: the run arm converts 10/11 -> 12 (:74357-74360).
-        n.vy = 0.0;
-        n.vx = 4.0;
-        n.find_frame();
-        assert_eq!(n.frame, 12, "the landing row");
-        assert_eq!(n.sprite_dir, 1, "the run faces the motion");
-        // The run: |vx|*0.4 = 2.0/tick (exact in f32), >8 advances every
-        // 5 ticks (2/4/6/8 hold, 10 - 8 = 2 carries). The >9 wrap lands
-        // on 3 (:74366-74369).
-        n.vx = 5.0;
-        n.frame_counter = 0.0;
-        let mut rows = Vec::new();
-        for _ in 0..12 {
-            n.find_frame();
-            rows.push(n.frame);
-        }
-        assert_eq!(rows, vec![12, 12, 12, 12, 3, 3, 3, 3, 3, 4, 4, 4]);
-        // The wrap: row 9 + advance -> 10 > 9 -> 3 (:74366-74369).
-        n.frame = 9;
-        n.frame_counter = 7.0;
-        n.find_frame();
-        assert_eq!(n.frame, 3, "the >9 wrap lands on 3");
-        // The idle.
-        n.vx = 0.0;
-        n.find_frame();
-        assert_eq!(n.frame, 0);
-        assert_eq!(n.frame_counter, 0.0);
-        // The turnaround: facing away, |vx| < 4 — rows 0..2 on the >5
-        // counter, the sprite faces the direction (:74331-74351).
-        n.facing = -1;
-        n.vx = 2.0;
-        n.frame = 5;
-        n.find_frame();
-        assert_eq!(n.frame, 0, "the >2 reset");
-        assert_eq!(n.sprite_dir, -1, "the turnaround faces the direction");
-        // The reset tick spent counter 1; four more reach 5 (not > 5).
-        for _ in 0..4 {
-            n.find_frame();
-        }
-        assert_eq!(n.frame, 0, "counter 5 holds the row");
-        n.find_frame();
-        assert_eq!(n.frame, 1, "the sixth tick advances");
-        // The row-2 park zeroes the counter (:74348-74351).
-        n.frame = 2;
-        n.frame_counter = 3.0;
-        n.find_frame();
-        assert_eq!(n.frame, 2);
-        assert_eq!(n.frame_counter, 0.0);
     }
 
     /// `FindFrame`'s `case 86` (`NPC.cs:74404-74464`): the grounded/wet
@@ -34414,114 +34175,6 @@ mod w4_d25_style26_wiring_tests {
         assert_eq!(n.frame, 9, "the >=15 wrap snaps to 9");
     }
 
-    /// The Tumbleweed's live axis tick: the wind-driven walk (the 0.92
-    /// sign damp + the 0.05 accel, the cap `4 + Lerp(0.6,1,|wind|) *
-    /// sign(wind) * direction * 3` zeroed outside the sandstorm,
-    /// `NPC.cs:62703-62716`), the rotation tail (`:62919-62923`), the
-    /// caller-owned gravity/collision tail. RNG-free: the machine takes
-    /// no stream and the tick draws nothing (the chirp is the hop-only
-    /// sound, drained separately). The sim pre-pass stamps the
-    /// wind/zone/sibling seams; this solo witness sets them directly.
-    #[test]
-    fn w4_d25_wiring_the_tumbleweed_rides_the_26_axis_draw_free() {
-        let w = ground26();
-        let mut p = Player::spawn(&w);
-        // Far (>200 px) and BELOW the tumbler's centre: no proximity
-        // clear, no directionY<0 jump-probe pollution.
-        p.x = 150.0 * TILE_PX;
-        p.y = 98.0 * TILE_PX;
-        let mut n = Npc::new(NpcKind::Tumbleweed, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
-        n.hp = n.max_hp;
-        n.on_ground = true;
-        n.sprite_dir = 1;
-        n.target = 0;
-        n.old_target = 0;
-        n.unicorn_stuck_x = n.x - 1.0; // moved last tick: no stuck arm
-        // The sim pre-pass stamps: in the desert (no despawn), no
-        // sandstorm (the wind term zeroes -> the cap is 4), no wind.
-        n.gallop_zone_desert = true;
-        n.gallop_zone_sandstorm = false;
-        n.gallop_wind_speed_target = 0.0;
-        let mut rng = UnifiedRandom::new(26);
-        let witness = rng.clone();
-        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
-        // The walk: sign(0) != facing(1) -> the 0.92 damp on vx=0 is 0,
-        // then the +0.05 accel. The cap is 4 (no sandstorm).
-        assert_eq!(n.vx, 0.05, "the 0.05 accel (:62716)");
-        assert!(!n.wet, "the dry floor");
-        // The tail: gravity 0.4 applied, the floor latch holds the body.
-        assert_eq!(n.y, 100.0 * TILE_PX - 30.0, "the floor latch");
-        assert_eq!(n.vy, 0.0);
-        assert!(n.on_ground);
-        assert_eq!(n.x, 60.0 * TILE_PX + 0.05, "the walk integrated");
-        assert_eq!(n.unicorn_stuck_x, n.x, "the end-of-tick latch (:92605)");
-        // The rotation tail: rotation += vx * 0.05, sprite = -direction.
-        assert_eq!(n.rotation, 0.05 * 0.05, "the rotation tail (:62920)");
-        assert_eq!(n.sprite_dir, -n.facing, "the sprite inversion (:62921)");
-        // The single frame never advances (no case 546).
-        assert_eq!(n.frame, 0, "the 1-row strip");
-        assert!(n.wants_sound.is_empty(), "no hop this tick (vx < 3)");
-        assert_eq!(rng, witness, "the wired tick draws nothing");
-    }
-
-    /// The Tumbleweed's separation (`NPC.cs:62378-62408`): a same-type
-    /// sibling inside the Manhattan `< width` window nudges vx/vy ∓0.05;
-    /// the grounded latch re-zeroes vy after. The sim pre-pass collects
-    /// the siblings; this solo witness sets `gallop_siblings` directly.
-    #[test]
-    fn w4_d25_wiring_the_tumbleweed_separates_from_siblings() {
-        let w = ground26();
-        let mut p = Player::spawn(&w);
-        p.x = 150.0 * TILE_PX;
-        p.y = 98.0 * TILE_PX;
-        let mut n = Npc::new(NpcKind::Tumbleweed, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
-        n.hp = n.max_hp;
-        n.on_ground = true;
-        n.sprite_dir = 1;
-        n.target = 0;
-        n.old_target = 0;
-        n.unicorn_stuck_x = n.x - 1.0;
-        n.gallop_zone_desert = true;
-        // A sibling 10 px right + 5 px down: Manhattan 15 < width 30.
-        n.gallop_siblings = vec![(n.x + 10.0, n.y + 5.0)];
-        let mut rng = UnifiedRandom::new(26);
-        let witness = rng.clone();
-        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
-        // vx: -0.05 (sibling right), then the walk's 0.92 sign damp
-        // (sign(-0.05) != facing) and the +0.05 accel.
-        assert_eq!(n.vx, -0.05f32 * 0.92 + 0.05, "the separation nudge + the walk");
-        // The grounded latch re-zeroed the vy nudge, then the tail's
-        // gravity 0.4 lands the body on the floor (vy 0).
-        assert_eq!(n.vy, 0.0, "the grounded latch + the floor");
-        assert_eq!(rng, witness, "the separation draws nothing");
-    }
-
-    /// The Tumbleweed's desert despawn gate (`NPC.cs:62570-62580`):
-    /// outside the desert, re-target, and if still outside:
-    /// EncourageDespawn(10), ai[3] = 30, the direction restored.
-    #[test]
-    fn w4_d25_wiring_the_tumbleweed_despawns_outside_the_desert() {
-        let w = ground26();
-        let mut p = Player::spawn(&w);
-        p.x = 150.0 * TILE_PX;
-        p.y = 98.0 * TILE_PX;
-        let mut n = Npc::new(NpcKind::Tumbleweed, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
-        n.hp = n.max_hp;
-        n.on_ground = true;
-        n.sprite_dir = 1;
-        n.target = 0;
-        n.old_target = 0;
-        n.unicorn_stuck_x = n.x - 1.0;
-        n.despawn_timer = 600;
-        n.gallop_zone_desert = false; // outside the desert
-        let mut rng = UnifiedRandom::new(26);
-        let witness = rng.clone();
-        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
-        assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10) (:62576)");
-        assert_eq!(n.ai[3], 30.0, "the wander window pinned (:62577)");
-        assert_eq!(n.facing, 1, "the pre-retarget direction restored (:62578)");
-        assert_eq!(rng, witness, "the despawn gate draws nothing");
-    }
 }
 
 // =====================================================================

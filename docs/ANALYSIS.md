@@ -24668,6 +24668,27 @@ RUN — no compiler invoked.
   d36's Wolf machine and d25's `ai_026_gallop_family` (Unicorn/Tumbleweed
   per the surviving kinds); no second dispatch arm.
 
+**KEEP-ONE EXECUTED (integration/batch-E).** The d25 merge into batch-E
+carried the drop at merge time (d36/d41 are NOT in this batch): the Wolf
+proto-355 and the Tumbleweed 546 kinds, ALL their `NpcKind` table rows
+(`to_u16`/`from_u16`/`cs_id`/`ai_style`/size/dmg/def/hp/kb/value/sounds/
+immunities), their bestiary entries + portraits + netglue seed arms +
+render arms (incl. the Tumbleweed rotation-whitelist row), the Wolf's
+`FindFrame` case-155 arm + the Tumbleweed's row-0 arm, the snow-arm 155
+Wolf spawn (reverted to the zombie stand-in — d36 relands it), the 546
+sim pre-pass + the four `gallop_*` carrier fields, and their witnesses
+(`ALL_KINDS` 273→271, the s1_f_3 coverage pin 273→271). The Unicorn 440 +
+the axis-26 arm + `ai_026_gallop_family`/`gallop_move_tail` STAY; the
+ctx's 546-only inputs carry the module-fixture defaults (the 86 path
+never reads them). The `npc_ai_style26` MODULE keeps its verbatim
+155/546 machine arms (census rows, `DemonEye` shells — they compile
+standalone). **Obligations**: (1) when d36/d41 land, extend the ONE
+`26 =>` arm kind-gated to their machines (no second dispatch); (2) the
+`anchors.txt` commit-2 row (`world_sim/npcs.rs|n.gallop_wind_speed_target`)
+was removed WITH its marker — the drop is recorded on the surviving
+`npc.rs|fn ai_026_gallop_family` row; d41's merge must land its own
+pre-pass anchor row. Code-only, no compiler invoked (batch rule).
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator

@@ -588,16 +588,10 @@ impl NpcKind {
             NpcKind::WyvernTail => 228,
             // W4-d25 STYLE-26 wiring: the Unicorn mirrors W4-d35 batch C
             // (6ed8c22f) verbatim — protocol 440 (the vanilla 86 slot is
-            // the RayGunner's; the merge keep-one). The Wolf's vanilla
-            // 155 is PlanterasTentacle's protocol slot, so it takes the
-            // next-free port-local 355 (353 BlazingWheel, 354
-            // WebbedStylist; 355/356 free across the co-lanes).
+            // the RayGunner's; the merge keep-one). The Wolf proto-355 +
+            // the Tumbleweed 546 DROPPED per the keep-one note f5f486c7c
+            // (d36/d41 own them).
             NpcKind::Unicorn => 440,
-            NpcKind::Wolf => 355,
-            // W4-d25 STYLE-26 wiring (commit 2): the Tumbleweed keeps its
-            // vanilla id 546 (free across the co-lanes — g10 carries only
-            // the lang_tables display name, no NpcKind).
-            NpcKind::Tumbleweed => 546,
         }
     }
 
@@ -930,8 +924,6 @@ impl NpcKind {
             228 => NpcKind::WyvernTail,
             // W4-d25 STYLE-26 wiring (the to_u16 rows above).
             440 => NpcKind::Unicorn,
-            355 => NpcKind::Wolf,
-            546 => NpcKind::Tumbleweed,
             _ => return None,
         })
     }
@@ -1812,12 +1804,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
-            // W4-d25 STYLE-26 wiring: 86 NPCHit12 (`NPC.cs:9934`),
-            // 155 NPCHit1 (`:10969`), 546 NPCHit11 (`:15980`). The
-            // Unicorn row mirrors d35 (C).
+            // W4-d25 STYLE-26 wiring: 86 NPCHit12 (`NPC.cs:9934`). The
+            // Unicorn row mirrors d35 (C); the Wolf/Tumbleweed rows
+            // dropped per keep-one f5f486c7c.
             NpcKind::Unicorn => "NPC_Hit_12",
-            NpcKind::Wolf => "NPC_Hit_1",
-            NpcKind::Tumbleweed => "NPC_Hit_11",
             _ => return None,
         })
     }
@@ -2122,12 +2112,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
-            // W4-d25 STYLE-26 wiring: 86 NPCDeath18 (`NPC.cs:9935`),
-            // 155 NPCDeath1 (`:10970`), 546 NPCDeath15 (`:15981`). The
-            // Unicorn row mirrors d35 (C).
+            // W4-d25 STYLE-26 wiring: 86 NPCDeath18 (`NPC.cs:9935`). The
+            // Unicorn row mirrors d35 (C); the Wolf/Tumbleweed rows
+            // dropped per keep-one f5f486c7c.
             NpcKind::Unicorn => "NPC_Killed_18",
-            NpcKind::Wolf => "NPC_Killed_1",
-            NpcKind::Tumbleweed => "NPC_Killed_15",
             _ => return None,
         })
     }
@@ -2479,10 +2467,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
-            // W4-d25 STYLE-26 wiring: aiStyle 26 — `NPC.cs:9930` (86) /
-            // `:10965` (155) / `:15976` (546). The Unicorn row mirrors
-            // d35 (C).
-            NpcKind::Unicorn | NpcKind::Wolf | NpcKind::Tumbleweed => 26,
+            // W4-d25 STYLE-26 wiring: aiStyle 26 — `NPC.cs:9930` (86).
+            // The Unicorn row mirrors d35 (C); the Wolf/Tumbleweed rows
+            // dropped per keep-one f5f486c7c.
+            NpcKind::Unicorn => 26,
         }
     }
 
@@ -3013,12 +3001,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
-            // W4-d25 STYLE-26 wiring: 86 46x42 (`NPC.cs:9928-9929`),
-            // 155 46x30 (`:10963-10964`), 546 30x30 (`:15974-15975`).
-            // The Unicorn row mirrors d35 (C).
+            // W4-d25 STYLE-26 wiring: 86 46x42 (`NPC.cs:9928-9929`).
+            // The Unicorn row mirrors d35 (C); the Wolf/Tumbleweed rows
+            // dropped per keep-one f5f486c7c.
             NpcKind::Unicorn => (46.0, 42.0),
-            NpcKind::Wolf => (46.0, 30.0),
-            NpcKind::Tumbleweed => (30.0, 30.0),
         }
     }
 
@@ -3095,13 +3081,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
-            // W4-d25 STYLE-26 wiring: the vanilla `NPC.type` ids
-            // (`NPCID.cs:10849`/`:10987`/`:11769`) — the machine's type
-            // gates and the spawn rolls speak these, NOT the protocol ids
-            // (440/355; the Tumbleweed's 546 IS its protocol id).
+            // W4-d25 STYLE-26 wiring: the vanilla `NPC.type` id
+            // (`NPCID.cs:10849`) — the machine's type gates speak this,
+            // NOT the protocol id (440). The Wolf/Tumbleweed rows dropped
+            // per keep-one f5f486c7c.
             NpcKind::Unicorn => 86,
-            NpcKind::Wolf => 155,
-            NpcKind::Tumbleweed => 546,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3667,12 +3651,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
-            // W4-d25 STYLE-26 wiring: 86 400 (`NPC.cs:9933`), 155 300
-            // (`:10968`), 546 50 (`:15979`). The Unicorn row mirrors
-            // d35 (C).
+            // W4-d25 STYLE-26 wiring: 86 400 (`NPC.cs:9933`). The
+            // Unicorn row mirrors d35 (C); the Wolf/Tumbleweed rows
+            // dropped per keep-one f5f486c7c.
             NpcKind::Unicorn => 400,
-            NpcKind::Wolf => 300,
-            NpcKind::Tumbleweed => 50,
         }
     }
 
@@ -4037,11 +4019,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
-            // W4-d25 STYLE-26 wiring: 86/155 dmg 65 (`NPC.cs:9931`/
-            // `:10966`), 546 dmg 30 (`:15977`). The Unicorn row mirrors
-            // d35 (C).
-            NpcKind::Unicorn | NpcKind::Wolf => 65,
-            NpcKind::Tumbleweed => 30,
+            // W4-d25 STYLE-26 wiring: 86 dmg 65 (`NPC.cs:9931`). The
+            // Unicorn row mirrors d35 (C); the Wolf/Tumbleweed rows
+            // dropped per keep-one f5f486c7c.
+            NpcKind::Unicorn => 65,
         }
     }
 }
