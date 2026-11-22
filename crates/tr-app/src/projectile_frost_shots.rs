@@ -74,16 +74,42 @@ pub(crate) fn handles(kind: u16) -> bool {
     FROST_SHOT_KINDS.contains(&kind)
 }
 
-/// One tick of the kind's flight. `rng` is the pool's `UpdateProjectiles`
-/// stream — none of the ported arms draw it (the 350/346 dust/death-burst
-/// draws are the documented skips, module docs), so it is unused here but
-/// kept on the signature for the seam's shape.
+/// One tick of the kind's flight. W4-g63 — the dust-free scratch entry
+/// (the `ProjectilePool::update` precedent): the witnesses below run on
+/// a scratch pool; the live sim threads the real pool + the
+/// `UpdateProjectiles` stream through [`frost_shot_step_dust`].
 pub(crate) fn frost_shot_step(p: &mut Projectile, world: &World) {
+    let mut dust = tr_core::particles::DustPool::new();
+    let ctx = tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: glam::Vec2::ZERO,
+        screen_size: glam::Vec2::new(
+            world.width as f32 * tr_core::TILE_PX,
+            world.height as f32 * tr_core::TILE_PX,
+        ),
+        max_dust_to_draw: 6000,
+    };
+    let mut rng = tr_core::UnifiedRandom::new(0);
+    frost_shot_step_dust(p, world, &mut rng, &mut dust, &ctx);
+}
+
+/// W4-g63 — the full step with the caller's stream + the live dust pool:
+/// the 350 Missile's `alpha == 0` dust window (`:55138-55157`) is
+/// RE-ARMED; every other kind's stream stays untouched.
+pub(crate) fn frost_shot_step_dust(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn tr_core::loot::DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     match p.kind {
         PINE_NEEDLE_HOSTILE => needle(p, world),
         FROST_WAVE => wave(p, world),
         FROST_SHARD => shard(p, world),
-        MISSILE => missile(p, world),
+        MISSILE => missile(p, world, rng, dust, dust_ctx),
         ORNAMENT_HOSTILE => ornament(p, world),
         SPIKE => spike(p, world),
         PRESENT => present(p, world),
@@ -213,17 +239,30 @@ fn shard(p: &mut Projectile, world: &World) {
 }
 
 /// **350 Missile** — `Projectile.cs:55130-55163`. `flag3` false
-/// (`:55987`): `alpha -= 100` clamp 0, the `ai[1]` latch. The dust rolls
-/// (`:55141-55156`) are the documented skip (module docs).
-fn missile(p: &mut Projectile, world: &World) {
+/// (`:55987`): `alpha -= 100` clamp 0, the `ai[1]` latch. W4-g63: the
+/// `alpha == 0` dust window (`:55138-55157`) RE-ARMED on the live pool.
+fn missile(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn tr_core::loot::DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // `:55132-55136`.
     p.alpha -= 100;
     if p.alpha < 0 {
         p.alpha = 0;
     }
     // `:55137` — the light plot (skipped, no light layer).
-    // `:55138-55157` — the two dust rolls at `alpha == 0` (SKIPPED, the
-    // FLAMING_WOOD precedent; they ride UpdateProjectiles, not UpdateNPCs).
+    // `:55138-55157` — W4-g63: the two dust rolls at `alpha == 0`
+    // RE-ARMED (the Next(3)/Next(10)/Next(4)/Next(5) draws ride the
+    // pass's stream at their C# positions).
+    if p.alpha == 0 {
+        crate::projectile_trail_dust::santa_missile_dust(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            rng, dust, dust_ctx, world,
+        );
+    }
     // `:55158-55162` — the `ai[1]` latch (`SoundID.Item42` skipped).
     if p.ai[1] == 0.0 {
         p.ai[1] = 1.0;

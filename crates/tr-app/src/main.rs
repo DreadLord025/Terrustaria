@@ -252,6 +252,11 @@ mod projectile_wet;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-g63 — the projectile TRAIL dust lane 1 (kinds 1-400): the per-kind
+// trailing/ambient dust arms inside Projectile.AI(), re-armed onto the live
+// DustPool on the UpdateProjectiles stream (research/66; g64 owns 401+, g65
+// the Kill death dust).
+mod projectile_trail_dust;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
