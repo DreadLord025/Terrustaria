@@ -90,6 +90,8 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
 | `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5327`) | PORTED | `tileobject.rs::resolve_tile_def` + `apply_style_override` (W4-d112) + the `RandomStyleRange` draw (S1-F-7b) | the tile-based `GetTileData(Tile)` frameY consumer `:5196-5261` ported 1:1 (thresholds 36/18/36-72-90); witnesses `tests/tileobject_resolve_witness_d112.rs` written-not-run |
 | `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (`get_tile_data` = the (type,style,alternate) overload `:5126-5161`, `resolve_tile_def` = the Tile overload `:5196-5261`; tests `get_tile_data_resolution`, `coordinate_full_extents`) | `TryGetTileBounds` `:5163-5194` still unported (coordinate pickup consumer) |
+
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` |
 | `tiledata` sets | PARTIAL | `tiledata/sets.rs` | 46 `TileSet`s vs 152 `Factory.CreateBoolSet(` sites in `TileID.cs` (upper bound: nested/Conversion sets) |
 | `tiledata` merge relation | PORTED | `tiledata/merge.rs` | dense 754×12-word bitset, generated |
 | emissive tile/wall tables | PORTED | `tiledata/emissive.rs` | full coverage 754 + 367 |

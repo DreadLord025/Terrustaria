@@ -46,6 +46,7 @@
 //! | `StyleWrapLimit` :1009 / `StyleLineSkip` :1108 / `StyleMultiplier` :1141 | `style_wrap_limit` / `style_line_skip` / `style_multiplier` |
 //! | `Alternates` (`addAlternate` :2097) | `alternates` |
 //! | `SubTiles` (`addSubTile` :2015) | `subtiles` |
+//! | `TryGetTileBounds` :5163-5194 | [`try_get_tile_bounds`] (W4-d113 coordinate walk; its `GetTileData(Tile)` seam :5167 is W4-d112's `resolve_tile_def`, passed as a parameter until the merge wires it) |
 //!
 //! Not ported (follow-ups, by design):
 //! - **Draw fields** (`DrawYOffset`, `DrawStyleOffset`, `DrawStepDown`,
@@ -698,6 +699,57 @@ fn apply_style_override(
             }
         }
     }
+}
+
+/// `TileObjectData.TryGetTileBounds(x, y, out bounds)`
+/// (`TileObjectData.cs:5163-5194`) — the coordinate walk (W4-d113, the
+/// research/08 "coordinate pickup" consumer): a placed cell's frames locate
+/// the object's top-left by stepping back one tile per `CoordinateWidth`
+/// column and per `CoordinateHeights[i]` row, then the bounds carry the
+/// RESOLVED def's `Width`/`Height`. Returns `(x, y, width, height)`; `None`
+/// when the tile-based resolution fails.
+///
+/// `resolve` is the `GetTileData(Tile)` seam (:5167, the :5196-5261
+/// overload — the frameX/frameY style decode + the `GetStyleOverride`
+/// hook). That overload is W4-d112's claim (`resolve_tile_def`); this walk
+/// takes it as a parameter so the two land independently and the merge
+/// wires `try_get_tile_bounds(world, x, y, resolve_tile_def)` — the C# call
+/// shape. Sole C# consumers: `RichRoomCheckFeedback.cs:228` (consume the
+/// other furniture cells inside the bounds) and `:298` (centre the
+/// room-check particle on the bounds) — housing feedback, unported.
+pub fn try_get_tile_bounds(
+    world: &World,
+    x: i32,
+    y: i32,
+    resolve: fn(&Tile) -> Option<&'static TileObjectDef>,
+) -> Option<(i32, i32, i32, i32)> {
+    // :5165-5171 — `bounds = (x, y, 1, 1)`; `GetTileData(tile)` gates. The
+    // C# reads `Main.tile[x, y]` unguarded (out-of-bounds throws); the port's
+    // `world.tile` returns None instead — documented degradation.
+    let tile = world.tile(x, y)?;
+    let def = resolve(tile)?;
+    let (mut bx, mut by) = (x, y);
+    // :5172-5175 — the frame remainder inside the style cell.
+    let cfw = def.coordinate_full_width();
+    let cfh = def.coordinate_full_height();
+    let mut num3 = tile.frame_x as i32 - (tile.frame_x as i32 / cfw) * cfw;
+    let mut num4 = tile.frame_y as i32 - (tile.frame_y as i32 / cfh) * cfh;
+    // :5176-5181 — step left one tile per coordinate column.
+    let coordinate_width = def.coordinate_width;
+    while num3 >= coordinate_width {
+        num3 -= coordinate_width;
+        bx -= 1;
+    }
+    // :5182-5190 — step up one tile per coordinate row (every height, no
+    // early exit — the C# loop runs the full array).
+    for h in def.coordinate_heights {
+        if num4 >= *h {
+            num4 -= h;
+            by -= 1;
+        }
+    }
+    // :5191-5193 — the bounds are the object's tile extents.
+    Some((bx, by, def.width, def.height))
 }
 
 /// `TileObjectData.CalculatePlacementStyle` (`TileObjectData.cs:1990-1998`).
@@ -2702,6 +2754,157 @@ mod tests {
         assert_eq!(get_tile_data(&WITH_SUBS, 0, 1).unwrap().height, 9);
         // An alternate index past the list -> None.
         assert!(get_tile_data(&WITH_SUBS, 0, 2).is_none());
+    }
+
+    // ---- W4-d113: TryGetTileBounds coordinate walk (TileObjectData.cs:5163-5194)
+
+    /// The base-def slice of the `GetTileData(Tile)` seam (:5196-5261) for
+    /// kinds WITHOUT sub-tiles/overrides: the active gate (:5198-5201) +
+    /// `_data[type]` (:5207-5211). The full frame decode is W4-d112's
+    /// `resolve_tile_def`; the merge wires that in as the `resolve`
+    /// argument. Every walk witness below uses a kind whose resolved def
+    /// has the BASE geometry (270's platform alternate D_270_A1 is
+    /// field-identical in width/heights/width/padding), so this slice is
+    /// exact for them even under the full resolver.
+    fn walk_resolve(t: &Tile) -> Option<&'static TileObjectDef> {
+        if !t.active() {
+            return None;
+        }
+        def_for_tile(t.kind)
+    }
+
+    /// Places an active tile with the given frames (the walk reads only
+    /// kind/active/frameX/frameY).
+    fn set_framed(w: &mut World, x: i32, y: i32, kind: u16, fx: i32, fy: i32) {
+        set_active(w, x, y, kind);
+        w.set_tile_frame_x(x, y, fx);
+        w.set_tile_frame_y(x, y, fy);
+    }
+
+    #[test]
+    fn w4_d113_walk_heavy_work_bench_283() {
+        // D_283 (registry): 3x3, heights [16,16,16], width 16, pad 2 →
+        // CFW = CFH = 54 (TileObjectData.cs:4062-4064, Style3x3).
+        let mut w = world();
+        // Top-left cell: frames (0,0) → no steps.
+        set_framed(&mut w, 12, 12, 283, 0, 0);
+        assert_eq!(
+            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            Some((12, 12, 3, 3))
+        );
+        // Bottom-right cell: frames (36,36) → :5177-5181 two column steps
+        // (36→20→4), :5183-5190 two row steps (36→20→4).
+        set_framed(&mut w, 12, 12, 283, 36, 36);
+        assert_eq!(
+            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            Some((10, 10, 3, 3))
+        );
+        // Padding column/row (frame 18 = 16+2): the C# while/for still step
+        // once — the remainder 18 >= 16 (:5177/:5185), padding is NOT skipped.
+        set_framed(&mut w, 12, 12, 283, 18, 18);
+        assert_eq!(
+            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            Some((11, 11, 3, 3))
+        );
+        // A second style column (frameX 54 = one CFW): the remainder resets,
+        // the walk is style-independent (:5172-5175 divides first).
+        set_framed(&mut w, 12, 12, 283, 54, 0);
+        assert_eq!(
+            try_get_tile_bounds(&w, 12, 12, walk_resolve),
+            Some((12, 12, 3, 3))
+        );
+    }
+
+    #[test]
+    fn w4_d113_walk_bunny_cage_275_six_wide() {
+        // D_275 (registry, TileObjectData.cs:2696-2708 Style6x3): 6x3,
+        // CFW = (16+2)*6 = 108, CFH = 54.
+        let mut w = world();
+        // Cell (20,12), frames (90,36): 90 = 5*16+10 → five column steps
+        // (:5177-5181), 36 → two row steps → top-left (15,10).
+        set_framed(&mut w, 20, 12, 275, 90, 36);
+        assert_eq!(
+            try_get_tile_bounds(&w, 20, 12, walk_resolve),
+            Some((15, 10, 6, 3))
+        );
+    }
+
+    #[test]
+    fn w4_d113_walk_chest_21_uneven_heights() {
+        // D_21 (registry, TileObjectData.cs:3461-3470): 2x2, heights [16,18],
+        // pad 2 → CFH = 16+2+18+2 = 38, CFW = 36. The row loop reads EVERY
+        // height (:5183-5190), not just the first.
+        let mut w = world();
+        // Bottom-row cell: frameY 20 = row 1 start (16+2) + 2 → subtract 16
+        // (row 0), remainder 4 < 18 (row 1) → one row step.
+        set_framed(&mut w, 11, 11, 21, 18, 20);
+        assert_eq!(
+            try_get_tile_bounds(&w, 11, 11, walk_resolve),
+            Some((10, 10, 2, 2))
+        );
+        // C# quirk pinned: frameY 36 is row 1's PADDING (row 1 spans 18..36);
+        // the full-array loop subtracts 16 then 18 → TWO row steps, landing
+        // one tile above the true top. Faithful, not "fixed" (:5183-5190).
+        set_framed(&mut w, 11, 11, 21, 18, 36);
+        assert_eq!(
+            try_get_tile_bounds(&w, 11, 11, walk_resolve),
+            Some((10, 9, 2, 2))
+        );
+    }
+
+    #[test]
+    fn w4_d113_walk_bottle_270_and_gates() {
+        // D_270 (registry, TileObjectData.cs:2442-2448 Style1x2Top): 1x2,
+        // heights [16,16] → CFH 36.
+        let mut w = world();
+        set_framed(&mut w, 10, 11, 270, 0, 18);
+        assert_eq!(
+            try_get_tile_bounds(&w, 10, 11, walk_resolve),
+            Some((10, 10, 1, 2))
+        );
+        // Inactive tile: the seam's :5198-5201 gate → None.
+        set_framed(&mut w, 10, 11, 270, 0, 18);
+        w.tiles[w.index(10, 11)].flags &= !FLAG_ACTIVE;
+        assert_eq!(try_get_tile_bounds(&w, 10, 11, walk_resolve), None);
+        // Unregistered kind (stone 1): `_data[type]` null (:5208-5211).
+        set_framed(&mut w, 10, 11, 1, 0, 0);
+        assert_eq!(try_get_tile_bounds(&w, 10, 11, walk_resolve), None);
+        // Out of bounds: the port's world.tile None (C# throws; documented).
+        assert_eq!(try_get_tile_bounds(&w, -1, 0, walk_resolve), None);
+        // Negative frames: C# int division truncates toward zero — num 0,
+        // remainder -1 < 16 → no steps (:5172-5175, both languages agree).
+        set_framed(&mut w, 10, 11, 270, -1, -1);
+        assert_eq!(
+            try_get_tile_bounds(&w, 10, 11, walk_resolve),
+            Some((10, 11, 1, 2))
+        );
+    }
+
+    #[test]
+    fn w4_d113_walk_uses_the_resolved_def() {
+        // The walk reads the RESOLVED def's geometry (:5167 → :5172-5192),
+        // not the base def's. Synthetic resolver returning a 2x2 def with
+        // heights [10,20], width 8, pad 0 → CFW 16, CFH 30.
+        static RESOLVED: TileObjectDef = TileObjectDef {
+            width: 2,
+            height: 2,
+            coordinate_heights: &[10, 20],
+            coordinate_width: 8,
+            ..base_def()
+        };
+        fn seam(_: &Tile) -> Option<&'static TileObjectDef> {
+            Some(&RESOLVED)
+        }
+        let mut w = world();
+        // Frames (8,20): one column step (8 >= 8), row loop 20 >= 10 → one
+        // step, remainder 10 < 20 → stop. Bounds carry RESOLVED's 2x2.
+        set_framed(&mut w, 10, 10, 283, 8, 20);
+        assert_eq!(try_get_tile_bounds(&w, 10, 10, seam), Some((9, 9, 2, 2)));
+        // A None resolution short-circuits before any frame math (:5168-5171).
+        fn none_seam(_: &Tile) -> Option<&'static TileObjectDef> {
+            None
+        }
+        assert_eq!(try_get_tile_bounds(&w, 10, 10, none_seam), None);
     }
 
     #[test]
