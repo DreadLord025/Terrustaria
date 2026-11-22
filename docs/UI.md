@@ -239,6 +239,22 @@ layer is kept behind `TR_VK_GRID=1`. Rename caps: 20 characters for players, 27 
 worlds (`Click_SetName`, `UIWorldCreation.cs:693`); `allowEmpty` differs per caller
 (Create passes `false`).
 
+**Text-entry bindings (W4-c25)** — the same module carries the field-less text-entry
+layer for the crafting search box and the chest rename (the i43 `edited_chest_name`
+seam's text source): `TextField` ports `UITextBox`'s editable state (caret `_cursor`,
+`Write` insert-at-caret, `SetText` cap+clamp, `Backspace`, `CursorLeft/Right`,
+`UITextBox.cs:11-78`), `get_input_text` ports `Main.GetInputText`
+(`Main.cs:20010-20121`: Ctrl+Z/X/C/V, Shift+Del/Ins, the typed-char queue, the
+Enter/Escape flags) with `BackspaceRepeat` for the held-Backspace machine
+(`:20089-20107`, banker's `Math.Round`), and `sanitize_clipboard_text` ports ReLogic's
+paste filter (`Clipboard.cs:21-32`). Pure bindings — no `UIElement`, no draw, no App
+wiring yet; the consumers attach in their own tasks. Note: the 1.4.5.8 decompilation
+has no `UITextField.cs` — these three sources ARE the text field's semantics; there
+is no ranged selection (copy/cut operate on the whole string). **SEALED** — the
+retire FINAL (`docs/research/314-c25-keyboard-text-field-final.md`) records the
+f22 keep-both compose (the sign editor keeps the `KeyboardState` path; the search
+keeps c24's event.text stand-in) and the keyboard-family bible.
+
 ### Credits and legacy confirms (`menu/`)
 
 The pages the flow parks onto are still legacy `Main.DrawMenu` branches: `menuMode`

@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 68 | Mood reconcile (W4-f37 ProcessMood core × W4-g58 happiness UI: arm table, KEEP/DROP lists, capture-once integration contract, g58b deviation census; merger assist, code-only) | `68-mood-reconcile.md` | ✅ |
 | 73 | Doc-sweep town lane 2 (W4-f37: ANALYSIS + research/23/11/22/29 + shop/town docs mined for unported town mechanics; CollectTaxes anniversary pair + head-index payer filter, nurse heal presentation tail, tax payout dialog tail, Stylist hair-window state machine — each with C# cite + lane verdict; code-only) | `73-doc-sweep-town.md` | ✅ |
+| 314 | W4-c25 RETIRE FINAL: keyboard-text-field census + the f22 sign co-lane keep-both compose-verify (re-confirmed at f22 tip c727ebc02) + the KEYBOARD-FAMILY bible SEALED (registry §8.1 ROUND 4 FINAL: chain 281→314, d54 a15cb634b — the 281-block self-pick race) | `314-c25-keyboard-text-field-final.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
