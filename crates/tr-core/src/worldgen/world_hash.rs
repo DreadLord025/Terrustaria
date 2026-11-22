@@ -281,6 +281,15 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-a2 / P0-3 (2026-11-20, code-only): the chest tile-kind audit
+    // (`chest_gen::CHEST_KINDS` [21,341] -> [21,467], `TileID.cs:570`) moves
+    // NEITHER pin: every worldgen chest placement already writes kind 21
+    // (`structures::place_chest`, the C#'s `chestTileType 0 -> 21` default,
+    // `WorldGen.cs:35880-35882`) — no site ever placed 341, the fixes touch
+    // the load-cull set / test plants / the cave-house exclusion probe
+    // (21-only -> BasicChest {21,467}, a no-op while no gen pass writes 467)
+    // only. No tile byte and no RNG draw changed; ANALYSIS "Chest tile-kind
+    // audit (W4-a2 / P0-3)".
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
