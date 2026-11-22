@@ -3610,6 +3610,9 @@ pub(crate) mod front_flow_tests {
             demon_torch_dir: 1.0,
             master_color: 1.0, // `Main.cs:66833-66834`
             master_color_dir: 1,
+            // `Main.cs:66831-66832`: martianLight 1, dir 1.
+            martian_light: 1.0,
+            martian_light_dir: 1.0,
             disco: [255, 0, 0],
             disco_style: 0,
             light_rng_seed: 1,

@@ -3310,6 +3310,10 @@ impl Npc {
                 // (`NPC.cs:13045`/`:13059`/`:13073`); the xmas pair and
                 // every other kind keep the 1f default.
                 .or_else(|| kind.holiday_zombie_scale())
+                // W4-g12 doc-sweep — the wave-A slimes' scale rows
+                // (`NPC.cs:8977`/`:9526`/`:9710`/`:9850`/`:10761`/
+                // `:11344`/`:11354`); draw-only, the hitbox stays the box.
+                .or_else(|| kind.wave_a_slime_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
                 .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),

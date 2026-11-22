@@ -307,7 +307,12 @@ impl App {
                     // smoothly on the draw pass, but the light map and world range can
                     // be reused for a second.
                     let quantised = (natural_time / 60.0).floor() * 60.0;
-                    let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
+                    let sky_tint = color_of_the_skies(
+                        quantised,
+                        is_day,
+                        world.moon_phase,
+                        world.blood_moon,
+                    );
                     let clock_time = natural_time;
                     // `SetBackColor`: rain multiplies the sky (and therefore the surface
                     // sunlight) by `1 - cloudAlpha * 0.9`.
@@ -379,6 +384,11 @@ impl App {
                         self.demon_torch = 0.0;
                         self.demon_torch_dir = 1.0;
                     }
+                    // The same fn's martianLight bounce (`Main.cs:18251-
+                    // 18261`): ±0.015 per frame, clamped at 1/0 with the
+                    // direction flip. Unconditional in C# (`:17145`) —
+                    // W4-g12 doc-sweep; feeds `_martianGlow` below.
+                    tick_martian_light(&mut self.martian_light, &mut self.martian_light_dir);
                     // `TileLightScanner.Update()`: one `NextSeed()` per frame, then
                     // `WithModifier(x, y)` per tile (done inside the scanner).
                     let mut light_rng = tr_core::tile_light::FastRandom::new(self.light_rng_seed);
@@ -1222,6 +1232,10 @@ impl App {
                                 0
                             }
                         },
+                        // W4-g12: `DrawGoreBehind`'s drip quads draw inside
+                        // the cached range — 0 while no drip slot draws
+                        // (the waterfall convention).
+                        back_gore: WorldFrameKey::back_gore_key(gore),
                         world_revision: world.revision,
                     };
                     let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
@@ -1410,6 +1424,12 @@ impl App {
                             &mut self.liquid_rand,
                             dust,
                             &draw_spawn_ctx,
+                            // W4-g12: the live `Main.martianLight` bounce
+                            // (`_martianGlow`, `TileDrawing.cs:498-499`).
+                            self.martian_light,
+                            // W4-g12: `DrawGoreBehind`'s pool (the
+                            // behind-tiles drip rows, `Main.cs:21842`).
+                            gore,
                         );
                         *world_key = Some(key);
                     }
@@ -2067,6 +2087,8 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // W4-g12: the savings pile's coin machine.
+                            &mut self.coin_slot,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
@@ -2649,6 +2671,75 @@ impl App {
             self.open_achievements_and_goto(name);
         }
         Some((stats, tile_stats))
+    }
+}
+
+/// `Main.DoUpdate_AnimateTileGlows`' martianLight half (`Main.cs:18251-
+/// 18261`): `martianLight += martianLightDir * 0.015f`, then the two
+/// clamps — `> 1` snaps to 1 and flips the dir to -1, `< 0` snaps to 0
+/// and flips to +1. Both clamps run every call (no else), exactly like
+/// the demon-torch half above it. Called per draw frame at the C#
+/// `:17145` site — UNCONDITIONALLY, no Martian-event gate (the
+/// `drawdata_cases_a.rs` "0 outside the event" note was wrong).
+fn tick_martian_light(light: &mut f32, dir: &mut f32) {
+    *light += *dir * 0.015;
+    if *light > 1.0 {
+        *light = 1.0;
+        *dir = -1.0;
+    }
+    if *light < 0.0 {
+        *light = 0.0;
+        *dir = 1.0;
+    }
+}
+
+#[cfg(test)]
+mod w4_g12_martian_light_tests {
+    use super::tick_martian_light;
+
+    /// The bounce starts at (1, +1) (`Main.cs:66831-66832`): the first
+    /// tick overshoots to 1.015, clamps back to 1 and flips the dir —
+    /// the same first-tick shape as the demon torch.
+    #[test]
+    fn w4_g12_the_first_tick_clamps_and_flips_like_demon_torch() {
+        let (mut l, mut d) = (1.0f32, 1.0f32);
+        tick_martian_light(&mut l, &mut d);
+        assert_eq!((l, d), (1.0, -1.0));
+        tick_martian_light(&mut l, &mut d);
+        assert!((l - 0.985).abs() < 1e-6, "the second tick descends: {l}");
+        assert_eq!(d, -1.0);
+    }
+
+    /// The bottom clamp mirrors the top: below 0 snaps to 0 and flips
+    /// to +1; both clamps are independent `if`s (no else).
+    #[test]
+    fn w4_g12_the_bottom_clamp_snaps_to_zero_and_flips_up() {
+        let (mut l, mut d) = (0.01f32, -1.0f32);
+        tick_martian_light(&mut l, &mut d);
+        assert_eq!((l, d), (0.0, 1.0));
+        tick_martian_light(&mut l, &mut d);
+        assert!((l - 0.015).abs() < 1e-6);
+    }
+
+    /// The glow byte the value feeds (`TileDrawing.cs:498`):
+    /// `b = (byte)(100 + 150 * martianLight)` truncates — 1 → 250,
+    /// 0 → 100, 0.5 → 175. The full bounce spans [100, 250], never 0:
+    /// the old constant-0 feed pinned the glow at 100 forever.
+    #[test]
+    fn w4_g12_the_glow_byte_spans_100_to_250_over_the_bounce() {
+        let b = crate::drawdata_cases_a::martian_glow;
+        assert_eq!(b(1.0), [250, 250, 250, 0]);
+        assert_eq!(b(0.0), [100, 100, 100, 0]);
+        assert_eq!(b(0.5), [175, 175, 175, 0]);
+        // A full bounce cycle visits both ends.
+        let (mut l, mut d) = (1.0f32, 1.0f32);
+        let (mut saw_min, mut saw_max) = (false, false);
+        for _ in 0..300 {
+            tick_martian_light(&mut l, &mut d);
+            saw_min |= l == 0.0;
+            saw_max |= l == 1.0;
+        }
+        assert!(saw_min && saw_max, "the bounce reaches both clamps");
     }
 }
 

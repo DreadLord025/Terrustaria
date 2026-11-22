@@ -2727,6 +2727,25 @@ impl NpcKind {
         })
     }
 
+    /// W4-g12 doc-sweep — the wave-A slimes' `NPC.scale` `SetDefaults`
+    /// rows (the `entities.rs` "unported outside the base slime variants"
+    /// deviation): 16 1.25f (`NPC.cs:8977`), 59 1.1f (`:9526`), 71 1.25f
+    /// (`:9710`), 81 1.1f (`:9850`), 138 1.05f (`:10761`), 183 1.1f
+    /// (`:11344`), 184 1.1f (`:11354`). IceSlime 147 (`:10847-10860`)
+    /// and UmbrellaSlime 225 (`:11898-11910`) write NO scale row — the
+    /// `SetDefaults` head's 1f default. The scale is DRAW-ONLY in C#
+    /// (`Main.DrawNPC`'s `scale` argument, `Main.cs:23124`); the hitbox
+    /// stays the `SetDefaults` box.
+    pub fn wave_a_slime_scale(self) -> Option<f32> {
+        Some(match self {
+            NpcKind::MotherSlime | NpcKind::DungeonSlime => 1.25,
+            NpcKind::LavaSlime | NpcKind::CorruptSlime | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime => 1.1,
+            NpcKind::IlluminantSlime => 1.05,
+            _ => return None,
+        })
+    }
+
     /// S1-D-3z — the holiday zombies' `NPC.scale` `SetDefaults` rows
     /// (`NPC.cs:13045`/`:13059`/`:13073`): 319 0.9f, 320 1.05f, 321 1.1f.
     /// The xmas pair (331/332) writes no scale row — the `SetDefaults`
@@ -2767,8 +2786,10 @@ impl NpcKind {
             // (`:9518-9519`/`:10750-10751`/`:10849-10850` region/
             // `:11348-11349` region), 81/183 40x30 (`:9840-9841`/
             // `:11334-11335` region), 225 38x26 (`:11900-11901` region).
-            // The C# `scale` rows (1.25/1.1/1.05) are unported outside
-            // the slime variants — documented deviation.
+            // The C# `scale` rows (1.25/1.1/1.05) ride
+            // `wave_a_slime_scale` → `Npc::scale` (W4-g12 doc-sweep) —
+            // DRAW-ONLY, the hitbox stays this box (the C# scale
+            // multiplies the sprite, not `base.width/height`).
             NpcKind::MotherSlime | NpcKind::DungeonSlime => (36.0, 24.0),
             NpcKind::LavaSlime
             | NpcKind::IlluminantSlime

@@ -30,7 +30,9 @@ pub(crate) fn is_liquid_style_water(style: usize) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_waters(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -51,14 +53,18 @@ pub(crate) fn draw_waters(
         } else {
             liquid_alpha[j]
         };
-        quads += draw_liquids(r, lookups, light, style, anim_time, draws, pass, j, alpha, true);
+        quads += draw_liquids(
+            r, world, lookups, atlas, light, style, anim_time, draws, pass, j, alpha, true,
+        );
         fading = true;
     }
     // `this.DrawLiquid(isBackground, Main.waterStyle, flag ? liquidAlpha[style] : 1f)`.
     let alpha = if fading { liquid_alpha[water_style] } else { 1.0 };
     quads += draw_liquids(
         r,
+        world,
         lookups,
+        atlas,
         light,
         style,
         anim_time,
@@ -69,7 +75,7 @@ pub(crate) fn draw_waters(
         false,
     );
     // `if (!waterOnly) { LiquidRenderer.Instance.DrawShimmer(...); }`.
-    quads += draw_shimmer(r, lookups, anim_time, draws, pass);
+    quads += draw_shimmer(r, world, lookups, atlas, light, style, anim_time, draws, pass);
     quads
 }
 
@@ -84,7 +90,9 @@ pub(crate) fn draw_waters(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_liquids(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -114,6 +122,25 @@ pub(crate) fn draw_liquids(
             2 => (11, 0.95),
             _ => (water_style, 0.60),
         };
+        // `Main.DrawTileInWater(drawOffset, i, j)` — the submerged pad
+        // redraw BEFORE the water quad (`LiquidRenderer.cs:664`, W4-g12
+        // render-sweep-2: the earlier "only caller is retro oldDrawWater"
+        // reading was wrong, this LIVE record path calls it too). The
+        // tint is `Lighting.GetColor(x, y)` (`Main.cs:57549`) through the
+        // port's mode-shader stand-in `style.shade` (the shroom-cap
+        // convention); `draw_offset` is Vec2::ZERO in world-pixel quads.
+        if let Some(a) = atlas {
+            quads += draw_tile_in_water(
+                r,
+                world,
+                lookups,
+                a,
+                style.shade(light.get(d.x, d.y), d.x, d.y, anim_time),
+                [0.0, 0.0],
+                d.x,
+                d.y,
+            );
+        }
         let corners = light.corner4(d.x, d.y);
         // `DrawNormalLiquids`: surface tiles snap to the still frame at y=1280,
         // everything else advances inside its 80 px block.
@@ -194,11 +221,20 @@ pub(crate) fn draw_liquids(
 /// `rgb/max(r,g,b)` with `alpha = max(r,g,b)` — the same source contribution
 /// with a slightly dimmed backdrop under the sparkle (documented deviation).
 ///
-/// `Main.DrawTileInWater` (the tile-518 submerged redraw) is not ported: the
-/// generator never places tile 518.
+/// `Main.DrawTileInWater` (the tile-518 submerged redraw) runs here per
+/// visible shimmer cell BEFORE the base quad (`LiquidRenderer.cs:707`,
+/// W4-g12 render-sweep-2): the earlier "only caller is the retro
+/// `oldDrawWater` pass" reading was wrong — the LIVE record path calls it
+/// too (`:664` in `DrawNormalLiquids`, `:707` here). The retro sprite
+/// pass (`Main.cs:57667`) stays unported; g13 owns its dust feeds.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_shimmer(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
+    light: &LightMap,
+    style: &LightStyle,
     anim_time: f32,
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
@@ -214,6 +250,24 @@ pub(crate) fn draw_shimmer(
     for d in draws {
         if !d.visible || d.liquid_type != 3 || d.src_w <= 0 || d.src_h <= 0 {
             continue;
+        }
+        // `Main.DrawTileInWater(drawOffset, num3, num4)` — the submerged
+        // pad redraw BEFORE the shimmer base quad (`LiquidRenderer.cs:707`;
+        // the cell coords are the record's, `:703-704`). The tint is
+        // `Lighting.GetColor(x, y)` (`Main.cs:57549`) through the port's
+        // mode-shader stand-in `style.shade` (the shroom-cap convention);
+        // `draw_offset` is Vec2::ZERO in the port's world-pixel quads.
+        if let Some(a) = atlas {
+            quads += draw_tile_in_water(
+                r,
+                world,
+                lookups,
+                a,
+                style.shade(light.get(d.x, d.y), d.x, d.y, anim_time),
+                [0.0, 0.0],
+                d.x,
+                d.y,
+            );
         }
         // `val = Math.Min(1f, Opacity * (isBackgroundDraw ? 1f : 0.75f))`
         // (`LiquidRenderer.cs:700-702`).
@@ -269,6 +323,92 @@ fn shimmer_glitter_corner(top: bool, x: i32, y: i32, tve: f32, opacity: f32) -> 
     let o = glitter_opacity(top, x, y, tve);
     let g = tr_core::tile_light::hsl_to_rgb(shimmer_glitter_hue(x as f32, y as f32, tve), 1.0, 0.5);
     [g[0] * o * opacity, g[1] * o * opacity, g[2] * o * opacity]
+}
+
+/// `WorldGen.SolidTile(x, y)` (`WorldGen.cs:70111-70131`) for the
+/// submerged-redraw probe: `nactive` (active, non-actuated), solid,
+/// non-solidTop, non-halfBrick, slopeless. Out-of-world reads false
+/// (the C# try/catch).
+fn solid_tile_probe(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && !t.inactive()
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+}
+
+/// `Main.DrawTileInWater` (`Main.cs:57536-57551`, W4-g12 doc-sweep): the
+/// retro `oldDrawWater` pass redraws a submerged LILY PAD (tile 518)
+/// OVER the water quad so the pad floats on the surface instead of
+/// drowning under it. `num = tile.liquid / 16 - 3` (byte integer
+/// divide), clamped to 8 under a solid ceiling (`WorldGen.SolidTile(x,
+/// y - 1) && num > 8`); the sprite is the tile's own 16x16 frame at
+/// `(x*16, y*16 - num) + drawOffset`, tinted `Lighting.GetColor(x, y)`,
+/// no rotation/flip/scale.
+///
+/// WIRED (W4-g12 render-sweep-2): the LIVE record path calls it per
+/// visible liquid cell — [`draw_liquids`] (`LiquidRenderer.cs:664`) and
+/// [`draw_shimmer`] (`:707`), before each water/shimmer quad; the tile
+/// pass skips wet pads (`TileDrawing.cs:872-875`, the tiles.rs twin), so
+/// this redraw is their ONLY sprite. The retro `oldDrawWater` sprite
+/// pass (`Main.cs:57667`) stays unported (g13 owns its dust feeds).
+/// `draw_offset` is the C#'s `-screenPosition + offScreenRange` vector —
+/// the port's world-pixel equivalent is `Vec2::ZERO` (the GPU transform
+/// applies). The tint is `Lighting.GetColor(x, y)` (`Main.cs:57549`)
+/// through the callers' `style.shade` mode-shader stand-in (the
+/// shroom-cap convention — raw GetColor in Color/White, the mode ramp
+/// in Trippy/Retro); `atlas` resolves the frame through
+/// `Lookups::rect_uv`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_tile_in_water(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &assets::Lookups,
+    atlas: &tr_render::Atlas,
+    tint: [f32; 3],
+    draw_offset: [f32; 2],
+    x: i32,
+    y: i32,
+) -> u32 {
+    // `:57538`: active AND type 518 — nothing else redraws.
+    let Some(tile) = world.tile(x, y) else {
+        return 0;
+    };
+    if !tile.active() || tile.kind != 518 {
+        return 0;
+    }
+    // `:57542-57546`: the integer lift + the solid-ceiling clamp.
+    let mut num = tile.liquid as i32 / 16 - 3;
+    if solid_tile_probe(world, x, y - 1) && num > 8 {
+        num = 8;
+    }
+    // `:57547-57548`: the tile's own frame (`GetTileDrawTexture` — the
+    // 518 sheet has no paint/style variants, the plain frame is exact).
+    let Some(tf) = lookups.rect_uv(
+        atlas,
+        518,
+        tile.frame_x,
+        tile.frame_y,
+        16,
+        16,
+    ) else {
+        return 0;
+    };
+    // `:57549`.
+    r.push_sprite(
+        [
+            x as f32 * TILE_PX + draw_offset[0],
+            y as f32 * TILE_PX - num as f32 + draw_offset[1],
+        ],
+        [16.0, 16.0],
+        tf.uv,
+        [tint[0], tint[1], tint[2], 1.0],
+    );
+    1
 }
 
 /// Pushes one record's quad as the 3x3 bilinear split (the shared light-split
@@ -680,6 +820,114 @@ pub(crate) fn draw_tile_liquid_behind(
 mod tests {
     use super::*;
     use tr_core::liquid_draw::LiquidDraw;
+
+    /// W4-g12 doc-sweep: `DrawTileInWater`'s lift maths
+    /// (`Main.cs:57542-57546`): `liquid/16 - 3` integer, clamped to 8
+    /// ONLY under a solid ceiling and ONLY when above 8.
+    #[test]
+    fn w4_g12_the_submerged_lift_is_the_byte_divide_with_the_ceiling_clamp() {
+        let mut w = World::new("t".into(), 64, 64);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16, liquid: u8| {
+            let i = w.index(x, y);
+            w.tiles[i].kind = kind;
+            w.tiles[i].liquid = liquid;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        };
+        // The pad cell: liquid 255 -> 255/16 - 3 = 15 - 3 = 12.
+        put(&mut w, 10, 10, 518, 255);
+        let lift = |w: &World| -> i32 {
+            let t = w.tile(10, 10).unwrap();
+            let mut num = t.liquid as i32 / 16 - 3;
+            if super::solid_tile_probe(w, 10, 9) && num > 8 {
+                num = 8;
+            }
+            num
+        };
+        // No ceiling: the raw 12 stands.
+        assert_eq!(lift(&w), 12);
+        // A solid stone ceiling clamps to 8.
+        put(&mut w, 10, 9, 1, 0);
+        assert_eq!(lift(&w), 8);
+        // A platform ceiling (solidTop) does NOT clamp.
+        w.tiles[w.index(10, 9)].kind = 19;
+        assert_eq!(lift(&w), 12);
+        // A shallow pad under the ceiling: 128/16 - 3 = 5, below the
+        // clamp threshold — the clamp never lowers.
+        w.tiles[w.index(10, 9)].kind = 1;
+        w.tiles[w.index(10, 10)].liquid = 128;
+        assert_eq!(lift(&w), 5);
+        // An actuated ceiling is not solid (nactive).
+        w.tiles[w.index(10, 9)].flags |= tr_core::tile::FLAG_INACTIVE;
+        w.tiles[w.index(10, 10)].liquid = 255;
+        assert_eq!(lift(&w), 12);
+    }
+
+    /// W4-g12 doc-sweep: the redraw gate (`Main.cs:57538`) — only an
+    /// ACTIVE type-518 cell redraws; the source scan pins the anchor
+    /// (`y*16 - num`), the 16x16 frame and the no-flip/no-rot draw.
+    #[test]
+    fn w4_g12_the_redraw_gate_and_anchor_match_the_csharp() {
+        let src = include_str!("liquids.rs");
+        let body = &src[src.find("pub(crate) fn draw_tile_in_water(").unwrap()..];
+        let body = &body[..body.find("/// Pushes one record's quad")];
+        assert!(body.contains("tile.kind != 518"), "the type gate");
+        assert!(body.contains("!tile.active()"), "the active gate");
+        assert!(body.contains("/ 16 - 3"), "the integer lift");
+        assert!(body.contains("num > 8"), "the clamp threshold");
+        assert!(body.contains("- num as f32"), "the y anchor lifts by num");
+        assert!(body.contains("[16.0, 16.0]"), "the 16x16 frame");
+    }
+
+    /// W4-g12 render-sweep-2: the LIVE record path calls the pad redraw
+    /// per visible cell BEFORE the water/shimmer quad
+    /// (`LiquidRenderer.cs:664`/`:707`) — the earlier "only caller is the
+    /// retro oldDrawWater pass" staging note was wrong. Source scan pins
+    /// both call sites and their order (the redraw precedes the pass's
+    /// corner sample / base quad push).
+    #[test]
+    fn w4_g12_sweep2_the_record_path_calls_the_pad_redraw_before_the_quads() {
+        let src = include_str!("liquids.rs");
+        let liquids = &src[src.find("pub(crate) fn draw_liquids(").unwrap()..];
+        let liquids = &liquids[..liquids.find("pub(crate) fn draw_shimmer(").unwrap()];
+        let call = liquids.find("draw_tile_in_water(").expect("normal-path call");
+        let corners = liquids.find("light.corner4").expect("the corner sample");
+        assert!(call < corners, "the :664 redraw precedes the water quad");
+        assert!(liquids[..call].contains("LiquidRenderer.cs:664"), "citation");
+        let shimmer = &src[src.find("pub(crate) fn draw_shimmer(").unwrap()..];
+        let shimmer = &shimmer[..shimmer.find("fn solid_tile_probe").unwrap()];
+        let call = shimmer.find("draw_tile_in_water(").expect("shimmer-path call");
+        let val = shimmer.find("let val =").expect("the base opacity");
+        assert!(call < val, "the :707 redraw precedes the shimmer base quad");
+        assert!(shimmer[..call].contains("LiquidRenderer.cs:707"), "citation");
+        // Both sample the cell light (`Main.cs:57549`'s GetColor) through
+        // the port's `style.shade` stand-in, and pass the zero world-pixel
+        // draw offset.
+        assert!(liquids.contains("style.shade(light.get(d.x, d.y)"));
+        assert!(shimmer.contains("style.shade(light.get(d.x, d.y)"));
+        assert!(liquids.contains("[0.0, 0.0]"));
+        assert!(shimmer.contains("[0.0, 0.0]"));
+    }
+
+    /// W4-g12 render-sweep-2: the tile pass's twin of `DrawSingleTile`'s
+    /// wet-pad early return (`TileDrawing.cs:872-875`) — active 518 with
+    /// liquid > 0 never draws in the tile loop (the liquid pass owns its
+    /// sprite), the gate sits BEFORE GetTileDrawData, and it breaks an
+    /// open dark run (the C# return precedes DrawBlack, `:988-990`).
+    #[test]
+    fn w4_g12_sweep2_the_tile_pass_skips_wet_pads_before_draw_data() {
+        let src = include_str!("tiles.rs");
+        let gate = src
+            .find("tile.kind == 518 && tile.liquid > 0")
+            .expect("the wet-pad gate");
+        let dd = src.find("tr_core::drawdata::draw_data(").unwrap();
+        assert!(gate < dd, "the :872 return precedes GetTileDrawData");
+        let end = gate + src[gate..].find("let vine_cell").unwrap();
+        let block = &src[gate..end];
+        assert!(block.contains("scratch.cur.push"), "breaks the dark run");
+        assert!(block.contains("run_start = -1"));
+        assert!(block.contains("continue;"), "no tile-pass sprite");
+        assert!(src[..gate].contains("TileDrawing.cs:872-875"), "citation");
+    }
 
     fn record(x: i32, y: i32, w: i32, h: i32, visible: bool) -> LiquidDraw {
         LiquidDraw {

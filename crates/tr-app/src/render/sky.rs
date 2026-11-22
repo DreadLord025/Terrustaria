@@ -50,7 +50,12 @@ pub(crate) fn display_name(name: &str) -> String {
 /// Day runs `0..54000` (0 = sunrise, 27000 = noon), night runs `0..32400`
 /// (16200 = midnight). Between 13500 and 37800 the colour is pure white, which is why
 /// vanilla daytime tiles are lit at 100 %.
-pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 3] {
+pub(crate) fn color_of_the_skies(
+    time: f64,
+    day: bool,
+    moon_phase: u8,
+    blood_moon: bool,
+) -> [f32; 3] {
     let byte = |v: f64| (v.clamp(0.0, 255.0) / 255.0) as f32;
     if day {
         if time < 13500.0 {
@@ -81,9 +86,15 @@ pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 
         // `Main.cs:63493-63540`: the two night ramps, then the moon-phase light
         // floor — `Main.cs:63792-63813` grades `minimalLight` 11 (new moon) up
         // to 19 (full moon), applied per channel at `:63818-63829`. The
-        // blood-moon floor of 25 (`:63830-63844`) lands with the blood-moon
-        // system (M4 events); its night ramp is not ported either.
-        let (r, g, b) = if time < 16200.0 {
+        // blood-moon arm (`:63495-63519`) replaces BOTH ramps with the red
+        // sky (`tr_core::sky::blood_moon_sky`) and its floor is 25
+        // (`:63830-63844`), applied AFTER the moon-phase floor — the
+        // `BloodMoonMonolith` half of the C# gate (`Main.cs:61979`) is
+        // unported, the caller passes `World.blood_moon` (W4-g12 doc-sweep).
+        let (r, g, b) = if blood_moon {
+            let c = tr_core::sky::blood_moon_sky(time);
+            (c[0] as f64, c[1] as f64, c[2] as f64)
+        } else if time < 16200.0 {
             let t = 1.0 - time / 16200.0;
             (t * 30.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
         } else {
@@ -93,10 +104,13 @@ pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 
         // `Enums/MoonPhase.cs`: Full=0, Empty=4, the right-half mirror behind.
         const FLOORS: [f64; 8] = [19.0, 17.0, 15.0, 13.0, 11.0, 13.0, 15.0, 17.0];
         let floor = (FLOORS[(moon_phase & 7) as usize] / 255.0) as f32;
+        // `:63830-63844`: the blood-moon floor is a BYTE compare (< 25)
+        // on the already-cast channels, after the moon-phase floor.
+        let bm_floor = if blood_moon { 25.0 / 255.0 } else { 0.0 };
         [
-            byte(r).max(floor),
-            byte(g).max(floor),
-            byte(b).max(floor),
+            byte(r).max(floor).max(bm_floor),
+            byte(g).max(floor).max(bm_floor),
+            byte(b).max(floor).max(bm_floor),
         ]
     }
 }
@@ -875,7 +889,17 @@ pub(crate) fn draw_sky(
             let dv = (moon.uv[3] - moon.uv[1]) / 8.0;
             let v0 = moon.uv[1] + dv * phase;
             let uv = [moon.uv[0], v0, moon.uv[2], v0 + dv];
-            let c = tr_core::sky::moon_color(clock_time);
+            // `Main.cs:62978`: `DrawSunAndMoon` tints with `SetBackColor`'s
+            // `moonColor` — the blood-moon red ramp (`:63495-63519`) while
+            // `BloodMoonActive`, else `Color.White` (`:63917-63920`). The
+            // port keeps its forest night tint for the no-blood-moon arm
+            // (pre-existing deviation, ANALYSIS "The blood-moon sky
+            // residuals (W4-g12)").
+            let c = if world.blood_moon {
+                tr_core::sky::blood_moon_color(clock_time)
+            } else {
+                tr_core::sky::moon_color(clock_time)
+            };
             let size = [moon.w * body.scale, moon.w * body.scale];
             push_screen_rot(
                 r,
@@ -1689,17 +1713,17 @@ mod cloud_star_tests {
     fn night_light_floor_follows_the_moon_phase() {
         // `Main.cs:63792-63829`: midnight (t = 16200) with the ramp floor of 5
         // lifted to the phase minimum — 19 at the full moon, 11 at the new one.
-        let full = color_of_the_skies(16200.0, false, 0);
-        let empty = color_of_the_skies(16200.0, false, 4);
+        let full = color_of_the_skies(16200.0, false, 0, false);
+        let empty = color_of_the_skies(16200.0, false, 4, false);
         let full_byte = full[0] * 255.0;
         let empty_byte = empty[0] * 255.0;
         assert!((full_byte - 19.0).abs() < 1e-4, "full moon {full:?}");
         assert!((empty_byte - 11.0).abs() < 1e-4, "new moon {empty:?}");
         // The right-half mirror: phase 5 quarter floors at 13.
-        let quarter = color_of_the_skies(16200.0, false, 5)[0] * 255.0;
+        let quarter = color_of_the_skies(16200.0, false, 5, false)[0] * 255.0;
         assert!((quarter - 13.0).abs() < 1e-4, "quarter {quarter}");
         // Daylight ignores the floor.
-        let day = color_of_the_skies(13500.0, true, 4);
+        let day = color_of_the_skies(13500.0, true, 4, false);
         assert!(day[0] > 0.09, "dawn stays dawn: {day:?}");
     }
 
@@ -1822,18 +1846,44 @@ mod cloud_star_tests {
         // 13500 to 37800 (noon is `Color.White`), the 37800..45900 sunset ramp
         // pulls it to (235,120,170) and past 45900 to the (35,35,35) dusk
         // floor. The 0..13500 sunrise ramp runs 25..255 on the red channel.
-        let noon = color_of_the_skies(27000.0, true, 0);
+        let noon = color_of_the_skies(27000.0, true, 0, false);
         assert_eq!(noon, [1.0, 1.0, 1.0], "noon is pure white");
-        let morning = color_of_the_skies(6750.0, true, 0);
+        let morning = color_of_the_skies(6750.0, true, 0, false);
         let byte = |v: f32| v * 255.0;
         assert!((byte(morning[0]) - 140.0).abs() < 1e-3, "sunrise red");
         assert!((byte(morning[1]) - 145.0).abs() < 1e-3, "sunrise green");
-        let sunset = color_of_the_skies(45900.0, true, 0);
+        let sunset = color_of_the_skies(45900.0, true, 0, false);
         assert!((byte(sunset[0]) - 235.0).abs() < 1e-3, "sunset red");
         assert!((byte(sunset[1]) - 120.0).abs() < 1e-3, "sunset green");
         assert!((byte(sunset[2]) - 170.0).abs() < 1e-3, "sunset blue");
-        let dusk = color_of_the_skies(53999.0, true, 0);
+        let dusk = color_of_the_skies(53999.0, true, 0, false);
         assert!((byte(dusk[0]) - 35.0).abs() < 0.1, "the dusk floor: {dusk:?}");
         assert!(dusk[0] < sunset[0] && sunset[0] < noon[0], "the day darkens");
+    }
+
+    /// W4-g12 doc-sweep: the blood-moon night sky (`Main.cs:63495-63519` +
+    /// the `:63830-63844` floor of 25). The red sky replaces both forest
+    /// ramps; the 25 floor is a byte compare AFTER the moon-phase floor.
+    #[test]
+    fn w4_g12_blood_moon_sky_and_the_25_floor() {
+        // Midnight: the raw ramp is (75, 15, 15); the moon-phase floor
+        // (full moon 19) leaves R alone, then the blood floor lifts G/B
+        // to 25 (`:63836-63843`).
+        let mid = color_of_the_skies(16200.0, false, 0, true);
+        let b = |v: f32| (v * 255.0).round() as i32;
+        assert_eq!([b(mid[0]), b(mid[1]), b(mid[2])], [75, 25, 25]);
+        // New moon: the phase floor 11 never beats the blood floor 25.
+        let mid_new = color_of_the_skies(16200.0, false, 4, true);
+        assert_eq!(mid_new, mid, "the 25 floor dominates every phase floor");
+        // Early night t=1: the ramp is (35, 35, 35) — all above 25.
+        let early = color_of_the_skies(0.0, false, 0, true);
+        assert_eq!([b(early[0]), b(early[1]), b(early[2])], [35, 35, 35]);
+        // Daylight ignores the blood arm entirely (the C# gates on
+        // `!Main.dayTime`, `:63493`).
+        let noon = color_of_the_skies(27000.0, true, 0, true);
+        assert_eq!(noon, [1.0, 1.0, 1.0]);
+        // Without the blood moon the forest ramps are untouched.
+        let forest = color_of_the_skies(16200.0, false, 4, false);
+        assert!((forest[0] * 255.0 - 11.0).abs() < 1e-4);
     }
 }

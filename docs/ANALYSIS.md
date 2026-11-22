@@ -988,6 +988,10 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   The base-colour wave itself stays in `tile_light/palette.rs` (W4-d66's lane); the
   draw-side `shimmer_wave` copy feeds only the glitter opacity/frame. 7 witnesses pin
   the split values, the noise lanes, the raw-opacity sparkle and the `val` clamp.
+
+  tile-518 submerged redraw) is ported AND wired (W4-g12 render-sweep-2): both live
+  record paths call it per visible cell (`LiquidRenderer.cs:664`/`:707`) and the tile
+  pass skips wet pads (`TileDrawing.cs:872-875`) — see "The submerged lily-pad redraw".
 - Not ported: the `HorizonClouds`-style shader tint of `NextHorizonRenderer.CloudsEnd`
   for falls, `Main.ambientLava(X/Y/Strength)` (an audio-ambience feed, not lighting),
   the `player.lavaOpacity` factor and the storm/rare cloud type branches.
@@ -39860,6 +39864,73 @@ cargo/rustc/tests/graphify invoked** (the Lead's code-only
 constraint); the deferred gate is the merge pass's
 `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`.
 
+## The Main.cs dust sites, batch 2 (W4-g12)
+`crates/tr-app/src/main_dust_b.rs` ports the middle third of the
+research/64 census (sites 9-16; g11 owns 1-8, g13 owns 17-23 — the
+line-order split in `docs/research/64-dust-main-sites-claims.md`).
+CODE-ONLY: staged emitters + witnesses, not wired — none of the eight
+sites has a live ported machine yet (the e2-batch-1 / d50 lane pattern).
+* **Sites 9/10/11 — `Main.TeleportEffect` cases 10/11/13**
+  (`Main.cs:13381-13418`/`:13419-13446`/`:13447-13462`): the 267
+  sparkle lane (`NewDustDirect` + `CloneDust`), the 50×
+  `NewDustPerfect` burst, the 21× type-27 smoke. `TeleportEffect`
+  itself stays the recall doc's "separate follow-up"; the wiring wave
+  ports `Player.Teleport`/`NPC.Teleport` and calls the case arms at the
+  Entry/Exit sites with `dustCountMult = Clamp(1 - teleportTime*0.99,
+  0.01, 1)` (`Player.cs:37442`). RNG: the caller's pass stream
+  (`UpdatePlayers`/`UpdateNPCs` — the teleport executes inside that
+  `SwapRandom` block); argument draws before the pool internals (case
+  10's named arguments evaluate in written order — the hue float
+  first), post writes after, the sentinel takes them. The case-10
+  scale ladder (`Next(20,70)` + the n<10/n<5 bonuses) is DEAD — the
+  `scale = scale` local write overwrites it, the draws still ride the
+  stream. Case 10 plays Item8 AFTER the loop, case 13 BEFORE it (the
+  d52 `play_npc_item_cue` contract: façade NextFloat on the audio-only
+  stream, case-2 `Next(-6,7)` on the caller's); case 11 plays nothing.
+* **Sites 12/13 — `DrawNPCDirect`'s bone-arm chains**
+  (`Main.cs:22701-22748` type-36 hand / `:22786-22824` aiStyle-33..36
+  Prime limbs): the two-hop tether geometry is ported verbatim (the
+  head's INTEGER width/height halves, the f64 sqrt normaliser, the
+  j==0 half-hop / j==1 full-hop-minus-(16,6) advances); the dust is
+  the j/k==1 tip puff (type 5 scale 2 / type 6 scale 2.5, speeds =
+  pre-normalisation deltas × 0.02). The BoneArm/BoneArm2/BoneArm3
+  SPRITE half is ported as the staged geometry plan
+  `main_dust_b::bone_arm_sprites` (W4-g12 render-sweep-2): per-leg
+  `(anchor, atan2(dy,dx) - 1.57)` over the SAME `bone_arm_leg` walk the
+  dust rides (the shared helper — the two halves never diverge); the
+  caller maps the sheet pick (type-36 `localAI[3] == 1` → BoneArm3 else
+  BoneArm, `:22727-22733`; Prime limbs always BoneArm2, `:22810`, both
+  at BoneArm's frame size/origin) + the anchor-tile `Lighting.GetColor`
+  tint. STAGED like the dust: the wiring wave resolves the head
+  snapshot (`Main.npc[(int)ai[1]]` — the limb spawn's ctx-seam
+  stand-in) and pushes the quads beside the dust call; the sheets
+  (`Arm_Bone`/`_2`/`_3`, AssetInitializer.cs:629-633) pack at that
+  merge. DRAW-PATH RNG: the C# runs outside every `SwapRandom`; the
+  port's draw-dust precedent (the Mushroom-glow/leaf/TrySparkling
+  frame-pinned streams) applies — the wiring feeds a frame-derived
+  stream, never a stage stream. The `FocusHelper.AllowMiscDustEffects`
+  gate (`FocusHelper.cs:39` = `!WorldUpdateStepper.DrawnThisUpdate`)
+  is the `allow_misc_dust` parameter (the port tracks the flag 1:1).
+* **Sites 14/15/16 — the Moon Lord core arm's flag8 puffs**
+  (`Main.cs:24736`/`:24748`/`:24752`; the fourth `:24756` is g13's).
+  **Dead-gate census finding:** `flag8` (`Main.cs:24703`) is
+  initialised `false` and NEVER assigned `true` in the type-398 block
+  — the only reads are the four `if (flag8)` gates. All four puffs are
+  dead code in 1.4.5.8; the port keeps the gate verbatim (the live
+  caller passes `false`) and the witness pins zero spawns AND zero
+  draws on the dead path. The shared enclosing-arm context (the
+  397-hand scan, `center2`, the `(220,-60)·side` anchor, the 0.5 pull)
+  is cited in both batches per the claim doc's boundary rule.
+Code-only: every site re-read against the cited C# windows (the
+case-10 named-argument order, the dead scale ladder, the case-11
+colour switch's always-overwritten `Color.Green` initial, the case-13
+sound-first order, the bone-arm integer head halves + f64 sqrt, the
+flag8 dead-gate census). The 7 + 1 witness tests (`main_dust_b.rs` —
+the +1 is render-sweep-2's sprite-anchor/rotation pin, which also
+cross-checks the dust tip against the shared walk) mirror
+the full draw sequences on same-seeded probe streams (WRITTEN, NOT
+RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
@@ -48686,3 +48757,218 @@ true-in-def but natural; 530/637 lava table inversions; torch style-8 and
 piano style-15 sub-tile flag flips), and the full 25-call-site
 `ApplyNaturalObjectRules` census incl. the 184 alternates and the
 233/185/165 sub-tiles.
+
+## The blood-moon sky residuals (W4-g12 doc-sweep)
+`render/sky.rs:85` deferred the blood-moon night ramp and its floor of 25
+to "the blood-moon system (M4 events)" — but `World.blood_moon` has been
+live since the events port (`world.rs:156`, `start_blood_moon`), so the
+deferral was stale. Ported now:
+* `tr_core::sky::blood_moon_color` (`Main.cs:63495-63519`): the moon's
+  red ramp. BOTH night arms write the same colour — the `>= 16200` arm's
+  forest write (`:63510-63512`) is a C# dead-write, overwritten at
+  `:63513-63515`; the port shares the early-night formula and splits only
+  the ramp factor. `DrawSunAndMoon`'s moon tint (`render/sky.rs`) picks
+  it while `World.blood_moon`.
+* `tr_core::sky::blood_moon_sky` (`Main.cs:63503-63505`/`:63516-63518`):
+  the sky colour replacement (R 75→35, G/B 15→35), consumed by
+  `color_of_the_skies`' new `blood_moon` parameter (the caller passes
+  `world.blood_moon`; the sky tint feeds the light map, so a blood-moon
+  night lights the surface red exactly like vanilla).
+* The floor of 25 (`Main.cs:63830-63844`) applies AFTER the moon-phase
+  floor (`:63818-63829`), as a byte compare on the cast channels.
+**Deviations kept:** (1) the C# gate is `Main.bloodMoon ||
+SceneMetrics.BloodMoonMonolith` (`Main.cs:61979`) — the monolith is
+unported, only the world flag feeds. (2) Outside a blood moon the C#
+tail (`:63917-63920`) sets the moon tint to `Color.White`; the port keeps
+its pre-existing forest night tint (`tr_core::sky::moon_color`) for that
+arm — a documented stand-in, unchanged by this pass. (3) The
+`dontStarveWorld` night-colour hook (`:63541-63544`) stays unported with
+the rest of the secret-seed draw arms.
+Verification: code-only; 3 witnesses WRITTEN NOT RUN
+(`tr-core/src/sky.rs` 2 — the shared red ramp + the sky replacement;
+`render/sky.rs` 1 — the 25-floor dominance over every phase floor, the
+daylight no-op and the untouched forest arm).
+## The shroom-cap overlay (W4-g12 doc-sweep)
+research/09's tree row carried "shroom cap MISSING" since S1-F-9 wave A.
+Ported: `tiles.rs::shroom_cap_frame` + the cap draw in the tile loop
+(`TileDrawing.cs:994-1006`): a type-72 trunk-top cell at `frameX >= 36`
+draws `TextureAssets.ShroomCap` (`Images/Shroom_Tops`,
+`AssetInitializer.cs:532` — now packed in `STATIC_SHEET_NAMES`) at
+`(x*16 - 22, y*16 - 26)`, source `(num4*62, 0, 60, 42)` where `num4` is
+0/1/2 by the EXACT `frameY == 18`/`== 36` equalities, tinted with the raw
+`Lighting.GetColor(x, y)` and flipped by the case's `tileSpriteEffect`.
+The C# site precedes the `!flag` return (`:1014`), so the port draws the
+cap before its `skip_draw`/vine `continue`s and the cell sprite; a
+missing sheet leaves the cap undrawn (the `r.uv` None arm, the
+load-static convention). Deviation: fully dark cells fold into the
+merged black rectangle before the cap site (the standing dark-cell
+merge — the cap tint there is zero, pixel-identical). 2 witnesses
+WRITTEN NOT RUN (the frame-equality arms; the draw-order/anchor/rect/
+raw-light source scan).
+## The martianLight bounce (W4-g12 doc-sweep)
+The port fed `apply_cases_a`/`glow_switch` a constant `martian_light =
+0.0` under the claim "`Main.martianLight` is 0 outside the (unported)
+Martian Madness event" (`tiles.rs:723`, `drawdata_cases_a.rs:53`). That
+reading was WRONG: `Main.DoUpdate_AnimateTileGlows` (`Main.cs:18238-
+18262`) ticks `martianLight += martianLightDir * 0.015f` with the 1/0
+clamps + dir flips EVERY frame — the call site (`Main.cs:17145`) has no
+event gate, and `Main.Initialize` seeds (1, +1) (`:66831-66832`). The
+value oscillates in [0, 1] from the first frame of every world; only
+the glow CONSUMERS (the martian-conduit/furniture glow records) are
+event-content, not the oscillator.
+Ported: `App.martian_light`/`martian_light_dir` (both ctors seed 1/1),
+the bounce beside the demon-torch tick in the draw pass
+(`frame/draw.rs::tick_martian_light`, the same two-independent-ifs
+shape), threaded through `draw_tiles`' new `martian_light` parameter
+into `apply_cases_a` (replacing the constant 0). `_martianGlow`'s byte
+(`TileDrawing.cs:498`, `100 + 150*light` truncated) now spans 100..250
+instead of pinning at 100. The glow record itself still rides unused
+until the glow bind (TILE-DRAW-2 / W4-f15's lane — keep-one at merge);
+the stale "0 outside the event" comments in `tiles.rs` and
+`drawdata_cases_a.rs` are corrected. The G6 key is untouched: the glow
+records are not drawn yet, so the value cannot change any cached pixel
+(the f15 bind must add it to the key or the glow pass when it lands).
+3 witnesses WRITTEN NOT RUN (the first-tick clamp/flip, the bottom
+clamp, the 100..250 byte span over a full bounce).
+## The back gore pass (W4-g12 doc-sweep)
+`render/gore.rs`'s module header listed `DrawGoreBehind`
+(`Main.cs:21842-21871`) as a documented drop ("the back pass needs the
+tile-batch seam"). The seam exists — the tile pass's behind-tiles slot
+(before `draw_npcs(behindTiles: true)`, the `:56934-56951` capture
+order: walls → WoF → back gore → behind-tiles NPCs → tiles). Ported:
+* `gore.rs::draws_in_back` (`:21846-21854`): the exact complement of
+  the front gate over the drip rows — active, type > 0, `IsDrip`, and
+  the frame row OUTSIDE 7..=9. A live drip draws in exactly one pass.
+* `gore.rs::draw_behind` (`:21855-21870`): the same source-rect-centre
+  light sample + `GetAlpha` tint as the front pass, through
+  `plan_quad_inner`'s `behind` arm — the framed `-2f` lift is kept
+  (`:21862`), the type-1217 `+4f` nudge is NOT (the front pass's
+  `:21893-21896` has no twin here), the unframed arm has no lift
+  (`:21867`). The quads push into the WORLD range in world pixels
+  (camera/zoom/screen collapsed; the G6 GPU transform applies), so
+  they sit under the tile layer exactly like the C# capture order.
+* The `Main.drawBackGore` latch needs no port static: the front walk
+  sets it iff any slot passes `draws_in_back` over the same pool state
+  the behind walk reads, so the predicate IS the latch (the C#
+  re-latches `true` after the capture draw, `:56939`, and the direct
+  path consumes it at `:63421` — both reduce to "any drip slot").
+* **G6 key**: the drip quads ride the CACHED world range, so their
+  state rides the key — `WorldFrameKey::back_gore`
+  (`back_gore_key`: a hash over every behind-drawing slot's index/
+  type/position/rotation/scale/alpha/frame). Zero while no drip draws
+  (the waterfall convention: gore-free frames keep the pre-wiring
+  cache behaviour bit-for-bit).
+Deviation: the direct-screen path (`:63275`) draws the back gore AFTER
+the whole tile draw in C#'s `drawToScreen` mode; the port has one fused
+pass and keeps the capture-path position for both (the standing
+fused-pass z-order approximation, same class as the pylon passes).
+4 witnesses WRITTEN NOT RUN (the gate complement over all 15 rows, the
+lift-kept/nudge-dropped geometry twin, the world-range seam source
+scan, the key-coverage motion/frame/fall-frame transitions).
+## The savings coin pile (W4-g12 doc-sweep)
+The g58 shop-happiness lane deferred `ItemSlot.DrawSavings`
+(`Main.cs:41791`) to "the coin-slot lane"; g57 recorded the reforge
+site's skip; no branch had claimed the port (`git log --all -S 'fn
+draw_savings'` empty). Ported as `ui/savings.rs`:
+* `coins_count`/`coins_combine_stacks`/`coins_split`
+  (`Utils.cs:1019-1076`) verbatim — the four denominations, the
+  9999999999 cap checked AFTER each add with the immediate return, the
+  descending remainder walk. The `overFlowing` out-params are dead at
+  every DrawSavings call — dropped.
+* `draw_savings` (`ItemSlot.cs:3704-3741`): the bank/bank2/bank3/bank4
+  totals, the pile icons per NON-EMPTY bank (void vault 4076 `+70,+45`,
+  defender's forge 3813 `+92,+45`, safe 346 `+80,+50`, piggy 87
+  `+70,+60`), each `Utils.CenteredRectangle` at 0.65 (all four casts
+  truncate toward zero), then `DrawMoney(Lang.inter[66], …,
+  CoinsSplit(total), fromSavings: true)`. The `total > 0` gate (`:3717`).
+* `draw_money` (`ItemSlot.cs:3652-3702`): both layouts — horizontal
+  (the label-width offset, coins at `+45+24i, +50`, counts at
+  `v.X-11, v.Y+LineSpacing*0.75` origin `(0, LineSpacing)`) and vertical
+  (coins at `+11+24j, +75`, the `j==0 && count>99` -6 px count shift),
+  the 999 cap, `CoinSlot.UpdateSavings` per cell (the jump offset rides
+  the coin, the text scale rides the count).
+* `CoinSlotState` gains the 4-entry `savings_entries` array
+  (`CoinSlot.cs:341`), `update_savings` (`:225-228`, type `71+slot`,
+  `SavingsCoinJumpScale` 10) and the Savings-first `UpdateSlotAnims`
+  loop order (`:258-261`).
+* `Coin_0..3` spin strips packed (`AssetInitializer.cs:369`),
+  `Lookups::coin_strips`; `DrawItemCoin`'s `Frame(1, 8, 0, frame)` cell
+  math (`CoinSlot.cs:240-254`, the 1024 size-limit guard kept).
+* WIRED: the shop block (`ui::mod`, `Main.cs:41791` — `(504,
+  invBottom=258)`, vertical, before the g58 happiness chrome).
+Deviations: (1) the `_customCurrencyForSavings` route (`:3707-3711`) is
+d122's UI follow-up — the vanilla coin path always runs; (2)
+`DrawItemCoin`'s `ContentSamples.ItemsByType[coin].GetAlpha(White)`
+folds to `Color.White` (a fresh sample has alpha 0, coins hit no
+special GetAlpha arm); (3) the pile icons' `GetItemDrawFrame` animation
+lookup folds to the whole sheet (none of 4076/3813/346/87 registers an
+`itemAnimations` row); (4) the reforge (`:41637`) and buy-button
+(`:43862`) sites stay with their lanes' merges (g57's reforge block,
+the NPC-chat buy surface) — `draw_savings` is the shared seam, both
+call shapes (horizontal included) are ported and tested. 6 witnesses
+WRITTEN NOT RUN (the denomination sum, the mid-walk cap, the split
+walk, the truncating CenteredRectangle, the call-shape source scan,
+the savings-row bounce).
+## The submerged lily-pad redraw (W4-g12 doc-sweep)
+`render/liquids.rs:197` dropped `Main.DrawTileInWater`
+(`Main.cs:57536-57551`) with "the generator never places tile 518" —
+stale on two counts: the c33 lane ports `PlaceLilyPad`
+(`WorldGen.cs:59086-59200`, fd7fae0e8), and loaded vanilla worlds carry
+pads regardless. Ported as `liquids.rs::draw_tile_in_water`: the
+active-518 gate, `num = liquid/16 - 3` (byte integer divide), the
+`SolidTile(x, y-1) && num > 8` ceiling clamp (the full nactive probe —
+actuated/platform/half/sloped ceilings do not clamp), the tile's own
+16x16 frame at `(x*16, y*16 - num) + drawOffset` with the
+`Lighting.GetColor` tint, no rotation/flip/scale.
+**WIRED (W4-g12 render-sweep-2 correction):** the doc-sweep's "the
+only C# caller is the retro `oldDrawWater` sprite pass" reading was
+WRONG — the LIVE record path calls it too:
+`LiquidRenderer.DrawNormalLiquids` (`LiquidRenderer.cs:664`) and
+`DrawShimmer` (`:707`) invoke `Main.DrawTileInWater` per visible liquid
+cell BEFORE each water/shimmer quad, and `DrawSingleTile`
+(`TileDrawing.cs:872-875`) early-returns for a wet pad (active 518,
+`liquid > 0`) so the tile pass never draws it — the liquid-pass redraw
+is the pad's ONLY sprite. Wired: both record paths call
+`draw_tile_in_water` (the tint is `Lighting.GetColor(x, y)` through the
+port's `style.shade` mode stand-in, `draw_offset` Vec2::ZERO in
+world-pixel quads), and the tile loop carries the wet-pad skip before
+`GetTileDrawData` (breaking an open dark run — the C# return precedes
+`DrawBlack`, `:988-990`). Dry pads (liquid 0) keep the tile pass's
+case-518 dry-float arm (`drawdata_cases_a::lily_pad_top_delta`,
+`TileDrawing.cs:4604-4630`). The retro sprite pass (`Main.cs:57667`)
+itself stays unported — its dust feeds are g13's
+(`retro_liquid_dust_feed`, wired); the fn is shared, no second copy at
+that merge. The `GetTileDrawTexture` paint lookup folds to the plain
+frame (518 has no paint variants in `TilePaintSystemV2`; a painted pad
+would need the g79 paint chain — recorded). G6: no new key field — the
+pad's inputs (liquid level, frame, cell light) already ride
+`world_revision` (the liquid settle bumps it, `liquid.rs:306`) +
+`light_generation` + the `liquid_anim` frame slot. 2 + 2 witnesses
+WRITTEN NOT RUN (the lift/clamp ladder incl. the actuated ceiling, the
+gate/anchor source scan; the two call-site order scans, the tile-pass
+skip scan).
+## The wave-A slime scale rows (W4-g12 doc-sweep)
+`entities.rs:3076` recorded "the C# `scale` rows (the slimes'
+1.25/1.1/1.05) are unported outside the base slime variants" (ANALYSIS
+"S1-D-3 FindFrame wave A"). No pushed lane claimed them (d34/d35/d37's
+entities.rs hunks add NEW kinds' arms only). Ported:
+* `NpcKind::wave_a_slime_scale` (`npc/data.rs`): MotherSlime 16 /
+  DungeonSlime 71 → 1.25 (`NPC.cs:8977`/`:9710`), LavaSlime 59 /
+  CorruptSlime 81 / Crimslime 183 / SpikedIceSlime 184 → 1.1
+  (`:9526`/`:9850`/`:11344`/`:11354`), IlluminantSlime 138 → 1.05
+  (`:10761`). IceSlime 147 (`:10847-10860`) and UmbrellaSlime 225
+  (`:11898-11910`) write NO scale row — the head's 1f.
+* The ctor chain (`npc.rs`, after `holiday_zombie_scale`) seeds
+  `Npc::scale`; the draw arm splits the nine slimes out of the
+  `pumpkin_moon_draw` group into `scaled_anchor` (the BlazingWheel
+  precedent): the quad grows about the frame centre and the generic
+  shift's `(h - frame_h*scale)/2` term composes to the C#'s
+  bottom-anchored `pos.Y + height - frame_h*scale + 4`
+  (`Main.cs:25511-25516` with the `:23124` scale argument).
+* The hitbox stays the unscaled `SetDefaults` box — the C# scale
+  multiplies the SPRITE only (`base.width/height` are written before
+  the scale row and never re-scaled).
+The eyes/zombies of the same wave-A group keep the plain
+`pumpkin_moon_draw` arm (their C# blocks write no scale row). 2
+witnesses WRITTEN NOT RUN (the ctor scale table + the unscaled hitbox;
+the composed anchor vs the C# formula, incl. the scale-1 no-op).

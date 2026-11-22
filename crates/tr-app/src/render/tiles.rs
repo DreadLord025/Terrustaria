@@ -218,6 +218,25 @@ pub(crate) fn resolve_tile_frame(
     frame.or_else(|| lookups.plain_tex(kind))
 }
 
+/// The shroom-cap frame column (`TileDrawing.cs:994-1005`): only a
+/// type-72 trunk-top cell at `tileFrameX >= 36` carries a cap;
+/// `num4 = 0`, lifted to 1 at `tileFrameY == 18` and 2 at `== 36`
+/// (exact equality — every other row keeps 0). The source rect is
+/// `(num4 * 62, 0, 60, 42)` on `TextureAssets.ShroomCap`
+/// (`Images/Shroom_Tops`, `AssetInitializer.cs:532`).
+pub(crate) fn shroom_cap_frame(frame_x: i16, frame_y: i16) -> Option<i32> {
+    if frame_x < 36 {
+        return None;
+    }
+    Some(if frame_y == 18 {
+        1
+    } else if frame_y == 36 {
+        2
+    } else {
+        0
+    })
+}
+
 /// One cell of the sunflower's special-pass sway
 /// (`TileDrawing.DrawMultiTileGrassInWind`, `TileDrawing.cs:8916-9041`).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -449,6 +468,16 @@ pub(crate) fn draw_tiles(
     liquid_rand: &mut tr_core::UnifiedRandom,
     dust: &mut tr_core::particles::DustPool,
     spawn_ctx: &tr_core::particles::SpawnCtx,
+    // W4-g12 doc-sweep: `Main.martianLight` (`Main.cs:1231`, the
+    // `DoUpdate_AnimateTileGlows` ±0.015 bounce `:18251-18261`) — the
+    // `_martianGlow` feed (`TileDrawing.cs:498-499`). Ticks EVERY frame in
+    // C#, no event gate; the glow record rides unused until the glow pass
+    // binds it (TILE-DRAW-2), but the value is now the live one.
+    martian_light: f32,
+    // W4-g12 doc-sweep: the gore pool for `DrawGoreBehind`
+    // (`Main.cs:21842-21871`) — the drip rows outside frames 7..=9 draw
+    // in the behind-tiles slot of this pass (the `:56934-56940` site).
+    gore_pool: &tr_core::gore::GorePool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:104,191`): ONE `UnifiedRandom`
@@ -631,7 +660,9 @@ pub(crate) fn draw_tiles(
     if tile_filter == TileFilter::All && !crate::env::no_liqback() {
         stats.liquids += draw_waters(
             r,
+            world,
             lookups,
+            atlas,
             light,
             style,
             anim_time,
@@ -682,6 +713,19 @@ pub(crate) fn draw_tiles(
             r, world, lookups, atlas, light, style, anim_time, x0, y0, x1, y1, &mut stats,
         );
     }
+
+    // W4-g12 doc-sweep: `Main.DrawGoreBehind` (`Main.cs:21842-21871`,
+    // capture site `:56934-56940`) — the drip rows outside frames 7..=9
+    // draw after the walls and BEFORE the behind-tiles NPCs, under the
+    // tile layer. The C# gate is the `Main.drawBackGore` latch the front
+    // `DrawGore` walk sets (`:21885`); `draw_behind`'s own walk gate is
+    // the same pool predicate, so the latch needs no port state. These
+    // quads ride the G6-CACHED world range, so the drip state rides the
+    // key (`WorldFrameKey::back_gore`, the waterfall convention: 0 while
+    // no drip slot draws — ANALYSIS "The back gore pass (W4-g12)").
+    stats.quads += crate::render::gore::draw_behind(
+        gore_pool, r, lookups, light, style, anim_time,
+    );
 
     // S1-G-13 consumers: the direct-screen extras block (`ScreenExtras`)
     // owns the behind-tiles NPC pass at its `DoDraw_DrawNPCsBehindTiles`
@@ -788,6 +832,24 @@ pub(crate) fn draw_tiles(
                 // BEFORE the vine crawl (the C# `switch` sits after it). The
                 // fused default (`All`) keeps every cell — unchanged.
                 if !tile_filter.keeps(tile.kind, active) {
+                    continue;
+                }
+                // `DrawSingleTile`'s first gate (`TileDrawing.cs:872-875`):
+                // a WET lily pad (active 518, liquid > 0) never draws in the
+                // tile pass — `LiquidRenderer` redraws it under the water
+                // quad via `Main.DrawTileInWater` (liquids.rs, W4-g12
+                // render-sweep-2). Before GetTileDrawData, so no frame
+                // data, no black quad, no dust either. Dry pads (liquid 0)
+                // keep the normal path — the case-518 dry-float arm.
+                if active && tile.kind == 518 && tile.liquid > 0 {
+                    // The C# return precedes DrawBlack (`:988-990`): the
+                    // cell emits NO black quad, so an open dark run must
+                    // break here (a merged rect would paint over the pad
+                    // the liquid pass draws).
+                    if run_start >= 0 {
+                        scratch.cur.push((run_start, tx - 1));
+                        run_start = -1;
+                    }
                     continue;
                 }
                 // `TileDrawing.Draw`'s vine arm (`TileDrawing.cs:536-545`):
@@ -902,9 +964,11 @@ pub(crate) fn draw_tiles(
                     // switch like the C#. The glow record rides unused
                     // until the glow pass binds it (TILE-DRAW-2); the
                     // cell light converts to XNA bytes (alpha 255, the
-                    // `Lighting.GetColor` colour has no alpha), the UI
-                    // text pulse is steady 255 and martianLight 0 outside
-                    // the (unported) event — documented deviations.
+                    // `Lighting.GetColor` colour has no alpha) and the UI
+                    // text pulse is steady 255 — documented deviations.
+                    // martianLight is the LIVE bounce (W4-g12 doc-sweep:
+                    // `Main.cs:17145` ticks it unconditionally; the old
+                    // "0 outside the event" reading was wrong).
                     let cell = raw_l;
                     let cell_bytes = [
                         (cell[0] * 255.0).min(255.0) as u8,
@@ -948,7 +1012,7 @@ pub(crate) fn draw_tiles(
                         );
                     }
                     let _glow = crate::drawdata_cases_a::apply_cases_a(
-                        &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
+                        &mut dd, world, tile, tx, ty, cell_bytes, 255, martian_light,
                     );
                     // W4-d58: `CacheSpecialDraws_Part2`'s BasicChest block
                     // (`TileDrawing.cs:4289-4330`), which `DrawSingleTile`
@@ -1110,6 +1174,31 @@ pub(crate) fn draw_tiles(
                         tile,
                         water_style,
                     );
+                }
+                // W4-g12 doc-sweep: the glowing-mushroom cap
+                // (`TileDrawing.cs:994-1006`, research/09's "shroom cap
+                // MISSING"): a type-72 trunk top at `frameX >= 36` draws
+                // the `Shroom_Tops` 60x42 sprite over the cell BEFORE the
+                // trunk quad, at `(x*16 - 22, y*16 - 26)` with the raw
+                // `Lighting.GetColor(x, y)` tint and the case's flip.
+                // Runs for every visible cap cell regardless of the draw
+                // `flag` (the C# site precedes the `!flag` return); the
+                // port's dark-cell merge above already folded the black
+                // cells, whose cap tint is zero anyway.
+                if active && tile.kind == 72 {
+                    if let Some(col) = shroom_cap_frame(tile.frame_x, tile.frame_y) {
+                        if let Some(uv) = r.uv("Shroom_Tops", col as f32 * 62.0, 0.0, 60.0, 42.0)
+                        {
+                            let c = style.shade(raw_l, tx, ty, anim_time);
+                            r.push_sprite(
+                                [tx as f32 * TILE_PX - 22.0, ty as f32 * TILE_PX - 26.0],
+                                [60.0, 42.0],
+                                flip_uv(uv, dd.flip),
+                                [c[0], c[1], c[2], 1.0],
+                            );
+                            stats.quads += 1;
+                        }
+                    }
                 }
                 // The switch's early `return` arms (751/752 off their (0,0)
                 // frame, the palm's frond columns 323): no sprite at all.
@@ -1774,7 +1863,9 @@ pub(crate) fn draw_tiles(
     if tile_filter == TileFilter::All && !crate::env::no_liqfront() {
         stats.liquids += draw_waters(
             r,
+            world,
             lookups,
+            atlas,
             light,
             style,
             anim_time,
@@ -2428,6 +2519,45 @@ fn draw_tile_flames(
 mod tests {
     use super::*;
     use tr_core::wind::Wind;
+
+    /// W4-g12 doc-sweep: the shroom-cap frame pick
+    /// (`TileDrawing.cs:994-1005`) — the `frameX >= 36` gate and the two
+    /// EXACT `frameY` equalities (18 → 1, 36 → 2, everything else 0).
+    #[test]
+    fn w4_g12_shroom_cap_frame_matches_the_two_equality_arms() {
+        // Below 36: no cap at all (the trunk-body columns).
+        assert_eq!(shroom_cap_frame(0, 0), None);
+        assert_eq!(shroom_cap_frame(18, 18), None);
+        assert_eq!(shroom_cap_frame(34, 36), None);
+        // The gate is >=, so 36 itself carries a cap.
+        assert_eq!(shroom_cap_frame(36, 0), Some(0));
+        assert_eq!(shroom_cap_frame(36, 18), Some(1));
+        assert_eq!(shroom_cap_frame(54, 36), Some(2));
+        // Exact equality, not a band: 19/37/54 keep column 0.
+        assert_eq!(shroom_cap_frame(36, 19), Some(0));
+        assert_eq!(shroom_cap_frame(36, 37), Some(0));
+        assert_eq!(shroom_cap_frame(36, 54), Some(0));
+    }
+
+    /// W4-g12 doc-sweep: the cap draw sits BEFORE the `skip_draw`/vine
+    /// `continue`s and the cell sprite (`TileDrawing.cs:994` precedes the
+    /// `!flag` return `:1014`), uses the raw cell light and the
+    /// `(-22, -26)` anchor with the 60x42 rect at `num4 * 62`.
+    #[test]
+    fn w4_g12_shroom_cap_draws_before_the_skip_arms_with_the_raw_light() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let cap = body.find("shroom_cap_frame(tile.frame_x").expect("the cap hook");
+        let skip = body.find("if dd.skip_draw").expect("the skip arm");
+        assert!(cap < skip, "the cap draws before the switch's return arms");
+        let cap_block = &body[cap - 400..skip];
+        assert!(cap_block.contains("- 22.0"), "the -22 x anchor (:1005)");
+        assert!(cap_block.contains("- 26.0"), "the -26 y anchor (:1005)");
+        assert!(cap_block.contains("60.0, 42.0"), "the 60x42 rect (:1005)");
+        assert!(cap_block.contains("raw_l"), "Lighting.GetColor, not the ghosted l");
+        assert!(cap_block.contains("dd.flip"), "tileSpriteEffect rides the case flip");
+    }
 
     /// S1-G-1f draw-order witness: the back-rope hook sits at the C#
     /// dispatch position — AFTER `DrawSingleTile`'s visibility gates

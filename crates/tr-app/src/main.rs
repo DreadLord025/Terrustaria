@@ -78,6 +78,7 @@ mod teleport_dust;
 mod melee_swing;
 mod menu;
 mod minecart;
+mod main_dust_b;
 mod mount;
 mod mount_dust;
 mod net;
