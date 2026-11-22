@@ -7895,17 +7895,49 @@ impl Projectile {
     }
 
     /// `AI()`'s aiStyle-50 arm (`Projectile.cs:28323-28401`): the InfernoFork
-    /// family's dust-fade lifetime. The hostile 291 branch is out of scope
-    /// (no ported row), the bolt 295's own arm is its 8× dust 174 and nothing
-    /// else (`:28333-28340`), the dust spawns are SKIPPED, and the first-tick
-    /// `SoundID.Item74` is SKIPPED — what survives of the blast's fade math is
-    /// the counter `ai[0]++` (+3 for the blast 296) and the kill at
-    /// `ai[0] > 540f`, where the C#'s dust count `25 - (ai[0] - 180) / 2`
+    /// family's dust-fade lifetime. The hostile 291's arrival-dot kill
+    /// (`:28325-28349`, W4-g2 d5 F4) rides its own early-return branch; the
+    /// bolt 295's own arm is its 8× dust 174 and nothing else
+    /// (`:28350-28360`), the dust spawns are SKIPPED, and the first-tick
+    /// `SoundID.Item74` rides `wants_sound` — what survives of the blast's
+    /// fade math is the counter `ai[0]++` (+3 for the 296 alone) and the kill
+    /// at `ai[0] > 540f`, where the C#'s dust count `25 - (ai[0] - 180) / 2`
     /// reaches zero.
     fn ai_inferno_fork(&mut self, world: &World) {
-        // `:28333-28340`: the bolt 295's whole AI arm is its 8× dust 174 and
-        // nothing else — the counter, the fade kill and the `+3` belong to the
-        // blast 296 alone, so the bolt flies straight and dies on its
+        // `:28325-28348`: the hostile bolt 291 — the first-tick Item20 cue,
+        // then the arrival test: `Vector2.Dot(target - Center, velocity)
+        // <= 0` zeroes the velocity and (owner-gated) kills. The 10× dust
+        // 174 (`:28341-28347`) is dust-only — skipped with its body; the
+        // branch RETURNS (no counter, no fade kill).
+        if self.kind == INFERNO_HOSTILE_BOLT {
+            if self.local_ai[0] == 0.0 {
+                // `:28327-28331`: the one-shot Item20 cue + the latch.
+                self.wants_sound = Some((2, 20, self.pos.x, self.pos.y, 0.0));
+                self.local_ai[0] = 1.0;
+            }
+            let target = Vec2::new(self.ai[0], self.ai[1]);
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            // `:28332-28333`: the zero-target guard (`vector30 !=
+            // Vector2.Zero`) — an unaimed bolt never arrival-kills.
+            if target != Vec2::ZERO && (target - center).dot(self.vel) <= 0.0 {
+                self.vel = Vec2::ZERO;
+                // `:28336-28339`: `owner == Main.myPlayer` — the port's
+                // local owner 0 (the hostile seam spawns the dungeon
+                // casters' shots with `Owner: Main.myPlayer`,
+                // `NPC.cs:21219`, so the gate is live).
+                if self.owner == 0 {
+                    self.kill();
+                }
+            }
+            // The C# `return` (`:28348`) exits AI() only — HandleMovement
+            // (`:17015`) still runs: tileCollide false, so the free move
+            // integrates the (possibly zeroed) velocity.
+            self.kill_step(world);
+            return;
+        }
+        // `:28350-28360`: the bolt 295's whole AI arm is its 8× dust 174 and
+        // nothing else — the counter, the fade kill and the `+3` belong to
+        // the blast 296 alone, so the bolt flies straight and dies on its
         // `timeLeft` (the `SetDefaults` default 3600, `:787`) or its
         // `penetrate`, whichever comes first. The dust is SKIPPED (no dust
         // layer in the pool) and the movement is the blocked-move default the
@@ -7917,11 +7949,14 @@ impl Projectile {
         if self.local_ai[0] == 0.0 {
             // `:28361-28365` — the first-tick `SoundID.Item74` blast cue at
             // `base.position` (S1-E-21h); the latch increments after it.
+            // The hostile blast 292 rides this same branch (no type gate).
             self.wants_sound = Some((2, 74, self.pos.x, self.pos.y, 0.0));
             self.local_ai[0] += 1.0;
         }
         self.ai[0] += 1.0;
         if self.kind == INFERNO_BLAST {
+            // `:28367-28370`: ONLY the 296 gets the +3 — the hostile 292
+            // counts +1/tick (its fade kill lands 3× later).
             self.ai[0] += 3.0;
         }
         // `:28376-28379`: `num350 = 25 - (ai[0] - 180) / 2` once
@@ -8531,8 +8566,10 @@ impl Projectile {
     /// bolt's lifetime — the out-of-world kill on a 5-tile margin, the
     /// delay-gated centre snapshot (`AI_048_GetStartPositionSettingDelay`
     /// `:53986-54000`: 255→4, 260/290→3, 294→9) and the alpha 255 write. The
-    /// 290's one-shot sound is SKIPPED (no sound layer in the pool) and the
-    /// movement is the generic blocked-move default (`kill_step`).
+    /// 290's one-shot Item8 cue at `localAI[0] == 1` (`:28229-28232`) rides
+    /// `wants_sound` (W4-g2 — d5's F1 recorded it skipped, but the S1-E-21h
+    /// sound layer has since landed); the movement is the generic
+    /// blocked-move default (`kill_step`) except the 290/294 reflect below.
     fn ai_magnet_bolt(&mut self, world: &World) {
         let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
         let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
@@ -8550,7 +8587,11 @@ impl Projectile {
         let delay = match self.kind {
             MAGNET_SPHERE_BOLT => 4,
             // S1-P-i22: the Heat Ray's 3-tick delay (`:53989-53991`).
-            HEAT_RAY => 3,
+            // W4-g2 (d5 F1): the hostile beam 290 shares the 3-tick case
+            // (`:53990-53992`) — the match omitted it while the kind was
+            // rowless; the row round arms it. The 433 keeps the default 0
+            // (`:53997-53998`) — correct, NOT added.
+            HEAT_RAY | SHADOWBEAM_HOSTILE => 3,
             // S1-P-i21: the Shadowbeam Staff's beam (`:53995-53996`) — the
             // 9-tick delay the doc cited but the match omitted (the beam's
             // reflect trail reads the snapshot at `localAI[0] >= 9`).
@@ -8562,16 +8603,24 @@ impl Projectile {
             self.local_ai[2] = cy;
         }
         self.local_ai[0] += 1.0;
-        // `:28216-28236`: every type writes alpha 255 (the 290's sound at
-        // `localAI[0] == 1` SKIPPED).
+        // `:28216-28236`: every type writes alpha 255.
         self.alpha = 255;
+        // `:28226-28232`: the 290's one-shot Item8 cue at `localAI[0] == 1`
+        // — AFTER the increment above, so it fires on the arm's first call
+        // (W4-g2: the `wants_sound` intent, the S1-E-21h drain).
+        if self.kind == SHADOWBEAM_HOSTILE && self.local_ai[0] == 1.0 {
+            self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
+        }
         // S1-P-i21: the Shadowbeam Staff's beam reflects off tiles instead of
         // dying — `HandleMovement`'s 290/294 arm (`Projectile.cs:18861-18904`):
         // a blocked axis steps once more and flips to `-lastVelocity`; the
         // beam never dies on contact (`penetrate = -1`). The particle-orchestra
         // broadcast (`:18893-18898`) is the render layer — skipped; the
         // `localAI[1..2]` centre snapshot it reads is the delay-gated one above.
-        if self.kind == SHADOWBEAM {
+        // W4-g2 (d5 F1): the hostile 290 rides the SAME reflect arm (the C#
+        // gate is `type == 290 || type == 294`, `:18861`); its broadcast gate
+        // (`:18873-18878`) is the netMode fold — single-player keeps it on.
+        if matches!(self.kind, SHADOWBEAM | SHADOWBEAM_HOSTILE) {
             let last = self.vel;
             let nx = self.pos.x + self.vel.x;
             let ny = self.pos.y + self.vel.y;
@@ -8781,12 +8830,12 @@ impl Projectile {
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 moving-cloud arm (`Projectile.cs:27952-
-    /// 27986`, the `type == 237 || type == 243` branch; the 243 Blood Cloud is
-    /// not a ported kind). The cloud flies to the cursor point cached in
+    /// 27986`, the `type == 237 || type == 243` branch; W4-g2 d5 F5 rows the
+    /// 243 Blood Cloud twin). The cloud flies to the cursor point cached in
     /// `ai[0..1]` (the shoot arm writes it): each axis zeroes once it reaches
     /// or passes the target, and when both rest the cloud dies (`:27960-
-    /// 27973`) — the kill hook spawns the raining cloud 238. The rotation rides
-    /// `velocity.X * 0.02f` and the 4-frame sheet wraps (`:27975-27985`).
+    /// 27973`) — the kill hook spawns the raining twin (238/244). The rotation
+    /// rides `velocity.X * 0.02f` and the 4-frame sheet wraps (`:27975-27985`).
     fn ai_rain_cloud_moving(&mut self, world: &World) {
         let tx = self.ai[0];
         let ty = self.ai[1];
@@ -8825,14 +8874,35 @@ impl Projectile {
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 rain-drop arm (`Projectile.cs:28084-
-    /// 28105`, the `type == 239 || type == 245 || type == 264` branch; the
-    /// 245/264 hostile twins are not ported kinds). The 239 sets alpha 50
-    /// (`:28093-28096`); the shimmer bounce (`:28086-28092`) folds out — the
-    /// port carries no shimmer-liquid state on the tile. The drop falls at its
-    /// spawn `vy = 5` through the generic movement.
+    /// 28105`, the `type == 239 || type == 245 || type == 264` branch). The
+    /// 239 sets alpha 50 (`:28093-28096`), the blood drop 245 alpha 100
+    /// (`:28097-28100`), the hostile nimbus drop 264 the rotation
+    /// `atan2(vy, vx) + 1.57` (`:28101-28104`) — W4-g2 (d5 F5) rows all
+    /// three. The shimmer bounce (`:28086-28092`) is LIVE (W4-g2 — d5's F5
+    /// recorded the fold-out stale: the tile now carries
+    /// `liquid_kind() == Shimmer`): a full shimmer cell at the drop's
+    /// bottom-centre tile flips a falling `vy` and syncs. The drop falls at
+    /// its spawn `vy = 5` through the generic movement.
     fn ai_rain_drop(&mut self, world: &World) {
-        // `:28093-28096`: the 239's alpha.
-        self.alpha = 50;
+        // `:28086-28092`: the shimmer bounce — `(int)(Center.X / 16f)`,
+        // `(int)((position.Y + height) / 16f)`, the full-liquid shimmer
+        // cell and a falling drop.
+        let tx = ((self.pos.x + self.w * 0.5) / TILE_PX) as i32;
+        let ty = ((self.pos.y + self.h) / TILE_PX) as i32;
+        let shimmer = world
+            .tile(tx, ty)
+            .is_some_and(|t| t.liquid == u8::MAX && t.liquid_kind() == tr_core::tile::LiquidKind::Shimmer);
+        if shimmer && self.vel.y > 0.0 {
+            self.vel.y *= -1.0;
+            self.net_update = true;
+        }
+        // `:28093-28104`: the per-kind pin.
+        match self.kind {
+            RAIN_FRIENDLY => self.alpha = 50,
+            BLOOD_RAIN => self.alpha = 100,
+            RAIN_NIMBUS => self.rot = self.vel.y.atan2(self.vel.x) + 1.57,
+            _ => {}
+        }
         self.kill_step(world);
     }
 
@@ -10087,6 +10157,30 @@ impl Projectile {
         false
     }
 
+    /// `Projectile.GetCollisionParams` (`Projectile.cs:19867-20022`) — the
+    /// **tile-collision** box (`colWidth`/`colHeight`) and its `resizeAnchor`,
+    /// distinct from the damage box ([`Self::damage_hitbox`],
+    /// `Damage_GetHitbox` `:14959-15023`, which keeps the FULL row box). The
+    /// C# `HandleMovement` (`:17588-17589`) centres the collision box on
+    /// `Center - colSize * resizeAnchor`; every arm here uses the symmetric
+    /// `(0.5, 0.5)` anchor, so the probe origin is
+    /// `Center - colSize/2 = pos + (rowSize - colSize)/2` — a 10 px inset per
+    /// axis for the −20 arm. W4-g2 ports the **−20 shrink arm** (`:19977-19981`,
+    /// kinds 182/190/33/229/237/243/866) for its ROWED kinds (229/237/243 —
+    /// the 33/182/190/866 siblings are rowless and ride `ai_boomerang`/no row).
+    /// The other `GetCollisionParams` arms (the −8/−12/−36 shrinks, the fixed
+    /// 1/2/4/6/10/14 boxes, the golf-ball/phaseblade arms) are unported — they
+    /// belong to families outside this task's kinds; the stock `(w, h, 0)`
+    /// stands for them. RNG-neutral: no draws, pure geometry.
+    fn collision_params(&self) -> (f32, f32, f32, f32) {
+        // `:19977-19981`: `colWidth = width - 20; colHeight = height - 20`.
+        if matches!(self.kind, CHLOROPHYTE_ORB | RAIN_CLOUD_MOVING | BLOOD_CLOUD_MOVING) {
+            (self.w - 20.0, self.h - 20.0, 10.0, 10.0)
+        } else {
+            (self.w, self.h, 0.0, 0.0)
+        }
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -10096,22 +10190,222 @@ impl Projectile {
     /// test is the per-axis destination-box probe the arrow/bomb arms use,
     /// standing in for the C#'s swept `TileCollision` (which zeroes the blocked
     /// axis, `Collision.cs:299-330`), so a dying projectile's exact death pixel
-    /// can differ by the swept span while the kill does not.
+    /// can differ by the swept span while the kill does not. The probe rides
+    /// [`Self::collision_params`] (`GetCollisionParams` `:17588`): the −20
+    /// kinds (229/237/243) collide on a 10 px-inset box, NOT the full row box —
+    /// the damage box stays full ([`Self::damage_hitbox`]).
     fn kill_step(&mut self, world: &World) {
         if !self.tile_collide {
             self.pos += self.vel;
             return;
         }
-        let nx = self.pos.x + self.vel.x;
-        let ny = self.pos.y + self.vel.y;
-        let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
-        let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        let (cw, ch, ox, oy) = self.collision_params();
+        let cx = self.pos.x + ox;
+        let cy = self.pos.y + oy;
+        let nx = cx + self.vel.x;
+        let ny = cy + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, cy, cw, ch);
+        let hit_y = crate::player::collides_rect(world, cx, ny, cw, ch);
         self.pos += self.vel;
         if hit_x || hit_y {
             self.kill_time_left = self.time_left;
             self.active = false;
             self.time_left = 0;
         }
+    }
+
+    /// `Projectile.Shimmer()` (`Projectile.cs:22361-22516`) — the shimmer-liquid
+    /// interaction the generic `Update` wet block runs at `:17009-17012`
+    /// (`if (base.shimmerWet) this.Shimmer()`), AFTER the AI and BEFORE
+    /// `HandleMovement` (`:17015`). W4-g2 ports the method VERBATIM as a
+    /// STAGED helper. **SUPERSEDED (g2d)**: d53 batch 4 `fa7b331d3` landed
+    /// the generic wet machine (`projectile_wet::wet_block`, the
+    /// authoritative `shimmer_wet` writer) and FINAL item 2 `804ad5715`
+    /// ACTIVATED this helper on the d53 branch — the `:17011` caller-gate
+    /// wired right after `wet_block`. KEEP-ONE at merge: **this staged copy
+    /// DROPS** (f20d-F5, `0883a80bc`); d53's adopted pub(crate) pair
+    /// survives (byte-identical bodies bar the -10 comment fix — the "-8"
+    /// in the 25/17 arm comment below is the recorded typo). The drop-hunk
+    /// is published in `research/377-projectile-rowless-riders-g2d.md` §5.
+    /// Until the merge this copy stays — the five `w4_g2_shimmer_*`
+    /// witnesses below drive it directly (setting `shimmer_wet`), the e3
+    /// STAGED-emitter precedent.
+    ///
+    /// The port's `hostile` proxy is `!friendly` (the hostile shots ride
+    /// `friendly = false`, `:22765`); the C# `hostile` is a distinct field, but
+    /// every rowed kind that reaches a Shimmer arm is friendly, so the proxy
+    /// is exact for the ported set. RNG-neutral: no draws (the 936 rainbow-slime
+    /// spawn's `NPC.NewNPC` is a world write, not a rand roll — and 936 is
+    /// rowless, so the arm never fires). The 936 arm's `NetMessage.SendData(7)`
+    /// + `WorldGen.CheckAchievement` are the net/achievement layers (skipped).
+    #[allow(dead_code)] // STAGED: the :17011 caller lands with the generic wet block
+    fn shimmer(&mut self, world: &World) {
+        let style = proj_data(self.kind).map_or(255, |d| d.ai_style);
+        // `:22363-22366` — the refusal gate: hostile non-25/17 shots, the
+        // aiStyle-99 `ai[0] == -1` ghost, the aiStyle-15 `ai[0] == 2|4` flail
+        // states. The port's hostile proxy is `!friendly`.
+        if (!self.friendly && style != 25 && style != 17)
+            || (style == 99 && self.ai[0] == -1.0)
+            || (style == 15 && (self.ai[0] == 2.0 || self.ai[0] == 4.0))
+        {
+            return;
+        }
+        // `:22367-22371` — the 502 disco ball: -0.4 Y, -5 life. Rowless.
+        if self.kind == 502 {
+            self.vel.y -= 0.4;
+            self.time_left -= 5;
+        }
+        // `:22372-22379` — the 469/181/566 float: -0.2 Y; the 469 kills when
+        // it rises (vy < 0). The 181/566 bees share the arm.
+        else if matches!(self.kind, 469 | 181 | 566) {
+            self.vel.y -= 0.2;
+            if self.kind == 469 && self.vel.y < 0.0 {
+                self.kill();
+            }
+        }
+        // `:22380-22383` — the arrow-family float: -0.4 Y (the 819 Blood Arrow,
+        // the 117/474/225/103/2/82/120/172/41/91/278/5/639/631/495/4/282/1/81
+        // arrows + the 2 wooden arrow).
+        else if matches!(
+            self.kind,
+            819 | 117 | 474 | 225 | 103 | 2 | 82 | 120 | 172 | 41 | 91 | 278 | 5 | 639 | 631
+                | 495 | 4 | 282 | 1 | 81
+        ) {
+            self.vel.y -= 0.4;
+        }
+        // `:22384-22402` — the phaseblades: the `ai[0] == 1` swing refuses;
+        // else reset ai[0..1], the -0.5 Y (with the >16 x0.9 pre-damp, the
+        // >-11 gate), the x1.1 X clamped to [-14, 14].
+        else if is_a_phaseblade(self.kind) {
+            if self.ai[0] == 1.0 {
+                return;
+            }
+            self.ai[1] = 0.0;
+            self.ai[0] = 0.0;
+            if self.vel.y > -11.0 {
+                if self.vel.y > 16.0 {
+                    self.vel.y *= 0.9;
+                }
+                self.vel.y -= 0.5;
+            }
+            self.vel.x *= 1.1;
+            self.vel.x = self.vel.x.clamp(-14.0, 14.0);
+        }
+        // `:22403-22423` — the aiStyle-1/16/40 + the 229 orb: the full-shimmer
+        // two-cell kill probe, else the falling bounce (-vy, netUpdate, the
+        // >600 life cap to 600, -60 life, clear wet/shimmerWet).
+        else if matches!(style, 1 | 16 | 40) || self.kind == CHLOROPHYTE_ORB {
+            if self.shimmer_two_cell_kill(world) {
+                self.kill();
+            } else if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+                if self.time_left > 600 {
+                    self.time_left = 600;
+                }
+                self.time_left -= 60;
+                self.shimmer_wet = false;
+                self.wet = false;
+            }
+        }
+        // `:22424-22439` — the aiStyle-5/8/21/28/29/33/36/47/93/115/151/152 +
+        // the 1024/669: the same two-cell kill probe + falling bounce, but NO
+        // life cap / -60 (the bounce keeps the life).
+        else if matches!(
+            style,
+            5 | 8 | 21 | 28 | 29 | 33 | 36 | 47 | 93 | 115 | 151 | 152
+        ) || matches!(self.kind, 1024 | 669)
+        {
+            if self.shimmer_two_cell_kill(world) {
+                self.kill();
+            } else if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+                self.shimmer_wet = false;
+                self.wet = false;
+            }
+        }
+        // `:22440-22452` — the aiStyle-15 flail (the non-refused states): the
+        // falling bounce + the -0.4 Y clamp to -8.
+        else if style == 15 {
+            if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+            }
+            self.vel.y -= 0.4;
+            if self.vel.y < -8.0 {
+                self.vel.y = -8.0;
+            }
+        }
+        // `:22453-22466` — the aiStyle-99 yoyo (the non-ghost states): the
+        // falling bounce + clear wet, then the vy pin to -8 (the `> -8` test
+        // sets -8 — a verbatim source quirk: it forces -8 whenever vy > -8).
+        else if style == 99 {
+            if self.vel.y > 0.0 {
+                self.vel.y *= -1.0;
+                self.net_update = true;
+                self.shimmer_wet = false;
+                self.wet = false;
+            }
+            if self.vel.y > -8.0 {
+                self.vel.y = -8.0;
+            }
+        }
+        // `:22467-22470` — the aiStyle-7/9/13/35/53/197/130/134/137/138/149/
+        // 160/204: instant kill.
+        else if matches!(
+            style,
+            7 | 9 | 13 | 35 | 53 | 197 | 130 | 134 | 137 | 138 | 149 | 160 | 204
+        ) {
+            self.kill();
+        }
+        // `:22471-22495` — the aiStyle-2 thrown: -0.7 Y, -20 life. The 936
+        // rainbow-slime spawn arm (`:22474-22490`) is a CITED SKIP: 936 is
+        // rowless (no slot can exist), and its arm is the NPC-spawn (681, no
+        // NpcKind row) + net (`SendData(7)`) + achievement layers. The else
+        // arm's -20 stands for every ROWED style-2 kind (the 936 condition
+        // can never hold on a live slot).
+        else if style == 2 {
+            self.vel.y -= 0.7;
+            self.time_left -= 20;
+        }
+        // `:22496-22503` — the aiStyle-14/16: the >3000 life -60, -0.5 Y.
+        else if matches!(style, 14 | 16) {
+            if self.time_left > 3000 {
+                self.time_left -= 60;
+            }
+            self.vel.y -= 0.5;
+        }
+        // `:22504-22515` — the aiStyle-25/17: the >10 Y x0.97 damp, -0.7 Y,
+        // the <-8 clamp to -10.
+        else if matches!(style, 25 | 17) {
+            if self.vel.y > 10.0 {
+                self.vel.y *= 0.97;
+            }
+            self.vel.y -= 0.7;
+            if self.vel.y < -10.0 {
+                self.vel.y = -10.0;
+            }
+        }
+    }
+
+    /// `Shimmer()`'s two-cell kill probe (`:22405-22410` / `:22426-22431`):
+    /// `(int)(Center.X / 16)`, `(int)(position.Y / 16)` — the cell at the
+    /// projectile's top-centre must be FULL shimmer (`liquid == 255 &&
+    /// shimmer()`) AND the cell above it must carry shimmer liquid
+    /// (`liquid > 0 && shimmer()`). Both `InWorld` + non-null. The probe reads
+    /// the tile's `liquid_kind() == Shimmer` (tr-core tile.rs:140).
+    #[allow(dead_code)] // STAGED: only `shimmer` calls it (the wet block is unported)
+    fn shimmer_two_cell_kill(&self, world: &World) -> bool {
+        let num = ((self.pos.x + self.w * 0.5) / TILE_PX) as i32;
+        let num2 = (self.pos.y / TILE_PX) as i32;
+        let full = |x: i32, y: i32, need_full: bool| {
+            world.tile(x, y).is_some_and(|t| {
+                let amount_ok = if need_full { t.liquid == u8::MAX } else { t.liquid > 0 };
+                amount_ok && t.liquid_kind() == tr_core::tile::LiquidKind::Shimmer
+            })
+        };
+        full(num, num2, true) && full(num, num2 - 1, false)
     }
 
     /// `AI()`'s `TrailingMode` chain (`Projectile.cs:17091-17195`): the history
@@ -17337,8 +17631,10 @@ impl ProjectilePool {
                             self.slots[i].kill_step(world);
                         }
                         44 => {
-                            if matches!(self.slots[i].kind, CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT) {
-                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i]);
+                            // W4-g2 (d5 F6): the Partisan's orb 229 joins
+                            // the 228/732 riders (its own arm branch).
+                            if matches!(self.slots[i].kind, CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT | CHLOROPHYTE_ORB) {
+                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i], world);
                             }
                             self.slots[i].kill_step(world);
                         }
@@ -17897,9 +18193,14 @@ impl ProjectilePool {
                         // cursor, the raining cloud spawns the drops and caps
                         // the owner at two (pool-side), the drop falls.
                         45 => match self.slots[i].kind {
-                            RAIN_CLOUD_MOVING => self.slots[i].ai_rain_cloud_moving(world),
-                            RAIN_CLOUD_RAINING => self.nimbus_step(i, world, rng),
-                            RAIN_FRIENDLY => self.slots[i].ai_rain_drop(world),
+                            // W4-g2 (d5 F5): the Blood Rain twins ride the
+                            // same arms (`:27952`/`:27987`/`:28084` gate on
+                            // 237|243 / 238|244 / 239|245|264).
+                            RAIN_CLOUD_MOVING | BLOOD_CLOUD_MOVING => {
+                                self.slots[i].ai_rain_cloud_moving(world)
+                            }
+                            RAIN_CLOUD_RAINING | BLOOD_CLOUD_RAINING => self.nimbus_step(i, world, rng),
+                            RAIN_FRIENDLY | BLOOD_RAIN | RAIN_NIMBUS => self.slots[i].ai_rain_drop(world),
                             _ => {}
                         },
                         // The aiStyle-129 spirit flame (`:36198-36309`): the
@@ -20141,6 +20442,10 @@ impl ProjectilePool {
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
+                // W4-g2 (d5 F6) — `Kill()`'s type-229 arm (`:74450-74474`):
+                // the Partisan orb's death cue + the rowless-1128 child
+                // burst (the draws kept, the spawn declines until its row).
+                self.chlorophyte_orb_kill(i, rng);
                 // (Resync keep-one: the i22 `spawn_electrosphere` call was
                 // dropped — main's i16 `dart_electro_firework_kill` below
                 // owns the 442 arm (:73528-73552), keeping both would
@@ -21305,9 +21610,12 @@ impl ProjectilePool {
             }
             // `:76035-76039` — the common bullet arm (36/104/207/242/279/285/287
             // and the unrowed siblings): `Collision.HitTiles` dust + Item10,
-            // both skipped, no explicit draw, no state.
+            // both skipped, no explicit draw, no state. W4-g2d: the 981's own
+            // arm (`:76040-76049`) is the SAME HitTiles + Item10 pair plus the
+            // `SilverBulletSparkle` ParticleOrchestrator request (the particle
+            // layer is unported — skipped); it folds onto this group.
             METEOR_SHOT | CURSED_BULLET | CHLOROPHYTE_BULLET | HIGH_VELOCITY_BULLET
-            | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET => {}
+            | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET | SILVER_BULLET => {}
             _ => {}
         }
     }
@@ -22445,19 +22753,32 @@ impl ProjectilePool {
         }
     }
 
-    /// `Kill()`'s type-295 arm (`Projectile.cs:74341-74350`): the Inferno
-    /// Fork bolt's death spawns its blast 296 at the bolt's centre with
-    /// `damage * 0.75` (the C#'s `(int)` truncation) and the same
-    /// knockback/owner. Owner-only (`Main.myPlayer == this.owner`), one-shot
-    /// per bolt ([`Projectile::blast_spawned`]), and kind-gated so the blast
-    /// itself — which rides the same aiStyle — never chains another spawn.
+    /// `Kill()`'s type-291/295 arms (`Projectile.cs:74334-74347`): the
+    /// Inferno bolt's death spawns its blast at the bolt's centre — the
+    /// friendly 295→296 with `damage * 0.75` (the C#'s `(int)` truncation),
+    /// the hostile 291→292 with the FULL damage (W4-g2 d5 F4, no scaling
+    /// line in `:74338`) — and the same knockback/owner. Owner-only
+    /// (`Main.myPlayer == this.owner`), one-shot per bolt
+    /// ([`Projectile::blast_spawned`]), and kind-gated so the blasts —
+    /// which ride the same aiStyle — never chain another spawn.
     fn spawn_inferno_blast(&mut self, slot: usize) {
         let p = &self.slots[slot];
-        if p.blast_spawned || p.kind != INFERNO_FORK_BOLT || p.owner != 0 {
+        if p.blast_spawned || p.owner != 0 {
             return;
         }
+        let blast_kind = match p.kind {
+            INFERNO_FORK_BOLT => INFERNO_BLAST,
+            INFERNO_HOSTILE_BOLT => INFERNO_HOSTILE_BLAST,
+            _ => return,
+        };
         let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        let damage = (p.damage as f32 * 0.75) as i32;
+        // `:74345`'s `(int)((double)this.damage * 0.75)` is the 295 arm
+        // alone; the 291's `:74338` passes `this.damage` verbatim.
+        let damage = if p.kind == INFERNO_FORK_BOLT {
+            (p.damage as f32 * 0.75) as i32
+        } else {
+            p.damage
+        };
         let knock_back = p.knock_back;
         // One-shot per bolt: the flag rides the *bolt*, written before the
         // spawn — the C#'s `NewProjectile` finds the just-freed bolt slot free
@@ -22467,33 +22788,56 @@ impl ProjectilePool {
         self.slots[slot].blast_spawned = true;
         // The C#'s `NewProjectile` takes the *centre* and offsets the box; the
         // port's spawn takes the top-left (`spawn_with_data_ai`'s
-        // `position = (x, y)`), so the blast's 150×150 box is re-centred.
-        let Some(row) = proj_data(INFERNO_BLAST) else {
+        // `position = (x, y)`), so the blast's box is re-centred (the 296's
+        // 150×150, the hostile 292's 130×130).
+        let Some(row) = proj_data(blast_kind) else {
             return;
         };
-        self.spawn_with_data(
-            INFERNO_BLAST,
-            cx - row.w * 0.5,
-            cy - row.h * 0.5,
-            0.0,
-            0.0,
-            damage,
-            knock_back,
-        );
+        // The hostile blast keeps `friendly = false` but the bolt's owner
+        // (`this.owner` = the local player, `NPC.cs:21219`'s spawn convention)
+        // — `spawn_hostile_ai_owned` with owner 0, NOT the 255 hostile seam
+        // (the C# passes `Owner: this.owner`, `:74338`).
+        if blast_kind == INFERNO_HOSTILE_BLAST {
+            self.spawn_hostile_ai_owned(
+                blast_kind,
+                0,
+                Vec2::new(cx - row.w * 0.5, cy - row.h * 0.5),
+                Vec2::ZERO,
+                damage,
+                knock_back,
+                0.0,
+                0.0,
+            );
+        } else {
+            self.spawn_with_data(
+                blast_kind,
+                cx - row.w * 0.5,
+                cy - row.h * 0.5,
+                0.0,
+                0.0,
+                damage,
+                knock_back,
+            );
+        }
     }
 
     /// S1-P-i21 — `AI()`'s aiStyle-45 Nimbus chain (`Projectile.cs:27950-
-    /// 28105`), pool-side: the raining cloud's rain spawn and its two-cloud
-    /// cap need the whole pool, so they are not slot arms (the magnet
-    /// sphere's precedent). The moving cloud's fly-to-cursor half and the
-    /// rain drop's shimmer bounce are slot arms ([`Projectile::ai_rain_cloud_moving`]
+    /// 28105`), pool-side: the raining cloud's rain spawn and its owner cap
+    /// need the whole pool, so they are not slot arms (the magnet sphere's
+    /// precedent). The moving cloud's fly-to-cursor half and the rain drop's
+    /// shimmer bounce are slot arms ([`Projectile::ai_rain_cloud_moving`]
     /// / [`Projectile::ai_rain_drop`]); the moving cloud's death → raining
     /// cloud spawn is the kill hook ([`Self::spawn_rain_cloud`]).
+    /// W4-g2 (d5 F5): the blood twin 244 rides the SAME machine — the C#
+    /// gates are `type == 238 || type == 244` (`:27987`), with the 244's
+    /// rain cadence 10 (`:28030`) vs 8 and owner cap 1 (`:28072`) vs 2, and
+    /// its drop the 245 (`:28035`).
     fn nimbus_step(&mut self, slot: usize, world: &World, rng: &mut dyn DropRng) {
         let kind = self.slots[slot].kind;
-        if kind != RAIN_CLOUD_RAINING || self.slots[slot].owner != 0 {
+        if !matches!(kind, RAIN_CLOUD_RAINING | BLOOD_CLOUD_RAINING) || self.slots[slot].owner != 0 {
             return;
         }
+        let blood = kind == BLOOD_CLOUD_RAINING;
         // `:27989-27995`: the ground test — a 2×20 box at the cloud's bottom
         // centre; solid tiles below stop the rain.
         let cx = (self.slots[slot].pos.x + self.slots[slot].w * 0.5) as i32;
@@ -22510,8 +22854,8 @@ impl ProjectilePool {
                 self.slots[slot].frame = 0;
             }
         }
-        // `:28006-28015`: the age counter; past 18000 the cloud fades 5/tick
-        // and dies at alpha 255.
+        // `:28006-28024`: the age counter; past 18000 the cloud fades 5/tick
+        // and dies at alpha 255 (the 244 and 238 arms are identical bodies).
         self.slots[slot].ai[1] += 1.0;
         if self.slots[slot].ai[1] >= 18000.0 {
             self.slots[slot].alpha += 5;
@@ -22522,11 +22866,13 @@ impl ProjectilePool {
             }
             return;
         }
-        // `:28025-28047`: over ground, the rain counter runs; past 8 it resets
-        // and spawns the drop 239 at `cx + Next(-14, 15)`, `vy = 5`.
+        // `:28025-28047`: over ground, the rain counter runs; past 8 (the
+        // 244: past 10, `:28030`) it resets and spawns the drop 239/245 at
+        // `cx + Next(-14, 15)`, `vy = 5`.
         if over_ground {
             self.slots[slot].ai[0] += 1.0;
-            if self.slots[slot].ai[0] > 8.0 {
+            let cadence = if blood { 10.0 } else { 8.0 };
+            if self.slots[slot].ai[0] > cadence {
                 self.slots[slot].ai[0] = 0.0;
                 let x = cx as f32 + rng.next_range(-14, 15) as f32;
                 let (damage, owner) = {
@@ -22535,14 +22881,17 @@ impl ProjectilePool {
                 };
                 // The C# spawns at the bottom-centre point; the port's spawn
                 // takes the top-left, so the 4×40 drop is re-centred on x.
-                let Some(row) = proj_data(RAIN_FRIENDLY) else { return };
+                let drop_kind = if blood { BLOOD_RAIN } else { RAIN_FRIENDLY };
+                let Some(row) = proj_data(drop_kind) else { return };
                 self.spawn_with_data_ai_owned(
-                    RAIN_FRIENDLY, owner, x - row.w * 0.5, bottom as f32, 0.0, 5.0, damage, 0.0, 0.0, 0.0,
+                    drop_kind, owner, x - row.w * 0.5, bottom as f32, 0.0, 5.0, damage, 0.0, 0.0, 0.0,
                 );
             }
         }
         // `:28048-28082`: every 10 ticks the cloud counts its owner's living
-        // raining clouds and, past two, ages out the oldest (`ai[1] = 18000`).
+        // raining clouds and, past two (the 244: past ONE, `:28072`), ages
+        // out the oldest (`ai[1] = 18000`). The count is per-kind (`num330
+        // = this.type`, `:28057`) — the two families never mix.
         self.slots[slot].local_ai[0] += 1.0;
         if self.slots[slot].local_ai[0] < 10.0 {
             return;
@@ -22553,7 +22902,7 @@ impl ProjectilePool {
         let mut oldest = usize::MAX;
         let mut oldest_age = 0.0f32;
         for (j, p) in self.slots.iter().enumerate() {
-            if p.active && p.owner == owner && p.kind == RAIN_CLOUD_RAINING && p.ai[1] < 18000.0 {
+            if p.active && p.owner == owner && p.kind == kind && p.ai[1] < 18000.0 {
                 count += 1;
                 if p.ai[1] > oldest_age {
                     oldest = j;
@@ -22561,28 +22910,95 @@ impl ProjectilePool {
                 }
             }
         }
-        if count > 2 && oldest != usize::MAX {
+        let cap = if blood { 1 } else { 2 };
+        if count > cap && oldest != usize::MAX {
+            // `:28074`/`:28080`: the aged-out cloud syncs.
+            self.slots[oldest].net_update = true;
             self.slots[oldest].ai[1] = 18000.0;
         }
     }
 
-    /// S1-P-i21 — `Kill()`'s type-237 arm (`Projectile.cs:74535-74538`): the
-    /// moving cloud's death spawns the raining cloud 238 at its centre with
-    /// the same damage/knockback/owner. Owner-only, one-shot per cloud (the
-    /// `blast_spawned` flag, the inferno-bolt precedent), kind-gated so the
-    /// raining cloud never chains a second spawn.
+    /// S1-P-i21 — `Kill()`'s type-237/243 arms (`Projectile.cs:74535-74542`):
+    /// the moving cloud's death spawns the raining twin (238/244) at its
+    /// centre with the same damage/knockback/owner. Owner-only, one-shot per
+    /// cloud (the `blast_spawned` flag, the inferno-bolt precedent),
+    /// kind-gated so the raining cloud never chains a second spawn.
     fn spawn_rain_cloud(&mut self, slot: usize) {
         let p = &self.slots[slot];
-        if p.blast_spawned || p.kind != RAIN_CLOUD_MOVING || p.owner != 0 {
+        if p.blast_spawned || p.owner != 0 {
             return;
         }
+        let raining_kind = match p.kind {
+            RAIN_CLOUD_MOVING => RAIN_CLOUD_RAINING,
+            // W4-g2 (d5 F5): `:74539-74542` — the blood twin's arm.
+            BLOOD_CLOUD_MOVING => BLOOD_CLOUD_RAINING,
+            _ => return,
+        };
         let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
         let (damage, knock_back, owner) = (p.damage, p.knock_back, p.owner);
         self.slots[slot].blast_spawned = true;
-        let Some(row) = proj_data(RAIN_CLOUD_RAINING) else { return };
+        let Some(row) = proj_data(raining_kind) else { return };
         self.spawn_with_data_ai_owned(
-            RAIN_CLOUD_RAINING, owner, cx - row.w * 0.5, cy - row.h * 0.5, 0.0, 0.0, damage, knock_back, 0.0, 0.0,
+            raining_kind, owner, cx - row.w * 0.5, cy - row.h * 0.5, 0.0, 0.0, damage, knock_back, 0.0, 0.0,
         );
+    }
+
+    /// W4-g2 (d5 F6) — `Kill()`'s type-229 arm (`Projectile.cs:74450-74474`):
+    /// the Partisan orb's death plays `SoundID.Item167` (every owner — the
+    /// cue precedes the owner gate) and, owner-only, bursts 32 spore-cloud
+    /// children (1128, two rows of 16, `:74456-74465`). The children are
+    /// ROWLESS (the aiStyle-92 claymore cloud is another family — a
+    /// recorded follow-up, the d5 census convention): the loop is ported
+    /// VERBATIM with its 64 `Main.rand` draws KEPT in order (`:74462`:
+    /// `Next(-25, 26)` X then `Next(-45, 46)` Y per child, `num533` 0..2 ×
+    /// `num534` 0..16) so the UpdateProjectiles stream stays aligned; the
+    /// spawn itself rides `spawn_with_data_ai_owned`, whose `proj_data`
+    /// guard silently declines the rowless 1128 until its row lands (the
+    /// same seam this task closes for the 229). The velocity maths
+    /// (`num535 = num534 / 4`, `num536 = num534 % 4`, the X/Y rolls with
+    /// the `0.35 + 0.125 * (num535 + 1)` velocity weight) rides the
+    /// request so the 1128 round needs no re-derivation. The 25× dust-157
+    /// tail (`:74467-74473`) draws nothing (the plain `Dust.NewDust`
+    /// overload) — skipped with the dust layer. The cue pushes straight
+    /// into the pool's queue: the death hook runs AFTER the sub-step
+    /// loop's `wants_sound` drain (the golf `tick.sounds` precedent).
+    fn chlorophyte_orb_kill(&mut self, slot: usize, rng: &mut dyn DropRng) {
+        let p = &self.slots[slot];
+        if p.kind != CHLOROPHYTE_ORB {
+            return;
+        }
+        // `:74452` — the death cue at `base.position`.
+        self.pending_proj_sounds
+            .push((2, 167, p.pos.x, p.pos.y, 0.0));
+        // `:74453-74466` — the owner-gated 32-child burst.
+        if p.owner != 0 {
+            return;
+        }
+        let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (vx, vy, owner) = (p.vel.x, p.vel.y, p.owner);
+        for _ in 0..2 {
+            for num534 in 0..16i32 {
+                let num535 = num534 / 4;
+                let num536 = num534 % 4;
+                // `:74462` — the X roll first, then the Y roll (the C#
+                // constructor evaluates X before Y).
+                let sx = num536 as f32 - 2.0
+                    + (rng.next_range(-25, 26) as f32 * 0.01
+                        + vx * (0.35 + 0.125 * (num535 + 1) as f32));
+                let sy = rng.next_range(-45, 46) as f32 * 0.01;
+                // `:74463` — `NewProjectile(Center.X + num536 * 8 - 16,
+                // Center.Y, ..., 1128, 40, 0f, owner)`: the C# spawn takes
+                // the CENTRE and offsets the box (`:10876-10877`); the
+                // port's spawn takes the top-left, so the child's half-box
+                // comes off (the style-57 dispatch's `map_or` idiom — the
+                // rowless 1128 reads 0 until its row lands, and the spawn
+                // declines before the position is used either way).
+                let x = cx + (num536 * 8 - 16) as f32
+                    - proj_data(1128).map_or(0.0, |d| d.w) * 0.5;
+                let y = cy - proj_data(1128).map_or(0.0, |d| d.h) * 0.5;
+                self.spawn_with_data_ai_owned(1128, owner, x, y, sx, sy, 40, 0.0, 0.0, 0.0);
+            }
+        }
     }
 
     /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-
@@ -23704,6 +24120,13 @@ impl ProjectilePool {
                     }
                 }
             }
+            // `:13385-13388` — the Silver Bullet 981's `targetNPC.type ==
+            // 104` (NPCID.Werewolf, `NPCID.cs:10885`) x3 damage arm: INERT
+            // SKIP (W4-g2d) — the Werewolf is an unported NPC kind, so no
+            // slot can match it. NOT gated on the port's internal id 104
+            // (that is DD2SkeletonT1, `npc/data.rs:288` — a false triple
+            // there would corrupt the DD2 lane). The arm lands with the
+            // Werewolf's row.
             // `:13389-13396` — the yoyo damage doublings, evaluated BEFORE
             // the strike against the player's `yoyoHitCounter` with the peek
             // (`countUp: false`) form, so the spawn arms below see the same
@@ -46025,5 +46448,570 @@ mod w4_f20_f6_quiver_tests {
         // so it does not even tick — the C# `:17210` netMode gate.
         assert_eq!(pool.slots()[slot].extra_updates, 0);
         assert_eq!(pool.slots()[slot].time_left, 1200, "untouched");
+    }
+}
+
+#[cfg(test)]
+mod w4_g2_rowless_tests {
+    //! W4-g2 — the rowless-kind round (d5 findings F1/F4/F5/F6): the
+    //! aiStyle-48 delay/cue/reflect arms (290/433), the aiStyle-50 hostile
+    //! pair (291/292 + the Kill spawn), the aiStyle-45 Blood Rain chain
+    //! (243/244/245) + the hostile nimbus drop 264, and the aiStyle-44 orb
+    //! 229. WRITTEN NOT RUN (code-only mode, the task contract): every
+    //! expected value re-derived from the cited C# by hand arithmetic.
+    use super::*;
+    use tr_core::tile::{LiquidKind, Tile, FLAG_ACTIVE};
+
+    fn world() -> World {
+        World::new("t".into(), 512, 128)
+    }
+
+    fn put_tile(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+    }
+
+    /// A hostile slot on the local-owner seam (`NPC.cs:21219`'s
+    /// `Owner: Main.myPlayer` convention): friendly false, owner 0.
+    fn hostile_slot(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32, vx: f32, vy: f32) -> usize {
+        pool.spawn_hostile_ai_owned(kind, 0, Vec2::new(x, y), Vec2::new(vx, vy), 60, 0.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    /// `Projectile.cs:53990-53992` + `:28212-28214` — the hostile beam
+    /// 290's snapshot fires at the 3-tick delay (the d5 F1 gap). The row's
+    /// `extraUpdates = 100` runs 101 sub-steps, but `timeLeft = 100`
+    /// (`:3801`) is consumed by the 100th decrement — the arm runs 100x
+    /// (the 101st sub-step skips the dead slot), so the counter ends at
+    /// 100 and the beam lives exactly ONE tick. The Item8 cue fires once,
+    /// at `localAI[0] == 1` (post-increment).
+    #[test]
+    fn w4_g2_the_hostile_beam_delays_three_and_cues_once() {
+        let mut pool = ProjectilePool::new();
+        let slot = hostile_slot(&mut pool, SHADOWBEAM_HOSTILE, 200.0, 200.0, 0.0, 0.0);
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 100.0, "100 AI sub-steps before the life ran out");
+        assert!(!p.active, "timeLeft 100 / 101 sub-steps: a one-tick flash");
+        assert!((p.local_ai[1] - 202.0).abs() < 1e-3, "the centre X snapshot at delay 3");
+        assert!((p.local_ai[2] - 202.0).abs() < 1e-3, "the centre Y snapshot");
+        assert_eq!(p.alpha, 255, ":28228");
+        let cues = pool.drain_proj_sounds();
+        assert_eq!(cues, vec![(2, 8, 200.0, 200.0, 0.0)], "the ONE Item8 cue (:28229-28232)");
+        // Tick 2: the dead slot queues nothing.
+        tick(&mut pool, &mut w);
+        assert!(pool.drain_proj_sounds().is_empty(), "one cue per life");
+    }
+
+    /// `Projectile.cs:53997-53998` — the UFO laser 433 keeps the DEFAULT 0
+    /// delay (the d5 F1 note): the snapshot lands on sub-step 0, and the
+    /// stock penetrate 1 stands. The 100-life/101-sub-step one-tick shape
+    /// matches the 290.
+    #[test]
+    fn w4_g2_the_ufo_laser_delays_zero() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(UFO_LASER, 200.0, 200.0, 0.0, 0.0, 20, 0.0).unwrap();
+        assert_eq!(pool.slots()[slot].penetrate, 1, "the stock penetrate (:774)");
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 100.0);
+        assert!((p.local_ai[1] - 204.0).abs() < 1e-3, "the 8-wide box's centre at delay 0");
+        assert!((p.local_ai[2] - 204.0).abs() < 1e-3);
+        assert!(pool.drain_proj_sounds().is_empty(), "the 433 has no cue arm");
+    }
+
+    /// `Projectile.cs:18861-18872` — the hostile beam 290 reflects like the
+    /// 294 (the C# gate is `290 || 294`): a blocked axis steps once more and
+    /// flips; the beam never dies on contact. The fixture lifts the life to
+    /// the 294's 300 so the corridor walk survives the tick (the row's 100
+    /// is pinned by the data witness — a one-tick flash in the live sim).
+    #[test]
+    fn w4_g2_the_hostile_beam_reflects_off_tiles() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        for y in 9..=11 {
+            put_tile(&mut w, 9, y, 1);
+            put_tile(&mut w, 12, y, 1);
+        }
+        let slot = hostile_slot(&mut pool, SHADOWBEAM_HOSTILE, 160.0, 160.0, 2.0, 0.0);
+        pool.slots_mut()[slot].time_left = 300;
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "the beam survives the walls");
+        assert!(p.pos.x >= 144.0 && p.pos.x <= 188.0, "stayed in the corridor: {}", p.pos.x);
+        assert!((p.vel.x.abs() - 2.0).abs() < 1e-5, "the speed holds through the flips");
+    }
+
+    /// `Projectile.cs:28325-28348` — the hostile bolt 291: the first-tick
+    /// Item20 cue, then the arrival-dot kill. The target centre rides
+    /// `ai[0..1]` (`NPC.cs:21219`); a bolt flying AT the target keeps its
+    /// velocity (dot > 0), a bolt past it zeroes + dies (owner 0).
+    #[test]
+    fn w4_g2_the_hostile_bolt_kills_on_arrival() {
+        let mut pool = ProjectilePool::new();
+        // Centre (206, 206); target (306, 206) — flying +X toward it.
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BOLT, 200.0, 200.0, 4.0, 0.0);
+        pool.slots_mut()[slot].ai[0] = 306.0;
+        pool.slots_mut()[slot].ai[1] = 206.0;
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "still short of the target: dot > 0");
+        assert_eq!(p.vel, Vec2::new(4.0, 0.0), "no zeroing before arrival");
+        assert_eq!(p.local_ai[0], 1.0, "the cue latch");
+        assert_eq!(pool.drain_proj_sounds(), vec![(2, 20, 200.0, 200.0, 0.0)]);
+        // Teleport past the target: the dot flips <= 0 -> zero + kill.
+        pool.slots_mut()[slot].pos.x = 400.0;
+        tick(&mut pool, &mut w);
+        // The death hook spawned the 292 blast with the FULL damage. The
+        // spawn takes the first free slot — the just-freed bolt's own (the
+        // `spawn_inferno_blast` doc's FindOldestProjectile note), so the
+        // blast is found BY KIND, not by the bolt's old index.
+        let blast = pool.slots().iter().find(|p| p.active && p.kind == INFERNO_HOSTILE_BLAST);
+        let blast = blast.expect("the 291->292 Kill spawn (:74334-74340)");
+        assert_eq!(blast.damage, 60, "FULL damage — no 0.75 (:74338)");
+        assert_eq!((blast.w, blast.h), (130.0, 130.0), "the 292 box (:3817-3818)");
+        assert!(!blast.friendly, "the hostile blast");
+        assert_eq!(blast.owner, 0, "the bolt's owner preserved");
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == INFERNO_HOSTILE_BOLT),
+            "the bolt is gone");
+    }
+
+    /// `Projectile.cs:28332-28333` — the zero-target guard: an unaimed
+    /// bolt (ai = 0) never arrival-kills, whatever its velocity.
+    #[test]
+    fn w4_g2_the_unaimed_hostile_bolt_never_arrival_kills() {
+        let mut pool = ProjectilePool::new();
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BOLT, 200.0, 200.0, -4.0, 0.0);
+        let mut w = world();
+        for _ in 0..5 {
+            tick(&mut pool, &mut w);
+        }
+        assert!(pool.slots()[slot].active, "the zero-target guard (:28333)");
+    }
+
+    /// `Projectile.cs:28361-28379` — the hostile blast 292 counts +1/tick
+    /// (NOT the 296's +4): the fade kill at `ai[0] > 540` lands on tick 541,
+    /// where the friendly 296 died on tick 136. The Item74 cue fires once.
+    #[test]
+    fn w4_g2_the_hostile_blast_counts_one_per_tick() {
+        let mut pool = ProjectilePool::new();
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BLAST, 200.0, 200.0, 0.0, 0.0);
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].ai[0], 1.0, "+1, NOT +4 (:28367-28370 gates on 296)");
+        assert_eq!(pool.drain_proj_sounds(), vec![(2, 74, 200.0, 200.0, 0.0)]);
+        // Fast-forward the counter to the kill boundary.
+        pool.slots_mut()[slot].ai[0] = 540.0;
+        tick(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "541 > 540 -> the fade kill (:28376-28379)");
+    }
+
+    /// `Projectile.cs:74341-74346` — the friendly pair keeps its 0.75
+    /// damage scaling (the regression guard for the generalized hook).
+    #[test]
+    fn w4_g2_the_friendly_blast_keeps_the_075_damage() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(INFERNO_FORK_BOLT, 200.0, 200.0, 0.0, 0.0, 60, 4.0).unwrap();
+        pool.slots_mut()[slot].time_left = 1;
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let blast = pool.slots().iter().find(|p| p.active && p.kind == INFERNO_BLAST)
+            .expect("the 295->296 spawn");
+        assert_eq!(blast.damage, 45, "(int)(60 x 0.75) (:74345)");
+        assert_eq!((blast.w, blast.h), (150.0, 150.0));
+    }
+
+    /// `Projectile.cs:27952-27985` + `:74539-74542` — the moving blood
+    /// cloud 243 rides the 237's fly-to-cursor arm and its death spawns the
+    /// 244 twin (the d5 F5 chain head).
+    #[test]
+    fn w4_g2_the_blood_cloud_settles_into_its_twin() {
+        let mut pool = ProjectilePool::new();
+        // Overshot cursor (centre 214 > 200) with Y at rest: both axes zero
+        // on tick 1 and the cloud dies -> the kill hook spawns the 244.
+        pool.spawn_with_data_ai(BLOOD_CLOUD_MOVING, 200.0, 200.0, 4.0, 0.0, 30, 0.0, 200.0, 200.0).unwrap();
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let raining = pool.slots().iter().find(|p| p.active && p.kind == BLOOD_CLOUD_RAINING);
+        let raining = raining.expect("the 243->244 kill hook (:74539-74542)");
+        assert_eq!(raining.damage, 30, "the damage carried");
+        assert_eq!((raining.w, raining.h), (54.0, 28.0), "the 244 box (:3268-3269)");
+        assert!(raining.net_important, ":3265");
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == BLOOD_CLOUD_MOVING));
+    }
+
+    /// `Projectile.cs:28028-28037` — the settled blood cloud rains every 11
+    /// ticks (the counter resets past 10, NOT the 238's 8) and its drop is
+    /// the 245 with alpha 100 pinned by the drop arm (`:28099`).
+    #[test]
+    fn w4_g2_the_blood_cloud_rains_on_the_ten_cadence() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(BLOOD_CLOUD_RAINING, 200.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        let mut w = world();
+        // 9 ticks: the 238 would have rained; the 244 has not.
+        for _ in 0..9 {
+            tick(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 9.0, "the counter still climbing");
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == BLOOD_RAIN), "no drop at 9");
+        // Ticks 10-11: the counter passes 10 and resets, spawning the 245.
+        for _ in 0..2 {
+            tick(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "the reset past 10 (:28030-28032)");
+        let drop = pool.slots().iter().find(|p| p.active && p.kind == BLOOD_RAIN)
+            .expect("the 245 drop (:28035)");
+        assert_eq!(drop.vel.y, 5.0, "the drop falls at 5");
+        assert_eq!(drop.alpha, 100, "the 245's alpha (:28099)");
+        assert_eq!(drop.penetrate, 2, "the 245's penetrate (:3281)");
+    }
+
+    /// `Projectile.cs:28070-28077` — the blood cloud's owner cap is ONE
+    /// (the 238's is 2): two living 244s age out the oldest on the 10-tick
+    /// scan, with the netUpdate sync (`:28074`).
+    #[test]
+    fn w4_g2_the_blood_cloud_caps_at_one() {
+        let mut pool = ProjectilePool::new();
+        let a = pool.spawn_with_data(BLOOD_CLOUD_RAINING, 200.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        let b = pool.spawn_with_data(BLOOD_CLOUD_RAINING, 400.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        pool.slots_mut()[a].ai[1] = 100.0; // the older
+        pool.slots_mut()[b].ai[1] = 50.0;
+        let mut w = world();
+        for _ in 0..10 {
+            tick(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[a].ai[1], 18000.0, "count 2 > 1: the oldest aged out");
+        assert!(pool.slots()[a].net_update, ":28074");
+        assert!(pool.slots()[b].ai[1] < 18000.0, "the younger survives");
+    }
+
+    /// `Projectile.cs:28086-28092` — the shimmer bounce is LIVE (d5 F5's
+    /// fold-out was stale): a full shimmer cell at the drop's bottom-centre
+    /// tile flips a falling vy and syncs; the 264's rotation pin
+    /// (`:28103`) reads the flipped velocity.
+    #[test]
+    fn w4_g2_the_nimbus_drop_bounces_off_shimmer_and_pins_rotation() {
+        let mut pool = ProjectilePool::new();
+        // Drop at (160, 120): bottom-centre tile ((160+2)/16, (120+40)/16)
+        // = (10, 10). Fill it with shimmer.
+        let slot = hostile_slot(&mut pool, RAIN_NIMBUS, 160.0, 120.0, 0.0, 5.0);
+        let mut w = world();
+        let i = w.index(10, 10);
+        w.tiles[i].liquid = u8::MAX;
+        w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.y, -5.0, "the shimmer flip (:28090)");
+        assert!(p.net_update, ":28091");
+        // atan2(-5, 0) + 1.57 = -pi/2 + 1.57.
+        let want = (-5.0f32).atan2(0.0) + 1.57;
+        assert!((p.rot - want).abs() < 1e-5, "the 264 rotation pin (:28103)");
+        assert_eq!(p.alpha, 0, "the 264 sets NO alpha (the 239/245 arms do)");
+    }
+
+    /// `Projectile.cs:27924-27933` — the orb 229's arm: the first-tick
+    /// CanHitLine Item8 cue (open air: the line is clear), the counter,
+    /// and the >20 gravity/friction pair. The 4x dust draws are skipped
+    /// dust-only — the arm draws NOTHING.
+    #[test]
+    fn w4_g2_the_orb_cues_then_falls() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 0.0, 30, 0.0).unwrap();
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 1.0, ":27928");
+        assert_eq!(p.vel, Vec2::new(2.0, 0.0), "no gravity before 20");
+        assert_eq!(pool.drain_proj_sounds(), vec![(2, 8, 200.0, 200.0, 0.0)], "the first-tick cue (:27924-27927)");
+        // Past 20: gravity +0.3, X friction x0.98 per tick.
+        pool.slots_mut()[slot].ai[0] = 20.0;
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 21.0);
+        assert!((p.vel.y - 0.3).abs() < 1e-6, "the +0.3 gravity (:27931)");
+        assert!((p.vel.x - 2.0 * 0.98).abs() < 1e-6, "the x0.98 friction (:27932)");
+        assert!(pool.drain_proj_sounds().is_empty(), "the cue is first-tick only");
+    }
+
+    /// `Projectile.cs:74450-74466` — the orb's Kill arm: the Item167 death
+    /// cue (every owner) and the 32-child burst's 64 draws KEPT in order
+    /// (X roll Next(-25,26) then Y roll Next(-45,46) per child); the
+    /// rowless 1128 spawns decline until its row lands.
+    #[test]
+    fn w4_g2_the_orb_death_cues_and_keeps_the_child_draws() {
+        struct DrawLog(Vec<(i32, i32)>);
+        impl tr_core::loot::DropRng for DrawLog {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.draws.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 { 0.5 }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 0.0, 30, 0.0).unwrap();
+        // Kill it on contact: the wall sits one tile ahead of the orb's
+        // COLLISION box — the −20 shrink (`GetCollisionParams` `:19977`) makes
+        // it 10×10 at pos + (10, 10), NOT the full 30-wide row box. The right
+        // edge must pass the wall (240) after the +2 step: pos.x + 10 + 10 + 2
+        // > 240 → pos.x = 219 (edge 241). The full-box probe (edge 251) would
+        // also hit, but the witness pins the SHRUNK geometry.
+        let mut w = world();
+        for y in 12..=14 {
+            put_tile(&mut w, 15, y, 1);
+        }
+        pool.slots_mut()[slot].pos.x = 219.0;
+        let mut rng = DrawLog(Vec::new());
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(!pool.slots()[slot].active, "the orb died on the wall (tileCollide true)");
+        let cues = pool.drain_proj_sounds();
+        assert!(cues.iter().any(|c| c.0 == 2 && c.1 == 167), "the Item167 death cue (:74452)");
+        // 32 children x 2 draws, X-then-Y interleaved.
+        assert_eq!(rng.draws.len(), 64, "the 64 kept draws (:74462)");
+        for pair in rng.draws.chunks(2) {
+            assert_eq!(pair[0], (-25, 26), "the X roll first");
+            assert_eq!(pair[1], (-45, 46), "the Y roll second");
+        }
+        // The rowless 1128 declined — no child slots.
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == 1128), "the 1128 row is a follow-up");
+    }
+
+    /// W4-g2 reconciliation — `GetCollisionParams`'s −20 arm
+    /// (`Projectile.cs:19977-19981`) shrinks the TILE-COLLISION box, not the
+    /// damage box. The 229/237/243 kinds collide on a 10 px-inset box; a wall
+    /// that the full row box would touch but the shrunk box clears does NOT
+    /// kill. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g2_the_minus20_shrink_clears_a_full_box_wall() {
+        // The orb 229 (30×30): collision box 10×10 at pos + (10, 10).
+        // Place the orb so its FULL box right edge (pos.x + 30) is inside the
+        // wall tile but its SHRUNK right edge (pos.x + 20) clears it.
+        // Wall at tile x=15 (px 240..256). pos.x = 215: full edge 245 (inside),
+        // shrunk edge 235 + step 2 = 237 < 240 (clears). The orb survives.
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 215.0, 200.0, 2.0, 0.0, 30, 0.0).unwrap();
+        let mut w = world();
+        for y in 12..=14 {
+            put_tile(&mut w, 15, y, 1);
+        }
+        tick(&mut pool, &mut w);
+        assert!(pool.slots()[slot].active, "the shrunk collision box clears the wall the full box touches");
+        // The damage box stays FULL: damage_hitbox reads the 30-wide row box.
+        let rect = pool.damage_hitbox(slot);
+        assert_eq!(rect.w, 30, "the damage box is NOT shrunk (Damage_GetHitbox :14961)");
+        assert_eq!(rect.h, 30);
+    }
+
+    /// The −20 shrink's collision geometry pins the inset origin: the orb's
+    /// 10×10 collision box sits at pos + (10, 10) (`Center - colSize * 0.5`),
+    /// so a wall the shrunk box reaches DOES kill. The 237/243 moving clouds
+    /// (28×28 → 8×8) share the arm. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g2_the_minus20_shrink_kills_on_the_inset_box() {
+        // The moving rain cloud 237 (28×28): collision box 8×8 at pos+(10,10).
+        // Wall at tile x=15 (240). pos.x = 221: shrunk right edge 221+10+8 = 239,
+        // + step 2 = 241 > 240 → hit. The cloud dies (kill_step).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(RAIN_CLOUD_MOVING, 221.0, 200.0, 2.0, 0.0, 30, 0.0, 1000.0, 200.0)
+            .unwrap();
+        let mut w = world();
+        for y in 12..=14 {
+            put_tile(&mut w, 15, y, 1);
+        }
+        tick(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "the inset collision box reaches the wall -> kill");
+        // The 237's death hook spawns the 238 raining cloud (the kill ran).
+        assert!(pool.slots().iter().any(|p| p.active && p.kind == RAIN_CLOUD_RAINING),
+            "the kill hook fired (:74535-74538)");
+    }
+
+    // --- W4-g2 reconciliation: the Shimmer() family (STAGED here; ACTIVATED
+    // by d53 804ad5715 — this staged copy DROPS at merge, f20d-F5; the
+    // drop-hunk: research/377-projectile-rowless-riders-g2d.md §5) -----------
+    // The helper is driven directly (shimmer_wet set by hand); d53 carries
+    // its own 7 dispatch-gate witnesses — keep BOTH sets (disjoint names).
+    // WRITTEN NOT RUN (code-only).
+
+    /// `Projectile.cs:22403-22422` — the 229 orb's shimmer arm: a falling orb
+    /// (vy > 0) over a NON-full shimmer cell bounces (-vy), syncs, caps the
+    /// life to 600 then -60, and clears wet/shimmerWet.
+    #[test]
+    fn w4_g2_shimmer_the_orb_bounces_and_ages() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 5.0, 30, 0.0).unwrap();
+        let mut w = world();
+        // No shimmer tiles → the two-cell kill probe fails, the bounce runs.
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        p.wet = true;
+        p.time_left = 3600;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.y, -5.0, "the falling bounce (:22413)");
+        assert!(p.net_update, ":22414");
+        assert_eq!(p.time_left, 540, "cap 600 then -60 (:22415-22419)");
+        assert!(!p.shimmer_wet && !p.wet, "the wet flags clear (:22420-22421)");
+        assert!(p.active, "the bounce keeps the orb alive");
+    }
+
+    /// `Projectile.cs:22405-22410` — the two-cell kill probe: a FULL shimmer
+    /// cell at the top-centre AND a shimmer cell above it kill the orb.
+    #[test]
+    fn w4_g2_shimmer_the_two_cell_probe_kills() {
+        let mut pool = ProjectilePool::new();
+        // Orb at (200, 200): top-centre tile ((200+15)/16, 200/16) = (13, 12).
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 5.0, 30, 0.0).unwrap();
+        let mut w = world();
+        let fill = |w: &mut World, x: i32, y: i32, amount: u8| {
+            let i = w.index(x, y);
+            w.tiles[i].liquid = amount;
+            w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+        };
+        fill(&mut w, 13, 12, u8::MAX); // full cell at top-centre
+        fill(&mut w, 13, 11, 100); // shimmer above (liquid > 0)
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        p.shimmer(&w);
+        assert!(!pool.slots()[slot].active, "the two-cell probe kills (:22409)");
+        // A single full cell (no shimmer above) does NOT kill — the bounce runs.
+        let slot2 = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 5.0, 30, 0.0).unwrap();
+        let mut w2 = world();
+        fill(&mut w2, 13, 12, u8::MAX);
+        let p2 = &mut pool.slots_mut()[slot2];
+        p2.shimmer_wet = true;
+        p2.shimmer(&w2);
+        assert!(pool.slots()[slot2].active, "one cell is not enough — the bounce stands");
+        assert_eq!(pool.slots()[slot2].vel.y, -5.0);
+    }
+
+    /// `Projectile.cs:22380-22383` — the arrow-family float: the wooden arrow
+    /// (1, aiStyle 1) takes -0.4 Y, no life change, no bounce.
+    #[test]
+    fn w4_g2_shimmer_the_arrow_floats() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(WOODEN_ARROW, 200.0, 200.0, 4.0, 3.0, 20, 0.0).unwrap();
+        let w = world();
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        let life = p.time_left;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert!((p.vel.y - 2.6).abs() < 1e-6, "the -0.4 float (:22382)");
+        assert_eq!(p.time_left, life, "the arrow float keeps the life");
+        assert!(p.active);
+    }
+
+    /// `Projectile.cs:22363-22366` — the refusal gate: a hostile shot (the
+    /// port's `!friendly` proxy) with a non-25/17 style returns untouched.
+    #[test]
+    fn w4_g2_shimmer_the_hostile_gate_refuses() {
+        let mut pool = ProjectilePool::new();
+        // The hostile inferno bolt 291 (aiStyle 50, friendly false).
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BOLT, 200.0, 200.0, 2.0, 5.0);
+        let w = world();
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        let vel = p.vel;
+        let life = p.time_left;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel, vel, "the hostile gate refuses — no velocity change");
+        assert_eq!(p.time_left, life);
+        assert!(p.active);
+    }
+
+    /// `Projectile.cs:22424-22438` — the aiStyle-5 falling star (92): the
+    /// bounce keeps the life (NO cap / -60, unlike the aiStyle-1/16/40 arm).
+    #[test]
+    fn w4_g2_shimmer_the_star_bounce_keeps_life() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(FALLING_STAR, 200.0, 200.0, 2.0, 5.0, 20, 0.0).unwrap();
+        let w = world();
+        let p = &mut pool.slots_mut()[slot];
+        p.shimmer_wet = true;
+        p.wet = true;
+        p.time_left = 3600;
+        p.shimmer(&w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.y, -5.0, "the bounce (:22434)");
+        assert_eq!(p.time_left, 3600, "NO life cap / -60 (the :22424 arm)");
+        assert!(!p.shimmer_wet && !p.wet, "the wet flags clear (:22436-22437)");
+    }
+}
+
+// --- W4-g2d rowless riders: the Silver Bullet 981 ---------------------------
+// The e3e-flagged rowless kind with an AI arm (the generic aiStyle-1 bullet
+// flight). WRITTEN NOT RUN (code-only mode, the task contract).
+#[cfg(test)]
+mod w4_g2d_silver_bullet_tests {
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 512, 128)
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+    }
+
+    /// `Projectile.cs:9340-9353` — the 981 spawns through the data seam
+    /// (was a silent decline) and rides the generic aiStyle-1 flight:
+    /// `extraUpdates = 1` runs TWO sub-steps per tick, `ai[0]` climbs 2/tick,
+    /// gravity +0.1 per sub-step from `ai[0] >= 15` (`:57572-57583`).
+    #[test]
+    fn w4_g2d_the_silver_bullet_spawns_and_flies() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SILVER_BULLET, 200.0, 200.0, 8.0, 0.0, 9, 3.0)
+            .expect("the 981 row accepts the spawn");
+        let mut w = world();
+        assert_eq!(pool.slots()[slot].extra_updates, 1);
+        assert_eq!(pool.slots()[slot].time_left, 600);
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 2.0, "two sub-steps per tick (:9352)");
+        assert_eq!(p.vel.y, 0.0, "no gravity before ai[0] >= 15");
+        assert!((p.pos.x - 216.0).abs() < 1e-4, "two 8-px steps");
+        // 7 more ticks: ai[0] reaches 16, the last sub-step adds +0.1 Y.
+        for _ in 0..7 {
+            tick(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 16.0);
+        assert!((p.vel.y - 0.1).abs() < 1e-6, "the >=15 gravity (:57577)");
+    }
+
+    /// `ProjLight` `:16343-16347` — the 981's own colour arm:
+    /// `(l, 0.7l, 0.7l)` at the row's light 0.5, NOT the common bullet's
+    /// `(l, 0.7l, 0.1l)`.
+    #[test]
+    fn w4_g2d_the_silver_bullet_light_is_its_own_arm() {
+        let l = proj_data(SILVER_BULLET).unwrap().light;
+        let lit = crate::proj_lights::proj_light(
+            SILVER_BULLET, l, Vec2::new(200.0, 200.0), 4.0, 4.0, false,
+            &tr_core::lighting::LightParams::default(),
+        )
+        .expect("light 0.5 is lit");
+        assert_eq!(lit.2, [l, l * 0.7, l * 0.7], "the :16343 arm");
     }
 }
