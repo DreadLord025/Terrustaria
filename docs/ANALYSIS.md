@@ -27079,6 +27079,72 @@ timer engine untouched. Deliberate deviations:
 - **Midas (72)** has no `UpdateBuffs` arm (NPC-side debuff); the flask
   block covers 71, 73-79 only, verbatim.
 
+## The first missing buff block (W4-c16, code-only mode, 2026-11-20)
+
+`crates/tr-app/src/buff_effects_orbs.rs` ports the FIRST contiguous region of
+`Player.UpdateBuffs` whose arms had no live effect anywhere in the port: the
+SugarRush/BrainOfConfusion stragglers (`Player.cs:9935-9947`) and the
+ManaHeat/lunar-orb tail (`:10328-10461`), 21 ids — 192, 321, 396, 95-100
+(beetle), 170-172 (solar), 173-181 (nebula). The live-set census
+(`docs/research/W4-c16-buff-effects-wave-b.md`) diffed every `buffType[j]`
+head/band in `:9855-12069` against ALL live paths (the `player.rs` wave-A
+match, the summon keep-alives, the wired wave-C accessory pass, the DoT
+`holding()` derivation, the regen fold, the light feed) — the remaining
+"missing" ids are the unwired wave-B/D tables' own claims, out of scope.
+
+Pure accumulator (the B/D seam): `apply_orb_effect_arm` folds one slot's
+writes into `OrbEffects`; the wiring (the merge step) copies the fields and
+drains the per-slot requests IN SLOT ORDER. Deliberate deviations:
+
+- **Wiring deferred** — same admission as waves B/D: test-only until the
+  merge; no runtime behaviour changes. The ManaHeat consumer
+  (`magicDamage *= manaHeat`, `:25906`) already runs via
+  `potions::apply_magic_damage_sickness_tail`; the grant side
+  (`try_apply_mana_heat`, the mana-star pickup lane) is live — only the
+  per-tick decay arm was missing, and it now ports here.
+- **Sequential orb state** — the caller SEEDS `beetle_orbs`/`solar_shields`
+  from the live fields; the arms read + assign per slot (the wave-B `thorns`
+  pattern), matching the C#'s live `this.beetleOrbs` reads mid-chain.
+- **The reconcile quirk is preserved** — the upgrade branch's m-loop band is
+  INCLUSIVE of the current slot's id (`:10357` `<= 95 + num8 - 1`), so the
+  C# deletes the very slot it is processing and does NOT `j--` afterwards
+  (the shifted-in buff skips its arm this tick). The accumulator records
+  `purge_band = (base, base + tier - 1)` and the wiring replicates the m-loop
+  verbatim. The downgrade branch (`current > tier`) self-deletes WITH the
+  `j--` rescan; the count assignment (`:10365`/`:10400`/`:10430`) still runs
+  after either branch, exactly like the source.
+- **Set gates constants-off** — `beetleDefense`/`beetleOffense`/`setSolar`
+  come from `ApplySetBonus_BeetleDefense`/`_BeetleDamage`/`_Solar`
+  (`:16499-16535`/`:16366-16369`, unported). With the flags false the arms
+  zero the orbs/shields and DelBuff the slot — the C#'s own behaviour without
+  the set bonus. BeetleMight's stat adds land BEFORE the gate (`:10431-10432`
+  precede `:10433`), so a single tick of +0.1·tier melee damage/speed applies
+  even without the set, verbatim.
+- **Nebula downgrade** — `UpdateBuffs_NebulaBuffs` (`:12070-12079`) ports as
+  `nebula_level`: at `buffTime == 2` with level > 1 the tier steps down
+  (`buffType[b]--`, `buffTime[b] = 480`) and the stat add reads the
+  POST-downgrade level (`:10451`/`:10456` run after the ref call). The
+  `buff_type_decrement` request rides the wiring. The mana-level consumer
+  (`UpdateManaRegen` `:19567-19583`) stays its own lane.
+- **SugarRush pickSpeed sign** — kept raw C# (−0.2); the wiring maps onto the
+  port's positive `pick_speed_bonus` convention (+0.2), like wave D's WellFed
+  rows.
+- **ManaHeat duration guard** — the `latestManaPotionDuration == 0f → 1f`
+  write (`:10333`) is a PLAYER-field mutation mid-arm; the accumulator
+  records `mana_potion_duration_reset` so the wiring applies it before the
+  next slot (a second 396 slot divides by 1, like the C#). The
+  `if (0f == 0f)` branch (`:10336`) is constants-true — folded.
+
+**RNG census: ZERO draws.** Every arm is arithmetic + slot bookkeeping — no
+`Main.rand` call in `:9935-9947` or `:10328-10461` (verified per body). The
+block is stream-neutral by construction; the `UpdatePlayers` stream cannot
+move.
+
+Tests: 18 `w4_c16_*` witnesses (written, **not run** — code-only mode), one
+per id plus the reconcile branches (upgrade purge-band inclusive quirk,
+downgrade self-delete, equal-tier skip), the nebula time-2 downgrade, the
+ManaHeat duration-0 guard, per-slot stacking and the out-of-range rejection.
+
 ## Frost Moon boss wiring (S1-F-13c, W1-1 resolved, code-only mode, 2026-11-19)
 
 `task/S1-F-13c-wire-bosses` wires the three Frost Moon bosses — **Everscream

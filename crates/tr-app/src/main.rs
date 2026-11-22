@@ -20,6 +20,7 @@ mod biome;
 mod buff_effects;
 mod buff_effects_misc;
 mod buff_effects_summons;
+mod buff_effects_orbs;
 mod buffs;
 mod buff_effects_accessory;
 mod bug_net;
