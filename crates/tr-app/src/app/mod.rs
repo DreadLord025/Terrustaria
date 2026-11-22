@@ -670,6 +670,12 @@ pub(crate) struct App {
     pub(crate) mouse_npc_type: i32,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// The frame's left-press edge snapshotted BEFORE the click cluster
+    /// consumes `ui_left_press` (`handle_inventory_clicks` clears it every
+    /// frame). The fullscreen map's pylon marker click reads it in the draw
+    /// (`TeleportPylonsMapLayer.cs:83`/`:90` — `Main.mouseLeft &&
+    /// Main.mouseLeftRelease`), which runs after the cluster.
+    pub(crate) map_left_press: bool,
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
@@ -4519,6 +4525,7 @@ impl App {
             mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
+            map_left_press: false,
             ui_right_release: false,
             control_throw: false,
             drop_right_edge: false,

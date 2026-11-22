@@ -20580,6 +20580,153 @@ or minimap is actually drawing, so the TE walk stays off the hot path.
 the hover text feeds the map's text line through `ui::text::hud_text` (the C#
 `ref text`).
 
+## The map player pins / death markers / misc + revenge icons (W4-e17, code-only 2026-11-21)
+
+`crates/tr-app/src/map_player_icons.rs` ports the `Main.DrawMap` passes the
+icon layers and the NPC heads sit between, both branches wired in
+`app/frame/draw.rs`:
+
+- **The player pins** — the 255-player head loops (fullscreen
+  `Main.cs:55931-55976`, minimap `:55712-55766`) over
+  `DrawPlayerMapIcon_CanBeSeen` (`:56076-56097`) and
+  `GetPlayerHeadBordersColor` (`:56610-56629`, the `teamColor` table
+  `:6657-6662`). The local head rides the existing
+  `render/entities.rs::draw_player_map_icon` composite; the remote peers
+  draw the same composite through their `PlayerNet` snapshots (the
+  `render/tiles.rs:1218` convention — position + netOffset, facing,
+  frames; `gfxOffY` 0). The head hover writes the player name
+  (`:55959`/`:55738`); the minimap's two insets differ (heads
+  `(6,6)..(w-16,h-14)` `:55726`, deaths `(8,8)..(w-18,h-16)` `:55752`).
+- **The death markers** — `DrawPlayerDeathMarker` (`:56446-56464`): the
+  `MapDeath` sheet centred at `headScale`, the hover box the head box
+  shifted `(-4,-4)`. `Player.KillMe`'s stamp (`Player.cs:38846-38848`:
+  `lastDeathPostion = Center`, `lastDeathTime = DateTime.Now`,
+  `showLastDeath = true`) lands on `Player::start_death`; the hover reads
+  `Game.PlayerDeathTime` ("{0} died {1} ago") through
+  `Lang.LocalizedDuration(abbreviated: false, showAllAvailableUnits:
+  false)` — `ui/resources.rs::localized_duration_full` adds the
+  culture-driven abbreviation (`Lang.cs:1161`) and the English long unit
+  names to the existing abbreviated form.
+- **The misc icons** — `DrawMiscMapIcons` (`:56466-56539`): the
+  Potion-of-Return home/exit portals (`Extra_175`/`Extra_173`, the
+  `(pos + (0, -height/2))/16` transform FLOORED, `Rectangle.Contains`
+  clip, `Utils.CenteredRectangle` hover) and the last-hit golf ball
+  (`Extra_176` + the ball's own `Projectile[type]` frame 0; the hover rect
+  is the MARKER's, captured before the ball draw `:56528`).
+  `GolfState::last_hit_ball_for_draw` exposes `GetLastHitBall`'s four
+  guards (`GolfState.cs:102-109`) for the draw side; the caller resolves
+  the live pool slot by `who_am_i` (the `update_golf_state` convention).
+- **The revenge markers** — `RevengeMarker.DrawMapIcon`
+  (`CoinLossRevengeSystem.cs:252-266`): the coin tier picks the sheet
+  (`<100` copper, `<10000` silver, `>=1000000` platinum, else gold — the
+  `MapDeath` assignment at `:261` is dead), frame `(1,8)` row 0, centred;
+  `DrawMapIcons` (`:482-496`) keeps the LAST hovered marker;
+  `UseMouseOver` (`:268-273`) draws `ItemSlot.DrawMoney` horizontal
+  (`ItemSlot.cs:3652-3684`): four coin icons at `mouse/drawScale + (-24,
+  0) + (24*i + 45, 50)` with the 999-capped counts under them (the
+  `ItemStack` font, origin `(0, lineSpacing)`, scale 0.75, four-way black
+  border). `Utils.CoinsSplit` (`Utils.cs:1048-1060`) is ported verbatim.
+
+The `ref text` precedence chains are rebuilt per the C# write order:
+fullscreen tile name (`:55784-55913`) → revenge/misc (`:55922-55923`) →
+NPC heads (`:55926`) → player names (`:55959`) → icon layers (`:55996`) →
+the death duration (`:55984-55986`, `num19` wins over the revenge
+`UseMouseOver`); minimap layers (`:55703`) → revenge/misc
+(`:55705-55706`) → NPC heads (`:55709`) → peer names (`:55738`) → the
+death duration (`:55772-55774`).
+
+Documented drops: the wormhole-potion teleport hover
+(`:55960-55975`/`:55998-56005`) is MP-only and unported (`HasUnityPotion`,
+`UnityTeleport`); the remote peers carry no team/hostile/lastDeath sync
+(`PlayerNet`), so they read as team 0 / not hostile and draw no death
+markers; the `mapStyle == 2` overlay's own pin/death loops
+(`:55653-55692`) ride the overlay branch (unwired, the P4 plan's
+Uncertainty 7). The minimap passes fold the `MapScale` batch transform
+into the positions/sizes and compare the screen mouse against the scaled
+rects (the `minimap_origin_raw` convention, the same as the NPC head
+pass). 9 `w4_e17_*` witnesses WRITTEN NOT RUN (code-only mode).
+
+## The map NPC heads + pylon network lines / click state (W4-e17 first half, code-only 2026-11-21)
+
+The f29 census's first half (items 1-4), ported ahead of the player-pin /
+death / misc / revenge passes above (items 5-8, the parallel lane).
+
+**The NPC head overlays** — `crates/tr-app/src/map_npc_icons.rs` ports
+`Main.DrawNPCMapIcons`/`2`/`3` (`Main.cs:56099-56292`): the fullscreen pass
+(`:56222-56292`, wired at `:55926` before the player heads), the minimap
+pass (`:56144-56220`, wired at `:55709` between the icon layers and the
+frame foreground, the strict-edged `(miniMapX+12, miniMapY+10, W-16, H-14)`
+clip) and the `mapStyle == 2` overlay pass (`:56099-56142`, ported but
+UNWIRED — the P4 plan's Uncertainty 7). The boss half resolves
+`GetBossHeadTextureIndex` (`NPC.cs:7557-7606`) over
+`NPCID.Sets.BossHeadTextures` (`NPCID.cs:10479`, keyed by the C# type, NOT
+the folded bestiary net id — the Golem parts fold onto 245 but only the
+246/249 heads draw) plus the seven type overrides (the Eye's phase-2 swap,
+the Brain's illusion hide, Plantera's INTEGER `lifeMax/2`, the twins'
+laser/spit phases, the Cultist's clone swap); `GetBossHeadRotation`
+(`:7608-7632`) and `GetBossHeadSpriteEffects` (`:7634-7642`, the Dutchman's
+`spriteDirection == 1` flip) gate the tilt/flip. The Destroyer head's
+segment-average (`:56125-56137`) walks the chain by `worm_id`/`seg_index`
+(the port's stable identity — the pool compacts, the C#'s `Main.npc[ai[0]]`
+slot links do not survive), head + up to 14 active links, divided by the
+count. The town half resolves `TownNPCProfiles.GetHeadIndexSafe`
+(`TownNPCProfiles.cs:200-207`): the stacked shimmer profiles pick the
+variant by `townNpcVariationIndex` (`Profiles.cs:44-52`), the pet
+`VariantNPCProfile`s index their head-id arrays (`:238-241`), the town
+slimes are fixed-head `LegacyNPCProfile`s, and the rest fall to
+`NPC.TypeToDefaultHeadIndex`. The outlined head
+(`OutlinedTextureRenderer.DrawWithOutlines` → the baked
+`AnOutlinedDrawRenderTargetContent` rings, `:38-62`) is reproduced as
+direct quads like `draw_player_map_icon`: 8 black copies at Manhattan
+radius 4, 4 border copies at radius 2, then the body — all riding the
+single `Color(alpha,alpha,alpha,alpha)` blit tint. The hover text is
+`FullName` (town, `Game.NPCTitle` "{0} the {1}") / `GivenOrTypeName`
+(boss); the hover rect's half-width is the C#'s INTEGER `(float)(Width()/2)`.
+The town `nextDialogue.ShowIndicator` notification bubble
+(`Utils.DrawNotificationIcon`, `Utils.cs:442-461`) is ported but gated off
+(the dialogue system is unported). The minimap pass folds the `MapScale`
+batch transform into the positions/sizes (`head_scale = num46 * MapScale`,
+the `minimap_origin_raw` convention).
+
+**The pylon network lines + hover/click state** — `map_layers.rs` ports
+`TeleportPylonsMapLayer.Draw` (`TeleportPylonsMapLayer.cs:30-110`): the
+fullscreen network lines (`:45-64`) from `Main.MapPylonTile`'s unclamped
+centre to every OTHER revealed pylon's, one black 6px + one white 2px
+`DrawLine` (`:18-28`: `Min(5,(int)Distance)` BlackTile segments lerped along
+the line, origin `(0, width/2)`, scale `(len/n/16, width/16)`); the markers
+draw through `DrawScaled` (the minimap, `MapOverlayDrawContext.cs:218-242`,
+the 2x hover scale) / `DrawClamped` (the fullscreen, `:118-216`, the
+border-10 rect pull-back along the ray from the screen centre + the
+`Extra_299` frame (2,1) offscreen arrow + the 0.5x offscreen / 2x hovered
+scales). The marker frame is the faithful `SpriteFrame(11,1,col,0)` cell —
+28 px wide (330/11 − PaddingX 2), NOT the 30 the earlier port drew. A hover
+claims `Main.cancelWormHole` (`:81`) and the item-name text; a press latches
+`PylonClick::Teleport` (onscreen) / `PanTo` (offscreen). `map.rs` carries the
+`MapPylonTile`/`PanTargetMapFullscreen`/`cancelWormHole` state, the 0.15 pan
+lerp (`Main.cs:55361-55385`, the `1/dist` overshoot guard + the <1-tile
+snap, a held press cancels) and `pylon_view_fit` (`Player.cs:32188-32212`:
+the anchor + every revealed pylon `Including`'d, `Inflate(20,20)`, the
+INTEGER rect centre, the scale clamped to fit `screen-40`); `set_open(true)`
+clears the selection (`TryOpeningFullscreenMap`, `:29113`). The 597 tile
+right-click (`world_sim/editing/doors.rs`, `Player.cs:32180-32212`) decodes
+the 3x4 body anchor (`x - frameX/18%3, y - frameY/18%4`), opens the map and
+fits the network. The marker click drains in `app/clicks.rs`:
+`handle_pylon_map_click` runs the `HandleTeleportRequest` gate ladder
+(`tr_core::pylons::handle_teleport_request`, the destination metrics scanned
+at the pylon) → `Player.Teleport(newPos, 9, pylonType)` + `velocity = 0`
+(`:189-194`) or the refusal chat line; the offscreen click arms the pan.
+The press edge is snapshotted (`App::map_left_press`) in `frame_shared_setup`
+BEFORE the click cluster consumes `ui_left_press` (the draw reads it after).
+
+Documented drops: the `mapStyle == 2` overlay head pass is unwired (the P4
+plan's Uncertainty 7); the town notification indicator is gated off (the
+dialogue system is unported); the wormhole-potion teleport hover that
+`cancelWormHole` guards is MP-only and unported (`HasUnityPotion`), so the
+flag is carried but has no same-frame consumer yet. 13 `w4_e17_*` witnesses
+WRITTEN NOT RUN (code-only mode). The atlas pack stays under the 8192-px
+bound: the head sheets add +16 px (8115 → 8131, measured through
+`tools/atlas_sim.js`'s skyline packer over the real content dims).
+
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 
 `crates/tr-core/src/particles.rs` is the `Main.dust` analog: the C# keeps the pool as the static `Main.dust[6001]` array plus the three static pressure counters (`Dust.dCount`, `lavaBubbles`, `SandStormCount`, `Dust.cs:12-16`), and the port carries the same global-pool semantics вЂ” one pool the App owns, spawns addressed by slot, slot 6000 the refuse sentinel `NewDust` returns and never scans (`Main.cs:66985`, `Dust.cs:79`/`:103`). The spawn path is a 1:1 transcription of `Dust.cs:10-407`: the guard chain (`:77-101`), the off-screen cull with the `400*(1-dCount)` margin (`:89-97`), the first-inactive-slot scan and the five pressure bands (`:103-152`), the default block with the per-100 frame shift (`:153-193`), the `ChildSafety` re-type arm (`:194-213`, `ChildSafety.cs:33`) and the per-type tweak chain (`:214-252`). The pool draws from the caller-passed stream (the `DustRng` seam, the C# `Next`/`NextFloat` conversions `UnifiedRandom.cs:120-141`), so per-consumer streams are preserved: the pool's band rolls are the only added draws on the clients' streams. The sand spawn site additionally regained the C# `NewDust` velocity/scale rolls the stand-in had skipped (`Sandstorm.cs:226`; the final 0.9 scale pin unchanged), and `Settings::blood` arms `pool.child_safety` at spawn вЂ” blood on is the vanilla default (the gate skipped), blood off sets `ChildSafety.Disabled` false and the re-type fires.

@@ -82,6 +82,8 @@ mod teleport_dust;
 // click-pan toggle, unity-map hover, fullscreen-map close, NewText tail,
 // SelectPlayer/password/IP arms). Code-only — witnesses written not run.
 mod main_sounds_batch3;
+mod map_npc_icons;
+mod map_player_icons;
 mod melee_swing;
 mod menu;
 mod minecart;
