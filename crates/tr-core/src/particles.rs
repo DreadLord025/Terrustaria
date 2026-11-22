@@ -221,10 +221,18 @@ pub struct DustPool {
     /// `Dust.dCount` — pool pressure for the cull margin (`Dust.cs:97`); the
     /// low band resets it (`:151`), `UpdateDust` increments it (`:440`, E-3).
     pub d_count: f32,
-    /// `Dust.lavaBubbles` (`Dust.cs:14`); its consumers are E-3.
+    /// `Dust.lavaBubbles` (`Dust.cs:14`); the head reset (`:427`) + the
+    /// inline type-35 increment (`:475`) maintain it — the retro lava-bubble
+    /// draw gate reads it (`Main.cs:57785`, W4-g13's canonical increment).
     pub lava_bubbles: i32,
     /// `Dust.SandStormCount` (`Dust.cs:15`); its consumers are E-3.
     pub sand_storm_count: i32,
+    /// `Main.snowDust` (`Main.cs:621`): reset per `UpdateDust` head
+    /// (`Dust.cs:428`), `++` per live type-76 slot (`Dust.cs:1747`); the
+    /// snowfall budget reads it (`Main.cs:13057`). The shared tick's
+    /// `type_chain` 76 arm feeds it through the env delta (W4-d50 wiring,
+    /// the d54 ONE-EDIT hunk `84eb739b` — the d130 field union).
+    pub snow_dust: i32,
     /// The blood gate; `disabled` defaults `true` (`ChildSafety.cs:33`).
     pub child_safety: ChildSafety,
     wet_probe: Option<WetProbe>,
@@ -249,6 +257,7 @@ impl DustPool {
             d_count: 0.0,
             lava_bubbles: 0,
             sand_storm_count: 0,
+            snow_dust: 0,
             child_safety: ChildSafety::default(),
             wet_probe: None,
         }
@@ -302,11 +311,16 @@ impl DustPool {
     ///
     /// The `customData` follower arms (325/its family, `:493-508`-region)
     /// and the light arms ride the same hook position; they are S1-E-2's.
+    ///
+    /// The hook receives the SAME stream the head rolls (W4-d50 wiring): the
+    /// C# chain draws `Main.rand` (`dust_physics`'s census), so the hook body
+    /// (`dust_physics::type_chain`) needs the caller's `rng` — one stream, no
+    /// new instances (the S1-E-3 rule).
     pub fn update_dust<R: DustRng>(
         &mut self,
         ctx: &UpdateCtx,
         rng: &mut R,
-        mut type_arm: impl FnMut(&mut Dust) -> bool,
+        mut type_arm: impl FnMut(&mut Dust, &mut R) -> bool,
     ) {
         let max = ctx.max_dust_to_draw.max(0) as usize;
         let child_safety_on = !self.child_safety.disabled;
@@ -314,10 +328,12 @@ impl DustPool {
         // method doc); it exists for the verbatim post-loop ladder.
         let num = 0;
         // `:427-431` — the head resets. `Main.snowDust` is a `Main` static
-        // (`Main.cs:621`, read at `:13057`), not a `Dust` one: the pool does
-        // not carry it and nothing in the port consumes it.
+        // (`Main.cs:621`, read at `:13057`); the pool carries it since the
+        // W4-d50 wiring (the d130 field union) — the type-76 arm (`:1747`)
+        // feeds it through the tick's env delta, the snowfall budget reads it.
         self.lava_bubbles = 0;
         self.sand_storm_count = 0;
+        self.snow_dust = 0;
         let mut d_count = self.d_count;
         let bottom = ctx.screen_position.y + ctx.screen_height;
         for i in 0..DUST_SENTINEL {
@@ -351,21 +367,28 @@ impl DustPool {
                     dust.active = false;
                 }
             }
+            // `:468-472` — the 299/300/301/305 pre-move shrink+lift, BEFORE
+            // the move (the W4-d50 wiring; `dust_physics::pre_move` owns the
+            // statements, research/69 §4 — the skeleton lacked them).
+            crate::dust_physics::pre_move(&mut dust);
             // `:473-476` — the lava-bubble budget: every live type-35 slot
             // increments the static BEFORE the move (the C# order). The
             // head reset (`:427`) above zeroes it each pass; the draw-path
             // `Dust.lavaBubbles < 200` gate (`Main.cs:57785`, the retro
             // lava-bubble pair, W4-g13) reads the running total. No RNG draw.
+            // CANONICAL increment — d50's `pre_move` 35 arm is stripped
+            // (research/69 §4 strip-contract): exactly one per live 35.
             if dust.dust_type == 35 {
                 self.lava_bubbles += 1;
             }
             // `:477` — the move.
             dust.position += dust.velocity;
-            // `:467-2334` — the per-type chain + its standalone arms: S1-E-2
-            // ports them; the hook returns true when an arm matched, because
-            // the generic gravity tail below is the chain's final `else if`
+            // `:467-2334` — the per-type chain + its standalone arms: the
+            // hook is `dust_physics::type_chain` (the W4-d50 wiring); it
+            // returns true when a SECOND-chain arm matched, because the
+            // generic gravity tail below is the chain's final `else if`
             // (`:2335`) and must not run when an arm did.
-            let matched = type_arm(&mut dust);
+            let matched = type_arm(&mut dust, rng);
             if !matched && dust.dust_type != 304 && dust.no_gravity {
                 // `:2336-2341` — the no-gravity drift; `fadeIn` gates the scale.
                 dust.velocity *= 0.92;
@@ -1914,7 +1937,7 @@ mod tests {
 
     /// One no-op-hook tick (`type_arm` is E-2's position).
     fn tick(pool: &mut DustPool, rng: &mut UnifiedRandom, c: &UpdateCtx) {
-        pool.update_dust(c, rng, |_| false);
+        pool.update_dust(c, rng, |_, _| false);
     }
 
     /// DW-1.4 — the gravity tail as the chain's final `else if`
@@ -2102,9 +2125,48 @@ mod tests {
         // The counters reset each pass.
         pool.lava_bubbles = 7;
         pool.sand_storm_count = 9;
+        pool.snow_dust = 11;
         tick(&mut pool, &mut rng, &t);
         assert_eq!(pool.lava_bubbles, 0);
         assert_eq!(pool.sand_storm_count, 0);
+        assert_eq!(pool.snow_dust, 0, "`Dust.cs:428` — the snowDust head reset");
+    }
+
+    /// W4-g13 — `Dust.lavaBubbles` maintenance (`Dust.cs:427` reset + `:475`
+    /// increment): every live type-35 slot bumps the static once per pass,
+    /// before the move; non-35 slots do not; the head reset zeroes it each
+    /// pass so the count is the live population, not an accumulator. The
+    /// draw-path `< 200` gate (`Main.cs:57785`) reads this. No RNG draws.
+    /// (Transplanted verbatim from g13 `150e7204a` at the W4-d50 wiring —
+    /// the canonical inline increment, research/69 §4.)
+    #[test]
+    fn w4_g13_lava_bubbles_counts_the_live_type35_population() {
+        let mut pool = new_pool();
+        let mut rng = UnifiedRandom::new(42);
+        let w = world();
+        let sc = ctx(6000);
+        let a = spawn(&mut pool, &mut rng, &w, &sc, 35);
+        let b = spawn(&mut pool, &mut rng, &w, &sc, 35);
+        let c = spawn(&mut pool, &mut rng, &w, &sc, 35);
+        let other = spawn(&mut pool, &mut rng, &w, &sc, 60);
+        // Keep them alive across passes (the scale floor would otherwise kill).
+        for &i in &[a, b, c, other] {
+            pool.slot_mut(i).scale = 1.0;
+        }
+        let t = uctx(6000);
+        let before = rng.clone();
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.lava_bubbles, 3, "three live type-35 slots");
+        assert_eq!(rng, before, "the increment draws nothing");
+        // A second pass resets then re-counts (not 6).
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.lava_bubbles, 3, "the head reset keeps it a population");
+        // Killing one type-35 drops the count.
+        pool.slot_mut(b).active = false;
+        tick(&mut pool, &mut rng, &t);
+        assert_eq!(pool.lava_bubbles, 2);
+        // The non-35 slot never contributed.
+        assert!(pool.slot(other).active);
     }
 
     /// W4-g13 — `Dust.lavaBubbles` maintenance (`Dust.cs:427` reset + `:475`

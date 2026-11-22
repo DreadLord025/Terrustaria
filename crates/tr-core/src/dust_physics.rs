@@ -19,27 +19,36 @@
 //!   arms). Each skipped `AddLight` is cited at its arm below so the light feed
 //!   can reconcile timing. Where the C# computes a light from a POST-mutation
 //!   scale (206 `:766`, 174 `:807`, 230 `:639`, 309 `:486`, 261 `:695-704`), the
-//!   mutation lands HERE and the feed must read the post-update record (the
-//!   feed's current local-decrement compensation for 206/174/230 is retired at
-//!   the wiring wave — see ANALYSIS "The dust physics chain (W4-d50)").
+//!   mutation lands HERE and the feed reads the post-update record — the
+//!   feed's local-decrement compensations for 206/174/230/309/261 were RETIRED
+//!   at the W4-d50 wiring (research/69 §5 — see ANALYSIS "The dust physics
+//!   chain (W4-d50)" + its wiring-resume section).
 //! - **`customData`** — dropped with the field (`particles.rs`'s `Dust` record):
 //!   the Player/Projectile/NPC/Vector2/Color/int/float follower halves never
 //!   fire. Each is cited; the 31 `else if (noGravity)` arm (`:1297`) becomes
 //!   reachable BECAUSE the NPC `customData` branch is dropped (noted there).
 //! - **`Main.snowDust`** (`:1747`) — a `Main` static (`Main.cs:621`), not a
-//!   `Dust` one; the pool does not carry it (the skeleton's documented drop).
-//!   The 76 arm's `snowDust++` is cited and skipped.
+//!   `Dust` one; the 76 arm feeds it through [`DustPhysicsEnv::snow_dust`]
+//!   (the `sand_storm_count` env-delta pattern — the d54 ONE-EDIT hunk
+//!   `84eb739b`, research/131 §7.2a), and the caller lands the delta on
+//!   `DustPool::snow_dust` after the pass (the head reset `:428` rides
+//!   `update_dust`, so the post-pass write lands the exact count).
 //!
-//! # Wiring (the d51-54 / e1-e4 sites' wave)
+//! # Wiring (W4-d50 resume — WIRED, research/69 §4-6+8)
 //!
-//! UNWIRED pure port (the `npc_ai_*` code-only precedent). The generic loop
-//! calls [`pre_move`] BEFORE `position += velocity` (`Dust.cs:468-476` precedes
-//! `:477`) and [`type_chain`] AFTER it (the `type_arm` hook, `:478-2334`); the
+//! The generic loop (`particles.rs::update_dust`) calls [`pre_move`] BEFORE
+//! `position += velocity` (`Dust.cs:468-472` precedes `:477`) — the `:473-476`
+//! lava-bubble increment stays INLINE in the skeleton (g13's canonical,
+//! landed + witnessed; the `pre_move` 35 arm is stripped, research/69 §4) —
+//! and the live tick (`tr-app::minecart::tick`, the `dust_phase` slot) passes
+//! [`type_chain`] as the `type_arm` hook AFTER the move (`:478-2334`); the
 //! hook's `bool` is [`type_chain`]'s return — `true` exactly when a SECOND-chain
 //! arm matched (`:2130-2334`), so the skeleton's final `else if (type != 304 &&
 //! noGravity)` gravity tail (`:2335`) is suppressed, exactly as the C#'s else-if
 //! structure does. The FIRST ladder's standalone arms (213/268 included) return
 //! `false` and take the tail alongside, the corrected S1-E-3 chain reading.
+//! The minecart 213 / sand 268 hand-dispatches retired into the chain (their
+//! bodies WERE the chain's arms).
 //! Child `NewDust` spawns (159/164/173/160/162) are recorded in
 //! [`DustPhysicsEnv::spawns`] and drained by the caller after the pass (the
 //! `wants_*` sink precedent); the deferral is stream-neutral for every current
@@ -141,6 +150,10 @@ pub struct DustPhysicsEnv<'a> {
     /// adds it to the pool after the pass (the skeleton resets the counter to 0
     /// at the head, `:429`, so the post-pass add lands the exact count).
     pub sand_storm_count: &'a mut i32,
+    /// `Main.snowDust++` (76 `:1747`) accumulated as a delta; the caller
+    /// lands it on `pool.snow_dust` after the pass (the head reset `:428`
+    /// rides `update_dust`, so the post-pass write lands the exact count).
+    pub snow_dust: &'a mut i32,
 }
 
 /// `MathHelper.Lerp(value1, value2, amount)` = `value1 + (value2 - value1) *
@@ -156,19 +169,19 @@ fn xna_normalize(v: Vec2) -> Vec2 {
     v / v.length()
 }
 
-/// The pre-move per-type statements (`Dust.cs:468-476`), which the C# runs
-/// BEFORE `position += velocity` (`:477`). The generic loop calls this ahead of
-/// the move; `lava_bubbles` is `Dust.lavaBubbles` (`:475`, the 35 arm).
-pub fn pre_move(d: &mut Dust, lava_bubbles: &mut i32) {
+/// The pre-move per-type statements (`Dust.cs:468-472`), which the C# runs
+/// BEFORE `position += velocity` (`:477`). The generic loop runs this inside
+/// `update_dust` ahead of the move (the W4-d50 wiring). The `:473-476`
+/// lava-bubble counter is STRIPPED from here (research/69 §4 strip-contract):
+/// the skeleton's inline increment is CANONICAL — exactly one `+= 1` per live
+/// 35 per pass, at the C#'s exact pre-move position — and the now-unused
+/// `lava_bubbles` parameter is dropped with it (§4: "d50's to drop").
+pub fn pre_move(d: &mut Dust) {
     // `:468-472` — the 299/300/301 (`(uint)(type-299) <= 2`) + 305 family.
     let num3 = d.dust_type;
     if ((num3 - 299) as u32) <= 2 || num3 == 305 {
         d.scale *= 0.96;
         d.velocity.y -= 0.01;
-    }
-    // `:473-476` — the lava-bubble counter.
-    if d.dust_type == 35 {
-        *lava_bubbles += 1;
     }
 }
 
@@ -648,8 +661,10 @@ pub fn type_chain<R: DustRng>(d: &mut Dust, rng: &mut R, env: &mut DustPhysicsEn
         // `:1735-1744` — the damp; AddLight (`:1743`, S1-E-5).
         d.velocity *= 0.98;
     } else if ty == 76 {
-        // `:1745-1763` — `Main.snowDust++` (`:1747`) is a Main static, dropped
-        // (module docs). The grow, the player-fall lerp + push, the solid damp.
+        // `:1745-1763` — `Main.snowDust++` (`:1747`) feeds the env delta
+        // (the sand_storm_count pattern; the caller lands pool.snow_dust).
+        *env.snow_dust += 1;
+        // The grow, the player-fall lerp + push, the solid damp.
         d.scale += 0.009;
         let y = env.player_vy;
         if y > 0.0 && d.fade_in == 0.0 && d.velocity.y < y {
@@ -1084,6 +1099,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut env = DustPhysicsEnv {
             world: &w,
             show_sandstorm_visuals: true,
@@ -1096,32 +1112,38 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         let matched = type_chain(d, rng, &mut env);
         (matched, spawns, sand)
     }
 
-    // ---- pre-move (`:468-476`) ----
+    // ---- pre-move (`:468-472`, the 35 arm stripped — research/69 §4) ----
 
     #[test]
-    fn w4_d50_pre_move_the_299_family_and_the_lava_counter() {
-        let mut lava = 0;
+    fn w4_d50_pre_move_the_299_family_shrink_lift_and_the_stripped_35_arm() {
         for ty in [299, 300, 301, 305] {
             let mut d = dust(ty, 1.0);
             d.velocity = Vec2::new(2.0, 3.0);
-            pre_move(&mut d, &mut lava);
+            pre_move(&mut d);
             assert_eq!(d.scale, 0.96, "type {ty} shrinks");
             assert_eq!(d.velocity.y, 3.0 - 0.01, "type {ty} lifts");
         }
         // 302/304 are NOT in the `(uint)(type-299) <= 2` band nor 305.
         for ty in [298, 302, 304] {
             let mut d = dust(ty, 1.0);
-            pre_move(&mut d, &mut lava);
+            pre_move(&mut d);
             assert_eq!(d.scale, 1.0, "type {ty} untouched");
         }
+        // The strip-contract (research/69 §4): pre_move no longer touches the
+        // lava counter — the skeleton's inline increment is canonical (the
+        // `w4_g13_lava_bubbles_*` witness in particles.rs pins it). A 35
+        // passes through pre_move completely untouched.
         let mut d = dust(35, 1.0);
-        pre_move(&mut d, &mut lava);
-        assert_eq!(lava, 1, "the 35 arm counts a lava bubble");
+        d.velocity = Vec2::new(2.0, 3.0);
+        pre_move(&mut d);
+        assert_eq!(d.scale, 1.0, "the stripped 35 arm mutates nothing");
+        assert_eq!(d.velocity, Vec2::new(2.0, 3.0));
     }
 
     // ---- the standalone FIRST-ladder physics ----
@@ -1129,47 +1151,52 @@ mod tests {
     #[test]
     fn w4_d50_the_standalone_arms_mutate_in_source_order() {
         let mut rng = UnifiedRandom::new(7);
+        // Each pin carries the chain's generic burn-out −0.01 (`:2127`,
+        // fadeIn 0) — the tails run INSIDE type_chain (the compile-window
+        // re-derivation; the RNG census pins are unaffected).
         // 258 (`:478`): noGravity lift + grow.
         let mut d = dust(258, 1.0);
         run(&mut d, &mut rng);
         assert!(d.no_gravity);
-        assert_eq!(d.scale, 1.0 + 0.015);
+        assert_eq!(d.scale, 1.0 + 0.015 - 0.01);
         // 309 (`:483`): the shrink (light skipped).
         let mut d = dust(309, 1.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 0.97);
+        assert_eq!(d.scale, 0.97 - 0.01);
         // 230 (`:630`): the grow AFTER the (skipped) light.
         let mut d = dust(230, 1.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 1.0 + 0.02);
-        // 154/218 (`:651`): spin + shrink.
+        assert_eq!(d.scale, 1.0 + 0.02 - 0.01);
+        // 154/218 (`:651`): spin + shrink; the `:2073` drag takes vx ×0.99
+        // BEFORE the `:2081` rebuild adds vx*0.5.
         let mut d = dust(154, 1.0);
         d.velocity = Vec2::new(2.0, 0.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.rotation, 2.0 * 0.3);
-        assert_eq!(d.scale, 1.0 - 0.03);
-        // 182 (`:665`): rotation++.
+        assert_eq!(d.rotation, 2.0 * 0.3 + (2.0 * 0.99) * 0.5);
+        assert_eq!(d.scale, 1.0 - 0.03 - 0.01);
+        // 182 (`:665`): rotation++ (vx 0 → the rebuild adds 0).
         let mut d = dust(182, 1.0);
         run(&mut d, &mut rng);
         assert_eq!(d.rotation, 1.0);
         // 206 (`:764`): the decrement.
         let mut d = dust(206, 1.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 0.9);
+        assert_eq!(d.scale, 0.9 - 0.01);
         // 174 (`:805`): the decrement.
         let mut d = dust(174, 1.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 0.99);
+        assert_eq!(d.scale, 0.99 - 0.01);
         // 175 (`:801`): the shrink.
         let mut d = dust(175, 1.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 0.95);
-        // 213/260 (`:737`): rotation reset (the `:2081` rebuild follows).
+        assert_eq!(d.scale, 0.95 - 0.01);
+        // 213/260 (`:737`): rotation reset; the `:2073` drag takes vx ×0.99
+        // then the `:2081` rebuild adds the dragged vx*0.5.
         let mut d = dust(213, 1.0);
         d.rotation = 5.0;
         d.velocity = Vec2::new(2.0, 0.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.rotation, 2.0 * 0.5, "reset to 0 then rebuilt from vx");
+        assert_eq!(d.rotation, (2.0 * 0.99) * 0.5, "reset to 0 then rebuilt from the dragged vx");
     }
 
     #[test]
@@ -1181,17 +1208,20 @@ mod tests {
         d.fade_in = 0.0;
         d.velocity = Vec2::new(1.0, 1.0);
         run(&mut d, &mut rng);
-        // velocity *= 0.93 then *= (0.97, 0.99).
-        assert_eq!(d.velocity, Vec2::new(0.93 * 0.97, 0.93 * 0.99));
-        // scale += 0.0025 (fadeIn 0) then -= 0.0025 → net 0.
-        assert_eq!(d.scale, 1.0);
-        // fadeIn != 0: no grow, only the shrink.
+        // velocity *= 0.93 then *= (0.97, 0.99), then the generic `:2073`
+        // air drag takes vx ×0.99 (261 is not 41/44/304-exempt).
+        assert_eq!(d.velocity, Vec2::new(0.93 * 0.97 * 0.99, 0.93 * 0.99));
+        // scale += 0.0025 (fadeIn 0) then -= 0.0025 → net 0, then the
+        // generic burn-out −0.01 (`:2127`, fadeIn 0).
+        assert_eq!(d.scale, 1.0 - 0.01);
+        // fadeIn != 0: no grow, only the shrink; the ramp's +0.03 (`:2110`,
+        // 1.0275 < 5 keeps the fadeIn live) then no burn-out.
         let mut d = dust(261, 1.0);
         d.no_gravity = true;
         d.fade_in = 5.0;
         d.velocity = Vec2::new(1.0, 1.0);
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 1.0 - 0.0025);
+        assert_eq!(d.scale, 1.0 - 0.0025 + 0.03);
     }
 
     #[test]
@@ -1203,6 +1233,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mk = || DustPhysicsEnv {
             world: &w,
             show_sandstorm_visuals: true,
@@ -1215,25 +1246,27 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
-        // 329 (`:587`): scale *= 0.8.
+        // 329 (`:587`): scale *= 0.8, then the generic burn-out −0.01.
         let mut d = dust(329, 1.0);
         let mut e = mk();
         type_chain(&mut d, &mut rng, &mut e);
-        assert_eq!(d.scale, 0.8);
+        assert_eq!(d.scale, 0.8 - 0.01);
         // 211 (`:729`): noLight + solid → kill.
         let mut d = dust(211, 1.0);
         d.no_light = true;
         let mut e = mk();
         type_chain(&mut d, &mut rng, &mut e);
         assert!(!d.active);
-        // 284 (`:733`): fadeIn 0 + solid → velocity *= 0.25.
+        // 284 (`:733`): fadeIn 0 + solid → velocity *= 0.25, then the
+        // generic `:2073` drag on vx.
         let mut d = dust(284, 1.0);
         d.fade_in = 0.0;
         d.velocity = Vec2::new(4.0, 4.0);
         let mut e = mk();
         type_chain(&mut d, &mut rng, &mut e);
-        assert_eq!(d.velocity, Vec2::new(1.0, 1.0));
+        assert_eq!(d.velocity, Vec2::new(1.0 * 0.99, 1.0));
     }
 
     // ---- the big else-if chain ----
@@ -1246,7 +1279,8 @@ mod tests {
         let (matched, spawns, _) = run(&mut d, &mut rng);
         assert!(!matched);
         assert!(spawns.is_empty());
-        assert_eq!(d.scale, 0.99);
+        // −0.01 (`:820`) then the generic burn-out −0.01 (`:2127`).
+        assert_eq!(d.scale, 0.99 - 0.01);
         assert_eq!(
             rng.calls,
             vec!["rng-100..101=50", "rng-100..101=-50"],
@@ -1305,14 +1339,16 @@ mod tests {
         let mut d = dust(140, 1.0);
         d.velocity = Vec2::new(2.0, 0.5);
         run(&mut d, &mut rng);
-        // vx *= 0.98 → 1.96; vy *= 0.98 → 0.49 then += 0.05 (vy < 1) → 0.54.
-        assert_eq!(d.velocity.x, 2.0 * 0.98);
+        // vx *= 0.98 → 1.96; vy *= 0.98 → 0.49 then += 0.05 (vy < 1) → 0.54;
+        // the generic `:2073` drag then takes vx ×0.99.
+        assert_eq!(d.velocity.x, 2.0 * 0.98 * 0.99);
         assert_eq!(d.velocity.y, 0.5 * 0.98 + 0.05);
-        assert_eq!(d.scale, 1.009);
+        // +0.009 then the generic burn-out −0.01 (`:2127`).
+        assert_eq!(d.scale, 1.009 - 0.01);
         // rotation -= vx*0.4 then += 0.005 (vx > 0), then the generic
-        // rebuild += vx*0.5 (`:2081`).
+        // rebuild += the DRAGGED vx*0.5 (`:2073` precedes `:2081`).
         let vx = 2.0 * 0.98;
-        assert_eq!(d.rotation, -vx * 0.4 + 0.005 + vx * 0.5);
+        assert_eq!(d.rotation, -vx * 0.4 + 0.005 + (vx * 0.99) * 0.5);
     }
 
     #[test]
@@ -1324,16 +1360,18 @@ mod tests {
         d.velocity = Vec2::new(1.0, 1.0);
         d.alpha = 0;
         run(&mut d, &mut rng);
-        // vy *= 0.98, vx *= 0.98 (`:1268-1269`) then *= 1.02 (`:1299`).
-        assert_eq!(d.velocity, Vec2::new(0.98 * 1.02, 0.98 * 1.02));
-        assert_eq!(d.scale, 1.02);
+        // vy *= 0.98, vx *= 0.98 (`:1268-1269`) then *= 1.02 (`:1299`);
+        // the generic `:2073` drag then takes vx ×0.99.
+        assert_eq!(d.velocity, Vec2::new(0.98 * 1.02 * 0.99, 0.98 * 1.02));
+        // +0.02 then the generic burn-out −0.01.
+        assert_eq!(d.scale, 1.02 - 0.01);
         assert_eq!(d.alpha, 4);
-        // alpha > 255 collapses the scale.
+        // alpha > 255 collapses the scale (the burn-out still runs).
         let mut d = dust(31, 1.0);
         d.no_gravity = true;
         d.alpha = 254;
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 0.0001);
+        assert_eq!(d.scale, 0.0001 - 0.01);
         assert_eq!(d.alpha, 255);
     }
 
@@ -1347,8 +1385,9 @@ mod tests {
         run(&mut d, &mut rng);
         // alpha floor 90 (`:1313`) then += 4 → 94.
         assert_eq!(d.alpha, 94);
-        assert_eq!(d.scale, 1.03);
-        assert_eq!(d.velocity, Vec2::new(0.98 * 1.02, 0.98 * 1.02));
+        // +0.03 then the generic burn-out −0.01; the `:2073` drag on vx.
+        assert_eq!(d.scale, 1.03 - 0.01);
+        assert_eq!(d.velocity, Vec2::new(0.98 * 1.02 * 0.99, 0.98 * 1.02));
     }
 
     #[test]
@@ -1359,6 +1398,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         // noLight + wet → half push (`:1679-1682`).
         let mut d = dust(27, 1.0);
@@ -1376,6 +1416,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(d.position, Vec2::new(81.0, 82.0), "the wet half-push");
@@ -1395,6 +1436,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(d.position, Vec2::new(82.0, 84.0), "the dry full push");
@@ -1425,6 +1467,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         let mut d = dust(76, 1.0);
         d.fade_in = 0.0;
@@ -1442,12 +1485,17 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         // lerp(1, 5, 0.04) = 1.16; push y += 5*0.2 = 1.
         assert_eq!(d.velocity.y, 1.0 + (5.0 - 1.0) * 0.04);
         assert_eq!(d.position.y, 81.0);
-        assert_eq!(d.scale, 1.009);
+        // +0.009 then the generic burn-out −0.01 (`:2127`).
+        assert_eq!(d.scale, 1.009 - 0.01);
+        // The G2 ONE-EDIT hunk (d54 `84eb739b`, research/131 §7.2a): the 76
+        // arm feeds `Main.snowDust++` (`:1747`) through the env delta.
+        assert_eq!(snow, 1, "snowDust++ rides the env delta");
     }
 
     #[test]
@@ -1459,8 +1507,10 @@ mod tests {
         let (matched, _, sand) = run(&mut d, &mut rng);
         assert!(!matched, "268 is a FIRST-ladder arm");
         assert_eq!(sand, 1, "SandStormCount++");
-        // velocity *= 1.0050251 then the sine overwrites vy.
-        assert_eq!(d.velocity.x, 2.0 * 1.0050251);
+        // velocity *= 1.0050251, the sine overwrites vy, then the GENERIC
+        // air drag (`:2071-2073`, the `else if (type != 304)` — 268 is not
+        // exempt) takes vx ×0.99.
+        assert_eq!(d.velocity.x, 2.0 * 1.0050251 * 0.99);
         assert_eq!(d.velocity.y, (80.0f32 * 0.0043982295).sin() * 2.0 + 3.0);
         // 268 is exempt from the rotation rebuild (`:2079`).
         assert_eq!(d.rotation, 0.0);
@@ -1471,6 +1521,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand2 = 0;
+        let mut snow = 0;
         let mut d = dust(268, 1.0);
         d.fade_in = 0.0;
         let mut e = DustPhysicsEnv {
@@ -1485,6 +1536,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand2,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         // +0.01 - 0.05 (no visuals) - 0.01 (burn-out) = -0.05.
@@ -1501,7 +1553,8 @@ mod tests {
         run(&mut d, &mut rng);
         let sine = (80.0f32 * 0.0043982295).sin() * 2.0;
         assert_eq!(d.velocity.y, (sine - 3.0) / 20.0);
-        assert_eq!(d.velocity.x, 2.0 * 1.0050251);
+        // The generic `:2073` drag applies to 270 too (not 41/44/304).
+        assert_eq!(d.velocity.x, 2.0 * 1.0050251 * 0.99);
         // 271 (`:1781`): (vy*1.0050251 - 4) / 6.
         let mut d = dust(271, 1.0);
         d.velocity = Vec2::new(2.0, 9.0);
@@ -1531,8 +1584,9 @@ mod tests {
         d.no_gravity = false;
         d.velocity = Vec2::new(0.0, 0.0);
         run(&mut d, &mut rng);
-        // 41 jitters (rng) but no +0.1 fall; scale += 0.007.
-        assert_eq!(d.scale, 1.007);
+        // 41 jitters (rng) but no +0.1 fall; scale += 0.007 then the
+        // generic burn-out −0.01.
+        assert_eq!(d.scale, 1.007 - 0.01);
     }
 
     // ---- the standalone bubble / wet arms ----
@@ -1548,15 +1602,16 @@ mod tests {
         run(&mut d, &mut rng);
         assert_eq!(d.rotation, 0.5);
         assert_eq!(d.alpha, 2);
-        // scale 1 - 0.01 - 0.005 = 0.985; vy capped at 4.
-        assert!((d.scale - 0.985).abs() < 1e-5);
+        // scale 1 - 0.01 - 0.005 = 0.985, then the burn-out −0.01; vy
+        // capped at 4 (the generic fall :1827 adds 0.1 first → 4.1 → cap).
+        assert!((d.scale - (0.985 - 0.01)).abs() < 1e-5);
         assert_eq!(d.velocity.y, 4.0);
-        // alpha > 255 → scale 0.
+        // alpha > 255 → scale 0 (the burn-out still runs).
         let mut d = dust(33, 1.0);
         d.velocity = Vec2::new(1.0, 0.0);
         d.alpha = 254;
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 0.0);
+        assert_eq!(d.scale, 0.0 - 0.01);
     }
 
     #[test]
@@ -1567,6 +1622,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         // 34 wet (`:1959-1986`): Next(2) then Next(-10,10), vx clamp ±0.25.
         let mut d = dust(34, 1.0);
         d.velocity = Vec2::new(0.0, 0.0);
@@ -1584,11 +1640,13 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert_eq!(rng.calls, vec!["max2=1", "rng-10..10=100"]);
         assert_eq!(d.alpha, 1, "Next(2)=1");
-        assert_eq!(d.scale, 1.005, "the 34 grow");
+        // The 34 grow +0.005 then the generic burn-out −0.01.
+        assert_eq!(d.scale, 1.005 - 0.01, "the 34 grow");
         assert_eq!(d.velocity.y, -0.5);
         // Next(-10,10)=100 → 100 % 20 - 10 = 0 → vx += 0; clamp leaves 0.
         assert_eq!(d.velocity.x, 0.0);
@@ -1608,9 +1666,11 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
-        assert_eq!(d.scale, 0.0);
+        // The dry kill sets scale 0; the generic burn-out −0.01 still runs.
+        assert_eq!(d.scale, 0.0 - 0.01);
         assert!(rng.calls.is_empty(), "the dry path draws nothing");
     }
 
@@ -1625,13 +1685,14 @@ mod tests {
         // 100 % 21 - 10 = 16 - 10 = 6 → vx += 0.06; -100 % 21 = 5 → -5 → vy -= 0.05.
         assert!((d.velocity.x - 0.06).abs() < 1e-6);
         assert!((d.velocity.y - (-0.05)).abs() < 1e-6);
-        assert_eq!(d.scale, 1.007);
-        // 44 (`:2043`): * 0.003, clamp ±0.35, scale += 0.0085.
+        // +0.007 then the generic burn-out −0.01.
+        assert_eq!(d.scale, 1.007 - 0.01);
+        // 44 (`:2043`): * 0.003, clamp ±0.35, scale += 0.0085 − burn-out.
         let mut d = dust(44, 1.0);
         d.velocity = Vec2::new(0.0, 0.0);
         let mut rng = ScriptRng::new(&[0, 0]);
         run(&mut d, &mut rng);
-        assert_eq!(d.scale, 1.0085);
+        assert_eq!(d.scale, 1.0085 - 0.01);
     }
 
     // ---- the fadeIn ramp + the generic tails ----
@@ -1670,6 +1731,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         // fadeIn = 1 → num78 = 0 → the player center (`:2091`).
         let mut d = dust(235, 1.0);
         d.fade_in = 1.0;
@@ -1688,6 +1750,7 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         // The FIRST-ladder 235 arm (`:820`) runs scale -= 0.01 → 0.99, then
@@ -1711,23 +1774,25 @@ mod tests {
         d.velocity = Vec2::new(1.0, 1.0);
         let (matched, _, _) = run(&mut d, &mut rng);
         assert!(matched, "130 is a SECOND-chain arm");
-        assert_eq!(d.velocity, Vec2::new(0.93, 0.93));
-        assert_eq!(d.scale, 1.0025);
+        // The generic `:2073` drag + burn-out run BEFORE the second chain
+        // (they are `:2071-2129` statements, not the suppressed `:2335` tail).
+        assert_eq!(d.velocity, Vec2::new(0.99 * 0.93, 0.93));
+        assert_eq!(d.scale, 1.0 - 0.01 + 0.0025);
         // 131 gravity (`:2161`): velocity *= 0.98, vy -= 0.1, scale += 0.0025.
         let mut d = dust(131, 1.0);
         d.no_gravity = false;
         d.velocity = Vec2::new(1.0, 1.0);
         let (matched, _, _) = run(&mut d, &mut rng);
         assert!(matched);
-        assert_eq!(d.velocity, Vec2::new(0.98, 0.98 - 0.1));
+        assert_eq!(d.velocity, Vec2::new(0.99 * 0.98, 0.98 - 0.1));
         // 132 gravity (`:2167`): velocity *= 0.95, scale -= 0.0025.
         let mut d = dust(132, 1.0);
         d.no_gravity = false;
         d.velocity = Vec2::new(1.0, 1.0);
         let (matched, _, _) = run(&mut d, &mut rng);
         assert!(matched);
-        assert_eq!(d.velocity, Vec2::new(0.95, 0.95));
-        assert_eq!(d.scale, 0.9975);
+        assert_eq!(d.velocity, Vec2::new(0.99 * 0.95, 0.95));
+        assert_eq!(d.scale, 1.0 - 0.01 - 0.0025);
         // 219 noGravity (`:2229`): *= 0.93 then *= (0.97, 0.99), scale -= 0.0025.
         let mut d = dust(219, 1.0);
         d.no_gravity = true;
@@ -1735,7 +1800,7 @@ mod tests {
         d.velocity = Vec2::new(1.0, 1.0);
         let (matched, _, _) = run(&mut d, &mut rng);
         assert!(matched);
-        assert_eq!(d.velocity, Vec2::new(0.93 * 0.97, 0.93 * 0.99));
+        assert_eq!(d.velocity, Vec2::new(0.99 * 0.93 * 0.97, 0.93 * 0.99));
         // 226/331/272 (`:2264`/`:2295`/`:2322`): *= (0.97,0.99), scale -= 0.01.
         for ty in [226, 331, 272] {
             let mut d = dust(ty, 1.0);
@@ -1743,8 +1808,8 @@ mod tests {
             d.velocity = Vec2::new(1.0, 1.0);
             let (matched, _, _) = run(&mut d, &mut rng);
             assert!(matched, "type {ty} matches");
-            assert_eq!(d.velocity, Vec2::new(0.97, 0.99));
-            assert_eq!(d.scale, 0.99);
+            assert_eq!(d.velocity, Vec2::new(0.99 * 0.97, 0.99));
+            assert_eq!(d.scale, 1.0 - 0.01 - 0.01);
         }
     }
 
@@ -1756,6 +1821,7 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         // 278 gravity over the solid tile (5,5) = px (80,80) (`:2197`).
         let mut d = dust(278, 1.0);
@@ -1775,12 +1841,18 @@ mod tests {
             light_color: &light,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         let matched = type_chain(&mut d, &mut rng, &mut e);
         assert!(matched);
-        // *= 0.95 then scale -= 0.0025, then *= 0.9 (solid).
-        assert!((d.scale - (1.0 * 0.95 - 0.0025) * 0.9).abs() < 1e-5);
-        assert_eq!(d.velocity, Vec2::new(0.95 * 0.25, 0.95 * 0.25));
+        // The generic fall +0.1 (`:1827`), drag ×0.99 (`:2073`), burn-out
+        // −0.01 (`:2127`) precede the second chain: *= 0.95, scale
+        // -= 0.0025, then *= 0.9 / *= 0.25 (solid).
+        assert!((d.scale - ((1.0 - 0.01) * 0.95 - 0.0025) * 0.9).abs() < 1e-5);
+        assert_eq!(
+            d.velocity,
+            Vec2::new(0.99 * 0.95 * 0.25, (1.0 + 0.1) * 0.95 * 0.25)
+        );
     }
 
     #[test]
@@ -1790,6 +1862,7 @@ mod tests {
         let wet = |_: Vec2, _: f32, _: f32| false;
         let mut spawns = Vec::new();
         let mut sand = 0;
+        let mut snow = 0;
         let mut rng = UnifiedRandom::new(7);
         // Black light + black dust colour → num48/49/50 = 0 → kill (`:1435`).
         let dark = |_: i32, _: i32| Color::new(0, 0, 0, 255);
@@ -1808,6 +1881,7 @@ mod tests {
             light_color: &dark,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert!(!d.active, "the full-dark 43 dies");
@@ -1828,6 +1902,7 @@ mod tests {
             light_color: &bright,
             spawns: &mut spawns,
             sand_storm_count: &mut sand,
+            snow_dust: &mut snow,
         };
         type_chain(&mut d, &mut rng, &mut e);
         assert!(d.active);
@@ -1868,8 +1943,9 @@ mod tests {
         let mut rng = ScriptRng::new(&[]);
         run(&mut d, &mut rng);
         assert!(rng.calls.is_empty(), "the < 0.7 branch draws nothing");
-        assert_eq!(d.velocity, Vec2::new(1.075, 1.075));
-        assert_eq!(d.scale, 0.5 - 0.03);
+        // The generic `:2073` drag takes vx ×0.99; the burn-out −0.01.
+        assert_eq!(d.velocity, Vec2::new(1.075 * 0.99, 1.075));
+        assert_eq!(d.scale, 0.5 - 0.03 - 0.01);
         // scale >= 0.7 (`:1068`): Next(2) decides -0.95 vs 1.05.
         let mut d = dust(159, 0.8);
         d.no_gravity = true;
@@ -1877,13 +1953,13 @@ mod tests {
         let mut rng = ScriptRng::new(&[0]);
         run(&mut d, &mut rng);
         assert_eq!(rng.calls, vec!["max2=0"]);
-        assert_eq!(d.velocity, Vec2::new(-0.95, -0.95));
+        assert_eq!(d.velocity, Vec2::new(-0.95 * 0.99, -0.95));
         let mut d = dust(159, 0.8);
         d.no_gravity = true;
         d.velocity = Vec2::new(1.0, 1.0);
         let mut rng = ScriptRng::new(&[1]);
         run(&mut d, &mut rng);
-        assert_eq!(d.velocity, Vec2::new(1.05, 1.05));
+        assert_eq!(d.velocity, Vec2::new(1.05 * 0.99, 1.05));
     }
 
     #[test]
@@ -1946,7 +2022,8 @@ mod tests {
         let (_, spawns, _) = run(&mut d, &mut rng);
         assert_eq!(rng.calls, vec!["rng-10..11=0", "rng-10..11=0"]);
         assert!(spawns.is_empty());
-        assert_eq!(d.scale, 1.03);
+        // +0.03 then the generic burn-out −0.01.
+        assert_eq!(d.scale, 1.03 - 0.01);
     }
 
     #[test]
@@ -1959,7 +2036,8 @@ mod tests {
         let (_, spawns, _) = run(&mut d, &mut rng);
         assert_eq!(rng.calls, vec!["rng-20..21=0", "rng-20..21=0"]);
         assert!(spawns.is_empty(), "the noGravity 173 spawns no child");
-        assert_eq!(d.scale, 0.99);
+        // −0.01 then the generic burn-out −0.01.
+        assert_eq!(d.scale, 0.99 - 0.01);
     }
 
     #[test]
@@ -1972,7 +2050,8 @@ mod tests {
         let (_, spawns, _) = run(&mut d, &mut rng);
         assert_eq!(rng.calls, vec!["rng-20..21=0", "rng-20..21=0"]);
         assert!(spawns.is_empty());
-        assert_eq!(d.scale, 0.9);
+        // −0.1 then the generic burn-out −0.01.
+        assert_eq!(d.scale, 0.9 - 0.01);
     }
 
     // ---- the no-draw witness: the RNG-free arms leave the stream untouched ----
@@ -1994,8 +2073,10 @@ mod tests {
     // ---- the full-pool integration: pre_move + move + type_chain + tail ----
 
     /// Drive the generic loop with the physics hook, mirroring the wiring:
-    /// `pre_move` before the move, `type_chain` as the hook, the skeleton's
-    /// gravity tail when the hook returns false.
+    /// the skeleton runs `pre_move` + the canonical inline 35 increment
+    /// before the move (`:468-476`, W4-d50 wiring — research/69 §4), the
+    /// hook is `type_chain`, the skeleton's gravity tail when it returns
+    /// false, and the sand/snow deltas land after the pass.
     fn tick_physics(pool: &mut DustPool, rng: &mut UnifiedRandom, ctx: &UpdateCtx) {
         let w = empty_world();
         let solid = |_: Vec2, _: f32, _: f32| false;
@@ -2003,18 +2084,8 @@ mod tests {
         let light = |_: i32, _: i32| Color::WHITE;
         let mut spawns = Vec::new();
         let mut sand = 0;
-        // pre_move (`:468-476`) runs BEFORE the skeleton's move (`:477`); the
-        // skeleton owns the move and the kills, the hook is type_chain.
-        for i in 0..crate::particles::DUST_SENTINEL {
-            if pool.slot(i).active {
-                let mut lava = pool.lava_bubbles;
-                let mut d = *pool.slot(i);
-                pre_move(&mut d, &mut lava);
-                *pool.slot_mut(i) = d;
-                pool.lava_bubbles = lava;
-            }
-        }
-        pool.update_dust(ctx, rng, |d| {
+        let mut snow = 0;
+        pool.update_dust(ctx, rng, |d, rng| {
             let mut env = DustPhysicsEnv {
                 world: &w,
                 show_sandstorm_visuals: true,
@@ -2027,10 +2098,12 @@ mod tests {
                 light_color: &light,
                 spawns: &mut spawns,
                 sand_storm_count: &mut sand,
+                snow_dust: &mut snow,
             };
             type_chain(d, rng, &mut env)
         });
         pool.sand_storm_count += sand;
+        pool.snow_dust = snow;
         // Drain the child spawns (the census's NewDust requests).
         let sc = SpawnCtx {
             game_menu: false,
@@ -2101,15 +2174,17 @@ mod tests {
         assert_eq!(d0.position, Vec2::new(102.0, 101.0));
         assert_eq!(d0.velocity, Vec2::new(1.98, 1.05));
         assert_eq!(d0.scale, 0.99);
-        // Slot 1 (130): move → (102,101); SECOND chain *= 0.93, fadeIn 0 →
-        // scale += 0.0025; the tail is SUPPRESSED (matched).
+        // Slot 1 (130): move → (102,101); the generic drag/burn-out precede
+        // the SECOND chain (*= 0.93, fadeIn 0 → scale += 0.0025); the
+        // skeleton's :2335 tail is SUPPRESSED (matched).
         let d1 = pool.slot(1);
-        assert_eq!(d1.velocity, Vec2::new(2.0 * 0.93, 1.0 * 0.93));
-        assert_eq!(d1.scale, 1.0025);
-        // Slot 2 (60): move → (102,101); no arm → the skeleton tail *= 0.92,
-        // fadeIn 0 → scale -= 0.04; the generic burn-out -= 0.01 also runs.
+        assert_eq!(d1.velocity, Vec2::new(2.0 * 0.99 * 0.93, 1.0 * 0.93));
+        assert_eq!(d1.scale, 1.0 - 0.01 + 0.0025);
+        // Slot 2 (60): move → (102,101); no arm matches → the chain's drag
+        // ×0.99 + burn-out −0.01, THEN the skeleton tail *= 0.92 with the
+        // fadeIn-gated −0.04.
         let d2 = pool.slot(2);
-        assert_eq!(d2.velocity, Vec2::new(2.0 * 0.92, 1.0 * 0.92));
+        assert_eq!(d2.velocity, Vec2::new(2.0 * 0.99 * 0.92, 1.0 * 0.92));
         assert_eq!(d2.scale, 1.0 - 0.01 - 0.04);
     }
 

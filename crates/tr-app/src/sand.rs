@@ -24,7 +24,6 @@ use glam::Vec2;
 use tr_core::World;
 use tr_core::particles::{Color, DUST_SENTINEL, DustPool, SpawnCtx};
 use tr_core::scene::SceneMetrics;
-use tr_core::tiledata as td;
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
@@ -264,60 +263,13 @@ impl Sand {
     }
 }
 
-/// `Dust.UpdateDust`'s type-268 path over the pool's 268 slots
-/// (`Dust.cs:451-454,476,1789-1818`, death `:2342-2346,2393-2394`).
-/// `show_visuals` is the same `ShowSandstormVisuals` the spawner read
-/// (`Dust.cs:430`); `player_vy` is `Main.player[myPlayer].velocity.Y`.
-/// Death deactivates the slot — the pool keeps its 6000 fixed slots.
-/// The type-268 chain arms (`Dust.cs:1789-2109`-family) — the shared
-/// `UpdateDust` loop's per-type hook (S1-E-3). It returns false: these arms
-/// are standalone statements of the C#'s first ladder (they sit between the
-/// position move at `:477` and the fresh `if (dust.type >= 130 ...)` chain
-/// head at `:2127`), so they do NOT exclude the chain's final
-/// `else if (type != 304 && noGravity)` tail (`:2335`) — a no-gravity 268
-/// takes both, exactly like the C#.
-pub(crate) fn type_268_arm(
-    d: &mut tr_core::particles::Dust,
-    show_visuals: bool,
-    player_vy: f32,
-    world: &World,
-) -> bool {
-    let px = tr_core::TILE_PX;
-    // `:1789-1796`: the speed-up and the scale drift; without the visuals
-    // the storm's dust shrinks away.
-    d.velocity *= 1.0050251;
-    d.scale += 0.01;
-    if !show_visuals {
-        d.scale -= 0.05;
-    }
-    // `:1800-1809`: the player's fall drags the sand along.
-    if player_vy > 0.0 {
-        if d.fade_in == 0.0 && d.velocity.y < player_vy {
-            d.velocity.y += (player_vy - d.velocity.y) * 0.04;
-        }
-        d.position.y += player_vy * 0.2;
-    }
-    // `:1811-1818`: over solid ground the dust dampens; in the open it
-    // oscillates on the sine and falls. The spawn fadeIn keeps the first tick
-    // damp-free (vanilla reads it before the ramp zeroes).
-    if d.fade_in == 0.0 && solid_at(world, d.position, px) {
-        d.scale *= 0.9;
-        d.velocity *= 0.25;
-    } else {
-        d.velocity.y = (d.position.x * 0.0043982295).sin() * 2.0 + 3.0;
-    }
-    // `:2082-2109`: the generic fadeIn ramp — one +0.03 tick while the spawn
-    // fadeIn stands, then it zeroes and the generic −0.01 tail takes over.
-    if d.fade_in > 0.0 && d.fade_in < 100.0 {
-        d.scale += 0.03;
-        if d.scale > d.fade_in {
-            d.fade_in = 0.0;
-        }
-    } else {
-        d.scale -= 0.01;
-    }
-    false
-}
+// The former `type_268_arm` hand-dispatch RETIRED at the W4-d50 wiring
+// (research/69 §4-6+8): its body WAS the chain's 268 arm
+// (`tr_core::dust_physics::type_chain`, `Dust.cs:1789-1818` + the generic
+// tails) — the shared tick (`minecart::tick`) now dispatches the whole chain,
+// including the `SandStormCount++` (`:1791`) env delta, the `!noLight` push
+// gate (`:1804`) and the `Collision.SolidCollision` probe the stand-in
+// approximated. The `solid_at` box helper retired with it.
 
 /// `Main.DrawDust`'s generic path (`Main.cs:39005-39013`) over the pool's
 /// type-268 slots: the light-tinted base pass, then the `GetColor` overlay
@@ -393,25 +345,6 @@ fn channel_overlay(colour: f32, light: f32) -> f32 {
     (colour + light - 1.0).max(0.0)
 }
 
-/// `Collision.SolidCollision(pos - one*5, 10, 10)` (`Dust.cs:1811`): any
-/// active solid tile in the 10x10 box centred on the dust.
-fn solid_at(world: &World, pos: Vec2, px: f32) -> bool {
-    let x0 = ((pos.x - 5.0) / px).floor() as i32;
-    let x1 = ((pos.x + 4.0) / px).floor() as i32;
-    let y0 = ((pos.y - 5.0) / px).floor() as i32;
-    let y1 = ((pos.y + 4.0) / px).floor() as i32;
-    for tx in x0..=x1 {
-        for ty in y0..=y1 {
-            if world.tile(tx, ty).is_some_and(|t| {
-                t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind)
-            }) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,6 +357,34 @@ mod tests {
     use crate::minecart::live_type;
     use tr_core::particles::DustPool;
     use tr_core::tile::FLAG_ACTIVE;
+
+    /// The shared tick under the tests' default snapshot: no player
+    /// (`DustPlayerSnap::default` — vy 0, the (10,21) fallback centre), the
+    /// wide-open `sand_ctx` for the child drain (W4-d50 wiring shape).
+    fn tick(
+        pool: &mut DustPool,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+        max: i32,
+        camera: Vec2,
+        screen: Vec2,
+        zoom: f32,
+        world: &World,
+        player_vy: f32,
+        show: bool,
+    ) {
+        crate::minecart::tick(
+            pool,
+            rng,
+            max,
+            camera,
+            screen,
+            zoom,
+            world,
+            crate::minecart::DustPlayerSnap { vy: player_vy, ..Default::default() },
+            show,
+            &sand_ctx(),
+        );
+    }
 
     /// A flat sand world: rows 95-99 sand (53) on dirt, no walls — the emit
     /// gate reads the metrics, not the tiles, so the shapes stay simple.
@@ -625,7 +586,7 @@ mod tests {
         });
         let pos0 = pool.slot(0).position;
         let vel0 = pool.slot(0).velocity;
-        crate::minecart::tick(
+        tick(
             &mut pool,
             &mut tr7(),
             6000,
@@ -638,7 +599,14 @@ mod tests {
         );
         let d = pool.slot(0);
         assert_eq!(d.position, pos0 + vel0, "the shared move precedes the arm");
-        assert_eq!(d.velocity.x, 2.0 * 1.0050251, "the 268 speed-up, no tail damp");
+        // The chain's 268 arm speeds up (`:1792`), then the GENERIC air drag
+        // (`:2071-2073`, the `else if (type != 304)` arm — 268 is not exempt)
+        // takes vx ×0.99; the noGravity tail needs the flag (off here).
+        assert_eq!(
+            d.velocity.x,
+            2.0 * 1.0050251 * 0.99,
+            "the 268 speed-up then the generic :2073 drag (W4-d50 chain)"
+        );
         // The sine reads the post-move position (the shared head's `:477`
         // precedes the arm).
         assert_eq!(
@@ -656,7 +624,7 @@ mod tests {
             d.velocity = Vec2::new(1.0, 1.0);
             d.fade_in = 0.0;
         });
-        crate::minecart::tick(
+        tick(
             &mut pool,
             &mut tr7(),
             6000,
@@ -678,12 +646,12 @@ mod tests {
         let w = sand_world();
         let mut on = DustPool::new();
         sand_slot(&mut on, 0, Vec2::new(CAMERA.x, CAMERA.y - 200.0), |_| {});
-        crate::minecart::tick(&mut on, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
+        tick(&mut on, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         assert!(
             (on.slot(0).scale - 0.94).abs() < 1e-3,
             "tick 1 settles at 0.94"
         );
-        crate::minecart::tick(&mut on, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
+        tick(&mut on, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         assert!(
             (on.slot(0).scale - 0.94).abs() < 1e-3,
             "the storm's dust holds the stable scale, got {}",
@@ -693,7 +661,7 @@ mod tests {
         sand_slot(&mut off, 0, Vec2::new(CAMERA.x, CAMERA.y - 200.0), |_| {});
         let mut ticks = 0;
         while live_268(&off) > 0 && ticks < 40 {
-            crate::minecart::tick(&mut off, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, false);
+            tick(&mut off, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, false);
             ticks += 1;
         }
         assert_eq!(live_268(&off), 0, "the orphaned dust fades out");
@@ -710,7 +678,7 @@ mod tests {
         let mut s = Sand::new(7);
         let mut pool = DustPool::new();
         emit(&mut s, &mut pool, &m, &w, 1.0);
-        crate::minecart::tick(&mut pool, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
+        tick(&mut pool, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         for d in &pool.slots()[..DUST_SENTINEL] {
             if !d.active || d.dust_type != 268 {
                 continue;
@@ -738,7 +706,7 @@ mod tests {
                 d.fade_in = 0.0;
             },
         );
-        crate::minecart::tick(
+        tick(
             &mut pool,
             &mut tr7(),
             6000,
@@ -765,8 +733,8 @@ mod tests {
         for _ in 0..30 {
             emit(&mut a, &mut pa, &m, &w, 0.8);
             emit(&mut b, &mut pb, &m, &w, 0.8);
-            crate::minecart::tick(&mut pa, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
-            crate::minecart::tick(&mut pb, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
+            tick(&mut pa, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
+            tick(&mut pb, &mut tr7(), 6000, CAMERA, SCREEN, 1.0, &w, 0.0, true);
         }
         for i in 0..DUST_SENTINEL {
             let (da, db) = (pa.slot(i), pb.slot(i));
