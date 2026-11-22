@@ -147,6 +147,49 @@ pub mod id {
     /// (`NetMessage.cs:1067-1072`, `MessageBuffer.cs:2695-2739`; sent by
     /// `SendNPCHousesAndTravelShop`, `NetMessage.cs:2845`).
     pub const NPC_HOUSE: u8 = 60;
+    /// `56 UniqueTownNPCInfoSyncRequest` (`MessageID.cs:125`) — the town NPC's
+    /// given name + variation (`NetMessage.cs:1046-1053`,
+    /// `MessageBuffer.cs:2612-2630`). W4-g49 (transplanted from W4-d92).
+    pub const UNIQUE_TOWN_NPC_INFO: u8 = 56;
+    /// `61 SpawnBossUseLicenseStartEvent` (`MessageID.cs:135`) — a boss/event
+    /// summon (`NetMessage.cs:1073-1076`, `MessageBuffer.cs:2740-2878`).
+    /// W4-g49 (transplanted from W4-d99).
+    pub const SPAWN_BOSS_EVENT: u8 = 61;
+    /// `63 SyncTilePaintOrCoating` (`MessageID.cs:139`) — a tile paint/coat
+    /// (`NetMessage.cs:1081-1087`, `MessageBuffer.cs:2909-2928`). W4-g49
+    /// (transplanted from W4-d90).
+    pub const TILE_PAINT: u8 = 63;
+    /// `64 SyncWallPaintOrCoating` (`MessageID.cs:141`) — a wall paint/coat
+    /// (`NetMessage.cs:1081-1087`, `MessageBuffer.cs:2929-2948`). W4-g49.
+    pub const WALL_PAINT: u8 = 64;
+    /// `65 TeleportEntity` (`MessageID.cs:143`) — a player/NPC teleport
+    /// (`NetMessage.cs:1088-1109`, `MessageBuffer.cs:2949-3035`). W4-g49
+    /// (transplanted from W4-d99).
+    pub const TELEPORT_ENTITY: u8 = 65;
+    /// `66 Unknown66` (`MessageID.cs:145`) — the Moon Leech Clot's owner heal
+    /// (`NetMessage.cs:1110-1113`, `MessageBuffer.cs:3036-3055`). W4-g49
+    /// (transplanted from W4-d94).
+    pub const HEAL_PLAYER: u8 = 66;
+    /// `68 Unknown68` (`MessageID.cs:149`) — the client's UUID string
+    /// (`NetMessage.cs:1114-1116`, `MessageBuffer.cs:3056-3058`). W4-g49
+    /// (transplanted from W4-d95).
+    pub const CLIENT_UUID: u8 = 68;
+    /// `73 RequestTeleportationByServer` (`MessageID.cs:159`) — a conch/potion/
+    /// shellphone teleport request (`NetMessage.cs:1142-1144`,
+    /// `MessageBuffer.cs:3127-3146`). W4-g49 (transplanted from W4-d99).
+    pub const REQUEST_TELEPORT: u8 = 73;
+    /// `75 AnglerQuestFinished` (`MessageID.cs:163`) — no body either side
+    /// (`MessageBuffer.cs:3154-3163` adds the sender's name on the host).
+    /// W4-g49 (transplanted from W4-d99).
+    pub const ANGLER_QUEST_FINISHED: u8 = 75;
+    /// `77 TemporaryAnimation` (`MessageID.cs:167`) — a temporary tile
+    /// animation (`NetMessage.cs:1154-1159`, `MessageBuffer.cs:3183-3185`).
+    /// W4-g49 (transplanted from W4-d99).
+    pub const TEMPORARY_ANIMATION: u8 = 77;
+    /// `78 InvasionProgressReport` (`MessageID.cs:169`) — the invasion/moon/
+    /// DD2 progress bar (`NetMessage.cs:1160-1165`,
+    /// `MessageBuffer.cs:3186-3191`). W4-g49 (transplanted from W4-d99).
+    pub const INVASION_PROGRESS: u8 = 78;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
@@ -271,6 +314,63 @@ pub mod id {
     /// `MessageBuffer.cs:2307-2324`; the send site is `Player.ManaEffect`,
     /// `Player.cs:4531-4538`).
     pub const MANA_EFFECT: u8 = 43;
+
+    // ---- W4-g49: the F21-TAIL apply ids (codecs transplanted byte-verbatim
+    // from origin/task/W4-f21-net-ids-verify-tail 5274a097, batches 3/4/5/7) ----
+    /// `57 Unknown57` (`MessageID.cs:127`) — the world-evil census push:
+    /// writer `NetMessage.cs:1054-1058` (`WorldGen.tGood/tEvil/tBlood`,
+    /// three `byte`s, `WorldGen.cs:4180-4184`); reader
+    /// `MessageBuffer.cs:2631-2638` is client-only. Sends: the join push
+    /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173` — S2c-only.
+    pub const WORLD_EVIL_BYTES: u8 = 57;
+    /// `58 InstrumentSound` (`MessageID.cs:129`) — writer
+    /// `NetMessage.cs:1059-1062` (`(byte)player + float pitch`); reader
+    /// `MessageBuffer.cs:2639-2681`: the host forces the id to the sender
+    /// and relays, the client plays the held instrument's sound
+    /// (`Player.cs:46544`/`:46573`/`:46587`/`:46602`/`:46622` send sites).
+    pub const INSTRUMENT_SOUND: u8 = 58;
+    /// `76 QuestsCountSync` (`MessageID.cs:165`) — writer
+    /// `NetMessage.cs:1149-1153` (`(byte)player + int anglerQuestsFinished
+    /// + int golferScoreAccumulated`); reader
+    /// `MessageBuffer.cs:3164-3182`: the host forces the id to the sender
+    /// and relays (`:3178`, the only live send site), the client stores a
+    /// peer's counts when `id != myPlayer || ServerSideCharacter`.
+    pub const QUESTS_COUNT_SYNC: u8 = 76;
+    /// `79 PlaceObject` (`MessageID.cs:171`) — writer
+    /// `NetMessage.cs:1166-1174`, reader `MessageBuffer.cs:3192-3215`
+    /// (host spam count + `InWorld(…, 10)` + section-sent gate, then
+    /// `WorldGen.PlaceObject` + `SendObjectPlacement` relay).
+    /// `SendObjectPlacement` (`NetMessage.cs:2573-2588`) sends it BOTH
+    /// ways: client placement asks (`Player.cs:40147`/`:45819`,
+    /// `Projectile.cs:25356`) and the host's placement relay.
+    pub const PLACE_OBJECT: u8 = 79;
+    /// `44 Unknown44` (`MessageID.cs:99-100`, `[Old("Deprecated.")]`) — no
+    /// writer arm, no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`). d96's census row confirms it dead.
+    pub const UNKNOWN_44: u8 = 44;
+    /// `48 LiquidUpdate` (`MessageID.cs:108-109`, `[Old("Deprecated. Use
+    /// NetLiquidModule instead.")]`) — the per-tile liquid send still
+    /// exists: writer `NetMessage.cs:987-995`, reader
+    /// `MessageBuffer.cs:2407-2446` (host `SquareTileFrame` + a `48` re-push
+    /// when the liquid drained to 0, `:2441`); `NetMessage.sendWater`
+    /// (`:2778-2797`) is the send site. The port's liquid lane uses module
+    /// 82; this is the verbatim legacy body.
+    pub const LIQUID_UPDATE: u8 = 48;
+    /// `52 LockAndUnlock` (`MessageID.cs:117`) — writer
+    /// `NetMessage.cs:1014-1018` (`(byte)action + (short)x + (short)y`,
+    /// the player id `number` is NOT written); reader
+    /// `MessageBuffer.cs:2531-2564` runs on BOTH sides (the `netMode == 2`
+    /// relay halves are host-only): kind 1 `Chest.Unlock`, 2
+    /// `WorldGen.UnlockDoor`, 3 `Chest.Lock`, each host-relayed as `52` +
+    /// `SendTileSquare(…, 2)`. All send sites are `netMode == 1`
+    /// (`Player.cs:32813`/`:32832`/`:33197`/`:33218`/`:41660`); the host
+    /// relay (`:2541`/`:2550`/`:2559`) gives the client an S2c read too.
+    pub const LOCK_AND_UNLOCK: u8 = 52;
+    /// `67 Unknown67` (`MessageID.cs:147`) — no writer arm, no body; the
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`). Note the accept
+    /// gate (`:165`) does NOT whitelist it pre-spawn (93 is whitelisted
+    /// there but still ignored by the reader group).
+    pub const UNKNOWN_67: u8 = 67;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -704,9 +804,11 @@ pub struct PlayerNet {
     pub chest: Option<i16>,
     /// `Player.hostile` — fed by `30 TogglePVP` (`MessageBuffer.cs:1859`).
     pub hostile: bool,
-    /// `Player.team` — fed by `12 PlayerSpawn` (`MessageBuffer.cs:914`); the
-    /// PVP chat line's colour keys on it (`:1864`, `Main.teamColor`).
-    pub team: u8,
+    /// `Player.team` — fed by `12 PlayerSpawn` (`MessageBuffer.cs:914`) and
+    /// `45 TeamChange` (`MessageBuffer.cs:2336`); the PVP chat line's colour
+    /// keys on it (`:1864`, `Main.teamColor`). `i32` = the C# field's type
+    /// (the W4-g48 `u8` widened at the g49 union; the wire byte is `u8`).
+    pub team: i32,
     /// `Player.SpawnX/SpawnY` — fed by `12` (`MessageBuffer.cs:909-910`).
     pub spawn_x: i16,
     pub spawn_y: i16,
@@ -727,6 +829,14 @@ pub struct PlayerNet {
     /// (`MessageBuffer.cs:2264`); `-1` = not talking, the C# field default.
     /// `None` is the port's `-1` (the `Default`).
     pub talk_npc: Option<i16>,
+    /// `Main.player[id].statMana`/`statManaMax`, fed by `42 Unknown42`
+    /// (`MessageBuffer.cs:2290-2306`). W4-g49.
+    pub mana: i32,
+    pub max_mana: i32,
+    /// `Main.player[id].anglerQuestsFinished`/`golferScoreAccumulated`, fed
+    /// by `76 QuestsCountSync` (`MessageBuffer.cs:3174-3175`). W4-g49.
+    pub angler_quests_finished: i32,
+    pub golfer_score: i32,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1893,6 +2003,224 @@ pub struct NpcHouse {
     pub status: u8,
 }
 
+/// `msg 56 UniqueTownNPCInfoSyncRequest`'s body (`NetMessage.cs:1046-1053`):
+/// `(short)` npc slot, then — ONLY in the host's answer (`netMode == 2`) —
+/// `GivenName` (`BinaryWriter.Write(string)`: 7-bit length + UTF-8) and
+/// `(int)` townNpcVariationIndex. The client's request is the bare slot
+/// (`NPC.cs:90564`); the host's read arm answers it back to the asker
+/// (`MessageBuffer.cs:2626`), the client's read arm stores the pair behind
+/// the `0..Main.maxNPCs` slot gate (`:2615-2623`). W4-g49 (from W4-d92).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UniqueTownNpcInfo {
+    pub npc: i16,
+    /// Present only in the host's answer (`NetMessage.cs:1048` netMode gate).
+    pub info: Option<(String, i32)>,
+}
+
+/// `msg 61 SpawnBossInvader`'s body (`NetMessage.cs:1073-1076`): two shorts —
+/// the player to spawn on and the event selector. Positive selectors are
+/// `NPCID` boss types gated by `NPCID.Sets.MPAllowedEnemies`
+/// (`MessageBuffer.cs:2748-2753`); negatives are the event ladder. Client→
+/// server only — every send site is a `netMode == 1` arm; the host answers
+/// with `7`/`78` pushes. W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpawnBossEvent {
+    pub player: i16,
+    pub event: i16,
+}
+
+/// `msg 63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating`'s shared body
+/// (`NetMessage.cs:1081-1087`): the tile, the paint id byte and the coat flag
+/// byte — `coat == 0` paints (`WorldGen.paintTile`/`paintWall`), anything
+/// else coats (`paintCoatTile`/`paintCoatWall`,
+/// `MessageBuffer.cs:2909-2948`), then the host relays. W4-g49 (from W4-d90).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TilePaint {
+    pub x: i16,
+    pub y: i16,
+    pub paint: u8,
+    /// `b12`/`b10`: 0 = paint, non-zero = illuminant coat.
+    pub coat: u8,
+}
+
+/// `msg 65 TeleportEntity`'s body (`NetMessage.cs:1088-1109`): a BitsByte
+/// (bit 0/1 = the kind's low two bits, bit 2 = "take the position from the
+/// player", bit 3 = the extraInfo int follows), `(short)` entity slot, the
+/// destination floats, `(byte)` teleport style, then the optional
+/// `(int)` extraInfo (the portal color for style 4). Kinds: 0 player
+/// teleport, 1 NPC teleport (host, style != 4), 2 player-to-player, 3 the
+/// client's ack. The host forces the entity to the sender
+/// (`MessageBuffer.cs:2953-2956`), overrides the position from the live player
+/// when bit 2 is set (`:2979-2982`). Both directions. The C# writes bit 3 only
+/// when `number7 != 0`: senders pass `None` for 0. W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TeleportEntity {
+    pub entity: i16,
+    pub x: f32,
+    pub y: f32,
+    pub style: u8,
+    /// 0 player, 1 NPC, 2 player-to-player, 3 ack.
+    pub kind: u8,
+    pub get_pos_from_player: bool,
+    pub extra_info: Option<i32>,
+}
+
+impl TeleportEntity {
+    fn flags(&self) -> BitsByte {
+        let mut b = BitsByte::new();
+        b.set(0, self.kind & 1 == 1);
+        b.set(1, self.kind & 2 == 2);
+        b.set(2, self.get_pos_from_player);
+        b.set(3, self.extra_info.is_some());
+        b
+    }
+}
+
+/// `msg 66 Unknown66`'s body (`NetMessage.cs:1110-1113`): the player id then
+/// the heal amount as a `short`. Sent by the Moon Leech Clot's contact arm
+/// (`Projectile.cs:28513-28524`); the host applies the same clamp and relays
+/// (`MessageBuffer.cs:3036-3055`, the `num71 > 0` gate lives in the apply arm,
+/// not the codec). W4-g49 (from W4-d94).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HealPlayer {
+    pub player_id: u8,
+    pub heal: i16,
+}
+
+/// `msg 68 Unknown68`'s body (`NetMessage.cs:1114-1116`): one
+/// `BinaryWriter.Write(string)` — `Main.clientUUID`, the client's
+/// `Guid.NewGuid().ToString()` (`Main.cs:10618`). Sent in the `3 PlayerId`
+/// join push right after `4 SyncPlayer` (`MessageBuffer.cs:248-249`); the
+/// host's arm reads the string and drops it (`:3056-3058`). The id is
+/// gate-whitelisted pre-spawn (`MessageBuffer.cs:165`). W4-g49 (from W4-d95).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClientUuid {
+    pub uuid: String,
+}
+
+/// `msg 73 RequestTeleport`'s body (`NetMessage.cs:1142-1144`): one byte —
+/// the teleport item kind: 0 teleportation potion, 1 magic conch
+/// (`Player.cs:43029`), 2 demon conch (`:43062`), 3 shellphone home
+/// (`:43103`), 4 no-space fallback (`:6069`). The host runs the matching
+/// `Player` method on the sender (`MessageBuffer.cs:3127-3146`), which
+/// answers with a `65`. Client→server only. W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RequestTeleport {
+    pub kind: u8,
+}
+
+/// `msg 77 SyncTilePicking`'s body (`NetMessage.cs:1154-1159`):
+/// `(short)` animationType, `(ushort)` tileType, `(short)` x, `(short)` y —
+/// `Animation.NewTemporaryAnimation`'s four args verbatim
+/// (`MessageBuffer.cs:3183-3185`). Sent only by the host's
+/// `SendTemporaryAnimation` (`NetMessage.cs:2590-2596`, `netMode == 2`) to
+/// one client; server→client only. W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TemporaryAnimation {
+    pub animation_type: i16,
+    pub tile_type: u16,
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 78 ReportInvasionProgress`'s body (`NetMessage.cs:1160-1165`):
+/// `(int)` progress, `(int)` progressMax, `(sbyte)` icon, `(sbyte)` wave —
+/// `Main.ReportInvasionProgress`'s four args verbatim
+/// (`MessageBuffer.cs:3186-3191`, client-only read). Server→client only.
+/// W4-g49 (from W4-d99).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvasionProgress {
+    pub progress: i32,
+    pub progress_max: i32,
+    pub icon: i8,
+    pub wave: i8,
+}
+
+// ---- W4-g49 F21-TAIL: the transplanted bodies (byte-verbatim from
+// origin/task/W4-f21-net-ids-verify-tail 5274a097) ----
+
+/// `msg 48 LiquidUpdate`'s body (`NetMessage.cs:987-995`): the tile as two
+/// `(short)`s, `tile.liquid` byte and `tile.liquidType()` byte. The reader
+/// (`MessageBuffer.cs:2407-2446`) applies both, runs the host spam check
+/// (`:2413-2427`, the ±10-tile window around the sender's centre) and
+/// re-frames; a drained tile (`b2 == 0`) is re-pushed as `48` (`:2441`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LiquidUpdate {
+    pub x: i16,
+    pub y: i16,
+    pub liquid: u8,
+    /// `Tile.liquidType()` (`Tile.cs:235`): 0 water, 1 lava, 2 honey,
+    /// 3 shimmer.
+    pub liquid_type: u8,
+}
+
+/// `msg 52 LockAndUnlock`'s body (`NetMessage.cs:1014-1018`): the action
+/// byte (`number2`), the tile as two `(short)`s (`number3`/`number4`). The
+/// reader (`MessageBuffer.cs:2531-2564`) maps 1 chest-unlock, 2 door-unlock,
+/// 3 chest-lock; any other kind is a silent no-op. The host relays with
+/// `number = 0` (`:2541`/`:2550`/`:2559`) — the player id never rides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LockAndUnlock {
+    /// 1 = `Chest.Unlock`, 2 = `WorldGen.UnlockDoor`, 3 = `Chest.Lock`.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+}
+
+/// `msg 57 Unknown57`'s body (`NetMessage.cs:1054-1058`): the three
+/// world-evil bytes `WorldGen.tGood`, `tEvil`, `tBlood` in that order
+/// (writer order good→evil→blood; the reader assigns the same order,
+/// `MessageBuffer.cs:2634-2636`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorldEvilBytes {
+    pub good: u8,
+    pub evil: u8,
+    pub blood: u8,
+}
+
+/// `msg 58 InstrumentSound`'s body (`NetMessage.cs:1059-1062`): the player
+/// id byte then the pitch float (`number2`, the raw `writer.Write(number2)`
+/// — no cast). The reader (`MessageBuffer.cs:2639-2681`) forces the id to
+/// the sender on the host and relays; the client's switch plays the guitar
+/// chords (4057/4372/4715), drums (4673) or the item sound (507 → Item35,
+/// 1305 → Item47, else Item26) with `Main.musicPitch = pitch`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InstrumentSound {
+    pub player_id: u8,
+    pub pitch: f32,
+}
+
+/// `msg 76 QuestsCountSync`'s body (`NetMessage.cs:1149-1153`): the player
+/// id byte, `anglerQuestsFinished` int, `golferScoreAccumulated` int. The
+/// reader (`MessageBuffer.cs:3164-3182`) skips its own echo unless
+/// `ServerSideCharacter`, forces the id to the sender on the host and
+/// relays to the others.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QuestsCountSync {
+    pub player_id: u8,
+    pub angler_quests_finished: i32,
+    pub golfer_score: i32,
+}
+
+/// `msg 79 PlaceObject`'s body (`NetMessage.cs:1166-1174`): the tile as two
+/// `(short)`s, the object `(short)` type, the `(short)` style, the
+/// `(byte)` alternative, the `(sbyte)` random and `number7 == 1` as a bool
+/// (the reader maps it back to `direction = 1 : -1`,
+/// `MessageBuffer.cs:3200`). The host gates on `InWorld(x, y, 10)` + the
+/// section having been sent (`:3204`) before `WorldGen.PlaceObject`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaceObject {
+    pub x: i16,
+    pub y: i16,
+    pub kind: i16,
+    pub style: i16,
+    pub alternative: u8,
+    pub random: i8,
+    /// The writer's `number7 == 1` bool; the reader's `direction` is
+    /// `1` when true, `-1` when false.
+    pub direction: bool,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -2237,6 +2565,34 @@ pub enum C2s {
     /// `53 AddNPCBuff` - a client applied a buff to an NPC
     /// (`NPC.AddBuff`'s `netMode == 1` send, `NPC.cs:89932-89935`).
     AddNpcBuff(AddNpcBuff),
+    /// `56 UniqueTownNPCInfoSyncRequest` - a client asks for a town NPC's
+    /// given name + variation (`NPC.cs:90564`; the host answers `:2626`).
+    /// W4-g49.
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `61 SpawnBossInvader` - a client used a boss/event summon item
+    /// (`Player.ItemCheck_UseBossSpawners`/`UseEventItems`). W4-g49.
+    SpawnBossEvent(SpawnBossEvent),
+    /// `63 SyncTilePaintOrCoating` - a client painted/coated a tile
+    /// (`WorldGen.paintTile`/`paintCoatTile`). W4-g49.
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` - a client painted/coated a wall
+    /// (`WorldGen.paintWall`/`paintCoatWall`). W4-g49.
+    WallPaint(TilePaint),
+    /// `65 TeleportEntity` - a client teleported (kind 0/2) or acks the
+    /// host's teleport (kind 3). W4-g49.
+    TeleportEntity(TeleportEntity),
+    /// `66 Unknown66` - this client's Moon Leech Clot healed its owner
+    /// (`Projectile.cs:28513-28524`). W4-g49.
+    HealPlayer(HealPlayer),
+    /// `68 Unknown68` — the client's UUID string, pushed right after
+    /// `4 PlayerInfo` in the `3 PlayerId` join arm. W4-g49.
+    ClientUuid(ClientUuid),
+    /// `73 RequestTeleport` - a client used a conch/potion/shellphone
+    /// (`Player.cs:43029`/`:43062`/`:43103`/`:6069`). W4-g49.
+    RequestTeleport(RequestTeleport),
+    /// `75 AnglerQuestFinished` - a client finished today's angler quest
+    /// (`Main.cs:40254`). No body. W4-g49.
+    AnglerQuestFinished,
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
@@ -2301,6 +2657,30 @@ pub enum C2s {
     /// `43 ManaEffect` - a client's mana effect (`Player.ManaEffect`'s
     /// broadcast, `Player.cs:4531-4538`; `MessageBuffer.cs:2307-2324`).
     ManaEffect(ManaEffect),
+    /// `58 InstrumentSound` — a client played its held instrument
+    /// (`Player.cs:46544` etc.; host id-force + relay
+    /// `MessageBuffer.cs:2642-2650`). W4-g49 (from W4-f21).
+    InstrumentSound(InstrumentSound),
+    /// `76 QuestsCountSync` — a client's quest/golf counts (the reader
+    /// accepts them from a peer or `ServerSideCharacter`,
+    /// `MessageBuffer.cs:3164-3182`).
+    QuestsCountSync(QuestsCountSync),
+    /// `79 PlaceObject` — a client placed a multi-tile object
+    /// (`Player.cs:40147`/`:45819`, `Projectile.cs:25356` via
+    /// `SendObjectPlacement`; host gate + relay
+    /// `MessageBuffer.cs:3192-3215`).
+    PlaceObject(PlaceObject),
+    /// `48 LiquidUpdate` — a client's single-tile liquid change
+    /// (`NetMessage.sendWater`'s `netMode == 1` arm, `NetMessage.cs:2782`;
+    /// reader `MessageBuffer.cs:2407-2446`). Deprecated in favour of module
+    /// 82's liquid stream, but the arm is live.
+    LiquidUpdate(LiquidUpdate),
+    /// `52 LockAndUnlock` — a client unlocked/locked a chest or door
+    /// (`Player.cs:32813`/`:33197`/`:41660`; host apply + relay
+    /// `MessageBuffer.cs:2531-2564`). The send sites are all `netMode == 1`;
+    /// the host relay (`:2541`/`:2550`/`:2559`) carries it back to the
+    /// clients as S2c (the reader applies on both sides).
+    LockAndUnlock(LockAndUnlock),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2387,6 +2767,23 @@ pub enum S2c {
     PlayerBuffs(PlayerBuffs),
     /// `54 NPCBuffs` - an NPC's buff pairs (`MessageBuffer.cs:2573`).
     NpcBuffs(NpcBuffs),
+    /// `56 UniqueTownNPCInfoSyncRequest` - the host's answer with the town
+    /// NPC's given name + variation (`MessageBuffer.cs:2617-2623`). W4-g49.
+    UniqueTownNpcInfo(UniqueTownNpcInfo),
+    /// `63 SyncTilePaintOrCoating` — the host's paint relay. W4-g49.
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` — the host's paint relay. W4-g49.
+    WallPaint(TilePaint),
+    /// `65 TeleportEntity` — the host's player/NPC teleport broadcast. W4-g49.
+    TeleportEntity(TeleportEntity),
+    /// `66 Unknown66` - a peer's Moon Leech heal, relayed by the host. W4-g49.
+    HealPlayer(HealPlayer),
+    /// `77 SyncTilePicking` - a temporary tile animation for one client
+    /// (`Animation.NewTemporaryAnimation`). W4-g49.
+    TemporaryAnimation(TemporaryAnimation),
+    /// `78 ReportInvasionProgress` - the invasion/moon/DD2 progress bar
+    /// (`Main.ReportInvasionProgress`). W4-g49.
+    InvasionProgress(InvasionProgress),
     /// `59 HitSwitch` - the switch a peer tripped, relayed
     /// (`MessageBuffer.cs:2691`).
     HitSwitch(HitSwitch),
@@ -2460,6 +2857,34 @@ pub enum S2c {
     /// `43 ManaEffect` - a peer's mana effect, relayed by the host
     /// (`MessageBuffer.cs:2319-2322`).
     ManaEffect(ManaEffect),
+    /// `57 Unknown57` — the world-evil bytes, join push
+    /// (`MessageBuffer.cs:867`) + `WorldGen.cs:71173`; client-only reader
+    /// (`MessageBuffer.cs:2631-2638`). S2c-only. W4-g49 (from W4-f21).
+    WorldEvilBytes(WorldEvilBytes),
+    /// `58 InstrumentSound` — a peer's instrument, host relay
+    /// (`MessageBuffer.cs:2649`). W4-g49 (from W4-f21).
+    InstrumentSound(InstrumentSound),
+    /// `76 QuestsCountSync` — a peer's quest/golf counts, host relay
+    /// (`MessageBuffer.cs:3178`).
+    QuestsCountSync(QuestsCountSync),
+    /// `79 PlaceObject` — the host's placement relay
+    /// (`SendObjectPlacement`'s `netMode == 2` half,
+    /// `NetMessage.cs:2577-2581` + `MessageBuffer.cs:3212`).
+    PlaceObject(PlaceObject),
+    /// `44 Unknown44` — deprecated (`MessageID.cs:99-100`), no body; the
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`).
+    Unknown44,
+    /// `67 Unknown67` — no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`).
+    Unknown67,
+    /// `48 LiquidUpdate` — one tile's liquid, host fan-out
+    /// (`NetMessage.sendWater`'s per-section loop, `NetMessage.cs:2785-2796`;
+    /// the drained-tile re-push `MessageBuffer.cs:2441`).
+    LiquidUpdate(LiquidUpdate),
+    /// `52 LockAndUnlock` — the host's unlock/lock relay
+    /// (`MessageBuffer.cs:2541`/`:2550`/`:2559`); the reader applies the
+    /// same `Chest.Unlock`/`WorldGen.UnlockDoor`/`Chest.Lock` on the client.
+    LockAndUnlock(LockAndUnlock),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2577,6 +3002,15 @@ impl C2s {
             Self::SignData(_) => id::SIGN_DATA,
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::SpawnBossEvent(_) => id::SPAWN_BOSS_EVENT,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
+            Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::ClientUuid(_) => id::CLIENT_UUID,
+            Self::RequestTeleport(_) => id::REQUEST_TELEPORT,
+            Self::AnglerQuestFinished => id::ANGLER_QUEST_FINISHED,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
@@ -2597,6 +3031,11 @@ impl C2s {
             Self::PlayerZone(_) => id::PLAYER_ZONE,
             Self::ItemAnim(_) => id::ITEM_ANIM,
             Self::ManaEffect(_) => id::MANA_EFFECT,
+            Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
+            Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
+            Self::PlaceObject(_) => id::PLACE_OBJECT,
+            Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
+            Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2664,6 +3103,44 @@ impl C2s {
             }
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
+            // `NetMessage.cs:1046-1053`: (short)npc; the name + variation
+            // ride only the host's answer (the client sends the bare slot).
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1073-1076`: (short)player + (short)event.
+            Self::SpawnBossEvent(e) => w.i16(e.player).i16(e.event),
+            // `NetMessage.cs:1081-1087`: short x + short y + byte paint +
+            // byte coat.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
+            }
+            // `NetMessage.cs:1088-1103`: BitsByte + (short)entity + the
+            // destination floats + (byte)style + the gated (int)extraInfo.
+            Self::TeleportEntity(t) => {
+                let w = w
+                    .bitsbyte(t.flags())
+                    .i16(t.entity)
+                    .f32(t.x)
+                    .f32(t.y)
+                    .u8(t.style);
+                match t.extra_info {
+                    Some(v) => w.i32(v),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1110-1113`: (byte)player + (short)heal.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1114-1116`: the UUID string.
+            Self::ClientUuid(u) => w.str(&u.uuid),
+            // `NetMessage.cs:1142-1144`: (byte)kind.
+            Self::RequestTeleport(q) => w.u8(q.kind),
+            // No writer arm — bodyless (`MessageBuffer.cs:3154-3163`).
+            Self::AnglerQuestFinished => w,
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             // (35/36 encode at the d96 arms below — keep-one at the g48 merge.)
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
@@ -2716,6 +3193,28 @@ impl C2s {
             Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
             // `NetMessage.cs:966-969`: (byte)number + (short)number2.
             Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
+            // `NetMessage.cs:1059-1062`: (byte)player + raw float pitch.
+            Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
+            // `NetMessage.cs:1149-1153`: (byte)player + two raw ints.
+            Self::QuestsCountSync(q) => w
+                .u8(q.player_id)
+                .i32(q.angler_quests_finished)
+                .i32(q.golfer_score),
+            // `NetMessage.cs:1166-1174`: two (short)s + (short)type +
+            // (short)style + (byte)alt + (sbyte)random + (number7 == 1).
+            Self::PlaceObject(p) => w
+                .i16(p.x)
+                .i16(p.y)
+                .i16(p.kind)
+                .i16(p.style)
+                .u8(p.alternative)
+                .i8(p.random)
+                .bool(p.direction),
+            // `NetMessage.cs:987-995`: two (short)s + liquid + liquidType().
+            Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
+            // `NetMessage.cs:1014-1018`: (byte)action + two (short)s; the
+            // player id is NOT written.
+            Self::LockAndUnlock(l) => w.u8(l.action).i16(l.x).i16(l.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
             Self::PlayerSpawn(s) => w
@@ -2840,6 +3339,46 @@ impl C2s {
                 buff_type: r.u16()?,
                 time: r.i16()?,
             }),
+            // `MessageBuffer.cs:2614`: the host reads ONLY the (short) slot —
+            // the request is bodyless past it (`NPC.cs:90564`).
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: None,
+            }),
+            // `MessageBuffer.cs:2742-2743`: (short)player + (short)event.
+            id::SPAWN_BOSS_EVENT => Self::SpawnBossEvent(SpawnBossEvent {
+                player: r.i16()?,
+                event: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2911-2914` / `:2931-2934`: short, short,
+            // byte, byte.
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
+            // `MessageBuffer.cs:2951-2978`: BitsByte + entity + Vector2 +
+            // style + gated extraInfo.
+            id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            // `MessageBuffer.cs:3038-3039`: (byte)player + (short)heal.
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3057`: the UUID string.
+            id::CLIENT_UUID => Self::ClientUuid(ClientUuid { uuid: r.str()? }),
+            // `MessageBuffer.cs:3128`: (byte)kind.
+            id::REQUEST_TELEPORT => Self::RequestTeleport(RequestTeleport { kind: r.u8()? }),
+            // `MessageBuffer.cs:3154-3163`: no body.
+            id::ANGLER_QUEST_FINISHED => Self::AnglerQuestFinished,
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
@@ -2950,6 +3489,42 @@ impl C2s {
             id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
                 player_id: r.u8()?,
                 amount: r.i16()?,
+            // `MessageBuffer.cs:2641-2646`: ReadByte + ReadSingle (the id
+            // force to the sender is the apply arm's, not the codec's).
+            id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
+                player_id: r.u8()?,
+                pitch: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3166-3175`: ReadByte + two ReadInt32.
+            id::QUESTS_COUNT_SYNC => Self::QuestsCountSync(QuestsCountSync {
+                player_id: r.u8()?,
+                angler_quests_finished: r.i32()?,
+                golfer_score: r.i32()?,
+            }),
+            // `MessageBuffer.cs:3194-3200`: two ReadInt16 + ReadInt16 type +
+            // ReadInt16 style + ReadByte alt + ReadSByte random + ReadBoolean
+            // (mapped to direction 1/-1 by the apply arm).
+            id::PLACE_OBJECT => Self::PlaceObject(PlaceObject {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                style: r.i16()?,
+                alternative: r.u8()?,
+                random: r.i8()?,
+                direction: r.bool()?,
+            }),
+            // `MessageBuffer.cs:2409-2412`: two ReadInt16 + two ReadByte.
+            id::LIQUID_UPDATE => Self::LiquidUpdate(LiquidUpdate {
+                x: r.i16()?,
+                y: r.i16()?,
+                liquid: r.u8()?,
+                liquid_type: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2533-2535`: ReadByte + two ReadInt16.
+            id::LOCK_AND_UNLOCK => Self::LockAndUnlock(LockAndUnlock {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -3050,6 +3625,35 @@ fn read_terminated_u16(r: &mut NetReader) -> Vec<u16> {
     out
 }
 
+/// `65 TeleportEntity` (`MessageBuffer.cs:2949-2978`): the BitsByte first,
+/// `(short)` entity, the destination Vector2, `(byte)` style, then the
+/// `(int)` extraInfo only when bit 3 is set; kind is reassembled from bits
+/// 0/1 (`num82++` / `num82 += 2`). W4-g49 (from W4-d99).
+fn read_teleport_entity(r: &mut NetReader) -> Option<TeleportEntity> {
+    let flags = r.bitsbyte()?;
+    let entity = r.i16()?;
+    let x = r.f32()?;
+    let y = r.f32()?;
+    let style = r.u8()?;
+    let mut kind = 0u8;
+    if flags.get(0) {
+        kind += 1;
+    }
+    if flags.get(1) {
+        kind += 2;
+    }
+    let extra_info = if flags.get(3) { Some(r.i32()?) } else { None };
+    Some(TeleportEntity {
+        entity,
+        x,
+        y,
+        style,
+        kind,
+        get_pos_from_player: flags.get(2),
+        extra_info,
+    })
+}
+
 /// `47 OpenSignResponse` (`MessageBuffer.cs:2376-2383`): index, tile, text,
 /// then the two flag bytes.
 fn read_sign_data(r: &mut NetReader) -> Option<SignData> {
@@ -3135,6 +3739,13 @@ impl S2c {
             Self::SignData(_) => id::SIGN_DATA,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::NpcBuffs(_) => id::NPC_BUFFS,
+            Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
+            Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::TemporaryAnimation(_) => id::TEMPORARY_ANIMATION,
+            Self::InvasionProgress(_) => id::INVASION_PROGRESS,
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
             Self::ChestSize(_) => id::CHEST_SIZE,
@@ -3164,6 +3775,14 @@ impl S2c {
             Self::PlayerZone(_) => id::PLAYER_ZONE,
             Self::ItemAnim(_) => id::ITEM_ANIM,
             Self::ManaEffect(_) => id::MANA_EFFECT,
+            Self::WorldEvilBytes(_) => id::WORLD_EVIL_BYTES,
+            Self::InstrumentSound(_) => id::INSTRUMENT_SOUND,
+            Self::QuestsCountSync(_) => id::QUESTS_COUNT_SYNC,
+            Self::PlaceObject(_) => id::PLACE_OBJECT,
+            Self::Unknown44 => id::UNKNOWN_44,
+            Self::Unknown67 => id::UNKNOWN_67,
+            Self::LiquidUpdate(_) => id::LIQUID_UPDATE,
+            Self::LockAndUnlock(_) => id::LOCK_AND_UNLOCK,
         }
     }
 
@@ -3292,6 +3911,50 @@ impl S2c {
                 }
                 w.u16(0)
             }
+            // `NetMessage.cs:1046-1053`: (short)npc, then the netMode == 2
+            // answer's string + (int) variation.
+            Self::UniqueTownNpcInfo(t) => {
+                let w = w.i16(t.npc);
+                match &t.info {
+                    Some((name, variation)) => w.str(name).i32(*variation),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1081-1087`: short x + short y + byte paint +
+            // byte coat.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
+            }
+            // `NetMessage.cs:1088-1103`: BitsByte + (short)entity + the
+            // destination floats + (byte)style + the gated (int)extraInfo.
+            Self::TeleportEntity(t) => {
+                let w = w
+                    .bitsbyte(t.flags())
+                    .i16(t.entity)
+                    .f32(t.x)
+                    .f32(t.y)
+                    .u8(t.style);
+                match t.extra_info {
+                    Some(v) => w.i32(v),
+                    None => w,
+                }
+            }
+            // `NetMessage.cs:1110-1113`: (byte)player + (short)heal.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1154-1159`: (short)animationType +
+            // (ushort)tileType + (short)x + (short)y.
+            Self::TemporaryAnimation(a) => w
+                .i16(a.animation_type)
+                .u16(a.tile_type)
+                .i16(a.x)
+                .i16(a.y),
+            // `NetMessage.cs:1160-1165`: (int)progress + (int)max +
+            // (sbyte)icon + (sbyte)wave.
+            Self::InvasionProgress(p) => w
+                .i32(p.progress)
+                .i32(p.progress_max)
+                .i8(p.icon)
+                .i8(p.wave),
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
             Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
@@ -3366,6 +4029,32 @@ impl S2c {
             Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
             // `NetMessage.cs:966-969`: (byte)number + (short)number2.
             Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
+            // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three bytes.
+            Self::WorldEvilBytes(e) => w.u8(e.good).u8(e.evil).u8(e.blood),
+            // `NetMessage.cs:1059-1062` — the shared body.
+            Self::InstrumentSound(s) => w.u8(s.player_id).f32(s.pitch),
+            // `NetMessage.cs:1149-1153` — the shared quest/golf body.
+            Self::QuestsCountSync(q) => w
+                .u8(q.player_id)
+                .i32(q.angler_quests_finished)
+                .i32(q.golfer_score),
+            // `NetMessage.cs:1166-1174` — the shared placement body.
+            Self::PlaceObject(p) => w
+                .i16(p.x)
+                .i16(p.y)
+                .i16(p.kind)
+                .i16(p.style)
+                .u8(p.alternative)
+                .i8(p.random)
+                .bool(p.direction),
+            // `44/67` have no writer arm; bare frames mirror the reader's
+            // ignore group (`MessageBuffer.cs:4483-4490`).
+            Self::Unknown44 | Self::Unknown67 => w,
+            // `NetMessage.cs:987-995` — the same liquid body as C2s.
+            Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
+            // `NetMessage.cs:1014-1018` — the same lock body as C2s (the
+            // host relay re-sends `number = 0`, never on the wire).
+            Self::LockAndUnlock(l) => w.u8(l.action).i16(l.x).i16(l.y),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3525,6 +4214,49 @@ impl S2c {
                 }
                 Self::NpcBuffs(NpcBuffs { npc, buffs })
             }
+            // `MessageBuffer.cs:2614-2622`: (short)npc, then the host
+            // answer's string + (int) variation.
+            id::UNIQUE_TOWN_NPC_INFO => Self::UniqueTownNpcInfo(UniqueTownNpcInfo {
+                npc: r.i16()?,
+                info: Some((r.str()?, r.i32()?)),
+            }),
+            // `MessageBuffer.cs:2911-2914` / `:2931-2934`: short, short,
+            // byte, byte.
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
+            // `MessageBuffer.cs:2951-2978`: BitsByte + entity + Vector2 +
+            // style + gated extraInfo.
+            id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            // `MessageBuffer.cs:3038-3039`: (byte)player + (short)heal.
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3184`: short, ushort, short, short.
+            id::TEMPORARY_ANIMATION => Self::TemporaryAnimation(TemporaryAnimation {
+                animation_type: r.i16()?,
+                tile_type: r.u16()?,
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3189`: int, int, sbyte, sbyte.
+            id::INVASION_PROGRESS => Self::InvasionProgress(InvasionProgress {
+                progress: r.i32()?,
+                progress_max: r.i32()?,
+                icon: r.i8()?,
+                wave: r.i8()?,
+            }),
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
@@ -3694,6 +4426,48 @@ impl S2c {
             id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
                 player_id: r.u8()?,
                 amount: r.i16()?,
+            // `MessageBuffer.cs:2634-2636`: three ReadByte, good→evil→blood.
+            id::WORLD_EVIL_BYTES => Self::WorldEvilBytes(WorldEvilBytes {
+                good: r.u8()?,
+                evil: r.u8()?,
+                blood: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2641-2646` — the shared read.
+            id::INSTRUMENT_SOUND => Self::InstrumentSound(InstrumentSound {
+                player_id: r.u8()?,
+                pitch: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3166-3175` — the shared quest/golf read.
+            id::QUESTS_COUNT_SYNC => Self::QuestsCountSync(QuestsCountSync {
+                player_id: r.u8()?,
+                angler_quests_finished: r.i32()?,
+                golfer_score: r.i32()?,
+            }),
+            // `MessageBuffer.cs:3194-3200` — the shared placement read.
+            id::PLACE_OBJECT => Self::PlaceObject(PlaceObject {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                style: r.i16()?,
+                alternative: r.u8()?,
+                random: r.i8()?,
+                direction: r.bool()?,
+            }),
+            // `MessageBuffer.cs:4483-4490` — the ignore group: bare frames.
+            id::UNKNOWN_44 => Self::Unknown44,
+            id::UNKNOWN_67 => Self::Unknown67,
+            // `MessageBuffer.cs:2409-2412` — the shared liquid read.
+            id::LIQUID_UPDATE => Self::LiquidUpdate(LiquidUpdate {
+                x: r.i16()?,
+                y: r.i16()?,
+                liquid: r.u8()?,
+                liquid_type: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2533-2535` — the shared lock read.
+            id::LOCK_AND_UNLOCK => Self::LockAndUnlock(LockAndUnlock {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
             }),
             _ => return None,
         })
@@ -6085,6 +6859,611 @@ mod tests {
             S2c::NpcHouse(d) => assert_eq!(d, h),
             other => panic!("expected 60, got {:?}", other.msg_id()),
         }
+    }
+
+    /// W4-g49 `56 UniqueTownNPCInfoSyncRequest` (`NetMessage.cs:1046-1053`):
+    /// (short)npc; the netMode == 2 answer appends GivenName (7-bit length +
+    /// UTF-8) + (int)variation. The client request is the bare slot
+    /// (`NPC.cs:90564`). Byte-verbatim from W4-d92.
+    #[test]
+    fn w4_g49_unique_town_npc_info_round_trips() {
+        let req = UniqueTownNpcInfo {
+            npc: 17,
+            info: None,
+        };
+        let c = C2s::UniqueTownNpcInfo(req.clone()).encode();
+        assert_eq!(c, vec![5, 0, 56, 17, 0]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::UniqueTownNpcInfo(d) => assert_eq!(d, req),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // The host answer (`MessageBuffer.cs:2619-2622` reads string + int).
+        let ans = UniqueTownNpcInfo {
+            npc: 17,
+            info: Some(("Andrew".into(), 1)),
+        };
+        let f = S2c::UniqueTownNpcInfo(ans.clone()).encode();
+        assert_eq!(f[2], 56);
+        let mut body = Vec::new();
+        body.extend_from_slice(&17i16.to_le_bytes());
+        body.push(6); // Write7BitEncodedInt(6) — one byte
+        body.extend_from_slice(b"Andrew");
+        body.extend_from_slice(&1i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::UniqueTownNpcInfo(d) => assert_eq!(d, ans),
+            other => panic!("expected 56, got {:?}", other.msg_id()),
+        }
+        // Truncated before the variation int must not decode.
+        assert!(S2c::decode(56, &mut NetReader::new(&body[..12])).is_none());
+        // The bare-slot request must not decode on the S2c side (the client
+        // arm always reads the string + int, `MessageBuffer.cs:2619-2621`).
+        assert!(S2c::decode(56, &mut NetReader::new(&[17, 0])).is_none());
+    }
+
+    /// W4-g49 `61 SpawnBossInvader` (`NetMessage.cs:1073-1076`): (short)player
+    /// + (short)selector. Positive = an NPCID boss; negative = the event
+    /// ladder — pin -19 (slime rain) so the sign bit survives the i16 round
+    /// trip. Client→server only. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_spawn_boss_event_round_trips() {
+        for (player, event) in [(1i16, 4i16), (0, -19), (2, -16)] {
+            let e = SpawnBossEvent { player, event };
+            let f = C2s::SpawnBossEvent(e).encode();
+            assert_eq!(f[2], 61);
+            let mut body = Vec::new();
+            body.extend_from_slice(&player.to_le_bytes());
+            body.extend_from_slice(&event.to_le_bytes());
+            assert_eq!(&f[3..], &body);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::SpawnBossEvent(d) => assert_eq!(d, e),
+                other => panic!("expected 61, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// W4-g49 `63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating`
+    /// (`NetMessage.cs:1081-1087`): 63 and 64 share the case — (short)x +
+    /// (short)y + (byte)paint + (byte)coat. Byte-verbatim from W4-d90.
+    #[test]
+    fn w4_g49_tile_and_wall_paint_round_trip() {
+        let p = TilePaint {
+            x: 4210,
+            y: 1120,
+            paint: 13,
+            coat: 1,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&4210i16.to_le_bytes());
+        body.extend_from_slice(&1120i16.to_le_bytes());
+        body.push(13);
+        body.push(1);
+        for (mk, sid, rid) in [
+            (C2s::TilePaint as fn(TilePaint) -> C2s, 63u8, 63u8),
+            (C2s::WallPaint as fn(TilePaint) -> C2s, 64, 64),
+        ] {
+            let c = mk(p).encode();
+            assert_eq!(c[2], sid);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+                C2s::TilePaint(d) if rid == 63 => assert_eq!(d, p),
+                C2s::WallPaint(d) if rid == 64 => assert_eq!(d, p),
+                other => panic!("expected {rid}, got {:?}", other.msg_id()),
+            }
+        }
+        for (mk, sid) in [
+            (S2c::TilePaint as fn(TilePaint) -> S2c, 63u8),
+            (S2c::WallPaint as fn(TilePaint) -> S2c, 64),
+        ] {
+            let f = mk(p).encode();
+            assert_eq!(f[2], sid);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TilePaint(d) if sid == 63 => assert_eq!(d, p),
+                S2c::WallPaint(d) if sid == 64 => assert_eq!(d, p),
+                other => panic!("expected {sid}, got {:?}", other.msg_id()),
+            }
+        }
+        // coat == 0 is the plain-paint arm (`MessageBuffer.cs:2915-2922`).
+        let plain = TilePaint { coat: 0, ..p };
+        let c = C2s::TilePaint(plain).encode();
+        assert_eq!(*c.last().unwrap(), 0);
+    }
+
+    /// W4-g49 `65 TeleportEntity` (`NetMessage.cs:1088-1103`): BitsByte27
+    /// (bit0/1 = kind low bits, bit2 = getPosFromPlayer, bit3 = extraInfo
+    /// gate), (short)entity, float x, float y, (byte)style, gated (int)extra.
+    /// Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_teleport_entity_round_trips() {
+        // Kind 0 with extraInfo 0 writes NO tail (`number7 != 0` gate) —
+        // the rod-of-discord send (`Player.cs:45513`, style 1).
+        let rod = TeleportEntity {
+            entity: 3,
+            x: 3200.5,
+            y: -64.25,
+            style: 1,
+            kind: 0,
+            get_pos_from_player: false,
+            extra_info: None,
+        };
+        let f = C2s::TeleportEntity(rod).encode();
+        assert_eq!(f[2], 65);
+        let mut body = vec![0u8]; // flags: kind 0, no bit2, no bit3
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&3200.5f32.to_le_bytes());
+        body.extend_from_slice(&(-64.25f32).to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::TeleportEntity(d) => assert_eq!(d, rod),
+            other => panic!("expected 65, got {:?}", other.msg_id()),
+        }
+        // Kind 2 (player-to-player, `Player.cs:42363`) → bit1 only; the
+        // host broadcast (`MessageBuffer.cs:3008`) with a portal color.
+        let p2p = TeleportEntity {
+            entity: 1,
+            x: 100.0,
+            y: 200.0,
+            style: 4,
+            kind: 2,
+            get_pos_from_player: true,
+            extra_info: Some(5),
+        };
+        let s = S2c::TeleportEntity(p2p).encode();
+        assert_eq!(s[2], 65);
+        let mut body = vec![0b1110u8]; // bit1 kind, bit2 getpos, bit3 extra
+        body.extend_from_slice(&1i16.to_le_bytes());
+        body.extend_from_slice(&100.0f32.to_le_bytes());
+        body.extend_from_slice(&200.0f32.to_le_bytes());
+        body.push(4);
+        body.extend_from_slice(&5i32.to_le_bytes());
+        assert_eq!(&s[3..], &body);
+        match S2c::decode(s[2], &mut NetReader::new(&s[3..])).expect("decode") {
+            S2c::TeleportEntity(d) => assert_eq!(d, p2p),
+            other => panic!("expected 65, got {:?}", other.msg_id()),
+        }
+        // Kind 1 (NPC teleport, `NPC.cs:81056`) → bit0; kind 3 (the client
+        // ack, `MessageBuffer.cs:2993`) → bits 0+1.
+        for (kind, flags) in [(1u8, 0b0001u8), (3, 0b0011)] {
+            let t = TeleportEntity {
+                entity: 7,
+                x: 0.0,
+                y: 0.0,
+                style: 2,
+                kind,
+                get_pos_from_player: false,
+                extra_info: None,
+            };
+            let f = C2s::TeleportEntity(t).encode();
+            assert_eq!(f[3], flags);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::TeleportEntity(d) => assert_eq!(d, t),
+                other => panic!("expected 65, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// W4-g49 `66 Unknown66` (`NetMessage.cs:1110-1113`): (byte)number +
+    /// (short)number2 — the Moon Leech Clot's heal (`Projectile.cs:28524`).
+    /// Byte-verbatim from W4-d94.
+    #[test]
+    fn w4_g49_heal_player_round_trips() {
+        let h = HealPlayer {
+            player_id: 2,
+            heal: 37,
+        };
+        let f = S2c::HealPlayer(h).encode();
+        assert_eq!(f[2], 66);
+        let mut body = vec![2];
+        body.extend_from_slice(&37i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+        let c = C2s::HealPlayer(h).encode();
+        assert_eq!(c[2], 66);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g49 `68 Unknown68` (`NetMessage.cs:1114-1116`): one
+    /// BinaryWriter.Write(string) — Main.clientUUID, a Guid string, so the
+    /// wire is the 7-bit byte count (36 = 0x24) + the ASCII. Byte-verbatim
+    /// from W4-d95.
+    #[test]
+    fn w4_g49_client_uuid_round_trips() {
+        let uuid = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        let u = ClientUuid {
+            uuid: uuid.to_string(),
+        };
+        let c = C2s::ClientUuid(u.clone()).encode();
+        assert_eq!(c[2], 68);
+        let mut body = vec![36];
+        body.extend_from_slice(uuid.as_bytes());
+        assert_eq!(&c[3..], &body);
+        assert_eq!(c.len(), 3 + 1 + 36);
+        let mut r = NetReader::new(&c[3..]);
+        match C2s::decode(c[2], &mut r).expect("decode") {
+            C2s::ClientUuid(d) => assert_eq!(d, u),
+            other => panic!("expected 68, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The length prefix counts UTF-8 BYTES, not chars (BinaryWriter).
+        let multi = ClientUuid {
+            uuid: "aé☃".to_string(), // 1 + 2 + 3 = 6 bytes
+        };
+        let c = C2s::ClientUuid(multi.clone()).encode();
+        assert_eq!(&c[3..4], &[6]);
+        match C2s::decode(68, &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ClientUuid(d) => assert_eq!(d, multi),
+            other => panic!("expected 68, got {:?}", other.msg_id()),
+        }
+        // The empty string is a bare 0 length byte; a truncated payload
+        // must not decode (`MessageBuffer.cs:3056-3058` ReadString).
+        let empty = C2s::ClientUuid(ClientUuid {
+            uuid: String::new(),
+        })
+        .encode();
+        assert_eq!(&empty[3..], &[0]);
+        assert!(C2s::decode(68, &mut NetReader::new(&[36, b'a'])).is_none());
+    }
+
+    /// W4-g49 `73 RequestTeleport` (`NetMessage.cs:1142-1144`): one (byte)kind
+    /// — the reader's ladder 0..4 (`MessageBuffer.cs:3128-3145`:
+    /// potion/magic conch/demon conch/shellphone/no-space). Byte-verbatim
+    /// from W4-d99.
+    #[test]
+    fn w4_g49_request_teleport_round_trips() {
+        for kind in 0u8..=4 {
+            let q = RequestTeleport { kind };
+            let f = C2s::RequestTeleport(q).encode();
+            assert_eq!(f[2], 73);
+            assert_eq!(&f[3..], &[kind]);
+            match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                C2s::RequestTeleport(d) => assert_eq!(d, q),
+                other => panic!("expected 73, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// W4-g49 `75 AnglerQuestFinished`: no `case 75` writer arm in
+    /// NetMessage.cs and the reader consumes nothing
+    /// (`MessageBuffer.cs:3154-3163` — it only adds the sender's name on the
+    /// host): the frame is exactly [len=3][75]. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_angler_quest_finished_is_bodyless() {
+        let f = C2s::AnglerQuestFinished.encode();
+        assert_eq!(f, vec![3, 0, 75]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::AnglerQuestFinished => {}
+            other => panic!("expected 75, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+    }
+
+    /// W4-g49 `77 SyncTilePicking` (`NetMessage.cs:1154-1159`): (short)number
+    /// (animationType), (ushort)number2 (tileType), (short)number3 (x),
+    /// (short)number4 (y) — `SendTemporaryAnimation`'s argument order
+    /// (`:2594`); the reader feeds Animation.NewTemporaryAnimation
+    /// (`MessageBuffer.cs:3184`). Server→client. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_temporary_animation_round_trips() {
+        let a = TemporaryAnimation {
+            animation_type: 3,
+            tile_type: 593, // the campfire toggle (`Wiring.cs:1704`)
+            x: 1234,
+            y: -56,
+        };
+        let f = S2c::TemporaryAnimation(a).encode();
+        assert_eq!(f[2], 77);
+        let mut body = Vec::new();
+        body.extend_from_slice(&3i16.to_le_bytes());
+        body.extend_from_slice(&593u16.to_le_bytes());
+        body.extend_from_slice(&1234i16.to_le_bytes());
+        body.extend_from_slice(&(-56i16).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TemporaryAnimation(d) => assert_eq!(d, a),
+            other => panic!("expected 77, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g49 `78 ReportInvasionProgress` (`NetMessage.cs:1160-1165`):
+    /// (int)progress, (int)max, (sbyte)icon, (sbyte)wave. Pin the DD2 shape
+    /// (icon 3, wave 5, `DD2Event.cs:191`) and a negative sbyte so the sign
+    /// survives. Byte-verbatim from W4-d99.
+    #[test]
+    fn w4_g49_invasion_progress_round_trips() {
+        for p in [
+            InvasionProgress {
+                progress: 120,
+                progress_max: 200,
+                icon: 3,
+                wave: 5,
+            },
+            InvasionProgress {
+                progress: 0,
+                progress_max: 1,
+                icon: -1,
+                wave: -2,
+            },
+        ] {
+            let f = S2c::InvasionProgress(p).encode();
+            assert_eq!(f[2], 78);
+            let mut body = Vec::new();
+            body.extend_from_slice(&p.progress.to_le_bytes());
+            body.extend_from_slice(&p.progress_max.to_le_bytes());
+            body.push(p.icon as u8);
+            body.push(p.wave as u8);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::InvasionProgress(d) => assert_eq!(d, p),
+                other => panic!("expected 78, got {:?}", other.msg_id()),
+            }
+        }
+    }
+
+    /// W4-g49 F21-TAIL `57 Unknown57` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 4 (`w4_f21_world_evil_bytes_round_trips`).
+    #[test]
+    fn w4_g49_world_evil_bytes_round_trips() {
+        // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three raw bytes
+        // in the writer's order; the reader assigns the same order
+        // (`MessageBuffer.cs:2634-2636`).
+        let b = WorldEvilBytes {
+            good: 200,
+            evil: 100,
+            blood: 50,
+        };
+        let f = S2c::WorldEvilBytes(b).encode();
+        assert_eq!(f[2], 57);
+        assert_eq!(&f[3..], &[200, 100, 50]);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::WorldEvilBytes(d) => assert_eq!(d, b),
+            other => panic!("expected 57, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only: no C2s variant (the reader is netMode==1-gated).
+        assert!(C2s::decode(57, &mut NetReader::new(&[1, 2, 3])).is_none());
+        // A truncated blood byte must not decode.
+        assert!(S2c::decode(57, &mut NetReader::new(&[1, 2])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `58 InstrumentSound` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 5 (`w4_f21_instrument_sound_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_instrument_sound_round_trips_both_directions() {
+        // `NetMessage.cs:1059-1062`: (byte)number + raw float number2 (no
+        // cast — the pitch rides as a full float, `Player.cs:46544`'s num6).
+        let b = InstrumentSound {
+            player_id: 4,
+            pitch: 0.45,
+        };
+        let mut body = vec![4u8];
+        body.extend_from_slice(&0.45f32.to_le_bytes());
+        let f = C2s::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        match S2c::decode(58, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        // A negative pitch rides verbatim (the drums' num9 can be negative
+        // before the round; the wire is the raw float).
+        let neg = InstrumentSound {
+            player_id: 0,
+            pitch: -0.25,
+        };
+        let f = C2s::InstrumentSound(neg).encode();
+        let mut body = vec![0u8];
+        body.extend_from_slice(&(-0.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        // A truncated pitch must not decode.
+        assert!(C2s::decode(58, &mut NetReader::new(&[4, 0, 0])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `76 QuestsCountSync` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 6 (`w4_f21_quests_count_sync_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_quests_count_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1149-1153`: (byte)number + raw int
+        // anglerQuestsFinished + raw int golferScoreAccumulated.
+        let b = QuestsCountSync {
+            player_id: 2,
+            angler_quests_finished: 42,
+            golfer_score: 1_000_000_000, // the AccumulateGolfingScore cap
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&42i32.to_le_bytes());
+        body.extend_from_slice(&1_000_000_000i32.to_le_bytes());
+        let f = C2s::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        assert_eq!(f.len(), 3 + 9);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        match S2c::decode(76, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        // A truncated golf score must not decode.
+        assert!(S2c::decode(76, &mut NetReader::new(&body[..8])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `79 PlaceObject` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 6 (`w4_f21_place_object_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_place_object_round_trips_both_directions() {
+        // `NetMessage.cs:1166-1174`: (short)x + (short)y + (short)type +
+        // (short)style + (byte)alt + (sbyte)random + (number7 == 1) bool.
+        let b = PlaceObject {
+            x: -3,
+            y: 500,
+            kind: 21, // a chest
+            style: 4,
+            alternative: 2,
+            random: -7,
+            direction: true,
+        };
+        let mut body = (-3i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&500i16.to_le_bytes());
+        body.extend_from_slice(&21i16.to_le_bytes());
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.push(2);
+        body.push((-7i8) as u8);
+        body.push(1);
+        let f = C2s::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        assert_eq!(f.len(), 3 + 12);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        match S2c::decode(79, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        // direction=false rides as 0 (the reader maps it to -1).
+        let left = PlaceObject {
+            direction: false,
+            ..b
+        };
+        let f = C2s::PlaceObject(left).encode();
+        assert_eq!(*f.last().unwrap(), 0);
+        // A truncated direction byte must not decode.
+        assert!(C2s::decode(79, &mut NetReader::new(&body[..11])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `48 LiquidUpdate` — byte-pin transplanted verbatim
+    /// from W4-f21 batch 3 (`w4_f21_liquid_update_round_trips_both_directions`).
+    #[test]
+    fn w4_g49_liquid_update_round_trips_both_directions() {
+        // `NetMessage.cs:987-995`: (short)x + (short)y + tile.liquid byte +
+        // tile.liquidType() byte (`Tile.cs:235-238`: (bTileHeader & 0x60)
+        // >> 5 — 0 water / 1 lava / 2 honey / 3 shimmer).
+        let b = LiquidUpdate {
+            x: -12,
+            y: 340,
+            liquid: 255,
+            liquid_type: 3, // shimmer
+        };
+        let mut body = (-12i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.push(255);
+        body.push(3);
+        let f = C2s::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(48, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        // The drained-tile shape (`MessageBuffer.cs:2439-2442` re-pushes it).
+        let drained = LiquidUpdate {
+            x: 5,
+            y: 6,
+            liquid: 0,
+            liquid_type: 0,
+        };
+        let f = S2c::LiquidUpdate(drained).encode();
+        assert_eq!(&f[3..], &[5, 0, 6, 0, 0, 0]);
+        // A truncated liquidType byte must not decode.
+        assert!(S2c::decode(48, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `52 LockAndUnlock` — byte-pin transplanted from
+    /// W4-f21 batch 3 (`w4_f21_lock_and_unlock_round_trips`), extended with
+    /// the S2c direction the host relay (`MessageBuffer.cs:2541`) needs.
+    #[test]
+    fn w4_g49_lock_and_unlock_round_trips_both_directions() {
+        // `NetMessage.cs:1014-1018`: (byte)number2 + (short)number3 +
+        // (short)number4 — the player id `number` is NOT on the wire (the
+        // host relay re-sends it as 0, `MessageBuffer.cs:2541`).
+        for action in [1u8, 2, 3, 0, 255] {
+            let b = LockAndUnlock {
+                action,
+                x: -5,
+                y: 1200,
+            };
+            let mut body = vec![action];
+            body.extend_from_slice(&(-5i16).to_le_bytes());
+            body.extend_from_slice(&1200i16.to_le_bytes());
+            let f = C2s::LockAndUnlock(b).encode();
+            assert_eq!(f[2], 52);
+            assert_eq!(f.len(), 3 + 5);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::LockAndUnlock(d) => assert_eq!(d, b),
+                other => panic!("expected 52, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            // The host relay carries the same body back to the clients.
+            let f = S2c::LockAndUnlock(b).encode();
+            assert_eq!(f[2], 52);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(52, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::LockAndUnlock(d) => assert_eq!(d, b),
+                other => panic!("expected 52, got {:?}", other.msg_id()),
+            }
+        }
+        // A truncated y must not decode.
+        assert!(C2s::decode(52, &mut NetReader::new(&[1, 0, 0, 0])).is_none());
+    }
+
+    /// W4-g49 F21-TAIL `44 Unknown44` / `67 Unknown67` — the reader ignore
+    /// group (`MessageBuffer.cs:4483-4490`): no writer arm, no body, bare
+    /// frames accepted and dropped. Transplanted from W4-f21's
+    /// `w4_f21_deprecated_ignore_group_26_44_67_83_are_bare_frames` (the
+    /// 26/83 twins are g48/g50's, keep-one at union).
+    #[test]
+    fn w4_g49_ignore_group_44_67_are_bare_frames() {
+        for (msg, expect_id) in [(S2c::Unknown44, 44u8), (S2c::Unknown67, 67u8)] {
+            let f = msg.encode();
+            assert_eq!(f[2], expect_id);
+            assert_eq!(f.len(), 3);
+            let mut r = NetReader::new(&f[3..]);
+            let d = S2c::decode(f[2], &mut r).expect("decode");
+            assert_eq!(d.msg_id(), expect_id);
+            assert_eq!(r.remaining(), 0);
+        }
+        // No C2s variant — the ids have no writer arm (client send sites).
+        assert!(C2s::decode(44, &mut NetReader::new(&[])).is_none());
+        assert!(C2s::decode(67, &mut NetReader::new(&[])).is_none());
     }
 
     #[test]

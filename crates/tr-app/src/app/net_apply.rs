@@ -576,8 +576,9 @@ pub(crate) fn client_player_hp(app: &mut App, player_id: u8, hp: i16, max_hp: i1
 
 /// `Main.teamColor[team]` (`Main.cs:6657-6662`) — the PVP chat line's colour
 /// (`MessageBuffer.cs:1864`). An out-of-range team reads white (the C# would
-/// throw; the wire byte is 0..5 in practice).
-fn team_color(team: u8) -> [u8; 3] {
+/// throw; the wire byte is 0..5 in practice). `i32` = the `Player.team`
+/// field's type (the g48/g49 union widened `PlayerNet.team` to `i32`).
+fn team_color(team: i32) -> [u8; 3] {
     match team {
         1 => [218, 59, 59],
         2 => [59, 218, 85],

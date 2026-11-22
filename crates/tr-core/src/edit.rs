@@ -8,7 +8,7 @@ use crate::tile::Tile;
 use crate::world::World;
 
 mod place;
-pub use place::{place_alch, place_item_tile, place_tile, place_torch};
+pub use place::{place_alch, place_item_tile, place_object, place_tile, place_torch};
 mod wall;
 // S1-P-i33 — the wall-edit table (drop conversions, the FULL Main.wallHouse,
 // the smash gate, the unsafe→safe replacement). `can_player_smash_wall` lives

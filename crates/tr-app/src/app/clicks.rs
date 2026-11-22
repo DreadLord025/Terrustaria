@@ -1082,13 +1082,39 @@ impl App {
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
         let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        // The Dryad's status button (`DryadPurification`, W4-g49) — the second
+        // interaction, hover index 1 while its condition holds.
+        let dryad_status = ui::npc_chat::dryad_status_active(&self.npcs, self.talk_npc);
+        let dryad_rect = ui::npc_chat::dryad_status_button_rect(&self.lookups, screen, &self.npc_chat_text);
+        let hovered = if ui::in_rect(self.mouse_pos, rect) {
+            0
+        } else if dryad_status && ui::in_rect(self.mouse_pos, dryad_rect) {
+            1
+        } else {
+            -1
+        };
         // `:157-160` — the hover-change tick (no gamepad in the port, so
         // the `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
             crate::chest::play_menu_sound(self, 12);
         }
         self.npc_chat_last_hovered = hovered;
+        if hovered == 1 && self.ui_left_press {
+            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
+            // `DryadPurification.Interact` (`NPCInteractions.cs:121-130`):
+            // the portrait hop (unported), sound 12, then the world-status
+            // report from the `57` census store. The pure-world achievement
+            // (`HandleSpecialEvent(27)`) rides the achievement lane.
+            crate::chest::play_menu_sound(self, 12);
+            let (text, _pure) = crate::lang::dryad_world_status_dialog(
+                &self.world.name,
+                self.world_evil_good,
+                self.world_evil_evil,
+                self.world_evil_blood,
+            );
+            self.npc_chat_text = text; // `:125` — `Main.npcChatText = …`
+            return;
+        }
         if hovered == 0 && self.ui_left_press {
             self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
             // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign

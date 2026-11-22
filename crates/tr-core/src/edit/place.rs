@@ -126,6 +126,63 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
     place_tile(world, x, y, kind)
 }
 
+/// `WorldGen.PlaceObject` (`WorldGen.cs:51425-51445`) — the net `79`
+/// reader's placement seam (`MessageBuffer.cs:3209`, `mute: false`): the
+/// `TileID.Count` gate, then `TileObject.CanPlace` + the forced `random`
+/// (`objectData.random = random`, `:51435`) + `TileObject.Place`; a placed
+/// object re-frames its square (`SquareTileFrame(x, y)`, `:51438`). The
+/// `mute: false` Dig cue (`:51441`) is app-scope — the caller plays it.
+/// `true` = the object landed (the C# returns true even when `Place`
+/// itself refused after `CanPlace` passed — `:51444` returns unconditionally
+/// once `CanPlace` succeeded; the port keeps that shape). W4-g49.
+pub fn place_object(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    kind: u16,
+    style: i32,
+    random: i32,
+    dir: i32,
+) -> bool {
+    // `:51427-51430` — `type >= TileID.Count` refuses.
+    if kind as usize >= crate::tiledata::TILE_COUNT {
+        return false;
+    }
+    let Some(def) = crate::tileobject::def_for_tile(kind) else {
+        return false; // `CanPlace`'s null-data refusal (`TileObject.cs:178-181`)
+    };
+    // The `Main.rand` / randomCache seam — the `place_item_tile` precedent:
+    // the stream is taken out for the read-only `can_place` and restored.
+    let mut rand = std::mem::take(&mut world.place_rng);
+    let instance = crate::tileobject::can_place(
+        world,
+        x,
+        y,
+        def,
+        style,
+        dir,
+        None,
+        &mut rand,
+        world.tile_object_random_cache,
+    );
+    world.place_rng = rand;
+    let Some(mut instance) = instance else {
+        return false; // `:51431-51434`
+    };
+    instance.random = random; // `:51435` — the forced roll overrides CanPlace's
+    let landed = crate::tileobject::place(world, &instance);
+    if landed {
+        // `:51438` — `SquareTileFrame(x, y)` (resetFrame: true default);
+        // `reframe_area` leaves `frame_important` tiles intact (DW-1.6).
+        framing::reframe_area(world, x, y, 2, true);
+    }
+    // The C# returns `true` unconditionally once `CanPlace` passed (`:51444`);
+    // the port returns the `Place`-success flag instead — the sole caller (the
+    // net `79` arm) ignores the C# return and needs the flag for the
+    // `mute: false` Dig cue (`:51439-51442`). Behaviour-identical for it.
+    landed
+}
+
 /// `WorldGen.PlaceTile`'s torch arm (`WorldGen.cs:59798-59842`) plus the
 /// liquid gate ahead of the write (`:59454-59467`): the torch family writes
 /// `frameY = 22 * style` (`:59839`) — the style column `CheckTorch` preserves

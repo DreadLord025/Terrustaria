@@ -534,6 +534,38 @@ mod s1_l12b_tests {
             assert!(sub(key).is_some(), "{key} must be set by the refresh");
         }
     }
+
+    /// W4-g49 `57`'s display consumer — `Lang.GetDryadWorldStatusDialog`
+    /// (`Lang.cs:251-293`): the eight status arms + the balance verdict.
+    #[test]
+    fn w4_g49_dryad_world_status_dialog_arms_and_verdicts() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        let _a = app();
+        // All three > 0 → WorldStatusAll; g*1.2 >= e+b and g*0.8 <= e+b is
+        // false here (200*0.8=160 > 150), g >= e+b → FairyTale.
+        let (text, pure) = dryad_world_status_dialog("Terra", 200, 100, 50);
+        assert!(!pure);
+        assert!(text.contains("200% hallow"), "{text}");
+        assert!(text.contains("fairy tale"), "{text}");
+        // The pure arm returns early with the flag set.
+        let (text, pure) = dryad_world_status_dialog("Terra", 0, 0, 0);
+        assert!(pure, "0/0/0 is entirely pure (`:287`)");
+        assert!(text.contains("completely pure"), "{text}");
+        // Corrupt-only → WorldStatusCorrupt; e+b=3 <= 5 → Close.
+        let (text, pure) = dryad_world_status_dialog("Terra", 0, 3, 0);
+        assert!(!pure);
+        assert!(text.contains("3% corrupt"), "{text}");
+        assert!(text.contains("so close"), "{text}");
+        // Balanced: g=10, e+b=10 → 10*1.2=12 >= 10 and 10*0.8=8 <= 10.
+        let (text, _) = dryad_world_status_dialog("Terra", 10, 10, 0);
+        assert!(text.contains("in balance"), "{text}");
+        // Grim: e+b > g+20 (g=0, e=30).
+        let (text, _) = dryad_world_status_dialog("Terra", 0, 30, 0);
+        assert!(text.contains("grim"), "{text}");
+        // Work: e+b=10, g=0 → not grim (10 <= 20), not close (10 > 5).
+        let (text, _) = dryad_world_status_dialog("Terra", 0, 10, 0);
+        assert!(text.contains("lot of work"), "{text}");
+    }
 }
 
 #[cfg(test)]
@@ -773,6 +805,55 @@ pub fn item_name(id: u16) -> String {
 /// dialog lines.
 pub fn dialog(i: i32) -> String {
     text(&format!("LegacyDialog.{i}"))
+}
+
+/// `Lang.GetDryadWorldStatusDialog` (`Lang.cs:251-293`): the Dryad's
+/// world-status report — the `WorldGen.tGood/tEvil/tBlood` census percentages
+/// (the `57 Unknown57` client store, `MessageBuffer.cs:2634-2636`) turned
+/// into the `DryadSpecialText.WorldStatus*` line plus the
+/// `WorldDescription*` balance verdict. Returns `(text, worldIsEntirelyPure)`;
+/// the pure arm returns early (no verdict suffix, `:286-288`). W4-g49.
+pub fn dryad_world_status_dialog(
+    world_name: &str,
+    t_good: u8,
+    t_evil: u8,
+    t_blood: u8,
+) -> (String, bool) {
+    let (g, e, b) = (t_good as i32, t_evil as i32, t_blood as i32);
+    let name = world_name.to_string();
+    // `:258-291` — the eight status arms, in the C#'s order.
+    let line = if g > 0 && e > 0 && b > 0 {
+        text_args("DryadSpecialText.WorldStatusAll", &[name, g.to_string(), e.to_string(), b.to_string()])
+    } else if g > 0 && e > 0 {
+        text_args("DryadSpecialText.WorldStatusHallowCorrupt", &[name, g.to_string(), e.to_string()])
+    } else if g > 0 && b > 0 {
+        text_args("DryadSpecialText.WorldStatusHallowCrimson", &[name, g.to_string(), b.to_string()])
+    } else if e > 0 && b > 0 {
+        text_args("DryadSpecialText.WorldStatusCorruptCrimson", &[name, e.to_string(), b.to_string()])
+    } else if e > 0 {
+        text_args("DryadSpecialText.WorldStatusCorrupt", &[name, e.to_string()])
+    } else if b > 0 {
+        text_args("DryadSpecialText.WorldStatusCrimson", &[name, b.to_string()])
+    } else if g <= 0 {
+        // `:284-288` — the pure arm returns early, `worldIsEntirelyPure = true`.
+        return (text_args("DryadSpecialText.WorldStatusPure", &[name]), true);
+    } else {
+        text_args("DryadSpecialText.WorldStatusHallow", &[name, g.to_string()])
+    };
+    // `:292` — the balance verdict. The C# casts to double for the 1.2/0.8
+    // comparisons; the port keeps the f64 maths verbatim.
+    let verdict = if (g as f64) * 1.2 >= (e + b) as f64 && (g as f64) * 0.8 <= (e + b) as f64 {
+        "DryadSpecialText.WorldDescriptionBalanced"
+    } else if g >= e + b {
+        "DryadSpecialText.WorldDescriptionFairyTale"
+    } else if e + b > g + 20 {
+        "DryadSpecialText.WorldDescriptionGrim"
+    } else if e + b <= 5 {
+        "DryadSpecialText.WorldDescriptionClose"
+    } else {
+        "DryadSpecialText.WorldDescriptionWork"
+    };
+    (format!("{line} {}", text(verdict)), false)
 }
 
 /// `LanguageManager.GetCategorySize` — the number of entries in a category
