@@ -41594,3 +41594,163 @@ special hosts, g16 gore, the cue/state lanes) is research/346 §5. New
 seal witness `w4_g65_seal_the_deferred_kinds_are_inert` (the 10 deferred
 kinds draw nothing through the drain) — WRITTEN NOT RUN with the other
 115.
+## The NPC death dust lane 2 (W4-g60, code-only)
+
+NPC.HitEffect's per-kind DEATH halves for the vanilla types 231-697
+(the g59 lane carries 1-230) are drawn by
+crates/tr-app/src/npc_death_dust.rs::death_dust_feed, called from
+world_sim/npcs.rs's death retain BEFORE the death cue (the C# runs
+HitEffect at `NPC.cs:81488`, ahead of checkDead's DeathSound
+`:81559` -> `:78186`). 121 ported kinds qualify under the g59 census
+convention (every top-level arm dust-bearing, dust-first, side-free);
+the 388/418 arms stay W4-c12's in-flight `style74_death_feed` (the
+merge reconciles the two feeds and the shared `Npc.last_hit_dir`
+field - both branches add the same shape).
+
+Recorded deviations:
+* **Stream**: the C# draws on the striking stage's stream; the port
+  batches deaths into UpdateNPCs (the S1-E-21c death-cue precedent).
+* **Carrier guard**: the feed rides the death events' carrier guard
+  (`NPC.cs:78040-78042`); the C# HitEffect itself runs per struck
+  segment - the batch model folds the segment draws onto the carrier's
+  death (the death-cue convention).
+* **Gore split**: the gore BODIES stay the d55/e5/f10 lane's; the gore
+  ARGUMENT draws (conditional-gore gates, type/velocity/count picks)
+  ARE consumed by this feed in C# order so the stream stays faithful -
+  the gore lane must NOT re-draw them (each site comment cites the
+  consumed arguments).
+* **663 Princess**: the `:88411` second arm is dead code - the
+  else-if chain's town arm (`:88046`) matches 663 first; only the
+  25-dust smoke burst + four tombstone picks fire.
+* **402 oldPos trail**: RESOLVED by the wiring wave - `Npc.old_pos`/
+  `old_rot` (`NPC.cs:6119-6121`) now carry the live rings and
+  `Npc::update_trails` ports `UpdateNPC_UpdateTrails`'s mode-7 shift
+  (`NPC.cs:90863-90872`, called at `:90512` after `FindFrame`;
+  `NPCID.cs:10430` maps 402 -> 7). The feed's trail loop reads the
+  live ring: a `== 0` gate on a filled slot spawns TWO gated pairs AT
+  THE SLOT (`:83621-83630`); only a never-updated corpse still reads
+  all-zero (the gates draw until the first `== 0` breaks - the C#'s
+  fresh-NPC shape). TRAILCACHE WIDENING EXECUTED (`19431e385`, g62's
+  `32af98b44` 6-hunk contract CONSUMED byte-identically): the rings
+  are `[Vec2; 60]`/`[f32; 60]` max-size storage + `trail_len` logical
+  length (`NpcKind::trail_cache_length`, 402->36, default 10; the
+  full census `NPCID.cs:10450`), the shift walks `..trail_len`, the
+  gate widened to 402+574/575 (g62's 945a6ea28), Transform re-zeroes;
+  `DeathFx.old_pos` widens the same + `trail_len` captured at strike,
+  the `:83611` death loop bounds `..fx.trail_len` (up to 36 Next(4)
+  gates), the fresh-ring witness's gate loop `0..36`. The merge
+  dedupes the byte-identical hunks (ONE copy); g62's pooled-path tail
+  call + `HitDustSnapshot` fields stay g62's. The other kinds'
+  TrailingMode arms stay unwired (their rings stay zero; no reader
+  yet).
+* **Keep-one census vs the d55/e5/f10 gore dispatchers** (the wiring
+  wave's overlap audit): the gore lanes re-run death DUST loops for
+  kinds this feed covers - d55's 668 (`deerclops_death`), e5's
+  551/552-554/555-557/561-563 (`dd2_death_dust`), f10's
+  558-560/564-577 DD2 band + 412-417/419/518/416 solar arms
+  (`death_dust_loop` + the pair loops). When those dispatchers claim
+  the strike/death slot the wiring MUST strip their dust loops for
+  exactly these kinds (keep g60's feed, keep the gore bodies); the
+  566/567 six `Next(2)` gates + the 576/577 `Next(5)` head pick are
+  ALREADY consumed by g60 - f10 re-draws them today, strip at wiring.
+  636/657/660/667 are NOT in g60's lane (gore-first / census-
+  ineligible): the e5 dispatch owns them whole (its 636
+  `empress_hit_dust_draws` count-plan must become a pool feed at its
+  wiring, not a second census). The e5 551 mirrored twin vs the f10
+  551 flipped arm ALSO overlap each other (the same
+  `spriteDirection == -1` branch) - keep one there too. 418 stays
+  c12's feed. The census table rides the feed call site
+  (`world_sim/npcs.rs`) + the module header.
+* **373 Sharkron2**: the wrapper maps the kind to 373 explicitly (the
+  style71 adapter precedent - `cs_id`'s bestiary fallback folds it
+  onto the Sharkron 372 row; the shared arm covers both).
+
+Verification: code-only - 17 stream-replay witnesses WRITTEN NOT RUN
+(each replays the cited draws on a pre-call RNG clone and asserts
+stream equality + the slot writes); no cargo/tests invoked. The
+wiring wave adds 5 more (also written not run): the mode-7 trail
+shift + the other-kinds no-shift (`npc.rs`), the live-ring trail
+spawn (`npc_death_dust.rs`), and the twin-app stream-parity pair
+through the LIVE `update_npcs` retain (the 552 burst delta + the
+Spore hp==0 edge, `world_sim/npcs.rs`).
+
+Gore-remainder phase (research/110 §11): the playbook's 66 blanket
+`GORE-UNIMPL` rows were probe-time-stale. Re-read against f10's pushed
+tip `67c51ec7` (wave-C now covers `NPC.cs:82206-85334`) and f5's wave-D
+claim `97c70c97` (tip `b33ba0a9`, the WHOLE `:85560-89835` classic-mob
+chain, 853 gore sites - the claim covers the gore BODIES too, not just
+the dust census): 24 kinds are f10-owned (gore pushed), 32 f5-owned
+(11 pushed + 21 claimed), 10 have NO gore sites at all (261/265/288/
+326/330/352/384/402/410/533 - dust-only arms, g60's feed is their whole
+death-effects port). ZERO gore bodies are unclaimed, so g60 ports NO
+gore bodies - the feed's ARG draws were already complete and unchanged.
+The strip surface grows at wiring: f10 +24 dust loops, f5 +32 (the one
+ARG hand-off is the 490's two `Next(3)` wing picks - f5 batch 25
+re-draws them today; the 262-264 position pairs / 266 velocity pairs /
+369+376+663 tombstone picks are claimed-not-pushed and must read the
+g60-consumed stream position). Five sweep witnesses added (written not
+run): every one of the 66 kinds now carries a per-kind draw-count row
+(`w4_g60_gore_tail_*` - the f5/f10/no-gore sweeps + the Plantera trio +
+the Angler pair); the g60 witness count is 27.
+
+FINAL STATUS (research/110 §12, the death-family final-status phase): the
+lane tips re-probed at g59 `dd336ef8` (88 kinds / 90 cs_ids / 42 witnesses,
+the 24 d35 row-gated activations landed; g59c activating), f10 `f7a9dd78`
+(batch 92), f5 `d908a4fd` (batch 85), g62 `53fdbf07`, c12 `5778e596`. Two
+NEW overlaps the playbook phase did not have: (1) **f10 OVERRAN its
+`:85560` claim boundary** - batches 62-92 (sites 562-816, `NPC.cs:85684-
+86784`) double-port f5's classic-mob chain (~38 same-arm fns, both live-
+dispatched; f10's header shows no f5 awareness). Resolution: f5 claimed
+first (03:43 vs f10's 05:28 overrun) and both headers agree f10 stops at
+`:85559` - the merge keeps f5's `npc_hit_effect_d.rs` and DELETES f10's
+overrun surface wholesale (fns + gates + witnesses), not a dust-strip.
+(2) **g59∩f5 = 57 pushed kinds** (all ≤230 - f5 re-draws the g59-owned
+death dust, e.g. `demon_eye_variant_death` cites g59's exact `:86459-
+86462` kind-2 burst) + 18 conditional in f5's remaining window; plus
+g59∩f10 = {225} (`umbrella_slime_death` re-draws g59's 50×4 burst).
+Strip-row total: 110 (g60 baseline) + 57 + 1 = 168 actionable, 186
+eventual. f5 is ALIVE (advanced b33→b85, `:86986`→`:88816`, during the
+probe); its remaining window `:88817-89835` (~1019 lines, ~120 sites) is
+censused in §12.1 as the f5-followup hand-off artifact - only 250/315/471
+of the 32 f5-owned g60 kinds remain unpushed. The three shared-surface
+contracts are FINAL: the `npc_death_dust.rs` union (§12.5 - the ONE
+semantic collision is the test `air()` world height, g59 200×200 vs g60
+200×120, keep both renamed); the `last_hit_dir` ONE-declaration (§12.6 -
+c12/g60/g59 field+ctor+3 strike records byte-identical, dedupe to one;
+KEEP BOTH fuse resets, g59's `ai_070_bubble` + c12's
+`ai_074_hover_charge` - different sites); the `update_trails` ONE-fn
+(§12.7 - g62b `2370316ce` adopted g60's ring VERBATIM, verified
+byte-identical; keep g62's pooled-path tail call + `HitDustSnapshot.
+old_pos`; the 402 HIT `:83579` (g62) vs DEATH `:83611` (g60) sites are
+disjoint; the TrailCacheLength under-carry 402→36/519→20 vs the 10-slot
+shape is the recorded deviation - ONE widening at merge). Code-only: no
+cargo/tests/rustfmt/graphify invoked.
+
+BIBLE PHASE / FINAL-FINAL (research/110 §12.8, `19431e385` + this commit):
+three movements. (1) **The widening EXECUTED** - g62's `32af98b44` published
+the EXACT 6-hunk contract; g60 consumed it byte-identically (fields/init/
+table/stride+gate/Transform/witnesses verified line-for-line equal by
+`g60_verify_widen.ps1`) plus its own DeathFx half (`old_pos[60]`+`trail_len`,
+the `:83611` death loop `..fx.trail_len`, the fresh-ring witness `0..36`).
+The §12.7 "ONE widening at merge" item is CLOSED pre-merge; the merge dedupes.
+(2) **f5 CHAIN COMPLETE** (`d0619d8e9` docs / `fa3c526d5` b103): all 853 gore
+sites of `:85560-89835` ported, remaining window 0, no takeover needed. The
+NO-gore arms (incl. 23 Meteor Head) are recorded-not-ported - no strip row.
+All 32 f5-owned g60 kinds pushed (250/315/471 closed). f5 compile-window flag:
+`HitEffectOutcomeD` is missing the `king_slime_spawns` field its `:221` write
++ 2 witnesses read (recorded in §12.8.2, f5's lane to fix). (3) **f10 kept
+overrunning** (b92→b134 during the phase): the drop surface is now 88 fns +
+the cite-less `five_gore_ladder`, 85 gates, 97 witnesses at `91b082e3c` -
+THREE CONTIGUOUS BANDS (fns `:3648-6698`, gates `:7122-7514`, witnesses
+`:9862-11834`) + the header rows `:136-233` + the two outcome fields; the
+EXACT per-fn line-ranges + the re-census scripts (`g60_f10_overrun.py`/
+`g60_f10_gates.py`) are §12.8.3 - f10 is ALIVE, re-census at the merge tip.
+The ONE non-mechanical bit: the 133 WanderingEye hit-half eye-pop latch
+(`:86529-86533`) is unowned after the delete (f5 defers to g62, g62 defers to
+d55, d55 has no body) - hand it to g62's hit-dust wiring. Strip totals
+refreshed: g59∩f5 = **93 kinds** (g59 b11-13 `29c13d103` activated the
+town/skeleton/beetle/sea-snail/pirate families f5 re-drew; 17 of the 18
+conditional materialized, 23 never) → **204 actionable rows, 0 conditional**.
+The union-8-step re-pinned (g59 2481 lines/53 module witnesses × g60 1998/23;
+the ONE `air()` height collision unchanged). Witness union 404 distinct after
+the byte-identical dedupe. Code-only: no cargo/tests/rustfmt/graphify invoked.

@@ -5240,6 +5240,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // single running event walks alone.
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
+        // W4-g60 — the death dust feed: the per-kind `HitEffect` DEATH
+        // halves for vanilla types 231-697 (`npc_death_dust.rs`, the
+        // census's dust-first side-free kinds), drawn in C# order on
+        // the UpdateNPCs stream (the S1-E-21c death-batch deviation).
+        // BEFORE the death cue: the C# runs HitEffect at `:81488`,
+        // ahead of checkDead's DeathSound (`:81559` → `:78186`). The
+        // 388/418 arms are W4-c12's in-flight feed (kept out); every
+        // other uncovered kind's HitEffect stays the documented skip.
+        //
+        // KEEP-ONE vs the d55/e5/f10 gore lanes (the wiring census):
+        // this feed owns the DEATH DUST + gore-argument draws for its
+        // 121 kinds. The gore lanes' dispatchers re-run the same dust
+        // loops for the overlap kinds — 668 (d55 `deerclops_death`),
+        // the e5 DD2 preamble kinds 551/552-554/555-557/561-563
+        // (`dd2_death_dust`), the f10 arms 558-560/564-565/566-567/
+        // 568-571/572-575/576-577/412-417/419/518/416 (`death_dust_loop`
+        // + the solar pair loops) — so when those dispatchers claim the
+        // strike/death slot the wiring wave MUST strip their dust loops
+        // for exactly these kinds (keep g60's feed, keep the gore
+        // bodies; the 566/567 six Next(2) gates + the 576/577 Next(5)
+        // head pick are ALREADY consumed here — the gore lane must not
+        // re-draw them). The e5 551 mirrored-twin arm and the f10 551
+        // flipped arm overlap EACH OTHER too — keep one there as well.
+        // 636/657/660/667 are NOT in this lane (their arms are gore-
+        // first or census-ineligible): the e5 dispatch owns them whole.
+        crate::npc_death_dust::death_dust_feed(app, npc);
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
         // faithful case-4 path (S1-E-21 wave C): the volume arms + the
@@ -7457,6 +7483,140 @@ mod tests {
                 k.name()
             );
         }
+    }
+
+    /// W4-g60 wiring — the death dust feed's stream parity through the
+    /// LIVE `update_npcs` death retain: twin apps (same fixture, same
+    /// seeded streams), one carrying a dead DD2 Goblin T1 (552, the
+    /// lane's 20×5 burst), one empty. The DELTA between the twins'
+    /// `UpdateNPCs` streams is exactly the feed's 20 six-draw `NewDust`
+    /// internals — the goblin's `dd2_goblin_death_0` cue is a trackable
+    /// (sound_id 42, no case-4 pitch draw, `audio.rs::npc_death_play`),
+    /// its value 0 drops no coins and its loot table is empty, so the
+    /// whole delta is the burst. The dust lands in `app.dust` at the
+    /// corpse's box with the recorded strike side; every OTHER stream
+    /// stays twin-equal. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g60_the_death_feed_pays_the_burst_before_the_cue() {
+        use crate::app::RngKey;
+        let mut control = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // The vanilla dust budget (`Main.cs:66794`'s init 6000): the
+        // flow fixture's GfxQuality default carries 0 until `apply`
+        // runs — pin the live value on BOTH twins so the pool's low
+        // band holds (no pressure-gate draws, the style56 convention).
+        control.gfx_quality.max_dust_to_draw = 6000;
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // Same seed on both twins: the pass's own draws (the town
+        // cadence etc.) run identically, so the delta isolates the feed.
+        let seed = app.world.seed as i32;
+        control.rngs = crate::app::rng::NamedRngs::new(seed);
+        app.rngs = crate::app::rng::NamedRngs::new(seed);
+        let mut npc = Npc::new(NpcKind::DD2GoblinT1, 100.0, 100.0, 1, 0.0);
+        npc.hp = 0;
+        npc.last_hit_dir = 1; // the recorded strike side (hurt/strike_pooled)
+        app.npcs.push(npc);
+        let (w, h) = (18, 40); // the goblin's SetDefaults box (`NPC.cs:16059-16060`)
+        update_npcs(&mut control, 1.0 / 60.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.is_empty(), "the corpse was retained out");
+        // The delta replay: the control's post-pass stream state + the
+        // feed's 20 spawns × 6 internals (`Dust.cs:153-193`, type 5
+        // hits no tweak) == the corpse app's post-pass state.
+        let mut witness = control.rngs.stream(RngKey::UpdateNpcs).clone();
+        for _ in 0..20 {
+            let _px = witness.next_max(w - 4);
+            let _py = witness.next_max(h - 4);
+            let _vx = witness.next_range(-20, 21);
+            let _vy = witness.next_range(-20, 21);
+            let _row = witness.next_max(3);
+            let _scale = witness.next_range(-20, 21);
+        }
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateNpcs),
+            &witness,
+            "the twin delta is exactly 20 spawns × 6 internals"
+        );
+        for k in RngKey::ALL.iter().filter(|&&k| k != RngKey::UpdateNpcs) {
+            assert_eq!(
+                app.rngs.stream(*k),
+                control.rngs.stream(*k),
+                "{} twin-equal — the feed touches only UpdateNPCs",
+                k.name()
+            );
+        }
+        // The dust landed: 20 type-5 slots at the corpse's box, the
+        // velocity carrying the recorded side (roll ×0.1 + hit_dir).
+        for i in 0..20 {
+            let d = app.dust.slot(i);
+            assert!(d.active, "slot {i} spawned");
+            assert_eq!(d.dust_type, 5);
+            assert!(d.position.x >= 104.0 && d.position.x < 118.0);
+            assert!(d.position.y >= 104.0 && d.position.y < 140.0);
+            assert!(d.velocity.x > 0.0, "hit_dir 1 rides SpeedX");
+        }
+        assert!(!app.dust.slot(20).active, "exactly 20");
+        assert!(!control.dust.slot(0).active, "the empty twin spawns nothing");
+    }
+
+    /// W4-g60 wiring — the Spore's hp == 0 edge through the LIVE retain:
+    /// the `life >= 0` gate (`NPC.cs:87222-87225`) returns with NO dust
+    /// at exactly 0 — the twin delta is ZERO (the `NPC_Killed_1` cue
+    /// runs on both twins). At hp < 0 the gate passes and the 15-dust
+    /// burst fires (the delta is 15 gated spawns). WRITTEN NOT RUN.
+    #[test]
+    fn w4_g60_the_spore_zero_hp_edge_pays_no_dust() {
+        use crate::app::RngKey;
+        let mut control = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        control.gfx_quality.max_dust_to_draw = 6000;
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let seed = app.world.seed as i32;
+        control.rngs = crate::app::rng::NamedRngs::new(seed);
+        app.rngs = crate::app::rng::NamedRngs::new(seed);
+        let mut npc = Npc::new(NpcKind::Spore, 100.0, 100.0, 1, 0.0);
+        npc.hp = 0; // exactly zero: the arm returns, no dust
+        app.npcs.push(npc);
+        update_npcs(&mut control, 1.0 / 60.0);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateNpcs),
+            control.rngs.stream(RngKey::UpdateNpcs),
+            "the hp == 0 edge draws no dust — the twins stay equal"
+        );
+        assert!(!app.dust.slot(0).active, "no burst at the edge");
+        // hp < 0: the gate passes, the 15-iteration burst fires (each
+        // iteration draws `Next(3)` then one spawn's six internals —
+        // types 166/167 hit no tweak, `Dust.cs:214-252`).
+        let mut control2 = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut app2 = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        control2.gfx_quality.max_dust_to_draw = 6000;
+        app2.gfx_quality.max_dust_to_draw = 6000;
+        control2.rngs = crate::app::rng::NamedRngs::new(seed);
+        app2.rngs = crate::app::rng::NamedRngs::new(seed);
+        let mut npc2 = Npc::new(NpcKind::Spore, 100.0, 100.0, 1, 0.0);
+        npc2.hp = -1;
+        app2.npcs.push(npc2);
+        update_npcs(&mut control2, 1.0 / 60.0);
+        update_npcs(&mut app2, 1.0 / 60.0);
+        let mut witness = control2.rngs.stream(RngKey::UpdateNpcs).clone();
+        for _ in 0..15 {
+            let _gate = witness.next_max(3);
+            let _px = witness.next_max(18 - 4);
+            let _py = witness.next_max(18 - 4);
+            let _vx = witness.next_range(-20, 21);
+            let _vy = witness.next_range(-20, 21);
+            let _row = witness.next_max(3);
+            let _scale = witness.next_range(-20, 21);
+        }
+        assert_eq!(
+            app2.rngs.stream(RngKey::UpdateNpcs),
+            &witness,
+            "hp < 0 fires the 15 gated spawns"
+        );
+        assert!(app2.dust.slot(0).active, "the burst spawned");
+        assert!(app2.dust.slot(14).active);
+        assert!(!app2.dust.slot(15).active, "exactly 15");
     }
 
     /// `NPC.cs:7117-7145`'s `SpawnAllowed_DyeTrader`: the inventory carries

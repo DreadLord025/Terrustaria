@@ -175,6 +175,9 @@ mod npc_hit_effect_c;
 // UpdateNPCs stream through the verbatim DustPool::new_dust (the death
 // halves are g59/g60's, the spawn dust g61's, the sounds c13's).
 mod npc_hit_dust;
+// W4-g60: the NPC death dust lane 2 (HitEffect death halves, types
+// 231-697) — the death retain's feed (see the module doc).
+mod npc_death_dust;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
