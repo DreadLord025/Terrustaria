@@ -1228,6 +1228,24 @@ pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option
             td::TILE_MOSS.has(v) || td::SET_TILE_MOSS_BRICK.has(v)
         });
     }
+    // W4-g82 — `TileFrameCosmetic`'s rope arm (`WorldGen.cs:81894-81931`,
+    // the `else if (Main.tileRope[num])` between the dirt branch and the
+    // per-type switch): the IsRope column merges, the 504 mystic-snake
+    // guards, the 698 display-jar bottom anchor, the !solidTop top anchor
+    // vs any-solid bottom and the up!=num side merges. For rope kinds the
+    // generic families above are no-ops (no rope id is in their sets), so
+    // this tail call site is observation-identical to the C#'s arm
+    // position. The :81923-81930 neighbour re-frame requests only write
+    // the NEIGHBOURS' frames — never this cell's neighbour kinds — and the
+    // port's square reframe covers them (framing_rope module doc).
+    if td::TILE_ROPE.has(me) {
+        let (up, down, left, right) =
+            crate::framing_rope::rope_frame_arm(world, x, y, num, n[0], n[1], n[2], n[3]);
+        n[0] = up;
+        n[1] = down;
+        n[2] = left;
+        n[3] = right;
+    }
 
     let mut mask = 0u8;
     for (i, bit) in [

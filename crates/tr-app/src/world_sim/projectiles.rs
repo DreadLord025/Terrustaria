@@ -796,6 +796,25 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-g82 — the coil refund drain (`Projectile.cs:77572-77615` →
+    // `Item.RequestNewItem` = `Item.NewItem`, a world DROP at
+    // `base.Center`): the velocity-triplet-then-prefix draws ride the
+    // `UpdateProjectiles` stream (the C# spawns inside `Kill()` under the
+    // `Main.cs:17775` swap; the port drains at the pass tail, the
+    // S1-E-21c convention — the ai1==0 Dig cue already drained above in
+    // `drain_proj_sounds`, the C#'s cue-before-refund order kept).
+    for (item, stack, cx, cy) in app.projectiles.drain_coil_drops() {
+        if stack <= 0 {
+            continue;
+        }
+        crate::world_sim::items::spawn_item_drop_px(
+            &mut app.items,
+            app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            item,
+            stack as u32,
+            glam::Vec2::new(cx, cy),
+        );
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's

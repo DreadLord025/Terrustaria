@@ -23,6 +23,10 @@ pub mod extract;
 pub mod falling;
 pub mod flame;
 pub mod framing;
+// W4-g82 — TileFrameCosmetic's rope arm (WorldGen.cs:81894-81931), the
+// tr-core home of render/ropes.rs's verbatim decision maths; wired into
+// framing::frame_of_variant's merge-chain tail.
+pub mod framing_rope;
 pub mod generation_progress;
 pub mod glowmask;
 pub mod housing;

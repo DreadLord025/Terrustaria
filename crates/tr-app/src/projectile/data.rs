@@ -4087,6 +4087,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // W4-g82 — the four rope coils (`Projectile.cs:2570-2578` for
+            // 171/505/506, `:5496-5504` for 475 — the two arms are
+            // term-identical): 14x14, aiStyle 35, `penetrate = -1`,
+            // `tileCollide = false`, `timeLeft = 400`. The stock
+            // extraUpdates 0 / alpha 0 / scale 1 stand (`:779`/`:785`);
+            // the aiStyle-35 machine + the chain preview live in
+            // `projectile_rope_coil.rs` (the kind constants there).
+            171 | 505 | 506 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
+            475 => (14.0, 14.0, 35, -1, 400, 0, false, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {

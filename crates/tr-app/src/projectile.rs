@@ -10499,6 +10499,26 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // W4-g82 — the rope coils' trailing-chain placement preview
+        // (`Main.DrawProjDirect`'s type-171/475/505/506 arms,
+        // `Main.cs:28499-28669`): the coil items have NO `createTile`, so
+        // the chain of rope links IS the placement preview — it draws
+        // ahead of the coil's own sprite (the C# chain arms run before
+        // the generic emit at `:30136`, the c6 pumpking-chain precedent).
+        // Each link carries its own `Lighting.GetColor` at the LINK's
+        // position + the 0.8 scale + half-sheet origin; the coil's own
+        // sprite keeps the generic path below unchanged.
+        if crate::projectile_rope_coil::is_coil(self.kind) {
+            crate::projectile_rope_coil::draw_coil_chain(
+                self,
+                r,
+                light,
+                camera,
+                zoom,
+                screen,
+                |name| lookups.coil_chain_uv(name),
+            );
+        }
         // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
         // ahead of the generic emit (`Main.cs:28143-28144` →
         // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the
@@ -14092,11 +14112,11 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
 /// The styles whose arms this port has are 2 (the thrown family, whose own
 /// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
-/// bolts) and the styles that already had ported arms (1 the arrows, 16 the
-/// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
-/// in a later phase or not at all.
+/// bolts), 35 (W4-g82's rope coils, `:22126`) and the styles that already had
+/// ported arms (1 the arrows, 16 the bombs) keep their pre-existing no-wind
+/// behaviour; the rest (10/14/…) port in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
+    matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 35)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -15012,6 +15032,12 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-g82 — the coil death hook's refund drops
+    /// (`Projectile.cs:77572-77615` → `Item.RequestNewItem` at
+    /// `base.Center`): `(item, stack, cx, cy)` the world sim spawns as
+    /// item drops on the `UpdateProjectiles` stream (NOT the bobber's
+    /// inventory fill — `RequestNewItem` is `Item.NewItem`, a world drop).
+    pending_coil_drops: Vec<(u16, i32, f32, f32)>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15413,6 +15439,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_coil_drops: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -18322,6 +18349,30 @@ impl ProjectilePool {
                                 &npcs[..],
                             );
                         }
+                        // W4-g82 — `AI()`'s `else if (this.aiStyle == 35)`
+                        // (`Projectile.cs:27189-27291`): the rope coils
+                        // (171/475/505/506). The arm owns its integration
+                        // (tileCollide false — the free move on every
+                        // early return, the collision-adjusted move on
+                        // contact) and its Kill (`:27290`); the refund +
+                        // the ai1==0 cue ride the pool's death hook
+                        // (`coil_death_drop`, the d77 kill_tail_cue
+                        // pattern — both C# sites live INSIDE Kill()).
+                        // The cut-tile TileKill records are discarded
+                        // here — the `ai_ice_block`/`ai_dungeon_debris`
+                        // precedent (`:7598`/`:12766`'s `let _ =
+                        // kill_tile`): the cascade runs, the per-cell
+                        // drops stay unspawned (recorded deviation).
+                        35 => { let _ = crate::projectile_rope_coil::coil_step(&mut self.slots[i], world, local_owner); }
+                        // W4-g82 — the coils are tools, not weapons: the
+                        // C# `SetDefaults` reset leaves `friendly = false`
+                        // (`:788`) and neither coil arm sets it — the
+                        // port's Default carries friendly true, so the
+                        // arm pins it false every tick (the
+                        // `ai_dungeon_debris` precedent, `:12689`).
+                        // `hostile` stays false (`:764`), so neither
+                        // damage pass claims a coil (damage 0 anyway).
+                        // (The pin itself rides `coil_step`'s head.)
                         // aiStyle 36: the bees (181/566), the beenade's
                         // children (`Projectile.cs:27292-27471`). The arm owns
                         // its kill-on-tile integration. The i21 Bat Scepter's
@@ -20663,6 +20714,14 @@ impl ProjectilePool {
                         self.slots[i].direction =
                             if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                     }
+                    // W4-g82 — the coils take the same generic write:
+                    // aiStyle 35 is NOT in the exclusion list, so the
+                    // facing (the spin's sign, `:27201`) follows the
+                    // velocity every sub-step after the AI.
+                    if data.ai_style == 35 {
+                        self.slots[i].direction =
+                            if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                    }
                     // The wind tail (`:16777-16781`) runs after the AI
                     // sub-steps, for the wind-eligible new arms only (the
                     // ported arrow/bomb/shuriken arms keep their pre-existing
@@ -20703,11 +20762,17 @@ impl ProjectilePool {
                 // C): its idle machine holds `friendly = false`
                 // (`Projectile.cs:61999-62002`) while the stock
                 // `hostile` stays false — an idle minion never hurts
-                // its owner.
+                // its owner. W4-g82: the rope coils are exempt the same
+                // way — `coil_step` pins friendly false (the `:788`
+                // reset; neither coil arm sets it) while the stock
+                // `hostile` stays false (`:764`), so `Damage_EVP`
+                // refuses (`:14775`) and a thrown coil never hurts its
+                // thrower.
                 if self.slots[i].active
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    && !crate::projectile_rope_coil::is_coil(self.slots[i].kind)
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -21003,6 +21068,21 @@ impl ProjectilePool {
                 // bursts spawn through the pool (the arm cannot see the slot
                 // array); the water conversion writes tiles directly.
                 self.thrown_consumable_death(i, world, player.as_deref(), rng);
+                // W4-g82 — the coils' Kill() arms: the ai1==0 Dig cue
+                // (`Projectile.cs:74617-74620`/`:74681-74684`, the dust
+                // walks' head — the dust bodies stay skipped) + the
+                // refund ladder (`:77572-77615`, inside
+                // `Kill_ExplodeTiles`: the owner gate `:77267` + the
+                // `!noDropItem` gate `:77367`). Both ride the death hook
+                // (the d77 kill_tail_cue pattern — the C# plays/drops
+                // inside Kill(); the out-of-world guard never reaches
+                // it). Kinds disjoint from every other death arm, so the
+                // position in the hook chain is unobservable. The
+                // out-of-world guard (`:16696`) deactivates WITHOUT
+                // Kill() — no cue, no refund (the d77 gate precedent).
+                if !died_out_of_world {
+                    self.coil_kill(i, local_owner);
+                }
 
                 // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
                 // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
@@ -22062,6 +22142,51 @@ impl ProjectilePool {
             }
             _ => {}
         }
+    }
+
+    /// W4-g82 — the coils' `Kill()` arms, kind-gated, once per death:
+    /// * the `ai[1] == 0` Dig cue (`Projectile.cs:74617-74620` for
+    ///   475/505/506, `:74681-74684` for 171 — `SoundEngine.PlaySound(0,
+    ///   (int)position.X, (int)position.Y)`, the int overload's truncated
+    ///   position; the dust walks sharing the chain geometry stay
+    ///   skipped). Queued straight into the pool's sound queue — the
+    ///   death hook runs AFTER the sub-step loop's `wants_sound` forward
+    ///   (the d77 kill_tail_cue convention).
+    /// * the refund ladder (`:77572-77615`, `coil_death_drop`): one coil
+    ///   item back at ai1==0, `10-ai1` rope items at ai1<10, nothing at
+    ///   ai1>=10. `Item.RequestNewItem` at `base.Center` — a world DROP
+    ///   (not the bobber's inventory fill), queued for the world sim's
+    ///   `UpdateProjectiles`-stream spawn. The enclosing C# gates:
+    ///   `Kill_ExplodeTiles`'s owner refusal (`:77267`) + the
+    ///   `!noDropItem` head (`:77367`); the cue is UNGATED by both (it
+    ///   sits in Kill()'s dust chain, ahead of `active = false`).
+    fn coil_kill(&mut self, slot: usize, local_owner: u8) {
+        let p = &self.slots[slot];
+        if !crate::projectile_rope_coil::is_coil(p.kind) {
+            return;
+        }
+        // :74617-74620/:74681-74684 — the cue, position truncated.
+        if p.ai[1] == 0.0 {
+            self.pending_proj_sounds
+                .push((0, 0, p.pos.x.trunc(), p.pos.y.trunc(), 0.0));
+        }
+        // :77267/:77367 — the refund's owner + noDropItem gates.
+        if p.owner != local_owner || p.no_drop_item {
+            return;
+        }
+        if let Some((item, count)) = crate::projectile_rope_coil::coil_death_drop(p.kind, p.ai[1]) {
+            let center = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            self.pending_coil_drops.push((item, count, center.0, center.1));
+        }
+    }
+
+    /// W4-g82 — the coil refund drain (`Projectile.cs:77572-77615`):
+    /// `(item, stack, cx, cy)` the world sim spawns through
+    /// `spawn_item_drop_px` on the `UpdateProjectiles` stream (the C#
+    /// `Item.NewItem` runs inside `Kill()` under the `Main.cs:17775`
+    /// swap; the port drains at the pass tail, the S1-E-21c convention).
+    pub fn drain_coil_drops(&mut self) -> Vec<(u16, i32, f32, f32)> {
+        std::mem::take(&mut self.pending_coil_drops)
     }
 
     /// The 283 VenomBullet's debuff-spread burst (`Projectile.cs:75940-75973`):
@@ -27806,6 +27931,163 @@ mod frost_shot_tests {
         assert!(pool.slots()[timed].active, "frame 2: 3 - 2 = 1");
         step(&mut pool, &mut w);
         assert!(!pool.slots()[timed].active, "frame 3: 1 - 2 kills");
+    }
+}
+
+// W4-g82 — the aiStyle-35 dispatch wiring witnesses: the rows
+// (`projectile/data.rs`) + the `35 =>` arm (`update`'s match) + the
+// friendly pin / direction write / PVP exemption. The machine's own
+// maths witnesses live in `projectile_rope_coil.rs`. WRITTEN NOT RUN
+// (code-only mode).
+#[cfg(test)]
+mod w4_g82_coil_dispatch_tests {
+    use super::*;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("coil".into(), 64, 200)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn step(pool: &mut ProjectilePool, w: &mut tr_core::World) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    // The four rows are verbatim `SetDefaults` (`Projectile.cs:2570-2578`
+    // / `:5496-5504`) and match the coil module's row fn; the kinds are
+    // spawnable (the atlas packs their sheets).
+    #[test]
+    fn w4_g82_the_coil_rows_are_live_and_spawnable() {
+        for k in [171u16, 475, 505, 506] {
+            let d = proj_data(k).expect("the coil row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.time_left), (14.0, 14.0, 35, -1, 400));
+            assert!(!d.tile_collide);
+            assert_eq!(d.extra_updates, 0);
+            assert_eq!(d.alpha, 0);
+            assert_eq!(d.scale, 1.0);
+            assert!(spawnable_kinds().contains(&k));
+            let (w, h, ai, pen, life, tc) = crate::projectile_rope_coil::coil_proj_row(k).unwrap();
+            assert_eq!((d.w, d.h, d.ai_style as u16, d.penetrate, d.time_left, d.tile_collide), (w, h, ai, pen, life, tc));
+        }
+    }
+
+    // The dispatch arm runs the machine: the age counter advances, the
+    // friendly pin holds (the `:788` reset), the direction follows the
+    // velocity (the `AutomaticallyChangesDirection` write), and the
+    // landing places one rope link above the floor then kills
+    // (`Projectile.cs:27272-27290`). Contact geometry: pos.y 460 → box
+    // bottom 474, +vel 10 → 484 overlaps the floor top 480 → vy clamps
+    // to 6 (≠10 → contact); centre (320,467) → tile (20,29).
+    #[test]
+    fn w4_g82_the_35_arm_flies_places_and_kills() {
+        let mut w = world();
+        for x in 18..24 {
+            put_solid(&mut w, x, 30);
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(171, 0, 320.0 - 7.0, 460.0, 0.0, 10.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        assert_eq!(proj_data(pool.slots()[slot].kind).unwrap().ai_style, 35);
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(!p.active, "the Kill at :27290");
+        assert!(!p.friendly, "the :788 reset pin");
+        assert_eq!(p.ai[0], 1.0, "the dispatch arm ran the counter");
+        assert_eq!(p.ai[1], 1.0, "one link placed above the floor");
+        assert_eq!(p.direction, 1, "vx 0 → the else arm's +1");
+        let t = w.tile(20, 29).unwrap();
+        assert!(t.active() && t.kind == 213, "the rope link");
+    }
+
+    // A free-flying coil keeps its stock no-collide move and never places
+    // (the `!contacted` early return, `:27223-27226`); the spin rides
+    // (|vx|+|vy|)*direction*0.02 (`:27201`).
+    #[test]
+    fn w4_g82_the_free_flight_spins_and_never_places() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(475, 0, 300.0, 300.0, 3.0, 4.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        step(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(p.ai[1], 0.0);
+        assert!((p.rot - 0.14).abs() < 1e-6, "(3+4)*1*0.02");
+        assert!((p.pos.x - 303.0).abs() < 1e-6 && (p.pos.y - 304.0).abs() < 1e-6);
+    }
+
+    // W4-g82 seam 3 — the death hook's Kill() arms: an unplaced coil
+    // (ai1==0) queues the truncated-position Dig cue (`:74681-74684`,
+    // id 0 = the port's Dig façade) + ONE coil item back at the Centre
+    // (`:77576`); a partially placed one (ai1=3) drops 7 rope items and
+    // NO cue (`:77580`); a fully placed one (ai1=10) drops nothing
+    // (`:77578`'s `< 10f`). The lifetime kill (`:17201-17205`) rides the
+    // same hook.
+    #[test]
+    fn w4_g82_the_kill_hook_queues_the_cue_and_the_refund() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(171, 0, 300.25, 300.75, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 1; // the lifetime kill this tick
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active);
+        let sounds = pool.drain_proj_sounds();
+        assert_eq!(sounds, vec![(0, 0, 300.0, 300.0, 0.0)], "the truncated Dig cue");
+        // Centre = pos + half-box; the arm's free move added vel 0.
+        let drops = pool.drain_coil_drops();
+        assert_eq!(drops, vec![(985, 1, 307.25, 307.75)], "one coil item at Centre");
+        // ai1 = 3: 7 rope items, no cue.
+        let slot = pool
+            .spawn_with_data_ai_owned(475, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 3.0)
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 1;
+        step(&mut pool, &mut w);
+        assert!(pool.drain_proj_sounds().is_empty(), "ai1 != 0 keeps the cue silent");
+        assert_eq!(pool.drain_coil_drops(), vec![(2996, 7, 307.0, 307.0)]);
+        // ai1 = 10: nothing drops, no cue.
+        let slot = pool
+            .spawn_with_data_ai_owned(505, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 10.0)
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 1;
+        step(&mut pool, &mut w);
+        assert!(pool.drain_proj_sounds().is_empty());
+        assert!(pool.drain_coil_drops().is_empty());
+        // The owner gate (`:77267`): a foreign coil's death still cues
+        // (the cue sits ahead of the gate in Kill()) but never refunds.
+        // The pool never simulates foreign slots (`:17210`), so the hook
+        // is pinned directly on a dead foreign slot.
+        let slot = pool
+            .spawn_with_data_ai_owned(506, 1, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].active = false;
+        pool.coil_kill(slot, 0);
+        assert_eq!(pool.drain_proj_sounds(), vec![(0, 0, 300.0, 300.0, 0.0)]);
+        assert!(pool.drain_coil_drops().is_empty(), "the :77267 owner refusal");
     }
 }
 

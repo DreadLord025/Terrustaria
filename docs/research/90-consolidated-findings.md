@@ -269,6 +269,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-36-13 | The zone metric — `Player.SceneMetrics.CloseEnoughToDD2LanePortal` → `Player.ZoneOldOneArmy` + `NPC.ZoneOldOneArmy` + the `NPC.cs:799` despawn gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:204 |
 | R-36-14 | The OOA's invasion id — set `invasion_type = 3` (`DD2Event.cs:47`) and route the progress through `invasion_progress_icon = 3` | 36 | S | behavioural (UI) | — | 36-cinematics-film.md:207 |
 | R-36-15 | Replace the `DD2Event.Ongoing` stub (`dd2.rs:17-19`) with the world's real flag and re-enable the sentry-persistence gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:210 |
+| R-26-13 | The projectile-loot seam — a `TileKill` drain for the projectile pool: all 7 pool `kill_tile` sites discard the record (ai_ice_block :7598, ai_dungeon_debris :12786, debris_death_crack :20393, celeb2_death :20472, explode_bomb :22064/:22109, explode_rocket :22256, the coil dispatch :17632) — the cleared plants/herbs/pots vanish (the mining path resolves via `break_drop_events`, the pool has no drain); queue + drain under the `UpdateProjectiles` rng stream, the per-site C# stream audit + the frame-roll resolution cited | 26 | M | behavioural (loot) | — | 26e-f-rope-union-final.md (W4-g82 final census) |
 
 ### (d) missing subsystems — 51 seeds
 

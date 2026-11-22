@@ -39586,6 +39586,202 @@ d74 (`buff_effects_tail.rs`, request accumulator). The keep-one decision
   cargo/rustc/rustfmt/tests/graphify invoked. The f12/merger step wires
   the module and drops the four duplicate orb copies.
 
+## The rope-coil lane (W4-g82, task/W4-g82-rope-coil-draw, 2026-11-21, code-only mode)
+The two unclaimed rope/coil residuals after S1-G-1b/f (the back-rope pass)
+and the d56 conventions branch (5d80b38a):
+1. **The rope variant draw residual** — `WorldGen.TileFrameCosmetic`'s
+   rope arm (`WorldGen.cs:81894-81931`), ported verbatim as
+   `render/ropes.rs::rope_frame_arm`. The port's generic framing carried
+   only the `!tileRope` blend-all gate (`:81731`, framing.rs:928); the
+   rope arm's seven writes were missing, so rope cells framed as plain
+   blocks. The arm: the 504 mystic-snake guards on the up-merge/solid-top
+   anchor/side merges (`:81896/:81904/:81912`), the 698 Dead Cells
+   display-jar bottom anchor (`:81900`), the `!solidTop` top anchor vs
+   the any-solid bottom anchor (`:81904/:81908`), the `up != num`
+   side-merge gate (`:81912`) and the two neighbour re-frame requests
+   (`:81923-81930`, returned as pure output — the probe never mutates).
+    WIRED (2026-11-21, wiring phase): the production copy is
+    `tr_core::framing_rope::rope_frame_arm` (verbatim twin, the d56
+    inlined-table convention), called from `frame_of_variant`'s merge-chain
+    tail AFTER the moss/dirt families and BEFORE the mask build - for rope
+    kinds every generic family above is a no-op (no rope id is in BLEND_ALL
+    / dirt / mud / moss sets), so the tail site is observation-identical to
+    the C#'s arm position. d109/d110 own `frame_of_variant`'s HEAD (the
+    8-way dispatch) and the wall passes - the tail region is append-safe.
+    The :81923-81930 neighbour re-frame requests only WRITE the neighbours'
+    frames, never this cell's neighbour KINDS, so this cell's mask is
+    independent of them; the port's square reframe (`reframe_area` after
+    every edit + `frame_world`) covers the neighbour writes (recorded
+    deviation - the render twin keeps the pure request output for its
+    witnesses).
+2. **The rope-coil lane** — `projectile_rope_coil.rs` (new module):
+   * the aiStyle-35 machine (`Projectile.cs:27189-27291`): the 30-tick
+     0.2/0.985 gravity + 14 vy cap, the `(|vx|+|vy|)*direction*0.02` spin,
+     the owner gate, the `fallThrough/fall2` collision probe + the
+     bottomSlope snap (`:27216-27221`), the `IsRope` column skip, the
+     10-link placement walk with the platform/track alternator
+     (`:27261-27264`, no budget spend) and the cut-tile/165 clears
+     (`:27265-27270`, returned as `TileKill` records for the editing
+     resolver). The four `SetDefaults` rows (171/475/505/506 → 14x14,
+     aiStyle 35, penetrate -1, tileCollide false, timeLeft 400;
+     `:2570-2578/:5496-5504`) + the rope-kind map (213/353/365/366).
+   * the coil's **placement preview** = the trailing chain draw
+     (`Main.DrawProjDirect` `Main.cs:28499-28669`): the coil items have
+     NO `createTile` so they never enter the `TileObject.objectPreview`
+     path — the chain of rope links IS the preview. The 17/30-tick
+     count/sag ramps, the 5.6-px normalize with the manhattan-<1 shrink
+     quirk, the reverse draw order and the draw-index sheet parity
+     (Chain16 for 171; Chain38/39 for 475; Chains_4/5 for 505; Chains_6/7
+     for 506), per-link `Lighting.GetColor` + 0.8 scale + half-sheet
+     origin.
+   * the `Kill()` refund ladder (`:77572-77615`): ai1==0 → one coil
+     item back; ai1<10 → `10-ai1` rope items; the per-kind item pairs.
+   * `PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`):
+     the down-column walk with the 5-consecutive-platform cap, the 214
+     chain lava exemption, the header-bit lava test (no amount check).
+* **WIRED (2026-11-21, the wiring phase - 5 seam commits)**: the
+  `35 =>` one-line dispatch arm (ahead of 36, the C# body order, the
+  per-arm mutable world reborrow - the ai_ice_block/ai_dungeon_debris
+  precedent), the four rows appended in `projectile/data.rs` before the
+  None arm (the 24-space convention, append-safe), the `main.rs` mod
+  decl, the chain draw in `draw_with_hand` ahead of the sprite emit (the
+  c6 pumpking-chain precedent) + the 7 chain sheets in `assets.rs`
+  (`STATIC_SHEET_NAMES` tail + `Lookups::coil_chains`/`coil_chain_uv`,
+  the glow_sheets keyed-name precedent), the refund + cue at the death
+  hook (`coil_kill` beside `thrown_consumable_death`, the d77
+  kill_tail_cue pattern), the usability gate in `use_tile_item` (the
+  walked target shadows ty for every downstream gate - the C#
+  tileTargetY static write). The item rows already existed (itemdata
+  985/3005/3079/3080).
+* **The cut-tile TileKill records are DISCARDED at the dispatch** (the
+  `let _ = kill_tile` precedent, projectile.rs :7598/:12766): the
+  KillTile cascade runs (support checks, object drops recorded), but
+  the per-cell item drops of the cleared plants stay unspawned - the
+  same recorded deviation the ice-block/debris tile writes carry. The
+  module keeps returning the records for a future drain.
+* **The refund is a world DROP, not an inventory fill**: the C#
+  `Item.RequestNewItem` = `Item.NewItem` (Item.cs:49639-49646) at
+  `base.Center`; the port queues `(item, stack, cx, cy)` and the world
+  sim spawns via `spawn_item_drop_px` on the `UpdateProjectiles` stream
+  (the velocity-triplet-then-prefix order deviation stands). The
+  enclosing gates are kept: the `:77267` owner refusal + the `:77367`
+  `!noDropItem` head gate the refund; the ai1==0 cue is UNGATED by both
+  (it sits in Kill()'s dust chain ahead of `active = false`).
+  **G82e DRAIN RECEIPT (2026-11-21)**: the `spawn_item_drop_px` spawn
+  shape is the WRONG emit for this ladder — the C# calls pass
+  `prefix: 0` (Item.cs:511-513 returns before any draw) and no
+  velocity, so NewItem draws exactly TWO integers
+  (`Next(-30,31)*0.1` / `Next(-40,-15)*0.1`, Item.cs:49749-49750; none
+  of the kinds is ItemNoGravity, ItemID.cs:1320); the tile-loot
+  helper draws three floats + a natural-prefix roll + a rotation the
+  C# never makes. The merge takes d4's `pending_death_drops` queue +
+  two-integer-draw `UpdateItems` drain (the d4d FINAL-FINAL ruling,
+  d4 tip f1480dc0, drain source pinned at the SEAL-VERIFY commit
+  d7c3fbc02 — the ball's Vector2.Zero takes the HasValue arm, zero
+  draws, the zero_velocity flag; the stream deferral stays recorded) — g82's
+  queue/drain are the g82-side drop-hunks, the cue + gate shape
+  stays. Full re-read + tables: 26e-f "The g82e drain receipt".
+* **The coil census correction**: the ai1==0 Dig cue + the dust walks
+  (`Projectile.cs:74615-74731`) live INSIDE `Kill()` (the enclosing
+  body re-read: no function boundary between :70642 and :74615), NOT
+  in `UpdateProjectiles` - so the cue rides the death hook, not
+  `wants_sound` (whose forward runs before the hook). The cue position
+  is the int-overload truncation (`(int)position.X/Y`).
+* **The friendly pin + the PVP exemption**: the C# SetDefaults reset
+  leaves `friendly = false` (`:788`) and neither coil arm sets it; the
+  port Default carries true, so `coil_step` pins false every tick (the
+  debris precedent) and the player-contact pass exempts the coils (the
+  debris/slime list - `hostile` false `:764`, `Damage_EVP` refuses
+  `:14775`). The generic `AutomaticallyChangesDirection` write covers
+  style 35 (`:17283` does not exclude it).
+* The dust walks sharing the chain geometry (`Projectile.cs:74615-74731`,
+  4 dust per segment past ai1, types 3/30/239/129) are SKIPPED with the
+  dust layer - zero state (the ai_style2 precedent). The ai1==0 sound
+  cue is WIRED at `coil_kill` (above).
+* `NetMessage.SendData(17/159)` skipped (single-player);
+  `WorldGen.IsTileLoaded` always true.
+* **The 0/0 NaN quirk is kept**: a chain link whose adjusted step hits
+  exactly zero length (e.g. vel (0,10) at walk index 24) computes
+  `0/0` → NaN in BOTH the C# and the port (the manhattan shrink zeroes
+  the 5.6 step first). The witness avoids the degenerate axis on purpose
+  and pins the quirk's existence.
+* The `IsRope` probe is inlined in the coil module (the render-side
+  twin lives in `render/ropes.rs`) to keep the module free of the
+  render dependency — the d56 inlined-table convention; both copies are
+  verbatim `WorldGen.cs:70026-70104` incl. the no-top-end down-scan
+  degeneration.
+* **FINAL keep-one (2026-11-21, final phase; SEALED same day)**:
+  `coil_step` is the
+  CANONICAL style-35 machine — the d4 branch's `ai_rope_coil` + its four
+  named-const data rows + its four witnesses are the DROP half
+  (the re-adjudication of d4's 26e doc, which ruled the other way while
+  g82 was still unwired; g82 then wired the full lane — refund/cue/
+  usability/chain draw/friendly pin/PVP exemption/direction write).
+  The two faithfulness deltas 26e credited to d4
+  are FIXED here (c2b7507a0): the null-tile abort integrates and the
+  placement kill tick adds the dead-tick integrate (the C# returns from
+  AI only — HandleMovement :17015 → UpdatePosition :20445 still runs,
+  the :17027 !active return sits AFTER). **SEAL**: d4 tip `cafec7222`
+  then pushed the extras union (refund/usability/preview copies of
+  g82 `67c9a740` — normalized byte-compare IDENTICAL, dedupe trivial)
+  with three wiring deltas that all favour g82 against the re-read C#:
+  d4's refund hook drops the `:77267` owner + `:77367` noDropItem
+  gates (the ladder sits INSIDE Kill_ExplodeTiles — d4's "NO owner
+  gate" is a misread of the orthogonal ReserveForLocalPlayer grab
+  reservation), d4's drain rides `UpdateItems` (the C# NewItem draws
+  run inside Kill() under the `Main.cs:17775` UpdateProjectiles swap),
+  and the death-centre post-integrate timing is a POOL-WIDE deviation
+  both ports share (d4's ANALYSIS paragraph is the better write-up —
+  keep its text). Verdict stands; the UPDATED ten-row drop-hunks
+  table (`cafec7222` lines), the d4d-retire cross-receipt and the
+  ROPE-FAMILY merger bible: `docs/research/26e-f-rope-union-final.md`.
+  Exact drop-hunks, the row
+  dedupe, the f3-pulley compose chain and the pool-wide TileKill census
+  + task seed: same doc. **G82e DRAIN RECEIPT (same day, SEALED
+  FINAL)**: the seal's drain delta is REVERSED on the shape axis —
+  d4's retire fix `954824d0` restored the `:77267`/`:77367` gates
+  (behaviourally identical to `coil_kill`), and the d4d FINAL-FINAL
+  (d4 tip `f1480dc0`) proved d4's two-integer-draw drain the faithful
+  `Item.NewItem` emit while g82's `spawn_item_drop_px` draws the
+  wrong tile-loot shape (re-verified against Item.cs:49727-49751 +
+  :511-513 + ItemID.cs:1320 this pass). FINAL split verdict: g82
+  `coil_step` CANONICAL machine, d4 death-hook queue + drain
+  CANONICAL emit (drain source d7c3fbc02 — the ball Vector2.Zero
+  fix); the g82-side drop-hunks (the queue/drain/witness/
+  doc-prose repoints) + the corrected rows 3/5/7/8 + the FINAL
+  merger bible: 26e-f "The g82e drain receipt". The refund bullet
+  above carries the deviation correction.
+* **The f3-pulley compose** (origin/task/W4-f3-dust-player-3 0b11548f):
+  the pulley machine attaches to the SAME td::TILE_ROPE set the coil
+  placement writes — place→attach→ride→coil-refund runs end-to-end on
+  the merged tree (disjoint files, no seam conflict); the compose
+  witness pins f3's exact attach/ride predicates on a live-placed
+  column (e23c69da7).
+* **The cut-tile TileKill drop is POOL-WIDE** (the final-phase census):
+  all seven projectile-pool kill_tile sites discard the record
+  (ai_ice_block :7598, ai_dungeon_debris :12786, debris_death_crack
+  :20393, celeb2_death :20472, explode_bomb :22064/:22109, explode_rocket
+  :22256, the coil dispatch :17632) — the player-mining path resolves
+  them (editing.rs break_drop_events) but the pool has no drain. Task
+  seed "projectile-loot seam" recorded in 26e-f; NOT a coil-only fix.
+Verification: code-only, every arm re-read against the cited windows;
+17 phase-1..3 witnesses + 10 wiring witnesses + 2 final-phase witnesses
+WRITTEN, NOT RUN (6 framing + 11 coil from the port phases; wiring: 4
+framing_rope core witnesses, 3 dispatch witnesses (rows live/spawnable,
+the landing places + kills, the free flight spins), 1 four-arm
+death-hook witness (cue + refund ladder + owner gate), 1 end-to-end
+usability witness (the retarget through use_tile_item), 1 chain-sheet
+packing witness; final: the null-abort/kill-tick integrate witness
+(c2b7507a0) + the f3-compose chain witness (e23c69da7) — 29 total).
+The wiring re-read the enclosing C# bodies (Kill()'s :70642-77628
+gate chain, the :39726 PlaceThing_Tiles chain, the DrawProjDirect
+arm-vs-emit order) and verified every port seam by read/grep (the
+collision API, the edit/place/kill exports, the LightMap fields, the
+sprite origin-rot math, the 7 retail chain files). **No
+cargo/rustc/tests/graphify invoked** (the Lead's code-only
+constraint); the deferred gate is the merge pass's
+`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
