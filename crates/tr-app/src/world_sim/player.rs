@@ -1094,6 +1094,20 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // (`Player.cs:14352`'s `inventory[selectedItem]`), filled before the
         // tick's `update_equips` pass.
         p.held_item_kind = app.inventory[app.selected].kind;
+        // W4-d21 fold 2 — `PlayerPettingInfo.TryGetTarget`
+        // (`PlayerPettingInfo.cs:54-76`): the petting target's live bottom
+        // for `UpdatePettingAnimal`. The projectile lane: the slot must be
+        // active AND the same type; a dead/changed slot resolves None (the
+        // drop). The NPC/mount lanes are their systems' follow-ups.
+        p.petting_target_bottom = if p.petting.is_petting && p.petting.proj >= 0 {
+            app.projectiles
+                .slots()
+                .get(p.petting.proj as usize)
+                .filter(|q| q.active && q.kind as i32 == p.petting.kind)
+                .map(|q| (q.pos.x + q.w * 0.5, q.pos.y + q.h))
+        } else {
+            None
+        };
         // `PlayerFrame()`'s held-item inputs (`Player.cs:36143-36146`): the C#
         // reads `inventory[selectedItem]` straight out of the player, the port
         // hands the summary in before the fixed step.
@@ -1107,8 +1121,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // mounts hold nothing (`MountID.Sets.DontHoldItems`,
             // `MountID.cs:46`) and the umbrella hold (4) is off while
             // mounted, roped or airborne (`Player.cs:50209-50224`).
+            // W4-d21 fold 2: `CanVisuallyHoldItem`'s petting refusals
+            // (`Player.cs:50204-50207`/`:50225-50232`) — the holdStyle
+            // 4/5/6 arms all refuse while petting.
             let mounted_blocks_hold = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+            let petting_blocks_hold = p.petting.is_petting && matches!(hold_style, 4 | 5 | 6);
             let can_visually_hold = !mounted_blocks_hold
+                && !petting_blocks_hold
                 && (hold_style != 4 || (!p.pulley && p.vy == 0.0 && !p.mount.is_active()));
             // The hooks' centroid relative to the body centre
             // (`Player.cs:36497-36503`): the C# averages ONLY the registered

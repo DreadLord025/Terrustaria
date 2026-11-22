@@ -661,6 +661,20 @@ pub(crate) struct App {
     /// hover sites are unported, so nothing arms it today — the field keeps
     /// the check's shape.
     pub(crate) no_throw: i32,
+    /// `Player.cursorItemIconID` (`Player.cs:1851`, W4-d21 fold 2) — the
+    /// right-click-interaction cursor icon the hover arms set (the petting
+    /// `TryPetting` `Main.cs:37958`, the money-trough/void-lens arms). 0 =
+    /// no icon (`cursorItemIconEnabled = false`). The icon DRAW is the
+    /// render layer's follow-up; the field carries the sim state.
+    pub(crate) cursor_item_icon_id: u16,
+    /// `Player.BlockInteractionWithProjectiles` (`Player.cs:3024`, W4-d21
+    /// fold 2) — the static interaction cooldown: the static ctor arms 3
+    /// (`:57125`), the gamepad inventory-close re-arms 3 (`:5050`), and
+    /// `Main.DoUpdate` decrements it while the right button is released
+    /// (`Main.cs:16849-16852`). The pet/money-trough/void-lens right-click
+    /// arms gate on `== 0` (`:37964`). The port is keyboard+mouse (no
+    /// gamepad re-arm); the decrement rides the editing pass head.
+    pub(crate) block_interaction_with_projectiles: i32,
     /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
     /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
     /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
@@ -3920,6 +3934,8 @@ impl App {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            cursor_item_icon_id: 0,
+            block_interaction_with_projectiles: 3,
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],

@@ -872,6 +872,39 @@ pub const LIGHTS_BANE: u16 = 974;
 /// ports it (`spawn_volcano_proc` + the `_spawnVolcanoExplosion` latch).
 pub const VOLCANO: u16 = 978;
 
+// ===== W4-d21: the projectile aiStyles 201-210 family =====
+// The missing machines' kinds (census: 26d-projectile-ai-201-210-census.md).
+// Ids verified against `ID/ProjectileID.cs`; the aiStyle + box + flags
+// against each `SetDefaults` arm (cited on the rows below).
+/// `ProjectileID.AntlionClaw` (1082) / `StylistKilLaKillScissorsIWish`
+/// (1083) — the thrown melee weapons, aiStyle 201 (`Projectile.cs:10095-
+/// 10114`, `AI_201_ThrownMelee` `:39954-39983`).
+pub const ANTLION_CLAW: u16 = 1082;
+pub const STYLIST_SCISSORS: u16 = 1083;
+/// `ProjectileID.TorchGodHelper` (1084) — aiStyle 202 (`:10115-10124`,
+/// `AI_202_TorchGodHelper` `:39912-39952`).
+pub const TORCH_GOD_HELPER: u16 = 1084;
+/// `ProjectileID.StormLightning` (1091, the trap) / `LightningStrikeShot`
+/// (1117, the weapon) / `ArcSurge` (1122) — aiStyle 203 (`:10175-10185`,
+/// `:10427-10449`, `AI_203_StormLightning` `:39641-39855`).
+pub const STORM_LIGHTNING: u16 = 1091;
+pub const LIGHTNING_STRIKE_SHOT: u16 = 1117;
+pub const ARC_SURGE: u16 = 1122;
+/// `ProjectileID.PalworldDigtoise` (1098) / `PalworldTrustyDigtoise` (1123)
+/// — aiStyle 204 (`:10241-10250`, `:10504-10513`, `AI_204_Digtoise`
+/// `:38463-38801`).
+pub const DIGTOISE: u16 = 1098;
+pub const TRUSTY_DIGTOISE: u16 = 1123;
+/// `ProjectileID.RemoteControlCar` (1105) — aiStyle 205 (`:10294-10302`,
+/// `AI_205_RemoteControlCar` `:38076-38461`).
+pub const REMOTE_CONTROL_CAR: u16 = 1105;
+/// `ProjectileID.GlacierFangShot` (1115) — aiStyle 208 (`:10401-10412`,
+/// `AI_208_GlacierFangShot` `:36903-37049`).
+pub const GLACIER_FANG_SHOT: u16 = 1115;
+/// `ProjectileID.ChlorophyteClaymoreBladeSlam` (1129) — aiStyle 209
+/// (`:10580-10596`, `AI_209_ChlorophyteClaymoreBladeSlam` `:69622-69631`).
+pub const CHLOROPHYTE_CLAYMORE_BLADE_SLAM: u16 = 1129;
+
 // ===== S1-D-4: the Empress of Light's projectile family =====
 // The five kinds the Empress `AI_120_HallowBoss` machine spawns (R7's
 // `npc_ai_empress.rs` `EmpressRequest::Projectile` set). Ids verified against
@@ -3564,6 +3597,50 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `KrakenWave` (`:10656-10667`): 100×100, aiStyle 210,
             // `timeLeft = 600`, `penetrate = -1`, idStatic-10.
             KRAKEN_WAVE => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
+            // W4-d21 — `Projectile.cs:10095-10104` (1082, the Antlion Claw):
+            // 26x26, aiStyle 201, friendly, penetrate 1, melee,
+            // usesOwnerMeleeHitCD (no port field — the per-hit melee gate is
+            // the damage_pve seam's, recorded). The stock tileCollide/timeLeft.
+            ANTLION_CLAW => (26.0, 26.0, 201, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:10105-10114` (1083, the Stylist scissors):
+            // 28x28, aiStyle 201, friendly, penetrate 2, melee.
+            STYLIST_SCISSORS => (28.0, 28.0, 201, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:10115-10124` (1084, the Torch God helper):
+            // 4x4, aiStyle 202, extraUpdates 2, timeLeft 300, penetrate -1,
+            // tileCollide false.
+            TORCH_GOD_HELPER => (4.0, 4.0, 202, -1, 300, 2, false, false, false, RESET_STATE),
+            // `Projectile.cs:10175-10185` (1091, the Storm Lightning trap):
+            // 16x16, aiStyle 203, friendly + hostile, trap, ignoreWater,
+            // netImportant. The hostileDamageScaling is the difficulty seam
+            // (single-difficulty, recorded). The stock penetrate 1/timeLeft.
+            STORM_LIGHTNING => (16.0, 16.0, 203, 1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE),
+            // `Projectile.cs:10427-10436` (1117, the Lightning Strike shot):
+            // 16x16, aiStyle 203, friendly, magic, ignoreWater, tileCollide
+            // false. The stock penetrate 1/timeLeft.
+            LIGHTNING_STRIKE_SHOT => (16.0, 16.0, 203, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
+            // `Projectile.cs:10437-10449` (1122, the Arc Surge): 16x16,
+            // aiStyle 203, friendly, magic, ignoreWater, tileCollide false,
+            // timeLeft 1, idStatic-10.
+            ARC_SURGE => (16.0, 16.0, 203, 1, 1, 0, false, false, false, (false, -2, true, 10, 0, 1.0)),
+            // `Projectile.cs:10241-10250` (1098, the Digtoise): 34x34,
+            // aiStyle 204, friendly, alpha 255, netImportant,
+            // correctSlopeCollision (the slope pass rides the dispatch).
+            DIGTOISE => (34.0, 34.0, 204, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:10504-10513` (1123, the Trusty Digtoise): the
+            // same 34x34 aiStyle-204 row.
+            TRUSTY_DIGTOISE => (34.0, 34.0, 204, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:10294-10302` (1105, the RC Car): 26x26,
+            // aiStyle 205, friendly, tileCollide true, correctSlopeCollision.
+            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:10401-10412` (1115, the Glacier Fang shot):
+            // 10x10, aiStyle 208, friendly, magic, ignoreWater, drawLayer 4
+            // (draw-only), the LOCAL pair (-1).
+            GLACIER_FANG_SHOT => (10.0, 10.0, 208, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, -1, false, -1, 0, 1.0)),
+            // `Projectile.cs:10580-10596` (1129, the Chlorophyte Claymore
+            // blade slam): 16x16, aiStyle 209, alpha 255, tileCollide false,
+            // ignoreWater, timeLeft 5, friendly, penetrate -1, melee, the
+            // LOCAL pair (-1), ownerHitCheck (the spear seam's, recorded).
+            CHLOROPHYTE_CLAYMORE_BLADE_SLAM => (16.0, 16.0, 209, -1, 5, 0, false, false, false, (true, -1, false, -1, 255, 1.0)),
             // The Terrarian's beam (`:6071-6083`): 14×14, aiStyle 115, scale
             // 1.2, `penetrate = -1`, idStatic-10 (the slice above).
             TERRARIAN_BEAM => (
@@ -5513,7 +5590,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, 822..=824 | 826..=830 | 838..=840 | 843..=846 | 850 | 852..=853)
             // W4-d20 — `Projectile.cs:10076`: the meteor ore (1078) sets
             // `netImportant = true`.
-            || kind == METEOR_ORE,
+            || kind == METEOR_ORE
+            // W4-d21 — the storm-lightning trap + the two digtoises set
+            // `netImportant = true` (`Projectile.cs:10178`/`:10248`/`:10511`).
+            || matches!(kind, STORM_LIGHTNING | DIGTOISE | TRUSTY_DIGTOISE),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -5721,7 +5801,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (1040/1041/1043) set `ignoreWater = true`.
             || matches!(kind, DEAD_CELLS_FLINT | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH)
             // W4-d20 — `Projectile.cs:9325`/`:9415`: the two aiStyle-191
-            // sword shots (973/985) set `ignoreWater = true`.,
+            || matches!(kind, TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT)
+            // W4-d21 — the storm-lightning trio + the Glacier Fang shot +
+            // the blade slam set `ignoreWater` (`Projectile.cs:10182`/
+            // `:10431`/`:10441`/`:10408`/`:10587`).
+            || matches!(kind, STORM_LIGHTNING | LIGHTNING_STRIKE_SHOT | ARC_SURGE | GLACIER_FANG_SHOT | CHLOROPHYTE_CLAYMORE_BLADE_SLAM),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -5801,6 +5885,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d20 - `Projectile.cs:9321`/`:9411`: the two
                     // aiStyle-191 sword shots (973/985) set melee.
                     | TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT
+                    // W4-d21 — the thrown melee weapons (1082/1083,
+                    // `:10102`/`:10112`) + the blade slam (1129, `:10593`).
+                    | ANTLION_CLAW | STYLIST_SCISSORS | CHLOROPHYTE_CLAYMORE_BLADE_SLAM
             ),
         ranged: matches!(
             kind,
@@ -5893,6 +5980,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // W4-d20 — `Projectile.cs:10424`: the Petalstorm shot (1116)
                 // sets magic (the 1038 Flower Whip petal does NOT).
                 | PETALSTORM_SHOT
+                // W4-d21 — the Lightning Strike shot (1117, `:10434`), the
+                // Arc Surge (1122, `:10443`) + the Glacier Fang shot (1115,
+                // `:10407`). The 1091 trap sets NO magic flag (`:10175-10185`).
+                | LIGHTNING_STRIKE_SHOT | ARC_SURGE | GLACIER_FANG_SHOT
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -6255,6 +6346,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         MONK_STAFF_T2_GHAST => 4,
         // W4-d15 — the T3-alt volley shot's 3-frame sheet (`Main.cs:8554`).
         MONK_STAFF_T3_ALT_SHOT => 3,
+        // W4-d21 — the aiStyles 201-210 sheets: the Glacier Fang shot's
+        // 3-frame charge ladder (`Main.cs:8563`, the AI's ai[0]>=20/40
+        // frame writes `Projectile.cs:37010-37017`), the two digtoises'
+        // 11-frame appear/dig sheets (`Main.cs:8723-8724`) and the RC car's
+        // 7-frame drive/fly sheet (`Main.cs:8725`).
+        1115 => 3,
+        1098 | 1123 => 11,
+        1105 => 7,
         // The Flamelash's 6-frame sheet (`Main.cs:8454`). Its AI's
         // `frameCounter++`/`frame` writes (`Projectile.cs:43216-43222`) are a
         // Phase-6 documented skip, so `frame` stays 0 and the slice reads the

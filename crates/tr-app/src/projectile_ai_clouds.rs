@@ -425,9 +425,10 @@ pub(crate) fn drain_claymore_spores(
         );
     }
     if let Some((x, y, damage, ai1, ai2)) = spores.slam {
-        // The 1129 row is d21's — the seam no-ops without it (the
-        // documented contract); the centre offset reads the row when
-        // present (`NewProjectile` `:10876-10877`).
+        // BATCH-D: the 1129 row + the aiStyle-209 arm landed with d21 -
+        // the slam spawn is LIVE (the 26g s5 cross-branch contract
+        // composed: the centre offset reads the row, `NewProjectile`
+        // `:10876-10877`).
         if let Some(row) = proj_data(1129) {
             if let Some(slot) = pool.spawn_with_data_ai_owned(
                 1129,
