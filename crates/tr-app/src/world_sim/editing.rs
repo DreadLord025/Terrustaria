@@ -7918,6 +7918,12 @@ fn resolve_melee_strike(
                         &mut app.npcs[idx].buffs,
                         status_rng,
                     );
+                    // W4-c28: `NPC.AddBuff`'s net branches
+                    // (`NPC.cs:89932-89935` client `53`, `:89979-89982`
+                    // host `54`) — the buff engine queued each accepted
+                    // (type, time) pair; the drain picks the wire by role
+                    // at the hit site (the C# sends inline at AddBuff).
+                    app.drain_npc_buff_sends();
                     // `if (this.meleeEnchant == 6) num2 = (int)((float)
                     // num2 * Player.GetNanoFlaskDamageBoost())`
                     // (`Player.cs:44396-44399`, `:44423-44426`) — the

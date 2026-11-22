@@ -28954,6 +28954,189 @@ Verification: code-only mode — no compiler/test run this wave; the decision
 layers' landed per-site tests (`net_npc_sync` 20, `net_proj_sync` 10) plus the
 four new wiring witnesses are the tests-as-code. C# cross-reads cited per block.
 
+## The player-state / container / tile-edit send cadences (W4-c28, code-only mode, 2026-11-21)
+
+S1-I-4's remaining send families. The projectile cadence already landed (wave C/D,
+`net_proj_sync` wired at 60 Hz); this wave maps the player-state, container and
+tile-edit cadences and swaps the player-state one into the live loop.
+
+**Player-state (`net_player_sync.rs`, the SWAP).** The C# client fans its own state
+over three paths, ported as pure decision functions and drained through the existing
+wires at 10 Hz (the decisions run at 60 Hz on `App.net_sync_cadence_timer`):
+- `Player.TrySyncingInput` (`Player.cs:6852-6916`, called `:6732`): the 12-field
+  compare vs `Main.clientPlayer`; ONE `13` per changed tick.
+- `Main.TrySyncingMyPlayer` (`Main.cs:17545-17703`, called `:17192` at netMode 1):
+  the `5` array diffs FIRST (`:17547-17574`), then the scalar tail in source order —
+  `33` close-flush, `40`, `36`, `16`/`42` (60-tick `netLife`/`netMana` throttles),
+  `50`+`13`, `99`/`115`, three separate `13`s (direction/shield/snapstone), `138`.
+- `Main.UpdateClient` (`Main.cs:64516-64553`): `netPlayCounter++` wrap `>3600`;
+  `%420` → one `13`; `%900` → `36`,`16`,`40` in that order.
+The old 10 Hz change-test + 42-call heartbeat (`netglue.rs::net_tick`, `net_beat`,
+`NET_HEARTBEAT_TICKS`) is DELETED — wiring both would double-send.
+
+**Fidelity decisions (re-derived from source, over the in-flight draft):**
+1. `ClientClone` starts at `new Player()` (`Main.cs:67158`): `statLife=statLifeMax=100`
+   (`Player.cs:1924-1928`), `statMana=0`/`statManaMax=20` (`:1930`+ctor), `direction=1`
+   (`Entity.cs:20`), `chest=-1` (`:2876`), `talkNPC=-1` (ctor), `MinionAttackTargetNPC=-1`
+   (`:3008`) — NOT an all-zero Default, so a zero-hp player compares different on tick 1.
+2. The `33` close body carries the LIVE (negative) chest index, so the writer's
+   `number > -1` coord read (`NetMessage.cs:884-889`) never runs — x/y are 0/0. The
+   named arm's text reads `Main.chest[player.chest]` — the CLONE's chest (`Main.cs:17581`),
+   with the null-slot nameless fallback (`:17585-17587`).
+3. Missing clone-item entries compare as AIR (`clientCloneItem` starts `new Item()`,
+   `Player.cs:54517-54523`) — kills the join-time `5`-spam on every empty slot.
+4. The render-extension `13` snapshots at DECISION time, not per 60 Hz step until the
+   10 Hz drain (else 6 duplicate sends per change).
+5. `chest::tick_open`'s S1-P-i43 close-flush is REMOVED — the cadence owns the `33`;
+   `HandleBeingInChestRange` (`Player.cs:31015-31097`) has no SendData. The
+   `prev_synced_chest` snapshot still updates (the open-click flush's name fallback).
+
+**Container (`32 SyncChestItem`, event-driven).** The port had the host-side `32`
+handler but NO client send path. Wired the C#'s per-changed-slot sends:
+`send_chest_item` (the `NetMessage.cs:864-877` body read back from the store;
+client-only, world chests only — banks ride the `5` sync) + `send_chest_item_diff`
+(the bulk-pass stamp diff, `ChestUI.cs:813-819` / `ItemSorting.cs:1673-1678`). Sites:
+`ItemSlot.cs:1014` left-click, `:1750` right-click split, `:808` shift-take,
+`:3359-3362` SwapEquip tail, the HasItemSwap cycle; ChestUI's bulk transfers
+(LootAll/DepositAll/QuickStack/Restock via the post-pass diff) and SortChest;
+`chest::try_placing_from`'s shift-deposit (pre-pass snapshot diff).
+
+**Tile-edit (event-driven immediate).** `WorldGen.KillTile`/`PlaceTile`'s
+`SendData(17)`/`SendTileSquare` fire at the EDIT SITE (`Player.cs:53783`/`:40152`,
+`WorldGen.cs:63937`), not on a timer. The port's `request_edit` already sends the
+client `Edit` immediately (`client.send` pushes straight to the wire buffer); the
+10 Hz `net_tick` carries no tile-edit batch. A witness pins the no-cadence-tick send.
+
+**Deliberate deviations / unported bodies (recorded, not silent):**
+1. **The render-extension `13`.** The C# server simulates every peer's movement from
+   the relayed controls and derives anim/hp locally; the port simulates remote players
+   nowhere, so a change in the wire body's position/anim/hp extension arms one more
+   `13` (a superset — never a missing update). The extension fields ride `net::PlayerState`.
+2. **Unported control channels.** `controlDownHold`/`controlDash`/`isOperatingAnotherEntity`/
+   `shieldRaised`/`accSnappingStoneLightUp` have no port input channel — they ride their
+   defaults in `ControlState` (the `13` bits stay false). `controlUseItem` reads the held
+   left button (`mouse_down || mine_down`).
+3. **The `36 SyncPlayerZone` / `18 SetTime` BODIES** are W4-c27's lane (`net.rs`'s
+   `PlayerZone`/`SetTime`); this module carries the send DECISIONS only. `35`/`40`/`84`/
+   `99`/`115`/`138`/`142`/`122` have no port wire yet — the decisions are recorded, the
+   sends land with their bodies (M6-NET-5). The zone BitsBytes pack the ported zones
+   (`zone_bytes`); unported zones (meteor/beach/graveyard/…) ride 0.
+4. **The `5` array layout** is the port's 40-slot-bank subset of `PlayerItemSlotID`
+   (`client_send_identity`'s layout), NOT the C#'s full 200-slot banks + loadouts.
+   **W4-c28 residual fix:** the old compact layout collapsed bank3[0] onto TRASH
+   (both 179) and the u8-keyed inventory maps truncated every bank4 id. The bases
+   now re-derive from the C# `AllocateSlots` walk (`PlayerItemSlotID.cs:175-185`):
+   the trash sentinel reserves ONE id (`:183`), so bank3 starts at 180 and bank4 at
+   220; the `5` diff carries bank3[0] and the server/peer copies key the full i16
+   wire slot (`MessageBuffer.cs:402` `ReadInt16`). Trash emits between bank2 and
+   bank3 per `Main.cs:17556-17567`. The 200-slot banks + loadouts remain the port's
+   documented subset (the 40-slot `bank.rs` stores).
+5. **The minion targets** (`99`/`115`) and the loadout `147` decision helpers are ported
+   but their bodies/callers are unported (`MinionRestTargetPoint`/`MinionAttackTargetNPC`
+   ride -1/(0,0); the port has no loadouts).
+Verification: code-only mode — no cargo/rustc/tests run; the `net_player_sync` per-site
+tests + the netglue cadence/container/tile-edit witnesses are the tests-as-code
+(WRITTEN NOT RUN). C# cross-reads cited per block.
+
+## The residual send-triggers (W4-c28 continuation, code-only mode, 2026-11-21)
+
+The cadence-residual pass over the remaining `SendData` families vs C# Main. The
+NPC-sync cadence (`net_npc_sync`, S1-I-4d) was verified already wired at 60 Hz
+(`npc_sync_cadence` → `update_network_code` per NPC, host-only); the mana/health
+`16`/`42` 60-tick throttles + the `UpdateClient` 900-tick trio were verified already
+in the `net_player_sync` tail. The MISSING send-triggers ported this pass:
+
+**NPC buff `53`/`54` (`NPC.AddBuff`, `NPC.cs:89926-89983`).** The decision layer
+(`net_npc_sync::add_buff`) existed but nothing called it. The buff engine now queues
+each accepted (type,time) pair at the write point (`NpcBuffs::net_sends`);
+`drain_npc_buff_sends` picks the wire by role — client one `53` per pair
+(`NPC.cs:89932-89935`, through the host slot map), host one `54` full list per touched
+NPC (`:89979-89982`). Drains ride the sim-pass tails that mutate NPC buffs (the melee
+hit `editing.rs`, the projectile pass, the player-tick retaliate) plus a 60 Hz net-step
+catch-all for the AI/timer lane. The `case 53` handler clears the queue (its own `54`
+IS the fan-out, `quiet:true` `MessageBuffer.cs:2570`). The host's per-AddBuff `54` is
+coalesced to one per touched NPC per pass (the list body is identical within a pass —
+the last write wins, the same bytes; recorded deviation).
+
+**Player hurt `16` (`Player.Hurt`, `Player.cs:38369-38377`).** The `hurt_sends` decision
+helper existed but had no caller. The accepted hurt now queues `(knockback_13, hp,
+max_hp)` at the hit moment — the hp pair is the PRE-subtraction `statLife` (the C#
+sends at `:38375` before `statLife -= num2` at `:38383`), the `13` gate is the C#'s
+three-clause `!noKnockback && hitDirection != 0 && (!mount.Active || !mount.Cart)`.
+`player_sync_cadence` drains the queue ahead of the clone-compare so the `13`/`16` ride
+the outbox in the C# order.
+
+**Buff `55` (`Player.AddBuff` remote-peer branch, `Player.cs:5269-5275`).** c27 landed
+the `55` body + apply/relay arms but NOT the client send. Ported the decision as
+`net_player_sync::add_buff_remote_pvp`: a buff aimed at a non-local player returns
+without applying locally, sending `55` only when `Main.pvpBuff[type]` (`:5271-5274`),
+else dropping (`:5275`); the local path falls through to the normal apply. The
+`PlayerSend::BuffPvp` intent carries the decision; the drain PARKS it until c27's
+`PlayerBuffPvp` wire merges (the `36`/`35`/`40`/`84` precedent — recorded, not silent).
+
+**Section-request `9` announce (`RemoteClient.CheckSection`, `RemoteClient.cs:126-188`).**
+The move-driven catch-up streamed the missing sections but never announced them. Ported
+the one `9 Status` before the `SendSection` walk (`:177-181`, `Lang.inter[44]`) carrying
+the fluff-box missing count. The client's load-status count now rides the `GetData` head
+(`MessageBuffer.cs:144-147` counts EVERY received message), the `9` writer ACCUMULATES
+the max (`:880` `StatusMax += ReadInt32`), and the completion walk clears the status
+(`Netplay.cs:528-533`) + on disconnect (`:573-575`).
+
+Verification: code-only mode — no cargo/rustc/tests run; the 9 new witnesses
+(`net_player_sync` remote-pvp + the netglue hurt/53/54/catch-all/id-lane/section tests)
+are the tests-as-code (WRITTEN NOT RUN). C# cross-reads cited per block.
+
+## The cadence-final UI/door/expiry send-triggers (W4-c28c, code-only mode, 2026-11-21)
+
+The last census residuals with ported interaction sites. Cross-read against
+`NetMessage.SendData`'s own `netMode == 0` return (`NetMessage.cs:83-86`) — the
+unguarded click sites ride that gate, so the port's role match IS the gate.
+
+**PVP toggle `30` (`Main.cs:42694`).** The click flips `hostile` THEN sends; the
+writer reads `Main.player[number].hostile` at send time (`NetMessage.cs:856-859`),
+so the port's `send_toggle_pvp(hostile)` carries the live post-flip flag. Client:
+one `30` with its own id; host: the default-arm fan-out (`NetMessage.cs:1801-1811`)
+with slot 0 (`Main.myPlayer`). The host apply/relay + team-coloured chat are g48's
+lane (`MessageBuffer.cs:1851-1867`); the c28 base parks the read (the no-op arm).
+
+**Team click `157` (`Main.cs:42766`, the `netMode != 0` gate `:42764`).** The
+writer's `case 45: case 157:` fall-through (`NetMessage.cs:970-974`) writes the
+SAME two bytes, but the reader's team-based-spawns tail keys on `b == 157`
+(`MessageBuffer.cs:2355`) — a `45` stand-in is NOT faithful. The send DECISION is
+recorded (`send_team_change`); the wire PARKS until d97's `TEAM_CHANGE_FROM_UI`
+codec (the c27 `55`/`36`/`35` precedent — recorded, not silent). Host apply is
+g49's lane (`MessageBuffer.cs:2325-2364`).
+
+**Door `19` (`Player.cs:32844`/`:32851` open, `:32861` close; the host fighter
+bash `NPC.cs:60067-60070`).** The sends gate on the open/close SUCCESS (the
+`type != 10` retry / `CloseDoor` bool), so the port queues at the fired
+`Door_Opened`/`Door_Closed` cue, not the blocked arm. The `19` id PARKS until
+d90's `DOOR_TOGGLE` codec (`NetMessage.cs:537-542` — byte action + short x/y +
+the `number4 == 1f ? 1 : 0` direction byte); the open-retry `-direction` nuance
+rides the d90 wire's decode. Trapdoor 2/3 + tall-gate 4/5 arms are unported
+(`ShiftTrapdoor`/`ShiftTallGate` have no port). Host apply is g48's
+`host_door_toggle` (`MessageBuffer.cs:1299-1334`).
+
+**Expired-buff sweep `54` (`NPC.cs:91890-91909`) — the WIRING the residual pass
+left open.** The decision helper (`net_npc_sync::expired_buff_sweep`) existed
+with no caller: the port's `clear_expired_buffs` runs inside `update_buffs_tick`
+with no netMode and dropped the C# `flag`. Now the quiet per-slot `DelBuff`s
+latch `NpcBuffs::expired_send` (`:91902`), and `drain_npc_buff_sends` takes the
+latch through the decision layer — host ONE `54` full list per expired sweep
+(coalesced with an AddBuff in the same pass: both write the SAME current list,
+last write wins, the same bytes — the recorded deviation); client/SP drop the
+latch with no wire (`:91892-91895`).
+
+**Fixture fix:** the door witness's `object_world` lacked the ceiling row the
+door's `CanPlace` upper `SolidTile` anchor requires — added row 16 (the core
+`doorway_world` shape); without it the placement refused and the witness could
+never reach the send arm.
+
+Verification: code-only mode — no cargo/rustc/tests run; the 8 new witnesses
+(the netglue pvp/team/door-decision + expiry wire tests, the npc_buffs sweep
+gate/latch tests, the doors.rs interaction test) are WRITTEN NOT RUN. C#
+cross-reads cited per block.
+
 ## The aiStyle-10 family (S1-D-3-s10, code-only mode, 2026-11-18)
 `crates/tr-app/src/npc_ai_style10.rs` (`style10_ai`) ports `NPC.AI()`'s
 `if (this.aiStyle == 10)` arm (`NPC.cs:21572-21918`) вЂ” the Cursed Skull

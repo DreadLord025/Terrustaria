@@ -1148,7 +1148,8 @@ pub struct PlayerNet {
     /// `Main.player[id].inventory` - the peer's slot state, fed by the
     /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`). The key
     /// is the vanilla `PlayerItemSlotID.SlotId` (i16 — the bank4 rows ride
-    /// 699+, W4-g50's 85 restore re-sends them).
+    /// 699+, W4-g50's 85 restore re-sends them; W4-c28: a u8 key truncated
+    /// bank4/loadout ids).
     pub inventory: HashMap<i16, NetItem>,
     /// `Main.player[id].buffType[]`'s live ids, fed by `50 PlayerBuffs`
     /// (`MessageBuffer.cs:2454-2480` sets every listed buff's time to 60).
@@ -7029,7 +7030,8 @@ pub struct Slot {
     /// `Main.player[id].inventory` — the peer's slot state, fed by the
     /// `5 PlayerInventory` messages (`MessageBuffer.cs:399-462`). The C#'s
     /// server keeps the same per-client copy of the inventory. The key is
-    /// the vanilla `PlayerItemSlotID.SlotId` (i16 — bank4 rides 699+).
+    /// the vanilla `PlayerItemSlotID.SlotId` (i16 — bank4 rides 699+;
+    /// `MessageBuffer.cs:402` reads `ReadInt16`, W4-c28).
     pub inventory: HashMap<i16, NetItem>,
     /// `RemoteClient.TileSections` (`RemoteClient.cs:31`): the flattened
     /// `sections_w * sections_h` latch grid of the sections already streamed.

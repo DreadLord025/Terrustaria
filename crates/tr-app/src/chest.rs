@@ -1726,19 +1726,14 @@ pub(crate) fn tick_open(app: &mut App) {
             play_menu_sound(app, id); // `:31080`/:31088 — `PlaySound(11)`
         }
     }
-    // `Main.TrySyncingMyPlayer` (`Main.cs:17575-17593`) runs AFTER
-    // `Player.Update`: a close transition this tick (the range/dead-tile
-    // close above, the click-path close, the dead tick's `UpdateDead`)
-    // carries a pending `editedChestName` on the `33` send — the name reads
-    // the LAST-SYNCED chest (`Main.chest[player.chest]`, `:17581`). The
-    // snapshot updates every tick (S1-P-i43).
-    let (cur, prev) = app
-        .player
-        .as_ref()
-        .map_or((-1, -1), |p| (p.chest, p.prev_synced_chest));
-    if cur != prev && cur < 0 && prev >= 0 {
-        flush_edited_chest_name(app);
-    }
+    // W4-c28 SWAP: the close-transition `33` send is owned by the client
+    // cadence's clone-compare (`net_player_sync`'s `chest_close_flush`,
+    // `Main.TrySyncingMyPlayer` `Main.cs:17575-17593`) — the C# sends it
+    // THERE, not in `HandleBeingInChestRange` (`Player.cs:31015-31097` has
+    // no SendData). The old S1-P-i43 per-tick flush here would double-send
+    // with the cadence arm; it is removed. The `prev_synced_chest` snapshot
+    // still updates every tick — the open-click flush's name-source
+    // fallback reads it.
     if let Some(p) = app.player.as_mut() {
         p.prev_synced_chest = p.chest;
     }
@@ -2041,6 +2036,10 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
         .get(chest)
         .filter(|c| !is_removed(c))
         .map_or(0, |c| c.max_items);
+    // W4-c28: the pre-pass snapshot for the deposit's `32` diff.
+    let before: Vec<ItemSlot> = (0..max_items)
+        .map(|i| chest_slot(&app.world_chests, chest, i).unwrap_or(EMPTY_SLOT))
+        .collect();
     // The merge pass (`ChestUI.cs:1221-1261`) — stackable kinds only.
     if max > 1 {
         for i in 0..max_items {
@@ -2106,6 +2105,10 @@ pub(crate) fn try_placing_from(app: &mut App, from: Source, just_check: bool) ->
         // The drained slot's remainder — air when fully moved
         // (`:1244`/:1278's `SetDefaults(0)` write-through).
         from.write(app, item);
+        // W4-c28: the ctx-1/2 shift-deposit's `32` per filled chest slot
+        // (`ChestUI.cs:1247`/`:1258`/`:1283` — the merge + empty-slot passes).
+        // The port diffs the whole pass against the pre-pass snapshot.
+        app.send_chest_item_diff(chest as i32, &before);
     }
     placeable
 }

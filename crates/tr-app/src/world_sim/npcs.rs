@@ -4840,6 +4840,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     ty as f32 * TILE_PX,
                     app.rngs.stream(RngKey::UpdateNpcs),
                 );
+                // `NPC.cs:60067-60070` — the host's `netMode == 2` door-open
+                // `SendData(19, …, 0, x, y, direction)`. W4-c28: the send
+                // decision rides the opened door; the `19` id parks until
+                // d90's `DOOR_TOGGLE` codec (the host apply is g48's lane).
+                app.send_door_toggle(0, tx, ty, dir);
                 app.world_key = None;
             }
             // The opening's cleanup kills' drops (`open_door`'s

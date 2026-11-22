@@ -1846,6 +1846,15 @@ pub struct Player {
     /// damage path queues (`Player.cs:38525`) — the caller owns the audio
     /// device, so the Player hands the cue over.
     pending_hurt_sound: Option<&'static str>,
+    /// W4-c28: `Player.Hurt`'s client send tail (`Player.cs:38369-38377`):
+    /// the accepted hurt queues `(knockback_13, hp, max_hp)` — the 13 is
+    /// gated on `!noKnockback && hitDirection != 0 && (!mount.Active ||
+    /// !mount.Cart)` (`:38371`), the 16 is unconditional on the tail. The
+    /// hp pair is the PRE-subtraction `statLife` (the send runs at `:38375`,
+    /// before `statLife -= num2` at `:38383`). The netglue drain pushes the
+    /// `PlayerSend`s into the client outbox (`SendPlayerHurt`'s 102 is
+    /// unported — M6-NET-5).
+    pending_hurt_net: Option<(bool, i32, i32)>,
     /// `Player.PlayDeathSound` (`Player.cs:38715-38744`): the death cue
     /// `Player.KillMe` queues (`Player.cs:38868`).
     pending_death_sound: Option<&'static str>,
@@ -2894,6 +2903,7 @@ impl Player {
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
             pending_hurt_sound: None,
+            pending_hurt_net: None,
             pending_death_sound: None,
             run_sound_delay: 0,
             // `Player.cs:35947-35949` — the default until `PlayerFrame` runs.
@@ -3358,6 +3368,14 @@ impl Player {
         self.pending_hurt_sound.take()
     }
 
+    /// W4-c28: takes the queued `Hurt` client-send tail
+    /// (`Player.cs:38369-38377`) — `(knockback_13, hp, max_hp)`, the hp pair
+    /// PRE-subtraction. The netglue drain maps it through
+    /// `net_player_sync::hurt_sends` into the client outbox.
+    pub(crate) fn take_hurt_net(&mut self) -> Option<(bool, i32, i32)> {
+        self.pending_hurt_net.take()
+    }
+
     /// Takes the queued death cue (`Player.PlayDeathSound`,
     /// `Player.cs:38868`).
     pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
@@ -3684,6 +3702,7 @@ impl Player {
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
         self.pending_retaliate = None;
+        self.pending_hurt_net = None;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
@@ -4440,6 +4459,17 @@ impl Player {
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
+        // `Player.Hurt`'s client tail (`Player.cs:38369-38377`): netMode 1 +
+        // local + !quiet — the knockback-gated 13 FIRST, then the 16 with the
+        // PRE-subtraction statLife (the C# sends before `statLife -= num2`
+        // at `:38383`). The port's Player has no netMode/whoAmI — the queue
+        // rides every accepted hurt and the netglue drain gates on the role
+        // (the `pending_hurt_sound` convention). The mount/cart clause is the
+        // knockback gate's own (`:38519` shape).
+        let knockback_13 = !self.no_knockback
+            && knock_back
+            && (!self.mount.is_active() || !crate::mount::is_cart(self.mount.kind()));
+        self.pending_hurt_net = Some((knockback_13, self.hp, self.max_hp));
         // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
         // truncation can drive a hit to 0; the C# lifts it back to 1 (which
         // also selects the 20-tick immunity window below, not 40).

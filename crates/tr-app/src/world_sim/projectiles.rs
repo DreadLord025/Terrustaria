@@ -440,6 +440,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             expert,
             rng,
         );
+        // W4-c28: the brain's Confused AddBuff (`Player.cs:38425-38426`)
+        // queued its net intent — the pass-tail drain below carries it
+        // (one drain per pass; the C# sends inline at each AddBuff).
     }
     // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
     // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
@@ -450,6 +453,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for (cue, x, y) in app.projectiles.drain_npc_hit_sounds() {
         app.audio.play_npc_hit_sound(cue, x, y, rng);
     }
+    // W4-c28: the pass's `StatusNPC`/whip/dart/flare/bullet/arrow debuffs
+    // (`Projectile.cs:11173-11750`) AND the retaliate brain's Confused
+    // (`Player.cs:38425-38426`) queued their `NPC.AddBuff` net intents —
+    // drain at the pass tail (the C# sends inline at each AddBuff,
+    // `NPC.cs:89932-89935` client `53` / `:89979-89982` host `54`).
+    app.drain_npc_buff_sends();
     // S1-E-21h — the projectile-family cue plays (the AI arms' first-tick
     // latches, the boomerang whoosh, the missile hum, the bomb blast): the
     // style play's case-2 draws ride the SAME `UpdateProjectiles` stream

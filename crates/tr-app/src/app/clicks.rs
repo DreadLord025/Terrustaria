@@ -1510,13 +1510,18 @@ impl App {
                     Some(ui::chrome::PvpClick::ToggleHostile) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
                         self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
-                        if let Some(p) = self.player.as_mut() {
+                        let hostile = if let Some(p) = self.player.as_mut() {
                             p.hostile = !p.hostile;
-                        }
-                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)` —
-                        // the PVP-state broadcast. M6-NET's message table has
-                        // no 30 (`net.rs`); the local flip is the whole effect
-                        // in SP (ANALYSIS).
+                            p.hostile
+                        } else {
+                            false
+                        };
+                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)`
+                        // (`Main.cs:42694`) — W4-c28: the send trigger now
+                        // rides the flip (the role match is SendData's own
+                        // netMode gate; SP drops it). The host apply/relay +
+                        // chat are g48's lane.
+                        self.send_toggle_pvp(hostile);
                     }
                     Some(ui::chrome::PvpClick::SetTeam(i)) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
@@ -1526,7 +1531,12 @@ impl App {
                         }
                         // `:42765-42770`: `SendData(157)` in MP, else the
                         // team-based-spawns respawn in SP (`teamBasedSpawnsSeed`
-                        // is not ported — no team spawn seeds yet).
+                        // is not ported — no team spawn seeds yet). W4-c28:
+                        // the send DECISION rides the team set; the `157` id
+                        // parks until d97's `TEAM_CHANGE_FROM_UI` codec merges
+                        // (a `45` stand-in would skip the `b == 157` team-spawn
+                        // tail — not faithful). The host apply is g49's lane.
+                        self.send_team_change(i as u8);
                     }
                     None => {}
                 }
@@ -2399,6 +2409,9 @@ impl App {
         let Some(wc) = self.world_chests.get_mut(idx) else {
             return;
         };
+        // W4-c28: the pre-pass snapshot for the `32` diff (`ChestUI.cs:813-819`
+        // sends one 32 per changed slot after the bulk transfer).
+        let before = wc.slots.clone();
         let favs = self.favorite_slots.clone();
         let fav = move |i: usize| favs.contains(&i);
         let Some(p) = self.player.as_mut() else {
@@ -2472,6 +2485,10 @@ impl App {
             }
         }
         *self.rngs.global() = rng;
+        // W4-c28: the bulk-transfer `32` fan-out — one per changed slot
+        // (`ChestUI.cs:813-819`'s post-pass loop; LootAll/DepositAll send
+        // per-fill inline, the port diffs the whole pass — same slot set).
+        self.send_chest_item_diff(idx as i32, &before);
     }
 
     /// `ChestUI.cs:304-306` → `ItemSorting.SortChest` (`ItemSorting.cs:1629-1653`)
@@ -2487,6 +2504,9 @@ impl App {
         let Some(wc) = self.world_chests.get_mut(idx) else {
             return;
         };
+        // W4-c28: the pre-sort snapshot for the `32` stamp diff
+        // (`ItemSorting.cs:1658-1678`).
+        let before = wc.slots.clone();
         let mult = match self.player.as_ref() {
             Some(p) => [
                 p.melee_damage,
@@ -2497,6 +2517,9 @@ impl App {
             None => [1.0; 4],
         };
         crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        // `ItemSorting.cs:1669-1678` — the withSync `32` per changed slot
+        // (netMode 1 + a world chest open; the helper gates both).
+        self.send_chest_item_diff(idx as i32, &before);
     }
 
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
@@ -2510,6 +2533,8 @@ impl App {
             // `inv[slot] = player.GetItem(inv[slot], QuickTransferFromSlot)`;
             // consumes the click (the action-0 movement does not run).
             chest::quick_transfer_from_slot(self, abs);
+            // `:808` — the ctx-3 shift-take's `32` (world chests only).
+            self.send_chest_item(chest_idx as i32, abs);
             return;
         }
         // The busy gates (S1-P-i48): `LeftClick` `:922-926` /
@@ -2540,6 +2565,8 @@ impl App {
             // chest transfer's tail (`ItemSlot.cs:1119`, S1-H-9; ctx 3).
             self.coin_slot
                 .force_slot_state(abs as i32, 3, target.kind, target.count);
+            // `:1014` — the ctx-3 left-click's `32` (W4-c28 container cadence).
+            self.send_chest_item(chest_idx as i32, abs);
         }
         if right_held {
             // `RightClick`'s ctx-3 swap block (`ItemSlot.cs:1658-1697`,
@@ -2559,6 +2586,9 @@ impl App {
                                 .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
                             self.stack_split = 30; // `:2007`
                             self.ui_right_press = false; // `:2008`
+                            // The ctx-3 `32` tail (`ItemSlot.cs:1750`'s
+                            // right-click send covers the swap arms too).
+                            self.send_chest_item(chest_idx as i32, abs);
                         }
                     }
                     return;
@@ -2570,13 +2600,16 @@ impl App {
                 {
                     // `:1685-1697` — `SwapEquip` on the press edge. The
                     // chest-source favourite clear has no port key space
-                    // (the favourites are grid-positional); the
-                    // `SendData(32)` MP tail (`:3359-3362`) is unported.
+                    // (the favourites are grid-positional).
                     if self.ui_right_press {
                         let mut item = target;
                         if self.swap_equip_click(None, &mut item) {
                             chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, item);
                         }
+                        // `:3359-3362` — SwapEquip's ctx-3 `32` tail (fires
+                        // on the attempt, success or not — the C# sends
+                        // after the swap ladder unconditionally).
+                        self.send_chest_item(chest_idx as i32, abs);
                     }
                     return;
                 }
@@ -2670,6 +2703,8 @@ impl App {
         chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, s);
         self.coin_slot
             .force_slot_state(abs as i32, 3, s.kind, s.count);
+        // `:1750` — the ctx-3 right-click split's `32` (W4-c28).
+        self.send_chest_item(chest_idx as i32, abs);
     }
 
     /// Applies a menu action (start singleplayer, host on a port, join a server).
