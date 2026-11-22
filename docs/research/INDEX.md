@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 338 | W4-d30 RETIRE/SEAL: NPC aiStyle band 65-72 FINAL census + keep-one bible (69-72 wired on main; 66/67/68 wiring on c8/c9/c10; 65 d30-canonical, f18/d39/d125-lacewing subsets drop; d31/d32/g65-309/d77-cues disjoint; code-only, witnesses written not run; renumbered 281→308→338 per research/150 §8.5, g13-308-executed-pre-§8 honored) | `338-band-65-72-retire.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
