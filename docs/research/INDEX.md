@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 366 | THE ADDLIGHT-FAMILY BIBLE (W4-g18 SEAL): the git-log census (every S1-E-5 wave-4 lane at its pushed tip), the d54-bible reconcile (Dust 94/94 + proj-107 86-covered/21-absent-rand-gated + NPC 80 + Main 5), the c29 gems-NEVER-emit-light premise REFUTED (no tileLighted write / dust-43 sparkle / no scanner case / g18-negative-census-agrees), the e6-addlight-proj-2 compose mutual receipt, the family declaration; number 366 per registry-150 §9 UNIFIED FINAL row 366 (chain 304→338→341→344→360→366; g10-360 KEEPS first-add, g18 fourth claimant); 6 family-census witnesses WRITTEN NOT RUN | `366-addlight-family-bible.md` | ✅ SEAL |
+| 102 | DOC-SWEEP lane 23: the lights gaps (W4-e7: Snapping-Stone trio lights + global-flicker oscillators landed; wing-27 f3-owned, modern UpdateLightDecay cited; code-only) | `102-doc-sweep-lights.md` | 🟡 |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

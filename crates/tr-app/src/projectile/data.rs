@@ -771,6 +771,13 @@ pub const CASCADE_EXPLOSION: u16 = 1125;
 pub const CRYSTAL_SHARD_MELEE: u16 = 1134;
 pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
+/// The Snapping Stone trio's strike effect projectiles (W4-e7 lane 23,
+/// `ProjectileID.cs:2796`/`:2816`/`:2818`) — `TryMakingSnappingStoneStrike`
+/// (`Projectile.cs:14318`/`:14322`/`:14327`) spawns them at the extra
+/// targets; `snapping_stone.rs` owns the strike machine.
+pub const SNAPPING_STONE_EFFECT: u16 = 1121;
+pub const SNAPPING_STONE_MELEE_EFFECT: u16 = 1131;
+pub const SNAPPING_STONE_SUMMON_EFFECT: u16 = 1132;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
 /// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
@@ -2933,6 +2940,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `TheEyeOfCthulhuDash` (`:10596-10608`): 100×100, aiStyle 210,
             // `timeLeft = 600`, `penetrate = -1`, local-immunity −1.
             EYE_OF_CTHULHU_DASH => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
+            // W4-e7 lane 23 — the Snapping Stone strike effects
+            // (`Projectile.cs:10491-10503` / `:10611-10623` /
+            // `:10624-10635`): 10×10, aiStyle 0 (the `:778` reset — no AI
+            // arm), the stock `penetrate = 1` (`:774`), `tileCollide =
+            // false`, `timeLeft = 2`, local-immunity 60. The class flags
+            // ride the census below (1121 ranged, 1131 melee, 1132 none);
+            // `noEnchantments`/`hide` have no port field (draw/enchant-
+            // only, the `hide` convention). The strike spawns them at the
+            // extra targets (`snapping_stone.rs`, `:14339-14345` — the
+            // melee arm flips 1131's class by the owner's crit comparison).
+            SNAPPING_STONE_EFFECT | SNAPPING_STONE_MELEE_EFFECT | SNAPPING_STONE_SUMMON_EFFECT => {
+                (10.0, 10.0, 0, 1, 2, 0, false, false, false, (true, 60, false, -1, 0, 1.0))
+            }
             // `CrystalShardMelee` (`:10636-10650`): 6×6, aiStyle 24,
             // `penetrate = 1`, `timeLeft = 600`, idStatic-20.
             CRYSTAL_SHARD_MELEE => (6.0, 6.0, 24, 1, 600, 0, false, false, false, RESET_STATE),
@@ -4302,6 +4322,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-e7 lane 23 — the Snapping Stone melee effect
+                    // (1131, `:10620`); the strike's crit-comparison flip
+                    // (`:14343-14345`) overwrites the slot flags at spawn.
+                    | SNAPPING_STONE_MELEE_EFFECT
             ),
         ranged: matches!(
             kind,
@@ -4331,6 +4355,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-e7 lane 23 — the Snapping Stone ranged effect (1121,
+            // `:10500`); the summon effect 1132 sets NO class (`:10624-10635`).
+                | SNAPPING_STONE_EFFECT
         ),
         magic: matches!(
             kind,
@@ -4836,6 +4863,33 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// W4-e7 lane 23 — the Snapping Stone strike effect rows
+    /// (`Projectile.cs:10491-10503`/`:10611-10635`): 10×10, aiStyle 0,
+    /// stock penetrate 1, tileCollide false, timeLeft 2, local-immunity 60;
+    /// 1121 ranged, 1131 melee, 1132 no class. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_e7_the_snapping_stone_effect_rows_match_set_defaults() {
+        for k in [SNAPPING_STONE_EFFECT, SNAPPING_STONE_MELEE_EFFECT, SNAPPING_STONE_SUMMON_EFFECT] {
+            let d = proj_data(k).expect("the strike effect row");
+            assert_eq!((d.w, d.h), (10.0, 10.0), "kind {k} (:10493-10494)");
+            assert_eq!(d.ai_style, 0, "kind {k} — the :778 reset, no AI arm");
+            assert_eq!(d.penetrate, 1, "kind {k} — the stock :774");
+            assert_eq!(d.time_left, 2, "kind {k} (:10499)");
+            assert!(!d.tile_collide, "kind {k} (:10495)");
+            assert!(d.uses_local_immunity, "kind {k} (:10497)");
+            assert_eq!(d.local_hit_cooldown, 60, "kind {k} (:10498)");
+            assert!(!d.uses_id_static_immunity, "kind {k}");
+            assert_eq!(d.alpha, 0, "kind {k} — the stock :779");
+            assert_eq!(d.scale, 1.0, "kind {k} — the stock :785");
+        }
+        assert_eq!(proj_data(SNAPPING_STONE_EFFECT).unwrap().ranged, true, "(:10500)");
+        assert_eq!(proj_data(SNAPPING_STONE_EFFECT).unwrap().melee, false);
+        assert_eq!(proj_data(SNAPPING_STONE_MELEE_EFFECT).unwrap().melee, true, "(:10620)");
+        assert_eq!(proj_data(SNAPPING_STONE_MELEE_EFFECT).unwrap().ranged, false);
+        let summon = proj_data(SNAPPING_STONE_SUMMON_EFFECT).unwrap();
+        assert!(!summon.melee && !summon.ranged && !summon.magic, "(:10624-10635) sets none");
     }
 
     #[test]
