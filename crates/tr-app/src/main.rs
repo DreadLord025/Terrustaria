@@ -345,6 +345,10 @@ mod player_dust;
 mod player_boot_dust;
 mod player_trail_dust;
 mod player_wing_dust;
+// W4-g89f: the Rod of Discord 1326 / Rod of Harmony 5335 use path —
+// ItemCheck_UseTeleportRod (Player.cs:45476-45534) + the chaos-state tax.
+// Wired into update_editing (the recall/boss-spawner seam).
+mod rod_teleport;
 mod regen;
 mod research;
 mod sand;

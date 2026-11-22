@@ -2691,6 +2691,27 @@ pub struct Player {
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
     /// ResetEffects — a permanent unlock (the player-file field).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit
+    /// permanent +4 defense (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45393-45398`, `UpdatePermanentBoosters` `:12853-12856`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56079` false, save `:54782` / load `:55256`).
+    pub used_aegis_fruit: bool,
+    /// `Player.usedAmbrosia` (`Player.cs:862`): the 5342 Ambrosia
+    /// permanent mining/placement speed (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45417-45422`, `UpdatePermanentBoosters` `:12861-12866` —
+    /// `pickSpeed -= 0.05f; tileSpeed += 0.05f; wallSpeed += 0.05f`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56083` false, save `:54786` / load `:55260`).
+    pub used_ambrosia: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// permanent life-regen ramp +0.2/tick (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45387-45392`, `UpdateLifeRegen` `:19113-19116` — the `regen.rs`
+    /// `aegis_crystal` slot BETWEEN the base +1 and the crimson fold, the
+    /// g90 lane-7 shape per research/138 §3.3). NOT cleared by ResetEffects
+    /// — a permanent unlock (ctor `:56078` false, save `:54781` / load
+    /// `:55255`; the g88/g90 declaration spot — after `used_ambrosia`).
+    pub used_aegis_crystal: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -3545,6 +3566,9 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_fruit: false, // `Player.cs:56079`
+            used_ambrosia: false,    // `Player.cs:56083`
+            used_aegis_crystal: false, // `Player.cs:56078` (the g88/g90 spot)
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -7865,10 +7889,32 @@ impl Player {
         // `set_player_caps` form (the same three C# `if`s, same order,
         // same values). i27's `add_player_scalars` twin was dropped at the
         // gate (it would double the adds); the seam stays available.
+        // W4-g89 — `UpdatePermanentBoosters`' Aegis Fruit row
+        // (`Player.cs:12853-12856`, called at `:25644` right after
+        // `UpdateEquips` `:25633`): the permanent +4 defense. The C# adds
+        // 4, NOT 5 — the row is verbatim. Ahead of the Gummy Worm row
+        // (the C#'s own order inside the booster pass) and ahead of the
+        // `:25927` defense floor below.
+        if self.used_aegis_fruit {
+            self.stat_defense += 4;
+        }
         // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
         // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
         if self.used_gummy_worm {
             self.fishing_skill += 3;
+        }
+        // W4-g89c — `UpdatePermanentBoosters`' Ambrosia row
+        // (`Player.cs:12861-12866`): `pickSpeed -= 0.05f; tileSpeed +=
+        // 0.05f; wallSpeed += 0.05f` — the LAST row of the pass (the C#'s
+        // own order: fruit, worm, ambrosia). The port's signed
+        // `pick_speed_bonus` mirrors `1 - pickSpeed` (`pick_speed()`
+        // reads `1 - bonus`), so the C# SUBTRACT maps to an ADD here;
+        // the tile/wall bonuses are the C# fields minus their 1f base
+        // (`tile_speed_multiplier`'s `1/(1+bonus)` fold).
+        if self.used_ambrosia {
+            self.pick_speed_bonus += 0.05;
+            self.tile_speed_bonus += 0.05;
+            self.wall_speed_bonus += 0.05;
         }
         // S1-P-i35 — `UpdateEquips`' post-loop bobber row
         // (`Player.cs:12985-12988`): the glow-bobber accessory's +10 skill,
@@ -13609,6 +13655,11 @@ impl Player {
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
+                // W4-g89i — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides its OWN slot, applied
+                // BETWEEN the base +1 and the crimson fold (the g90 lane-7
+                // shape, research/138 §3.3 — the C#'s f32 order).
+                aegis_crystal: self.used_aegis_crystal,
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
                 ..RegenInputs::default()
             };
@@ -14756,6 +14807,88 @@ mod tests {
         assert!(p.cactus_thorns);
         assert!(!p.turtle_thorns, "the turtle row is gone");
         assert_eq!(p.thorns_damage(20), 35, "20 from the potion + the flat 15");
+    }
+
+    /// W4-g89 — `UpdatePermanentBoosters`' Aegis Fruit row
+    /// (`Player.cs:12853-12856`, called at `:25644`): the permanent +4
+    /// defense, re-added EVERY tick after `ResetEffects` zeroes
+    /// `statDefense` (`:18327`) — the flag itself is never cleared (the
+    /// player-file field, ctor `:56079` false). The C# adds 4, NOT 5.
+    #[test]
+    fn w4_g89_the_aegis_fruit_adds_four_defense_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_aegis_fruit, "ctor false (`Player.cs:56079`)");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 0, "no fruit, no bonus");
+        p.used_aegis_fruit = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 4, "the +4 row (`:12855`)");
+        // The next tick's ResetEffects zero + re-add: still exactly 4,
+        // never compounding — the unlock is a bool, not a stack.
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, 4, "one +4 per tick, no compounding");
+        assert!(p.used_aegis_fruit, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g89c — `UpdatePermanentBoosters`' Ambrosia row
+    /// (`Player.cs:12861-12866`, called at `:25644`): `pickSpeed -= 0.05f;
+    /// tileSpeed += 0.05f; wallSpeed += 0.05f`, re-added EVERY tick after
+    /// `ResetEffects` resets the three (`:18690` pickSpeed=1f, `:18531`
+    /// wallSpeed=1f, `:18532` tileSpeed=1f) — the flag itself is never cleared
+    /// (ctor `:56083` false). The port's signed bonuses mirror the C#
+    /// fields minus their 1f base (pick: `1 - bonus`; tile/wall:
+    /// `1/(1 + bonus)`).
+    #[test]
+    fn w4_g89c_the_ambrosia_speeds_apply_every_tick() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_ambrosia, "ctor false (`Player.cs:56083`)");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.pick_speed(), 1.0, "no ambrosia, base pickSpeed 1f");
+        assert_eq!(p.tile_speed_multiplier(), 1.0);
+        assert_eq!(p.wall_speed_multiplier(), 1.0);
+        p.used_ambrosia = true;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.pick_speed() - 0.95).abs() < 1e-6,
+            "pickSpeed -= 0.05 (`:12863`): {}",
+            p.pick_speed()
+        );
+        assert!(
+            (p.tile_speed_multiplier() - 1.0 / 1.05).abs() < 1e-6,
+            "tileSpeed += 0.05 (`:12864`), the :25913-25917 invert"
+        );
+        assert!(
+            (p.wall_speed_multiplier() - 1.0 / 1.05).abs() < 1e-6,
+            "wallSpeed += 0.05 (`:12865`), the :25918-25922 invert"
+        );
+        // The next tick's ResetEffects reset + re-add: same values, never
+        // compounding — the unlock is a bool, not a stack.
+        p.update(&w, PlayerInput::default());
+        assert!((p.pick_speed() - 0.95).abs() < 1e-6, "one row per tick");
+        assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6);
+        assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6);
+        assert!(p.used_ambrosia, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g89i — the Aegis Crystal unlock is a permanent bool: ctor false
+    /// (`Player.cs:56078`), `ResetEffects` never clears it (the C# clears
+    /// only the per-tick `chaosState`-style latches, not `usedAegisCrystal`
+    /// — it is absent from the `:18333-18810` reset block). The +0.2
+    /// consumer rides the `regen.rs` `aegis_crystal` slot (the feeder reads
+    /// `self.used_aegis_crystal` every tick); the f32-order witness lives in
+    /// `regen.rs` (`w4_g89i_the_aegis_crystal_adds_between_the_base_and_the_crimson`).
+    #[test]
+    fn w4_g89i_the_aegis_crystal_unlock_survives_reset_effects() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_aegis_crystal, "ctor false (`Player.cs:56078`)");
+        p.used_aegis_crystal = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_aegis_crystal, "ResetEffects never clears the unlock");
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_aegis_crystal, "still set after a second tick");
     }
 
     /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.

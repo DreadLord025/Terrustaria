@@ -43698,7 +43698,7 @@ style signature (161/71) and the runner/one-shot equality; the module
 tests pin the Bayer literal, the style quintuples, the bounds clamps, the
 `CanPaint` algebra, the border band, `SetTangents`, the builder a == b and
 the paint-driver a == b.
-### Verification
+### Verification (W4-g89)
 Code-only: every block re-read against the cited C# windows
 (`DitherSnake.cs`, `DitherSnakePass.cs`, `DungeonControlLine.cs` whole;
 `DungeonCrawler.cs:54-134`, `DungeonUtils.cs:2067-2087`,
@@ -49971,3 +49971,462 @@ byte-identical keep-one). The scout contract re-verified UNCLAIMED
 across all 356 W4 tips → the FINAL task-seed R-24-11 (research/90
 §2(d)). §8 SEALED + the ORB bible paragraph in the census. No new
 deviations — the retire phase changes no code.
+
+## W4-g89 — the Aegis Fruit permanent upgrade (2026-11-21, code-only)
+The 5338 Aegis Fruit (shimmer-crafted) is a once-ever permanent +4 defense
+unlock — `Player.usedAegisFruit` (`Player.cs:854`). The C# adds **4, NOT
+5** (`UpdatePermanentBoosters` `:12853-12856`); the row is ported verbatim.
+- **The use path**: `ItemCheck_UseShimmerPermanentItems`' 5338 arm
+  (`Player.cs:45393-45398`, called from `ItemCheck_OwnerOnlyCode`
+  `:43607`) → `world_sim/editing.rs::use_aegis_fruit` under the i37
+  `use_press_edge` consumable block. The mid-swing
+  `ItemTimeIsZero && itemAnimation > 0` window folds onto the press tick
+  (the food/potion convention); the use-start swing seam runs, then
+  `ApplyItemTime` re-arms the 45-tick action cadence (prefix-aware), the
+  generic consumable tail pays one (`:43280-43326`), TurnToAir folds onto
+  the consume tick. The `NetMessage.SendData(4)` sync (`:45397`) has no
+  single-player port. A second fruit is refused by the `!usedAegisFruit`
+  gate — stack intact, once ever.
+- **The permanent flag**: `Player::used_aegis_fruit` (ctor false,
+  `Player.cs:56079`); NOT cleared by ResetEffects — the booster pass
+  re-adds +4 every tick after the `statDefense = 0` reset (`:18327`),
+  ahead of the Gummy Worm row (the C#'s own order inside the pass).
+- **The .plr persistence**: `PlayerFileWrite`/`PlayerFile.used_aegis_fruit`
+  ride the real `Serialize` slot (write `:54782`, read `:55256` — the
+  260+ six-unlock block's SECOND bool; the other five stay
+  consumed-and-dropped until their tasks land). The golden-fixture byte
+  equality is unaffected (the harness player's flag is false).
+- **The sidecar persistence**: `.trplayer` version 7 adds one 0/1 line
+  (`persist.rs`); v3-v6 files load with the unlock absent, and `App`'s
+  sidecar restore seeds `p.used_aegis_fruit` so the +4 resumes on world
+  reload. NOTE: the port applies no other .plr field to the live player
+  at world entry (the character-select card is appearance-only); the
+  sidecar is the live persistence carrier, the .plr slot is the
+  vanilla-format half.
+Deviations: none beyond the standing folds (press-tick window, TurnToAir,
+no net sync). Census: the a6/g87/g88 branches sat at main tip with zero
+pushed claims — the flag + booster row + call site found in-flight in
+this worktree were completed, not duplicated.
+Code-only: every arm re-read against the cited C# windows (`Player.cs`
+`:45385-45423`, `:12851-12867`, `:43280-43326`, `:4406-4419`,
+`:54776-54787`, `:55235-55262`, `:56079`; `Item.cs:42346-42355`); **no
+cargo/rustc/rustfmt/tests/graphify invoked**. Six witness tests WRITTEN,
+NOT RUN: `editing.rs` use-loop ×2 (unlock-once + consume + cadence; the
+last-fruit TurnToAir + non-fruit refusal), `player.rs` ×1 (the +4 per
+tick, no compounding, flag survives ResetEffects), `persist.rs` ×2 (v7
+round-trip; v6 back-compat), `player_file.rs` ×1 (the :54782/:55256 bool
+round-trip with the walk alignment pinned).
+## W4-g89b — the Gummy Worm use path + persistence (2026-11-21, code-only)
+The 5341 Gummy Worm (shimmer-crafted from a Gold Worm) is a once-ever
+permanent +3 fishing-skill unlock — `Player.usedGummyWorm`
+(`Player.cs:2074`). The flag and the `UpdatePermanentBoosters` row
+(`:12857-12860`) landed with S1-P-i35; the USE PATH and both persistence
+halves were missing and land here.
+- **Census correction**: the worm is **5341**, not 5339 (5339 is the
+  Arcane Crystal). `ItemCheck_UseShimmerPermanentItems`
+  (`Player.cs:45385-45423`) holds SIX arms: 5337 Aegis Crystal
+  (lifeRegenTime += 0.2, `:19113`), 5338 Aegis Fruit (landed, W4-g89),
+  5339 Arcane Crystal (d117's in-flight flag/read arms), 5340 Galaxy Pearl
+  (e26's landed luck read), 5341 Gummy Worm (this commit), 5342 Ambrosia
+  (the follow-up commit). The a6-crystals-powerups / g87-demon-heart-use /
+  g88-life-fruit-use branches claim 5337/5339/5340 + 3335 + the Life
+  Fruit; at main tip all three sit at zero commits — nothing landed to
+  skip beyond those claims.
+- **The use path**: `use_gummy_worm` under the i37 `use_press_edge`
+  block, sharing the new `use_shimmer_permanent_item` core with the
+  Aegis Fruit arm (the six C# arms are the SAME machine — house-style
+  keep-one helper; the `fn use_aegis_fruit` anchor marker survives as
+  the thin wrapper). Same folds: press-tick window, 45-tick
+  `ApplyItemTime` (`Item.cs:42376-42385` — useTime 45 == useAnimation
+  45), consumable pay + TurnToAir, no net sync.
+- **The .plr slot**: the 260+ six-unlock block now keeps the FIFTH bool
+  (`usedGummyWorm`, write `:54785` / read `:55259`); four remain
+  consumed-and-dropped (a6's three + Ambrosia until the next commit).
+- **The sidecar**: `.trplayer` version 8 appends the worm as the unlock
+  line's SECOND token; a v7 one-token line reads fruit-only, v3-v6 read
+  neither. The App sidecar restore seeds both flags.
+### Verification (W4-g89b)
+Code-only: re-read `Player.cs:45385-45423` / `:12851-12867` /
+`:54776-54787` / `:55235-55262` and `Item.cs:42376-42385`; **no
+cargo/rustc/rustfmt/tests/graphify invoked**. Three witness tests
+WRITTEN, NOT RUN: `editing.rs` (unlock-once + consume + 45-tick cadence
++ last-worm TurnToAir + non-worm refusal), `player_file.rs` (the
+:54785/:55259 fifth-bool round-trip, both-flags independence, walk
+alignment), `persist.rs` (v8 round-trip + the v7 one-token back-read;
+the v6 witness extended with the worm-absent assert).
+## W4-g89c — the Ambrosia permanent upgrade (2026-11-21, code-only)
+The 5342 Ambrosia (shimmer-crafted) is a once-ever permanent
+mining/placement-speed unlock — `Player.usedAmbrosia` (`Player.cs:862`).
+This completes `UpdatePermanentBoosters` (`:12851-12867`): ALL THREE rows
+now ported (Aegis Fruit +4 defense, Gummy Worm +3 fishing, Ambrosia
+speeds), in the C#'s own order.
+- **Census correction**: Ambrosia is **5342**, not 5336. 5336 is the
+  Combat Book Volume Two ("Advanced Combat Techniques") — a WORLD-global
+  `NPC.combatBookVolumeTwoWasUsed` flag (`ItemCheck_UseCombatBook`
+  `:45337-45347`, persisted in the .wld flags block, NOT a .plr bool);
+  4383 is the Ultrabright Torch. The 5337 "Vital Crystal" is the Aegis
+  Crystal — its effect is `lifeRegenTime += 0.2f` (`:19113-19116`, the
+  regen RAMP clock, not flat life regen), a6's claim.
+- **The booster row VERBATIM** (`:12861-12866`): `pickSpeed -= 0.05f;
+  tileSpeed += 0.05f; wallSpeed += 0.05f`. The port's signed bonuses
+  mirror the C# fields minus their 1f base: the pick SUBTRACT maps to
+  `pick_speed_bonus += 0.05` (`pick_speed()` reads `1 - bonus`), the
+  tile/wall ADDs map to `+= 0.05` on the bonus accumulators
+  (`tile_speed_multiplier`'s `1/(1+bonus)` cap-3 invert,
+  `:25913-25922`). Re-added every tick after ResetEffects resets the
+  three (`:18690`, `:18531-18532`); the flag never clears.
+- **The use path**: `use_ambrosia` on the shared
+  `use_shimmer_permanent_item` core (`Player.cs:45417-45422`), the LAST
+  arm of the C# function; 45-tick cadence (`Item.cs:42386-42395`),
+  consumable pay + TurnToAir, once-ever gate, no net sync.
+- **The .plr slot**: the 260+ six-unlock block now keeps its SIXTH bool
+  (`usedAmbrosia`, write `:54786` / read `:55260`). Three remain
+  consumed-and-dropped — exactly a6's claimed 5337/5339/5340.
+- **The sidecar**: `.trplayer` version 9 appends the ambrosia as the
+  unlock line's THIRD token; v7/v8 short lines back-read, v3-v6 read
+  none. The App sidecar restore seeds all three flags.
+### Verification (W4-g89c)
+Code-only: re-read `Player.cs:45417-45422` / `:12861-12866` /
+`:18531-18532` / `:18690` / `:25913-25922` / `:54786` / `:55260` /
+`:56083` and `Item.cs:42386-42395`; **no cargo/rustc/rustfmt/tests/
+graphify invoked**. Four witness tests WRITTEN, NOT RUN: `player.rs`
+(the three speeds per tick, the 1/1.05 inverts, no compounding, flag
+survives ResetEffects), `editing.rs` (unlock-once + consume + cadence +
+TurnToAir + refusal), `player_file.rs` (the :54786/:55260 sixth-bool
+round-trip, all-three independence, walk alignment), `persist.rs` (v9
+round-trip + the v8 two-token back-read; the v6 witness extended).
+## W4-g89d — the .trplayer v9 persist ADDENDUM (2026-11-21, docs-only)
+`docs/research/122-persist-v9-addendum.md` published: v9 SUPERSEDES the v7
+contract (research/103 does not exist in any ref at probe — g88c in-flight).
+The exact 8-line layout, the line-8 unlock token order (v7=1/v8=2/v9=3
+tokens, short-line back-reads), the two in-flight v7 forks read at their
+tips (g88 `717e0640`'s token-count reader would parse a v9 3-token line as
+a life pair — corruption on merge; g90 `1f1b88f0`'s bread-only v7 misreads
+g89's aegis flag), the reconciled v10+ contract (crystal bools append as
+line-8 tokens 4/5/6; life/mana pairs lines 9/10; bread line 11) and the
+merger recipe (g89 v9 base whole → g88 pairs → g90 flag → a6 tokens).
+## W4-g89e — the Combat Book arms + the vol-two world flag (2026-11-21, code-only)
+Census (the brief's guesses corrected against `ItemID.cs`):
+- **5336 = CombatBookVolumeTwo** (`ItemID.cs:12355`), NOT Ambrosia (5342,
+  landed g89c). Use arm `Player.ItemCheck_UseCombatBook`
+  (`Player.cs:45322-45350`, called `:43604`): the
+  `!NPC.combatBookVolumeTwoWasUsed` once-ever WORLD gate + `ApplyItemTime`
+  (45 ticks, `Item.cs:42326-42335`) + the netMode==0
+  `Main.NewText(Misc.CombatBookVolumeTwoUsed, ChatColors.World)` (the key
+  is a `{$Misc.CombatBookUsed}` copy command — the same line). The
+  `SendData(61, -17f)` MP sync has no single-player port.
+- **4382 = CombatBook** (vol one, `ItemID.cs:10447`): the SAME machine
+  (`:45324-45336`, `SendData(61, -11f)`). Its flag `NPC.combatBookWasUsed`
+  already had World state (i35's fishing condition `DidNotUseCombatBook`)
+  but NO use path — landed here too (one function, two arms, verbatim).
+- **4383 = DesertTorch** (`ItemID.cs:10449`), NOT UltrabrightTorch (2274,
+  `:6231`). `DefaultToTorch(16)` (`Item.cs:37297-37299`, `TorchID.Desert
+  = 16` `TorchID.cs:117`); the itemdata row (tile 4, place_style 16)
+  already matches. Placement rides the existing torch/biome-torch seam
+  (`editing.rs` `biome_torch_place_style`); d6's claim is the aiStyle-60
+  gun-stream biome-torch CONVERSION (`projectile_ai_guns.rs`, `5d81f2de`)
+  — a different lane, no overlap, nothing to port here.
+- **5335 = RodOfHarmony** (`ItemID.cs:12353`), NOT "Advanced Combat
+  Techniques Vol One" (no such item exists in 1.4.5.8). It is the
+  shimmered Rod of Discord (shimmer table 1326→5335):
+  `ItemCheck_UseTeleportRod` (`Player.cs:45476-45534`) — the 5335 arm
+  SKIPS the chaos-state block (`:45514-45517` early return). Unclaimed
+  (g87's branch is at main tip, zero commits; a6 claimed 3335 DemonHeart,
+  not 5335) — ported in W4-g89f.
+What the flag DOES (the consumer census): `NPC.AI_007_TownEntities`'
+`isLikeATownNPC` stat block (`NPC.cs:53025-53031`) — +250 lifeMax,
+cooldown scale ×0.8 (num3), damage scale +0.25 (num2), +8 defense; the
+growth full-heal `:53032-53035`. num2 feeds every town attack's
+`GetAttackDamage_ForTownNPC` (`:54482`/`:54758`/`:54908`/`:55055`); num3
+feeds the attack-chance denominator (`:55443`) and the flee ×0.8
+(`:55201`). The ladder was ALREADY ported
+(`npc_ai_town::town_stat_bonuses`, `env.combat_book_two`) — the flag had
+no writer; this task supplies it. NOT the peddler bonus — the peddler's
+satchel is a SEPARATE flag (`NPC.peddlersSatchelWasUsed`, v260 byte,
+unowned). Second consumer: `Player.cs:25695-25698` — both books fire
+progression event 40 (TRAINING_DAY, `AchievementInitializer.cs:414-416`),
+wired in the `update_player` borrow-free tail.
+Persistence: `.wld` flags section — write `WorldFile.cs:1407` (after
+unlockedPrincessSpawn), read `:2416-2423` version ≥259 (below: false).
+The port's `flags.rs` wrote `false`/skipped the byte; now World-owned
+(`world.combat_book_volume_two_was_used`), pinned tail offset 2036
+(princess@2035+1). The `.plr`/`.trplayer` sidecars are NOT touched —
+this is a WORLD global (research/122 §5).
+### Verification (W4-g89e)
+Code-only: re-read `Player.cs:45322-45350` / `:25695-25698` /
+`NPC.cs:53014-53035` / `:55443` / `WorldFile.cs:1407` / `:2416-2423` /
+`Item.cs:37287-37296` / `:42326-42335`; **no cargo/rustc/rustfmt/tests/
+graphify invoked**. Five witness tests WRITTEN, NOT RUN: `editing.rs`
+(vol-two unlock-once + consume + cadence + refusal; vol-one use path +
+TurnToAir + once-ever), `npc_ai_town.rs` (the vol-two block stacks + the
+growth full-heal + the damaged-NPC refusal), `player.rs` (both books fire
+TRAINING_DAY, one alone does not), `wld/mod.rs` (the v259 gate + the
+tail-2036 pin; the owned-fields round-trip extended).
+## W4-g89f — the Rod of Discord / Rod of Harmony use path (2026-11-21, code-only)
+Census: **5335 = RodOfHarmony** (`ItemID.cs:12353`) — the brief's "Advanced
+Combat Techniques Vol One" does not exist in 1.4.5.8; 5335 is the shimmered
+Rod of Discord (shimmer table 1326→5335). Unclaimed at probe: g87's branch
+(`task/W4-g87-demon-heart-use`) sits at main tip with ZERO commits (the
+demon-heart claim is 3335, ported by a6 `ea478936`); neither rod had a use
+arm. Ported BOTH kinds — one C# function, `ItemCheck_UseTeleportRod`
+(`Player.cs:45476-45534`, called `:43594`).
+The machine (`crates/tr-app/src/rod_teleport.rs`, the recall-module
+precedent): the mid-swing `itemAnimation > 0 && ItemTimeIsZero` gate,
+`ApplyItemTime` (20 ticks) BEFORE the aim gates (a refusal still pays the
+cadence), the gravDir-1 aim `(cursor − (width/2, height))`, the shared
+`limit_point_to_player_reachable_area` clamp (visibility widened to
+pub(crate)), the 50-px bounds flag, the NEW
+`collision::any_wall_of_type_on_line` (the verbatim `Collision.cs:973-1135`
+Bresenham substep walk, wall 350 — the temple line refusal), the aim-cell
+wall-87 temple gate (`!downedPlantBoss && (remix || below surface)`) +
+`Player::solid_collision`, then `teleport_style(point, 1)` + the style-1
+camera lerp (delay 10). **The 5335 difference**: `:45514-45517` returns
+before the chaos block — no tax, no buff 88, ever. The 1326 block: buff-88
+slot scan → `hp -= max_hp / 7` (INTEGER division), the `Next(2)` reason
+roll (UpdatePlayers stream, ONE draw per taxed teleport) →
+`ByOther(13)`/`ByOther(14/15)`, the `dot_death` booking at hp ≤ 0 (the
+npcs-pass drain runs KillMe), the unconditional regen reset, then
+`AddBuff(88, 360)` every discord teleport.
+Deviations: the `TeleportEffect` dust/sound bursts are the unported system
+(the recall module's §Scope precedent); the port has no player `Male` flag
+(the render draws the base male frame) so the roll's gendered arm books
+`DeathText.Teleport_2_Male` — the en-US text is IDENTICAL to the female row
+(`Lang.cs:1098-1103`, both "legs appeared where their head should be");
+the chaos read is the buff-88 slot scan (the `DebuffEffects.chaos_state`
+table row exists but has no live wiring); the hp floor-at-0 is the port's
+collapsed damage lane (the C# statLife goes negative; the ≤0 death test
+reads the same outcome). New `DotDeath::Teleport`/`TeleportGendered`
+variants + the `death_text_key` rows (`DeathText.Teleport_1`,
+`DeathText.Teleport_2_Male`, single-variant — no draw).
+### Verification (W4-g89f)
+Code-only: re-read `Player.cs:45476-45534` / `:45447-45473` /
+`:37414-37496` / `Collision.cs:973-1144` / `Item.cs:42318-42324` /
+`Lang.cs:1095-1103` / `Utils.cs:1807-1810`; **no cargo/rustc/rustfmt/
+tests/graphify invoked**. Six witness tests WRITTEN, NOT RUN:
+`rod_teleport.rs` (the harmony teleport + no-chaos-ever + the
+non-consumable stack; the discord arm-then-tax + the 360-tick window +
+the INTEGER tax + the regen reset; the chaos death booking + the ONE
+Next(2) draw on a cloned stream; the wall-350 line refusal keeps the
+cadence; the solid + temple refusals + the downed-boss opening),
+`collision.rs` (the wall-line walk: on-line hit, parallel/diagonal miss,
+zero-length never, the y-clamp endpoint).
+## W4-g89g — the RoD chaos-state consumer census + the 1326/5335 row/shimmer cross-checks (2026-11-21, code-only)
+Continuation of W4-g89f on the same branch (59864256). Three census items,
+one witness each; no behaviour change to the landed use path.
+**(1) The chaos-state consumer census.** The C# `Player.chaosState` bool
+has exactly FOUR sites: the field (`Player.cs:1986`), the buff-88 latch
+(`:10090-10093`, set from `buffType[j] == 88` every `UpdateBuffs` tick),
+the `ResetEffects` clear (`:18442`), and the rod block (`:45518`, the ONLY
+reader). The tax-arm re-verified 1:1 against `:45518-45533`: the buff-up
+gate, `statLife -= statLifeMax2 / 7` INTEGER, the `ByOther(13)` reason with
+the `Main.rand.Next(2) == 0` → `ByOther(Male ? 14 : 15)` roll BEFORE the
+death test, `KillMe(reason, 1.0, 0)` at `statLife <= 0`, the unconditional
+`lifeRegenCount = 0; lifeRegenTime = 0f`, then `AddBuff(88, 360)` outside
+the gate. **There is NO chaos-specific UI/draw**: buff 88 rides the generic
+buff-icon loop (`Main.cs:43215+`; the port's `ui/resources.rs::draw_buffs`,
+the `Buff_88.xnb` icon exists in `assets/Content/Images`, and the
+`(88, "ChaosState")` lang row `lang_tables.rs:865` feeds
+`BuffName.ChaosState`/`BuffDescription.ChaosState`). The two debuff-table
+consumers: `Main.debuff[88] = true` (`Main.cs:8895`) → the buff-icon
+right-click cancel is a no-op (`TryRemovingBuff`'s `!Main.debuff[b]` gate;
+the port's `Player::try_removing_buff` + `buffs::DEBUFF_IDS` already carry
+88), and 88 is ABSENT from `BuffID.Sets.NurseCannotRemoveDebuff` (the
+20-id CreateBoolSet; the port's `buffs::NURSE_CANNOT_REMOVE_DEBUFF`) → it
+counts in `GetNurseHealCost` (`Main.cs:40059`, `buffTime > 60`) and clears
+at the Nurse heal (`:40133`) — the port's `remountable_debuff_count` /
+`clear_nurse_removable_debuffs` cover both. The `ResetEffects` clear is
+observation-free in the port: the slot scan re-derives the latch every
+read, so a per-tick bool would read the same value (the `DebuffEffects.
+chaos_state` table row `buff_effects.rs:46` stays unwired — no consumer
+needs the bool form). New witness
+`w4_g89g_the_chaos_state_buff_is_nurse_removable_but_not_cancel_clickable`
+pins all three consumers + the no-window-no-tax re-arm.
+**(3) The 1326/5335 item-row census.** Both generated rows
+(`itemdata.rs:1492`/`:5501`) re-verified field-by-field against the C#
+cases (`Item.cs:16438-16447` / `:42316-42325`): `useStyle 1`,
+`useAnimation 20`, `useTime 20`, `autoReuse false`, `width/height 20`,
+`UseSound Item8` (the SOUND_STYLES index 133 — re-derived through the
+generator's own `parse_soundid`, NOT the legacy (2,8) pair), 1326 `rare 7`
++ `value sellPrice(0,10) = 500000`, 5335 `SetShopValues(StrongRed10,
+sellPrice(0,10))` → `rare 10` + the same value. Neither case sets
+`maxStack`/`consumable`/`useTurn` — the `ResetStats` defaults stand
+(`CommonMaxStack = 9999`, `Item.cs:49017`/`:49966`; `consumable false`),
+so the rows' `max_stack: 9999` is the C# default, not a drift.
+`python tools/GenItemData/gen.py --check` → `check ok (6196 rows,
+5977098 bytes)` — the table is generator-faithful, no hand edit.
+**(4) The shimmer 1326→5335 transform.** The entry EXISTS on main AND on
+`origin/task/W4-e19-liquid-quicksell-shimmer` (tip 0570e713): the
+machine-extracted `SHIMMER_TRANSFORM_TO_ITEM` table
+(`tr-core/src/shimmer_tables.rs:14`, the `(1326, 5335)` pair from
+`ItemID.cs:353`'s `ShimmerTransformToItem` CreateIntSet) plus the
+post-Moonlord lock set (`:35`, `SHIMMER_POST_MOONLORD` from
+`ItemID.cs:356` — 1326 is in it, so the transform is LOCKED until
+`downedMoonlord`). The consumers are wired on main:
+`tr-core/src/shimmer.rs::transform_to_item` (the set-first resolution) +
+`is_transform_locked`, called from `tr-app/src/shimmer.rs:96/:104` (the
+`WorldItem.GetShimmered` chain). e19's diff touches only
+`tr-app/src/shimmer.rs` (the decraft half) — the tables are identical on
+both refs, nothing to add. This is a TRANSFORM, not a decraft: 1326 has no
+recipe, so `GetDecraftingRecipeIndex` never sees it; the rod shimmers to
+5335 whole (the `Item.GetShimmerEquivalentType` fallback reads its own
+type). New witness `w4_g89g_the_rod_shimmers_to_harmony_after_the_moon_lord`
+in `tr-core/src/shimmer.rs` pins the pair + the lock both ways.
+### Verification (W4-g89g)
+Code-only: re-read `Player.cs:45476-45534` / `:1986` / `:10090-10093` /
+`:18442` / `Main.cs:8895` / `:43371+` / `BuffID.cs` NurseCannotRemoveDebuff /
+`Item.cs:16438-16447` / `:42316-42325` / `:49017` / `:49966` /
+`ItemID.cs:353` / `:356`; **no cargo/rustc/rustfmt/tests/graphify invoked**
+(the `gen.py --check` above is the generator's own drift check, not a
+cargo run). Two witness tests WRITTEN, NOT RUN: `rod_teleport.rs` (the
+chaos-state consumer census) and `tr-core/src/shimmer.rs` (the rod
+transform + the Moon-Lord lock).
+## W4-g89h — the RoD teleport_style(1) ⨉ TeleportEffect-union composition (2026-11-21, code-only)
+Cross-note for the g11 union merger, published as **research/145** (first
+published as research/139, RENAMED at W4-g89j — g52c-net-master owns 139; the
+derivation + the two merger actions). The g11 union is EXECUTED on its tip
+(`9a9ac1fd0`, the research/116 keep-one: g61's widest-11 body →
+`teleport_dust.rs` + g11's App-level `main_dust` dispatcher). Verdicts:
+1. **The rod call COMPOSES, zero rod-side dust code.** g89f's
+   `p.teleport_style(point.x, point.y, 1)` is g11's
+   `teleport_style_with_extra(…, 0)` wrapper — it queues the Entry/Exit pair
+   (`pending_teleport_effect`, the OLD box + PRE-move mult) and the player
+   replay (`main_dust::player_teleport`) fires the style-1 arm
+   (`teleport_dust.rs:90-129`, the `0 | 1` shape: the Item8 cue FIRST, then
+   `(W*H/5)*mult` type-164 dust with the `Next(20,70)*0.01` scale + j<10/j<5
+   bumps, `Main.cs:13256-13274`) at BOTH legs. The style-1 Entry/Exit dust is
+   NOW-LIVE through the union; the g89f "bursts stay unported (recall
+   precedent)" citation is superseded FOR THE ROD (the module doc updated).
+2. **NEW gap 7 (not in research/116's six): the editing-phase caller drains
+   a tick late — the chaos-roll RNG order flips.** The rod fires in
+   `update_editing` (`editing.rs:2139`), which the frame runs in
+   `editing_net_phase` (`app/frame/world.rs:658`) AFTER `players_phase`
+   (`:633`). g11's drain lives in the player tick, so the rod's queue drains
+   NEXT tick — the chaos `Next(2)` (`Player.cs:45522`, drawn THIS tick in
+   `chaos_state_tax`) lands AHEAD of the Entry/Exit dust draws on
+   `UpdatePlayers`, the reverse of the C# order (dust `:37444`/`:37489`
+   inside `Teleport` BEFORE the chaos block `:45518`). A determinism break.
+   Fix: drain the pending effect at the EDITING tail on `UpdatePlayers`
+   right after the rod arm (the recall post-step convention); the player-tick
+   drain stays for the player-tick callers (disjoint per tick).
+3. **The gap-5 camera dedup.** g11's replay OWNS the style-1 camera
+   (`main_dust.rs:435-450`, delay 10); the rod's INLINE call
+   (`rod_teleport.rs:121-126`) would double-set it (the second
+   `set_camera_lerp` resets the timer, re-arming the delay a tick late).
+   Retire the inline call at the union — NOT before (the replay is absent on
+   this base, so retiring now would drop the camera).
+Both merger actions are WRITTEN, NOT APPLIED (the union code is not on g89's
+base `a725acb04`); research/145 §2/§3 carry the exact worklist + the
+re-pinned chaos witness (the cloned-stream expectation gains the dust draws
+AHEAD of the Next(2)).
+### Verification (W4-g89h)
+Code-only: re-read `Main.cs:13233-13274` / `Player.cs:37414-37496` /
+`:45476-45534` / `app/frame/world.rs:627-670` (the phase order) + the g11-tip
+bodies (`git show origin/task/W4-g11-dust-main-sites-1:<path>`:
+`teleport_dust.rs`, `main_dust.rs`, `player.rs`, `world_sim/player.rs`);
+**no cargo/rustc/rustfmt/tests/graphify invoked**. No code change to the rod
+machine — the module doc's §Scope citation updated + research/145 + the INDEX
+row + this section + the PORT_MAP cross-note.
+## W4-g89i — the Aegis Crystal 5337 permanent upgrade + the +0.2 consumer (2026-11-21, code-only)
+The 5337 Aegis Crystal (`ItemID.cs:12357`), the FIRST arm of
+`ItemCheck_UseShimmerPermanentItems` (`Player.cs:45387-45392`): the
+once-ever `!usedAegisCrystal` gate, `ApplyItemTime` (45 ticks), the flag
+latch, the consumable pay + TurnToAir fold — the SAME shared machine as the
+g89 fruit/gummy/ambrosia arms (`use_shimmer_permanent_item`). The consumer
+is `UpdateLifeRegen`'s `lifeRegenTime += 0.2f` (`Player.cs:19113-19116`).
+**The consumer shape is the g90 lane-7 slot, NOT a pre-summed fold**
+(research/138 §3.3, the a6 reconcile adjudication): the C# adds
+`lifeRegenTime++` (`:19112`), THEN `+= 0.2f` if `usedAegisCrystal`
+(`:19113-19116`), THEN `++` if `crimsonRegen` (`:19117-19120`). Pre-summing
+`0.2 + 1.0` into `extra_time` reorders the f32 accumulation. The port adds a
+`RegenInputs.aegis_crystal: bool` slot applied BETWEEN `+= 1.0` and
+`+= extra_time` (the crimson fold stays in `extra_time`); the feeder reads
+`self.used_aegis_crystal`. This matches g90's `e76ee133` and a6's post-138
+shape verbatim — the merge keep-one.
+**Persistence (both carriers):**
+- `.plr` (`player_file.rs`): the 260+ unlock block's FIRST bool
+  (`usedAegisCrystal`, write `:54781` / read `:55255`) — previously
+  hardcoded `false`/consumed-dropped, now read + written. The block walk
+  stays aligned (the fruit/gummy/ambrosia bools after it unchanged; the
+  arcane/pearl third/fourth stay consumed-dropped — a6/g90's).
+- `.trplayer` (`persist.rs`): the sidecar bumps v9→v10, widening the unlock
+  line to the SIX-token g88-v10 binding order (research/138 §6:
+  `aegisFruit gummyWorm ambrosia aegisCrystal arcaneCrystal galaxyPearl`).
+  This branch carries token 4 (the crystal); tokens 5/6 write `0`
+  placeholders (the arcane/pearl Player fields + consumers stay a6/g90's —
+  the g88 v10 superset reader hydrates them at the merge). The v7/v8/v9
+  short-line back-reads survive (a v9 three-token line loads the crystal
+  false). The App restore (`app/mod.rs`) reads `saved.used_aegis_crystal`.
+**Merge boundary (research/138):** the use arm dedups onto a6's
+`use_shimmer_permanent` machine (§1 — a6 owns the full cluster on one seam);
+the sidecar dedups onto g88 v10 (§2/§8.2 — g88 owns the superset writer);
+the `.plr` bool dedups onto f44's `used_upgrades[6]` array (§2 L1, index 0 =
+aegisCrystal). This branch's consumer shape (the regen slot) is the canonical
+one a6 adopted — no semantic conflict at the dedup.
+### Verification (W4-g89i)
+Code-only: re-read `Player.cs:45385-45423` (the cluster) / `:19112-19120`
+(the regen rows) / `:54781`/`:55255` (the .plr slot) / `:56078` (ctor);
+research/138 (the a6 adjudication, fetched tip `d7de8bd53`) + g88 v10
+(`c8985b534` persist.rs writer/reader) + g90 `e76ee133` (the regen slot).
+**No cargo/rustc/rustfmt/tests/graphify invoked.** Five witness tests
+WRITTEN, NOT RUN: `regen.rs` (the +0.2 between base and crimson, the f32
+order + the no-crystal control), `world_sim/editing.rs` (the 5337 use arm
+once-ever + consume + cadence + refusal), `player.rs` (the unlock survives
+ResetEffects), `player_file.rs` (the .plr :54781 round-trip + the four-bool
+block alignment), `persist.rs` (the .trplayer v10 token-4 round-trip + the
+v9 three-token back-read).
+## W4-g89j — AEGIS FINAL: the 139→145 rename, GAP-7 exact hunks, the token-4 receipt + the family declaration (2026-11-21, code-only)
+The final-phase pass on this branch (three work items, no game-logic change):
+1. **research/139 → 145** (g52c-net-master owns 139 for its COLLISION
+   report). The pushed-branch census: 140 (f29), 141 (e9), 142 (d122),
+   143/144 (c4) taken; **145 free**. The rod-teleport composition note is
+   renamed (`145-rod-teleport-union-composition.md`, a numbering note inside
+   records the old citations), every on-branch ref updated (INDEX, the
+   W4-g89h section above, PORT_MAP, the `rod_teleport.rs` module doc).
+2. **GAP-7 FINAL (research/145 §2a): the EXACT drain-move hunks published**
+   for the g11-union merger, re-pinned at g11's FINAL tip `98283df08`
+   (research/83+116 FINAL; the union code unchanged from `9a9ac1fd0`). The
+   placement refinement over the g89h prose: the drain sits INSIDE
+   `run_rod_arm` BETWEEN `rod_teleport` (`Player.cs:45512`) and
+   `chaos_state_tax` (`:45518`) — a drain after `rod_item_check` returns
+   would still leave the chaos `Next(2)` ahead of the dust. Three hunks:
+   the editing-tail drain (the g11 player-tick drain's req shape verbatim,
+   BEFORE the 5335 early return so the harmony rod's dust drains too), the
+   gap-5 inline-camera retirement (SAME merger commit — the replay owns
+   the camera, `main_dust.rs:463-478`), the re-pinned chaos witness (Entry +
+   Exit dust draws AHEAD of the `Next(2)`) + a new two-phase no-double-fire
+   witness. NOT wired on this branch: the teleport-dust seam is unreachable
+   (g89's base has no `pending_teleport_effect`/replay — `teleport_style` is
+   the bare move core `player.rs:9496`; g11's tip has no rod arm, `git grep
+   rod_item_check` empty). Wiring here would mean porting g11's union —
+   out of scope, g11's lane; the published hunks are the g11-union worklist.
+3. **The g88g-v10-token-4 receipt + the aegis-family declaration
+   (research/122 §7, FINAL-FINAL).** Probe: g88 tip `a9f1c29d8` (fold 7
+   FINAL, writer v11), a6 tip `115ce655a` (138 FINAL pushed), g90 tip
+   `94d33f2ca` (g90b `e76ee133e` ancestor-verified). The SAME-slot
+   double-writer question ANSWERED: both branches write line 8 token 4 =
+   `usedAegisCrystal`, same order/encoding — g88's six-token writer is a
+   strict superset of g89's `… 0 0` placeholder writer; **no semantic
+   conflict, g88's persist.rs is the merger keep** (138 §2/§8.2, 103 §9-L2),
+   g89's v10 writer/reader DROP. A g89 v10 file loads losslessly on g88's
+   reader; the reverse rejects (`"11"` hits g89's migrate `_ => return
+   None`, `persist.rs:127`) — the standing pre-merge incompatibility,
+   recorded, killed by the merge. The g88e-folded-crystal-trio (g90b's
+   flags) dedupes textually with g89i's declaration (same anchor after
+   `used_ambrosia`); the consumer (the regen f32-order slot) is the shape
+   a6 adopted (138 §3.3) — keep g90's anchor. **The aegis family is
+   ALL-LANDED on this branch: 5338/5341/5342/5337** — four use arms on the
+   shared core, four `.plr` bools both halves, four sidecar tokens with the
+   short-line back-reads; the merger per 138 §1/§8 + 103 §9 (use arms →
+   a6's machine, fields/consumers → g90's shapes, `.plr` → f44c's
+   `used_upgrades[6]`, sidecar → g88 v11). 5339/5340 stay a6/g90's.
+### Verification (W4-g89j)
+Code-only: re-read g11 tip `98283df08` (`main_dust.rs:405-497`,
+`teleport_dust.rs:92-131`, `player.rs:3431`/`:9498-9546`,
+`world_sim/player.rs:1564-1576`/`:1691-1693`, `world_sim/editing.rs:1998`),
+g88 tip `a9f1c29d8` (`persist.rs` writer `:260-267` / reader `:440-456` /
+the v7 recognitions, research/103 §9), a6 tip `115ce655a` (research/138
+§1/§2/§3.3/§6/§8), g90b `e76ee133e` (the trio + the regen slot), this
+branch's `persist.rs:104-110`/`:117-128`/`:189-200` + `rod_teleport.rs`.
+**No cargo/rustc/rustfmt/tests/graphify invoked.** No new witnesses (the
+GAP-7 witness hunks are merger worklist, written not applied); the docs
+receipts cite pushed tips verified by `git show`/`git grep`/`git ls-tree`.

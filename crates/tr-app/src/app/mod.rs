@@ -3450,6 +3450,20 @@ impl App {
                         p.y = saved.y;
                     }
                     p.hp = saved.hp.clamp(1, p.max_hp);
+                    // W4-g89 — the permanent Aegis Fruit unlock rides the
+                    // sidecar's v7 line (`Player.usedAegisFruit` load,
+                    // `Player.cs:55256`); the booster pass re-adds the +4
+                    // every tick (`:12853-12856`). The Gummy Worm rides the
+                    // same line's second token (v8, `:55259`; the +3 row
+                    // `:12857-12860`).
+                    p.used_aegis_fruit = saved.used_aegis_fruit;
+                    p.used_gummy_worm = saved.used_gummy_worm;
+                    // W4-g89c — the Ambrosia rides the third token (v9,
+                    // `:55260`; the speed row `:12861-12866`).
+                    p.used_ambrosia = saved.used_ambrosia;
+                    // W4-g89i — the Aegis Crystal rides the fourth token
+                    // (v10, `:55255`; the +0.2 regen row `:19113-19116`).
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;

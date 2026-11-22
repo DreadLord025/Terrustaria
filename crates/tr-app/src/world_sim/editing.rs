@@ -658,7 +658,7 @@ fn remap_gem(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32)
 /// the box KEEPS its size — on a world smaller than the view the clamp's
 /// max < min and `Utils.Clamp<T>` (`:223-234`, max first) returns the max,
 /// so the box hangs off the far edge exactly as the C#'s does (S1-P-i23).
-fn limit_point_to_player_reachable_area(
+pub(crate) fn limit_point_to_player_reachable_area(
     center: Vec2,
     point: Vec2,
     world: &tr_core::World,
@@ -1719,6 +1719,151 @@ fn held_use_time_ticks(held: ItemSlot) -> i32 {
     registry::get(held.kind).map_or(0, |d| i32::from(d.use_time))
 }
 
+/// `ItemCheck_UseShimmerPermanentItems`' shared arm body
+/// (`Player.cs:45385-45423`, called from `ItemCheck_OwnerOnlyCode`
+/// `:43607`): every one of the six C# arms is the SAME machine —
+/// `sItem.type == <id> && itemAnimation > 0 && !<flag> && ItemTimeIsZero`
+/// → `ApplyItemTime(sItem)`, `<flag> = true`, `NetMessage.SendData(4)`.
+/// The mid-swing window folds onto the press tick (the i37 food/potion
+/// convention; the caller's `use_press_edge` carries the animation/
+/// cooldown halves). The `SendData(4)` player sync has no single-player
+/// port. The generic consumable tail (`:43280-43326` — `Item.consumable`
+/// on every 5337-5342 row, `Item.cs:42337-42395`) pays one per use; the
+/// TurnToAir fold matches the food arm above. `already_used` is the
+/// caller-read `!<flag>` half; `latch` writes the flag.
+fn use_shimmer_permanent_item(
+    app: &mut App,
+    held: ItemSlot,
+    kind: u16,
+    already_used: bool,
+    latch: impl FnOnce(&mut Player),
+) -> bool {
+    if held.kind != kind {
+        return false;
+    }
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    if already_used {
+        return false; // `!this.<flag>` — once ever
+    }
+    latch(p);
+    // The use START (`ItemCheck_StartActualUse`, `:51678-51680`): the swing
+    // + the Item92 UseSound (`Item.cs:42351`) — the press tick's swing seam
+    // every consume arm rides (the boss-summon gate above starts it the
+    // same way before its mid-swing fire).
+    start_use_timers(app, held);
+    // `ApplyItemTime(sItem)` (`:45389`/`:45395`/`:45401`/`:45407`/`:45413`/
+    // `:45419`): the PREFIXED instance useTime (`Item.Prefix` scales
+    // useTime), the boss-summon arm's read shape.
+    app.item_time = crate::prefix::prefixed_stats(held.kind, held.prefix)
+        .map(|s| s.use_time)
+        .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 * ONE_TICK_SECS)
+        .unwrap_or(app.swing_max);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// W4-g89 — the 5338 Aegis Fruit arm (`Player.cs:45393-45398`): the
+/// permanent +4 defense (`UpdatePermanentBoosters` `:12853-12856`).
+fn use_aegis_fruit(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_aegis_fruit);
+    use_shimmer_permanent_item(app, held, 5338, already, |p| p.used_aegis_fruit = true)
+}
+
+/// W4-g89i — the 5337 Aegis Crystal arm (`Player.cs:45387-45392`): the
+/// permanent +0.2 lifeRegenTime per tick (`UpdateLifeRegen` `:19113-19116`,
+/// the `regen.rs` `aegis_crystal` slot). The FIRST arm of
+/// `ItemCheck_UseShimmerPermanentItems`; same shared machine as the fruit
+/// (the once-ever `!usedAegisCrystal` gate, ApplyItemTime 45, the
+/// consumable pay + TurnToAir fold). research/138 §1: a6's
+/// `use_shimmer_permanent` machine is the merge keep-one for the cluster —
+/// this arm dedups onto it (the consumer shape here is the canonical g90
+/// slot a6 adopted, §3.3).
+fn use_aegis_crystal(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_aegis_crystal);
+    use_shimmer_permanent_item(app, held, 5337, already, |p| p.used_aegis_crystal = true)
+}
+
+/// W4-g89 — the 5341 Gummy Worm arm (`Player.cs:45411-45416`): the
+/// permanent +3 fishing skill (`UpdatePermanentBoosters` `:12857-12860`,
+/// the i35 row). The flag landed with i35; this is its MISSING use path.
+fn use_gummy_worm(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_gummy_worm);
+    use_shimmer_permanent_item(app, held, 5341, already, |p| p.used_gummy_worm = true)
+}
+
+/// W4-g89c — the 5342 Ambrosia arm (`Player.cs:45417-45422`): the
+/// permanent mining/placement speed (`UpdatePermanentBoosters`
+/// `:12861-12866` — `pickSpeed -= 0.05f; tileSpeed += 0.05f;
+/// wallSpeed += 0.05f`). The LAST arm of the C# function.
+fn use_ambrosia(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_ambrosia);
+    use_shimmer_permanent_item(app, held, 5342, already, |p| p.used_ambrosia = true)
+}
+
+/// W4-g89e — `ItemCheck_UseCombatBook` (`Player.cs:45322-45350`, called
+/// from `ItemCheck_OwnerOnlyCode` `:43604`): the two WORLD-global books.
+/// 4382 Combat Book (`:45324-45336`, `NPC.combatBookWasUsed` — the flag
+/// landed with i35's fishing condition; this is its MISSING use path) and
+/// 5336 Combat Book Volume Two (`:45337-45348`,
+/// `NPC.combatBookVolumeTwoWasUsed`). Same machine as the shimmer arms
+/// above but the latch is a WORLD flag, not a player bool, and the C#
+/// `Main.NewText(..., ChatColors.World)` announcement rides the netMode==0
+/// arm (the `SendData(61, -11f/-17f)` MP sync has no single-player port).
+/// The generic consumable tail (`:43280-43326` — both rows `consumable`,
+/// `Item.cs:37287-37296`/`:42326-42335`) pays one per use; the mid-swing
+/// window folds onto the press tick (the i37 convention). The consumer is
+/// the town-NPC stat ladder (`NPC.cs:53018-53031` — +250 lifeMax, ×0.8
+/// cooldown, +0.25 damage, +8 defense per book), ported in
+/// `npc_ai_town::town_stat_bonuses` (`env.combat_book`/`combat_book_two`).
+fn use_combat_book(app: &mut App, held: ItemSlot) -> bool {
+    let kind = held.kind;
+    let (already, vol_two) = match kind {
+        4382 => (app.world.combat_book_was_used, false),
+        5336 => (app.world.combat_book_volume_two_was_used, true),
+        _ => return false,
+    };
+    if app.player.is_none() || already {
+        return false; // `!NPC.combatBook...WasUsed` — once ever, per world
+    }
+    if vol_two {
+        app.world.combat_book_volume_two_was_used = true; // `:45342`
+    } else {
+        app.world.combat_book_was_used = true; // `:45329`
+    }
+    // The use START (`ItemCheck_StartActualUse`, `:51678-51680`): the swing
+    // + the Item92 UseSound (`Item.cs:42331`/`:37292`).
+    start_use_timers(app, held);
+    // `ApplyItemTime(sItem)` (`:45326`/`:45339`): the PREFIXED instance
+    // useTime (45 on both rows), the shimmer arms' read shape.
+    app.item_time = crate::prefix::prefixed_stats(held.kind, held.prefix)
+        .map(|s| s.use_time)
+        .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 * ONE_TICK_SECS)
+        .unwrap_or(app.swing_max);
+    // `Main.NewText(Language.GetTextValue("Misc.CombatBook...Used"),
+    // ChatColors.World)` (`:45330`/`:45343`) — the vol-two key is a
+    // `{$Misc.CombatBookUsed}` copy command (the same line).
+    let key = if vol_two { "Misc.CombatBookVolumeTwoUsed" } else { "Misc.CombatBookUsed" };
+    app.chat.new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 /// Refresh `mine_timer`/`mine_hardness` from the `HitTile` book's damage
 /// at the cell — the mining-state mirror the mining witnesses read. The
 /// crack overlay itself reads the book directly (W4-g77,
@@ -2062,6 +2207,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // frame at the top). A started use consumes the tick like the boss arms;
     // a live swing's per-tick arm runs without consuming.
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
+    // W4-g89f — the Rod of Discord 1326 / Rod of Harmony 5335 arm
+    // (`ItemCheck_UseTeleportRod`, `Player.cs:45476-45534`, called `:43594`
+    // BEFORE the recall cluster's `:42976` block in C# order — the kinds
+    // are disjoint, so the position is observation-identical). Same
+    // mid-swing machine: the press edge starts the swing, the teleport
+    // fires at `ItemTimeIsZero` inside it; the harmony rod skips the
+    // chaos-state block (`:45514-45517`).
+    if crate::rod_teleport::rod_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
@@ -2417,6 +2572,40 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // per-kind delays (`ApplyPotionDelay` `:51853-51886`), the Mana
         // Sickness grant (`:51938`) and the stack consume all live there.
         if crate::potions::use_potion_item(app, held) {
+            return;
+        }
+        // W4-g89i — the 5337 Aegis Crystal arm (`Player.cs:45387-45392`,
+        // the FIRST arm of `ItemCheck_UseShimmerPermanentItems` `:43607`):
+        // the permanent +0.2 lifeRegenTime unlock (the `regen.rs`
+        // `aegis_crystal` slot). Same press-tick fold + once-ever gate.
+        if use_aegis_crystal(app, held) {
+            return;
+        }
+        // W4-g89 — `ItemCheck_UseShimmerPermanentItems`' Aegis Fruit arm
+        // (`Player.cs:45393-45398`, called from `ItemCheck_OwnerOnlyCode`
+        // `:43607`): the 5338 permanent +4 defense unlock. The mid-swing
+        // `ItemTimeIsZero && itemAnimation > 0` window folds onto the press
+        // tick (the i37 food/potion convention above).
+        if use_aegis_fruit(app, held) {
+            return;
+        }
+        // W4-g89 — the 5341 Gummy Worm arm (`Player.cs:45411-45416`): the
+        // permanent +3 fishing skill (the i35 booster row's MISSING use
+        // path). Same fold, same once-ever gate.
+        if use_gummy_worm(app, held) {
+            return;
+        }
+        // W4-g89c — the 5342 Ambrosia arm (`Player.cs:45417-45422`): the
+        // permanent mining/placement speed (`:12861-12866`), the LAST arm
+        // of `ItemCheck_UseShimmerPermanentItems`.
+        if use_ambrosia(app, held) {
+            return;
+        }
+        // W4-g89e — `ItemCheck_UseCombatBook` (`Player.cs:45322-45350`,
+        // called `:43604` BEFORE the shimmer machine `:43607`): the 4382 /
+        // 5336 world-global books. The kinds are disjoint from every arm
+        // above, so the press-edge position is observation-identical.
+        if use_combat_book(app, held) {
             return;
         }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
@@ -18195,6 +18384,244 @@ mod use_loop_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
         assert_eq!(p.slots_minions, 1.0);
+    }
+
+    /// W4-g89i — the 5337 Aegis Crystal use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45387-45392`, the
+    /// FIRST arm of the cluster): ONE press unlocks `usedAegisCrystal`
+    /// permanently, pays one from the stack and re-arms the 45-tick
+    /// cadence (`ApplyItemTime` `:45389`, `Item.cs:42337-42346`). A second
+    /// crystal is REFUSED — the `!usedAegisCrystal` gate (`:45387`) leaves
+    /// the stack intact, once ever. The consumer is the `regen.rs`
+    /// `aegis_crystal` slot (+0.2 lifeRegenTime, `:19113-19116`).
+    #[test]
+    fn w4_g89i_the_aegis_crystal_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5337);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_aegis_crystal,
+            "the unlock latched (`:45390`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45389`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second crystal: the permanent gate refuses — no consume, no
+        // re-arm (`!this.usedAegisCrystal`, `:45387`).
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_aegis_crystal(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+    }
+
+    /// W4-g89 — the 5338 Aegis Fruit use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45393-45398`):
+    /// ONE press unlocks `usedAegisFruit` permanently, pays one from the
+    /// stack (the generic consumable tail `:43280-43326`) and re-arms the
+    /// action cadence at the 45-tick useTime (`ApplyItemTime` `:45395`,
+    /// `Item.cs:42350`). A second fruit is REFUSED — the `!usedAegisFruit`
+    /// gate (`:45393`) leaves the stack intact, once ever.
+    #[test]
+    fn w4_g89_the_aegis_fruit_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5338);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_aegis_fruit,
+            "the unlock latched (`:45396`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45395`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second fruit: the permanent gate refuses — no consume, no
+        // re-arm (`!this.usedAegisFruit`, `:45393`).
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_aegis_fruit(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+    }
+
+    /// W4-g89 — the 5341 Gummy Worm use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45411-45416`): the
+    /// i35 flag/booster row's MISSING use path. ONE press unlocks
+    /// `usedGummyWorm`, pays one and re-arms the 45-tick cadence
+    /// (`Item.cs:42376-42385` — useTime 45 == useAnimation 45). A second
+    /// worm is refused (`!usedGummyWorm`, `:45411`) — the stack stays.
+    #[test]
+    fn w4_g89_the_gummy_worm_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5341);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_gummy_worm,
+            "the unlock latched (`:45414`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45413`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second worm: the once-ever gate refuses.
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_gummy_worm(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+        // The last worm TurnToAirs on the consume tick; a non-worm never
+        // enters the arm.
+        let mut last = app_with_staff(5341);
+        let held = last.inventory[last.selected];
+        assert!(super::use_gummy_worm(&mut last, held));
+        assert_eq!(last.inventory[last.selected].count, 0);
+        assert_eq!(last.inventory[last.selected].kind, 0, "TurnToAir folded");
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_gummy_worm(&mut other, dirt));
+        assert!(!other.player.as_ref().unwrap().used_gummy_worm);
+    }
+
+    /// W4-g89c — the 5342 Ambrosia use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45417-45422`):
+    /// ONE press unlocks `usedAmbrosia`, pays one and re-arms the 45-tick
+    /// cadence (`Item.cs:42386-42395`). A second Ambrosia is refused
+    /// (`!usedAmbrosia`, `:45417`) — the stack stays; the last one
+    /// TurnToAirs.
+    #[test]
+    fn w4_g89c_the_ambrosia_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5342);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_ambrosia,
+            "the unlock latched (`:45420`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45419`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second Ambrosia: the once-ever gate refuses.
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_ambrosia(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+        // The last Ambrosia TurnToAirs; a non-Ambrosia never enters the arm.
+        let mut last = app_with_staff(5342);
+        let held = last.inventory[last.selected];
+        assert!(super::use_ambrosia(&mut last, held));
+        assert_eq!(last.inventory[last.selected].count, 0);
+        assert_eq!(last.inventory[last.selected].kind, 0, "TurnToAir folded");
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_ambrosia(&mut other, dirt));
+        assert!(!other.player.as_ref().unwrap().used_ambrosia);
+    }
+
+    /// W4-g89 — the last fruit in the stack TurnToAirs on the consume tick
+    /// (the food-arm fold of `:42824-42828`); the unlock still lands.
+    #[test]
+    fn w4_g89_the_last_fruit_empties_the_slot() {
+        let mut app = app_with_staff(5338);
+        let held = app.inventory[app.selected];
+        assert!(super::use_aegis_fruit(&mut app, held));
+        assert!(app.player.as_ref().unwrap().used_aegis_fruit);
+        assert_eq!(app.inventory[app.selected].count, 0);
+        assert_eq!(app.inventory[app.selected].kind, 0, "TurnToAir folded");
+        // A non-fruit item never enters the arm.
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_aegis_fruit(&mut other, dirt));
+        assert!(!other.player.as_ref().unwrap().used_aegis_fruit);
+    }
+
+    /// W4-g89e — the 5336 Combat Book Volume Two use arm
+    /// (`ItemCheck_UseCombatBook`, `Player.cs:45337-45348`): ONE press
+    /// latches the WORLD flag `NPC.combatBookVolumeTwoWasUsed` (`:45342`),
+    /// pays one from the stack (the generic consumable tail `:43280-43326`,
+    /// `Item.cs:42326-42335` consumable) and re-arms the 45-tick cadence
+    /// (`ApplyItemTime` `:45339`). A second book is REFUSED — the
+    /// `!NPC.combatBookVolumeTwoWasUsed` gate (`:45337`) keeps the stack.
+    #[test]
+    fn w4_g89e_the_combat_book_vol_two_latches_the_world_flag_once() {
+        let mut app = app_with_staff(5336);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.world.combat_book_volume_two_was_used,
+            "the world flag latched (`:45342`)"
+        );
+        assert!(!app.world.combat_book_was_used, "vol one untouched");
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45339`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second book: the once-ever WORLD gate refuses.
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_combat_book(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+    }
+
+    /// W4-g89e — the 4382 Combat Book (vol one) arm (`Player.cs:45324-45336`):
+    /// the i35 flag's MISSING use path. ONE press latches
+    /// `NPC.combatBookWasUsed` (`:45329`), pays one, re-arms 45 ticks; the
+    /// last book TurnToAirs. The two flags are independent — vol two stays
+    /// false until its own arm runs.
+    #[test]
+    fn w4_g89e_the_combat_book_vol_one_use_path_latches_i35s_flag() {
+        let mut app = app_with_staff(4382);
+        let held = app.inventory[app.selected];
+        assert!(super::use_combat_book(&mut app, held));
+        assert!(app.world.combat_book_was_used, "the i35 flag latched (`:45329`)");
+        assert!(!app.world.combat_book_volume_two_was_used);
+        assert_eq!(app.inventory[app.selected].count, 0);
+        assert_eq!(app.inventory[app.selected].kind, 0, "TurnToAir folded");
+        assert_eq!(app.item_time, 45.0 * super::ONE_TICK_SECS, "`:45326`");
+        // Once ever: a fresh stack is refused while the world flag holds.
+        app.inventory[app.selected].kind = 4382;
+        app.inventory[app.selected].count = 1;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_combat_book(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        // A non-book never enters the arm.
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_combat_book(&mut other, dirt));
+        assert!(!other.world.combat_book_was_used);
     }
 
     /// S1-P-i25 — the summon spawn arm books the UNSCALED item damage as

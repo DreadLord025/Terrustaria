@@ -1944,6 +1944,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     if let Some(req) = teleport_effect_req {
         crate::main_dust::player_teleport(app, req);
     }
+    // W4-g89e — `Player.cs:25695-25698` (the `i == Main.myPlayer` block of
+    // UpdateEquips): BOTH combat books used fires progression event 40
+    // (`TRAINING_DAY`, `AchievementInitializer.cs:414-416`). The C# re-fires
+    // every tick while both flags hold; `notify_progression` is idempotent
+    // after the grant. The borrow-free tail is the port's myPlayer-block
+    // position (the armor-set ammo grants above ride the same fold).
+    if app.world.combat_book_was_used && app.world.combat_book_volume_two_was_used {
+        let _ = app.notify_progression_net(40);
+    }
     // `Spawn_ForceClearArea` (`Player.cs:37914-37935`): the same-tick
     // deferral is observation-identical — nothing probes the spawn area
     // between the teleport and this drain.
@@ -2119,6 +2128,31 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    /// W4-g89e — `Player.cs:25695-25698`: BOTH combat books used fires
+    /// progression event 40 (`TRAINING_DAY`, `AchievementInitializer.cs:414-416`).
+    /// One book alone does not fire; both together grant on the tick.
+    #[test]
+    fn w4_g89e_both_combat_books_fire_the_training_day_progression() {
+        let mut app = ammo_app();
+        app.world.combat_book_was_used = true;
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.achievements.notify_progression(40),
+            Some("TRAINING_DAY"),
+            "one book alone did not grant — the condition is still open"
+        );
+        // Reset: a fresh manager, both flags — the tick itself grants.
+        let mut app = ammo_app();
+        app.world.combat_book_was_used = true;
+        app.world.combat_book_volume_two_was_used = true;
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.achievements.notify_progression(40),
+            None,
+            "the tick already granted TRAINING_DAY (`:25697`)"
+        );
     }
 
     /// S1-P-i53 — the buff-bar cancel drains for a LIVING player: the drain

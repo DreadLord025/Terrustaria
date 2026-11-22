@@ -310,6 +310,12 @@ pub struct World {
     /// `PrepareFishingContext` context) — the world-field standing-in
     /// (S1-P-i35).
     pub combat_book_was_used: bool,
+    /// `NPC.combatBookVolumeTwoWasUsed` (`NPC.cs:6341`; the 5336 use arm
+    /// `Player.cs:45337-45348`, `.wld` write `WorldFile.cs:1407` / read
+    /// `:2416-2423` version ≥259) — the same world-field standing-in
+    /// (W4-g89e). The town-NPC stat ladder's second +250/×0.8/+0.25/+8
+    /// block (`NPC.cs:53025-53031`) reads it.
+    pub combat_book_volume_two_was_used: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -714,6 +720,7 @@ impl World {
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
             combat_book_was_used: false,
+            combat_book_volume_two_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,

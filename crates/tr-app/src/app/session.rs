@@ -287,6 +287,11 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // live `favorite_slots`, flattened (`App::favorite_bits`); a fresh
         // character has none.
         inv_favorites: favorites,
+        // A fresh character has used no permanent upgrade (`Player.cs:56079`).
+        used_aegis_fruit: false,
+        used_gummy_worm: false, // `Player.cs:56082`
+        used_ambrosia: false,   // `Player.cs:56083`
+        used_aegis_crystal: false, // `Player.cs:56078`
         // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — `Serialize`
         // stamps the save-time clock on every write, `CreateAndSave`
         // included (`PlayerFileData.cs:58` → `SavePlayer`). W4-c43.
