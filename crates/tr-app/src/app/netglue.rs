@@ -8662,6 +8662,7 @@ impl App {
                 stack: i16::from(p.equipped[i] != 0),
                 prefix: p.equipped_prefix[i].min(255) as u8,
                 favorited: false,
+                blocked: false,
             });
         }
         if (ps::DYE_0..ps::DYE_0 + 10).contains(&slot) {
@@ -8671,6 +8672,7 @@ impl App {
                 stack: i16::from(p.dye_slots[i] != 0),
                 prefix: 0,
                 favorited: false,
+                blocked: false,
             });
         }
         if (ps::MISC_0..ps::MISC_0 + 5).contains(&slot) {
@@ -8683,6 +8685,7 @@ impl App {
                 stack: i16::from(p.misc_dye_slots[i] != 0),
                 prefix: 0,
                 favorited: false,
+                blocked: false,
             });
         }
         for b in 0..4 {
