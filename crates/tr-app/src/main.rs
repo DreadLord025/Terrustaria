@@ -240,6 +240,10 @@ mod rain;
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
 // helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
 mod recall_teleport;
+// W4-d51: the player-tick `Dust.NewDust` drain lanes — the extra-jump chain
+// (`Player.JumpMovement`, Player.cs:20818-21012) first; the tick queues the
+// box/velocity snapshot, this module replays on the `UpdatePlayers` stream.
+mod player_dust;
 mod regen;
 mod research;
 mod sand;
