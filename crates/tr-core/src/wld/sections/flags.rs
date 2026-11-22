@@ -47,7 +47,8 @@ pub fn write(w: &mut Writer, world: &World) {
         w.i32(s); // treeStyle (`:1256-1259`)
     }
     for x in world.cave_back_x[..3] {
-        w.i32(x); // caveBackX (`:1260-1262` — [3] is never persisted)
+        // caveBackX (:1260-1262, W4-g72) — [3] is never persisted
+        w.i32(x);
     }
     for s in world.cave_back_style {
         w.i32(s); // caveBackStyle (`:1263-1266`)

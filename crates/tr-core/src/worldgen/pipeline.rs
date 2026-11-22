@@ -2780,6 +2780,11 @@ fn step_world_tail(
     // styles, on its own `pass_rng` slot. The four forest styles + the eight
     // surface variants + the underworld style write through
     // `set_surface_bg_style` (the C#'s `setBG` calls, `:7965-8011`).
+    // W4-g72 final ORDER-CONTRACT (research/181 §6) EXECUTED here: the
+    // surface roll draws AFTER apply_cave_backgrounds and BEFORE the moon
+    // draw (the contiguous `:11339→:11340→:11341` genRand sequence; the
+    // ahead-of-cave `:11337` WorldId / `:11338` TreeStyle seats ride their
+    // own pass_rng slots above — the recorded per-pass-stream deviation).
     let styles =
         super::bg_rolls::randomize_backgrounds(&mut streams.pass_rng("RandomizeBackgrounds"));
     world.set_surface_bg_style(0, styles.forest[0]);
@@ -2803,12 +2808,14 @@ fn step_world_tail(
     // surface rolls ride isolated `pass_rng` slots and shift nothing.
     world.moon_type = (streams.rng.next_u32() % 9) as u8;
     world.moon_phase = 0;
-    // The f45 Ph6 roll copies (randomize_tree_style/randomize_cave_backgrounds
-    // + the standalone hell/ice/jungle tail draws) DROP here per the f45/g71
-    // keep-one (research/279 §3.4 / research/218 §1-FULL): the canonical rolls
-    // ran above — g71's bg_rolls tree/surface seats + g72's cave_bg block (the
-    // hell Next(3) folded into its tail). A second draw would double-consume
-    // the stream and re-roll the styles.
+    // The f45 Ph6 roll copies (fn randomize_tree_style /
+    // randomize_cave_backgrounds + the standalone hell/ice/jungle tail
+    // draws) DROP here per the f45/g71 keep-one (research/279 §3.4 /
+    // research/218 §1-FULL): the canonical rolls ran above — g71's
+    // `bg_rolls::randomize_tree_style`/`randomize_backgrounds` seats + g72's
+    // `cave_bg::randomize_cave_backgrounds` block (the hell Next(3) folded
+    // into its tail). A second draw would double-consume the stream and
+    // re-roll the styles.
     // W4-f45 — `WorldGen.Reset`'s doom-party arm (`WorldGen.cs:11128-11137`):
     // a tenth-anniversary world (not skyblock) opens with a genuine party on a
     // 5-day cooldown; with get-good too, `afterPartyOfDoom` arms (the party's

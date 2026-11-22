@@ -5313,6 +5313,8 @@ mod w4_g71_bg_net_tests {
     use crate::ui::save_list::{PlayerEntry, WorldEntry};
 
     #[test]
+    // The g72 `the_world_info_header_carries_the_cave_roll` witness folds
+    // into this superset (the keep-one — the cave-roll asserts ride below).
     fn the_world_info_header_carries_the_bg_rolls() {
         let mut host = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
         host.world.forest_bg_styles = [2, 3, 4, 5];
