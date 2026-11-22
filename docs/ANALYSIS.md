@@ -23104,6 +23104,231 @@ colours, the laser/hook arm colours, the negative-coordinate truncation and the
 even-side anchor invariant; `projectile.rs`'s `proj_light_spawn_tests` pin the
 spawn copy, the crystal-storm scale-driven rewrite across the fade gate, the
 dark WaterBolt and the stream-neutrality witness.
+### The projectile AI-arm lights, second wave (S1-E-5, W4-e6, 2026-11-20, code-only mode)
+
+`crates/tr-app/src/proj_ai_lights.rs::proj_ai_lights` ports the **second 40**
+of `Projectile.cs`'s 107 `Lighting.AddLight` call sites (sites 68-107 in line
+order, `:54173`…`:78556`) — the AI-arm lights OUTSIDE `ProjLight`
+(`:16153-16661`, the first wave's chain tail; the first 67 sites are W4-c19's
+slice). The feed is ONE loop in `app/frame/draw.rs` beside the `proj_light`
+feed, after the step, in `Main.projectile` slot order, into the **same**
+`EntityLights` pair. Like the `ProjLight` chain, an arm whose kind has no
+`proj_data` row is absent wholesale (no slot can carry it), and no ported arm
+draws `Main.rand` — the feed is pure, so its placement cannot move any stream.
+
+**Ported (20 sites / 23 lights):**
+
+* `AI_001`'s per-type arms: 436 BrainScramblerBolt (`:54173`,
+  `(int)Center/16`, (0.3, 1.1, 0.5)); 634/635 NebulaBlaze1/2 (`:54571`,
+  `AddLight(Center, rgb2)` — the per-kind head colours (0.7, 0.1, 0.5) /
+  (0.4, 0.6, 0.9), `:54470`/`:54481`); 459 ChargedBlasterOrb (`:54674`,
+  (0.4, 0.85, 0.9) — the `:54670-54673` box rewrite keeps the centre
+  invariant); 442 ElectrosphereMissile (`:54755`, (0.3, 0.45, 0.8), inside
+  `if (alpha == 0)` after the `localAI[1] >= 120` kill the sim already runs);
+  449 SaucerLaser (`:54788`, (0.7, 0.65, 0.3)); 438 RayGunnerLaser (`:54831`,
+  (0.4, 0.1, 0.2)); 350 Missile (`:55137`) + 325 FlamingWood (`:55171`), the
+  twin (0.9, 0.6, 0.2) arms; 819 BloodArrow (`:56421`, (0.3, 0.05, 0.05)).
+* `AI_026`'s foxsparks pair: 1094/1113 (`:58213`/`:58226`,
+  `AddLight(Center, 0.5, 0.3, 0.1)`, unconditional inside each type block).
+* `AI_062`'s StardustCell 613 (`:65120`, (0.2, 0.6, 0.7)).
+* `AI_075`'s LaserDrill 445 (`:66272`): the `localAI[0]/60` triangle-wave
+  `Vector3.Lerp((0,1,0.7),(0,0.7,1), 1-num12*2) * 0.5` colour (unclamped
+  Lerp), gated on `Distance(hand, Center) >= 5f` (`:66256`), `hand` = the
+  owner's `RotatedRelativePoint(MountedCenter)` (`:66135`; the feed resolves
+  `owner == 0` to the local player, the `ai_drill`/`map_layers` precedent).
+* `AI_130`'s FlameBurst tower pairs: 663 T1 (`:68124-68125`), 665 T2
+  (`:68172-68173`, ×1.2), 667 T3 (`:68224-68225`, ×1.5) — each appends the
+  `Center` light then the `Bottom + (0,-10)` light at (0.4, 0.2, 0.1)×mult.
+* `AI_138`'s ExplosiveTrap shared tail (`:69332`): 691/692/693 all light
+  `Center` (0.6, 0.5, 0.3).
+
+**The LaserDrill deviation (recorded).** The 445 arm is ported but **dark in
+the current port**, the WaterBolt dead-arm precedent (`proj_lights.rs`): the
+port's `ai_drill` stand-in pins the slot's centre to the hand every tick
+(`projectile.rs::ai_drill`), so the `>= 5f` distance gate reads 0, and the
+`localAI[0]++`/wrap-60 cycle (`:66251-66255`) is an AI-side writer that lands
+with the full `AI_075` 445 arm — until then the colour reads the stock 0. The
+C# pins the drill to the hand at `AI_075`'s TAIL (`:67329`), AFTER this light,
+so the vanilla gate reads the pre-pin (moved) centre and the light is live
+there. The `>= 30f` `PlotTileLine` flood half (`:66264-66271`) is the
+light-map write with no port — skipped, the 870 `FloodFillTile` precedent.
+
+**Absent (20 sites), exactly:**
+
+* The 18 unrowed kinds: 467 CultistBossFireBall (`:54262`), 468
+  CultistBossFireBallClone (`:54406`), 709 MonkStaffT3_AltShot (`:54714`),
+  440 LaserMachinegunLaser (`:54784`), 606 ScutlixLaser (`:54792`), 593
+  AncientDoomProjectile (`:54835`), 592 MartianWalkerLaser (`:54858`), 435
+  MartianTurretBolt (`:54932`), 682 DD2LightningBugZap (`:54968`), 684
+  DD2SquireSonicBoom (`:54992`), 585 ClothiersCurse (`:56126`, the colour
+  rides `NPCID.Sets.MagicAuraColor[54]` = (100, 4, 227)/255,
+  `NPCID.cs:10475`), 577 VortexLaser (`:56294`), 576 NebulaLaser (`:56298`),
+  312 JackOLantern (`:57185`), 324 CursedSapling (`:61228`), 595 Arkhalis
+  (`:66683`) + 735 Terragrim (`:66736`) (the `Center + velocity*3` lead
+  anchor), 707 MonkStaffT3 (`:69507`) + 708 MonkStaffT3_Alt (`:69885`) (the
+  OWNER-centre anchor, 708 behind `!player.frozen`). Each lands with its
+  kind's `proj_data` row.
+* The lightning-liquid electrification scan (`:78556`,
+  `SpawnLightningLiquidElectrificationParticles(int, int)`): the
+  `Main.rand.Next(4) == 0` gate (`:78549`) draws on the projectile stream and
+  the `ParticleOrchestrator` request has no port — absent wholesale (the
+  S1-E-5 RNG rule).
+
+**The anchor vocabulary.** `(int)Center.X / 16` (the 436/459/442/449/438/
+350/325/445 arms) truncates the centre coordinate BEFORE the divide
+(`XAnchor::CenterTruncated`); the `AddLight(Vector2, …)` overload
+(`Lighting.cs:140-143`, the 634/635/819/foxsparks/613/tower/trap arms)
+truncates the QUOTIENT (`XAnchor::Center`). Truncation commutes with division
+by a positive integer, so the two agree for every real coordinate —
+`the_two_anchor_forms_agree_for_every_position` pins that across a sweep.
+
+Tests (written, **not run** — code-only mode): 15 witnesses in
+`proj_ai_lights.rs` — the per-arm colours/anchors, the 442 alpha gate, the
+445 hand-distance gate + triangle-wave colour (0/30/60), the tower
+Centre+Bottom pair order + tier multipliers, the trap shared tail, the
+anchor-agreement sweep and the every-ported-kind-has-a-row invariant.
+
+### The projectile AI-arm lights, second wave — SEAL (S1-E-5, W4-e6, 2026-11-21, code-only mode)
+
+This is the e6-side FINAL record — the per-file authority the g18
+addlight-family bible (`origin/task/W4-g18-addlight-main-1` `d460345f4`,
+`docs/research/366-addlight-family-bible.md` §5) names for the proj second
+wave. Registry-150 §9.4 closed the number race ("new docs ≥369 require a
+Lead assignment; NO self-picks"), so this seal rides ANALYSIS, not a new
+research number; the cross-lane authorities are g18 research/366 (the
+family bible), c19 research/189 (the first-wave SEAL, `5400e0374`) and the
+f7 census freeze (`67110ccfb`, `tests/proj_addlight_census.rs`).
+
+**§1 — the git-log census (what landed on this branch).** Base `a725acb04`
+(main at claim), four port commits + the record + this seal:
+
+| Commit | Scope |
+| --- | --- |
+| `3ece05254` | sites 68-82 (`AI_001`'s 436/634/635/459/442/449/438 arms) |
+| `66d75adbd` | sites 83-97 (350/325/819, the foxsparks pair, 613, the 445 LaserDrill) |
+| `fceb64db3` | sites 98-107 (the FlameBurst tower pairs, the ExplosiveTrap tail) — SLICE COMPLETE |
+| `c8b072b69` | the record: this ANALYSIS section's first-wave text, ROADMAP S1-E-5, the anchors canary |
+| `79d259c14` | the seal round's four activations (below) |
+
+**§2 — the row-absence re-probe + the four activations (`79d259c14`).** The
+g18 bible §2 lists SIX of e6's 19 unrowed kinds NOW ROWED on pushed lanes.
+Re-derived here independently (whole-tip `data.rs` greps over every pushed
+`task/W4-*` ref, numeric AND named-const forms; each row re-read against
+its `SetDefaults` C# window):
+
+| Kind | Rowing lane (tip) | Row cite | C# defaults | e6 site | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 435 MartianTurretBolt | c11 `9a9c2625e` | `data.rs:1924` | `:5056-5063` (10×10, style 1, hostile, ignoreWater) | `:54932` | **ACTIVATED** — `(int)Center/16`, (0.3, 0.8, 1.1), unconditional after the latch/fade/frame machine (the f20 slice-E overlay owns those writes). The c11 research/284 §2 four-owner table names this the ONE lights-family gap — discharged here |
+| 576 NebulaLaser | d11 `7820a9466` | `data.rs:2517` | `:6258-6269` (4×4, style 1, pen −1, alpha 255, extraUpdates 2, scale 1.2, life 600) | `:56298` | **ACTIVATED** — `AddLight(Center, 0.4, 0.2, 0.4)`, quotient truncation; the 5-dust trail below is the dust lane's |
+| 606 ScutlixLaser | d8 `c3edc9771` / c14 `ea25492cc` | `data.rs:1772` / `:1987` | `:6530-6541` (5×5, style 1, friendly, alpha 255, extraUpdates 2, life 600) | `:54792` | **ACTIVATED** — the shared 440/449/606 arm's 606 sub-if, `AddLight(Center, 0.7, 0.3, 0.3)`, QUOTIENT truncation (the d8 research/226 §5 contract verbatim; the 449's coordinate-first form stays distinct) |
+| 709 MonkStaffT3_AltShot | d15 `869ac7edd` | `data.rs:4081` | `:7508-7520` (12×12, style 1, melee, alpha 255, extraUpdates 1, scale 0.6) | `:54714` | **ACTIVATED** — `(int)Center/16`, (0.4, 0.85, 0.9), the 459 twin colour, unconditional |
+| 707 MonkStaffT3 | d14 `1b9c6b930` / d15 | `data.rs:2664` / `:4066` | `:7474-7490` (16×16, style 140, pen −1) | `:69507` | **ABSENT — owner-centre task seed**: the light rides `player.Center` (`Main.player[this.owner]`, AI_140), NOT the projectile centre; the feed carries no player slice beyond the 445 hand |
+| 708 MonkStaffT3_Alt | d15 | `data.rs:4072` | `:7491-7507` (24×24, style 142, pen −1) | `:69885` | **ABSENT — same seed**, behind `!player.frozen` (`:69829`); the frozen flag rides the owner snapshot when the seam lands |
+
+The four activations are new sub-ifs in the `proj_ai_lights` if-chain (e6's
+chain does NOT auto-activate like c19's row-gated collector — the g18 §4
+activation obligation). Each is an unconditional self-centre `AddLight`,
+RNG-free: the feed stays pure, its signature unchanged, no stream moves.
+The rows stay the lanes' to merge (keep-one — this branch copies NONE);
+the arms match `kind` directly and are inert until a slot can carry the
+kind (the spawn gate), live with no further edit once the row lands.
+
+**§3 — the accounting, reconciled at site granularity.** e6 FINAL:
+**24 ported sites / 27 light contributions, 16 absent** (13 still-unrowed
+kinds — 467/468/440/593/592/585/577/682/684/312/324/595/735 — plus the 2
+owner-centre seeds 707/708 and the `:78556` rand-gated electrification
+scan). The family headline **86 covered / 21 absent of 107** (the g18
+bible §2, the brief's target) is verified here at strict AddLight-LINE
+granularity:
+
+* **c19: 62 covered / 5 absent of 67.** 56 ported feed lines + 4 sim
+  lines (409/590/849/912) + 2 audit-landed (`:16655`/`:16659`) = 62;
+  absent = 465 (`:31998`), 731 (`:37821`), the phaseblade PAIR
+  (`:39020`/`:39021`, two lines), 756 (`:51492`) = 5. The `:34487` trio
+  line is COVERED (it fires for the rowed 612/953; the 978 third term is
+  unreachable — a style mismatch — but that is a kind-level note, not an
+  absent line).
+* **e6: 24 covered / 16 absent of 40** (above).
+* **62 + 24 = 86 covered; 5 + 16 = 21 absent; 86 + 21 = 107.** ✓
+
+The g18 §2 / c19 register HEADLINE figures use a register-entry
+convention that differs from line granularity by three offsets, which
+cancel in the total: (a) c19's "63 covered" counts the `:34487` trio as
+TWO sites (612/953) — one phantom line vs the 62 above; (b) the g18 "+6
+activations" includes 707/708, which stay ABSENT here pending the
+owner-centre seam (−2 covered, +2 absent vs a naive +6); (c) the
+phaseblade pair is ONE absent register entry but TWO absent lines (+1
+absent). Net: g18's 63+20+6 = 89 → 89 −1 (trio) −2 (707/708) = **86**;
+its 4+13+1 = 18 → 18 +2 (707/708) +1 (phaseblade) = **21**. The headline
+is correct; the 707/708 owner-centre seeds are the delta between "rowed"
+and "covered-at-runtime" — recorded here, not silent.
+
+**§4 — the compose receipts (all tips re-fetched at this seal).**
+
+* **c19 (`5400e0374`, research/189 SEALED) — DISJOINT, keep-both.** The
+  f7 freeze splits at `:54071`/`:54173`; zero shared kind arms. The merge
+  unions: `main.rs` (e6 `mod proj_ai_lights;` before `mod proj_lights;`,
+  c19 `mod proj_lights_a;` after — adjacent-line, alphabetical);
+  `app/frame/draw.rs` (BOTH feed loops after the ProjLight feed at the
+  same `@@ -569` seam — keep both, e6's first; the ONE EntityLights pair
+  max-merges, loop order is pixel-neutral); `anchors.txt` (one row each).
+  e6 touches NO `projectile.rs`/`world_sim/projectiles.rs`/`data.rs` —
+  c19's sim arms (`pending_ai_lights`/`drain_ai_lights`/
+  `set_mouse_text_color` + the typhoon/spore/whip machines) are
+  c19-exclusive. The `craft.rs` 340-line "deletion" in both branches'
+  `origin/main..` diffs is NOT a deletion — main's LATER S1-L-11g
+  addition (`03711f456`) absent from both fork trees; neither branch
+  touches craft.rs (true diffs verified empty). No keep-one owed there.
+* **g18 (`d460345f4`, research/366) — DISJOINT.** g18 is Main.cs batch 1
+  (the 332-chain distrust-verbatim audit + the f32 oracle
+  `tests/main_addlight_batch1.rs`, 5 witnesses; the port copy stays e8's
+  `tile_lights.rs::christmas_hook_chain_lights` — g18 ports nothing).
+  Main.cs's 5 sites (`:29016/29020/29024/29028/:29186`) are OUTSIDE
+  Projectile.cs's 107 — no kind/site overlap with e6. File sets share
+  only the doc ledgers (ANALYSIS/ROADMAP/anchors append-union). g19
+  (`9733c82a7`, the Main whole-file census freeze) likewise disjoint.
+  The g18 §4 e6-compose mutual receipt is confirmed from this side.
+* **d13 (`6850a19e5`, research/336 ex-243 PET-LIGHT FINAL) — the
+  67-site-PET census CONSUMED.** The seven aiStyle-124 pets
+  (650/882/888/895/896/898/957) contribute ZERO sites to the 107-family:
+  no `AddLight` anywhere in the arm (`:34970-35696` — re-grepped: 0 hits,
+  12 `PlotTileLine` casts), no `this.light` in any of the seven
+  `SetDefaults` rows (re-grepped: 0). Their light is the
+  `PlotTileLine`/`CastLightOpen` light-map WRITE layer (`:35008-35043`:
+  the 650 `(0.5,0.9,1)·2` self-20/owner-40 casts, the 895 `(1,0.6,1)·1.5`
+  + `!NotRetro` ×0.8 ladder, the 896 `(1,0.7,0.05)·1.5` same ladder;
+  882/888/898/957 cast NOTHING — dark in C# too). That is the SAME
+  standing light-map-write deferral as e6's 445 `>=30f` flood half
+  (`:66264-66271`) and c19's hooks' rope spreads — ONE task consumes all
+  the registers together (the g18 §5 deferral list). d13's 658 row
+  activated c19's site 28 at round 2; no e6 site rides a pet kind. The
+  d13 code-side overlap is the `world_sim/projectiles.rs` seam (its
+  kite/screen-width setters vs c19's mouse-text snapshot — adjacent-line
+  union, c19's drain first); e6 touches none of it.
+* **d54 (`041ffcd68`, research/131 + the 150 registry) — the bible
+  reconcile.** The 131 master's AddLight rows: Dust.cs **94/94 CLOSED**
+  (42 main FIRST-ladder + 52 g13 second-chain `a234107ac`, the `:2275`
+  customData light LIVE-in-C# per G5 `c5a0e646` — a cited
+  reconstruct-from-`d.color` gap, not an uncounted site). The proj-107
+  86/21 headline is the g18 §2 derivation this seal reconciles (§3).
+  The 150 registry §9.4 CLOSED the number race — this seal rides
+  ANALYSIS per the no-self-pick rule.
+
+**§5 — the witnesses.** 6 new seal-round witnesses in `proj_ai_lights.rs`
+(21 total, all WRITTEN NOT RUN — code-only mode, no compiler invoked):
+the 435 blue truncated-centre light, the 576 violet quotient light + the
+577-stays-dark twin, the 606 red quotient light + the 449 colour split +
+the 440-stays-dark, the 709/459 teal twin, the 707/708 owner-centre seeds
+stay dark, and the conditional row invariant for the four activated
+kinds (the c19 round-2 keep-one precedent — `proj_data` reads None here
+until the lanes' rows merge). The first-wave 15 witnesses stand unchanged.
+
+**SEAL**: no further census/arm/row work is owed on sites 68-107 by this
+lane. The 13 unrowed kinds + the 2 owner-centre seeds + the rand gate are
+task seeds for the row-owning / seam-owning lanes; the light-map-write
+layer is its own task. The family authorities: g18 research/366 (the
+bible), c19 research/189 (first wave), f7 `proj_addlight_census.rs` (the
+107 freeze), this section (second wave).
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
