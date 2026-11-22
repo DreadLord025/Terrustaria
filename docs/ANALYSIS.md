@@ -41813,3 +41813,119 @@ the butterflies, 654 Lavafly, 655 MagmaSnail, 657 QueenSlimeBoss,
 658-660 the minions, 662/664 the floater siblings, 667/676 the
 slimes, 669 Stinkbug, 671-675 the birds, 677 Shimmerfly, 687-689,
 691-696 — re-check at the next census.
+## The dungeon biome style tables (W4-c32, 2026-11-20, code-only mode)
+
+**Scope.** `crates/tr-core/src/worldgen/dungeon_styles.rs` ports
+`DungeonGenerationStyleData` (`DungeonGenerationStyleData.cs:9-169` —
+the field block :11-95, `TileIsInStyle` :108-129, `WallIsInStyle`
+:131-148, the `CanGenerateFeatureAt` base :97-100) and the four biome
+style statics the task names — Snow (`DungeonGenerationStyles.cs:352-392`),
+Desert (:393-433), Crimson (:474-513), Hallow (:553-593) — plus Crystal
+(:514-552), Hallow's only sub-style (:592, a `ShimmerStyleData` so its
+pit-trap/window refusal :13-20 rides along). The style-0 wrapper
+`GetCurrentDungeonStyle` (:95-135) reads the landed `DungeonColor`
+triple; the window walls/platform item rows (`DungeonCrawler.cs:63-92`:
+blue 91/96/8 + 1386, green 92/94/9 + 1385, pink 90/98/7 + 1384) gained
+`DungeonColor` accessors in `dungeon.rs`. The lookups
+`GetStyleForTile`/`GetStyleForWall` (:137-158/:160-185) keep the C#'s
+flag choices verbatim (`includeCracked: false, includeExtras: true` /
+`includeWindows: false, includeExtras: true`), the sub-style walk, and
+the style-0 arm's `Main.wallDungeon` test (`Main.cs:10598-10606` =
+`dungeon_features::DUNGEON_WALLS`) under `WallID.Count` 367
+(`WallID.cs:845`). `DualDungeonUnbreakableWallTiers`' 0..5 ladder and
+`DungeonRoomType`'s ordinals are ported as cited constants/enums.
+
+**Deliberate deviations / cited skips.**
+- The C#'s `int[]` furniture rows become `&'static [i32]`; the
+  null-vs-array distinction survives only where it is semantic:
+  `BannerItemTypes` (null = the `bannerStyles` fallback the landed
+  `dungeon_features::place_banners` reads; Desert's Some([790,791,789])
+  = its own banners) and `VaseOrStatueItemTypes` (null in all five).
+- `GetPlatformStyle`/`GetWindowPlatformStyle`
+  (`DungeonGenerationStyleData.cs:150-168`) are NOT ported: they read
+  `ItemID.Sets.DerivedPlacementDetails` (`ItemID.cs:304-325`), whose
+  port lives in tr-app's generated `itemdata.rs` — tr-core cannot reach
+  it; the item-data seam rides the wiring round (the landed
+  `DungeonLightStyles` resolved its chandelier styles the same way,
+  by hand: 27/28/29).
+- The other style statics (Shimmer/Spider/LivingWood/Cavern :189-351,
+  Corruption :434-473, GlowingMushroom/Beehive/LivingMahogany/Jungle/Temple
+  :594-797) stay out — the task's four + Crystal only. The
+  LivingWood/Beehive/Temple `CanGenerateFeatureAt`/bookshelf overrides
+  (:23-63) go with them; the Shimmer override is ported as the
+  `shimmer_feature_gate` flag (Crystal is its only in-scope user).
+- The dual-dungeon list arms (`DungeonCrawler.cs:111-128`: the
+  Cavern/evil/Jungle + Snow/Desert/Hallow/Temple quads) and the
+  `isDungeonTile`/`isCrackedBrick` set clones (:139-183) are out — the
+  port generates classic single-dungeon worlds (M5-SEED-2 defers
+  `dualDungeons`); `dungeon_style_list` ports the classic arm
+  (:129-132, one entry).
+- `LiquidType`/paint fields exist on the struct but no in-scope style
+  sets them (Shimmer's liquid 3 / LivingMahogany's wall paint 12 belong
+  to the skipped statics).
+
+**Determinism.** UNWIRED: data tables + pure lookups, no pipeline step
+consumes them — no RNG draw added, no tile written. BOTH world-hash pins
+(`SEED42_512`/`DEFAULT_WORLD`) are UNCHANGED and the a == b
+determinism assertions stay green (the S1-K-2 wave B constants-off
+class); the note rides `world_hash.rs`. The wiring round re-pins.
+
+**Verification.** Code-only: every row re-read against the cited C#
+windows (the static ctor :187-798 field-by-field, the lookup flag
+choices, the tier ladder, the room-type ordinals). 10 witness tests
+written NOT run (palettes, extras/chests, furniture rows, banner/dither
+flags, tile/wall membership flags, the sub-style lookups, the style-0
+wall arm, the colour wrapper, the Crystal gate). **No cargo/rustc/
+rustfmt/tests/dotnet invoked.**
+
+## The convert-tables family seal (W4-c32-convert, 2026-11-21, code-only mode)
+
+**Scope.** The cross-lane SEAL over the `WorldGen.Convert` family from the
+c32 side — research/315 (`315-convert-tables-family-bible.md`, number 315 per
+registry 150 §9 UNIFIED FINAL, d54 `b243c7086`, chain 281→315 — the original
+281 self-pick per the ≥281 free block after a fresh 362-tip sweep). No
+game-logic change: 3 table-pin witnesses appended to `dungeon_styles.rs`
+(13 total on the branch) + the bible + row updates.
+
+**The three seals (each re-verified against the C# this round).**
+- **SEAL-1 (the c32 census):** `git log` shows exactly two commits —
+  `3d0f3c19c` (the tables + lookups + `DungeonColor` accessors, 10
+  witnesses) and `d27fb00ae` (docs + the pin note + the clone fix). NO
+  Convert cells, NO room bodies. `BiomeDungeonRoom.cs:139-310` re-read:
+  `BiomeRoom_FinishRoom`'s style switch (2/3/5/6 + the skipped corruption
+  4) feeds `BiomeRoom_GrassySurface`/`SandySurface`/`SnowySurface`, which
+  call `DungeonUtils.ChangeTileType` (`DungeonUtils.cs:1577-1590` — a
+  field write: active-true + slope-clear + kind/paint, NO tree kill, NO
+  re-frame) at :232/:236/:248/:252/:266/:270/:282/:286/:298/:307 — NOT
+  `WorldGen.Convert`. Their only Convert-family dependencies are f25's C1
+  `TileIsExposedToAir` (:230/:246) and C2 `BlockBelow…HardenedSand`
+  (:264/:280). The wiring round ports the DungeonUtils pair + calls the
+  f25 helpers (the bible §5 contract).
+- **SEAL-2 (f25's 15/16/18/19):** f25 closeout `9fc704a15` (tip
+  `d587b128d`) ports the four dungeon-biome cells
+  (`WorldGen.cs:56008-56231`) as `convert_biome_cell`/`convert_sized_biome`
+  — UNWIRED, ZERO C# call sites (re-grepped: no literal 15/16/18/19
+  Convert call anywhere; every `conversionType =` feed is 1/2/4; the
+  aiStyle-31 ladder tops out at 7). The c32 tables are NOT their consumer
+  — the room bodies bypass Convert (SEAL-1). The cells' output ids match
+  the table palettes (the 3rd witness pins the agreement); the
+  style-ordinal-vs-conversionType collision (Crystal Style 15 ≠ Convert
+  15, Snow Style 2 ≠ Convert 2) is pinned by the 2nd witness.
+- **SEAL-3 (g42's Convert(3)):** FOUR sites — `WorldGen.cs:2101/:2125/
+  :2129` (DoSurfaceIsMushrooms, gen-only, g42 G6/G7 `e2707f2d0`) +
+  `Projectile.cs:26834` (aiStyle 31 :26786-26886, the :26805-26808 ladder
+  maps proj 148 → type 3; Clentaminator 779 shoot 145 + DarkBlueSolution
+  783 shoot 3). g42 GROWTH SEAL `910cc9747` completed
+  `convert_sized_mushroom` (the same square + Manhattan-<6 walk, RNG-free
+  cell). Merger contract: ONE `3 =>` arm into f25's `ai_spray` match; this
+  branch's `ai_spray` keeps its type-0-only S1-D-4 form until the merges.
+
+**Determinism.** Tests + docs only — no RNG draw, no tile write, no
+pipeline change. BOTH world-hash pins unchanged, a == b untouched.
+
+**Verification.** Code-only: the C# windows re-read in ≤100-line slices
+(the Convert switch head/writers :55067-55097/:56287-56343, types
+2/3/5/6/8/9/11/12/13/14/15/16/17/18/19/20/21, the BiomeDungeonRoom bodies,
+the DungeonUtils pair, the style statics' ordinals); the f25/g42/d1/d103/
+d107 tips re-fetched and their bodies read. 3 witnesses written NOT run.
+**No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
