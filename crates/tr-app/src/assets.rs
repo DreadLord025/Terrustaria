@@ -1779,6 +1779,126 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "Glow_327",
     "Glow_334",
     "Glow_335",
+    // W4-g35 entity glow consumers: the NPC `Main.DrawNPC` arms
+    // (`npc_glow.rs` census, `Main.cs:23406-26297`), the projectile
+    // `proj.glowMask` overlay (`Main.cs:34855-34942`, the
+    // `set_defaults_glow_mask` slice) and the item-slot glow
+    // (`ItemSlot.cs:2891-2929` + the world drop `Main.cs:38740-38775`,
+    // the `itemdata.rs` glow_mask column). The pillar ghosts' 132/143/
+    // 149/162 already ride STATIC_SHEET_NAMES; the flame set above and
+    // f15's TILE-DRAW-2 45 stay disjoint from this list.
+    "Glow_2",   // VortexChainsaw 427 (Projectile.cs:4988)
+    "Glow_3",   // VortexDrill 428 (:4995)
+    "Glow_5",   // VortexPickaxe item 2776
+    "Glow_7",   // NebulaChainsaw 429 (:5002)
+    "Glow_8",   // NebulaDrill 430 (:5009)
+    "Glow_10",  // NebulaPickaxe item 2781
+    "Glow_11",  // MartianOfficer 383 (Main.cs:25772)
+    "Glow_24",  // BrainScrambler 381 rider frame (Main.cs:25855 — the Extra[0] twin, residual)
+    "Glow_20",  // VortexChainsaw item 2773 (Item.cs:26504)
+    "Glow_21",  // VortexDrill item 2774
+    "Glow_22",  // VortexHamaxe item 2778 (:26574)
+    "Glow_23",  // NebulaDrill item 2779
+    "Glow_26",  // VortexHelmet item 2757
+    "Glow_27",  // VortexBreastplate item 2758
+    "Glow_28",  // NebulaHelmet item 2760
+    "Glow_29",  // NebulaBreastplate item 2761
+    "Glow_30",  // NebulaLeggings item 2762
+    "Glow_31",  // MartianEngineer 386 (Main.cs:25959)
+    "Glow_32",  // MartianTurret 387 (:25971)
+    "Glow_33",  // MartianDrone 388 (:25975)
+    "Glow_34",  // GigaZapper 389 (:25979)
+    "Glow_36",  // ElectrosphereLauncher item 2796
+    "Glow_38",  // Xenopopper item 2797
+    "Glow_39",  // LaserDrill item 2798
+    "Glow_45",  // MartianUniformTorso item 2807
+    "Glow_46",  // MartianUniformHelmet item 2806
+    "Glow_47",  // LaserMachinegun item 2795
+    "Glow_48",  // MartianSaucer 392 (Main.cs:24601)
+    "Glow_49",  // MartianSaucerCore 395 (:24605)
+    "Glow_50",  // MartianSaucerCannon 394 (:24609)
+    "Glow_93",  // MartianConduitPlating item 2860
+    "Glow_98",  // MartianHairDye item 2863
+    "Glow_99",  // MartianArmorDye item 2864
+    "Glow_100", // MartianProbe 399 body (Main.cs:25103)
+    "Glow_101", // MartianProbe 399 Extra[20] twin (:25108)
+    "Glow_102", // ChargedBlasterCannon item 2882
+    "Glow_103", // ChlorophyteDye item 2883
+    "Glow_104", // PixieDye item 2879
+    "Glow_105", // WispDye item 2878
+    "Glow_106", // InfernalWispDye item 2885
+    "Glow_107", // UnicornWispDye item 2884
+    "Glow_129", // LavaLamp item 3253
+    "Glow_133", // StardustWormHead 402 trail (Main.cs:24306, parity pick)
+    "Glow_134", // StardustWormHead 402 trail alternate
+    "Glow_135", // StardustWormHead 402 head (:24312)
+    "Glow_136", // StardustSoldier 411 (Main.cs:26109)
+    "Glow_137", // StardustSpiderSmall 410 (:26115)
+    "Glow_138", // StardustSpiderBig 409 (:26112)
+    "Glow_139", // StardustJellyfishBig 407 (:26118)
+    "Glow_141", // StardustCellBig 405 (:26121)
+    "Glow_142", // StardustCellSmall 406 (:26124)
+    "Glow_144", // NebulaSoldier 424 (:26127)
+    "Glow_145", // NebulaBeast 423 (:26130)
+    "Glow_146", // NebulaHeadcrab 421 (:25381/:26133)
+    "Glow_147", // NebulaBrain 420 (:26136)
+    "Glow_150", // VortexRifleman 425 (:26141)
+    "Glow_151", // VortexSoldier 429 (:26148)
+    "Glow_152", // VortexHornet 427 (:23409)
+    "Glow_153", // VortexHornetQueen 426 (:23412)
+    "Glow_154", // SolarSolenian 419 (:25152/:26193)
+    "Glow_155", // SolarDrakomire 415 (:26184)
+    "Glow_157", // SolarCrawltipedeHead 412 (:26176, 157+type-412)
+    "Glow_158", // SolarCrawltipedeBody 413
+    "Glow_159", // SolarCrawltipedeTail 414
+    "Glow_160", // SolarSroller 417 (:26213)
+    "Glow_161", // SolarCorite 418 (:26152)
+    "Glow_163", // SolarSpearman 518 (:26234)
+    "Glow_172", // DesertDjinn 533 (:26275)
+    "Glow_175", // StardustChainsaw item 3463 (Item.cs:31064)
+    "Glow_176", // StardustDrill item 3464
+    "Glow_178", // StardustPickaxe item 3466
+    "Glow_179", // StardustChainsaw 610 (Projectile.cs:5028)
+    "Glow_180", // StardustDrill 609 (:5035)
+    "Glow_191", // VortexBeater item 3475
+    "Glow_194", // NebulaArcanum item 3476
+    "Glow_196", // LunarHamaxeVortex item 3523
+    "Glow_197", // LunarHamaxeNebula item 3524
+    "Glow_198", // LunarHamaxeStardust item 3525
+    "Glow_200", // Phantasm item 3540
+    "Glow_207", // NebulaBlaze item 3542
+    "Glow_216", // SandElemental 541 (Main.cs:23425, ring + centre)
+    "Glow_218", // SpiritFlame item 3779
+    "Glow_224", // DD2WitherBeast 568/569 (Main.cs:23452, gate localAI[3]>=60)
+    "Glow_225", // DD2DarkMage 564/565 (Main.cs:23941, gate Opacity>0)
+    "Glow_226", // DD2Betsy 551 (Main.cs:23596)
+    "Glow_227", // DD2SquireBetsySword item 3827
+    "Glow_233", // MonkStaffT3 item 3858 (the :2913 3-row rect)
+    "Glow_234", // DD2BetsyBow item 3859
+    "Glow_238", // ApprenticeStaffT3 item 3870
+    "Glow_239", // DD2EterniaCrystal 548 (Main.cs:24039, gate alpha<255)
+    "Glow_244", // DefendersForge item 3813
+    "Glow_253", // Everscream 344 (Main.cs:26243)
+    "Glow_254", // SantaNK1 346 (:26250)
+    "Glow_255", // HeadlessHorseman 315 (:26260)
+    "Glow_318", // glow bobber 987 (Projectile.cs:9432) + item 5140
+    "Glow_319", // 988 / 5141
+    "Glow_320", // 989 / 5142
+    "Glow_321", // 990 / 5143
+    "Glow_322", // 991 / 5144
+    "Glow_323", // 992 / 5145
+    "Glow_324", // 993 / 5146
+    "Glow_328", // LightsBane item 46
+    "Glow_355", // DeadCellsFlint item 5462
+    "Glow_360", // FireImp 24 (Main.cs:25563)
+    "Glow_372", // RainbowPhaseblade 1101 (Projectile.cs:10019) + item 5670
+    "Glow_373", // RainbowPhasesaber 1102 (:10035) + item 5671
+    "Glow_374", // TrueCopperShortsword item 5669
+    "Glow_379", // PalworldTrustyCattiva item 6148
+    "Glow_380", // PalworldTrustyFoxsparks item 6149
+    "Glow_381", // PalworldTrustyChillet item 6150
+    "Glow_382", // PalworldTrustyChilletIgnis item 6151
+    "Glow_383", // PalworldTrustyDigtoise item 6174
     // The named single-sheet textures.
     "GlowSnail",
     "FireflyJar",

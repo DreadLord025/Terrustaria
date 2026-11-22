@@ -395,7 +395,6 @@ def parse_call_args(argstr):
 THIS_SKIP_FIELDS = {
     # field: reason (value not represented in ItemDef)
     "color": "Color not provisioned",
-    "glowMask": "glow-mask id not provisioned",
     "stringColor": "fishing-line colour not provisioned",
     "tileWand": "tile-wand id not provisioned",
     "expert": "expert flag not provisioned",
@@ -1075,7 +1074,19 @@ def exec_stmts(stmts, ctx, type_value, src, casemap=None, in_switch=False):
             # `method` is the parsed-region NAME ("SetDefaults3"); the parsed
             # block list rides on ctx.methods so the inheritance runs the real
             # body (Item.cs:31271-style `SetDefaults1(1)` inheritances).
+            # W4-g35: the nested call's `return;` exits the NESTED method only
+            # (C# `this.SetDefaults3(2774); type = 2779; this.shoot = 430;`
+            # keeps running the caller, Item.cs:26576-26581) — save/restore
+            # the flag so the post-call overrides are not dropped.
+            saved_returned = ctx.returned
+            # The nested method's switches dispatch on its ARGUMENT (the C#
+            # `type` parameter), not the caller's current row type — track it
+            # so the switch handler below reads the right subject.
+            saved_subject = getattr(ctx, "switch_subject", None)
+            ctx.switch_subject = target
             run_method(ctx.methods[method], target, ctx, src)
+            ctx.switch_subject = saved_subject
+            ctx.returned = saved_returned
         elif kind == "local":
             _, _, name, rhs = st
             env = ctx.env(type_value)
@@ -1084,12 +1095,24 @@ def exec_stmts(stmts, ctx, type_value, src, casemap=None, in_switch=False):
             _, _, name, rhs = st
             env = ctx.env(type_value)
             if name == "type":
-                # `type = 52;` inside case 52 (Item.cs:2004) — self-assignment of
-                # the switch parameter; only a true re-point stays unsupported.
+                # `type = 52;` inside case 52 (Item.cs:2004) — self-assignment
+                # of the switch parameter; a true re-point
+                # (`this.SetDefaults3(2774); type = 2779;`, Item.cs:26577-78)
+                # re-points the parameter for the caller's remaining
+                # statements — W4-g35 tracks it on the row so later switches
+                # dispatch on the NEW value (the C# local shadows nothing
+                # else; `this.type` was written by the nested call's own
+                # `ResetStats(type)` head).
                 v = eval_expr(rhs, env, src, line)
-                if v != type_value:
-                    fail(src, line, "parameter re-point type = %d (type-merge path)" % v)
-                return
+                ctx.row["type"] = v
+                # The re-point also updates THIS method's switch subject (the
+                # C# parameter) — without it the caller's later switches keep
+                # dispatching on the pre-call value. `continue`, NOT `return`:
+                # the case body's remaining statements (the 2779 shoot/
+                # glowMask overrides, Item.cs:26579-26580) still run.
+                if getattr(ctx, "switch_subject", None) is not None:
+                    ctx.switch_subject = v
+                continue
             if name not in ctx.locals:
                 fail(src, line, "assignment to unknown local " + name)
             ctx.locals[name] = eval_expr(rhs, env, src, line)
@@ -1110,11 +1133,21 @@ def exec_stmts(stmts, ctx, type_value, src, casemap=None, in_switch=False):
                 # a `break` here belongs to an enclosing switch — it propagates
         elif kind == "switch":
             _, _, cmap, default = st
-            body = cmap.get(type_value)
+            # W4-g35: the switch subject is the CURRENT `type` parameter —
+            # inside a nested `this.SetDefaults3(2774)` call it is the
+            # sdcall's argument (ctx.switch_subject), at the top level the
+            # row's own type (which a bare `type = N;` re-point updates).
+            # Using the outer type_value here re-ran the CALLER's case inside
+            # the nested method (the 2779 shoot/glowMask overrides were
+            # overwritten by the recursive 2774-template dispatch).
+            subject = getattr(ctx, "switch_subject", None)
+            if subject is None:
+                subject = ctx.row.get("type", type_value)
+            body = cmap.get(subject)
             if body is None:
                 body = default
             if body:
-                exec_stmts(body, ctx, type_value, src, cmap, in_switch=True)
+                exec_stmts(body, ctx, subject, src, cmap, in_switch=True)
             if ctx.brk:
                 ctx.brk = False
         elif kind == "goto":
@@ -1791,6 +1824,8 @@ def stock_row():
         "dye": 0,
         "paint": 0,
         "paintCoating": 0,
+        # ResetStats stock (Item.cs:49006 glowMask = -1) — the glow-sheet id.
+        "glowMask": -1,
         "mech": False,
         "mountType": -1,
         "vanity": False,
@@ -1850,17 +1885,28 @@ def run_method(blocks, item_id, ctx, src):
         kind = block[0]
         if kind == "switch":
             _, line, cmap, default = block
-            body = cmap[item_id] if item_id in cmap else default
+            # W4-g35: the top-level switch dispatches on the CURRENT `type`
+            # parameter — the sdcall's argument inside a nested call
+            # (ctx.switch_subject), else the method argument. Using the
+            # outer item_id re-ran the CALLER's case inside the nested
+            # SetDefaults3(2774) (the 2779 overrides were overwritten).
+            subject = getattr(ctx, "switch_subject", None)
+            if subject is None:
+                subject = item_id
+            body = cmap[subject] if subject in cmap else default
             if body:
-                exec_stmts(body, ctx, item_id, src, cmap, in_switch=True)
+                exec_stmts(body, ctx, subject, src, cmap, in_switch=True)
             if ctx.brk:
                 ctx.brk = False
         elif kind == "if":
             _, line, cond, body, else_body = block
-            if eval_cond(cond, ctx.env(item_id), src, line):
-                exec_stmts(body, ctx, item_id, src)
+            subject = getattr(ctx, "switch_subject", None)
+            if subject is None:
+                subject = item_id
+            if eval_cond(cond, ctx.env(subject), src, line):
+                exec_stmts(body, ctx, subject, src)
             elif else_body:
-                exec_stmts(else_body, ctx, item_id, src)
+                exec_stmts(else_body, ctx, subject, src)
             if ctx.brk:
                 fail(src, line, "break escaped a top-level if-range")
         else:
@@ -2321,6 +2367,7 @@ RUST_FIELDS = [
     ("mount_type", "mountType", "i32"),
     ("paint", "paint", "i32"),
     ("paint_coating", "paintCoating", "i32"),
+    ("glow_mask", "glowMask", "i16"),
     ("use_sound", "UseSound", "sound"),
     ("use_sound_pitch", "useSoundPitch", "f32"),
 ]
@@ -2534,6 +2581,10 @@ pub struct ItemDef {
     pub paint: i32,
     /// `Item.paintCoating` (`Item.cs:48965`, stock 0).
     pub paint_coating: i32,
+    /// `Item.glowMask` (`Item.cs:195`, stock −1 — `ResetStats` `:49006`):
+    /// the `TextureAssets.GlowMask` sheet the world-item draw overlays
+    /// (`Main.cs:38636`/`:38772-38775`); −1 = none (W4-g35).
+    pub glow_mask: i16,
     /// `Item.UseSound` (`Item.cs:199`, a `LegacySoundStyle`): the index into
     /// [`crate::soundid::SOUND_STYLES`] (`SoundID.cs`'s static ctor order),
     /// `None` = the C# `null` (stock `ResetStats`, `Item.cs:49027`). The

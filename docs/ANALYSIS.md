@@ -47282,3 +47282,90 @@ keep-ones whichever copy survives.
   `_martianGlow`'s byte ramp (`:498-499`) is ported but the martian event
   itself is unported (the caller feeds 0). Code-only mode: 20 witnesses
   WRITTEN NOT RUN — no cargo/rustc/tests invoked.
+
+## The glow-mask records census + wire (W4-g35)
+The four glow-mask record families censused from the C# and landed as data;
+the TEXTURE BINDING (the draw passes that consume them) stays with the
+render tasks — TILE-DRAW-2 (W4-f15) owns the tile glow binding, the entity
+glow draws are the NPC/proj/item render work.
+- **Tile** (`tr-core/src/glowmask.rs`): `Main.tileGlowMask` — all 37
+  assignments (`Main.cs:10024-10068`), the −1 reset stock (`:8437`), the −2
+  sentinel on Crystals 129 (`:10048` — `IndexInRange` fails, the glow block
+  keeps the painted tile texture, `TileDrawing.cs:1258-1275`). Consumer:
+  `DrawSingleTile` `TileDrawing.cs:1178-1339` (the per-type colour switch +
+  the slope/half-brick draw ladder). Two dead colour arms recorded: 391/718
+  have colour cases but NO table assignment.
+- **NPC** (`tr-app/src/npc_glow.rs`): no `NPC.glowMask` field exists — each
+  `Main.DrawNPC` type arm hard-codes its sheet(s). 76 records over 74 types
+  (`Main.cs:23406-26297`), incl. the town variants (Truffle 160 166/352,
+  Cyborg 209 167/350/351), the trail alternates (StardustWormHead 402
+  133/134/135), the dynamic Crawltipede 157+type−412, and the dual-arm
+  419/421. The pillar ghosts (493/507/422/517) are already drawn
+  (`render/entities.rs`); the census pins their ids. Named-sheet arms
+  (Firefly/Lightningbug, Prime's Bone_Eyes/Bone_Laser, the Golem extras) and
+  the non-glow twins (393/382/516) documented in the module header.
+- **Projectile** (`projectile/data.rs::set_defaults_glow_mask` +
+  `ProjData.glow_mask` + `Projectile.glow_mask`): all 10 C# assignment sites
+  (`Projectile.cs:4055`, `:4988-5035`, `:9432`, `:10019`/`:10035`) → 16
+  kinds; the −1 stock (`:780`); the data-carrying spawn copies it onto the
+  slot. The solar drill/chainsaw pair sets NO glowMask (`:5011-5022`) —
+  pinned.
+- **Item** (`itemdata.rs` `glow_mask` column, generated): `glowMask` left
+  `THIS_SKIP_FIELDS`, stock −1 (`Item.cs:49006`), 59 non-stock rows. The
+  four Deprecated lunar chainsaws ride `registry.rs` corrections
+  (2773/20, 2778/22, 2783/−1, 3463/175).
+### The GenItemData sdcall/type-repoint interpreter fix
+Landing the item column exposed two latent interpreter bugs (both masked
+while `glowMask` was a skip field):
+1. The nested `this.SetDefaultsN(arg)` call leaked its `return` flag into
+   the caller and dispatched its switches on the OUTER id — so the clone
+   rows re-ran the caller's case and lost their post-call overrides.
+2. The bare `type = N;` re-point did `return` (aborting the rest of the case
+   body) instead of continuing.
+Fixed: sdcall saves/restores `returned` + pins `switch_subject` to the
+argument; the re-point updates the subject and CONTINUES; top-level +
+nested switches dispatch on the current subject. Restored rows: 52 Angel
+Statue (tile 105/style 1 — its whole body was dropped after `type = 52;`),
+2779 Nebula Drill (shoot 430/glow 23), 2781 Nebula Pickaxe (10), 2784/2786
+Solar (432/−1), 3464 Stardust Drill (609/176), 3466 Stardust Pickaxe (178).
+`itemdata_freeze` re-pinned `0x8e04_e794_8244_3e00`.
+Code-only (no cargo/tests/graphify). The Python generator checks RUN and
+pass: `gen.py --check` (6196 rows), `test_gen.py` (ALL GEN TESTS PASSED),
+`gen_recipes.py --check` (3206 rows), `test_gen_recipes.py` (2895+311 rows).
+The Rust witness tests (glowmask 3, npc_glow 2, projectile/data 2,
+registry 1) are WRITTEN, NOT RUN. Every record re-read against the cited C#
+window; the clone-row fix traced write-by-write against
+`Item.cs:26576-26581`/`:2003-2016`.
+### The f15 sheet-set reconciliation (W4-g35, 8ca19097)
+W4-f15's TILE-DRAW-2 binding added **45** `Glow_{id}` sheets to
+`GLOW_SHEET_NAMES` (25e4ffe2: 51-69/88/112-125/127/202/243/267-270/289/
+315/329/330). Census against this task's **37** `Main.tileGlowMask` rows
+(`glowmask.rs`):
+- The two sets are **disjoint by design** — f15 binds the SECOND
+  `GetTileDrawData` switch's per-case glow records
+  (`TileDrawing.cs:6049-6507`, `drawdata_cases_a::glow_switch`), drawn at
+  `DrawSingleTile:1343-1403`; the 37-row table feeds the SEPARATE
+  `Main.tileGlowMask` pass at `:1178-1339`. The table's 35 distinct masks
+  (429/445 share 214; 129 is the −2 sentinel, no sheet) are a different
+  sheet family; zero overlap with f15's 45.
+- **No mismatch**: f15 did NOT add sheets for the dead-colour kinds.
+  `case 391` (`TileDrawing.cs:1247`, colour (250,250,250,200)) and
+  `case 718` (`:1190`, colour (0,0,0,0)) have colour arms in the
+  `tileGlowMask` switch but NO `Main.tileGlowMask[391/718]` assignment
+  anywhere in `Main.cs` (re-verified: the only `tileGlowMask[...]` writes
+  are `:10024-10068` + the `:8437` reset) — the `!= -1` gate never opens,
+  so no sheet is needed and none was added. 391's other two switch hits
+  (`:5766`/`:5806`) are the FIRST switch's terrarium-cage framing
+  (`wormCageFrame`), not glow. Verbatim source state, not a port gap.
+- `glow_switch` also picks mask 327 (case 638) — already packed pre-f15
+  (the shimmer-vine sheet, S1-G-1); f15's 45 + 327 = the switch's full
+  46-mask census.
+- The `tileGlowMask` table pass itself (`:1178-1339` — texture swap, the
+  per-type colour switch, the slope/half-brick draw ladder) remains
+  UNPORTED on both branches; f15's task doc names it "a separate wide
+  task, explicitly out of scope". Its 35 sheets are still unbound.
+- **Glow_24 residual (verify round)**: the interrupted dispatch's +1
+  `GLOW_SHEET_NAMES` row binds the BrainScrambler 381 rider-frame glow
+  (`Main.cs:25855`, census `npc_glow.rs:119` masks [24]) — re-verified
+  COHERENT (C# arm read whole, `.xnb` present, unique, disjoint from the
+  flame set + f15's 45) and kept; receipt in `research/52` §6.

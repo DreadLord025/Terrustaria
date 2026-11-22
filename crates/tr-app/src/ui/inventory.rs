@@ -444,11 +444,12 @@ fn draw_row_slot(
     context: i32,
     scale: f32,
     favored: bool,
+    pulse: super::UiPulse,
 ) {
     if favored {
-        slot::draw_slot_favorited(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+        slot::draw_slot_favorited(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK, pulse);
     } else {
-        slot::draw_slot(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK);
+        slot::draw_slot(r, lookups, item, x, y, context, -1, false, scale, INVENTORY_BACK, pulse);
     }
 }
 
@@ -500,6 +501,9 @@ pub fn draw(
     // `Main.mouseItem.IsAir`: every tick draw and hit is gated on it
     // (`Main.cs:41430`, `:41453`).
     mouse_air: bool,
+    // W4-g35: the item-slot glow clocks (`ItemSlot.cs:2891-2929`) — the
+    // miscCounter/disco/global-time trio the glow tints read.
+    pulse: super::UiPulse,
 ) -> InventoryHit {
     // `Main.DrawInventory`'s button pair (`Main.cs:41012-41013`):
     // `DrawBestiaryIcon` rides beside `DrawEmoteBubblesButton`. The bestiary
@@ -543,6 +547,7 @@ pub fn draw(
                     slot_idx == selected,
                     INVENTORY_SCALE,
                     INVENTORY_BACK,
+                    pulse,
                 );
             } else {
                 slot::draw_slot(
@@ -556,6 +561,7 @@ pub fn draw(
                     slot_idx == selected,
                     INVENTORY_SCALE,
                     INVENTORY_BACK,
+                    pulse,
                 );
             }
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y, INVENTORY_SCALE, cell) {
@@ -585,6 +591,7 @@ pub fn draw(
             1,
             COIN_SCALE,
             favored,
+            pulse,
         );
         if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((1, k)) {
             hit.hovered = Some(HoverRef::Coin(k));
@@ -610,6 +617,7 @@ pub fn draw(
             2,
             AMMO_SCALE,
             favored,
+            pulse,
         );
         if hit.hovered.is_none() && coin_ammo_hit(mouse, cell) == Some((2, k)) {
             hit.hovered = Some(HoverRef::Ammo(k));
@@ -645,6 +653,7 @@ pub fn draw(
                         false,
                         INVENTORY_SCALE,
                         INVENTORY_BACK,
+                        pulse,
                     );
                     if hit.hovered.is_none() && hit_test(mouse, x, y, INVENTORY_SCALE, cell) {
                         hit.hovered = Some(HoverRef::MiscEquip(m));
@@ -662,6 +671,7 @@ pub fn draw(
                         false,
                         INVENTORY_SCALE,
                         INVENTORY_BACK,
+                        pulse,
                     );
                     if hit.hovered.is_none() && hit_test(mouse, x, y, INVENTORY_SCALE, cell) {
                         hit.hovered = Some(HoverRef::MiscDye(m));
@@ -726,6 +736,7 @@ pub fn draw(
                 false,
                 INVENTORY_SCALE,
                 equip_tint(context, INVENTORY_BACK),
+                pulse,
             );
             if hit.hovered.is_none() && hit_test(mouse, armor_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -777,6 +788,7 @@ pub fn draw(
                 false,
                 INVENTORY_SCALE,
                 equip_tint(context, INVENTORY_BACK),
+                pulse,
             );
             if hit.hovered.is_none() && hit_test(mouse, vanity_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Armor(idx));
@@ -803,6 +815,7 @@ pub fn draw(
                 false,
                 INVENTORY_SCALE,
                 equip_tint(12, INVENTORY_BACK),
+                pulse,
             );
             if hit.hovered.is_none() && hit_test(mouse, dye_x, y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Dye(idx));
@@ -832,6 +845,7 @@ pub fn draw(
         false,
         trash_scale,
         INVENTORY_BACK,
+        pulse,
     );
     if hit.hovered.is_none() && hit_test(mouse, trash_x, trash_y, trash_scale, cell) {
         hit.hovered = Some(HoverRef::Trash);
@@ -887,6 +901,7 @@ pub fn draw(
                 false,
                 INVENTORY_SCALE,
                 INVENTORY_BACK,
+                pulse,
             );
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y + m_h, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Bank(idx));

@@ -1283,6 +1283,11 @@ pub struct ProjData {
     /// fireworks (`:2568`, S1-P-i16) and the 286 Exploding Bullet (`:3754`,
     /// S1-P-i18).
     pub applies_immunity_time_on_single_hits: bool,
+    /// `Projectile.glowMask` (`:332`, reset −1 `:780`) — the
+    /// `TextureAssets.GlowMask` sheet the draw pass overlays
+    /// (`Main.cs:34855-34942`); −1 = none. W4-g35: the `SetDefaults` slice
+    /// [`set_defaults_glow_mask`] rides the data-carrying spawn.
+    pub glow_mask: i16,
 }
 
 /// The `(uses_local_immunity, local_hit_cooldown, uses_id_static_immunity,
@@ -1596,6 +1601,36 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
         _ => 0.0,
+    }
+}
+
+/// The `SetDefaults` `this.glowMask` slice (W4-g35): the
+/// `TextureAssets.GlowMask` sheet index the projectile draw pass overlays
+/// (`Main.cs:34855-34942` — the `proj.glowMask != -1` gate). The C# has
+/// exactly 10 assignment sites (`Projectile.cs:4055`, `:4988-5035`,
+/// `:9432`, `:10019`/`:10035`); the stock is −1 (`:780`). The 986 plain
+/// bobber keeps −1 (the `:9430` gate starts at 987).
+pub(crate) fn set_defaults_glow_mask(kind: u16) -> i16 {
+    match kind {
+        312 => 257, // JackOLantern `:4055`
+        CHAINSAW_VORTEX => 2,      // `:4988`
+        DRILL_VORTEX => 3,         // `:4995`
+        CHAINSAW_NEBULA => 7,      // `:5002`
+        DRILL_NEBULA => 8,         // `:5009`
+        CHAINSAW_STARDUST => 179,  // `:5028`
+        DRILL_STARDUST => 180,     // `:5035`
+        // The glow bobbers `:9430-9434`: 318 + (type − 987).
+        987 => 318,
+        988 => 319,
+        989 => 320,
+        990 => 321,
+        991 => 322,
+        992 => 323,
+        993 => 324,
+        // The phaseblade/phasersaber boomerangs (`:10017-10020`/`:10033-36`).
+        1101 => 372,
+        1102 => 373,
+        _ => -1, // the `:780` reset stock
     }
 }
 
@@ -4176,6 +4211,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // the frame feed multiplies (`proj_lights.rs`); the unlisted kinds
         // keep the stock 0f and stay dark.
         light: set_defaults_light(kind),
+        // The `SetDefaults` `glowMask` slice (W4-g35): the glow-sheet id the
+        // draw pass overlays (`Main.cs:34855-34942`); −1 = none (`:780`).
+        glow_mask: set_defaults_glow_mask(kind),
         // The summon identification (M4-PROJ-8 Phase 1): the
         // `minion`/`minionSlots` slice; every summon arm sets `netImportant`
         // and `ignoreWater` (but the Storm Tigers keep the stock false).
@@ -4829,6 +4867,54 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn w4_g35_the_glow_mask_slice_matches_the_set_defaults_census() {
+        // The 10 C# assignment sites (Projectile.cs:4055, :4988-5035,
+        // :9432, :10019/:10035) + the −1 reset stock (:780).
+        assert_eq!(set_defaults_glow_mask(312), 257); // JackOLantern
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_VORTEX), 2);
+        assert_eq!(set_defaults_glow_mask(DRILL_VORTEX), 3);
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_NEBULA), 7);
+        assert_eq!(set_defaults_glow_mask(DRILL_NEBULA), 8);
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_STARDUST), 179);
+        assert_eq!(set_defaults_glow_mask(DRILL_STARDUST), 180);
+        // The solar pair sets NO glowMask (:5011-5022) — stock −1.
+        assert_eq!(set_defaults_glow_mask(CHAINSAW_SOLAR), -1);
+        assert_eq!(set_defaults_glow_mask(DRILL_SOLAR), -1);
+        // The bobber ladder 318+(type−987); the 986 plain keeps −1.
+        assert_eq!(set_defaults_glow_mask(986), -1);
+        assert_eq!(set_defaults_glow_mask(987), 318);
+        assert_eq!(set_defaults_glow_mask(988), 319);
+        assert_eq!(set_defaults_glow_mask(989), 320);
+        assert_eq!(set_defaults_glow_mask(990), 321);
+        assert_eq!(set_defaults_glow_mask(991), 322);
+        assert_eq!(set_defaults_glow_mask(992), 323);
+        assert_eq!(set_defaults_glow_mask(993), 324);
+        // The Rainbow phaseblade/phasersaber (the :10006/:10022 shared
+        // boomerang arms' inner type gates).
+        assert_eq!(set_defaults_glow_mask(1101), 372);
+        assert_eq!(set_defaults_glow_mask(1102), 373);
+        // Their non-glowing arm-mates keep −1.
+        assert_eq!(set_defaults_glow_mask(1059), -1);
+        assert_eq!(set_defaults_glow_mask(1065), -1);
+        // The unlisted kinds stay dark.
+        assert_eq!(set_defaults_glow_mask(WOODEN_ARROW), -1);
+        assert_eq!(set_defaults_glow_mask(GLOWSTICK), -1);
+    }
+
+    #[test]
+    fn w4_g35_the_spawn_copies_the_glow_mask() {
+        // The data-carrying spawn writes the slice onto the slot, like the
+        // light slice (test_s1_e_5_the_spawn_copies_the_set_defaults_light).
+        for k in [CHAINSAW_VORTEX, DRILL_VORTEX, CHAINSAW_NEBULA, DRILL_NEBULA,
+                  CHAINSAW_STARDUST, DRILL_STARDUST] {
+            let d = proj_data(k).expect("the drill/chainsaw rows exist");
+            assert_eq!(d.glow_mask, set_defaults_glow_mask(k), "kind {k}");
+        }
+        // A row-less kind keeps the −1 stock through Default.
+        assert_eq!(crate::projectile::Projectile::default().glow_mask, -1);
+    }
 
     #[test]
     fn the_damage_class_flags_match_the_set_defaults_census() {

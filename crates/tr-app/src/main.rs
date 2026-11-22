@@ -83,6 +83,7 @@ mod mount_dust;
 mod net;
 mod npc;
 mod npc_scaling;
+mod npc_glow;
 mod npc_chat;
 mod npc_spatial;
 mod revenge;
