@@ -364,7 +364,12 @@ impl App {
                     self.light_rng_seed = light_rng.seed;
                     let params = LightParams {
                         sky: sky_light,
-                        hell_glow: 0.55,
+                        // `TileLightScanner.cs:3245`:
+                        // `0.55f + (float)Math.Sin(Main.GlobalTimeWrappedHourly * 2f) * 0.08f`
+                        // — the sin runs in double, then narrows to f32 (W4-d66:
+                        // the driver had pinned the static 0.55 base).
+                        hell_glow: 0.55
+                            + ((anim_time % 3600.0 * 2.0) as f64).sin() as f32 * 0.08,
                         mouse_text_color: self.mouse_text_color,
                         demon_torch: self.demon_torch,
                         disco: self.disco,
