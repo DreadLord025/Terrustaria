@@ -2134,6 +2134,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
+        // `Player.cs:25695-25698` (`Main.myPlayer` block): BOTH combat books
+        // used fires progression event 40 (TRAINING_DAY,
+        // `AchievementInitializer.cs:414-415`) every tick the pair stands —
+        // the notify is idempotent once completed (W4-g90 lane 7; the
+        // 4382/5336 uses raise the world flags).
+        if app.world.combat_book_was_used && app.world.combat_book_volume_two_was_used {
+            let _ = app.notify_progression_net(40);
+        }
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running

@@ -304,9 +304,14 @@ below can no longer pass the suite.
   `:14955-14958`), the `TileReachCheckSettings.Simple` clamp of 20
   (`TileReachCheckSettings.cs:20-34`, `:84`) and the artisan loaf's +4
   (`Player.cs:35671`). Closes: D10. Tests `s1_l_11d_the_tile_reach_follows_the_csharp_formula`
-  and `s1_l_11d_the_artisan_bread_reaches_a_far_station`. The loaf's own use
+  and `s1_l_11d_the_artisan_bread_reaches_a_far_station`. ~~The loaf's own use
   effect (item 5326, `Player.cs:45218-45221`) is still unported — the flag
-  `Player.ateArtisanBread` rides the player and stays false in play.
+  `Player.ateArtisanBread` rides the player and stays false in play.~~ —
+  **DONE (W4-g90)**: `editing.rs::use_artisan_loaf` ports
+  `ItemCheck_UseArtisanLoaf` (`Player.cs:45216-45224`) — the once-only
+  permanent flag, the `.plr`/`.trplayer` persistence and the Skeleton
+  Merchant's stock gate (`Chest.cs:2958`). The 1.4.5.8 reforge roll never
+  reads the flag (no reforge-tier consumer — full-source grep verified).
 - **S — the generator's tail branch** (`expand_body`, `tools/gen_recipes.py`): the
   expansion loop broke out on the `Recipe.CreateReverseWallRecipes()` tail
   **before** copying the text that precedes it, so the 414 authored rows

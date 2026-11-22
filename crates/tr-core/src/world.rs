@@ -326,6 +326,11 @@ pub struct World {
     /// (W4-g89e). The town-NPC stat ladder's second +250/×0.8/+0.25/+8
     /// block (`NPC.cs:53025-53031`) reads it.
     pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`NPC.cs:6343`, the 5343 use
+    /// `Player.cs:45370-45382`; `Chest.SetupTravelShop`'s +1 slot row
+    /// `Chest.cs:1303-1306`) — the same standing-in (W4-g90 lane 7; the
+    /// .wld flag reads from v260, `WorldFile.cs:2405`).
+    pub peddlers_satchel_was_used: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -732,6 +737,7 @@ impl World {
             unlocked_slime_red_spawn: false,
             combat_book_was_used: false,
             combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,

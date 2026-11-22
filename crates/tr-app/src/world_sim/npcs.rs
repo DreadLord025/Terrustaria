@@ -1156,6 +1156,17 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
         crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
         travel_stock: app.world.travel_shop,
+        // W4-g90 — the Skeleton Merchant's gates (`Chest.cs:2958`'s
+        // `!ateArtisanBread`, `:2822-2831`'s remix swap, `:2887`'s clock).
+        ate_artisan_bread: app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.ate_artisan_bread),
+        remix_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::REMIX),
+        time: app.world.time,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -5495,6 +5506,77 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // convention — the aiStyle-75 `TargetClosest` reads).
                 let cand = crate::npc_target::session_candidate(player);
                 let players = [cand];
+                // W4-g90 — the town stat-ladder feeder (the b3-seam's
+                // stat half, LIVE ahead of the b3 AI migration): the C#
+                // runs `isLikeATownNPC`'s stat block INSIDE
+                // `AI_007_TownEntities` (`NPC.cs:52999-53157`) at each
+                // town NPC's slot turn; the port's live dispatch still
+                // rides `update_guide`, so the ladder runs HERE, once
+                // per tick before the slot loop (the ForceBubble
+                // pre-pass ORDER convention — the block reads only the
+                // NPC's own state + world flags, never a sibling, so
+                // the position move is state-identical). RNG-free by
+                // construction: the ladder draws nothing. The combat
+                // books (+250 HP / ×0.8 cd / +0.25 dmg / +8 def each)
+                // and the boss ladder now apply in play; the returned
+                // (num2, num3) attack scales have no consumer until the
+                // b3 AI wiring drains `TownOutputs` — dropped here (the
+                // eye wiring's `let _ = out` precedent).
+                // FEEDER-CANONICAL (retire, the b3 receipt): b3's
+                // phase-1 tip `96a5d88f0` wires the AI dispatch on its
+                // own branch but folds combat_book_two false in its
+                // INLINE env — this feeder is the canonical env source
+                // (`from_world`, both books live); at the merge b3's
+                // arm env builds through it and the arm's ladder call
+                // (`npc_ai_town.rs:1737`) dedupes onto THIS pre-pass
+                // (the two b3-dedup witnesses pin the field census +
+                // the one-row delta).
+                {
+                    let flags = crate::npc_ai_town::TownEnvFlags::from_world(
+                        world,
+                        player.buffs.expert_mode,
+                    );
+                    for n in npcs.iter_mut() {
+                        // The C# gate: the block lives inside the
+                        // aiStyle-7 arm and is isLikeATownNPC-gated
+                        // (`NPC.cs:53014`); every ported town-like kind
+                        // is aiStyle 7 (`npc/data.rs::ai_style`).
+                        if n.hp <= 0
+                            || n.kind.ai_style() != 7
+                            || !n.kind.is_town_npc_like()
+                        {
+                            continue;
+                        }
+                        // The kind defaults: the `SetDefaults` rows
+                        // (every town kind 250/15). The BASE defense is
+                        // the kind table read with the override cleared
+                        // — the ladder rewrites `defense_override` every
+                        // tick, so a stale override must not feed the
+                        // next tick's base (the skeletron wiring's
+                        // reset-then-read convention, `npc.rs`).
+                        n.defense_override = None;
+                        let stats = crate::npc_ai_town::TownKindStats {
+                            def_life_max: n.kind.max_hp(),
+                            def_defense: n.defense(),
+                        };
+                        // The Andrew `defDefense` easter egg
+                        // (`NPC.cs:52968-52971`) writes the BASE the
+                        // ladder reads — the full arm applies it to its
+                        // defaults copy before the ladder; the feeder
+                        // mirrors that (the Slimefors 680 half needs a
+                        // kind the port does not ship).
+                        let mut stats = stats;
+                        if n.kind.net_id() == 441 && n.given_name == "Andrew" {
+                            stats.def_defense = 200;
+                        }
+                        let env = flags.env(world, &[], &[], n.home.is_none());
+                        let dryad_ward = n.buffs.find_buff_index(165).is_some();
+                        let tipsy = n.buffs.find_buff_index(25).is_some();
+                        let _ = crate::npc_ai_town::town_stat_bonuses(
+                            n, stats, &env, dryad_ward, tipsy,
+                        );
+                    }
+                }
                 for i in 0..npcs.len() {
                     // The NPC's slot index (the C#'s `NPC.whoAmI`) — the
                     // spawn requests that carry an owner reference (the
@@ -9086,6 +9168,74 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 mod tests {
     use super::*;
     use tr_core::World;
+
+    // ---- W4-g90: the town stat-ladder feeder (WRITTEN NOT RUN) ----------
+
+    /// The LIVE wiring: one `update_npcs` tick with both combat-book
+    /// world flags raised feeds the town ladder — the Guide leaves the
+    /// tick at 750/750 lifeMax (`NPC.cs:53016-53035`: 250 + 250 + 250,
+    /// the full-heal-on-growth) and defense 31 (15 + 8 + 8). A wild NPC
+    /// (the slime) is untouched — the block is isLikeATownNPC-gated
+    /// (`NPC.cs:53014`). The feeder draws NOTHING (the ladder is
+    /// RNG-free), so the ambient spawns' streams are unperturbed.
+    #[test]
+    fn w4_g90_the_town_tick_feeds_both_combat_books_into_the_ladder() {
+        let world = crate::test_world_helpers::ground();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.combat_book_was_used = true;
+        app.world.combat_book_volume_two_was_used = true;
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        let mut slime = Npc::new(NpcKind::Slime, 48.0, 100.0, 1, 0.0);
+        slime.hp = slime.max_hp;
+        let slime_max = slime.max_hp;
+        app.npcs.push(slime);
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::Guide).unwrap();
+        assert_eq!(g.max_hp, 750, "250 base + 250 book one + 250 book two");
+        assert_eq!(g.hp, 750, "the `& flag3` full heal (`:53032-53035`)");
+        assert_eq!(g.defense(), 31, "15 + 8 + 8 (`:53022`/`:53029`)");
+        let s = app.npcs.iter().find(|n| n.kind == NpcKind::Slime).unwrap();
+        assert_eq!(s.max_hp, slime_max, "the wild slime skips the block");
+        assert_eq!(s.defense_override, None, "no ladder write on a wild kind");
+        // A second tick is idempotent (the reset-then-read base).
+        update_npcs(&mut app, 1.0 / 60.0);
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::Guide).unwrap();
+        assert_eq!((g.max_hp, g.hp, g.defense()), (750, 750, 31));
+    }
+
+    /// No books, one boss down: the ladder still runs every tick — the
+    /// EoC row adds +2 defense and the 0.985 cooldown scale (the returned
+    /// num3 has no live consumer until b3 drains TownOutputs; the
+    /// defense write is the observable half).
+    #[test]
+    fn w4_g90_the_town_tick_feeds_the_boss_ladder_without_books() {
+        let world = crate::test_world_helpers::ground();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 66.0 * 16.0;
+        player.y = 112.0 * 16.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.downed_eoc = true;
+        let mut guide = Npc::new(NpcKind::Guide, 32.0, 100.0, 1, 0.0);
+        guide.home = Some((2, 6));
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::Guide).unwrap();
+        assert_eq!(g.max_hp, 250, "no books: the lifeMax reset is the base");
+        assert_eq!(g.defense(), 17, "15 + 2 (EoC, `:53041-53045`)");
+    }
 
     /// S1-D-8b's A/B equivalence proof: the migrated carrier family
     /// (spatial hash over the snapshot) against the verbatim pre-migration

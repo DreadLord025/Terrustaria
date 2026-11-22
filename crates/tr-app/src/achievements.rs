@@ -820,6 +820,10 @@ mod tests {
         // BOOK_WORM's row exists even though its notify site is blocked on
         // S1-F-15 (`kills_needed_for`); the manager surface still dispatches.
         assert_eq!(m.notify_progression(29), Some("BOOK_WORM"));
+        // W4-g90 lane 7: TRAINING_DAY's row (progression 40,
+        // `AchievementInitializer.cs:414-415`) — the both-books hook
+        // (`Player.cs:25695-25698`) dispatches here.
+        assert_eq!(m.notify_progression(40), Some("TRAINING_DAY"));
         // I_AM_LOOT rides the `Peek` CustomFlag (`:347`).
         assert_eq!(m.notify_custom("Peek"), Some("I_AM_LOOT"));
         assert_eq!(m.notify_custom("Nope"), None);

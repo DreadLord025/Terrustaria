@@ -3,6 +3,17 @@
 //! The world format stays tile-only; the player's position, HP and hotbar counts live in a
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
+//!
+//! DEPRECATED-BY-SUPERSET (W4-g90 retire, research/135 §8.3/§11): this
+//! branch's v7 writer/reader is the FOLD SOURCE, not the merge survivor.
+//! g88's v11 superset (`a9f1c29d8`, research/103 §9 step 6) is the
+//! canonical `.trplayer` writer; its v7 legacy arm loads THIS branch's
+//! six-1-token-line block LOSSLESSLY (the 135 §2 recognition rule landed
+//! verbatim at g88 `persist.rs:463-481`, witness
+//! `g90bs_six_line_v7_loads_positionally` `:1198` — re-verified at the
+//! retire probe). At the merge this writer retires and the `SavedPlayer`
+//! flag fields + App restores dedup onto the superset's (103 §9 step 7);
+//! the branch keeps its v7 shape until then (the standing decision).
 
 use std::path::{Path, PathBuf};
 
@@ -50,6 +61,41 @@ pub struct SavedPlayer {
     /// Player fields + consumers stay the a6/g90 lanes' (research/138 §2);
     /// the g88 v10 superset reader hydrates them at the merge.
     pub used_aegis_crystal: bool,
+   /// `Player.ateArtisanBread` (`Player.cs:2048`) — version 7 (W4-g90);
+    /// older files load false (the ctor default, `Player.cs:56077`). The
+    /// vanilla persists it in the `.plr` (`Serialize:54779`,
+    /// `Deserialize:55245`); the port's live-session sidecar carries it so
+    /// the permanent unlock survives a `.trwld` reload.
+    pub ate_artisan_bread: bool,
+   /// `Player.ateArtisanBread` (`Player.cs:2048`) — version 7 (W4-g90);
+    /// older files load false (the ctor default, `Player.cs:56077`). The
+    /// vanilla persists it in the `.plr` (`Serialize:54779`,
+    /// `Deserialize:55245`); the port's live-session sidecar carries it so
+    /// the permanent unlock survives a `.trwld` reload.
+    pub ate_artisan_bread: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`, save `:54781` / load
+    /// `:55255`) — version 7's second unlock line (W4-g90 lane 7); older
+    /// files load false (the ctor `:56078`).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`, `:54783`/`:55257`) —
+    /// version 7 (W4-g90 lane 7); older files load false (`:56080`).
+    pub used_arcane_crystal: bool,
+   /// `Player.ateArtisanBread` (`Player.cs:2048`) — version 7 (W4-g90);
+    /// older files load false (the ctor default, `Player.cs:56077`). The
+    /// vanilla persists it in the `.plr` (`Serialize:54779`,
+    /// `Deserialize:55245`); the port's live-session sidecar carries it so
+    /// the permanent unlock survives a `.trwld` reload.
+    pub ate_artisan_bread: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`, save `:54781` / load
+    /// `:55255`) — version 7's second unlock line (W4-g90 lane 7); older
+    /// files load false (the ctor `:56078`).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`, `:54783`/`:55257`) —
+    /// version 7 (W4-g90 lane 7); older files load false (`:56080`).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`, `:54784`/`:55258`) —
+    /// version 7 (W4-g90 lane 7); older files load false (`:56081`).
+    pub used_galaxy_pearl: bool,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -116,7 +162,7 @@ pub fn save(
     dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("10\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("11\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -143,15 +189,20 @@ pub fn save(
     // (W4-g89i) widens to the SIX-token g88-v10 unlock line (research/138
     // §6, the binding written order): tokens 4/5/6 = the crystal trio in
     // the vanilla `.plr` relative order (`:54781` crystal / `:54783` arcane
-    // / `:54784` pearl). This branch carries only the crystal flag (token
-    // 4); arcane/pearl write `0` placeholders (their fields are a6/g90's).
+    // / `:54784` pearl). The crystal trio tokens 4/5/6 are live (W4-g90 lane 7).
     s.push_str(&format!(
-        "{} {} {} {} 0 0\n",
+        "{} {} {} {} {} {}\n",
         u8::from(player.used_aegis_fruit),
         u8::from(player.used_gummy_worm),
         u8::from(player.used_ambrosia),
-        u8::from(player.used_aegis_crystal)
+        u8::from(player.used_aegis_crystal),
+        u8::from(player.used_arcane_crystal),
+        u8::from(player.used_galaxy_pearl)
     ));
+    // Version 11 (W4-g90, renumbered from its v7 claim): the artisan-bread
+    // flag on its own line after the unlock line (`Player.ateArtisanBread`,
+    // `Player.cs:2048` — the permanent 5326 unlock, saved at `:54779`).
+    s.push_str(if player.ate_artisan_bread { "1\n" } else { "0\n" });
     std::fs::write(player_path(world), s)
 }
 
@@ -161,12 +212,12 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 7 the permanent shimmer unlocks (W4-g89); 8 the Gummy
+        // dye kinds; 11 the artisan-bread flag (W4-g90); 7 the permanent shimmer unlocks (W4-g89); 8 the Gummy
         // Worm token on that line; 9 the Ambrosia token (W4-g89c); 10 the
         // crystal trio tokens 4/5/6 (W4-g89i, the g88-v10 binding order);
         // 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
         // tile/wall/weapon/coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" => false,
+        "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -193,7 +244,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9" | "10") {
+    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -201,7 +252,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if matches!(version, "5" | "6" | "7" | "8" | "9" | "10") {
+    if matches!(version, "5" | "6" | "7" | "8" | "9" | "10" | "11") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -216,7 +267,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if matches!(version, "6" | "7" | "8" | "9" | "10") {
+    if matches!(version, "6" | "7" | "8" | "9" | "10" | "11") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
@@ -230,18 +281,27 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // crystal; tokens 5/6 are the a6/g90 lanes'). Older files load with
     // the unlocks absent; a v7 line has one token, a v8 line two, a v9
     // line three (the crystal back-reads false).
-    let (used_aegis_fruit, used_gummy_worm, used_ambrosia, used_aegis_crystal) =
-        if matches!(version, "7" | "8" | "9" | "10") {
+    let (used_aegis_fruit, used_gummy_worm, used_ambrosia, used_aegis_crystal, used_arcane_crystal, used_galaxy_pearl) =
+        if matches!(version, "7" | "8" | "9" | "10" | "11") {
             let line = lines.next()?;
             let mut tokens = line.split_whitespace();
             let fruit = tokens.next().is_some_and(|t| t == "1");
             let worm = tokens.next().is_some_and(|t| t == "1");
             let ambrosia = tokens.next().is_some_and(|t| t == "1");
             let crystal = tokens.next().is_some_and(|t| t == "1");
-            (fruit, worm, ambrosia, crystal)
+            let arcane = tokens.next().is_some_and(|t| t == "1");
+            let pearl = tokens.next().is_some_and(|t| t == "1");
+            (fruit, worm, ambrosia, crystal, arcane, pearl)
         } else {
-            (false, false, false, false)
+            (false, false, false, false, false, false)
         };
+    // Version 11 (W4-g90): the artisan-bread flag line; older files load
+    // false (the ctor default, `Player.cs:56077`).
+    let ate_artisan_bread = if version == "11" {
+        lines.next().is_some_and(|l| l.trim() == "1")
+    } else {
+        false
+    };
     Some(SavedPlayer {
         x,
         y,
@@ -255,6 +315,9 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         used_gummy_worm,
         used_ambrosia,
         used_aegis_crystal,
+        ate_artisan_bread,
+        used_arcane_crystal,
+        used_galaxy_pearl,
     })
 }
 
@@ -298,6 +361,88 @@ mod tests {
         assert_eq!(s.inventory[49], (0, 0));
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, dye);
+        assert!(!s.ate_artisan_bread, "the fresh player never ate one");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90: the v7 artisan-bread line round-trips — the permanent 5326
+    /// unlock (`Player.ateArtisanBread`, `Player.cs:2048`) survives the
+    /// sidecar save/load.
+    #[test]
+    fn the_artisan_bread_flag_round_trips() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.ate_artisan_bread = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-bread");
+        let path = dir.join("tr-persist-bread.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("v7 sidecar");
+        assert!(s.ate_artisan_bread, "the flag survives the round trip");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90: a v6 sidecar (no bread line) loads false — the ctor default
+    /// (`Player.cs:56077`), the same version-gate shape as the dye line.
+    #[test]
+    fn version_6_loads_with_no_bread() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v6-bread");
+        let path = dir.join("tr-persist-v6.trwld");
+        let mut line = String::from("6\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n1 (BlueSlime 7) \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push('\n');
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v6 sidecar");
+        assert!(!s.ate_artisan_bread);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90 lane 7: the five shimmer unlocks round-trip through the v7
+    /// flag block (`Player.cs:54781-54786` minus the g89-owned fruit).
+    #[test]
+    fn w4_g90_the_shimmer_unlocks_round_trip() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.used_aegis_crystal = true;
+        p.used_galaxy_pearl = true;
+        p.used_ambrosia = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-shimmer");
+        let path = dir.join("tr-persist-shimmer.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v7 sidecar");
+        assert!(s.used_aegis_crystal, "the crystal persisted");
+        assert!(!s.used_arcane_crystal, "the unused arcane stays false");
+        assert!(s.used_galaxy_pearl);
+        assert!(!s.used_gummy_worm);
+        assert!(s.used_ambrosia);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g90 lane 7: a v7 sidecar written BEFORE the unlock extension (the
+    /// bread line only, the g90 first-pass shape) loads with all five
+    /// unlocks absent — each flag reads its own optional line.
+    #[test]
+    fn w4_g90_a_bread_only_v7_loads_without_the_unlocks() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-bread-only");
+        let path = dir.join("tr-persist-v7.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 1015 0 0 0 0 \n1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the bread-only v7 still reads");
+        assert!(s.ate_artisan_bread, "the bread line parses");
+        assert!(!s.used_aegis_crystal, "the absent lines load false");
+        assert!(!s.used_arcane_crystal);
+        assert!(!s.used_galaxy_pearl);
+        assert!(!s.used_gummy_worm);
+        assert!(!s.used_ambrosia);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

@@ -8267,6 +8267,234 @@ seams), the real `TownDoorOps`, the live NPC list + `App.talk_npc`,
 shimmering latch fields. Contested pieces untouched: `town.rs` housing,
 `npc_chat` selection, the caster aiStyle-8 arm.
 
+**W4-g90 feeder update (2026-11-21, `8521139d`)**: the STAT-LADDER half
+of the wiring is LIVE on the g90 branch, ahead of the b3 AI migration.
+`npc_ai_town.rs` gains `TownEnvFlags` — the OWNED scalar half of
+`TownEnv` (every field that is not a borrow / not per-NPC), built by
+`from_world(world, expert_mode)` with the b3 phase-1 env's exact folds
+(the live `World` flags incl. BOTH `combat_book_was_used` and
+`combat_book_volume_two_was_used` — the b3 feeder
+(`96a5d88f0`, `ai_007_town_family`) still folds book two false; the
+unported statics false, the host net path, Classic ×1.0).
+`world_sim/npcs.rs::update_npcs` runs `town_stat_bonuses` per living
+aiStyle-7 town-like NPC once per tick BEFORE the slot loop (the
+ForceBubble pre-pass ORDER convention — the block reads only the NPC's
+own state + world flags, never a sibling, so the position move is
+state-identical; the ladder is RNG-free by construction). The base
+defense is read with `defense_override` cleared (the reset-then-read
+convention — the ladder rewrites the override every tick, a stale
+value must not compound); the Andrew `defDefense=200` base mirror
+rides the feeder's defaults copy like the arm's. The returned
+`(num2, num3)` attack scales are dropped (no consumer until b3 drains
+`TownOutputs`); the lifeMax/defense writes are the live observable
+half — both books' +250 HP / +8 def and the boss ladder now apply in
+play. The AI dispatch (`update_guide` on this branch, b3's
+`ai_007_town_family` on its own) is UNTOUCHED — at the merge b3's arm's
+ladder call dedupes onto the feeder (same inputs → same writes, zero
+draws, idempotent). Witnesses (WRITTEN NOT RUN): the env-flags
+both-books + boss-ladder pin, the feeder-pass idempotence + tipsy
+seam, and two live `update_npcs` ticks (750/750 HP + def 31 with both
+books; the wild slime untouched; def 17 with EoC down, no books).
+**W4-g90 fishing census (`fdffccc4`)**: `DidNotUseCombatBook` is a
+fishing DROP condition, not a fishing-power penalty —
+`GameContentFishDropPopulator.cs:196`
+`Add(Legendary, 2, 4382, BloodMoon, DidNotUseCombatBook)` (the 2-arg
+`Add` = numerator 1 / denominator 2, `AFishDropRulePopulator.cs:201-
+204`; the condition `!NPC.combatBookWasUsed`, `:171`). The
+`Projectile.cs:21056` inline arm (`!combatBookWasUsed && bloodMoon &&
+legendary && Next(3)==0`) lives in `FishingCheck_RollItemDropOld`,
+which is NEVER CALLED — `SetFishingCheckResults:20742` routes to the
+DB-backed `FishingCheck_RollItemDrop` only; the port's 1/2 rule
+(`fishing.rs:1691`) is the LIVE semantics, fully armed
+(`world_sim/projectiles.rs:327` → `BobberInputs` → `FishingContext`
+`projectile_bobber.rs:357` → `FishCondition::DidNotUseCombatBook`
+`fishing.rs:1450`). The condition runs BEFORE the chance draw
+(`FishDropRule.cs:31-51`), so a used book skips the row's `Next(2)`
+entirely — the stream stays aligned (witness
+`w4_g90_the_combat_book_drop_dies_once_the_book_is_used`). Full C#
+`combatBookWasUsed` census: the NPC ladder `:53018` (now fed), the
+TRAINING_DAY hook `Player.cs:25695` (wired), the use arm `:45324-45329`
+(wired), `NetMessage.cs:334` / `MessageBuffer.cs:582`+`:2823` (wired
+netglue), `WorldFile.cs:1380`/`:2315` (wired flags.rs), the
+`WorldGen.cs:7071` / `NPC.cs:95217` world-reset clears (the port's
+fresh `World::new` default false). No missing consumer.
+**W4-g90 reconcile cross-note (research/135 §7)**: a6
+(`8ed96ee5d`) has NO research/138 and NO keep-one verdicts — its
+`powerups.rs` machine ports the same nine use arms this branch carries
+in `editing.rs` (5326/4382/5336/5343 + the five shimmer) plus the ones
+g90 does not port (29/109/1291/3335/5289/5043/pet licenses/drones);
+the flag fields are name-identical on both branches, the keep-one
+dedup at the merge is one machine per item (135 §7a's proposal: a6
+keeps its exclusives, the overlap keeps whichever lands first). g88
+(`6998a4ecb`, fold 5 docs) has NOT consumed 135 (its tip predates the
+publication by 23 minutes); its writer stays v9 with tokens 4/5/6
+RESERVED→v10 — 135 §3's mapping already agrees with 103 §2a's reserved
+order, no conflict; this branch keeps its v7/v18 shape (the merger
+folds per 135). *(Historical probe — superseded by the FINAL receipts
+below and research/135 §8/§9.)*
+**W4-g90 FINAL receipts (2026-11-21, research/135 §8/§9 — the persist
+merge is adjudicated)**: g88 fold 7 (`a9f1c29d8`, writer **v11**)
+CONSUMED 135 — §2's six-line v7 recognition rule landed verbatim
+(`persist.rs:463-481`, witness `g90bs_six_line_v7_loads_positionally`
+replacing the bounded-misread witness), so a g90 lane-7 v7 file loads
+LOSSLESSLY on the superset reader. Two supersessions: the unlock-token
+order is the WRITTEN crystal=4/arcane=5/pearl=6 (g88 fold 6, 103 §8 +
+138 §6 — 135 §3's pearl-first recommendation retired, zero back-compat
+cost by its own premise), and the `.trwld` union is a6 138 §5a's
+FIVE-way **68-byte** table (g70 forest 16 + g71 surface 3 + g87 pets 3
+at 19-21 + g90 books 2 at **22/23** + f45 identity 44 at 24-67) —
+135 §4's 21-byte three-way contract is superseded, this branch's pair
+moves +3 and every truncation constant goes +68. a6's research/138
+(`d7de8bd53` + FINAL `115ce655a`) adjudicates the keep-ones: **g90
+KEEPS the 5326 loaf** (`use_artisan_loaf` + the skeleton-merchant stock
+gate — the consumer that won the keep-own), the shimmer USE arms dedup
+onto a6's `use_shimmer_permanent` machine while **g90's Player field
+declarations + consumer shapes are the merge anchors** (the pearl
+mirror, the regen slots, the booster order — a6 fixed itself to match,
+138 §3.2-3.4); the books/satchel keep-one is a6-or-g89e/g90 with g90's
+carriers + consumers surviving regardless. The g87-triple
+(3335/5289/licenses): 138's first pass read g87 as zero commits — STALE
+(g87 pushed `dfbcaf94b` 47 min earlier); its own §10 re-adjudicates
+(a6 keeps all three arms: the start-refusal, the full QuickSpawnItem
+walk with the void vault, the live AnyNPCs scan; g87's arms + its v7
+`dh` sidecar line DROP, its `.wld` flips dedup onto f45, its `.trwld`
+pets ride the union). 138 FINAL's "g88 six-line rule still missing"
+re-flag is itself stale — g88 fold 7 landed 33 min before it (135 §8.4's
+census). No `g87b-143` ref exists on origin; the re-adjudication is
+a6's own 138 §10.
+**W4-g90 RETIRE — the 68-vs-106 union receipt (research/135 §10)**
+(*superseded again by the SEAL paragraph below — the 107-byte
+DEFINITIVE head, pair [61]/[62]*): the
+68-byte five-way table above is itself SUPERSEDED — c39's research/114
+§8 (tip `8e0946ff0`, read at retire) publishes the NINE-way **106-byte**
+fixed head: 138 §5a's five claimants miss FOUR pushed v18 writers (g72's
+31-B cave block `4a75715ef`, g69's crimson byte, c39's 5-B moon quintet,
+d109's dense W×H). Under the 106 head **g90's pair seats 104/105 — the
+LAST fixed-head block** (the c39-table claim verified against the table
+AND `WorldFile.cs:1392-1394/:1407-1408` directly: the books are the last
+C#-backed flag rows the union seats; d109's dense variants follow at
+106). The journey 19/20 → 22/23 → 104/105; every truncation constant
+moves **+106** (the six sites re-pinned at this tip: `save.rs:1202/
+:1314/:1345/:1532/:1555/:1584`, comments-only seat notes landed). The
+f44/g71 consolidation reads: f44 FINAL `bdd1cc79a` (132 §3-L3) seats a
+97-byte head missing the quintet+licenses with its own 97/98 off-by-one
+(identity `[54..97]` = a 43-B span for 44 B); g71 FINAL `f08e8d41e`
+(92-doc-sweep-bg §1 — NOT the roadmap-reverification file) seats 21
+bytes, 85 short. c39 §12's CORRECTION-input broadcast stands; this lane
+CONCURS — the merger takes 114 §8's head, never a 97/98/21/68 head that
+drops a claimant. One order nuance recorded (135 §10e): the empress
+`.wld` row is `:1395`, AFTER the licenses `:1392-1394`, while 114 §8
+seats empress [100] before the licenses [101..104] — the block set and
+the g90 seat are identical under both readings; no g90 byte moves.
+**W4-g90 RETIRE — the DEPRECATED-BY-SUPERSET banners (comments-only)**:
+the branch's `.trplayer` v7 six-line block is the FOLD SOURCE, not the
+merge survivor — g88's v11 superset (`a9f1c29d8`) is canonical (103 §9
+step 6). The lossless-load claim re-verified on the pushed tip at
+retire: the six-line guard `persist.rs:463-465`, the positional reads
+`:470-481` (bread/crystal/arcane/pearl/gummy/ambrosia), the witness
+`g90bs_six_line_v7_loads_positionally` `:1198`, the v11 writer header
+`:230` — all present. Banners landed (comments only, zero behaviour
+change): the `persist.rs` module doc + the v7 writer block + the v7
+reader arm (which rejects g88/g89 files BY DESIGN — the superset reader
+wins at the merge) + the `app/mod.rs` six-flag restore block (dedups
+onto the superset's restore, 103 §9 step 7; the sidecar restore runs
+SECOND after the character-load hydration, 132 §2c). The branch keeps
+its v7 shape until the merge (the standing decision, 135 header).
+**W4-g90 RETIRE — the b3 feeder receipt (research/135 §11a)**: b3's
+pushed tip is `96a5d88f0` — **phase 1 ONLY, phase 2 NOT landed** (two
+commits over wave-3; the phase-2 remainder is b3's own module doc:
+the `TownOutputs` drain, the real `TownDoorOps`, the live NPC list +
+`talk_npc`, the `HomeTileUpdate`/message-60 seam). Phase 1 wires the
+aiStyle-7 dispatch and retires `update_guide`, but its arm builds the
+`TownEnv` INLINE (`npc.rs::ai_007_town_family`) folding
+`combat_book_two: false` ("volume two unported") — STALE: the g90
+world flag is the pushed carrier. The retire census compared b3's
+inline env against `TownEnvFlags::from_world` field-for-field: every
+scalar agrees EXCEPT that one fold (the empress false-fold is shared —
+no `World.downed_empress` on either tip, d125's lane). **The g90
+feeder is canonical** (`8521139d`): at the merge b3's arm env builds
+through `from_world(...).env(...)` (the live lists + homeless ride the
+parameters; the Andrew/Slimefors defaults adjustment stays in the arm)
+and the arm's `town_stat_bonuses` call (`npc_ai_town.rs:1737`) dedupes
+onto the `update_npcs` pre-pass — same inputs → same writes, RNG-free,
+idempotent; the `(num2, num3)` scales stay dropped until phase 2 drains
+`TownOutputs`. Two b3-dedup witnesses WRITTEN NOT RUN
+(`npc_ai_town.rs`): the field-census pin
+(`w4_g90_the_b3_inline_env_matches_from_world_except_book_two`) + the
+one-row delta pin (`w4_g90_the_b3_book_two_fold_drops_exactly_one_ladder_row`
+— 750 HP/def 31 vs 500/23, exactly +250/+8/+0.25/×0.8). Feeder-canonical
+banners landed comments-only on `from_world` + the pre-pass.
+**W4-g90 RETIRE FINAL-FINAL — the booster-family declaration
+(research/135 §11/§11b)**: the lane is COMPLETE. All four families —
+**bread** (5326, the keep-own: `use_artisan_loaf` + the reach + the
+merchant gate), **books** (4382/5336: the world flags + the town
+ladder/fishing/TRAINING_DAY consumers), **satchel** (5343: the shop +1),
+**shimmer-6** (5337-5342 minus g89's 5338: the regen/luck/fishing/speed
+consumers) — are landed with every carrier (`.plr`/`.trplayer`/`.trwld`/
+`.wld`/net) and every live consumer; the retire anchor census (§11b)
+re-verified all 15 cited sites present at the tip. The merger's ordered
+checklist (§11b): L1 f44c's walk + the bool dedups, L2 g88 v11 (the v7
+block is the consumed fold source), L3 the **107-byte DEFINITIVE head**
+(g88 103 §L3-DEFINITIVE D3 — pair at **[61]/[62]**, **+107** constants,
+the §10g seal re-pin below) + f45's `.wld` superset, the use-arm
+keep-ones per 138, all consumers stay g90's, the 26 `w4_g90_*`
+witnesses re-pin. **No open g90 obligations remain** — the recorded
+remainders are other lanes' scope (b3 phase 2, d125's empress flag, the
+g71c union landing, the g88/f44/f45 persist bases). The branch is
+RETIRED: code-only, nothing run, every receipt published (135 §8-§11).
+**W4-g90 SEAL — the 106→107 re-pin + the lossless receipt (research/135
+§10g/§12)**: g88's SEAL tip **`fc5cf11ae`** read FULL — 103
+§L3-DEFINITIVE D1-D5 is **THE 107-authority**: 13 v18 claimants → 11
+blocks after three dedup pairs (e19≡g69 crimson, f39≡c39 moon-quintet,
+c43≡f45 identity), the 107-byte head = 16 forest + 31 cave + 3 surface
++ the STRICT-C#-row flag middle (crimson `:1281` [50] → moon
+`:1347-1351` [51..56] → underworld `:1376` [56] → pets `:1392-1394`
+[57..60] → empress `:1395` [60] → books `:1407-1408` [61..63]) +
+identity 44 [63..107], d109 dense LAST. **g90's pair IS the books-2
+block (D1 row 9) — PRESENT, seats [61]/[62]**, the LAST flags block;
+the journey 19/20 → 22/23 → 104/105 → **61/62**; the bread/journey
+flags never ride `.trwld` (L1/L2 carriers) — no missing claimant, the
+107 arithmetic stands (spot-verified against `WorldFile.cs:1392-1395/
+:1407-1408` directly this pass; the §10e empress-order nuance RESOLVED
+— D3 seats empress AFTER pets). The six truncation sites re-pinned
+**+107** comments-only (`save.rs:1206/:1320/:1351/:1541/:1566/:1596` at
+the seal tip) + the writer/reader seat notes; the branch keeps its
+2-byte tail. **b3 re-probe: tip UNCHANGED `96a5d88f0`, phase 1 only** —
+the feeder-contract unconsumed receipt stands (§11a banner).
+**The g88-v11 lossless receipt re-verified at `fc5cf11ae`** (the seal
+commit is doc-only, v11 code stands as `a9f1c29d8`): the six-line
+guard `persist.rs:463-465`, the positional reads `:470-481`, the
+witness `g90bs_six_line_v7_loads_positionally` `:1198`, the v11 writer
+`:230` + the torch-pair line-16 arm — all present, g90's v7 files load
+LOSSLESSLY on the superset reader; 132-RETIRE §2e's g87-`dh`-line-17
+fold (recommended over 138's DROP) would move DD2's bump to v13 —
+orthogonal to this lane. The booster-family bible published (135
+§12b): L1 f44c walk / L2 g88 v11 / L3 D3's 107 head + f45 `.wld` /
+a6 shimmer machine + g90 keep-own loaf + all g90 consumers. 135
+marked SEALED; code-only, nothing run.
+**W4-g90 artisan-loaf consumer census (`33d4b1625`)**: the
+`ateArtisanBread` full-source census is exactly four families — the
+use arm (`Player.cs:45218-45221`), `AdjTiles`' TB=4 crafting reach
+(`:35671` — `TileReachCheckSettings.Simple.GetTileRegion(this,
+ateArtisanBread ? 4 : 0)`, the +4 applied AFTER `GetRanges`' 20-clamp,
+`TileReachCheckSettings.cs:20-54`), the Skeleton Merchant stock gate
+(`Chest.cs:2958`, `!ateArtisanBread && 3 <= moonPhase <= 5`), and the
+net/persist pairs (`NetMessage.cs:195`/`MessageBuffer.cs:355` flags3
+bit 6; `.plr` `:54779`/`:55245` gate 256). **NO build-speed consumer
+exists** — `tileSpeed`/`wallSpeed` read the Brick Layer / Builder
+Potion / Ambrosia rows only; the mining/placement reach carries no
+loaf TB (the SmartCursor TB is `item.tileBoost + blockRange`,
+`SmartCursorHelper.cs:94-99`); the 1.4.5.8 reforge roll does not read
+the flag (the standing census). The port's chain is LIVE end-to-end,
+the combat-book-ladder shape: the press-tick use flips the Player flag
+(`editing.rs:2365` → `use_artisan_loaf:15966`), `craft.rs::tile_reach`
+(`:573`, +4/+4 after the clamp) feeds BOTH live crafting reads
+(`clicks.rs:921-926` + `frame/draw.rs:1575-1583`), and the shop-open's
+`ShopFlags` feeder (`npcs.rs:969-972`) drives `ArtisanLoafWindow`
+(`shop.rs:1455-1457`). Two live-chain witnesses WRITTEN NOT RUN: the
+use→reach chain (a bench 8 tiles out enters the scan after one press)
+and the use→stock-gate chain (phases 3-5 hide the 5326 row once eaten).
+
 ## Buff slots (M2-BUFF-1)
 
 `crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
@@ -21456,10 +21684,27 @@ Deviations:
   the cursor's content (`craft.rs::result_fits_next`) вЂ” the observable
   quantity matches the C#'s (a prefixable recipe crafts once), but the player
   never holds the crafted item on the cursor.
-- **The artisan loaf's effect is not ported.** The flag
-  `Player.ateArtisanBread` rides the player and the reach reads it, but the
-  item that sets it (5326, `Player.cs:45218-45221`) has no ported use effect,
-  so the +4 is unreachable in play.
+- ~~**The artisan loaf's effect is not ported.**~~ — **DONE (W4-g90)**: the
+  5326 use is ported (`editing.rs::use_artisan_loaf`,
+  `Player.ItemCheck_UseArtisanLoaf`, `Player.cs:45216-45224`): the once-only
+  `ateArtisanBread` set (`Player.cs:2048`, permanent — no `ResetEffects`
+  clear), `ApplyItemTime` and the generic consumable consume
+  (`:43280-43326`). The +4 reach (`craft.rs::tile_reach`, `:35671`) is now
+  reachable in play. Persistence: the `.plr` bool (`Serialize:54779` /
+  `Deserialize:55245`, gate 256) and the `.trplayer` sidecar's v7 line
+  (older sidecars load false). The Skeleton Merchant's stock gate
+  (`Chest.cs:2958` — the loaf hides once eaten) rides the ported shop
+  index 20 (`shop.rs`); the net sync is `PlayerInfo`'s flags3 bit 6
+  (`NetMessage.cs:195` / `MessageBuffer.cs:355`). **The task brief's
+  "reforge quality tier +1" consumer does not exist in 1.4.5.8**: a
+  full-source grep of `ateArtisanBread` finds exactly four consumers —
+  the crafting reach (`Player.cs:35671`), the Skeleton Merchant gate
+  (`Chest.cs:2958`), the net pair and the save pair; the reforge roll
+  (`Main.ReforgeItemInReforgeSlot`, `Main.cs:41902-41933` →
+  `Item.Prefix(-2)`, `Item.cs:504-618`) never reads the flag. The i45
+  reforge path stays verbatim (no tier bump invented — the golden rule).
+  The loaf's own acquisition (the Skeleton Merchant's spawn/AI) is still
+  unported; the stock rows resolve once his shop opens.
 - **The Torch God's unlock is not ported.** `player.unlockedBiomeTorches`
   (`Player.cs:2046`) rides the player and the gate reads it, but the unlock
   itself (the Torch God's dialogue) is unported, so the two gated recipes stay
@@ -56265,3 +56510,128 @@ the `noThrow=2 + enabled BEFORE the ID` order + the per-update clear are
 the landed phase-1 surface); the owning lane supplies the prerequisite and
 the merge re-homes a decoder if it lands its own copy. The g53c cross-note
 (the flagging lane's handover) is research/244 §6.1.
+
+## W4-g90 DOC-SWEEP lane 7 — the permanent boosters/consumables census (2026-11-21, code-only)
+The census of the once-use permanent items beside the Artisan Loaf (the
+branch's first commit). **The brief's guessed ids were wrong; the C#
+`ItemCheck_UseShimmerPermanentItems` switch (`Player.cs:45385-45423`) is
+the source of truth:**
+| item | id | flag | consumer |
+| Aegis Crystal | 5337 | `Player.usedAegisCrystal` (`:852`) | `UpdateLifeRegen` `:19113-19116` — `lifeRegenTime += 0.2f` |
+| Aegis Fruit | 5338 | `usedAegisFruit` | **W4-g89's lane** (pushed `920014cb`) — skipped |
+| Arcane Crystal | 5339 | `usedArcaneCrystal` (`:856`) | `UpdateManaRegen` `:19430-19433` (delay −0.05) + `:19453-19456` (regen +statManaMax2/50) |
+| Galaxy Pearl | 5340 | `usedGalaxyPearl` (`:858`) | `RecalculateLuck` `:29142-29145` — luck +0.03 |
+| Gummy Worm | 5341 | `usedGummyWorm` (`:860`) | `UpdatePermanentBoosters` `:12857-12860` — fishingSkill +3 (the i35 row existed; the USE path was missing) |
+| Ambrosia | 5342 | `usedAmbrosia` (`:862`) | `UpdatePermanentBoosters` `:12861-12866` — pickSpeed −0.05, tileSpeed +0.05, wallSpeed +0.05. **NOT a minion slot** — the Demon Heart 3335 owns that (g87's lane, branch exists) |
+| Combat Book | 4382 | `NPC.combatBookWasUsed` (WORLD, `NPC.cs:6339`) | the town-NPC stat ladder `NPC.cs:53018-53024` (+250 lifeMax, +8 def, ×0.8 cd, +0.25 dmg) |
+| Combat Book Volume Two | 5336 | `NPC.combatBookVolumeTwoWasUsed` (`:6341`) | the same ladder's second row `:53025-53031` |
+| Peddler's Satchel | 5343 | `NPC.peddlersSatchelWasUsed` (`:6343`) | `Chest.SetupTravelShop` `:1303-1306` — +1 stock slot (a plain +1, NO RNG draw) |
+(4383 is a torch, not a book; 5337 is the Aegis Crystal, not the satchel;
+5339 is the Arcane Crystal, not the gummy worm — the brief's ids were
+re-derived from the C# switch. The Torch God's Favor 5043 is f33's lane
+(branch `task/W4-f33-torch-god-favor` exists at main tip, zero pushed
+claims — claimed, skipped). No g88b/g89b branches exist; g88's pushed
+claims (`f1eb9b60`) cover the Life Fruit + the v7 life-maxima sidecar pair
+line only.)
+- **The use paths**: `world_sim/editing.rs::use_shimmer_permanent_item`
+  (the five non-g89 arms), `use_combat_book` (4382/5336) and
+  `use_peddlers_satchel` (5343), all under the i37 `use_press_edge`
+  consumable block beside the loaf. Same folds as the loaf: the mid-swing
+  `ItemTimeIsZero && itemAnimation > 0` window onto the press tick,
+  `ApplyItemTime` re-arms the 45-tick cadence (the books/satchel/shimmer
+  rows are all useTime 45), the generic consumable tail pays one
+  (`:43280-43326`), TurnToAir on the last item. The books/satchel post
+  their `Misc.*Used` world text (`ChatColors.World`; VolumeTwo's key is
+  the localization alias `{$Misc.CombatBookUsed}` — the same line). The
+  `SendData(61, -11/-17/-18)` book/satchel syncs have no port message;
+  the world flags ride the WorldInfo push + the world saves instead.
+- **The flags**: `Player.used_aegis_crystal/used_arcane_crystal/
+  used_galaxy_pearl/used_ambrosia` (ctor false `:56078-56083`, never
+  cleared by ResetEffects); `used_gummy_worm` existed (i35). The
+  consumers: the Ambrosia triple joins the booster pass after the gummy
+  row (the C#'s own order); the aegis +0.2 rides `RegenInputs.aegis_crystal`
+  BETWEEN the base +1 and the crimson extra_time (the f32 accumulation
+  order `:19112-19120`); the arcane rows ride `RegenInputs.arcane_crystal`
+  (the delay −0.05 inside the positive-delay block, the +max/50 after the
+  still/grapple doubling, before the num10 scale); the pearl mirrors into
+  `LuckState.used_galaxy_pearl` in `update_luck` before every
+  `recalculate_luck` (the persistence owner is the Player field).
+- **The world flags**: `World.combat_book_volume_two_was_used` /
+  `peddlers_satchel_was_used` (the `combat_book_was_used` standing-in's
+  shape, i35). The .wld halves: write `flags.rs` (the two `false`
+  literals now write the fields), read gates 259/260 (`WorldFile.cs:
+  2404-2405`); the v326 tail bytes 2036/2037. The .trwld: **v18** appends
+  the two-byte pair (the v15 queen-slime byte's shape); pre-v18 loads
+  false. Book ONE's .trwld carrier stays the recorded remainder (its
+  .wld half is owned since i35; the fishing context reads the loaded
+  field).
+- **The .plr persistence**: the 260+ six-unlock block's bools 1/3/4/5/6
+  (`:55255-55260`) now read into `PlayerFile`; bool 2 (`usedAegisFruit`
+  `:55256`) stays consumed-and-dropped (g89's lane). The writer emits the
+  five at `:54781-54786` (the fruit slot stays false). The legacy-279
+  subset keeps indices 4/6/7/8/9. The golden fixture is unaffected (the
+  harness player used nothing).
+- **The sidecar**: `.trplayer` v7 appends the five 0/1 lines after the
+  bread line, in the .plr write order; each reads its own OPTIONAL line
+  (a bread-only v7 from the branch's first pass loads all five false).
+  The g88 superset contract: g88's life-maxima pair line sits AHEAD of
+  the bread line at the merge (g88 writes it directly after the dye
+  line; this branch's block follows the bread line — the merge keeps
+  both, pair first). `App`'s sidecar restore seeds the five Player
+  fields.
+- **The consumers landed**: the travel-shop +1 (`shop.rs`, no RNG draw —
+  the seed-7 stock's 7 rows become 8); the TRAINING_DAY achievement
+  (progression 40, `Player.cs:25695-25698` — both books up fires every
+  tick, idempotent once completed; the row exists in
+  `achievements_data.rs`); the town-NPC book-two row already existed in
+  `npc_ai_town.rs::town_stat_bonuses` (the env input was never fed — the
+  module is the b3 lane's unwired seam, the witness feeds it directly).
+- **The net sync**: flags3 bits 0/2/3/4/5 (`NetMessage.cs:189-194` /
+  `MessageBuffer.cs:349-354`) ride the identity push, the server slot
+  copy (`Slot.shimmer_unlocks`) and the remote-player snapshot; the
+  world-flag trio rides WorldInfo's bitsByte9[0] + bitsByte11[6/7]
+  (`NetMessage.cs:334`/`:360-361`) into the client's world at the
+  install (the C# reads them into the NPC statics during case 7, before
+  `clearWorld` — the port's world rebuild applies them in
+  `client_install_world`).
+the SendData(61) book/satchel syncs folded onto the WorldInfo push). The
+expert-mode travel-shop `RollLuck(2)` row (`Chest.cs:1299`) stays
+constants-off (single-difficulty port) — the satchel +1 sits after it in
+the C# order, a plain increment with no draw, so the stream is unchanged.
+### Verification (W4-g90 lane 7)
+`:45322-45423`, `:12851-12867`, `:19108-19120`, `:19424-19460`,
+`:29137-29148`, `:25690-25700`, `:54776-54787`, `:55235-55262`,
+`:56076-56083`; `NPC.cs:53014-53035`, `:6339-6343`; `Chest.cs:1275-1314`;
+`NetMessage.cs:183-196`, `:331-362`; `MessageBuffer.cs:344-355`;
+`WorldFile.cs` gates 259/260; `AchievementInitializer.cs:414-415`); **no
+cargo/rustc/rustfmt/tests/graphify invoked**. 17 witness tests WRITTEN,
+NOT RUN: `editing.rs` ×6 (the five-arm flag/consume/cadence sweep, the
+second-item refusal, the hold-LMB one-use, the book world-gate +
+once-per-world, volume-two's own flag + TurnToAir, the satchel use + the
+shop +1), `player.rs` ×3 (the Ambrosia triple per tick, the pearl luck
+mirror, the crystal regen rows), `persist.rs` ×2 (the five-flag round
+trip, the bread-only v7 back-compat), `player_file.rs` ×1 (the :54781-
+54786 bool round trip + walk alignment), `save.rs` ×1 (the v18 pair round
+trip + pre-v18 false + the mixed state), `wld/mod.rs` (the gate witness
+extended: v258/259/260 + the 2036/2037 byte pins), `npc_ai_town.rs` ×1
+(both books stack), `achievements.rs` (the TRAINING_DAY dispatch),
+`net.rs` ×1 (the flags3 bit positions + the slot copy), `netglue.rs` ×1
+(the join carries the unlocks + the world flags).
+### The persist fold-input (reconcile-input phase)
+The three-way persist reconciliation is published as
+`docs/research/135-g90-persist-folds.md` — the mechanical fold-input
+for g88d (the superset owner) and the g71c union extension: this
+branch's exact v7 six-line block + reader gates, the six-line v7
+recognition rule (g88's token-count walk misparses it — bread lands in
+the aegis slot, the last line overwrites bread), the `.plr`-bool ↔
+103/122 unlock-token mapping table (103 §2a's reserved order wins; no
+pushed writer ever emitted token 4+), the `.trwld` v18 pair at union
+offsets 19/20 (the 21-byte g70⨉g71⨉g90 tail + the six truncation-constant
+moves), and the combat-book consumer census (the town ladder is the b3
+lane's UNWIRED seam — flag/persistence/net complete, live consumers are
+the fishing condition, TRAINING_DAY and the satchel shop +1). This
+branch keeps its persist shape; the merger folds per 135.
+*(Final state: 135 §8/§9 — g88 fold 7 consumed the doc, the six-line
+rule landed; the union is now 138 §5a's 68-byte five-way table with the
+g90 pair at 22/23; the town ladder was FED by `8521139d` before this
+note was written — the §5 census row is the current one.)*

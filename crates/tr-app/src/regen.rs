@@ -115,10 +115,14 @@ pub struct RegenInputs {
     /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 permanent
     /// `lifeRegenTime += 0.2f` (`:19113-19116`) — its own slot so the add
     /// runs BETWEEN the base `+1` (`:19112`) and the crimson `+1`
-    /// (`:19117-19120`)/soulDrain adds folded into `extra_time`, the C#'s
-    /// f32 accumulation order (the g90 lane-7 shape, research/138 §3.3 —
-    /// pre-summing 0.2+1.0 into `extra_time` reorders the f32 adds).
+    /// (`:19117-19120`) in `extra_time`, the C#'s f32 accumulation order
+    /// (W4-g90 lane 7).
     pub aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 permanent
+    /// mana-regen boost — `manaRegenDelay -= 0.05f` inside the positive-
+    /// delay block (`:19430-19433`) and `manaRegen += statManaMax2 / 50`
+    /// after the still/grapple doubling (`:19453-19456`) (W4-g90 lane 7).
+    pub arcane_crystal: bool,
     /// crimson ×1.5 / shinyStone ×1.1 / rabid ramp scale (`:19247-19258`).
     pub extra_ramp_scale: f32,
     /// palladium's +4 straight into the counter (`:19264`).
@@ -154,6 +158,7 @@ impl Default for RegenInputs {
             extra_regen: 0,
             extra_time: 0.0,
             aegis_crystal: false,
+            arcane_crystal: false,
             extra_ramp_scale: 1.0,
             extra_count: 0,
             sitting_or_sleeping: false,
@@ -375,8 +380,9 @@ pub fn check_mana(
 /// `Player.UpdateManaRegen` (`Player.cs:19418-19563`). Returns true when this
 /// tick refilled the last missing mana point (the full-bar sound + dust in the
 /// C# — M6-AUDIO polish). `manaRegenDelayBonus` has no grant source in the
-/// source (`:18656` is its only write) and the arcane crystal is unported —
-/// both folded out (noted in ANALYSIS). `flags.item_in_use` is the C# `flag`
+/// source (`:18656` is its only write) — folded out (noted in ANALYSIS); the
+/// arcane crystal now rides `in_.arcane_crystal` (W4-g90 lane 7).
+/// `flags.item_in_use` is the C# `flag`
 /// (`:19420`) feeding the ManaV2 animation gate.
 pub fn update_mana_regen(
     state: &mut RegenState,
@@ -388,6 +394,11 @@ pub fn update_mana_regen(
         state.mana_regen_delay -= 1.0;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen_delay -= 1.0;
+        }
+        // `:19430-19433` — the Arcane Crystal's −0.05, INSIDE the positive-
+        // delay block after the still/grapple/buff decrement (W4-g90 lane 7).
+        if in_.arcane_crystal {
+            state.mana_regen_delay -= 0.05;
         }
     }
     // `:19435-19441`: the ManaV2 sub-4 window counts as expired (flag3) and
@@ -405,6 +416,12 @@ pub fn update_mana_regen(
         state.mana_regen = num5;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen += num5;
+        }
+        // `:19453-19456` — the Arcane Crystal's `statManaMax2 / 50` (integer
+        // division), after the still/grapple doubling, before the num10
+        // bar-ratio scale (W4-g90 lane 7).
+        if in_.arcane_crystal {
+            state.mana_regen += in_.max_mana / 50;
         }
         let num6 = *mana as f32 / in_.max_mana as f32;
         let num9: f32 = if in_.mana_regen_buff { 1.0 } else { 0.5 };

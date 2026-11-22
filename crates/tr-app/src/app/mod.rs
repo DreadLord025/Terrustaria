@@ -3897,6 +3897,24 @@ impl App {
                     // W4-g89i — the Aegis Crystal rides the fourth token
                     // (v10, `:55255`; the +0.2 regen row `:19113-19116`).
                     p.used_aegis_crystal = saved.used_aegis_crystal;
+                    // W4-g90: the permanent artisan-loaf unlock rides the
+                    // sidecar's v7 line (`Player.ateArtisanBread`,
+                    // `Player.cs:2048`; vanilla persists it in the `.plr`,
+                    // `:54779`/`:55245`). Older sidecars load false.
+                    p.ate_artisan_bread = saved.ate_artisan_bread;
+                    // W4-g90 lane 7: the five shimmer unlocks ride the same
+                    // v7 block (`Player.cs:54781-54786` minus the g89-owned
+                    // fruit) — the boosters resume on world reload.
+                    // DEPRECATED-BY-SUPERSET (retire, 135 §11): these six
+                    // restores dedup onto g88 v11's superset restore block
+                    // at the merge (103 §9 step 7 — gummy already restored
+                    // there since fold 3); the sidecar restore runs SECOND
+                    // after the character-load hydration (132 §2c).
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
+                    p.used_arcane_crystal = saved.used_arcane_crystal;
+                    p.used_galaxy_pearl = saved.used_galaxy_pearl;
+                    p.used_gummy_worm = saved.used_gummy_worm;
+                    p.used_ambrosia = saved.used_ambrosia;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;

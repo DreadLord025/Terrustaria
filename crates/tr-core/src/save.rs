@@ -76,6 +76,11 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// `claimableBanners` half, `BannerSystem.cs:180-185`, the `version >= 289`
 /// load arm `:203-211`) — the claimable-banner pool the milestone fills
 /// (W4-e24); a pre-v18 file loads none (the pool starts empty).
+/// v19 appended the combat-book-two + Peddler's-Satchel world flags
+/// (`NPC.combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed`, the C#
+/// .wld flags bytes `WorldFile.cs:1407-1408`; W4-g90 lane 7, renumbered
+/// from its v18 claim — v18 is the c43/d109/e24 union); a pre-v19 file
+/// loads both false.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -93,7 +98,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// The v18 UNION (c39 research/114 §8, tip `4f72847e`: the 9-way 106-byte
 /// fixed head + d109 dense LAST, VERSION 18) carries no f40 row; this
 /// constant stays 17 until that union lands at the merge.
-pub const VERSION: u32 = 18;
+pub const VERSION: u32 = 19;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -498,6 +503,26 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         w.write_all(&c.banner.to_le_bytes())?;
         w.write_all(&c.count.to_le_bytes())?;
     }
+    // v19: the combat-book-two + Peddler's-Satchel world flags (W4-g90
+    // lane 7) — `NPC.combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed`
+    // (`NPC.cs:6341/6343`; the C# .wld flags bytes `WorldFile.cs:1407-1408`,
+    // read gates 259/260). The v15 queen-slime byte's shape; book ONE
+    // (`combat_book_was_used`) rides the .wld flags half only (its .trwld
+    // carrier is the recorded remainder — the i35 fishing context reads
+    // the .wld-loaded field).
+    // UNION SEAT (research/135 §10g, the 107-DEFINITIVE receipt — g88
+    // research/103 §L3-DEFINITIVE D3, fc5cf11ae): at the merge this pair
+    // rides offsets [61]/[62] of the 107-byte fixed head — the LAST flags
+    // block (STRICT C# row order: crimson [50] → moon [51..56] → underworld
+    // [56] → pets [57..60] → empress [60] → books [61..63]), identity
+    // [63..107] closes the head, d109's dense variants LAST ([107..]);
+    // journey 19/20 (135 §4, 21-byte) → 22/23 (138 §5a, 68-byte) → 104/105
+    // (114 §8, 106-byte) → 61/62 (103 D3, 107-byte). This branch keeps its
+    // own 2-byte tail until the union lands (the standing decision).
+    w.write_all(&[
+        u8::from(world.combat_book_volume_two_was_used),
+        u8::from(world.peddlers_satchel_was_used),
+    ])?;
     Ok(())
 }
 
@@ -908,6 +933,16 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 18 {
         side.banner_claimable = read_banner_claimable_v18(&mut r)?;
     }
+    // v19: the combat-book-two + Peddler's-Satchel world flags (W4-g90
+    // lane 7 — the v15 queen-slime byte's shape). A pre-v18 file loads
+    // both false (the fresh-world default; the C# reads them from .wld
+    // v259/v260, `WorldFile.cs:2404-2405`). UNION SEAT: [61]/[62] of the
+    // 107-byte DEFINITIVE head at the merge (research/135 §10g / g88
+    // research/103 §L3-DEFINITIVE D3, fc5cf11ae — the writer's seat note).
+    if version >= 19 {
+        world.combat_book_volume_two_was_used = r.u8()? != 0;
+        world.peddlers_satchel_was_used = r.u8()? != 0;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1197,10 +1232,9 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v18 (the world-identity
-        // block, W4-c43, the framing-variants block, W4-d109, then the
-        // banner claimable counts, W4-e24) is now the current format, so
-        // the gate pins 18.
+        // current one (`save.rs` version gate). v19 (the book-two/satchel
+        // pair, W4-g90 lane 7, after the v18 c43/d109/e24 union) is now
+        // the current format, so the gate pins 19.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1285,7 +1319,7 @@ mod tests {
         // one empty chest count + one empty banner count + one empty bestiary count.
         // (+1: the v17 downedFishron byte rides the flags block's tail;
         // the v18 tail — identity 44 + variants — peels via v18_tail_len.)
-        let tail = v18_tail_len(&buf) + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1;
+        let tail = v19_tail_len(&buf) + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1;
         buf.truncate(buf.len() - tail);
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
@@ -1403,7 +1437,7 @@ mod tests {
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + EMPTY_V18_TAIL;
         // Peel the v18 variants block first (W4-d109); the -1 is the v13
         // block's leading u32 sign count.
-        v12.truncate(cur_len - v18_tail_len(&v12) - tail - 1);
+        v12.truncate(cur_len - v19_tail_len(&v12) - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
         assert!(back.signs.is_empty(), "a v12 file has no sign block");
@@ -1457,6 +1491,17 @@ mod tests {
         // so the tail is 44 + w*h + 4; a non-empty pool's exact length
         // rides the sequential parse, never this helper.
         44 + width * height + 4
+    }
+
+    /// The v19 tail: the v18 union (identity 44 + variants + claimable)
+    /// plus the book-two/satchel pair (2 bytes, W4-g90 lane 7). The
+    /// end-relative fixtures carry empty pools (the v18 helper's note).
+    fn v19_tail_len(buf: &[u8]) -> usize {
+        let version = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+        if version < 19 {
+            return v18_tail_len(buf);
+        }
+        v18_tail_len(buf) + 2
     }
 
     fn back_flags(buf: &[u8]) -> u16 {
@@ -1647,11 +1692,44 @@ mod tests {
         // flag (6 bytes); the v18 identity block (44) rides the stream end
         // after the v18 variants block (W4-d109) — peel the variants first.
         let mut v14 = buf.clone();
-        let tail = v18_tail_len(&v14) + 1 + 5 + 1;
+        let tail = v19_tail_len(&v14) + 1 + 5 + 1;
         v14.truncate(v14.len() - tail);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
+    }
+
+    /// W4-g90 lane 7: the book-two + satchel world flags round-trip through
+    /// the v18 tail (`NPC.combatBookVolumeTwoWasUsed` /
+    /// `peddlersSatchelWasUsed`, the C# .wld bytes `WorldFile.cs:1407-1408`);
+    /// a pre-v18 file loads both false (the fresh-world default).
+    #[test]
+    fn w4_g90_the_book_two_and_satchel_flags_round_trip_in_v18() {
+        let mut w = World::new("Test".into(), 64, 48);
+        w.combat_book_volume_two_was_used = true;
+        w.peddlers_satchel_was_used = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.combat_book_volume_two_was_used, "book two survives");
+        assert!(back.peddlers_satchel_was_used, "the satchel survives");
+        // A pre-v18 file (the pair truncated, the version patched) loads
+        // both false — the version gate, not a length guess. Union re-pin:
+        // the -2 becomes -107 (research/135 §10g / g88 103 D3, the
+        // 107-byte definitive head).
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 2);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert!(!back.combat_book_volume_two_was_used, "pre-v18: false");
+        assert!(!back.peddlers_satchel_was_used);
+        // The mixed state: one flag up, one down — each byte is its own.
+        w.peddlers_satchel_was_used = false;
+        buf.clear();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.combat_book_volume_two_was_used);
+        assert!(!back.peddlers_satchel_was_used);
     }
 
     #[test]
@@ -1724,7 +1802,7 @@ mod tests {
         // four empty colour counts + one empty entity count.
         // (+1: the v17 downedFishron byte rides the flags block's tail;
         // the v18 tail — identity 44 + variants — peels via v18_tail_len.)
-        let tail = v18_tail_len(&buf) + 2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4;
+        let tail = v19_tail_len(&buf) + 2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4;
         buf.truncate(buf.len() - tail);
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();

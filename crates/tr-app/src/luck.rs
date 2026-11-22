@@ -73,9 +73,10 @@ pub struct LuckState {
     /// zeroes it (`:18812`), `UpdateEquips` accumulates the clover/horseshoe/
     /// lucky-coin adds (`:13050-13069`); no accessory layer yet, so it stays 0.
     pub equipment_based_luck_bonus: f32,
-    /// `Player.usedGalaxyPearl` (`Player.cs:858`) — the C# persists it to the
-    /// player file (`:54784/:55258`); the port has no player-file writer, so
-    /// it stays the default (deviation recorded in ANALYSIS).
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`) — the +0.03 term
+    /// (`RecalculateLuck` `:29142-29145`). W4-g90 lane 7: the persistence
+    /// owner is `Player.used_galaxy_pearl` (the 5340 use path); the player's
+    /// `update_luck` mirrors it here before every recalculation.
     pub used_galaxy_pearl: bool,
     /// `LanternNight.LanternsUp` (`LanternNight.cs:17-27`) — W4-f40 wires it:
     /// `world_sim/player.rs` snapshots the event flag each tick beside the
