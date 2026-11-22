@@ -489,6 +489,86 @@ pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
     }
 }
 
+/// S1-E-21h d77 — `Kill()`'s 710 DD2BetsyArrow death census
+/// (`Projectile.cs:71660-71678`): the 2-iteration dust-31 lead
+/// (`:71660-71664`) — per step a `RotatedByRandom(π)` pair (2 floats) +
+/// a `NextDouble` radius; the 10-iteration dust-6 loop (`:71665-71671`)
+/// — the same shape; the 5-iteration dust-31 tail (`:71672-71678`) —
+/// per step a `RotatedByRandom(π)` pair only (the `UnitX` spin's
+/// `.RotatedBy(velocity.ToRotation())` is draw-free). The `NewDust`
+/// internals go with the dust pool (the module's RNG contract).
+pub(crate) fn betsy_arrow_death_draws(rng: &mut dyn DropRng) {
+    for _ in 0..2 {
+        let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom
+        let _ = rng.next_double(); // radius
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..5 {
+        let _ = (rng.next_float(), rng.next_float());
+    }
+}
+
+/// S1-E-21h d77 — `Kill()`'s 617 NebulaArcanum death census
+/// (`Projectile.cs:72287-72326`): the 4-iteration dust-240 lead
+/// (`:72287-72291`) — per step a `RotatedByRandom(π)` pair + a
+/// `NextDouble` radius; the 30-iteration loop (`:72292-72304`) — per
+/// step the dust-62's pair + double, then the dust-90's pair + double;
+/// the 10-iteration dust-62 (`:72305-72311`) and dust-240
+/// (`:72312-72318`) tails — per step a pair only; then 2 gore rows
+/// (`:72319-72326`), each 7 ranges + a pair + a double: the position
+/// `Next(100)` pair, the `Next(61, 64)` type, the `NewGore` kicks
+/// `Next(10, 31)`/`Next(-20, 21)` (`Gore.cs:1327-1328`), the reposition
+/// `RotatedByRandom(π)` pair + `NextDouble` radius, and the two
+/// `Next(-10, 11)` velocity kicks. The dust/gore BODIES skip.
+pub(crate) fn nebula_arcanum_death_draws(rng: &mut dyn DropRng) {
+    for _ in 0..4 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..30 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float());
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float());
+    }
+    for _ in 0..2 {
+        let _ = rng.next_range(0, 100); // position X
+        let _ = rng.next_range(0, 100); // position Y
+        let _ = rng.next_range(61, 64); // gore type
+        let _ = rng.next_range(10, 31); // NewGore Y kick
+        let _ = rng.next_range(-20, 21); // NewGore X kick
+        let _ = (rng.next_float(), rng.next_float()); // reposition spin
+        let _ = rng.next_double(); // reposition radius
+        let _ = rng.next_range(-10, 11); // velocity X kick
+        let _ = rng.next_range(-10, 11); // velocity Y kick
+    }
+}
+
+/// S1-E-21h d77 — `Kill()`'s 618/620 Nebula subshot/shard death census
+/// (`Projectile.cs:72394-72417`, the shared `type == 620 || type == 618`
+/// arm): the 10-iteration dust loop — per step a `Next(3)` gate
+/// (`:72403`); the taken branch (`== 0`) adds the fadeIn/scale
+/// `Next(-10, 11)` pair (`:72406-72407`). The dust TYPE is `(int)ai[0]`
+/// (the 618's `Kill()` latches it to 86 at `:72398` — a state write the
+/// caller owns); the colour/scale bodies skip. ZERO further draws.
+pub(crate) fn nebula_shard_kill_draws(rng: &mut dyn DropRng) {
+    for _ in 0..10 {
+        if rng.next_range(0, 3) == 0 {
+            let _ = rng.next_range(-10, 11); // fadeIn
+            let _ = rng.next_range(-10, 11); // scale
+        }
+    }
+}
+
 /// `AI_147_Explosion` (`Projectile.cs:53130-53399`) — the per-state
 /// firework burst, as the DRAW CENSUS: every explicit `Main.rand` draw
 /// stays on the stream in the C#'s order, the dust/gore bodies are

@@ -128,6 +128,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // laser wind-up, `:41838`/`:42338`/`:42611`) is already above.
     ("NPC_Killed_13", 4),
     ("NPC_Killed_61", 4),
+    // S1-E-21h d77 — the Sharknado bolt's death cry (`Projectile.cs:73763`,
+    // `PlaySound(4, Center, 19)` — the int overload, case 4 style 19; the
+    // `Sounds/NPC_Killed_19.xnb` asset verified on disk).
+    ("NPC_Killed_19", 4),
     // S1-E-21g — the attack/shot cues the caster teleport plays
     // (`SoundID.Item8`, `NPC.cs:20862`/`:20931`) and the EoC servant
     // launch (`SoundID.Item14`, the goblin-fist arm `:19415`) — Item_8
@@ -173,6 +177,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_4", 4),
     ("NPC_Killed_5", 4),
     ("NPC_Killed_6", 4),
+    // S1-E-21h d77 — the Stardust Jellyfish's death cry
+    // (`Projectile.cs:72571`'s `PlaySound(4, x, y, 7)`) — the
+    // `Sounds/NPC_Killed_7.xnb` asset verified on disk.
+    ("NPC_Killed_7", 4),
     // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
     // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
     ("NPC_Killed_8", 4),
@@ -283,6 +291,20 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_17", 2),
     ("Item_33", 2),
     ("Item_74", 2),
+    // S1-E-21h d77 — the Kill()-tail bank gaps: the Flairon bubble's Item54
+    // (`Projectile.cs:72851`), the snowball's Item51 (`:74762`), the
+    // Houndius fireball's Item45 (`:75278`), the electrosphere's Item94
+    // (`:73530`), the Xenopopper's Item96 (`:73400`), the barnacle's
+    // Item167 (`:75288`) and the rocket families' Item62
+    // (`Kill_Bombs_DoUsualKillCode` `:77737`-`:78146`). All seven `.xnb`
+    // assets verified on disk.
+    ("Item_45", 2),
+    ("Item_51", 2),
+    ("Item_54", 2),
+    ("Item_62", 2),
+    ("Item_94", 2),
+    ("Item_96", 2),
+    ("Item_167", 2),
     ("Item_15", 2),
     ("Item_16", 2),
     ("Item_18", 2),
@@ -350,6 +372,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_108", 2),
     ("Item_109", 2),
     ("Item_111", 2),
+    // S1-E-21h d77 — the Crystal Pulse's death cue (`Projectile.cs:73294`,
+    // `SoundID.Item110`; the `.xnb` verified on disk).
+    ("Item_110", 2),
     ("Item_113", 2),
     ("Item_117", 2),
     ("Item_128", 2),
@@ -492,6 +517,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_22", 14),
     ("Zombie_23", 14),
     ("Zombie_109", 45),
+    // S1-E-21h d77 deferred-arm wave — the Phantasmal Eye's death moan
+    // (`Projectile.cs:72989`, `PlaySound(29, x, y, 103)`): case 29's
+    // Style-is-the-slot row 103, the ×0.4 arm (`LegacySoundPlayer.cs:1025-
+    // 1028`); the asset is on disk (`Sounds/Zombie_103.xnb`).
+    ("Zombie_103", 29),
 ];
 
 /// The `Sounds/Custom/` NPC cues — the DD2 families' hit/death sounds and
@@ -1180,6 +1210,29 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        self.play_use_sound_scaled(style_index, x, y, pitch_offset, 1.0, rng)
+    }
+
+    /// S1-E-21h d77 — the `volumeScale`-carrying peer of
+    /// [`Audio::play_use_sound`]: the style façade's fourth argument
+    /// (`SoundEngine.cs:93-99` — `type.Volume * volumeScale` rides the
+    /// legacy player's `volumeScale` parameter, applied at
+    /// `LegacySoundPlayer.cs:1411` AFTER the attenuation gate and the
+    /// case-2 volume tweaks, so a quiet scale never changes the gate's
+    /// refusal nor the RNG census). The DD2 Goblin Bomb's death cue
+    /// (`SoundID.DD2_GoblinBomb = new LegacySoundStyle(2, 14).WithVolume(0.5f)`,
+    /// `SoundID.cs:1596`, played at `Projectile.cs:71906`) is the first
+    /// caller; every other style play keeps the 1.0 default through
+    /// [`Audio::play_use_sound`].
+    pub fn play_use_sound_scaled(
+        &mut self,
+        style_index: u16,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         let style = &crate::soundid::SOUND_STYLES[style_index as usize];
         // `SoundEngine.cs:99` — `pitchOffset + type.GetRandomPitch()`; the
         // NextFloat draw is consumed even at variance 0 (`SoundStyle.cs:42`).
@@ -1187,19 +1240,22 @@ impl Audio {
         let pitch_offset =
             pitch_offset + sound::get_random_pitch(style.pitch_variance, draw);
         // The attenuation gate first — the C# walks the position/volume
-        // checks (`:369-436`) before the type switch draws anything.
+        // checks (`:369-436`) before the type switch draws anything. The
+        // caller's `volumeScale` rides `:1411` AFTER the gate, so folding it
+        // into the probe's scale cannot change a refusal (the gate never
+        // reads the scale).
         if sound::play_sound(
             u32::from(style.sound_id),
             x,
             y,
             self.listener,
-            style.volume,
+            style.volume * volume_scale,
         )
         .is_none()
         {
             return None;
         }
-        let (cue, volume_scale, pitch) = if style.sound_id == 42 {
+        let (cue, cue_volume, pitch) = if style.sound_id == 42 {
             // Case 42 (`:1376-1381`): no volume tweak, no pitch switch —
             // only the caller's offset, clamped at `:1410`.
             let base = style.trackable.expect("trackable style carries an asset");
@@ -1232,7 +1288,9 @@ impl Audio {
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        self.emit(name, x, y, volume_scale, pitch);
+        // `:1411` — `soundEffectInstance.Volume *= volumeScale`: the caller's
+        // scale multiplies the case's own volume AFTER the tweaks.
+        self.emit(name, x, y, cue_volume * volume_scale, pitch);
         Some(name)
     }
 
@@ -1493,6 +1551,11 @@ impl Audio {
     /// wave-G call sites: the tower dissolve's `PlaySound(4, Center, 22)`
     /// (`NPC.cs:39059`) and the Moon parts' laser wind-up
     /// `PlaySound(4, pos, 6)` (`NPC.cs:41838`/`:42338`/`:42611`).
+    /// S1-E-21h d77 adds style 19 — the Sharknado bolt's `Kill()` cry
+    /// (`Projectile.cs:73763`), drained on the `UpdateProjectiles` stream —
+    /// and style 7, the Stardust Jellyfish's `Kill()` cry (`:72571`, the
+    /// re-probe wave: the row lives on d11, the cue's position is the
+    /// derived centre − 40 post-recentre read).
     pub fn play_npc_death_int(
         &mut self,
         style_num: i32,
@@ -1505,6 +1568,10 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             6 => "NPC_Killed_6",
+            // S1-E-21h d77 — the Stardust Jellyfish's style-7 cry
+            // (`Projectile.cs:72571`).
+            7 => "NPC_Killed_7",
+            19 => "NPC_Killed_19",
             22 => "NPC_Killed_22",
             _ => return None,
         };
@@ -2215,6 +2282,29 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        self.play_proj_sound_scaled((id, style), x, y, pitch_offset, 1.0, rng)
+    }
+
+    /// S1-E-21h d77 — the `volumeScale`-carrying peer of
+    /// [`Audio::play_proj_sound`]: the queue's sixth term. The DD2 Goblin
+    /// Bomb's `Kill()` cue (`Projectile.cs:71906`) plays
+    /// `SoundID.DD2_GoblinBomb = new LegacySoundStyle(2, 14).WithVolume(0.5f)`
+    /// (`SoundID.cs:1596`) — the SAME case-2 style-14 asset as `Item14`
+    /// (which the id-2 style lookup resolves), but the C# style object
+    /// carries `type.Volume = 0.5`; the queue reproduces that as
+    /// `volume_scale = 0.5` (`SoundEngine.cs:99`'s
+    /// `type.Volume * volumeScale` with the call's own scale 1). Every
+    /// other queued cue keeps 1.0. The scale folds into
+    /// [`Audio::play_use_sound_scaled`].
+    pub fn play_proj_sound_scaled(
+        &mut self,
+        (id, style): (u16, i32),
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         // S1-E-21h d75 part 2 — id 42 joins the drain's families: the
         // bobber's sonar bite cue (`SoundID.SonarPotion`, style 311,
         // `Projectile.cs:20751`/:20765) rides wave A's trackable façade —
@@ -2226,7 +2316,7 @@ impl Audio {
         let idx = crate::soundid::SOUND_STYLES
             .iter()
             .position(|s| s.sound_id == id as u8 && s.style == style)?;
-        self.play_use_sound(idx as u16, x, y, pitch_offset, rng)
+        self.play_use_sound_scaled(idx as u16, x, y, pitch_offset, volume_scale, rng)
     }
 
     /// S1-E-21h d75 part 4 — one star-chime play (the 502 Meowmere's
@@ -4257,6 +4347,83 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_foxparks_flame(0.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d77 deferred-arm wave — the queue's `volumeScale` term
+    /// (`SoundEngine.cs:93`'s fourth argument): the DD2 Goblin Bomb's
+    /// `Kill()` cue (`Projectile.cs:71906`) plays the case-2 style-14 asset
+    /// at `type.Volume = 0.5` (`SoundID.cs:1596`'s `.WithVolume(0.5f)`).
+    /// The scale rides `LegacySoundPlayer.cs:1411` AFTER the gate and the
+    /// case-2 tweaks — the RNG census and the refusal shape stay the
+    /// stock-scale play's. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_goblin_bomb_scale_rides_after_the_gate_draw_free_census() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The 0.5-scale play draws the SAME one Next(-6, 7) as the stock
+        // play (the scale is not an RNG input) and resolves Item_14.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-6, 7);
+        let cue = audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng);
+        assert_eq!(cue, Some("Item_14"), "the goblin bomb is the Item14 asset");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate refuses BEFORE the switch regardless of scale.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound_scaled((2, 14), 0.0, 0.0, 0.0, 0.5, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the muted scaled play is draw-free");
+        // The style row itself keeps the C#'s 0.5 (`WithVolume`) — the
+        // queue's term reproduces the call-site scale, not the row's.
+        let row = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.name == "DD2_GoblinBomb")
+            .expect("the style row exists");
+        assert_eq!((row.sound_id, row.style), (2, 14));
+        assert_eq!(row.volume, 0.5, "SoundID.cs:1596 WithVolume(0.5f)");
+        // The Phantasmal Eye's case-29 slot-103 moan resolves through the
+        // fighter-moan seam: one Next(-10, 11) pitch draw after the gate,
+        // the ×0.4 arm (`LegacySoundPlayer.cs:1025-1028`), bank row present.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_fighter_moan(29, 103, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Zombie_103"), "the eye's death moan slot");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
+        assert!(SFX_CUES.iter().any(|(n, t)| *n == "Zombie_103" && *t == 29));
+    }
+
+    /// S1-E-21h d77 re-probe wave — the id-4 int façade gains style 7 (the
+    /// Stardust Jellyfish's `Kill()` cry, `Projectile.cs:72571`): one
+    /// `Next(-10, 11)` pitch draw after the gate (the case-4 contract), the
+    /// `NPC_Killed_7` bank row present, the muted play draw-free. WRITTEN
+    /// NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_jellyfish_cry_rides_the_case4_int_facade() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_npc_death_int(7, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("NPC_Killed_7"), "the jellyfish's style-7 cry");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
+        assert!(SFX_CUES.iter().any(|(n, t)| *n == "NPC_Killed_7" && *t == 4));
+        // Muted: the gate refuses BEFORE the draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_death_int(7, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract

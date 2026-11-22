@@ -461,7 +461,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // passed. The C# plays inline mid-walk; the port drains at the pass
     // tail (the wave-C batch convention, ANALYSIS "The projectile sound
     // wave").
-    for (id, style, x, y, pitch_offset) in app.projectiles.drain_proj_sounds() {
+    for (id, style, x, y, pitch_offset, volume_scale) in app.projectiles.drain_proj_sounds() {
         // S1-P-i08 + W3-i39 — the aiStyle-3 wall thud (`Projectile.cs:19571`)
         // and `AI_007`'s latch dig cue (`Projectile.cs:52757`:
         // `PlaySound(0, i*16, j*16)`) are the int-id Dig play: case 0's
@@ -472,11 +472,21 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
         } else if id == 13 {
-            // S1-E-21h d75 part 2 — the Crystal Shard's Shatter play
-            // (`Projectile.cs:25943`, `PlaySound(13, x, y, 0, 0.35f)`): case
-            // 13 draws NOTHING (`LegacySoundPlayer.cs:783-792`), attenuation
-            // gate first; the 0.35 volumeScale rides the façade arm.
-            app.audio.play_shatter_sound(x, y, 0.35);
+            // S1-E-21h d75 part 2 + d77 — the Shatter plays: case 13 draws
+            // NOTHING (`LegacySoundPlayer.cs:783-792`), attenuation gate
+            // first. The queue's sixth term carries the call-site
+            // volumeScale: the Crystal Shard's lead (`Projectile.cs:25943`,
+            // `PlaySound(13, x, y, 0, 0.35f)`) queues 0.35; the Kill-tail
+            // water bottles (`:77018`/`:77033`/`:77048`) and the molotov
+            // (`:73923`) queue the stock 1.0 (d77's wall-break int arm
+            // shape — both draw-free, the volume rides the queue).
+            app.audio.play_shatter_sound(x, y, volume_scale);
+        } else if id == 6 {
+            // S1-E-21h d77 — the spore cloud's Grass rustle
+            // (`Projectile.cs:74517`, `PlaySound(6, pos)`): the wall-break
+            // façade's int arm (`LegacySoundPlayer.cs:706-716`, one
+            // `Next(-30, 31)` pitch), attenuation gate first.
+            app.audio.play_wall_break_sound((id, 1), x, y, rng);
         } else if id == 15 {
             // The yoyo-shot's rare roar (`:36821`, `PlaySound(15, …, 0,
             // 0.35f, jitter)`): case 15 draws nothing (the slot guard is the
@@ -498,7 +508,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // `play_fighter_moan` façade on the same UpdateProjectiles
             // stream, attenuation gate first. The int overload draws NO
             // `GetRandomPitch` NextFloat.
-            app.audio.play_fighter_moan(29, style, x, y, rng);
+            // The C# sites truncate (`PlaySound(29, (int)X, (int)Y, …)`
+            // `:31504`/`:72989`) — the drain-side truncation is the
+            // faithful gate probe (the d75 part-6 receipt).
+            app.audio.play_fighter_moan(29, style, x.trunc(), y.trunc(), rng);
         } else if id == 3 && style == 29 {
             // S1-E-21h d75 part 4 — the 1054 SpiderBoulder's death cue
             // (`Projectile.cs:74865`, `PlaySound(SoundID.NPCHit29, x, y)`).
@@ -509,13 +522,25 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // id-3 styles fall through (the façade's None — a future
             // style's route is its own lane's follow-up).
             app.audio.play_npc_hit_sound("NPC_Hit_29", x, y, rng);
+        } else if id == 4 && style == -6 {
+            // S1-E-21h d75 part 4 + d77 compose — the 1055 Ghoulder's death
+            // cue (`Projectile.cs:74869`, `PlaySound(SoundID.NPCDeath6, x,
+            // y)`): the STYLE overload — case 4's one `Next(-10, 11)` pitch
+            // after the gate (the 10 playing guard is style-10-only), the
+            // GetRandomPitch NextFloat audio-only. d3's `boulder_kill`
+            // intent rides the −6 named-route sentinel (the −34 precedent,
+            // the d75 part-6 receipt): the payload alone cannot tell the
+            // style call from d77's kill-tail int `(4, 6)` — the sentinel
+            // keeps BOTH overload paths live.
+            app.audio.play_npc_death_style(6, x, y, rng);
         } else if id == 4 {
-            // S1-E-21h d75 part 4 — the 1055 Ghoulder's death cue
-            // (`Projectile.cs:74869`, `PlaySound(SoundID.NPCDeath6, x,
-            // y)`): the style overload — case 4's one `Next(-10, 11)`
-            // pitch after the gate (the 10 playing guard is
-            // style-10-only), the GetRandomPitch NextFloat audio-only.
-            app.audio.play_npc_death_style(style, x, y, rng);
+            // S1-E-21h d77 — the kill-tail death cries: the Sharknado bolt
+            // (`Projectile.cs:73763`, `PlaySound(4, Center, 19)`), the
+            // Phantasmal Sphere (`:73016`, style 6), the Stardust Jellyfish
+            // (`:72571`, style 7): the int-overload case-4 façade (one
+            // `Next(-10, 11)` pitch after the gate, the 10 playing guard,
+            // NO GetRandomPitch).
+            app.audio.play_npc_death_int(style, x, y, rng);
         } else if id == 37 {
             // S1-E-21h d75 part 4 — the 502 Meowmere star's bounce chime
             // (`Projectile.cs:18209`, `PlaySound(37, x, y, 5 + ai[0])`):
@@ -533,7 +558,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             // play_chillet_sound precedent).
             app.audio.play_foxparks_flame(x, y, rng);
         } else {
-            app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
+            app.audio
+                .play_proj_sound_scaled((id, style), x, y, pitch_offset, volume_scale, rng);
         }
     }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):

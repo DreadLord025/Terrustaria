@@ -591,6 +591,9 @@ pub(crate) fn zombie_asset(slot: usize) -> &'static str {
         // (`Projectile.cs:31504`).
         104 => "Zombie_104",
         109 => "Zombie_109",
+        // S1-E-21h d77 deferred-arm wave — the Phantasmal Eye's death moan
+        // slot 103 (`Projectile.cs:72989`, case 29's ×0.4 arm).
+        103 => "Zombie_103",
         _ => "Zombie_0",
     }
 }

@@ -35282,6 +35282,34 @@ SEAL §4, d77's `kill_tail_cue` map, f1's RETIRE banners), the 19
 sheets + `Item_182.xnb` verified on disk. No cargo/rustc/tests/
 rustfmt/graphify invoked — the witnesses are WRITTEN, NOT RUN.
 
+### Integration batch-A compose note (d75 × d77, merger-executed)
+
+The d75 part-5/6 compose-receipt's seam decisions EXECUTED at the
+integration merge (`integration/batch-A`, d75 then d77):
+
+- **The id-4 style-vs-int collision — sentinel chosen.** The pool's
+  `wants_sound` forward (`projectile.rs`, the sub-step tail) remaps the
+  AI-side `(4, 6)` intent to `(4, -6)` (the −34 named-route precedent);
+  the drain routes `(4, -6)` → `play_npc_death_style(6)` (the STYLE
+  overload, one audio-only GetRandomPitch) and plain `(4, style)` →
+  `play_npc_death_int` (d77's kill-tail 454/385/539 int cries). Both
+  paths live; the payload split is producer-side.
+- **The id-29 truncation — d77's shape kept.** The drain truncates x/y
+  before `play_fighter_moan` for BOTH the 455 `(29, 104)` latch and the
+  452 `(29, 103)` kill cue (the faithful gate probe, `:31504`/`:72989`).
+- **The id-13 volume fold.** The AI-side Crystal Shard intent queues
+  `volume_scale = 0.35` at the `wants_sound` forward (the C#'s explicit
+  `0.35f`, `:25943`); d77's kill-tail Shatters (399/69/70/621) queue
+  their own 1.0. The drain's id-13 arm is the shared
+  `play_shatter_sound(x, y, volume_scale)` (both shapes draw-free).
+  The id-6 Grass arm routes to `play_wall_break_sound((6, 1), …)`.
+- **The 6-tuple fold.** Every other d75 `wants_sound` push folds to
+  volume 1.0; the `(2, -34)` Foxparks sentinel survives (its 0.15
+  volume stays inside the by-name façade).
+- **The boulder kill-map keep-one**: d77's `kill_tail_cue` carries no
+  boulder-family kinds (checked arm-by-arm at the merge) — nothing to
+  drop at this compose; the verdict stands for the f1/g65 waves.
+
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch
@@ -40241,3 +40269,421 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile sound wave, part 3 (S1-E-21h d77, 2026-11-21, code-only mode)
+
+**Scope**: the line-order remainder of the 437-site `PlaySound` census in
+`Projectile.cs` — **d77** (`task/W4-d77-proj-sounds-3`, branched from
+`a725acb0`) owns sites 241-437 (lines `:70978`-the `Kill()` tail
+`:78505`), per the d76 range doc (sites 1-120 d75, 121-240 d76). The
+landed 24-site wave's `Kill_Bombs_DoUsualKillCode` bomb cues
+(`:78331`/`:78386`) are KEPT untouched (the `ai_bomb` detonation latch).
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests/graphify invoked (the
+Lead's constraint); every `s1_e_21h_d77_*` witness test is WRITTEN NOT
+RUN. Verification = whole-block C# re-reads (the census table's arm gates
+re-derived against `Projectile.cs:70642-78533`), the position probes
+(which arms write `position`/`Resize` before their play) and the
+rowed-kind check against `proj_data` (all 121 mapped kinds rowed).
+
+### The seam: the kill_tail_cue death-hook map
+
+The C# plays these cues inside `Kill()` while the slot is STILL active
+(`active = false` lands at `:77262`, after every death arm). The port's
+death hook (`projectile.rs`'s `!active` block, after the sub-steps) is the
+same once-per-death seam: the new `ProjectilePool::kill_tail_cue` runs
+inside the `!died_out_of_world` gate (the out-of-world guard's direct
+deactivate never reaches `Kill()`, the S1-P-i23 precedent) and pushes
+straight into `pending_proj_sounds` — NOT the slot's `wants_sound` field,
+whose forward runs earlier (before the death hook). Every mapped arm
+plays before its own state writes or has none, so the hook's PRE-hook
+position read is the C#'s play position. The drain
+(`world_sim/projectiles.rs`) now routes id 13/6 to the wall-break facade
+(Shatter no-draws / Grass one `Next(-30, 31)`), id 4 to the case-4 int
+facade (`play_npc_death_int` gains style 19 — the Sharknado cry) and id 0
+to the case-0 Dig path (unchanged); id 2 keeps the wave-A style facade.
+Attenuation BEFORE any draw on every path (the E21e precedent); the
+gameplay draws ride the pass-tail `UpdateProjectiles` stream (the 21h
+batch convention — relative order among the tick's sound draws preserved,
+interleaving with gameplay draws not).
+
+### Ported sites (95, seven commits of ≤15)
+
+- **Batch 1** (`:71112`-`:73982`): 932 Item10 Center; 662/685/680 Dig;
+  634/635 Item14 pre-snap; 819 Dig; 405 Item54; 521 Item110; 444 Item96;
+  442 Item94; 448 Item14 pre-snap; 715-718 Item14; 385 case-4 style-19
+  Center; 399 Shatter; 507/598 Dig.
+- **Batch 2** (`:74014`-`:75214`): 1/81/98/980 Dig; 343/349/346 Item27;
+  323 Dig; 184 Dig; 275/276 Dig; 270 Dig-Style-27; 837 Dig-Style-27 gated
+  `penetrate != maxPenetrate` (`:74367`); 928 Dig; 206 (alpha<255 gate
+  `:74515`)/225 Grass; 120 Dig; 117 Dig; 166 Item51; 91/92 Item10.
+- **Batch 3** (`:75252`-`:75646`): 89 Dig; 967 Item45; 1026 Item167;
+  359/309/308/337 Item27; 80 Item27 gated `ai[0] >= 0` (`:75535`); 267
+  Dig; 2/82/474/172/103/278 Dig; 3/48/54 Dig.
+- **Batch 4** (`:75662`-`:76180`): 4 Dig; 5/9/955 Item10; 240 Item14
+  pre-snap; 282 Item10; 283 Item10 pre-burst; 286 Item14 pre-burst; the
+  common-bullet Item10 subset 14/20/36/83/84/88/100/104/110/180/207/242/
+  259/279/285/287/357/389/968 (`:76038`); 1006 Dig (Vector2 int overload);
+  660/638/15/253/95/96 Item10; 42 Dig.
+- **Batch 5** (`:76207`-`:77138`): 109 Dig; 27/44/45 Item10; 41 Item14
+  pre-blast; 183 Item14; 167-170 Item14 (aiStyle 34); 69/70/621 Shatter;
+  115/114/116/173/132/156 Item10.
+- **Batch 6** (`:75427`, `:77153`, `:77371`, `:77737`-`:77983`): the
+  gem bolts 121-126/597 Dig pre-resize (NOT feature-gated — the sound
+  precedes the `AoeExplosion` test); 157 Item10; the dungeon debris
+  736-738 Item127 in `debris_death_crack` (the `!noDropItem` gate
+  `:77367` + `Kill_ExplodeTiles`'s owner refusal `:77267` — the sound
+  is inside the owner-gated method); the rocket census' wet/lava/honey
+  trios (785/788/791 Item62, rest Item14, POST-resize), the dry family
+  (800 Item62), the Mini Nukes (794/797 Item62 at Center PRE-resize), the
+  shrapnel 779/783/862/863 Item62 POST-resize — all in
+  `rocket_kill_census` at the C# play points.
+- **Batch 7** (`:78025`-`:78150`): the cluster II pair 777/781 Item62
+  POST-resize (rest Item14); the plain rockets 133/136 Item62 PRE-recentre
+  (the inner `type == 30` test `:78090` is dead code — 30 takes the
+  `:78331` bomb arm); Rocket III 139 Item62 PRE-recentre (rest Item14).
+
+Bank: `Item_45/51/54/62/94/96/110/167` + `NPC_Killed_19` join
+`SFX_CUES` (all nine `.xnb` assets verified on disk); every other style
+was already registered.
+
+### Deviations (deliberate, recorded)
+
+- **The int-overload Style argument**: the skull arms' `PlaySound(0, x, y,
+  27)` (`:74352`/`:74369`) carries Style 27 on the queue payload, but
+  case 0 ignores Style (`LegacySoundPlayer.cs:440-452`) — the Dig facade
+  plays the same variation/pitch either way. Kept for the census mapping.
+- **Positions ride untruncated** in the queue (the landed 21h convention);
+  the id-4 facade truncates itself (`SoundEngine.cs:83-85`), the id-0/6/13
+  facades gate on the float position — the sub-pixel attenuation difference
+  is the standing 21h deviation, not re-opened here.
+- **State-bearing death bursts stay unported** (the cue alone lands where
+  it precedes every write): the 634/635 Nebula Blaze resize+Damage+dust
+  census (`:72016-72049`), the 448 Saucer Missile 112×112 burst
+  (`:73606-73630`), the 240 cannonball 96×96 burst (`:75887-75893`), the
+  521's 522 shard ring (`:73312-73325`), the 117's 1124 bone shards
+  (`:74741-74749`), the 80's gel-tile KillTile (`:75543-75552`). Their
+  cues land; the state halves are follow-up arms (each needs its own RNG
+  census — the `celeb2_death` shape).
+- **Deferred sites** (no ported arm, a non-id-2/0/6/13/4 facade, or a
+  pet/trackable family): the 949/931/1039/1047/1012/669/608/619/596/539/
+  585/590/587/501/410/467/468/483/523/522/520/616/510/868/869/996/424-426/
+  1037/1049/508/1073/589/335/318/195/1097/263/261/229/227/475/505/506/171/
+  1124/158-161 unrowed kinds (and the unrowed siblings of the ported
+  arms: 12/503, 31, 51, 118/119/128, 257/302/576/577/876, 321, 599/909);
+  the 710/661/617/659/681/16/34/79/452/454
+  resize+Damage death bursts (their cues sit AFTER or BETWEEN state writes
+  the port has no arm for — porting the cue alone would mis-order the
+  position read); the 681 DD2_GoblinBomb 0.5-volume style (the queue
+  carries no volume term — the style-facade volume plumbing is a follow-up);
+  the 452 case-29 zombie voice + 454 case-4 style-6 (int-style facades
+  exist but their arms are unported); the pet-gated families (`:74819`-
+  `:75187`, `Main.projPet` kinds unported); the 761/762/712/370/371/936/
+  981/303/930/903-906/773/588/1077/910/911/1023/312/246/249/281/162 unrowed
+  kinds; the 1088 acorn (`:78505`, unported); the DD2/Betsy/DeadCells
+  trackables (`:71637`/`:71641`/`:76868`, the D3 trackable pool).
+- **The 1006 Shimmer Arrow's `NextFloat` rotation** (`:76054`) is a
+  particle-orchestrator draw — skipped with the particle layer (the census
+  convention); the cue itself lands.
+
+**Verification.** Code-only: every mapped arm was re-read against its C#
+block (the gates `:74367`/`:74515`/`:75535`/`:77367`, the pre/post-resize
+position reads, the dead `type == 30` inner test), the 121-kind rowed
+check ran clean, and the nine new bank assets were confirmed on disk. The
+7 new `s1_e_21h_d77_*` witness tests are WRITTEN, NOT RUN — **no compiler
+invoked**. Commits `360bbb33`/`dcf54adc`/`13f29af5`/`1608360e`/`f5d8f263`/
+`0a74234a`/`ab859f19` on `task/W4-d77-proj-sounds-3` (pushed, unmerged).
+### d77 follow-up: the deferred-arm resolution + the queue volume term (2026-11-21)
+
+**Scope**: the ten state-bearing deferred kinds of part 3
+(710/661/617/659/681/16/34/79/452/454), re-audited against the PUSHED
+branches after the state lanes landed: d12 `9152b259` (the aiStyle-117
+explosion family — NOT the 710/661/617 Kill arms), d18 `d7d631e9`
+(aiStyle 178 — the 918 Firecracker, not the 720 Kill tail), d78 `5fe6d940`
+(`magic_death_blast`: the 79/16/34 resize+Damage+restore, the 634/635
+recentre, the 661 160-box) and g3 `778573ca`/`9ee2a7a1`
+(`aimed_spell_kill`/`nebula_spirit_onyx_kill`: the same 79/16/34 + the
+634/635/659/661 blasts WITH the Item10/Item14 cues already inline).
+
+**Armed (9 sites, commits `2a0c2c1b` 5 sites + `75044e75` 4 sites)** —
+every cue's play position is derivable from the PRE-hook box because
+`Resize` (`Projectile.cs:22353-22359`) keeps the centre:
+
+- `:71266`/`:71338` — 79/16 Item10 at Center (the blast + restore keep
+  the centre; the read is centre-invariant).
+- `:71418` — 34 Item10 at the post-restore position = the pre-hook
+  position (both resizes centre-keep).
+- `:71906` — 681 DD2_GoblinBomb at the centre: `PrepareBombToBlow`'s
+  `Resize(80,80)` (`:46804-46808`) keeps the centre and the arm's
+  `+width/2` recentre (`:71904-71905`) returns to it. **0.5 volume**:
+  `SoundID.DD2_GoblinBomb = new LegacySoundStyle(2, 14).WithVolume(0.5f)`
+  (`SoundID.cs:1596`) — the same case-2 style-14 asset as Item14, the
+  style object's `Volume` rides `SoundEngine.cs:99`'s
+  `type.Volume * volumeScale`.
+- `:72234` — 661 Item14 at `centre − 80` (the 160-box recentre, no
+  restore).
+- `:72512` — 659 Item14 at `centre − 40` (the 80-box recentre), gated
+  `ai[0] >= 0` (`:72505`).
+- `:72989` — 452 `PlaySound(29, x, y, 103)` CUE-FIRST (the play precedes
+  the 144-box resize/Damage): the case-29 fighter-moan façade
+  (`play_fighter_moan`, the Style-is-the-slot 103 ×0.4 arm + playing
+  guard + one `Next(-10, 11)` pitch); `Zombie_103` bank row added (asset
+  verified on disk).
+- `:73016` — 454 `PlaySound(4, x, y, 6)` CUE-FIRST (the play precedes the
+  208-box recentre/Damage): the id-4 int façade. **f1 overlap** — f1's
+  `kill_sound_cue` already maps 454 identically (pre-resize position);
+  keep-one at merge (see below).
+- `:78505` — the 1088 acorn's `PlaySound(0, base.Center)` Dig: the row
+  ALREADY landed (M3-ITEM-6, `proj_data(1088)` — the no-consume ammo
+  window), so no rowing was owed; d1b/g2b never claimed it (d1 = the
+  aiStyle-6 powder family, g2 = the rowless 229/243-245/264/290-292
+  census). The aiStyle-16 `Kill()` head skips the acorn's bomb prep
+  (`:70664`), so this is its only death cue.
+
+**Still deferred (2 kinds)**: the 710 Betsy Arrow (`:71659`) and the 617
+Nebula Arcanum (`:72286`) Kill resize+Damage bursts — their state writes
+are UNPORTED on every pushed branch (f20 slice D `4bd2f496` ports the
+AI_001 *flight overlays* `:57549`/`:55734`, not the Kill arms; d12's
+decade is styles 111-120; d78 part 1 stops at the 661). Arming the cue
+alone would mis-order the position read (both play AFTER a
+centre-snap+resize the port never performs). They arm when their Kill
+arms land.
+
+**The seam change (commit `9d35874a`)**: `pending_proj_sounds` /
+`drain_proj_sounds` gain the sixth term — the `volumeScale`
+(`SoundEngine.cs:93`'s fourth argument). `Audio::play_use_sound_scaled` /
+`play_proj_sound_scaled` fold it into the gate probe and the emit
+(`LegacySoundPlayer.cs:1411` — the multiply lands AFTER the attenuation
+gate and the case tweaks, so the refusal shape and the RNG census are
+scale-invariant); every stock caller keeps 1.0 through the unchanged
+5-arg peers. The drain routes id 29 to `play_fighter_moan` (truncated
+position). The `kill_tail_cue` map's payload is now
+`(id, style, x, y, volumeScale)`.
+
+**keep-one: `kill_tail_cue` (d77) vs `kill_sound_cue` (f1)** —
+RECOMMENDATION: keep d77's `kill_tail_cue` as the surviving seam, drop
+f1's `kill_sound_cue` at merge. Evidence: the d77 map is a strict
+superset of f1's 57-site map — every f1 arm appears in d77 with the same
+id/style/position semantics (the 932 Center, the DD2 pair, the blaze
+pre-snap, the gem PRE-resize thud, the Ice Block gate, the 454 id-4 cry),
+and d77 adds the sites f1 deferred or never reached: the skull Style-27
+pair + `penetrate != maxPenetrate` gate (`:74352`/`:74369`), the spore
+Grass gate (`:74515`), the 385 id-4 style-19 cry, the 69/70/621 +
+115/114/116/173/132/156/157 tail, the debris Item127 owner gate, the
+16-site rocket census (`rocket_kill_census`, f1 has a parallel 16-site
+copy — keep d77's, it carries the 133/136 Item62 picks f1 gated out),
+and this wave's nine deferred-arm cues + the volume term f1's queue
+cannot carry. The hook position is identical (inside the
+`!died_out_of_world` gate at the death hook); f1's drain id-0/13/4 routes
+are already in d77's drain, so only the map fn + its 4 witnesses drop.
+The 454 site is the one true duplicate payload — same pre-resize
+position, same id-4 route; either survivor plays it once (the hook runs
+once per death).
+
+**Verification.** Code-only: every armed arm re-read against its C#
+block (`:71257-71418`/`:71902-71951`/`:72226-72234`/`:72503-72512`/
+`:72987-73045`/`:78499-78510`, `Resize` `:22353-22359`,
+`PrepareBombToBlow` `:46804-46808`, the `Kill()` head `:70661-70687`),
+the pushed-branch write audit (d78/g3/d12/d18/f20 tips re-read), the
+`Zombie_103.xnb` asset confirmed on disk, the style row's 0.5 volume
+confirmed in `soundid.rs`. The 2 new witnesses
+(`s1_e_21h_d77_the_deferred_arms_whose_writes_landed`,
+`s1_e_21h_d77_the_goblin_bomb_scale_rides_after_the_gate_draw_free_census`)
+are WRITTEN, NOT RUN — **no compiler invoked**. Commits `9d35874a`/
+`2a0c2c1b`/`75044e75` on `task/W4-d77-proj-sounds-3` (pushed, unmerged).
+
+### d77 Kill-host wave: the 710/617 arms land + the re-probe census (2026-11-21)
+
+**Scope**: the two STAY-DEFERRED kinds of the follow-up (the 710 Betsy
+Arrow `:71659` and the 617 Nebula Arcanum `:72286`) — their Kill
+resize+Damage hosts were unported on every pushed tip, so the cues could
+not arm. This wave ports the hosts WHOLE on this branch (commit
+`0573b70f`), arms the cues at the C# post-resize play points, and
+re-probes the rest of the part-3 deferred list against the pushed d-lane
+tips.
+
+**The full-arm census (both arms read whole, ≤100-line windows):**
+
+- **710 DD2BetsyArrow** (`Projectile.cs:71652-71679`, rowed
+  `proj_data(710)` — the Betsy Bow ammo window): `ai[1] = -1` (the
+  AI_001 overlay's spent latch), `position = Center; width = height =
+  40; Center = position` (the centre-keep recentre), `Damage()` (the
+  PVE half — friendly/ranged, the local-immunity −1 pair), THEN
+  `PlaySound(Item14, base.position)` at centre − 20, then the dust
+  census: 2× dust-31 (`RotatedByRandom(π)` pair + `NextDouble` radius
+  each), 10× dust-6 (same shape), 5× dust-31 (pair only — the `UnitX`
+  spin's `.RotatedBy(velocity.ToRotation())` draws nothing). NO gore,
+  NO penetration write, NO restore, NO owner gate. Port:
+  `betsy_arrow_kill` (the death hook, kind-gated) +
+  `betsy_arrow_death_draws` (24 floats + 12 doubles, zero ranges).
+- **617 NebulaArcanum** (`:72278-72373`, rowed `proj_data(617)` — the
+  aiStyle-118 homing bolt): the 176×176 centre-snap,
+  `maxPenetrate = penetrate = -1`, `Damage()`, THEN `PlaySound(Item14,
+  base.position)` at centre − 88, then the census: 4× dust-240 (pair +
+  double), 30× (dust-62 pair + double, dust-90 pair + double), 10×
+  dust-62 (pair), 10× dust-240 (pair), 2× gore rows (the `Next(100)`
+  position pair, `Next(61,64)` type, the `NewGore` kicks
+  `Next(10,31)`/`Next(-20,21)`, the reposition pair + double, the two
+  `Next(-10,11)` velocity kicks — 7 ranges + 2 floats + 1 double each).
+  Then the OWNER-GATED tail (`:72327`): the 618 sweep (every active 618
+  whose `ai[1]` == this slot's key bits dies — its own `Kill()` runs
+  INLINE: the `ai[0] = 86` latch `:72398` + the ten-dust `Next(3)`-gate
+  census `:72400-72416`), then the two 620-shard scatter loops:
+  `Next(5,9)` counts ×2, `SelectRandom(86,90)` + complement, per shard
+  `Center + RandomVector2(-30,30)` (two `NextDouble`s), the
+  `Next(-100,101)` velocity pair with the (0,0) zero-redraw, normalize,
+  the Y-flip gate (0.2 loop A / 0.4 loop B), `Next(70,101)`/`Next(40,81)`
+  × 0.1 speed, damage × 0.65 (the f64 truncation), kb × 0.8, `ai0` = the
+  dust pick. Port: `nebula_arcanum_kill` + `nebula_arcanum_death_draws`
+  (172 floats + 66 doubles + 14 ranges) + the inline
+  `nebula_shard_kill_draws` for the swept 618s.
+- **620 NebulaArcanumExplosionShotShard** — UNROWED, so the row lands
+  too (`:6681-6690`: 8×8, aiStyle 29, alpha 255, penetrate 1, magic,
+  friendly; the stock tileCollide/3600 life — the 40-tick `ai[1]` fuse
+  kills first). Its AI_029 arm (`:37672-37704`): the counter, the >40
+  `Kill()` with NO early return (the gravity/drag land on the dead slot
+  — the `ai_falling_star` daylight-kill precedent), the 0.2 gravity +
+  18 cap + ×0.98 X drag; the dust loops draw NOTHING explicit (the plain
+  `NewDust` overload). Its HandleMovement arm (`:18796-18806`, shared
+  with the unrowed 522): the blocked-axis −1 reflection. Port:
+  `ai_nebula_shard` behind the style-29 dispatch's kind gate (the 521
+  precedent). The 618/620 shared `Kill()` arm (`:72394-72417`) is
+  sound-free — its ten-dust census rides the death hook (and the sweep
+  inline).
+
+**The cues arm at the POST-resize positions** — both plays follow the
+centre-snap + `Damage()`, so the reads are centre − 20 (710) and
+centre − 88 (617), derived exactly as the 661/659 wave's centre − 80 /
+centre − 40. The `kill_tail_cue` map stays SILENT for both kinds (their
+cues ride the host arms, not the pre-hook map) — the deferred witness's
+"stays deferred" tail was repointed to pin that.
+
+**The re-probe census (the rest of the part-3 deferred list).** Every
+pushed branch tip that touches `projectile/data.rs` was re-scanned for
+newly-rowed deferred kinds (the 664/666/668 signal on every tip is a
+base-row artifact — the Flame Burst rows are already on this base).
+The TRUE new-rowed kinds and their cues:
+
+| kind | site | cue | host lane (pushed tip) | disposition |
+| --- | --- | --- | --- | --- |
+| 949 TorchGod | `:70978` | Item10 @ Center | d19 `1054c396` (row + AI_184) | ARMED here |
+| 171/475/505/506 rope coils | `:74683`/`:74619` | Dig, gated `ai[1]==0` | d4 `4fa74b3c` (rows + aiStyle-35) | ARMED here |
+| 590 TruffleSpore | `:72616` | Dig (Style 27 unused) | d12 `54cbe238` (row + aiStyle-112) | ARMED here |
+| 539 StardustJellyfishSmall | `:72571` | id-4 style-7 @ centre−40 (derived) | d11 `e0395afc` (row + aiStyle-102) | ARMED here (the resize+Damage host stays the unported remainder — the derived-read shape) |
+| 523 ToxicFlaskCloud | `:73259` | Item54 | d10 `1f0b60e9` (row + aiStyle-91) | ARMED here |
+| 12 natural FallingStar | `:75683` | Item10 | d15 `60731d50` (row + aiStyle-5) | ARMED here |
+| 321 FlamingJack | `:76136` | Item10 | d6 `451cace1` (row + aiStyle-55) | ARMED here |
+| 576 NebulaLaser | `:76038` | Item10 (the common-bullet arm) | d11 `e0395afc` + f20 `7d6e2b72` (row + AI_001 overlay) | ARMED here |
+| 728/729 SuperStar pair | `:75127`/`:75151` | Item10 | d16 `d414afbc` (rows + aiStyle-151/152) | ARMED here |
+| 1115 GlacierFangShot | `:75502` | Item27 | d21 `9fa9e9ba` (row + aiStyle-208) | ARMED here |
+| 1120 ForbiddenSign shot | `:75376` | Dig (cue-first — precedes the 112-box burst) | a9 `8c4fded8` (row + the `gem_bolt_aoe` 1120 branch) | ARMED here |
+| 410 Bubble | `:72921` | Item54 | d8 `50dcaa75` — SELF-ARMED (`bubble_pop_kill`) | keep-one: d8's wins |
+| 608 SolarCounter | `:72182` | Item14 | d12 `54cbe238` — SELF-ARMED (`solar_counter_kill_resize` + cue) | keep-one: d12's wins |
+| 761/762 paper airplanes | `:76085` | Item10 + the recovery drop | d16 `d414afbc` — SELF-ARMED (the death-hook block) | keep-one: d16's wins |
+| 229 Partisan orb | `:74452` | Item167 + the 1128 ring | g2 `81c4ab85` — SELF-ARMED | keep-one: g2's wins |
+| 596 DesertDjinnCurse | `:72482` | Item14 @ centre−30 | f42 `4bf7b2e8` / g5 — SELF-ARMED (`djinn_curse_kill`) | keep-one: f42's wins |
+
+Still deferred after the re-probe: the unrowed remainder (931/1039/
+1047-rowed-but-trackable-facade/1012/706/669/619/585/587/501/467/468/
+483/522/520/616/510/868/869/996/424-426/1037/1049/508/1073/589/335/318/
+195/1097/263/261/227/158-161/712/370/371/936/981/303/930/903-906/773/
+588/1077/910/911/1023/312/246/249/281/162, the unrowed siblings 503/31/
+51/118/119/128/257/302/577/876/599/909), the pet-gated families
+(`:74819-75187` — d3 `2d01693c` rows them but its `boulder_kill` owns
+the cues), and the DD2/Betsy/DeadCells trackables (the D3 pool).
+
+**keep-one cross-note (the d77-superset verdict, re-verified against
+f1's LATEST pushed tip `e6f3e50c`)** — f1's fifth batch (commit
+`684d284b`) added 12 per-kind cues + its own 16-site `rocket_kill_census`
+copy. The verdict STANDS: d77's `kill_tail_cue` + `rocket_kill_census`
+are a strict superset. The per-kind dedupe table (every f1 arm → its d77
+survivor; the merge drops f1's `kill_sound_cue` fn + its 4 witnesses and
+f1's `rocket_kill_census` copy):
+
+| f1 arm (site) | d77 survivor | payload identical? |
+| --- | --- | --- |
+| 932 `:71112` | `kill_tail_cue` 932 | yes — Item10 @ Center |
+| 662/685 `:71782`, 680 `:71802` | 662/685/680 | yes — Dig @ pos |
+| 634/635 `:72015` | 634/635 | yes — Item14 pre-snap |
+| 819 `:72716` | 819 | yes — Dig |
+| 405 `:72851` | 405 | yes — Item54 |
+| 521 `:73294` | 521 | yes — Item110 |
+| 444 `:73400` | 444 | yes — Item96 |
+| 442 `:73530` | 442 | yes — Item94 |
+| 448 `:73605` | 448 | yes — Item14 pre-snap |
+| 454 `:73016` | 454 | yes — id-4 style-6 @ pos (the ONE true duplicate; either survivor plays once) |
+| 399 `:73923` | 399 | yes — Shatter |
+| 507 `:73965`, 598 `:73982` | 507/598 | yes — Dig |
+| 1/81/98/980 `:74014` | same | yes — Dig |
+| 343 `:74161`, 349 `:74173`, 346 `:74238` | same | yes — Item27 |
+| 323 `:74184` | 323 | yes — Dig |
+| 184 `:74305` | 184 | yes — Dig |
+| 275/276 `:74328` | same | yes — Dig |
+| 928 `:74444` | 928 | yes — Dig |
+| 120 `:74545` | 120 | yes — Dig |
+| 117 `:74736` | 117 | yes — Dig |
+| 166 `:74762` | 166 | yes — Item51 |
+| 91/92 `:75214` | same | yes — Item10 |
+| 89 `:75252` | 89 | yes — Dig |
+| 967 `:75278` | 967 | yes — Item45 |
+| 1026 `:75288` | 1026 | yes — Item167 |
+| 359 `:75331`, 309 `:75350`, 308 `:75365`, 337 `:75515` | same | yes — Item27 |
+| gem bolts `:75427` | 121-126/597 | yes — Dig pre-resize |
+| 80 `:75537` | 80 | yes — Item27, `ai[0]>=0` gate |
+| 267 `:75572` | 267 | yes — Dig |
+| 2/82 `:75594`, 474 `:75602`, 172 `:75610`, 103 `:75618`, 278 `:75632` | same | yes — Dig |
+| 3/48/54 `:75646` | same | yes — Dig |
+| 4 `:75662` | 4 | yes — Dig |
+| 5 `:75670` | 5 | yes — Item10 |
+| 9/955 `:75683` | 9/12/955 | d77 SUPERSET (the 12 sibling, d15's row) |
+| 240 `:75857` | 240 | yes — Item14 pre-snap |
+| 282 `:75901`, 283 `:75913`, 286 `:76002` | same | yes — Item10/10/14 |
+| 1006 `:76053` | 1006 | yes — Dig |
+| 660 `:76070`, 638 `:76122`, 15 `:76136`, 253 `:76148`, 95/96 `:76160` | same (15/321) | d77 SUPERSET (the 321 sibling, d6's row) |
+| 42 `:76180`, 109 `:76207` | same | yes — Dig |
+| 27 `:76283`, 44/45 `:76300` | same | yes — Item10 |
+| 69/70/621 `:77018-77048` | same | yes — Shatter |
+| 115/114/116/173/132/156/157 `:77063-77153` | same | yes — Item10 |
+| the 16 rocket sites `:77737-78150` | d77 `rocket_kill_census` | d77 SUPERSET — the 133/136 Item62 picks f1 gated out; every other payload identical (the post-Resize(22) top-left / Centre pre-Resize(50) / pre-family-resize reads) |
+
+f1 has NO arm d77 lacks. d77 adds: the skull Style-27 pair + the
+`penetrate != maxPenetrate` gate (`:74352`/`:74369`), the spore Grass
+gate (`:74515`), the 385 id-4 style-19 cry, the 69/70/621 +
+115/114/116/173/132/156/157 tail (f1's fifth batch duplicates these —
+drop f1's), the debris Item127 owner gate, the 41/183/167-170 picks,
+the nine deferred-arm cues, the volumeScale term f1's 5-tuple queue
+cannot carry, and THIS wave's 710/617 hosts + the 15 re-probe cues.
+The hook position is identical (inside the `!died_out_of_world` gate);
+f1's drain id-0/13/4 routes are already in d77's drain. **Merge action:
+keep d77's seam, drop f1's `kill_sound_cue` + `rocket_kill_census` fns
+and their witnesses; the 454 duplicate plays once.**
+
+**Deviations (deliberate, recorded):** the 620 shard's spawn takes the
+top-left (the C# `NewProjectile` centre convention — the 8×8 half-box
+subtracts, the cluster-ring precedent); the swept 618's `Kill()` runs
+inline in the sweep (the `floating_turret_kill` nested-order precedent
+— the swept slot never reaches its own death hook); the 617's scatter
+lifts the corpse flag for the free-slot scan (the `moonlord_arrow_kill`
+precedent); the 539's cue position is DERIVED (centre − 40) because its
+resize+Damage host is still unported — the same standing shape as the
+661/659 wave, re-noted here because the host lane (d11) ports only the
+flight machine.
+
+**Verification.** Code-only: both Kill arms re-read WHOLE against
+`Projectile.cs:71652-71679`/`:72278-72373` (≤100-line windows, direct
+paths through the `decompiled/` junction — no junction recursion), the
+620 row against `:6681-6690`, its AI against `:37672-37704` +
+`:18796-18806`, the 618/620 Kill census against `:72394-72417`, the
+`RandomVector2`/`SelectRandom`/`RotatedByRandom` draw shapes against
+`Utils.cs:2431-2434`/`:2459-2462`/`:1697-1700`, the gore kicks against
+`Gore.cs:1327-1328`; the re-probe scanned EVERY pushed tip touching
+`projectile/data.rs` (the 664/666/668 base-row artifact excluded); the
+f1 dedupe table re-derived against f1's latest pushed tip `e6f3e50c`
+(the fifth-batch map read whole). `NPC_Killed_7.xnb` verified on disk.
+The 5 new witnesses (`s1_e_21h_d77_the_betsy_arrow_kill_bursts_at_forty`,
+`s1_e_21h_d77_the_nebula_arcanum_kill_bursts_at_176_and_scatters`,
+`s1_e_21h_d77_the_nebula_shard_row_and_forty_tick_fuse`,
+`s1_e_21h_d77_the_reprobe_wave_arms_the_landed_hosts`,
+`s1_e_21h_d77_the_jellyfish_cry_rides_the_case4_int_facade`) are WRITTEN,
+NOT RUN — **no compiler invoked**. Commit `0573b70f` on
+`task/W4-d77-proj-sounds-3` (pushed, unmerged).
