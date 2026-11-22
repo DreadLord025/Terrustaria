@@ -419,7 +419,9 @@ impl App {
             }
             C2s::Edit { x, y, kind, tile } => {
                 log::info!("net edit kind {kind} at {x},{y} from {id}");
-                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
+                // W4-g83: the replay's kill cascade rides the bare stream
+                // (the message handler runs outside every SwapRandom).
+                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile, self.rngs.global());
                 // S1-E-21i — the `KillWall` replay's sound arm
                 // (`MessageBuffer.cs:1177`): the host is `netMode == 2`, so
                 // the positioned gate refuses before any draw
@@ -1438,7 +1440,9 @@ impl App {
                 self.world.day_time = day;
             }
             S2c::Edit { x, y, kind, tile } => {
-                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile);
+                // W4-g83: the replay's kill cascade rides the bare stream
+                // (the message handler runs outside every SwapRandom).
+                let broken_wall = apply_edit(&mut self.world, x, y, kind, tile, self.rngs.global());
                 // S1-E-21i — the client's `KillWall` replay plays too
                 // (`MessageBuffer.cs:1177`); the message handler runs
                 // outside every `SwapRandom` (`Main.cs:16895`'s NpcStrike
@@ -4217,7 +4221,7 @@ mod handshake_tests {
         // The host edits the tile (the real flow: `editing.rs` mutates the
         // world, then asks for the replication) and the client receives the
         // `20` body.
-        let _ = crate::world_sim::editing::apply_edit(&mut host_app.world, 50, 60, 0, 5);
+        let _ = crate::world_sim::editing::apply_edit(&mut host_app.world, 50, 60, 0, 5, host_app.rngs.global());
         host_app.request_edit(50, 60, 0, 5);
         pump(&mut host_app, &mut client_app, 15);
         assert_eq!(

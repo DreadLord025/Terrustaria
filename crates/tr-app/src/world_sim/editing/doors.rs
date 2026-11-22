@@ -191,7 +191,16 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // borrows — the world write happens inside `interact_at`.
     let (player, npcs) = (&app.player, &app.npcs);
     let cell_blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
-    let result = edit::interact_at(&mut app.world, tx, ty, direction, &cell_blocked);
+    // W4-g83: the door ops' cleanup kills' framing dispatch rides the
+    // UpdatePlayers stream (the active genRand of the player tick).
+    let result = edit::interact_at(
+        &mut app.world,
+        tx,
+        ty,
+        direction,
+        &cell_blocked,
+        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+    );
     // The furniture interactions that touch the player/world state ahead of
     // the cue/drop mapping.
     if let edit::TileInteraction::BankOpen { bank } = result {

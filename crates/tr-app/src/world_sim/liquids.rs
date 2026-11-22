@@ -16,15 +16,19 @@ pub(crate) fn update_liquids(app: &mut App, dt: f32) {
     let world = &mut app.world;
     let audio = &mut app.audio;
     // The retirement-tail kills drain inside the tick (the `liquids` borrow)
-    // and resolve after it (the `app` borrow) — the two cannot overlap.
+    // and resolve after it (the `app` borrow) - the two cannot overlap.
+    // W4-g83 contract 2: the liquid tick's ACTIVE genRand stream - the C#
+    // `UpdateLiquid` swap (`WorldGen.cs:71528`); the merge-tile KillTile's
+    // framing dispatch (the seaweed tip re-rolls) draws it, and the drained
+    // kills below resolve on the SAME `RngKey::UpdateLiquid` stream (the
+    // stream the C# `KillTile` drops draw under the swap).
+    let rng = app.rngs.stream(crate::app::RngKey::UpdateLiquid);
     let mut pending_kills = Vec::new();
     app.liquid_step.tick(dt, |_| {
-        // `WorldGen.cs:71526-71533` — `skipCount++; if (skipCount > 1)
+        // `WorldGen.cs:71526-71533` - `skipCount++; if (skipCount > 1)
         // { using (Main.SwapRandom("UpdateLiquid")) UpdateLiquid();
-        // skipCount = 0; }`, verbatim on the engine driver. The RNG swap is
-        // this caller's seam: the drained kills below resolve on
-        // `RngKey::UpdateLiquid` (the stream the C# `KillTile` drops draw).
-        if liquids.update_world_tick(world) {
+        // skipCount = 0; }`, verbatim on the engine driver.
+        if liquids.update_world_tick(world, rng) {
             // `Liquid.cs:1345-1347`: the live merge plays its
             // `PlayLiquidChangeSound` inline — the port's engine is pure,
             // so it queues the events and the tick plays them here

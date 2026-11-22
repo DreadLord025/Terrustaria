@@ -392,7 +392,10 @@ mod tests {
     #[test]
     fn break_then_place_round_trips_a_tile() {
         let mut w = ground_world();
-        assert_eq!(kill_tile(&mut w, 10, 20, true).map(|k| k.kind), Some(1));
+        assert_eq!(
+            kill_tile(&mut w, 10, 20, true, &mut super::super::tests::rng()).map(|k| k.kind),
+            Some(1)
+        );
         assert!(!w.tile(10, 20).unwrap().active());
         assert_eq!(w.surface_of(10), 21);
         assert!(place_tile(&mut w, 10, 20, 0));

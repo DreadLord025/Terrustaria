@@ -258,7 +258,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // their frames (the transfer touches only liquid), so the liquid
         // wake is the whole observable here.
         for (px, py) in app.wiring.take_pump_wakes() {
-            app.liquids.wake_around(&mut app.world, px, py, 1);
+            app.liquids.wake_around(&mut app.world, app.wiring.rand_mut(), px, py, 1);
         }
         // The trap emissions (`HitWireSingle`'s case 137): the spear's
         // proximity cap reads the pool, so the drain splits it from the

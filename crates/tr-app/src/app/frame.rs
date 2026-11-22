@@ -920,7 +920,7 @@ mod tests {
         let cell = app.world.index(30, 100);
         app.world.tiles[cell].liquid = 255;
         app.liquids = tr_core::liquid::LiquidSystem::new(&app.world);
-        app.liquids.add_water(&mut app.world, 30, 100);
+        app.liquids.add_water(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdateLiquid), 30, 100);
         // The rain event state (`Rain::restore_saved` — `SetOngoingToTemps`'s
         // triple): raining with a live countdown.
         app.rain.restore_saved(true, 4000, 0.8);

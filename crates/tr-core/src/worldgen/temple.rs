@@ -1788,7 +1788,16 @@ fn place_plate_tile(world: &mut World, x: i32, y: i32, style: i32) {
 /// `WorldGen.Place2x1` (`WorldGen.cs:39624-39663`) for the temple workbench
 /// 18 style 10: both floor columns solid, both cells empty, then
 /// `frameX = 36 * style + col * 18`, `frameY = 0` + `SquareTileFrame`.
-fn place_workbench(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+/// `gen_rng` is the worldgen `genRand` stand-in (`world.frame_rng`) the
+/// framing dispatch threads (W4-g83 contract §2 — the pass's xorshift stream
+/// is a different generator; only the seaweed tip re-roll would draw it).
+fn place_workbench(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    style: i32,
+    gen_rng: &mut crate::UnifiedRandom,
+) -> bool {
     if !solid_tile2_p2(world, x, y + 1, false) || !solid_tile2_p2(world, x + 1, y + 1, false) {
         return false;
     }
@@ -1810,14 +1819,22 @@ fn place_workbench(world: &mut World, x: i32, y: i32, style: i32) -> bool {
         t.frame_x = (36 * style + col * 18) as i16;
         t.frame_y = 0;
     }
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen(world, x, y, gen_rng);
     true
 }
 
 /// `WorldGen.Place3x2`'s default path (`WorldGen.cs:52066-52195`) for the
 /// temple table 14 style 9: the 3×2 body empty, the floor solid under all
 /// three columns, `frameX = 54 * style + col * 18`, `frameY = row * 18`.
-fn place_table(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+/// `gen_rng` threads the worldgen `genRand` stand-in (the [`place_workbench`]
+/// note).
+fn place_table(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    style: i32,
+    gen_rng: &mut crate::UnifiedRandom,
+) -> bool {
     if x < 5 || x > world.width - 5 || y < 5 || y > world.height - 5 {
         return false;
     }
@@ -1880,8 +1897,15 @@ fn place_chair(world: &mut World, x: i32, y: i32, style: i32) -> bool {
 /// `WorldGen.Place2xX` (`WorldGen.cs:39663-39715`) for the temple statue
 /// 105 styles 43-45: three body rows empty over both columns, the floor
 /// solid under both, `frameX = 36 * style + col * 18`,
-/// `frameY = row * 18`, `SquareTileFrame`.
-fn place_statue(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+/// `frameY = row * 18`, `SquareTileFrame`. `gen_rng` threads the worldgen
+/// `genRand` stand-in (the [`place_workbench`] note).
+fn place_statue(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    style: i32,
+    gen_rng: &mut crate::UnifiedRandom,
+) -> bool {
     let num3 = 3;
     let mut ok = true;
     for row in (y - num3 + 1)..(y + 1) {
@@ -1911,7 +1935,7 @@ fn place_statue(world: &mut World, x: i32, y: i32, style: i32) -> bool {
             t.frame_y = (row * 18) as i16;
         }
     }
-    crate::edit::square_tile_frame_gen(world, x, y);
+    crate::edit::square_tile_frame_gen(world, x, y, gen_rng);
     true
 }
 
@@ -2060,6 +2084,7 @@ fn mayan_trap(
     world_surface: f64,
     spike_solid: bool,
     rng: &mut super::Rng,
+    gen_rng: &mut crate::UnifiedRandom,
 ) -> bool {
     let num2 = if rng.range(0, 3) == 0 { 0 } else { 1 };
     let mut num3 = y2;
@@ -2103,8 +2128,8 @@ fn mayan_trap(
         return false;
     }
     match num2 {
-        0 => mayan_trap_horizontal(world, x2, num3, spike_solid, rng),
-        1 => mayan_trap_vertical(world, x2, num3, world_surface, spike_solid, rng),
+        0 => mayan_trap_horizontal(world, x2, num3, spike_solid, rng, gen_rng),
+        1 => mayan_trap_vertical(world, x2, num3, world_surface, spike_solid, rng, gen_rng),
         _ => false,
     }
 }
@@ -2117,6 +2142,7 @@ fn mayan_trap_horizontal(
     num3: i32,
     spike_solid: bool,
     rng: &mut super::Rng,
+    gen_rng: &mut crate::UnifiedRandom,
 ) -> bool {
     let mut num11 = x2;
     let num12 = num3 - rng.range(0, 3);
@@ -2182,7 +2208,9 @@ fn mayan_trap_horizontal(
         return false;
     }
     place_plate_tile(world, x2, num3, 6);
-    crate::edit::kill_tile(world, num11, num12, true);
+    // W4-g83: the trap-site kill's framing dispatch threads the worldgen
+    // genRand stand-in (`world.frame_rng`), not the pass's xorshift stream.
+    crate::edit::kill_tile(world, num11, num12, true, gen_rng);
     let num19 = if has_wire(world, x2, num3, 0) {
         0
     } else if has_wire(world, x2, num3, 1) {
@@ -2232,6 +2260,7 @@ fn mayan_trap_vertical(
     world_surface: f64,
     spike_solid: bool,
     rng: &mut super::Rng,
+    _gen_rng: &mut crate::UnifiedRandom,
 ) -> bool {
     let (mut num4, mut num5) = (x2, num3);
     while !solid_or_sloped_p2(world, num4, num5, spike_solid) {
@@ -2309,6 +2338,11 @@ pub(crate) fn pass_temple_part2(
     world_surface: f64,
     rng: &mut super::Rng,
 ) {
+    // W4-g83 contract §2: the framing dispatch's genRand stand-in — the
+    // worldgen `Main.rand` model (`UnifiedRandom(worldSeed)`,
+    // `WorldGen.cs:6611`); the pass's xorshift `rng` stays untouched (the
+    // world-hash contract). Only a seaweed tip re-roll would draw it.
+    let mut gen_rng = crate::UnifiedRandom::new(world.seed as i32);
     let floor_abort = world.height - 300;
     let rooms = t_rooms as f64;
     // The dart traps — the spikes still solid in this window.
@@ -2321,7 +2355,7 @@ pub(crate) fn pass_temple_part2(
             .tile(num3, num4)
             .is_some_and(|t| t.wall == WALL_TEMPLE_UNSAFE && !t.active())
         {
-            if mayan_trap(world, num3, num4, floor_abort, world_surface, true, rng) {
+            if mayan_trap(world, num3, num4, floor_abort, world_surface, true, rng, &mut gen_rng) {
                 num -= 1.0;
                 num2 = 0;
             } else {
@@ -2374,7 +2408,9 @@ pub(crate) fn pass_temple_part2(
                 }
             }
             num12 -= 1;
-            if num12 <= bounds.bottom && place_statue(world, num11, num12, rng.range(43, 46)) {
+            if num12 <= bounds.bottom
+                && place_statue(world, num11, num12, rng.range(43, 46), &mut gen_rng)
+            {
                 num8 -= 1.0;
             }
         }
@@ -2403,8 +2439,8 @@ pub(crate) fn pass_temple_part2(
             num17 -= 1;
             if num17 <= bounds.bottom {
                 let placed = match rng.range(0, 3) {
-                    0 => place_workbench(world, num16, num17, 10),
-                    1 => place_table(world, num16, num17, 9),
+                    0 => place_workbench(world, num16, num17, 10, &mut gen_rng),
+                    1 => place_table(world, num16, num17, 9, &mut gen_rng),
                     _ => place_chair(world, num16, num17, 12),
                 };
                 if placed {
@@ -2478,6 +2514,9 @@ pub(crate) fn pass_temple_part2(
 /// brick base row, then the six `SquareTileFrame` calls — the late anchor
 /// safety after the tile passes.
 pub(crate) fn pass_lihzahrd_altar(world: &mut World, l_altar_x: i32, l_altar_y: i32) {
+    // W4-g83 contract §2: the framing dispatch's genRand stand-in (the
+    // `pass_temple_part2` note — the C# pass draws nothing of its own).
+    let mut gen_rng = crate::UnifiedRandom::new(world.seed as i32);
     let (x, y) = (l_altar_x, l_altar_y);
     for i in 0..3 {
         for j in 0..2 {
@@ -2506,7 +2545,7 @@ pub(crate) fn pass_lihzahrd_altar(world: &mut World, l_altar_x: i32, l_altar_y: 
     }
     for k in 0..3 {
         for l in 0..2 {
-            crate::edit::square_tile_frame_gen(world, x + k, y + l);
+            crate::edit::square_tile_frame_gen(world, x + k, y + l, &mut gen_rng);
         }
     }
 }
@@ -3341,7 +3380,7 @@ mod tests {
         // abort and refuses (no panic, no OOB write).
         for _ in 0..8 {
             let abort = world.height - 300;
-            let _ = mayan_trap(&mut world, 150, 290, abort, 200.0, true, &mut rng);
+            let _ = mayan_trap(&mut world, 150, 290, abort, 200.0, true, &mut rng, &mut crate::UnifiedRandom::new(0));
         }
         assert_eq!(world.tiles.len(), 300 * 300);
         // And with a wall-87 pocket with a floor below, the trap writes
@@ -3358,7 +3397,7 @@ mod tests {
             }
         }
         let mut rng = Rng(13);
-        let placed = mayan_trap(&mut world, 105, 152, 299, 200.0, true, &mut rng);
+        let placed = mayan_trap(&mut world, 105, 152, 299, 200.0, true, &mut rng, &mut crate::UnifiedRandom::new(0));
         let _ = placed;
         assert_eq!(world.tiles.len(), 300 * 300);
     }

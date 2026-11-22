@@ -4899,6 +4899,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let switch = crate::collision::switch_tiles(
                 wiring, world, n.x, n.y, n.old_x, n.old_y, w as i32, h as i32,
                 2, // the NPC's objType (`NPC.cs:90504`)
+                // W4-g83: the plate kill's framing dispatch rides the
+                // UpdateNpcs stream (the active genRand of the NPC tick).
+                npcs_rng,
             );
             if let Some((item, x, y)) = switch.dropped {
                 // `WorldGen.KillTile`'s drop for the broken plate — the
@@ -4978,7 +4981,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let kind = app.world.tile(tx, ty).map(|t| t.kind);
         if kind == Some(10) {
             let mut drops = Vec::new();
-            let opened = tr_core::edit::open_door(&mut app.world, tx, ty, dir, &mut drops);
+            // W4-g83: the door-bash open's cleanup kills' framing dispatch
+            // rides the UpdateNpcs stream (the active genRand of the tick).
+            let opened = tr_core::edit::open_door(
+                &mut app.world,
+                tx,
+                ty,
+                dir,
+                &mut drops,
+                app.rngs.stream(RngKey::UpdateNpcs),
+            );
             if !opened {
                 // `:60062-60066` — the refusal: the idle counter jumps to
                 // num57 (60 for the zombie family), blocking the chase

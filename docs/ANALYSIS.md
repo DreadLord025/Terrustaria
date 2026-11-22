@@ -27305,10 +27305,10 @@ Deliberate deviations:
   draw RNG stream order.
 - The strip applies NO `GetFinalLight` actuation ghost (the C# reads
   `Lighting.GetColor` raw, `:9081`); fullbright -> White is ported (`:9084`).
-- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) and multi-tile
-  vine (`DrawMultiTileVines` `:8829-8888`) passes are separate C# passes and
-  stay unported (S1-G-1's remaining waves); their cells keep the old inline
-  draw.
+- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) pass landed with
+  W4-g83 and is WIRED into the fused pass (below, the wiring phase); the
+  multi-tile vine (`DrawMultiTileVines` `:8829-8888`) pass is the furniture
+  lane (d57) and stays out — its cells keep the old inline draw.
 - The dark-cell merge still covers unlit vine cells (the port's black-quad
   coverage shape); the C# `DrawBlackHelper` runs inside `DrawSingleTile`,
   which the vine cells never reach - a documented z-order/coverage
@@ -27319,6 +27319,233 @@ platform/no-attach/bottom-slope/half-brick attachment gates, the calm straight
 hang, the sway ladder + anchor walk, the blocking-wall freeze, the remix
 gate, the grid push subtract/bounce, the gap/bottom-bound break, the Echo
 hide-not-break.
+
+## The vine draw residuals (W4-g83, 2026-11-21)
+
+The four unclaimed vine-family residual groups left after the S1-G-1a hanging
+strip + the d56 animated-tile draw gate: the **vine-tip variants** (the rising
+seaweed strip + its tip-frame columns), the **jungle thorns** (the underground
+grow arm + the down-merge frame), the **glowing mushroom vines** (the 528
+conversion/grow arms) and the **grow-tops** (the overground vine grow chain).
+All UNWIRED code-only — the natural seams are contested by in-flight siblings
+(`tiles.rs`/`draw.rs` d56-d60, `framing.rs` d109/d110/g48, `growth.rs`
+d102/d106/g42, `drawdata.rs` d62/g34/g79); the ports land in unclaimed modules
+and the wiring is the family's merge step. No RNG stream, frame-cache key or
+fixed-step order changes until wired.
+
+### Phase 1 — the rising-vine draw pass (`render/vines.rs`)
+
+`draw_reverse_vines` / `rising_vine_strip_segments` / `collect_reverse_vine_root`
+port `DrawReverseVines` (`TileDrawing.cs:8903-8914`), `DrawRisingVineStrip`
+(`:9134-9193`) and `CrawlToBottomOfReverseVineAndAddSpecialPoint` (`:764-782`).
+Verbatim differences from the hanging strip, each pinned by a witness:
+- the anchor starts `(x*16+8, startY*16+16+2)` (`:9138`, +16+2 not -2) and
+  walks UP along `(rot - PI/2)` (`:9190`, not `+ PI/2`);
+- the walk runs `num7 > 10` descending (`:9144`, not `< maxTilesY-10`);
+- the exposure gate has NO remix arm — always `num7 < worldSurface` (`:9163`);
+- the grid push is `GetWindGridPush(x, num7, 40, -0.004)` (`:9167`, the
+  40-window / negative force, not 20 / 0.01);
+- the rotation negates the ladder: `num2 * (0 - num4) * cycle` (`:9179`);
+- the origin pivots at the sprite's BOTTOM-centre
+  `(tileWidth/2, halfBrickHeight - tileTop + tileHeight)` (`:9188`);
+- NO glowmask: `:9173` discards the glow out-params (`out var _`).
+The reverse crawl starts AT `j` (`:767`, not `j-1`) and roots at `k-1` (the row
+ABOVE the attachable floor); `torch::top_edge_can_be_attached_to` is lifted to
+`pub` (identical to g28/g30 — keep-one at merge). The `ReverseVineThreads` set
+is `{549}` alone (`TileID.cs:545`). 10 `w4_g83_*` witnesses written not run.
+
+### Phase 2 — the vine lifecycle checks (`tr-core::vine_checks`)
+
+`check_vines` ports `WorldGen.CheckVines` (`WorldGen.cs:84858-84960`): the
+eight-family LAST-write-wins type-conversion ladder (ash 638, mushroom 528,
+hallow 115, jungle 62, corrupt 636, crimson 205, plain 52 [excluded for 382],
+flower 382 — `:84883-84914`) reads the `nactive && !bottomSlope` support above;
+a mismatch converts the cell + `SquareTileFrame`, otherwise the per-type
+support gates kill an unsupported vine (`:84921-84958`). The glowing-mushroom
+arm (70/528 → 528) is the `num4` flag. `can_underwater_plant_grow_here`
+(`:58542-58576`) + `check_underwater_plant` (`:58578-58627`) port the seaweed
+validity (50-border, three full-water cells, sand/same-type support, the
+0/63-69/80-81 wall whitelist) and the TIP-FRAME variants — `frameX` column 0
+(lone), 1-7 (a 549 above, `Next(1,8)*18`) or 7-12 (a 549 below,
+`Next(7,13)*18`), `frameY = 0`. These columns are the rising strip's
+per-segment source frames (`DrawRisingVineStrip` `:9173`). 16 witnesses.
+
+### Phase 3 — the grow-tops + jungle thorns (`tr-core::vine_growth`)
+
+`grow_overground_vines` ports `UpdateWorld_OvergroundTile`'s vine chain
+(`WorldGen.cs:72506-72802`): the plain/flower 2/52/382/192 arm (the wall
+68/65/66/63 + below-wall + remix `Next(5)` flower pick, `:72516-72535`; the
+`num24` budget `:72508-72512` is dead in the C# and not carried), then the
+jungle 60/62/384/226 (the `TooManyJungleVinesNearby` gate on 226), mushroom
+70/528, hallow 109/115, corrupt 23/661/636, crimson 199/662/205 and ash
+633/638 arms — each behind the free-below gate, the 10-row grass look-up and
+`grow_more_vines`' density (`:45586-45621`, the 60 budget ÷5 on a 528 source,
+the LOS-weighted `(j-y)*2`/`*20` accumulation). `too_many_jungle_vines_nearby`
+(`:73189-73212`) is the ±9×±5 clamped box counting active 62, true strictly
+above the cap (default 6). `grow_underground_jungle_thorn` (`:73658-73661`)
+is the underground dispatcher's 69 arm — `GrowSpike(69, 60)` with NO roll; the
+port's overground 69 arm (`growth.rs:843`) sits inside `grass_pass`, which 69
+is not a member of, so it never fires — the genuine arm is the underground
+one. `thorn_down_merge_frame` (`:82043-82066`) ports the thorn down-merge:
+cases 32/352/69/655 fold a matching grass neighbour BELOW into the thorn
+(`down = num`) before the generic block frameset — these are direct `down=num`
+assignments, NOT `TileMergeAttempt` calls, so `tools/GenTileData`'s merge
+parser never emits them and `framing.rs` lacks them. The slope adjustments run
+BEFORE the merge (`:81632-81700` precedes `:82043`), so a sloped grass-below
+cell does not merge. The generic frameset (`framing.rs::RULES`) is re-ported
+verbatim (the table is private to the contested `framing.rs`). 16 witnesses.
+
+Deliberate deviations (all phases): the `Main.netMode == 2`
+`NetMessage.SendData`/`SendTileSquare` sides are MP scope; `SquareTileFrame`
+rides `edit::square_tile_frame_default`; `CopyPaintAndCoating` copies `meta` +
+the extras byte (the `grow_spike` convention). The LitNature shader +
+biomeSight dust stay the standing S1-G-1a deviations. The multi-tile vine
+(`DrawMultiTileVines(:InWind)`) is the furniture lane (d57), out of scope.
+
+Verification: code-only, no compiler invoked; every arm re-read against the
+cited C# windows; 42 witnesses WRITTEN NOT RUN (10 + 16 + 16). The world-hash
+pins are unchanged (no wired behaviour change). Anchors: 3 rows
+(`draw_reverse_vines`, `check_vines`, `grow_overground_vines`).
+
+### Wiring phase — the wire contract + the uncontested small wires
+
+`docs/research/123-vine-wire-contract.md` is the per-fn attach script for the
+four groups, re-derived from the C# call sites and the pushed sibling tips
+(g31 union `c3027a38` §1-§8, d102 `29e8859b`/d106 `e2c2609c`/g42 `d4836bbd`,
+d109 `81894095`/d110 `054e3dc2`/g48 `9e037b7c`, d58/d59 WIRED hunk zones).
+Key corrections to the phase notes:
+
+- **`CheckVines`/`CheckUnderwaterPlant` are framing-dispatch arms, NOT tick
+  arms** — the only C# call sites are `TileFrame`'s non-solid `IsVine` arm
+  (`WorldGen.cs:81375-81378`) and `TileFrameImportant`'s `case 549`
+  (`:84972-84974`). The Rust seam is `edit/kill.rs::square_tile_frame`'s
+  check loop (after the cactus-80 arm), NOT `growth.rs`; the growth tick
+  reaches the checks through `SquareTileFrame` after each vine write. The
+  real wiring cost is threading the caller's rng through
+  `square_tile_frame` (the tip re-rolls consume the ACTIVE `genRand` —
+  contract §2.2). The d102/d106/g42 "contest" on `growth.rs` is three
+  one-line re-exports; the tick-driver insertions (contract §3.2:
+  `grow_overground_vines` at the overground fn tail,
+  `grow_underground_jungle_thorn` after `grow_vine_arm` + deleting the dead
+  overground 69 arm) are add-only, uncontested.
+- **The rising pass IS placeable in the g31-union step map** (contract §1.2):
+  g30's `ReverseVineCrawl` classify arm + g31's `DrainPass::ReverseVines`
+  post step already carry the order; the keep-one binds g30's crawl to
+  `vines::collect_reverse_vine_root` (the forward-arm delegation pattern)
+  and g31's strip maths to `vines::rising_vine_strip_segments`, with g31's
+  `show_invisible`/`IsVisible` shape winning at the d56 keep-one.
+- **The thorn down-merge wires as a 4-line insertion** into
+  `framing.rs::frame_of_variant` after the own-slope match (base `:879`),
+  not a call to `thorn_down_merge_frame` (which retires/rebinds — §4).
+
+LANDED on this branch (the uncontested wires, contract §5-§6):
+
+- The rising-vine pass into the fused tile pass's OWN seams: `tiles.rs`'s
+  case-549 crawl arm (after the live forward `collect_vine_root` caller,
+  before any light gate — the C# switch head `:546-548`), the
+  `vine_cell || reverse_vine_cell` inline skip, and `draw_reverse_vines` at
+  the `draw_vines` tail (`PostDrawTiles` `:429-430`). The 549 cell
+  previously drew inline through `DrawSingleTile` — wrong vs the C#
+  `continue`; now it draws as a rising strip. d58's `:586` chest-map hunk
+  is the only adjacent context (trivial union); d56/d57/d60 have empty
+  `tiles.rs` diffs. The g31-union merge replaces these hunks with the §1.2
+  binds; the 2 source-order witnesses retire with the fused pass.
+- `torch.rs`'s `top_edge_can_be_attached_to` doc made byte-identical to the
+  union-exec keep-one (blob `737d4cf4`) — zero-conflict merge.
+- The ROPE-interplay census (contract §7): natural vines are NOT climbable
+  — `IsVine`+549 and `Main.tileRope` are disjoint (the climbing movement
+  reads `IsRope`/`tileRope` only; `Player.cs`'s only `IsVine` read is the
+  placement-kill gate `:41309`, already ported). The climbing block
+  (`FindPulley` `:19644-19749` + `Update`'s rope block `:26116-26470`,
+  ~460 lines entangled with the movement core) is NOT self-contained
+  small — NOT ported; the census + the attach seam are recorded for the
+  movement family. 2 census witnesses.
+
+Wiring-phase verification: code-only; 4 new witnesses written not run
+(2 tiles.rs source-order + 2 vine_checks census); actual file counts
+vines.rs 20 / vine_checks.rs 17 / vine_growth.rs 16 / tiles.rs 14. The
+world-hash pins stay unchanged (draw-side only).
+
+### Wire phase 2 — the remaining seams EXECUTED (2026-11-21)
+
+The four remaining seams landed on the branch (contract §9, commits
+`885514e1d`/`2325528ce`/`6b9a1d9fa`/`02f4abe9d`/`5ce66d8f3`):
+
+- **The checks ride the framing dispatch** (`edit/kill.rs::square_tile_frame`):
+  `check_underwater_plant` as the case-549 arm BEFORE the tree arms (the
+  frame-important dispatch precedes the non-solid arm, `WorldGen.cs:84972`/
+  `:81353-81359`) and `check_vines` as the non-solid `IsVine` arm after
+  cactus-80 (`:81375-81378`, a `false` return `continue`s). The entry gate
+  admits the vine kinds + 549 explicitly (generated worlds carry no def/flag).
+- **The genRand threading** (the contract §2 cost): the whole
+  `kill_tile`/`square_tile_frame_default`/`_gen`/`actuation_square_frame` +
+  cascade family takes `&mut UnifiedRandom` — the caller's ACTIVE stream
+  (growth `UpdateWorldGen`, liquid `UpdateLiquid` [`WorldGen.cs:71528`],
+  wiring `self.rand`, edit `UpdatePlayers`, npc `UpdateNpcs`, projectile
+  `UpdateProjectiles` via a new pool `gen_rng` param beside the `DropRng`
+  loot object, net the bare global, worldgen a fresh
+  `UnifiedRandom(world.seed)` stand-in). The seaweed tip re-rolls
+  (`:58601`/`:58612`) draw it — NEVER `world.frame_rng` (the variant-reset
+  stream stays separate; the kill.rs twin witness pins the exact prefix).
+- **The port-only `frame_important[vine]` writes DROPPED**
+  (`vine_growth::plant_vine` + `growth.rs::grow_vine_arm`): C# never marks
+  the 8 vine kinds frame-important; the flag mis-routed placed vines away
+  from `reframe_area`'s cosmetic pass.
+- **The grow-tops + jungle-thorn** (contract §3): `grow_overground_vines` at
+  `update_world_overground_tile`'s tail (the C# `:72504` vine chain after the
+  grass/moss arms), `grow_underground_jungle_thorn` after `grow_vine_arm`
+  (`:73658`, no roll), the dead overground-69 arm DELETED. Both draw the
+  caller's `UpdateWorldGen` stream; the growth.rs twin witness pins the
+  genRand position (the tail adds exactly the dye-head + vine-arm draws).
+- **The thorn down-merge** (contract §4): the 4-line `grass_below`/`down=num`
+  insertion in `framing.rs::frame_of_variant` after the own-slope match
+  (the direct assignments GenTileData's merge parser never emits);
+  `thorn_down_merge_frame` kept as the thin witness fixture delegating to
+  the canonical framer (the standalone re-port + private RULES copy dropped).
+- **The g31 keep-one deltas** (contract §1.2/§9.1): `rising_vine_strip_segments`
+  + `draw_reverse_vines` take `show_invisible` and read the FULL `IsVisible`
+  (`TileDrawing.cs:1411-1432`); the final hunk-pair for the g31-side rebind is
+  published in research/123 §9.1.
+
+Standing deviation (recorded per contract §2): `framing.rs::frame_world`
+stays cosmetic-only — the C# `FrameEverything` runs `TileFrame` per cell
+(the checks included), the port's banded-parallel full pass cannot run the
+killing checks; a generated vine that lost its support stands until the
+next edit/growth frame touches it. The worldgen callers' new
+`UnifiedRandom(world.seed)` stand-ins are drawn ONLY by a seaweed tip
+re-roll (none exists in the pinned passes' framing rings), so the
+world-hash pins stay unchanged; the xorshift pass streams are untouched.
+
+Wire-phase-2 verification: code-only; 7 new witnesses written not run
+(2 kill.rs dispatch/stream + 3 growth.rs dispatcher/stream [incl. the
+seam-5 UpdateWorldGen-position twin] + 1 framing.rs down-merge + 1 vines.rs
+full-IsVisible); census 74 file-total (g83 share 52), contract §9.2.
+
+### Retire phase — SEALED (g83d vine-retire, 2026-11-21)
+
+The lane is COMPLETE for its scope; research/123 §10 is the seal: every
+sibling tip re-probed (g42 ADVANCED to `910cc9747` — the GROWTH SEAL +
+FINAL rewrote both growth dispatchers g83 wires into; the §10.2 merge
+script re-binds g83's three insertions onto g42's shape: the vine tail
+between `grass_pass` and the wall arms, the thorn else-if after the
+vine-family arm, the dead-69 deletion a same-deletion union; g31 ADVANCED
+to `9d1e331db` — the `is_visible` keep-one EXECUTED as the promoted
+`tr_render::tile_visibility`, hunk B re-pinned at the retire tip, §10.4;
+d106/g48 advanced with NEW 3-arg `kill_tile` sites — the §10.5 rng-rebind
+census names each site's stream; d102/d109/d110/d56-d60 UNCHANGED). The
+on-branch duplicate RETIRED (§10.3): `vine_growth.rs`'s self-contained
+`grow_more_vines` re-port + its private `IS_VINE`/`in_world`/`can_hit_line`
+helpers dropped onto `growth.rs::grow_more_vines` (lifted `pub(crate)`,
+the same `:45586-45621` port line-for-line; the thin delegate keeps the
+9 density/grow witnesses unchanged). The vine-family merger bible
+(§10.6) + the merger-acceptance checklist (§10.7: the gate command, the
+74-witness name-set census, the stream pins, the 6 anchors rows, the
+keep-one symbol list) are published. The rope family stays out (g82's
+seal `6e5f6b748` pins the pulley gate `is_rope`+`tileRope`, the §7
+disjoint-set witness). World-hash pins unchanged on g83's side; the
+standing deviations stand (the `frame_world` cosmetic-only check-skip,
+LitNature/biomeSight, the MP sends). Code-only; no compiler invoked; the
+deferred gate stays the merge pass's command.
 
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 

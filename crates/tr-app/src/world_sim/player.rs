@@ -1127,6 +1127,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.width as i32,
                 p.height as i32,
                 5, // the player's objType (`Collision.SwitchTiles`)
+                // W4-g83: the plate kill's framing dispatch rides the
+                // UpdatePlayers stream (the active genRand of the tick).
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
             if let Some((item, x, y)) = switch.dropped {
                 // `WorldGen.KillTile`'s drop for the broken plate.
@@ -1361,7 +1364,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // own rolls ride the same `UpdatePlayers` stream, so the draw order
             // is the source's (S1-A-10).
             if let Some((wx, wy)) = p.take_sticky_kill() {
-                tr_core::edit::kill_tile(&mut app.world, wx, wy, false);
+                // W4-g83: the cobweb kill's framing dispatch rides the
+                // UpdatePlayers stream (the active genRand of the tick).
+                tr_core::edit::kill_tile(
+                    &mut app.world,
+                    wx,
+                    wy,
+                    false,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             for puff in p.take_sticky_dust() {
                 let idx = app.dust.new_dust(

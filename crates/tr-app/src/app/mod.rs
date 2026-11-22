@@ -3316,10 +3316,14 @@ impl App {
         // brick with full liquid on its right and a clear drop below) so the waterfall
         // overlay can be screenshotted deterministically.
         if let Some((x, y)) = crate::env::spout_xy() {
+            // W4-g83: the dev carve's framing dispatch rides a fresh
+            // world-seed stream (the load-time genRand stand-in — no player
+            // tick exists yet; the cascade draws nothing on a plain carve).
+            let mut dev_rng = tr_core::UnifiedRandom::new(world.seed as i32);
             for j in 1..=14 {
-                edit::kill_tile(&mut world, x, y + j, true);
+                edit::kill_tile(&mut world, x, y + j, true, &mut dev_rng);
             }
-            edit::kill_tile(&mut world, x, y, true);
+            edit::kill_tile(&mut world, x, y, true, &mut dev_rng);
             if edit::place_tile(&mut world, x, y, 1) {
                 if let Some(t) = world.tile_mut(x, y) {
                     t.flags |= tr_core::tile::FLAG_HALF_BRICK;
@@ -4125,7 +4129,12 @@ impl App {
         // keep their pixels; `TR_NO_SETTLE` is the general A/B escape hatch.
         let staging = crate::env::pool_rect().is_some() || crate::env::spout_xy().is_some();
         if !crate::env::no_settle() && !staging {
-            app.liquids.settle_loaded_world(&mut app.world);
+            // W4-g83 contract 2: the load settle's framing dispatch draws the
+            // caller-pinned frame_rng (the load-context genRand stand-in, the
+            // W4-g47 pin above) - dry worlds consume zero draws either way.
+            let mut load_rng = app.world.frame_rng.clone();
+            app.liquids.settle_loaded_world(&mut app.world, &mut load_rng);
+            app.world.frame_rng = load_rng;
             let _ = app.liquids.drain_merge_events();
             let load_kills = app.liquids.drain_edit_kills();
             world_sim::editing::resolve_liquid_edit_kills(&mut app, load_kills);
@@ -4559,7 +4568,10 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
         for _ in 0..op.n {
             // No player exists at load: `direction` is 1 (right-facing) and
             // no entity can block the door cells.
-            let hit = edit::interact_at(world, op.x, op.y, 1, &|_, _| false);
+            // W4-g83: the dev toggle's door-cleanup dispatch rides a fresh
+            // world-seed stream (the load-time genRand stand-in).
+            let mut dev_rng = tr_core::UnifiedRandom::new(world.seed as i32);
+            let hit = edit::interact_at(world, op.x, op.y, 1, &|_, _| false, &mut dev_rng);
             match hit {
                 edit::TileInteraction::None => {
                     log::info!("TR_TOGGLE {},{} -> none", op.x, op.y)

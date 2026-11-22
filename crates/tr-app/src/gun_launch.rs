@@ -962,6 +962,7 @@ mod tests {
             rng,
             app.local_id as u8,
             false,
+            rng,
         );
         app.npcs = npcs;
     }

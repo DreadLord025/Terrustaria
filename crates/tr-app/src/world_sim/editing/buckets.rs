@@ -230,7 +230,7 @@ fn bucket_pickup(
     app.world.mark_chunk(tx, ty);
     // `:46380` SquareTileFrame(resetFrame: false) + `:46387` AddWater (SP).
     frame_and_wake(app, tx, ty, false);
-    app.liquids.add_water(&mut app.world, tx, ty);
+    app.liquids.add_water(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), tx, ty);
     // `:46389-46392` — a full target needs no top-up.
     if num3 >= 255 {
         return;
@@ -261,7 +261,7 @@ fn bucket_pickup(
                 }
                 app.world.mark_chunk(k, l);
                 frame_and_wake(app, k, l, false);
-                app.liquids.add_water(&mut app.world, k, l);
+                app.liquids.add_water(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), k, l);
             }
         }
     }
@@ -435,9 +435,9 @@ fn play_splash(app: &mut App) {
 /// caller), the spawn_force_clear_area precedent.
 fn frame_and_wake(app: &mut App, x: i32, y: i32, reset_frame: bool) {
     let drops = if reset_frame {
-        edit::square_tile_frame_default(&mut app.world, x, y)
+        edit::square_tile_frame_default(&mut app.world, x, y, app.rngs.stream(crate::app::RngKey::UpdatePlayers))
     } else {
-        edit::actuation_square_frame(&mut app.world, x, y)
+        edit::actuation_square_frame(&mut app.world, x, y, app.rngs.stream(crate::app::RngKey::UpdatePlayers))
     };
     for drop in drops {
         let id = drop
@@ -455,6 +455,6 @@ fn frame_and_wake(app: &mut App, x: i32, y: i32, reset_frame: bool) {
             );
         }
     }
-    app.liquids.wake_around(&mut app.world, x, y, 1);
+    app.liquids.wake_around(&mut app.world, app.rngs.stream(crate::app::RngKey::UpdatePlayers), x, y, 1);
     app.world_key = None;
 }

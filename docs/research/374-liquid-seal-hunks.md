@@ -18,6 +18,17 @@ deduped form, ready to apply.
 
 ## The seam signatures (ON this branch, `crates/tr-core/src/liquid.rs`)
 
+> **batch-K g83 compose note:** the W4-g83 rng-threading (research/123
+> contract 2) added an `rng: &mut UnifiedRandom` parameter to the liquid
+> engine's public surface (`update`/`update_world_tick`/`add_water`/
+> `wake_around`/`quick_water`/`water_check`/`gen_settle_loop`/
+> `settle_loaded_world`/`liquid_reaction_check` - positioned right after
+> `world`). The runtime tick binds `RngKey::UpdateLiquid` (the C# swap),
+> the edit wakes bind `UpdatePlayers`, the pump wake binds the wiring
+> stream, the load settle binds the caller-pinned `frame_rng` clone, and
+> the gen driver (step 6/7 at the worldgen merge) binds the pass's genRand
+> stand-in. The signatures below are the pre-g83 forms.
+
 Every hunk below calls only these public surfaces — no new engine code:
 
 | Seam | Signature | C# home |
@@ -30,7 +41,7 @@ Every hunk below calls only these public surfaces — no new engine code:
 | water check | `LiquidSystem::water_check(&mut self, world: &mut World)` | `WorldGen.WaterCheck` (`WorldGen.cs:80415-80494`) |
 | gen loop | `LiquidSystem::gen_settle_loop(&mut self, world: &mut World)` | `WorldGen.cs:16158-16206` verbatim (Part-2 twin `:21265-21305` classic-identical): WaterCheck → quickSettle → 10 rounds × `num3*5` budget with live re-raise → WaterCheck between → ClearPendingLiquid → quickSettle down |
 | kill drain | `LiquidSystem::drain_edit_kills(&mut self) -> Vec<crate::edit::TileKill>` | the gen-tail `edit_kills` drain (research/252 §9.3 — the records must not leak across the per-pass instance) |
-| reaction check | `LiquidSystem::liquid_reaction_check(&mut self, world: &mut World, x: i32, y: i32, kind: u8)` | the `AttemptToMove*` tail's `LavaCheck`/`HoneyCheck`/`ShimmerCheck` dispatch (`Liquid.cs:284-286`/`:1445-1468`) — only needed if a gen-local `settle_water_at` is kept (the recommended unification drops it) |
+| reaction check | `LiquidSystem::liquid_reaction_check(&mut self, world: &mut World, rng: &mut UnifiedRandom, x: i32, y: i32, kind: u8)` | the `AttemptToMove*` tail's `LavaCheck`/`HoneyCheck`/`ShimmerCheck` dispatch (`Liquid.cs:284-286`/`:1445-1468`) — only needed if a gen-local `settle_water_at` is kept (the recommended unification drops it) |
 
 The producer-side seams (on the f24/c30/g36 lanes, carried at the worldgen
 merge): `GenVars.shimmer_position: Option<(i32,i32)>` (g36 `pipeline.rs:376`,

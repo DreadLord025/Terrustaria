@@ -395,6 +395,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
             local_owner,
             hostile_local,
+            // W4-g83: the tile-kill arms' framing dispatch rides the SAME
+            // UpdateProjectiles stream (the active genRand, contract §2).
+            rng,
         );
     });
     app.projectile_step.cap_backlog();
@@ -651,6 +654,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     w as i32,
                     h as i32,
                     4,
+                    // W4-g83: the plate kill's framing dispatch rides the
+                    // UpdateProjectiles stream (the active genRand).
+                    app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                 );
                 app.send_switch_outcome(&outcome);
                 // The tripped switches' Mech-28 clicks (S1-E-21i): the
