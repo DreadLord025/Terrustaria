@@ -32,6 +32,10 @@ impl App {
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
     self.handle_npc_chat_clicks();
+    // The world housing banners' right-click kick-out (`DrawNPCHousesInWorld`,
+    // `Main.cs:40824-40829`, W4-g21 batch 4 host 53) — the banner hover box
+    // consumes the right press before the chest/crafting/inventory handlers.
+    self.handle_house_banner_clicks();
     // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest

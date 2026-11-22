@@ -92,6 +92,12 @@ pub struct Settings {
     /// true (`Player.cs:406`): the crafting pulls ingredients from the world
     /// chests in range.
     pub craft_from_nearby_chests: bool,
+    /// `Player.Settings.StackToChestsPreferredMode` (`Player.cs:358`): the
+    /// quick-stack button's mode — 0 QuickStackToNearbyChests (the default,
+    /// `Player.cs:405`), 1 SmartStackToNearbyChests. The right-click arm cycles
+    /// it (`CycleQuickStackMode`, `Player.cs:374-377`; `Main.cs:41854`).
+    /// Persisted under `"StackToChestsPreferredMode"` (`Main.cs:4212/:4549`).
+    pub stack_to_chests_mode: u8,
     /// `Main.GameZoomTarget` (`Zoom`): 1.0..=2.0, only changed in the settings UI.
     pub zoom: f32,
     /// `Main._uiScaleWanted` (`Main.cs:251`), the persisted **wanted** UI scale
@@ -284,6 +290,7 @@ impl Default for Settings {
             miners_wobble: true,
             tiles_sway: true,
             craft_from_nearby_chests: true,
+            stack_to_chests_mode: 0,
             zoom: 1.0,
             // `LoadSettings`' `Get("UIScale", GetScaling())` (`Main.cs:4487`) — a
             // 100 %-scaling desktop returns 1.0.
@@ -594,6 +601,13 @@ impl Settings {
                 // `Player.Settings` control pair read back through the same
                 // group; the port wrote no key for it before.
                 "CraftFromNearbyChests" => me.craft_from_nearby_chests = boolean(value),
+                // `configuration.Get("StackToChestsPreferredMode", ...)`
+                // (`Main.cs:4549`): the quick-stack mode byte (0/1).
+                "StackToChestsPreferredMode" => {
+                    if let Ok(v) = value.parse::<u8>() {
+                        me.stack_to_chests_mode = v.min(1);
+                    }
+                }
                 // `configuration.Get("LockOnPriority", ...)` (`Main.cs:4496-4505`):
                 // the stored value clamps to 0..=2 and FocusTarget (0) reloads
                 // as ThreeDS (2), so 0 never survives a boot.
@@ -710,6 +724,7 @@ impl Settings {
              \"UseSmartCursorForCommonBlocks\": {},\n  \"DoorAutoOpeningMode\": {},\n  \
              \"HoverControlMode\": {},\n  \"SettingsEnabled_AutoReuseAllItems\": {},\n  \
              \"CraftFromNearbyChests\": {},\n  \
+             \"StackToChestsPreferredMode\": {},\n  \
              \"LockOnPriority\": {},\n  \
              \"ReverseUpDownForArmorSetBonuses\": {},\n  \
              \"DisableLeftShiftTrashCan\": {},\n  \"DisableQuickTrash\": {},\n  \
@@ -779,6 +794,9 @@ impl Settings {
             // keeps its own position in this list (Phase 2 only renames keys, it
             // does not reorder the writer).
             self.craft_from_nearby_chests,
+            // `configuration.Put("StackToChestsPreferredMode",
+            // Player.Settings.StackToChestsPreferredMode)` (`Main.cs:4212`).
+            self.stack_to_chests_mode,
             self.lock_on_priority,
             // The Task 5 keys, written under the vanilla names (`Main.cs:4145`,
             // `:4141`, `:4142`, `:4220`; `BigProgressBarSystem.cs:231`;

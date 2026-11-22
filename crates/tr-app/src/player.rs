@@ -1091,6 +1091,21 @@ pub struct Player {
     /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a
     /// recorded follow-up (ANALYSIS "The wiring tools (S1-P-i34)").
     pub auto_actuator: bool,
+    /// `Player.rulerLine` (`Player.cs:2360`): the Ruler (486) / Wire Kite
+    /// (3611) measurement line. `ResetEffects` re-sets it TRUE every tick
+    /// (`:18693`), so it reads on unless nothing has run yet; grants at
+    /// `RefreshMechanicalAccsFromItemType` (`:12805-12808`) + the held arm
+    /// (`:15190-15193`). Counted by `GetBuilderAccsCountToShow` (`:47596`).
+    pub ruler_line: bool,
+    /// `Player.rulerGrid` (`Player.cs:2358`): the Laser Ruler (2799) / Wire
+    /// Kite (3611) grid. Cleared in `ResetEffects` (`:18692`), re-granted at
+    /// `:12809-12812` + the held arm (`:15194-15197`). Counted at `:47596`.
+    pub ruler_grid: bool,
+    /// `Player.autoPaint` (`Player.cs:2472`): the Paint Sprayer (2216) /
+    /// Architect Gizmo Pack (3061) / Presserator (5126) auto-paint. Cleared
+    /// in `ResetEffects` (`:18533`), re-granted at `:12813-12816` + the held
+    /// arms (`:15271-15294`). Counted at `:47596`.
+    pub auto_paint: bool,
     /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
     /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
     /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
@@ -1198,6 +1213,12 @@ pub struct Player {
     /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
     /// is unported, so the flag stays false in play.
     pub unlocked_biome_torches: bool,
+    /// `Player.hbLocked` (`Player.cs:1436`): the hotbar-lock toggle. The
+    /// `DrawHotbarLockIcon` click flips it (`Main.cs:42507`, sound 22 at
+    /// `:42506`); the closed-hotbar hover/click gates read it
+    /// (`GUIHotbarDrawInner`, `Main.cs:43616`/`:43620`) — a locked hotbar
+    /// refuses the pointer selection. W4-g21 batch 5, host 71.
+    pub hb_locked: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -2810,6 +2831,11 @@ impl Player {
             actuation_rod_lock_setting: false,
             info_acc_mech_show_wires: false,
             auto_actuator: false,
+            // C# field inits are false; `ResetEffects` re-sets `rulerLine`
+            // true per tick (`Player.cs:18692-18693`).
+            ruler_line: false,
+            ruler_grid: false,
+            auto_paint: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.
             builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -2881,6 +2907,7 @@ impl Player {
             void_vault_enabled: false,
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
+            hb_locked: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -4294,6 +4321,35 @@ impl Player {
         d.use_sound // `:17338`
     }
 
+    /// `Player.TogglePet` (`Player.cs:17342-17349`): the misc-equip page's pet
+    /// tick (`Main.cs:41240-41243`) flips `hideMisc[0]`; hiding clears the
+    /// equipped pet's buff (`miscEquips[0].buffType`). The App owns
+    /// `equip.misc_equips`, so the caller supplies the equipped kind.
+    /// W4-g21 batch 2, host 58.
+    pub fn toggle_pet(&mut self, pet_kind: u16) {
+        self.hide_misc[0] = !self.hide_misc[0];
+        if self.hide_misc[0] {
+            let bt = crate::registry::get(pet_kind).map_or(0, |d| d.buff_type);
+            self.buffs.clear_buff(bt); // `:17347`
+        }
+    }
+
+    /// `Player.ToggleLight` (`Player.cs:17351-17363`): the light-pet tick
+    /// (`Main.cs:41244-41247`) flips `hideMisc[1]`; hiding clears the light
+    /// pet's buff, and the Fairy Bell's legacy `buffType == 27` also clears
+    /// the 102/101 fairy buffs (`:17357-17360`). W4-g21 batch 2, host 58.
+    pub fn toggle_light(&mut self, light_kind: u16) {
+        self.hide_misc[1] = !self.hide_misc[1];
+        if self.hide_misc[1] {
+            let bt = crate::registry::get(light_kind).map_or(0, |d| d.buff_type);
+            self.buffs.clear_buff(bt); // `:17356`
+            if bt == 27 {
+                self.buffs.clear_buff(102); // `:17359`
+                self.buffs.clear_buff(101); // `:17360`
+            }
+        }
+    }
+
     /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff
     /// slot counts when `Main.debuff[b] && buffTime > 60 &&
     /// !NurseCannotRemoveDebuff[b]`.
@@ -5125,6 +5181,30 @@ impl Player {
     /// the same cap-and-invert (`Player.cs:25918-25922`).
     pub fn wall_speed_multiplier(&self) -> f32 {
         1.0 / (1.0 + self.wall_speed_bonus).min(3.0)
+    }
+
+    /// `Player.TileReplacementEnabled` (`Player.cs:3373`): the
+    /// block-replacement toggle is `builderAccStatus[10] == 0` (0 = on).
+    /// The `DrawBlockReplacementIcon` click flips it (`Main.cs:42545`,
+    /// sound 22 at `:42544`). W4-g21 batch 5, host 72.
+    pub fn tile_replacement_enabled(&self) -> bool {
+        self.builder_acc_status[10] == 0
+    }
+
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3964`): the getter gates
+    /// on `unlockedBiomeTorches` AND `builderAccStatus[11] == 0`; the setter
+    /// writes ONLY `builderAccStatus[11]` (`!value ? 1 : 0`). The
+    /// `DrawTorchBiomeSwapIcon` click flips the raw toggle (`Main.cs:42585`,
+    /// sound 22 at `:42584`); the icon draws only while unlocked
+    /// (`Main.cs:47580`). W4-g21 batch 5, host 73.
+    pub fn using_biome_torches(&self) -> bool {
+        self.unlocked_biome_torches && self.builder_acc_status[11] == 0
+    }
+
+    /// The `UsingBiomeTorches` setter (`Player.cs:3960-3963`): writes
+    /// `builderAccStatus[11]` only — the unlock gate is the getter's.
+    pub fn set_using_biome_torches(&mut self, value: bool) {
+        self.builder_acc_status[11] = if value { 0 } else { 1 };
     }
 
     /// Resync keep-one: main's i12 `melee_speed(held_kind)` /
@@ -6519,6 +6599,12 @@ impl Player {
         // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
         self.info_acc_mech_show_wires = false;
         self.auto_actuator = false;
+        // `Player.cs:18692-18693`/`:18533`: `ResetEffects` clears the grid
+        // and paint flags but re-sets `rulerLine = true` unconditionally —
+        // the ruler-line toggle starts ON every tick.
+        self.ruler_grid = false;
+        self.ruler_line = true;
+        self.auto_paint = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
@@ -14292,6 +14378,34 @@ mod tests {
             "the arm entered"
         );
         assert!(!p.mount.is_active(), "the mount dismounted");
+    }
+
+    /// W4-g21 batch 2 host 58 — `Player.TogglePet`/`ToggleLight`
+    /// (`Player.cs:17342-17363`): the misc-page ticks flip `hideMisc` and clear
+    /// the equipped buff on hide; the Fairy Bell's legacy 27 also clears 102/101.
+    #[test]
+    fn w4_g21_toggle_pet_and_light_flip_hide_and_clear_the_buff() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        // Carrot 603 carries buffType 40 (`Item.cs:8411`); Fairy Bell 425
+        // carries buffType 27 (`Item.cs:6342`).
+        p.buffs.add_buff(40, 3600);
+        p.toggle_pet(603);
+        assert!(p.hide_misc[0], "the pet hid");
+        assert_eq!(p.buffs.find_buff_index(40), None, "the pet buff cleared");
+        // Showing again does NOT re-add the buff (the C# only clears on hide).
+        p.toggle_pet(603);
+        assert!(!p.hide_misc[0]);
+        assert_eq!(p.buffs.find_buff_index(40), None);
+        // The light pet: hiding clears 27 and the 102/101 fairy buffs.
+        p.buffs.add_buff(27, 3600);
+        p.buffs.add_buff(102, 3600);
+        p.buffs.add_buff(101, 3600);
+        p.toggle_light(425);
+        assert!(p.hide_misc[1]);
+        assert_eq!(p.buffs.find_buff_index(27), None);
+        assert_eq!(p.buffs.find_buff_index(102), None, "`:17359`");
+        assert_eq!(p.buffs.find_buff_index(101), None, "`:17360`");
     }
 
     /// S1-P-i53 — `TryRemovingBuff_CheckBuffHideMisc` (`Main.cs:43390-43404`):

@@ -811,6 +811,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // `TextureAssets.Extra[255]/[256]` — the super-cart on/off ticks
+        // (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
+        "Extra_255",
+        "Extra_256",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -830,6 +834,30 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `TextureAssets.InventoryTickOn/Off`).
         "Inventory_Tick_On",
         "Inventory_Tick_Off",
+        // `UI/ChestStack_0..3` — the quick-stack-all button's 4 frames
+        // (`Main.cs:41838-41867`, `TextureAssets.ChestStack`,
+        // `AssetInitializer.cs:245-248`); `UI/Sort_0..1` — the sort-inventory
+        // button's idle/hover frames (`Main.cs:41891`, `TextureAssets.InventorySort`,
+        // `AssetInitializer.cs:275-278`). W4-g21 batch 3 hosts 62/63/64.
+        "UI/ChestStack_0",
+        "UI/ChestStack_1",
+        "UI/ChestStack_2",
+        "UI/ChestStack_3",
+        "UI/Sort_0",
+        "UI/Sort_1",
+        // `UI/House_Banner` — the world housing banner (`Main.cs:40783`,
+        // `TextureAssets.HouseBanner`, `AssetInitializer.cs:265`, W4-g21
+        // batch 4 host 53).
+        "UI/House_Banner",
+        // W4-g21 batch 5 hosts 71/72/73 — the hotbar-lock icon
+        // (`TextureAssets.HbLock[0/1]`, `AssetInitializer.cs:475-476`), the
+        // block-replacement icon (`TextureAssets.blockReplaceIcon[0]`,
+        // `:477`) and the torch-biome-swap icon (`TextureAssets.Extra[211]`,
+        // the `ExtrasID.Count` loop `:362-365`).
+        "Lock_0",
+        "Lock_1",
+        "UI/BlockReplace_0",
+        "Extra_211",
         "UI/DisplaySlots_0",
         "UI/DisplaySlots_1",
         "UI/DisplaySlots_2",
@@ -1982,6 +2010,10 @@ pub struct Lookups {
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
+    /// `Extra_255`/`Extra_256`: the super-cart on/off ticks
+    /// (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
+    pub extra_255: Option<tr_render::SheetRect>,
+    pub extra_256: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -2060,6 +2092,29 @@ pub struct Lookups {
     /// the right of every accessory row (`Main.cs:41436-41460`).
     pub ui_tick_on: Option<tr_render::SheetRect>,
     pub ui_tick_off: Option<tr_render::SheetRect>,
+    /// `UI/ChestStack_0..3`: the quick-stack-all button's frames
+    /// (`Main.cs:41838-41867`, W4-g21 batch 3 host 62).
+    pub chest_stack: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Sort_0..1`: the sort-inventory button's idle/hover frames
+    /// (`Main.cs:41891`, W4-g21 batch 3 host 64).
+    pub inventory_sort: [Option<tr_render::SheetRect>; 2],
+    /// `UI/House_Banner`: the world housing banner (`Main.cs:40783`,
+    /// W4-g21 batch 4 host 53).
+    pub house_banner: Option<tr_render::SheetRect>,
+    /// `Images/Lock_0`/`Lock_1` (`TextureAssets.HbLock[0/1]`,
+    /// `AssetInitializer.cs:475-476`): the hotbar-lock icon's locked/unlocked
+    /// frames (`Main.DrawHotbarLockIcon`, `Main.cs:42488`, W4-g21 batch 5
+    /// host 71). Index 0 = locked, 1 = unlocked.
+    pub hb_lock: [Option<tr_render::SheetRect>; 2],
+    /// `Images/UI/BlockReplace_0` (`TextureAssets.blockReplaceIcon[0]`,
+    /// `AssetInitializer.cs:477`): the block-replacement icon's 3-frame
+    /// strip (`Main.DrawBlockReplacementIcon`, `Main.cs:42533`, W4-g21
+    /// batch 5 host 72).
+    pub block_replace: Option<tr_render::SheetRect>,
+    /// `Images/Extra_211` (`TextureAssets.Extra[211]`): the torch-biome-swap
+    /// icon's 4-frame strip (`Main.DrawTorchBiomeSwapIcon`, `Main.cs:42573`,
+    /// W4-g21 batch 5 host 73).
+    pub torch_biome: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
@@ -2410,6 +2465,8 @@ impl Lookups {
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
+            extra_255: atlas.sheet("Extra_255").copied(),
+            extra_256: atlas.sheet("Extra_256").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
@@ -2434,6 +2491,16 @@ impl Lookups {
             ui_defense_shield: atlas.sheet("Extra_58").copied(),
             ui_tick_on: atlas.sheet("Inventory_Tick_On").copied(),
             ui_tick_off: atlas.sheet("Inventory_Tick_Off").copied(),
+            chest_stack: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/ChestStack_{i}")).copied()
+            }),
+            inventory_sort: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/Sort_{i}")).copied()
+            }),
+            house_banner: atlas.sheet("UI/House_Banner").copied(),
+            hb_lock: [0, 1].map(|i| atlas.sheet(&format!("Lock_{i}")).copied()),
+            block_replace: atlas.sheet("UI/BlockReplace_0").copied(),
+            torch_biome: atlas.sheet("Extra_211").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),

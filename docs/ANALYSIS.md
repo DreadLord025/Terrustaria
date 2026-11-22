@@ -1902,7 +1902,9 @@ The verdicts, each with its C# cite:
 
 Deliberate deviations (recorded, not forced): the replacement toggle
 (`builderAccStatus[10]`, `TileReplacementEnabled` `Player.cs:3373`) defaults ON like
-vanilla's and has no UI yet; the `wallSpeed`/`tileSpeed` multipliers (`Player.cs:25920-25922`,
+vanilla's and flips on the `DrawBlockReplacementIcon` click (W4-g21 batch 5
+`7596fb26`, `Main.cs:42545` — the icon draws in `ui/chrome.rs`); the
+`wallSpeed`/`tileSpeed` multipliers (`Player.cs:25920-25922`,
 the Builder potion/accessory chain) and the `tileBoost + blockRange` reach extension are
 not modelled (the placement uses the base `useTime`/reach); the hammer's 2×2 mouse-half
 scan (`ItemCheck_UseMiningTools_TryFindingWallToHammer`, `Player.cs:45832-45906`) is
@@ -23362,9 +23364,11 @@ code-only mode).
 **Deliberate folds / deviations:**
 
 * `UsingBiomeTorches` (`:3950-3959`) is `unlockedBiomeTorches &&
-  builderAccStatus[11] == 0`: the port reads `p.unlocked_biome_torches`
-  (without the Torch God unlock the plain torch stays plain) and folds the
-  builder toggle to 0 (on). `happyFunTorchTime` folds to false (no field).
+  builderAccStatus[11] == 0`: the port reads `p.using_biome_torches()` —
+  both halves wired (W4-g21 batch 5 host 73: the `DrawTorchBiomeSwapIcon`
+  click flips `builderAccStatus[11]`, `Main.cs:42585`; the old "toggle
+  folds to 0 (on)" deviation is retired). `happyFunTorchTime` folds to
+  false (no field).
 * `BiomeTorchHoldStyle` (`:40291-40346`): the `ZoneShimmer` (`:40297`),
   `ZoneLihzhardTemple` (`:40305`), `ZoneUndergroundDesert` and remix-world
   desert arms (`:40337-40344`) read fields the port's `Zones` does not carry
@@ -40144,9 +40148,9 @@ witness tests are WRITTEN, NOT RUN.**
    `!hbLocked && !IgnoreMouseInterface && !controlTorch && !channel`
    (:43616) and `mouseLeft && !blockMouse` (:43620); `changeItem` feeds
    `Select` at `Player.cs:25087-25091`. Fixed: the click buffers through
-   `Select` behind the controlTorch/channel/blockMouse gates (hbLocked
-   has no port state — the lock icon is a recorded no-op,
-   `ui/chrome.rs:677-690`).
+   `Select` behind the hbLocked/controlTorch/channel/blockMouse gates
+   (hbLocked wired W4-g21 batch 5 `7596fb26` — the lock icon draws +
+   clicks, `ui/chrome.rs::draw_hotbar_lock`).
 6. **MISSING — smart-select auto-tool (LeftShift / cTorch)**: no port at
    all. Ported as `hotbar::SmartSelectCtx` + `smart_select_lookup`:
    `PickItemSelectionOverride` (`Player.cs:17410-17432` — the mouse-item
@@ -40222,9 +40226,10 @@ channel-state clear stays compatible).
   itemTime only.
 - **`lastItemUseAttemptSuccess`** (:554, the net-sync latch :6902) has no
   port field — the OnSelectionChanged reset is a no-op.
-- **`hbLocked`** (the hotbar lock, `Main.cs:42488-42507`) has no port
-  state — the lock icon is a recorded draw no-op (`ui/chrome.rs`); the
-  click gate reads the other three conditions only.
+- **`hbLocked`** (the hotbar lock, `Main.cs:42488-42507`) — **WIRED
+  W4-g21 batch 5 (`7596fb26`)**: `Player.hb_locked` (`player.rs`), the
+  lock icon draws + clicks (`ui/chrome.rs::draw_hotbar_lock`), the click
+  gate reads it alongside the other three conditions (`:43616`/`:43620`).
 - **`pStone`** (the Philosopher's Stone / Charm of Myths ×0.75 delay
   scale, :25477-25486/:51858-51861) has no port accessory flag —
   constants-off; the Strange Brew delay rolls the unscaled range.
@@ -41159,3 +41164,471 @@ pushed branch's projectile.rs for the C# line cites (zero matches = unclaimed).
 The 16 `w4_g3_ds_*` witnesses are WRITTEN, NOT RUN — no cargo/rustc/rustfmt/
 tests/graphify invoked (the Lead's constraint).
 
+## The Main.cs sound sites wave, part 1 (W4-g21, 2026-11-20, code-only mode) — CLAIM
+
+**Line-order split of the 271-site `PlaySound` census in `Main.cs`**
+(`Select-String 'PlaySound\('` over `decompiled/Terraria/Main.cs`,
+ascending line order, first `:3244`, last `:66248`): the sites are split
+into three worktrees — **g21** (this branch,
+`task/W4-g21-sounds-main-1`) owns sites **1-90** (lines
+**`:3244`-`:43936`**), **g22** (`task/W4-g22-sounds-main-2`) owns sites
+91-180 (lines `:44118`-`:49727`), **g23**
+(`task/W4-g23-sounds-main-3`) owns sites 181-271 (lines
+`:49734`-`:66248`). All three branch from `a725acb0`. The landed
+world-sounds wave (S1-E-21i, c15 — `KillWall_PlaySounds` +
+`Wiring.HitSwitch` + door plays) is KEPT untouched; none of its sites
+live in `Main.cs`, but its seams (`play_wall_break_sound` /
+`play_door_sound` / `play_switch_click`, attenuation BEFORE any case
+draw) are the convention this wave follows.
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests/graphify invoked (the
+Lead's constraint); every witness test is WRITTEN NOT RUN. Audio seams
+follow the landed S1-E-21 conventions: the `wants_sound` intent queue
+where the site runs without the `Audio` borrow, attenuation BEFORE any
+case draw (`LegacySoundPlayer.cs:369-436` precedes the type switch),
+the overload split (`SoundEngine.cs:93-99` façade draws the
+`GetRandomPitch` NextFloat on the audio-only `sound_style_random`;
+`:102-108` int overload draws NONE), and every gameplay draw keeps its
+exact slot on the C# statement order, on the named stream of the
+enclosing C# pass. Sites already ported by earlier waves are recorded
+as landed, not re-ported. Commits land ≤15 sites each.
+
+### Batch 1 census (sites 1-90) — landed `a2ec6acb`
+
+Every one of the 90 direct `PlaySound(` lines in g21's range was mapped
+to its enclosing C# function and then to the Rust port. Three buckets:
+**WIRED** (this batch, 15), **LANDED** (an earlier wave already plays it,
+19), **HOST-NOT-PORTED** (the enclosing function has no Rust port yet, 56
+— 15 + 19 + 56 = 90). Witnesses for the 15 wired sites are WRITTEN NOT
+RUN (code-only mode).
+
+**WIRED this batch (15)** — cue + Rust seam + witness:
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 16 | `:18270` | `DoUpdate_Enter_ToggleChat` | 10 `Menu_Open` | `app/loop.rs::chat_key` (open arm) |
+| 17 | `:18349` | `DoUpdate_HandleChat` text-change | 12 `Menu_Tick` | `chat_key` (append + trim arms) |
+| 18 | `:18370` | `DoUpdate_HandleChat` submit | 11 `Menu_Close` | `chat_key` (Enter tail) |
+| 22 | `:18481` | `DoUpdate_F9_ToggleLighting` | 12 `Menu_Tick` | `app/loop.rs::world_key` F2 arm |
+| 35 | `:40105` | `NPCChatText_DoNurseHeal` head | 12 `Menu_Tick` | `app/mod.rs::nurse_heal` head |
+| 36 | `:40111` | `NPCChatText_DoNurseHeal` pay | `Item4` (case 2) | `nurse_heal` success arm |
+| 37 | `:40230` | `NPCChatText_DoAnglerQuest` head | 12 `Menu_Tick` | `world_sim/npcs.rs::angler_turn_in` head |
+| 38 | `:40243` | `NPCChatText_DoAnglerQuest` hand-in | 24 `Chat` | `angler_turn_in` hand-in arm |
+| 54 | `:41100` | `DrawInventory` map-icon k0 | 10 `Menu_Open` | `app/clicks.rs` map-icon arm |
+| 55 | `:41109` | `DrawInventory` map-icon k1 | 12 `Menu_Tick` | same |
+| 56 | `:41114` | `DrawInventory` map-icon k2 | 12 `Menu_Tick` | same |
+| 57 | `:41119` | `DrawInventory` map-icon k3 | 12 `Menu_Tick` | same |
+| 69 | `:42403` | `DrawEmoteBubblesButton` click | 12 `Menu_Tick` | `app/clicks.rs::handle_bestiary_clicks` |
+| 70 | `:42458` | `DrawBestiaryIcon` click | 12 `Menu_Tick` | same |
+| 78 | `:43083` | `HoverOverNPCs` talk-open | 24 `Chat` | `world_sim/npcs.rs::talk_to_npc` tail |
+
+The chat chain (sites 16-18) was extracted from `window_event`'s
+`KeyboardInput` arm into `App::chat_key(code, text)` — the `world_key`
+headless convention — so the open/edit/submit cues are reachable without a
+live window. The nurse `Item4` (site 36) is the legacy `PlaySound(SoundID)`
+façade: the `GetRandomPitch` NextFloat rides the audio-only
+`sound_style_random`, case 2's ONE `Next(-6,7)` pitch roll rides the
+bare-`Main.rand` stand-in (`global()`, the click runs outside every swap —
+the S1-A-11 §4 convention), snapshotted before/after the `Audio` borrow.
+The lighting cycle (site 22) plays on the port's F2 binding (the help
+overlay's row, `render/debug.rs`; the vanilla Shift+F9 chord is not
+modelled, F9 is the port's save key).
+
+**LANDED earlier (19)** — recorded, not re-ported:
+
+- 1-2 `:3244`/`:3256` `DoStatefulTickSound(ref bool/int)` — the port plays
+  the hover-edge tick inline at each ported caller (Bug 17:
+  `app/loop.rs:576-596` menu/front/emote hover, `app/flow.rs`,
+  `chest.rs`/`ui/chest.rs` chest hover). The helper is not a Rust fn; the
+  unported hover latches (`mapStyleMouseOver :41126`,
+  `equipPageMouseOver :41155`, `emoteMouseOver :42407`,
+  `bestiaryMouseOver :42463`) are
+  host-not-ported sub-states, not census sites (they call the helper).
+  The landed latches: `allChestStackHover :41865` +
+  `inventorySortMouseOver :41890` (batch 3), `hotbarLockMouseOver :42515` +
+  `toggleAccMouseOver :47588` (batch 5 — the latter is a g22-line host whose
+  hover tick is g21's helper site, the g22 census's own reading).
+- 12-15 `:13477`/`:13484`/`:13500`/`:13506` `Ambience` waterfall/lavafall
+  (34/35) — collapsed into the persistent liquid-loop volume update
+  (`app/frame.rs:295-344` → `Audio::set_liquid_loop`, the documented
+  `audio.rs:2122-2127` deviation: the loops re-volume in place every ¼ s
+  instead of re-`PlaySound`).
+- 32 `:40026` `NPCChatText_TinkererReforge` — covered by the collapsed
+  shop-open entry (the recorded #9 deviation, `world_sim/npcs.rs:997-1001`
+  auto-opens the reforge menu beside the shop; the `:40466` tick plays).
+- 40 `:40466` `OpenShop` — `world_sim/npcs.rs:997`.
+- 51 `:40688` `CloseNPCChatOrSign` — `app/clicks.rs:1099`.
+- 60 `:41438` accessory hide-tick — `app/clicks.rs:1477`.
+- 61 `:41654` reforge hover-edge — `app/mod.rs:2037`.
+- 65-66 `:41909`/`:41931` `ReforgeItemInReforgeSlot` BestReforge/Item37 —
+  `prefix.rs::reforge_presentation_tail` (`:696-728`).
+- 67 `:42060` housing cell click — `app/clicks.rs:1412`.
+- 68 `:42299` craft focus click — `app/clicks.rs:977`.
+- 74-75 `:42692`/`:42762` PVP/team clicks — `app/clicks.rs:1486`/`:1497`.
+- 76 `:42859` page-tab click — `app/clicks.rs:1526` (cited `:42857`).
+- 79 `:43382` `TryRemovingBuff` — `world_sim/player.rs:629`.
+
+**HOST-NOT-PORTED (56)** — the enclosing function has no Rust port; the
+site stays deferred with its host (no cue is invented):
+
+- 3-11 `TeleportEffect` styles 0/1/3/4/5/7/9/10/13 (`:13239`-`:13449`) —
+  the `Player.Teleport`/`TeleportEffect` system is a recorded follow-up
+  (`recall_teleport.rs:36`/:88); the recall/mirror cluster uses `Spawn`,
+  not `TeleportEffect`.
+- 19/20/21/23 `:18416`/`:18432`/`:18460`/`:18498` F11 hideUI / F7 drawDiag
+  / F8 netDiag / F10 FPS — **WIRED batch 2 (`7858ba28`)**: `App::diag_key`
+  release-latch machines (`app/loop.rs`), the `hide_ui`/`draw_diag`/`net_diag`/
+  `show_frame_rate` state + the `DrawFPS` line; see "Batch 2" below.
+- 24-25 `:37716`/`:37733` `TryInteractingWithVoidLens` — **owned by the g56
+  co-lane** (`task/W4-g56-ui-void-vault`, `273814c5` ports the open/close +
+  Item130 + the `HandleBeingInChestRange` lens arm); this lane skips them.
+- 26-27 `:37988`/`:37991` `PlayInteractiveProjectileOpenCloseSound`
+  (proj 525/960) — no interactive-projectile open/close.
+- 28 `:39820` `DrawNPCChatBottomRightItem` — the corner item is deferred
+  (`ui/npc_chat.rs:14-15`).
+- 29/30/31/33/34/39 `:39996` TavernkeepAdvice, `:40005`/`:40016`
+  DyeTraderRarePlant, `:40035` GuideReverseCrafting, `:40047`
+  PartyGirlSwapMusic, `:40268` DryadText — the chat-button interaction
+  handlers are unported (only Nurse/Angler/TaxCollector/shop collapse).
+- 41-50 `:40502`-`:40665` `DrawNPCChatButtons` hover pairs — **DEAD-ARM
+  (batch-5 verify)**: the function has zero callers in the decompile; the
+  live `NPCChatPanel.cs:159` hover tick is already ported
+  (`handle_npc_chat_clicks`); see "The chat-button census correction"
+  below.
+- 52 `:40696` `SubmitSignText` — no sign editor (`app/mod.rs:2279`).
+- 53 `:40828` `DrawNPCHousesInWorld` kickOut — **WIRED batch 4 (`31e5595a`)**:
+  `house_banners.rs` ports the banner draw + the right-click kick-out
+  (`town::kick_out` + `PlaySound(12)`); see "Batch 4" below.
+- 58/59 `:41249`/`:41275` misc pet/light + super-cart toggles — **WIRED batch 2
+  (`7858ba28`)**: `Player::toggle_pet`/`toggle_light` + the misc-page tick
+  click surface (`ui::inventory::misc_tick_click`); see "Batch 2" below.
+- 62/63/64 `:41849`/`:41855`/`:41887` quick-stack-all / mode-cycle /
+  sort-inventory buttons — **WIRED batch 3 (`c07c1eb9`)**: `quick_stack.rs`
+  (the `QuickStacking.cs` engine) + `item_sorting.rs::sort_inventory`; see
+  "Batch 3" below.
+- 71/72/73 `:42506`/`:42544`/`:42584` hotbar-lock / block-replacement /
+  torch-biome-swap icons — **WIRED batch 5 (`7596fb26`)**: the three icons
+  draw + click (`ui/chrome.rs` + `app/clicks.rs`), `hbLocked` gates the
+  closed hotbar, `TileReplacementEnabled`/`UsingBiomeTorches` gate the
+  placement routes; see "Batch 5" below.
+- 77 `:43041` elder-slime transform (22) — no elder slime.
+- 80-90 `:43663`-`:43936` the hair/stylist window (`OpenHairWindow` /
+  `CancelHairWindow` / `BuyHairWindow` / `DrawHairWindow`) — unported.
+
+### Batch 2 (hosts 19/20/21/23/58/59) — landed `7858ba28`
+
+The F-key diagnostic toggles and the misc-page pet/light/super-cart ticks.
+Every cue is the `PlaySound(int)` façade (`SoundEngine.cs:102-108` draws NO
+gameplay RNG), so the toggles draw no gameplay stream.
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 19 | `:18416` | `DoUpdate_F11_ToggleUI` | 12 `Menu_Tick` | `app/loop.rs::diag_key` F11 arm |
+| 20 | `:18432` | `DoUpdate_F7_ToggleGraphicsDiagnostics` | 12 | `diag_key` F7 arm |
+| 21 | `:18460` | `DoUpdate_F8_ToggleNetDiagnostics` | 12 | `diag_key` F8 arm |
+| 23 | `:18498` | `DoUpdate_F10_ToggleFPS` | 12 | `diag_key` F10 arm |
+| 58 | `:41249` | misc pet/light tick click | 12 | `app/clicks.rs` misc-tick arm → `Player::toggle_pet`/`toggle_light` |
+| 59 | `:41275` | super-cart tick click | 12 | same arm → `enabled_super_cart` flip |
+
+The four toggles are release-latch machines (`Main.cs:18402-18514`): the
+toggle fires once per press while the latch holds, the key-up re-arms it.
+`App::diag_key(code, pressed)` models them headlessly (the winit press/release
+edges feed it). `hide_ui` gates the interface + minimap draw
+(`DrawInterface_8_CheckF11UIHideToggle`, `:46175-46183`); `show_frame_rate` /
+`draw_diag > 0` draw the `DrawFPS` line (`:21491-21526`). The misc ticks
+(`Main.cs:41226-41283`) flip `hideMisc[0/1]` / `enabledSuperCart` and clear the
+equipped buff on hide (`Player.cs:17342-17363`, the Fairy Bell 27 → 102/101
+arm). Deviations: `TimeLogger.ToggleLogging` (F7+Alt) is a no-op (the
+TimeLogger is unported), no MP `SendData(4)` for hideMisc/superCart, the
+DetailedFPS/TimeLogger draws (`:62485/:62494`) are unported. 8 witnesses
+WRITTEN NOT RUN (code-only).
+
+### Batch 3 (hosts 62/63/64) — landed `c07c1eb9`
+
+The quick-stack-all / mode-cycle / sort-inventory buttons
+(`Main.cs:41833-41897`).
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 62 | `:41849` | quick-stack-all left press | 12 | `app/clicks.rs::quick_stack_all_click` → `quick_stack.rs` |
+| 63 | `:41855` | quick-stack mode-cycle right press | 10 `Menu_Open` | `quick_stack_mode_click` → `cycle_quick_stack_mode` + `SaveSettings` |
+| 64 | `:41887` | sort-inventory left press | 12 | `sort_inventory_click` → `item_sorting::sort_inventory` |
+
+`quick_stack.rs` ports the `QuickStacking.cs` engine: `Transfer`
+(`:404-459`) with the `DestinationHelper` metrics (`:14-98`) and the
+`MatchingItemTypeDestinationList` first-free-slot lookup (`:100-185`),
+`PackQuickStackableItems` (`:377-402`), `RestoreToPlayer` (`:343-363`), the
+banks-then-chests entry (`:232-249`). The source slots snapshot into a Vec and
+write back (behaviour-identical to the C#'s live references). `item_sorting.rs`
+gains `SortInventory`/`SortCoins`/`SortAmmo`/`ClearAmmoSlotSpaces`/
+`FillAmmoFromInventory`/`RefillItemStack`/`TrySlidingUp`
+(`ItemSorting.cs:1616-1923`) over the port's split grid/coin/ammo model, the
+`sort_fav` favorite predicate and `sorting_layer_index` for `GetCategory`.
+`Settings.stack_to_chests_mode` persists (`Main.cs:4212/:4549`); the
+`ChestStack_0..3` + `Sort_0..1` sheets pack. The buttons' `DoStatefulTickSound`
+hover latches (`:41865/:41890`) play the hover-edge tick. RNG: the button cues
+are `PlaySound(int)` façades (no gameplay RNG); the bank `MoveCoins` pre-pass
+keeps its case-7 draw on the bare stream (i43); the coin-overflow drop rides
+`Item.NewItem`'s pinned triplet+prefix on the bare stream. Deviations: the
+ItemTransfer particle + `IndicateBlockedChest`/`IndicateBlockedSlot` pulses are
+no-ops, the net arms are SP no-ops, the projectile-bank range half is unported
+(hosts 24-27), `HasLockedInventory` reads the cursor only (the net slot-lock is
+unported). 10 witnesses WRITTEN NOT RUN (code-only).
+
+### Batch 4 (host 53) — landed `31e5595a`
+
+The world housing banners (`DrawNPCHousesInWorld`, `Main.cs:40711-40832`).
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 53 | `:40828` | `DrawNPCHousesInWorld` kickOut | 12 | `app/clicks.rs::handle_house_banner_clicks` → `town::kick_out` |
+
+`house_banners.rs` ports the banner NPC filter/sort (`NPCBannerSorter`
+descending `housingCategory`, `:40706-40721`), the solid-tile walk-up anchor
+(`:40755-40779`), the per-home 26 px stack (`:40741-40750`), the
+`House_Banner` `Frame(2,2)` cell (reserved column / category row,
+`:40783-40792`), the head icon scaled to 24 px (`:40801-40809`), the
+`Lighting.GetColor` tint and the inclusive hover box (`:40810-40821`). The
+draw runs while `EquipPage == 1` (`DrawInterface_7`, `:46214-46222`); the
+right-click kick-out runs `town::kick_out` (`WorldGen.cs:4869-4879`: homeless
++ the 3600-tick timer + the room drop) + `PlaySound(12)`, consuming the press
+before the chest/crafting/inventory handlers. RNG: the kick-out cue is the
+`PlaySound(int)` façade (no gameplay RNG); the banner draw draws nothing.
+Deviations: the variant head profiles are unported (the default head), the
+`gravDir == -1` flip is unported, the controller-housing-cursor arm is
+gamepad-only. 4 witnesses WRITTEN NOT RUN (code-only).
+
+### Batch 5 (hosts 71/72/73) — landed `7596fb26`
+
+The hotbar-lock + builder-accessory icon toggles
+(`Main.DrawHotbarLockIcon`/`DrawBlockReplacementIcon`/`DrawTorchBiomeSwapIcon`,
+`Main.cs:42479-42596`).
+
+| # | C# line | function | cue | Rust seam |
+|---|---------|----------|-----|-----------|
+| 71 | `:42506` | `DrawHotbarLockIcon` click | 22 `Unlock` | `app/clicks.rs` hotbar-lock arm → `Player.hb_locked` flip |
+| 72 | `:42544` | `DrawBlockReplacementIcon` click | 22 | same handler → `builder_acc_status[10]` flip |
+| 73 | `:42584` | `DrawTorchBiomeSwapIcon` click | 22 | same handler → `builder_acc_status[11]` flip |
+
+`ui/chrome.rs` ports the three icons: the `HbLock[hbLocked ? 0 : 1]`
+`Frame(2)` cell at `(0, 21|0)` (`:42481-42489`), the `blockReplaceIcon[0]`
+`Frame(3,1, enabled ? 0 : 1)` cell at `(0, 44|23)` (`:42524-42534`), the
+`Extra[211]` `Frame(4,1, enabled ? 1 : 0)` cell at `(0, 68|47)`
+(`:42564-42574`) — all scale 0.9 with the strict-edge hover box and the
+`OurFavoriteColor` overlay column (`:42513`/`:42552`/`:42592`). The
+`GetBuilderAccsCountToShow` push-up gate (`:47592-47597`,
+`totalDrawnIcons >= 10` at `:41043`/`:47370`) folds the unported
+ruler-line/grid + auto-paint flags to false. The hover latches:
+`hotbarLockMouseOver` (`:42515`, the `ref bool` helper `:3237-3247` —
+extracted as `chrome::stateful_tick`) and the shared `toggleAccMouseOver`
+int latch (`:47588`, the `ref int` helper `:3249-3259`; the wire/ruler
+icons before the block icon are unported so the port's state indices start
+at 0 — the g22 co-lane owns those icons' own click cues `:47413-:47556`).
+State wiring: `Player.hb_locked` (`Player.cs:1436`) gates the closed-hotbar
+hover/click (`GUIHotbarDrawInner`, `Main.cs:43616`/`:43620`);
+`TileReplacementEnabled` (`Player.cs:3373`) gates the wall-replacement
+route (`:39612` → `place_wall_route`); `UsingBiomeTorches`
+(`Player.cs:3950-3964`, getter + setter) gates the biome-torch hold light
+(`BiomeTorchHoldStyle`) AND the placement conversion (`:40129`) — the
+S1-P-i42 / player_lights "builder toggle folds to 0" deviation is RETIRED.
+Sheets: `Lock_0`/`Lock_1` (`AssetInitializer.cs:475-476`),
+`UI/BlockReplace_0` (`:477`), `Extra_211` (`:362-365`). RNG: every cue is
+the `PlaySound(int)` façade (`SoundEngine.cs:102-108` draws NONE).
+Deviations: the `MouseText` hover labels (`Lang.inter[5/6]`,
+`GameUI.BlockReplacerOn/Off`, `GameUI.TorchTypeSwapperOn/Off`) are unported
+(the port's icon tooltips are a recorded UI gap); `player.mouseInterface`
+is the port's click-consumption stand-in; the `DrawBuilderAccToggles`
+`sign >= 0` early return (`:47361`) reads `Player.sign` which this branch
+does not carry — when the f22 co-lane's sign editor composes in, the gate
+should read its sign-open state (recorded for the merger); the
+`UILinkPointNavigator` gamepad points are
+gamepad-only; the wire/ruler/actuator/paint icon row itself is the g22
+co-lane's census. 8 witnesses WRITTEN NOT RUN (code-only): 3 chrome
+(hit boxes / count+push gate / enter-edge tick) + 3 click (lock flip +
+closed-hotbar gate, block-status flip, torch unlock gate + setter) + 2
+gameplay (replacement toggle gates the wall conversion, biome toggle
+gates the placed torch style).
+
+### The chat-button census correction (sites 41-50) — batch 5 verify
+
+The batch-1 census recorded sites 41-50 (`:40502`-`:40665`,
+`DrawNPCChatButtons`' `npcChatFocus1-4` hover pairs) as host-not-ported
+"the legacy chat interaction buttons are deferred". The batch-5 verify
+re-read the C#: **`DrawNPCChatButtons` (`Main.cs:40474-40673`) has ZERO
+callers in the whole decompile** — it is dead 1.4.5.8 code, superseded by
+`NPCChatPanel.DrawButtons` (`NPCChatPanel.cs:88-162`). The LIVE hover tick
+is `NPCChatPanel.cs:159` (`_lastHovered != num2` → `PlaySound(12)`), which
+the port already plays in `app/clicks.rs::handle_npc_chat_clicks`
+(S1-E-10b — a different census site, outside the `Main.cs` wave). The
+ten sites are re-classified **DEAD-ARM** (not deferred): no port is owed,
+no cue is invented. The `:40656`/`:40665` pair inside the same dead
+function shares the classification. The NPCChatPanel-side button work
+(the interaction registry, the dynamic `INTERACTION_LINES` layout) is the
+**f22/d120 co-lanes' claim** (`task/W4-f22-ui-screens-4` ports the
+sign-aware panel + the ceil(count/4) line count per d120's retire note;
+`task/W4-d120-town-chatter` retired with all 40 `GetChat` arms accounted)
+— this lane reads their claims and touches neither `ui/npc_chat.rs` nor
+the panel geometry. The menu-region sites are **g22's claim**
+(`task/W4-g22-sounds-main-2`, retired: 151/151 menu sites claimed, the
+`:47413-:47556` builder-toggle click cues included); g21's batch 5 wires
+only the three icon clicks in its own `:3244`-`:43936` window plus the
+`:47588` hover-latch helper tick that g22's census explicitly leaves to
+g21 ("the hover tick stays — g21's site, not this batch's").
+
+## The W4-g21 co-lane receipts (2026-11-21, code-only mode)
+
+The post-batch-5 coordination pass: the co-lane witness monitor, the g50
+keep-one mutual receipt, the d79 pitch-rewire receipt (with the one fix
+applied now), and the g22 disjointness census. No cargo/tests/rustfmt/
+graphify invoked; the one new witness is WRITTEN NOT RUN.
+
+### §1. The batch-5 witness monitor — co-lane COMMITTED `ad3282ec6`
+
+The four dirty files (`app/clicks.rs`, `player_lights.rs`, `ui/chrome.rs`,
+`world_sim/editing.rs`) landed as `ad3282ec6` ("batch 5 witnesses + verify
+fixes") while this pass was in flight — the tree is CLEAN, nothing was
+clobbered. 8 witnesses (3 chrome + 3 clicks + 2 editing), every harness
+symbol verified against the tree (grep, not assumed):
+
+| witness | rig/symbols | resolved at |
+| --- | --- | --- |
+| `batch5_icon_hit_boxes_match_the_frame_cells` | `icon_lookups()` → `assets::Lookups::default()` (`#[derive(Default)]` `assets.rs:1929`), `SheetRect` (`tr-render/src/atlas.rs:46`), `hotbar_lock_hit`/`block_replace_hit`/`torch_biome_hit` | `chrome.rs:815/:827/:839` |
+| `batch5_builder_accs_count_and_push_gate` | `builder_accs_count_to_show(wires, actuator, torches)` | `chrome.rs:799` |
+| `batch5_hotbar_lock_hover_ticks_on_the_enter_edge_only` | `stateful_tick` (the extracted `Main.cs:3237-3247` latch tail; the draw returns through it, `chrome.rs:712`) | `chrome.rs:720` |
+| `batch5_hotbar_lock_click_flips_and_gates_the_closed_hotbar` | `inv_app()` (`clicks.rs:6479`), `handle_inventory_clicks` (`:1398`), `Player.hb_locked` (`player.rs:1117`), `selection.buffered` (`app/mod.rs:262` → `hotbar.rs:38`, the -1 none sentinel) | all live |
+| `batch5_block_replace_click_flips_the_builder_status` | `builder_acc_status[10]` (`player.rs:1022`), `tile_replacement_enabled()` (`:4690`) | all live |
+| `batch5_torch_biome_click_needs_the_unlock_and_flips_the_toggle` | `builder_acc_status[11]`, `using_biome_torches()` (`player.rs:4700`), `set_using_biome_torches` (`:4706`) | all live |
+| `batch5_the_biome_swap_toggle_gates_the_placed_torch_style` | `flat_app()` (`editing.rs:17733`), `use_tile_item` (`:7192`), `World::compute_column_surface`/`compute_chunks`/`index` (`tr-core/src/world.rs:1082/:1106/:1181`), `zones.snow` (`tr-core/src/scene.rs:271`) | all live |
+| `batch5_the_replacement_toggle_gates_the_wall_conversion` | `wall_app()` (`editing.rs:18519`), `empty_world` (`:18540`), `set_wall`/`hold_wall` (`:18544/:18549`), `update_editing` (`:1670`), `SCREEN` (`:18513`) | all live |
+
+**ONE SEMANTIC DEFECT FOUND (not fixed — co-lane's code, reported for its
+next commit):** `chrome.rs:1356`
+(`batch5_builder_accs_count_and_push_gate`) asserts
+`builder_accs_count_to_show(true, true, true) >= 10`, but the fn
+(`:799-810`) returns 6+1+1+1 = **9**. The C# `GetBuilderAccsCountToShow`
+(`Main.cs:47592-47597`) counts `rulerLine + rulerGrid + autoPaint` too —
+with the port's folds-to-false deviation the max reachable count is 9 and
+the `>= 10` push-up gate (`:41043`/`:47370`) can NEVER fire; the witness's
+own comment ("+torch = 10 pushes") is arithmetically wrong (6+1+1+1=9).
+The test WILL FAIL when run. Fix owed by the co-lane: either assert
+`< 10` on the last row too (pinning the deviation: the push never fires
+while ruler/paint are unported) or extend the fn with the three folded
+flags before claiming the 10-push. The other 7 witnesses' assertions
+check out against the C# reads (the strict-edge boxes, the enter-edge
+latch, the flip arms, the `:39612` wall gate, the `:40129` style-9
+conversion with the 240-tall rig keeping the underworld arm below).
+
+### §2. The g50 quick_stack keep-one — MUTUAL RECEIPT (g21 canonical)
+
+W4-g50's `1c023f0ad` ("wire the QuickStackChests host arm onto W4-g21's
+landed engine") constants-copied `quick_stack.rs` (490→520 lines) + the
+two `item_sorting.rs` helpers. Verified by
+`git diff HEAD origin/task/W4-g50-net-apply-arms-3 -- <file>`:
+
+- **Engine + witnesses VERBATIM**: all 6 `w4_g21_*` tests byte-identical
+  (the tests-module diff is empty); the engine body differs ONLY by the
+  net extensions below.
+- **g50's additive deltas** (graft at the union, keep g21's body):
+  `SourceSlot`/`Dest`/`transfer`/`Dest::new` widened `pub(crate)`;
+  `Dest.changed: Vec<usize>` (the SyncSlot ledger) + its two `push` sites
+  (`insert_into_free_slot` ≡ `:565`, `build_metrics_and_stack` ≡ `:537`);
+  `chest_index()`/`changed_slots()` accessors; three `#[allow(dead_code)]`
+  attrs (g50's tree has no button caller — g21's does, so the attrs DROP
+  at the union); the module-doc copy note; `item_sorting.rs`'s two
+  CONSTANTS-COPY doc notes (the fn bodies identical).
+- **g50-only files stay g50's**: `netglue.rs::host_quick_stack` (the 85
+  arm), `net.rs`'s NetItem blocked bit + i16 slot keys. `main.rs`: BOTH
+  trees declare `mod quick_stack;` (g21 at base-43 with `mod
+  house_banners;`, g50 at base-181) — different positions, so a textual
+  merge keeps BOTH lines: the union must DEDUPE to one declaration
+  (compile error otherwise).
+- **Phantom name**: g50's module doc names `quick_stack_net_source` as
+  "the net entry this lane adds" — no such fn exists on either tree; the
+  `ReadNetInventory` scratch is inline in `netglue.rs:1751-1766`. No code
+  is owed; the doc name is cosmetic.
+- **g50's base is OLDER**: its `item_sorting.rs` predates g21's batch-3
+  `sort_fav`/`sort_inventory` additions (the diff shows them as g21-only)
+  — the union keeps g21's superset, never g50's older sort body.
+
+The receipt is published on both trees: g21's `quick_stack.rs` module doc
++ the two `item_sorting.rs` doc notes (this commit) mirror g50's own
+"keep-one at union (g21's copy is the survivor)" notes (`1c023f0ad`).
+
+### §3. The d79 pitch-rewire receipt (§F4) — one fix APPLIED, rest union-time
+
+d79's `research/W4-d79-pitch-final.md` §F4 (tip `03ebefad7`) censuses g21
+at `7da02f439`: +21 bare sites (19 menu + 2 Chat), every one a draw-free
+pool cue. This pass re-censused g21 at HEAD (`ad3282ec6`): **+26** (12
+clicks + 9 loop + 3 ui/mod + 2 npcs) = the +21 plus batch 5's +5 (3
+`Unlock` clicks `:42506`/`:42544`/`:42584` + 2 hover-latch ticks
+`:42515`/`:47588` → `:3244`/`:3256`). The batch-5 addendum for d79's
+rewrite-table:
+
+| site (g21 HEAD) | C# anchor | bare call | REWRITE (d79 façade) |
+| --- | --- | --- | --- |
+| clicks.rs:1953 | `Main.cs:42506` hotbar-lock click | `play("Unlock")` | `play_single_voice("Unlock")` (case 22 `:937-946`, no draws) |
+| clicks.rs:1962 | `:42544` block-replace click | `play("Unlock")` | same |
+| clicks.rs:1973 | `:42584` torch-biome click | `play("Unlock")` | same |
+| ui/mod.rs:1018 | `:42515` → `:3244` hotbar-lock hover tick | `chest_panel.audio.play("Menu_Tick")` | `chest_panel.audio.play_menu("Menu_Tick")` (the FrontDraw audio borrow — same façade as d79's ui/mod.rs:892 row) |
+| ui/mod.rs:1042 | `:47588` → `:3256` toggleAcc hover tick | same | same |
+
+The ledger updates: 49 raw + 5 batch-5 = 54; −4 g22/g23-shared = 50
+unique; −2 g21 Chat DELETEs = **48 rewire targets** (45 prod + 3 test).
+
+**APPLIED NOW (this commit)** — the one non-new-site conflict d79 rules
+"keep d79's side" that is standalone-fixable on this base: the Destroyer
+burrow roar drain (`world_sim/npcs.rs` `ev.roar` arm) played bare
+`play_at("Roar_0", …)`. The C# `NPC.cs:50093` `PlaySound(15, x, y)` takes
+the int overload's **default Style = 1** (`SoundEngine.cs:102` — verified
+in the decompile), so `Roar_1` is faithful and `Roar_0` was wrong twice
+(wrong slot, no attenuation/slot guard). The landed S1-E-21g seam
+`Audio::play_roar` (`audio.rs:1439`) already exists on this base (the
+queued-roar drain at `npcs.rs:1144` rides it), so the arm now calls
+`app.audio.play_roar(1, nx, ny)` — d79's `:2072` hunk applied ahead of the
+union on the shared seam. Witness
+`w4_g21_the_destroyer_roar_default_style_is_one` (audio.rs) pins the
+style-1 → `Roar_1` mapping + the draw-free contract. WRITTEN NOT RUN.
+
+**UNION-TIME ONLY (not applied — d79's seams absent on this base):** the
+2 Chat DELETEs (`npcs.rs:286` talk-open `:43083`, `:644` angler `:40243` —
+d79's phase-7 `talk_to_npc`/`angler_turn_in` seams play them through
+`play_single_voice("Chat")`; deleting them here would silence the cues
+AND break g21's own batch-1 witnesses, which pin `played_count`), the
+kill-table `play_at(name, …)` → `play_kill_cue` rewire (`npcs.rs:4733`),
+the 19+2 menu `play_menu` rewrites, and the Grab/Coins click dedupes
+(d79's phase-3/5 forms win one-for-one). The merger's checklist is d79's
+§F4 table + the addendum above.
+
+### §4. The g22 menu-canonical receipt — DISJOINT, direction B respected
+
+g22's RETIRE (`250488c34`) publishes direction B: the merger starts from
+g22's base, folds g23's 4 commits (keep-g22/take-g23-unique), g24
+independent. g21 is NOT in that fold — it merges separately. The
+shared-file hunk census (`git diff a725acb04..<tip>` per file, base-line
+ranges) proves the regions disjoint:
+
+| file | g21 hunks (base lines) | g22 hunks (base lines) | verdict |
+| --- | --- | --- | --- |
+| `app/clicks.rs` | 1133-2478 (the icon/map/emote/quick-stack arms) + tests 3968+/4691+/5640+/5984+ | 2664-2670 (menu Action arms) + 2765-2771 (`cancel_connect`/`load_backup`) + tests 3267-3273 | disjoint (g21's 2472+6 hunk ends base-2478, before g22's 2664; g22's test hunk at 3267 sits before g21's first test hunk at 3968) |
+| `app/loop.rs` | 153-252 (chat/diag extraction) + 287-295 + 677-682/715-720 (the chat_key/diag_key insertion points) + tests 934-939 | 267-278 + 447-457 + 585-595 (menu tick sites) | disjoint |
+| `app/mod.rs` | 749 (App fields) + 2105-2128 (nurse_heal) + 3931 + tests 5652 | 1508 + 2565 (menu glue) | disjoint |
+| `app/flow.rs` | tests 2367 (the rig's new App fields) | 308 (FrontDraw.audio) + 437-1229 (front-screen cues) + tests 1562 | disjoint (different test-mod regions; the rig-literal hunk is g21-only, g22's FrontDraw field is g22-only — the union composes both) |
+| `app/frame/world.rs` | 32 (house-banner click) | 250 (music env fields) | disjoint |
+| `app/frame/draw.rs` | 171/1405/1416/1442/1561/1762/1988 (banner + icon draws) | 1545-1551 (menu draw) | disjoint (g22's 1545-1551 sits BETWEEN g21's 1442-1448 and 1561-1568 hunks — no shared base line) |
+| `main.rs` | 43 (`mod house_banners; mod quick_stack;`) | 258 (`mod main_sounds;`) | disjoint vs g22; NOTE the g50 union dedupe: g50 declares `mod quick_stack;` at base-181 (ANALYSIS §2) |
+| `audio.rs` | none (g21 adds no engine code) | 66 (cue rows) + 1729+ (menu façades) | g22-only |
+| `menu/*`, `ui/char_creation.rs`, `ui/keyboard.rs`, `ui/world_creation.rs`, `main_sounds.rs` | none | all g22 | g22-only |
+
+The `:47588` hover-latch tick is g21's by g22's own census reading (the
+chat-button census correction above); the `:47413-:47556` builder-toggle
+CLICK cues are g22's. The `sign >= 0` gate note (batch 5) still awaits
+f22's sign state — unchanged.
+
+### §5. The research/32 update + family declaration
+
+`docs/research/32-sound-audio.md` gains "The W4 main-sounds family —
+declaration + coverage update": the six-lane claim table (g21/g22/g23/
+g24/g25 + d79/d80), the g21 coverage delta (+26 bare sites, the nurse
+Item4 façade, the Roar fix's −1), the seeds status (2/3 → d79, 4 → this
+family, 6 → d80). The module's D-row defects are unchanged by this pass
+(the family executes the seeds; it does not re-audit).

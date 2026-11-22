@@ -157,10 +157,12 @@ pub(crate) fn grant_ammo_mastery(
 /// `:15295-15298`) runs on the selected slot.
 ///
 /// Scope: the Mechanical Lens (3619) and Wire Kite (3611) grant
-/// `InfoAccMechShowWires` (`:12801-12804`); the Actuation Accessory (3624)
-/// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
-/// halves (`:12805-12812`) and the auto-paint family are out of this wiring
-/// wave. The `autoActuator` placement consumer
+/// `InfoAccMechShowWires` (`:12801-12804`); the Ruler (486) / Wire Kite grant
+/// `rulerLine` (`:12805-12808`), the Laser Ruler (2799) / Wire Kite
+/// `rulerGrid` (`:12809-12812`), the Paint Sprayer (2216) / Architect Gizmo
+/// Pack (3061) / Presserator (5126) `autoPaint` (`:12813-12816`); the
+/// Actuation Accessory (3624) grants `autoActuator` (`:12817-12820`). The
+/// `autoActuator` placement consumer
 /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
 /// follow-up — the flag is granted and read by the visibility gate, but the
 /// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
@@ -189,11 +191,24 @@ pub(crate) fn grant_mechanical_accs(
 }
 
 /// `Player.RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12820`),
-/// the wiring-relevant arms only.
+/// the builder-toggle arms (the `preventAllItemPickups` arm `:12821-12824`
+/// stays out of the wiring scope).
 fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     // `:12801-12804` — the Mechanical Lens / Wire Kite show the wires.
     if kind == 3619 || kind == 3611 {
         p.info_acc_mech_show_wires = true;
+    }
+    // `:12805-12808` — the Ruler / Wire Kite show the ruler line.
+    if kind == 486 || kind == 3611 {
+        p.ruler_line = true;
+    }
+    // `:12809-12812` — the Laser Ruler / Wire Kite show the ruler grid.
+    if kind == 2799 || kind == 3611 {
+        p.ruler_grid = true;
+    }
+    // `:12813-12816` — the Paint Sprayer / Gizmo Pack / Presserator auto-paint.
+    if kind == 2216 || kind == 3061 || kind == 5126 {
+        p.auto_paint = true;
     }
     // `:12817-12820` — the Actuation Accessory auto-places actuators.
     if kind == 3624 {
@@ -2354,6 +2369,29 @@ mod tests {
             app.player.as_ref().unwrap().auto_actuator,
             "3624 held grants autoActuator"
         );
+        // The ruler/paint arms (`Player.cs:12805-12816`): the ruler LINE is
+        // on by default — `ResetEffects` re-sets it every tick (`:18693`);
+        // the grid and paint flags start off and clear per tick (`:18692`,
+        // `:18533`).
+        app.inventory[app.selected] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(p.ruler_line, "rulerLine defaults true (:18693)");
+            assert!(!p.ruler_grid && !p.auto_paint, "grid/paint clear");
+        }
+        // The Wire Kite (3611) grants line + grid on top of the wires.
+        app.equip.armor[4] = slot(3611);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().ruler_grid, "3611 grants rulerGrid");
+        app.equip.armor[4] = EMPTY_SLOT;
+        // The Paint Sprayer (2216) grants autoPaint; unequip clears it.
+        app.equip.armor[4] = slot(2216);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().auto_paint, "2216 grants autoPaint");
+        app.equip.armor[4] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().auto_paint, "autoPaint cleared");
     }
 
     /// DW-3.3 (the buff half) — the three buff-granted flags (16 Archery,

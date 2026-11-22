@@ -749,6 +749,51 @@ pub(crate) struct App {
     /// The debug *window* (the typed always-present overlay, top-left). Its own
     /// toggle (F4) so it can be up while the large `TR_DEBUG` overlay is off.
     pub(crate) debug_overlay: bool,
+    /// `Main.hideUI` (`Main.cs:2085`): the F11 interface-hide toggle
+    /// (`DoUpdate_F11_ToggleUI`, `Main.cs:18402-18424`). While true the
+    /// `DrawInterface_8_CheckF11UIHideToggle` layer (`:46175-46183`) returns
+    /// false, so every later interface layer stands down (W4-g21 batch 2).
+    pub(crate) hide_ui: bool,
+    /// `Main.drawDiag` (`Main.cs:509`): the F7 graphics-diagnostics cycle
+    /// (`DoUpdate_F7_ToggleGraphicsDiagnostics`, `Main.cs:18426-18452`) —
+    /// `(drawDiag + 1) % 3`; >0 forces `showFrameRate` (`:62479-62481`) and
+    /// clears the net-diagnostics flag (`:18440-18443`).
+    pub(crate) draw_diag: i32,
+    /// `Main.shouldDrawNetDiagnosticsUI` (`Main.cs:647`): the F8 net-diagnostics
+    /// toggle (`DoUpdate_F8_ToggleNetDiagnostics`, `Main.cs:18454-18473`);
+    /// turning it on zeroes `drawDiag` (`:18462-18465`).
+    pub(crate) net_diag: bool,
+    /// `Main.showFrameRate` (`Main.cs:991`): the F10 FPS toggle
+    /// (`DoUpdate_F10_ToggleFPS`, `Main.cs:18492-18514`) — `DrawFPS`
+    /// (`Main.cs:21491-21526`) draws the fps/ups line while it holds.
+    pub(crate) show_frame_rate: bool,
+    /// `Main.releaseUI` (`Main.cs:2087`): the F11 press-edge latch.
+    pub(crate) release_ui: bool,
+    /// `Main.drawRelease` (`Main.cs:511`): the F7 press-edge latch.
+    pub(crate) draw_release: bool,
+    /// `Main.netRelease` (`Main.cs:987`): the F8 press-edge latch.
+    pub(crate) net_release: bool,
+    /// `Main.frameRelease` (`Main.cs:989`): the F10 press-edge latch.
+    pub(crate) frame_release: bool,
+    /// `Main.allChestStackHover` (`Main.cs:1297`): the quick-stack button's
+    /// hover latch (`DoStatefulTickSound`, `Main.cs:41865`, W4-g21 batch 3).
+    pub(crate) all_chest_stack_hover: bool,
+    /// `Main.inventorySortMouseOver` (`Main.cs:1299`): the sort button's hover
+    /// latch (`DoStatefulTickSound`, `Main.cs:41890`, W4-g21 batch 3).
+    pub(crate) inventory_sort_hover: bool,
+    /// `Main.hotbarLockMouseOver` (`Main.cs:42515`): the hotbar-lock icon's
+    /// hover latch (`DoStatefulTickSound`, W4-g21 batch 5 host 71).
+    pub(crate) hotbar_lock_hover: bool,
+    /// `Main.toggleAccMouseOver` (`Main.cs:47588`): the builder-accessory
+    /// toggle row's shared hover latch — the block-replacement and
+    /// torch-biome-swap icons feed it (`DoStatefulTickSound(ref int, state)`,
+    /// `Main.cs:3249-3259`; -1 = none hovered). W4-g21 batch 5 hosts 72/73.
+    pub(crate) toggle_acc_hover: i32,
+    /// The world housing banners' hover boxes (`DrawNPCHousesInWorld`,
+    /// `Main.cs:40711-40832`), rebuilt each draw while `EquipPage == 1` — the
+    /// right-click kick-out hit-tests them (`Main.cs:40824-40829`, W4-g21
+    /// batch 4 host 53).
+    pub(crate) house_banners: Vec<crate::house_banners::Banner>,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -2105,6 +2150,10 @@ impl App {
     /// → the life to full + the removable debuffs cleared. Returns false
     /// when the purse is short or there is nothing to heal.
     pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
+        // `Main.cs:40105` — `NPCChatText_DoNurseHeal` plays sound 12 FIRST,
+        // before the `healCost > 0` / `BuyItem` gates (the port's collapse
+        // runs the cost gate inside; the cue plays on the button press).
+        crate::chest::play_menu_sound(self, 12);
         let cost = self.nurse_heal_cost(nurse_idx);
         if cost <= 0 || self.coins < cost as u64 {
             return false;
@@ -2118,10 +2167,26 @@ impl App {
         // !NurseCannotRemoveDebuff[b]`).
         player.clear_nurse_removable_debuffs();
         self.coins -= cost as u64;
-        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40111`,
+        // `AchievementsHelper.HandleNurseService(healCost)` (`Main.cs:40110`,
         // `AchievementsHelper.cs:407-410`): the paid amount rides
         // FREQUENT_FLYER's `Pay` float, i.e. `BuyItem` succeeded.
         let _ = self.achievements.notify_custom_float("Pay", cost as f32);
+        // `SoundEngine.PlaySound(SoundID.Item4)` (`Main.cs:40111`) — the
+        // coins cue AFTER `HandleNurseService`, BEFORE `HealEffect`
+        // (`:40112`). The legacy `PlaySound(SoundID)` façade
+        // (`SoundEngine.cs:93-99`) draws the `GetRandomPitch` NextFloat on
+        // the audio-only `sound_style_random` and case 2's ONE
+        // `Next(-6,7)` pitch roll on the bare-`Main.rand` stand-in (the
+        // click runs outside every swap, the S1-A-11 §4 convention).
+        if let Some(idx) = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.name == "Item4")
+        {
+            let mut rng = self.rngs.global().clone();
+            self.audio
+                .play_use_sound(idx as u16, -1.0, -1.0, 0.0, &mut rng);
+            *self.rngs.global() = rng;
+        }
         true
     }
 
@@ -3931,6 +3996,22 @@ impl App {
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
             debug_overlay: false,
+            // W4-g21 batch 2 — the F-key diagnostic toggles' boot state: the
+            // C# statics default false/0 (`Main.cs:509/:647/:991/:2085`), the
+            // release latches false (`:511/:987/:989/:2087`).
+            hide_ui: false,
+            draw_diag: 0,
+            net_diag: false,
+            show_frame_rate: false,
+            release_ui: false,
+            draw_release: false,
+            net_release: false,
+            frame_release: false,
+            all_chest_stack_hover: false,
+            inventory_sort_hover: false,
+            hotbar_lock_hover: false,
+            toggle_acc_hover: -1,
+            house_banners: Vec::new(),
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
@@ -5657,6 +5738,45 @@ mod s1_e_18_tests {
             .find(|a| a.name == "FREQUENT_FLYER")
             .and_then(|a| a.tracker_values())
             .map_or(0, |(v, _)| v)
+    }
+
+    /// W4-g21 — `NPCChatText_DoNurseHeal`'s two cues (`Main.cs:40105`,
+    /// `:40111`): sound 12 plays FIRST on every button press (even a refused
+    /// heal), sound `Item4` only inside the `BuyItem` success arm. The
+    /// Item4 case-2 pitch roll draws ONE `Next(-6,7)` on the bare-`Main.rand`
+    /// stand-in (the click runs outside every swap); the `GetRandomPitch`
+    /// NextFloat rides the audio-only `sound_style_random`.
+    #[test]
+    fn w4_g21_the_nurse_heal_plays_the_tick_then_the_coins_cue() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.hp = player.max_hp / 2;
+        app.player = Some(player);
+        app.npcs.push(crate::npc::Npc::new(
+            crate::npc::NpcKind::Nurse,
+            32.0,
+            100.0,
+            1,
+            0.0,
+        ));
+        let cost = app.nurse_heal_cost(0);
+        assert!(cost > 0);
+        // The refused heal: the `:40105` tick still plays, no Item4.
+        app.coins = cost as u64 - 1;
+        let before = app.audio.played_count();
+        let rng_before = app.rngs.global().clone();
+        assert!(!app.nurse_heal(0));
+        assert_eq!(app.audio.played_count(), before + 1, "only the tick");
+        assert_eq!(*app.rngs.global(), rng_before, "no gameplay draw");
+        // The paid heal: tick + Item4, and the case-2 pitch roll advanced the
+        // bare stream by exactly one `Next(-6,7)` draw.
+        app.coins = cost as u64;
+        let before = app.audio.played_count();
+        let mut witness = app.rngs.global().clone();
+        witness.next_range(-6, 7); // `LegacySoundPlayer.cs:634`'s default arm
+        assert!(app.nurse_heal(0));
+        assert_eq!(app.audio.played_count(), before + 2, "tick + Item4");
+        assert_eq!(*app.rngs.global(), witness, "one pitch draw, in order");
     }
 }
 
