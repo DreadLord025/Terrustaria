@@ -484,6 +484,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d11 DOC-SWEEP — the BloodSquid's `DebuffImmunitySets` row:
+        // SpecificallyImmuneTo {31} (Confused, `NPCID.cs:9648-9654`).
+        NpcKind::BloodSquid => &[31],
     }
 }
 

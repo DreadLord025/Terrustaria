@@ -80,6 +80,7 @@ mod npc_ai3_speeds;
 // (NPC.cs:59831-60284) + the Drippler's aiStyle-22 machine.
 mod npc_ai_fighter_scan;
 mod npc_ai_drippler;
+mod npc_ai_blood_squid;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;
@@ -195,6 +196,11 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-d11 — the aiStyle 101-110 census slice (the tower orbs, the spore
+// sac/gas, the nebula sphere / djinn curse, the ritual markers' 813 arm,
+// the mechanic wrench and the nurse syringe). Code-only round — the
+// witness tests are WRITTEN NOT RUN.
+mod projectile_ai_101_110;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

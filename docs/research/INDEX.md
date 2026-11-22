@@ -74,7 +74,9 @@ per `docs/superpowers` agreements).
 | 60 | Item-use census (S1-P-i01: Player.ItemCheck vs world_sim/editing.rs use path; U1-U39 rows + 11 fix slices) | `60-item-use-census.md` | 🟡 |
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
-| 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 164 | Projectile aiStyles 101-110 census + port (W4-d11; renumbered 26d per registry-150: the ten-style coverage table, the DOC-SWEEP wave, the nebula-sweep producer + the sibling dedupe notes, the RETIRE closeout) | `164-projectile-ai-101-110-census.md` | ✅ |
+| 355 | W4-d11 RETIRE FINAL (the band-101-110 git-log census - nebula-sweep NOT on main, branch-sole; the d77c 539/576 cue compose; the 813 three-way keep-one g64-superset + d11-row-byte-equal EXECUTED; the all-armed/rowed census + gaps; the nebula producer-unique/lifecycle-fold keep-one table + the can_ghost_heal d6-field ruling; the family declaration) — chain 245→355 (registry-150 §9.2 row 355, d54 `e9ac39459`: g48 WINS 245 pre-publish `2b61530b4`) | `355-w4-d11-retire-final.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

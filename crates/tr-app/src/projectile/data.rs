@@ -296,8 +296,68 @@ pub const MARTIAN_RAY: u16 = 438;
 /// hostile, penetrate -1).
 pub const STARDUST_MARK: u16 = 540;
 pub const NEBULA_EYE: u16 = 574;
+/// `ProjectileID.MedusaHeadRay` (536) — the Medusa head's gaze ray,
+/// aiStyle 101 (`Projectile.cs:6107-6119`: 10x10, friendly, penetrate
+/// -1, tileCollide false, magic, ignoreWater). W4-d11.
+pub const MEDUSA_HEAD_RAY: u16 = 536;
+/// `ProjectileID.MinecartMechLaser` (591) — the mechanical minecart's
+/// laser, aiStyle 101 (`Projectile.cs:6397-6408`: 8x8, friendly,
+/// penetrate -1, tileCollide false, ignoreWater). W4-d11.
+pub const MINECART_MECH_LASER: u16 = 591;
+/// `ProjectileID.StardustJellyfishSmall` (539) — the stardust pillar's
+/// small jellyfish orb, aiStyle 102 (`Projectile.cs:6142-6150`: 18x30,
+/// hostile, penetrate -1, timeLeft 600). W4-d11.
+pub const STARDUST_JELLYFISH_SMALL: u16 = 539;
+/// `ProjectileID.NebulaBolt` (573) — the nebula soldier's bolt orb,
+/// aiStyle 102 (`Projectile.cs:6230-6238`: 18x30, hostile, penetrate -1,
+/// timeLeft 600). W4-d11.
+pub const NEBULA_BOLT: u16 = 573;
+/// `ProjectileID.NebulaLaser` (576) — the 574 eye's release laser,
+/// aiStyle 1 (`Projectile.cs:6258-6269`: 4x4, hostile, penetrate -1,
+/// alpha 255, extraUpdates 2, scale 1.2, timeLeft 600). W4-d11.
+pub const NEBULA_LASER: u16 = 576;
+/// `ProjectileID.BrainOfConfusion` (565) — the Brain of Confusion's
+/// confusion burst, aiStyle 104 (`Projectile.cs:6161-6171`: 28x28,
+/// penetrate -1, tileCollide false, ignoreWater, alpha 255, scale 0.8).
+/// W4-d11.
+pub const BRAIN_OF_CONFUSION: u16 = 565;
+/// `ProjectileID.SporeTrap` (567) / `SporeTrap2` (568) — the Spore Sac
+/// accessory's traps, aiStyle 105 (`Projectile.cs:6185-6205`: 14x14 /
+/// 16x16, friendly, penetrate 1, alpha 255, timeLeft 3600, tileCollide
+/// false, ignoreWater, `UseGroupStaticImmunity(567)`). W4-d11.
+pub const SPORE_TRAP: u16 = 567;
+pub const SPORE_TRAP_2: u16 = 568;
+/// `ProjectileID.SporeGas` (569) / `SporeGas2` (570) / `SporeGas3` (571)
+/// — the Spore Sac's released gas clouds, aiStyle 106
+/// (`Projectile.cs:6206-6218`: 32x32, friendly, penetrate -1, alpha 255,
+/// timeLeft 3600, tileCollide false, ignoreWater,
+/// `UseGroupStaticImmunity(569)`). W4-d11.
+pub const SPORE_GAS: u16 = 569;
+pub const SPORE_GAS_2: u16 = 570;
+pub const SPORE_GAS_3: u16 = 571;
+/// `ProjectileID.NebulaSphere` (575) — the nebula pillar's seeking
+/// sphere, aiStyle 107 (`Projectile.cs:6219-6229`: 24x24, hostile,
+/// penetrate -1, tileCollide false, timeLeft 420, alpha 255). W4-d11.
+pub const NEBULA_SPHERE: u16 = 575;
+/// `ProjectileID.DesertDjinnCurse` (596) — the djinn's curse flame,
+/// aiStyle 107 (`Projectile.cs:6450-6460`: 8x8, hostile, alpha 255,
+/// ignoreWater, timeLeft 180, tileCollide false). W4-d11.
+pub const DESERT_DJINN_CURSE: u16 = 596;
+/// `ProjectileID.MechanicWrench` (582) — the Mechanic's thrown wrench,
+/// aiStyle 109 (`Projectile.cs:6316-6324`: 20x20, friendly, penetrate
+/// -1, MaxUpdates 2 = extraUpdates 1). W4-d11.
+pub const MECHANIC_WRENCH: u16 = 582;
+/// `ProjectileID.NurseSyringeHeal` (584) — the Nurse's healing syringe,
+/// aiStyle 110 (`Projectile.cs:6340-6348`: 10x10, friendly, scale 0.8,
+/// penetrate 3). W4-d11.
+pub const NURSE_SYRINGE_HEAL: u16 = 584;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
+/// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' tear
+/// ritual marker, aiStyle 108 (`Projectile.cs:6282-6293`: the shared
+/// 32x32 row with the 578/579, friendly + hostile, alpha 255,
+/// tileCollide false, ignoreWater, drawLayer 1). W4-d11.
+pub const BLOOD_NAUTILUS_TEARS: u16 = 813;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
 pub const TOWER_DAMAGE_BOLT: u16 = 629;
 pub const VORTEX_DART: u16 = 581;
@@ -2435,18 +2495,105 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // rows): the 452/454/455/456 hostile set (timeLeft 600,
             // penetrate -1 except the bolt) and the drama smoke 622.
             // `:6151-6160`'s StardustTowerMark (the 540): 20x20, aiStyle
-            // 103, timeLeft 300, hostile.
-            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, RESET_STATE),
+            // 103, timeLeft 300, hostile, alpha 255 (`:6159` — W4-d11 row
+            // fix: the fade-in starts invisible).
+            STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
-            // timeLeft 600, tileCollide false.
-            NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false, RESET_STATE),
+            // timeLeft 600, tileCollide false. W4-d11 row fix: the stock
+            // penetrate 1 (`:774` — the arm sets none), NOT -1.
+            NEBULA_EYE => (18.0, 18.0, 102, 1, 600, 0, false, false, false, RESET_STATE),
+            // W4-d11 — `Projectile.cs:6142-6150` (539, the
+            // StardustJellyfishSmall): 18x30, aiStyle 102, penetrate -1,
+            // timeLeft 600, the stock tileCollide.
+            STARDUST_JELLYFISH_SMALL => {
+                (18.0, 30.0, 102, -1, 600, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d11 — `Projectile.cs:6230-6238` (573, the NebulaBolt):
+            // 18x30, aiStyle 102, penetrate -1, timeLeft 600.
+            NEBULA_BOLT => (18.0, 30.0, 102, -1, 600, 0, true, false, false, RESET_STATE),
+            // W4-d11 — `Projectile.cs:6258-6269` (576, the NebulaLaser):
+            // 4x4, aiStyle 1, penetrate -1, alpha 255, extraUpdates 2,
+            // scale 1.2, timeLeft 600.
+            NEBULA_LASER => {
+                (4.0, 4.0, 1, -1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.2))
+            }
+            // W4-d11 — `Projectile.cs:6161-6171` (565, the
+            // BrainOfConfusion): 28x28, aiStyle 104, penetrate -1,
+            // tileCollide false, alpha 255, scale 0.8. The stock
+            // friendly/hostile false — the burst is a visual marker.
+            BRAIN_OF_CONFUSION => {
+                (28.0, 28.0, 104, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 0.8))
+            }
+            // W4-d11 — `Projectile.cs:6185-6205` (567/568, the Spore
+            // Sac traps): 14x14 / 16x16, aiStyle 105, penetrate 1,
+            // alpha 255, timeLeft 3600, tileCollide false; the shared
+            // `UseGroupStaticImmunity(567)` rides the idStatic overlay
+            // below.
+            SPORE_TRAP => {
+                (14.0, 14.0, 105, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
+            }
+            SPORE_TRAP_2 => {
+                (16.0, 16.0, 105, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
+            }
+            // W4-d11 — `Projectile.cs:6206-6218` (569-571, the SporeGas
+            // clouds): 32x32, aiStyle 106, penetrate -1, alpha 255,
+            // timeLeft 3600, tileCollide false; the shared
+            // `UseGroupStaticImmunity(569)` rides the idStatic overlay.
+            SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3 => {
+                (32.0, 32.0, 106, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
+            }
+            // W4-d11 — `Projectile.cs:6219-6229` (575, the NebulaSphere):
+            // 24x24, aiStyle 107, penetrate -1, tileCollide false,
+            // timeLeft 420, alpha 255.
+            NEBULA_SPHERE => {
+                (24.0, 24.0, 107, -1, 420, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d11 — `Projectile.cs:6450-6460` (596, the
+            // DesertDjinnCurse): 8x8, aiStyle 107, alpha 255, timeLeft
+            // 180, tileCollide false; the stock penetrate 1 (`:774`).
+            DESERT_DJINN_CURSE => {
+                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d11 — `Projectile.cs:6316-6324` (582, the
+            // MechanicWrench): 20x20, aiStyle 109, penetrate -1,
+            // MaxUpdates 2 (extraUpdates 1); the stock tileCollide.
+            MECHANIC_WRENCH => {
+                (20.0, 20.0, 109, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE)
+            }
+            // W4-d11 — `Projectile.cs:6340-6348` (584, the
+            // NurseSyringeHeal): 10x10, aiStyle 110, scale 0.8,
+            // penetrate 3; the stock tileCollide.
+            NURSE_SYRINGE_HEAL => {
+                (10.0, 10.0, 110, 3, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 0, 0.8))
+            }
+            // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
+            // 10x10, aiStyle 101, penetrate -1, tileCollide false;
+            // drawLayer 7 / usesOwnerLight are render-side (dropped).
+            MEDUSA_HEAD_RAY => {
+                (10.0, 10.0, 101, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
+            // W4-d11 — `Projectile.cs:6397-6408` (591, the
+            // MinecartMechLaser): 8x8, aiStyle 101, penetrate -1,
+            // tileCollide false; drawLayer 7 / usesOwnerLight dropped.
+            MINECART_MECH_LASER => {
+                (8.0, 8.0, 101, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
             // `:6754-6766`'s TowerDamageBolt (the 629): 8x8, aiStyle 122,
             // ignoreWater, extraUpdates 2.
             TOWER_DAMAGE_BOLT => (8.0, 8.0, 122, -1, TIME_LEFT_DEFAULT, 2, false, false, true, RESET_STATE),
             // `:6282-6293`'s ritual markers (the 578 lightning + the 579
-            // portal): 32x32, aiStyle 108, tileCollide false, ignoreWater.
-            VORTEX_LIGHTNING | VORTEX_PORTAL => {
-                (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            // portal + the 813 Blood Nautilus tears, W4-d11/g64/d13): 32x32,
+            // aiStyle 108, friendly AND hostile, alpha 255, tileCollide
+            // false, ignoreWater, drawLayer 1 (a draw-side field, no pool
+            // consumer). `penetrate` keeps the stock 1 (`:774` — the block
+            // never sets it); the row shape carries neither friendly nor
+            // hostile (the data-row deviation census). W4-d11 RETIRE item 3:
+            // the g64/d13 corrected shape adopted for all three kinds — the
+            // old d11 `-1`/RESET_STATE (alpha 0) was stale; this tuple is
+            // BYTE-EQUAL to g64 `3cdc6423` / d13 `b56db900` so the three-way
+            // 813 keep-one merges clean (g64's dust-wired machine survives).
+            VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS => {
+                (32.0, 32.0, 108, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
             }
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
             // extraUpdates 4, ignoreWater.
@@ -4080,7 +4227,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
         // id-static table keys both under one cooldown. Every other row keeps
         // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
-        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
+        // W4-d11: the Spore Sac traps share 567 (`UseGroupStaticImmunity
+        // (567)`, `Projectile.cs:6204`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) {
+            BEE
+        } else if matches!(kind, SPORE_TRAP | SPORE_TRAP_2) {
+            SPORE_TRAP
+        } else if matches!(kind, SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3) {
+            SPORE_GAS
+        } else {
+            0
+        },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.
@@ -4209,6 +4366,27 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i18 — `Projectile.cs:3251`: the High Velocity Bullet's
             // `ignoreWater = true`.
             || kind == HIGH_VELOCITY_BULLET
+            // W4-d11 — the aiStyle-101 rays set `ignoreWater`
+            // (`Projectile.cs:6118` the 536, `:6407` the 591).
+            || matches!(kind, MEDUSA_HEAD_RAY | MINECART_MECH_LASER)
+            // W4-d11 — the 565 BrainOfConfusion sets `ignoreWater`
+            // (`Projectile.cs:6168`).
+            || kind == BRAIN_OF_CONFUSION
+            // W4-d11 — the Spore Sac traps set `ignoreWater`
+            // (`Projectile.cs:6203`).
+            || matches!(kind, SPORE_TRAP | SPORE_TRAP_2)
+            // W4-d11 — the SporeGas clouds set `ignoreWater`
+            // (`Projectile.cs:6216`).
+            || matches!(kind, SPORE_GAS | SPORE_GAS_2 | SPORE_GAS_3)
+            // W4-d11 — the 596 DesertDjinnCurse sets `ignoreWater`
+            // (`Projectile.cs:6457`); the 575 sphere does NOT
+            // (`:6219-6229` has no such line).
+            || kind == DESERT_DJINN_CURSE
+            // W4-d11 RETIRE item 3 (the g64 remainder-4 / d13 a2588cd2
+            // residual adopted) — the aiStyle-108 ritual markers' shared
+            // block sets `ignoreWater` (`Projectile.cs:6290`); the 578/579
+            // rows predated the flag list, the 813 joins them.
+            || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,
@@ -4308,6 +4486,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+            // W4-d11 — the 536 MedusaHeadRay sets `magic = true`
+            // (`Projectile.cs:6117`); the 591 mech laser does NOT
+            // (`:6397-6408` has no such line).
+                | MEDUSA_HEAD_RAY
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4703,6 +4885,21 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-d11 — the tower orbs' sheets (`Main.cs:8549-8551`): the 539
+        // jellyfish + the 575 sphere 4 rows, the 574 eye 2 rows (the
+        // aiStyle-102 machine's frame wraps + the 574's `frame = 1` pin,
+        // `Projectile.cs:33310-33317`/`:33352`/`:33410-33417`).
+        STARDUST_JELLYFISH_SMALL => 4,
+        NEBULA_EYE => 2,
+        // W4-d11 — the 575 sphere + the 596 curse flame's 4-frame sheets
+        // (`Main.cs:8550`/`:8491`) — the aiStyle-107 5-tick cycles wrap
+        // at them (`Projectile.cs:33572-33579`/`:33598-33605`).
+        NEBULA_SPHERE => 4,
+        DESERT_DJINN_CURSE => 4,
+        // W4-d11 — the 565's 4-frame sheet (`Main.cs:8478`) — the
+        // aiStyle-104 7-tick cycle wraps at it (`Projectile.cs:33499-
+        // 33508`).
+        BRAIN_OF_CONFUSION => 4,
         _ => 1,
     }
 }

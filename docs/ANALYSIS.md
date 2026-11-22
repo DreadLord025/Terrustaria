@@ -39244,3 +39244,51 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The W4-d11 RETIRE round (the band-101-110 closeout)
+
+The five-item RETIRE (research/355 FINAL — chain 245→355 per registry-150
+§9.2 row 355, d54 `e9ac39459`: g48 WINS 245 pre-publish `2b61530b4`; the
+census renumbered 26d->164 per registry-150). Code-only: no cargo/tests/rustfmt/graphify; the one new witness
+is WRITTEN NOT RUN.
+
+1. **The git-log census**: the band 101-110 + the nebula-sweep are NOT on
+   main (`051600da8`: no band module, zero arm hits, no nebula-set commit)
+   — the branch is the sole carrier (producer `121672908` + completion
+   `ab42de2d7` + census `2894f6f7d`).
+2. **The d77c compose CONFIRMED**: the 539 id-4 style-7 cry (centre−40, the
+   `:72565-72571` post-recentre read) + the 576 common-bullet Item10
+   (`:76038`) ride d77's `kill_tail_cue` on d11's rows; d11 self-arms
+   neither; f20's 576 AI_001 overlay (`7d6e2b72`) stays row-gated inert
+   until this branch merges — three disjoint layers.
+3. **The 813 three-way keep-one**: g64 `3cdc64236`'s dust-wired
+   `ai_vortex_ritual` superset SURVIVES (it absorbed d11's dissolve
+   no-return + d13's wind-up scale/Kill-head/Item8-cue/(int)Center fixes);
+   d11/d13's gates-only machines DROP. THE ROW: d11's stale `-1`/alpha-0
+   corrected to the C# `:6282-6293` shape (stock pen 1 `:774`, alpha 255,
+   the `:6290` ignoreWater entry) — now BYTE-EQUAL to g64/d13
+   (string-compare verified; the
+   `w4_d11_retire_the_marker_row_is_byte_equal_across_the_three_way`
+   witness pins it). The d11 wind-up `scale = 0.0` stand-in stays as-is
+   (the arm drops wholesale; no hybrid).
+4. **The all-armed/rowed census**: all ten styles one live arm each, all 20
+   rowed kinds armed (research/355 s4 table). Gaps all cited + owned
+   elsewhere: the 535 head waits on d10 (row+arm verified at its tip), the
+   578/579/813 dust bodies are g64's axis, the 539 Kill-host is the g65/Kill
+   lanes', the 596 keep-one is d11's machine + g64's bool seam.
+5. **The nebula keep-one**: the PRODUCER (set_nebula/nebula_cd + the
+   `(2760,2761,2762)` arm + the `:13826-13830` proc + the draw-free drop)
+   is d11-UNIQUE (the 360-tip grep census: only d11 + d6's can_ghost_heal
+   field) — lands wholesale. The LIFECYCLE twins (nebula_levelup /
+   update_buffs_nebula / apply_nebula_buff_arm / apply_nebula_buff_mana /
+   the tier fields + zeros + the extra_regen feed) are FOLD-SOURCE per the
+   mana-family declaration (`fb771bfb8`): f49's levelup/fields/zeros,
+   f12's g27 apply_orb_arm tier writer, d117/f49's regen.rs cadence — d11's
+   player.rs copies DROP at merge (the per-fn table in research/355 s5).
+   The `can_ghost_heal` keep-one is d6's FIELD (`174c0d541`, ctor-derived
+   same gate); d11's method retires, the proc call re-points to the field.
+
+The family declaration (research/355 s6): the band-101-110 family is
+d11-owned wholesale; the 813 machine g64's, the 596 machine d11's, the 576
+overlay f20's, the 539/576 Kill cues d77's, the nebula lifecycle the
+mana-family's, the can_ghost_heal gate d6's. No further d11 commits planned.

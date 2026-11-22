@@ -650,6 +650,31 @@ pub struct Player {
     /// the Stardust armor set bonus flag; the down-hold rest-target clear
     /// gate (`KeyHoldDown` `:56903-56906`).
     pub set_stardust: bool,
+    /// `Player.setNebula` (`Player.cs:2820`) — the Nebula armor set bonus
+    /// flag (`ArmorSetBonuses.Nebula`, `ArmorSetBonuses.cs:47-54`); the
+    /// magic on-hit pickup proc gate (`Projectile.cs:13826`).
+    /// `ResetEffects` clears it (`:18743`); the set pass re-derives it.
+    pub set_nebula: bool,
+    /// `Player.nebulaCD` (`Player.cs:2822`) — the Nebula proc's 30-tick
+    /// cooldown: the on-hit proc sets it (`Projectile.cs:13828`), the
+    /// set-bonus Effect decrements it per tick while the set is worn
+    /// (`ArmorSetBonuses.cs:49-52`). NOT reset by ResetEffects (no C#
+    /// reset site — the cooldown survives an armor swap).
+    pub nebula_cd: i32,
+    /// `Player.nebulaLevelLife` / `nebulaLevelMana` / `nebulaLevelDamage`
+    /// (`Player.cs:924-930`) — the three pickup-buff tiers (0..3).
+    /// `NebulaLevelup` (`:57030-57059`) raises them on a pickup;
+    /// `UpdateBuffs_NebulaBuffs` (`:12070-12079`) re-derives them from the
+    /// live buff slot each tick and steps the tier down when the buff
+    /// timer hits 2. `ResetEffects` zeroes all three (`:18755`).
+    pub nebula_level_life: i32,
+    pub nebula_level_mana: i32,
+    pub nebula_level_damage: i32,
+    /// `Player.nebulaManaCounter` (`Player.cs:928`) — the mana-tier's
+    /// 6-count accumulator (`ApplyNebulaBuffMana`, `:19565-19585`):
+    /// +level per tick, one mana per 6. NOT reset by ResetEffects (no
+    /// C# reset site); the zero-level arm zeroes it.
+    pub nebula_mana_counter: i32,
     /// `Player.ownedProjectileCounts[ProjectileID.Count]` (`Player.cs:2992`)
     /// — recounted every tick from the live pool (`:25565`); the summon
     /// buff-arms and the keep-alive checks read exactly this.
@@ -723,6 +748,13 @@ pub struct Player {
     /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
     /// chain's last arm (`:10957-10972`).
     pub deadly_sphere_minion: bool,
+    /// `Player.sporeSac` (`Player.cs:1990`) — the Spore Sac accessory's
+    /// equipped flag (`ApplyEquipFunctional`'s item-3336 arm, `:14776-
+    /// 14780`); `ResetEffects` clears it (`:18453`). `AI_105_SporeSac`'s
+    /// distance penalty reads it (`Projectile.cs:40149-40152`): an
+    /// unequipped sac's traps age +100/tick. The grant side (the
+    /// accessory pass) is unported — the flag stays false until it lands.
+    pub spore_sac: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -2495,6 +2527,7 @@ impl Player {
         };
         Self {
             dead: false,
+            spore_sac: false,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -2519,6 +2552,12 @@ impl Player {
             minion_rest_target_point: Vec2::ZERO,
             set_forbidden: false,
             set_stardust: false,
+            set_nebula: false,
+            nebula_cd: 0,
+            nebula_level_life: 0,
+            nebula_level_mana: 0,
+            nebula_level_damage: 0,
+            nebula_mana_counter: 0,
             tag_effects: crate::tag_effects::TagEffectStack::default(),
             whip_range_multiplier: 1.0,
             whip_use_time_multiplier: 1.0,
@@ -4146,6 +4185,105 @@ impl Player {
     fn clear_summon_flags(&mut self) {
         for arm in &SUMMON_BUFF_ARMS {
             *(arm.flag)(self) = false;
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — `Player.NebulaLevelup` (`Player.cs:57030-57059`):
+    /// a nebula pickup (3453 damage / 3454 life / 3455 mana, `Item.cs:31008-
+    /// 31016`'s buffType rows) clears every buff of the same family
+    /// (`type..type+3`), raises the tier (clamp 0..3) and grants
+    /// `type + level - 1` for 480 ticks. `base.whoAmI == Main.myPlayer`
+    /// always holds in the single-player port.
+    pub fn nebula_levelup(&mut self, buff_type: i32) {
+        let time = 480;
+        // `:57037-57043` — the family clear with the `i--` rescan (the
+        // DelBuff compaction shifts the later buffs left).
+        let mut i = 0usize;
+        while i < crate::buffs::MAX_BUFFS {
+            let t = self.buffs.buff_type[i];
+            if t >= buff_type && t < buff_type + 3 {
+                self.buffs.del_buff(i);
+            } else {
+                i += 1;
+            }
+        }
+        // `:57044-57058` — the tier raise + the grant.
+        match buff_type {
+            173 => {
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — `Player.UpdateBuffs_NebulaBuffs`
+    /// (`Player.cs:12070-12079`): re-derive the tier from the live buff
+    /// slot (`1 + buffType[b] - baseBuffId`); when the timer hits 2 and
+    /// the tier is above 1, step down (the buff id decrements, the timer
+    /// re-arms to 480). Returns the derived tier.
+    fn update_buffs_nebula(&mut self, base_buff_id: i32, b: usize) -> i32 {
+        let mut level = 1 + self.buffs.buff_type[b] - base_buff_id;
+        if self.buffs.buff_time[b] == 2 && level > 1 {
+            level -= 1;
+            self.buffs.buff_type[b] -= 1;
+            self.buffs.buff_time[b] = 480;
+        }
+        level
+    }
+
+    /// W4-d11 DOC-SWEEP — the three nebula buff arms of `UpdateBuffs`
+    /// (`Player.cs:10444-10461`): the mana family (176-178) re-derives
+    /// `nebulaLevelMana`; the life family (173-175) re-derives
+    /// `nebulaLevelLife` and adds `lifeRegen += 6 * level`; the damage
+    /// family (179-181) re-derives `nebulaLevelDamage` and adds
+    /// `0.15 * level` to all four damage classes. Called per active slot
+    /// in the buff scan (the `active_types` loop's nebula arms).
+    pub fn apply_nebula_buff_arm(&mut self, buff_type: i32) {
+        let Some(b) = self.buffs.buff_type.iter().position(|&t| t == buff_type) else {
+            return;
+        };
+        if (176..=178).contains(&buff_type) {
+            self.nebula_level_mana = self.update_buffs_nebula(176, b);
+        } else if (173..=175).contains(&buff_type) {
+            self.nebula_level_life = self.update_buffs_nebula(173, b);
+            // `:10451` — the lifeRegen add rides the regen input fold
+            // (`update_survival`'s `extra_regen` sum reads the tier).
+        } else if (179..=181).contains(&buff_type) {
+            self.nebula_level_damage = self.update_buffs_nebula(179, b);
+            let num12 = 0.15 * self.nebula_level_damage as f32;
+            self.melee_damage += num12;
+            self.ranged_damage += num12;
+            self.magic_damage += num12;
+            self.minion_damage += num12;
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — `Player.ApplyNebulaBuffMana`
+    /// (`Player.cs:19565-19585`): the mana tier's 6-count accumulator —
+    /// +level per tick, one mana per 6 (capped at max); the zero-level
+    /// arm zeroes the counter. Called from `update_survival`'s mana-regen
+    /// head (the C# `UpdateManaRegen` calls it first, `:19421`).
+    pub fn apply_nebula_buff_mana(&mut self) {
+        if self.nebula_level_mana > 0 {
+            self.nebula_mana_counter += self.nebula_level_mana;
+            if self.nebula_mana_counter >= 6 {
+                self.nebula_mana_counter -= 6;
+                self.mana += 1;
+                if self.mana >= self.mana_max {
+                    self.mana = self.mana_max;
+                }
+            }
+        } else {
+            self.nebula_mana_counter = 0;
         }
     }
 
@@ -6045,6 +6183,9 @@ impl Player {
         // re-arm them per tick (S1-P-i52).
         self.mana_magnet = false;
         self.life_magnet = false;
+        // `ResetEffects`' `sporeSac = false` (`Player.cs:18453`, W4-d11):
+        // the Spore Sac accessory row re-arms it per tick (`:14779`).
+        self.spore_sac = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -6148,6 +6289,14 @@ impl Player {
         // re-derives both per tick.
         self.set_stardust = false;
         self.set_forbidden = false;
+        // W4-d11 DOC-SWEEP — `:18743`'s `setNebula = false` and `:18755`'s
+        // `nebulaLevelDamage = nebulaLevelLife = nebulaLevelMana = 0`: the
+        // set pass re-derives the flag, the buff scan re-derives the tiers.
+        // `nebulaCD`/`nebulaManaCounter` have NO C# reset site — they persist.
+        self.set_nebula = false;
+        self.nebula_level_life = 0;
+        self.nebula_level_mana = 0;
+        self.nebula_level_damage = 0;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -6388,6 +6537,16 @@ impl Player {
             // are the guardian's own lane (deferred, ANALYSIS).
             (3381, 3382, 3383) => {
                 self.set_stardust = true;
+            }
+            // W4-d11 DOC-SWEEP — the Nebula triple (`ArmorSetBonuses.cs:481`,
+            // `Benefits.Nebula` `:47-54`): the 30-tick proc cooldown
+            // decrements per tick while the set is worn, then `setNebula`
+            // arms the magic on-hit pickup proc (`Projectile.cs:13826`).
+            (2760, 2761, 2762) => {
+                if self.nebula_cd > 0 {
+                    self.nebula_cd -= 1;
+                }
+                self.set_nebula = true;
             }
             _ => {}
         }
@@ -6724,6 +6883,12 @@ impl Player {
                     self.lava_vision = true;
                     self.fire_walk = true;
                 }
+                // W4-d11 DOC-SWEEP — the nebula pickup-buff families
+                // (`Player.cs:10444-10461`): the tier re-derivation + the
+                // life-regen / four-class damage adds. The mana family's
+                // restore rides `apply_nebula_buff_mana` in the mana-regen
+                // head (the C# `UpdateManaRegen` call, `:19421`).
+                173..=181 => self.apply_nebula_buff_arm(bt),
                 _ => {}
             }
         }
@@ -11148,6 +11313,10 @@ impl Player {
         // defaults until those systems land (`regen.rs`); the hp gate stands in
         // for the original's dead-player check (M2-DEATH).
         if self.hp > 0 {
+            // W4-d11 DOC-SWEEP — `Player.UpdateManaRegen`'s head calls
+            // `ApplyNebulaBuffMana` first (`Player.cs:19421`): the mana
+            // tier's 6-count restore runs before the regen machine.
+            self.apply_nebula_buff_mana();
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
@@ -11164,7 +11333,10 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting || self.sleeping,
-                extra_regen: self.accessory_life_regen,
+                // W4-d11 DOC-SWEEP — the nebula life tier's `lifeRegen +=
+                // 6 * level` (`Player.cs:10451`) rides the same input slot
+                // as the accessory regen adds.
+                extra_regen: self.accessory_life_regen + 6 * self.nebula_level_life,
                 // S1-C-12 wave D — the Crimson set's regen halves
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp

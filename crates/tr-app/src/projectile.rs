@@ -656,6 +656,23 @@ pub struct Projectile {
     /// ai[1] - 1)`): (x, y, vx, vy, ai1). The sim re-spawns the same kind
     /// with ai0 = 10 (the pool cannot spawn from a slot arm mid-iteration).
     pub wants_cloud_segment: Option<(f32, f32, f32, f32, f32)>,
+    /// W4-d11 DOC-SWEEP — the 584 NurseSyringeHeal's catch `HealEffect`
+    /// (`Projectile.cs:34089` → `NPC.HealEffect`, `NPC.cs:77433-77448`):
+    /// (x, y, w, h, amount) — the host NPC's hitbox + the healed life.
+    /// The world-sim pass spawns the HealLife combat text on the
+    /// `UpdateProjectiles` stream (the `wants_mark_spawn` intent shape —
+    /// the pool cannot borrow the App's combat-text vec).
+    pub wants_heal_text: Option<(f32, f32, f32, f32, i32)>,
+    /// W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup proc
+    /// (`Projectile.cs:13826-13830`): (kind, cx, cy, vx, vy) — the
+    /// `Item.RequestNewItem` payload (the 3453/3454/3455 pick, the
+    /// victim's centre, the hit-direction-scaled velocity). The
+    /// world-sim pass spawns the drop on the `UpdateProjectiles` stream
+    /// (the `wants_mark_spawn` intent shape). The rolls (the Next(3)
+    /// gate, the SelectRandom pick, the two velocity draws) run at the
+    /// hit site in C# order; the drop spawn itself is draw-free (the
+    /// explicit-velocity arm, `Item.cs:49738-49741`).
+    pub wants_nebula_pickup: Option<(u16, f32, f32, f32, f32)>,
     /// The aiStyle-50 one-shot (`Projectile.cs:74341-74350`'s `Kill()` arm):
     /// the Inferno Fork bolt 295 spawns its blast 296 exactly once, however
     /// the bolt died (the arm's fade kill, `timeLeft`, or a penetrating hit).
@@ -829,6 +846,8 @@ impl Default for Projectile {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_heal_text: None,
+            wants_nebula_pickup: None,
             minion: false,
             sentry: false,
             minion_slots: 0.0,
@@ -3745,17 +3764,27 @@ impl Projectile {
         self.pos += self.vel;
     }
 
-    /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`) — the
-    /// ritual markers (the 578 lightning / the 579 portal): the timeline
-    /// `ai[0] <= 50 -> <= 90 -> <= 120 -> else` with the scale/alpha ramps
-    /// and the rotation decrements, the 578's aim rotation, the 580 bolt it
-    /// fires at the 90th tick, and the 579's two VortexAliens.
+    /// `AI()`'s aiStyle-108 block (`Projectile.cs:33679-34025`) — the
+    /// ritual markers (the 578 lightning / the 579 portal / the 813 Blood
+    /// Nautilus tears, W4-d11): the timeline `ai[0] <= 50 -> <= 90 ->
+    /// <= 120 -> else` with the scale/alpha ramps and the rotation
+    /// decrements, the 578's aim rotation, the 580 bolt it fires at the
+    /// 90th tick, the 579's two VortexAliens, and the 813's BloodSquid
+    /// (619) spawn + its per-stage dust-gate census.
     ///
-    /// Deviations: the dust arms (229/240/5, the `ai[1] == 1f` burst) are
-    /// unmodelled; the late-stage clone spawn rides the 580's own machine.
+    /// Deviations: the 578/579 dust arms (229/240, the `ai[1] == 1f`
+    /// burst) stay unmodelled (the pre-existing recorded skip — their
+    /// gate rolls are NOT on the stream, the 578/579 witnesses pin the
+    /// current stream); the 813's dust GATES are modelled (the W4-d11
+    /// census, the bodies skip). The late-stage clone spawn rides the
+    /// 580's own machine. The 813's 619 spawn intent carries the rowed
+    /// BloodSquid kind (W4-d11 DOC-SWEEP — `NpcKind::BloodSquid.to_u16()`
+    /// keeps the vanilla 619; the drain's `from_u16` resolves it).
     fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut dyn tr_core::loot::DropRng) {
-        // `:33696-33700`'s first-tick sound latch.
-        if self.local_ai[1] == 0.0 {
+        // `:33681` — flag53: the 578/579 pair (the 813 is NOT on it).
+        let flag53 = self.kind == VORTEX_PORTAL || self.kind == VORTEX_LIGHTNING;
+        // `:33696-33700`'s first-tick sound latch (the 578/579 only).
+        if flag53 && self.local_ai[1] == 0.0 {
             self.local_ai[1] = 1.0;
         }
         // `:33705-33713`'s aim (the 578 only: the 579's ai[1] is the burst
@@ -3772,18 +3801,52 @@ impl Projectile {
         self.ai[0] += 1.0;
         let scale;
         if self.ai[0] <= 50.0 {
-            // The wind-up: the dust arms (unmodelled).
+            // The wind-up: the 578/579 dust arms (unmodelled). The 813's
+            // two Next(4) gates (`:33762`/`:33772`) — the bodies skip.
+            // W4-d11 RETIRE item 3: this gates-only stand-in machine DROPS
+            // at the three-way keep-one — g64 `3cdc6423`'s dust-wired
+            // superset survives (it carries the d13 b56db900 wind-up scale
+            // fix: the C# `:33714-33783` writes NO scale, the stock 1 holds;
+            // this arm's `scale = 0.0` is the stale stand-in the g64 machine
+            // corrects). The shared ROW above is byte-equal across the three.
             scale = 0.0;
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                if rng.next_range(0, 4) == 0 {
+                    // `:33764-33770` — the 5 dust (RotatedByRandom pair +
+                    // Next(10,21) + NextFloat): body skipped, gates only.
+                }
+                if rng.next_range(0, 4) == 0 {
+                    // `:33774-33780` — the 240 dust: body skipped.
+                }
+            }
         } else if self.ai[0] <= 90.0 {
             // `:33797-33799`'s charge.
             scale = (self.ai[0] - 50.0) / 40.0;
             self.alpha = 255 - (255.0 * scale) as i32;
             self.rot -= std::f32::consts::PI / 20.0;
+            // The 813's two Next(2) gates (`:33860`/`:33871`).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                if rng.next_range(0, 2) == 0 {
+                    // `:33862-33869` — the 5 dust: body skipped.
+                }
+                if rng.next_range(0, 2) == 0 {
+                    // `:33873-33880` — the 240 dust: body skipped.
+                }
+            }
         } else if self.ai[0] <= 120.0 {
             // `:33891-33893`'s full charge.
             scale = 1.0;
             self.alpha = 0;
             self.rot -= std::f32::consts::PI / 60.0;
+            // The 813's if/else Next(2) gate (`:33896` — ONE roll, the
+            // taken branch's dust body skips).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                if rng.next_range(0, 2) == 0 {
+                    // `:33898-33905` — the 5 dust: body skipped.
+                } else {
+                    // `:33909-33916` — the 240 dust: body skipped.
+                }
+            }
         } else {
             // `:33944-33950`'s dissolve.
             scale = 1.0 - (self.ai[0] - 120.0) / 60.0;
@@ -3791,7 +3854,19 @@ impl Projectile {
             self.rot -= std::f32::consts::PI / 30.0;
             if self.alpha >= 255 {
                 self.active = false;
-                return;
+                // W4-d11: the C# `Kill()` does NOT return (`:33947-33950`)
+                // — the 813's death-tick dust gates + opacity tail below
+                // still roll. The old `return` here is dropped: for the
+                // 578/579 it is a no-op (the slot is dead, `ai[0] != 90`,
+                // the opacity tail is 813-only), so their state stays
+                // byte-identical.
+            }
+            // The 813's two Next(3) switch gates (`:33955`, the case-2
+            // no-op draws nothing further).
+            if self.kind == BLOOD_NAUTILUS_TEARS {
+                for _ in 0..2 {
+                    let _ = rng.next_range(0, 3);
+                }
             }
         }
         self.scale = scale;
@@ -3802,7 +3877,7 @@ impl Projectile {
                 // centre, `ai0 = ai[1]`.
                 let (vx, vy) = (self.ai[1].cos() * 8.0, self.ai[1].sin() * 8.0);
                 self.wants_ritual_bolt = Some((self.pos.x - vx, self.pos.y - vy, vx, vy, self.ai[1]));
-            } else {
+            } else if self.kind == VORTEX_PORTAL {
                 // `:33844-33856`'s two VortexAliens (427) at the centre
                 // with `-UnitY.RotatedByRandom(2*PI) * rand.Next(4, 9) - UnitY*2`.
                 // B-6d: BOTH spawn (`for num815 < 2`) — the single-Option
@@ -3825,6 +3900,23 @@ impl Projectile {
                     self.wants_mark_spawn
                         .push((NpcKind::VortexAlien.to_u16(), self.pos.x, self.pos.y, vx, vy));
                 }
+            } else if self.kind == BLOOD_NAUTILUS_TEARS {
+                // `:33882-33886`'s BloodSquid (619) at the centre, zero
+                // velocity. W4-d11 DOC-SWEEP: the kind is rowed now —
+                // `to_u16` keeps the vanilla 619, the drain's `from_u16`
+                // resolves the real kind (the old raw-id fold is gone).
+                self.wants_mark_spawn
+                    .push((NpcKind::BloodSquid.to_u16(), self.pos.x, self.pos.y, 0.0, 0.0));
+            }
+        }
+        // `:34018-34024` — the 813's opacity dust tail: one NextFloat
+        // gate against Opacity (1 - alpha/255), the taken branch's
+        // NextVector2Circular pair (the 90 dust body skips).
+        if self.kind == BLOOD_NAUTILUS_TEARS {
+            let opacity = 1.0 - self.alpha as f32 / 255.0;
+            if rng.next_float() < opacity {
+                let _ = rng.next_float(); // NextVector2Circular X
+                let _ = rng.next_float(); // NextVector2Circular Y
             }
         }
     }
@@ -3895,47 +3987,38 @@ impl Projectile {
                 self.active = false;
             }
         } else {
+            // `:33462-33464` — the `!(ai[0] >= 0f)` early return: a
+            // negative counter (a spawn-time ai0 below -1) waits without
+            // fading. W4-d11 verbatim fix.
+            if self.ai[0] < 0.0 {
+                return;
+            }
             self.alpha -= 25;
             if self.alpha < 0 {
                 self.alpha = 0;
-                // `:33467-33475`'s spawn.
+                // `:33467-33475`'s spawn. W4-d11 anchor fix: the C#
+                // spawns at `(int)Center.X, (int)Bottom.Y` — the port's
+                // intent carried the top-left (a 10/20 px deviation).
                 if self.local_ai[1] == 0.0 && self.local_ai[0] > 0.0 {
                     self.local_ai[1] = 1.0;
-                    self.wants_mark_spawn
-                        .push((self.local_ai[0] as u16, self.pos.x, self.pos.y, 0.0, 0.0));
+                    self.wants_mark_spawn.push((
+                        self.local_ai[0] as u16,
+                        self.pos.x + self.w * 0.5,
+                        self.pos.y + self.h,
+                        0.0,
+                        0.0,
+                    ));
                 }
             }
         }
         let _ = npcs;
     }
 
-    /// `AI()`'s aiStyle-102 block's 574 arm (`Projectile.cs:33250-33299`) —
-    /// the Nebula Eye: the host-locked position drag with the 0.15/0.075
-    /// homing accel over the 6-px clamp, the 180-tick release.
-    fn ai_nebula_eye(&mut self, npcs: &[Npc], player: (f32, f32)) {
-        let host_idx = self.host_by_kind(npcs, NpcKind::NebulaFloater).unwrap_or(usize::MAX);
-        let alive = npcs
-            .get(host_idx)
-            .map(|h| h.kind == NpcKind::NebulaFloater && h.hp > 0)
-            .unwrap_or(false);
-        self.time_left = 2;
-        self.ai[0] += 1.0;
-        if self.ai[0] < 180.0 {
-            if let Some(host) = npcs.get(host_idx) {
-                self.pos += Vec2::new(host.vx, host.vy);
-            }
-        }
-        if alive {
-            let (px, py) = player;
-            let (dx, dy) = ((px - self.pos.x).signum() * 0.15, (py - self.pos.y).signum() * 0.075);
-            let v = self.vel + Vec2::new(dx, dy);
-            let l = v.length();
-            self.vel = if l > 6.0 { v * (6.0 / l) } else { v };
-        } else {
-            self.ai[0] = 180.0;
-        }
-        self.pos += self.vel;
-    }
+    // W4-d11 — the 574-only `ai_nebula_eye` stand-in that sat here is
+    // REPLACED by the verbatim three-kind aiStyle-102 machine
+    // (`projectile_ai_101_110::ai_tower_orb`, `Projectile.cs:33222-
+    // 33447`): the stand-in lacked the release volley, the dust-gate
+    // census, the frames and the 539/573 kinds entirely.
 
     /// `AI()`'s aiStyle-122 block (`Projectile.cs:34896-34931`) — the
     /// TowerDamageBolt: the host-homing 5-px bolt that dies when the host
@@ -14199,7 +14282,7 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
 /// non-actuated, solid, non-solidTop tile for a strict box overlap (the
 /// halfBrick shrinks the tile's top by 8). The falling star's `ai[1]` latch
 /// reads it (`Projectile.cs:23871`).
-fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+pub(crate) fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
     let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
@@ -14532,6 +14615,16 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// `NPC.lazyNPCOwnedProjectileSearchArray` (`NPC.cs:6431`,
+    /// `new int[MaxNPCs]` at `:95263`) — W4-d11 DOC-SWEEP: the per-NPC
+    /// cache of the last 582 MechanicWrench that armed its return leg
+    /// (`Projectile.cs:34050` writes `[ai[1]] = whoAmI`). The Mechanic's
+    /// `AI_007` head (`NPC.cs:53166-53179`) re-derives `localAI[0]` from
+    /// it each tick: 1 while the cached slot is an active 582 aimed back
+    /// at this NPC, else 0 — the gate that suppresses a second throw
+    /// (`:55214-55217`). Indexed by the port's NPC vec position (the
+    /// `who_am_i` seam); absent entries read 0 (the C# zero-init).
+    lazy_npc_owned_search: Vec<i32>,
 }
 
 impl Default for ProjectilePool {
@@ -14921,6 +15014,7 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            lazy_npc_owned_search: Vec::new(),
         }
     }
 
@@ -16088,6 +16182,74 @@ impl ProjectilePool {
         for p in self.slots.iter_mut() {
             if let Some((x, y, vx, vy, ai0)) = p.wants_ritual_bolt.take() {
                 out.push((p.owner, p.damage, p.knock_back, x, y, vx, vy, ai0));
+            }
+        }
+        out
+    }
+
+    /// W4-d11 DOC-SWEEP — `NPC.lazyNPCOwnedProjectileSearchArray[whoAmI]`
+    /// (`NPC.cs:6431`/`:53168`): the cached wrench slot the 582's return
+    /// leg wrote (`Projectile.cs:34050`). Absent entries read 0 (the C#
+    /// `new int[MaxNPCs]` zero-init, `:95263`).
+    pub fn lazy_npc_owned(&self, who_am_i: usize) -> i32 {
+        self.lazy_npc_owned_search.get(who_am_i).copied().unwrap_or(0)
+    }
+
+    /// W4-d11 DOC-SWEEP — `NPC.cs:53166-53179`'s type-124 head block: the
+    /// Mechanic re-derives `localAI[0]` from the cached slot each tick —
+    /// 1 while `IndexInRange(num4)` and the slot is an ACTIVE 582 whose
+    /// `ai[1]` points back at this NPC, else 0. The `:55214-55217` gate
+    /// reads it to suppress a second throw while the wrench lives.
+    /// `IndexInRange` is `index >= 0 && index < Count` (the pool's slot
+    /// count); the port's `slots()` is the same dense array.
+    pub fn mechanic_wrench_latched(&self, who_am_i: usize) -> bool {
+        let num4 = self.lazy_npc_owned(who_am_i);
+        if num4 < 0 || num4 as usize >= self.slots.len() {
+            return false;
+        }
+        let p = &self.slots[num4 as usize];
+        p.active && p.kind == MECHANIC_WRENCH && p.ai[1] == who_am_i as f32
+    }
+
+    /// W4-d11 DOC-SWEEP — the `:34050` write seam
+    /// (`lazyNPCOwnedProjectileSearchArray[(int)ai[1]] = whoAmI`): the
+    /// aiStyle-109 dispatch calls it after the arm when the return leg
+    /// ran and the slot survived; the witness tests drive it directly.
+    pub fn write_owned_latch(&mut self, npc_slot: usize, proj_slot: i32) {
+        if self.lazy_npc_owned_search.len() <= npc_slot {
+            self.lazy_npc_owned_search.resize(npc_slot + 1, 0);
+        }
+        self.lazy_npc_owned_search[npc_slot] = proj_slot;
+    }
+
+    /// W4-d11 DOC-SWEEP — the 584's catch `HealEffect` intents
+    /// (`Projectile.cs:34089` → `NPC.HealEffect`, `NPC.cs:77433-77448`):
+    /// (x, y, w, h, amount) — the host's hitbox + the healed life. The
+    /// world-sim pass spawns the HealLife combat texts on the
+    /// `UpdateProjectiles` stream (the `drain_mark_spawns` shape).
+    pub fn drain_heal_texts(&mut self) -> Vec<(f32, f32, f32, f32, i32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_heal_text.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
+    /// W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup proc
+    /// (`Projectile.cs:13826-13830`): the (kind, cx, cy, vx, vy) the world
+    /// sim resolves into a world drop (`Item.RequestNewItem`, the
+    /// `drain_mark_spawns` shape — the pool cannot grow the item vec). The
+    /// four rolls (the Next(3) gate, the SelectRandom pick, the two velocity
+    /// draws) already ran at the hit site in C# order; the spawn itself is
+    /// DRAW-FREE (the explicit-velocity arm, `Item.cs:49738-49741`, prefix 0
+    /// `:511-514`, ownership None → no grab delay in SP).
+    pub fn drain_nebula_pickups(&mut self) -> Vec<(u16, f32, f32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_nebula_pickup.take() {
+                out.push(req);
             }
         }
         out
@@ -17876,14 +18038,170 @@ impl ProjectilePool {
                                 self.slots[i].ai_moon_leech(&npcs[..], p);
                             }
                         }
+                        // W4-d11 — aiStyle 101 (`AI()` `:33165-33221`):
+                        // the 536 MedusaHeadRay (the key-linked 535 head
+                        // anchor — the 535 row is aiStyle 100, d10's
+                        // claim; the probe reads None until it lands and
+                        // the ray dies like the C#'s failed TryGetActive)
+                        // and the 591 MinecartMechLaser (the owner's
+                        // position-delta rider). The arm pins the centre;
+                        // `kill_step` is the generic `UpdatePosition` add
+                        // (`:20445` — 101 is not on the skip list).
+                        101 => {
+                            let parent = if self.slots[i].kind == MEDUSA_HEAD_RAY {
+                                self.key_parent(self.slots[i].ai[0], 535).map(|p| {
+                                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                                })
+                            } else {
+                                None
+                            };
+                            crate::projectile_ai_101_110::ai_medusa_ray(
+                                &mut self.slots[i],
+                                parent,
+                                player.as_deref(),
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d11 — aiStyle 102 (`AI()` `:33222-33447`):
+                        // the three tower orbs (539 jellyfish / 573 bolt /
+                        // 574 eye) — the verbatim machine replaces the
+                        // 574-only `ai_nebula_eye` stand-in (the host drag,
+                        // the release volley, the dust-gate census, the
+                        // frames). The host is the `ai[1]` NPC index (the
+                        // C# `Main.npc[(int)ai[1]]`); the single-player
+                        // target folds to the local player.
                         102 => {
-                            let player = owner.unwrap_or((0.0, 0.0));
-                            let npcs = &npcs[..];
-                            self.slots[i].ai_nebula_eye(npcs, player)
+                            let host_idx = self.slots[i].ai[1] as usize;
+                            let host = npcs.get(host_idx).map(|h| (host_idx, h));
+                            let target_player = player
+                                .as_deref()
+                                .map(|pl| pl.center())
+                                .or(owner);
+                            let expert =
+                                player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
+                            crate::projectile_ai_101_110::ai_tower_orb(
+                                &mut self.slots[i],
+                                world,
+                                host,
+                                target_player,
+                                expert,
+                                local_owner,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
                         }
                         103 => {
                             let npcs = &npcs[..];
                             self.slots[i].ai_stardust_mark(&*world, npcs)
+                        }
+                        // W4-d11 — aiStyle 104 (`AI()` `:33478-33511`):
+                        // the 565 BrainOfConfusion burst — the grow/fade
+                        // legs, the 7-tick frame cycle, the upward drift.
+                        // 104 is not on the `UpdatePosition` skip list, so
+                        // `kill_step` integrates the drifted velocity.
+                        104 => {
+                            crate::projectile_ai_101_110::ai_brain_of_confusion(
+                                &mut self.slots[i],
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d11 — aiStyle 106 (`AI()` `:33516-33552`):
+                        // the 569-571 SporeGas clouds — the velocity spin,
+                        // the 0.98 drag, the 60-tick alpha gate + the
+                        // owner-gated kill. `kill_step` integrates.
+                        106 => {
+                            crate::projectile_ai_101_110::ai_spore_gas(
+                                &mut self.slots[i],
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d11 — aiStyle 107 (`AI()` `:33553-33678`):
+                        // the 575 NebulaSphere + the 596 DesertDjinnCurse
+                        // — the player-index homing (ai[0] = the target;
+                        // the single-player fold reads the local player),
+                        // the orphan cap, the per-kind visual legs + the
+                        // 596's dust-gate census (the C# RETURNS on the
+                        // first non-zero Next(3)). `kill_step` integrates.
+                        107 => {
+                            let target_active = player.as_deref().is_some_and(|pl| !pl.dead);
+                            let target_center = player.as_deref().map(|pl| pl.center());
+                            let expert =
+                                player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
+                            crate::projectile_ai_101_110::ai_nebula_sphere(
+                                &mut self.slots[i],
+                                world,
+                                target_center,
+                                target_active,
+                                expert,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d11 — aiStyle 109 (`AI()` `:34026-34065`):
+                        // the 582 MechanicWrench — the speed latch, the
+                        // 30-tick outbound wait, the Mechanic-host return
+                        // leg. The arm integrates its OWN movement (the
+                        // HandleMovement aiStyle-109 tile bounce,
+                        // `:19512-19571`) — NO kill_step here.
+                        109 => {
+                            let host_idx = self.slots[i].ai[1] as usize;
+                            let host = npcs.get(host_idx);
+                            crate::projectile_ai_101_110::ai_mechanic_wrench(
+                                &mut self.slots[i],
+                                world,
+                                host,
+                            );
+                            // W4-d11 DOC-SWEEP — `:34050`'s
+                            // `lazyNPCOwnedProjectileSearchArray[ai[1]] =
+                            // whoAmI`: the write sits between the host gate
+                            // and the catch kill, so it lands exactly when
+                            // the return leg ran and the slot survived
+                            // (`active && ai[0] == 1` — the bounce's
+                            // `ai[0] = 1` write happens inside the same
+                            // call, matching the C#'s post-AI state only
+                            // when the AI itself armed the return; a
+                            // bounce-armed slot writes NEXT tick, the
+                            // one-tick intent lag the drain family carries).
+                            if self.slots[i].active && self.slots[i].ai[0] == 1.0 {
+                                self.write_owned_latch(host_idx, i as i32);
+                            }
+                        }
+                        // W4-d11 — aiStyle 110 (`AI()` `:34066-34109`):
+                        // the 584 NurseSyringeHeal — the town-NPC host
+                        // (ai[0] index) seek + the catch heal. The host
+                        // is borrowed mutably (the heal writes life);
+                        // `kill_step` integrates the seek velocity.
+                        110 => {
+                            let host_idx = self.slots[i].ai[0] as usize;
+                            let host = npcs.get_mut(host_idx);
+                            crate::projectile_ai_101_110::ai_nurse_syringe(
+                                &mut self.slots[i],
+                                host,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d11 — aiStyle 105 (`AI()` `:33512-33515` ->
+                        // `AI_105_SporeSac` `:40043-40192`): the 567/568
+                        // Spore Sac traps. `IndexForVisuals` is the slot
+                        // index (`key.Index`, `:552`); the owner centre +
+                        // the sporeSac flag ride the player. 105 is not on
+                        // the `UpdatePosition` skip list — `kill_step`
+                        // integrates the drift.
+                        105 => {
+                            let sac_owner = player.as_deref().map(|pl| pl.center()).or(owner);
+                            let sac_flag =
+                                player.as_deref().is_some_and(|pl| pl.spore_sac);
+                            crate::projectile_ai_101_110::ai_spore_sac(
+                                &mut self.slots[i],
+                                npcs,
+                                sac_owner,
+                                sac_flag,
+                                i,
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
                         }
                         122 => {
                             // `:34927-34929`'s homing run, then the contact's
@@ -23222,6 +23540,55 @@ impl ProjectilePool {
                 // arms: the Cascade's 1125, the Kraken's 3× 1135, the Chik's
                 // 5× 1134 and the Eye-of-Cthulhu's homing 1130.
                 self.yoyo_on_hit(slot, idx as u16, hit, player.as_deref_mut(), rng);
+                // W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup
+                // proc (`Projectile.cs:13826-13830`, inside the
+                // `canGhostHeal | flag9` block `:13816` under `flag10`
+                // `:13810`): a magic shot, the owner wearing the set, the
+                // 30-tick cooldown at 0 and a 1/3 roll spawn one of the
+                // three nebula pickups at the victim's centre. The C#
+                // order: the Next(3) gate FIRST (the `&&` short-circuit —
+                // the magic/set/cooldown terms draw nothing), then the
+                // SelectRandom pick (one Next(3)), then the two velocity
+                // draws (Next(10,31) and Next(-20,1)). `num23` is the hit
+                // direction (`:13598`'s base.direction; the port's
+                // `from_x`-derived sign — the strike's knockback side).
+                // flag9 (the target-dummy debug override) is constants-off.
+                // `flag10` (`:13659`) also carries `!hostile && aiStyle != 59`:
+                // the port folds `hostile` into `!friendly` (the player-contact
+                // pass), but the aiStyle-59 exclusion is live — the Spectre
+                // Wrath 356 flips `friendly = true` past its 60-tick hostile
+                // window (`:28943`) yet must NOT proc the set bonus.
+                let nebula_gate = !npc_immortal
+                    && strike_dmg > 0
+                    && npc_life_max_gt5
+                    && self.slots[slot].friendly
+                    && proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) != 59
+                    && npcs[idx].can_ghost_heal();
+                if nebula_gate {
+                    if let Some(pl) = player.as_deref_mut() {
+                        let magic = self.slots[slot].magic;
+                        if magic
+                            && pl.set_nebula
+                            && pl.nebula_cd == 0
+                            && rng.next_range(0, 3) == 0
+                        {
+                            pl.nebula_cd = 30;
+                            // `Utils.SelectRandom(Main.rand, 3453, 3454,
+                            // 3455)` — one Next(3) pick (`Utils.cs:2459`).
+                            let kind = [3453u16, 3454, 3455][rng.next_range(0, 3) as usize];
+                            // `num23` — the hit direction: the C# reads
+                            // base.direction (`:13598`); the port's strike
+                            // side is the from_x sign relative to the
+                            // victim's centre (the knockback direction).
+                            let (ncx, ncy) = npcs[idx].center();
+                            let num23 = if from_x < ncx { 1.0 } else { -1.0 };
+                            let vx = rng.next_range(10, 31) as f32 * 0.2 * num23;
+                            let vy = rng.next_range(-20, 1) as f32 * 0.2;
+                            self.slots[slot].wants_nebula_pickup =
+                                Some((kind, ncx, ncy, vx, vy));
+                        }
+                    }
+                }
             }
             if landed {
                 let p = &mut self.slots[slot];
@@ -24597,6 +24964,145 @@ mod tests {
             pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], 5, "kind {kind}: the 5-tick per-type arm");
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup proc
+    /// (`Projectile.cs:13826-13830`): a magic shot, the owner wearing the set
+    /// (`setNebula`), the 30-tick cooldown at 0 and a 1/3 gate spawn one of
+    /// the three pickups at the victim's centre. The C# draw order: the
+    /// Next(3) gate FIRST (the `&&` short-circuit — magic/set/cooldown draw
+    /// nothing), then the SelectRandom pick (one Next(3)), then the two
+    /// velocity draws (Next(10,31) and Next(-20,1)). The crit Next(1,101) and
+    /// DamageVar Next(-15,16) precede them on the same stream. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d11_the_nebula_set_procs_a_pickup_on_a_magic_hit() {
+        // A recording stream that returns `min` (the CensusRng shape): the
+        // Next(3) gate returns 0 (proc fires), the pick returns 0 (3453), the
+        // velocity draws return 10 and -20.
+        struct CensusRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl DropRng for CensusRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let mut player = crate::player::Player::spawn(&w);
+        player.set_nebula = true;
+        player.nebula_cd = 0;
+        // The Water Bolt (27): magic, friendly, aiStyle 8 (not 59).
+        let slot = pool
+            .spawn_with_data_ai(WATER_BOLT, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { ranges: Vec::new() };
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            Some(&mut player),
+            &mut rng,
+        );
+        assert!(npc.hp < 10_000, "the magic hit lands");
+        assert_eq!(player.nebula_cd, 30, ":13828 the cooldown arms");
+        // The draw order: crit, DamageVar, then the four nebula rolls.
+        assert_eq!(
+            rng.ranges,
+            vec![(1, 101), (-15, 16), (0, 3), (0, 3), (10, 31), (-20, 1)],
+            "the gate draw precedes the pick and the two velocity draws"
+        );
+        // The payload: kind 3453 (pick index 0), the victim's centre, the
+        // hit-direction-scaled velocity. num23 is the from_x sign relative to
+        // the victim's centre (the strike's knockback side).
+        let (ncx, ncy) = npc.center();
+        let from_x = npc.x + SIZE * 0.5; // the proj centre (spawned at npc.x)
+        let num23 = if from_x < ncx { 1.0 } else { -1.0 };
+        let req = pool.slots()[slot].wants_nebula_pickup.expect("the proc queued");
+        assert_eq!(req.0, 3453, "SelectRandom index 0");
+        assert_eq!((req.1, req.2), (ncx, ncy), "the victim's centre");
+        assert_eq!(req.3, 10.0 * 0.2 * num23, "Next(10,31)*0.2*num23");
+        assert_eq!(req.4, -20.0 * 0.2, "Next(-20,1)*0.2");
+        // The drain takes the intent (the world sim spawns the drop).
+        let drained = pool.drain_nebula_pickups();
+        assert_eq!(drained, vec![req], "the drain carries the payload");
+        assert!(pool.slots()[slot].wants_nebula_pickup.is_none(), "taken");
+    }
+
+    /// W4-d11 DOC-SWEEP — the proc's gates: no set bonus (`setNebula` false),
+    /// a live cooldown, or the aiStyle-59 exclusion (the Spectre Wrath 356
+    /// flips friendly past its hostile window but must NOT proc, `:13659`'s
+    /// `aiStyle != 59`) each refuse the proc and draw NOTHING for it.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d11_the_nebula_proc_gates_refuse_without_drawing() {
+        struct NoDrawRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl DropRng for NoDrawRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let w = ground();
+        // Case 1: no set bonus. Case 2: cooldown live. Case 3: aiStyle 59.
+        for (case, kind, set, cd) in [
+            (1u8, WATER_BOLT, false, 0),
+            (2, WATER_BOLT, true, 5),
+            (3, SPECTRE_WRATH, true, 0),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let mut player = crate::player::Player::spawn(&w);
+            player.set_nebula = set;
+            player.nebula_cd = cd;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            // The 356 spawns friendly (the pool default); its aiStyle-59 row
+            // is the exclusion under test (the hostile-window flip is the
+            // AI's, not the spawn's).
+            pool.slots_mut()[slot].friendly = true;
+            let mut rng = NoDrawRng { ranges: Vec::new() };
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                None,
+                Some(&mut player),
+                &mut rng,
+            );
+            assert!(
+                pool.slots()[slot].wants_nebula_pickup.is_none(),
+                "case {case}: no proc"
+            );
+            assert_eq!(player.nebula_cd, cd, "case {case}: the cooldown unchanged");
+            // Only the crit + DamageVar draws ran — no nebula Next(3)/velocity.
+            assert!(
+                !rng.ranges.contains(&(0, 3)) && !rng.ranges.contains(&(10, 31)),
+                "case {case}: the proc drew nothing"
+            );
         }
     }
 
@@ -30416,6 +30922,8 @@ mod phasmal_projectile_tests {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_heal_text: None,
+            wants_nebula_pickup: None,
             w: 14.0,
             h: 14.0,
             tile_collide: true,
@@ -30566,10 +31074,14 @@ mod phasmal_projectile_tests {
 
     #[test]
     fn the_stardust_mark_spawns_the_carried_npc() {
-        // `AI_103`: the fade-in spawns the id in `localAI[0]`.
+        // `AI_103`: the fade-in spawns the id in `localAI[0]`. W4-d11:
+        // the anchor is `(int)Center.X, (int)Bottom.Y` (`:33473`) — the
+        // 20x20 mark at (500, 100) spawns at (510, 120).
         let npcs: Vec<Npc> = Vec::new();
         let world = surface_world();
         let mut p = spawn(STARDUST_MARK, 500.0, 100.0);
+        p.w = 20.0;
+        p.h = 20.0;
         p.local_ai[0] = NpcKind::StardustCellBig.to_u16() as f32;
         for _ in 0..12 {
             p.ai_stardust_mark(&world, &npcs);
@@ -30577,13 +31089,67 @@ mod phasmal_projectile_tests {
         let (kind, x, y, _vx, _vy) = p.wants_mark_spawn[0];
         assert_eq!(p.wants_mark_spawn.len(), 1, "the mark spawns one");
         assert_eq!(kind, NpcKind::StardustCellBig.to_u16());
-        assert!((x - 500.0).abs() < 1.0 && (y - 100.0).abs() < 1.0);
+        assert!((x - 510.0).abs() < 1.0 && (y - 120.0).abs() < 1.0, "Center.X / Bottom.Y");
         // The pool's drain carries it out.
         let mut pool = ProjectilePool::new();
         pool.slots[0] = p;
         let drained = pool.drain_mark_spawns();
         assert_eq!(drained.len(), 1);
         assert!(pool.slots[0].wants_mark_spawn.is_empty(), "the intent clears");
+    }
+
+    /// W4-d11 — the 540 row carries alpha 255 (`Projectile.cs:6159`):
+    /// the fade-in starts invisible, the spawn fires when alpha crosses
+    /// 0 (tick 11 from 255: 255 - 11*25 = -20 -> 0), and the fade-out
+    /// kills at alpha >= 250 (tick 30 + 10).
+    #[test]
+    fn w4_d11_103_the_mark_fades_from_255_and_dies_at_250() {
+        let d = proj_data(STARDUST_MARK).unwrap();
+        assert_eq!(d.alpha, 255, ":6159");
+        let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
+        let mut p = spawn(STARDUST_MARK, 500.0, 100.0);
+        p.alpha = d.alpha;
+        p.local_ai[0] = NpcKind::StardustCellBig.to_u16() as f32;
+        for _ in 0..10 {
+            p.ai_stardust_mark(&world, &npcs);
+        }
+        assert_eq!(p.alpha, 5, "tick 10: 255 - 250");
+        assert!(p.wants_mark_spawn.is_empty(), "not yet visible");
+        p.ai_stardust_mark(&world, &npcs);
+        assert_eq!(p.alpha, 0, "tick 11 clamps to 0");
+        assert_eq!(p.wants_mark_spawn.len(), 1, "the spawn fires at 0");
+        assert_eq!(p.local_ai[1], 1.0, "the one-shot latch");
+        // The fade-out: ticks 30..39 add 25; at 250 the mark dies.
+        for _ in 0..19 {
+            p.ai_stardust_mark(&world, &npcs);
+        }
+        assert_eq!(p.ai[0], 30.0);
+        for _ in 0..9 {
+            p.ai_stardust_mark(&world, &npcs);
+        }
+        assert_eq!(p.alpha, 225, "9 fade-out ticks");
+        assert!(p.active);
+        p.ai_stardust_mark(&world, &npcs);
+        assert_eq!(p.alpha, 250);
+        assert!(!p.active, "alpha >= 250 -> Kill");
+    }
+
+    /// W4-d11 — `:33462-33464`'s negative-counter early return: a mark
+    /// spawned with ai0 = -3 waits two ticks without fading.
+    #[test]
+    fn w4_d11_103_a_negative_counter_waits_without_fading() {
+        let npcs: Vec<Npc> = Vec::new();
+        let world = surface_world();
+        let mut p = spawn(STARDUST_MARK, 500.0, 100.0);
+        p.alpha = 255;
+        p.ai[0] = -3.0;
+        p.ai_stardust_mark(&world, &npcs); // -2: the early return
+        assert_eq!(p.alpha, 255, "no fade while ai[0] < 0");
+        p.ai_stardust_mark(&world, &npcs); // -1: still waiting
+        assert_eq!(p.alpha, 255);
+        p.ai_stardust_mark(&world, &npcs); // 0: the fade starts
+        assert_eq!(p.alpha, 230);
     }
 
     #[test]
@@ -30825,6 +31391,8 @@ mod ritual_projectile_tests {
             wants_ritual_bolt: None,
             wants_shark_spawn: None,
             wants_cloud_segment: None,
+            wants_heal_text: None,
+            wants_nebula_pickup: None,
             w: 32.0,
             h: 32.0,
             tile_collide: false,
@@ -30989,6 +31557,133 @@ mod ritual_projectile_tests {
             p.ai_vortex_ritual((300.0, 300.0), &mut rng);
         }
         assert!(!p.active, "the marker dies");
+    }
+
+    /// W4-d11 — the 813 BloodNautilusTears row rides the shared 108 row
+    /// (`Projectile.cs:6282-6293`). W4-d11 RETIRE item 3: the corrected
+    /// shape — the stock penetrate 1 (`:774`, the block sets none) + alpha
+    /// 255 (`:6288`) + ignoreWater (`:6290`), NOT the stale `-1`/alpha-0.
+    #[test]
+    fn w4_d11_108_the_tears_row_rides_the_shared_marker() {
+        let d = proj_data(BLOOD_NAUTILUS_TEARS).expect("the 813 row");
+        assert_eq!(d.ai_style, 108);
+        assert_eq!((d.w, d.h), (32.0, 32.0));
+        assert!(!d.tile_collide, ":6289");
+        assert_eq!(d.penetrate, 1, ":774 the stock 1 — the block sets none");
+        assert_eq!(d.alpha, 255, ":6288");
+        assert!(d.ignore_water, ":6290");
+    }
+
+    /// W4-d11 RETIRE item 3 — the three-way 813 keep-one row contract: the
+    /// 578/579/813 share ONE byte-equal row tuple, and that tuple is
+    /// BYTE-EQUAL to g64 `3cdc6423` / d13 `b56db900` (the published
+    /// `(32,32,108,1,3600,0,false,false,false,(false,-2,false,-1,255,1.0))`).
+    /// The g64 dust-wired `ai_vortex_ritual` superset survives the merge;
+    /// d11's gates-only stand-in machine + this row's old `-1`/RESET_STATE
+    /// retire into it. Written NOT run (code-only).
+    #[test]
+    fn w4_d11_retire_the_marker_row_is_byte_equal_across_the_three_way() {
+        let lightning = proj_data(VORTEX_LIGHTNING).expect("the 578 row");
+        let portal = proj_data(VORTEX_PORTAL).expect("the 579 row");
+        let tears = proj_data(BLOOD_NAUTILUS_TEARS).expect("the 813 row");
+        // ONE shared row — the three kinds are value-identical.
+        assert_eq!(lightning, portal, "the 578/579 share the row");
+        assert_eq!(lightning, tears, "the 813 joins the shared row");
+        // The exact corrected tuple the g64/d13 keep-one carries.
+        assert_eq!(
+            (
+                tears.w, tears.h, tears.ai_style, tears.penetrate,
+                tears.time_left, tears.extra_updates, tears.tile_collide,
+                tears.arrow, tears.trap, tears.uses_local_immunity,
+                tears.local_hit_cooldown, tears.uses_id_static_immunity,
+                tears.id_static_hit_cooldown, tears.alpha, tears.scale,
+            ),
+            (
+                32.0, 32.0, 108, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                false, -2, false, -1, 255, 1.0,
+            ),
+            "the g64 3cdc6423 / d13 b56db900 byte-equal row"
+        );
+        assert!(tears.ignore_water, ":6290 the flag-list entry");
+    }
+
+    /// W4-d11 — the 813's 90th-tick BloodSquid (619) spawn
+    /// (`Projectile.cs:33882-33886`): one intent, the raw C# id, zero
+    /// velocity. The 813 is NOT on flag53 (no sound latch, no aim).
+    #[test]
+    fn w4_d11_108_the_tears_spawn_the_blood_squid_at_90() {
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..90 {
+            p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        }
+        assert_eq!(p.ai[0], 90.0);
+        assert_eq!(p.wants_mark_spawn.len(), 1, "one BloodSquid");
+        let (kind, x, y, vx, vy) = p.wants_mark_spawn[0];
+        assert_eq!(kind, 619, "the rowed BloodSquid keeps the vanilla id");
+        assert_eq!(
+            crate::npc::NpcKind::from_u16(kind),
+            Some(crate::npc::NpcKind::BloodSquid),
+            "W4-d11 DOC-SWEEP: the drain resolves the real kind"
+        );
+        assert!((x - 200.0).abs() < 1.0 && (y - 200.0).abs() < 1.0);
+        assert_eq!((vx, vy), (0.0, 0.0), ":33884's zero velocity");
+        assert_eq!(p.local_ai[1], 0.0, "the 813 is not on flag53");
+    }
+
+    /// W4-d11 — the 813's per-stage dust-gate census (the bodies skip):
+    /// wind-up two Next(4), charge two Next(2), full-charge ONE Next(2)
+    /// if/else, dissolve two Next(3); plus the per-tick opacity NextFloat
+    /// gate (`:34018`). A scripted stream proves the order.
+    #[test]
+    fn w4_d11_108_the_tears_dust_gate_census() {
+        struct CountRng {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+        }
+        impl DropRng for CountRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+        }
+        // Wind-up tick (ai[0] = 1): two Next(4) + the opacity gate. The
+        // 813 spawns alpha 255 (the shared row), but the wind-up keeps
+        // alpha 255 -> opacity 0 -> the gate FAILS (one NextFloat, no
+        // circular pair). Set alpha 0 to exercise the taken branch.
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.alpha = 0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 4), (0, 4)], ":33762/:33772");
+        assert_eq!(rng.floats, 3, "the opacity gate + the circular pair");
+        // The stock alpha-255 wind-up: the gate fails, one float only.
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.floats, 1, "opacity 0 -> the gate fails");
+        // Charge tick (ai[0] = 51): two Next(2) + the opacity gate.
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.ai[0] = 50.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 2), (0, 2)], ":33860/:33871");
+        // Full-charge tick (ai[0] = 91): ONE Next(2) if/else.
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.ai[0] = 90.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 2)], ":33896's single if/else roll");
+        // Dissolve tick (ai[0] = 121): two Next(3).
+        let mut p = rspawn(BLOOD_NAUTILUS_TEARS, 200.0, 200.0);
+        p.ai[0] = 120.0;
+        let mut rng = CountRng { ranges: Vec::new(), floats: 0 };
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        assert_eq!(rng.ranges, vec![(0, 3), (0, 3)], ":33955's two switch rolls");
     }
 
     #[test]

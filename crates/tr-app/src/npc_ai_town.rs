@@ -1591,8 +1591,13 @@ pub fn town_npc_ai(
     if (net_id == 148 || net_id == 149) && npc.local_ai[0] == 0.0 {
         npc.local_ai[0] = rng.next_range(1, 5) as f32;
     }
-    // `:53166-53179` — the Mechanic's owned-projectile latch: the
-    // lazyNPCOwnedProjectileSearchArray seam is unported; cited skip.
+    // `:53166-53179` — the Mechanic's owned-projectile latch: W4-d11
+    // DOC-SWEEP ported the seam — the pool's
+    // `lazyNPCOwnedProjectileSearchArray` cache (the 582's `:34050`
+    // write) feeds `mechanic_wrench_latched`, and the world-sim NPC pass
+    // re-derives `local_ai[0]` at the Mechanic's slot turn
+    // (`world_sim/npcs.rs`, the pre-AI head block). The `:55214-55217`
+    // gate below reads the live value.
     // `:53180-53184` — the bound-NPC Transform rows: cited skip.
 
     // `:53185` — UpdateSavedStates.
@@ -2179,9 +2184,10 @@ pub fn town_npc_ai(
             flag32 = false;
         }
         if flag32 && net_id == 124 {
-            // The Mechanic's sentry-active gate: localAI[0] is the
-            // owned-proj latch (the unported seam reads 0) — the C#
-            // suppresses the attack while the sentry lives.
+            // `:55214-55217` — the Mechanic's sentry-active gate:
+            // localAI[0] is the owned-proj latch (W4-d11 DOC-SWEEP: the
+            // world-sim pass re-derives it from the pool's cache) — the
+            // C# suppresses the attack while the wrench lives.
             if npc.local_ai[0] == 1.0 {
                 flag32 = false;
             }
