@@ -1,0 +1,1498 @@
+{
+ "c4_drops": {
+  "BloodFeeder": {
+   "crates/tr-app/src/app/netglue.rs": [
+    [
+     3309,
+     "| crate::npc::NpcKind::BloodFeeder"
+    ]
+   ],
+   "crates/tr-app/src/bestiary.rs": [
+    [
+     2239,
+     "kind: NpcKind::BloodFeeder,"
+    ]
+   ],
+   "crates/tr-app/src/npc.rs": [
+    [
+     1143,
+     "BloodFeeder,"
+    ],
+    [
+     3467,
+     "NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 1."
+    ],
+    [
+     3851,
+     "NpcKind::BloodFeeder => 20,"
+    ],
+    [
+     4254,
+     "NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 50"
+    ],
+    [
+     6321,
+     "| NpcKind::BloodFeeder"
+    ],
+    [
+     8389,
+     "| NpcKind::BloodFeeder"
+    ],
+    [
+     18877,
+     "NpcKind::BloodFeeder => 241,"
+    ],
+    [
+     24239,
+     "NpcKind::BloodFeeder,"
+    ],
+    [
+     24439,
+     "(NpcKind::BloodFeeder, 241, 241, 18.0, 20.0, 50, 20, 150, 1.0, 500.0, 6),"
+    ],
+    [
+     24471,
+     "assert_eq!(NpcKind::BloodFeeder.hit_sound(), Some(\"NPC_Hit_13\"));"
+    ],
+    [
+     24472,
+     "assert_eq!(NpcKind::BloodFeeder.death_sound(), Some(\"NPC_Killed_19\"));"
+    ],
+    [
+     24496,
+     "NpcKind::BloodFeeder,"
+    ],
+    [
+     31722,
+     "(NpcKind::BloodFeeder, 16),"
+    ]
+   ],
+   "crates/tr-app/src/npc/data.rs": [
+    [
+     623,
+     "NpcKind::BloodFeeder => 241,"
+    ],
+    [
+     976,
+     "241 => NpcKind::BloodFeeder,"
+    ],
+    [
+     1616,
+     "NpcKind::BloodFeeder => \"NPC_Hit_13\","
+    ],
+    [
+     1934,
+     "NpcKind::BloodFeeder => \"NPC_Killed_19\","
+    ],
+    [
+     2285,
+     "| NpcKind::BloodFeeder"
+    ],
+    [
+     2440,
+     "| NpcKind::BloodFeeder"
+    ],
+    [
+     3045,
+     "NpcKind::CorruptGoldfish | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => {"
+    ],
+    [
+     3244,
+     "NpcKind::BloodFeeder => 241,"
+    ],
+    [
+     3708,
+     "NpcKind::BloodFeeder => 150,"
+    ],
+    [
+     4084,
+     "NpcKind::BloodFeeder => 50,"
+    ]
+   ],
+   "crates/tr-app/src/npc_ai_style16.rs": [
+    [
+     123,
+     "NpcKind::BloodFeeder => 241,"
+    ],
+    [
+     1252,
+     "(NpcKind::BloodFeeder, 241),"
+    ]
+   ],
+   "crates/tr-app/src/npc_buffs.rs": [
+    [
+     247,
+     "| NpcKind::BloodFeeder"
+    ]
+   ],
+   "crates/tr-app/src/render/entities.rs": [
+    [
+     3265,
+     "| NpcKind::BloodFeeder"
+    ],
+    [
+     3439,
+     "| NpcKind::BloodFeeder"
+    ],
+    [
+     4117,
+     "NpcKind::BloodFeeder,"
+    ]
+   ],
+   "crates/tr-app/src/ui/bestiary.rs": [
+    [
+     1623,
+     "(NpcKind::BloodFeeder, _) => {"
+    ]
+   ]
+  },
+  "CorruptGoldfish": {
+   "crates/tr-app/src/app/netglue.rs": [
+    [
+     3307,
+     "| crate::npc::NpcKind::CorruptGoldfish"
+    ]
+   ],
+   "crates/tr-app/src/bestiary.rs": [
+    [
+     2223,
+     "kind: NpcKind::CorruptGoldfish,"
+    ]
+   ],
+   "crates/tr-app/src/npc.rs": [
+    [
+     1127,
+     "CorruptGoldfish,"
+    ],
+    [
+     3467,
+     "NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 1."
+    ],
+    [
+     3849,
+     "NpcKind::CorruptGoldfish => 6,"
+    ],
+    [
+     4254,
+     "NpcKind::CorruptGoldfish | NpcKind::Arapaima | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => 50"
+    ],
+    [
+     6319,
+     "NpcKind::CorruptGoldfish"
+    ],
+    [
+     8387,
+     "NpcKind::CorruptGoldfish"
+    ],
+    [
+     18875,
+     "NpcKind::CorruptGoldfish => 405,"
+    ],
+    [
+     24237,
+     "NpcKind::CorruptGoldfish,"
+    ],
+    [
+     24437,
+     "(NpcKind::CorruptGoldfish, 57u16, 405u16, 18.0, 20.0, 30, 6, 100, 1.0, 500.0, 6u32),"
+    ],
+    [
+     24477,
+     "assert!(crate::npc_buffs::NpcBuffs::for_kind(NpcKind::CorruptGoldfish).buff_immune[31]);"
+    ],
+    [
+     24494,
+     "NpcKind::CorruptGoldfish,"
+    ],
+    [
+     24516,
+     "let mut fish = Npc::new(NpcKind::CorruptGoldfish, 100.0, 100.0, 1, 0.0);"
+    ],
+    [
+     31720,
+     "(NpcKind::CorruptGoldfish, 16),"
+    ]
+   ],
+   "crates/tr-app/src/npc/data.rs": [
+    [
+     621,
+     "NpcKind::CorruptGoldfish => 405,"
+    ],
+    [
+     974,
+     "405 => NpcKind::CorruptGoldfish,"
+    ],
+    [
+     1608,
+     "NpcKind::CorruptGoldfish"
+    ],
+    [
+     1926,
+     "NpcKind::CorruptGoldfish"
+    ],
+    [
+     2283,
+     "NpcKind::CorruptGoldfish"
+    ],
+    [
+     2438,
+     "NpcKind::CorruptGoldfish"
+    ],
+    [
+     3045,
+     "NpcKind::CorruptGoldfish | NpcKind::BloodFeeder | NpcKind::CrimsonGoldfish => {"
+    ],
+    [
+     3242,
+     "NpcKind::CorruptGoldfish => 57,"
+    ],
+    [
+     3706,
+     "NpcKind::CorruptGoldfish => 100,"
+    ],
+    [
+     4082,
+     "NpcKind::CorruptGoldfish => 30,"
+    ]
+   ],
+   "crates/tr-app/src/npc_ai_style16.rs": [
+    [
+     121,
+     "NpcKind::CorruptGoldfish => 57,"
+    ],
+    [
+     1250,
+     "(NpcKind::CorruptGoldfish, 57),"
+    ]
+   ],
+   "crates/tr-app/src/npc_buffs.rs": [
+    [
+     245,
+     "NpcKind::CorruptGoldfish"
+    ]
+   ],
+   "crates/tr-app/src/render/entities.rs": [
+    [
+     3263,
+     "NpcKind::CorruptGoldfish"
+    ],
+    [
+     3437,
+     "| NpcKind::CorruptGoldfish"
+    ],
+    [
+     4115,
+     "NpcKind::CorruptGoldfish,"
+    ]
+   ],
+   "crates/tr-app/src/ui/bestiary.rs": [
+    [
+     1617,
+     "(NpcKind::CorruptGoldfish | NpcKind::CrimsonGoldfish | NpcKind::GoldGoldfish | NpcKind::Pupfish, _) "
+    ]
+   ]
+  },
+  "FlyingFish": {
+   "crates/tr-app/src/app/netglue.rs": [
+    [
+     3447,
+     "| crate::npc::NpcKind::FlyingFish"
+    ]
+   ],
+   "crates/tr-app/src/bestiary.rs": [
+    [
+     2183,
+     "kind: NpcKind::FlyingFish,"
+    ]
+   ],
+   "crates/tr-app/src/npc.rs": [
+    [
+     1098,
+     "FlyingFish,"
+    ],
+    [
+     3641,
+     "NpcKind::FlyingFish => 0.8,"
+    ],
+    [
+     4037,
+     "NpcKind::FlyingFish => 4,"
+    ],
+    [
+     4424,
+     "NpcKind::FlyingFish => 300.0,"
+    ],
+    [
+     6303,
+     "NpcKind::FlyingFish"
+    ],
+    [
+     6854,
+     "NpcKind::FlyingFish"
+    ],
+    [
+     18865,
+     "NpcKind::FlyingFish => 359,"
+    ],
+    [
+     24232,
+     "NpcKind::FlyingFish,"
+    ],
+    [
+     24356,
+     "(NpcKind::FlyingFish, 224u16, 4u32, 6u32),"
+    ],
+    [
+     24406,
+     "let mut fish = Npc::new(NpcKind::FlyingFish, 100.0, 100.0, 1, 0.0);"
+    ]
+   ],
+   "crates/tr-app/src/npc/data.rs": [
+    [
+     601,
+     "NpcKind::FlyingFish => 359,"
+    ],
+    [
+     964,
+     "359 => NpcKind::FlyingFish,"
+    ],
+    [
+     1870,
+     "NpcKind::FlyingFish | NpcKind::EyeballFlyingFish => \"NPC_Hit_1\","
+    ],
+    [
+     2191,
+     "NpcKind::FlyingFish | NpcKind::EyeballFlyingFish => \"NPC_Killed_1\","
+    ],
+    [
+     2318,
+     "NpcKind::FlyingFish"
+    ],
+    [
+     2593,
+     "NpcKind::FlyingFish"
+    ],
+    [
+     3142,
+     "NpcKind::FlyingFish | NpcKind::EyeballFlyingFish => (32.0, 18.0),"
+    ],
+    [
+     3227,
+     "NpcKind::FlyingFish => 224,"
+    ],
+    [
+     3823,
+     "NpcKind::FlyingFish => 20,"
+    ],
+    [
+     4203,
+     "NpcKind::FlyingFish => 9,"
+    ]
+   ],
+   "crates/tr-app/src/npc_buffs.rs": [
+    [
+     502,
+     "NpcKind::FlyingFish"
+    ]
+   ],
+   "crates/tr-app/src/render/entities.rs": [
+    [
+     3245,
+     "NpcKind::FlyingFish"
+    ],
+    [
+     3428,
+     "| NpcKind::FlyingFish"
+    ]
+   ],
+   "crates/tr-app/src/ui/bestiary.rs": [
+    [
+     1591,
+     "(NpcKind::FlyingFish | NpcKind::EyeballFlyingFish, _) => {"
+    ]
+   ]
+  }
+ },
+ "moves": {
+  "c10": {
+   "ak_rows": {
+    "Duck": [
+     [
+      24967,
+      "NpcKind::Duck,"
+     ]
+    ],
+    "Duck2": [
+     [
+      24968,
+      "NpcKind::Duck2,"
+     ],
+     [
+      25151,
+      "NpcKind::Duck2,"
+     ]
+    ],
+    "DuckWhite": [
+     [
+      24969,
+      "NpcKind::DuckWhite,"
+     ]
+    ],
+    "DuckWhite2": [
+     [
+      24970,
+      "NpcKind::DuckWhite2,"
+     ],
+     [
+      25152,
+      "NpcKind::DuckWhite2,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "Duck": [
+     [
+      593,
+      "NpcKind::Duck => 362,"
+     ],
+     [
+      948,
+      "362 => NpcKind::Duck,"
+     ],
+     [
+      3232,
+      "NpcKind::Duck => 362,"
+     ]
+    ],
+    "Duck2": [
+     [
+      594,
+      "NpcKind::Duck2 => 363,"
+     ],
+     [
+      949,
+      "363 => NpcKind::Duck2,"
+     ],
+     [
+      3233,
+      "NpcKind::Duck2 => 363,"
+     ]
+    ],
+    "DuckWhite": [
+     [
+      595,
+      "NpcKind::DuckWhite => 364,"
+     ],
+     [
+      950,
+      "364 => NpcKind::DuckWhite,"
+     ],
+     [
+      3234,
+      "NpcKind::DuckWhite => 364,"
+     ]
+    ],
+    "DuckWhite2": [
+     [
+      596,
+      "NpcKind::DuckWhite2 => 365,"
+     ],
+     [
+      951,
+      "365 => NpcKind::DuckWhite2,"
+     ],
+     [
+      3235,
+      "NpcKind::DuckWhite2 => 365,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    24687,
+    290
+   ],
+   "s1f3_pin": [
+    29211,
+    "270,"
+   ]
+  },
+  "c7": {
+   "ak_rows": {
+    "Firefly": [
+     [
+      24119,
+      "NpcKind::Firefly,"
+     ]
+    ],
+    "LightningBug": [
+     [
+      24120,
+      "NpcKind::LightningBug,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "Firefly": [
+     [
+      593,
+      "NpcKind::Firefly => 355,"
+     ],
+     [
+      928,
+      "355 => NpcKind::Firefly,"
+     ],
+     [
+      3095,
+      "NpcKind::Firefly => 355,"
+     ]
+    ],
+    "LightningBug": [
+     [
+      594,
+      "NpcKind::LightningBug => 358,"
+     ],
+     [
+      929,
+      "358 => NpcKind::LightningBug,"
+     ],
+     [
+      3096,
+      "NpcKind::LightningBug => 358,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    23839,
+    274
+   ],
+   "s1f3_pin": [
+    27888,
+    "270,"
+   ]
+  },
+  "c8": {
+   "ak_rows": {
+    "TruffleWorm": [
+     [
+      24452,
+      "NpcKind::TruffleWorm,"
+     ]
+    ],
+    "TruffleWormDigger": [
+     [
+      24453,
+      "NpcKind::TruffleWormDigger,"
+     ]
+    ],
+    "Worm": [
+     [
+      24451,
+      "NpcKind::Worm,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "TruffleWorm": [
+     [
+      595,
+      "NpcKind::TruffleWorm => 374,"
+     ],
+     [
+      936,
+      "374 => NpcKind::TruffleWorm,"
+     ],
+     [
+      3190,
+      "NpcKind::TruffleWorm => 374,"
+     ]
+    ],
+    "TruffleWormDigger": [
+     [
+      596,
+      "NpcKind::TruffleWormDigger => 375,"
+     ],
+     [
+      937,
+      "375 => NpcKind::TruffleWormDigger,"
+     ],
+     [
+      2533,
+      "NpcKind::TruffleWormDigger => 6,"
+     ],
+     [
+      3191,
+      "NpcKind::TruffleWormDigger => 375,"
+     ]
+    ],
+    "Worm": [
+     [
+      594,
+      "NpcKind::Worm => 357,"
+     ],
+     [
+      935,
+      "357 => NpcKind::Worm,"
+     ],
+     [
+      3189,
+      "NpcKind::Worm => 357,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    24171,
+    279
+   ],
+   "s1f3_pin": [
+    28396,
+    "279,"
+   ]
+  },
+  "c9": {
+   "ak_rows": {
+    "GlowingSnail": [],
+    "Snail": []
+   },
+   "data_arms": {
+    "GlowingSnail": [
+     [
+      595,
+      "NpcKind::GlowingSnail => 360,"
+     ],
+     [
+      931,
+      "360 => NpcKind::GlowingSnail,"
+     ],
+     [
+      3137,
+      "NpcKind::GlowingSnail => 360,"
+     ]
+    ],
+    "Snail": [
+     [
+      594,
+      "NpcKind::Snail => 359,"
+     ],
+     [
+      930,
+      "359 => NpcKind::Snail,"
+     ],
+     [
+      3136,
+      "NpcKind::Snail => 359,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    23972,
+    270
+   ],
+   "s1f3_pin": [
+    27862,
+    "270,"
+   ]
+  },
+  "d120": {
+   "ak_rows": {
+    "Cyborg": [
+     [
+      24046,
+      "NpcKind::Cyborg,"
+     ]
+    ],
+    "SantaClaus": [
+     [
+      24043,
+      "NpcKind::SantaClaus,"
+     ]
+    ],
+    "Steampunker": [
+     [
+      24045,
+      "NpcKind::Steampunker,"
+     ]
+    ],
+    "Truffle": [
+     [
+      24044,
+      "NpcKind::Truffle,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "Cyborg": [
+     [
+      597,
+      "NpcKind::Cyborg => 244,"
+     ],
+     [
+      933,
+      "244 => NpcKind::Cyborg,"
+     ],
+     [
+      2504,
+      "NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => 7,"
+     ],
+     [
+      3094,
+      "NpcKind::Cyborg => 209,"
+     ],
+     [
+      3204,
+      "NpcKind::Cyborg => 26,"
+     ],
+     [
+      3250,
+      "NpcKind::Cyborg => 10,"
+     ],
+     [
+      3709,
+      "NpcKind::Cyborg => 500,"
+     ]
+    ],
+    "SantaClaus": [
+     [
+      594,
+      "NpcKind::SantaClaus => 241,"
+     ],
+     [
+      930,
+      "241 => NpcKind::SantaClaus,"
+     ],
+     [
+      3091,
+      "NpcKind::SantaClaus => 142,"
+     ],
+     [
+      3203,
+      "NpcKind::SantaClaus => 25,"
+     ]
+    ],
+    "Steampunker": [
+     [
+      596,
+      "NpcKind::Steampunker => 243,"
+     ],
+     [
+      932,
+      "243 => NpcKind::Steampunker,"
+     ],
+     [
+      3093,
+      "NpcKind::Steampunker => 178,"
+     ],
+     [
+      3200,
+      "| NpcKind::Steampunker => 23,"
+     ],
+     [
+      3249,
+      "NpcKind::SantaClaus | NpcKind::Steampunker => 9,"
+     ],
+     [
+      3708,
+      "NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 250,"
+     ]
+    ],
+    "Truffle": [
+     [
+      595,
+      "NpcKind::Truffle => 242,"
+     ],
+     [
+      931,
+      "242 => NpcKind::Truffle,"
+     ],
+     [
+      3092,
+      "NpcKind::Truffle => 160,"
+     ],
+     [
+      3245,
+      "| NpcKind::Truffle => 7,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    23763,
+    275
+   ],
+   "s1f3_pin": [
+    27659,
+    "275,"
+   ]
+  },
+  "d125": {
+   "ak_rows": {
+    "EmpressOfLight": [
+     [
+      24289,
+      "NpcKind::EmpressOfLight,"
+     ]
+    ],
+    "PrismaticLacewing": [
+     [
+      24290,
+      "NpcKind::PrismaticLacewing,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "EmpressOfLight": [
+     [
+      593,
+      "NpcKind::EmpressOfLight => 229,"
+     ],
+     [
+      926,
+      "229 => NpcKind::EmpressOfLight,"
+     ],
+     [
+      2479,
+      "NpcKind::EmpressOfLight => 120,"
+     ],
+     [
+      3659,
+      "NpcKind::EmpressOfLight => 70000,"
+     ],
+     [
+      4028,
+      "NpcKind::EmpressOfLight => 80,"
+     ]
+    ],
+    "PrismaticLacewing": [
+     [
+      594,
+      "NpcKind::PrismaticLacewing => 237,"
+     ],
+     [
+      927,
+      "237 => NpcKind::PrismaticLacewing,"
+     ],
+     [
+      2480,
+      "NpcKind::PrismaticLacewing => 65,"
+     ],
+     [
+      3660,
+      "NpcKind::PrismaticLacewing => 5,"
+     ],
+     [
+      4029,
+      "NpcKind::PrismaticLacewing => 0,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    24009,
+    270
+   ],
+   "s1f3_pin": [
+    27902,
+    "270,"
+   ]
+  },
+  "d23": {
+   "ak_rows": {
+    "AngryTrapper": [
+     [
+      24278,
+      "NpcKind::AngryTrapper,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "AngryTrapper": [
+     [
+      583,
+      "NpcKind::AngryTrapper => 357,"
+     ],
+     [
+      939,
+      "357 => NpcKind::AngryTrapper,"
+     ],
+     [
+      3730,
+      "NpcKind::AngryTrapper => 300,"
+     ],
+     [
+      4106,
+      "NpcKind::AngryTrapper => 100,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    24002,
+    279
+   ],
+   "s1f3_pin": [
+    27903,
+    "279,"
+   ]
+  },
+  "e26": {
+   "ak_rows": {
+    "Frog": [
+     [
+      24144,
+      "NpcKind::Frog,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "Frog": [
+     [
+      595,
+      "NpcKind::Frog => 361,"
+     ],
+     [
+      931,
+      "361 => NpcKind::Frog,"
+     ],
+     [
+      3136,
+      "NpcKind::Frog => 361,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    23864,
+    274
+   ],
+   "s1f3_pin": [
+    27759,
+    "274,"
+   ]
+  },
+  "g8": {
+   "ak_rows": {
+    "Antlion": [
+     [
+      25626,
+      "NpcKind::Antlion,"
+     ]
+    ],
+    "CrimsonAxe": [
+     [
+      25641,
+      "NpcKind::CrimsonAxe,"
+     ]
+    ],
+    "Derpling": [
+     [
+      25640,
+      "NpcKind::Derpling,"
+     ]
+    ],
+    "FloatyGross": [
+     [
+      25642,
+      "NpcKind::FloatyGross,"
+     ]
+    ],
+    "GiantFlyingFox": [
+     [
+      25653,
+      "NpcKind::GiantFlyingFox,"
+     ]
+    ],
+    "Herpling": [
+     [
+      25639,
+      "NpcKind::Herpling,"
+     ]
+    ],
+    "IceBat": [
+     [
+      25651,
+      "NpcKind::IceBat,"
+     ]
+    ],
+    "IceElemental": [
+     [
+      25638,
+      "NpcKind::IceElemental,"
+     ]
+    ],
+    "Lavabat": [
+     [
+      25652,
+      "NpcKind::Lavabat,"
+     ]
+    ],
+    "LostGirl": [
+     [
+      25643,
+      "NpcKind::LostGirl,"
+     ]
+    ],
+    "Nymph": [
+     [
+      25644,
+      "NpcKind::Nymph,"
+     ]
+    ],
+    "PinkJellyfish": [
+     [
+      25625,
+      "NpcKind::PinkJellyfish,"
+     ]
+    ],
+    "RedDevil": [
+     [
+      25659,
+      "NpcKind::RedDevil,"
+     ]
+    ],
+    "SpikeBall": [
+     [
+      25627,
+      "NpcKind::SpikeBall,"
+     ]
+    ],
+    "VampireBat": [
+     [
+      25654,
+      "NpcKind::VampireBat,"
+     ]
+    ],
+    "WallCreeper": [
+     [
+      25636,
+      "NpcKind::WallCreeper,"
+     ]
+    ],
+    "WallCreeperWall": [
+     [
+      25637,
+      "NpcKind::WallCreeperWall,"
+     ]
+    ]
+   },
+   "data_arms": {
+    "Antlion": [
+     [
+      597,
+      "NpcKind::Antlion => 357,"
+     ],
+     [
+      966,
+      "357 => NpcKind::Antlion,"
+     ],
+     [
+      2618,
+      "NpcKind::Antlion => 19,"
+     ],
+     [
+      3337,
+      "NpcKind::Antlion => 69,"
+     ],
+     [
+      3931,
+      "NpcKind::Antlion => 45,"
+     ],
+     [
+      4345,
+      "NpcKind::Antlion => 10,"
+     ]
+    ],
+    "CrimsonAxe": [
+     [
+      612,
+      "NpcKind::CrimsonAxe => 371,"
+     ],
+     [
+      981,
+      "371 => NpcKind::CrimsonAxe,"
+     ],
+     [
+      2633,
+      "NpcKind::CrimsonAxe => 23,"
+     ],
+     [
+      3354,
+      "NpcKind::CrimsonAxe => 179,"
+     ],
+     [
+      3948,
+      "NpcKind::CrimsonAxe => 200,"
+     ],
+     [
+      4362,
+      "NpcKind::CrimsonAxe => 80,"
+     ]
+    ],
+    "Derpling": [
+     [
+      611,
+      "NpcKind::Derpling => 370,"
+     ],
+     [
+      980,
+      "370 => NpcKind::Derpling,"
+     ],
+     [
+      2632,
+      "NpcKind::Herpling | NpcKind::Derpling => 41,"
+     ],
+     [
+      3353,
+      "NpcKind::Derpling => 177,"
+     ],
+     [
+      3947,
+      "NpcKind::Derpling => 300,"
+     ],
+     [
+      4361,
+      "NpcKind::Derpling => 80,"
+     ]
+    ],
+    "FloatyGross": [
+     [
+      613,
+      "NpcKind::FloatyGross => 372,"
+     ],
+     [
+      982,
+      "372 => NpcKind::FloatyGross,"
+     ],
+     [
+      2629,
+      "NpcKind::Gastropod | NpcKind::IceElemental | NpcKind::FloatyGross => 22,"
+     ],
+     [
+      3355,
+      "NpcKind::FloatyGross => 182,"
+     ],
+     [
+      3949,
+      "NpcKind::FloatyGross => 240,"
+     ],
+     [
+      4363,
+      "NpcKind::FloatyGross => 65,"
+     ]
+    ],
+    "GiantFlyingFox": [
+     [
+      624,
+      "NpcKind::GiantFlyingFox => 382,"
+     ],
+     [
+      993,
+      "382 => NpcKind::GiantFlyingFox,"
+     ],
+     [
+      3368,
+      "NpcKind::GiantFlyingFox => 152,"
+     ],
+     [
+      3964,
+      "NpcKind::GiantFlyingFox => 220,"
+     ],
+     [
+      4378,
+      "NpcKind::GiantFlyingFox => 80,"
+     ]
+    ],
+    "Herpling": [
+     [
+      610,
+      "NpcKind::Herpling => 369,"
+     ],
+     [
+      979,
+      "369 => NpcKind::Herpling,"
+     ],
+     [
+      3352,
+      "NpcKind::Herpling => 174,"
+     ],
+     [
+      3946,
+      "NpcKind::Herpling => 220,"
+     ],
+     [
+      4360,
+      "NpcKind::Herpling => 65,"
+     ]
+    ],
+    "IceBat": [
+     [
+      622,
+      "NpcKind::IceBat => 380,"
+     ],
+     [
+      991,
+      "380 => NpcKind::IceBat,"
+     ],
+     [
+      3366,
+      "NpcKind::IceBat => 150,"
+     ],
+     [
+      3962,
+      "NpcKind::IceBat => 30,"
+     ],
+     [
+      4376,
+      "NpcKind::IceBat => 18,"
+     ]
+    ],
+    "IceElemental": [
+     [
+      609,
+      "NpcKind::IceElemental => 368,"
+     ],
+     [
+      978,
+      "368 => NpcKind::IceElemental,"
+     ],
+     [
+      3351,
+      "NpcKind::IceElemental => 169,"
+     ],
+     [
+      3945,
+      "NpcKind::IceElemental => 200,"
+     ],
+     [
+      4359,
+      "NpcKind::IceElemental => 55,"
+     ]
+    ],
+    "Lavabat": [
+     [
+      623,
+      "NpcKind::Lavabat => 381,"
+     ],
+     [
+      992,
+      "381 => NpcKind::Lavabat,"
+     ],
+     [
+      3367,
+      "NpcKind::Lavabat => 151,"
+     ],
+     [
+      3963,
+      "NpcKind::Lavabat => 160,"
+     ],
+     [
+      4377,
+      "NpcKind::Lavabat => 50,"
+     ]
+    ],
+    "LostGirl": [
+     [
+      614,
+      "NpcKind::LostGirl => 373,"
+     ],
+     [
+      983,
+      "373 => NpcKind::LostGirl,"
+     ],
+     [
+      2634,
+      "NpcKind::LostGirl => 42,"
+     ],
+     [
+      3356,
+      "NpcKind::LostGirl => 195,"
+     ],
+     [
+      3950,
+      "NpcKind::LostGirl => 250,"
+     ],
+     [
+      4364,
+      "NpcKind::LostGirl => 10,"
+     ]
+    ],
+    "Nymph": [
+     [
+      615,
+      "NpcKind::Nymph => 374,"
+     ],
+     [
+      984,
+      "374 => NpcKind::Nymph,"
+     ],
+     [
+      2635,
+      "NpcKind::Nymph => 3,"
+     ],
+     [
+      3357,
+      "NpcKind::Nymph => 196,"
+     ],
+     [
+      3431,
+      "NpcKind::Nymph => 14,"
+     ],
+     [
+      3951,
+      "NpcKind::Nymph => 300,"
+     ],
+     [
+      4365,
+      "NpcKind::Nymph => 35,"
+     ]
+    ],
+    "PinkJellyfish": [
+     [
+      596,
+      "NpcKind::PinkJellyfish => 356,"
+     ],
+     [
+      965,
+      "356 => NpcKind::PinkJellyfish,"
+     ],
+     [
+      2617,
+      "NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 18,"
+     ],
+     [
+      3336,
+      "NpcKind::PinkJellyfish => 64,"
+     ],
+     [
+      3930,
+      "NpcKind::PinkJellyfish => 70,"
+     ],
+     [
+      4344,
+      "NpcKind::PinkJellyfish => 30,"
+     ]
+    ],
+    "RedDevil": [
+     [
+      630,
+      "NpcKind::RedDevil => 387,"
+     ],
+     [
+      999,
+      "387 => NpcKind::RedDevil,"
+     ],
+     [
+      2647,
+      "NpcKind::Harpy | NpcKind::RedDevil => 14,"
+     ],
+     [
+      3375,
+      "NpcKind::RedDevil => 156,"
+     ],
+     [
+      3971,
+      "NpcKind::RedDevil => 600,"
+     ],
+     [
+      4385,
+      "NpcKind::RedDevil => 50,"
+     ]
+    ],
+    "SpikeBall": [
+     [
+      598,
+      "NpcKind::SpikeBall => 358,"
+     ],
+     [
+      967,
+      "358 => NpcKind::SpikeBall,"
+     ],
+     [
+      2619,
+      "NpcKind::SpikeBall => 20,"
+     ],
+     [
+      3338,
+      "NpcKind::SpikeBall => 70,"
+     ],
+     [
+      3932,
+      "NpcKind::SpikeBall => 100,"
+     ],
+     [
+      4346,
+      "NpcKind::SpikeBall => 32,"
+     ]
+    ],
+    "VampireBat": [
+     [
+      625,
+      "NpcKind::VampireBat => 383,"
+     ],
+     [
+      994,
+      "383 => NpcKind::VampireBat,"
+     ],
+     [
+      3369,
+      "NpcKind::VampireBat => 158,"
+     ],
+     [
+      3965,
+      "NpcKind::VampireBat => 750,"
+     ],
+     [
+      4379,
+      "NpcKind::VampireBat => 60,"
+     ]
+    ],
+    "WallCreeper": [
+     [
+      607,
+      "NpcKind::WallCreeper => 366,"
+     ],
+     [
+      976,
+      "366 => NpcKind::WallCreeper,"
+     ],
+     [
+      2630,
+      "NpcKind::WallCreeper => 3,"
+     ],
+     [
+      3349,
+      "NpcKind::WallCreeper => 164,"
+     ]
+    ],
+    "WallCreeperWall": [
+     [
+      608,
+      "NpcKind::WallCreeperWall => 367,"
+     ],
+     [
+      977,
+      "367 => NpcKind::WallCreeperWall,"
+     ],
+     [
+      2631,
+      "NpcKind::WallCreeperWall => 40,"
+     ],
+     [
+      3350,
+      "NpcKind::WallCreeperWall => 165,"
+     ],
+     [
+      3944,
+      "NpcKind::WallCreeper | NpcKind::WallCreeperWall => 80,"
+     ],
+     [
+      4358,
+      "NpcKind::WallCreeper | NpcKind::WallCreeperWall => 30,"
+     ]
+    ]
+   },
+   "npc_decl": [
+    25343,
+    270
+   ],
+   "s1f3_pin": [
+    29271,
+    "270,"
+   ]
+  }
+ }
+}

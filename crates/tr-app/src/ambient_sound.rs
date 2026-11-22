@@ -649,6 +649,35 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | Scarecrow9
             | Scarecrow10
             | Splinterling
+            // W4-d37 — the NPCID 211-280 band's aiStyle-3 walkers ride the
+            // shared `walker_step_fighter` (their `ai[3]` is free for the idle
+            // counter). The armored bones 269-280 draw the `:57364` 1000-roll
+            // moan; the other walkers have no moan arm (the type lists at
+            // `:57340`/`:57364` name none of them) — the counter-only kinds.
+            | CochinealBeetle
+            | CyanBeetle
+            | LacBeetle
+            | SeaSnail
+            | JungleCreeper
+            | BloodCrawler
+            | IceGolem
+            | Eyezor
+            | ZombieMushroom
+            | ZombieMushroomHat
+            | AnomuraFungus
+            | MushiLadybug
+            | RustyArmoredBonesAxe
+            | RustyArmoredBonesFlail
+            | RustyArmoredBonesSword
+            | RustyArmoredBonesSwordNoArmor
+            | BlueArmoredBones
+            | BlueArmoredBonesMace
+            | BlueArmoredBonesNoPants
+            | BlueArmoredBonesSword
+            | HellArmoredBones
+            | HellArmoredBonesSpikeShield
+            | HellArmoredBonesMace
+            | HellArmoredBonesSword
     )
 }
 

@@ -563,6 +563,50 @@ impl HoverParams {
         bounce: 0.7,
         rotation: HoverRotation::SpriteAim,
     };
+    /// W4-d37 — the HornetFatty (type 231; `NPC.cs:50345-50348`: num 3,
+    /// num2 0.017 — the type-231 override of the 42/231-235 family arm).
+    /// The family's `2f - scale` factor + surface damping (`:50350-50362`),
+    /// `flag5` false (`:50447` excludes 231-235), tile collision with the
+    /// 0.7 bounce (`:50656`), the `velocity.X * 0.1` rotation (`:50647`).
+    /// The stinger arm (`:50739+`) is the documented stand-in skip — the
+    /// base Hornet's hover precedent.
+    pub const HORNET_FATTY: Self = Self {
+        max_speed: 3.0,
+        accel: 0.017,
+        surface_damped: true,
+        double_add: false,
+        no_tile_collide: false,
+        bounce: 0.7,
+        rotation: HoverRotation::VelocityX,
+    };
+    /// W4-d37 — the HornetHoney/Leafy/Spikey/Stingy (types 232-235;
+    /// `NPC.cs:50341-50344`: the family base num 3.5, num2 0.021 — no
+    /// per-type override). The same family gates as HORNET_FATTY.
+    pub const HORNET_VARIANT: Self = Self {
+        max_speed: 3.5,
+        accel: 0.021,
+        surface_damped: true,
+        double_add: false,
+        no_tile_collide: false,
+        bounce: 0.7,
+        rotation: HoverRotation::VelocityX,
+    };
+    /// W4-d37 — the Parrot (type 252; `NPC.cs:50328-50339`): num 6 /
+    /// num2 0.1 when the target is hittable, else num 2 / num2 0.01. The
+    /// hover stand-in pins the chase pair (the CanHit-gated idle pair is
+    /// the documented remainder — the base Hornet's stinger-skip shape).
+    /// `flag5` true (`:50447` — 252 is outside the excluded set), tile
+    /// collision with the 0.7 bounce (`:50656` — 252 is NOT in the
+    /// noTileCollide list), the else-arm velocity tilt (`:50652-50655`).
+    pub const PARROT: Self = Self {
+        max_speed: 6.0,
+        accel: 0.1,
+        surface_damped: false,
+        double_add: true,
+        no_tile_collide: false,
+        bounce: 0.7,
+        rotation: HoverRotation::Velocity,
+    };
 }
 
 /// The hover AI's aim (`NPC.GetTargetData`): the centre drives the desired

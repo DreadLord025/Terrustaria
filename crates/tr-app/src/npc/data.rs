@@ -651,6 +651,60 @@ impl NpcKind {
             // dups dropped (g8 owns 745-747). 281-285 cleared for d38.
             NpcKind::Crab => 791,
             NpcKind::DungeonGuardian => 792,
+            // W4-d37 — the NPCID 211-280 kinds-coverage band (census 65, 46
+            // missing ids). The vanilla ids 217-280 collide with the landed
+            // port-local bands (217/218 destroyer, 219-222 fishron, 223-228
+            // wyvern, 230-236 zombies, 250 nimbus), so the 46 take the next
+            // free port-local band 354-399 (above the 353 BlazingWheel; the
+            // vanilla `NPC.type` rides `cs_id`/`net_id`, NOT these protocol
+            // ids — the S1-F-1 renumber precedent). Save-compat safe: the
+            // band is free on main (to_u16 scan, 0 dups).
+            NpcKind::CochinealBeetle => 354,
+            NpcKind::CyanBeetle => 355,
+            NpcKind::LacBeetle => 356,
+            NpcKind::SeaSnail => 357,
+            NpcKind::Squid => 358,
+            NpcKind::FlyingFish => 359,
+            NpcKind::FlyingSnake => 360,
+            NpcKind::Pirate => 361,
+            NpcKind::GoldfishWalker => 362,
+            NpcKind::HornetFatty => 363,
+            NpcKind::HornetHoney => 364,
+            NpcKind::HornetLeafy => 365,
+            NpcKind::HornetSpikey => 366,
+            NpcKind::HornetStingy => 367,
+            NpcKind::JungleCreeper => 368,
+            NpcKind::JungleCreeperWall => 369,
+            NpcKind::BlackRecluseWall => 370,
+            NpcKind::BloodCrawler => 371,
+            NpcKind::BloodCrawlerWall => 372,
+            NpcKind::BloodFeeder => 373,
+            NpcKind::BloodJelly => 374,
+            NpcKind::IceGolem => 375,
+            NpcKind::RainbowSlime => 376,
+            NpcKind::Eyezor => 377,
+            NpcKind::Parrot => 378,
+            NpcKind::Reaper => 379,
+            NpcKind::ZombieMushroom => 380,
+            NpcKind::ZombieMushroomHat => 381,
+            NpcKind::FungoFish => 382,
+            NpcKind::AnomuraFungus => 383,
+            NpcKind::MushiLadybug => 384,
+            NpcKind::FungiBulb => 385,
+            NpcKind::GiantFungiBulb => 386,
+            NpcKind::IchorSticker => 387,
+            NpcKind::RustyArmoredBonesAxe => 388,
+            NpcKind::RustyArmoredBonesFlail => 389,
+            NpcKind::RustyArmoredBonesSword => 390,
+            NpcKind::RustyArmoredBonesSwordNoArmor => 391,
+            NpcKind::BlueArmoredBones => 392,
+            NpcKind::BlueArmoredBonesMace => 393,
+            NpcKind::BlueArmoredBonesNoPants => 394,
+            NpcKind::BlueArmoredBonesSword => 395,
+            NpcKind::HellArmoredBones => 396,
+            NpcKind::HellArmoredBonesSpikeShield => 397,
+            NpcKind::HellArmoredBonesMace => 398,
+            NpcKind::HellArmoredBonesSword => 399,
         }
     }
 
@@ -1042,6 +1096,55 @@ impl NpcKind {
             // (the 281-285 squat cleared for d38's anchor band).
             791 => NpcKind::Crab,
             792 => NpcKind::DungeonGuardian,
+            // W4-d37 — the NPCID 211-280 band's port-local protocol ids
+            // (`to_u16` above; the vanilla 217-280 collide with the landed
+            // bands). 354-399, free on main.
+            354 => NpcKind::CochinealBeetle,
+            355 => NpcKind::CyanBeetle,
+            356 => NpcKind::LacBeetle,
+            357 => NpcKind::SeaSnail,
+            358 => NpcKind::Squid,
+            359 => NpcKind::FlyingFish,
+            360 => NpcKind::FlyingSnake,
+            361 => NpcKind::Pirate,
+            362 => NpcKind::GoldfishWalker,
+            363 => NpcKind::HornetFatty,
+            364 => NpcKind::HornetHoney,
+            365 => NpcKind::HornetLeafy,
+            366 => NpcKind::HornetSpikey,
+            367 => NpcKind::HornetStingy,
+            368 => NpcKind::JungleCreeper,
+            369 => NpcKind::JungleCreeperWall,
+            370 => NpcKind::BlackRecluseWall,
+            371 => NpcKind::BloodCrawler,
+            372 => NpcKind::BloodCrawlerWall,
+            373 => NpcKind::BloodFeeder,
+            374 => NpcKind::BloodJelly,
+            375 => NpcKind::IceGolem,
+            376 => NpcKind::RainbowSlime,
+            377 => NpcKind::Eyezor,
+            378 => NpcKind::Parrot,
+            379 => NpcKind::Reaper,
+            380 => NpcKind::ZombieMushroom,
+            381 => NpcKind::ZombieMushroomHat,
+            382 => NpcKind::FungoFish,
+            383 => NpcKind::AnomuraFungus,
+            384 => NpcKind::MushiLadybug,
+            385 => NpcKind::FungiBulb,
+            386 => NpcKind::GiantFungiBulb,
+            387 => NpcKind::IchorSticker,
+            388 => NpcKind::RustyArmoredBonesAxe,
+            389 => NpcKind::RustyArmoredBonesFlail,
+            390 => NpcKind::RustyArmoredBonesSword,
+            391 => NpcKind::RustyArmoredBonesSwordNoArmor,
+            392 => NpcKind::BlueArmoredBones,
+            393 => NpcKind::BlueArmoredBonesMace,
+            394 => NpcKind::BlueArmoredBonesNoPants,
+            395 => NpcKind::BlueArmoredBonesSword,
+            396 => NpcKind::HellArmoredBones,
+            397 => NpcKind::HellArmoredBonesSpikeShield,
+            398 => NpcKind::HellArmoredBonesMace,
+            399 => NpcKind::HellArmoredBonesSword,
             _ => return None,
         })
     }
@@ -1304,6 +1407,10 @@ impl NpcKind {
                     // W4-d34: the Old Man carries `townNPC = true`
                     // (`NPC.cs:9199`) — `isLikeATownNPC` (`NPC.cs:6856`).
                     | NpcKind::OldMan
+                    // W4-d37 — the Pirate (229) is a town NPC (`NPC.cs:11955`
+                    // `townNPC = true`) with no ported housing entry yet (the
+                    // TravellingMerchant precedent). `is_friendly` reads this.
+                    | NpcKind::Pirate
             )
     }
 
@@ -2002,6 +2109,51 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` HitSound rows
+            // (the `this.HitSound = SoundID.NPCHitN;` cites in the enum).
+            NpcKind::CochinealBeetle
+            | NpcKind::CyanBeetle
+            | NpcKind::LacBeetle
+            | NpcKind::SeaSnail
+            | NpcKind::Squid
+            | NpcKind::FlyingFish
+            | NpcKind::Pirate
+            | NpcKind::GoldfishWalker
+            | NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy
+            | NpcKind::JungleCreeper
+            | NpcKind::JungleCreeperWall
+            | NpcKind::RainbowSlime
+            | NpcKind::Eyezor
+            | NpcKind::ZombieMushroom
+            | NpcKind::ZombieMushroomHat
+            | NpcKind::FungoFish
+            | NpcKind::AnomuraFungus
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => "NPC_Hit_1",
+            NpcKind::FlyingSnake => "NPC_Hit_23",
+            NpcKind::BlackRecluseWall => "NPC_Hit_29",
+            NpcKind::BloodCrawler | NpcKind::BloodCrawlerWall => "NPC_Hit_20",
+            NpcKind::BloodFeeder | NpcKind::BloodJelly | NpcKind::IchorSticker => "NPC_Hit_13",
+            NpcKind::IceGolem => "NPC_Hit_5",
+            NpcKind::Parrot => "NPC_Hit_46",
+            NpcKind::Reaper => "NPC_Hit_49",
+            NpcKind::MushiLadybug => "NPC_Hit_45",
+            NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => "NPC_Hit_2",
             _ => return None,
         })
     }
@@ -2364,6 +2516,48 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` DeathSound rows
+            // (the `this.DeathSound = SoundID.NPCDeathN;` cites in the enum).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle => "NPC_Killed_16",
+            NpcKind::SeaSnail
+            | NpcKind::Squid
+            | NpcKind::FlyingFish
+            | NpcKind::Pirate
+            | NpcKind::GoldfishWalker
+            | NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy
+            | NpcKind::JungleCreeper
+            | NpcKind::JungleCreeperWall
+            | NpcKind::RainbowSlime
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb => "NPC_Killed_1",
+            NpcKind::FlyingSnake => "NPC_Killed_26",
+            NpcKind::BlackRecluseWall => "NPC_Killed_32",
+            NpcKind::BloodCrawler | NpcKind::BloodCrawlerWall => "NPC_Killed_23",
+            NpcKind::BloodFeeder | NpcKind::BloodJelly | NpcKind::IchorSticker => "NPC_Killed_19",
+            NpcKind::IceGolem => "NPC_Killed_7",
+            NpcKind::Eyezor
+            | NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => "NPC_Killed_2",
+            NpcKind::Parrot => "NPC_Killed_48",
+            NpcKind::Reaper => "NPC_Killed_51",
+            NpcKind::ZombieMushroom | NpcKind::ZombieMushroomHat | NpcKind::FungoFish | NpcKind::AnomuraFungus => {
+                "NPC_Killed_6"
+            }
+            NpcKind::MushiLadybug => "NPC_Killed_47",
             _ => return None,
         })
     }
@@ -2490,6 +2684,36 @@ impl NpcKind {
             // writes noGravity but kb 0 (`:9664`) — the Y-pop selector never
             // reaches it (the ManEater precedent); the Crab is a grounded
             // walker. PinkJellyfish/Antlion/SpikeBall dropped (g8-owned).
+            // W4-d37 — the NPCID 211-280 band's flyers whose `SetDefaults`
+            // writes `noGravity = true` AND `knockBackResist > 0` (the Y-pop's
+            // 0.5 selector reaches them). The squid/blood jelly/fungo fish
+            // (aiStyle 18, `NPC.cs:11842`/`:12121`/`:12291`, kb 1f default),
+            // the flying snake (aiStyle-14 head, `:22851`, kb 0.65), the
+            // hornets + parrot (aiStyle 5, `:11991`/`:12250`, kb 0.3-0.7),
+            // the wall crawlers (aiStyle 40, `:12065`/`:11046`/`:12093`,
+            // kb 0.25/0.5), the blood feeder (aiStyle 16, `:12108`, kb 1f),
+            // the reaper (aiStyle 22, `:15452`, kb 0.6) and the ichor sticker
+            // (aiStyle 22, `:12472`, kb 0.6). The flying fish's noGravity is
+            // the aiStyle-44 head's per-tick write (`:30863`, kb 0.8). The
+            // fungi bulbs (259/260) are noGravity but kb 0 — the knockback
+            // gate refuses them, so they keep the false row.
+            NpcKind::Squid
+            | NpcKind::BloodJelly
+            | NpcKind::FungoFish
+            | NpcKind::FlyingSnake
+            | NpcKind::FlyingFish
+            | NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy
+            | NpcKind::Parrot
+            | NpcKind::JungleCreeperWall
+            | NpcKind::BlackRecluseWall
+            | NpcKind::BloodCrawlerWall
+            | NpcKind::BloodFeeder
+            | NpcKind::Reaper
+            | NpcKind::IchorSticker => true,
             _ => false,
         }
     }
@@ -2799,6 +3023,66 @@ impl NpcKind {
             NpcKind::Necromancer => 8,
             NpcKind::NecromancerArmored => 8,
             NpcKind::DiabolistRed => 8,
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` aiStyle rows
+            // (the `this.aiStyle = N;` cites in `npc.rs`'s enum).
+            // aiStyle 1 — RainbowSlime (`NPC.cs:12152`).
+            NpcKind::RainbowSlime => 1,
+            // aiStyle 3 — the beetles/snail/crawlers/fungi/walkers/armored
+            // bones (`NPC.cs:11792`/`:11805`/`:11818`/`:11831`/`:12053`/
+            // `:12082`/`:12137`/`:12238`/`:12267`/`:12280`/`:12308`/
+            // `:12322`/`:12488`-`:12631`).
+            NpcKind::CochinealBeetle
+            | NpcKind::CyanBeetle
+            | NpcKind::LacBeetle
+            | NpcKind::SeaSnail
+            | NpcKind::JungleCreeper
+            | NpcKind::BloodCrawler
+            | NpcKind::IceGolem
+            | NpcKind::Eyezor
+            | NpcKind::ZombieMushroom
+            | NpcKind::ZombieMushroomHat
+            | NpcKind::AnomuraFungus
+            | NpcKind::MushiLadybug
+            | NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => 3,
+            // aiStyle 5 — the hornets + the parrot (`NPC.cs:11983`/`:11997`/
+            // `:12011`/`:12025`/`:12039`/`:12254`).
+            NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy
+            | NpcKind::Parrot => 5,
+            // aiStyle 7 — the pirate town NPC + the goldfish critter
+            // (`NPC.cs:11959`/`:11971`).
+            NpcKind::Pirate | NpcKind::GoldfishWalker => 7,
+            // aiStyle 13 — the fungi bulbs (`NPC.cs:12338`/`:12354`).
+            NpcKind::FungiBulb | NpcKind::GiantFungiBulb => 13,
+            // aiStyle 14 — the flying snake (`NPC.cs:11916`).
+            NpcKind::FlyingSnake => 14,
+            // aiStyle 16 — the blood feeder (`NPC.cs:12111`).
+            NpcKind::BloodFeeder => 16,
+            // aiStyle 18 — the squid/blood jelly/fungo fish (`NPC.cs:11845`/
+            // `:12124`/`:12294`).
+            NpcKind::Squid | NpcKind::BloodJelly | NpcKind::FungoFish => 18,
+            // aiStyle 22 — the reaper + the ichor sticker (`NPC.cs:15456`/
+            // `:12475`).
+            NpcKind::Reaper | NpcKind::IchorSticker => 22,
+            // aiStyle 40 — the wall crawlers (`NPC.cs:12068`/`:11049`/
+            // `:12096`).
+            NpcKind::JungleCreeperWall | NpcKind::BlackRecluseWall | NpcKind::BloodCrawlerWall => 40,
+            // aiStyle 44 — the flying fish (`NPC.cs:11889`).
+            NpcKind::FlyingFish => 44,
         }
     }
 
@@ -2927,6 +3211,35 @@ impl NpcKind {
             NpcKind::BoneLee => 5.0,
             NpcKind::Paladin => 1.0,
             NpcKind::SkeletonSniper => 1.0,
+            // W4-d37 — the NPCID 211-280 band's aiStyle-3 walk caps (the
+            // `AI_003_Fighters` ladder groups, `NPC.cs:57403-58401`). The
+            // beetles + the mushroom zombie ride the `num83` group base 1.5f
+            // (`:57606-57608`, no per-type override); the sea snail the
+            // 67/220/428 slow arm 0.5f (`:57881`); the jungle/blood crawlers
+            // + the anomura fungus the cap-2 group 2f (`:57554`); the mushi
+            // ladybug the cap-3 group 3f (`:57520`). The ice golem + eyezor
+            // carry life-scaled caps (`:57972`/`:58002`) — the full-HP base
+            // pins here, the live `npc_ai3_speeds` ladder scales them. The
+            // armored bones ride the `num84` group (`:57741-57791`, the
+            // scale factor is 1 at the 1f default scale).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::ZombieMushroom => 1.5,
+            NpcKind::SeaSnail => 0.5,
+            NpcKind::JungleCreeper | NpcKind::BloodCrawler | NpcKind::AnomuraFungus => 2.0,
+            NpcKind::MushiLadybug => 3.0,
+            NpcKind::IceGolem | NpcKind::Eyezor => 1.0,
+            // 255 is NOT in the `num83` list (`:57606`) — the `num107`
+            // default 1f (`:58324`, no per-type override).
+            NpcKind::ZombieMushroomHat => 1.0,
+            NpcKind::RustyArmoredBonesAxe | NpcKind::BlueArmoredBonesSword => 2.0,
+            NpcKind::RustyArmoredBonesFlail => 1.0,
+            NpcKind::RustyArmoredBonesSword => 1.5,
+            NpcKind::RustyArmoredBonesSwordNoArmor | NpcKind::BlueArmoredBonesMace => 3.0,
+            NpcKind::BlueArmoredBones => 1.25,
+            NpcKind::BlueArmoredBonesNoPants => 3.25,
+            NpcKind::HellArmoredBones => 2.75,
+            NpcKind::HellArmoredBonesSpikeShield => 1.8,
+            NpcKind::HellArmoredBonesMace => 1.3,
+            NpcKind::HellArmoredBonesSword => 2.5,
             _ => return None,
         })
     }
@@ -3407,6 +3720,50 @@ impl NpcKind {
             NpcKind::Necromancer => (18.0, 40.0),
             NpcKind::NecromancerArmored => (18.0, 40.0),
             NpcKind::DiabolistRed => (18.0, 40.0),
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` boxes (the
+            // `base.width`/`base.height` cites in `npc.rs`'s enum).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail => {
+                (28.0, 20.0)
+            }
+            NpcKind::Squid | NpcKind::BloodJelly | NpcKind::FungoFish => (26.0, 26.0),
+            NpcKind::FlyingFish => (32.0, 18.0),
+            NpcKind::FlyingSnake => (34.0, 50.0),
+            NpcKind::Pirate => (18.0, 40.0),
+            NpcKind::GoldfishWalker => (18.0, 20.0),
+            NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy => (34.0, 32.0),
+            NpcKind::JungleCreeper | NpcKind::BloodCrawler => (50.0, 20.0),
+            NpcKind::JungleCreeperWall | NpcKind::BlackRecluseWall | NpcKind::BloodCrawlerWall => {
+                (36.0, 36.0)
+            }
+            NpcKind::BloodFeeder => (18.0, 20.0),
+            NpcKind::IceGolem => (30.0, 114.0),
+            NpcKind::RainbowSlime => (60.0, 42.0),
+            NpcKind::Eyezor
+            | NpcKind::ZombieMushroom
+            | NpcKind::ZombieMushroomHat
+            | NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => (18.0, 40.0),
+            NpcKind::Parrot => (32.0, 32.0),
+            NpcKind::Reaper => (24.0, 44.0),
+            NpcKind::AnomuraFungus => (44.0, 34.0),
+            NpcKind::MushiLadybug => (30.0, 24.0),
+            NpcKind::FungiBulb => (20.0, 20.0),
+            NpcKind::GiantFungiBulb => (36.0, 36.0),
+            NpcKind::IchorSticker => (28.0, 56.0),
         }
     }
 
@@ -3530,6 +3887,14 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // W4-d37 — the NPCID 211-280 band's three Hide=true bestiary
+            // folds keep their OWN vanilla `NPC.type` here (the AI ladder's
+            // type gates read it — the BlazingWheel precedent: protocol 353,
+            // cs_id 72). The bestiary CREDIT folds onto the visible twin
+            // (`entry_for_npc`), but `cs_id` is the C# type, not the credit.
+            NpcKind::GoldfishWalker => 230,
+            NpcKind::JungleCreeper => 236,
+            NpcKind::BloodCrawler => 239,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3576,6 +3941,10 @@ impl NpcKind {
             | NpcKind::PartyGirl => 23,
             NpcKind::Dryad => 21,
             NpcKind::GoblinArcher => 21,
+            // W4-d37 — the Pirate (229) rides the humanoid-group arm
+            // (`NPC.cs:68590`'s case list) on the 26-row town strip
+            // (`Main.npcFrameCount[229]` = 26, the Guide's shape).
+            NpcKind::Pirate => 26,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
             // W4-d34: the Angry Bones (31) rides the humanoid-group case list
@@ -3631,6 +4000,9 @@ impl NpcKind {
             NpcKind::Angler | NpcKind::Mechanic => 9,
             // W4-d34: the Old Man's `ExtraFramesCount[37] = 5` (`NPCID.cs:10464`).
             NpcKind::OldMan => 5,
+            // W4-d37 — the Pirate (229) reserves 10 attack rows
+            // (`NPCID.cs:10464`'s ExtraFramesCount set: `229, 10`).
+            NpcKind::Pirate => 10,
             _ => 0,
         }
     }
@@ -4148,6 +4520,38 @@ impl NpcKind {
             NpcKind::Necromancer => 300,
             NpcKind::NecromancerArmored => 450,
             NpcKind::DiabolistRed => 200,
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` lifeMax rows
+            // (the `this.lifeMax = N;` cites in `npc.rs`'s enum).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail => 40,
+            NpcKind::Squid => 30,
+            NpcKind::FlyingFish => 20,
+            NpcKind::FlyingSnake => 260,
+            NpcKind::Pirate => 250,
+            NpcKind::GoldfishWalker => 5,
+            NpcKind::HornetFatty => 50,
+            NpcKind::HornetHoney | NpcKind::HornetSpikey => 42,
+            NpcKind::HornetLeafy | NpcKind::HornetStingy => 38,
+            NpcKind::JungleCreeper | NpcKind::JungleCreeperWall => 400,
+            NpcKind::BlackRecluseWall => 350,
+            NpcKind::BloodCrawler | NpcKind::BloodCrawlerWall => 60,
+            NpcKind::BloodFeeder | NpcKind::BloodJelly => 150,
+            NpcKind::IceGolem => 4000,
+            NpcKind::RainbowSlime => 400,
+            NpcKind::Eyezor => 1000,
+            NpcKind::Parrot => 100,
+            NpcKind::Reaper => 700,
+            NpcKind::ZombieMushroom => 180,
+            NpcKind::ZombieMushroomHat | NpcKind::MushiLadybug => 220,
+            NpcKind::FungoFish => 140,
+            NpcKind::AnomuraFungus => 230,
+            NpcKind::FungiBulb => 90,
+            NpcKind::GiantFungiBulb => 300,
+            NpcKind::IchorSticker => 340,
+            NpcKind::RustyArmoredBonesAxe | NpcKind::BlueArmoredBonesNoPants => 550,
+            NpcKind::RustyArmoredBonesFlail | NpcKind::RustyArmoredBonesSwordNoArmor | NpcKind::HellArmoredBones => 400,
+            NpcKind::RustyArmoredBonesSword | NpcKind::HellArmoredBonesSpikeShield => 450,
+            NpcKind::BlueArmoredBones | NpcKind::BlueArmoredBonesSword | NpcKind::HellArmoredBonesMace | NpcKind::HellArmoredBonesSword => 500,
+            NpcKind::BlueArmoredBonesMace => 350,
         }
     }
 
@@ -4572,6 +4976,40 @@ impl NpcKind {
             NpcKind::Necromancer => 50,
             NpcKind::NecromancerArmored => 35,
             NpcKind::DiabolistRed => 50,
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` damage rows
+            // (the `this.damage = N;` cites in `npc.rs`'s enum).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail | NpcKind::Squid => 20,
+            NpcKind::FlyingFish => 9,
+            NpcKind::FlyingSnake => 85,
+            NpcKind::Pirate => 10,
+            NpcKind::GoldfishWalker => 0,
+            NpcKind::HornetFatty => 22,
+            NpcKind::HornetHoney => 28,
+            NpcKind::HornetLeafy => 30,
+            NpcKind::HornetSpikey => 32,
+            NpcKind::HornetStingy => 34,
+            NpcKind::JungleCreeper | NpcKind::JungleCreeperWall | NpcKind::BlackRecluseWall => 100,
+            NpcKind::BloodCrawler | NpcKind::BloodCrawlerWall => 30,
+            NpcKind::BloodFeeder => 50,
+            NpcKind::BloodJelly => 75,
+            NpcKind::IceGolem => 60,
+            NpcKind::RainbowSlime => 85,
+            NpcKind::Eyezor => 50,
+            NpcKind::Parrot | NpcKind::Reaper => 80,
+            NpcKind::ZombieMushroom => 40,
+            NpcKind::ZombieMushroomHat | NpcKind::AnomuraFungus => 38,
+            NpcKind::FungoFish => 90,
+            NpcKind::MushiLadybug => 60,
+            NpcKind::FungiBulb => 24,
+            NpcKind::GiantFungiBulb => 70,
+            NpcKind::IchorSticker => 55,
+            NpcKind::RustyArmoredBonesAxe | NpcKind::RustyArmoredBonesSword | NpcKind::HellArmoredBones => 70,
+            NpcKind::RustyArmoredBonesFlail => 55,
+            NpcKind::RustyArmoredBonesSwordNoArmor | NpcKind::HellArmoredBonesSword => 75,
+            NpcKind::BlueArmoredBones | NpcKind::BlueArmoredBonesNoPants => 45,
+            NpcKind::BlueArmoredBonesMace | NpcKind::HellArmoredBonesSpikeShield => 65,
+            NpcKind::BlueArmoredBonesSword => 85,
+            NpcKind::HellArmoredBonesMace => 40,
         }
     }
 }

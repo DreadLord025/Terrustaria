@@ -1865,6 +1865,109 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 42.0, h, white)
         }
+        // W4-d37 — the NPCID 211-280 band's portraits: the sheet's own row
+        // height over `Main.npcFrameCount[type]` (the small-kinds wiring
+        // shape), the frame width the sheet's own, the anchor box the kind's
+        // `SetDefaults` box. The three Hide=true folds (230/236/239) ride
+        // their twin's entry kind, so they never reach this match.
+        (NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 2.0).unwrap_or(20.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::Squid, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 8.0).unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::FlyingFish, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(18.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::FlyingSnake, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(50.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::Pirate, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 26.0).unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::HornetFatty | NpcKind::HornetHoney | NpcKind::HornetLeafy | NpcKind::HornetSpikey | NpcKind::HornetStingy, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 3.0).unwrap_or(32.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::JungleCreeperWall | NpcKind::BlackRecluseWall | NpcKind::BloodCrawlerWall, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(36.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::BloodFeeder, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 6.0).unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::BloodJelly, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 7.0).unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::IceGolem, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 15.0).unwrap_or(114.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::RainbowSlime, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(42.0);
+            (sheet_i, h, 60.0, h, white)
+        }
+        (NpcKind::Eyezor | NpcKind::ZombieMushroom | NpcKind::ZombieMushroomHat, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 3.0).unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Parrot, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(32.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::Reaper, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 3.0).unwrap_or(44.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::FungoFish, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::AnomuraFungus, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(34.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::MushiLadybug, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 6.0).unwrap_or(24.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::FungiBulb, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::GiantFungiBulb, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 2.0).unwrap_or(36.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::IchorSticker, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(56.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::RustyArmoredBonesAxe
+        | NpcKind::RustyArmoredBonesFlail
+        | NpcKind::RustyArmoredBonesSword
+        | NpcKind::RustyArmoredBonesSwordNoArmor
+        | NpcKind::BlueArmoredBones
+        | NpcKind::BlueArmoredBonesMace
+        | NpcKind::BlueArmoredBonesSword
+        | NpcKind::HellArmoredBones
+        | NpcKind::HellArmoredBonesSpikeShield
+        | NpcKind::HellArmoredBonesMace
+        | NpcKind::HellArmoredBonesSword, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 15.0).unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::BlueArmoredBonesNoPants, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 16.0).unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
     }
 }
 

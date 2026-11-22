@@ -1,0 +1,406 @@
+{
+ "by_lane": {
+  "c4": [
+   [
+    "Arapaima",
+    157
+   ],
+   [
+    "CrimsonGoldfish",
+    465
+   ],
+   [
+    "GiantFlyingAntlion",
+    509
+   ],
+   [
+    "EyeballFlyingFish",
+    587
+   ],
+   [
+    "GoldGoldfish",
+    592
+   ],
+   [
+    "Pupfish",
+    607
+   ],
+   [
+    "Dolphin",
+    615
+   ]
+  ],
+  "c8": [
+   [
+    "TruffleWormDigger",
+    375
+   ]
+  ],
+  "d120": [
+   [
+    "SantaClaus",
+    142
+   ],
+   [
+    "Truffle",
+    160
+   ],
+   [
+    "Steampunker",
+    178
+   ],
+   [
+    "Cyborg",
+    209
+   ]
+  ],
+  "d33": [
+   [
+    "WindyBalloon",
+    594
+   ]
+  ],
+  "d40": [
+   [
+    "CultistTablet",
+    437
+   ],
+   [
+    "CultistDevote",
+    438
+   ],
+   [
+    "CultistBossClone",
+    440
+   ],
+   [
+    "SkeletonMerchant",
+    453
+   ],
+   [
+    "Butcher",
+    460
+   ],
+   [
+    "CreatureFromTheDeep",
+    461
+   ],
+   [
+    "Fritz",
+    462
+   ],
+   [
+    "Nailhead",
+    463
+   ],
+   [
+    "CrimsonBunny",
+    464
+   ],
+   [
+    "Psycho",
+    466
+   ],
+   [
+    "DeadlySphere",
+    467
+   ],
+   [
+    "DrManFly",
+    468
+   ],
+   [
+    "ThePossessed",
+    469
+   ],
+   [
+    "CrimsonPenguin",
+    470
+   ],
+   [
+    "ShadowFlameApparition",
+    472
+   ],
+   [
+    "BigMimicCorruption",
+    473
+   ],
+   [
+    "BigMimicCrimson",
+    474
+   ],
+   [
+    "BigMimicHallow",
+    475
+   ],
+   [
+    "BigMimicJungle",
+    476
+   ],
+   [
+    "Mothron",
+    477
+   ],
+   [
+    "MothronEgg",
+    478
+   ],
+   [
+    "MothronSpawn",
+    479
+   ],
+   [
+    "Medusa",
+    480
+   ],
+   [
+    "GreekSkeleton",
+    481
+   ],
+   [
+    "GraniteGolem",
+    482
+   ],
+   [
+    "GraniteFlyer",
+    483
+   ]
+  ],
+  "d41": [
+   [
+    "Crawdad",
+    494
+   ],
+   [
+    "GiantShelly",
+    496
+   ],
+   [
+    "Salamander2",
+    499
+   ],
+   [
+    "GiantWalkingAntlion",
+    508
+   ],
+   [
+    "DuneSplicerHead",
+    510
+   ],
+   [
+    "TombCrawlerHead",
+    513
+   ],
+   [
+    "DesertGhoul",
+    524
+   ],
+   [
+    "DesertGhoulCorruption",
+    525
+   ],
+   [
+    "DesertGhoulCrimson",
+    526
+   ],
+   [
+    "DesertGhoulHallow",
+    527
+   ],
+   [
+    "DesertLamiaLight",
+    528
+   ],
+   [
+    "DesertLamiaDark",
+    529
+   ],
+   [
+    "DesertScorpionWalk",
+    530
+   ],
+   [
+    "DesertBeast",
+    532
+   ],
+   [
+    "DemonTaxCollector",
+    534
+   ],
+   [
+    "TheBride",
+    536
+   ],
+   [
+    "SandSlime",
+    537
+   ]
+  ],
+  "d42": [
+   [
+    "DD2LightningBug",
+    578
+   ],
+   [
+    "LarvaeAntlion",
+    582
+   ],
+   [
+    "ZombieMerman",
+    586
+   ],
+   [
+    "TorchZombie",
+    590
+   ],
+   [
+    "GoldGoldfishWalker",
+    593
+   ],
+   [
+    "Rat",
+    610
+   ],
+   [
+    "Owl",
+    611
+   ],
+   [
+    "WaterStrider",
+    612
+   ],
+   [
+    "GoldWaterStrider",
+    613
+   ],
+   [
+    "ExplosiveBunny",
+    614
+   ],
+   [
+    "Turtle",
+    616
+   ],
+   [
+    "TurtleJungle",
+    617
+   ],
+   [
+    "BloodNautilus",
+    618
+   ],
+   [
+    "GoblinShark",
+    620
+   ],
+   [
+    "BloodEelHead",
+    621
+   ],
+   [
+    "Gnome",
+    624
+   ],
+   [
+    "SeaTurtle",
+    625
+   ],
+   [
+    "Seahorse",
+    626
+   ],
+   [
+    "GoldSeahorse",
+    627
+   ],
+   [
+    "Dandelion",
+    628
+   ],
+   [
+    "IceMimic",
+    629
+   ]
+  ]
+ },
+ "gaps": {
+  "Arapaima": 157,
+  "BigMimicCorruption": 473,
+  "BigMimicCrimson": 474,
+  "BigMimicHallow": 475,
+  "BigMimicJungle": 476,
+  "BloodEelHead": 621,
+  "BloodNautilus": 618,
+  "Butcher": 460,
+  "Crawdad": 494,
+  "CreatureFromTheDeep": 461,
+  "CrimsonBunny": 464,
+  "CrimsonGoldfish": 465,
+  "CrimsonPenguin": 470,
+  "CultistBossClone": 440,
+  "CultistDevote": 438,
+  "CultistTablet": 437,
+  "Cyborg": 209,
+  "DD2LightningBug": 578,
+  "Dandelion": 628,
+  "DeadlySphere": 467,
+  "DemonTaxCollector": 534,
+  "DesertBeast": 532,
+  "DesertGhoul": 524,
+  "DesertGhoulCorruption": 525,
+  "DesertGhoulCrimson": 526,
+  "DesertGhoulHallow": 527,
+  "DesertLamiaDark": 529,
+  "DesertLamiaLight": 528,
+  "DesertScorpionWalk": 530,
+  "Dolphin": 615,
+  "DrManFly": 468,
+  "DuneSplicerHead": 510,
+  "ExplosiveBunny": 614,
+  "EyeballFlyingFish": 587,
+  "Fritz": 462,
+  "GiantFlyingAntlion": 509,
+  "GiantShelly": 496,
+  "GiantWalkingAntlion": 508,
+  "Gnome": 624,
+  "GoblinShark": 620,
+  "GoldGoldfish": 592,
+  "GoldGoldfishWalker": 593,
+  "GoldSeahorse": 627,
+  "GoldWaterStrider": 613,
+  "GraniteFlyer": 483,
+  "GraniteGolem": 482,
+  "GreekSkeleton": 481,
+  "IceMimic": 629,
+  "LarvaeAntlion": 582,
+  "Medusa": 480,
+  "Mothron": 477,
+  "MothronEgg": 478,
+  "MothronSpawn": 479,
+  "Nailhead": 463,
+  "Owl": 611,
+  "Psycho": 466,
+  "Pupfish": 607,
+  "Rat": 610,
+  "Salamander2": 499,
+  "SandSlime": 537,
+  "SantaClaus": 142,
+  "SeaTurtle": 625,
+  "Seahorse": 626,
+  "ShadowFlameApparition": 472,
+  "SkeletonMerchant": 453,
+  "Steampunker": 178,
+  "TheBride": 536,
+  "ThePossessed": 469,
+  "TombCrawlerHead": 513,
+  "TorchZombie": 590,
+  "Truffle": 160,
+  "TruffleWormDigger": 375,
+  "Turtle": 616,
+  "TurtleJungle": 617,
+  "WaterStrider": 612,
+  "WindyBalloon": 594,
+  "ZombieMerman": 586
+ },
+ "slot_target": 517
+}

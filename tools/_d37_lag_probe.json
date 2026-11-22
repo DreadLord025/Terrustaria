@@ -1,0 +1,143 @@
+{
+ "c4": {
+  "behind_ahead": "0\t0",
+  "dirty_files": 0,
+  "local_tip": "0df6964be",
+  "origin_is_ancestor_of_local": true,
+  "origin_tip": "0df6964be",
+  "origin_tip_date": "2026-11-21 10:16:16 +0200"
+ },
+ "c4_state_origin": {
+  "bijection_ok": true,
+  "decl": 283,
+  "from_arms": 283,
+  "kinds": {
+   "Arapaima": 406,
+   "BloodFeeder": 241,
+   "CorruptGoldfish": 405,
+   "CrimsonGoldfish": 465,
+   "Dolphin": 615,
+   "EyeballFlyingFish": 587,
+   "FlyingAntlion": 581,
+   "FlyingFish": 359,
+   "GiantFlyingAntlion": 509,
+   "GoldGoldfish": 592,
+   "Orca": 692,
+   "Pufferfish": 688,
+   "Pupfish": 607
+  },
+  "rows": 283,
+  "to_arms": 283
+ },
+ "c9": {
+  "behind_ahead": "0\t1",
+  "dirty_files": 7,
+  "local_tip": "c830aec3d",
+  "origin_is_ancestor_of_local": true,
+  "origin_tip": "2042d77f1",
+  "origin_tip_date": "2026-11-21 07:13:30 +0200"
+ },
+ "c9_local_npc_blob": "e57529f99768d9631c589a995bf7c7f860e95b3a",
+ "c9_state_origin": {
+  "bijection_ok": false,
+  "decl": 270,
+  "from_arms": 274,
+  "kinds": {
+   "GlowingSnail": 360,
+   "MagmaSnail": 655,
+   "Shimmerfly": 677,
+   "Snail": 359
+  },
+  "rows": 270,
+  "to_arms": 274
+ },
+ "c9_tip_npc_blob": "4697bcf9b0a79edc1d81d639a1890ed9d663d354",
+ "d125": {
+  "behind_ahead": "0\t0",
+  "dirty_files": 0,
+  "local_tip": "7a0482302",
+  "origin_is_ancestor_of_local": true,
+  "origin_tip": "7a0482302",
+  "origin_tip_date": "2026-11-21 12:22:47 +0200"
+ },
+ "d125_state_local": {
+  "bijection_ok": true,
+  "decl": 270,
+  "from_arms": 272,
+  "kinds": {
+   "Empress": null,
+   "EmpressButterfly": null,
+   "Lacewing": null,
+   "LightningBug": null
+  },
+  "rows": 272,
+  "to_arms": 272
+ },
+ "d42": {
+  "behind_ahead": "0\t0",
+  "dirty_files": 0,
+  "local_tip": "bac408be0",
+  "origin_is_ancestor_of_local": true,
+  "origin_tip": "bac408be0",
+  "origin_tip_date": "2026-11-21 12:55:30 +0200"
+ },
+ "d42_diff_stat": "crates/tr-app/src/npc.rs                         |   6 +\n crates/tr-app/src/npc_ai.rs                      | 227 ++++++++-\n crates/tr-app/src/render/entities.rs             | 316 +++++++++----\n docs/ANALYSIS.md                                 | 152 ++++---\n docs/research/238-d42-roster-sheets.md           | 221 +++++++++\n docs/research/239-d42-final-keep-one-and-band.md | 321 +++++++++++++\n docs/research/INDEX.md                           |   2 +\n tools/_d42_sheet_inventory.json                  | 555 +++++++++++++++++++++++\n tools/_d42_sheets.js                             | 116 +++++\n 9 files changed, 1778 insertions(+), 138 deletions(-)",
+ "d42_new_commits": [
+  "bac408be0 W4-d42 FINAL doc: research/239 - the 11-kind keep-one drop-hunks + the 593-fold re-point + the 592/607/615 re-adjudication + the 32-kind band declaration. (1) EXECUTE-prep drop-hunks for the 7 d33-owned dragonflies (595-601) + 4 c10-owned waterfowl (602/603/608/609): exact line ranges at 33b3cfe07 across npc.rs (enum/kb/def/value/idle-arms/FindFrame/render_key/ALL_KINDS 313->302/the b4-b6 tests/the b7-b11 cumulative pins/the s1_f_3 gate), data.rs (to/from_u16/sounds/no_gravity/ai_style/size/cs_id/hp/dmg), bestiary.rs (4 ENTRIES + 7 folds), npc_buffs/netglue/ui-bestiary/entities (gate/texture/draw/witnesses) - node-verified RANGES-OK (every range kind-hit + boundary-checked, one off-by-six caught+fixed); d42 keeps its rows on-branch (E8 dropped-lane rule), the OTHER 32 kinds stay; two owner-side gaps flagged (c10's missing Seagull2/Grebe2 credit fold, d33's 7-row superset). (2) The GGF-walker-593 fold re-point contract: c4's 592 IS ported (479d70ad2) -> drop the interim entry, add the ContentSamples.cs:1049 fold arm, keep texture_net_id 593, ENTRIES 281->276, union 486->485. (3) FINAL re-adjudication: c4 @592/607/615/581/587 STAND (d42 ceded 49346dba6, E3's keep-d42 rows moot); CorruptGoldfish keep d34@277 retire c4@405 (E3 kinds-lane rule, c4's 145 concedes); Arapaima ACCEPT c4@406 (pushed+witness-pinned+collision-free; R5's 762 buys nothing - 405/406 are free proto, the StardustCell cs ids ride base 121/116). (4) The band declaration: 32 owned kinds protocol==NPCID 578-630, the 19 holes itemized (581/587 c4, 588/589 base cs-reserved, 592/607/615 c4, 595-601 d33, 602/603/608/609 c10, 604/605 e26b, 606 c8). INDEX 239 row + ANALYSIS roster-join FINAL pointer. Doc-only, code-only mode",
+  "9eadc3043 W4-d42 RENAME: research/143 -> 238 per the d54 registry-150 late-push rule - c4's 143-d40-crimsongoldfish-retire-hunk (90fd242d9, first-add 09:02) wins the 143 key (registry \u00a72: one-sided at scan time, late pushers MUST take 237+); d42's sheets doc pushed 09:50 (2d7ac08c3) is such a late push. 237 is taken locally (e23's 237-bestiary-ui-final, live peer), the 355-tip 150-299 sweep finds 238/239 free -> 238. Content-preserving: header + INDEX row (with the rename note) + the 5 own-branch refs (npc_ai.rs/entities.rs x2 rotation-census cites, ANALYSIS deviation 1 x2). The 148 rename-fallback the Lead floated is NOT free - c4's local 148-fish-family-declaration (0df6964be, live) claims it; registry authority wins. Doc-only + comment-only, no behaviour",
+  "33b3cfe07 W4-d42 FINAL: close the BloodSquid-619 hover gap - port the flag4 bob/<150px boost/-0.3 rise into the shared hover_step, kind-gated (NPC.cs:50445-50488). Three new HoverParams fields (bob_drift/close_boost/hover_rise), TRUE only for BLOOD_SQUID: the bob's (num7>100)|flag4 gate :50450 is always-true for 619 (flag4 :50446), ai[0]++ +/-0.023 Y-by-sign X-by-+/-100-band with the >200 wrap :50469-50472; the boost velocity+=num4/num5*0.007 on the normalized aim at num7<150 :50474-50478; the rise is the dead-flee's ELSE-if :50485-50488 (Center.Y>target.Center.Y-200). Exact C# position: drift/boost after the aim normalize (num7 kept pre-normalize :50428), before the flee/rise block and the approach :50547. The four legacy presets keep the gates false (behaviour frozen; the bees' drift stays bee-local in update_bee_hover, its inline HoverParams literal gains the three false fields - no double-apply). 3 witnesses WRITTEN NOT RUN (bob tick/wrap/-100-boundary values, the strict <150 + 200px-rise + dead-flee gates, the blood-squid-only gate pin); node simulation of the ported order re-verifies every asserted value (ALL-WITNESS-ARITHMETIC-OK). ANALYSIS roster-join deviation 3 updated: gap CLOSED. Code-only: no cargo/tests/rustfmt",
+  "2f6b99947 W4-d42 ROTATION: extract npc_rotation_allowed (the d38c pattern) + the 43-kind write-census - the mechanical C# scan (FindFrame cases + AI_<style> fns) vs the port's writers admits exactly 10 IN kinds (578 vx*0.1 :67876, 583-585 vx*0.1 :69838, 593 air -=vy*0.01 :75959, 603/609 fly vx*0.1 :73870/:73802, 611 vx*0.1 :73684, 619 hover Aim :50643-50646, 620 wet atan2 lerp :68463-68475); 594/618/626/627 have C# writers but their port arms are unwired stand-ins - OUT until the axis wiring; 621-623 OUT with the is_worm deferral; the style-3 AI_003 rotation arms are type-471/427/185/428-local (none of ours); the inline matches! call site now consumes the fn (47 pre-existing members unchanged, 0 dups, mechanical check); 2 witnesses WRITTEN NOT RUN (the gate-consumes-the-writers arm runs + the BloodSquid hover Aim snapped-vector value); research/143 section 7 publishes the census",
+  "2d7ac08c3 W4-d42 SHEETS: the 43-kind roster real-dims inventory + pack verdict (research/143) - all 43 NPC_<id>.xnb decode (0.807 Mpx padded, tools/_d42_sheets.js atlas_sim stub-reuse, skyline x2 determinism + verify on every layout); full runtime set 8382 > 8192 (+190 OVER) so NO pack - the sheets ride d35's research/113 section-10 lazy-load wave (roster solo page 1768 px); the stale ~71px headroom re-measures 77px (8115); the 39-name union-forecast delta published padded-area DESC (the 4 c10 waterfowl rows owner-append only, the 7 dragonflies shared with d33's tip); ANALYSIS deviation 1 updated; node-only, code-only mode",
+  "489308b58 W4-d42 docs: update the ANALYSIS roster-join note for the vanilla-free reconcile (43 kinds, the 8 sibling-owned drops, the GoldGoldfishWalker interim entry, the BloodSquid hover_step bob/boost/rise gap)"
+ ],
+ "d42_state_origin": {
+  "bijection_ok": true,
+  "decl": 313,
+  "from_arms": 313,
+  "kinds": {
+   "Dragonfly": null,
+   "Dragonfly2": null,
+   "Dragonfly3": null,
+   "Dragonfly4": null,
+   "Dragonfly5": null,
+   "Dragonfly6": null,
+   "Dragonfly7": null
+  },
+  "rows": 313,
+  "to_arms": 313
+ },
+ "g8": {
+  "behind_ahead": "0\t0",
+  "dirty_files": 11,
+  "local_tip": "e1d9578a4",
+  "origin_is_ancestor_of_local": true,
+  "origin_tip": "e1d9578a4",
+  "origin_tip_date": "2026-11-21 12:20:46 +0200"
+ },
+ "g8_state_origin": {
+  "bijection_ok": true,
+  "decl": 270,
+  "from_arms": 304,
+  "kinds": {
+   "Antlion": 357,
+   "CrimsonAxe": 371,
+   "Derpling": 370,
+   "FloatyGross": 372,
+   "GiantFlyingFox": 382,
+   "Herpling": 369,
+   "IceBat": 380,
+   "IceElemental": 368,
+   "Lavabat": 381,
+   "LostGirl": 373,
+   "Nymph": 374,
+   "PinkJellyfish": 356,
+   "RedDevil": 387,
+   "SpikeBall": 358,
+   "VampireBat": 383,
+   "WallCreeper": 366,
+   "WallCreeperWall": 367
+  },
+  "rows": 304,
+  "to_arms": 304
+ }
+}

@@ -1,0 +1,142 @@
+{
+ "c9_local": {
+  "array_set_eq_to_set": true,
+  "decl": 277,
+  "gold_critters": {
+   "GoldBird": 442,
+   "GoldGrasshopper": 446,
+   "GoldMouse": 447
+  },
+  "rows": 277,
+  "snails_in_array": [
+   "Snail",
+   "GlowingSnail",
+   "MagmaSnail",
+   "Shimmerfly"
+  ],
+  "tip": "c830aec3d",
+  "to_arms": 277,
+  "unpushed": "1"
+ },
+ "c9_origin": {
+  "decl": 270,
+  "rows": 270,
+  "snails_in_array": [],
+  "to_arms": 274
+ },
+ "d125_sheets_ancestor": true,
+ "d125_state": {
+  "EmpressOfLight": 229,
+  "PrismaticLacewing": 237,
+  "decl": 270,
+  "rows": 272
+ },
+ "d36_hover_batch_vs_union": {
+  "Crimera": {
+   "id": 781,
+   "in_union": false,
+   "kind_in_union": false
+  },
+  "MossHornet": {
+   "id": 782,
+   "in_union": false,
+   "kind_in_union": false
+  },
+  "Moth": {
+   "id": 793,
+   "in_union": false,
+   "kind_in_union": false
+  }
+ },
+ "d36_r7_executed": true,
+ "d36_receipt": {
+  "Crimera": 781,
+  "GiantTortoise": 770,
+  "IceTortoise": 771,
+  "MossHornet": 782,
+  "Moth": 793,
+  "Penguin": 768,
+  "PenguinBlack": 769,
+  "ToxicSludge": 767
+ },
+ "d37_zero_code_diff": true,
+ "d39_r7": {
+  "Butterfly": 817,
+  "ChatteringTeethBomb": 821,
+  "CultistArcherBlue": 822,
+  "CultistArcherWhite": 823,
+  "Grasshopper": 820,
+  "Scorpion": 819,
+  "ScorpionBlack": 818
+ },
+ "d42_dragonflies_present": {
+  "BlackDragonfly": 595,
+  "BlueDragonfly": 596,
+  "GoldDragonfly": 601,
+  "GreenDragonfly": 597,
+  "OrangeDragonfly": 598,
+  "RedDragonfly": 599,
+  "YellowDragonfly": 600
+ },
+ "g8_origin": {
+  "decl": 270,
+  "e8_moves_executed": false,
+  "flying_snake": 384,
+  "rows": 305,
+  "to_arms": 305,
+  "vampire": 388
+ },
+ "lag_union": {
+  "core_kinds": 282,
+  "core_max": 766,
+  "grand_kinds": 373,
+  "max_id": 823
+ },
+ "tips": {
+  "c4": {
+   "date": "2026-11-21 10:16:16 +0200",
+   "origin": "0df6964be"
+  },
+  "c9": {
+   "date": "2026-11-21 07:13:30 +0200",
+   "origin": "2042d77f1"
+  },
+  "d125": {
+   "date": "2026-11-21 12:22:47 +0200",
+   "origin": "7a0482302"
+  },
+  "d36": {
+   "date": "2026-11-21 14:28:17 +0200",
+   "origin": "8c5839b03"
+  },
+  "d36x": {
+   "date": "2026-11-21 09:56:23 +0200",
+   "origin": "396a35ceb"
+  },
+  "d39": {
+   "date": "2026-11-21 12:03:52 +0200",
+   "origin": "a0d49dc1d"
+  },
+  "d41": {
+   "date": "2026-11-21 14:20:54 +0200",
+   "origin": "db12805be"
+  },
+  "d42": {
+   "date": "2026-11-21 12:55:30 +0200",
+   "origin": "bac408be0"
+  },
+  "d43": {
+   "date": "2026-11-21 12:35:09 +0200",
+   "origin": "0253bde90"
+  },
+  "g10": {
+   "date": "2026-11-21 10:24:40 +0200",
+   "origin": "5dee28650"
+  },
+  "g8": {
+   "date": "2026-11-21 14:37:06 +0200",
+   "origin": "1752c70df"
+  }
+ },
+ "utc_local_time": "2026-11-21T14:55:35"
+}

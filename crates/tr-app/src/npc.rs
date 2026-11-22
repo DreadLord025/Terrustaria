@@ -1274,6 +1274,212 @@ pub enum NpcKind {
     // by g8@746 and SpikeBall (70) by g8@747 — d34@284/285's duplicate
     // ports dropped at the wave-1 splice; g8 lands the canonical rows +
     // wiring.
+    // ---- W4-d37 — the NPCID 211-280 kinds-coverage band (census 65, 46
+    // missing ids). Every row is the kind's `SetDefaults` block verbatim
+    // (the `NPC.cs` cites); the protocol ids ride the port-local 354-399
+    // band (`to_u16`), the vanilla `NPC.type` rides `cs_id`/`net_id`. ----
+    /// `NPCID.CochinealBeetle` (217, `NPCID.cs:11111`) — the cavern beetle
+    /// (`NPC.cs:11788-11800`): 28x20, aiStyle 3, dmg 20, def 10, 40 HP,
+    /// NPCHit1/NPCDeath16, value 60, rarity 1. The `num83` walk cap is the
+    /// 1.5f group base (`NPC.cs:57606`, no per-type override).
+    CochinealBeetle,
+    /// `NPCID.CyanBeetle` (218, `NPCID.cs:11113`) — the snow beetle
+    /// (`NPC.cs:11801-11813`): the 217 stat twin (28x20, aiStyle 3, dmg 20,
+    /// def 10, 40 HP, NPCHit1/NPCDeath16, value 60, rarity 1).
+    CyanBeetle,
+    /// `NPCID.LacBeetle` (219, `NPCID.cs:11115`) — the jungle beetle
+    /// (`NPC.cs:11814-11826`): the 217 stat twin (28x20, aiStyle 3, dmg 20,
+    /// def 10, 40 HP, NPCHit1/NPCDeath16, value 60, rarity 1).
+    LacBeetle,
+    /// `NPCID.SeaSnail` (220, `NPCID.cs:11117`) — the ocean snail
+    /// (`NPC.cs:11827-11839`): 28x20, aiStyle 3, dmg 20, def 10, 40 HP,
+    /// NPCHit1/NPCDeath1, value 60, rarity 2. The slow 0.5f walk cap
+    /// (`NPC.cs:57881-57906`, the 67/220/428 arm).
+    SeaSnail,
+    /// `NPCID.Squid` (221, `NPCID.cs:11119`) — the ocean squid
+    /// (`NPC.cs:11840-11854`): noGravity, 26x26, aiStyle 18, dmg 20, def 2,
+    /// 30 HP, NPCHit1/NPCDeath1, value 100, alpha 20, rarity 1.
+    Squid,
+    /// `NPCID.FlyingFish` (224, `NPCID.cs:11125`) — the rain flyer
+    /// (`NPC.cs:11885-11897`): 32x18, aiStyle 44, dmg 9, def 4, 20 HP,
+    /// NPCHit1/NPCDeath1, kb 0.8, value 300. The faithful style-44 machine
+    /// (`npc_ai_style44.rs`) claims the axis arm.
+    FlyingFish,
+    /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) — the temple flyer
+    /// (`NPC.cs:11911-11924`): npcSlots 0.5, 34x50, aiStyle 14, dmg 85,
+    /// def 28, 260 HP, NPCHit23/NPCDeath26, kb 0.65, value 400.
+    FlyingSnake,
+    /// `NPCID.Pirate` (229, `NPCID.cs:11135`) — the pirate-invasion town
+    /// NPC (`NPC.cs:11953-11966`): townNPC + friendly, 18x40, aiStyle 7,
+    /// dmg 10, def 15, 250 HP, NPCHit1/NPCDeath1, kb 0.5.
+    Pirate,
+    /// `NPCID.GoldfishWalker` (230, `NPCID.cs:11137`) — the rain critter
+    /// (`NPC.cs:11967-11978`): 18x20, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// NPCHit1/NPCDeath1, catchItem 261. Hide=true bestiary draw modifier
+    /// (`NPCID.cs:616-620`) — folds onto the Goldfish (55) credit.
+    GoldfishWalker,
+    /// `NPCID.HornetFatty` (231, `NPCID.cs:11139`) — the jungle hornet
+    /// variant (`NPC.cs:11979-11992`): 34x32, aiStyle 5, dmg 22, def 16,
+    /// 50 HP, NPCHit1/NPCDeath1, kb 0.3, value 200, noGravity. The AI_005
+    /// type-231 row: num 3 / num2 0.017 (`NPC.cs:50345-50348`).
+    HornetFatty,
+    /// `NPCID.HornetHoney` (232, `NPCID.cs:11141`) — (`NPC.cs:11993-12006`):
+    /// 34x32, aiStyle 5, dmg 28, def 12, 42 HP, NPCHit1/NPCDeath1, kb 0.6,
+    /// value 200, noGravity. The AI_005 num 3.5 / num2 0.021 family row.
+    HornetHoney,
+    /// `NPCID.HornetLeafy` (233, `NPCID.cs:11143`) — (`NPC.cs:12007-12020`):
+    /// 34x32, aiStyle 5, dmg 30, def 14, 38 HP, NPCHit1/NPCDeath1, kb 0.45,
+    /// value 200, noGravity.
+    HornetLeafy,
+    /// `NPCID.HornetSpikey` (234, `NPCID.cs:11145`) — (`NPC.cs:12021-12034`):
+    /// 34x32, aiStyle 5, dmg 32, def 6, 42 HP, NPCHit1/NPCDeath1, kb 0.55,
+    /// value 200, noGravity.
+    HornetSpikey,
+    /// `NPCID.HornetStingy` (235, `NPCID.cs:11147`) — (`NPC.cs:12035-12048`):
+    /// 34x32, aiStyle 5, dmg 34, def 4, 38 HP, NPCHit1/NPCDeath1, kb 0.6,
+    /// value 200, noGravity.
+    HornetStingy,
+    /// `NPCID.JungleCreeper` (236, `NPCID.cs:11149`) — the jungle crawler
+    /// (`NPC.cs:12049-12062`): 50x20, aiStyle 3, dmg 100, def 28, 400 HP,
+    /// NPCHit1/NPCDeath1, kb 0.25, value 1000, npcSlots 0.75. Hide=true
+    /// (`NPCID.cs:2790-2794`) — folds onto the JungleCreeperWall (237) credit.
+    JungleCreeper,
+    /// `NPCID.JungleCreeperWall` (237, `NPCID.cs:11151`) — the wall-crawling
+    /// twin (`NPC.cs:12063-12077`): noGravity, 36x36, aiStyle 40, dmg 100,
+    /// def 28, 400 HP, NPCHit1/NPCDeath1, kb 0.25, value 1000, npcSlots 0.75.
+    JungleCreeperWall,
+    /// `NPCID.BlackRecluseWall` (238, `NPCID.cs:11153`) — the spider-nest
+    /// wall crawler (`NPC.cs:11044-11058`): noGravity, 36x36, aiStyle 40,
+    /// dmg 100, def 40, 350 HP, NPCHit29/NPCDeath32, kb 0.25, value 500,
+    /// npcSlots 0.5.
+    BlackRecluseWall,
+    /// `NPCID.BloodCrawler` (239, `NPCID.cs:11155`) — the crimson crawler
+    /// (`NPC.cs:12078-12090`): 50x20, aiStyle 3, dmg 30, def 8, 60 HP,
+    /// NPCHit20/NPCDeath23, kb 0.5, value 130. Hide=true
+    /// (`NPCID.cs:2813-2817`) — folds onto the BloodCrawlerWall (240) credit.
+    BloodCrawler,
+    /// `NPCID.BloodCrawlerWall` (240, `NPCID.cs:11157`) — the wall-crawling
+    /// twin (`NPC.cs:12091-12104`): noGravity, 36x36, aiStyle 40, dmg 30,
+    /// def 8, 60 HP, NPCHit20/NPCDeath23, kb 0.5, value 130.
+    BloodCrawlerWall,
+    /// `NPCID.BloodFeeder` (241, `NPCID.cs:11159`) — the crimson fish
+    /// (`NPC.cs:12105-12118`): npcSlots 0.5, noGravity, 18x20, aiStyle 16,
+    /// dmg 50, def 20, 150 HP, NPCHit13/NPCDeath19, value 500.
+    BloodFeeder,
+    /// `NPCID.BloodJelly` (242, `NPCID.cs:11161`) — the crimson jellyfish
+    /// (`NPC.cs:12119-12132`): noGravity, 26x26, aiStyle 18, dmg 75, def 20,
+    /// 150 HP, NPCHit13/NPCDeath19, value 800, alpha 20.
+    BloodJelly,
+    /// `NPCID.IceGolem` (243, `NPCID.cs:11163`) — the blizzard mini-boss
+    /// (`NPC.cs:12133-12147`): 30x114, aiStyle 3, dmg 60, def 32, 4000 HP,
+    /// NPCHit5/NPCDeath7, kb 0.05, value 15000 (`Item.buyPrice(0, 1, 50)`),
+    /// coldDamage, rarity 2. The life-scaled walk cap (`NPC.cs:57972-58001`).
+    IceGolem,
+    /// `NPCID.RainbowSlime` (244, `NPCID.cs:11165`) — the hallow slime
+    /// (`NPC.cs:12148-12162`): 60x42, aiStyle 1, dmg 85, def 26, 400 HP,
+    /// NPCHit1/NPCDeath1, alpha 175, value 2000 (`Item.buyPrice(0, 0, 20)`),
+    /// kb 0.3, rarity 1.
+    RainbowSlime,
+    /// `NPCID.Eyezor` (251, `NPCID.cs:11179`) — the eclipse walker
+    /// (`NPC.cs:12234-12247`): 18x40, aiStyle 3, dmg 50, def 30, 1000 HP,
+    /// NPCHit1/NPCDeath2, kb 0.3, value 5000 (`Item.buyPrice(0, 0, 50)`),
+    /// rarity 2. The life-scaled walk cap (`NPC.cs:58002-58031`).
+    Eyezor,
+    /// `NPCID.Parrot` (252, `NPCID.cs:11181`) — the pirate-invasion flyer
+    /// (`NPC.cs:12248-12262`): noGravity, npcSlots 0.5, 32x32, aiStyle 5,
+    /// dmg 80, def 12, 100 HP, NPCHit46/NPCDeath48, kb 0.7, value 500. The
+    /// AI_005 type-252 row: num 6 / num2 0.1 when the target is hittable,
+    /// else num 2 / num2 0.01 (`NPC.cs:50328-50339`).
+    Parrot,
+    /// `NPCID.Reaper` (253, `NPCID.cs:11183`) — the eclipse ghost
+    /// (`NPC.cs:15450-15465`): noGravity + noTileCollide, 24x44, aiStyle 22,
+    /// dmg 80, def 22, 700 HP, NPCHit49/NPCDeath51, alpha 100, value 1500,
+    /// kb 0.6. `ImmuneToAllBuffsThatAreNotWhips` (`NPCID.cs:7559-7564`).
+    Reaper,
+    /// `NPCID.ZombieMushroom` (254, `NPCID.cs:11185`) — the mushroom walker
+    /// (`NPC.cs:12263-12275`): 18x40, aiStyle 3, dmg 40, def 10, 180 HP,
+    /// NPCHit1/NPCDeath6, kb 0.4, value 1000.
+    ZombieMushroom,
+    /// `NPCID.ZombieMushroomHat` (255, `NPCID.cs:11187`) — the hat variant
+    /// (`NPC.cs:12276-12288`): 18x40, aiStyle 3, dmg 38, def 16, 220 HP,
+    /// NPCHit1/NPCDeath6, kb 0.3, value 1200.
+    ZombieMushroomHat,
+    /// `NPCID.FungoFish` (256, `NPCID.cs:11189`) — the mushroom fish
+    /// (`NPC.cs:12289-12303`): noGravity, 26x26, aiStyle 18, dmg 90, def 20,
+    /// 140 HP, NPCHit1/NPCDeath6, value 1200, alpha 20, npcSlots 0.3.
+    FungoFish,
+    /// `NPCID.AnomuraFungus` (257, `NPCID.cs:11191`) — the mushroom crawler
+    /// (`NPC.cs:12304-12317`): 44x34, aiStyle 3, dmg 38, def 24, 230 HP,
+    /// NPCHit1/NPCDeath6, kb 0.3, value 1300, npcSlots 0.3. The cap-2 walk
+    /// group (`NPC.cs:57554`).
+    AnomuraFungus,
+    /// `NPCID.MushiLadybug` (258, `NPCID.cs:11193`) — the mushroom beetle
+    /// (`NPC.cs:12318-12331`): 30x24, aiStyle 3, dmg 60, def 16, 220 HP,
+    /// NPCHit45/NPCDeath47, kb 0.3, value 1500, npcSlots 0.3. The cap-3 walk
+    /// group (`NPC.cs:57520`).
+    MushiLadybug,
+    /// `NPCID.FungiBulb` (259, `NPCID.cs:11195`) — the mushroom spore
+    /// (`NPC.cs:12332-12347`): noGravity + noTileCollide, 20x20, aiStyle 13,
+    /// dmg 24, def 4, 90 HP, NPCHit1/NPCDeath1, kb 0, value 350, npcSlots 0.3.
+    FungiBulb,
+    /// `NPCID.GiantFungiBulb` (260, `NPCID.cs:11197`) — the giant spore
+    /// (`NPC.cs:12348-12363`): noGravity + noTileCollide, 36x36, aiStyle 13,
+    /// dmg 70, def 20, 300 HP, NPCHit1/NPCDeath1, kb 0, value 1250,
+    /// npcSlots 0.3.
+    GiantFungiBulb,
+    /// `NPCID.IchorSticker` (268, `NPCID.cs:11213`) — the crimson flyer
+    /// (`NPC.cs:12470-12483`): noGravity, 28x56, aiStyle 22, dmg 55, def 20,
+    /// 340 HP, NPCHit13/NPCDeath19, kb 0.6, value 450.
+    IchorSticker,
+    /// `NPCID.RustyArmoredBonesAxe` (269, `NPCID.cs:11215`) — the dungeon
+    /// armored skeleton (`NPC.cs:12484-12496`): 18x40, aiStyle 3, dmg 70,
+    /// def 34, 550 HP, NPCHit2/NPCDeath2, kb 0.3, value 1000. The `num84`
+    /// walk cap 2f (`NPC.cs:57744-57747`).
+    RustyArmoredBonesAxe,
+    /// `NPCID.RustyArmoredBonesFlail` (270, `NPCID.cs:11217`) —
+    /// (`NPC.cs:12497-12509`): 18x40, aiStyle 3, dmg 55, def 50, 400 HP,
+    /// NPCHit2/NPCDeath2, kb 0.2, value 1000. The `num84` walk cap 1f.
+    RustyArmoredBonesFlail,
+    /// `NPCID.RustyArmoredBonesSword` (271, `NPCID.cs:11219`) —
+    /// (`NPC.cs:12510-12522`): 18x40, aiStyle 3, dmg 70, def 40, 450 HP,
+    /// NPCHit2/NPCDeath2, kb 0.25, value 1000. The `num84` walk cap 1.5f.
+    RustyArmoredBonesSword,
+    /// `NPCID.RustyArmoredBonesSwordNoArmor` (272, `NPCID.cs:11221`) —
+    /// (`NPC.cs:12523-12535`): 18x40, aiStyle 3, dmg 75, def 28, 400 HP,
+    /// NPCHit2/NPCDeath2, kb 0.35, value 1000. The `num84` walk cap 3f.
+    RustyArmoredBonesSwordNoArmor,
+    /// `NPCID.BlueArmoredBones` (273, `NPCID.cs:11223`) —
+    /// (`NPC.cs:12536-12548`): 18x40, aiStyle 3, dmg 45, def 50, 500 HP,
+    /// NPCHit2/NPCDeath2, kb 0.15, value 1000. The `num84` walk cap 1.25f.
+    BlueArmoredBones,
+    /// `NPCID.BlueArmoredBonesMace` (274, `NPCID.cs:11225`) —
+    /// (`NPC.cs:12549-12561`): 18x40, aiStyle 3, dmg 65, def 34, 350 HP,
+    /// NPCHit2/NPCDeath2, kb 0.4, value 1000. The `num84` walk cap 3f.
+    BlueArmoredBonesMace,
+    /// `NPCID.BlueArmoredBonesNoPants` (275, `NPCID.cs:11227`) —
+    /// (`NPC.cs:12562-12574`): 18x40, aiStyle 3, dmg 45, def 50, 550 HP,
+    /// NPCHit2/NPCDeath2, kb 0.15, value 1000. The `num84` walk cap 3.25f.
+    BlueArmoredBonesNoPants,
+    /// `NPCID.BlueArmoredBonesSword` (276, `NPCID.cs:11229`) —
+    /// (`NPC.cs:12575-12587`): 18x40, aiStyle 3, dmg 85, def 54, 500 HP,
+    /// NPCHit2/NPCDeath2, kb 0.2, value 1000. The `num84` walk cap 2f.
+    BlueArmoredBonesSword,
+    /// `NPCID.HellArmoredBones` (277, `NPCID.cs:11231`) —
+    /// (`NPC.cs:12588-12600`): 18x40, aiStyle 3, dmg 70, def 32, 400 HP,
+    /// NPCHit2/NPCDeath2, kb 0.4, value 1000. The `num84` walk cap 2.75f.
+    HellArmoredBones,
+    /// `NPCID.HellArmoredBonesSpikeShield` (278, `NPCID.cs:11233`) —
+    /// (`NPC.cs:12601-12613`): 18x40, aiStyle 3, dmg 65, def 48, 450 HP,
+    /// NPCHit2/NPCDeath2, kb 0.3, value 1000. The `num84` walk cap 1.8f.
+    HellArmoredBonesSpikeShield,
+    /// `NPCID.HellArmoredBonesMace` (279, `NPCID.cs:11235`) —
+    /// (`NPC.cs:12614-12626`): 18x40, aiStyle 3, dmg 40, def 54, 500 HP,
+    /// NPCHit2/NPCDeath2, kb 0.2, value 1000. The `num84` walk cap 1.3f.
+    HellArmoredBonesMace,
+    /// `NPCID.HellArmoredBonesSword` (280, `NPCID.cs:11237`) —
+    /// (`NPC.cs:12627-12639`): 18x40, aiStyle 3, dmg 75, def 34, 500 HP,
+    /// NPCHit2/NPCDeath2, kb 0.4, value 1000. The `num84` walk cap 2.5f.
+    HellArmoredBonesSword,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3335,6 +3541,13 @@ impl Npc {
                             NpcKind::BlueJellyfish => 20,
                             // W4-d38 b5 — the alpha row (NPC.cs).
                             NpcKind::Ghost => 100,
+                            // W4-d37 — the NPCID 211-280 band's `SetDefaults`
+                            // alpha rows: the squid/blood jelly/fungo fish 20
+                            // (`NPC.cs:11852`/`:12131`/`:12301`), the rainbow
+                            // slime 175 (`:12158`), the reaper 100 (`:15462`).
+                            NpcKind::Squid | NpcKind::BloodJelly | NpcKind::FungoFish => 20,
+                            NpcKind::RainbowSlime => 175,
+                            NpcKind::Reaper => 100,
                             _ => 0,
                         }
                     }),
@@ -3794,6 +4007,42 @@ impl Npc {
             NpcKind::Necromancer => 0.55,
             NpcKind::NecromancerArmored => 0.5,
             NpcKind::DiabolistRed => 0.7,
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` knockBackResist
+            // rows (the `this.knockBackResist = Nf;` cites in the enum). The
+            // kinds with no row keep the C# class default 1f (`NPC.cs:8533`),
+            // NOT the stock `_ => 0.4` below.
+            // No-row kinds (the class default 1f): the beetles/snail/squid,
+            // the goldfish critter, the blood feeder/jelly, the fungo fish.
+            NpcKind::CochinealBeetle
+            | NpcKind::CyanBeetle
+            | NpcKind::LacBeetle
+            | NpcKind::SeaSnail
+            | NpcKind::Squid
+            | NpcKind::GoldfishWalker
+            | NpcKind::BloodFeeder
+            | NpcKind::BloodJelly
+            | NpcKind::FungoFish => 1.0,
+            NpcKind::FlyingFish => 0.8,
+            NpcKind::FlyingSnake => 0.65,
+            NpcKind::Pirate => 0.5,
+            NpcKind::HornetFatty => 0.3,
+            NpcKind::HornetHoney | NpcKind::HornetStingy => 0.6,
+            NpcKind::HornetLeafy => 0.45,
+            NpcKind::HornetSpikey => 0.55,
+            NpcKind::JungleCreeper | NpcKind::JungleCreeperWall | NpcKind::BlackRecluseWall => 0.25,
+            NpcKind::BloodCrawler | NpcKind::BloodCrawlerWall => 0.5,
+            NpcKind::IceGolem => 0.05,
+            NpcKind::RainbowSlime | NpcKind::Eyezor | NpcKind::ZombieMushroomHat | NpcKind::AnomuraFungus | NpcKind::MushiLadybug => 0.3,
+            NpcKind::Parrot => 0.7,
+            NpcKind::Reaper | NpcKind::IchorSticker => 0.6,
+            NpcKind::ZombieMushroom => 0.4,
+            NpcKind::FungiBulb | NpcKind::GiantFungiBulb => 0.0,
+            NpcKind::RustyArmoredBonesAxe | NpcKind::HellArmoredBonesSpikeShield => 0.3,
+            NpcKind::RustyArmoredBonesFlail | NpcKind::BlueArmoredBonesSword | NpcKind::HellArmoredBonesMace => 0.2,
+            NpcKind::RustyArmoredBonesSword => 0.25,
+            NpcKind::RustyArmoredBonesSwordNoArmor => 0.35,
+            NpcKind::BlueArmoredBones | NpcKind::BlueArmoredBonesNoPants => 0.15,
+            NpcKind::BlueArmoredBonesMace | NpcKind::HellArmoredBones | NpcKind::HellArmoredBonesSword => 0.4,
             _ => 0.4,
         }
     }
@@ -4233,6 +4482,35 @@ impl Npc {
             NpcKind::Necromancer => 18,
             NpcKind::NecromancerArmored => 24,
             NpcKind::DiabolistRed => 12,
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` defense rows
+            // (the `this.defense = N;` cites in `npc.rs`'s enum).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail | NpcKind::ZombieMushroom => 10,
+            NpcKind::Squid => 2,
+            NpcKind::FlyingFish => 4,
+            NpcKind::FlyingSnake => 28,
+            NpcKind::Pirate => 15,
+            NpcKind::GoldfishWalker => 0,
+            NpcKind::HornetFatty | NpcKind::ZombieMushroomHat | NpcKind::MushiLadybug => 16,
+            NpcKind::HornetHoney | NpcKind::Parrot => 12,
+            NpcKind::HornetLeafy => 14,
+            NpcKind::HornetSpikey => 6,
+            NpcKind::HornetStingy | NpcKind::FungiBulb => 4,
+            NpcKind::JungleCreeper | NpcKind::JungleCreeperWall => 28,
+            NpcKind::BlackRecluseWall => 40,
+            NpcKind::BloodCrawler | NpcKind::BloodCrawlerWall => 8,
+            NpcKind::BloodFeeder | NpcKind::BloodJelly | NpcKind::FungoFish | NpcKind::GiantFungiBulb | NpcKind::IchorSticker => 20,
+            NpcKind::IceGolem => 32,
+            NpcKind::RainbowSlime => 26,
+            NpcKind::Eyezor => 30,
+            NpcKind::Reaper => 22,
+            NpcKind::AnomuraFungus => 24,
+            NpcKind::RustyArmoredBonesAxe | NpcKind::BlueArmoredBonesMace | NpcKind::HellArmoredBonesSword => 34,
+            NpcKind::RustyArmoredBonesFlail | NpcKind::BlueArmoredBones | NpcKind::BlueArmoredBonesNoPants => 50,
+            NpcKind::RustyArmoredBonesSword => 40,
+            NpcKind::RustyArmoredBonesSwordNoArmor => 28,
+            NpcKind::BlueArmoredBonesSword | NpcKind::HellArmoredBonesMace => 54,
+            NpcKind::HellArmoredBones => 32,
+            NpcKind::HellArmoredBonesSpikeShield => 48,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4663,6 +4941,44 @@ impl Npc {
             NpcKind::Necromancer => 1500.0,
             NpcKind::NecromancerArmored => 1500.0,
             NpcKind::DiabolistRed => 1500.0,
+            // W4-d37 — the NPCID 211-280 band's `SetDefaults` value rows
+            // (copper; the `this.value = Nf;` / `Item.buyPrice` cites in the
+            // enum). The goldfish critter writes no value row (the head's 0).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle | NpcKind::SeaSnail => 60.0,
+            NpcKind::Squid => 100.0,
+            NpcKind::FlyingFish => 300.0,
+            NpcKind::FlyingSnake => 400.0,
+            NpcKind::Pirate | NpcKind::GoldfishWalker => 0.0,
+            NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy => 200.0,
+            NpcKind::JungleCreeper | NpcKind::JungleCreeperWall | NpcKind::ZombieMushroom | NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => 1000.0,
+            NpcKind::BlackRecluseWall => 500.0,
+            NpcKind::BloodCrawler | NpcKind::BloodCrawlerWall => 130.0,
+            NpcKind::BloodFeeder | NpcKind::Parrot => 500.0,
+            NpcKind::BloodJelly => 800.0,
+            NpcKind::IceGolem => 15000.0,
+            NpcKind::RainbowSlime => 2000.0,
+            NpcKind::Eyezor => 5000.0,
+            NpcKind::Reaper | NpcKind::MushiLadybug => 1500.0,
+            NpcKind::ZombieMushroomHat | NpcKind::FungoFish => 1200.0,
+            NpcKind::AnomuraFungus => 1300.0,
+            NpcKind::FungiBulb => 350.0,
+            NpcKind::GiantFungiBulb => 1250.0,
+            NpcKind::IchorSticker => 450.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5522,6 +5838,17 @@ impl Npc {
             NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
             NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
             NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
+            // W4-d37 — the hornet variants ride the same AI_005 hover core
+            // on their own num/num2 rows (`NPC.cs:50341-50362`): the Fatty
+            // the type-231 override (3/0.017), the other four the family
+            // base (3.5/0.021). The stinger arm is the documented stand-in
+            // skip (the base Hornet's precedent). The parrot (252) rides the
+            // chase pair (6/0.1, `NPC.cs:50328-50334`).
+            NpcKind::HornetFatty => self.update_hover(world, player, HoverParams::HORNET_FATTY),
+            NpcKind::HornetHoney | NpcKind::HornetLeafy | NpcKind::HornetSpikey | NpcKind::HornetStingy => {
+                self.update_hover(world, player, HoverParams::HORNET_VARIANT)
+            }
+            NpcKind::Parrot => self.update_hover(world, player, HoverParams::PARROT),
             // The Queen Bee's volley bees — `AI_005_EaterOfSouls`'s
             // type-210/211 branch (`NPC.cs:50384-50413`): num 5, num2
             // 0.1·num3 with the (ai[1]-60)/60 ramp and the ±6 clamps.
@@ -6777,6 +7104,103 @@ impl Npc {
             NpcKind::NecromancerArmored => self.update_caster(world, player, rng),
             // W4-d38 b1 — aiStyle 8 caster.
             NpcKind::DiabolistRed => self.update_caster(world, player, rng),
+            // ---- W4-d37 — the NPCID 211-280 band (census 65, 46 kinds). ----
+            // The aiStyle-3 walkers ride the shared fighter walker (the
+            // `npc_ai3_speeds` ladder carries each type's cap group — the
+            // beetles/snail/crawlers/fungi the num83/cap-2/cap-3/slow arms,
+            // the ice golem + eyezor the life-scaled arms, the armored bones
+            // the num84 group; `NPC.cs:57403-58401`). The frame is the
+            // kind's own FindFrame arm (below), not the skeleton's 15-row.
+            NpcKind::CochinealBeetle
+            | NpcKind::CyanBeetle
+            | NpcKind::LacBeetle
+            | NpcKind::SeaSnail
+            | NpcKind::JungleCreeper
+            | NpcKind::BloodCrawler
+            | NpcKind::IceGolem
+            | NpcKind::Eyezor
+            | NpcKind::ZombieMushroom
+            | NpcKind::ZombieMushroomHat
+            | NpcKind::AnomuraFungus
+            | NpcKind::MushiLadybug
+            | NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => {
+                crate::npc_ai::walker_step_fighter(
+                    self,
+                    world,
+                    player,
+                    crate::npc_ai::WalkerParams {
+                        speed: self.kind.ai3_walk_speed().unwrap_or(1.0),
+                        jump: -6.2,
+                        aggro_x: 80.0 * TILE_PX,
+                        aggro_y: 40.0 * TILE_PX,
+                    },
+                    GRAVITY,
+                    MAX_FALL,
+                );
+            }
+            // The rainbow slime (244, aiStyle 1) rides the shared hop
+            // machine on its own 60x42 box (the wave-A slimes' precedent).
+            NpcKind::RainbowSlime => self.update_slime(world, player, dt),
+            // The pirate (229, aiStyle 7) is a town NPC — the shared town
+            // wander (the Guide precedent; the housing/chatter machine is
+            // the town-NPC work's concern).
+            NpcKind::Pirate => self.update_guide(world, dt),
+            // The goldfish walker (230, aiStyle 7) is the rain critter — the
+            // same town wander stand-in (the C#'s AI_007 critter arm is the
+            // documented remainder; it deals no contact damage).
+            NpcKind::GoldfishWalker => self.update_guide(world, dt),
+            // The flying snake (226, aiStyle 14) rides the shared bat machine
+            // (the generic approach — its type-226 velocity-sign facing +
+            // 4/2.5 approach are the documented unported branches,
+            // `npc_ai_style14.rs`'s census note).
+            NpcKind::FlyingSnake => self.update_cave_bat(world, player, rng),
+            // The blood feeder (241, aiStyle 16) rides the shared swimmer
+            // (the generic 0.1/0.1 chase + idle bob — `NPC.cs:23824-23961`).
+            NpcKind::BloodFeeder => self.update_swimmer(world, player, rng),
+            // The aiStyle-5 hornets + parrot ride the style axis above
+            // (`ai_005_hover_family`) — these arms keep the kind match
+            // exhaustive (the S1-D-2 axis precedent).
+            NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy
+            | NpcKind::Parrot => {
+                unreachable!("aiStyle 5 rides the style axis (W4-d37)")
+            }
+            // The flying fish (224, aiStyle 44) rides the faithful style-44
+            // machine (`npc_ai_style44.rs`, the W4-c4 port). The solo step
+            // feeds a one-slot sibling slice (the separation loop's empty
+            // body) + the session player; the wet lift + the noGravity
+            // integration ride the flyer-collision tail.
+            NpcKind::FlyingFish => self.update_flying_fish(world, player, rng),
+            // The squid/blood jelly/fungo fish (aiStyle 18), the wall
+            // crawlers (aiStyle 40), the fungi bulbs (aiStyle 13) and the
+            // reaper/ichor sticker (aiStyle 22) have no ported family
+            // machine yet — the documented stand-in holds them still (the
+            // MartianTurret precedent; the stats + FindFrame rows are live,
+            // the AI bodies land with each style's wiring round).
+            NpcKind::Squid
+            | NpcKind::BloodJelly
+            | NpcKind::FungoFish
+            | NpcKind::JungleCreeperWall
+            | NpcKind::BlackRecluseWall
+            | NpcKind::BloodCrawlerWall
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb
+            | NpcKind::Reaper
+            | NpcKind::IchorSticker => {}
         }
     }
 
@@ -10078,6 +10502,494 @@ impl Npc {
                     }
                 }
             }
+            // ---- W4-d37 — the NPCID 211-280 band's FindFrame arms. ----
+            // The beetles (217-219) ride the case-67 group (`NPC.cs:74571-
+            // 74589`): the grounded flip, the 6-tick counter over the 2-row
+            // strip. The sea snail (220) the same arm at 10 ticks (`:74590-
+            // 74605`).
+            NpcKind::CochinealBeetle | NpcKind::CyanBeetle | NpcKind::LacBeetle => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % self.rows();
+                }
+            }
+            NpcKind::SeaSnail => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 10.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % self.rows();
+                }
+            }
+            // The squid (221, `NPC.cs:73961-73993`): the localAI[2] attack
+            // latch picks the 8-tick clamp-last strip vs the 13-tick wrap.
+            NpcKind::Squid => {
+                if self.local_ai[2] == 1.0 {
+                    if self.local_ai[0] == 1.0 {
+                        self.frame = 0;
+                        self.local_ai[0] = 0.0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = self.rows() - 1;
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 13.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= self.rows() {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // The flying fish (224) rides the style-44 module's FindFrame
+            // (`NPC.cs:74763-74785`, the W4-c4 port).
+            NpcKind::FlyingFish => {
+                crate::npc_ai_style44::style44_find_frame(
+                    crate::npc_ai_style44::FLYING_FISH,
+                    self.vx,
+                    self.vy,
+                    self.facing,
+                    self.rows(),
+                    &mut self.frame,
+                    &mut self.frame_counter,
+                    &mut self.sprite_dir,
+                    &mut self.rotation,
+                );
+            }
+            // The flying snake (226) rides the case-150 group (`NPC.cs:74786-
+            // 74822`): the velocity-sign flip, the vx*0.1 tilt, the 6-tick
+            // counter over the 4-row strip (the 150/151 dust arms are the
+            // unported types' — 226 draws none).
+            NpcKind::FlyingSnake => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
+            }
+            // The pirate (229) rides the humanoid-group arm (`NPC.cs:68590`'s
+            // case list) — the 26-row town strip (the Guide precedent).
+            NpcKind::Pirate => self.humanoid_town_frame(),
+            // The goldfish walker (230, `NPC.cs:75883-75922`): the grounded
+            // flip + rotation reset, the |vx|*2+1 accumulator advancing every
+            // >10 over the 6-row strip; the air holds row 0 with the vy>4
+            // tilt.
+            NpcKind::GoldfishWalker => {
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 10.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 0;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                    if self.vy > 4.0 {
+                        self.rotation -= self.vy * 0.01;
+                    }
+                }
+            }
+            // The hornets (231-235) ride the case-42 flap (`NPC.cs:74907-
+            // 74934`): the 1..8 counter's four-phase 0/1/2/1 strip.
+            NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy => {
+                self.frame_counter += 1.0;
+                self.frame = if self.frame_counter < 2.0 {
+                    0
+                } else if self.frame_counter < 4.0 {
+                    1
+                } else if self.frame_counter < 6.0 {
+                    2
+                } else if self.frame_counter < 8.0 {
+                    1
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame
+                };
+            }
+            // The crawlers (236/239) ride the case-164 group (`NPC.cs:73083-
+            // 73111`): the air pins row 4 (rising) / 0 (falling), the grounded
+            // |vx|*1.1 accumulator laps every 6 over rows 0..3.
+            NpcKind::JungleCreeper | NpcKind::BloodCrawler => {
+                if self.vy != 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vy < 0.0 { 4 } else { 0 };
+                } else {
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += self.vx.abs() * 1.1;
+                    while self.frame_counter >= 6.0 {
+                        self.frame_counter -= 6.0;
+                        self.frame += 1;
+                        if self.frame > 3 {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // The wall crawlers (237/238/240) ride the case-165 group
+            // (`NPC.cs:73112-73145`): the (|vx|+|vy|)*0.5 accumulator's
+            // 6/12/18/24 bands over rows 0/1/2/3.
+            NpcKind::JungleCreeperWall | NpcKind::BlackRecluseWall | NpcKind::BloodCrawlerWall => {
+                self.frame_counter += (self.vx.abs() + self.vy.abs()) * 0.5;
+                self.frame = if self.frame_counter < 6.0 {
+                    0
+                } else if self.frame_counter < 12.0 {
+                    1
+                } else if self.frame_counter < 18.0 {
+                    2
+                } else if self.frame_counter < 24.0 {
+                    3
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame
+                };
+            }
+            // The blood feeder (241) rides the case-55 fish group (`NPC.cs:
+            // 74181-74226`): the flip, the wet 6/12/18/24 bands over rows
+            // 0..3, the dry 6/12 bands over rows 4/5.
+            NpcKind::BloodFeeder => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                if self.wet {
+                    self.frame = if self.frame_counter < 6.0 {
+                        0
+                    } else if self.frame_counter < 12.0 {
+                        1
+                    } else if self.frame_counter < 18.0 {
+                        2
+                    } else if self.frame_counter < 24.0 {
+                        3
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame
+                    };
+                } else if self.frame_counter < 6.0 {
+                    self.frame = 4;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 5;
+                } else {
+                    self.frame_counter = 0.0;
+                }
+            }
+            // The blood jelly + fungo fish (242/256) ride the case-63 jelly
+            // group (`NPC.cs:73916-73960`): the ai[1]==1 attack latch (242
+            // only) clamps rows 4..6 on the >4 counter; else the 6/12/18/23
+            // bands over rows 0/1/2/3.
+            NpcKind::BloodJelly | NpcKind::FungoFish => {
+                if self.kind == NpcKind::BloodJelly && self.ai[1] == 1.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 6 {
+                        self.frame = 4;
+                    }
+                    if self.frame < 4 {
+                        self.frame = 4;
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    self.frame = if self.frame_counter < 6.0 {
+                        0
+                    } else if self.frame_counter < 12.0 {
+                        1
+                    } else if self.frame_counter < 18.0 {
+                        2
+                    } else {
+                        if self.frame_counter >= 23.0 {
+                            self.frame_counter = 0.0;
+                        }
+                        3
+                    };
+                }
+            }
+            // The ice golem (243, `NPC.cs:72995-73053`): the negative-counter
+            // land/air recovery (rows 11/12/13/14), the grounded |vx*1.1|
+            // accumulator advancing every 6 over rows 0..9, the vy<-2/>5
+            // launch into the -18 air counter.
+            NpcKind::IceGolem => {
+                if self.frame_counter < 0.0 {
+                    if self.vy == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter < -12.0 {
+                            if self.frame > 9 {
+                                self.frame = 11;
+                            }
+                        } else if self.frame_counter < -6.0 {
+                            if self.frame > 9 {
+                                self.frame = 12;
+                            }
+                        } else if self.frame_counter < 0.0 {
+                            self.frame_counter = 0.0;
+                            if self.frame > 9 {
+                                self.frame = 11;
+                            }
+                        }
+                    } else {
+                        self.frame_counter = -18.0;
+                        self.frame = if self.vy < 0.0 { 14 } else { 13 };
+                    }
+                } else {
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += (self.vx * 1.1).abs();
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 9 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vy < -2.0 || self.vy > 5.0 {
+                        self.frame_counter = -18.0;
+                    }
+                }
+            }
+            // The rainbow slime (244, `NPC.cs:72632-72651`): the case-1 hop
+            // clock (the num2 motion class doubles/triples the tick), the
+            // 8-tick advance over the 4-row strip.
+            NpcKind::RainbowSlime => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
+                }
+            }
+            // The eyezor + mushroom zombies (251/254/255) ride the case-3
+            // walker strip (`NPC.cs:76324-76391`, the wave-A walkers' arm).
+            NpcKind::Eyezor | NpcKind::ZombieMushroom | NpcKind::ZombieMushroomHat => {
+                self.walker_frame();
+            }
+            // The parrot (252, `NPC.cs:73558-73606`): the ±0.5 velocity flip,
+            // the vx*0.1 tilt, the stand-still row 0, the >4 counter advancing
+            // over rows 1..4 (the row-0/row->4 snap to 1).
+            NpcKind::Parrot => {
+                if (self.vx as f64) > 0.5 {
+                    self.sprite_dir = 1;
+                }
+                if (self.vx as f64) < -0.5 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 4 || self.frame == 0 {
+                        self.frame = 1;
+                    }
+                }
+            }
+            // The reaper (253) rides the case-48 ghost group (`NPC.cs:74823-
+            // 74885`): the velocity-sign flip, the vx*0.1 tilt, the 6-tick
+            // counter over the 3-row strip (no num292-- for 253).
+            NpcKind::Reaper => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
+                }
+            }
+            // The anomura fungus (257, `NPC.cs:76179-76224`): the grounded
+            // flip, the air/turn pin to row 4, the idle row 0, the |vx|
+            // accumulator's 8/16/24/32 bands over rows 0/1/2/3.
+            NpcKind::AnomuraFungus => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    self.frame = if self.frame_counter < 8.0 {
+                        0
+                    } else if self.frame_counter < 16.0 {
+                        1
+                    } else if self.frame_counter < 24.0 {
+                        2
+                    } else if self.frame_counter < 32.0 {
+                        3
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame
+                    };
+                }
+            }
+            // The mushi ladybug (258, `NPC.cs:76225-76275`): the grounded
+            // flip, the air/turn >1 counter advancing rows 3..5, the idle
+            // row 0, the |vx| accumulator's 8/16/24 bands over rows 0/1/2.
+            NpcKind::MushiLadybug => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 1.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 5 || self.frame < 3 {
+                        self.frame = 3;
+                    }
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    self.frame = if self.frame_counter < 8.0 {
+                        0
+                    } else if self.frame_counter < 16.0 {
+                        1
+                    } else if self.frame_counter < 24.0 {
+                        2
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame
+                    };
+                }
+            }
+            // The fungi bulbs (259/260) have NO FindFrame case (`NPC.cs:66684-
+            // 77370` has no case 259/260; the post-switch tail is aiStyle-39
+            // only) — the single frame never advances (the ForceBubble
+            // precedent). npcFrameCount 259=4/260=2, but no case writes them.
+            NpcKind::FungiBulb | NpcKind::GiantFungiBulb => {}
+            // The ichor sticker (268) rides the case-250 group (`NPC.cs:72884-
+            // 72897`): the 6-tick counter over the 4-row strip.
+            NpcKind::IchorSticker => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= self.rows() {
+                    self.frame = 0;
+                }
+            }
+            // The armored bones (269-280, `NPC.cs:75825-75882`): the grounded
+            // ±1 flip, the idle row 0, the walk climbs from row 2 on the
+            // |vx|*2+1 accumulator advancing every >6, wrapping at the sheet
+            // count back to row 2; the air holds row 0.
+            NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 2 {
+                            self.frame = 2;
+                        }
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 2;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
         }
     }
 
@@ -11812,6 +12724,50 @@ impl Npc {
             self.wants_hostile_shot
                 .push((crate::projectile::DEMON_SICKLE, shot.x, shot.y, shot.vx, shot.vy, 21));
         }
+        self.integrate_flyer_collision(world);
+    }
+
+    /// W4-d37 — the Flying Fish (224, aiStyle 44): the faithful style-44
+    /// machine (`npc_ai_style44.rs`, the W4-c4 port — `NPC.cs:30861-31124`).
+    /// The solo step feeds a one-slot sibling slice (the separation loop's
+    /// `j != self_index` guard skips it — the empty-swarm body) + the session
+    /// player; the scratch dust pool carries the 587-only sparkle (224 draws
+    /// none). The noGravity flyer integration rides the shared tail.
+    fn update_flying_fish(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        let players_wet = [player.wet];
+        let siblings = [crate::npc_ai_style44::Style44Sibling {
+            active: true,
+            npc_type: crate::npc_ai_style44::FLYING_FISH,
+            x: self.x,
+            y: self.y,
+        }];
+        let mut dust = tr_core::particles::DustPool::new();
+        let dust_ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut env = crate::npc_ai_style44::Style44Env {
+            npc_type: crate::npc_ai_style44::FLYING_FISH,
+            self_index: 0,
+            siblings: &siblings,
+            world,
+            players: &players,
+            player_wet: &players_wet,
+            ticker: 0,
+            dust: &mut dust,
+            dust_ctx: &dust_ctx,
+            rng,
+            wants_no_gravity: false,
+        };
+        crate::npc_ai_style44::style44_step(self, &mut env);
         self.integrate_flyer_collision(world);
     }
 
@@ -19861,6 +20817,10 @@ impl Npc {
                     | NpcKind::GoblinTinkerer
                     // W4-d34: the Old Man is friendly — never contact-damages.
                     | NpcKind::OldMan
+                    // W4-d37 — the Pirate (229) is a friendly town NPC
+                    // (`NPC.cs:11955-11956`); the goldfish critter (230) is
+                    // 0-damage (the `dmg > 0` gate below already refuses it).
+                    | NpcKind::Pirate
             ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -20306,6 +21266,61 @@ impl Npc {
             // d38's anchor band.
             NpcKind::Crab => 791,
             NpcKind::DungeonGuardian => 792,
+            // W4-d37 — the NPCID 211-280 band's vanilla type ids (the G6 key
+            // stays injective). MERGE-SIDE (367 §1): the flying fish/snake
+            // ride their PROTOCOL ids (359/360) — the vanilla 224/226 collide
+            // with the WyvernLegs/WyvernBody2 keys above; the 13 armored-
+            // bones/ichor kinds (vanilla 268-280) ride 793-805 — d34's landed
+            // 266-280 band owns those hash values, and 387/396/397 are the
+            // MartianTurret/MoonLordHead/MoonLordHand keys (the wyvern/pirate
+            // renumber precedent; to_u16 stays 354-399 ZERO-MOVE — only the
+            // render key moves; 793-805 sit after Crab/Guardian's 791/792).
+            NpcKind::CochinealBeetle => 217,
+            NpcKind::CyanBeetle => 218,
+            NpcKind::LacBeetle => 219,
+            NpcKind::SeaSnail => 220,
+            NpcKind::Squid => 221,
+            NpcKind::FlyingFish => 359,
+            NpcKind::FlyingSnake => 360,
+            NpcKind::Pirate => 229,
+            NpcKind::GoldfishWalker => 230,
+            NpcKind::HornetFatty => 231,
+            NpcKind::HornetHoney => 232,
+            NpcKind::HornetLeafy => 233,
+            NpcKind::HornetSpikey => 234,
+            NpcKind::HornetStingy => 235,
+            NpcKind::JungleCreeper => 236,
+            NpcKind::JungleCreeperWall => 237,
+            NpcKind::BlackRecluseWall => 238,
+            NpcKind::BloodCrawler => 239,
+            NpcKind::BloodCrawlerWall => 240,
+            NpcKind::BloodFeeder => 241,
+            NpcKind::BloodJelly => 242,
+            NpcKind::IceGolem => 243,
+            NpcKind::RainbowSlime => 244,
+            NpcKind::Eyezor => 251,
+            NpcKind::Parrot => 252,
+            NpcKind::Reaper => 253,
+            NpcKind::ZombieMushroom => 254,
+            NpcKind::ZombieMushroomHat => 255,
+            NpcKind::FungoFish => 256,
+            NpcKind::AnomuraFungus => 257,
+            NpcKind::MushiLadybug => 258,
+            NpcKind::FungiBulb => 259,
+            NpcKind::GiantFungiBulb => 260,
+            NpcKind::IchorSticker => 793,
+            NpcKind::RustyArmoredBonesAxe => 794,
+            NpcKind::RustyArmoredBonesFlail => 795,
+            NpcKind::RustyArmoredBonesSword => 796,
+            NpcKind::RustyArmoredBonesSwordNoArmor => 797,
+            NpcKind::BlueArmoredBones => 798,
+            NpcKind::BlueArmoredBonesMace => 799,
+            NpcKind::BlueArmoredBonesNoPants => 800,
+            NpcKind::BlueArmoredBonesSword => 801,
+            NpcKind::HellArmoredBones => 802,
+            NpcKind::HellArmoredBonesSpikeShield => 803,
+            NpcKind::HellArmoredBonesMace => 804,
+            NpcKind::HellArmoredBonesSword => 805,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25374,10 +26389,10 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    // Wave-1 splice pin (367 §1): 322 = the pre-wave 270 + W4-d34's 17 +
-    // W4-d38's 35 (the declared 290/305 branch pins were stale-by-design;
-    // the roster grows to 665 by the spine end).
-    pub(super) const ALL_KINDS: [NpcKind; 322] = [
+    // Wave-1 splice pin (367 §1): 368 = the pre-wave 270 + W4-d34's 17 +
+    // W4-d38's 35 + W4-d37's 46 (the 290/305/316 branch pins were
+    // stale-by-design; the roster grows to 665 by the spine end).
+    pub(super) const ALL_KINDS: [NpcKind; 368] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25721,6 +26736,53 @@ mod tests {
         // dups dropped — g8 owns 745-747, 367 §1).
         NpcKind::Crab,
         NpcKind::DungeonGuardian,
+        // W4-d37 — the NPCID 211-280 band (census 65, 46 kinds).
+        NpcKind::CochinealBeetle,
+        NpcKind::CyanBeetle,
+        NpcKind::LacBeetle,
+        NpcKind::SeaSnail,
+        NpcKind::Squid,
+        NpcKind::FlyingFish,
+        NpcKind::FlyingSnake,
+        NpcKind::Pirate,
+        NpcKind::GoldfishWalker,
+        NpcKind::HornetFatty,
+        NpcKind::HornetHoney,
+        NpcKind::HornetLeafy,
+        NpcKind::HornetSpikey,
+        NpcKind::HornetStingy,
+        NpcKind::JungleCreeper,
+        NpcKind::JungleCreeperWall,
+        NpcKind::BlackRecluseWall,
+        NpcKind::BloodCrawler,
+        NpcKind::BloodCrawlerWall,
+        NpcKind::BloodFeeder,
+        NpcKind::BloodJelly,
+        NpcKind::IceGolem,
+        NpcKind::RainbowSlime,
+        NpcKind::Eyezor,
+        NpcKind::Parrot,
+        NpcKind::Reaper,
+        NpcKind::ZombieMushroom,
+        NpcKind::ZombieMushroomHat,
+        NpcKind::FungoFish,
+        NpcKind::AnomuraFungus,
+        NpcKind::MushiLadybug,
+        NpcKind::FungiBulb,
+        NpcKind::GiantFungiBulb,
+        NpcKind::IchorSticker,
+        NpcKind::RustyArmoredBonesAxe,
+        NpcKind::RustyArmoredBonesFlail,
+        NpcKind::RustyArmoredBonesSword,
+        NpcKind::RustyArmoredBonesSwordNoArmor,
+        NpcKind::BlueArmoredBones,
+        NpcKind::BlueArmoredBonesMace,
+        NpcKind::BlueArmoredBonesNoPants,
+        NpcKind::BlueArmoredBonesSword,
+        NpcKind::HellArmoredBones,
+        NpcKind::HellArmoredBonesSpikeShield,
+        NpcKind::HellArmoredBonesMace,
+        NpcKind::HellArmoredBonesSword,
     ];
 
 
@@ -29585,8 +30647,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            322,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; wave-1: W4-d34's 17 (266-280 keeps + Crab/DungeonGuardian @791/792) + W4-d38's 35 (the 281-337 anchor), 367 §1)"
+            368,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate; wave-1: W4-d34's 17 (266-280 keeps + Crab/DungeonGuardian @791/792) + W4-d38's 35 (the 281-337 anchor) + W4-d37's 46 (the 211-280 band, protocol 354-399 ZERO-MOVE), 367 §1)"
         );
         assert!(
             covered > 43,
@@ -36193,5 +37255,318 @@ mod s1_f_13d_tests {
         blade.find_frame();
         assert_eq!(blade.frame, 0);
         assert_eq!(blade.frame_counter, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod w4_d37_tests {
+    //! W4-d37 — the NPCID 211-280 kinds-coverage band (census 65, 46 missing
+    //! ids). The `SetDefaults` stat rows pin verbatim against the C# blocks
+    //! (the `NPC.cs` cites in `npc.rs`'s enum); the protocol ids ride the
+    //! port-local 354-399 band, the vanilla `NPC.type` rides `cs_id`/`net_id`.
+    //! WRITTEN NOT RUN (code-only mode — no compiler invoked on this branch).
+    use super::*;
+    use super::tests::{bare, ground};
+
+    /// The 46 kinds' `SetDefaults` rows: (kind, vanilla type, w, h, aiStyle,
+    /// lifeMax, damage, defense, value, knockBackResist). Every value is the
+    /// C# block's literal (the enum cites); the no-row kinds keep the class
+    /// defaults (kb 1f `NPC.cs:8533`, value 0f `:8544`).
+    #[test]
+    fn w4_d37_the_setdefaults_rows_match_the_csharp_blocks() {
+        // (kind, ty, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::CochinealBeetle, 217u16, 28.0, 20.0, 3u8, 40, 20, 10, 60.0, 1.0),
+            (NpcKind::CyanBeetle, 218, 28.0, 20.0, 3, 40, 20, 10, 60.0, 1.0),
+            (NpcKind::LacBeetle, 219, 28.0, 20.0, 3, 40, 20, 10, 60.0, 1.0),
+            (NpcKind::SeaSnail, 220, 28.0, 20.0, 3, 40, 20, 10, 60.0, 1.0),
+            (NpcKind::Squid, 221, 26.0, 26.0, 18, 30, 20, 2, 100.0, 1.0),
+            (NpcKind::FlyingFish, 224, 32.0, 18.0, 44, 20, 9, 4, 300.0, 0.8),
+            (NpcKind::FlyingSnake, 226, 34.0, 50.0, 14, 260, 85, 28, 400.0, 0.65),
+            (NpcKind::Pirate, 229, 18.0, 40.0, 7, 250, 10, 15, 0.0, 0.5),
+            (NpcKind::GoldfishWalker, 230, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0),
+            (NpcKind::HornetFatty, 231, 34.0, 32.0, 5, 50, 22, 16, 200.0, 0.3),
+            (NpcKind::HornetHoney, 232, 34.0, 32.0, 5, 42, 28, 12, 200.0, 0.6),
+            (NpcKind::HornetLeafy, 233, 34.0, 32.0, 5, 38, 30, 14, 200.0, 0.45),
+            (NpcKind::HornetSpikey, 234, 34.0, 32.0, 5, 42, 32, 6, 200.0, 0.55),
+            (NpcKind::HornetStingy, 235, 34.0, 32.0, 5, 38, 34, 4, 200.0, 0.6),
+            (NpcKind::JungleCreeper, 236, 50.0, 20.0, 3, 400, 100, 28, 1000.0, 0.25),
+            (NpcKind::JungleCreeperWall, 237, 36.0, 36.0, 40, 400, 100, 28, 1000.0, 0.25),
+            (NpcKind::BlackRecluseWall, 238, 36.0, 36.0, 40, 350, 100, 40, 500.0, 0.25),
+            (NpcKind::BloodCrawler, 239, 50.0, 20.0, 3, 60, 30, 8, 130.0, 0.5),
+            (NpcKind::BloodCrawlerWall, 240, 36.0, 36.0, 40, 60, 30, 8, 130.0, 0.5),
+            (NpcKind::BloodFeeder, 241, 18.0, 20.0, 16, 150, 50, 20, 500.0, 1.0),
+            (NpcKind::BloodJelly, 242, 26.0, 26.0, 18, 150, 75, 20, 800.0, 1.0),
+            (NpcKind::IceGolem, 243, 30.0, 114.0, 3, 4000, 60, 32, 15000.0, 0.05),
+            (NpcKind::RainbowSlime, 244, 60.0, 42.0, 1, 400, 85, 26, 2000.0, 0.3),
+            (NpcKind::Eyezor, 251, 18.0, 40.0, 3, 1000, 50, 30, 5000.0, 0.3),
+            (NpcKind::Parrot, 252, 32.0, 32.0, 5, 100, 80, 12, 500.0, 0.7),
+            (NpcKind::Reaper, 253, 24.0, 44.0, 22, 700, 80, 22, 1500.0, 0.6),
+            (NpcKind::ZombieMushroom, 254, 18.0, 40.0, 3, 180, 40, 10, 1000.0, 0.4),
+            (NpcKind::ZombieMushroomHat, 255, 18.0, 40.0, 3, 220, 38, 16, 1200.0, 0.3),
+            (NpcKind::FungoFish, 256, 26.0, 26.0, 18, 140, 90, 20, 1200.0, 1.0),
+            (NpcKind::AnomuraFungus, 257, 44.0, 34.0, 3, 230, 38, 24, 1300.0, 0.3),
+            (NpcKind::MushiLadybug, 258, 30.0, 24.0, 3, 220, 60, 16, 1500.0, 0.3),
+            (NpcKind::FungiBulb, 259, 20.0, 20.0, 13, 90, 24, 4, 350.0, 0.0),
+            (NpcKind::GiantFungiBulb, 260, 36.0, 36.0, 13, 300, 70, 20, 1250.0, 0.0),
+            (NpcKind::IchorSticker, 268, 28.0, 56.0, 22, 340, 55, 20, 450.0, 0.6),
+            (NpcKind::RustyArmoredBonesAxe, 269, 18.0, 40.0, 3, 550, 70, 34, 1000.0, 0.3),
+            (NpcKind::RustyArmoredBonesFlail, 270, 18.0, 40.0, 3, 400, 55, 50, 1000.0, 0.2),
+            (NpcKind::RustyArmoredBonesSword, 271, 18.0, 40.0, 3, 450, 70, 40, 1000.0, 0.25),
+            (NpcKind::RustyArmoredBonesSwordNoArmor, 272, 18.0, 40.0, 3, 400, 75, 28, 1000.0, 0.35),
+            (NpcKind::BlueArmoredBones, 273, 18.0, 40.0, 3, 500, 45, 50, 1000.0, 0.15),
+            (NpcKind::BlueArmoredBonesMace, 274, 18.0, 40.0, 3, 350, 65, 34, 1000.0, 0.4),
+            (NpcKind::BlueArmoredBonesNoPants, 275, 18.0, 40.0, 3, 550, 45, 50, 1000.0, 0.15),
+            (NpcKind::BlueArmoredBonesSword, 276, 18.0, 40.0, 3, 500, 85, 54, 1000.0, 0.2),
+            (NpcKind::HellArmoredBones, 277, 18.0, 40.0, 3, 400, 70, 32, 1000.0, 0.4),
+            (NpcKind::HellArmoredBonesSpikeShield, 278, 18.0, 40.0, 3, 450, 65, 48, 1000.0, 0.3),
+            (NpcKind::HellArmoredBonesMace, 279, 18.0, 40.0, 3, 500, 40, 54, 1000.0, 0.2),
+            (NpcKind::HellArmoredBonesSword, 280, 18.0, 40.0, 3, 500, 75, 34, 1000.0, 0.4),
+        ];
+        for (kind, ty, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(n.hp, hp, "{kind:?} spawn hp");
+        }
+    }
+
+    /// The protocol ids ride the port-local 354-399 band (the vanilla
+    /// 217-280 collide with the landed bands); the bijection round-trips.
+    #[test]
+    fn w4_d37_the_protocol_band_round_trips() {
+        let kinds = [
+            NpcKind::CochinealBeetle, NpcKind::CyanBeetle, NpcKind::LacBeetle,
+            NpcKind::SeaSnail, NpcKind::Squid, NpcKind::FlyingFish, NpcKind::FlyingSnake,
+            NpcKind::Pirate, NpcKind::GoldfishWalker, NpcKind::HornetFatty,
+            NpcKind::HornetHoney, NpcKind::HornetLeafy, NpcKind::HornetSpikey,
+            NpcKind::HornetStingy, NpcKind::JungleCreeper, NpcKind::JungleCreeperWall,
+            NpcKind::BlackRecluseWall, NpcKind::BloodCrawler, NpcKind::BloodCrawlerWall,
+            NpcKind::BloodFeeder, NpcKind::BloodJelly, NpcKind::IceGolem,
+            NpcKind::RainbowSlime, NpcKind::Eyezor, NpcKind::Parrot, NpcKind::Reaper,
+            NpcKind::ZombieMushroom, NpcKind::ZombieMushroomHat, NpcKind::FungoFish,
+            NpcKind::AnomuraFungus, NpcKind::MushiLadybug, NpcKind::FungiBulb,
+            NpcKind::GiantFungiBulb, NpcKind::IchorSticker, NpcKind::RustyArmoredBonesAxe,
+            NpcKind::RustyArmoredBonesFlail, NpcKind::RustyArmoredBonesSword,
+            NpcKind::RustyArmoredBonesSwordNoArmor, NpcKind::BlueArmoredBones,
+            NpcKind::BlueArmoredBonesMace, NpcKind::BlueArmoredBonesNoPants,
+            NpcKind::BlueArmoredBonesSword, NpcKind::HellArmoredBones,
+            NpcKind::HellArmoredBonesSpikeShield, NpcKind::HellArmoredBonesMace,
+            NpcKind::HellArmoredBonesSword,
+        ];
+        for (i, kind) in kinds.iter().enumerate() {
+            let id = 354 + i as u16;
+            assert_eq!(kind.to_u16(), id, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(id), Some(*kind), "{kind:?} decode");
+        }
+    }
+
+    /// The bestiary credits: the 43 visible kinds resolve their own entry
+    /// (net id == vanilla type); the three Hide=true folds ride their twin's
+    /// credit (230 → Goldfish 55, 236 → JungleCreeperWall 237, 239 →
+    /// BloodCrawlerWall 240) but keep their own `cs_id` + draw sheet.
+    #[test]
+    fn w4_d37_the_bestiary_credits_and_folds() {
+        let own = [
+            (NpcKind::CochinealBeetle, 217), (NpcKind::CyanBeetle, 218),
+            (NpcKind::LacBeetle, 219), (NpcKind::SeaSnail, 220), (NpcKind::Squid, 221),
+            (NpcKind::FlyingFish, 224), (NpcKind::FlyingSnake, 226), (NpcKind::Pirate, 229),
+            (NpcKind::HornetFatty, 231), (NpcKind::HornetHoney, 232),
+            (NpcKind::HornetLeafy, 233), (NpcKind::HornetSpikey, 234),
+            (NpcKind::HornetStingy, 235), (NpcKind::JungleCreeperWall, 237),
+            (NpcKind::BlackRecluseWall, 238), (NpcKind::BloodCrawlerWall, 240),
+            (NpcKind::BloodFeeder, 241), (NpcKind::BloodJelly, 242),
+            (NpcKind::IceGolem, 243), (NpcKind::RainbowSlime, 244), (NpcKind::Eyezor, 251),
+            (NpcKind::Parrot, 252), (NpcKind::Reaper, 253), (NpcKind::ZombieMushroom, 254),
+            (NpcKind::ZombieMushroomHat, 255), (NpcKind::FungoFish, 256),
+            (NpcKind::AnomuraFungus, 257), (NpcKind::MushiLadybug, 258),
+            (NpcKind::FungiBulb, 259), (NpcKind::GiantFungiBulb, 260),
+            (NpcKind::IchorSticker, 268), (NpcKind::RustyArmoredBonesAxe, 269),
+            (NpcKind::RustyArmoredBonesFlail, 270), (NpcKind::RustyArmoredBonesSword, 271),
+            (NpcKind::RustyArmoredBonesSwordNoArmor, 272), (NpcKind::BlueArmoredBones, 273),
+            (NpcKind::BlueArmoredBonesMace, 274), (NpcKind::BlueArmoredBonesNoPants, 275),
+            (NpcKind::BlueArmoredBonesSword, 276), (NpcKind::HellArmoredBones, 277),
+            (NpcKind::HellArmoredBonesSpikeShield, 278), (NpcKind::HellArmoredBonesMace, 279),
+            (NpcKind::HellArmoredBonesSword, 280),
+        ];
+        for (kind, net) in own {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.kind, kind, "{kind:?} entry kind");
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(kind.net_id(), net, "{kind:?} net_id reads the entry");
+            assert!(!e.quick_unlock, "{kind:?} not a boss");
+        }
+        // The three Hide=true folds: the credit rides the twin, the cs_id +
+        // draw sheet stay the kind's own vanilla type.
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldfishWalker, SlimeVariant::Blue).net_id, 55);
+        assert_eq!(NpcKind::GoldfishWalker.cs_id(), 230);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::GoldfishWalker), 230);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::JungleCreeper, SlimeVariant::Blue).net_id, 237);
+        assert_eq!(NpcKind::JungleCreeper.cs_id(), 236);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::JungleCreeper), 236);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BloodCrawler, SlimeVariant::Blue).net_id, 240);
+        assert_eq!(NpcKind::BloodCrawler.cs_id(), 239);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::BloodCrawler), 239);
+    }
+
+    /// The `DebuffImmunitySets` rows through `NpcBuffs::for_kind` (the
+    /// `NPCID.cs` cites in `npc_buffs.rs`): the poison-chain (20 ⇒ 30/375)
+    /// and the ichor-chain (69 ⇒ 36) derivations ride along.
+    #[test]
+    fn w4_d37_the_immunities() {
+        fn immune(kind: NpcKind, id: usize) -> bool {
+            crate::npc_buffs::NpcBuffs::for_kind(kind).buff_immune[id]
+        }
+        // [31] Confused: the beetles/snail/squid, pirate/goldfish, blood
+        // feeder/jelly, fungo fish.
+        for kind in [
+            NpcKind::CochinealBeetle, NpcKind::CyanBeetle, NpcKind::LacBeetle,
+            NpcKind::SeaSnail, NpcKind::Squid, NpcKind::Pirate, NpcKind::GoldfishWalker,
+            NpcKind::BloodFeeder, NpcKind::BloodJelly, NpcKind::FungoFish,
+        ] {
+            assert!(immune(kind, 31), "{kind:?} confused");
+            assert!(!immune(kind, 20), "{kind:?} no poison");
+        }
+        // [20, 31]: the hornets + fungi bulbs (poison ⇒ 30/375).
+        for kind in [
+            NpcKind::HornetFatty, NpcKind::HornetHoney, NpcKind::HornetLeafy,
+            NpcKind::HornetSpikey, NpcKind::HornetStingy, NpcKind::FungiBulb,
+            NpcKind::GiantFungiBulb,
+        ] {
+            assert!(immune(kind, 20) && immune(kind, 31), "{kind:?} poison+confused");
+            assert!(immune(kind, 30) && immune(kind, 375), "{kind:?} poison chain");
+        }
+        // [20]: the crawlers/wall crawlers/rainbow slime/rusty+blue bones.
+        for kind in [
+            NpcKind::JungleCreeper, NpcKind::JungleCreeperWall, NpcKind::BlackRecluseWall,
+            NpcKind::BloodCrawler, NpcKind::BloodCrawlerWall, NpcKind::RainbowSlime,
+            NpcKind::RustyArmoredBonesAxe, NpcKind::BlueArmoredBones,
+        ] {
+            assert!(immune(kind, 20), "{kind:?} poison");
+            assert!(!immune(kind, 31), "{kind:?} no confused");
+        }
+        // [20, 31, 44, 324]: the ice golem.
+        let ig = NpcKind::IceGolem;
+        assert!(immune(ig, 20) && immune(ig, 31) && immune(ig, 44) && immune(ig, 324));
+        // [20, 69]: the ichor sticker (69 ⇒ 36).
+        let ic = NpcKind::IchorSticker;
+        assert!(immune(ic, 20) && immune(ic, 69) && immune(ic, 36), "ichor chain");
+        // [20, 24, 323]: the hell armored bones.
+        for kind in [
+            NpcKind::HellArmoredBones, NpcKind::HellArmoredBonesSpikeShield,
+            NpcKind::HellArmoredBonesMace, NpcKind::HellArmoredBonesSword,
+        ] {
+            assert!(immune(kind, 20) && immune(kind, 24) && immune(kind, 323), "{kind:?}");
+            assert!(!immune(kind, 31), "{kind:?} no confused");
+        }
+        // Null rows: the flying fish/snake, eyezor/parrot/reaper, the mushroom
+        // zombies/anomura/mushi.
+        for kind in [
+            NpcKind::FlyingFish, NpcKind::FlyingSnake, NpcKind::Eyezor, NpcKind::Parrot,
+            NpcKind::Reaper, NpcKind::ZombieMushroom, NpcKind::ZombieMushroomHat,
+            NpcKind::AnomuraFungus, NpcKind::MushiLadybug,
+        ] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null row");
+        }
+    }
+
+    /// The aiStyle-3 walk caps (the `AI_003_Fighters` ladder groups): the
+    /// full-HP base pins; the ice golem/eyezor life-scaled rows scale in the
+    /// live ladder (`npc_ai3_speeds`), the base here is the full-HP 1f.
+    #[test]
+    fn w4_d37_the_walk_caps() {
+        let table = [
+            (NpcKind::CochinealBeetle, 1.5), (NpcKind::CyanBeetle, 1.5),
+            (NpcKind::LacBeetle, 1.5), (NpcKind::SeaSnail, 0.5),
+            (NpcKind::JungleCreeper, 2.0), (NpcKind::BloodCrawler, 2.0),
+            (NpcKind::IceGolem, 1.0), (NpcKind::Eyezor, 1.0),
+            (NpcKind::ZombieMushroom, 1.5), (NpcKind::ZombieMushroomHat, 1.0),
+            (NpcKind::AnomuraFungus, 2.0), (NpcKind::MushiLadybug, 3.0),
+            (NpcKind::RustyArmoredBonesAxe, 2.0), (NpcKind::RustyArmoredBonesFlail, 1.0),
+            (NpcKind::RustyArmoredBonesSword, 1.5), (NpcKind::RustyArmoredBonesSwordNoArmor, 3.0),
+            (NpcKind::BlueArmoredBones, 1.25), (NpcKind::BlueArmoredBonesMace, 3.0),
+            (NpcKind::BlueArmoredBonesNoPants, 3.25), (NpcKind::BlueArmoredBonesSword, 2.0),
+            (NpcKind::HellArmoredBones, 2.75), (NpcKind::HellArmoredBonesSpikeShield, 1.8),
+            (NpcKind::HellArmoredBonesMace, 1.3), (NpcKind::HellArmoredBonesSword, 2.5),
+        ];
+        for (kind, cap) in table {
+            assert_eq!(kind.ai3_walk_speed(), Some(cap), "{kind:?} walk cap");
+        }
+        // The non-aiStyle-3 kinds carry no walk-cap row.
+        assert_eq!(NpcKind::Squid.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::RainbowSlime.ai3_walk_speed(), None);
+        assert_eq!(NpcKind::Parrot.ai3_walk_speed(), None);
+    }
+
+    /// The alpha rows (`Npc::new`): the squid/blood jelly/fungo fish 20, the
+    /// rainbow slime 175, the reaper 100; the rest spawn at 0.
+    #[test]
+    fn w4_d37_the_alpha_rows() {
+        assert_eq!(bare(NpcKind::Squid).alpha, 20);
+        assert_eq!(bare(NpcKind::BloodJelly).alpha, 20);
+        assert_eq!(bare(NpcKind::FungoFish).alpha, 20);
+        assert_eq!(bare(NpcKind::RainbowSlime).alpha, 175);
+        assert_eq!(bare(NpcKind::Reaper).alpha, 100);
+        assert_eq!(bare(NpcKind::CochinealBeetle).alpha, 0);
+        assert_eq!(bare(NpcKind::IceGolem).alpha, 0);
+    }
+
+    /// The pirate (229) is a friendly town NPC (no contact damage); the
+    /// goldfish walker (230) is a 0-damage critter.
+    #[test]
+    fn w4_d37_the_pirate_is_friendly() {
+        assert!(NpcKind::Pirate.is_town_npc_like());
+        assert!(NpcKind::Pirate.is_friendly());
+        assert!(bare(NpcKind::Pirate).friendly);
+        assert_eq!(NpcKind::Pirate.contact_damage(), 10);
+        assert_eq!(NpcKind::GoldfishWalker.contact_damage(), 0);
+    }
+
+    /// The hit/death cues resolve to a registered bank asset + a SoundID
+    /// style row (the S1-E-21 wave C invariant, scoped to this band).
+    #[test]
+    fn w4_d37_the_sound_cues_resolve() {
+        for kind in super::tests::ALL_KINDS {
+            if kind.cs_id() < 217 || kind.cs_id() > 280 {
+                continue;
+            }
+            if let Some(cue) = kind.hit_sound() {
+                assert!(crate::audio::sfx_cue_registered(cue), "{kind:?} hit {cue} in bank");
+                assert!(crate::audio::npc_sound_style(cue, "NPC_Hit_", 3).is_some(), "{kind:?} hit style");
+            }
+            if let Some(cue) = kind.death_sound() {
+                assert!(crate::audio::sfx_cue_registered(cue), "{kind:?} death {cue} in bank");
+                assert!(crate::audio::npc_sound_style(cue, "NPC_Killed_", 4).is_some(), "{kind:?} death style");
+            }
+        }
+    }
+
+    /// The walkers step their fighter machine without panicking, stay inside
+    /// their own FindFrame strip, and keep their SetDefaults HP (the wave-A
+    /// stepping witness's shape, scoped to this band's aiStyle-3 kinds).
+    #[test]
+    fn w4_d37_the_walkers_step_their_machine() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in super::tests::ALL_KINDS {
+            if kind.ai_style() != 3 || kind.cs_id() < 217 || kind.cs_id() > 280 {
+                continue;
+            }
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(crate::render::entities::texture_net_id(kind));
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
     }
 }

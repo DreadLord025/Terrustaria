@@ -1,0 +1,945 @@
+{
+ "additions": {
+  "AncientCultistSquidhead": {
+   "id": 790,
+   "lane": "d9",
+   "verdict": "RENUMBER proto 521->790 ONLY (cs/net/texture stay 521)"
+  },
+  "BlueMacaw": {
+   "id": 672,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "BoundTownSlimeOld": {
+   "id": 685,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "BoundTownSlimePurple": {
+   "id": 686,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "BoundTownSlimeYellow": {
+   "id": 687,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "Butterfly": {
+   "id": 817,
+   "lane": "d39",
+   "verdict": "ACCEPT as-pushed R7 re-pin 817-823"
+  },
+  "ChaosBallTim": {
+   "id": 665,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "ChatteringTeethBomb": {
+   "id": 821,
+   "lane": "d39",
+   "verdict": "ACCEPT as-pushed R7 re-pin 817-823"
+  },
+  "Crawdad": {
+   "id": 494,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Crawdad2": {
+   "id": 495,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "CultistArcherBlue": {
+   "id": 822,
+   "lane": "d39",
+   "verdict": "ACCEPT as-pushed R7 re-pin 817-823"
+  },
+  "CultistArcherWhite": {
+   "id": 823,
+   "lane": "d39",
+   "verdict": "ACCEPT as-pushed R7 re-pin 817-823"
+  },
+  "DuneSplicerBody": {
+   "id": 511,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "DuneSplicerHead": {
+   "id": 510,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "DuneSplicerTail": {
+   "id": 512,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "GemBunnyAmber": {
+   "id": 652,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemBunnyAmethyst": {
+   "id": 646,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemBunnyDiamond": {
+   "id": 651,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemBunnyEmerald": {
+   "id": 649,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemBunnyRuby": {
+   "id": 650,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemBunnySapphire": {
+   "id": 648,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemBunnyTopaz": {
+   "id": 647,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemSquirrelAmber": {
+   "id": 645,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemSquirrelAmethyst": {
+   "id": 639,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemSquirrelDiamond": {
+   "id": 644,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemSquirrelEmerald": {
+   "id": 642,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemSquirrelRuby": {
+   "id": 643,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemSquirrelSapphire": {
+   "id": 641,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GemSquirrelTopaz": {
+   "id": 640,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "GiantShelly": {
+   "id": 496,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "GiantShelly2": {
+   "id": 497,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "GiantTortoise": {
+   "id": 770,
+   "lane": "d36",
+   "verdict": "RE-PIN 765->770 (R6 towns 763-766 + Vampire 762)"
+  },
+  "GiantWalkingAntlion": {
+   "id": 508,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "GoldenSlime": {
+   "id": 667,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "Grasshopper": {
+   "id": 820,
+   "lane": "d39",
+   "verdict": "ACCEPT as-pushed R7 re-pin 817-823"
+  },
+  "GrayCockatiel": {
+   "id": 675,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "HellButterfly": {
+   "id": 653,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "IceTortoise": {
+   "id": 771,
+   "lane": "d36",
+   "verdict": "RE-PIN 766->771 (R6 towns 763-766 + Vampire 762)"
+  },
+  "LibrarianSkeleton": {
+   "id": 693,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "MaggotZombie": {
+   "id": 632,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "MossZombie": {
+   "id": 691,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "OwlMimic": {
+   "id": 689,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "PalworldCattivaDistressed": {
+   "id": 695,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "PalworldFoxsparksDistressed": {
+   "id": 696,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "Penguin": {
+   "id": 768,
+   "lane": "d36",
+   "verdict": "RE-PIN 763->768 (R6 towns 763-766 + Vampire 762)"
+  },
+  "PenguinBlack": {
+   "id": 769,
+   "lane": "d36",
+   "verdict": "RE-PIN 764->769 (R6 towns 763-766 + Vampire 762)"
+  },
+  "PirateGhost": {
+   "id": 662,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "QueenSlimeBoss": {
+   "id": 657,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "QueenSlimeMinionBlue": {
+   "id": 658,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "QueenSlimeMinionPink": {
+   "id": 659,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "QueenSlimeMinionPurple": {
+   "id": 660,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "RockGolem": {
+   "id": 631,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "RuneWizard": {
+   "id": 789,
+   "lane": "g5",
+   "verdict": "RENUMBER proto 354->789 ONLY (cs/net/texture stay 172)"
+  },
+  "Salamander": {
+   "id": 498,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander2": {
+   "id": 499,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander3": {
+   "id": 500,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander4": {
+   "id": 501,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander5": {
+   "id": 502,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander6": {
+   "id": 503,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander7": {
+   "id": 504,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander8": {
+   "id": 505,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "Salamander9": {
+   "id": 506,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "ScarletMacaw": {
+   "id": 671,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "Scorpion": {
+   "id": 819,
+   "lane": "d39",
+   "verdict": "ACCEPT as-pushed R7 re-pin 817-823"
+  },
+  "ScorpionBlack": {
+   "id": 818,
+   "lane": "d39",
+   "verdict": "ACCEPT as-pushed R7 re-pin 817-823"
+  },
+  "ShimmerSlime": {
+   "id": 676,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "SolarGoop": {
+   "id": 519,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "SporeBat": {
+   "id": 634,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "SporeSkeleton": {
+   "id": 635,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "StatueMimic": {
+   "id": 690,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "Stinkbug": {
+   "id": 669,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "TombCrawlerBody": {
+   "id": 514,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "TombCrawlerHead": {
+   "id": 513,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "TombCrawlerTail": {
+   "id": 515,
+   "lane": "d41",
+   "verdict": "ACCEPT as-pushed 494-519 band"
+  },
+  "TorchGod": {
+   "id": 664,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "Toucan": {
+   "id": 673,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  },
+  "TownBunny": {
+   "id": 656,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownCat": {
+   "id": 637,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownDog": {
+   "id": 638,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimeBlue": {
+   "id": 670,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimeCopper": {
+   "id": 684,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimeGreen": {
+   "id": 678,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimeOld": {
+   "id": 679,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimePurple": {
+   "id": 680,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimeRainbow": {
+   "id": 681,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimeRed": {
+   "id": 682,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "TownSlimeYellow": {
+   "id": 683,
+   "lane": "g10",
+   "verdict": "ACCEPT pushed pets cs==proto"
+  },
+  "ToxicSludge": {
+   "id": 767,
+   "lane": "d36",
+   "verdict": "RE-PIN 762->767 (R6 towns 763-766 + Vampire 762)"
+  },
+  "Tumbleweed": {
+   "id": 788,
+   "lane": "f42",
+   "verdict": "RENUMBER proto 354->788 ONLY (cs/net/texture stay 546)"
+  },
+  "Vampire": {
+   "id": 762,
+   "lane": "g8",
+   "verdict": "RENUMBER WIP 388->762 (d37 owns 388)"
+  },
+  "YellowCockatiel": {
+   "id": 674,
+   "lane": "d43",
+   "verdict": "ACCEPT as-pushed cs==proto 631-697"
+  }
+ },
+ "aliases": {
+  "EmpressButterfly": "PrismaticLacewing",
+  "HallowBoss": "EmpressOfLight",
+  "VileSpitEaterOfWorlds": "VileSpitEoW"
+ },
+ "core_kinds": 282,
+ "core_max": 766,
+ "d43_drops": [
+  [
+   "WaterBoltMimic",
+   694,
+   "dup c3"
+  ],
+  [
+   "Orca",
+   692,
+   "dup c4"
+  ],
+  [
+   "TownSlimeCopper",
+   684,
+   "dup g10"
+  ],
+  [
+   "Pufferfish",
+   688,
+   "dup c4"
+  ],
+  [
+   "TownSlimeOld",
+   679,
+   "dup g10"
+  ],
+  [
+   "TownSlimePurple",
+   680,
+   "dup g10"
+  ],
+  [
+   "TownSlimeRainbow",
+   681,
+   "dup g10"
+  ],
+  [
+   "TownSlimeRed",
+   682,
+   "dup g10"
+  ],
+  [
+   "TownSlimeYellow",
+   683,
+   "dup g10"
+  ],
+  [
+   "Shimmerfly",
+   677,
+   "dup c7"
+  ],
+  [
+   "TownSlimeGreen",
+   678,
+   "dup g10"
+  ],
+  [
+   "TownSlimeBlue",
+   670,
+   "dup g10"
+  ],
+  [
+   "VileSpitEaterOfWorlds",
+   666,
+   "alias of VileSpitEoW"
+  ],
+  [
+   "EmpressButterfly",
+   661,
+   "alias of PrismaticLacewing"
+  ],
+  [
+   "Lavafly",
+   654,
+   "dup c7"
+  ],
+  [
+   "MagmaSnail",
+   655,
+   "dup c9"
+  ],
+  [
+   "TownBunny",
+   656,
+   "dup g10"
+  ],
+  [
+   "TownCat",
+   637,
+   "dup g10"
+  ],
+  [
+   "TownDog",
+   638,
+   "dup g10"
+  ],
+  [
+   "HallowBoss",
+   636,
+   "alias of EmpressOfLight"
+  ]
+ ],
+ "grand": {
+  "AncientCultistSquidhead": 790,
+  "AnglerFish": 719,
+  "AngryBones": 266,
+  "AngryBonesBig": 294,
+  "AngryBonesBigHelmet": 296,
+  "AngryBonesBigMuscle": 295,
+  "AngryTrapper": 743,
+  "AnomuraFungus": 383,
+  "Antlion": 746,
+  "Arapaima": 406,
+  "ArmedTorchZombie": 591,
+  "ArmedZombie": 430,
+  "ArmedZombieCenx": 436,
+  "ArmedZombieEskimo": 431,
+  "ArmedZombiePincussion": 432,
+  "ArmedZombieSlimed": 433,
+  "ArmedZombieSwamp": 434,
+  "ArmedZombieTwiggy": 435,
+  "ArmoredSkeleton": 701,
+  "BartenderUnconscious": 579,
+  "BigMimicCorruption": 473,
+  "BigMimicCrimson": 474,
+  "BigMimicHallow": 475,
+  "BigMimicJungle": 476,
+  "Bird": 699,
+  "BirdBlue": 297,
+  "BirdRed": 298,
+  "BlackDragonfly": 595,
+  "BlackRecluseWall": 370,
+  "BloodCrawler": 371,
+  "BloodCrawlerWall": 372,
+  "BloodEelBody": 622,
+  "BloodEelHead": 621,
+  "BloodEelTail": 623,
+  "BloodFeeder": 373,
+  "BloodJelly": 374,
+  "BloodMummy": 630,
+  "BloodNautilus": 618,
+  "BloodSquid": 619,
+  "BlueArmoredBones": 392,
+  "BlueArmoredBonesMace": 393,
+  "BlueArmoredBonesNoPants": 394,
+  "BlueArmoredBonesSword": 395,
+  "BlueDragonfly": 596,
+  "BlueJellyfish": 280,
+  "BlueMacaw": 672,
+  "BoneLee": 287,
+  "BoneSerpentBody": 272,
+  "BoneSerpentHead": 271,
+  "BoneSerpentTail": 273,
+  "BoneThrowingSkeleton": 449,
+  "BoneThrowingSkeleton2": 450,
+  "BoneThrowingSkeleton3": 451,
+  "BoneThrowingSkeleton4": 452,
+  "BoundTownSlimeOld": 685,
+  "BoundTownSlimePurple": 686,
+  "BoundTownSlimeYellow": 687,
+  "Buggy": 487,
+  "Bunny": 270,
+  "BunnySlimed": 303,
+  "BunnyXmas": 337,
+  "Butcher": 460,
+  "Butterfly": 817,
+  "ChaosBallTim": 665,
+  "ChaosElemental": 726,
+  "ChatteringTeethBomb": 821,
+  "Clinger": 718,
+  "Clown": 722,
+  "CochinealBeetle": 354,
+  "CorruptBunny": 274,
+  "CorruptGoldfish": 277,
+  "Corruptor": 711,
+  "Crawdad": 494,
+  "Crawdad2": 495,
+  "CreatureFromTheDeep": 461,
+  "CrimsonAxe": 753,
+  "CrimsonBunny": 464,
+  "CrimsonGoldfish": 465,
+  "CrimsonPenguin": 470,
+  "CultistArcherBlue": 822,
+  "CultistArcherWhite": 823,
+  "CultistBossClone": 440,
+  "CultistDevote": 438,
+  "CultistDragonBody1": 455,
+  "CultistDragonBody2": 456,
+  "CultistDragonBody3": 457,
+  "CultistDragonBody4": 458,
+  "CultistDragonHead": 454,
+  "CultistDragonTail": 459,
+  "CultistTablet": 437,
+  "CursedHammer": 706,
+  "CursedSkull": 267,
+  "CyanBeetle": 355,
+  "Cyborg": 766,
+  "DD2LightningBug": 578,
+  "Dandelion": 628,
+  "DarkMummy": 703,
+  "DeadlySphere": 467,
+  "Demon": 279,
+  "DemonEyeOwl": 317,
+  "DemonEyeSpaceship": 318,
+  "Derpling": 752,
+  "DiabolistRed": 285,
+  "DiabolistWhite": 286,
+  "DiggerBody": 713,
+  "DiggerHead": 712,
+  "DiggerTail": 714,
+  "Dolphin": 615,
+  "DrManFly": 468,
+  "Duck": 731,
+  "Duck2": 732,
+  "DuckWhite": 733,
+  "DuckWhite2": 734,
+  "DuneSplicerBody": 511,
+  "DuneSplicerHead": 510,
+  "DuneSplicerTail": 512,
+  "EmpressOfLight": 636,
+  "EnchantedNightcrawler": 484,
+  "EnchantedSword": 707,
+  "ExplosiveBunny": 614,
+  "EyeballFlyingFish": 587,
+  "Eyezor": 377,
+  "FairyCritterBlue": 585,
+  "FairyCritterGreen": 584,
+  "FairyCritterPink": 583,
+  "Firefly": 735,
+  "FloatyGross": 754,
+  "FlyingAntlion": 581,
+  "FlyingFish": 359,
+  "FlyingSnake": 360,
+  "Fritz": 462,
+  "Frog": 744,
+  "FungiBulb": 385,
+  "FungoFish": 382,
+  "Gastropod": 728,
+  "GemBunnyAmber": 652,
+  "GemBunnyAmethyst": 646,
+  "GemBunnyDiamond": 651,
+  "GemBunnyEmerald": 649,
+  "GemBunnyRuby": 650,
+  "GemBunnySapphire": 648,
+  "GemBunnyTopaz": 647,
+  "GemSquirrelAmber": 645,
+  "GemSquirrelAmethyst": 639,
+  "GemSquirrelDiamond": 644,
+  "GemSquirrelEmerald": 642,
+  "GemSquirrelRuby": 643,
+  "GemSquirrelSapphire": 641,
+  "GemSquirrelTopaz": 640,
+  "Ghost": 316,
+  "GiantBat": 710,
+  "GiantCursedSkull": 289,
+  "GiantFlyingAntlion": 509,
+  "GiantFlyingFox": 759,
+  "GiantFungiBulb": 386,
+  "GiantShelly": 496,
+  "GiantShelly2": 497,
+  "GiantTortoise": 770,
+  "GiantWalkingAntlion": 508,
+  "GlowingSnail": 741,
+  "Gnome": 624,
+  "GoblinScout": 698,
+  "GoblinShark": 620,
+  "GoldBird": 442,
+  "GoldBunny": 443,
+  "GoldButterfly": 444,
+  "GoldDragonfly": 601,
+  "GoldFrog": 445,
+  "GoldGoldfish": 592,
+  "GoldGoldfishWalker": 593,
+  "GoldGrasshopper": 446,
+  "GoldLadyBug": 605,
+  "GoldMouse": 447,
+  "GoldSeahorse": 627,
+  "GoldWaterStrider": 613,
+  "GoldWorm": 448,
+  "GoldenSlime": 667,
+  "GoldfishWalker": 362,
+  "GraniteFlyer": 483,
+  "GraniteGolem": 482,
+  "Grasshopper": 820,
+  "GrayCockatiel": 675,
+  "Grebe": 608,
+  "Grebe2": 609,
+  "GreekSkeleton": 481,
+  "GreenDragonfly": 597,
+  "GreenJellyfish": 720,
+  "Grubby": 485,
+  "Harpy": 275,
+  "HellArmoredBones": 396,
+  "HellArmoredBonesMace": 398,
+  "HellArmoredBonesSpikeShield": 397,
+  "HellArmoredBonesSword": 399,
+  "HellButterfly": 653,
+  "Herpling": 751,
+  "HoppinJack": 304,
+  "HornetFatty": 363,
+  "HornetHoney": 364,
+  "HornetLeafy": 365,
+  "HornetSpikey": 366,
+  "HornetStingy": 367,
+  "IceBat": 757,
+  "IceElemental": 750,
+  "IceGolem": 375,
+  "IceMimic": 629,
+  "IceTortoise": 771,
+  "IchorSticker": 387,
+  "IlluminantBat": 729,
+  "JungleCreeper": 368,
+  "JungleCreeperWall": 369,
+  "LacBeetle": 356,
+  "LadyBug": 604,
+  "LarvaeAntlion": 582,
+  "Lavabat": 758,
+  "Lavafly": 654,
+  "LibrarianSkeleton": 693,
+  "LightMummy": 704,
+  "LightningBug": 736,
+  "LostGirl": 755,
+  "Maggot": 606,
+  "MaggotZombie": 632,
+  "MagmaSnail": 655,
+  "ManEater": 269,
+  "Medusa": 480,
+  "Mimic": 708,
+  "MossZombie": 691,
+  "Mothron": 477,
+  "MothronEgg": 478,
+  "MothronSpawn": 479,
+  "Mouse": 300,
+  "Mummy": 702,
+  "MushiLadybug": 384,
+  "Nailhead": 463,
+  "Necromancer": 283,
+  "NecromancerArmored": 284,
+  "Nymph": 756,
+  "OldMan": 268,
+  "OrangeDragonfly": 598,
+  "Orca": 692,
+  "Owl": 611,
+  "OwlMimic": 689,
+  "Paladin": 290,
+  "PalworldCattivaDistressed": 695,
+  "PalworldFoxsparksDistressed": 696,
+  "Parrot": 378,
+  "Penguin": 768,
+  "PenguinBlack": 769,
+  "PinkJellyfish": 745,
+  "Pirate": 361,
+  "PirateGhost": 662,
+  "Pixie": 700,
+  "PossessedArmor": 730,
+  "PrismaticLacewing": 742,
+  "Psycho": 466,
+  "Pufferfish": 688,
+  "PumpkingBlade": 328,
+  "Pupfish": 607,
+  "QueenSlimeBoss": 657,
+  "QueenSlimeMinionBlue": 658,
+  "QueenSlimeMinionPink": 659,
+  "QueenSlimeMinionPurple": 660,
+  "RaggedCaster": 281,
+  "RaggedCasterOpenCoat": 282,
+  "RainbowSlime": 376,
+  "Rat": 610,
+  "Raven": 301,
+  "Reaper": 379,
+  "RedDevil": 761,
+  "RedDragonfly": 599,
+  "RockGolem": 631,
+  "RuneWizard": 789,
+  "RustyArmoredBonesAxe": 388,
+  "RustyArmoredBonesFlail": 389,
+  "RustyArmoredBonesSword": 390,
+  "RustyArmoredBonesSwordNoArmor": 391,
+  "Salamander": 498,
+  "Salamander2": 499,
+  "Salamander3": 500,
+  "Salamander4": 501,
+  "Salamander5": 502,
+  "Salamander6": 503,
+  "Salamander7": 504,
+  "Salamander8": 505,
+  "Salamander9": 506,
+  "SantaClaus": 763,
+  "ScarletMacaw": 671,
+  "Scorpion": 819,
+  "ScorpionBlack": 818,
+  "SeaSnail": 357,
+  "SeaTurtle": 625,
+  "Seagull": 602,
+  "Seagull2": 603,
+  "Seahorse": 626,
+  "SeekerBody": 716,
+  "SeekerHead": 715,
+  "SeekerTail": 717,
+  "ShadowFlameApparition": 472,
+  "ShimmerSlime": 676,
+  "Shimmerfly": 677,
+  "SkeletonAlien": 324,
+  "SkeletonArcher": 723,
+  "SkeletonAstonaut": 323,
+  "SkeletonCommando": 293,
+  "SkeletonMerchant": 453,
+  "SkeletonSniper": 291,
+  "SkeletonTopHat": 322,
+  "SlimeMasked": 302,
+  "SlimeRibbonGreen": 335,
+  "SlimeRibbonRed": 336,
+  "SlimeRibbonWhite": 333,
+  "SlimeRibbonYellow": 334,
+  "Slimer": 727,
+  "Sluggy": 486,
+  "Snail": 740,
+  "Snatcher": 276,
+  "SolarFlare": 408,
+  "SolarGoop": 519,
+  "SpikeBall": 747,
+  "SporeBat": 634,
+  "SporeSkeleton": 635,
+  "Squid": 358,
+  "Squirrel": 299,
+  "StatueMimic": 690,
+  "Steampunker": 765,
+  "Stinkbug": 669,
+  "TacticalSkeleton": 292,
+  "TargetDummy": 488,
+  "TheHungryII": 725,
+  "ThePossessed": 469,
+  "TombCrawlerBody": 514,
+  "TombCrawlerHead": 513,
+  "TombCrawlerTail": 515,
+  "TorchGod": 664,
+  "TorchZombie": 590,
+  "Toucan": 673,
+  "TownBunny": 656,
+  "TownCat": 637,
+  "TownDog": 638,
+  "TownSlimeBlue": 670,
+  "TownSlimeCopper": 684,
+  "TownSlimeGreen": 678,
+  "TownSlimeOld": 679,
+  "TownSlimePurple": 680,
+  "TownSlimeRainbow": 681,
+  "TownSlimeRed": 682,
+  "TownSlimeYellow": 683,
+  "ToxicSludge": 767,
+  "Truffle": 764,
+  "TruffleWorm": 738,
+  "TruffleWormDigger": 739,
+  "Tumbleweed": 788,
+  "Turtle": 616,
+  "TurtleJungle": 617,
+  "Unicorn": 709,
+  "Vampire": 762,
+  "VampireBat": 760,
+  "VileSpit": 724,
+  "VileSpitEoW": 411,
+  "Vulture": 278,
+  "WalkingAntlion": 580,
+  "WallCreeper": 748,
+  "WallCreeperWall": 749,
+  "WaterBoltMimic": 694,
+  "WaterStrider": 612,
+  "Werewolf": 721,
+  "WindyBalloon": 594,
+  "Worm": 737,
+  "Wraith": 705,
+  "YellowCockatiel": 674,
+  "YellowDragonfly": 600,
+  "ZombieMerman": 586,
+  "ZombieMushroom": 380,
+  "ZombieMushroomHat": 381
+ },
+ "grand_kinds": 373,
+ "max_id": 823
+}

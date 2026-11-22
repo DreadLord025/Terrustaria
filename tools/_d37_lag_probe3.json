@@ -1,0 +1,360 @@
+{
+ "d11": {
+  "clash_grand": {},
+  "id_taken_by_other": {},
+  "new": {
+   "BloodSquid": 619
+  }
+ },
+ "d36": {
+  "clash_grand": {},
+  "id_taken_by_other": {
+   "GiantTortoise": [
+    765,
+    "Steampunker"
+   ],
+   "IceTortoise": [
+    766,
+    "Cyborg"
+   ],
+   "Penguin": [
+    763,
+    "SantaClaus"
+   ],
+   "PenguinBlack": [
+    764,
+    "Truffle"
+   ]
+  },
+  "lost_since_seal": {},
+  "moved_since_seal": {},
+  "new": {
+   "GiantTortoise": 765,
+   "IceTortoise": 766,
+   "Penguin": 763,
+   "PenguinBlack": 764,
+   "ToxicSludge": 762
+  },
+  "seal_new": {}
+ },
+ "d39": {
+  "clash_grand": {
+   "Butterfly": 817,
+   "ChatteringTeethBomb": 821,
+   "CultistArcherBlue": 822,
+   "CultistArcherWhite": 823,
+   "Grasshopper": 820,
+   "Scorpion": 819,
+   "ScorpionBlack": 818
+  },
+  "id_taken_by_other": {},
+  "lost_since_seal": {},
+  "moved_since_seal": {
+   "Butterfly": [
+    781,
+    817
+   ],
+   "ChatteringTeethBomb": [
+    785,
+    821
+   ],
+   "CultistArcherBlue": [
+    786,
+    822
+   ],
+   "CultistArcherWhite": [
+    787,
+    823
+   ],
+   "Grasshopper": [
+    784,
+    820
+   ],
+   "Scorpion": [
+    783,
+    819
+   ],
+   "ScorpionBlack": [
+    782,
+    818
+   ]
+  },
+  "new": {
+   "Butterfly": 817,
+   "ChatteringTeethBomb": 821,
+   "CultistArcherBlue": 822,
+   "CultistArcherWhite": 823,
+   "Grasshopper": 820,
+   "Scorpion": 819,
+   "ScorpionBlack": 818
+  },
+  "seal_new": {
+   "Butterfly": 781,
+   "ChatteringTeethBomb": 785,
+   "CultistArcherBlue": 786,
+   "CultistArcherWhite": 787,
+   "Grasshopper": 784,
+   "Scorpion": 783,
+   "ScorpionBlack": 782
+  }
+ },
+ "d41": {
+  "clash_grand": {},
+  "id_taken_by_other": {},
+  "lost_since_seal": {},
+  "moved_since_seal": {},
+  "new": {
+   "Crawdad": 494,
+   "Crawdad2": 495,
+   "DuneSplicerBody": 511,
+   "DuneSplicerHead": 510,
+   "DuneSplicerTail": 512,
+   "GiantFlyingAntlion": 509,
+   "GiantShelly": 496,
+   "GiantShelly2": 497,
+   "GiantWalkingAntlion": 508,
+   "Salamander": 498,
+   "Salamander2": 499,
+   "Salamander3": 500,
+   "Salamander4": 501,
+   "Salamander5": 502,
+   "Salamander6": 503,
+   "Salamander7": 504,
+   "Salamander8": 505,
+   "Salamander9": 506
+  },
+  "seal_new": {
+   "Crawdad": 494,
+   "Crawdad2": 495,
+   "GiantShelly": 496,
+   "GiantShelly2": 497,
+   "Salamander": 498,
+   "Salamander2": 499,
+   "Salamander3": 500,
+   "Salamander4": 501,
+   "Salamander5": 502,
+   "Salamander6": 503,
+   "Salamander7": 504,
+   "Salamander8": 505,
+   "Salamander9": 506
+  }
+ },
+ "d43": {
+  "clash_grand": {},
+  "id_taken_by_other": {
+   "HallowBoss": [
+    636,
+    "EmpressOfLight"
+   ]
+  },
+  "lost_since_seal": {},
+  "moved_since_seal": {},
+  "new": {
+   "BlueMacaw": 672,
+   "BoundTownSlimeOld": 685,
+   "BoundTownSlimePurple": 686,
+   "BoundTownSlimeYellow": 687,
+   "ChaosBallTim": 665,
+   "EmpressButterfly": 661,
+   "GemBunnyAmber": 652,
+   "GemBunnyAmethyst": 646,
+   "GemBunnyDiamond": 651,
+   "GemBunnyEmerald": 649,
+   "GemBunnyRuby": 650,
+   "GemBunnySapphire": 648,
+   "GemBunnyTopaz": 647,
+   "GemSquirrelAmber": 645,
+   "GemSquirrelAmethyst": 639,
+   "GemSquirrelDiamond": 644,
+   "GemSquirrelEmerald": 642,
+   "GemSquirrelRuby": 643,
+   "GemSquirrelSapphire": 641,
+   "GemSquirrelTopaz": 640,
+   "GoldenSlime": 667,
+   "GrayCockatiel": 675,
+   "HallowBoss": 636,
+   "HellButterfly": 653,
+   "Lavafly": 654,
+   "LibrarianSkeleton": 693,
+   "MaggotZombie": 632,
+   "MagmaSnail": 655,
+   "MossZombie": 691,
+   "Orca": 692,
+   "OwlMimic": 689,
+   "PalworldCattivaDistressed": 695,
+   "PalworldFoxsparksDistressed": 696,
+   "PirateGhost": 662,
+   "Pufferfish": 688,
+   "QueenSlimeBoss": 657,
+   "QueenSlimeMinionBlue": 658,
+   "QueenSlimeMinionPink": 659,
+   "QueenSlimeMinionPurple": 660,
+   "RockGolem": 631,
+   "ScarletMacaw": 671,
+   "ShimmerSlime": 676,
+   "Shimmerfly": 677,
+   "SporeBat": 634,
+   "SporeSkeleton": 635,
+   "StatueMimic": 690,
+   "Stinkbug": 669,
+   "TorchGod": 664,
+   "Toucan": 673,
+   "TownBunny": 656,
+   "TownCat": 637,
+   "TownDog": 638,
+   "TownSlimeBlue": 670,
+   "TownSlimeCopper": 684,
+   "TownSlimeGreen": 678,
+   "TownSlimeOld": 679,
+   "TownSlimePurple": 680,
+   "TownSlimeRainbow": 681,
+   "TownSlimeRed": 682,
+   "TownSlimeYellow": 683,
+   "VileSpitEaterOfWorlds": 666,
+   "WaterBoltMimic": 694,
+   "YellowCockatiel": 674
+  },
+  "seal_new": {}
+ },
+ "d9": {
+  "clash_grand": {},
+  "id_taken_by_other": {},
+  "new": {
+   "AncientCultistSquidhead": 521,
+   "CultistDragonBody1": 455,
+   "CultistDragonBody2": 456,
+   "CultistDragonBody3": 457,
+   "CultistDragonBody4": 458,
+   "CultistDragonHead": 454,
+   "CultistDragonTail": 459
+  }
+ },
+ "f18": {
+  "clash_grand": {
+   "ArmedZombie": 258,
+   "Butterfly": 238,
+   "ChatteringTeethBomb": 255,
+   "CultistArcherBlue": 256,
+   "CultistArcherWhite": 257,
+   "Duck": 244,
+   "Duck2": 245,
+   "DuckWhite": 246,
+   "DuckWhite2": 247,
+   "Firefly": 237,
+   "Frog": 243,
+   "GlowingSnail": 242,
+   "Grasshopper": 254,
+   "LightningBug": 240,
+   "Scorpion": 249,
+   "ScorpionBlack": 248,
+   "Snail": 241,
+   "TruffleWorm": 252,
+   "TruffleWormDigger": 253,
+   "Worm": 239
+  },
+  "id_taken_by_other": {},
+  "new": {
+   "ArmedZombie": 258,
+   "Butterfly": 238,
+   "ChatteringTeethBomb": 255,
+   "CultistArcherBlue": 256,
+   "CultistArcherWhite": 257,
+   "Duck": 244,
+   "Duck2": 245,
+   "DuckWhite": 246,
+   "DuckWhite2": 247,
+   "Firefly": 237,
+   "Frog": 243,
+   "GlowingSnail": 242,
+   "Grasshopper": 254,
+   "LightningBug": 240,
+   "Scorpion": 249,
+   "ScorpionBlack": 248,
+   "Snail": 241,
+   "TruffleWorm": 252,
+   "TruffleWormDigger": 253,
+   "Worm": 239
+  }
+ },
+ "f42": {
+  "clash_grand": {
+   "Antlion": 356,
+   "BloodMummy": 359,
+   "DarkMummy": 358,
+   "FlyingAntlion": 362,
+   "LightMummy": 360,
+   "Mummy": 357,
+   "Vulture": 355,
+   "WalkingAntlion": 361
+  },
+  "id_taken_by_other": {
+   "Antlion": [
+    356,
+    "LacBeetle"
+   ],
+   "BloodMummy": [
+    359,
+    "FlyingFish"
+   ],
+   "DarkMummy": [
+    358,
+    "Squid"
+   ],
+   "FlyingAntlion": [
+    362,
+    "GoldfishWalker"
+   ],
+   "LightMummy": [
+    360,
+    "FlyingSnake"
+   ],
+   "Mummy": [
+    357,
+    "SeaSnail"
+   ],
+   "Tumbleweed": [
+    354,
+    "CochinealBeetle"
+   ],
+   "Vulture": [
+    355,
+    "CyanBeetle"
+   ],
+   "WalkingAntlion": [
+    361,
+    "Pirate"
+   ]
+  },
+  "new": {
+   "Antlion": 356,
+   "BloodMummy": 359,
+   "DarkMummy": 358,
+   "FlyingAntlion": 362,
+   "LightMummy": 360,
+   "Mummy": 357,
+   "Tumbleweed": 354,
+   "Vulture": 355,
+   "WalkingAntlion": 361
+  }
+ },
+ "f47": {
+  "clash_grand": {},
+  "id_taken_by_other": {},
+  "new": {
+   "ShimmerSlime": 676
+  }
+ },
+ "g5": {
+  "clash_grand": {},
+  "id_taken_by_other": {
+   "RuneWizard": [
+    354,
+    "CochinealBeetle"
+   ]
+  },
+  "new": {
+   "LibrarianSkeleton": 693,
+   "RuneWizard": 354
+  }
+ }
+}

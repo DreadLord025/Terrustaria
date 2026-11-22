@@ -1,0 +1,1694 @@
+{
+ "done": {
+  "c3": [
+   "WaterBoltMimic"
+  ],
+  "c4": [
+   "GiantFlyingAntlion",
+   "FlyingAntlion",
+   "EyeballFlyingFish",
+   "Arapaima",
+   "CrimsonGoldfish",
+   "GoldGoldfish",
+   "Pupfish",
+   "Dolphin",
+   "Pufferfish",
+   "Orca"
+  ],
+  "c7": [
+   "Lavafly",
+   "Shimmerfly"
+  ],
+  "c8": [
+   "Maggot"
+  ],
+  "c9": [
+   "MagmaSnail"
+  ],
+  "d125": [
+   "EmpressOfLight",
+   "PrismaticLacewing"
+  ],
+  "d23": [
+   "SolarFlare",
+   "VileSpitEoW"
+  ],
+  "d33": [
+   "BlackDragonfly",
+   "BlueDragonfly",
+   "GreenDragonfly",
+   "OrangeDragonfly",
+   "RedDragonfly",
+   "YellowDragonfly",
+   "GoldDragonfly"
+  ],
+  "d34": [
+   "AngryBones",
+   "CursedSkull",
+   "OldMan",
+   "ManEater",
+   "Bunny",
+   "BoneSerpentHead",
+   "BoneSerpentBody",
+   "BoneSerpentTail",
+   "CorruptBunny",
+   "Harpy",
+   "Snatcher",
+   "CorruptGoldfish",
+   "Vulture",
+   "Demon",
+   "BlueJellyfish"
+  ],
+  "d36": [
+   "ToxicSludge",
+   "Penguin",
+   "PenguinBlack",
+   "GiantTortoise",
+   "IceTortoise",
+   "Crimera",
+   "MossHornet",
+   "Moth"
+  ],
+  "d37": [
+   "CochinealBeetle",
+   "CyanBeetle",
+   "LacBeetle",
+   "SeaSnail",
+   "Squid",
+   "FlyingFish",
+   "FlyingSnake",
+   "Pirate",
+   "GoldfishWalker",
+   "HornetFatty",
+   "HornetHoney",
+   "HornetLeafy",
+   "HornetSpikey",
+   "HornetStingy",
+   "JungleCreeper",
+   "JungleCreeperWall",
+   "BlackRecluseWall",
+   "BloodCrawler",
+   "BloodCrawlerWall",
+   "BloodFeeder",
+   "BloodJelly",
+   "IceGolem",
+   "RainbowSlime",
+   "Eyezor",
+   "Parrot",
+   "Reaper",
+   "ZombieMushroom",
+   "ZombieMushroomHat",
+   "FungoFish",
+   "AnomuraFungus",
+   "MushiLadybug",
+   "FungiBulb",
+   "GiantFungiBulb",
+   "IchorSticker",
+   "RustyArmoredBonesAxe",
+   "RustyArmoredBonesFlail",
+   "RustyArmoredBonesSword",
+   "RustyArmoredBonesSwordNoArmor",
+   "BlueArmoredBones",
+   "BlueArmoredBonesMace",
+   "BlueArmoredBonesNoPants",
+   "BlueArmoredBonesSword",
+   "HellArmoredBones",
+   "HellArmoredBonesSpikeShield",
+   "HellArmoredBonesMace",
+   "HellArmoredBonesSword"
+  ],
+  "d38": [
+   "SlimeRibbonWhite",
+   "SlimeRibbonYellow",
+   "SlimeRibbonGreen",
+   "SlimeRibbonRed",
+   "BunnyXmas",
+   "DemonEyeSpaceship",
+   "SkeletonTopHat",
+   "SkeletonAstonaut",
+   "SkeletonAlien",
+   "PumpkingBlade",
+   "SlimeMasked",
+   "BunnySlimed",
+   "HoppinJack",
+   "Ghost",
+   "DemonEyeOwl",
+   "BirdBlue",
+   "BirdRed",
+   "Squirrel",
+   "Mouse",
+   "Raven",
+   "TacticalSkeleton",
+   "SkeletonCommando",
+   "AngryBonesBig",
+   "AngryBonesBigMuscle",
+   "AngryBonesBigHelmet",
+   "DiabolistWhite",
+   "BoneLee",
+   "GiantCursedSkull",
+   "Paladin",
+   "SkeletonSniper",
+   "RaggedCaster",
+   "RaggedCasterOpenCoat",
+   "Necromancer",
+   "NecromancerArmored",
+   "DiabolistRed"
+  ],
+  "d39": [
+   "Butterfly",
+   "ScorpionBlack",
+   "Scorpion",
+   "Grasshopper",
+   "ChatteringTeethBomb",
+   "CultistArcherBlue",
+   "CultistArcherWhite"
+  ],
+  "d40": [
+   "ArmedZombie",
+   "ArmedZombieEskimo",
+   "ArmedZombiePincussion",
+   "ArmedZombieSlimed",
+   "ArmedZombieSwamp",
+   "ArmedZombieTwiggy",
+   "ArmedZombieCenx",
+   "CultistTablet",
+   "CultistDevote",
+   "CultistBossClone",
+   "GoldBird",
+   "GoldBunny",
+   "GoldButterfly",
+   "GoldFrog",
+   "GoldGrasshopper",
+   "GoldMouse",
+   "GoldWorm",
+   "BoneThrowingSkeleton",
+   "BoneThrowingSkeleton2",
+   "BoneThrowingSkeleton3",
+   "BoneThrowingSkeleton4",
+   "SkeletonMerchant",
+   "CultistDragonHead",
+   "CultistDragonBody1",
+   "CultistDragonBody2",
+   "CultistDragonBody3",
+   "CultistDragonBody4",
+   "CultistDragonTail",
+   "Butcher",
+   "CreatureFromTheDeep",
+   "Fritz",
+   "Nailhead",
+   "CrimsonBunny",
+   "Psycho",
+   "DeadlySphere",
+   "DrManFly",
+   "ThePossessed",
+   "CrimsonPenguin",
+   "ShadowFlameApparition",
+   "BigMimicCorruption",
+   "BigMimicCrimson",
+   "BigMimicHallow",
+   "BigMimicJungle",
+   "Mothron",
+   "MothronEgg",
+   "MothronSpawn",
+   "Medusa",
+   "GreekSkeleton",
+   "GraniteGolem",
+   "GraniteFlyer",
+   "EnchantedNightcrawler",
+   "Grubby",
+   "Sluggy",
+   "Buggy",
+   "TargetDummy"
+  ],
+  "d41": [
+   "Crawdad",
+   "Crawdad2",
+   "GiantShelly",
+   "GiantShelly2",
+   "Salamander",
+   "Salamander2",
+   "Salamander3",
+   "Salamander4",
+   "Salamander5",
+   "Salamander6",
+   "Salamander7",
+   "Salamander8",
+   "Salamander9",
+   "GiantWalkingAntlion",
+   "DuneSplicerHead",
+   "DuneSplicerBody",
+   "DuneSplicerTail",
+   "TombCrawlerHead",
+   "TombCrawlerBody",
+   "TombCrawlerTail",
+   "SolarGoop",
+   "AncientLight",
+   "AncientDoom",
+   "DesertGhoul",
+   "DesertGhoulCorruption",
+   "DesertGhoulCrimson",
+   "DesertGhoulHallow",
+   "DesertLamiaLight",
+   "DesertLamiaDark",
+   "DesertScorpionWalk",
+   "DesertScorpionWall"
+  ],
+  "d42": [
+   "DD2LightningBug",
+   "BartenderUnconscious",
+   "WalkingAntlion",
+   "LarvaeAntlion",
+   "FairyCritterPink",
+   "FairyCritterGreen",
+   "FairyCritterBlue",
+   "ZombieMerman",
+   "TorchZombie",
+   "ArmedTorchZombie",
+   "GoldGoldfishWalker",
+   "WindyBalloon",
+   "Seagull",
+   "Seagull2",
+   "Grebe",
+   "Grebe2",
+   "Rat",
+   "Owl",
+   "WaterStrider",
+   "GoldWaterStrider",
+   "ExplosiveBunny",
+   "Turtle",
+   "TurtleJungle",
+   "BloodNautilus",
+   "BloodSquid",
+   "GoblinShark",
+   "BloodEelHead",
+   "BloodEelBody",
+   "BloodEelTail",
+   "Gnome",
+   "SeaTurtle",
+   "Seahorse",
+   "GoldSeahorse",
+   "Dandelion",
+   "IceMimic",
+   "BloodMummy"
+  ],
+  "d43": [
+   "PalworldCattivaDistressed",
+   "PalworldFoxsparksDistressed",
+   "OwlMimic",
+   "StatueMimic",
+   "MossZombie",
+   "LibrarianSkeleton",
+   "BoundTownSlimeOld",
+   "BoundTownSlimePurple",
+   "BoundTownSlimeYellow",
+   "YellowCockatiel",
+   "GrayCockatiel",
+   "ShimmerSlime",
+   "Stinkbug",
+   "ScarletMacaw",
+   "BlueMacaw",
+   "Toucan",
+   "PirateGhost",
+   "TorchGod",
+   "ChaosBallTim",
+   "GoldenSlime",
+   "QueenSlimeBoss",
+   "QueenSlimeMinionBlue",
+   "QueenSlimeMinionPink",
+   "QueenSlimeMinionPurple",
+   "GemBunnyAmber",
+   "HellButterfly",
+   "GemBunnyTopaz",
+   "GemBunnySapphire",
+   "GemBunnyEmerald",
+   "GemBunnyRuby",
+   "GemBunnyDiamond",
+   "GemSquirrelEmerald",
+   "GemSquirrelRuby",
+   "GemSquirrelDiamond",
+   "GemSquirrelAmber",
+   "GemBunnyAmethyst",
+   "GemSquirrelAmethyst",
+   "GemSquirrelTopaz",
+   "GemSquirrelSapphire",
+   "RockGolem",
+   "MaggotZombie",
+   "SporeBat",
+   "SporeSkeleton"
+  ],
+  "e21": [
+   "PartyBunny"
+  ],
+  "e26": [
+   "Frog",
+   "LadyBug",
+   "GoldLadyBug"
+  ],
+  "g10": [
+   "TownCat",
+   "TownDog",
+   "TownBunny",
+   "TownSlimeBlue",
+   "TownSlimeGreen",
+   "TownSlimeOld",
+   "TownSlimePurple",
+   "TownSlimeRainbow",
+   "TownSlimeRed",
+   "TownSlimeYellow",
+   "TownSlimeCopper"
+  ]
+ },
+ "drops": {
+  "c10": [
+   {
+    "id": 602,
+    "keeper": "d42",
+    "kind": "Seagull",
+    "why": "dup"
+   },
+   {
+    "id": 603,
+    "keeper": "d42",
+    "kind": "Seagull2",
+    "why": "dup"
+   },
+   {
+    "id": 608,
+    "keeper": "d42",
+    "kind": "Grebe",
+    "why": "dup"
+   },
+   {
+    "id": 609,
+    "keeper": "d42",
+    "kind": "Grebe2",
+    "why": "dup"
+   },
+   {
+    "id": 357,
+    "keeper": "c8",
+    "kind": "Worm",
+    "why": "dup"
+   },
+   {
+    "id": 442,
+    "keeper": "d40",
+    "kind": "GoldBird",
+    "why": "dup"
+   },
+   {
+    "id": 443,
+    "keeper": "d40",
+    "kind": "GoldBunny",
+    "why": "dup"
+   },
+   {
+    "id": 444,
+    "keeper": "d40",
+    "kind": "GoldButterfly",
+    "why": "dup"
+   },
+   {
+    "id": 445,
+    "keeper": "d40",
+    "kind": "GoldFrog",
+    "why": "dup"
+   },
+   {
+    "id": 446,
+    "keeper": "d40",
+    "kind": "GoldGrasshopper",
+    "why": "dup"
+   },
+   {
+    "id": 447,
+    "keeper": "d40",
+    "kind": "GoldMouse",
+    "why": "dup"
+   },
+   {
+    "id": 448,
+    "keeper": "d40",
+    "kind": "GoldWorm",
+    "why": "dup"
+   },
+   {
+    "id": 484,
+    "keeper": "d40",
+    "kind": "EnchantedNightcrawler",
+    "why": "dup"
+   },
+   {
+    "id": 485,
+    "keeper": "d40",
+    "kind": "Grubby",
+    "why": "dup"
+   },
+   {
+    "id": 486,
+    "keeper": "d40",
+    "kind": "Sluggy",
+    "why": "dup"
+   },
+   {
+    "id": 487,
+    "keeper": "d40",
+    "kind": "Buggy",
+    "why": "dup"
+   }
+  ],
+  "c3": [
+   {
+    "id": 355,
+    "keeper": "d34",
+    "kind": "CursedSkull",
+    "why": "dup"
+   },
+   {
+    "id": 289,
+    "keeper": "d38",
+    "kind": "GiantCursedSkull",
+    "why": "dup"
+   }
+  ],
+  "c4": [
+   {
+    "id": 359,
+    "keeper": "d37",
+    "kind": "FlyingFish",
+    "why": "dup"
+   },
+   {
+    "id": 405,
+    "keeper": "d34",
+    "kind": "CorruptGoldfish",
+    "why": "dup"
+   },
+   {
+    "id": 241,
+    "keeper": "d37",
+    "kind": "BloodFeeder",
+    "why": "dup"
+   }
+  ],
+  "c6": [
+   {
+    "id": 328,
+    "keeper": "d38",
+    "kind": "PumpkingBlade",
+    "why": "dup"
+   }
+  ],
+  "c8": [
+   {
+    "id": 448,
+    "keeper": "d40",
+    "kind": "GoldWorm",
+    "why": "dup"
+   },
+   {
+    "id": 484,
+    "keeper": "d40",
+    "kind": "EnchantedNightcrawler",
+    "why": "dup"
+   },
+   {
+    "id": 485,
+    "keeper": "d40",
+    "kind": "Grubby",
+    "why": "dup"
+   },
+   {
+    "id": 486,
+    "keeper": "d40",
+    "kind": "Sluggy",
+    "why": "dup"
+   },
+   {
+    "id": 487,
+    "keeper": "d40",
+    "kind": "Buggy",
+    "why": "dup"
+   }
+  ],
+  "c9": [
+   {
+    "id": 677,
+    "keeper": "c7",
+    "kind": "Shimmerfly",
+    "why": "dup"
+   },
+   {
+    "id": 442,
+    "keeper": "d40",
+    "kind": "GoldBird",
+    "why": "dup"
+   },
+   {
+    "id": 446,
+    "keeper": "d40",
+    "kind": "GoldGrasshopper",
+    "why": "dup"
+   },
+   {
+    "id": 447,
+    "keeper": "d40",
+    "kind": "GoldMouse",
+    "why": "dup"
+   },
+   {
+    "id": 443,
+    "keeper": "d40",
+    "kind": "GoldBunny",
+    "why": "dup"
+   },
+   {
+    "id": 445,
+    "keeper": "d40",
+    "kind": "GoldFrog",
+    "why": "dup"
+   }
+  ],
+  "d11": [
+   {
+    "id": 619,
+    "keeper": "d42",
+    "kind": "BloodSquid",
+    "why": "dup"
+   }
+  ],
+  "d120": [
+   {
+    "id": 245,
+    "keeper": "d42",
+    "kind": "BartenderUnconscious",
+    "why": "dup"
+   }
+  ],
+  "d23": [
+   {
+    "id": 354,
+    "keeper": "d34",
+    "kind": "ManEater",
+    "why": "dup"
+   },
+   {
+    "id": 355,
+    "keeper": "d34",
+    "kind": "Snatcher",
+    "why": "dup"
+   },
+   {
+    "id": 356,
+    "keeper": "d35",
+    "kind": "Clinger",
+    "why": "dup"
+   },
+   {
+    "id": 259,
+    "keeper": "d37",
+    "kind": "FungiBulb",
+    "why": "dup"
+   },
+   {
+    "id": 260,
+    "keeper": "d37",
+    "kind": "GiantFungiBulb",
+    "why": "dup"
+   },
+   {
+    "id": 455,
+    "keeper": "d35",
+    "kind": "VileSpit",
+    "why": "dup"
+   },
+   {
+    "id": 275,
+    "keeper": "d34",
+    "kind": "Harpy",
+    "why": "dup"
+   },
+   {
+    "id": 400,
+    "keeper": "d34",
+    "kind": "Demon",
+    "why": "dup"
+   },
+   {
+    "id": 441,
+    "keeper": "d35",
+    "kind": "GiantBat",
+    "why": "dup"
+   },
+   {
+    "id": 458,
+    "keeper": "d35",
+    "kind": "Slimer",
+    "why": "dup"
+   },
+   {
+    "id": 460,
+    "keeper": "d35",
+    "kind": "IlluminantBat",
+    "why": "dup"
+   },
+   {
+    "id": 401,
+    "keeper": "g8",
+    "kind": "IceBat",
+    "why": "dup"
+   },
+   {
+    "id": 402,
+    "keeper": "g8",
+    "kind": "Lavabat",
+    "why": "dup"
+   },
+   {
+    "id": 403,
+    "keeper": "g8",
+    "kind": "GiantFlyingFox",
+    "why": "dup"
+   },
+   {
+    "id": 404,
+    "keeper": "g8",
+    "kind": "RedDevil",
+    "why": "dup"
+   },
+   {
+    "id": 405,
+    "keeper": "g8",
+    "kind": "VampireBat",
+    "why": "dup"
+   },
+   {
+    "id": 406,
+    "keeper": "g8",
+    "kind": "Vampire",
+    "why": "dup"
+   },
+   {
+    "id": 360,
+    "keeper": "d37",
+    "kind": "FlyingSnake",
+    "why": "dup"
+   },
+   {
+    "id": 407,
+    "keeper": "d43",
+    "kind": "SporeBat",
+    "why": "dup"
+   },
+   {
+    "id": 409,
+    "keeper": "d43",
+    "kind": "QueenSlimeMinionPurple",
+    "why": "dup"
+   }
+  ],
+  "d34": [
+   {
+    "id": 281,
+    "keeper": "g8",
+    "kind": "PinkJellyfish",
+    "why": "dup"
+   },
+   {
+    "id": 284,
+    "keeper": "g8",
+    "kind": "Antlion",
+    "why": "dup"
+   },
+   {
+    "id": 285,
+    "keeper": "g8",
+    "kind": "SpikeBall",
+    "why": "dup"
+   }
+  ],
+  "d40": [
+   {
+    "id": 465,
+    "keeper": "c4",
+    "kind": "CrimsonGoldfish",
+    "why": "dup"
+   }
+  ],
+  "d41": [
+   {
+    "id": 509,
+    "keeper": "c4",
+    "kind": "GiantFlyingAntlion",
+    "why": "dup"
+   },
+   {
+    "id": 516,
+    "keeper": "d23",
+    "kind": "SolarFlare",
+    "why": "dup"
+   }
+  ],
+  "d42": [
+   {
+    "id": 595,
+    "keeper": "d33",
+    "kind": "BlackDragonfly",
+    "why": "dup"
+   },
+   {
+    "id": 596,
+    "keeper": "d33",
+    "kind": "BlueDragonfly",
+    "why": "dup"
+   },
+   {
+    "id": 597,
+    "keeper": "d33",
+    "kind": "GreenDragonfly",
+    "why": "dup"
+   },
+   {
+    "id": 598,
+    "keeper": "d33",
+    "kind": "OrangeDragonfly",
+    "why": "dup"
+   },
+   {
+    "id": 599,
+    "keeper": "d33",
+    "kind": "RedDragonfly",
+    "why": "dup"
+   },
+   {
+    "id": 600,
+    "keeper": "d33",
+    "kind": "YellowDragonfly",
+    "why": "dup"
+   },
+   {
+    "id": 601,
+    "keeper": "d33",
+    "kind": "GoldDragonfly",
+    "why": "dup"
+   }
+  ],
+  "d43": [
+   {
+    "id": 694,
+    "keeper": "c3",
+    "kind": "WaterBoltMimic",
+    "why": "dup"
+   },
+   {
+    "id": 692,
+    "keeper": "c4",
+    "kind": "Orca",
+    "why": "dup"
+   },
+   {
+    "id": 684,
+    "keeper": "g10",
+    "kind": "TownSlimeCopper",
+    "why": "dup"
+   },
+   {
+    "id": 688,
+    "keeper": "c4",
+    "kind": "Pufferfish",
+    "why": "dup"
+   },
+   {
+    "id": 679,
+    "keeper": "g10",
+    "kind": "TownSlimeOld",
+    "why": "dup"
+   },
+   {
+    "id": 680,
+    "keeper": "g10",
+    "kind": "TownSlimePurple",
+    "why": "dup"
+   },
+   {
+    "id": 681,
+    "keeper": "g10",
+    "kind": "TownSlimeRainbow",
+    "why": "dup"
+   },
+   {
+    "id": 682,
+    "keeper": "g10",
+    "kind": "TownSlimeRed",
+    "why": "dup"
+   },
+   {
+    "id": 683,
+    "keeper": "g10",
+    "kind": "TownSlimeYellow",
+    "why": "dup"
+   },
+   {
+    "id": 677,
+    "keeper": "c7",
+    "kind": "Shimmerfly",
+    "why": "dup"
+   },
+   {
+    "id": 678,
+    "keeper": "g10",
+    "kind": "TownSlimeGreen",
+    "why": "dup"
+   },
+   {
+    "id": 670,
+    "keeper": "g10",
+    "kind": "TownSlimeBlue",
+    "why": "dup"
+   },
+   {
+    "id": 666,
+    "keeper": "d23",
+    "kind": "VileSpitEaterOfWorlds",
+    "why": "alias"
+   },
+   {
+    "id": 661,
+    "keeper": "d125",
+    "kind": "EmpressButterfly",
+    "why": "alias"
+   },
+   {
+    "id": 654,
+    "keeper": "c7",
+    "kind": "Lavafly",
+    "why": "dup"
+   },
+   {
+    "id": 655,
+    "keeper": "c9",
+    "kind": "MagmaSnail",
+    "why": "dup"
+   },
+   {
+    "id": 656,
+    "keeper": "g10",
+    "kind": "TownBunny",
+    "why": "dup"
+   },
+   {
+    "id": 637,
+    "keeper": "g10",
+    "kind": "TownCat",
+    "why": "dup"
+   },
+   {
+    "id": 638,
+    "keeper": "g10",
+    "kind": "TownDog",
+    "why": "dup"
+   },
+   {
+    "id": 636,
+    "keeper": "d125",
+    "kind": "HallowBoss",
+    "why": "alias"
+   }
+  ],
+  "d9": [
+   {
+    "id": 454,
+    "keeper": "d40",
+    "kind": "CultistDragonHead",
+    "why": "dup"
+   },
+   {
+    "id": 455,
+    "keeper": "d40",
+    "kind": "CultistDragonBody1",
+    "why": "dup"
+   },
+   {
+    "id": 456,
+    "keeper": "d40",
+    "kind": "CultistDragonBody2",
+    "why": "dup"
+   },
+   {
+    "id": 457,
+    "keeper": "d40",
+    "kind": "CultistDragonBody3",
+    "why": "dup"
+   },
+   {
+    "id": 458,
+    "keeper": "d40",
+    "kind": "CultistDragonBody4",
+    "why": "dup"
+   },
+   {
+    "id": 459,
+    "keeper": "d40",
+    "kind": "CultistDragonTail",
+    "why": "dup"
+   }
+  ],
+  "e21": [
+   {
+    "id": 229,
+    "keeper": "d34",
+    "kind": "Bunny",
+    "why": "dup"
+   }
+  ],
+  "f18": [
+   {
+    "id": 237,
+    "keeper": "c7",
+    "kind": "Firefly",
+    "why": "dup"
+   },
+   {
+    "id": 238,
+    "keeper": "d39",
+    "kind": "Butterfly",
+    "why": "dup"
+   },
+   {
+    "id": 239,
+    "keeper": "c8",
+    "kind": "Worm",
+    "why": "dup"
+   },
+   {
+    "id": 240,
+    "keeper": "c7",
+    "kind": "LightningBug",
+    "why": "dup"
+   },
+   {
+    "id": 241,
+    "keeper": "c9",
+    "kind": "Snail",
+    "why": "dup"
+   },
+   {
+    "id": 242,
+    "keeper": "c9",
+    "kind": "GlowingSnail",
+    "why": "dup"
+   },
+   {
+    "id": 243,
+    "keeper": "e26",
+    "kind": "Frog",
+    "why": "dup"
+   },
+   {
+    "id": 244,
+    "keeper": "c10",
+    "kind": "Duck",
+    "why": "dup"
+   },
+   {
+    "id": 245,
+    "keeper": "c10",
+    "kind": "Duck2",
+    "why": "dup"
+   },
+   {
+    "id": 246,
+    "keeper": "c10",
+    "kind": "DuckWhite",
+    "why": "dup"
+   },
+   {
+    "id": 247,
+    "keeper": "c10",
+    "kind": "DuckWhite2",
+    "why": "dup"
+   },
+   {
+    "id": 248,
+    "keeper": "d39",
+    "kind": "ScorpionBlack",
+    "why": "dup"
+   },
+   {
+    "id": 249,
+    "keeper": "d39",
+    "kind": "Scorpion",
+    "why": "dup"
+   },
+   {
+    "id": 252,
+    "keeper": "c8",
+    "kind": "TruffleWorm",
+    "why": "dup"
+   },
+   {
+    "id": 253,
+    "keeper": "c8",
+    "kind": "TruffleWormDigger",
+    "why": "dup"
+   },
+   {
+    "id": 254,
+    "keeper": "d39",
+    "kind": "Grasshopper",
+    "why": "dup"
+   },
+   {
+    "id": 255,
+    "keeper": "d39",
+    "kind": "ChatteringTeethBomb",
+    "why": "dup"
+   },
+   {
+    "id": 256,
+    "keeper": "d39",
+    "kind": "CultistArcherBlue",
+    "why": "dup"
+   },
+   {
+    "id": 257,
+    "keeper": "d39",
+    "kind": "CultistArcherWhite",
+    "why": "dup"
+   },
+   {
+    "id": 258,
+    "keeper": "d40",
+    "kind": "ArmedZombie",
+    "why": "dup"
+   }
+  ],
+  "f42": [
+   {
+    "id": 355,
+    "keeper": "d34",
+    "kind": "Vulture",
+    "why": "dup"
+   },
+   {
+    "id": 356,
+    "keeper": "g8",
+    "kind": "Antlion",
+    "why": "dup"
+   },
+   {
+    "id": 357,
+    "keeper": "d35",
+    "kind": "Mummy",
+    "why": "dup"
+   },
+   {
+    "id": 358,
+    "keeper": "d35",
+    "kind": "DarkMummy",
+    "why": "dup"
+   },
+   {
+    "id": 359,
+    "keeper": "d42",
+    "kind": "BloodMummy",
+    "why": "dup"
+   },
+   {
+    "id": 360,
+    "keeper": "d35",
+    "kind": "LightMummy",
+    "why": "dup"
+   },
+   {
+    "id": 361,
+    "keeper": "d42",
+    "kind": "WalkingAntlion",
+    "why": "dup"
+   },
+   {
+    "id": 362,
+    "keeper": "c4",
+    "kind": "FlyingAntlion",
+    "why": "dup"
+   }
+  ],
+  "f47": [
+   {
+    "id": 676,
+    "keeper": "d43",
+    "kind": "ShimmerSlime",
+    "why": "dup"
+   }
+  ],
+  "g5": [
+   {
+    "id": 693,
+    "keeper": "d43",
+    "kind": "LibrarianSkeleton",
+    "why": "dup"
+   }
+  ],
+  "g62": [
+   {
+    "id": 677,
+    "keeper": "c7",
+    "kind": "Shimmerfly",
+    "why": "dup"
+   },
+   {
+    "id": 620,
+    "keeper": "d42",
+    "kind": "GoblinShark",
+    "why": "dup"
+   }
+  ],
+  "g8": [
+   {
+    "id": 354,
+    "keeper": "d34",
+    "kind": "Vulture",
+    "why": "dup"
+   },
+   {
+    "id": 355,
+    "keeper": "d34",
+    "kind": "BlueJellyfish",
+    "why": "dup"
+   },
+   {
+    "id": 359,
+    "keeper": "d35",
+    "kind": "Pixie",
+    "why": "dup"
+   },
+   {
+    "id": 360,
+    "keeper": "d35",
+    "kind": "Wraith",
+    "why": "dup"
+   },
+   {
+    "id": 361,
+    "keeper": "d35",
+    "kind": "CursedHammer",
+    "why": "dup"
+   },
+   {
+    "id": 362,
+    "keeper": "d35",
+    "kind": "EnchantedSword",
+    "why": "dup"
+   },
+   {
+    "id": 363,
+    "keeper": "d35",
+    "kind": "Mimic",
+    "why": "dup"
+   },
+   {
+    "id": 364,
+    "keeper": "d35",
+    "kind": "GreenJellyfish",
+    "why": "dup"
+   },
+   {
+    "id": 365,
+    "keeper": "d35",
+    "kind": "Gastropod",
+    "why": "dup"
+   },
+   {
+    "id": 375,
+    "keeper": "d34",
+    "kind": "CursedSkull",
+    "why": "dup"
+   },
+   {
+    "id": 376,
+    "keeper": "d34",
+    "kind": "Demon",
+    "why": "dup"
+   },
+   {
+    "id": 377,
+    "keeper": "d35",
+    "kind": "GiantBat",
+    "why": "dup"
+   },
+   {
+    "id": 378,
+    "keeper": "d35",
+    "kind": "Slimer",
+    "why": "dup"
+   },
+   {
+    "id": 379,
+    "keeper": "d35",
+    "kind": "IlluminantBat",
+    "why": "dup"
+   },
+   {
+    "id": 384,
+    "keeper": "d37",
+    "kind": "FlyingSnake",
+    "why": "dup"
+   },
+   {
+    "id": 385,
+    "keeper": "d37",
+    "kind": "Squid",
+    "why": "dup"
+   },
+   {
+    "id": 386,
+    "keeper": "d34",
+    "kind": "Harpy",
+    "why": "dup"
+   }
+  ]
+ },
+ "drops_total": 144,
+ "moves": {
+  "c10": [
+   {
+    "kind": "Duck",
+    "new": 731,
+    "old": 362
+   },
+   {
+    "kind": "Duck2",
+    "new": 732,
+    "old": 363
+   },
+   {
+    "kind": "DuckWhite",
+    "new": 733,
+    "old": 364
+   },
+   {
+    "kind": "DuckWhite2",
+    "new": 734,
+    "old": 365
+   }
+  ],
+  "c7": [
+   {
+    "kind": "Firefly",
+    "new": 735,
+    "old": 355
+   },
+   {
+    "kind": "LightningBug",
+    "new": 736,
+    "old": 358
+   }
+  ],
+  "c8": [
+   {
+    "kind": "Worm",
+    "new": 737,
+    "old": 357
+   },
+   {
+    "kind": "TruffleWorm",
+    "new": 738,
+    "old": 374
+   },
+   {
+    "kind": "TruffleWormDigger",
+    "new": 739,
+    "old": 375
+   }
+  ],
+  "c9": [
+   {
+    "kind": "Snail",
+    "new": 740,
+    "old": 359
+   },
+   {
+    "kind": "GlowingSnail",
+    "new": 741,
+    "old": 360
+   }
+  ],
+  "d120": [
+   {
+    "kind": "SantaClaus",
+    "new": 763,
+    "old": 241
+   },
+   {
+    "kind": "Truffle",
+    "new": 764,
+    "old": 242
+   },
+   {
+    "kind": "Steampunker",
+    "new": 765,
+    "old": 243
+   },
+   {
+    "kind": "Cyborg",
+    "new": 766,
+    "old": 244
+   }
+  ],
+  "d23": [
+   {
+    "kind": "AngryTrapper",
+    "new": 743,
+    "old": 357
+   }
+  ],
+  "d34": [
+   {
+    "kind": "Crab",
+    "new": 791,
+    "old": 282
+   },
+   {
+    "kind": "DungeonGuardian",
+    "new": 792,
+    "old": 283
+   }
+  ],
+  "d35": [
+   {
+    "kind": "GoblinScout",
+    "new": 698,
+    "old": 429
+   },
+   {
+    "kind": "Bird",
+    "new": 699,
+    "old": 430
+   },
+   {
+    "kind": "Pixie",
+    "new": 700,
+    "old": 431
+   },
+   {
+    "kind": "ArmoredSkeleton",
+    "new": 701,
+    "old": 432
+   },
+   {
+    "kind": "Mummy",
+    "new": 702,
+    "old": 433
+   },
+   {
+    "kind": "DarkMummy",
+    "new": 703,
+    "old": 434
+   },
+   {
+    "kind": "LightMummy",
+    "new": 704,
+    "old": 435
+   },
+   {
+    "kind": "Wraith",
+    "new": 705,
+    "old": 436
+   },
+   {
+    "kind": "CursedHammer",
+    "new": 706,
+    "old": 437
+   },
+   {
+    "kind": "EnchantedSword",
+    "new": 707,
+    "old": 438
+   },
+   {
+    "kind": "Mimic",
+    "new": 708,
+    "old": 439
+   },
+   {
+    "kind": "Unicorn",
+    "new": 709,
+    "old": 440
+   },
+   {
+    "kind": "GiantBat",
+    "new": 710,
+    "old": 441
+   },
+   {
+    "kind": "Corruptor",
+    "new": 711,
+    "old": 442
+   },
+   {
+    "kind": "DiggerHead",
+    "new": 712,
+    "old": 443
+   },
+   {
+    "kind": "DiggerBody",
+    "new": 713,
+    "old": 444
+   },
+   {
+    "kind": "DiggerTail",
+    "new": 714,
+    "old": 445
+   },
+   {
+    "kind": "SeekerHead",
+    "new": 715,
+    "old": 446
+   },
+   {
+    "kind": "SeekerBody",
+    "new": 716,
+    "old": 447
+   },
+   {
+    "kind": "SeekerTail",
+    "new": 717,
+    "old": 448
+   },
+   {
+    "kind": "Clinger",
+    "new": 718,
+    "old": 449
+   },
+   {
+    "kind": "AnglerFish",
+    "new": 719,
+    "old": 450
+   },
+   {
+    "kind": "GreenJellyfish",
+    "new": 720,
+    "old": 451
+   },
+   {
+    "kind": "Werewolf",
+    "new": 721,
+    "old": 452
+   },
+   {
+    "kind": "Clown",
+    "new": 722,
+    "old": 453
+   },
+   {
+    "kind": "SkeletonArcher",
+    "new": 723,
+    "old": 454
+   },
+   {
+    "kind": "VileSpit",
+    "new": 724,
+    "old": 455
+   },
+   {
+    "kind": "TheHungryII",
+    "new": 725,
+    "old": 456
+   },
+   {
+    "kind": "ChaosElemental",
+    "new": 726,
+    "old": 457
+   },
+   {
+    "kind": "Slimer",
+    "new": 727,
+    "old": 458
+   },
+   {
+    "kind": "Gastropod",
+    "new": 728,
+    "old": 459
+   },
+   {
+    "kind": "IlluminantBat",
+    "new": 729,
+    "old": 460
+   },
+   {
+    "kind": "PossessedArmor",
+    "new": 730,
+    "old": 461
+   }
+  ],
+  "d9": [
+   {
+    "kind": "AncientCultistSquidhead",
+    "new": 790,
+    "old": 521
+   }
+  ],
+  "f42": [
+   {
+    "kind": "Tumbleweed",
+    "new": 788,
+    "old": 354
+   }
+  ],
+  "g5": [
+   {
+    "kind": "RuneWizard",
+    "new": 789,
+    "old": 354
+   }
+  ],
+  "g8": [
+   {
+    "kind": "PinkJellyfish",
+    "new": 745,
+    "old": 356
+   },
+   {
+    "kind": "Antlion",
+    "new": 746,
+    "old": 357
+   },
+   {
+    "kind": "SpikeBall",
+    "new": 747,
+    "old": 358
+   },
+   {
+    "kind": "WallCreeper",
+    "new": 748,
+    "old": 366
+   },
+   {
+    "kind": "WallCreeperWall",
+    "new": 749,
+    "old": 367
+   },
+   {
+    "kind": "IceElemental",
+    "new": 750,
+    "old": 368
+   },
+   {
+    "kind": "Herpling",
+    "new": 751,
+    "old": 369
+   },
+   {
+    "kind": "Derpling",
+    "new": 752,
+    "old": 370
+   },
+   {
+    "kind": "CrimsonAxe",
+    "new": 753,
+    "old": 371
+   },
+   {
+    "kind": "FloatyGross",
+    "new": 754,
+    "old": 372
+   },
+   {
+    "kind": "LostGirl",
+    "new": 755,
+    "old": 373
+   },
+   {
+    "kind": "Nymph",
+    "new": 756,
+    "old": 374
+   },
+   {
+    "kind": "IceBat",
+    "new": 757,
+    "old": 380
+   },
+   {
+    "kind": "Lavabat",
+    "new": 758,
+    "old": 381
+   },
+   {
+    "kind": "GiantFlyingFox",
+    "new": 759,
+    "old": 382
+   },
+   {
+    "kind": "VampireBat",
+    "new": 760,
+    "old": 383
+   },
+   {
+    "kind": "RedDevil",
+    "new": 761,
+    "old": 387
+   },
+   {
+    "kind": "Vampire",
+    "new": 762,
+    "old": 388
+   }
+  ]
+ },
+ "moves_total": 72,
+ "plan_size": 389,
+ "tips": {
+  "c10": "15f93d134",
+  "c3": "9c54f4c0e",
+  "c4": "8abf0f1d8",
+  "c6": "5de680219",
+  "c7": "c2cc6ec61",
+  "c8": "10192602a",
+  "c9": "9252d6f31",
+  "d11": "121672908",
+  "d120": "2408233da",
+  "d125": "5a26ae348",
+  "d23": "b00e7626f",
+  "d33": "b08acf463",
+  "d34": "f0d92564e",
+  "d35": "8fa3b3dbf",
+  "d36": "8c5839b03",
+  "d37": "750d8e446",
+  "d38": "72b1092e7",
+  "d39": "048c74f8f",
+  "d40": "8fe1d6d31",
+  "d41": "1a1b07ff2",
+  "d42": "bac408be0",
+  "d43": "6fbe06250",
+  "d9": "88677f9de",
+  "e21": "4782d6631",
+  "e26": "a23c64933",
+  "f18": "a832d38ea",
+  "f42": "425d4ff9d",
+  "f47": "18fe75f2e",
+  "g10": "5dee28650",
+  "g5": "96f074959",
+  "g62": "7ec3df62b",
+  "g8": "1752c70df"
+ }
+}

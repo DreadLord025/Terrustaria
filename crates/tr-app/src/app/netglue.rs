@@ -3669,6 +3669,61 @@ fn npc_seed(
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
 
+        // W4-d37 — the NPCID 211-280 band's net seeds. The aiStyle-3 walkers
+        // plant their feet on the column surface (the wave-A walkers' shape);
+        // the flyers ride the hover ctor (the net state overwrites the
+        // position below); the pirate town NPC rides the guide ctor.
+        crate::npc::NpcKind::CochinealBeetle
+        | crate::npc::NpcKind::CyanBeetle
+        | crate::npc::NpcKind::LacBeetle
+        | crate::npc::NpcKind::SeaSnail
+        | crate::npc::NpcKind::JungleCreeper
+        | crate::npc::NpcKind::BloodCrawler
+        | crate::npc::NpcKind::IceGolem
+        | crate::npc::NpcKind::Eyezor
+        | crate::npc::NpcKind::ZombieMushroom
+        | crate::npc::NpcKind::ZombieMushroomHat
+        | crate::npc::NpcKind::AnomuraFungus
+        | crate::npc::NpcKind::MushiLadybug
+        | crate::npc::NpcKind::RustyArmoredBonesAxe
+        | crate::npc::NpcKind::RustyArmoredBonesFlail
+        | crate::npc::NpcKind::RustyArmoredBonesSword
+        | crate::npc::NpcKind::RustyArmoredBonesSwordNoArmor
+        | crate::npc::NpcKind::BlueArmoredBones
+        | crate::npc::NpcKind::BlueArmoredBonesMace
+        | crate::npc::NpcKind::BlueArmoredBonesNoPants
+        | crate::npc::NpcKind::BlueArmoredBonesSword
+        | crate::npc::NpcKind::HellArmoredBones
+        | crate::npc::NpcKind::HellArmoredBonesSpikeShield
+        | crate::npc::NpcKind::HellArmoredBonesMace
+        | crate::npc::NpcKind::HellArmoredBonesSword
+        | crate::npc::NpcKind::RainbowSlime
+        | crate::npc::NpcKind::GoldfishWalker => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::Pirate => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::Squid
+        | crate::npc::NpcKind::FlyingFish
+        | crate::npc::NpcKind::FlyingSnake
+        | crate::npc::NpcKind::HornetFatty
+        | crate::npc::NpcKind::HornetHoney
+        | crate::npc::NpcKind::HornetLeafy
+        | crate::npc::NpcKind::HornetSpikey
+        | crate::npc::NpcKind::HornetStingy
+        | crate::npc::NpcKind::Parrot
+        | crate::npc::NpcKind::JungleCreeperWall
+        | crate::npc::NpcKind::BlackRecluseWall
+        | crate::npc::NpcKind::BloodCrawlerWall
+        | crate::npc::NpcKind::BloodFeeder
+        | crate::npc::NpcKind::BloodJelly
+        | crate::npc::NpcKind::FungoFish
+        | crate::npc::NpcKind::FungiBulb
+        | crate::npc::NpcKind::GiantFungiBulb
+        | crate::npc::NpcKind::Reaper
+        | crate::npc::NpcKind::IchorSticker => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

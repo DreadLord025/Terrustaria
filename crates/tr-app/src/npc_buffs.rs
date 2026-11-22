@@ -554,6 +554,67 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Necromancer
         | NpcKind::NecromancerArmored
         | NpcKind::DiabolistRed => &[20, 31],
+        // W4-d37 — the NPCID 211-280 band's `DebuffImmunitySets` rows
+        // verbatim (`NPCID.cs:6075+`'s dictionary). The `[31]` Confused row:
+        // the beetles/snail/squid (`:7341`/`:7348`/`:7355`/`:7362`/`:7369`),
+        // the pirate + goldfish (`:7407`/`:7414`), the blood feeder/jelly
+        // (`:7491`/`:7498`), the fungo fish (`:7572`). The `[20, 31]` row:
+        // the hornets (`:7421`-`:7449`), the fungi bulbs (`:7581`/`:7588`).
+        // The `[20]` Poisoned row: the crawlers/wall crawlers/rainbow slime
+        // (`:7456`-`:7484`/`:7512`), the rusty + blue armored bones
+        // (`:7651`-`:7700`). The `[20, 31, 44, 324]` ice golem (`:7505`).
+        // The `[20, 69]` ichor sticker (`:7644`). The `[20, 24, 323]` hell
+        // armored bones (`:7707`-`:7728`). The null rows (no immunity): the
+        // flying fish/snake (`:7380`/`:7388`), eyezor/parrot (`:7557`/
+        // `:7558`), the mushroom zombies/anomura/mushi (`:7566`/`:7567`/
+        // `:7575`/`:7576`). The reaper's `ImmuneToAllBuffsThatAreNotWhips`
+        // (`:7559-7564`) is the documented mask-loop gap — `&[]` here.
+        NpcKind::CochinealBeetle
+        | NpcKind::CyanBeetle
+        | NpcKind::LacBeetle
+        | NpcKind::SeaSnail
+        | NpcKind::Squid
+        | NpcKind::Pirate
+        | NpcKind::GoldfishWalker
+        | NpcKind::BloodFeeder
+        | NpcKind::BloodJelly
+        | NpcKind::FungoFish => &[31],
+        NpcKind::HornetFatty
+        | NpcKind::HornetHoney
+        | NpcKind::HornetLeafy
+        | NpcKind::HornetSpikey
+        | NpcKind::HornetStingy
+        | NpcKind::FungiBulb
+        | NpcKind::GiantFungiBulb => &[20, 31],
+        NpcKind::JungleCreeper
+        | NpcKind::JungleCreeperWall
+        | NpcKind::BlackRecluseWall
+        | NpcKind::BloodCrawler
+        | NpcKind::BloodCrawlerWall
+        | NpcKind::RainbowSlime
+        | NpcKind::RustyArmoredBonesAxe
+        | NpcKind::RustyArmoredBonesFlail
+        | NpcKind::RustyArmoredBonesSword
+        | NpcKind::RustyArmoredBonesSwordNoArmor
+        | NpcKind::BlueArmoredBones
+        | NpcKind::BlueArmoredBonesMace
+        | NpcKind::BlueArmoredBonesNoPants
+        | NpcKind::BlueArmoredBonesSword => &[20],
+        NpcKind::IceGolem => &[20, 31, 44, 324],
+        NpcKind::IchorSticker => &[20, 69],
+        NpcKind::HellArmoredBones
+        | NpcKind::HellArmoredBonesSpikeShield
+        | NpcKind::HellArmoredBonesMace
+        | NpcKind::HellArmoredBonesSword => &[20, 24, 323],
+        NpcKind::FlyingFish
+        | NpcKind::FlyingSnake
+        | NpcKind::Eyezor
+        | NpcKind::Parrot
+        | NpcKind::Reaper
+        | NpcKind::ZombieMushroom
+        | NpcKind::ZombieMushroomHat
+        | NpcKind::AnomuraFungus
+        | NpcKind::MushiLadybug => &[],
     }
 }
 

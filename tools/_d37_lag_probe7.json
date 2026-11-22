@@ -1,0 +1,88 @@
+{
+ "c9_ak": {
+  "decl": 279,
+  "decl_line": 24358,
+  "pin": 279,
+  "rows": 279,
+  "tip": "9252d6f31"
+ },
+ "d125_ak": {
+  "decl": 272,
+  "decl_line": 24009,
+  "pin": 270,
+  "rows": 272,
+  "tip": "5a26ae348"
+ },
+ "d23_ak": {
+  "decl": 293,
+  "decl_line": 24338,
+  "pin": 293,
+  "rows": 293,
+  "tip": "b00e7626f"
+ },
+ "d34_ak": {
+  "decl": 290,
+  "decl_line": 24461,
+  "pin": 290,
+  "rows": 290,
+  "tip": "f0d92564e"
+ },
+ "d34_new_cs": {
+  "Antlion": 69,
+  "Crab": 67,
+  "DungeonGuardian": 68,
+  "PinkJellyfish": 64,
+  "SpikeBall": 70
+ },
+ "d34_new_update": {
+  "Antlion": "NpcKind::Antlion => {}",
+  "Crab": "NpcKind::Crab => self.update_skeleton(world, player, dt),",
+  "DungeonGuardian": "NpcKind::DungeonGuardian => self.update_skeletron(world, player, rng, false),",
+  "PinkJellyfish": "NpcKind::PinkJellyfish => self.update_jellyfish(world, player),",
+  "SpikeBall": "NpcKind::SpikeBall => {}"
+ },
+ "d36_ak": {
+  "decl": 278,
+  "decl_line": 23937,
+  "pin": 278,
+  "rows": 278,
+  "tip": "8c5839b03"
+ },
+ "d38_281_290": {
+  "BoneLee": 287,
+  "DiabolistRed": 285,
+  "DiabolistWhite": 286,
+  "DungeonSpirit": 288,
+  "GiantCursedSkull": 289,
+  "Necromancer": 283,
+  "NecromancerArmored": 284,
+  "Paladin": 290,
+  "RaggedCaster": 281,
+  "RaggedCasterOpenCoat": 282
+ },
+ "d41_ak": {
+  "decl": 303,
+  "decl_line": 25302,
+  "pin": 303,
+  "rows": 303,
+  "tip": "1a1b07ff2"
+ },
+ "e21_cs": {
+  "Bunny": 46,
+  "PartyBunny": 540
+ },
+ "e26_ak": {
+  "decl": 273,
+  "decl_line": 23838,
+  "pin": 273,
+  "rows": 273,
+  "tip": "a23c64933"
+ },
+ "g8_ak": {
+  "decl": 270,
+  "decl_line": 25412,
+  "pin": 270,
+  "rows": 305,
+  "tip": "1752c70df"
+ }
+}

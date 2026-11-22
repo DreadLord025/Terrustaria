@@ -107,6 +107,9 @@ fn vanilla_type(kind: NpcKind) -> i32 {
         // C#'s type-57 branches are the shared wet/dry machine (no 57-only
         // arm; the critter exclusion `:23700` keeps it OUT, so it chases).
         NpcKind::CorruptGoldfish => 57,
+        // W4-d37 — the Blood Feeder (241) rides the generic aiStyle-16
+        // wet/dry machine (`NPC.cs:23824-23961`, the 0.1/0.1 chase + bob).
+        NpcKind::BloodFeeder => 241,
         _ => unreachable!("only aiStyle-16 kinds reach the family arm"),
     }
 }

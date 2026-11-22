@@ -651,6 +651,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(D38_B6_SHEETS)
             .chain(D38_B7_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(D37_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1268,6 +1269,14 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-d37 — the NPCID 211-280 band's three Hide=true bestiary folds
+        // draw their OWN sheets (the credit folds onto the visible twin,
+        // but `TextureAssets.Npc[type]` is the kind's own — the ForceBubble
+        // precedent): 230 the goldfish walker, 236 the jungle creeper,
+        // 239 the blood crawler.
+        NpcKind::GoldfishWalker => 230,
+        NpcKind::JungleCreeper => 236,
+        NpcKind::BloodCrawler => 239,
         _ => kind.net_id() as u16,
     }
 }
@@ -1443,6 +1452,23 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     67, 68, // phase 4 (merge-side: 64/69/70 dropped, g8-owned — 367 §1)
 ];
 
+/// W4-d37 — the NPCID 211-280 band's own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`. The three Hide=true
+/// bestiary folds (230/236/239) still draw their OWN sheet here (the
+/// `texture_net_id` rows) — the credit fold is bestiary-only.
+pub(crate) const D37_SHEETS: &[u32] = &[
+    217, 218, 219, 220, 221, // the beetles + snail + squid
+    224, 226, // the flying fish + snake
+    229, 230, // the pirate + goldfish walker
+    231, 232, 233, 234, 235, // the hornets
+    236, 237, 238, 239, 240, // the crawlers + wall crawlers
+    241, 242, 243, 244, // the blood feeder/jelly, ice golem, rainbow slime
+    251, 252, 253, 254, 255, // eyezor, parrot, reaper, mushroom zombies
+    256, 257, 258, 259, 260, // the fungi family
+    268, // the ichor sticker
+    269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, // armored bones
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3596,6 +3622,60 @@ pub(crate) fn draw_npcs(
             }
             // W4-d38 b1 — own NPC_285 sheet, generic centred anchor.
             NpcKind::DiabolistRed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d37 — the NPCID 211-280 band draws its OWN sheet
+            // (`TextureAssets.Npc[type]`, the `D37_SHEETS` rows) at
+            // `SetFrameSize`'s integer-division row height over
+            // `Main.npcFrameCount[type]` (`Main.cs:67082`) with the generic
+            // centred anchor (`Main.cs:25511-25516`) — the wave-A shape.
+            NpcKind::CochinealBeetle
+            | NpcKind::CyanBeetle
+            | NpcKind::LacBeetle
+            | NpcKind::SeaSnail
+            | NpcKind::Squid
+            | NpcKind::FlyingFish
+            | NpcKind::FlyingSnake
+            | NpcKind::Pirate
+            | NpcKind::GoldfishWalker
+            | NpcKind::HornetFatty
+            | NpcKind::HornetHoney
+            | NpcKind::HornetLeafy
+            | NpcKind::HornetSpikey
+            | NpcKind::HornetStingy
+            | NpcKind::JungleCreeper
+            | NpcKind::JungleCreeperWall
+            | NpcKind::BlackRecluseWall
+            | NpcKind::BloodCrawler
+            | NpcKind::BloodCrawlerWall
+            | NpcKind::BloodFeeder
+            | NpcKind::BloodJelly
+            | NpcKind::IceGolem
+            | NpcKind::RainbowSlime
+            | NpcKind::Eyezor
+            | NpcKind::Parrot
+            | NpcKind::Reaper
+            | NpcKind::ZombieMushroom
+            | NpcKind::ZombieMushroomHat
+            | NpcKind::FungoFish
+            | NpcKind::AnomuraFungus
+            | NpcKind::MushiLadybug
+            | NpcKind::FungiBulb
+            | NpcKind::GiantFungiBulb
+            | NpcKind::IchorSticker
+            | NpcKind::RustyArmoredBonesAxe
+            | NpcKind::RustyArmoredBonesFlail
+            | NpcKind::RustyArmoredBonesSword
+            | NpcKind::RustyArmoredBonesSwordNoArmor
+            | NpcKind::BlueArmoredBones
+            | NpcKind::BlueArmoredBonesMace
+            | NpcKind::BlueArmoredBonesNoPants
+            | NpcKind::BlueArmoredBonesSword
+            | NpcKind::HellArmoredBones
+            | NpcKind::HellArmoredBonesSpikeShield
+            | NpcKind::HellArmoredBonesMace
+            | NpcKind::HellArmoredBonesSword => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
