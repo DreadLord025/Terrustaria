@@ -2102,6 +2102,30 @@ pub struct Player {
     /// one snapshot per footstep tick, drained on the `UpdatePlayers` stream
     /// right after the footstep sound (`player_dust::drain_fast_run`).
     pending_fast_run_dust: Option<FastRunDust>,
+    /// W4-f6 wiring — the tick's queued mount dust events
+    /// (`Mount.DoSpawnDust` / `DoFailedDismountDust` / the `UpdateFrame`
+    /// per-type extras, the `pending_sticky_dust` convention): the drain
+    /// calls `mount_dust::drain_mount_dust` on the `UpdatePlayers` stream.
+    pending_mount_dust: Vec<crate::mount_dust::MountDustRequest>,
+    /// W4-f6 wiring — `Player.basiliskCharge` (`Player.cs:842`): the
+    /// Basilisk's charge accumulator (`Mount.cs:4089-4093` folds it,
+    /// `:4121-4133` reads it). PLAYER state — survives the dismount (the
+    /// vanilla never zeroes it outside the case-14 slow arm).
+    pub basilisk_charge: f32,
+    /// W4-f6 wiring — `Main.timeForVisualEffects` (`Main.cs:1181`, the
+    /// per-update tick counter wrapped at 216000, `:17162-17164`): the
+    /// Pixie tail's even-tick gate reads it (`Mount.cs:5147`). The world-sim
+    /// sets it from the update count before each tick (the `frame_inputs`
+    /// convention); the pure `update` path leaves 0.
+    pub time_for_visuals: f64,
+    /// W4-f6 wiring — `Main.WindForVisuals` (= `windSpeedCurrent`,
+    /// `Main.cs:2823`): the Witch Broom trinket sway reads it
+    /// (`Mount.cs:3572`). The world-sim sets it before each tick.
+    pub wind_for_visuals: f32,
+    /// W4-f6 wiring — `WorldGen.InAPlaceWithWind(Center.ToTileCoordinates(),
+    /// 1, 1)` (`Mount.cs:3568`): the trinket sway's wind-exposure gate. The
+    /// world-sim sets it before each tick (needs `&World` + the wind model).
+    pub wind_in_place: bool,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3073,6 +3097,11 @@ impl Player {
             pending_jump_dust: None,
             pending_dash_dust: None,
             pending_fast_run_dust: None,
+            pending_mount_dust: Vec::new(),
+            basilisk_charge: 0.0,
+            time_for_visuals: 0.0,
+            wind_for_visuals: 0.0,
+            wind_in_place: false,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3875,6 +3904,7 @@ impl Player {
         self.pending_jump_dust = None;
         self.pending_dash_dust = None;
         self.pending_fast_run_dust = None;
+        self.pending_mount_dust.clear();
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -3919,8 +3949,10 @@ impl Player {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
-        // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
-        let _ = self.dismount(world, true);
+        // `Player.KillMe` -> `mount.Dismount(this)` (`Player.cs:38907`):
+        // the default `ignoreEffect = false` — the spawn dust fires
+        // (W4-f6; the old `true` was the no-dust-system stand-in).
+        let _ = self.dismount(world, false);
         // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
         // legacy "Player Killed" id 5 (`Player.cs:38737`, the default arm).
         self.pending_death_sound = Some("Player_Killed");
@@ -7962,6 +7994,7 @@ impl Player {
                     body_h,
                     10,
                     pre_rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
             if flags.bouncy_bumper() {
@@ -8155,6 +8188,49 @@ impl Player {
         self.left_prev = input.left;
     }
 
+    /// W4-f6 wiring — `Mount.UpdateFrame` (`Mount.cs:3581`) with the
+    /// per-type extras head (`:3637-4142`): the Basilisk charge fold runs
+    /// player-side (`Player.basiliskCharge` survives the dismount), the
+    /// extras queue their dusts onto `pending_mount_dust` (the drain draws
+    /// on `UpdatePlayers`), and the possibly re-routed state feeds the
+    /// frame-table switch. The five `PlayerFrame` call sites
+    /// (`Player.cs:36200-36216` + `TryLanding` `Mount.cs:4566`) route here.
+    fn mount_update_frame(&mut self, state: i32) {
+        // `:4083-4093` — the charge fold (case 14 only; the emitter reads
+        // the POST-fold value).
+        if self.mount.kind() == 14 {
+            self.basilisk_charge = crate::mount_dust::basilisk_charge_update(
+                self.basilisk_charge,
+                self.vx,
+                self.mount.run_speed(),
+            );
+        }
+        let (cx, cy) = self.center();
+        let snap = crate::mount_dust::MountFrameSnap {
+            pos_x: self.x,
+            pos_y: self.y,
+            center_x: cx,
+            center_y: cy,
+            width: self.width,
+            height: self.height,
+            facing: self.facing,
+            basilisk_charge: self.basilisk_charge,
+        };
+        let mut reqs = Vec::new();
+        let state = self.mount.frame_extras(state, self.vx, self.vy, &snap, &mut reqs);
+        self.pending_mount_dust.extend(reqs);
+        self.mount.update_frame(
+            state,
+            self.vx,
+            self.vy,
+            self.just_jumped,
+            self.control_down,
+            self.sliding,
+            self.dash,
+            self.dash_delay,
+        );
+    }
+
     /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
     /// still air/fly, a 4px-down tile probe snapping shut pulls the frame to
     /// the grounded set on the touchdown tick (the C# re-probes
@@ -8189,17 +8265,7 @@ impl Player {
             } else {
                 crate::mount::FRAME_RUNNING
             };
-            self.mount
-                .update_frame(
-                    state,
-                    self.vx,
-                    self.vy,
-                    self.just_jumped,
-                    self.control_down,
-                    self.sliding,
-                    self.dash,
-                    self.dash_delay,
-                );
+            self.mount_update_frame(state);
         }
     }
 
@@ -8263,42 +8329,15 @@ impl Player {
                     // `:36199-36200`: `TryBeginningFlight` only fires for
                     // hover mounts (`Mount.cs:4537` — none in this table);
                     // the Rudolph dust trail is a visual seam.
-                    self.mount.update_frame(
-                        crate::mount::FRAME_FLYING,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_FLYING);
                     self.try_landing(world);
                 } else if self.wet {
                     // `:36203-36206`: the swim state (the ground mounts'
                     // swim sets reuse their in-air frames).
-                    self.mount.update_frame(
-                        crate::mount::FRAME_SWIMMING,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_SWIMMING);
                 } else {
                     // `:36207-36212`: plain air.
-                    self.mount.update_frame(
-                        crate::mount::FRAME_IN_AIR,
-                        self.vx,
-                        self.vy,
-                        self.just_jumped,
-                        self.control_down,
-                        self.sliding,
-                        self.dash,
-                        self.dash_delay,
-                    );
+                    self.mount_update_frame(crate::mount::FRAME_IN_AIR);
                     self.try_landing(world);
                 }
             } else {
@@ -8312,16 +8351,7 @@ impl Player {
                 } else {
                     crate::mount::FRAME_RUNNING
                 };
-                self.mount.update_frame(
-                    state,
-                    self.vx,
-                    self.vy,
-                    self.just_jumped,
-                    self.control_down,
-                    self.sliding,
-                    self.dash,
-                    self.dash_delay,
-                );
+                self.mount_update_frame(state);
             }
         }
 
@@ -9590,12 +9620,247 @@ impl Player {
         self.buffs.clear_buff(bt);
     }
 
+    /// W4-f6 wiring — `Mount.DoSpawnDust`'s request (`Mount.cs:6371`): the
+    /// resolved box `r` (`:6439-6459`) computed at the C# read moment (the
+    /// GROWN hitbox for a mount, the pre-restore box for a dismount —
+    /// `Dismount` calls it BEFORE `Reset` + the 20×42 restore, `:6167-6176`).
+    /// The emitter itself drains on the `UpdatePlayers` stream via
+    /// `mount_dust::drain_mount_dust` (the `pending_sticky_dust` convention).
+    fn queue_spawn_dust(&mut self, kind: i32, is_dismounting: bool) {
+        let Some(row) = crate::mount::mount_data(kind) else {
+            return;
+        };
+        let pos = Vec2::new(self.x, self.y);
+        let vel = Vec2::new(self.vx, self.vy);
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        // `:6439` — the default box: `(int)position.X - 20, (int)position.Y,
+        // width + 40, height` (the truncating int casts).
+        let mut r_top_left = Vec2::new(pos.x as i32 as f32 - 20.0, pos.y as i32 as f32);
+        let mut r_w = self.width as i32 + 40;
+        let mut r_h = self.height as i32;
+        // `:6440-6452` — the Bat (56) / Pixie (61) box: the dismount reads
+        // the Bottom-anchored DefaultSize (20×42), the mount the live
+        // hitbox; both inflate (10, 10).
+        if kind == 56 || kind == 61 {
+            if is_dismounting {
+                let bottom = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                r_top_left = Vec2::new(
+                    bottom.x as i32 as f32 - (WIDTH as i32 / 2) as f32,
+                    bottom.y as i32 as f32 - HEIGHT as i32 as f32,
+                );
+                r_w = WIDTH as i32;
+                r_h = HEIGHT as i32;
+            } else {
+                r_top_left = Vec2::new(pos.x as i32 as f32, pos.y as i32 as f32);
+                r_w = self.width as i32;
+                r_h = self.height as i32;
+            }
+            r_top_left -= Vec2::new(10.0, 10.0);
+            r_w += 20;
+            r_h += 20;
+        }
+        // `:6453-6459` — the roller skates' bottom strip.
+        if kind > 0 && crate::mount::is_roller_skates(kind) {
+            let num3 = self.width as i32 / 2;
+            r_top_left = Vec2::new(
+                cx as i32 as f32 - num3 as f32 - 10.0,
+                (self.y + self.height) as i32 as f32 - 10.0,
+            );
+            r_w = (num3 + 20).max(1);
+            r_h = 10;
+        }
+        self.pending_mount_dust
+            .push(crate::mount_dust::MountDustRequest::Spawn {
+                kind,
+                spawn_dust: row.spawn_dust,
+                spawn_dust_no_gravity: row.spawn_dust_no_gravity,
+                // `MountID.Sets.Cart` (`:6462`) — the full 27-cart set.
+                is_cart: crate::mount::is_cart(kind),
+                is_dismounting,
+                pos,
+                width: self.width as i32,
+                height: self.height as i32,
+                r_top_left,
+                r_w,
+                r_h,
+                vel,
+                center,
+            });
+    }
+
+    /// Takes the tick's queued mount dust events (`Mount.DoSpawnDust` /
+    /// `DoFailedDismountDust` / the `UpdateFrame` + `UpdateEffects` arms) —
+    /// the caller owns `Main.dust` + the `UpdatePlayers` stream (the
+    /// `take_sticky_dust` convention).
+    pub(crate) fn take_mount_dust(&mut self) -> Vec<crate::mount_dust::MountDustRequest> {
+        std::mem::take(&mut self.pending_mount_dust)
+    }
+
+    /// W4-f6 wiring — `Mount.UpdateEffects`' dust-bearing switch arms
+    /// (`Mount.cs:4804-5165`): the gem carts 25-31 (`:4858-4878`), the Witch
+    /// Broom 23 sparkle + trail (`:4815-4856`), the Drill-mount 11 trail
+    /// (`:5016-5078`), the Lava-cart 22 trail (`:5080-5114`), the
+    /// steam/exhaust/confetti carts 36/32/34 (`:5124-5132`) and the Pixie 61
+    /// tail (`:5142-5165`). The caller folds the `RotatedRelativePoint`
+    /// anchors (`player.rs::rotated_relative_point`); the emitters draw on
+    /// `UpdatePlayers` via the drain. `Directions` = `(facing, 1)` (no
+    /// gravity flip). The `Lighting.AddLight` heads + the shader writes are
+    /// the documented drops (mount_dust.rs module doc).
+    fn queue_mount_effect_dust(&mut self) {
+        use crate::mount_dust::MountDustRequest as Req;
+        let kind = self.mount.kind();
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        let vel = Vec2::new(self.vx, self.vy);
+        let dir = Vec2::new(self.facing as f32, 1.0);
+        match kind {
+            // `:4858-4878` — the gem carts (the per-cart dust id).
+            25..=31 => {
+                let dust_type = match kind {
+                    25 => 86, 26 => 87, 27 => 88, 28 => 89,
+                    29 => 90, 30 => 91, _ => 262,
+                };
+                // `:4702-4703` — Center + (0,10)*Directions, rotated.
+                let spawn_point = self.rotated_relative_point(center + Vec2::new(0.0, 10.0) * dir, 0);
+                self.pending_mount_dust.push(Req::GemSparkle { spawn_point, dust_type });
+            }
+            // `:4815-4856` — the Witch Broom sparkle + trail.
+            23 => {
+                // `:4817-4819` — the trinket point (the RNG-free swing).
+                let rot = crate::mount_dust::witch_broom_trinket_rotation(
+                    self.vx, self.misc_counter, self.wind_for_visuals, self.wind_in_place,
+                );
+                let offset = crate::mount_dust::witch_broom_trinket_origin_offset(self.facing);
+                let rv = Vec2::new(
+                    (rot + std::f32::consts::FRAC_PI_2).cos(),
+                    (rot + std::f32::consts::FRAC_PI_2).sin(),
+                );
+                let trinket_point = self.rotated_relative_point(center + offset + rv * 11.0, 0);
+                self.pending_mount_dust.push(Req::BroomSparkle { trinket_point });
+                // `:4834-4838` — the trail anchors. The pos4 jitter NextFloat
+                // draws inside the emitter (BEFORE the gate, :4835) and the
+                // drain folds it through `rotated_relative_point`; the caller
+                // passes the un-jittered base + the rotated pos5.
+                let pos4_base = center + Vec2::new(18.0, 12.0);
+                let pos5 = self.rotated_relative_point(center + Vec2::new(52.0 * self.facing as f32, -6.0), 0);
+                self.pending_mount_dust.push(Req::BroomTrail {
+                    pos4_base, pos5, facing: self.facing,
+                    full_rotation: self.full_rotation, vel_len: vel.length(),
+                });
+            }
+            // `:5016-5078` — the Drill-mount trail (the vector6/7 folds).
+            11 => {
+                let (anchor_now, anchor_old) = self.drill_trail_anchors();
+                self.pending_mount_dust.push(Req::DrillTrail { center, anchor_now, anchor_old });
+            }
+            // `:5080-5114` — the Lava-cart trail (the shadow-offset anchors).
+            22 => {
+                let (value, anchor, delta) = self.lava_trail_anchors();
+                self.pending_mount_dust.push(Req::LavaTrail { value, anchor, delta, vel_len: vel.length() });
+            }
+            // `:5124-5132` — the steam/exhaust/confetti carts.
+            36 => {
+                let spawn_point = self.rotated_relative_point(center + Vec2::new(-10.0, -4.0) * dir, 0);
+                self.pending_mount_dust.push(Req::SteamPuff {
+                    spawn_point, dust_type: 303, vx: self.vx, frame: self.mount.frame(),
+                });
+            }
+            32 => {
+                self.pending_mount_dust.push(Req::ExhaustSmoke {
+                    center, facing: self.facing, vel, dust_type: 31,
+                });
+            }
+            34 => {
+                self.pending_mount_dust.push(Req::ConfettiBurst { center, facing: self.facing, vel });
+            }
+            // `:5142-5165` — the Pixie tail.
+            61 => {
+                self.pending_mount_dust.push(Req::PixieTail {
+                    center, vel, time_for_visuals: self.time_for_visuals,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-f6 wiring — the Drill-mount trail anchors (`Mount.cs:5035-5051`):
+    /// `vector6 = (num9*num8, -19).RotatedBy(fullRotation)`, `vector7` the
+    /// Lerp pair (scaled when `num8 == Sign(fullRotation)`), `vector8 =
+    /// Bottom + vector6 + vector7`, `vector9 = oldPosition + Size*(0.5,1) +
+    /// vector6 + vector7`. `num8 = Sign(vx)` (facing when 0), `num9 = -24`
+    /// (-22 when facing != num8, +1 when num8 == -1). RNG-free.
+    fn drill_trail_anchors(&self) -> (Vec2, Vec2) {
+        let sign_i = |v: f32| if v > 0.0 { 1 } else if v < 0.0 { -1 } else { 0 };
+        let mut num8 = sign_i(self.vx);
+        if num8 == 0 {
+            num8 = self.facing; // `:5021-5024`
+        }
+        let mut num9 = -24.0f32;
+        if self.facing != num8 {
+            num9 = -22.0; // `:5036-5039`
+        }
+        if num8 == -1 {
+            num9 += 1.0; // `:5040-5043`
+        }
+        let rot = self.full_rotation;
+        let vector6 = crate::bow_launch::rotated_by(Vec2::new(num9 * num8 as f32, -19.0), rot as f64);
+        // `:5045` — the Lerp pair, both rotated by fullRotation.
+        let t = rot / (std::f32::consts::PI / 4.0);
+        let mut vector7 = crate::bow_launch::rotated_by(
+            Vec2::new(
+                0.0 + (-8.0 - 0.0) * t,
+                0.0 + (2.0 - 0.0) * t.abs(),
+            ),
+            rot as f64,
+        );
+        // `:5046-5049` — the scale when num8 == Sign(fullRotation).
+        if num8 == sign_i(rot) {
+            vector7 *= 1.0 + (0.6 - 1.0) * t.abs();
+        }
+        let bottom = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+        let anchor_now = bottom + vector6 + vector7; // `:5050`
+        let anchor_old = Vec2::new(self.old_x, self.old_y)
+            + Vec2::new(self.width * 0.5, self.height)
+            + vector6 + vector7; // `:5051`
+        (anchor_now, anchor_old)
+    }
+
+    /// W4-f6 wiring — the Lava-cart trail anchors (`Mount.cs:5083-5093`):
+    /// `vector2 = Center + (20,10)*Directions`, `pos = vector2 + velocity`,
+    /// `pos2 = vector2 + (-1,-0.5)*Directions`, all folded through
+    /// `RotatedRelativePoint`; `value = shadowPos[2] - position + vector2`,
+    /// then `vector3 = pos - vector2` added to both `vector2` and `value`,
+    /// `vector4 = pos - pos2`. The port has no advanced shadows
+    /// (`shadowPos[2] == position`, the `ResetAdvancedShadows` default), so
+    /// `value` starts at `vector2`. RNG-free.
+    fn lava_trail_anchors(&self) -> (Vec2, Vec2, Vec2) {
+        let (cx, cy) = self.center();
+        let center = Vec2::new(cx, cy);
+        let dir = Vec2::new(self.facing as f32, 1.0);
+        let vel = Vec2::new(self.vx, self.vy);
+        let vector2 = center + Vec2::new(20.0, 10.0) * dir;
+        let pos = vector2 + vel;
+        let pos2 = vector2 + Vec2::new(-1.0, -0.5) * dir;
+        let vector2 = self.rotated_relative_point(vector2, 0);
+        let pos = self.rotated_relative_point(pos, 0);
+        let pos2 = self.rotated_relative_point(pos2, 0);
+        // `:5089` — shadowPos[2] - position == 0 (no advanced shadows).
+        let mut value = vector2;
+        let vector3 = pos - vector2;
+        let anchor = vector2 + vector3; // `:5091`
+        value += vector3; // `:5092`
+        let delta = pos - pos2; // `:5093`
+        (value, anchor, delta)
+    }
+
     /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
     /// swap, the buff clear/add (`:6203`/`:6226`), the swap resets
     /// (`:6205-6213`), the pirate-ship dash reset (`:6228-6235`), the
     /// PlayerSize-delegate resize (`:6244-6263` — Rat 14×14, Bat 20×18,
     /// Pixie 8×14) or the bottom-anchored `42 + heightBoost` growth
     /// (`:6264-6277`), and the Chillet sound queue (`:6283-6286`).
+    /// W4-f6: the `DoSpawnDust` queue (`:6300`) runs after the growth.
     pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
         let Some(equip) = self.mount.set_mount(m, wet) else {
             return false;
@@ -9652,6 +9917,9 @@ impl Player {
             let (cx, cy) = self.center();
             self.pending_chillet_sound = Some((cx, cy));
         }
+        // `:6300` — `DoSpawnDust(mountedPlayer, isDismounting: false)` after
+        // `FinalizeMountData`, on the GROWN hitbox (W4-f6 wiring).
+        self.queue_spawn_dust(m, false);
         true
     }
 
@@ -9666,9 +9934,10 @@ impl Player {
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
     /// (`:6150`), the transformation mounts' `noItems` restore (`:6152-6155`),
     /// the cart flip/boost clears (`:6156-6160`), the full-rotation reset
-    /// (`:6161-6162`) and the 20×42 hitbox restore (`:6176-6193`).
-    /// `ignore_effect` stands in for the spawn dust (`:6167-6170` — no dust
-    /// system yet). The petting stop (`:6163-6166`) has no port counterpart.
+    /// (`:6161-6162`), the `DoSpawnDust` queue (`:6167-6170`, W4-f6 — BEFORE
+    /// the state clears, on the still-mounted hitbox) and the 20×42 hitbox
+    /// restore (`:6176-6193`). The petting stop (`:6163-6166`) has no port
+    /// counterpart.
     pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         // `:6148` — `bool cart = this.Cart` is read BEFORE the state clears
         // (`Mount.Cart` = `Minecart && _active`, `Mount.cs:530-540`).
@@ -9678,10 +9947,17 @@ impl Player {
                 .data()
                 .is_some_and(|d| d.minecart);
         let was_type = self.mount.kind();
+        if !self.mount.is_active() {
+            return false; // `:6144-6147`
+        }
+        // `:6167-6170` — `DoSpawnDust(isDismounting: true)` runs while the
+        // mount data is still live (`Reset` is `:6171`), on the mounted box.
+        if !ignore_effect {
+            self.queue_spawn_dust(was_type, true);
+        }
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
-        let _ = ignore_effect;
         self.clear_buff_type(buff);
         // `:6152-6155` — the Rat (55) / Bat (56) transformation mounts free
         // the item lock unless Cursed keeps it.
@@ -9902,10 +10178,28 @@ impl Player {
             self.failed_no_space_count += 1;
             if self.failed_no_space_count < 3 {
                 // `:6057` — `PlaySound(0, (int)position.X, (int)position.Y)`;
-                // the case-0 Dig draws ride the drain's stream. The
-                // `DoFailedDismountDust` (`:6058`) is a visual seam (no dust
-                // request channel for mounts yet — ANALYSIS).
+                // the case-0 Dig draws ride the drain's stream.
                 self.pending_no_space_sound = Some((self.x.trunc(), self.y.trunc()));
+                // `:6058` — `DoFailedDismountDust(this, FailedNoSpaceCount *
+                // 20)` (W4-f6 wiring): the hitbox inflates (10, 10)
+                // (`Mount.cs:6335-6336`); the emitter drains on the tick's
+                // `UpdatePlayers` stream AFTER the tink's case-0 draws.
+                if let Some(row) = crate::mount::mount_data(self.mount.kind()) {
+                    let (cx, cy) = self.center();
+                    self.pending_mount_dust.push(
+                        crate::mount_dust::MountDustRequest::FailedDismount {
+                            kind: self.mount.kind(),
+                            spawn_dust: row.spawn_dust,
+                            spawn_dust_no_gravity: row.spawn_dust_no_gravity,
+                            hitbox_top_left: Vec2::new(self.x - 10.0, self.y - 10.0),
+                            hitbox_w: self.width as i32 + 20,
+                            hitbox_h: self.height as i32 + 20,
+                            dust_amount: self.failed_no_space_count * 20,
+                            vel: Vec2::new(self.vx, self.vy),
+                            center: Vec2::new(cx, cy),
+                        },
+                    );
+                }
                 return None;
             }
             // `:6061-6066`: the third strike forces the dismount
@@ -10106,11 +10400,17 @@ impl Player {
         // `Mount.cs:5137-5145` (`UpdateEffects` cases 55/56/61): the
         // transformation mounts lock item use every tick
         // (`IsAllowedToHoldItems = false` rides the draw's
-        // `mounted_blocks_hold`; the Pixie's dust tail `:5146-5160` is the
-        // visual seam).
+        // `mounted_blocks_hold`).
         if matches!(self.mount.kind(), 55 | 56 | 61) {
             self.no_items = true;
         }
+        // W4-f6 wiring — the `UpdateEffects` dust arms (the switch at
+        // `Mount.cs:4804`), queued at their case positions: the gem carts
+        // (:4858-4878) run BEFORE the stat arms below, the steam/exhaust/
+        // confetti (:5124-5132) + the Pixie tail (:5142-5165) after them.
+        // The emitters drain on `UpdatePlayers` (the `pending_mount_dust`
+        // channel); the caller folds the `RotatedRelativePoint` anchors.
+        self.queue_mount_effect_dust();
         // `Mount.cs:4949-4981`: the ground-dash mounts arm their extra jumps
         // (the PHYS-8 priority chain consumes them) and pin knockback off
         // above the charge speed. The Santank's (46) jump rides the
@@ -10684,6 +10984,7 @@ impl Player {
             height as i32,
             25,
             self.full_rotation,
+            minecart::spark_variant_of(self.mount.kind()),
         );
         true
     }
@@ -10992,6 +11293,7 @@ impl Player {
                     vel,
                     max_run,
                     rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
         } else if self.control_right && self.vx < self.max_run_speed {
@@ -11033,6 +11335,7 @@ impl Player {
                     vel,
                     max_run,
                     rotation,
+                    minecart::spark_variant_of(self.mount.kind()),
                 );
             }
         } else if self.control_left && self.vx > -self.acc_run_speed && self.dash_delay >= 0 {
@@ -18712,6 +19015,7 @@ mod tests {
                 Vec2::new(vel_x, 0.0),
                 13.0,
                 0.0,
+                crate::minecart::SparkVariant::Sparks,
             );
             if sparks.len() == want {
                 return s;

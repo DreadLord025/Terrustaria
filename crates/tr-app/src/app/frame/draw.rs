@@ -186,6 +186,10 @@ impl App {
             // (`TileDrawing.cs:8717`, `!Main.gamePaused`) — snapshotted before
             // the field destructuring (the pass borrows `entity_lights` mutably).
             let game_paused_for_specials = self.game_paused;
+            // W4-f6 wiring: the dust spawn ctx for the draw-side emitters
+            // (lava bubbles + pylon/void-lens) — snapshotted before the
+            // destructure (it reads camera/zoom, which the block borrows).
+            let draw_spawn_ctx = self.spawn_ctx();
             // The achievement popup's click target (`InGamePopups.cs:138`'s
             // `OpenAchievementsAndGoto`) — parked here because the goto
             // mutates `self` while the draw destructure holds its fields;
@@ -1346,6 +1350,11 @@ impl App {
                             // `Main.*CageFrame` tables (TileDrawing.cs:474/
                             // :5672-5907).
                             &mut self.cage_anim,
+                            // W4-f6 wiring: the lava-bubble private stream +
+                            // the pool/ctx (`LiquidRenderer._random`, :132).
+                            &mut self.liquid_rand,
+                            dust,
+                            &draw_spawn_ctx,
                         );
                         *world_key = Some(key);
                     }
@@ -1398,6 +1407,9 @@ impl App {
                             lens_counter: self.game_update_count % 40,
                             show_invisible: crate::env::show_invisible(),
                         };
+                        // W4-f6 wiring: the special-tile dust rolls — the
+                        // pylon gates on the private `tile_draw_rand`, the
+                        // void lens + the pylon spawn on the bare global.
                         crate::render::pylons::draw_pylons_trophies_void(
                             renderer,
                             world,
@@ -1410,6 +1422,10 @@ impl App {
                             &special_env,
                             game_paused_for_specials,
                             &mut self.entity_lights,
+                            &mut self.tile_draw_rand,
+                            self.rngs.global(),
+                            dust,
+                            &draw_spawn_ctx,
                         );
                     }
 
@@ -1444,10 +1460,10 @@ impl App {
                     // world-effect range as the rain (`Main.DrawRain`'s draw call
                     // site — world content, under the map batches and the UI).
                     crate::sand::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
-                    // The type-213 wheel sparks — `Main.DrawDust`'s generic
-                    // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
-                    // world-content range as the rain/sand dust.
-                    crate::minecart::draw(dust, renderer, lookups, draw_cam, world_zoom, screen);
+                    // The cart wheel sparks (213/260/211/107) — `Main.DrawDust`'s
+                    // self-lit 213|260 gray + the light-tinted 211/107 generic
+                    // path, the same world-content range as the rain/sand dust.
+                    crate::minecart::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
                     crate::render::foliage::draw_leaves(
                         renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
                     );

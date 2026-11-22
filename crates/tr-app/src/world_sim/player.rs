@@ -1193,6 +1193,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `Player.miscCounter++` (`Player.cs:31827`): the sandstorm leg
             // pose's 4-tick turn cadence reads it.
             p.misc_counter = p.misc_counter.wrapping_add(1);
+            // W4-f6 wiring — the mount visual-effect inputs: the
+            // `timeForVisualEffects` tick counter (the Pixie tail's even-tick
+            // gate, `Mount.cs:5147`), `WindForVisuals` + the wind-exposure
+            // gate (the Witch Broom trinket sway, `Mount.cs:3568-3572`).
+            p.time_for_visuals = (app.anim_time as f64 * 60.0) % 216000.0;
+            p.wind_for_visuals = app.wind.speed_current;
+            let (mcx, mcy) = p.center();
+            p.wind_in_place = app.wind.in_a_place_with_wind(
+                &app.world, (mcx / 16.0) as i32, (mcy / 16.0) as i32, 1, 1,
+            );
             // `Player.cs:28162-28176,28233-28236`: `vector7` captures the
             // pre-movement position, `flag34` is false on a mount or while
             // tongued, and `HandleRunning` fires after movement when grounded.
@@ -1683,6 +1693,24 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.player_no_space_teleport(&app.world);
                 // `Shellphone_Spawn`'s fallback may queue the force-clear.
                 force_clear = p.take_force_clear();
+            }
+            // W4-f6 wiring — the mount dust drain (`Mount.DoSpawnDust`
+            // `Mount.cs:6300`/`:6169` + `DoFailedDismountDust`
+            // `Player.cs:6058`): the tick queued snapshots in C# call order
+            // (the `pending_sticky_dust` convention); the emitters draw on
+            // the same `UpdatePlayers` stream AFTER the tink's case-0 draws
+            // above (`:6057` precedes `:6058`).
+            let mount_dust = p.take_mount_dust();
+            if !mount_dust.is_empty() {
+                crate::mount_dust::drain_mount_dust(
+                    mount_dust,
+                    &app.player_name,
+                    p,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                );
             }
             // `Main.UpdateWorld_Players`' tail (`Main.cs:17869-17873`): the
             // journey godmode player's three pools are refilled to their
@@ -2797,6 +2825,7 @@ mod tests {
                 glam::Vec2::new(vel_x, 0.0),
                 13.0,
                 0.0,
+                crate::minecart::SparkVariant::Sparks,
             );
             if sparks.len() == want {
                 return s;

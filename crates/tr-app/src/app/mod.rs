@@ -758,6 +758,19 @@ pub(crate) struct App {
     /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
     /// (determinism rule, ANALYSIS "The tile-crack overlay").
     pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
+    /// W4-f6 wiring — `TileDrawing._rand` (`TileDrawing.cs:104`/:191): the
+    /// special-tile pass's PRIVATE stream (the pylon crystal's dust gate,
+    /// `:8669-8670`). Deviation: the C# parameterless ctor is clock-seeded;
+    /// the port seeds the world seed (the `mine_crack_rng` determinism
+    /// convention). NOT a `SwapRandom` key. g68 collision keep-one
+    /// (research/198, renamed 67→198 round-1): g68's drip gates (`EmitLiquidDrops` :7609) read the
+    /// SAME C# field on the ONE `Main.TilesRenderer` (`Main.cs:2301/6541`)
+    /// — at merge keep ONE field, both consumers, drips-before-pylons.
+    pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
+    /// W4-f6 wiring — `LiquidRenderer._random` (`LiquidRenderer.cs:132`):
+    /// the lava-bubble PRIVATE stream (`InternalPrepareDraw` :558/:562).
+    /// Same clock-seed → world-seed deviation; NOT a `SwapRandom` key.
+    pub(crate) liquid_rand: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -4179,6 +4192,8 @@ impl App {
             mine_wall_hits: 0,
             mine_crack_styles: crate::render::tile_cracks::CrackStyles::new(),
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
+            tile_draw_rand: tr_core::UnifiedRandom::new(world_seed as i32),
+            liquid_rand: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,

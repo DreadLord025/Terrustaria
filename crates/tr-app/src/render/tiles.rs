@@ -438,6 +438,12 @@ pub(crate) fn draw_tiles(
     // `frame_of` reads the tables. Ticked at the `AnimateTiles` tail
     // (`Main.cs:19303`) by `App::animate_tiles_phase`.
     cage_anim: &mut tr_core::drawdata_cages::CritterCageAnimator,
+    // W4-f6 wiring — the lava-bubble drain (`LiquidRenderer.cs:552-577`,
+    // sites 560/564): the renderer's PRIVATE `_random` stream
+    // (`LiquidRenderer.cs:132`, NOT a swap key), the dust pool + spawn ctx.
+    liquid_rand: &mut tr_core::UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    spawn_ctx: &tr_core::particles::SpawnCtx,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:104,191`): ONE `UnifiedRandom`
@@ -556,7 +562,20 @@ pub(crate) fn draw_tiles(
 
     // `LiquidRenderer.InternalPrepareDraw` runs once per frame; both the opaque
     // background pass and the translucent foreground pass consume this record.
-    let liquid_draws = tr_core::liquid_draw::build(world, x0, y0, x1, y1);
+    // W4-f6 wiring: the bubble cells drain `world_dust::lava_bubbles` on the
+    // renderer's private `_random` (the `Dust.lavaBubbles < 200` gate + the
+    // two independent `Next` rolls live in the emitter).
+    let (liquid_draws, bubble_cells) = tr_core::liquid_draw::build_with_bubbles(world, x0, y0, x1, y1);
+    for cell in bubble_cells {
+        crate::world_dust::lava_bubbles(
+            cell,
+            dust.lava_bubbles,
+            liquid_rand,
+            dust,
+            spawn_ctx,
+            world,
+        );
+    }
     // M1.4-BG-18 phase 4: the same records feed the WaterDistortion mask.
     scratch.water_rects = crate::render::liquids::water_mask_rects(&liquid_draws);
     if crate::env::dump_liquid() {

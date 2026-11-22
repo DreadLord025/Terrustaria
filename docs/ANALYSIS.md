@@ -27715,11 +27715,15 @@ Deliberate deviations:
   grass sway uses (`tiles.rs`). This keeps the G6 `WorldFrameKey` and the
   cached range untouched; the sprites animate per frame in the always-rebuilt
   range instead.
-* **Dust rolls skipped.** `TeleportPylonsSystem.SpawnInWorldDust`
-  (`TileDrawing.cs:8669-8673`, two `_rand.Next` draws) and
-  `VoidLensHelper.SpawnVoidLensDust` (`VoidLensHelper.cs:40-75`, `Main.rand`)
-  belong to the unported particle pass. Skipping them wholesale leaves both
-  RNG streams untouched (the `entity_lights.rs` rule).
+* **Dust rolls — WIRED (W4-f6, 2026-11-21; was "skipped").**
+  `TeleportPylonsSystem.SpawnInWorldDust` (`TileDrawing.cs:8669-8673`, two
+  `_rand.Next` draws) and `VoidLensHelper.SpawnVoidLensDust`
+  (`VoidLensHelper.cs:40-75`, `Main.rand`) now fire via
+  `world_dust::pylon_spawn_dust`/`void_lens_dust`. The pylon GATES draw the
+  new `App.tile_draw_rand` (`TileDrawing._rand` stand-in, world-seeded —
+  the `mine_crack_rng` convention); the pylon SPAWN + the void-lens draw
+  the bare global (`NamedRngs::global()`). Both gate `!game_paused`. See
+  the W4-f6 wiring section + research/198 (renamed 67→198, round-1).
 * **Frame counters.** `Main.tileFrameCounter[597]` wraps at 64 and `[491]` at
   40 (`Main.cs:19284-19287`/`:19227-19230`, `AnimateTiles`); the animator is
   unported (`drawdata.rs`'s `tile_frame в‰Ў 0`), so the pass stands them in with
@@ -46332,3 +46336,107 @@ base band `1615 + banner - 1`, `BannerSystem.cs:400`).
   buff 69 → `banner_buff_for(1)` = (1.5, 0.75) → hover names the Blue
   Slime). WRITTEN NOT RUN — code-only lane, no cargo invoked; every
   expectation re-derived against the cited C# windows.
+
+## The world-lane dust sites (W4-f6, task/W4-f6-dust-world-3, 2026-11-21, code-only mode)
+The world lane's THIRD batch (d54 first / e4 second pushed zero commits —
+dead lanes). 40 `Dust.NewDust*` sites across the world-sim files outside
+the entity lanes (Player/NPC/Projectile) and the g11-g15
+Main/WorldGen/WorldItem lanes: **all 27 Mount.cs sites** + 13 small
+world-file sites (Chest 420, Utils.PoofOfSmoke 1089, TeleportPylonsSystem
+390, VoidLensHelper 48/63, PopupText 461/470/479/488, LiquidRenderer
+560/564, Rain 122, MessageBuffer 3697). Census + split:
+`docs/research/65-dust-world-sites-claims.md`.
+Two new STAGED-emitter modules (the e2 Skeletron/Brain precedent — the
+enclosing machines are unported M2-MOUNT-3/4 or draw-side, so each fn takes
+the snapshot at the C# read moment and the wiring wave calls them at the
+C# positions on the cited pass):
+* `crates/tr-app/src/mount_dust.rs` — the 27 Mount sites (the drill beam
+  pair, the UpdateFrame dash/gallop rings + bodies, the four minecart
+  effects, the UpdateEffects broom/drill/lava arms, the Pixie tail, the
+  failed-dismount burst, DoSpawnDust's Wolf/Chillet/generic loops + clones)
+  plus the shared `GetFairyQueenWeaponsColorFull`
+  (`Projectile.cs:21665-21889` verbatim — the ~40-arm dev-name switch, the
+  Cenx/Artyrian/Bame/Unit One early returns, the `hslToRgb` generic path)
+  and the MathHelper/Utils vector + float-Color helpers. 24 witnesses.
+* `crates/tr-app/src/world_dust.rs` — the 13 small-file sites + the
+  `dustWater` map. 8 witnesses.
+**Deliberate drops (each cited at its site):** the `dust.shader` /
+`dust.customData` writes (the `particles.rs` field drops); the mount
+`Lighting.AddLight` heads (the light lane's); the case-14 `cMount == 0`
+FloorVisuals hop (`Mount.cs:4110-4115`, the caller's temporary ±24 px
+position shift); the `netMode == 2` head guards (single-player); the
+`Gore.NewGore` bodies (W4-d55's lane — their ARGUMENT draws are consumed
+in order, the e2 spin hand-off split). `EmitGolfCartSmoke`
+(`Mount.cs:4623`) is DEAD code (zero callers in the decompile) — ported
+verbatim for the census, staged unwired.
+**RNG (S1-A-10, one slot per C# pass):** the mount/chest/poof/nebula sites
+ride `UpdatePlayers` or the bare global (`NamedRngs::global()`, the
+clicks/netglue `UpdateInventory`/net-dispatch convention); the void-lens
+rides `UpdateProjectiles` (`Projectile.cs:52195`); the fancy flash rides
+`UpdateFloatingText` (`Main.cs:17791`); the lava bubbles ride the
+renderer's PRIVATE `_random` (`LiquidRenderer.cs:132`, a distinct
+`UnifiedRandom` — NOT a swap key, documented); the rain splash rides the
+draw's bare global (`Main.DrawItems` :38821, no swap). No new streams.
+The f32 loop-step accumulations are preserved verbatim (the lava trail's
+0.1 step runs 10 iterations, the broom trail's 0.125 step runs 8 — the
+accumulated f32 error, not a tidy 11/9).
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 32 witnesses are owed a compile window
+before merge.
+### The wiring phase (W4-f6, 2026-11-21, code-only mode)
+The staged emitters are now called from the live machines (6 commits:
+`bebd0c55`/`ac0c7edc`/`65ec64a2`/`bcd63051`/`7dfcd098`/`7c9165da`). The
+seam census + the e4 keep-one decision: `docs/research/198-dust-world-wiring-keep-one.md`
+(renamed 67→198, registry round-1).
+* **Mount spawn/dismount/failed-dismount** — the `pending_mount_dust`
+  request channel (the `pending_sticky_dust` convention): the pure player
+  tick queues a snapshot at the C# read moment, `world_sim/player.rs`
+  drains `mount_dust::drain_mount_dust` on `UpdatePlayers`. `set_mount`
+  queues `DoSpawnDust(false)` on the grown hitbox (`Mount.cs:6300`),
+  `dismount` queues it BEFORE `Reset` on the mounted box (`:6169`),
+  `start_death` drops the `ignoreEffect:true` stand-in (KillMe `:38907`
+  default false), the QuickMount ladder queues `DoFailedDismountDust`
+  (`Player.cs:6058`). The resolved `r`-box ports `:6439-6459`.
+* **Mount movement** — `MountState::frame_extras` ports the per-type
+  extras head (`Mount.cs:3637-4142` dust subset): the case-10/47 dash
+  re-route + `_frameExtra` latch, the 44/45 bool-latch rings + the
+  every-tick pirate run-puff gate, the Basilisk run/charge pair.
+  `Player.basilisk_charge` (`Player.cs:842`) is PLAYER state (survives the
+  dismount), folded player-side. `mount_update_frame` routes the five
+  PlayerFrame/TryLanding sites; the FRAME_DASHING frame-table arm lands
+  (`:4476-4505`). The drill beam pair (3113/3170) stays staged —
+  `UseDrill`/DrillMountData is M2-MOUNT-4.
+* **Mount effects** — `queue_mount_effect_dust` ports the UpdateEffects
+  switch's dust arms (`:4804-5165`): the gem carts, the Witch Broom
+  sparkle+trail (the RNG-free trinket swing `:3562-3579` verbatim; the
+  pos4 jitter NextFloat draws pre-gate and folds through
+  `rotated_relative_point` at drain), the Drill/Lava trails (the
+  fullRotation/shadow-offset anchor folds caller-side), the
+  steam/exhaust/confetti carts, the Pixie tail. New per-tick player inputs
+  `time_for_visuals`/`wind_for_visuals`/`wind_in_place`.
+* **Chest unlock + poof** — `chest.rs::unlock_dust` at both Unlock sites;
+  **RNG re-pin: the unlock rides UpdatePlayers** (ItemCheck→
+  TileInteractionsUse, `Main.cs:17754`), NOT the bare global the staged
+  doc guessed. `bug_net.rs::catch_npc` StatuePoof/MysticFrog calls
+  `poof_of_smoke` (`NPC.cs:79912`).
+* **Pylon + void-lens (draw-side)** — `draw_pylons_trophies_void` fires the
+  pylon gates on the new `App.tile_draw_rand` (`TileDrawing._rand`
+  stand-in) + the spawn/void-lens on the bare global; both gate
+  `!game_paused`. The dust-skip deviation (S1-G-1 wave D) is RETIRED.
+* **Lava bubbles (draw-side)** — `liquid_draw::build_with_bubbles` collects
+  the padded-rect bubble cells (RNG-free, record-identical to `build`);
+  `draw_tiles` drains `lava_bubbles` on the new `App.liquid_rand`
+  (`LiquidRenderer._random` stand-in).
+**New private streams:** `tile_draw_rand` + `liquid_rand` — the C# clock-
+seeded (`Environment.TickCount`) private draw streams, world-seeded in the
+port (the `mine_crack_rng` determinism convention). NOT swap keys.
+**Still staged (no live seam in this branch):** the popup fancy flash
+(g57's PopupText module is on `task/W4-g57-ui-reforge-anim`; the reforge
+contexts are RNG-zero so the flash arm has no SP trigger), the rain splash
+(d130 owns the rain machine), the nebula net-102 beam (MP-only dispatch,
+f12 owns the buff-scan tier state). The golf-cart smoke is DEAD (zero
+callers, verified).
+**e4 keep-one:** f6's 27 Mount sites SUPERSEDE e4's 19 (`mount_dust.rs`
+canonical); e4 wires ParticleOrchestrator 41-61 only. The merger drops
+e4's Mount emitters to avoid double-drawing (research/198, renamed from 67).
+Code-only: the 6 wiring drain-parity witnesses are WRITTEN NOT RUN.

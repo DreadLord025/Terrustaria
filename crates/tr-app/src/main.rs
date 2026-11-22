@@ -69,6 +69,7 @@ mod melee_swing;
 mod menu;
 mod minecart;
 mod mount;
+mod mount_dust;
 mod net;
 mod npc;
 mod npc_scaling;
@@ -341,6 +342,7 @@ mod town_arrival;
 mod tracked_sound;
 mod touch_damage;
 mod ui;
+mod world_dust;
 mod world_sim;
 mod world_stepper;
 
