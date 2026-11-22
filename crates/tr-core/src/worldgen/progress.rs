@@ -157,10 +157,22 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.
         "surface flora" => PassMessage::Gen(42),
+        // WorldGen.cs:21254 — `Lang.gen[27]` (the settle message; the
+        // extraLiquid seed overrides it to "WorldGeneration.WaterFeatures",
+        // `:21257` — the classic feed is Gen(27)).
+        "settle liquids again" => PassMessage::Gen(27),
         // WorldGen.cs:21314.
         "cacti" => PassMessage::Gen(38),
+        // WorldGen.cs:21525 — `Lang.gen[84]`.
+        "tile cleanup" => PassMessage::Gen(84),
         // WorldGen.cs:21977.
         "water plants" => PassMessage::Gen(88),
+        // WorldGen.cs:22040 — `Language.GetTextValue("WorldGeneration.Speleothems")`.
+        "stalac" => PassMessage::Key("WorldGeneration.Speleothems"),
+        // WorldGen.cs:22125 — `Lang.gen[82]`.
+        "remove broken traps" => PassMessage::Gen(82),
+        // WorldGen.cs:22145 — `Lang.gen[86]`.
+        "final cleanup" => PassMessage::Gen(86),
         // WorldGen.cs:22489 — the GenerateWorld tail's own message
         // (the port's world-tail step is that tail's stand-in).
         "world tail" => PassMessage::Gen(87),

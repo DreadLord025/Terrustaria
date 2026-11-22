@@ -1,9 +1,13 @@
 //! Liquid placement: the forest lake, the ocean shores and lava puddles,
-//! and the Waterfalls pass's liquid-edge half-brick sweep.
+//! the Waterfalls pass's liquid-edge half-brick sweep (W4-d103), and
+//! the generation-time settle machinery (`QuickWater`/`WaterCheck`/the
+//! quick-settle loop) the `Settle Liquids` and `Settle Liquids Again`
+//! passes share (W4-d106 R2, re-based onto the f25 settle core).
 
 use super::TILE_DIRT;
 use super::noise::Rng;
 use super::terrain::{Layers, SurfaceMap};
+use crate::liquid::LiquidSystem;
 use crate::tile::{FLAG_ACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, Tile};
 use crate::tiledata as td;
 use crate::world::World;
@@ -233,6 +237,104 @@ pub(crate) fn pass_waterfalls(world: &mut World, rng: &mut Rng) {
     }
 }
 
+// --- the generation settle machinery (W4-d106 R2, re-based onto the f25 core) --
+//
+// `Settle Liquids` (`WorldGen.cs:16132`, f25's `settle_liquids.rs`) and `Settle
+// Liquids Again` (`:21246`, this pass) share ONE body: `QuickWater(3)` drops
+// every liquid cell straight down, `WaterCheck` re-wakes the world, then ten
+// quick-settle rounds run `Liquid.UpdateLiquid` until the active list drains
+// (each round bounded by `numLiquid * 5` updates), `WaterCheck` between rounds,
+// and `ClearPendingLiquid` at the tail. KEEP-ONE at the batch-B merge
+// (matrix-88 §3.3, research-312 §1.3): the f25 settle core wins — the machinery
+// lives in `settle_liquids.rs` (`quick_water`/`shimmer_remove_water`/
+// `liquid_interactions_cleanup`, exposed `pub(crate)`), and this pass re-bases
+// onto it. d106's duplicate `liquid.rs`/`tileobject.rs` halves dropped.
+//
+// Scope notes (the `finish_seeds.rs` discipline — seed-gated / unported-helper
+// arms are documented stand-ins, not invented):
+// - `ShimmerRemoveWater` (`:34823`) keys on `GenVars.shimmerPosition`; the port
+//   carries no shimmer until the Shimmer pass lands, so it is `None`-guarded.
+// - `NotTheBees` (`:25107`) is the notTheBees seed's whole-world honey
+//   conversion — flag-gated, g41's `not_the_bees.rs` host owns it (the
+//   `step_seed_finish` seam); this pass's gate is a no-op stand-in.
+
+/// `WorldGen.NotTheBees` (`WorldGen.cs:25107-25360`) — the notTheBees seed's
+/// whole-world honey conversion. Flag-gated: a classic world never calls it.
+/// KEEP-ONE: g41's `not_the_bees.rs` host (the `step_seed_finish` seam) owns the
+/// conversion body; this gate is the documented no-op stand-in (the classic
+/// pipeline is untouched, the affected-seed witness rides a==b).
+pub(crate) fn not_the_bees(world: &mut World, opts: &super::GenOptions) {
+    if !opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES) {
+        return;
+    }
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    // The conversion body (`:25118-25359`) is seed-only; g41's host owns it.
+    let _ = world;
+}
+
+/// `Settle Liquids Again` (`GenPassNameID.SettleLiquidsPart2AndNotTheBees`,
+/// `WorldGen.cs:21246-21309`) — W4-d106 R2, re-based onto the f25 settle core.
+/// The second settle pass, after the Micro Biomes family; it re-runs the shared
+/// settle body so the liquids the late passes disturbed (the thin ice, the
+/// campsites, the mahogany trees) drain to rest. `Skyblock.denyAllGeneration`
+/// skips it; the FTW arm sets `tileSolid[56] = true` (obsidian solid for the
+/// settle — the port's stock table already holds it solid, a documented no-op).
+/// The pass draws no RNG of its own (the settle engine is deterministic over the
+/// tile state). The body mirrors `settle_liquids::settle_liquids` minus the
+/// ocean-retype sweep (the `:21246` pass has none).
+pub(crate) fn settle_liquids_again(
+    world: &mut World,
+    gv: &super::pipeline::GenVars,
+    opts: &super::GenOptions,
+) {
+    // `:21248` — `!Skyblock.denyAllGeneration`.
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    // `:21250-21253` — the FTW obsidian-solid window (no-op on the stock table).
+    // `:21259-21262` — the notTheBees conversion (flag-gated, g41's host).
+    not_the_bees(world, opts);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    // The per-pass instance — the C# statics' stand-in (the f25 core).
+    let mut sys = LiquidSystem::new(world);
+    sys.set_generating(remix);
+    // `Liquid.worldGenTilesIgnoreWater(ignoreSolids: true)` (`:21263`).
+    sys.world_gen_tiles_ignore_water(true);
+    // `Liquid.QuickWater(3)` (`:21264`) — the shared f25 sweep.
+    super::settle_liquids::quick_water(world, gv, &mut sys, remix);
+    // `WorldGen.WaterCheck()` (`:21265`).
+    sys.water_check(world);
+    // `:21266-21303` — the ten-round quick-settle loop (the f25 body).
+    sys.set_quick_settle(true);
+    let mut num = 0;
+    while num < 10 {
+        let mut num3 = sys.num_liquid_total() as i64;
+        num += 1;
+        let mut budget = num3 * 5;
+        while sys.active_len() > 0 {
+            budget -= 1;
+            if budget < 0 {
+                // The `extraLiquid` round bump is the special-seed arm —
+                // classic breaks straight out (the f25 precedent).
+                break;
+            }
+            let live = sys.num_liquid_total() as i64;
+            if live > num3 {
+                num3 = live;
+            }
+            sys.update(world);
+        }
+        sys.water_check(world);
+    }
+    // `:21304-21307` — clear pending, restore the toggles.
+    sys.clear_pending_liquid();
+    sys.set_quick_settle(false);
+    sys.world_gen_tiles_ignore_water(false);
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::lake_floor_depth;
@@ -455,5 +557,102 @@ mod tests {
         assert_eq!(lake_floor_depth(0, half), 6);
         assert_eq!(lake_floor_depth(half, half), 1);
         assert_eq!(lake_floor_depth(-half, half), 1);
+    }
+
+    // --- W4-d106 R2 witnesses (written NOT run — code-only branch) ----------
+    // Re-based onto the f25 settle core (the settle body is
+    // `settle_liquids::settle_liquids`; the pass under test is
+    // `settle_liquids_again`, which re-runs that body minus the ocean retype).
+
+    use super::settle_liquids_again;
+    use crate::tile::{FLAG_ACTIVE, LiquidKind, Tile};
+    use crate::worldgen::pipeline::GenVars;
+
+    /// A flat stone-floor world with a water column perched above a gap:
+    /// the settle sweep must drop it onto the floor and level it.
+    fn perched_world() -> World {
+        let mut w = World::new("settle".into(), 120, 120);
+        // A stone floor at y=100 across the middle.
+        for x in 10..110 {
+            let i = w.index(x, 100);
+            w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        // A 255-water cell perched at (60, 40), air below down to the floor.
+        let i = w.index(60, 40);
+        w.tiles[i].liquid = 255;
+        w
+    }
+
+    fn settle_gv() -> GenVars {
+        GenVars { water_line: 60, lava_line: 90, ..Default::default() }
+    }
+
+    fn classic_opts() -> GenOptions {
+        GenOptions::default()
+    }
+
+    /// `QuickWater` drops the perched cell onto the floor (the settle walk,
+    /// `Liquid.cs:150-289`) — no liquid stays at the perch row.
+    #[test]
+    fn r2_quick_water_drops_the_perched_cell() {
+        let mut w = perched_world();
+        w.world_surface = 30.0;
+        w.rock_layer = 70.0;
+        settle_liquids_again(&mut w, &settle_gv(), &classic_opts());
+        assert_eq!(w.tile(60, 40).unwrap().liquid, 0, "the perch drained");
+        // The water landed on the floor row above the stone (y=99).
+        let floor_water: i32 = (10..110).map(|x| w.tile(x, 99).unwrap().liquid as i32).sum();
+        assert!(floor_water > 0, "the water settled onto the floor ({floor_water})");
+    }
+
+    /// The settle body is deterministic (a == b on the same tile state) and
+    /// conserves the total liquid amount (no cell created or destroyed).
+    #[test]
+    fn r2_the_settle_is_deterministic_and_conserves_liquid() {
+        let total = |w: &World| -> i64 {
+            w.tiles.iter().map(|t| t.liquid as i64).sum()
+        };
+        let mut a = perched_world();
+        let mut b = perched_world();
+        a.world_surface = 30.0; a.rock_layer = 70.0;
+        b.world_surface = 30.0; b.rock_layer = 70.0;
+        let before = total(&a);
+        settle_liquids_again(&mut a, &settle_gv(), &classic_opts());
+        settle_liquids_again(&mut b, &settle_gv(), &classic_opts());
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        assert_eq!(total(&a), before, "the settle conserves liquid");
+    }
+
+    /// The pass's skyblock gate (`WorldGen.cs:21248`) skips it tile-for-tile.
+    #[test]
+    fn r2_skyblock_skips_the_pass() {
+        let mut w = perched_world();
+        let before = w.tiles.clone();
+        let opts = GenOptions {
+            flags: crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::SKYBLOCK),
+            ..Default::default()
+        };
+        settle_liquids_again(&mut w, &settle_gv(), &opts);
+        assert_eq!(w.tiles, before, "skyblock skips the settle");
+    }
+
+    /// A lava cell below `waterLine` re-types to lava as it falls
+    /// (`Liquid.cs:184-187`); a water cell above stays water.
+    #[test]
+    fn r2_the_settle_retypes_by_depth() {
+        let mut w = World::new("settle".into(), 120, 120);
+        for x in 10..110 {
+            let i = w.index(x, 110);
+            w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        // Water perched high (y=20) falls past waterLine=60 → becomes lava.
+        let i = w.index(60, 20);
+        w.tiles[i].liquid = 255;
+        w.world_surface = 30.0;
+        w.rock_layer = 70.0;
+        settle_liquids_again(&mut w, &settle_gv(), &classic_opts());
+        let landed = w.tile(60, 109).unwrap();
+        assert!(landed.liquid > 0, "the cell landed");
+        assert_eq!(landed.liquid_kind(), LiquidKind::Lava, "below waterLine → lava");
     }
 }

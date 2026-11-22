@@ -835,6 +835,15 @@ pub fn tile_cut(kind: u16) -> bool {
     TILE_CUT.contains(&kind)
 }
 
+/// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
+/// frame-based def resolution. KEEP-ONE at the batch-B merge: the existing
+/// [`resolve_tile_def`] is the same C# window (the f25/core port); d106's
+/// duplicate copy dropped (matrix-88 §3.3, research-312 §1.3). The
+/// `CheckLavaDeath`/`CheckWaterDeath` consumers read `resolve_tile_def`.
+pub fn get_tile_data_for_tile(tile: &Tile) -> Option<&'static TileObjectDef> {
+    resolve_tile_def(tile)
+}
+
 /// `Player.PlaceThing_IsReplaceableBlock` (`Player.cs:39753-39760`): a
 /// `tileCut` target is replaceable EXCEPT the two named exemptions (484,
 /// 711); the drip-tile band 373-375 plus 461/709 is always replaceable;

@@ -34,6 +34,7 @@ use super::biomes::{self, BiomeSpans};
 use super::buried_chest;
 use super::cave_walls;
 use super::caves;
+use super::cleanup;
 use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
@@ -233,6 +234,17 @@ impl<'a> Streams<'a> {
     #[allow(dead_code)] // the per-pass stream contract — consumed from Phase 3 on
     pub(crate) fn pass_rng(&self, name: &str) -> Rng {
         Rng(self.seed ^ fnv1a64(name))
+    }
+
+    /// The per-pass stream as a [`crate::UnifiedRandom`] — the same name-mixed
+    /// seed ([`Self::pass_rng`]) but the C#'s own Knuth subtractive algorithm,
+    /// for the passes whose ported helpers already draw on `UnifiedRandom`
+    /// (the gem-tree grower `growth::try_growing_tree_by_type`, W4-d106 R4's
+    /// Stalac pass). The seed is the low 32 bits of the mixed state, wrapped
+    /// to `i32` (the `UnifiedRandom(int)` ctor). Isolation is identical to
+    /// `pass_rng`: a fresh stream per call, no other step's ledger shifts.
+    pub(crate) fn pass_unified(&self, name: &str) -> crate::UnifiedRandom {
+        crate::UnifiedRandom::new((self.seed ^ fnv1a64(name)) as u32 as i32)
     }
 }
 
@@ -560,10 +572,17 @@ impl GenVars {
             .expect("the terrain height-map step did not run")
     }
 
-    fn layers(&self) -> &Layers {
+    pub(crate) fn layers(&self) -> &Layers {
         self.layers
             .as_ref()
             .expect("the terrain fill step did not run")
+    }
+
+    /// Test-only: seed the layer anchors without running the terrain step
+    /// (the W4-d106 R6 witnesses construct a GenVars directly).
+    #[cfg(test)]
+    pub(crate) fn set_layers_for_test(&mut self, layers: Layers) {
+        self.layers = Some(layers);
     }
 
     fn spans(&self) -> &BiomeSpans {
@@ -1551,14 +1570,51 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // over the islands ledger (the `w4_g44_the_island_houses_step_follows_
     // the_islands` witness pins it); d103's after-cave-walls duplicate
     // dropped at the merge.
+    // The vanilla Grass Wall slot (`WorldGen.cs:19589`): after Spawn Point
+    // (`:19460`, unported — the port's spawn rides the world tail) and
+    // before Guide (`:19685`, d105's lane) / Planting Trees (`:19940`) —
+    // W4-d106 R1. The port slots it between the living trees and the trees
+    // steps (the nearest executed neighbours); the pass draws only its own
+    // `pass_rng("Grass Wall")` stream, so the insertion shifts no other
+    // step's ledger.
+    step!("grass wall", "Grass Wall", step_grass_wall),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
+    // The vanilla Settle Liquids Again slot (`WorldGen.cs:21246`): after the
+    // Micro Biomes family (`:20901`) and immediately before Cactus (`:21310`)
+    // — W4-d106 R2. The port slots it right before the cacti step (the Cactus
+    // pass, the nearest executed vanilla neighbour). The settle engine is
+    // deterministic over the tile state (no RNG draw), so the insertion shifts
+    // no other step's ledger.
+    step!("settle liquids again", "Settle Liquids Again", step_settle_liquids_again),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
+    // The vanilla Tile Cleanup slot (`WorldGen.cs:21520`): after Cactus
+    // (`:21310`) and before Lihzahrd Altars (`:21943`) — W4-d106 R3. The
+    // pass draws only its own `pass_rng("Tile Cleanup")` stream (the drip
+    // block), so the insertion shifts no other step's ledger.
+    step!("tile cleanup", "Tile Cleanup", step_tile_cleanup),
     // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
     // vegetation family, before the world tail — the M5-OCEAN phase-4
     // insertion (the seaweed arm of the pass).
     step!("lihzahrd altar", "Lihzahrd Altars", step_lihzahrd_altar),
     step!("water plants", "Water Plants", step_water_plants),
+    // The vanilla Stalac slot (`WorldGen.cs:22038`): after Water Plants
+    // (`:21973`) and before Remove Broken Traps (`:22121`) — W4-d106 R4.
+    // The pass draws only its own name-seeded `UnifiedRandom` stream (the
+    // gem-tree grower + PlaceTight share vanilla's single genRand), so the
+    // insertion shifts no other step's ledger.
+    step!("stalac", "Stalac", step_stalac),
+    // The vanilla Remove Broken Traps slot (`WorldGen.cs:22121`): after
+    // Stalac (`:22038`) and before Final Cleanup (`:22141`) — W4-d106 R5.
+    // The pass draws no RNG (the wire-network BFS is deterministic over the
+    // tile/wire state), so the insertion shifts no other step's ledger.
+    step!("remove broken traps", "Remove Broken Traps", step_remove_broken_traps),
+    // The vanilla Final Cleanup slot (`WorldGen.cs:22141`): after Remove
+    // Broken Traps (`:22121`) and before the GenerateWorld tail (`:22431`) —
+    // W4-d106 R6. The classic body draws only the poo scatter's own
+    // `pass_rng("Final Cleanup")` stream (the sweep is RNG-free), so the
+    // insertion shifts no other step's ledger.
+    step!("final cleanup", "Final Cleanup", step_final_cleanup),
     step!("world tail", "", step_world_tail),
     // The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the
     // seed `Finish*` passes — M5-SEED-1's `step_seed_finish`, gated per
@@ -3120,6 +3176,22 @@ fn step_trees(
     surface::plant_trees(world, &mut streams.rng, &map.heights, world_surface);
 }
 
+/// The vanilla Grass Wall slot (`WorldGen.cs:19589-19684`) — W4-d106 R1:
+/// the surface dirt-wall → grass-wall spread, the flower speckle and the
+/// dirt-to-grass fringe, on the pass's own stream. The skyblock gate lives
+/// in the pass body (`:19591`).
+fn step_grass_wall(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    surface::grass_wall(world, world_surface, &mut streams.pass_rng("Grass Wall"), opts);
+}
+
 fn step_surface_flora(
     world: &mut World,
     gv: &mut GenVars,
@@ -3217,6 +3289,34 @@ fn step_water_plants(
     ocean::water_plants(world, &layers, &mut streams.pass_rng("Water Plants"));
 }
 
+/// The vanilla Settle Liquids Again slot (`WorldGen.cs:21246-21309`) —
+/// W4-d106 R2: the second liquid settle, on the shared `QuickWater` /
+/// `WaterCheck` / quick-settle-loop machinery. Draws no RNG.
+fn step_settle_liquids_again(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    liquids::settle_liquids_again(world, gv, opts);
+}
+
+/// The vanilla Tile Cleanup slot (`WorldGen.cs:21520-21942`) — W4-d106 R3:
+/// the slope clear, the tidy sweep and the object frame normalisation, on
+/// the pass's own stream (the drip block's draws).
+fn step_tile_cleanup(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    cleanup::tile_cleanup(world, &mut streams.pass_rng("Tile Cleanup"), opts);
+}
+
 fn step_cacti(
     world: &mut World,
     gv: &mut GenVars,
@@ -3236,6 +3336,58 @@ fn step_cacti(
         &layers,
         &mut streams.pass_rng("Cactus, Palm Trees, & Coral"),
     );
+}
+
+/// The vanilla Stalac slot (`WorldGen.cs:22038-22120`) — W4-d106 R4: the
+/// gem-tree scatter + the speleothem placement, on the pass's own
+/// name-seeded `UnifiedRandom` stream (the grower + PlaceTight share it).
+fn step_stalac(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    spider_gem_moss::pass_stalac(
+        world,
+        &mut streams.pass_unified("Stalac"),
+        world_surface,
+        rock_layer,
+        opts,
+    );
+}
+
+/// The vanilla Remove Broken Traps slot (`WorldGen.cs:22121-22140`) —
+/// W4-d106 R5: the wire-network BFS that strips broken trap circuits. Draws
+/// no RNG.
+fn step_remove_broken_traps(
+    world: &mut World,
+    _gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    cleanup::remove_broken_traps(world, opts);
+}
+
+/// The vanilla Final Cleanup slot (`WorldGen.cs:22141-22490`) — W4-d106 R6:
+/// the wall-hole fill, the whole-world sweep, the poo scatter, the seed
+/// Finish* dispatch, the shimmer clean-up and the final LiquidCheck sweep.
+fn step_final_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    cleanup::final_cleanup(world, gv, streams, opts);
 }
 
 fn step_world_tail(
@@ -3775,7 +3927,21 @@ mod tests {
         // W4-d103 pass 27 keep-one (research/87): the `floating island
         // houses` slot stays g44's (over the islands ledger) - d103's
         // after-cave-walls registration dropped at the merge.
-        assert_eq!(names.len(), 77);
+        // W4-d106 R1: + `grass wall` (vanilla "Grass Wall",
+        // `WorldGen.cs:19589`) between `living trees` and `trees`.
+        // W4-d106 R2: + `settle liquids again` (vanilla "Settle Liquids
+        // Again", `WorldGen.cs:21246`) before `cacti`.
+        // W4-d106 R3: + `tile cleanup` (vanilla "Tile Cleanup",
+        // `WorldGen.cs:21520`) between `cacti` and `lihzahrd altar`.
+        // W4-d106 R4: + `stalac` (vanilla "Stalac", `WorldGen.cs:22038`)
+        // after `water plants`.
+        // W4-d106 R5: + `remove broken traps` (vanilla "Remove Broken
+        // Traps", `WorldGen.cs:22121`) after `stalac`.
+        // W4-d106 R6: + `final cleanup` (vanilla "Final Cleanup",
+        // `WorldGen.cs:22141`) between `remove broken traps` and `world tail`.
+        // W4-d106 R1-R6: + `grass wall`/`settle liquids again`/`tile cleanup`/
+        // `stalac`/`remove broken traps`/`final cleanup` (the six lane-6 passes).
+        assert_eq!(names.len(), 83);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3877,11 +4043,17 @@ mod tests {
                 "surface chests",
                 "water chests",
                 "cave walls",
+                "grass wall",
                 "trees",
                 "surface flora",
+                "settle liquids again",
                 "cacti",
+                "tile cleanup",
                 "lihzahrd altar",
                 "water plants",
+                "stalac",
+                "remove broken traps",
+                "final cleanup",
                 "world tail",
                 "seed finish",
             ]
@@ -3977,11 +4149,21 @@ mod tests {
         // W4-d103 pass 27 keep-one (research/87): the executed houses slot
         // stays g44's (over the islands ledger, the adjacency witness pins
         // it); d103's after-cave-walls duplicate dropped — the chain goes
-        // straight to the planting family here.
-        assert_eq!(names[pos("cave walls") + 1], "trees");
-        assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
+        // straight to the Grass Wall + planting family here (d106 R1).
+        assert_eq!(names[pos("cave walls") + 1], "grass wall");
+        assert_eq!(names[pos("grass wall") + 1], "trees");
+        // W4-d106 R3: `tile cleanup` now sits between `cacti` and
+        // `lihzahrd altar` (the vanilla Tile Cleanup slot, `:21520`).
+        assert_eq!(names[pos("lihzahrd altar") - 1], "tile cleanup");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
-        assert_eq!(names[pos("water plants") + 1], "world tail");
+        // W4-d106 R4/R5: `stalac` + `remove broken traps` now sit between
+        // `water plants` and the world tail (the vanilla Stalac `:22038` →
+        // Remove Broken Traps `:22121` slots).
+        assert_eq!(names[pos("water plants") + 1], "stalac");
+        // W4-d106 R6: `final cleanup` sits between `remove broken traps` and
+        // the world tail (the vanilla Final Cleanup slot, `:22141`).
+        assert_eq!(names[pos("remove broken traps") + 1], "final cleanup");
+        assert_eq!(names[pos("final cleanup") + 1], "world tail");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -4169,6 +4351,33 @@ mod tests {
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
+    }
+
+    /// W4-d106 R1: `grass wall` sits ahead of the port's `trees` step — the
+    /// vanilla chain's relative order Spawn Point (`WorldGen.cs:19460`,
+    /// unported) → Grass Wall (`:19589`) → Guide (`:19685`, d105) → Planting
+    /// Trees (`:19940`) puts the pass ahead of the trees. At the batch-B merge
+    /// the d103 passes (waterfalls … cave walls) sit between `living trees`
+    /// and `grass wall`, so the witness pins grass wall < trees + the
+    /// cave-walls adjacency, not a strict living-trees +1.
+    #[test]
+    fn w4_d106_r1_the_grass_wall_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert!(pos("living trees") < pos("grass wall"));
+        assert_eq!(pos("grass wall"), pos("cave walls") + 1);
+        assert_eq!(pos("grass wall") + 1, pos("trees"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Living Trees") < cpos("Grass Wall"));
+        assert!(cpos("Spawn Point") < cpos("Grass Wall"));
+        assert!(cpos("Grass Wall") < cpos("Guide"));
+        assert!(cpos("Grass Wall") < cpos("Planting Trees"));
     }
 
     #[test]

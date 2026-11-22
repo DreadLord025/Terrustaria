@@ -1,9 +1,13 @@
 //! Surface dressing: slope tiles, trees, small flora and desert cacti.
 
+use std::collections::HashSet;
+
 use super::noise::Rng;
 use super::terrain::SurfaceMap;
-use super::{TILE_GRASS, TILE_SAND, TILE_SNOW};
-use crate::tile::{FLAG_ACTIVE, Tile};
+use super::{GenOptions, TILE_DIRT, TILE_GRASS, TILE_SAND, TILE_SNOW};
+use crate::seeds::{MicroSeedFlags, SeedFlags};
+use crate::tile::{FLAG_ACTIVE, LiquidKind, Tile};
+use crate::tiledata::{SET_CAN_BE_CLEARED_DURING_GENERATION, TILE_SOLID};
 use crate::tree;
 use crate::world::World;
 
@@ -349,5 +353,525 @@ pub(crate) fn plant_cacti(world: &mut World, rng: &mut Rng, map: &SurfaceMap, wi
                 };
             }
         }
+    }
+}
+
+// --- Grass Wall (W4-d106 R1) --------------------------------------------------
+
+/// Wall ids the pass reads/writes (`ID/WallID.cs`): DirtUnsafe 2 (`:109`),
+/// MudUnsafe 15 (`:135`), Cave6Unsafe 59 (`:223`), SpiderUnsafe 62 (`:229`),
+/// GrassUnsafe 63 (`:231`), FlowerUnsafe 65 (`:235`).
+const WALL_MUD_UNSAFE: u16 = 15;
+const WALL_CAVE6_UNSAFE: u16 = 59;
+const WALL_SPIDER_UNSAFE: u16 = 62;
+const WALL_GRASS_UNSAFE: u16 = 63;
+const WALL_FLOWER_UNSAFE: u16 = 65;
+
+/// `WorldGen.maxTileCount` (`WorldGen.cs:86921` static ctor / `:19593` —
+/// the pass re-sets the same 3500) and `maxWallOut2` (`:86922`, never
+/// rewritten — 5000 for the whole generation).
+const MAX_TILE_COUNT: i32 = 3500;
+const MAX_WALL_OUT: i32 = 5000;
+
+/// `WorldGen.InWorld(x, y, fluff)` (`WorldGen.cs:9688-9695`).
+fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
+    x >= fluff && x < world.width - fluff && y >= fluff && y < world.height - fluff
+}
+
+/// `WallID.Sets.CannotBeReplacedByWallSpread` (`WallID.cs:98` —
+/// Wood 4, SnowWallUnsafe 40, EbonstoneUnsafe 3, CrimstoneUnsafe 83,
+/// LihzahrdBrickUnsafe 87, LivingWoodUnsafe 244, SandstoneBrick 34).
+fn cannot_be_replaced_by_wall_spread(wall: u16) -> bool {
+    matches!(wall, 4 | 40 | 3 | 83 | 87 | 244 | 34)
+}
+
+/// `Spread.Wall2` (`WorldGen.cs:3416-3524`): the wave-front wall flood.
+/// The two-list + visited-set structure is verbatim (`list` = this wave,
+/// `list2` = the next; every popped point joins `hashSet` before its tile
+/// tests). A non-solid cell converts and fans out 4-way — plus the
+/// diagonals and the ±2 columns when `WallSpreadStopsAtAir[wallType]`
+/// (`WallID.cs:99` — the set is {63, 62}, true for both walls this pass
+/// spreads) — under the 5000-conversion budget; the budget hit skips the
+/// write but still fans nothing (the C# `continue`s before the write).
+/// A solid active cell takes the wall without fanning out (`:3518-3521`).
+/// RNG-free.
+fn spread_wall(world: &mut World, x: i32, y: i32, wall_type: u16) {
+    // `!InWorld(x, y)` (`:3418`).
+    if !in_world(world, x, y, 0) {
+        return;
+    }
+    let stops_at_air = matches!(wall_type, WALL_GRASS_UNSAFE | WALL_SPIDER_UNSAFE);
+    let mut wave: Vec<(i32, i32)> = vec![(x, y)];
+    let mut visited: HashSet<(i32, i32)> = HashSet::new();
+    let mut conversions = 0;
+    while !wave.is_empty() {
+        let mut next: Vec<(i32, i32)> = Vec::new();
+        for (px, py) in wave.drain(..) {
+            // `!InWorld(item.X, item.Y, 1)` (`:3437`).
+            if !in_world(world, px, py, 1) {
+                continue;
+            }
+            visited.insert((px, py));
+            let t = world.tiles[world.index(px, py)];
+            // `tile.wall == num || CannotBeReplacedByWallSpread[wall]` (`:3445`).
+            if t.wall == wall_type || cannot_be_replaced_by_wall_spread(t.wall) {
+                continue;
+            }
+            if !super::biome_detail::solid_tile(world, px, py) {
+                // `WallSpreadStopsAtAir[num] && tile.wall == 0` (`:3451-3456`).
+                if stops_at_air && t.wall == 0 {
+                    continue;
+                }
+                conversions += 1;
+                if conversions >= MAX_WALL_OUT {
+                    continue;
+                }
+                world.tiles[world.index(px, py)].wall = wall_type;
+                // The 4-way fan (`:3464-3483`).
+                let mut fan = [
+                    (px - 1, py),
+                    (px + 1, py),
+                    (px, py - 1),
+                    (px, py + 1),
+                ]
+                .to_vec();
+                if stops_at_air {
+                    // The diagonals + the ±2 columns (`:3484-3516`).
+                    fan.extend([
+                        (px - 1, py - 1),
+                        (px + 1, py - 1),
+                        (px - 1, py + 1),
+                        (px + 1, py + 1),
+                        (px - 2, py),
+                        (px + 2, py),
+                    ]);
+                }
+                for p in fan {
+                    if !visited.contains(&p) {
+                        next.push(p);
+                    }
+                }
+            } else if t.active() {
+                // The solid-active arm (`:3518-3521`): the wall only.
+                world.tiles[world.index(px, py)].wall = wall_type;
+            }
+        }
+        wave = next;
+    }
+}
+
+/// `WorldGen.countDirtTiles` + `nextDirtCount` (`WorldGen.cs:9637-9681`):
+/// the connected dirt-wall census the spread gate reads. The C# recurses
+/// depth-first in a fixed 10-neighbour order; the port walks an explicit
+/// LIFO stack with the neighbours pushed in reverse order so the pop order
+/// is the C#'s call order exactly (the count saturates at `max`, so only
+/// the traversal *set* matters, but the order is kept verbatim anyway).
+/// The border touch (`x <= 1 || ...`, `:9651`) and the snow/ice tiles 147/
+/// 161 or the structure walls 244/83/3/187/216 (`:9657-9664`) saturate the
+/// count at `max`; only non-solid cells with wall 2/59 count (`:9665`).
+/// RNG-free.
+fn count_dirt_tiles(world: &World, x: i32, y: i32, max: i32) -> i32 {
+    let mut count = 0;
+    let mut counted: HashSet<(i32, i32)> = HashSet::new();
+    let mut stack = vec![(x, y)];
+    while let Some((cx, cy)) = stack.pop() {
+        // `numTileCount >= maxTileCount` (`:9647`).
+        if count >= max {
+            return count;
+        }
+        if cx <= 1 || cx >= world.width - 1 || cy <= 1 || cy >= world.height - 1 {
+            count = max;
+            continue;
+        }
+        if counted.contains(&(cx, cy)) {
+            continue;
+        }
+        let t = world.tiles[world.index(cx, cy)];
+        if t.active() && matches!(t.kind, super::TILE_SNOW | super::TILE_ICE) {
+            count = max;
+            continue;
+        }
+        if matches!(t.wall, 244 | 83 | 3 | 187 | 216) {
+            count = max;
+            continue;
+        }
+        if !super::biome_detail::solid_tile(world, cx, cy)
+            && matches!(t.wall, super::WALL_DIRT | WALL_CAVE6_UNSAFE)
+        {
+            counted.insert((cx, cy));
+            count += 1;
+            // The C#'s call order (`:9669-9678`) — pushed reversed for the
+            // LIFO pop.
+            for p in [
+                (cx + 2, cy),
+                (cx - 2, cy),
+                (cx + 1, cy + 1),
+                (cx + 1, cy - 1),
+                (cx - 1, cy + 1),
+                (cx - 1, cy - 1),
+                (cx, cy + 1),
+                (cx, cy - 1),
+                (cx + 1, cy),
+                (cx - 1, cy),
+            ] {
+                stack.push(p);
+            }
+        }
+    }
+    count
+}
+
+/// `WorldGen.SpreadGrass(i, j)` — the default-args call shape (`dirt = 0`,
+/// `grass = 2`, `repeat = true`, `WorldGen.cs:75146-75257`), the slice this
+/// pass runs. The generation-time surface rule (`:75162`: `j >=
+/// worldSurface && dirt == 0` refuses) and the 3×3 enclosure scan with the
+/// lava exception (`:75186-75201`) are verbatim; the `CanBeClearedDuring-
+/// Generation` gate (`:75202`, skipDualDungeonCheck) reads the tiledata
+/// set; the flower-27 exclusions guard grasses 23/661/199/662/109, not
+/// grass 2. The write (`:75220-75225`) kills an invalid tree above
+/// (`:54802-54902` — the shared growth helper), then converts the kind
+/// only (`SquareTileFrame` is the post-pipeline framing seam, the port's
+/// documented deferral). The recursion (`:75231-75252`) carries the
+/// `grassSpread < 1000` cap. RNG-free.
+fn spread_dirt_grass(world: &mut World, i: i32, j: i32, world_surface: f64, grass_spread: &mut i32) {
+    // `!InWorld(i, j, 10) || !active || type != dirt` (`:75150`).
+    if !in_world(world, i, j, 10) {
+        return;
+    }
+    if !world.tile(i, j).is_some_and(|t| t.active() && t.kind == TILE_DIRT) {
+        return;
+    }
+    // The generation-time else-if (`:75162-75165`): grass 2 is not 199/23,
+    // `isGeneratingOrLoadingWorld` is true and `growGrassUnderground` false
+    // — only the surface rule can fire for dirt 0.
+    if j as f64 >= world_surface {
+        return;
+    }
+    // The clamped 3×3 scan (`:75166-75201`).
+    let num2 = (i - 1).max(0);
+    let num3 = (i + 2).min(world.width);
+    let num4 = (j - 1).max(0);
+    let num5 = (j + 2).min(world.height);
+    let mut flag = true;
+    for k in num2..num3 {
+        for l in num4..num5 {
+            if let Some(t) = world.tile(k, l) {
+                if !t.active() || !TILE_SOLID.has(t.kind) {
+                    flag = false;
+                }
+                if t.liquid > 0 && t.liquid_kind() == LiquidKind::Lava {
+                    flag = true;
+                    break;
+                }
+            }
+        }
+    }
+    if flag
+        || !world
+            .tile(i, j)
+            .is_some_and(|t| SET_CAN_BE_CLEARED_DURING_GENERATION.has(t.kind))
+    {
+        return;
+    }
+    // `flag2` (`:75206`) is dead for dirt 0 (`Conversion.Grass` holds
+    // 2/23/199/109/477/492, `TileID.cs:86`) — the plain write runs.
+    crate::growth::kill_invalid_tree_above(world, i, j, TILE_GRASS);
+    if let Some(t) = world.tile_mut(i, j) {
+        t.kind = TILE_GRASS;
+    }
+    // The 3×3 recursion with the cap (`:75231-75252`).
+    for m in num2..num3 {
+        for n in num4..num5 {
+            if world.tile(m, n).is_some_and(|t| t.active() && t.kind == TILE_DIRT)
+                && *grass_spread < 1000
+            {
+                *grass_spread += 1;
+                spread_dirt_grass(world, m, n, world_surface, grass_spread);
+                *grass_spread -= 1;
+            }
+        }
+    }
+}
+
+/// The `Grass Wall` pass (`GenPassNameID.SurfaceDirtWallsToGrassWalls`,
+/// `WorldGen.cs:19589-19684`): the surface dirt walls turn to grass walls
+/// (63, the Don't Starve spider-wall 62 arm) behind exposed grass tiles,
+/// then the flower-wall speckle (63 → 65 at 1/10) and the dirt-to-grass
+/// fringe sweep. `Skyblock.denyAllGeneration` (`:19591` → `:3131` — the
+/// skyblock flag) skips the whole pass.
+///
+/// Draws, in C# order on the pass's own stream: one `Next(4)` per (i, j)
+/// in `[50, maxTilesX − 50) × [0, worldSurface − 10)` (`:19595-19599`), the
+/// Don't Starve `Next(maxValue)` only when a spread actually fires
+/// (`:19641`, short-circuit: no draw when the seed is off), then one
+/// `Next(10)` per (i, j) with wall 63 in `[5, maxTilesX − 5) × [10,
+/// worldSurface − 1)` (`:19654-19658`, short-circuit: no draw on other
+/// walls). `grassSpread` resets to 0 per conversion site — the C# static
+/// is 0 here because no earlier executed pass recursed `SpreadGrass`
+/// (the jungle/evil sweeps zero it per site, `:12484`/`:14137`).
+pub(crate) fn grass_wall(world: &mut World, world_surface: f64, rng: &mut Rng, opts: &GenOptions) {
+    // `!Skyblock.denyAllGeneration` (`:19591`).
+    if opts.flags.contains(SeedFlags::SKYBLOCK) {
+        return;
+    }
+    // `maxTileCount = 3500` (`:19593`) — the census cap, [`MAX_TILE_COUNT`].
+    let dont_starve = opts.flags.contains(SeedFlags::DONT_STARVE);
+    // `SecretSeed.Variations.noSpiderCavesActuallyNoSpiderCaves`
+    // (`WorldGen.cs:269-279`): noSpiderCaves && activeSecretSeedCount < 4.
+    let no_spider_actually = opts.micro_flags.contains(MicroSeedFlags::NO_SPIDER_CAVES)
+        && crate::seeds::active_secret_seed_count(opts.micro_flags, opts.flags) < 4;
+    // The wall-spread sweep (`:19595-19653`) — i-outer, j-inner, the
+    // `Next(4)` gate first (`:19599`). The row count is the C# loop bound
+    // `(double)j < worldSurface - 10.0` evaluated once (the house
+    // convention, `biome_detail::pass_muds_walls_in_jungle`).
+    let spread_rows = {
+        let mut rows = 0i32;
+        let mut j = 0i32;
+        while (j as f64) < world_surface - 10.0 {
+            rows += 1;
+            j += 1;
+        }
+        rows
+    };
+    for i in 50..world.width - 50 {
+        for j in 0..spread_rows {
+            if rng.range(0, 4) != 0 {
+                continue;
+            }
+            let mut flag = false;
+            let mut num = -1;
+            let mut num2 = -1;
+            let seed_cell = world
+                .tile(i, j)
+                .is_some_and(|t| t.active() && t.kind == TILE_GRASS && matches!(t.wall, super::WALL_DIRT | WALL_GRASS_UNSAFE));
+            if seed_cell {
+                // The 3×3 exposure scan (`:19606-19615`): a wall-0 non-solid
+                // neighbour exposes the pocket. Out-of-world reads would
+                // throw in C#; unreachable here (the seed cell is terrain,
+                // far below row 0), so the port reads them as no-expose.
+                for k in (i - 1)..=(i + 1) {
+                    for l in (j - 1)..=(j + 1) {
+                        let exposes = match world.tile(k, l) {
+                            Some(t) => t.wall == 0 && !super::biome_detail::solid_tile(world, k, l),
+                            None => false,
+                        };
+                        if exposes {
+                            flag = true;
+                        }
+                    }
+                }
+                if flag {
+                    // The 3×3 target pick (`:19618-19628`): the LAST wall-2/
+                    // 15 non-solid cell in scan order wins.
+                    for m in (i - 1)..=(i + 1) {
+                        for n in (j - 1)..=(j + 1) {
+                            let candidate = match world.tile(m, n) {
+                                Some(t) => {
+                                    matches!(t.wall, super::WALL_DIRT | WALL_MUD_UNSAFE)
+                                        && !super::biome_detail::solid_tile(world, m, n)
+                                }
+                                None => false,
+                            };
+                            if candidate {
+                                num = m;
+                                num2 = n;
+                            }
+                        }
+                    }
+                }
+            }
+            // The spread gate (`:19631-19650`).
+            if flag && num > -1 && num2 > -1 && count_dirt_tiles(world, num, num2, MAX_TILE_COUNT) < MAX_TILE_COUNT {
+                // `maxValue = 3`, for-the-worthy 10 (`:19635-19639`).
+                let max_value = if opts.flags.contains(SeedFlags::FOR_THE_WORTHY) { 10 } else { 3 };
+                let mut wall_type = WALL_GRASS_UNSAFE;
+                // The Don't Starve spider-wall arm (`:19641-19644`) — the
+                // `Next(maxValue)` draw short-circuits behind dontStarve and
+                // ahead of the noSpiderCaves check.
+                if dont_starve && rng.range(0, max_value) != 0 && !no_spider_actually {
+                    wall_type = WALL_SPIDER_UNSAFE;
+                }
+                spread_wall(world, num, num2, wall_type);
+            }
+        }
+    }
+    // The flower speckle + grass fringe sweep (`:19654-19682`) — rows
+    // `[10, worldSurface − 1)`.
+    let fringe_rows = {
+        let mut rows = 0i32;
+        let mut j = 0i32;
+        while (j as f64) < world_surface - 1.0 {
+            rows += 1;
+            j += 1;
+        }
+        rows
+    };
+    for num3 in 5..world.width - 5 {
+        for num4 in 10..fringe_rows {
+            // The wall-63 speckle (`:19658-19661`) — the `Next(10)` draw
+            // short-circuits behind the wall test.
+            if world.tile(num3, num4).is_some_and(|t| t.wall == WALL_GRASS_UNSAFE)
+                && rng.range(0, 10) == 0
+            {
+                world.tiles[world.index(num3, num4)].wall = WALL_FLOWER_UNSAFE;
+            }
+            // The dirt fringe (`:19662-19680`): any wall-63/65 cell in the
+            // 3×3 converts the dirt tile via SpreadGrass. The C# `break`
+            // exits the inner loop only, but `flag2` is only ever assigned
+            // true (`:19671`) and the scan draws nothing — breaking both
+            // loops on the first hit is outcome-identical.
+            if world.tile(num3, num4).is_some_and(|t| t.active() && t.kind == TILE_DIRT) {
+                let mut flag2 = false;
+                'scan: for num5 in (num3 - 1)..=(num3 + 1) {
+                    for num6 in (num4 - 1)..=(num4 + 1) {
+                        if world
+                            .tile(num5, num6)
+                            .is_some_and(|t| matches!(t.wall, WALL_GRASS_UNSAFE | WALL_FLOWER_UNSAFE))
+                        {
+                            flag2 = true;
+                            break 'scan;
+                        }
+                    }
+                }
+                if flag2 {
+                    // `grassSpread` is the C# static — 0 at this site (no
+                    // earlier executed pass left it non-zero).
+                    let mut grass_spread = 0;
+                    spread_dirt_grass(world, num3, num4, world_surface, &mut grass_spread);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod grass_wall_tests {
+    use super::*;
+
+    /// A synthetic surface world: air above row 50, a grass row with wall
+    /// 2 at row 50 across `[50, width − 50)`, dirt with wall 2 below — plus
+    /// an exposed wall-2 air pocket at row 49 (the overhang the C# pass
+    /// spreads into: the seed cell needs a non-solid wall-2/15 target).
+    fn wall_world(width: i32, height: i32) -> World {
+        let mut world = World::new("gw".into(), width, height);
+        for x in 50..width - 50 {
+            for y in 50..height - 10 {
+                let i = world.index(x, y);
+                let mut t = Tile::default();
+                t.kind = if y == 50 { TILE_GRASS } else { TILE_DIRT };
+                t.wall = super::super::WALL_DIRT;
+                t.flags |= FLAG_ACTIVE;
+                world.tiles[i] = t;
+            }
+        }
+        // The pocket: inactive cells with wall 2 one row above the grass,
+        // every third column left wall-0 air so the seed cells' 3×3
+        // exposure scan (`:19610`, wall == 0 && !SolidTile) always finds an
+        // exposer while the target scan still finds wall-2 candidates.
+        for x in 55..width - 55 {
+            if x % 3 != 0 {
+                world.tiles[world.index(x, 49)].wall = super::super::WALL_DIRT;
+            }
+        }
+        world
+    }
+
+    /// W4-d106 R1: `Spread.Wall2` converts the exposed pocket and takes the
+    /// wall behind solid active cells (`WorldGen.cs:3449-3521`), while
+    /// wall-0 air stops the spread (`WallSpreadStopsAtAir`, `:3451-3456`)
+    /// and the protected walls (`WallID.cs:98`) are never replaced.
+    #[test]
+    fn r1_wall2_converts_the_pocket_and_stops_at_air_and_protected_walls() {
+        let mut w = World::new("gw".into(), 60, 60);
+        // A dirt-wall pocket: (30,30) and (31,30) carry wall 2, air.
+        for (x, y) in [(30, 30), (31, 30), (30, 31)] {
+            w.tiles[w.index(x, y)].wall = super::super::WALL_DIRT;
+        }
+        // A solid grass cell beside the pocket and a protected wood wall.
+        let i = w.index(29, 30);
+        w.tiles[i].kind = TILE_GRASS;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[w.index(32, 30)].wall = 4; // Wood — CannotBeReplacedByWallSpread.
+        spread_wall(&mut w, 30, 30, WALL_GRASS_UNSAFE);
+        assert_eq!(w.tile(30, 30).unwrap().wall, WALL_GRASS_UNSAFE);
+        assert_eq!(w.tile(31, 30).unwrap().wall, WALL_GRASS_UNSAFE);
+        assert_eq!(w.tile(30, 31).unwrap().wall, WALL_GRASS_UNSAFE);
+        // The solid-active arm (`:3518-3521`): the wall lands behind it.
+        assert_eq!(w.tile(29, 30).unwrap().wall, WALL_GRASS_UNSAFE);
+        // The protected wall survives; wall-0 air never converts.
+        assert_eq!(w.tile(32, 30).unwrap().wall, 4);
+        assert_eq!(w.tile(33, 30).unwrap().wall, 0);
+    }
+
+    /// W4-d106 R1: `countDirtTiles` counts the connected wall-2/59 pocket
+    /// and saturates at the structure walls (`WorldGen.cs:9661-9664`) and
+    /// the snow/ice tiles (`:9657-9660`).
+    #[test]
+    fn r1_count_dirt_tiles_counts_and_saturates() {
+        let mut w = World::new("gw".into(), 60, 60);
+        for (x, y) in [(30, 30), (31, 30), (30, 31)] {
+            w.tiles[w.index(x, y)].wall = super::super::WALL_DIRT;
+        }
+        assert_eq!(count_dirt_tiles(&w, 30, 30, MAX_TILE_COUNT), 3);
+        // A crimstone wall (83) in reach saturates the census.
+        w.tiles[w.index(32, 30)].wall = 83;
+        assert_eq!(count_dirt_tiles(&w, 30, 30, MAX_TILE_COUNT), MAX_TILE_COUNT);
+        // An ice tile (161) saturates too.
+        w.tiles[w.index(32, 30)].wall = 0;
+        let i = w.index(32, 30);
+        w.tiles[i].kind = super::super::TILE_ICE;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert_eq!(count_dirt_tiles(&w, 30, 30, MAX_TILE_COUNT), MAX_TILE_COUNT);
+    }
+
+    /// W4-d106 R1: the `SpreadGrass(0, 2)` slice converts an exposed dirt
+    /// cell above the surface line and refuses below it (`:75162`) or when
+    /// enclosed (`:75186-75201`).
+    #[test]
+    fn r1_spread_dirt_grass_converts_exposed_dirt_above_the_surface() {
+        let mut w = World::new("gw".into(), 60, 60);
+        let i = w.index(30, 30);
+        w.tiles[i].kind = TILE_DIRT;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut spread = 0;
+        spread_dirt_grass(&mut w, 30, 30, 100.0, &mut spread);
+        assert_eq!(w.tile(30, 30).unwrap().kind, TILE_GRASS);
+        // Below the surface line the generation-time rule refuses.
+        let j = w.index(30, 40);
+        w.tiles[j].kind = TILE_DIRT;
+        w.tiles[j].flags |= FLAG_ACTIVE;
+        spread_dirt_grass(&mut w, 30, 40, 35.0, &mut spread);
+        assert_eq!(w.tile(30, 40).unwrap().kind, TILE_DIRT);
+    }
+
+    /// W4-d106 R1: the pass is deterministic (a == b on the same seed) and
+    /// the skyblock gate (`:19591`) skips it tile-for-tile.
+    #[test]
+    fn r1_the_pass_is_deterministic_and_skyblock_skips_it() {
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let mut a = wall_world(200, 120);
+        let mut b = wall_world(200, 120);
+        grass_wall(&mut a, 100.0, &mut Rng(42), &opts);
+        grass_wall(&mut b, 100.0, &mut Rng(42), &opts);
+        assert_eq!(a.tiles, b.tiles, "a == b");
+        // The classic pass converts at least one pocket wall to 63 (the
+        // 100-column grass band rolls ~100 Next(4) chances at row 50).
+        assert!(
+            a.tiles.iter().any(|t| t.wall == WALL_GRASS_UNSAFE),
+            "the classic pass must spread grass walls"
+        );
+        let mut sky = wall_world(200, 120);
+        let before = sky.tiles.clone();
+        let sky_opts = GenOptions {
+            flags: SeedFlags::from(SeedFlags::SKYBLOCK),
+            ..opts.clone()
+        };
+        grass_wall(&mut sky, 100.0, &mut Rng(42), &sky_opts);
+        assert_eq!(sky.tiles, before, "skyblock skips the pass");
     }
 }

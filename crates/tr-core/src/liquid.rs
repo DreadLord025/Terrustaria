@@ -58,11 +58,25 @@ pub struct LiquidSystem {
     cycles: usize,
     /// Set when any level changed during the current [`LiquidSystem::update`].
     dirty: bool,
-    /// `Liquid.quickFall` (`Liquid.cs:34`): derived from `quickSettle` at the
-    /// head of every `UpdateLiquid` (`Liquid.cs:1056-1068`); it forces every
-    /// entry's `delay = 10` in the pass loop (`:1086-1092`), so lava/honey
-    /// flow every tick. The runtime pass keeps it `false`.
+    /// `Liquid.quickFall` (`Liquid.cs:34`): the quick-settle mode sets it and
+    /// forces every entry's `delay = 10` in the pass loop (`:1086-1092`), so
+    /// lava/honey flow every tick. The runtime pass keeps it `false`; the
+    /// gen settle loop derives it from [`Self::quick_settle`] every update
+    /// (`Liquid.cs:1056-1068`, W4-d106 R2).
     quick_fall: bool,
+    /// `Liquid.quickSettle` (`Liquid.cs:35`): the worldgen settle passes
+    /// (`Settle Liquids` `WorldGen.cs:16160` / `Settle Liquids Again`
+    /// `:21267`) set it for their update loops — the down arm snaps a >250
+    /// source back to 255 (`Liquid.cs:588-591`) and the 255→254 kill arm
+    /// snaps it too (`:944-948`). `false` at runtime (W4-d106 R2).
+    quick_settle: bool,
+    /// `Liquid.worldGenTilesIgnoreWater`'s state (`Liquid.cs:75-81`): during
+    /// the gen settle passes the doors 10 and the living-wood family
+    /// 190/191/192 lose solidity (`Main.tileSolid[10/192/191/190] =
+    /// !ignoreSolids`), so water settles through them. Separate from
+    /// [`Self::ignore_solids`] (the grate/boulder family, `:69-73`) — the
+    /// two toggles wrap different scopes (W4-d106 R2).
+    gen_ignore_water: bool,
     /// `WorldGen.remixWorldGen` — the desert-strip arm's gate
     /// (`Liquid.cs:1447`); the R-12-5 plumbing owns it, `false` at runtime.
     /// W4-f25: the `Settle Liquids` pass sets it from the seed flags.
@@ -72,18 +86,6 @@ pub struct LiquidSystem {
     /// (`worldgen/settle_liquids.rs`) sets it for the whole settle; the
     /// runtime pass keeps it `false`.
     generating: bool,
-    /// `Liquid.quickSettle` (`Liquid.cs:35`): the worldgen settle loop's
-    /// mode (`WorldGen.cs:16160`/`:16206`). `UpdateLiquid` derives
-    /// `quickFall` from it (`Liquid.cs:1056-1068`), the down-transfer bumps
-    /// a >250 source to 255 (`:588-591`) and the 254-from-255 tail keeps the
-    /// cell full (`:944-948`). `false` at runtime — every gated arm is
-    /// inert on the live path.
-    quick_settle: bool,
-    /// `Liquid.worldGenTilesIgnoreWater`'s state (`Liquid.cs:75-81`): the
-    /// `Settle Liquids` pass lifts the solidity of the doors 10/192 and the
-    /// living-wood/leaf pair 191/190 for the whole settle
-    /// (`WorldGen.cs:16156`/`:16207`). `false` at runtime.
-    gen_ignore_water: bool,
     /// The `WorldGen.PlayLiquidChangeSound` events (`Liquid.cs:1345-1347`,
     /// S1-E-25): one row per live-game merge tile — `(kind, x, y)` in tile
     /// coordinates, drained by the audio caller after the pass. The C# plays
@@ -153,10 +155,10 @@ impl LiquidSystem {
             cycles: CYCLES,
             dirty: false,
             quick_fall: false,
-            generating: false,
-            remix_world_gen: false,
             quick_settle: false,
             gen_ignore_water: false,
+            generating: false,
+            remix_world_gen: false,
             merge_events: Vec::new(),
             // The stock solidity: the grate and the boulders are solid and
             // the bubble is not (`Main.cs:10124`, `Main.cs:17753`).
@@ -191,10 +193,6 @@ impl LiquidSystem {
         std::mem::take(&mut self.merge_events)
     }
 
-    pub fn buffered_len(&self) -> usize {
-        self.buffer.len()
-    }
-
     #[inline]
     fn bit(&self, x: i32, y: i32) -> usize {
         y as usize * self.width as usize + x as usize
@@ -226,7 +224,7 @@ impl LiquidSystem {
         }
     }
 
-    fn set_checking(&mut self, x: i32, y: i32, v: bool) {
+    pub(crate) fn set_checking(&mut self, x: i32, y: i32, v: bool) {
         let i = self.bit(x, y);
         if v {
             self.checking[i >> 6] |= 1 << (i & 63);
@@ -590,7 +588,7 @@ impl LiquidSystem {
 
     /// `Liquid.LavaCheck` (`Liquid.cs:1445-1459`): the generation-only
     /// underground-desert lava strip, then the merge check.
-    fn lava_check(&mut self, world: &mut World, x: i32, y: i32) {
+    pub(crate) fn lava_check(&mut self, world: &mut World, x: i32, y: i32) {
         if self.generating
             && !self.remix_world_gen
             && !world
@@ -613,12 +611,12 @@ impl LiquidSystem {
     }
 
     /// `Liquid.HoneyCheck` (`Liquid.cs:1460-1463`).
-    fn honey_check(&mut self, world: &mut World, x: i32, y: i32) {
+    pub(crate) fn honey_check(&mut self, world: &mut World, x: i32, y: i32) {
         self.liquid_check(world, x, y, 2, false);
     }
 
     /// `Liquid.ShimmerCheck` (`Liquid.cs:1465-1468`).
-    fn shimmer_check(&mut self, world: &mut World, x: i32, y: i32) {
+    pub(crate) fn shimmer_check(&mut self, world: &mut World, x: i32, y: i32) {
         self.liquid_check(world, x, y, 3, false);
     }
 
@@ -629,7 +627,7 @@ impl LiquidSystem {
     /// cut plant below, honours the container override and merges at the
     /// cell below. `createMergeTilesDuringGen` rides the worldgen caller
     /// (`WorldGen.cs:22480` passes `true`).
-    fn liquid_check(
+    pub(crate) fn liquid_check(
         &mut self,
         world: &mut World,
         x: i32,
@@ -827,6 +825,7 @@ impl LiquidSystem {
                 && t.slope() == 0
         })
     }
+
 }
 
 /// `Tile.liquidType()`-style type getter — the two header bits, regardless
@@ -1127,7 +1126,7 @@ impl LiquidSystem {
                             crate::tileobject::check_water_death(&tile)
                         };
                         if dies {
-                            crate::edit::kill_tile(world, i, num, false);
+                            crate::edit::kill_tile(world, i, num, true);
                         }
                     }
                     // `:80449-80460`: the below-cell — open and not full.

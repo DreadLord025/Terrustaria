@@ -38,7 +38,11 @@ pub(crate) fn run(world: &mut World, streams: &mut Streams, opts: &GenOptions) {
     let micro = opts.micro_flags;
     let active = active_secret_seed_count(micro, opts.flags);
     if micro.contains(MicroSeedFlags::SURFACE_IS_DESERT) {
-        surface_is_desert(world, &mut streams.pass_rng("DoSurfaceIsDesert"), micro, active);
+        // W4-d106 R6: the C#'s `FinalizeSecretSeeds` desert arm is
+        // `DoSurfaceIsDesertFinish` only (`WorldGen.cs:591-594`); the body
+        // `DoSurfaceIsDesert` runs from the Final Cleanup head
+        // (`:22146-22149`, `cleanup::final_cleanup`) on a fresh
+        // `pass_rng("DoSurfaceIsDesert")` copy — same draws, earlier slot.
         surface_is_desert_finish(world, &mut streams.pass_rng("DoSurfaceIsDesertFinish"), micro);
     }
     if micro.contains(MicroSeedFlags::SURFACE_IS_IN_SPACE) {
@@ -122,9 +126,13 @@ fn solid_top(world: &World, x: i32, y: i32) -> bool {
 /// `DoSurfaceIsDesert` (`WorldGen.cs:2355-2591`), the normal (non-noSurface)
 /// arm only: the per-column band `worldSurface + Next(3)` conversions. The
 /// noSurface arm is a row-major scan keyed on the ice bands — not ported
-/// (no `noSurface` world state; documented at the module doc).
-fn surface_is_desert(world: &mut World, rng: &mut super::Rng, _micro: MicroSeedFlags, _active: u32) {
-    let band = world.world_surface as i32 + rng.range(0, 3);
+/// (no `noSurface` world state; documented at the module doc). Called from
+/// `cleanup::final_cleanup` (the C#'s Final Cleanup head, `:22146-22149`,
+/// W4-d106 R6) on a fresh `pass_rng("DoSurfaceIsDesert")` copy. `ws` is the
+/// real `Main.worldSurface` layer anchor (`gv.layers()`) — the port's
+/// `world.world_surface` is only written at the world tail, after this pass.
+pub(crate) fn surface_is_desert(world: &mut World, rng: &mut super::Rng, ws: f64, _micro: MicroSeedFlags, _active: u32) {
+    let band = ws as i32 + rng.range(0, 3);
     for x in 0..world.width {
         for y in 0..band.min(world.height) {
             if !active_at(world, x, y) {

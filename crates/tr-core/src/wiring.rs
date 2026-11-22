@@ -122,6 +122,16 @@ impl WireState {
         }
     }
 
+    /// `Tile.wire()` — the red wire bit (`Tile.cs:623-626`). The C#
+    /// `WorldGen.ClearBrokenTraps` family reads `tile.wire()` (red only);
+    /// the port's wiring engine uses all four colours, but the worldgen
+    /// trap passes write red exclusively (`dungeon_features.rs`,
+    /// `mini_biomes.rs`, `temple.rs`), so the red bit is the worldgen
+    /// "wired" test (W4-d106 R5).
+    pub fn wire(&self, x: i32, y: i32) -> bool {
+        self.red.contains(&(x, y))
+    }
+
     fn any_in_rect(&self, left: i32, top: i32, width: i32, height: i32, color: WireColor) -> bool {
         let set = match color {
             WireColor::Red => &self.red,

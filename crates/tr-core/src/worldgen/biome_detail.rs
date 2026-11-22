@@ -712,7 +712,8 @@ fn place_jungle_plant_detritus(
 
 /// `WorldGen.SolidTile` (`WorldGen.cs:70111-70131`) — no RNG; an
 /// out-of-bounds tile reads as solid (`Main.tile[i, j] == null → true`).
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+/// Shared with the Grass Wall pass (W4-d106 R1, `surface.rs`).
+pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };

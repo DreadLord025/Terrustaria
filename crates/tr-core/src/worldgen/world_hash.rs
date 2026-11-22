@@ -427,6 +427,56 @@ mod tests {
     // (`UpdateWorld_UndergroundTile`'s `:73699-73755` branch) is RUNTIME-only
     // — the growth tick, not the pipeline. This pin is UNCHANGED. a == b
     // stays.
+    // W4-d106 R1 (2026-11-20, code-only): the `Grass Wall` pass
+    // (`WorldGen.cs:19589-19684` + `Spread.Wall2` `:3416-3524` +
+    // `countDirtTiles` `:9637-9681`) lands between `living trees` and
+    // `trees` on a fresh `pass_rng("Grass Wall")` stream. The pin is
+    // EXPECTED UNCHANGED: the compact terrain's grass tops carry wall 0
+    // (walls start at `top + 3`, `terrain.rs:343`) and no earlier executed
+    // pass writes wall 63, so neither the seed-cell test (`:19604`) nor
+    // the flower speckle (`:19658`) fires — the pass draws its `Next(4)`
+    // lattice on its own isolated stream and writes nothing. If a
+    // grass-with-wall cell does exist on some seed, the pin moves BY
+    // DESIGN; the re-pin is DEFERRED to the merge gate (no compiler on
+    // this branch). The a == b determinism asserts stay in place.
+    // W4-d106 R2 (2026-11-21, code-only): the `Settle Liquids Again` pass
+    // (`WorldGen.cs:21246-21309`) lands before `cacti` — the shared
+    // `QuickWater`/`WaterCheck`/quick-settle machinery drains the liquids
+    // the late passes disturbed. It draws NO RNG (the settle engine is
+    // deterministic over the tile state), so no other step's stream moves;
+    // the pin moves BY DESIGN wherever a liquid cell settles/re-types/
+    // merges (the lake, the ocean shelves, the lava puddles, the honey).
+    // Re-pin DEFERRED to the merge gate; a == b stays green.
+    // W4-d106 R3 (2026-11-21, code-only): the `Tile Cleanup` pass
+    // (`WorldGen.cs:21520-21942`) lands between `cacti` and `lihzahrd altar`
+    // on a fresh `pass_rng("Tile Cleanup")` stream — the whole-world slope
+    // clear, the half-brick conversions, the water-death kills, the drip
+    // placement and the object frame normalisation all move tile bytes BY
+    // DESIGN. The pass draws only its own stream, so no other step's ledger
+    // shifts; a == b stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R4 (2026-11-21, code-only): the `Stalac` pass
+    // (`WorldGen.cs:22038-22120`) lands after `water plants` on a fresh
+    // name-seeded `UnifiedRandom` (`pass_unified("Stalac")`) — the gem-tree
+    // scatter (583-589) and the stalactite/stalagmite placement move tile
+    // bytes BY DESIGN. The pass draws only its own stream; a == b stays
+    // green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R5 (2026-11-21, code-only): the `Remove Broken Traps` pass
+    // (`WorldGen.cs:22121-22140`) lands after `stalac` — the wire-network
+    // BFS strips broken trap circuits (the dungeon/temple/mining-explosives
+    // wires), moving tile + wire bytes BY DESIGN. Draws no RNG; a == b
+    // stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R6 (2026-11-21, code-only): the `Final Cleanup` pass
+    // (`WorldGen.cs:22141-22490`) lands between `remove broken traps` and
+    // `world tail` — the wall-hole fill, the sand-family fall columns, the
+    // boulder normalisation, the dungeon-wall/minecart liquid strips, the
+    // painting wall inheritance and the poo-668 scatter move tile bytes BY
+    // DESIGN, and the final `Liquid.LiquidCheck` merge sweep re-types/merges
+    // liquid cells. The classic body draws only the poo scatter's fresh
+    // `pass_rng("Final Cleanup")` stream (the sweep is RNG-free), so no other
+    // step's ledger shifts; a == b stays green. The seed `Finish*` arms are
+    // flag-gated (a classic world skips them). Re-pin DEFERRED to the merge
+    // gate. On the 512-wide pin world the poo scatter's `Next(50, w-50)` /
+    // `Next(50, h-200)` ranges stay valid (512 > 250), so the scatter runs.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -682,6 +732,32 @@ mod tests {
     // UNCHANGED. a == b stays.
     // W4-d103 tail P9 (2026-11-21, code-only): the underground moss arm is
     // RUNTIME-only (the growth tick). This pin is UNCHANGED. a == b stays.
+    // W4-d106 R1 (code-only): the Grass Wall pass (see SEED42_512 above) —
+    // expected UNCHANGED for the same wall-0-grass-top reason on the
+    // 4200-wide default world; any grass-with-wall seed cell would move it
+    // BY DESIGN. Re-pin DEFERRED to the merge gate; a == b stays green
+    // (the pass draws only its own fresh stream).
+    // W4-d106 R2 (code-only): `Settle Liquids Again` (see SEED42_512 above)
+    // — the settle engine re-types/drops/merges liquid cells across the
+    // lake, ocean shelves and lava puddles, so this pin moves BY DESIGN.
+    // No RNG draw is added (the engine is deterministic over tile state),
+    // so a == b stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R3 (code-only): `Tile Cleanup` (see SEED42_512 above) — the
+    // slope clear / drip placement / object normalisation move this pin BY
+    // DESIGN on the fresh `pass_rng("Tile Cleanup")` stream; a == b stays
+    // green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R4 (code-only): `Stalac` (see SEED42_512 above) — the gem
+    // trees + speleothems move this pin BY DESIGN on the fresh
+    // `pass_unified("Stalac")` stream; a == b stays green. Re-pin DEFERRED
+    // to the merge gate.
+    // W4-d106 R5 (code-only): `Remove Broken Traps` (see SEED42_512 above)
+    // — the broken-circuit strip moves this pin BY DESIGN (no RNG draw);
+    // a == b stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R6 (code-only): `Final Cleanup` (see SEED42_512 above) — the
+    // wall-hole fill, the sand fall columns, the boulder/liquid/painting
+    // sweeps, the poo scatter and the final LiquidCheck merge sweep move
+    // this pin BY DESIGN on the fresh `pass_rng("Final Cleanup")` stream;
+    // a == b stays green. Re-pin DEFERRED to the merge gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

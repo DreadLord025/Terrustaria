@@ -146,7 +146,7 @@ pub(crate) fn settle_liquids(world: &mut World, gv: &GenVars, remix: bool) {
 /// `ShimmerRemoveWater` before and after the sweep; the `noTraps` boulder
 /// arms are the special-seed lane's. The `LiquidInteractionsCleanup` tail
 /// (`:144-147`) runs for a generating non-skyblock world.
-fn quick_water(world: &mut World, gv: &GenVars, sys: &mut LiquidSystem, remix: bool) {
+pub(crate) fn quick_water(world: &mut World, gv: &GenVars, sys: &mut LiquidSystem, remix: bool) {
     shimmer_remove_water(world, gv);
     // `Main.tileSolid[379] = true` (`:114`) + `tilesIgnoreWater(true)` (`:115`).
     sys.set_bubble_solid(true);
@@ -170,7 +170,7 @@ fn quick_water(world: &mut World, gv: &GenVars, sys: &mut LiquidSystem, remix: b
 /// liquid is zeroed and every tombstone 162 deactivated. The position is
 /// d102's Shimmer-pass product — `None` (the C# `Vector2D.Zero` reset) makes
 /// the circle sit off-world, a no-op (module doc).
-fn shimmer_remove_water(world: &mut World, gv: &GenVars) {
+pub(crate) fn shimmer_remove_water(world: &mut World, gv: &GenVars) {
     let Some((sx, sy)) = gv.shimmer_position else {
         return;
     };
@@ -385,7 +385,7 @@ fn attempt_to_move(
 /// keeps the block; an empty one defaults by block type — 56 → lava,
 /// 659 → shimmer). The `:23753-23756` up-neighbour shimmer arm increments
 /// the WATER counter (`num5++`) — a C# quirk kept verbatim.
-fn liquid_interactions_cleanup(world: &mut World) {
+pub(crate) fn liquid_interactions_cleanup(world: &mut World) {
     for i in 1..world.width - 2 {
         for j in 1..world.height - 2 {
             let idx = world.index(i, j);

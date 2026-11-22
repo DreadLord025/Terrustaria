@@ -87,6 +87,10 @@ pub(crate) use grass::{conversion_hardened_sand_walls_contains, conversion_snow_
 // W4-f25 closeout: the Convert 16/18 wall-union seams (the dungeon-biome cells).
 pub(crate) use grass::{conversion_dirt_walls_contains, conversion_new_wall_set};
 use grass::{grow_moss_arm, grow_moss_arm_underground, SPREAD_UNDERGROUND};
+// W4-d106 R1: the Grass Wall pass's `SpreadGrass` write kills an invalid
+// tree above the converted cell (`WorldGen.cs:75222` → `:54802-54902`) —
+// the same helper the growth-tick slice uses (S1-K-3 seam).
+pub(crate) use trees::kill_invalid_tree_above;
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public
 // seams stay on `growth` (verbatim move, behaviour frozen).

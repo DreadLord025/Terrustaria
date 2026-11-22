@@ -103,6 +103,7 @@ use super::{
 };
 use crate::growth::spread_grass;
 use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
+use crate::tiledata as td;
 use crate::tiledata::{SET_BOULDERS, TILE_MOSS, TILE_SOLID, TILE_SOLID_TOP};
 use crate::world::World;
 
@@ -405,16 +406,36 @@ fn gem_cave(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
 // --- the spider cave ---------------------------------------------------------
 
 /// `WorldGen.PlaceTight` (`WorldGen.cs:38303-38325`) → the stalactite.
-pub(crate) fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) {
-    let blocked = world
-        .tile(x, y)
-        .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer);
+/// Generic over the pass stream ([`WorldGenRand`]) so the spider cave's
+/// `Rng` and the Stalac pass's `UnifiedRandom` share one port (W4-d106 R4).
+/// The `CheckStalactite` tail (`:38320-38323`) is the caller's responsibility:
+/// the spider pass's landed port skips it (its seats are pre-validated), the
+/// Stalac pass runs it ([`check_stalactite`]) — keeping the spider output
+/// byte-identical.
+///
+/// KEEP-ONE GRAFTED (research-88 §3.2 / research-96 §3, the g41 stalactite
+/// 6-point FINAL; research-312 §2.1): g41's chain body wins — the validator
+/// runs INSIDE `place_tight`'s tail (the C# `PlaceTight` tail,
+/// `WorldGen.cs:38320-38323`), and the four Stalac call sites' explicit
+/// `check_stalactite` blocks dropped at the batch-B merge (the
+/// double-validation trap — keeping both doubles the `Next(3)` mismatch
+/// draws). The signature is d106's generalisation over [`WorldGenRand`] so
+/// the spider pass's `Rng` and the Stalac pass's `UnifiedRandom` share one
+/// port (matrix-88 §3.2 point 2).
+pub(crate) fn place_tight(
+    world: &mut World,
+    rng: &mut impl super::chest_stock::WorldGenRand,
+    x: i32,
+    y: i32,
+    spiders: bool,
+) {
+    let blocked = world.tile(x, y).is_some_and(|t| t.any_shimmer());
     let larva = world.tile(x, y).is_some_and(|t| t.active() && t.kind == TILE_LARVA);
     if blocked || larva {
         return;
     }
-    let prefer_small = rng.range(0, 2) == 0;
-    let variation = rng.range(0, 3);
+    let prefer_small = rng.next(2) == 0;
+    let variation = rng.next(3);
     place_unchecked_stalactite(world, x, y, prefer_small, variation, spiders);
     // `:38320-38323` — the post-placement support validation (W4-g41): an
     // unsupported sac pops, a mismatched style re-rolls (the chain's only
@@ -521,7 +542,7 @@ fn get_desired_stalagtite_style(world: &World, x: i32, j: i32) -> Option<(i32, i
 /// (`:38665`, the chain's ONLY RNG draw) plus the desired-style frame base
 /// rewritten over the object's height. The `netMode == 1` early-true
 /// (`:38645`) is the client skip — worldgen runs offline (netMode 0).
-fn update_stalagtite_style(world: &mut World, rng: &mut Rng, x: i32, j: i32) -> bool {
+fn update_stalagtite_style(world: &mut World, rng: &mut impl super::chest_stock::WorldGenRand, x: i32, j: i32) -> bool {
     let Some(tile) = world.tile(x, j) else {
         return true;
     };
@@ -532,7 +553,7 @@ fn update_stalagtite_style(world: &mut World, rng: &mut Rng, x: i32, j: i32) -> 
         return false;
     };
     if style != desired {
-        let mut num = rng.range(0, 3) * 18;
+        let mut num = rng.next(3) * 18;
         // `:38666-38707` — the 13-case desired-style base switch (case 7 is
         // the identity `num = num`).
         num += match desired {
@@ -563,7 +584,7 @@ fn update_stalagtite_style(world: &mut World, rng: &mut Rng, x: i32, j: i32) -> 
 /// `WorldGen.CheckStalactite` (`WorldGen.cs:38996-39175`): the four frameY
 /// arms' support validation. A failed check kills the object's cells whose
 /// kind still matches the original (`destroyObject` kills — no cascade).
-fn check_stalactite(world: &mut World, rng: &mut Rng, x: i32, j: i32) {
+pub(crate) fn check_stalactite(world: &mut World, rng: &mut impl super::chest_stock::WorldGenRand, x: i32, j: i32) {
     let Some(tile) = world.tile(x, j) else {
         return;
     };
@@ -769,6 +790,132 @@ fn write_stalactite(world: &mut World, x: i32, y: i32, frame_x: i32, frame_y: i3
         t.frame_x = frame_x as i16;
         t.frame_y = frame_y as i16;
         t.set_slope(0);
+    }
+}
+
+// --- the Stalac pass (W4-d106 R4) ---------------------------------------------
+
+/// `WorldGen.oceanDepths` (`WorldGen.cs:10963-10973`) — the ±380 beach
+/// margins above the ocean level. Shared with `cleanup::final_cleanup`
+/// (W4-d106 R6's sand-fall gate).
+pub(crate) fn ocean_depths(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
+    if y as f64 > ocean_level {
+        return false;
+    }
+    x < 380 || x > world.width - 380
+}
+
+/// The support-type test the Stalac slope-clear arms read (`WorldGen.cs:22080`
+/// / `:22084`): stone 1 / snow 147 / ice 161 / ebonstone 25 / crimstone 203,
+/// or any `tileStone` / `tileMoss` kind. Reads the tile TYPE regardless of
+/// active state (the C# does).
+fn speleothem_support(kind: u16) -> bool {
+    matches!(kind, 1 | 147 | 161 | 25 | 203) || td::TILE_STONE.has(kind) || td::TILE_MOSS.has(kind)
+}
+
+/// `Stalac` (`GenPassNameID.SpeleothemsAndGemTrees`, `WorldGen.cs:22038-22120`)
+/// — W4-d106 R4. The gem-tree scatter + the stalactite/stalagmite placement
+/// over the underground, plus the surface snow/ice/evil speleothems. Runs on
+/// one name-seeded [`UnifiedRandom`] (the gem-tree grower
+/// `growth::try_growing_tree_by_type` and `PlaceTight` share vanilla's single
+/// `genRand`). Draws, in C# order per (i, j): the gem-tree gate `Next(5)`
+/// (short-circuited by the anniversary/drunk flags) then `Next(7)` on a pass;
+/// the stalactite gate `Next(5)` (after the `oceanDepths`/active vetoes); the
+/// surface arms' three `Next(5)` rolls.
+pub(crate) fn pass_stalac(
+    world: &mut World,
+    rng: &mut crate::UnifiedRandom,
+    world_surface: f64,
+    rock_layer: f64,
+    opts: &super::GenOptions,
+) {
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let drunk = opts.flags.contains(crate::seeds::SeedFlags::DRUNK);
+    let ocean_level = (world_surface + rock_layer) / 2.0 + 40.0;
+    let (width, height) = (world.width, world.height);
+    let surface = world_surface as i32;
+    // `:22043-22118` — i from 20 to maxTilesX-20.
+    for i in 20..width - 20 {
+        // `:22046-22090` — the underground band, j from worldSurface to
+        // maxTilesY-20.
+        for j in surface..height - 20 {
+            // `:22048-22077` — the gem-tree arm: the anniversary/drunk flags
+            // short-circuit the Next(5); the above cell must hold no liquid.
+            let above_dry = world.tile(i, j - 1).is_some_and(|t| t.liquid == 0);
+            if (anniversary || drunk || rng.next_max(5) == 0) && above_dry {
+                let num2 = rng.next_max(7);
+                // `:22052-22075` — the gem-tree kind table (583..589).
+                let tree_tile_type: u16 = 583 + num2 as u16;
+                crate::growth::try_growing_tree_by_type(world, tree_tile_type, i, j, rng);
+            }
+            // `:22078-22089` — the stalactite arm: not ocean depths, the cell
+            // inactive, 1-in-5.
+            let cell_inactive = world.tile(i, j).is_some_and(|t| !t.active());
+            if !ocean_depths(world, i, j, ocean_level) && cell_inactive && rng.next_max(5) == 0 {
+                // `:22080-22083` — flatten the support above when it is a
+                // speleothem support and both cells are inactive.
+                let above_kind = world.tile(i, j - 1).map_or(0, |t| t.kind);
+                if speleothem_support(above_kind)
+                    && world.tile(i, j).is_some_and(|t| !t.active())
+                    && world.tile(i, j + 1).is_some_and(|t| !t.active())
+                {
+                    if let Some(t) = world.tile_mut(i, j - 1) {
+                        t.set_slope(0);
+                    }
+                }
+                // `:22084-22087` — the same for the support below.
+                let below_kind = world.tile(i, j + 1).map_or(0, |t| t.kind);
+                if speleothem_support(below_kind)
+                    && world.tile(i, j).is_some_and(|t| !t.active())
+                    && world.tile(i, j - 1).is_some_and(|t| !t.active())
+                {
+                    if let Some(t) = world.tile_mut(i, j + 1) {
+                        t.set_slope(0);
+                    }
+                }
+                // `:22088` — PlaceTight (the support check rides inside).
+                place_tight(world, rng, i, j, false);
+            }
+        }
+        // `:22091-22117` — the surface band, k from 5 to worldSurface.
+        for k in 5..surface {
+            // `:22093-22100` — the snow/ice ceiling arm.
+            let above = world.tile(i, k - 1).copied().unwrap_or_default();
+            if above.active() && matches!(above.kind, 147 | 161) && rng.next_max(5) == 0 {
+                if world.tile(i, k).is_some_and(|t| !t.active())
+                    && world.tile(i, k + 1).is_some_and(|t| !t.active())
+                {
+                    if let Some(t) = world.tile_mut(i, k - 1) {
+                        t.set_slope(0);
+                    }
+                }
+                place_tight(world, rng, i, k, false);
+            }
+            // `:22101-22108` — the ebonstone/crimstone ceiling arm.
+            let above = world.tile(i, k - 1).copied().unwrap_or_default();
+            if above.active() && matches!(above.kind, 25 | 203) && rng.next_max(5) == 0 {
+                if world.tile(i, k).is_some_and(|t| !t.active())
+                    && world.tile(i, k + 1).is_some_and(|t| !t.active())
+                {
+                    if let Some(t) = world.tile_mut(i, k - 1) {
+                        t.set_slope(0);
+                    }
+                }
+                place_tight(world, rng, i, k, false);
+            }
+            // `:22109-22116` — the ebonstone/crimstone floor arm.
+            let below = world.tile(i, k + 1).copied().unwrap_or_default();
+            if below.active() && matches!(below.kind, 25 | 203) && rng.next_max(5) == 0 {
+                if world.tile(i, k).is_some_and(|t| !t.active())
+                    && world.tile(i, k - 1).is_some_and(|t| !t.active())
+                {
+                    if let Some(t) = world.tile_mut(i, k + 1) {
+                        t.set_slope(0);
+                    }
+                }
+                place_tight(world, rng, i, k, false);
+            }
+        }
     }
 }
 
@@ -2586,5 +2733,81 @@ mod tests {
             w.tiles.clone()
         };
         assert_eq!(build(0x5B1D), build(0x5B1D), "a == b for the validator pass");
+    // --- W4-d106 R4 witnesses (written NOT run — code-only branch) ----------
+
+    /// The Stalac pass is deterministic (a == b on the same seed) over a
+    /// pocketed stone world.
+    #[test]
+    fn r4_the_stalac_pass_is_deterministic() {
+        let opts = super::super::GenOptions { width: 800, height: 400, ..Default::default() };
+        let mut a = flat_world(800, 400, 60);
+        carve_pocket(&mut a, 300, 120, 60, 80);
+        let mut b = a.clone();
+        pass_stalac(&mut a, &mut crate::UnifiedRandom::new(42), 60.0, 230.0, &opts);
+        pass_stalac(&mut b, &mut crate::UnifiedRandom::new(42), 60.0, 230.0, &opts);
+        assert_eq!(a.tiles, b.tiles, "a == b");
+    }
+
+    /// `PlaceTight` places a hanging stalactite under a stone ceiling and the
+    /// internal validator keeps it (the support is valid). KEEP-ONE graft
+    /// (research-312 §2.1): the validator runs INSIDE `place_tight`'s tail
+    /// (g41's body), so the witness's explicit `check_stalactite` call dropped.
+    #[test]
+    fn r4_place_tight_hangs_a_stalactite_under_stone() {
+        let mut w = flat_world(200, 200, 60);
+        // A 3-tall air pocket under the stone ceiling at (100, 100).
+        carve_pocket(&mut w, 99, 100, 3, 3);
+        // The ceiling at (100, 99) is stone (flat_world), the cell (100,100)
+        // and (100,101) are air. PlaceTight at (100,100).
+        let mut rng = crate::UnifiedRandom::new(7);
+        place_tight(&mut w, &mut rng, 100, 100, false);
+        // A valid stone support keeps the stalactite (the internal check ran).
+        assert!(
+            w.tile(100, 100).is_some_and(|t| t.active() && t.kind == TILE_STALACTITE),
+            "the supported stalactite survived the internal check"
+        );
+    }
+
+    /// research-88 §3.2 point 5 / research-96 §3 (EXECUTED, retire phase):
+    /// the moss support test reads the GENERATED `tiledata::TILE_MOSS`
+    /// (`Main.cs:7031`), which includes 627 (KryptonMoss Brown) — the old
+    /// local `MOSS_TILES`+`NEON_MOSS`+381 union missed it, so a stalactite
+    /// under a 627 ceiling silently refused to place. Same fixture as the
+    /// stone witness, support kind 627.
+    #[test]
+    fn r4_place_tight_hangs_under_the_generated_moss_627() {
+        let mut w = flat_world(200, 200, 60);
+        carve_pocket(&mut w, 99, 100, 3, 3);
+        // The ceiling at (100, 99) becomes KryptonMoss Brown 627.
+        let j = w.index(100, 99);
+        w.tiles[j].kind = 627;
+        let mut rng = crate::UnifiedRandom::new(7);
+        place_tight(&mut w, &mut rng, 100, 100, false);
+        assert!(
+            w.tile(100, 100).is_some_and(|t| t.active() && t.kind == TILE_STALACTITE),
+            "the 627 moss ceiling seats a stalactite (the generated TILE_MOSS)"
+        );
+    }
+
+    /// `CheckStalactite` kills a stalactite whose support was removed.
+    #[test]
+    fn r4_check_stalactite_kills_the_unsupported() {
+        let mut w = flat_world(200, 200, 60);
+        carve_pocket(&mut w, 99, 100, 3, 3);
+        // Hand-place a small hanging stalactite (frameY 72) at (100,100).
+        let i = w.index(100, 100);
+        w.tiles[i].kind = TILE_STALACTITE;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].frame_x = 54;
+        w.tiles[i].frame_y = 72;
+        // Remove the ceiling support above.
+        let j = w.index(100, 99);
+        w.tiles[j].flags &= !FLAG_ACTIVE;
+        let mut rng = crate::UnifiedRandom::new(7);
+        check_stalactite(&mut w, &mut rng, 100, 100);
+        assert!(
+            !w.tile(100, 100).is_some_and(|t| t.active() && t.kind == TILE_STALACTITE),
+            "the unsupported stalactite died"
+        );
     }
 }

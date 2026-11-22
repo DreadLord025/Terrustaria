@@ -23,6 +23,7 @@ pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;
 mod caves;
+mod cleanup;
 mod config;
 mod crystals;
 mod desert;
