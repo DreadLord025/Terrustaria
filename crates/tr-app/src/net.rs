@@ -730,6 +730,12 @@ pub mod id {
     /// (`MessageBuffer.cs:165`'s `b != 93` escape) — the C# accepts the
     /// frame early, then drops it.
     pub const SOCIAL_HANDSHAKE: u8 = 93;
+
+    // ---- W4-c27: the entity-state ids (apply/relay arms land with them) ----
+    pub const SET_TIME: u8 = 18; // MessageID.cs:45 / NetMessage.cs:531-536 / MessageBuffer.cs:1290-1298
+    pub const MISC_DATA_SYNC: u8 = 51; // MessageID.cs:115 / NetMessage.cs:1010-1013 / MessageBuffer.cs:2482-2530
+    pub const ADD_PLAYER_BUFF_PVP: u8 = 55; // MessageID.cs:123 / NetMessage.cs:1041-1045 / MessageBuffer.cs:2594-2611
+    pub const SYNC_DODGE: u8 = 62; // MessageID.cs:137 / NetMessage.cs:1077-1080 / MessageBuffer.cs:2879-2908
 }
 
 // ===========================================================================
@@ -1232,6 +1238,15 @@ pub struct PlayerNet {
     /// on the peer snapshot (the creative-power authority check is unported).
     /// W4-g51 f21 cross-check.
     pub counts_as_host: bool,
+    /// `Main.player[id].zone1..5` + `townNPCs`, fed by `36 SyncPlayerZone`
+    /// (`MessageBuffer.cs:2187-2192`). W4-c27.
+    pub zone: PlayerZone,
+    /// `Player.itemRotation`/`itemAnimation`, fed by `41
+    /// ItemRotationAndAnimation` (`MessageBuffer.cs:2281-2282`); `channel`
+    /// re-derived from the selected inventory item (`:2283`). W4-c27.
+    pub item_rotation: f32,
+    pub item_animation: i16,
+    pub channel: bool,
 }
 
 impl Default for PlayerNet {
@@ -1283,6 +1298,18 @@ impl Default for PlayerNet {
             loadout: None,
             host: false,
             counts_as_host: false,
+            zone: PlayerZone {
+                player_id: 0,
+                zone1: BitsByte::new(),
+                zone2: BitsByte::new(),
+                zone3: BitsByte::new(),
+                zone4: BitsByte::new(),
+                zone5: BitsByte::new(),
+                town_npcs: 0,
+            },
+            item_rotation: 0.0,
+            item_animation: 0,
+            channel: false,
         }
     }
 }
@@ -3246,6 +3273,17 @@ pub enum C2s {
     /// (`WorldItem.FindOwner`'s `netMode == 1` arm, `WorldItem.cs:256`;
     /// reader `MessageBuffer.cs:2232-2255`).
     ReleaseItemOwnership(ReleaseItemOwnership),
+    /// `51 MiscDataSync` - a client's misc request (kinds 1/2/3/6;
+    /// `MessageBuffer.cs:2482-2530`). W4-c27.
+    MiscDataSync(MiscDataSync),
+    /// `55 AddPlayerBuffPvP` - a client applied a PvP debuff to a peer
+    /// (`Player.AddBuff`'s remote branch, `Player.cs:5269-5275`;
+    /// `MessageBuffer.cs:2594-2611`). W4-c27.
+    PlayerBuffPvp(PlayerBuffPvp),
+    /// `62 SyncDodge` - a client's dodge fired (`Player.NinjaDodge`/
+    /// `ShadowDodge`/`BrainOfConfusionDodge`/`DoMysticSashDodge`'s sends;
+    /// `MessageBuffer.cs:2879-2908`). W4-c27.
+    SyncDodge(SyncDodge),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -3605,6 +3643,18 @@ pub enum S2c {
     /// `124 TEHatRackItemSync` — the host's hat-rack relay
     /// (`MessageBuffer.cs:4019`). Both directions. W4-g51.
     HatRackItemSync(HatRackItemSync),
+    /// `18 SetTime` - the host's clock (`NetMessage.cs:531-536`; the client
+    /// applies it at `netMode == 1`, `MessageBuffer.cs:1290-1298`). W4-c27.
+    SetTime(SetTime),
+    /// `51 MiscDataSync` - the host's misc fan-out (kinds 2/4;
+    /// `MessageBuffer.cs:2498`, `:2512`). W4-c27.
+    MiscDataSync(MiscDataSync),
+    /// `55 AddPlayerBuffPvP` - a PvP debuff aimed at us, sent by the host to
+    /// the target alone (`MessageBuffer.cs:2603`). W4-c27.
+    PlayerBuffPvp(PlayerBuffPvp),
+    /// `62 SyncDodge` - a peer's dodge, relayed by the host
+    /// (`MessageBuffer.cs:2905`). W4-c27.
+    SyncDodge(SyncDodge),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3793,6 +3843,9 @@ impl C2s {
             Self::DeadCellsJarTryPlacing(_) => id::DEAD_CELLS_JAR_TRY_PLACING,
             Self::LeashedAnchorPlaceItem(_) => id::LEASHED_ANCHOR_PLACE_ITEM,
             Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
+            Self::SyncDodge(_) => id::SYNC_DODGE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -4033,6 +4086,15 @@ impl C2s {
             }
             // `NetMessage.cs:1654-1658`: three (short)s.
             Self::LeashedAnchorPlaceItem(p) => w.i16(p.x).i16(p.y).i16(p.item_type),
+            // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+            Self::MiscDataSync(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+            // (int)number3.
+            Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
+            // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+            Self::SyncDodge(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             // `NetMessage.cs:433-445`: (byte)number leads the spawn body.
             Self::PlayerSpawn(s) => w
@@ -4051,8 +4113,6 @@ impl C2s {
                 max_hp,
             } => w.u8(*player_id).i16(*hp).i16(*max_hp),
             Self::PlayerState(ps) => ps.write_to(w),
-            // `NetMessage.cs:1197-1204` — byte id + float stealth.
-            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             // `NetMessage.cs:1321-1326` — short npc, int value, two floats.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
             // `NetMessage.cs:1337-1346` — byte player, short color, dest
@@ -4501,6 +4561,27 @@ impl C2s {
                 y: r.i16()?,
                 item_type: r.i16()?,
             }),
+            // `MessageBuffer.cs:2484-2489`: two bytes.
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2596-2598`: byte + ushort + int.
+            id::ADD_PLAYER_BUFF_PVP => Self::PlayerBuffPvp(PlayerBuffPvp {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                time: r.i32()?,
+            }),
+            // `MessageBuffer.cs:2881-2882`: two bytes.
+            id::SYNC_DODGE => Self::SyncDodge(SyncDodge {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3248-3253`: byte + float.
+            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
+                player_id: r.u8()?,
+                stealth: r.f32()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -4573,11 +4654,6 @@ impl C2s {
                 end_x: r.i16()?,
                 end_y: r.i16()?,
                 tool_mode: r.u8()?,
-            }),
-            // `MessageBuffer.cs:3248-3253` — byte id + ReadSingle stealth.
-            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
-                player_id: r.u8()?,
-                stealth: r.f32()?,
             }),
             // `MessageBuffer.cs:3444-3447`: (short)npc, (int)value, two
             // ReadSingles (the writer's number3/number4 are floats).
@@ -4888,6 +4964,10 @@ impl S2c {
             Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
             Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
             Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
+            Self::SetTime(_) => id::SET_TIME,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
+            Self::SyncDodge(_) => id::SYNC_DODGE,
         }
     }
 
@@ -5365,6 +5445,20 @@ impl S2c {
             Self::HatRackItemSync(h) => h
                 .item
                 .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
+            // `NetMessage.cs:531-536`: (byte)dayTime + (int)time + sunModY +
+            // moonModY (both `short`, `Main.cs:1185`/`:1187`).
+            Self::SetTime(t) => w
+                .u8(u8::from(t.day_time))
+                .i32(t.time)
+                .i16(t.sun_mod_y)
+                .i16(t.moon_mod_y),
+            // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+            Self::MiscDataSync(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+            // (int)number3.
+            Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
+            // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+            Self::SyncDodge(d) => w.u8(d.player_id).u8(d.kind),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -6061,6 +6155,29 @@ impl S2c {
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
                 slot: r.i16()?,
                 force_assign_to_server: r.bool()?,
+            }),
+            // `MessageBuffer.cs:1290-1298`: byte == 1 day flag + int + 2 shorts.
+            id::SET_TIME => Self::SetTime(SetTime {
+                day_time: r.u8()? == 1,
+                time: r.i32()?,
+                sun_mod_y: r.i16()?,
+                moon_mod_y: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2484-2489`: two bytes.
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2596-2598`: byte + ushort + int.
+            id::ADD_PLAYER_BUFF_PVP => Self::PlayerBuffPvp(PlayerBuffPvp {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                time: r.i32()?,
+            }),
+            // `MessageBuffer.cs:2881-2882`: two bytes.
+            id::SYNC_DODGE => Self::SyncDodge(SyncDodge {
+                player_id: r.u8()?,
+                kind: r.u8()?,
             }),
             _ => return None,
         })
@@ -14478,6 +14595,256 @@ mod tests {
             assert_eq!(r.remaining(), 0);
         }
     }
+
+    // ---- W4-c27: the entity-state ids — byte-verbatim witnesses ----
+    // Each test pins the frame's id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    #[test]
+    fn w4_c27_set_time_round_trips() {
+        // `NetMessage.cs:531-536`: (byte)dayTime + (int)Main.time +
+        // sunModY/moonModY, both `short` (`Main.cs:1185`/`:1187`).
+        let t = SetTime {
+            day_time: false,
+            time: 32_400,
+            sun_mod_y: -120,
+            moon_mod_y: 45,
+        };
+        let f = S2c::SetTime(t).encode();
+        assert_eq!(f[2], 18);
+        let mut body = vec![0u8];
+        body.extend_from_slice(&32_400i32.to_le_bytes());
+        body.extend_from_slice(&(-120i16).to_le_bytes());
+        body.extend_from_slice(&45i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SetTime(d) => assert_eq!(d, t),
+            other => panic!("expected 18, got {:?}", other.msg_id()),
+        }
+        // `MessageBuffer.cs:1293`: the day flag is `== 1`, not `!= 0` —
+        // a byte 2 reads as night.
+        let mut body2 = vec![2u8];
+        body2.extend_from_slice(&0i32.to_le_bytes());
+        body2.extend_from_slice(&0i16.to_le_bytes());
+        body2.extend_from_slice(&0i16.to_le_bytes());
+        match S2c::decode(18, &mut NetReader::new(&body2)).expect("decode") {
+            S2c::SetTime(d) => assert!(!d.day_time, "byte 2 is not day"),
+            other => panic!("expected 18, got {:?}", other.msg_id()),
+        }
+        // Truncated bodies are malformed.
+        assert!(S2c::decode(18, &mut NetReader::new(&[1, 0, 0])).is_none());
+    }
+
+    /// W4-c27 SEAL (research/332): the PARKED `sunModY`/`moonModY` offsets
+    /// still ride the wire verbatim — the full `short` range round-trips
+    /// (`NetMessage.cs:534-535`, both `short`, `Main.cs:1185`/`:1187`), so a
+    /// future title-screen-drag sender needs no codec change.
+    #[test]
+    fn w4_c27_set_time_mod_offsets_ride_the_full_short_range() {
+        let t = SetTime {
+            day_time: true,
+            time: 0,
+            sun_mod_y: i16::MIN,
+            moon_mod_y: i16::MAX,
+        };
+        let f = S2c::SetTime(t).encode();
+        assert_eq!(f[2], 18);
+        // Body: day byte + 4 time bytes, then the two shorts LE.
+        assert_eq!(&f[8..12], &[0x00, 0x80, 0xff, 0x7f]);
+        match S2c::decode(18, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SetTime(d) => assert_eq!(d, t),
+            other => panic!("expected 18, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_c27_player_zone_round_trips() {
+        // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+        // zone5 bit 0 is ZoneShimmer (`Player.cs:3811-3821`).
+        let z = PlayerZone {
+            player_id: 6,
+            zone1: 0b1010_0101,
+            zone2: 0x0F,
+            zone3: 0xF0,
+            zone4: 0x33,
+            zone5: 0b0000_0001,
+            town_npcs: 3,
+        };
+        let body = [6, 0b1010_0101, 0x0F, 0xF0, 0x33, 0x01, 3];
+        let f = S2c::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerZone(z).encode();
+        assert_eq!(c[2], 36);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(36, &mut NetReader::new(&body[..6])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_item_anim_round_trips() {
+        // `NetMessage.cs:956-960`: (byte)number + itemRotation float +
+        // (short)itemAnimation.
+        let a = ItemAnim {
+            player_id: 2,
+            rotation: -1.25,
+            animation: 17,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&(-1.25f32).to_le_bytes());
+        body.extend_from_slice(&17i16.to_le_bytes());
+        let f = S2c::ItemAnim(a).encode();
+        assert_eq!(f[2], 41);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+        let c = C2s::ItemAnim(a).encode();
+        assert_eq!(c[2], 41);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(41, &mut NetReader::new(&body[..6])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_mana_effect_round_trips() {
+        // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+        let m = ManaEffect {
+            player_id: 5,
+            amount: -40,
+        };
+        let mut body = vec![5u8];
+        body.extend_from_slice(&(-40i16).to_le_bytes());
+        let f = S2c::ManaEffect(m).encode();
+        assert_eq!(f[2], 43);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+        let c = C2s::ManaEffect(m).encode();
+        assert_eq!(c[2], 43);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(43, &mut NetReader::new(&[5])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_misc_data_sync_round_trips() {
+        // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+        let d = MiscDataSync {
+            player_id: 3,
+            kind: 6,
+        };
+        let f = S2c::MiscDataSync(d).encode();
+        assert_eq!(f[2], 51);
+        assert_eq!(&f[3..], &[3, 6]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::MiscDataSync(x) => assert_eq!(x, d),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        let c = C2s::MiscDataSync(d).encode();
+        assert_eq!(c[2], 51);
+        assert_eq!(&c[3..], &[3, 6]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MiscDataSync(x) => assert_eq!(x, d),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(51, &mut NetReader::new(&[3])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_player_buff_pvp_round_trips() {
+        // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+        // (int)number3.
+        let b = PlayerBuffPvp {
+            player_id: 1,
+            buff_type: 400,
+            time: 600,
+        };
+        let mut body = vec![1u8];
+        body.extend_from_slice(&400u16.to_le_bytes());
+        body.extend_from_slice(&600i32.to_le_bytes());
+        let f = S2c::PlayerBuffPvp(b).encode();
+        assert_eq!(f[2], 55);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerBuffPvp(x) => assert_eq!(x, b),
+            other => panic!("expected 55, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerBuffPvp(b).encode();
+        assert_eq!(c[2], 55);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerBuffPvp(x) => assert_eq!(x, b),
+            other => panic!("expected 55, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(55, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_sync_dodge_round_trips() {
+        // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+        let d = SyncDodge {
+            player_id: 4,
+            kind: 5, // MysticSash (`Player.cs:38115`)
+        };
+        let f = S2c::SyncDodge(d).encode();
+        assert_eq!(f[2], 62);
+        assert_eq!(&f[3..], &[4, 5]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SyncDodge(x) => assert_eq!(x, d),
+            other => panic!("expected 62, got {:?}", other.msg_id()),
+        }
+        let c = C2s::SyncDodge(d).encode();
+        assert_eq!(c[2], 62);
+        assert_eq!(&c[3..], &[4, 5]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SyncDodge(x) => assert_eq!(x, d),
+            other => panic!("expected 62, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(62, &mut NetReader::new(&[4])).is_none());
+    }
+
+    #[test]
+    fn w4_c27_player_stealth_round_trips() {
+        // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+        let s = PlayerStealth {
+            player_id: 2,
+            stealth: 0.625,
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&0.625f32.to_le_bytes());
+        let f = S2c::PlayerStealth(s).encode();
+        assert_eq!(f[2], 84);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerStealth(x) => assert_eq!(x, s),
+            other => panic!("expected 84, got {:?}", other.msg_id()),
+        }
+        let c = C2s::PlayerStealth(s).encode();
+        assert_eq!(c[2], 84);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerStealth(x) => assert_eq!(x, s),
+            other => panic!("expected 84, got {:?}", other.msg_id()),
+        }
+        assert!(C2s::decode(84, &mut NetReader::new(&body[..4])).is_none());
+    }
 }
 
 /// `msg 119 CombatTextString`'s body (`NetMessage.cs:1188-1196`, W4-g50):
@@ -15980,4 +16347,58 @@ impl TileEntityData {
             _ => return None, // InvalidEntityID (TileEntitiesManager.cs:17-24)
         })
     }
+}
+
+/// `msg 18 SetTime`'s body (`NetMessage.cs:531-536`): the day flag as one
+/// byte, `(int)Main.time`, then the `Main.sunModY`/`moonModY` offsets — both
+/// `short` (`Main.cs:1185`/`:1187`). The reader is client-only
+/// (`MessageBuffer.cs:1290-1298`, `netMode == 1`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SetTime {
+    pub day_time: bool,
+    /// `Main.time` — the wire is an `int`; the port's clock is the f64 ticks.
+    pub time: i32,
+    pub sun_mod_y: i16,
+    pub moon_mod_y: i16,
+}
+
+/// `msg 51 MiscDataSync`'s body (`NetMessage.cs:1010-1013`): two bytes —
+/// `number` (the subject: a player slot for kinds 1/2, an NPC slot for kind
+/// 4) and `number2`, the kind switch (`MessageBuffer.cs:2490-2528`):
+/// 1 SpawnSkeletron, 2 the Item1 use sound at the player, 3 Sundialing
+/// (host-only), 4 BigMimicSpawnSmoke, 5 the TorchGod bestiary kill
+/// (host-only), 6 Moondialing (host-only). The host forces the subject to
+/// the sender (`:2485-2488`). W4-c27.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MiscDataSync {
+    pub player_id: u8,
+    pub kind: u8,
+}
+
+/// `msg 55 AddPlayerBuffPvP`'s body (`NetMessage.cs:1041-1045`): the player
+/// id, `(ushort)number2` the buff type and `(int)number3` the time
+/// (`MessageBuffer.cs:2596-2598`). The host applies only when BOTH players
+/// are hostile and `Main.pvpBuff[type]` (`:2599`) and sends it to the TARGET
+/// alone (`:2603`); the client applies only to itself (`:2599`'s second
+/// clause) via `AddBuff(fromNetPvP: true)` (`:2607`, `Player.cs:5287-5290`
+/// skips the time extension). W4-c27.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerBuffPvp {
+    pub player_id: u8,
+    pub buff_type: u16,
+    pub time: i32,
+}
+
+/// `msg 62 SyncDodge`'s body (`NetMessage.cs:1077-1080`): the player id and
+/// `(byte)number2`, the dodge kind — 1 Ninja, 2 Shadow, 4 BrainOfConfusion,
+/// 5 MysticSash (`MessageBuffer.cs:2887-2902`; 3 is the retired Holy dodge,
+/// no arm). The host forces the id to the sender (`:2883-2886`), runs the
+/// dodge on the subject and relays to the others (`:2903-2906`). Send sites:
+/// `Player.NinjaDodge` (`Player.cs:38163`), `ShadowDodge` (`:38038`),
+/// `BrainOfConfusionDodge` (`:38053`), `DoMysticSashDodge` (`:38115`).
+/// W4-c27.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SyncDodge {
+    pub player_id: u8,
+    pub kind: u8,
 }

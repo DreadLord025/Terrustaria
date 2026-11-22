@@ -1068,6 +1068,8 @@ pub(crate) fn host_player_zone(app: &mut App, server: &net::Server, id: u32, z: 
     if let Some(p) = app.remote_players.get_mut(&id) {
         p.zones = [z.zone1.0, z.zone2.0, z.zone3.0, z.zone4.0, z.zone5.0];
         p.town_npcs = z.town_npcs;
+        // The c27 whole-struct mirror (the render/zone consumers' copy).
+        p.zone = net::PlayerZone { player_id: id as u8, ..z };
     }
     // `:2195-2198` — the faeling edge: `NPC.Spawner.SpawnFaelings(player16)`
     // on the zone5[0] rising edge (W4-g48 — the seam is live; the Shimmerfly
@@ -1103,6 +1105,8 @@ pub(crate) fn client_player_zone(app: &mut App, z: net::PlayerZone) {
     if let Some(p) = app.remote_players.get_mut(&(z.player_id as u32)) {
         p.zones = [z.zone1.0, z.zone2.0, z.zone3.0, z.zone4.0, z.zone5.0];
         p.town_npcs = z.town_npcs;
+        // The c27 whole-struct mirror (the wire id kept, `:2187-2192`).
+        p.zone = z;
     }
 }
 
