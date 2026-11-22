@@ -70,14 +70,29 @@ namespace Terraria.GameContent
             => _roomLocationPairs.Add(System.Tuple.Create(npcID, new Point(x, y)));
     }
 
-    // BannerSystem.Save writes killCount[] then claimableBanners[].
+    // BannerSystem.Save writes killCount[] then claimableBanners[]. W4-c44:
+    // the arrays are allocated by the EXTRACTED static cctor
+    // (BannerSystem.cs:1451-1457) and populated by the extracted kill chain
+    // (AddNPCKillBy/AddKill/AddClaimableBanner, :231-278) - no shim setters.
     public static partial class BannerSystem
     {
-        public static readonly int MaxBannerTypes = 293;
-        private static int[] killCount = new int[MaxBannerTypes];
-        private static ushort[] claimableBanners = new ushort[MaxBannerTypes];
-        public static void SetKillCount(int banner, int count) => killCount[banner] = count;
-        public static void SetClaimable(int banner, ushort count) => claimableBanners[banner] = count;
+        public static readonly int MaxBannerTypes;   // cctor: 293 (:1453)
+        private static int[] killCount;              // cctor (:1454)
+        private static ushort[] claimableBanners;    // cctor (:1455)
+        private static bool[] newBanner;             // cctor (:1456)
+        public static bool AnyNewClaimableBanners;   // :132
+
+        // The netMode==2 broadcast sinks the extracted AddKill /
+        // AddClaimableBanner guard on (:265-268, :274-277). The fixture runs
+        // at netMode 0, so these are never reached; they throw rather than
+        // model the network (no serialization logic lives in the shims).
+        public class NetBannersModule
+        {
+            public static Terraria.Net.NetPacket WriteKillCountUpdate(int bannerId)
+                => throw new System.InvalidOperationException("netMode 2 path not modelled");
+            public static Terraria.Net.NetPacket WriteClaimCountUpdate(int bannerId)
+                => throw new System.InvalidOperationException("netMode 2 path not modelled");
+        }
     }
 
     // ExtraSpawnPointManager.Write writes extraSpawnPoints[] (Point[]).

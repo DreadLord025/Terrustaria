@@ -43,8 +43,10 @@ namespace Terraria
         public int stack;         // Item.cs:157
         public byte prefix;       // Item.cs:305
         public bool favorited;    // Item.cs:143
-        // The C# ctor is empty (`public Item() {}`, Item.cs:48654) — a fresh
+        // The C# ctor is empty (`public Item() {}`, Item.cs:48654) - a fresh
         // item is air (type 0, stack 0). SetDefaults is not on the save path.
+        // AddClaimableBanner's guard (BannerSystem.cs:246); cctor Item.cs:49966.
+        public static readonly int CommonMaxStack = 9999;
     }
 
     // --- Chest: SaveChests reads x/y/name/maxItems/item[] --------------------
@@ -165,6 +167,23 @@ namespace Terraria
         public int voiceVariant;                                   // :1346 (ctor sets 1)
         public float voicePitchOffset;                             // :1348
         public HashSet<string> oneTimeDialoguesSeen = new HashSet<string>(); // :3209
+        public OverheadMessage chatOverhead;                       // :798
+
+        // Player.OverheadMessage (Player.cs:765-784). NewMessage's snippet
+        // parse + font measure (ChatManager/FontAssets) is UI-only; the shim
+        // keeps the serialized-adjacent fields (text/time/color). The fixture
+        // broadcasts with author 255, so this is never reached anyway.
+        public struct OverheadMessage
+        {
+            public string chatText;
+            public int timeLeft;
+            public Color color;
+            public void NewMessage(string message, int displayTime)
+            {
+                chatText = message;
+                timeLeft = displayTime;
+            }
+        }
 
         // `BuilderAccToggleIDs.Count = 12` (Player.cs:47-75).
         public static class BuilderAccToggleIDs
