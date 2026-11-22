@@ -39503,3 +39503,13 @@ owed. 3 seal witnesses WRITTEN NOT RUN (18 total). Registry number 338
 per research/150 §8.5 (281 self-pick → §8.1 308 → §8.5 338; g13 KEEPS 308,
 executed pre-§8). No style/kind/dust/cue in the band is
 unclaimed; d30 owes nothing further.
+
+**Batch-E merge note (367 §1 Lead-flag).** d30's `ai_065_butterflies`
+lands CANONICAL here, but **f18 is NOT in this batch** — its module
+KEEPS stand until the spine merge. **Style-65 keep-one OBLIGATION for
+the spine agent**: at the f18/d39/d125 merges, DROP the f18/d39
+`ai_065_step` rewrites + d125's `npc_ai_lacewing.rs` (strict subsets per
+the research/338 keep-one table above), keep c10's `npc.rs` adapter, and
+re-point d125's threat-slice pre-pass + despawn gate + case-661
+SpawnBoss drain onto `Ai65Effects`. Nothing to execute in batch-E
+(f18/d39/d125 absent).
