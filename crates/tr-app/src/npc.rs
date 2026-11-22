@@ -1786,6 +1786,21 @@ pub struct Npc {
     /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
     /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
     pub wants_transform: Option<i32>,
+    /// W4-d31 style83 wiring — the cultist tablet's ritual spawn/link
+    /// requests (`NPC.cs:36773-36791` the ritual four, `:36840-36844`
+    /// the boss + `TabletDestroyed`). The pooled arm queues the whole
+    /// `Style83Out` (shots already drained to `wants_hostile_shot_ai`);
+    /// the sim's `resolve_ritual_requests` pass allocates the spawns,
+    /// records the stable uids and runs the ritual-delay reset.
+    pub wants_ritual: Option<crate::npc_ai_style83::Style83Out>,
+    /// W4-d31 style83 wiring — the tablet's four ritual links as STABLE
+    /// uids in spawn order (0 archer, 1/2 devotees, 3 archer — the C#'s
+    /// `ai[0..1]`/`localAI[1..2]` hold slot+1, `NPC.cs:36782`/`:36787`;
+    /// the port's vec compacts, so the uid carries the link — the Moon
+    /// Lord parts' convention). The boss link rides `carrier_uid`. The
+    /// per-tick `ritual_link_prepass` translates them back to the
+    /// slot-aligned ai fields the machine reads. 0 = unresolved.
+    pub ritual_uids: [u32; 4],
     /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
     /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
     /// (no audio seam there); the sim's pooled path drains them immediately
@@ -3108,6 +3123,8 @@ impl Npc {
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
+            wants_ritual: None,
+            ritual_uids: [0; 4],
             wants_item_sounds: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
@@ -4984,6 +5001,60 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // W4-d31 axis census (research/25 rows 76-82): the faithful
+            // per-kind machines claim their styles — the S1-D-2 migration
+            // step for the saucer/Moon-Lord/probe band. The machines are
+            // UNCHANGED (ported: verify-only); only the dispatch entry
+            // moves from the kind match to the axis, the 49/70/71
+            // precedent. The kind arms below are `unreachable!` markers.
+            //
+            // `else if (this.aiStyle == 76)` (`NPC.cs:36071-36519`) — the
+            // Martian Saucer core 395, the style's only user. The
+            // S1-D-3-aistyle76 audited machine (the despawn ride's own
+            // if-chain, the 600-tick scan ladder, the wobble, the 447 gun
+            // owner payload, the out-of-world clamp). RNG-free by
+            // construction (the arm draws no `Main.rand`).
+            76 => self.update_saucer_core(world, player, rng),
+            // `else if (this.aiStyle == 77) { this.AI_077_MoonLordCore(); }`
+            // (`NPC.cs:36520-36523`; the machine `:41157-41575`) — the
+            // Moon Lord core 398. The S1-D-3 audited machine (the roar
+            // census, the if-sequence fall-through, the drama storm/smoke
+            // draws, the enrage hop).
+            77 => self.update_moon_lord_core(world, player, rng),
+            // `else if (this.aiStyle == 78) { this.AI_078_MoonLordHands(); }`
+            // (`NPC.cs:36524-36527`; the machine `:41577-42083`) — the
+            // Moon Lord hands 397 (the sequencer + the eyelid gate).
+            78 => self.update_moon_lord_hand(world, player, rng),
+            // `else if (this.aiStyle == 79) { this.AI_079_MoonLordHead(); }`
+            // (`NPC.cs:36528-36531`; the machine `:42084-42458`) — the
+            // Moon Lord head 396 (the iris/lid drivers, the 455 deathray,
+            // the leech summon).
+            79 => self.update_moon_lord_head(world, player, rng),
+            // `else if (this.aiStyle == 80)` (`NPC.cs:36532-36624`) — the
+            // Martian Probe 399, the style's only user: the hover scan
+            // bands, the 352-px detect, the 60-tick flash, the escape →
+            // `StartInvasion(4)` seam. RNG-free by construction.
+            80 => self.update_martian_probe(world, player),
+            // `else if (this.aiStyle == 81) { this.AI_081_TrueEyeOfCthulhu(); }`
+            // (`NPC.cs:36625-36628`; the machine `:42459-42928`) — the
+            // True Eye of Cthulhu 400 (the roar census, the attack table).
+            81 => self.update_true_eye(world, player, rng),
+            // `else if (this.aiStyle == 82)` (`NPC.cs:36629-36756`) — the
+            // Moon Leech Clot 401: the 90-tick glide + the drain request
+            // (the sibling heal resolve rides the sim seam, the dust rings
+            // are the documented visual skip). RNG-free at arm level.
+            82 => self.update_moon_leech_blob(world, player),
+            // `else if (this.aiStyle == 83)` (`NPC.cs:36757-36925`) — the
+            // cultist ritual (CultistTablet 437 / CultistDevote 438). The
+            // W4-d31 wiring wave (the d10 activation contract): the faithful
+            // `npc_ai_style83::style83_step` claims the axis. The SOLO path
+            // (a bare `update_rng`) runs it over a one-slot pool; the SIM's
+            // pooled path (the aiStyle-83 arm in `world_sim/npcs.rs`) runs
+            // it over the whole `App::npcs` so the ritual slot links
+            // resolve. The 437/438 kinds ride the roster wave (W4-d40
+            // `7fec14aa`) — until they land no kind has ai_style 83 and this
+            // arm is dormant (the style75 precedent).
+            83 => self.update_rng_style83_solo(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5120,6 +5191,106 @@ impl Npc {
         self.wants_item_sounds.extend(out.sounds);
         // `out.died`: the module already set hp = 0; the death pass owns
         // the HitEffect + deactivation pair (the style72 pop precedent).
+    }
+
+    /// The SOLO aiStyle-83 step (`NPC.cs:36757-36925`) for a bare
+    /// `update_rng` caller (the W4-d31 wiring wave, the style75 solo
+    /// precedent): the faithful `style83_step` over a ONE-slot pool (no
+    /// siblings — the ritual links read unresolved, the module's wiring
+    /// guards skip them). The SIM's pooled path (the aiStyle-83 arm in
+    /// `world_sim/npcs.rs`'s tick closure) is the live route; this wrapper
+    /// queues the out-requests (`wants_ritual` / `wants_hostile_shot_ai`)
+    /// for the caller to drain. The 437/438 kinds ride the roster wave
+    /// (W4-d40 `7fec14aa`) — until they land no kind reaches this arm.
+    fn update_rng_style83_solo(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let npc_type = self.kind.cs_id() as i32;
+        let just_hit = self.just_hit;
+        let mut pool = [self.clone()];
+        let out = crate::npc_ai_style83::style83_step(
+            &mut pool,
+            0,
+            world,
+            &[cand],
+            npc_type,
+            &|n: &Npc| n.kind.cs_id() as i32,
+            just_hit,
+            0,
+            rng,
+        );
+        *self = pool[0].clone();
+        self.drain_style83_out(out);
+    }
+
+    /// Land a `Style83Out` on this NPC (the solo queue — the sim's pooled
+    /// path drains the same requests with the full pool seams): the 526
+    /// shots ride `wants_hostile_shot_ai` (the C# call sites pass
+    /// `Main.myPlayer`, the sim's ritual drain re-pins the owner — the
+    /// fishron `spawn_hostile_ai_owned` precedent); the spawn/link/
+    /// tablet_destroyed requests queue on `wants_ritual`. `out.died`: the
+    /// module already set hp = 0 (the death pass owns the HitEffect +
+    /// deactivation pair); `out.light` is the draw-side feed's
+    /// (`app/frame/draw.rs`'s style-83 arm, the style72 precedent).
+    fn drain_style83_out(&mut self, mut out: crate::npc_ai_style83::Style83Out) {
+        self.wants_hostile_shot_ai.append(&mut out.shots);
+        let _ = out.light.take();
+        self.wants_ritual = Some(out);
+    }
+
+    /// The aiStyle-83 family's post-`AI()` movement tail (`NPC.UpdateNPC`,
+    /// `NPC.cs:90465-90498`) — the W4-d31 wiring wave. The tablet 437 is
+    /// noGravity + noTileCollide (`NPC.cs:14189-14190`): the dead-band X
+    /// snap (`:90473-90476`) then the raw integration (`:90494-90498`, the
+    /// style-56 arm's shape). The devotee 438 writes NEITHER flag
+    /// (`:14195-14211`): the 0.4 gravity + the 8 fall cap (`:90465-90472`,
+    /// the zombie's GRAVITY/MAX_FALL rows) then the tile collision
+    /// (`UpdateCollision`, `:90490-90492` — the port's `collides_rect`
+    /// axis stand-in, the zombie integration's shape minus the fighter
+    /// scan's jump fallback: the devotee has no obstacle scan). RNG-free.
+    pub(crate) fn style83_movement_tail(&mut self, world: &World) {
+        // `:90473-90476` — the dead-band X snap (double compare), both kinds.
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        if self.kind.cs_id() == 437 {
+            // `:90496-90498` — the stamps + the raw integration.
+            self.old_x = self.x;
+            self.old_y = self.y;
+            self.old_direction = self.facing;
+            self.integrate_no_tile_collide();
+            return;
+        }
+        // The devotee: gravity + the fall cap (`:90465-90472`).
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        let (w, h) = self.size();
+        // `UpdateCollision`'s axis integration (the zombie stand-in shape,
+        // `NPC.cs:92523-92608`): the blocked X axis zeroes the velocity,
+        // the blocked Y axis snaps to the floor/ceiling.
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+        }
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
     }
 
     /// `NPC.Transform(int newType, ...)` (`NPC.cs:81084-81114`) with the
@@ -6025,9 +6196,12 @@ impl Npc {
                 self.update_skeleton(world, player, dt);
                 self.martian_officer_bubble();
             }
-            // The probe: aiStyle 80's hover/detect/escape machine (`AI()`'s
-            // aiStyle-80 block, `NPC.cs:36532-36624`).
-            NpcKind::MartianProbe => self.update_martian_probe(world, player),
+            // The probe: aiStyle 80 rides the style axis (W4-d31 — the
+            // hover/detect/escape machine, `NPC.cs:36532-36624`) — this
+            // arm is unreachable.
+            NpcKind::MartianProbe => {
+                unreachable!("aiStyle 80 rides the style axis (W4-d31)")
+            }
             // The drone: aiStyle 74's approach/charge/dash machine (`AI()`'s
             // aiStyle-74 block, `NPC.cs:35218-35500`).
             NpcKind::MartianDrone => self.update_martian_drone(world, player, rng),
@@ -6045,10 +6219,12 @@ impl Npc {
             // The carrier: aiStyle 3's walker (the params 5/0.25/0.7,
             // `NPC.cs:58203-58240`).
             NpcKind::Scutlix => self.update_scutlix(world, player, dt),
-            // The saucer core: aiStyle 76's machine (`NPC.cs:36071-36520`)
-            // — R35's branch owns it; the mounts (392/393/394) ride the
-            // aiStyle-75 axis above.
-            NpcKind::MartianSaucerCore => self.update_saucer_core(world, player, rng),
+            // The saucer core: aiStyle 76 rides the style axis (W4-d31 —
+            // `NPC.cs:36071-36520`) — this arm is unreachable; the mounts
+            // (392/393/394) ride the aiStyle-75 axis above.
+            NpcKind::MartianSaucerCore => {
+                unreachable!("aiStyle 76 rides the style axis (W4-d31)")
+            }
             NpcKind::MartianSaucer
             | NpcKind::MartianSaucerTurret
             | NpcKind::MartianSaucerCannon => {
@@ -6217,12 +6393,15 @@ impl Npc {
                     MAX_FALL,
                 );
             }
-            // The Moon Lord family: aiStyles 77/78/79/81/82.
-            NpcKind::MoonLordCore => self.update_moon_lord_core(world, player, rng),
-            NpcKind::MoonLordHand => self.update_moon_lord_hand(world, player, rng),
-            NpcKind::MoonLordHead => self.update_moon_lord_head(world, player, rng),
-            NpcKind::MoonLordFreeEye => self.update_true_eye(world, player, rng),
-            NpcKind::MoonLordLeechBlob => self.update_moon_leech_blob(world, player),
+            // The Moon Lord family: aiStyles 77/78/79/81/82 ride the style
+            // axis (W4-d31) — these arms are unreachable.
+            NpcKind::MoonLordCore
+            | NpcKind::MoonLordHand
+            | NpcKind::MoonLordHead
+            | NpcKind::MoonLordFreeEye
+            | NpcKind::MoonLordLeechBlob => {
+                unreachable!("aiStyles 77-82 ride the style axis (W4-d31)")
+            }
             // The etherian crystal: aiStyle 105's machine.
             NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
 
@@ -34511,5 +34690,237 @@ mod w4_d25_style30_census_tests {
         assert_eq!(n.y, y0 - 0.04, "the noTileCollide integration tail");
         assert_eq!(n.x, x0, "no horizontal steer on the flee");
         assert!(n.wants_hostile_shot.is_empty(), "the flee fires nothing");
+    }
+}
+
+/// W4-d31 (research/25 rows 75-83, code-only — WRITTEN NOT RUN): the
+/// aiStyle-75..82 axis census. The band's machines were already ported
+/// (the style75 module WIRED by S1-D-3-wire-saucer; the saucer core
+/// audited by S1-D-3-aistyle76; the Moon Lord family by M4-EVENT-10 +
+/// the S1-D-3 audit; the probe by M4-EVENT-4b); this round claims the
+/// styles on the axis (the S1-D-2 migration step) and pins the census.
+/// aiStyle 83 (the cultist ritual, `NPC.cs:36757-36925`) is the band's
+/// only MISSING family — the faithful unwired module is
+/// `npc_ai_style83.rs` (the style73 precedent); the 437/438 kinds wait
+/// on the roster wave.
+#[cfg(test)]
+mod w4_d31_axis_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: every ported kind in the 75-82 band carries its
+    /// `SetDefaults` aiStyle row (the citations are the
+    /// `this.aiStyle = N;` lines in `NPC.cs`).
+    #[test]
+    fn w4_d31_the_band_kinds_carry_their_csharp_styles() {
+        let rows: &[(NpcKind, u8)] = &[
+            // aiStyle 75 — the six mount riders (`NPC.cs:13973`, :14000,
+            // :14018, :14035, :14655, :15338).
+            (NpcKind::ScutlixRider, 75),
+            (NpcKind::MartianSaucer, 75),
+            (NpcKind::MartianSaucerTurret, 75),
+            (NpcKind::MartianSaucerCannon, 75),
+            (NpcKind::FlyingDutchmanCannon, 75),
+            (NpcKind::SolarDrakomireRider, 75),
+            // aiStyle 76 — the saucer core 395 (`NPC.cs:14052`).
+            (NpcKind::MartianSaucerCore, 76),
+            // aiStyles 77/78/79 — the Moon Lord core/hand/head
+            // (`NPC.cs:14127`/`:14108`/`:14089`).
+            (NpcKind::MoonLordCore, 77),
+            (NpcKind::MoonLordHand, 78),
+            (NpcKind::MoonLordHead, 79),
+            // aiStyle 80 — the Martian Probe 399 (`NPC.cs:14069`).
+            (NpcKind::MartianProbe, 80),
+            // aiStyles 81/82 — the True Eye 400 / the Leech Clot 401
+            // (`NPC.cs:14146`/`:14166`).
+            (NpcKind::MoonLordFreeEye, 81),
+            (NpcKind::MoonLordLeechBlob, 82),
+        ];
+        for &(kind, style) in rows {
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
+        }
+        // aiStyle 83 — the cultist ritual (CultistTablet 437 /
+        // CultistDevote 438, `NPC.cs:14183`/`:14202`). The W4-d31 wiring
+        // wave claims the axis (the `83 =>` arm in `update_rng_dust` + the
+        // pooled `world_sim/npcs.rs` branch, the d10 activation contract).
+        // The 437/438 KINDS ride the roster wave (W4-d40 `7fec14aa`): until
+        // they land no ported kind has style 83 and the arm is dormant;
+        // once they merge, exactly those two kinds claim it. This census
+        // pins the wiring contract merge-safely — any style-83 kind must be
+        // one of the ritual pair (no stray kind may claim the axis).
+        for k in ALL_KINDS.iter().filter(|k| k.ai_style() == 83) {
+            assert!(
+                k.cs_id() == 437 || k.cs_id() == 438,
+                "{k:?} claims aiStyle 83 but is not the CultistTablet/Devote"
+            );
+        }
+    }
+
+    /// The frozen-behaviour A/B + the RNG census (the
+    /// `s1_d_2_the_style_axis_keeps_the_hover_behaviour` precedent): the
+    /// axis-routed arm must produce the exact pre-axis state sequence —
+    /// the kind match's old bodies called the SAME machines with the
+    /// same args. The streams must stay bit-equal too: the 76/80/82
+    /// arms draw NOTHING at arm level (`NPC.cs:36071-36519` /
+    /// `:36532-36624` / `:36629-36756` — the clot's dust rings are the
+    /// documented visual skip), the 77/78/79/81 machines carry the
+    /// S1-D-3 roar/storm censuses (their own witnesses live in
+    /// `s1_d_3_moonlord_rng_witnesses`).
+    #[test]
+    fn w4_d31_the_axis_claims_keep_the_machine_behaviour_and_stream() {
+        let w = ground();
+        for kind in [
+            NpcKind::MartianSaucerCore,
+            NpcKind::MoonLordCore,
+            NpcKind::MoonLordHand,
+            NpcKind::MoonLordHead,
+            NpcKind::MartianProbe,
+            NpcKind::MoonLordFreeEye,
+            NpcKind::MoonLordLeechBlob,
+        ] {
+            let mut player_a = Player::spawn(&w);
+            let mut player_b = Player::spawn(&w);
+            let mut axis = Npc::new(kind, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+            axis.hp = axis.max_hp;
+            // The Moon Lord parts need their carrier link alive (the
+            // sim pre-pass owns it; both paths read the same fields).
+            axis.moon_core_alive = true;
+            axis.carrier_x = 32.0 * TILE_PX;
+            axis.carrier_y = 22.0 * TILE_PX;
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(75);
+            let mut rng_b = UnifiedRandom::new(75);
+            for tick in 0..120 {
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // The pre-axis arm, verbatim (the kind match's old bodies).
+                match kind {
+                    NpcKind::MartianSaucerCore => legacy.update_saucer_core(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordCore => legacy.update_moon_lord_core(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordHand => legacy.update_moon_lord_hand(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordHead => legacy.update_moon_lord_head(&w, &player_b, &mut rng_b),
+                    NpcKind::MartianProbe => legacy.update_martian_probe(&w, &player_b),
+                    NpcKind::MoonLordFreeEye => legacy.update_true_eye(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordLeechBlob => legacy.update_moon_leech_blob(&w, &player_b),
+                    _ => unreachable!(),
+                }
+                legacy.find_frame();
+                legacy.contact(&mut player_b, &mut rng_b);
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                for i in 0..4 {
+                    assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "{kind:?} ai[{i}] @{tick}");
+                }
+                assert_eq!(axis.hp, legacy.hp, "{kind:?} hp @{tick}");
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "{kind:?} rot @{tick}");
+                assert_eq!(rng_a.peek(), rng_b.peek(), "{kind:?} stream @{tick}");
+            }
+        }
+    }
+
+    /// The zero-draw censuses, direct: a full saucer-core scan cycle
+    /// (600 ticks through every band), the probe's hover/detect/escape
+    /// and the clot's 90-tick glide consume NO `Main.rand` — the arms
+    /// have no draw sites (`NPC.cs:36071-36519`/`:36532-36624`/
+    /// `:36629-36756`; the clot's `Dust.NewDust` rings are the
+    /// documented visual skip, the style73 precedent).
+    #[test]
+    fn w4_d31_the_76_80_82_arms_draw_nothing() {
+        let w = ground();
+        let p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(83);
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.wants_scutlix = true; // the init latch spent (no crew request)
+        for _ in 0..600 {
+            core.update_saucer_core(&w, &p, &mut rng);
+        }
+        assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the 76 scan cycle is draw-free");
+        let mut probe = Npc::new(NpcKind::MartianProbe, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        probe.hp = probe.max_hp;
+        for _ in 0..300 {
+            probe.update_martian_probe(&w, &p);
+        }
+        assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the 80 machine is draw-free");
+        let mut clot = Npc::new(NpcKind::MoonLordLeechBlob, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        clot.hp = clot.max_hp;
+        for _ in 0..90 {
+            clot.update_moon_leech_blob(&w, &p);
+        }
+        assert!(clot.wants_moon_leech, "the 90-tick glide ends in the drain request");
+        assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the 82 arm is draw-free");
+    }
+
+    /// The kind-match stand-ins are retired: calling `update_kind_ai`
+    /// directly on a band kind panics (the Everscream/ScutlixRider
+    /// precedent's guard) — the axis owns the dispatch.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d31_the_saucer_core_kind_arm_is_retired() {
+        let w = ground();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::MartianSaucerCore, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// W4-d31 wiring wave — the style-83 movement tail (`NPC.UpdateNPC`,
+    /// `NPC.cs:90465-90498`). The devotee 438 writes NEITHER noGravity nor
+    /// noTileCollide (`:14195-14211`), so it takes the 0.4 gravity + the 8
+    /// fall cap + the tile collision. The tail keys the tablet branch on
+    /// `cs_id() == 437`; every other kind (the placeholder here) takes the
+    /// devotee gravity+collision path. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d31_the_devotee_movement_tail_falls_and_lands() {
+        let w = ground(); // dirt at y = 30 (480 px)
+        // A devotee-shaped placeholder (22×40) above the ground, at rest.
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n.size_override = Some((22.0, 40.0));
+        n.vx = 0.0;
+        n.vy = 0.0;
+        // One tail tick: gravity 0.4 added, the box falls 0.4 px (free air).
+        n.style83_movement_tail(&w);
+        assert_eq!(n.vy.to_bits(), 0.4f32.to_bits(), "the 0.4 gravity (:90467)");
+        assert_eq!(n.y.to_bits(), 300.4f32.to_bits(), "the free-air integration");
+        assert!(!n.on_ground);
+        // Run to the ground: the box's bottom (y + 40) reaches 480 → the
+        // floor snap lands it at y = 440, vy zeroed, on_ground true.
+        for _ in 0..600 {
+            n.style83_movement_tail(&w);
+        }
+        assert_eq!(n.y, 440.0, "the floor snap (ty*16 - h)");
+        assert_eq!(n.vy, 0.0);
+        assert!(n.on_ground, "the landing sets on_ground");
+        // The fall cap: a long drop never exceeds the 8 fall speed.
+        let mut n2 = Npc::new(NpcKind::Zombie, 100.0, 0.0, 1, 0.0);
+        n2.size_override = Some((22.0, 40.0));
+        for _ in 0..100 {
+            n2.style83_movement_tail(&w);
+            assert!(n2.vy <= 8.0, "the 8 fall cap (:90468-90471)");
+        }
+    }
+
+    /// W4-d31 wiring wave — the tablet 437's raw integration branch
+    /// (noGravity + noTileCollide, `NPC.cs:14189-14190`): the dead-band X
+    /// snap then the position add, NO gravity, NO tile interaction. The
+    /// tail keys this branch on `cs_id() == 437`; the placeholder cannot
+    /// reach it pre-merge, so this pins the devotee-path dead-band snap
+    /// (shared by both kinds, `:90473-90476`) instead. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d31_the_movement_tail_dead_band_x_snap() {
+        let w = ground();
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n.size_override = Some((22.0, 40.0));
+        n.vx = 0.004; // inside the ±0.005 dead band
+        n.style83_movement_tail(&w);
+        assert_eq!(n.vx, 0.0, "the dead-band X snap (:90473-90476)");
+        // Outside the band: the velocity survives.
+        let mut n2 = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n2.size_override = Some((22.0, 40.0));
+        n2.vx = 0.01;
+        n2.style83_movement_tail(&w);
+        assert_eq!(n2.vx.to_bits(), 0.01f32.to_bits(), "outside the band keeps vx");
     }
 }

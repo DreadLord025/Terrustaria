@@ -3784,6 +3784,151 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
     out
 }
 
+/// W4-d31 style83 wiring — the ritual-link PRE-pass (the d10 activation
+/// contract, the Moon Lord carrier write-through precedent). The C#'s
+/// aiStyle-83 arm reads the ritual links as SLOT indices (`ai[0..1]` the
+/// archers, `localAI[1..2]` the devotees, `ai[2]` the boss — all slot+1
+/// except the boss's RAW slot, `NPC.cs:36782`/`:36787`/`:36842`); the
+/// port's `App::npcs` compacts every tick, so the stable uids
+/// (`ritual_uids` / `carrier_uid`) carry the link and this pass
+/// re-derives the slot-aligned ai fields each tick BEFORE the machine
+/// runs. A missing/dead link resolves to 0 — the module's wiring guards
+/// read that as the C#'s inactive slot (the release/summon writes and
+/// the `active && type` scan skip it, behaviour-identical). RNG-free.
+/// Dormant until the 437/438 kinds land (W4-d40 `7fec14aa`): no kind has
+/// `ai_style() == 83` before then.
+fn ritual_link_prepass(app: &mut App) {
+    // uid -> living slot+1 (0 = unresolved). Read-only over the pool.
+    let slot_plus_one = |npcs: &[Npc], uid: u32| -> f32 {
+        if uid == 0 {
+            return 0.0;
+        }
+        npcs.iter()
+            .position(|m| m.uid != 0 && m.uid == uid && m.hp > 0)
+            .map(|s| (s + 1) as f32)
+            .unwrap_or(0.0)
+    };
+    for i in 0..app.npcs.len() {
+        if app.npcs[i].kind.ai_style() != 83 || app.npcs[i].hp <= 0 {
+            continue;
+        }
+        let ty = app.npcs[i].kind.cs_id();
+        if ty == 437 {
+            let uids = app.npcs[i].ritual_uids;
+            let boss_uid = app.npcs[i].carrier_uid;
+            // `:36821` — once the summon arms `ai[0] = -1` it HOLDS; the
+            // archer links must not overwrite the dissolve latch.
+            let post_summon = app.npcs[i].ai[0] == -1.0;
+            let a0 = slot_plus_one(&app.npcs, uids[0]);
+            let a1 = slot_plus_one(&app.npcs, uids[3]);
+            let l1 = slot_plus_one(&app.npcs, uids[1]);
+            let l2 = slot_plus_one(&app.npcs, uids[2]);
+            // The boss link: the port's slot+1 convention (the module's
+            // `ai[2] > 0` read; the C#'s RAW slot translated here).
+            let b = slot_plus_one(&app.npcs, boss_uid);
+            let n = &mut app.npcs[i];
+            if !post_summon {
+                n.ai[0] = a0;
+                n.ai[1] = a1;
+            }
+            n.local_ai[1] = l1;
+            n.local_ai[2] = l2;
+            n.ai[2] = b;
+        } else if ty == 438 {
+            // The devotee's owner link (`ai[3] = -(whoAmI + 1)`,
+            // `:36783`/`:36788`): the tablet's uid rides `carrier_uid`.
+            // A missing tablet resolves to 0 → the module's owner -1
+            // orphan kill (`:36897-36903`). The C# reads the inactive
+            // owner slot's stale centre; the port culls it, so the
+            // orphan kill is the recorded fold (ANALYSIS).
+            let owner_uid = app.npcs[i].carrier_uid;
+            let owner = slot_plus_one(&app.npcs, owner_uid);
+            app.npcs[i].ai[3] = if owner > 0.0 { -owner } else { 0.0 };
+        }
+    }
+}
+
+/// W4-d31 style83 wiring — the ritual SPAWN/LINK resolve pass (the d10
+/// activation contract, the style75 carrier-spawn one-tick fold
+/// precedent). The pooled arm queues the whole `Style83Out` on
+/// `wants_ritual`; this pass allocates the `NewNPC` requests IN ORDER
+/// (`Bottom = (X, Y)`, `NPC.cs:80770`), hands out the stable uids, writes
+/// the tablet's `ritual_uids`/`carrier_uid` links and runs
+/// `CultistRitual.TabletDestroyed` (`:36844` → `world_events`, delay
+/// 43200). The 379 archer has NO ported kind yet (no bestiary row — the
+/// roster wave), so its spawn resolves to `None` and its link stays 0
+/// (the summon gate reads it gone — the recorded fold, ANALYSIS); the
+/// 438 devotee + 439 boss resolve through `kind_from_net_id` once W4-d40
+/// rows them. RNG-free (`NewNPC`'s one draw short-circuits on
+/// `Main.getGoodWorld`, false in the port).
+fn resolve_ritual_requests(app: &mut App) {
+    let mut spawns: Vec<Npc> = Vec::new();
+    let mut next_uid = app.next_npc_uid;
+    let mut tablet_destroyed = false;
+    for n in app.npcs.iter_mut() {
+        let Some(out) = n.wants_ritual.take() else {
+            continue;
+        };
+        let tablet_uid = n.uid;
+        // Allocate each spawn, recording its uid by spawn index (0 =
+        // unresolved — the kind is not ported yet).
+        let mut spawn_uids: Vec<u32> = Vec::with_capacity(out.spawns.len());
+        for s in &out.spawns {
+            let Some((kind, _)) = crate::npc::kind_from_net_id(s.npc_type) else {
+                spawn_uids.push(0);
+                continue;
+            };
+            let (w, h) = kind.size();
+            let facing = s.facing.unwrap_or(1);
+            let mut m = Npc::new(kind, s.x - w * 0.5, s.y - h, facing, 0.0);
+            m.hp = m.max_hp;
+            // `NewNPC`'s `timeLeft = (int)(activeTime * 1.25)` = 937
+            // (`NPC.cs:80772`, `activeTime = 750`).
+            m.despawn_timer = 937;
+            m.uid = next_uid;
+            next_uid += 1;
+            m.net_update = true;
+            if let Some(dir) = s.facing {
+                m.sprite_dir = dir;
+            }
+            // The ritual four link back to the tablet (the C#'s
+            // `ai[3] = -(whoAmI + 1)`); the pre-pass re-derives the slot
+            // each tick. The boss is independent (no back-link).
+            if s.npc_type != 439 {
+                m.carrier_uid = tablet_uid;
+            }
+            spawn_uids.push(m.uid);
+            spawns.push(m);
+        }
+        // The tablet's four ritual links in spawn order (archer0,
+        // devotee0, devotee1, archer1 — `:36782`/`:36787`).
+        let link_uid = |idx: Option<usize>| -> u32 {
+            idx.map(|i| spawn_uids.get(i).copied().unwrap_or(0))
+                .unwrap_or(0)
+        };
+        if out.links.archers[0].is_some() || out.links.devotees[0].is_some() {
+            n.ritual_uids = [
+                link_uid(out.links.archers[0]),
+                link_uid(out.links.devotees[0]),
+                link_uid(out.links.devotees[1]),
+                link_uid(out.links.archers[1]),
+            ];
+        }
+        // The boss link rides `carrier_uid` (the pre-pass writes `ai[2]`).
+        if let Some(b) = out.links.boss {
+            n.carrier_uid = spawn_uids.get(b).copied().unwrap_or(0);
+        }
+        if out.tablet_destroyed {
+            tablet_destroyed = true;
+        }
+    }
+    app.next_npc_uid = next_uid;
+    app.npcs.append(&mut spawns);
+    if tablet_destroyed {
+        crate::world_events::tablet_destroyed(&mut app.world_events);
+    }
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
@@ -3802,6 +3947,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
     }
+    // W4-d31 style83 wiring — the ritual-link pre-pass re-derives the
+    // tablet/devotee slot-aligned ai fields from the stable uids BEFORE
+    // the tick closure's pooled arm runs (the Moon Lord carrier
+    // write-through precedent). Dormant until the 437/438 kinds land.
+    ritual_link_prepass(app);
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead
     // at STRIKE time (before `UpdateNPCs`), so the restore rides ahead of
@@ -4283,6 +4433,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // borrow) — a second `app.spawn_ctx()` here would re-borrow `*app`
     // immutably while `npcs_rng` holds it mutable (E0502).
     let dust_ctx = dust_spawn_ctx;
+    // W4-d31 style83 wiring — the cultist tablet's 526 death-volley side
+    // channel (the d10 activation contract). The tablet fires its death
+    // volley on the tick it dies (`NPC.cs:36852-36876` sets `life = 0`
+    // THEN spawns), so the shots cannot ride the dying NPC's
+    // `wants_hostile_shot_ai` (the death retain at the pass tail culls it
+    // before the generic shot drain). The pooled arm captures them here,
+    // in slot order on the `UpdateNPCs` stream; the ritual drain below
+    // spawns them owner-re-pinned (the fishron precedent). The trickle
+    // shots (living tablet) ride the generic `wants_hostile_shot_ai` seam.
+    let mut ritual_death_shots: Vec<crate::npc::HostileShotAi> = Vec::new();
     // Limit the scope of borrows to just the tick closure
     {
         // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
@@ -4463,7 +4623,56 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // S1-F-13c wiring: the non-75 kinds ride `update_rng_dust`
                     // so the Everscream/Santa dust arms reach the live pool.
                     let is_style75 = npcs[i].kind.ai_style() == 75;
-                    if !is_style75 {
+                    let is_style83 = npcs[i].kind.ai_style() == 83;
+                    if is_style83 && npcs[i].hp > 0 {
+                        // W4-d31 style83 wiring (the d10 activation
+                        // contract, the style75 pool precedent): the cultist
+                        // ritual is a POOL step — the tablet reads the
+                        // ritual-four slot links (`ai[0..1]`/`localAI[1..2]`)
+                        // and the boss link (`ai[2]`) live, and the devotee
+                        // reads its owner slot (`ai[3]`). The
+                        // `ritual_link_prepass` re-derived those slot fields
+                        // from the stable uids at tick start. The arm runs
+                        // here, in slot order, on the `UpdateNPCs` stream.
+                        npcs[i].update_preamble(step);
+                        let npc_type = npcs[i].kind.cs_id() as i32;
+                        let just_hit = npcs[i].just_hit;
+                        let mut out = crate::npc_ai_style83::style83_step(
+                            npcs,
+                            i,
+                            world,
+                            &players,
+                            npc_type,
+                            &|n: &Npc| n.kind.cs_id() as i32,
+                            just_hit,
+                            0,
+                            npcs_rng,
+                        );
+                        // The 526 shots: the death volley (the tablet died
+                        // this tick) rides the side channel — the death
+                        // retain would cull the dying NPC's seam before the
+                        // generic drain. The trickle (living tablet) rides
+                        // `wants_hostile_shot_ai` (the generic drain's 526
+                        // owner re-pin applies to both).
+                        if out.died {
+                            ritual_death_shots.append(&mut out.shots);
+                        } else {
+                            npcs[i].wants_hostile_shot_ai.append(&mut out.shots);
+                        }
+                        // The spawn/link/tablet_destroyed requests queue for
+                        // the `resolve_ritual_requests` pass (below). The
+                        // retargets already ran in-step (the module calls
+                        // `target_closest` on the pool slots); `out.light`
+                        // is the draw-side feed's (`app/frame/draw.rs`).
+                        let _ = out.light.take();
+                        npcs[i].wants_ritual = Some(out);
+                        // The post-`AI()` movement tail (`NPC.UpdateNPC`,
+                        // `NPC.cs:90465-90498`): the tablet's raw
+                        // integration / the devotee's gravity + collision.
+                        npcs[i].style83_movement_tail(world);
+                        npcs[i].find_frame();
+                        npcs[i].contact(player, npcs_rng);
+                    } else if !is_style75 {
                         npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
                     } else {
                         npcs[i].update_preamble(step);
@@ -5852,6 +6061,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         lane_spawns.append(&mut spawn_dd2_from_gate(app, sx, sy, left_gate));
     }
     app.npcs.append(&mut lane_spawns);
+    // W4-d31 style83 wiring — the ritual spawn/link resolve pass (the d10
+    // activation contract): the pooled arm queued the `Style83Out` on
+    // `wants_ritual`; this allocates the ritual-four/boss spawns, hands out
+    // the stable uids, writes the tablet's links and runs
+    // `CultistRitual.TabletDestroyed`. Runs after the death retain (the
+    // dying tablet's request was captured on the NPC before the cull — the
+    // resolve reads `app.npcs`, so a dead tablet's spawn request is handled
+    // via the death-shot channel below instead; the boss summon fires on a
+    // LIVING tablet tick, so its request survives the retain).
+    resolve_ritual_requests(app);
+    // The tablet's 526 death volley (the side channel — the dying NPC was
+    // culled by the death retain before the generic drain). The C# call
+    // sites pass `Main.myPlayer` (`NPC.cs:36863`/`:36874`), NOT the hostile
+    // default: spawn owner-re-pinned to the local id (the fishron
+    // `spawn_hostile_ai_owned` precedent) so the channel-track tail + owner
+    // semantics hold. The payload is the packed boss-centre aim (`ai0`/
+    // `ai1`), exactly the d10 seek's read. RNG-free (the particle draws
+    // already rode the `UpdateNPCs` stream in-step).
+    for shot in ritual_death_shots {
+        let _ = app.projectiles.spawn_hostile_ai_owned(
+            shot.kind,
+            app.local_id as u8,
+            Vec2::new(shot.x, shot.y),
+            Vec2::new(shot.vx, shot.vy),
+            shot.damage,
+            0.0,
+            shot.ai0,
+            shot.ai1,
+        );
+    }
     // The hostile shots (`NPC.cs`'s `Projectile.NewProjectile` arms —
     // the archer's Wooden Arrow Hostile 81): the update pass set
     // `wants_hostile_shot`, this pass resolves it into the pool (the
@@ -5945,15 +6184,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for shot in ai_shots {
-        let slot = app.projectiles.spawn_hostile_ai(
-            shot.kind,
-            Vec2::new(shot.x, shot.y),
-            Vec2::new(shot.vx, shot.vy),
-            shot.damage,
-            0.0,
-            shot.ai0,
-            shot.ai1,
-        );
+        // W4-d31 style83 wiring — the 526 CultistBossParticle OWNER RE-PIN
+        // (the d10 activation contract): the C# call sites pass
+        // `Main.myPlayer` (`NPC.cs:36863`/`:36874`/`:36885`), NOT the
+        // hostile default — the generic `spawn_hostile_ai` hardcodes 255,
+        // which would leave the particle's channel-track tail + owner
+        // semantics inert. Spawn owner-re-pinned to the local id (the
+        // fishron `spawn_hostile_ai_owned` precedent). Every other kind
+        // keeps the stock 255 drain (the established hostile fold).
+        let slot = if shot.kind == 526 {
+            app.projectiles.spawn_hostile_ai_owned(
+                shot.kind,
+                app.local_id as u8,
+                Vec2::new(shot.x, shot.y),
+                Vec2::new(shot.vx, shot.vy),
+                shot.damage,
+                0.0,
+                shot.ai0,
+                shot.ai1,
+            )
+        } else {
+            app.projectiles.spawn_hostile_ai(
+                shot.kind,
+                Vec2::new(shot.x, shot.y),
+                Vec2::new(shot.vx, shot.vy),
+                shot.damage,
+                0.0,
+                shot.ai0,
+                shot.ai1,
+            )
+        };
         // S1-D-4 W-10: the Horseman's pumpkin scale roll
         // (`Projectile.cs:9518`) was consumed at the lob's QUEUE site
         // (`unicorn_step`'s fourth draw); apply it to the spawned slot.
@@ -18274,5 +18534,231 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+}
+
+/// W4-d31 style83 WIRING witnesses (the d10 activation contract, code-only
+/// — WRITTEN NOT RUN). These pin the sim plumbing the wiring wave added:
+/// the ritual-link pre-pass (uid → slot translation), the spawn/link
+/// resolve pass (`NewNPC` Bottom placement + the stable-uid links +
+/// `TabletDestroyed`), and the 526 owner re-pin's channel-track tail. The
+/// 437/438 KINDS ride the roster wave (W4-d40 `7fec14aa`), so the fixtures
+/// ride placeholder Zombie kinds with `size_override` boxes and drive the
+/// passes directly (the module's stand-in witness convention); the
+/// kind-gated pooled dispatch activates when the kinds merge. The
+/// machine's own behaviour is pinned by `npc_ai_style83.rs`'s witnesses.
+#[cfg(test)]
+mod w4_d31_style83_wiring_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::App;
+    use crate::npc_ai_style83::{RitualLinks, RitualSpawn, Style83Out};
+
+    /// A ritual arena: flat dirt at y = 40 in a 200×120 world (the module's
+    /// `arena` shape — every CheckFloor column finds its floor at row 40).
+    fn arena() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 40..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    fn app_arena() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = arena();
+        app
+    }
+
+    /// A tablet-shaped placeholder (the 54×54 box, 400 HP — the roster has
+    /// no 437 kind yet; the wiring passes key on the ai fields + uids, not
+    /// the kind variant, so a Zombie placeholder exercises them).
+    fn tablet_ph(x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, x, y, 1, 0.0);
+        n.size_override = Some((54.0, 54.0));
+        n.hp = 400;
+        n.max_hp = 400;
+        n
+    }
+
+    /// The pre-pass's DORMANCY gate (the pre-merge contract): it keys on
+    /// `kind.ai_style() == 83`, and no ported kind claims style 83 until the
+    /// roster wave (W4-d40 `7fec14aa`) lands the 437/438 kinds. A
+    /// placeholder Zombie (style 3) carrying ritual uids is therefore
+    /// SKIPPED — its ai fields stay untouched. This pins that the wiring
+    /// cannot disturb any existing kind pre-merge. The live uid→slot
+    /// translation (archer0 uid → `ai[0]=slot+1`, devotees →
+    /// `local_ai[1..2]`, boss → `ai[2]`, the post-summon `ai[0]=-1` hold)
+    /// activates with the kinds and is pinned by the module's own
+    /// slot-link witnesses + the resolve pass below.
+    #[test]
+    fn the_prepass_is_dormant_until_the_ritual_kinds_land() {
+        let mut app = app_arena();
+        let mut tablet = tablet_ph(1600.0, 480.0);
+        tablet.uid = 10;
+        tablet.ritual_uids = [11, 12, 13, 14];
+        tablet.carrier_uid = 15;
+        tablet.ai[0] = 7.0; // a sentinel the pass must NOT overwrite
+        let mut members: Vec<Npc> = (11..=15)
+            .map(|uid| {
+                let mut m = Npc::new(NpcKind::Zombie, 1500.0, 592.0, 1, 0.0);
+                m.uid = uid;
+                m.hp = m.max_hp;
+                m
+            })
+            .collect();
+        app.npcs.push(tablet);
+        app.npcs.append(&mut members);
+        ritual_link_prepass(&mut app);
+        // The Zombie placeholder is style 3, NOT 83 — the pass skips it.
+        assert_eq!(app.npcs[0].ai[0], 7.0, "the dormancy gate leaves non-83 kinds untouched");
+        assert_eq!(app.npcs[0].local_ai[1], 0.0);
+        assert_eq!(app.npcs[0].ai[2], 0.0);
+        // No kind in the roster claims style 83 pre-merge (the census gap).
+        assert!(
+            !app.npcs.iter().any(|n| n.kind.ai_style() == 83),
+            "no ported kind claims aiStyle 83 until the ritual kinds land"
+        );
+    }
+
+    /// The resolve pass allocates the boss spawn (439 → AncientCultist via
+    /// `kind_from_net_id`), Bottom-places it, hands out the uid, writes the
+    /// tablet's `carrier_uid` link and runs `TabletDestroyed` (delay 43200).
+    /// The 379 archer / 438 devotee have no ported kind pre-merge, so their
+    /// spawns resolve to None and their links stay 0 (the recorded fold).
+    #[test]
+    fn the_resolve_pass_spawns_the_boss_and_resets_the_delay() {
+        let mut app = app_arena();
+        let mut tablet = tablet_ph(1600.0, 480.0);
+        tablet.uid = 10;
+        // A boss-summon request: ONE 439 spawn at (col*16+10, row*16-2).
+        let out = Style83Out {
+            spawns: vec![RitualSpawn {
+                npc_type: 439,
+                x: 111.0 * 16.0 + 10.0,
+                y: 40.0 * 16.0 - 2.0,
+                ai3: 0.0,
+                facing: Some(-1),
+            }],
+            links: RitualLinks { archers: [None, None], devotees: [None, None], boss: Some(0) },
+            shots: vec![],
+            retargets: vec![],
+            died: false,
+            tablet_destroyed: true,
+            light: None,
+        };
+        tablet.wants_ritual = Some(out);
+        app.npcs.push(tablet);
+        app.next_npc_uid = 100;
+        resolve_ritual_requests(&mut app);
+        // The boss spawned (439 resolves to AncientCultist).
+        assert_eq!(app.npcs.len(), 2, "the boss spawn appended");
+        let boss = &app.npcs[1];
+        assert_eq!(boss.kind, NpcKind::AncientCultist, "439 → AncientCultist");
+        assert_eq!(boss.uid, 100, "the handed-out uid");
+        // Bottom placement: the 24×50 box's bottom-centre at (X, Y).
+        let (bw, bh) = boss.size();
+        assert_eq!(boss.x, 111.0 * 16.0 + 10.0 - bw * 0.5);
+        assert_eq!(boss.y, 40.0 * 16.0 - 2.0 - bh);
+        assert_eq!(boss.facing, -1, "the Math.Sign facing");
+        assert_eq!(boss.sprite_dir, -1);
+        assert_eq!(boss.despawn_timer, 937, "NewNPC's activeTime*1.25");
+        // The tablet's boss link rides carrier_uid.
+        assert_eq!(app.npcs[0].carrier_uid, 100);
+        assert_eq!(app.next_npc_uid, 101);
+        // TabletDestroyed → the ritual delay 43200.
+        assert_eq!(app.world_events.cultist_delay, 43200);
+        // The request was consumed.
+        assert!(app.npcs[0].wants_ritual.is_none());
+    }
+
+    /// The resolve pass with the ritual-four request: the 379 archers and
+    /// 438 devotees have NO ported kind pre-merge (no bestiary row), so all
+    /// four spawns resolve to None and the tablet's ritual_uids stay 0 —
+    /// the summon gate reads them gone (the recorded roster-wave fold).
+    /// No boss, no TabletDestroyed.
+    #[test]
+    fn the_resolve_pass_folds_the_unported_ritual_four() {
+        let mut app = app_arena();
+        let mut tablet = tablet_ph(1600.0, 480.0);
+        tablet.uid = 10;
+        let out = Style83Out {
+            spawns: vec![
+                RitualSpawn { npc_type: 379, x: 1448.0, y: 592.0, ai3: -1.0, facing: None },
+                RitualSpawn { npc_type: 438, x: 1512.0, y: 592.0, ai3: -1.0, facing: None },
+                RitualSpawn { npc_type: 438, x: 1704.0, y: 592.0, ai3: -1.0, facing: None },
+                RitualSpawn { npc_type: 379, x: 1768.0, y: 592.0, ai3: -1.0, facing: None },
+            ],
+            links: RitualLinks {
+                archers: [Some(0), Some(3)],
+                devotees: [Some(1), Some(2)],
+                boss: None,
+            },
+            shots: vec![],
+            retargets: vec![],
+            died: false,
+            tablet_destroyed: false,
+            light: None,
+        };
+        tablet.wants_ritual = Some(out);
+        app.npcs.push(tablet);
+        resolve_ritual_requests(&mut app);
+        // No spawn landed (379/438 unported pre-merge).
+        assert_eq!(app.npcs.len(), 1, "the ritual four fold to None");
+        // The links stay 0 (unresolved) — the summon gate reads all-gone.
+        assert_eq!(app.npcs[0].ritual_uids, [0, 0, 0, 0]);
+        assert_eq!(app.world_events.cultist_delay, 0, "no TabletDestroyed");
+        assert!(app.npcs[0].wants_ritual.is_none());
+    }
+
+    /// The 526 owner re-pin's channel-track tail (the d10 activation
+    /// contract): `spawn_hostile_ai_owned` with owner 0 (the local id)
+    /// pushes the channel-track intent (`Projectile.cs:11097-11100`), while
+    /// the stock `spawn_hostile_ai`'s owner 255 does NOT. This is the
+    /// observable difference the re-pin buys — the particle's owner
+    /// semantics + the channel-track tail. (The 526 proj_data row is d10's
+    /// live `8814cb4e`; this witness uses the rowed SHARKNADO_BOLT 385 to
+    /// pin the OWNER mechanism kind-agnostically — the re-pin's contract is
+    /// the owner, not the kind.)
+    #[test]
+    fn the_owner_zero_repin_arms_the_channel_track_tail() {
+        let mut app = app_arena();
+        // Owner 0 (the re-pin): the channel-track intent fires.
+        let slot = app.projectiles.spawn_hostile_ai_owned(
+            crate::projectile::SHARKNADO_BOLT,
+            0,
+            Vec2::new(1600.0, 480.0),
+            Vec2::new(1.0, -2.0),
+            0,
+            0.0,
+            1600.0,
+            200.0,
+        );
+        assert!(slot.is_some(), "the owner-0 spawn lands");
+        assert_eq!(
+            app.projectiles.drain_channel_tracks().len(),
+            1,
+            "owner 0 arms the channel-track tail (Projectile.cs:11097)"
+        );
+        // The stock owner-255 drain: NO channel-track intent.
+        let mut app2 = app_arena();
+        let _ = app2.projectiles.spawn_hostile_ai(
+            crate::projectile::SHARKNADO_BOLT,
+            Vec2::new(1600.0, 480.0),
+            Vec2::new(1.0, -2.0),
+            0,
+            0.0,
+            1600.0,
+            200.0,
+        );
+        assert_eq!(
+            app2.projectiles.drain_channel_tracks().len(),
+            0,
+            "the stock 255 drain leaves the channel-track tail inert"
+        );
     }
 }

@@ -39513,3 +39513,138 @@ the research/338 keep-one table above), keep c10's `npc.rs` adapter, and
 re-point d125's threat-slice pre-pass + despawn gate + case-661
 SpawnBoss drain onto `Ai65Effects`. Nothing to execute in batch-E
 (f18/d39/d125 absent).
+## The cultist ritual (W4-d31 aiStyle-83, code-only)
+
+`crates/tr-app/src/npc_ai_style83.rs` ports `NPC.AI()`'s
+`else if (this.aiStyle == 83)` arm (`NPC.cs:36757-36925`) — the
+CultistTablet 437 / CultistDevote 438 (`SetDefaults` `:14176-14194` /
+`:14195-14211`, `ID/NPCID.cs:11549`/`:11551`), the dungeon-entrance
+ritual that summons the Lunatic Cultist. W4-d31 (research/25's 75-83
+census band): row 83 was the band's only MISSING family. CODE-ONLY MODE:
+no cargo/rustc/rustfmt invoked; the 8 witness tests are written, not run.
+Wiring deferred (the `npc_ai_style73.rs` precedent): neither 437 nor
+438 has an `NpcKind` (the port's `AncientCultist` is the aiStyle-94
+pillar, research/25 deviation 8), so the style axis has no arm to claim;
+only the `mod npc_ai_style83;` seam landed.
+
+- **Census — exactly two NPC kinds**: the whole-tree `aiStyle = 83;`
+  census returns `NPC.cs:14183` (437) and `:14202` (438). No dynamic
+  reassignment exists. The spawned 379 archers ride aiStyle 3 and the
+  439 boss rides aiStyle 84 (`npc_ai_cultist.rs`'s census) — requests
+  here, not this arm's kinds.
+- **The tablet's machine** (in C# order): the `localAI[3]` first-tick
+  latch → `CultistRitual.CheckFloor` (`CultistRitual.cs:102-131` —
+  the ±10/±6-tile columns, each the first floor in the -5..11 window
+  whose 3×3 body is clear under the two-column fallback; a failed floor
+  kills the tablet); the four spawns (spots 0/3 → 379 on `ai[0..1]`,
+  spots 1/2 → 438 on `localAI[1..2]`, every spawn's
+  `ai[3] = -(whoAmI+1)`, Bottom-placed at `(spot.X*16+8,
+  spot.Y*16-48)`); the struck-devotee release (`localAI[0]` 1 → 2,
+  both devotees `ai[1] = 1`, both archers `ai[3] = 0` +
+  `TargetClosest()`); the all-gone boss summon (ONE `Next(2)` side
+  roll ±11 tiles, the floor scan with the last-row fallback, the 439 at
+  `(col*16+10, row*16-2)` facing `Math.Sign`,
+  `CultistRitual.TabletDestroyed()` → the port's
+  `world_events::tablet_destroyed` 43200 delay); the 300-tick dissolve
+  (the 6-particle ring + the 20 gated launches at death, the
+  `%10 == 1 && >120` trickle — all 526 CultistBossParticle requests
+  carry the boss-centre aim on ai0/ai1); the constant
+  `AddLight(Center, 0.8, 0.75, 0.55)` tail (skipped only by the
+  early-return paths, as the C#'s returns skip it).
+- **The devotee's machine**: the ×0.93 X decay + the double-compare ±0.1
+  snap, the `(int)(0 - ai[3] - 1)` owner slot (-1 → death + return),
+  the `Math.Sign` facing flip (zero keeps), the `justHit` release
+  request onto the owner's `localAI[0]`, the 300-tick `ai[0]` pose
+  cycle. ZERO draws.
+- **RNG census (by construction)**: the summon's ONE `Next(2)`
+  (`:36824`); the death volley's 6 × (NextFloat + RotatedByRandom's
+  two NextDouble) then 20 × (Next(2) gate + the gated speed/rotation
+  pair/radius NextFloat — the gate draw consumed even on rejection);
+  the trickle's 3-draw shape. `RotatedByRandom`'s left-operand-first
+  order rides the `npc_ai_cultist.rs` precedent
+  (`Utils.cs:1697-1700`). The mirrored-stream witnesses replay every
+  draw. HitEffect's dust/gore is the cosmetic skip (the death pass owns
+  it when it lands).
+- **Wiring seams (documented folds)**: the slot+1 link convention (the
+  C#'s raw `ai[2]` boss slot translated by the wiring's uid layer, the
+  Moon Lord parts' precedent); the latch tick's summon scan is skipped
+  (the C#'s synchronous NewNPC makes the four fresh NPCs block the
+  summon on the same tick — behaviour-identical, the style75
+  carrier-spawn fold); the `type_of` resolver seam (the style52
+  precedent) until the roster kinds land; the 526 SetDefaults row +
+  projectile arm are the projectile family's obligation.
+
+### The wiring wave (W4-d31 RETIRE/FINAL, the d10 activation contract)
+
+The d10 CultistTablet-437 activation contract (`649b18aef`, docsweep 26d
+§98) is DISCHARGED — the style-83 dispatch + the sim plumbing landed
+(research/363 the RETIRE/FINAL + the cultist-ritual family declaration):
+
+- **The dispatch**: `npc.rs::update_rng_dust`'s `83 =>` axis arm (the solo
+  path `update_rng_style83_solo`) + the pooled branch in
+  `world_sim/npcs.rs`'s tick closure (the live route, the style75
+  precedent — in slot order on the `UpdateNPCs` stream). The 437/438
+  kinds ride the roster wave (W4-d40 `7fec14aa`); until they merge no
+  kind has `ai_style() == 83` and the dispatch is DORMANT.
+- **The link pre-pass** (`ritual_link_prepass`, the Moon Lord carrier
+  write-through precedent): the tablet's stable uids (`ritual_uids[4]` +
+  `carrier_uid` for the boss) re-derive the slot-aligned ai fields each
+  tick; the post-summon `ai[0] = -1` latch HOLDS. The devotee's owner
+  link re-derives from `carrier_uid` (a missing tablet → the orphan kill).
+- **The resolve pass** (`resolve_ritual_requests`, the style75
+  carrier-spawn one-tick fold): allocates the spawns IN ORDER
+  (Bottom-placed), hands out the uids, writes the links, runs
+  `TabletDestroyed` (delay 43200). The 379 archer has no ported kind yet
+  — its spawn folds to None, its link stays 0 (the summon gate reads it
+  gone; the recorded roster-wave fold).
+- **The 526 OWNER RE-PIN** (the contract's core): the C# call sites pass
+  `Main.myPlayer` (`NPC.cs:36863`/`:36874`/`:36885`), NOT the hostile
+  default — the generic `wants_hostile_shot_ai` drain hardcodes 255, so
+  the 526 branch spawns via `spawn_hostile_ai_owned(kind, local_id, …)`
+  (the fishron precedent), arming the channel-track tail
+  (`Projectile.cs:11097-11100`). The DEATH VOLLEY rides a side channel
+  (`ritual_death_shots`) — the dying tablet is culled by the death retain
+  before the generic drain; the trickle rides the generic seam.
+- **The 0-link wiring guards** (the module): a 0 link is an inactive slot
+  (the port culls the dead); the release block + the summon scan skip it
+  — behaviour-identical to the C#'s inactive-slot semantics
+  (`SetDefaults` resets on reuse, `NPC.cs:80768`), no underflow panic.
+- **The movement tail** (`style83_movement_tail`, `NPC.UpdateNPC:90465-
+  90498`): the tablet's raw integration (noGravity+noTileCollide) / the
+  devotee's 0.4 gravity + 8 fall cap + tile collision. **The light feed**
+  (`app/frame/draw.rs`, `cs_id() == 437`): the constant
+  `AddLight(Center, 0.8, 0.75, 0.55)`, the `XAnchor::Center` quotient-
+  truncation form (`Lighting.cs:140-143`). Both RNG-free.
+- **The census witness re-pinned merge-safe**: any style-83 kind must be
+  437/438 (was "no kind claims 83" — breaks when d40 merges). 9 wiring
+  witnesses WRITTEN NOT RUN (2 module guards + 2 movement-tail + 4 sim
+  plumbing + the re-pin). The family declaration (research/363 §6): d31
+  machine+dispatch / d40 kinds / d10 526 row+seek / c1 boss-84 — DISJOINT,
+  no two branches own the same fn body.
+
+## The aiStyle 75-83 axis census (W4-d31, code-only)
+
+The band's other eight styles were ALREADY ported (research/25 rows
+75-82 all PORTED); this round's verify-only pass confirmed the machines
+against the C# and claimed styles 76-82 on the `update_rng_dust`
+aiStyle axis (the S1-D-2 migration step — the machines UNCHANGED, the
+kind-match arms retired to `unreachable!` markers, the ScutlixRider
+precedent):
+
+- **76** → `update_saucer_core` (the S1-D-3-aistyle76 audited machine,
+  `NPC.cs:36071-36519`; RNG-free by construction).
+- **77/78/79** → `update_moon_lord_core/hand/head` (the S1-D-3 Moon
+  Lord audit's machines, `NPC.cs:41157-42458`; the roar/storm/smoke
+  RNG censuses ride `s1_d_3_moonlord_rng_witnesses`).
+- **80** → `update_martian_probe` (`NPC.cs:36532-36624`; RNG-free;
+  the `StartInvasion(4)` seam stays on `wants_martian_invasion`).
+- **81** → `update_true_eye` (`AI_081`, `NPC.cs:42459-42928`; the
+  roar census `Next(420)` + `Next(100,101)`).
+- **82** → `update_moon_leech_blob` (`NPC.cs:36629-36756`; the
+  90-tick glide + the `wants_moon_leech` drain request; the sibling
+  heal resolve rides the sim seam, the dust rings the visual skip).
+
+The 4 `w4_d31_axis_census_tests` witnesses (WRITTEN NOT RUN) pin the
+kind→style rows (including the no-83-kind gap), the frozen-behaviour
+A/B + stream parity for all seven migrated kinds, the 76/80/82
+zero-draw censuses, and the kind-arm retirement guard.
