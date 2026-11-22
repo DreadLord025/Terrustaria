@@ -55,6 +55,7 @@ mod ocean;
 pub mod pipeline;
 pub mod progress;
 mod settle_liquids;
+mod shimmer;
 mod spider_gem_moss;
 mod statues;
 mod skyblock;

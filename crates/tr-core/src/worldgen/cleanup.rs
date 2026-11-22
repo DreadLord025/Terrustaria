@@ -792,8 +792,9 @@ const TILE_DUNGEON: [u16; 6] = [41, 43, 44, 677, 678, 679];
 const TILE_DIRTIEST: u16 = 668;
 
 /// `LiquidKind` → the C# `liquidType()` code (0 water / 1 lava / 2 honey /
-/// 3 shimmer) — the final `LiquidCheck` sweep's type argument.
-fn liquid_code(k: LiquidKind) -> u8 {
+/// 3 shimmer) — the final `LiquidCheck` sweep's type argument. Shared with
+/// the §6.4 compose-hunk at `step_seed_finish`'s tail (matrix-88 §6.4).
+pub(crate) fn liquid_code(k: LiquidKind) -> u8 {
     match k {
         LiquidKind::Water => 0,
         LiquidKind::Lava => 1,
@@ -1353,6 +1354,11 @@ pub(crate) fn final_cleanup(world: &mut World, gv: &mut GenVars, streams: &mut S
     // world nothing draws between the scatter and the cleanup.)
     let mut fc_rng = streams.pass_rng("Final Cleanup");
     poo_scatter(world, &mut fc_rng, opts);
+    // Matrix-88 §6.4 stream note (a): stash the scatter's Rng so the
+    // ShimmerCleanUp compose-hunk at `step_seed_finish`'s tail CONTINUES the
+    // scatter's draw sequence (the C# genRand is ONE per-pass instance; a
+    // fresh `pass_rng("Final Cleanup")` would replay the scatter's draws).
+    gv.final_cleanup_rng = Some(fc_rng);
     // `:22423-22447` — the seed `Finish*` dispatch (FinishNoTraps / anniversary /
     // drunk / NotTheBees+FinishNotTheBees / FinishGetGoodWorld / FinishRemixWorld)
     // rides `step_seed_finish` — the M5-SEED-1 seam. KEEP-ONE at the batch-B

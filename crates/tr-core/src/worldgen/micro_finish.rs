@@ -20,6 +20,8 @@
 //! 3384) are chest-side; the port generates chests as tiles without
 //! inventories, so those arms are documented no-ops here.
 
+use std::collections::HashSet;
+
 use crate::edit::kill_tile;
 use crate::world::World;
 use super::pipeline::Streams;

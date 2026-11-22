@@ -103,6 +103,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "gravitating sand" => PassMessage::Gen(24),
         // WorldGen.cs:15180.
         "ocean caves" => PassMessage::Gen(90),
+        // WorldGen.cs:15256 (W4-g36 A2).
+        "clean up dirt" => PassMessage::Gen(25),
         // WorldGen.cs:17845 (Jungle Trees).
         "underground jungle trees" => PassMessage::Gen(83),
         // WorldGen.cs:17215.
@@ -157,6 +159,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "cave walls" => PassMessage::Gen(63),
         // WorldGen.cs:15480.
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
+        // WorldGen.cs:15721 (W4-g36 A4 — the same LivingTrees message).
+        "wood tree walls" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.

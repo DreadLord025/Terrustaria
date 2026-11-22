@@ -477,6 +477,48 @@ mod tests {
     // flag-gated (a classic world skips them). Re-pin DEFERRED to the merge
     // gate. On the 512-wide pin world the poo scatter's `Next(50, w-50)` /
     // `Next(50, h-200)` ranges stay valid (512 > 250), so the scatter runs.
+    // W4-g36 A1 (code-only): the Shimmer pass (`WorldGen.cs:15195-15245`,
+    // `shimmer.rs::pass_shimmer`) lands between `ocean caves` and
+    // `fragile ice`. This pin is UNCHANGED by this pass alone: the
+    // sub-vanilla width guard skips the pass before any draw on a
+    // 512-wide world (the x-band `Next(200, (int)(0.11*512))` is empty —
+    // the C# throws there; the `pass_mining_explosives` width-guard
+    // precedent). The DEFAULT_WORLD re-pin is deferred to the gate.
+    // W4-g36 A2 (code-only): the Clean Up Dirt pass
+    // (`WorldGen.cs:15246-15359`, `micro_finish.rs::pass_clean_up_dirt`)
+    // lands after `shimmer` — the two surface sweeps strip the exposed
+    // dirt walls (2/40/64/86) above the surface on EVERY world, so this
+    // pin moves BY DESIGN; deferred to the gate.
+    // W4-g36 A3 (code-only): the Dirt Rock Wall Runner pass
+    // (`WorldGen.cs:15461-15475` + `DirtyRockRunner` `:77145-77210`,
+    // `micro_finish.rs::pass_dirt_rock_wall_runner`) lands after
+    // `clean up dirt` — the per-column walkers convert wall 2 → 59 on
+    // every world with surface dirt walls, so this pin moves BY DESIGN;
+    // deferred to the gate.
+    // W4-g36 A4 (code-only): the Wood Tree Walls pass
+    // (`WorldGen.cs:15717-15749`, `living_trees.rs::wood_tree_walls`)
+    // lands after `living trees` — the wall-244 fill behind the living
+    // wood crosses moves this pin BY DESIGN (RNG-free, no ledger shift);
+    // deferred to the gate.
+    // W4-g36 A6 (code-only): the Wall Variety pass
+    // (`WorldGen.cs:16697-16754`, `micro_finish.rs::pass_wall_variety`)
+    // lands after `slopes` — the cave-wall variety fill (196/204/208/212
+    // families) moves this pin BY DESIGN on every world with air pockets;
+    // deferred to the gate.
+    // W4-g36 A7 (code-only): the Life Crystals pass
+    // (`WorldGen.cs:16755-16852`, `structures.rs::pass_life_crystals`)
+    // lands after `wall variety` — the 2×2 hearts move this pin BY DESIGN
+    // (the y-band `(worldSurface*2 + rockLayer)/3 .. height-300` does not
+    // collapse on the 512 world, so the pass runs and seats crystals);
+    // deferred to the gate. The sub-vanilla guard only fires when the
+    // band genuinely collapses (a deeper surface/rock layer).
+    // W4-g36 gap-fill (code-only): the ShimmerCleanUp arm
+    // (`shimmer.rs::shimmer_clean_up`, the Final Cleanup `:22472` tail) is
+    // UNWIRED — no executed step calls it, so this pin stays UNCHANGED. The
+    // merger composes it into g37's Final Cleanup; the 512 world's Shimmer
+    // pass takes the sub-vanilla width guard (no shimmer placed →
+    // `shimmer_position` None → the arm's zero-sentinel early return), so even
+    // wired the arm is a no-op on the 512 pin. a == b untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -758,6 +800,40 @@ mod tests {
     // sweeps, the poo scatter and the final LiquidCheck merge sweep move
     // this pin BY DESIGN on the fresh `pass_rng("Final Cleanup")` stream;
     // a == b stays green. Re-pin DEFERRED to the merge gate.
+    // W4-g36 A1 (code-only): the Shimmer pass (see SEED42_512 above) carves
+    // the aether biome on every DEFAULT-sized world — the stone shell, the
+    // shimmer pool, the gem trees and the two openings move this pin BY
+    // DESIGN; the re-pin is deferred to the gate. The pass draws only its
+    // own `pass_rng("Shimmer")` stream, so no other step's ledger shifts.
+    // W4-g36 A2 (code-only): the Clean Up Dirt pass (see SEED42_512 above)
+    // strips the exposed surface dirt walls on every world — this pin
+    // moves BY DESIGN too; deferred. Own `pass_rng("Clean Up Dirt")`
+    // stream; the `a == b` halves stay untouched.
+    // W4-g36 A3 (code-only): the Dirt Rock Wall Runner pass (see
+    // SEED42_512 above) — the wall 2 → 59 conversions move this pin BY
+    // DESIGN; deferred. Own `pass_rng("Dirt Rock Wall Runner")` stream.
+    // W4-g36 A4 (code-only): the Wood Tree Walls pass (see SEED42_512
+    // above) — the wall-244 fill moves this pin BY DESIGN; deferred.
+    // RNG-free; the `a == b` halves stay untouched.
+    // W4-g36 A6 (code-only): the Wall Variety pass (see SEED42_512 above)
+    // — the cave-wall fill moves this pin BY DESIGN; deferred. Own
+    // `pass_rng("Wall Variety")` stream; the shimmer-safety re-roll reads
+    // the A1 centre (a cross-pass GenVars read, no shared-stream draw).
+    // W4-g36 A7 (code-only): the Life Crystals pass (see SEED42_512 above)
+    // — the 2×2 hearts (and the errorWorld/noSurface mana stars) move this
+    // pin BY DESIGN; deferred. Own `pass_rng("Life Crystals")` stream.
+    // W4-g36 gap-fill (code-only): the ShimmerCleanUp arm
+    // (`WorldGen.cs:34716-34821`, `shimmer.rs::shimmer_clean_up`) — the Final
+    // Cleanup pass's `:22472` shimmer tail, deferred back to g36 by g37's
+    // Final Cleanup port (`4ced188f9`). UNWIRED by design (the g39/f25
+    // convention): no executed step calls it yet, so BOTH pins stay UNCHANGED
+    // on this branch. The merger composes it into g37's Final Cleanup at
+    // `:22472`; at that point it moves the pins BY DESIGN (the inner-disc
+    // cleanse, the outer-ellipse wall clear + Convert-0, the pool refill, the
+    // anniversary Shimmerator flood, the tree-under-shimmer kill) — deferred
+    // to the gate. Own draws ride the caller's `pass_rng("Final Cleanup")`
+    // stream (the two NextDouble jitter rolls per outer-sweep cell); a == b
+    // untouched (the W:7 witnesses replay it).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

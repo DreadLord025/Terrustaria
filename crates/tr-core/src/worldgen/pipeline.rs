@@ -55,6 +55,7 @@ use super::micro_surface;
 use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
+use super::shimmer;
 use super::spider_gem_moss;
 use super::statues;
 use super::structures;
@@ -400,9 +401,9 @@ pub(crate) struct GenVars {
     /// `GenVars.shimmerPosition` (`GenVars.cs:282`) — the Shimmer pass's
     /// pool anchor (`WorldGen.cs:15241`), reset to `Vector2D.Zero`
     /// (`:7039`). The W4-f25 `Settle Liquids` pass reads it through
-    /// `ShimmerRemoveWater`; d102's Shimmer step writes it (the same field
-    /// name — the merge reconciles). `None` until then: the C# zero reset
-    /// puts the circle off-world, a classic no-op.
+    /// `ShimmerRemoveWater`; W4-g36 A1's Shimmer step is the producer
+    /// (matrix-88 §3.4). `None` until then: the C# zero reset puts the
+    /// circle off-world, a classic no-op.
     pub(crate) shimmer_position: Option<(i32, i32)>,
     /// `GenVars.numLarva/larvaX/larvaY` (`GenVars.cs:150-154`, reset 0 at
     /// `WorldGen.cs:11245`) — the hive stands' larva anchors (W4-c31):
@@ -486,6 +487,17 @@ pub(crate) struct GenVars {
     /// pair carries the C# statics the skyblock arm writes (−1 sentinel).
     pub(crate) dungeon_x: i32,
     pub(crate) dungeon_y: i32,
+    /// `GenVars.structures.AddProtectedStructure` (`WorldGen.cs:15243`):
+    /// the Shimmer pass's 200×200 protected rect — the port's
+    /// structure-map stand-in list (the `mini_biomes` `protected` idiom).
+    /// W4-g36 A1.
+    pub(crate) protected_structures: Vec<(i32, i32, i32, i32)>,
+    /// The threaded Final Cleanup Rng (matrix-88 §6.4 stream note): the poo
+    /// scatter (`step_final_cleanup`) stashes its `pass_rng("Final Cleanup")`
+    /// instance here so the ShimmerCleanUp compose-hunk at `step_seed_finish`'s
+    /// tail CONTINUES the scatter's draw sequence (a fresh `pass_rng` would
+    /// replay it). `None` until the scatter runs; taken back by the compose.
+    pub(crate) final_cleanup_rng: Option<super::Rng>,
 }
 
 impl Default for GenVars {
@@ -587,6 +599,9 @@ impl Default for GenVars {
             // (the run() head re-stamps the real height), Low = 0.
             desert_hive_high: i32::MAX,
             desert_hive_low: 0,
+            protected_structures: Vec::new(),
+            // The threaded Final Cleanup Rng — `None` until the scatter runs.
+            final_cleanup_rng: None,
         }
     }
 }
@@ -1475,6 +1490,16 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         step_gravitating_sand
     ),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
+    // The vanilla Shimmer slot (`WorldGen.cs:15195`): immediately after
+    // Create Ocean Caves (`:15167`), before Clean Up Dirt (`:15246`,
+    // W4-g36 A2) — W4-g36 A1. Own `pass_rng("Shimmer")` stream; the
+    // dualDungeons prune (`DUAL_DUNGEON_DISABLED_PASSES`) now finds a real
+    // step to skip.
+    step!("shimmer", "Shimmer", step_shimmer),
+    // W4-g36 A2/A3 KEEP-ONE (matrix-88 §2.2/§2.3): Clean Up Dirt + Dirt Rock
+    // Wall Runner are d102-owned (passes2.rs, unmerged at this gate) — g36's
+    // micro_finish copies dropped; the slots re-land with d102. `fragile ice`
+    // follows shimmer directly on the merged chain.
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -1581,6 +1606,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("oasis", "Oasis", step_oasis),
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
+    // W4-g36 A6/A7 KEEP-ONE (matrix-88 §2.5/§2.6): Wall Variety + Life
+    // Crystals are d103-owned (wall_variety.rs / crystals.rs) — g36's
+    // micro_finish/structures copies dropped; the d103 slots sit after
+    // `waterfalls` below (the vanilla :16697/:16755 relative order).
     step!("living trees", "Living Trees", step_living_trees),
     // The vanilla Waterfalls slot (`WorldGen.cs:16610`): after Smooth World
     // (`:16419`) and Living Trees (`:15476`), before Planting Trees
@@ -1629,6 +1658,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // `pass_rng("Grass Wall")` stream, so the insertion shifts no other
     // step's ledger.
     step!("grass wall", "Grass Wall", step_grass_wall),
+    // The vanilla Wood Tree Walls slot (`WorldGen.cs:15717`): immediately
+    // after Living Trees (`:15476`), before Altars (`:15750`) — W4-g36
+    // A4. RNG-free (the C# body draws nothing), so the insertion shifts
+    // no step's ledger.
+    step!("wood tree walls", "Wood Tree Walls", step_wood_tree_walls),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     // The vanilla Settle Liquids Again slot (`WorldGen.cs:21246`): after the
@@ -1756,6 +1790,35 @@ fn step_seed_finish(
     // sweeps run before the surface conversions (the C#'s dispatch order).
     micro_finish::run(world, streams, opts);
     micro_surface::run(world, streams, opts);
+    // WorldGen.cs:22472 — ShimmerCleanUp (g36's gap-fill arm, composed here
+    // per matrix-88 §6.4). Reads g36 A1's published GenVars.shimmerPosition
+    // (the zero-vector sentinel is handled inside: None / (0,0) → no-op).
+    // Draws on the THREADED Final Cleanup Rng the scatter stashed (the C#
+    // genRand at this point IS the Final Cleanup pass's re-seed — a fresh
+    // pass_rng would replay the scatter's draws; §6.4 stream note (a)).
+    if let Some(mut fc_rng) = gv.final_cleanup_rng.take() {
+        shimmer::shimmer_clean_up(
+            world,
+            gv.shimmer_position,
+            opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+            &mut fc_rng,
+        );
+    }
+    // WorldGen.cs:22473-22483 — the Liquid.LiquidCheck merge sweep, y-outer
+    // x-inner, liquid>0 cells only, createMergeTilesDuringGen: true. Rides
+    // the LiquidSystem (the f25/d106 gen core, matrix-88 §3.3); the g47
+    // set_gen_settle_context/set_gen_shimmer_position seams re-land at the
+    // 70-graft (the liquid_check body reads no gen-context state today).
+    let mut sys = crate::liquid::LiquidSystem::new(world);
+    sys.set_generating(opts.flags.contains(crate::seeds::SeedFlags::REMIX));
+    for y in 0..world.height {
+        for x in 0..world.width {
+            let t = world.tile(x, y).copied().unwrap_or_default();
+            if t.liquid > 0 {
+                sys.liquid_check(world, x, y, cleanup::liquid_code(t.liquid_kind()), true);
+            }
+        }
+    }
 }
 
 /// The vanilla Grass slot (`WorldGen.cs:12423`): the M5-SEED-2
@@ -2422,6 +2485,47 @@ fn step_ocean_caves(
     );
 }
 
+/// The vanilla Shimmer slot (`WorldGen.cs:15195-15245`) — W4-g36 A1: the
+/// aether biome placement on the pass's own stream. The
+/// `Skyblock.denyAllGeneration` gate (`:15197`) lives here; the dungeon
+/// side is the port's spans-derived side (`step_full_desert`'s idiom —
+/// the C# `GenVars.CurrentDungeonGenVars.dungeonSide`, -1/1).
+fn step_shimmer(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `!Skyblock.denyAllGeneration` (`:15197` → `:3131`).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    let dungeon_side = if gv.spans().dungeon_x > world.width / 2 { 1 } else { -1 };
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let Some((x, y)) = shimmer::pass_shimmer(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        dungeon_side,
+        anniversary,
+        &mut streams.pass_rng("Shimmer"),
+    ) else {
+        return; // the sub-vanilla width guard (no draws, no writes)
+    };
+    // `GenVars.shimmerPosition = new Vector2D(num4, num3)` (`:15241`).
+    gv.shimmer_position = Some((x, y));
+    // `structures.AddProtectedStructure(Rectangle(x-100, y-100, 200, 200))`
+    // (`:15242-15243`).
+    gv.protected_structures.push((x - 100, y - 100, 200, 200));
+}
+
+// W4-g36 A2/A3 KEEP-ONE (matrix-88 §2.2/§2.3): step_clean_up_dirt +
+// step_dirt_rock_wall_runner dropped — d102's passes2.rs owns those passes
+// (unmerged at this gate); g36's micro_finish copies drop with the slots.
+
 fn step_fragile_ice(
     world: &mut World,
     gv: &mut GenVars,
@@ -3051,6 +3155,13 @@ fn step_slopes(
     surface::apply_slopes(world, width, heights);
 }
 
+// W4-g36 A6/A7 KEEP-ONE (matrix-88 §2.5/§2.6): step_wall_variety +
+// step_life_crystals (the micro_finish/structures copies) + the local
+// deny_some_generation dropped — d103's wall_variety.rs / crystals.rs own
+// those passes (the d103 step fns sit after step_wood_tree_walls below).
+// The denySomeGeneration gate rides f24 A1's canonical skyblock_prunes
+// table (matrix-88 §3.5) at the pass_disabled_by_special_seeds seam.
+
 fn step_living_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -3077,6 +3188,13 @@ fn step_waterfalls(
     world: &mut World,
     _gv: &mut GenVars,
     streams: &mut Streams,
+/// The vanilla Wood Tree Walls slot (`WorldGen.cs:15717-15749`) — W4-g36
+/// A4: the living-wood wall fill, RNG-free. The
+/// `Skyblock.denyAllGeneration` gate (`:15719`) lives here.
+fn step_wood_tree_walls(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
     opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
@@ -3091,10 +3209,10 @@ fn step_waterfalls(
 /// natural-wall retexture over enclosed cave pockets on a fresh
 /// `pass_rng("Wall Variety")` stream. The `Skyblock.denyAllGeneration` gate
 /// (`:16699`, `:3131` — plain skyblock) rides the skyblock flag. The shimmer
-/// safety loop reads `GenVars.shimmerPosition` — zero until the unported
-/// `Shimmer` pass (`:15195`) writes it (`WorldGen.cs:7039`/`:15241`), so the
-/// port passes the C# zero-init pair (the loop is inert at the origin, far
-/// below the surface band).
+/// safety loop reads `GenVars.shimmerPosition` — W4-g36 A1's Shimmer pass
+/// (`:15195`) publishes it (`:15241`); the merge rewire (matrix-88 §2.5)
+/// hands the published centre through (the `None` sentinel maps to the C#
+/// zero-init pair, inert at the origin far below the surface band).
 fn step_wall_variety(
     world: &mut World,
     gv: &mut GenVars,
@@ -3107,12 +3225,16 @@ fn step_wall_variety(
         return;
     }
     let layers = *gv.layers();
+    let shimmer = gv
+        .shimmer_position
+        .map(|(x, y)| (x as f64, y as f64))
+        .unwrap_or((0.0, 0.0));
     wall_variety::pass_wall_variety(
         world,
         layers.world_surface,
         layers.rock_layer,
         gv.lava_line,
-        (0.0, 0.0),
+        shimmer,
         opts.flags.contains(crate::seeds::SeedFlags::REMIX),
         &mut streams.pass_rng("Wall Variety"),
     );
@@ -3296,6 +3418,12 @@ fn step_cave_walls(
         opts.flags.contains(crate::seeds::SeedFlags::REMIX),
         &mut streams.pass_rng("Cave Walls"),
     );
+    // `!Skyblock.denyAllGeneration` (`:15719`).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    living_trees::wood_tree_walls(world, world_surface);
 }
 
 fn step_trees(
@@ -3688,6 +3816,12 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[105] = true;
     world.frame_important[349] = true;
     world.frame_important[135] = true;
+    // The life crystal 12 (`Main.cs:7639`) and the mana crystal 639
+    // (`Main.cs:9649`) — W4-g36 A7: the Life Crystals pass writes their
+    // 2×2 frames (`WorldGen.cs:31959-31974` / `:32028-32043`), which the
+    // framer must keep instead of autotiling.
+    world.frame_important[12] = true;
+    world.frame_important[639] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -4082,7 +4216,19 @@ mod tests {
         // classic world's step is a no-op.
         // W4-f24 A4: + `skyblock` (vanilla "Skyblock", `WorldGen.cs:11511`)
         // after `plan biome spans`, before `dunes` — gated, classic no-op.
-        assert_eq!(names.len(), 85);
+        // W4-g36 A1: + `shimmer` (vanilla "Shimmer", `WorldGen.cs:15195`)
+        // between `ocean caves` and `fragile ice`.
+        // W4-g36 A2: + `clean up dirt` (vanilla "Clean Up Dirt",
+        // `WorldGen.cs:15246`) between `shimmer` and `fragile ice`.
+        // W4-g36 A3: + `dirt rock wall runner` (vanilla "Dirt Rock Wall
+        // Runner", `WorldGen.cs:15461`) after `clean up dirt`.
+        // W4-g36 A4: + `wood tree walls` (vanilla "Wood Tree Walls",
+        // `WorldGen.cs:15717`) between `living trees` and `trees`.
+        // W4-g36 A6: + `wall variety` (vanilla "Wall Variety",
+        // `WorldGen.cs:16697`) between `slopes` and `living trees`.
+        // W4-g36 A7: + `life crystals` (vanilla "Life Crystals",
+        // `WorldGen.cs:16755`) between `wall variety` and `living trees`.
+        assert_eq!(names.len(), 87);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -4142,6 +4288,7 @@ mod tests {
                 "beaches",
                 "gravitating sand",
                 "ocean caves",
+                "shimmer",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
@@ -4187,6 +4334,7 @@ mod tests {
                 "water chests",
                 "cave walls",
                 "grass wall",
+                "wood tree walls",
                 "trees",
                 "surface flora",
                 "settle liquids again",
@@ -4515,7 +4663,11 @@ mod tests {
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert!(pos("living trees") < pos("grass wall"));
         assert_eq!(pos("grass wall"), pos("cave walls") + 1);
-        assert_eq!(pos("grass wall") + 1, pos("trees"));
+        // W4-g36 A4 keep-one (matrix-88 §2.4): wood tree walls rides between
+        // grass wall and trees (the d102 owner is unmerged; g36's body stands
+        // in at the gate, the slot is the vanilla :15717 relative order).
+        assert_eq!(pos("grass wall") + 1, pos("wood tree walls"));
+        assert_eq!(pos("wood tree walls") + 1, pos("trees"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -4527,6 +4679,78 @@ mod tests {
         assert!(cpos("Spawn Point") < cpos("Grass Wall"));
         assert!(cpos("Grass Wall") < cpos("Guide"));
         assert!(cpos("Grass Wall") < cpos("Planting Trees"));
+    }
+
+    /// W4-g36 A1: `shimmer` sits immediately after `ocean caves` — the
+    /// vanilla adjacent pair Create Ocean Caves (`WorldGen.cs:15167`) →
+    /// Shimmer (`:15195`). KEEP-ONE (matrix-88 §2.2/§2.3): the Clean Up Dirt
+    /// + Dirt Rock Wall Runner steps are d102-owned (unmerged), so g36's
+    /// A2/A3 registrations dropped; `fragile ice` follows shimmer directly.
+    #[test]
+    fn w4_g36_a1_the_shimmer_step_sits_after_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
+        assert_eq!(names[pos("shimmer") + 1], "fragile ice");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+        assert!(cpos("Clean Up Dirt") < cpos("Pyramids"));
+        assert!(cpos("Pyramids") < cpos("Dirt Rock Wall Runner"));
+        assert!(cpos("Dirt Rock Wall Runner") < cpos("Living Trees"));
+    }
+
+    /// W4-g36 A4: `wood tree walls` sits ahead of `trees` — the vanilla
+    /// relative order Living Trees (`WorldGen.cs:15476`) → Wood Tree Walls
+    /// (`:15717`) → Altars (`:15750`, the port's altars step sits earlier in
+    /// the grouped chain). At the batch-B merge the d103/d106 passes sit
+    /// between living trees and wood tree walls, so the witness pins the
+    /// trees adjacency, not a strict living-trees +1.
+    #[test]
+    fn w4_g36_a4_the_wood_tree_walls_step_sits_after_the_living_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert!(pos("living trees") < pos("wood tree walls"));
+        assert_eq!(names[pos("wood tree walls") + 1], "trees");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Living Trees") < cpos("Wood Tree Walls"));
+        assert!(cpos("Wood Tree Walls") < cpos("Altars"));
+    }
+
+    /// W4-d103 pass 21/22 KEEP-ONE (matrix-88 §2.5/§2.6): `wall variety` +
+    /// `life crystals` are d103-owned (wall_variety.rs / crystals.rs); g36's
+    /// A6/A7 duplicates dropped. The d103 slots sit after `waterfalls`
+    /// (the vanilla Waterfalls `:16610` → Wall Variety `:16697` → Life
+    /// Crystals `:16755` → Statues `:16853` relative order).
+    #[test]
+    fn w4_g36_a6_the_wall_variety_step_sits_after_the_slopes() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("wall variety"), pos("waterfalls") + 1);
+        assert_eq!(pos("life crystals"), pos("wall variety") + 1);
+        assert_eq!(names[pos("life crystals") + 1], "statues");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Smooth World") < cpos("Wall Variety"));
+        assert!(cpos("Wall Variety") < cpos("Life Crystals"));
+        assert!(cpos("Life Crystals") < cpos("Statues"));
     }
 
     #[test]
@@ -4793,12 +5017,13 @@ mod tests {
             ]
         );
         // The C# loop can only disable a pass that exists in `_passes`; every
-        // name must therefore be a real chain name — `Shimmer` is the one slot
+        // name must therefore be a real chain name — `Larva` is the one slot
         // the port's chain does not declare yet (research/12's missing-pass
         // list), so it is allowed to be absent and pruned vacuously.
+        // (`Shimmer` declared its chain row with W4-g36 A1.)
         for name in DUAL_DUNGEON_DISABLED_PASSES {
             assert!(
-                VANILLA_CHAIN.iter().any(|p| p.name == name) || name == "Shimmer",
+                VANILLA_CHAIN.iter().any(|p| p.name == name) || name == "Larva",
                 "'{name}' is not a vanilla chain pass"
             );
         }
