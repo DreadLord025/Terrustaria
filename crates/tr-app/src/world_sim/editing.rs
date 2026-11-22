@@ -4126,6 +4126,27 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 2623 {
+        // W4-d8 DOC-SWEEP (2) — `Player.cs:48393-48401` — the Bubble Gun's
+        // three-bubble volley: each bubble at the shared launch point with
+        // the aim plus `Next(-40, 41) * 0.1` per axis (no renormalize).
+        // Draw order per bubble: spread X, spread Y. The C# `return`s here
+        // (the generic tail never runs); the spawn source is
+        // `projectileSource_Item_WithPotentialAmmo` (`:47152` →
+        // `GetProjectileSource_Item_WithPotentialAmmo` `:9805-9808`, an
+        // `EntitySource_ItemUse_WithAmmo` — the port's spawn seam carries
+        // no source context, the i22 census convention).
+        for _ in 0..3 {
+            let vx = shot.x + loot_rng.next_range(-40, 41) as f32 * 0.1;
+            let vy = shot.y + loot_rng.next_range(-40, 41) as f32 * 0.1;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if tr_core::whip::is_whip(proj) {
         // S1-P-i24 — `Player.ItemCheck_Shoot`'s whip arm
         // (`Player.cs:48655-48690`): the 18 whip items fire
@@ -8267,7 +8288,9 @@ fn thrust_stab_tick(
         remaining,
         frame_w,
         scale,
-        0.0, // mountOffset — HeightOffsetHitboxCenter stands at 0
+        // mountOffset — HeightOffsetHitboxCenter (W4-d8 retire (1): LIVE,
+        // `Player.cs:42604` captures it before ItemCheck; 0 unmounted).
+        p.height_offset_hitbox_center(),
         i32::from(held.kind),
     );
     let Some(hitbox) = crate::player::thrust_melee_hitbox(
@@ -14223,6 +14246,41 @@ mod tests {
         };
         assert!(seeds_match(741), "the SwirlTwins pair is seed-stable");
         assert!(seeds_match(6171), "the AllGems random kind is seed-stable");
+    }
+
+    #[test]
+    fn test_dw_5_1_the_bubble_gun_fires_the_three_bubble_volley() {
+        // W4-d8 DOC-SWEEP (2) — `Player.cs:48393-48401`: the Bubble Gun
+        // (2623, shoot 410, shootSpeed 15) fires THREE bubbles per use,
+        // each at the aim plus `Next(-40, 41) * 0.1` per axis — six
+        // `UpdatePlayers` range draws, X before Y per bubble. The C#
+        // `return`s (no generic tail); the bubbles carry the fused damage
+        // 70 (the magic class multiplier 1) and the item's knockback 3.
+        let mut app = staff_app(2623, "Bubble Gun");
+        fire_once(&mut app);
+        let bubbles: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(bubbles.len(), 3, "the three-bubble volley (`:48395`)");
+        for b in &bubbles {
+            assert_eq!(b.kind, 410, "the Bubble Gun's Item.shoot (`Item.cs:25686`)");
+            assert_eq!(b.damage, 70, "the fused weapon damage");
+            // The aim is +X (the cursor sits right of the player): the
+            // base shot is (15, 0), the spread adds ±4 per axis.
+            assert!(
+                (b.vel.x - 15.0).abs() <= 4.0 && b.vel.y.abs() <= 4.0,
+                "the ±40×0.1 spread (`:48399`), v = {:?}",
+                b.vel
+            );
+        }
+        // The three spreads differ (the seed draws six distinct values).
+        assert!(
+            bubbles[0].vel != bubbles[1].vel || bubbles[1].vel != bubbles[2].vel,
+            "the per-bubble spread draws"
+        );
     }
 
     #[test]
