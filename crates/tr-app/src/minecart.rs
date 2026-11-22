@@ -1063,6 +1063,10 @@ pub(crate) fn tick(
     player_vy: f32,
     show_sandstorm_visuals: bool,
 ) {
+    // `Main.snowDust` (`Main.cs:621`): the head reset (`Dust.cs:428`) rides
+    // `update_dust`; the type-76 arm's `++` (`:1747`) accumulates here and
+    // lands on the pool after the pass (the snowfall budget reads it).
+    let mut snow_dust = 0;
     pool.update_dust(
         &tr_core::particles::UpdateCtx {
             max_dust_to_draw,
@@ -1092,16 +1096,34 @@ pub(crate) fn tick(
                 }
             } else if d.dust_type == 268 {
                 crate::sand::type_268_arm(d, show_sandstorm_visuals, player_vy, world);
+            } else if d.dust_type == 76 {
+                // `Dust.cs:1745-1763` — the ambient snowfall's flake AI
+                // (W4-d130). The arm feeds `Main.snowDust` (`:1747`); the
+                // shared tails (the second chain's drag `:2073`, the rotation
+                // rebuild `:2081`, the fadeIn-else fade `:2127`) run after it.
+                // The FIRST ladder's gravity else-if (`:1819`) is excluded by
+                // the matched arm — the flake keeps its own fall velocity.
+                crate::snow::type_76_arm(d, player_vy, world, &mut snow_dust);
+                crate::snow::type_76_tails(d);
+            } else {
+                // g67 (transplanted, docs/research/83 §3): the rain collision
+                // splashes (`dustWater()`'s family) ride the shared loop's
+                // `Dust.cs:1834-1874` arm — it gates on the C#'s full member
+                // list (308/52/266 included) and no-ops every other type.
+                crate::rain::water_splash_arm(d, world);
             }
-            // Both arms return false: the 213/268 arms are standalone
+            // All arms return false: the 213/268/splash arms are standalone
             // statements of the C#'s FIRST ladder (between the `:477` move and
             // the fresh `if (dust.type >= 130 ...)` chain head at `:2127`), so
             // they do NOT exclude the second chain's final
             // `else if (type != 304 && noGravity)` tail (`:2335`) — a
             // no-gravity 213 takes its arm AND the tail, exactly like the C#.
+            // The 76 arm is an else-if OF the first ladder (`:1745`), so it
+            // excludes the `:2071` drag — its own tails ran above.
             false
         },
     );
+    pool.snow_dust = snow_dust;
 }
 
 /// The generic `Main.DrawDust` draw (`Main.cs:39003-39013`) over the pool's

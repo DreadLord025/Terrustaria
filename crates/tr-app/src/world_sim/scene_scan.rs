@@ -100,6 +100,10 @@ pub(crate) fn scan_scene_full(
     let mut metrics = SceneMetrics::new();
     metrics.center = center;
     metrics.tile_center = tile_center;
+    // The skyblock low-tiles flag the snow/desert thresholds read
+    // (`SceneMetrics.cs:154-176` via `WorldGen.Skyblock.lowTiles`;
+    // g67 `f8c4b659` fold, research/134 R5).
+    metrics.skyblock_low_tiles = world.skyblock_low_tiles;
     scan_tiles(world, &mut metrics);
     // `SceneMetrics.cs:338-341`: the visual-area pass runs only when the
     // settings carry the rect (`Main.cs:62540` always does).
@@ -395,6 +399,48 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         screen,
         *zoom,
         app.gfx_quality.max_dust_to_draw,
+    );
+    // `Main.snowing()` (`Main.cs:17238`, body `:13032-13116`): the ambient
+    // snowfall spawns right BEFORE `Sandstorm.EmitDust` in the C# — the port
+    // runs both in this slot (the spawn order between the two dust families
+    // only matters for the shared pool's slot scan). The budget reads the
+    // previous tick's `Main.snowDust` (`pool.snow_dust`, the shared tick's
+    // count). W4-d130.
+    let snow_inputs = crate::snow::SnowInputs {
+        // `Main.gamePaused` (`Main.cs:13040`) — g11's env field folded: the
+        // check is snowing's own first disjunct, the cluster gate redundant.
+        game_paused: app.game_paused,
+        scaled_position: *camera - screen * 0.5 / *zoom,
+        scaled_size: screen / *zoom,
+        cloud_alpha: rain.cloud_alpha(),
+        raining: rain.is_raining(),
+        wind_speed_current: wind.speed_current,
+        player_vy,
+        gfx_quality: app.gfx_quality.quality,
+        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`): the
+        // `npcsFoundForCheckActive[668]` read — `UpdateFoundActiveNPCs`
+        // (`NPC.cs:7229-7239`) sets it for any ACTIVE npc of type 668 (no
+        // near-screen filter despite the name; the port's `hp > 0` is the
+        // active flag, g11's census wording).
+        deerclops_near: npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::Deerclops),
+        remix_world: wind.remix_world,
+    };
+    let snow_dust = app.dust.snow_dust;
+    let snow_metrics = app.scene_metrics.clone();
+    // F1 (g11 research/83-addendum, adjudicated): the bare-`Main.rand`
+    // stand-in — `:17238` precedes every `SwapRandom` (they all live inside
+    // `DoUpdateInWorld`, `Main.cs:17280`→`:17732`), so the draws ride the
+    // shared global stream, not a private snow splitmix.
+    crate::snow::snowing(
+        &snow_metrics,
+        &snow_inputs,
+        snow_dust,
+        app.rngs.global(),
+        &ctx,
+        world,
+        &mut app.dust,
     );
     app.sand.emit_dust(
         &app.scene_metrics,

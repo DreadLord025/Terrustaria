@@ -897,6 +897,8 @@ pub(crate) struct App {
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
     pub(crate) sand: crate::sand::Sand,
+    // W4-d130 F1: no `snow` field — `Main.snowing()` is a static on the bare
+    // `Main.rand` (the port's `rngs.global()`), not a per-consumer stream.
     /// `Main.dust` (`Main.cs:66985`): the 6001-slot pressure-gated pool —
     /// the wheel sparks and the sandstorm spawn/tick/draw through it
     /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
@@ -4421,6 +4423,10 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
     let wall_frame_ms = t_walls.elapsed().as_secs_f32() * 1000.0;
     world.compute_column_surface();
     world.compute_chunks();
+    // `WorldFile.cs:766`: `WorldGen.Skyblock.ScanTiles()` at load — the
+    // low-tiles flag the scene snow/desert thresholds read (W4-g67
+    // `f8c4b659` fold, research/134 R5).
+    world.scan_skyblock_low_tiles();
     // Torches are important tiles; generated saves written before the hotbar existed
     // may lack this bit.
     if world.frame_important.len() > 4 {

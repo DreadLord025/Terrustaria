@@ -185,16 +185,27 @@ impl App {
         day: self.world.day_time,
         underground: self.camera.y
             >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-        rain: self.rain.is_raining(),
+        // g67b IsItRaining fix: the music rain branches read
+        // `Main.cloudAlpha > 0` (`Main.cs:12859/:12880/:12932/:12973`),
+        // NOT the `Main.raining` event flag — the post-StopRain cloud ramp
+        // keeps the rain track until the clouds clear.
+        rain: self.rain.is_it_raining(),
         boss_music,
         clock: self.world.time,
         eclipse: self.world.eclipse
             && self.camera.y
                 < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+        // `flag24` (`Main.cs:12200`): the Slime Rain event track 48
+        // (`:12654-12657`) — the raw flag; the ladder arm applies the
+        // graveyard/blood-moon/surface gates (W4-f39 co-lane compose).
+        slime_rain: self.world.slime_rain,
         shimmer: self.scene_metrics.zone_shimmer,
         town_npcs: self.scene_metrics.town_npc_count,
         // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
-        cloud_alpha: self.rain.visual_alpha(),
+        // The RAW `Main.cloudAlpha` (`:11544`'s `num11` reads the unclamped
+        // static; the sky-tint `visual_alpha` clamp was a deviation —
+        // observable above 1 under a heavy storm / TR_RAIN pin, W4-d130).
+        cloud_alpha: self.rain.cloud_alpha(),
         zone_rain: self.scene_metrics.zone_rain,
         zone_snow: self.scene_metrics.zone_snow,
         surface_atmospherics: self.scene_metrics.surface_atmospherics,
@@ -247,7 +258,9 @@ impl App {
         rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
         jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
             + screen.y * 0.5,
-        quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+        // g67b IsItRaining fix: the town quiet-sky gate reads
+        // `Main.cloudAlpha == 0` (`Main.cs:12670/:12674`), not the event flag.
+        quiet_sky: !self.rain.is_it_raining() && !self.wind.happy_windy_day,
         menu: false,
         menu_flags: Default::default(),
         music_box: self.scene_metrics.active_music_box,
@@ -488,7 +501,10 @@ impl App {
         pumpkin_moon: self.world.pumpkin_moon,
         snow_moon: self.world.snow_moon,
         hard_mode: self.world.hard_mode,
-        is_raining: self.rain.is_raining(),
+        // g67b IsItRaining fix: the scheduler's sunny/calm gates read
+        // `Main.IsItRaining` = `cloudAlpha > 0` (`Main.cs:2597`,
+        // `AmbienceServer.cs:32/:50`), NOT the event flag.
+        is_raining: self.rain.is_it_raining(),
         is_storming: self.wind.storming,
         happy_windy_day: self.wind.happy_windy_day,
         too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),

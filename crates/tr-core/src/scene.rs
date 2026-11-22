@@ -56,13 +56,20 @@ pub struct SceneMetrics {
     pub honey_block_count: i32,
     /// `metrics.SurfaceAtmospherics` (`SceneMetrics.cs:698`, `WorldGen.cs:10976`).
     pub surface_atmospherics: bool,
-    /// `metrics.ZoneRain` (`SceneMetrics.cs:701`).
+    /// `metrics.ZoneRain` (`SceneMetrics.cs:698`, cleared by the sandstorm
+    /// at `:700-703`).
     pub zone_rain: bool,
+    /// `WorldGen.Skyblock.lowTiles` copied in by the scan driver — the
+    /// `SnowTileThreshold`/`DesertTileThreshold` skyblock arm
+    /// (`SceneMetrics.cs:154-176`). Not a C# `SceneMetrics` field; the port
+    /// carries the world flag here so `calculate_zones` reads it.
+    /// (g67 `f8c4b659` fold, research/134 R5.)
+    pub skyblock_low_tiles: bool,
     /// `metrics.ZoneSnow` (`SceneMetrics.cs:675`).
     pub zone_snow: bool,
     /// `metrics.ZoneDesert` (`SceneMetrics.cs:676`).
     pub zone_desert: bool,
-    /// `metrics.ZoneSandstorm` (`SceneMetrics.cs:703-707`).
+    /// `metrics.ZoneSandstorm` (`SceneMetrics.cs:699-703`).
     pub zone_sandstorm: bool,
     /// `metrics.ZoneCorrupt` (`SceneMetrics.cs:671`).
     pub zone_corrupt: bool,
@@ -287,8 +294,14 @@ pub struct Zones {
 pub mod thresholds {
     /// `SnowTileNormalThreshold` (`SceneMetrics.cs:930`).
     pub const SNOW_TILE_NORMAL: i32 = 1500;
-    /// `DesertTileNormalThreshold` (`SceneMetrics.cs:934`).
+    /// `SnowTileSkyblockThreshold` (`SceneMetrics.cs:931`) — the low-tiles
+    /// skyblock arm of `SnowTileThreshold` (`:154-163`).
+    pub const SNOW_TILE_SKYBLOCK: i32 = 300;
+    /// `DesertTileNormalThreshold` (`SceneMetrics.cs:933`).
     pub const DESERT_TILE_NORMAL: i32 = 1500;
+    /// `DesertTileSkyblockThreshold` (`SceneMetrics.cs:934`) — the low-tiles
+    /// arm of `DesertTileThreshold` (`:166-176`).
+    pub const DESERT_TILE_SKYBLOCK: i32 = 300;
     /// `GraveyardTileThreshold` (`SceneMetrics.cs:941`).
     pub const GRAVEYARD_TILE: i32 = 28;
     /// `GraveyardTileMin` (`SceneMetrics.cs:940`).
@@ -317,6 +330,28 @@ pub mod thresholds {
 /// the dungeon zone requires behind the scan centre.
 pub fn is_dungeon_wall(wall: u16) -> bool {
     matches!(wall, 7 | 8 | 9 | 94..=99)
+}
+
+/// `SceneMetrics.SnowTileThreshold` (`SceneMetrics.cs:154-163`): the skyblock
+/// low-tiles flag picks 300 (`SnowTileSkyblockThreshold`) over the normal 1500.
+/// `WorldGen.Skyblock.lowTiles` rides `World.skyblock_low_tiles`.
+/// (g67 `f8c4b659` fold, research/134 R5.)
+pub fn snow_tile_threshold(skyblock_low_tiles: bool) -> i32 {
+    if skyblock_low_tiles {
+        thresholds::SNOW_TILE_SKYBLOCK
+    } else {
+        thresholds::SNOW_TILE_NORMAL
+    }
+}
+
+/// `SceneMetrics.DesertTileThreshold` (`SceneMetrics.cs:166-176`): the same
+/// low-tiles arm (300 / 1500).
+pub fn desert_tile_threshold(skyblock_low_tiles: bool) -> i32 {
+    if skyblock_low_tiles {
+        thresholds::DESERT_TILE_SKYBLOCK
+    } else {
+        thresholds::DESERT_TILE_NORMAL
+    }
 }
 
 /// `SceneMetrics.IsValidForOreFinder` (`SceneMetrics.cs:888-903`): the metal
@@ -355,6 +390,7 @@ impl SceneMetrics {
             honey_block_count: 0,
             surface_atmospherics: false,
             zone_rain: false,
+            skyblock_low_tiles: false,
             zone_snow: false,
             zone_desert: false,
             zone_sandstorm: false,
@@ -446,16 +482,27 @@ impl SceneMetrics {
         }
     }
 
-    /// `metrics.EnoughTilesForSnow` (`SceneMetrics.cs:258`; threshold
-    /// `SnowTileNormalThreshold`, `:930` — the Skyblock variant is not ported).
+    /// `metrics.EnoughTilesForSnow` (`SceneMetrics.cs:258`) — reads
+    /// `SnowTileThreshold` (the skyblock-aware getter above). The no-arg form
+    /// keeps the normal threshold for the classic callers; the skyblock arm
+    /// rides [`Self::enough_tiles_for_snow_at`].
     pub fn enough_tiles_for_snow(&self) -> bool {
-        self.snow_tile_count >= thresholds::SNOW_TILE_NORMAL
+        self.enough_tiles_for_snow_at(false)
     }
 
-    /// `metrics.EnoughTilesForDesert` (`SceneMetrics.cs:262`; threshold
-    /// `DesertTileNormalThreshold`, `:934`).
+    /// `EnoughTilesForSnow` with the world's `Skyblock.lowTiles` flag.
+    pub fn enough_tiles_for_snow_at(&self, skyblock_low_tiles: bool) -> bool {
+        self.snow_tile_count >= snow_tile_threshold(skyblock_low_tiles)
+    }
+
+    /// `metrics.EnoughTilesForDesert` (`SceneMetrics.cs:262`) — normal threshold.
     pub fn enough_tiles_for_desert(&self) -> bool {
-        self.desert_sand_tile_count >= thresholds::DESERT_TILE_NORMAL
+        self.enough_tiles_for_desert_at(false)
+    }
+
+    /// `EnoughTilesForDesert` with the world's `Skyblock.lowTiles` flag.
+    pub fn enough_tiles_for_desert_at(&self, skyblock_low_tiles: bool) -> bool {
+        self.desert_sand_tile_count >= desert_tile_threshold(skyblock_low_tiles)
     }
 
     /// `metrics.EnoughTilesForGraveyard` (`SceneMetrics.cs:272`; threshold
@@ -762,9 +809,12 @@ impl SceneMetrics {
         self.zone_dirt_layer_height = ty <= rock_layer && ty > world_surface;
         self.zone_rock_layer_height = ty <= underworld_layer as f64 && ty > rock_layer;
         self.zone_underworld_height = zone_underworld_height;
-        // `SceneMetrics.cs:675-676`:
-        self.zone_snow = self.enough_tiles_for_snow();
-        self.zone_desert = self.enough_tiles_for_desert();
+        // `SceneMetrics.cs:675-676`: `ZoneSnow`/`ZoneDesert` read the
+        // skyblock-aware thresholds. The flag rides the metrics (the scan
+        // driver copies `World.skyblock_low_tiles` in); the no-arg getters
+        // keep the normal threshold for the classic callers.
+        self.zone_snow = self.enough_tiles_for_snow_at(self.skyblock_low_tiles);
+        self.zone_desert = self.enough_tiles_for_desert_at(self.skyblock_low_tiles);
         // `SceneMetrics.cs:678-679`:
         self.zone_meteor = self.meteor_tile_count >= thresholds::METEOR_TILE;
         self.zone_graveyard = self.enough_tiles_for_graveyard();
@@ -780,11 +830,24 @@ impl SceneMetrics {
         // `SceneMetrics.cs:698` via `WorldGen.IsSurfaceForAtmospherics`
         // (`WorldGen.cs:10976-10985`; the remix branch is not ported):
         self.surface_atmospherics = self.tile_center.1 as f64 <= world_surface;
-        // `SceneMetrics.cs:701`:
+        // `SceneMetrics.cs:698-703` (the 1.4.5.8 lines; the earlier
+        // :701/:703/:704-707 citations were the pre-fold numbering):
+        // `ZoneRain = raining && SurfaceAtmospherics`,
+        // `ZoneSandstorm = ZoneDesert && SurfaceAtmospherics && Happening`,
+        // then the ONE-WAY suppression — a sandstorm clears the rain zone
+        // (W4-d130 final cross-note: rain does NOT gate the sandstorm;
+        // `Sandstorm.UpdateTime` (`Sandstorm.cs:32-77`) reads only wind —
+        // the storms coexist as state, the sandstorm wins the ZONE). The
+        // downstream consumers: `Rain.MakeRain`'s `!ZoneRain` early-out
+        // (`Rain.cs:32`, `rain.rs::spawn`) stops rain DROP spawns in the
+        // storm zone, and the rain ambience cue's `ZoneRain && !ZoneSnow`
+        // gate (`Main.cs:11554`) fades track 28 out; the blizzard pair
+        // (`SceneState.cs:78`) needs ZoneRain too. `Main.raining` itself
+        // stays up — the event keeps draining its rainTime through the
+        // storm (`Main.cs:64874`), and the rain resumes when the storm's
+        // zone gate drops.
         self.zone_rain = raining && self.surface_atmospherics;
-        // `SceneMetrics.cs:703`:
         self.zone_sandstorm = self.zone_desert && self.surface_atmospherics && sandstorm_happening;
-        // `SceneMetrics.cs:704-707`: a sandstorm suppresses the rain zone.
         if self.zone_sandstorm {
             self.zone_rain = false;
         }
@@ -2582,6 +2645,35 @@ mod tests {
 
     // --- CalculateZones (SceneMetrics.cs:662-707) ---
 
+    /// W4-g67 (folded `f8c4b659`) — the skyblock-aware snow/desert thresholds
+    /// (`SceneMetrics.cs:154-176`): 300 when `Skyblock.lowTiles`, else 1500, and
+    /// `EnoughTilesForSnow`/`Desert` + `ZoneSnow`/`ZoneDesert` read them.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_skyblock_thresholds_pick_300_over_1500() {
+        assert_eq!(snow_tile_threshold(false), 1500);
+        assert_eq!(snow_tile_threshold(true), 300);
+        assert_eq!(desert_tile_threshold(false), 1500);
+        assert_eq!(desert_tile_threshold(true), 300);
+        // 500 snow tiles: enough on skyblock (≥300), not on a normal world (<1500).
+        let mut m = SceneMetrics::new();
+        m.snow_tile_count = 500;
+        m.desert_sand_tile_count = 500;
+        assert!(!m.enough_tiles_for_snow_at(false));
+        assert!(m.enough_tiles_for_snow_at(true));
+        assert!(!m.enough_tiles_for_desert_at(false));
+        assert!(m.enough_tiles_for_desert_at(true));
+        // The zone derivation reads the carried flag.
+        m.skyblock_low_tiles = true;
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, false);
+        assert!(m.zone_snow, "500 ≥ 300 on skyblock");
+        assert!(m.zone_desert);
+        m.skyblock_low_tiles = false;
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, false);
+        assert!(!m.zone_snow, "500 < 1500 normal");
+        assert!(!m.zone_desert);
+    }
+
     #[test]
     fn zones_at_exact_thresholds() {
         // `SceneMetrics.cs:258,262`: `>=` comparisons.
@@ -2632,7 +2724,9 @@ mod tests {
 
     #[test]
     fn zone_sandstorm_suppresses_zone_rain() {
-        // `SceneMetrics.cs:703-707`.
+        // `SceneMetrics.cs:698-703` — the ONE-WAY gate (W4-d130 final
+        // cross-note): the sandstorm clears ZoneRain; rain never gates
+        // ZoneSandstorm (`Sandstorm.cs:32-77` reads only wind).
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
@@ -2654,6 +2748,18 @@ mod tests {
         m.tile_center = (0, 500);
         m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, true);
         assert!(!m.zone_sandstorm);
+
+        // The gate is ONE-WAY (W4-d130 final): a happening desert storm
+        // sets ZoneSandstorm even with `raining` FALSE — the sandstorm's
+        // own state machine never reads the rain (`Sandstorm.cs:32-77`
+        // gates on wind only), and the zone derivation's `:699` has no
+        // rain term. Only ZoneRain is suppressed, never the reverse.
+        let mut m = SceneMetrics::new();
+        m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
+        m.tile_center = (0, 10);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, true);
+        assert!(m.zone_sandstorm, "the storm needs no rain");
+        assert!(!m.zone_rain);
     }
 
     // --- oceanDepths / isDesertBiomeSand (WorldGen.cs:4447, TileID.cs:501) ---
