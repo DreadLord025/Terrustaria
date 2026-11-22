@@ -66,6 +66,10 @@ pub(crate) struct PlayerAssets {
     /// `AssetInitializer.cs:578`): the Beetle orb's 3-frame wing sheet
     /// (`DrawPlayer_37_BeetleBuff`, `PlayerDrawLayers.cs:4007-4031`).
     pub(crate) beetle_orb: Option<BgTex>,
+    /// `TextureAssets.AccShield[slot]` (`AssetInitializer.cs:219-221`,
+    /// `Images/Acc_Shield_{slot}`): the visible shield strips by
+    /// `ArmorIDs.Shield` slot, 1..12 (0 is the empty slot, Count = 13).
+    pub(crate) acc_shield: [Option<BgTex>; 13],
 }
 
 impl Default for PlayerAssets {
@@ -91,6 +95,7 @@ impl Default for PlayerAssets {
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
             beetle_orb: None,
+            acc_shield: [None; 13],
         }
     }
 }
@@ -174,6 +179,15 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         // W4-f50 deviation 3 — `TextureAssets.Beetle` loads `Images/BeetleOrb`
         // (`AssetInitializer.cs:578`); a missing file stays `None`.
         beetle_orb: sky_tex(atlas, "BeetleOrb", None),
+        // `AssetInitializer.cs:219-221`: slot 0 is the empty asset; the
+        // visible shield slots 1..12 load `Images/Acc_Shield_{slot}`.
+        acc_shield: std::array::from_fn(|slot| {
+            if slot == 0 {
+                None
+            } else {
+                sky_tex(atlas, &format!("Acc_Shield_{slot}"), None)
+            }
+        }),
     }
 }
 
@@ -1782,6 +1796,15 @@ pub(crate) fn player_draw_layers(
             [player.beetle_vel[2].x, player.beetle_vel[2].y],
         ],
         beetle_set: player.beetle_offense || player.beetle_defense,
+        // `DrawPlayer_25_Shield` (`PlayerDrawLayers.cs:2954-3024`): the
+        // sim-derived visible shield slot + the raised/parry pose inputs.
+        shield: player.shield,
+        shield_raised: player.shield_raised,
+        shield_parry_time_left: player.shield_parry_time_left,
+        // `Main.GlobalTimeWrappedHourly = TotalGameTime.TotalSeconds % 3600`
+        // (the draw pass's `anim_time % 3600` convention).
+        global_time: anim_time % 3600.0,
+        cart_mounted: player.cart_mounted,
     };
     let mut layers = assemble_layers(&state, assets);
     // `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the

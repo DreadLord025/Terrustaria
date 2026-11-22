@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 97 | DOC-SWEEP lane 19: dodge/immune family (W4-d115: the afterimage DRAW port + ImmunityCooldownID table + CrossNecklace shield-layer census + the MISSING buff-321 stat arm + the stacking-order verify; code-only, 16 witnesses) | `97-doc-sweep-dodge.md` | ✅ |
 | W4-f50-retire | The hurt retire receipts (Panic-63 + rederive-ladder drop-hunks re-pinned at 18eeb4f44 + the NEW f48 third-copy sub-receipt; the f3-stealth mutual receipt — compose 1:1, f3-canonical; the g64-608 keep-yours note — no-608-row confirmed at 625c449e0, BlastRng→DustDraw fold; the d70-paladin MP-peer-Hurt task seed; research/04 SEALED + the hurt-family bible; the ONE-paragraph HURT merger-instruction) | `W4-f50-closeout.md` | ✅ receipts recorded (code-only) |
+| 98 | DOC-SWEEP lane 20: shields/accessories (W4-f48: raised-shield stats, shield draw, proj 866 Bouncing Shield, projectile-lane parry + ParryDamageBuff consumer, StarVeil damage witness; census negatives; code-only) — **SEALED 2026-11-21 (SHIELDS RETIRE: the f50/f12 panic keep-one executed f4539c27e, the 866 d18/d12 compose census, the ManaCloak + fast-run-dust task seeds, the shields-family bible)** | `98-doc-sweep-shields.md` | 🔒 SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

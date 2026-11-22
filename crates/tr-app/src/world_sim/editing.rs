@@ -7737,6 +7737,26 @@ fn resolve_melee_strike(
                 // `UpdatePlayers` swap (`Main.cs:17754`).
                 let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
+                // `if (this.parryDamageBuff && sItem.melee)`
+                // (`Player.cs:44307-44312`): the shield parry's buff 198
+                // ×5s the next MELEE strike and consumes itself — the
+                // flag clears AND `ClearBuff(198)` strips the buff (both,
+                // so the same swing's later NPCs get no second boost).
+                // The ×5 rides the PRE-`DamageVar` value (the C# block
+                // precedes `:44342`), after the crit roll (`:44298`) —
+                // the draw order is untouched (no new draws).
+                let held_is_melee = registry::get(held.kind).is_some_and(|d| d.melee);
+                let raw = if held_is_melee
+                    && app.player.as_ref().is_some_and(|p| p.parry_damage_buff)
+                {
+                    if let Some(p) = app.player.as_mut() {
+                        p.parry_damage_buff = false;
+                        p.buffs.clear_buff(198);
+                    }
+                    raw * 5.0
+                } else {
+                    raw
+                };
                 let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
                 // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
                 // (`Player.cs:44344-44353`): the Flymeal takes full armour
@@ -8396,6 +8416,62 @@ mod tests {
         let hp_c = c.npcs[0].hp;
         mine_frames(&mut c, 1);
         assert_eq!(c.npcs[0].hp, hp_c, "the tile target runs, not the NPC hit");
+    }
+
+    /// W4-f48 parry wave — `ProcessHitAgainstNPC`'s ParryDamageBuff arm
+    /// (`Player.cs:44307-44312`): buff 198 ×5s the next melee strike
+    /// (pre-`DamageVar`) and consumes the flag AND the buff. WRITTEN NOT
+    /// RUN (code-only mode). The base sword hit reads 7 on this rig's
+    /// pristine `UpdatePlayers` stream (the bug_09 pin above); ×5 = 35
+    /// through the same ±15% band + the slime's defence — the assertion
+    /// rides the band, not a literal, because the ×5 changes the roll's
+    /// truncation input.
+    #[test]
+    fn w4_f48_parry_buff_198_quintuples_the_next_melee_strike_and_consumes() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24; // the wooden sword (damage 7, melee)
+        a.inventory[a.selected].count = 1;
+        let p = a.player.as_mut().unwrap();
+        p.parry_damage_buff = true;
+        p.buffs.add_buff(198, 300);
+        let hp0 = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        let dealt = hp0 - a.npcs[0].hp;
+        // 7 × 5 = 35 pre-var; the ±15% band [30, 40] minus defence/2 ≥ 1.
+        assert!(
+            dealt >= 28,
+            "the parry boost lands (7×5 through the band, got {dealt})"
+        );
+        let p = a.player.as_ref().unwrap();
+        assert!(!p.parry_damage_buff, "the strike consumes the flag");
+        assert!(p.buffs.find_buff_index(198).is_none(), "ClearBuff(198) strips it");
+        // A second swing (the buff gone) lands the plain 7-band again.
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 24;
+        b.inventory[b.selected].count = 1;
+        let hp_b = b.npcs[0].hp;
+        mine_frames(&mut b, 1);
+        assert_eq!(hp_b - b.npcs[0].hp, 7, "no buff, the plain sword row");
+    }
+
+    /// W4-f48 parry wave — the ×5 is MELEE-only (`sItem.melee`,
+    /// `Player.cs:44307`): a non-melee held row keeps the buff armed.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f48_parry_buff_198_leaves_non_melee_strikes_alone() {
+        let mut a = melee_app();
+        // The Copper Bow (99, ranged) — the cursor melee arm still runs
+        // its ProcessHitAgainstNPC resolution for the held row, but
+        // `sItem.melee` is false, so the parry arm must not fire.
+        a.inventory[a.selected].kind = 99;
+        a.inventory[a.selected].count = 1;
+        let p = a.player.as_mut().unwrap();
+        p.parry_damage_buff = true;
+        p.buffs.add_buff(198, 300);
+        mine_frames(&mut a, 1);
+        let p = a.player.as_ref().unwrap();
+        assert!(p.parry_damage_buff, "the non-melee strike keeps the flag");
+        assert!(p.buffs.find_buff_index(198).is_some(), "the buff survives");
     }
 
 

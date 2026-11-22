@@ -737,6 +737,16 @@ pub const ICE_BOOMERANG: u16 = 113;
 /// the per-axis wall bounce that does NOT arm the return (`:19550-19560`)
 /// and the 0.3 spin (`:39556-39559`).
 pub const LIGHT_DISC: u16 = 106;
+/// `ProjectileID.BouncingShield` (866, `Projectile.cs:8312-8324`) — the
+/// Bouncing Shield item 4760's thrown shot (W4-f48 lane 20): 30×30,
+/// aiStyle 3, `penetrate = 5`, melee, `extraUpdates = 1`, `light = 0.15`,
+/// `usesLocalNPCImmunity` + `localNPCHitCooldown = -1`. The outbound leg
+/// never counts `ai[1]` (`:39027-39030`); the homing seek runs on
+/// `localAI[0]` ∈ [10, 360] (`:39220-39259`), the return seek is 16/1.2
+/// (`:39427-39431`), the rotation tracks the velocity (`:39560-39568`)
+/// and the on-hit store decays ×0.8 (`:13443-13445`) with its own
+/// penetrate spend (`:14077-14104`, the generic `:14125` excludes it).
+pub const BOUNCING_SHIELD: u16 = 866;
 /// The yoyo family (`Projectile.cs:6013-6093` + `:9483-9490` — every row is
 /// 16×16 with `DefaultToYoyo()`, aiStyle 99; the AI is `AI_099_2_Yoyos`
 /// `:67733-68105`). The counterweight projectiles 556-561/1079 share the style
@@ -1102,6 +1112,34 @@ pub const SPARKLE_GUITAR: u16 = 856;
 /// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
 /// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
 pub const STAR_CANNON_STAR: u16 = 955;
+// W4-f48 — the star-cloak family (`Player.Hurt`'s retaliate block spawns
+// them, `Player.cs:38432-38481`; the overrides resolve LAST-wins starVeil
+// 725 → beeCloak 724 → manaCloak 723 → snakeCloak 1133). All five share one
+// `SetDefaults` arm (`Projectile.cs:7646-7658`) and one aiStyle-5 AI branch
+// (`:23845-23856/:23914-23927/:23988-24031`).
+/// `ProjectileID.ManaCloakStar` (723) — the Mana Cloak's star; the magic-hit
+/// proc (`Projectile.cs:13831-13852`) spawns it with `ai2 = 1` (the
+/// fall-through + star-drop half, unported families — cited in the AI arm).
+pub const MANA_CLOAK_STAR: u16 = 723;
+/// `ProjectileID.BeeCloakStar` (724) — the Bee Cloak's star.
+pub const BEE_CLOAK_STAR: u16 = 724;
+/// `ProjectileID.StarVeilStar` (725) — the Star Veil's star (the W4-f48 item).
+pub const STAR_VEIL_STAR: u16 = 725;
+/// `ProjectileID.StarCloakStar` (726) — the plain Star Cloak's star.
+pub const STAR_CLOAK_STAR: u16 = 726;
+/// `ProjectileID.SnakeBandStarCloakTinkerStar` (1133) — the Serpent's Coil's
+/// star (the snakeCloak override).
+pub const SNAKE_CLOAK_STAR: u16 = 1133;
+/// The five cloak-star kinds, one row / one AI branch
+/// (`Projectile.cs:7646`/`:23845`). The 503 Holy star shares the AI branch's
+/// kind list but not the row; it rides the i17 slice.
+pub const CLOAK_STARS: [u16; 5] = [
+    MANA_CLOAK_STAR,
+    BEE_CLOAK_STAR,
+    STAR_VEIL_STAR,
+    STAR_CLOAK_STAR,
+    SNAKE_CLOAK_STAR,
+];
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -1542,6 +1580,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         DESTROYER_LASER => 0.75,               // `:1878`
         ICE_BOOMERANG => 0.4,                  // `:2020`
         LIGHT_DISC => 0.4,                     // `:1944` (S1-P-i08)
+        BOUNCING_SHIELD => 0.15,               // `:8314` (W4-f48 lane 20)
         UNHOLY_TRIDENT => 0.5,                 // `:2029`
         UNHOLY_TRIDENT_HOSTILE => 0.5,         // `:2044`
         SWORD_BEAM => 0.5,                     // `:2054`
@@ -2319,6 +2358,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 RESET_STATE,
+            ),
+            // `:8312-8324` — the Bouncing Shield (866, W4-f48 lane 20):
+            // 30×30, aiStyle 3, friendly, `penetrate = 5`, melee (the
+            // census below), `extraUpdates = 1`, `usesLocalNPCImmunity` +
+            // `localNPCHitCooldown = -1` (one hit per NPC per throw); the
+            // stock 3600 life / tileCollide; `light = 0.15` rides
+            // `set_defaults_light`.
+            BOUNCING_SHIELD => (
+                30.0,
+                30.0,
+                3,
+                5,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                false,
+                (true, -1, false, -1, 0, 1.0),
             ),
             // The flail family (`DefaultToFlail` `:10753-10762` — aiStyle 15,
             // `penetrate = -1`, melee, the local-immunity pair 10 via the
@@ -3831,6 +3888,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
             // dropped).
             STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
+            // W4-f48 — `Projectile.cs:7646-7658`: the five cloak stars
+            // (723/724/725/726/1133) share ONE arm: 24x24, aiStyle 5,
+            // friendly, `penetrate = 2`, `alpha = 50`, `tileCollide = false`
+            // (the AI arms it at `Center.Y > ai[1]`, `:23853-23856`),
+            // `usesLocalNPCImmunity` + `localNPCHitCooldown = 10`.
+            // `armorPenetration = 25` (`:7657`) has no `ProjData` field — the
+            // retaliate drain sets it through `set_armor_penetration` (the
+            // gun_launch precedent). No damage-class flag (the stock false
+            // trio — the C# arm sets none).
+            MANA_CLOAK_STAR | BEE_CLOAK_STAR | STAR_VEIL_STAR | STAR_CLOAK_STAR
+            | SNAKE_CLOAK_STAR => (
+                24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 10, false, -1, 50, 1.0),
+            ),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -4246,6 +4317,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-f48 lane 20 — the Bouncing Shield (866, `:8320`).
+                    | BOUNCING_SHIELD
             ),
         ranged: matches!(
             kind,

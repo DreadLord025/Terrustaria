@@ -70,6 +70,10 @@ pub(crate) enum PlayerPart {
     FrontShoulderUnder,
     FrontShoulderSleeve,
     FrontShoulderShirt,
+    /// `DrawPlayer_25_Shield` (`PlayerDrawLayers.cs:2954-3024`): the visible
+    /// shield's `Acc_Shield_{slot}` frame — the raised ghosts, the body
+    /// sprite and the parry echo all share the part tag.
+    Shield,
     HeldItem,
     /// `DrawPlayer_37_BeetleBuff` (`PlayerDrawLayers.cs:4007-4031`): the
     /// Beetle orb sprites — 5 trail ghosts + 1 body per live orb.
@@ -254,6 +258,21 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) beetle_pos: [[f32; 2]; 3],
     pub(crate) beetle_vel: [[f32; 2]; 3],
     pub(crate) beetle_set: bool,
+    /// `Player.shield` (`Player.cs:1584`): the visible shield's
+    /// `ArmorIDs.Shield` slot, −1/0 = none (`DrawPlayer_25_Shield`'s
+    /// `<= 0 || >= Count` guard, `PlayerDrawLayers.cs:2956`).
+    pub(crate) shield: i16,
+    /// `Player.shieldRaised` — the −4y lift, the 4 orbiting ghosts and the
+    /// sin pulse (`PlayerDrawLayers.cs:2961-3003`).
+    pub(crate) shield_raised: bool,
+    /// `Player.shieldParryTimeLeft` — the echo's push/fade fraction
+    /// (`/20`, `PlayerDrawLayers.cs:3004-3018`).
+    pub(crate) shield_parry_time_left: i32,
+    /// `Main.GlobalTimeWrappedHourly` — the ghosts' orbit phase and the
+    /// pulse's sine (`PlayerDrawLayers.cs:2980/:2998`).
+    pub(crate) global_time: f32,
+    /// `mount.Cart` — the layer's last-two reverse (`:3020-3023`).
+    pub(crate) cart_mounted: bool,
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -1673,6 +1692,129 @@ fn beetle_orb_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSpr
     out
 }
 
+/// `DrawPlayer_25_Shield` (`PlayerDrawLayers.cs:2954-3024`): the visible
+/// shield's body-frame slice of `Acc_Shield[shield]`, drawn at the body
+/// anchor with the raised pose's −4y lift (`gravDir` is always 1 in the
+/// port). While raised: 4 alpha-0 ghost copies orbit the anchor at radius
+/// `2.5 + 1.5·sin(2π·GlobalTimeWrappedHourly)`, quarter-turn apart, tint
+/// `×(0.45 − 0.15·sin)`; the `sin(π·t)` pulse overlay is built but never
+/// added to the cache in the C# (`:3001-3002`, dead code — skipped);
+/// inside the parry window an echo pushes from the anchor away from the
+/// player centre by `1.5·(parryTimeLeft/20)`, scales `1 + 1.5·fraction`
+/// and fades `×(1 − fraction)`. `bodyPosition`/`bodyRotation` are stock
+/// zero for the alive player (`PlayerDrawSet.cs:1706-1711`); `bodyVect`
+/// is the frame centre (`PlayerDrawSet.cs:1752`), so the anchor collapses
+/// to the 40×56 sheet box at `(x − 10, y − 10 + gfxOffY)` (the `height −
+/// bodyFrame.Height + 4` term). The cart's last-two reverse
+/// (`:3020-3023`) swaps the final two entries. The `cShield` dye has no
+/// port producer — every copy draws plain.
+pub(crate) fn shield_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
+    // `:2956-2959`: `shield <= 0 || shield >= ArmorIDs.Shield.Count` (13).
+    if s.shield <= 0 || s.shield >= 13 {
+        return Vec::new();
+    }
+    let Some(tex) = a.acc_shield[s.shield as usize] else {
+        return Vec::new();
+    };
+    let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
+    // The body anchor: the C#'s `height − bodyFrame.Height + 4` term
+    // (`42 − 56 + 4 = −10`) plus the `bodyFrame/2` origin shift collapses
+    // to the plain 40×56 sheet box at `(x − 10, y − 10 + gfxOffY)` — the
+    // same anchor `part_pos(s, 0)` gives every body part. The
+    // `bodyFrame.Width != texture.Width` re-slice (`:2968-2976`) is a
+    // no-op: every `Acc_Shield_*` strip is 40 px wide like the body frame.
+    let anchor = part_pos(s, 0.0, [0.0, 0.0], 0.0);
+    // The raised lift (`:2960-2964`).
+    let lift = if s.shield_raised { -4.0 } else { 0.0 };
+    let center = [anchor[0] + 20.0, anchor[1] + 28.0 + lift];
+    let uv = |t: &BgTex| flip_uv(player_frame_uv(t, s.body_frame), dir < 0.0);
+    let mut out = Vec::with_capacity(7);
+    if s.shield_raised {
+        // `:2978-2990`: the four ghosts — `colorArmorBody.A = 0`, the RGB
+        // scaled by `0.45 − 0.15·sin(2πt)`; each sits at the anchor plus
+        // `(x, 0).RotatedBy(k/4·2π)`.
+        let num = (s.global_time * std::f32::consts::TAU).sin();
+        let radius = 2.5 + 1.5 * num;
+        let scale = 0.45 - num * 0.15;
+        let ghost = [s.light[0] * scale, s.light[1] * scale, s.light[2] * scale, 0.0];
+        for k in 0..4 {
+            let angle = k as f32 / 4.0 * std::f32::consts::TAU;
+            let (sin, cos) = angle.sin_cos();
+            out.push(LayerSprite {
+                part: PlayerPart::Shield,
+                pos: [center[0] + radius * cos - 20.0, center[1] + radius * sin - 28.0],
+                size: [40.0, 56.0],
+                uv: uv(&tex),
+                color: ghost,
+                rotation: 0.0,
+                dye: 0,
+            });
+        }
+    }
+    // `:2992-2994`: the body sprite, full `colorArmorBody`.
+    out.push(LayerSprite {
+        part: PlayerPart::Shield,
+        pos: [center[0] - 20.0, center[1] - 28.0],
+        size: [40.0, 56.0],
+        uv: uv(&tex),
+        color: [s.light[0], s.light[1], s.light[2], 1.0],
+        rotation: 0.0,
+        dye: 0,
+    });
+    if s.shield_raised {
+        // `:2995-3003`: the pulse overlay — the C# builds the DrawData
+        // (`colorArmorBody2` alpha + RGB `×(0.5 + 0.5·sin(πt))`) but NEVER
+        // `DrawDataCache.Add`s it: the block ends at `:3002` with no Add,
+        // so the vanilla draws nothing here. Ported faithfully as a skip
+        // (the dead-code census, docs/research/98-doc-sweep-shields.md).
+    }
+    if s.shield_raised && s.shield_parry_time_left > 0 {
+        // `:3004-3018`: the parry echo — `num4 = parryTimeLeft / 20`,
+        // `num5 = 1.5·num4`; the anchor pushes away from the player centre
+        // (`drawinfo.Position + Size/2`, the hitbox centre) by `num5`, the
+        // scale grows `1 + num5`, alpha and RGB fade `×(1 − num4)`.
+        let num4 = s.shield_parry_time_left as f32 / 20.0;
+        let num5 = 1.5 * num4;
+        // The hitbox centre relative to the 40×56 box origin: the box sits
+        // at `(x − 10, y − 10)`, the 20×42 hitbox centre at `(x + 10,
+        // y + 21)` — box-local (20, 31).
+        let player_center = [s.origin[0] + 20.0, s.origin[1] + s.gfx_off_y + 31.0];
+        let echo_center = [
+            center[0] + (center[0] - player_center[0]) * num5,
+            center[1] + (center[1] - player_center[1]) * num5,
+        ];
+        let scale = 1.0 + num5;
+        let fade = 1.0 - num4;
+        out.push(LayerSprite {
+            part: PlayerPart::Shield,
+            // The scale grows about the frame centre (bodyVect).
+            pos: [
+                echo_center[0] - 20.0 * scale,
+                echo_center[1] - 28.0 * scale,
+            ],
+            size: [40.0 * scale, 56.0 * scale],
+            uv: uv(&tex),
+            // `:3014-3015`: `A *= (1 − num4)` THEN `color *= (1 − num4)` —
+            // XNA's Color×float scales ALL four channels, so the alpha
+            // lands `(1 − num4)²` while the RGB lands `(1 − num4)`.
+            color: [
+                s.light[0] * fade,
+                s.light[1] * fade,
+                s.light[2] * fade,
+                fade * fade,
+            ],
+            rotation: 0.0,
+            dye: 0,
+        });
+    }
+    // `:3020-3023`: `mount.Cart` reverses the LAST TWO cache entries.
+    if s.cart_mounted && out.len() >= 2 {
+        let n = out.len();
+        out.swap(n - 2, n - 1);
+    }
+    out
+}
+
 /// The full player composition: body, then the held item in its
 /// `weaponDrawOrder` slot, then the front arm — the
 /// `LegacyPlayerRenderer.cs:185-255` sequence for the starter player. The
@@ -1683,9 +1825,10 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
     let body = body_layers(s, a);
     let arms = front_arm_layers(s, a);
     let item = held_item_layers(s);
+    let shield = shield_layers(s, a);
     let mount_back = mount_layer(s, a, false);
     let mount_front = mount_layer(s, a, true);
-    let mut out = Vec::with_capacity(body.len() + arms.len() + item.len() + 2);
+    let mut out = Vec::with_capacity(body.len() + arms.len() + item.len() + shield.len() + 2);
     if let Some(back) = mount_back {
         out.push(back);
     }
@@ -1696,6 +1839,11 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
         }
         WeaponDrawOrder::BehindFrontArm => {
             out.extend(body);
+            // `DrawPlayer_25_Shield` sits after `DrawPlayer_24_Pulley`/
+            // `32_FrontAcc_BackPart` and before the BehindFrontArm held
+            // item (`LegacyPlayerRenderer.cs:228-238`); the port has no
+            // pulley/front-acc layers, so the shield lands right here.
+            out.extend(shield.iter().copied());
             out.extend(item.iter().copied());
         }
         WeaponDrawOrder::OverFrontArm => {}
@@ -2321,6 +2469,9 @@ mod tests {
             mount_back: [Some(sheet()); crate::mount::MOUNT_COUNT],
             mount_front: [Some(sheet()); crate::mount::MOUNT_COUNT],
             beetle_orb: None,
+            acc_shield: std::array::from_fn(|slot| {
+                if slot == 0 { None } else { Some(sheet()) }
+            }),
         }
     }
 
@@ -2364,6 +2515,11 @@ mod tests {
             beetle_pos: [[0.0; 2]; 3],
             beetle_vel: [[0.0; 2]; 3],
             beetle_set: false,
+            shield: -1,
+            shield_raised: false,
+            shield_parry_time_left: 0,
+            global_time: 0.0,
+            cart_mounted: false,
         }
     }
 
@@ -3265,6 +3421,7 @@ mod player_draw_tests {
             mount_back: std::array::from_fn(|_| None),
             mount_front: std::array::from_fn(|_| None),
             beetle_orb: None,
+            acc_shield: [None; 13],
         }
     }
 
@@ -3308,6 +3465,11 @@ mod player_draw_tests {
             beetle_pos: [[0.0; 2]; 3],
             beetle_vel: [[0.0; 2]; 3],
             beetle_set: false,
+            shield: -1,
+            shield_raised: false,
+            shield_parry_time_left: 0,
+            global_time: 0.0,
+            cart_mounted: false,
         }
     }
 
@@ -3440,6 +3602,153 @@ mod player_draw_tests {
             assert!(
                 crate::assets::STATIC_SHEET_NAMES.contains(&name),
                 "C# PlayerDrawLayers.cs:1346-1362/3698-3705 draws Players[skinVar, {name}] — it must be packed into the atlas"
+            );
+        }
+    }
+
+    fn shield_assets() -> PlayerAssets {
+        let mut a = assets_all();
+        a.acc_shield = std::array::from_fn(|slot| {
+            if slot == 0 { None } else { dummy(40.0, 1120.0) }
+        });
+        a
+    }
+
+    /// W4-f48 lane 20 — `DrawPlayer_25_Shield`'s guard + slot
+    /// (`PlayerDrawLayers.cs:2956-2959`): `shield <= 0 || >= 13` draws
+    /// nothing; a live slot draws the body sprite at the plain body anchor
+    /// (the `height − bodyFrame.Height + 4` collapse), full tint.
+    #[test]
+    fn w4_f48_shield_layer_guard_and_body_anchor() {
+        let a = shield_assets();
+        for slot in [-1i16, 0, 13, 99] {
+            let s = PlayerCompositeState { shield: slot, ..state(0, 1.0) };
+            assert!(shield_layers(&s, &a).is_empty(), "slot {slot} draws nothing");
+        }
+        let s = PlayerCompositeState { shield: 1, ..state(0, 1.0) };
+        let out = shield_layers(&s, &a);
+        assert_eq!(out.len(), 1, "the idle shield is one sprite");
+        assert_eq!(out[0].part, PlayerPart::Shield);
+        // The body anchor: origin (1000,1000) — no +4 shift (the C#'s
+        // `42 − 56 + 4 = −10` + the +28 bodyVect cancel to the sheet box).
+        assert_eq!(out[0].pos, [1000.0, 1000.0]);
+        assert_eq!(out[0].size, [40.0, 56.0]);
+        assert_eq!(out[0].color, [1.0, 1.0, 1.0, 1.0]);
+        // Facing −1 mirrors the quad.
+        let sf = PlayerCompositeState { shield: 1, ..state(0, -1.0) };
+        let f = &shield_layers(&sf, &a)[0];
+        assert!(f.uv[0] > f.uv[2], "mirrored quad {:?}", f.uv);
+        // A missing sheet skips (the null-texture guard).
+        let s9 = PlayerCompositeState { shield: 9, ..state(0, 1.0) };
+        let mut a9 = shield_assets();
+        a9.acc_shield[9] = None;
+        assert!(shield_layers(&s9, &a9).is_empty());
+    }
+
+    /// W4-f48 lane 20 — the raised pose (`PlayerDrawLayers.cs:2960-2994`):
+    /// the −4y lift, the four alpha-0 ghosts at radius `2.5 + 1.5·sin(2πt)`
+    /// quarter-turn apart, tint `×(0.45 − 0.15·sin)`. At t = 0 the sine is
+    /// 0: radius 2.5, scale 0.45, ghosts at +x/+y/−x/−y of the lifted
+    /// centre. The pulse overlay is dead code in the C# (no cache Add) —
+    /// 4 ghosts + 1 body = 5 sprites, not 6.
+    #[test]
+    fn w4_f48_shield_raised_lifts_and_orbits_four_ghosts() {
+        let a = shield_assets();
+        let s = PlayerCompositeState {
+            shield: 5,
+            shield_raised: true,
+            global_time: 0.0,
+            ..state(0, 1.0)
+        };
+        let out = shield_layers(&s, &a);
+        assert_eq!(out.len(), 5, "4 ghosts + body, no pulse (dead code)");
+        // The lifted centre: (1020, 1028 − 4) = (1020, 1024).
+        let center = [1020.0f32, 1024.0f32];
+        for (k, (off_x, off_y)) in [(2.5f32, 0.0f32), (0.0, 2.5), (-2.5, 0.0), (0.0, -2.5)]
+            .into_iter()
+            .enumerate()
+        {
+            let g = &out[k];
+            assert_eq!(g.color, [0.45, 0.45, 0.45, 0.0], "ghost {k} alpha-0 tint");
+            assert!((g.pos[0] - (center[0] + off_x - 20.0)).abs() < 1e-3);
+            assert!((g.pos[1] - (center[1] + off_y - 28.0)).abs() < 1e-3);
+        }
+        // The body sprite rides the lift too, full tint.
+        assert_eq!(out[4].pos, [1000.0, 996.0]);
+        assert_eq!(out[4].color, [1.0, 1.0, 1.0, 1.0]);
+        // t = 0.25: sin(π/2) = 1 → radius 4, scale 0.3.
+        let s2 = PlayerCompositeState { global_time: 0.25, ..s };
+        let out2 = shield_layers(&s2, &a);
+        assert!((out2[0].pos[0] - (center[0] + 4.0 - 20.0)).abs() < 1e-3);
+        assert!((out2[0].color[0] - 0.3).abs() < 1e-6, "0.45 − 0.15");
+        assert_eq!(out2[0].color[3], 0.0);
+    }
+
+    /// W4-f48 lane 20 — the parry echo (`PlayerDrawLayers.cs:3004-3018`):
+    /// `num4 = parryTimeLeft/20`, push `×1.5·num4` away from the hitbox
+    /// centre, scale `1 + 1.5·num4`, RGB fade `×(1−num4)`, alpha
+    /// `×(1−num4)²` (the double multiply). At parryTimeLeft 10: num4 0.5,
+    /// num5 0.75, scale 1.75, fade 0.5. The lifted centre (1020, 1024) vs
+    /// the hitbox centre (1020, 1031): the push is (0, −5.25).
+    #[test]
+    fn w4_f48_shield_parry_echo_pushes_scales_and_fades() {
+        let a = shield_assets();
+        let s = PlayerCompositeState {
+            shield: 9,
+            shield_raised: true,
+            shield_parry_time_left: 10,
+            ..state(0, 1.0)
+        };
+        let out = shield_layers(&s, &a);
+        assert_eq!(out.len(), 6, "4 ghosts + body + echo");
+        let echo = &out[5];
+        // Centre (1020, 1024 − 5.25) = (1020, 1018.75); the scaled
+        // top-left = centre − (20, 28)·1.75.
+        assert!((echo.pos[0] - (1020.0 - 35.0)).abs() < 1e-3);
+        assert!((echo.pos[1] - (1018.75 - 49.0)).abs() < 1e-3);
+        assert_eq!(echo.size, [70.0, 98.0]);
+        assert_eq!(echo.color, [0.5, 0.5, 0.5, 0.25]);
+        // No window: no echo (5 sprites).
+        let s0 = PlayerCompositeState { shield_parry_time_left: 0, ..s };
+        assert_eq!(shield_layers(&s0, &a).len(), 5);
+        // Not raised: the echo refuses even with a live window.
+        let su = PlayerCompositeState { shield_raised: false, ..s };
+        assert_eq!(shield_layers(&su, &a).len(), 1);
+    }
+
+    /// W4-f48 lane 20 — the layer slot (`LegacyPlayerRenderer.cs:228-238`):
+    /// `DrawPlayer_25_Shield` sits after the body stack and BEFORE the
+    /// BehindFrontArm held item; the cart's last-two reverse
+    /// (`PlayerDrawLayers.cs:3020-3023`) swaps the final two shield
+    /// entries (body + echo).
+    #[test]
+    fn w4_f48_shield_slots_before_the_held_item_and_cart_reverses() {
+        let mut a = shield_assets();
+        a.acc_shield[1] = dummy(40.0, 1120.0);
+        let mut s = PlayerCompositeState {
+            shield: 1,
+            shield_raised: true,
+            shield_parry_time_left: 10,
+            item_uv: Some([0.0, 0.0, 1.0, 1.0]),
+            item_size: [16.0, 16.0],
+            ..state(0, 1.0)
+        };
+        let out = assemble_layers(&s, &a);
+        let shield_last = out.iter().rposition(|l| l.part == PlayerPart::Shield).unwrap();
+        let item = out.iter().position(|l| l.part == PlayerPart::HeldItem).unwrap();
+        assert!(shield_last < item, "the shield draws before the held item");
+        // The cart reverse: the last two entries (body, echo) swap.
+        let plain = shield_layers(&s, &a);
+        s.cart_mounted = true;
+        let cart = shield_layers(&s, &a);
+        assert_eq!(cart[4], plain[5], "the echo moves ahead of the body");
+        assert_eq!(cart[5], plain[4]);
+        // The packed-sheet census: all twelve strips ride the atlas.
+        for slot in 1..=12 {
+            let name = format!("Acc_Shield_{slot}");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} must be packed"
             );
         }
     }

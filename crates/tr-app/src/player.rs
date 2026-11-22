@@ -1211,6 +1211,54 @@ pub struct Player {
     pub pulley_dir: u8,
     /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
     pub shield_raised: bool,
+    /// `Player.shield` (`Player.cs:1584`): the visible shield's
+    /// `ArmorIDs.Shield` slot (−1 = none). `ResetVisibleAccessories`
+    /// (`:31134`, called from `Player.Update` `:25624`) clears it per tick;
+    /// `UpdateVisibleAccessories` (`:36753-36833`, from `PlayerFrame`
+    /// `:35770` while alive) re-derives it: the equipped shieldSlot rows,
+    /// the eocDash/raised fallbacks (`:36762-36777`) and the held-4760
+    /// override (`:36806-36810`, slot 9 = BouncingShield). The draw layer
+    /// `DrawPlayer_25_Shield` reads it (`PlayerDrawLayers.cs:2954-3024`).
+    pub shield: i16,
+    /// `Player.hasRaisableShield` (`Player.cs:3128`): any equipped wearable
+    /// with `shieldSlot > 0` (`GrantArmorBenefits` `:13123-13126`) or the
+    /// held Bouncing Shield 4760 with no live 866 (`UpdateEquips`
+    /// `:13075-13078`). `ResetEffects` `:18611` clears it per tick.
+    pub has_raisable_shield: bool,
+    /// `Player.shieldParryTimeLeft` (`Player.cs:3132`): the 20-tick parry
+    /// window (`SHIELD_PARRY_DURATION` `:3122`). `TryTogglingShield`
+    /// (`:31750-31753`) arms 1 on the raise (only with the cooldown spent);
+    /// `ItemCheck_ManageRightClickFeatures_ShieldRaise` (`:31734-31737`)
+    /// pre-increments it and clears past 20.
+    pub shield_parry_time_left: i32,
+    /// `Player.shield_parry_cooldown` (`Player.cs:3134`): the 15-tick lock
+    /// `TryTogglingShield` arms on the lower (`:31760`); the ShieldRaise
+    /// head counts it down (`:31719-31733`) and the zero tick plays the
+    /// MaxMana cue (legacy 25) + the 10x dust-45 burst.
+    pub shield_parry_cooldown: i32,
+    /// `Player.parryDamageBuff` (`Player.cs:2422`): buff 198's flag
+    /// (`UpdateBuffs` `:11855-11858`). The contact-lane parry grants the
+    /// buff (`:31430`); the next melee strike ×5s and consumes it
+    /// (`ProcessHitAgainstNPC` `:44307-44312`). `ResetEffects` `:18698`.
+    pub parry_damage_buff: bool,
+    /// The ShieldRaise zero-cooldown tick's MaxMana cue request (legacy
+    /// sound 25, `Player.cs:31724`) — the `pending_mana_effect` convention:
+    /// the tick queues it, the world-sim drain plays it at `base.Center`.
+    pending_parry_ready_sound: bool,
+    /// The ShieldRaise zero-cooldown tick's 10x dust-45 burst
+    /// (`Player.cs:31725-31731`) — the fully-formed spawn request (the
+    /// centre anchor + the `direction` offset); the drain rolls the
+    /// `Next(10,16) * 0.1` scale per dust on the `UpdatePlayers` stream.
+    pending_parry_ready_dust: Option<(f32, f32)>,
+    /// `Player._timeSinceLastImmuneGet` (`Player.cs:1432`): counts up once
+    /// per `Player.Update` tick (`:24663-24667`, capped at 10000);
+    /// `GiveImmuneTimeForCollisionAttack` (`:20496-20504`) resets it to 0.
+    time_since_last_immune_get: i32,
+    /// `Player._immuneStrikes` (`Player.cs:1434`): consecutive close-together
+    /// collision-immunity grants — `GiveImmuneTimeForCollisionAttack`
+    /// increments it within the 20-tick window (else resets to 1) and
+    /// refuses the grant at 3 (`:20496-20505`).
+    immune_strikes: i32,
     /// `Player.sliding` (`Player.cs`): the slope/ice slide pose (body row 3 in
     /// the air). No port source sets it yet, so the arm is coded but
     /// unreachable.
@@ -1433,8 +1481,10 @@ pub struct Player {
     /// (`:15060`/`:15064`), 6189 (`:14633`), 3223 (`:15087` — the C# carries
     /// the `Item` reference, the port's bool is the armed-flag equivalent) and
     /// buff 59 (`:10075-10077`); `long_invince` arms from the Star Veil 862
-    /// (`:15147`, S1-C-7 wave B) — its other sources (6187 et al.) ride later
-    /// waves. `ResetEffects` clears them every
+    /// (`:15147`, S1-C-7 wave B), the Cross Necklace 554 (`:15587-15590`)
+    /// and the Crossed Heart Necklace 6187 (`:14625-14628`, W4-f48); the
+    /// Seraph Necklace 6180 (`:14590`) rides a later wave with its unported
+    /// `accHarpyCharm`/`accSeraphNecklace` halves. `ResetEffects` clears them every
     /// frame (`:18440/:18617/:18661-18662`/`:18719`) and the `Hurt` roll block
     /// (`:38214-38241`) consumes them.
     pub black_belt: bool,
@@ -1452,6 +1502,14 @@ pub struct Player {
     /// `shadowDodgeTimer == 0` — the buff arms `shadow_dodge` through the
     /// buff scan (`:10074-10077`) and the next `Hurt` dodges. W4-d115.
     pub on_hit_dodge: bool,
+    // `Player.panic` (`Player.cs:1154`) — the field + the hurt grant
+    // (`:38237-38240`) + the 1290/1578/6187 equip arms + the `ResetEffects`
+    // clear (`:18616`) are f50-canonical (SHIELDS RETIRE keep-one, receipt
+    // 51eefdf84, `task/W4-f50-hurt-reactions`); the buff-63 `moveSpeed++`
+    // reader (`:10130-10133`) is f12-canonical (`DEBUFF_DISPATCH`,
+    // `buff_frame_wiring.rs`). This branch keeps its dodge block + the
+    // 1578 `honey_comb` / 6187 `long_invince` fold halves + the DD2
+    // crystal-lane `add_buff(205, 3600)` only.
     /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
     /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
     /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
@@ -2801,6 +2859,15 @@ impl Player {
             pulley: false,
             pulley_dir: 0,
             shield_raised: false,
+            shield: -1,
+            has_raisable_shield: false,
+            shield_parry_time_left: 0,
+            shield_parry_cooldown: 0,
+            parry_damage_buff: false,
+            pending_parry_ready_sound: false,
+            pending_parry_ready_dust: None,
+            time_since_last_immune_get: 10000,
+            immune_strikes: 0,
             sliding: false,
             sand_storm: false,
             carpet_frame: -1,
@@ -4022,6 +4089,9 @@ impl Player {
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
     /// player should respawn now.
+    /// `Player.UpdateDead`'s visible-accessory clear (`Player.cs:16937` →
+    /// `ResetVisibleAccessories` `:31134`): the dead tick drops the visible
+    /// shield (the `PlayerFrame` re-derive never runs while dead).
     pub fn update_dead(
         &mut self,
         jump: bool,
@@ -4030,6 +4100,7 @@ impl Player {
         moon_event_live: bool,
     ) -> bool {
         self.dead_time += 1;
+        self.shield = -1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
         self.hp = 0;
         // `Player.cs:17017`: the dead tick drops the channel.
@@ -4517,6 +4588,110 @@ impl Player {
             *cd = time;
         }
         self.hurt_cd = time as f32 / 60.0;
+    }
+
+    /// `Player.CanParryAgainst` (`Player.cs:31437-31444`), verbatim: the
+    /// parry window is live, the enemy centre lies on the facing side
+    /// (`Math.Sign(enemyRect.Center.X - blockingPlayerRect.Center.X) ==
+    /// direction`), the enemy is moving, and the player is NOT already
+    /// immune. Both centres ride the C# `Rectangle` integer arithmetic —
+    /// the caller truncates the positions (`(int)position.X`) and halves
+    /// the int widths; `Math.Sign` answers 0 on an exact tie.
+    pub fn can_parry_against(&self, enemy_center_x: i32, enemy_vx: f32, enemy_vy: f32) -> bool {
+        let player_center_x = self.x as i32 + self.width as i32 / 2;
+        let d = enemy_center_x - player_center_x;
+        let sign = if d > 0 { 1 } else if d < 0 { -1 } else { 0 };
+        if self.shield_parry_time_left > 0
+            && sign == self.facing
+            && (enemy_vx != 0.0 || enemy_vy != 0.0)
+        {
+            return !self.immune;
+        }
+        false
+    }
+
+    /// `Player.GiveImmuneTimeForCollisionAttack` (`Player.cs:20494-20511`),
+    /// verbatim: the strike counter climbs while grants land within 20
+    /// ticks of each other (else resets to 1); at 3 strikes the grant is
+    /// refused; otherwise the window lands only if not already immune or
+    /// the new window is at least as long. `immuneNoBlink = true` rides
+    /// with it (no blink flash on collision i-frames). The port's
+    /// `hurt_cd` carries the window in seconds (the collapsed lane).
+    pub(crate) fn give_immune_time_for_collision_attack(&mut self, time: i32) {
+        if self.time_since_last_immune_get <= 20 {
+            self.immune_strikes += 1;
+        } else {
+            self.immune_strikes = 1;
+        }
+        self.time_since_last_immune_get = 0;
+        if self.immune_strikes < 3 && (!self.immune || self.immune_time <= time) {
+            self.immune = true;
+            self.immune_no_blink = true;
+            self.immune_time = time;
+            self.hurt_cd = time as f32 / 60.0;
+        }
+    }
+
+    /// `Player.TryTogglingShield` (`Player.cs:31741-31764`), minus the
+    /// `ApplyAttackCooldown(20)` write (the port's `attack_cd` lives on the
+    /// App — the ShieldRaise caller folds the max there): the raise arms
+    /// the 20-tick parry window ONLY with the cooldown spent and zeroes
+    /// the use timers; the lower locks 15 ticks and clears the window.
+    /// Returns the attack-cooldown request (20 on the lower, 0 otherwise)
+    /// so the caller can `attack_cd = max(attack_cd, req / 60)`.
+    pub(crate) fn try_toggling_shield(&mut self, should_guard: bool) -> i32 {
+        if should_guard == self.shield_raised {
+            return 0;
+        }
+        self.shield_raised = should_guard;
+        if self.shield_raised {
+            if self.shield_parry_cooldown == 0 {
+                self.shield_parry_time_left = 1;
+            }
+            // `:31754-31756` — itemAnimation/itemTime/reuseDelay zero;
+            // the App-owned timers clear in the caller.
+            0
+        } else {
+            self.shield_parry_cooldown = 15;
+            self.shield_parry_time_left = 0;
+            20 // `ApplyAttackCooldown(20)` (`:31762`, `:44433-44439`).
+        }
+    }
+
+    /// The ShieldRaise per-tick countdowns (`Player.cs:31719-31737`): the
+    /// cooldown decrements and its zero tick queues the MaxMana cue + the
+    /// 10x dust-45 burst at the shield-side anchor; the parry window
+    /// pre-increments and clears past `SHIELD_PARRY_DURATION` (20).
+    /// `SoundEngine.PlaySound(25, base.Center)` (`:31724`) queues for the
+    /// world-sim drain (the `pending_mana_effect` convention); the dust
+    /// anchor is `Center + (direction * 6 + (direction == -1 ? -10 : 0),
+    /// -14)` (`:31727`).
+    pub(crate) fn shield_raise_countdowns(&mut self) {
+        if self.shield_parry_cooldown > 0 {
+            self.shield_parry_cooldown -= 1;
+            if self.shield_parry_cooldown == 0 {
+                self.pending_parry_ready_sound = true;
+                let (cx, cy) = self.center();
+                let dx = self.facing as f32 * 6.0 + if self.facing == -1 { -10.0 } else { 0.0 };
+                self.pending_parry_ready_dust = Some((cx + dx, cy - 14.0));
+            }
+        }
+        if self.shield_parry_time_left > 0 {
+            self.shield_parry_time_left += 1;
+            if self.shield_parry_time_left > 20 {
+                self.shield_parry_time_left = 0;
+            }
+        }
+    }
+
+    /// Takes the ShieldRaise ready-cue request (`Player.cs:31724`).
+    pub(crate) fn take_parry_ready_sound(&mut self) -> bool {
+        std::mem::replace(&mut self.pending_parry_ready_sound, false)
+    }
+
+    /// Takes the ShieldRaise ready-burst anchor (`Player.cs:31725-31731`).
+    pub(crate) fn take_parry_ready_dust(&mut self) -> Option<(f32, f32)> {
+        self.pending_parry_ready_dust.take()
     }
 
     /// `Player.ShadowDodge` (`Player.cs:38023-38044`): the 120/80 immunity,
@@ -5182,6 +5357,12 @@ impl Player {
             self.buffs.add_buff(205, 300);
         }
         self.stealth = 1.0;
+        // W4-f48 retire receipt (SHIELDS RETIRE keep-one, 51eefdf84): the
+        // panic-63 + squire-205 grants above are the ONE f50-canonical copy;
+        // f48 keeps only its dodge block lane and the separate DD2
+        // crystal-lane `add_buff(205, 3600)` in the equip fold. A dodged hit
+        // grants nothing (the early returns); the d123/f36 DD2 lanes carried
+        // no hurt-grant copy (censused).
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
         // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
@@ -5870,6 +6051,17 @@ impl Player {
             self.luck_state.equipment_based_luck_bonus += 0.05;
 
         }
+        // `UpdateEquips`' held-Bouncing-Shield row (`Player.cs:13075-13078`):
+        // `HeldItem.type == 4760 && ownedProjectileCounts[866] < 1` arms
+        // `hasRaisableShield` — the shield in hand IS raisable until its
+        // thrown projectile is live. `held_item_kind` is the pre-tick
+        // snapshot (`world_sim/player.rs`), the recount ran at the
+        // `UpdateProjectileCaches` seam.
+        if self.held_item_kind == 4760
+            && self.owned_projectile_counts.get(866).copied().unwrap_or(0) < 1
+        {
+            self.has_raisable_shield = true;
+        }
         // `Player.UpdateEquips`' tail (`Player.cs:13097-13100`):
         // `mount.UpdateAfterEquips(this)` — the Velociraptor's selective-fly
         // permission (`Mount.cs:2989-2997`, the empress-brooch refill reads
@@ -6304,6 +6496,14 @@ impl Player {
                 self.magic_cuffs = true;
                 self.mana_magnet = true;
             }
+            // W4-f48 — the Cross Necklace 554 (`ApplyEquipFunctional`
+            // `Player.cs:15587-15590`): the bare `longInvince = true` — the
+            // accepted hit's immunity window doubles (40→80, 1-damage 20→40,
+            // `Hurt` `:38385`, the `iframes_for` pair the port already feeds)
+            // and the dodge handlers' `SetImmuneTimeForAllTypes` reads the
+            // same flag (120/80, `:38025`). `ResetEffects` clears it
+            // (`:18719`, the dodge-family clears above).
+            554 => self.long_invince = true,
             // The Lucky Coin family (`Player.cs:14975-14996`): 855 Lucky
             // Coin arms `hasLuckyCoin` + `hasLuck_LuckyCoin`; 3033 Gold Ring
             // arms `goldRing` alone; 3034 Coin Ring arms goldRing + the
@@ -6398,9 +6598,13 @@ impl Player {
             6183 => self.acc_silver_bracer = true,
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
-            // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
-            // W4-f50 wired the `panic` field — the hurt buff `AddBuff(63,
-            // 480)` (`:38237-38240`) now runs in `hurt_inner`.
+            // Sweetheart/Panic Necklace 1578 (`:15076-15080`): the honeycomb
+            // + `panic`. W4-f50 wired the `panic` field — the hurt buff
+            // `AddBuff(63, 480)` (`:38237-38240`) runs in `hurt_inner`.
+            // SHIELDS RETIRE keep-one (receipt 51eefdf84): this f50 arm is
+            // the ONE copy — f48's honeycomb-only 1578 + long_invince-only
+            // 6187 halves are its subsets (the full 6187 panic+longInvince
+            // arm rides below).
             1578 => {
                 self.honey_comb = true;
                 self.panic = true;
@@ -6667,6 +6871,13 @@ impl Player {
         if self.time_since_last_dash_started >= 300 {
             self.time_since_last_dash_started = 300;
         }
+        // `Player.cs:24663-24667`: the collision-immunity age counter ticks
+        // and caps at 10000 — `GiveImmuneTimeForCollisionAttack`
+        // (`:20496-20504`) reads the 20-tick window and resets it on grant.
+        self.time_since_last_immune_get += 1;
+        if self.time_since_last_immune_get >= 10000 {
+            self.time_since_last_immune_get = 10000;
+        }
         // `Player.cs:24761-24764`: every resting tick recovers 2 hover
         // fatigue — the read is the PREVIOUS tick's velocity (the head runs
         // before this tick's movement).
@@ -6852,6 +7063,12 @@ impl Player {
         }
         self.move_speed = 1.0;
         self.strongest_move_speed_debuff = 1.0;
+        // `Player.Update`'s `ResetVisibleAccessories` call (`Player.cs:25624`
+        // → `:31134`): the visible shield slot clears per tick; the
+        // `PlayerFrame`-time `update_visible_shield` re-derives it. The other
+        // slots (handon/back/waist/…) have no port consumers yet — only the
+        // shield row lands (W4-f48 lane 20).
+        self.shield = -1;
         // `Player.cs:24371-24374`: a mounted cart keeps `onWrongGround` across
         // the tick (the on-track check below rewrites it); everyone else
         // clears it at the defaults.
@@ -7170,6 +7387,16 @@ impl Player {
         // W4-d115 — `ResetEffects`' `onHitDodge = false` (`Player.cs:18443`):
         // the Hallowed set rows re-arm it in `apply_armor_set_bonuses`.
         self.on_hit_dodge = false;
+        // `:18616`: `panic = false` is f50-canonical (SHIELDS RETIRE
+        // keep-one, receipt 51eefdf84) — the clear rides f50's field.
+        // `ResetEffects`' parry-machine clears (W4-f48 parry wave):
+        // `hasRaisableShield = false` (`:18611`) — the shield-slot rows and
+        // the held-4760 arm re-derive; `parryDamageBuff = false` (`:18698`)
+        // — the buff-198 scan re-arms. `shieldRaised`/the two parry timers
+        // are NOT reset here (no C# reset site — they persist across ticks
+        // through the ShieldRaise machine).
+        self.has_raisable_shield = false;
+        self.parry_damage_buff = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
@@ -7203,6 +7430,21 @@ impl Player {
             }
             if let Some(def) = crate::registry::get(kind) {
                 self.stat_defense += def.defense as i32;
+            }
+            // `GrantArmorBenefits`' `shieldSlot > 0` row (`Player.cs:
+            // 13123-13126`): any equipped shield arms `hasRaisableShield`.
+            // The port's registry carries no `shieldSlot` field — the
+            // eleven `Item.SetDefaults` rows are the id list (`Item.cs`
+            // :3250/:6039/:12218/:19122/:28645/:33727/:35509/:35515/
+            // :47589/:47620/:47647): Cobalt 156, Obsidian 397, Paladin's
+            // 938, Ankh 1613, EoC 3097, Squire 3810, Frozen 3997, Hero
+            // 3998, Royal Guard Harness 6177, Silver 6183, Restoration
+            // 6188.
+            if matches!(
+                kind,
+                156 | 397 | 938 | 1613 | 3097 | 3810 | 3997 | 3998 | 6177 | 6183 | 6188
+            ) {
+                self.has_raisable_shield = true;
             }
             // The piece's own damage/crit/speed row (`GrantArmorBenefits`'
             // `switch (armorPiece.type)`, `Player.cs:13126-13950`).
@@ -7602,6 +7844,11 @@ impl Player {
                 // one snowflake/spark; the buff re-affirms the flag per tick.
                 312 => self.cool_whip_buff = true,
                 365 => self.cob_whip_buff = true,
+                // `:10130-10133`: Panic (63) `moveSpeed++` — RETIRED here
+                // (SHIELDS RETIRE keep-one): f12-canonical, the
+                // `DEBUFF_DISPATCH` 63 arm (`buff_frame_wiring.rs` /
+                // `buff_effects.rs`, task/W4-f12-buff-frame-wiring). Two
+                // dispatches would grant +2 moveSpeed/tick (f12's ruling).
                 // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
                 // `lifeRegen += 6` (the regen half has no consumer yet) and
                 // `thorns += 0.5` while under 1.
@@ -7712,6 +7959,9 @@ impl Player {
                 // `:11843-11846` — buff 205 (Ballista Panic): the Ballista's
                 // reload caps (`Projectile.cs:68563-68570`).
                 205 => self.ballista_panic = true,
+                // `:11855-11858` — buff 198 (ParryDamageBuff): the contact
+                // parry's ×5 next-melee flag (`:44307-44312` consumes it).
+                198 => self.parry_damage_buff = true,
                 // `:10276-10280`: buff 120 (Stinky) — the `talkNPC = -1`
                 // dialogue half is not ported; the luck −0.25 flag is.
                 120 => self.luck_state.stinky = true,
@@ -7772,6 +8022,17 @@ impl Player {
         }
         if self.chilled {
             self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.75);
+        }
+        // `Player.cs:25955-25962`: the raised shield caps the move speed at
+        // 1/3 (the strongest debuff wins) and halves a grounded |vx| > 3.
+        // The sibling `slowOgreSpit` (:25931-25938) / `dazed` (:25939-25942)
+        // / `burned` (:25943-25946) 1/3-and-0.5 caps are unported rows —
+        // only the shield arm lands here (W4-f48 lane 20).
+        if self.shield_raised {
+            self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(1.0 / 3.0);
+            if self.vy == 0.0 && self.vx.abs() > 3.0 {
+                self.vx /= 2.0;
+            }
         }
         if self.webbed {
             // `:11866-11872`: velocity zeroed (airborne keeps a 1e-6 fall),
@@ -7969,6 +8230,14 @@ impl Player {
             && !self.lava_wet
             && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
         self.merman = self.acc_merman && merman_wet;
+        // `Player.cs:25714-25717`: the raised shield grants +20 defense —
+        // after the equip pass (`UpdateEquips` `:25633`), before the floor
+        // below. `shieldRaised` toggles in ItemCheck (`:28283`, after
+        // `Player.Update`), so this reads the previous tick's guard state,
+        // exactly like the C#.
+        if self.shield_raised {
+            self.stat_defense += 20;
+        }
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -9168,6 +9437,76 @@ impl Player {
             self.apply_item_composite_arms(&held);
         } else {
             self.apply_hold_composite_arms(&held);
+        }
+        // `PlayerFrame`'s `!dead` visible-accessory pass (`Player.cs:35768-
+        // 35771` → `UpdateVisibleAccessories` `:36753-36833`): only the
+        // shield slot has a port consumer (`DrawPlayer_25_Shield`), so the
+        // port derives just that row — AFTER the composite arms above (the
+        // C# `ItemIsVisuallyIncompatible` reads `compositeBackArm.enabled`).
+        if !self.dead {
+            self.update_visible_shield();
+        }
+    }
+
+    /// `UpdateVisibleAccessories`' shield rows (`Player.cs:36762-36777`,
+    /// `:36790-36793` → `UpdateVisibleAccessory` `:36923-36926`,
+    /// `:36806-36810`), shield-only: the equipped `shieldSlot` rows scan
+    /// slots 3..10 (the vanity slots 13..20 have no port loadout), the
+    /// eocDash/raised fallbacks fill an unset slot ahead of the visible
+    /// pass, and the held Bouncing Shield (4760, no live 866) overrides to
+    /// slot 9. `ItemIsVisuallyIncompatible`'s shield arms (`:36837-36843`):
+    /// an enabled composite back arm or a held food hides the worn shield.
+    /// The `cShield` dye fallback (`:36765-36768`) has no port dye-slot
+    /// consumer — the shield draws plain (recorded, ANALYSIS).
+    fn update_visible_shield(&mut self) {
+        // `Item.shieldSlot` per id (`Item.cs:3250/:6039/:12218/:19122/
+        // :28645/:33727/:35509/:35515/:47589/:47620/:47647` — the same
+        // eleven rows the raisable-shield list reads).
+        fn shield_slot(kind: u16) -> i16 {
+            match kind {
+                156 => 1,  // Cobalt Shield
+                938 => 2,  // Paladin's Shield
+                397 => 3,  // Obsidian Shield
+                1613 => 4, // Ankh Shield
+                3097 => 5, // Shield of Cthulhu
+                3810 => 6, // Squire's Shield
+                3997 => 7, // Frozen Shield
+                3998 => 8, // Hero's Shield
+                6183 => 10, // Silver Shield
+                6177 => 11, // Royal Guard Harness
+                6188 => 12, // Restoration Shield
+                _ => -1,
+            }
+        }
+        for m in 3..10 {
+            if !self.is_item_slot_unlocked_and_usable(m) {
+                continue;
+            }
+            let slot = shield_slot(self.equipped[m]);
+            // `:36762-36777`: the eocDash / raised fallbacks — they fill an
+            // unset shield slot BEFORE the visibility gate, so a hidden
+            // accessory still guards while raised.
+            if (self.eoc_dash > 0 || self.shield_raised) && self.shield == -1 && slot != -1 {
+                self.shield = slot;
+            }
+            // `ItemIsVisuallyIncompatible` (`:36837-36843`), shield arms.
+            if slot > 0
+                && (self.composite_back.enabled
+                    || crate::sortdata::IS_FOOD.get(self.held_item_kind))
+            {
+                continue;
+            }
+            // `:36790-36793` → `UpdateVisibleAccessory` `:36923-36926`.
+            if !self.hide_visible_accessory[m] && slot > 0 {
+                self.shield = slot;
+            }
+        }
+        // `:36806-36810`: the held Bouncing Shield draws slot 9 until its
+        // thrown 866 is live (`ownedProjectileCounts[866] < 1`).
+        if self.held_item_kind == 4760
+            && self.owned_projectile_counts.get(866).copied().unwrap_or(0) < 1
+        {
+            self.shield = 9;
         }
     }
 
@@ -16933,6 +17272,410 @@ mod tests {
         q.update_armor_sets_always_beetle(&mut rng2);
         assert_eq!(q.beetle_counter, 0.0);
         assert!(rng2.ranges.is_empty(), "no set → no orbit draws");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_arms_long_invince_and_clears() {
+        // `ApplyEquipFunctional` 554 (`Player.cs:15587-15590`): the bare
+        // `longInvince = true`; `ResetEffects` clears it (`:18719`) and the
+        // fold re-arms per tick.
+        let p = player_with_accessory(554);
+        assert!(p.long_invince, "the Cross Necklace arms longInvince (:15589)");
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.update(&w, PlayerInput::default());
+        assert!(p.long_invince);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.long_invince, "the clear re-folds without the source");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_doubles_the_accepted_hurt_window() {
+        // `Hurt`'s `num7` (`Player.cs:38385`): damage != 1 → 80 : 40, exactly
+        // 1 → 40 : 20 — the port's `iframes_for` already reads `long_invince`;
+        // this pins the EQUIP source through the full hurt.
+        let w = ground_world();
+        let mut plain = Player::spawn(&w);
+        let mut cross = player_with_accessory(554);
+        assert!(plain.hurt(20, plain.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(plain.immune_time, 40);
+        assert!(cross.hurt(20, cross.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(cross.immune_time, 80, "the doubled normal window");
+        assert!((cross.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+        // The exactly-1 lane: 20 → 40.
+        plain.immune = false;
+        plain.hurt_cd = 0.0;
+        cross.immune = false;
+        cross.hurt_cd = 0.0;
+        assert!(plain.hurt(1, plain.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(plain.immune_time, 20);
+        assert!(cross.hurt(1, cross.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(cross.immune_time, 40, "the doubled 1-damage window");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_lifts_the_dodge_pair_to_120_without_draws() {
+        // The dodge handlers' `SetImmuneTimeForAllTypes(longInvince ? 120 :
+        // 80)` (`Player.cs:38025`) reads the same flag; the necklace itself
+        // draws NOTHING (the belt's `Next(10)` stays the only roll).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.equipped[4] = 963;
+        p.update(&w, PlayerInput::default());
+        assert!(p.long_invince && p.black_belt);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(rng.draws, vec![(0, 10)], "the necklace adds no draw");
+        assert!(
+            (p.hurt_cd - 120.0 / 60.0).abs() < 1e-4,
+            "the long-invince dodge window"
+        );
+    }
+
+    #[test]
+    fn w4_f48_the_necklace_fold_halves_survive_the_panic_keep_one() {
+        // `ApplyEquipFunctional`: 1578 honeycomb + panic (`Player.cs:
+        // 15076-15080`), 6187 longInvince + panic (`:14625-14628`).
+        // SHIELDS RETIRE keep-one (receipt 51eefdf84): the `panic` halves
+        // + the 1290 arm + the `ResetEffects` clear are f50-canonical —
+        // this witness pins THIS branch's surviving fold halves only
+        // (1578 honey_comb / 6187 long_invince). f50's three-source
+        // witness (`w4_f50_the_panic_necklace_grants_the_hurt_buff_and_
+        // arms_from_all_three_sources`) owns the panic assertions.
+        let p = player_with_accessory(1578);
+        assert!(p.honey_comb, "the Sweetheart keeps the bees (f48's half)");
+        let p = player_with_accessory(6187);
+        assert!(p.long_invince, "the Crossed Heart's window half (f48's)");
+    }
+
+    #[test]
+    fn w4_f48_a_dodged_hit_draws_only_the_belt_roll() {
+        // The dodge block's early returns (`Player.cs:38214-38241`): a
+        // belt dodge skips everything after it — the f50-canonical
+        // reaction head (panic 63 / squire 205 grants, receipt 51eefdf84)
+        // sits AFTER the returns, so a dodged hit grants nothing and the
+        // necklace adds no RNG draw of its own. RETARGETED (SHIELDS
+        // RETIRE): the old grant assertions ride f50's head witness; this
+        // keeps f48's own lane — the roll order + the draw census.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1290;
+        p.equipped[4] = 963;
+        p.update(&w, PlayerInput::default());
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(rng.draws, vec![(0, 10)], "one belt draw, nothing else");
+        // The next accepted hit takes the belt's failed roll and lands.
+        expire_dodge_window(&mut p);
+        let mut rng = DodgeRng::with_rolls(&[5]);
+        assert!(p.hurt(50, p.x + 100.0, &mut rng, true));
+        assert_eq!(rng.draws, vec![(0, 10)]);
+    }
+
+    #[test]
+    fn w4_f48_parry_can_parry_against_reads_window_facing_motion_and_immunity() {
+        // `CanParryAgainst` (`Player.cs:31437-31444`): all four gates —
+        // the live window, the enemy centre on the facing side, a moving
+        // enemy, and NOT already immune.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.facing = 1;
+        let cx = p.x as i32 + p.width as i32 / 2;
+        // No window: never a parry.
+        assert!(!p.can_parry_against(cx + 30, 1.0, 0.0));
+        p.shield_parry_time_left = 1;
+        assert!(p.can_parry_against(cx + 30, 1.0, 0.0), "facing + moving + window");
+        // Behind the player: `Math.Sign` mismatch.
+        assert!(!p.can_parry_against(cx - 30, 1.0, 0.0));
+        // Exactly centred: `Math.Sign(0) == 0 != direction`.
+        assert!(!p.can_parry_against(cx, 1.0, 0.0));
+        // A stationary enemy never parries (velocity == Vector2.Zero).
+        assert!(!p.can_parry_against(cx + 30, 0.0, 0.0));
+        // Vertical-only motion counts (velocity != Zero).
+        assert!(p.can_parry_against(cx + 30, 0.0, -2.0));
+        // Already immune: the parry refuses (the i-frames own the hit).
+        p.immune = true;
+        assert!(!p.can_parry_against(cx + 30, 1.0, 0.0));
+    }
+
+    #[test]
+    fn w4_f48_parry_try_toggling_shield_arms_and_locks_the_windows() {
+        // `TryTogglingShield` (`Player.cs:31741-31764`): the raise arms
+        // window 1 ONLY with the cooldown spent; the lower locks 15,
+        // clears the window and requests `ApplyAttackCooldown(20)`; a
+        // same-state call is a no-op.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert!(p.shield_raised);
+        assert_eq!(p.shield_parry_time_left, 1);
+        // Idempotent: re-raising changes nothing.
+        p.shield_parry_time_left = 7;
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert_eq!(p.shield_parry_time_left, 7, "the no-op keeps the window");
+        // The lower: cooldown 15, window cleared, attack-cooldown 20.
+        assert_eq!(p.try_toggling_shield(false), 20);
+        assert!(!p.shield_raised);
+        assert_eq!(p.shield_parry_cooldown, 15);
+        assert_eq!(p.shield_parry_time_left, 0);
+        // A raise DURING the cooldown arms no window.
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert_eq!(p.shield_parry_time_left, 0, "the cooldown blocks the window");
+    }
+
+    #[test]
+    fn w4_f48_parry_the_shield_raise_countdowns_tick_the_two_windows() {
+        // `ItemCheck_ManageRightClickFeatures_ShieldRaise` (`Player.cs:
+        // 31719-31737`): the cooldown decrements to 0 (cue + dust queued
+        // on the zero tick), the window pre-increments and clears past 20.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.facing = -1;
+        p.try_toggling_shield(true); // window 1
+        p.try_toggling_shield(false); // cooldown 15, window 0
+        p.try_toggling_shield(true); // raised, cooldown 15, window stays 0
+        for _ in 0..14 {
+            p.shield_raise_countdowns();
+        }
+        assert_eq!(p.shield_parry_cooldown, 1);
+        assert!(!p.take_parry_ready_sound(), "no cue before the zero tick");
+        p.shield_raise_countdowns(); // the zero tick
+        assert_eq!(p.shield_parry_cooldown, 0);
+        assert!(p.take_parry_ready_sound(), "the MaxMana cue queues");
+        let (dx, dy) = p.take_parry_ready_dust().expect("the burst anchor");
+        let (cx, cy) = p.center();
+        // direction -1: `direction * 6 + (-10)` = -16, y -14.
+        assert!((dx - (cx - 16.0)).abs() < 1e-4);
+        assert!((dy - (cy - 14.0)).abs() < 1e-4);
+        // The window: 1 → 2 … → 20 → 0 (20 ticks live, `> 20` clears).
+        p.shield_parry_time_left = 1;
+        for _ in 0..19 {
+            p.shield_raise_countdowns();
+        }
+        assert_eq!(p.shield_parry_time_left, 20);
+        p.shield_raise_countdowns();
+        assert_eq!(p.shield_parry_time_left, 0, "past SHIELD_PARRY_DURATION");
+    }
+
+    #[test]
+    fn w4_f48_parry_give_immune_time_counts_strikes_and_refuses_the_third() {
+        // `GiveImmuneTimeForCollisionAttack` (`Player.cs:20494-20511`):
+        // grants within 20 ticks climb the strike counter; the third is
+        // refused; a longer window replaces a shorter one; a gap > 20
+        // resets the counter.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.immune = false;
+        p.immune_time = 0;
+        p.time_since_last_immune_get = 10000;
+        p.give_immune_time_for_collision_attack(30);
+        assert!(p.immune && p.immune_no_blink);
+        assert_eq!(p.immune_time, 30);
+        assert_eq!(p.immune_strikes, 1);
+        // Second grant inside the window: a LONGER window replaces.
+        p.give_immune_time_for_collision_attack(60);
+        assert_eq!(p.immune_time, 60);
+        assert_eq!(p.immune_strikes, 2);
+        // Third: refused outright (the anti-cheese cap).
+        p.give_immune_time_for_collision_attack(60);
+        assert_eq!(p.immune_strikes, 3);
+        assert_eq!(p.immune_time, 60, "the third grant lands nothing");
+        // A shorter window never shrinks a live one.
+        p.immune_strikes = 0;
+        p.give_immune_time_for_collision_attack(30);
+        assert_eq!(p.immune_time, 60, "!immune || immuneTime <= time");
+        // The age counter: > 20 ticks resets the strikes to 1.
+        p.time_since_last_immune_get = 21;
+        p.immune = false;
+        p.give_immune_time_for_collision_attack(30);
+        assert_eq!(p.immune_strikes, 1, "the gap resets the counter");
+        assert_eq!(p.immune_time, 30);
+        // The per-tick age climb + 10000 cap (`:24663-24667`).
+        p.time_since_last_immune_get = 9999;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.time_since_last_immune_get, 10000, "the cap holds");
+    }
+
+    #[test]
+    fn w4_f48_parry_the_shield_slots_and_held_4760_arm_raisable() {
+        // `GrantArmorBenefits` `shieldSlot > 0` (`Player.cs:13123-13126`)
+        // + the held-Bouncing-Shield row (`:13075-13078`); `ResetEffects`
+        // `:18611` clears per tick.
+        for kind in [156u16, 397, 938, 1613, 3097, 3810, 3997, 3998, 6177, 6183, 6188] {
+            let p = player_with_accessory(kind);
+            assert!(p.has_raisable_shield, "shield {kind} arms raisable");
+        }
+        // A non-shield accessory does not.
+        let p = player_with_accessory(554);
+        assert!(!p.has_raisable_shield);
+        // The held 4760 with no live 866 projectile.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.held_item_kind = 4760;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_raisable_shield, "the shield in hand is raisable");
+        // A live thrown shield (866) blocks it. The standalone `update`
+        // zeroes the recount inputs (`ResetProjectileCaches`), so the
+        // blocked branch drives the equip fold directly on a live count
+        // (the sim's `UpdateProjectileCaches` seam supplies it).
+        p.has_raisable_shield = false;
+        p.owned_projectile_counts[866] = 1;
+        p.update_equips();
+        assert!(!p.has_raisable_shield, "the thrown shield is out");
+        // The clear re-folds without any source.
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.has_raisable_shield);
+    }
+
+    #[test]
+    fn w4_f48_parry_buff_198_arms_the_damage_flag_and_clears() {
+        // `UpdateBuffs` `:11855-11858` sets `parryDamageBuff`; the
+        // `ResetEffects` `:18698` clear re-folds per tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(198, 300);
+        p.update(&w, PlayerInput::default());
+        assert!(p.parry_damage_buff, "buff 198 arms the flag");
+        let i = p.buffs.find_buff_index(198).unwrap();
+        p.buffs.buff_time[i] = 1;
+        p.update(&w, PlayerInput::default()); // ticks to 0, purged
+        p.update(&w, PlayerInput::default());
+        assert!(!p.parry_damage_buff, "the expiry folds the flag back");
+    }
+
+    /// W4-f48 lane 20 — `UpdateVisibleAccessories`' shield rows
+    /// (`Player.cs:36762-36777/:36790-36793/:36923-36926/:36806-36810`):
+    /// the equipped shieldSlot ids map to their `ArmorIDs.Shield` slots,
+    /// the per-tick reset re-folds, hide/composite-back/food gates refuse
+    /// the visible row (but not the raised fallback), and the held 4760
+    /// overrides to slot 9 until its 866 is live.
+    #[test]
+    fn w4_f48_visible_shield_slot_derives_from_the_equipped_rows() {
+        let w = ground_world();
+        let pairs = [
+            (156u16, 1i16), (938, 2), (397, 3), (1613, 4), (3097, 5),
+            (3810, 6), (3997, 7), (3998, 8), (6183, 10), (6177, 11), (6188, 12),
+        ];
+        for (kind, slot) in pairs {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            assert_eq!(p.shield, slot, "shield {kind} draws slot {slot}");
+        }
+        // No shield: the reset holds −1.
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1);
+        // The hide tick refuses the visible row…
+        p.equipped[3] = 156;
+        p.hide_visible_accessory[3] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1, "hidden accessory draws nothing");
+        // …but the raised fallback fills the slot ahead of the gate.
+        p.shield_raised = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1, "the raised fallback beats the hide tick");
+        p.shield_raised = false;
+        // The eocDash fallback too.
+        p.eoc_dash = 5;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1);
+        p.eoc_dash = 0;
+        // A held food hides the worn shield (`ItemIsVisuallyIncompatible`).
+        p.hide_visible_accessory[3] = false;
+        p.held_item_kind = 353; // cooked fish? — IsFood row
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1, "food in hand hides the shield");
+        p.held_item_kind = 0;
+        // The held Bouncing Shield overrides to slot 9.
+        p.held_item_kind = 4760;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 9);
+        // A live thrown 866 drops the override back to the worn slot.
+        p.owned_projectile_counts[866] = 1;
+        p.update_frames(&w);
+        assert_eq!(p.shield, 1, "the thrown shield is out — the worn row returns");
+        p.owned_projectile_counts[866] = 0;
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1);
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_grants_20_defense_per_tick() {
+        // `Player.cs:25714-25717`: `shieldRaised` adds +20 AFTER the equip
+        // pass, before the defense floor (`:25927-25930`). The flag itself
+        // is not a ResetEffects clear — ItemCheck owns the toggle — so it
+        // persists across the fold until lowered.
+        let mut p = player_with_accessory(156); // Cobalt Shield, +1 defense
+        let base = p.stat_defense;
+        assert_eq!(base, 1);
+        p.shield_raised = true;
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base + 20, "the raised shield grants +20");
+        // The grant re-folds per tick (statDefense resets in ResetEffects).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base + 20, "no accumulation");
+        p.shield_raised = false;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base, "the lower folds it back");
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_caps_the_move_speed_at_one_third() {
+        // `Player.cs:25955-25957`: `strongestMoveSpeedDebuff = min(1/3)` —
+        // the strongest debuff wins, and the run-speed merge (`:26004-26009`)
+        // multiplies the accessory moveSpeed adds by it too.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shield_raised = true;
+        p.update(&w, PlayerInput::default());
+        assert!((p.strongest_move_speed_debuff - 1.0 / 3.0).abs() < 1e-6);
+        assert!((p.move_speed - 1.0 / 3.0).abs() < 1e-6);
+        // A moveSpeed buff adds BEFORE the merge — the shield cap rides
+        // the raised value, it does not replace it. RETARGETED (SHIELDS
+        // RETIRE): the old Panic-63 doubling rides f12's wiring witness
+        // (`w4_f12_closeout_panic_63_grants_move_speed_once_through_the_
+        // wiring`) — the inline 63 arm is dropped here (f12-canonical);
+        // Swiftness 3 (+0.25, `:10049-10052`) proves the same multiply.
+        p.buffs.add_buff(3, 480);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.25 / 3.0).abs() < 1e-6, "the cap multiplies");
+        // The lower restores the full buffed speed.
+        p.shield_raised = false;
+        p.update(&w, PlayerInput::default());
+        assert!((p.strongest_move_speed_debuff - 1.0).abs() < 1e-6);
+        assert!((p.move_speed - 1.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_halves_a_fast_grounded_run() {
+        // `Player.cs:25958-25961`: grounded (`velocity.Y == 0`) with
+        // `|velocity.X| > 3` halves vx — BEFORE HorizontalMovement's
+        // friction (the grounded no-input arm subtracts runSlowdown 0.2).
+        let (w, mut p) = settled();
+        p.shield_raised = true;
+        p.vx = 6.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        // 6 → 3 (the halve) → 2.8 (the friction).
+        assert!((p.vx - 2.8).abs() < 1e-4, "halved then frictioned: {}", p.vx);
+        // The boundary: exactly 3 is NOT > 3 — no halve, friction only.
+        p.vx = 3.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.vx - 2.8).abs() < 1e-4);
+        // Airborne: the halve refuses (vy != 0); the airborne friction is
+        // half the grounded one (0.1).
+        p.vx = 6.0;
+        p.vy = -2.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.vx - 5.9).abs() < 1e-4, "no halve airborne: {}", p.vx);
     }
 
     #[test]

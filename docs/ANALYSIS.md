@@ -18470,11 +18470,26 @@ Documented gaps, all deliberate:
 - **The Hallowed `onHitDodge` grant** (`:6938-6941`, buff 59's source) is an
   armor-set row вЂ” the buff can be granted only by tests/debug today.
 - **`long_invince` arming**: the Star Veil 862 (`:15147`) arms it with
-  S1-C-7 wave B; the other sources (item 6187 et al.,
-  `:14590/:14627/:15589`) ride later waves.
-- **The panic/squire hurt buffs** (`:38242-38247`, `AddBuff(63, 480)` /
-  `AddBuff(205, 300)`) ride S1-C-7 (wave B arms the 1578 honeycomb half only вЂ”
-  the `panic` buff itself stays deferred, see "The hurt modifiers").
+  S1-C-7 wave B; the Cross Necklace 554 (`:15589`) and the Crossed Heart
+  Necklace 6187 (`:14627`) arm it with W4-f48; the Seraph Necklace 6180
+  (`:14590`) rides a later wave with its unported `accHarpyCharm`/
+  `accSeraphNecklace` halves.
+- **The panic/squire hurt buffs** (`:38237-38244`, `AddBuff(63, 480)` /
+  `AddBuff(205, 300)`): the panic half lands with W4-f48 вЂ” the `panic` flag
+  (1290 `:14894`, 1578 `:15079`, 6187 `:14626`, clear `:18616`), the
+  post-dodge grant in `hurt_inner` and the buff-63 `moveSpeed++` effect arm
+  (`:10130-10133`, +1.0 on the base-1 multiplier, the Swiftness-3 wired
+  convention). The squire `setSquireT2` twin (`AddBuff(205, 300)`) landed
+  with the W4-f48 parry wave (see "The parry machine lands" below) - the
+  d123/f36 DD2 lanes carried no copy (censused), so `hurt_inner` held the
+  one grant, right after the panic row. **SHIELDS RETIRE keep-one
+  (2026-11-21, `f4539c27e`)**: BOTH grants + the field + the equip panic
+  halves + the clear are now **f50-canonical** (`task/W4-f50-hurt-reactions`
+  51eefdf84's sub-receipt — f50 owns `hurt_inner`'s reaction head); the
+  inline buff-63 reader is **f12-canonical** (`DEBUFF_DISPATCH`,
+  `task/W4-f12-buff-frame-wiring` 22ce2a41f). This branch's copies are
+  DROPPED; the dodge block + the 1578 `honey_comb`/6187 `long_invince`
+  fold halves + the DD2 crystal-lane `add_buff(205, 3600)` stay.
 - **`brain_of_confusion_dodge_animation_counter`** has no render consumer
   (the S1-A-9 dead-slot convention) вЂ” carried for state parity.
 - **The contact/thorns restructure** (Phase 2, landed): the contact block runs
@@ -18497,6 +18512,97 @@ Documented gaps, all deliberate:
   `Player.cs:38197`) вЂ” a black belt eats spike, lava and fall damage
   (vanilla); the Paladin MP-only `dodgeable: false` site (`:38361`) is
   unreachable in the port.
+- **The contact-lane parry extension** (W4-f48 census, LANDED with the
+  W4-f48 parry wave): after an NPC hit, `Update_NPCCollision` runs
+  `GiveImmuneTimeForCollisionAttack(longInvince ?
+  60 : 30)` + `AddBuff(198, 300)` under `flag3 = CanParryAgainst(...)`
+  (`Player.cs:31368/:31427-31431`) - the machine now lives on `Player`
+  and the contact lane wires it (`Npc::contact`); see "The parry machine
+  lands" below for the port shape + deviations. The Cross Necklace's
+  60/30 half has its consumer.
+
+### The parry machine lands (W4-f48 parry wave, 2026-11-21)
+
+The Squire/Brand-of-the-Inferno shield-parry family (1.4.5's `Player.cs`
+3122-3134/31437-31444/31706-31764 + the contact lane 31366-31431 + the
+melee consumer 44307-44312), censused OUT with the Cross Necklace commit
+(41323c7c), now lands. Code-only mode: 14 witnesses written not run.
+
+- **The machine on `Player`** (`player.rs`): `can_parry_against` (the
+  window + facing-side + moving + not-immune gates; BOTH centres ride
+  the C# `Rectangle` integer arithmetic — `(int)position.X + width/2`,
+  and `Math.Sign` answers 0 on an exact tie), `try_toggling_shield`
+  (raise arms window 1 ONLY cooldown-spent, lower locks 15 and returns
+  the `ApplyAttackCooldown(20)` request for the App-owned `attack_cd`),
+  `shield_raise_countdowns` (the cooldown's zero tick queues the MaxMana
+  cue + the dust anchor; the window pre-increments and clears past 20),
+  and `give_immune_time_for_collision_attack` verbatim (the
+  `_immuneStrikes` 3-cap within the 20-tick `_timeSinceLastImmuneGet`
+  window, the `!immune || immuneTime <= time` replace gate,
+  `immuneNoBlink = true`; the age counter climbs in `update_with_grapple`
+  at the `:24663-24667` slot, capped 10000).
+- **`hasRaisableShield`**: the port's registry carries no `shieldSlot`
+  field, so the `GrantArmorBenefits` `shieldSlot > 0` row
+  (`:13123-13126`) is the eleven-id list from `Item.SetDefaults`
+  (`Item.cs` :3250/:6039/:12218/:19122/:28645/:33727/:35509/:35515/
+  :47589/:47620/:47647 — 156/397/938/1613/3097/3810/3997/3998/6177/
+  6183/6188), folded in the same equipped-wearable loop as the defense
+  add; the held-4760/no-live-866 row (`:13075-13078`) rides
+  `update_equips`' tail on the pre-tick `held_item_kind` snapshot.
+  `ResetEffects` `:18611` clears per tick; `shieldRaised` + the two
+  timers have NO C# reset site and persist across ticks.
+- **The contact lane** (`npc.rs::contact`): the parry verdict runs
+  BEFORE the thorns arms (`:31368`), the parry reflect pins the
+  multiplier at 2 REGARDLESS of thorns sources (`num = 2f` `:31377` —
+  a bare shield parry reflects; the Cactus flat 15 still rides its own
+  arm), knockback 5 vs 10, `Hurt` skipped (`flag = false`), then the
+  60/30 window + `AddBuff(198, 300)` tail (`:31427-31431`). The
+  `StatusFromNPC` skip (`flag2`) is folded — the port carries that
+  debuff body elsewhere (the pre-existing `:31423` note).
+- **The melee x5 consumer** (`resolve_melee_strike`): the C# block
+  (`:44307-44312`) multiplies the PRE-`DamageVar` value after the crit
+  roll and before the Flymeal arm; the port folds the x5 onto `raw`
+  between the crit roll and `damage_var` — the draw order is untouched
+  (no new draws). The consumption clears BOTH the flag and the buff
+  (`ClearBuff(198)`), so later NPCs in the same swing get no second
+  boost. Melee-only (`sItem.melee` reads the registry row).
+- **The Hurt squire twin** (`hurt_inner`): `AddBuff(205, 300)` right
+  after the panic grant (`:38241-38244`), post-dodge, pre-defense. The
+  d123 (OOA loss/medals) and f36 (medal drops) lanes were censused for
+  a copy — neither carried one; this was the single grant. The buff-205
+  ballista-reload consumers already existed (`Projectile.cs:68563-68570`
+  port). **SHIELDS RETIRE keep-one (`f4539c27e`)**: the twin's grant now
+  lives ONLY in f50's head (receipt 51eefdf84 — f12's tree has no 205
+  hurt writer); this branch's copy is dropped, the witnesses retargeted.
+- **The ShieldRaise wiring** (`world_sim/player.rs`, the `:28283` seam
+  after `dropItemCheck`/chest, before the editing pass): the general
+  check (`:31528`) uses the port's stand-ins — `selected != 58`,
+  `place_down` (controlUseTile), the previous tick's `mine_released`
+  latch (releaseUseItem — the C# writes it at ItemCheck's END),
+  `!mine_down`, `!inventory_open` (mouseInterface). DEVIATIONS:
+  `tileInteractionHappened`, `CaptureManager.Active`, the
+  `!mouseRightRelease || !HoveringAnInteractable` clause and
+  `LocalPlayerHasPendingInventoryActions` have no port machinery —
+  collapsed open; the `JustPressed.MouseRight` edge rides
+  `drop_right_edge` (the players-phase press-edge capture with the
+  slot-surface refusal folded). The drill-mount skip (`:28281`
+  `mount.Type != 8`) is keyed. The raise zeroes the App-owned
+  swing/item_time/reuse_delay (`:31754-31756`; `swing_max` stays —
+  the C# never clears itemAnimationMax there); the lower floors
+  `attack_cd` at 20/60 (max, not set).
+- **The zero-tick effects**: the MaxMana cue (legacy sound 25,
+  `LegacySoundPlayer` case 25 — Volume/Pan only, no draws; the bank row
+  joins `audio.rs`) plays at `base.Center`; the 10x dust-45 burst
+  (`:31725-31731`) drains on the `UpdatePlayers` stream — per dust the
+  `Next(10,16) * 0.1` scale ARGUMENT evaluates before `Dust.NewDust`'s
+  internal rolls (the C# argument order), then the
+  `noLight`/`noGravity`/`velocity *= 0.5` post-arms. The anchor is
+  `Center + (direction * 6 + (direction == -1 ? -10 : 0), -14)`.
+- **Out**: the shield draw layer (`:36481` body row 10 + `:36770`'s
+  accessory-shield carve) already reads `shield_raised` — the machine
+  now feeds it live. The `bitsByte22` net packing of `shieldRaised`
+  (`net.rs`) stays as-is (the field existed). The MP `shieldRaised`
+  mirror (`:31709-31713`) is unreachable single-player.
 
 ### W4-d115 addendum — the send seams + HolyProtection (2026-11-21)
 
@@ -18827,8 +18933,11 @@ Documented deviations, all deliberate:
   in the same spawn expression).
 - **The NPC `active` gate** folds to the `hp > 0` live-list convention (the
   `buff_effects_accessory` precedent).
-- **Deferred families**: 1578's `panic` hurt buff (`AddBuff(63, 480)`,
-  `:38242-38244`), 6184's `accPoisonBarb`/`accHoneyedBarb`, 6186's
+- **Deferred families**: 1578's `panic` hurt buff landed with W4-f48 (see
+  "The dodge family" вЂ” the flag, the grant and the buff-63 speed arm;
+  SHIELDS RETIRE keep-one: the panic family is now f50-canonical, the
+  63 reader f12-canonical — this branch keeps the `honey_comb` half);
+  6184's `accPoisonBarb`/`accHoneyedBarb`, 6186's
   `accSnakeBand`, 4001's manaFlower auto-potion half (`:52588`, the port
   folds only the -0.08 `manaCost` row), 3251's `hasLuck_LuckyHorseshoe`
   (`:14876`, no luck-horseshoe field yet). Combat text stays FROZEN
@@ -18840,6 +18949,213 @@ compression/dart, the star aim/overrides/expert, the bee count/flip/damage/
 expert scaling, the source order, the dismount drain) + `player.rs`'s
 `s1_c_7b_*` Г—4 (the crit maths, the queue snapshot, the dismount set gate,
 the equip arms/clears).
+
+### The cloak stars land (W4-f48, 2026-11-21)
+
+The retaliate block's five star kinds (723/724/725/726/1133) gain their
+`proj_data` row (`Projectile.cs:7646-7658` вЂ” one shared arm: 24Г—24,
+aiStyle 5, penetrate 2, alpha 50, `tileCollide = false`, local immunity
+10) and their aiStyle-5 AI arm (`projectile.rs::ai_cloak_star`,
+`Projectile.cs:23845-23856`/`:23914-23927`/`:23946-23953`): the
+`Center.Y > ai[1]` solidity latch, the 723 fall-through arm (owner-top +
+`ai[2] == 1`, the magic-proc payload `:13849` вЂ” the hurt-spawned stars
+carry ai2 = 0 and never enter), the alpha в€'15 ramp with the 100/0 floors,
+the spin accumulators reading the PRE-movement direction (the C# updates
+`base.direction` after `HandleMovement`, `:17016-17026`), and the
+`kill_step` default tile arm. The drain spawns through
+`spawn_with_data_ai_owned` (ai1 = position.Y as before) + the arpen-25
+setter (`:7657`, no `ProjData` field вЂ” the gun_launch precedent); the
+`set_ai1` setter stays `#[allow(dead_code)]` for rowless callers.
+Deviations: the dust/gore trail rolls (`:23988-24031`) are SKIPPED with
+their on-screen gates (no screen model in the pool вЂ” the
+`ai_falling_star` precedent), so the arm's only gameplay draw is the
+Item9 twinkle's `soundDelay = 20 + Next(40)` (`:23881-23885`) on the
+`UpdateProjectiles` stream, the play queued through `wants_sound` (the
+S1-E-21h batch convention); the 723's `decidesManualFallThrough = true`
+half has no slot field (the `should_fall_through = false` write rides;
+the platform pass-through is inert); the Kill-time dust/gore/star-drop
+burst (`:75159-75201`, the 4143 Star in a Bottle drop on the ai2 = 1
+proc) rides the death-effects waves; the draw layer (`Main.cs:31333+`,
+the Extra[91] glow trail) rides the tile-draw waves. 7
+`w4_f48_cloak_star_tests` witnesses + the strengthened star-spawn row
+assertions (written, NOT run вЂ” code-only mode).
+
+### The shields doc-sweep lands (W4-f48 lane 20, 2026-11-21)
+
+DOC-SWEEP lane 20 (shields/accessories) censused six items and ported the
+real gaps; the full per-item census + the commit ledger live in
+`docs/research/98-doc-sweep-shields.md`. Code-only mode: 15 witnesses
+written not run. The deliberate deviations:
+
+- **Raised-shield stats** (`player.rs`, `Player.cs:25714-25717`/
+  `:25955-25962`): the +20 `statDefense` lands after the equip pass before
+  the defense floor; the `strongestMoveSpeedDebuff = min(1/3)` rides beside
+  the slow/chilled arms before the run-speed merge, and the grounded
+  `|vx| > 3 → vx /= 2` runs pre-`HorizontalMovement`. The sibling
+  `slowOgreSpit`/`dazed`/`burned` 1/3-and-0.5 caps (`:25931-25946`) are
+  unported rows — only the shield arm lands.
+- **The shield draw** (`render/player_layers.rs::shield_layers`,
+  `PlayerDrawLayers.cs:2954-3024`): `Player.shield` derives from the
+  eleven `shieldSlot` ids (the registry carries no `shieldSlot` field —
+  the same id list as `hasRaisableShield`), the eocDash/raised fallbacks
+  fill an unset slot ahead of the visibility gate, and
+  `ItemIsVisuallyIncompatible`'s shield arms (an enabled composite back
+  arm or a held food) hide the worn row; the held 4760/no-live-866
+  overrides to slot 9. The −4y raised lift, the 4 alpha-0 orbiting ghosts
+  (radius `2.5 + 1.5·sin(2πt)`, tint `×(0.45 − 0.15·sin)`), the body sprite
+  and the parry echo (push/scale/fade, alpha `(1−t)²` from the C# double
+  multiply) all land; the cart's last-two reverse rides. DEVIATIONS:
+  `bodyPosition`/`bodyRotation` are stock zero for the alive player
+  (`PlayerDrawSet.cs:1706-1711`), the `cShield` dye has no port producer
+  (every copy draws plain), the vanity slots 13..20 have no port loadout.
+  CENSUS FINDING: the `sin(π·t)` pulse overlay (`:2995-3003`) builds a
+  `DrawData` but never `DrawDataCache.Add`s it — dead code in the source,
+  skipped faithfully (5 raised sprites, not 6).
+- **Proj 866 Bouncing Shield** (`projectile/data.rs` + `projectile.rs`,
+  `Projectile.cs:8312-8324`): the row (30×30, aiStyle 3, penetrate 5,
+  melee, extraUpdates 1, light 0.15, local-immunity −1) un-inerts the
+  thrown shield. `ai_boomerang`'s 866 arms: the outbound never counts
+  `ai[1]`, the `localAI[0]` ∈ [10,360] retarget window + the 30-tick
+  no-target return, the 12/len accel-0.25 sign-cross-double steer, the
+  16/1.2 return seek, rotation = velocity angle + the `Next(2)` dust-212
+  gate (the dust skipped, its gate draw kept). On-hit: the ×0.8 STORED
+  decay (pre-strike, this hit keeps full damage — the Shadowbeam
+  precedent), `immune[owner] = 0` + the local −1 stamp + `penetrate--`, at
+  0 the inert reset + retarget redirect; the generic `penetrate--` excludes
+  866 (`:14125`). `ai_boomerang` widened with `npcs`/`local_immunity`/`rng`
+  (the other kinds draw nothing). NAMING: 866 = Bouncing Shield (item
+  4760's shot), NOT a "squire bash"; 3823 = Brand of the Inferno.
+- **The projectile-lane parry** (`projectile.rs::damage_player`,
+  `Damage_EVP` `Projectile.cs:14822-14828`): `CanParryAgainst(player.Hitbox,
+  base.Hitbox, velocity)` skips the hurt block whole (no DamageVar draw /
+  Hurt / StatusPlayer) and the parried shot SURVIVES (the C# spends no
+  penetrate on a parry, `:14881-14899`). NO reflect/immunity/buff is
+  granted here — those live only in the contact lane's
+  `Update_NPCCollision` (already ported). The early return skips the
+  port's single-hit kill too (the faithful "the shield eats the hit, the
+  shot survives" shape).
+- **The ParryDamageBuff ×5 melee-PROJECTILE consumer**
+  (`projectile.rs::damage_pve`, `Projectile.cs:13573-13578`): an owned
+  melee projectile ×5s the rolled damage while buff 198's flag is live,
+  clears flag + `ClearBuff(198)`; `DontApplyParryDamageBuff` =
+  {524,321,181,566} (`ProjectileID.cs:187`) refuses. Post-DamageVar
+  pre-strike (the draw order untouched — a pure multiply). The projectile
+  twin of the already-ported melee-ITEM consumer
+  (`world_sim/editing.rs`, `Player.cs:44307-44312`).
+- **Census negatives** (no code): no `TriggersSet.ShieldRaise` trigger
+  exists (the input is MouseRight + the general check, already wired at
+  `world_sim/player.rs:1689-1787`); no panic speed-lines exist (buff-63's
+  only effect is `moveSpeed++`, already ported); the fast-run dust half of
+  `SpawnFastRunParticles` (`Player.cs:20205-20299`) is an unported visual
+  seam ON THIS TREE (the sound half is ported; the dust half landed on
+  W4-d51 — see the SHIELDS RETIRE section below). The ManaCloak magic-hit
+  star proc (`Projectile.cs:13831-13852`, ai2 = 1 / dmg 100 / cooldown 300)
+  is unported — out of the hurt-retaliate lane's scope (task-seeded below).
+- **StarVeil damage-lands witness** (`projectile.rs`): the drain spawns
+  kind 725 (dmg 75 classic / ×2 expert 150) and the star's contact lands
+  through `damage_pve` — the end-to-end "the star hurts" pin the spawn
+  seam + row + AI already implied but never witnessed.
+
+### SHIELDS RETIRE (W4-f48, 2026-11-21)
+
+The retire phase of the shields family: the raised-shield stats + the
+shield draw + proj 866 + the parry machine + the StarVeil witness all
+landed (the ledger above); this pass executes the cross-branch keep-one
+rulings, publishes the receipts, task-seeds the two out-of-scope seams
+and seals research/98. Code-only: witnesses written not run.
+
+1. **The f50 Panic-63 THIRD-copy drop — EXECUTED** (`f4539c27e`, per
+   f50's receipt 51eefdf84, sub-receipt "the f48 THIRD copy"; the ranges
+   re-pinned from 69d499c6b to the lane-20 tip e5b66bb06 before the cut).
+   DROPPED from `player.rs`: the hurt-head grants `AddBuff(63, 480)` +
+   `AddBuff(205, 300)` (the comment + both ifs), the `panic` field + doc +
+   spawn default, the 1578/6187 equip arms' panic halves (1578 keeps
+   `honey_comb`, 6187 keeps `long_invince` — both already f50/main
+   fields), the whole 1290 arm, the `ResetEffects` `:18616` clear, and
+   the inline buff-scan `63 => move_speed += 1.0` row (f12-canonical,
+   item 2). STAY: the dodge block (f48's own lane, re-verified on main),
+   the DD2 crystal-lane `add_buff(205, 3600)` (a DIFFERENT site — the
+   S1-D-4b-2 set-flags witness; f50's receipt: "lands clean"). Witness
+   retargets per the receipt: the dodged-hit-no-grant pin →
+   `w4_f48_a_dodged_hit_draws_only_the_belt_roll` (the roll order + the
+   draw census, the grant assertions ride f50's head witnesses); the
+   necklaces witness → `w4_f48_the_necklace_fold_halves_survive_the_
+   panic_keep_one` (the surviving halves only); the shield-cap witness's
+   Panic-63 `2 × 1/3` pin → Swiftness-3 `1.25 × 1/3` (the same
+   multiply-before-merge proof without the dropped reader); the
+   480-tick-grant / 205-hurt-twin / expiry witnesses retired onto f50's
+   `w4_f50_the_panic_necklace_grants_the_hurt_buff_and_arms_from_all_
+   three_sources` + `w4_f50_the_squire_t2_set_grants_ballista_panic_on_
+   hurt` + f12's wiring witness. **CENSUS NEGATIVE — the THIRD
+   `rederive_beetle_solar_buffs` claim is misattributed**: f50's receipt
+   head names "f48-69d499c6b THIRD rederive_beetle_solar_buffs+63-row
+   copy", but `git grep rederive 69d499c6b -- crates` and the same at
+   HEAD are EMPTY (the only `rederive` hits repo-wide are the unrelated
+   wld ore-tier tests + the biomes band test). f48 carries the panic
+   family + the 63 row ONLY — no beetle/solar ladder copy exists on any
+   f48 commit (`git log -S rederive_beetle_solar_buffs` over the branch:
+   zero). The g27-canonical ladder ruling stands for f50/f12; there is
+   no third ladder to drop here.
+2. **The f12 Panic-63 canonical receipt — PUBLISHED** (f12 22ce2a41f's
+   dispatch): three copies existed (f12's `DEBUFF_DISPATCH` 63 arm —
+   `buff_frame_wiring.rs:113`'s set carries 63, the `buff_effects.rs:149`
+   table row `63 => e.move_speed += 1`; f50's inline `63 => move_speed
+   += 1.0` at 18eeb4f44 :7168; f48's inline row, now dropped). KEEP ONE:
+   f12. f50's drop-hunks are f50's own ledger (51eefdf84 re-pinned them
+   at 18eeb4f44: the :7165-7168 row + the witness retarget :16199-16215);
+   f48's half is executed above. Merged as-is with both inline rows the
+   buff would grant +2 moveSpeed/tick (f12's ruling, unchanged).
+3. **The 866 d18/d12 boomerang keep-one — CENSUSED, COMPOSES**: the
+   `ai_boomerang` body at d18 tip 6e8083751 (8248a54be's FINAL census
+   commit), d12 tip c98bd8937 and f48's pre-866 base (42ffb0759^) are
+   BYTE-IDENTICAL (SHA256 head 2553EB9D1F0D over the fn body, all three)
+   — neither boomerang lane touched the machine; their 866 mentions are
+   the pre-existing 33/106/866 wall-bounce trio (`:19550-19560`) + the
+   301/866/902 NPC-hit-reverse exclusion, both already on main. f48's
+   42ffb0759 widening (`npcs`/`local_immunity`/`rng` params + the 866
+   arms + the 13 call sites: 1 live dispatch + 12 witnesses) is the ONLY
+   change to the machine — it composes onto either tip with no keep-one
+   cut needed; at merge the widened signature wins and d18/d12's
+   call-site lines take the three new arguments (empty slices + the
+   pass stream for the non-866 kinds, which draw nothing). No 866 row
+   exists on d18/d12 (`projectile/data.rs` grep: zero) — the row is
+   f48's alone.
+4. **The ManaCloak magic-hit proc — TASK SEED** (the lane-20 out-of-scope
+   note, `Projectile.cs:13831-13852`): a magic projectile's NPC hit with
+   the manaCloak override armed + `starCloakCooldown == 0` sets the
+   cooldown 300 and spawns ONE 723 star from above (`x + Next(-400,400)`,
+   `y − Next(500,800)`, the centre-seeking `23/len` speed with the
+   `Next(-100,101)` x-jitter, damage 100, kb 5, `ai2 = 1` — the manual
+   fall-through half `ai_cloak_star` already codes inert). The site is
+   `Damage_PVE_Inner`'s `flag10` block (`:13810`), beside the ghost
+   heal/hurt + the nebula-boost roll (`:13826-13830`) — the
+   projectile-on-hit accessory-proc family, NOT the hurt-retaliate lane.
+   SEED → the projectile on-hit accessory lane (the `damage_pve`
+   flag10 family: ghostHeal/ghostHurt/vampireHeal + nebula + manaCloak;
+   no origin/task branch carries any of them — censused). Prereqs: the
+   `starCloakCooldown` field (`Player.cs:1108`, the `:24626-24628` tick
+   decrement — unported), the magic-hit gate, the accessory-source
+   spawn seam (`spawn_with_data_ai_owned`, the StarVeil precedent).
+5. **SpawnFastRunParticles dust half — TASK SEED, ALREADY PORTED
+   ELSEWHERE** (`Player.cs:20205-20299`): the lane-20 note called it an
+   unported visual seam; the retire census finds the dust half LANDED on
+   **W4-d51** (`0d0cf7c42`, batch 3: the `FastRunArm` picker — wings-3/
+   rocket-6, sailDash, desertDash Direct, coldDash, fairyBoots one-roll,
+   hellfireTreads, plain — + the boot-run visual grants + the
+   `player_dust::drain_fast_run` replay after the footstep sound). The
+   `spawn_fast_run_particles` body is byte-identical (SHA256 head
+   653BEED04AEC) at d51 tip 0d0cf7c42, f3 tip 75f3f7347 and g66 tip
+   248f0ff4d (d51 is an ancestor of both — `merge-base --is-ancestor`
+   exit 0; NOT on main). KEEP ONE: the d51 copy, riding whichever of
+   f3/g66 merges (g66's RNG-order contract already names "fast-run
+   (W4-d51)" first in the `UpdatePlayers` drain order). f48's sound-only
+   body drops at merge in favour of the d51 shape; no f48 code change
+   needed (the seam note in research/98 is corrected below). The
+   gravDir == −1 foot-offset fold (`:20207-20211`) collapses to 0 on the
+   d51 port (no gravity flip) — its documented deviation.
+6. **research/98 SEALED + the shields-family bible** — the seal verdicts
+   + the family table live in `docs/research/98-doc-sweep-shields.md`
+   (the RETIRE section); the INDEX row flips to SEALED.
 
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
