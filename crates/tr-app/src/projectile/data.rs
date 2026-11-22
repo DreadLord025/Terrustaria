@@ -225,6 +225,18 @@ pub const SHADOWFLAME_ARROW: u16 = 495;
 /// `ProjectileID.BloodArrow` (`ProjectileID.cs:2192`) — the Blood Rain
 /// Bow's rain shot.
 pub const BLOOD_ARROW: u16 = 819;
+/// `ProjectileID.Stake` (`ProjectileID.cs:1200`) — the Stake Launcher's
+/// shot (W4-f20 slice D, `Projectile.cs:4160-4171`).
+pub const STAKE: u16 = 323;
+/// `ProjectileID.PulseBolt` (`ProjectileID.cs:1268`) — the Pulse Bow's
+/// override shot (W4-f20 slice D, `Projectile.cs:4474-4486`).
+pub const PULSE_BOLT: u16 = 357;
+/// `ProjectileID.Hellwing` (`ProjectileID.cs:1524`) — the Hellwing Bow's
+/// homing bat (W4-f20 slice D, `Projectile.cs:5604-5615`).
+pub const HELLWING: u16 = 485;
+/// `ProjectileID.DD2BetsyArrow` (`ProjectileID.cs:1974`) — the Betsy Bow's
+/// shot (W4-f20 slice D, `Projectile.cs:7521-7535`).
+pub const BETSY_ARROW: u16 = 710;
 /// `ProjectileID.ShimmerArrow` (`ProjectileID.cs:2566`).
 pub const SHIMMER_ARROW: u16 = 1006;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
@@ -1084,6 +1096,10 @@ pub const ELECTROSPHERE_MISSILE: u16 = 442;
 /// `ProjectileID.Electrosphere` (443, `ProjectileID.cs:1440`) — the sphere the
 /// missile's death spawns (aiStyle 77).
 pub const ELECTROSPHERE: u16 = 443;
+/// `ProjectileID.SkyDragonsFuryElectrosphere` (1110, `ProjectileID.cs:2774`) —
+/// the Sky Dragon's Fury alt-shot's death circle (aiStyle 77, the 443 sibling;
+/// W4-f20 F3, the 709 Kill-hook half `Projectile.cs:73372-73388`).
+pub const SKY_DRAGONS_FURY_ELECTROSPHERE: u16 = 1110;
 /// `ProjectileID.ChargedBlasterOrb` (459, `ProjectileID.cs:1472`) — the
 /// cannon's charge orb (aiStyle 1, `extraUpdates = 1`).
 pub const CHARGED_BLASTER_ORB: u16 = 459;
@@ -3151,6 +3167,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater` (the overlay below), the `NewProjectileSetup`
             // 300-tick seed (`:11065-11068`).
             443 => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-f20 F3 — the Sky Dragon's Fury circle 1110
+            // (`Projectile.cs:10340-10352`): 80x80, aiStyle 77, friendly,
+            // alpha 255, scale 1, melee, ignoreWater, tileCollide false,
+            // penetrate -1; the `NewProjectileSetup` 300-tick seed
+            // (`:11065-11068`, the 443 sibling). The 709's Kill spawns it
+            // (`:73384`) and overrides timeLeft to `30 * Next(2,6)`.
+            SKY_DRAGONS_FURY_ELECTROSPHERE => (80.0, 80.0, 77, -1, 300, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // The Fireworks Launcher's rockets 167-170 (`:2558-2569`):
             // 14x14, aiStyle 34, `timeLeft = 45`, the idStatic-1 pair with
             // `appliesImmunityTimeOnSingleHits` (the plain PVE walk applies
@@ -4202,6 +4225,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-P-i16 — the Electrosphere sphere 443's `ignoreWater = true`
             // (`Projectile.cs:5147`, the `:5137-5149` row block).
             || kind == 443
+            // W4-f20 F3 — the Sky Dragon's Fury circle 1110's `ignoreWater`
+            // (`Projectile.cs:10349`, the `:10340-10352` row block).
+            || kind == SKY_DRAGONS_FURY_ELECTROSPHERE
             // S1-P-i14 — the bullet-launch projectiles that set `ignoreWater`:
             // the Xenopopper bubble 444 (`Projectile.cs:5159`) and the Onyx
             // black bolt 661 (`:7118`).
@@ -4246,6 +4272,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-f20 F3 — the Sky Dragon's Fury circle 1110's
+                    // `this.melee = true` (`Projectile.cs:10348`).
+                    | SKY_DRAGONS_FURY_ELECTROSPHERE
             ),
         ranged: matches!(
             kind,
@@ -4545,12 +4574,21 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         206 => 5,
         254 => 5,
         436 => 4,
+        // W4-f20 F3 — the Electrosphere sphere 443 + the Sky Dragon's Fury
+        // circle 1110 share the 4-frame sheet (`Main.cs:8536`/`:8559`); the
+        // aiStyle-77 pulse's 3-tick frame machine wraps at 4
+        // (`Projectile.cs:30724-30733`).
+        443 | SKY_DRAGONS_FURY_ELECTROSPHERE => 4,
         447 => 4,
         448 => 3,
         450 => 5,
         454 => 2,
         456 => 4,
         462 => 5,
+        // W4-f20 slice D — the Hellwing bat's 5-frame sheet
+        // (`Main.cs:8482`); the AI_001 rotation tail's 2-tick frame
+        // machine wraps at 5 (`Projectile.cs:57716-57725`).
+        HELLWING => 5,
         519 => 4,
         574 => 2,
         601 => 2,

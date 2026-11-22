@@ -2092,6 +2092,32 @@ pub struct Player {
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
     /// +1 ammo damage on arrows (`:53548`).
     pub acc_sharp_barb: bool,
+    // ---- W4-f20 F7: the Harpy-charm accessory family (the ai[2]-bits
+    // producer, census research/26f F7). The `Update_HarpyCharm` tick
+    // (`Player.cs:24565` → `:28436-28490`) scans the owner's uncharmed
+    // aiStyle-1 arrows 400..1200 px out, picks the nearest with a
+    // 1600-px line-of-sight target and calls `ApplyHarpyCharm`
+    // (`Projectile.cs:57796-57824`); the AI_001 tail (`:57769-57793`)
+    // then steers the charmed arrow at π/sub-step until the target is
+    // lost (the Consumed bit). The flags clear in `ResetEffects`
+    // (`:18471-18472`, `:18609`) and re-arm from the worn accessory
+    // (`ApplyEquipFunctional` `:14490-14493`/`:14588-14598`); the
+    // cooldown PERSISTS across ticks (ResetEffects does not clear it).
+    /// `Player.accHarpyCharm` (`Player.cs:1234`): 6166 Harpy Charm
+    /// (`:14492`), 6180 Seraph Necklace (`:14589`), 6181 Phoenix Quiver
+    /// (`:14594`).
+    pub acc_harpy_charm: bool,
+    /// `Player.accSeraphNecklace` (`Player.cs:1238`): 6180 (`:14591`) —
+    /// the charm cooldown drops 90 → 72 (`:28458-28461`).
+    pub acc_seraph_necklace: bool,
+    /// `Player.hasPhoenixQuiver` (`Player.cs:1976`): 6181 (`:14595`) —
+    /// the charm's itemID picks 6181 (the PhoenixQuivered bit, the
+    /// `:54005-54011` dust gate's producer).
+    pub has_phoenix_quiver: bool,
+    /// `Player.accHarpyCharmCooldown` (`Player.cs:1236`): the 90-tick
+    /// (Seraph 72) re-charm cooldown (`:28488`), decremented by
+    /// `Update_HarpyCharm` (`:28438-28441`). NOT cleared by ResetEffects.
+    pub acc_harpy_charm_cooldown: i32,
     // S1-P-i35 — the fishing family (`Player.cs:1088-1102` region).
     /// `Player.fishingSkill` (`Player.cs:1092`): the +15 Fishing potion
     /// (buff 121, `UpdateBuffs` `:10146-10149`), the Angler armor pieces
@@ -2938,6 +2964,10 @@ impl Player {
             used_gummy_worm: false,
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
+            acc_harpy_charm: false,
+            acc_seraph_necklace: false,
+            has_phoenix_quiver: false,
+            acc_harpy_charm_cooldown: 0,
             ballista_panic: false,
             set_squire_t2: false,
             set_squire_t3: false,
@@ -5403,6 +5433,26 @@ impl Player {
             // (the `brain_of_confusion` convention).
             // Star Cloak 532 (`:15583-15586`).
             532 => self.star_cloak = true,
+            // W4-f20 F7 — the Harpy-charm family (`Player.cs:14490-14493`,
+            // `:14588-14598`): 6166 Harpy Charm (+5 ranged crit), 6180
+            // Seraph Necklace (charm + longInvince + seraph), 6181 Phoenix
+            // Quiver (charm + phoenix + the molten/magic quiver halves —
+            // the quiver flags ride the `grant_ammo_mastery` seam, the
+            // M3-ITEM-6 keep-one; this arm adds the charm-family flags and
+            // the +0.1 additive stack is ALSO there — no double-add).
+            6166 => {
+                self.ranged_crit += 5;
+                self.acc_harpy_charm = true;
+            }
+            6180 => {
+                self.acc_harpy_charm = true;
+                self.long_invince = true;
+                self.acc_seraph_necklace = true;
+            }
+            6181 => {
+                self.acc_harpy_charm = true;
+                self.has_phoenix_quiver = true;
+            }
             // Star Veil 862 (`:15144-15149`): the cloak + `longInvince` +
             // the starVeil override (star type 725).
             862 => {
@@ -6194,6 +6244,13 @@ impl Player {
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
+        // W4-f20 F7 — the Harpy-charm family's ResetEffects clears
+        // (`Player.cs:18471-18472` accHarpyCharm/accSeraphNecklace,
+        // `:18609` hasPhoenixQuiver). The COOLDOWN persists (the C# does
+        // not reset it — `:28438` decrements it across ticks).
+        self.acc_harpy_charm = false;
+        self.acc_seraph_necklace = false;
+        self.has_phoenix_quiver = false;
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
         // re-derived in the buff scan below (the potion/kite/stinky arms).

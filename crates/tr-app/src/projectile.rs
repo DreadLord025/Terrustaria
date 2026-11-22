@@ -5265,8 +5265,8 @@ impl Projectile {
     /// Phase 3 extracted it so the aiStyle-1 riders can wrap the same
     /// generic flight instead of duplicating it) — the delegation is
     /// behaviour-identical, pinned by the arrow tests below.
-    fn ai_arrow(&mut self, world: &World) {
-        self.ai_style1_flight(world, true);
+    fn ai_arrow(&mut self, world: &World, npcs: &[Npc], immune: &[i32]) {
+        self.ai_style1_flight(world, true, npcs, immune);
     }
 
     /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
@@ -6728,7 +6728,17 @@ impl Projectile {
     /// (`:55947-56032`) that holds the flight counter at rest. The plain
     /// arrows pass `true`; the M4-PROJ-6 riders 20/88/355/660 are all on that
     /// list, so they never reach the gravity at all.
-    fn ai_style1_flight(&mut self, world: &World, count_flight: bool) {
+    ///
+    /// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
+    /// that runs after the clamp, before the movement — the C#'s own slot.
+    /// The no-charm case (ai[2] bits 0) is a two-bit test, no scan.
+    fn ai_style1_flight(
+        &mut self,
+        world: &World,
+        count_flight: bool,
+        npcs: &[Npc],
+        immune: &[i32],
+    ) {
         if count_flight {
             self.ai[0] += 1.0;
         }
@@ -6737,6 +6747,8 @@ impl Projectile {
         }
         self.vel.y = self.vel.y.clamp(-16.0, 16.0);
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7).
+        crate::projectile_harpy_charm::charm_tail(self, world, npcs, immune);
         if self.tile_collide {
             let nx = self.pos.x + self.vel.x;
             let ny = self.pos.y + self.vel.y;
@@ -6765,11 +6777,22 @@ impl Projectile {
     /// resting counter and no gravity: a laser or a fang flies exactly
     /// straight, as in the vanilla game. S1-D-3q's BulletSnowman 110 joins
     /// the same list (`:55962`) with its latch + fade hooks above.
-    fn ai_style1_rider(&mut self, world: &World) {
+    fn ai_style1_rider(&mut self, world: &World, npcs: &[Npc], immune: &[i32]) {
         // The PurpleLaser (`:54021-54045`): the `extraUpdates` remap off
         // `ai[0]`, then the scale growth to 4 with the owner-only knockback
-        // and the 8-tick counter. `ai[0]` sits at rest on this kind, so the
-        // remap never fires — ported for its shape, pinned by the tests.
+        // and the 8-tick counter. W4-f20 F4 census correction: the remap
+        // DOES fire — the Laser Rifle's shoot path seeds `ai[0] =
+        // Main.rand.Next(3, 6)` (`Player.cs:49381`, the port's `editing.rs`
+        // ai0 arm), so the bolt remaps its row's 4 to 3..5 on the first AI
+        // tick (the flight counter itself rests — 88 is on the `flag3 =
+        // false` list `:55957`, so the seed never grows). The `.min(15.0)`
+        // cap the C# lacks is INERT for every reachable input: the seed is
+        // 3..5, a net-wire `ai[0]` payload would need ≥ 16 to diverge (no
+        // such writer exists — the hostile 88 spawns ride ai0 0), and the
+        // pre-remap row value 4 keeps the first tick's sub-step count
+        // identical either way. Kept as the u32-cast guard (a negative or
+        // huge float would wrap the bare `as u32`); recorded, not
+        // behaviour-visible (research/26f F4).
         if self.kind == PURPLE_LASER {
             if self.ai[0] != 0.0 {
                 self.extra_updates = self.ai[0].min(15.0) as u32;
@@ -6840,8 +6863,11 @@ impl Projectile {
         }
         // The generic flight, then the per-kind rotation tail the C# order
         // below it: SkyFracture's `velocity.ToRotation() + π/4`
-        // (`:57650-57652`).
-        self.ai_style1_flight(world, false);
+        // (`:57650-57652`). W4-f20 F7: the flight carries the Harpy-charm
+        // tail (`:57769-57793`) — the rider kinds are not arrows (the
+        // producer's `arrow` gate never charms them), so the tail is the
+        // two-bit no-op for them; the slice keeps the C# shape.
+        self.ai_style1_flight(world, false, npcs, immune);
         if self.kind == SKY_FRACTURE {
             self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
         }
@@ -7291,7 +7317,9 @@ impl Projectile {
         }
         // 837 is off the `flag3` skip list, so the flight counter and the
         // gravity run for the skull exactly as they do for an arrow.
-        self.ai_style1_flight(world, true);
+        // W4-f20 F7: the skull is not an arrow (the producer never charms
+        // it) — the empty immune slice keeps the charm tail a no-op.
+        self.ai_style1_flight(world, true, npcs, &[]);
         // The per-kind rotation tail (`:57597-57602`): the skull's sprite
         // faces its flight direction without the generic +π/2 offset. The
         // C#'s `base.direction` field has no slot counterpart; it tracks
@@ -13668,6 +13696,15 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
     BULLET_SNOWMAN,
 ];
 
+/// W4-f20 F3 — `ProjectileID.MonkStaffT3AltShot` (709): the Sky Dragon's
+/// Fury alt-shot. The kind const lives module-private in
+/// `projectile_ai001_e` (the d15 row-gated inertness — no `data.rs` const
+/// until the d15 merge); the Kill hook needs the id here, so it carries
+/// its own local const (the same value, the same row-gated inertness: the
+/// hook only fires for a 709 slot, and `proj_data(709)` is None until d15
+/// merges, so no 709 spawns on this branch).
+const MONK_STAFF_T3_ALT_SHOT_KIND: u16 = 709;
+
 /// `Projectile.ShouldUseWindPhysics`'s style list (`Projectile.cs:22110-22132`).
 /// The styles whose arms this port has are 2 (the thrown family, whose own
 /// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
@@ -14294,8 +14331,9 @@ fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
 /// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`) with an
 /// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
 /// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
-/// default instead of collapsing to zero.
-fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+/// default instead of collapsing to zero. `pub(crate)`: W4-f20 F7's
+/// Harpy-charm tail reads the same form (`Projectile.cs:57781`).
+pub(crate) fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         default_value
     } else {
@@ -14411,8 +14449,10 @@ fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
 
 /// `Utils.rotateTowards(currentPosition, currentVelocity, targetPosition,
 /// maxChange)` (`Utils.cs:1934-1939`): the velocity turned by at most
-/// `max_change` toward the target, its length preserved.
-fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
+/// `max_change` toward the target, its length preserved. `pub(crate)`:
+/// W4-f20 F7's Harpy-charm producer/tail read it (`Projectile.cs:57778`/
+/// `:57801`).
+pub(crate) fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
     let len = vel.length();
     // `vel.ToRotation()` and `position.AngleTo(target)` (`Entity.cs:186-190`).
     let angle = angle_towards(
@@ -15431,6 +15471,14 @@ impl ProjectilePool {
 
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
+    }
+
+    /// W4-f20 F7 — the slot's local-NPC-immunity slice (the C#
+    /// `projectile.localNPCImmunity`, `Projectile.cs:45645`): the
+    /// Harpy-charm producer's `FindTargetWithLineOfSight` scan reads it
+    /// per arrow (`Player.cs:28475`).
+    pub fn local_immunity_slice(&self, slot: usize) -> &[i32] {
+        &self.local_immunity[slot * 256..(slot + 1) * 256]
     }
 
     /// The mutable slot array — the golf family's pool-side resolvers
@@ -16755,15 +16803,25 @@ impl ProjectilePool {
                             // (the straight flight, `flag3 = false` `:55973`).
                             ELECTROSPHERE_MISSILE => self.slots[i].ai_electrosphere_missile(world),
                             CHARGED_BLASTER_ORB => self.slots[i].ai_charged_blaster_orb(world),
-                            POISON_FANG => self.slots[i].ai_style1_rider(world),
+                            POISON_FANG => self.slots[i].ai_style1_rider(
+                                world,
+                                npcs,
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                            ),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
-                                self.slots[i].ai_style1_rider(world)
+                                self.slots[i].ai_style1_rider(
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             kind if crate::projectile_ai001_a::handles(kind) => {
                                 crate::projectile_ai001_a::ai001_slice_a(
                                     &mut self.slots[i],
                                     world,
                                     owner,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
                                 )
                             }
                             // S1-D-5 slice B — the higher-id rowed kinds'
@@ -16796,6 +16854,43 @@ impl ProjectilePool {
                                     sub_steps as i32 - 2 - sub as i32,
                                 )
                             }
+                            // W4-f20 slice D — the 7 rowed aiStyle-1 kinds
+                            // the S1-D-5 slices never covered (323 Stake /
+                            // 357 PulseBolt / 485 Hellwing / 661 BlackBolt /
+                            // 710 BetsyArrow / 719 Stinger / 819 BloodArrow,
+                            // `Projectile.cs:54002-57798`), gated to
+                            // `projectile_ai001_d`'s own kind list ONLY
+                            // (disjoint from A/B/C and every other gate —
+                            // census research/167 F6). The 357 takes NO
+                            // gravity (the chain heads at its fade block,
+                            // F7); the 485 blends toward its launch vector.
+                            kind if crate::projectile_ai001_d::covers(kind) => {
+                                crate::projectile_ai001_d::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
+                            }
+                            // W4-f20 slice E — the aiStyle-1 kinds the
+                            // round-b row branches ROWED but left on the
+                            // generic flight (435 MartianTurretBolt c11 /
+                            // 576 NebulaLaser d11 / 709 MonkStaffT3AltShot
+                            // d15, `Projectile.cs:54002-57794`), gated to
+                            // `projectile_ai001_e`'s own kind list ONLY
+                            // (disjoint from A/B/C/D and every other gate —
+                            // census research/26f). ROW-GATED INERT until
+                            // the row branches merge: `proj_data` returns
+                            // None for these kinds here, so this arm never
+                            // routes them yet (the d7 unwired precedent).
+                            kind if crate::projectile_ai001_e::covers(kind) => {
+                                crate::projectile_ai001_e::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
+                            }
                             // S1-D-4 — the Frost Moon family's four
                             // aiStyle-1 kinds (345/348/349/350,
                             // `projectile_ai_frostmoon`): kind-disjoint
@@ -16814,7 +16909,12 @@ impl ProjectilePool {
                             // every other kind keeps the generic `ai_arrow`
                             // flight byte-identical.
                             kind if crate::projectile_ai_moonlord::covers(kind) => {
-                                crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
+                                crate::projectile_ai_moonlord::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             // S1-P-i06 — the North Pole's falling flake (344,
                             // `AI_001`'s type hook `Projectile.cs:57062-57114`):
@@ -16855,6 +16955,7 @@ impl ProjectilePool {
                                     &npcs[..],
                                     rng,
                                     local_owner,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
                                 )
                             }
                             // S1-P-i17 — the special arrows' per-type
@@ -16882,6 +16983,7 @@ impl ProjectilePool {
                                         &mut self.slots[i],
                                         world,
                                         npcs,
+                                        &self.local_immunity[i * 256..(i + 1) * 256],
                                     )
                                 }
                             }
@@ -16911,7 +17013,11 @@ impl ProjectilePool {
                                     world,
                                 )
                             }
-                            _ => self.slots[i].ai_arrow(world),
+                            _ => self.slots[i].ai_arrow(
+                                world,
+                                npcs,
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                            ),
                         },
                         3 => {
                             // `AI_003_Boomerang` (S1-P-i08): the meleeSpeed
@@ -19827,6 +19933,39 @@ impl ProjectilePool {
                     let vel = self.slots[i].vel;
                     self.slots[i].pos += vel;
                 }
+                // W4-f20 F6 — the magicQuiver Update-tail bump
+                // (`Projectile.cs:17032-17035`): `!npcProj && friendly &&
+                // Main.player[owner].magicQuiver && extraUpdates < 1 &&
+                // arrow` → `extraUpdates = 1`. The C# runs it AFTER
+                // `HandleMovement` + the `!active` return (`:17027-17030`)
+                // and `ProjLight` (`:17031`, the light layer's own seam),
+                // BEFORE the per-type dust tail (`:17036-17077`, the dust
+                // lane) and `Damage()` (`:17078` — the `damage_pve` call
+                // below); the port's movement rides inside the AI arms, so
+                // this seam is the same post-move/pre-Damage slot. The C#
+                // reads `numUpdates` from `extraUpdates` ONCE at the loop
+                // head (`:16675`), so the bump takes effect on the NEXT
+                // update: this sub-step's remaining tail runs unchanged and
+                // the lifetime block still spends one timeLeft — the
+                // arrow's sub-step count doubles from the following tick
+                // (the ×1.1 shoot-speed fuse is the ammo.rs half, landed
+                // f28/e16; this is the flight-side half, census 26f F6).
+                // `!npcProj`: the port's hostile shots ride `friendly =
+                // false` (the `owned_by_someone` fold), so `friendly` alone
+                // carries the gate. The owner read is the LOCAL player's
+                // flag for the locally-simulated owner-0 slot; a remote
+                // owner has no port flag (the `owner == local_owner` gate).
+                // The bump draws nothing — the `UpdateProjectiles` stream
+                // is untouched by construction.
+                if self.slots[i].active
+                    && self.slots[i].friendly
+                    && self.slots[i].arrow
+                    && self.slots[i].extra_updates < 1
+                    && self.slots[i].owner == local_owner
+                    && player.as_ref().is_some_and(|pl| pl.magic_quiver)
+                {
+                    self.slots[i].extra_updates = 1;
+                }
                 // `Projectile.cs:17078` — `this.Damage()` runs per sub-step
                 // inside `Update` (it calls `Damage_PVP` internally,
                 // `:12509`), between the AI and the lifetime block: the hit
@@ -19959,6 +20098,18 @@ impl ProjectilePool {
                     }
                 }
                 self.spawn_inferno_blast(i);
+                // W4-f20 F3 — `Kill()`'s 709 half of the 459/709 arm
+                // (`Projectile.cs:73372-73388`): the Sky Dragon's Fury
+                // alt-shot's death pulls in the nearby 1110 circles and
+                // spawns a fresh one. The 459 half (`:73338-73371`, the
+                // resize + Damage + dust/gore burst) is the g1 Kill-hook
+                // lane's claim (its census `26d` lists 459 among the six
+                // functional hooks) — this lane ports ONLY the 709-only
+                // half + the 1110 row/arm (the F3 "row+arm together"
+                // pattern). The arm sits at `:73338`, BEFORE the gem arm
+                // `:75425` and the 442 arm `:73528` — kind-disjoint, so the
+                // order between them is unobservable.
+                self.sky_dragons_fury_kill(i, rng, local_owner);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
                 // moving cloud's death spawns the raining cloud 238.
                 self.spawn_rain_cloud(i);
@@ -20078,6 +20229,93 @@ impl ProjectilePool {
                     self.slots[s].time_left -= tl_delta;
                 }
             }
+        }
+    }
+
+    /// W4-f20 F3 — `Kill()`'s 709-only half of the 459/709 arm
+    /// (`Projectile.cs:73372-73388`): the Sky Dragon's Fury alt-shot's death
+    /// pulls in the nearby own 1110 circles (`ai[1] = 1`, the velocity pull
+    /// toward the corpse centre / 5, `netUpdate`) and spawns a fresh circle
+    /// at the centre with the shot's damage / 0 knockback, `timeLeft =
+    /// 30 * Next(2,6)` (the ONE explicit draw — the RNG-bearing half the
+    /// slice-E module could not carry). The tracked
+    /// `DD2_SkyDragonsFuryCircle` cue (`:73387`) folds inert (the pool has
+    /// no tracked-sound layer, S1-E-23 — the d15 dd2 precedent); the
+    /// `localAI[0]` slot-id write rides 0 (the aiStyle-77 arm's sound-volume
+    /// decay reads it, `:30673-30686`, itself the sound-layer skip).
+    ///
+    /// The 459/709 SHARED burst (`:73338-73371`: the scale≥1 resize + Damage
+    /// + the 3/7 dust-31 ring + the 10/30 dust-226 ring + the 0/2 gore rows)
+    /// is the g1 Kill-hook lane's claim (its census `26d` lists 459 among
+    /// the six functional hooks) — NOT ported here. This lane ports ONLY
+    /// the 709-only half + the 1110 row/arm (the F3 "row+arm together"
+    /// pattern; the g1 tip `5bd68ce2` is census-only, the half still
+    /// deferred there).
+    ///
+    /// The corpse-flag lift (the 442 `dart_electro_firework_kill`
+    /// precedent): the C# `Kill()` runs the arm while the shot is STILL
+    /// active (`active = false` lands at `:77262`, after), so
+    /// `GetNextSlot` skips the dying slot — the circle takes the NEXT free
+    /// slot, not the shot's own.
+    fn sky_dragons_fury_kill(&mut self, slot: usize, rng: &mut dyn DropRng, local_owner: u8) {
+        let p = &self.slots[slot];
+        if p.kind != MONK_STAFF_T3_ALT_SHOT_KIND {
+            return;
+        }
+        // `:73372` — the owner gate (`Main.myPlayer == this.owner`).
+        if p.owner != local_owner {
+            return;
+        }
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let (damage, owner) = (p.damage, p.owner);
+        // `:73374-73383` — the pull-in: every own 1110 whose box intersects
+        // the 80×80 centre box gets `ai[1] = 1` + the velocity pull +
+        // `netUpdate`. The C# `getRect().Intersects(value6)` is the strict
+        // rectangle overlap (the 442 pull-in's `hit` shape).
+        for j in 0..MAX_PROJECTILES {
+            if j == slot {
+                continue;
+            }
+            let q = &mut self.slots[j];
+            if q.active && q.owner == owner && q.kind == SKY_DRAGONS_FURY_ELECTROSPHERE {
+                let hit = q.pos.x < center.x + 40.0
+                    && q.pos.x + q.w > center.x - 40.0
+                    && q.pos.y < center.y + 40.0
+                    && q.pos.y + q.h > center.y - 40.0;
+                if hit {
+                    q.ai[1] = 1.0;
+                    let qc = Vec2::new(q.pos.x + q.w * 0.5, q.pos.y + q.h * 0.5);
+                    q.vel = (center - qc) / 5.0;
+                    q.net_update = true;
+                }
+            }
+        }
+        // `:73384-73387` — the fresh circle spawn. The 1110's 80×80 half-box
+        // subtracts (the C# takes the centre). The corpse-flag lift keeps
+        // the dying shot's slot out of the free-slot scan.
+        self.slots[slot].active = true;
+        let spawned = self.spawn_with_data_ai_owned(
+            SKY_DRAGONS_FURY_ELECTROSPHERE,
+            owner,
+            center.x - 40.0,
+            center.y - 40.0,
+            0.0,
+            0.0,
+            damage,
+            0.0,
+            0.0,
+            0.0,
+        );
+        self.slots[slot].active = false;
+        if let Some(s) = spawned {
+            // `:73386` — `timeLeft = 30 * Main.rand.Next(2, 6)`: the ONE
+            // explicit draw (60/90/120/150). It rides the pass's
+            // `UpdateProjectiles` stream AFTER the spawn (the C# order).
+            let life = 30 * rng.next_range(2, 6);
+            self.slots[s].time_left = life;
+            // `:73387` — the tracked-sound slot-id write folds to 0 (the
+            // sound-layer skip, S1-E-23); the aiStyle-77 arm reads it.
+            self.slots[s].local_ai[0] = 0.0;
         }
     }
 
@@ -22647,8 +22885,11 @@ impl ProjectilePool {
             // flips `friendly = false`, so a sphere being reeled back to its
             // bolt deals no NPC damage (`Damage_PVE_Inner`'s `!friendly`
             // refusal `:12611`). The fresh sphere spawns friendly (the
-            // `:788` default) and hits normally.
-            if p.kind == 443 && !p.friendly {
+            // `:788` default) and hits normally. W4-f20 F3: the 1110 Sky
+            // Dragon's Fury circle shares the aiStyle-77 arm + the same
+            // pull-in latch (the 709's Kill sets `ai[1] = 1` on the nearby
+            // circles, `:73379`), so the gate carries it too.
+            if matches!(p.kind, 443 | SKY_DRAGONS_FURY_ELECTROSPHERE) && !p.friendly {
                 continue;
             }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
@@ -23066,6 +23307,10 @@ impl ProjectilePool {
             } else if p.kind == MAGIC_MISSILE {
                 // `:14032-14035` — the Magic Missile (16): 8 ticks.
                 npcs[idx].immune[owner_idx] = 8;
+            } else if matches!(p.kind, ELECTROSPHERE | SKY_DRAGONS_FURY_ELECTROSPHERE) {
+                // `:14008-14011` — the Electrosphere 443 / Sky Dragon's Fury
+                // circle 1110: 8 ticks (W4-f20 F3).
+                npcs[idx].immune[owner_idx] = 8;
             } else if p.kind == TYPHOON {
                 // `:14036-14039` — the Razorblade Typhoon (409): 6 ticks.
                 npcs[idx].immune[owner_idx] = 6;
@@ -23381,6 +23626,8 @@ impl ProjectilePool {
                 npcs[idx].immune[owner] = 5; // `:14016-14023`
             } else if p.kind == MAGIC_MISSILE {
                 npcs[idx].immune[owner] = 8; // `:14032-14035`
+            } else if matches!(p.kind, ELECTROSPHERE | SKY_DRAGONS_FURY_ELECTROSPHERE) {
+                npcs[idx].immune[owner] = 8; // `:14008-14011` (W4-f20 F3)
             } else if p.kind == TYPHOON {
                 npcs[idx].immune[owner] = 6; // `:14036-14039`
             } else if uses_local && p.local_hit_cooldown != -2 {
@@ -23549,7 +23796,7 @@ mod s1_e_21h_sound_tests {
                 tile_collide: false,
                 ..Default::default()
             };
-            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
             assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
             // The C# plays BEFORE the movement tail — the payload carries
             // the pre-movement position (48, 48).
@@ -23559,7 +23806,7 @@ mod s1_e_21h_sound_tests {
                 "kind {kind}'s cue at the play-time position"
             );
             p.wants_sound = None;
-            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
             assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
         }
         // The Flaming Wood's Item42 trackable is DEFERRED — the latch
@@ -23572,7 +23819,7 @@ mod s1_e_21h_sound_tests {
             tile_collide: false,
             ..Default::default()
         };
-        crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+        crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.ai[1], 1.0);
         assert_eq!(p.wants_sound, None, "the Item42 trackable is deferred");
     }
@@ -32720,8 +32967,10 @@ mod magic_ai_tests {
     #[test]
     fn test_dw_3_2_the_purple_laser_grows_to_four_and_keeps_a_resting_flight_counter() {
         // `:54021-54045`: `scale += 0.053f` (cap 4), `knockBack *= 1.0045f`,
-        // the 8-tick counter, and the `extraUpdates = (int)ai[0]` remap that
-        // never fires because `flag3` holds `ai[0]` at rest for this kind.
+        // the 8-tick counter, and the `extraUpdates = (int)ai[0]` remap.
+        // THIS fixture spawns with ai0 = 0 (no shoot-path seed), so the
+        // remap never fires here; the seeded case (the Laser Rifle's
+        // `Next(3, 6)`, `Player.cs:49381`) is the F4 witness below.
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(
@@ -32761,6 +33010,64 @@ mod magic_ai_tests {
             4,
             "the row's extraUpdates rides untouched"
         );
+    }
+
+    /// W4-f20 F4 — the seeded remap: the Laser Rifle's shoot path seeds
+    /// `ai[0] = Main.rand.Next(3, 6)` (`Player.cs:49381`, the editing.rs
+    /// ai0 arm), so the `:54025` remap DOES fire — the row's extraUpdates 4
+    /// becomes the seed (3..5) on the first AI tick. The flight counter
+    /// rests (88 is `flag3 = false`, `:55957`), so the seed never grows and
+    /// the remap re-writes the same value every tick. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f20_f4_the_seeded_purple_laser_remaps_extra_updates_to_the_seed() {
+        for seed in [3.0f32, 4.0, 5.0] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    PURPLE_LASER,
+                    10.0 * TILE_PX,
+                    10.0 * TILE_PX,
+                    2.0,
+                    0.0,
+                    200,
+                    2.0,
+                    seed,
+                    0.0,
+                )
+                .unwrap();
+            assert_eq!(pool.slots()[slot].extra_updates, 4, "the row's 4 pre-AI");
+            let mut w = world();
+            step(&mut pool, &mut w);
+            assert_eq!(
+                pool.slots()[slot].extra_updates, seed as u32,
+                ":54025 — the remap takes the seed"
+            );
+            // The counter rests — the seed never grows, the remap is stable.
+            for _ in 0..30 {
+                step(&mut pool, &mut w);
+            }
+            assert_eq!(pool.slots()[slot].ai[0], seed, "flag3=false (:55957)");
+            assert_eq!(pool.slots()[slot].extra_updates, seed as u32);
+        }
+    }
+
+    /// W4-f20 F4 — the `.min(15.0)` cap the C# lacks is INERT for every
+    /// reachable input: the shoot seed is 3..5 (all < 15, so the cap never
+    /// binds), and the only writer that could exceed 15 would be a net-wire
+    /// ai[0] payload — no such writer exists (the hostile 88 spawns ride
+    /// ai0 0). The cap stays as the u32-cast guard; this witness pins that
+    /// the whole reachable seed range passes the cap unchanged. WRITTEN
+    /// NOT RUN (the finalize note, research/26f F4).
+    #[test]
+    fn w4_f20_f4_the_cap_is_inert_across_the_reachable_seed_range() {
+        // Every seed the shoot path can draw (Next(3, 6) = 3, 4, 5) maps
+        // through `.min(15.0)` unchanged — the C# `(int)ai[0]` and the
+        // port's capped cast agree on the whole producer range.
+        for seed in 3..6 {
+            let capped = (seed as f32).min(15.0) as u32;
+            let bare = seed as u32;
+            assert_eq!(capped, bare, "seed {seed}: the cap never binds");
+        }
     }
 
     #[test]
@@ -43128,6 +43435,157 @@ mod s1_p_i22_magic_guns_tomes_tests {
         assert!(p.local_ai[2] > 0.0, "the start Y snapshot");
         assert_eq!(p.alpha, 255, "the aiStyle-48 alpha write (`:28240`)");
     }
+
+    /// W4-f20 F3 — the 1110 row carries the verbatim `SetDefaults` slice
+    /// (`Projectile.cs:10340-10352`) + the 300-tick `NewProjectileSetup`
+    /// seed (`:11065-11068`) + the 4-frame sheet (`Main.cs:8559`).
+    #[test]
+    fn w4_f20_f3_the_1110_row_is_verbatim() {
+        let d = proj_data(SKY_DRAGONS_FURY_ELECTROSPHERE).expect("the 1110 row");
+        assert_eq!((d.w, d.h), (80.0, 80.0), "`:10342-10343`");
+        assert_eq!(d.ai_style, 77, "`:10344`");
+        assert_eq!(d.penetrate, -1, "`:10351`");
+        assert_eq!(d.time_left, 300, "the `:11067` seed");
+        assert_eq!(d.extra_updates, 0);
+        assert!(!d.tile_collide, "`:10350`");
+        assert!(d.ignore_water, "`:10349`");
+        assert_eq!(d.alpha, 255, "`:10346`");
+        assert_eq!(d.scale, 1.0, "`:10347`");
+        assert!(d.melee, "`:10348`");
+        assert_eq!(proj_frames(SKY_DRAGONS_FURY_ELECTROSPHERE), 4, "`Main.cs:8559`");
+        // The 443 sibling shares the sheet + the aiStyle-77 arm.
+        assert_eq!(proj_frames(ELECTROSPHERE), 4, "`Main.cs:8536`");
+    }
+
+    /// W4-f20 F3 — the 709 Kill hook spawns the 1110 circle at the corpse
+    /// centre with the shot's damage / 0 knockback, `timeLeft = 30 *
+    /// Next(2,6)` (`Projectile.cs:73384-73386`). The 709 row lives on d15
+    /// (row-gated inert here), so the witness hand-builds the 709 slot (the
+    /// d7 unwired precedent) and drives the hook directly.
+    #[test]
+    fn w4_f20_f3_the_709_kill_spawns_the_circle_with_the_rng_life() {
+        let mut pool = ProjectilePool::new();
+        // A hand-built 709 corpse at centre (400, 300), damage 50, owner 0.
+        let slot = {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false; // the corpse (the hook runs on the !active transition)
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 0;
+            p.pos = Vec2::new(400.0 - 6.0, 300.0 - 6.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+            0
+        };
+        // A scripted stream: Next(2,6) returns 4 → timeLeft 120.
+        struct LifeRng;
+        impl DropRng for LifeRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                assert_eq!((min, max), (2, 6), "`:73386` — the one draw");
+                4
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = LifeRng;
+        pool.sky_dragons_fury_kill(slot, &mut rng, 0);
+        let circle = pool
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == SKY_DRAGONS_FURY_ELECTROSPHERE)
+            .expect("the death spawns the circle");
+        assert_eq!(circle.damage, 50, "the shot's damage (`:73384`)");
+        assert_eq!(circle.knock_back, 0.0, "knockback 0 (`:73384`)");
+        assert_eq!(circle.owner, 0, "the owner preserved");
+        assert_eq!(circle.time_left, 120, "30 * Next(2,6)=4 (`:73386`)");
+        // The spawn takes the centre (the 80×80 half-box subtracts).
+        assert_eq!(circle.pos, Vec2::new(400.0 - 40.0, 300.0 - 40.0));
+        assert_eq!(circle.vel, Vec2::ZERO, "the spawn velocity 0 (`:73384`)");
+    }
+
+    /// W4-f20 F3 — the pull-in: every own 1110 whose box intersects the
+    /// 80×80 centre box gets `ai[1] = 1` + the velocity pull toward the
+    /// corpse centre / 5 + `netUpdate` (`Projectile.cs:73374-73383`). A
+    /// circle outside the box, or another owner's, is untouched.
+    #[test]
+    fn w4_f20_f3_the_709_kill_pulls_in_the_nearby_circles() {
+        let mut pool = ProjectilePool::new();
+        // The 709 corpse at centre (400, 300).
+        {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false;
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 0;
+            p.pos = Vec2::new(394.0, 294.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+        }
+        // A nearby own circle at centre (430, 300) — inside the 80×80 box.
+        let near = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 0, 430.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        // A far own circle at centre (600, 300) — outside the box.
+        let far = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 0, 600.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        // Another owner's circle inside the box — untouched.
+        let other = pool
+            .spawn_with_data_ai_owned(SKY_DRAGONS_FURY_ELECTROSPHERE, 1, 420.0 - 40.0, 300.0 - 40.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        struct LifeRng;
+        impl DropRng for LifeRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                2
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = LifeRng;
+        pool.sky_dragons_fury_kill(0, &mut rng, 0);
+        let n = &pool.slots()[near];
+        assert_eq!(n.ai[1], 1.0, "`:73379` — the pull-in latch");
+        // The pull: (corpse centre - circle centre) / 5 = ((400-430)/5, 0).
+        assert_eq!(n.vel, Vec2::new(-6.0, 0.0), "`:73380` — the velocity pull");
+        assert!(n.net_update, "`:73381`");
+        assert_eq!(pool.slots()[far].ai[1], 0.0, "the far circle is untouched");
+        assert_eq!(pool.slots()[far].vel, Vec2::ZERO);
+        assert_eq!(pool.slots()[other].ai[1], 0.0, "the other owner's circle is untouched");
+    }
+
+    /// W4-f20 F3 — the owner gate: a remote-owned 709 spawns no circle
+    /// (`Main.myPlayer == this.owner`, `Projectile.cs:73372`).
+    #[test]
+    fn w4_f20_f3_a_remote_owned_709_spawns_no_circle() {
+        let mut pool = ProjectilePool::new();
+        {
+            let p = &mut pool.slots_mut()[0];
+            p.active = false;
+            p.kind = MONK_STAFF_T3_ALT_SHOT_KIND;
+            p.owner = 1; // remote
+            p.pos = Vec2::new(394.0, 294.0);
+            p.w = 12.0;
+            p.h = 12.0;
+            p.damage = 50;
+        }
+        struct NoDrawRng;
+        impl DropRng for NoDrawRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                panic!("the owner gate skips the spawn — no draw");
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = NoDrawRng;
+        pool.sky_dragons_fury_kill(0, &mut rng, 0);
+        assert!(
+            !pool.slots().iter().any(|p| p.active && p.kind == SKY_DRAGONS_FURY_ELECTROSPHERE),
+            "the remote owner spawns nothing"
+        );
+    }
 }
 
 /// S1-P-i23 — the channel machinery witnesses (written, NOT run — code-only
@@ -44382,5 +44840,132 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+#[cfg(test)]
+mod w4_f20_f6_quiver_tests {
+    //! W4-f20 F6 — the magicQuiver Update-tail bump
+    //! (`Projectile.cs:17032-17035`): the friendly arrow-flag kinds gain
+    //! `extraUpdates = 1` while the owner wears a quiver. WRITTEN NOT RUN
+    //! (code-only contract); every value hand-derived from the cited C#.
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 128, 128)
+    }
+
+    fn quiver_player(w: &World) -> crate::player::Player {
+        let mut p = crate::player::Player::spawn(w);
+        p.x = 200.0;
+        p.y = 200.0;
+        p.magic_quiver = true;
+        p
+    }
+
+    fn step_with(
+        pool: &mut ProjectilePool,
+        w: &mut World,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            player,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    /// The bump fires on the FIRST update and takes effect on the SECOND:
+    /// the C# reads `numUpdates` once at `:16675`, so tick 1 spends ONE
+    /// timeLeft (1200 → 1199) and tick 2 spends TWO (1199 → 1197).
+    #[test]
+    fn w4_f20_f6_the_quiver_bumps_the_arrows_extra_updates_from_the_next_tick() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "the row's stock 0");
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 1, ":17034 — the bump");
+        assert_eq!(pool.slots()[slot].time_left, 1199, "tick 1: one sub-step");
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].time_left, 1197, "tick 2: two sub-steps");
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the < 1 gate holds it at 1");
+    }
+
+    /// No quiver → no bump: the plain arrow keeps the row's sub-step count
+    /// and spends one timeLeft per tick.
+    #[test]
+    fn w4_f20_f6_without_the_quiver_the_arrow_keeps_one_sub_step() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = 200.0;
+        p.y = 200.0;
+        step_with(&mut pool, &mut w, Some(&mut p));
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "no quiver, no bump");
+        assert_eq!(pool.slots()[slot].time_left, 1198, "one per tick");
+    }
+
+    /// The `arrow` flag gate (`:17032`): the musket ball (14, arrow=false)
+    /// keeps its stock count even with the quiver on.
+    #[test]
+    fn w4_f20_f6_the_bump_is_arrow_flag_gated() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(MUSKET_BALL, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 0, "the bullet is not an arrow");
+    }
+
+    /// The `extraUpdates < 1` gate: the Frost Arrow (120, row extraUpdates
+    /// 1) is already sub-stepped — the bump never rewrites it.
+    #[test]
+    fn w4_f20_f6_the_bump_skips_already_substepped_arrows() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(FROST_ARROW, 300.0, 300.0, 6.0, 0.0, 10, 2.0)
+            .unwrap();
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the row's 1");
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        assert_eq!(pool.slots()[slot].extra_updates, 1, "the < 1 gate");
+        assert_eq!(pool.slots()[slot].time_left, 1198, "two sub-steps from tick 1");
+    }
+
+    /// The owner gate (`Main.player[this.owner]`): a remote-owned arrow
+    /// reads no local quiver flag — the bump stays off (the port has one
+    /// player; the `owner == local_owner` gate folds the C# read).
+    #[test]
+    fn w4_f20_f6_a_remote_owned_arrow_takes_no_local_quiver_bump() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_owned(WOODEN_ARROW, 1, 300.0, 300.0, 6.0, 0.0, 10, 2.0, 0.0, 0.0)
+            .unwrap();
+        let mut p = quiver_player(&w);
+        step_with(&mut pool, &mut w, Some(&mut p));
+        // The remote slot is not locally simulated (owner 1 != local 0),
+        // so it does not even tick — the C# `:17210` netMode gate.
+        assert_eq!(pool.slots()[slot].extra_updates, 0);
+        assert_eq!(pool.slots()[slot].time_left, 1200, "untouched");
     }
 }

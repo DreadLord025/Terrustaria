@@ -1257,6 +1257,23 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // reset cooldown counts down one per tick; at 0 the swing
             // counter returns to −1 (the next whip throw is swing #0).
             p.update_snake_band();
+            // W4-f20 F7 — `Player.Update_HarpyCharm` (`Player.cs:28436-28446`,
+            // called at `:24565` between `Update_SnappingStone` `:24564` and
+            // `Update_AmmoCycler` `:24566`): the charm cooldown decrements,
+            // then the nearest-arrow charm scan runs (`HarpyCharmEffect`
+            // `:28448-28490` → `ApplyHarpyCharm` `Projectile.cs:57796-57824`).
+            // The C# order is charm BEFORE snake-band; the port's split-frame
+            // fold seats it after (the `grant_ammo_mastery` precedent — the
+            // two are disjoint: the charm writes projectile ai[2]/velocity,
+            // the snake-band writes the player's whip counter). The scan
+            // draws nothing — the `UpdatePlayers` stream is untouched.
+            crate::projectile_harpy_charm::update_harpy_charm(
+                p,
+                &mut app.projectiles,
+                &app.world,
+                &app.npcs,
+                app.local_id as u8,
+            );
             // S1-P-i27 — `Player.UpdateMinionTarget` (`Player.cs:56999-57028`):
             // the per-tick minion-target maintenance. The rest target drops
             // past 1000 px (`:57005-57007`), the attack target drops when
