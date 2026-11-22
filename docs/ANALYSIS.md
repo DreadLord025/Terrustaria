@@ -25199,6 +25199,44 @@ tile-entity hooks). The generated defs carry the C# method NAME in
 `PlacementHook::callback` with `hook: None`; the `GetStyleOverride` tag is
 generated data.
 
+### W4-e12 (2026-11-20): the GetTileData(int,int,int) alternate-tail correction
+
+The lane's original scope (the `GetTileData(Tile)` frameY resolution
+:5196-5261 + `TryGetTileBounds` :5163-5194) was claimed on the sibling
+branches before this one resumed — d112 `resolve_tile_def`, d113 the bounds
+walk (resolver-parameterised), e11 `get_tile_data_for_tile` +
+`try_get_tile_bounds` + the tile-based death twins, d114 the hook-invocation
+consumers (`CallPostPlacementPlayerHook`/`OriginToTopLeft` + the style-indexed
+death checks). The duplicate draft in this worktree was deleted (the d113
+precedent); the UNCLAIMED remainder is the placement-side int overload's
+alternate tail, where the port diverged from the source:
+
+* `TileObjectData.GetTileData(type, style, alternate)` (:5126-5161): C#
+  replaces the resolved def ONLY with a non-null in-range alternate entry
+  (:5152-5158); a null slot or an index past `Alternates.Count` KEEPS the
+  current def (:5159). The port's `get_tile_data` answered `None` on an
+  out-of-range index (`alternates.get(alt)?`) — and a unit test pinned that
+  wrong answer. Fixed 1:1 (`if let Some(a) = ... { resolved = a; }`); the
+  sub-tile narrowing (:5141-5148) still runs FIRST, so an overflow on a
+  sub-tile style keeps the SUB-TILE, not the base.
+* Reachability: the `CanPlace` alternate loop only passes
+  `0..=AlternatesCount` (`TileObject.cs:203-208`), so the divergence never
+  bit the placement gates; the exposed consumers are `TileObject.Place`
+  (:31, arbitrary `toBePlaced.alternate`) and `DrawPreview` (:859) — an
+  overflow alternate previously refused the placement before any world
+  write, now it places with the resolved def exactly as C#. No generated
+  def combines a base alternate list longer than its sub-tiles' lists
+  (census: 0 hits across the 604 defs), so the in-registry behaviour change
+  is confined to overflow indices; no RNG, no frame-cache, no determinism
+  surface touched.
+* Witnesses WRITTEN NOT RUN (code-only): the corrected
+  `test_get_tile_data_resolution` (overflow keeps the base; a sub-tile with
+  no alternates keeps the SUB-TILE) + `test_w4_e12_alternate_overflow_keeps_the_resolved_def`
+  (real registry 15/14: in-range replacement pointer identity, overflow
+  `2/7/i32::MAX`, negatives/0 skip the list, empty-list table) +
+  `test_w4_e12_place_rides_the_alternate_overflow` (chair placement with
+  `alternate = 5` runs and is tile-byte-equal to the alternate-0 placement).
+
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 
 `crates/tr-core/src/lighting/legacy.rs` ports `Terraria.Graphics.Light.LegacyLighting`
