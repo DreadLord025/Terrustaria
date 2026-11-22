@@ -533,7 +533,65 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Sluggy
         | NpcKind::Buggy
         | NpcKind::Maggot => &[31],
+        // The snail family + its shimmer target (W4-c9): none of
+        // 359/360/655/677 has a `DebuffImmunitySets` row (`NPCID.cs:6075+`
+        // carries no entry for them) — the null-row else-branch.
+        NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |        // The gold critters (W4-c9): each carries the Confused (31)
+        // `SpecificallyImmuneTo` row (`NPCID.cs:8612-8652` — 442/443/445/
+        // 446/447).
+        NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => &[31],
     }
+}
+
+/// `NPCID.Sets.ShimmerImmunity` (`NPCID.cs:10467`) — the C# `NPC.type`
+/// ids whose `SetDefaults` writes `buffImmune[353] = true` (`NPC.cs:17838`).
+/// The set verbatim, compressed to ranges where the C# lists contiguous
+/// runs (245-249, 381-421, 423-429, 516-523, 551-578, 657-660, 678-683).
+/// Keyed on `cs_id` — the snail trio 359/360/655 is NOT in the set (their
+/// aiStyle-67 probe owns the shimmer transform, `NPC.cs:34350-34360`),
+/// the Shimmerfly 677 IS (the transform target never re-shimmers).
+fn shimmer_immune(cs_id: u16) -> bool {
+    matches!(
+        cs_id,
+        637 | 638
+            | 656
+            | 670
+            | 684
+            | 678..=683
+            | 356
+            | 669
+            | 676
+            | 244
+            | 677
+            | 594
+            | 667
+            | 662
+            | 5
+            | 115
+            | 116
+            | 139
+            | 245..=249
+            | 344
+            | 325
+            | 50
+            | 535
+            | 657..=660
+            | 668
+            | 25
+            | 30
+            | 33
+            | 70
+            | 72
+            | 665
+            | 666
+            | 112
+            | 516..=523
+            | 381..=421
+            | 423..=429
+            | 548
+            | 549
+            | 551..=578
+    )
 }
 
 /// `NPCDebuffImmunityData.ImmuneToWhips` — the 11 `NPCID.cs` rows
@@ -573,6 +631,15 @@ impl NpcBuffs {
         if buffs.buff_immune[69] {
             buffs.buff_immune[36] = true;
         }
+        // `NPC.cs:17838` — `buffImmune[353] = NPCID.Sets.ShimmerImmunity
+        // [this.type]`: the unconditional post-dictionary write, keyed on
+        // the C# `NPC.type` (the roster's `cs_id`), NOT the debuff rows
+        // above. The set (`NPCID.cs:10467`) is ported above as
+        // `shimmer_immune`. W4-c9: without the write the Shimmerfly 677
+        // (a set member) accepts buff 353 and re-shimmers; the snail
+        // trio (non-members) stays susceptible — the aiStyle-67 probe
+        // owns their transform (`NPC.cs:34350-34360`).
+        buffs.buff_immune[353] = shimmer_immune(kind.cs_id());
         buffs
     }
 
@@ -1177,6 +1244,33 @@ mod tests {
         let eye = NpcBuffs::for_kind(NpcKind::DemonEye);
         let wandering = NpcBuffs::for_kind(NpcKind::WanderingEye);
         assert!(!eye.buff_immune[20] && !wandering.buff_immune[20]);
+    }
+
+    #[test]
+    fn w4_c9_shimmer_immunity_write_keys_the_cs_type() {
+        // NPC.cs:17838 — `buffImmune[353] = ShimmerImmunity[type]` runs
+        // AFTER the debuff dictionary for EVERY kind. NPCID.cs:10467:
+        // the snail trio 359/360/655 is NOT in the set (the aiStyle-67
+        // probe owns their transform); the Shimmerfly 677 IS — the
+        // transform target must reject buff 353 so it never re-shimmers
+        // (the f47 transparency ramp reads `buff_immune[353]`).
+        let snail = NpcBuffs::for_kind(NpcKind::Snail);
+        let glowing = NpcBuffs::for_kind(NpcKind::GlowingSnail);
+        let magma = NpcBuffs::for_kind(NpcKind::MagmaSnail);
+        assert!(!snail.buff_immune[353]);
+        assert!(!glowing.buff_immune[353]);
+        assert!(!magma.buff_immune[353]);
+        let mut fly = NpcBuffs::for_kind(NpcKind::Shimmerfly);
+        assert!(fly.buff_immune[353], "NPCID.cs:10467 lists 677");
+        fly.add_buff(353, 100);
+        assert!(occupied(&fly).is_empty(), "the immune guard rejects 353");
+        // Set members on the landed roster: BlazingWheel 72, ForceBubble
+        // 384 (NPCID.cs:10821/:11445), the butterfly-free zombie 3 is not.
+        assert!(NpcBuffs::for_kind(NpcKind::BlazingWheel).buff_immune[353]);
+        assert!(NpcBuffs::for_kind(NpcKind::ForceBubble).buff_immune[353]);
+        assert!(!NpcBuffs::for_kind(NpcKind::Zombie).buff_immune[353]);
+        // The full-set compare ran scripted against NPCID.cs:10467
+        // (131 ids, zero drift) — the range compression is exact.
     }
 
     #[test]

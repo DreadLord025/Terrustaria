@@ -520,6 +520,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(STYLE10_SHEETS)
             .chain(FIREFLY_SHEETS)
             .chain(CRAWLER_SHEETS)
+            .chain(SNAIL_SHEETS)
+            .chain(GOLD_CRITTER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1386,6 +1388,18 @@ pub(crate) const FIREFLY_SHEETS: &[u32] = &[355, 358, 654, 677];
 /// rows divide evenly by `npcFrameCount` (2/4/4/2/2/4/4/4/2,
 /// `Main.cs:67082`). No code change here — the census + the witness.
 pub(crate) const CRAWLER_SHEETS: &[u32] = &[357, 374, 375, 448, 484, 485, 486, 487, 606];
+/// The snail wall-crawler family (W4-c9): the Snail (359), the
+/// Glowing Snail (360) and the Magma Snail (655) each draw their own
+/// `NPC_<id>` art. The Shimmerfly's 677 strip deduped to c7's
+/// FIREFLY_SHEETS (keep-one, research/349 §5). Keyed by the vanilla
+/// net id ([`NpcKind::net_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655];
+
+/// The gold critters (W4-c9): the Gold Bird (442), the Gold Grasshopper
+/// (446) and the Gold Mouse (447) each draw their own `NPC_<id>` art.
+/// Keyed by the vanilla net id ([`NpcKind::net_id`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const GOLD_CRITTER_SHEETS: &[u32] = &[442, 446, 447, 443, 445];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3443,6 +3457,29 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-c9 — the snail family draws its own sheets
+            // (`SNAIL_SHEETS`) at `Main.npcFrameCount[type]` rows
+            // (359/360/655 six — `Main.cs:67121`/`:67125`; the 677
+            // draw deduped to c7's firefly arm)
+            // with the generic centred anchor. The 359 scale roll
+            // (`Next(80,111) * 0.01f`) and the 677 scale latch
+            // (`Next(75,111) * 0.01f`) ride `n.scale` — `scaled_anchor`
+            // (the BlazingWheel/stardust-cells convention). All four
+            // rotate (the whitelist below).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-c9 — the gold critters draw their own sheets
+            // (`GOLD_CRITTER_SHEETS`) at `Main.npcFrameCount[type]` rows
+            // (442 five, 446 two, 447 six — `Main.cs:67128`) with the
+            // generic centred anchor (the pumpkin arm's shape; scale 1).
+            // The GoldBird rotates (the vx*0.1 tilt, the whitelist below);
+            // the grasshopper/mouse do not.
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3681,6 +3718,16 @@ pub(crate) fn draw_npcs(
                     | NpcKind::Sluggy
                     | NpcKind::Buggy
                     | NpcKind::Maggot
+                    // W4-c9 — the snail trio's quadrant rotation + ease
+                    // (`NPC.cs:34525-34619`; the Shimmerfly tilt row
+                    // deduped to c7's).
+                    | NpcKind::Snail
+                    | NpcKind::GlowingSnail
+                    | NpcKind::MagmaSnail
+                    // W4-c9 — the GoldBird's `rotation = vx * 0.1` tilt
+                    // (`NPC.cs:73634`). The grasshopper/mouse write no
+                    // rotation.
+                    | NpcKind::GoldBird
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

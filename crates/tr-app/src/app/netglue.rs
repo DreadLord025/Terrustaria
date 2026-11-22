@@ -3625,6 +3625,29 @@ fn npc_seed(
         | crate::npc::NpcKind::LightningBug
         | crate::npc::NpcKind::Lavafly
         | crate::npc::NpcKind::Shimmerfly => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
+        // The snail family (W4-c9): the wall-crawler critters plant on
+        // the column surface like the wave-A walkers (the aiStyle-67
+        // machine takes over on the first tick — the fall roll + the
+        // crawl state machine own the placement from there).
+        crate::npc::NpcKind::Snail
+        | crate::npc::NpcKind::GlowingSnail
+        | crate::npc::NpcKind::MagmaSnail => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // The gold critters (W4-c9): the GoldGrasshopper/GoldMouse plant on
+        // the column surface like the wave-A walkers (their machines take
+        // over on the first tick); the GoldBird rides the hover ctor (the
+        // aiStyle-24 flyer's open-air seed, the fishron-hazard shape).
+        crate::npc::NpcKind::GoldGrasshopper | crate::npc::NpcKind::GoldMouse => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::GoldBunny | crate::npc::NpcKind::GoldFrog => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::GoldBird => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

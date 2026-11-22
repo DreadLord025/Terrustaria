@@ -2345,6 +2345,35 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Lavafly",
     },
+    // The snail wall-crawler family + its shimmer target (W4-c9): the
+    // populator registers all four (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set — plus the `FindEntryByNPCID(359)`/`(677)`
+    // cavern-spawn info rows).
+    BestiaryEntryDef {
+        credit_id: "Snail",
+        net_id: 359,
+        kind: NpcKind::Snail,
+        variant: None,
+        quick_unlock: false,
+        name: "Snail",
+    },
+    BestiaryEntryDef {
+        credit_id: "GlowingSnail",
+        net_id: 360,
+        kind: NpcKind::GlowingSnail,
+        variant: None,
+        quick_unlock: false,
+        name: "Glowing Snail",
+    },
+    BestiaryEntryDef {
+        credit_id: "MagmaSnail",
+        net_id: 655,
+        kind: NpcKind::MagmaSnail,
+        variant: None,
+        quick_unlock: false,
+        name: "Magma Snail",
+    },
     BestiaryEntryDef {
         credit_id: "Shimmerfly",
         net_id: 677,
@@ -2429,6 +2458,51 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Maggot",
+    },
+    // The gold critters (W4-c9): the populator registers each
+    // (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set). The names ride the lang table
+    // (`lang_tables.rs`'s 442/446/447 rows).
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGrasshopper",
+        net_id: 446,
+        kind: NpcKind::GoldGrasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Grasshopper",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldMouse",
+        net_id: 447,
+        kind: NpcKind::GoldMouse,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Mouse",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldBunny",
+        net_id: 443,
+        kind: NpcKind::GoldBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldFrog",
+        net_id: 445,
+        kind: NpcKind::GoldFrog,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Frog",
     },
 ];
 

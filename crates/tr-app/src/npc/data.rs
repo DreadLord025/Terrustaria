@@ -647,6 +647,24 @@ impl NpcKind {
             NpcKind::Sluggy => 486,
             NpcKind::Buggy => 487,
             NpcKind::Maggot => 606,
+            // The snail wall-crawler family (W4-c9): the E8 shift EXECUTED
+            // at the batch-E merge (research/349 §5 — d33's fairies own
+            // port-local 359/360): Snail 740 / GlowingSnail 741 (the E3
+            // 740/741 targets); MagmaSnail keeps 655 (free). The
+            // Shimmerfly row deduped to c7's (677). cs_id/net_id keys
+            // never move (R1).
+            NpcKind::Snail => 740,
+            NpcKind::GlowingSnail => 741,
+            NpcKind::MagmaSnail => 655,
+            // The gold critters (W4-c9): the vanilla ids 442/446/447 are
+            // free protocol slots (the to_u16 scan: the 442-447 band is
+            // unclaimed), so they keep their vanilla ids — the snail
+            // precedent.
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldGrasshopper => 446,
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldFrog => 445,
         }
     }
 
@@ -1017,6 +1035,18 @@ impl NpcKind {
             486 => NpcKind::Sluggy,
             487 => NpcKind::Buggy,
             606 => NpcKind::Maggot,
+            // The snail family (W4-c9): the post-E8 ids (`to_u16` above;
+            // the Shimmerfly decode deduped to c7's 677 row).
+            740 => NpcKind::Snail,
+            741 => NpcKind::GlowingSnail,
+            655 => NpcKind::MagmaSnail,
+            // The gold critters (W4-c9): the vanilla ids kept (`to_u16`
+            // above).
+            442 => NpcKind::GoldBird,
+            446 => NpcKind::GoldGrasshopper,
+            447 => NpcKind::GoldMouse,
+            443 => NpcKind::GoldBunny,
+            445 => NpcKind::GoldFrog,
             _ => return None,
         })
     }
@@ -1922,6 +1952,13 @@ impl NpcKind {
             | NpcKind::Sluggy
             | NpcKind::Buggy
             | NpcKind::Maggot => "NPC_Hit_1",
+            // The snail family + its shimmer target (W4-c9): NPCHit1
+            // each (`NPC.cs:13581` / `:13595` / `:17288` / `:17587`).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |                "NPC_Hit_1"
+            }
+            // The gold critters (W4-c9): NPCHit1 each (`NPC.cs:14255` /
+            // `:14311` / `:14326` / `:14270` / `:14298`).
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2266,6 +2303,15 @@ impl NpcKind {
             | NpcKind::Sluggy
             | NpcKind::Buggy
             | NpcKind::Maggot => "NPC_Killed_1",
+            // The snail family + its shimmer target (W4-c9): NPCDeath1
+            // each (`NPC.cs:13582` / `:13596` / `:17289` / `:17588`).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |                "NPC_Killed_1"
+            }
+            // The gold critters (W4-c9): the GoldBird/GoldGrasshopper/
+            // GoldBunny/GoldFrog NPCDeath1 (`NPC.cs:14257` / `:14312` /
+            // `:14271` / `:14299`), the GoldMouse NPCDeath4 (`:14327`).
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldBunny | NpcKind::GoldFrog => "NPC_Killed_1",
+            NpcKind::GoldMouse => "NPC_Killed_4",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2428,7 +2474,12 @@ impl NpcKind {
             // (`NPC.cs:13787`); the eight style-66 crawlers keep the head
             // default false (`:8535`) — they walk on gravity.
             NpcKind::TruffleWormDigger => true,
-            _ => false,
+            // The snail family + its shimmer target (W4-c9): the
+            // `SetDefaults` noGravity rows (`NPC.cs:13584` / `:13598` /
+            // `:17291` / `:17590`). kb 1 (the head default — the rows
+            // write none), so a strike can push them; the crawl's own
+            // per-tick gravity gate rides `SnailEvents::no_gravity`.
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            _ => false,
         }
     }
 
@@ -2727,6 +2778,17 @@ impl NpcKind {
             // (`NPC.cs:13781`): the worm pass's lone-minion member (the
             // StardustWormHead precedent — `is_worm` true, no chain).
             NpcKind::TruffleWormDigger => 6,
+            // The snail wall-crawler family (W4-c9) — `NPC.cs:13577` /
+            // `:13591` / `:17284` (the three `this.aiStyle = 67;` rows).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 67,
+            // The gold critters (W4-c9) — `NPC.cs:14251` (the GoldBird's
+            // aiStyle 24), `:14307` (the GoldGrasshopper's aiStyle 1),
+            // `:14322` (the GoldMouse's aiStyle 7).
+            NpcKind::GoldBird => 24,
+            NpcKind::GoldGrasshopper => 1,
+            NpcKind::GoldMouse => 7,
+            // The GoldBunny/GoldFrog's aiStyle 7 (`NPC.cs:14266` / `:14294`).
+            NpcKind::GoldBunny | NpcKind::GoldFrog => 7,
         }
     }
 
@@ -3302,6 +3364,21 @@ impl NpcKind {
             | NpcKind::Sluggy
             | NpcKind::Buggy
             | NpcKind::Maggot => (10.0, 4.0),
+            // The snail family + its shimmer target (W4-c9): 359 12x12
+            // (`NPC.cs:13575-13576`), 360/655 14x14 (`:13589-13590` /
+            // `:17282-17283`), 677 10x10 (`:17581-17582`). The 359 scale
+            // roll's resize rides `size_override` (the machine's).
+            NpcKind::Snail => (12.0, 12.0),
+            NpcKind::GlowingSnail | NpcKind::MagmaSnail => (14.0, 14.0),
+            // The gold critters (W4-c9): 442 14x14 (`NPC.cs:14249-14250`),
+            // 446 14x10 (`:14305-14306`), 447 14x12 (`:14320-14321`).
+            NpcKind::GoldBird => (14.0, 14.0),
+            NpcKind::GoldGrasshopper => (14.0, 10.0),
+            NpcKind::GoldMouse => (14.0, 12.0),
+            // The GoldBunny 18x20 (`NPC.cs:14264-14265`), the GoldFrog
+            // 12x10 (`:14292-14293`).
+            NpcKind::GoldBunny => (18.0, 20.0),
+            NpcKind::GoldFrog => (12.0, 10.0),
         }
     }
 
@@ -3468,6 +3545,26 @@ impl NpcKind {
             NpcKind::Sluggy => 486,
             NpcKind::Buggy => 487,
             NpcKind::Maggot => 606,
+            // The snail family + its shimmer target (W4-c9): the vanilla
+            // `NPC.type` ids — the AI arms' type gates (the 359 scale
+            // roll, the 360/655 lights, the 677 threat scan) and the
+            // catch/convert tables read them (`NPCID.cs:11395`/`:11397`/
+            // `:11987`/`:12031`). All four have their own bestiary
+            // entries (the populator's `FindEntryByNPCID(359)`/`(677)`
+            // info rows), so no fold is needed.
+            NpcKind::Snail => 359,
+            NpcKind::GlowingSnail => 360,
+            NpcKind::MagmaSnail => 655,
+            // The gold critters (W4-c9): the vanilla `NPC.type` ids — the
+            // catch/convert tables + the IsGoldCritter sparkle gate read
+            // them (`NPCID.cs:11557`/`:11565`/`:11567`). All three have
+            // their own bestiary entries (the populator's
+            // `AddEmptyEntries_CrittersAndEnemies_Automated` rows).
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldGrasshopper => 446,
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldFrog => 445,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -4049,6 +4146,11 @@ impl NpcKind {
             | NpcKind::Sluggy
             | NpcKind::Buggy
             | NpcKind::Maggot => 5,
+            // The snail family + its shimmer target (W4-c9): lifeMax 5
+            // each (`NPC.cs:13580` / `:13594` / `:17287` / `:17586`).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            // The gold critters (W4-c9): lifeMax 5 each (`NPC.cs:14254` /
+            // `:14310` / `:14325` / `:14269` / `:14297`).
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 5,
         }
     }
 
@@ -4453,6 +4555,11 @@ impl NpcKind {
             | NpcKind::Sluggy
             | NpcKind::Buggy
             | NpcKind::Maggot => 0,
+            // The snail family + its shimmer target (W4-c9): damage 0
+            // each (`NPC.cs:13578` / `:13592` / `:17285` / `:17584`).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            // The gold critters (W4-c9): damage 0 each (`NPC.cs:14252` /
+            // `:14308` / `:14323` / `:14267` / `:14295`).
+            NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 0,
         }
     }
 }

@@ -34,6 +34,10 @@
 //! (the sim at the slot turn, the solo wrapper via `wants_ai_light`).
 //! The integration tail is `Npc::ai_064_integrate` (the dead-band snap +
 //! the noTileCollide/`UpdateCollision` split, `NPC.cs:90473-90503`).
+//! W4-c9's kind-gated Shimmerfly arm + `shimmerfly_threat_views`
+//! pre-pass DEDUPED to this routing at the batch-E merge (keep-one,
+//! research/349 §5); c9's shimmer Transform(677) wiring survives on
+//! the snail adapter + the sim's `wants_transform` drain.
 //!
 //! Seam: the module writes only the fields the C# arm writes — velocity,
 //! `ai[0]`/`ai[1]`/`ai[3]`, `localAI[0..3]`, `scale`, `rotation` (677),

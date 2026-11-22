@@ -1312,6 +1312,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_486",
         "NPC_487",
         "NPC_606",
+        // The snail wall-crawler family (W4-c9; NPC_677 deduped to c7's):
+        // one sheet per kind, keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s SNAIL_SHEETS).
+        "NPC_359",
+        "NPC_360",
+        "NPC_655",
+        // The gold critters (W4-c9): one sheet per kind, keyed by the
+        // vanilla net id in `NpcAssets::npc_sheets`
+        // (`render/entities.rs`'s GOLD_CRITTER_SHEETS).
+        "NPC_442",
+        "NPC_446",
+        "NPC_447",
+        "NPC_443",
+        "NPC_445",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1897,7 +1911,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 197] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 205] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1953,6 +1967,12 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 197] = [
         // it folds onto the TruffleWorm), so only the eight visible
         // crawlers take sheet slots.
         357, 374, 448, 484, 485, 486, 487, 606,
+        // The snail family (W4-c9; the 677 slot deduped to c7's
+        // firefly row — keep-one) — appended last for the same reason.
+        359, 360, 655,
+        // The gold critters (W4-c9) — appended last for the same reason.
+        442, 446, 447,
+        443, 445,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2747,6 +2767,20 @@ impl Lookups {
                 atlas.sheet("NPC_486").copied(),
                 atlas.sheet("NPC_487").copied(),
                 atlas.sheet("NPC_606").copied(),
+                // The snail family (W4-c9) — the three new strips
+                // (359/360/655 six rows; the 677 slot deduped to c7's).
+                atlas.sheet("NPC_359").copied(),
+                atlas.sheet("NPC_360").copied(),
+                atlas.sheet("NPC_655").copied(),
+                // The gold critters (W4-c9) — the three new strips
+                // (442 five rows, 446 two, 447 six — `Main.cs:67128`).
+                atlas.sheet("NPC_442").copied(),
+                atlas.sheet("NPC_446").copied(),
+                atlas.sheet("NPC_447").copied(),
+                // The gold bunny + frog (W4-c9) — the 7-row NPC_443 and
+                // the 13-row NPC_445 strips (`Main.cs:67128`/`:67118`).
+                atlas.sheet("NPC_443").copied(),
+                atlas.sheet("NPC_445").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

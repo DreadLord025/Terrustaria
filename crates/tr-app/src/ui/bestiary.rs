@@ -1697,6 +1697,20 @@ fn portrait_data(
         // arm never renders; the SetDefaults box (10x10, `NPC.cs:13779-
         // 13780`) stands as the shape (the ForceBubble precedent).
         (NpcKind::TruffleWormDigger, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        // W4-c9 — the snail family + its shimmer target: the portrait
+        // rests each kind's `SetDefaults` box (`NPC.cs:13575-13576` /
+        // `:13589-13590` / `:17282-17283` / `:17581-17582`), the
+        // wave-A shape.
+        (NpcKind::Snail, _) => (sheet_i, 12.0, 12.0, 12.0, white),
+        (NpcKind::GlowingSnail | NpcKind::MagmaSnail, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        // W4-c9 — the gold critters: the portrait rests each kind's
+        // `SetDefaults` box (`NPC.cs:14249-14250` / `:14305-14306` /
+        // `:14320-14321`), the wave-A shape.
+        (NpcKind::GoldBird, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::GoldGrasshopper, _) => (sheet_i, 10.0, 14.0, 10.0, white),
+        (NpcKind::GoldMouse, _) => (sheet_i, 12.0, 14.0, 12.0, white),
+        (NpcKind::GoldBunny, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::GoldFrog, _) => (sheet_i, 10.0, 12.0, 10.0, white),
     }
 }
 
