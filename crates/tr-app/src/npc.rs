@@ -5445,10 +5445,32 @@ impl Npc {
             // the arm is RNG-free by construction (the FungiSpore light's
             // one `Next(28,42)` is the documented draw-pass skip).
             50 => self.ai_050_spore_family(world, player),
+            // `else if (this.aiStyle == 51)` (`NPC.cs:31717-32075`) — the
+            // Plantera (262), the style's only user. W4-d28 axis census:
+            // the faithful machine (`npc_ai_plantera::step`, ba8159fc)
+            // already ran through the kind arm; the axis claims the style
+            // now (the S1-D-2 convention), the kind arm becomes the
+            // unreachable marker. The wrapper keeps the hook-anchor seam
+            // (the sim's centroid pre-pass) + the documented world-bottom
+            // despawn tail.
+            51 => self.update_plantera(world, player, rng),
             // aiStyles 52/53 (the hook 263 / the tentacle 264) need the
             // whole NPC pool (the boss slot + the sibling scan), so they
             // ride the sim's `update_plantera_minions` pass (the worm
-            // precedent) - the kind arms below stay empty on purpose.
+            // precedent). W4-d28 axis census: the styles are CLAIMED here
+            // as empty arms — the pool pass owns the AI + the
+            // noTileCollide integration (`NPC.cs:90490-90498`); the kind
+            // arms below stay empty on purpose (the exhaustive match).
+            52 | 53 => {}
+            // `else if (this.aiStyle == 54)` (`NPC.cs:32370-32656`) — the
+            // Brain of Cthulhu (266), the style's only user. W4-d28
+            // verify-only census: the landed S1-D-3e machine
+            // (`update_brain`) is faithful (the 6000-px Manhattan despawn,
+            // the reciprocal-first drift, the blink/retreat states, the
+            // despawn ramp); the axis claims the style, the kind arm
+            // becomes the unreachable marker. The swarm init + the
+            // Creeper count ride the sim's `update_brain_state` pre-pass.
+            54 => self.update_brain(world, player, rng),
             // S1-F-13b2 slice B: the Pumpkin Moon bosses' named machines
             // (`NPC.cs:32761-33043` / `:33044-33197`) - claimed for these
             // two kinds only (the aiStyle-26/22 kinds ride another slice).
@@ -7031,13 +7053,19 @@ impl Npc {
                 rng,
                 &crate::npc_ai_style31::Style31Env::CLASSIC_SOLO,
             ),
-            NpcKind::Plantera => self.update_plantera(world, player, rng),
+            // W4-d28 axis census: the Plantera (aiStyle 51) rides the style
+            // axis above (`51 => update_plantera`) — this arm is unreachable
+            // through `update_rng` (the S1-D-2 axis precedent).
+            NpcKind::Plantera => {
+                unreachable!("aiStyle 51 rides the style axis (W4-d28)")
+            }
             // The Plantera minions (S1-D-3-wire-plantera-minions): the
             // hook (52) and the tentacle (53) run in the sim's pool pass
             // `world_sim/npcs.rs::update_plantera_minions` (the C# arms
             // read `NPC.plantBoss` + the sibling slots, `NPC.cs:32080`/
-            // `:32129`/`:32260`); these kind arms keep the match exhaustive
-            // and route nowhere - the pool pass owns the AI + integration.
+            // `:32129`/`:32260`); the axis claims 52/53 as empty arms
+            // (W4-d28) — these kind arms keep the match exhaustive and
+            // route nowhere - the pool pass owns the AI + integration.
             NpcKind::PlanterasHook | NpcKind::PlanterasTentacle => {}
             // The spore pair rides the aiStyle-50 axis above
             // (`ai_050_spore_family`); these arms are unreachable through
@@ -7045,7 +7073,13 @@ impl Npc {
             NpcKind::FungiSpore | NpcKind::Spore => {
                 unreachable!("aiStyle 50 rides the style axis (S1-D-3-wire-plantera-minions)")
             }
-            NpcKind::BrainOfCthulhu => self.update_brain(world, player, rng),
+            // W4-d28 axis census: the Brain of Cthulhu (aiStyle 54) rides
+            // the style axis above (`54 => update_brain`) — this arm is
+            // unreachable through `update_rng` (the S1-D-3e machine is
+            // unchanged, the verify-only census).
+            NpcKind::BrainOfCthulhu => {
+                unreachable!("aiStyle 54 rides the style axis (W4-d28)")
+            }
             // S1-D-3 W-2: the Creeper (aiStyle 55) rides the style axis
             // (`ai_055_creeper_family`) — this arm is unreachable through
             // `update_rng` (the axis claims style 55 first). The
@@ -36821,5 +36855,153 @@ mod w4_d24_style22_census_tests {
         let _want = mirror.next_range(-1, 2) as f32 * 1.5;
         m.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng2);
         assert_eq!(rng2, mirror, "exactly the one flee drift draw");
+    }
+}
+// =====================================================================
+// W4-d28 — the aiStyles 51-58 axis census witnesses. WRITTEN, NOT RUN
+// (code-only mode: no cargo/rustc). The census verdicts at a725acb0:
+// 51 Plantera / 54 Brain machines LANDED (kind-arm routed) -> the axis
+// claims them here; 52/53 pool-pass owned -> empty axis claims; 55/56/
+// 57/58 already axis-claimed (S1-D-3 W-2 / wire-smallkinds / S1-F-13b2
+// slice B / S1-F-13c) -> verify-only. The per-machine draw-order
+// witnesses live in the modules' own tests; these pin the SEAM.
+// =====================================================================
+#[cfg(test)]
+mod w4_d28_axis_census_tests {
+    use super::*;
+
+    /// The axis claims every style 51-58 exactly once (57 twice: the two
+    /// kind-gated arms, MourningWood + Everscream — the shared-kind census,
+    /// NPC.cs:13119/:13359). A source scan of the `match self.kind.ai_style()`
+    /// body: the arm heads start with the style number(s).
+    #[test]
+    fn w4_d28_the_axis_claims_styles_51_through_58() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut counts = std::collections::BTreeMap::new();
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            // Arm heads only: digits, `|`, spaces, and the `if` kind guard.
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if let Ok(style) = tok.trim().parse::<u8>() {
+                    *counts.entry(style).or_insert(0u32) += 1;
+                }
+            }
+        }
+        for style in [51u8, 52, 53, 54, 55, 56, 58] {
+            assert_eq!(counts.get(&style), Some(&1), "aiStyle {style} claimed once");
+        }
+        assert_eq!(counts.get(&57), Some(&2), "57: MourningWood + Everscream");
+        // The retired kind arms are unreachable markers (the axis wins).
+        assert!(src.contains("aiStyle 51 rides the style axis (W4-d28)"));
+        assert!(src.contains("aiStyle 54 rides the style axis (W4-d28)"));
+    }
+
+    fn census_world() -> World {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 100.0;
+        w
+    }
+
+    /// The 51 claim is LIVE: a full `update_rng` tick runs the faithful
+    /// machine (the hook init latch + the phase-1 stats), and the RNG
+    /// census holds — at full life the phase-1 cadence is +1/tick, the
+    /// volley fires on tick 81 (c > 80) and the seed (275, dmg 22) draws
+    /// NOTHING (the Next(4)/Next(8) picks are below-0.8-life gated,
+    /// NPC.cs:31937-31957). 80 quiet ticks, one draw-free shot.
+    #[test]
+    fn w4_d28_the_plantera_rides_the_51_axis_draw_census() {
+        let w = census_world();
+        let mut p = Player::spawn(&w);
+        p.x = 100.0 * TILE_PX;
+        p.y = 150.0 * TILE_PX;
+        p.zones.jungle = true;
+        let mut pl = Npc::new(NpcKind::Plantera, 120.0 * TILE_PX, 140.0 * TILE_PX, 1, 0.0);
+        pl.hp = pl.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        for _ in 0..80 {
+            pl.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(pl.local_ai[0], 1.0, "the hook init latch");
+        assert_eq!(pl.wants_plantera_hooks, 3);
+        assert!(pl.wants_hostile_shot.is_empty(), "no volley before tick 81");
+        assert_eq!(rng, UnifiedRandom::new(7), "80 quiet ticks draw nothing");
+        pl.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(pl.wants_hostile_shot.len(), 1, "the tick-81 seed volley");
+        let s = pl.wants_hostile_shot[0];
+        assert_eq!(s.0, 275, "ProjectileID.SeedPlantera");
+        assert_eq!(s.5, 22, "num758 classic");
+        assert_eq!(rng, UnifiedRandom::new(7), "the full-life volley is draw-free");
+    }
+
+    /// The 54 claim is LIVE (verify-only: the S1-D-3e machine unchanged):
+    /// one normal-phase tick drifts at 1 px/tick and consumes EXACTLY one
+    /// Next(300) — the blink period roll fires every tick (NPC.cs:32573).
+    #[test]
+    fn w4_d28_the_brain_rides_the_54_axis_one_period_roll() {
+        let w = census_world();
+        let mut p = Player::spawn(&w);
+        p.x = 80.0 * TILE_PX;
+        p.y = 60.0 * TILE_PX;
+        p.zones.crimson = true;
+        let mut br = Npc::new(NpcKind::BrainOfCthulhu, 60.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        br.hp = br.max_hp;
+        br.brain_local[2] = 1.0; // a live Creeper keeps the normal phase
+        let mut rng = UnifiedRandom::new(12345);
+        br.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let speed = (br.vx * br.vx + br.vy * br.vy).sqrt();
+        assert!((speed - 1.0).abs() < 0.01, "the 1-px normal drift ({speed})");
+        let mut mirror = UnifiedRandom::new(12345);
+        let _ = mirror.next_max(300);
+        assert_eq!(rng, mirror, "exactly the one Next(300) period roll");
+    }
+
+    /// The 52/53 claims are EMPTY on purpose: the pool pass
+    /// (`update_plantera_minions`) owns the AI + integration, so a solo
+    /// `update_rng` tick neither moves the minion nor draws (no double
+    /// step — the sim runs the machine once, after the per-NPC pass).
+    #[test]
+    fn w4_d28_the_minion_axes_are_pool_pass_owned() {
+        let w = census_world();
+        let mut p = Player::spawn(&w);
+        for kind in [NpcKind::PlanterasHook, NpcKind::PlanterasTentacle] {
+            let mut n = Npc::new(kind, 120.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+            n.hp = n.max_hp;
+            let (x0, y0) = (n.x, n.y);
+            let mut rng = UnifiedRandom::new(3);
+            n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+            assert_eq!((n.x, n.y), (x0, y0), "{kind:?} the axis arm is empty");
+            assert_eq!((n.vx, n.vy), (0.0, 0.0), "{kind:?} no velocity write");
+            assert_eq!(n.local_ai, [0.0; 4], "{kind:?} no timer write");
+            assert_eq!(rng, UnifiedRandom::new(3), "{kind:?} no draws");
+        }
+    }
+
+    /// The retired kind arms panic on a direct `update_kind_ai` call (the
+    /// Everscream precedent's guard) — the axis claims 51/54 first.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d28_the_plantera_kind_arm_is_retired() {
+        let w = census_world();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::Plantera, 0.0, 0.0, 1, 0.0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut UnifiedRandom::new(0));
+    }
+
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d28_the_brain_kind_arm_is_retired() {
+        let w = census_world();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::BrainOfCthulhu, 0.0, 0.0, 1, 0.0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut UnifiedRandom::new(0));
     }
 }
