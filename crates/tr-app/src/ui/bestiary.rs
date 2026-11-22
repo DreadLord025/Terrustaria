@@ -1595,6 +1595,13 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d25 STYLE-26 wiring: the gallopers' portraits rest the
+        // `SetDefaults` box (the d35 (C) convention — the Unicorn row
+        // mirrors 6ed8c22f verbatim; the Wolf's 46x30 `NPC.cs:10963-10964`,
+        // the Tumbleweed's 30x30 `:15974-15975`).
+        (NpcKind::Unicorn, _) => (sheet_i, 42.0, 46.0, 42.0, white),
+        (NpcKind::Wolf, _) => (sheet_i, 30.0, 46.0, 30.0, white),
+        (NpcKind::Tumbleweed, _) => (sheet_i, 30.0, 30.0, 30.0, white),
     }
 }
 

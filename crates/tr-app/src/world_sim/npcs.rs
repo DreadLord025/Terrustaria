@@ -4268,6 +4268,44 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 crate::npc_ai_style30::twin_time_left_scan(&app.npcs, i, is_twin);
         }
     }
+    // W4-d25 STYLE-26 wiring (commit 2) — the Tumbleweed's per-tick seams
+    // (`AI_026_Unicorns`' 546 branches): the AI's `&World` borrow cannot
+    // reach `app.wind` / `app.scene_metrics` / the pool, so the sim stamps
+    // them before the update (the `wind_speed_current` / `twin_time_lefts`
+    // pre-pass convention). `Main.windSpeedTarget` (`NPC.cs:62703-62716`'s
+    // wind cap), the session player's `ZoneDesert` (`:62570`'s despawn
+    // gate) + `ZoneSandstorm` (`:62709`'s wind gate), and the same-type
+    // sibling scan (`:62382-62384`'s `Main.npc` loop, `i != whoAmI &&
+    // active && type == this.type`, the Manhattan `< width` window read
+    // in-machine). The 86/155 paths never read these; the stamp is
+    // Tumbleweed-only (RNG-free — no stream draws).
+    {
+        let wind_target = app.wind.speed_target;
+        let zone_desert = app.scene_metrics.zone_desert;
+        let zone_sandstorm = app.scene_metrics.zone_sandstorm;
+        for i in 0..app.npcs.len() {
+            if app.npcs[i].kind != NpcKind::Tumbleweed || app.npcs[i].hp <= 0 {
+                continue;
+            }
+            // The sibling scan: the OTHER active 546 slots' positions in
+            // slot order (the C# reads `Main.npc[i].position` live; the
+            // port pre-collects once per tick — the one-tick lag the
+            // carrier write-through family already carries, the style72
+            // ForceBubble precedent).
+            let siblings: Vec<(f32, f32)> = app
+                .npcs
+                .iter()
+                .enumerate()
+                .filter(|&(j, m)| j != i && m.hp > 0 && m.kind == NpcKind::Tumbleweed)
+                .map(|(_, m)| (m.x, m.y))
+                .collect();
+            let n = &mut app.npcs[i];
+            n.gallop_wind_speed_target = wind_target;
+            n.gallop_zone_desert = zone_desert;
+            n.gallop_zone_sandstorm = zone_sandstorm;
+            n.gallop_siblings = siblings;
+        }
+    }
     let player = &mut app.player;
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
     // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the

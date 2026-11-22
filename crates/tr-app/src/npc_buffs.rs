@@ -484,6 +484,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d25 STYLE-26 wiring: 86's `DebuffImmunitySets` row is null
+        // (`NPCID.cs:6599`), 155's is null (`:7041`) — no immunity.
+        // The Unicorn row mirrors d35 (C). 546 is SpecificallyImmuneTo[31]
+        // (Confused) (`NPCID.cs:9169`).
+        NpcKind::Unicorn | NpcKind::Wolf => &[],
+        NpcKind::Tumbleweed => &[31],
     }
 }
 

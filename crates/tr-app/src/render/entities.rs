@@ -3170,6 +3170,26 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-d25 STYLE-26 wiring: the gallopers' draw arms. **Sheet
+            // deferral**: NPC_86/155 are NOT packed — the full-set
+            // skyline measurement (tools/atlas_sim.js, the L-8b ref
+            // repointed to the merge af957ee4) lands at 8132 with NPC_86
+            // alone / 8180 with NPC_155 alone but 8217 with BOTH (> the
+            // 8192 strict-GPU bound); `npc_sheet` returns None and the
+            // draw skips (the d35 (C) deferral precedent). The packing
+            // rides the atlas-repack wave. The Unicorn arm mirrors d35
+            // (6ed8c22f) verbatim; the row heights ride the integer
+            // `SetFrameSize` division (`Main.npcFrameCount` 86 = 16,
+            // 155 = 13, `Main.cs:67082`).
+            NpcKind::Unicorn => generic_anchor(assets.npc_sheet(86), 16, n, w, h),
+            NpcKind::Wolf => pumpkin_moon_draw(assets.npc_sheet(155), npc_rows(155), n, w, h),
+            // W4-d25 STYLE-26 wiring (commit 2): the Tumbleweed's draw arm.
+            // **Sheet deferral**: NPC_546 is NOT packed (the full-set bound
+            // with NPC_86/155 — the d35 precedent); `npc_sheet` returns
+            // None and the draw skips. The single frame (row 0) rides the
+            // generic anchor; the rotation rides the whitelist below (the
+            // machine's `rotation += vx * 0.05` tail, `NPC.cs:62919-62923`).
+            NpcKind::Tumbleweed => generic_anchor(assets.npc_sheet(546), 1, n, w, h),
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3339,10 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-d25 STYLE-26 wiring: the Tumbleweed's roll
+                    // (`AI_026_Unicorns`' rotation tail, `NPC.cs:62919-62923`:
+                    // `rotation += vx * 0.05`).
+                    | NpcKind::Tumbleweed
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
