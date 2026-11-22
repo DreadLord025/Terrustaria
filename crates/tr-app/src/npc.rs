@@ -1867,6 +1867,14 @@ pub struct Npc {
     /// here; the worm pass pays it to the carrier before the frame's
     /// death sweep.
     pub pending_pool_damage: i32,
+    /// `NPC.takenDamageMultiplier` (`NPC.cs:6091`, stock 1): the LIVE
+    /// per-strike multiplier `StrikeNPC_Inner` applies AFTER the defence/
+    /// crit line (`NPC.cs:81244-81246`). The kind-level row
+    /// ([`NpcKind::taken_damage_multiplier`]) seeds it at spawn; the solar
+    /// selenian's AI arm flips it 1/3 per tick (`NPC.cs:56722`/`:56776`,
+    /// `AI_003_Fighters`) — that write waits on the arm's port (ANALYSIS,
+    /// W4-d116), the field is the seam it lands on.
+    pub taken_damage_multiplier: f32,
     /// The WoF's Leech-head spawn request (the tongue-phase
     /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
     /// S1-D-3 W-1: the faithful aiStyle-27 arm emits `Style27Spawn`
@@ -3506,6 +3514,10 @@ impl Npc {
             worm_left: 0,
             worm_inited: false,
             pending_pool_damage: 0,
+            // `NPC.cs:6091`'s stock 1 + the kind's SetDefaults row (the
+            // crawltipede tail's 10, `NPC.cs:15316` — the old strike-time
+            // kind read now seeds the live field).
+            taken_damage_multiplier: kind.taken_damage_multiplier(),
             wants_leech: false,
             wants_limbs: false,
             wants_hungry: false,
@@ -5050,15 +5062,29 @@ impl Npc {
         if self.dont_take_damage {
             return false;
         }
+        // W4-d116 — `StrikeNPC_Inner`'s scalar damage tail (`NPC.cs:
+        // 81240-81249`), shared with `strike_pooled`: the red-hat ×0.7, the
+        // LIVE takenDamageMultiplier when > 1, the final `Max(1, num)`.
+        let mut amount = amount;
+        if self.red_hat_skeletron_adjustments_enabled() {
+            amount = ((amount as f32 * 0.7) as i32).max(1);
+        }
+        if self.taken_damage_multiplier > 1.0 {
+            amount = (amount as f32 * self.taken_damage_multiplier) as i32;
+        }
+        let amount = amount.max(1);
         // The `realLife` arm (`NPC.cs:81374-81378`): a linked segment owns
         // no life of its own — the strike belongs to the carrier's pool.
         // This path runs without the NPC list (the EoC shield-dash and the
         // thorns reflect inside `Npc::contact`), so the damage waits for
-        // the worm pass to pay it to the carrier.
-        if self.has_carrier() {
-            self.pending_pool_damage += amount;
-        } else {
-            self.hp -= amount;
+        // the worm pass to pay it to the carrier. The `!immortal` gate
+        // (`NPC.cs:81368`) covers both arms.
+        if !self.immortal {
+            if self.has_carrier() {
+                self.pending_pool_damage += amount;
+            } else {
+                self.hp -= amount;
+            }
         }
         self.hurt_cd = 0.18;
         // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`) — the strike
@@ -5102,6 +5128,8 @@ impl Npc {
     /// three C# immunity systems (`Projectile.cs:12577-12624`), not by the
     /// melee cooldown stand-in. The hit still arms `hurt_cd`, so melee is
     /// gated afterward, matching `StrikeNPC`'s 10-tick `NPC.immune` window.
+    /// W4-d116: the live PVE lanes ride [`Npc::strike_projectile`] (the
+    /// list-bearing pool arm); this no-list twin keeps the same scalar tail.
     pub fn hurt_from_projectile(
         &mut self,
         amount: i32,
@@ -5113,10 +5141,23 @@ impl Npc {
         if self.hp <= 0 {
             return false;
         }
-        if self.has_carrier() {
-            self.pending_pool_damage += amount;
-        } else {
-            self.hp -= amount;
+        // W4-d116 — `StrikeNPC_Inner`'s scalar damage tail (`NPC.cs:
+        // 81240-81249`), the `hurt`/`strike_pooled` twin.
+        let mut amount = amount;
+        if self.red_hat_skeletron_adjustments_enabled() {
+            amount = ((amount as f32 * 0.7) as i32).max(1);
+        }
+        if self.taken_damage_multiplier > 1.0 {
+            amount = (amount as f32 * self.taken_damage_multiplier) as i32;
+        }
+        let amount = amount.max(1);
+        // The `!immortal` life gate (`NPC.cs:81368`).
+        if !self.immortal {
+            if self.has_carrier() {
+                self.pending_pool_damage += amount;
+            } else {
+                self.hp -= amount;
+            }
         }
         self.hurt_cd = 0.18;
         // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`).
@@ -5152,7 +5193,8 @@ impl Npc {
     /// `NPC.StrikeNPC` (`NPC.cs:81189-81563`) — the melee strike, able to
     /// reach the NPC list, so the `realLife` pool arm lands on the carrier
     /// (`NPC.cs:81374-81378`). The gates are the port's melee ones: the
-    /// shared `hurt_cd` window and `NPC.dontTakeDamage`.
+    /// shared `hurt_cd` window and `NPC.dontTakeDamage`. Returns the strike's
+    /// dealt number (`StrikeNPC`'s `return num`, `:81563`) — 0 when refused.
     pub fn strike_melee(
         npcs: &mut [Npc],
         idx: usize,
@@ -5162,11 +5204,11 @@ impl Npc {
         crit: bool,
         owner: Option<u8>,
         expert: bool,
-    ) -> bool {
+    ) -> i32 {
         {
             let n = &npcs[idx];
             if n.hurt_cd > 0.0 || n.hp <= 0 || n.dont_take_damage {
-                return false;
+                return 0;
             }
         }
         Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner, expert)
@@ -5174,7 +5216,8 @@ impl Npc {
 
     /// `NPC.StrikeNPC` from a projectile: the same pool arm, without the
     /// melee `hurt_cd` gate (the projectile's right to hit rides the three
-    /// C# immunity systems, `Projectile.cs:12577-12624`).
+    /// C# immunity systems, `Projectile.cs:12577-12624`). Returns the dealt
+    /// number (`Projectile.cs:13649`'s `num24` — the flag10 source, `:13659`).
     pub fn strike_projectile(
         npcs: &mut [Npc],
         idx: usize,
@@ -5184,9 +5227,9 @@ impl Npc {
         crit: bool,
         owner: Option<u8>,
         expert: bool,
-    ) -> bool {
+    ) -> i32 {
         if npcs[idx].hp <= 0 {
-            return false;
+            return 0;
         }
         Self::strike_pooled(npcs, idx, amount, from_x, knock_back, crit, owner, expert)
     }
@@ -5206,19 +5249,36 @@ impl Npc {
         crit: bool,
         owner: Option<u8>,
         expert: bool,
-    ) -> bool {
-        // `NPC.takenDamageMultiplier` (`NPC.cs:81244-81246`): the solar
-        // crawltipede's tail (414) takes ten times the damage
-        // (`NPC.cs:15316`).
-        let amount = (amount as f32 * npcs[idx].kind.taken_damage_multiplier()) as i32;
-        // The pool arm.
-        match Npc::carrier_index(npcs, idx) {
-            Some(carrier) => {
-                npcs[carrier].hp -= amount;
-                npcs[idx].hp = npcs[carrier].hp;
-                npcs[idx].max_hp = npcs[carrier].max_hp;
+    ) -> i32 {
+        // `NPC.StrikeNPC_Inner`'s damage tail (`NPC.cs:81239-81249`): the
+        // caller passes the post-defence/crit `num` (`:81239` —
+        // `strike_npc_damage`), then the red-hat ×0.7 (`:81240-81243`), the
+        // LIVE `takenDamageMultiplier` when > 1 (`:81244-81246`, the solar
+        // crawltipede tail's 10 `:15316`; the field seeds from the kind row
+        // at spawn), and the final `Math.Max(1, num)` (`:81249`) — a
+        // truncation-to-0 hit still lands for 1.
+        let mut amount = amount;
+        if npcs[idx].red_hat_skeletron_adjustments_enabled() {
+            amount = (amount as f32 * 0.7) as i32;
+            amount = amount.max(1); // `Math.Max(1, ...)` inside `:81242`
+        }
+        if npcs[idx].taken_damage_multiplier > 1.0 {
+            amount = (amount as f32 * npcs[idx].taken_damage_multiplier) as i32;
+        }
+        let amount = amount.max(1);
+        // The pool arm, under `if (!this.immortal)` (`NPC.cs:81368`): an
+        // immortal target (the dummy) takes the strike's effects but NO
+        // life loss — `AddStrikeDamage`/`life -= num` (`:81372-81385`) all
+        // sit inside the gate.
+        if !npcs[idx].immortal {
+            match Npc::carrier_index(npcs, idx) {
+                Some(carrier) => {
+                    npcs[carrier].hp -= amount;
+                    npcs[idx].hp = npcs[carrier].hp;
+                    npcs[idx].max_hp = npcs[carrier].max_hp;
+                }
+                None => npcs[idx].hp -= amount,
             }
-            None => npcs[idx].hp -= amount,
         }
         // `NPC.StrikeNPC_Inner`'s interaction block (`NPC.cs:81266-81273`),
         // ahead of the knockback like the C#: `owner == Main.myPlayer` sets
@@ -5268,7 +5328,9 @@ impl Npc {
         // W4-c13 — `StrikeNPC_Inner`'s `HitEffect(hitDirection, num)`
         // tail (`NPC.cs:81476-81489`) sound seams.
         n.queue_hit_effect_sound();
-        true
+        // `return num` (`NPC.cs:81563`) — the dealt number, even on an
+        // immortal target (the C# computes it before the life gate).
+        amount
     }
 
     /// W4-c13 — `NPC.HitEffect`'s unconditional sound arms reached from
@@ -25248,18 +25310,18 @@ mod tests {
         // A strike on a body link: the head's life takes the damage, the
         // body mirrors it.
         let body_x = npcs[1].x;
-        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None, false));
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None, false) > 0);
         assert_eq!(npcs[0].hp, pool - 25, "the carrier's life took the hit");
         assert_eq!(npcs[1].hp, pool - 25, "the segment mirrors the carrier");
         assert_eq!(npcs[1].max_hp, pool, "the segment's lifeMax is the carrier's");
         // The tail is a segment too: its hit lands on the same pool.
         let last = npcs.len() - 1;
         let tail_x = npcs[last].x;
-        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false, None, false));
+        assert!(Npc::strike_melee(&mut npcs, last, 10, tail_x, 5.0, false, None, false) > 0);
         assert_eq!(npcs[0].hp, pool - 35, "the tail hits the same pool");
         // The head's own hit: its life IS the pool (`realLife = whoAmI`).
         let head_x = npcs[0].x;
-        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false, None, false));
+        assert!(Npc::strike_melee(&mut npcs, 0, 5, head_x, 5.0, false, None, false) > 0);
         assert_eq!(npcs[0].hp, pool - 40, "the head's own life is the pool");
         // The worm pass keeps the mirror: the segments read the carrier's
         // life (`NPC.cs:81377-81378`).
@@ -25284,9 +25346,132 @@ mod tests {
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the EoW assembled ({})", npcs.len());
         let body_x = npcs[1].x;
-        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None, false));
+        assert!(Npc::strike_melee(&mut npcs, 1, 25, body_x, 5.0, false, None, false) > 0);
         assert_eq!(npcs[1].hp, npcs[1].max_hp - 25, "the segment owns its life");
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "the head's pool is untouched");
+    }
+
+    /// W4-d116 — `StrikeNPC_Inner`'s `!immortal` gate (`NPC.cs:81368-81386`):
+    /// the life subtraction (both arms) sits inside it; the strike still
+    /// returns the dealt number and arms `justHit`/knockback. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_immortal_target_takes_no_life_loss() {
+        let mut n = bare(NpcKind::Slime);
+        n.hp = 100;
+        n.max_hp = 100;
+        n.immortal = true;
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, Some(0), false);
+        assert_eq!(dealt, 40, "the strike computes num before the gate (:81239)");
+        assert_eq!(npcs[0].hp, 100, "the dummy's life never drops (:81368)");
+        assert!(npcs[0].just_hit, "the one-tick flag still arms (:81274)");
+        // The mortal control drops the same 40.
+        npcs[0].immortal = false;
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, Some(0), false);
+        assert_eq!(dealt, 40);
+        assert_eq!(npcs[0].hp, 60);
+    }
+
+    /// W4-d116 — the red-hat ×0.7 (`NPC.cs:81240-81243`) runs AFTER the
+    /// caller's defence/crit line, truncates, floors at 1. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_red_hat_skeletron_takes_seventy_percent() {
+        let mut n = bare(NpcKind::SkeletronHead);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.ai[3] = 1.0; // the red-hat latch (`:66671-66682`)
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 25, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 17, "(int)(25 * 0.7) = 17 (:81242)");
+        assert_eq!(npcs[0].hp, 983);
+        // The ×0.7 truncation to 0 floors back to 1 (`Math.Max(1, ..)`).
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 1, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 1, "(int)(1 * 0.7) = 0 → Max(1, 0) = 1");
+        // Unlatched: the full number lands.
+        npcs[0].ai[3] = 0.0;
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 25, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 25);
+    }
+
+    /// W4-d116 — `takenDamageMultiplier` is a LIVE field with a `> 1` gate
+    /// (`NPC.cs:81244-81246`), applied after the red-hat step; the final
+    /// `Max(1, num)` (`:81249`) covers the tail. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_live_taken_multiplier_gates_and_floors() {
+        let mut n = bare(NpcKind::Slime);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.taken_damage_multiplier = 3.0; // the selenian's roll-phase value (:56776)
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 10, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 30);
+        // A < 1 multiplier is IGNORED (the C# gates `> 1f`, never shrinks).
+        npcs[0].taken_damage_multiplier = 0.5;
+        npcs[0].hurt_cd = 0.0;
+        let dealt = Npc::strike_melee(&mut npcs, 0, 10, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 10, "the > 1 gate refuses the 0.5 (:81244)");
+        // Red-hat first, multiplier second: 25 × 0.7 → 17, × 3 → 51.
+        let mut h = bare(NpcKind::SkeletronHead);
+        h.hp = 1000;
+        h.max_hp = 1000;
+        h.ai[3] = 1.0;
+        h.taken_damage_multiplier = 3.0;
+        let mut npcs = vec![h];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 25, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 51, "the C# order: :81242 then :81246");
+    }
+
+    /// W4-d116 — the strike RETURNS the dealt number (`NPC.cs:81563`); a
+    /// refused strike returns 0 (the `!active || life <= 0` gate `:81199`).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_strike_returns_the_dealt_number() {
+        let mut n = bare(NpcKind::Slime);
+        n.hp = 100;
+        n.max_hp = 100;
+        let mut npcs = vec![n];
+        assert_eq!(
+            Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, None, false),
+            40
+        );
+        // The melee cooldown gate refuses → 0 (the port's stand-in for the
+        // C# `NPC.immune` window).
+        assert_eq!(
+            Npc::strike_melee(&mut npcs, 0, 40, 0.0, 0.0, false, None, false),
+            0,
+            "the hurt_cd gate refuses"
+        );
+        // The dead gate → 0.
+        npcs[0].hp = 0;
+        npcs[0].hurt_cd = 0.0;
+        assert_eq!(
+            Npc::strike_projectile(&mut npcs, 0, 40, 0.0, 0.0, false, None, false),
+            0
+        );
+    }
+
+    /// W4-d116 — the kind's `takenDamageMultiplier` row seeds the LIVE field
+    /// at construction (`NPC.cs:6091` stock 1 + the SetDefaults write, the
+    /// crawltipede tail's 10 `:15316`); a later AI write (the selenian's
+    /// 1/3 flip, `:56722`/`:56776`) replaces it — the strike reads the
+    /// field, never the kind table. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_taken_multiplier_seeds_from_the_kind_row() {
+        let tail = bare(NpcKind::SolarCrawltipedeTail);
+        assert_eq!(tail.taken_damage_multiplier, 10.0, "the :15316 row seeds");
+        let slime = bare(NpcKind::Slime);
+        assert_eq!(slime.taken_damage_multiplier, 1.0, "the stock 1 (:6091)");
+        // A live write wins over the kind row (the strike reads the field).
+        let mut n = bare(NpcKind::SolarCrawltipedeTail);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.taken_damage_multiplier = 1.0; // the AI reset (`:56722` shape)
+        let mut npcs = vec![n];
+        let dealt = Npc::strike_melee(&mut npcs, 0, 7, 0.0, 0.0, false, None, false);
+        assert_eq!(dealt, 7, "the field, not the kind table");
     }
 
     #[test]

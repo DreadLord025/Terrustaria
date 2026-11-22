@@ -15016,6 +15016,19 @@ pub struct ProjectilePool {
     /// `NPC.cs:84231`/`:89528`/`:89540`/`:89692`) FIRST, then queues the
     /// hit/voice cue, keeping the C#'s per-strike play order.
     pending_npc_hit_sounds: Vec<crate::npc::NpcSoundRequest>,
+    /// W4-d116 — the landed strikes' combat-text intents (`NPC.cs:
+    /// 81250-81264`, inside `StrikeNPC_Inner` before `HitEffect`):
+    /// `(hitbox, final dealt num, crit, friendly)` per landed hit on a
+    /// `lifeMax > 1` NPC. The world sim drains and spawns them on the
+    /// `UpdateProjectiles` stream BEFORE the hit-sound drain — the C#'s
+    /// mid-strike draw order under the S1-E-21c batch convention.
+    pending_npc_damage_texts: Vec<(crate::combat_text::Rect, i32, bool, bool)>,
+    /// W4-d116 — the landed strikes' Destroyer-probe roll intents
+    /// (`NPC.cs:81488` → `:89266-89285`): the struck NPC index per landed
+    /// hit on a body. The world sim rolls `probe_launch_on_hit` AFTER the
+    /// damage-text drain (the C# draws the text before `HitEffect`), on the
+    /// same `UpdateProjectiles` stream.
+    pending_probe_rolls: Vec<usize>,
     /// S1-E-21h — the projectile-family cues the AI arms and the bomb kill
     /// path queued this tick: `(sound id, style, x, y, pitchOffset)` — the
     /// `SoundEngine.PlaySound` overload payload (`SoundEngine.cs:93-108`).
@@ -15476,6 +15489,8 @@ impl ProjectilePool {
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             pending_npc_hit_sounds: Vec::new(),
+            pending_npc_damage_texts: Vec::new(),
+            pending_probe_rolls: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_wall_break_sounds: Vec::new(),
             pending_proj_tracked: Vec::new(),
@@ -16776,6 +16791,25 @@ impl ProjectilePool {
     /// C#'s `:81488` → `:81546` order).
     pub fn drain_npc_hit_sounds(&mut self) -> Vec<crate::npc::NpcSoundRequest> {
         std::mem::take(&mut self.pending_npc_hit_sounds)
+    }
+
+    /// W4-d116 — the landed strikes' combat-text intents (`NPC.cs:
+    /// 81250-81264`): `(hitbox, dealt num, crit, friendly)`. The world sim
+    /// spawns them through `combat_text::spawn` on the `UpdateProjectiles`
+    /// stream BEFORE the hit-sound drain — `CombatText.NewText` draws its
+    /// rolls inside `StrikeNPC_Inner`, ahead of `HitEffect`/`HitSound`.
+    pub fn drain_npc_damage_texts(
+        &mut self,
+    ) -> Vec<(crate::combat_text::Rect, i32, bool, bool)> {
+        std::mem::take(&mut self.pending_npc_damage_texts)
+    }
+
+    /// W4-d116 — the Destroyer-probe roll intents (the struck NPC indices).
+    /// The world sim rolls them AFTER the damage-text drain, on the
+    /// `UpdateProjectiles` stream — `HitEffect` follows `CombatText.NewText`
+    /// inside `StrikeNPC_Inner` (`NPC.cs:81250` → `:81488`).
+    pub fn drain_probe_rolls(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.pending_probe_rolls)
     }
 
     /// S1-E-21h — the projectile-family cue intents the AI arms and the
@@ -25294,25 +25328,47 @@ impl ProjectilePool {
             crate::special_arrows::status_npc(self.slots[slot].kind, &mut npcs[idx], rng);
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
             let expert = player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
-            let landed = Npc::strike_projectile(
+            let dealt = Npc::strike_projectile(
                 npcs, idx, strike_dmg, from_x, kb, hit_crit, Some(owner_idx as u8), expert,
             );
-            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
-            // W4-c13 — the sound cues FIRST (`strike_pooled` queued them
-            // onto `wants_sound` — the bubble's int-4 style-3 `:84231`,
-            // the spheres' Item10 `:89528`/`:89540`/`:89692`; the C#'s
-            // sound sits at HitEffect's head), THEN the Destroyer body's
-            // probe launch gate (`:89266-89285`) — the Next(25) roll
-            // rides the strike's stream (the C# HitEffect runs inside
-            // StrikeNPC, under this pass's Main.rand swap).
+            let landed = dealt > 0;
+            // W4-d116 — `NPC.StrikeNPC_Inner`'s combat text (`NPC.cs:
+            // 81250-81264`): the projectile lane never spawned it. The text
+            // shows the FINAL dealt number, gates on `lifeMax > 1` and the
+            // non-instakill flag, and draws its rolls BEFORE `HitEffect`'s
+            // probe roll (`:81488`) — the C#'s order inside the strike. The
+            // pool queues it (no app borrow here); the world-sim drain rolls
+            // it on the `UpdateProjectiles` stream ahead of the hit-sound
+            // drain (the S1-E-21c batch convention, ANALYSIS W4-d116).
+            if landed && npcs[idx].max_hp > 1 {
+                let (nw, nh) = npcs[idx].size();
+                let location = crate::combat_text::Rect {
+                    x: npcs[idx].x,
+                    y: npcs[idx].y,
+                    width: nw,
+                    height: nh,
+                };
+                self.pending_npc_damage_texts
+                    .push((location, dealt, hit_crit, npcs[idx].friendly));
+            }
+            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
+            // Destroyer body's probe launch gate (`:89266-89285`). W4-d116:
+            // the C# draws the combat text FIRST (`:81250-81264`), then the
+            // probe's Next(25) — both inside the strike. The pool defers
+            // BOTH to the pass tail in that order (the text queue above;
+            // this probe intent queue — the S1-E-21c batch convention,
+            // ANALYSIS W4-d116). The roll used to ride here, ahead of the
+            // (missing) text draws — the census fix.
+            // W4-c13 — the HitEffect head's sound cues (`strike_pooled`
+            // queued them onto `wants_sound`): drained ahead of the probe
+            // intent (the C#'s sound-before-probe order); the world-sim
+            // drain plays text → sounds → probe on UpdateProjectiles.
             if landed {
                 self.pending_npc_hit_sounds
                     .extend(npcs[idx].wants_sound.drain(..));
-                if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-                    &mut npcs[idx], rng, false,
-                ) {
-                    npcs[idx].wants_probe = Some(anchor);
-                }
+            }
+            if landed && npcs[idx].kind == NpcKind::TheDestroyerBody {
+                self.pending_probe_rolls.push(idx);
             }
             // `NPC.StrikeNPC`'s hit/voice cue (`NPC.cs:81490-81554`, S1-E-21
             // wave C + W4-c13) at `base.position`, AFTER the HitEffect
@@ -25480,11 +25536,12 @@ impl ProjectilePool {
                 // (`:12815`); `flag10 = num24 > 0 && lifeMax > 5 && friendly &&
                 // !hostile && aiStyle != 59` (`:13659`). The PVE pass only
                 // simulates friendly, non-hostile shots (aiStyle 165 != 59),
-                // so those terms fold true; `num24` is the strike's dealt
-                // damage (`strike_dmg`, floored at 1 by CalculateDamageNPCsTake).
+                // so those terms fold true; `num24` is the strike's RETURNED
+                // dealt damage (`dealt` — the C# reads `StrikeNPC`'s return,
+                // not the pre-strike value; W4-d116).
                 // The retarget (`:14257-14263`) is OUTSIDE both gates.
                 if is_whip {
-                    let on_hit_effects_run = !npc_immortal && strike_dmg > 0 && npc_life_max_gt5;
+                    let on_hit_effects_run = !npc_immortal && dealt > 0 && npc_life_max_gt5;
                     // S1-P-i27 — `targetNPC.active` (`Projectile.cs:14259`):
                     // a killing blow deactivates the NPC inside `StrikeNPC`
                     // (`NPC.checkDead`, `NPC.cs:78225`), so the retarget only
@@ -25631,25 +25688,36 @@ impl ProjectilePool {
             // shared call keeps the order for any special bullet that reaches
             // the boxed walk.
             self.special_bullet_status_npc(slot, &mut npcs[idx], rng);
-            let landed =
+            let dealt =
                 Npc::strike_projectile(npcs, idx, strike_dmg, cx, kb, crit, Some(owner as u8), false);
-            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
-            // W4-c13 — the sound cues first (the queue drain), then the
-            // Destroyer body's probe gate rides the strike's stream —
-            // the C#'s sound-before-probe order (the plain walk's note).
-            if landed {
+            // W4-d116 — the boxed walk's combat text queue (the plain-walk
+            // twin, `NPC.cs:81250-81264`): same gate, same payload.
+            if dealt > 0 && npcs[idx].max_hp > 1 {
+                let (nw, nh) = npcs[idx].size();
+                let location = crate::combat_text::Rect {
+                    x: npcs[idx].x,
+                    y: npcs[idx].y,
+                    width: nw,
+                    height: nh,
+                };
+                self.pending_npc_damage_texts.push((location, dealt, crit, npcs[idx].friendly));
+            }
+            // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`): the
+            // Destroyer body's probe gate defers behind the text draws (the
+            // plain-walk twin, W4-d116).
+            // W4-c13 — the HitEffect head's sound cues (the boxed walk's
+            // twin): drained ahead of the probe intent.
+            if dealt > 0 {
                 self.pending_npc_hit_sounds
                     .extend(npcs[idx].wants_sound.drain(..));
-                if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-                    &mut npcs[idx], rng, false,
-                ) {
-                    npcs[idx].wants_probe = Some(anchor);
-                }
+            }
+            if dealt > 0 && npcs[idx].kind == NpcKind::TheDestroyerBody {
+                self.pending_probe_rolls.push(idx);
             }
             // `NPC.StrikeNPC`'s hit/voice cue (`NPC.cs:81490-81554`, S1-E-21
             // wave C + W4-c13) — the boxed walk queues it after the
             // HitEffect cues like the plain PVE pass.
-            if landed {
+            if dealt > 0 {
                 let (hx, hy) = (npcs[idx].x, npcs[idx].y);
                 if let Some(cue) = npcs[idx].strike_hit_cue(rng) {
                     self.pending_npc_hit_sounds.push(crate::npc::NpcSoundRequest {
@@ -25693,7 +25761,7 @@ impl ProjectilePool {
             } else if p.penetrate != 1 || p.applies_immunity_time_on_single_hits {
                 npcs[idx].immune[owner] = OWNER_IMMUNE_TICKS;
             }
-            if landed {
+            if dealt > 0 {
                 let p = &mut self.slots[slot];
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
@@ -27199,6 +27267,172 @@ mod tests {
             before - 1,
             "S1-C-2: projectile→NPC damage must apply DamageVar and defense (Projectile.cs:12938, NPC.cs:81189,81239)"
         );
+    }
+
+    /// W4-d116 — the PVE strike queues the combat-text intent (`NPC.cs:
+    /// 81250-81264`): `(hitbox, final dealt num, crit, friendly)` on a
+    /// `lifeMax > 1` target; the `lifeMax == 1` critter and the refused hit
+    /// queue nothing. The dealt value is the strike's RETURN (the red-hat/
+    /// taken-mult tail included), not the pre-strike `strike_dmg`.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d116_the_pve_strike_queues_the_damage_text() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.defense_override = Some(200); // post-defense floor 1
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        let texts = pool.drain_npc_damage_texts();
+        assert_eq!(texts.len(), 1, "one landed hit, one text intent");
+        let (loc, amount, crit, friendly) = texts[0];
+        assert_eq!(amount, 1, "the final dealt number (:81239-81249)");
+        assert!(!crit && !friendly, "the hostile non-crit pair (:81258)");
+        assert_eq!(loc.x, npc.x);
+        assert_eq!(loc.width, npc.size().0);
+        // The drain empties the queue (the mem::take convention).
+        assert!(pool.drain_npc_damage_texts().is_empty());
+        // The lifeMax == 1 critter (`:81250`'s gate) queues nothing.
+        let mut critter = one_npc(&w);
+        critter.x = 20.0 * TILE_PX;
+        critter.y = 24.0 * TILE_PX;
+        critter.hp = 1;
+        critter.max_hp = 1;
+        critter.defense_override = Some(0);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut critter),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert!(critter.hp <= 0, "the hit still lands");
+        assert!(pool.drain_npc_damage_texts().is_empty(), "lifeMax 1: no text");
+    }
+
+    /// W4-d116 — the immortal target's hit queues the text (the C# computes
+    /// `num` and spawns the text BEFORE the `!immortal` life gate,
+    /// `NPC.cs:81250` vs `:81368`) but the life never drops. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_immortal_target_still_gets_the_text_no_life_loss() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 500;
+        npc.max_hp = 500;
+        npc.immortal = true;
+        npc.defense_override = Some(0);
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(npc.hp, 500, "the !immortal gate (:81368) holds the life");
+        let texts = pool.drain_npc_damage_texts();
+        assert_eq!(texts.len(), 1, "the text spawns ahead of the gate");
+        assert!((34..=46).contains(&texts[0].1), "DamageVar(40): {}", texts[0].1);
+    }
+
+    /// W4-d116 — the Destroyer body's landed hit queues the probe-roll
+    /// intent instead of drawing inline: the world sim rolls it AFTER the
+    /// text drain (the C# order `:81250` text → `:81488` HitEffect).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_destroyer_hit_queues_the_probe_roll_behind_the_text() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut body = Npc::new(NpcKind::TheDestroyerBody, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        body.hp = 1000;
+        body.max_hp = 1000;
+        body.defense_override = Some(0);
+        let slot = pool
+            .spawn(
+                SHURIKEN,
+                0,
+                Vec2::new(20.0 * TILE_PX, 24.0 * TILE_PX),
+                Vec2::ZERO,
+                40,
+                12.0,
+                false,
+            )
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut body),
+            None,
+            None,
+            None,
+            &mut rng,
+        );
+        // Both queues fill; the walk itself drew NO probe roll (deferred).
+        assert_eq!(pool.drain_npc_damage_texts().len(), 1, "the text queued too");
+        assert_eq!(pool.drain_probe_rolls(), vec![0], "the body hit queues idx 0");
+        assert_eq!(body.ai[2], 0.0, "no inline launch write");
+        // The sim-side order: the text's 2 jitter rolls run FIRST (the
+        // drain spawns them), then `probe_launch_on_hit` draws its Next(25)
+        // on the same stream. The mirror replays that exact sequence.
+        let mut mirror = tr_core::tile_light::FastRandom::new(7);
+        let _var = mirror.next_range(-15, 16); // the walk's DamageVar (unowned: no crit roll)
+        let _tx = mirror.next_range(-((body.size().0 * 0.5) as i32), (body.size().0 * 0.5) as i32 + 1);
+        let _ty = mirror.next_range(-((body.size().1 * 0.5) as i32), (body.size().1 * 0.5) as i32 + 1);
+        let probe = mirror.next_range(0, 25);
+        let anchor = crate::npc_ai_style37::probe_launch_on_hit(&mut body, &mut rng, false);
+        assert_eq!(anchor.is_some(), probe == 0, "the mirrored Next(25) decides");
     }
 
     /// S1-P-i49 — the summon prefixes' armor penetration reaches the strike:

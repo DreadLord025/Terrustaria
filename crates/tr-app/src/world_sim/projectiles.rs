@@ -621,6 +621,52 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
         );
     }
+    // W4-d116 — the landed strikes' combat texts (`NPC.cs:81250-81264`,
+    // inside `StrikeNPC_Inner` BEFORE `HitEffect`/`HitSound`): the pool
+    // queued `(hitbox, dealt num, crit, friendly)` per landed hit on a
+    // `lifeMax > 1` NPC; the spawn's 2 (+1 crit) `Main.rand` rolls ride the
+    // `UpdateProjectiles` stream here, ahead of the hit-sound drain below
+    // (the C#'s order; the S1-E-21c batch convention defers both from
+    // mid-walk — ANALYSIS W4-d116).
+    for (location, amount, crit, friendly) in app.projectiles.drain_npc_damage_texts() {
+        let text = amount.to_string();
+        let font = if crit {
+            app.lookups.combat_crit_font.as_ref()
+        } else {
+            app.lookups.combat_text_font.as_ref()
+        };
+        // `FontAssets.CombatText[crit ? 1 : 0].MeasureString`
+        // (`CombatText.cs:76`).
+        let size = match font {
+            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+            None => [text.chars().count() as f32 * 8.0, 10.0],
+        };
+        let color = crate::combat_text::damage_text_color(crit, friendly, false);
+        crate::combat_text::spawn(
+            &mut app.combat_texts,
+            location,
+            color,
+            text,
+            crit,
+            false,
+            size,
+            1.0,
+            rng,
+        );
+    }
+    // W4-d116 — the Destroyer-probe roll intents (`NPC.cs:81488` →
+    // `:89266-89285`): the landed body hits queue their index; the roll runs
+    // HERE, after the text draws above and before the hit-sound drain —
+    // the C#'s inside-the-strike order (text → HitEffect → HitSound).
+    for idx in app.projectiles.drain_probe_rolls() {
+        // The queued index rides this tick's list (the death retain runs in
+        // the NPC pass, after this one); the guard keeps a stale index from
+        // ever panicking.
+        let Some(n) = app.npcs.get_mut(idx) else { continue };
+        if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(n, rng, false) {
+            n.wants_probe = Some(anchor);
+        }
+    }
     // S1-E-21 wave C — the landed strikes' sound plays
     // (`NPC.cs:81476-81554` via `Projectile.Damage` `Projectile.cs:13649`):
     // the case-3 volume arms + the `Main.rand.Next(-10, 11) * 0.01` pitch

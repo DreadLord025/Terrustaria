@@ -15517,7 +15517,7 @@ mod worm_tests {
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
             &mut npcs, tail, 7, tail_x, 0.0, false, None, false
-        ));
+        ) > 0);
         assert_eq!(npcs[0].hp, pool - 70, "the tail's hit is multiplied by ten");
     }
 
@@ -16183,7 +16183,7 @@ mod worm_tests {
         let tail_x = npcs[tail].x;
         assert!(Npc::strike_melee(
             &mut npcs, tail, 9, tail_x, 0.0, false, None, false
-        ));
+        ) > 0);
         assert_eq!(npcs[0].hp, pool - 9, "the tail hits the head's pool");
         assert_eq!(npcs[tail].hp, pool - 9, "the tail mirrors the carrier");
     }
@@ -20381,7 +20381,7 @@ mod fishron_wiring_tests {
         bubble.target = 0;
         bubble.ai[3] = 1.0;
         let mut npcs = vec![bubble];
-        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0), false));
+        assert!(Npc::strike_melee(&mut npcs, 0, 50, 0.0, 0.0, false, Some(0), false) > 0);
         assert_eq!(npcs[0].hp, npcs[0].max_hp, "life restored");
         assert_eq!(npcs[0].ai[0], 1.0);
         assert_eq!(npcs[0].ai[1], 4.0);

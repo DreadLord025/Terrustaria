@@ -8419,6 +8419,10 @@ fn resolve_melee_strike(
                 let n_defense = n.defense();
                 let (nx, ny) = (n.x, n.y);
                 let (bw, bh) = n.size();
+                // `NPC.cs:81250-81254` — the combat text's gate + colour arm
+                // read `lifeMax > 1` and `friendly` (the town pair).
+                let n_friendly = n.friendly;
+                let n_life_max_gt1 = n.max_hp > 1;
                 // W4-c13: the hit cue resolves AFTER the strike now —
                 // `strike_hit_cue` reads the type-1 voice switch (the
                 // chicken roll rides the strike's stream), so the
@@ -8497,9 +8501,10 @@ fn resolve_melee_strike(
                 // ×15 reads the player's expert flag (the port's world-mode
                 // stand-in, `BuffSlots.expert_mode`).
                 let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
-                let landed = crate::npc::Npc::strike_melee(
+                let dealt = crate::npc::Npc::strike_melee(
                     &mut app.npcs, idx, dmg, pcx, kb, crit, Some(me), expert,
                 );
+                let landed = dealt > 0;
                 // S1-P-i05: `ProcessHitAgainstNPC`'s tail
                 // (`Player.cs:44414/:44419`) — the landed hit re-arms the
                 // per-NPC melee lock to the CURRENT `itemAnimation` ticks
@@ -8523,40 +8528,22 @@ fn resolve_melee_strike(
                             as f32
                             / 60.0;
                 }
-                // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
-                // the Destroyer body's probe gate (`:89266-89285`) — the
-                // roll rides the melee strike's stream (the `UpdatePlayers`
-                // swap the damage/crit rolls above already ride).
-                if landed {
-                    // W4-c13 — the same `HitEffect` tail's sound cues
-                    // (`strike_pooled` queued them): the bubble's int-4
-                    // style-3 (`NPC.cs:84231`) / the spheres' Item10
-                    // (`:89528`/`:89540`/`:89692`) play on the melee
-                    // strike's `UpdatePlayers` stream — the C# plays
-                    // inside `StrikeNPC` under the same swap, AHEAD of
-                    // the probe roll (the sound sits at HitEffect's
-                    // head, the probe gate at its tail `:89266`).
-                    let reqs: Vec<_> = app.npcs[idx].wants_sound.drain(..).collect();
-                    for req in reqs {
-                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                        crate::world_sim::npcs::play_npc_sound_request(
-                            &mut app.audio, req, rng,
-                        );
-                    }
-                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
-                        &mut app.npcs[idx], probe_rng, false,
-                    ) {
-                        app.npcs[idx].wants_probe = Some(anchor);
-                    }
-                }
-                if landed {
-                    // `NPC.cs:81250-81264`: a landed strike on a `lifeMax > 1`
-                    // NPC spawns the combat text with the post-defence number
-                    // (`:81239`) and the crit flag. The local player's strike
-                    // takes the hostile pair (`:81258`) — never the friendly
-                    // (`:81254`) or network (`:81261`) arms.
-                    let text = dmg.to_string();
+                // W4-d116 — the C# draw order: `CombatText.NewText`
+                // (`NPC.cs:81250-81264`, inside `StrikeNPC_Inner` right
+                // after the damage tail) draws its 2 (+1 on crit) rolls
+                // BEFORE `HitEffect`'s probe `Next(25)` (`:81488` →
+                // `:89266-89285`). Both ride the `UpdatePlayers` stream
+                // (the melee swap, `Main.cs:17754`). The old port drew the
+                // probe first and the text second — the census fix.
+                if landed && n_life_max_gt1 {
+                    // `NPC.cs:81250-81264`: the text shows the FINAL dealt
+                    // number (`num` after the red-hat/taken-mult tail,
+                    // `:81239-81249`), the friendly pair on town NPCs
+                    // (`:81254`), the hostile pair otherwise (`:81258`);
+                    // the network arm (`:81261`) never fires on the local
+                    // strike. `flag` (the 9999 instakill, `:81237`) is
+                    // false on every ported melee lane.
+                    let text = dealt.to_string();
                     let font = if crit {
                         app.lookups.combat_crit_font.as_ref()
                     } else {
@@ -8574,7 +8561,7 @@ fn resolve_melee_strike(
                         width: bw,
                         height: bh,
                     };
-                    let color = crate::combat_text::damage_text_color(crit, false, false);
+                    let color = crate::combat_text::damage_text_color(crit, n_friendly, false);
                     // The port's player carries no flipped-gravity state, so
                     // `Main.player[Main.myPlayer].gravDir` is the normal 1f
                     // (`CombatText.cs:93`).
@@ -8590,6 +8577,30 @@ fn resolve_melee_strike(
                         1.0,
                         rng,
                     );
+                }
+                // `NPC.StrikeNPC_Inner`'s `HitEffect` tail (`NPC.cs:81488`):
+                // the Destroyer body's probe gate (`:89266-89285`) — the
+                // roll rides the melee strike's stream AFTER the text draws
+                // above (the C#'s order).
+                if landed {
+                    // W4-c13 — the HitEffect head's sound cues
+                    // (`strike_pooled` queued them onto `wants_sound`):
+                    // played on the melee strike's `UpdatePlayers` stream
+                    // after the text draws above, ahead of the probe roll
+                    // (the C#'s CombatText → sound → probe order).
+                    let reqs: Vec<_> = app.npcs[idx].wants_sound.drain(..).collect();
+                    for req in reqs {
+                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        crate::world_sim::npcs::play_npc_sound_request(
+                            &mut app.audio, req, rng,
+                        );
+                    }
+                    let probe_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    if let Some(anchor) = crate::npc_ai_style37::probe_launch_on_hit(
+                        &mut app.npcs[idx], probe_rng, false,
+                    ) {
+                        app.npcs[idx].wants_probe = Some(anchor);
+                    }
                 }
                 // A joining client's strike goes to the host as `28`
                 // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
@@ -9776,6 +9787,73 @@ mod tests {
         // resolution the cursor arm uses (the shared helper).
         let dealt = hp0 - app.npcs[0].hp;
         assert!(dealt > 0, "the umbrella's own damage row");
+    }
+
+    /// W4-d116 — the melee text shows the FINAL dealt number
+    /// (`NPC.cs:81250-81264` — `num` after the `:81239-81249` tail), spawns
+    /// on the landed stab, and its jitter rolls ride the strike's
+    /// `UpdatePlayers` stream BEFORE the probe roll (`HitEffect` `:81488`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d116_the_melee_text_shows_the_dealt_number_and_draws_first() {
+        let mut app = thrust_app();
+        let hp0 = app.npcs[0].hp;
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        mine_frames(&mut app, 9); // the stab arm's first hit tick
+        let dealt = hp0 - app.npcs[0].hp;
+        assert!(dealt > 0, "the stab landed");
+        let text = app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the landed strike spawns its text");
+        assert_eq!(text.text, dealt.to_string(), "the FINAL num (:81239-81249)");
+        // The x jitter is `Next(-w/2, w/2+1)` off the box-centred anchor
+        // (`CombatText.cs:86-88`); the measured-size offset only shifts the
+        // anchor left, so the position stays inside the padded window.
+        let (bw, _bh) = app.npcs[0].size();
+        let base_x = app.npcs[0].x + bw * 0.5;
+        assert!(
+            text.position[0] >= base_x - bw * 0.5 - 64.0
+                && text.position[0] <= base_x + bw * 0.5,
+            "the x jitter rides the box window: {} vs {base_x}",
+            text.position[0]
+        );
+    }
+
+    /// W4-d116 — the town NPC's melee text takes the FRIENDLY pair
+    /// (`NPC.cs:81252-81254`), not the hostile one the old port hard-coded.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d116_the_town_npc_text_uses_the_friendly_pair() {
+        let mut app = thrust_app();
+        // Swap the victim for a town resident in the same stab reach.
+        let mut guide = crate::npc::Npc::new(
+            crate::npc::NpcKind::Guide,
+            app.npcs[0].x,
+            app.npcs[0].y,
+            1,
+            0.0,
+        );
+        guide.hp = 250;
+        guide.max_hp = 250;
+        guide.uid = app.npcs[0].uid;
+        app.npcs[0] = guide;
+        app.mine_released = true;
+        app.mine_prev_down = false;
+        mine_frames(&mut app, 9);
+        let text = app
+            .combat_texts
+            .iter()
+            .find(|t| t.active)
+            .expect("the town hit spawns its text");
+        assert!(
+            text.color == crate::combat_text::DAMAGED_FRIENDLY
+                || text.color == crate::combat_text::DAMAGED_FRIENDLY_CRIT,
+            "the friendly pair (:81254), got {:?}",
+            text.color
+        );
     }
 
     /// The one-hit-per-swing lock (`meleeNPCHitCooldown`,
