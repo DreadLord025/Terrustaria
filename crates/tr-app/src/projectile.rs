@@ -297,6 +297,35 @@ struct FlailTick {
     item_rotation: Option<f32>,
 }
 
+/// W4-d14 — one monk staff swing's ground-impact spawn request
+/// (`AI_140_MonkStaffT1`, `Projectile.cs:69500`): the 698 at the dust
+/// anchor + (num6 * -15, -60), velocity (num6, 0), damage = the swing's
+/// damage × 3, knockback 0, `bonusCritChance = 25` (`:69501`). The C#
+/// passes the CENTRE; the dispatch converts to the top-left (the
+/// `FlailSpawnRequest` shape).
+struct MonkGroundImpact {
+    x: f32,
+    y: f32,
+    vx: f32,
+    damage: i32,
+}
+
+/// W4-d14 — what one aiStyle-140 tick hands back to the pool: the 697's
+/// ground-impact spawn, the `player.ChangeDir` facing (`:69464`/`:69538`
+/// mid-swing + `:69596` tail), the `player.reuseDelay` write on the swing's
+/// death (`:69457` = 10, `:69531` = 2 — rides the pool's `pending_monk_reuse`
+/// queue, the App owns the timer), the `player.heldProj` / `SetDummyItemTime`
+/// / `itemRotation` tail writes (`:69597-69599`). The `FlailTick` precedent.
+#[derive(Default)]
+struct MonkStaffTick {
+    ground_impact: Option<MonkGroundImpact>,
+    facing: Option<i32>,
+    reuse_delay: Option<i32>,
+    held_proj: bool,
+    dummy_item_time: Option<i32>,
+    item_rotation: Option<f32>,
+}
+
 
 /// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
 /// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
@@ -11067,11 +11096,12 @@ impl Projectile {
     /// `AI()`'s aiStyle-133 block (`Projectile.cs:36435-36498`) — the Dark
     /// Mage raise marker (673) and the heal mark (674).
     ///
-    /// The port's kind set carries the 673 only (the 674 has no `proj_data`
-    /// row), so the arm ports the marker's ramp: the summon cue at the 70th
+    /// The 673 arm ports the marker's ramp: the summon cue at the 70th
     /// tick (SKIPPED — no tracked-sound layer), the counter, the opacity
-    /// curve and the kill past 80.
-    fn ai_dark_mage_raise(&mut self, world: &World) {
+    /// curve and the kill past 80. The 674 arm (W4-d14) is the 40-tick
+    /// heal scan: every live NPC with damage >= 1 / lifeMax >= 30 inside
+    /// 1000 px except the Dark Mages (564/565) heals min(500, missing).
+    fn ai_dark_mage_raise(&mut self, world: &World, npcs: &mut [Npc]) {
         if self.kind == DARK_MAGE_MARKER {
             // `:36438-36440` — the summon cue at `ai[0] == 70` (SKIPPED: no
             // tracked-sound layer in the pool).
@@ -11101,11 +11131,520 @@ impl Projectile {
             // The C# assigns it after the kill arm, so the dying tick lands
             // on the value 0 (the alpha 255).
             self.alpha = alpha_of(opacity);
+        } else if self.kind == DARK_MAGE_HEAL {
+            // `:36456-36497` — the 674 heal arm (W4-d14): the first-tick cue
+            // (SKIPPED — no tracked-sound layer), the counter, then at 40 the
+            // 1000-px scan heals every live NPC with damage >= 1 and lifeMax
+            // >= 30 except the Dark Mages themselves (564/565), capped at
+            // 500 and at the missing life; the marker dies after the scan.
+            self.ai[0] += 1.0;
+            if self.ai[0] >= 40.0 {
+                let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+                for n in npcs.iter_mut() {
+                    // `:36481` — `nPC.active && damage >= 1 && lifeMax >= 30
+                    // && Distance <= 1000 && type != 564 && type != 565`.
+                    // The port's liveness is `hp > 0` (the vec carries no
+                    // active field — `can_be_chased_by`'s convention).
+                    let damage = n.damage_override.unwrap_or(n.kind.contact_damage());
+                    if n.hp > 0
+                        && damage >= 1
+                        && n.max_hp >= 30
+                        && center.distance(npc_center(n)) <= 1000.0
+                        && !matches!(n.kind, NpcKind::DD2DarkMage | NpcKind::DD2DarkMageT3)
+                    {
+                        // `:36483-36494` — `num985 = min(500, lifeMax - life)`;
+                        // only a positive heal lands (`HealEffect` + netUpdate
+                        // are the combat-text/net layers — the hp write is the
+                        // state).
+                        let heal = 500.min(n.max_hp - n.hp);
+                        if heal > 0 {
+                            n.hp += heal;
+                            n.net_update = true;
+                        }
+                    }
+                }
+                // `:36497` — `this.Kill()`.
+                self.active = false;
+                self.time_left = 0;
+            }
         }
-        // The 674's heal arm (`:36456-36498`) has no ported row.
         // `HandleMovement`: the marker's row keeps `tileCollide = false`, so
         // the position simply follows the (zero) velocity.
         self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-132 block (`Projectile.cs:36318-36434`) — the 672
+    /// DD2ElderWins crystal-destruction marker (W4-d14). The four-state
+    /// machine on `localAI[1]`:
+    /// - 0: the defeat cue at `localAI[0] == 0` (SKIPPED — no tracked-sound
+    ///   layer), the 20-gore burst at 105, the shader ramps (SKIPPED — no
+    ///   scene-filter layer), then the 120-tick advance;
+    /// - 1: the shader hold (skipped), the 300-tick advance. The C#'s
+    ///   `velocity.Y` write sits INSIDE `!Main.dedServ` (`:36367-36371`) —
+    ///   a server-side quirk the port keeps (the sim is the dedServ shape:
+    ///   no velocity write here);
+    /// - 2: `velocity.Y--` every tick, the 60-tick advance;
+    /// - 3: the shader deactivation (skipped) + `Kill()`.
+    /// The `localAI[1] >= 1` dust trail (`:36414-36432`) runs after the
+    /// state arms: `1 + (int)(-velocity.Y)` iterations, each gated on
+    /// `Next(2)`; the taken branch draws the height float, the x-jitter
+    /// float, the sine-phase `Next(3)`, the lerp float and the velocity
+    /// float — five draws, in that order. `localAI[0]++` closes the block.
+    ///
+    /// RNG census (the taken dust branch): `NextFloat` (`:36420`),
+    /// `NextFloat` (`:36421`), `Next(3)` (`:36422`), `NextFloat` (`:36423`),
+    /// `NextFloat` (`:36428`). The gore burst's 20 iterations each draw
+    /// `NextFloat` (the angle jitter `:36330`), `NextFloat` (the radius
+    /// `:36330`) and `SelectRandom`'s `Next(4)` (`:36331`, Utils.cs:2459-
+    /// 2462 — four choices 1027-1030); `Gore.NewGoreDirect`'s internal
+    /// kicks `Next(10,31)`/`Next(-20,21)` follow per gore (Gore.cs:1327-
+    /// 1328). The gore bodies are SKIPPED (no draw layer).
+    fn ai_elder_wins(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        if self.local_ai[1] == 0.0 {
+            // `:36322-36325` — the defeat cue (skipped).
+            // `:36326-36343` — the 20-gore burst at the 105th tick.
+            if self.local_ai[0] == 105.0 {
+                for _ in 0..20 {
+                    let _angle = rng.next_float(); // `:36330` the ±0.05 jitter
+                    let _radius = rng.next_float(); // `:36330` the 0-10 radius
+                    let _type = rng.next_range(0, 4); // `:36331` SelectRandom
+                    let _ = rng.next_range(10, 31); // NewGore's Y kick
+                    let _ = rng.next_range(-20, 21); // NewGore's X kick
+                }
+            }
+            // `:36344-36358` — the shader activation/intensity (skipped).
+            // `:36359-36363` — the 120-tick advance.
+            if self.local_ai[0] == 120.0 {
+                self.local_ai[0] = 0.0;
+                self.local_ai[1] += 1.0;
+            }
+        } else if self.local_ai[1] == 1.0 {
+            // `:36367-36384` — the !dedServ block (the velocity.Y ramp and
+            // the shader hold): skipped whole — the sim keeps the server
+            // shape (no velocity write, no filters).
+            // `:36385-36389` — the 300-tick advance.
+            if self.local_ai[0] == 300.0 {
+                self.local_ai[0] = 0.0;
+                self.local_ai[1] += 1.0;
+            }
+        } else if self.local_ai[1] == 2.0 {
+            // `:36393-36397` — the vortex progress (skipped).
+            // `:36398` — the fall accel.
+            self.vel.y -= 1.0;
+            // `:36399-36403` — the 60-tick advance.
+            if self.local_ai[0] == 60.0 {
+                self.local_ai[0] = 0.0;
+                self.local_ai[1] += 1.0;
+            }
+        } else if self.local_ai[1] == 3.0 {
+            // `:36407-36411` — the shader deactivation (skipped).
+            // `:36412` — `this.Kill()`.
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `:36414-36432` — the dust trail (the state arms above may have
+        // advanced localAI[1] this tick — the C# reads it AFTER them).
+        if self.local_ai[1] >= 1.0 {
+            let iterations = 1 + (0.0 - self.vel.y) as i32;
+            for _ in 0..iterations {
+                if rng.next_range(0, 2) == 0 {
+                    let _height = rng.next_float(); // `:36420`
+                    let _jitter = rng.next_float(); // `:36421`
+                    let _phase = rng.next_range(0, 3); // `:36422`
+                    let _lerp = rng.next_float(); // `:36423`
+                    let _vy = rng.next_float(); // `:36428`
+                }
+            }
+        }
+        // `:36433` — the age counter.
+        self.local_ai[0] += 1.0;
+        // `HandleMovement`: the row keeps `tileCollide = false` — the
+        // position follows the velocity (the state-2 fall integrates).
+        self.kill_step(world);
+    }
+
+    /// `AI_135_OgreStomp` (`Projectile.cs:68671-68787`) — the Ogre's ground
+    /// pound (683) and the Queen Slime's twin (922). W4-d14.
+    ///
+    /// The C# order: the per-kind radius cap (40, the 922's 30), the
+    /// counter, the 10-tick kill, the velocity zero, the position→centre
+    /// collapse, the `Lerp(5, cap, GetLerpValue(0, 9, ai[0]))` box growth
+    /// (the `Size` setter truncates to int, Entity.cs:164-168), the
+    /// centre re-pin, then — every 3rd tick only — the tile walk: the
+    /// radius gate, the exposed-full-solid gate, the dust-amount row, the
+    /// layer-2 second row, the 2-in-3 gore gate (the 922 swaps the gore
+    /// for the crystal dust).
+    ///
+    /// RNG census (the `UpdateProjectiles` stream): the first dust row
+    /// draws ONE `NextFloat` per dust (`:68720`, the velocity.Y scale —
+    /// the `KillTile_MakeTileDust` bodies are the dust skip, its type
+    /// table rand-free for the exposed-solid kinds); the layer-2 second
+    /// row the same (`:68750`); the gore gate is `Next(3)` (`:68755`),
+    /// the taken branch draws the `61 + Next(3)` type (`:68780`) + the
+    /// NewGore kicks `Next(10,31)`/`Next(-20,21)` (Gore.cs:1327-1328) +
+    /// one `NextFloat` (`:68782`). The 922's dust arms draw the colour
+    /// helper's TWO `NextFloat`s per call (`NPC.cs:45121-45124`) plus the
+    /// per-dust `NextFloat`/`NextFloatDirection`/`Next(16)` pair/`Next(3)`
+    /// (`:68732-68741`/`:68766-68775`) — the bodies are skipped, the
+    /// explicit draws stay. The `num5 <= 0` short-circuit (`:68755`)
+    /// skips the gate draw entirely (the `||`'s left operand).
+    fn ai_ogre_stomp(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
+        // `:68673-68677` — the radius cap.
+        let cap = if self.kind == QUEEN_SLIME_SMASH { 30.0 } else { 40.0 };
+        // `:68678-68683` — the counter and the 10-tick kill.
+        self.ai[0] += 1.0;
+        if self.ai[0] > 9.0 {
+            self.active = false;
+            self.time_left = 0;
+            return;
+        }
+        // `:68684-68687` — the velocity zero, the position→centre collapse,
+        // the box growth, the centre re-pin. `base.position = base.Center`
+        // then `Size = 16 * Lerp(...)` then `Center = position` — the box
+        // grows around the OLD centre, truncated to int per axis.
+        self.vel = Vec2::ZERO;
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        let side = 16.0 * (5.0 + (cap - 5.0) * get_lerp_value(0.0, 9.0, self.ai[0]));
+        self.w = side as i32 as f32;
+        self.h = side as i32 as f32;
+        self.pos = center - Vec2::new(self.w * 0.5, self.h * 0.5);
+        // `:68688-68691` — the tile box (`ToTileCoordinates` is
+        // `(int)X >> 4`, Utils.cs:1807-1810 — the arithmetic shift, NOT a
+        // division: negatives floor) and the integer radius half.
+        let x0 = (self.pos.x as i32) >> 4;
+        let y0 = (self.pos.y as i32) >> 4;
+        let x1 = ((self.pos.x + self.w) as i32) >> 4;
+        let y1 = ((self.pos.y + self.h) as i32) >> 4;
+        let mid_col = x0 / 2 + x1 / 2;
+        let radius = self.w as i32 / 2;
+        // `:68692-68696` — the every-3rd-tick gate.
+        if self.ai[0] as i32 % 3 != 0 {
+            return;
+        }
+        let layer = self.ai[0] as i32 / 3;
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        for i in x0..=x1 {
+            for j in y0..=y1 {
+                // `:68701-68704` — the radius gate.
+                if center.distance(Vec2::new(i as f32 * 16.0, j as f32 * 16.0))
+                    > radius as f32
+                {
+                    continue;
+                }
+                // `:68705-68709` — the exposed full-solid gate.
+                let Some(t) = world.tile(i, j) else {
+                    continue;
+                };
+                let solid = tr_core::tiledata::TILE_SOLID.has(t.kind);
+                let solid_top = tr_core::tiledata::TILE_SOLID_TOP.has(t.kind);
+                let important = world
+                    .frame_important
+                    .get(t.kind as usize)
+                    .copied()
+                    .unwrap_or(false);
+                if !t.active() || !solid || solid_top || important {
+                    continue;
+                }
+                // `:68710-68714` — the tile above must not be a full solid.
+                let above_full_solid = world.tile(i, j - 1).is_some_and(|a| {
+                    a.active()
+                        && tr_core::tiledata::TILE_SOLID.has(a.kind)
+                        && !tr_core::tiledata::TILE_SOLID_TOP.has(a.kind)
+                });
+                if above_full_solid {
+                    continue;
+                }
+                // `:68715-68723` — the first dust row: one NextFloat each.
+                let amount = crate::collision::tile_dust_amount(t.kind, true, t.frame_x);
+                for _ in 0..amount {
+                    let _ = rng.next_float(); // `:68720`
+                }
+                // `:68724-68754` — the layer-2 second row.
+                if layer >= 2 {
+                    if self.kind == QUEEN_SLIME_SMASH {
+                        // `:68728-68742` — the crystal dust: the colour
+                        // helper's 2 floats, then per dust the Y-scale
+                        // float, the X-direction float, the position
+                        // `Next(16)` pair and the `Next(3)` noGravity pick.
+                        let _ = rng.next_float(); // GetDustColor lerp 1
+                        let _ = rng.next_float(); // GetDustColor lerp 2
+                        for _ in 0..(amount - 1) {
+                            let _ = rng.next_float(); // `:68734`
+                            let _ = rng.next_float(); // `:68735` direction
+                            let _ = rng.next_range(0, 16); // `:68736` X
+                            let _ = rng.next_range(0, 16); // `:68736` Y
+                            let _ = rng.next_range(0, 3); // `:68737`
+                        }
+                    } else {
+                        // `:68746-68752` — the tile dust: one float each.
+                        for _ in 0..(amount - 1) {
+                            let _ = rng.next_float(); // `:68750`
+                        }
+                    }
+                }
+                // `:68755-68758` — the 2-in-3 gate (`num5 <= 0` skips the
+                // draw — the `||`'s left operand short-circuits).
+                if amount <= 0 || rng.next_range(0, 3) == 0 {
+                    continue;
+                }
+                // `:68759` — the gore scale's column term (draw-only).
+                let _col = (mid_col - i).abs() as f32 / (cap / 2.0);
+                if self.kind == QUEEN_SLIME_SMASH {
+                    // `:68762-68776` — three crystal dusts: the colour
+                    // helper's 2 floats, then per dust the Y-scale float,
+                    // the X-direction float and the `Next(3)` pick (the
+                    // position is the fixed `(i*16+20, j*16+20)` — no
+                    // draws, `:68770`).
+                    let _ = rng.next_float(); // GetDustColor lerp 1
+                    let _ = rng.next_float(); // GetDustColor lerp 2
+                    for _ in 0..3 {
+                        let _ = rng.next_float(); // `:68768`
+                        let _ = rng.next_float(); // `:68769` direction
+                        let _ = rng.next_range(0, 3); // `:68771`
+                    }
+                } else {
+                    // `:68780-68783` — the gore: the type roll, the two
+                    // NewGore kicks, the velocity.Y scale.
+                    let _ = rng.next_range(0, 3); // `:68780` 61 + Next(3)
+                    let _ = rng.next_range(10, 31); // Gore.cs:1327
+                    let _ = rng.next_range(-20, 21); // Gore.cs:1328
+                    let _ = rng.next_float(); // `:68782`
+                }
+            }
+        }
+        // `HandleMovement`'s `UpdatePosition` (`:20433-20446`): aiStyle 135
+        // is not on the skip list, so `position += velocity` runs — the
+        // arm zeroed the velocity, a no-op move (the aiStyle-139 shape).
+        let vel = self.vel;
+        self.pos += vel;
+    }
+
+    /// `AI_140_MonkStaffT1` (`Projectile.cs:69416-69600`) — the Brand of the
+    /// Inferno (697) and the Sleepy Octopod (707) swings. W4-d14.
+    ///
+    /// The C# order: the constants (num = 50 the swing length, num2 = 2 the
+    /// spin turns, num3 = 20 the orbit radius, num4 = -π/4 the base angle),
+    /// the owner's `RotatedRelativePoint(MountedCenter)` anchor, the dead
+    /// kill, then the per-kind arm (the velocity sign pin, the first-tick
+    /// rotation, the alpha fade, the age/spin advance, the mid-swing
+    /// direction flip, the dust rows, the 697's ground-impact spawn), then
+    /// the common tail (the position = anchor + orbit offset, the
+    /// spriteDirection, timeLeft = 2, ChangeDir, heldProj, SetDummyItemTime,
+    /// itemRotation).
+    ///
+    /// The player writes ride back in [`MonkStaffTick`] (the `FlailTick`
+    /// precedent — the port's facing is run-key driven); the reuseDelay
+    /// write rides the pool's `pending_monk_reuse` queue (the App owns the
+    /// timer). The 698 ground-impact spawn rides back as a request (the
+    /// `FlailSpawnRequest` shape).
+    ///
+    /// RNG census: the 697's type-31 dust gate `Next(2)` (`:69473`), the
+    /// type-55 dust at num7 >= 0.85 (`:69478`, no gate), the 5-dust burst
+    /// in [num-8, num-2) (`:69485`, no gate); the 707's type-31 gate
+    /// `Next(2)` (`:69553`) and the 4-spoke type-226 web's `Next(6)` gate +
+    /// `NextFloat` radius + `NextFloat` speed + `Next(4)` gravity pick per
+    /// spoke (`:69576-69588`). The dust bodies are SKIPPED (no draw layer);
+    /// the explicit call-site draws stay. The `NewDustDirect` internal
+    /// rolls go with the dust pool (the `ai_style2` precedent).
+    ///
+    /// Deliberate skips: the `Lighting.AddLight` (`:69507`, no pool light
+    /// layer), the `DD2_MonkStaffGroundImpact` tracked cue (`:69502` — the
+    /// pool's sound queue carries only the id-0/2 families, the 131/134
+    /// tracked-sound precedent), the `netUpdate` writes (the MP bookkeeping
+    /// is out of scope), the `drawLayer`/`usesOwnerLight`/`ownerHitCheck`/
+    /// `noEnchantmentVisuals` flags (no consumers). The port keeps
+    /// `gravDir = 1` (the `ai_158_home_location` precedent).
+    fn ai_monk_staff(
+        &mut self,
+        player: Option<&crate::player::Player>,
+        aim: Option<Vec2>,
+        control_use_item: bool,
+        local_owner: u8,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> MonkStaffTick {
+        let mut tick = MonkStaffTick::default();
+        // `:69418-69424` — the constants and the anchor. An absent player
+        // reads as the C#'s inactive `Main.player[owner]` (the flail
+        // orphan-kill precedent).
+        let num = 50.0f32;
+        let num2 = 2.0f32;
+        let num3 = 20.0f32;
+        let num4 = -std::f32::consts::FRAC_PI_4;
+        let Some(player) = player else {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        };
+        let (mx, my) = player.mounted_center();
+        let anchor = player.rotated_relative_point(Vec2::new(mx, my), 0);
+        // `:69425-69429` — the dead kill.
+        if player.dead {
+            self.active = false;
+            self.time_left = 0;
+            return tick;
+        }
+        let mut orbit = Vec2::ZERO;
+        if self.kind == MONK_STAFF_T1 {
+            // `:69430-69504` — the 697 arm.
+            let num5 = self.damage * 3;
+            let num6 = csign(self.vel.x);
+            self.vel = Vec2::new(num6, 0.0);
+            // `:69435-69442` — the first-tick rotation.
+            if self.ai[0] == 0.0 {
+                // gravDir = 1 (the port's convention).
+                let v = Vec2::new(num6, -1.0);
+                self.rot = v.y.atan2(v.x) + num4 + std::f32::consts::PI;
+                if self.vel.x < 0.0 {
+                    self.rot -= std::f32::consts::FRAC_PI_2;
+                }
+            }
+            // `:69443-69447` — the alpha fade.
+            self.alpha -= 128;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            let num7 = self.ai[0] / num;
+            let num8 = 1.0 + self.ai[0] / num * 0.5;
+            let mut flag = self.ai[0] < (num / 2.0) as i32 as f32;
+            self.ai[0] += num8;
+            self.rot += std::f32::consts::TAU * num2 / num * num6 * num8;
+            flag &= self.ai[0] >= (num / 2.0) as i32 as f32;
+            // `:69454-69469` — the end / the mid-swing flip.
+            if self.ai[0] >= num || (flag && !control_use_item) {
+                self.active = false;
+                self.time_left = 0;
+                tick.reuse_delay = Some(10);
+            } else if flag {
+                // `:69461-69468` — the mouse-side flip.
+                if let Some(aim) = aim {
+                    let (pcx, _) = player.center();
+                    let num9 = if aim.x - pcx > 0.0 { 1.0 } else { -1.0 };
+                    if num9 != self.vel.x {
+                        tick.facing = Some(num9 as i32);
+                        self.vel = Vec2::new(num9, 0.0);
+                        self.net_update = true;
+                        self.rot -= std::f32::consts::PI;
+                    }
+                }
+            }
+            // `:69470-69472` — the orbit offset and the dust anchor.
+            let num10 = self.rot - std::f32::consts::FRAC_PI_4 * num6;
+            let angle = num10 + if num6 == -1.0 { std::f32::consts::PI } else { 0.0 };
+            orbit = rotation_vector(angle) * (self.ai[0] / num) * num3;
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let dust_anchor = center + rotation_vector(angle) * 30.0;
+            // `:69473-69477` — the type-31 dust gate.
+            if rng.next_range(0, 2) == 0 {
+                // Dust.NewDustDirect(dust_anchor - 5, 10, 10, 31, ...) —
+                // skipped (the body + its internal rolls).
+            }
+            // `:69478-69484` — the type-55 dust at num7 >= 0.85 (no gate).
+            if num7 >= 0.85 {
+                // Dust.NewDustDirect(..., 55, ...) — skipped.
+            }
+            // `:69485-69495` — the 5-dust burst in [num-8, num-2).
+            if self.ai[0] >= num - 8.0 && self.ai[0] < num - 2.0 {
+                // 5 × Dust.NewDustDirect(..., 55, ...) — skipped.
+            }
+            // `:69496-69503` — the ground-impact spawn (local owner only).
+            if self.ai[0] >= num - 3.0 && self.ai[0] - num8 < num - 3.0
+                && self.owner == local_owner
+            {
+                // `:69500` — the 698 at dust_anchor + (num6 * -15, -60),
+                // velocity (num6, 0), damage num5, knockback 0. The C#
+                // passes the CENTRE; the dispatch converts to the top-left.
+                tick.ground_impact = Some(MonkGroundImpact {
+                    x: dust_anchor.x + num6 * -15.0,
+                    y: dust_anchor.y - 60.0,
+                    vx: num6,
+                    damage: num5,
+                });
+                // `:69501` — bonusCritChance = 25 (the dispatch applies it).
+                // `:69502` — the tracked cue (skipped, module doc).
+            }
+        }
+        if self.kind == MONK_STAFF_T3 {
+            // `:69505-69591` — the 707 arm.
+            // `:69507` — Lighting.AddLight (skipped).
+            let num12 = csign(self.vel.x);
+            self.vel = Vec2::new(num12, 0.0);
+            // `:69510-69517` — the first-tick rotation.
+            if self.ai[0] == 0.0 {
+                let v = Vec2::new(num12, -1.0);
+                self.rot = v.y.atan2(v.x) + num4 + std::f32::consts::PI;
+                if self.vel.x < 0.0 {
+                    self.rot -= std::f32::consts::FRAC_PI_2;
+                }
+            }
+            // `:69518-69522` — the alpha fade.
+            self.alpha -= 128;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            let num13 = 1.0f32;
+            self.ai[0] += num13;
+            self.rot += std::f32::consts::TAU * num2 / num * num12;
+            let flag2 = self.ai[0] == (num / 2.0) as i32 as f32;
+            // `:69528-69543` — the end / the mid-swing flip.
+            if self.ai[0] >= num || (flag2 && !control_use_item) {
+                self.active = false;
+                self.time_left = 0;
+                tick.reuse_delay = Some(2);
+            } else if flag2 {
+                if let Some(aim) = aim {
+                    let (pcx, _) = player.center();
+                    let num14 = if aim.x - pcx > 0.0 { 1.0 } else { -1.0 };
+                    if num14 != self.vel.x {
+                        tick.facing = Some(num14 as i32);
+                        self.vel = Vec2::new(num14, 0.0);
+                        self.net_update = true;
+                        self.rot -= std::f32::consts::PI;
+                    }
+                }
+            }
+            // `:69544-69547` — the local-owner aim read (a no-op `_ =` in
+            // the C# — the direction-to-mouse times zero; skipped).
+            // `:69548-69552` — the orbit offset and the dust anchors.
+            let num15 = self.rot - std::f32::consts::FRAC_PI_4 * num12;
+            let angle = num15 + if num12 == -1.0 { std::f32::consts::PI } else { 0.0 };
+            orbit = rotation_vector(angle) * (self.ai[0] / num) * num3;
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            let _dust_anchor = center + rotation_vector(angle) * 30.0;
+            let vector5 = rotation_vector(num15);
+            let _vector6 = rotate(vector5, std::f32::consts::FRAC_PI_2 * self.sprite_direction as f32);
+            // `:69553-69557` — the type-31 dust gate.
+            if rng.next_range(0, 2) == 0 {
+                // Dust.NewDustDirect(..., 31, ...) — skipped.
+            }
+            // `:69558-69590` — the 4-spoke type-226 web.
+            for j in 0..4 {
+                let (num16, num17) = match j {
+                    1 => (1.0, -1.0),
+                    2 => (0.5, 1.25),
+                    3 => (0.5, -1.25),
+                    _ => (1.0, 1.0),
+                };
+                // `:69576` — the Next(6) gate.
+                if rng.next_range(0, 6) != 0 {
+                    let _radius = rng.next_float(); // `:69579`
+                    let _speed = rng.next_float(); // `:69580`
+                    // Dust.NewDustDirect(..., 226, ...) — skipped; the
+                    // post-spawn writes feed only the body.
+                    let _ = rng.next_range(0, 4); // `:69585` the gravity pick
+                    let _ = (num16, num17);
+                }
+            }
+        }
+        // `:69592-69599` — the common tail.
+        self.pos = anchor - Vec2::new(self.w * 0.5, self.h * 0.5);
+        self.pos += orbit;
+        self.sprite_direction = self.direction;
+        self.time_left = 2;
+        tick.facing = Some(self.direction);
+        tick.held_proj = true;
+        tick.dummy_item_time = Some(2);
+        tick.item_rotation = Some(wrap_angle(self.rot));
+        tick
     }
 
     /// `AI_187_ShadowHand` (`Projectile.cs:42502-42591`) with its variation
@@ -15303,6 +15842,12 @@ pub struct ProjectilePool {
     /// the step and re-arms `app.swing`/`app.item_time` (the `FlailTick.facing`
     /// write-back precedent). `None` = no hold fired.
     pending_spear_hold: Option<i32>,
+    /// W4-d14 — the monk staff swings' `player.reuseDelay` writes
+    /// (`AI_140_MonkStaffT1`, `Projectile.cs:69457`/`:69531`): the tick count
+    /// the arm asks the App to re-arm on the swing's death. The world-sim
+    /// pass drains it into `app.reuse_delay` (the `take_spear_hold`
+    /// write-back precedent). `None` = no swing died this tick.
+    pending_monk_reuse: Option<i32>,
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
     /// (`AI_061` + `FishingCheck`'s `Main.player[owner]` reads). The world sim
@@ -15729,6 +16274,7 @@ impl ProjectilePool {
             pending_channel_tracks: Vec::new(),
             spear_owner: None,
             pending_spear_hold: None,
+            pending_monk_reuse: None,
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
@@ -16017,6 +16563,13 @@ impl ProjectilePool {
     /// lance held this tick.
     pub fn take_spear_hold(&mut self) -> Option<i32> {
         self.pending_spear_hold.take()
+    }
+
+    /// W4-d14 — drain the monk staff swings' `player.reuseDelay` write
+    /// (`Projectile.cs:69457`/`:69531`): the world-sim pass re-arms
+    /// `app.reuse_delay` to this many ticks. `None` when no swing died.
+    pub fn take_monk_reuse(&mut self) -> Option<i32> {
+        self.pending_monk_reuse.take()
     }
 
     /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`) plus
@@ -18632,7 +19185,72 @@ impl ProjectilePool {
                         70 => self.slots[i].ai_flairon_bubble(world, &npcs[..], rng),
                         // The aiStyle-133 Dark Mage raise marker
                         // (`:36435-36453`): the opacity ramp and the kill.
-                        133 => self.slots[i].ai_dark_mage_raise(world),
+                        133 => self.slots[i].ai_dark_mage_raise(world, npcs),
+                        // The aiStyle-132 crystal-destruction marker
+                        // (`:36318-36434`): the 4-state defeat drama.
+                        132 => self.slots[i].ai_elder_wins(world, rng),
+                        // The aiStyle-135 Ogre/QueenSlime stomp
+                        // (`AI_135_OgreStomp`, `:68671-68787`): the growing
+                        // box and the every-3-tick tile walk.
+                        135 => self.slots[i].ai_ogre_stomp(world, rng),
+                        // The aiStyle-140 monk staff swings
+                        // (`AI_140_MonkStaffT1`, `:69416-69600`): the 697/707
+                        // orbit machine. The player writes ride back in the
+                        // tick (the FlailTick precedent); the reuseDelay
+                        // rides the pool queue; the 698 ground-impact spawn
+                        // resolves here (the FlailSpawnRequest shape).
+                        140 => {
+                            let aim = flail_inputs.aim.map(|(x, y)| Vec2::new(x, y));
+                            let tick = self.slots[i].ai_monk_staff(
+                                player.as_deref(),
+                                aim,
+                                flail_inputs.control_use_item,
+                                local_owner,
+                                rng,
+                            );
+                            // `:69500-69501` — the 698 ground impact.
+                            if let Some(g) = tick.ground_impact {
+                                let owner = self.slots[i].owner;
+                                let d = proj_data(MONK_STAFF_T1_EXPLOSION)
+                                    .expect("the rowed explosion");
+                                if let Some(slot) = self.spawn_with_data_ai_owned(
+                                    MONK_STAFF_T1_EXPLOSION,
+                                    owner,
+                                    g.x - d.w * 0.5,
+                                    g.y - d.h * 0.5,
+                                    g.vx,
+                                    0.0,
+                                    g.damage,
+                                    0.0,
+                                    0.0,
+                                    0.0,
+                                ) {
+                                    self.slots[slot].bonus_crit_chance = 25;
+                                }
+                            }
+                            // `:69457`/`:69531` — the reuseDelay write.
+                            if let Some(rd) = tick.reuse_delay {
+                                self.pending_monk_reuse = Some(rd);
+                            }
+                            // The player-side writes (the FlailTick shape).
+                            if let Some(p) = player.as_deref_mut() {
+                                if let Some(dir) = tick.facing {
+                                    p.facing = dir;
+                                }
+                                if tick.held_proj {
+                                    p.held_proj = i as i32;
+                                }
+                                if let Some(rot) = tick.item_rotation {
+                                    p.item_rotation = rot;
+                                }
+                            }
+                            // `SetDummyItemTime(2)` (`:69598`) rides the
+                            // spear-hold queue (the same swing/item_time
+                            // re-arm the lances use).
+                            if let Some(frames) = tick.dummy_item_time {
+                                self.pending_spear_hold = Some(frames);
+                            }
+                        }
                         // The aiStyle-187 Insanity shadow (`:42502-42591`):
                         // the four variation choreographies and the alpha
                         // ramp.
@@ -20452,6 +21070,104 @@ impl ProjectilePool {
                             // (`:17986-17990`), `flag6 = false` (`:17561-17563`).
                             if !killed {
                                 self.slots[i].dd2_sentry_step(world);
+                            }
+                        }
+                        136 => {
+                            // `AI_136_BetsyBreath` (`Projectile.cs:68789-68852`):
+                            // Betsy's breath (687), W4-d14. The C# order: the
+                            // ai[1] host-index guard, the host-anchored centre +
+                            // rotation, the three PlotTileLine light casts
+                            // (SKIPPED — no pool light layer, the aiStyle-139
+                            // precedent), the 3-dust head plume while the tail
+                            // is still at 0, the 1-in-5 gore roll, the per-tick
+                            // 31 dust along the beam, then frameCounter++ /
+                            // ai[0]++ and the 78-tick kill.
+                            //
+                            // RNG (the pass's `UpdateProjectiles` stream, the
+                            // celeb2 census convention): the head plume draws
+                            // `NextFloatDirection` + `NextFloat` per dust
+                            // (`:68819`); the gore gate is `Next(5)` FIRST in
+                            // the `&&` (`:68826`), and the taken branch draws
+                            // the `RandomVector2` pair (`:68828`, Utils.cs:
+                            // 2431-2434 — two NextDoubles), the `61 + Next(3)`
+                            // type, then the NewGore kicks `Next(10,31)` /
+                            // `Next(-20,21)` (Gore.cs:1327-1328); the beam dust
+                            // draws `NextFloatDirection` + `NextFloat` +
+                            // the lerp `NextFloat` (`:68837`/`:68842`). The
+                            // dust/gore bodies are SKIPPED (no draw layer).
+                            let host_index = self.slots[i].ai[1];
+                            // `:68791-68795` — `ai[1] < 0 || > Main.maxNPCs`
+                            // kills (maxNPCs = 200, InitData.cs:9). The port's
+                            // NPC vec is compacted, so an index past its end
+                            // kills too (the deathray's `npcs.get` precedent).
+                            let host = if host_index < 0.0 || host_index > 200.0 {
+                                None
+                            } else {
+                                npcs.get(host_index as usize)
+                            };
+                            if let Some(host) = host {
+                                let host_center = npc_center(host);
+                                let host_vel = Vec2::new(host.vx, host.vy);
+                                // `:68797` — Centre = host.Centre + ((110 - 8)
+                                // * spriteDirection, 30).RotatedBy(rotation).
+                                let anchor = host_center
+                                    + rotate(
+                                        Vec2::new(102.0 * host.sprite_dir as f32, 30.0),
+                                        host.rotation,
+                                    );
+                                let p = &mut self.slots[i];
+                                p.pos = anchor - Vec2::new(p.w * 0.5, p.h * 0.5);
+                                // `:68798` — rotation = host.DirectionTo
+                                // (Centre).ToRotation() (Entity.cs:205-208).
+                                let aim = safe_normalize(anchor - host_center);
+                                p.rot = aim.y.atan2(aim.x);
+                                // `:68800-68809` — the head/tail envelopes.
+                                let num = (p.ai[0] / 40.0).min(1.0);
+                                let num2 = ((p.ai[0] - 38.0) / 40.0).max(0.0);
+                                // `:68810-68812` — the three light casts:
+                                // skipped (no pool light layer).
+                                let _dir = rotation_vector(p.rot);
+                                // `:68813-68825` — the head plume.
+                                if num2 == 0.0 && num > 0.1 {
+                                    for _ in 0..3 {
+                                        // `:68819` — spread + speed draws.
+                                        let _spread = rng.next_float() * 2.0 - 1.0;
+                                        let _speed = rng.next_float();
+                                    }
+                                }
+                                // `:68826-68831` — the gore roll: `Next(5)` is
+                                // drawn every tick (the `&&`'s left operand).
+                                if rng.next_range(0, 5) == 0 && p.ai[0] >= 15.0 {
+                                    let _ = rng.next_double(); // RandomVector2 X
+                                    let _ = rng.next_double(); // RandomVector2 Y
+                                    let _ = rng.next_range(0, 3); // 61+Next(3)
+                                    let _ = rng.next_range(10, 31); // gore Y kick
+                                    let _ = rng.next_range(-20, 21); // gore X kick
+                                }
+                                // `:68832-68845` — the one beam dust (the
+                                // `j < 1` loop runs exactly once).
+                                let _spread = rng.next_float() * 2.0 - 1.0; // `:68837`
+                                let _speed = rng.next_float();
+                                let _lerp = rng.next_float(); // `:68842` num3
+                                // `:68846-68851` — the frame counter, the age
+                                // and the 78-tick kill.
+                                p.frame_counter += 1;
+                                p.ai[0] += 1.0;
+                                let dead = p.ai[0] >= 78.0;
+                                let _ = host_vel; // the dust bodies' vel add
+                                if dead {
+                                    self.kill(i);
+                                } else {
+                                    // `HandleMovement`: 687 keeps
+                                    // `tileCollide = true` (`:7315-7324`
+                                    // writes no override) and is not on the
+                                    // DD2 blocked-move list (`:17986`) — the
+                                    // generic tile-hit movement runs (the
+                                    // aiStyle-131 kill_step precedent).
+                                    self.slots[i].kill_step(world);
+                                }
+                            } else {
+                                self.kill(i);
                             }
                         }
                         137 => {
@@ -25702,7 +26418,19 @@ mod tests {
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
         // self-contained family.
-        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        // W4-d14: 141 (the MonkStaffT1Explosion 698, `AI_141_MonkStaffT1
+        // Explosion` `:69602+`) is rowed so the 140 arm's ground-impact
+        // spawn resolves, but its arm is d15's claim (141-150) — the
+        // rowed-but-unarmed deferral (the census §3c pattern).
+        // W4-d14 doc-sweep item 1 cross-note: d15 (`2cea7454`, tip
+        // `5b7f028d`) LANDED the 141 arm + a field-identical 698 row and
+        // removed 141 from ITS pin, taking 140 instead (d14's arm — the
+        // mirror deferral, `90b368a4`): d15's list is `[140, 156, 164,
+        // 169, 206]`. The integrate is a keep-one 698 row/const dedupe +
+        // this pin's reconciliation — BOTH 140 and 141 are armed in the
+        // merged tree, so the merged list drops both: `[156, 164, 169,
+        // 206]` (d15's `b1d2a416` cross-note records the same reconcile).
+        const UNARMED_ROWED: [u8; 5] = [141, 156, 164, 169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -33686,7 +34414,7 @@ mod widened_state_tests {
     /// sweep lives here rather than over `0..2048`. The rows whose C#
     /// `SetDefaults` overrides the reset (the shadow hand and the Dark Mage
     /// marker, both `alpha = 255`) sit outside it since S1-D-4b-1.
-    const BASELINE_ROWS: [u16; 39] = [
+    const BASELINE_ROWS: [u16; 37] = [
         WOODEN_ARROW,
         FLAME_ARROW,
         WOODEN_ARROW_HOSTILE,
@@ -33729,8 +34457,8 @@ mod widened_state_tests {
         DD2_SPEAR,
         DD2_SPEAR_T3,
         DD2_BOMB,
-        BETSY_BREATH,
-        BETSY_FIREBALL,
+        // W4-d14 / f19 F5: 686/687 write `alpha = 255` (`Projectile.cs
+        // :7310`/`:7320`) — both leave the reset sweep.
     ];
 
     fn world() -> World {
@@ -42676,7 +43404,7 @@ mod s1_d_4b_1_tests {
         // Tick 1: `ai[0] = 1` → the opacity is 1/20, and the C#'s
         // `Opacity` is a property over `alpha` (`Projectile.cs:540-549`):
         // the write lands on `alpha = (int)((1 - 0.05) * 255) = 242`.
-        p.ai_dark_mage_raise(&w);
+        p.ai_dark_mage_raise(&w, &mut []);
         assert_eq!(p.ai[0], 1.0);
         assert_eq!(p.alpha, 242, "the ramp opens on the alpha");
         assert!(
@@ -42685,30 +43413,77 @@ mod s1_d_4b_1_tests {
         );
         // Tick 20: `ai[0] = 20` → the opacity is 1 → the alpha 0.
         for _ in 0..19 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 20.0);
         assert_eq!(p.alpha, 0, "the ramp is open");
         // Tick 60: the opacity holds at 1.
         for _ in 0..40 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 60.0);
         assert_eq!(p.alpha, 0, "the ramp holds");
         // Tick 70: the descending range has fallen to 0.5 → the alpha 127.
         for _ in 0..10 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 70.0);
         assert_eq!(p.alpha, 127, "the ramp closes ({})", p.alpha);
         // Tick 80: the marker dies and the opacity write lands on 0 (the
         // alpha 255).
         for _ in 0..10 {
-            p.ai_dark_mage_raise(&w);
+            p.ai_dark_mage_raise(&w, &mut []);
         }
         assert_eq!(p.ai[0], 80.0);
         assert!(!p.active, "the marker dies at the 80th tick");
         assert_eq!(p.alpha, 255, "the dying tick lands on the opacity 0");
+    }
+
+    /// W4-d14 — the 674 heal arm (`Projectile.cs:36465-36497`): the counter
+    /// runs to 40, then the scan heals min(500, missing) on every live NPC
+    /// with damage >= 1 / lifeMax >= 30 inside 1000 px except the Dark Mages,
+    /// and the marker dies. Code-only: WRITTEN NOT RUN.
+    #[test]
+    fn w4_d14_the_dark_mage_heal_scans_at_forty_and_dies() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: DARK_MAGE_HEAL,
+            w: 10.0,
+            h: 10.0,
+            alpha: 255,
+            time_left: 900,
+            pos: Vec2::new(320.0, 400.0),
+            ..Default::default()
+        };
+        // A wounded zombie (damage >= 1, lifeMax 40 >= 30) at the marker,
+        // a full-health one, a Dark Mage (excluded) and a distant one.
+        let mut wounded = Npc::new(NpcKind::Zombie, 320.0, 400.0, 1, 0.0);
+        wounded.max_hp = 40;
+        wounded.hp = 10;
+        let mut full = Npc::new(NpcKind::Zombie, 330.0, 400.0, 1, 0.0);
+        full.max_hp = 40;
+        full.hp = 40;
+        let mut mage = Npc::new(NpcKind::DD2DarkMage, 320.0, 400.0, 1, 0.0);
+        mage.max_hp = 800;
+        mage.hp = 100;
+        let mut far = Npc::new(NpcKind::Zombie, 1400.0, 400.0, 1, 0.0);
+        far.max_hp = 40;
+        far.hp = 10;
+        let mut npcs = [wounded, full, mage, far];
+        for _ in 0..39 {
+            p.ai_dark_mage_raise(&w, &mut npcs);
+        }
+        assert_eq!(p.ai[0], 39.0);
+        assert!(p.active, "the scan has not fired yet");
+        assert_eq!(npcs[0].hp, 10, "no heal before 40");
+        p.ai_dark_mage_raise(&w, &mut npcs);
+        assert_eq!(p.ai[0], 40.0);
+        assert!(!p.active, ":36497 — the marker dies after the scan");
+        assert_eq!(npcs[0].hp, 40, "min(500, 40-10) = 30 heals to full");
+        assert_eq!(npcs[1].hp, 40, "the missing-life cap: no overheal");
+        assert_eq!(npcs[2].hp, 100, ":36481 — the 564/565 exclusion");
+        assert_eq!(npcs[3].hp, 10, "the 1000-px distance gate");
     }
 
     /// S1-D-4b-1 — the aiStyle-187 Insanity shadow
@@ -47864,5 +48639,571 @@ mod w4_d12_solar_flare_ray_tests {
         p.ai_solar_flare_ray(owner);
         let expected = 0.05 * std::f32::consts::PI;
         assert!((p.rot - expected).abs() < 1e-4, "the 5% lerp toward π (:34450)");
+    }
+}
+
+/// W4-d14 — aiStyle 136 (`AI_136_BetsyBreath`, `Projectile.cs:68789-68852`)
+/// + the f19 F5 row corrections (687/686). Code-only round: the witnesses
+/// are WRITTEN NOT RUN (no compiler on this branch); each assertion is
+/// re-derived from the cited C# block by hand arithmetic.
+#[cfg(test)]
+mod w4_d14_betsy_breath_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 300, 200)
+    }
+
+    /// A breathing Betsy at (1600, 800), facing right, no rotation — the
+    /// anchor is then host.Centre + (102, 30) exactly.
+    fn betsy() -> Npc {
+        let mut n = Npc::new(NpcKind::DD2Betsy, 1600.0, 800.0, 1, 0.0);
+        n.hp = 1000;
+        n.max_hp = 1000;
+        n.sprite_dir = 1;
+        n.rotation = 0.0;
+        n.vx = 10.0;
+        n.vy = 0.0;
+        n
+    }
+
+    fn breath(pool: &mut ProjectilePool, ai1: f32) -> usize {
+        pool.spawn_hostile_ai_owned(
+            BETSY_BREATH,
+            0,
+            Vec2::new(1600.0, 800.0),
+            Vec2::new(10.0, 0.0),
+            35,
+            0.0,
+            0.0,
+            ai1,
+        )
+        .expect("a free slot")
+    }
+
+    fn tick(
+        pool: &mut ProjectilePool,
+        w: &mut World,
+        npcs: &mut [Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        pool.update(
+            w,
+            npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            true,
+        );
+    }
+
+    /// f19 F5 — the corrected `SetDefaults` rows (`Projectile.cs:7305-7324`).
+    #[test]
+    fn f5_the_687_and_686_rows_match_set_defaults() {
+        let b = proj_data(BETSY_BREATH).expect("the 687 row");
+        assert_eq!((b.w, b.h), (30.0, 30.0), ":7317-7318");
+        assert_eq!(b.ai_style, 136, ":7319 — NOT the old aiStyle 1");
+        assert_eq!(b.alpha, 255, ":7320");
+        assert_eq!(b.penetrate, -1, ":7321");
+        assert_eq!(b.extra_updates, 0, "the stock 0 — the old 1 deviated");
+        assert!(b.tile_collide, "the stock true (`:775`) — no override");
+        assert_eq!(b.time_left, 3600, "the stock 3600 (`:787`)");
+        let f = proj_data(BETSY_FIREBALL).expect("the 686 row");
+        assert_eq!((f.w, f.h), (30.0, 30.0), ":7307-7308 — NOT 22x22");
+        assert_eq!(f.ai_style, 1, ":7309");
+        assert_eq!(f.alpha, 255, ":7310");
+        assert_eq!(f.penetrate, -1, ":7311");
+    }
+
+    /// The host anchor (`:68797-68798`): Centre = host.Centre +
+    /// (102·spriteDirection, 30).RotatedBy(host.rotation); the rotation is
+    /// the host→Centre heading. The age/frame counters advance (`:68846-
+    /// 68847`), and the plume/gore/beam draws land in the C# order.
+    #[test]
+    fn the_breath_anchors_to_its_host_and_counts() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        let mut npcs = [betsy()];
+        let slot = breath(&mut pool, 0.0);
+        // ai[0] = 20: num = 0.5 > 0.1 and num2 = 0 → the 3-dust head plume
+        // runs; the gore gate rolls Next(5) and 20 >= 15, so a 0 roll
+        // takes the gore branch too.
+        pool.slots_mut()[slot].ai[0] = 20.0;
+        struct R {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+            doubles: usize,
+        }
+        impl tr_core::loot::DropRng for R {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+            fn next_double(&mut self) -> f64 {
+                self.doubles += 1;
+                0.0
+            }
+        }
+        let mut rng = R { ranges: Vec::new(), floats: 0, doubles: 0 };
+        tick(&mut pool, &mut w, &mut npcs, &mut rng);
+        let p = &pool.slots()[slot];
+        let hc = npc_center(&npcs[0]);
+        let anchor = hc + Vec2::new(102.0, 30.0);
+        let c = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        // kill_step adds the (10, 0) velocity AFTER the anchor write.
+        assert!((c - (anchor + Vec2::new(10.0, 0.0))).length() < 1e-3);
+        assert!((p.rot - (30.0f32).atan2(102.0)).abs() < 1e-5, ":68798");
+        assert_eq!(p.ai[0], 21.0, ":68847");
+        assert_eq!(p.frame_counter, 1, ":68846");
+        // Draw census: plume 3×(direction+speed) = 6 floats, gore gate
+        // Next(5)=0 taken (ai0 20 >= 15): RandomVector2's 2 doubles + the
+        // 61+Next(3) type + the two NewGore kicks, then the beam dust's
+        // 3 floats (direction, speed, lerp).
+        assert_eq!(rng.floats, 9, "6 plume + 3 beam");
+        assert_eq!(rng.doubles, 2, "RandomVector2 (Utils.cs:2431-2434)");
+        assert_eq!(rng.ranges, [(0, 5), (0, 3), (10, 31), (-20, 21)]);
+    }
+
+    /// The ai[1] guard (`:68791-68795`): a negative index or one past
+    /// Main.maxNPCs (200) kills; the compacted-vec miss kills too.
+    #[test]
+    fn the_host_guard_kills_on_a_bad_index() {
+        for ai1 in [-1.0f32, 201.0, 5.0] {
+            let mut w = air();
+            let mut pool = ProjectilePool::new();
+            let mut npcs = [betsy()];
+            let slot = breath(&mut pool, ai1);
+            tick(&mut pool, &mut w, &mut npcs, &mut tr_core::tile_light::FastRandom::new(1));
+            assert!(!pool.slots()[slot].active, "ai1 {ai1} kills");
+        }
+    }
+
+    /// The 78-tick lifetime (`:68848-68851`): the 78th ai[0]++ kills.
+    #[test]
+    fn the_breath_dies_at_seventy_eight() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        let mut npcs = [betsy()];
+        let slot = breath(&mut pool, 0.0);
+        let mut rng = tr_core::tile_light::FastRandom::new(3);
+        for i in 1..=77 {
+            tick(&mut pool, &mut w, &mut npcs, &mut rng);
+            assert!(pool.slots()[slot].active, "tick {i} lives");
+            assert_eq!(pool.slots()[slot].ai[0], i as f32);
+        }
+        tick(&mut pool, &mut w, &mut npcs, &mut rng);
+        assert!(!pool.slots()[slot].active, "ai[0] = 78 kills (:68848)");
+    }
+}
+
+/// W4-d14 — aiStyle 132 (`AI()`'s inline block, `Projectile.cs:36318-36434`):
+/// the 672 crystal-destruction marker's four-state machine. Code-only:
+/// WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_d14_elder_wins_tests {
+    use super::*;
+
+    fn marker() -> Projectile {
+        let d = proj_data(DD2_ELDER_WINS).expect("the 672 row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = DD2_ELDER_WINS;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    struct R {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for R {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The row (`Projectile.cs:7196-7207`).
+    #[test]
+    fn the_672_row_matches_set_defaults() {
+        let d = proj_data(DD2_ELDER_WINS).expect("the row");
+        assert_eq!((d.w, d.h), (10.0, 10.0), ":7198-7199");
+        assert_eq!(d.ai_style, 132, ":7200");
+        assert_eq!(d.alpha, 255, ":7201");
+        assert!(!d.tile_collide, ":7202");
+        assert!(d.ignore_water, ":7203");
+        assert_eq!(d.time_left, 900, ":7204");
+        assert_eq!(d.penetrate, -1, ":7206");
+    }
+
+    /// State 0 → 1 at the 120th tick; the gore burst fires once at 105
+    /// with 20 × (2 floats + Next(4) + the two gore kicks).
+    #[test]
+    fn state_zero_bursts_gores_at_105_and_advances_at_120() {
+        let w = World::new("t".into(), 300, 200);
+        let mut p = marker();
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        for _ in 0..104 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        // Ticks 1..104: localAI[0] entered at 0..103 — no burst yet. The
+        // 105th call enters at 104, sees `== 105`? NO — the C# checks the
+        // PRE-increment value: the burst fires on the call that ENTERS at
+        // 105, i.e. the 106th. Here: 104 calls leave the age at 104.
+        assert_eq!(p.local_ai[0], 104.0);
+        assert!(rng.ranges.is_empty(), "no draws before the burst");
+        p.ai_elder_wins(&w, &mut rng); // enters at 104 — still no burst
+        assert!(rng.ranges.is_empty());
+        p.ai_elder_wins(&w, &mut rng); // enters at 105 — the burst
+        assert_eq!(rng.floats, 40, "20 gores × 2 floats");
+        assert_eq!(
+            rng.ranges,
+            (0..20)
+                .flat_map(|_| [(0, 4), (10, 31), (-20, 21)])
+                .collect::<Vec<_>>(),
+            "per gore: SelectRandom's Next(4) then the two kicks"
+        );
+        // The advance fires on the call that ENTERS at age 120 — the
+        // 121st call (106 so far, so 15 more).
+        for _ in 0..15 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        // The 121st tick: the advance zeroes the age and bumps the state.
+        assert_eq!(p.local_ai[1], 1.0, ":36359-36363");
+        assert_eq!(p.local_ai[0], 1.0, "the age restarted and ticked once");
+    }
+
+    /// State 1 holds 300 ticks with NO velocity write (the dedServ quirk,
+    /// `:36367-36371`); state 2 falls 1/tick and advances at 60; state 3
+    /// kills. The dust trail draws 1 + (int)(-vy) gates per tick.
+    #[test]
+    fn the_states_advance_and_the_fall_integrates() {
+        let w = World::new("t".into(), 300, 200);
+        let mut p = marker();
+        p.local_ai[1] = 1.0;
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        // The advance fires on the call that ENTERS at age 300 — the 301st.
+        for _ in 0..301 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        assert_eq!(p.local_ai[1], 2.0, "the 300-tick advance (:36385)");
+        assert_eq!(p.vel.y, 0.0, "state 1 writes no velocity (dedServ)");
+        // State 2: the advance fires on the call that ENTERS at age 60 —
+        // the 61st state-2 call. Each call decrements vy first, so the
+        // trail's gate count is 1 + (int)(-vy) = the call index.
+        let y0 = p.pos.y;
+        for _ in 0..61 {
+            p.ai_elder_wins(&w, &mut rng);
+        }
+        assert_eq!(p.local_ai[1], 3.0, "the 60-tick advance (:36399)");
+        assert_eq!(p.vel.y, -61.0, ":36398 — one per tick");
+        // kill_step integrates the velocity each tick: sum 1..61 = 1891.
+        assert!((p.pos.y - (y0 + 1891.0)).abs() < 1e-3);
+        // The trail gates: state 1's 301 ticks × 1 + state 2's sum 1..61.
+        assert_eq!(rng.ranges.len(), 301 + 1891, "one Next(2) per iteration");
+        assert!(rng.ranges.iter().all(|&(a, b)| (a, b) == (0, 2)));
+        // The taken branches (CensusRng returns min = 0): 5 floats each.
+        assert_eq!(rng.floats, (301 + 1891) * 5);
+        // State 3 kills on the next tick.
+        p.ai_elder_wins(&w, &mut rng);
+        assert!(!p.active, ":36412");
+    }
+}
+
+/// W4-d14 — aiStyle 135 (`AI_135_OgreStomp`, `Projectile.cs:68671-68787`):
+/// the 683/922 ground pounds. Code-only: WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_d14_ogre_stomp_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn stomp(kind: u16) -> Projectile {
+        let d = proj_data(kind).expect("the stomp row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 255;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p
+    }
+
+    struct R {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for R {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            // Non-zero so the `Next(3) == 0` gore gate (`:68755`) TAKES
+            // the branch — the census proves the taken path's draws.
+            1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The rows (`Projectile.cs:7282-7293` / `:8745-8756`).
+    #[test]
+    fn the_stomp_rows_match_set_defaults() {
+        for kind in [OGRE_SMASH, QUEEN_SLIME_SMASH] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (30.0, 30.0), "kind {kind}");
+            assert_eq!(d.ai_style, 135, "kind {kind}");
+            assert_eq!(d.alpha, 255, "kind {kind}");
+            assert!(!d.tile_collide, "kind {kind}");
+            assert!(d.ignore_water, "kind {kind}");
+            assert_eq!(d.time_left, 120, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+        }
+    }
+
+    /// The box growth (`:68684-68687`): tick 1 → 16·Lerp(5,40,1/9) =
+    /// 142.22 → 142; the centre holds; the velocity zeroes. The walk runs
+    /// only on ticks 3/6/9 (`:68692`); the 10th tick kills (`:68679`).
+    #[test]
+    fn the_box_grows_and_the_tenth_tick_kills() {
+        let w = World::new("t".into(), 300, 200);
+        let mut p = stomp(OGRE_SMASH);
+        p.vel = Vec2::new(5.0, 5.0);
+        let c0 = Vec2::new(p.pos.x + 15.0, p.pos.y + 15.0);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        p.ai_ogre_stomp(&w, &mut rng);
+        assert_eq!(p.ai[0], 1.0);
+        assert_eq!(p.vel, Vec2::ZERO, ":68684");
+        assert_eq!((p.w, p.h), (142.0, 142.0), "16·(5+35/9) = 142.22 → 142");
+        let c1 = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        assert!((c1 - c0).length() < 1e-3, "the centre holds");
+        assert!(rng.ranges.is_empty(), "tick 1: no walk (1 % 3 != 0)");
+        // Ticks 2..9 in an empty world: the walk finds no tiles.
+        for _ in 0..8 {
+            p.ai_ogre_stomp(&w, &mut rng);
+        }
+        assert_eq!(p.ai[0], 9.0);
+        assert_eq!((p.w, p.h), (640.0, 640.0), "tick 9: the full 16·40");
+        assert!(p.active);
+        p.ai_ogre_stomp(&w, &mut rng);
+        assert!(!p.active, ":68679-68683 — ai[0] > 9 kills");
+    }
+
+    /// The tile walk (`:68697-68786`): one exposed dirt tile under the
+    /// centre. Tick 3 (layer 1): 3 dust floats + the gore gate taken
+    /// (CensusRng returns 0) → the type roll + 2 kicks + 1 float. Tick 6
+    /// (layer 2): the second row adds 2 floats. The 922 twin swaps the
+    /// gore for 3 crystal dusts (2 colour floats + 3×3 draws).
+    #[test]
+    fn the_walk_censuses_the_dust_and_gore_rows() {
+        let mut w = World::new("t".into(), 300, 200);
+        // The stomp centre is (1615, 815); tile (100, 51) = (1600, 816)
+        // sits inside every grown box. Dirt (kind 0) is a full solid.
+        let idx = w.index(100, 51);
+        w.tiles[idx] = Tile { kind: 0, ..Default::default() };
+        w.tiles[idx].flags |= FLAG_ACTIVE;
+        let mut p = stomp(OGRE_SMASH);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        for _ in 0..3 {
+            p.ai_ogre_stomp(&w, &mut rng);
+        }
+        // Tick 3: amount = 3 (the fail row), layer 1 → no second row.
+        assert_eq!(rng.floats, 3 + 1, "3 dust scales + the gore velocity");
+        assert_eq!(rng.ranges, [(0, 3), (0, 3), (10, 31), (-20, 21)]);
+        for _ in 0..3 {
+            p.ai_ogre_stomp(&w, &mut rng);
+        }
+        // Tick 6: layer 2 → the second row's 2 floats join.
+        assert_eq!(rng.floats, 4 + 3 + 2 + 1);
+        assert_eq!(rng.ranges.len(), 8, "two walk ticks × 4 ranges");
+        // The 922 twin: the same walk, the crystal-dust draw rows.
+        let mut q = stomp(QUEEN_SLIME_SMASH);
+        let mut rng2 = R { ranges: Vec::new(), floats: 0 };
+        for _ in 0..3 {
+            q.ai_ogre_stomp(&w, &mut rng2);
+        }
+        // Tick 3 (layer 1): 3 dust floats + the gate + 2 colour floats +
+        // 3 dusts × (2 floats + Next(3)).
+        assert_eq!(rng2.floats, 3 + 2 + 6);
+        assert_eq!(rng2.ranges, [(0, 3), (0, 3), (0, 3), (0, 3)]);
+    }
+}
+
+/// W4-d14 — aiStyle 140 (`AI_140_MonkStaffT1`, `Projectile.cs:69416-69600`):
+/// the 697/707 swings. Code-only: WRITTEN NOT RUN.
+#[cfg(test)]
+mod w4_d14_monk_staff_tests {
+    use super::*;
+    use crate::player::Player;
+
+    fn swing(kind: u16) -> Projectile {
+        let d = proj_data(kind).expect("the swing row");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.vel = Vec2::new(1.0, 0.0);
+        p.w = d.w;
+        p.h = d.h;
+        p.alpha = d.alpha;
+        p.scale = d.scale;
+        p.time_left = d.time_left;
+        p.tile_collide = d.tile_collide;
+        p.damage = 30;
+        p.direction = 1;
+        p
+    }
+
+    struct R {
+        ranges: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for R {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.ranges.push((min, max));
+            min
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.0
+        }
+    }
+
+    /// The rows (`Projectile.cs:7366-7384` / `:7474-7490` / `:7385-7401`).
+    #[test]
+    fn the_monk_rows_match_set_defaults() {
+        let t1 = proj_data(MONK_STAFF_T1).unwrap();
+        assert_eq!((t1.w, t1.h), (16.0, 16.0));
+        assert_eq!(t1.ai_style, 140);
+        assert!(t1.melee);
+        assert!((t1.scale - 1.35).abs() < 1e-6, ":7373");
+        assert_eq!(t1.alpha, 255);
+        assert!(!t1.tile_collide);
+        assert!(t1.ignore_water);
+        assert!(t1.uses_local_immunity);
+        assert_eq!(t1.local_hit_cooldown, 12, ":7381");
+        let t3 = proj_data(MONK_STAFF_T3).unwrap();
+        assert_eq!(t3.ai_style, 140);
+        assert!((t3.scale - 1.0).abs() < 1e-6, "no scale override");
+        assert_eq!(t3.local_hit_cooldown, 6, ":7488");
+        let ex = proj_data(MONK_STAFF_T1_EXPLOSION).unwrap();
+        assert_eq!((ex.w, ex.h), (75.0, 200.0), ":7387-7388");
+        assert_eq!(ex.ai_style, 141, ":7389 — d15's arm claim");
+        assert_eq!(ex.time_left, 5, ":7393");
+        assert!(ex.melee, ":7398");
+        assert_eq!(ex.local_hit_cooldown, -1, ":7397");
+    }
+
+    /// The 697 first tick: the velocity sign pin, the first-tick rotation,
+    /// the alpha fade 255→127, the age advance num8 = 1, the spin, the
+    /// orbit offset and the tail writes. The type-31 gate draws Next(2).
+    #[test]
+    fn the_697_first_tick_pins_and_fades() {
+        let w = World::new("t".into(), 300, 200);
+        let player = Player::spawn(&w);
+        let mut p = swing(MONK_STAFF_T1);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        let tick = p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        assert_eq!(p.vel, Vec2::new(1.0, 0.0), ":69434 the sign pin");
+        assert_eq!(p.alpha, 127, ":69443 255-128");
+        assert_eq!(p.ai[0], 1.0, ":69451 num8 = 1 at ai0 0");
+        assert_eq!(p.time_left, 2, ":69595");
+        assert!(tick.held_proj, ":69597");
+        assert_eq!(tick.dummy_item_time, Some(2), ":69598");
+        assert_eq!(tick.facing, Some(1), ":69596 ChangeDir(direction)");
+        assert!(tick.item_rotation.is_some(), ":69599");
+        assert!(tick.ground_impact.is_none(), "the impact fires near the end");
+        // The type-31 gate drew Next(2); the num7 = 0 < 0.85 and the burst
+        // window is closed, so no other draws.
+        assert_eq!(rng.ranges, [(0, 2)]);
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// The 697 ground impact fires once in [num-3, num-3+num8) with the
+    /// local owner: damage × 3, the (num6 * -15, -60) offset. The death at
+    /// num queues reuseDelay 10.
+    #[test]
+    fn the_697_impact_and_death() {
+        let w = World::new("t".into(), 300, 200);
+        let player = Player::spawn(&w);
+        let mut p = swing(MONK_STAFF_T1);
+        // Jump to just under the impact window: ai0 = 46, num8 = 1+46/50*0.5
+        // = 1.46 → 47.46 crosses num-3 = 47.
+        p.ai[0] = 46.0;
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        let tick = p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        let g = tick.ground_impact.expect("the impact fires");
+        assert_eq!(g.damage, 90, ":69432 damage * 3");
+        assert_eq!(g.vx, 1.0, ":69500 (num6, 0)");
+        // The death: ai0 >= 50.
+        let mut q = swing(MONK_STAFF_T1);
+        q.ai[0] = 49.5;
+        let mut rng2 = R { ranges: Vec::new(), floats: 0 };
+        let tick2 = q.ai_monk_staff(Some(&player), None, true, 0, &mut rng2);
+        assert!(!q.active, ":69454 ai0 >= num kills");
+        assert_eq!(tick2.reuse_delay, Some(10), ":69457");
+    }
+
+    /// The 707 arm: the age advances by 1 (num13), the death queues
+    /// reuseDelay 2, and the 4-spoke web draws its Next(6) gates.
+    #[test]
+    fn the_707_counts_by_one_and_webs() {
+        let w = World::new("t".into(), 300, 200);
+        let player = Player::spawn(&w);
+        let mut p = swing(MONK_STAFF_T3);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        let tick = p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        assert_eq!(p.ai[0], 1.0, ":69525 num13 = 1");
+        assert_eq!(p.alpha, 127);
+        assert_eq!(tick.reuse_delay, None, "not dead yet");
+        // The type-31 gate Next(2)=0 taken (no body draws), then 4 spokes
+        // each Next(6)=0 → the gate REFUSES (0 == 0 is the skip), so no
+        // spoke draws. CensusRng returns min, so Next(6)=0 skips all four.
+        assert_eq!(rng.ranges, [(0, 2), (0, 6), (0, 6), (0, 6), (0, 6)]);
+        // The death at num.
+        let mut q = swing(MONK_STAFF_T3);
+        q.ai[0] = 49.0;
+        let mut rng2 = R { ranges: Vec::new(), floats: 0 };
+        let tick2 = q.ai_monk_staff(Some(&player), None, true, 0, &mut rng2);
+        assert!(!q.active);
+        assert_eq!(tick2.reuse_delay, Some(2), ":69531");
+    }
+
+    /// The dead-owner kill (`:69425-69429`) and the absent-player orphan
+    /// kill (the flail precedent).
+    #[test]
+    fn the_dead_and_orphan_kills() {
+        let w = World::new("t".into(), 300, 200);
+        let mut player = Player::spawn(&w);
+        player.dead = true;
+        let mut p = swing(MONK_STAFF_T1);
+        let mut rng = R { ranges: Vec::new(), floats: 0 };
+        p.ai_monk_staff(Some(&player), None, true, 0, &mut rng);
+        assert!(!p.active, ":69427");
+        let mut q = swing(MONK_STAFF_T1);
+        q.ai_monk_staff(None, None, true, 0, &mut rng);
+        assert!(!q.active, "the orphan kill");
     }
 }

@@ -3074,9 +3074,10 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
     // crystal survives into the loss scene. The scene's first-tick arm
     // (`NPC.cs:40868-40885`, `ai[0] == 0`) rides the same resolve: every
     // active portal (549) flips to its fade (`ai[1] = 1`, `ai[0] = 0`),
-    // then `DD2Event.ReportLoss` (`:40882`). The 672 defeat-scene
-    // projectile (`:40883`, aiStyle 132's filters/sound/gore drama) is
-    // deferred — the port carries no scene filters yet (ANALYSIS).
+    // then `DD2Event.ReportLoss` (`:40882`). The 672 defeat-scene marker
+    // (`:40883`) IS spawned below (W4-d14, aiStyle 132) — only the scene
+    // filters/sound/gore drama stay skipped (no scene-filter layer,
+    // ANALYSIS).
     // The win scene's shield (`NPC.cs:40760-40761`: `life = lifeMax` every
     // tick) keeps the crystal's hp positive, so the `hp <= 0` gate below
     // never sees a winning crystal — the C#'s intercept (`:78087`,
@@ -3109,6 +3110,31 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
         }
         // `DD2Event.ReportLoss` (`DD2Event.cs:507-515`).
         tr_core::dd2::report_loss(&mut app.world.dd2_lost, &mut app.world.dd2_spawn_hold);
+        // `NPC.cs:40883` — the 672 defeat-scene marker (W4-d14, aiStyle
+        // 132): `NewProjectile(Center - UnitY * 40, Zero, 672, 0, 0f,
+        // Main.myPlayer)` — the C# passes the CENTRE; the spawn takes the
+        // top-left (the breath precedent). The filters/sound/gore drama
+        // rides the arm's documented skips (no scene-filter layer).
+        if let Some(crystal) = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::DD2EterniaCrystal && n.ai[1] == 1.0 && n.ai[0] == 0.0)
+        {
+            let (cw, ch) = crystal.size();
+            let (cx, cy) = (crystal.x + cw * 0.5, crystal.y + ch * 0.5 - 40.0);
+            let d = crate::projectile::proj_data(crate::projectile::DD2_ELDER_WINS)
+                .expect("the rowed marker");
+            app.projectiles.spawn_hostile_ai_owned(
+                crate::projectile::DD2_ELDER_WINS,
+                app.local_id as u8,
+                Vec2::new(cx - d.w * 0.5, cy - d.h * 0.5),
+                Vec2::ZERO,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            );
+        }
     }
     // `DD2Event.UpdateTime` (`DD2Event.cs:194-251`): the hold's decay,
     // then — at the exact zero crossing (`:222-236`) — the `!LostThisRun`
@@ -5964,9 +5990,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for shot in ai_shots {
-        let slot = app.projectiles.spawn_hostile_ai(
+        // W4-d14: Betsy's breath (`NPC.cs:62026`) passes `Owner:
+        // Main.myPlayer` (the deathray precedent — owner 255 would leave
+        // the aiStyle-136 arm unsimulated on a client) and the CENTRE (the
+        // `NewProjectile` box-centring `Projectile.cs:10876-10877`); the
+        // other payload shots keep the stock 255-owner/top-left shape.
+        // W4-d14 doc-sweep item 4: the Dark Mage's markers ride the same
+        // seam — the 673 summon marker (`NPC.cs:65846`) and the 674 heal
+        // mark (`:65864`) both pass `Main.myPlayer` and the CENTRE /
+        // `ToWorldCoordinates(8, 0)` point, so owner 255 would leave the
+        // aiStyle-133 arms (the opacity ramp / the 40-tick heal scan)
+        // unsimulated on a client.
+        let (owner, x, y) = if shot.kind == crate::projectile::BETSY_BREATH
+            || shot.kind == crate::projectile::DARK_MAGE_MARKER
+            || shot.kind == crate::projectile::DARK_MAGE_HEAL
+        {
+            let d = crate::projectile::proj_data(shot.kind).expect("the rowed marker");
+            (app.local_id as u8, shot.x - d.w * 0.5, shot.y - d.h * 0.5)
+        } else {
+            (255, shot.x, shot.y)
+        };
+        let slot = app.projectiles.spawn_hostile_ai_owned(
             shot.kind,
-            Vec2::new(shot.x, shot.y),
+            owner,
+            Vec2::new(x, y),
             Vec2::new(shot.vx, shot.vy),
             shot.damage,
             0.0,
@@ -11461,7 +11508,11 @@ mod dd2_goblin_tests {
                 if s.0 == 675 {
                     saw_flame = true;
                 }
-                if s.0 == 673 {
+            }
+            // W4-d14 doc-sweep item 4: the 673 marker moved to the ai-shot
+            // list (the local-owner seam, `NPC.cs:65846`).
+            for s in n.wants_hostile_shot_ai.iter() {
+                if s.kind == 673 {
                     saw_summon = true;
                 }
             }
@@ -11511,18 +11562,27 @@ mod dd2_goblin_tests {
         n.hp = n.max_hp;
         player.x = 160.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
-        // Phase 3 (the flame breath).
+        // Phase 3 (the flame breath). W4-d14 doc-sweep: the 687 rides the
+        // AI-shot list (`97c5a984`) — `NPC.cs:62026` passes `base.whoAmI` as
+        // ai1 so the aiStyle-136 arm anchors to the breathing NPC — with
+        // the CENTRE as the spawn point (the sim drain converts to the
+        // top-left).
         n.ai[0] = 3.0;
         n.ai[1] = 0.0;
-        let mut saw_breath = false;
+        n.slot = 5;
+        let mut breath = None;
         for _ in 0..50 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if !n.wants_hostile_shot.is_empty() {
-                saw_breath = true;
+            if let Some(s) = n.wants_hostile_shot_ai.last().copied() {
+                breath = Some(s);
                 break;
             }
         }
-        assert!(saw_breath, "the flame breath fires");
+        let b = breath.expect("the flame breath fires");
+        assert_eq!(b.kind, 687, "the breath");
+        assert_eq!(b.ai1, 5.0, "ai1 names the breathing NPC (`:62026`)");
+        assert_eq!(b.damage, 35, "num3's breath damage");
+        assert!(b.vx.abs() == 10.0 && b.vy == 0.0, "the 10-speed sideways breath");
         // Phase 4 (the volley).
         let mut m = Npc::new(NpcKind::DD2Betsy, 100.0 * TILE_PX, 1400.0, 1, 0.0);
         m.hp = m.max_hp;
@@ -12212,6 +12272,46 @@ mod dd2_loss_tests {
             .expect("the portal survives — only its fade arm opens");
         assert_eq!(g.ai[1], 1.0, "the portal mark (`NPC.cs:40875`)");
         assert_eq!(g.ai[0], 0.0, "the fade arm starts at 0");
+    }
+
+    /// W4-d14 doc-sweep item 2 — the loss scene's 672 defeat marker
+    /// (`NPC.cs:40883`): `NewProjectile(Center - UnitY * 40, Zero, 672, 0,
+    /// 0f, Main.myPlayer)` fires ONCE on the scene entry, local-owned (the
+    /// aiStyle-132 arm simulates on a client too) with the C# centre
+    /// converted to the top-left. The scene's later ticks do not re-spawn
+    /// it (the entry gate is the `hp <= 0` intercept, not the scene ride).
+    #[test]
+    fn the_loss_scene_spawns_the_672_defeat_marker_once() {
+        let mut app = base_app();
+        crystal(&mut app);
+        app.npcs[0].hp = 0; // the killing blow
+        update_npcs(&mut app, 1.0 / 60.0);
+        let marker = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 672)
+            .expect("the defeat marker drains on the scene entry");
+        assert_eq!(marker.owner, app.local_id as u8, "Main.myPlayer");
+        // The crystal's centre (2420, 1812) minus UnitY * 40 = (2420,
+        // 1772); the 10x10 row's half-box subtraction lands (2415, 1767).
+        assert_eq!((marker.pos.x, marker.pos.y), (2415.0, 1767.0));
+        assert_eq!(marker.damage, 0, "the marker deals no damage");
+        assert_eq!((marker.vel.x, marker.vel.y), (0.0, 0.0), "Vector2.Zero");
+        // The scene's next ticks keep the crystal alive (hp = lifeMax), so
+        // the intercept cannot re-fire — exactly one marker.
+        for _ in 0..5 {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|s| s.active && s.kind == 672)
+                .count(),
+            1,
+            "the entry fires once"
+        );
     }
 
     #[test]
@@ -16944,7 +17044,12 @@ mod dd2_tier_tests {
     }
 
     /// `AI_107`'s 576/577 arm (`NPC.cs:63029-63122`): the ogre's chase
-    /// window latches at 300 ticks and the spit leaves on `num9` (36).
+    /// window latches at 300 ticks and the spit leaves on the DEFAULT
+    /// `num9 = num8/2 = 35` (`:62950-62951` — case 1 does not override it).
+    /// W4-d14 doc-sweep: the throw rides the AI_107 defaults — speed
+    /// `num10 = 11` (`:62952`), drop `num15 = 0.1` (`:62958`), the ±0.5
+    /// jitter (`:63904`) and the `vector5 * num18` launch offset
+    /// (`:63906`, `num18 = 1`) — NOT the drakin's 13/0.15.
     #[test]
     fn the_ogre_latches_its_chase_window_and_spits() {
         let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
@@ -16956,18 +17061,273 @@ mod dd2_tier_tests {
         player.y = 118.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
         let mut shot = None;
+        let mut throw_ai = 0.0;
+        // The throw reads the position at the START of its tick (before the
+        // walker tail moves the ogre), so keep the previous tick's position.
+        let (mut prev_x, mut prev_y) = (n.x, n.y);
         for _ in 0..400 {
             n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
             if let Some(s) = n.wants_hostile_shot.last().copied() {
                 shot = Some(s);
+                throw_ai = n.ai[0];
                 break;
             }
+            (prev_x, prev_y) = (n.x, n.y);
         }
         let s = shot.expect("the ogre throws");
         assert_eq!(s.0, 676, "the spit");
         // `:63103`'s `GetAttackDamage_ForProjectiles(40f, 30f)` — the port's
         // classic-damage convention takes the first value.
         assert_eq!(s.5, 40, "the spit's damage");
+        // The throw fires on the tick LEAVING `ai[0]` at `num9 = 35`.
+        assert_eq!(throw_ai, 35.0, "the default num9, not the pound's 36");
+        // The exact throw shape (`:63890-63906`): the muzzle is
+        // `Center + (direction * 30, -70)` (`:63110`), the aim carries the
+        // 0.1 ballistic drop and the 11 speed, the spawn point steps one
+        // PRE-jitter velocity along the aim, and the velocity itself adds
+        // only the ±0.5 `RandomVector2` jitter.
+        let (sx, sy) = (prev_x + 96.0 * 0.5 + 30.0, prev_y + 124.0 * 0.5 - 70.0);
+        let (pcx, pcy) = player.center();
+        let dx = pcx - sx;
+        let dy = pcy - sy - dx.abs() * 0.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        let (vx0, vy0) = (dx / len * 11.0, dy / len * 11.0);
+        assert!(
+            (s.1 - (sx + vx0)).abs() < 1e-3 && (s.2 - (sy + vy0)).abs() < 1e-3,
+            "the launch offset is one pre-jitter velocity: ({}, {}) vs ({}, {})",
+            s.1,
+            s.2,
+            sx + vx0,
+            sy + vy0
+        );
+        assert!(
+            ((s.1 - sx).hypot(s.2 - sy) - 11.0).abs() < 1e-3,
+            "the throw speed is the default 11, not the drakin's 13"
+        );
+        assert!(
+            (-0.5..0.5).contains(&(s.3 - vx0)) && (-0.5..0.5).contains(&(s.4 - vy0)),
+            "the velocity adds only the ±0.5 jitter: ({}, {}) vs ({}, {})",
+            s.3,
+            s.4,
+            vx0,
+            vy0
+        );
+    }
+
+    /// `AI_107`'s pound (`NPC.cs:63085-63101`): case 2 overrides `num9 = 36`
+    /// and throws the 683 stomp from the `(-direction * 20, height/2 - 1)`
+    /// muzzle on the SAME default 11-speed/0.1-drop/jitter/launch-offset
+    /// shape. The hop (`:63914-63924`, `flag4`): at `num = 56` the ogre slams
+    /// `vy = -13`, and while airborne under `num2 = 41` the charge
+    /// fast-forwards to 41 — the throw still fires once it lands.
+    #[test]
+    fn the_ogre_pounds_the_683_and_hops_before_the_throw() {
+        let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        // ~120 px away: inside `num4 + 300` (430) with the chase window
+        // clear, so `ai[1] = 2` (the pound) picks; also inside the pound's
+        // own 250-px engage (`:63087`).
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        let mut shot = None;
+        let mut throw_ai = 0.0;
+        let mut hopped = false;
+        let mut stuck_at_41 = 0;
+        let (mut prev_x, mut prev_y) = (n.x, n.y);
+        for _ in 0..400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            // The hop tick: the charge sits at `num = 56` and the slam's
+            // -13 has already taken the tail's +0.4 gravity.
+            if n.ai[0] == 56.0 && n.vy < -12.0 {
+                hopped = true;
+            }
+            // The airborne clamp (`:63916-63919`): the charge holds at 41
+            // while `vy != 0`, never dropping below 40.
+            if hopped && n.vy != 0.0 && n.ai[0] > 0.0 {
+                assert!(n.ai[0] >= 40.0, "the airborne clamp: {}", n.ai[0]);
+                if n.ai[0] == 41.0 {
+                    stuck_at_41 += 1;
+                }
+            }
+            if let Some(s) = n.wants_hostile_shot.last().copied() {
+                shot = Some(s);
+                throw_ai = n.ai[0];
+                break;
+            }
+            (prev_x, prev_y) = (n.x, n.y);
+        }
+        assert!(hopped, "the pound hops at num = 56");
+        assert!(stuck_at_41 >= 5, "the charge fast-forwards to 41 airborne");
+        let s = shot.expect("the ogre still throws after landing");
+        assert_eq!(s.0, 683, "the stomp");
+        assert_eq!(s.5, 60, "the pound's classic damage (`:63089`)");
+        assert_eq!(throw_ai, 36.0, "case 2's num9 = 36 (`:63090`)");
+        // The same default throw shape, from the pound's muzzle
+        // (`:63097`: `(-direction * 20, height/2 - 1)`).
+        let (sx, sy) = (prev_x + 96.0 * 0.5 - 20.0, prev_y + 124.0 * 0.5 + 61.0);
+        let (pcx, pcy) = player.center();
+        let dx = pcx - sx;
+        let dy = pcy - sy - dx.abs() * 0.1;
+        let len = (dx * dx + dy * dy).sqrt();
+        let (vx0, vy0) = (dx / len * 11.0, dy / len * 11.0);
+        assert!(
+            (s.1 - (sx + vx0)).abs() < 1e-3 && (s.2 - (sy + vy0)).abs() < 1e-3,
+            "the stomp rides the same launch offset: ({}, {}) vs ({}, {})",
+            s.1,
+            s.2,
+            sx + vx0,
+            sy + vy0
+        );
+        assert!(
+            ((s.1 - sx).hypot(s.2 - sy) - 11.0).abs() < 1e-3,
+            "the stomp's speed is 11 too"
+        );
+        assert!(
+            (-0.5..0.5).contains(&(s.3 - vx0)) && (-0.5..0.5).contains(&(s.4 - vy0)),
+            "the stomp gets the jitter as well: ({}, {}) vs ({}, {})",
+            s.3,
+            s.4,
+            vx0,
+            vy0
+        );
+    }
+
+    /// `AI_107`'s idle sub-state (`NPC.cs:63078-63084`): case 0 sets only
+    /// `num5 = 44` — `flag3` stays false, so the charge cycles WITHOUT ever
+    /// throwing. The chase window is held open (`localAI[0] > 0`) and the
+    /// target sits inside the 130-160 px band so `ai[1]` stays 0.
+    #[test]
+    fn the_ogres_idle_sub_state_charges_without_throwing() {
+        let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        // The 300-tick chase latch, held far open: the sub-state pick keeps
+        // the idle arm instead of converting to the pound.
+        n.caster_counter = 100_000;
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        // ~100 px from the ogre's centre: under `num4 = 130` so the 44-tick
+        // charge arms, but the held chase window keeps `ai[1] = 0`.
+        player.x = 150.0 * TILE_PX + 96.0 * 0.5 + 100.0 - 10.0;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        let mut armed = false;
+        for _ in 0..300 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.ai[1], 0.0, "the idle sub-state holds");
+            assert!(
+                n.wants_hostile_shot.is_empty(),
+                "case 0 sets no flag3 — no throw"
+            );
+            if n.ai[0] > 0.0 {
+                armed = true;
+            }
+        }
+        assert!(armed, "the 44-tick charge still cycles");
+    }
+
+    /// The charge's arming gate (`NPC.cs:63857`): alongside the grounded
+    /// and reach terms it needs `Collision.CanHit(...) ||
+    /// Collision.CanHitLine(...)` — a solid wall between the ogre and the
+    /// target blocks BOTH walks, so the spit never arms even inside the
+    /// 1000-px engage.
+    #[test]
+    fn the_ogre_needs_line_of_sight_to_arm_its_throw() {
+        let mut n = Npc::new(NpcKind::DD2OgreT2, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        let mut world = fixture();
+        // A 20-tile solid column at x = 170 between the ogre (centre tile
+        // ~153) and the player (tile ~190) — both LOS walks step onto it.
+        for y in 100..120 {
+            let i = world.index(170, y);
+            world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut player = Player::spawn(&world);
+        player.x = 190.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(7);
+        for _ in 0..400 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            assert!(
+                n.wants_hostile_shot.is_empty(),
+                "no throw through the wall"
+            );
+            assert!(n.ai[0] <= 0.0, "the charge never arms: {}", n.ai[0]);
+        }
+    }
+
+    /// W4-d14 doc-sweep item 4 — the Dark Mage's heal mark (674): the
+    /// `:65862-65864` queue runs at `ai[0]` 40/48/56 of the heal phase,
+    /// the `Searches.Down(50)` scan finds the first solid tile under
+    /// `Center.X + direction * 240` and spawns at its
+    /// `ToWorldCoordinates(8, 0)`. The drain gives it `Main.myPlayer` as
+    /// the owner (the breath precedent — owner 255 would leave the
+    /// aiStyle-133 arm unsimulated on a client) and converts the point to
+    /// the top-left (`Projectile.cs:10876-10877`). The pool's 40-tick scan
+    /// (`Projectile.cs:36469-36497`) then heals every live NPC with
+    /// damage >= 1 / lifeMax >= 30 inside 1000 px EXCEPT the Dark Mages,
+    /// min(500, missing), and dies.
+    #[test]
+    fn the_dark_mage_heal_mark_drains_local_owned_and_heals_the_army() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        let mut mage = Npc::new(NpcKind::DD2DarkMage, 145.0 * TILE_PX, 1500.0, 1, 0.0);
+        mage.hp = mage.max_hp;
+        mage.caster_counter = 60; // past the materialize
+        // The heal phase's first marker window: 41 drops to 40 on the tick.
+        mage.ai[1] = 1.0;
+        mage.ai[0] = 41.0;
+        app.npcs.push(mage);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let heal = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 674)
+            .expect("the heal mark drains into the pool");
+        assert_eq!(
+            heal.owner,
+            app.local_id as u8,
+            "Main.myPlayer — the arm simulates on a client too"
+        );
+        // The scan column: `(2320 + 17 + 240) / 16 = 161`, the first solid
+        // row from 93 down is the surface at 120. `ToWorldCoordinates(8, 0)`
+        // = (2584, 1920); the half-box subtraction lands (2579, 1915).
+        assert_eq!((heal.pos.x, heal.pos.y), (2579.0, 1915.0));
+        assert_eq!(heal.damage, 0, "the marker deals no damage");
+        // The scan's subjects: a wounded goblin (heals), a full-health
+        // goblin (no heal) and a second mage (the 564/565 exclusion).
+        let mut goblin = Npc::new(NpcKind::DD2GoblinT1, 160.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        goblin.hp = 1;
+        app.npcs.push(goblin);
+        let mut healthy = Npc::new(NpcKind::DD2GoblinT1, 161.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        healthy.hp = healthy.max_hp;
+        let healthy_max = healthy.max_hp;
+        app.npcs.push(healthy);
+        let mut mage2 = Npc::new(NpcKind::DD2DarkMage, 162.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        mage2.hp = 1;
+        app.npcs.push(mage2);
+        // 40 pool ticks: the scan fires on the 40th and kills the marker.
+        for _ in 0..40 {
+            crate::world_sim::projectiles::update_projectiles(&mut app, 1.0 / 60.0);
+        }
+        assert!(
+            !app.projectiles.slots().iter().any(|s| s.active && s.kind == 674),
+            "the marker dies after the scan (`:36497`)"
+        );
+        let g = app.npcs.iter().find(|n| n.kind == NpcKind::DD2GoblinT1 && n.x < 161.0 * TILE_PX).unwrap();
+        assert_eq!(g.hp, 1 + 500.min(g.max_hp - 1), "min(500, missing) heals");
+        let h = app.npcs.iter().find(|n| n.kind == NpcKind::DD2GoblinT1 && n.x >= 161.0 * TILE_PX).unwrap();
+        assert_eq!(h.hp, healthy_max, "a full-health NPC takes no heal");
+        let m2 = app.npcs.iter().filter(|n| n.kind == NpcKind::DD2DarkMage).nth(1).unwrap();
+        assert_eq!(m2.hp, 1, "the mages exclude themselves (`:36481`)");
     }
 
     /// `AI_107`'s 570/571 arm (`NPC.cs:63145-63195`): the drakin's 671

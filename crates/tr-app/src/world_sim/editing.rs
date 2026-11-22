@@ -17350,6 +17350,47 @@ mod use_loop_tests {
         assert_eq!(p.slots_minions, 1.0);
     }
 
+    /// W4-d14 doc-sweep item 3 — the Monk Staff T1 (3835) fires through the
+    /// GENERIC shoot tail: `Item.cs:33958-33976` gives `shoot = 697`,
+    /// `shootSpeed = 24`, `damage = 50`, `knockBack = 7`, `channel = true`
+    /// and NO mana cost (`ItemCheck_Shoot` has no per-item arm for 3835 —
+    /// it falls through to the generic spawn, `Player.cs:49437`). The
+    /// `StartChanneling` latch (`Player.cs:52958-52968`) arms the hold with
+    /// the 697 cancel-key seed. The T2/T3 per-item arms ARE special-cased
+    /// in the C# and remain d15-adjacent gaps (recorded, not ported here):
+    /// `:48731-48734` (3836 seeds `ai0 = NextFloat() * speed * 0.75 *
+    /// direction`) and `:48736-48746` (3858's alt-use fires 708 at 1.5×
+    /// velocity, `ai0 = (0.3 + 0.7 * NextFloat()) * speed * 1.75 *
+    /// direction`, half damage, knockback +4).
+    #[test]
+    fn the_monk_staff_t1_use_spawns_the_697_and_latches_the_channel() {
+        let mut app = app_with_staff(3835); // Monk Staff T1 — shoot 697
+        let mana_before = app.player.as_ref().unwrap().mana;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let slot = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 697)
+            .expect("the MonkStaffT1 spawned");
+        let s = &app.projectiles.slots()[slot];
+        assert_eq!(s.owner, app.local_id as u8, "the local player's shot");
+        assert_eq!(s.damage, 50, "the row's damage at multiplier 1");
+        assert!(
+            (s.vel.length() - 24.0).abs() < 1e-3,
+            "the 24 shootSpeed: {}",
+            s.vel.length()
+        );
+        assert_eq!((s.ai[0], s.ai[1]), (0.0, 0.0), "no per-item ai seed for 3835");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, mana_before, "the staff costs no mana");
+        assert!(p.channel, "StartChanneling latches the hold");
+        assert_eq!(p.channel_item, 3835, "the channel names the staff");
+        assert_eq!(p.channel_proj_expected, 697, "the cancel-key seed");
+    }
+
     /// S1-P-i25 — the summon spawn arm books the UNSCALED item damage as
     /// `originalDamage` (`Player.cs:49601`), not the class-multiplied shot: the
     /// pool's `summon_tick_block` applies `minionDamage` later (`:16707`). The

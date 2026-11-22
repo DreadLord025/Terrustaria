@@ -419,11 +419,47 @@ pub const DD2_BOMB: u16 = 681;
 /// Mage's summon/heal casts (`Projectile.cs:7208-7220`: 10x10, aiStyle
 /// 133, alpha 255, tileCollide false, timeLeft 900).
 pub const DARK_MAGE_MARKER: u16 = 673;
+/// `ProjectileID.DD2DarkMageHeal` (674) — the heal cast's ground marker,
+/// the 673 row's twin (`Projectile.cs:7208-7220`); the AI()'s aiStyle-133
+/// block's 40-tick heal scan is `:36465-36497`.
+pub const DARK_MAGE_HEAL: u16 = 674;
+/// `ProjectileID.DD2ElderWins` (672) — the Old One's Army victory crystal's
+/// destruction marker (`Projectile.cs:7196-7207`: 10x10, aiStyle 132,
+/// alpha 255, tileCollide false, ignoreWater, timeLeft 900, hostile,
+/// penetrate -1); the AI()'s inline 4-state machine is `:36318-36434`.
+pub const DD2_ELDER_WINS: u16 = 672;
+/// `ProjectileID.DD2OgreSmash` (683) — the Ogre's ground pound
+/// (`Projectile.cs:7282-7293`: 30x30, aiStyle 135, alpha 255, tileCollide
+/// false, ignoreWater, timeLeft 120, hostile, penetrate -1); the growing
+/// box's tile walk is `AI_135_OgreStomp` `:68671-68787`.
+pub const OGRE_SMASH: u16 = 683;
+/// `ProjectileID.QueenSlimeSmash` (922) — the Queen Slime's ground pound,
+/// the 683 row's twin (`Projectile.cs:8745-8756`); `AI_135`'s 922 arms
+/// shrink the box to 30 and swap the gore for the crystal dust.
+pub const QUEEN_SLIME_SMASH: u16 = 922;
+/// `ProjectileID.MonkStaffT1` (697) — the Brand of the Inferno's swing
+/// (`Projectile.cs:7366-7384`: 16x16, aiStyle 140, friendly+melee, scale
+/// 1.35, penetrate -1, alpha 255, tileCollide false, ignoreWater, the
+/// local-immunity 12 pair); `AI_140_MonkStaffT1` `:69416-69600`.
+pub const MONK_STAFF_T1: u16 = 697;
+/// `ProjectileID.MonkStaffT1Explosion` (698) — the T1 swing's ground
+/// impact (`Projectile.cs:7385-7401`: 75x200, aiStyle 141, alpha 255,
+/// tileCollide false, ignoreWater, timeLeft 5, friendly, penetrate -1,
+/// the local-immunity -1 pair, melee). The aiStyle-141 arm is d15's
+/// claim — the row rides here so the 140 arm's spawn resolves.
+pub const MONK_STAFF_T1_EXPLOSION: u16 = 698;
+/// `ProjectileID.MonkStaffT3` (707) — the Sleepy Octopod's swing
+/// (`Projectile.cs:7474-7490`: 16x16, aiStyle 140, friendly+melee,
+/// penetrate -1, alpha 255, tileCollide false, ignoreWater, the
+/// local-immunity 6 pair); the 140 arm's second kind branch.
+pub const MONK_STAFF_T3: u16 = 707;
 /// `ProjectileID.DD2DarkMageShot` (675) — the Dark Mage's shadowflame
 /// (`Projectile.cs:7221-7230`: 10x10, aiStyle 1, alpha 255, penetrate -1).
 pub const DARK_MAGE_FLAME: u16 = 675;
 /// `ProjectileID.DD2BetsyBreath` (687) — Betsy's breath
-/// (`AI_110`'s `NewProjectile(..., 687, 35, ...)`).
+/// (`Projectile.cs:7315-7324`: 30x30, aiStyle 136, alpha 255, penetrate -1,
+/// hostile; the spawn is `NPC.cs:62026`'s `NewProjectile(..., 687, num3,
+/// 0f, Main.myPlayer, 0f, base.whoAmI)` — ai1 names the breathing NPC).
 // --- the whip family (M4-PROJ-7): `ProjectileID.Sets.IsAWhip`
 // (`ProjectileID.cs:193`) — the 18 kinds, all `DefaultToWhip()`'s slice
 // (`Projectile.cs:10704-10718`: 18x18, aiStyle 165, penetrate -1,
@@ -2869,10 +2905,92 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // marker 673 + the heal marker 674 (10x10, aiStyle 133, alpha
             // 255, tileCollide false, timeLeft 900) and the shadowflame
             // 675 (10x10, aiStyle 1, alpha 255, penetrate -1).
+            // `DD2ElderWins` (`Projectile.cs:7196-7207`): the victory
+            // crystal's destruction marker — 10x10, aiStyle 132, alpha 255,
+            // tileCollide false, ignoreWater, timeLeft 900, penetrate -1.
+            // W4-d14.
+            DD2_ELDER_WINS => (
+                10.0,
+                10.0,
+                132,
+                -1,
+                900,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `DD2OgreSmash` / `QueenSlimeSmash` (`Projectile.cs:7282-7293` /
+            // `:8745-8756`): 30x30, aiStyle 135, alpha 255, tileCollide
+            // false, ignoreWater, timeLeft 120, penetrate -1 — the two rows
+            // are byte-identical. W4-d14.
+            OGRE_SMASH | QUEEN_SLIME_SMASH => (
+                30.0,
+                30.0,
+                135,
+                -1,
+                120,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `MonkStaffT1` (`Projectile.cs:7366-7384`): 16x16, aiStyle 140,
+            // friendly+melee, scale 1.35, penetrate -1, alpha 255,
+            // tileCollide false, ignoreWater, the local-immunity 12 pair.
+            // W4-d14.
+            MONK_STAFF_T1 => (
+                16.0,
+                16.0,
+                140,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (true, 12, false, -1, 255, 1.35),
+            ),
+            // `MonkStaffT3` (`Projectile.cs:7474-7490`): the same box/style,
+            // scale 1 (no override), the local-immunity 6 pair. W4-d14.
+            MONK_STAFF_T3 => (
+                16.0,
+                16.0,
+                140,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (true, 6, false, -1, 255, 1.0),
+            ),
+            // `MonkStaffT1Explosion` (`Projectile.cs:7385-7401`): 75x200,
+            // aiStyle 141, alpha 255, tileCollide false, ignoreWater,
+            // timeLeft 5, friendly, penetrate -1, the local-immunity -1
+            // pair, melee. The aiStyle-141 arm is d15's claim (141-150) —
+            // the row rides here so the 140 arm's ground-impact spawn
+            // (`:69500`) resolves; the kind sits rowed-but-unarmed until
+            // d15 lands the arm (the census §3c deferral pattern). W4-d14.
+            MONK_STAFF_T1_EXPLOSION => (
+                75.0,
+                200.0,
+                141,
+                -1,
+                5,
+                0,
+                false,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // `DD2DarkMageRaise` / `DD2DarkMageHeal` (`Projectile.cs:7208-7219`):
             // 10x10, aiStyle 133, `alpha = 255`, `timeLeft = 900`,
-            // `penetrate = -1`, no tile collision, water-ignoring.
-            DARK_MAGE_MARKER => (
+            // `penetrate = -1`, no tile collision, water-ignoring. The 674
+            // heal marker shares the row verbatim (the `||` group); W4-d14.
+            DARK_MAGE_MARKER | DARK_MAGE_HEAL => (
                 10.0,
                 10.0,
                 133,
@@ -2899,25 +3017,31 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
-            // Betsy's breath 687 (`Projectile.cs`'s SetDefaults row: the
-            // aiStyle-1 breath flight).
+            // Betsy's breath 687 (`Projectile.cs:7315-7324`): 30x30, aiStyle
+            // 136 (`AI_136_BetsyBreath` `:68789-68852`), alpha 255, penetrate
+            // -1, hostile. The stock `tileCollide = true` (`:775`),
+            // extraUpdates 0 and timeLeft 3600 (`:787`) stand — the arm
+            // writes NO override. W4-d14 / f19 F5: the old 12x12 aiStyle-1
+            // extraUpdates-1 row deviated on every axis.
             BETSY_BREATH => (
-                12.0,
-                12.0,
-                1,
+                30.0,
+                30.0,
+                136,
                 -1,
                 TIME_LEFT_DEFAULT,
-                1,
+                0,
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
-            // Betsy's fireball 686 (`AI_110`'s `NewProjectile(..., 686, 35,
-            // ...)` — the 1500-px leaping shot).
+            // Betsy's fireball 686 (`Projectile.cs:7305-7314`): 30x30,
+            // aiStyle 1 (the slice-B `AI_001` ladder), alpha 255, penetrate
+            // -1, hostile. The stock tileCollide/timeLeft/extraUpdates stand.
+            // W4-d14 / f19 F5: the box was 22x22 and the alpha reset 0.
             BETSY_FIREBALL => (
-                22.0,
-                22.0,
+                30.0,
+                30.0,
                 1,
                 -1,
                 TIME_LEFT_DEFAULT,
@@ -2925,7 +3049,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 false,
                 false,
-                RESET_STATE,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // --- The magic (caster) families (M4-PROJ-6, in `ProjectileID`
             // order) --- the aiStyle declaration is what Phases 3-4 need; the
@@ -4700,7 +4824,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || matches!(kind, VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d14 — `Projectile.cs:7215`: the Dark Mage cast markers
+            // (673/674) set `ignoreWater = true` (the 673 row's flag was
+            // missing from the overlay; the 674 heal twin shares it).
+            // `:7203`: the 672 victory marker sets it too.
+            || matches!(kind, DARK_MAGE_MARKER | DARK_MAGE_HEAL | DD2_ELDER_WINS)
+            // `Projectile.cs:7289`/`:8752` — the Ogre/QueenSlime stomps.
+            || matches!(kind, OGRE_SMASH | QUEEN_SLIME_SMASH)
+            // `Projectile.cs:7379`/`:7392`/`:7486` — the monk staff family.
+            || matches!(kind, MONK_STAFF_T1 | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T3),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4742,6 +4875,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // (636, `:6844`), the Tentacle Spike (971, `:9203`) and
                     // the Blood Butcherer (975, `:9293`).
                     | DAYBREAK | TENTACLE_SPIKE | BLOOD_BUTCHERER
+                    // W4-d14 — the monk staff swings + the T1 ground impact
+                    // (`Projectile.cs:7372`/`:7398`/`:7480`).
+                    | MONK_STAFF_T1 | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T3
             ),
         ranged: matches!(
             kind,

@@ -12058,15 +12058,23 @@ impl Npc {
             self.ai[0] -= 1.0;
             // `:65840-65843` — the summon sound window (the tracked cue).
             // `:65844-65848` — the summon marker + `DD2Event.RaiseGoblins`.
+            // W4-d14 doc-sweep item 4: `NewProjectile(..., 673, 0, 0f,
+            // Main.myPlayer)` — the owner is the local player, so the
+            // aiStyle-133 ramp simulates on a client too; the payload rides
+            // the ai-shot list (the breath precedent) and the C# passes the
+            // CENTRE (the drain converts to the top-left).
             if self.ai[1] == 2.0 && self.ai[0] == 64.0 {
-                self.wants_hostile_shot.push((
-                    673u16,
-                    cx + self.facing as f32 * 24.0,
-                    cy - 40.0,
-                    0.0,
-                    0.0,
-                    0,
-                ));
+                self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                    kind: 673u16,
+                    x: cx + self.facing as f32 * 24.0,
+                    y: cy - 40.0,
+                    vx: 0.0,
+                    vy: 0.0,
+                    damage: 0,
+                    ai0: 0.0,
+                    ai1: 0.0,
+                    scale: None,
+                });
                 // `DD2Event.RaiseGoblins` — the port's summon request.
                 self.wants_sphere.push((NpcKind::DD2GoblinT1, cx, cy, 0.0));
             }
@@ -12104,14 +12112,25 @@ impl Npc {
                         .tile(tx, y)
                         .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
                     if solid {
-                        self.wants_hostile_shot.push((
-                            674u16,
-                            tx as f32 * TILE_PX + 8.0,
-                            y as f32 * TILE_PX,
-                            0.0,
-                            0.0,
-                            0,
-                        ));
+                        // `:65864` — `NewProjectile(..., result.
+                        // ToWorldCoordinates(8, 0), Zero, 674, 0, 0f,
+                        // Main.myPlayer)`: the local owner keeps the heal
+                        // scan alive on a client (the breath precedent).
+                        // The point is the tile's centre-x / top-y; the
+                        // drain's `NewProjectile` half-box subtraction
+                        // (`Projectile.cs:10876-10877`) lands the box at
+                        // `tileX + 3, tileY - 5`.
+                        self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                            kind: 674u16,
+                            x: tx as f32 * TILE_PX + 8.0,
+                            y: y as f32 * TILE_PX,
+                            vx: 0.0,
+                            vy: 0.0,
+                            damage: 0,
+                            ai0: 0.0,
+                            ai1: 0.0,
+                            scale: None,
+                        });
                         break;
                     }
                 }
@@ -12463,8 +12482,22 @@ impl Npc {
                 self.vy = 0.0;
                 self.facing = dir2 as i32;
                 self.sprite_dir = self.facing;
-                self.wants_hostile_shot
-                    .push((687u16, cx, cy, self.vx, self.vy, 35));
+                // `NPC.cs:62026` — `NewProjectile(..., 687, num3, 0f,
+                // Main.myPlayer, 0f, base.whoAmI)`: ai1 names the breathing
+                // NPC (the aiStyle-136 arm anchors to it), so the payload
+                // rides the ai-shot list (the deathray precedent). The C#
+                // passes the CENTRE; the drain converts to the top-left.
+                self.wants_hostile_shot_ai.push(crate::npc::HostileShotAi {
+                    kind: 687u16,
+                    x: cx,
+                    y: cy,
+                    vx: self.vx,
+                    vy: self.vy,
+                    damage: 35,
+                    ai0: 0.0,
+                    ai1: self.slot as f32,
+                    scale: None,
+                });
             } else if self.ai[1] >= 40.0 && (pcx - cx).abs() > 550.0 && self.vx.abs() < 20.0 {
                 self.vx += self.vx.signum() * 0.5;
             }
@@ -15549,8 +15582,13 @@ impl Npc {
     }
 
     /// `AI_107`'s 576/577 arm (`NPC.cs:63029-63122`) — the ogres: the
-    /// chase/spit/pound sub-state machine with the 676/683 throws and the
-    /// hop.
+    /// chase/spit/pound sub-state machine. The 676 spit throws at the
+    /// default `num9 = 35` and the 683 pound at `num9 = 36`, both riding the
+    /// AI_107 default throw shape (`:63881-63913`): speed `num10 = 11`,
+    /// ballistic drop `num15 = 0.1`, the ±0.5 jitter and the one-velocity
+    /// launch offset. The pound's hop (`:63914-63924`) clamps an airborne
+    /// charge to `num2 = 41` and slams `vy = -13` at `num = 56`; the idle
+    /// sub-state never throws (`flag3` stays false).
     fn update_ogre(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
@@ -15574,9 +15612,20 @@ impl Npc {
             // `:63072`: the sub-2 state latches the 300-tick chase window.
             self.caster_counter = 300;
         }
-        // `:63076-63117`'s per-sub-state tuning: the charge length, the
-        // engage distance, the cooldown and the throw's own tuning.
-        let (tick, engage, cooldown, proj, dmg, hop, ox, oy) = match self.ai[1] as i32 {
+        // `:63076-63117`'s per-sub-state tuning: the charge length (`num5`),
+        // the engage distance (`num4`), the cooldown (`num6`), the throw kind
+        // (`num12`), the classic damage (`num11`), the hop (`num`/`num3`,
+        // `flag4`), the muzzle offset (`vector`) and the throw tick (`num9`).
+        // W4-d14 doc-sweep: the ogre case-2/case-1 blocks override ONLY
+        // `num5/num4/num6/num9/num/num2/num3/num11/num12/vector` — the throw
+        // speed `num10 = 11f` (`:62952`), the ballistic drop `num15 = 0.1f`
+        // (`:62958`), the jitter `num16 = 0.5f` (`:62960`), the count
+        // `num17 = 1` (`:62961`) and the launch offset `num18 = 1f`
+        // (`:62962`) keep the AI_107 DEFAULTS (the 13/0.15 the first pass
+        // used are the DRAKIN's `:63163-63168`, not the ogre's). Case 1 keeps
+        // the default `num9 = num8/2 = 35` (`:62950-62951`); case 2 sets
+        // `num9 = 36` (`:63090`). Case 0 sets no `flag3` → NO throw.
+        let (tick, engage, cooldown, proj, dmg, hop, ox, oy, throw_at) = match self.ai[1] as i32 {
             2 => (
                 90.0,
                 250.0,
@@ -15586,6 +15635,7 @@ impl Npc {
                 56.0,
                 -20.0 * self.facing as f32,
                 h * 0.5 - 1.0,
+                36.0,
             ),
             1 => (
                 90.0,
@@ -15596,14 +15646,44 @@ impl Npc {
                 0.0,
                 30.0 * self.facing as f32,
                 -70.0,
+                35.0,
             ),
-            _ => (44.0, 130.0, 60.0, 676u16, 40, 0.0, 0.0, 0.0),
+            // Case 0 (`:63078-63084`): `num5 = 44` only — `flag3` stays
+            // false, so the idle sub-state never throws.
+            _ => (44.0, 130.0, 60.0, 0u16, 0, 0.0, 0.0, 0.0, 0.0),
         };
         // The flag5 charge (`:63850-63880`): the countdown, the damping and
-        // the cooldown.
+        // the cooldown. The arming gate (`:63857`) needs the target in line
+        // of sight — `Collision.CanHit(...) || Collision.CanHitLine(...)`
+        // over the two boxes — alongside the grounded (`vy == 0`, `flag6`
+        // false for the ogre) and reach terms.
         if self.ai[0] < 0.0 {
             self.ai[0] += 1.0;
-        } else if self.ai[0] == 0.0 && self.vy == 0.0 && dist < engage {
+        } else if self.ai[0] == 0.0
+            && self.vy == 0.0
+            && dist < engage
+            && (crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            ) || crate::projectile::can_hit_line(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                player.height,
+            ))
+        {
             self.ai[0] = tick;
         }
         if self.ai[0] > 0.0 {
@@ -15613,20 +15693,48 @@ impl Npc {
                 self.ai[0] = -cooldown;
             }
         }
-        // `:63916-63920`'s hop: at `num = 56` the ogre slams up.
-        if hop > 0.0 && self.ai[0] == hop {
-            self.vy = -13.0;
-        }
-        // `:63888-63913`'s throw: at `num9 = 36` the projectile leaves from
-        // the offset, aimed with the `Math.Abs(v.X) * num15` drop.
-        if (proj == 676 || proj == 683) && self.ai[0] == 36.0 {
+        // `:63881-63913`'s throw (`flag3`, at `num9`) — the C# block runs
+        // BEFORE the hop below (`:63914`), so an airborne ogre at the 36
+        // window still throws before the clamp fast-forwards the charge.
+        // The aim from the muzzle (`Center + vector`) to the target, the
+        // ballistic drop `v.Y -= Abs(v.X) * num15` (0.1),
+        // `SafeNormalize(-UnitY) * num10` (11), then — `vector2 = null` for
+        // the ogre — the `RandomVector2(-0.5, 0.5)` jitter (`:63904`, two
+        // NextDouble draws on the UpdateNPCs stream) and the
+        // `vector5 * num18` launch offset (`:63906`, num18 = 1). BOTH the
+        // 683 stomp and the 676 spit ride this shape (`num17 = 1` loop).
+        if throw_at > 0.0 && self.ai[0] == throw_at {
             let (sx, sy) = (cx + ox, cy + oy);
-            let drop = (pcx - sx).abs() * 0.15;
-            let (dx, dy) = (pcx - sx, pcy - sy - drop);
-            let len = (dx * dx + dy * dy).sqrt().max(1.0);
-            let speed = 13.0;
-            self.wants_hostile_shot
-                .push((proj, sx, sy, dx / len * speed, dy / len * speed, dmg));
+            let (dx, dy) = (pcx - sx, pcy - sy - (pcx - sx).abs() * 0.1);
+            // `SafeNormalize(-Vector2.UnitY)` (`:63893`): a zero delta keeps
+            // the -Y default rather than collapsing to zero.
+            let (nx, ny) = if dx == 0.0 && dy == 0.0 {
+                (0.0, -1.0)
+            } else {
+                let len = (dx * dx + dy * dy).sqrt();
+                (dx / len, dy / len)
+            };
+            let speed = 11.0;
+            let (vx0, vy0) = (nx * speed, ny * speed);
+            // `:63904` — `Utils.RandomVector2(Main.rand, -0.5, 0.5)`
+            // (Utils.cs:2431-2434: `(max-min)*NextDouble + min` per axis).
+            let vx = vx0 + rng.next_double() as f32 - 0.5;
+            let vy = vy0 + rng.next_double() as f32 - 0.5;
+            // `:63906` — `vector7 += vector5 * num18` (num18 = 1).
+            let (px, py) = (sx + vx0, sy + vy0);
+            self.wants_hostile_shot.push((proj, px, py, vx, vy, dmg));
+        }
+        // `:63914-63924`'s hop (case 2's `flag4` only): while airborne
+        // (`vy != 0`) under `num2 = 41` the charge fast-forwards to 41
+        // (`:63916-63919`), then at `num = 56` the ogre slams up `vy = -13`
+        // (`num3`, `:63920-63923`).
+        if hop > 0.0 && self.ai[0] > 0.0 {
+            if self.vy != 0.0 && self.ai[0] < 41.0 {
+                self.ai[0] = 41.0;
+            }
+            if self.ai[0] == hop {
+                self.vy = -13.0;
+            }
         }
         // The walker physics (the shared `AI_107` body's accel/friction):
         // `num23 = 1.0`, `num24 = 0.07`, `num25 = 0.8`.
