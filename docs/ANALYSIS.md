@@ -29070,6 +29070,29 @@ mutual receipt**: d43 grew a 694 port after 108's census (batch 13
 `0253bde90`) but its own retire doc research/244 (`6fbe06250` §2d)
 drops it onto c3 ("c3's `npc_anchor_nudge` 694 arm is the keeper — d43
 has NO 694 anchor"). 24 witnesses WRITTEN NOT RUN; no further c3 rounds.
+
+**Batch-E merge note (research/329 §3 E8 — OBLIGATION, not executed).**
+d34/d38 are NOT in this batch, so c3's `NpcKind::CursedSkull` (proto 355)
++ `NpcKind::GiantCursedSkull` (289) variants STAY here — the E8 drop
+cannot run yet: unlike d25's wholesale drop, E8 keeps EVERY wiring block
+keyed on the SAME variant names (the axis 10 arm + drains, the spawn
+band, the tint arms, the witnesses), which need the variants to exist to
+compile. **For the spine agent at the d34/d38 merges** (the §3 hunk
+table is the work order): drop c3's two enum variants + their
+`npc/data.rs` rows + bestiary/portrait/netglue/render-draw arms + the
+34/289 FindFrame arm + ALL_KINDS/CS_STYLES entries (d34@267 / d38@289
+own them, same names); KEEP the tint arms re-keyed onto the canonical
+variants, the 694 kind wholesale (d43's 694 drops per its research/244),
+c3's superset `npc_ai_style10.rs`, the 299 proj row + AI_001 arm + Cursed
+23/240 (d38/d43 have NO 299 row — hazard 3), the spawn band, and route
+the canonical kinds through c3's axis 10 arm (drop/unreachable-mark the
+d34/d38 wrapper dispatches — they discard `Style10Out` and lack the
+`:90496-90497` stamps). The sheet-list rows NPC_34/289 dedupe with
+d34/d38's at that merge; `BESTIARY_NPC_SHEET_IDS` 189 re-pins then. The
+`w4_c3_*` witnesses re-pin onto protocol 267/289/694 as the family's
+activation gate. The anchors 10-arm marker row SURVIVES on the 694-only
+arm (do not delete).
+
 ## The aiStyle-14 flyer family (S1-D-3 aiStyle-14 slice, 2026-11-18, code-only mode)
 `npc_ai_style14.rs::bat_ai` ports `NPC.AI()`'s `if (this.aiStyle == 14)`
 arm (`NPC.cs:22849-23486`) with the branches the port's four style-14 kinds
