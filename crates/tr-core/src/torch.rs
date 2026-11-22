@@ -75,7 +75,7 @@ pub(crate) fn platform_proper_top_frame(frame_x: i16) -> bool {
 }
 
 /// `WorldGen.TopEdgeCanBeAttachedTo` (`WorldGen.cs:70380-70398`).
-/// `pub(crate)`: the torch placement support gate (`WorldGen.PlaceTile`
+/// The torch placement support gate (`WorldGen.PlaceTile`
 /// case 4, `WorldGen.cs:59835`) reads the same below-platform test
 /// (`edit/place.rs::place_torch`). The C# carries `!tile.inActive()`
 /// (`:70389`) — S1-P-i42 restored it (the actuated platform has no top
