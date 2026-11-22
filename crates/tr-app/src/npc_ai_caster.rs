@@ -152,7 +152,7 @@ pub fn global_firing_distance_check(shoot_x: f32, shoot_y: f32, target_x: f32, t
 /// early returns), and the per-tile test is
 /// `active && !inActive && tileSolid && !tileSolidTop` — platforms do NOT
 /// block the body space.
-fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
+pub(crate) fn solid_tiles(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
     if x0 < 0 || x1 >= world.width || y0 < 0 || y1 >= world.height - 40 {
         return true;
     }

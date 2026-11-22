@@ -82,9 +82,12 @@
 //!   netMode 0): the shot blocks and the discourage loop always run;
 //!   the `netMode == 1` early return (`:26869-26872`) is constant-false
 //!   and folds away.
-//! - The dust/gore visuals and the sounds (3 / 15) are SKIPPED — no
-//!   dust/gore/sound layer — but every `Main.rand` draw they carry is
-//!   kept in order (see the RNG list above).
+//! - The dust VISUALS are W4-e2's second batch (sites 26462/26755/
+//!   26760): the gate drip, the 20-dust hand-off burst and the per-tick
+//!   spin dust spawn through the live `DustPool` (`npc_dust.rs`'s
+//!   shared twins' emitters) on the same stream, argument draws first.
+//!   The gore bodies (143/7/6) stay W4-d55's — their six argument pairs
+//!   are consumed here in order; the sounds (3 / 15) stay SKIPPED.
 //! - `reflectsProjectiles = false` (`:26485`) / `= true` under the
 //!   Mech Queen (`:26716`): the port has no NPC projectile-reflect
 //!   flag; with no Mech Queen the C# value is constant-false, the
@@ -240,9 +243,11 @@ pub fn retinazer_ai(
     player: &Player,
     rng: &mut UnifiedRandom,
     env: &Style30Env,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     debug_assert_eq!(npc.kind, NpcKind::Retinazer);
-    ai_body(npc, world, player, rng, env);
+    ai_body(npc, world, player, rng, env, dust, dust_ctx);
     // The C#'s `return`s leave `AI()` only — `NPC.Update`'s
     // `noTileCollide` integration (`:90494-90498`) still runs.
     npc.old_vx = npc.vx;
@@ -261,6 +266,8 @@ fn ai_body(
     player: &Player,
     rng: &mut UnifiedRandom,
     env: &Style30Env,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     let (w, h) = npc.size();
     // `:26407-26410` — the invalid-target retarget.
@@ -304,8 +311,12 @@ fn ai_body(
         npc.rotation = num397;
     }
     // `:26460-26465` — the dust gate: the draw runs EVERY tick, before
-    // the day gate; the dust itself is a documented skip.
-    let _dust_gate = rng.next_max(5) == 0;
+    // the day gate. W4-e2 (site 26462): the passed gate spawns the
+    // type-5 drip on the live pool — the shared twins' emitter.
+    let dust_gate = rng.next_max(5) == 0;
+    crate::npc_dust::twin_drip(
+        dust_gate, npc.x, npc.y, w as i32, h, npc.vx, rng, dust, dust_ctx, world,
+    );
     // `:26466-26475` — the twin-alive despawn discouragement: at night,
     // alive, with the timer under 10, every other active 125/126's
     // `timeLeft - 1` raises ours (`DiscourageDespawn`, `:7258-7265`).
@@ -559,16 +570,19 @@ fn ai_body(
                         let _gy = rng.next_range(-30, 31) as f32 * 0.2;
                     }
                 }
-                for _ in 0..20 {
-                    let _dx = rng.next_range(-30, 31) as f32 * 0.2;
-                    let _dy = rng.next_range(-30, 31) as f32 * 0.2;
-                }
+                // W4-e2 (site 26755): the 20 type-5 dusts spawn on the
+                // live pool — argument pair then internals per dust.
+                crate::npc_dust::twin_spin_burst(
+                    npc.x, npc.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+                );
             }
         }
         // `:26760` — the per-tick spin dust: 2 draws, also on the
-        // transition tick, AFTER the burst.
-        let _dx = rng.next_range(-30, 31) as f32 * 0.2;
-        let _dy = rng.next_range(-30, 31) as f32 * 0.2;
+        // transition tick, AFTER the burst. W4-e2 (site 26760): the
+        // type-5 dust spawns on the live pool.
+        crate::npc_dust::twin_spin_tick(
+            npc.x, npc.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+        );
         // `:26761-26770` — the 0.98 damp with the ±0.1 dead-band.
         npc.vx *= 0.98;
         npc.vy *= 0.98;
@@ -830,6 +844,19 @@ mod tests {
         Style30Env::CLASSIC_SOLO
     }
 
+    /// W4-e2: the tests' scratch dust seam (the `update_rng` permissive
+    /// convention — whole world on-screen, full budget, no cull).
+    fn dctx() -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(4000.0, 4000.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The SetDefaults identity (`NPC.cs:10522-10537`, `NPCID.cs:10927`
     /// Retinazer = 125) and the aim's named-argument atan2 (`:26412`):
     /// the bottom-59 anchor, the integer halves, the +1.57 offset.
@@ -865,7 +892,7 @@ mod tests {
         // Park well outside the band, on the short side.
         n.rotation = aim + 1.0;
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert!(
             (n.rotation - (aim + 1.0 - 0.1)).abs() < 1e-5,
             "the turn steps 0.1 toward the aim: {}",
@@ -880,7 +907,7 @@ mod tests {
         n.vx = 0.0;
         n.vy = 0.0;
         n.rotation = aim + 0.05;
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.rotation, aim, "the snap band lands on the aim");
     }
 
@@ -895,7 +922,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(42);
         let mut witness = rng.clone();
         let _gate = witness.next_max(5);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "exactly one draw, in order");
     }
 
@@ -910,7 +937,7 @@ mod tests {
         let mut n = ret(60.0 * TILE_PX, 60.0 * TILE_PX);
         let (x0, y0) = (n.x, n.y);
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.vy, -0.04);
         assert_eq!(n.despawn_timer, 10);
         assert_eq!(n.ai, [0.0; 4], "the day gate precedes the phases");
@@ -932,7 +959,7 @@ mod tests {
         // left of and 300 px above the player's centre.
         let mut n = ret(20.0 * TILE_PX, 60.0 * TILE_PX);
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         let (cx, cy) = (20.0 * TILE_PX + 50.0, 60.0 * TILE_PX + 55.0);
         let (pcx, pcy) = p.center();
         let dx = pcx - 300.0 - cx;
@@ -948,7 +975,7 @@ mod tests {
         // twice (-0.15 + 0.2 = 0.05).
         n.vx = -0.15;
         n.vy = 0.0;
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert!((n.vx - (-0.15 + 0.2)).abs() < 1e-4, "double-add: {}", n.vx);
     }
 
@@ -964,14 +991,14 @@ mod tests {
         let mut n = ret(90.0 * TILE_PX, 70.0 * TILE_PX);
         n.ai = [0.0, 0.0, 0.0, 30.0];
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[3], 30.0, "below the player: no timer advance");
         assert!(n.wants_hostile_shot.is_empty());
         // ABOVE the player (y 40 tiles, bottom 750 < 960), hover point
         // ~180 px away (< 400): the timer advances.
         let mut n = ret(90.0 * TILE_PX, 40.0 * TILE_PX);
         n.ai = [0.0, 0.0, 0.0, 30.0];
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[3], 31.0, "above + near: the timer advances");
     }
 
@@ -985,7 +1012,7 @@ mod tests {
         n.ai = [0.0, 0.0, 599.0, 30.0];
         n.target = 0;
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[1], 1.0);
         assert_eq!(n.ai[2], 0.0);
         assert_eq!(n.ai[3], 0.0);
@@ -1009,7 +1036,7 @@ mod tests {
         let jx = witness.next_range(-40, 41) as f32 * 0.08;
         let jy = witness.next_range(-40, 41) as f32 * 0.08;
         let (cx, cy) = (n.x + 50.0, n.y + 55.0);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "gate + X + Y, in order");
         assert_eq!(n.ai[3], 0.0, "the shot resets the timer");
         assert_eq!(n.wants_hostile_shot.len(), 1);
@@ -1036,7 +1063,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(42);
         let mut witness = rng.clone();
         let _gate = witness.next_max(5);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "the dash draws nothing");
         let speed = (n.vx * n.vx + n.vy * n.vy).sqrt();
         assert!((speed - 12.0).abs() < 1e-3, "speed {speed}");
@@ -1045,7 +1072,7 @@ mod tests {
         let mut e = ret(60.0 * TILE_PX, 60.0 * TILE_PX);
         e.ai = [0.0, 1.0, 0.0, 0.0];
         let expert = Style30Env { expert: true, get_good: true, ..env() };
-        retinazer_ai(&mut e, &w, &p, &mut rng, &expert);
+        retinazer_ai(&mut e, &w, &p, &mut rng, &expert, &mut tr_core::particles::DustPool::new(), &dctx());
         let speed = (e.vx * e.vx + e.vy * e.vy).sqrt();
         assert!((speed - 17.0).abs() < 1e-3, "expert+getGood speed {speed}");
     }
@@ -1062,23 +1089,23 @@ mod tests {
         n.vx = 10.0;
         n.vy = 0.0;
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert!((n.vx - 9.6).abs() < 1e-5, "the 25th tick damps 0.96: {}", n.vx);
         // Before the 25th: the rotation rides the velocity, no damp.
         n.ai = [0.0, 2.0, 0.0, 0.0];
         n.vx = 10.0;
         n.vy = 0.0;
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.vx, 10.0);
         assert!((n.rotation - (0.0f32.atan2(10.0) - 1.57)).abs() < 1e-5);
         // The 70-tick wrap: dash 4 returns to the hover.
         n.ai = [0.0, 2.0, 69.0, 3.0];
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!((n.ai[1], n.ai[2], n.ai[3]), (0.0, 0.0, 0.0));
         assert_eq!(n.target, 255, "ClearTarget on the cycle");
         // Dash 3 of 4 keeps dashing.
         n.ai = [0.0, 2.0, 69.0, 2.0];
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!((n.ai[1], n.ai[3]), (1.0, 3.0));
     }
 
@@ -1092,7 +1119,7 @@ mod tests {
         n.hp = n.max_hp * 39 / 100;
         n.ai = [0.0, 2.0, 12.0, 3.0];
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai, [1.0, 0.0, 0.0, 0.0]);
         assert!(n.net_update);
     }
@@ -1112,7 +1139,7 @@ mod tests {
         let _gate = witness.next_max(5);
         let _d1 = witness.next_range(-30, 31);
         let _d2 = witness.next_range(-30, 31);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "gate + 2 dust draws");
         assert!((n.ai[2] - 0.005).abs() < 1e-6, "the ramp steps 0.005");
         // The transition into phase 2: 52 burst draws + the pair.
@@ -1124,7 +1151,7 @@ mod tests {
         }
         let _d1 = witness.next_range(-30, 31);
         let _d2 = witness.next_range(-30, 31);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[0], 2.0);
         assert_eq!(n.ai[1], 0.0);
         assert_eq!(rng.peek(), witness.peek(), "52 burst + 2, in order");
@@ -1134,7 +1161,7 @@ mod tests {
         let _gate = witness.next_max(5);
         let _d1 = witness.next_range(-30, 31);
         let _d2 = witness.next_range(-30, 31);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[0], 3.0);
         assert_eq!(n.ai[2], 0.0, "the phase-3 entry zeroes the spin");
         assert_eq!(rng.peek(), witness.peek(), "no burst into phase 3");
@@ -1149,7 +1176,7 @@ mod tests {
         let mut n = ret(60.0 * TILE_PX, 60.0 * TILE_PX);
         n.ai = [3.0, 0.0, 0.0, 0.0];
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.damage_override, Some(67), "(int)(45 * 1.5)");
         assert_eq!(n.defense_override, Some(20), "10 + 10");
         assert_eq!(n.defense(), 20);
@@ -1170,7 +1197,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(42);
         let mut witness = rng.clone();
         let _gate = witness.next_max(5);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "the laser draws NOTHING");
         assert_eq!(n.local_ai[1], 0.0, "the laser resets the timer");
         assert_eq!(n.wants_hostile_shot.len(), 1);
@@ -1199,7 +1226,7 @@ mod tests {
         n.ai = [3.0, 0.0, 299.0, 0.0];
         n.target = 255;
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[1], 1.0);
         assert_eq!(n.ai[2], 0.0);
         assert_eq!(n.ai[3], 0.0);
@@ -1225,7 +1252,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(42);
         let mut witness = rng.clone();
         let _gate = witness.next_max(5);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "the strafe laser draws NOTHING");
         assert_eq!(n.local_ai[1], 0.0, "60 + 4.75 > 60: fired and reset");
         assert_eq!(n.wants_hostile_shot.len(), 1);
@@ -1239,14 +1266,14 @@ mod tests {
         e.ai = [3.0, 1.0, 0.0, 0.0];
         e.local_ai = [0.0, 58.0, 0.0, 0.0];
         let expert = Style30Env { expert: true, ..env() };
-        retinazer_ai(&mut e, &w, &p, &mut rng, &expert);
+        retinazer_ai(&mut e, &w, &p, &mut rng, &expert, &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(e.local_ai[1], 0.0, "58 + 2.5 > 60: the expert fires");
         assert_eq!(e.wants_hostile_shot[0].5, 17, "expert damage 17");
         // The 180-tick wrap back into the approach.
         n.ai = [3.0, 2.0, 179.0, 0.0];
         n.local_ai = [0.0; 4];
         n.target = 255;
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!((n.ai[1], n.ai[2], n.ai[3]), (0.0, 0.0, 0.0));
         assert_eq!(n.target, 0, "TargetClosest on the wrap");
         assert!(n.net_update);
@@ -1272,7 +1299,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(42);
         let mut witness = rng.clone();
         let _gate = witness.next_max(5);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &env());
+        retinazer_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "only the dust gate drew");
         assert_eq!(n.local_ai[1], 181.0, "the timer climbed, no reset");
         assert!(n.wants_hostile_shot.is_empty());
@@ -1289,16 +1316,16 @@ mod tests {
         n.despawn_timer = 5;
         let twins = Style30Env { twin_time_lefts: &[300, 120], ..env() };
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut n, &w, &p, &mut rng, &twins);
+        retinazer_ai(&mut n, &w, &p, &mut rng, &twins, &mut tr_core::particles::DustPool::new(), &dctx());
         // 300 - 1 = 299 raises 5; 120 - 1 = 119 cannot lower it.
         assert_eq!(n.despawn_timer, 299);
         // The -1 sentinel: no active timer, no raise.
         n.despawn_timer = -1;
-        retinazer_ai(&mut n, &w, &p, &mut rng, &twins);
+        retinazer_ai(&mut n, &w, &p, &mut rng, &twins, &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.despawn_timer, -1);
         // A healthy timer (>= 10) skips the loop.
         n.despawn_timer = 50;
-        retinazer_ai(&mut n, &w, &p, &mut rng, &twins);
+        retinazer_ai(&mut n, &w, &p, &mut rng, &twins, &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.despawn_timer, 50);
     }
 
@@ -1329,7 +1356,7 @@ mod tests {
         assert_eq!(list, vec![300], "own slot skipped, dead slot dropped, slot order");
         let env = Style30Env { twin_time_lefts: &list, ..env() };
         let mut rng = UnifiedRandom::new(7);
-        retinazer_ai(&mut me, &w, &p, &mut rng, &env);
+        retinazer_ai(&mut me, &w, &p, &mut rng, &env, &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(me.despawn_timer, 299, "the fed list discourages the despawn");
     }
 }

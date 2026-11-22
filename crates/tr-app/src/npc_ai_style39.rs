@@ -28,9 +28,11 @@
 //! (the caller sets `size_override` for the unported sizes).
 //!
 //! RNG by construction: the arm DOES draw `Main.rand`, so the fn takes
-//! `rng: &mut UnifiedRandom` — and the dust/gore spawns run through the
-//! S1-E-1/S1-E-4 pools (`DustPool::new_dust`, `GorePool::new_gore`) on
-//! that SAME stream, exactly like the C#'s `Main.dust`/`Main.gore`.
+//! `rng: &mut UnifiedRandom` — and W4-e2 wires the six dust sites
+//! (29214/29427/29540/29555/29558/29572) through the S1-E-1 `DustPool`
+//! (`new_dust`) on that SAME stream, exactly like the C#'s `Main.dust`.
+//! The four gore bodies (`:29564`) stay W4-d55's lane: their ARGUMENT
+//! draws are consumed here in order (the twins' spin hand-off split).
 //! Every draw is consumed in C# order, cited at its site:
 //! * `:29212` `Next(10) == 0` — the 154 head dust gate; on 0 the
 //!   `NewDust` body draws (type 67 hits no per-type tweak, `Dust.cs:214-252`).
@@ -109,7 +111,6 @@
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
 use glam::Vec2;
-use tr_core::gore::GorePool;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::tile::Tile;
 use tr_core::tiledata as td;
@@ -353,6 +354,8 @@ pub fn style39_step(
     ctx: &mut Style39Context,
     players: &[TargetCandidate],
     rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
 ) {
     let ty = ctx.kind;
     // `:29147-29150` — retarget when untargeted / the target died / the
@@ -374,11 +377,23 @@ pub fn style39_step(
         target_closest(npc, world, players, true, 39, ctx.ticker);
     }
     // `:29209-29219` — the 154 frost dust. The gate draw IS consumed
-    // (`Main.rand.Next(10) == 0`); the spawn is unmodelled (module doc),
-    // and the `position ± netOffset` pair cancels exactly.
+    // (`Main.rand.Next(10) == 0`); W4-e2 (site 29214) the spawn rides the
+    // live pool: type 67, speeds (vx·0.5, vy·0.5), alpha 90, scale 1.5;
+    // post-writes noGravity + velocity ×0.2. The ±netOffset pair cancels
+    // exactly (single-player, the module doc).
     if ty == Style39Type::IceTortoise && rng.next_max(10) == 0 {
-        // Dust.NewDust(..., 67, vx*0.5, vy*0.5, 90, default, 1.5) —
-        // the pool-internal draws ride the DustRng seam at wiring.
+        let (w, h) = npc.size();
+        npc.x += npc.net_offset.x;
+        npc.y += npc.net_offset.y;
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, Vec2::new(npc.x, npc.y), w as i32, h as i32,
+            67, npc.vx * 0.5, npc.vy * 0.5, 90, Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:29215`
+        d.velocity *= 0.2; // `:29216`
+        npc.x -= npc.net_offset.x;
+        npc.y -= npc.net_offset.y;
     }
     if npc.ai[0] == 0.0 {
         // `:29222-29230` — the facing follows the velocity sign; the
@@ -557,10 +572,22 @@ pub fn style39_step(
         }
     }
     else if npc.ai[0] == 3.0 {
-        // `:29424-29431` — the 154 lunge dust gate (the draw is consumed
-        // even when the spawn is unmodelled; the ±netOffset cancels).
+        // `:29424-29431` — the 154 lunge dust gate. W4-e2 (site 29427):
+        // the same 67 body as the head drip — alpha 90, scale 1.5,
+        // noGravity + velocity ×0.2; the ±netOffset pair kept verbatim.
         if ty == Style39Type::IceTortoise && rng.next_max(3) < 2 {
-            // Dust.NewDust(..., 67, ...) — module-doc RNG note.
+            let (w, h) = npc.size();
+            npc.x += npc.net_offset.x;
+            npc.y += npc.net_offset.y;
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, Vec2::new(npc.x, npc.y), w as i32, h as i32,
+                67, npc.vx * 0.5, npc.vy * 0.5, 90, Color::default(), 1.5,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true; // `:29428`
+            d.velocity *= 0.2; // `:29429`
+            npc.x -= npc.net_offset.x;
+            npc.y -= npc.net_offset.y;
         }
         // `:29432-29438` — the lunge stats: damage lerps 2× → 2×·0.9
         // (the shelly 1.5×), defense doubles.
@@ -681,18 +708,58 @@ pub fn style39_step(
         ));
         npc.defense_override = Some(ty.def_defense() * 2);
         ctx.knockback_resist = 0.0;
-        // `:29537-29545` — the ball dust gate (the draw is consumed).
+        // `:29537-29545` — the ball dust gate. W4-e2 (site 29540): the
+        // type-6 body at Center − (30, 30), box 60×60, speeds (vx·0.5,
+        // vy·0.5), alpha 90, scale 1.5; post-writes noGravity, velocity
+        // ×0.2, fadeIn 1. The type-6 pool tweak ADDS the Next(-10, 6) vy
+        // re-roll inside new_dust (Dust.cs:215-219).
         if rng.next_max(3) < 2 {
-            // Dust.NewDust(Center − 30, 60, 60, 6, ...) — module doc.
+            npc.x += npc.net_offset.x;
+            npc.y += npc.net_offset.y;
+            let (cx, cy) = npc.center();
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, Vec2::new(cx - 30.0, cy - 30.0), 60, 60,
+                6, npc.vx * 0.5, npc.vy * 0.5, 90, Color::default(), 1.5,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true; // `:29541`
+            d.velocity *= 0.2; // `:29542`
+            d.fade_in = 1.0; // `:29543`
+            npc.x -= npc.net_offset.x;
+            npc.y -= npc.net_offset.y;
         }
         npc.ai[1] += 1.0;
         // `:29547-29581` — the bounce FX layer: ai[3] is armed to 1 by
         // the collision bounce pass (`Collision_MoveSolarSroller`,
         // :92744 — the wiring round ports it) and counts to 10 here.
         if npc.ai[3] > 0.0 {
+            // `:29549` — the netOffset add wraps the whole FX block.
+            npc.x += npc.net_offset.x;
+            npc.y += npc.net_offset.y;
             if npc.ai[3] == 1.0 {
-                // `:29552-29561` — the 32×2 dust burst (spawns unmodelled;
-                // their pool draws ride the DustRng seam at wiring).
+                // W4-e2 (sites 29555/29558) — `:29552-29561`: the 32 dust
+                // PAIRS at Center − (50, 50), box 100×100, type 6, speeds
+                // zero, alpha 100: first scale 2.5 (noGravity, velocity
+                // ×3), then scale 1.5 (velocity ×2, noGravity). The
+                // type-6 pool tweak rolls inside each new_dust.
+                let (cx, cy) = npc.center();
+                let vector68 = Vec2::new(cx - 50.0, cy - 50.0);
+                for _ in 0..32 {
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world, vector68, 100, 100, 6,
+                        0.0, 0.0, 100, Color::default(), 2.5,
+                    );
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true; // `:29556`
+                    d.velocity *= 3.0; // `:29557`
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world, vector68, 100, 100, 6,
+                        0.0, 0.0, 100, Color::default(), 1.5,
+                    );
+                    let d = dust.slot_mut(idx);
+                    d.velocity *= 2.0; // `:29559`
+                    d.no_gravity = true; // `:29560`
+                }
                 // `:29562-29568` — the 4 gores: the ARGUMENT draws are
                 // arm-level and consumed here in C# order — per gore:
                 // Next(100) ×2 (the offset), Next(61, 64) (the type),
@@ -707,17 +774,28 @@ pub fn style39_step(
                     let _nvy = rng.next_range(-10, 11) as f32 * 0.05;
                 }
             }
-            // `:29570-29574` — the 5 trailing dusts: the NextFloat draw
-            // runs even when NewDust refuses the spawn (the C# reads
-            // Main.dust[num590].velocity either way).
+            // W4-e2 (site 29572) — `:29570-29574`: the 5 trailing type-31
+            // dusts at position, box (width, height), speeds zero, alpha
+            // 100, scale 1.5; the post-write velocity × NextFloat runs
+            // even when NewDust refuses (the C# reads Main.dust[num590]
+            // either way — the sentinel takes the write).
+            let (w, h) = npc.size();
             for _ in 0..5 {
-                let _scale = rng.next_float();
+                let idx = dust.new_dust(
+                    rng, dust_ctx, world, Vec2::new(npc.x, npc.y),
+                    w as i32, h as i32, 31, 0.0, 0.0, 100, Color::default(), 1.5,
+                );
+                let scale = rng.next_float(); // `:29573`
+                dust.slot_mut(idx).velocity *= scale;
             }
             // `:29575-29579` — the FX layer wraps at 10.
             npc.ai[3] += 1.0;
             if npc.ai[3] >= 10.0 {
                 npc.ai[3] = 0.0;
             }
+            // `:29580` — the netOffset restore closes the FX block.
+            npc.x -= npc.net_offset.x;
+            npc.y -= npc.net_offset.y;
         }
         // `:29582-29611` — the launch tick: same aim shape as the lunge,
         // speed 16 (10 without sight), no-sight lob −12, NO ai[3] latch.
@@ -834,6 +912,20 @@ mod tests {
         World::new("t".into(), 200, 200)
     }
 
+    /// W4-e2: the permissive dust ctx for the witnesses — the whole world
+    /// on-screen, the full 6000 budget (the `npc::permissive_dust_ctx`
+    /// shape, local so the pure module keeps no npc.rs test dependency).
+    fn permissive_ctx(w: &World) -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     fn ctx(kind: Style39Type) -> Style39Context {
         Style39Context {
             kind,
@@ -879,7 +971,7 @@ mod tests {
         n.vx = 2.0;
         let mut rng = UnifiedRandom::new(12345);
         let mut probe = rng.clone();
-        style39_step(&mut n, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.vx, 1.0, "the wind-up halves vx (:29396)");
         assert_eq!(n.ai[0], 6.0, "the ball state (:29417)");
         assert_eq!(n.size_override, Some((46.0, 32.0)), "the collapse");
@@ -894,7 +986,7 @@ mod tests {
         let mut n2 = npc39(1087.0, 984.0, (28.0, 22.0));
         n2.ai[0] = 1.0;
         n2.ai[1] = 29.0;
-        style39_step(&mut n2, &w, &mut c2, &[cand(5000.0, 2000.0)], &mut rng);
+        style39_step(&mut n2, &w, &mut c2, &[cand(5000.0, 2000.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n2.ai[1], 29.5, "the shelly 0.5 rate (:29399)");
         assert_eq!(n2.ai[0], 1.0, "still winding up");
     }
@@ -915,7 +1007,7 @@ mod tests {
         n.ai[2] = 3.0;
         n.direction_y = 1;
         let mut rng = UnifiedRandom::new(7);
-        style39_step(&mut n, &w, &mut c, &[cand(1400.0, 1400.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(1400.0, 1400.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert!((n.vx - 9.6).abs() < 1e-4, "300·16/500 ({})", n.vx);
         assert!((n.vy - 12.8).abs() < 1e-4, "400·16/500 ({})", n.vy);
         assert_eq!(n.damage_override, Some(144), "80·1.8 classic (:29534)");
@@ -941,7 +1033,7 @@ mod tests {
         n.ai[0] = 6.0;
         n.ai[1] = 5.0;
         n.ai[2] = 0.0;
-        style39_step(&mut n, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[0], 5.0, "the unroll (:29625)");
         assert_eq!(n.ai[1], 0.0);
         // The timeout: 1199 → 1200 exits even with revolutions left.
@@ -949,14 +1041,14 @@ mod tests {
         n2.ai[0] = 6.0;
         n2.ai[1] = 1199.0;
         n2.ai[2] = 3.0;
-        style39_step(&mut n2, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n2, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n2.ai[0], 5.0, "the 1200 timeout (:29622)");
         // Neither → the roll continues.
         let mut n3 = npc39(1087.0, 984.0, (46.0, 32.0));
         n3.ai[0] = 6.0;
         n3.ai[1] = 10.0;
         n3.ai[2] = 3.0;
-        style39_step(&mut n3, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n3, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n3.ai[0], 6.0);
         assert_eq!(n3.ai[1], 11.0);
     }
@@ -975,7 +1067,7 @@ mod tests {
         n.ai[1] = 29.0;
         n.rotation = 1.0;
         n.vx = 3.0;
-        style39_step(&mut n, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.size_override, Some((46.0, 52.0)), "the restore");
         assert_eq!(n.y, 1000.0 + 32.0 - 52.0, "the feet stay planted");
         assert_eq!(n.rotation, 0.0, "(:29642)");
@@ -987,7 +1079,7 @@ mod tests {
         n2.ai[0] = 5.0;
         n2.ai[1] = 29.0;
         n2.wet = true;
-        style39_step(&mut n2, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n2, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n2.ai[0], 3.0, "wet → straight to the lunge");
         assert_eq!(n2.ai[1], 0.0);
     }
@@ -1005,7 +1097,7 @@ mod tests {
         let mut n = npc39(1087.0, 984.0, (46.0, 32.0));
         n.ai[0] = 3.0;
         let mut rng = UnifiedRandom::new(3);
-        style39_step(&mut n, &w, &mut c, &[cand(1400.0, 1400.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(1400.0, 1400.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert!((n.vx - 6.0).abs() < 1e-4, "300·10/500 ({})", n.vx);
         assert!((n.vy - 8.0).abs() < 1e-4, "400·10/500 ({})", n.vy);
         assert_eq!(n.ai[3], n.vx, "the vx latch (:29476)");
@@ -1016,7 +1108,7 @@ mod tests {
         assert_eq!(n.defense_override, Some(60), "30·2 (:29438)");
         // The flight tick: the latch holds vx and fights gravity −0.22.
         let vy_before = n.vy;
-        style39_step(&mut n, &w, &mut c, &[cand(1400.0, 1400.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(1400.0, 1400.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.vx, n.ai[3], "the lock (:29491)");
         assert!((n.vy - (vy_before - 0.22)).abs() < 1e-5, "(:29492)");
     }
@@ -1037,7 +1129,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(4);
         // The player overlaps x (1100..1120 vs 1087..1133) and the npc
         // is above the player's bottom (984 < 1042).
-        style39_step(&mut n, &w, &mut c, &[cand(1100.0, 1000.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(1100.0, 1000.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert!((n.vx - 4.8).abs() < 1e-5, "×0.8 (:29482)");
         assert_eq!(n.ai[3], 0.0, "the release (:29483)");
         assert!((n.vy - (-1.8)).abs() < 1e-5, "+0.2 (:29486)");
@@ -1055,7 +1147,7 @@ mod tests {
         let mut n = npc39(1087.0, 984.0, (28.0, 22.0));
         n.vx = 0.49;
         n.old_vx = 0.49; // no blocked-move flip
-        style39_step(&mut n, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.vx, 0.5, "0.49 + 0.07 clamps (:29327-29331)");
         assert_eq!(n.ai[1], 7.0, "+2 +4 +1 (:29240/:29244/:29272)");
         assert_eq!(c.knockback_resist, 0.75, "the shelly kb (:29266)");
@@ -1066,7 +1158,7 @@ mod tests {
         n2.vx = 0.6;
         n2.vy = 0.0;
         n2.old_vx = 0.6;
-        style39_step(&mut n2, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n2, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert!((n2.vx - 0.48).abs() < 1e-5, "×0.8 (:29322)");
     }
 
@@ -1081,20 +1173,20 @@ mod tests {
         // Near (< 200): only the ++ lands.
         let mut n = npc39(1087.0, 984.0, (46.0, 32.0));
         n.vy = 0.5; // skip the cliff probe
-        style39_step(&mut n, &w, &mut c, &[cand(1120.0, 990.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(1120.0, 990.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[1], 1.0, "near → no aggro adds");
         assert_eq!(n.ai[0], 0.0);
         // Far + wet: 1000 → ++ → ≥400 → the wind-up.
         let mut n2 = npc39(1087.0, 984.0, (46.0, 32.0));
         n2.vy = 0.5;
         n2.wet = true;
-        style39_step(&mut n2, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng);
+        style39_step(&mut n2, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n2.ai[0], 1.0, "the wet shortcut (:29259/:29273)");
         assert_eq!(n2.ai[1], 0.0);
         // Far + dry: +4 +10 +1 = 15, still walking.
         let mut n3 = npc39(1087.0, 984.0, (46.0, 32.0));
         n3.vy = 0.5;
-        style39_step(&mut n3, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng);
+        style39_step(&mut n3, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n3.ai[1], 15.0);
         assert_eq!(n3.ai[0], 0.0);
     }
@@ -1114,7 +1206,7 @@ mod tests {
         n.ai[0] = 3.0;
         n.ai[1] = 50.0;
         n.vy = 0.5;
-        style39_step(&mut n, &w, &mut c, &p, &mut rng);
+        style39_step(&mut n, &w, &mut c, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.ai[0], 0.0, "the reset (:29205)");
         assert_eq!(n.ai[1], 1.0, "the walk ran after the reset");
         // Sroller: the same hit does NOT reset the ball.
@@ -1124,7 +1216,7 @@ mod tests {
         n2.ai[0] = 6.0;
         n2.ai[1] = 5.0;
         n2.ai[2] = 3.0;
-        style39_step(&mut n2, &w, &mut c2, &[cand(5000.0, 2000.0)], &mut rng);
+        style39_step(&mut n2, &w, &mut c2, &[cand(5000.0, 2000.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n2.ai[0], 6.0, "417 is exempt (:29203)");
         assert_eq!(n2.ai[1], 6.0);
         // The blocked-move flip: vx != oldVelocity.X, no hit → flip.
@@ -1133,7 +1225,7 @@ mod tests {
         n3.vx = 1.0;
         n3.old_vx = 0.5;
         n3.vy = 0.5;
-        style39_step(&mut n3, &w, &mut c3, &p, &mut rng);
+        style39_step(&mut n3, &w, &mut c3, &p, &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n3.facing, -1, "the flip (:29280)");
     }
 
@@ -1150,7 +1242,7 @@ mod tests {
         n.ai[0] = 2.0; // no state arm — isolate the probe
         n.vx = 1.0;
         let mut rng = UnifiedRandom::new(9);
-        style39_step(&mut n, &w, &mut c, &[cand(1120.0, 990.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(1120.0, 990.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.y, 912.0, "the lift onto 944 (:29190)");
         assert_eq!(c.gfx_off_y, 16.0, "gfxOffY absorbs it (:29189)");
         assert_eq!(c.step_speed, 1.5, "16 ≥ 9 (:29197)");
@@ -1161,7 +1253,7 @@ mod tests {
         let mut n2 = npc39(1010.0, 928.0, (46.0, 32.0));
         n2.ai[0] = 2.0;
         n2.vx = 1.0;
-        style39_step(&mut n2, &w2, &mut c2, &[cand(1120.0, 990.0)], &mut rng);
+        style39_step(&mut n2, &w2, &mut c2, &[cand(1120.0, 990.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w2));
         assert_eq!(n2.y, 920.0, "the halfbrick +8 (:29178)");
         assert_eq!(c2.gfx_off_y, 8.0);
         assert_eq!(c2.step_speed, 0.75, "8 < 9 (:29193)");
@@ -1183,19 +1275,24 @@ mod tests {
         n.old_vx = 0.5; // no blocked-move flip before the probe
         let mut rng = UnifiedRandom::new(10);
         // The player above the feet (900 < 960) arms the probe.
-        style39_step(&mut n, &w, &mut c, &[cand(1010.0, 900.0)], &mut rng);
+        style39_step(&mut n, &w, &mut c, &[cand(1010.0, 900.0)], &mut rng, &mut DustPool::new(), &permissive_ctx(&w));
         assert_eq!(n.facing, -1, "the cliff flip (:29311)");
         // −0.1 nudge, then the walk accel −0.07 (facing −1, |vx| < 1).
         assert!((n.vx - (-0.17)).abs() < 1e-5, "(:29312 + :29363)");
     }
 
-    /// `NPC.cs:29537` + `:29547-29581` — the ball FX layer's arm-level
-    /// draws, in C# order: the dust gate Next(3), then on ai[3] == 1 the
-    /// 4 gores' Next(100)×2 / Next(61,64) / Next(-10,11)×2 each, then the
-    /// 5 NextFloat dust scales; ai[3] counts to 10 and wraps.
+    /// `NPC.cs:29537` + `:29547-29581` — the ball FX layer's draws, in C#
+    /// order, W4-e2 with the REAL pool internals: the dust gate Next(3),
+    /// on a pass the type-6 body (7 default draws + the Next(-10,6) vy
+    /// re-roll), then on ai[3] == 1 the 32 type-6 pairs, the 4 gores'
+    /// Next(100)×2 / Next(61,64) / Next(-10,11)×2 each (the NewGore body
+    /// is d55's), then the 5 type-31 spawns each + its NextFloat scale;
+    /// ai[3] counts to 10 and wraps. The mirror replays every cited draw
+    /// through the same pool calls and compares full stream state.
     #[test]
     fn the_ball_fx_layer_consumes_the_cited_draws() {
         let w = air();
+        let dc = permissive_ctx(&w);
         let mut c = ctx(Style39Type::SolarSroller);
         let p = [cand(5000.0, 2000.0)];
         let mut n = npc39(1087.0, 984.0, (46.0, 32.0));
@@ -1205,8 +1302,31 @@ mod tests {
         n.ai[3] = 1.0;
         let mut rng = UnifiedRandom::new(12345);
         let mut probe = rng.clone();
-        style39_step(&mut n, &w, &mut c, &p, &mut rng);
-        probe.next_max(3); // the dust gate (:29537)
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        style39_step(&mut n, &w, &mut c, &p, &mut rng, &mut pool, &dc);
+        // The mirror: the gate, then (on a pass) the type-6 body at the
+        // same anchor the arm read (Center − 30 after the netOffset add,
+        // zero here).
+        let gate = probe.next_max(3); // the dust gate (:29537)
+        let (cx, cy) = (1087.0 + 23.0, 984.0 + 16.0);
+        if gate < 2 {
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(cx - 30.0, cy - 30.0), 60, 60,
+                6, n.vx * 0.5, n.vy * 0.5, 90, Color::default(), 1.5,
+            );
+        }
+        // The FX block (ai[3] was 1): the 32 pairs at Center − 50.
+        for _ in 0..32 {
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(cx - 50.0, cy - 50.0), 100, 100,
+                6, 0.0, 0.0, 100, Color::default(), 2.5,
+            );
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(cx - 50.0, cy - 50.0), 100, 100,
+                6, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
+        }
         for _ in 0..4 {
             probe.next_max(100); // the gore offset X (:29564)
             probe.next_max(100); // the gore offset Y
@@ -1215,11 +1335,16 @@ mod tests {
             probe.next_range(-10, 11); // the velocity nudge Y (:29567)
         }
         for _ in 0..5 {
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(1087.0, 984.0), 46, 32,
+                31, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
             probe.next_float(); // the dust velocity scale (:29573)
         }
-        assert_eq!(rng, probe, "the 26 draws in C# order");
+        assert_eq!(rng, probe, "the full draw order incl. pool internals");
         assert_eq!(n.ai[3], 2.0, "the FX counter (:29575)");
-        // ai[3] == 9: no gore burst, just the gate + 5 floats, wrap to 0.
+        // ai[3] == 9: no gore burst, just the gate (+ body) and the 5
+        // type-31 spawns + floats, wrap to 0.
         let mut n2 = npc39(1087.0, 984.0, (46.0, 32.0));
         n2.ai[0] = 6.0;
         n2.ai[1] = 5.0;
@@ -1227,30 +1352,55 @@ mod tests {
         n2.ai[3] = 9.0;
         let mut rng2 = UnifiedRandom::new(999);
         let mut probe2 = rng2.clone();
-        style39_step(&mut n2, &w, &mut c, &p, &mut rng2);
-        probe2.next_max(3);
+        let mut pool2 = DustPool::new();
+        let mut mpool2 = DustPool::new();
+        style39_step(&mut n2, &w, &mut c, &p, &mut rng2, &mut pool2, &dc);
+        let gate2 = probe2.next_max(3);
+        if gate2 < 2 {
+            mpool2.new_dust(
+                &mut probe2, &dc, &w, Vec2::new(cx - 30.0, cy - 30.0), 60, 60,
+                6, n2.vx * 0.5, n2.vy * 0.5, 90, Color::default(), 1.5,
+            );
+        }
         for _ in 0..5 {
+            mpool2.new_dust(
+                &mut probe2, &dc, &w, Vec2::new(1087.0, 984.0), 46, 32,
+                31, 0.0, 0.0, 100, Color::default(), 1.5,
+            );
             probe2.next_float();
         }
-        assert_eq!(rng2, probe2, "the 6 draws");
+        assert_eq!(rng2, probe2, "the gate + 5 spawns");
         assert_eq!(n2.ai[3], 0.0, "the wrap at 10 (:29576-29579)");
     }
 
-    /// `NPC.cs:29212` + `:29424` — the IceTortoise dust GATES are draws
-    /// even though the spawns are unmodelled: Next(10) in the head,
-    /// Next(3) in the lunge — one each, nothing else.
+    /// `NPC.cs:29212` + `:29424` — the IceTortoise dust gates: Next(10) in
+    /// the head, Next(3) in the lunge; W4-e2 (sites 29214/29427) a passed
+    /// gate rolls the type-67 body through the pool (7 default draws, no
+    /// per-type tweak). The mirror replays gate + body and compares state.
     #[test]
     fn the_ice_tortoise_gates_consume_their_draws() {
         let w = air();
+        let dc = permissive_ctx(&w);
         let mut c = ctx(Style39Type::IceTortoise);
-        // State 0: only the head gate draws.
+        // State 0: the head gate (+ body on a pass). The head dust reads
+        // the PRE-walk velocity/position (:29214 precedes the state arms),
+        // so the mirror snapshots them before the step.
         let mut n = npc39(1087.0, 984.0, (46.0, 32.0));
         n.vy = 0.5;
+        let (hx, hy, hvx, hvy) = (n.x, n.y, n.vx, n.vy);
         let mut rng = UnifiedRandom::new(42);
         let mut probe = rng.clone();
-        style39_step(&mut n, &w, &mut c, &[cand(1120.0, 990.0)], &mut rng);
-        probe.next_max(10);
-        assert_eq!(rng, probe, "the head Next(10) (:29212)");
+        let mut pool = DustPool::new();
+        let mut mpool = DustPool::new();
+        style39_step(&mut n, &w, &mut c, &[cand(1120.0, 990.0)], &mut rng, &mut pool, &dc);
+        let g = probe.next_max(10);
+        if g == 0 {
+            mpool.new_dust(
+                &mut probe, &dc, &w, Vec2::new(hx, hy), 46, 32,
+                67, hvx * 0.5, hvy * 0.5, 90, Color::default(), 1.5,
+            );
+        }
+        assert_eq!(rng, probe, "the head Next(10) + body (:29212/:29214)");
         // State 3 flight: the HEAD gate Next(10) runs first (it is not
         // state-gated, :29209-29219), then the lunge gate Next(3).
         let mut n2 = npc39(1087.0, 984.0, (46.0, 32.0));
@@ -1260,9 +1410,23 @@ mod tests {
         n2.vy = 1.0;
         let mut rng2 = UnifiedRandom::new(43);
         let mut probe2 = rng2.clone();
-        style39_step(&mut n2, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng2);
-        probe2.next_max(10);
-        probe2.next_max(3);
+        let mut pool2 = DustPool::new();
+        let mut mpool2 = DustPool::new();
+        style39_step(&mut n2, &w, &mut c, &[cand(5000.0, 2000.0)], &mut rng2, &mut pool2, &dc);
+        let g1 = probe2.next_max(10);
+        if g1 == 0 {
+            mpool2.new_dust(
+                &mut probe2, &dc, &w, Vec2::new(1087.0, 984.0), 46, 32,
+                67, 0.5, 0.5, 90, Color::default(), 1.5,
+            );
+        }
+        let g2 = probe2.next_max(3);
+        if g2 < 2 {
+            mpool2.new_dust(
+                &mut probe2, &dc, &w, Vec2::new(1087.0, 984.0), 46, 32,
+                67, 0.5, 0.5, 90, Color::default(), 1.5,
+            );
+        }
         assert_eq!(rng2, probe2, "the head + lunge gates (:29212/:29424)");
     }
 }
