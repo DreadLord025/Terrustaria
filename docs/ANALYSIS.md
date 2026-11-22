@@ -3507,6 +3507,51 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
   convention, re-pinned by the Task 8b review): `DarkGray * 1.2` =
   `[202, 202, 202, 50]` вЂ” the ghosted Master-difficulty bunny preview.
 
+## UIElement framework — margins, snap points, state stack, layer stack (W4-d87, 2026-11-20)
+
+The three framework gaps research 18 left open are now ported as pure machinery
+(code + hand-computed pins; no cargo run on this lane):
+
+* **Margins** — `ui/uistate.rs::resolve_with_margins` ports `Recalculate`'s head
+  (`UIElement.cs:293-297`) and `GetDimensionsBasedOnParentDimensions`' inflate
+  (`:317-318`) **in C# order**: clamp the content size (`:315-316`), inflate to
+  the margin box, align the *inflated* box (`:319-320`), then shrink to
+  `_dimensions` (`:293-296`). The inflate/subtract pair is not a no-op under
+  `HAlign`/`VAlign != 0` — a centred margin box shifts by half the margin total.
+  `resolve`/`resolve_with_max_h`/`resolve_in_list` delegate at `margin = [0; 4]`;
+  the `+0.0`/`-0.0` steps are exact for every finite float, so every existing
+  caller is bit-identical (pinned by
+  `resolve_zero_margins_is_bit_identical_to_the_old_margin_free_pass`).
+  Deviation: `resolve_in_list` still substitutes `f32::MAX` for the C#'s
+  `float.MaxValue` (`:290`) — pre-existing, unchanged.
+* **Snap points** — `ui/snap.rs` ports `SnapPoint.cs` (`Calculate` `:27-31` =
+  `Position() + offset + anchor*size` against `GetDimensions()`, the
+  margin-shrunk rect; `ThisIsAHackThatChangesTheSnapPointsInfo` `:33-38`) and
+  `UIElement.SetSnapPoint`/`GetSnapPoint`/`GetSnapPoints` (`:124-145,271-283`):
+  the (0.5, 0.5)/zero defaults, the recalculate-on-read, and the
+  self-then-children pre-order walk over the flat table's `parent` links
+  (append order preserved, same ruling as `framework.rs`). The gamepad consumer
+  (`UILinkPointNavigator`) remains unported — deliberate, Stage 1.
+* **State stack** — `ui/state_stack.rs` ports `UserInterface.SetState`/`GoBack`/
+  `AddToHistory` (`:276-322`) over screen ids: the same-state early return
+  *before* the history append, the MouseOut→Deactivate→ResetState→Activate→
+  Recalculate effect order, the 2-deep `GoBack` pop that re-appends via
+  `SetState`, and the history **sawtooth** (`>32` drops the first **four**,
+  33→29 — not a sliding window). Verified: `UserInterface.GoBack` has zero call
+  sites in 1.4.5.8 (all 8 `GoBack()` hits are screens' private helpers, e.g.
+  `UIWorldCreation.cs:670-674` → `Main.OpenWorldSelectUI()`); research 18
+  deviation 9's "is called from the back-button paths" was wrong and is
+  corrected. `app/flow.rs` is **not** rewired — its per-screen back entries are
+  what the C# screens actually do.
+* **Layer stack** — `ui/layers.rs` ports `InterfaceScaleType` (Game/UI/None),
+  `GameInterfaceLayer.Draw`'s matrix selection (`:22-37`), the 43-layer vanilla
+  table (`Main.cs:44718-44918`, 16 Game / 27 UI / 0 None — `Mouse Over` is
+  world-space while its neighbours are UI) and `DrawInterface`'s stop-on-false
+  walk (`:44930-44935`, the stopping layer counts as drawn). Deviation:
+  `app/frame.rs` still draws the HUD in fixed code order and applies no
+  per-layer zoom — the table is data the wiring follow-up will consume; no
+  pixels change in this task.
+
 ## UIElement framework (M7-UI-1, 2026-11-08)
 
 The framework halves of `UIElement`/`UserInterface` that the screens cannot live
