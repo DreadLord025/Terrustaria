@@ -36,6 +36,12 @@ pub(crate) mod tile_cracks;
 // — the draw_tiles seam is contested by the in-flight pass siblings
 // (g29-g32 own passes 2-5); wiring is the family's merge step.
 pub(crate) mod tile_pass;
+// W4-g32 pass 5: UNWIRED Draw orchestration + PostDrawTiles post-pass order
+// (TileDrawing.cs:465-533/:728-741/:414-442/:6549-6622, DrawBlackHelper.cs,
+// Main.cs:56949-56988) — the draw_tiles seam is contested by the in-flight
+// pass siblings; wiring is the family's merge step (module doc lists the
+// intended call sites).
+pub(crate) mod tile_draw_pass;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
