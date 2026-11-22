@@ -135,10 +135,30 @@ fn spawn_pet_if_needed(p: &mut Player, pool: &mut ProjectilePool, j: usize, proj
         }
     }
     // `Projectile.NewProjectile(source, center.X, center.Y, 0f, 0f, proj,
-    // 0, 0f, whoAmI)` — damage 0, knockback 0, no ai payload. The port's
-    // data-row table has no pet rows yet (`proj_data` returns None), so the
-    // plain spawn carries the slot; the pet AI/box lands with the pet-AI
-    // task (recorded in ANALYSIS). The buff pin + flag are the ported half.
+    // 0, 0f, whoAmI)` — damage 0, knockback 0, no ai payload. W4-d2: the
+    // aiStyle-11 light pets (18/72/86/87) now carry `proj_data` rows, so
+    // THEY ride the data-carrying spawn — `NewProjectile` applies
+    // SetDefaults and centres the box (`Projectile.cs:10876-10877`). The
+    // other pets keep the plain spawn (the rowed style-67 trio's spawn
+    // upgrade is the pet-AI task's follow-up — this task's scope is the
+    // style-11 arm; recorded in ANALYSIS). The buff pin + flag are the
+    // ported half either way.
+    if crate::projectile_ai_light_pets::LIGHT_PET_KINDS.contains(&proj) {
+        let d = crate::projectile::proj_data(proj).expect("the light-pet row");
+        pool.spawn_with_data_ai_owned(
+            proj,
+            0,
+            cx - d.w * 0.5,
+            cy - d.h * 0.5,
+            0.0,
+            0.0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+        );
+        return;
+    }
     pool.spawn(
         proj,
         0,
@@ -247,14 +267,21 @@ pub fn update_accessory_buff_arms(
                 p.pet_flags[usize::from(proj)] = true;
                 if p.owned_projectile_counts[usize::from(proj)] == 0 {
                     let (cx, cy) = (p.x + WIDTH * 0.5, p.y + HEIGHT * 0.5);
-                    pool.spawn(
+                    // W4-d2 — the fairies carry aiStyle-11 rows now: the
+                    // data-carrying spawn applies SetDefaults and centres
+                    // the box (`Projectile.cs:10876-10877`).
+                    let d = crate::projectile::proj_data(proj).expect("the fairy row");
+                    pool.spawn_with_data_ai_owned(
                         proj,
                         0,
-                        glam::Vec2::new(cx, cy),
-                        glam::Vec2::ZERO,
+                        cx - d.w * 0.5,
+                        cy - d.h * 0.5,
+                        0.0,
+                        0.0,
                         0,
                         0.0,
-                        false,
+                        0.0,
+                        0.0,
                     );
                 }
             }

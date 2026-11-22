@@ -39595,3 +39595,234 @@ the close boost 11, the tick-16 kill gate, the bounce cell (11,10) +
 vel.x −4.4 with the `lastVelocity.Y == 0` guard, the draw orders
 `[(0,2)]` / `[(0,2),(0,3)]` / `[(0,6)]`). No cargo/tests/rustfmt/
 graphify invoked.
+## The aiStyle-11 light pets (W4-d2, 2026-11-21, code-only вЂ” tests written NOT run)
+
+The projectile aiStyles 11-20 census (`task/W4-d2-proj-ai-11-20`) found
+12/14/15/16/18/19/20 armed and **11/13/17 missing** (the f19 verify
+branch's 1-105 coverage census agrees). This slice lands **aiStyle 11**
+(`Projectile.cs:24371-24500`): the Shadow Orb (18) and the three fairies
+(72/86/87), in `projectile_ai_light_pets.rs` behind the dispatch's
+`11 =>` arm (kind-gated to `LIGHT_PET_KINDS`).
+
+* **The fairy head** (`:24373-24410`): the sprite flips AGAINST the X
+  velocity, `rotation = velocity.X * 0.1f` (a SET), the 4-tick frame
+  cycle, the 1-in-6 dust gate. The orb's else arm spins `+= 0.02f`.
+* **The keep-alive pin is AFFIRMATIVE** (`:24415-24439`): the flag true
+  pins `timeLeft = 2` вЂ” the exact `AI_026` keep-alive shape
+  (`projectile_ai026_a::keep_alive`). The buff pass re-grants
+  `pet_flags[kind]` every tick (`buff_effects_accessory.rs`,
+  `Player.cs:11286-11297`/`:11008`), so the pin holds the pet alive; the
+  tick the buff lapses the flag stays false and the 2-tick life runs
+  out. Verified against the decompile bytes (no negation вЂ” hex-dumped
+  `:24417`).
+* **The follow block** (`:24440-24495`): speed 3 (fairies 6), the 800-px
+  teleport (position only вЂ” the velocity is untouched), the 70-px rest
+  band (fairies 50; the orb's controlUp/controlDown shifts the target
+  В±40 Y / в€’6 X and narrows the band to 4), the fairy-only overshoot cap
+  `SafeNormalize(Zero) * (dist в€’ band)`. The owner-centre reads use the
+  C# INTEGER box halves (`(float)(width / 2)`).
+* **Rows** (`data.rs`): 18 в†’ 32Г—32 alpha 150; 72/86/87 в†’ 18Г—18 stock
+  alpha 0; all aiStyle 11, penetrate в€’1, `timeLeft *= 5` (18000),
+  `tileCollide = false`, `light = 0.9f`, `scale = 0.8f`,
+  `netImportant`/`ignoreWater`; `proj_frames` 4 for the fairies
+  (`Main.cs:8578-8580`), stock 1 for the orb.
+* **Spawn seam**: the pet buff pass's `spawn_pet_if_needed` + the fairy
+  arm now route the FOUR light-pet kinds through
+  `spawn_with_data_ai_owned` (SetDefaults + the centred box,
+  `Projectile.cs:10876-10877`). The other pets keep the plain spawn вЂ”
+  the rowed style-67 trio's (500/1018/1056) spawn upgrade is the pet-AI
+  task's follow-up, deliberately out of this slice's scope.
+
+RNG: the fairy head consumes exactly ONE `Next(6)` per tick
+(`:24395`); the `Dust.NewDust` INTERNAL rolls are pool-occupancy gated
+(`Dust.cs:114-152`) and skip with the unported dust layer вЂ” the
+`projectile_ai026_a` wisp-dust precedent, NOT the empress six-draw
+form. The orb draws nothing. The witness suite mirrors the gate
+against a same-seeded `UnifiedRandom` (`peek` equality).
+
+Deliberate skips: the dust visuals + the `cLight` shader read (draw
+state), `netUpdate`, the wet movement half (`ignoreWater = true` on
+every row). The direction flip rides the arm tail
+(`AutomaticallyChangesDirection` `:17283` does not exclude 11).
+
+Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
+12 witness tests in `projectile_ai_light_pets.rs` are WRITTEN NOT RUN;
+every expected value hand-derived from the cited C# lines.
+
+## The aiStyle-13 chain weapons (W4-d2, 2026-11-21, code-only вЂ” tests written NOT run)
+
+The second missing style of the 11-20 census: **aiStyle 13**
+(`Projectile.cs:24636-24829`) вЂ” the Harpoon (23), the Golem Fist (262),
+the Boxing Glove (271), the Chain Knife (273) and the Chain Guillotine
+(481), in `projectile_ai_chain.rs` behind the dispatch's `13 =>` arm
+(kind-gated to `CHAIN_KINDS`).
+
+* **The head**: the dead-owner / 2000-px leash kill;
+  `SetDummyItemTime(5)` (not the 481) rides the spear-hold seam
+  (`pending_spear_hold`); the alpha-0 `ChangeDir` flip and the
+  itemRotation tail ride the `ChainTick` write-back (the FlailTick
+  precedent вЂ” `pl.facing` / `pl.item_rotation` written at the dispatch).
+  The 481's `extraUpdates` re-arms 1/2 per state every tick.
+* **The outbound state**: the distance-flip else-if chain ported
+  VERBATIM (the generic >700 arm precedes the per-type sub-700 arms вЂ”
+  net: 23 at 1000, 262 at 500, 271 at 200, 273 at 150/remix 300, 481 at
+  525). The `ai[1] > 5 в†’ alpha = 0` fade-in, the melee chains' 8-tick
+  cap (they NEVER reach the generic >=10 gravity вЂ” a verbatim source
+  quirk), the harpoon's 17-tick gravity tail (vy += 0.6, vx *= 0.995),
+  the 262/271 sprite, the 262's post-flip `localAI[0] = -1`.
+* **The return state**: the 262's one-shot burst (inside 150 в†’ в€’1;
+  else `localAI[0] = 200` вЂ” the `damage_hitbox` inflate `:14978-14983`
+  already ported consumes it вЂ” + the Item14 cue; the
+  `HitTilesInACircle` is effectOnly dust, zero explicit rand);
+  `tileCollide = false`; the <50 catch kill; the 20/30 seek; the
+  inverted sprite.
+* **The movement** (`HandleMovement`'s shared 3/13/69/109 arm
+  `:19512-19571`): the blocked axis zeroes (the `collides_rect` probe
+  stand-in for `Collision.TileCollision`, the M4-PROJ-3 deviation), the
+  harpoon sticks (both axes zero), every kind arms `ai[0] = 1` WITHOUT
+  a velocity reversal (only 3/109 reverse) + the Dig thud. The
+  world-edge flag feeds the same response (the boomerang precedent).
+  `AutomaticallyChangesDirection` excludes 13 at `ai[0] == 1` вЂ” the
+  direction freezes on the return.
+* **The on-hit return** (`Damage_PVE_Inner` `:14148-14164`, wired in
+  `damage_pve` AFTER the penetrate decrement, BEFORE the `== 0` stop):
+  the harpoon's own arm returns only at penetrate в‰¤ 0 (the outbound
+  zero + penetrate в€’1 re-arm вЂ” the third hit), every other chain kind
+  returns on EVERY hit. The `StatusNPC` debuffs (`:11282-11288`,
+  pre-strike): the fist's 1/3 Confused (the Next(10,21) duration ONLY
+  on a gate hit, the double truncation verbatim) + the harpoon's
+  unconditional Bleeding (60 Г— Next(8,13)).
+* **Rows** (`data.rs`): 23 в†’ 4Г—4 pen 3 ranged local-12; 262 в†’ 30Г—30
+  melee extra 1; 271 в†’ 20Г—20 scale 1.2; 273 в†’ 26Г—26; 481 в†’ 22Г—22
+  extra 0; all alpha 255, aiStyle 13, stock tileCollide/timeLeft.
+
+RNG: the AI body draws ZERO `Main.rand` (the chain_step signature
+takes no rng вЂ” the structural witness). The two debuff rolls are
+HIT-time draws on the pass's `UpdateProjectiles` stream, mirrored
+against a same-seeded `UnifiedRandom` (peek equality) in
+`w4_d2_the_chain_debuff_rolls_mirror_the_unified_stream`.
+
+Deliberate skips: the dust visuals, `netUpdate` (the field rides), the
+wet/shimmer movement half (the generic Update wet block is unported
+for these kinds вЂ” the Shimmer kill `:22467-22470` is unreachable
+without it), the PVP hit arm (`:14704-14708`, no PVP), the
+`HitTiles`/`HitTilesInACircle` cell scans (effectOnly dust, no state).
+Style 13 is NOT wind-eligible (`:22110-22132`). The spawn rides the
+generic `ItemCheck_Shoot` tail (the rows activate
+`spawn_with_data_ai`; the C# `NewProjectile` box-centring convention
+is the shoot seam's standing form).
+
+Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
+13 witness tests in `projectile_ai_chain.rs` + the 3 in
+`projectile.rs` (`w4_d2_the_chain_*`) are WRITTEN NOT RUN; every
+expected value hand-derived from the cited C# lines.
+
+## The aiStyle-17 tombstones (W4-d2, 2026-11-21, code-only вЂ” tests written NOT run)
+
+The third missing style of the 11-20 census: **aiStyle 17**
+(`Projectile.cs:25316-25366`) вЂ” the Tombstone (43), the five grave
+markers (201-205) and the five rich gravestones (527-531), in
+`projectile_ai_tombstone.rs` behind the dispatch's `17 =>` arm
+(kind-gated to `TOMB_KINDS`).
+
+**The census finding that shaped the slice**: the pre-existing
+`death.rs::TombFall` stand-in was DEAD CODE вЂ” `tick_tomb_falls` was
+never called from any pass, so tombstones rolled at death but NEVER
+placed (and their launch-velocity draws `Player.cs:39127` were never
+consumed). This slice replaces the stand-in's flight with the real
+aiStyle-17 projectile and wires the spawn.
+
+* **The AI head**: the grounded X friction (vy == 0 в†’ vx Г—0.98), the
+  spin (rot += vxВ·0.1, the POST-friction X), the gravity (vy += 0.2),
+  the FTW dead-roll disarm (|vx|+|vy| < 1 в†’ damage 0 / knockBack 0).
+* **The placement** (LOCAL OWNER only): the probe cell
+  `((x+w/2)/16, (y+hв€’4)/16)`; the tile-85 style ladder (201-205 в†’
+  1-5, 527-531 в†’ 6-10, the plain 43 в†’ 0); `TileObject.CanPlace` +
+  `Place` through the `place_rng` take/restore convention (tile 85
+  carries NO random styles вЂ” zero draws); the Dig thud at the TILE
+  corner; the epitaph through `Sign.ReadSign`/`TextSign` (tile 85 IS
+  a `tileSign` kind вЂ” the `misc_text` field, a real C# field `:432`,
+  lands the death text); `Kill()`.
+* **The movement**: the blocked-move prologue's ONE `Next(3)`
+  (`:17948`, the first operand вЂ” fires even when the cut gates fail);
+  the aiStyle-17 bounce (`:19310-19320`): the changed X Г—в€’0.75, the
+  changed Y Г—в€’0.7 ONLY when last.Y > 1.5; the post-bounce integrate.
+  The world-edge flag is aiStyle-3-ONLY (`:17900`) вЂ” the tombstones
+  bounce off tiles, not the edge. The direction follows the X sign
+  (`AutomaticallyChangesDirection` does not exclude 17).
+* **The wind tail**: aiStyle 17 joins `uses_wind_physics`
+  (`ShouldUseWindPhysics` `:22118` lists it) вЂ” the shared `wind_tail`
+  helper applies.
+* **The spawn** (`death.rs::on_player_death`, `Player.DropTombstone`
+  `:39108-39136`): the kind roll (`roll_tombstone`, unchanged) THEN
+  the launch draws вЂ” `Next(10,30)*0.1*hitDirection + scatter` X,
+  `Next(-40,-20)*0.1` Y (FTW Г—1.5 both, damage 70 / kb 10), the box
+  centred on the player centre, `misc_text = deathText`. The
+  `tomb_falls` bookkeeping record stays (the death-screen witness);
+  the FLIGHT rides the pool. The three death-pipeline RNG witnesses
+  gained the two launch draws (the stream census stays exact).
+* **Rows** (`data.rs`): all eleven в†’ 24Г—24, aiStyle 17, penetrate в€’1,
+  stock 3600/tileCollide; the classic rows keep the stock
+  friendly/hostile false (the FTW arm flips both at the spawn).
+
+RNG: the AI body draws ZERO; the placement draws ZERO for tile 85;
+the blocked move ONE `Next(3)` (mirrored against a same-seeded
+`UnifiedRandom`); the spawn's two launch draws ride `UpdatePlayers`
+after the kind roll (the death witnesses pin the order).
+
+Deliberate skips / deviations: the `NetMessage` wires (SP no-ops);
+the wet movement half (the generic Update wet block is unported for
+these kinds вЂ” the Shimmer buoyancy `:22504-22515` unreachable); the
+`DateTime.Now` date suffix on the epitaph (wall-clock,
+non-deterministic вЂ” the death text alone is stored); the
+`hitDirection` parameter (the port's death seam carries none вЂ” the
++1 stand-in, recorded here); the tile-cut bodies (the classic
+damage-0 fails the gate; the FTW cut is the unported layer, the roll
+still fires). The `TombFall`/`tick_tomb_falls` stand-in stays as the
+bookkeeping record (its tick remains uncalled вЂ” the pool flight
+replaces it).
+
+Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
+10 witness tests in `projectile_ai_tombstone.rs` are WRITTEN NOT RUN;
+every expected value hand-derived from the cited C# lines (the
+placement fixture's probe cell (20,29), the 2Г—2 object (20,28)-(21,29)
+and the floor-row-30 anchor verified against `can_place`'s scoring).
+
+## The W4-d2 RETIRE — band-11-20 SEALED (2026-11-21, code-only)
+
+research/**354** (number per registry-150's §9 UNIFIED FINAL AUTHORITY,
+d54 tip `4b0d5c246`, §9.2 row 354 = d2: the first publish's 283 loses to
+f26's §7.3 re-issue (14:18:55, published 15:35:39) and g59's
+`283-death-effects-family-bible.md`; the prior 283→310 self-rename was
+INVALID — 310 is g48's §9.2 assignment (`310-c28-18-send-switch`,
+DONE `09364c008`) and §9 forbids self-picks — chain
+283→310-invalid-self→354, rename
+executed on this branch per the registry procedure) publishes the
+five-part FINAL: (1) the git-log census —
+five commits `ebf418031`/`15e5448a9`/`61c47ed79` + the two witness-fix
+rounds `b1c4ec0a8`/`f430ccf83`, 20 rows + 40 module witnesses (the
+light-pets commit message's "12" undercounts: the tip's `#[test]` census
+is 13; the chain message's "16" is 14 module + 3 damage_pve = 17); (2) the **261 resolution** — the flail machine is aiStyle **15**
+(`DefaultToFlail` `Projectile.cs:10753-10759`), d75's correction STANDS;
+the 261 BoulderStaffOfEarth is aiStyle **14** (`:3452-3462`), UNROWED on
+every pushed tip (re-probed d3/d75/d77/f1/g2/e3 + HEAD), band-11-20 owns
+it by the style axis, and the gap is TWO halves (the `:24989-25042` AI
+type-arm + the `HandleMovement` `:19643` ±3 gate -> `MakeBoulderOfEarthExplosion`
+`:20391` RNG body) — **task-seeded S1-P-i61 (i58 double-seeded g65/d3, i59/i60 g65's)**, not ported in the retire
+round; (3) the all-styles/kinds census: **10/10 styles armed**, 196 C#
+band kinds, **169 rowed / 27 unrowed** — every remainder named with its
+SetDefaults cite (the 5 style-14 kinds incl. 261, the 17 style-16
+bomb/rocket kinds, 288, the 3 style-18 sickle/book kinds, the 252
+jackhammer); (4) the **d77c/f1 compose receipt** at the moved tips
+(d77 `5f10560b2` / f1 `3065492b0`): the band's 20 landed kinds are
+DISJOINT from both kill maps (the C# Kill range names none of them —
+mechanical sweep), the inherited rowed kinds overlap only via
+keep-one-identical arms (44/45, 928, 346, 183 — the d77-superset drop
+plays once), the f1-UNIQUE fold remainder touches no band kind, and the
+one merger obligation is the mechanical 5->6-tuple `volumeScale` forward;
+(5) the band declaration: **SEALED** — no census/arm/row work owed
+beyond the named seeds (S1-P-i61 + the d75-armed 288 gate). 3 RETIRE
+witnesses appended to `projectile.rs`'s tests tail (the band-arm scan,
+the landed-roster pin, the 261-unrowed activation pin) — WRITTEN NOT
+RUN, no cargo/tests/rustfmt/graphify invoked.
+
