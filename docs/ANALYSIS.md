@@ -7808,6 +7808,95 @@ Deviations:
 - **`miscEquips[3]`** — the equipment mount slot is not ported (M3-EQUIP); the
   quick-mount scan walks the inventory only.
 
+### Mount projectile abilities (M2-MOUNT-4, W4-c14, code-only mode)
+
+**WRITTEN NOT RUN** (no cargo/rustc/rustfmt invoked on this lane); the witnesses
+were re-read against `Mount.cs`/`Projectile.cs` and hand arithmetic. The two
+projectile abilities — Scutlix (9) + Santank (46) — are ported whole (the
+smallest two `UseAbility` arms, research/371); the Drill (8) and the dash-contact
+/ slime-stomp combat abilities stay unported (the combat seam / the `UseDrill`
+mining consumer — research/371 §2 contract). What landed:
+
+- **The aim/fire machine** (`mount.rs`): `clamp_to_dead_zone` (`Mount.cs:5296-5333`,
+  the Scutlix 45×54 / Santank 23×2 half-boxes, the smaller-axis-ratio push, the
+  float divide-by-zero on an exact-0 axis reproduced), `aim_ability` cases 9/46
+  (`:5335-5465`, the 6-10 degree bands at ±22.5/±67.5/±112.5, the >90/<-90 facing
+  fold, the flipDraw), `stop_ability_charge` (`:2922-2931`), `reset_head_position`
+  (`:5283-5294`, the Santank band spared), the `scutlixEyePositions` table MINUS
+  (45,54) (`:1398-1421`). `Player::update_mount_ability` drives the scan
+  (`UpdateEffects` case 9/46, `:4879-4947`: the 850-px nearest-chaseable cone scan
+  + `CanHitLine`, the cooldown cadence 9 `==0` / 46 `%10==0`, the gift window
+  `<=10`) and `mount_use_ability` fires (`UseAbility` `:3254-3338`).
+- **The two Santank cues** (`audio.rs`): `play_mount_ability_sound` — the INT
+  overload (`SoundEngine.cs:102`, **no `GetRandomPitch` draw**, unlike the style
+  façade `:93` the cart cues use), volumeScale 0.2 rides `LegacySoundPlayer.cs:1411`
+  AFTER the case-2 tweak (the shared `play_item_style` body), one `Next(-6,7)*0.01`
+  pitch roll on the `UpdatePlayers` stream after the attenuation gate. `Item_89`
+  joined the SFX bank (the 88/90 gap; the asset verified present). The cues queue
+  on `pending_ability_sounds` and drain at the player-pass tail (the cart-cue batch
+  convention — the C# plays inline at the spawn).
+- **The consumers**: the 606 ScutlixLaser joins `projectile_ai001_b` as the 449
+  sibling (the SAME C# block `:54772-54828`, the 150/5 constants vs 449's 100/3);
+  the 930 SantankMountRocket joins `is_launcher_rocket`/`rocket_homing`/
+  `rockets_skip_self_damage` with the reach-650/speed-12 overrides
+  (`:47273-47276`/`:47305-47308`), the 128×128 kb8 PrepareBombToBlow arm
+  (`:46820`) and the plain-rocket kill census + Item14 blast cue (`:78088-78096`).
+  The 14 missile reuses the existing MUSKET_BALL row.
+
+Deliberate deviations (the standing conventions):
+- **The 606 tile contact keeps the port's kill-on-tile stand-in** — the C#
+  `HandleMovement` bounce latch (`:18278-18286`, `ai[1]=1` + the velocity restore)
+  and the `UpdatePosition` skip (`:20435`) are the slice-B deviation the 449
+  sibling already carries (ANALYSIS "aiStyle-1 per-type arms, slice B"); the 606
+  rides the same `finish_flight` for keep-one consistency. The fade-out countdown
+  (`localAI[0] -= 5`, the `Kill()` at ≤0) is ported; the latch that triggers it on
+  tile contact is the documented gap.
+- **The charge eye-glow lights dropped** — `AimAbility`'s `Lighting.AddLight`
+  heads (`:5413`/`:5457`) are the LIGHT lane's (the `ability_charge_ratio` accessor
+  keeps the seam discoverable). The 606 first-tick 4× dust-182 (`:54804-54812`) and
+  the kill dust (`:73563-73572`) are the pool's dust census skip (the 449 sibling's
+  convention — the `NewDust` args are constants, no explicit call-site draw).
+- **The 441 crosshair + `StartAbilityCharge` are single-player-dead; the 453
+  is port-dead only** (SEAL correction, research/371 §8) — 441's only caller is
+  the aiStyle-76 remote-owner branch (`Projectile.cs:30662`), unreachable in
+  SP; the local `_abilityCharging` writer is the scan's else-arm (`:4939`),
+  ported. The 453 is SP-LIVE in the C# (`UseAbility` case 8 `Mount.cs:3327`
+  via the Drill toggle `Player.cs:52944`) — dead in the port only because the
+  Drill is unported; the 453 crosshair + `UseDrill` ride the mount-lane
+  contract (research/371 §2) and MUST be ported with it. The remote aiStyle-76
+  arms + the `Kill()` tail (`Projectile.cs:73390-73396`) are the MP-scope
+  record (research/371 §8).
+- **The scan order** — the C# runs `UpdateEffects` at `Player.cs:25658` (inside
+  `UpdateEquips`, before movement + the `:26664` AbilityRecovery); the port runs
+  `update_mount_ability` in the world-sim player pass right before
+  `update_with_grapple` (whose `update_mount` tail ticks `ability_recovery`), so
+  the fire reads the pre-recovery cooldown — the C#'s order. The fire's
+  `RotatedByRandom` draws (gift 2 + missile 2, left-first) ride the `UpdatePlayers`
+  stream inline; the cue pitch rolls drain at the pass tail (the batch convention).
+- **The dash-contact / slime-stomp damage stays unported** — the `CollideWithNPCs`
+  → `ApplyDamageToNPC` → `GiveImmuneTimeForCollisionAttack` combat seam
+  (`Player.cs:20108-20174`/`:20533-20564`/`:20381-20511`) is a combat lane, not a
+  sound lane (research/371 §2 table). The dash DUST is f6's staged batch 1.
+  SEAL: the seam's OWNER CONTRACT is published as research/371 §7 — it is
+  unclaimed by d116 (inbound `Hurt` + the strike math only) and g59 (post-death
+  visuals only); the task seed **M5-COMBAT-8** claims it, with the boundary
+  pins (reuse d116's `damage.rs` math + the General i-frame stand-in, end at
+  `strike_pooled` before g59's death visuals, wire f6's staged dash dust) and
+  the stomp's inline-scan caveat (`JumpMovement` does NOT call
+  `CollideWithNPCs`; the bounce `vy = -10` precedes the i-frame grant).
+  The f6 mutual receipt (research/371 §6, f6 tip `ebdcbd96d`) closes the four
+  co-lane items: the UseDrill seam `Player.cs:28288-28291`, SpawnFartCloud
+  staged-with-c14-delegate-callers (the `useDelay` split: Jumping/Landing
+  false, Bumper true), the 4 spark delegates f6-dust/c14-sounds, and the ONE
+  `App.tile_draw_rand` field (c14 has no consumer).
+
+Verification (WRITTEN NOT RUN): the `mount.rs` dead-zone/aim-band/stop-charge/
+reset-head witnesses, the `audio.rs` int-overload RNG/volume witness (no style
+draw, one pitch roll, the bank join), the `player.rs` scan-cadence witnesses
+(Santank missile-every-10/gift-every-40 + the 4-draw order, Scutlix two-lasers-
+every-20, the no-target reset), the `projectile_ai001_b` 606 ramp witness, and the
+`minecart.rs` rattle speed-invariance witness (research/371 §3 — no pitch scaling).
+
 Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
 (the table constants, the set/dismount guards, the merge modes, the jump/fall
 interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle,
@@ -40563,3 +40652,123 @@ NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked. The ghost-sibling
 (8816f3dc2 → 6d8fc54c3) was probed live via mtimes + origin tip before each
 write; its pending respawn-skip edit landed as 6d8fc54c3 and was not
 disturbed.
+## The tile-break fail + movement-sound wave (W4-c14, 2026-11-21)
+
+**Code-only mode**: implemented without invoking any compiler - no
+cargo/rustc/rustfmt, no test runs, no graphify refresh (the Lead's task
+constraint). The ten `w4_c14_*` witness tests are WRITTEN, NOT RUN; the
+branch `task/W4-c14-tile-break-footstep-sounds` is pushed unmerged for a
+verification pass. 33 C# `PlaySound` sites across 8 commits.
+
+### Census (what this wave covers)
+
+- **The mining fail ticks** - `Player.PickTile` `:53815`, the hammer
+  `:45692`, the axe `:45758`: each sub-100 hit calls
+  `WorldGen.KillTile(x, y, fail: true)`, whose entry plays
+  `KillTile_PlaySounds(fail: true)` (`WorldGen.cs:63558`) BEFORE the
+  dust. The shared `play_kill_fail_cue` plays the landed S1-E-21c table
+  through the pinned `kill_cue` map (the D3 convention - no gameplay
+  draws); `can_kill_tile` stands in for `CheckTileBreakability`'s
+  `num == 2` return (`:63542-63545`), which refuses BEFORE the sound.
+  The recorded i29/i30/i31 "per-tick sound is a deviation" notes close.
+- **The check tails** - `CheckOrb` (`WorldGen.cs:54335-54342`: the
+  crimson Heart's `frameX >= 36` plays the killed sound 4 style 1,
+  everything else Shatter 13) and `Check2x1`'s piggy arm (`:47235`
+  Shatter 13). `TileKill::check_sounds` carries `(id, style, x, y)` at
+  the CHECKED cell (the C# `i`, not the pair anchor); `break_tile`
+  drains it after the hit cell's own cue - the C# order (the entry sound
+  precedes the `SquareTileFrame` cascade).
+- **The wiring tools' ten Dig-0 sites** - `PlaceWire`/2/3/4
+  (`:58115`/`:58145`/`:58175`/`:58205`), `KillWire`/2/3/4
+  (`:58126`/`:58156`/`:58186`/`:58216`), `PlaceActuator`
+  (`:58015`), `KillActuator` (`:58026`). The pinned `Dig_1`
+  stand-in is replaced by `play_place_sound`'s case-0 path (the
+  `Next(3)` variation + `Next(-10,11)*0.01` pitch on `UpdatePlayers`,
+  gate-first). The cutter arms play BEFORE the item drop - the C# order
+  (`:58026` precedes `:58030`), so the cue's two draws precede the
+  drop's on the stream.
+- **The stoned transition** - `Player.cs:25225`: the Dig-0 plays on BOTH
+  edges (the site sits outside the `stoned` arm); the 20 dust 1 stay
+  skipped. `pending_stoned_sound` queues the truncated top-left.
+- **The cart-sound drain** - the Item53/55/56 cues (the rolling rattle
+  `Player.cs:19870`/`:19928`, the landing/bumper delegates
+  `DelegateMethods.cs:250`/`:255`) upgrade from the flat `play_at`
+  to the wave-A style facade (the audio-only GetRandomPitch NextFloat +
+  case 2's draws: 53/55's x0.75 arms + the signed `Next(-20,-11)*0.02`
+  windows).
+- **The Pogo Stick (43)** - `Player.cs:19784` (the HorizontalMovement
+  grounded hop: the half-speed hop + static `jumpHeight` 15 + the early
+  return ported whole) and `:20764` (the ground jump), both Item168 at
+  `base.Center`. `Item_168` joins the bank.
+- **The fart carts (51/53)** - the delegate trio
+  (`DelegateMethods.cs:308-326`): JumpingSoundFart Item16 (the off-rail
+  edge `Player.cs:28118-28121` - the base cart's delegate is EMPTY),
+  LandingSoundFart Item16 THEN Item53, BumperSoundFart Item16 THEN
+  Item56. The fart clouds (gore 435-437 + the dust) are visual seams.
+- **The Meowmere cart (33)** - `Mount.MeowcartLandingSound`
+  (`Mount.cs:661` `PlaySound(37, x, y, 5)`) / `MeowcartBumperSound`
+  (`:666` style 3): the new case-37 path
+  (`LegacySoundPlayer.cs:1326-1336`) - the `Next(57,59)` slot pick
+  (`Item_57`/`Item_58` join the bank at legacy id 37), the
+  `Style * 0.05` volume scale (the non-starGame arm) and the
+  `Next(-40,41)*0.01` pitch - TWO `UpdatePlayers` draws after the
+  gate. `sound.rs::meowcart_case37` carries the maths.
+- **The rocket cadence** - `Player.rocketSoundDelay` (`:2752`) lands:
+  the fuel tick's cue arm (`:26884-26896`) + the `:26903-26905`
+  per-tick decrement. The wings-4 jetpack frame arm (`:29471-29480`
+  Item13/60), the wings-45 Starboard arm (`:30165-30174` Item24/30
+  behind the whole `ShouldDrawWingsThatAreAlwaysAnimated` gate
+  `:30737-30748`) and the glide wings-4 arm (`:27149-27156`
+  Item13/60) queue their cues on the movement-cue drain.
+
+### Deliberate deviations / deferrals
+
+- **The fail-tick dust stays skipped** (the recorded visual seam); only
+  the sound closes.
+- **The vanity-rocket producer — CLOSED (DOC-SWEEP lane 11, `4cbd37bf`)**:
+  `vanity_rocket_boots` lands (`Player.cs:2760`) - the equip rows set both
+  tiers equal (`:14420`/`:15023`/`:15222`/`:15380-15400`), the visible-boot
+  half + the social loop re-derive the visual tier
+  (`UpdateBootVisualEffects` `:36704-36751`), the Red's Leggings 668 sets
+  tier 6 (`:13088-13091` - NOT a "Bee costume"; the bee rocket is the
+  `RocketBootVisuals` dust `:29330`). The cue arm reads the vanity tier
+  (`:26886`/`:26891`). The `CancelAllBootRunVisualEffects` dash flags stay
+  run-particle visual seams. Census: research/82 §1.
+- **The 53/55/159 playing guards — CLOSED (DOC-SWEEP lane 11, `4cbd37bf`)**:
+  `sound.rs::item_case2_playing_guard` + `audio.rs::item_slots` model the
+  refusal-before-the-pitch-draw (`LegacySoundPlayer.cs:559-562`/`:583-586`)
+  and the per-style Stop/re-create pool (`:580-607`, the stack-allowed
+  styles `:595-605` keep the old source). Headless no slot fills, so the
+  guard never trips (the case-28 precedent). The per-frame re-pan + the
+  garbage collector stay the standing tracked-sound D4 (S1-E-23). Census:
+  research/82 §2.
+- **The fart clouds / the Meowcart dust / the wing frame tables are
+  visual seams** - the cues play, the particles wait for their waves.
+- **The `check_sounds` drain uses the pinned `kill_cue` map** (the
+  D3 convention, the `break_tile` precedent) - the crimson Heart's
+  killed-4 plays `NPC_Killed_1` pinned, no case-4 pitch draw; the
+  pitched upgrade is a follow-up if the D3 pin lifts.
+- **The pogo hop's `gravDir`** is 1 (the port has no gravity flip);
+  the hop uses the STATIC `Player.jumpSpeed` 5.01 / `jumpHeight` 15,
+  not the per-player rebased fields (the C# reads the statics).
+
+### Witness tests (written, NOT run)
+
+- `tr-core/edit/kill.rs::w4_c14_the_check_tail_sounds_ride_the_kill_record`
+- `world_sim/editing.rs::w4_c14_the_mining_fail_tick_plays_the_kill_fail_cue`
+- `world_sim/editing/wiring.rs::w4_c14_the_wire_placement_dig_draws_ride_the_player_stream`
+- `world_sim/editing/wiring.rs::w4_c14_the_cutter_dig_draws_precede_the_drop`
+- `world_sim/player.rs::w4_c14_the_stoned_transition_plays_the_dig_on_both_edges`
+- `player.rs::w4_c14_the_rocket_cue_rides_its_own_cadence`
+- `player.rs::w4_c14_the_pogo_hop_and_jump_queue_item168_at_the_centre`
+- `minecart.rs::w4_c14_the_fart_delegates_play_their_cue_pairs_in_order`
+  + `w4_c14_the_meowcart_delegates_queue_the_case37_cues`
+- `audio.rs::w4_c14_the_meowcart_case37_draws_the_slot_then_the_pitch`
+
+DOC-SWEEP lane 11 (research/82, `4cbd37bf`) adds two witnesses (written, NOT
+run): `player.rs::w4_c14_the_vanity_rocket_tier_produces_the_cue` (the
+vanity-tier producer + the divergent cue) and
+`audio.rs::w4_c14_the_cart_rattle_guard_refuses_while_the_slot_is_live` (the
+53/55/159 playing-guard refusal). The movement-sound census verdicts (swim
+strokes none, landing thud = the hurt sound, grapple fire/reel ported, no
+mount ambient loop beyond d80b) live in research/82 §3-4.

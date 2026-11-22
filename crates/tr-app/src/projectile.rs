@@ -862,11 +862,12 @@ impl Default for Projectile {
 /// S1-P-i16 — `AI_016_Bombs`' rocket-family membership
 /// (`Projectile.cs:47175`'s keep-damage list, the launcher subset): the
 /// plain launcher rockets 133-144, the Snowman Cannon's 338-341 and the
-/// 1.4.4 family 776-801/803-810 plus the cluster shrapnel 862/863. These
-/// keep their damage in flight (the thrown bombs zero it, `:47177`) and
-/// take the per-family flight arms instead of the thrown-bomb arc.
+/// 1.4.4 family 776-801/803-810 plus the cluster shrapnel 862/863 — and
+/// (M2-MOUNT-4) the Santank mount's gift-box rocket 930 (`:47175` names it).
+/// These keep their damage in flight (the thrown bombs zero it, `:47177`)
+/// and take the per-family flight arms instead of the thrown-bomb arc.
 pub(crate) fn is_launcher_rocket(kind: u16) -> bool {
-    matches!(kind, 133..=144 | 338..=341 | 776..=801 | 803..=810 | 862 | 863)
+    matches!(kind, 133..=144 | 338..=341 | 776..=801 | 803..=810 | 862 | 863 | 930)
 }
 
 /// The straight-flight rocket set — the Rocket Launcher's 134/137/140/143,
@@ -901,11 +902,13 @@ pub(crate) fn rocket_mine(kind: u16) -> bool {
 /// The homing rocket set (`Projectile.cs:47197`/`:47463`): the Snowman
 /// Cannon's 338-341 + the 1.4.4 homing kinds 803/804/808/809/810 AND the
 /// liquid Snowman kinds 805/806/807 (the C# arm lists them — they home
-/// FIRST, the straight/arc/mine lists never see them) — the 30-tick acquire
-/// (Manhattan < 600, `Collision.CanHit`), the 1/12 lerp toward the target at
-/// speed 16, the spriteDirection/rotation pair.
+/// FIRST, the straight/arc/mine lists never see them) — and (M2-MOUNT-4)
+/// the Santank mount's gift-box rocket 930 (`:47197`/`:47463` name it) —
+/// the 30-tick acquire (Manhattan < 600, `Collision.CanHit`), the 1/12 lerp
+/// toward the target at speed 16; the 930 overrides BOTH (reach 650,
+/// speed 12 — `:47273-47276`/`:47305-47308`).
 pub(crate) fn rocket_homing(kind: u16) -> bool {
-    matches!(kind, 338..=341 | 803..=810)
+    matches!(kind, 338..=341 | 803..=810 | 930)
 }
 
 /// The cluster rocket set (`Kill_Bombs_DoUsualKillCode`
@@ -925,8 +928,9 @@ pub(crate) fn rocket_liquid(kind: u16) -> bool {
 /// `ProjectileID.Sets.RocketsSkipDamageForPlayers` (`ProjectileID.cs:341`,
 /// the rowed subset): the Snowman rockets never hurt their owner — the
 /// `Kill()` gate (`Projectile.cs:70667`) excludes them from `SelfHurtPlayers`.
+/// M2-MOUNT-4 adds the Santank gift-box rocket 930 (the set names it).
 pub(crate) fn rockets_skip_self_damage(kind: u16) -> bool {
-    matches!(kind, 338..=341 | 803..=810 | 862 | 863)
+    matches!(kind, 338..=341 | 803..=810 | 862 | 863 | 930)
 }
 
 /// `ProjectileID.Sets.FixedSelfDamageForPlayers` (`ProjectileID.cs:342-422`):
@@ -6612,10 +6616,12 @@ impl Projectile {
             // (the counter increments HERE, `:47278`), the nearest chaseable
             // NPC by Manhattan distance < 600 with a clear `CanHit` line;
             // the miss aims 100 velocity-ticks ahead. The 1/12 lerp toward
-            // the target direction at speed 16.
+            // the target direction at speed 16. M2-MOUNT-4 — the Santank
+            // gift-box rocket 930 overrides the reach to 650 (`:47273-47276`)
+            // and the speed to 12 (`:47305-47308`).
             let mut tx = self.pos.x;
             let mut ty = self.pos.y;
-            let mut reach = 600.0f32;
+            let mut reach = if self.kind == SANTANK_MOUNT_ROCKET { 650.0 } else { 600.0 };
             self.ai[0] += 1.0;
             let mut found = false;
             if self.ai[0] > 30.0 {
@@ -6642,10 +6648,11 @@ impl Projectile {
                 tx = self.pos.x + self.w * 0.5 + self.vel.x * 100.0;
                 ty = self.pos.y + self.h * 0.5 + self.vel.y * 100.0;
             }
+            let homing_speed = if self.kind == SANTANK_MOUNT_ROCKET { 12.0 } else { 16.0 };
             let toward = safe_normalize_or(
                 Vec2::new(tx, ty) - Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
                 -Vec2::Y,
-            ) * 16.0;
+            ) * homing_speed;
             // `Vector2.Lerp(value1: velocity, value2: toward, 1/12)` —
             // `v1 + (v2 - v1) * amount` (XNA's form).
             self.vel = self.vel + (toward - self.vel) * (1.0 / 12.0);
@@ -22245,8 +22252,9 @@ impl ProjectilePool {
                 // `:46815-46819` — the cluster shrapnel: 48×48, kb 8 (the
                 // damage stays — the arm sets none).
                 (48.0, 48.0, 8.0)
-            } else if matches!(kind, 133..=138 | 338 | 339) {
-                // `:46820-46824` — 128×128, knockback 8.
+            } else if matches!(kind, 133..=138 | 338 | 339 | 930) {
+                // `:46820-46824` — 128×128, knockback 8 (M2-MOUNT-4: the
+                // Santank gift-box rocket 930 joins the arm).
                 (128.0, 128.0, 8.0)
             } else if matches!(kind, 794 | 797 | 795 | 798 | 793 | 796 | 808) {
                 // `:46825-46829` — the Mini Nuke family: 250×250, kb 12.
@@ -22513,10 +22521,17 @@ impl ProjectilePool {
                 ));
                 t += 1.0f32 / 6.0f32;
             }
-        } else if matches!(kind, 133..=138 | 338 | 339) {
+        } else if matches!(kind, 133..=138 | 338 | 339 | 930) {
             // `:78088-78141` — the plain rockets: the 22×22 recentre, the
             // 30+20×2 dust (no explicit draws), 8 gores (`:78117-78140`'s
-            // 2×4 loop).
+            // 2×4 loop). M2-MOUNT-4: the Santank gift-box rocket 930 joins
+            // the arm; its `:78096` Item14 blast cue queues at the PRE-
+            // resize position (the `ai_bomb` detonation-latch convention —
+            // the 133/136 siblings play Item62 instead, `:78090-78093`).
+            if kind == SANTANK_MOUNT_ROCKET {
+                let p = &mut self.slots[slot];
+                p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
+            }
             resize(&mut self.slots[slot], 22.0);
             for _ in 0..8 {
                 gore(rng);

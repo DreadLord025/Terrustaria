@@ -1851,9 +1851,22 @@ pub struct Player {
     rocket_time_max: i32,
     pub rocket_delay: i32,
     rocket_delay2: i32,
+    /// W4-c14 - `Player.rocketSoundDelay` (`Player.cs:2752`): the rocket
+    /// cue's own cadence (`:26884-26896` arms it 30/15 per vanity tier,
+    /// `:26903-26905` ticks it down once per flight tick).
+    rocket_sound_delay: i32,
     /// `Player.rocketBoots` (`Player.cs:2756`): the boots tier
     /// (`TR_BOOTS=<1..5>` pins it).
     pub rocket_boots: i32,
+    /// W4-c14 doc-sweep - `Player.vanityRocketBoots` (`Player.cs:2760`): the
+    /// VISUAL boots tier the rocket cue picks its sound from
+    /// (`:26886`/`:2691`). The functional equip rows set it equal to
+    /// `rocketBoots` (`:14420`/`:15023`/`:15222`/`:15380-15400`); the vanity
+    /// pass (`UpdateBootVisualEffects`, `:36704-36751`) re-derives it from
+    /// the visible boot and the Red's Leggings 668 sets tier 6
+    /// (`:13088-13091`). ResetEffects clears it (`:18354`), the mount block
+    /// zeroes it (`:26630`).
+    pub vanity_rocket_boots: i32,
     /// `Player.canRocket` / `rocketRelease` (`Player.cs:2762,2752`): the
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
@@ -2222,6 +2235,11 @@ pub struct Player {
     /// case-0 Dig play draws its variation + pitch on the `UpdatePlayers`
     /// stream (the `play_place_sound` contract).
     pending_no_space_sound: Option<(f32, f32)>,
+    /// W4-c14 - the petrify-transition Dig-0 (`Player.cs:25225`:
+    /// `SoundEngine.PlaySound(0, (int)position.X, (int)position.Y)` on the
+    /// `stoned != lastStoned` edge, BOTH directions): `(x, y)` - the case-0
+    /// variation + pitch draws ride the drain's `UpdatePlayers` stream.
+    pending_stoned_sound: Option<(f32, f32)>,
     /// S1-P-i41 — the third-fail `PlayerNoSpaceTeleport` request
     /// (`Player.cs:6061-6066`): the forced dismount ran, the tick owns
     /// `&World` for the spot scan (`TeleportHelpers.FindClosestTeleportSpotNoSpace`).
@@ -2241,6 +2259,12 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    /// M2-MOUNT-4 — the tick's queued Santank ability cues (style 89 gift /
+    /// 11 missile, `Mount.cs:3300`/`:3311`), drained into
+    /// `App::audio::play_mount_ability_sound` on the `UpdatePlayers` stream
+    /// (the `pending_cart_sounds` convention). `(style, x, y)` — the raw
+    /// float positions; the facade truncates like the C#'s int args.
+    pending_ability_sounds: Vec<(i32, f32, f32)>,
     /// The tick's queued sticky dust: the `Collision.StickyTiles` type-30 web
     /// puff (`Collision.cs:3401`) and `StickyMovement`'s type-153 honey puffs
     /// (`:23036-23080`). The C# calls `Dust.NewDust` inline; the port queues the
@@ -3125,7 +3149,9 @@ impl Player {
             rocket_time_max: 7,
             rocket_delay: 0,
             rocket_delay2: 0,
+            rocket_sound_delay: 0,
             rocket_boots: 0,
+            vanity_rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
             merman: false,
@@ -3226,11 +3252,13 @@ impl Player {
             pending_dodge_sends: Vec::new(),
             pending_chillet_sound: None,
             pending_no_space_sound: None,
+            pending_stoned_sound: None,
             pending_no_space_teleport: false,
             pending_force_clear: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
+            pending_ability_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
@@ -3727,10 +3755,16 @@ impl Player {
         self.pending_chillet_sound.take()
     }
 
-    /// S1-P-i41 — takes the QuickMount no-space tink (`Player.cs:6057`) —
+    /// S1-P-i41 - takes the QuickMount no-space tink (`Player.cs:6057`) -
     /// `(x, y)`, the truncated position; the case-0 draws ride the drain.
     pub(crate) fn take_no_space_sound(&mut self) -> Option<(f32, f32)> {
         self.pending_no_space_sound.take()
+    }
+
+    /// W4-c14 - takes the petrify-transition Dig-0 (`Player.cs:25225`) -
+    /// `(x, y)`, the truncated position; the case-0 draws ride the drain.
+    pub(crate) fn take_stoned_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_stoned_sound.take()
     }
 
     /// S1-P-i41 — takes the third-fail no-space teleport request
@@ -4073,6 +4107,7 @@ impl Player {
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
         self.pending_flap_sound = None;
+        self.pending_stoned_sound = None;
         self.pending_dismount = false;
         self.pending_dodge_sends.clear();
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
@@ -6302,6 +6337,24 @@ impl Player {
         }
     }
 
+    /// W4-c14 doc-sweep - `Player.UpdateBootVisualEffects`
+    /// (`Player.cs:36704-36751`): the boot kind -> VISUAL rocket tier. Only
+    /// the tier-setting arms land (the rocket cue reads the tier); the
+    /// `CancelAllBootRunVisualEffects` dash flags (`sailDash`/`coldDash`/
+    /// `desertDash`/`fairyBoots`/`hellfireTreads`, `:36664-36671`) and the
+    /// Hermes-54 cancel are run-particle visual seams. `None` = the kind
+    /// sets no visual tier (the C# switch falls through).
+    fn boot_visual_tier(kind: u16) -> Option<i32> {
+        match kind {
+            128 => Some(1),          // `:36708-36710` Rocket Boots
+            405 | 898 | 3993 => Some(2), // `:36714-36718` Spectre/Lightning + `:36745-36749` Fairy
+            1862 => Some(3),         // `:36724-36727` Frostspark
+            5000 => Some(4),         // `:36728-36731` Terraspark
+            4874 => Some(5),         // `:36719-36723` Hellfire Treads
+            _ => None,
+        }
+    }
+
     /// `Player.UpdateEquips`' functional-accessory loop (`Player.cs:12946-12952`):
     /// for the slots 3..10, `IsItemSlotUnlockedAndUsable` gates the slot and
     /// `ApplyEquipFunctional` applies the worn kind. `GetEffectiveArmor`
@@ -6349,6 +6402,15 @@ impl Player {
                 continue;
             }
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
+            // W4-c14 doc-sweep - `ApplyEquipFunctional`'s visible-boot half
+            // (`Player.cs:14378-14380`): `UpdateBootVisualEffects` runs only
+            // when the slot is NOT hidden. The functional grant below is
+            // unconditional (the C# switch sits outside the gate).
+            if !self.hide_visible_accessory[m] {
+                if let Some(tier) = Self::boot_visual_tier(kind) {
+                    self.vanity_rocket_boots = tier;
+                }
+            }
             self.apply_equip_functional(m, kind);
         }
         // `UpdateEquips`' luck tail (`Player.cs:13050-13069`, W4-e26): the
@@ -6370,6 +6432,32 @@ impl Player {
         if self.has_luck_lucky_horseshoe {
             self.luck_state.equipment_based_luck_bonus += 0.05; // `:13062-13065`
         }
+        // W4-c14 doc-sweep - `UpdateEquips`' vanity-accessory loop
+        // (`Player.cs:13009-13015` -> `ApplyEquipVanity` `:14197` ->
+        // `UpdateBootVisualEffects` `:14234`): the slots 13..20 re-derive the
+        // visual boot tier from the SOCIAL accessory (no hide gate on this
+        // loop). The other `ApplyEquipVanity` grants (shader/wings/merman/
+        // bobber/voice) stay draw seams; only the rocket-cue tier lands.
+        for n in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(n) {
+                continue;
+            }
+            if let Some(tier) = Self::boot_visual_tier(self.equipped[n]) {
+                self.vanity_rocket_boots = tier;
+            }
+        }
+        // W4-c14 doc-sweep - `Player.cs:13088-13091`: the Red's Leggings 668
+        // in the leg armour slot (2) OR its vanity slot (12) sets the visual
+        // rocket tier 6 (the bee-costume rocket cue, Item24 cadence 15).
+        // `GetEffectiveArmor` collapses to `equipped[slot]` (no loadouts).
+        // This runs AFTER the accessory loops, so it wins like the C#.
+        if self.equipped[2] == 668 || self.equipped[12] == 668 {
+            self.vanity_rocket_boots = 6;
+        }
+        // The luck tail's last flag (W4-e26 supersedes c14's subset note):
+        // ONE +0.05 `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` —
+        // the flag the Lucky Coin family arms (855/3034/3035); two rings
+        // still add 0.05 once.
         if self.has_lucky_coin {
             self.luck_state.equipment_based_luck_bonus += 0.05; // `:13066-13069`
         }
@@ -6620,6 +6708,7 @@ impl Player {
             3993 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:14420` (W4-c14 doc-sweep)
             }
             // The Sand Boots (`:14422-14425`): 6f plus the desert-run flag
             // (the sand-floor 1.75x rides the floor-modifier chain).
@@ -6628,7 +6717,10 @@ impl Player {
                 self.desert_boots = true;
             }
             // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
-            128 => self.rocket_boots = 1,
+            128 => {
+                self.rocket_boots = 1;
+                self.vanity_rocket_boots = 1; // `:15023` (W4-c14 doc-sweep)
+            }
             // W4-c46 — the Flipper (`Player.cs:15101-15104`): `accFlipper`.
             187 => self.acc_flipper = true,
             // W4-c46 — the Diving Gear family (`:15198-15202` 394,
@@ -6660,12 +6752,14 @@ impl Player {
             405 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:15222` (W4-c14 doc-sweep)
             }
             // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
             // +8% move).
             898 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:15380` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
             }
             // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
@@ -6673,6 +6767,7 @@ impl Player {
             1862 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 3;
+                self.vanity_rocket_boots = 3; // `:15386` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
                 self.ice_skate = true;
             }
@@ -6680,6 +6775,7 @@ impl Player {
             5000 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 4;
+                self.vanity_rocket_boots = 4; // `:15393` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
                 self.ice_skate = true;
                 // The Terraspark row (`:15168-15174`): the water/fire walk
@@ -6690,6 +6786,7 @@ impl Player {
             4874 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 5;
+                self.vanity_rocket_boots = 5; // `:15400` (W4-c14 doc-sweep)
             }
             _ if Self::wing_slot(kind as i32) > 0 => {
                 // `:15593-15602`: the accessory's `wingSlot` is both the
@@ -8488,6 +8585,9 @@ impl Player {
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
+        // W4-c14 doc-sweep - `:18354`: `vanityRocketBoots = 0` clears with
+        // the gameplay tier; the equip rows + the vanity pass re-arm it.
+        self.vanity_rocket_boots = 0;
         self.no_knockback = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
@@ -8735,6 +8835,14 @@ impl Player {
         }
         if self.pinned_rocket_boots > self.rocket_boots {
             self.rocket_boots = self.pinned_rocket_boots;
+            // W4-c14 doc-sweep - the pin stands in for the equip row, which
+            // sets both tiers equal (`Player.cs:14420` etc.). This block runs
+            // AFTER `update_equips`, so a vanity producer that already set a
+            // tier this tick (the social-slot boot, the Red's Leggings 668
+            // tier 6) WINS - the pin only fills an unset vanity tier.
+            if self.vanity_rocket_boots == 0 {
+                self.vanity_rocket_boots = self.pinned_rocket_boots;
+            }
         }
         if self.pinned_dash != 0 {
             self.dash_type = self.pinned_dash;
@@ -8872,6 +8980,7 @@ impl Player {
         if self.cart_mounted {
             self.run_slowdown = 0.2; // `:26625`
             self.rocket_boots = 0; // `:26628`
+            self.vanity_rocket_boots = 0; // `:26630` (W4-c14 doc-sweep)
             self.wings_logic = 0; // `:26631-26633` (`wings = 0` has no port field)
             self.max_run_speed = CART_RUN_SPEED; // `:26652` mount.RunSpeed
             self.acc_run_speed = CART_DASH_SPEED; // `:26653` mount.DashSpeed
@@ -8977,9 +9086,20 @@ impl Player {
                     self.full_rotation = 0.0;
                 }
                 // `Player.cs:20766-20767`: the ground jump; the landing re-arm
-                // follows (`:20755-20758` — `RefreshDoubleJumps`). `:20678`
+                // follows (`:20755-20758` - `RefreshDoubleJumps`). `:20678`
                 // sets `justJumped` on the grounded trigger. `:20749-20750`:
                 // the trigger disarms the rocket (it re-arms midair).
+                // W4-c14 - `:20762-20764`: the Pogo Stick's (43) ground jump
+                // plays Item168 at the CENTRE before the velocity writes
+                // (the `pending_cart_sounds` drain, the hop arm above).
+                if self.mount.is_active() && self.mount.kind() == 43 {
+                    let (cx, cy) = self.center();
+                    self.pending_cart_sounds.push(crate::minecart::CartCue {
+                        cue: "Item_168",
+                        x: cx,
+                        y: cy,
+                    });
+                }
                 self.just_jumped = true;
                 self.can_rocket = false;
                 self.rocket_release = false;
@@ -9195,7 +9315,7 @@ impl Player {
         // `Player.cs:28093-28161`: the `Minecart.TrackCollision` slot — it runs
         // before the integration because it snaps Y itself and rewrites the
         // velocity (pitfall §10.3: X moves in the integration below).
-        let _was_on_track = self.on_track; // `:28091` `flag32` — the off-rail JumpingSound delegate is empty (see below)
+        let was_on_track = self.on_track; // `:28093` `flag32` - the off-rail JumpingSound delegate (the fart carts' Item16, see below)
         self.on_track = false; // `:28092`
         let mut hit_switch_flag = false; // `flag33`
         if self.cart_mounted {
@@ -9253,18 +9373,47 @@ impl Player {
                 self.full_rotation_origin = ((WIDTH / 2.0), body_h as f32);
             }
             // `:28117-28119`: the riding-off-rail `MinecartJumpingSound`
-            // delegate is EMPTY in C# (`DelegateMethods.cs:244-248`) — the
-            // `was_on_track` && !on_track edge plays nothing.
-            if flags.landing {
-                // `Minecart.cs:809-813`: the landing check —
-                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
-                // with the pre-call position and rotation captured above.
-                minecart::minecart_landing_sound(
+            // delegate - EMPTY for the base cart (`DelegateMethods.cs:244-
+            // 246`); W4-c14: the Fart/Terra-Fart carts (51/53) play Item16
+            // (`JumpingSoundFart`, `:308-312`) at the POST-call position.
+            if was_on_track && !self.on_track && matches!(self.cart_mount, 51 | 53) {
+                minecart::minecart_jumping_sound_fart(
                     &mut self.pending_cart_sounds,
-                    pre_pos,
+                    pos,
                     WIDTH as i32,
                     body_h,
                 );
+            }
+            if flags.landing {
+                // `Minecart.cs:809-813`: the landing check -
+                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
+                // with the pre-call position and rotation captured above.
+                // W4-c14: the fart carts' delegate plays Item16 THEN
+                // Item53 (`LandingSoundFart`, `DelegateMethods.cs:314-319`);
+                // the Meowmere cart (33) plays the case-37 style-5 cue
+                // (`Mount.MeowcartLandingSound`, `Mount.cs:659-662`).
+                if matches!(self.cart_mount, 51 | 53) {
+                    minecart::minecart_landing_sound_fart(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else if self.cart_mount == 33 {
+                    minecart::meowcart_landing_sound(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else {
+                    minecart::minecart_landing_sound(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                }
                 minecart::wheel_sparks(
                     &mut self.pending_sparks,
                     &mut self.spark_rng,
@@ -9288,12 +9437,32 @@ impl Player {
                 }
                 // `:28140`: `MinecartBumperSound` → Item56, at the
                 // post-TrackCollision position (`base.position`, pre-integration).
-                minecart::minecart_bumper_sound(
-                    &mut self.pending_cart_sounds,
-                    pos,
-                    WIDTH as i32,
-                    body_h,
-                );
+                // W4-c14: the Meowmere cart (33) plays the case-37 style-3
+                // cue instead (`Mount.MeowcartBumperSound`, `Mount.cs:664-667`);
+                // the fart carts play Item16 THEN Item56 (`BumperSoundFart`,
+                // `DelegateMethods.cs:321-326`).
+                if self.cart_mount == 33 {
+                    minecart::meowcart_bumper_sound(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else if matches!(self.cart_mount, 51 | 53) {
+                    minecart::minecart_bumper_sound_fart(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else {
+                    minecart::minecart_bumper_sound(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                }
             }
             if flags.hit_switch() {
                 hit_switch_flag = true; // `:28138-28140`
@@ -9334,22 +9503,31 @@ impl Player {
             self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
         }
 
-        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
+        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit -
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
         let stoned = self.buffs.find_buff_index(156).is_some();
-        if stoned && !self.last_stoned {
-            let cx = self.x + self.width * 0.5;
-            // `Player.cs:25223` — the default General counter.
-            self.hurt_inner(
-                20,
-                cx,
-                false,
-                rng,
-                true,
-                false,
-                None,
-                crate::id_tables::IMMUNITY_GENERAL,
-            );
+        // `Player.cs:25219`: the transition gate — BOTH edges run the sound
+        // (W4-c14), only the entering edge runs the Hurt.
+        if stoned != self.last_stoned {
+            if stoned && !self.last_stoned {
+                let cx = self.x + self.width * 0.5;
+                // `Player.cs:25223` — the default General counter.
+                self.hurt_inner(
+                    20,
+                    cx,
+                    false,
+                    rng,
+                    true,
+                    false,
+                    None,
+                    crate::id_tables::IMMUNITY_GENERAL,
+                );
+            }
+            // W4-c14 - `:25225`: the transition's Dig-0 plays on BOTH edges
+            // (the C# site sits outside the `stoned` arm), at the truncated
+            // top-left; the case-0 draws ride the drain. The 20 dust 1
+            // (`:25226-25233`) are the visual seam.
+            self.pending_stoned_sound = Some((self.x.trunc(), self.y.trunc()));
         }
         self.last_stoned = stoned;
 
@@ -11564,6 +11742,7 @@ impl Player {
             self.run_slowdown = 0.2;
         }
         self.rocket_boots = 0;
+        self.vanity_rocket_boots = 0; // `:26630` (W4-c14 doc-sweep)
         if !self.mount.can_use_wings() {
             self.has_wings = false;
             self.wings_logic = 0;
@@ -11594,6 +11773,238 @@ impl Player {
         // M2-MOUNT-4) have no rows in this table yet; the ability counters
         // still tick (`:26663`).
         self.mount.ability_recovery();
+    }
+
+    /// M2-MOUNT-4 (W4-c14) — the Scutlix (9) / Santank (46) auto-fire ability:
+    /// `Mount.UpdateEffects` case 9/46 (`Mount.cs:4879-4947`), the per-tick
+    /// target scan + aim + fire. The C# runs it at `Player.cs:25658` (inside
+    /// `UpdateEquips`, BEFORE the movement block); the port's `update_mount`
+    /// folds the UpdateEffects head + the `:26623` stat block into one call
+    /// (the standing order deviation), so this scan rides the world-sim
+    /// player pass right after `update_with_grapple` — the same
+    /// `UpdatePlayers` stream, the fire draws ride it (`Main.cs:17754`).
+    ///
+    /// The scan: the nearest chaseable NPC within 850 px inside the facing
+    /// cone (±60°) with a clear `CanHitLine`; on a hit the cooldown gate
+    /// (9: `== 0`; 46: `% 10 == 0`) fires `AimAbility` + (at cooldown 0)
+    /// `StopAbilityCharge` + `UseAbility`; else it aims + charges. No target
+    /// clears the charge + resets the head. The Santank jump flag
+    /// (`:4882-4884`) is already armed by `update_mount` (keep-one).
+    ///
+    /// `UseAbility` (`Mount.cs:3254-3338`) cases 9/46 spawn through the pool
+    /// (the top-left convention — `NewProjectile` centres, `Projectile.cs:
+    /// 10876-10877`); the Santank's two cues queue on the tick's ability-cue
+    /// list (the `pending_cart_sounds` convention) — the drain plays them on
+    /// the same stream. The Scutlix spawns no cue. The aiStyle-1 spawn
+    /// velocity clamp (`:10895-10902`) never fires for these speeds (14/12).
+    pub fn update_mount_ability(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        pool: &mut ProjectilePool,
+        rng: &mut tr_core::UnifiedRandom,
+    ) {
+        if !self.mount.is_active() || !matches!(self.mount.kind(), 9 | 46) {
+            return;
+        }
+        let center = Vec2::new(self.center().0, self.center().1);
+        // `:4886-4919` — the nearest-target scan.
+        let mut target = center;
+        let mut found = false;
+        let mut best = 1500.0f32;
+        for n in npcs {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let nc = crate::projectile::npc_center(n);
+            let v = nc - center;
+            let dist = v.length();
+            // `:4900` — inside 850 AND (closer than the held target OR none
+            // held yet). The `(vector - center).Length() > num3` term is the
+            // held target's distance; `best` tracks it (the C# re-measures
+            // `vector` each pass — identical while `vector` is the last
+            // accepted centre).
+            if dist < 850.0 && ((target - center).length() > dist && dist < best || !found) {
+                // `:4902-4911` — the facing cone: |angle| <= 60° facing
+                // right, >= 120° facing left (the C#'s radian thresholds).
+                let mut in_cone = true;
+                let ang = v.to_angle().abs();
+                if self.facing == 1 && (ang as f64) > 1.047197594907988 {
+                    in_cone = false;
+                } else if self.facing == -1 && (ang as f64) < 2.0943951461045853 {
+                    in_cone = false;
+                }
+                let (nw, nh) = n.size();
+                // `:4912` — `CanHitLine(center, 0, 0, npc.position, w, h) &
+                // flag3` (the bitwise & evaluates both; the port short-
+                // circuits the line test only when the cone already failed
+                // — no draws either way).
+                if in_cone
+                    && crate::projectile::can_hit_line(
+                        world, center.x, center.y, 0.0, 0.0, n.x, n.y, nw, nh,
+                    )
+                {
+                    best = dist;
+                    target = nc;
+                    found = true;
+                }
+            }
+        }
+        if found {
+            // `:4922-4926` — the fire cadence gate.
+            let mut fire = self.mount.ability_cooldown() == 0;
+            if self.mount.kind() == 46 {
+                fire = self.mount.ability_cooldown() % 10 == 0;
+            }
+            if fire {
+                // `:4929-4934` — aim, stop-charge (only at cooldown 0), fire.
+                let (_, facing) =
+                    self.mount
+                        .aim_ability(center, target, self.facing, self.vx);
+                self.facing = facing;
+                if self.mount.ability_cooldown() == 0 {
+                    self.mount.stop_ability_charge();
+                }
+                self.mount_use_ability(target, pool, rng);
+            } else {
+                // `:4938-4939` — aim + charge.
+                let (_, facing) =
+                    self.mount
+                        .aim_ability(center, target, self.facing, self.vx);
+                self.facing = facing;
+                self.mount.set_ability_charging(true);
+            }
+        } else {
+            // `:4944-4945` — no target: drop the charge, reset the head.
+            self.mount.set_ability_charging(false);
+            self.mount.reset_head_position();
+        }
+    }
+
+    /// `Mount.UseAbility` (`Mount.cs:3254-3338`) cases 9/46 — the fire. The
+    /// `Main.myPlayer == whoAmI` gates (`:3260`/`:3292`) always hold in the
+    /// single-player port. `target` is the scan's locked NPC centre (the
+    /// C#'s `mousePosition` argument), NOT the cursor.
+    fn mount_use_ability(
+        &mut self,
+        target: Vec2,
+        pool: &mut ProjectilePool,
+        rng: &mut tr_core::UnifiedRandom,
+    ) {
+        let center = Vec2::new(self.center().0, self.center().1);
+        match self.mount.kind() {
+            9 => {
+                // `:3264-3288` — the Scutlix laser pair.
+                let target = self.mount.clamp_to_dead_zone(center, target);
+                // `:3266-3268` — the bottom-centre anchor.
+                let anchor = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                let row = crate::mount::mount_data(9).expect("the Scutlix row");
+                let idx = ((self.mount.frame_extra() - 6) * 2) as usize;
+                for i in 0..2 {
+                    let eye = crate::mount::SCUTLIX_EYE_POSITIONS[idx + i];
+                    // `:3273-3281` — the eye position: Y adds the row's
+                    // yOffset, X mirrors by facing and adds xOffset.
+                    let mut pos = Vec2::new(0.0, anchor.y + eye.y + row.y_offset as f32);
+                    if self.facing == -1 {
+                        pos.x = anchor.x - eye.x - row.x_offset as f32;
+                    } else {
+                        pos.x = anchor.x + eye.x + row.x_offset as f32;
+                    }
+                    // `:3282-3284` — Normalize (NOT SafeNormalize) × 14.
+                    let vel = (target - pos).normalize_or_zero() * 14.0;
+                    // `:3286-3287` — the spawn rides one velocity step ahead.
+                    pos += vel;
+                    // `NewProjectile` centres (`Projectile.cs:10876-10877`):
+                    // the 606's 5×5 half-box subtracts.
+                    let _ = pool.spawn_with_data_ai_owned(
+                        crate::projectile::SCUTLIX_LASER,
+                        0,
+                        pos.x - 2.5,
+                        pos.y - 2.5,
+                        vel.x,
+                        vel.y,
+                        150,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                }
+            }
+            46 => {
+                // `:3294-3301` — the gift box, only inside the cooldown-10
+                // window. The driver fires every 10 ticks (40/30/20/10/0);
+                // the cooldown-0 fire runs StopAbilityCharge FIRST (back to
+                // 40), so the gift rides the cooldown-10 fire — one gift
+                // per 40-tick cycle, the C#'s order.
+                if self.mount.ability_cooldown() <= 10 {
+                    // `:3297` — Centre + (width * -direction, 26).
+                    let gift = center
+                        + Vec2::new(self.width * -self.facing as f32, 26.0);
+                    // `:3298` — (0, -4).RotatedByRandom(0.1): TWO NextDouble
+                    // draws, left first.
+                    let vel = crate::bow_launch::rotated_by_random(
+                        Vec2::new(0.0, -4.0),
+                        0.10000000149011612,
+                        rng,
+                    );
+                    // The 930's 14×14 half-box subtracts.
+                    let _ = pool.spawn_with_data_ai_owned(
+                        crate::projectile::SANTANK_MOUNT_ROCKET,
+                        0,
+                        gift.x - 7.0,
+                        gift.y - 7.0,
+                        vel.x,
+                        vel.y,
+                        120,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    // `:3300` — Item89 at the gift position, volumeScale 0.2
+                    // (the int overload — no GetRandomPitch draw).
+                    self.pending_ability_sounds.push((89, gift.x, gift.y));
+                }
+                // `:3302-3311` — the missile barrage, every fire.
+                let target = self.mount.clamp_to_dead_zone(center, target);
+                // `:3305-3308` — the muzzle: bottom-centre + width*direction
+                // in X, -12 in Y.
+                let anchor = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                let muzzle = Vec2::new(
+                    anchor.x + self.width * self.facing as f32,
+                    anchor.y - 12.0,
+                );
+                // `:3309` — SafeNormalize(Zero) × 12 THEN RotatedByRandom(0.2)
+                // (TWO more NextDouble draws).
+                let vel = crate::bow_launch::rotated_by_random(
+                    crate::bow_launch::safe_normalize(target - muzzle, Vec2::ZERO) * 12.0,
+                    0.20000000298023224,
+                    rng,
+                );
+                // The 14's 4×4 half-box subtracts.
+                let _ = pool.spawn_with_data_ai_owned(
+                    crate::projectile::MUSKET_BALL,
+                    0,
+                    muzzle.x - 2.0,
+                    muzzle.y - 2.0,
+                    vel.x,
+                    vel.y,
+                    100,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+                // `:3311` — Item11 at the muzzle, volumeScale 0.2.
+                self.pending_ability_sounds.push((11, muzzle.x, muzzle.y));
+            }
+            _ => {}
+        }
+    }
+
+    /// Takes the tick's queued mount-ability cues (the Santank Item89/Item11
+    /// style plays, `Mount.cs:3300`/`:3311`) — the caller owns the audio
+    /// device (the `take_cart_sounds` convention).
+    pub(crate) fn take_ability_sounds(&mut self) -> Vec<(i32, f32, f32)> {
+        std::mem::take(&mut self.pending_ability_sounds)
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -11675,7 +12086,44 @@ impl Player {
         if flag19 {
             self.wing_movement();
         }
-        // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // S1-E-21f - `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // W4-c14 - the wings-4 (jetpack) sound arm (`:29471-29480`): while
+        // flapping or mid-jump the rocketDelay2 cadence plays Item13 every
+        // 60 ticks (the frame table + the dust are visual seams). The C#
+        // decrements INSIDE the arm; the `:26907` per-tick decrement runs
+        // again below - both, verbatim.
+        if self.wings_logic == 4 && (flag19 || self.jump > 0) {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                self.pending_cart_sounds.push(crate::minecart::CartCue {
+                    cue: "Item_13",
+                    x: self.x,
+                    y: self.y,
+                });
+                self.rocket_delay2 = 60;
+            }
+        }
+        // W4-c14 - the wings-45 (Celestial Starboard) sound arm
+        // (`:30165-30174`): `ShouldDrawWingsThatAreAlwaysAnimated`
+        // (`:30737-30748`: airborne, ungrappled, not water-floating, the
+        // mount allows wings) + budget left: Item24 every 30 ticks.
+        if self.wings_logic == 45
+            && self.vy != 0.0
+            && !self.grappling_active
+            && (!self.wet || !self.should_float_in_water())
+            && self.mount.can_use_wings()
+            && self.wing_time > 0.0
+        {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                self.pending_cart_sounds.push(crate::minecart::CartCue {
+                    cue: "Item_24",
+                    x: self.x,
+                    y: self.y,
+                });
+                self.rocket_delay2 = 30;
+            }
+        }
         // The port runs the DEFAULT arm's frame machine (`:30448-30526`:
         // num35 = 4, num36 = 4, num37 = 0, num38 = 0, num39 = 1 — the
         // wings-43/48/32 constants and the hover wings' own tables are visual
@@ -11761,12 +12209,39 @@ impl Player {
                     // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
-                // `:26884-26896`: the rocketSoundDelay cue (Item13/Item24 per
-                // vanity tier) is an audio seam — the port's rocket sound
-                // rides the S1-E-21 family, not this block.
+                // W4-c14 - `:26884-26896`: the rocketSoundDelay cue - the
+                // VANITY tier picks the cue (1/5 Item13 cadence 30,
+                // 2/3/4/6 Item24 cadence 15). W4-c14 doc-sweep: the vanity
+                // producer lands (`vanity_rocket_boots` - the equip rows set
+                // both tiers equal, `Player.cs:14420`/`:15023`/`:15222`/
+                // `:15380-15400`, the vanity pass `UpdateBootVisualEffects`
+                // `:36704-36751` re-derives it, the Red's Leggings 668 sets
+                // tier 6 `:13088-13091`), so the cue reads the vanity tier
+                // like the C#. The play queues on the movement-cue drain
+                // (the Item55 convention).
+                if self.rocket_sound_delay <= 0 {
+                    let cue = match self.vanity_rocket_boots {
+                        1 | 5 => Some(("Item_13", 30)),
+                        2 | 3 | 4 | 6 => Some(("Item_24", 15)),
+                        _ => None,
+                    };
+                    if let Some((cue, delay)) = cue {
+                        self.rocket_sound_delay = delay;
+                        self.pending_cart_sounds.push(crate::minecart::CartCue {
+                            cue,
+                            x: self.x,
+                            y: self.y,
+                        });
+                    }
+                }
             } else {
                 self.can_rocket = false;
             }
+        }
+        // W4-c14 - `:26903-26905`: the rocket cue cadence ticks once per
+        // flight tick, before the flame cadence below.
+        if self.rocket_sound_delay > 0 {
+            self.rocket_sound_delay -= 1;
         }
         // `:26907-26910`: the flame cadence delay ticks every tick.
         if self.rocket_delay2 > 0 {
@@ -11883,6 +12358,21 @@ impl Player {
                 && !self.is_performing_down_dash()
             {
                 self.fall_start = (self.y / TILE_PX) as i32;
+                // W4-c14 - the wings-4 glide sound (`Player.cs:27149-27156`,
+                // inside the `velocity.Y > 0` dust block): the rocketDelay2
+                // cadence plays Item13 every 60 ticks while gliding (the
+                // per-wing dust rolls stay visual seams).
+                if self.wings_logic == 4 {
+                    self.rocket_delay2 -= 1;
+                    if self.rocket_delay2 <= 0 {
+                        self.pending_cart_sounds.push(crate::minecart::CartCue {
+                            cue: "Item_13",
+                            x: self.x,
+                            y: self.y,
+                        });
+                        self.rocket_delay2 = 60;
+                    }
+                }
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
@@ -12261,7 +12751,34 @@ impl Player {
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
     /// tails close the chain (`:20059-20087`).
     fn horizontal_movement(&mut self, input: PlayerInput) {
-        // `Player.cs:19779`: the fast-run threshold — halfway between the
+        // W4-c14 - `Player.cs:19782-19793`: the Pogo Stick's (mount 43)
+        // grounded hop - control key held, resting, jump not held: the
+        // Item168 cue at the CENTRE (`base.Center`, the Vector2 facade
+        // truncates), then the half-speed hop and the early return. The
+        // port queues the cue on the `pending_cart_sounds` drain (the
+        // Item55 convention - the drain's facade truncates too).
+        if (self.control_left || self.control_right)
+            && self.mount.is_active()
+            && self.mount.kind() == 43
+            && self.vy == 0.0
+            && !self.control_jump
+        {
+            let (cx, cy) = self.center();
+            self.pending_cart_sounds.push(crate::minecart::CartCue {
+                cue: "Item_168",
+                x: cx,
+                y: cy,
+            });
+            let mut hop = 5.01 * 0.5; // `Player.jumpSpeed` static × gravDir 1
+            if hop < 2.0 {
+                hop = 2.0;
+            }
+            self.vy = -(hop + 0.01);
+            self.jump = 15; // `Player.jumpHeight` - the STATIC 15 (`:19791`)
+            self.full_rotation = 0.0;
+            return;
+        }
+        // `Player.cs:19779`: the fast-run threshold - halfway between the
         // boot top speed and the base run speed.
         let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
         // `Player.cs:19818-19833`: the boost applies before any input reads
@@ -21464,7 +21981,185 @@ mod tests {
         unreachable!()
     }
 
-    /// DW-3.2 — the landing burst (`Minecart.cs:809-813` via the Phase-1
+    /// W4-c14 - the rocket cadence cue (`Player.cs:26884-26896` +
+    /// `:26903-26905`): the first fuel tick queues the tier's Item cue at
+    /// the top-left and arms rocketSoundDelay (30 tier 1 / 15 tiers 2-4,
+    /// the same tick's decrement brings it to 29/14); the held thrust
+    /// stays silent until the cadence expires. W4-c14 doc-sweep: the cue
+    /// reads the VANITY tier (the producer lands - the pin/equip rows set
+    /// both tiers equal, so this witness's pinned tiers drive it unchanged).
+    #[test]
+    fn w4_c14_the_rocket_cue_rides_its_own_cadence() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // Arm the midair trigger state: fuel, the release latch, canRocket.
+        // The PIN survives ResetEffects' per-tick `rocket_boots = 0` clear
+        // (`:18760`-area; the `:26628` re-grant reads it). `jump = 1` keeps
+        // the held-jump branch out of the extra-jump chain.
+        p.pinned_rocket_boots = 1;
+        p.rocket_boots = 1;
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.jump = 1;
+        p.vy = 2.0; // airborne
+        p.on_ground = false;
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the first fuel tick plays");
+        assert_eq!(cues[0].cue, "Item_13", "tier 1 -> Item13");
+        assert_eq!(p.rocket_sound_delay, 29, "30 armed, one tick spent");
+        // The held thrust: the cadence blocks replays.
+        for _ in 0..10 {
+            p.update(
+                &w,
+                PlayerInput {
+                    jump: true,
+                    ..Default::default()
+                },
+            );
+            assert!(p.take_cart_sounds().is_empty(), "the cadence blocks");
+        }
+        // Tier 2 arms 15 (14 after the same tick's decrement).
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.pinned_rocket_boots = 2;
+        p.rocket_boots = 2;
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.jump = 1;
+        p.vy = 2.0;
+        p.on_ground = false;
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].cue, "Item_24", "tier 2 -> Item24");
+        assert_eq!(p.rocket_sound_delay, 14);
+    }
+
+    /// W4-c14 doc-sweep - the vanity-rocket producer
+    /// (`Player.cs:2760`/`:14420`/`:15023`/`:15222`/`:15380-15400` +
+    /// `UpdateBootVisualEffects` `:36704-36751` + the Red's Leggings 668
+    /// `:13088-13091`): the equip rows set BOTH tiers equal, the social
+    /// slot re-derives the visual tier, and tier 6 plays the Item24 cue.
+    /// The cue arm reads `vanity_rocket_boots`, so a divergent vanity tier
+    /// picks its OWN cue while the gameplay tier stays the thrust source.
+    #[test]
+    fn w4_c14_the_vanity_rocket_tier_produces_the_cue() {
+        let w = ground_world();
+        // The functional equip rows set both tiers equal.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 128; // Rocket Boots -> tier 1
+        p.update_equips();
+        assert_eq!(p.rocket_boots, 1);
+        assert_eq!(p.vanity_rocket_boots, 1, "the equip row sets both equal");
+        p.equipped[3] = 4874; // Hellfire Treads -> tier 5
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 5);
+        // The Red's Leggings 668 (leg slot 2) sets tier 6 AFTER the loops.
+        p.equipped[2] = 668;
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 6, "the bee-costume tier 6");
+        assert_eq!(p.rocket_boots, 5, "the gameplay tier is untouched");
+        // The social slot (13) re-derives the visual tier (no hide gate).
+        let mut p = Player::spawn(&w);
+        p.equipped[13] = 1862; // Frostspark in the vanity slot -> tier 3
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 3, "the vanity pass re-derives");
+        assert_eq!(p.rocket_boots, 0, "no functional grant from the social slot");
+        // The cue reads the VANITY tier: the Red's Leggings 668 sets tier 6
+        // AFTER the pin re-arms tier 1, so the cue plays Item24 cadence 15
+        // while the gameplay tier stays 1 (the thrust source). The 668 row
+        // re-arms every tick, so the divergence survives reset_effects.
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.pinned_rocket_boots = 1; // the gameplay thrust tier
+        p.equipped[2] = 668; // the Red's Leggings -> vanity tier 6
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.jump = 1;
+        p.vy = 2.0;
+        p.on_ground = false;
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert_eq!(p.rocket_boots, 1, "the gameplay tier stays the thrust source");
+        assert_eq!(p.vanity_rocket_boots, 6, "the 668 row wins the visual tier");
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].cue, "Item_24", "vanity tier 6 -> Item24");
+        assert_eq!(p.rocket_sound_delay, 14, "cadence 15, one tick spent");
+    }
+
+    /// W4-c14 - the Pogo Stick's (mount 43) hop cue (`Player.cs:19782-19793`):
+    /// a direction key held while grounded with jump free queues Item168 at
+    /// the CENTRE and takes the half-speed hop (the early return - no run
+    /// accel that tick); the ground jump (`:20762-20764`) plays it too.
+    #[test]
+    fn w4_c14_the_pogo_hop_and_jump_queue_item168_at_the_centre() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(43, false), "the pogo equips");
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground, "landed first");
+        let (cx, cy) = p.center();
+        p.update(
+            &w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the hop plays once");
+        assert_eq!(cues[0].cue, "Item_168");
+        assert_eq!((cues[0].x, cues[0].y), (cx, cy), "the centre position");
+        assert!(p.vy < 0.0, "the hop lifted");
+        // (`jump = 15` is written by the hop, then the same tick's
+        // jump-released branch clears it - `Player.cs:21026`, the C# order.)
+        // The ground jump (jump held on a resting tick) plays it too.
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(43, false));
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the ground jump plays once");
+        assert_eq!(cues[0].cue, "Item_168");
+    }
+
+    /// DW-3.2 - the landing burst (`Minecart.cs:809-813` via the Phase-1
     /// `TrackFlags::landing`): a real fall onto a rail queues the Item53 cue
     /// and exactly 10 sparks at the pre-call magnet point, with the
     /// pre-call rotation (`Player.cs:28110-28111` sets the emitter statics
@@ -24729,6 +25424,156 @@ mod summon_tests {
         let mut q = Player::spawn(&w);
         assert!(q.set_mount(10, false));
         assert!(q.mount.allow_direction_change());
+    }
+
+    // --- M2-MOUNT-4 witnesses (WRITTEN NOT RUN — code-only lane) ------------
+
+    /// A chaseable Zombie centred at (cx, cy) — the scan's target stand-in
+    /// (the `npc_centered` convention, projectile.rs).
+    fn ability_npc(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (nw, nh) = n.size();
+        n.x = cx - nw * 0.5;
+        n.y = cy - nh * 0.5;
+        n
+    }
+
+    /// `Mount.UpdateEffects` case 46 (`Mount.cs:4879-4947`): the Santank
+    /// fires the missile every 10 cooldown ticks and the gift only inside
+    /// the cooldown-10 window (one gift per 40-tick cycle); each fire draws
+    /// FOUR NextDoubles (gift 2 + missile 2) or TWO (missile only), and
+    /// queues the Item11 cue every fire + the Item89 cue on the gift fire.
+    #[test]
+    fn m4_the_santank_scan_fires_the_missile_every_ten_and_the_gift_every_forty() {
+        let w = World::new("t".into(), 200, 200); // open air — CanHitLine clear
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(46, false));
+        let npcs = [ability_npc(1900.0, 810.0)]; // 300 px right, inside the cone
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        // The fresh mount floors the cooldown at 40 (`set_mount`): the first
+        // scan fires (40 % 10 == 0), missile only (40 > 10), then re-arms?
+        // No — StopAbilityCharge only at cooldown 0, so the cooldown stays
+        // 40 until ability_recovery ticks it. Drive the recovery between
+        // scans (the fixed-step order: scan → … → recovery).
+        let mut missiles = 0;
+        let mut gifts = 0;
+        for tick in 0..80 {
+            let before = pool.slots().iter().filter(|s| s.active).count();
+            p.update_mount_ability(&w, &npcs, &mut pool, &mut rng);
+            let spawned: Vec<_> = pool
+                .slots()
+                .iter()
+                .filter(|s| s.active)
+                .skip(before)
+                .map(|s| s.kind)
+                .collect();
+            // The fire ticks are cooldown 40/30/20/10/0 → every 10th tick.
+            if tick % 10 == 0 {
+                assert!(spawned.contains(&14), "tick {tick}: the missile fires");
+                missiles += 1;
+                if tick % 40 == 30 {
+                    // cooldown 10 at tick 30/70 — the gift window.
+                    assert!(spawned.contains(&930), "tick {tick}: the gift fires");
+                    gifts += 1;
+                }
+            } else {
+                assert!(spawned.is_empty(), "tick {tick}: no fire between");
+            }
+            p.mount.ability_recovery();
+        }
+        assert_eq!(missiles, 8, "80 ticks / 10");
+        assert_eq!(gifts, 2, "one gift per 40-tick cycle");
+        // The cues: one Item11 per fire + one Item89 per gift.
+        let cues = p.take_ability_sounds();
+        assert_eq!(cues.iter().filter(|c| c.0 == 11).count(), 8);
+        assert_eq!(cues.iter().filter(|c| c.0 == 89).count(), 2);
+    }
+
+    /// `Mount.UseAbility` case 9 (`Mount.cs:3264-3288`): the Scutlix fires
+    /// TWO 606 lasers per fire (cooldown 0 only — the 20-tick cycle), from
+    /// the eye pair keyed by frameExtra, each one velocity step ahead of
+    /// its eye; NO cue. The fresh mount floors the cooldown at 20
+    /// (`set_mount`), so the first fire lands at tick 20.
+    #[test]
+    fn m4_the_scutlix_scan_fires_two_lasers_per_twenty_tick_cycle() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(9, false));
+        let npcs = [ability_npc(1900.0, 800.0)]; // straight right → band 8
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        let mut fires = 0;
+        for tick in 0..60 {
+            let before = pool.slots().iter().filter(|s| s.active).count();
+            p.update_mount_ability(&w, &npcs, &mut pool, &mut rng);
+            let spawned: Vec<_> = pool
+                .slots()
+                .iter()
+                .filter(|s| s.active)
+                .skip(before)
+                .map(|s| s.kind)
+                .collect();
+            // The cooldown runs 20→0 over ticks 0..19; the fire lands when
+            // it reads 0 (tick 20), then StopAbilityCharge re-arms 20.
+            if tick > 0 && tick % 20 == 0 {
+                assert_eq!(
+                    spawned.iter().filter(|&&k| k == 606).count(),
+                    2,
+                    "tick {tick}: the eye pair"
+                );
+                fires += 1;
+            } else {
+                assert!(spawned.is_empty(), "tick {tick}: the cooldown gates");
+            }
+            p.mount.ability_recovery();
+        }
+        assert_eq!(fires, 2, "ticks 20 + 40");
+        assert!(p.take_ability_sounds().is_empty(), "the Scutlix plays no cue");
+        // The lasers fly at speed 14 toward the target (the band-8 eyes).
+        let laser = pool.slots().iter().find(|s| s.active && s.kind == 606).unwrap();
+        assert!((laser.vel.length() - 14.0).abs() < 0.001, "speed 14");
+        assert!(laser.vel.x > 0.0, "aimed right at the target");
+    }
+
+    /// `Mount.UpdateEffects` case 9/46's no-target arm (`Mount.cs:4942-4946`):
+    /// an empty scan clears the charge and resets the head; a target outside
+    /// the facing cone never locks.
+    #[test]
+    fn m4_the_scan_resets_the_head_without_a_target() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(9, false));
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        // A target BEHIND the facing (left, outside the ±60° cone): no lock.
+        let behind = [ability_npc(1300.0, 800.0)];
+        p.mount.set_ability_charging(true);
+        p.update_mount_ability(&w, &behind, &mut pool, &mut rng);
+        assert!(!p.mount.ability_charging(), "the no-target arm clears the charge");
+        assert!(pool.slots().iter().all(|s| !s.active), "no fire");
+        // A target beyond 850 px: no lock either.
+        let far = [ability_npc(2600.0, 800.0)];
+        p.mount.set_ability_charging(true);
+        p.update_mount_ability(&w, &far, &mut pool, &mut rng);
+        assert!(!p.mount.ability_charging());
+        // An in-cone target locks + aims (the charging else-arm at a non-zero
+        // cooldown): the aim arms, the charge stays.
+        let near = [ability_npc(1900.0, 800.0)];
+        p.update_mount_ability(&w, &near, &mut pool, &mut rng);
+        assert!(p.mount.ability_charging(), "the cooldown-20 else-arm charges");
+        assert_eq!(p.mount.frame_extra(), 8, "the straight-right band");
     }
 }
 
