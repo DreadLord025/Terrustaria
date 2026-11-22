@@ -8918,6 +8918,76 @@ mannequin interactions) stays its own follow-up; the pylon network is
 M7-PYLON-1; the leashed critter/kite anchors need the critter entities;
 the dummy's DPS-meter hook rides the NPC 488 landing.
 
+## The TE furniture draw (W4-d57, code-only mode, 2026-11-20)
+
+The render-side of the tile-entity furniture — the item frame (395), the
+food platter (520), the weapons rack (471), the display doll (470) and the
+hat rack (475) — lands in `crates/tr-app/src/render/te_furniture.rs` as an
+**UNWIRED** module (the `special_tiles.rs` S1-G-1e pattern): the
+`draw_tiles`/`app/frame/draw.rs` seam is contested by the in-flight
+tile-draw siblings (d58 chest frames, d59 platform slopes, d60 particles),
+so the slice is pure draw/decision functions with the wiring deferred to
+the family's merge step. The display doll's **payload** is S1-L-7a's; this
+task is the draw half the S1-L-7 row's "runtime half stays its own
+follow-up" deferred.
+
+- **The Part1 anchors** (`te_anchor`/`collect_te_points`,
+  `TileDrawing.cs:4154-4247`): the five furniture tiles resolve their
+  entity's top-left cell off the frame grid (395/470 the 36 px step, 471
+  the 54 px, 475 the 54x72, 520 none), the per-kind dictionary dedupes in
+  first-seen row-major order and only a `TileEntityType<T>.Find` hit adds
+  the special legacy point. The port reads `World.tile_entities.get_at`.
+- **The legacy item arms** (`item_frame_icon`/`food_platter_draw`/
+  `weapons_rack_te_icon`, `TileDrawing.cs:7951-8000`): the 395/471 arms
+  ride `ItemSlot.DrawItemIcon` (context 40, sizeLimit 20/40) and the 520
+  arm its own bottom-third food frame + integer origin + `GetItemLight`
+  pulse scale. The shared colour chain is `DrawItem_GetColorAndScale`
+  (`ItemSlot.cs:2961-2976`) + `GetItemLight` (`:3760-3801`, the disco /
+  ItemIconPulse / heart-star arms) + `Item.GetAlpha`/`GetColor`
+  (`Item.cs:49170-49383`, the full per-type table incl. BossBag, the
+  self-lits, the shimmer-bait floors and the gFade ghost arm).
+- **The doll pose/placement** (`display_doll_draw`,
+  `TEDisplayDoll.cs:339-495`): the `SupportedUseStylePoses` table
+  (`:56-83`), `IsValidPose` (`:135-155`), direction/gender off `frameX`,
+  the mount Sitting/Jumping→Standing override, the per-pose velocity /
+  leg row / 1000-tick use animation + aim, and the bottom-centred position.
+- **The hat rack** (`hat_rack_draw`, `TEHatRack.cs:165-201`): the two
+  invisible-body doll players, the shared `(tileLeftX+1.5, tileTopY+4)*16`
+  anchor and the double direction flip (`:185` then `:198`).
+- **The held-projectile preview** (`ai_display_doll`,
+  `TEDisplayDoll.cs:458-490` → `Projectile.AI_DisplayDoll`
+  `Projectile.cs:22580-23197`): the `DisplayDollDrawUseStyle` set
+  (`ProjectileID.cs:188`), the `IsAPhaseblade` gate (`:192`), the
+  per-aiStyle placement arms, `AI_DisplayDoll_ItemDisplay` + the
+  `HandPosition`/`GetArmPosition` on-hand geometry (`Player.cs:4189`/
+  `:50595`, `Main.OffsetsPlayerOnhand` `Main.cs:66615`),
+  `CalculateFrameFromMiscCounter` (`:4253`) and the `SetDefaults` rows the
+  generated `proj_data` table omits. `spear_offset`
+  (`projectile_ai_spear.rs`) is shared `pub(crate)` for the aiStyle-19 arm.
+
+Deviations (the wiring step's inputs):
+- `Main.itemAnimations[type]` is unported — the icon source rect is the
+  whole item texture (the `ui/slot.rs::draw_item_icon` stand-in); the 5644
+  spectate `frameCounterOverride` arm rides the animator.
+- `TeItem` carries only the wire triple (kind/prefix/stack): `item.alpha`
+  and `item.color` are not in the generated `ItemDef`, so the callers pass
+  them in (0 / transparent stand-ins); the prefix scale resolve rides the
+  wiring step like the 334 arm.
+- The `DrawItemIcon` glowmask / TrapSigned / DrawUnsafeIndicator tails
+  (`ItemSlot.cs:2891-2950`) need the glowmask atlas + the wire sheet — the
+  base + `item.color` second pass are ported.
+- `Main.gFade` (the `GetAlpha` 1446/1506/1507/1543-1545 arm) is unported;
+  the caller passes the byte (0 stand-in).
+- The doll/hat-rack `LegacyPlayerRenderer.DrawPlayer` call itself, the
+  armor/dye copy + ResetEffects/UpdateDyes/DisplayDollUpdate, and the
+  held-projectile `drawLayer <= 3` routing (`TEDisplayDoll.cs:485-488`)
+  are the wiring step; the pure functions resolve the pose, placement and
+  preview sprite. The `ownedProjectileCounts[902]` write
+  (`Projectile.cs:22799-22802`) is a sim-side effect the pure draw omits.
+- The doll's `fullRotation` is 0 (it never spins), so the
+  `RotatedRelativePoint` mount-pivot rotation is the identity in the
+  preview's on-hand geometry; the sitting offset rides when seated.
+
 ## Pylon network (M7-PYLON-1)
 
 The pylon system is the network-validity engine

@@ -24,6 +24,11 @@ pub(crate) mod sky;
 // + platform slope side-fills) — the draw_tiles seam is contested by the
 // in-flight S1-G-1 siblings; wiring is the family's merge step.
 pub(crate) mod special_tiles;
+// W4-d57: UNWIRED TE-furniture draw slice (the 395/520/471 legacy arms +
+// the Part1 anchor collection + the ItemSlot icon colour chain) — the
+// draw_tiles seam is contested by the in-flight tile-draw siblings; wiring
+// is the family's merge step.
+pub(crate) mod te_furniture;
 pub(crate) mod tile_cracks;
 pub(crate) mod tiles;
 pub(crate) mod vines;
