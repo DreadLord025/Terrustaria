@@ -40,6 +40,14 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     // (`main_dust.rs`) reads `App.gfx_quality.quality` at its own
     // `Main.cs:17238` slot (`scene_scan::update_scene`), so the retired
     // `rain.gfx_quality` copy is gone.
+    // `Rain.NewRain` reads the STORED `Main.waterStyle` (`Rain.cs:205`) —
+    // latch the frame's `CalculateWaterStyle` value (the fountain head arm
+    // `Main.cs:57390-57393` included), the same seam convention.
+    app.rain.water_style = crate::biome::calculate_water_style_with_fountain(
+        &app.world,
+        app.camera,
+        app.scene_metrics.active_fountain_color,
+    ) as u32;
     app.rain.update(
         &app.world,
         app.camera,

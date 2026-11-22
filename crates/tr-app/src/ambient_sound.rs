@@ -1024,9 +1024,324 @@ pub fn thunder_strike(
     Some((x, y))
 }
 
+/// One `Main.Ambience` liquid-loop decision (`Main.cs:13475-13508` +
+/// `LegacySoundPlayer.PlaySound`'s `:360-435` head + cases 34/35
+/// `:1249-1307`). The caller runs it every ¼ s (`Main.ambientCounter`'s
+/// 15-tick gate, `Main.cs:13468-13473`) and feeds the result to
+/// `Audio::set_liquid_loop`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LiquidLoopUpdate {
+    /// The `SoundInstanceLiquid[n]` slot: true while the loop plays.
+    pub playing: bool,
+    /// The C# `(int)` truncations of the `PlaySound(34/35, x, y, strength)`
+    /// call (`Main.cs:13477`/`:13500`) — -1 keeps the 2D arm.
+    pub x: i32,
+    pub y: i32,
+    pub strength: i32,
+    /// The instance's new Volume/Pan — `None` when the C# leaves the block
+    /// untouched (an out-of-range position: `flag` stays false at
+    /// `LegacySoundPlayer.cs:392-397`, so the `if (flag)` at `:415` never
+    /// runs and the live loop keeps its last volume) or stops the slot.
+    pub volume_pan: Option<(f32, f32)>,
+    /// The case-34 re-volume arm's `Pitch = -0.2f` (`:1268`); case 35 sets
+    /// `-0f` (`:1298`) — the fresh-create arms set no pitch at all.
+    pub pitch: Option<f32>,
+}
+
+/// The waterfall/lavafall loop update of `Main.Ambience`.
+///
+/// `channel` is 0 (case 34, the `ambientWaterfall*` triple) or 1 (case 35,
+/// the lavafall arm). `triple` is `(strength, x, y)` — the App store order;
+/// `lava` is `Main.ambientLava(X/Y/Strength)` in the same order, read only
+/// by channel 1. `screen_center` is `Main.screenPosition + (screenWidth/2,
+/// screenHeight/2)` with the int halving (`Main.cs:13488-13489`),
+/// `camera_center` is `Main.Camera.Center` (the attenuation origin,
+/// `LegacySoundPlayer.cs:390`). `ambient_volume` is `Main.ambientVolume`;
+/// `game_menu` zeroes it (`:420-423` — `FocusHelper.QuietAmbientSounds` is
+/// pinned false, the BG-20 deviation). `playing` is the slot's current
+/// state (`SoundInstanceLiquid[n] != null && State == Playing`);
+/// `shimmer_alpha` is `Main.shimmerAlpha` (the `1 - shimmerAlpha` factor
+/// of cases 34/35, `:1256`/`:1286`).
+///
+/// The lavafall arm's position pick (`Main.cs:13488-13496`): the Manhattan
+/// distances of the pooled-lava and lavafall triples to the screen centre
+/// decide which position plays; the strength is ALWAYS the sum
+/// `ambientLavafallStrength + ambientLavaStrength` (`:13497`). The play
+/// gate is the LAVAFALL strength alone (`:13498`), so pooled lava with no
+/// lavafall takes the stop arm.
+///
+/// The per-channel volume walk delegates to the shared pure
+/// [`crate::sound::liquid_ambience`] (the W4-g75 residuals census) — this
+/// decision half owns the `Main.Ambience` arms above it and the slot/pitch
+/// bookkeeping below it.
+pub fn liquid_loop_update(
+    channel: usize,
+    triple: (f32, f32, f32),
+    lava: (f32, f32, f32),
+    screen_center: (f32, f32),
+    camera_center: (f32, f32),
+    ambient_volume: f32,
+    game_menu: bool,
+    playing: bool,
+    shimmer_alpha: f32,
+) -> LiquidLoopUpdate {
+    let (mut strength, mut x, mut y) = triple;
+    if channel == 1 {
+        // `Main.cs:13488-13497`: the Manhattan pick + the strength sum.
+        let d_lava = (lava.1 - screen_center.0).abs() + (lava.2 - screen_center.1).abs();
+        let d_fall = (x - screen_center.0).abs() + (y - screen_center.1).abs();
+        if d_fall < d_lava {
+            x = triple.1;
+            y = triple.2;
+        } else {
+            x = lava.1;
+            y = lava.2;
+        }
+        strength = triple.0 + lava.0;
+    }
+    // The `(int)` casts of the PlaySound call (`Main.cs:13477`/`:13500`).
+    let (xi, yi, si) = (x as i32, y as i32, strength as i32);
+    let stop = LiquidLoopUpdate {
+        playing: false,
+        x: xi,
+        y: yi,
+        strength: si,
+        volume_pan: None,
+        pitch: None,
+    };
+    // The play gate: the channel's OWN strength (`:13475`/`:13498`) — the
+    // lavafall arm's summed strength only rides the PlaySound argument.
+    // The else arm plays a zero-strength stop only while the loop was live
+    // (`_isWaterfallMusicPlaying`, `:13482-13486`); stopping an already
+    // stopped slot is a no-op, so the port folds both into the stop record.
+    if triple.0 <= 0.0 {
+        return stop;
+    }
+    // The shared pure volume half (`sound::liquid_ambience`, the W4-g75
+    // residuals census): the `LegacySoundPlayer.cs:376-397` walk (-1
+    // sentinel → 2D atten 1/pan 0; the FIXED `MaxWorldViewSize.X * 0.5` =
+    // 960 pan denominator, `:395`), the `:419-422` slider/quiet/menu scale
+    // and the case-34/35 `strength/50 × mult × (1 - shimmerAlpha)` math
+    // (`:1251-1256`/`:1281-1286`). `None` = out of attenuation range:
+    // `flag` stays false, the whole `if (flag)` block (`:415`) is skipped
+    // and the live loop keeps its last volume — it does NOT stop.
+    let mult = if channel == 0 { 0.2 } else { 0.65 };
+    let Some((volume, pan)) = crate::sound::liquid_ambience(
+        strength,
+        x,
+        y,
+        mult,
+        camera_center,
+        ambient_volume,
+        game_menu,
+        shimmer_alpha,
+    ) else {
+        return LiquidLoopUpdate { playing, x: xi, y: yi, strength: si, volume_pan: None, pitch: None };
+    };
+    if volume <= 0.0 || xi == -1 || yi == -1 {
+        // `:1257-1262`/`:1287-1292`: the zero-volume OR sentinel-position
+        // stop (a -1 position with positive strength cannot arise from the
+        // scan — every contributing cell sets x/y — but the C# condition
+        // is verbatim).
+        return stop;
+    }
+    LiquidLoopUpdate {
+        playing: true,
+        x: xi,
+        y: yi,
+        strength: si,
+        volume_pan: Some((volume, pan)),
+        // The re-volume arm sets the pitch; the fresh create does not
+        // (`:1264-1276`/`:1294-1306`).
+        pitch: if playing {
+            Some(if channel == 0 { -0.2 } else { 0.0 })
+        } else {
+            None
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Main.cs:13477` + `LegacySoundPlayer.cs:390-396`/`:1251-1256`: the
+    /// waterfall play truncates the triple to ints BEFORE the attenuation
+    /// (the position is `(int)x, (int)y`), the pan divides by
+    /// `MaxWorldViewSize.X * 0.5` = 960 (NOT the live screen width), and
+    /// the volume is atten × min(strength/50, 1) × 0.2 × (1 - shimmerAlpha).
+    #[test]
+    fn the_waterfall_loop_truncates_and_pans_against_the_1920_view() {
+        // Strength 30.9 → (int)30; position (168.7, 168.2) → (168, 168);
+        // camera at (0, 0): dist = sqrt(2)·168, dx = 168.
+        let u = liquid_loop_update(
+            0,
+            (30.9, 168.7, 168.2),
+            (0.0, -1.0, -1.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            1.0,
+            false,
+            false,
+            0.0,
+        );
+        assert_eq!((u.x, u.y, u.strength), (168, 168, 30));
+        assert!(u.playing);
+        let dist = (168.0f32 * 168.0 + 168.0 * 168.0).sqrt();
+        let expected = (1.0 - dist / 2500.0) * (30.0 / 50.0) * 0.2;
+        let (volume, pan) = u.volume_pan.expect("in range");
+        assert!((volume - expected).abs() < 1e-6);
+        // The 960 divisor: 168/960, not 168/(screen/2).
+        assert!((pan - 168.0 / 960.0).abs() < 1e-6);
+        // Fresh create: no pitch write (`:1272-1275`).
+        assert_eq!(u.pitch, None);
+        // The re-volume arm sets Pitch = -0.2 (`:1268`).
+        let again = liquid_loop_update(
+            0,
+            (30.9, 168.7, 168.2),
+            (0.0, -1.0, -1.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            1.0,
+            false,
+            true,
+            0.0,
+        );
+        assert_eq!(again.pitch, Some(-0.2));
+    }
+
+    /// `LegacySoundPlayer.cs:392-397` + `:415`: a position beyond
+    /// SoundAttenuationDistance leaves `flag` false — the whole volume
+    /// block is skipped, so a LIVE loop keeps its last volume (it does
+    /// not stop), and a dead slot stays dead.
+    #[test]
+    fn an_out_of_range_position_keeps_the_live_loop_untouched() {
+        let far = (10.0, 5000.0, 0.0);
+        let live = liquid_loop_update(
+            0, far, (0.0, -1.0, -1.0), (0.0, 0.0), (0.0, 0.0), 1.0, false, true, 0.0,
+        );
+        assert!(live.playing);
+        assert_eq!(live.volume_pan, None);
+        assert_eq!(live.pitch, None);
+        let dead = liquid_loop_update(
+            0, far, (0.0, -1.0, -1.0), (0.0, 0.0), (0.0, 0.0), 1.0, false, false, 0.0,
+        );
+        assert!(!dead.playing);
+        assert_eq!(dead.volume_pan, None);
+    }
+
+    /// `Main.cs:13475-13486`: strength 0 takes the else arm — the stop
+    /// record (`_isWaterfallMusicPlaying`'s zero-strength PlaySound).
+    #[test]
+    fn zero_strength_stops_the_waterfall_loop() {
+        let u = liquid_loop_update(
+            0,
+            (0.0, -1.0, -1.0),
+            (0.0, -1.0, -1.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            1.0,
+            false,
+            true,
+            0.0,
+        );
+        assert!(!u.playing);
+        assert_eq!(u.volume_pan, None);
+    }
+
+    /// `Main.cs:13488-13497`: the lavafall arm picks the position by the
+    /// MANHATTAN distance to the screen centre and sums the strengths —
+    /// the pooled-lava triple wins the position when nearer, but the
+    /// lavafall strength alone gates the play (`:13498`).
+    #[test]
+    fn the_lavafall_arm_picks_the_nearer_position_and_sums_strength() {
+        // Lavafall at (1000, 0), pooled lava at (100, 0), screen centre 0:
+        // |100| < |1000| → the lava position plays; strength = 20 + 30 = 50.
+        let u = liquid_loop_update(
+            1,
+            (20.0, 1000.0, 0.0),
+            (30.0, 100.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            1.0,
+            false,
+            false,
+            0.0,
+        );
+        assert_eq!((u.x, u.y, u.strength), (100, 0, 50));
+        let (volume, pan) = u.volume_pan.expect("in range");
+        let expected = (1.0 - 100.0 / 2500.0) * 1.0 * 0.65;
+        assert!((volume - expected).abs() < 1e-6);
+        assert!((pan - 100.0 / 960.0).abs() < 1e-6);
+        // The lavafall position wins when it is nearer.
+        let v = liquid_loop_update(
+            1,
+            (20.0, 100.0, 0.0),
+            (30.0, 1000.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            1.0,
+            false,
+            false,
+            0.0,
+        );
+        assert_eq!((v.x, v.y, v.strength), (100, 0, 50));
+        // Pooled lava alone (lavafall strength 0) never plays — the gate
+        // is `ambientLavafallStrength > 0` (`:13498`), not the sum.
+        let w = liquid_loop_update(
+            1,
+            (0.0, -1.0, -1.0),
+            (30.0, 100.0, 0.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            1.0,
+            false,
+            true,
+            0.0,
+        );
+        assert!(!w.playing);
+        assert_eq!(w.volume_pan, None);
+        // The case-35 re-volume arm's pitch is -0f (`:1298`).
+        let again = liquid_loop_update(
+            1,
+            (20.0, 100.0, 0.0),
+            (0.0, -1.0, -1.0),
+            (0.0, 0.0),
+            (0.0, 0.0),
+            1.0,
+            false,
+            true,
+            0.0,
+        );
+        assert_eq!(again.pitch, Some(0.0));
+    }
+
+    /// `LegacySoundPlayer.cs:417-423`: the menu zeroes the ambient scale
+    /// (the `Main.gameMenu` arm), so the loop stops; the shimmer factor
+    /// (`:1256`) scales the volume down without stopping until it hits 0.
+    #[test]
+    fn the_menu_mutes_and_the_shimmer_factor_scales_the_loop() {
+        let near = (40.0, 100.0, 0.0);
+        let menu = liquid_loop_update(
+            0, near, (0.0, -1.0, -1.0), (0.0, 0.0), (0.0, 0.0), 1.0, true, true, 0.0,
+        );
+        assert!(!menu.playing);
+        assert_eq!(menu.volume_pan, None);
+        let full = liquid_loop_update(
+            0, near, (0.0, -1.0, -1.0), (0.0, 0.0), (0.0, 0.0), 1.0, false, false, 0.0,
+        );
+        let shimmered = liquid_loop_update(
+            0, near, (0.0, -1.0, -1.0), (0.0, 0.0), (0.0, 0.0), 1.0, false, false, 0.5,
+        );
+        let (v_full, _) = full.volume_pan.unwrap();
+        let (v_half, _) = shimmered.volume_pan.unwrap();
+        assert!((v_half - v_full * 0.5).abs() < 1e-6);
+        // Full shimmer (alpha 1) stops the loop outright.
+        let muted = liquid_loop_update(
+            0, near, (0.0, -1.0, -1.0), (0.0, 0.0), (0.0, 0.0), 1.0, false, true, 1.0,
+        );
+        assert!(!muted.playing);
+    }
 
     /// A deterministic stand-in for the per-consumer `Main.rand`: call-index
     /// based, so a gate can force an exact roll to 0.

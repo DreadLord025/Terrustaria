@@ -138,6 +138,14 @@ pub struct Rain {
     /// the flakes themselves live in the shared `DustPool` (`Main.snowing`,
     /// `main_dust.rs`); this flag only suppresses the rain-drop spawn.
     snow_mode: bool,
+    /// The gfx-quality value the snow cap scales with (S1-B-6) — the
+    /// weather pass copies `App.gfx_quality.quality` in.
+    pub gfx_quality: f32,
+    /// `Main.waterStyle` at spawn time (`Rain.cs:205` reads the stored
+    /// static, not a re-derivation): the weather pass copies the frame's
+    /// `CalculateWaterStyle` value in — the fountain head arm included
+    /// (`Main.cs:57390-57393`).
+    pub water_style: u32,
     rng: u64,
     spawn_acc: f32,
     forced: Option<f32>,
@@ -249,6 +257,8 @@ impl Rain {
             splashes: Vec::with_capacity(128),
             sparkles: Vec::with_capacity(64),
             snow_mode: false,
+            gfx_quality: 0.0,
+            water_style: 0,
             rng,
             spawn_acc: 0.0,
             forced,
@@ -932,9 +942,13 @@ impl Rain {
             }
             let scale = 1.0 + (self.rand01() * 2.0 - 1.0) * 0.2;
             let vel = Vec2::new(wind * 18.0 * scale, 14.0 * scale);
-            // `Rain.cs:205`: `type = (byte)(Main.waterStyle * 3 + Main.rand.Next(3))`.
-            let water_style = crate::biome::calculate_water_style(world, camera) as u32;
-            let kind = (water_style * 3 + self.range(0, 3)) as u8;
+            // `Rain.cs:205`: `type = (byte)(Main.waterStyle * 3 + Main.rand.Next(3))`
+            // — `Main.waterStyle` is the STORED per-frame static
+            // (`Main.cs:57475` `DrawWaters` writes it, the fountain head arm
+            // `:57390-57393` included), never a spawn-time re-derivation;
+            // the weather pass latches it into `Rain::water_style` beside
+            // `gfx_quality` (the same seam convention).
+            let kind = (self.water_style * 3 + self.range(0, 3)) as u8;
             self.drops.push(Drop {
                 pos: Vec2::new(x, y),
                 vel,
@@ -1086,6 +1100,11 @@ mod tests {
 
     fn run(rain: &mut Rain, w: &World, n: usize) {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        // The live seam's latch (`world_sim/weather.rs::update_rain`): the
+        // drop fixtures run over the plain forest `ground()` world, so the
+        // stored `Main.waterStyle` is 0 — the pre-port spawn re-derived
+        // exactly this from the camera.
+        rain.water_style = crate::biome::calculate_water_style(w, camera) as u32;
         for _ in 0..n {
             rain.update(
                 w,
@@ -1111,6 +1130,46 @@ mod tests {
         assert!(rain.drop_count() > 100, "drops {}", rain.drop_count());
         // The ground is below the camera, so impacts leave splashes at a steady state.
         assert!(!rain.splashes.is_empty(), "impacts should leave splashes");
+    }
+
+    /// W4-g73 retire phase — `Rain.NewRain` reads the STORED
+    /// `Main.waterStyle` (`Rain.cs:205`: `type = waterStyle*3 + Next(3)`),
+    /// not a spawn-time camera re-derivation: the fountain head arm's
+    /// colour (`Main.cs:57390-57393`, latched by `update_rain`) reaches the
+    /// drop frame types. The fixture camera derives OCEAN (13) from the
+    /// 64-wide world's edge rule — a flowing underground-desert fountain
+    /// (colour 12) must override it: every drop kind lands in 36..=38,
+    /// never 39..=41.
+    #[test]
+    fn the_stored_fountain_water_style_feeds_the_drop_frame_types() {
+        let w = ground();
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        assert_eq!(crate::biome::calculate_water_style(&w, camera), 13);
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        // The `update_rain` latch with a flowing colour-12 fountain.
+        rain.water_style =
+            crate::biome::calculate_water_style_with_fountain(&w, camera, 12) as u32;
+        assert_eq!(rain.water_style, 12);
+        for _ in 0..120 {
+            rain.update(
+                &w,
+                camera,
+                Vec2::new(1600.0, 200.0),
+                1.0,
+                1.0 / 60.0,
+                false,
+                1,
+                0.0,
+                1.0,
+                0,
+                true,
+            );
+        }
+        assert!(rain.drop_count() > 100, "drops {}", rain.drop_count());
+        assert!(
+            rain.drops.iter().all(|d| (36..=38).contains(&d.kind)),
+            "every drop rides the fountain style 12, not the biome's 13"
+        );
     }
 
     #[test]

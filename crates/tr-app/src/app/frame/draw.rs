@@ -774,8 +774,13 @@ impl App {
                     // `Main.DrawWaters` (`Main.cs:57473-57489`): the `liquidAlpha`
                     // cross-fade ramps per frame while the current water style is a
                     // plain water style — lava (1), honey (11) and shimmer (14) sit
-                    // outside the ramp.
-                    let water_style_now = crate::biome::calculate_water_style(world, draw_cam);
+                    // outside the ramp. The style carries the fountain head arm
+                    // (`CalculateWaterStyle`, `:57390-57393`) like `Main.waterStyle`.
+                    let water_style_now = crate::biome::calculate_water_style_with_fountain(
+                        world,
+                        draw_cam,
+                        self.scene_metrics.active_fountain_color,
+                    );
                     // `Main.waterStyle = Main.CalculateWaterStyle()`
                     // (`Main.cs:57475`): the STORED static the
                     // `TeleportEffect` style-5 arm reads (research/116
@@ -802,8 +807,8 @@ impl App {
                     );
                     if !crate::env::no_waterfall() {
                         // `Main.screenPosition` / `screenWidth` / `screenHeight`
-                        // for the lavafall ambience scan and the rain-arm view
-                        // cull (`WaterfallManager.cs:381`/`:687-691`): the
+                        // for both ambience scans and the rain-arm view cull
+                        // (`WaterfallManager.cs:381`/`:687-691`/`:710-714`): the
                         // unscaled world-pixel view, top-left = draw_cam -
                         // screen/2 (the S1-E-19 `Camera.UnscaledPosition`
                         // convention).
@@ -817,7 +822,21 @@ impl App {
                         // port `oldDrawWater`'s true-store (`:57938`), so the
                         // flag rides false; `WaterfallManager.Draw` clears it
                         // at `:1125` either way.
-                        let (lights, lavafall_scan) = waterfall.draw(
+                        // `WaterfallManager.Draw`'s head (`WaterfallManager.cs:1120`):
+                        // the `_shouldShowInvisibleBlocksAndWalls` latch GetAlpha's
+                        // default arm reads (`:1037`) — the same value the light
+                        // params carry (`Main.cs:58023-58030`).
+                        waterfall.set_show_invisible(params.draw_invisible_walls);
+                        // `Main.DiscoR/G/B` (`Main.cs:959-963`): the disco fall
+                        // (tile 160 → type 2) reads the SHARED statics the
+                        // lighting scanner reads (`StylizeColor` case 2,
+                        // `WaterfallManager.cs:1010-1012`; `AddLight` case 2,
+                        // `:1084`). The cycle is `DoUpdate_AnimateDiscoRGB`
+                        // (`Main.cs:19591-19648`), stepped by `advance_disco`;
+                        // latch the same values the `LightParams` carry.
+                        // (W4-g75 final sweep `d118f7ba`, folded.)
+                        waterfall.set_disco_rgb(params.disco);
+                        let (lights, waterfall_scan, lavafall_scan) = waterfall.draw(
                             world,
                             light,
                             &style,
@@ -829,13 +848,19 @@ impl App {
                             false,
                         );
                         scratch.waterfall_quads = waterfall.take_quads();
+                        // `Main.ambientWaterfallX/Y/Strength` +
                         // `Main.ambientLavafallX/Y/Strength`
-                        // (`WaterfallManager.cs:685-707` scan, `:963-965`
-                        // store): the walk's kind-1 near-screen strength sum
-                        // and the nearest segment's cell-centre world pixels
-                        // — the lavafall loop's volume/pan inputs. The
-                        // water-style triple (`:960-962`) stays with the
-                        // waterfall co-lane.
+                        // (`WaterfallManager.cs:685-729` scans, `:960-965`
+                        // stores): the near-screen strength sums and the
+                        // nearest segments' cell-centre world pixels — the
+                        // waterfall/lavafall loops' volume/pan inputs
+                        // (`Main.Ambience`, `Main.cs:13475-13508`). Honey
+                        // falls feed neither triple (`:708`'s kind-14 skip).
+                        self.ambient_waterfall = (
+                            waterfall_scan.strength,
+                            waterfall_scan.x,
+                            waterfall_scan.y,
+                        );
                         self.ambient_lavafall = (
                             lavafall_scan.strength,
                             lavafall_scan.x,
@@ -870,7 +895,11 @@ impl App {
                         scratch.all_lights.extend_from_slice(&scratch.waterfall_lights);
                         scratch.all_lights.extend_from_slice(self.entity_lights.visible());
                         let mut legacy_water_style =
-                            crate::biome::calculate_water_style(world, *camera);
+                            crate::biome::calculate_water_style_with_fountain(
+                                world,
+                                *camera,
+                                self.scene_metrics.active_fountain_color,
+                            );
                         if let Some(n) = crate::env::water_style() {
                             legacy_water_style = n.min(14);
                         }
@@ -966,6 +995,44 @@ impl App {
                             }
                         }
                         engine.present_into(light);
+                        // `Main.DrawLiquid`'s retro branch (`Main.cs:57519-
+                        // 57522`): `!Lighting.NotRetro` (Retro/Trippy,
+                        // `Lighting.cs:63-73`) routes the liquid draw to
+                        // `oldDrawWater`, whose lava arm writes the
+                        // `Main.ambientLava*` triple (`:57615-57634` scan,
+                        // `:57932-57936` store). The port keeps the
+                        // LiquidRenderer draw in every mode but ports the
+                        // scan (W4-g73 closeout): the foreground
+                        // `DrawWaters` (`:62300`) resets `drewLava` false
+                        // (`:57472`) and its FIRST `DrawLiquid` pass stores
+                        // the triple (later passes are gated by the
+                        // `:57938` true-store); the background call's
+                        // (`:62192`) store is overwritten by it — so one
+                        // `bg = false, drew_lava = false` scan IS the final
+                        // Main state. Non-retro modes never write (the
+                        // triple keeps its last value, exactly like the
+                        // original — the load reset until a retro frame).
+                        if matches!(
+                            *light_mode,
+                            tr_core::lighting::LightMode::Retro
+                                | tr_core::lighting::LightMode::Trippy
+                        ) {
+                            let scan = tr_core::retro_water::ambient_lava_scan(
+                                world,
+                                light,
+                                tr_core::waterfall::ScreenInfo {
+                                    position: [
+                                        draw_cam.x - screen.x * 0.5,
+                                        draw_cam.y - screen.y * 0.5,
+                                    ],
+                                    width: screen.x,
+                                    height: screen.y,
+                                },
+                                false,
+                                false,
+                            );
+                            self.ambient_lava = (scan.strength, scan.x, scan.y);
+                        }
                     }
 
                     // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind WALK
@@ -1509,6 +1576,10 @@ impl App {
                             &remote_players.values().cloned().collect::<Vec<_>>(),
                             *edit_target,
                             liquid_alpha,
+                            // The `CalculateWaterStyle` head arm's input
+                            // (`Main.cs:57390-57393`): the scene scan's
+                            // flowing-fountain colour (-1 = none).
+                            self.scene_metrics.active_fountain_color,
                             // `TrySparkling`'s draw thread: the frame count pins it.
                             (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
                             wind,
@@ -3764,6 +3835,30 @@ mod w4_f23_closeout_craft_list_tests {
         assert!(
             (new_focus as usize) < second.len().max(1),
             "the focus pins into the rebuilt list, not the stale position"
+        );
+    }
+}
+
+#[cfg(test)]
+mod w4_g75_final_sweep_tests {
+    /// W4-g75 final sweep (`d118f7ba`, folded) - the waterfall block feeds
+    /// the manager the SAME `Main.DiscoR/G/B` the `LightParams` carry:
+    /// the disco fall (tile 160 -> type 2) reads the shared statics
+    /// (`StylizeColor` case 2, `WaterfallManager.cs:1010-1012`;
+    /// `AddLight` case 2, `:1084`), and the cycle is
+    /// `Main.DoUpdate_AnimateDiscoRGB` (`Main.cs:19591-19648`), stepped
+    /// by `advance_disco` - the manager has no cycle of its own. Without
+    /// this feed the fall tinted from a stale private copy.
+    #[test]
+    fn the_waterfall_block_latches_the_shared_disco_statics() {
+        let src = include_str!("draw.rs");
+        assert!(
+            src.contains("waterfall.set_disco_rgb(params.disco)"),
+            "the waterfall block must latch the shared disco statics"
+        );
+        assert!(
+            src.contains("waterfall.set_show_invisible(params.draw_invisible_walls)"),
+            "the invisible latch stays fed too"
         );
     }
 }
