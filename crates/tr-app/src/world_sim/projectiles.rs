@@ -469,6 +469,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 channel: p.channel,
                 use_animation,
                 held_item_type: held as i32,
+                // W4-d20 — the flint arm's anchor + dust rotation reads.
+                mounted_center: Vec2::new(p.mounted_center().0, p.mounted_center().1),
+                item_rotation: p.item_rotation,
             },
             player_name: app.player_name.clone(),
             golfer_score: p.golfer_score,
@@ -873,6 +876,33 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             glam::Vec2::new(cx, cy),
         );
     }
+    // W4-d20 — the aiStyle-192 jumino's completion gift (`AI_192_JuminoAnimation`
+    // `Projectile.cs:41632-41637`): `Item.NewItem(EntitySource_Gift, Center +
+    // (0, 12), 5276)` then `velocity = (0, 0)`. The C# `NewItem` draws the
+    // velocity triplet on `Main.rand` (the `UpdateProjectiles` swap,
+    // `Main.cs:17775`) BEFORE the explicit zeroing overrides it; prefix 0
+    // rolls nothing (`Item.Prefix(0)`, `Item.cs:49730`). The port keeps the
+    // three draws for stream fidelity, then zeroes the velocity (the death
+    // drop's explicit-velocity precedent, `death.rs`). The drop centres on
+    // the gift point (`WorldItem.Center = center`, `Item.cs:49736`).
+    for (owner, item, x, y) in app.projectiles.drain_gift_items() {
+        if owner != app.local_id as u8 {
+            continue;
+        }
+        let _ = rng.next_float();
+        let _ = rng.next_float();
+        let _ = rng.next_float();
+        app.items.push(crate::item::ItemDrop::new(
+            item,
+            1,
+            0,
+            x - crate::item::SIZE * 0.5,
+            y - crate::item::SIZE * 0.5,
+            0.0,
+            0.0,
+            0.0,
+        ));
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's
@@ -946,6 +976,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 held_proj,
                 dummy_item_time,
                 cancel_use,
+                item_animation_max,
             } => {
                 if let Some(p) = app.player.as_mut() {
                     // `player.ChangeDir(direction)` (`Player.cs:42091`) —
@@ -957,6 +988,12 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     // `player.heldProj = whoAmI` (`:52490`/`:52535`).
                     if let Some(slot) = held_proj {
                         p.held_proj = slot;
+                    }
+                    // W4-d20 — `player.itemAnimationMax = useAnimation`
+                    // (`AI_198_Flint` `Projectile.cs:52307`): the port's
+                    // swing_max is the itemAnimationMax stand-in (seconds).
+                    if let Some(max) = item_animation_max {
+                        app.swing_max = max as f32 / 60.0;
                     }
                     if cancel_use {
                         // `SetItemTime(0)` + `itemAnimation/Max = 0` +

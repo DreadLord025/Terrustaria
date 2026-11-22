@@ -985,7 +985,7 @@ pub struct Projectile {
     pub bonus_crit_chance: i32,
     /// S1-P-i16 вЂ” one slot's queued child-spawn requests for the pool's
     /// post-AI drain: `(kind, x, y, vx, vy, damage, knock_back, ai0, ai1,
-    /// time_left_delta)`. The dart split machines (the Ichor Dart's fan
+    /// time_left_delta, ai2)`. The dart split machines (the Ichor Dart's fan
     /// `Projectile.cs:57332-57348`, the Cursed Dart's flame drops
     /// `:57351-57362`) and the cluster rockets' shrapnel ring
     /// (`Kill_Bombs_DoUsualKillCode` `:78063-78086`) spawn mid-iteration in
@@ -993,8 +993,12 @@ pub struct Projectile {
     /// requests here (`wants_mark_spawn` pattern) and the dispatch resolves
     /// them after the sub-steps. `time_left_delta` is subtracted from the
     /// spawned row's `timeLeft` (the cluster ring's `-= Next(30)`, `:78084`).
-    pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32)>,
-    // S1-P-i35 вЂ” the fishing bobber's liquid flags (`Projectile.cs:376-382`,
+    /// W4-d20 — `ai2` rides the C# `NewProjectile`'s third ai argument
+    /// (the flint release slash's scale 1, `Projectile.cs:52254`; the
+    /// aiStyle-190 arm reads `scale *= ai[2]` `:42222` — a dropped ai2
+    /// collapsed the slash's scale to 0).
+    pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32, f32)>,
+    // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
     // reset false `:756-760`). The generic `Update` wet block
     // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
     // probes them at the tick head (the one-tick-lag deviation, ANALYSIS
@@ -1025,6 +1029,20 @@ pub struct Projectile {
     /// pool's sibling chum slots, so the `frameCounter == 0` latch rides
     /// this intent out to the dispatcher (the `wants_splash` pattern).
     pub(crate) wants_chum_reduce: bool,
+    /// W4-d20 — the aiStyle-192 jumino's gift (`AI_192_JuminoAnimation`
+    /// `Projectile.cs:41632-41637`): the `(item, x, y)` the world sim resolves
+    /// into an item drop when the animation completes (`Item.NewItem` of the
+    /// JunimoPetItem 5276 at `Center + (0, 12)`, then `velocity = 0`). The
+    /// `wants_mark_spawn` intent pattern — the pool cannot borrow the App's
+    /// item vec mid-iteration.
+    pub(crate) wants_gift_item: Option<(u16, f32, f32)>,
+    /// `Projectile.ownerHitCheck` (`Projectile.cs:304`, stock false): the
+    /// melee reach gate `Damage_PVE_Inner` reads (`:12637`). The spear family
+    /// sets it via `DefaultToSpear` (the port keys that on `SPEAR_KINDS`);
+    /// W4-d20's aiStyle-191 TerraBlade2Shot (985) sets it DYNAMICALLY
+    /// (`AI_191_TrueNightsEdge` `:41730`: `localAI[0] <= 6`), so the field
+    /// carries the live state for the 985 damage gate.
+    pub owner_hit_check: bool,
 }
 
 impl Default for Projectile {
@@ -1115,6 +1133,8 @@ impl Default for Projectile {
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
             wants_chum_reduce: false,
+            wants_gift_item: None,
+            owner_hit_check: false,
         }
     }
 }
@@ -15034,7 +15054,7 @@ pub(crate) fn alpha_of(opacity: f32) -> i32 {
 
 /// `Vector2.ToRotationVector2()` (XNA): the unit vector at the angle вЂ”
 /// `(cos, sin)`.
-fn rotation_vector(angle: f32) -> Vec2 {
+pub(crate) fn rotation_vector(angle: f32) -> Vec2 {
     let (s, c) = angle.sin_cos();
     Vec2::new(c, s)
 }
@@ -17293,7 +17313,23 @@ impl ProjectilePool {
         std::mem::take(&mut self.pending_item_drops)
     }
 
-    /// S1-P-i35 вЂ” `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
+
+    /// W4-d20 — the aiStyle-192 jumino's completion gift
+    /// (`AI_192_JuminoAnimation` `Projectile.cs:41632-41637`): the
+    /// `(owner, item, x, y)` the world sim resolves into an item drop
+    /// (`Item.NewItem` of the JunimoPetItem at `Center + (0, 12)`, then
+    /// `velocity = 0`). The `drain_mark_spawns` intent pattern.
+    pub fn drain_gift_items(&mut self) -> Vec<(u8, u16, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some((item, x, y)) = p.wants_gift_item.take() {
+                out.push((p.owner, item, x, y));
+            }
+        }
+        out
+    }
+
+    /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
     /// kill every active bobber this owner controls (the sleep teardown,
     /// `PlayerSleepingHelper.cs:174`). The C# `Kill()`'s bobber arm
     /// (`Projectile.cs:71986-71994`) still gives a reeled catch, so the port
@@ -20410,142 +20446,7 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d16 ╨▓╨ВтАЭ aiStyle 151, the Super Star Cannon's
-                        // star (`AI_151_SuperStar` `:22138-22168`): the
-                        // alpha ramp, the Item9 cue re-arm, the spin, the
-                        // on-screen gore gate + the two dust gates. The
-                        // row keeps tileCollide true (`:7665`) ╨▓╨ВтАЭ the
-                        // kill_step probe is HandleMovement's default arm.
-                        151 => {
-                            crate::projectile_ai_misc::ai_super_star(
-                                &mut self.slots[i],
-                                rng,
-                                self.screen_view,
-                            );
-                            // HandleMovement runs before the !active return (:17015/:17027).
-                            self.slots[i].kill_step(world);
-                        }
-                        // W4-d16 ╨▓╨ВтАЭ aiStyle 152, the four slashes
-                        // (`AI_152_SuperStarSlash` `:22230-22351`): the
-                        // 729 cannon slash, the Zenith's 977/976, the
-                        // Moon Lord whip's 1045. The arm pins
-                        // tileCollide false (`:22350`) ╨▓╨ВтАЭ the kill_step
-                        // is the free integrate.
-                        152 => {
-                            crate::projectile_ai_misc::ai_super_star_slash(
-                                &mut self.slots[i],
-                                world,
-                                rng,
-                            );
-                            // HandleMovement runs before the !active return (:17015/:17027).
-                            self.slots[i].kill_step(world);
-                        }
-                        // W4-d16 ╨▓╨ВтАЭ aiStyle 153, the toilet's pop
-                        // (`AI_153_ToiletPop` `:52198-52236`): the
-                        // first-tick 6-dust/1-gore burst, the 1-in-5 gore
-                        // ticks, the past-10 kill. The row keeps
-                        // tileCollide false ╨▓╨ВтАЭ the free integrate.
-                        153 => {
-                            crate::projectile_ai_misc::ai_toilet_pop(
-                                &mut self.slots[i],
-                                rng,
-                            );
-                            // HandleMovement runs before the !active return (:17015/:17027).
-                            self.slots[i].kill_step(world);
-                        }
-                        // W4-d16 ╨▓╨ВтАЭ aiStyle 154, the Void Lens
-                        // (`AI_154_VoidLens` `:52154-52196`): the
-                        // owner-gated same-type dedupe scans the LIVE
-                        // pool (`:52157-52176` ╨▓╨ВтАЭ the C# reads
-                        // `Main.projectile` while killing), so the scan
-                        // is pool-side here (the dragon_step shape); the
-                        // post-dedupe body lives in the misc module.
-                        // `HadAnActiveInteractableProjectile` (`:52156`)
-                        // is a frame flag with no port consumer ╨▓╨ВтАЭ skipped.
-                        154 => {
-                            let mut survived = true;
-                            if self.slots[i].owner == local_owner {
-                                for j in 0..MAX_PROJECTILES {
-                                    if j == i {
-                                        continue;
-                                    }
-                                    let other = &self.slots[j];
-                                    if other.active
-                                        && other.owner == self.slots[i].owner
-                                        && other.kind == self.slots[i].kind
-                                    {
-                                        if self.slots[i].time_left < other.time_left {
-                                            self.slots[i].kill();
-                                            survived = false;
-                                            break;
-                                        }
-                                        self.slots[j].kill();
-                                    }
-                                }
-                            }
-                            if survived {
-                                crate::projectile_ai_misc::ai_void_lens(
-                                    &mut self.slots[i],
-                                    rng,
-                                );
-                            }
-                            // HandleMovement runs before the !active return (:17015/:17027).
-                            self.slots[i].kill_step(world);
-                        }
-                        // W4-d16 ╨▓╨ВтАЭ aiStyle 155, the Mystic Snake's rope
-                        // coil (`AI_155_MysticSnakeCoil` `:51939-52112`):
-                        // the rise machine + the owner-gated PlaceTile-504
-                        // column + the attached conversion/death walks.
-                        // The tile writes reborrow `world` mutably (the
-                        // ai_ice_block carve-out). The owner centre rides
-                        // the dispatch's `owner` snapshot; the resolved
-                        // player's presence is `active`.
-                        155 => {
-                            let owner_center = owner.map(|(x, y)| Vec2::new(x, y));
-                            let owner_active = player.is_some();
-                            crate::projectile_ai_misc::ai_mystic_snake_coil(
-                                &mut self.slots[i],
-                                world,
-                                owner_center,
-                                owner_active,
-                                local_owner,
-                                rng,
-                            );
-                            // HandleMovement runs before the !active return (:17015/:17027).
-                            self.slots[i].kill_step(world);
-                        }
-                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 172)`
-                        // (`Projectile.cs:36651-36654`) ->
-                        // `AI_172_HallowBossRainbowPelletStorm` (`:45569-45604`):
-                        // the Split-Shot Core (871), the style's ONLY SetDefaults
-                        // row (`:8380-8392`), so no kind gate. The 91-tick grow-in,
-                        // the 210-tick storm life and the six three-bullet fans.
-                        // The empress gate does NOT claim 871 (its own arm serves
-                        // it тАФ `projectile_ai_empress` module doc). ZERO rand draws.
-                        172 => {
-                            crate::projectile_ai_misc::ai_pellet_storm(&mut self.slots[i]);
-                            // HandleMovement runs before the !active return (:17015/:17027).
-                            self.slots[i].kill_step(world);
-                        }
-                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 174)`
-                        // (`Projectile.cs:36659-36662`) ->
-                        // `AI_174_MultisegmentPet` (`:45345-45427`): the
-                        // three worm-segment pets (883/887/893), the style's
-                        // ONLY SetDefaults rows (`:8474-8485`/`:8496-8507`/
-                        // `:8531-8542`), so no kind gate. The keep-alive,
-                        // the teleport, the steering and the world clamp.
-                        // The owner writes ride the mutable player channel
-                        // (the ai026_b shape). ZERO rand draws.
-                        174 => {
-                            crate::projectile_ai_misc::ai_multisegment_pet(
-                                &mut self.slots[i],
-                                player.as_deref_mut(),
-                                world,
-                            );
-                            // HandleMovement runs before the !active return (:17015/:17027).
-                            self.slots[i].kill_step(world);
-                        }
-                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 175)`
+                        // W4-d18 ╤В╨Р╨д `AI()`'s `else if (this.aiStyle == 175)`
                         // (`Projectile.cs:36663-36666`) ->
                         // `AI_175_TitaniumStormShards` (`:45319-45343`):
                         // the Titanium Storm Shard (908), the style's ONLY
@@ -20570,7 +20471,7 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 176)`
+                        // W4-d18 ╤В╨Р╨д `AI()`'s `else if (this.aiStyle == 176)`
                         // (`Projectile.cs:36667-36670`) ->
                         // `AI_176_EdgyLightning` (`:45058-45095`): the
                         // Dark Harvest scythe bolt (916), the style's ONLY
@@ -20588,14 +20489,14 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 177)`
+                        // W4-d18 ╤В╨Р╨д `AI()`'s `else if (this.aiStyle == 177)`
                         // (`Projectile.cs:36671-36674`) ->
                         // `AI_177_IceWhipSlicer` (`:45117-45265`): the Cool
                         // Whip snowflake (917) + the Weather Pain twister
                         // (969), the style's ONLY SetDefaults rows
                         // (`:8701-8713`/`:9169-9181`), so no kind gate. The
                         // 969 sibling-sync scan runs AFTER the core (the
-                        // pool borrow the slot arm cannot take тАФ the
+                        // pool borrow the slot arm cannot take ╤В╨Р╨д the
                         // minion_separation pattern).
                         177 => {
                             let sync = crate::projectile_ai_misc::ai_ice_whip_slicer(
@@ -20616,7 +20517,7 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 178)`
+                        // W4-d18 ╤В╨Р╨д `AI()`'s `else if (this.aiStyle == 178)`
                         // (`Projectile.cs:36675-36678`) ->
                         // `AI_178_FireExplosion` (`:45267-45317`): the
                         // Firecracker explosion flash (918), the style's
@@ -20631,7 +20532,168 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // S1-P-i56 тАФ `AI()`'s `else if (this.aiStyle == 120)`
+                        // W4-d20 тАФ aiStyle 200, the bird dropping
+                        // (`AI_200_BirdDroppings` `:39985-40017`): the 0.3
+                        // gravity / 16 cap, the two-dust trail's draws and
+                        // the player-contact kill. The row keeps tileCollide
+                        // true; the blocked-move arm (`:18921-18928`) kills
+                        // on contact тАФ `kill_step`'s shape.
+                        200 => {
+                            crate::projectile_ai_misc::ai_bird_droppings(
+                                &mut self.slots[i],
+                                player.as_deref(),
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d20 тАФ aiStyle 199, the meteor ore
+                        // (`AI_199_MeteorOre` `:40019-40041`): the first-tick
+                        // frame roll, the dust-31/6 trail draws and the two
+                        // rotation terms. The row keeps tileCollide true; the
+                        // blocked-move default (`:19849-19853`) kills on
+                        // contact тАФ `kill_step`'s shape.
+                        199 => {
+                            crate::projectile_ai_misc::ai_meteor_ore(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d20 тАФ aiStyle 196, the petal
+                        // (`AI_196_Petal` `:40466-40560`): the first-20-tick
+                        // drift, the 8-frame cycle, the spin, the homing
+                        // blend / sine sway. The 1038 keeps tileCollide false
+                        // (free integrate); the 1116's blocked-move arm
+                        // (`:18068-18078`) reverses the blocked axis ├Ч0.25.
+                        196 => {
+                            crate::projectile_ai_misc::ai_petal(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            if self.slots[i].kind == crate::projectile::PETALSTORM_SHOT {
+                                crate::projectile_ai_misc::petal_storm_move(&mut self.slots[i], world);
+                            } else {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
+                        // W4-d20 тАФ aiStyle 192, the jumino stardrop animation
+                        // (`AI_192_JuminoAnimation` `:41516-41638`): the
+                        // 20-frame fall machine, the opacity ramp, the five
+                        // dust windows' draws and the completion gift. The
+                        // row keeps tileCollide false тАФ the free integrate.
+                        192 => {
+                            crate::projectile_ai_misc::ai_jumino(
+                                &mut self.slots[i],
+                                player.as_deref(),
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d20 тАФ aiStyle 195, Jim's drone
+                        // (`AI_195_JimsDrone` `:40923-41067`): the input-bit
+                        // pack, the altitude/held-item kill gates, the
+                        // tilt/thrust physics, the timeLeft=2 keep-alive and
+                        // the ground-probe dust. The row keeps tileCollide
+                        // true; the blocked-move arm (`:18057-18067`) reverses
+                        // the blocked axis ├Ч0.25 when |last| > 1.
+                        195 => {
+                            crate::projectile_ai_misc::ai_jims_drone(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                local_owner,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            crate::projectile_ai_misc::drone_move(&mut self.slots[i], world);
+                        }
+                        // W4-d20 тАФ aiStyle 198, the Dead Cells flint
+                        // (`AI_198_Flint` `:52238-52315`): the channel hold,
+                        // the release slash (1043) + charged spike wave
+                        // (1041) and the follow-through. The player writes
+                        // ride the golf PlayerWrites seam; the spawns ride
+                        // wants_dart_spawns (the pool drains them after).
+                        // The row keeps tileCollide false тАФ the free move.
+                        198 => {
+                            if let Some(ctx) = self.golf_ctx.as_mut() {
+                                let player = if self.slots[i].owner == local_owner {
+                                    ctx.player
+                                } else {
+                                    crate::projectile_ai_golf::GolfClubPlayer {
+                                        active: false,
+                                        ..ctx.player
+                                    }
+                                };
+                                let tick = crate::projectile_ai_misc::ai_flint(
+                                    &mut self.slots[i],
+                                    world,
+                                    player,
+                                    ctx.mouse_world,
+                                    local_owner,
+                                    rng,
+                                );
+                                // The 1043 release slash: ai0 = dir┬╖gravDir,
+                                // ai1 = 6 (the 190 arm's lifetime envelope),
+                                // ai2 = 1 (the scale тАФ `:42222` reads it).
+                                if let Some((x, y, vx, vy, dmg, kb, ai0, ai1, ai2)) = tick.wants_slash {
+                                    self.slots[i].wants_dart_spawns.push((
+                                        crate::projectile::DEAD_CELLS_FLINT_SLASH,
+                                        x - 8.0, y - 8.0, vx, vy, dmg, kb, ai0, ai1, 0, ai2,
+                                    ));
+                                }
+                                // The 1041 ground spikes.
+                                for (x, y, vx, vy, ai0, ai1) in tick.spikes {
+                                    self.slots[i].wants_dart_spawns.push((
+                                        crate::projectile::DEAD_CELLS_FLINT_SHOT,
+                                        x - 16.0, y - 16.0, vx, vy,
+                                        self.slots[i].damage, self.slots[i].knock_back,
+                                        ai0, ai1, 0, 0.0,
+                                    ));
+                                }
+                                // The player-side writes.
+                                self.golf_effects.push(
+                                    crate::projectile_ai_golf::GolfEffect::PlayerWrites {
+                                        facing: tick.facing,
+                                        held_proj: if tick.writes_held_proj {
+                                            Some(i as i32)
+                                        } else {
+                                            None
+                                        },
+                                        dummy_item_time: tick.dummy_item_time,
+                                        cancel_use: false,
+                                        item_animation_max: tick.item_animation_max,
+                                    },
+                                );
+                            }
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d20 тАФ aiStyle 191, the True Night's Edge / Terra
+                        // Blade sword shots (`AI_191_TrueNightsEdge`
+                        // `:41640-41808`): the opacity envelope, the num4 kill,
+                        // the 973 spin / 985 velocity-aligned choreographies.
+                        // The 973 keeps tileCollide false (free integrate); the
+                        // 985's blocked-move arm (`:18104-18110`) retracts.
+                        191 => {
+                            crate::projectile_ai_misc::ai_true_nights_edge(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            if self.slots[i].kind == crate::projectile::TERRA_BLADE_2_SHOT {
+                                crate::projectile_ai_misc::terra_blade_move(&mut self.slots[i], world);
+                            } else {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
                         // Stardust Guardian (623), the style's ONLY
@@ -23938,6 +24000,7 @@ impl ProjectilePool {
                                         },
                                         dummy_item_time: tick.dummy_item_time,
                                         cancel_use: tick.cancel_use,
+                                        item_animation_max: None,
                                     },
                                 );
                             }
@@ -24358,11 +24421,17 @@ impl ProjectilePool {
             // pattern): resolve them after the sub-steps, in order.
             let requests = std::mem::take(&mut self.slots[i].wants_dart_spawns);
             let owner = self.slots[i].owner;
-            for (kind, x, y, vx, vy, damage, kb, ai0, ai1, tl_delta) in requests {
+            for (kind, x, y, vx, vy, damage, kb, ai0, ai1, tl_delta, ai2) in requests {
                 if let Some(s) = self.spawn_with_data_ai_owned(
                     kind, owner, x, y, vx, vy, damage, kb, ai0, ai1,
                 ) {
                     self.slots[s].time_left -= tl_delta;
+                    // W4-d20 — the C# `NewProjectile`'s ai2 argument
+                    // (`Projectile.cs:10923`); the spawn seam carries
+                    // ai0/ai1 only, so the third ai rides this write.
+                    if ai2 != 0.0 {
+                        self.slots[s].ai[2] = ai2;
+                    }
                 }
             }
         }
@@ -27281,6 +27350,7 @@ impl ProjectilePool {
                     0.0,
                     0.0,
                     delta,
+                    0.0,
                 ));
                 t += 1.0f32 / 6.0f32;
             }
@@ -27702,6 +27772,17 @@ impl ProjectilePool {
                 if let Some(pl) = player.as_deref() {
                     let pc = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
                     if !rapier_owner_can_hit(world, pl, n, pc) {
+                        continue;
+                    }
+                }
+            }
+            // W4-d20 — the aiStyle-191 TerraBlade2Shot (985) sets
+            // `ownerHitCheck` dynamically (`AI_191_TrueNightsEdge` `:41730`:
+            // `localAI[0] <= 6`); the same `CanHitWithMeleeWeapon` reach gate
+            // applies while it is true (the spear snapshot carries the owner).
+            if p.kind == crate::projectile::TERRA_BLADE_2_SHOT && p.owner_hit_check {
+                if let Some(so) = self.spear_owner {
+                    if !crate::projectile_ai_spear::owner_can_hit(world, &so, n) {
                         continue;
                     }
                 }
@@ -36761,6 +36842,8 @@ mod phasmal_projectile_tests {
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
             wants_chum_reduce: false,
+            wants_gift_item: None,
+            owner_hit_check: false,
         }
     }
 
@@ -37232,6 +37315,8 @@ mod ritual_projectile_tests {
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
             wants_chum_reduce: false,
+            wants_gift_item: None,
+            owner_hit_check: false,
         }
     }
 

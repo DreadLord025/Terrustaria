@@ -313,6 +313,7 @@ pub(crate) fn ai_tower_orb(
                     0.0,
                     0.0,
                     0,
+                    0.0,
                 ));
             }
             p.ai[0] = 0.0;

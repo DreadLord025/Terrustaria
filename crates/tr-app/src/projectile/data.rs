@@ -1404,9 +1404,9 @@ pub const FIRST_FRACTAL: u16 = 857;
 /// `proj_data` returns None until those rows merge, so the spawn no-ops.
 /// Only 1036/1037 are UNCLAIMED — their rows land in this branch.
 /// BATCH-D keep-one: d18's richer 916/917/918/1039 const docs + rows
-/// survive (the d17 alias copies deduped here); the 1038 row is d20's
-/// claim - `proj_data` returns None until that merge, so the flower
-/// proc spawn no-ops (the documented row-gate).
+/// survive (the d17 alias copies deduped here); the 1038 row landed with
+/// W4-d20 (the aiStyle-196 petal) - the flower proc spawn is now LIVE.
+
 /// `ProjectileID.ScytheWhipProj` (916) — the Dark Harvest black lightning.
 pub const SCYTHE_WHIP_PROJ: u16 = 916;
 /// `ProjectileID.CoolWhipProj` (917) — the Cool Whip snowflake minion.
@@ -4241,6 +4241,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 900`, `tileCollide = false`, `ignoreWater`, `alpha = 255`,
             // hostile.
             SANDNADO_MARK => (14.0, 14.0, 128, 1, 900, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d20 T4a — the pet-buff shoot arm's spawn kinds (the
+            // `Player.cs:48561-48583` arm needs a row to spawn through
+            // `spawn_with_data_ai`; the row-less fallback would carry no
+            // box/aiStyle). The C# rows verbatim:
+            // `Projectile.cs:8451-8460` (881 KingSlimePet): 20x20,
+            // aiStyle 26, friendly, pen -1, timeLeft *= 5, netImportant.
+            KING_SLIME_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:8874-8883` (934 QueenSlimePet): the 881 shape.
+            QUEEN_SLIME_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9436-9445` (994 JunimoPet): the 881 shape.
+            JUNIMO_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9024-9033` (956 BerniePet): 20x28, the 881 shape.
+            BERNIE_PET => (20.0, 28.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4408,6 +4421,63 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ),
             DEAD_CELLS_BARNACLE => (42.0, 38.0, 197, 1, 36000, 0, true, false, false, RESET_STATE),
             DEAD_CELLS_BARNACLE_SHOT => (14.0, 14.0, 28, 1, 3600, 2, true, false, false, RESET_STATE), // Projectile.cs:9717
+            // W4-d20 — `Projectile.cs:10078-10086` (1080, the bird dropping):
+            // 10x10, aiStyle 200, alpha 255, penetrate -1, ignoreWater, stock
+            // tileCollide true. Stock friendly/hostile false — the arm's own
+            // player-contact Kill() is the only interaction (the debris
+            // precedent); the spawner passes damage 0 (NPC.cs:25322).
+            BIRD_DROPPINGS => (10.0, 10.0, 200, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:10067-10077` (1078, the meteor ore):
+            // 14x14, aiStyle 199, hostile+friendly+trap, penetrate -1,
+            // netImportant, stock tileCollide true. The friendly damage rides
+            // the generic PVE pass; the hostile player-contact is the port's
+            // !friendly proxy deviation (the ore is friendly, so it hits NPCs).
+            METEOR_ORE => (14.0, 14.0, 199, -1, TIME_LEFT_DEFAULT, 0, true, false, true, RESET_STATE),
+            // W4-d20 — `Projectile.cs:9793-9806` (1038, the Flower Whip's
+            // petal): 18x18, aiStyle 196, timeLeft 120, penetrate 1, the
+            // LOCAL pair (-1), tileCollide false, ignoreWater
+            // (armorPenetration = 50 dropped — no ProjData field, the
+            // set_armor_penetration spawn seam carries it).
+            FLOWER_WHIP_PETAL => (18.0, 18.0, 196, 1, 120, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d20 — `Projectile.cs:10413-10426` (1116, the Petalstorm
+            // shot): 18x18, aiStyle 196, timeLeft 120, penetrate 1, the
+            // LOCAL pair (-1), ignoreWater, magic, stock tileCollide true
+            // (the blocked-move bounce :18068-18078).
+            PETALSTORM_SHOT => (18.0, 18.0, 196, 1, 120, 0, true, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d20 — `Projectile.cs:9446-9457` (995, the jumino stardrop
+            // animation): 240x104, aiStyle 192, penetrate -1, tileCollide
+            // false, ignoreWater, timeLeft = 3600 * 5 = 18000.
+            JUMINO_STARDROP_ANIMATION => (240.0, 104.0, 192, -1, 18000, 0, false, false, false, RESET_STATE),
+            // W4-d20 — `Projectile.cs:9659-9666` (1020, Jim's drone): 12x12,
+            // aiStyle 195, penetrate -1, stock tileCollide true (the
+            // blocked-move bounce :18057-18067). friendly rides the pool
+            // default; the drone damages nothing (no melee/ranged/magic).
+            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d20 — `Projectile.cs:9821-9833` (1040, the Dead Cells flint):
+            // 2x2, aiStyle 198, tileCollide false, ignoreWater, penetrate -1,
+            // alpha 255, manualDirectionChange (the arm owns the facing).
+            // drawLayer 7 / usesOwnerLight are draw-side (no ProjData field).
+            DEAD_CELLS_FLINT => (2.0, 2.0, 198, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:9834-9847` (1041, the flint ground
+            // spike): 32x32, aiStyle 157, friendly, melee, alpha 255,
+            // tileCollide false, ignoreWater, penetrate 4, LOCAL pair (25).
+            DEAD_CELLS_FLINT_SHOT => (32.0, 32.0, 157, 4, TIME_LEFT_DEFAULT, 0, false, false, false, (true, 25, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:9858-9874` (1043, the flint release
+            // BATCH-D keep-d19 drop-d20 (research/26g s9.7): the 1043
+            // flint-slash row + the four 972/982+997/983/984 slash-row
+            // copies are dropped here - d19's value-identical rows below
+            // survive (the T5 use-arms spawn through them).
+            // W4-d20 — `Projectile.cs:9315-9329` (973, the True Night's Edge
+            // spin slash): 30x30, aiStyle 191, friendly, melee, penetrate 3,
+            // LOCAL pair (10), tileCollide false, ignoreWater, alpha 255,
+            // timeLeft 90.
+            TRUE_NIGHTS_EDGE => (30.0, 30.0, 191, 3, 90, 0, false, false, false, (true, 10, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:9405-9421` (985, the Terra Blade second
+            // shot): 8x8, aiStyle 191, friendly, melee, penetrate -1, LOCAL
+            // pair (-1), stock tileCollide true (the blocked-move retract
+            // :18104-18110), ignoreWater, alpha 255, timeLeft 90,
+            // ownerHitCheck (the arm sets it dynamically).
+            TERRA_BLADE_2_SHOT => (8.0, 8.0, 191, -1, 90, 0, true, false, false, (true, -1, false, -1, 255, 1.0)),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // W4-d19 — the aiStyles 182-186/190 census slice's rows (the
             // `projectile_ai_sword_styles` arms). The damage-side fields
@@ -5413,6 +5483,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d18: the multisegment pets' `netImportant = true`
             // (`Projectile.cs:8484`/`:8506`/`:8541`).
             || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
+            // W4-d20 T4a — the pet-buff shoot arm's spawn kinds set
+            // `netImportant = true` (`Projectile.cs:8453`/`:8876`/
+            // `:9438`/`:9026`).
+            || matches!(kind, KING_SLIME_PET | QUEEN_SLIME_PET | JUNIMO_PET | BERNIE_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -5436,7 +5510,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:8042`/`:8057`/`:8138`/`:8151`/`:8170`/
             // `:8184`); the 766-771 block (`:7889-7892`) keeps the stock
             // false (the `DefaultToKite` helper sets none).
-            || matches!(kind, 822..=824 | 826..=830 | 838..=840 | 843..=846 | 850 | 852..=853),
+            || matches!(kind, 822..=824 | 826..=830 | 838..=840 | 843..=846 | 850 | 852..=853)
+            // W4-d20 — `Projectile.cs:10076`: the meteor ore (1078) sets
+            // `netImportant = true`.
+            || kind == METEOR_ORE,
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -5630,7 +5707,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | FINAL_FRACTAL | TRUE_COPPER_SHORTSWORD | PRINCESS_WEAPON
                     | NIGHTS_EDGE | EXCALIBUR | TRUE_EXCALIBUR | TERRA_BLADE_2
                     | HORSEMANS_BLADE | DEAD_CELLS_FLINT_SLASH | CHLOROPHYTE_CLAYMORE_BLADE
-            ),
+            )
+            // W4-d20 — `Projectile.cs:10085`: the bird dropping (1080) sets
+            // `ignoreWater = true`.
+            || kind == BIRD_DROPPINGS
+            // W4-d20 — `Projectile.cs:9804`/`:10423`: the two aiStyle-196
+            // petals set `ignoreWater = true`.
+            || matches!(kind, FLOWER_WHIP_PETAL | PETALSTORM_SHOT)
+            // W4-d20 — `Projectile.cs:9455`: the jumino animation (995) sets
+            // `ignoreWater = true`.
+            || kind == JUMINO_STARDROP_ANIMATION
+            // W4-d20 — `Projectile.cs:9827`/`:9843`/`:9868`: the flint trio
+            // (1040/1041/1043) set `ignoreWater = true`.
+            || matches!(kind, DEAD_CELLS_FLINT | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH)
+            // W4-d20 — `Projectile.cs:9325`/`:9415`: the two aiStyle-191
+            // sword shots (973/985) set `ignoreWater = true`.,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -5703,6 +5794,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d19 follow-up — the spore cloud's melee
                     // (`Projectile.cs:10572`).
                     | 1128
+                    // W4-d20 - `Projectile.cs:9841`: the flint spike (1041)
+                    // sets melee (the 1043 slash already rides the d19
+                    // seven-slash list above - BATCH-D keep-d19 drop-d20).
+                    | DEAD_CELLS_FLINT_SHOT
+                    // W4-d20 - `Projectile.cs:9321`/`:9411`: the two
+                    // aiStyle-191 sword shots (973/985) set melee.
+                    | TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT
             ),
         ranged: matches!(
             kind,
@@ -5792,6 +5890,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // W4-d19 follow-up — the toxic clouds' magic
                 // (`Projectile.cs:5813`/`:5825`/`:5837`).
                 | 511 | 512 | 513
+                // W4-d20 — `Projectile.cs:10424`: the Petalstorm shot (1116)
+                // sets magic (the 1038 Flower Whip petal does NOT).
+                | PETALSTORM_SHOT
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -5889,6 +5990,20 @@ pub const DUKE_FISHRON_PET: u16 = 892;
 pub const MOON_LORD_PET: u16 = 894;
 pub const DD2_BETSY_PET: u16 = 901;
 pub const PUFFERFISH: u16 = 1046;
+/// `ProjectileID.KingSlimePet` (881, `ProjectileID.cs:2316`) — the King
+/// Slime pet, aiStyle 26 (`Projectile.cs:8451-8460`). W4-d20 T4a (the
+/// pet-buff shoot arm's spawn kind; the aiStyle-26 slice C owns the AI).
+pub const KING_SLIME_PET: u16 = 881;
+/// `ProjectileID.QueenSlimePet` (934, `ProjectileID.cs:2422`) — the Queen
+/// Slime pet, aiStyle 26 (`Projectile.cs:8874-8883`). W4-d20 T4a.
+pub const QUEEN_SLIME_PET: u16 = 934;
+/// `ProjectileID.JunimoPet` (994, `ProjectileID.cs:2542`) — the Jumino
+/// pet, aiStyle 26 (`Projectile.cs:9436-9445`). W4-d20 T4a (the 5276
+/// gift item's pet; the aiStyle-26 slice C owns the AI).
+pub const JUNIMO_PET: u16 = 994;
+/// `ProjectileID.BerniePet` (956, `ProjectileID.cs:2466`) — Bernie the
+/// button-eyed pet, aiStyle 26 (`Projectile.cs:9024-9033`). W4-d20 T4a.
+pub const BERNIE_PET: u16 = 956;
 pub const STORM_TIGER_1: u16 = 833;
 pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;
@@ -5942,6 +6057,36 @@ pub const HOUNDIUS_SHOOTIUS: u16 = 966;
 pub const HOUNDIUS_SHOOTIUS_FIREBALL: u16 = 967;
 pub const DEAD_CELLS_BARNACLE: u16 = 1025;
 pub const DEAD_CELLS_BARNACLE_SHOT: u16 = 1026; // AI_197 follow-up
+/// `ProjectileID.BirdDroppings` (1080) — the bird dropping, aiStyle 200
+/// (`Projectile.cs:10078-10086`). W4-d20.
+pub const BIRD_DROPPINGS: u16 = 1080;
+/// `ProjectileID.MeteorOre` (1078) — the meteor ore chunk, aiStyle 199
+/// (`Projectile.cs:10067-10077`). W4-d20.
+pub const METEOR_ORE: u16 = 1078;
+/// `ProjectileID.FlowerWhipPetal` (1038) - the Flower Whip's petal, aiStyle
+/// 196 (`Projectile.cs:9793-9806`). W4-d20 row; the const keeps d17's alias
+/// (BATCH-D dedupe, the row-gate now OPEN).
+/// `ProjectileID.PetalstormShot` (1116) — the Petalstorm's shot, aiStyle 196
+/// (`Projectile.cs:10413-10426`). W4-d20.
+pub const PETALSTORM_SHOT: u16 = 1116;
+/// `ProjectileID.JuminoStardropAnimation` (995) — the jumino stardrop
+/// animation, aiStyle 192 (`Projectile.cs:9446-9457`). W4-d20.
+pub const JUMINO_STARDROP_ANIMATION: u16 = 995;
+/// `ProjectileID.JimsDrone` (1020) — Jim's RC drone, aiStyle 195
+/// (`Projectile.cs:9659-9666`). W4-d20.
+pub const JIMS_DRONE: u16 = 1020;
+/// `ProjectileID.DeadCellsFlint` (1040) — the Dead Cells flint channel
+/// weapon, aiStyle 198 (`Projectile.cs:9821-9833`). W4-d20.
+pub const DEAD_CELLS_FLINT: u16 = 1040;
+/// `ProjectileID.DeadCellsFlintShot` (1041) — the flint's ground spike,
+/// aiStyle 157 (`Projectile.cs:9834-9847`). W4-d20.
+pub const DEAD_CELLS_FLINT_SHOT: u16 = 1041;
+/// `ProjectileID.TrueNightsEdge` (973) — the True Night's Edge spin slash,
+/// aiStyle 191 (`Projectile.cs:9315-9329`). W4-d20.
+pub const TRUE_NIGHTS_EDGE: u16 = 973;
+/// `ProjectileID.TerraBlade2Shot` (985) — the Terra Blade's second shot,
+/// aiStyle 191 (`Projectile.cs:9405-9421`). W4-d20.
+pub const TERRA_BLADE_2_SHOT: u16 = 985;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,
@@ -6168,6 +6313,16 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // The Crimson Heart's 4-frame sheet (`Main.cs:8484`) — the pet's
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
+        // W4-d20 — the meteor ore's 3-frame sheet (`Main.cs:8443`) — the
+        // first-tick `Next(3)` frame roll picks it (`Projectile.cs:40024`).
+        METEOR_ORE => 3,
+        // W4-d20 — the two aiStyle-196 petals' 8-frame sheets
+        // (`Main.cs:8555-8556`) — the 4-tick cycle wraps at 8
+        // (`Projectile.cs:40492-40499`).
+        FLOWER_WHIP_PETAL | PETALSTORM_SHOT => 8,
+        // W4-d20 — the jumino animation's 20-frame sheet (`Main.cs:8709`) —
+        // the fall machine wraps at 20 (`Projectile.cs:41547-41550`).
+        JUMINO_STARDROP_ANIMATION => 20,
         CRIMSON_HEART => 4,
         // W4-d13 — the aiStyle-124 pets' sheets (`Main.cs:8500` 650 → 4,
         // `:8670` 882 → 20, `:8676` 888 → 36, `:8683-8684` 895 → 6 /
