@@ -83,6 +83,16 @@ pub const VILE_BASE: u16 = 7;
 /// `ProjectileID.VilethornTip` (8) — the Vilethorn's last segment, the type
 /// the base chains into once `ai[1] >= 6` (`Projectile.cs:23737-23741`).
 pub const VILE_TIP: u16 = 8;
+/// `ProjectileID.CrystalVileShardHead` (493, `ProjectileID.cs:1540`) — the
+/// Crystal Vile Shard's head segment (aiStyle 4, the Vilethorn family's
+/// chain; `Projectile.cs:5667-5680`). The head spawns nothing; the shaft
+/// chains into it at depth ≥ `7 + Next(2)` (`:23746-23760`) with a 1.25×
+/// damage/knockBack bonus.
+pub const CRYSTAL_VILE_HEAD: u16 = 493;
+/// `ProjectileID.CrystalVileShardShaft` (494, `ProjectileID.cs:1542`) — the
+/// Crystal Vile Shard's chaining segment (`Projectile.cs:5667-5680` shares
+/// the head's row; the `:23746` chain arm is the shaft's alone).
+pub const CRYSTAL_VILE_SHAFT: u16 = 494;
 /// `ProjectileID.ThrowingKnife` (48) — the thrown aiStyle-2 kind
 /// (`Projectile.cs:1310-1316`).
 pub const THROWING_KNIFE: u16 = 48;
@@ -98,6 +108,30 @@ pub const UNHOLY_WATER: u16 = 70;
 /// `ProjectileID.BloodWater` (621) — the crimson twin of the holy water
 /// (`Projectile.cs:1504-1511`).
 pub const BLOOD_WATER: u16 = 621;
+/// `ProjectileID.PurificationPowder` (10) — the aiStyle-6 purify cloud
+/// (`Projectile.cs:897-912`): the 64×64 box, the tile-scan `Convert(…, 11, 1)`
+/// (`:24193`).
+pub const PURIFICATION_POWDER: u16 = 10;
+/// `ProjectileID.VilePowder` (11) — the corruption twin of the powder
+/// (`Projectile.cs:913-923`, `Convert(…, 1, 1)` `:24197`).
+pub const VILE_POWDER: u16 = 11;
+/// `ProjectileID.ViciousPowder` (463) — the crimson twin of the powder
+/// (`Projectile.cs:5340-5350`, `Convert(…, 4, 1)` `:24201`; the dust type
+/// remaps 10+463 → 231, `:24115-24118`).
+pub const VICIOUS_POWDER: u16 = 463;
+/// `ProjectileID.Fertilizer` (1019) — the aiStyle-6 sapling-grow cloud
+/// (`Projectile.cs:9648-9658`): no conversion, the `flag2` tree-growth arm
+/// (`:24203-24220`) and the slow-velocity kill (`:24224-24227`).
+pub const FERTILIZER: u16 = 1019;
+/// `ProjectileID.SuperFertilizer` (1051) — the fertilizer's `flag` twin
+/// (`Projectile.cs:9967-9977`): the 50-dust burst with the per-dust
+/// `Next(3)` type pick (`:24124-24133`) and the +15 tree-height addon
+/// (`:24208-24211`).
+pub const SUPER_FERTILIZER: u16 = 1051;
+/// The aiStyle-6 powder/fertilizer family — the style's five rowed kinds
+/// (`Projectile.cs:24100-24228`'s inline arm; W4-d1).
+pub const POWDER_KINDS: [u16; 5] =
+    [PURIFICATION_POWDER, VILE_POWDER, VICIOUS_POWDER, FERTILIZER, SUPER_FERTILIZER];
 /// `ProjectileID.Grenade` (30) — the thrown aiStyle-16 bomb
 /// (`Projectile.cs:1122-1130`).
 pub const GRENADE: u16 = 30;
@@ -201,6 +235,45 @@ pub const HOLY_ARROW: u16 = 91;
 /// `ProjectileID.FallingStar` (92) — the Holy Arrow's death spawn
 /// (`Projectile.cs:75212-75248`, aiStyle 5).
 pub const FALLING_STAR: u16 = 92;
+/// `ProjectileID.FallingStar` (12, `ProjectileID.cs:578`) — the natural
+/// night-sky falling star (aiStyle 5, `Projectile.cs:924-938`): 18×18,
+/// penetrate −1, alpha 50, light 1, trap; the remix seed turns it hostile
+/// (`:929-932`). Distinct from the Holy Arrow's death spawn 92.
+pub const FALLING_STAR_NATURAL: u16 = 12;
+/// `ProjectileID.StarWrath` (503, `ProjectileID.cs:1560`) — the Star Wrath's
+/// falling star (aiStyle 5, `Projectile.cs:5743-5756`): 24×24, penetrate 2,
+/// alpha 255, tileCollide false, melee, extraUpdates 1, local immunity 15.
+pub const STAR_WRATH: u16 = 503;
+/// `ProjectileID.ManaCloakStar` (723, `ProjectileID.cs:2000`) — the Mana
+/// Cloak's retaliatory star (aiStyle 5, `Projectile.cs:7646-7658` shares the
+/// 724/725/726/1133 row): 24×24, penetrate 2, alpha 50, tileCollide false,
+/// local immunity 10, armorPenetration 25.
+pub const MANA_CLOAK_STAR: u16 = 723;
+/// `ProjectileID.BeeCloakStar` (724, `ProjectileID.cs:2002`) — the Bee Cloak's
+/// star (the shared `:7646-7658` row).
+pub const BEE_CLOAK_STAR: u16 = 724;
+/// `ProjectileID.StarVeilStar` (725, `ProjectileID.cs:2004`) — the Star Veil's
+/// star (the shared `:7646-7658` row).
+pub const STAR_VEIL_STAR: u16 = 725;
+/// `ProjectileID.StarCloakStar` (726, `ProjectileID.cs:2006`) — the Star
+/// Cloak's star (the shared `:7646-7658` row).
+pub const STAR_CLOAK_STAR: u16 = 726;
+/// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2628`) — the
+/// Meteor Whip's meteor (aiStyle 5, `Projectile.cs:9780-9792`): 24×24,
+/// scale 0.8, extraUpdates 1, alpha 254, tileCollide false, local immunity −1.
+pub const METEOR_WHIP_METEOR: u16 = 1037;
+/// `ProjectileID.MeteorStormMeteor` (1049, `ProjectileID.cs:2652`) — the
+/// Meteor Staff's meteor (aiStyle 5, `Projectile.cs:9938-9952`): 24×24,
+/// hostile + friendly, scale 0.8, timeLeft 1200, extraUpdates 1, alpha 254,
+/// penetrate −1, tileCollide false, trap.
+pub const METEOR_STORM_METEOR: u16 = 1049;
+/// `ProjectileID.SnakeBandStarCloakTinkerStar` (1133, `ProjectileID.cs:2820`)
+/// — the Snake Band + Star Cloak tinker's star (the shared `:7646-7658` row).
+pub const SNAKE_BAND_STAR: u16 = 1133;
+/// The aiStyle-5 cloak-star family — the five kinds that share the
+/// `Projectile.cs:7646-7658` `SetDefaults` arm (W4-d1).
+pub const CLOAK_STAR_KINDS: [u16; 5] =
+    [MANA_CLOAK_STAR, BEE_CLOAK_STAR, STAR_VEIL_STAR, STAR_CLOAK_STAR, SNAKE_BAND_STAR];
 /// `ProjectileID.CursedArrow` (`ProjectileID.cs:760`).
 pub const CURSED_ARROW: u16 = 103;
 /// `ProjectileID.BoneArrow` (`ProjectileID.cs:788`) — the Bone Bow's 117
@@ -558,7 +631,22 @@ pub const GOLDEN_BULLET: u16 = 287;
 /// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
 /// existing `ai_crystal_storm` arm) and 638 MoonlordBullet is S1-D-4's — both
 /// excluded here.
-pub const SPECIAL_BULLET_KINDS: [u16; 11] = [
+/// `ProjectileID.SilverBullet` (981, `ProjectileID.cs:2516`) — the Silver
+/// Bullet: the Werewolf-bane aiStyle-1 shot (`Projectile.cs:9340-9353`,
+/// the resting counter `:56030`, the `Next(6)` drip gate `:56746-56752`,
+/// the ×3 damage vs the Werewolf `Damage_PVE_Inner` `:13385-13388`, the
+/// ProjLight 0.7/0.7 tint `:16343-16347`). W4-d1 SEAL — the e3/d75-flagged
+/// unrowed kind (the e3 RETIRE census's 345-branch scan; the
+/// `ai001_silver_bullet_drip_981` emitter's fade-chain slot `:56746`
+/// between the 265/355 arms `:56728` and the 357 trail `:56753`).
+pub const SILVER_BULLET: u16 = 981;
+/// The special-bullet kind set S1-P-i18 owns (the aiStyle-1 arms in
+/// `projectile_special_bullets`). Disjoint from the ai001 A/B/C kind lists,
+/// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
+/// existing `ai_crystal_storm` arm) and 638 MoonlordBullet is S1-D-4's — both
+/// excluded here. W4-d1 SEAL adds the 981 SilverBullet (the e3/d75-flagged
+/// unrowed sibling; the module's drip gate + Werewolf-bane arms).
+pub const SPECIAL_BULLET_KINDS: [u16; 12] = [
     METEOR_SHOT,
     CRYSTAL_BULLET,
     CURSED_BULLET,
@@ -570,7 +658,17 @@ pub const SPECIAL_BULLET_KINDS: [u16; 11] = [
     NANO_BULLET,
     EXPLODING_BULLET,
     GOLDEN_BULLET,
+    SILVER_BULLET,
 ];
+/// `ProjectileID.FlyingKnife` (491, `ProjectileID.cs:1536`) — the Flying
+/// Knife: the aiStyle-9 LEGACY spell (`Projectile.cs:5404-5412` —
+/// 26×26, melee, penetrate −1). `AI_009_MagicMissiles`'s type-491 head
+/// (`:43197-43201`) delegates to `AI_009_MagicMissiles_Old`
+/// (`:43427-43653`) — the LIVE legacy machine the e3 RETIRE census
+/// task-seeded to d1 (the `AI_019_Spears_Old` sibling is DEAD, zero
+/// callers). The `_Old` body's 16/34/79 branches are dead for the only
+/// reachable kind 491 — kept verbatim (the census-F2 convention).
+pub const FLYING_KNIFE: u16 = 491;
 /// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
 /// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
 pub const TRAP_DART: u16 = 98;
@@ -1003,6 +1101,102 @@ pub const PINK_DUNGEON_DEBRIS: u16 = 738;
 /// `:57942`, `:58073`, `:77369`).
 pub const DUNGEON_DEBRIS: [u16; 3] =
     [BLUE_DUNGEON_DEBRIS, GREEN_DUNGEON_DEBRIS, PINK_DUNGEON_DEBRIS];
+// ---- W4-d1 wave 3: the aiStyle-10 falling-block family (`AI_010`,
+// `Projectile.cs:57826-58100`). The kinds `WorldGen.GetSandfallProjData`
+// (`WorldGen.cs:86514-86570`, `tr_core::falling::sandfall_proj_data`) spawns
+// when a `TileID.Sets.Falling` tile loses its support, plus the DirtBall
+// the Dirt Rod fires. The rows are verbatim `SetDefaults` slices; the
+// `friendly`/`hostile` flags the row shape carries no field for ride the
+// arm (`projectile_ai_falling`) and the damage-pass gates (ANALYSIS "The
+// projectile data-row deviations").
+/// `ProjectileID.DirtBall` (17, `ProjectileID.cs:588`) — the Dirt Rod's
+/// dirt ball (`Projectile.cs:985-992`): 10x10, aiStyle 10, friendly,
+/// ignoreWater, the stock penetrate 1.
+pub const DIRT_BALL: u16 = 17;
+/// `ProjectileID.SandBallFalling` (31, `ProjectileID.cs:616`) — the sand
+/// tile's fall (`Projectile.cs:1131-1140`): 10x10, aiStyle 10, friendly +
+/// hostile, penetrate −1.
+pub const SAND_BALL_FALLING: u16 = 31;
+/// `ProjectileID.MudBall` (39, `ProjectileID.cs:632`) — the mud tile's
+/// fall (`Projectile.cs:1217-1226`), the 31's shape.
+pub const MUD_BALL_FALLING: u16 = 39;
+/// `ProjectileID.AshBallFalling` (40, `ProjectileID.cs:634`) — the ash
+/// tile's fall (`Projectile.cs:1227-1236`), the 31's shape. The channel
+/// aim-steer excludes it (`:57956`).
+pub const ASH_BALL_FALLING: u16 = 40;
+/// `ProjectileID.EbonsandBallFalling` (56, `ProjectileID.cs:666`) — the
+/// ebonsand tile's fall (`Projectile.cs:1384-1393`), the 31's shape.
+pub const EBONSAND_BALL_FALLING: u16 = 56;
+/// `ProjectileID.PearlSandBallFalling` (67, `ProjectileID.cs:688`) — the
+/// pearlsand tile's fall (`Projectile.cs:1467-1476`), the 31's shape.
+pub const PEARLSAND_BALL_FALLING: u16 = 67;
+/// `ProjectileID.SiltBall` (71, `ProjectileID.cs:696`) — the silt tile's
+/// fall (`Projectile.cs:1512-1521`), the 31's shape.
+pub const SILT_BALL_FALLING: u16 = 71;
+/// `ProjectileID.SlushBall` (179, `ProjectileID.cs:912`) — the slush
+/// tile's fall (`Projectile.cs:2650-2659`), the 31's shape.
+pub const SLUSH_BALL_FALLING: u16 = 179;
+/// `ProjectileID.CrimsandBallFalling` (241, `ProjectileID.cs:1036`) — the
+/// crimsand tile's fall (`Projectile.cs:3228-3237`), the 31's shape.
+pub const CRIMSAND_BALL_FALLING: u16 = 241;
+/// `ProjectileID.ShellPileFalling` (812, `ProjectileID.cs:2178`) — the
+/// shell-pile tile's fall (`Projectile.cs:7953-7962`), the 31's shape.
+pub const SHELL_PILE_FALLING: u16 = 812;
+/// `ProjectileID.CopperCoinsFalling` (411, `ProjectileID.cs:1376`) — the
+/// copper coin pile's fall (`Projectile.cs:4933-4941`): 10x10, aiStyle 10
+/// ONLY — the stock friendly false / penetrate 1 stand (the arm holds the
+/// C# friendly state, the debris precedent).
+pub const COPPER_COINS_FALLING: u16 = 411;
+/// `ProjectileID.SilverCoinsFalling` (412, `ProjectileID.cs:1378`) — the
+/// silver twin of the 411.
+pub const SILVER_COINS_FALLING: u16 = 412;
+/// `ProjectileID.GoldCoinsFalling` (413, `ProjectileID.cs:1380`) — the
+/// gold twin of the 411.
+pub const GOLD_COINS_FALLING: u16 = 413;
+/// `ProjectileID.PlatinumCoinsFalling` (414, `ProjectileID.cs:1382`) — the
+/// platinum twin of the 411.
+pub const PLATINUM_COINS_FALLING: u16 = 414;
+/// `ProjectileID.MudBallPlayer` (1081, `ProjectileID.cs:2716`) — the
+/// player Mud Ball (`Projectile.cs:10087-10094`): 12x12, aiStyle 10,
+/// friendly, penetrate −1; its own 20-tick gravity delay + side-slide.
+pub const MUD_BALL_PLAYER: u16 = 1081;
+/// The four coin-pile kinds the C# spells `type >= 411 && type <= 414`
+/// (`Projectile.cs:57853`, `:17598`).
+pub const COIN_PILE_KINDS: [u16; 4] = [
+    COPPER_COINS_FALLING, SILVER_COINS_FALLING, GOLD_COINS_FALLING, PLATINUM_COINS_FALLING,
+];
+/// The falling-block kinds whose `SetDefaults` arms set `hostile = true`
+/// beside `friendly` (the natural falls: `Projectile.cs:1138`/`:1224`/
+/// `:1234`/`:1391`/`:1474`/`:1519`/`:2657`/`:3235`/`:7960`). The row shape
+/// carries neither flag; the pool's `!friendly` player-damage proxy reads
+/// this set so the C# `Damage_EVP` pass runs for them (the DUNGEON_DEBRIS
+/// exemption's mirror, ANALYSIS W4-d1). The sandgun balls 42/65/68/354 are
+/// friendly + ranged (NOT hostile), the 17/1081 friendly only, the coin
+/// piles stock both-false — none joins.
+pub const FALLING_HOSTILE_KINDS: [u16; 9] = [
+    SAND_BALL_FALLING, MUD_BALL_FALLING, ASH_BALL_FALLING, EBONSAND_BALL_FALLING,
+    PEARLSAND_BALL_FALLING, SILT_BALL_FALLING, SLUSH_BALL_FALLING,
+    CRIMSAND_BALL_FALLING, SHELL_PILE_FALLING,
+];
+/// `ProjectileID.Sets.FallingBlockDoesNotFallThroughPlatforms`
+/// (`ProjectileID.cs:433`) — `HandleMovement`'s `flag6 = false` set
+/// (`Projectile.cs:17544-17547`): these falling blocks stop ON platforms.
+/// Verbatim order.
+pub const FALLING_BLOCK_NO_PLATFORM_FALL: [u16; 18] = [
+    71, 179, 40, 39, 17, 812, 411, 412, 413, 414, 31, 67, 56, 241, 42, 68, 65, 354,
+];
+/// The aiStyle-10 kinds the W4-d1 falling arm serves (the rowed set minus
+/// the 109 hostile snowball and the 736-738 debris trio, which keep their
+/// own arms). The rowed-but-inert sandgun balls 42/65/68/354 join here —
+/// the S1-D-5 "42-row gap" closes (ANALYSIS W4-d1).
+pub const FALLING_BLOCK_KINDS: [u16; 19] = [
+    DIRT_BALL, SAND_BALL_FALLING, MUD_BALL_FALLING, ASH_BALL_FALLING,
+    EBONSAND_BALL_FALLING, PEARLSAND_BALL_FALLING, SILT_BALL_FALLING,
+    SLUSH_BALL_FALLING, CRIMSAND_BALL_FALLING, SHELL_PILE_FALLING,
+    COPPER_COINS_FALLING, SILVER_COINS_FALLING, GOLD_COINS_FALLING,
+    PLATINUM_COINS_FALLING, MUD_BALL_PLAYER,
+    42, 65, 68, 354,
+];
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -1525,6 +1719,8 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         GLOWSTICK | STICKY_GLOWSTICK | SPELUNKER_GLOWSTICK | BOUNCY_GLOWSTICK
         | FAIRY_GLOWSTICK | RAINBOW_GLOWSTICK => 1.0,
         BULLET_SNOWMAN => 0.5,                 // `:1985`
+        // W4-d1 SEAL — `Projectile.cs:9347`: the SilverBullet's light.
+        SILVER_BULLET => 0.5,
         BALL_OF_FIRE => 0.8,                   // `:970`
         MAGIC_MISSILE => 0.8,                  // `:980`
         GREEN_LASER => 0.75,                   // `:1025`
@@ -1571,6 +1767,10 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         NANO_BULLET => 0.5,                    // `:3734`
         EXPLODING_BULLET => 0.5,               // `:3747`
         GOLDEN_BULLET => 0.5,                  // `:3765`
+        // W4-d1 — `Projectile.cs:5678`: the Crystal Vile Shard pair's light.
+        CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT => 0.2,
+        // W4-d1 — `Projectile.cs:936`: the natural FallingStar's `light = 1f`.
+        FALLING_STAR_NATURAL => 1.0,
         // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
@@ -1738,6 +1938,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             HOLY_WATER | UNHOLY_WATER | BLOOD_WATER => {
                 (14.0, 14.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // W4-d1 — the aiStyle-6 powder/fertilizer family. The five arms
+            // share the row shape: 64×64, aiStyle 6, friendly, penetrate
+            // −1, alpha 255, tileCollide false, ignoreWater (the overlay
+            // below); the stock timeLeft 3600 (`:787`) and extraUpdates 0
+            // (`:771`) stand. `Projectile.cs:897-912` (10) / `:913-923`
+            // (11) / `:5340-5350` (463) / `:9648-9658` (1019) /
+            // `:9967-9977` (1051). The 10's infectedSeed box growth
+            // (`:907-911`, width/height += /3*2 → 106×106) is applied at
+            // the data-carrying spawn (the `Main.infectedSeed` read is a
+            // world flag, not a row constant — `spawn_with_data_ai_owned`).
+            PURIFICATION_POWDER | VILE_POWDER | VICIOUS_POWDER | FERTILIZER
+            | SUPER_FERTILIZER => {
+                (64.0, 64.0, 6, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                    (false, -2, false, -1, 255, 1.0))
+            }
             // `Projectile.cs:1122-1130` — the grenade (30): 14x14, aiStyle 16,
             // `penetrate = -1`; `NewProjectile` pins `timeLeft = 180`
             // (`:10993-10996`).
@@ -1806,6 +2021,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             VILE_BASE | VILE_TIP => (
                 28.0,
                 28.0,
+                4,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d1 — `Projectile.cs:5667-5680`: the Crystal Vile Shard pair
+            // (493 head / 494 shaft): 32×32, aiStyle 4, `penetrate = -1`,
+            // `tileCollide = false`, `alpha = 255`, `ignoreWater` (the overlay
+            // below), `light = 0.2f` (the light slice), magic; the
+            // `armorPenetration = 10` (`:5679`) has no row consumer (the
+            // NETTLE_BURST precedent). The stock timeLeft 3600 (`:787`) and
+            // extraUpdates 0 (`:771`) stand.
+            CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT => (
+                32.0,
+                32.0,
                 4,
                 -1,
                 TIME_LEFT_DEFAULT,
@@ -2656,9 +2890,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `penetrate = 10` and `timeLeft /= 2` off the 3600 reset
             // (`:787`) — 1800.
             WATER_BOLT => (16.0, 16.0, 8, 10, 1800, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d1 SEAL — `Projectile.cs:9340-9353`: the SilverBullet
+            // (981): 4x4, aiStyle 1, friendly, `penetrate = 1`,
+            // `light = 0.5f` (the `set_defaults_light` row), `alpha = 255`,
+            // `scale = 1.2f`, `timeLeft = 600`, ranged, `extraUpdates = 1`.
+            // The stock `tileCollide = true` (`:775`) stands — the shot
+            // dies on tile contact (the blocked-move default, the
+            // `move_bullet` stand-in). The e3/d75-flagged unrowed sibling.
+            SILVER_BULLET => (4.0, 4.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
             // `:1162-1173` — the flamelash: 32x32, aiStyle 9, `penetrate =
             // 2`, the local-NPC immunity with the 12-tick cooldown.
             FLAMELASH => (32.0, 32.0, 9, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 12, false, -1, 0, 1.0)),
+            // W4-d1 SEAL — `Projectile.cs:5404-5412`: the FlyingKnife
+            // (491): 26x26, aiStyle 9, friendly, melee, `penetrate = -1`.
+            // The stock 3600 life (`:787`) / tileCollide true (`:775`) /
+            // extraUpdates 0 / alpha 0 / scale 1 stand — the arm writes NO
+            // override. The `AI_009_MagicMissiles` type-491 head
+            // (`:43197-43201`) delegates to the LIVE `_Old` machine
+            // (`ai_magic_missile_old`); the e3 RETIRE census's d1 task
+            // seed (research/125 §2).
+            FLYING_KNIFE => (26.0, 26.0, 9, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // `:1271-1282` — the demon sickle (the Demon/VoodooDemon's
             // hostile shot, `NPC.cs:23449`): 48x48, aiStyle 18, alpha 100,
             // `penetrate = -1`, `scale = 0.9f`; the spawn site overrides
@@ -3185,6 +3436,51 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // knockBack (8 / 6) is dropped — the spawner's input wins.
             42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            // W4-d1 wave 3 — the falling-block family (`AI_010`). The
+            // DirtBall 17 (`Projectile.cs:985-992`): 10x10, aiStyle 10,
+            // friendly, ignoreWater (the overlay below); the stock
+            // penetrate 1 (`:774`) / 3600 life / tileCollide true stand.
+            DIRT_BALL => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // The natural falls (`Projectile.cs:1131-1140` 31, `:1217-1226`
+            // 39, `:1227-1236` 40, `:1384-1393` 56): 10x10, aiStyle 10,
+            // friendly + hostile, `penetrate = -1`; the per-type
+            // `knockBack = 6f` is dropped — the spawner's input wins (the
+            // sand-row precedent above; `SpawnFallingBlockProjectile`
+            // passes KnockBack 0, `WorldGen.cs:86071`). The C# friendly +
+            // hostile pair rides the arm's damage gates (the row shape
+            // carries neither flag, ANALYSIS).
+            SAND_BALL_FALLING | MUD_BALL_FALLING | ASH_BALL_FALLING | EBONSAND_BALL_FALLING => {
+                (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d1 wave 3b — the remaining natural falls
+            // (`Projectile.cs:1467-1476` 67, `:1512-1521` 71, `:2650-2659`
+            // 179, `:3228-3237` 241, `:7953-7962` 812): the 31's shape
+            // verbatim — 10x10, aiStyle 10, friendly + hostile,
+            // `penetrate = -1`, the stock life / tileCollide; the
+            // `knockBack = 6f` drop is the sand-row precedent above.
+            PEARLSAND_BALL_FALLING | SILT_BALL_FALLING | SLUSH_BALL_FALLING
+            | CRIMSAND_BALL_FALLING | SHELL_PILE_FALLING => {
+                (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d1 wave 3c — the coin piles 411-414
+            // (`Projectile.cs:4933-4941`): 10x10, aiStyle 10 ONLY — the
+            // stock friendly false (`:788`) / hostile false (`:764`) /
+            // penetrate 1 (`:774`) / 3600 life stand (the arm touches
+            // neither flag; the empty switch is a decompilation remnant).
+            // The arm holds the C# friendly state and the PVE walk refuses
+            // them (`Damage_PVE_Inner` `:12611`, the debris precedent).
+            COPPER_COINS_FALLING | SILVER_COINS_FALLING | GOLD_COINS_FALLING
+            | PLATINUM_COINS_FALLING => {
+                (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d1 wave 3c — the player Mud Ball 1081
+            // (`Projectile.cs:10087-10094`): 12x12, aiStyle 10, friendly,
+            // `penetrate = -1`; the stock life / tileCollide stand. Its own
+            // 20-tick gravity delay (`:57997-58004`) + the side-slide death
+            // probe (`:77492-77502`) ride the falling arm.
+            MUD_BALL_PLAYER => {
+                (12.0, 12.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
             // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
             // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever
@@ -3305,9 +3601,30 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // tileCollide false, `alpha`/`ignoreWater` dropped) and the Acorn
             // Slingshot's acorn (`:10145-10149`: 20x20, aiStyle 16 — the port's
             // `ai_bomb`, pen -1). Without these rows the wire would drain the
-            // ammo and then decline the spawn.
+            // ammo and then decline the spawn. (W4-d1 retire: the seven
+            // SOLUTION sprays 146-149/1015-1017 are rowed below the 145 —
+            // the d18/f25 keep-one, the verbatim alpha-255/ignoreWater
+            // shape; the 145's own dropped pair stays its M3-ITEM-6 note.)
             85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
             145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE),
+            // W4-d1 retire (the spray compose — the d18/f25 DUP keep-one,
+            // research/352, registry-150 §9 chain 246→352): the seven
+            // solution sprays 146-149 /
+            // 1015-1017. `Projectile.cs:2350-2397` — the four 146-149
+            // blocks are LINE-IDENTICAL copies of the 145 arm; `:9633-9636`
+            // → `DefaultToSpray` (`:10691-10702`) for 1015-1017. Every
+            // block: 6x6, aiStyle 31, friendly, `alpha = 255`,
+            // `penetrate = -1`, `extraUpdates = 2`, `tileCollide = false`,
+            // `ignoreWater = true` (the overlay below), the stock 3600
+            // life (the arm caps it at 133), NO class flag, NO immunity
+            // pair. The d18 copy (`78ffe8e11`) is the keep-one survivor —
+            // it carries the alpha/ignoreWater the f25 copy (`5e83d3ecb`)
+            // dropped on the 145-precedent; the f25 rows fold into this
+            // one at merge (the ANALYSIS keep-one entry).
+            146..=149 | 1015..=1017 => (
+                6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             1088 => (20.0, 20.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
             // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
@@ -3784,6 +4101,51 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:886-896` — the Starfury star (9): 24x24, aiStyle 5,
             // `penetrate = 2`, `scale = 0.8f`, `tileCollide = false`, melee.
             STARFURY => (24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 0, 0.8)),
+            // W4-d1 — the aiStyle-5 falling-star family's unrowed kinds.
+            // `Projectile.cs:924-938` — the natural FallingStar (12): 18×18,
+            // aiStyle 5, penetrate −1, alpha 50, light 1 (the light slice),
+            // trap; the remix seed's `hostile = true` (`:929-932`) is a world
+            // flag, not a row constant (the stock friendly stands; the
+            // `Main.remixWorld` read rides the arm, ANALYSIS). The stock
+            // tileCollide true (`:775`) stands — the AI_005 arm arms it below
+            // the `ai[1]` floor.
+            FALLING_STAR_NATURAL => (
+                18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, true,
+                (false, -2, false, -1, 50, 1.0),
+            ),
+            // `Projectile.cs:5743-5756` — the Star Wrath star (503): 24×24,
+            // aiStyle 5, penetrate 2, alpha 255, tileCollide false, melee,
+            // extraUpdates 1, local immunity 15.
+            STAR_WRATH => (
+                24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 1, false, false, false,
+                (true, 15, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:7646-7658` — the cloak-star family (723/724/725/
+            // 726/1133): 24×24, aiStyle 5, penetrate 2, alpha 50, tileCollide
+            // false, local immunity 10; `armorPenetration = 25` (`:7657`) has
+            // no row consumer (the NETTLE_BURST precedent).
+            MANA_CLOAK_STAR | BEE_CLOAK_STAR | STAR_VEIL_STAR | STAR_CLOAK_STAR
+            | SNAKE_BAND_STAR => (
+                24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 10, false, -1, 50, 1.0),
+            ),
+            // `Projectile.cs:9780-9792` — the Meteor Whip meteor (1037):
+            // 24×24, aiStyle 5, scale 0.8, extraUpdates 1, alpha 254,
+            // tileCollide false, local immunity −1; the stock penetrate 1
+            // (`:774`) stands (the arm writes none).
+            METEOR_WHIP_METEOR => (
+                24.0, 24.0, 5, 1, TIME_LEFT_DEFAULT, 1, false, false, false,
+                (true, -1, false, -1, 254, 0.8),
+            ),
+            // `Projectile.cs:9938-9952` — the Meteor Staff meteor (1049):
+            // 24×24, aiStyle 5, hostile + friendly, scale 0.8, timeLeft 1200,
+            // extraUpdates 1, alpha 254, penetrate −1, tileCollide false,
+            // trap. The `hostile` flag rides the arm's `friendly = false`
+            // proxy (the hostile-spawn seam), not the row.
+            METEOR_STORM_METEOR => (
+                24.0, 24.0, 5, -1, 1200, 1, false, false, true,
+                (false, -2, false, -1, 254, 0.8),
+            ),
             // `Projectile.cs:1556-1593` — the harp notes (76/77/78): aiStyle 21,
             // `alpha = 100`, `penetrate = 5`, `timeLeft = 180`, ignoreWater; the
             // per-kind box (76: 10x22, 77: 18x24, 78: 22x24). The `switch (2)`
@@ -4159,6 +4521,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ))
             // `Projectile.cs:874-884`: the Vilethorn pair sets `ignoreWater`.
             || matches!(kind, VILE_BASE | VILE_TIP)
+            // W4-d1 — `Projectile.cs:5676`: the Crystal Vile Shard pair's
+            // `ignoreWater = true` (the shared `:5667-5680` arm).
+            || matches!(kind, CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT)
             // The slice-B pets set `ignoreWater` themselves
             // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
@@ -4211,7 +4576,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-d1 — the aiStyle-6 powder/fertilizer family's five arms
+            // all set `ignoreWater = true` (`Projectile.cs:906`/`:922`/
+            // `:5349`/`:9657`/`:9976`).
+            || POWDER_KINDS.contains(&kind)
+            // W4-d1 — `Projectile.cs:991`: the DirtBall 17's
+            // `ignoreWater = true` (the only falling-family kind that sets
+            // it; the natural falls' arms touch neither).
+            || kind == DIRT_BALL
+            // W4-d1 retire (the spray compose) — the seven solution sprays'
+            // `ignoreWater = true` (`Projectile.cs:2360`/`:2372`/`:2384`/
+            // `:2396` — the four 146-149 blocks — and `DefaultToSpray`
+            // `:10701` for 1015-1017). The 145 row's dropped
+            // alpha/ignoreWater stays the pre-existing M3-ITEM-6 deviation
+            // (its row comment), unchanged.
+            || matches!(kind, 146..=149 | 1015..=1017),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4246,6 +4626,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d1 — `Projectile.cs:5752`: the Star Wrath star's
+                    // `melee = true` (the Starfury 9's `:893` is the S1-P-i22
+                    // row's documented drop — the 503 carries it verbatim).
+                    | STAR_WRATH
+                    // W4-d1 SEAL — `Projectile.cs:5410`: the FlyingKnife's
+                    // `melee = true`.
+                    | FLYING_KNIFE
             ),
         ranged: matches!(
             kind,
@@ -4275,6 +4662,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-d1 SEAL — `Projectile.cs:9351`: the SilverBullet's
+            // `ranged = true`.
+                | SILVER_BULLET
         ),
         magic: matches!(
             kind,
@@ -4296,6 +4686,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // Skulls (837, `:8131`), the Wand of Sparking spark (954,
             // `:9008`).
             VILE_BASE | VILE_TIP
+                // W4-d1 — `Projectile.cs:5677`: the Crystal Vile Shard pair's
+                // `magic = true` (the shared `:5667-5680` arm).
+                | CRYSTAL_VILE_HEAD | CRYSTAL_VILE_SHAFT
                 | BALL_OF_FIRE | MAGIC_MISSILE | GREEN_LASER | WATER_BOLT | FLAMELASH
                 | DEMON_SCYTHE | RAINBOW_ROD_BULLET | ICE_BLOCK | PURPLE_LASER
                 | CRYSTAL_STORM | CURSED_FLAME_FRIENDLY
@@ -4751,6 +5144,11 @@ mod tests {
         // flag (`:2338-2349`/`:10145-10152`) — the census stays exact.
         assert_eq!(flags(145), (false, false, false));
         assert_eq!(flags(1088), (false, false, false));
+        // W4-d1 retire (the spray compose) — the seven solution sprays set
+        // none either (`:2350-2397`/`DefaultToSpray` `:10691-10702`).
+        for k in (146..=149).chain(1015..=1017) {
+            assert_eq!(flags(k), (false, false, false), "kind {k}");
+        }
         // The magic spells.
         assert_eq!(flags(CRYSTAL_STORM), (false, false, true));
         assert_eq!(flags(SPARK), (false, false, true));
@@ -4780,6 +5178,38 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// W4-d1 retire (the spray compose — the d18/f25 DUP keep-one): the
+    /// seven solution-spray rows (`Projectile.cs:2350-2397` the four
+    /// 146-149 blocks, `:9633-9636` → `DefaultToSpray` `:10691-10702` for
+    /// 1015-1017): every block is the 145 shape VERBATIM — 6x6, aiStyle
+    /// 31, penetrate −1, the stock 3600 life (the arm caps it at 133),
+    /// extraUpdates 2, tileCollide false, alpha 255, ignoreWater true, NO
+    /// class flag, NO immunity pair. The d18 copy (`78ffe8e11`) is the
+    /// keep-one survivor (the alpha/ignoreWater the f25 copy dropped).
+    /// WRITTEN NOT RUN (code-only retire round).
+    #[test]
+    fn w4_d1_retire_the_solution_spray_rows_are_the_145_shape() {
+        for k in (146..=149u16).chain(1015..=1017) {
+            let d = proj_data(k).unwrap_or_else(|| panic!("kind {k} row"));
+            assert_eq!((d.w, d.h), (6.0, 6.0), "kind {k} box");
+            assert_eq!(d.ai_style, 31, "kind {k} style");
+            assert_eq!(d.penetrate, -1, "kind {k} penetrate");
+            assert_eq!(d.time_left, 3600, "kind {k} stock life");
+            assert_eq!(d.extra_updates, 2, "kind {k} extraUpdates");
+            assert!(!d.tile_collide, "kind {k} tileCollide false");
+            assert!(d.ignore_water, "kind {k} ignoreWater (`:2360`/`:10701`)");
+            assert_eq!(d.alpha, 255, "kind {k} alpha (`:2356`/`:10697`)");
+            assert!(!d.uses_local_immunity && !d.uses_id_static_immunity, "kind {k} stock immunity");
+            assert!(!d.melee && !d.ranged && !d.magic, "kind {k} no class flag");
+            assert!(!d.arrow && !d.trap, "kind {k} no arrow/trap flag");
+        }
+        // The rows enter the atlas pack set (the sheets exist for all seven).
+        let spawnable = spawnable_kinds();
+        for k in (146..=149u16).chain(1015..=1017) {
+            assert!(spawnable.contains(&k), "kind {k} packs");
+        }
     }
 
     #[test]
