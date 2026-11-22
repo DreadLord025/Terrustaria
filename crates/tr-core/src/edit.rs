@@ -16,8 +16,8 @@ mod wall;
 // the i33 copy reads the full 279-wall Main.wallHouse, the C# table the
 // Player.cs:45924 gate actually reads, not the housing room-check subset).
 pub use wall::{
-    break_wall, can_player_smash_wall, kill_wall_drop, kill_wall_sound, near_friendly_wall,
-    place_wall, replace_wall, wall_house, WALL_COUNT,
+    break_wall, can_player_smash_wall, kill_wall, kill_wall_drop, kill_wall_sound,
+    near_friendly_wall, place_wall, replace_wall, wall_house, WallBreak, WALL_COUNT,
 };
 mod hammer;
 pub use hammer::{
