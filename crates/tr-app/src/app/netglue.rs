@@ -889,6 +889,31 @@ impl App {
             | C2s::PlayerZone(_)
             | C2s::ItemAnim(_)
             | C2s::ManaEffect(_) => {}
+            // S1-I-1 wave E: 51 MiscDataSync (`MessageBuffer.cs:2482-2530`
+            // subject forcing + the kind ladder) + 61 SpawnBossInvader
+            // (`:2740-2878`'s selector ladder) — bodies + codecs in `net.rs`;
+            // the apply/relay arms land with the send-path pass (S1-I-4).
+            C2s::MiscDataSync(_) | C2s::SpawnBossEvent(_) => {}
+            // 65 TeleportEntity (`MessageBuffer.cs:2949-3035` kind ladder +
+            // ack decrement) + 73 RequestTeleport (`:3127-3146` conch/
+            // potion/shellphone dispatch) — same wave, same parking.
+            C2s::TeleportEntity(_) | C2s::RequestTeleport(_) => {}
+            // 75 AnglerQuestFinished (`MessageBuffer.cs:3154-3163` adds the
+            // sender's name to anglerWhoFinishedToday) — same wave, same
+            // parking.
+            C2s::AnglerQuestFinished => {}
+            // 96's client half (`PortalHelper.cs:190` send; the host forces
+            // the subject and relays, `MessageBuffer.cs:3538-3555`) — same
+            // wave, same parking.
+            C2s::PlayerPortalTeleport(_) => {}
+            // 113 DD2 crystal placement (`MessageBuffer.cs:3841-3854`
+            // WouldFailSpawningHere + SummonCrystal on the sender) — same
+            // wave, same parking.
+            C2s::CrystalInvasionStart(_) => {}
+            // 141's client half (`LucyAxeMessage.cs:133`; the host relays,
+            // `MessageBuffer.cs:4272-4275`) + 143 DD2 skip-wait
+            // (`:4298-4303` AttemptToSkipWaitTime) — same wave, same parking.
+            C2s::LucyPopup(_) | C2s::CrystalInvasionSkip => {}
         }
     }
 
@@ -2085,6 +2110,35 @@ impl App {
             | S2c::PlayerZone(_)
             | S2c::ItemAnim(_)
             | S2c::ManaEffect(_) => {}
+            // S1-I-1 wave E: 51's kind-2 rod-sound echo
+            // (`MessageBuffer.cs:2500-2503` SoundID.Item1) — same wave, same
+            // parking.
+            S2c::MiscDataSync(_) => {}
+            // 65's host teleport broadcast (`MessageBuffer.cs:2985-3028`
+            // Teleport + netOffset zero + the nearest-peer chat) — same
+            // wave, same parking.
+            S2c::TeleportEntity(_) => {}
+            // 77 SyncTilePicking (`MessageBuffer.cs:3183-3185`
+            // Animation.NewTemporaryAnimation) — same wave, same parking.
+            S2c::TemporaryAnimation(_) => {}
+            // 78 ReportInvasionProgress (`MessageBuffer.cs:3186-3191`
+            // Main.ReportInvasionProgress) + 96's relay (`:3538-3557`
+            // parity flip + style-4 teleport) — same wave, same parking.
+            S2c::InvasionProgress(_) | S2c::PlayerPortalTeleport(_) => {}
+            // 103 Moon Lord countdown (`MessageBuffer.cs:3708-3714` stores
+            // both statics) + 112 SpecialFX (`:3815-3840` TreeGrowFX /
+            // FairyEffects) — same wave, same parking.
+            S2c::MoonlordCountdown(_) | S2c::SpecialFx(_) => {}
+            // 114 DD2 wipe (`MessageBuffer.cs:3855-3860`
+            // DD2Event.WipeEntities on the client) — same wave, same parking.
+            S2c::CrystalInvasionWipe => {}
+            // 116 DD2 wave countdown (`MessageBuffer.cs:3861-3866`) + 127
+            // revenge-marker removal (`:4049-4057` DestroyMarker) — same
+            // wave, same parking.
+            S2c::CrystalInvasionWait(_) | S2c::RemoveRevengeMarker(_) => {}
+            // 141's relay (`MessageBuffer.cs:4278` CreateFromNet) — same
+            // wave, same parking.
+            S2c::LucyPopup(_) => {}
         }
     }
 
