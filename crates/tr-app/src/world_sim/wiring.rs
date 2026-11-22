@@ -456,13 +456,18 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         if let Some(id) = crate::registry::tile_drop(drop.tile_kind, 0) {
             // The spawn joins the wiring block's own seeded stream (the
             // S1-L-6c contract; the C# truth is `UpdateWorldGen` — ANALYSIS).
+            // The position is the C# `Item.NewItem` rect CENTRE (the g78
+            // FIX-ONCE, `ObjectDrop::spawn_center_px`).
             let rng = app.wiring.rand_mut();
-            // W4-g78 FIX-ONCE (research/375 §2): the actuation cascade's
-            // `Check*` drops spawn at the C# rect CENTRE (the obsolete
-            // `Item.NewItem` overload's `X + Width/2`, `Item.cs:49651`),
-            // not the tile top-left — `ObjectDrop::spawn_centre_px` carries
-            // the per-kind rect (32×32 furniture / 16×16 doors + on-table).
-            let (cx, cy) = drop.spawn_centre_px();
+            // W4-g78 FIX-ONCE (research/375 §2) × g34 (research/68 §7.4, the
+            // batch-H keep-one): the actuation cascade's `Check*` drops spawn
+            // at the C# rect CENTRE (the obsolete `Item.NewItem` overload's
+            // `X + Width/2`, `Item.cs:49651`). The rect census is g34's
+            // superset `spawn_center_px` (32×32 furniture / 16×16 doors +
+            // on-table / 48×32 oasis-echo + worm-cages); this uncontested
+            // actuation site keeps g78's centre-accurate `spawn_item_drop_centre`
+            // drain (the box-centre convention, the exact-centre witness).
+            let (cx, cy) = drop.spawn_center_px();
             crate::world_sim::items::spawn_item_drop_centre(
                 &mut app.items,
                 rng,

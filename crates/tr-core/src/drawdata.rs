@@ -100,11 +100,12 @@ impl Default for TileDrawData {
 /// `x % 2 == 0` sprite flip, both feed case 751/207 arithmetic), `frame_x`/
 /// `frame_y` the tile's framing, `tile_frame` the animation row
 /// `Main.tileFrame[kind]` (0 until the animator is ported — the vanilla t=0
-/// state), and `solid_above` is the caller's "solid tile above" probe — the
-/// tile at `(x, y - 1)` is active, in `TILE_SOLID` and not in
-/// `TILE_SOLID_TOP` (`render/tiles.rs:371-373`; the C# analogue is the
-/// `WorldGen.SolidTile(x, y - 1)` probe of case 4,
-/// TileDrawing.cs:4672-4679). World/engine-dependent
+/// state), and `solid_above` is the caller's `WorldGen.SolidTile(x, y - 1)`
+/// probe (`WorldGen.cs:70111-70132`): the tile at `(x, y - 1)` is active, in
+/// `TILE_SOLID`, not in `TILE_SOLID_TOP`, not half-brick, slope 0 and not
+/// actuated-inactive (a null tile is `true`). Fed from
+/// `drawdata_cases_a::solid_tile` (`render/tiles.rs`); the C# analogue is
+/// case 4's probe, TileDrawing.cs:4672-4679. World/engine-dependent
 /// sub-branches keep their unconditional static part; everything else is a
 /// documented deviation.
 pub fn draw_data(
@@ -660,8 +661,10 @@ pub fn draw_data(
             data.top = 2;
         }
         // `case 441 / 468` — FakeContainers: 18 px tall on the
-        // `tileFrameY == 18` row; the `tileFrameY` rewrite needs
-        // `Animation.GetTemporaryFrame` (5342-5356) — documented deviation.
+        // `tileFrameY == 18` row; the `tileFrameY` rewrite
+        // (`Animation.GetTemporaryFrame`, 5342-5356) is scaffolded in
+        // `drawdata_cases_b` (W4-g34, d63/d64 R13) — behaviour-neutral while
+        // the registry is empty.
         441 | 468 => {
             if fy == 18 {
                 data.height = 18;
@@ -706,8 +709,10 @@ pub fn draw_data(
             data.add_fr_y = (n34 * 54) as i16;
         }
         // `case 455` — PartyMonolith: addFrY 0, top 2; the extra row applies
-        // only while `BirthdayParty.PartyIsUp` (5397-5408), which the port
-        // treats as always false.
+        // only while `BirthdayParty.PartyIsUp` (5397-5408). The static table
+        // carries the party-down state; the live `drawdata_cases_b` arm feeds
+        // the real flag (W4-g34 doc-sweep: the old "always false" comment
+        // described the pre-wiring behaviour).
         455 => {
             data.add_fr_y = 0;
             data.top = 2;
@@ -797,11 +802,14 @@ pub fn draw_data(
             data.add_fr_y = (tile_frame * 36) as i16;
             data.top = 2;
         }
-        // `case 564` — PlasmaLamp: shares the 217/218 arm in C# (5523-5528)
-        // but the glow switch then unconditionally clears addFrY (6105-6113),
-        // so the net result is top 2 with no animation offset.
+        // `case 564` — PlasmaLamp: shares the 217/218 arm in C# (5523-5528):
+        // `addFrY = tileFrame * 36`, top 2. The glow switch's unconditional
+        // `addFrY = 0` (6112) is applied by `drawdata_cases_a` AFTER it reads
+        // the pre-clear row for the glow rect (6109) — W4-g34 deviation fix
+        // (d63 batch 4 / d64 R15): the clear must not ride here, or the rect
+        // loses the animation row.
         564 => {
-            data.add_fr_y = 0;
+            data.add_fr_y = (tile_frame * 36) as i16;
             data.top = 2;
         }
         // `case 219 / 220 / 642` — Extractinator family: animation row * 54,
@@ -863,8 +871,11 @@ pub fn draw_data(
             data.flip = flip_x;
         }
         // `case 428` — WeightedPressurePlate: top 4;
-        // `PressurePlateHelper.PressurePlatesPressed` would add addFrX 18 —
-        // the port treats plates as not pressed (TileDrawing.cs:5605-5611).
+        // `PressurePlateHelper.PressurePlatesPressed` adds addFrX 18 — the
+        // static table carries the not-pressed state; the live
+        // `drawdata_cases_b` arm feeds the real pressed flag
+        // (TileDrawing.cs:5605-5611; W4-g34 doc-sweep: the old "not pressed"
+        // comment described the pre-wiring behaviour).
         428 => {
             data.top += 4;
         }
@@ -1042,8 +1053,9 @@ pub fn draw_data(
         data.top = 2;
     }
     // The halfBrick epilogue (TileDrawing.cs:6045-6048) and the glow switch
-    // (6049-, except 564's addFrY reset handled above) live in the tile pass
-    // / TILE-DRAW-2 respectively.
+    // (6049-, including 564's addFrY reset, which rides drawdata_cases_a's
+    // delta after the rect reads the pre-clear row — W4-g34) live in the tile
+    // pass / TILE-DRAW-2 respectively.
 
     data
 }
@@ -1903,9 +1915,12 @@ mod tests {
         assert_eq!((extr.top, extr.add_fr_y), (2, 216));
         // Kinds outside the switch keep the global default * 38.
         assert_eq!(dd(1, 0, 0, 0, 0, 3).add_fr_y, 114);
-        // Dirty: 564's glow-switch reset (TileDrawing.cs:6105-6113) zeroes the
-        // row that 217/218 keep.
-        assert_eq!(dd(564, 0, 0, 0, 0, 3).add_fr_y, 0);
+        // W4-g34: 564 shares the 217/218 first-switch arm (tileFrame * 36);
+        // the glow-switch reset (TileDrawing.cs:6112) now rides
+        // drawdata_cases_a's delta AFTER the rect reads the pre-clear row, so
+        // the static table keeps the row here (the old port folded the clear
+        // in and the glow rect lost it — d63 batch 4 / d64 R15).
+        assert_eq!(dd(564, 0, 0, 0, 0, 3).add_fr_y, 108);
         assert_eq!(dd(564, 0, 0, 0, 0, 3).top, 2);
         assert_eq!(dd(217, 0, 0, 0, 0, 3).add_fr_y, 108);
         assert_eq!(dd(218, 0, 0, 0, 0, 3).add_fr_y, 108);
@@ -2902,8 +2917,9 @@ mod tests {
     #[test]
     fn test_DW_4_2_solid_above_scope() {
         // The doc on `draw_data` must describe the caller's actual predicate
-        // (render/tiles.rs:371-373: active && TILE_SOLID && !TILE_SOLID_TOP),
-        // not claim solid_above *is* WorldGen.SolidTile.
+        // (W4-g34: the full WorldGen.SolidTile, fed from
+        // drawdata_cases_a::solid_tile), naming the solid/solid-top sets and
+        // the active flag.
         let src = include_str!("drawdata.rs");
         let doc = &src
             [src.find("/// `kind` is `Tile.type`").unwrap()..src.find("pub fn draw_data").unwrap()];
@@ -2912,6 +2928,10 @@ mod tests {
         assert!(
             doc.contains("TILE_SOLID_TOP"),
             "doc must state the solid-top exclusion"
+        );
+        assert!(
+            doc.contains("WorldGen.SolidTile"),
+            "doc must name the full C# predicate (W4-g34 deviation fix)"
         );
         // And the parameter is consumed only by the torch arm: flipping
         // solid_above changes nothing anywhere else

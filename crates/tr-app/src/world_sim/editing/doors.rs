@@ -11,6 +11,7 @@
 //! `bed_spawn_valid`/`check_bed_spawn` are `pub(crate) use`-re-exported so
 //! `player.rs`/`world_sim/player.rs` stay unchanged.
 
+use glam::Vec2;
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, edit};
 
@@ -19,7 +20,7 @@ use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::registry;
 
-use super::super::items::spawn_item_drop;
+use super::super::items::spawn_item_drop_px;
 
 /// The right-click interaction hook (the port's `TileInteractionsUse`):
 /// dispatches the world interaction at `(tx, ty)` through
@@ -416,11 +417,13 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             }
         }
     }
-    for (id, x, y) in drops {
+    for (id, px, py) in drops {
         // The tile-interaction drops ride the `UpdatePlayers` stream (the
-        // interaction runs in `Player.ItemCheck`, `Main.cs:17754`).
+        // interaction runs in `Player.ItemCheck`, `Main.cs:17754`). The
+        // positions are PIXELS — the C# `Item.NewItem` rect centre (the g78
+        // FIX-ONCE, `ObjectDrop::spawn_center_px`).
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        spawn_item_drop(&mut app.items, rng, id, 1, x, y);
+        spawn_item_drop_px(&mut app.items, rng, id, 1, Vec2::new(px, py));
     }
     app.world_key = None;
     true
@@ -441,10 +444,12 @@ fn within_snapping_range(p: &crate::player::Player, tx: i32, ty: i32, distance: 
 /// door/dial cue and the drop spawns. `None` = no interaction (fall-through
 /// to the place path); a blocked door or a refused dial yields no cue
 /// (vanilla plays `PlaySound(8/:9)`/`SoundID.Item4` only on the fired paths),
-/// while the click still counts as consumed.
+/// while the click still counts as consumed. The drop positions are PIXELS
+/// — the C# `Item.NewItem` rect centre (`ObjectDrop::spawn_center_px`, the
+/// g78 FIX-ONCE).
 fn interaction_events(
     result: edit::TileInteraction,
-) -> Option<(Option<&'static str>, Vec<(u16, i32, i32)>)> {
+) -> Option<(Option<&'static str>, Vec<(u16, f32, f32)>)> {
     let (cue, object_drops) = match result {
         edit::TileInteraction::None => return None,
         edit::TileInteraction::DoorOpened { object_drops } => (Some("Door_Opened"), object_drops),
@@ -488,7 +493,12 @@ fn interaction_events(
     };
     let events = object_drops
         .iter()
-        .filter_map(|d| registry::tile_drop(d.tile_kind, 0).map(|id| (id, d.x, d.y)))
+        .filter_map(|d| {
+            registry::tile_drop(d.tile_kind, 0).map(|id| {
+                let (px, py) = d.spawn_center_px();
+                (id, px, py)
+            })
+        })
         .collect();
     Some((cue, events))
 }
@@ -724,7 +734,9 @@ mod tests {
         })
         .unwrap();
         assert_eq!(cue, Some("Door_Opened")); // PlaySound(8), WorldGen.cs:37732
-        assert_eq!(events, vec![(25, 10, 18)]); // GetDoorItem(0) = 25
+        // GetDoorItem(0) = 25; the 16x16 door rect centre (10*16+8, 18*16+8)
+        // — the g78 FIX-ONCE (`ObjectDrop::spawn_center_px`).
+        assert_eq!(events, vec![(25, 168.0, 296.0)]);
 
         let (cue, events) = interaction_events(TileInteraction::DoorClosed {
             object_drops: vec![],
@@ -745,7 +757,8 @@ mod tests {
         })
         .unwrap();
         assert_eq!(cue, None);
-        assert_eq!(events, vec![(32, 10, 17)]);
+        // The cleanup table drop: the 32x32 rect centre (10*16+16, 17*16+16).
+        assert_eq!(events, vec![(32, 176.0, 288.0)]);
     }
 
     #[test]

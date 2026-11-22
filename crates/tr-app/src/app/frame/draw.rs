@@ -405,9 +405,12 @@ impl App {
                         // mute the dial light while one ticks (0..=8, u8 on World).
                         sundial_cooldown: i32::from(world.sundial_cooldown),
                         moondial_cooldown: i32::from(world.moondial_cooldown),
-                        // `Main.jellyfishCageMode`: `Main.AnimateTiles` is not ported, so
-                        // every cage stays in mode 0.
-                        cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
+                        // `Main.jellyfishCageMode` (`Main.cs:66948`): the wired
+                        // critter-cage animator's mode bytes (W4-g34 union). The
+                        // scanner's jellyfish arm (`TileLightScanner.cs:714-768`)
+                        // brightens the cage while mode == 2; feeding the live
+                        // table keeps that pulse in step with the draw frames.
+                        cage_mode: self.cage_anim.jellyfish_mode,
                         rng_seed: self.light_rng_seed,
                         // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
                         // W4-g78 wired — the EchoMonolith scan + the 4409/5345
@@ -1027,10 +1030,44 @@ impl App {
                                     })
                                 })
                             });
-                            if any_animated {
+                            let base = if any_animated {
                                 self.tile_anim.anim_key()
                             } else {
                                 0
+                            };
+                            // W4-g34 union (research/67 §2.4): ALL 92
+                            // critter-cage ids animate through the SEPARATE
+                            // cage tables (`AnimateTiles_CritterCages`), not
+                            // `tileFrame`, and none is in `is_animated_kind`'s
+                            // gate set — so they need their own contribution.
+                            // Gated on ANY cage kind being active in the view
+                            // rect (the same convention); a cage-free view
+                            // keeps the pre-wiring key bit-for-bit. A
+                            // lane-2-only gate would leave the g33-half cages
+                            // (bunny 275, penguin, owl, ...) animating with a
+                            // stale key under the union wiring.
+                            let any_cage = (vy0..=vy1).any(|ty| {
+                                (vx0..=vx1).any(|tx| {
+                                    world.tile(tx, ty).is_some_and(|t| {
+                                        t.active()
+                                            && tr_core::drawdata_furniture::is_cage_kind(
+                                                t.kind,
+                                            )
+                                    })
+                                })
+                            });
+                            if any_cage {
+                                // Mix the cage key into the tile-animator key
+                                // with one more FNV round so the two inputs
+                                // cannot collide with a tile-only state.
+                                let mut h = base;
+                                for b in self.cage_anim.anim_key().to_le_bytes() {
+                                    h ^= b as u64;
+                                    h = h.wrapping_mul(0x0000_0100_0000_01b3);
+                                }
+                                h
+                            } else {
+                                base
                             }
                         },
                         net_key: {
@@ -1206,6 +1243,11 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-g34 union: the critter-cage animator's tables
+                            // + the `Main.critterCage` proximity flag the pass
+                            // raises (`TileDrawing.cs:474`/`:5672`).
+                            &self.cage_anim,
+                            &mut self.critter_cage,
                         );
                         *world_key = Some(key);
                     }

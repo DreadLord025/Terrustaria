@@ -86,6 +86,9 @@ per `docs/superpowers` agreements).
 | 375 | SIGHT-RETIRE seal (W4-g78: the c42 §3.1-consumed seal (MonolithToggle/use_switch_monolith f173fb88d); the ObjectDrop centre-gap FIX-ONCE core LANDED (spawn_centre_px + spawn_item_drop_centre + the actuation drain wired) + the contested drains' hunk locations; the held-3002 held_3002_tick LANDED + the caller hunks; the d9/d13/d56 dedupe EXACT delete line-ranges; the sight-family bible — every mechanic's final owner + status; code-only) — rename-chain note: 78→375 (registry-150 §10.2; 78 belongs to c40's earlier doc-sweep-weather, 06:57:53) | `375-sight-retire-seal.md` | ✅ |
 
 | 382 | W4-g81 WIRE-DRAW SEAL: the compose verdicts (c42 arms / f11 radial-drops / d13 pool-keep-one / g86 outline+icon-override / g78 disjoint), the junction-box correction (423/424/445 NOT in HasOutlines, no MouseOver arm - no such C# hover highlight; the 423 range rect is the always-on DrawWires box), the MassWireOperation c42-owned confirmation, the ghost alpha-0 additive fix, the wire-draw-family bible; code-only (chain: 283-self-contested → 382, f26's §7.3 reservation keeps 283) | `382-g81-wire-draw-seal.md` | SEALED |
+| 66 | DrawData unwired-arm census SECOND half + wiring (W4-g34: the 50 small-animal/water/jellyfish cage ids; union-executed per research/67) | `66-drawdata-unwired-second-half.md` | ✅ |
+| 67 | Cage-animator triple-dup reconcile (W4-g34 merger assist: f14/g33/g34 KEEP/DROP + the union execution record) | `67-cage-animator-reconcile.md` | ✅ |
+| 68 | Cage critter items census + break-drop cascade + SEAL (W4-g34: the 92-kind union, the d105 Chillet port, the g78 centre-gap FIX-ONCE, the cage-family bible) | `68-cage-critter-items-census.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

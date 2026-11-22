@@ -16,13 +16,17 @@ use crate::world::World;
 /// One object destruction the kill cascade performed — the world-state effect
 /// of a `WorldGen.Check*` routine (`WorldGen.cs:57923/:86339/:86432/:43335/
 /// :46973/:49187`): the whole object was removed and vanilla would spawn
-/// `Item.NewItem` with the rect origin at `(x, y)` (tile coordinates; the
-/// rect is 32x32 px for furniture, 16x16 for doors). `tile_kind` is the
-/// object's tile id; `item` carries the id only when the `Check*` body spawns
-/// the item itself — the sunflower's `Item.NewItem(…, 63)`
+/// `Item.NewItem` with the rect TOP-LEFT at `(x, y)` (tile coordinates).
+/// `tile_kind` is the object's tile id; `item` carries the id only when the
+/// `Check*` body spawns the item itself — the sunflower's `Item.NewItem(…, 63)`
 /// (`WorldGen.cs:53787-53791`); `None` resolves app-side through
 /// `registry::tile_drop` (style-0 drops: door 25, table 32, chair 34, bench
 /// 36, chest 48 — `WorldGen.cs:69204/:42194/:42635/:42447/:41677`).
+///
+/// W4-g34 (the g78 centre-gap FIX-ONCE): the rect enters `Item.NewItem` ONLY
+/// through the centre conversion (`Item.cs:49651` — `center = (X + Width/2,
+/// Y + Height/2)`); [`ObjectDrop::spawn_center_px`] resolves it once for every
+/// consumer instead of per-check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct ObjectDrop {
     pub tile_kind: u16,
@@ -33,29 +37,35 @@ pub struct ObjectDrop {
 }
 
 impl ObjectDrop {
-    /// W4-g78 — the FIX-ONCE centre conversion (research/375 §2). EVERY C#
-    /// `Check*` routine spawns through the obsolete `Item.NewItem(source,
-    /// X, Y, Width, Height, …)` overload (`Item.cs:49649-49652`): the rect
-    /// becomes `center = (X + Width/2, Y + Height/2)` — a 32×32 furniture
-    /// rect centred at `(x*16 + 16, y*16 + 16)`, a 16×16 door rect
-    /// (`DropDoorItem` `WorldGen.cs:69409-69416`) at `(x*16 + 8, y*16 + 8)`.
-    /// The C# `WorldItem` box is 16×16 (`WorldItem.cs:138`), so the drop's
-    /// top-left is `center − 8`. The app spawns the port's 14×14 box at
-    /// `centre − SIZE/2` (the same box-centre convention).
+    /// The `Item.NewItem` spawn CENTRE in pixels — the rect top-left
+    /// `(x*16, y*16)` plus half the rect (`Item.cs:49649-49651`). The rect is
+    /// the C# check's own: 32x32 for the furniture/cage/object checks (every
+    /// `Check*` `Item.NewItem` in `WorldGen.cs:37855-57984` reads `32, 32`
+    /// except the arms below), 16x16 for the door drops (`DropDoorItem`,
+    /// `WorldGen.cs:69414`) and the `CheckOnTable1x1` single-cell kill's
+    /// per-cell drop (`KillTile_DropItems`, `:63955` — 13/33/49/78), and
+    /// 48x32 for the two wide echo arms (`case 705` the oasis echo
+    /// `:49454`, `case 391-394` the worm cages `:49481`).
     ///
-    /// The rect census (research/375 §2): every producer's own `NewItem` is
-    /// 32×32 EXCEPT the closed/open door checks (10/11 — 16×16 via
-    /// `DropDoorItem`) and the on-table 1×1 group (13/33/49/78 —
-    /// `CheckOnTable1x1` `WorldGen.cs:43503-43546` spawns NOTHING itself;
-    /// the drop rides `KillTile`'s per-cell 16×16 `:63955`). The chandelier
-    /// coin arms (`:52913`/`:52929`'s 52×52 at −10,−10 — centre lands at
-    /// +16 anyway) are `PileLootEvent` business, not `ObjectDrop`.
-    pub fn spawn_centre_px(&self) -> (f32, f32) {
-        let half = match self.tile_kind {
-            10 | 11 | 13 | 33 | 49 | 78 => 8.0,
-            _ => 16.0,
+    /// Batch-H keep-one (g78 research/375 §2 × g34 research/68 §7.4): the
+    /// g34 superset is the ONE fn — it carries the g78 rect census PLUS the
+    /// 48×32 wide arms; the g78 `spawn_center_px` twin dropped, its callers
+    /// re-pointed here. The C# `WorldItem` box is 16×16 (`WorldItem.cs:138`);
+    /// the app spawns the port's 14×14 box at `centre − SIZE/2` (the same
+    /// box-centre convention, `spawn_item_drop_centre`).
+    pub fn spawn_center_px(&self) -> (f32, f32) {
+        let (hw, hh) = match self.tile_kind {
+            // `DropDoorItem` (:69414) + the on-table 1x1 per-cell drop
+            // (:63955): 16x16 → centre +8.
+            10 | 11 | 13 | 33 | 49 | 78 => (8.0, 8.0),
+            // The 48x32 rects (:49454/:49481): centre +24 x, +16 y.
+            391..=394 | 705 => (24.0, 16.0),
+            _ => (16.0, 16.0),
         };
-        (self.x as f32 * 16.0 + half, self.y as f32 * 16.0 + half)
+        (
+            self.x as f32 * crate::TILE_PX + hw,
+            self.y as f32 * crate::TILE_PX + hh,
+        )
     }
 }
 
@@ -87,14 +97,18 @@ pub struct HerbEvent {
     pub y: i32,
 }
 
-/// One broken 2x1 pile's loot block — `Check2x1`'s `Item.NewItem` table for
-/// tile 185 (`WorldGen.cs:47130-47245`), keyed on the origin cell's `frameX`
-/// (the right cell's when the origin already died). The app resolves the
-/// `genRand` coin/ore counts (phase 3); a `Check*`-level `Item.NewItem`, so it
-/// is not `noItem`-gated. `kind` disambiguates the two pile loot blocks:
-/// 185's 2x1 coin/ore table (`Check2x1`, `WorldGen.cs:47130-47245`) and
-/// 187's sword-in-stone roll (`Check3x2`'s `case 187`,
-/// `WorldGen.cs:49828-49839`).
+/// One broken pile's loot block — a `Check*`-level `Item.NewItem` whose count
+/// or item needs an RNG roll the core defers to the app (phase 3). Not
+/// `noItem`-gated (the C# spawns it inside the check, not `KillTile_DropItems`).
+/// `kind` disambiguates the loot blocks:
+/// * 185 — the 2x1 coin/ore table (`Check2x1`, `WorldGen.cs:47130-47245`),
+///   keyed on the origin cell's `frameX` (the right cell's when the origin
+///   already died); the app rolls the `genRand` coin/ore counts.
+/// * 187 — the sword-in-stone roll (`Check3x2`'s `case 187`,
+///   `WorldGen.cs:49828-49839`); the app rolls `Main.rand.Next(30)`.
+/// * 488 — the fallen log's wood stack (`Check3x2`'s `case 488`,
+///   `WorldGen.cs:49553`): `Item.NewItem(…, 9, genRand.Next(10, 21))`; the app
+///   rolls the `genRand` stack count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct PileLootEvent {
     pub kind: u16,
@@ -655,18 +669,24 @@ struct CheckPlan {
 /// `Check*` routine for the cell's registry kind and returns its destruction
 /// plan. Cell routines: 10 → `CheckDoorClosed` (:86432), 11 →
 /// `CheckDoorOpen` (:86339), 13/33/49/78 → `CheckOnTable1x1` (:43503, the
-/// 13/33/49/50/78/174/372/646/707 group at :85604-85614), 14/87/88/186/187 →
-/// `Check3x2` (:49187, dispatch :85980-85989), 15 → `Check1x2` (:43335),
-/// 18 → `Check2x1` (:46973), 21 → `CheckChest` (:57923, via
+/// 13/33/49/50/78/174/372/646/707 group at :85604-85614), 15 → `Check1x2`
+/// (:43335), 18 → `Check2x1` (:46973), 21 → `CheckChest` (:57923, via
 /// `TileID.Sets.BasicChest` :85616-85619), 27 → `CheckSunflower` (:85639),
-/// 28 → `CheckPot` (:85643), 34 → `Check3x3` (:53059), 42 → `Check1x2Top`
-/// (:46706), 79/90 → `Check4x2` (:47408), 82/83/84 → `CheckAlch` (the
-/// `Main.tileAlch` default arm, :85830-85832), 93 → `Check1xX` (:37788),
-/// 100/172 → `Check2x2`'s default (:48397), 101 → `Check3x4` (:50076),
+/// 28 → `CheckPot` (:85643), 34 → `Check3x3` (:53059), 79/90 → `Check4x2`
+/// (:47408), 82/83/84 → `CheckAlch` (the `Main.tileAlch` default arm,
+/// :85830-85832), 93 → `Check1xX` (:37788), 101 → `Check3x4` (:50076),
 /// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275), 219/642 →
 /// `Check3x3`'s bottom-support arm (:53059, the `:53114` support group — the
 /// M7-EXTRACT-1 extractinators; tile 34's is the ceiling arm, the `else` at
 /// `:53129-53139`).
+///
+/// W4-g34 (the cage break-drop cascade, research/68 §2): `Check3x2` (:49187)
+/// now covers all 53 kinds — the table family 14/87/88/186/187, the 23 small
+/// cages, the 17 furniture kinds and the echo piles / fallen log / sandcastle;
+/// `Check6x3` (:50242) covers the 41 big cages; `Check1x2Top` (:46706) covers
+/// the lantern + bottles + soul bottles + jar (42/270/271/572/581/660/698);
+/// `Check2x2`'s default (:48397) covers the candelabra/sink + the 28 water
+/// cages. Together these wire the full 92-kind cage union's break-drop.
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
@@ -678,6 +698,31 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // Heart), 31 (Shadow Orb), 639 (Mana Crystal).
         12 | 31 | 639 => check_orb(world, x, y),
         14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
+        // `Check3x2`'s small-cage group (`WorldGen.cs:49234`'s support group,
+        // dispatch :85976-85989 + the 391-394 range guard :85543): the 3x2
+        // cages drop their cage item (:49460-49524).
+        285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 391..=394 | 532 | 533 | 538 | 544 | 555
+        | 556 | 582 | 619 | 629 => check_3x2(world, x, y, kind),
+        // `Check3x2`'s furniture family (`WorldGen.cs:49432-49706`, dispatch
+        // :85959-85989): the fixed-drop kinds (17/77/86/114/217/218/237/244/
+        // 377/405/486), the style-dependent kinds (89/133/215/469/695) and the
+        // altar 26 (drops nothing here — its SmashAltar ore-seeding is
+        // app-wired through break_tile). The echo piles 647/648/651, the
+        // fallen log 488 and the sandcastle 552 ride their own arms below.
+        17 | 26 | 77 | 86 | 89 | 114 | 133 | 215 | 217 | 218 | 237 | 244 | 377 | 405 | 469 | 486
+        | 695 => check_3x2(world, x, y, kind),
+        // `Check3x2`'s echo piles / echo objects / fallen log / sandcastle
+        // (`WorldGen.cs:49252-49269` support, :49552-49678 drops): the
+        // rubblemaker/large-pile/plant-detritus echoes (647/648/651), the
+        // fallen log 488 + its echo 704, the oasis echo 705, the terragrim-
+        // shrine echo 706, and the sandcastle 552 (sweeps, drops nothing).
+        488 | 552 | 647 | 648 | 651 | 704 | 705 | 706 => check_3x2(world, x, y, kind),
+        // `Check6x3` (`WorldGen.cs:50242`, dispatch :86019-86026 + the
+        // :85278 type-guard fall-through): the 41 cage kinds — 275-281
+        // listed at the case, the rest routed by the default's
+        // `type != 296 && …` guard falling to `goto case 275`.
+        275..=281 | 296 | 297 | 309 | 358 | 359 | 413 | 414 | 542 | 550 | 551 | 553 | 554
+        | 558 | 559 | 599..=612 | 632 | 640 | 643..=645 | 710 => check_6x3(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
         21 => check_chest(world, x, y),
@@ -687,11 +732,30 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
         // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
         219 | 642 => check_3x3_bottom(world, x, y, kind),
-        42 => check_lantern(world, x, y),
+        // `Check1x2Top` (`WorldGen.cs:46706`, dispatch :85752-85759): the
+        // hanging lantern 42, the critter bottles 270/271/581/660, the soul
+        // bottles 572 and the Dead-Cells display jar 698.
+        42 | 270 | 271 | 572 | 581 | 660 | 698 => check_1x2_top(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
         93 => check_lamp(world, x, y),
-        100 | 172 => check_candelabra_sink(world, x, y),
+        // `Check2x2`'s default branch (`WorldGen.cs:48397`, dispatch
+        // :85653-85659 + :85784-85798 + the 316-318 range guard :85662): the
+        // candelabra 100, the sink 172 and the 28 water-cage kinds (fish bowls
+        // 282/505/543/598, fairy jars 568-570, butterflies 288-295/360/580/620,
+        // dragonflies 521-527, jellyfish 316-318).
+        100 | 172 | 282 | 505 | 543 | 598 | 568..=570 | 288..=295 | 360 | 580 | 620 | 521..=527
+        | 316..=318 => check_2x2(world, x, y),
+        // W4-g34 — the Palworld crossover 2x2 eggs (`WorldGen.cs:48573-48578`):
+        // the Digtoise 751 (item 5667) and the Chillet Egg 752 (item 6142).
+        // Dispatch: the inner switch lists 751/752 as a PLAIN break
+        // (:85689-85691) — it falls out through the nested defaults to
+        // `goto case 132` (:85927) → `Check2x2` (verified by interpreting the
+        // ILSpy goto-fallthrough; the same route the 316-318 guard takes).
+        // Neither kind places through an item (`itemdata` tile:None), so the
+        // explicit check drop is the ONLY drop (the per-cell `by_tile`
+        // fallback finds nothing — 751/752 are NOT in the empty case group).
+        751 | 752 => check_2x2(world, x, y),
         101 => check_bookcase(world, x, y),
         104 => check_clock(world, x, y),
         185 => check_pile(world, x, y),
@@ -1184,10 +1248,10 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             _ => Some(111), // Band of Starpower
         }
     };
-    // The 2x2's drop position: the orb's centre tile (`Item.NewItem`'s
-    // spawn at the object centre).
-    let cx = ox + 1;
-    let cy = oy + 1;
+    // The 2x2's drop rect top-left (`WorldGen.cs:54229` — `num*16, num2*16`,
+    // a 32x32 box). The centre conversion happens ONCE at the app's
+    // ObjectDrop → spawn seam (W4-g34, the g78 centre-gap fix), so the record
+    // carries the top-left like every other check — NOT a pre-centred cell.
     // `:54292-54293`'s flags (outside the drop switch — all three kinds
     // count toward the same world counter).
     world.shadow_orb_smashed = true;
@@ -1195,8 +1259,8 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     Some(CheckPlan {
         drop: Some(crate::edit::ObjectDrop {
             tile_kind: kind,
-            x: cx,
-            y: cy,
+            x: ox,
+            y: oy,
             item,
         }),
         cells,
@@ -1424,10 +1488,17 @@ fn check_bookcase(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     })
 }
 
-/// `WorldGen.Check1x2Top` (`WorldGen.cs:46706-46776`) for the hanging lantern
-/// (42): the two cells carry the style-row frames and the tile ABOVE is a
-/// solid (or a platform — the placement alternate's anchor).
-fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+/// `WorldGen.Check1x2Top` (`WorldGen.cs:46706-46813`) for the hanging lantern
+/// (42), the firefly/lightning-bug/lavafly/shimmerfly bottles (270/271/581/
+/// 660), the soul bottles (572) and the Dead-Cells display jar (698): the two
+/// cells carry the style-row frames and the tile ABOVE anchors them. The
+/// anchor judge (:46760-46765): `flag2` (42/270/271/572/581/660) accepts a
+/// platform or planter-box 380; `flag3` (698 only) additionally accepts a
+/// rope; every kind accepts a solid non-solid-top above. The drop
+/// (:46787-46811): the lantern rides `GetItemDrop_Lanterns(style)` (style 0 →
+/// 136 via `by_tile`), the bottles drop their fixed bottle item, the soul
+/// bottles `4695 + style`, the jar 5472.
+fn check_1x2_top(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     let mut num2 = world.tile(x, y)?.frame_y as i32 / 18;
     let mut style_row = 0i32;
@@ -1438,7 +1509,7 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let oy = y - num2;
     let top_frame = (style_row * 36) as i16;
     let mut broken = false;
-    let mut region = vec![(x, oy), (x, oy + 1)];
+    let region = vec![(x, oy), (x, oy + 1)];
     let top = world.tile(x, oy);
     let bot = world.tile(x, oy + 1);
     if !top.is_some_and(|c| c.active() && c.kind == kind && c.frame_y == top_frame)
@@ -1446,36 +1517,51 @@ fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     {
         broken = true;
     }
-    // The anchor: solid above; the platform flag mirrors the placement
-    // alternate (`flag4`, `WorldGen.cs:46752-46756` — the rope branch is the
-    // Dead-Cells jar's, not the lantern's).
+    // The anchor judge (:46743-46765). `flag2` = the platform/380 group
+    // (42/270/271/572/581/660); `flag3` = the rope group (698 only).
+    let flag2 = matches!(kind, 42 | 270 | 271 | 572 | 581 | 660);
+    let flag3 = kind == 698;
     let above = world.tile(x, oy - 1);
     let platform_ok =
         above.is_some_and(|a| a.active() && (td::SET_PLATFORMS.has(a.kind) || a.kind == 380));
+    let rope_ok = above.is_some_and(|a| a.active() && td::TILE_ROPE.has(a.kind));
     let solid_ok = above.is_some_and(|a| {
-        (a.active() || a.has_any_liquid())
+        crate::tileobject::nactive(a)
             && td::TILE_SOLID.has(a.kind)
             && !td::TILE_SOLID_TOP.has(a.kind)
     });
-    if !platform_ok && !solid_ok {
+    // :46762 — `(!flag2 || !flag4) && (!flag3 || !flag5) && !solid`.
+    if (!flag2 || !platform_ok) && (!flag3 || !rope_ok) && !solid_ok {
         broken = true;
     }
     if !broken {
         return None;
     }
+    // The drop (:46787-46811). The lantern's style table resolves through
+    // `by_tile` (style 0 → 136); the bottles/jar carry fixed items, the soul
+    // bottles `4695 + style`.
+    let item = match kind {
+        270 => Some(1993), // FireflyinaBottle
+        271 => Some(2005), // LightningBuginaBottle
+        581 => Some(4848), // LavaflyinaBottle
+        660 => Some(5351), // ShimmerflyinaBottle
+        572 => Some(4695 + style_row), // SoulBottles
+        698 => Some(5472), // DeadCellsDisplayJar
+        _ => None,         // 42 lantern → by_tile (GetItemDrop_Lanterns)
+    };
     Some(CheckPlan {
         drop: Some(ObjectDrop {
             tile_kind: kind,
             x,
-            y,
-            item: None,
+            y: oy,
+            item,
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
         herb_event: None,
         pile_event: None,
         ring: None,
-        // floats until a later break (`WorldGen.cs`'s check_lantern).
+        // floats until a later break (`WorldGen.cs`'s Check1x2Top has no tail).
     })
 }
 
@@ -1544,11 +1630,19 @@ fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     })
 }
 
-/// `WorldGen.Check2x2`'s default branch (`WorldGen.cs:48397-48470`) for the
-/// candelabra (100) and the sink (172): the 2x2 cells with the style frames
-/// (the sink's full height is 38) and the solid-or-table floor without
-/// half-bricks.
-fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+/// `WorldGen.Check2x2`'s default branch (`WorldGen.cs:48397-48799`) for the
+/// candelabra (100), the sink (172), the water-cage family (the fish bowls
+/// 282/505/543/598, fairy jars 568-570, butterfly jars 288-295/360/580/620,
+/// dragonfly jars 521-527, jellyfish bowls 316-318) and the Palworld eggs
+/// (751 Digtoise / 752 Chillet Egg, W4-g34): the 2x2 cells with the
+/// style frames (the sink's full height is 38) and the solid-or-table floor
+/// without half-bricks (:48452-48463). The drop (:48570-48751) is the object's
+/// item — every water-cage kind's drop equals its placing item, so `item:
+/// None` resolves through `by_tile`; the candelabra/sink keep their style-0
+/// slice; the eggs carry the fixed items 5667/6142 (:48573-48578). (The
+/// boulder/ceiling/chandelier arms of Check2x2 — 95/126/132/138/484/664/665/
+/// 711-716 — are separate lanes, not ported here.)
+fn check_2x2(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     let t = world.tile(x, y)?;
     let full = if kind == 172 { 38 } else { 36 };
@@ -1593,19 +1687,31 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
     if !broken {
         return None;
     }
+    // The drop switch's head (`WorldGen.cs:48570-48578`): the Palworld eggs
+    // carry FIXED items — 751 (Digtoise) → 5667, 752 (Chillet Egg) → 6142
+    // (W4-g34, the d105 task seed). Every other kind this slice covers keeps
+    // `item: None` — the water-cage drops equal their placing items and the
+    // candelabra/sink keep their style-0 slice (`by_tile`).
+    let item = match kind {
+        751 => Some(5667),
+        752 => Some(6142),
+        _ => None,
+    };
     Some(CheckPlan {
         drop: Some(ObjectDrop {
             tile_kind: kind,
             x,
             y,
-            item: None,
+            item,
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
         herb_event: None,
         pile_event: None,
-        ring: None,
-        // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
+        // :48792-48798 — Check2x2 closes with a 4x4 TileFrame ring around
+        // the 2x2 (the old candelabra/sink slice carried None — the ring is
+        // the C# tail, ported with the W4-g34 generalization).
+        ring: Some(region_ring(&region)),
     })
 }
 
@@ -1905,10 +2011,53 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
                 broken = true;
             }
         }
-        // The per-column support judge (:49280-49373 + the trailing
-        // `else if` :49396-49399). The 186/ style sets re-judge the ground
-        // family from `TileID.Sets` (`TileID.cs:89-94/558`).
+        // The per-column support judge (:49234-49377). The small cages and
+        // the platform-friendly furniture (:49234's group) accept a platform
+        // below in addition to `SolidTileAllowBottomSlope`/solid-top-frameY0;
+        // the 186/187 piles re-judge the ground family from `TileID.Sets`
+        // (`TileID.cs:89-94/558`); everything else keeps the plain
+        // `SolidTileAllowBottomSlope` arm (the trailing `else if`, :49374).
         match kind {
+            // :49234 — the cage / platform group.
+            285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 532 | 533 | 538 | 544 | 555 | 556
+            | 582 | 619 | 629 => {
+                let below = world.tile(k, oy + rows);
+                let solid_top = below.is_some_and(|b| {
+                    crate::tileobject::nactive(b)
+                        && td::TILE_SOLID_TOP.has(b.kind)
+                        && b.frame_y == 0
+                });
+                let platform = below.is_some_and(|b| b.active() && td::SET_PLATFORMS.has(b.kind));
+                if !solid_tile_allow_bottom_slope(world, k, oy + rows) && !solid_top && !platform {
+                    broken = true;
+                }
+            }
+            // :49270-49279 — the altar (26) and its replica (695):
+            // SolidTileAllowBottomSlope below, but a Boulder under the column
+            // refuses (the altar must not sit on a trap boulder).
+            26 | 695 => {
+                let boulder = world
+                    .tile(k, oy + rows)
+                    .is_some_and(|b| b.active() && td::SET_BOULDERS.has(b.kind));
+                if !solid_tile_allow_bottom_slope(world, k, oy + rows) || boulder {
+                    broken = true;
+                }
+            }
+            // :49252-49269 — the fallen log (488) stands only on a grass
+            // family: dirt 2 / ash-grass 477 / hallowed-grass 109 / shimmer-
+            // grass 492 / snow 147 / sand 53 / jungle-grass 60 / mushroom-
+            // grass 70; the infected seed adds corrupt 23 / crimson 199.
+            488 => {
+                let g = world.tile(k, oy + rows).filter(|b| b.active()).map(|b| b.kind);
+                let grass = matches!(g, Some(2 | 477 | 109 | 492 | 147 | 53 | 60 | 70));
+                let infected = world
+                    .micro_seeds
+                    .contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)
+                    && matches!(g, Some(23 | 199));
+                if !grass && !infected {
+                    broken = true;
+                }
+            }
             186 => {
                 if !solid_tile_allow_bottom_slope(world, k, oy + rows)
                     || invalid_tile_for_piles(world, k, oy + rows)
@@ -1993,13 +2142,15 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
     if !broken {
         return None;
     }
-    // The drop is the table family's alone (`GetItemDrop_Tables(style)` for
-    // 14, `GetItemDrop_Pianos/Dressers(style)` for 87/88 — the slices cover
-    // style 0 → 32); the piles' per-cell
-    // case group is empty (:65759-65815) and `Check3x2`'s destroy switch
-    // carries the pile specials — for 187 the sword-in-stone styles roll
-    // the Enchanted Sword (:49828-49839), resolved app-side like the 2x1
-    // coin table.
+    // The drop: the table family (`GetItemDrop_Tables(style)` for 14,
+    // `GetItemDrop_Pianos/Dressers(style)` for 87/88 — the slices cover
+    // style 0 → 32) and the small cages (:49460-49524 — each drops its cage
+    // item, which equals the placing item, so `item: None` resolves through
+    // `registry::tile_drop`/`by_tile`). The piles' per-cell case group is
+    // empty (:65759-65815) and `Check3x2`'s destroy switch carries the pile
+    // specials — for 187 the sword-in-stone styles roll the Enchanted Sword
+    // (:49828-49839), resolved app-side like the 2x1 coin table. The fallen
+    // log 488 (:49553) rolls its wood stack on `genRand` — also app-side.
     let pile_event = if kind == 187 {
         // `int frameX = Main.tile[i, j].frameX;` (:49443) — the CHECKED
         // cell's frameX (a survivor of the pile; the dispatch never runs on
@@ -2012,20 +2163,405 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
             x: ox,
             y: oy,
         })
+    } else if kind == 488 {
+        // :49553 — `Item.NewItem(…, 9, genRand.Next(10, 21))`: the wood stack
+        // count rides the app's genRand seam (the trigger cell's position).
+        Some(PileLootEvent {
+            kind: 488,
+            frame_x,
+            x,
+            y,
+        })
     } else {
         None
     };
-    Some(CheckPlan {
-        drop: (kind == 14 || kind == 87 || kind == 88).then(|| ObjectDrop {
+    // The small cages drop their cage item at the trigger cell (:49460-49524);
+    // 361-364 → 3073+type-361 and 391-394 → 3254+type-391 are the computed
+    // arms, the rest are the fixed pairs. All equal the placing item.
+    let cage_drop = matches!(
+        kind,
+        285 | 286 | 298 | 299 | 310 | 339 | 361..=364 | 391..=394 | 532 | 533 | 538 | 544 | 555
+            | 556 | 582 | 619 | 629
+    );
+    // The furniture family's fixed drops (:49432-49706) — each equals the
+    // placing item, so `item: None` resolves through `by_tile`. The altar 26
+    // drops NOTHING here (its `SmashAltar` ore-seeding is app-wired through
+    // `break_tile`, editing.rs:1303-1315); the style-dependent kinds
+    // (89/133/215/469/695) resolve in-core via [`check_3x2_furniture_drop`].
+    let furniture_fixed = matches!(
+        kind,
+        17 | 77 | 86 | 114 | 217 | 218 | 237 | 244 | 377 | 405 | 486
+    );
+    let furniture_style = matches!(kind, 89 | 133 | 215 | 469 | 695);
+    // The echo piles (647/648/651), the fallen-log echo (704), the oasis echo
+    // (705) and the terragrim-shrine echo (706) drop a style-keyed item
+    // (:49555-49678); the sandcastle 552 drops NOTHING (no C# arm). The
+    // fallen log 488's wood rides the pile event above.
+    let echo_drop = matches!(kind, 647 | 648 | 651 | 704 | 705 | 706);
+    let drop = if kind == 14 || kind == 87 || kind == 88 || cage_drop || furniture_fixed {
+        Some(ObjectDrop {
             tile_kind: kind,
             x,
             y,
             item: None,
-        }),
+        })
+    } else if furniture_style {
+        Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: Some(check_3x2_furniture_drop(kind, style, frame_x)),
+        })
+    } else if echo_drop {
+        check_3x2_echo_drop(kind, style, style_row).map(|item| ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: Some(item),
+        })
+    } else {
+        None
+    };
+    Some(CheckPlan {
+        drop,
         cells: killable_cells(world, &region, kind),
         pot_event: None,
         herb_event: None,
         pile_event,
+        ring: Some(region_ring(&region)),
+    })
+}
+
+/// The echo-pile / echo-object `Check3x2` drops (`WorldGen.cs:49555-49678`).
+/// `style` is the horizontal style index, `style_row` the vertical row
+/// (`frameY / 36`); 648 folds the row into the index (`num5 += num3 * 35`,
+/// :49611) and 705 into a 9-wide row (`num5 += num3 * 9`, :49452). Returns
+/// `None` when the C# arm spawns nothing (the `num != 0` gates).
+fn check_3x2_echo_drop(kind: u16, style: i32, style_row: i32) -> Option<i32> {
+    match kind {
+        // :49564-49607 — the rubblemaker echo's style-keyed debris.
+        647 => {
+            let item = if style < 7 {
+                154
+            } else if style < 16 {
+                3
+            } else if style < 18 {
+                71
+            } else if style < 20 {
+                72
+            } else if style < 22 {
+                73
+            } else if style < 26 {
+                9
+            } else if style < 32 {
+                593
+            } else if style < 35 {
+                183
+            } else {
+                0
+            };
+            (item != 0).then_some(item)
+        }
+        // :49609-49665 — the large-pile echo, row folded into the index.
+        648 => {
+            let s = style + style_row * 35;
+            let item = if s < 6 {
+                195
+            } else if s < 9 {
+                174
+            } else if s < 14 {
+                150
+            } else if s < 17 {
+                3
+            } else if s < 18 {
+                989
+            } else if s < 21 {
+                1101
+            } else if s < 29 {
+                9
+            } else if s < 35 {
+                3271
+            } else if s < 41 {
+                3086
+            } else if s < 47 {
+                3081
+            } else if s < 52 {
+                62
+            } else if s < 55 {
+                154
+            } else {
+                0
+            };
+            (item != 0).then_some(item)
+        }
+        // :49670-49678 — the plant-detritus echo.
+        651 => {
+            let item = if style < 3 {
+                195
+            } else if style >= 6 {
+                331
+            } else {
+                62
+            };
+            Some(item)
+        }
+        // :49555-49556 — the fallen-log echo drops a Fallen Star 501.
+        704 => Some(501),
+        // :49450-49455 — the oasis-plant echo, row folded into a 9-wide index.
+        705 => {
+            let s = style + style_row * 9;
+            let item = if (0..=8).contains(&s) {
+                276
+            } else if (9..=17).contains(&s) {
+                369
+            } else if (18..=26).contains(&s) {
+                2171
+            } else {
+                59
+            };
+            Some(item)
+        }
+        // :49667-49668 — the terragrim-shrine echo drops the Terragrim 4144.
+        706 => Some(4144),
+        _ => None,
+    }
+}
+
+/// The style-dependent `Check3x2` furniture drops (`WorldGen.cs:49432-49706`).
+/// `style` is the horizontal style index (`frameX / 18 / 3`); `frame_x` is the
+/// CHECKED cell's `frameX` (captured at :49416 before the kill loop — the
+/// forge 133 reads it directly). The fixed-item kinds resolve through
+/// `by_tile` instead; this helper covers the arms whose item varies by style.
+fn check_3x2_furniture_drop(kind: u16, style: i32, frame_x: i32) -> i32 {
+    match kind {
+        // :49699 — `GetItemDrop_Benches(style)` (:40169-40243).
+        89 => match style {
+            1..=20 => 2396 + style,
+            21 => 2521,
+            22 => 2527,
+            23 => 2539,
+            24 => 858,
+            25 => 2582,
+            26 => 2634,
+            27 => 2635,
+            28 => 2636,
+            29 => 2823,
+            30 => 3150,
+            31 => 3152,
+            32 => 3151,
+            33 => 3918,
+            34 => 3919,
+            35 => 3947,
+            36 => 3973,
+            37 => 4161,
+            38 => 4182,
+            39 => 4203,
+            40 => 4224,
+            41 => 4313,
+            42 => 4582,
+            43 => 4993,
+            44 => 5164,
+            45 => 5185,
+            46 => 5206,
+            47 => 5564,
+            48 => 5617,
+            49 => 5705,
+            50 => 5728,
+            51 => 5753,
+            52 => 5772,
+            53 => 5793,
+            54 => 5814,
+            55 => 5835,
+            56 => 5854,
+            57 => 5874,
+            58 => 5893,
+            59 => 5914,
+            60 => 5948,
+            61 => 5970,
+            62 => 5991,
+            63 => 6014,
+            64 => 6037,
+            65 => 6060,
+            66 => 6083,
+            67 => 6105,
+            68 => 6127,
+            _ => 335,
+        },
+        // :49701-49709 — the Adamantite/Titanium Forge by the CHECKED cell's
+        // frameX (>= 54 → Titanium 1221, else Adamantite 524).
+        133 => {
+            if frame_x >= 54 {
+                1221
+            } else {
+                524
+            }
+        }
+        // :49559 — `GetCampfireItemDrop(style)` (:50039-50074).
+        215 => match style {
+            0 => 966,
+            1..=5 => 3045 + style,
+            6 => 3723,
+            7 => 3724,
+            8..=13 => 4681 + style,
+            14 => 5299,
+            15 => 5357,
+            _ => 966,
+        },
+        // :49439 — `GetItemDrop_Tables(style, secondType: true)` (:42092-42190).
+        469 => match style {
+            0 => 3920,
+            1 => 3948,
+            2 => 3974,
+            3 => 4162,
+            4 => 4183,
+            5 => 4204,
+            6 => 4225,
+            7 => 4314,
+            8 => 4583,
+            9 => 5165,
+            10 => 5186,
+            11 => 5207,
+            12 => 5565,
+            13 => 5618,
+            14 => 5706,
+            15 => 5729,
+            16 => 5773,
+            17 => 5794,
+            18 => 5815,
+            19 => 5836,
+            20 => 5875,
+            21 => 5894,
+            22 => 5915,
+            23 => 5949,
+            24 => 5971,
+            25 => 5992,
+            26 => 6015,
+            27 => 6038,
+            28 => 6061,
+            29 => 6084,
+            30 => 6106,
+            31 => 6128,
+            _ => 3920,
+        },
+        // :49458 — the altar replica: style 0 → Demon 5467, else Crimson 5468.
+        695 => {
+            if style == 0 {
+                5467
+            } else {
+                5468
+            }
+        }
+        _ => 0,
+    }
+}
+
+/// The `Check6x3` cage-item drop table (`WorldGen.cs:50291-50454`): every
+/// 6x3 kind drops its cage item at the trigger cell (32x32). The census
+/// (research/68 §2) confirms all 41 `Check6x3` kinds are cages and the drop
+/// is the plain cage item — there is NO critter release on break (the
+/// critter stays inside the dropped cage item; releasing it is the LMB
+/// item-use `ItemCheck_ReleaseCritter`, already ported in `bug_net.rs`).
+/// The order mirrors the C# `if (type == …)` chain (275, 413, 414, 276…).
+const CAGE_6X3_DROP: &[(u16, i32)] = &[
+    (275, 2162), // BunnyCage
+    (413, 3565), // SquirrelOrangeCage
+    (414, 3566), // SquirrelGoldCage
+    (276, 2163), // SquirrelCage
+    (277, 2164), // MallardDuckCage
+    (278, 2165), // DuckCage
+    (279, 2166), // BirdCage
+    (280, 2167), // BlueJay
+    (281, 2168), // CardinalCage
+    (296, 2186), // ScorpionCage
+    (297, 2187), // BlackScorpionCage
+    (309, 2206), // PenguinCage
+    (358, 3070), // GoldBirdCage
+    (359, 3071), // GoldBunnyCage
+    (542, 4396), // OwlCage
+    (550, 4461), // TurtleCage
+    (551, 4462), // TurtleJungleCage
+    (553, 4473), // GrebeCage
+    (554, 4474), // SeagullCage
+    (558, 4481), // SeahorseCage
+    (559, 4483), // GoldSeahorseCage
+    (599, 4882), // AmethystBunnyCage
+    (600, 4883), // TopazBunnyCage
+    (601, 4884), // SapphireBunnyCage
+    (602, 4885), // EmeraldBunnyCage
+    (603, 4886), // RubyBunnyCage
+    (604, 4887), // DiamondBunnyCage
+    (605, 4888), // AmberBunnyCage
+    (606, 4889), // AmethystSquirrelCage
+    (607, 4890), // TopazSquirrelCage
+    (608, 4891), // SapphireSquirrelCage
+    (609, 4892), // EmeraldSquirrelCage
+    (610, 4893), // RubySquirrelCage
+    (611, 4894), // DiamondSquirrelCage
+    (612, 4895), // AmberSquirrelCage
+    (632, 5213), // ScarletMacawCage
+    (640, 5301), // BlueMacawCage
+    (643, 5314), // ToucanCage
+    (644, 5315), // YellowCockatielCage
+    (645, 5316), // GrayCockatielCage
+    (710, 5512), // PufferfishCage
+];
+
+/// `WorldGen.Check6x3` (`WorldGen.cs:50242-50463`): the 6x3 cage. The origin
+/// is `frameX / 18` / `frameY / 18` back from the trigger (:50251-50252 —
+/// the cage is a single style, no style offset); all 18 cells must be active
+/// of `kind` with frames `(dx*18, dy*18)` (:50262), and each of the six
+/// columns needs `SolidTileAllowBottomSlope` below OR an active solid-top
+/// tile with `frameY == 0` (a table top, :50271). A broken cage sweeps all
+/// 18 cells and drops its cage item ([`CAGE_6X3_DROP`], :50291-50454) at the
+/// trigger cell, then frames the 8x5 ring (:50456-50462). The per-cell drop
+/// is suppressed (`KILL_TILE_NO_CELL_DROP` — every cage kind is in the
+/// `KillTile_GetItemDrops` empty group), so the object record is the only
+/// drop: breaking a cage returns the cage item with the critter inside.
+fn check_6x3(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let ox = x - i32::from(t.frame_x) / 18;
+    let oy = y - i32::from(t.frame_y) / 18;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(18);
+    for k in ox..ox + 6 {
+        for l in oy..oy + 3 {
+            region.push((k, l));
+            let expected = (((k - ox) * 18) as i16, ((l - oy) * 18) as i16);
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+        // :50271 — `SolidTileAllowBottomSlope` OR (nactive && solidTop &&
+        // frameY == 0). The solid-top arm is the table-top placement.
+        let below = world.tile(k, oy + 3);
+        let table_top = below.is_some_and(|b| {
+            crate::tileobject::nactive(b) && td::TILE_SOLID_TOP.has(b.kind) && b.frame_y == 0
+        });
+        if !solid_tile_allow_bottom_slope(world, k, oy + 3) && !table_top {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    let item = CAGE_6X3_DROP
+        .iter()
+        .find(|&&(k, _)| k == kind)
+        .map(|&(_, item)| item);
+    Some(CheckPlan {
+        drop: item.map(|item| ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: Some(item),
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
         ring: Some(region_ring(&region)),
     })
 }
@@ -2885,21 +3421,21 @@ mod tests {
     #[test]
     fn w4_g78_the_object_drop_centre_conversion() {
         let furniture = ObjectDrop { tile_kind: 21, x: 10, y: 18, item: None };
-        assert_eq!(furniture.spawn_centre_px(), (176.0, 304.0));
+        assert_eq!(furniture.spawn_center_px(), (176.0, 304.0));
         // Every 32×32 family member shares the +16 centre.
         for kind in [14u16, 15, 18, 27, 29, 34, 42, 79, 90, 93, 100, 101, 104, 172, 219, 642] {
             let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
-            assert_eq!(d.spawn_centre_px(), (176.0, 304.0), "kind {kind}");
+            assert_eq!(d.spawn_center_px(), (176.0, 304.0), "kind {kind}");
         }
         // The doors (10/11) — DropDoorItem's 16×16.
         for kind in [10u16, 11] {
             let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
-            assert_eq!(d.spawn_centre_px(), (168.0, 296.0), "kind {kind}");
+            assert_eq!(d.spawn_center_px(), (168.0, 296.0), "kind {kind}");
         }
         // The on-table 1×1 group (13/33/49/78) — KillTile's per-cell 16×16.
         for kind in [13u16, 33, 49, 78] {
             let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
-            assert_eq!(d.spawn_centre_px(), (168.0, 296.0), "kind {kind}");
+            assert_eq!(d.spawn_center_px(), (168.0, 296.0), "kind {kind}");
         }
     }
 
@@ -5118,5 +5654,537 @@ mod tests {
             drop2.item
         );
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
+    }
+
+    // ---- W4-g34: the Check6x3 cage break-drop cascade (research/68 §2) ----
+
+    /// A placed 6x3 cage over the stone floor: origin (8, 17), cells
+    /// x 8..=13, y 17..=19, frames `(dx*18, dy*18)`.
+    fn cage_6x3_world(kind: u16) -> World {
+        let mut w = object_world();
+        for dx in 0..6 {
+            for dy in 0..3 {
+                set_object_cell(&mut w, 8 + dx, 17 + dy, kind, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_break_drops_the_cage_item_with_critter_inside() {
+        // `Check6x3` (`WorldGen.cs:50242-50463`): breaking any cell sweeps
+        // all 18 and drops the cage item at the trigger cell — the critter
+        // stays inside (no NPC release; the C# has no release arm here).
+        let mut w = cage_6x3_world(275);
+        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        let cells: Vec<(i32, i32)> = (8..=13)
+            .flat_map(|x| (17..=19).map(move |y| (x, y)))
+            .collect();
+        assert_all_gone(&w, &cells);
+        // The trigger is the first surviving cell in SquareTileFrame order
+        // around the hit (10, 18): (9, 17).
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 275,
+                x: 9,
+                y: 17,
+                item: Some(2162), // Bunny Cage — the critter stays inside
+            }]
+        );
+        assert!(kill.events.is_empty());
+        assert!(kill.pile_events.is_empty());
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_drop_table_covers_every_kind() {
+        // The per-kind item mapping (`WorldGen.cs:50291-50454`): each of the
+        // 41 kinds drops its own cage item, never a neighbour's.
+        for &(kind, item) in CAGE_6X3_DROP {
+            let mut w = cage_6x3_world(kind);
+            let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!(kill.object_drops[0].item, Some(item), "kind {kind}");
+        }
+        assert_eq!(CAGE_6X3_DROP.len(), 41, "the full Check6x3 census");
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_intact_survives_and_no_item_suppresses() {
+        // An intact cage on solid ground yields no drop when a far cell
+        // dies; `noItem` keeps the cascade but suppresses the drop record
+        // (the shared `no_item` gate).
+        let mut w = cage_6x3_world(275);
+        let kill = kill_tile(&mut w, 20, 20, false).unwrap();
+        assert!(kill.object_drops.is_empty(), "the intact cage drops nothing");
+        assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 275));
+        let kill = kill_tile(&mut w, 10, 18, true).unwrap();
+        assert!(kill.object_drops.is_empty(), "noItem suppresses the record");
+        assert!(!w.tile(9, 17).is_some_and(|t| t.active()), "the sweep ran");
+    }
+
+    #[test]
+    fn w4_g34_cage_6x3_stands_on_a_table_top() {
+        // :50271 — the support arm accepts an active solid-top tile with
+        // frameY == 0 (a table top) even when SolidTileAllowBottomSlope
+        // refuses it (a table is not solid). Two intact style-0 tables under
+        // the cage carry it; a break one cell below the cage's edge runs
+        // check_6x3 on the cage and it survives.
+        let mut w = object_world();
+        for dx in 0..6 {
+            for dy in 0..3 {
+                set_object_cell(&mut w, 8 + dx, 17 + dy, 275, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        // Two 3x2 tables (14) at x 8..10 and 11..13, y 20..21, over a floor
+        // row at y 22 (the tables need their own support or they cascade too).
+        for base in [8i32, 11] {
+            for dx in 0..3 {
+                for dy in 0..2 {
+                    set_object_cell(&mut w, base + dx, 20 + dy, 14, (dx * 18) as i16, (dy * 18) as i16);
+                }
+            }
+        }
+        for x in 8..=13 {
+            set_object_cell(&mut w, x, 22, 1, 0, 0);
+        }
+        // Break the floor cell (14, 20): its 3x3 reaches the cage's bottom-
+        // right cell (13, 19), so check_6x3 runs — the table tops carry it.
+        let kill = kill_tile(&mut w, 14, 20, false).unwrap();
+        assert!(
+            !kill.object_drops.iter().any(|d| d.tile_kind == 275),
+            "the table carries the cage"
+        );
+        assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 275));
+    }
+
+    // ---- W4-g34: the Check3x2 small-cage break-drop (research/68 §2) ----
+
+    /// A placed 3x2 small cage over the stone floor: origin (9, 18), cells
+    /// x 9..=11, y 18..=19, frames `(dx*18, dy*18)` (style 0).
+    fn cage_3x2_world(kind: u16) -> World {
+        let mut w = object_world();
+        for dx in 0..3 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 9 + dx, 18 + dy, kind, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_g34_small_cage_3x2_break_drops_the_cage_item() {
+        // `Check3x2`'s cage arms (`WorldGen.cs:49460-49524`): breaking any
+        // cell sweeps all six and drops the cage item at the trigger cell.
+        // The record carries `item: None` — the app resolves it through
+        // `registry::tile_drop`/`by_tile` to the placing item (the cage item,
+        // e.g. 285→2174, 361→3073, 391→3254; the itemdata census pins those).
+        for kind in [
+            285u16, 286, 298, 299, 310, 339, 361, 362, 363, 364, 391, 392, 393, 394, 532, 533,
+            538, 544, 555, 556, 582, 619, 629,
+        ] {
+            let mut w = cage_3x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let cells: Vec<(i32, i32)> = (9..=11)
+                .flat_map(|x| (18..=19).map(move |y| (x, y)))
+                .collect();
+            assert_all_gone(&w, &cells);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            // The trigger is the first surviving cell in SquareTileFrame
+            // order around the hit (10, 19): (9, 18).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (9, 18));
+            assert_eq!(kill.object_drops[0].item, None, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_small_cage_3x2_stands_on_a_platform() {
+        // :49234-49240 — the cage group accepts a platform below (the
+        // `TileID.Sets.Platforms` disjunct), unlike the table family's plain
+        // SolidTileAllowBottomSlope. The cage survives on a platform row.
+        let mut w = cage_3x2_world(285);
+        for x in 9..=11 {
+            set_object_cell(&mut w, x, 20, 19, 0, 0); // platform 19
+        }
+        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        assert!(
+            !kill.object_drops.iter().any(|d| d.tile_kind == 285),
+            "the platform carries the cage"
+        );
+        assert!(w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 285));
+    }
+
+    // ---- W4-g34: the Check3x2 furniture break-drop (research/68 §2) ----
+
+    #[test]
+    fn w4_g34_furniture_3x2_fixed_drops_sweep_and_record() {
+        // The fixed-drop furniture (`WorldGen.cs:49432-49706`): each kind
+        // sweeps all six cells and records a drop at the trigger cell with
+        // `item: None` (the app resolves the placing item via `by_tile`).
+        for kind in [17u16, 77, 86, 114, 217, 218, 237, 244, 377, 405, 486] {
+            let mut w = cage_3x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let cells: Vec<(i32, i32)> = (9..=11)
+                .flat_map(|x| (18..=19).map(move |y| (x, y)))
+                .collect();
+            assert_all_gone(&w, &cells);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (9, 18));
+            assert_eq!(kill.object_drops[0].item, None, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_furniture_3x2_style_drops_resolve_in_core() {
+        // The style-dependent arms resolve their item in-core: the forge 133
+        // by the checked cell's frameX (:49701-49709), the altar replica 695
+        // by style (:49458), the campfire 215 / Tables2 469 / bench 89 by
+        // their style tables.
+        // Forge style 0 (frameX 0..53) → Adamantite 524.
+        let mut w = cage_3x2_world(133);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(524));
+        // Forge style 1 (frameX 54..107) → Titanium 1221.
+        let mut w = object_world();
+        for dx in 0..3 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 9 + dx, 18 + dy, 133, (54 + dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(1221));
+        // Altar replica style 0 → Demon 5467; style 1 → Crimson 5468.
+        let mut w = cage_3x2_world(695);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(5467));
+        // Campfire style 0 → 966.
+        let mut w = cage_3x2_world(215);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(966));
+        // Tables2 style 0 → Crystal Table 3920.
+        let mut w = cage_3x2_world(469);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(3920));
+        // Bench style 0 → 335.
+        let mut w = cage_3x2_world(89);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.object_drops[0].item, Some(335));
+    }
+
+    #[test]
+    fn w4_g34_altar_3x2_sweeps_but_records_no_drop() {
+        // The altar 26 (`WorldGen.cs:49444-49449`): the cascade sweeps the
+        // cells but records NO item drop — the SmashAltar ore-seeding is
+        // app-wired through break_tile (editing.rs:1303-1315), not a drop.
+        let mut w = cage_3x2_world(26);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let cells: Vec<(i32, i32)> = (9..=11)
+            .flat_map(|x| (18..=19).map(move |y| (x, y)))
+            .collect();
+        assert_all_gone(&w, &cells);
+        assert!(kill.object_drops.is_empty(), "the altar drops nothing here");
+    }
+
+    #[test]
+    fn w4_g34_altar_3x2_refuses_a_boulder_support() {
+        // :49270-49279 — a Boulder under the altar's column refuses the
+        // support (the altar must not sit on a trap boulder): the cascade
+        // sweeps it. Without the boulder the intact altar survives.
+        let mut w = cage_3x2_world(26);
+        set_object_cell(&mut w, 10, 20, 138, 0, 0); // boulder 138 under the middle column
+        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        assert!(
+            kill.object_drops.iter().all(|d| d.tile_kind != 26),
+            "the altar records no drop"
+        );
+        assert!(!w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 26));
+    }
+
+    // ---- W4-g34: the Check3x2 echo piles / fallen log / sandcastle ----
+
+    #[test]
+    fn w4_g34_echo_piles_3x2_drop_style_keyed_items() {
+        // The echo piles (`WorldGen.cs:49564-49678`): the drop item is keyed
+        // on the style index (648/705 fold the row in). Style 0 pins the
+        // first arm of each table.
+        for (kind, item) in [
+            (647u16, 154i32), // rubblemaker echo, style 0 → bone 154
+            (648, 195),       // large-pile echo, style 0 → 195
+            (651, 195),       // plant-detritus echo, style 0 → 195
+            (704, 501),       // fallen-log echo → Fallen Star 501
+            (705, 276),       // oasis echo, style 0 → Cactus 276
+            (706, 4144),      // terragrim-shrine echo → Terragrim 4144
+        ] {
+            let mut w = cage_3x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!(kill.object_drops[0].item, Some(item), "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_fallen_log_488_records_the_wood_stack_event() {
+        // :49553 — the fallen log drops wood 9 with a genRand stack count;
+        // the core records the pile event (the app rolls the count). The log
+        // stands on a grass family (:49252-49269) — dirt 2 below carries it.
+        let mut w = object_world();
+        for dx in 0..3 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 9 + dx, 18 + dy, 488, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        for x in 9..=11 {
+            set_object_cell(&mut w, x, 20, 2, 0, 0); // dirt grass below
+        }
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert!(kill.object_drops.is_empty(), "the wood rides the pile event");
+        assert_eq!(
+            kill.pile_events,
+            vec![PileLootEvent { kind: 488, frame_x: 0, x: 9, y: 18 }]
+        );
+    }
+
+    #[test]
+    fn w4_g34_fallen_log_488_dies_off_the_grass_family() {
+        // :49252-49269 — the log stands only on the grass family; a stone
+        // floor (the object_world default) refuses it, so the cascade sweeps
+        // it when a nearby break re-frames it.
+        let mut w = cage_3x2_world(488); // stone floor below — not grass
+        let kill = kill_tile(&mut w, 12, 20, false).unwrap();
+        assert!(
+            kill.pile_events.iter().any(|p| p.kind == 488),
+            "the log dies off the grass and records its wood"
+        );
+        assert!(!w.tile(10, 18).is_some_and(|t| t.active() && t.kind == 488));
+    }
+
+    #[test]
+    fn w4_g34_sandcastle_552_sweeps_but_drops_nothing() {
+        // The sandcastle 552 has NO C# drop arm in Check3x2's destroy switch
+        // (census: :49432-49836 carries no case 552) — the cascade sweeps the
+        // cells but records no item.
+        let mut w = cage_3x2_world(552);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let cells: Vec<(i32, i32)> = (9..=11)
+            .flat_map(|x| (18..=19).map(move |y| (x, y)))
+            .collect();
+        assert_all_gone(&w, &cells);
+        assert!(kill.object_drops.is_empty(), "the sandcastle drops nothing");
+        assert!(kill.pile_events.is_empty());
+    }
+
+    // ---- W4-g34: the Check1x2Top bottle break-drop (research/68 §2) ----
+
+    /// A hanging 1x2 bottle under a stone ceiling: ceiling (10, 16), bottle
+    /// cells (10, 17)/(10, 18) with frames 0/18 (style 0).
+    fn bottle_world(kind: u16) -> World {
+        let mut w = object_world();
+        set_object_cell(&mut w, 10, 16, 1, 0, 0); // stone ceiling anchor
+        set_object_cell(&mut w, 10, 17, kind, 0, 0);
+        set_object_cell(&mut w, 10, 18, kind, 0, 18);
+        w
+    }
+
+    #[test]
+    fn w4_g34_bottle_1x2_top_break_drops_the_bottle_item() {
+        // `Check1x2Top` (`WorldGen.cs:46787-46811`): breaking a bottle cell
+        // sweeps both and drops the bottle item at (trigger x, origin y).
+        for (kind, item) in [
+            (270u16, Some(1993i32)), // FireflyinaBottle
+            (271, Some(2005)),       // LightningBuginaBottle
+            (581, Some(4848)),       // LavaflyinaBottle
+            (660, Some(5351)),       // ShimmerflyinaBottle
+            (572, Some(4695)),       // SoulBottles style 0 → 4695 + 0
+            (698, Some(5472)),       // DeadCellsDisplayJar
+        ] {
+            let mut w = bottle_world(kind);
+            let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+            assert_all_gone(&w, &[(10, 17), (10, 18)]);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            // The drop is at (trigger x, origin y) = (10, 17).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 17));
+            assert_eq!(kill.object_drops[0].item, item, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_bottle_1x2_top_hangs_from_a_platform() {
+        // :46760-46762 — the flag2 group (the bottles) accepts a platform
+        // above as the anchor. The bottle survives on a platform ceiling.
+        let mut w = object_world();
+        set_object_cell(&mut w, 10, 16, 19, 0, 0); // platform anchor
+        set_object_cell(&mut w, 10, 17, 270, 0, 0);
+        set_object_cell(&mut w, 10, 18, 270, 0, 18);
+        // A stone block beside the bottle's top cell: breaking it runs
+        // check_1x2_top on the bottle (the 3x3 reaches (10, 17)).
+        set_object_cell(&mut w, 11, 17, 1, 0, 0);
+        let kill = kill_tile(&mut w, 11, 17, false).unwrap();
+        assert!(
+            !kill.object_drops.iter().any(|d| d.tile_kind == 270),
+            "the platform carries the bottle"
+        );
+        assert!(w.tile(10, 17).is_some_and(|t| t.active() && t.kind == 270));
+    }
+
+    #[test]
+    fn w4_g34_lantern_42_still_drops_via_by_tile() {
+        // The lantern 42 keeps its style-0 drop through `by_tile` (136, the
+        // Chain Lantern) — the rename to check_1x2_top preserves its record.
+        let mut w = bottle_world(42);
+        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        assert_all_gone(&w, &[(10, 17), (10, 18)]);
+        assert_eq!(kill.object_drops.len(), 1);
+        assert_eq!(kill.object_drops[0].tile_kind, 42);
+        assert_eq!(kill.object_drops[0].item, None, "the lantern resolves via by_tile");
+        assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 17));
+    }
+
+    // ---- W4-g34: the Check2x2 water-cage break-drop (research/68 §2) ----
+
+    /// A placed 2x2 water cage over the stone floor: origin (10, 18), cells
+    /// x 10..=11, y 18..=19, frames `(dx*18, dy*18)` (style 0).
+    fn cage_2x2_world(kind: u16) -> World {
+        let mut w = object_world();
+        for dx in 0..2 {
+            for dy in 0..2 {
+                set_object_cell(&mut w, 10 + dx, 18 + dy, kind, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_g34_water_cage_2x2_break_drops_the_cage_item() {
+        // `Check2x2`'s default branch (`WorldGen.cs:48570-48751`): breaking
+        // any cell sweeps all four and drops the cage item at the trigger
+        // cell. Every water-cage drop equals the placing item (`item: None`
+        // → `by_tile`; the itemdata census pins 282→250 … 318→2441).
+        for kind in [
+            282u16, 505, 543, 598, 568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360,
+            580, 620, 521, 522, 523, 524, 525, 526, 527, 316, 317, 318,
+        ] {
+            let mut w = cage_2x2_world(kind);
+            let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+            let cells: Vec<(i32, i32)> = (10..=11)
+                .flat_map(|x| (18..=19).map(move |y| (x, y)))
+                .collect();
+            assert_all_gone(&w, &cells);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            // The trigger is the first surviving cell in SquareTileFrame
+            // order around the hit (10, 19): (10, 18).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 18));
+            assert_eq!(kill.object_drops[0].item, None, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn w4_g34_jellyfish_bowl_2x2_break_drops_the_jar() {
+        // The jellyfish bowls 316-318 (the animated-light cages, research/68
+        // §3) drop their jar item on break — the placing items 2439/2440/2441
+        // (pinned by the itemdata census); the record carries `item: None`
+        // and the app resolves it via `by_tile`.
+        for kind in [316u16, 317, 318] {
+            let mut w = cage_2x2_world(kind);
+            let kill = kill_tile(&mut w, 11, 18, false).unwrap();
+            assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+            assert_eq!(kill.object_drops.len(), 1, "kind {kind}");
+            assert_eq!(kill.object_drops[0].tile_kind, kind);
+            assert_eq!(kill.object_drops[0].item, None);
+            // The trigger is the first surviving cell in SquareTileFrame
+            // order around the hit (11, 18): (10, 18).
+            assert_eq!((kill.object_drops[0].x, kill.object_drops[0].y), (10, 18));
+        }
+    }
+
+    // ---- W4-g34: the Palworld egg break-drop (the d105 task seed) ----
+
+    #[test]
+    fn w4_g34_chillet_egg_752_break_drops_the_egg_item() {
+        // `Check2x2` case 752 (`WorldGen.cs:48576-48578`): `num14 = 6142`
+        // (the Palworld Chillet Egg item). Breaking any cell of the placed
+        // 2x2 sweeps all four and drops ONE 6142 at the trigger cell — the
+        // egg has NO placing item (`itemdata` 6142 tile:None), so the
+        // explicit check drop is the only drop (no per-cell double spawn:
+        // 752 is not in `KILL_TILE_NO_CELL_DROP`, but `by_tile(752)` finds
+        // nothing). Dispatch: the plain-break group :85689-85691 falls to
+        // `goto case 132` :85927 → Check2x2.
+        let mut w = cage_2x2_world(752);
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 752,
+                x: 10,
+                y: 18,
+                item: Some(6142),
+            }]
+        );
+    }
+
+    #[test]
+    fn w4_g34_digtoise_751_break_drops_the_sibling_item() {
+        // `Check2x2` case 751 (`WorldGen.cs:48573-48575`): `num14 = 5667`
+        // (the Palworld Digtoise item) — the sibling arm ported with the
+        // Chillet egg. Same 2x2 sweep + trigger-cell drop position.
+        let mut w = cage_2x2_world(751);
+        let kill = kill_tile(&mut w, 11, 18, false).unwrap();
+        assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 751,
+                x: 10,
+                y: 18,
+                item: Some(5667),
+            }]
+        );
+    }
+
+    #[test]
+    fn w4_g34_egg_2x2_no_item_support_break_sweeps_without_the_drop() {
+        // `no_item` suppresses the drop record but still sweeps the object:
+        // mining the floor under the left column cascades into `Check2x2`
+        // (the support test :48452-48463 fails), the four cells die, and the
+        // `CheckPlan` gate (`square_tile_frame`'s `!no_item` arm) holds the
+        // egg record back — the same shape as the chest support-break
+        // witness above, with the drops suppressed.
+        let mut w = cage_2x2_world(752);
+        let kill = kill_tile(&mut w, 10, 20, true).unwrap();
+        assert_all_gone(&w, &[(10, 18), (10, 19), (11, 18), (11, 19)]);
+        assert!(kill.object_drops.is_empty(), "no_item suppresses the egg");
+    }
+
+    #[test]
+    fn w4_g34_object_drop_spawn_center_matches_the_csharp_rects() {
+        // The g78 centre-gap FIX-ONCE: `Item.NewItem`'s rect → centre
+        // conversion (`Item.cs:49649-49651` — `center = (X + Width/2,
+        // Y + Height/2)`). The record carries the rect TOP-LEFT in tile
+        // coords; the helper resolves the pixel centre once for every
+        // consumer. Rect census: 32x32 for the furniture/cage/object checks,
+        // 16x16 for the doors (`DropDoorItem` :69414) + the on-table 1x1
+        // per-cell drop (`KillTile_DropItems` :63955), 48x32 for the oasis
+        // echo 705 (:49454) + the worm cages 391-394 (:49481).
+        let at = |kind: u16, x: i32, y: i32| {
+            ObjectDrop { tile_kind: kind, x, y, item: None }.spawn_center_px()
+        };
+        // 32x32: +16/+16.
+        assert_eq!(at(14, 10, 18), (176.0, 304.0), "the table");
+        assert_eq!(at(275, 9, 17), (160.0, 288.0), "the big cage");
+        assert_eq!(at(752, 10, 18), (176.0, 304.0), "the Chillet egg");
+        assert_eq!(at(31, 99, 99), (1600.0, 1600.0), "the orb (top-left, not pre-centred)");
+        // 16x16: +8/+8.
+        assert_eq!(at(10, 9, 18), (152.0, 296.0), "the closed door");
+        assert_eq!(at(11, 9, 18), (152.0, 296.0), "the open door");
+        assert_eq!(at(78, 10, 19), (168.0, 312.0), "the on-table pot");
+        // 48x32: +24/+16.
+        assert_eq!(at(391, 10, 18), (184.0, 304.0), "the worm cage");
+        assert_eq!(at(705, 10, 18), (184.0, 304.0), "the oasis echo");
     }
 }

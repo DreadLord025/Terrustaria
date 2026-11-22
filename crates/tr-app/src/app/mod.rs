@@ -892,6 +892,23 @@ pub(crate) struct App {
     /// `WorldFrameKey::tile_anim` covers every value it feeds the draw.
     pub(crate) tile_anim: tr_core::drawdata_anim::TileAnimator,
     pub(crate) tile_anim_step: FixedStepper,
+    /// `Main.*CageFrame`/`*CageFrameCounter` + the mode bytes
+    /// (`Main.cs:66902-66972`) — the critter-cage animator
+    /// (`Main.AnimateTiles_CritterCages`, `Main.cs:13511-16596`), ticked in
+    /// the same `animate_tiles_phase` as the tile animator (the C# calls it
+    /// at the tail of `AnimateTiles`, `Main.cs:19303`), gated on the
+    /// `critter_cage` proximity flag the tile draw raises (W4-g34 union).
+    /// `draw_tiles` reads its tables through `cage_draw_data`'s `frame_of`
+    /// for ALL 92 cage ids; the G6 `WorldFrameKey::tile_anim` covers it via
+    /// the `is_cage_kind`-gated FNV mix. PROCESS state — warmed up once at
+    /// construction on a fresh world-seed clone (`Initialize_TileAndNPCData2`,
+    /// `Main.cs:6800-6807`), NEVER reset on world entry (research/67).
+    pub(crate) cage_anim: tr_core::critter_cage_anim::CritterCageAnimator,
+    /// `Main.critterCage` (`Main.cs:1445`): set by the tile draw when a cage
+    /// cell is drawn (`TileDrawing.cs:5672` etc.), cleared at the non-solid
+    /// pass head (`:474`). The port's single row-major pass raises it during
+    /// `draw_tiles` and the animator consumes the previous frame's value.
+    pub(crate) critter_cage: bool,
     /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
@@ -1227,6 +1244,78 @@ mod frame_key {
         let before = a.anim_key();
         a.weather_vane_bobframe += 1;
         assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
+    }
+
+    /// W4-g34 union key-coverage witness (WRITTEN NOT RUN — f14's
+    /// `cage_animator_state_changes_the_frame_key` adapted from the
+    /// dedicated `cage_anim` slot to the `tile_anim` FNV-mix form,
+    /// research/67 §2.4/§5): the cage animator's tables ride the cached
+    /// world range (`draw_tiles` feeds `frame_of` into the cage arms'
+    /// addFrY rewrites), so two frames that differ only in cage state must
+    /// not share a cached range; the closed gate keeps the key (the
+    /// pre-wiring cache behaviour for cage-free views).
+    #[test]
+    fn cage_animator_state_changes_the_frame_key() {
+        // The frame/draw.rs mix: one extra FNV round per cage-key byte.
+        let mix = |base: u64, cage: u64| {
+            let mut h = base;
+            for b in cage.to_le_bytes() {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+            h
+        };
+        let mut a = tr_core::critter_cage_anim::CritterCageAnimator::new();
+        let k0 = mix(0, a.anim_key());
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        a.animate(true, &mut rng);
+        let k1 = mix(0, a.anim_key());
+        assert_ne!(k0, k1, "one open-gate cage tick must change the key");
+        assert_eq!(k1, mix(0, a.anim_key()), "an unchanged animator must not");
+        // The closed gate draws nothing — the key holds.
+        a.animate(false, &mut rng);
+        assert_eq!(k1, mix(0, a.anim_key()), "the closed gate keeps the key");
+    }
+
+    /// W4-g34 union warm-up wiring witness (WRITTEN NOT RUN — f14's
+    /// `w4_f14_the_warmup_replays_on_a_clone_not_the_live_stream`
+    /// semantics pinned at the App seam, research/67 §2.6/§4/§5): both
+    /// constructors warm up on a FRESH world-seeded clone (NOT g33's live
+    /// `rngs.global()` form), and world entry never resets or re-warms
+    /// the cage tables (PROCESS state).
+    #[test]
+    fn the_app_warm_up_uses_a_fresh_clone_and_world_entry_keeps_the_tables() {
+        let src = include_str!("mod.rs");
+        assert!(
+            src.contains("app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(world_seed as i32))"),
+            "App::new warms up on a fresh world-seed clone"
+        );
+        // Built at runtime so this witness's own source does not match.
+        let live_form = format!("warm_up({}.rngs.global())", "app");
+        let live_form_self = format!("warm_up({}.rngs.global())", "self");
+        assert!(
+            !src.contains(&live_form) && !src.contains(&live_form_self),
+            "the live global stream is never consumed by the warm-up (g33 form dropped)"
+        );
+        let flow = include_str!("flow.rs");
+        assert!(
+            flow.contains("app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(1))"),
+            "the flow_app twin warms up on the same clone form"
+        );
+        let enter = src
+            .split("pub(crate) fn enter_loaded_world")
+            .nth(1)
+            .expect("the world-entry hook")
+            .split("pub(crate) fn is_client")
+            .next()
+            .expect("the hook ends before is_client");
+        // The STATEMENT forms — the hook's comment names the dropped call.
+        assert!(
+            !enter.contains("self.cage_anim.reset();")
+                && !enter.contains("self.cage_anim.warm_up("),
+            "no per-world cage reset or warm-up (:8387-8395 covers tileFrame only)"
+        );
+        assert!(enter.contains("self.tile_anim.reset();"), "the tileFrame reset stays");
     }
 }
 
@@ -2346,6 +2435,13 @@ impl App {
         // `weatherVaneBobframe = 0` at `:67242`).
         self.tile_anim.reset();
         self.tile_anim_step = FixedStepper::new(1.0 / 60.0, 8);
+        // W4-g34 union (research/67 §2.5/§3): the cage tables are PROCESS
+        // state — NO world-entry reset. The `:8387-8395` zero loop above
+        // covers `tileFrame`/`tileFrameCounter` ONLY; the cage arrays are
+        // allocated zeroed once in the STATIC ctor `static Main()`
+        // (`Main.cs:66502`, `:66901-66972`) and never re-zeroed per world.
+        // The old `cage_anim.reset()` here mis-cited that allocation as
+        // `Initialize_TileAndNPCData` — dropped (f14/g33 lifetime).
         // `Main.mapDelay = 2` (`WorldGen.cs:6947`, the world-load reset):
         // the legacy engine owns the counter in the port (S1-E-19 wave B,
         // `LegacyLighting.cs:345-348`).
@@ -4035,6 +4131,8 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
+            cage_anim: tr_core::critter_cage_anim::CritterCageAnimator::new(),
+            critter_cage: false,
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -4123,6 +4221,21 @@ impl App {
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).
         app.wiring.seed_rand(world_seed | 1);
+        // W4-g34 union (research/67 §2.6/§4): the cage warm-up —
+        // `Initialize_TileAndNPCData2`'s 3600 forced ticks
+        // (`Main.cs:6802-6807`, the FIRST statement of the ctor-called
+        // `:6610` init, between `RandomizeBackgrounds` `:6594-6601` and
+        // the sky/cloud draws `:10873-10876`). f14's FRESH-CLONE semantics:
+        // a world-seeded `UnifiedRandom` clone, NOT the live
+        // `rngs.global()` stream (g33's form shifts every downstream
+        // `Main.rand` consumer — a much larger determinism blast radius).
+        // The C# stream is `DateTime.Now.Ticks`-seeded process state (the
+        // documented `rng.rs` stand-in); the clone keeps the port's live
+        // interleave bit-for-bit with the pre-wiring baseline, at the cost
+        // of the post-warm-up tables not matching an exact-stream replay
+        // (the recorded approximation, research/67 §4 residual). Runs
+        // ONCE per App, before any world-load or ambience draw.
+        app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(world_seed as i32));
         // `SetOngoingToTemps:169-172`: the sandstorm snapshot the load read out
         // of the flags block (`_tempSandstorm*`, `LoadWorldFlags:2277-2283`)
         // restores the event's live state, exactly as the rain triple above

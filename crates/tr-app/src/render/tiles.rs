@@ -331,6 +331,15 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-g34 union: the critter-cage animator's tables
+    // (`Main.*CageFrame`, `Main.cs:66902-66972`) — ALL 92 cage ids'
+    // `addFrY = Main.<table>[idx] * stride` rewrite
+    // (`TileDrawing.cs:5629-5907`) reads them through `cage_draw_data`'s
+    // `frame_of`. `critter_cage` is `Main.critterCage` (`Main.cs:1445`):
+    // cleared at the pass head (`TileDrawing.cs:474`), raised for every cage
+    // cell drawn (`:5672` etc.), read back by the caller for the animator gate.
+    cage_anim: &tr_core::critter_cage_anim::CritterCageAnimator,
+    critter_cage: &mut bool,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -419,6 +428,10 @@ pub(crate) fn draw_tiles(
 
     let width = world.width as usize;
     let white = r.white_uv();
+    // `TileDrawing.Draw`'s non-solid-pass head clears `Main.critterCage`
+    // (`TileDrawing.cs:474`); the port's single row-major pass clears it
+    // here and the cage cells below re-raise it (W4-g34).
+    *critter_cage = false;
     let mut stats = TileDrawStats {
         lit_tiles: light.lit_tiles,
         light_ms,
@@ -669,9 +682,13 @@ pub(crate) fn draw_tiles(
                 // `Main.tileFrame[kind]` (`TileDrawing.cs:4533`), fed from
                 // the wired animator (S1-G-1f, `drawdata_anim.rs`).
                 let dd = if active && marker.is_none() && !is_tree {
-                    let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
-                        t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
-                    });
+                    // W4-g34 deviation fix (d61/d64 R3): case 4's probe is the
+                    // FULL `WorldGen.SolidTile(x, y - 1)` (`WorldGen.cs:70111-
+                    // 70132`) — active + solid + not-solid-top + not-half-brick
+                    // + slope 0 + not-inactive, null-true — not the old
+                    // three-clause subset. The exact predicate already lives
+                    // in `drawdata_cases_a::solid_tile` (the 518 probe).
+                    let solid_above = crate::drawdata_cases_a::solid_tile(world, tx, ty - 1);
                     // The animator arrays are `[TileID.Count]`
                     // (`Main.cs:66976-66977`); an out-of-range kind keeps the
                     // vanilla t=0 row (the `solid` probe below bounds-checks
@@ -728,6 +745,39 @@ pub(crate) fn draw_tiles(
                     ) {
                         dd = cased;
                     }
+                    // W4-g34 union (research/67 §2.2/§2.3): the critter-cage
+                    // rewrite — the C# FIRST GetTileDrawData switch's four
+                    // cage case groups (TileDrawing.cs:5629-5907, ALL 92
+                    // ids: g34's 50 + g33's 42), at the FIRST switch's
+                    // TAIL position: AFTER the static
+                    // table + slice B's delegated first-switch cases,
+                    // BEFORE slice A's SECOND switch (:6049-6507). The
+                    // 568/569/570/580 glow rects read `tileFrameY + addFrY`
+                    // POST-cage (:6085-6104), so the rewrite must land
+                    // before `apply_cases_a` builds them, and before the
+                    // source-rect resolve (:1007 reads the final
+                    // addFrX/addFrY). `cage_draw_data` REPLACES the static
+                    // cage arms with `top = 2` + the per-animal
+                    // `addFrY = Main.<table>[idx] * stride` read from the
+                    // wired cage animator (`AnimateTiles_CritterCages`,
+                    // `Main.cs:13511-16596`). The chest rewrite stays with
+                    // the chest lane (W4-d58's `:993` seam). The
+                    // `Main.critterCage = true` side effect (:5672 etc.)
+                    // rides the post-dd flag block below — the port's
+                    // fused-pass stand-in, one cell later in the same walk.
+                    if tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
+                        if let Some(cage) = tr_core::drawdata_furniture::cage_draw_data(
+                            tile.kind,
+                            tx,
+                            ty,
+                            tile.frame_x,
+                            tile.frame_y,
+                            tr_core::drawdata_furniture::CAGE_FRAMES,
+                            |table, row, idx| cage_anim.frame_of(table, row, idx),
+                        ) {
+                            dd = cage;
+                        }
+                    }
                     // S1-F-9d slice A: the delegated static-case pass —
                     // LilyPad's liquid float (518), the oasis/sea-oats
                     // biome rows (530/529) and the SECOND GetTileDrawData
@@ -753,6 +803,17 @@ pub(crate) fn draw_tiles(
                 } else {
                     tr_core::drawdata::TileDrawData::default()
                 };
+
+                // `Main.critterCage = true` (`TileDrawing.cs:5672`/`:5781`/
+                // `:5838` etc.): every drawn cage cell raises the proximity
+                // flag that gates `AnimateTiles_CritterCages`. The port's
+                // single row-major pass raises it here for ANY cage kind;
+                // the caller reads it back after the pass and the animator
+                // consumes it on the next tick (the C# clears it at the
+                // non-solid pass head, `:474`).
+                if active && tr_core::drawdata_furniture::is_cage_kind(tile.kind) {
+                    *critter_cage = true;
+                }
 
                 // Resolve the drawn tile frame once; reused for opacity and drawing.
                 let mut tile_frame = None;
@@ -1998,6 +2059,117 @@ mod tests {
             body.contains("let echo_wall_lit = tile.wall == WALL_ECHO && show_invisible_blocks;"),
             "a shown echo wall is never dark coverage"
         );
+    /// W4-g34 union draw-feed witness (WRITTEN NOT RUN — code-only mode):
+    /// the cage rewrite covers ALL 92 ids (`is_cage_kind`, research/67
+    /// §2.2 — the g33 42 + g34 50 union) and reads the wired cage animator
+    /// through `cage_draw_data`'s `frame_of` (the C# `GetTileDrawData` cage
+    /// arms, `TileDrawing.cs:5629-5907`); the `Main.critterCage` flag is
+    /// cleared at the pass head (`:474`) and raised for every cage cell
+    /// (`:5672` etc.). The old `cage > glow` assertion is INVERTED by the
+    /// order witness below (research/67 §2.3 — f14's slice-B/A order).
+    #[test]
+    fn the_cage_rewrite_feeds_from_the_cage_animator() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        // The rewrite is gated on the FULL cage set and reads the animator.
+        assert!(
+            dd_block.contains("is_cage_kind(tile.kind)"),
+            "the rewrite covers all 92 cage ids (the union wiring)"
+        );
+        assert!(
+            dd_block.contains("cage_anim.frame_of(table, row, idx)"),
+            "the cage frame rides the wired animator's tables"
+        );
+        assert_eq!(
+            dd_block.matches("cage_draw_data(").count(),
+            1,
+            "exactly one live cage dispatch site"
+        );
+        // The proximity flag: cleared at the head, raised per cage cell.
+        assert!(
+            body.contains("*critter_cage = false;"),
+            "the pass head clears Main.critterCage (TileDrawing.cs:474)"
+        );
+        assert!(
+            body.contains("*critter_cage = true;"),
+            "a drawn cage cell raises Main.critterCage (TileDrawing.cs:5672)"
+        );
+        assert!(
+            body.contains("is_cage_kind(tile.kind)"),
+            "the flag covers EVERY cage kind (the animator is whole)"
+        );
+    }
+
+    /// W4-g34 composite-order witness (WRITTEN NOT RUN — f14's
+    /// `w4_f14_the_cage_post_pass_rides_the_first_switch_tail` adapted to
+    /// the direct `cage_draw_data` call, research/67 §2.3/§5): the cage
+    /// rewrite sits at the C# FIRST `GetTileDrawData` switch's tail
+    /// (TileDrawing.cs:5629-5907) — AFTER `draw_data` + slice B's
+    /// delegated first-switch cases and BEFORE slice A's SECOND switch,
+    /// whose 568/569/570/580 glow rects read `tileFrameY + addFrY`
+    /// POST-cage (`:6085-6104`), and BEFORE the source-rect resolve
+    /// (`:1007`). This REPLACES the old post-slice-A `cage > glow` pin
+    /// (the assertion INVERTS to glow > post-cage-read).
+    #[test]
+    fn the_cage_rewrite_rides_the_first_switch_tail() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let table = dd_block.find("tr_core::drawdata::draw_data(").expect("the static table");
+        let cases_b = dd_block.find("crate::drawdata_cases_b::case_draw_data(").expect("slice B");
+        let cage = dd_block
+            .find("tr_core::drawdata_furniture::cage_draw_data(")
+            .expect("the cage rewrite");
+        let cases_a = dd_block
+            .find("crate::drawdata_cases_a::apply_cases_a")
+            .expect("slice A");
+        assert!(table < cases_b, "slice B follows the static table");
+        assert!(cases_b < cage, "the cage groups are the FIRST switch's tail");
+        assert!(
+            cage < cases_a,
+            "the SECOND switch's glow rects read the POST-cage addFrY (:6085-6104)"
+        );
+        // The gate precedes the rewrite and feeds the animator's tables.
+        let gate = dd_block.find("is_cage_kind(tile.kind)").unwrap();
+        assert!(gate < cage, "the cage-kind gate precedes the rewrite");
+        assert!(dd_block.contains("cage_anim.frame_of(table, row, idx)"));
+        // The source-rect resolve reads the final addFrX/addFrY (:1007).
+        assert!(cage < body.find("// Resolve the drawn tile frame once").unwrap());
+    }
+
+    /// W4-g34 union acceptance pin (WRITTEN NOT RUN — g33's
+    /// `wired_cage_rewrite_matches_the_static_arms_at_t0` retargeted to
+    /// `CritterCageAnimator`, research/67 §5): with the vanilla t=0 tables
+    /// the wired cage rewrite is byte-equal to the static arms for EVERY
+    /// one of the 92 cage ids — the union wiring changes no pixel until
+    /// the animator moves the tables.
+    #[test]
+    fn wired_cage_rewrite_matches_the_static_arms_at_t0() {
+        let a = tr_core::critter_cage_anim::CritterCageAnimator::new();
+        let cages: &[u16] = &[
+            275, 276, 277, 278, 279, 280, 281, 296, 297, 309, 358, 359, 413, 414, 542, 550, 551,
+            553, 554, 558, 559, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611,
+            612, 632, 640, 643, 644, 645, 710, 285, 286, 298, 299, 310, 339, 361, 362, 363, 364,
+            391, 392, 393, 394, 532, 533, 538, 544, 555, 556, 582, 619, 629, 282, 505, 543, 598,
+            568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360, 580, 620, 521, 522, 523,
+            524, 525, 526, 527, 316, 317, 318,
+        ];
+        assert_eq!(cages.len(), 92);
+        for &kind in cages {
+            let static_arm = tr_core::drawdata::draw_data(kind, 13, 7, 18, 18, 0, false);
+            let wired = tr_core::drawdata_furniture::cage_draw_data(
+                kind, 13, 7, 18, 18,
+                tr_core::drawdata_furniture::CAGE_FRAMES,
+                |t, r, i| a.frame_of(t, r, i),
+            )
+            .unwrap();
+            assert_eq!(wired, static_arm, "kind {kind}");
+        }
     }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain

@@ -18,12 +18,13 @@
 //! in source order. No other RNG is touched; tile framing (`framing.rs`) is
 //! untouched.
 //!
-//! Deliberate deviation: the trailing `Main.AnimateTiles_CritterCages()`
-//! (`Main.cs:19303`, body `:13511-13700`) is NOT ported here — it animates the
-//! separate `Main.bunnyCageFrame[]` cage-entity arrays (tile 620's deferred
-//! special pass, research/09 deviation "critter cage MISSING"), not
-//! `tileFrame[]`, and needs the `Main.critterCage` proximity gate. Recorded in
-//! docs/ANALYSIS.md.
+//! The trailing `Main.AnimateTiles_CritterCages()` (`Main.cs:19303`, body
+//! `:13511-16596`) is ported in [`crate::critter_cage_anim`] (W4-g34) — it
+//! animates the separate `Main.*CageFrame[]` cage-entity arrays, not
+//! `tileFrame[]`, gated on the `Main.critterCage` proximity flag. It ticks
+//! beside this animator in `App::animate_tiles_phase` on the same
+//! `Main.rand` stream; the cage draw seam (`render/tiles.rs`) reads its
+//! tables. Recorded in docs/ANALYSIS.md + research/66.
 
 use crate::tiledata::TILE_COUNT;
 use crate::unified_random::UnifiedRandom;
@@ -452,7 +453,9 @@ impl TileAnimator {
         if self.tile_frame_counter[493] < 0 {
             self.tile_frame_counter[493] += 120;
         }
-        // Main.cs:19303 — AnimateTiles_CritterCages: deferred (module docs).
+        // Main.cs:19303 — AnimateTiles_CritterCages: ported in
+        // critter_cage_anim.rs, ticked beside this animator in
+        // App::animate_tiles_phase (W4-g34).
     }
 
     /// `Main.AnimateTiles_WeatherVane` (`Main.cs:19306-19329`).

@@ -791,7 +791,7 @@ pub(crate) fn spawn_item_drop_px(
 /// 16×16 `WorldItem` box (`WorldItem.cs:138`) at `(x*16+16, y*16+16)`; the
 /// tile variant above fed the tile TOP-LEFT (+1 px), landing every object
 /// drop ~15 px left/up of the C# centre. This entry takes the CENTRE (the
-/// `ObjectDrop::spawn_centre_px` conversion) and places the port's 14×14
+/// `ObjectDrop::spawn_center_px` conversion) and places the port's 14×14
 /// box at `centre − SIZE/2` — the same box-centre convention, no +1. The
 /// draws are byte-identical to [`spawn_item_drop_px`] (only the position
 /// differs). The per-cell / pot / tree / wall drops keep the tile variant
