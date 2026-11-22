@@ -1502,6 +1502,14 @@ pub struct Npc {
     /// recorded side. 0 = no strike / the aiStyle-74 fuse's argument-less
     /// `HitEffect()` (`NPC.cs:35497`, the default `hitDirection = 0`).
     pub last_hit_dir: i32,
+    /// The last accepted strike's `hitDirection` (`NPC.StrikeNPC`'s
+    /// argument, `NPC.cs:81189`): the C# passes it straight to
+    /// `HitEffect(hitDirection, num)` (`:81488`); the port batches deaths
+    /// into the NPC pass (S1-E-21c), so the W4-g59 death dust feed reads
+    /// the recorded side. 0 = no strike / an argument-less `HitEffect()`
+    /// (the C# default `hitDirection = 0`, `NPC.cs:81654`). The W4-c12
+    /// staged field, landed here for the death-dust lane.
+    pub last_hit_dir: i32,
     /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
@@ -3490,6 +3498,19 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-g59 — the Crimslime's `alpha = 55` row
+                            // (`NPC.cs:11342`): the death dust feed's
+                            // type-136 burst reads it (`:85422`).
+                            NpcKind::Crimslime => 55,
+                            // W4-g59 DOC-SWEEP — the EoW family's
+                            // `alpha = 255` spawn-fade rows (`NPC.cs:8921`
+                            // head / `:8941` body / `:8961` tail): the
+                            // `AI_006` tail (`:52251-52271`) fades it 42
+                            // per moved tick; the death dust feed's
+                            // type-18 burst reads the live value.
+                            NpcKind::EaterOfWorldsHead
+                            | NpcKind::EaterOfWorldsBody
+                            | NpcKind::EaterOfWorldsTail => 255,
                             _ => 0,
                         }
                     }),
@@ -4827,6 +4848,8 @@ impl Npc {
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         // W4-c12: the strike side for the death feed's HitEffect draws.
         self.last_hit_dir = dir;
+        // W4-g59: the strike side for the death dust feed's HitEffect draws.
+        self.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
             self.knock_back_resist(),
@@ -4881,6 +4904,8 @@ impl Npc {
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         // W4-c12: the strike side for the death feed's HitEffect draws.
+        self.last_hit_dir = dir;
+        // W4-g59: the strike side for the death dust feed's HitEffect draws.
         self.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
@@ -4994,6 +5019,8 @@ impl Npc {
         let (w, _) = n.size();
         let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
         // W4-c12: the strike side for the death feed's HitEffect draws.
+        n.last_hit_dir = dir;
+        // W4-g59: the strike side for the death dust feed's HitEffect draws.
         n.last_hit_dir = dir;
         let (vx, vy) = tr_core::damage::knock_back_npc(
             knock_back,
@@ -6489,6 +6516,11 @@ impl Npc {
             // damage zero mirrors that (the contact pass runs at this
             // update's tail).
             self.damage_override = Some(0);
+            // W4-g59 — the fuse calls `HitEffect()` with NO arguments: the
+            // C# defaults `hitDirection = 0` (`NPC.cs:81654`), so the death
+            // dust feed's SpeedX reads 0, not the last strike's side (the
+            // W4-c12 reset, landed for the death-dust lane).
+            self.last_hit_dir = 0;
         }
     }
 

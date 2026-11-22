@@ -1210,12 +1210,84 @@ pub(crate) fn update_worms(app: &mut App) {
         zone_crimson: app.scene_metrics.zone_crimson,
     });
     update_worms_ctx(world, ctx, &mut app.npcs, rng, &mut app.next_worm_id);
+    // W4-g59 DOC-SWEEP — the EoW spawn fade (`AI_006_Worms`'s tail,
+    // `NPC.cs:52251-52271`), a post-pass after the chain movement (the
+    // pool-pass deviation — the C# interleaves it in slot order).
+    let dust_ctx = app.spawn_ctx();
+    eow_spawn_fade(&app.world, &dust_ctx, &mut app.npcs, &mut app.dust, rng);
     // S1-E-21g — the worm pass's queued plays (the leech entry burst,
     // the dig roars): the same drain as the per-NPC loop, after the
     // pass's draws on the same UpdateNPCs stream.
     for n in app.npcs.iter_mut() {
         for req in std::mem::take(&mut n.wants_sound) {
             play_npc_sound_request(&mut app.audio, n, req, rng);
+        }
+    }
+}
+
+/// W4-g59 DOC-SWEEP — the EoW spawn fade (`AI_006_Worms`'s tail,
+/// `NPC.cs:52251-52271`): the 13/14/15 family fades its `alpha = 255`
+/// SetDefaults start (`:8921`/`:8941`/`:8961`) 42 per MOVED tick. The
+/// port runs it as a post-pass after the chain movement (the pool-pass
+/// deviation — the C# interleaves it in slot order; the fade reads the
+/// leader's alpha, so the head's fade lands before its followers' gate).
+/// The dust rides the live pool on the same `UpdateNPCs` stream. The
+/// movement test reads the preamble's `old_x/old_y` stamp (`NPC.cs:92605`)
+/// vs the post-worm-pass position — the C#'s
+/// `(position - oldPosition).Length() > 2f`.
+fn eow_spawn_fade(
+    world: &tr_core::World,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+    npcs: &mut [Npc],
+    dust: &mut tr_core::particles::DustPool,
+    rng: &mut UnifiedRandom,
+) {
+    for i in 0..npcs.len() {
+        if !matches!(
+            npcs[i].kind,
+            NpcKind::EaterOfWorldsHead | NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail
+        ) || npcs[i].hp <= 0
+        {
+            continue;
+        }
+        // `:52251` — the gate: type 13 always passes; 14/15 pass only while
+        // their leader (`ai[1]` = the port's seg_index-1 link) is already
+        // half-visible (`alpha < 85`). A missing leader reads 255 (the C#'s
+        // fresh-slot default) → the follower holds its fade.
+        let is_head = npcs[i].kind == NpcKind::EaterOfWorldsHead;
+        let leader_alpha = if is_head {
+            0
+        } else {
+            let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+            npcs.iter()
+                .find(|n| n.worm_id == wid && n.seg_index == seg.saturating_sub(1) && n.hp > 0)
+                .map(|n| n.alpha as i32)
+                .unwrap_or(255)
+        };
+        if !is_head && leader_alpha >= 85 {
+            continue;
+        }
+        // `:52255-52263` — while still fading AND alive: 2× type-14 dust at
+        // the position, alpha 100, scale 2, noGravity + noLight.
+        if npcs[i].alpha > 0 {
+            let (w, h) = npcs[i].size();
+            let pos = Vec2::new(npcs[i].x, npcs[i].y);
+            for _ in 0..2 {
+                let idx = dust.new_dust(
+                    rng, dust_ctx, world, pos, w as i32, h as i32, 14,
+                    0.0, 0.0, 100, tr_core::particles::Color::default(), 2.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.no_light = true;
+            }
+        }
+        // `:52264-52271` — the fade step is MOVEMENT-gated: only when the
+        // tick's displacement exceeds 2 px does `alpha -= 42` (floor 0).
+        let dx = npcs[i].x - npcs[i].old_x;
+        let dy = npcs[i].y - npcs[i].old_y;
+        if (dx * dx + dy * dy).sqrt() > 2.0 {
+            npcs[i].alpha = npcs[i].alpha.saturating_sub(42);
         }
     }
 }
@@ -1855,6 +1927,10 @@ fn update_worms_ctx(
                 npcs[i].kind = NpcKind::EaterOfWorldsHead;
                 npcs[i].y -= npcs[i].size().1;
                 npcs[i].max_hp = NpcKind::EaterOfWorldsHead.max_hp();
+                // W4-g59 DOC-SWEEP — `Transform(13)`'s `SetDefaults` resets
+                // the fade start (`NPC.cs:8921`'s `alpha = 255`): the new
+                // head re-fades from invisible (`:52251-52271`).
+                npcs[i].alpha = 255;
                 npcs[i].hp = if old_max > 0 {
                     (old_life * npcs[i].max_hp / old_max).max(1)
                 } else {
@@ -1904,6 +1980,9 @@ fn update_worms_ctx(
                 npcs[i].kind = NpcKind::EaterOfWorldsTail;
                 npcs[i].y -= npcs[i].size().1;
                 npcs[i].max_hp = NpcKind::EaterOfWorldsTail.max_hp();
+                // W4-g59 DOC-SWEEP — `Transform(15)`'s `SetDefaults` resets
+                // the fade start (`NPC.cs:8961`'s `alpha = 255`).
+                npcs[i].alpha = 255;
                 npcs[i].hp = if old_max > 0 {
                     (old_life * npcs[i].max_hp / old_max).max(1)
                 } else {
@@ -5707,6 +5786,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // visual skip.
         if matches!(npc.kind, NpcKind::MartianDrone | NpcKind::SolarCorite) {
             style74_death_feed(app, npc);
+        }
+        // W4-g59 — the death DUST feed: the kind's `HitEffect` death-half
+        // burst (`npc_death_dust.rs`, batches 1-16: every dust-first clean
+        // kind the port's kind set carries + the 24 d35 row-gated
+        // activations of the DOC-SWEEP + the 23 d34/c4/d23/d37 row-gated
+        // activations of batches 11-13 + the 17 g8/d120/f42 row-gated
+        // activations of batches 14-15 + the 105 base-fold activation
+        // of batch 16). BEFORE the death cue: the C#
+        // runs HitEffect at `:81488`, ahead of checkDead's DeathSound
+        // (`:81561` → `:78186`). The draws ride the UpdateNPCs stream —
+        // the S1-E-21c batched-death deviation (the death-cue precedent
+        // below). Kinds outside the match draw nothing; the gore BODIES
+        // stay d55's (the feed consumes only the gore ARGUMENT draws the
+        // C# interleaves — the Wyvern's count/type rolls + the cursed
+        // pair's velocity pairs, the g63 rule; d55's wiring must not
+        // re-consume them).
+        {
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
+            crate::npc_death_dust::death_dust(
+                npc,
+                npc.kind.cs_id() as i32,
+                &mut app.dust,
+                &ctx,
+                rng,
+                &app.world,
+            );
         }
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
@@ -15559,6 +15665,130 @@ mod worm_tests {
             .count();
         assert_eq!(heads_after, heads_before, "AnyNPCs(13) blocks the second summon");
         assert_eq!(app.world.shadow_orb_count, 3, "the blocked gate leaves the count");
+    }
+
+    // ---- W4-g59 DOC-SWEEP: the EoW spawn fade (`NPC.cs:52251-52271`).
+
+    /// The fade is MOVEMENT-gated: a head that moved >2 px this tick drops
+    /// alpha 42 (255 → 213) and spawns 2× type-14 fade dust; a stationary
+    /// head keeps its alpha and draws nothing.
+    #[test]
+    fn w4_g59_the_eow_fade_steps_42_only_on_movement() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        assert_eq!(head.alpha, 255, "the ctor carries the SetDefaults fade start");
+        // Moved 10 px this tick (the preamble stamped old_x = 100).
+        head.old_x = 100.0;
+        head.old_y = 100.0;
+        head.x = 110.0;
+        let mut npcs = vec![head];
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(191);
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[0].alpha, 213, "255 - 42 on a >2px move");
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 2, "the 2x type-14 fade dust");
+        for d in &live {
+            assert_eq!(d.dust_type, 14);
+            assert_eq!(d.alpha, 100);
+            assert!(d.no_gravity && d.no_light);
+        }
+        // A stationary tick: no fade step, no dust.
+        npcs[0].old_x = npcs[0].x;
+        npcs[0].old_y = npcs[0].y;
+        let mut dust2 = tr_core::particles::DustPool::new();
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust2, &mut rng);
+        assert_eq!(npcs[0].alpha, 213, "the stationary tick holds the alpha");
+        assert!(dust2.slots().iter().all(|d| !d.active), "no dust when still");
+    }
+
+    /// The follower gate (`:52251`): a body fades only while its leader's
+    /// alpha < 85; at/above 85 it holds. The head always passes.
+    #[test]
+    fn w4_g59_the_eow_follower_fade_gates_on_the_leader_alpha() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_id = 1;
+        head.worm_inited = true;
+        head.alpha = 100; // still >= 85: the follower holds
+        head.old_x = 100.0;
+        head.old_y = 100.0;
+        head.x = 110.0;
+        let mut body = Npc::new(NpcKind::EaterOfWorldsBody, 100.0, 140.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.worm_id = 1;
+        body.seg_index = 1;
+        body.worm_inited = true;
+        body.old_x = 100.0;
+        body.old_y = 140.0;
+        body.x = 110.0;
+        let mut npcs = vec![head, body];
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(193);
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[0].alpha, 58, "the head fades (100 - 42)");
+        assert_eq!(npcs[1].alpha, 255, "the body holds while the leader >= 85");
+        // Now the leader is half-visible (< 85): the body fades too.
+        npcs[0].alpha = 58;
+        npcs[0].old_x = npcs[0].x;
+        npcs[0].old_y = npcs[0].y;
+        npcs[1].old_x = 100.0;
+        npcs[1].old_y = 140.0;
+        npcs[1].x = 110.0;
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[1].alpha, 213, "the body fades once the leader < 85");
+    }
+
+    /// The fade floors at 0 and stops drawing dust once invisible; the
+    /// death dust feed then reads the steady-state 0 (the batch-2 trio).
+    #[test]
+    fn w4_g59_the_eow_fade_floors_at_zero() {
+        let w = World::new("t".into(), 200, 200);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.alpha = 30; // one more step floors at 0
+        head.old_x = 100.0;
+        head.old_y = 100.0;
+        head.x = 110.0;
+        let mut npcs = vec![head];
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(197);
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust, &mut rng);
+        assert_eq!(npcs[0].alpha, 0, "30 - 42 floors at 0");
+        // The next moved tick: alpha 0 → no dust, no underflow.
+        npcs[0].old_x = npcs[0].x;
+        npcs[0].old_y = npcs[0].y;
+        npcs[0].x += 10.0;
+        let mut dust2 = tr_core::particles::DustPool::new();
+        eow_spawn_fade(&w, &ctx, &mut npcs, &mut dust2, &mut rng);
+        assert_eq!(npcs[0].alpha, 0);
+        assert!(dust2.slots().iter().all(|d| !d.active), "invisible: no fade dust");
     }
 }
 

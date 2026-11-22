@@ -47415,3 +47415,429 @@ W4-f15's TILE-DRAW-2 binding added **45** `Glow_{id}` sheets to
   (`Main.cs:25855`, census `npc_glow.rs:119` masks [24]) — re-verified
   COHERENT (C# arm read whole, `.xnb` present, unique, disjoint from the
   flame set + f15's 45) and kept; receipt in `research/52` §6.
+
+## The NPC death dust table (W4-g59, lane 1: kinds 1-230)
+`NPC.HitEffect` (`NPC.cs:81654-89834`) carries the per-kind dust/gore
+table; the DEATH halves (`life <= 0`) fire from `StrikeNPC_Inner`
+(`:81488`) BEFORE `checkDead` (`:81561`). `checkDead` itself
+(`:78040-78276`) draws NO dust (the probe's 4 hits at `:80980-81025` are
+`TransformVisuals`, the shimmer-transform lane). The port batches deaths
+into the NPC pass (S1-E-21c), so the feed rides the death retain
+(`world_sim/npcs.rs::update_npcs`) ahead of the death cue — the W4-c12
+`style74_death_feed` precedent — on the `UpdateNPCs` stream.
+**Lane split**: g59 = death dust kinds 1-230; d55 (`npc_hit_effect_a.rs`,
+ec78d152) = the gore sites; g60 = kinds 231-697; g61 = death spawns;
+g62 = the `life > 0` hit halves.
+**Census** (the full 1-230 arm walk): 173 kinds have dust-first death
+arms with no side effects (no NewNPC/PlaySound/AddBuff/tile writes in the
+death half); 20 of those are DUST-ONLY (zero gore):
+{23, 34, 63, 75, 112, 120, 122, 137, 138, 141, 143, 144, 145, 147, 169,
+183, 184, 204, 210, 211}. Exactly 10 are present in the port's kind set —
+**batch 1** (`npc_death_dust.rs::death_dust`, wired at the death retain):
+23 MeteorHead (`:89487-89501`, 50 Next(2)-selected 25/6 + 50 type-6
+vel×6), 138 IlluminantSlime (`:85490-85494`, 50×71 alpha 200 vel×1.5),
+143/144/145 the snowman trio (`:85370-85375`, 50×76 noGravity scale×1.2),
+147/184 the ice slimes (`:85350-85355`, 30×(76+4-tinted) pairs),
+183 Crimslime (`:85420-85424`, 50×136 this.alpha/this.color vel×2),
+210/211 the bees (`:85065-85077`, 6×150 Next(2) scale gate).
+**Excluded kinds (the census's rejects)**: the slime family 1/16/71
+(`:84721` NewNPC splits), the zombie family 3/52/53/104/109/132/161/162/
+186-189/200/223 (`:86937` gore-first + NewNPC), 4/125/126 (EoC PlaySound),
+25/30/33 (PlaySound), 46/55/67/74/102/224/230 (`:85942` gore-first),
+50 (KingSlime split), 59/60/151 (tile writes), 81/121 (NewNPC),
+113/114 (WoF gore-first), 115/116 (NewNPC), 127-131 (gore-first),
+133 (gore-first), 134-136 (Destroyer NewNPC). 64/103 share the 63 arm
+(their own `:85537`/`:85541` rows are color-only) — batch 2 candidates
+with 63 when the kind lands.
+**RNG contract**: the d50 DustPool contract — argument draws first (the
+Next(2) selectors), then the pool internals inside `new_dust` (the 6
+default-block rolls; type 6 adds the tweak-chain Next(-10,6)); cull
+refusals consume exactly the C#'s draws; post-spawn writes land on the
+returned slot, the sentinel included. None of batch 1's types
+(4/6/25/71/76/136/150) is ChildSafety-dangerous.
+**Stand-ins**: `hitDirection` rides `Npc::last_hit_dir` (the W4-c12
+staged field, landed here: recorded at hurt/hurt_from_projectile/
+strike_pooled, reset to 0 at the bubble fuse's argument-less HitEffect).
+183's `this.color` = default(Color) — the SetDefaults reset (`:8526`) is
+the only write for 183 (the paint-blend ladder `:60577-60692` is
+type-1-only); the port's Npc has no color field yet. 183's `alpha = 55`
+ctor row added (`NPC.cs:11342`). The 112/666 whole-arm burst
+(`:85395-85408`) fires on every hit — g62's, not death-only.
+8 witnesses WRITTEN NOT RUN (code-only): the bee gate ladder, the
+meteor-head twin-pool replay, the snowman trio's shared census, the
+ice-slime pairs, the Crimslime alpha/vel×2, the Illuminant vel×1.5, the
+off-screen sentinel writes, the non-batch no-draw gate.
+### W4-g59 batch 2 (the gore-tail kinds, 10 kinds)
+The next 10 ascending dust-first clean kinds present in the port:
+2 DemonEye (`:86459-86462`, 50× type-5 2×dir/-2), 5 ServantOfCthulhu
+(`:87351-87354`, 20× type-5), 6/7/13 the EaterOfSouls/Devourer-head/
+EoW-head type-18 trio (`:87512`/`:87566`/`:87632`, 50× type-18 at
+`this.alpha`/`this.color`/`this.scale`, SpeedX = dir NOT doubled),
+10 GiantWormHead (`:87600-87603`, 10× type-5 2.5×dir/-2.5),
+17/18/19/20 the Merchant/Nurse/ArmsDealer/Dryad town quartet
+(`:87662`/`:88292`/`:88315`/`:88358`, 50× type-5 2.5×dir/-2.5).
+**Gore-sibling rule** (the g63 claim's convention): every batch-2 gore
+tail draws NO arguments — the types are constants or `this.type`
+arithmetic (`this.type - 7 + 18`, `this.type - 95 + 111`), and the
+shimmer/altTexture gates are field reads. So the dust loop is the whole
+RNG census; the `NewGore` bodies + kicks stay d55's lane.
+**Stand-ins**: the type-18 trio reads `npc.alpha`/`npc.scale` off the
+ctor. The EoW head's `alpha = 255` SetDefaults row (`:8921`) is the
+spawn-fade window (`AI_006_Worms` `:50998`'s `alpha -= 42`), unported —
+the ctor keeps the steady-state 0, so the feed reads 0 (the fade window
+is the worm AI lane's remainder; adding 255 to the ctor would render the
+worm invisible with no fade to clear it). The color stand-in is
+default(Color) — none of 6/7/13 writes a color.
+**ChildSafety**: batch 2's type 5 IS dangerous ({5,227,273,237,248,249,
+250,251}), but the re-type arm's draws are pool-owned and the blood
+toggle defaults ON (`Disabled = true`, no re-type) — the witnesses run
+the default pool.
+6 witnesses WRITTEN NOT RUN (code-only): the Demon Eye twin-pool replay,
+the type-18 trio's alpha/scale read, the Giant Worm's 2.5 multiplier, the
+town quartet's shared census, the Servant's 20-count, plus batch 1's 8.
+### W4-g59 batch 3 (the skeleton/goblin/Skeletron families, 10 kinds)
+21 Skeleton / 32 DarkCaster (`:88537-88540`, 20× type-26 bone puffs
+2.5×dir/-2.5 — the big skeleton arm's dust head), 22 Guide
+(`:87932-87935`, 50× type-5), 24 FireImp (`:89514-89519`, 50× type-6
+embers at the corpse's velocity, scale 2.5, noGravity + vel×2),
+26/27/28/29 the goblin quartet (`:89560-89563`, 50× type-5), 35/36
+SkeletronHead/Hand (`:89177-89180`, 150× type-26 — the largest burst).
+The batch-3 gore tails draw NO arguments: the skeleton arm's per-kind
+ladder (`:88541-88639`), the goblin type ladder (`:89564-89596`) and the
+Skeletron RedHat gate (`:89181-89208`, reads ai[3]/localAI[3]) are
+constant data / field reads. The dust loop is the whole census; the
+NewGore bodies stay d55's.
+6 witnesses WRITTEN NOT RUN (code-only): the skeleton pair's 20-bone
+census, the Fire Imp twin-pool ember replay, the goblin quartet's shared
+census, the Skeletron pair's 150-bone census, the Guide's 50-count.
+### W4-g59 batch 4 (the bat/shark/piranha families + the hornet, 10 kinds)
+38 Demolitionist / 54 Clothier (`:88335`/`:88252`, 50× type-5
+2.5×dir/-2.5), 42 Hornet (`:89712-89715`, 50× type-18 at
+`this.alpha`/`this.color`/`this.scale`, SpeedX = dir), 44 UndeadMiner /
+45 Tim (`:88537-88540`, 20× type-26 — the big skeleton arm), 49 CaveBat /
+51 JungleBat (`:85807-85810`, 15× type-5 2×dir/-2), 58 Piranha
+(`:86381-86384`, 10× type-5), 65 Shark (`:86740-86743`, 75× type-5 — the
+largest type-5 burst), 66 VoodooDemon (`:89803-89806`, 50× type-5).
+The batch-4 gore tails draw NO arguments (verified by scan: the hornet's
+205/176 ladder, the bat per-kind gores, the piranha/shark/voodoo ladders
+are constant data). Shared-arm siblings outside the port's kind set
+(47/57, 62, 176/205/231-235, 542-545/692) stay cited skips — the 231-235
+band is g60's.
+5 witnesses WRITTEN NOT RUN (code-only): the bat pair's 15-count, the
+Shark's 75-count, the Hornet's type-18 census, the Piranha/Voodoo
+two-count check.
+### W4-g59 batch 5 (the wyvern/eye/town families + the leech, 10 kinds)
+87 WyvernHead (`:88921-88932`, 10× type-16 scale 1.5 vel×2 noGravity +
+the gore tail's ARGUMENT draws), 106 BoundWizard / 107 GoblinTinkerer /
+108 Wizard (`:87880-87883`, 50× type-5 2.5×dir/-2.5), 111 GoblinArcher
+(`:89560-89563`, 50× type-5 — the goblin arm), 117 LeechHead
+(`:87446-87449`, 10× type-5 dir/-1 — the SpeedY stays -1), 123
+BoundMechanic / 124 Mechanic (`:87912-87915`, 50× type-5), 190
+CataractEye / 191 SleepyEye (`:86459-86462`, 50× type-5 2×dir/-2 — the
+demon-eye arm).
+**The Wyvern (87) is the FIRST arm with gore ARGUMENT draws**: the
+`Next(1,4)` gore count (`:88927`) + the per-gore `Next(11,14)` type roll
+(`:88930`) are consumed in C# order here; the `NewGore` bodies + kicks
+stay d55's (the g63 claim's gore-sibling rule). The witness hand-rolls
+the full ladder (10 dust × 6 draws + the count + the per-gore types).
+The other batch-5 tails draw no arguments (the town shimmer/altTexture
+gates, the goblin 111 ladder's 131 bone, the eye per-kind types are
+constant data / field reads).
+5 witnesses WRITTEN NOT RUN (code-only): the Wyvern gore-argument ladder,
+the Leech's -1 SpeedY, the town families' shared census, the eye pair's
+50-count.
+### W4-g59 batch 6 (the eye trio, the dye/party girls, the pirates, 10 kinds)
+192 DialatedEye / 193 GreenEye / 194 PurpleEye (`:86459-86462`, 50×
+type-5 2×dir/-2 — the demon-eye arm), 207 DyeTrader / 208 PartyGirl
+(`:88378`/`:88401`, 50× type-5 2.5×dir/-2.5), 212-216 the pirate family
+(`:88458-88461`, 50× type-5 2.5×dir/-2.5).
+All batch-6 gore tails draw NO arguments (the eye per-kind types and the
+pirate ladder `:88462-88501` are constant data).
+3 witnesses WRITTEN NOT RUN (code-only): the eye trio's 50-count, the
+pirate family's shared census, the Dye/Party girls' 50-count.
+### W4-g59 batch 7 (the final present-clean kinds, 4 kinds)
+222 QueenBee (`:87491-87494`, 50× type-18 at `this.alpha`/`this.color`/
+`this.scale`, SpeedX = dir — the 6-gore tail `:87495-87500` is constant
+types), 225 UmbrellaSlime (`:85038-85041`, 50× type-4 tinted
+(0,80,255,100) alpha 100 — the 314 gore is constant), 227 Painter /
+228 WitchDoctor (`:88086`/`:88109`, 50× type-5 2.5×dir/-2.5 — the
+shimmer/altTexture gates are field reads).
+All batch-7 gore tails draw NO arguments.
+**The lane is complete for the port's kind set**: 64 dust-first clean
+kinds across 7 batches (66 C# types — the 138 arm's gate also carries
+120/137, shared-arm siblings with no port kind row yet). The census's
+109 absent kinds (the worm segments, casters, frost/martian/dd2 families,
+the 195-206/209/217-221/226/229 bands) stay UNWIRED until their kind rows
+land (the S1-F-9b row-gate convention); their arm citations are in the
+census above.
+3 witnesses WRITTEN NOT RUN (code-only): the Queen Bee's type-18 census,
+the Umbrella's tinted type-4 census, the Painter/Witch Doctor's 50-count.
+**Lane total: 32 witnesses WRITTEN NOT RUN across 7 commits (code-only
+mode — no cargo/rustc/tests invoked).**
+### W4-g59 DOC-SWEEP (batches 8-10): the d35 row-gated activations
+W4-d35's 33-kind SetDefaults wave (`eb0f1005`, branch `task/W4-d35-npc-
+kinds-71-140`, kinds 73-140) landed kind rows inside this lane's UNWIRED
+remainder. The sweep re-derived the census (`g59_death_order.json`, the
+`g59_order.py` dust-first walk) and cross-checked d35's pushed `cs_id`
+roster: **24 of the 33 d35 kinds intersect the unwired clean set** —
+73/75/77/78/79/80/82/83/84/85/86/93/94/95/96/97/98/99/100/101/103/110/
+122/140. 120/137 were ALREADY wired (batch 1's illuminant arm + batch 5's
+— their arms fire once d35's rows merge). The 7 d35 kinds NOT activated
+are census rejects: 74/102 (gore-first `:85942`), 104/109 (the zombie
+arm's NewNPC `:86937`), 116 (NewNPC `:87410`), 121 (NewNPC `:85427`), and
+112 VileSpit — its whole-arm burst (`:85395-85408`) fires on EVERY hit,
+so g62 owns it (`npc_hit_dust.rs`, the `:85399` site), not this death lane.
+**Batch 8 (10 kinds):** 73 GoblinScout (`:89560`, 50× type-5 goblin arm),
+75 Pixie (`:85527-85531`, 50× type-55 alpha 200 vel×2, dust-only), 77/110
+ArmoredSkeleton/SkeletonArcher (`:88537`, 20× type-26), 78/79/80 the mummy
+trio (`:88946-88951`, 20× type-31 scale 1.5 vel×2 noGravity), 82 Wraith
+(`:88971-88976`, 20× type-54 alpha 50), 83/84 CursedHammer/EnchantedSword
+(`:87152-87163`, 20× type-31 + the SECOND gore-ARGUMENT tail).
+**Batch 9 (10 kinds):** 85 Mimic (`:88768-88788`, 20× ai[3]-selected
+7/10/37 — the selector is a field read), 86 Unicorn (`:87705`, 50×
+type-5), 93 GiantBat (`:85807`, 15× type-5 bat arm), 94 Corruptor
+(`:87512`, 50× type-18 alpha/color/scale), 95/96/97 the digger trio
+(`:87616`, 10× type-5 2.5×dir), 98/99/100 the seeker trio (`:87583`, 50×
+type-18). The 96/97/99/100 segments ride d35's Hide-fold net ids (96/97→
+95, 99/100→98) per the d35 plan — their `cs_id` falls through to the
+head's bestiary id, but the death feed matches the RAW C# type the
+`HitEffect` arm reads, so the arms fire on the segment's own type.
+**Batch 10 (4 kinds):** 101 Clinger (`:87547`, 50× type-18), 103
+GreenJellyfish (`:85554-85557`, 25× type-4 tinted (70,225,140,100) — the
+shared 63/64/103 arm's own color row; the census's nested `:85541`
+color-selection row reads dust=0, an artifact of the `g59_order.py`
+per-arm dust>0 filter, NOT a second death arm — re-checked against the
+C#; 63/64 stay row-gated), 122 Gastropod (`:85509-85513`, 50× type-72
+alpha 200 vel×1.5, dust-only), 140 PossessedArmor (`:89085-89090`, 20×
+type-54 alpha 50, a death-only `life <= 0` gate with no hit half).
+**The 83/84 gore-ARGUMENT tail** (the second after the Wyvern's): each of
+the 3 gores draws a `Next(-2, 3)` x/y velocity pair (`:87158`/`:87160`/
+`:87162`) — 6 draws consumed in C# order here, the `NewGore` bodies +
+kicks stay d55's (the g63 gore-sibling rule). Every other batch-8-10 tail
+draws NO arguments (verified: constant types / `this.type` arithmetic /
+hitDirection / ai-field reads).
+**The EoW alpha-255 fade window is NOW PORTED** (the batch-2 stand-in
+retired): the ctor carries `alpha = 255` for 13/14/15 (`NPC.cs:8921`/
+`:8941`/`:8961`), and the worm pass gains `eow_spawn_fade` (`AI_006`'s
+tail `:52251-52271`): the 14/15 gate on the leader's `alpha < 85`, the 2×
+type-14 alpha-100 scale-2 noGravity/noLight fade dust while `alpha > 0 &&
+life > 0`, the movement-gated (`(position - oldPosition).Length() > 2f`)
+`alpha -= 42` floor 0. The two EoW split `Transform` sites re-stamp 255
+(the `SetDefaults` reset). The death feed's type-18 trio reads the LIVE
+alpha (255 → 0 over the fade, then the steady-state 0). **Citation
+correction:** the module doc's old `:50998` reference was the
+CultistDragon (454-459) arm — the EoW's own fade is `:52251-52271`
+(re-derived in the sweep; the `:50998`/`:51018` `alpha -= 42` sites are
+the CultistDragon/BloodEel families, the Destroyer's is `:49806`).
+**`last_hit_dir` 3-way KEEP-ONE** (c12/g60/g59): the SAME `pub
+last_hit_dir: i32` field is staged independently on `task/W4-c12-style74-
+martian-drone`, `task/W4-g60-npc-death-effects-2`, and this lane — one
+declaration at `npc.rs` with the same three recording seams (hurt/
+hurt_from_projectile/strike_pooled) + the c12 bubble-fuse reset; the merge
+keeps ONE, every feed reads it, none re-records it elsewhere.
+**The lane's remainder after the sweep:** 83 of the 173 dust-first clean
+kinds stay row-gated UNWIRED (the worm segments 8/9/11/12/14/15, the
+casters 31/37/39-41/43, the frost/martian/dd2 families, the 195-206/209/
+217-221/226/229 bands). 88 kinds / 90 C# types are now wired across 10
+batches.
+13 witnesses WRITTEN NOT RUN (code-only): the mummy/wraith shapes, the
+cursed pair's gore-velocity ladder, the Pixie's type-55 twin-pool, the
+goblin scout/skeleton pair counts, the Mimic's ai[3] selector, the
+digger/seeker/corruptor arms, the Clinger's alpha/scale read, the
+Gastropod's type-72 twin-pool, the Possessed Armor's type-54 census, the
+Green Jellyfish's tinted type-4 census; plus 3 EoW fade witnesses (the
+movement-gated 42-step, the follower leader-alpha gate, the floor-at-0).
+**Lane total: 45 witnesses WRITTEN NOT RUN (code-only mode — no
+cargo/rustc/tests invoked): 32 across batches 1-7, 10 across the DOC-SWEEP
+kind batches 8-10, 3 with the EoW fade port.**
+### W4-g59 batches 11-13: the d34/c4/d23/d37 row-gated activations
+The roster lanes landed kind rows inside this lane's 83-kind row-gated
+remainder. The sweep re-intersected the 83 cs_ids against EVERY pushed
+roster tip (scripted `cs_id` hand-row + bestiary-fallback + Hide-fold
+extraction, git-show per tip): d34 `5f3435a8` (phases 1-3, kinds 1-70),
+d35 `7d131be3`, d37 `08f7d25c` (= `750d8e44` + the research/108 reconcile),
+d38 `c096bac9`, d40 `8fe1d6d3`, d41 `4ed22f0b` (claim), d42 `88df5809`
+(WIP checkpoint), d36 `65e481f9` / d39 / d43 (claim-only, tip == base or
+no kind rows), plus the c4 `22cec16f` / c8 `86769379` / c10 `c48bbb1e` /
+e26 `048cca6c` / d23 `19109424` kind-claims. **23 newly-rowed C# types /
+21 census kinds intersect** — d34's 14 (31/34/37/39/40/41/43/47/48/56/
+57/61/62/63), c4's 157 Arapaima, d23's 175 AngryTrapper, d37's 7
+(217/218/219/220/221/226/229). d35/d38/d40/d41/d42/c8/c10/e26 intersect
+∅ (their bands are >230, already-wired, or g62-owned). ALL 23 activate:
+**Batch 11 (10 kinds):** 31 AngryBones (`:88537`, 20× type-26 — the big
+skeleton arm, its gore path falls to the generic 42/43/43/44/44 constant
+tail), 34 CursedSkull (`:89132-89141`, 15× (type-15 noGravity/noLight
+alpha-100 scale-1.8 + type-26 noLight scale-0.9) pairs at -velocity×0.2,
+each velocity×1.3, dust-only), 37 OldMan (`:88232`, 50× type-5 2.5×dir —
+the town shape, the shimmer gore gates are field reads), 39/40/41
+BoneSerpent (`:89109`, 20× type-26 — the 40/41 segments ride d34's
+Hide-fold onto the head's cs_id 39, the feed sees 39, the C# arm reads
+the RAW type, all three draw the same burst), 43/56 ManEater/Snatcher
+(`:89752`, 50× type-40 alpha/color scale-1.2), 47 CorruptBunny (`:86381`,
+10× type-5 — the piranha arm), 48 Harpy (`:89786`, 50× type-5 2×dir).
+**Batch 12 (10 kinds):** 57 CorruptGoldfish (`:86381`, the piranha arm),
+61 Vulture (`:86617`, 50× type-5), 62 Demon (`:89803`, the voodoo arm),
+63 BlueJellyfish (`:85554`, 25× type-4 tinted (50,120,255,100) — the
+shared 63/64/103 arm's DEFAULT color row `:85536`; 64 stays row-gated,
+its (225,70,140) tint lands with its d36-band row; 103 wired batch 10),
+157 Arapaima (`:86514`, 50× type-5 — c4's style-44 row), 175 AngryTrapper
+(`:89769`, 50× type-40 alpha/color scale-1.2 — d23's style-13 row, its
+OWN C# arm), 217/218/219 the beetle trio (`:87462`, 50× type-18
+alpha/color/scale), 226 FlyingSnake (`:85807`, 15× type-5 — the bat arm).
+**Batch 13 (3 kinds):** 220/221 SeaSnail/Squid (`:88513`, 20× type-151
+2.5×dir scale-0.7), 229 Pirate (`:88129-88143`, the `IsShimmerVariant`
+dust SPLIT — `variation_index == 1 && shimmer_town_transform(229)` (the
+`NPC.cs:6713-6723` composition, 229 IS a ShimmerTownTransform member)
+selects 50× type-180 at the corpse's velocity vel×2 noGravity scale-1.4
+vs the plain 50× type-5 2.5×dir town shape; the altTexture gore gate
+`:88144-88151` is a field read + constants).
+All batch-11-13 gore tails draw NO arguments (verified: the skeleton
+ladder's generic tail, the `this.type - 39 + 67` arithmetic, the
+72/72/78/79/80/81/84/86-88/93/94/186/187/227/228/292-299/317-319/328-330
+constants + `this.scale`, the shimmer/altTexture field-read gates).
+**The remainder after batches 11-13:** 60 of the 173 dust-first clean
+census kinds stay row-gated UNWIRED — 15 base-present folded kinds
+(8/9/11/12/14/15/88-92/118/119 ride the ALREADY-wired heads 7/10/13/87/
+117 via cs_id fold, no new activation; 105 BoundGoblin folds 107 wired;
+139 Probe folds 134, the Destroyer head UNWIRED) + 45 no-row kinds
+(68 DungeonGuardian / 69 Antlion + the d36 band 141/142/148/149/150/152/
+153/154/155/158/159/160/163-171/173/174/176-182/185/195-199/201-206/209;
+the d36 claim `65e481f9` is pushed but NO kind rows yet). 64
+PinkJellyfish is NOT in the dust-first clean census (its color-only
+nested `:85537` row is the g59_order dust>0 artifact) — it rides 63's
+arm when its row lands. **111 wired match types / 113 census kinds**
+across 13 batches (the 40/41 fold accounts for the 2-type gap).
+**The g60 boundary (research/110) stays CLEAN:** every activated cs_id
+is ≤ 229 ≤ 230 — ZERO kinds > 230, nothing flags to the g60 lane. The
+231-697 band remains g60's; the hornet arm's 231-235 siblings stay
+absent (no port kind row), the 250 AngryNimbus arm g60's.
+11 witnesses WRITTEN NOT RUN (code-only): the AngryBones skeleton-census
+equality, the CursedSkull twin-pair replay, the OldMan/BoneSerpent
+counts, the ManEater pair's type-40 census, the CorruptBunny/Harpy
+counts (batch 11, 5); the CorruptGoldfish/Vulture/Demon counts, the
+BlueJellyfish default-tint census, the Arapaima/AngryTrapper counts, the
+beetle-trio/FlyingSnake census (batch 12, 4); the SeaSnail/Squid shared
+census, the Pirate shimmer-split twin-pool (batch 13, 2).
+**Lane total: 56 witnesses WRITTEN NOT RUN (code-only mode — no
+cargo/rustc/tests invoked): 45 through the DOC-SWEEP + EoW fade, 11
+across batches 11-13.**
+### W4-g59 ACTIVATIONS-2 (batches 14-16): the g8/d120/f42 row-gated activations + the base-fold check
+The 60-kind row-gated remainder (15 base-present folds + 45 no-row) was
+re-intersected against **ALL 355 pushed task refs** (33 unique
+`npc/data.rs`+`bestiary.rs` trees, the scripted `cs_id` hand-row +
+bestiary-fallback extraction — `g59_act2_probe.py` /
+`g59_act2_sweep.py`). The roster re-read: d34 stays `5f3435a8` (no
+advance past phase 3), d35 `e5558b0a` (docs-only past `7d131be3`), d36
+`0eb4fee9` (**census pushed, NO kind rows** — the 731-768 port-local
+band plan only), d37 `bdd59afb` (docs past `08f7d25c`), d38 `6f9dd02d`,
+d40 `8fe1d6d3`, d41 `4ed22f0b` (claim), **d42 `9b22c091` — the 51-kind
+578-630 wave NOW PUSHED** (the batch-13 probe saw WIP `88df5809`;
+intersect ∅, the band is >230), d33 `b08acf46` (dragonflies 595-601),
+c9 `2042d77f` (snails 359/360/655/677), f42 `75f055fc` (desert 9 kinds,
+protocol 354-362: 546/61/69/78/79/630/80/580/581), d120 `c5e68a80`
+(the four town kinds + the 579 BartenderUnconscious hand row), **g8
+`82c93cec`** (lane 1's ≤230 machine wiring — the missed claimant: 13
+no-row kinds + the 64 PinkJellyfish artifact row).
+**The 45-no-row set intersects exactly THREE tips — 17 kinds, ALL
+activated (batches 14-15):**
+**Batch 14 (7 kinds):** 69 Antlion (`:86562-86565`, 50× type-250 at
+2×dir/-2 — the shared 69/580/581/508/509/582 arm's num514=50 default,
+only 582 lowers it; f42's bestiary row + g8's hand row, the
+double-claim; the 97/98 gore pair is constant), 142 SantaClaus /
+178 Steampunker (`:88163`/`:88186`, 50× type-5 2.5×dir — d120's
+landed-truth hand rows, d36 skips them per the keep-one note), 150
+IceBat / 152 GiantFlyingFox (`:85807`, the bat arm — consolidated to
+`49 | 51 | 150 | 152 | 226`, the shared `:85797` arm), 164/165
+WallCreeper pair (`:87783-87786`, 50× type-18 2.5×dir).
+**Batch 15 (10 kinds):** 158 VampireBat (the `82 | 158` wraith arm
+extension, `:88959` shared), 160 Truffle (`:88272-88275`, 50× type-26
+— the mushroom-spore town shape), 169 IceElemental (`:88830-88836`,
+100× type-92, the scale=1.5 post-write OVERRIDE, vel×2 noGravity,
+dust-only), 174/182 Herpling/FloatyGross (`:86419-86422`, 50× type-5
+at `this.alpha` — the shared `:86409` arm), 177 Derpling
+(`:85733-85736`, 15× type-5), 179 CrimsonAxe (the `83 | 84 | 179`
+cursed arm extension — the SAME 6 `Next(-2,3)` gore-ARGUMENT draws,
+the g63 rule), 195/196 LostGirl/Nymph (`:86797-86800`, 75× type-5),
+209 Cyborg (`:88438-88441`, 50× type-5 town shape).
+All batch-14/15 gore tails draw NO arguments beyond the cursed arm's
+already-consumed 6 (the town shimmer ladders, the herpling 225/226 +
+238/239, the derpling 234/235/236/236, the nymph 254/255/256 +
+`this.scale`, the bat/creeper/antlion constants — verified).
+**Batch 16 — the 15-base-fold head-wiring check:** the base's
+`entry_for_npc` folds 8/9→7, 11/12→10, 14/15→13, 88-92→87, 118/119→117,
+105→107 — every head ALREADY wired (batches 2/5), the segments fire
+through the head's match; the C# arms cover the raw segment ids with
+the SAME burst (`:87556` 7-9, `:87590` 10-12, `:87622` 13-15, `:88909`
+87-92, `:87436` 117-119, `:87870` 105-108 — verified); 105 joins the
+`105 | 106 | 107 | 108` arm as the raw-id belt-and-braces, fold
+citations land on the head arms. **139 Probe folds 134 — the
+Destroyer head's death arm (`:89266-89323`) is NOT dust-first** (the
+ungated gore-156 + the `Next(2)` gate wrap the 10×31 + 5×(6+6) burst)
+and stays UNWIRED in this lane: f5 wave D `1b6a1979` ports
+`destroyer_death`/`probe_death` (`npc_hit_effect_d.rs` sites 776-786)
+INCLUDING the dust census — the keep-one at merge (f5's dispatcher is
+unwired, `#![allow(dead_code)]`, the strike-path claim is their
+wiring wave; the d32 style lane's tips carry NO death-arm wiring —
+`ac1d38e7` is witness fixes only). The 139 Probe arm (`:89210-89244`)
+is the same shape (10×31 + 5 pairs + 4×`Next(61,64)` ARG draws). No
+double-consume.
+**The remainder after batches 14-16: 43 of the 173 dust-first clean
+census kinds stay row-gated UNWIRED** — 13 base-present folds riding
+wired heads (8/9/11/12/14/15/88-92/118/119; 105 activated batch 16) +
+139 Probe (the unwired Destroyer head, f5's keep-one) + 112 (g62's
+every-hit re-own) + 28 no-row kinds (68 DungeonGuardian + the d36 band
+141/148/149/153/154/155/159/163/166/167/168/170/171/173/176/180/181/
+185/197/198/199/201-206). 64 PinkJellyfish stays OUT of the clean
+census (the color-only nested `:85537` artifact) — g8's row landed;
+its (225,70,140) tint composes with 63's arm shape at merge, recorded
+not activated. **129 wired match types / 130 census kinds** across 16
+batches (the 40/41 fold accounts for the gap).
+is ≤ 229 ≤ 230 — ZERO >230 activations. The newly-rowed >230 siblings
+FLAG to the g60 lane: f42's 546 Tumbleweed / 580 WalkingAntlion / 581
+FlyingAntlion / 630 BloodMummy (the antlion arm's 580/581/582 siblings
++ the mummy 630), d120's 579 BartenderUnconscious, d42's whole 578-630
+wave, d33's 595-601 dragonflies, c9's 359/360/655/677 snails — all
+g60's band per the 110 verdict.
+10 witnesses WRITTEN NOT RUN (code-only): the Antlion 50×6-draw twin,
+the Santa/Steampunker shared census, the bat-arm 4-way census
+equality, the WallCreeper pair twin-pool (batch 14, 4); the
+Truffle/Cyborg counts, the Herpling/FloatyGross live-alpha census, the
+Derpling/IceElemental counts + scale-override pin, the
+Nymph/Vampire/Crimson shared-arm censuses incl. the 6-ARG twin (batch
+15, 4); the BoundGoblin fold-census equality, the worm-fold
+head-wiring sweep + the unwired-134 zero-draw pin (batch 16, 2).
+**Lane total: 66 witnesses WRITTEN NOT RUN (code-only mode — no
+cargo/rustc/tests invoked): 56 through batch 13, 10 across batches
+14-16.**
+### W4-g59 SEAL (research/321): the death-effects-family bible FINAL
+The lane is SEALED at `d277f782b` — `docs/research/321-death-effects-
+family-bible.md` (renumber 283→321 per registry-150 §9.2: f26's §7.3
+reservation KEEPS 283; original round-2 pick was 283, verified free at
+360 tips). The five seal receipts: (1) ACTIVATIONS-2 landed — 17
+newly-rowed + the 15-base-fold check (105 activated, 139→134 f5's
+keep-one), 129 wired match types / 130 census kinds, 43 row-gated
+remainder; (2) the g60f death-bible compose (g60 `30fea0fe1` §12.8)
+consumed AND refreshed at the new tips — the g59∩f5 re-intersection
+(g60's committed script method, g59 `d277f782b` × f5 `b68eac297`)
+grows 93→**110 kinds in 56 fn-rows** (+17 = exactly the SEAL-1
+activations f5 re-draws; 169 dust-only, no strip), the strip total
+**221 actionable / 0 conditional** (110 g60 baseline + 110 g59∩f5 +
+1 g59∩f10 225) supersedes the 204; (3) the f5f GORE SEAL `b68eac297`
+consumed — and both scheduled executions landed while sealing: f10
+`afea4c0fc` DELETED the overrun pre-merge (152 fns / 147 gates / 157
+witnesses, cross-verified incl the DD2 wyvern name-twin + the
+town_pet straddle; 94 legit + 1 receipt witness survive) and g62
+`f5ce54743` PORTED the 4 hit-half gore bodies (the 133 latch + the
+186/632 gated emits + the 694 LIVE count) — the f5↔DeathFx keep-one
+receipt stays DISJOINTNESS (re-verified: zero gore refs in either
+dust feed, zero ring refs in f5), the 32+110-kind strips ride wiring;
+(4) the boundary re-checked MECHANICALLY (match-arm extraction): 129
+unique ids, **max cs_id 229 ≤ 230, CLEAN**, zero >230 flags; (5) the
+family bible one-paragraph + the gate-commands re-run (NPC 1345 /
+Proj 165 / WG 36 / Player 32 / Main 0 = 1578; the f5 window 853) +
+the witness union re-counted **418 distinct** (was 404: g59 +10,
+f10 +1 receipt, g62 +3). The merger's remaining work: the 8-step
+`npc_death_dust.rs` union (the ONE `air()` height collision — g59's
+200×200 renames `air_tall()`, 64 call sites), the `last_hit_dir`
+ONE-declaration (BOTH fuse resets keep), one compile window for the
+418, and the wiring wave executing the 221 strips.
