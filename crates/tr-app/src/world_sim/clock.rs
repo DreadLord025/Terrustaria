@@ -61,6 +61,10 @@ pub(crate) fn advance_time(
         // cooldowns on one (`:65422-65430`) — event rolls land with M4.
         world.fast_forward_to_dawn = false;
         world.sundial_cooldown = world.sundial_cooldown.saturating_sub(1);
+        // W4-g17 wiring — `WorldGen.ResetTreeShakes` (`Main.cs:65367` →
+        // `WorldGen.cs:63126-63129`): the per-day shake dedupe clears at
+        // dawn (the FIRST call in the C#'s StartDay).
+        world.tree_shakes.clear();
         // `Main.cs:65382`/`:65389`: `Main.time = 0.0; Main.dayTime = true;`.
         // `UpdateTime_StartDay`'s `Main.stopMoonEvent()` (`Main.cs:65392`):
         // the moon events end at dawn — the flag clears are unconditional,

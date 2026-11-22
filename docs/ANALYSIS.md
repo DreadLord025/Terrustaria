@@ -39874,3 +39874,391 @@ the C# `:75729-75733` ALWAYS draws then overrides — g65 owes the one-line
 fix before the 503 row lands; g16's `kill9_503_gores` keeps the draw).
 The 87 g16 witnesses (73 module + 14 wiring) stay WRITTEN NOT RUN, owed
 one compile window before merge.
+## The world gore sites (W4-g17, wave A)
+
+`Gore.NewGore*` census for the world/player lane: **Main.cs carries ZERO
+sites** (verified by direct grep — only `Gore.goreTime` `:17075` and the
+TimeLogger rows `:17993`/`:21906`); WorldGen.cs has 36, Player.cs 32.
+The NPC death sites are W4-d55/e5/f10 (`npc_hit_effect_a.rs` wave A
+landed), the projectile sites W4-g16. This lane ports the world/player
+remainder, code-only (module + witnesses; dispatch claims deferred).
+
+Wave A (`world_gore_a.rs`): `WorldGen.TreeGrowFX` (`WorldGen.cs:29600-
+29637`) — the 3-trunk-gore column + the top-row leaf burst (20 grown /
+5 axe-hit), the paint column read from the trunk cell (`Tile.color()`
+is the paint), the `treeGore == 1278` ash delegation;
+`TreeGrowFX_AshShake` (`:29639-29672`) — the two dust shakes (type 31
+upper-half, type 6 lower-70%, the `Next(3)` row gates short-circuit)
+and the `!hitTree` 61+Next(3) leaf gore; `Check3x3` `case 231`
+(`:53230-53257`) — the larva 300/301/302 burst + the nearest-live-player
+Manhattan probe returning the `NPC.SpawnOnPlayer(plr, 222)` claim.
+
+RNG contract: `Utils.RandomVector2` (`Utils.cs:2431-2434`) draws TWO
+`NextDouble`s X-then-Y with the float cast BEFORE the multiply; the
+argument draws ride before the `NewGore`/`NewDust` internals (C#
+left-to-right evaluation); the `NewGore` kicks are Y `Next(10,31)` then
+X `Next(-20,21)` (`Gore.cs:1327-1328`, pool-side). The ash-shake row
+gates: `-height / 2` is C# int division (truncation toward zero), the
+second gate is float (`(float)num >= (float)(-height) * 0.7f`).
+
+Documented drops: the `TreeGrowFXCheck` height/style scan + `GetTreeLeaf`
+table, the axe-hit `:63416` and `MessageBuffer.cs:3828` callers, the
+`Check3x3` validation/KillTile/TileFrame tail (the edit lane's), and the
+Queen Bee spawn itself (returned as the player-index claim) are the
+wiring wave. netMode: single-player (the `== 0` arm runs, `== 2` drops).
+7 witnesses written, NOT run (code-only mode).
+
+## The world gore sites (W4-g17, wave B)
+
+`world_gore_b.rs`: `WorldGen.CheckPot`'s gore switch
+(`WorldGen.cs:56878-56954`) — COMPLETE: the 51/52/53,
+166/167/168, 169/170/171, 172/173/174 rows + the 2-gore bands
+(4-6 → 197/198, 7-9 → 199/200, 10-12 → 201/202, 13-15 → 203/204),
+the no-gore band 16-24, the genRand pairs (25-27 → 2× Next(217,220),
+28-30 → 2× Next(315,317)), the count roll (31-33 → Next(2,5) gores of
+698+Next(6)) and the 34-36 → 1122/1123/1124 trio. The fixed rows draw NOTHING but the
+`NewGore` kicks; the spawn point is the TRIGGER cell `(i*16, j*16)`,
+not the pot's 2x2 origin. The style is `frameY / 36` (`:56810-56816`).
+The validation/KillTile/loot tail stay in the edit lane
+(`tr_core::edit::kill::check_pot` → `PotEvent`); the wiring wave feeds
+the event here. The `genRand` rows (25-36) draw their type picks on a
+SEPARATE stream from the kicks' `Main.rand` — the port has no runtime
+genRand (`edit.rs:900`), the caller hands it in. 7 witnesses written,
+NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave A)
+
+`player_gore_a.rs`: `Player.JumpMovement`'s extra-jump visual tails
+(`Player.cs:20531-21032`) — the Fart arm's 10 type-188 puffs + 3
+`Next(435,438)` gores (`:20849-20863`), the Santank arm's 15×2 dust
+pairs (type 4 + type 6 with the even-iteration fadeIn roll) + the
+3-gore `Next(61,63)` loop at `Bottom.Y - 22` with the Circular(1,1)
+velocity add (`:20960-20994`), the Cloud fall-through's 10 type-16
+puffs + 3 `Next(11,14)` gores (`:21007-21021`).
+
+The state snapshot carries the POST-jump velocity (the arms run after
+the `:20847-20848` writes) and `gravDir` (the port's Player has only
+`grav_control`); the `num9`/`num20`/`num25` height pick is `height` or
+0 under reversed gravity — but the Santank gore row reads `Bottom.Y`
+FULL height regardless (the C# does not use num20 there).
+`(float)(base.width / 2)` keeps the C# INT division. The dust draws
+ride `DustPool::new_dust` (type 6 hits the `Dust.cs:214` tweak: +1
+`Next(-10,6)`); the post-spawn writes land on the sentinel included.
+The arm gates / isPerformingJump latch / sound / velocity writes are
+the movement lane's. 4 witnesses written, NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave B)
+
+`player_gore_b.rs`: `DashMovement`'s dash==1 visual tail
+(`Player.cs:21419-21434`) — 20 type-31 jitter dusts (the position
+`Next(-5,6)` ×2 + scale `Next(20)` post-rolls) then 2 `Next(61,64)`
+gores at centre-(24,34)/(24,14) whose velocity is OVERWRITTEN by
+`Next(-50,51)*0.01` per axis then ×0.4 (the kicks are discarded);
+`DoubleJumpVisuals`' sandstorm arm (`:21905-21926`) — 3 type-124 dusts
+scaled by `num4 = (jump/75 + 1)/2`, the `miscCounter % 3` gate (no
+draw) then ONE `Next(220,223)` gore with the velocity OVERWRITE
+`playerVel * 0.3 * num4` + alpha 100 (the reversed-gravity height pick
+is -6, and `num3 / 2` keeps C# int division); `UpdateHairDyeDust`
+(`:24268-24294`) — the `Next(45)` dust gate and the `Next(225)` gore
+gate ALWAYS draw (both ifs run unconditionally), the gore arm's
+argument order is Type → Position.X `Next(width)` → Position.Y
+`Next(8)`, then the six post rolls (X/Y multipliers, scale, X/Y adds)
++ the Y decrement + `vel*0.2`. The team-dye shader id resolves from
+item 1984 (`ID/ContentSamples.cs:19`); the gate itself is the
+caller's. 3 witnesses written, NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave C)
+
+`player_gore_c.rs`: the dodge bursts — `DoMysticSashDodge`
+(`Player.cs:38060-38112`) and `NinjaDodge` (`:38122-38160`). Both end
+in the SAME 5-gore velocity fan at centre-(24,24): offsets (0,0),
+(+1.5,+1.5), (-1.5,+1.5), (+1.5,-1.5), (-1.5,-1.5), each axis its own
+`Next(-50,51)*0.01` roll (the negative arms SUBTRACT the roll), the
+kicks OVERWRITTEN, then ×0.4. The sash fan writes scale 1.5 + alpha
+100 and types `Next(11,14)`; the ninja fan writes scale 1.5, NO alpha,
+types `Next(61,64)`.
+
+The sash dust loop (50 iterations) draws the scale argument
+`Next(10,26)*0.1` BEFORE the type-267 `NewDustDirect` internals, then
+3 `NextFloat`s (fadeIn/scale/colour-lerp) and the `CloneDust` — a
+fresh 0×0 `NewDust` (6 draws; the pool's sentinel early return is the
+C#'s own). The ninja loop (100 type-31 dusts) draws the `Next(-20,21)`
+jitter ×2, `Next(40)` scale, the `Next(2)` gate ALWAYS, and a second
+`Next(40)` when it hits. The immunity grant / buff 321 / SendData(62)
+dodge syncs are the caller's / the net lane's. `Color.Lerp` mirrors
+the `dust_table.rs` per-channel truncating helper. 3 witnesses
+written, NOT run (code-only mode).
+
+## The player gore sites (W4-g17, wave D)
+
+`player_gore_d.rs`: `KillMe`'s tenth-anniversary confetti
+(`Player.cs:38869-38893`) — 85 type-`Next(139,143)` dusts (7 post
+rolls each) then 40 `Next(276,283)` gores at the death spot, velocity
+`(0,-10)`, 7 post rolls each (X/Y adds → X/Y multipliers → scale →
+X/Y `*0.05` adds). `ItemCheck_EmitUseVisuals`' type-65 arm
+(`:44796-44806`, the `Next(5)`/`Next(10)` gates ALWAYS draw, type
+`Next(16,18)`), type-3065 arm (`:44807-44817`, one dust + the
+`Next(8)` gate, gore 16 at the rect centre, velocity ×0.5 +
+`(direction,0)`), meleeEnchant-7 arm (`:44988-45008`, the
+`Next(20)`/`Next(40)` gates ALWAYS draw, type `Next(276,283)`, 5 post
+rolls) and the item-1304 ChildSafety arm (`:45024-45027`, the
+`Next(60)` gate ALWAYS draws, the velocity's two `NextFloat`s ride
+BEFORE the `Next(3,6)` type — C# Position/Velocity/Type argument
+order). The KillMe drop pipeline is `death.rs`'s; the item-type /
+melee-flag gates are the caller's. 3 witnesses written, NOT run
+(code-only mode).
+
+## The player gore sites (W4-g17, wave E — census complete)
+
+`player_gore_e.rs`: `ItemCheck_GetMeleeHitboxParticles`' item-1450
+sparkle ladder (`Player.cs:45050-45080`) — the `Next(3)` outer gate,
+the position rolls `Next(rect.Width)`/`Next(rect.Height)`, then the
+500/250/80/10/3 if-else-if CHAIN spawning ONE of 415/414/413/412/411
+at scale `Next(51,101)*0.01` (each gate draws only when every earlier
+gate missed), the `num >= 0` post-write `+direction*2` X / ×0.3 Y.
+The 411-430 `NewGore` arm (`Gore.cs:1407-1421`) is asset-gated — the
+pool draws NOTHING for it (`gore.rs:506-508` documented drop); the
+witness mirrors the pool's stream. `ItemCheck_ApplyUseStyle`'s
+useStyle-5 item-4262 lantern mote (`:51109-51125`) — the `Next(20)`
+gate, type `Next(570,573)` FIRST, then the wind velocity's two
+`Next(-50,51)` multipliers, scale 0.8; the 570-572 arm RESTORES the
+passed velocity pool-side (`Gore.cs:1367-1370`, kicks discarded); the
+-8/-4 position nudges are data. The `DontHoldItems` mount gate
+(`MountID.cs:46`: 55/56/61) and the `itemLocation`/`MountedCenter`
+writes are the caller's.
+
+**Census complete**: Main.cs 0 sites (verified), WorldGen.cs 36
+(`world_gore_a`/`world_gore_b`), Player.cs 32 (`player_gore_a`..`e`).
+68 `Gore.NewGore*` sites ported across 9 commits, ≤10 sites each.
+3 witnesses written, NOT run (code-only mode).
+
+## The gore wiring wave (W4-g17, wiring)
+
+The pure gore modules' dispatch claims landed as live call sites. The
+wiring keeps every module's RNG contract: the bursts draw on the
+caller's stage stream in the C# order, the gates ALWAYS draw, and the
+POST-write snapshots ride the state structs.
+
+**The dispatch seams (5 commits):**
+
+1. `pot_gore_drain` (`world_sim/editing.rs`) — `break_tile` drains the
+   edit lane's `PotEvent`s through `pot_break_gores` between the break
+   sound and `SpawnThingsFromPot` (the `CheckPot` order,
+   `WorldGen.cs:56856-57014`). The genRand stand-in is the edit lane's
+   `FastRandom` seeded by ONE `UpdatePlayers` throw per event, drawn
+   BEFORE the loot's own seed throw. `pot_break_gores` takes the
+   `FastRandom` directly (the `spawn_things_from_pot` convention).
+2. The player-tick queues (`player.rs` + `world_sim/player.rs`) —
+   `pending_jump_gores` (the extra-jump chain, after the velocity/jump
+   writes), `pending_dash_gores` (the dash==1 start), and
+   `pending_dodge_gores` (the Hurt dodge handlers) queue at the C#
+   write points; the tick-tail drain runs `player_gore_a`/`b`/`c` on
+   `UpdatePlayers` with the POST-write snapshots (the
+   `pending_sticky_dust` convention — the Player carries no pools).
+3. The death seam (`world_sim/npcs.rs`) — the KillMe confetti runs
+   after `on_player_death` (the PlayDeathSound half) and before
+   `start_death`, gated on `SeedFlags::TENTH_ANNIVERSARY`. The larva
+   break's claim spawns the Queen Bee through
+   `spawn_queen_bee_on_player` — the `NPC.SpawnOnPlayer` 500×50 scan
+   (`NPC.cs:80475-80628`) with the C# flag-persistence shape (`flag`
+   survives the spawn-space refusal; the round-end
+   `CheckNotSpawningOnScreen` gate; the stale-position break), the
+   `HasAwoken` broadcast. `check_3x3_bottom` covers kind 231 (no item
+   drop — the C# case 231 has no `Item.NewItem`).
+4. The tree-FX dispatches (`tr-core/src/tree.rs` +
+   `world_sim/growth.rs` + `axe_tile_hit`) — `GetTreeLeaf` (both hallow
+   tables + the height+5), `TreeGrowFXCheck`'s scan, `PlayerLOS`,
+   `IsTileALeafyTreeTop`, `Collision.SolidTiles` and `ShakeTree`'s
+   dedupe/walk/FX-tail slice ported. The growth pass threads
+   `GrowthFxCtx`/`TreeFxRequests` through
+   `update_world`/overground/underground/grass-growth (the sapling
+   arms + the kind-70 `Next(250)` arm record the check cells);
+   `world_sim::growth` drains them on `UpdateWorldGen`. The axe fail
+   tick runs `shake_tree_fx` → `tree_grow_fx(hitTree: true)` on
+   `UpdatePlayers`. `World.tree_shakes` carries the per-day dedupe
+   bookkeeping; the dawn `ResetTreeShakes` clears it
+   (`UpdateTime_StartDay`'s first call).
+5. `item_use_visuals_tick` (`world_sim/editing.rs`) — the ItemCheck
+   per-tick visual arms (`Player.cs:43644-43653`): the 1450 sparkle
+   ladder, the 65/3065/enchant-7/1304 use arms and the 4262 lantern
+   mote, every animation tick. The melee rect resolves through the
+   shared `melee_swing`/`thrust` ports (useStyle 1/3).
+
+**Documented remainders (the wiring's scope):**
+
+* The sandstorm hold (`sandstorm_jump_gore`) and the hair-dye arms
+  stay unwired: the port has no `DoubleJumpVisuals` dispatch and no
+  team-dye state (`Player.hairDye` unported — the dye cache's recorded
+  deviation).
+* The `MessageBuffer.cs:3828` net arm drops (single-player port).
+* The `ShakeTree` loot ladder (`WorldGen.cs:63163-63403`) is WIRED (wiring
+  wave 2, `world_sim/editing/shake_loot.rs`): the axe fail tick resolves the
+  shake site once (`tree::shake_tree_resolve`), runs the full genRand else-if
+  chain (the per-shake `FastRandom` stand-in seeded by ONE `UpdatePlayers`
+  throw, the `Main.rand` item/NPC/projectile rolls on the same stream), then
+  the FX tail (`tree::shake_tree_fx_at`). The i30 axe-chop lane owns the
+  chop/damage book + the per-cell BREAK drops; this is the per-shake loot.
+  Stand-ins: `Item.NewItem`'s `prefix: 0` natural-roll deviation
+  (`items.rs:767`), `Main.halloween`/`xMas` constants-off (the gates draw,
+  fall through), unported NPC kinds consume their rolls then spawn nothing
+  (`kind_from_net_id`), the `npcProj`/`CanBeReplacedByOtherNPCs` flags
+  unported. The `MessageBuffer.cs:3828` net arm is g50's (see below).
+* The `ItemCheck_EmitUseVisuals` dust-only item arms
+  (989/2880/44-46/273/723/190/213/…) and the other meleeEnchant rows
+  are WIRED in wiring wave 2 (`player_dust_use.rs`, see "The gore wiring
+  wave 2"); the other use styles' rect resolutions park with the item
+  lane.
+* The `noMelee`/`noUseGraphic` item fields are unported — every
+  registered row stands noMelee-false (the itemdata stand-in), so the
+  EmitUseVisuals gate folds to `damage >= 0` plus the bug-net trio.
+* The Queen Bee scan's `wallHouse` refusal is unmodelled (the port has
+  no house-wall table — the `try_spawn_an_npc` convention); the
+  skyblock midair arm and the type-50 clearance special never fire
+  for 222.
+
+**Witnesses**: 21 wiring witnesses written, NOT run (code-only mode) —
+the per-site spawn assertions plus the 500-tick/500-event
+stream-parity ledgers (the pot drain's all-37-styles replay, the
+player/growth/ItemCheck idle draw-neutrality twins, the confetti
+gate's classic-seed twin). The witness rigs put the camera on the
+player (the `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
+
+## The gore wiring wave 2 (W4-g17, the unwired remainders)
+
+The wiring wave's documented remainders, censused against the co-lane
+branch tips and resolved:
+
+**1. The ShakeTree loot ladder — WIRED** (`world_sim/editing/shake_loot.rs`,
+`WorldGen.cs:63163-63403`). The i30 axe-chop lane (merged `0c888e891`) owns
+the chop/damage book and the per-cell BREAK drops (`KillTile_GetItemDrops`
+via `break_tile`); the per-shake loot ladder was UNCLAIMED. The port splits
+`tree.rs`'s `shake_tree_fx` into `shake_tree_resolve` (the dedupe/walk,
+`:63133-63162`, returns a `ShakeTreeSite`) and `shake_tree_fx_at` (the FX
+tail, `:63404-63417`); the axe fail tick runs resolve → loot → FX in the C#
+order. The ladder is the full genRand else-if chain: the tenth+notTheBees
+honey grenade (1130), the getGood bomb projectile (28/75, `npcProj`), the
+forest/jungle rare items (832/933/3360/3361/5517/4366), the 5629 + acorn 27,
+the mushroom 194, the halloween pumpkin 1809 (constants-off), the per-cell
+`KillTile_GetItemDrops` wood (the `:63219` arm discards `dropItemStack`/
+`secondaryItem` — the resolver's rolls draw, the spawn always uses
+`genRand.Next(1,4)`), the coin arm (71/73/72), the bird/squirrel critter
+(the `goldCritterChance` 400 `RollLuck`), the hallowed night fairy, the
+forest night owl, the jungle day macaw, the 5-bird/5-bee bursts, the palm
+seagull, the crimson Crimera (-22→173) / corrupt Eater (-11→6), the jungle
+night bat + hive projectile (655), the butterfly, the ash underworld
+critter, the remix obsidian 965, and the per-biome fruit/seed band. The
+genRand stand-in is ONE `UpdatePlayers` throw per shake (the
+`spawn_things_from_pot` convention); `Main.rand` rides the same stream.
+`is_palm_oasis_tree` (`WorldGen.cs:27205-27212`, `beachDistance` 380) gates
+the palm arms. Stand-ins: the `Item.NewItem` `prefix: 0` natural-roll
+deviation, `Main.halloween`/`xMas` false (the gates draw then fall through),
+unported NPC kinds consume their rolls then spawn nothing
+(`kind_from_net_id`), `NPC.NewNPC`'s getGood `Next(3)` draw kept, the
+`Bottom` anchor → top-left `(X-w/2, Y-h)`, `timeLeft` 937 → `despawn_timer`,
+the `npcProj`/`CanBeReplacedByOtherNPCs` flags unported. 3 witnesses
+(the 400-seed ladder replay, the acorn-arm pin, the re-pinned axe-shake
+8-gore witness — the ladder spawns no gores, so the FX count is seed-robust).
+
+**2. The sandstorm hold — CONTRACT (f42's).** `Player.DoubleJumpVisuals`'
+sandstorm arm (`Player.cs:21905-21926`) is fully wired on
+`origin/task/W4-f42-sandstorm-2` (`4bf7b2e88`: `pending_sandstorm_jump` +
+the `world_sim/player.rs` drain, the 3 type-124 dusts + the %3 220-222 gore
+on `UpdatePlayers`). c40 (`bdd039802`) deferred the visuals to f42 with the
+RNG slot recorded. This lane's `player_gore_b::sandstorm_jump_gore` is the
+UNWIRED twin — keep-one at merge: f42's live drain survives, this module's
+arm retires (the `npc_ai_style73` unwired-module precedent). No double-feed.
+
+**3. The hair-dye arm — WIRED** (`Player.hair_dye` + the use arm + the
+tick-tail drain). `Player.hairDye` (`Player.cs:2546`, a `byte`) was unported
+(the dye cache's recorded deviation, ANALYSIS "The dye plumbing"). The port
+adds the field (0 = no dye, the fresh default), the use arm
+(`Player.cs:42856-42866`: `ItemTimeIsZero && itemAnimation > 0 &&
+item.hairDye >= 0` → `ApplyItemTime` + `hairDye = (byte)item.hairDye`, in
+`world_sim/editing.rs` after the potion block — the hair dyes are useStyle 9
+consumables with no heal/buff, so the potion/food arms skip them), and the
+per-tick `UpdateHairDyeDust` drain (`Player.cs:24268-24294`, called from
+`Player.Update` `:24593`) in `world_sim/player.rs`'s tick-tail: the
+`!gamePaused && !dead && !ghost && !stoned && !frozen && hairDye ==
+TeamDyeShaderIndex` gate (stoned = buff 156, frozen = `p.frozen`, ghost
+false), then `player_gore_b::hair_dye_dust_arm` + `hair_dye_gore_arm` on
+`UpdatePlayers` (both gates ALWAYS draw, the dust arm first). The team-dye
+shader id resolves from item 1984's `ItemDef.hair_dye` (8,
+`ID/ContentSamples.cs:19`). The `NetMessage.SendData(4)` sync is MP-only.
+The hair-dye DRAW tint (the legacy CPU `GameShaders.Hair.GetColor` →
+`colorHair` channel) stays the dye lane's — this is the sparkle visual +
+the state field only. 2 witnesses (the 600-tick team-dye sparkle, the
+non-team draw-neutrality twin).
+
+**4. The MessageBuffer net arm — CONTRACT (g50's).** `MessageBuffer.cs:3828`
+is msg **112 SpecialFX** kind 1 (`WorldGen.TreeGrowFX`, the shake variant on
+`b6 == 1`). `origin/task/W4-g50-net-apply-arms-3` owns the apply arm
+(`netglue.rs:3000` `S2c::SpecialFx` → `tree_grow_fx` + `tree_grow_fx_ash_shake`
++ kind 2 `fairy_effects`, the bare-`Main.rand` message-time replay). g51 is
+ids 121-163 (112 out of range). This lane's `world_gore_a::tree_grow_fx` is
+the single-player twin — keep-one at merge: g50's net apply + this lane's
+growth/axe dispatches share the one burst fn. The `ShakeTree` `netMode == 2`
+`SendData(112)` (`:63410-63413`) is the server send (single-player port
+drops it, the pool convention).
+
+**5. The dust-only ItemCheck arms — WIRED** (`player_dust_use.rs`,
+`Player.cs:44756-45023`). g66/e3/d51/e1/f3/g15 do NOT claim them (only the
+`bug_net.rs` zero-draw comment + `buff_effects_accessory.rs`'s "not ported
+yet" note). The port adds the full dust-only arm set: the 989 (Next(5)
+type-15/57/58), 2880 (Next(2) SelectRandom 226/229), 44/45/103/104/46
+(Next(15) type-14), 273/675 (Next(5) type-14 + always type-27), 723
+(Next(2) type-64), 190/213/5295 (always type-40/3), 121 (2× swung-path
+type-6 perfect), 122/217 (always type-6), 155 (always type-172), 676
+(Next(3) type-67), 3063 (always type-66 + hslToRgb colour), 3823 (always
+type-6 direct), 724 (Next(5) type-67), 795-802 (2× swung-path type-5 +
+Next(20) type-115), 367 (Next(3) type-57 + Next(4) type-43) arms + the
+frostBurn (Next(2) type-135), meleeEnchant 1-6/8 rows, and magmaStone
+(Next(3)!=0 type-6) tails. `item_use_visuals_tick` runs them in three
+halves (`item_use_dust_pre`/`_post`/`_tail`) interleaved with the gore
+lane's 65/3065/enchant-7/1304 arms in the exact C# order, all gates ALWAYS
+draw on `UpdatePlayers`. The swung-path arms read
+`melee_swing::point_on_swung_item_path` (the placement's loc/rotation now
+captured). The 3063 colour uses the byte-exact `ui::color::hsl_to_rgb`.
+Stand-ins: the `noUseGraphic`/`noMelee` fields fold to `sItem.melee` (the
+`player_gore_d` convention); the `:44913-44917` phase-color AddLight +
+`:45028-45045` mount-62-65 AddLight/type-306 are the light/mount lanes'
+(skipped). 2 witnesses (the Terra Blade type-64 + the Night's Edge
+always-type-27, written not run).
+
+## The gore-world seal (W4-g17, research FINAL — research/339)
+
+The lane's research FINAL + the GORE-WORLD-family bible landed as
+`docs/research/339-g17-gore-world-final.md` (registry 339 per §9.2 —
+renamed from 304, §8.6: the 304 self-pick was post-§7.4-contested, d50
+KEEPS 304; chain 304→339; originally verified free
+against registry-150 §7 + a fresh all-tip sweep). Three verifications
+closed this round (code-only, witnesses WRITTEN NOT RUN):
+
+1. **The census is FINAL**: Main 0 / WorldGen 36 / Player 32 = **68**
+   sites, re-counted per file and re-read line-by-line. There is NO
+   `World.cs` in this decompilation (the `Terraria.World` statics live
+   in `Main.cs`); the world-side census reads WorldGen + Main. The
+   full-family table (1627 distinct sites: 1565 bare / 16 Perfect /
+   46 Direct across 13 files + Main's zero) carries the per-file owner
+   lanes; research/15's 1643 baseline double-counted the Perfect sites
+   (the prefix match already included them). The 10 UNCLAIMED residue
+   sites (Mount 3, PlayerDrawSet 3, AmbientWindSystem 2, WorldItem's
+   star-burn gore 1, Utils.PoofOfSmoke 1) are task-seeds for the
+   merger, NOT this lane's.
+2. **The i30-compose ONE-throw contract**: `axe_tile_hit`'s fail tick
+   draws EXACTLY ONE `UpdatePlayers` throw to seed the genRand
+   FastRandom stand-in before the ladder + FX (the C# order). New
+   witness `w4_g17_the_axe_fail_tick_compose_draws_one_seed_throw`
+   (the live path vs the manual resolve→throw→ladder→FX twin, stream +
+   pool equality). Witness total 60.
+3. **DrawNPCChatButtons is DEAD** (`Main.cs:40474-40673`, ZERO callers
+   in the whole decompilation — the NPCChatPanel.DrawButtons path
+   replaced it; g58 research/240 row 8 concurs). The 6 unported chat
+   buttons are pinned (StardewValleyBit/DryadPurification/GuideTip/
+   RequestHome/PartyGirlMusicSwap/TavernkeepAdvice,
+   `NPCInteractions.cs:486-531` minus the landed roster) — they stay
+   with their lanes; no code change.
+
+The keep-one contracts hold at the co-lane tips: the sandstorm arm is
+f42's (`4bf7b2e88`), the msg-112 net arm g50's; this lane's twins retire
+at merge. The family bible (research/339 §4) is the merger's one-paragraph
+read: one owner lane per family file, no double-feed, the 68 SEALED.

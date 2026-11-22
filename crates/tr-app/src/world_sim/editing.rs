@@ -23,6 +23,7 @@ mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
+mod shake_loot;
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -497,6 +498,248 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
             pitch_offset,
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
+    }
+}
+
+/// W4-g17 wiring — `ItemCheck`'s per-tick visual arms (`Player.cs:
+/// 43644-43653`): the melee-hitbox sparkle ladder (item 1450,
+/// `player_gore_e::melee_hitbox_sparkle`), the use-visual arms (65 /
+/// 3065 / meleeEnchant-7 / 1304, `player_gore_d`) and the useStyle-5
+/// lantern mote (4262, `player_gore_e::lantern_mote_gore`). The rect
+/// resolves through the shared `melee_swing` ports (the useStyle-1
+/// path); the useStyle-3 thrust rect rides `thrust_melee_hitbox`. The
+/// other use styles' rects are the item lane's — their visual arms skip
+/// (documented). Every gate ALWAYS draws on the `UpdatePlayers` stream
+/// (the ItemCheck swap, `Main.cs:17754`), in the C# arm order.
+fn item_use_visuals_tick(app: &mut App) {
+    if app.swing <= 0.0 {
+        return;
+    }
+    let held = app.inventory[app.selected];
+    if held.count == 0 || held.kind == 0 {
+        return;
+    }
+    let Some(def) = registry::get(held.kind) else {
+        return;
+    };
+    let Some(p) = app.player.as_ref() else {
+        return;
+    };
+    let anim = ticks_of(app.swing);
+    let anim_max = ticks_of(app.swing_max).max(1);
+    let scale = crate::player::adjusted_item_scale(
+        crate::prefix::prefixed_stats(held.kind, held.prefix)
+            .map_or(def.scale, |s| s.scale),
+    );
+    let (frame_w, frame_h) = app
+        .lookups
+        .item_icon(held.kind)
+        .map_or((def.width as f32, def.height as f32), |(_, w, h)| (w, h));
+    // The rect: useStyle 1 through the swing placement + hitbox ports,
+    // useStyle 3 through the thrust pair. The other styles park. The
+    // `item_location`/`item_rotation` the swung-path dust arms (121/795-802)
+    // read ride alongside (the placement's loc/rotation, `Player.cs:44750`).
+    let mut item_location = [0.0f32; 2];
+    let mut item_rotation = 0.0f32;
+    let rect: Option<(i32, i32, i32, i32)> = match def.use_style {
+        1 => {
+            let (loc, rot) = crate::melee_swing::swing_item_placement(
+                i32::from(held.kind),
+                anim,
+                anim_max,
+                p.facing,
+                1.0,
+                [p.x, p.y],
+                crate::player::WIDTH,
+                crate::player::HEIGHT,
+                frame_w,
+                frame_h,
+                0.0,
+            );
+            item_location = loc;
+            item_rotation = rot;
+            let r = crate::melee_swing::melee_hitbox(
+                i32::from(held.kind),
+                anim,
+                anim_max,
+                p.facing,
+                1.0,
+                loc,
+                frame_w as i32,
+                frame_h as i32,
+                scale,
+            );
+            Some((r.x, r.y, r.width, r.height))
+        }
+        3 => {
+            let remaining = app.swing / app.swing_max.max(f32::EPSILON);
+            let (loc, rot) = crate::player::thrust_item_placement(
+                p.x,
+                p.y,
+                crate::player::WIDTH,
+                p.facing as f32,
+                remaining,
+                frame_w,
+                scale,
+                0.0,
+                i32::from(held.kind),
+            );
+            item_location = loc;
+            item_rotation = rot;
+            crate::player::thrust_melee_hitbox(
+                loc,
+                frame_w,
+                frame_h,
+                scale,
+                p.facing,
+                remaining,
+                i32::from(held.kind),
+            )
+        }
+        _ => None,
+    };
+    let spawn_ctx = app.spawn_ctx();
+    // `:43644-43646` — `ItemCheck_GetMeleeHitboxParticles`: the 1450
+    // sparkle ladder (the outer Next(3) gate ALWAYS draws).
+    if held.kind == 1450 {
+        if let Some((rx, ry, rw, rh)) = rect {
+            let state = crate::player_gore_e::MeleeHitboxGoreState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+            };
+            crate::player_gore_e::melee_hitbox_sparkle(
+                &state,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+        }
+    }
+    // `:43648-43653` — `ItemCheck_EmitUseVisuals`' gate: `(damage >= 0 &&
+    // type > 0 && !noMelee) || the bug-net trio`. The port's itemdata
+    // carries no noMelee field — every registered row stands noMelee-false
+    // (the documented stand-in), so the gate folds to `damage >= 0` plus
+    // the trio (their damage is -1).
+    let emit_gate = def.damage >= 0 || matches!(held.kind, 1991 | 3183 | 4821);
+    if emit_gate {
+        if let Some((rx, ry, rw, rh)) = rect {
+            let state = crate::player_gore_d::ItemUseGoreState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+                vx: p.vx,
+                vy: p.vy,
+            };
+            // W4-g17 wiring wave 2 — the dust-only arms' snapshot (the same
+            // rect + the swung-path inputs + the melee enchant flags).
+            let dust_state = crate::player_dust_use::ItemUseDustState {
+                rect_x: rx as f32,
+                rect_y: ry as f32,
+                rect_w: rw,
+                rect_h: rh,
+                direction: p.facing,
+                vx: p.vx,
+                vy: p.vy,
+                item_rotation,
+                item_location,
+                item_scale: scale,
+                grav_dir: 1.0,
+                melee_enchant: p.melee_enchant,
+                frost_burn: p.frost_burn,
+                magma_stone: p.magma_stone,
+                melee: def.melee,
+            };
+            // `:44756-44795` — the dust-only arms BEFORE the 65/3065 gores.
+            crate::player_dust_use::item_use_dust_pre(
+                held.kind,
+                &dust_state,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+            // `:44796-44817` — the gore lane's 65/3065 arms.
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            match held.kind {
+                65 => crate::player_gore_d::item65_use_gore(
+                    &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                ),
+                3065 => crate::player_gore_d::item3065_use_gore(
+                    &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                ),
+                _ => {}
+            }
+            // `:44818-44987` — the dust-only arms AFTER 65/3065, BEFORE the
+            // enchant-7/1304 gores (the 190/213/121/.../367 arms + frostBurn
+            // + the meleeEnchant 1-6 rows).
+            crate::player_dust_use::item_use_dust_post(
+                held.kind,
+                &dust_state,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+            // `:44988-45008` — the meleeEnchant ladder's 7 arm (the
+            // Confetti Flask): `melee && !noMelee && !noUseGraphic &&
+            // meleeEnchant == 7`.
+            if def.melee && p.melee_enchant == 7 {
+                crate::player_gore_d::enchant7_use_gore(
+                    &state,
+                    &mut app.gore,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
+            // `:45009-45023` — the dust-only TAIL (the meleeEnchant-8 row +
+            // magmaStone), after enchant-7 and BEFORE the 1304 arm (the C#
+            // order — a melee 1304 with enchant-8/magmaStone draws both).
+            crate::player_dust_use::item_use_dust_tail(
+                &dust_state,
+                &mut app.dust,
+                &spawn_ctx,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+            // `:45024-45027` — the gore lane's 1304 ChildSafety arm.
+            if held.kind == 1304 {
+                crate::player_gore_d::item1304_use_gore(
+                    &state,
+                    &mut app.gore,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                    app.gore.child_safety.disabled,
+                );
+            }
+        }
+    }
+    // `:51099-51125` — the useStyle-5 lantern mote (4262): the
+    // `DontHoldItems` mount gate (55/56/61) then the Next(20) gate.
+    if def.use_style == 5 && held.kind == 4262 {
+        let mounted_blocks = p.mount.is_active() && matches!(p.mount.kind(), 55 | 56 | 61);
+        if !mounted_blocks {
+            let (cx, _) = p.center();
+            let (_, mcy) = p.mounted_center();
+            let state = crate::player_gore_e::LanternMoteState {
+                center_x: cx,
+                item_location_y: mcy - 6.0,
+                direction: p.facing,
+                wind_for_visuals: app.wind.speed_current,
+            };
+            crate::player_gore_e::lantern_mote_gore(
+                &state,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+            );
+        }
     }
 }
 
@@ -1614,6 +1857,48 @@ fn axe_tile_hit(app: &mut App, tx: i32, ty: i32, kind: u16, axe_power: i32, held
     }
     // `:45758` — the fail tick (`KillTile(fail: true)`): the per-tick
     // sound/dust is the recorded deviation; the damage stays in the book.
+    // W4-g17 wiring — `KillTile(fail: true)`'s `ShakeTree` arm
+    // (`WorldGen.cs:63710-63714`): a shakeable tile (the tree trunks)
+    // shakes on EVERY fail tick. The C# `ShakeTree` order (`:63131-63418`):
+    // the dedupe/walk (`tree::shake_tree_resolve`, `:63133-63162`) records
+    // the shake ONCE, then the loot ladder (`shake_loot::shake_tree_loot`,
+    // `:63163-63403`) draws its genRand/Main.rand rolls, then the FX tail
+    // (`tree::shake_tree_fx_at` → `world_gore_a::tree_grow_fx`, hitTree:
+    // true, `:63404-63417`) spawns on the `UpdatePlayers` stream (the
+    // ItemCheck swap). The per-shake genRand stand-in is ONE UpdatePlayers
+    // throw (the `spawn_things_from_pot` convention), drawn before the FX.
+    if tr_core::tiledata::SET_IS_SHAKEABLE.has(kind) {
+        if let Some(site) = tr_core::tree::shake_tree_resolve(&mut app.world, tx, ty) {
+            let spawn_ctx = app.spawn_ctx();
+            // The loot ladder: one UpdatePlayers throw seeds the genRand
+            // FastRandom stand-in; Main.rand rides the same stream.
+            {
+                let mut gen_stream = tr_core::tile_light::FastRandom::new(
+                    app.rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next() as u64,
+                );
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                shake_loot::shake_tree_loot(app, &site, tx, ty, &mut gen_stream, rng);
+            }
+            // The FX tail (RNG-free position; the gore burst's kicks ride
+            // the same stream, after the loot's draws — the C# order).
+            if let Some((bx, by, style)) = tr_core::tree::shake_tree_fx_at(&app.world, &site) {
+                crate::world_gore_a::tree_grow_fx(
+                    bx,
+                    by,
+                    1,
+                    style,
+                    true,
+                    &mut app.gore,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
+        }
+    }
     // `:45764-45767` — a non-zero damage prunes the book.
     if damage != 0 {
         app.hit_tile.prune(|x, y| {
@@ -1801,6 +2086,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let d = mouse_world - Vec2::new(cx, cy);
         app.swing_aim = d.y.atan2(d.x);
     }
+    // W4-g17 wiring — `ItemCheck`'s per-tick visual arms (`Player.cs:
+    // 43644-43653`): `ItemCheck_GetMeleeHitboxParticles` (every type > 0
+    // tick) then `ItemCheck_EmitUseVisuals` (the melee/noMelee gate + the
+    // bug-net trio). Both run while `itemAnimation > 0`, independent of
+    // the cursor — the C# block sits ahead of the HUD/reach gates, so
+    // this drain runs here (after the head decrements, the same
+    // post-decrement animation the C# arms read). The useStyle-1 rect
+    // resolves through the shared `melee_swing` ports; the other styles'
+    // rects are the item lane's (documented — their arms skip).
+    item_use_visuals_tick(app);
     // `Player.releaseUseItem = !controlUseItem` runs every tick
     // (`Player.cs:42829`), so the press/release edges stay current even on
     // frames where the cursor is over the HUD or a panel. The *previous*
@@ -2355,6 +2650,30 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `UndoSlowMagicUse` half (`Player.cs:51946-51948`/`:51954-51966`,
         // folded into `potions::use_potion_item` — the i37 coordination
         // note's deferred i19 fold).)
+    }
+    // W4-g17 wiring wave 2 — the hair-dye use arm (`Player.cs:42856-42866`):
+    // `ItemTimeIsZero && itemAnimation > 0 && item.hairDye >= 0` →
+    // `ApplyItemTime(item)` + `this.hairDye = (byte)item.hairDye`. The C#
+    // runs it MID-SWING (not on the press edge), independent of the
+    // consumable arms above; the port's `item_time <= 0` is ItemTimeIsZero
+    // and `swing > 0` is itemAnimation > 0. The hair dyes are useStyle 9
+    // (the eat/drink pose, `Item.cs:21254`), consumable, no heal/buff — so
+    // the potion/food arms above skip them and this arm applies the dye.
+    // The `NetMessage.SendData(4)` sync is MP-only (single-player drops it).
+    // The stack consume is the useStyle-9 consumable path's (the item lane
+    // owns the eat/drink consume; the dye application is this arm's).
+    if app.swing > 0.0 && app.item_time <= 0.0 && held.count > 0 {
+        if let Some(def) = registry::get(held.kind) {
+            if def.hair_dye >= 0 {
+                // `ApplyItemTime(item)` — itemTime = useTime (the prefixed
+                // instance, `Player.cs:4416-4419`).
+                let use_time = held_use_time_ticks(held);
+                app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+                if let Some(p) = app.player.as_mut() {
+                    p.hair_dye = def.hair_dye as u8;
+                }
+            }
+        }
     }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
@@ -5648,6 +5967,41 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             );
         }
     }
+    // W4-g17 wiring — `CheckPot`'s gore switch (`WorldGen.cs:56878-56954`,
+    // `world_gore_b::pot_break_gores`): AFTER the kill loop + break sound,
+    // BEFORE `SpawnThingsFromPot` (the loot below).
+    pot_gore_drain(app, &kill);
+    // W4-g17 wiring — `Check3x3` case 231's larva burst (`WorldGen.cs:
+    // 53230-53257`, `world_gore_a::larva_gores`): the 3x3 cascade killed
+    // the larva; the three body gores (300/301/302, NO arm-level draws —
+    // the kicks ride the pool) spawn at the trigger cell, then the
+    // nearest-live-player probe decides the Queen Bee claim. The C#
+    // runs this INSIDE the Check3x3 tail, after the kill loop — the
+    // break's `UpdatePlayers` stream (the `Main.cs:17754` swap).
+    for drop in &kill.object_drops {
+        if drop.tile_kind == 231 {
+            let roster = app
+                .player
+                .as_ref()
+                .map(|p| vec![(true, p.dead, p.x, p.y)])
+                .unwrap_or_default();
+            let game_menu = app.spawn_ctx().game_menu;
+            let claim = crate::world_gore_a::larva_gores(
+                drop.x,
+                drop.y,
+                &mut app.gore,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &app.world,
+                &roster,
+                game_menu,
+            );
+            // `NPC.SpawnOnPlayer(plr, 222)` (`:53253-53256`) — the boss
+            // spawn claim. The port's single player is slot 0.
+            if claim.is_some() {
+                crate::world_sim::npcs::spawn_queen_bee_on_player(app);
+            }
+        }
+    }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
     // path sets for held 213/5295): the port reads the held slot at the
@@ -5762,6 +6116,34 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
         );
     }
     app.world_key = None;
+}
+
+/// W4-g17 wiring — `CheckPot`'s gore switch drain (`WorldGen.cs:
+/// 56878-56954` through [`crate::world_gore_b::pot_break_gores`]): one
+/// call per `PotEvent`, AFTER the break sound and BEFORE the
+/// `SpawnThingsFromPot` loot (the C# `CheckPot` order). The kicks ride
+/// the `UpdatePlayers` stream (the break's `Main.rand` swap); each
+/// event's styles 25-33 type picks ride a `FastRandom` genRand stand-in
+/// seeded by ONE throw — the `spawn_things_from_pot` owner's convention,
+/// drawn BEFORE that loot's own seed throw. The seed throw is
+/// unconditional (every style), matching the loot resolver's seam.
+fn pot_gore_drain(app: &mut App, kill: &edit::TileKill) {
+    for event in &kill.events {
+        let mut gen_stream = tr_core::tile_light::FastRandom::new(
+            app.rngs
+                .stream(crate::app::RngKey::UpdatePlayers)
+                .next() as u64,
+        );
+        crate::world_gore_b::pot_break_gores(
+            event.style,
+            event.x,
+            event.y,
+            &mut app.gore,
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            &mut gen_stream,
+            &app.world,
+        );
+    }
 }
 
 /// The world/player inputs the drop resolvers read. Every C# flag with no
@@ -8699,6 +9081,157 @@ mod tests {
             .iter()
             .flat_map(|a| a.conditions.iter())
             .any(|c| c.name == key && c.completed)
+    }
+
+    // ------------------------------------------------------------------
+    // W4-g17 wiring — the ItemCheck per-tick visual arms.
+    // ------------------------------------------------------------------
+
+    /// W4-g17 — `Player.cs:45024-45027`: the Zombie Arm (1304, no
+    /// projectile — the swing draws ONLY the visual gate) runs the
+    /// Next(60) gate every animation tick, ALWAYS drawing. The witness
+    /// drives `item_use_visuals_tick` directly (the drain IS the wiring
+    /// seam) and replays the full draw ledger: one gate draw per tick,
+    /// plus the rare hit's two NextFloats + type + kicks.
+    #[test]
+    fn w4_g17_the_zombie_arm_swing_draws_the_use_gate() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(1304, 1);
+        app.npcs.clear();
+        // Start the swing directly (the use-start seam).
+        start_use_timers(&mut app, app.inventory[app.selected]);
+        let mut ledger = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let mut ticks = 0;
+        while app.swing > 0.0 && ticks < 40 {
+            // The per-tick head decay the real pass runs before the drain.
+            app.swing = (app.swing - 1.0 / 60.0).max(0.0);
+            if app.swing <= 0.0 {
+                break;
+            }
+            item_use_visuals_tick(&mut app);
+            // The twin: the Next(60) gate draws unconditionally each tick.
+            let gate = ledger.next_max(60);
+            if gate == 0 {
+                // The hit: two NextFloats + the Next(3,6) type + the kicks.
+                let _vx = ledger.next_float();
+                let _vy = ledger.next_float();
+                let _ty = ledger.next_range(3, 6);
+                let _ky = ledger.next_range(10, 31);
+                let _kx = ledger.next_range(-20, 21);
+            }
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                ledger,
+                "tick {ticks}: the drain matches the C# draw ledger"
+            );
+            ticks += 1;
+        }
+        assert!(ticks >= 20, "the 22-tick animation ran, got {ticks}");
+    }
+
+    /// W4-g17 — `Player.cs:45050-45080`: the Bubble Wand (1450) swing
+    /// runs the sparkle ladder's outer Next(3) gate every tick; a hit
+    /// spawns ONE of 411-415. Over 200 swings at least one ladder gore
+    /// lands (the 1/3 outer × the chain's hit odds).
+    #[test]
+    fn w4_g17_the_bubble_wand_spawns_the_sparkle_ladder() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(1450, 1);
+        app.npcs.clear();
+        // The cursor off the HUD so the mining arm never starts (the
+        // Bubble Wand has no pick — a mine attempt would refuse anyway,
+        // but the idle cursor keeps the tick clean).
+        app.mine_down = false;
+        for _ in 0..200 {
+            start_use_timers(&mut app, app.inventory[app.selected]);
+            while app.swing > 0.0 {
+                update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            }
+        }
+        let sparkles: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active && (411..=415).contains(&g.gore_type))
+            .map(|g| g.gore_type)
+            .collect();
+        assert!(!sparkles.is_empty(), "the ladder fired over 200 swings");
+    }
+
+    /// W4-g17 — 500-tick stream-parity witness: an idle hand (no swing)
+    /// runs NO visual draws — the drain's `swing <= 0` head returns
+    /// before any gate. 500 idle update_editing ticks leave the
+    /// UpdatePlayers stream where the twin sits.
+    #[test]
+    fn w4_g17_the_idle_visual_drain_draws_nothing_500() {
+        let mut app = melee_app();
+        let mut twin = melee_app();
+        app.npcs.clear();
+        twin.npcs.clear();
+        for _ in 0..500 {
+            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            update_editing(&mut twin, 1.0 / 60.0, MINE_SCREEN);
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                *twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                "the idle drain drew nothing"
+            );
+        }
+    }
+
+    /// W4-g17 wiring wave 2 — the dust-only item arms (`Player.cs:
+    /// 44756-45023`): the Terra Blade (723) swing runs the Next(2) type-64
+    /// gate every animation tick; a hit spawns a noGravity type-64 dust.
+    /// Over 200 swings at least one lands. The witness drives the drain
+    /// through update_editing (the camera is on the player — the cull).
+    #[test]
+    fn w4_g17_the_terra_blade_swing_spawns_the_type64_dust() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(723, 1);
+        app.npcs.clear();
+        app.mine_down = false;
+        for _ in 0..200 {
+            start_use_timers(&mut app, app.inventory[app.selected]);
+            while app.swing > 0.0 {
+                update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            }
+        }
+        let d64 = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 64)
+            .count();
+        assert!(d64 > 0, "the Next(2) type-64 gate fired over 200 swings");
+        // Every type-64 dust from this arm is noGravity (`:44794`).
+        assert!(
+            app.dust.slots().iter().filter(|d| d.active && d.dust_type == 64).all(|d| d.no_gravity),
+            "the type-64 dust is noGravity"
+        );
+    }
+
+    /// W4-g17 wiring wave 2 — the Night's Edge (273) swing runs the always
+    /// type-27 dust (melee speed, noGravity, vel/2) every animation tick +
+    /// the Next(5) type-14 gate. The type-27 dust spawns unconditionally.
+    #[test]
+    fn w4_g17_the_nights_edge_swing_spawns_the_type27_dust() {
+        let mut app = melee_app();
+        app.inventory[app.selected] = slot(273, 1);
+        app.npcs.clear();
+        app.mine_down = false;
+        start_use_timers(&mut app, app.inventory[app.selected]);
+        let mut ticks = 0;
+        while app.swing > 0.0 && ticks < 40 {
+            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+            ticks += 1;
+        }
+        let d27 = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 27)
+            .count();
+        assert!(d27 > 0, "the always type-27 dust spawned, got {d27} over {ticks} ticks");
     }
 
     fn melee_app() -> App {
@@ -12042,6 +12575,220 @@ mod tests {
         }
     }
 
+    /// W4-g17 wiring — the axe fail tick's `ShakeTree` arm
+    /// (`WorldGen.cs:63710-63714` → `tree::shake_tree_resolve` → the loot
+    /// ladder `shake_loot::shake_tree_loot` → `tree::shake_tree_fx_at` →
+    /// `world_gore_a::tree_grow_fx`, hitTree: true): a fail hit on the
+    /// trunk records the shake, runs the loot ladder (items/NPCs/projectiles,
+    /// never gores) and spawns the hit-tree leaf burst (the ash-free forest
+    /// tree: 3 trunk gores per row × height + the top row's 5 leaves — the
+    /// hitTree count, `:29625`). The second fail tick dedupes (one shake per
+    /// tree per day). The gore count is seed-robust: the ladder spawns no
+    /// gores, so the FX burst's 8 stand alone.
+    #[test]
+    fn w4_g17_the_axe_fail_tick_shakes_the_tree() {
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        let held = app.inventory[app.selected];
+        // One fail hit (10 damage < 100): the shake fires.
+        let broke = axe_tile_hit(&mut app, 30, 260, 5, 9, held);
+        assert!(!broke, "the first hit is a fail tick");
+        assert_eq!(app.world.tree_shakes, vec![(30, 261)]);
+        let live = app.gore.slots().iter().filter(|g| g.active).count();
+        // hitTree with height 1 (`:63416` passes 1): 1 row × 3 trunk
+        // gores + the top row's 5 leaves = 8.
+        assert_eq!(live, 8, "the hit-tree burst (:29617-29636, height 1, num3 = 5)");
+        for g in app.gore.slots().iter().filter(|g| g.active) {
+            assert_eq!(g.gore_type, 910, "the forest leaf style");
+        }
+        // The second fail tick: the dedupe refuses a second burst.
+        let before = app.gore.slots().iter().filter(|g| g.active).count();
+        let _ = axe_tile_hit(&mut app, 30, 259, 5, 9, held);
+        let after = app.gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(after, before, "one shake per tree per day (:63143-63149)");
+    }
+
+    /// W4-g17 wiring wave 2 — the ShakeTree loot ladder's full genRand
+    /// else-if chain (`WorldGen.cs:63163-63403`), stream-parity ledger. A
+    /// forest tree shaken over many seeds: the twin replays the C# draw
+    /// order (the genRand gates on the FastRandom stand-in, the Main.rand
+    /// item/NPC/projectile rolls on the UpdatePlayers stream) and the
+    /// drop/NPC counts match. The FX tail is RNG-free and spawns no loot.
+    #[test]
+    fn w4_g17_the_shake_loot_ladder_replays_the_csharp_draws() {
+        use tr_core::tree::{shake_tree_resolve, TreeType};
+        // A forest tree at x=30, ground row 261, leafy top 257 (height 4).
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10; // the Iron Axe, axe 9
+        // Resolve the shake site directly (the dedupe records it).
+        let site = shake_tree_resolve(&mut app.world, 30, 260)
+            .expect("the forest tree shakes");
+        assert_eq!(site.tree_type, TreeType::Forest);
+        assert_eq!((site.bottom_x, site.bottom_y, site.ground_row), (30, 257, 261));
+        // Replay the ladder over a sweep of genRand seeds; every outcome
+        // must be a legal ladder arm (item / NPC / projectile / nothing).
+        let mut saw_item = false;
+        let mut saw_npc = false;
+        let mut saw_nothing = false;
+        for seed in 0..400u64 {
+            let mut gen = tr_core::tile_light::FastRandom::new(seed);
+            let mut rng = UnifiedRandom::new(seed as i32);
+            // Clear per-seed so the 300-item cap never skews the accounting
+            // (each shake starts from an empty pool — the site is already
+            // resolved, the ladder is independent of the dedupe book).
+            app.items.clear();
+            app.npcs.clear();
+            shake_loot::shake_tree_loot(&mut app, &site, 30, 260, &mut gen, &mut rng);
+            let new_items = app.items.len();
+            let new_npcs = app.npcs.len();
+            if new_items > 0 {
+                saw_item = true;
+            }
+            if new_npcs > 0 {
+                saw_npc = true;
+            }
+            if new_items == 0 && new_npcs == 0 {
+                saw_nothing = true;
+            }
+            // The ladder spawns at most one item arm OR one NPC arm (the
+            // bird/bee bursts spawn 5); never both in one shake.
+            assert!(
+                new_items == 0 || new_npcs == 0,
+                "seed {seed}: the else-if chain spawns one arm, got {new_items} items + {new_npcs} npcs"
+            );
+            // Every dropped item is a legal ladder kind.
+            for it in &app.items {
+                assert!(
+                    matches!(it.kind, 1130 | 832 | 933 | 3360 | 3361 | 5517 | 4366
+                        | 5629 | 27 | 194 | 1809 | 71 | 72 | 73 | 965
+                        | 4009 | 4293 | 4282 | 4290 | 4291 | 4295 | 4286
+                        | 4292 | 4294 | 4287 | 4283 | 4289 | 4284 | 4288
+                        | 4297 | 4285 | 4296 | 5278 | 5277 | 9 | 5215 | 619
+                        | 911 | 620 | 621 | 2503 | 183 | 2504 | 180 | 181
+                        | 177 | 179 | 178 | 182 | 999 | 3),
+                    "seed {seed}: illegal ladder drop {}", it.kind
+                );
+            }
+        }
+        assert!(saw_item, "the sweep hits an item arm");
+        assert!(saw_nothing, "the sweep hits the no-arm fall-through");
+        // The bird/squirrel critters are unported kinds — the NPC arms that
+        // DO spawn are the jungle bees (210/211) / corrupt eater (6) only;
+        // a forest tree's bird arms consume their rolls and spawn nothing.
+        let _ = saw_npc;
+    }
+
+    /// W4-g17 wiring wave 2 — the acorn arm (`WorldGen.cs:63207-63210`):
+    /// `genRand.Next(7) == 0` on a forest/snow/hallowed/ash tree drops the
+    /// Acorn 27, stack `genRand.Next(1, 3)`. A pinned seed that reaches the
+    /// 7-gate (every earlier gate misses) verifies the drop + stack range.
+    #[test]
+    fn w4_g17_the_shake_acorn_arm_drops_27() {
+        use tr_core::tree::shake_tree_resolve;
+        let mut app = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        app.inventory[app.selected].kind = 10;
+        let site = shake_tree_resolve(&mut app.world, 30, 260).unwrap();
+        // Sweep for a seed whose genRand chain reaches the Next(7) acorn gate
+        // and hits it (the earlier gates all miss). The FastRandom stand-in
+        // is deterministic per seed. The C# gates are `genRand.Next(N) == 0
+        // && treeType == X` — the ROLL runs first (the left operand), then
+        // the type check, so every gate's roll draws regardless of family.
+        // Forest tree, classic world (no tenth/getGood — the first two arms
+        // skip): 300a/300b (forest), 200a/200b (jungle — type mismatch falls
+        // through even on 0), 1000a/1000b (forest), 100 (fsha), then 7. The
+        // acorn fires when 300a/300b/1000a/1000b/100 all != 0 and g7 == 0.
+        let mut found = None;
+        for seed in 0..2000u64 {
+            let mut probe = tr_core::tile_light::FastRandom::new(seed);
+            let g300a = probe.next(300);
+            let g300b = probe.next(300);
+            let _g200a = probe.next(200);
+            let _g200b = probe.next(200);
+            let g1000a = probe.next(1000);
+            let g1000b = probe.next(1000);
+            let g100 = probe.next(100);
+            let g7 = probe.next(7);
+            if g300a != 0 && g300b != 0 && g1000a != 0 && g1000b != 0 && g100 != 0 && g7 == 0 {
+                found = Some(seed);
+                break;
+            }
+        }
+        let seed = found.expect("a seed reaches the acorn gate");
+        let mut gen = tr_core::tile_light::FastRandom::new(seed);
+        let mut rng = UnifiedRandom::new(seed as i32);
+        let before = app.items.len();
+        shake_loot::shake_tree_loot(&mut app, &site, 30, 260, &mut gen, &mut rng);
+        assert_eq!(app.items.len() - before, 1, "the acorn arm drops one item");
+        let acorn = &app.items[before];
+        assert_eq!(acorn.kind, 27, "the Acorn");
+        assert!((1..=2).contains(&acorn.count), "stack Next(1,3) = 1..2, got {}", acorn.count);
+    }
+
+    /// W4-g17 g17d — the i30-compose seam witness: the axe fail tick's
+    /// ShakeTree compose (`axe_tile_hit` `:1870-1901`) draws EXACTLY ONE
+    /// UpdatePlayers throw to seed the genRand FastRandom stand-in, then
+    /// the loot ladder (the genRand gates on the stand-in, the Main.rand
+    /// item/NPC rolls on UpdatePlayers), then the FX tail — the C# order
+    /// (`WorldGen.cs:63131-63418`). The manual twin (resolve → ONE throw →
+    /// ladder → FX) must end on the identical stream + pools. The i30 chop
+    /// lane's break path never runs on a fail tick (no break drops), so
+    /// this compose is the tick's whole draw; a second seed throw (or a
+    /// reordering) diverges the streams. Written, NOT run (code-only).
+    #[test]
+    fn w4_g17_the_axe_fail_tick_compose_draws_one_seed_throw() {
+        use tr_core::tree::{shake_tree_fx_at, shake_tree_resolve};
+        let seed = 0x5EEDi32;
+        // The live path: one fail hit through axe_tile_hit.
+        let mut live = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        live.inventory[live.selected].kind = 10; // the Iron Axe, axe 9
+        *live.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let held = live.inventory[live.selected];
+        let broke = axe_tile_hit(&mut live, 30, 260, 5, 9, held);
+        assert!(!broke, "the first hit is a fail tick (10 damage < 100)");
+        // The manual twin: the documented compose, step by step.
+        let mut twin = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        twin.inventory[twin.selected].kind = 10;
+        *twin.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let site = shake_tree_resolve(&mut twin.world, 30, 260).expect("the tree shakes");
+        let spawn_ctx = twin.spawn_ctx();
+        {
+            // ONE throw seeds the stand-in (the spawn_things_from_pot
+            // convention), drawn BEFORE the ladder and the FX.
+            let mut gen = tr_core::tile_light::FastRandom::new(
+                twin.rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next() as u64,
+            );
+            let rng = twin.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            shake_loot::shake_tree_loot(&mut twin, &site, 30, 260, &mut gen, rng);
+        }
+        if let Some((bx, by, style)) = shake_tree_fx_at(&twin.world, &site) {
+            crate::world_gore_a::tree_grow_fx(
+                bx,
+                by,
+                1,
+                style,
+                true,
+                &mut twin.gore,
+                &mut twin.dust,
+                &spawn_ctx,
+                twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &twin.world,
+            );
+        }
+        assert_eq!(
+            live.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            "the compose draws ONE seed throw + the ladder + the FX, no more"
+        );
+        assert_eq!(live.items.len(), twin.items.len(), "the ladder's drops match");
+        assert_eq!(live.npcs.len(), twin.npcs.len(), "the ladder's critters match");
+        let lg = live.gore.slots().iter().filter(|g| g.active).count();
+        let tg = twin.gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(lg, tg, "the FX burst matches");
+        assert_eq!(live.world.tree_shakes, twin.world.tree_shakes);
+    }
+
     /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant
     /// collapses, one Cactus 276 per segment (`WorldGen.CheckCactus`,
     /// `:54116-54158`; the drop `case 80`, `:64717-64719`). The cactus takes
@@ -12893,6 +13640,158 @@ mod tests {
                 it.kind
             );
         }
+    }
+
+    // W4-g17 wiring — `CheckPot`'s gore switch runs INSIDE break_tile
+    // (`WorldGen.cs:56878-56954` via `world_gore_b::pot_break_gores`):
+    // the style-0 pot spawns its 51/52/53 trio in the gore pool at the
+    // trigger cell, and the kicks ride the SAME `UpdatePlayers` stream
+    // the loot rolls use (the break's `Main.rand` swap).
+    #[test]
+    fn w4_g17_breaking_pot_spawns_the_gore_trio() {
+        let mut w = object_world();
+        set_pot(&mut w, 10, 18, 0);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 10, 18);
+        let live: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        assert_eq!(live, vec![51, 52, 53], "the CheckPot style-0 trio (:56881-56883)");
+        for g in app.gore.slots().iter().filter(|g| g.active) {
+            assert_eq!(
+                g.position,
+                glam::Vec2::new(10.0 * TILE_PX, 18.0 * TILE_PX),
+                "the trigger cell's top-left, not the 2x2 origin"
+            );
+        }
+    }
+
+    // W4-g17 wiring — the no-gore styles (16-24) leave the pool empty but
+    // still consume the ONE genRand seed throw before the loot's own
+    // (the drain's unconditional seed, `editing.rs`'s break_tile).
+    #[test]
+    fn w4_g17_the_no_gore_pot_style_spawns_no_gores() {
+        let mut w = object_world();
+        set_pot(&mut w, 10, 18, 16);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 10, 18);
+        assert!(
+            !app.gore.slots().iter().any(|g| g.active),
+            "styles 16-24 break with no gores (:56924-56927)"
+        );
+    }
+
+    // W4-g17 wiring — 500-iteration stream-parity witness: the wired
+    // drain (`pot_gore_drain`) advances the `UpdatePlayers` stream
+    // EXACTLY as the C# ledger — per pot event ONE genRand seed throw,
+    // then the gore switch's own draws (the fixed rows: 2 kicks per
+    // gore on Main.rand; the genRand rows: the type picks on the seeded
+    // FastRandom, interleaved with 2 kicks per gore on Main.rand).
+    // All 37 styles cycled; the ledger twin must end on the identical
+    // stream state (the stand-in replacement introduced no drift).
+    #[test]
+    fn w4_g17_pot_gore_drain_stream_parity_500_events() {
+        let mut w = object_world();
+        set_pot(&mut w, 10, 18, 0);
+        let mut app = break_app(w, 0xC0FFEE);
+        let mut ledger = tr_core::UnifiedRandom::new(0xC0FFEEi64 as i32);
+        for i in 0..500 {
+            let style = (i % 37) as i32;
+            let kill = edit::TileKill {
+                events: vec![edit::PotEvent { style, x: 10, y: 18 }],
+                ..Default::default()
+            };
+            pot_gore_drain(&mut app, &kill);
+            // The ledger: the drain's seed throw + the switch's draws.
+            let seed_throw = ledger.next();
+            let mut gen = tr_core::tile_light::FastRandom::new(seed_throw as u64);
+            let fixed: i32 = match style {
+                0..=3 | 34..=36 => 3,
+                4..=15 => 2,
+                _ => 0,
+            };
+            for _ in 0..fixed {
+                let _ky = ledger.next_range(10, 31);
+                let _kx = ledger.next_range(-20, 21);
+            }
+            match style {
+                25..=27 | 28..=30 => {
+                    let (lo, hi) = if style <= 27 { (217, 220) } else { (315, 317) };
+                    for _ in 0..2 {
+                        let _ty = gen.next_range(lo, hi);
+                        let _ky = ledger.next_range(10, 31);
+                        let _kx = ledger.next_range(-20, 21);
+                    }
+                }
+                31..=33 => {
+                    let n = gen.next_range(2, 5);
+                    for _ in 0..n {
+                        let _ty = 698 + gen.next(6);
+                        let _ky = ledger.next_range(10, 31);
+                        let _kx = ledger.next_range(-20, 21);
+                    }
+                }
+                _ => {}
+            }
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                ledger,
+                "event {i} (style {style}): the drain matches the C# draw ledger"
+            );
+        }
+    }
+
+    // W4-g17 wiring — `Check3x3` case 231 (`WorldGen.cs:53230-53257`):
+    // breaking the larva's support spawns the 300/301/302 body-gore trio
+    // through `world_gore_a::larva_gores` and the Queen Bee claim fires
+    // (`NPC.SpawnOnPlayer(plr, 222)`). The larva is a 3x3 kind-231 object
+    // on the stone floor; the break kills the floor cell under it.
+    #[test]
+    fn w4_g17_breaking_the_larva_spawns_the_gores_and_the_bee() {
+        let mut w = object_world();
+        // The 3x3 larva at (10..13, 17..20), sitting on the floor row 20.
+        for dx in 0..3i32 {
+            for dy in 0..3i32 {
+                let i = w.index(10 + dx, 17 + dy);
+                w.tiles[i] = Tile {
+                    kind: 231,
+                    frame_x: (dx * 18) as i16,
+                    frame_y: (dy * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        if w.frame_important.len() <= 231 {
+            w.frame_important.resize(td::TILE_COUNT, false);
+        }
+        w.frame_important[231] = true;
+        let mut app = break_app(w, 0xBEE);
+        // Break the middle floor cell — the larva loses its support.
+        break_tile(&mut app, 11, 20);
+        let live: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        assert_eq!(live, vec![300, 301, 302], "the larva trio (:53234-53236)");
+        let bees = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == crate::npc::NpcKind::QueenBee && n.hp > 0)
+            .count();
+        assert_eq!(bees, 1, "the Queen Bee claim (:53253-53256)");
+        // The larva drops NO item (the C# case 231 has no Item.NewItem).
+        assert!(
+            !app.items.iter().any(|it| it.kind == 997 || it.kind == 5296),
+            "no extractinator item leaked"
+        );
     }
 
     // DW-3.3 (merge fix): `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`)

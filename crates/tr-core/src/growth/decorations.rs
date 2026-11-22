@@ -867,7 +867,7 @@ mod tests {
         let mut placed = false;
         for seed in 1..64u64 {
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_underground_tile(&mut w, 100, 205, 3, true, true, false, &mut rng);
+            update_world_underground_tile(&mut w, 100, 205, 3, true, true, false, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             if w.tile(100, 205).is_some_and(|t| t.active() && t.kind == 51) {
                 placed = true;
                 break;
@@ -882,7 +882,7 @@ mod tests {
         }
         for seed in 1..64u64 {
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_underground_tile(&mut w2, 100, 205, 3, true, true, false, &mut rng);
+            update_world_underground_tile(&mut w2, 100, 205, 3, true, true, false, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             assert!(
                 !w2.tile(100, 205).is_some_and(|t| t.active()),
                 "no web without the 62 wall"
@@ -1029,7 +1029,7 @@ mod tests {
         let mut seen = false;
         for seed in 1..=40000u64 {
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_underground_tile(&mut w, 100, 150, 3, true, true, false, &mut rng);
+            update_world_underground_tile(&mut w, 100, 150, 3, true, true, false, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             if w.tile(100, 149).is_some_and(|t| t.active() && t.kind == 227) {
                 seen = true;
                 break;
@@ -1046,7 +1046,7 @@ mod tests {
         for k in 0..40000u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_overground_tile(&mut w2, 100, 190, true, false, 0.0, 0.0, &mut rng);
+            update_world_overground_tile(&mut w2, 100, 190, true, false, 0.0, 0.0, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             if w2.tile(100, 189).is_some_and(|t| t.active() && t.kind == 227) {
                 seen = true;
                 break;
@@ -1070,7 +1070,7 @@ mod tests {
         for k in 0..40000u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng);
+            update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
             flower = flower.or((110..130).find_map(|x| {
                 (140..160)
                     .find(|&y| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 624))
@@ -1102,7 +1102,7 @@ mod tests {
         for k in 0..20000u64 {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(7);
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng);
+            update_world_overground_tile(&mut w, 120, 149, true, false, 0.0, 0.0, &mut rng, &crate::growth::GrowthFxCtx::default(), &mut Vec::new());
         }
         let after = (100..160)
             .flat_map(|x| (140..160).map(move |y| (x, y)))

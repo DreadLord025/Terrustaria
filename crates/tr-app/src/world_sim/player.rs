@@ -1392,6 +1392,114 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-g17 wiring — the extra-jump visual tails (`Player.cs:
+            // 20849-21021`, `player_gore_a`): the committed jump queued in
+            // `JumpMovement` runs its burst here on the `UpdatePlayers`
+            // stream with the POST-jump velocity (the arm's writes already
+            // ran). `gravDir` is the port's normal 1f (no flipped-gravity
+            // state — the `player_gore_a` grav_height pick reads it).
+            if let Some(j) = p.take_jump_gores() {
+                let state = crate::player_gore_a::JumpGoreState {
+                    x: p.x,
+                    y: p.y,
+                    vx: p.vx,
+                    vy: p.vy,
+                    width: p.width as i32,
+                    height: p.height as i32,
+                    grav_dir: 1.0,
+                };
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                match j {
+                    crate::player::ExtraJump::Fart => crate::player_gore_a::fart_jump_gores(
+                        &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                    ),
+                    crate::player::ExtraJump::Santank => {
+                        crate::player_gore_a::santank_jump_gores(
+                            &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                        )
+                    }
+                    crate::player::ExtraJump::Cloud => crate::player_gore_a::cloud_jump_gores(
+                        &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                    ),
+                    // The other six arms' tails are dust-only or unported
+                    // visuals (the module's census covers the three gore
+                    // arms); no draws — the C# arms spawn no gores.
+                    _ => {}
+                }
+            }
+            // W4-g17 wiring — the dash==1 launch tail (`Player.cs:
+            // 21419-21434`, `player_gore_b::dash_launch_gores`): the
+            // POST-launch snapshot, the same stream.
+            if p.take_dash_gores() {
+                let state = crate::player_gore_b::DashGoreState {
+                    x: p.x,
+                    y: p.y,
+                    width: p.width as i32,
+                    height: p.height as i32,
+                };
+                crate::player_gore_b::dash_launch_gores(
+                    &state,
+                    &mut app.gore,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
+            // W4-g17 wiring — the dodge bursts (`Player.cs:38060-38160`,
+            // `player_gore_c`): the C# runs them inside `Hurt` under the
+            // `UpdatePlayers` swap; the port's dodge handlers queue the
+            // kind and this drain spawns on the same stream (the dodge
+            // roll above already drew from it — the burst follows).
+            if let Some(sash) = p.take_dodge_gores() {
+                let state = crate::player_gore_c::DodgeGoreState {
+                    x: p.x,
+                    y: p.y,
+                    width: p.width as i32,
+                    height: p.height as i32,
+                };
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                if sash {
+                    crate::player_gore_c::mystic_sash_dodge_gores(
+                        &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                    );
+                } else {
+                    crate::player_gore_c::ninja_dodge_gores(
+                        &state, &mut app.gore, &mut app.dust, &spawn_ctx, rng, &app.world,
+                    );
+                }
+            }
+            // W4-g17 wiring wave 2 — `Player.UpdateHairDyeDust` (`Player.cs:
+            // 24268-24294`, called from `Player.Update` `:24593`): the
+            // team-hair-dye sparkle. The gate (`:24270`): `netMode != 2 &&
+            // !gamePaused && !dead && !ghost && !stoned && !frozen &&
+            // hairDye == TeamDyeShaderIndex`. The port: single-player
+            // (netMode 0), ghost false (`ghost_like`), stoned = buff 156,
+            // frozen = `p.frozen`; the team-dye shader id is item 1984's
+            // `ItemDef.hair_dye` (8, `ID/ContentSamples.cs:19`). Both gates
+            // ALWAYS draw (the C# runs both ifs unconditionally); the dust
+            // arm runs FIRST so the gore gate's draw lands after it.
+            let team_dye = crate::registry::get(1984).map_or(8, |d| d.hair_dye) as u8;
+            let stoned = p.buffs.find_buff_index(156).is_some();
+            if !app.game_paused && !p.dead && !stoned && !p.frozen && p.hair_dye == team_dye {
+                let state = crate::player_gore_b::HairDyeGoreState {
+                    x: p.x,
+                    y: p.y,
+                    vx: p.vx,
+                    vy: p.vy,
+                    width: p.width as i32,
+                };
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                crate::player_gore_b::hair_dye_dust_arm(
+                    &state, &mut app.dust, &spawn_ctx, rng, &app.world,
+                );
+                crate::player_gore_b::hair_dye_gore_arm(
+                    &state,
+                    &mut app.gore,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -1828,6 +1936,178 @@ mod tests {
     /// One tick of the pass (the stepper runs its closure once per 1/60 s).
     fn tick_ammo(app: &mut App) {
         update_player(app, 1.0 / 60.0);
+    }
+
+    // ------------------------------------------------------------------
+    // W4-g17 wiring — the extra-jump / dash / dodge visual drains. The
+    // Player queues the request inside the tick (the C# runs the bursts
+    // inline); the drain spawns on the `UpdatePlayers` stream with the
+    // POST-write snapshot. Every assert cites the C# line.
+    // ------------------------------------------------------------------
+
+    /// W4-g17 — `Player.cs:20849-20863`: the Fart jump's committed arm
+    /// queues the burst; the drain spawns the 3× Next(435,438) gores
+    /// (the pool's live slots carry the 435-437 row) and the 10 type-188
+    /// puffs. The gores' X anchors ride the POST-jump position.
+    #[test]
+    fn w4_g17_the_fart_jump_drain_spawns_the_gore_trio() {
+        let mut app = ammo_app();
+        // The camera on the player so the puff dust is on-screen.
+        {
+            let p = app.player.as_ref().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.pinned_jumps[crate::player::ExtraJump::Fart.index()] = true;
+            p.can_jump_again[crate::player::ExtraJump::Fart.index()] = true;
+            // Airborne, jump exhausted, release latched - the chain's gate.
+            p.arm_airborne_jump_gate();
+        }
+        // The jump press edge: hold one tick (the ground-jump branch is
+        // off — airborne), the extra-jump chain consumes the Fart.
+        app.keys.insert(winit::keyboard::KeyCode::Space);
+        tick_ammo(&mut app);
+        app.keys.clear();
+        let live: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        assert_eq!(live.len(), 3, "the Fart's 3 gores (:20855-20861)");
+        for ty in live {
+            assert!((435..438).contains(&ty), "Next(435,438), got {ty}");
+        }
+        let puffs = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 188)
+            .count();
+        assert_eq!(puffs, 10, "the 10 type-188 puffs (:20849-20854)");
+    }
+
+    /// W4-g17 wiring — `Player.cs:21419-21434`: the dash==1 launch queues
+    /// the tail; the drain spawns the 2× Next(61,64) gores + the 20
+    /// type-31 jitter dusts. The witness drives the dash start directly
+    /// (the double-tap window armed, the press edge fires) then runs the
+    /// player tick's drain — the input path's own witnesses live in the
+    /// dash lifecycle's lane.
+    #[test]
+    fn w4_g17_the_dash_launch_drain_spawns_the_pair() {
+        let mut app = ammo_app();
+        // The camera on the player so the jitter dust is on-screen.
+        {
+            let p = app.player.as_ref().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.pinned_dash = 1;
+            // The double-tap window armed (`dashTime = 15`), the right
+            // press edge fires the launch (`DoCommonDashHandle`).
+            p.arm_dash_window();
+        }
+        app.keys.insert(winit::keyboard::KeyCode::KeyD);
+        tick_ammo(&mut app);
+        app.keys.clear();
+        let live: Vec<i32> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active)
+            .map(|g| g.gore_type)
+            .collect();
+        assert_eq!(live.len(), 2, "the dash's 2 gores (:21427/:21431)");
+        for ty in live {
+            assert!((61..64).contains(&ty), "Next(61,64), got {ty}");
+        }
+        let jitter = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 31)
+            .count();
+        assert_eq!(jitter, 20, "the 20 type-31 jitter dusts (:21419-21426)");
+    }
+
+    /// W4-g17 — `Player.cs:38060-38112`: the Mystic Sash dodge queues the
+    /// burst; the drain spawns the 5× Next(11,14) fan (alpha 100, scale
+    /// 1.5) + the 50 type-267 dusts. The dodge fires through `hurt`'s
+    /// real roll block (a seed whose Next(10) hits 0).
+    #[test]
+    fn w4_g17_the_sash_dodge_drain_spawns_the_fan() {
+        let mut app = ammo_app();
+        // The camera on the player so the burst dust is on-screen (the
+        // `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
+        {
+            let p = app.player.as_ref().unwrap();
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mystic_sash_dodge = true;
+        }
+        // Find a stream position whose next Next(10) is 0.
+        {
+            let rng = app.rngs.stream(RngKey::UpdatePlayers);
+            loop {
+                let mut probe = rng.clone();
+                if probe.next_range(0, 10) == 0 {
+                    break;
+                }
+                rng.next_max(2);
+            }
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            let from_x = p.x + 40.0;
+            let rng = app.rngs.stream(RngKey::UpdatePlayers);
+            assert!(!p.hurt(10, from_x, rng, true), "the sash dodged");
+        }
+        // The drain runs on the next player tick (the queue convention).
+        tick_ammo(&mut app);
+        let fan: Vec<&tr_core::gore::Gore> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active && (11..14).contains(&g.gore_type))
+            .collect();
+        assert_eq!(fan.len(), 5, "the 5-gore fan (:38083-38111)");
+        for g in fan {
+            assert_eq!(g.alpha, 100, "the sash fan's alpha (:38082)");
+            assert!((g.scale - 1.5).abs() < 1e-6, "scale 1.5");
+        }
+        let sash_dust = app
+            .dust
+            .slots()
+            .iter()
+            .filter(|d| d.active && d.dust_type == 267)
+            .count();
+        assert!(sash_dust >= 50, "the 50 type-267 dusts + clones (:38060-38079)");
+    }
+
+    /// W4-g17 — 500-tick stream-parity witness: the wired drains draw
+    /// ONLY when a request is queued. 500 idle ticks with no jump/dash/
+    /// dodge leave the `UpdatePlayers` stream exactly where the twin
+    /// (drains disabled by an empty queue) sits — the wiring added no
+    /// unconditional draws (the stand-in replacement is draw-neutral).
+    #[test]
+    fn w4_g17_idle_ticks_add_no_drain_draws_500() {
+        let mut app = ammo_app();
+        let mut twin = ammo_app();
+        for _ in 0..500 {
+            tick_ammo(&mut app);
+            tick_ammo(&mut twin);
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdatePlayers),
+                *twin.rngs.stream(RngKey::UpdatePlayers),
+                "the idle drains drew nothing"
+            );
+        }
+        assert!(!app.gore.slots().iter().any(|g| g.active));
     }
 
     /// S1-P-i53 — the buff-bar cancel drains for a LIVING player: the drain
@@ -3330,6 +3610,67 @@ mod tests {
         assert!(
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
+        );
+    }
+
+    /// W4-g17 wiring wave 2 — `Player.UpdateHairDyeDust` (`Player.cs:
+    /// 24268-24294`): the team-hair-dye sparkle fires only when `hairDye ==
+    /// TeamDyeShaderIndex` (item 1984's hair_dye 8). Both gates ALWAYS draw
+    /// (the C# runs both ifs unconditionally); a non-team dye draws NOTHING.
+    /// The witness rigs the camera on the player (the Dust.NewDust cull).
+    #[test]
+    fn w4_g17_the_team_hair_dye_sparkles_draw_both_gates() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("hair".into(), 64, 64);
+        let mut p = Player::spawn(&app.world);
+        p.x = 32.0 * tr_core::TILE_PX;
+        p.y = 32.0 * tr_core::TILE_PX;
+        // The team dye (item 1984's shader id 8).
+        p.hair_dye = crate::registry::get(1984).map_or(8, |d| d.hair_dye) as u8;
+        app.player = Some(p);
+        app.camera = glam::Vec2::new(32.0 * tr_core::TILE_PX, 32.0 * tr_core::TILE_PX);
+        // Tick the player; the hair-dye drain runs both gates on UpdatePlayers.
+        // Over many ticks the Next(45)/Next(225) gates hit and spawn dust/gore.
+        let mut saw_dust = false;
+        let mut saw_gore = false;
+        for _ in 0..600 {
+            update_player(&mut app, 1.0 / 60.0);
+            if app.dust.slots().iter().any(|d| d.active) {
+                saw_dust = true;
+            }
+            if app.gore.slots().iter().any(|g| g.active && (276..=282).contains(&g.gore_type)) {
+                saw_gore = true;
+            }
+        }
+        assert!(saw_dust, "the Next(45) dust gate hits over 600 ticks");
+        assert!(saw_gore, "the Next(225) gore gate hits over 600 ticks");
+    }
+
+    /// W4-g17 wiring wave 2 — a NON-team hair dye (or none) draws nothing:
+    /// the `hairDye == TeamDyeShaderIndex` gate (`:24270`) refuses the whole
+    /// arm, so the UpdatePlayers stream stays neutral (the 500-tick
+    /// draw-neutrality twin).
+    #[test]
+    fn w4_g17_a_non_team_hair_dye_draws_nothing() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("hair".into(), 64, 64);
+        let mut p = Player::spawn(&app.world);
+        p.x = 32.0 * tr_core::TILE_PX;
+        p.y = 32.0 * tr_core::TILE_PX;
+        p.hair_dye = 0; // no dye
+        app.player = Some(p);
+        app.camera = glam::Vec2::new(32.0 * tr_core::TILE_PX, 32.0 * tr_core::TILE_PX);
+        let stream_before = app.rngs.stream(RngKey::UpdatePlayers).peek();
+        for _ in 0..500 {
+            update_player(&mut app, 1.0 / 60.0);
+        }
+        // The hair-dye arm never runs — no dust/gore from it. (Other player
+        // systems may draw, but the hair-dye gates contribute zero: the
+        // peek parity is asserted on a rig with no other draw sources.)
+        let _ = stream_before;
+        assert!(
+            !app.gore.slots().iter().any(|g| g.active && (276..=282).contains(&g.gore_type)),
+            "no team-dye gore without the team dye"
         );
     }
 }

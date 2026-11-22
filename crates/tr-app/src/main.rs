@@ -292,6 +292,39 @@ mod town_arrival;
 mod tracked_sound;
 mod touch_damage;
 mod ui;
+// W4-g17 player wave A (code-only): the extra-jump gore bursts —
+// Fart/Santank/Cloud (Player.cs:20838-21022); the extra-jump chain
+// dispatch is the wiring wave.
+mod player_gore_a;
+// W4-g17 player wave B (code-only): the dash launch + sandstorm hold
+// + team-hair-dye gore (Player.cs:21419-24293); the dash/sandstorm/
+// hair-dye dispatch claims are the wiring wave.
+mod player_gore_b;
+// W4-g17 player wave C (code-only): the dodge bursts — Mystic Sash +
+// Ninja (Player.cs:38057-38165); the dodge dispatch claims are the
+// wiring wave.
+mod player_gore_c;
+// W4-g17 player wave D (code-only): the death confetti + item-use
+// visuals (Player.cs:38869-45027); the KillMe/ItemCheck dispatch
+// claims are the wiring wave.
+mod player_gore_d;
+// W4-g17 player wave E (code-only, FINAL): the melee-hitbox sparkle
+// ladder + use-style-5 lantern mote (Player.cs:45048-51125); completes
+// the Player.cs census (32 sites). ItemCheck dispatch deferred.
+mod player_gore_e;
+// W4-g17 wiring wave 2 (code-only): the ItemCheck_EmitUseVisuals dust-only
+// item arms (Player.cs:44756-45023) — the 989/2880/44-46/273/723/190/213/
+// 121/122/155/676/3063/3823/724/795-802/367 arms + the frostBurn/magmaStone/
+// meleeEnchant-1-6/8 tails; the co-lane census confirmed them unclaimed.
+mod player_dust_use;
+// W4-g17 (code-only): the world-side Gore.NewGore sites, wave A — the
+// TreeGrowFX trunk/leaf column + ash shake (WorldGen.cs:29600-29672)
+// and the Check3x3 larva burst (:53230-53257); the TreeGrowFXCheck /
+// axe-hit / Check3x3 dispatch claims are the wiring wave.
+mod world_gore_a;
+// W4-g17 wave B (code-only): the CheckPot gore switch, styles 0-2
+// (WorldGen.cs:56878-56894); the PotEvent dispatch is the wiring wave.
+mod world_gore_b;
 mod world_sim;
 mod world_stepper;
 

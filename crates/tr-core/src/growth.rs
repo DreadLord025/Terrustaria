@@ -699,6 +699,8 @@ pub fn update_world_overground_tile(
     max_raining: f32,
     wind_speed: f32,
     rng: &mut UnifiedRandom,
+    fx_ctx: &GrowthFxCtx<'_>,
+    fx: &mut TreeFxRequests,
 ) {
     let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
     let Some((active, kind)) = kind else {
@@ -733,15 +735,18 @@ pub fn update_world_overground_tile(
     }
     // The sapling arm (:72430-72434): the kind-20 sapling at `Next(20)`,
     // the beach palm saplings 595/615 at `Next(5)` (the settings profiles
-    // land with the vanity trees).
+    // land with the vanity trees). W4-g17 wiring: a successful growth
+    // behind `PlayerLOS` queues the `TreeGrowFXCheck` (`:72854-72857`).
     if kind == 20 && rng.next_max(20) == 0 {
-        attempt_grow_tree_from_sapling(world, x, y, false, rng);
+        let grew = attempt_grow_tree_from_sapling(world, x, y, false, rng);
+        record_tree_fx(fx, fx_ctx, grew, x, y);
         return;
     }
     if (kind == 595 || kind == 615) && rng.next_max(5) == 0 {
         // `AttemptToGrowTreeFromSapling`'s 595/615 arms (`:72435-72444`)
         // — the Sakura/Willow settings profiles.
-        attempt_grow_tree_from_sapling(world, x, y, false, rng);
+        let grew = attempt_grow_tree_from_sapling(world, x, y, false, rng);
+        record_tree_fx(fx, fx_ctx, grew, x, y);
         return;
     }
     // The vanilla/KillTile arm (:72146-72152): the sakura/willow sapling or
@@ -826,6 +831,8 @@ pub fn update_world_overground_tile(
             y + 2,
             true,
             rng,
+            fx_ctx,
+            fx,
         );
         // The thorn arms (:72362-72370): the corruption thorn 32 grows into
         // the corrupt grass 23 and the crimson thorn 352 into the crimson
@@ -904,6 +911,39 @@ pub fn grow_crystal_shards(world: &mut World, x: i32, y: i32, rng: &mut UnifiedR
     }
 }
 
+/// W4-g17 wiring — the growth pass's tree-FX request channel
+/// (`WorldGen.TreeGrowFXCheck`'s call sites, `:72856`/`:72869`/`:72882`/
+/// `:72919`/`:74504`/`:74725`/`:74770`). The core has no gore pool, so a
+/// successful sapling growth behind `PlayerLOS` records the check cell
+/// and the app resolves it (`tree::tree_grow_fx_check` →
+/// `world_gore_a::tree_grow_fx`) on the `UpdateWorldGen` stream — the
+/// same stream the growth draws ride (the C# `genRand` swap covers
+/// `UpdateWorld`, `Main.cs:17810`). The `players` roster is the
+/// `PlayerLOS` input (`(active, x, y, width, height)` per slot); an empty
+/// roster refuses every FX (the C# no-player scan).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GrowthFxCtx<'a> {
+    pub players: &'a [(bool, f32, f32, f32, f32)],
+}
+
+/// The FX requests one `update_world` call collected (the check cells,
+/// in pick order — the app drains them in the same order).
+pub type TreeFxRequests = Vec<(i32, i32)>;
+
+/// `WorldGen.PlayerLOS`-gated FX record (`:72854-72857`): a successful
+/// growth whose cell is on a player's screen queues the `TreeGrowFXCheck`.
+fn record_tree_fx(
+    fx: &mut TreeFxRequests,
+    ctx: &GrowthFxCtx<'_>,
+    grew: bool,
+    x: i32,
+    y: i32,
+) {
+    if grew && crate::tree::player_los(x, y, ctx.players) {
+        fx.push((x, y));
+    }
+}
+
 /// `UpdateWorld`'s growth loops (`:71540-71632`): the overground
 /// `3e-5 · rate` picks (×1.5 raining) with the alch-seed gate, then the
 /// underground `1.5e-5 · rate` picks (the port's slice runs the same herb
@@ -922,6 +962,10 @@ pub fn update_world(
     max_raining: f32,
     wind_speed: f32,
     rng: &mut UnifiedRandom,
+    // W4-g17 wiring — the tree-FX channel: the `PlayerLOS` roster + the
+    // request sink (the sapling arms' `TreeGrowFXCheck` call sites).
+    fx_ctx: &GrowthFxCtx<'_>,
+    fx: &mut TreeFxRequests,
 ) -> u32 {
     let rate = world_update_rate(day_rate, freeze_time);
     if rate == 0 {
@@ -953,6 +997,8 @@ pub fn update_world(
             max_raining,
             wind_speed,
             rng,
+            fx_ctx,
+            fx,
         );
         picks += 1;
     }
@@ -972,6 +1018,8 @@ pub fn update_world(
             day_time,
             raining,
             rng,
+            fx_ctx,
+            fx,
         );
         picks += 1;
     }
@@ -1250,7 +1298,7 @@ pub(super) mod tests {
         for seed in 1u64..600 {
             let mut w = w.clone();
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_overground_tile(&mut w, 30, 56, true, false, 0.0, 0.0, &mut rng);
+            update_world_overground_tile(&mut w, 30, 56, true, false, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
             runs += 1;
             grew += w
                 .tiles
@@ -1292,7 +1340,7 @@ pub(super) mod tests {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
             let mut w = build(23);
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
+            update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
             if !w.tile(10, 29).is_some_and(|t| t.active()) {
                 killed = true;
                 break;
@@ -1305,7 +1353,7 @@ pub(super) mod tests {
             let seed = k.wrapping_mul(0x9E37_79B9_7F4A_7C15);
             let mut w = build(2);
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng);
+            update_world_overground_tile(&mut w, 10, 29, true, false, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
             assert!(
                 w.tile(10, 29).is_some_and(|t| t.active()),
                 "the sapling on the plain grass survives"
@@ -1409,7 +1457,7 @@ pub(super) mod tests {
         let mut grew = false;
         for seed in 1..64u64 {
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng);
+            update_world_underground_tile(&mut w, 100, 200, 3, true, true, false, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
             if w.tile(100, 200).is_some_and(|t| t.kind == 74) {
                 grew = true;
                 break;
@@ -1426,7 +1474,7 @@ pub(super) mod tests {
         let mut converted = false;
         for seed in 1..64u64 {
             let mut rng = UnifiedRandom::new(seed as i32);
-            update_world_underground_tile(&mut w2, 100, 201, 3, true, true, false, &mut rng);
+            update_world_underground_tile(&mut w2, 100, 201, 3, true, true, false, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
             if w2.tile(100, 200).is_some_and(|t| t.active()) {
                 converted = true;
                 break;
@@ -1596,7 +1644,7 @@ pub(super) mod tests {
         put(&mut w, 100, 200, 2, 0); // the grass seed cell
         put(&mut w, 101, 200, 0, 0); // the dirt neighbour
         let mut rng = UnifiedRandom::new(7);
-        update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+        update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
         assert!(
             w.tile(101, 200).is_some_and(|t| t.kind == 2),
             "the dirt converted to grass"
@@ -1613,7 +1661,7 @@ pub(super) mod tests {
         let mut rng = UnifiedRandom::new(7);
         let mut grew = false;
         for tick in 0..200 {
-            update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng);
+            update_world_overground_tile(&mut w, 100, 200, true, false, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
             // The walk lands at a free neighbour of the thorn; the world's
             // 352 count is the observable.
             let n352 = w
@@ -1636,17 +1684,17 @@ pub(super) mod tests {
         // ×1.5 raining = 75; the underground 1.5e-5·tiles = 25.
         let mut w = world();
         let mut rng = UnifiedRandom::new(9);
-        let picks = update_world(&mut w, 1, false, false, true, true, 0.0, 0.0, &mut rng);
+        let picks = update_world(&mut w, 1, false, false, true, true, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
         assert_eq!(picks, 50 + 25);
-        let picks = update_world(&mut w, 1, true, false, true, true, 0.0, 0.0, &mut rng);
+        let picks = update_world(&mut w, 1, true, false, true, true, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
         assert_eq!(picks, 75 + 25);
         // The frozen time picks nothing.
-        let picks = update_world(&mut w, 1, false, true, true, true, 0.0, 0.0, &mut rng);
+        let picks = update_world(&mut w, 1, false, true, true, true, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
         assert_eq!(picks, 0);
         // The spread-stop flag changes no pick budget — `WorldGen.UpdateWorld`
         // only hands `AllowedToSpreadInfections` to the tile arms
         // (`:71502-71507`).
-        let picks = update_world(&mut w, 1, false, false, false, true, 0.0, 0.0, &mut rng);
+        let picks = update_world(&mut w, 1, false, false, false, true, 0.0, 0.0, &mut rng, &GrowthFxCtx::default(), &mut Vec::new());
         assert_eq!(picks, 50 + 25);
     }
 
@@ -1672,6 +1720,8 @@ pub fn update_world_underground_tile(
     day_time: bool,
     raining: bool,
     rng: &mut UnifiedRandom,
+    fx_ctx: &GrowthFxCtx<'_>,
+    fx: &mut TreeFxRequests,
 ) {
     // The clamped box (`:73216-73231`).
     let min_i = (i - 1).max(10);
@@ -1739,6 +1789,8 @@ pub fn update_world_underground_tile(
             max_j,
             allowed_to_spread,
             rng,
+            fx_ctx,
+            fx,
         );
         if matches!(kind, 32 | 352) && rng.next_max(3) == 0 {
             if kind == 32 {

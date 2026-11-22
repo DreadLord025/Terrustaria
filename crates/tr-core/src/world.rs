@@ -72,6 +72,12 @@ pub struct World {
     /// `onlyCheck` preview writeback (:826-837), which the port does not run,
     /// so production stays `None`.
     pub tile_object_random_cache: Option<crate::tileobject::RandomCache>,
+    /// `WorldGen.numTreeShakes`/`treeShakeX`/`treeShakeY` (`WorldGen.cs:
+    /// 86960-86963`): the per-day shake dedupe bookkeeping `ShakeTree`
+    /// reads (`:63133-63151`) — max 500 entries, reset at dawn
+    /// (`UpdateTime_StartDay` → `ResetTreeShakes`, `Main.cs:65367`).
+    /// Runtime-only (the C# statics are not saved). W4-g17 wiring.
+    pub tree_shakes: Vec<(i32, i32)>,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
     /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
@@ -612,6 +618,7 @@ impl World {
             frame_rng: crate::unified_random::UnifiedRandom::new(0),
             place_rng: crate::unified_random::UnifiedRandom::new(0),
             tile_object_random_cache: None,
+            tree_shakes: Vec::new(),
             // `Main.AnnouncementBoxDisabled`'s stock is false (the launch
             // switch off) and `Main.AnnouncementBoxRange`'s stock is -1
             // (`Main.cs:66530`).

@@ -2130,6 +2130,160 @@ pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
     true
 }
 
+/// W4-g17 wiring — `NPC.SpawnOnPlayer(plr, 222)` (`NPC.cs:80475-80628`)
+/// for the Queen Bee, the larva break's claim (`WorldGen.cs:53253-53256`
+/// → `world_gore_a::larva_gores`). The generic boss arm: the 500×50
+/// candidate scan over `GetSpawnArea` (the `Main.rand` draws ride the
+/// caller's stream — the larva break runs under the `UpdatePlayers`
+/// swap), the solid/house-wall refusal, the ground descent, the
+/// safe-area + spawn-space + off-screen gates, then `SpawnBoss`
+/// (`:80660-80712`): the NPC at `(x*16+8, y*16)`, `timeLeft *= 20` and
+/// the `Announcement.HasAwoken` broadcast. The port's single player is
+/// the target; the skyblock midair arm (`:80583`) and the type-50
+/// clearance special (`:80605-80617`) never fire for 222. The
+/// `wallHouse` refusal is unmodelled (the port has no house-wall table
+/// — the `try_spawn_an_npc` convention).
+pub(crate) fn spawn_queen_bee_on_player(app: &mut App) -> bool {
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let (pcx, pcy) = p.center();
+    let (px, py) = (p.x, p.y);
+    // `Spawner.GetSpawnArea` reads only the player position + the world
+    // bounds — a minimal ctx carries them (the Default flags never gate
+    // this arm).
+    let ctx = spawner::SpawnContext {
+        world: &app.world,
+        player_center: (pcx, pcy),
+        player_pos: (px, py),
+        nearby_active_npcs: 0.0,
+        town_npcs: 0,
+        day_time: app.world.day_time,
+        player_life_max: p.max_hp,
+        underworld_for_bats: false,
+        flags: spawner::SpawnFlags::default(),
+        bound_goblin_ok: false,
+        bound_wizard_ok: false,
+        bound_mech_ok: false,
+        below_deep_dungeon: false,
+        invaders: false,
+        downed_golem: false,
+        downed_martians: false,
+        invasion_type: 0,
+        invasion_summoner_alive: false,
+        invasion_captain_alive: false,
+        invasion_walker_alive: false,
+        invasion_saucer_alive: false,
+        invasion_progress_30: false,
+        invasion_progress_frac: 0.0,
+        any_danger: false,
+        probe_exists: false,
+        sky_behind_player: false,
+        moon_boss_cap_count: 0.0,
+        moon_npc_counts: &[],
+    };
+    let (spawn_area, safe_area) = spawner::get_spawn_area(&ctx);
+    let in_safe = |x: i32, y: i32| {
+        x >= safe_area.left && x < safe_area.right && y >= safe_area.top && y < safe_area.bottom
+    };
+    // `Spawner.CheckNotSpawningOnScreen` (NPC.cs:5436-5450): the tile
+    // must lie outside the player's inflated screen rect.
+    let not_on_screen = |x: i32, y: i32| {
+        let num = spawner::S_WIDTH / 2;
+        let num2 = spawner::S_HEIGHT / 2;
+        let safe_range_x = (spawner::S_WIDTH / 16 * 52) / 100;
+        let safe_range_y = (spawner::S_HEIGHT / 16 * 52) / 100;
+        let rect_x = pcx - num as f32 - safe_range_x as f32 * TILE_PX;
+        let rect_y = pcy - num2 as f32 - safe_range_y as f32 * TILE_PX;
+        let tile_px = x as f32 * TILE_PX;
+        let tile_py = y as f32 * TILE_PX;
+        !(tile_px + TILE_PX > rect_x
+            && tile_px < rect_x + (spawner::S_WIDTH + safe_range_x * 2) as f32
+            && tile_py + TILE_PX > rect_y
+            && tile_py < rect_y + (spawner::S_HEIGHT + safe_range_y * 2) as f32)
+    };
+    let rng = app.rngs.stream(RngKey::UpdatePlayers);
+    let mut found: Option<(i32, i32)> = None;
+    // `:80575-80625` — the 500 rounds × 50 candidates. `flag` persists
+    // ACROSS candidates (the C# never resets it inside the n-loop): a
+    // found ground that fails the spawn-space gate keeps `flag` true,
+    // so the round-end check can still break with the stale position.
+    let mut flag = false;
+    'rounds: for m in 0..500 {
+        let last_round = m == 499;
+        for _ in 0..50 {
+            let x = rng.next_range(spawn_area.left, spawn_area.right);
+            let mut y = rng.next_range(spawn_area.top, spawn_area.bottom);
+            // `:80585-80590` — the solid-cell refusal (the house-wall
+            // arm is unmodelled; the type-50 arm never fires for 222).
+            let solid = app
+                .world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+            if solid {
+                continue;
+            }
+            // `:80591-80603` — the ground descent to the area's bottom.
+            let mut ground = None;
+            while y < spawn_area.bottom {
+                let solid_here = app
+                    .world
+                    .tile(x, y)
+                    .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+                if solid_here && (last_round || !in_safe(x, y)) {
+                    ground = Some(y);
+                    break;
+                }
+                y += 1;
+            }
+            let Some(gy) = ground else { continue };
+            flag = true;
+            found = Some((x, gy));
+            // `:80618-80621` — the spawn-space gate (the last round
+            // skips it, the C# `!flag2`); a refusal clears `flag` but
+            // the C# `num10/num11` keep the position.
+            if !last_round && !spawner::has_tile_spawn_space(&app.world, x, gy) {
+                flag = false;
+            }
+            if flag {
+                break;
+            }
+        }
+        // `:80622-80625` — the round-end check: `(!flag || flag2 ||
+        // CheckNotSpawningOnScreen(num10, num11)) && flag`.
+        if flag {
+            let (fx, fy) = found.unwrap();
+            if last_round || not_on_screen(fx, fy) {
+                break 'rounds;
+            }
+        }
+    }
+    if !flag {
+        return false;
+    }
+    let Some((x, y)) = found else {
+        return false;
+    };
+    // `NPC.SpawnBoss` (`:80660-80712`): the spawn + the ×20 timeLeft +
+    // the HasAwoken broadcast (the literal stands in for the
+    // localization key, the `spawn_wof_at` convention).
+    let mut boss = Npc::new(
+        NpcKind::QueenBee,
+        x as f32 * TILE_PX + 8.0,
+        y as f32 * TILE_PX,
+        1,
+        0.0,
+    );
+    boss.hp = boss.max_hp;
+    app.npcs.push(boss);
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        "Queen Bee has awoken!",
+        crate::chat::COLOR_COMMAND,
+    );
+    true
+}
+
 /// `Main.StartInvasion` (`Main.cs:64482-64511`): the army size 80 + 40 per
 /// qualified player, the march column on the world's far side (the random
 /// 0/maxTilesX roll; the marauder's `invasionX` double is f64 on the World).
@@ -6483,6 +6637,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // the App.
             crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
+            // W4-g17 wiring — `KillMe`'s tenth-anniversary confetti
+            // (`Player.cs:38869-38893`): AFTER `PlayDeathSound` (the
+            // `on_player_death` half above), BEFORE `start_death`'s
+            // dismount/respawn writes — the 85 type-Next(139,143) dusts
+            // + the 40 Next(276,283) gores at the death spot, on the
+            // `UpdatePlayers` stream (the death-text roll above already
+            // drew from it; `KillMe` runs under the `Main.cs:17754`
+            // swap). The seed gate is `Main.tenthAnniversaryWorld`.
+            if app
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            {
+                if let Some(p) = app.player.as_ref() {
+                    let state = crate::player_gore_d::DeathConfettiState {
+                        x: p.x,
+                        y: p.y,
+                        width: p.width as i32,
+                        height: p.height as i32,
+                    };
+                    let spawn_ctx = app.spawn_ctx();
+                    crate::player_gore_d::death_confetti_gores(
+                        &state,
+                        &mut app.gore,
+                        &mut app.dust,
+                        &spawn_ctx,
+                        app.rngs.stream(RngKey::UpdatePlayers),
+                        &app.world,
+                    );
+                }
+            }
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, false);
             }
@@ -8213,6 +8398,126 @@ mod tests {
                 .npcs
                 .iter()
                 .all(|n| n.kind != NpcKind::Merchant || n.hp <= 0));
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // W4-g17 wiring — the KillMe confetti + the larva's Queen Bee claim.
+    // ------------------------------------------------------------------
+    mod w4_g17_wiring {
+        use super::super::*;
+        use crate::app::flow::front_flow_tests::flow_app;
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+        /// A surface world with a stone floor at row 120 (the invasion
+        /// fixture shape).
+        fn surface() -> World {
+            let mut w = World::new("g17".into(), 300, 200);
+            w.world_surface = 120.0;
+            for x in 0..w.width {
+                for y in 120..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w.compute_column_surface();
+            w
+        }
+
+        fn g17_app() -> App {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface();
+            let mut p = crate::player::Player::spawn(&app.world);
+            p.x = 150.0 * TILE_PX;
+            p.y = 118.0 * TILE_PX;
+            // The camera on the player so the confetti dust is on-screen
+            // (the `Dust.NewDust` cull reads `SpawnCtx.screen_position`).
+            app.camera = Vec2::new(p.x + 10.0, p.y + 21.0);
+            app.player = Some(p);
+            app
+        }
+
+        /// W4-g17 — `Player.cs:38869-38893`: on the tenth-anniversary
+        /// seed the death seam spawns the 40 Next(276,283) confetti
+        /// gores + the 85 type-139..142 dusts; a classic seed spawns
+        /// neither (the gate draws nothing).
+        #[test]
+        fn w4_g17_the_tenth_seed_death_spawns_the_confetti() {
+            let mut app = g17_app();
+            app.world
+                .seeds
+                .insert(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+            app.player.as_mut().unwrap().hp = 0;
+            app.npc_timer = 10.0;
+            update_npcs(&mut app, 1.0 / 60.0);
+            let gores: Vec<i32> = app
+                .gore
+                .slots()
+                .iter()
+                .filter(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(gores.len(), 40, "the 40 confetti gores (:38882-38892)");
+            for ty in gores {
+                assert!((276..283).contains(&ty), "Next(276,283), got {ty}");
+            }
+            let dust = app
+                .dust
+                .slots()
+                .iter()
+                .filter(|d| d.active && (139..143).contains(&d.dust_type))
+                .count();
+            assert_eq!(dust, 85, "the 85 confetti dusts (:38871-38881)");
+            // The classic twin: no confetti, no draws from the gate.
+            let mut classic = g17_app();
+            classic.player.as_mut().unwrap().hp = 0;
+            classic.npc_timer = 10.0;
+            update_npcs(&mut classic, 1.0 / 60.0);
+            assert!(!classic.gore.slots().iter().any(|g| g.active));
+        }
+
+        /// W4-g17 — `WorldGen.cs:53230-53257` + `NPC.cs:80475`: the
+        /// larva break's claim spawns the Queen Bee through the
+        /// SpawnOnPlayer machinery (a live boss lands in the pool, the
+        /// HasAwoken broadcast fires). The 500×50 scan finds ground in
+        /// the fixture's floor band.
+        #[test]
+        fn w4_g17_the_larva_claim_spawns_the_queen_bee() {
+            let mut app = g17_app();
+            assert!(spawn_queen_bee_on_player(&mut app), "the scan found ground");
+            let bees = app
+                .npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::QueenBee && n.hp > 0)
+                .count();
+            assert_eq!(bees, 1, "exactly one Queen Bee");
+        }
+
+        /// W4-g17 — 500-tick stream-parity witness: the confetti gate is
+        /// draw-neutral on a classic seed — 500 death-free ticks with the
+        /// wiring in place leave every stage stream where the pristine
+        /// twin sits (the gate reads the seed flag, never the RNG).
+        #[test]
+        fn w4_g17_the_confetti_gate_is_draw_neutral_500() {
+            let mut app = g17_app();
+            let mut twin = g17_app();
+            for _ in 0..500 {
+                app.npc_timer = 10.0;
+                twin.npc_timer = 10.0;
+                update_npcs(&mut app, 1.0 / 60.0);
+                update_npcs(&mut twin, 1.0 / 60.0);
+                for key in crate::app::RngKey::ALL {
+                    assert_eq!(
+                        *app.rngs.stream(key),
+                        *twin.rngs.stream(key),
+                        "{key:?} stayed in lockstep"
+                    );
+                }
+            }
         }
     }
 }
