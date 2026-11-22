@@ -39682,3 +39682,169 @@ shared NPC-feed dead-skip convention. The TWIN sites' lights are dark
 until their kind/machine waves land (the roster census above); their
 pure fns + witnesses pin the exact colours/anchors/gates for those
 waves. 27 witness tests written NOT run (code-only mode).
+## The projectile sound wave, part 2 (S1-E-21h d76, 2026-11-20, code-only mode)
+
+**Line-order split of the 437-site `PlaySound` census in `Projectile.cs`**
+(the S1-E-21h census, "The projectile sound wave" above): the sites in
+ascending C# line order are split into three worktrees — **d75**
+(`task/W4-d75-proj-sounds-1`) owns sites 1-120 (lines `:14385`-`:41968`),
+**d76** (this branch, `task/W4-d76-proj-sounds-2`) owns sites 121-240
+(lines **`:41978`-`:70958`**), **d77** (`task/W4-d77-proj-sounds-3`) owns
+sites 241-437 (lines `:70978`-the `Kill()` tail). All three branch from
+`a725acb0`. The already-landed S1-E-21h wave's 24 sites are KEPT
+untouched; where one falls inside the d76 range (`:42234`/`:43366`, the
+slice-A `AI_001` latches `:54155`-`:55358`) it is recorded as landed, not
+re-ported.
+
+**Code-only mode**: no cargo/rustc/rustfmt/tests/graphify invoked (the
+Lead's constraint); every witness test is WRITTEN NOT RUN. Audio seams
+follow the landed S1-E-21h conventions: the `wants_sound` intent
+(`Projectile.wants_sound` -> `pending_proj_sounds` ->
+`Audio::play_proj_sound`), attenuation BEFORE any case draw, the drain on
+the `UpdateProjectiles` stream at the pass tail after the wave-C hit
+drain. RNG draws keep their exact slots on the C# statement order.
+
+### The d76 port (the portable sites, commit `65d82312`)
+
+The 118 in-range sites split into PORTED, LANDED (kept), and DEFERRED.
+
+**PORTED** (the cue queues on `wants_sound` / the golf `tick.sounds`, the
+drain plays it on `UpdateProjectiles`):
+
+| C# site(s) | cue | Rust arm |
+| --- | --- | --- |
+| `:56078` (skull 270) | Item8 | `projectile_ai001_a::skull` (+ slice-B reference) |
+| `:54089`/`:54093` (cannon 601 portal) | Item114/115 | `projectile_ai001_b` (alpha-1..15 window, `ai[0]` pick) |
+| `:55242`/`:55257`/`:55299`/`:55329` (259/438/389/980) | Item33/12/12/17 | `projectile_ai001_b` latch chain |
+| `:55274`/`:55278` (phantasmal 462) | Item124/125 (`Next(2)` pick) | `projectile_ai001_b` — **rng threaded** |
+| `:56314` (vortex dart 581) | Item17 at Center | `projectile_ai001_b` |
+| `:56540` (Betsy 686, `ai[1] != 2`) | Item20 | `projectile_ai001_b` |
+| `:55247` (snowman 110) | Item11 | `projectile_ai001_c` (+ rider reference) |
+| `:55339`/`:55344` (seeds 275/276) | Item17 | `projectile_ai001_c` |
+| `:54488` (blaze 634/635) | Item34 | `projectile_ai001_c::blaze` |
+| `:57121`/`:56251`/`:55161` (345/348/350) | Item1/8/42 | `projectile_ai_frostmoon` (+ `projectile_frost_shots` reference) |
+| `:55678` (sky fracture 660) | Item9 at Center | `ai_style1_rider` |
+| `:45672` (fairy glowstick 870) | Item28 | `projectile_ai_light_items::fairy_glowstick_hover` |
+| `:44988` (sun dance 923) | Item159 at Center | `projectile_ai_empress::ai_180_sun_dance` |
+| `:43706` (flail loud bounce) | Dig (int id 0) | `ai_flail_bounce` |
+| `:47720`/`:47724`/`:47728`/`:47732` (whip tip) | NPCDeath1/NPCHit9/Item193/Item153 | `ai_whip` (curve's last control point) |
+| `:66428` (charged blaster 460) | Item15 (cooldown) | `charged_blaster_step` |
+| `:66607` (last prism 633) | Item15 (cooldown) | `ai_last_prism` |
+| `:66248` (laser drill 445) | Item132 (cooldown 23) | `ai_drill` |
+| `:52448`/`:52467` (golf strike) | Item1 at **player.Center** + Item126/ball | `projectile_ai_golf` (Item1 position FIX) |
+
+**Item42 reclassification**: `SoundID.Item42 = new LegacySoundStyle(2, 42)`
+(`SoundID.cs:1425`) — a plain id-2 style, NOT a case-42 trackable. The
+landed wave's "Flaming Wood Item42 trackable deferred" label was a
+misclassification; the SantaNK1 missile's `:55161` cue is ported here. The
+Flaming Wood 325's twin (`:55194`, slice A) stays as landed (keep-one — its
+witness pins the cue-less latch); the bank entry `Item_42` serves both.
+
+**RNG**: the ONLY state-bearing draw threaded is the 462's `Next(2)` cue
+pick (`:55272`) — it selects Item124 vs Item125, so it rides
+`UpdateProjectiles` via a new `rng` parameter on `projectile_ai001_b::step`
+(the golf-strike precedent). Its `Next(5, 10)` dust-count draw stays skipped
+with the dust. Every other ported arm keeps zero RNG (the cue queues; its
+case-2 pitch draw rides the drain, not the AI). The 634/635 blaze's
+`localAI[0] = -Next(48)` seed stays skipped (dust-only reader, `:54583`).
+
+**LANDED (kept, not re-ported)**: `:42234` (Lights Bane), `:43366` (Magic
+Missile), the slice-A latches `:54155`/`:55232`/`:55242`/`:55257`/`:55299`/
+`:55309`/`:55314`/`:55324`/`:55348`/`:55353`/`:55358`, `:52757` (grapple dig).
+
+**DEFERRED** (recorded, no cue queued):
+- *Case-42 trackables* (the D3 pool): `:42269` DD2_ExplosiveTrapExplode,
+  `:46621` AbigailUpgrade, `:49208`/`:49212`/`:49217` Pal Cattiva/Summon/Joy,
+  `:51452` DeerclopsIceAttack (the 961's OWN arm — NOT the else-branch
+  Item60), `:51456` DeadCellsFlintWave, `:52305` DeadCellsFlintCharge,
+  `:54939` DD2_LightningBugZap, `:58138`/`:58142`/`:58147` Pal Foxparks,
+  `:65466`/`:65477` AbigailCry/Attack, `:56541` DD2_BetsyFireballShot.
+- *Unported kinds* (no row/arm): `:41978` NightsEdge 984, `:42796` BadTorch,
+  `:43120` FinalFractal 933/1100, `:44541` Medusa 535, `:45271` FireExplosion,
+  `:45778` Smolstar 864, `:46941`/`:47131` bombs 75/102, `:47661` Rapier,
+  `:48508` Kite, `:49521`/`:49542`/`:49547` CompanionCube 653, `:54130` 472,
+  `:54180`/`:54324` 467/468, `:54882`/`:54914` 437/435, `:55049` 174,
+  `:55101`/`:55105` 605/920/921/926/937, `:55127` 176, `:55237` 408,
+  `:55247`/`:55252` 110/302 (110 ported via C), `:55262`/`:55267` 593/592,
+  `:55304` 257, `:55319` 1073, `:55334` 195, `:55364`/`:55369` 576/577,
+  `:55548`/`:55562` 374/376, `:56095` 585, `:56193` 587, `:56279` 572,
+  `:56364`/`:56427`/`:56479` 811/814/676, `:56635` 299, `:57495` 498,
+  `:66187` 439, `:66652`/`:66705`/`:66758` 600/735/927, `:66835` 611,
+  `:66920`/`:67026`/`:67183`/`:67261` 615/630/705 (gunProj rockets — the
+  `controlUseItem`/`canShoot` gates need the player input seam), `:70219`
+  DD2Pet, `:70865`/`:70904`/`:70936`/`:70958` Kill-tail 1020/1105/1085/1080/1084.
+- *Dead `_Old` arms*: `:43589`/`:43606` (MagicMissiles_Old, only the unported
+  491 routes there), `:44197` (HandleMovementCollision_Old, no caller).
+- *Non-id-2 int plays / deferred families*: `:46941` zombie-voice 66 (the
+  E21e table), `:53756`/`:53904` bobber splash 19 (the bobber's own seam).
+- *The Corrupt Whip's ×0.6 volumeScale* (`:47720`): the queue→drain batch
+  plays at the style's own volume (the Lights Bane post-gate-scale
+  precedent) — the cue, position and family are ported, the scale deferred.
+
+**Bank**: `Item_42`/`Item_114`/`Item_115`/`Item_124`/`Item_125`/`Item_126`/
+`Item_132`/`Item_153`/`Item_159`/`Item_193` join `SFX_CUES` (all `.xnb`
+assets verified on disk); `NPC_Killed_1`/`NPC_Hit_9` were already registered.
+`Audio::play_proj_sound` gains the id-3/4 routing (the whip tip's NPC
+families ride the case-3/4 façades).
+
+**Verification.** Code-only: every edited arm re-read against its C# block
+(the latch flags, the cooldown re-arms, the position reads — `base.position`
+vs `base.Center`, the whip curve's `getActualCollisionPoints = false`), the
+462 draw slot pinned by a `Seq` witness, the golf Item1 position fix pinned
+against `player.Center`. The new `s1_e_21h_d76_*` witnesses are WRITTEN, NOT
+RUN — **no compiler invoked**.
+
+### The d76 DOC-SWEEP (lane 9, the projectile-sound residuals)
+
+The d76 deferred list's four residual families, closed on the same branch
+(commits `fe205fc9` / `dd90f162`; the full census in
+`docs/research/80-doc-sweep-proj-sounds.md`):
+
+**The volumeScale port.** The proj-sound queue payload widens to the
+6-tuple `(id, style, x, y, pitchOffset, volumeScale)` (`wants_sound` /
+`pending_proj_sounds` / `drain_proj_sounds` + the golf cue tuples).
+`Audio::play_use_sound_scaled` / `npc_hit_play` / `npc_death_play` apply
+the call's volumeScale POST-tweak (`LegacySoundPlayer.cs:1411`); the
+attenuation gate reads the UNSCALED `style.volume`. The Corrupt Whip's
+×0.6 tip cue (`:47720`) and the Lights Bane slash's `0.15 * ai[0]`
+(`:42237`) ride it — the d76 "post-gate-scale deferred" note is superseded
+for these two sites. The scale draws NOTHING (a volume-only term); the
+witness pins the draw-count parity with the volume-1 twins. Every other
+cue passes `1.0`.
+
+**The Kill()-tail non-bomb cue map.** The d76 range's last four
+`PlaySound` sites (`:70865` Jim's Drone/RC Car 1020/1105 Item62, `:70904`
+Pretty Mirror 1085 Item106, `:70936` Bird Droppings 1080 Item177, `:70958`
+Torch God helper 1084 Item10) are in-range and unclaimed by d77 (its map
+starts at `:71112`). A new `ProjectilePool::kill_tail_cue` (the d77
+death-hook shape, kinds disjoint) queues them at the PRE-hook position;
+the five kinds row (`projectile/data.rs`, the 1084/1105 values kept
+identical to d21's for a conflict-free merge), `Item_62` joins the bank,
+and the four unarmed styles (195/200/202/205) join the `UNARMED_ROWED`
+census. The 1080 stinky-buff / 1085 bad-luck state writes are the
+cue-first deferrals (the cue precedes both); the dust/gore censuses stay
+skipped.
+
+**The now-rowed kinds.** Cross-checked against the pushed d18/d19/d21
+tips: 984/933/1100/949 (d19) and 918 (d18) are rowed AND cue-armed by
+those lanes (no d76 action). The only now-rowed unclaimed cues were the
+five Kill()-tail kinds (ported above). 864 Smolstar (`:45778`, inside the
+unported aiStyle-169 machine) and the 75/102 hostile bombs
+(`:46941`/`:47131`, unrowed + non-id-2/unported-arm) stay deferred — the
+arm is the prerequisite. The rest of the d76 DEFERRED kind list is
+unrowed by all three sibling lanes (grep-verified).
+
+**The dead `_Old` arms.** Verified truly dead by zero-caller grep:
+`AI_009_MagicMissiles_Old` (`:43427`, only caller `:43199` gated
+`type == 491`, 491 unrowed; its `:43589`/`:43606` cues dead — 79/16 take
+the NEW `AI_009` path, the 16's live whoosh is the landed `:43361-43367`
+cue), `AI_015_HandleMovementCollision_Old` (`:44171`, ZERO callers —
+`:19323` calls the NEW `:43655`; its `:44197` Dig cue dead), and
+`AI_015_Flails_Old` (`:44205`, ZERO callers, bonus find). The port carries
+none of them — nothing to remove; the d76 classification was correct.
+
+**Verification.** Code-only: the C# re-reads, the sibling-claim
+cross-checks, the zero-caller greps, the `Item_62` asset on disk. The two
+new `s1_e_21h_d76_sweep_*` witnesses + the updated queue-tuple / whip-tip
+/ Lights Bane asserts are WRITTEN, NOT RUN — **no compiler invoked**.
+Anchors rows: `play_use_sound_scaled`, `kill_tail_cue`.

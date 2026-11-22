@@ -707,13 +707,16 @@ pub struct Projectile {
     /// S1-E-21h: the sound sites read and re-arm it.
     pub sound_delay: i32,
     /// S1-E-21h — one slot's queued cue for the pool's sound drain: the
-    /// `(sound id, style, x, y, pitchOffset)` the C# `SoundEngine.PlaySound`
-    /// overload carries (the int overload passes style 0 / no offset). The
-    /// slot arms cannot see the pool's queue, so they park the request here
-    /// and the dispatch forwards it into `pending_proj_sounds` on the same
-    /// tick — the `wants_mark_spawn` intent pattern. `None` for every slot
-    /// that played nothing this sub-step.
-    pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32)>,
+    /// `(sound id, style, x, y, pitchOffset, volumeScale)` the C#
+    /// `SoundEngine.PlaySound` overload carries (the int overload passes
+    /// style 0 / no offset; volumeScale 1 unless the site scales — the
+    /// Corrupt Whip's ×0.6 tip cue, `:47720`, and the Lights Bane slash's
+    /// `0.15 * ai[0]`, `:42237`, the d76 DOC-SWEEP port). The slot arms
+    /// cannot see the pool's queue, so they park the request here and the
+    /// dispatch forwards it into `pending_proj_sounds` on the same tick —
+    /// the `wants_mark_spawn` intent pattern. `None` for every slot that
+    /// played nothing this sub-step.
+    pub(crate) wants_sound: Option<(u16, i32, f32, f32, f32, f32)>,
     /// `Projectile.melee`/`ranged`/`magic` (`:434-438`, reset false
     /// `:751-753`) — the damage-class flags the per-hit crit block reads
     /// (`Damage_PVE_Inner`, `Projectile.cs:12890-12898`). The data-carrying
@@ -4050,7 +4053,7 @@ impl Projectile {
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
             let style = if self.kind == TERRA_BEAM { 60 } else { 8 };
-            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         // `:26536-26544` — the rotation: the 157 spins on its `direction` (and
         // carries it into `spriteDirection`), every other kind faces the
@@ -4141,7 +4144,7 @@ impl Projectile {
             // `:28419-28423` — the 293's sound latch: `localAI[0] == 0f`
             // plays Item8 once at `base.position` (S1-E-21h) and increments.
             if self.local_ai[0] == 0.0 {
-                self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
+                self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0, 1.0));
                 self.local_ai[0] += 1.0;
             }
             // `:28448-28475` — the player hunt: `num362` resets to 200f and the
@@ -4994,6 +4997,15 @@ impl Projectile {
                 self.frame = 0;
             }
         }
+        // `:66601-66609` — the hum cooldown (S1-E-21h d76): while
+        // `soundDelay <= 0`, re-arm `num36 * 2` (num36 = 10, `:66558`) and
+        // play `SoundID.Item15` at base.position unless `ai[0] == 1`.
+        if self.sound_delay <= 0 {
+            self.sound_delay = 20;
+            if self.ai[0] != 1.0 {
+                self.wants_sound = Some((2, 15, self.pos.x, self.pos.y, 0.0, 1.0));
+            }
+        }
         // `:66615-66636` — the fire window: the mana pays only on the
         // interval ticks (`flag10 = !flag8 || CheckMana(mana, pay: true)`,
         // `Player.cs:52576-52617`). Under the shipped ManaV2
@@ -5075,6 +5087,14 @@ impl Projectile {
         aim: Option<(f32, f32)>,
         player: Option<&crate::player::Player>,
     ) {
+        // `:66246-66250` — the drill's hum (S1-E-21h d76): while
+        // `soundDelay <= 0`, play `SoundID.Item132` at base.position and
+        // re-arm 23. The C# runs this at the TOP of the 445 arm, before the
+        // channel gate — the cue plays even on the release tick.
+        if self.sound_delay <= 0 {
+            self.wants_sound = Some((2, 132, self.pos.x, self.pos.y, 0.0, 1.0));
+            self.sound_delay = 23;
+        }
         // `:25483` — the life pin.
         self.time_left = 60;
         let Some(p) = player else {
@@ -5388,7 +5408,7 @@ impl Projectile {
         // machine, exactly as the C# orders it.
         if self.sound_delay == 0 {
             self.sound_delay = 8 * (self.extra_updates as i32 + 1);
-            self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 7, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         if self.ai[0] == 0.0 {
             // The outbound flight (`:39024-39034` + the generic tail
@@ -5546,7 +5566,7 @@ impl Projectile {
                 // drain's stream). The single intent slot keeps the whoosh
                 // when both land on one sub-step (the recorded deviation).
                 if self.wants_sound.is_none() {
-                    self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0));
+                    self.wants_sound = Some((0, 0, self.pos.x, self.pos.y, 0.0, 1.0));
                 }
             } else {
                 self.pos.x = nx;
@@ -5575,6 +5595,7 @@ impl Projectile {
         owner: Option<(f32, f32)>,
         aim: Option<Vec2>,
         rng: &mut dyn tr_core::loot::DropRng,
+        whip_range_multiplier: f32,
     ) -> Option<WhipArmSpawn> {
         let kind = self.kind;
         // `:47669-47672`: the Moon Lord whip's arm budget, rolled once.
@@ -5604,6 +5625,41 @@ impl Projectile {
             self.active = false;
             self.time_left = 0;
             return None;
+        }
+        // `:47713-47734` — the mid-swing tip cue (S1-E-21h d76): at
+        // `ai[0] == (int)(timeToFlyOut / 2)` the curve's LAST control point
+        // carries the per-type play — 1029 Corrupt → NPCDeath1 (id 4) at
+        // ×0.6 volumeScale (`:47720`, the DOC-SWEEP port: the queue's volume
+        // term rides the case-4 tail's post-tweak multiply), 1030 Crimson →
+        // NPCHit9 (id 3), 1033 Eel → Item193, else Item153.
+        // The curve is `FillWhipControlPoints` with the default
+        // `getActualCollisionPoints = false` (the spin seed rides `ai[1]`)
+        // and `frameOffset = 0`; the arm anchor is the player center (the
+        // port's `GetArmPosition` stand-in, the collision-curve precedent).
+        if self.ai[0] == (time_fly_out / 2.0) as i32 as f32 {
+            let inputs = tr_core::whip::WhipCurveInputs {
+                kind,
+                ai0: self.ai[0],
+                frame_offset: 0,
+                ai1: self.ai[1],
+                sprite_direction: self.sprite_direction,
+                rotation: self.rot,
+                arm_position: arm,
+                held_use_animation: self.whip_use_animation,
+                whip_range_multiplier,
+                velocity_len: self.vel.length(),
+                get_actual_collision_points: false,
+            };
+            let points = tr_core::whip::fill_whip_control_points(&inputs, &settings);
+            if let Some(&tip) = points.last() {
+                let req = match kind {
+                    CORRUPT_WHIP => (4, 1, tip.x, tip.y, 0.0, 0.6), // :47720
+                    CRIMSON_WHIP => (3, 9, tip.x, tip.y, 0.0, 1.0), // :47724
+                    EEL_WHIP => (2, 193, tip.x, tip.y, 0.0, 1.0),   // :47728
+                    _ => (2, 153, tip.x, tip.y, 0.0, 1.0),          // :47732
+                };
+                self.wants_sound = Some(req);
+            }
         }
         // `:47703-47712`: the Moon Lord whip's extra arms, up to three.
         if kind == MOON_LORD_WHIP && self.ai[2] < 10.0 {
@@ -6118,20 +6174,22 @@ impl Projectile {
             // full pre-move velocity from the post-move position.
             self.pos = pos_before - last_velocity;
         }
-        // `:43699-43707` — the loud bounce nets an update.
+        // `:43699-43707` — the loud bounce nets an update and plays the Dig
+        // cue: `SoundEngine.PlaySound(0, (int)position.X, (int)position.Y)`
+        // (`:43706`, S1-E-21h d76). The int-id-0 play rides the drain's
+        // `play_place_sound` façade (case 0's Next(3) variation + pitch,
+        // `LegacySoundPlayer.cs:440-452`); the position truncates per the
+        // int overload (`SoundEngine.cs:102`). `Collision.HitTiles` ×count
+        // (the tile damage) stays deferred — no projectile→tile seam.
         if loud {
             self.net_update = true;
+            self.wants_sound = Some((0, 0, self.pos.x.trunc(), self.pos.y.trunc(), 0.0, 1.0));
         }
         // `:43708-43712` — the repeated-bounce bail-out.
         if !matches!(self.ai[0], 3.0 | 0.0 | 5.0 | 6.0) && self.local_ai[0] >= 10.0 {
             self.ai[0] = 4.0;
             self.net_update = true;
         }
-        // `:43702-43706` — `Collision.HitTiles` ×count (the tile damage — no
-        // generic projectile→tile seam in the port) and
-        // `SoundEngine.PlaySound(0, …)` (the AI has no audio access): both
-        // deferred to the decor follow-up, recorded in ANALYSIS.
-        let _ = loud;
     }
 
     /// One helper spawn request from the head's center — the Drippler's extra
@@ -6452,7 +6510,7 @@ impl Projectile {
                 BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH | DYNAMITE
                     | GRENADE | STICKY_GRENADE | BOUNCY_GRENADE
             ) {
-                self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0));
+                self.wants_sound = Some((2, 14, self.pos.x, self.pos.y, 0.0, 1.0));
             }
             self.detonated = true;
         }
@@ -6804,10 +6862,15 @@ impl Projectile {
             }
         }
         // The SkyFracture's first-tick marker (`:55676-55687`): the light
-        // plot (`Utils.PlotTileLine` → `CastLightOpen`), the
-        // `SoundID.Item9` cue, the `frame` roll and the 16× dust 180 are
-        // SKIPPED; the alpha/scale write is the state the port keeps.
+        // plot (`Utils.PlotTileLine` → `CastLightOpen`) and the 16× dust 180
+        // are SKIPPED; the alpha/scale write is the state the port keeps.
+        // S1-E-21h d76: the `SoundID.Item9` cue (`:55678`, base.Center)
+        // queues with the marker. The `frame = Main.rand.Next(14)` roll
+        // (`:55681`) stays SKIPPED — the rider keeps zero RNG (the M4-PROJ-6
+        // convention); the cue itself draws nothing at queue time.
         if self.kind == SKY_FRACTURE && self.alpha > 0 {
+            let (cx, cy) = (self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            self.wants_sound = Some((2, 9, cx, cy, 0.0, 1.0));
             self.alpha = 0;
             self.scale = 1.1;
         }
@@ -6824,14 +6887,17 @@ impl Projectile {
             self.alpha = (self.alpha - 50).max(0);
         }
         // The BulletSnowman 110 (S1-D-3q): the first-tick `ai[1] = 1f` latch
-        // (`:55244-55248`; the `SoundID.Item11` cue is SKIPPED — no sound
-        // engine) and the `alpha -= 15` fade (`:55603-55634`, the case-110
-        // arm of the per-type alpha switch). 110 is on the `flag3 = false`
-        // list (`:55962`), so the flight below runs with a resting counter
-        // and no gravity — the bottle flies dead straight while it fades.
+        // (`:55244-55248`; S1-E-21h d76: the `SoundID.Item11` cue queues at
+        // base.position) and the `alpha -= 15` fade (`:55603-55634`, the
+        // case-110 arm of the per-type alpha switch). 110 is on the `flag3 =
+        // false` list (`:55962`), so the flight below runs with a resting
+        // counter and no gravity — the bottle flies dead straight while it
+        // fades. (The live dispatch routes 110 to slice C — this reference
+        // copy keeps the same cue.)
         if self.kind == BULLET_SNOWMAN {
             if self.ai[1] == 0.0 {
                 self.ai[1] = 1.0;
+                self.wants_sound = Some((2, 11, self.pos.x, self.pos.y, 0.0, 1.0));
             }
             if self.alpha > 0 {
                 self.alpha -= 15;
@@ -7319,7 +7385,7 @@ impl Projectile {
         // intent rides out to the pool's sound drain).
         if matches!(self.kind, GOLEM_FIREBALL | CURSED_FLAME) && self.local_ai[0] == 0.0 {
             self.local_ai[0] = 1.0;
-            self.wants_sound = Some((2, 20, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 20, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         // `:24245-24301`: the WaterBolt's own block — the `extraUpdates = 5`
         // remap first (read off the *previous* tick's `ai[1]`, as the C#
@@ -7861,7 +7927,7 @@ impl Projectile {
             // (`:26661`/`:26673`, S1-E-21h). The per-kind dust blocks
             // (`:26572-26609`) stay SKIPPED — noted for ANALYSIS.
             let style = if self.kind == HOUNDIUS_SHOOTIUS_FIREBALL { 60 } else { 28 };
-            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         self.kill_step(world);
     }
@@ -7889,7 +7955,7 @@ impl Projectile {
         if self.local_ai[0] == 0.0 {
             // `:28361-28365` — the first-tick `SoundID.Item74` blast cue at
             // `base.position` (S1-E-21h); the latch increments after it.
-            self.wants_sound = Some((2, 74, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 74, self.pos.x, self.pos.y, 0.0, 1.0));
             self.local_ai[0] += 1.0;
         }
         self.ai[0] += 1.0;
@@ -8147,7 +8213,7 @@ impl Projectile {
             && self.vel.x.abs() + self.vel.y.abs() > 2.0
         {
             self.sound_delay = 10;
-            self.wants_sound = Some((2, 9, self.pos.x, self.pos.y, 0.0));
+            self.wants_sound = Some((2, 9, self.pos.x, self.pos.y, 0.0, 1.0));
         }
         // `:43390+`: the Flamelash's `Utils.GetLerpValue(0f, 10f, localAI[0])`
         // trail tint feeds its dust blocks only — no draw state on the slot.
@@ -10743,13 +10809,14 @@ impl Projectile {
         // `:42231-42239` — the one-shot slash cue: `soundDelay` latches −1
         // and `SoundID.Item60` queues at `base.Center` (S1-E-21h). The C#
         // scales the returned instance's Volume by `0.15f * ai[0]` AFTER
-        // the play — that post-gate scale is DEFERRED (the queue→drain
-        // batch plays at the style's own volume; ANALYSIS S1-E-21h).
+        // the play — the d76 DOC-SWEEP port carries that post-gate scale on
+        // the queue's volume term (`LegacySoundPlayer.cs:1411` applies it
+        // after the case-2 tweak; the gate reads the unscaled style volume).
         if self.sound_delay == 0 {
             self.sound_delay = -1;
             let cx = self.pos.x + self.w * 0.5;
             let cy = self.pos.y + self.h * 0.5;
-            self.wants_sound = Some((2, 60, cx, cy, 0.0));
+            self.wants_sound = Some((2, 60, cx, cy, 0.0, 0.15 * self.ai[0]));
         }
         // `:42240` — the scale is the spawn's `ai[0]`.
         self.scale = self.ai[0];
@@ -12636,6 +12703,15 @@ impl Projectile {
             self.rot = self.vel.y.atan2(self.vel.x);
             // `Main.rand.Next(maxValue)` (exclusive of the bound).
             self.frame = rng.next_range(0, FRAMES);
+            // `:51450-51461` — the first-tick cue. The 961's OWN arm is
+            // `SoundID.DeerclopsIceAttack` (`:51452`, a case-42 trackable,
+            // `SoundID.cs` — the D3 deferred family); the 1041 flint wave's
+            // `DeadCellsFlintWave` (`:51456`) is likewise trackable, and the
+            // ELSE branch's `SoundID.Item60` (`:51460`) belongs to the OTHER
+            // aiStyle-157 kinds the port does not row. So the 961's cue stays
+            // DEFERRED (S1-E-21h d76) — the latch rides cue-less, the same
+            // shape the Flaming Wood's Item42 deferral took before its
+            // legacy-id reclassification. No Item60 is queued for the 961.
         }
         // `:51442-51446` — the fade-in: the opacity climbs 0.1/tick and the
         // scale follows it.
@@ -14481,12 +14557,14 @@ pub struct ProjectilePool {
     /// recorded deviation (ANALYSIS, S1-E-21c).
     pending_npc_hit_sounds: Vec<(&'static str, f32, f32)>,
     /// S1-E-21h — the projectile-family cues the AI arms and the bomb kill
-    /// path queued this tick: `(sound id, style, x, y, pitchOffset)` — the
-    /// `SoundEngine.PlaySound` overload payload (`SoundEngine.cs:93-108`).
-    /// The world-sim pass drains them on the `UpdateProjectiles` stream
-    /// AFTER the attenuation gate, the S1-E-21c queue→drain convention
-    /// (`Main.cs:17775-17777` wraps the whole `UpdateProjectiles` walk).
-    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32)>,
+    /// path queued this tick: `(sound id, style, x, y, pitchOffset,
+    /// volumeScale)` — the `SoundEngine.PlaySound` overload payload
+    /// (`SoundEngine.cs:93-108`; volumeScale 1 by default, the d76
+    /// DOC-SWEEP scale port). The world-sim pass drains them on the
+    /// `UpdateProjectiles` stream AFTER the attenuation gate, the
+    /// S1-E-21c queue→drain convention (`Main.cs:17775-17777` wraps the
+    /// whole `UpdateProjectiles` walk).
+    pending_proj_sounds: Vec<(u16, i32, f32, f32, f32, f32)>,
     /// `NewProjectile`'s `TryUpdateChannel` intents (`Projectile.cs:11097-
     /// 11100`): `(kind, slot)` per local-owner spawn this tick, drained by
     /// the world-sim pass onto the player's `_channelShotCache` — the LAST
@@ -16135,7 +16213,7 @@ impl ProjectilePool {
     /// plays them through `Audio::play_proj_sound` on the
     /// `UpdateProjectiles` stream (`Main.cs:17775`), attenuation gate
     /// first — the wave-C drain convention.
-    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32)> {
+    pub fn drain_proj_sounds(&mut self) -> Vec<(u16, i32, f32, f32, f32, f32)> {
         std::mem::take(&mut self.pending_proj_sounds)
     }
 
@@ -16775,7 +16853,7 @@ impl ProjectilePool {
                             // kind keeps the generic `ai_arrow` flight
                             // byte-identical.
                             kind if crate::projectile_ai001_b::covers(kind) => {
-                                crate::projectile_ai001_b::step(&mut self.slots[i], world, owner)
+                                crate::projectile_ai001_b::step(&mut self.slots[i], world, owner, rng)
                             }
                             // S1-D-5 slice C — the mid-range rowed kinds'
                             // per-type `AI_001` arms (`Projectile.cs:54002-
@@ -18004,7 +18082,14 @@ impl ProjectilePool {
                             // `AI_165_Whip` (`:47667-48270`): the swing
                             // machine. The Moon Lord whip's extra arms are
                             // pool spawns, so the request comes back out.
-                            if let Some(arm) = self.slots[i].ai_whip(owner, aim, rng) {
+                            // S1-E-21h d76: the tip cue's curve reads the
+                            // owner's `whipRangeMultiplier` (the collision
+                            // curve's seam, `:48301`).
+                            let range_mult = player
+                                .as_deref()
+                                .map(|pl| pl.whip_range_multiplier)
+                                .unwrap_or(1.0);
+                            if let Some(arm) = self.slots[i].ai_whip(owner, aim, rng, range_mult) {
                                 self.spawn_whip_arm(i, arm, owner);
                             }
                         }
@@ -19957,6 +20042,14 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                    // S1-E-21h d76 DOC-SWEEP — `Kill()`'s non-bomb cue arms
+                    // in the d76 range (`Projectile.cs:70855-70975`): the
+                    // death-cue map queues its intent at the death hook (the
+                    // C# plays inside `Kill()` while the slot is still active,
+                    // so the cue rides every Kill()-shaped death; the
+                    // out-of-world guard's direct deactivate never reaches
+                    // `Kill()`). The d77 map (`:71112+`) is the sibling lane.
+                    self.kill_tail_cue(i);
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
@@ -20078,6 +20171,53 @@ impl ProjectilePool {
                     self.slots[s].time_left -= tl_delta;
                 }
             }
+        }
+    }
+
+    /// S1-E-21h d76 DOC-SWEEP — `Kill()`'s sound-only / cue-first non-bomb
+    /// death arms in the d76 line-order range (`Projectile.cs:70855-70975`,
+    /// the four `PlaySound` sites before d77's map starts at `:71112`): one
+    /// cue per death, queued straight into the pool's sound queue (the death
+    /// hook runs AFTER the sub-step loop's `wants_sound` forward, so the
+    /// intent cannot ride the slot field — the d77 `kill_tail_cue` shape).
+    /// The C# plays inside `Kill()` while the slot is still active
+    /// (`active = false` lands at `:77262`); the port's death hook is the
+    /// same once-per-death seam, and the cue reads the PRE-hook position
+    /// (every mapped arm plays before its own state writes, or has none).
+    /// The dust/gore bodies stay skipped (the module's RNG note); the
+    /// style-facade plays ride id 2 — the drain (`world_sim/projectiles.rs`)
+    /// routes them through the wave-A façade. Positions ride untruncated
+    /// (the landed 21h queue convention; the id-2 façade truncates itself).
+    /// The 1020/1105 arm's `GetActiveSound(...).Stop()` (`:70863`, the Jim's
+    /// Drone hum) is the tracked-instance stop — the standing D4 deviation.
+    /// The 1080 arm's `ApplyBuffTo(player, 120, 600)` (`:70933`) and the
+    /// 1085 arm's `brokenMirrorBadLuckTime = 25200` (`:70921`) are the
+    /// state halves — the cue precedes both, so it lands; the buff/luck
+    /// writes are the player-state follow-up (the d77 cue-first precedent).
+    fn kill_tail_cue(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        let pos = p.pos;
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let cue: Option<(u16, i32, f32, f32, f32, f32)> = match p.kind {
+            // `:70865` — the Jim's Drone / RC Car's Item62 blast at position
+            // (the `type == 1020 || type == 1105` arm; the dust/gore census
+            // `:70866-70900` stays skipped).
+            JIMS_DRONE | REMOTE_CONTROL_CAR => Some((2, 62, pos.x, pos.y, 0.0, 1.0)),
+            // `:70904` — the Pretty Mirror's Item106 shatter at Center (the
+            // oldVelocity drag + the gore ring `:70905-70914` stay skipped;
+            // the bad-luck write `:70921` is the state follow-up).
+            PRETTY_MIRROR => Some((2, 106, center.x, center.y, 0.0, 1.0)),
+            // `:70936` — the Bird Droppings' Item177 splat at Center (the
+            // int-overload `(int)Center.X/Y` — the id-2 façade truncates;
+            // the stinky-buff write `:70933` is the state follow-up).
+            BIRD_DROPPINGS => Some((2, 177, center.x, center.y, 0.0, 1.0)),
+            // `:70958` — the Torch God helper's Item10 pop at Center (the
+            // 40-dust torch census `:70959-70974` stays skipped).
+            TORCH_GOD_HELPER => Some((2, 10, center.x, center.y, 0.0, 1.0)),
+            _ => None,
+        };
+        if let Some((id, style, x, y, pitch, vol)) = cue {
+            self.pending_proj_sounds.push((id, style, x, y, pitch, vol));
         }
     }
 
@@ -20685,7 +20825,19 @@ impl ProjectilePool {
                 }
             }
         }
-        // `:66422-66475` — the sound + dust writes are SKIPPED.
+        // `:66422-66430` — the hum cooldown (S1-E-21h d76): while
+        // `soundDelay <= 0` AND pre-full (`!flag4`), re-arm
+        // `(num21 - num20) * 2` and play `SoundID.Item15` at base.position
+        // unless `ai[0] == 1` (the first charge tick stays silent). num21 = 5
+        // (`:66379`), num20 = the stage counter (0/1/2 at 80/180). The dust
+        // writes (`:66431-66475`) stay SKIPPED.
+        if self.slots[slot].sound_delay <= 0 && !full {
+            self.slots[slot].sound_delay = (5 - stage) * 2;
+            if self.slots[slot].ai[0] != 1.0 {
+                let (x, y) = (self.slots[slot].pos.x, self.slots[slot].pos.y);
+                self.slots[slot].wants_sound = Some((2, 15, x, y, 0.0, 1.0));
+            }
+        }
         // `:66476-66537` — the fire window: the channel gate + the mana pay.
         if fire && self.slots[slot].owner == 0 {
             let mut kill = false;
@@ -23489,7 +23641,7 @@ mod s1_e_21h_sound_tests {
             }
             assert_eq!(
                 p.wants_sound,
-                Some((2, style, 64.0, 64.0, 0.0)),
+                Some((2, style, 64.0, 64.0, 0.0, 1.0)),
                 "kind {kind}'s first-tick cue"
             );
             // The latch holds: a second tick queues nothing new.
@@ -23514,7 +23666,7 @@ mod s1_e_21h_sound_tests {
             ..Default::default()
         };
         p.ai_spectre_shot(&w, &[], None, None);
-        assert_eq!(p.wants_sound, Some((2, 8, 64.0, 64.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 8, 64.0, 64.0, 0.0, 1.0)));
         assert_eq!(p.local_ai[0], 1.0);
         p.wants_sound = None;
         p.ai_spectre_shot(&w, &[], None, None);
@@ -23555,7 +23707,7 @@ mod s1_e_21h_sound_tests {
             // the pre-movement position (48, 48).
             assert_eq!(
                 p.wants_sound,
-                Some((2, style, 48.0, 48.0, 0.0)),
+                Some((2, style, 48.0, 48.0, 0.0, 1.0)),
                 "kind {kind}'s cue at the play-time position"
             );
             p.wants_sound = None;
@@ -23595,7 +23747,7 @@ mod s1_e_21h_sound_tests {
             ..Default::default()
         };
         p.ai_boomerang(&w, None, 1.0, true);
-        assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0)));
+        assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0, 1.0)));
         assert_eq!(p.sound_delay, 8);
         // The pool decrements ahead of the AI (`:16768-16771`); while the
         // cooldown is positive the arm queues nothing.
@@ -23642,7 +23794,7 @@ mod s1_e_21h_sound_tests {
             ..Default::default()
         };
         s.ai_lights_bane(&w);
-        assert_eq!(s.wants_sound, Some((2, 60, 63.0, 63.0, 0.0)));
+        assert_eq!(s.wants_sound, Some((2, 60, 63.0, 63.0, 0.0, 0.15)));
         assert_eq!(s.sound_delay, -1);
         s.wants_sound = None;
         s.ai_lights_bane(&w);
@@ -23670,7 +23822,7 @@ mod s1_e_21h_sound_tests {
             assert!(p.detonated);
             assert_eq!(
                 p.wants_sound,
-                Some((2, 14, 80.0, 80.0, 0.0)),
+                Some((2, 14, 80.0, 80.0, 0.0, 1.0)),
                 "kind {kind}'s blast cue at the pre-PrepareBombToBlow position"
             );
             // The latch holds: a re-run queues nothing new.
@@ -23750,6 +23902,56 @@ mod s1_e_21h_sound_tests {
             true,
         );
         assert_eq!(pool.slots()[slot].sound_delay, -1, "the latch holds");
+    }
+
+    /// S1-E-21h d76 DOC-SWEEP — the Kill()-tail non-bomb cue map (the d76
+    /// range's four sites `:70865`/`:70904`/`:70936`/`:70958`): one queued
+    /// intent per death at the C#'s pre-hook position, the payload's
+    /// id/style/volume exact, and a non-mapped kind queues nothing. The
+    /// 1020/1105 pair shares the Item62 blast; the 1085/1080/1084 cues ride
+    /// Center. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_e_21h_d76_sweep_the_kill_tail_cue_map() {
+        let mut pool = ProjectilePool::new();
+        // (kind, expected (id, style), position mode: 0 = pos, 1 = center)
+        let cases: [(u16, (u16, i32), u8); 5] = [
+            (JIMS_DRONE, (2, 62), 0),
+            (REMOTE_CONTROL_CAR, (2, 62), 0),
+            (PRETTY_MIRROR, (2, 106), 1),
+            (BIRD_DROPPINGS, (2, 177), 1),
+            (TORCH_GOD_HELPER, (2, 10), 1),
+        ];
+        for (kind, want, mode) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            let p = &pool.slots()[slot];
+            let (x, y) = if mode == 1 {
+                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            } else {
+                (p.pos.x, p.pos.y)
+            };
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue per death");
+            assert_eq!(
+                (queued[0].0, queued[0].1, queued[0].2, queued[0].3, queued[0].4, queued[0].5),
+                (want.0, want.1, x, y, 0.0, 1.0),
+                "kind {kind}'s cue payload"
+            );
+            // The map is idempotent per call site: a second call queues a
+            // second intent (the death hook runs once — the slot never
+            // returns to active), so the once-per-death guarantee is the
+            // hook's, not the map's.
+            pool.kill(slot);
+        }
+        // A kind outside the map queues nothing (the bomb's cue rides its
+        // own detonation latch, not the death map).
+        let slot = pool
+            .spawn_with_data_ai_owned(28, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the bomb row spawns");
+        pool.kill_tail_cue(slot);
+        assert!(pool.drain_proj_sounds().is_empty(), "the bomb keeps its latch cue");
     }
 }
 
@@ -23834,7 +24036,13 @@ mod tests {
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
         // self-contained family.
-        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        // S1-E-21h d76 DOC-SWEEP: the four Kill()-tail cue kinds' styles join
+        // the census — 195 (Jim's Drone 1020), 200 (Bird Droppings 1080),
+        // 202 (Torch God helper 1084) and 205 (RC Car 1105). Their rows land
+        // so the death-hook `kill_tail_cue` can spawn them; the AI machines
+        // are the documented follow-ups (the d21 lane ports 202/205's bodies;
+        // 195/200 stay census rows). The cue lands on death regardless.
+        const UNARMED_ROWED: [u8; 8] = [156, 164, 169, 206, 195, 200, 202, 205];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -26605,6 +26813,27 @@ mod flail_tests {
             .spawn_with_data_ai(kind, x, y, 0.0, 0.0, 20, 5.0, 0.0, 0.0)
             .unwrap();
         (pool, slot)
+    }
+
+    /// S1-E-21h d76 (`:43699-43706`): the loud flail bounce queues the Dig
+    /// cue (int id 0) at the truncated position; a soft bounce (both axes
+    /// ≤ 4, no state-1 stagger) draws nothing.
+    #[test]
+    fn s1_e_21h_d76_the_loud_flail_bounce_queues_the_dig_cue() {
+        let (mut pool, slot) = spawn(BALL_O_HURT, 100.7, 200.9);
+        // A blocked X axis at |lastVelocity.X| > 4 → loud.
+        pool.slots_mut()[slot].vel = Vec2::new(-2.0, 0.0);
+        pool.slots_mut()[slot].ai[0] = 2.0; // not the state-1 stagger
+        pool.slots_mut()[slot].ai_flail_bounce(Vec2::new(10.0, 0.0), Vec2::new(100.7, 200.9));
+        let req = pool.slots()[slot].wants_sound.expect("the loud bounce cue");
+        assert_eq!((req.0, req.1), (0, 0), "the int-id Dig play");
+        assert_eq!((req.2, req.3), (100.0, 200.0), "the truncated position");
+        // A soft bounce: both axes change but |last| ≤ 4, no stagger → silent.
+        let (mut pool2, s2) = spawn(BALL_O_HURT, 100.0, 200.0);
+        pool2.slots_mut()[s2].vel = Vec2::new(-1.0, -1.0);
+        pool2.slots_mut()[s2].ai[0] = 2.0;
+        pool2.slots_mut()[s2].ai_flail_bounce(Vec2::new(3.0, 3.0), Vec2::new(100.0, 200.0));
+        assert_eq!(pool2.slots()[s2].wants_sound, None, "the soft bounce is silent");
     }
 
     #[test]
@@ -29617,6 +29846,46 @@ mod whip_tests {
         assert_eq!(ticks2, 28, "84 sub-steps at 3 per tick");
         assert_eq!(pool2.slots[0].local_hit_cooldown, -1, "the sentinel");
         assert_eq!(pool2.slots[0].ai[0], 28.0 * 3.0, "the sub-steps ran out");
+    }
+
+    /// S1-E-21h d76 (`:47713-47734`): the mid-swing tip cue — at
+    /// `ai[0] == (int)(timeToFlyOut / 2)` the per-type play queues at the
+    /// curve's last control point. The four arms: 1029→NPCDeath1 (id 4),
+    /// 1030→NPCHit9 (id 3), 1033→Item193, else→Item153.
+    #[test]
+    fn s1_e_21h_d76_the_whip_tip_cue_fires_at_the_mid_swing() {
+        let center = (300.0, 200.0);
+        for (kind, id, style) in [
+            (CORRUPT_WHIP, 4u16, 1i32),  // :47720 NPCDeath1
+            (CRIMSON_WHIP, 3, 9),        // :47724 NPCHit9
+            (EEL_WHIP, 2, 193),          // :47728 Item193
+            (BLAND_WHIP, 2, 153),        // :47732 Item153 (the else arm)
+        ] {
+            let mut pool = ProjectilePool::new();
+            let s = pool
+                .spawn_with_data(kind, center.0, center.1, 4.0, 0.0, 20, 2.0)
+                .unwrap();
+            // timeToFlyOut = 60 (animation 30 × MaxUpdates 2); the cue fires
+            // at ai[0] == 30. Drive the slot to the sub-step BEFORE it.
+            pool.set_whip_params(s, 0, 0, 30.0);
+            pool.slots[s].ai[0] = 29.0;
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            let _ = pool.slots[s].ai_whip(Some(center), None, &mut rng, 1.0);
+            assert_eq!(pool.slots[s].ai[0], 30.0, "kind {kind}: the mid-swing");
+            let req = pool.slots[s].wants_sound.expect("kind {kind}: the tip cue");
+            assert_eq!((req.0, req.1), (id, style), "kind {kind}'s cue family");
+            // The tip is the curve's last point — finite, off the arm anchor.
+            assert!(req.2.is_finite() && req.3.is_finite());
+            // The Corrupt Whip's ×0.6 volumeScale (`:47720`); every other
+            // tip cue plays at the style's own volume (the d76 DOC-SWEEP).
+            let want_vol = if kind == CORRUPT_WHIP { 0.6 } else { 1.0 };
+            assert_eq!(req.5, want_vol, "kind {kind}'s tip volumeScale");
+            // One cue per swing: the next sub-step (ai[0] = 31) is past the
+            // gate, no re-queue.
+            pool.slots[s].wants_sound = None;
+            let _ = pool.slots[s].ai_whip(Some(center), None, &mut rng, 1.0);
+            assert_eq!(pool.slots[s].wants_sound, None, "kind {kind}: once per swing");
+        }
     }
 
     #[test]
@@ -34721,6 +34990,83 @@ mod magic_ai_tests {
         let p = &pool.slots()[holder];
         assert_eq!(p.frame, 1, "the 5-frame sheet advances after 4 ticks");
         assert_eq!(p.frame_counter, 0, "the accumulator reset with the frame");
+    }
+
+    /// S1-E-21h d76 (`:66601-66609`): the Last Prism hum — `soundDelay`
+    /// re-arms 20 (num36 × 2) and plays Item15 at base.position unless
+    /// `ai[0] == 1` (the first charge tick stays silent).
+    #[test]
+    fn s1_e_21h_d76_the_last_prism_hum_rearms_and_skips_the_first_tick() {
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        // Tick 1: ai[0] becomes 1 — the cooldown arms but the cue is gated.
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(pool.slots()[holder].sound_delay, 20, "num36 × 2");
+        assert_eq!(pool.slots()[holder].wants_sound, None, "ai[0]==1 stays silent");
+        // Force the cooldown down and charge past 1: the next tick plays.
+        pool.slots_mut()[holder].sound_delay = 0;
+        pool.slots_mut()[holder].ai[0] = 5.0;
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[holder];
+        assert_eq!(p.sound_delay, 20, "the re-arm");
+        let req = p.wants_sound.expect("the hum cue");
+        assert_eq!((req.0, req.1), (2, 15), "Item15");
+    }
+
+    /// S1-E-21h d76 (`:66422-66430`): the Charged Blaster Cannon hum —
+    /// pre-full, `soundDelay` re-arms `(5 - stage) × 2` and plays Item15
+    /// unless `ai[0] == 1`; past full charge (flag4) the hum stops.
+    #[test]
+    fn s1_e_21h_d76_the_charged_blaster_hum_rearms_pre_full() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        player.channel = true;
+        player.channel_item = 3541;
+        player.mana = 200;
+        let holder = pool
+            .spawn_with_data_ai_owned(CHARGED_BLASTER_CANNON, 0, 160.0, 160.0, 4.0, 0.0, 40, 2.0, 0.0, 0.0)
+            .unwrap();
+        // Tick 1: ai[0] becomes 1 — the cooldown arms (5−0)×2 = 10, silent.
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(pool.slots()[holder].sound_delay, 10);
+        assert_eq!(pool.slots()[holder].wants_sound, None, "ai[0]==1 silent");
+        // Force the cooldown down, charge 5 (pre-full): the hum plays.
+        pool.slots_mut()[holder].sound_delay = 0;
+        pool.slots_mut()[holder].ai[0] = 5.0;
+        step_player(&mut pool, &mut w, &mut player);
+        let req = pool.slots()[holder].wants_sound.expect("the hum");
+        assert_eq!((req.0, req.1), (2, 15), "Item15");
+        assert_eq!(pool.slots()[holder].sound_delay, 10, "(5−0)×2 pre-full");
+        // Past full (ai[0] >= 180): flag4 closes the hum window.
+        pool.slots_mut()[holder].sound_delay = 0;
+        pool.slots_mut()[holder].ai[0] = 200.0;
+        pool.slots_mut()[holder].wants_sound = None;
+        step_player(&mut pool, &mut w, &mut player);
+        assert_eq!(pool.slots()[holder].wants_sound, None, "full charge: no hum");
+    }
+
+    /// S1-E-21h d76 (`:66246-66250`): the Laser Drill hum — `soundDelay <= 0`
+    /// plays Item132 at base.position and re-arms 23, at the TOP of the 445
+    /// arm (before the channel gate).
+    #[test]
+    fn s1_e_21h_d76_the_laser_drill_hum_rearms_23() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0;
+        player.y = 100.0;
+        player.channel = true;
+        player.channel_item = 3541;
+        let drill = pool
+            .spawn_with_data_ai_owned(LASER_DRILL, 0, 160.0, 160.0, 4.0, 0.0, 30, 2.0, 0.0, 0.0)
+            .unwrap();
+        step_player(&mut pool, &mut w, &mut player);
+        let p = &pool.slots()[drill];
+        assert_eq!(p.sound_delay, 23, "the re-arm (`:66249`)");
+        let req = p.wants_sound.expect("the drill hum");
+        assert_eq!((req.0, req.1), (2, 132), "Item132");
     }
 
     #[test]
@@ -40522,6 +40868,10 @@ mod s1_d_4b_5_tests {
             p.rot
         );
         assert!((0..5).contains(&p.frame), "the frame roll ({})", p.frame);
+        // S1-E-21h d76 (`:51452`): the 961's own cue is the DeerclopsIceAttack
+        // trackable (case 42, the D3 deferred family) — the latch rides
+        // cue-less, NO Item60 (that belongs to the else branch's other kinds).
+        assert_eq!(p.wants_sound, None, "the 961's trackable cue is deferred");
         // The fade-in: the opacity climbs 0.1/tick, so the alpha drops from
         // 255 to 229 and the scale follows the opacity times `ai[1]`.
         assert_eq!(p.alpha, 229, "the fade-in ({})", p.alpha);

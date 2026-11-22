@@ -398,6 +398,20 @@ pub const CONSTELLATION_WHIP: u16 = 1034;
 pub const MOON_LORD_WHIP: u16 = 1035;
 /// `ProjectileID.SlimeWhip` (1104).
 pub const SLIME_WHIP: u16 = 1104;
+/// S1-E-21h d76 DOC-SWEEP — the Kill()-tail non-bomb cue kinds
+/// (`Projectile.cs:70855-70975`, the d76 line-order range's last four
+/// `PlaySound` sites; d77's map starts at `:71112`).
+/// `ProjectileID.JimsDrone` (1020) — the Item62 blast (`:70865`).
+pub const JIMS_DRONE: u16 = 1020;
+/// `ProjectileID.BirdDroppings` (1080) — the Item177 splat (`:70936`).
+pub const BIRD_DROPPINGS: u16 = 1080;
+/// `ProjectileID.TorchGodHelper` (1084) — the Item10 pop (`:70958`).
+pub const TORCH_GOD_HELPER: u16 = 1084;
+/// `ProjectileID.PrettyMirror` (1085) — the Item106 shatter (`:70904`).
+pub const PRETTY_MIRROR: u16 = 1085;
+/// `ProjectileID.RemoteControlCar` (1105) — shares the 1020 Item62 blast
+/// (`:70855`'s `type == 1020 || type == 1105` arm).
+pub const REMOTE_CONTROL_CAR: u16 = 1105;
 pub const BETSY_BREATH: u16 = 687;
 /// `ProjectileID.DD2BetsyFireball` (686) — Betsy's fireball
 /// (`AI_110`'s phase-4 volley: `NewProjectile(..., 686, 35, ...)`).
@@ -3969,6 +3983,30 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // S1-E-21h d76 DOC-SWEEP — the Kill()-tail non-bomb cue kinds
+            // (`Projectile.cs:70855-70975`). The rows land so the death-hook
+            // cue map can spawn them; the AI machines for the four unarmed
+            // styles (195/200/202/205) are the documented census follow-ups
+            // (UNARMED_ROWED, the i25 precedent) — the cue lands on death.
+            // `:9659-9666` — Jim's Drone (1020): 12x12, aiStyle 195,
+            // friendly, penetrate -1 (the stock tileCollide true / 3600 life).
+            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:10078-10086` — Bird Droppings (1080): 10x10, aiStyle 200,
+            // alpha 255, penetrate -1, ignoreWater (the overlay below); the
+            // stock friendly false / tileCollide true / 3600 life.
+            BIRD_DROPPINGS => (10.0, 10.0, 200, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `:10115-10124` — the Torch God's helper (1084): 4x4, aiStyle
+            // 202, extraUpdates 2, timeLeft 300, penetrate -1, tileCollide
+            // false (the d21 row values, kept identical for the merge).
+            TORCH_GOD_HELPER => (4.0, 4.0, 202, -1, 300, 2, false, false, false, RESET_STATE),
+            // `:10125-10132` — the Pretty Mirror (1085): 18x18, aiStyle 2
+            // (the thrown family — its rotation ladder `:23245` is already
+            // in `ai_style2`), friendly, penetrate 1.
+            PRETTY_MIRROR => (18.0, 18.0, 2, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // `:10294-10302` — the RC Car (1105): 26x26, aiStyle 205,
+            // friendly, tileCollide true, correctSlopeCollision (the slope
+            // pass is the d21 movement follow-up; the d21 row values kept).
+            REMOTE_CONTROL_CAR => (26.0, 26.0, 205, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4211,7 +4249,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // S1-E-21h d76 DOC-SWEEP — `Projectile.cs:10085`: the Bird
+            // Droppings (1080) sets `ignoreWater = true`.
+            || kind == BIRD_DROPPINGS,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
