@@ -284,6 +284,12 @@ impl App {
                 {
                     log::warn!("player save failed: {e}");
                 }
+                // W4-g56 — the void-vault favorites ride their own `.trvault`
+                // sidecar (the `.plr` bank4-favourited rows are f44's lane, the
+                // `.trplayer` superset g88's; the contract is in ANALYSIS).
+                if let Err(e) = persist::save_vault_favorites(&self.world_path, &p.vault_favorites) {
+                    log::warn!("vault favorites save failed: {e}");
+                }
             }
             // `Player.InternalSaveMap` (`Player.cs:55046`): the explored map is
             // written alongside the player/world save.

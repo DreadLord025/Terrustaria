@@ -142,6 +142,8 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 
 | 105 | DOC-SWEEP lane 25 lantern/events (W4-f40: ReleaseLantern 4702 USE arm + noUseGraphic draw gate, the 4703/5613 census correction, the c39 gates union contract, d130 wind-drift verify, f45 lantern-quad persistence-order fix; FINAL s8: the c39 114-exec cross-receipt + world-seed graft, the music ambient-only census, the 4702-recipe-less/5613-bench craft census, the f45 compose-contract witness, the doves-volley correction; RETIRE s9: the doves-dup adjudication d17-form keep-one + brace fix, the f41 shop-row dedupe receipt, the 114 FINAL merge-scope receipts, the LANTERN-FAMILY unified merger order; code-only) | `105-doc-sweep-lantern.md` | ✅ |
 
+| 274 | VOID-FAMILY BIBLE + the g56 RETIRE verdicts (the `.trvault` two-seam retire gate vs f44 bank4/g88 v11, e19 disjoint + the 16-box repin receipt, g88 persist zero-touch, SetGlowForChest keep-one g56; renumbered 239→274 per registry-150 §6.3 `72226e500` — 239 belongs to d42's earlier push 12:55:30) | `274-void-family-bible.md` | ✅ |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

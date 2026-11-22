@@ -5111,6 +5111,74 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
     {
         return;
     }
+    // W4-g56 — the HELD-ITEM right-click variant swap
+    // (`Player.ItemCheck_ManageRightClickFeatures`, `Player.cs:31526-31640`,
+    // the `:28283` call inside `Player.Update` ahead of `ItemCheckWrapped`).
+    // The Void Bag 4131 ↔ Closed Void Bag 5325 pair (`:31560-31565`) is the
+    // void-chain member: right-clicking the HELD bag flips its kind in place
+    // (sound 7), distinct from the slot-context `ItemSlot.TryItemSwap` cycle
+    // (`equip_swap::try_item_swap`, the ctx-0/3/4/32 grid arm). The C# LMB use
+    // of 4131/5325 spawns the lens 734 via the generic `ItemCheck_Shoot`
+    // (`Item.cs:35875-35888` shoot=734) — there is NO "bag-open" spawn
+    // suppression; the vault opens through the lens PROJECTILE's right-click
+    // (`Main.TryInteractingWithVoidLens`, `void_lens.rs`). This arm is the
+    // use-side census gap: the held-item swap was unported (only the slot
+    // cycle landed).
+    //
+    // Gate (`:31528-31534`): `selectedItem != 58 && controlUseTile &&
+    // myPlayer && !tileInteractionHappened && releaseUseItem &&
+    // !controlUseItem && !mouseInterface && !CaptureManager.Active &&
+    // (!mouseRightRelease || !HoveringAnInteractable) &&
+    // !LocalPlayerHasPendingInventoryActions`; `flag2` additionally needs
+    // `ItemsThatAllowRepeatedRightClick[type] || mouseRightRelease` (4131/5325
+    // are NOT in the repeat set, `ItemID.cs` — press edge only); then
+    // `altFunctionUse == 0 && itemTime == 0 && itemAnimation == 0`. The port's
+    // stand-ins: `controlUseTile` = `place_down`, `releaseUseItem` =
+    // `mine_released` (the use-button release latch), `controlUseItem` =
+    // `mine_down`, `mouseInterface` = `mouse_interface_now()`,
+    // `mouseRightRelease` = the right press edge (`place_down &&
+    // !prev_place_down`), `tileInteractionHappened` = a tile interaction
+    // already consumed this press (the chest/dresser/furniture/shop arms
+    // above all `return`, so reaching here means none fired), the capture /
+    // pending-inventory-action / smart-cursor halves are unported (false).
+    // `altFunctionUse` has no port state (0). The swap fires on the press
+    // edge with the use button up and no swing running.
+    if app.place_down
+        && !prev_place_down
+        && app.mine_released
+        && !app.mine_down
+        && !app.mouse_interface_now()
+        && !crate::void_lens::hovering_lens(app)
+        && app.item_time <= 0.0
+        && app.swing <= 0.0
+        && app.selected != 58
+    {
+        let held = app.inventory[app.selected];
+        if held.count > 0 && matches!(held.kind, 4131 | 5325) {
+            // `:31633-31639` — `releaseUseTile = false; mouseRightRelease =
+            // false; PlaySound(type=7); inventory[selectedItem]
+            // .ChangeItemType(num)`. The port's press consume is
+            // `ui_right_press = false` (the slot-cycle precedent); the kind
+            // flip rides the shared `try_item_swap` (`ChangeItemType` keeps
+            // the stack and re-applies the prefix — `ItemSlot` carries the
+            // prefix verbatim, so only kind/name change).
+            let mut item = held;
+            if let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut item) {
+                app.inventory[app.selected] = item;
+                // `SoundEngine.PlaySound(7)` (`:31637`, type defaults to 7
+                // for the void pair — no `type = 22` override). The case-7
+                // pitch draw rides the `UpdatePlayers` stream (the
+                // `Player.Update` caller, `Main.cs:17754`).
+                app.audio.play_pickup_sound(
+                    false,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+                app.ui_right_press = false; // `mouseRightRelease = false`
+                let _ = new_kind;
+                return;
+            }
+        }
+    }
     // `ItemCheck_Shoot` (`Player.cs:47056+`): the ammo shooters fire at
     // `ItemTimeIsZero` mid-swing (`Player.cs:43544`'s
     // `itemAnimation > 0 && ItemTimeIsZero` gate). `PickAmmo`
@@ -15316,6 +15384,71 @@ mod tests {
             5,
             "the wood landed in the grid"
         );
+    }
+
+    /// W4-g56 — the HELD-ITEM right-click variant swap
+    /// (`Player.ItemCheck_ManageRightClickFeatures`, `Player.cs:31560-31565`):
+    /// right-clicking the held Void Bag 4131 flips it to the Closed Void Bag
+    /// 5325 in place (sound 7, the press consumed), and the reverse flips back.
+    /// The use button is up, no swing runs, the cursor is over an in-reach air
+    /// tile (no tile interaction, no interface, no lens hover). The rig parks
+    /// the player above the floor row and aims at the air beside them (the
+    /// port's reach gate precedes the tile-interact dispatch, the same
+    /// placement as the `ManageRightClickFeatures` dismount arm).
+    fn held_bag_app() -> App {
+        let mut app = mining_app(object_world(), 11, 18);
+        app.inventory[app.selected] = slot(4131, 1);
+        app.mine_down = false;
+        app.mine_released = true;
+        app.place_down = true;
+        app.place_prev_down = false;
+        app.ui_right_press = true;
+        app
+    }
+
+    #[test]
+    fn w4_g56_the_held_void_bag_right_click_swaps_the_variant() {
+        let mut app = held_bag_app();
+        let before = app.audio.played_count();
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(
+            app.inventory[app.selected].kind, 5325,
+            "the held 4131 flips to 5325 (:31563-31565)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "the stack survives");
+        assert_eq!(app.audio.played_count(), before + 1, "sound 7 (:31637)");
+        assert!(!app.ui_right_press, "the press is consumed (:31636)");
+        // The reverse: 5325 → 4131 on the next press edge.
+        app.place_prev_down = false;
+        app.ui_right_press = true;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(
+            app.inventory[app.selected].kind, 4131,
+            "the held 5325 flips back to 4131 (:31560-31562)"
+        );
+    }
+
+    /// W4-g56 — the swap gate refusals (`Player.cs:31528-31534`): a running
+    /// swing (`itemAnimation != 0`), the use button held (`controlUseItem`),
+    /// and a held (non-edge) right button each keep the kind unchanged.
+    #[test]
+    fn w4_g56_the_held_swap_gate_refuses_swing_use_button_and_held_press() {
+        // A running swing refuses (itemAnimation != 0).
+        let mut app = held_bag_app();
+        app.swing = 0.2; // a live swing
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.inventory[app.selected].kind, 4131, "the swing refuses");
+        // The use button held refuses (controlUseItem).
+        let mut app = held_bag_app();
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.inventory[app.selected].kind, 4131, "the use button refuses");
+        // A held right button (no press edge) refuses — the pair is not in
+        // ItemsThatAllowRepeatedRightClick, so mouseRightRelease must be true.
+        let mut app = held_bag_app();
+        app.place_prev_down = true; // held, no edge
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.inventory[app.selected].kind, 4131, "the held press refuses");
     }
 
     #[test]

@@ -27,6 +27,7 @@ pub mod crafting_grid;
 pub mod cursor;
 pub mod debug_items;
 pub mod elements;
+pub(crate) mod glow;
 pub mod ingame_options;
 pub mod housing;
 pub mod images;
@@ -763,6 +764,14 @@ pub fn draw_hud(
     // latch (`Main.mouseReforge`).
     reforge: Option<(&crate::item::ItemSlot, u64, f32, bool)>,
     bank: Option<(&[ItemSlot], i32)>,
+    // W4-g56 — the void vault's per-slot favorite bits (context 32's
+    // `Inventory_Back19` arm, `ItemSlot.cs:2155-2158`); `None` for the
+    // other banks.
+    bank_favorites: Option<&[bool; crate::bank::BANK_SLOTS]>,
+    // W4-g56 — the chest-glow state (`ItemSlot.Draw:2305-2326`): the open
+    // container's per-slot glow time/hue, threaded to the bank/vault grid
+    // (contexts 4/32) and the world-chest panel (context 3).
+    glow: Option<&crate::ui::glow::GlowState>,
     // `Main.DrawPVPIcons`'s inputs (`Main.cs:42654`): the net mode / seed gates,
     // the local player's `hostile` + `team` and the `teamCooldown` timer.
     pvp: &chrome::PvpIconState,
@@ -964,6 +973,8 @@ pub fn draw_hud(
             mouse_pos,
             m_h,
             bank,
+            bank_favorites,
+            glow,
             // `Main.ChestOrShopUIVisible` (`Main.cs:2939-2952`): the trash
             // slot shifts while a container or shop panel is open (bug 20).
             chest_panel.chest >= 0 || shop.is_some(),

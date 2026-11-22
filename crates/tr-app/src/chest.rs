@@ -944,8 +944,9 @@ fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) 
 /// panel close (`NewCraftingUI.Close(quiet: true)` `:33516`), the inventory
 /// open (`Main.playerInventory = true` `:33517`) and the tile origin — set
 /// for the banks too (`:33524-33525`), or the per-tick range close would
-/// probe a stale tile. The `ItemSlot.SetGlowForChest`/input-navigator arms
-/// are UI state the port does not carry (`:33508-33515`/:33518-33523).
+/// probe a stale tile. The `ItemSlot.SetGlowForChest` half NOW LANDS below
+/// (W4-g56 void-chain item 5, `ui/glow.rs` — research/274 §4 keep-one); the
+/// input-navigator arms stay unported UI state (`:33518-33523`).
 ///
 /// The browsed chest's 40-slot window materializes on open: the C#
 /// `Chest.item[]` is 40 real entries for every chest (`Chest.cs:107-109`,
@@ -972,6 +973,32 @@ fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
             c.slots.resize(c.max_items, EMPTY_SLOT);
         }
     }
+    // W4-g56 — `ItemSlot.SetGlowForChest(currentContainer)` (`Player.cs:33508-
+    // 33515`): the open clears the chest glow arrays (and grows them to the
+    // container's `maxItems`). The `CoinSlot.ForceSlotState(j, 3, ...)` half
+    // (`ItemSlot.cs:488-491`) resets the coin-cell ranks for the open window.
+    let max_items = if new_chest >= 0 {
+        app.world_chests
+            .get(new_chest as usize)
+            .map_or(crate::chest::DEFAULT_MAX_ITEMS as usize, |c| c.max_items)
+    } else {
+        crate::bank::BANK_SLOTS
+    };
+    app.slot_glow.set_glow_for_chest(max_items);
+    for j in 0..max_items {
+        let (kind, count) = if new_chest >= 0 {
+            app.world_chests
+                .get(new_chest as usize)
+                .and_then(|c| c.slots.get(j))
+                .map_or((0, 0), |s| (s.kind, s.count))
+        } else {
+            app.player
+                .as_ref()
+                .and_then(|p| crate::bank::bank_for_chest(new_chest).map(|bi| p.banks[bi][j]))
+                .map_or((0, 0), |s| (s.kind, s.count))
+        };
+        app.coin_slot.force_slot_state(j as i32, 3, kind, count);
+    }
 }
 
 /// `Player.cs:33230-33252` — the open toggle shared by every container kind
@@ -988,6 +1015,14 @@ pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 
     let Some(current) = app.player.as_ref().map(|p| p.chest) else {
         return 0; // no player — no container state (the front screens park the routes)
     };
+    // W4-g56 — the tile-vault open's `disableVoidBag` guard (`Player.cs:33134-
+    // 33139`): `case 4: if (this.disableVoidBag < 0) num76 = -5;` — a locked
+    // vault slot leaves `num76 = -1`, so the shared open block (`:33230`)
+    // never runs (no stackSplit, no toggle, no cue). The net-slot lock is
+    // MP-only (`Player.disable_void_bag`); SP keeps −1 and always opens.
+    if new_chest == -5 && app.player.as_ref().is_some_and(|p| p.disable_void_bag >= 0) {
+        return 0;
+    }
     app.stack_split = 600; // `:33232` — `Main.stackSplit = 600`, before the branch
     if new_chest == current {
         if let Some(p) = app.player.as_mut() {
@@ -1340,15 +1375,31 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
 /// close for every open container (the unified `Player.chest` covers the
 /// world chests and the banks): out of the container's multi-tile-hitbox
 /// interaction range or a dead origin tile force-closes with sound 11
-/// (`:31078-31090`). The bank-projectile arms (`:31019-31076`) are the
-/// remote opens — out of scope. Runs for alive players only (the C# call
-/// site sits after the dead branch's return, `:24752`/:25290) — the
-/// `update_player` hook inherits that gating.
+/// (`:31078-31090`). The void-lens tracker arm (`:31051-31073`, W4-g56
+/// `void_lens::tick_tracker`) runs first and its `flag` return
+/// (`:31074-31077`) skips the tile probe while the lens open is live; the
+/// piggy-trough arm (`:31028-31050`) stays out (no remote piggy open).
+/// Runs for alive players only (the C# call site sits after the dead
+/// branch's return, `:24752`/:25290) — the `update_player` hook inherits
+/// that gating.
 pub(crate) fn tick_open(app: &mut App) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
-    if p.chest != -1 {
+    // W4-g56 — `HandleBeingInChestRange`'s void-lens arm
+    // (`Player.cs:31051-31073`): the tracked lens's death/range close runs
+    // AHEAD of the tile-range close below (the C# `flag` return at
+    // `:31074-31077` skips the multi-tile-hitbox probe while a bank
+    // projectile tracker is live). The Item130 cue plays here.
+    let lens_sound = crate::void_lens::tick_tracker(app);
+    if lens_sound != 0 {
+        app.audio.play("Item_130"); // `:31056`/`:31068` — `SoundID.Item130`
+    }
+    let tracked_open = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.chest == -5 && p.void_lens_chest != crate::void_lens::LensTracker::default());
+    if p.chest != -1 && !tracked_open {
         let (chest_x, chest_y) = (p.chest_x, p.chest_y);
         // Both probes read the world only; the close below mutates the
         // player after the borrow ends.
@@ -1377,6 +1428,22 @@ pub(crate) fn tick_open(app: &mut App) {
     }
     if let Some(p) = app.player.as_mut() {
         p.prev_synced_chest = p.chest;
+    }
+    // W4-g56 — `Player.ChestChangeEvents` (`Player.cs:28760-28775`, the
+    // `:25384` call): a change to a WORLD chest (`lastChest != chest && chest
+    // >= 0`) arms `ItemSlot.forceClearGlowsOnChest` (`:28771`), consumed by
+    // the next glow decay. The bank values (−2..−5) never arm it (the C#
+    // `chest >= 0` gate); the gas-trap / big-mimic halves (`:28766`/:28770`)
+    // are unported. `lastChest` updates every tick.
+    let (cur_chest, last_chest) = app
+        .player
+        .as_ref()
+        .map_or((-1, -1), |p| (p.chest, p.last_chest));
+    if last_chest != cur_chest && cur_chest >= 0 {
+        app.slot_glow.force_clear_chest = true;
+    }
+    if let Some(p) = app.player.as_mut() {
+        p.last_chest = p.chest;
     }
 }
 
@@ -1574,6 +1641,7 @@ pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
         0,
         |idx| app.is_favorite(idx),
         if vault_enabled { vault } else { None },
+        |i| app.player.as_ref().is_some_and(|p| p.vault_favorites[i]),
     )
     .can_take
     {
@@ -2780,6 +2848,29 @@ mod tests {
         assert_eq!(toggle_open(&mut app, 20, 19, -3), 10, "fresh again");
         assert_eq!(toggle_open(&mut app, 10, 19, -2), 12, "the switch");
         assert_eq!(app.player.as_ref().unwrap().chest, -2);
+    }
+
+    /// W4-g56 — the tile-vault open's `disableVoidBag` guard (`Player.cs:33134-
+    /// 33139`): a locked vault slot leaves `num76 = -1`, so the shared open
+    /// block never runs — `toggle_open(-5)` answers 0 (no cue), the chest stays
+    /// closed, no stackSplit. The other banks (−2..−4) ignore the lock. The
+    /// slot-5 echo clear re-opens the vault. MP-only; the witness arms the lock
+    /// directly (the quick-stack producer is unported).
+    #[test]
+    fn w4_g56_the_tile_vault_open_refuses_while_the_slot_is_locked() {
+        let mut app = interact_app(world());
+        app.player.as_mut().unwrap().lock_net_slot(0);
+        assert_eq!(toggle_open(&mut app, 10, 19, -5), 0, "the locked vault refuses");
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "stays closed");
+        assert_eq!(app.stack_split, 0, "no stackSplit on the refused open");
+        // The other banks ignore the vault lock.
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 10, "the piggy opens");
+        assert_eq!(app.player.as_ref().unwrap().chest, -2);
+        // The echo clears the lock; the vault opens — with the piggy still
+        // open this is the SWITCH arm, sound 12 (`Player.cs:33248-33252`).
+        app.player.as_mut().unwrap().clear_void_bag_lock_on_echo(0);
+        assert_eq!(toggle_open(&mut app, 10, 19, -5), 12, "the cleared lock opens (the switch)");
+        assert_eq!(app.player.as_ref().unwrap().chest, -5);
     }
 
     /// DW-1.4 — the one open-container field carries the full C# index space

@@ -190,6 +190,16 @@ impl App {
             // (lava bubbles + pylon/void-lens) — snapshotted before the
             // destructure (it reads camera/zoom, which the block borrows).
             let draw_spawn_ctx = self.spawn_ctx();
+            // W4-g56 — `Main.DrawProjDirect`'s per-lens
+            // `TryInteractingWithVoidLens` call (`Main.cs:27924`): the
+            // draw-time interaction pass runs here (the right-press toggle
+            // fires inside it, exactly like the C#), the selection modes
+            // land on `void_lens_selection` for the projectile draw loop.
+            if !self.game_paused && self.menu.is_none() && self.front.is_none() {
+                crate::void_lens::update_selection(self);
+            } else {
+                self.void_lens_selection.clear();
+            }
             // The achievement popup's click target (`InGamePopups.cs:138`'s
             // `OpenAchievementsAndGoto`) — parked here because the goto
             // mutates `self` while the draw destructure holds its fields;
@@ -649,6 +659,25 @@ impl App {
                             p.kind, p.light, p.pos, p.w, p.h, good_world, &params,
                         ) {
                             self.entity_lights.add(x, y, rgb);
+                        }
+                        // W4-g56 — `AI_154_VoidLens`'s `VoidLensHelper.Update`
+                        // (`Projectile.cs:52195` → `VoidLensHelper.cs:34-38`):
+                        // `AddLight(Center, 0.4, 0.2, 0.9)` — the Vector2
+                        // overload tiles by `(int)(v / 16f)`
+                        // (`Lighting.cs:140-143`). The lens row's `light` is
+                        // 0, so the ProjLight chain above contributes
+                        // nothing; this is the AI-side source, collected
+                        // here like the tile lens's (one frame late, the
+                        // EntityLights convention). The dust half stays
+                        // skipped (the S1-G-1 wave-D RNG-order rule).
+                        if p.kind == crate::projectile::VOID_LENS && !self.game_paused {
+                            let cx = p.pos.x + p.w * 0.5;
+                            let cy = p.pos.y + p.h * 0.5;
+                            self.entity_lights.add(
+                                (cx / TILE_PX) as i32,
+                                (cy / TILE_PX) as i32,
+                                [0.4, 0.2, 0.9],
+                            );
                         }
                     }
                     // The projectile AI-arm lights, second wave (S1-E-5,
@@ -1701,7 +1730,38 @@ impl App {
                         scene_state,
                     );
                     draw_phase("projectiles");
-                    for p in projectiles.slots().iter().filter(|p| p.active) {
+                    for (pi, p) in projectiles.slots().iter().enumerate().filter(|(_, p)| p.active) {
+                        // W4-g56 — `Main.DrawProjDirect`'s type-734 arm
+                        // (`Main.cs:27920-27931`): the Void Lens draws via
+                        // `VoidLensHelper.DrawToDrawData` (the projectile
+                        // ctor — Center / Opacity / frame), never the
+                        // generic emit. `selectionMode` is the per-frame
+                        // `TryInteractingWithVoidLens` answer
+                        // (`App.void_lens_selection`, the draw pass runs it
+                        // per lens slot); the smart-cursor arm is unported
+                        // (mode 0/1 only).
+                        if p.kind == crate::projectile::VOID_LENS {
+                            let selection = self
+                                .void_lens_selection
+                                .get(pi)
+                                .copied()
+                                .unwrap_or(0);
+                            crate::render::pylons::draw_void_lens_projectile(
+                                renderer,
+                                light,
+                                &style,
+                                draw_cam,
+                                world_zoom,
+                                screen,
+                                anim_time,
+                                anim_time % 3600.0,
+                                [p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5],
+                                p.frame,
+                                1.0 - p.alpha as f32 / 255.0,
+                                selection,
+                            );
+                            continue;
+                        }
                         // The yoyo family's string anchors on the player's
                         // centre (`Main.cs:27943-27945`'s mountedCenter +
                         // gfxOffY) — the frame's rendered player carries both.
@@ -2552,6 +2612,8 @@ impl App {
                                 scroll_row: &mut self.chest_scroll_row,
                                 button_scales: &mut self.chest_button_scales,
                                 button_hovered: &mut self.chest_button_hovered,
+                                // W4-g56 — the world-chest glow (context 3).
+                                glow: Some(&self.slot_glow),
                                 audio: &mut self.audio,
                             },
                             self.in_reforge_menu.then(|| {
@@ -2584,6 +2646,13 @@ impl App {
                                 crate::bank::bank_for_chest(p.chest)
                                     .map(|bi| (&p.banks[bi][..], p.chest))
                             }),
+                            // W4-g56 — the void vault's favorite bits ride
+                            // the draw (context 32's `Inventory_Back19`).
+                            player.as_ref().and_then(|p| {
+                                (p.chest == -5).then_some(&p.vault_favorites)
+                            }),
+                            // W4-g56 — the chest-glow state (contexts 3/4/32).
+                            Some(&self.slot_glow),
                             // `Main.DrawPVPIcons`'s state (`Main.cs:42654`): the
                             // net-mode / team-based-spawns gates, the local
                             // player's `hostile` + `team` and `Main.teamCooldown`.
@@ -3428,6 +3497,12 @@ impl App {
                 m.cancel_wormhole = false;
             }
         }
+        // W4-g56 — `Main.cs:61811-61812`: `lastMouseInterface =
+        // mouseInterface; mouseInterface = false` at the update tail. The
+        // port recomputes the hover surfaces here (the draw tail — the
+        // button state cannot change mid-frame, the buff-latch precedent);
+        // the next draw's `TryInteractingWithVoidLens` reads it.
+        self.last_mouse_interface = self.mouse_interface_now();
         Some((stats, tile_stats))
     }
 

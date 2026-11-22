@@ -150,6 +150,11 @@ impl App {
         if self.team_cooldown > 0 {
             self.team_cooldown -= 1;
         }
+        // W4-g56 — `ItemSlot.UpdateInterface()` (`Main.cs:17046`): the slot
+        // glow decay runs once per game update beside the team cooldown (the
+        // same pre-`gameMenu`-return region, menus included). The chest pair
+        // also honours `forceClearGlowsOnChest` (`Player.ChestChangeEvents`).
+        self.slot_glow.update_interface();
         // `Main.DrawInventory`'s reforge head (`Main.cs:41557-41578`): the
         // button's hover-scale animation, the unhovered cooldown clear and
         // the force-close gate. Runs every frame the menu is open (the C#

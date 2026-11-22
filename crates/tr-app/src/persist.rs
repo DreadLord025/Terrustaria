@@ -56,6 +56,50 @@ pub fn player_path(world: &Path) -> PathBuf {
     world.with_extension("trplayer")
 }
 
+/// W4-g56 — the void-vault favorites sidecar: `<world>.trvault` beside the
+/// `.trwld`/`.trplayer`. The C# rides `bank4.item[i].favorited` in the `.plr`
+/// (`Player.cs:54856-54862`, the favourited bool at release >= 255,
+/// `Deserialize:55495`; research/99 row 47) plus the `voidVaultInfo` BitsByte
+/// (`:54863`, gate 199, row 48). The port's `.plr` writer (`player_file.rs`)
+/// emits those rows at fresh-ctor defaults and its reader drops them — the
+/// full bank4 byte-shape is W4-f44's lane (`task/W4-f44-save-plr-2`, the
+/// `PlayerFile.bank4` model + the verify-sweep), and the live-session
+/// `.trplayer` superset is W4-g88's lane (v7-v11). Until those land the vault
+/// favorites persist in this self-contained sidecar (the `.trfav` marker
+/// precedent, `player_file.rs:1058`): a 40-char `0`/`1` string, one per bank4
+/// slot, index 0 first. The `.plr` contract is documented in
+/// `docs/ANALYSIS.md` ("W4-g56 void-vault favorites sidecar contract") and
+/// `docs/research/274-void-family-bible.md` §1 (the RETIRE verdict): the
+/// sidecar COEXISTS through the f44/g88 folds — f44's `.plr` writers emit
+/// bank4 at fresh defaults (no live-session re-save on any tip), so this
+/// write retires only when character-load hydration AND the exit-save both
+/// land; restore `.plr` first, sidecar second (f44 research/132 §2c).
+pub fn vault_favorites_path(world: &Path) -> PathBuf {
+    world.with_extension("trvault")
+}
+
+/// Write the vault favorites sidecar (`Player.vault_favorites`, the 40 bank4
+/// favourited bools). A missing/empty vault writes all-`0` (the fresh default).
+pub fn save_vault_favorites(world: &Path, favorites: &[bool; crate::bank::BANK_SLOTS]) -> std::io::Result<()> {
+    let mut s = String::with_capacity(crate::bank::BANK_SLOTS);
+    for f in favorites {
+        s.push(if *f { '1' } else { '0' });
+    }
+    std::fs::write(vault_favorites_path(world), s)
+}
+
+/// Read the vault favorites sidecar; `None` when absent (a fresh world keeps
+/// the all-false default). A short/garbled line loads the slots it can and
+/// defaults the rest (the back-compat shape the `.trplayer` reader uses).
+pub fn load_vault_favorites(world: &Path) -> Option<[bool; crate::bank::BANK_SLOTS]> {
+    let s = std::fs::read_to_string(vault_favorites_path(world)).ok()?;
+    let mut out = [false; crate::bank::BANK_SLOTS];
+    for (slot, ch) in out.iter_mut().zip(s.trim().chars()) {
+        *slot = ch == '1';
+    }
+    Some(out)
+}
+
 /// The explored-map sidecar (`<world>.map`) next to the world file. Vanilla names
 /// it `<worldName>.map` under the player directory (`MapHelper.cs:3038`); this
 /// engine keeps it beside the `.trwld` like the player sidecar.
@@ -488,5 +532,32 @@ mod tests {
     #[test]
     fn map_path_sits_next_to_the_world() {
         assert_eq!(map_path(Path::new("a/b.trwld")), PathBuf::from("a/b.map"));
+    }
+
+    /// W4-g56 — the void-vault favorites sidecar round-trips: the 40 bank4
+    /// favourited bools write to `<world>.trvault` and read back; a fresh world
+    /// (no sidecar) loads `None` (the all-false default). The `.plr` bank4 rows
+    /// are f44's lane — this is the interim carrier (ANALYSIS contract).
+    #[test]
+    fn w4_g56_the_vault_favorites_sidecar_round_trips() {
+        let dir = crate::test_world_helpers::test_scratch("persist-vault-fav");
+        let path = dir.join("tr-vault-fav.trwld");
+        assert_eq!(vault_favorites_path(&path), dir.join("tr-vault-fav.trvault"));
+        // No sidecar yet: the load answers None (fresh default).
+        assert!(load_vault_favorites(&path).is_none());
+        let mut favs = [false; crate::bank::BANK_SLOTS];
+        favs[0] = true;
+        favs[7] = true;
+        favs[39] = true;
+        save_vault_favorites(&path, &favs).unwrap();
+        let back = load_vault_favorites(&path).expect("the sidecar reads");
+        assert_eq!(back, favs, "the 40 bools round-trip");
+        // An all-false vault writes a readable all-0 line.
+        save_vault_favorites(&path, &[false; crate::bank::BANK_SLOTS]).unwrap();
+        assert_eq!(
+            load_vault_favorites(&path).unwrap(),
+            [false; crate::bank::BANK_SLOTS]
+        );
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 }

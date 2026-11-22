@@ -878,12 +878,13 @@ fn run_layer(
 /// `ItemSorting.Sort` (`ItemSorting.cs:1492-1597`): the whole engine — stack
 /// merge, then every layer in `SetupSortingPriorities` order, then the items are
 /// written back into the lowest free slots in layer order. `ignore` slots are
-/// skipped (`params int[] ignoreSlots`, `:1502`/`:1554`). `with_feedback` is
-/// accepted for parity but ignored — it only drives `ItemSlot.SetGlow`
-/// (`:1584-1587`), which the port has no equivalent for; the resulting order is
-/// identical (see the module doc).
-pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [f32; 4]) {
-    let _ = with_feedback;
+/// skipped (`params int[] ignoreSlots`, `:1502`/`:1554`). W4-g56: `with_feedback`
+/// now drives the `ItemSlot.SetGlow` ramp (`:1584-1587`) — the returned
+/// `(slot, hue)` pairs are the per-written-back-slot glow the caller applies to
+/// `App.slot_glow` (the chest flag is the caller's open-container state,
+/// `Main.player[myPlayer].chest != -1`). With `with_feedback` false the vec is
+/// empty and the resulting order is identical (the module doc's pre-glow pin).
+pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [f32; 4]) -> Vec<(usize, f32)> {
     let layers = sort_order(mult[0], mult[1], mult[2], mult[3]);
 
     // `_sort_itemsToSort`: non-ignored slots holding a real, non-favorited item
@@ -952,9 +953,15 @@ pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [
     available.sort_unstable();
 
     // Run every layer; each returns the indexes it sorted (`:1564-1572`).
+    // `_sort_counts` (`:1567-1571`): one entry per non-empty layer, in order —
+    // the write-back's hue ramp walks it (`:1579-1593`).
     let mut sorted_indexes: Vec<usize> = Vec::new();
+    let mut counts: Vec<usize> = Vec::new();
     for (layer, li) in &layers {
         let claimed = run_layer(layer, *li, inv, &mut items_to_sort);
+        if !claimed.is_empty() {
+            counts.push(claimed.len());
+        }
         sorted_indexes.extend(claimed);
     }
     // Anything left (the C# appends it after the layers, `:1573`); with
@@ -967,20 +974,52 @@ pub fn sort(inv: &mut [ItemSlot], ignore: &[usize], with_feedback: bool, mult: [
     for &i in &sorted_indexes {
         inv[i] = EMPTY_SLOT;
     }
+    // W4-g56 — the Sort-feedback glow (`ItemSorting.cs:1579-1593`): `num3 =
+    // 1/_sort_counts.Count`, `num4 = num3/2`; per written-back slot
+    // `SetGlow(num5, num4, chest != -1)` (`:1586`), then `_sort_counts[0]--`
+    // and, at 0, remove the head and `num4 += num3` (the next layer band's
+    // hue). The port collects `(slot, hue)` pairs; the caller applies them to
+    // the glow state with the open-container flag (`with_feedback` gates the
+    // SetGlow only — `:1584`; the counts walk itself runs ungated). The
+    // leftover tail (`:1573`) has no count entry,
+    // so it keeps the last band's hue (the C# `_sort_counts[0]` would throw on
+    // an empty list; with `Last - Trash` matching everything the tail is empty
+    // in practice — the port guards the index).
+    let mut feedback: Vec<(usize, f32)> = Vec::new();
+    let num3 = if counts.is_empty() { 0.0 } else { 1.0 / counts.len() as f32 };
+    let mut num4 = num3 / 2.0;
     for (m, item) in cache.iter().enumerate() {
         if m >= available.len() {
             break;
         }
-        inv[available[m]] = *item;
+        let slot = available[m];
+        inv[slot] = *item;
+        if with_feedback {
+            feedback.push((slot, num4));
+        }
+        // `:1588-1593` — the counts walk runs OUTSIDE the withFeedback gate
+        // in the C# (only the SetGlow is gated); keeping it ungated is
+        // order-identical and matches the source structure.
+        if !counts.is_empty() {
+            counts[0] -= 1;
+            if counts[0] == 0 {
+                counts.remove(0);
+                num4 += num3;
+            }
+        }
     }
+    feedback
 }
 
 /// `ItemSorting.SortChest` (`ItemSorting.cs:1629-1653`) — the chest Sort button.
 /// Sorts `slots` (`chest.item`, `chest.maxItems` long) with no ignored slots and
 /// feedback on; the net-sync half is a no-op outside multiplayer
-/// (`Main.netMode != 1`, `:1669`).
-pub fn sort_chest(slots: &mut [ItemSlot], mult: [f32; 4]) {
-    sort(slots, &[], true, mult);
+/// (`Main.netMode != 1`, `:1669`). W4-g56: returns the Sort-feedback glow pairs
+/// (`(slot, hue)`) the caller applies to `App.slot_glow`'s chest pair (the
+/// open-container flag is always true here — `SortChest` only runs with a
+/// container open, `:1632`).
+pub fn sort_chest(slots: &mut [ItemSlot], mult: [f32; 4]) -> Vec<(usize, f32)> {
+    sort(slots, &[], true, mult)
 }
 
 #[cfg(test)]
@@ -1044,5 +1083,31 @@ mod tests {
         assert_eq!(inv[0].kind, 24, "the weapon sorts before the block");
         assert_eq!(inv[1].kind, 2);
         assert!(is_empty(&inv[2]));
+    }
+
+    /// W4-g56 — the Sort-feedback glow (`ItemSorting.cs:1579-1593`): with
+    /// `with_feedback` true the write-back emits one `(slot, hue)` pair per
+    /// written slot, the hue ramping by layer band (`num3 = 1/counts.Count`,
+    /// `num4 = num3/2`, `+num3` per exhausted band). Two layers (melee weapon +
+    /// tiles) → `num3 = 0.5`, the first band's hue 0.25, the second 0.75. With
+    /// `with_feedback` false the vec is empty (the order is unchanged).
+    #[test]
+    fn w4_g56_the_sort_feedback_emits_the_layer_band_hues() {
+        let mut inv = [EMPTY_SLOT; 4];
+        inv[0] = slot(2, 10); // dirt — the tiles band
+        inv[1] = slot(24, 1); // the melee weapon band
+        let glow = sort(&mut inv, &[], true, [1.0; 4]);
+        assert_eq!(glow.len(), 2, "one pair per written slot");
+        // The weapon sorts to slot 0 (first band, hue 0.25), dirt to slot 1
+        // (second band, hue 0.75).
+        assert_eq!(glow[0].0, 0);
+        assert!((glow[0].1 - 0.25).abs() < 1e-6, "the first band hue num3/2");
+        assert_eq!(glow[1].0, 1);
+        assert!((glow[1].1 - 0.75).abs() < 1e-6, "the second band hue +num3");
+        // The no-feedback run emits nothing.
+        let mut inv2 = [EMPTY_SLOT; 4];
+        inv2[0] = slot(2, 10);
+        inv2[1] = slot(24, 1);
+        assert!(sort(&mut inv2, &[], false, [1.0; 4]).is_empty());
     }
 }

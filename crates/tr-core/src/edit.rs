@@ -322,7 +322,8 @@ pub fn interact_at(
     // vanilla opens via `OpenChest(num74, num75, num76)`; the port's banks
     // are player-bounded (`Player.bank[1..4]`, `Player.cs:1580-1591`), so
     // only the chest index moves. The vault's `disableVoidBag` gate
-    // (:33127-33133) has no port mechanic yet.
+    // (:33134-33139) is enforced downstream by `chest::toggle_open`
+    // (W4-g56 — the MP-only net-slot lock, `Player.disable_void_bag`).
     if matches!(t.kind, 29 | 97 | 463 | 491) {
         let bank = match t.kind {
             29 => -2,

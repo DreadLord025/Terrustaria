@@ -512,8 +512,9 @@ into the favorite toggle (the `ItemSlot.cs:602-625` cursorOverride-3 arm, sound 
 the `can_favorite_at` gate — the C# binding; the row sketch's right-click wording was
 wrong); favorited slots swap their background to the gold `Inventory_Back10`
 (`ItemSlot.cs:2149-2156`, packed as `lookups.ui_back10`, tint still
-`Main.inventoryBack`; `Inventory_Back17`/`_19` are the gamepad-highlight and
-loadout variants — neither surface is ported) and shift-transfer refuses them.
+`Main.inventoryBack`; `Inventory_Back17` is the gamepad-highlight variant —
+unported; `Inventory_Back19` is the void vault's favorite frame, landed with
+W4-g56 — see the void-vault section below) and shift-transfer refuses them.
 The coin (ctx 1) and ammo (ctx 2) rows are click surfaces too
 (`Main.cs:41752-41782` handle every cell they draw): left runs the shared
 action-0 move behind `PickItemMovementAction`'s gate (coins 71-74 only; the
@@ -542,6 +543,93 @@ the game UI under `InGameUI`) — the full list is in `docs/ANALYSIS.md` →
 Screenshots: `TR_CHEST` stages a stocked style-0 chest on the spawn plateau and opens
 the panel deterministically (the `TR_INV`/`TR_CRAFT` presence-flag pattern); double
 runs are SHA256-equal.
+
+### Void vault (`chest = -5`, W4-g56) — the lens projectile + the context-32 grid
+
+The Void Bag's storage is reachable two ways: the Void Vault tile (491, the
+S1-P-i43 open path) and the Void Lens projectile (734) the bag throws. Both open
+the same `Player.chest = -5` / bank index 3 window; the lens adds the tracker.
+
+The lens projectile (`projectile/data.rs` + `projectile.rs`): the `SetDefaults`
+row (`Projectile.cs:7726-7735` — 30×24, aiStyle 154, timeLeft 10800, alpha 255,
+penetrate 1) + `projFrames[734] = 8` (`Main.cs:8504`); `AI_154_VoidLens`
+(`Projectile.cs:52154-52196`) — the same-owner/same-kind sibling cull (the
+lower-timeLeft slot dies), ×0.94 velocity decay, direction 1, the 5-tick frame
+machine, the 0.03/tick Opacity fade-in through the setter's `(int)Clamp`
+truncation; the free `HandleMovement` integrate (tileCollide false) runs even on
+the culled tick. `damage_player` exempts the lens (no friendly fire). The draw
+is `VoidLensHelper.DrawToDrawData` (`VoidLensHelper.cs:77-104`) — the shared
+`render/pylons.rs::void_lens_sprites_at` body both the tile pass (S1-G-1 wave D)
+and the projectile ctor feed: base sprite tinted
+`Lerp(GetColor(tile), White, 0.5) × opacity`, the 3-copy 1.1-scale purple ring
+at the 0.34f cadence, the `Extra_93` selection glow; `draw_with_hand`/the generic
+projectile emit early-return for 734 (`Main.DrawProjDirect`'s type arm,
+`Main.cs:27920-27931`). The AI-side `AddLight(0.4, 0.2, 0.9)`
+(`VoidLensHelper.cs:34-38`) feeds the `EntityLights` pair in the draw's
+proj-light loop (one frame late, the tile-lens precedent).
+
+The interaction is DRAW-time, exactly like the C#: `frame/draw.rs` calls
+`void_lens::update_selection` at the draw head (gated
+`!game_paused && menu.is_none() && front.is_none()`), which runs
+`Main.TryInteractingWithVoidLens` (`Main.cs:37673-37745`) per active lens and
+stores the selection modes on `App.void_lens_selection` (indexed by projectile
+slot). The gate chain: in-range (`IsProjectileInteractableAndInInteractionRange`
+— the hitbox's closest point to the player centre, tile-truncated, inside the
+live `tile_interaction_reach` bounds) + the world-mouse hitbox hover +
+`!lastMouseInterface` (`App.last_mouse_interface`, recomputed at the draw tail
+by `App::mouse_interface_now()` — the `Main.cs:61811` latch). A hover arms
+`noThrow = 2`; the right press toggles: re-click on the open vault closes with
+Item130, else `stackSplit = 600`, `chest = -5`, chestX/Y off the lens CENTRE,
+the tracker latch (`Player.void_lens_chest: LensTracker` — the packed
+`ProjectileKey` bits, `ProjectileKey.cs:27-32`), the talk/shop/crafting clears,
+the inventory open, Item130 (`void_lens.rs::try_interacting`). The per-tick
+close is `HandleBeingInChestRange`'s lens arm (`Player.cs:31051-31073`) via
+`void_lens::tick_tracker` at `chest::tick_open`'s head: a dead/absent tracked
+lens or an out-of-range hitbox point force-closes with Item130; the live arm
+re-seeds chestX/Y from the closest point each tick and its `tracked_open` gate
+skips the tile-range close (the C# `flag` return, `:31074-31077`). The
+`chest != -5` / `chest == -1` arms clear the tracker (`:31023-31026`/`:31095`);
+`UpdateDead` clears it too. The C# bank-tile open path does NOT clear trackers
+(only the dresser default arm does) — a tile-vault open relies on the default
+tracker answering `try_get_active = None`.
+
+The context-32 grid (`ui/inventory.rs` bank panel): the void vault draws the
+same 10×4 window as the banks but with context 32 (`ChestUI.cs:356-359`) — the
+`Inventory_Back2` frame (contexts 4 AND 32, `ItemSlot.cs:2218-2221`, packed as
+`lookups.ui_back2`). The vault is the one bank whose slots CAN favorite
+(`canFavoriteAt[32]`, `ItemSlot.cs:386-394`): `Player.vault_favorites: [bool;
+40]` (the `.plr` bank4 per-slot bools), Alt+left-click toggles (the cursor-3
+arm over the bank cell, sound 12), the favorited cell swaps to the purple
+`Inventory_Back19` frame (`ItemSlot.cs:2155-2158`, `lookups.ui_back19`; the
+gold frame stands in on a content-less build). An emptied cell clears its
+favorite (the flag rides a non-air stack). LootAll parks the favorited slots
+outside the drain and restores them (`ChestUI.cs:451`); the bank Sort row
+(id 4, `bank_button_at` now 0..5) runs `ItemSorting.SortChest` over the open
+bank (`ItemSorting.cs:1629-1653`); right-click runs the ctx-32 `HasItemSwap`
+cycle (the Void Bag 4131 ↔ Closed Void Bag 5325 pair) then the `SwapEquip`
+ladder ahead of the paced pickup split (`ItemSlot.cs:1668-1697`). The pickup
+room probe (`item.rs::item_space`) reads the vault slot's OWN favorited flag
+for the Cofveve accept (`ItemSpaceForCofveve`, `Player.cs:39199-39218`).
+
+The void-chain continuation (items 1-5) closes the use-side gaps: the HELD-item
+right-click 4131↔5325 swap (`ItemCheck_ManageRightClickFeatures`,
+`Player.cs:31560-31565`, sound 7) now flips the held bag in place — distinct
+from the slot-context cycle above; the `hovering_lens` probe keeps the lens-open
+interaction exclusive (C# has NO bag-open spawn-suppression — LMB fires the lens
+734 via the generic `ItemCheck_Shoot`). The `disableVoidBag` net-lock is ported
+(MP-only, SP-inert — `Player.disable_void_bag` + the two open guards). The vault
+favorites now PERSIST via the `<world>.trvault` sidecar (the `.plr` bank4 rows
+are f44's lane, the fold contract in ANALYSIS). The `SetGlowForChest` glow
+package landed (`ui/glow.rs`): the open-time clear, the Sort-feedback hue ramp,
+the per-frame decay and the context-3/4/32 draw tint (`Inventory_Back13` +
+base→hsl lerp). The auto-pickup is the already-landed `GetItem` void-bag arm
+(S1-P-i43/i47/i50), confirmed complete.
+
+Deviations (ANALYSIS "The void vault UI (W4-g56)"): the smart-cursor/gamepad
+selection arms, the cursorItemIcon surface and the lens dust rolls stay
+unported; the `FillAmmoFromInventory` ammo-row glow (`ItemSorting.cs:1695`)
+stays out (the ammo-sort producer is unported); the bank CONTENTS still do not
+persist (f44's lane).
 
 ### Minimap frame (`ui/minimap.rs`, `MinimapFrame.cs`)
 

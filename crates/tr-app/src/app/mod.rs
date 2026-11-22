@@ -735,6 +735,23 @@ pub(crate) struct App {
     /// hover sites are unported, so nothing arms it today — the field keeps
     /// the check's shape.
     pub(crate) no_throw: i32,
+    /// W4-g56 — `Player.lastMouseInterface` (`Player.cs:1454`, latched at
+    /// `Main.cs:61811-61812`: last frame's `mouseInterface`): the
+    /// void-lens interaction gate reads it (`Main.cs:37688`). The port
+    /// recomputes it at the interface-draw tail from the same hover
+    /// surfaces that set `mouseInterface` (the slot/panel hit tests).
+    pub(crate) last_mouse_interface: bool,
+    /// W4-g56 — the per-slot `TryInteractingWithVoidLens` answers
+    /// (`Main.cs:27924`), computed once per draw at the draw head
+    /// (`void_lens::update_selection`) and read by the projectile draw
+    /// loop's type-734 arm. Indexed by projectile slot; 0 for non-lenses.
+    pub(crate) void_lens_selection: Vec<u8>,
+    /// W4-g56 — the inventory/chest slot glow (`ItemSlot.cs`'s four glow
+    /// arrays, `ui/glow.rs`): the open-time clear (`SetGlowForChest`), the
+    /// Sort-feedback writer (`ItemSorting.Sort:1586`), the per-frame decay
+    /// (`UpdateInterface:522-544`) and the draw tint (`ItemSlot.Draw:2305-
+    /// 2326`). The chest pair rides the open container (contexts 3/4/32).
+    pub(crate) slot_glow: crate::ui::glow::GlowState,
     /// `Main.mouseRightRelease` as the vanilla recomputes it at the END of
     /// every interface draw (`Main.cs:62458-62465`: `!Main.mouseRight`) —
     /// the buff bar's cancel reads `mouseRight && mouseRightRelease`
@@ -3816,6 +3833,15 @@ impl App {
                 // below builds from.
                 loaded_kills = saved.kills;
             }
+            // W4-g56 — the void-vault favorites restore from the `.trvault`
+            // sidecar (the `.plr` bank4-favourited rows are f44's lane; the
+            // contract is in ANALYSIS). A fresh world (no sidecar) keeps the
+            // all-false default.
+            if let Some(favs) = persist::load_vault_favorites(&world_path) {
+                if let Some(p) = player.as_mut() {
+                    p.vault_favorites = favs;
+                }
+            }
         }
         if let Some(n) = crate::env::coins() {
             coins = n;
@@ -4791,6 +4817,9 @@ impl App {
             control_throw: false,
             drop_right_edge: false,
             no_throw: 0,
+            last_mouse_interface: false,
+            void_lens_selection: Vec::new(),
+            slot_glow: crate::ui::glow::GlowState::default(),
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],

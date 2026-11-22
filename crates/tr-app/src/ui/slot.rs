@@ -30,6 +30,9 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         // `ItemSlot.cs:2215-2218`: the world-chest slots (3) are
         // `Inventory_Back5`.
         3 => 8,
+        // W4-g56 — `ItemSlot.cs:2218-2221`: the bank (4) AND void-vault (32)
+        // slots are `Inventory_Back2`.
+        4 | 32 => 11,
         // `ItemSlot.cs:2222-2225`: reforge (5) and guide (7) are `Inventory_Back4`.
         5 | 7 => 2,
         // `ItemSlot.cs:2226-2228`: trash (6) is `Inventory_Back7`.
@@ -69,6 +72,7 @@ pub(crate) fn background_for(
         8 => lookups.ui_back5,       // Inventory_Back5
         9 => lookups.ui_back10,      // Inventory_Back10
         10 => lookups.ui_back6,      // Inventory_Back6
+        11 => lookups.ui_back2,      // Inventory_Back2 (banks/vault, W4-g56)
         _ => lookups.ui_back,        // Inventory_Back
     }
 }
@@ -95,14 +99,21 @@ pub(crate) fn favorited_background_active(context: i32, favorited: bool, item: &
 }
 
 /// `ItemSlot.cs:2154-2158`: the sheet the favorited arm swaps in — the gold
-/// `Inventory_Back10`, or `Inventory_Back19` for context 32 (the loadout
-/// panel, not ported, so the base sheet stands in for it). The tint stays
-/// `Main.inventoryBack`; `Main.OurFavoriteColor` (`Main.cs:66748`) colours the
-/// tooltip name, not the frame.
+/// `Inventory_Back10`, or `Inventory_Back19` for context 32 (the void
+/// vault's purple frame, W4-g56). The tint stays `Main.inventoryBack`;
+/// `Main.OurFavoriteColor` (`Main.cs:66748`) colours the tooltip name, not
+/// the frame.
 pub(crate) fn favorited_background_for(
     lookups: &assets::Lookups,
+    context: i32,
 ) -> Option<SheetRect> {
-    lookups.ui_back10
+    if context == 32 {
+        // `:2155-2158` — the vault favorite frame; the packed sheet may be
+        // absent (a content-less build), the gold frame stands in then.
+        lookups.ui_back19.or(lookups.ui_back10)
+    } else {
+        lookups.ui_back10
+    }
 }
 
 /// `ItemSlot.cs:2403-2470`: the `Extra_54` frame index for an empty equipment
@@ -547,7 +558,7 @@ pub(crate) fn draw_slot(
     tint: [f32; 4],
     pulse: super::UiPulse,
 ) {
-    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, false, pulse);
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, false, pulse, None);
 }
 
 /// [`draw_slot`] with the favorite flag the C# reads from the item
@@ -567,7 +578,33 @@ pub(crate) fn draw_slot_favorited(
     tint: [f32; 4],
     pulse: super::UiPulse,
 ) {
-    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, true, pulse);
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, true, pulse, None);
+}
+
+/// W4-g56 — [`draw_slot_favorited`] with the chest-glow entries
+/// (`ItemSlot.Draw:2314-2326`): a glowing (`time > 0`) non-air non-favorited
+/// slot in context 3/4/32 swaps to `Inventory_Back13` and lerps the base tint
+/// toward `hslToRgb(hue, 1, 0.5)` by `t²/2`. `glow` is `Some((time, hue))` for
+/// the open-container slots (the caller reads `App.slot_glow`'s chest pair);
+/// `None` keeps the plain background. The favorite arm still wins (the C#
+/// glow gate reads `!inv[slot].favorited`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_slot_glow(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    x: f32,
+    y: f32,
+    context: i32,
+    index: i32,
+    selected: bool,
+    scale: f32,
+    tint: [f32; 4],
+    pulse: super::UiPulse,
+    favorite: bool,
+    glow: Option<(i32, f32)>,
+) {
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, favorite, pulse, glow);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -584,6 +621,7 @@ fn draw_slot_flagged(
     tint: [f32; 4],
     favorite: bool,
     pulse: super::UiPulse,
+    glow: Option<(i32, f32)>,
 ) {
     // `ItemSlot.cs:2109-2112` + `Main.cs:43615`: the derived `lightColor`.
     let light_color = if context == 13 {
@@ -599,9 +637,23 @@ fn draw_slot_flagged(
         // `ItemSlot.cs:2149-2156`: the favorited arm sits at the head of the
         // C# sheet chain — it beats the hotbar row frame (`context == 0 && slot
         // < 10` → `Inventory_Back9`) too.
-        (favorited_background_for(lookups), tint)
+        (favorited_background_for(lookups, context), tint)
     } else {
         (background_for(lookups, context, index), tint)
+    };
+    // W4-g56 — `ItemSlot.cs:2314-2326`: the chest-glow arm runs AFTER the
+    // context sheet chain and overrides it (a glowing non-air non-favorited
+    // slot in context 3/4/32 swaps to `Inventory_Back13` + the lerped tint).
+    // The favorite gate (`!inv[slot].favorited`) and the air gate
+    // (`!inv[slot].IsAir`) match the C#; the favorite arm above already won
+    // for a favorited slot, so this only fires for the plain ones.
+    let (back, tint) = if !favorite && item.count > 0 {
+        match glow.and_then(|(time, hue)| super::glow::chest_glow_tint(context, time, hue)) {
+            Some(glow_tint) => (lookups.ui_inv_bg13, glow_tint),
+            None => (back, tint),
+        }
+    } else {
+        (back, tint)
     };
     // `ItemSlot.cs:2499`: cell = `value.Size()`, the chosen sheet's native size
     // (the retail `Inventory_Back*` sheets are 52x52; the 56 px is the layout
@@ -961,7 +1013,7 @@ mod tests {
         };
         let pick = |c, f| {
             if favorited_background_active(c, f, &favorited) {
-                favorited_background_for(&lk)
+                favorited_background_for(&lk, c)
             } else {
                 background_for(&lk, c, 0)
             }
@@ -1068,5 +1120,30 @@ mod tests {
         assert_eq!(row(10), 2);
         assert_eq!(row(14), 2);
         assert_eq!(row(15), 0);
+    }
+
+    /// W4-g56 — `ItemSlot.cs:2155-2158`: the context-32 favorite swaps to
+    /// `Inventory_Back19` (the vault's purple frame), not the gold one; the
+    /// unpacked sheet falls back to the gold frame.
+    #[test]
+    fn w4_g56_the_vault_favorite_uses_inventory_back19() {
+        let mut lk = assets::Lookups::default();
+        lk.ui_back10 = Some(rect(10));
+        assert_eq!(
+            favorited_background_for(&lk, 32).map(|r| r.x),
+            Some(10),
+            "the unpacked _19 falls back to the gold frame"
+        );
+        lk.ui_back19 = Some(rect(19));
+        assert_eq!(favorited_background_for(&lk, 32).map(|r| r.x), Some(19));
+        assert_eq!(
+            favorited_background_for(&lk, 0).map(|r| r.x),
+            Some(10),
+            "the grid keeps the gold frame"
+        );
+        // `ItemSlot.cs:2218-2221`: contexts 4 AND 32 draw Inventory_Back2.
+        lk.ui_back2 = Some(rect(2));
+        assert_eq!(background_for(&lk, 4, 0).map(|r| r.x), Some(2));
+        assert_eq!(background_for(&lk, 32, 7).map(|r| r.x), Some(2));
     }
 }
