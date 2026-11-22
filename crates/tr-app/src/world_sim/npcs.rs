@@ -4900,15 +4900,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 n.kind.net_id(),
             ));
         }
+        let mut homed = 0;
         for (i, tx, ty, net_id) in asking {
             // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            // `NPC.unlockedTruffleSpawn` has no ported field yet (no Truffle
+            // kind), so the special-conditions gate reads false.
             if let Some((hx, hy)) =
-                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id)
+                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id, false)
             {
-                // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
-                // the home assigns, the homeless flag clears.
+                // `QuickFindHome`'s success arm (`WorldGen.cs:5776-5780`):
+                // homeTileX/Y = bestX/bestY, homeless = false,
+                // homelessDespawn = false, NotifyProgressionEvent(8).
                 npcs[i].home = Some((hx, hy));
+                npcs[i].homeless_despawn = false;
+                homed += 1;
             }
+        }
+        // The NO_HOBO notifications after the mutable pass (the borrow seam
+        // — `notify_progression_net` needs `&mut App`; one per move-in,
+        // `WorldGen.cs:5780`).
+        for _ in 0..homed {
+            let _ = app.notify_progression_net(8);
         }
     }
     // `Main.UpdateTime_SpawnTownNPCs` (`Main.cs:65542-66116`, M4-TOWN-1b):
@@ -4924,15 +4936,86 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     {
         // `:65763-65784` — the five SpawnAllowed_* flags read the inventory.
         // The Party Girl's roll is `Main.rand.Next(40) == 0`, drawn ONCE PER
-        // CHECK — the C# draws it after `UpdateNpcsSpawnsTownNPCs`'s
-        // `checkForSpawns >= 7200` early-return (`Main.cs:65550-65554`), so
-        // the draw gates on the same boundary (the counter increments
+        // CHECK — the C# draws it after `UpdateTime_SpawnTownNPCs`'s
+        // `checkForSpawns >= 7200/rate` early-return (`Main.cs:65550-65554`),
+        // so the draw gates on the same boundary (the counter increments
         // inside `update_time_spawn_town_npcs`; the pre-increment value
         // predicts whether this tick is a check). The `UpdateTime_SpawnTownNPCs`
         // identity runs under the `UpdateTime` swap (`Main.cs:65542`,
         // called `:65153`).
-        let party_roll = app.town_arrival.check_for_spawns + 1 >= 7200
-            && app.rngs.stream(RngKey::UpdateTime).next_max(40) == 0;
+        //
+        // W4-d119 phase 2b — `GetWorldUpdateRate()` (`WorldGen.cs:72020-72030`):
+        // `min(desiredWorldTilesUpdateRate, 24)`, 0 under FreezeTime. The
+        // port's desired rate is the creative time-rate slider folded with
+        // the all-asleep x5 (`Main.UpdateTimeRate`, `Main.cs:6199-6224` —
+        // the dial fast-forward pins it to 1, `:6204`); the check interval
+        // is `7200 / rate` and a zero rate skips the whole function.
+        let rate = if app.world.is_fast_forwarding() {
+            1
+        } else {
+            let slider = app.creative_powers.time_rate();
+            if slider <= 0.0 {
+                0
+            } else {
+                let base = slider as i32;
+                if app.world.all_players_asleep { base * 5 } else { base }
+            }
+        }
+        .min(24);
+        let is_check = rate > 0
+            && app.town_arrival.check_for_spawns + 1 >= 7200 / rate;
+        let party_roll =
+            is_check && app.rngs.stream(RngKey::UpdateTime).next_max(40) == 0;
+        // W4-d119 — the home-LOSS half of mid-game relocation: on the same
+        // 7200-tick check boundary, `Main.UpdateTime_SpawnTownNPCs` runs
+        // `WorldGen.QuickFindHome(k)` on every housed resident that is not the
+        // Travelling Merchant (368) / Old Man (37) / Skeleton Merchant (453)
+        // and not already homeless (`Main.cs:65607-65614`). A destroyed room
+        // re-scans: QuickFindHome either re-homes the NPC at a new scored spot
+        // or sets `homeless = true` (`WorldGen.cs:5785`/`:5790`). The port's
+        // `home` Option models homeless as `None`, so a failed scan clears it.
+        let mut rehomed = 0;
+        if is_check {
+            let world = &app.world;
+            let npcs = &mut app.npcs;
+            // Snapshot the asking set first: the room scan reads the whole NPC
+            // list (occupancy), so the mutable writes run after the reads.
+            let mut asking: Vec<(usize, i32, i32, i32)> = Vec::new();
+            for (i, n) in npcs.iter().enumerate() {
+                let id = n.kind.net_id();
+                if !n.kind.is_town_npc() || n.home.is_none() || matches!(id, 368 | 37 | 453) {
+                    continue;
+                }
+                let (hx, hy) = n.home.unwrap();
+                // `QuickFindHome`'s outer guard (`WorldGen.cs:5736`): an
+                // out-of-range home tile makes the whole call a NO-OP — the
+                // NPC keeps its home, it does NOT go homeless. Only an
+                // in-range home whose scan fails unhouses (`:5785`/`:5790`).
+                if hx <= 10 || hy <= 10 || hx >= world.width - 10 || hy >= world.height {
+                    continue;
+                }
+                asking.push((i, hx, hy, id));
+            }
+            for (i, hx, hy, id) in asking {
+                // `QuickFindHome(k)` scans around the NPC's own home tile.
+                match crate::town::quick_find_home(world, npcs, hx, hy, Some(i), id, false) {
+                    Some((nx, ny)) => {
+                        npcs[i].home = Some((nx, ny));
+                        npcs[i].homeless_despawn = false;
+                        rehomed += 1;
+                    }
+                    None => {
+                        // `:5785`/`:5790`: the room is gone — homeless.
+                        npcs[i].home = None;
+                    }
+                }
+            }
+        }
+        // NO_HOBO per re-home (`WorldGen.cs:5780`), after the mutable pass
+        // releases the `npcs` borrow (`notify_progression_net` needs `&mut App`).
+        for _ in 0..rehomed {
+            let _ = app.notify_progression_net(8);
+        }
         let max_hp = app.player.as_ref().map_or(0, |p| p.max_hp);
         let residents = app
             .npcs
@@ -4940,6 +5023,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .filter(|n| n.hp > 0 && n.kind.is_town_resident())
             .count() as i32;
         let no_dyes: [crate::item::ItemSlot; 0] = [];
+        // `Main.GetBestiaryProgressReport()` (`Main.cs:65770`) — the
+        // Zoologist's `CompletionPercent >= 0.1f` gate (W4-d119 phase 2b).
+        let bestiary_completion = crate::bestiary::completion_percent(&app.bestiary.kills);
         let chosen = {
             let ctx = crate::town_arrival::ArrivalContext {
                 world: &app.world,
@@ -4948,6 +5034,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 max_hp,
                 party_roll,
                 residents,
+                world_update_rate: rate,
+                bestiary_completion,
+                // `BirthdayParty.GenuineParty` (`Main.cs:65795`) — flag8's
+                // first term for the TownSlimeGreen 678 gate (W4-d119 seal).
+                // NOT `party_is_up`: a manual monolith party does not open it.
+                genuine_party: app.world_events.genuine_party,
             };
             // `WorldGen.IsThereASpawnablePrioritizedTownNPC`: every ladder arm
             // needs its room ready, and the port's rooms are found by the same
@@ -4964,9 +5056,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if let Some(player) = app.player.as_ref() {
                 let xt = (player.x / TILE_PX) as i32;
                 let yt = (player.y / TILE_PX) as i32;
-                if let Some((hx, hy)) =
-                    crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None, kind.net_id())
-                {
+                if let Some((hx, hy)) = crate::town::quick_find_home(
+                    &app.world,
+                    &app.npcs,
+                    xt,
+                    yt,
+                    None,
+                    kind.net_id(),
+                    false,
+                ) {
                     // `WorldGen.SpawnTownNPC`'s relocation arm
                     // (`WorldGen.cs:5428` `FindNPCLookingForHomeThatCanMoveIn`
                     // → `:5453-5463`): an already-live homeless NPC of this
@@ -7328,6 +7426,14 @@ mod tests {
         // Arm the vanilla arrival gate: the C# checks every 7200 ticks
         // (`Main.cs:65548-65555`), so the next update is a check.
         app.town_arrival.check_for_spawns = 7199;
+        // The DyeTrader's `num40 >= 4` term (`Main.cs:65860-65863`, W4-d119
+        // phase 2b): seed three more residents beside the Guide.
+        for kind in [NpcKind::Merchant, NpcKind::Nurse, NpcKind::ArmsDealer] {
+            let mut n = Npc::new(kind, 32.0, 100.0, 1, 0.0);
+            n.home = Some((2, 6));
+            n.hp = n.max_hp;
+            app.npcs.push(n);
+        }
         // The party roll draws `Next(40)` from stream(UpdateTime) — seed
         // the streams so the roll is deterministic for the fixture.
         app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
@@ -7353,6 +7459,7 @@ mod tests {
         // Arm the vanilla arrival gate: the C# checks every 7200 ticks
         // (`Main.cs:65548-65555`), so the next update is a check.
         app.town_arrival.check_for_spawns = 7199;
+        // The `num40 >= 4` roster is already seeded above (W4-d119 phase 2b).
         // The party roll draws `Next(40)` from stream(UpdateTime) — seed
         // the streams so the roll is deterministic for the fixture.
         app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);

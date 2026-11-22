@@ -379,9 +379,11 @@ fn clear_wall_paint_and_coating(world: &mut World, x: i32, y: i32) {
 /// `Main.wallHouse` — the FULL table (`Main.cs:9741-9789`, `:10353-10577`,
 /// incl. the `for (num4 = 153; num4 < 167; num4++)` loop `:10367-10370`): the
 /// 279 "safe" walls a house may be enclosed by, and the walls the hammer /
-/// replacement / friendly-wall gates treat as player-made. This is the faithful
-/// wall-edit table; `housing::is_house_wall` is a narrower room-check subset
-/// (housing scope, untouched here). Unsafe worldgen walls (dirt 2, stone-unsafe
+/// replacement / friendly-wall gates treat as player-made. This is the ONE
+/// landed copy of the table — the housing room check reads it too
+/// (`housing::is_house_wall` delegates here, g44e dedupe: the C#
+/// `CheckRoom:6204`/`:6212` and `SpawnTownNPC:5411` read the same
+/// `Main.wallHouse`). Unsafe worldgen walls (dirt 2, stone-unsafe
 /// variants, dungeon 7/8/9/94-99, biome walls, …) are deliberately absent.
 pub fn wall_house(wall: u16) -> bool {
     matches!(

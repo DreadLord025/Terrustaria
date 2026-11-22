@@ -7471,6 +7471,302 @@ Deviations:
   runs the chain twice on identical inputs (identical state) and proves a
   seeded stream is untouched.
 
+## Mid-game housing relocation (W4-d119, 2026-11-21, code-only — tests written NOT run)
+
+The mid-game relocation driver — a town NPC re-homes when its house is lost,
+is evicted, or a free room appears near the player. Stacked on W4-d118's
+`QuickFindHome`/occupancy seams (`task/W4-d118-housing-scoreroom`); relocation
+only — the NEW-NPC homeless arrival/departure pair is out of scope.
+
+- **Home loss** (`Main.UpdateTime_SpawnTownNPCs`, `Main.cs:65607-65614`): at the
+  7200-tick check, every housed resident that is not the Travelling Merchant
+  (368) / Old Man (37) / Skeleton Merchant (453) and not already homeless runs
+  `WorldGen.QuickFindHome(k)` around its own home tile. A destroyed room
+  re-scans: `QuickFindHome` either re-homes at a new scored spot or sets
+  `homeless = true` (`WorldGen.cs:5785`/`:5790`). Wired in
+  `world_sim/npcs.rs`'s arrival block on the same `check_for_spawns + 1 >= 7200`
+  boundary the party roll predicts. The port's `home: Option` models homeless
+  as `None`, so a failed scan clears it. **The outer-guard quirk is kept**:
+  `QuickFindHome`'s `homeTileX > 10 && … && homeTileY < maxTilesY` guard
+  (`:5736`) makes an out-of-range home a NO-OP — the NPC keeps its home, it does
+  NOT go homeless; only an in-range home whose scan fails unhouses. Each
+  re-home fires NO_HOBO (8, `:5780`).
+- **The prioritized type** (`WorldGen.UpdatePrioritizedTownNPC`,
+  `WorldGen.cs:71627-71641` → `town_rehome::update_prioritized_town_npc`): the
+  first live homeless town NPC with `lookForHomeTimeout == 0` and a type other
+  than 368/160 becomes `WorldGen.prioritizedTownNPCType` (the port parks the
+  kind on `ArrivalState::prioritized`). The Old-Man (37) early return is
+  vacuous — no ported kind. RNG-free.
+- **The house probe** (`WorldGen.CheckForHousesNearAPlayer`,
+  `WorldGen.cs:71643-71674` → `town_rehome::check_for_houses_near_a_player`):
+  the view rectangle around the player's centre tile (`ToTileCoordinates` is
+  `(int)x >> 4`, an arithmetic shift — `Utils.cs:1809`), inflated by
+  `MaxWorldViewSize / 32` = (60, 37) (`Main.cs:66714`), clamped to
+  `[10, max − 10]` (`WorldUtils.ClampToWorld`, `WorldBuilding/WorldUtils.cs:9-14`),
+  then 300 random picks. The first house-wall pick runs the relocation-only
+  `SpawnTownNPC(x, y, canSpawnNewTownNPC: false)` (`:5409-5463`): the room
+  check + furniture + stinkbug + score gates, then
+  `FindNPCLookingForHomeThatCanMoveIn` moves an existing homeless NPC of the
+  prioritized type into the scored spot (`:5453-5463`), registers the room and
+  zeroes the prioritized slot. With `canSpawnNewTownNPC: false` the new-spawn
+  tail (`:5468-5611`) is unreachable — this arm NEVER spawns a new NPC. Wired
+  in `world_sim/growth.rs`'s `UpdateWorld` head (after the liquid pass, before
+  the growth loops), on the `UpdateWorldGen` stream; each relocation fires
+  NO_HOBO (8) once the borrow releases.
+- **The eviction predicate** (`WorldGen.IsNPCEvictable`,
+  `WorldGen.cs:4857-4867` → `town_rehome::is_npc_evictable`): the local
+  player's hitbox inflated by half the max world view size (±960/±600) must
+  intersect the NPC's 16×16 home tile; a negative index / missing player /
+  missing home is never evictable. RNG-free. **The predicate has NO caller in
+  this decompile** (grep of the whole tree finds only the definition); the
+  real eviction triggers are the house-banner right-click (`Main.cs:40827`),
+  the controller path (`UILinksInitializer.cs:908`) and net message 60
+  (`MessageBuffer.cs:2723`/`:2732`), all of which call the already-ported
+  `town::kick_out` (`WorldGen.cs:4869-4879`: homeless + 3600-tick
+  `lookForHomeTimeout` + `TownManager.KickOut`). The banner-draw surface
+  (`DrawNPCHousesInWorld`, `Main.cs:40711-40832`) is unported, so the predicate
+  lands as the faithful gate for when it arrives; the kick-out primitive and
+  the timeout decay (`NPC.cs:90324-90327`) are already live.
+
+### RNG census (the whole driver)
+
+| Site | Stream | Draws | Cite |
+| --- | --- | --- | --- |
+| `UpdatePrioritizedTownNPC` | — | 0 | `WorldGen.cs:71627-71641` |
+| `CheckForHousesNearAPlayer` picks | `UpdateWorldGen` (`Main.rand` under the swap, `Main.cs:17802`) | 2 per pick (`Next(Left,Right)` + `Next(Top,Bottom)`), ≤ 300 picks | `Utils.NextFromRectangle`, `Utils.cs:1246-1249`; loop `WorldGen.cs:71661-71672` |
+| `SpawnTownNPC` relocation arm | — | 0 (`canSpawnNewTownNPC: false` short-circuits the spawn tail) | `WorldGen.cs:5409-5463` |
+| `QuickFindHome` home-loss re-scan | — | 0 (the housing chain is RNG-free, S1-E-11d) | `WorldGen.cs:5732-5794` |
+| `IsNPCEvictable` / `kickOut` | — | 0 | `WorldGen.cs:4857-4879` |
+
+The house probe draws on the SAME `UpdateWorldGen` stream the growth loops
+read, BEFORE them — exactly the C# `UpdateWorld` order (`:71551` ahead of the
+`:71552+` growth loops). The no-house arm draws exactly 600 (300 × 2); a
+house-wall pick stops the loop early (the C# `break`, `:71670`). The
+`SpawnHomelessNPC`/`UnspawnHomelessNPC` pair (`Main.cs:65043-65062`,
+`WorldGen.cs:5036-5249`) — the NEW-NPC homeless arrival (`Main.rand.Next(27000/
+dayRate)` gate + the random-resident home pick) and the night departure — is
+the arrival lane's, NOT this relocation-only lane.
+
+Deviations:
+- **The single-player fold**: the C# selects one active player per tick via
+  `GameUpdateCount % ActivePlayersCount` (`:71650`); the port has one player,
+  so the probe runs every tick (the modulo is 0). The multi-player rotation
+  lands with the net player roster.
+- **The `is_town_npc` subset**: the prioritized scan and the home-loss re-scan
+  read the port's ten-kind housing set (`NpcKind::is_town_npc`), narrower than
+  the C#'s `townNPC` flag; the excluded sellers (Angler, Wizard, …) are not
+  homeless-relocatable until their own housing arms land, so the narrower set
+  is the reachable one. The 368/37/453/160 exclusions are kept verbatim.
+- **The Truffle unlock** passes `false` (no ported field/kind, the S1-E-11d
+  precedent) — the special-conditions arm is vacuous for the ported roster.
+
+Verification: code-only — every function re-read against the cited C#
+windows; the seam call sites checked against the actual signatures by
+read/grep (`check_room`/`room_needs`/`score_room_report`/`room_occupancy`,
+`find_npc_looking_for_home_that_can_move_in`, `TownRooms::set_room/has_room`,
+`ArrivalState::prioritized`, `NpcKind::net_id`, `Player::center`,
+`tr_core::edit::wall_house`, `UnifiedRandom::next_range`). 8 witness tests
+(`town_rehome.rs` 6 + `town.rs` 2) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
+## Homeless arrival + town-spawn cadence (W4-d119 phase 2/3, 2026-11-21, code-only — tests written NOT run)
+
+The Lead's follow-up puts the d119-parked pair in scope: the NEW-NPC homeless
+arrival/departure (`WorldGen.SpawnHomelessNPC`/`UnspawnHomelessNPC`), the
+`UpdateTime_SpawnTownNPCs` cadence vs the landed core, and the net-msg-60
+client apply arm. Claim map read first: c41's pushed claims are the
+`spawner.rs` GetSpawnRate/invaders re-verification only; f43's pushed claims
+are the `town_arrival_pets.rs` pure tail fns (UNWIRED — the pet/slime/Santa/
+Princess arms + the license chain, left for a wiring lane); g48 parked the
+60 body, g50 wired 81-96, g51 wired 125-135. Everything below is unclaimed.
+
+- **The homeless pair** (`town_spawn.rs`, `WorldGen.cs:5036-5249`):
+  `SpawnHomelessNPC`'s gate chain (eclipse / night / started invasion /
+  prioritized-0 / `homelessSpawnTimeout > 0`), the housed-resident count
+  (37/453/368 excluded), the `FindAnyHomelessTownNPC(includeGuide: true)` +
+  `AnyNPCs(prioritized)` blocks, the `LastFoundHouse` retry through the FULL
+  `SpawnTownNPC`, then the edge arrival: `Next(num2)` house pick over the
+  housed residents' homes, the `SolidTile || tileSolidTop` roofline span
+  (±10) + the 30-attempt `Next(min, max+1)` pick (first 20 reject the ±1
+  band, last 10 accept anything but the exact home), the n=20..500
+  double-sided surface spiral (3-cell liquid gate + `Collision.SolidTiles`
+  box + the safe-range player veto), `NewNPC` with `homeless` +
+  `homelessDespawn`, one `QuickFindHome`, and the `Next(6)`
+  `Announcement.HomelessArrived_n` chat (the housed outcome picks
+  `HasArrived` instead — the draw happens either way).
+  `UnspawnHomelessNPC`: the FIRST `homelessDespawn` NPC; a housed/non-town
+  one only clears the flag; the safe-range box around `(int)(Center/16f)`
+  vetoes the departure; else `Lang.misc[35]` + deactivation (the port's
+  removal rides the live-list drop, the `unspawn_travel_npc` precedent).
+  Wired in `world_sim/weather.rs`'s `update_world_tick` right after the
+  travel block (`Main.cs:65043-65062`): the departure at night / past
+  48600, the arrival on `Next(27000/max(dayRate,1)) == 0` over
+  `time < 27000 && !IsFastForwardingTime() && GetWorldUpdateRate() > 0`,
+  all under the `netMode != 1` gate. NO_HOBO (8) per housing event fires
+  after the tick closure (the `notify_progression_net` borrow seam).
+- **The full `SpawnTownNPC`** (`WorldGen.cs:5409-5615`): the sticky
+  `WorldGen.canSpawn` flag (house-wall pick arms it; `StartRoomCheck` and
+  `RoomNeeds` write it), the stinkbug pet-with-room exemption,
+  `ScoreRoom(-1, type)`, the resident-block / mover-clear / spawnable-query
+  fork, the relocation arm (`:5453-5463`), the stored-room alternate-spot
+  recursion (`currentlyTryingToUseAlternateHousingSpot` guard, bestX/bestY
+  saved and restored, `:5470-5482`), `IsRoomConsideredAlreadyOccupied` on
+  the PRIORITIZED id (`:5486` — not the re-picked num), the safe-range veto
+  + the 500-step spiral writing the LOCAL num5/num6 while the home tiles
+  keep the scored best (`:5563-5564`), `NewNPC` Bottom placement, the
+  `HasArrived` chat, the unlock switch (the two modelled flags —
+  PartyGirl/Princess; the other seven setters are f45 Ph4's pushed claim),
+  the prioritized zero and the `LastFoundHouse` write on
+  `FoundHouseNoSpawn`. The C# keeps the LAST scanned spiral cell even when
+  nothing was found — the quirk is kept.
+- **The statics** (`TownSpawnStatics` on `App`): `homelessSpawnTimeout`
+  (54000 at `clearWorld`, `WorldGen.cs:7026`), `LastFoundHouse`,
+  `npcSpawnDelay`/`npcSpawnPeriod`, `canSpawn`, the alternate-spot guard.
+  The `UpdateWorld` head decay + `npcSpawnPeriod = 20 * rate` re-arm
+  (`:71545-71549`) rides `world_sim/growth.rs`'s tick, rate-0 gated.
+- **The cadence fix** (`town_arrival.rs` + `world_sim/npcs.rs`): the landed
+  core folded `GetWorldUpdateRate()` to 1; the interval is
+  `7200 / rate` (`Main.cs:65548-65555`) with rate =
+  `min(desiredWorldTilesUpdateRate, 24)` (`WorldGen.cs:72020-72030`), the
+  port's desired rate = the creative time-rate slider × the all-asleep 5
+  (dial fast-forward pins 1, `Main.cs:6204`), FreezeTime → 0 skips the
+  whole function. The party `Next(40)` draw and the d119 home-loss pass
+  gate on the same rate-aware boundary. Two unclaimed LANDED gaps closed:
+  the DyeTrader's `num40 >= 4` term (`Main.cs:65860-65863`, the f43
+  census's "known LANDED gap") and the Zoologist's
+  `CompletionPercent >= 0.1f` (`:65896-65899`/`:66062-66065`, via
+  `bestiary::completion_percent`). The vampire-seed lead terms stay
+  constants-off (the special-seed lane's claim).
+- **The msg-60 client apply** (`netglue.rs`, `MessageBuffer.cs:2695-2739`):
+  the slot-keyed `net_npcs` home write (status 1 clears the port's `home`
+  Option, else the pair stores — the C# writes homeTileX/Y unconditionally
+  on the client), the `isLikeATownNPC`-before-writes read gating the
+  TownManager book arms (1 `KickOut(type)`, 2 `SetRoom(type, x, y)`) on the
+  client's `town_rooms`. The host `kickOut`/`moveRoom` arms
+  (`:2731-2738`) stay parked — their C2s senders (the housing-banner UI's
+  net legs) are unported; recorded, not invented. The `>= maxNPCs`
+  `BootPlayer` gate is server-side only.
+
+### RNG census (the arrival lane, exact slots)
+
+| Site | Stream | Draws | Cite |
+| --- | --- | --- | --- |
+| Homeless cadence roll | `UpdateTime` | 1 × `Next(27000/max(dayRate,1))` per morning tick | `Main.cs:65057` |
+| `SpawnHomelessNPC` house pick | `UpdateTime` | 1 × `Next(num2)` | `WorldGen.cs:5093` |
+| Roofline pick | `UpdateTime` | k × `Next(minValue, num4+1)`, 1 ≤ k ≤ 30 (first accepted breaks) | `WorldGen.cs:5108-5124` |
+| Chat variant | `UpdateTime` | 1 × `Next(6)` (drawn even when housed) | `WorldGen.cs:5200` |
+| `UnspawnHomelessNPC` | — | 0 | `WorldGen.cs:5206-5249` |
+| `SpawnTownNPC` (both arms) | — | 0 of its own; `NewNPC`'s naming draws are f38's pushed `give_town_unique_data` seam (`genRand` name + `Main.rand` variation), the port keeps `given_name` empty like the landed arrival paths; the `getGoodWorld` `Next(3)` gate (`NPC.cs:80752`) is constants-off | `WorldGen.cs:5409-5615` |
+| `IsThereASpawnablePrioritizedTownNPC` | — | 0 | `WorldGen.cs:4881-4917` |
+| `TrySpawningTownNPC` gate | `UpdateWorldGen` | 1 × `Next(4)` ONLY on a wall-34 tile at the fire tick (the `wall != 34 ||` short-circuit) | `WorldGen.cs:74874` |
+| `UpdateTime_SpawnTownNPCs` | `UpdateTime` | 1 × `Next(40)` per check (the landed party slot, unchanged) | `Main.cs:65786` |
+| msg 60 apply | — | 0 | `MessageBuffer.cs:2695-2739` |
+
+Deviations:
+- **`TrySpawningTownNPC` WIRED (escalation 1)**: the C# call sites are the
+  growth walkers' inactive-tile arms (`WorldGen.cs:72497`/`:73807`). The
+  gate rides the `tr_core::growth::TownSpawnWalker` seam (`_ts` walker
+  variants; `None` keeps every landed pure walk): the gate + its ONE
+  conditional `Next(4)` draw inline with the picks on `UpdateWorldGen`,
+  the fire pushes an `(x, y)` spawn-request intent (the
+  `take_statue_spawns` event-queue precedent) and the app drains the queue
+  at the `UpdateWorldGen` slot into the FULL `SpawnTownNPC` (`:74878`,
+  `canSpawnNewTownNPC: true`) — the inline call deferred because the pure
+  walkers have no NPC store. The `tileSolid[379]` window (`:74876-74879`)
+  needs no toggle: the generated `TILE_SOLID` base table carries 379 (the
+  `CheckSpawn` forced-view precedent). NO_HOBO(8) fires per
+  `Successful`/`RelocatedHomeless` after the borrow releases.
+- **g44e wall_house dedupe**: `housing::is_house_wall` (the identical
+  d118/d119 narrow-fn blob `2ecd7924`) now delegates to the ONE landed
+  full-table copy `edit::wall_house` (279 members, S1-P-i33) — the C#
+  `CheckRoom` ±2 scan (`:6204`/`:6212`) and `SpawnTownNPC`'s canSpawn pick
+  (`:5411`) read the SAME `Main.wallHouse` the hammer gates read; the old
+  narrower room-check subset was a recorded deviation, now closed (walls
+  1/4..6/75..78/129..169/347..366 legitimately enclose rooms). The d119
+  `town_spawn.rs` `:5411` gate becomes C#-correct for free. The g44e §5
+  receipt is CONSUMED and MUTUAL: g44's SEAL-VERIFY `f688ab142` confirms
+  the d119 consumption at `dd8a2f764`; d118's own lane executes the SAME
+  ONE verbatim hunk on its own branch (tip `91db266ea` still narrow) —
+  NEVER take g44's housing.rs wholesale (d118 rewrote
+  `solid_tiles_in_box`); research/333 §3 carries both halves.
+- **The homeless anchor tiles**: `Npc.home` conflates homeless + homeTile;
+  the arrival's anchor feeds the immediate `QuickFindHome` and is not
+  stored on a homeless NPC — later re-scans ride the 2 s look pass at the
+  NPC's position (the landed convention).
+- **The `BlockedTooManyNPCs` cap**: the port's live list is a Vec, not the
+  fixed 200-slot array — the push always succeeds (the enum arm is kept).
+- **The unlock switch**: only the two modelled flags write; the other
+  seven setters are f45 Ph4's pushed claim (`8c28a7ae`), the
+  `CheckAchievement_RealEstateAndTownSlimes` roster waits on the town
+  slimes (d43 kinds lane).
+- **The f43 tail splice stays open**: the pet/slime/Santa/Princess ladder
+  arms are f43's pushed UNWIRED fns; this lane closes only the two
+  unclaimed LANDED gaps (DyeTrader ≥4, Zoologist bestiary) and the cadence.
+  The 678-flag8 arm — the f41e census's named "remaining tail" — now has
+  its predicate landed (`slime_green_flag8`/`slime_green_can_spawn`, the
+  `ctx.genuine_party` production feed); the splice folds it into f43's
+  `TailFlags` twin, ONE gate (the seal section below + research/333 §4).
+
+Verification: code-only — every function re-read against the cited C#
+windows; the seams checked by read/grep (`kind_from_net_id`,
+`TownRooms::occupants_at/has_room_quick`, `ArrivalState` canSpawn
+accessors, `creative_powers.time_rate`, `bestiary::completion_percent`,
+the `S2c::NpcHouse` codec + the framed `f[2]`/`f[3..]` decode precedent).
+12 new witness tests (`town_spawn.rs` 8, `town_arrival.rs` 2, `netglue.rs`
+2) + the dye-trader fixture repair are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
+### The d119 seal (2026-11-21, code-only — the family bible + the 678-flag8 gate)
+
+The lane's SEAL close-out; the full merger map + receipts live in
+**research/333** (the housing-relocation-family bible; renumbered 304→333 per
+research/150 §9 UNIFIED FINAL, d54 tip `b243c7086` — d50-§7.4-KEEPS-304; the
+round-3 `51a28d09e` floor-304 self-pick superseded).
+
+- **The 678-flag8 gate lands** (the f41e party census's remaining tail,
+  research/70 §8h `d118ff9d` / the PARTY SEAL `ef3a481a6` §9e): the C#
+  re-read `Main.cs:65795-65799` (`flag8 = BirthdayParty.GenuineParty`,
+  forced true by `NPC.unlockedSlimeGreenSpawn`), `:65916-65919` (the
+  canSpawn arm `flag8 && num32 < 1`) and `:66078-66081` (the ladder arm,
+  the non-short-circuit `&` on pure sides) ports as
+  `town_arrival.rs::slime_green_flag8` + `slime_green_can_spawn`;
+  `ArrivalContext.genuine_party` is fed in production from
+  `app.world_events.genuine_party` (`world_sim/npcs.rs`'s ctx build) —
+  NOT `party_is_up` (a manual monolith party does not open the gate;
+  `world_events.rs:61-62` folds the two, the C# reads `GenuineParty`
+  alone). ZERO draws. **Deviation (recorded, not invented)**: 678 has no
+  ported kind (d43's lane) and the world carries no
+  `unlockedSlimeGreenSpawn` field (only rainbow/red, `world.rs:303-307`),
+  so the gate is a landed predicate with witnesses, NOT a LADDER row —
+  production fire waits on the d43 kinds + the f43 tail splice, which
+  folds this local into f43's `TailFlags`-fed twin (ONE gate). The
+  compose: d119's `TownSpawnWalker` drain is type-agnostic — a prioritized
+  678 flows through the existing query→`SpawnTownNPC` path once the kind
+  exists; `is_town_pet(678)` (`town.rs:573-575`) already early-returns.
+  c41's claims stay spawner.rs-only (`72a93e062`, zero overlap).
+- **The g44e §5 receipt is MUTUAL-CLOSED on the d119×g44 edge**: this
+  lane consumed the ONE verbatim hunk at `dd8a2f764` (the delegation body
+  + the anchors `:904` marker + the own full-table witness); g44's
+  SEAL-VERIFY `f688ab142` (research/87 §SEAL-VERIFY item 3) confirms the
+  consumption at the live tips. d118 (`91db266ea`, narrow blob `2ecd7924e`
+  unchanged) executes the SAME hunk on its OWN branch — the d118/d119
+  housing.rs diff is exactly the hunk + d119's witness (2 hunks, verified
+  at the tips), so the second-lander keeps ONE copy; NEVER g44's
+  housing.rs wholesale (d118's `solid_tiles_in_box` rewrite + occupancy
+  fns are absent there).
+- **The walker seam + escalation 1 re-verified EXECUTED** (`171549649`):
+  `tr-core/growth.rs:101/:123` + `world_sim/growth.rs:121/:181` — g44's
+  seal-verify independently confirms the UNWIRED deviation closed.
+- The stale line cites in `town_arrival.rs`'s gate comments corrected to
+  the re-read windows (`:65800-65956` canSpawn, `:65957-66114` ladder,
+  `:65785-65794` flag7, `:65880-65883` Painter, `:65808`/`:65820` the
+  Merchant terms, `:65944-65956` flag9) — comment-only.
+
+Verification: code-only — the C# windows re-read ≤100 lines each; 2 new
+witnesses (`the_slime_green_flag8_gate_is_party_or_unlock_and_no_resident`,
+`the_flag8_feed_changes_no_landed_ladder_arm`) WRITTEN NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
 ## Zoologist/Princess (M4-TOWN-19)
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
@@ -9697,12 +9993,14 @@ conversion; a `PlaceTile`-faithful temple writer is the follow-up.
   bullet below). Parked arms: the 655 life-fruit
   kill (the NPC store), the
   444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
-  `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the
+  `CountNearBlocksTypes` have no ports), the
   net sides, the creative-power override on `AllowedToSpreadInfections` (the
   port passes the gate through `allowed_to_spread` instead), and
   the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer stream
   carries every draw вЂ” the dye head's `Main.rand.Next(2500)`/`Next(10000)`
-  now draw from it too).
+  now draw from it too). `TrySpawningTownNPC` rides the `TownSpawnWalker`
+  seam (the `_ts` variants, W4-d119 escalation 1 — the gate inline, the
+  spawn deferred to the app's `UpdateWorldGen`-slot drain).
 
 - **Abigail's flower** (`TryGrowingAbigailsFlower` `WorldGen.cs:73049-73073`,
   `HasValidGroundForAbigailsFlowerBelowSpot` `:73026-73046`,

@@ -1899,16 +1899,57 @@ impl App {
                         .loadout = Some(l);
                 }
             }
+            // `case 60` — an NPC's household change (`MessageBuffer.cs:2695-2739`,
+            // W4-d119 phase 3). The client writes homeless + homeTileX/Y on
+            // its NPC copy (`:2708-2713`), then the town-only book arms
+            // (`:2719-2729`): status 1 = `TownManager.KickOut(type)`,
+            // status 2 = `SetRoom(type, x, y)`. The host arms (`:2731-2738`
+            // `WorldGen.kickOut`/`moveRoom`) need the C2s kick-out/move-room
+            // senders (the housing-banner UI's net legs, unported) — the
+            // port's host never receives a 60 today; recorded, not invented.
+            S2c::NpcHouse(h) => {
+                // `:2700-2704`: `num258 >= Main.maxNPCs` boots the sender —
+                // a server-sent frame cannot boot anyone on the client; the
+                // port's slot-keyed store drops an out-of-range slot below.
+                let slot = h.npc as u32;
+                let Some(npc) = self.net_npcs.get_mut(&slot) else {
+                    return;
+                };
+                // `:2706`: `isLikeATownNPC` is read BEFORE the writes.
+                let is_town = npc.kind.is_town_npc_like();
+                // `:2708-2713`: the client's homeless + home-tile writes.
+                // The port's `home` Option conflates the two — status 1
+                // (homeless) clears it, every other status stores the pair
+                // (the C# writes homeTileX/Y unconditionally on the client).
+                npc.home = if h.status == 1 {
+                    None
+                } else {
+                    Some((h.home_x as i32, h.home_y as i32))
+                };
+                self.net_npcs_dirty = true;
+                // `:2715-2718`: a non-town NPC stops here.
+                if !is_town {
+                    return;
+                }
+                // `:2719-2729`: the client's TownManager book.
+                let net_id = npc.kind.net_id();
+                match h.status {
+                    1 => self.town_rooms.kick_out(net_id),
+                    2 => self
+                        .town_rooms
+                        .set_room(net_id, h.home_x as i32, h.home_y as i32),
+                    _ => {}
+                }
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
             // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
-            // `:4195-4203`, `:4238-4249`, `:4282-4297`) land
+            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
             | S2c::PlayerMana(_)
             | S2c::TeamChange(_)
-            | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
             | S2c::RevengeMarker(_)
@@ -5408,5 +5449,101 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    /// W4-d119 phase 3 — `case 60` (`MessageBuffer.cs:2695-2739`): the
+    /// client's household writes. Status 2 stores the home pair + the
+    /// TownManager room; status 1 clears both (the KickOut arm). The frame
+    /// goes through the real decode path (`client_event`).
+    #[test]
+    fn the_60_household_frame_writes_the_client_home_and_book() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A Guide on the host, streamed to the client's slot-keyed store.
+        let mut guide = crate::npc::Npc::new(crate::npc::NpcKind::Guide, 100.0, 48.0, 1, 0.0);
+        guide.hp = guide.max_hp;
+        host_app.npcs.clear();
+        host_app.npcs.push(guide);
+        host_app.net_npc_gen.insert(0, (22, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(client_app.net_npcs.contains_key(&0), "the 23 push delivered the Guide");
+        // Status 2: SetRoom — the home pair + the book entry.
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 0,
+            home_x: 65,
+            home_y: 106,
+            status: 2,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..]))
+            .expect("the 60 body decodes");
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        assert_eq!(
+            client_app.net_npcs[&0].home,
+            Some((65, 106)),
+            "the client's home tiles landed (`:2710-2712`)"
+        );
+        assert_eq!(
+            client_app.town_rooms.has_room(22),
+            Some((65, 106)),
+            "the SetRoom book arm (`:2725-2727`)"
+        );
+        // Status 1: KickOut — homeless + the book entry dropped.
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 0,
+            home_x: 0,
+            home_y: 0,
+            status: 1,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        assert_eq!(client_app.net_npcs[&0].home, None, "the KickOut homeless write");
+        assert_eq!(client_app.town_rooms.has_room(22), None, "the KickOut book arm (`:2721-2723`)");
+    }
+
+    /// W4-d119 phase 3 — `case 60`'s non-town gate (`MessageBuffer.cs:2715-2718`):
+    /// a non-town NPC gets the home write but NO TownManager book arm; an
+    /// unknown slot is a no-op (the port's store has no fixed 200 array).
+    #[test]
+    fn the_60_non_town_npc_skips_the_book_arms() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut slime = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 100.0, 48.0, 1, 0.0);
+        slime.hp = slime.max_hp;
+        host_app.npcs.clear();
+        host_app.npcs.push(slime);
+        host_app.net_npc_gen.insert(0, (0, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 0,
+            home_x: 10,
+            home_y: 20,
+            status: 2,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        // The home write is unconditional on the client (`:2708-2713`)...
+        assert_eq!(client_app.net_npcs[&0].home, Some((10, 20)));
+        // ...but `isLikeATownNPC` false breaks before the book (`:2715-2718`).
+        assert!(client_app.town_rooms.rooms().is_empty(), "no book arm for a slime");
+        // An unknown slot: the store lookup misses, nothing panics.
+        let frame = S2c::NpcHouse(net::NpcHouse {
+            npc: 199,
+            home_x: 1,
+            home_y: 2,
+            status: 2,
+        })
+        .encode();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
+        if let NetRole::Client(client) = &client_app.net {
+            client_app.client_event(client, net::ClientEvent::Frame(msg));
+        }
+        assert!(!client_app.net_npcs.contains_key(&199));
     }
 }

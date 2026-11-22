@@ -273,6 +273,8 @@ mod soundid;
 mod test_world_helpers;
 mod town;
 mod town_arrival;
+mod town_rehome;
+mod town_spawn;
 mod tracked_sound;
 mod touch_damage;
 mod ui;

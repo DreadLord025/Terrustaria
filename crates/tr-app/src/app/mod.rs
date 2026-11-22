@@ -371,6 +371,16 @@ pub(crate) struct App {
     /// `WorldGen.prioritizedTownNPCType` (`Main.cs:65542-66116`) — the town
     /// NPC arrival gates (M4-TOWN-1b).
     pub(crate) town_arrival: crate::town_arrival::ArrivalState,
+    /// `WorldGen.homelessSpawnTimeout`/`LastFoundHouse`/`npcSpawnDelay`/
+    /// `npcSpawnPeriod`/`canSpawn`/`currentlyTryingToUseAlternateHousingSpot`
+    /// (`WorldGen.cs:4244`/`:4320`/`:4238`/`:4240`/`:4282`/`:4322`) — the
+    /// homeless-arrival + SpawnTownNPC statics (W4-d119 phase 2).
+    pub(crate) town_spawn: crate::town_spawn::TownSpawnStatics,
+    /// The growth walkers' `TrySpawningTownNPC` spawn-request queue (W4-d119
+    /// escalation 1): the pure tr-core walkers push `(x, y)` intents
+    /// (`WorldGen.cs:72497`/`:73807`'s inline `SpawnTownNPC` calls) and
+    /// `world_sim/growth.rs` drains them at the `UpdateWorldGen` slot.
+    pub(crate) town_spawn_requests: Vec<(i32, i32)>,
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
@@ -4238,6 +4248,8 @@ impl App {
             },
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
+            town_spawn: crate::town_spawn::TownSpawnStatics::default(),
+            town_spawn_requests: Vec::new(),
             reuse_delay: 0.0,
             pending_item_reuse: false,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);

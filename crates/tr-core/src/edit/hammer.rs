@@ -158,8 +158,9 @@ pub fn is_a_hammer_target(kind: u16) -> bool {
 // `edit::wall` (the i33 copy) — it reads the FULL `Main.wallHouse` table
 // (`wall_house`, 279 members, `Main.cs:9741-9789`/`:10353-10577`), which is
 // the table `Player.cs:45924` actually reads; the i31 copy used the narrower
-// `housing::is_house_wall` room-check subset (recorded deviation, corrected
-// at the gate). The finder below rides the same full table.
+// housing subset (recorded deviation, corrected at the gate). The finder
+// below rides the same full table. Since the g44e dedupe (W4-d119)
+// `housing::is_house_wall` delegates to this table too — one copy, all gates.
 
 /// `Player.ItemCheck_UseMiningTools_TryFindingWallToHammer`
 /// (`Player.cs:45832-45906`): the wall cell the hammer's wall pass targets.
