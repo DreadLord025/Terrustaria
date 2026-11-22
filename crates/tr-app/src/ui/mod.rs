@@ -12,6 +12,7 @@ pub mod char_creation;
 pub mod char_select;
 pub mod clipboard;
 pub(crate) mod chest;
+pub(crate) mod chat_overhead;
 pub mod chrome;
 pub(crate) mod coin_slot;
 pub mod color;
@@ -32,6 +33,7 @@ pub mod sliders;
 pub mod select_hit;
 pub mod slot;
 pub mod text;
+pub(crate) mod text_wrap;
 pub mod tooltip;
 pub mod uistate;
 pub mod world_creation;
@@ -717,6 +719,11 @@ pub fn draw_hud(
     talk_npc: Option<usize>,
     npc_chat_text: &str,
 ) {
+    // `DrawInterface`'s head (`Main.cs:63334-63339`): the player chat
+    // overheads draw under `UIScaleMatrix` before the combat text — the
+    // port's local-player half (`ui::chat_overhead`, W4-d121).
+    chat_overhead::draw(r, lookups, player, camera, zoom, screen);
+
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
     // hotbar (30).

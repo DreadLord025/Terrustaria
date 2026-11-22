@@ -19,49 +19,29 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
-use super::{text, UiPulse};
+use super::{text, text_wrap, UiPulse};
 use crate::assets::Lookups;
 use crate::npc::Npc;
 use crate::npc_chat::{chat_box_height, chat_box_rect};
 
 /// `TextDisplayCache.PrepareCache` (`TextDisplayCache.cs:19-30`):
 /// `Utils.WordwrapString(text, FontAssets.MouseText.Value, 460, 10, …)`
-/// (`Utils.cs:860-867`) — the font-measured wrap at 460 px, capped at 10
-/// lines. The port measures with the retail `Mouse_Text` sheet when loaded
-/// (`text::ui_font_width`); the bitmap fallback estimates 8 px per char
+/// (`Utils.cs:860-867`) — the ReLogic `WrappedTextBuilder` wrap at 460 px,
+/// capped at 10 lines, ported 1:1 in `ui::text_wrap` (W4-d121, the
+/// research/37 gap). The port measures with the retail `Mouse_Text` sheet
+/// when loaded; the bitmap fallback estimates 8 px per char
 /// (docs/ANALYSIS.md "Town chatter UI (S1-E-10b)"). The selection half's
-/// `format_chat_lines` keeps its char-count wrap for the tests; the drawn
-/// panel measures the real font.
+/// `format_chat_lines` keeps its char-count wrap for the tests.
 pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
     const MAX_LINES: usize = 10; // `TextDisplayCache.cs:27`'s maxLines
-    let width = |s: &str| {
-        text::ui_font_width(lookups, s, 1.0).unwrap_or(s.chars().count() as f32 * 8.0)
-    };
     let max_w = crate::npc_chat::CHAT_TEXT_WRAP_WIDTH as f32;
-    let mut rows: Vec<String> = Vec::new();
-    for paragraph in chat_text.split('\n') {
-        let mut cur = String::new();
-        for word in paragraph.split(' ') {
-            if cur.is_empty() {
-                cur.push_str(word);
-            } else if width(&format!("{cur} {word}")) <= max_w {
-                cur.push(' ');
-                cur.push_str(word);
-            } else {
-                rows.push(std::mem::take(&mut cur));
-                cur.push_str(word);
-            }
-            if rows.len() >= MAX_LINES {
-                return rows;
-            }
-        }
-        rows.push(cur);
-        if rows.len() >= MAX_LINES {
-            return rows;
-        }
-    }
-    rows.truncate(MAX_LINES);
-    rows
+    text_wrap::wordwrap_string(
+        lookups.ui_font.as_ref(),
+        chat_text,
+        max_w,
+        MAX_LINES,
+        crate::lang::active_culture(),
+    )
 }
 
 /// The interaction row count the port renders: only `CloseChat`

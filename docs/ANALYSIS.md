@@ -7168,8 +7168,9 @@ What landed:
   spread 2 (`ChatManager.cs:246-249`, `ShadowDirections` В±X/В±Y `:376-382`).
 - **The wrap** (`panel_lines`): `TextDisplayCache.PrepareCache`'s
   `Utils.WordwrapString(text, MouseText, 460, 10)` (`TextDisplayCache.cs:27`,
-  `Utils.cs:860-867`) вЂ” greedy word wrap measured through the retail
-  `Mouse_Text` sheet (`ui_font_width`), capped at 10 lines. The bitmap
+  `Utils.cs:860-867`) — originally a greedy word wrap measured through the
+  retail `Mouse_Text` sheet; **W4-d121 replaced it with the 1:1 ReLogic
+  `WrappedTextBuilder` port** (`ui::text_wrap`, below). The bitmap
   fallback estimates 8 px per char (the same recorded approximation the
   selection half's `format_chat_lines` carries, which keeps its char-count
   wrap for its own tests).
@@ -7243,6 +7244,87 @@ Deliberate deviations / deferred:
   HUD spine draws the chat input strip early too; the panel sits under the
   inventory/bestiary/options layers, which is the visible-order difference
   that matters.
+
+## Overhead chat + text wrap (W4-d121, 2026-11-20, code-only mode)
+
+The draw side of the chat lane: the player overhead text
+(`Main.DrawPlayerChatBubbles`) and the ReLogic word-wrap port research/37
+flagged MISSING. **Code-only mode**: no compiler/tests were invoked; the
+new tests are written not run and the port was verified by re-reading the
+C#. The NPC hover bubble + dialogue panel already landed with S1-E-10b
+(above); d120 owns the town-chatter selection logic — this task owns the
+display only.
+
+What landed:
+
+- **The state** (`Player.chat_overhead`, `player.rs`):
+  `Player.OverheadMessage` (`Player.cs:765-784`) — `text`, `time_left`,
+  `color`; `NewMessage` arms the text + timer, the color is set after
+  (`ChatHelper.cs:86-87`). `Main.PlayerOverheadChatMessageDisplayTime = 400`
+  (`Main.cs:67009`). The C#'s cached `snippets`/`messageSize` are
+  re-derived at draw time from the flat text (the port carries no
+  `[c:...]` snippet markup — `chat.rs`'s recorded stand-in).
+- **The timer** (`world_sim/player.rs`): `Player.cs:24554-24557` — one
+  decrement per player update, right after the void-vault refresh, floor 0.
+- **The Say seam** (`ChatMonitor.pending_overhead`, `chat.rs` +
+  `app/loop.rs`): `SayChatCommand.ProcessIncomingMessage` broadcasts AS the
+  client (`SayChatCommand.cs:11`), so `ChatHelper.DisplayMessage`'s author
+  arm (`ChatHelper.cs:86-88`) arms the overhead with the BARE text while
+  the monitor line keeps the name-tag prefix. The port's single-player
+  fold runs Say inside `send`, so the intent rides a pending field the
+  loop drains into `Player.chat_overhead` (`ui::chat_overhead::arm_overhead`).
+  Non-Say commands broadcast with author 255 (`ChatHelper.cs:46-49`) — no
+  overhead; the intent clears at the head of every `send_with`.
+- **The draw** (`ui/chat_overhead.rs`): `Main.DrawPlayerChatBubbles`
+  (`Main.cs:63248-63263`) — the gate `active && timeLeft > 0 && (!dead ||
+  ghost)` (`:63253`), the anchor `GetChatDrawPosition` (`:63243-63246`:
+  `player.Top + netOffset + (0, gfxOffY)` through `ToScreenPosition`,
+  `Utils.cs:1095-1098`, then `(0, −2)`), the origin
+  `(anchor − (0, size.Y/2) − size/2).Floor()` (`:63255-63258`), and
+  `DrawColorCodedStringWithShadow` at scale 1 (`:63260`) — the four ±2 px
+  black shadow passes (`ShadowDirections`, `ChatManager.cs:376-382`,
+  spread 2) then the colour. Drawn at the head of `draw_hud` under the
+  emote world→UI transform, matching the C#'s `UIScaleMatrix` head slot
+  (`Main.cs:63334-63339`).
+- **The wrap** (`ui/text_wrap.rs`): `ReLogic.Text.WrappedTextBuilder`
+  (`WrappedTextBuilder.cs:1-171`) + `StringReaderWrapExtension`
+  (`StringReaderWrapExtension.cs:1-132`) ported 1:1 — the scan-mode token
+  reader, the `CanBreakBetween` culture rules (the two Chinese cultures
+  break between glyphs, digits stay glued; other cultures break only
+  after the CJK `WordTerminators`), the greedy `Append` with the
+  `KernedWidth`/`KernedWidthOnNewLine` metrics (`GlyphMetrics.cs:13-15`),
+  the hyphenating `AppendWithHardBreaks` (the signed `i--` push-back walk)
+  and `Build`'s '\n' commits. `Utils.WordwrapString` (`Utils.cs:860-867`)
+  is the maxLines-capped split; `DynamicSpriteFont.MeasureString`
+  (`DynamicSpriteFont.cs:272-318`) is the multi-line measure twin.
+  `ui::npc_chat::panel_lines` now consumes the port (the S1-E-10b greedy
+  stand-in is gone); the selection half's `format_chat_lines` keeps its
+  char-count wrap for its own tests.
+
+Deliberate deviations / deferred:
+
+- **Remote players' overheads**: the C# walks all 255 players
+  (`Main.cs:63250`); the port's `net::PlayerNet` carries no `chatOverhead`,
+  so only the local player draws. The client-side TEXT module
+  (`app/netmodules.rs:415-421`) appends the relayed line to the monitor
+  but does not arm an overhead — the author byte's player is remote.
+- **`MeasureString`'s `Padding.Height` floor** (`DynamicSpriteFont.cs:311`):
+  the port's `FontGlyph` keeps only the pad ORIGIN (`assets.rs:1519-1520`),
+  so the glyph's drawn height `h` stands in for the padding rect's height.
+- **The bitmap fallback**: 8 px/char, 8 px rows, no spacing — the same
+  recorded stand-in `panel_lines` carried before the wrap port.
+- **The gravity-flip anchor arm** (`GetChatDrawPosition`'s `player.Bottom`,
+  `Main.cs:63245`) is unreachable: the port keeps `gravDir = 1`.
+- **`Main.hideUI`** (`:63334`): no port field; the overhead draws whenever
+  the HUD draws.
+- **The snippet markup** (`[c:...]`, item tags): flat text like `chat.rs`;
+  `ParseMessage`/`LayoutSnippets` (`ChatManager.cs:60-177`) are unported.
+- **The other wrap consumers**: item tooltips and the chat monitor's
+  width-limit re-parse (`ChatMessageContainer.cs:70`) still ride flat
+  rows — the wrap helper is available for them (research/37 task seed).
+- **The `firstLineOffset` ctor arg** (`WrappedTextBuilder.cs:64`): the
+  port's callers use 0 (`CreateWrappedText(text, maxWidth, culture)`);
+  `LayoutSnippets`' offset form comes with the snippet markup.
 
 ## Town housing (S1-E-11a, 2026-11-14)
 

@@ -663,8 +663,43 @@ pub(crate) enum FastRunArm {
     Plain,
 }
 
+/// `Player.OverheadMessage` (`Player.cs:765-784`): the chat text that draws
+/// above the player's head — `ChatHelper.DisplayMessage`'s author arm
+/// (`ChatHelper.cs:86-87`) arms it through `NewMessage(message,
+/// Main.PlayerOverheadChatMessageDisplayTime)` (= 400, `Main.cs:67009`) and
+/// then sets `color`. The C#'s cached `snippets`/`messageSize` are re-derived
+/// at draw time from `text` (the port carries flat text, no `[c:...]`
+/// snippet markup — `chat.rs`'s recorded stand-in).
+#[derive(Clone, Debug, Default)]
+pub struct OverheadMessage {
+    /// `OverheadMessage.chatText` (`Player.cs:767`).
+    pub text: String,
+    /// `OverheadMessage.timeLeft` (`:773`): decremented once per player
+    /// update (`Player.cs:24554-24557`).
+    pub time_left: i32,
+    /// `OverheadMessage.color` (`:775`), set AFTER `NewMessage` by
+    /// `ChatHelper.DisplayMessage` (`ChatHelper.cs:87`).
+    pub color: [u8; 3],
+}
+
+impl OverheadMessage {
+    /// `Main.PlayerOverheadChatMessageDisplayTime = 400` (`Main.cs:67009`).
+    pub const DISPLAY_TIME: i32 = 400;
+
+    /// `OverheadMessage.NewMessage` (`Player.cs:777-783`): the text and the
+    /// timer arm; the color stays as-is (the C# sets it on the next line,
+    /// `ChatHelper.cs:87`).
+    pub fn new_message(&mut self, message: &str, display_time: i32) {
+        self.text = message.to_string();
+        self.time_left = display_time;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
+    /// `Player.chatOverhead` (`Player.cs:798`) — the overhead chat text
+    /// (`Main.DrawPlayerChatBubbles`, `Main.cs:63248-63263`).
+    pub chat_overhead: OverheadMessage,
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
     // crit 4 and a 1.0 damage multiplier; the equipment modifies them
     // (M3-EQUIP).
@@ -2616,6 +2651,9 @@ impl Player {
             ),
         };
         Self {
+            // `Player.chatOverhead` starts empty (`OverheadMessage`'s default
+            // struct — `timeLeft` 0, no text).
+            chat_overhead: OverheadMessage::default(),
             dead: false,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
