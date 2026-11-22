@@ -1105,3 +1105,99 @@ the fetched tips (union `6fb5e01e8`, f29 `809d08238`):
   brace-matched helper-body compares, the `c6cf86bf..HEAD` `+fn` re-scan
   symbol-checked against the union, the f29 tip's stale-comment/UNWIRED
   lines read from git objects. No cargo/tests/rustfmt/graphify.
+
+## W4-f29 map-overlay census (2026-11-20, code-only)
+
+Full inventory of every overlay piece `Main.DrawMap` (`Main.cs:55279-56074`) paints on the
+fullscreen map and the minimap, against the port at main `a725acb0`. The e17 sibling branch
+(`task/W4-e17-map-overlay-layers`) was still at main (0 commits) at census time — nothing claimed.
+`task/W4-c35-map-update-queue` touches `map.rs` (the update queue), not the overlay draws.
+
+### Landed + verified (S1-L-4 second pass, `map_layers.rs`)
+
+| Piece | C# | Port |
+| --- | --- | --- |
+| MapIconOverlay walk + context | `MapIconOverlay.cs:16-23`, `MapOverlayDrawContext.cs:34-65` | `map_layers.rs:181-339` — FAITHFUL (transform, clip, aligned origin, hover rect) |
+| SpawnMapLayer (world + bed) | `SpawnMapLayer.cs:10-23` | `map_layers.rs:246-270` — FAITHFUL (`bed_spawn` stand-in for `Player.SpawnX/Y`, documented) |
+| BossBagMapLayer | `BossBagMapLayer.cs:9-23`, `ItemID.cs:1383` | `map_layers.rs:228-244` — FAITHFUL 21-kind set |
+| DigtoiseMapLayer | `DigtoiseMapLayer.cs:11-27` | `map_layers.rs:204-226` + `digtoise_marker` — FAITHFUL |
+| TeamBasedSpawnMapLayer | `TeamBasedSpawnMapLayer.cs:11-21` | gated stub (`teamBasedSpawnsSeed` unported, M5-SEED-2) — VERIFIED gate |
+| PingMapLayer | `PingMapLayer.cs:26-41` | `map_layers.rs:318-337` + `map.rs` pool — FAITHFUL (100 cap, 15 s, 1x5 10 Hz) |
+| Pylon MARKERS (not lines) | `TeleportPylonsMapLayer.cs:65-89` | `map_layers.rs:282-316` — marker anchor/dim/reveal FAITHFUL |
+| Fullscreen player head | `Main.cs:55931-55954` | `frame/draw.rs:1962-1980` + `entities.rs:1904` — local player only, singleplayer border |
+| MapBG backdrop | `Main.cs:56342-56444` | `map.rs::map_bg_index` — landed earlier |
+
+### PORTED (W4-f29, 2026-11-21, code-only — witnesses written not run)
+
+> **SUPERSEDED by the reconcile execution (research/140, 2026-11-21):** the
+> e17 sibling lane advanced past this census and ported all nine pieces
+> independently; `docs/research/140-map-overlay-reconcile.md` adjudicated
+> e17's tip `8500c3e5d` as the surviving skeleton. This branch rebuilt onto
+> it — the `map_overlay.rs`/`map_pylons.rs` module homes named below are
+> RETIRED; the live homes are e17's `map_npc_icons.rs`/`map_player_icons.rs`/
+> `map_layers.rs`/`map.rs`/`app/clicks.rs`, with f29's six fixes F1-F6
+> applied as cited patches (the int-truncated line endpoints, the half-open
+> `Contains` hovers, `Utils.Floor` truncation, the `Coin_0..3` strips, the
+> fullscreen death box without the −4 shift, the pure pan step). The census
+> below is kept as the historical record of what the f29 lane ported.
+>
+> **SEALED (research/140 §11, seal phase 2026-11-21):** the map-overlay
+> family is sealed — f46-union-FIRST → f29-TIP-SECOND with the e18 D18
+> draw re-fold ahead of both (140 §11.1/§11.2, e18 84 §10.10 SEAL
+> `5509cb87a`); the atlas demand is inside d35's 562-union (8131 px /
+> 9606 sheets with `Cursor_11`, margin 61 — 140 §11.3); the compose
+> hunks are merge-tree `feddf3178`'s 6 files / 9 hunks. Nothing owed
+> on this branch; every remaining action is merger-side.
+
+All nine pieces below landed on `task/W4-f29-map-overlay-2` (base main `a725acb0`).
+The new module `crates/tr-app/src/map_overlay.rs` carries the head/death/revenge/misc/
+hover machinery; `crates/tr-app/src/map_pylons.rs` carries the pylon lines/clamp/click;
+`map_layers.rs` gained the `DrawClamped` markers + the `PylonClick` outcome; the draw
+sites (`app/frame/draw.rs`) wire both the fullscreen and minimap passes. The e17
+sibling branch had 0 commits at port time — nothing was claimed.
+
+1. **Pylon network lines** — `TeleportPylonsMapLayer.cs:45-64` + `DrawLine` `:18-28`:
+   `map_pylons.rs::draw_pylon_lines` + `draw_line` (the <=5-segment BlackTile stretch,
+   origin `(0, w/2)`, scale `(len/segments/16, width/16)`, the real sheet dims). PORTED.
+2. **Pylon hover/click state** — `WorldMap.map_pylon_tile`/`pan_target`; the right-click
+   arm `world_sim/editing/doors.rs::use_pylon` (anchor decode + reveal-inclusive inflate-20
+   recentre + scale fit, `map_pylons.rs::pylon_right_click_view`); `set_open` clears the
+   tile; the marker click `map_layers.rs::PylonClick` → `App::apply_pylon_click` (the
+   `handle_teleport_request` ladder + style-9 `Teleport`, or the pan target);
+   `DrawClamped` offscreen markers + Extra_299 arrows (`map_layers.rs::draw_pylon_clamped`);
+   the pan step `map_pylons.rs::pan_target_step` in `update_map_input`. PORTED.
+3. **Boss head icons** — `map_overlay.rs::boss_head_texture_index` (the 40-row table +
+   7 overrides), `boss_head_rotation`, `boss_head_flip`, `destroyer_average_center`,
+   `draw_npc_head_boss` → `draw_head_outlined` (the 8+4 ring composite). PORTED.
+4. **Town NPC head icons** — `map_overlay.rs::town_head_index` (the default table),
+   `draw_npc_head_friendly`, the `direction > 0` flip, `Center + gfxOffY + netOffset`,
+   the per-mode transforms (`head_pos`) + minimap clip, `npc_full_name`/`npc_given_or_type_name`
+   hover. The `nextDialogue.ShowIndicator` icon is gated off (no dialogue queue — ANALYSIS). PORTED.
+5. **Player death markers** — `Player.last_death_position/last_death_time/show_last_death`
+   set in `start_death` (`KillMe` `:38846-38848`); `map_overlay.rs::draw_player_death_marker`
+   (fullscreen) + `draw_minimap_death_marker` (the extra -4 hover box) + the minimap clip;
+   `lang.rs::localized_duration` (`Lang.LocalizedDuration`). PORTED.
+6. **Revenge coin markers** — `map_overlay.rs::revenge_coin_tier`, `draw_revenge_map_icon`
+   (the `Frame(1,8)` row 0), `coins_split`, `revenge_use_mouse_over` (the horizontal
+   `ItemSlot.DrawMoney` row). PORTED.
+7. **Misc map icons** — `map_overlay.rs::draw_misc_map_icon` (the `Utils.Floor` = `(int)`
+   truncation), `draw_golf_ball_on_map`, `last_hit_golf_ball` (the four `GetLastHitBall`
+   guards re-derived from the stored snapshot + live slot). PORTED.
+8. **Minimap player heads** — the minimap head loop in `app/frame/draw.rs` (the
+   `(x+6, y+6, W-16, H-14)` clip, `Center + gfxOffY + height/2`). PORTED.
+9. **Fullscreen hover tile/chest names** — `map_overlay.rs::fullscreen_hover_name`
+   (the `Light > 40` gate, the chest/dresser lookup bounds + origin decode) +
+   `find_chest_name` (`DrawMap_FindChestName`). PORTED.
+
+### Verify-only (out of scope, recorded)
+
+- `DrawDebugMapOverlays` (`Main.cs:56299-56340`) — DebugOptions gates, dev-only.
+- The map-style-2 whole-screen overlay (`Main.cs:55617-55695`) — the port's `map_style == 2`
+  draws nothing (P4 Uncertainty 7, recorded); its icon calls ride the same helpers ported here.
+- Unity-potion teleport hover (`Main.cs:55960-55975`) — MP-only, `HasUnityPotion` unported.
+- `DrawPlayerMapIcon_CanBeSeen` (`:56076-56097`) — singleplayer collapses to `true`; ported
+  implicitly, re-verified.
+- Quest fish map markers: NO such overlay exists in `Main.DrawMap`/`MapHelper`/the six
+  `IMapLayer`s (grep `Quest|Fish` over `Map/*.cs` = 0 hits; the quest fish live only in the
+  fishing drop rules + the angler chat). The task seed's "quest fish markers" is a phantom —
+  recorded here so no future census re-hunts it.

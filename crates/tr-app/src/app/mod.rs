@@ -589,8 +589,9 @@ pub(crate) struct App {
     /// `Main.LocalPlayer.mouseInterface = true` (the mine/place suppression).
     pub(crate) minimap_hover: Option<ui::minimap::MinimapButton>,
     /// `Main.mapStyle` (`Main.cs:66750`, default 1): 0 = off, 1 = the minimap
-    /// frame, 2 = the overlay (out of P4 scope — nothing draws, the whole-UI P4
-    /// plan's Uncertainty 7). Cycled by the inventory icon row
+    /// frame, 2 = the screen overlay — its tile pass + layer walk landed the
+    /// D18 re-fold (research/84 §10.5) and the `:55626-55694` icon block the
+    /// f29-tip landing (research/140 §11.1). Cycled by the inventory icon row
     /// (`Main.cs:41106-41120`, `handle_inventory_clicks`) and the `cMapStyle`
     /// key (Tab, `Player.cs:24949-24965`, `world_key`); a debug env var selects
     /// it for screenshots.
@@ -630,6 +631,12 @@ pub(crate) struct App {
     pub(crate) mouse_npc_type: i32,
     pub(crate) ui_left_press: bool,
     pub(crate) ui_right_press: bool,
+    /// The frame's left-press edge snapshotted BEFORE the click cluster
+    /// consumes `ui_left_press` (`handle_inventory_clicks` clears it every
+    /// frame). The fullscreen map's pylon marker click reads it in the draw
+    /// (`TeleportPylonsMapLayer.cs:83`/`:90` — `Main.mouseLeft &&
+    /// Main.mouseLeftRelease`), which runs after the cluster.
+    pub(crate) map_left_press: bool,
     /// `Main.mouseRightRelease` (`Main.cs:67166`'s analog — the right
     /// button's release edge, consumed per frame).
     pub(crate) ui_right_release: bool,
@@ -4046,6 +4053,7 @@ impl App {
             mouse_npc_type: -1,
             ui_left_press: false,
             ui_right_press: false,
+            map_left_press: false,
             ui_right_release: false,
             control_throw: false,
             drop_right_edge: false,

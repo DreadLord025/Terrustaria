@@ -88,6 +88,81 @@ pub fn map_drag_delta(delta: [f32; 2], scale: f32) -> [f32; 2] {
     [-delta[0] * s, -delta[1] * s]
 }
 
+/// The pylon right-click's map view fit (`Player.cs:32188-32212`): start from
+/// the clicked pylon's anchor as a zero-size rect, `Including` every revealed
+/// pylon, `Inflate(20, 20)`, recentre on the rect's centre and clamp the scale
+/// so the whole rect fits inside `screen - 40`. Returns `(pos, scale)`; the
+/// caller also clears `PanTargetMapFullscreen`/`resetMapFull` (`:32199-32200`).
+///
+/// `Rectangle.Including` (`Utils.cs:957-963`) grows the rect to contain the
+/// point; `Inflate(20, 20)` adds 20 to every side (XNA semantics: x -= 20,
+/// width += 40). `rect.Center` is integer `(x + width/2, y + height/2)`.
+pub fn pylon_view_fit(
+    anchor: (i32, i32),
+    revealed: &[(i32, i32)],
+    screen: Vec2,
+    scale: f32,
+) -> ([f32; 2], f32) {
+    // `new Rectangle(MapPylonTile.X, MapPylonTile.Y, 0, 0)`.
+    let (mut left, mut top, mut right, mut bottom) =
+        (anchor.0, anchor.1, anchor.0, anchor.1);
+    for &(x, y) in revealed {
+        left = left.min(x);
+        right = right.max(x);
+        top = top.min(y);
+        bottom = bottom.max(y);
+    }
+    // `rect.Inflate(20, 20)`.
+    left -= 20;
+    top -= 20;
+    right += 20;
+    bottom += 20;
+    let (w, h) = (right - left, bottom - top);
+    // `rect.Center` — INTEGER division of the width/height.
+    let pos = [(left + w / 2) as f32, (top + h / 2) as f32];
+    let mut scale = scale;
+    let fit_x = (screen.x - 40.0) / w as f32;
+    let fit_y = (screen.y - 40.0) / h as f32;
+    if scale > fit_x {
+        scale = fit_x;
+    }
+    if scale > fit_y {
+        scale = fit_y;
+    }
+    (pos, scale)
+}
+
+/// `Main.cs:55361-55385`'s pan-target step, pure: while
+/// `PanTargetMapFullscreen` is armed, a left press cancels it; else the map
+/// position lerps toward the target by 0.15 (or snaps when within 1 tile,
+/// or when `dist*0.15 < 1` the amount is `1/dist`). Returns the new
+/// position and whether the pan finished. The C# runs this once per frame
+/// in `DrawMap`'s fullscreen branch, BEFORE the scale/pos clamps.
+/// W4-f29 fix F6 (research/140 §3) — relocated from the retired
+/// `map_pylons.rs`; `WorldMap::prepare`'s inline block delegates here.
+pub fn pan_target_step(pos: [f32; 2], target: [f32; 2], left_press: bool) -> ([f32; 2], bool) {
+    // `:55363-55366`: a press cancels the pan.
+    if left_press {
+        return (pos, true);
+    }
+    let dx = target[0] - pos[0];
+    let dy = target[1] - pos[1];
+    let dist = (dx * dx + dy * dy).sqrt();
+    // `:55369-55374`: within 1 tile snaps.
+    if dist < 1.0 {
+        return (target, true);
+    }
+    // `:55377-55382`: the lerp amount.
+    let mut amount = 0.15f32;
+    if dist * 0.15 < 1.0 {
+        amount = 1.0 / dist;
+    }
+    (
+        [pos[0] + dx * amount, pos[1] + dy * amount],
+        false,
+    )
+}
+
 /// One map quad: `dest` is a screen rect `[x, y, w, h]`, `uv` the texture subrect
 /// `[u0, v0, u1, v1]` (normalised over the world-sized texture).
 pub struct MapQuad {
@@ -447,6 +522,91 @@ pub fn draw_map_background(r: &mut SpriteRenderer, bg: MapBg, screen: Vec2, sky:
     r.push_map_back_sprite([0.0, 0.0], [screen.x, screen.y], uv, color);
 }
 
+/// `Main.DrawMap`'s fullscreen tile-hover text (`Main.cs:55782-55913`): the
+/// hovered map cell's name — the chest/dresser style rows with the stored
+/// name suffix (`DrawMap_FindChestName`, `Main.cs:56631-56643`), else
+/// `Lang.GetMapObjectName(type)`. `None` when the cursor is outside the
+/// drawable window (`flag2`, `:55786-55802`), the map cell is dark
+/// (`Light > 40`, `:55809`) or the row has no name. The icon layers' hover
+/// text overrides this one (`:55922`'s `ref text`), so the caller reads it
+/// as the fallback.
+pub(crate) fn fullscreen_hover_name(
+    world: &World,
+    map: &WorldMap,
+    chests: &[crate::chest::WorldChest],
+    mouse: Vec2,
+    screen: Vec2,
+) -> Option<String> {
+    // `:55784-55785`: `(int)((0 - num + mouseX) / num5 + num6)` — `num` is
+    // the drawing origin (`map_origin`), `num6`/`num7` are 10.
+    let origin = map_origin(map.pos, map.scale, screen);
+    let x = ((mouse.x - origin[0]) / map.scale + 10.0) as i32;
+    let y = ((mouse.y - origin[1]) / map.scale + 10.0) as i32;
+    // `:55786-55802`: the drawable window `[10, width-10) x [10, height-19)`.
+    if x < 10 || x >= world.width - 10 || y < 10 || y >= world.height - 19 {
+        return None;
+    }
+    let cell = map.tiles[world.index(x, y)];
+    if cell.light <= 40 {
+        return None;
+    }
+    let table = tr_core::map::color_table();
+    let ty = cell.ty as usize;
+    let lookup = |tile: usize| table.tile_lookup[tile] as usize;
+    let options = |tile: usize| table.tile_option_counts[tile] as usize;
+    // `:55820-55821`: the legacy style tables. `Lang.cs:503-506` aliases
+    // `chestType[52..]` to `chestType[0]`.
+    let chest_row = |style: i32| crate::lang::chest_type(if style >= 52 { 0 } else { style as usize });
+    // `DrawMap_FindChestName` (`:56631-56643`): no chest -> row 0; a named
+    // chest appends ": <name>".
+    let find_name = |row: String, ax: i32, ay: i32| match crate::chest::find_chest(chests, ax, ay) {
+        None => crate::lang::chest_type(0),
+        Some(i) if !chests[i].name.is_empty() => format!("{row}: {}", chests[i].name),
+        Some(_) => row,
+    };
+    let tile = world.tile(x, y)?;
+    let (fx, fy) = (tile.frame_x as i32, tile.frame_y as i32);
+    let text = if ty >= lookup(21) && ty < lookup(21) + options(21) {
+        // `:55822-55839`: tile 21 (Containers) — the anchor cell shift.
+        let ax = if fx % 36 != 0 { x - 1 } else { x };
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        find_name(chest_row(fx / 36), ax, ay)
+    } else if ty >= lookup(467) && ty < lookup(467) + options(467) {
+        // `:55840-55857`: tile 467 (Containers2) — the same walk over
+        // `chestType2`.
+        let ax = if fx % 36 != 0 { x - 1 } else { x };
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        match crate::chest::find_chest(chests, ax, ay) {
+            None => crate::lang::chest_type2(0),
+            Some(i) if !chests[i].name.is_empty() => {
+                format!("{}: {}", crate::lang::chest_type2((fx / 36) as usize), chests[i].name)
+            }
+            Some(_) => crate::lang::chest_type2((fx / 36) as usize),
+        }
+    } else if ty >= lookup(441) && ty < lookup(441) + options(21) {
+        // `:55858-55875`: tile 441 (FakeContainers) — the bare style row.
+        chest_row(fx / 36)
+    } else if ty >= lookup(468) && ty < lookup(468) + options(467) {
+        // `:55876-55893`: tile 468 (FakeContainers2).
+        crate::lang::chest_type2((fx / 36) as usize)
+    } else if ty >= lookup(88) && ty < lookup(88) + options(88) {
+        // `:55894-55908`: tile 88 (Dressers) — the 54-px anchor shift.
+        let ay = if fy % 36 != 0 { y - 1 } else { y };
+        let ax = x - fx % 54 / 18;
+        match crate::chest::find_chest(chests, ax, ay) {
+            None => crate::lang::dresser_type(0),
+            Some(i) if !chests[i].name.is_empty() => {
+                format!("{}: {}", crate::lang::dresser_type((fx / 54) as usize), chests[i].name)
+            }
+            Some(_) => crate::lang::dresser_type((fx / 54) as usize),
+        }
+    } else {
+        // `:55911`: every other cell reads the map legend row.
+        crate::lang::map_object_name(ty)
+    };
+    if text.is_empty() { None } else { Some(text) }
+}
+
 pub struct WorldMap {
     /// Row-major `y * width + x`, matching `World::index`.
     pub tiles: Vec<MapTile>,
@@ -570,6 +730,23 @@ pub struct WorldMap {
     /// frame, so `load_map_last_x` stays 0 (the tail's reset value).
     pub load_map_lock: bool,
     pub load_map_last_x: i32,
+    /// `Main.MapPylonTile` (`Main.cs`, default `Point16(-1, -1)`): the pylon
+    /// whose network lines the fullscreen map draws — set by the pylon tile
+    /// right-click (`Player.cs:32187`), cleared by `TryOpeningFullscreenMap`
+    /// (`:29113`) and the inventory map icon (`Main.cs:41102`).
+    pub pylon_tile: (i32, i32),
+    /// `Main.mouseLeft && Main.mouseLeftRelease` (`Main.cs:55363`): the press
+    /// edge that cancels an in-progress pan, sampled by the frame before
+    /// `prepare` (the C# reads the live input inside `DrawMap`). The pan
+    /// state itself is the union's `pan_target: Option<[f32; 2]>` above
+    /// (`None` = the C# flag false, `Some(end)` = armed + destination —
+    /// research/84 §10.3 step 2's representation keep-one).
+    pub pan_cancel_press: bool,
+    /// `Main.cancelWormHole` (`Main.cs`): the pylon marker hover sets it
+    /// (`TeleportPylonsMapLayer.cs:81`) so a same-frame unity-potion hover
+    /// cannot also claim the click; the fullscreen tail clears it
+    /// (`Main.cs:56006`).
+    pub cancel_wormhole: bool,
 }
 
 impl WorldMap {
@@ -613,6 +790,9 @@ impl WorldMap {
             map_ready: false,
             load_map_lock: false,
             load_map_last_x: 0,
+            pylon_tile: (-1, -1),
+            pan_cancel_press: false,
+            cancel_wormhole: false,
         }
     }
 
@@ -1058,11 +1238,14 @@ impl WorldMap {
 
     /// `KeyM`: opening also arms the recentre (`Main.resetMapFull = true`) and
     /// resets the scale (`Main.mapFullscreenScale = 2.5`, `Main.cs:41101`).
+    /// `TryOpeningFullscreenMap` (`Player.cs:29113`) also clears
+    /// `Main.MapPylonTile` — the pylon network lines reset on every open.
     pub fn set_open(&mut self, open: bool) {
         self.open = open;
         if open {
             self.reset_pos = true;
             self.scale = MAP_FULLSCREEN_SCALE_DEFAULT;
+            self.pylon_tile = (-1, -1);
         }
     }
 
@@ -1094,13 +1277,29 @@ impl WorldMap {
         center_tile: [f32; 2],
         map_enabled: bool,
     ) {
+        // `Main.cs:55361-55385`: the offscreen-pylon pan runs BEFORE the
+        // scale/position clamps. A held left press cancels it; otherwise the
+        // position lerps toward the target at 0.15 (or `1/dist` when that
+        // would overshoot), snapping when within 1 tile. The step itself is
+        // the pure `pan_target_step` (W4-f29 fix F6, research/140 §3), on the
+        // union's Option representation (`Some(end)` = flag armed +
+        // destination — research/84 §10.3 step 2).
+        if let Some(end) = self.pan_target {
+            let (pos, done) = pan_target_step(self.pos, end, self.pan_cancel_press);
+            self.pos = pos;
+            if done {
+                self.pan_target = None;
+            }
+        }
         // `Main.cs:55387-55395`.
         self.scale = map_scale_clamp(screen.x, world.width, self.scale);
         // `Main.cs:55398-55413`.
         self.pos = map_clamp_pos(self.pos, world);
         // `Main.cs:55416-55424`: `resetMapFull` overrides the clamp with the unclamped
         // view centre `(screenPosition + screenSize/2)/16f` — and clears the pan
-        // target first (`:55418`, the `recentre` seam).
+        // target first (`:55418`, the `recentre` seam; the f29 tip's inline
+        // pan-clear + pos/reset writes dedupe into `recentre`, research/84
+        // §10.3 step 2).
         if self.reset_pos {
             self.recentre(center_tile);
         }
@@ -1560,6 +1759,123 @@ mod tests {
         w.spawn_x = 10;
         w.spawn_y = 40;
         w
+    }
+
+    #[test]
+    fn w4_c21_fullscreen_hover_reads_the_map_legend_and_chest_names() {
+        // `Main.cs:55782-55913` + `DrawMap_FindChestName` (`:56631-56643`):
+        // the hovered cell answers the legend row, the chest style rows
+        // carry the stored ": <name>" suffix, and a dark cell / a cursor
+        // outside the drawable window answers nothing.
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        m.pos = [100.0, 60.0];
+        m.scale = 4.0;
+        let screen = Vec2::new(800.0, 600.0);
+        let table = color_table();
+        // The mouse over tile (100, 60): origin + (tile - 10) * scale.
+        let origin = map_origin(m.pos, m.scale, screen);
+        let mouse_at = |tx: i32, ty: i32| {
+            Vec2::new(
+                origin[0] + (tx - 10) as f32 * m.scale + 1.0,
+                origin[1] + (ty - 10) as f32 * m.scale + 1.0,
+            )
+        };
+        // An iron-ore cell (tile 6, `MapObject.Iron`, `Lang.cs:575`).
+        let i = world.index(100, 60);
+        m.tiles[i] = MapTile::create(table.tile_lookup[6], 200, 0);
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen).as_deref(),
+            Some("Iron")
+        );
+        // A dark cell (`Light <= 40`, `:55809`) answers nothing.
+        m.tiles[i] = MapTile::create(table.tile_lookup[6], 40, 0);
+        assert_eq!(fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen), None);
+        // Outside the drawable window (`flag2`, `:55786-55802`).
+        assert_eq!(fullscreen_hover_name(&world, &m, &[], mouse_at(5, 60), screen), None);
+        // A chest cell (tile 21 style 0) with a named chest at the anchor:
+        // "<style row>: <name>" (`:56640`).
+        m.tiles[i] = MapTile::create(table.tile_lookup[21], 200, 0);
+        world.tiles[i] = Tile { kind: 21, ..Default::default() };
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        let mut chest = crate::chest::WorldChest { tile: (100, 60), ..Default::default() };
+        chest.name = "Loot".into();
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[chest], mouse_at(100, 60), screen).as_deref(),
+            Some("Chest: Loot")
+        );
+        // No chest at the anchor -> the bare row 0 (`:56634-56637`).
+        assert_eq!(
+            fullscreen_hover_name(&world, &m, &[], mouse_at(100, 60), screen).as_deref(),
+            Some("Chest")
+        );
+    }
+
+    /// W4-e17 — the pylon right-click's view fit (`Player.cs:32188-32212`):
+    /// the rect spans the anchor + every revealed pylon, inflated 20 per
+    /// side; the centre is the INTEGER rect centre; the scale clamps so the
+    /// rect fits inside `screen - 40`.
+    #[test]
+    fn w4_e17_the_pylon_view_fit_centres_and_fits_the_network() {
+        let screen = Vec2::new(800.0, 600.0);
+        // A single pylon at (100, 100): the rect is (80, 80)..(120, 120)
+        // after the inflate, 40x40; centre (100, 100). The fit scale is
+        // min(760/40, 560/40) = 14 — a 2.5 start stays 2.5 (no clamp up).
+        let (pos, scale) = pylon_view_fit((100, 100), &[(100, 100)], screen, 2.5);
+        assert_eq!(pos, [100.0, 100.0]);
+        assert_eq!(scale, 2.5);
+        // A wide network forces the scale down: pylons at x 100 and 500 →
+        // rect x 80..520 (440 wide), fit_x = 760/440 ≈ 1.727.
+        let (pos, scale) = pylon_view_fit((100, 100), &[(100, 100), (500, 100)], screen, 2.5);
+        assert_eq!(pos, [300.0, 100.0]); // centre x = 80 + 440/2 = 300
+        assert!((scale - 760.0 / 440.0).abs() < 1e-4);
+        // The integer centre: an odd-width rect truncates. Pylons at x 100
+        // and 101 → rect 80..121 (41 wide), centre x = 80 + 41/2 = 100.
+        let (pos, _) = pylon_view_fit((100, 100), &[(100, 100), (101, 100)], screen, 2.5);
+        assert_eq!(pos[0], 100.0);
+        // No revealed pylons: the rect is just the anchor inflated.
+        let (pos, _) = pylon_view_fit((50, 60), &[], screen, 2.5);
+        assert_eq!(pos, [50.0, 60.0]);
+    }
+
+    /// W4-f29 fix F6 — `Main.cs:55361-55385`: the pan step — a press
+    /// cancels, within 1 tile snaps, far lerps by 0.15, and `dist*0.15 < 1`
+    /// takes the `1/dist` amount (a 1-tile step).
+    #[test]
+    fn w4_f29_pan_target_step() {
+        // A press cancels.
+        let (pos, done) = pan_target_step([0.0, 0.0], [100.0, 0.0], true);
+        assert_eq!(pos, [0.0, 0.0]);
+        assert!(done);
+        // Within 1 tile snaps.
+        let (pos, done) = pan_target_step([99.5, 0.0], [100.0, 0.0], false);
+        assert_eq!(pos, [100.0, 0.0]);
+        assert!(done);
+        // Far: lerp by 0.15.
+        let (pos, done) = pan_target_step([0.0, 0.0], [100.0, 0.0], false);
+        assert_eq!(pos, [15.0, 0.0]);
+        assert!(!done);
+        // dist*0.15 < 1 -> amount = 1/dist (a 1-tile step).
+        let (pos, done) = pan_target_step([0.0, 0.0], [5.0, 0.0], false);
+        assert_eq!(pos, [1.0, 0.0]);
+        assert!(!done);
+    }
+
+    /// W4-e17 — `set_open(true)` clears `Main.MapPylonTile`
+    /// (`TryOpeningFullscreenMap`, `Player.cs:29113`); the pan state survives
+    /// a close (the C# only clears it on the reset/open paths).
+    #[test]
+    fn w4_e17_opening_the_map_clears_the_selected_pylon() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        assert_eq!(m.pylon_tile, (-1, -1), "the default is no selection");
+        m.pylon_tile = (40, 30);
+        m.set_open(true);
+        assert_eq!(m.pylon_tile, (-1, -1), "the open clears the selection");
+        assert!(m.reset_pos, "the open arms the recentre");
+        assert_eq!(m.scale, MAP_FULLSCREEN_SCALE_DEFAULT);
     }
 
     #[test]

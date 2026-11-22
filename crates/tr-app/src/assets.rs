@@ -771,6 +771,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // sheets it fills them with — one per town NPC the port ships
         // (`NPC.TypeToDefaultHeadIndex`, `NPC.cs:7510-7553`).
         "Inventory_Back11",
+        // `TextureAssets.NpcHead[0..NPCHeadID.Count]` (`AssetInitializer.cs:406-409`):
+        // the full town-head range. The housing page and the map's town-head
+        // overlay (`Main.DrawNPCHeadFriendly`, `Main.cs:56553`) both index it by
+        // the vanilla head id; the shimmer variants (54-80) and the pet heads
+        // (27-53) ride the same array, so pack the whole set.
+        "NPC_Head_0",
         "NPC_Head_1",
         "NPC_Head_2",
         "NPC_Head_3",
@@ -782,16 +788,119 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_9",
         "NPC_Head_10",
         "NPC_Head_11",
+        "NPC_Head_12",
+        "NPC_Head_13",
         "NPC_Head_14",
         "NPC_Head_15",
+        "NPC_Head_16",
         "NPC_Head_17",
+        "NPC_Head_18",
+        "NPC_Head_19",
         "NPC_Head_20",
         "NPC_Head_21",
         "NPC_Head_22",
         "NPC_Head_23",
         "NPC_Head_24",
         "NPC_Head_25",
+        "NPC_Head_26",
+        "NPC_Head_27",
+        "NPC_Head_28",
+        "NPC_Head_29",
+        "NPC_Head_30",
+        "NPC_Head_31",
+        "NPC_Head_32",
+        "NPC_Head_33",
+        "NPC_Head_34",
+        "NPC_Head_35",
+        "NPC_Head_36",
+        "NPC_Head_37",
+        "NPC_Head_38",
+        "NPC_Head_39",
+        "NPC_Head_40",
+        "NPC_Head_41",
+        "NPC_Head_42",
+        "NPC_Head_43",
+        "NPC_Head_44",
         "NPC_Head_45",
+        "NPC_Head_46",
+        "NPC_Head_47",
+        "NPC_Head_48",
+        "NPC_Head_49",
+        "NPC_Head_50",
+        "NPC_Head_51",
+        "NPC_Head_52",
+        "NPC_Head_53",
+        "NPC_Head_54",
+        "NPC_Head_55",
+        "NPC_Head_56",
+        "NPC_Head_57",
+        "NPC_Head_58",
+        "NPC_Head_59",
+        "NPC_Head_60",
+        "NPC_Head_61",
+        "NPC_Head_62",
+        "NPC_Head_63",
+        "NPC_Head_64",
+        "NPC_Head_65",
+        "NPC_Head_66",
+        "NPC_Head_67",
+        "NPC_Head_68",
+        "NPC_Head_69",
+        "NPC_Head_70",
+        "NPC_Head_71",
+        "NPC_Head_72",
+        "NPC_Head_73",
+        "NPC_Head_74",
+        "NPC_Head_75",
+        "NPC_Head_76",
+        "NPC_Head_77",
+        "NPC_Head_78",
+        "NPC_Head_79",
+        "NPC_Head_80",
+        // `TextureAssets.NpcHeadBoss[0..40]` (`AssetInitializer.cs:410-413`):
+        // the boss-head overlay sheets (`Main.DrawNPCHeadBoss`,
+        // `Main.cs:56562`), indexed by `GetBossHeadTextureIndex`
+        // (`NPCID.Sets.BossHeadTextures`, `NPCID.cs:10479`).
+        "NPC_Head_Boss_0",
+        "NPC_Head_Boss_1",
+        "NPC_Head_Boss_2",
+        "NPC_Head_Boss_3",
+        "NPC_Head_Boss_4",
+        "NPC_Head_Boss_5",
+        "NPC_Head_Boss_6",
+        "NPC_Head_Boss_7",
+        "NPC_Head_Boss_8",
+        "NPC_Head_Boss_9",
+        "NPC_Head_Boss_10",
+        "NPC_Head_Boss_11",
+        "NPC_Head_Boss_12",
+        "NPC_Head_Boss_13",
+        "NPC_Head_Boss_14",
+        "NPC_Head_Boss_15",
+        "NPC_Head_Boss_16",
+        "NPC_Head_Boss_17",
+        "NPC_Head_Boss_18",
+        "NPC_Head_Boss_19",
+        "NPC_Head_Boss_20",
+        "NPC_Head_Boss_21",
+        "NPC_Head_Boss_22",
+        "NPC_Head_Boss_23",
+        "NPC_Head_Boss_24",
+        "NPC_Head_Boss_25",
+        "NPC_Head_Boss_26",
+        "NPC_Head_Boss_27",
+        "NPC_Head_Boss_28",
+        "NPC_Head_Boss_29",
+        "NPC_Head_Boss_30",
+        "NPC_Head_Boss_31",
+        "NPC_Head_Boss_32",
+        "NPC_Head_Boss_33",
+        "NPC_Head_Boss_34",
+        "NPC_Head_Boss_35",
+        "NPC_Head_Boss_36",
+        "NPC_Head_Boss_37",
+        "NPC_Head_Boss_38",
+        "NPC_Head_Boss_39",
         "Heart",
         "Bubble",
         // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
@@ -799,8 +908,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
         "HealthBar1",
         "HealthBar2",
-        "NPC_Head_Boss_7",
         "UI/UI_BossBar",
+        // `TextureAssets.BlackTile` also fills the underworld box (the
+        // first occurrence above wins the dedup); the pylon network lines
+        // stretch it (`TeleportPylonsMapLayer.DrawLine`,
+        // `TeleportPylonsMapLayer.cs:18-28`).
+        // `Images/UI/UI_quickicon1`: the town-NPC map head's "new dialogue"
+        // notification bubble (`Utils.DrawNotificationIcon`, `Utils.cs:444`).
+        "UI/UI_quickicon1",
         // The map overlay layers (`Main.cs:66551`'s `Main.MapIcons`): the
         // spawn/bed markers, the ping animation and the layer Extras
         // (`TextureAssets.Extra[n] = Images/Extra_n`, AssetInitializer.cs:365).
@@ -811,6 +926,23 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // The Main.DrawMap icon passes (W4-e17): the death marker
+        // (`TextureAssets.MapDeath`, `AssetInitializer.cs:338`) and the
+        // Potion-of-Return portals + golf marker (`DrawMiscMapIcons`,
+        // `Main.cs:56466-56539`). The boss-head set rides the
+        // `NPC_Head_Boss_0..39` block above (a8b02614).
+        "MapDeath",
+        "Extra_173",
+        "Extra_175",
+        "Extra_176",
+        // W4-f29 fix F4 (research/140 §3): the revenge map markers draw the
+        // 1x8 `Coin_<n>` ANIMATION strips (`TextureAssets.Coin[0..4]`,
+        // `AssetInitializer.cs:369`), NOT the `Item_71..74` inventory icons
+        // (`CoinLossRevengeSystem.cs:262`, `CoinSlot.cs:242`).
+        "Coin_0",
+        "Coin_1",
+        "Coin_2",
+        "Coin_3",
         "UI/Cursor_0",
         "UI/Cursor_1",
         // `TextureAssets.Cursors[11]` — the thick-cursor border ring
@@ -1954,8 +2086,15 @@ pub struct Lookups {
     /// `Main.DrawGore` source (`Main.cs:21873-21907`). Includes the leaf
     /// gores 910/911 (they also ride `leaf_gores` for the foliage pass).
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
-    /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
+    /// `Item_71..74`: copper/silver/gold/platinum coin sprites — the
+    /// INVENTORY icons; the revenge map markers draw [`Self::coin_anim`].
     pub coins: [Option<tr_render::SheetRect>; 4],
+    /// `TextureAssets.Coin[0..4]` (`AssetInitializer.cs:369`): the 1x8 coin
+    /// ANIMATION strips the revenge map markers draw
+    /// (`CoinLossRevengeSystem.cs:262-264`, `CoinSlot.cs:242`) — distinct
+    /// from the `Item_71..74` inventory icons in [`Self::coins`].
+    /// W4-f29 fix F4 (research/140 §3).
+    pub coin_anim: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
     /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
@@ -1972,6 +2111,27 @@ pub struct Lookups {
     /// (`NPCHeadID`): the town heads the housing page draws. Absent entries are
     /// heads the port ships no NPC for.
     pub npc_heads: Vec<Option<tr_render::SheetRect>>,
+    /// `TextureAssets.MapDeath` (`AssetInitializer.cs:338`): the player
+    /// death marker (`Main.DrawPlayerDeathMarker`, `Main.cs:56446-56464`)
+    /// and the revenge marker's fallback sheet (`CoinLossRevengeSystem.cs:261`).
+    pub map_death: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[173/175/176]` — `DrawMiscMapIcons`'
+    /// Potion-of-Return exit/home portals + the golf marker
+    /// (`Main.cs:56473-56539`).
+    pub extra_173: Option<tr_render::SheetRect>,
+    pub extra_175: Option<tr_render::SheetRect>,
+    pub extra_176: Option<tr_render::SheetRect>,
+    /// `TextureAssets.NpcHeadBoss[0..40]` (`AssetInitializer.cs:410-413`):
+    /// the boss-head overlay sheets, indexed by `GetBossHeadTextureIndex`
+    /// (`NPCID.Sets.BossHeadTextures`, `NPCID.cs:10479`). Absent entries are
+    /// heads whose sheet file the atlas never packed.
+    pub npc_boss_heads: Vec<Option<tr_render::SheetRect>>,
+    /// `TextureAssets.BlackTile` (`Images/Black_Tile`): the white tintable
+    /// square the pylon network lines stretch (`TeleportPylonsMapLayer.cs:18`).
+    pub black_tile: Option<tr_render::SheetRect>,
+    /// `Images/UI/UI_quickicon1`: the town-NPC map head's notification bubble
+    /// (`Utils.DrawNotificationIcon`, `Utils.cs:444`).
+    pub ui_quickicon1: Option<tr_render::SheetRect>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
     /// The map overlay icons (`Main.MapIcons`' layers, `Main.cs:66551`).
@@ -2361,6 +2521,8 @@ impl Lookups {
                 })
                 .collect(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
+            // W4-f29 fix F4: the revenge markers' 1x8 animation strips.
+            coin_anim: [0, 1, 2, 3].map(|i| atlas.sheet(&format!("Coin_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
@@ -2369,6 +2531,15 @@ impl Lookups {
             npc_heads: (0..crate::ui::housing::HEAD_COUNT)
                 .map(|h| atlas.sheet(&format!("NPC_Head_{h}")).copied())
                 .collect(),
+            map_death: atlas.sheet("MapDeath").copied(),
+            extra_173: atlas.sheet("Extra_173").copied(),
+            extra_175: atlas.sheet("Extra_175").copied(),
+            extra_176: atlas.sheet("Extra_176").copied(),
+            npc_boss_heads: (0..40)
+                .map(|h| atlas.sheet(&format!("NPC_Head_Boss_{h}")).copied())
+                .collect(),
+            black_tile: atlas.sheet("Black_Tile").copied(),
+            ui_quickicon1: atlas.sheet("UI/UI_quickicon1").copied(),
             ui_font,
             item_font,
             death_font,
@@ -3661,6 +3832,47 @@ mod tests {
             );
         }
         assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
+    }
+
+    /// W4-e17 — the map head-overlay sheets pack: the full town-head range
+    /// (the shimmer variants 54-80 the profiles resolve to), the 40 boss
+    /// heads, the pylon line's BlackTile and the notification quickicon.
+    #[test]
+    fn w4_e17_the_map_head_overlay_sheets_pack() {
+        let (_, lookups) = content_lookups();
+        assert_eq!(lookups.npc_boss_heads.len(), 40);
+        // The boss heads the port's kinds resolve to must all be packed.
+        for head in [0usize, 5, 7, 8, 11, 19, 22, 23, 24, 25, 39] {
+            assert!(
+                lookups.npc_boss_heads[head].is_some(),
+                "NPC_Head_Boss_{head} must reach the atlas"
+            );
+        }
+        // The shimmered Guide (72) and Princess (54) heads.
+        assert!(lookups.npc_heads[72].is_some(), "the shimmered Guide head");
+        assert!(lookups.npc_heads[54].is_some(), "the shimmered Princess head");
+        assert!(lookups.black_tile.is_some(), "Black_Tile for the pylon lines");
+        assert!(lookups.ui_quickicon1.is_some(), "the notification quickicon");
+        // W4-f29 fix F4 (research/140 §5): the revenge markers' Coin_0..3
+        // animation strips pack, each an 8-row strip (`value.Frame(1, 8)`,
+        // `CoinLossRevengeSystem.cs:263`).
+        for (i, sheet) in lookups.coin_anim.iter().enumerate() {
+            let sheet = sheet.unwrap_or_else(|| panic!("Coin_{i}"));
+            assert_eq!(sheet.height % 8, 0, "Coin_{i} is an 8-row strip");
+        }
+        // The death marker + the misc portals/golf ring (f29's pack rows).
+        assert!(lookups.map_death.is_some(), "MapDeath");
+        assert!(lookups.extra_173.is_some(), "the exit portal");
+        assert!(lookups.extra_175.is_some(), "the home portal");
+        assert!(lookups.extra_176.is_some(), "the golf ring");
+        // The town heads the map draws beyond the housing page's set
+        // (f29's pack rows; e17's full 0..80 range is the superset).
+        for head in [12usize, 13, 16, 18, 19, 26] {
+            assert!(
+                lookups.npc_heads[head].is_some(),
+                "NPC_Head_{head} (the map town heads)"
+            );
+        }
     }
 
     #[test]

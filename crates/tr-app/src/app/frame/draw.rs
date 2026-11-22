@@ -223,6 +223,10 @@ impl App {
             // mutates `self` while the draw destructure holds its fields;
             // applied after the gpu block (S1-E-26 wave A).
             let mut popup_goto: Option<&'static str> = None;
+            // The fullscreen pylon marker click (`TeleportPylonsMapLayer.cs:
+            // 90-109`): resolved during the map draw, drained after the gpu
+            // block releases the field borrows (the popup_goto convention).
+            let mut pylon_click: Option<crate::map_layers::PylonClick> = None;
 
             {
                 let App {
@@ -1531,7 +1535,7 @@ impl App {
                                     ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
                                 )
                             });
-                            let _ = crate::map_layers::map_layers_draw(
+                            let (layer_hover, _, _) = crate::map_layers::map_layers_draw(
                                 renderer,
                                 lookups,
                                 &crate::map_layers::MapIconInputs {
@@ -1545,6 +1549,10 @@ impl App {
                                     map: Some(m),
                                     team_based_spawns,
                                     mouse: self.mouse_pos,
+                                    map_fullscreen: false,
+                                    pylon_tile: m.pylon_tile,
+                                    screen,
+                                    left_press: self.map_left_press,
                                 },
                                 [0.0, 0.0],
                                 ui::minimap::minimap_origin_raw(screen, map_scale),
@@ -1558,6 +1566,270 @@ impl App {
                                 num46,
                                 m.minimap_alpha, // `b` (`Main.cs:55532` → `:55703`)
                             );
+                            // `Main.cs:55705-55706`: the revenge markers +
+                            // the misc icons (return portals / golf ball),
+                            // between the icon layers and the NPC heads.
+                            // The C# passes the transform-space
+                            // `(num12, num13)` / `(num3+num10, num4+num11)`
+                            // pair; the port folds `MapScale` into the
+                            // positions (the `minimap_origin_raw`
+                            // convention), so the pair rides screen space
+                            // and the clip is the scaled 240x240 panel.
+                            let mm_origin_raw = ui::minimap::minimap_origin_raw(screen, map_scale);
+                            let mm_scale_raw = m.minimap_scale;
+                            let mm_win = 240.0 / mm_scale_raw.clamp(0.2, 3.0);
+                            let mm_left = view_center[0].floor() - mm_win * 0.5;
+                            let mm_top = view_center[1].floor() - mm_win * 0.5;
+                            let mm_sub = [
+                                -(view_center[0] - view_center[0].floor()) * mm_scale_raw,
+                                -(view_center[1] - view_center[1].floor()) * mm_scale_raw,
+                            ];
+                            let mm_panel = ui::minimap::scale_rect(
+                                [mm_origin_raw[0], mm_origin_raw[1], 240.0, 240.0],
+                                map_scale,
+                            );
+                            let misc_offset = [
+                                (mm_origin_raw[0] + mm_sub[0]) * map_scale,
+                                (mm_origin_raw[1] + mm_sub[1]) * map_scale,
+                            ];
+                            let misc_top_left = [mm_left, mm_top];
+                            let misc_scale = mm_scale_raw * map_scale;
+                            let revenge_hover = crate::map_player_icons::draw_revenge_map_icons(
+                                renderer,
+                                lookups,
+                                &self.revenge_markers,
+                                misc_top_left,
+                                misc_offset,
+                                Some(mm_panel),
+                                misc_scale,
+                                num46 * map_scale,
+                                self.mouse_pos,
+                            );
+                            let golf_ball = self.golf_state.last_hit_golf_ball().and_then(|stored| {
+                                let live = self.projectiles.slots().get(stored.who_am_i).map(|q| {
+                                    let (cx, cy) = q.center();
+                                    tr_core::golf_state::GolfBall {
+                                        who_am_i: stored.who_am_i,
+                                        kind: q.kind as i32,
+                                        owner: q.owner as i32,
+                                        active: q.active,
+                                        position: q.pos,
+                                        center: glam::Vec2::new(cx, cy),
+                                        ai1: q.ai[1],
+                                        local_ai1: q.local_ai[1],
+                                    }
+                                });
+                                self.golf_state
+                                    .last_hit_ball_for_draw(live.as_ref(), self.local_id as i32)
+                            });
+                            let misc_hover = crate::map_player_icons::draw_misc_map_icons(
+                                renderer,
+                                lookups,
+                                &crate::map_player_icons::MiscIconInputs {
+                                    player: player.as_ref(),
+                                    golf_ball,
+                                    mouse: self.mouse_pos,
+                                },
+                                misc_top_left,
+                                misc_offset,
+                                Some(mm_panel),
+                                misc_scale,
+                                num46 * map_scale,
+                            );
+                            // `Main.cs:55709`: `DrawNPCMapIcons2` — the
+                            // minimap's boss/town head pass, between the
+                            // icon layers and the player heads. The C#
+                            // runs it in the `MapScale` batch transform
+                            // (`transformMatrix2`, `:55708`), so the panel
+                            // origin / left / top / sub-offsets ride the
+                            // raw transform space and the clip is the raw
+                            // 240x240 rect; the port folds the transform
+                            // into the positions (the `minimap_origin_raw`
+                            // convention). The hover text rides the same
+                            // `ref text` chain — the layers' write wins
+                            // over the heads' (`:55703` runs first).
+                            let mm_origin = ui::minimap::minimap_origin_raw(screen, map_scale);
+                            let mm_scale = m.minimap_scale;
+                            let win = 240.0 / mm_scale.clamp(0.2, 3.0);
+                            let left = view_center[0].floor() - win * 0.5;
+                            let top = view_center[1].floor() - win * 0.5;
+                            let sub = [
+                                -(view_center[0] - view_center[0].floor()) * mm_scale,
+                                -(view_center[1] - view_center[1].floor()) * mm_scale,
+                            ];
+                            let head_hover = crate::map_npc_icons::draw_npc_map_icons_minimap(
+                                renderer,
+                                lookups,
+                                npcs,
+                                [mm_origin[0] * map_scale, mm_origin[1] * map_scale],
+                                &crate::map_npc_icons::NpcIconView {
+                                    map_position: [left, top],
+                                    sub_offset: [sub[0] * map_scale, sub[1] * map_scale],
+                                    minimap_rect: Some(ui::minimap::scale_rect(
+                                        [mm_origin[0], mm_origin[1], 240.0, 240.0],
+                                        map_scale,
+                                    )),
+                                    map_scale: mm_scale * map_scale,
+                                    // The head draws at `num46` inside the
+                                    // `MapScale` transform — the screen-space
+                                    // size/hover rect is `num46 * MapScale`
+                                    // (the C# compares in transform space
+                                    // against the `num16`-divided mouse,
+                                    // `Main.cs:55512-55513`).
+                                    head_scale: num46 * map_scale,
+                                    // `b/255` (`Main.cs:55709` → the live
+                                    // minimap alpha, D17 — research/140 §8.3).
+                                    alpha: m.minimap_alpha,
+                                    mouse: self.mouse_pos,
+                                    global_time: anim_time % 3600.0,
+                                },
+                            );
+                            // `Main.cs:55712-55766`: the 255-player head loop
+                            // — the local head plus the remote peers' pins,
+                            // then the death markers. The C# runs it in the
+                            // `MapScale` transform with the `num16`-divided
+                            // mouse; the port folds the transform into the
+                            // positions/sizes and compares the screen mouse
+                            // against the scaled rects (the same convention
+                            // as the NPC head pass above).
+                            let net_mode = match self.net {
+                                crate::app::NetRole::Host(_) => 2,
+                                crate::app::NetRole::Client(_) => 1,
+                                crate::app::NetRole::Off => 0,
+                            };
+                            let local_team = player.as_ref().map_or(0, |p| p.team);
+                            let local_hostile = player.as_ref().is_some_and(|p| p.hostile);
+                            let mm_hs = num46 * map_scale;
+                            let mut pin_hover: Option<String> = None;
+                            let mut death_hover: Option<String> = None;
+                            let mut death_hovered = false;
+                            // The local player first (`Main.myPlayer` is
+                            // slot 0 in the port).
+                            if let Some(p) = player.as_ref() {
+                                let center = [
+                                    p.x + p.width * 0.5,
+                                    p.y + p.gfx_off_y + p.height * 0.5,
+                                ];
+                                let pin = crate::map_player_icons::minimap_pin_pos(
+                                    center,
+                                    [left, top],
+                                    [mm_origin[0] * map_scale, mm_origin[1] * map_scale],
+                                    [sub[0] * map_scale, sub[1] * map_scale],
+                                    mm_scale * map_scale,
+                                );
+                                if !p.dead
+                                    && crate::map_player_icons::minimap_head_gate(pin, mm_panel)
+                                {
+                                    let border = crate::map_player_icons::player_head_borders_color(
+                                        p.dead, p.team, p.hostile, true, local_team, net_mode,
+                                    );
+                                    // `b/255` (`Main.cs:55729`, D17).
+                                    draw_player_map_icon(renderer, player_assets, p, pin, mm_hs, border, m.minimap_alpha);
+                                }
+                                if p.show_last_death {
+                                    if let Some(d) = p.last_death_position {
+                                        let dp = crate::map_player_icons::death_marker_pos(
+                                            [d.0, d.1],
+                                            [left, top],
+                                            [mm_origin[0] * map_scale, mm_origin[1] * map_scale],
+                                            mm_scale * map_scale,
+                                            [-sub[0] * map_scale, -sub[1] * map_scale],
+                                        );
+                                        // `:55746-55751`: the minimap death
+                                        // position adds `num10/num11` (the
+                                        // sub-offset) — the inset pair is
+                                        // the negated sub, not 10*scale.
+                                        if crate::map_player_icons::minimap_death_gate(dp, mm_panel)
+                                            && crate::map_player_icons::draw_death_marker(
+                                                // `White * b/255` (`:55754`, D17).
+                                                renderer, lookups, dp, mm_hs, m.minimap_alpha, self.mouse_pos,
+                                                // `:55755-55758`: the minimap
+                                                // inline copy's extra -4/-4
+                                                // hover shift (W4-f29 F5).
+                                                true,
+                                            )
+                                        {
+                                            death_hovered = true;
+                                            if let Some(t) = p.last_death_time {
+                                                death_hover = Some(
+                                                    crate::map_player_icons::death_hover_text(
+                                                        &self.player_name, t,
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // The remote peers (`Main.player[j]`, j !=
+                            // myPlayer): the snapshot players, team 0 /
+                            // not hostile (unsynced), hover = the name.
+                            for rp in remote_players.values() {
+                                if !crate::map_player_icons::player_map_icon_can_be_seen(
+                                    false, false, 0, local_hostile, local_team,
+                                ) {
+                                    continue;
+                                }
+                                let pp = crate::map_player_icons::remote_pin_player(world, rp);
+                                let center = [
+                                    pp.x + pp.width * 0.5,
+                                    pp.y + pp.gfx_off_y + pp.height * 0.5,
+                                ];
+                                let pin = crate::map_player_icons::minimap_pin_pos(
+                                    center,
+                                    [left, top],
+                                    [mm_origin[0] * map_scale, mm_origin[1] * map_scale],
+                                    [sub[0] * map_scale, sub[1] * map_scale],
+                                    mm_scale * map_scale,
+                                );
+                                if crate::map_player_icons::minimap_head_gate(pin, mm_panel) {
+                                    let border = crate::map_player_icons::player_head_borders_color(
+                                        false, 0, false, false, local_team, net_mode,
+                                    );
+                                    // `b/255` (`Main.cs:55729`, D17).
+                                    draw_player_map_icon(renderer, player_assets, &pp, pin, mm_hs, border, m.minimap_alpha);
+                                    // `:55730-55740`: the peer hover rect.
+                                    let hr = crate::map_player_icons::head_hover_rect(pin, mm_hs);
+                                    if crate::map_player_icons::hover_inclusive(hr, self.mouse_pos) {
+                                        pin_hover = Some(rp.name.clone());
+                                    }
+                                }
+                            }
+                            // The hover precedence is the C#'s `ref text`
+                            // write order: layers (`:55703`) → revenge/misc
+                            // (`:55705-55706`) → NPC heads (`:55709`) →
+                            // peer names (`:55738`) → the death duration
+                            // (`:55772-55774`, num19 wins over the revenge
+                            // UseMouseOver).
+                            let mm_text = death_hover
+                                .or(pin_hover)
+                                .or(head_hover)
+                                .or(misc_hover)
+                                .or(layer_hover);
+                            if let Some(t) = mm_text {
+                                crate::ui::text::hud_text(
+                                    renderer,
+                                    lookups,
+                                    self.mouse_pos.x + 12.0,
+                                    self.mouse_pos.y + 12.0,
+                                    0.85,
+                                    [1.0; 4],
+                                    &t,
+                                );
+                            }
+                            // `:55778`: no death hover → the revenge
+                            // marker's UseMouseOver money row.
+                            if !death_hovered {
+                                if let Some(i) = revenge_hover {
+                                    crate::map_player_icons::draw_revenge_mouse_over(
+                                        renderer,
+                                        lookups,
+                                        self.revenge_markers[i].coins_value,
+                                        self.mouse_pos,
+                                        num46 * map_scale,
+                                    );
+                                }
+                            }
                             // The hover highlight is `MinimapFrame.Update`'s
                             // `buttonUnderMouse.IsHighlighted`
                             // (`MinimapFrame.cs:163`), resolved per frame in
@@ -1603,11 +1875,11 @@ impl App {
                             // `MapIcons.Draw` as the fullscreen/minimap arms
                             // at the overlay transform: `mapPosition =
                             // Vector2.Zero`, no clip (`null`), `b` opacity.
-                            // The rest of the `:55626-55694` icon block
-                            // (revenge/misc/NPC heads/the 255 player loop +
-                            // death markers) is the f29/e17 overlay
-                            // keep-one's nine pieces — ported with that
-                            // pick, never twice (research/14 retire census).
+                            // The `:55626-55694` icon block below is the f29
+                            // tip's overlay pick inserted INTO this re-folded
+                            // branch (research/84 §10.3 step 2 / research/140
+                            // §11.1) — never a second tile pass, num37 walk
+                            // or hover tail.
                             let num37 = ((num5 * 0.2 * 2.0 + 1.0) / 3.0).min(1.0)
                                 * settings.applied_ui_scale(screen.x, screen.y);
                             let digtoise =
@@ -1619,7 +1891,15 @@ impl App {
                                     ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
                                 )
                             });
-                            let hover = crate::map_layers::map_layers_draw(
+                            // The third `MapIconInputs` site gains the f29
+                            // tip's 4 fields (research/140 §8.5/§11.1):
+                            // `map_fullscreen: false` + `pylon_tile: (-1,-1)`
+                            // (no network lines — `TeleportPylonsMapLayer.cs:45`
+                            // gates fullscreen), `left_press: false` (the
+                            // marker click is fullscreen-only, `:83`/`:90`);
+                            // the PylonClick/cancel_wormhole return halves are
+                            // inert at that gate — dropped here.
+                            let (layer_hover, _, _) = crate::map_layers::map_layers_draw(
                                 renderer,
                                 lookups,
                                 &crate::map_layers::MapIconInputs {
@@ -1633,6 +1913,10 @@ impl App {
                                     map: Some(m),
                                     team_based_spawns,
                                     mouse: self.mouse_pos,
+                                    map_fullscreen: false,
+                                    pylon_tile: (-1, -1),
+                                    screen,
+                                    left_press: false,
                                 },
                                 [0.0, 0.0],
                                 overlay_offset,
@@ -1641,9 +1925,165 @@ impl App {
                                 num37,
                                 alpha,
                             );
+                            // `Main.cs:55626-55627`: the revenge markers +
+                            // the misc icons at the overlay transform —
+                            // `Vector2.Zero` / `(num - 10*num5, num2 -
+                            // 10*num5)` (the inset-free origin draw_overlay
+                            // returned), no clip. Like the fullscreen pair
+                            // these take NO `b` in C#.
+                            let ov_revenge_hover = crate::map_player_icons::draw_revenge_map_icons(
+                                renderer,
+                                lookups,
+                                &self.revenge_markers,
+                                [0.0, 0.0],
+                                overlay_offset,
+                                None,
+                                num5,
+                                num37,
+                                self.mouse_pos,
+                            );
+                            let ov_golf_ball = self.golf_state.last_hit_golf_ball().and_then(|stored| {
+                                let live = self.projectiles.slots().get(stored.who_am_i).map(|q| {
+                                    let (cx, cy) = q.center();
+                                    tr_core::golf_state::GolfBall {
+                                        who_am_i: stored.who_am_i,
+                                        kind: q.kind as i32,
+                                        owner: q.owner as i32,
+                                        active: q.active,
+                                        position: q.pos,
+                                        center: glam::Vec2::new(cx, cy),
+                                        ai1: q.ai[1],
+                                        local_ai1: q.local_ai[1],
+                                    }
+                                });
+                                self.golf_state
+                                    .last_hit_ball_for_draw(live.as_ref(), self.local_id as i32)
+                            });
+                            let ov_misc_hover = crate::map_player_icons::draw_misc_map_icons(
+                                renderer,
+                                lookups,
+                                &crate::map_player_icons::MiscIconInputs {
+                                    player: player.as_ref(),
+                                    golf_ball: ov_golf_ball,
+                                    mouse: self.mouse_pos,
+                                },
+                                [0.0, 0.0],
+                                overlay_offset,
+                                None,
+                                num5,
+                                num37,
+                            );
+                            // `Main.cs:55629-55641`: the revenge marker's
+                            // UseMouseOver runs BETWEEN the misc icons and
+                            // the NPC heads in this arm (no death gate —
+                            // the loop's num19 hover only feeds the shared
+                            // MouseText tail).
+                            if let Some(i) = ov_revenge_hover {
+                                crate::map_player_icons::draw_revenge_mouse_over(
+                                    renderer,
+                                    lookups,
+                                    self.revenge_markers[i].coins_value,
+                                    self.mouse_pos,
+                                    num37,
+                                );
+                            }
+                            // `Main.cs:55645`: `DrawNPCMapIcons3` — the
+                            // overlay head pass (fullscreen geometry, no
+                            // hover text), now WIRED (research/140 §11.1).
+                            crate::map_npc_icons::draw_npc_map_icons_overlay(
+                                renderer,
+                                lookups,
+                                npcs,
+                                map::map_origin(m.pos, num5, screen),
+                                &crate::map_npc_icons::NpcIconView {
+                                    map_position: [0.0, 0.0],
+                                    sub_offset: [0.0, 0.0],
+                                    minimap_rect: None,
+                                    map_scale: num5,
+                                    head_scale: num37,
+                                    alpha,
+                                    mouse: self.mouse_pos,
+                                    global_time: anim_time % 3600.0,
+                                },
+                            );
+                            // `Main.cs:55653-55692`: the 255-player loop —
+                            // the overlay arm SKIPS the local head
+                            // (`i != Main.myPlayer`, `:55659`) but draws
+                            // EVERY player's death marker (`:55672`), at
+                            // the `:55661-55668` offsets (position.Y only,
+                            // no gfxOffY/height half on the head). The
+                            // remote peers stand in for the 255 slots.
+                            let ov_net_mode = match self.net {
+                                crate::app::NetRole::Host(_) => 2,
+                                crate::app::NetRole::Client(_) => 1,
+                                crate::app::NetRole::Off => 0,
+                            };
+                            let ov_local_team = player.as_ref().map_or(0, |p| p.team);
+                            let ov_local_hostile = player.as_ref().is_some_and(|p| p.hostile);
+                            let ov_origin = map::map_origin(m.pos, num5, screen);
+                            let mut ov_death_hover: Option<String> = None;
+                            for rp in remote_players.values() {
+                                if !crate::map_player_icons::player_map_icon_can_be_seen(
+                                    false, false, 0, ov_local_hostile, ov_local_team,
+                                ) {
+                                    continue;
+                                }
+                                let pp = crate::map_player_icons::remote_pin_player(world, rp);
+                                // `:55661-55668`: `(position + (width/2, 0))
+                                // /16*num5 + origin - (6, 2 + (2 - num5/5*2))
+                                // - 10*num5` — the head Y has NO gfxOffY /
+                                // height-half (unlike fullscreen `:55938`).
+                                let ov_pin = [
+                                    (pp.x + pp.width * 0.5) / 16.0 * num5 + ov_origin[0]
+                                        - 6.0 - 10.0 * num5,
+                                    pp.y / 16.0 * num5 + ov_origin[1]
+                                        - 2.0 - (2.0 - num5 / 5.0 * 2.0) - 10.0 * num5,
+                                ];
+                                let border = crate::map_player_icons::player_head_borders_color(
+                                    false, 0, false, false, ov_local_team, ov_net_mode,
+                                );
+                                draw_player_map_icon(renderer, player_assets, &pp, ov_pin, num37, border, alpha);
+                                // The peers' `showLastDeath`/`lastDeath`
+                                // have no net sync (the fullscreen loop's
+                                // recorded deviation) — only the local
+                                // player's death marker draws below.
+                            }
+                            // The local player's death marker (`i ==
+                            // myPlayer` still runs `:55672`).
+                            if let Some(p) = player.as_ref() {
+                                if p.show_last_death {
+                                    if let Some(d) = p.last_death_position {
+                                        let dp = crate::map_player_icons::death_marker_pos(
+                                            [d.0, d.1],
+                                            [0.0, 0.0],
+                                            ov_origin,
+                                            num5,
+                                            [10.0 * num5, 10.0 * num5],
+                                        );
+                                        if crate::map_player_icons::draw_death_marker(
+                                            renderer, lookups, dp, num37, alpha, self.mouse_pos,
+                                            true,
+                                        ) {
+                                            if let Some(t) = p.last_death_time {
+                                                ov_death_hover = Some(
+                                                    crate::map_player_icons::death_hover_text(
+                                                        &self.player_name, t,
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             // `Main.cs:56046-56049`: the shared `MouseText`
                             // tail — the hover line draws over the overlay.
-                            if let Some(t) = hover {
+                            // The `ref text` write order: layers (`:55625`)
+                            // → revenge/misc (`:55626-55627` + the `:55634`
+                            // UseMouseOver) → the death duration (num19).
+                            let ov_text = ov_death_hover
+                                .or(ov_misc_hover)
+                                .or(layer_hover);
+                            if let Some(t) = ov_text {
                                 crate::ui::text::hud_text(
                                     renderer,
                                     lookups,
@@ -2039,12 +2479,15 @@ impl App {
                     // is computed above, where the minimap branch consumes it.
                     if settings.map_enabled {
                         if let Some(m) = map.as_mut() {
+                            // `Main.cs:55363`: a held left press cancels the
+                            // offscreen-pylon pan (sampled before `prepare`
+                            // runs the lerp).
+                            m.pan_cancel_press = self.mine_down && self.map_left_press;
                             // `Main.cs:55550-55566`: the style-2 overlay's
                             // draw-side clamps ride the same draw half as
-                            // the minimap's (`prepare`'s clamp_minimap_axes)
-                            // — `world_zoom` IS `RenderZoom` (`:61999`, the
-                            // `ForcedMinimumZoom * Clamp(GameZoomTarget)`
-                            // product computed above).
+                            // the minimap's — `world_zoom` IS `RenderZoom`
+                            // (`:61999`, the `ForcedMinimumZoom *
+                            // Clamp(GameZoomTarget)` product computed above).
                             m.clamp_overlay_axes(screen.x, world.width, world_zoom);
                             m.prepare(renderer, gpu, world, screen, view_center, settings.map_enabled);
                         }
@@ -2097,7 +2540,91 @@ impl App {
                                         ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
                                     )
                                 });
-                                let hover = crate::map_layers::map_layers_draw(
+                                // `Main.cs:55782-55913`: the hovered map
+                                // cell's name (chests/dressers/legend) is
+                                // the hover text's base; the icon layers'
+                                // `ref text` writes (`:55922-55923`) win.
+                                let tile_hover = crate::map::fullscreen_hover_name(
+                                    world,
+                                    map,
+                                    &self.world_chests,
+                                    self.mouse_pos,
+                                    screen,
+                                );
+                                // `Main.cs:55915-55921`: `num77` — the
+                                // `(scale*0.25*2+1)/3` formula is dead code
+                                // (the `:55920-55921` unconditional writes
+                                // overwrite it); the head scale is
+                                // `Main.UIScale`.
+                                let num77 = self.settings.applied_ui_scale(screen.x, screen.y);
+                                // `Main.cs:55922-55923`: the revenge markers
+                                // + the misc icons, BEFORE the NPC heads.
+                                // The fullscreen pair is `Vector2.Zero` /
+                                // `(num - 10*scale, num2 - 10*scale)` — the
+                                // same offset `draw_full` returned.
+                                let revenge_hover = crate::map_player_icons::draw_revenge_map_icons(
+                                    renderer,
+                                    lookups,
+                                    &self.revenge_markers,
+                                    [0.0, 0.0],
+                                    map_offset,
+                                    None,
+                                    map.scale,
+                                    num77,
+                                    self.mouse_pos,
+                                );
+                                let golf_ball = self.golf_state.last_hit_golf_ball().and_then(|stored| {
+                                    let live = self.projectiles.slots().get(stored.who_am_i).map(|q| {
+                                        let (cx, cy) = q.center();
+                                        tr_core::golf_state::GolfBall {
+                                            who_am_i: stored.who_am_i,
+                                            kind: q.kind as i32,
+                                            owner: q.owner as i32,
+                                            active: q.active,
+                                            position: q.pos,
+                                            center: glam::Vec2::new(cx, cy),
+                                            ai1: q.ai[1],
+                                            local_ai1: q.local_ai[1],
+                                        }
+                                    });
+                                    self.golf_state
+                                        .last_hit_ball_for_draw(live.as_ref(), self.local_id as i32)
+                                });
+                                let misc_hover = crate::map_player_icons::draw_misc_map_icons(
+                                    renderer,
+                                    lookups,
+                                    &crate::map_player_icons::MiscIconInputs {
+                                        player: player.as_ref(),
+                                        golf_ball,
+                                        mouse: self.mouse_pos,
+                                    },
+                                    [0.0, 0.0],
+                                    map_offset,
+                                    None,
+                                    map.scale,
+                                    num77,
+                                );
+                                // `Main.cs:55926`: `DrawNPCMapIcons` — the
+                                // boss/town head pass, AFTER the revenge/
+                                // misc icons and BEFORE the player heads;
+                                // its hover text overrides the tile hover.
+                                let head_hover = crate::map_npc_icons::draw_npc_map_icons_fullscreen(
+                                    renderer,
+                                    lookups,
+                                    npcs,
+                                    map::map_origin(map.pos, map.scale, screen),
+                                    &crate::map_npc_icons::NpcIconView {
+                                        map_position: [0.0, 0.0],
+                                        sub_offset: [0.0, 0.0],
+                                        minimap_rect: None,
+                                        map_scale: map.scale,
+                                        head_scale: num77,
+                                        alpha: 1.0,
+                                        mouse: self.mouse_pos,
+                                        global_time: anim_time % 3600.0,
+                                    },
+                                );
+                                let (hover, click, pylon_hovered) = crate::map_layers::map_layers_draw(
                                     renderer,
                                     lookups,
                                     &crate::map_layers::MapIconInputs {
@@ -2111,6 +2638,10 @@ impl App {
                                         map: Some(map),
                                         team_based_spawns,
                                         mouse: self.mouse_pos,
+                                        map_fullscreen: true,
+                                        pylon_tile: map.pylon_tile,
+                                        screen,
+                                        left_press: self.map_left_press,
                                     },
                                     [0.0, 0.0],
                                     map_offset,
@@ -2119,7 +2650,121 @@ impl App {
                                     map_draw_scale,
                                     1.0,
                                 );
-                                if let Some(t) = hover {
+                                pylon_click = click;
+                                // `TeleportPylonsMapLayer.cs:81`: a pylon
+                                // marker hover claims `Main.cancelWormHole`.
+                                if pylon_hovered {
+                                    self.map.as_mut().unwrap().cancel_wormhole = true;
+                                }
+                                // `Main.cs:55931-55976`: the 255-player head
+                                // loop — the local head plus the remote
+                                // peers, each with the name hover; then the
+                                // death markers (`:55977-55983`).
+                                let net_mode = match self.net {
+                                    crate::app::NetRole::Host(_) => 2,
+                                    crate::app::NetRole::Client(_) => 1,
+                                    crate::app::NetRole::Off => 0,
+                                };
+                                let local_team = player.as_ref().map_or(0, |p| p.team);
+                                let local_hostile = player.as_ref().is_some_and(|p| p.hostile);
+                                let fs_origin = map::map_origin(map.pos, map.scale, screen);
+                                let mut pin_hover: Option<String> = None;
+                                if let Some(p) = player.as_ref() {
+                                    if !p.dead {
+                                        let (cx, cy) = p.center();
+                                        // `Main.cs:55938`: `position.Y + gfxOffY + height/2`.
+                                        let center_px = [cx, cy + p.gfx_off_y];
+                                        let icon_pos = map::head_icon_pos(
+                                            center_px, map.pos, map.scale, screen,
+                                        );
+                                        let border = crate::map_player_icons::player_head_borders_color(
+                                            p.dead, p.team, p.hostile, true, local_team, net_mode,
+                                        );
+                                        draw_player_map_icon(
+                                            // Fullscreen `b = 255` (`Main.cs:55291`).
+                                            renderer, player_assets, p, icon_pos, num77, border, 1.0,
+                                        );
+                                        // `:55945-55959`: the local head's
+                                        // hover writes the name too (the
+                                        // wormhole branch is MP-only and
+                                        // unported — HasUnityPotion).
+                                        let hr = crate::map_player_icons::head_hover_rect(icon_pos, num77);
+                                        if crate::map_player_icons::hover_inclusive(hr, self.mouse_pos) {
+                                            pin_hover = Some(self.player_name.clone());
+                                        }
+                                    }
+                                }
+                                for rp in remote_players.values() {
+                                    if !crate::map_player_icons::player_map_icon_can_be_seen(
+                                        false, false, 0, local_hostile, local_team,
+                                    ) {
+                                        continue;
+                                    }
+                                    let pp = crate::map_player_icons::remote_pin_player(world, rp);
+                                    let center_px = [
+                                        pp.x + pp.width * 0.5,
+                                        pp.y + pp.gfx_off_y + pp.height * 0.5,
+                                    ];
+                                    let pin = crate::map_player_icons::fullscreen_pin_pos(
+                                        center_px, fs_origin, map.scale,
+                                    );
+                                    let border = crate::map_player_icons::player_head_borders_color(
+                                        false, 0, false, false, local_team, net_mode,
+                                    );
+                                    draw_player_map_icon(renderer, player_assets, &pp, pin, num77, border, 1.0);
+                                    let hr = crate::map_player_icons::head_hover_rect(pin, num77);
+                                    if crate::map_player_icons::hover_inclusive(hr, self.mouse_pos) {
+                                        pin_hover = Some(rp.name.clone());
+                                    }
+                                }
+                                // `:55977-55983`: the death markers — the
+                                // local player's (the peers carry no
+                                // lastDeath sync).
+                                let mut death_hover: Option<String> = None;
+                                let mut death_hovered = false;
+                                if let Some(p) = player.as_ref() {
+                                    if p.show_last_death {
+                                        if let Some(d) = p.last_death_position {
+                                            let dp = crate::map_player_icons::death_marker_pos(
+                                                [d.0, d.1],
+                                                [0.0, 0.0],
+                                                fs_origin,
+                                                map.scale,
+                                                [10.0 * map.scale, 10.0 * map.scale],
+                                            );
+                                            if crate::map_player_icons::draw_death_marker(
+                                                renderer, lookups, dp, num77, 1.0, self.mouse_pos,
+                                                // `DrawPlayerDeathMarker`
+                                                // (`:56455-56462`): NO -4
+                                                // shift (W4-f29 F5).
+                                                false,
+                                            ) {
+                                                death_hovered = true;
+                                                if let Some(t) = p.last_death_time {
+                                                    death_hover = Some(
+                                                        crate::map_player_icons::death_hover_text(
+                                                            &self.player_name, t,
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                // The hover precedence is the C#'s write
+                                // order: the tile name (`:55784-55913`),
+                                // the revenge/misc (`:55922-55923`), the NPC
+                                // heads (`:55926`), the player names
+                                // (`:55959`), the icon layers (`:55996`),
+                                // then the death duration (`:55984-55986`,
+                                // num19 wins over the revenge UseMouseOver).
+                                let fs_text = death_hover
+                                    .or(hover)
+                                    .or(pin_hover)
+                                    .or(head_hover)
+                                    .or(misc_hover)
+                                    .or(tile_hover);
+                                if let Some(t) = fs_text {
                                     crate::ui::text::hud_text(
                                         renderer,
                                         lookups,
@@ -2129,6 +2774,19 @@ impl App {
                                         [1.0; 4],
                                         &t,
                                     );
+                                }
+                                // `:55988-55995`: no death hover → the
+                                // revenge marker's UseMouseOver money row.
+                                if !death_hovered {
+                                    if let Some(i) = revenge_hover {
+                                        crate::map_player_icons::draw_revenge_mouse_over(
+                                            renderer,
+                                            lookups,
+                                            self.revenge_markers[i].coins_value,
+                                            self.mouse_pos,
+                                            num77,
+                                        );
+                                    }
                                 }
                                 // `Main.cs:56014-56036`: the close button draws
                                 // AFTER the hover text (`:56046-56049`'s
@@ -2173,25 +2831,11 @@ impl App {
                                     self.mouse_pos,
                                     bonus,
                                 );
-                                // `Main.cs:55931-55954`: the local player's head icon,
-                                // drawn after the map tiles (`Main.cs:55609`).
-                                if let Some(p) = player.as_ref() {
-                                    let (cx, cy) = p.center();
-                                    // `Main.cs:55938`: `position.Y + gfxOffY + height/2`.
-                                    let center_px = [cx, cy + p.gfx_off_y];
-                                    let icon_pos =
-                                        map::head_icon_pos(center_px, map.pos, map.scale, screen);
-                                    // `Main.GetPlayerHeadBordersColor` (`Main.cs:56616-56618`)
-                                    // → `Main.teamColor[0]` = White (singleplayer).
-                                    draw_player_map_icon(
-                                        renderer,
-                                        player_assets,
-                                        p,
-                                        icon_pos,
-                                        self.settings.applied_ui_scale(screen.x, screen.y),
-                                        [1.0; 4],
-                                    );
-                                }
+                                // The union's single local-head block DROPS
+                                // here (research/140 §8.2 hunk 5): the f29
+                                // 255-player head loop (`Main.cs:55931-55976`,
+                                // above) replaces it — local + remote pins
+                                // with the team borders + name hovers.
                                 // `Main.cs:62160`: the fullscreen map's draw
                                 // tail runs `DrawPlayerChat` after `DrawMap`
                                 // — the chat log + input strip draw over the
@@ -2432,6 +3076,18 @@ impl App {
         // for the next frame's draw.
         if let Some(name) = popup_goto {
             self.open_achievements_and_goto(name);
+        }
+        // The fullscreen pylon marker click (`TeleportPylonsMapLayer.cs:
+        // 90-109`) — drained here, the field borrows released.
+        if let Some(click) = pylon_click {
+            self.handle_pylon_map_click(click);
+        }
+        // `Main.cs:56006`: the fullscreen tail clears `cancelWormHole` every
+        // frame (the pylon hover re-arms it on the next draw).
+        if self.map.as_ref().is_some_and(|m| m.open) {
+            if let Some(m) = self.map.as_mut() {
+                m.cancel_wormhole = false;
+            }
         }
         Some((stats, tile_stats))
     }
