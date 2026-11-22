@@ -46657,3 +46657,56 @@ resolves `main_dust.rs` THREE-WAY per research/116 §6's per-fn table;
 seam set (`main_dust.rs` dispatcher + replays), the g61/g12/d54
 fold-sources DROP, the witness union ALL WRITTEN NOT RUN. No further
 g11 commits planned; §7.2 is the merger's complete instruction.
+
+## The WorldGen.cs dust sites (W4-g14, task/W4-g14-dust-worldgen-sites, 2026-11-21, code-only mode)
+The research/15 caller table's `WorldGen.cs` row (29 `Dust.NewDust*`
+sites, verdict "N/A (latent)") is now ported: all 29 sites, line-ordered,
+in three tr-core modules (`worldgen_dust.rs`, `worldgen_dust_wall.rs`,
+`worldgen_dust_tile.rs`). The in-flight probe found d54/e4/f6 at base
+with zero pushed commits — g14 adopted the whole lane (the census +
+claim doc: `docs/research/65-dust-worldgen-sites-claims.md`).
+**The two type ladders are RNG-bearing and port verbatim.**
+`KillWall_MakeWallDust` (`WorldGen.cs:61345-62158`, 11 genRand draws)
+and `KillTile_MakeTileDust` (`:66687-69169`, ~35 genRand draws + ONE
+`Main.rand.Next(3)` at the type-19 row-30 arm `:67402`) compute the dust
+TYPE before spawning; dropping the ladders would break the draw order,
+so they land whole (the tile ladder in 8 C#-order chunks). The C#'s own
+dead writes are kept in order: the 187 second `<= 1132` arm (`:67603`,
+shadowed), the 129 `>= 324` write overwritten by the next line's
+unconditional ternary (`:68992-68996`), the 216 duplicate arm
+(`:66698`), the tree-walk's duplicated `44/132-176` offset (`:68183`),
+the 314 arm's duplicated noGravity write (`:69127`).
+**Two streams per method (the S1-A-10 world-pass slots):** `gen` =
+`WorldGen.genRand` (every ladder roll + the paint post-spawn gates),
+`rng` = `Main.rand` (the `NewDust` internals through d50's
+`DustPool::new_dust` + the explicit argument draws: the ash-shake
+`RandomVector2`/`NextVector2Circular`/`NextFloat`, the 139 `Next(4)`,
+the row-30 `Next(3)`, the paintCoat old-color pick). The functions are
+stream-agnostic — the wiring wave hands the runtime `world.frame_rng`
+(the port's genRand stand-in, `framing.rs:1263`) or the pass's slot.
+**Deliberate deviations / drops (each cited at its site):**
+* **UNWIRED pure emitters** (the d50/e2 precedent): the enclosing
+  methods' tile mutations, sounds, item drops and achievement notifies
+  belong to the edit-path lanes (`edit::kill_wire`/`kill_actuator`
+  already cite "its dust are app-side" — these are those dusts). The
+  pool's `SpawnCtx.generating` guard (`Dust.cs:89-92`) means the
+  generation passes emit nothing at runtime; the sites fire from the
+  runtime edit paths at the wiring wave.
+* **The ash-shake gore sibling** (`:29669`): its ARGUMENT draws
+  (`RandomVector2(-40,40)` + `Next(3)`) are consumed in order here; the
+  `NewGoreDirect` body rolls are the W4-g17 gore-world lane's (the e2
+  argument/body split).
+* **The disco colour** (`Main.DiscoR/G/B`) is a caller snapshot — the
+  App owns the cycle (`app/mod.rs:839`); tr-core takes the bytes.
+* **The torch-disco float ctor** (`:69152`): `new Color((float)R/255f,
+  …)` truncates each [0,1] component to a byte — every channel lands 0
+  except a full-255 one (lands 1). Ported as the truncation, pinned by
+  a witness; NOT a re-scale.
+* **`clearWorld`'s pool reset** (`:7179-7180`) is NOT a spawn site —
+  `DustPool::new` already writes `dust_index` per slot; the reset is
+  the clear-world lane's (cited in research/65 so no batch re-ports it).
+* **The 529/530 below-tile reads** use `world.tile` (None = the C#'s
+  null-tile default arm); the 5/323 column walks stop at out-of-world
+  cells exactly like the C#'s null check.
+invoked** (user directive). The 24 witnesses (7 + 7 + 10) are owed a
+compile window before merge.
