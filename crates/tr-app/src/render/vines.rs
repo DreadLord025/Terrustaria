@@ -110,6 +110,9 @@ pub(crate) fn vine_strip_segments(
     vine_counter: f32,
     x: i32,
     start_y: i32,
+    // W4-g78: `_shouldShowInvisibleBlocks` (`TileDrawing.cs:379`) — the
+    // segment's `IsVisible` (`:9121`) reads the real Echo-sight value.
+    show_invisible_blocks: bool,
 ) -> Vec<VineSegment> {
     let mut out = Vec::new();
     // `vector = new Vector2(x * 16 + 8, startY * 16 - 2)` (`:9038`).
@@ -184,7 +187,15 @@ pub(crate) fn vine_strip_segments(
             half,
             anchor,
             rot,
-            visible: !world.invisible_block(x, i),
+            // `IsVisible(tile)` (`:9121`), W4-g78: the shared verbatim port
+            // (the coating bit + the row-48/541/631 overrides — no vine kind
+            // hits the overrides, but one seam keeps the C# shape).
+            visible: tr_core::scene::tile_is_visible(
+                tile.kind,
+                tile.frame_y,
+                world.invisible_block(x, i),
+                show_invisible_blocks,
+            ),
             fullbright: tile.fullbright_block(),
             paint: tile.paint(),
             seam_bottom: below.is_some_and(|t| t.active() && is_vine_thread(t.kind)),
@@ -212,10 +223,13 @@ pub(crate) fn draw_vines(
     wind: &Wind,
     vine_counter: f32,
     roots: &[(i32, i32)],
+    // W4-g78: `_shouldShowInvisibleBlocks` (`TileDrawing.cs:379`).
+    show_invisible_blocks: bool,
 ) -> u32 {
     let mut quads = 0u32;
     for &(x, start_y) in roots {
-        let segments = vine_strip_segments(world, wind, vine_counter, x, start_y);
+        let segments =
+            vine_strip_segments(world, wind, vine_counter, x, start_y, show_invisible_blocks);
         for seg in segments {
             // `GetTileDrawTexture` null → `break` (`:9116-9120`); the port's
             // unframed-cell guard (`resolve_tile_frame`) is the same "no
@@ -396,7 +410,7 @@ mod tests {
     fn s1_g_1a_calm_strip_hangs_straight_down() {
         let w = vine_world();
         let wind = calm_wind();
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         assert_eq!(segs.len(), 3);
         for (k, seg) in segs.iter().enumerate() {
             assert_eq!(seg.rot, 0.0);
@@ -426,7 +440,7 @@ mod tests {
             w.tiles[i].flags = FLAG_ACTIVE;
         }
         let wind = windy();
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         assert_eq!(segs.len(), 10);
         let num3 = 0.2 + 0.8 * (0.5f32 / 1.2);
         let cycle = wind.cycle(10, 20, 0.0);
@@ -467,7 +481,7 @@ mod tests {
             w.tiles[i].wall = 1;
         }
         let wind = windy();
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         for seg in &segs {
             assert_eq!(seg.rot, 0.0);
         }
@@ -481,10 +495,10 @@ mod tests {
         let mut wind = windy();
         wind.remix_world = true;
         wind.world_surface = 10.0; // the strip (y >= 20) is BELOW it
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         assert!(segs[2].rot != 0.0, "remix: below-surface cells sway");
         wind.world_surface = 100.0; // now the strip is ABOVE it
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         for seg in &segs {
             assert_eq!(seg.rot, 0.0);
         }
@@ -502,7 +516,7 @@ mod tests {
             wind.wind_grid.update();
         }
         // game_time 5, stamp at 0 → time_left 5 (< 20/2) → push 5*0.01*1.
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         assert_eq!(segs.len(), 3);
         assert_eq!(segs[0].rot, 0.0, "y=20 unstamped");
         assert!((segs[1].rot - -0.05).abs() < 1e-6, "y=21: 0 - 0.05");
@@ -520,15 +534,15 @@ mod tests {
         let i = w.index(10, 21);
         w.tiles[i].flags &= !FLAG_ACTIVE;
         let wind = calm_wind();
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         assert_eq!(segs.len(), 1);
         // A foreign active tile breaks it too.
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.tiles[i].kind = 0;
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         assert_eq!(segs.len(), 1);
         // The bottom bound: a root at height-10 draws nothing.
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, w.height - 10);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, w.height - 10, false);
         assert!(segs.is_empty());
     }
 
@@ -540,8 +554,27 @@ mod tests {
         // `invisibleBlock` rides the extras table (sTileHeader coating bit).
         w.set_invisible_block(10, 21, true);
         let wind = calm_wind();
-        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20);
+        let segs = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
         assert_eq!(segs.len(), 3);
         assert!(segs[0].visible && !segs[1].visible && segs[2].visible);
+    }
+
+    /// W4-g78 (WRITTEN NOT RUN): with Echo sight granted
+    /// (`_shouldShowInvisibleBlocks`, `TileDrawing.cs:379`) the coated
+    /// segment DRAWS — the strip maths is unchanged (same anchors/rotations
+    /// either way), only the `IsVisible` flag flips.
+    #[test]
+    fn w4_g78_echo_sight_shows_the_coated_segment_without_moving_the_strip() {
+        let mut w = vine_world();
+        w.set_invisible_block(10, 21, true);
+        let wind = calm_wind();
+        let hidden = vine_strip_segments(&w, &wind, 0.0, 10, 20, false);
+        let shown = vine_strip_segments(&w, &wind, 0.0, 10, 20, true);
+        assert_eq!(hidden.len(), shown.len());
+        assert!(shown.iter().all(|s| s.visible), "sight shows every segment");
+        for (h, s) in hidden.iter().zip(shown.iter()) {
+            assert_eq!(h.anchor, s.anchor, "the walk is sight-independent");
+            assert_eq!(h.rot, s.rot);
+        }
     }
 }

@@ -185,11 +185,14 @@ pub struct LightParams {
     /// Seed for the per-tile `FastRandom` (`TileLightScanner._random`).
     pub rng_seed: u64,
     /// `TileLightScannerOptions.DrawInvisibleWalls` — `Main.
-    /// ShouldShowInvisibleBlocksAndWalls()` (`Main.cs:58023`): echo-coated
+    /// ShouldShowInvisibleBlocksAndWalls()` (`Main.cs:58023`, fed at
+    /// `LightingEngine.cs:124`/`LegacyLighting.cs:726`): echo-coated
     /// (invisible) blocks and walls keep blocking/qualifying for light only
-    /// while the player can see them; hidden, light passes through. The seeing
-    /// systems (EchoMonolith, the 4409 accessory) are not ported, so this stays
-    /// `false` — `TR_SHOW_INVISIBLE=1` pins it for A/B shots.
+    /// while the player can see them; hidden, light passes through. W4-g78
+    /// wired the seeing systems (the EchoMonolith scene scan + the
+    /// `Player.CanSeeInvisibleBlocks` grants, 4409/5345) — the frame feeds
+    /// `scene::should_show_invisible_blocks_and_walls`;
+    /// `TR_SHOW_INVISIBLE=1` still pins it for A/B shots.
     pub draw_invisible_walls: bool,
 }
 

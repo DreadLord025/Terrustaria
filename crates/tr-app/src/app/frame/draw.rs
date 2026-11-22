@@ -362,6 +362,26 @@ impl App {
                     let mut light_rng = tr_core::tile_light::FastRandom::new(self.light_rng_seed);
                     light_rng.next_seed_in_place();
                     self.light_rng_seed = light_rng.seed;
+                    // W4-g78 — `Main.ShouldShowInvisibleBlocksAndWalls`
+                    // (`Main.cs:58023-58030`) via the landed scene scan
+                    // (`SceneMetrics.EchoMonolith`, tile 657 `frameY >= 54`)
+                    // and the player's `CanSeeInvisibleBlocks` (the 4409
+                    // Spectre Goggles / vanity-5345 grants). ONE per-frame
+                    // value feeds the light options (`LightingEngine.cs:124`),
+                    // the tile pass's `IsVisible`/case-541 row
+                    // (`TileDrawing.Update` `:379`) and the pylon/trophy
+                    // passes (`WallDrawing.Update` `:45`'s wall twin rides
+                    // the light params). `TR_SHOW_INVISIBLE=1` keeps pinning
+                    // it on for A/B shots. The perspective player is
+                    // `Main.LocalPlayer` (`SceneMetrics.AddPlayerEffects`
+                    // `:749`) — the sim player, dead or not.
+                    let show_invisible = crate::env::show_invisible()
+                        || tr_core::scene::should_show_invisible_blocks_and_walls(
+                            self.scene_metrics.echo_monolith,
+                            player
+                                .as_ref()
+                                .is_some_and(|p| p.can_see_invisible_blocks),
+                        );
                     let params = LightParams {
                         sky: sky_light,
                         hell_glow: 0.55,
@@ -390,9 +410,9 @@ impl App {
                         cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
                         rng_seed: self.light_rng_seed,
                         // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
-                        // false until the EchoMonolith / 4409-accessory systems land;
-                        // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
-                        draw_invisible_walls: crate::env::show_invisible(),
+                        // W4-g78 wired — the EchoMonolith scan + the 4409/5345
+                        // grants above; `TR_SHOW_INVISIBLE=1` still pins it on.
+                        draw_invisible_walls: show_invisible,
                     };
                     // `Main.essScale`'s drift (`Main.cs:62264-62277`), which
                     // the C# runs once per draw pass just before `DrawItems`
@@ -1179,7 +1199,10 @@ impl App {
                             // inputs (plates 428, party 455, echo sight 541).
                             &self.wiring,
                             crate::world_events::party_is_up(&self.world_events),
-                            crate::env::show_invisible(),
+                            // W4-g78: `_shouldShowInvisibleBlocks` — the real
+                            // sight value (echo monolith / goggles), not the
+                            // bare env pin.
+                            show_invisible,
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
@@ -1226,7 +1249,7 @@ impl App {
                             global_time: anim_time % 3600.0,
                             pylon_counter: self.game_update_count % 64,
                             lens_counter: self.game_update_count % 40,
-                            show_invisible: crate::env::show_invisible(),
+                            show_invisible,
                         };
                         crate::render::pylons::draw_pylons_trophies_void(
                             renderer,

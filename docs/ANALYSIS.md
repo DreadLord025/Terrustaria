@@ -798,8 +798,10 @@ Remaining lighting gaps:
   (`light_is_zero && (active || wall != 0)`), which is what stops the parallax/underground
   backdrop bleeding through unlit caves. A fully dark tile is solid black either way, so
   skipping its sprite is pixel-identical (glow masks are not implemented yet). Echo walls
-  (`WallID.EchoWall`, 318) are skipped entirely вЂ” no sprite and no black вЂ” exactly like
-  `WallDrawing` with invisible walls hidden.
+  (`WallID.EchoWall`, 318) are skipped entirely — no sprite and no black — exactly like
+  `WallDrawing` with invisible walls hidden; **W4-g78**: with Echo sight granted they
+  draw WHITE (`WallDrawing.cs:100-103`) and never merge into black coverage, and hidden
+  Echo-coated cells (block or wall) paint no black at all (`Main.cs:58006-58007`).
 `Main.time` advances with a 15-minute day and 9-minute night (60 ticks/s); the sky colour
 and light are quantised to one-second steps so the map/instance caches still hit.
 
@@ -1053,9 +1055,11 @@ A/B screenshots show the corrected output (max 9 LSB over a world frame,
 deterministic; the invariants in AGENTS.md "Rendering" describe this as the tint
 matching XNA's byte multiplies).
 - Coatings: Echo blocks/walls are hidden (`TileDrawing.IsVisible`,
-  `TileDrawing.cs:1411-1432`; `WallDrawing.cs:91`) вЂ” the port has neither the
-  Echo Monolith nor the Echo sight item, so `CanSeeInvisibleBlocks` is always
-  false and the coated state stays hidden. Glow walls sample white light
+  `TileDrawing.cs:1411-1432`; `WallDrawing.cs:91`) unless Echo sight is granted
+  — **W4-g78 (2026-11-21) wired the sight chain** (the Echo Monolith scene
+  scan + `Player.CanSeeInvisibleBlocks`, the 4409/5345 grants; ANALYSIS "The
+  Echo-coating draw lane"), so the coated state draws with sight and stays
+  hidden without it. Glow walls sample white light
   (`WallDrawing.cs:96-99`); the tile-side Glow bit (`FLAG_FULLBRIGHT`) was
   already read from `.wld`.
 - Light: a painted glowing wall takes the paint colour at the /765 scaling of
@@ -3914,8 +3918,10 @@ Remaining deliberate deviations:
   `flag2 = false`; in-game the caller passes `player.center().0`
   (`Main.LocalPlayer` always exists in C#).
 - The production wiring passes `crate::env::show_invisible()` for 541 (the
-  same `TR_SHOW_INVISIBLE` pin the light params use) вЂ” the EchoMonolith /
-  accessory sight systems remain out.
+  same `TR_SHOW_INVISIBLE` pin the light params use) — the EchoMonolith /
+  accessory sight systems remain out. **RESOLVED W4-g78 (2026-11-21)**: the
+  feed is now the real `ShouldShowInvisibleBlocksAndWalls` value (the env pin
+  ORs on top) — ANALYSIS "The Echo-coating draw lane".
 
 ### Epilogues and cross-cutting
 
@@ -39771,3 +39777,247 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Echo-coating draw lane (W4-g78, 2026-11-21, code-only)
+
+`Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023-58030`) is ported as
+`tr_core::scene::should_show_invisible_blocks_and_walls(echo_monolith,
+can_see_invisible_blocks)` — the Echo Monolith wins outright, else the
+perspective player's `CanSeeInvisibleBlocks`. The two sight sources land with
+it: `Player.can_see_invisible_blocks` (`Player.cs:2814`) granted by
+`ApplyEquipFunctional` case 4409 (Spectre Goggles, `:14548-14550`) and the
+`UpdateEquips` vanity loop's (`:13009-13015`) `ApplyEquipVanity` case 5345 row
+(`:14215-14217`, a vanity-worn Echo Monolith — kind-only match, no accessory
+gate), cleared per tick by `ResetEffects` (`:18742`). The monolith half reads
+the LANDED `SceneMetrics` 657 `frameY >= 54` scan (`SceneMetrics.cs:541-546`).
+`frame/draw.rs` computes ONE per-frame sight value (the `TR_SHOW_INVISIBLE`
+pin ORs on top) and feeds all three consumers: `LightParams.
+draw_invisible_walls` (`LightingEngine.cs:124`/`LegacyLighting.cs:726`), the
+tile pass's `show_invisible_blocks` (case 541 + the gates) and the pylon
+passes' `SpecialEnv.show_invisible`. The full census + co-lane splits live in
+`docs/research/179-tile-echo-draw-census.md`.
+
+The draw residuals fixed (all were sight-blind or override-blind):
+
+* **`IsVisible` (`TileDrawing.cs:1411-1432`)** is now ONE shared port,
+  `scene::tile_is_visible` — the coating bit PLUS the three overrides the
+  pre-wave `tiles.rs` bare-bit gate missed: platform row 48
+  (`frameY / 18 == 48`), and kinds 541/631 which are ALWAYS sight-gated.
+  `tiles.rs`, `vines.rs` and `pylons.rs` (whose private S1-G-1d copy now
+  delegates — keep-one) consume it.
+* **The wall head gate (`WallDrawing.cs:91`)**: `wall_visible(wall,
+  invisible_wall, show_invisible)` — wall 318 AND the coating bit both ride
+  the sight; the `FullTile` cull (`:258-261`, a hidden coated block does not
+  hide its wall) runs FIRST, the C# order.
+* **The shown echo wall draws WHITE** (`WallDrawing.cs:100-103`,
+  `Main.wallLight[318] = true` `Main.cs:10580`): the white flag rides
+  `push_wall_lit` beside fullbright, the zero-light skip and the dark-cell
+  merge both exempt it.
+* **Hidden echo cells paint NO black coverage** — `DrawSingleTile`'s
+  `DrawBlack` needs `flag2` (`:988`) and `Main.DrawBlackTiles`' arms carry
+  `(!invisible… || flag)` (`:58006-58007`); the port's merged dark rectangle
+  is the fold of both, so `block_covers`/`wall_covers` ride the same gates.
+  A hidden echo block in a dark cave now shows the parallax, like the C#.
+* **The vine segments** (`DrawVineStrip` `:9121`) read the sight value; the
+  strip walk/anchors/rotations are sight-independent (witnessed).
+
+Deliberate deviations / co-lane seams:
+
+* **`Main.WallLightAt(i, j, show)` (`Main.cs:55169-55181`)** lands as the pure
+  `scene::wall_light_at(wall_is_light, invisible_wall, show)` predicate
+  (wallLight table wins; else the HIDDEN coating counts as backdrop light).
+  UNWIRED: the `render/bg.rs::wall_light_at` consumer is contested by the
+  W4-g70 bg-layers lane — the wiring lands with that merge.
+* **The crack conjuncts** (`Main.cs:61540`) are g77's lane (its phase 1
+  re-arms the real bits); its sight stand-in should delegate to the new
+  predicate at merge. **The platform side fills** (d59 wiring) and the
+  **animated-tile gate** (d56, `tr_render::animated_tiles::tile_draw_gate` —
+  read, NOT re-ported) consume the same `show_invisible_blocks` input
+  `draw_tiles` already carries.
+* **The vanity loop ports ONLY the 5345 row** — wingSlot/hideWolf/5452/
+  ApplyShader are unported families (the functional match grants wings).
+* **The `TileDrawing.Update` sight-flip section refresh** (`:380-384`) needs
+  no port arm: the G6 `WorldFrameKey.light_params` already keys
+  `draw_invisible_walls`, so a flip invalidates the cached world range.
+
+Pixel deltas vs the pre-wave port (moves TOWARD the C#): uncoated row-48
+platforms + 541/631 now hide without sight; hidden echo cells stop painting
+black and stop culling their walls; with sight, coated cells + wall 318 draw
+(318 white) and the light pass treats them as solid. Zero RNG draws; the
+fixed-step order and the `WorldFrameKey` contents are unchanged.
+
+Verification: code-only — every arm re-read against the cited windows; 11
+witness tests WRITTEN, NOT RUN (`scene.rs` 4, `player.rs` 3, `vines.rs` 1,
+`tiles.rs` 2 source-scans, `bg.rs` 1 extended).
+
+## The remaining sight-mechanics (W4-g78 DOC-SWEEP lane 4)
+
+The four potion sight-buffs and the two Echo-sight items beyond the g78
+echo-coating chain (research/179). Census: research/76. Two pure modules land
+PORTED-UNWIRED here; the rest is recorded for the co-lane merges.
+
+* **SpelunkerProjectileHelper** (`SpelunkerProjectileHelper.cs:6-67`) lands
+  as `tr-app/src/spelunker_helper.rs` — the 473 Spelunker Glowstick's
+  ore-spot dust layer (distinct from the tile vision floors). The 10-tick
+  dedupe-clear cadence, the per-position/per-tile HashSets, the ±30 window
+  clamped to `Rectangle(2,2,maxTilesX-2,maxTilesY-2)`, the
+  `!(Length()>30f)` radius gate, the `_tilesChecked.Add && Next(4)==0`
+  short-circuit (a repeat tile rolls NOTHING), the 204 dust request
+  (fadeIn 0.75, vel×0.1, noLight) on the caller's DropRng. UNWIRED: the 473
+  head's `AddSpotToCheck` call (the distance gate `screenWidth+30*16`
+  stays with the caller per C#) + the `PreUpdateAllProjectiles` cadence
+  are the wiring merge. `Main.IsTileSpelunkable` re-inlined verbatim (the
+  49-row table + the 185/186 windows) — d56's tr-render copy + d9/d13's
+  inline copies are the keep-one targets at the merges.
+* **The Hunter NPC-tint chain** (`NPC.GetNPCColorTintedByBuffs`
+  `NPC.cs:91024-91141` + `buffColor` `:90986-90993`) lands as
+  `tr-app/src/npc_hunter_tint.rs` — the 14-arm compounding debuff tint
+  chain whose last arm is the Hunter floor (friendly 50/255/50, hostile
+  255/50/50, the `detectCreature && lifeMax>1` gate). The
+  `drippingSparkleSlime` arm's NON-accumulator direct multiply and the
+  ichor REPLACE are kept 1:1; `buffColor` truncates toward zero (the f32
+  rounding kept: 200·0.65f32 rounds to 130.0f, 255·0.45f32 → 114). KEEP-ONE:
+  `AppearsFriendlyToHunterPotion` (the 689 override) stays f47's
+  `shimmer::appears_friendly_to_hunter_potion` — this module takes its
+  result as `hunter_friendly`. UNWIRED: the `render/entities.rs`
+  consumer + the `DoDraw_WallsTilesNPCs` draw-order swap
+  (`Main.cs:63290-63299`) are the npc-kind/style lanes' merge.
+* **The vision floors** (Dangersense/Spelunker/BiomeSight,
+  `TileDrawing.cs:897-963`/`:8481-8552`) are d56's
+  `tr_render::animated_tiles` (UNWIRED) — the `render/tiles.rs` consumer
+  is the d56 wiring merge; the four flags are live (find_treasure/
+  biome_sight/detect_creature in player.rs; f12 wires danger_sense). NOT
+  re-ported here.
+* **The Echo Monolith (657/5345)**: placement routes through TileObject
+  (`D_657` UsesCustomCanPlace, verified + witnessed); the right-click use
+  arm (`Player.cs:32271-32277` → `SwitchMonolith` + Mech-28) and the
+  `Check2xX` break check (drop 5345 at the origin cell) are MISSING — the
+  `interact_at`/`doors.rs` and `check_object` seams are contested
+  (wiring-device + break-check lanes). The wired `switch_monolith`
+  already exists (e21 fixes its kind-match).
+* **Spectre Goggles (4409)**: the grant is FUNCTIONAL-ONLY
+  (`ApplyEquipFunctional` case 4409); `ApplyEquipVanity` has no 4409
+  case and `RefreshInfoAccsFromItemType` no 4409 row — a vanity-worn
+  goggles grants NOTHING (the mirror of the 5345 monolith's vanity-only
+  grant). The g78 port matches; witnessed. The faceSlot 14 cosmetic is
+  unmodelled (the port's ItemDef has no face_slot).
+
+RNG: the two new modules draw only through the caller's stream (the
+spelunker Next(4) per new tile; the tint chain ZERO). Both UNWIRED — zero
+pixel delta until their consumers wire. No WorldFrameKey / fixed-step
+change.
+
+Verification: code-only — every arm re-read against the cited windows; 14
+witness tests WRITTEN, NOT RUN (spelunker_helper 6, npc_hunter_tint 6,
+player.rs 1, edit/place.rs 1).
+
+### The wiring phase (W4-g78, 2026-11-21 — research/77)
+
+The DOC-SWEEP's two PORTED-UNWIRED modules advance:
+
+* **The NPC debuff-tint family is WIRED.** The 14-arm
+  `GetNPCColorTintedByBuffs` chain (`Main.cs:22939`) + the behind-tiles
+  black-out scan (`:22922-22938`, BEFORE the chain, the 113/114 WoF
+  exemption, the RAW-light zero-brightness test) run at the
+  `render/entities.rs` colour site — the ONE window the per-branch hunk
+  census proved uncontested (every npc-kind/style lane's `entities.rs`
+  hunks land at :3170+ or the signature tail :2156, never :2176-2181).
+  `tint_flags_from_buffs` folds the live `Npc.buffs` bar (the 14
+  `UpdateNPC_BuffSetFlags` ids via `has_buff`'s immune gate; the Golem
+  245-248 `canDisplayBuffs` refusal). **Deliberate deviation
+  (minimal-delta gate):** the byte round-trip (`Lighting.GetColor`'s
+  `(int)(v*255)` quantisation) runs ONLY when the chain is non-identity —
+  a clean NPC keeps the pre-wiring float shade bit-for-bit; the C#'s
+  UNCONDITIONAL GetColor byte quantisation is a residual fidelity item
+  (the whole NPC draw would shift ≤1/255 per channel; recorded, not
+  landed, to keep the buff-free pixel delta zero).
+* **The G6 `npc_key` is widened** in the uncontested free
+  `npc.rs::render_key` (:18631): `tint_key`'s 14-bit buff hash rides the
+  per-NPC fold (the d70 `moon_lord_strength` key precedent). A buff-free
+  world (Golem included — the refusal is kind-static, already keyed)
+  keeps the pre-wiring key bit-for-bit; a midas/ichor/poison gain or
+  expiry rebuilds the cached world range. NO `WorldFrameKey` struct field
+  added (the hash rides the existing `npc_key` slot — the struct itself
+  is contested by g12/g80/f14/d70).
+* **The Hunter floor stays UNWIRED** (`hunter_active`/`hunter_friendly`
+  false in the fold): the `detectCreature` threading needs the contested
+  `draw_npcs` signature tail (c39/d70) + the `DoDraw_WallsTilesNPCs`
+  draw-order swap (`Main.cs:63290-63299`, every tiles.rs lane). Exact
+  hunks: research/77 §2. The debuff arms are independent of the potion,
+  so the wired family is complete without it.
+* **The spelunker helper**: the table becomes the d9-canonical `TileSet`
+  bitset VERBATIM (the keep-one intermediate; the census witness now
+  proves bitset==49-id-list for EVERY id in 0..TILE_COUNT); the
+  caller-side `spot_in_range` distance gate lands; the 473/1008 AI arms
+  gain the attach-ready `SpelunkerSpot` forms (the legacy `None` path is
+  bit-identical). The C# caller census corrects to THREE sites (the held
+  3002 `spelunkerTimer`, `Player.cs:50094-50099`, was missed). The
+  dispatch swap + the pool fields + the pass head/tail + the held-3002
+  attach are contested — exact hunks + the DropRng-stream verdict:
+  research/77 §1.
+* **The 657 use-arm + Check2xX break-drop**: exact hunks published for
+  c42d (research/77 §3) — the `interact_at` kind-literal arm + the
+  `doors.rs` Mech-28/`switch_monolith_use` match arm (e21's kind-gated
+  flip is the single source) + the `check_monolith` sibling of
+  `check_clock` (height 3, the 410 lit-row +2 quirk, the per-kind drop
+  table, the origin-cell spawn). The 32×32-box centre gap is PRE-EXISTING
+  across every `ObjectDrop` consumer (the clock/statue/dial share it) —
+  the merger fixes it once at the spawn seam.
+* **The keep-one dedupe hunks** (research/77 §4): d9's bitset is
+  canonical; g78's copy re-exports it, d13's inline table deletes, d56's
+  tr-render copy is the crate-boundary exception (or the words move to a
+  shared hand-transcribed tr-core module — NOT the generated tiledata/).
+
+RNG: the wired tint chain + black-out draw ZERO (pure colour maths); the
+G6 key-widen changes no stream. The spelunker attach forms draw only
+through the caller's stream when attached (the `None` path draws nothing).
+9 new witnesses WRITTEN, NOT RUN (spelunker_helper 1, npc_hunter_tint 4,
+projectile_ai_light_items 4).
+
+### The sight-retire seal (W4-g78, 2026-11-21 — research/375, renamed from 78 per registry-150 §10.2)
+
+The sight family closes: every mechanic has a named final owner and a
+landed-or-published hunk (the bible: research/375 §5).
+
+* **The c42 wiring-seal**: research/77 §3.1 is CONSUMED at c42
+  `f173fb88d` — the landed names are `TileInteraction::MonolithToggle` /
+  `Wiring::use_switch_monolith` (NOT the §3.1 draft's
+  `MonolithSwitch`/`switch_monolith_use`), and c42 ported the REAL
+  `Player.quick_grapple_cooldown` (the §3.1 "no gamepad layer" deviation
+  note is superseded). §3.2 (the 657 Check2xX break check) stays the
+  break-lane contract.
+* **The ObjectDrop centre-gap FIX-ONCE** (the pre-existing ~15 px
+  left/up gap research/77 §3.2 flagged): the C# rect→centre conversion
+  (`Item.cs:49649-49652`, the 16×16 WorldItem box `WorldItem.cs:138`)
+  lands as `ObjectDrop::spawn_centre_px` (the per-kind rect census:
+  32×32 furniture; 16×16 doors 10/11 via `DropDoorItem` + the on-table
+  13/33/49/78 group whose `CheckOnTable1x1` spawns nothing itself — the
+  drop rides `KillTile`'s per-cell 16×16) + `spawn_item_drop_centre`
+  (the 14×14 box at centre−SIZE/2; **the draws are byte-identical** —
+  only the position differs, no stream change). WIRED at the ONE
+  uncontested consumer (the actuation drain, `world_sim/wiring.rs`);
+  the editing.rs/doors.rs/recall_teleport.rs drains are contested
+  (g85/g48, d79/e10/g24, g83) — the one-fix hunk locations + the lane
+  ownership: research/375 §2.3. **Deliberate scope limit:** the per-cell
+  /pot/tree/wall 16×16-family drops keep the tile feed (the same class
+  of gap, but the whole-feed audit is the item-spawn lane's — recorded
+  so the merger does not fix the ObjectDrop drains twice).
+* **The held-3002 `spelunkerTimer`**: the counter+scan half lands
+  ATTACH-READY as `held_3002_tick` (g78's own module — the `byte`
+  counter rides the caller's `&mut u8`, `wrapping_add` matches the C#
+  `byte++`, the >=10 wrap runs ONE `add_spot_to_check` on the SHARED
+  helper instance; NO distance/netMode gate). The `Player` field + the
+  `world_sim/player.rs` tick/drain are contested (18 lanes at the
+  window) — hunks research/375 §3.
+* **The keep-one dedupe**: the EXACT delete line-ranges publish
+  (research/375 §4) — g78's copy re-exports d9's `pub` bitset+fn; d13's
+  inline table deletes at `projectile_ai_pets124.rs:59-80` (the g64
+  file-union copy: :57-78, the fn body byte-identical); d56's tr-render
+  copy STAYS (tr-render has no tr-core/tr-app dependency — verified
+  Cargo.toml; the crate-boundary exception).
+
+RNG: the FIX-ONCE changes positions ONLY (the spawn draws are
+byte-identical, proven by the draw-stream twin witness); the held tick
+draws only through the caller's UpdatePlayers stream on the wrap.
+6 new witnesses WRITTEN, NOT RUN (spelunker_helper 3, edit/kill 1,
+items 1, wiring 1).

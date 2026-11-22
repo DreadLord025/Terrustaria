@@ -914,6 +914,13 @@ pub struct Player {
     pub invis: bool,
     /// Buff 12 (NightOwl): the legacy light pass's brightness lift (`:9999`).
     pub night_vision: bool,
+    /// `Player.CanSeeInvisibleBlocks` (`Player.cs:2814`): the Echo-sight
+    /// grant `Main.ShouldShowInvisibleBlocksAndWalls` reads (`Main.cs:58027`).
+    /// `ApplyEquipFunctional` case 4409 (Spectre Goggles, `:14548-14550`)
+    /// and `ApplyEquipVanity` case 5345 (a vanity-worn Echo Monolith,
+    /// `:14215-14217`) arm it; `ResetEffects` clears it every tick
+    /// (`:18742`).
+    pub can_see_invisible_blocks: bool,
     /// Buff 13 (Battle): the spawner's ×0.5 rate / ×2 cap (`:10003`).
     pub enemy_spawns: bool,
     /// Buff 15 (WaterWalking): the liquid-surface walk — collision half
@@ -2973,6 +2980,7 @@ impl Player {
             biome_sight: false,
             invis: false,
             night_vision: false,
+            can_see_invisible_blocks: false,
             enemy_spawns: false,
             water_walk: false,
             detect_creature: false,
@@ -4927,6 +4935,23 @@ impl Player {
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
             self.apply_equip_functional(m, kind);
         }
+        // W4-g78 — `UpdateEquips`' vanity loop (`Player.cs:13009-13015` →
+        // `ApplyEquipVanity` `:14197-14218`): the Echo-sight row only — a
+        // vanity-worn Echo Monolith (5345, case `:14215-14217`) grants
+        // `CanSeeInvisibleBlocks`. The loop's other rows (wingSlot,
+        // hideWolf/forceWerewolf 861/3110/485, remoteVisionForDrone 5452,
+        // `ApplyShader`) are unported families — the port grants wings
+        // through the functional match; this scan ports the g78 row.
+        // No `accessory` gate: C# calls ApplyEquipVanity for every usable
+        // slot, the case matches the kind alone.
+        for n in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(n) {
+                continue;
+            }
+            if self.equipped[n] == 5345 {
+                self.can_see_invisible_blocks = true;
+            }
+        }
         // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
         // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
         // the Lucky Coin family arms (855/3034/3035); two rings still add
@@ -5020,6 +5045,11 @@ impl Player {
             // carries the same `chiselSpeed` (`:15293`) plus the range
             // flag the reach scan reads (`craft.rs`).
             4056 | 5126 => self.pick_speed_bonus += 0.25,
+            // W4-g78 — `ApplyEquipFunctional` case 4409 (`Player.cs:14548-
+            // 14550`): the Spectre Goggles grant `CanSeeInvisibleBlocks`
+            // (the Echo-sight half of `Main.ShouldShowInvisibleBlocksAndWalls`,
+            // `Main.cs:58027`). `ResetEffects` clears it (`:18742`).
+            4409 => self.can_see_invisible_blocks = true,
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -6000,6 +6030,10 @@ impl Player {
         self.biome_sight = false;
         self.invis = false;
         self.night_vision = false;
+        // `ResetEffects`' `CanSeeInvisibleBlocks = false` (`Player.cs:18742`):
+        // the 4409 functional grant + the 5345 vanity grant re-arm it per
+        // tick in `update_equips` (W4-g78).
+        self.can_see_invisible_blocks = false;
         self.enemy_spawns = false;
         self.water_walk = false;
         self.detect_creature = false;
@@ -19729,6 +19763,76 @@ mod tests {
         );
     }
 
+    // --- W4-g78: the Echo-sight grants (WRITTEN NOT RUN, code-only) ---
+
+    /// `ApplyEquipFunctional` case 4409 (`Player.cs:14548-14550`): the worn
+    /// Spectre Goggles grant `CanSeeInvisibleBlocks`; `ResetEffects`
+    /// (`:18742`) clears it when the slot empties. A full tick re-grants.
+    #[test]
+    fn w4_g78_the_spectre_goggles_grant_echo_sight_per_tick() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(!p.can_see_invisible_blocks, "spawn: no sight");
+        p.equipped[3] = 4409;
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_see_invisible_blocks, "the worn goggles grant");
+        // Re-tick: the per-tick clear + re-grant must not lose the flag.
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_see_invisible_blocks, "the grant re-arms every tick");
+        // Unequip: ResetEffects clears, nothing re-grants.
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.can_see_invisible_blocks, "the flag clears on unequip");
+    }
+
+    /// `UpdateEquips`' vanity loop (`Player.cs:13009-13015` →
+    /// `ApplyEquipVanity` case 5345 `:14215-14217`): a vanity-worn Echo
+    /// Monolith grants sight; the FUNCTIONAL slots (3..10) do NOT run the
+    /// vanity arm — a monolith in a functional slot grants nothing.
+    #[test]
+    fn w4_g78_the_vanity_monolith_grants_but_the_functional_slot_does_not() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Functional slot: the 4409-only match has no 5345 arm, and the
+        // vanity loop reads 13..20 — no grant.
+        p.equipped[3] = 5345;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            !p.can_see_invisible_blocks,
+            "the functional slots never run ApplyEquipVanity"
+        );
+        // Vanity slot 13: the grant fires.
+        p.equipped[3] = 0;
+        p.equipped[13] = 5345;
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_see_invisible_blocks, "the vanity-worn monolith grants");
+        // Slot 19 is master-mode locked (`IsItemSlotUnlockedAndUsable`,
+        // the port's slot-9/19 false) — the loop skips it.
+        p.equipped[13] = 0;
+        p.equipped[19] = 5345;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.can_see_invisible_blocks, "the locked slot 19 never grants");
+    }
+
+    /// The goggles + the vanity monolith together grant ONCE per tick (the
+    /// flag is a bool — no stacking); removing either keeps the other's
+    /// grant alive.
+    #[test]
+    fn w4_g78_either_sight_source_keeps_the_flag() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 4409;
+        p.equipped[13] = 5345;
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_see_invisible_blocks);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_see_invisible_blocks, "the vanity monolith alone grants");
+        p.equipped[13] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.can_see_invisible_blocks, "both gone: hidden again");
+    }
+
     #[test]
     fn s1_p_i41_shellphone_spawn_falls_back_and_queues_the_force_clear() {
         // `Player.Shellphone_Spawn` (`Player.cs:56164-56181`): the world
@@ -21675,5 +21779,40 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    /// W4-g78 DOC-SWEEP lane 4 — the Spectre Goggles (4409) slot-split
+    /// verification. C# grants `CanSeeInvisibleBlocks` for 4409 ONLY in
+    /// `ApplyEquipFunctional` case 4409 (`Player.cs:14548-14550`, the
+    /// 3..10 functional loop `:12946-12952`); `ApplyEquipVanity`
+    /// (`:14197-14218`) has NO 4409 case and `RefreshInfoAccsFromItemType`
+    /// (`:12721-12797`) has no 4409 row — so a vanity-worn goggles grants
+    /// NOTHING. The Echo Monolith (5345) is the mirror: its ONLY grant is
+    /// the vanity case 5345 (`:14215-14217`); a functional-worn monolith
+    /// grants nothing (witnessed above). The g78 port matches this split.
+    #[test]
+    fn w4_g78_doc_sweep_the_goggles_grant_is_functional_only() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Vanity slot 13: the 13..20 loop runs ApplyEquipVanity, whose
+        // switch has no 4409 arm — no sight.
+        p.equipped[13] = 4409;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            !p.can_see_invisible_blocks,
+            "a vanity-worn Spectre Goggles grants nothing (no ApplyEquipVanity 4409 case)"
+        );
+        // Functional slot 3: ApplyEquipFunctional case 4409 grants.
+        p.equipped[13] = 0;
+        p.equipped[3] = 4409;
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_see_invisible_blocks, "the functional goggles grant");
+        // The item row itself: 4409 is a plain accessory (vanity false),
+        // 5345 is accessory + vanity (`Item.cs:37391-37395` / `:42406-42414`).
+        let goggles = crate::registry::get(4409).unwrap();
+        assert!(goggles.accessory && !goggles.vanity, "4409 DefaultToAccessory(28)");
+        let monolith = crate::registry::get(5345).unwrap();
+        assert!(monolith.accessory && monolith.vanity, "5345 accessory + vanity");
+        assert_eq!(monolith.tile, Some(657), "5345 places the Echo Monolith 657");
     }
 }
