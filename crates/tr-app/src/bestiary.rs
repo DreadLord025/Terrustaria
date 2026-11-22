@@ -2182,6 +2182,114 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Unicorn",
     },
+    // The dragonflies (W4-d33): the populator's visible card is the Red
+    // 599 "Dragonfly" (`NPCs.json:637`) — 595/596/597/598/600 are
+    // `Hide = true` (`NPCID.cs:510-543`, `GetExclusions` drops them from
+    // `AddEmptyEntries_CrittersAndEnemies_Automated`, `:851-885`) and
+    // their kill credits fold onto 599 (`ContentSamples.cs:1043-1047`).
+    // The hidden colours keep their OWN entries (the c8 TruffleWormDigger
+    // precedent: own entry + cs_id for the catch/release chain's
+    // `kind_from_net_id`; `entry_for_npc` folds the kill credit).
+    BestiaryEntryDef {
+        credit_id: "BlackDragonfly",
+        net_id: 595,
+        kind: NpcKind::BlackDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "BlueDragonfly",
+        net_id: 596,
+        kind: NpcKind::BlueDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GreenDragonfly",
+        net_id: 597,
+        kind: NpcKind::GreenDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "OrangeDragonfly",
+        net_id: 598,
+        kind: NpcKind::OrangeDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "RedDragonfly",
+        net_id: 599,
+        kind: NpcKind::RedDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    // The Yellow 600 is Hide=true too (`NPCID.cs:538-543`) — its credit
+    // folds onto 599; the Gold 601 keeps its OWN visible card
+    // ("Gold Dragonfly", `NPCs.json:639` — no Hide row, no
+    // `ContentSamples` fold, the GoldLadyBug precedent).
+    BestiaryEntryDef {
+        credit_id: "YellowDragonfly",
+        net_id: 600,
+        kind: NpcKind::YellowDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dragonfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldDragonfly",
+        net_id: 601,
+        kind: NpcKind::GoldDragonfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Dragonfly",
+    },
+    // The fairy critters + the windy balloon (W4-d33 wiring): all four
+    // are VISIBLE cards — the `NPCID.cs:5148-5169` fairy draw modifiers
+    // only shift Position/Direction (no Hide), the balloon's
+    // `:5232-5239` row sets a CustomTexturePath + Scale 0.8 (no Hide);
+    // no `ContentSamples` credit fold. The names ride
+    // `Lang.GetNPCName` (en-US NPCs.json: "Pink Fairy" / "Green Fairy"
+    // / "Blue Fairy" / "Windy Balloon"). d42 batch-2/3's rows,
+    // constants-copy (keep-one d37c-E3).
+    BestiaryEntryDef {
+        credit_id: "FairyCritterPink",
+        net_id: 583,
+        kind: NpcKind::FairyCritterPink,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterGreen",
+        net_id: 584,
+        kind: NpcKind::FairyCritterGreen,
+        variant: None,
+        quick_unlock: false,
+        name: "Green Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "FairyCritterBlue",
+        net_id: 585,
+        kind: NpcKind::FairyCritterBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Fairy",
+    },
+    BestiaryEntryDef {
+        credit_id: "WindyBalloon",
+        net_id: 594,
+        kind: NpcKind::WindyBalloon,
+        variant: None,
+        quick_unlock: false,
+        name: "Windy Balloon",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2374,6 +2482,15 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // The dragonflies (W4-d33): the five Hide=true colours fold onto
+        // the visible RedDragonfly 599 card — the kill credit
+        // `ContentSamples.cs:1043-1047` (`NpcBestiaryCreditIdsByNpcNetIds`
+        // [595/596/597/598/600] = [599]). The Gold 601 keeps its own card.
+        NpcKind::BlackDragonfly
+        | NpcKind::BlueDragonfly
+        | NpcKind::GreenDragonfly
+        | NpcKind::OrangeDragonfly
+        | NpcKind::YellowDragonfly => NpcKind::RedDragonfly,
         other => other,
     };
     ENTRIES

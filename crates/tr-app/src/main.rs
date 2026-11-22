@@ -170,6 +170,28 @@ mod npc_ai_style91;
 // the 488 kind + the axis arm wait on the roster wave (the style86
 // precedent; see the module doc).
 mod npc_ai_style92;
+// W4-d33 (research/25 rows 99-127): the MISSING aiStyle band's unwired
+// pure machines, one module per style (the npc_ai_style73 precedent).
+mod npc_ai_style99;
+mod npc_ai_style100;
+mod npc_ai_style101;
+mod npc_ai_style102;
+mod npc_ai_style103;
+mod npc_ai_style104;
+mod npc_ai_style111;
+mod npc_ai_style112;
+mod npc_ai_style113;
+mod npc_ai_style114;
+mod npc_ai_style115;
+mod npc_ai_style116;
+mod npc_ai_style117;
+mod npc_ai_style118;
+mod npc_ai_style119;
+mod npc_ai_style121;
+mod npc_ai_style122;
+mod npc_ai_style125;
+mod npc_ai_style126;
+mod npc_ai_style127;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
 mod npc_ai_style30;

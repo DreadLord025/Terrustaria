@@ -423,6 +423,37 @@ impl AchievementManager {
         }
     }
 
+    /// `AchievementsHelper.HandleSpecialEvent(player, 22)`
+    /// (`AchievementsHelper.cs:361-363`): the fairy-nearby check
+    /// (`NPC.AI_112_FairyCritter`'s tail, `NPC.cs:48642-48648`) completes
+    /// the FIND_A_FAIRY row's "Do" condition DIRECTLY —
+    /// `GetCondition("FIND_A_FAIRY", "Do").Complete()` names the row, so
+    /// the shared `Custom("Do")` broadcast (which would complete every
+    /// open "Do" row) is NOT the right seam. W4-d33 wiring.
+    pub fn notify_fairy_nearby(&mut self) -> Option<&'static str> {
+        let mut done = None;
+        for a in &mut self.list {
+            if a.completed || a.name != "FIND_A_FAIRY" {
+                continue;
+            }
+            for c in &mut a.conditions {
+                if !c.completed && matches!(c.kind, CondKind::Custom("Do")) {
+                    c.value = c.max;
+                    c.completed = true;
+                }
+            }
+            if a.is_completed() {
+                a.completed = true;
+                done = Some(a.name);
+            }
+        }
+        if let Some(name) = done {
+            self.save();
+            self.completed_events.push(name);
+        }
+        done
+    }
+
     /// The `CustomFlagCondition` hook shape (`AchievementsHelper.cs:347`'s
     /// `GetCondition("I_AM_LOOT", "Peek").Complete()`).
     pub fn notify_custom(&mut self, flag: &'static str) -> Option<&'static str> {

@@ -14236,8 +14236,9 @@ fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
 /// `Microsoft.Xna.Framework.Vector2` body): the cubic Hermite spline the
 /// Sparkle Guitar note's arc rides (`Projectile.cs:46585`). The coefficients
 /// are XNA's verbatim (`0.5·((2·p1) + (−p0+p2)·t + (2·p0−5·p1+4·p2−p3)·t² +
-/// (−p0+3·p1−3·p2+p3)·t³)`).
-fn catmull_rom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
+/// (−p0+3·p1−3·p2+p3)·t³)`). `pub(crate)` since W4-d33 style 102: the
+/// Sand Elemental's sandnado trail rides the same spline (`NPC.cs:40284`).
+pub(crate) fn catmull_rom(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f32) -> Vec2 {
     let t2 = t * t;
     let t3 = t2 * t;
     0.5 * ((2.0 * p1)
@@ -14401,7 +14402,8 @@ fn laser_ray_len(world: &World, from: Vec2, dir: Vec2, max: f32) -> f32 {
 
 /// `Vector2.MoveTowards(this Vector2, Vector2, float)` (`Utils.cs:1772-1786`):
 /// `from` walks toward `target` by at most `max`, snapping on arrival.
-fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
+/// `pub(crate)` since W4-d33 style 122: the Pirate Ghost's hover rides it.
+pub(crate) fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
     let delta = target - from;
     if delta.length() < max {
         return target;

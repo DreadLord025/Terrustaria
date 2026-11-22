@@ -489,6 +489,28 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // d35 (C); the Wolf/Tumbleweed rows dropped per keep-one
         // f5f486c7c (d36/d41 own them).
         NpcKind::Unicorn => &[],
+        // The dragonflies (W4-d33): all seven share the
+        // `SpecificallyImmuneTo = [31]` (Confused) rows
+        // (`NPCID.cs:9473-9521` — 595 through 601 each carry one; the
+        // c8 crawlers' same-band precedent).
+        NpcKind::BlackDragonfly
+        | NpcKind::BlueDragonfly
+        | NpcKind::GreenDragonfly
+        | NpcKind::OrangeDragonfly
+        | NpcKind::RedDragonfly
+        | NpcKind::YellowDragonfly
+        | NpcKind::GoldDragonfly => &[31],
+        // The fairy critters (W4-d33 wiring): `ImmuneToAllBuffsThatAre
+        // NotWhips = true` + `ImmuneToWhips = true` (`NPCID.cs:9410-
+        // 9433`, 583/584/585 each) — the mask loop is unmodelled, so
+        // they ride `&[]` (the ForceBubble documented gap); the whip
+        // tag gate reads `whip_immune` below. The windy balloon 594:
+        // `SpecificallyImmuneTo = [31]` (`NPCID.cs:9466-9472`).
+        // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+        NpcKind::FairyCritterPink
+        | NpcKind::FairyCritterGreen
+        | NpcKind::FairyCritterBlue => &[],
+        NpcKind::WindyBalloon => &[31],
     }
 }
 
@@ -496,11 +518,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// (`:6499`/`:6528`/`:8378`/`:8601`/`:8899`/`:9194`/`:9415`/`:9423`/`:9431`/
 /// `:10034`/`:10042`): DungeonGuardian 68, BlazingWheel 72, MartianSaucer 392,
 /// CultistBossClone 440, FlyingDutchman 491, DD2LanePortal 549, the fairy
-/// critters 583/584/585, the bound town slimes 686/687. Only the saucer and
-/// the pirate ship are on the ported roster — the whip tag gate
+/// critters 583/584/585, the bound town slimes 686/687. The saucer, the
+/// pirate ship and (W4-d33 wiring) the three fairy critters are on the
+/// ported roster — the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
+    matches!(
+        kind,
+        NpcKind::MartianSaucer
+            | NpcKind::FlyingDutchman
+            | NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+    )
 }
 
 impl NpcBuffs {
