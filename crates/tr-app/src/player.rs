@@ -924,6 +924,14 @@ pub struct Player {
     /// Buff 18 (Gravitation): the gravity-flip key — unported, flag only
     /// (`:10027`).
     pub grav_control: bool,
+    /// `Player.bleed` (`Player.cs:2362`): Bleeding (30) sets it (`:10031`) and
+    /// Obstructed (163) sets it too (`:11829`, the misc table's `e.bleed` half).
+    /// `ResetEffects` clears it (`:18694`). The sole consumer is
+    /// `UpdateLifeRegen`'s `lifeRegenTime = 0f` (`:19178-19181`), which the port
+    /// derives through the DoT fold's `holding(30)` read in `derive_dot_inputs`
+    /// (the same convention as the other DoT flags); this field mirrors the C#
+    /// flag for the 163 writer and any future consumer.
+    pub bleed: bool,
     /// Buff 31 (Confused): the control swap (`:10035`, `:24996-25004`).
     pub confused: bool,
     /// Buff 35 (Silenced): mana items refuse (`:10043`, `:52221`).
@@ -2958,6 +2966,7 @@ impl Player {
             water_walk: false,
             detect_creature: false,
             grav_control: false,
+            bleed: false,
             confused: false,
             silence: false,
             dazed: false,
@@ -5951,8 +5960,8 @@ impl Player {
         // (`Player.cs:18355` fireWalk, `:18367-18374` lavaImmune/gills/
         // slowFall/findTreasure/biomeSight/invis/nightVision/enemySpawns,
         // `:18378` waterWalk, `:18380-18381` detectCreature/gravControl,
-        // `:18394` manaRegenBuff, `:18650` dazed, `:18695` confused,
-        // `:18705` silence) — the buff arms below re-set them per tick.
+        // `:18394` manaRegenBuff, `:18650` dazed, `:18694` bleed, `:18695`
+        // confused, `:18705` silence) — the buff arms below re-set them per tick.
         self.lava_immune = false;
         self.fire_walk = false;
         // S1-C-12 wave D — the armor-set flag clears of `ResetEffects`
@@ -5986,6 +5995,7 @@ impl Player {
         self.detect_creature = false;
         self.grav_control = false;
         self.confused = false;
+        self.bleed = false; // `:18694` — the Bleeding (30) flag clear
         self.silence = false;
         self.dazed = false;
         self.weak_stacks = 0;
@@ -6481,6 +6491,13 @@ impl Player {
                 // `:10025-10028` — Gravitation (18): the gravity-flip key
                 // (unported — flag only).
                 18 => self.grav_control = true,
+                // `:10029-10032` — Bleeding (30): `bleed = true`. The spike
+                // debuff's only consumer is `UpdateLifeRegen`'s ramp reset
+                // (`:19178-19181`), which the DoT fold already derives from
+                // `holding(30)` (`derive_dot_inputs`) — this arm mirrors the C#
+                // field grant (the 163 Obstructed arm sets the same flag,
+                // `:11829`). W4-g26 census: the one id no wave had ported.
+                30 => self.bleed = true,
                 // `:10033-10036` — Confused (31): the control swap below.
                 31 => self.confused = true,
                 // `:10041-10044` — Silenced (35): mana items refuse.
@@ -13143,6 +13160,32 @@ mod tests {
                 && !q.enemy_spawns && !q.water_walk && !q.detect_creature
                 && !q.grav_control
         );
+    }
+
+    #[test]
+    fn w4_g26_bleeding_30_arms_the_flag_and_resets_the_regen_ramp() {
+        // W4-g26 census gap: Bleeding (30) was the one `UpdateBuffs` id no wave
+        // had ported. `Player.cs:10029-10032` sets `bleed = true`; the sole
+        // consumer is `UpdateLifeRegen`'s `lifeRegenTime = 0f` (`:19178-19181`),
+        // derived here through the DoT fold's `holding(30)` read.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(!p.bleed, "spawn starts clear");
+        p.buffs.add_buff(30, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.bleed, "the 30 arm grants the flag (`:10031`)");
+        // The ramp reset: a built-up regen ramp is zeroed while bleeding.
+        p.regen.life_regen_time = 500.0;
+        let dots = p.derive_dot_inputs(false);
+        assert!(dots.resets_time, "bleeding resets the ramp (`:19178-19181`)");
+        assert_eq!(dots.regen, 0, "bleeding drains nothing itself");
+        // Expiry: the ResetEffects clear (`:18694`) leaves the flag down.
+        let mut q = Player::spawn(&w);
+        q.buffs.add_buff(30, 2);
+        for _ in 0..4 {
+            q.update(&w, PlayerInput::default());
+        }
+        assert!(!q.bleed, "expired — the clear leaves it down");
     }
 
     #[test]
