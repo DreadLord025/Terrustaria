@@ -39514,3 +39514,70 @@ Steampunker's 2..13 band + idle/air rows, the Crimson Axe's spin/bonk, and
 the M4-NPC-3t strip sweep (every arm over a 5x3x3x2x2x4 input grid, 40 ticks
 each, asserting the row never leaves its own sheet).
 
+## W4-d48 FindFrame wave C (2026-11-20, code-only mode)
+
+`crates/tr-app/src/npc_findframe_c.rs` — the FIRST 12 missing
+`NPC.FindFrame` ids of the 350-550 HIGH band (`NPC.cs:66684-77370`),
+the surface critters. The ascending census against the port's
+`npc.rs::find_frame` match: 350-352 ride the frost arms, 353/368/369/
+441/453+ the humanoid town group, 370-373 the fishron chain, 376 the
+sleeping angler, 381-429/518/520 the martian/lunar arms — so the first
+gap starts at **355** and this wave owns exactly:
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 355 | Firefly | `:72688-72709` (with 358/654) | 4 (`:67119`) |
+| 356 | Butterfly | `:72739-72772` (with 444/653/661) | 24 (`:67119`) |
+| 357 | Worm | `:72774-72828` (with 448/484/606) | 2 (`:67119`) |
+| 358 | LightningBug | `:72688-72709` | 4 (`:67119`) |
+| 359 | Snail | `:72238-72295` (with 360/655) | 6 (`:67119`) |
+| 360 | GlowingSnail | `:72238-72295` | 6 (`:67120`) |
+| 361 | Frog | `:76618-76685` (with 445/687) | 13 (`:67120`) |
+| 362 | Duck | `:73747-73771` (with 364/608) | 15 (`:67120`) |
+| 363 | Duck2 | `:73772-73818` (with 365/609) | 15 (`:67120`) |
+| 364 | DuckWhite | `:73747-73771` | 15 (`:67120`) |
+| 365 | DuckWhite2 | `:73772-73818` | 15 (`:67120`) |
+| 366 | ScorpionBlack | `:76820-76850` (with 367) | 4 (`:67120`) |
+
+**367 Scorpion is the 13th** — `task/W4-d49-findframe-high-2` owns it
+and the rest of the band.
+
+Shape (the `npc_findframe_b.rs` precedent): the kinds are NOT in
+`NpcKind` yet (the roster wave `task/W4-d39-npc-kinds-351-420` owns
+351-420), so the machines land as pure fns over `FrameState`/
+`FrameInput` with `find_frame_kind_c` as the vanilla-id wiring seam;
+the `npc.rs::find_frame` arm per kind is the follow-up when the roster
+lands. **No RNG**: none of the 12 arms draws `Main.rand` — the wiring
+cannot move a stream.
+
+Deliberate deviations / folds:
+
+* **The snail arm delegates** to `npc_ai_style67::snail_find_frame`
+  (the aiStyle-67 module's verbatim twin of the same C# case) — one
+  machine, no second copy; the witness pins byte-parity on a mixed
+  40-tick run.
+* **The worm's tile probe is an input** (`FrameInput::slope`): the C#
+  reads `Framing.GetTileSafely((int)Center.X/16, (int)position.Y/16)`
+  and falls through to the tile BELOW when that tile's slope is 0
+  (`NPC.cs:72807-72815`); the pure arm consumes the resolved slope,
+  the caller (the wiring step) resolves the probe. The `localAI[0]`
+  write (`-2f` pin, slope lift to 0) rides `FrameState::local_ai0`.
+* **The butterfly bank cast**: `(int)(num*3 * (ai[2]-1))` truncates
+  toward zero; vanilla `ai[2]` is 1..8 so the offset is >= 0 — the
+  port's `.max(0)` clamp only guards a non-vanilla negative bank
+  (documented, unreachable in vanilla).
+* **Out-of-band case siblings skipped with cites**: 654 Lavafly,
+  444 GoldButterfly, 653/661, 448 GoldWorm, 484 EnchantedNightcrawler,
+  606, 655 MagmaSnail, 445 GoldFrog, 687, 608/609 the seagull/grebe
+  swimmers — later waves (the gold/crimson critters ride the 421-490
+  roster). No `IsABestiaryIconDummy` branch exists in any of the 12
+  arms (the 377 grasshopper's dummy branch is d49+'s concern).
+
+12 frame witnesses WRITTEN NOT RUN (code-only mode — no cargo/rustc/
+rustfmt/tests invoked): the count table cross-checked against the
+port's `NPC_FRAME_COUNT`, the firefly 4/7 blink + glow bank, the
+butterfly velocity-fed flap (the 1.5/tick feed at vx 1) + colour
+banks, the worm 13-tick crawl + slope override, the snail delegate
+parity, the frog wet bands + idle/walk clocks (the every-tick idle
+wrap quirk), the duck 3..9 stride + the swimmer's wet/dry bands, the
+scorpion `|vx|+1` scuttle + the ground-only flip gate.
