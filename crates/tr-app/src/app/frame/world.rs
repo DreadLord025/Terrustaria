@@ -123,8 +123,15 @@ impl App {
             let m_h = self.main_m_h();
             let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
             let chest_or_shop = self.open_container() >= 0 || self.shop_npc.is_some();
-            ui::inventory::equip_cell_at(self.mouse_pos, screen, m_h, self.equip_page, cell)
-                .is_some()
+            ui::inventory::equip_cell_at(
+                self.mouse_pos,
+                screen,
+                m_h,
+                self.equip_page,
+                cell,
+                ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
+            )
+            .is_some()
                 || ui::inventory::trash_slot_at(self.mouse_pos, chest_or_shop)
         });
     self.drop_right_edge =

@@ -606,6 +606,8 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.ore_tiers.gold = -1;
     }
     if version >= 217 {
+        // WorldFile.cs:2358-2360 — the three town-pet licenses (a6/g87,
+        // deduped at the batch-L merge).
         world.bought_cat = r.bool()?; // boughtCat
         world.bought_dog = r.bool()?; // boughtDog
         world.bought_bunny = r.bool()?; // boughtBunny

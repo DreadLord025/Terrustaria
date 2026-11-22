@@ -917,7 +917,9 @@ mod tests {
     }
 
     /// A second Demon Heart refuses (extraAccessory already set) — the
-    /// stack keeps its remainder.
+    /// stack keeps its remainder AND the START refuses (no swing — g87's
+    /// `w4_g87_a_used_demon_heart_refuses_the_start` pin, kept on the
+    /// surviving arm per research/263 §6.5).
     #[test]
     fn a_second_demon_heart_refuses() {
         let mut app = rig(3335, 2);
@@ -935,6 +937,49 @@ mod tests {
         app.mine_down = true;
         tick(&mut app);
         assert_eq!(app.inventory[app.selected].count, 1, "the second refuses");
+        assert_eq!(app.swing, 0.0, "the used heart refuses the START (`:52051`)");
+    }
+
+    /// W4-g87 keep-one (research/263 §6.5) — the RNG census on the surviving
+    /// a6 machine: the Demon Heart + Pet License uses draw NOTHING on the
+    /// UpdatePlayers stream (the C# arms make no rand call; the muted sound
+    /// draws nothing either). The Minecart Powerup's Mech `Prefix(-1)` rides
+    /// UpdatePlayers (the use's swap) but the Mech is NON-prefixable, so it
+    /// draws nothing either — and the muted pickup chime draws nothing.
+    /// The ApplyItemTime 30-tick cadence pins ride along (`:45196`/`:45206`).
+    #[test]
+    fn w4_g87_the_demon_heart_and_license_draw_no_updateplayers() {
+        let mut app = rig(3335, 1);
+        app.player.as_mut().unwrap().buffs.expert_mode = true;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(0x687);
+        app.mine_down = true;
+        assert!(powerup_item_check(&mut app, true), "the heart use starts");
+        assert_eq!(ticks_of(app.item_time), 30, "ApplyItemTime re-arms useTime 30");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(0x687),
+            "the Demon Heart use draws nothing on UpdatePlayers"
+        );
+
+        let mut lic = rig(4829, 1);
+        *lic.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(0x687);
+        lic.mine_down = true;
+        assert!(powerup_item_check(&mut lic, true), "the license use starts");
+        assert_eq!(
+            lic.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(0x687),
+            "the license use draws nothing on UpdatePlayers"
+        );
+
+        let mut cart = rig(5289, 1);
+        *cart.rngs.stream(crate::app::RngKey::UpdatePlayers) = tr_core::UnifiedRandom::new(0x687);
+        cart.mine_down = true;
+        assert!(powerup_item_check(&mut cart, true), "the powerup use starts");
+        assert_eq!(
+            cart.rngs.stream(crate::app::RngKey::UpdatePlayers).clone(),
+            tr_core::UnifiedRandom::new(0x687),
+            "the non-prefixable Mech + the muted chime draw nothing"
+        );
     }
 
     /// Minecart Powerup 5289: unlockedSuperCart flips true and the Minecart
@@ -1227,6 +1272,8 @@ mod tests {
             "a slime is not the cat — the exchange refuses, nothing consumed"
         );
         assert!(app.chat.messages.is_empty(), "no exchange chat on refusal");
+        // g87's kept pin (research/263 §6.5): no ApplyItemTime on refusal.
+        assert_eq!(ticks_of(app.item_time), 0, "no ApplyItemTime on refusal");
     }
 
     // W4-f43b: the exchange legs are REACHABLE — the g10 kinds carry

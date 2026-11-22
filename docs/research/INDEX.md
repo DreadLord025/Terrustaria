@@ -83,6 +83,7 @@ per `docs/superpowers` agreements).
 | # | Module | File | Status |
 | --- | --- | --- | --- |
 | 360 | W4-g10 lane 3 pets FINAL — the SEAL-VERIFY receipt (g10b phases landed, ALL-11 wired census, the f43b splice contract receipt, the d43 keep-one) + the pets-family bible | `360-g10-pets-final.md` | ✅ SEALED (code-only; 26 witnesses written not run) |
+| 263 | W4-g87 closeout fold-input + RETIRE (RENUMBERED 143 → 263 per research/150 §6.3 — c4 keeps 143): §1-§5 the closeout record (the a6 dup adjudication, a6's 4 fidelity deltas folded, the 5289 flag-gate hypothesis REFUTED — both ALWAYS-spawn; the slot-8 UI/draw census + port); §6 the g87c retire receipts SUPERSEDE the fold tables — the dh line g88h DEFAULT-DROP (138 §10.4 / 132 §2f, DD2 keeps v12), the pets seat [57..60] in the SEALED 107-byte v18 union (103 L3-ARBITER A3, the 24/68-byte tables retired), the use-arm survivor seats on a6's machine (138 §12.3), the pet-license Success leg activation-contracted (g10 DONE → f43b splice → the one-line dispatch, the g87-side hunk in code comment), the FINAL demonheart-family bible | `263-g87-fold-input.md` | ✅ SEALED (the use-arm keep-one + the Success leg EXECUTED at batch-L; the dh DROP deferred — g88/f44 not in this batch) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

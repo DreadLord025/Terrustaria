@@ -69,7 +69,11 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// carries them at its own end-of-file seat until the Lead's union merge;
 /// the VALUES are identical. v18 also appends a per-NPC-record variation
 /// byte (`townNpcVariationIndex`, `SaveNPCs:1731`'s BitsByte payload) so the
-/// license pets' rolled variant survives the reload.
+/// license pets' rolled variant survives the reload. (g87's 3-byte v18
+/// claim deduped into this 11-byte tail at the batch-L merge; its g87c
+/// retire re-pins the union seat to [57..60] of the SEALED 107-byte
+/// g88h-A3 head — research/263 §6.4 — landed ONCE at the g71c union merge,
+/// forward-only; this port keeps its own end-of-file tail until then.)
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -1356,7 +1360,7 @@ mod tests {
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
         // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
         // the v17 fishron flag (1) and the v18 town-pet flags (11,
-        // W4-g87/W4-f43b).
+        // W4-g87/W4-f43b — the g87 3-byte claim deduped into f43b's tail).
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 11;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
@@ -1586,6 +1590,8 @@ mod tests {
     /// 1394`) then ALL EIGHT town-slime unlocks (`:1398` + `:1409-1415`,
     /// the rainbow/red pair included — f43b closes their native-save gap).
     /// All eleven survive the save/load; a pre-v18 file loads them false.
+    /// (The g87 3-byte twin witness deduped into this one at batch-L — its
+    /// bought-trio assertions ride below.)
     #[test]
     fn w4_f43_the_pet_arrival_flags_round_trip_in_v18() {
         let mut w = World::new("Test".into(), 64, 48);

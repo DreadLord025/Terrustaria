@@ -4978,14 +4978,50 @@ impl Player {
     /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
     /// read false in the sim; the port has no master difficulty yet, so the
     /// slot 9 stays locked (docs/ANALYSIS.md "The UpdateEquip seam"). The
-    /// Demon Heart's use-grant (`:45197`) is unported - the flag stays false
-    /// in play until the consumable use lands.
-    fn is_item_slot_unlocked_and_usable(&self, slot: usize) -> bool {
+    /// Demon Heart's use-grant (`:45197`) is LIVE (W4-g87,
+    /// `world_sim/editing/permanent_upgrades.rs`).
+    pub fn is_item_slot_unlocked_and_usable(&self, slot: usize) -> bool {
         match slot {
             8 | 18 => self.extra_accessory && self.buffs.expert_mode,
             9 | 19 => false, // `Main.masterMode` - unported difficulty
             _ => true,
         }
+    }
+
+    /// `Player.CanDemonHeartAccessoryBeShown` (`Player.cs:4276-4283`): the
+    /// slot-8 row SHOWS when the slot is unlocked-and-usable, OR any of the
+    /// three carriers holds an item (`armor[8]`, the vanity `armor[18]`, the
+    /// dye `dye[8]`) — a pre-unlock loaded save keeps its stored row visible.
+    /// The C#'s `type <= 0` reads map to the port's kind-0-empty slots.
+    pub fn can_demon_heart_accessory_be_shown(&self) -> bool {
+        if !self.is_item_slot_unlocked_and_usable(8)
+            && self.equipped[8] == 0
+            && self.equipped[18] == 0
+        {
+            return self.dye_slots[8] > 0;
+        }
+        true
+    }
+
+    /// `Player.CanMasterModeAccessoryBeShown` (`Player.cs:4285-4292`): the
+    /// slot-9 twin. No master difficulty in the port, so the unlock half is
+    /// always false — the row shows only while a stored item occupies it.
+    pub fn can_master_mode_accessory_be_shown(&self) -> bool {
+        if !self.is_item_slot_unlocked_and_usable(9)
+            && self.equipped[9] == 0
+            && self.equipped[19] == 0
+        {
+            return self.dye_slots[9] > 0;
+        }
+        true
+    }
+
+    /// `Player.GetAmountOfExtraAccessorySlotsToShow` (`Player.cs:4294-4306`):
+    /// `Main.cs:41145`'s `num19 = 8 + this` — the equipment column's row
+    /// count and the Settings-button avoidance both read it.
+    pub fn extra_accessory_slots_to_show(&self) -> i32 {
+        i32::from(self.can_demon_heart_accessory_be_shown())
+            + i32::from(self.can_master_mode_accessory_be_shown())
     }
 
     /// `Player.UpdateEquips`' functional-accessory loop (`Player.cs:12946-12952`):
@@ -15129,6 +15165,45 @@ mod tests {
         p.buffs.add_buff(29, 3600);
         p.update(&w, PlayerInput::default());
         assert_eq!(p.mana_max, 40, "the buff's +20 on the rebased cap");
+    }
+
+    /// W4-g87 — `CanDemonHeartAccessoryBeShown` (`Player.cs:4276-4283`): the
+    /// unlock shows the row; without it a stored armor/vanity/dye item keeps
+    /// it visible; an empty classic row stays hidden. The master twin
+    /// (`:4285-4292`) has no unlock in the port — only the stored-item legs.
+    #[test]
+    fn w4_g87_the_demon_heart_row_show_predicate() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(
+            !p.can_demon_heart_accessory_be_shown(),
+            "empty classic row hidden"
+        );
+        assert_eq!(p.extra_accessory_slots_to_show(), 0);
+        // The unlock (expert + extraAccessory) shows it.
+        p.extra_accessory = true;
+        p.buffs.expert_mode = true;
+        assert!(p.can_demon_heart_accessory_be_shown());
+        assert_eq!(p.extra_accessory_slots_to_show(), 1);
+        // Expert alone (no heart) does NOT unlock.
+        p.extra_accessory = false;
+        assert!(!p.can_demon_heart_accessory_be_shown());
+        // A stored item shows the row even without the unlock (each leg).
+        p.equipped[8] = 285; // armor[8]
+        assert!(p.can_demon_heart_accessory_be_shown());
+        p.equipped[8] = 0;
+        p.equipped[18] = 285; // the vanity armor[18]
+        assert!(p.can_demon_heart_accessory_be_shown());
+        p.equipped[18] = 0;
+        p.dye_slots[8] = 1; // dye[8]
+        assert!(p.can_demon_heart_accessory_be_shown());
+        p.dye_slots[8] = 0;
+        assert!(!p.can_demon_heart_accessory_be_shown());
+        // The master row: no unlock in the port, only a stored item shows it.
+        assert!(!p.can_master_mode_accessory_be_shown());
+        p.equipped[9] = 285;
+        assert!(p.can_master_mode_accessory_be_shown());
+        assert_eq!(p.extra_accessory_slots_to_show(), 1);
     }
 
     /// S1-C-12 wave A — the prefix speed rows ride the accessory's rolled

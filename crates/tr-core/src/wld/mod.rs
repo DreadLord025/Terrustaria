@@ -2109,6 +2109,12 @@ mod tests {
         tail[2022] = u8::from(world.bought_dog);
         tail[2023] = u8::from(world.bought_bunny);
         tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
+        // W4-g87: the three town-pet license flags (`WorldFile.cs:1392-1394`)
+        // sit right after the pre-hardmode quartet (2005..2020, 16 bytes):
+        // cat@2021, dog@2022, bunny@2023 (the empress byte follows at 2024).
+        tail[2021] = u8::from(world.bought_cat); // boughtCat (`:1392`)
+        tail[2022] = u8::from(world.bought_dog); // boughtDog (`:1393`)
+        tail[2023] = u8::from(world.bought_bunny); // boughtBunny (`:1394`)
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)

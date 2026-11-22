@@ -23,6 +23,13 @@ mod doors;
 use doors::interact_tile;
 pub(crate) use doors::{bed_spawn_valid, check_bed_spawn};
 mod sentry;
+// W4-g87 keep-one EXECUTED at the batch-L merge (research/263 §6.5, a6 138
+// §12.3 SEALED): g87's `permanent_upgrades.rs` three use arms (Demon Heart
+// 3335 / Minecart Powerup 5289 / Pet Licenses 4829/4830/4910) dedup onto
+// a6's single-seam `crate::powerups` machine — the START refusal, the
+// reuseDelay tail, the live AnyNPCs scan and the full GetItem walk are
+// shape-identical there; g87's unique slot-8 UI/draw port rides
+// `ui/inventory.rs` + `player.rs::can_demon_heart_accessory_be_shown`.
 
 /// One 60 Hz tick in seconds — the fixed step the swing/item timers are paced
 /// against (`Player.Update`'s tick, `frame.rs`'s `FixedStepper::new(1.0 / 60.0)`).
@@ -2005,11 +2012,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // consumes the tick — the drones are weapons, the kill is not a use.
     crate::powerups::drone_destroy_check(app);
     // W4-a6 — the permanent power-up consumables (`ItemCheck_UseLifeCrystal`
-    // / `UseManaCrystal` and the sibling `Use*` arms, `Player.cs:45192-45423`):
-    // the same mid-swing `ItemTimeIsZero && itemAnimation > 0` shape as the
-    // boss spawners below. The machine starts the swing on the press edge and
+    // / `UseManaCrystal` and the sibling `Use*` arms, `Player.cs:45192-45423`,
+    // the full `:43595-43607` ladder incl. the Demon Heart `:43598`, the
+    // Minecart Powerup `:43599` and the Pet Licenses `:43606`): the same
+    // mid-swing `ItemTimeIsZero && itemAnimation > 0` shape as the boss
+    // spawners below. The machine starts the swing on the press edge and
     // grants when `item_time` reads zero inside the running swing; a started
-    // use consumes the tick like the boss arms.
+    // use consumes the tick like the boss arms. g87 keep-one EXECUTED
+    // (research/263 §6.5, a6 138 §12.3 SEALED): g87's three
+    // `permanent_upgrades` use arms + their dispatch calls dedup onto this
+    // single-seam machine — the CheckCanUse START refusal, the reuseDelay
+    // tail, the live AnyNPCs scan + the full GetItem walk are all folded
+    // here; g87's unique slot-8 UI/draw port rides ui/inventory.rs.
     if crate::powerups::powerup_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
