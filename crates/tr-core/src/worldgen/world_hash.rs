@@ -424,6 +424,12 @@ mod tests {
     // living-wood 191 interiors wherever the Living Trees step planted
     // them (the 512 world's count roll can rescue one tree). If a tree
     // exists this pin moves BY DESIGN; deferred to the gate.
+    // W4-d109 (code-only, the save half of S1-A-3): the `.trwld` v18 tail
+    // persists `World::variants` and the framing passes reuse them on a save
+    // load. This pin is UNCHANGED by that change: `generate()` runs only the
+    // pipeline steps and never frames (framing is the app-side post-pipeline
+    // seam), and `variants` is not a hashed `Tile` field — the pin hashes an
+    // un-framed world. (The S1-P-i33 deferred re-pin above still stands.)
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -607,6 +613,9 @@ mod tests {
     // W4-d102 pass 9 (code-only): the Wood Tree Walls sweep (see
     // SEED42_512 above) walls the living-tree interiors on the full-size
     // worlds — this pin moves BY DESIGN; deferred to the gate.
+    // W4-d109 (code-only): the `.trwld` v18 variants persistence leaves this
+    // pin UNCHANGED for the same reason as SEED42_512 above — `generate()`
+    // never frames and `variants` is unhashed. The i33 deferred re-pin stands.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
