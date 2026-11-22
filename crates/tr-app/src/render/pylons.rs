@@ -141,12 +141,15 @@ pub(crate) fn selection_glow_color(selected: bool, avg: i32) -> [f32; 4] {
     }
 }
 
-/// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): the shared verbatim
-/// port (`tr_core::scene::tile_is_visible`, W4-g78 keep-one — the pylon pass
-/// was the first landing of this gate; the tile/vine passes now ride the
-/// same seam).
+/// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): an Echo-coated block
+/// hides unless sight is granted; platforms on row 48 and the two invisible
+/// wiring tiles (541/631) always ride the flag. KEEP-ONE (batch-H compose):
+/// thin wrapper over the promoted `tr_render::tile_visibility::is_visible`
+/// (g31 TILEPASS final, research/136 §4 — the d56/d60 rebind target); the
+/// g78 `tr_core::scene::tile_is_visible` copy is the byte-identical twin
+/// (its sim-side callers keep it; the render passes ride this one).
 fn is_visible(world: &World, x: i32, y: i32, tile: &tr_core::Tile, show_invisible: bool) -> bool {
-    tr_core::scene::tile_is_visible(
+    tr_render::tile_visibility::is_visible(
         tile.kind,
         tile.frame_y,
         world.invisible_block(x, y),

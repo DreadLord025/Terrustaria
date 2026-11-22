@@ -1232,6 +1232,37 @@ pub(crate) fn draw_tiles(
             show_invisible_blocks,
         );
     }
+    // W4-g31 attach phase (UNION-CONTRACT-tilepass §8): the TR_TILEPASS
+    // SHADOW attach — the union's draw_layer/post_draw_tiles drivers run
+    // at the C# PostDrawTiles position (after the fused walk + the inline
+    // foliage/vine passes, before the NPC pass) over the same camera
+    // rect, PLAN-ONLY: no sprites pushed, a separate _rand stream (the
+    // fused pass's roll stream is never passed in), no shared state
+    // mutated, the G6 key untouched. Default
+    // OFF — unset the pin and zero union code runs here. The pixel
+    // binding (the fused loop split into the two draw_layer calls) is
+    // §8's merge script.
+    if crate::env::tilepass_shadow() {
+        let shadow_inputs = crate::render::tile_attach::ShadowInputs {
+            camera,
+            zoom,
+            screen,
+            // The fused pass's pinned-default convention (the
+            // HIGH_LIGHT/MEDIUM_LIGHT constants at :425): the adaptive
+            // App.gfx_quality.quality threads in at the pixel merge (§8).
+            gfx_quality: 0.5,
+            grass_counter: grass_wind_counter,
+            sunflower_counter: sunflower_wind_counter,
+            vine_counter: vine_wind_counter,
+            anim_time,
+            sparkle_seed,
+            disco: params.disco,
+        };
+        let shadow = crate::render::tile_attach::run_shadow(
+            world, wind, light, &shadow_inputs,
+        );
+        log::info!("TILEPASS shadow: {}", shadow.summary());
+    }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
     draw_phase("npcs");
     stats.quads += draw_npcs(

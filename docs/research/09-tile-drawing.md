@@ -84,7 +84,7 @@ render-target cache.
 | C# pass (order) | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
 | 1. `Draw` quality-light thresholds (:479-495) | PARTIAL | `tiles.rs:362-366` | The three tiers exist as `HIGH_LIGHT`/`MEDIUM_LIGHT`/flat; the `_highQualityLightingRequirement` byte formula (255*(1-q)+30q) is not reproduced — a different constant set. |
-| 2. `Draw` screen-area loop (+4/-2 margin) (:504-506) | PARTIAL | `tiles.rs::draw_tiles` | One fused loop instead of two layer passes; margin differs (G6 cached range). |
+| 2. `Draw` screen-area loop (+4/-2 margin) (:504-506) | PARTIAL | `tiles.rs::draw_tiles` + `render/tile_pass.rs` (W4-g29, UNWIRED) | One fused loop instead of two layer passes; margin differs (G6 cached range). The MISSING orchestration (prologue/epilogue order, `GetScreenDrawArea`, black strips, `PostDrawTiles` order, the frame-level layer order) landed as structure in `tile_pass.rs` — ANALYSIS "The Draw orchestration (W4-g29 pass 2)". |
 | 3. `DrawTile_LiquidBehindTile` on solid layer (:524) | PORTED | `render/liquids.rs::draw_tile_liquid_behind` | |
 | 4. Special-point classification switch (:534-723) — vines / MultiTileVine / MultiTileGrass / VoidLens / Pylon / MasterTrophy / AnyDirectionalGrass / WindyGrass | PARTIAL | none (registry) | Inlined: grass+sunflower sway (`tiles.rs:671-751`, `838-851`), trees (`foliage.rs`). The **deferred ordering** is lost — `tiles.rs:671-678` admits the "z-order approximation". |
 | 5. `DrawSingleTile` (:864-1411) | PARTIAL | `tiles.rs::draw_tiles` body | See coverage table; `GetTileDrawData`, the positional switch, flames, half/slice/slope are ported. |
