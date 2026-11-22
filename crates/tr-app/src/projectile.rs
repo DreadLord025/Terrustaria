@@ -8182,8 +8182,21 @@ impl Projectile {
         _player: Option<&crate::player::Player>,
     ) {
         // `:37831-37839`: the gem dust id `type - 121 + 86` (121→86 amethyst
-        // … 126→91 diamond, 597→262 amber) — the two-per-tick dust spawns
-        // that read it (`:37847-37855`) are SKIPPED.
+        // … 126→91 diamond, 597→262 amber, 1120→170 the Forbidden sign) —
+        // the per-tick dust spawns that read it (`:37847-37855`) are SKIPPED
+        // (the 1120's single unconditional dust draws NO Next(5) gate,
+        // `:37842-37846` — the flag folds false).
+        // `:37856-37864` — the one-cue-per-life latch: the gem family plays
+        // StackableItem8ForRubyStaff (2, 205), the 1120 sign plays Item72
+        // (2, 72) (`SoundID.cs:1455`/`:1589`). The cue rides the slot's
+        // `wants_sound` intent (the S1-E-21h queue); the 1120's 8-dust
+        // first-cue ring (`:37865-37873`, two NextFloats per dust) is the
+        // documented dust skip.
+        if self.sound_delay == 0 {
+            self.sound_delay = -1;
+            let style = if self.kind == 1120 { 72 } else { 205 };
+            self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
+        }
         let features = GemStaffFeatures::from_ai(self.ai[0]);
         // The homing block (`:37876-37923`).
         if features.homing() {
@@ -12406,6 +12419,37 @@ impl Projectile {
         skip_if_cannot_hit: bool,
         respect_owner_target: bool,
     ) -> i32 {
+        // W4-a9 — the aiStyle-206 caller's `AI_206_CustomEliminationCheck_
+        // Forbidden` (`Projectile.cs:37496-37499`): the box-to-box
+        // `Collision.CanHitLine` probe. `None` = the C#'s default null check.
+        self.minion_find_target_in_range_custom(
+            world,
+            npcs,
+            player,
+            start_attack_range,
+            skip_if_cannot_hit,
+            respect_owner_target,
+            None,
+        )
+    }
+
+    /// [`Self::minion_find_target_in_range`] with the C#'s
+    /// `customEliminationCheck` parameter (`Projectile.cs:48990`'s
+    /// `Func<Entity, int, bool>`): `Some(f)` runs `f(npc, current_target)`
+    /// as the LAST conjunction of the scan's gate (`:49012`) — a false
+    /// answer skips the candidate without touching the distance ladder.
+    /// The 206 arm passes the Forbidden box-LOS probe; every other caller
+    /// keeps the null default through the wrapper above.
+    fn minion_find_target_in_range_custom(
+        &self,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&crate::player::Player>,
+        start_attack_range: f32,
+        skip_if_cannot_hit: bool,
+        respect_owner_target: bool,
+        custom_elimination_check: Option<&dyn Fn(&Npc, i32) -> bool>,
+    ) -> i32 {
         let mut num = start_attack_range;
         let mut num2 = num;
         let mut num3 = num;
@@ -12456,6 +12500,12 @@ impl Projectile {
                 || crate::revenge::BOSS_KINDS.contains(&n.kind);
             if !in_view {
                 continue;
+            }
+            // `:49012` — the custom elimination check, the gate's last term.
+            if let Some(check) = custom_elimination_check {
+                if !check(n, attack_target) {
+                    continue;
+                }
             }
             attack_target = i as i32;
             let my_distance = center.distance(npc_center(n));
@@ -13397,10 +13447,10 @@ fn shift_ring<T: Copy>(ring: &mut [T]) {
 /// `CreateIntSet(-1, …)` default −1 records nothing.
 ///
 /// The table is the in-scope slice over the ported kinds (`Projectile.cs`
-/// `17091-17195`'s chain). The C# set's 1120 (the Forbidden sign's shot) and the
-/// rest of the unported kinds default to −1 here, as the source's factory
-/// default does for every id the set omits. Modes 4/5 have no ported kind
-/// (933/1100/106) and no arm.
+/// `17091-17195`'s chain). W4-a9: the 1120 Forbidden sign's shot carries the
+/// family's mode 2 now; the rest of the unported kinds default to −1 here,
+/// as the source's factory default does for every id the set omits. Modes
+/// 4/5 have no ported kind (933/1100/106) and no arm.
 pub(crate) fn trailing_mode(kind: u16) -> i32 {
     match kind {
         // `:17091`'s mode-0 kinds among the ported rows (the positions only;
@@ -13417,10 +13467,11 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // `:17099`'s mode 1 — the Vortex Ritual's bolt.
         VORTEX_RITUAL_BOLT => 1,
         // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
-        // Betsy's fireball.
+        // Betsy's fireball. W4-a9: the 1120 Forbidden sign's shot joins the
+        // family's mode (`ProjectileID.cs:521`'s `1120, 2` entry).
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
         | GEM_BOLT_SAPPHIRE | GEM_BOLT_EMERALD | GEM_BOLT_RUBY | GEM_BOLT_DIAMOND
-        | GEM_BOLT_AMBER => 2,
+        | GEM_BOLT_AMBER | 1120 => 2,
         // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
@@ -13466,8 +13517,9 @@ fn trail_family(kind: u16) -> Option<TrailFamily> {
     let gem = |c1, c2, c3| Some(TrailFamily::Gem { c1, c2, c3 });
     match kind {
         // `:28197-28229`'s switch: the amethyst (121) keeps the call site's
-        // default Violet/Purple/White, and 1120 (unported) would take it too.
-        GEM_BOLT_AMETHYST => gem(VIOLET, PURPLE, [1.0; 3]),
+        // default Violet/Purple/White; W4-a9: the 1120 sign's shot takes the
+        // same default (the C# switch has no 1120 case).
+        GEM_BOLT_AMETHYST | 1120 => gem(VIOLET, PURPLE, [1.0; 3]),
         // `:28199-28203`.
         GEM_BOLT_TOPAZ => gem(ORANGE, ORANGE, [1.0; 3]),
         // `:28204-28212`.
@@ -13901,6 +13953,58 @@ fn ai_158_home_location(master: &crate::player::Player, stacked_index: i32) -> V
     let (mcx, mcy) = master.mounted_center();
     let anchor = master.rotated_relative_point(Vec2::new(mcx, mcy), 0);
     (anchor + Vec2::new(0.0, -21.0) + pos).floor()
+}
+
+/// `Projectile.AI_164_GetHomeLocation` (`Projectile.cs:46646-46699`): the
+/// gem/counter orbit above the owner's head — the headgear row lift, the
+/// 4-per-ring stack ladder (the last partial ring re-phases its members),
+/// the miscCounter spin and the floored mount anchor. The port keeps
+/// `gravDir = 1` (the `ai_158_home_location` precedent) and the C#'s
+/// `_ = master.direction;` discard (`:46695`) ports as nothing.
+fn ai_164_home_location(master: &crate::player::Player, stacked_index: i32, total_indexes: i32) -> Vec2 {
+    // `:46648-46654` — the headgear row (`bodyFrame.Height` is the constant
+    // 56 the port's `body_frame` index partition matches, the 158 precedent).
+    let mut vector = Vec2::new(0.0, crate::player::offsets_player_headgear_y(master.body_frame as usize));
+    vector.y -= 2.0;
+    // `:46655-46673` — the ring ladder. `miscCounterNormalized` is
+    // `miscCounter / 300f` (`Player.cs:3389`).
+    let mut num2 = master.misc_counter as f32 / 300.0 * 2.0;
+    let num3 = stacked_index / 4;
+    let mut num4 = total_indexes / 4;
+    if total_indexes % 4 > 0 {
+        num4 += 1;
+    }
+    let mut num5 = (total_indexes - num3 * 4) % 4;
+    if num5 == 0 {
+        num5 = 4;
+    }
+    if num4 - 1 != num3 {
+        num5 = 4;
+    }
+    let num6 = stacked_index % num5;
+    let mut num7 = num6 as f32 / num5 as f32;
+    num2 += num3 as f32 / 8.0;
+    // `:46674-46692` — the last partial ring's re-phase (the C# switch).
+    if stacked_index >= (num4 - 1) * 4 && num3 > 0 {
+        num2 = 0.0;
+        match num5 {
+            1 => num7 = 0.0,
+            2 => num7 = 0.25 + num6 as f32 * 0.5,
+            3 => num7 = (num6 - 1) as f32 / 6.0,
+            4 => num7 = (num6 as f32 - 1.5) / 6.0,
+            _ => {}
+        }
+    }
+    // `:46693` — the ring offset: the (0, −8 − 12·ring) arm rotated by the
+    // spin, plus the 40-px lift (gravDir = 1).
+    vector += rotate(Vec2::new(0.0, -8.0 - 12.0 * num3 as f32), (num2 + num7) * std::f32::consts::TAU)
+        + Vec2::new(0.0, -40.0);
+    // `:46694-46698` — the mount anchor, the 21-px eye line, the gfx lift,
+    // floored.
+    let (mcx, mcy) = master.mounted_center();
+    let mut vec = Vec2::new(mcx, mcy) + Vec2::new(0.0, -21.0) + vector;
+    vec.y += master.gfx_off_y;
+    vec.floor()
 }
 
 /// `Collision.CanHitLine(Vector2, int, int, Vector2, int, int)`
@@ -17396,6 +17500,124 @@ impl ProjectilePool {
                             );
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
+                        }
+                        // W4-a9 — `AI()`'s `else if (this.aiStyle == 156)`
+                        // (`Projectile.cs:36587-36590`) -> `AI_156_BatOfLight`
+                        // (`:51516-51937`): the Sanguine bat (755) + the
+                        // Empress Blade (946), the style's ONLY rows
+                        // (`:7777-7792`/`:8922-8940`). Pool-side — the
+                        // StartAttack immunity reset writes the pool's
+                        // local_immunity array. The i25 dispatch no-op
+                        // deferral is superseded (the UNARMED_ROWED census
+                        // drops 156). Both rows keep `tileCollide = false`
+                        // and aiStyle 156 is not in `UpdatePosition`'s skip
+                        // list (`:20435`), so the free integrate runs every
+                        // sub-step (the loop arms back the velocity out of
+                        // the position so the integrate lands on the arc).
+                        156 => {
+                            self.bat_of_light_step(
+                                i,
+                                world,
+                                &npcs[..],
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): the 946's `manualDirectionChange =
+                            // true` (`:8938`) suppresses the rewrite; the
+                            // 755's row leaves it false, so its direction
+                            // follows velocity.X's sign after the move
+                            // (`:17016-17026`).
+                            if self.slots[i].kind != 946 {
+                                self.slots[i].direction =
+                                    if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                            }
+                        }
+                        // W4-a9 — `AI()`'s `else if (this.aiStyle == 164)`
+                        // (`Projectile.cs:36619-36622`) ->
+                        // `AI_164_StormTigerGem` (`:46593-46644`): the Storm
+                        // Tiger gem (831) + Abigail's counter (970), the
+                        // style's ONLY rows (`:8067-8081`/`:9182-9196`).
+                        // Pool-side — the group index reads the sibling
+                        // slots. The i25 dispatch no-op deferral is
+                        // superseded (the UNARMED_ROWED census drops 164).
+                        // Both rows keep `tileCollide = false` and aiStyle
+                        // 164 is not in `UpdatePosition`'s skip list
+                        // (`:20435`), so the free integrate runs every
+                        // sub-step (the home pin is AI-set; the velocity is
+                        // whatever the spawn carried).
+                        164 => {
+                            self.storm_tiger_gem_step(i, player.as_deref_mut());
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): neither row sets
+                            // `manualDirectionChange`, so the direction
+                            // follows velocity.X's sign after the move
+                            // (`:17016-17026`).
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
+                        // W4-a9 — `AI()`'s `else if (this.aiStyle == 169)`
+                        // (`Projectile.cs:36639-36642`) -> `AI_169_Smolstars`
+                        // (`:45718-45855`): the Smolstar (864), the style's
+                        // ONLY row (`:8284-8300`). Pool-side — the idle orbit
+                        // and the separation loop read the sibling slots.
+                        // The i25 dispatch no-op deferral is superseded (the
+                        // UNARMED_ROWED census drops 169). The row keeps
+                        // `tileCollide = false` and aiStyle 169 is not in
+                        // `UpdatePosition`'s skip list (`:20435`), so the free
+                        // integrate runs every sub-step.
+                        169 => {
+                            self.smolstar_step(
+                                i,
+                                world,
+                                &npcs[..],
+                                player.as_deref_mut(),
+                                rng,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): the row leaves `manualDirectionChange`
+                            // false, so the direction follows velocity.X's
+                            // sign after the move (`:17016-17026`).
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
+                        }
+                        // W4-a9 — `AI()`'s `else if (this.aiStyle == 206)`
+                        // (`Projectile.cs:36787-36790`) ->
+                        // `AI_206_ForbiddenMinion` (`:37501-37641`): the
+                        // Forbidden Minion (1119), the style's ONLY row
+                        // (`:10464-10478`). Pool-side — the group index reads
+                        // the sibling slots and the fire tick spawns the
+                        // 1120 sign's shot. The i25 dispatch no-op deferral
+                        // is superseded (the UNARMED_ROWED census drops 206
+                        // — the list is EMPTY). The row keeps `tileCollide =
+                        // false` and aiStyle 206 is not in `UpdatePosition`'s
+                        // skip list (`:20435`), so the free integrate runs
+                        // every sub-step.
+                        206 => {
+                            self.forbidden_minion_step(
+                                i,
+                                world,
+                                &npcs[..],
+                                player.as_deref_mut(),
+                                rng,
+                                local_owner,
+                            );
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                            // `AutomaticallyChangesDirection` (`:17281-
+                            // 17288`): the row leaves `manualDirectionChange`
+                            // false, so the direction follows velocity.X's
+                            // sign after the move (`:17016-17026`) — the
+                            // arm's owner-facing pin is overwritten here,
+                            // exactly as the C# does.
+                            self.slots[i].direction =
+                                if self.slots[i].vel.x < 0.0 { -1 } else { 1 };
                         }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
@@ -21264,6 +21486,13 @@ impl ProjectilePool {
     /// seven [`GEM_BOLTS`] and feature-gated, so nothing else can die through
     /// it and the burst fires at most once per bolt (a dead slot never returns
     /// to `active`).
+    ///
+    /// W4-a9 — the 1120 Forbidden sign's shot takes its OWN `Kill()` arm
+    /// (`:75374-75424`, the branch AHEAD of the gem family): the unconditional
+    /// `Resize(112, 112)` burst, `damage × 1`, the same penetration open +
+    /// immunity reset + boxed `Damage()` + trailing `Resize(22, 22)` — NO
+    /// feature gate (the C# arm never reads the pack). The 15+30 dust spawns
+    /// and the thud are the documented skip.
     fn gem_bolt_aoe(
         &mut self,
         slot: usize,
@@ -21276,6 +21505,40 @@ impl ProjectilePool {
             Some(p) => (p.kind, p.ai[0]),
             None => return,
         };
+        if kind == 1120 {
+            // `:75407-75423` — the sign's burst: Resize(112, 112), damage ×1,
+            // the penetration open, the cooldown-preserving immunity reset,
+            // the boxed Damage() and the trailing Resize(22, 22).
+            let (center, cooldown) = {
+                let p = &self.slots[slot];
+                (
+                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5),
+                    p.local_hit_cooldown,
+                )
+            };
+            let p = &mut self.slots[slot];
+            p.w = 112.0;
+            p.h = 112.0;
+            p.pos = center - Vec2::new(56.0, 56.0);
+            p.max_penetrate = -1;
+            p.penetrate = -1;
+            let base = slot * 256;
+            for v in &mut self.local_immunity[base..base + 256] {
+                if *v != cooldown {
+                    *v = 0;
+                }
+            }
+            self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            let (cx, cy) = {
+                let p = &self.slots[slot];
+                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            };
+            let p = &mut self.slots[slot];
+            p.w = 22.0;
+            p.h = 22.0;
+            p.pos = Vec2::new(cx - 11.0, cy - 11.0);
+            return;
+        }
         if !GEM_BOLTS.contains(&kind) {
             return;
         }
@@ -21699,6 +21962,998 @@ impl ProjectilePool {
         let p = &mut self.slots[i];
         p.pos.x = p.pos.x.clamp(160.0, world.width as f32 * 16.0 - 160.0);
         p.pos.y = p.pos.y.clamp(160.0, world.height as f32 * 16.0 - 160.0);
+    }
+
+    /// W4-a9 — `AI_156_BatOfLight` (`Projectile.cs:51516-51566`, the dispatch
+    /// `:36587-36590`) + `AI_156_Think` (`:51583-51846`): the Sanguine bat
+    /// (755) and the Empress Blade (946), the style's ONLY SetDefaults rows
+    /// (`:7777-7792`/`:8922-8940`). A pool-side step (the `dragon_step`
+    /// shape): `AI_156_StartAttack`'s `ResetLocalNPCHitImmunity` clears the
+    /// slot's row in the pool's `local_immunity` array, which a slot arm
+    /// cannot reach.
+    ///
+    /// RNG: the idle-state `Main.rand.Next(20)` acquire gates (`:51633`/
+    /// `:51655`) and the blade's `NextFromList(num, num3)` re-arms
+    /// (`:51661`/`:51748`/`:51767`/`:51834` — ONE `Next(2)` per call,
+    /// `Utils.cs:1213-1216`) stay on the pass's `UpdateProjectiles` stream.
+    /// The `:51661` draw is CONSUMED then overwritten by `ai[0] = num3`
+    /// (`:51662`) — the verbatim vanilla dead-write pair.
+    ///
+    /// Skips (ANALYSIS): the `AI_156_GetColor` + `CastLightOpen` light casts
+    /// (`:51532-51534`/`:51560-51562`) have no pool layer; the static
+    /// `_ai156_blacklistedTargets` list (`:512`/`:51518`/`:51564`) is never
+    /// `.Add`ed anywhere in the C# — the blacklist folds to EMPTY (the
+    /// `Contains` tests are always false). `IndexForVisuals` (`:552`,
+    /// `key.Index`) is the pool slot index (the dragon precedent).
+    fn bat_of_light_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let flag = self.slots[i].kind == 755;
+        let flag2 = self.slots[i].kind == 946;
+        // `:51519` — `Main.player[this.owner]`; the C# has NO owner-inactive
+        // kill here (unlike the guardian) — an unresolved owner folds the
+        // whole machine away and the dispatch still integrates the slot.
+        let Some(pl) = player else {
+            return;
+        };
+        if flag {
+            // `:51524-51531` — death clears the summon flag; the live flag
+            // pins `timeLeft = 2`.
+            if pl.dead {
+                pl.bats_of_light = false;
+            }
+            if pl.bats_of_light {
+                self.slots[i].time_left = 2;
+            }
+            // `:51532-51534` — the light cast: SKIPPED (no light layer).
+            // `:51535-51542` — the 6-tick flap, wrapping at projFrames − 1.
+            let frames = proj_frames(self.slots[i].kind) as i32;
+            let p = &mut self.slots[i];
+            p.frame_counter += 1;
+            if p.frame_counter >= 6 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= frames - 1 {
+                    p.frame = 0;
+                }
+            }
+            // `:51543-51548` — the facing: the owner's direction, overridden
+            // by the velocity's sign when moving.
+            let mut num = pl.facing;
+            if p.vel.x != 0.0 {
+                num = csign(p.vel.x) as i32;
+            }
+            p.sprite_direction = num;
+        }
+        if flag2 {
+            // `:51552-51559` — the blade's keep-alive pair; the light cast
+            // (`:51560-51562`) is the documented skip. The blade carries NO
+            // frame machine (the C# block ends at the cast).
+            if pl.dead {
+                pl.empress_blade = false;
+            }
+            if pl.empress_blade {
+                self.slots[i].time_left = 2;
+            }
+        }
+        // `:51564-51565` — the blacklist clear + the Think body. The static
+        // list never gains entries (the doc block), so it is not threaded.
+        self.bat_of_light_think(i, world, npcs, pl, rng);
+    }
+
+    /// `AI_156_Think` (`Projectile.cs:51583-51846`) — the state machine:
+    /// the −1 return-home glide, the 0 idle hover + acquire gate, the bat's
+    /// single-loop strike and the blade's two-phase (loop + overhead dive)
+    /// strike. The parameter ladder: the bat keeps the stock 60-window
+    /// with `num = 66`; the blade re-derives ALL five around 40.
+    fn bat_of_light_think(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        pl: &crate::player::Player,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        let flag = self.slots[i].kind == 755;
+        let flag2 = self.slots[i].kind == 946;
+        // `:51587-51603` — the parameter block.
+        let mut num = 60.0f32;
+        let mut num2 = num - 1.0;
+        let mut num3 = num + 60.0;
+        let mut num4 = num3 - 1.0;
+        let mut num5 = num + 1.0;
+        if flag {
+            num = 66.0;
+        }
+        if flag2 {
+            num = 40.0;
+            num2 = num - 1.0;
+            num3 = num + 40.0;
+            num4 = num3 - 1.0;
+            num5 = num + 1.0;
+        }
+        let (pcx, pcy) = pl.center();
+        let player_center = Vec2::new(pcx, pcy);
+        // `:51605-51610` — the 2000-px leash reset (the owner is active by
+        // construction here — the caller resolved it).
+        if player_center.distance(Vec2::from(self.slots[i].center())) > 2000.0 {
+            let p = &mut self.slots[i];
+            p.ai[0] = 0.0;
+            p.ai[1] = 0.0;
+            p.net_update = true;
+        }
+        if self.slots[i].ai[0] == -1.0 {
+            // `:51611-51624` — the return-home glide: the 32-px MoveTowards
+            // step, the 0.2 idle-rotation blend, the <2-px arrival reset.
+            let (index, total) = self.group_index_and_total(i);
+            let (idle_spot, idle_rotation) = self.bat_of_light_idle_position(i, pl, index, total);
+            let p = &mut self.slots[i];
+            p.vel = Vec2::ZERO;
+            let c = Vec2::from(p.center());
+            p.set_center(move_towards(c, idle_spot, 32.0));
+            p.rot = angle_lerp(p.rot, idle_rotation, 0.2);
+            // `base.Distance` reads the CENTRE (`Entity.cs:195-198`).
+            if Vec2::from(p.center()).distance(idle_spot) < 2.0 {
+                p.ai[0] = 0.0;
+                p.net_update = true;
+            }
+            return;
+        }
+        if self.slots[i].ai[0] == 0.0 {
+            if flag {
+                // `:51627-51645` — the bat's idle: the 0.45 SmoothStep onto
+                // the fan spot, the Next(20) acquire gate, the 66-window.
+                let (index, total) = self.group_index_and_total(i);
+                let (idle_spot, _) = self.bat_of_light_idle_position(i, pl, index, total);
+                let p = &mut self.slots[i];
+                p.vel = Vec2::ZERO;
+                let c = Vec2::from(p.center());
+                let (sx, sy) = crate::npc::smooth_step2(c.x, c.y, idle_spot.x, idle_spot.y, 0.45);
+                p.set_center(Vec2::new(sx, sy));
+                if rng.next_range(0, 20) == 0 {
+                    let num6 = self.bat_of_light_try_attack(world, npcs, pl, i, false);
+                    if num6 != -1 {
+                        self.bat_of_light_start_attack(i);
+                        let p = &mut self.slots[i];
+                        p.ai[0] = num;
+                        p.ai[1] = num6 as f32;
+                        p.net_update = true;
+                        return;
+                    }
+                }
+            }
+            if !flag2 {
+                return;
+            }
+            // `:51650-51667` — the blade's idle: the same SmoothStep plus
+            // the 0.45 rotation blend, the Next(20) gate, and the
+            // NextFromList draw the C# then overwrites with num3 (`:51661-
+            // 51662`, the verbatim dead-write pair — the draw stays).
+            let (index, total) = self.group_index_and_total(i);
+            let (idle_spot, idle_rotation) = self.bat_of_light_idle_position(i, pl, index, total);
+            let p = &mut self.slots[i];
+            p.vel = Vec2::ZERO;
+            let c = Vec2::from(p.center());
+            let (sx, sy) = crate::npc::smooth_step2(c.x, c.y, idle_spot.x, idle_spot.y, 0.45);
+            p.set_center(Vec2::new(sx, sy));
+            p.rot = angle_lerp(p.rot, idle_rotation, 0.45);
+            if rng.next_range(0, 20) == 0 {
+                let num7 = self.bat_of_light_try_attack(world, npcs, pl, i, false);
+                if num7 != -1 {
+                    self.bat_of_light_start_attack(i);
+                    let picked = if rng.next_range(0, 2) == 0 { num } else { num3 };
+                    let p = &mut self.slots[i];
+                    p.ai[0] = picked;
+                    p.ai[0] = num3;
+                    p.ai[1] = num7 as f32;
+                    p.net_update = true;
+                }
+            }
+            return;
+        }
+        if flag {
+            // `:51669-51727` — the bat's strike loop.
+            let num8 = self.slots[i].ai[1] as i32;
+            let Some(n) = npcs.get(num8 as usize) else {
+                // `:51672-51677` — IndexInRange fail → idle.
+                let p = &mut self.slots[i];
+                p.ai[0] = 0.0;
+                p.net_update = true;
+                return;
+            };
+            if !chaseable(n) {
+                // `:51679-51684` — the target died → idle.
+                let p = &mut self.slots[i];
+                p.ai[0] = 0.0;
+                p.net_update = true;
+                return;
+            }
+            self.slots[i].ai[0] -= 1.0;
+            if self.slots[i].ai[0] >= num2 {
+                // `:51686-51695` — the wind-up: the 0.8 damp; the boundary
+                // tick stamps the loop anchor (localAI[0..1]).
+                let p = &mut self.slots[i];
+                p.vel *= 0.8;
+                if p.ai[0] == num2 {
+                    let c = Vec2::from(p.center());
+                    p.local_ai[0] = c.x;
+                    p.local_ai[1] = c.y;
+                }
+                return;
+            }
+            // `:51696-51712` — the loop: the anchor flips to the owner at
+            // the half-way lerp, the ±π unwind spins around the midpoint,
+            // the slot-index sine squashes Y, and the position rides the
+            // circle (the velocity backs out of it so UpdatePosition's
+            // integrate lands exactly on the computed centre).
+            let lerp_value = get_lerp_value(num2, 0.0, self.slots[i].ai[0]);
+            let p = &mut self.slots[i];
+            let mut vector = Vec2::new(p.local_ai[0], p.local_ai[1]);
+            if lerp_value >= 0.5 {
+                vector = player_center;
+            }
+            let center = npc_center(n);
+            let num9 = (center - vector).to_angle();
+            let num10 = if center.x > vector.x { -std::f32::consts::PI } else { std::f32::consts::PI };
+            let num11 = num10 + (0.0 - num10) * lerp_value * 2.0;
+            let mut spinningpoint = rotate(Vec2::UNIT_X, num11);
+            spinningpoint.y *= (i as f32 * 2.3).sin() * 0.5;
+            spinningpoint = rotate(spinningpoint, num9);
+            let num12 = (center - vector).length() / 2.0;
+            p.set_center(vector.lerp(center, 0.5) + spinningpoint * num12);
+            p.vel = rotate(Vec2::UNIT_X, wrap_angle(num9 + num11)) * 10.0;
+            p.pos -= p.vel;
+            if p.ai[0] == 0.0 {
+                // `:51713-51726` — the loop ends: re-acquire (the 66-window
+                // again) or fall to idle with the target cleared.
+                let num13 = self.bat_of_light_try_attack(world, npcs, pl, i, false);
+                if num13 != -1 {
+                    let p = &mut self.slots[i];
+                    p.ai[0] = num;
+                    p.ai[1] = num13 as f32;
+                    self.bat_of_light_start_attack(i);
+                    self.slots[i].net_update = true;
+                    return;
+                }
+                let p = &mut self.slots[i];
+                p.ai[1] = 0.0;
+                p.net_update = true;
+            }
+        }
+        if !flag2 {
+            return;
+        }
+        // `:51732-51741` — the blade's phase select: ai[0] ≥ 41 is the
+        // overhead dive (phase 1, the 79→41 window), else the loop (phase
+        // 0, the 39→0 window). `skipBodyCheck = true` throughout.
+        let skip_body_check = true;
+        let (num14, num15, num16) = if self.slots[i].ai[0] >= num5 {
+            (1, num4, num5)
+        } else {
+            (0, num2, 0.0)
+        };
+        let num17 = self.slots[i].ai[1] as i32;
+        let target_ok = npcs
+            .get(num17 as usize)
+            .is_some_and(|n| chaseable(n));
+        if !target_ok {
+            // `:51743-51779` — both validity fails share the re-acquire /
+            // return-home fork (the C# duplicates the block; the port folds
+            // the identical pair).
+            let num18 = self.bat_of_light_try_attack(world, npcs, pl, i, skip_body_check);
+            let p = &mut self.slots[i];
+            if num18 != -1 {
+                p.ai[0] = if rng.next_range(0, 2) == 0 { num } else { num3 };
+                p.ai[1] = num18 as f32;
+                self.bat_of_light_start_attack(i);
+                self.slots[i].net_update = true;
+            } else {
+                p.ai[0] = -1.0;
+                p.ai[1] = 0.0;
+                p.net_update = true;
+            }
+            return;
+        }
+        let n = &npcs[num17 as usize];
+        self.slots[i].ai[0] -= 1.0;
+        if self.slots[i].ai[0] >= num15 {
+            // `:51781-51789` — the wind-up facing + the boundary anchor.
+            let p = &mut self.slots[i];
+            p.direction = if Vec2::from(p.center()).x < npc_center(n).x { 1 } else { -1 };
+            if p.ai[0] == num15 {
+                let c = Vec2::from(p.center());
+                p.local_ai[0] = c.x;
+                p.local_ai[1] = c.y;
+            }
+        }
+        let lerp_value2 = get_lerp_value(num15, num16, self.slots[i].ai[0]);
+        if num14 == 0 {
+            // `:51791-51812` — the blade's loop: the anchor flips to the
+            // target/owner midpoint at the half-way lerp, the facing picks
+            // the unwind sign, the Y squash carries the 0.8 + 0.2·sin
+            // slot-index modulation, and the rotation is the heading + π/2.
+            let p = &mut self.slots[i];
+            let mut vector2 = Vec2::new(p.local_ai[0], p.local_ai[1]);
+            if lerp_value2 >= 0.5 {
+                vector2 = npc_center(n).lerp(player_center, 0.5);
+            }
+            let center2 = npc_center(n);
+            let num20 = (center2 - vector2).to_angle();
+            let num21 = if p.direction == 1 { -std::f32::consts::PI } else { std::f32::consts::PI };
+            let num22 = num21 + (0.0 - num21) * lerp_value2 * 2.0;
+            let mut spinningpoint2 = rotate(Vec2::UNIT_X, num22);
+            spinningpoint2.y *= 0.5;
+            spinningpoint2.y *= 0.8 + (i as f32 * 2.3).sin() * 0.2;
+            spinningpoint2 = rotate(spinningpoint2, num20);
+            let num23 = (center2 - vector2).length() / 2.0;
+            p.set_center(vector2.lerp(center2, 0.5) + spinningpoint2 * num23);
+            let num24 = wrap_angle(num20 + num22);
+            p.rot = num24 + std::f32::consts::FRAC_PI_2;
+            p.vel = rotate(Vec2::UNIT_X, num24) * 10.0;
+            p.pos -= p.vel;
+        }
+        if num14 == 1 {
+            // `:51813-51828` — the overhead dive: the anchor lifts 100 px
+            // over the first 0.4 of the window, the standoff clamps 60..150
+            // along the gap, the rotation turns at π/5 per tick, and the
+            // centre lerps anchor→target (0.4..0.6) then target→standoff
+            // (0.6..1).
+            let p = &mut self.slots[i];
+            let mut vector3 = Vec2::new(p.local_ai[0], p.local_ai[1]);
+            vector3 += Vec2::new(0.0, get_lerp_value(0.0, 0.4, lerp_value2) * -100.0);
+            let v = npc_center(n) - vector3;
+            let vector4 = safe_normalize(v) * v.length().clamp(60.0, 150.0);
+            let value = npc_center(n) + vector4;
+            let lerp_value3 = get_lerp_value(0.4, 0.6, lerp_value2);
+            let lerp_value4 = get_lerp_value(0.6, 1.0, lerp_value2);
+            p.rot = angle_towards(
+                p.rot,
+                safe_normalize(v).to_angle() + std::f32::consts::FRAC_PI_2,
+                std::f32::consts::PI / 5.0,
+            );
+            p.set_center(vector3.lerp(npc_center(n), lerp_value3));
+            if lerp_value4 > 0.0 {
+                p.set_center(npc_center(n).lerp(value, lerp_value4));
+            }
+        }
+        if self.slots[i].ai[0] == num16 {
+            // `:51829-51845` — the phase ends: re-acquire (the NextFromList
+            // window) or return home.
+            let num25 = self.bat_of_light_try_attack(world, npcs, pl, i, skip_body_check);
+            let p = &mut self.slots[i];
+            if num25 != -1 {
+                p.ai[0] = if rng.next_range(0, 2) == 0 { num } else { num3 };
+                p.ai[1] = num25 as f32;
+                self.bat_of_light_start_attack(i);
+                self.slots[i].net_update = true;
+            } else {
+                p.ai[0] = -1.0;
+                p.ai[1] = 0.0;
+                p.net_update = true;
+            }
+        }
+    }
+
+    /// `AI_156_StartAttack` (`Projectile.cs:51848-51851`) —
+    /// `ResetLocalNPCHitImmunity` (`:43719-43722`): the slot's 256-entry
+    /// local-immunity row clears (the pool-array half a slot arm cannot
+    /// reach — the reason this machine is pool-side).
+    fn bat_of_light_start_attack(&mut self, i: usize) {
+        let base = i * 256;
+        self.local_immunity[base..base + 256].fill(0);
+    }
+
+    /// `AI_156_TryAttackingNPCs` (`Projectile.cs:51853-51893`): the owner's
+    /// whip target first (chaseable, ≤1000 px from the OWNER's centre, the
+    /// own-body LOS unless `skip_body_check`), then the full scan — the
+    /// nearest chaseable NPC within 1000 px of the owner that passes the
+    /// body check. The blacklist is always EMPTY (the doc block on
+    /// [`Self::bat_of_light_step`]), so the `boss ||` disjuncts fold away;
+    /// the `num == -1f` first-pick sentinel stays (a 0-distance first pick
+    /// must not be overwritten by the `!(num2 > num)` test).
+    fn bat_of_light_try_attack(
+        &self,
+        world: &World,
+        npcs: &[Npc],
+        pl: &crate::player::Player,
+        i: usize,
+        skip_body_check: bool,
+    ) -> i32 {
+        let (pcx, pcy) = pl.center();
+        let center = Vec2::new(pcx, pcy);
+        let mut result = -1;
+        let mut num = -1.0f32;
+        // `:51858-51878` — the whip-target head start.
+        if pl.minion_attack_target_npc >= 0 {
+            if let Some(n) = npcs.get(pl.minion_attack_target_npc as usize) {
+                if chaseable(n) {
+                    let mut flag = true;
+                    if npc_center(n).distance(center) > 1000.0 {
+                        flag = false;
+                    }
+                    if !skip_body_check && !self.slots[i].can_hit_with_own_body(world, n) {
+                        flag = false;
+                    }
+                    if flag {
+                        return pl.minion_attack_target_npc;
+                    }
+                }
+            }
+        }
+        // `:51879-51891` — the nearest-target scan.
+        for (idx, n) in npcs.iter().enumerate() {
+            if !chaseable(n) {
+                continue;
+            }
+            let num2 = npc_center(n).distance(center);
+            if !(num2 > 1000.0)
+                && (!(num2 > num) || num == -1.0)
+                && (skip_body_check || self.slots[i].can_hit_with_own_body(world, n))
+            {
+                num = num2;
+                result = idx as i32;
+            }
+        }
+        result
+    }
+
+    /// `AI_GetMyGroupIndexAndFillBlackList` (`Projectile.cs:51895-51911`):
+    /// the same-owner same-kind sibling count — the 759 gate counts only
+    /// perched birds (`frame == projFrames − 1`), the 1119 gate only the
+    /// same `localAI[0]` cohort. The blacklist out-param is dropped (the
+    /// C# body never fills it — the doc block on
+    /// [`Self::bat_of_light_step`]). `whoAmI > i` is the pool-index order.
+    fn group_index_and_total(&self, me: usize) -> (i32, i32) {
+        let this = &self.slots[me];
+        let frames = proj_frames(this.kind) as i32;
+        let mut index = 0i32;
+        let mut total = 0i32;
+        for (i, other) in self.slots.iter().enumerate() {
+            if !other.active || other.owner != this.owner || other.kind != this.kind {
+                continue;
+            }
+            // `:51902` — the 759/1119 cohort gates.
+            if other.kind == BABY_BIRD && other.frame != frames - 1 {
+                continue;
+            }
+            if other.kind == 1119 && (other.local_ai[0] as i32) as f32 != this.local_ai[0] {
+                continue;
+            }
+            if me > i {
+                index += 1;
+            }
+            total += 1;
+        }
+        (index, total)
+    }
+
+    /// `AI_156_GetIdlePosition` (`Projectile.cs:51913-51937`): the bat's
+    /// 40-px fan above the owner (the 4.3982296-rad spread ÷ the group
+    /// size), and the blade's 10-px ring at the wrapped per-slot rotation
+    /// plus the behind-the-owner offset and the miscCounter orbit wobble.
+    /// The port keeps `gravDir = 1` (the ai_158_home_location precedent).
+    fn bat_of_light_idle_position(
+        &self,
+        me: usize,
+        pl: &crate::player::Player,
+        stacked_index: i32,
+        total_indexes: i32,
+    ) -> (Vec2, f32) {
+        let (pcx, pcy) = pl.center();
+        let player_center = Vec2::new(pcx, pcy);
+        let kind = self.slots[me].kind;
+        let mut idle_rotation = 0.0f32;
+        let mut idle_spot = Vec2::ZERO;
+        if kind == 755 {
+            // `:51920-51925` — the fan: −UnitY rotated by the per-slot
+            // share of 4.3982296 rad, 40 px out.
+            let num = (total_indexes as f32 - 1.0) / 2.0;
+            idle_spot = player_center
+                + rotate(-Vec2::UNIT_Y, 4.3982296 / total_indexes as f32 * (stacked_index as f32 - num)) * 40.0;
+            idle_rotation = 0.0;
+        }
+        if kind == 946 {
+            // `:51926-51936` — the blade ring. `miscCounterNormalized` is
+            // `miscCounter / 300f` (`Player.cs:3389`).
+            let num2 = stacked_index + 1;
+            idle_rotation = num2 as f32 * std::f32::consts::TAU * (1.0 / 60.0) * pl.facing as f32
+                + std::f32::consts::FRAC_PI_2;
+            idle_rotation = wrap_angle(idle_rotation);
+            let num3 = num2 % total_indexes;
+            let misc_norm = pl.misc_counter as f32 / 300.0;
+            let vector = rotate(
+                Vec2::new(0.0, 0.5),
+                (misc_norm * (2.0 + num3 as f32) + num3 as f32 * 0.5 + pl.facing as f32 * 1.3)
+                    * std::f32::consts::TAU,
+            ) * 4.0;
+            let (mcx, mcy) = pl.mounted_center();
+            idle_spot = rotate(Vec2::UNIT_X, idle_rotation) * 10.0
+                + Vec2::new(mcx, mcy)
+                + Vec2::new(pl.facing as f32 * (num2 * -6 - 16) as f32, -15.0);
+            idle_spot += vector;
+            idle_rotation += std::f32::consts::FRAC_PI_2;
+        }
+        (idle_spot, idle_rotation)
+    }
+
+    /// W4-a9 — `AI_164_StormTigerGem` (`Projectile.cs:46593-46644`, the
+    /// dispatch `:36619-36622`): the Storm Tiger Staff's gem (831) and
+    /// Abigail's counter (970), the style's ONLY SetDefaults rows
+    /// (`:8067-8081`/`:9182-9196`). A pool-side step — the group index
+    /// reads the sibling slots (`AI_GetMyGroupIndexAndFillBlackList`,
+    /// `:51895-51911`; neither kind trips the 759/1119 cohort gates).
+    ///
+    /// RNG: ZERO draws — the machine is pure state + the home pin.
+    /// Skips (ANALYSIS): the 970 upgrade cue `SoundID.AbigailUpgrade`
+    /// (`:46621`) is a `CreateTrackable` custom style (`SoundID.cs:1702`)
+    /// with no `(id, style)` row in the pool's legacy sound queue — the
+    /// `localAI[0]` one-shot latch stays, the play is the documented skip.
+    /// The `_ai164_blacklistedTargets` static list (`:512`/`:46640-46641`)
+    /// is never `.Add`ed in the C# — it folds to EMPTY (the 156 precedent).
+    fn storm_tiger_gem_step(
+        &mut self,
+        i: usize,
+        player: Option<&mut crate::player::Player>,
+    ) {
+        // `:46595` — `Main.player[this.owner]`; no owner-inactive kill in
+        // the C# arm — an unresolved owner folds the machine away (the
+        // bat_of_light_step precedent) and the dispatch still integrates.
+        let Some(pl) = player else {
+            return;
+        };
+        let kind = self.slots[i].kind;
+        // `:46596` — the localAI[1] tick runs for BOTH kinds, ahead of the
+        // type gates.
+        self.slots[i].local_ai[1] += 1.0;
+        if kind == 831 {
+            // `:46599-46606` — death clears the summon flag; the live flag
+            // pins `timeLeft = 2`.
+            if pl.dead {
+                pl.storm_tiger = false;
+            }
+            if pl.storm_tiger {
+                self.slots[i].time_left = 2;
+            }
+            // `:46607-46614` — the 4-tick pulse, wrapping at the literal 6.
+            let p = &mut self.slots[i];
+            p.frame_counter += 1;
+            if p.frame_counter >= 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 6 {
+                    p.frame = 0;
+                }
+            }
+        }
+        if kind == 970 {
+            // `:46618-46622` — the upgrade one-shot: a second counter in
+            // the owner's count latches localAI[0] = 1 and plays the
+            // AbigailUpgrade cue (the documented skip, the doc block).
+            if pl.owned_projectile_counts[kind as usize] > 1
+                && self.slots[i].local_ai[0] == 0.0
+            {
+                self.slots[i].local_ai[0] = 1.0;
+            }
+            // `:46623-46630` — the counter's keep-alive pair.
+            if pl.dead {
+                pl.abigail_minion = false;
+            }
+            if pl.abigail_minion {
+                self.slots[i].time_left = 2;
+            }
+            // `:46631-46638` — the same 4-tick 6-frame pulse.
+            let p = &mut self.slots[i];
+            p.frame_counter += 1;
+            if p.frame_counter >= 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 6 {
+                    p.frame = 0;
+                }
+            }
+        }
+        // `:46640-46643` — the blacklist clear (EMPTY, the doc block), the
+        // group index, and the home pin.
+        let (index, total) = self.group_index_and_total(i);
+        let home = ai_164_home_location(pl, index, total);
+        self.slots[i].set_center(home);
+    }
+
+    /// W4-a9 — `AI_169_Smolstars` (`Projectile.cs:45718-45855`, the dispatch
+    /// `:36639-36642`): the Smolstar (864), the style's ONLY SetDefaults row
+    /// (`:8284-8300`). A pool-side step — the idle orbit's group index and
+    /// the attack-state separation loop both read the sibling slots.
+    ///
+    /// RNG: the −1 tumble's first tick (`ai[1] == 0`, `:45776-45791`) draws
+    /// TWO `Next(3)` dust-scale gates (`:45782`, the dust bodies are the
+    /// documented skip but the GATE draws stay — the dragon precedent) then
+    /// ONE `NextFloat` for the `NextVector2CircularEdge(4, 4)` velocity kick
+    /// (`:45790`, `Utils.cs:1271-1274` → `NextVector2Unit` `:1261-1264`).
+    /// Every other state draws NOTHING.
+    ///
+    /// Skips (ANALYSIS): the tumble's `SoundEngine.PlaySound(0, …)` thud
+    /// (`:45778`) and the two dust bodies (`:45781-45789`); the
+    /// `Main.GlobalTimeWrappedHourly` orbit phase reads the pool's
+    /// `update_count / 60` stand-in (the dragon's `timeForVisualEffects`
+    /// precedent — a draw-frame clock the pool does not carry; the phase is
+    /// cosmetic orbit position only).
+    fn smolstar_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // `:45720` — `Main.player[this.owner]`; no owner-inactive kill in
+        // the C# arm — an unresolved owner folds the machine away (the
+        // bat_of_light_step precedent) and the dispatch still integrates.
+        let Some(pl) = player else {
+            return;
+        };
+        let flag = self.slots[i].kind == 864;
+        // `:45722` — the hover anchor: the owner's Top + (0, −30).
+        let (pcx, pcy) = pl.center();
+        let player_center = Vec2::new(pcx, pcy);
+        let mut vector = Vec2::new(pl.x + pl.width * 0.5, pl.y) + Vec2::new(0.0, -30.0);
+        if flag {
+            // `:45725-45732` — death clears the summon flag; the live flag
+            // pins `timeLeft = 2`.
+            if pl.dead {
+                pl.smolstar = false;
+            }
+            if pl.smolstar {
+                self.slots[i].time_left = 2;
+            }
+            if self.slots[i].ai[0] == 0.0 {
+                // `:45735-45741` — the idle orbit: the group ring around
+                // the anchor, the wrapped-hourly spin, the gfx lift, floored.
+                let (index, total) = self.group_index_and_total(i);
+                let num = std::f32::consts::TAU / total as f32;
+                let num2 = total as f32 * 0.66;
+                let vector2 = Vec2::new(30.0, 6.0) / 5.0 * (total - 1) as f32;
+                let global_time = self.update_count as f32 / 60.0 % 3600.0;
+                vector += rotate(
+                    Vec2::UNIT_Y,
+                    num * index as f32 + global_time % num2 / num2 * std::f32::consts::TAU,
+                ) * vector2;
+                vector.y += pl.gfx_off_y;
+                vector = vector.floor();
+            }
+        }
+        if self.slots[i].ai[0] == 0.0 {
+            // `:45746-45756` — the idle steer: the 10 + 30·remap speed cap,
+            // the 3000-px teleport snap, the velocity clamp.
+            let p = &mut self.slots[i];
+            let c = Vec2::from(p.center());
+            let vector3 = vector - c;
+            let num3 = 10.0 + get_lerp_value(200.0, 600.0, vector3.length()) * 30.0;
+            if vector3.length() >= 3000.0 {
+                p.set_center(vector);
+            }
+            p.vel = vector3;
+            if p.vel.length() > num3 {
+                p.vel *= num3 / p.vel.length();
+            }
+            // `:45757-45765` — the 800-px acquire (the shared
+            // Minion_FindTargetInRange walk, `skipIfCannotHitWithOwnBody:
+            // false`, respectOwnerTarget default true).
+            let attack_target =
+                self.slots[i].minion_find_target_in_range(world, npcs, Some(pl), 800.0, false, true);
+            if attack_target != -1 {
+                let p = &mut self.slots[i];
+                p.ai[0] = 60.0;
+                p.ai[1] = attack_target as f32;
+                p.net_update = true;
+            }
+            // `:45766-45771` — the heading blend: the velocity's rotation +
+            // π/2 (the UnitY fallback), the <40-px near-anchor pin to straight
+            // down, the 0.2 AngleLerp.
+            let p = &mut self.slots[i];
+            let mut target_angle =
+                safe_normalize_or(p.vel, Vec2::UNIT_Y).to_angle() + std::f32::consts::FRAC_PI_2;
+            if vector3.length() < 40.0 {
+                target_angle = Vec2::UNIT_Y.to_angle() + std::f32::consts::FRAC_PI_2;
+            }
+            p.rot = angle_lerp(p.rot, target_angle, 0.2);
+            return;
+        }
+        if self.slots[i].ai[0] == -1.0 {
+            // `:45776-45791` — the tumble's first tick: the thud + the two
+            // dust gates (the draws stay, the bodies skip) + the circular-edge
+            // velocity kick (ONE NextFloat).
+            if self.slots[i].ai[1] == 0.0 {
+                let _ = rng.next_range(0, 3);
+                let _ = rng.next_range(0, 3);
+                let angle = rng.next_float() * std::f32::consts::TAU;
+                self.slots[i].vel += rotate(Vec2::UNIT_X, angle) * Vec2::new(4.0, 4.0);
+            }
+            // `:45792-45799` — the tumble: the counter, the velocity-scaled
+            // spin, the 0.92 drag, the 9-tick reset to idle.
+            let p = &mut self.slots[i];
+            p.ai[1] += 1.0;
+            p.rot += p.vel.x * 0.1 + p.vel.y * 0.05;
+            p.vel *= 0.92;
+            if p.ai[1] >= 9.0 {
+                p.ai[0] = 0.0;
+                p.ai[1] = 0.0;
+            }
+            return;
+        }
+        // `:45802-45830` — the attack state: the target validity fork (the
+        // −1 tumble on a dead/invalid target, the 900-px owner leash drop to
+        // idle), else the 16-speed chase + the 0.4 heading blend.
+        let num4 = self.slots[i].ai[1] as i32;
+        let target = npcs.get(num4 as usize).filter(|n| chaseable(n));
+        match target {
+            None => {
+                let p = &mut self.slots[i];
+                p.ai[0] = -1.0;
+                p.ai[1] = 0.0;
+                p.net_update = true;
+            }
+            Some(n) if player_center.distance(npc_center(n)) >= 900.0 => {
+                let p = &mut self.slots[i];
+                p.ai[0] = 0.0;
+                p.ai[1] = 0.0;
+                p.net_update = true;
+            }
+            Some(n) => {
+                let p = &mut self.slots[i];
+                let c = Vec2::from(p.center());
+                let vector4 = npc_center(n) - c;
+                let num5 = 16.0f32;
+                p.vel = vector4;
+                if p.vel.length() > num5 {
+                    p.vel *= num5 / p.vel.length();
+                }
+                p.rot = angle_lerp(
+                    p.rot,
+                    safe_normalize_or(p.vel, Vec2::UNIT_Y).to_angle() + std::f32::consts::FRAC_PI_2,
+                    0.4,
+                );
+            }
+        }
+        // `:45831-45854` — the same-kind separation: every other active
+        // sibling of the same owner+kind within width·5 Manhattan px pushes
+        // 0.1 per axis away (the C# scans all 1000 slots; the port walks the
+        // pool array, skipping self).
+        let (kind, owner, pos, w) = {
+            let p = &self.slots[i];
+            (p.kind, p.owner, p.pos, p.w)
+        };
+        let num7 = w * 5.0;
+        let mut push = Vec2::ZERO;
+        for (j, other) in self.slots.iter().enumerate() {
+            if j == i || !other.active || other.owner != owner || other.kind != kind {
+                continue;
+            }
+            if (pos.x - other.pos.x).abs() + (pos.y - other.pos.y).abs() < num7 {
+                push.x += if pos.x < other.pos.x { -0.1 } else { 0.1 };
+                push.y += if pos.y < other.pos.y { -0.1 } else { 0.1 };
+            }
+        }
+        self.slots[i].vel += push;
+    }
+
+    /// W4-a9 — `AI_206_ForbiddenMinion` (`Projectile.cs:37501-37641`, the
+    /// dispatch `:36787-36790`) + `AI_206_CustomEliminationCheck_Forbidden`
+    /// (`:37496-37499`): the Forbidden Minion (1119), the style's ONLY
+    /// SetDefaults row (`:10464-10478`). A pool-side step — the group index
+    /// reads the sibling slots (the 1119 cohort gate: same `localAI[0]`),
+    /// and the fire tick spawns the 1120 sign's shot through the pool's
+    /// spawn seam.
+    ///
+    /// RNG: the fire tick's `Next(105, 115)` re-arm (`:37580`, ONE draw)
+    /// and the idle frame machine's `Next(7)` hold gate (`:37629`, drawn
+    /// every frame-0 tick the attack frames did not return early). The
+    /// fire's dust/sound are the documented skip.
+    ///
+    /// Skips (ANALYSIS): the `Main.GlobalTimeWrappedHourly` orbit phases
+    /// read the pool's `update_count / 60` stand-in (the smolstar precedent
+    /// — cosmetic orbit position only). The 1120 shot's `GemStaffFeatures`
+    /// pack carries ONLY FastThenSlow (`:37588-37591`), so the spawn's
+    /// `ai0` is the bit-1 float.
+    fn forbidden_minion_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+    ) {
+        // `:37503` — `Main.player[this.owner]`; no owner-inactive kill in
+        // the C# arm — an unresolved owner folds the machine away (the
+        // bat_of_light_step precedent) and the dispatch still integrates.
+        let Some(pl) = player else {
+            return;
+        };
+        // `:37504-37511` — death clears the summon flag; the live flag pins
+        // `timeLeft = 2`.
+        if pl.dead {
+            pl.forbidden_minion = false;
+        }
+        if pl.forbidden_minion {
+            self.slots[i].time_left = 2;
+        }
+        // `:37512-37516` — the hover anchor behind the owner's facing, the
+        // 2000-px leash teleport onto the mount centre.
+        let mut vec = Vec2::new(pl.x + pl.width * 0.5, pl.y)
+            + Vec2::new(-pl.facing as f32 * 16.0, -25.0);
+        let (mcx, mcy) = pl.mounted_center();
+        let mounted_center = Vec2::new(mcx, mcy);
+        if Vec2::from(self.slots[i].center()).distance(mounted_center) > 2000.0 {
+            self.slots[i].set_center(mounted_center);
+        }
+        // `:37517-37519` — the 800-px acquire with the Forbidden box-LOS
+        // elimination check (`:37496-37499` — the box-to-box CanHitLine).
+        let (px, py, pw, ph) = (self.slots[i].pos.x, self.slots[i].pos.y, self.slots[i].w, self.slots[i].h);
+        let check = |n: &Npc, _current: i32| {
+            let (nw, nh) = n.size();
+            can_hit_line(world, px, py, pw, ph, n.x, n.y, nw, nh)
+        };
+        let attack_target = self.slots[i].minion_find_target_in_range_custom(
+            world,
+            npcs,
+            Some(pl),
+            800.0,
+            false,
+            true,
+            Some(&check),
+        );
+        self.slots[i].local_ai[0] = attack_target as f32;
+        // `:37520-37546` — the group ring: the per-slot share of 2π, the
+        // even-count π/2 phase, the setForbidden idle stretch, the facing
+        // offset, the gfx lift, the wrapped-hourly bob, floored.
+        let (index, total) = self.group_index_and_total(i);
+        let num = std::f32::consts::TAU / total as f32;
+        let num2 = total as f32 * 0.66;
+        let vector = Vec2::new(30.0, 6.0) / 5.0 * (total - 1) as f32;
+        let mut num3 = std::f32::consts::PI;
+        if pl.owned_projectile_counts[1119] % 2 == 0 {
+            num3 = std::f32::consts::FRAC_PI_2;
+        }
+        let mut vector2 = rotate(Vec2::UNIT_Y, num * index as f32 + num3);
+        vector2.x *= 1.0;
+        vector2.y *= 1.2;
+        if pl.set_forbidden && attack_target == -1 {
+            vector2.y *= 4.0;
+            vec.y += 20.0;
+            vec.x += pl.facing as f32 * 4.0;
+        }
+        if pl.facing == -1 {
+            vec.x -= 6.0;
+        }
+        vec += vector2 * vector;
+        vec.y += pl.gfx_off_y;
+        let global_time = self.update_count as f32 / 60.0 % 3600.0;
+        let vector3 = rotate(Vec2::UNIT_Y, num * index as f32 + global_time % num2 / num2 * std::f32::consts::TAU);
+        vec.y += vector3.y * 4.0;
+        vec = vec.floor();
+        // `:37547-37551` — the fire countdown + the owner-facing pin.
+        if self.slots[i].ai[0] > 0.0 {
+            self.slots[i].ai[0] -= 1.0;
+        }
+        self.slots[i].direction = pl.facing;
+        self.slots[i].sprite_direction = pl.facing;
+        // `:37552-37567` — the attack posture: the 200-px MoveTowards onto
+        // the target, the 0.306-ring bob, the target facing + the rotation
+        // (plus π when facing left); no target zeroes the rotation.
+        if attack_target >= 0 {
+            let n = &npcs[attack_target as usize];
+            let nc = npc_center(n);
+            vec = move_towards(nc, vec, 200.0);
+            let num4 = total as f32 * 0.306;
+            vec += rotate(Vec2::UNIT_Y, num * index as f32 + global_time % num4 / num4 * std::f32::consts::TAU) * 20.0;
+            let c = Vec2::from(self.slots[i].center());
+            let dir = if nc.x > c.x { 1 } else { -1 };
+            self.slots[i].direction = dir;
+            self.slots[i].sprite_direction = dir;
+            self.slots[i].rot = (nc - c).to_angle();
+            if dir == -1 {
+                self.slots[i].rot += std::f32::consts::PI;
+            }
+        }
+        if attack_target == -1 {
+            self.slots[i].rot = 0.0;
+        }
+        // `:37568-37596` — the owner-only fire machine: the 150-tick arm,
+        // the 120-tick fire (the Next(105, 115) − 30 re-arm, the 32-px
+        // MoveTowards shot velocity, the 1120 spawn with the FastThenSlow
+        // bit, the −0.3 recoil, the early return).
+        let num5 = 150.0f32;
+        let num6 = 30.0f32;
+        let num7 = 10.0f32;
+        if self.slots[i].owner == local_owner {
+            if self.slots[i].ai[0] == 0.0 && attack_target != -1 {
+                self.slots[i].ai[0] = num5;
+                self.slots[i].net_update = true;
+            }
+            if self.slots[i].ai[0] == num5 - num6 && attack_target != -1 {
+                self.slots[i].ai[0] =
+                    rng.next_range((num5 - num6 - num7 - 5.0) as i32, (num5 - num6 - num7 + 5.0) as i32) as f32 - num6;
+                self.slots[i].net_update = true;
+                let n = &npcs[attack_target as usize];
+                let c = Vec2::from(self.slots[i].center());
+                let vector4 = move_towards(Vec2::ZERO, npc_center(n) - c, 32.0);
+                let (damage, knock_back, owner) = {
+                    let p = &self.slots[i];
+                    (p.damage, p.knock_back, p.owner)
+                };
+                let mut features = GemStaffFeatures::from_ai(0.0);
+                features.set_bit(GemStaffFeatures::FAST_THEN_SLOW, true);
+                // `NewProjectile` centres the box (`:10876-10877`): the spawn
+                // site subtracts the 1120's half-box (the spawn_hook precedent).
+                let shot_data = proj_data(1120).expect("the 1120 row");
+                self.spawn_with_data_ai_owned(
+                    1120,
+                    owner,
+                    c.x - shot_data.w * 0.5,
+                    c.y - shot_data.h * 0.5,
+                    vector4.x,
+                    vector4.y,
+                    damage,
+                    knock_back,
+                    features.ai_state(),
+                    0.0,
+                );
+                self.slots[i].vel = -vector4 * 0.3;
+                return;
+            }
+        }
+        // `:37599-37604` — the hover steer: the 16-px/speed cap shrinks over
+        // the fire wind-up (the 150→120 remap), the 2-px MoveTowards blend.
+        let mut num11 = 16.0f32;
+        if self.slots[i].ai[0] > num5 - num6 {
+            num11 *= remap(self.slots[i].ai[0], num5, num5 - num6, 1.0, 0.0);
+        }
+        let c = Vec2::from(self.slots[i].center());
+        let target_vel = move_towards(Vec2::ZERO, vec - c, num11);
+        self.slots[i].vel = move_towards(self.slots[i].vel, target_vel, 2.0);
+        // `:37605-37628` — the attack frame machine: the 124-tick frame-5
+        // pin, the 5-8 attack frames' 4-tick advance (the no-target reset),
+        // the >4 early return.
+        if self.slots[i].ai[0] == num5 - num6 + 4.0 {
+            self.slots[i].frame = 5;
+        }
+        if self.slots[i].frame >= 5 && self.slots[i].frame <= 8 {
+            let p = &mut self.slots[i];
+            p.frame_counter += 1;
+            if p.frame_counter >= 4 {
+                p.frame_counter = 0;
+                p.frame += 1;
+                if p.frame >= 9 {
+                    p.frame = 0;
+                }
+            }
+            if attack_target == -1 {
+                p.frame_counter = 0;
+                p.frame = 0;
+            }
+        }
+        if self.slots[i].frame > 4 {
+            return;
+        }
+        // `:37629-37640` — the idle frame machine: the frame-0 Next(7) hold
+        // gate (a non-zero draw resets the counter), the 4-tick 0-4 advance.
+        if self.slots[i].frame == 0 && rng.next_range(0, 7) != 0 {
+            self.slots[i].frame_counter = 0;
+        }
+        let p = &mut self.slots[i];
+        p.frame_counter += 1;
+        if p.frame_counter >= 4 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 5 {
+                p.frame = 0;
+            }
+        }
     }
 
     /// `((ProjectileKey)this.ai[0]).TryGetActive(ProjectileID.Sets
@@ -23833,8 +25088,14 @@ mod tests {
         // 700-line four-machine port inside the fix round. The Stardust
         // Dragon chain (121) WAS ported at the gate (`dragon_step`) — its
         // deferral collided with the same pin and the machine is one
-        // self-contained family.
-        const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
+        // self-contained family. W4-a9: 156 LEFT with the `bat_of_light_step`
+        // arm (the pool-side AI_156 port); 164 LEFT with the
+        // `storm_tiger_gem_step` arm (the pool-side AI_164 port); 169 LEFT
+        // with the `smolstar_step` arm (the pool-side AI_169 port); 206 LEFT
+        // with the `forbidden_minion_step` arm (the pool-side AI_206 port +
+        // the 1120 sign's shot row) — the list is EMPTY, the i25 deferral
+        // census is fully superseded.
+        const UNARMED_ROWED: [u8; 0] = [];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the
         // aiStyle dispatch — their styles are armed there, not in the
@@ -35215,9 +36476,10 @@ mod magic_ai_tests {
         for kind in [CRYSTAL_STORM, TYPHOON, NEBULA_ARCANUM, SKY_FRACTURE] {
             assert_eq!(trailing_mode(kind), 0, "kind {kind} records the positions only");
         }
-        // 1120 is in the C#'s set but its row is out of scope, and every kind
-        // the set omits reads the −1 factory default.
-        assert_eq!(trailing_mode(1120), -1, "the unported kind defaults");
+        // W4-a9: the 1120 sign's shot now carries the family's mode 2 (the
+        // row + the 206 arm landed); every kind the set omits reads the −1
+        // factory default.
+        assert_eq!(trailing_mode(1120), 2, "the sign's shot records the triple");
         assert_eq!(trailing_mode(WOODEN_ARROW), -1, "the arrows have no history");
     }
 
@@ -44382,5 +45644,565 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+#[cfg(test)]
+mod w4_a9_bat_of_light_tests {
+    //! W4-a9 — the aiStyle-156 machine (`AI_156_BatOfLight` +
+    //! `AI_156_Think`, `Projectile.cs:51516-51937`, the dispatch
+    //! `:36587-36590`): the Sanguine bat (755) + the Empress Blade (946).
+    //! The i25 dispatch no-op deferral is superseded — the pool-side
+    //! `bat_of_light_step` arm lands and `UNARMED_ROWED` drops 156.
+    //! WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321), the bat summon flag live.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.bats_of_light = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream: `next_range(0, 20)` returns 0 so the idle
+    /// acquire gate fires; every draw is recorded (the census).
+    struct GateRng {
+        draws: Vec<(i32, i32)>,
+    }
+    impl tr_core::loot::DropRng for GateRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            0
+        }
+        fn next_float(&mut self) -> f32 {
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, npcs: &mut [Npc], rng: &mut GateRng) {
+        let center = p.center();
+        pool.update(
+            w,
+            npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    fn npc_centered(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n
+    }
+
+    /// Witness 1 — the idle acquire (`:51627-51645`): the bat idles near
+    /// the owner, the forced Next(20) == 0 gate fires, the open-air zombie
+    /// 300 px right is chaseable and within the 1000-px owner reach
+    /// (`:51884-51890`), so the strike arms: ai[0] = 66 (the bat's num,
+    /// `:51594`), ai[1] = the NPC index, netUpdate, and StartAttack clears
+    /// the local-immunity row (`:51850`). The keep-alive pins timeLeft = 2
+    /// (the tail decrements to 1), the flap counts to 1, and the ONE gate
+    /// draw is the whole RNG census.
+    #[test]
+    fn w4_a9_the_bat_idle_gate_arms_the_66_window() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Centre (410, 321) — on the owner. The single-slot fan spot is
+        // (410, 281); the SmoothStep idle pull steps toward it before the
+        // acquire (the assertions do not read pos).
+        let slot = pool
+            .spawn_with_data_ai_owned(755, 0, 405.0, 316.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_centered(710.0, 321.0)];
+        let mut rng = GateRng { draws: Vec::new() };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        assert_eq!(d.ai[0], 66.0, ":51639 — the bat's num = 66 (:51594)");
+        assert_eq!(d.ai[1], 0.0, ":51640 — the scan's NPC index");
+        assert!(d.net_update, ":51641");
+        assert_eq!(d.time_left, 1, "the keep-alive pin 2 minus the tail decrement (:51530)");
+        assert_eq!(d.frame_counter, 1, "the 6-tick flap's first count (:51535)");
+        assert_eq!(rng.draws, vec![(0, 20)], "ONE Next(20) gate draw (:51633)");
+    }
+
+    /// Witness 2 — the −1 return-home glide (`:51611-51624`): a lone bat
+    /// (index 0 of 1) glides 32 px per tick toward the fan spot — the
+    /// single-slot fan is straight up (`4.3982296/1 * (0 − 0) = 0`,
+    /// `:51922-51923`), so the spot is the owner's centre + (0, −40) =
+    /// (410, 281). From (410, 381) the MoveTowards step lands the centre
+    /// at (410, 349), velocity zero, and the 68-px remainder keeps the −1
+    /// state (the <2-px arrival reset does not fire). No RNG draw.
+    #[test]
+    fn w4_a9_the_return_home_glide_steps_32px() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Centre (410, 381): 100 px below the idle spot (410, 281).
+        let slot = pool
+            .spawn_with_data_ai_owned(755, 0, 405.0, 376.0, 0.0, 0.0, 40, 0.0, -1.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = GateRng { draws: Vec::new() };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], -1.0, "68 px out — the arrival reset stays armed (:51618)");
+        assert_eq!(d.vel, Vec2::ZERO, ":51615");
+        let c = Vec2::from(d.center());
+        assert!((c.x - 410.0).abs() < 0.01, "the glide is vertical: {c}");
+        assert!((c.y - 349.0).abs() < 0.01, "381 − 32 = 349 (:51616): {c}");
+        assert!(rng.draws.is_empty(), "the glide draws nothing");
+    }
+}
+
+#[cfg(test)]
+mod w4_a9_storm_tiger_gem_tests {
+    //! W4-a9 — the aiStyle-164 machine (`AI_164_StormTigerGem` +
+    //! `AI_164_GetHomeLocation`, `Projectile.cs:46593-46699`, the dispatch
+    //! `:36619-36622`): the Storm Tiger gem (831) + Abigail's counter (970).
+    //! The i25 dispatch no-op deferral is superseded — the pool-side
+    //! `storm_tiger_gem_step` arm lands and `UNARMED_ROWED` drops 164.
+    //! WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321), the gem summon flag live.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.storm_tiger = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream: records every draw (the ZERO-draw census).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, rng: &mut CensusRng) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        let center = p.center();
+        pool.update(
+            w,
+            &mut npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    /// Witness 1 — the gem's home pin + keep-alive + pulse
+    /// (`:46596-46614`, `:46643` + `AI_164_GetHomeLocation`
+    /// `:46646-46699`): a lone gem (index 0 of 1) pins its centre on the
+    /// single-ring home spot. With miscCounter 0, body row 0 and
+    /// gfxOffY 0: headgear 2 − 2 = 0; num3 = 0, num4 = 1, num5 = 1,
+    /// num6 = 0, num7 = 0, num2 = 0; the offset (0, −8) rotated by 0 plus
+    /// (0, −40) = (0, −48); the anchor (410, 321) + (0, −21) + (0, −48) =
+    /// (410, 252), floored. The live flag pins timeLeft = 2 (the tail
+    /// decrements to 1), localAI[1] ticks to 1, the 4-tick pulse counts
+    /// to 1, and the machine draws NOTHING.
+    #[test]
+    fn w4_a9_the_gem_pins_the_single_ring_home_spot() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(831, 0, 500.0, 400.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(410.0, 252.0), "the floored home pin (:46643/:46698)");
+        assert_eq!(d.time_left, 1, "the keep-alive pin 2 minus the tail decrement (:46605)");
+        assert_eq!(d.local_ai[1], 1.0, "the localAI[1] tick (:46596)");
+        assert_eq!(d.frame_counter, 1, "the 4-tick pulse's first count (:46607)");
+        assert_eq!(d.frame, 0);
+        assert!(rng.draws.is_empty(), "the machine draws NO Next: {:?}", rng.draws);
+        assert_eq!(rng.floats, 0, "the machine draws NO NextFloat");
+    }
+
+    /// Witness 2 — the counter's upgrade latch + keep-alive
+    /// (`:46616-46638`): a second 970 in the owner's count latches
+    /// localAI[0] = 1 (the AbigailUpgrade play is the documented skip);
+    /// the live abigailMinion flag pins timeLeft = 2. A lone counter's
+    /// home spot is the same (410, 252) ring pin. A second tick does NOT
+    /// re-latch (localAI[0] stays 1) and the pulse counts to 2.
+    #[test]
+    fn w4_a9_the_counter_latches_the_upgrade_once() {
+        let mut w = world();
+        let mut p = owner(&w);
+        p.storm_tiger = false;
+        p.abigail_minion = true;
+        p.owned_projectile_counts[970] = 2;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(970, 0, 500.0, 400.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.local_ai[0], 1.0, "the upgrade latch (:46620)");
+        assert_eq!(d.local_ai[1], 1.0, "the shared tick (:46596)");
+        assert_eq!(d.time_left, 1, "the counter's keep-alive pin (:46629)");
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(410.0, 252.0), "the same single-ring pin");
+        tick(&mut pool, &mut w, &mut p, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.local_ai[0], 1.0, "the latch holds — no re-fire (:46618)");
+        assert_eq!(d.local_ai[1], 2.0);
+        assert_eq!(d.frame_counter, 2, "the pulse counts on (:46631)");
+        assert!(rng.draws.is_empty(), "still ZERO draws");
+    }
+}
+
+#[cfg(test)]
+mod w4_a9_smolstar_tests {
+    //! W4-a9 — the aiStyle-169 machine (`AI_169_Smolstars`,
+    //! `Projectile.cs:45718-45855`, the dispatch `:36639-36642`): the
+    //! Smolstar (864). The i25 dispatch no-op deferral is superseded — the
+    //! pool-side `smolstar_step` arm lands and `UNARMED_ROWED` drops 169.
+    //! WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321), the smolstar summon flag live.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.smolstar = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream: records every draw; `next_range` returns max−1
+    /// (the dust gates never fire their bodies — the draws are the census).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, npcs: &mut [Npc], rng: &mut CensusRng) {
+        let center = p.center();
+        pool.update(
+            w,
+            npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    fn npc_centered(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n
+    }
+
+    /// Witness 1 — the idle orbit pin + keep-alive (`:45722-45741`): a lone
+    /// smolstar (index 0 of 1) idles at the owner's Top + (0, −30) — the
+    /// single-member ring offset is (30, 6)/5·0 = ZERO, so the anchor is
+    /// (410, 300 − 30) = (410, 270), floored. Spawned ON the anchor, the
+    /// steer's delta is zero: velocity stays zero, the <40-px near-anchor
+    /// pin blends the rotation toward straight-down + π/2 = π, and the
+    /// 800-px acquire finds nothing. The live flag pins timeLeft = 2 (the
+    /// tail decrements to 1). ZERO draws.
+    #[test]
+    fn w4_a9_the_idle_orbit_pins_the_lone_anchor() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Centre (410, 270) — on the anchor.
+        let slot = pool
+            .spawn_with_data_ai_owned(864, 0, 405.0, 265.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        assert_eq!(d.ai[0], 0.0, "no target — the idle state holds");
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(410.0, 270.0), "the floored lone anchor (:45738-45741)");
+        assert_eq!(d.vel, Vec2::ZERO, "the zero delta steers nothing (:45752)");
+        assert_eq!(d.time_left, 1, "the keep-alive pin 2 minus the tail decrement (:45731)");
+        // The rotation blends 0 → π at 0.2: AngleLerp(0, π, 0.2) = 0.2π.
+        assert!((d.rot - 0.2 * std::f32::consts::PI).abs() < 1e-5, "the 0.2 blend (:45771): {}", d.rot);
+        assert!(rng.draws.is_empty(), "the idle draws NO Next: {:?}", rng.draws);
+        assert_eq!(rng.floats, 0, "the idle draws NO NextFloat");
+    }
+
+    /// Witness 2 — the acquire + chase (`:45757-45765`, `:45820-45830`):
+    /// the idle smolstar on its anchor sees the zombie 300 px right (within
+    /// the 800-px Minion_FindTargetInRange reach, chaseable, in view), arms
+    /// ai[0] = 60 / ai[1] = the index + netUpdate. The NEXT tick runs the
+    /// attack state: the 16-speed chase clamp caps the 300-px gap velocity
+    /// at 16 along +X, the 0.4 heading blend turns the sprite, and the
+    /// separation loop finds no sibling. The keep-alive re-pins each tick.
+    #[test]
+    fn w4_a9_the_acquire_arms_and_the_chase_clamps_16() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(864, 0, 405.0, 265.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_centered(710.0, 270.0)];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 60.0, "the acquire arms the 60-window (:45762)");
+        assert_eq!(d.ai[1], 0.0, "the NPC index (:45763)");
+        assert!(d.net_update, ":45764");
+        // The chase tick: the gap is (300, 0) minus the idle tick's zero
+        // move — the velocity clamps to 16 along +X, then the integrate
+        // moves the box 16 px right.
+        pool.slots_mut()[slot].net_update = false;
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 60.0, "the attack state holds (no countdown in the C# arm)");
+        assert!((d.vel.x - 16.0).abs() < 1e-4, "the 16-speed clamp (:45823-45828): {}", d.vel);
+        assert!(d.vel.y.abs() < 1e-4, "the chase is horizontal: {}", d.vel);
+        let c = Vec2::from(d.center());
+        assert!((c.x - 426.0).abs() < 0.01, "410 + 16 integrate: {c}");
+        assert!(rng.draws.is_empty(), "the chase draws nothing");
+    }
+}
+
+#[cfg(test)]
+mod w4_a9_forbidden_minion_tests {
+    //! W4-a9 — the aiStyle-206 machine (`AI_206_ForbiddenMinion` +
+    //! `AI_206_CustomEliminationCheck_Forbidden`, `Projectile.cs:37496-37641`,
+    //! the dispatch `:36787-36790`): the Forbidden Minion (1119) + its 1120
+    //! sign's shot. The i25 dispatch no-op deferral is superseded — the
+    //! pool-side `forbidden_minion_step` arm lands and `UNARMED_ROWED` is
+    //! EMPTY. WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::npc::{Npc, NpcKind};
+    use crate::player::Player;
+
+    fn world() -> World {
+        World::new("t".into(), 256, 128)
+    }
+
+    /// The owner at centre (410, 321), the forbidden summon flag live.
+    fn owner(w: &World) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = 400.0;
+        p.y = 300.0;
+        p.forbidden_minion = true;
+        p.max_minions = 3;
+        p
+    }
+
+    /// The scripted stream: records every draw; `next_range` returns max−1
+    /// (the Next(7) hold gate reads 6 ≠ 0 — the counter resets; the fire
+    /// re-arm reads 114).
+    struct CensusRng {
+        draws: Vec<(i32, i32)>,
+        floats: usize,
+    }
+    impl tr_core::loot::DropRng for CensusRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.draws.push((min, max));
+            max - 1
+        }
+        fn next_float(&mut self) -> f32 {
+            self.floats += 1;
+            0.5
+        }
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World, p: &mut Player, npcs: &mut [Npc], rng: &mut CensusRng) {
+        let center = p.center();
+        pool.update(
+            w,
+            npcs,
+            Some(center),
+            None,
+            Some(p),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            false,
+        );
+    }
+
+    fn npc_centered(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (w, h) = n.size();
+        n.x = cx - w * 0.5;
+        n.y = cy - h * 0.5;
+        n
+    }
+
+    /// Witness 1 — the idle hover + keep-alive + frame hold
+    /// (`:37504-37546`, `:37629-37640`): a lone minion (index 0 of 1, the
+    /// even count keeps the π/2 phase) idles with no target. The ring offset
+    /// is (30, 6)/5·0 = ZERO, so the anchor is the owner's Top + (−16, −25)
+    /// = (394, 275); the wrapped-hourly bob at update_count 1 is
+    /// cos(2π·(1/60)/0.66)·4 ≈ +3.95 — the floor lifts the anchor to 278.
+    /// Spawned at (394, 275), the steer's delta is (0, 3): the 16-cap keeps
+    /// it, the 2-px MoveTowards blend steps the velocity to (0, 2) and the
+    /// integrate lands the centre at (394, 277). The live flag pins
+    /// timeLeft = 2 (the tail decrements to 1), the rotation zeroes,
+    /// localAI[0] = −1, and the frame-0 Next(7) hold gate draws 6 ≠ 0 so the
+    /// counter resets then counts to 1. ONE draw.
+    #[test]
+    fn w4_a9_the_idle_hover_pins_the_anchor_and_holds_frame_zero() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        // Centre (394, 275) — the un-bobbed anchor. The 14x22 box: pos (387, 264).
+        let slot = pool
+            .spawn_with_data_ai_owned(1119, 0, 387.0, 264.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert!(d.active);
+        assert_eq!(d.local_ai[0], -1.0, "no target (:37519)");
+        assert_eq!(d.rot, 0.0, "the no-target rotation zero (:37566)");
+        assert_eq!(d.vel, Vec2::new(0.0, 2.0), "the 2-px blend toward the bobbed anchor (:37604)");
+        let c = Vec2::from(d.center());
+        assert_eq!(c, Vec2::new(394.0, 277.0), "275 + the 2-px integrate");
+        assert_eq!(d.time_left, 1, "the keep-alive pin 2 minus the tail decrement (:37510)");
+        assert_eq!(d.frame, 0, "the Next(7) hold gate keeps frame 0 (:37629-37631)");
+        assert_eq!(d.frame_counter, 1, "the reset then the count (:37633)");
+        assert_eq!(rng.draws, vec![(0, 7)], "ONE Next(7) hold gate draw (:37629)");
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// Witness 2 — the acquire + fire (`:37517-37518`, `:37573-37594`): the
+    /// idle minion sees the zombie 300 px right (within the 800-px reach,
+    /// chaseable, in view, the box-LOS check walks clean air), arms
+    /// ai[0] = 150 + netUpdate, and the attack posture faces the target.
+    /// Then 30 ticks count the fire window down to 120: the fire tick draws
+    /// Next(105, 115) → 114, re-arms ai[0] = 114 − 30 = 84, spawns the 1120
+    /// sign's shot at the minion's centre with the FastThenSlow bit and the
+    /// 32-px MoveTowards velocity, and recoils −0.3×. The shot's row carries
+    /// aiStyle 29, extraUpdates 1, alpha 255, the LOCAL 60 pair.
+    #[test]
+    fn w4_a9_the_acquire_arms_and_the_fire_spawns_the_sign() {
+        let mut w = world();
+        let mut p = owner(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(1119, 0, 387.0, 264.0, 0.0, 0.0, 40, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut npcs = vec![npc_centered(694.0, 275.0)];
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 150.0, "the acquire arms the 150-window (:37575)");
+        assert_eq!(d.local_ai[0], 0.0, "the target index (:37519)");
+        assert!(d.net_update, ":37576");
+        assert_eq!(d.sprite_direction, 1, "the target is right (:37557)");
+        // The fire window: 30 ticks count 150 → 120. The attack posture
+        // keeps the target each tick (the zombie holds still).
+        for _ in 0..30 {
+            tick(&mut pool, &mut w, &mut p, &mut npcs, &mut rng);
+        }
+        let d = &pool.slots()[slot];
+        assert_eq!(d.ai[0], 84.0, "the fire re-arm: Next(105,115)=114 − 30 (:37580)");
+        assert!(d.net_update, ":37581");
+        // The recoil: the shot velocity is the 32-px MoveTowards along the
+        // ~240-px gap (the minion chased ~60 px over the wind-up) → mostly
+        // +X; the minion recoils −0.3× → ≈ −9.6.
+        assert!((d.vel.x + 9.6).abs() < 0.15, "the −0.3 recoil (:37593): {}", d.vel);
+        // The spawned sign's shot: the pool's second slot. It ticks its own
+        // gem AI (FastThenSlow ×0.97 drag) twice this same update
+        // (extraUpdates 1), so its velocity is the spawn vector dragged.
+        let shot = pool
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 1120)
+            .expect("the fire spawned the 1120 sign's shot (:37592)");
+        let s = &pool.slots()[shot];
+        let features = GemStaffFeatures::from_ai(s.ai[0]);
+        assert!(features.fast_then_slow(), "the FastThenSlow bit (:37590)");
+        assert!(!features.homing(), "ONLY FastThenSlow");
+        assert!(s.vel.x > 29.0 && s.vel.x < 32.0, "the 32-px shot velocity dragged ×0.97² (:37582): {}", s.vel);
+        assert_eq!(s.damage, 40, "the minion's damage rides the shot (:37585)");
+        assert_eq!(s.owner, 0, "the minion's owner (:37587)");
+        assert_eq!(s.extra_updates, 1, "the row's extraUpdates (:10489)");
+        assert_eq!(s.alpha, 255, "the row's alpha (:10484)");
+        assert_eq!(s.local_hit_cooldown, 60, "the row's LOCAL pair (:10487)");
+        // The fire tick's draw is the ONE Next(105, 115). (The wind-up ticks
+        // draw the frame-0 Next(7) hold gate until ai[0] hits 124 and pins
+        // frame 5 — the attack frames then early-return past the gate.)
+        assert_eq!(rng.draws.last(), Some(&(105, 115)), "the fire re-arm draw (:37580)");
     }
 }
