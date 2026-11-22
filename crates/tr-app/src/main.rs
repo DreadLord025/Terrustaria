@@ -264,6 +264,12 @@ mod shimmer;
 mod signs;
 mod sound;
 mod soundid;
+// W4-g22: the Main.cs PlaySound census batch 2 (sites 91-180 of 271,
+// :44118-:49727) — the hair-window scroll machine, the clothes-window
+// open/cancel/save cue arms, the builder-accessory toggle cycles and the
+// case-20 female-hit slot pick. The menu-half cues ride Menu::pending_cue
+// (code-only mode — witnesses written not run).
+mod main_sounds;
 mod test_world_helpers;
 mod town;
 mod town_arrival;

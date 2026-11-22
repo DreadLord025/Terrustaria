@@ -3033,6 +3033,25 @@ impl App {
                 self.close_menu();
                 self.inventory_open = true;
             }
+            // W4-g22 DOC-SWEEP — the connecting overlay's Cancel
+            // (`Main.cs:48615-48635`): the 11 already rode the cue queue
+            // (`:48621`/`:48822`); the state change is `cancel_connect`.
+            Action::CancelConnect => self.cancel_connect(),
+            // W4-g22 DOC-SWEEP — menuMode 200's Load Backup
+            // (`Main.cs:48837-48853`): the `.bak` probe decides the cue —
+            // restore + 10 + `WorldGen.playWorld` (`:48841-48845`) or
+            // 11 + menuMode 0 (`:48849-48851`).
+            Action::LoadBackup => self.load_backup(),
+            // W4-g22 DOC-SWEEP — 200's Cancel / 201's Back
+            // (`Main.cs:48854-48860`, `:48873-48879`): the 11 already rode
+            // the cue queue; menuMode 0 / netMode 0.
+            Action::CancelLoadFailed => {
+                if let Some(m) = self.menu.as_mut() {
+                    m.page = menu::Page::Main;
+                    m.selected = 0;
+                    m.load_failed_path = None;
+                }
+            }
             Action::Singleplayer => {
                 // `Main.cs:48981-48987`: menuMode 1 -> `OpenCharacterSelectUI`
                 // (888) — the real screen flow replaces the old "Single
@@ -3131,6 +3150,70 @@ impl App {
                     }
                 }
             },
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP — the connecting overlay's Cancel state change
+    /// (`Main.cs:48615-48635`): `Netplay.InvalidateAllOngoingIPSetAttempts`
+    /// + `Disconnect = true` + the socket close, then `menuMode = 0` /
+    /// `netMode = 0`. The port drops the client role (the socket close),
+    /// clears the join target and returns the menu to its main page. The
+    /// 11 rides the menu's cue queue (`:48621`/`:48822`), not this fn.
+    pub(crate) fn cancel_connect(&mut self) {
+        self.net = NetRole::Off;
+        self.join_target = None;
+        self.net_state = net::client_state::NOT_CONNECTED;
+        self.net_dropped = false;
+        if let Some(m) = self.menu.as_mut() {
+            m.connecting = false;
+            m.page = menu::Page::Main;
+            m.selected = 0;
+            m.hint = None;
+            m.bar_grab = None;
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP — menuMode 200's Load Backup row
+    /// (`Main.cs:48837-48853`): when the `.bak` exists, move the corrupt
+    /// `.wld` to `.bad` and the `.bak` onto the world path, play 10 and
+    /// re-enter the load (`WorldGen.playWorld()` + `menuMode = 10` —
+    /// the port parks `play_world` for the frame-boundary swap); without
+    /// a backup, play 11 and return to menuMode 0. The probe re-runs here
+    /// exactly as the C# re-reads `FileUtilities.Exists` (`:48839`).
+    pub(crate) fn load_backup(&mut self) {
+        let Some(path) = self.menu.as_ref().and_then(|m| m.load_failed_path.clone()) else {
+            return;
+        };
+        let mut bak = path.as_os_str().to_os_string();
+        bak.push(".bak");
+        let bak = std::path::PathBuf::from(bak);
+        if bak.exists() {
+            let mut bad = path.as_os_str().to_os_string();
+            bad.push(".bad");
+            // `FileUtilities.Move` (`:48841-48842`): the corrupt file
+            // parks as `.bad`, the backup takes its place. A failed move
+            // keeps the page live (the C# would throw; the port logs).
+            match std::fs::rename(&path, std::path::PathBuf::from(&bad))
+                .and_then(|()| std::fs::rename(&bak, &path))
+            {
+                Ok(()) => {
+                    self.audio.play("Menu_Open"); // `:48843`
+                    // `WorldGen.playWorld()` + `menuMode = 10`
+                    // (`:48844-48845`): the load re-runs at the frame
+                    // boundary; both front-end sides close.
+                    self.play_world = Some(path);
+                    self.front = None;
+                    self.park_menu();
+                }
+                Err(e) => log::warn!("backup restore failed: {e}"),
+            }
+        } else {
+            self.audio.play("Menu_Close"); // `:48849`
+            if let Some(m) = self.menu.as_mut() {
+                m.page = menu::Page::Main; // `:48850-48851`
+                m.selected = 0;
+                m.load_failed_path = None;
+            }
         }
     }
 
@@ -3634,6 +3717,81 @@ mod tests {
         app.inventory_open = true;
         app.inventory[3] = slot(9, 10);
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the connecting-cancel end to end: the
+    /// menu queues ONE Menu_Close (`Main.cs:48621`), `cancel_connect`
+    /// drops the client role, clears the join target and returns the main
+    /// page (`menuMode = 0` / `netMode = 0`, `:48622-48623`).
+    #[test]
+    fn doc_sweep_cancel_connect_drops_the_role_and_returns_main() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut m = crate::menu::Menu::new(app.settings.clone(), "T".into());
+        m.page = crate::menu::Page::JoinPassword;
+        m.connecting = true;
+        m.hover = Some(0);
+        app.menu = Some(m);
+        app.join_target = Some(("127.0.0.1:7777".into(), String::new()));
+        let action = app.menu.as_mut().unwrap().click();
+        assert!(matches!(action, menu::Action::CancelConnect));
+        let cue = app.menu.as_mut().unwrap().take_cue();
+        assert_eq!(cue, Some("Menu_Close"));
+        let before = app.audio.played_count();
+        app.audio.play(cue.unwrap());
+        assert_eq!(app.audio.played_count(), before + 1, "one 11");
+        app.cancel_connect();
+        assert!(matches!(app.net, NetRole::Off), "the socket closed");
+        assert!(app.join_target.is_none());
+        let m = app.menu.as_ref().unwrap();
+        assert!(!m.connecting);
+        assert_eq!(m.page, crate::menu::Page::Main, "menuMode = 0");
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the Load Backup probe end to end
+    /// (`Main.cs:48837-48853`): with a `.bak` the corrupt file parks as
+    /// `.bad`, the backup takes the world path, ONE Menu_Open plays and
+    /// the load re-parks; without one, ONE Menu_Close plays and the page
+    /// returns to Main.
+    #[test]
+    fn doc_sweep_load_backup_probe_moves_and_plays() {
+        let dir = std::env::temp_dir().join(format!("tr-g22-bak-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("w.trwld");
+        std::fs::write(&path, b"corrupt").unwrap();
+        let mut bak = path.as_os_str().to_os_string();
+        bak.push(".bak");
+        let bak = std::path::PathBuf::from(bak);
+        // WITH a backup: 10 + the moves + the re-park.
+        std::fs::write(&bak, b"good").unwrap();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.menu = Some(crate::menu::Menu::open_load_failed(
+            app.settings.clone(),
+            path.clone(),
+            true,
+        ));
+        let before = app.audio.played_count();
+        app.load_backup();
+        assert_eq!(app.audio.played_count(), before + 1, "one 10");
+        assert_eq!(app.play_world.as_deref(), Some(path.as_path()));
+        assert!(app.menu.is_none(), "both sides closed for the load");
+        let mut bad = path.as_os_str().to_os_string();
+        bad.push(".bad");
+        assert_eq!(std::fs::read(std::path::PathBuf::from(&bad)).unwrap(), b"corrupt");
+        assert_eq!(std::fs::read(&path).unwrap(), b"good");
+        // WITHOUT a backup: 11 + Main.
+        std::fs::write(&path, b"corrupt2").unwrap();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.menu = Some(crate::menu::Menu::open_load_failed(
+            app.settings.clone(),
+            path.clone(),
+            false,
+        ));
+        let before = app.audio.played_count();
+        app.load_backup();
+        assert_eq!(app.audio.played_count(), before + 1, "one 11");
+        assert!(app.play_world.is_none());
+        assert_eq!(app.menu.as_ref().unwrap().page, crate::menu::Page::Main);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// DW-4.3 — the accelerator ladder (`Main.cs:61781-61807`): the first

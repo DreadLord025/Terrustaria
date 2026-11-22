@@ -309,8 +309,11 @@ pub(crate) struct FrontDraw<'a> {
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
     /// W4-e10 — the creation screen's voice-picker audio seam (the pitch
-    /// bar's Menu_Tick + the `PlayVoicePreview` hurt cue). The other screens
-    /// leave it untouched.
+    /// bar's Menu_Tick + the `PlayVoicePreview` hurt cue); W4-g22 DOC-SWEEP
+    /// — the same seam carries the HSL bars' DrawSelf-time cues
+    /// (`UIColoredSlider`'s hover/usage latches play inside the draw pass
+    /// in the C#, `UIColoredSlider.cs:85`/`:136`). The other screens leave
+    /// it untouched.
     pub(crate) audio: &'a mut crate::audio::Audio,
     /// W4-e10 — the bare-`Main.rand` stand-in for the creation screen's voice
     /// plays (the front end runs outside every world swap).
@@ -474,7 +477,7 @@ impl FrontScreenBehaviours for FrontScreen {
                 // categories, the one middle menu, Back/Create and the hover
                 // tooltip. The HSL drag runs inside (the `CurrentLockedSlider`
                 // latch) off `front_mouse_down`.
-                let cues = ui::char_creation::draw(
+                let (cues, highlight) = ui::char_creation::draw(
                     d.renderer,
                     d.lookups,
                     d.player_assets,
@@ -493,6 +496,19 @@ impl FrontScreenBehaviours for FrontScreen {
                 }
                 if cues.preview {
                     drain_voice_preview(d.audio, d.rng_global, &state.draft);
+                }
+                // W4-g22 DOC-SWEEP — the HSL bars' DrawSelf cue latches
+                // (`UIColoredSlider.cs:136` hover-enter / `:85` drag-start,
+                // 12 each): the highlight the drag pass just derived feeds
+                // `hsl_slider_cues`, the plays run here (the draw itself
+                // stays audio-free, the App owns the seam).
+                let hsl_cues = ui::char_creation::hsl_slider_cues(
+                    state,
+                    highlight,
+                    d.front_mouse_down,
+                );
+                for _ in 0..hsl_cues {
+                    d.audio.play("Menu_Tick");
                 }
             }
             FrontScreen::WorldCreation(draft) => {
@@ -665,11 +681,25 @@ impl FrontScreenBehaviours for FrontScreen {
                 // through the audio seam. The per-frame latch lives on the
                 // state (`play_voice_preview`).
                 let mut voice_preview = false;
+                // W4-g22 DOC-SWEEP — the per-site inline cue
+                // (`UICharacterCreation.cs`'s `Click_*` `PlaySound`s,
+                // `click_cue`'s census): the categories and the cloth
+                // variant play 12 before their state write. The click
+                // resolves against the live category first; the play runs
+                // before the borrow block (the audio seam needs the App).
+                let category = match app.front.as_ref() {
+                    Some(FrontScreen::CharCreation(state)) => state.category,
+                    _ => return None,
+                };
+                let click = ui::char_creation::click_at(&l, category, mouse);
+                if let Some(id) = ui::char_creation::click_cue(click) {
+                    crate::chest::play_menu_sound(app, id);
+                }
                 let nav = {
                     let Some(FrontScreen::CharCreation(state)) = app.front.as_mut() else {
                         return None;
                     };
-                    match ui::char_creation::click_at(&l, state.category, mouse) {
+                    match click {
                         // `SelectColorPicker`/`Click_*` (`:1810-1833`): the
                         // picker selects and the middle menu follows
                         // (`middle_for`), seeding `_currentColorHSL` from the
@@ -900,11 +930,19 @@ impl FrontScreenBehaviours for FrontScreen {
                 let mut nav = Nav::None;
                 let mut flow = None;
                 let mut create_draft: Option<ui::world_creation::NewWorldDraft> = None;
+                // W4-g22 DOC-SWEEP — the per-site inline cue
+                // (`UIWorldCreation.cs`'s handlers + the GroupOptionButton
+                // 12, `click_cue`'s census) plays before the state write;
+                // Back's 11 rides the flow hop instead (Bug 17).
+                let click = ui::world_creation::click_at(&l, mouse);
+                if let Some(id) = ui::world_creation::click_cue(click) {
+                    crate::chest::play_menu_sound(app, id);
+                }
                 {
                     let Some(FrontScreen::WorldCreation(draft)) = app.front.as_mut() else {
                         return None;
                     };
-                    match ui::world_creation::click_at(&l, mouse) {
+                    match click {
                         // `ClickRandomizeName` (`:497-503`): the port's
                         // `AssignRandomWorldName` stand-in re-derives the
                         // name (`:1002-1025`'s composition tables have no
@@ -927,8 +965,9 @@ impl FrontScreenBehaviours for FrontScreen {
                         // "UI.EnterSeed", `allowEmpty: true`, no cap (the
                         // source's `int.MaxValue`); the icon's Advanced-tab
                         // click degrades to the same keyboard (plan
-                        // Uncertainty 4).
-                        ui::world_creation::Click::Seed => nav = Nav::Seed(draft.clone()),
+                        // Uncertainty 4) — its own button 12 already played.
+                        ui::world_creation::Click::Seed
+                        | ui::world_creation::Click::SeedIcon => nav = Nav::Seed(draft.clone()),
                         // `Click_NamingAndCreating` (`:710-724`): an empty
                         // name opens the naming keyboard (`allowEmpty: false`,
                         // 27), a filled one finishes (`:722`).
@@ -1101,11 +1140,35 @@ impl FrontScreenBehaviours for FrontScreen {
                 // handlers): the on-screen keys type, the toggles cycle the
                 // `KeyState`, Submit re-checks the validation, Cancel runs
                 // the `_cancelAction`.
+                let l = ui::keyboard::layout(screen, app.vk_grid);
+                // The click resolves against the live state first (the
+                // read borrow drops before the audio play).
+                let click = match app.front.as_ref() {
+                    Some(FrontScreen::Keyboard(session)) => {
+                        ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse)
+                    }
+                    _ => return None,
+                };
+                // W4-g22 DOC-SWEEP — the on-screen keys' own cues
+                // (`UIVirtualKeyboard.cs`): Shift/Symbol/letter keys/Space/
+                // Backspace play 12 BEFORE the edit (`:252`/`:286`/`:525`/
+                // `:499`/`:394`); Submit/Cancel play their 10/11 inside
+                // `keyboard_submit`/`keyboard_cancel` already (the
+                // validation gate decides), so they queue nothing here.
+                match click {
+                    ui::keyboard::Click::Char(_)
+                    | ui::keyboard::Click::Shift
+                    | ui::keyboard::Click::Symbol
+                    | ui::keyboard::Click::Space
+                    | ui::keyboard::Click::Backspace => {
+                        app.audio.play("Menu_Tick");
+                    }
+                    _ => {}
+                }
                 let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
                     return None;
                 };
-                let l = ui::keyboard::layout(screen, app.vk_grid);
-                match ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse) {
+                match click {
                     ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
                     // The shift button: `(keyState != Shift) ? Shift : Default`
                     // (`:250-254`).
@@ -1296,9 +1359,9 @@ impl App {
     /// The element id under the pointer on the live front screen — the
     /// framework's `GetElementAt` (`UIElement.cs:324-352`), fed to the pointer
     /// machine so its `LastClicked` compares elements and a card's double-click
-    /// is recognised (`UICharacterListItem.cs:68-69`). `None` on the screens
-    /// without element ids (the creation screens and the keyboard) and when no
-    /// front screen is live.
+    /// is recognised (`UICharacterListItem.cs:68-69`). Also feeds the Bug-17
+    /// hover edge on the creation screens and the keyboard (W4-g22
+    /// DOC-SWEEP). `None` when no front screen is live.
     pub(crate) fn front_hit(&self) -> Option<u32> {
         let front = self.front.as_ref()?;
         let (sw, sh) = self.screen_size();
@@ -1318,7 +1381,56 @@ impl App {
                 let favorites: Vec<bool> = self.worlds.iter().map(|w| w.is_favorite).collect();
                 ui::world_select::hit_element(&l, &favorites, self.mouse_pos)
             }
+            // W4-g22 DOC-SWEEP — the creator's hover-sounding elements
+            // (`hover_element`'s census: the DrawSelf-latched buttons +
+            // the FadedMouseOver panels + the UIColoredImageButtons). The
+            // +1000 base keeps the ids off the select screens' `select_hit`
+            // range so a screen switch never reads a stale latch as the
+            // same element. The loop's Bug-17 edge plays the 12.
+            FrontScreen::CharCreation(state) => {
+                let l = ui::char_creation::layout(screen, 0.0);
+                ui::char_creation::hover_element(&l, state.category, self.mouse_pos)
+                    .map(|id| id + 1000)
+            }
+            // W4-g22 DOC-SWEEP — the world creator's hover census (the
+            // GroupOptionButton/plate DrawSelf latches + FadedMouseOver).
+            // The +2000 base keeps the ids off both other screens' ranges.
+            FrontScreen::WorldCreation(_) => {
+                let l = ui::world_creation::layout(screen, 0.0);
+                ui::world_creation::hover_element(&l, self.mouse_pos).map(|id| id + 2000)
+            }
+            // W4-g22 DOC-SWEEP — the keyboard's hover census: ONLY the
+            // Submit/Cancel pair sounds (`FadedMouseOver`); the grid keys
+            // are colour-only. The +3000 base keeps the ids separate.
+            FrontScreen::Keyboard(_) => {
+                let l = ui::keyboard::layout(screen, self.vk_grid);
+                ui::keyboard::hover_element(&l, self.mouse_pos).map(|id| id + 3000)
+            }
             _ => None,
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP — whether the element id [`App::front_hit`]
+    /// answers SOUNDS on hover. The select screens' card BODIES are
+    /// silent (`UICharacterListItem.MouseOver` `:294-300` /
+    /// `UIWorldListItem.MouseOver` `:475-479` swap colours only — the
+    /// tick belongs to the child `UIImageButton.MouseOver`
+    /// `UIImageButton.cs:61` and the Back/New `FadedMouseOver`); every
+    /// other id the hit-test answers is a sounding element.
+    pub(crate) fn front_hit_sounds(&self, hit: u32) -> bool {
+        match self.front.as_ref() {
+            Some(FrontScreen::CharSelect | FrontScreen::WorldSelect) => {
+                if hit == ui::select_hit::BACK || hit == ui::select_hit::NEW {
+                    return true; // `FadedMouseOver` (`:124`/`:126`)
+                }
+                if hit >= ui::select_hit::CARD_BASE {
+                    let part = (hit - ui::select_hit::CARD_BASE) % ui::select_hit::PARTS;
+                    return part != ui::select_hit::PART_BODY;
+                }
+                false
+            }
+            // The creation/keyboard hit-tables list sounding elements only.
+            _ => true,
         }
     }
 
@@ -1659,6 +1771,301 @@ pub(crate) mod front_flow_tests {
             assert_eq!(front, Some(parked), "the exact parked screen returns");
             assert!((backup.is_none()) && page.is_none());
         }
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a category click on the live
+    /// creator plays ONE Menu_Tick (`Click_CharInfo`'s 12,
+    /// `UICharacterCreation.cs:1270`) and the category lands; a dead click
+    /// on the panel plays nothing.
+    #[test]
+    fn doc_sweep_a_category_click_plays_one_tick() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The Clothing category button (id 1).
+        app.mouse_pos = centre(l.categories[1]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the category");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::CharCreation(ref s)) if s.category == 1
+        ));
+        // A click on empty panel space is silent.
+        app.mouse_pos = Vec2::new(l.panel[0] + 4.0, l.panel[1] + 4.0);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before, "a dead click is silent");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the naming plate plays ONE
+    /// Menu_Open (`Click_Naming`'s 10, `:1661`) and opens the keyboard;
+    /// Back on a clean draft plays ONE Menu_Close (`GoBack`'s 11, `:1212`)
+    /// and returns to the char select — no second cue from the hop.
+    #[test]
+    fn doc_sweep_naming_and_back_play_their_own_cues_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        app.mouse_pos = centre(l.info_name);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 10 on the name plate");
+        assert!(matches!(app.front, Some(FrontScreen::Keyboard(_))));
+        // Cancel back to the creator (the keyboard's own 11), then Back.
+        app.keyboard_cancel();
+        app.pointer.tick(300.0);
+        app.mouse_pos = centre(l.back);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 11 on Back");
+        assert!(matches!(app.front, Some(FrontScreen::CharSelect)));
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a difficulty row plays ONE
+    /// Menu_Tick (`UIDifficultyButton.LeftMouseDown`, `:84`) and the pick
+    /// lands; the randomize-player button plays ONE Menu_Tick
+    /// (`Click_RandomizePlayer`, `:1547`).
+    #[test]
+    fn doc_sweep_difficulty_and_randomize_play_one_tick() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The Expert row (display index 2 -> id 1).
+        app.mouse_pos = centre(l.difficulty_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the row");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::CharCreation(ref s)) if s.draft.difficulty == 1
+        ));
+        // The Clothing category's randomize button.
+        app.mouse_pos = centre(l.categories[1]);
+        front_press(&mut app);
+        app.mouse_pos = centre(l.template_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on randomize");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the creator's hover edge plays one
+    /// Menu_Tick per enter through the loop's Bug-17 latch (`front_hit` now
+    /// answers the creator's sounding elements), staying inside is silent,
+    /// and re-entering after an exit plays again (the DrawSelf
+    /// `_soundedHover` reset, `UIHairStyleButton.cs:51-53`).
+    #[test]
+    fn doc_sweep_creator_hover_edge_ticks_once_per_enter() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The loop's cursor-moved path (`app/loop.rs`'s Bug-17 block).
+        let hover = |app: &mut App| {
+            let hit = app.front_hit();
+            if hit != app.front_hover_hit {
+                if hit.is_some() {
+                    app.audio.play("Menu_Tick");
+                }
+                app.front_hover_hit = hit;
+            }
+        };
+        app.mouse_pos = centre(l.categories[2]);
+        let before = app.audio.played_count();
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one tick on enter");
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "no repeat inside");
+        // Exit to the preview (silent), then re-enter: the latch re-arms.
+        app.mouse_pos = centre(l.preview);
+        hover(&mut app);
+        app.mouse_pos = centre(l.categories[2]);
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 2, "re-enter ticks again");
+        // Moving to a DIFFERENT sounding element is a fresh enter.
+        app.mouse_pos = centre(l.back);
+        hover(&mut app);
+        assert_eq!(app.audio.played_count(), before + 3, "a new element ticks");
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a size row on the live world
+    /// creator plays ONE Menu_Tick (the GroupOptionButton 12) and the pick
+    /// lands; the seed plate plays ONE Menu_Open (`OpenSeedInputMenu`'s 10,
+    /// `:704`) and opens the keyboard; Back plays ONE Menu_Close (the hop's
+    /// 11, `GoBack` `:672`) — never doubled.
+    #[test]
+    fn doc_sweep_world_creator_rows_and_plates_play_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(0, 0))),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::world_creation::layout(Vec2::new(sw, sh), 0.0);
+        app.mouse_pos = centre(l.size_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the size row");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::WorldCreation(ref d)) if d.size == 2
+        ));
+        app.mouse_pos = centre(l.seed_plate);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 10 on the seed plate");
+        assert!(matches!(app.front, Some(FrontScreen::Keyboard(_))));
+        app.keyboard_cancel();
+        app.pointer.tick(300.0);
+        app.mouse_pos = centre(l.back);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 11 on Back, not two");
+        assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the seed submit's special-seed cue
+    /// (`UIWorldCreation.cs:834`'s 24): a seed text resolving a generation
+    /// option plays Chat ON TOP of the submit's 10; a plain text plays
+    /// only the submit's 10.
+    #[test]
+    fn doc_sweep_special_seed_submit_plays_the_chat_cue() {
+        for (text, extra) in [("for the worthy", 1u64), ("hello world", 0)] {
+            let mut app = flow_app(
+                Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(0, 0))),
+                Vec::new(),
+                Vec::new(),
+            );
+            app.pointer.tick(300.0);
+            let (sw, sh) = app.screen_size();
+            let l = ui::world_creation::layout(Vec2::new(sw, sh), 0.0);
+            app.mouse_pos = centre(l.seed_plate);
+            front_press(&mut app);
+            let Some(FrontScreen::Keyboard(s)) = app.front.as_mut() else {
+                panic!("the seed keyboard opened");
+            };
+            ui::keyboard::write_str(&mut s.state, text);
+            let before = app.audio.played_count();
+            app.keyboard_submit();
+            assert_eq!(
+                app.audio.played_count(),
+                before + 1 + extra,
+                "seed {text:?}: the submit's 10 plus {extra} Chat"
+            );
+            assert!(matches!(
+                app.front,
+                Some(FrontScreen::WorldCreation(ref d)) if d.seed == text
+            ));
+        }
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the on-screen keyboard keys play
+    /// ONE Menu_Tick each (`UIVirtualKeyboard.cs:252`/`:286`/`:525`/
+    /// `:499`/`:394`): a letter key, the shift toggle and backspace; the
+    /// dead space outside the layer stays silent.
+    #[test]
+    fn doc_sweep_keyboard_keys_tick_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let cl = ui::char_creation::layout(screen, 0.0);
+        app.mouse_pos = centre(cl.info_name);
+        front_press(&mut app);
+        // The grid layer (`TR_VK_GRID=1`'s shape).
+        app.vk_grid = true;
+        let l = ui::keyboard::layout(screen, true);
+        // A letter key (0, 0).
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 0, 0, 1));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the key");
+        // The shift toggle.
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 0, 4, 1));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on shift");
+        // Backspace.
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 8, 4, 2));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on backspace");
+        // Outside the layer: silent.
+        app.mouse_pos = Vec2::new(10.0, 10.0);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the hover-sound census across the
+    /// screens: the select card BODIES are silent (colour-only MouseOver),
+    /// their buttons and Back/New sound; every creation/keyboard id the
+    /// hit-tables answer sounds.
+    #[test]
+    fn doc_sweep_card_bodies_do_not_tick_but_buttons_do() {
+        let players = vec![entry("Alpha", true)];
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players, Vec::new());
+        use ui::select_hit as sh;
+        assert!(!app.front_hit_sounds(sh::card_part(0, sh::PART_BODY)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_PLAY)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_FAVORITE)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_RENAME)));
+        assert!(app.front_hit_sounds(sh::card_part(0, sh::PART_DELETE)));
+        assert!(app.front_hit_sounds(sh::BACK));
+        assert!(app.front_hit_sounds(sh::NEW));
+        // The world screen mirrors it.
+        let mut app = flow_app(Some(FrontScreen::WorldSelect), Vec::new(), Vec::new());
+        assert!(!app.front_hit_sounds(sh::card_part(3, sh::PART_BODY)));
+        assert!(app.front_hit_sounds(sh::card_part(3, sh::PART_PLAY)));
+        // The creation screens' tables list sounding elements only.
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(app.front_hit_sounds(1000));
+        // The loop's edge with the gate: a card body enter plays nothing.
+        let players = vec![entry("Alpha", true)];
+        let mut app = flow_app(Some(FrontScreen::CharSelect), players, Vec::new());
+        let (sw, sh2) = app.screen_size();
+        let screen = Vec2::new(sw, sh2);
+        let l = ui::char_select::resolved_layout(screen, app.front_header_w("Select Player"), 1);
+        let c0 = ui::char_select::card_layout(l.list, 0);
+        // A point inside the card but off every button (the name strip).
+        app.mouse_pos = Vec2::new(c0.card[0] + c0.card[2] * 0.5, c0.card[1] + 4.0);
+        let hit = app.front_hit();
+        assert_eq!(hit, Some(ui::select_hit::card_part(0, ui::select_hit::PART_BODY)));
+        let before = app.audio.played_count();
+        if hit != app.front_hover_hit {
+            if hit.is_some_and(|h| app.front_hit_sounds(h)) {
+                app.audio.play("Menu_Tick");
+            }
+            app.front_hover_hit = hit;
+        }
+        assert_eq!(app.audio.played_count(), before, "the body enter is silent");
     }
 
     #[test]

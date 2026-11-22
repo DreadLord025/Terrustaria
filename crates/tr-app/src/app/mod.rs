@@ -1553,16 +1553,28 @@ impl App {
     /// vanilla's `WorldGen.drunkWorldGen` and friends), and the other front
     /// screens play the plain title track.
     pub(crate) fn update_menu_music(&mut self) {
-        let menu_flags = match &self.front {
+        // W4-g22 MENU-FINAL — the drunk arm's two micro-seed titles
+        // (`Main.cs:12465-12472`) read the SAME seed text through the
+        // combined resolution (`seed_identity`, the vampirism micro seed
+        // is `Main.vampireSeed`, `WorldGen.cs:555-558`).
+        let (menu_flags, menu_micro_flags) = match &self.front {
             Some(FrontScreen::WorldCreation(draft)) => {
-                tr_core::seeds::SeedFlags::from_seed_text(&draft.seed)
+                ui::world_creation::seed_identity(&draft.seed)
             }
-            _ => tr_core::seeds::SeedFlags::default(),
+            _ => Default::default(),
         };
+        // `Main.menuMode == 3000` (`:12486-12489`): the credits page's
+        // JourneysEnd (89) — the legacy menu owns that page.
+        let menu_credits = self
+            .menu
+            .as_ref()
+            .is_some_and(|m| m.page == menu::Page::Credits);
         self.music.update(audio::MusicEnv {
             music_volume: self.settings.music_volume,
             menu: true,
             menu_flags,
+            menu_micro_flags,
+            menu_credits,
             // `Main.activeMusicBox = -1` — the derived default 0 is the first
             // box's id, which would override the title track.
             music_box: -1,
@@ -2630,7 +2642,23 @@ impl App {
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
-                    draft.seed = name;
+                    draft.seed = name.clone();
+                    // W4-g22 DOC-SWEEP — `SoundEngine.PlaySound(24)`
+                    // (`UIWorldCreation.cs:834`): the seed text resolving a
+                    // special generation option (`GetOptionFromSeedText !=
+                    // null`, `:829-833`) plays the Chat cue (SoundID.Chat =
+                    // 24, `SoundID.cs:70`). The port's resolution is the
+                    // pure `seed_flags` (`tr_core::seeds`); a non-empty
+                    // classic flag set is the option hit. The secret-seed
+                    // `Enable` trackable sound (`WorldGen.cs:539`,
+                    // SoundID.MenuAccept) stays with the Advanced tab
+                    // (documented deviation).
+                    if !name.is_empty()
+                        && ui::world_creation::seed_flags(&name)
+                            != tr_core::seeds::SeedFlags::none()
+                    {
+                        self.audio.play("Chat");
+                    }
                 }
                 self.enter_front(back);
             }

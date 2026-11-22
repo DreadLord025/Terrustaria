@@ -205,6 +205,12 @@ pub struct CreationState {
     /// W4-e10 — `_alreadyHovered` (`UIColoredSlider.cs:29`): the pitch bar's
     /// hover-edge Menu_Tick latch (`:134-143`).
     pub pitch_already_hovered: bool,
+    /// W4-g22 DOC-SWEEP — `UIColoredSlider._alreadyHovered` (`:134-142`):
+    /// the per-bar hover latch, 12 once per enter (`:136`).
+    pub hsl_hovered: [bool; 3],
+    /// W4-g22 DOC-SWEEP — `UIColoredSlider._soundedUsage` (`:83-92`): the
+    /// per-bar drag latch, 12 once per held-drag spell (`:85`).
+    pub hsl_sounded: [bool; 3],
 }
 
 impl CreationState {
@@ -223,6 +229,8 @@ impl CreationState {
             pitch_changed_cooldown: 0,
             pitch_sounded_usage: false,
             pitch_already_hovered: false,
+            hsl_hovered: [false; 3],
+            hsl_sounded: [false; 3],
         }
     }
 }
@@ -1409,6 +1417,8 @@ pub fn hsl_sliders_update(
     if state.category < 3 {
         // The HSL menu is only live over a colour category (`:1826`).
         state.hsl_grab = 0;
+        state.hsl_hovered = [false; 3];
+        state.hsl_sounded = [false; 3];
         return highlight;
     }
     let color_id = state.category;
@@ -1558,6 +1568,40 @@ pub fn voice_pitch_update(
             if play_voice_preview(state) {
                 cues.preview = true;
             }
+        }
+    }
+    cues
+}
+
+/// W4-g22 DOC-SWEEP — the HSL bars' two per-bar cue latches
+/// (`UIColoredSlider.cs`): the hover enter plays 12 once
+/// (`_alreadyHovered`, `:134-142` — the highlight flag IS the latch input)
+/// and the held drag plays 12 once per spell (`_soundedUsage`, `:83-92`,
+/// re-arming on release). Runs after [`hsl_sliders_update`] with its
+/// highlight answer; returns the number of 12s to play (0..=2 — a hover
+/// enter and a drag start can coincide on one bar, the C# plays both).
+pub fn hsl_slider_cues(state: &mut CreationState, highlight: [bool; 3], mouse_down: bool) -> u32 {
+    let mut cues = 0;
+    for k in 0..3 {
+        // The hover latch (`:131-143`): `flag || lockMode == 1` is the
+        // highlight the update derived.
+        if highlight[k] {
+            if !state.hsl_hovered[k] {
+                cues += 1; // `:136`
+            }
+            state.hsl_hovered[k] = true;
+        } else {
+            state.hsl_hovered[k] = false;
+        }
+        // The usage latch (`:80-92`): the locked bar under a held button.
+        let dragging = mouse_down && state.hsl_grab == (k + 1) as u8;
+        if dragging {
+            if !state.hsl_sounded[k] {
+                cues += 1; // `:85`
+            }
+            state.hsl_sounded[k] = true;
+        } else {
+            state.hsl_sounded[k] = false;
         }
     }
     cues
@@ -1832,6 +1876,86 @@ pub fn apply_player_template(
     true
 }
 
+// --- The census-only 888 sites (W4-g22 DOC-SWEEP) ---------------------------------
+
+/// The armor row's seven `EquipArmor*` handlers (`UICharacterCreation.cs:530-
+/// 613`) each play 12 before the assignment (`:532`/`:538`/`:549`/`:560`/
+/// `:571`/`:582`/`:599`). The port draws the row's chrome but keeps no armor
+/// state (`_maleArmor`/`_femaleArmor` are unported — the preview decodes no
+/// `Images/Item_*` sheets), so the assignments land here as the pure census
+/// and the cue answers 12 for every button. `(head, body, leg)` per gender;
+/// the Formal/Swimming pairs differ per gender, the other five share one
+/// assignment (`_femaleArmor = (_maleArmor = ...)`). The Swimming female
+/// also carries `Accessory1Item = 208` (`:611`) — see
+/// [`armor_assignment_accessory`].
+///
+/// MENU-FINAL census correction: `button` here is the HANDLER census order
+/// (0 None, 1 Gold, 2 Silver, 3 Funeral, 4 Hallowed, 5 Formal, 6 Swimming),
+/// NOT the layout order. Only FIVE handlers are subscribed in 1.4.5.8
+/// (`:355/:362/:369/:376/:383`): the layout's `armor_buttons`
+/// `[HAlign 0/.5/.25/.75/1]` map to `[None, Hallowed, Silver, Formal,
+/// Swimming]` = census ids `[0, 4, 2, 5, 6]`; `EquipArmorGold` (`:536`) and
+/// `EquipArmorFuneral` (`:558`) are declared but never subscribed — dead
+/// handlers, kept in the census for completeness.
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_assignment(button: usize, male: bool) -> (i32, i32, i32) {
+    match button {
+        0 => (0, 0, 0),                                  // None (`:533`)
+        1 => (92, 83, 79),                               // Gold (`:541-543`)
+        2 => (91, 82, 78),                               // Silver (`:552-554`)
+        3 => (4704, 4705, 4706),                         // Funeral (`:563-565`)
+        4 => (5660, 551, 552),                           // Hallowed (`:574-576`)
+        5 if male => (239, 240, 241),                    // Formal (`:585-587`)
+        5 => (3478, 3479, 0),                            // Formal female (`:591-593`)
+        6 if male => (237, 3785, 5649),                  // Swimming (`:602-604`)
+        6 => (237, 5646, 5647),                          // Swimming female (`:608-610`)
+        _ => (0, 0, 0),
+    }
+}
+
+/// The Swimming female's `Accessory1Item = 208` (`:611`) — the only
+/// accessory any `EquipArmor*` assigns (the flipper). Every other
+/// handler/gender leaves the accessory slots at 0.
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_assignment_accessory(button: usize, male: bool) -> i32 {
+    if button == 6 && !male { 208 } else { 0 }
+}
+
+/// MENU-FINAL — the five LIVE armor buttons' handler ids, in the layout's
+/// `armor_buttons` order (`[HAlign 0/.5/.25/.75/1]`, `:348-384`): None,
+/// Hallowed, Silver, Formal, Swimming. Gold/Funeral are dead handlers.
+pub const ARMOR_LAYOUT_HANDLERS: [usize; 5] = [0, 4, 2, 5, 6];
+
+/// The armor row's cue — every `EquipArmor*` plays 12 (`:532-599`); the
+/// census answers it for all seven buttons (the state half is
+/// [`armor_assignment`], unwired with the armor preview).
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_click_cue(_button: usize) -> u32 {
+    12
+}
+
+/// `Click_VoicePitch` (`:1040-1043`) plays 12 and nothing else — the pitch
+/// slider's drag chrome is the documented no-audio deviation, but the
+/// CLICK cue is its own site. Census-only (the voice state is unported).
+#[allow(dead_code)] // census-only - the voice state is unported
+pub fn voice_pitch_click_cue() -> u32 {
+    12
+}
+
+/// `HandleBackButtonUsage` (`:2366-2380`): the gamepad Back on a non-Info
+/// category plays 12 and re-selects CharInfo; on CharInfo it falls through
+/// to `GoBack` (11, `:1212`). Returns the cue id. Census-only — the gamepad
+/// snap points are out of scope (§J.3); the port's Escape/Back rides the
+/// mouse `Click_GoBack` path instead.
+#[allow(dead_code)] // census-only - the gamepad snap points are out of scope
+pub fn back_button_usage_cue(category: usize) -> u32 {
+    if category != 0 {
+        12 // `:2370`
+    } else {
+        11 // `GoBack` (`:1212`)
+    }
+}
+
 // --- Clicks ---------------------------------------------------------------------
 
 /// `UICharacterCreation.MAX_NAME_LENGTH` (`:142`) — the naming keyboard's cap
@@ -1889,6 +2013,123 @@ pub enum Click {
     /// one Menu_Tick (12); the drag itself runs in [`voice_pitch_update`].
     VoicePitch,
     None,
+}
+
+/// W4-g22 DOC-SWEEP — the per-site click cue of the creator's `Click_*`
+/// handlers (the 888 inline-cue census, `UICharacterCreation.cs`). Every
+/// handler plays its own `SoundEngine.PlaySound` BEFORE its state write;
+/// `None` means the port has no live control for the site (the armor row's
+/// seven `EquipArmor*` handlers `:532-599`, the voice-pitch click `:1042`
+/// and the gamepad `HandleBackButtonUsage` `:2370` are census-only — the
+/// armor/voice state is not ported). The App plays the answer through
+/// `chest::play_menu_sound` (10/11/12 → Menu_Open/Menu_Close/Menu_Tick).
+pub fn click_cue(click: Click) -> Option<u32> {
+    Some(match click {
+        // `Click_ColorPicker` (`:1239`), `Click_ClothStyles` (`:1252`),
+        // `Click_HairStyles` (`:1261`), `Click_CharInfo` (`:1270`) — all
+        // four category handlers play 12.
+        Click::Category(_) => 12,
+        // `Click_CharClothStyle` (`:1288`) — the variant pick plays 12
+        // (the armor-guard re-entry through `EquipArmorNone` `:1281`
+        // plays the same 12, `:532`).
+        Click::ClothStyle(_) => 12,
+        // `Click_Naming` (`:1661`) and `Click_NamingAndCreating` (`:1670`)
+        // play 10 BEFORE the keyboard opens / the character finishes.
+        Click::Name | Click::Create => 10,
+        // `GoBack` (`:1212`) plays 11 before the dirty check parks the
+        // mode-40 confirm or the char select reopens.
+        Click::Back => 11,
+        // `Click_CopyHex` (`:1333`) / `Click_PasteHex` (`:1339`) play 12
+        // before the clipboard read/write (a failed paste still played).
+        Click::CopyHex | Click::PasteHex => 12,
+        // `Click_CopyPlayerTemplate` (`:1410`) / `Click_PastePlayerTemplate`
+        // (`:1416`) play 12 before the clipboard read/write.
+        Click::CopyTemplate | Click::PasteTemplate => 12,
+        // `Click_RandomizePlayer` (`:1547`) and `Click_RandomizeSingleColor`
+        // (`:1781`) play 12 before the `Main.rand` rolls.
+        Click::RandomizePlayer | Click::RandomizeColor => 12,
+        // `UIDifficultyButton.LeftMouseDown` (`UIDifficultyButton.cs:84`)
+        // plays 12 after the difficulty write — the row is a button of its
+        // own, not a `Click_*` handler.
+        Click::Difficulty(_) => 12,
+        // `UIHairStyleButton.LeftMouseDown` (`UIHairStyleButton.cs:82`)
+        // plays 12 after the hair write.
+        Click::Hair(_) => 12,
+        _ => return None,
+    })
+}
+
+/// The hover-sounding element under the pointer — the census of the four
+/// DrawSelf-latched buttons (`UIDifficultyButton.cs:49-60`,
+/// `UIHairStyleButton.cs:43-54`, `UIClothStyleButton.cs:67-78` — each plays
+/// 12 once on the hover edge, re-arming on exit) plus the two
+/// `FadedMouseOver` panels (Back/Create, `:1226` — sound on every
+/// `MouseOver` event, which the framework fires on the enter edge only,
+/// `UIElement.cs:510-520`) and the ten `UIColoredImageButton.MouseOver`
+/// category buttons (`UIColoredImageButton.cs:95`). The ids are stable per
+/// element so the App's edge latch (`front_hover_hit`) fires once per
+/// enter; `None` over anything silent (the plates' name button latches too
+/// — `UICharacterNameButton.cs:69` — id 100).
+pub fn hover_element(l: &Layout, category: usize, mouse: Vec2) -> Option<u32> {
+    for id in CATEGORY_IDS {
+        if in_rect(mouse, l.categories[id]) {
+            return Some(id as u32); // `UIColoredImageButton.cs:95`
+        }
+    }
+    if in_rect(mouse, l.back) {
+        return Some(10); // `FadedMouseOver` (`:1226`)
+    }
+    if in_rect(mouse, l.create) {
+        return Some(11); // `FadedMouseOver` (`:1226`)
+    }
+    match middle_for(category) {
+        MiddleMenu::Info => {
+            if in_rect(mouse, l.info_name) {
+                return Some(100); // `UICharacterNameButton.cs:69`
+            }
+            for (k, _) in DIFFICULTY_IDS.iter().enumerate() {
+                if in_rect(mouse, l.difficulty_buttons[k]) {
+                    return Some(12 + k as u32); // `UIDifficultyButton.cs:53`
+                }
+            }
+        }
+        MiddleMenu::Hairstyles => {
+            // The list clips (`GetClippingRectangle`, `:254`): a button
+            // outside the view never draws, so its DrawSelf latch never
+            // fires — the hit-test clips the same way.
+            let view = uistate::inner(l.hair_list, HAIR_LIST_PADDING);
+            if in_rect(mouse, view) {
+                for (i, _) in HAIRSTYLES.iter().enumerate() {
+                    if in_rect(mouse, hair_button(l.hair_grid, i)) {
+                        return Some(20 + i as u32); // `UIHairStyleButton.cs:47`
+                    }
+                }
+            }
+        }
+        MiddleMenu::ClothStyles => {
+            for (i, _) in VALID_CLOTH_STYLES.iter().enumerate() {
+                if in_rect(mouse, l.cloth_buttons[i]) {
+                    return Some(300 + i as u32); // `UIClothStyleButton.cs:71`
+                }
+            }
+            // The template Copy/Paste/Randomize trio are
+            // `UIColoredImageButton`s too (`:406-430`).
+            for (k, _) in l.template_buttons.iter().enumerate() {
+                if in_rect(mouse, l.template_buttons[k]) {
+                    return Some(320 + k as u32); // `UIColoredImageButton.cs:95`
+                }
+            }
+        }
+        MiddleMenu::Hsl { .. } => {
+            // The hex Copy/Paste/Randomize trio (`:1006-1031`).
+            for (k, _) in l.hsl_buttons.iter().enumerate() {
+                if in_rect(mouse, l.hsl_buttons[k]) {
+                    return Some(330 + k as u32); // `UIColoredImageButton.cs:95`
+                }
+            }
+        }
+    }
+    None
 }
 
 /// The click table over the live geometry: the categories bar (always), the
@@ -2115,8 +2356,11 @@ fn draw_hair_button(
 /// makes the timing unobservable. `time` is `Main.GlobalTimeWrappedHourly`
 /// (the preview's animation clock, `:92`); `mouse_down` feeds the HSL drag
 /// latch. Mutates the draft like the source's draw-side paths do
-/// (`:1102-1124`, `:2011-2021`). W4-e10: returns the voice-picker cues (the
-/// pitch bar's Menu_Tick + the debounce preview) for the caller's audio seam.
+/// (`:1102-1124`, `:2011-2021`). The merge compose (W4-e10 × W4-g22): returns
+/// BOTH cue answers — the voice-picker cues (the pitch bar's Menu_Tick + the
+/// debounce preview) and the HSL bars' highlight flags (the
+/// `hsl_sliders_update` answer) so the App can run the W4-g22 DOC-SWEEP cue
+/// latches ([`hsl_slider_cues`]) without re-running the drag.
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -2126,14 +2370,14 @@ pub fn draw(
     time: f32,
     mouse: Vec2,
     mouse_down: bool,
-) -> VoicePreviewCues {
+) -> (VoicePreviewCues, [bool; 3]) {
     let l = layout(screen, 0.0);
 
     // The Draw-time dirty check (`:2011-2021`) runs before Back's consult.
     state.draft.refresh_dirty();
     // The HSL drag pass runs in the draw like the source's `DrawSelf` chain
     // (`UIColoredSlider.cs:47-90`): hit-test -> mutate -> render.
-    let _highlight = hsl_sliders_update(&l, state, mouse, mouse_down);
+    let highlight = hsl_sliders_update(&l, state, mouse, mouse_down);
     // W4-e10 — the pitch bar's drag + the preview debounce (the same
     // `DrawSelf`/`OnUpdate` chain, `UIColoredSlider.cs:46-102` +
     // `PitchSliderUpdate` `:649-656`). Clears the per-frame preview latch.
@@ -2302,7 +2546,7 @@ pub fn draw(
         }
         border_string(r, lookups, x, y, [1.0; 4], &text);
     }
-    voice_cues
+    (voice_cues, highlight)
 }
 
 /// `UICharacterCreation.Draw`'s tooltip resolution (`:1880-1979`) over the
@@ -3224,6 +3468,140 @@ mod tests {
         assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[0])), Click::CopyHex);
         assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[1])), Click::PasteHex);
         assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[2])), Click::RandomizeColor);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the creator's per-site click cues
+    /// (`UICharacterCreation.cs`): the four category handlers play 12
+    /// (`:1239`/`:1252`/`:1261`/`:1270`), the cloth variant plays 12
+    /// (`:1288`); the unported armor/voice sites stay census-only (`None`).
+    #[test]
+    fn doc_sweep_category_and_cloth_clicks_play_12() {
+        for id in CATEGORY_IDS {
+            assert_eq!(click_cue(Click::Category(id)), Some(12), "category {id}");
+        }
+        for style in VALID_CLOTH_STYLES {
+            assert_eq!(click_cue(Click::ClothStyle(style)), Some(12), "style {style}");
+        }
+        // The naming pair plays 10 (`:1661`/`:1670`), Back plays 11
+        // (`GoBack`, `:1212`), the hex clipboard pair plays 12
+        // (`:1333`/`:1339`).
+        assert_eq!(click_cue(Click::Name), Some(10));
+        assert_eq!(click_cue(Click::Create), Some(10));
+        assert_eq!(click_cue(Click::Back), Some(11));
+        assert_eq!(click_cue(Click::CopyHex), Some(12));
+        assert_eq!(click_cue(Click::PasteHex), Some(12));
+        // The template pair (`:1410`/`:1416`), the two randomizers
+        // (`:1547`/`:1781`) and the difficulty rows
+        // (`UIDifficultyButton.cs:84`) all play 12.
+        assert_eq!(click_cue(Click::CopyTemplate), Some(12));
+        assert_eq!(click_cue(Click::PasteTemplate), Some(12));
+        assert_eq!(click_cue(Click::RandomizePlayer), Some(12));
+        assert_eq!(click_cue(Click::RandomizeColor), Some(12));
+        for d in DIFFICULTY_IDS {
+            assert_eq!(click_cue(Click::Difficulty(d)), Some(12), "difficulty {d}");
+        }
+        // The hair buttons (`UIHairStyleButton.cs:82`).
+        assert_eq!(click_cue(Click::Hair(0)), Some(12));
+        assert_eq!(click_cue(Click::Hair(51)), Some(12));
+        // A dead click is silent.
+        assert_eq!(click_cue(Click::None), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the hover census: every sounding element
+    /// answers a stable id, silent space answers `None`, and the hair grid
+    /// clips to the list view (`UIHairStyleButton.DrawSelf` only runs for
+    /// drawn buttons).
+    #[test]
+    fn doc_sweep_hover_elements_answer_stable_ids() {
+        let l = layout(SCREEN, 40.0);
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] / 2.0, r[1] + r[3] / 2.0);
+        assert_eq!(hover_element(&l, 0, centre(l.categories[3])), Some(3));
+        assert_eq!(hover_element(&l, 0, centre(l.back)), Some(10));
+        assert_eq!(hover_element(&l, 0, centre(l.create)), Some(11));
+        assert_eq!(hover_element(&l, 0, centre(l.info_name)), Some(100));
+        assert_eq!(hover_element(&l, 0, centre(l.difficulty_buttons[1])), Some(13));
+        assert_eq!(hover_element(&l, 2, centre(hair_button(l.hair_grid, 0))), Some(20));
+        assert_eq!(hover_element(&l, 1, centre(l.cloth_buttons[0])), Some(300));
+        assert_eq!(hover_element(&l, 1, centre(l.template_buttons[2])), Some(322));
+        assert_eq!(hover_element(&l, 3, centre(l.hsl_buttons[0])), Some(330));
+        // A far-outside-the-view hair cell is clipped (row 20 sits ~961 px
+        // down the unscrolled grid, the view is 119 tall).
+        assert_eq!(hover_element(&l, 2, centre(hair_button(l.hair_grid, 200))), None);
+        // The preview and the panel border are silent.
+        assert_eq!(hover_element(&l, 0, centre(l.preview)), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the HSL bars' two cue latches
+    /// (`UIColoredSlider.cs:136`/`:85`): the hover enter plays one 12,
+    /// staying hovered is silent, the held drag plays one more 12, holding
+    /// the drag is silent, release re-arms the usage latch, exit re-arms
+    /// the hover latch.
+    #[test]
+    fn doc_sweep_hsl_hover_and_usage_latches() {
+        let mut s = CreationState::new();
+        s.category = 3;
+        // Hover enter on bar 0: one cue.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 1);
+        // Still hovered, no button: silent.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 0);
+        // The drag starts (the update latched hsl_grab = 1): one more cue.
+        s.hsl_grab = 1;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 1);
+        // Held drag: silent.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 0);
+        // Release: the usage latch re-arms; the hover stays latched.
+        s.hsl_grab = 0;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 0);
+        s.hsl_grab = 1;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 1);
+        // Exit: both latches clear; re-enter plays again.
+        s.hsl_grab = 0;
+        assert_eq!(hsl_slider_cues(&mut s, [false, false, false], false), 0);
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 1);
+        // A hover enter and a drag start on DIFFERENT bars in one frame
+        // play both (the C# runs each bar's DrawSelf independently). Bar 1
+        // was already hovered (its hover latch is set); the drag starts now.
+        let mut s = CreationState::new();
+        s.category = 3;
+        s.hsl_hovered[1] = true;
+        s.hsl_grab = 2;
+        assert_eq!(hsl_slider_cues(&mut s, [true, true, false], true), 2);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the census-only 888 sites: the seven
+    /// armor handlers play 12 with their exact assignments (the
+    /// Formal/Swimming gender split), the voice-pitch click plays 12, the
+    /// gamepad Back plays 12 off-Info / 11 on Info.
+    #[test]
+    fn doc_sweep_armor_voice_and_gamepad_back_census() {
+        for b in 0..7 {
+            assert_eq!(armor_click_cue(b), 12, "armor button {b}");
+        }
+        assert_eq!(armor_assignment(0, true), (0, 0, 0));
+        assert_eq!(armor_assignment(1, true), (92, 83, 79));
+        assert_eq!(armor_assignment(2, false), (91, 82, 78));
+        assert_eq!(armor_assignment(3, true), (4704, 4705, 4706));
+        assert_eq!(armor_assignment(4, false), (5660, 551, 552));
+        assert_eq!(armor_assignment(5, true), (239, 240, 241));
+        assert_eq!(armor_assignment(5, false), (3478, 3479, 0));
+        assert_eq!(armor_assignment(6, true), (237, 3785, 5649));
+        assert_eq!(armor_assignment(6, false), (237, 5646, 5647));
+        // MENU-FINAL census correction: only five handlers are subscribed
+        // (`:355/:362/:369/:376/:383`); the layout order maps to census ids
+        // [None, Hallowed, Silver, Formal, Swimming]. Gold (1) / Funeral (3)
+        // are dead handlers. The Swimming female alone carries the flipper.
+        assert_eq!(ARMOR_LAYOUT_HANDLERS, [0, 4, 2, 5, 6]);
+        for b in 0..7 {
+            for male in [true, false] {
+                let want = if b == 6 && !male { 208 } else { 0 };
+                assert_eq!(armor_assignment_accessory(b, male), want, "{b}/{male}");
+            }
+        }
+        assert_eq!(voice_pitch_click_cue(), 12);
+        assert_eq!(back_button_usage_cue(0), 11, "CharInfo falls to GoBack");
+        for c in 1..=9 {
+            assert_eq!(back_button_usage_cue(c), 12, "category {c}");
+        }
     }
 
     #[test]

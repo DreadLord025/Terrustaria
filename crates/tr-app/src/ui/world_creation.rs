@@ -523,11 +523,16 @@ pub enum Click {
     /// The `IconRandomName` button (`ClickRandomizeName` -> `AssignRandomWorldName`,
     /// `:497-503`).
     RandomName,
-    /// The seed row: the plate's `Click_SetSeed` -> `OpenSeedInputMenu`
-    /// (`:697-708`) and the icon's `ClickAdvancedSeedMenu` (`:505-511`) — the
-    /// Advanced tab is out of scope (plan Uncertainty 4), so the icon's click
-    /// degrades to the same plain seed keyboard (documented deviation).
+    /// The seed plate's `Click_SetSeed` -> `OpenSeedInputMenu`
+    /// (`:697-708`) — plays 10.
     Seed,
+    /// The seed icon's `ClickAdvancedSeedMenu` (`:505-511`) — the handler
+    /// itself has no `PlaySound`, but the icon is a `GroupOptionButton`
+    /// whose `LeftMouseDown` plays 12 (`GroupOptionButton.cs:255`). The
+    /// Advanced tab is out of scope (plan Uncertainty 4), so the click
+    /// degrades to the same plain seed keyboard (documented deviation);
+    /// the button's 12 stays.
+    SeedIcon,
     /// A size option (`ClickSizeOption`, `:541-551`) — the `WorldSizeId`.
     Size(u8),
     /// A difficulty option (`ClickDifficultyOption`, `:553-563`) — the
@@ -546,6 +551,74 @@ pub enum Click {
     None,
 }
 
+/// W4-g22 DOC-SWEEP — the per-site click cue of the world creator's
+/// handlers (the 888 inline-cue census, `UIWorldCreation.cs`). The option
+/// rows and the two plate icons are `GroupOptionButton`s whose
+/// `LeftMouseDown` plays 12 (`GroupOptionButton.cs:255`) before the
+/// handler runs; the naming/seed/create handlers play 10 themselves.
+/// `Back` answers `None` here: its `GoBack` 11 (`:672`) already rides the
+/// flow hop (`FlowClick::WorldCreateBack` → `handle_front_click`'s
+/// Menu_Close, Bug 17) — a second play would double the cue.
+pub fn click_cue(click: Click) -> Option<u32> {
+    Some(match click {
+        // `ClickRandomizeName` (`:497-503`) rides the button's own 12
+        // (`GroupOptionButton.cs:255`); the seed icon's degraded
+        // `ClickAdvancedSeedMenu` (`:505-511`) rides the same button 12.
+        Click::RandomName | Click::SeedIcon => 12,
+        // `ClickSizeOption`/`ClickDifficultyOption`/`ClickEvilOption`
+        // (`:541-575`) — the `GroupOptionButton.LeftMouseDown` 12.
+        Click::Size(_) | Click::Difficulty(_) | Click::Evil(_) => 12,
+        // `Click_SetName` (`:691`), `OpenSeedInputMenu` (`:704`),
+        // `Click_NamingAndCreating` (`:712`) play 10 before the keyboard
+        // opens / the creation finishes.
+        Click::Name | Click::Seed | Click::Create => 10,
+        _ => return None,
+    })
+}
+
+/// W4-g22 DOC-SWEEP — the hover-sounding element under the pointer: the
+/// two `GroupOptionButton` plate icons + the ten option rows
+/// (`GroupOptionButton.cs:212-223`'s DrawSelf latch, 12 once per enter),
+/// the two `UICharacterNameButton` plates (`UICharacterNameButton.cs:65-76`,
+/// same latch) and the Back/Create `FadedMouseOver` panels (`:678`).
+/// Ids are stable per element for the App's Bug-17 edge latch.
+pub fn hover_element(l: &Layout, mouse: Vec2) -> Option<u32> {
+    if in_rect(mouse, l.random_name_icon) {
+        return Some(0); // `GroupOptionButton.cs:216`
+    }
+    if in_rect(mouse, l.seed_button) {
+        return Some(1); // `GroupOptionButton.cs:216`
+    }
+    if in_rect(mouse, l.name_button) {
+        return Some(2); // `UICharacterNameButton.cs:69`
+    }
+    if in_rect(mouse, l.seed_plate) {
+        return Some(3); // `UICharacterNameButton.cs:69`
+    }
+    for (k, _) in l.size_buttons.iter().enumerate() {
+        if in_rect(mouse, l.size_buttons[k]) {
+            return Some(10 + k as u32); // `GroupOptionButton.cs:216`
+        }
+    }
+    for (k, _) in l.difficulty_buttons.iter().enumerate() {
+        if in_rect(mouse, l.difficulty_buttons[k]) {
+            return Some(20 + k as u32); // `GroupOptionButton.cs:216`
+        }
+    }
+    for (k, _) in l.evil_buttons.iter().enumerate() {
+        if in_rect(mouse, l.evil_buttons[k]) {
+            return Some(30 + k as u32); // `GroupOptionButton.cs:216`
+        }
+    }
+    if in_rect(mouse, l.back) {
+        return Some(40); // `FadedMouseOver` (`:678`)
+    }
+    if in_rect(mouse, l.create) {
+        return Some(41); // `FadedMouseOver` (`:678`)
+    }
+    None
+}
+
 /// The click table over the live geometry, in append order: the two 40x40
 /// icons, the two plates, the three option rows, then Back/Create. Nothing
 /// overlaps (the info rows end 19 px above the description, and the pair sits
@@ -555,7 +628,7 @@ pub fn click_at(l: &Layout, mouse: Vec2) -> Click {
         return Click::RandomName; // `:497-503`
     }
     if in_rect(mouse, l.seed_button) {
-        return Click::Seed; // `:505-511` degraded, see `Click::Seed`
+        return Click::SeedIcon; // `:505-511` degraded, see `Click::SeedIcon`
     }
     if in_rect(mouse, l.name_button) {
         return Click::Name; // `:689-695`
@@ -1559,7 +1632,7 @@ mod tests {
         let l = layout(Vec2::new(1600.0, 900.0), 40.0);
         let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
         assert_eq!(click_at(&l, centre(l.random_name_icon)), Click::RandomName);
-        assert_eq!(click_at(&l, centre(l.seed_button)), Click::Seed);
+        assert_eq!(click_at(&l, centre(l.seed_button)), Click::SeedIcon);
         assert_eq!(click_at(&l, centre(l.name_button)), Click::Name);
         assert_eq!(click_at(&l, centre(l.seed_plate)), Click::Seed);
         assert_eq!(click_at(&l, centre(l.size_buttons[0])), Click::Size(0));
@@ -1573,6 +1646,49 @@ mod tests {
         assert_eq!(click_at(&l, centre(l.create)), Click::Create);
         // Empty space clicks nothing.
         assert_eq!(click_at(&l, Vec2::new(100.0, 100.0)), Click::None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the world creator's per-site click cues:
+    /// the two plate icons and the three option rows ride the
+    /// `GroupOptionButton.LeftMouseDown` 12 (`GroupOptionButton.cs:255`),
+    /// the naming/seed/create handlers play 10 (`:691`/`:704`/`:712`);
+    /// Back answers `None` (its `GoBack` 11 rides the flow hop, `:672`).
+    #[test]
+    fn doc_sweep_world_creator_click_cues() {
+        assert_eq!(click_cue(Click::RandomName), Some(12));
+        assert_eq!(click_cue(Click::SeedIcon), Some(12));
+        for s in 0..=2u8 {
+            assert_eq!(click_cue(Click::Size(s)), Some(12), "size {s}");
+            assert_eq!(click_cue(Click::Evil(s)), Some(12), "evil {s}");
+        }
+        for d in 0..=3u8 {
+            assert_eq!(click_cue(Click::Difficulty(d)), Some(12), "difficulty {d}");
+        }
+        assert_eq!(click_cue(Click::Name), Some(10));
+        assert_eq!(click_cue(Click::Seed), Some(10));
+        assert_eq!(click_cue(Click::Create), Some(10));
+        assert_eq!(click_cue(Click::Back), None, "the hop plays the 11");
+        assert_eq!(click_cue(Click::None), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the world creator's hover census: the
+    /// plate icons, both plates, the ten option rows and Back/Create all
+    /// answer stable ids; the preview and empty space are silent.
+    #[test]
+    fn doc_sweep_world_creator_hover_elements() {
+        let l = layout(Vec2::new(1600.0, 900.0), 40.0);
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+        assert_eq!(hover_element(&l, centre(l.random_name_icon)), Some(0));
+        assert_eq!(hover_element(&l, centre(l.seed_button)), Some(1));
+        assert_eq!(hover_element(&l, centre(l.name_button)), Some(2));
+        assert_eq!(hover_element(&l, centre(l.seed_plate)), Some(3));
+        assert_eq!(hover_element(&l, centre(l.size_buttons[1])), Some(11));
+        assert_eq!(hover_element(&l, centre(l.difficulty_buttons[3])), Some(23));
+        assert_eq!(hover_element(&l, centre(l.evil_buttons[2])), Some(32));
+        assert_eq!(hover_element(&l, centre(l.back)), Some(40));
+        assert_eq!(hover_element(&l, centre(l.create)), Some(41));
+        assert_eq!(hover_element(&l, centre(l.preview)), None);
+        assert_eq!(hover_element(&l, Vec2::new(100.0, 100.0)), None);
     }
 
     #[test]

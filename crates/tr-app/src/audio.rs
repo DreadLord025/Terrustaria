@@ -66,6 +66,14 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Player_Hit_0", 1),
     ("Player_Hit_1", 1),
     ("Player_Hit_2", 1),
+    // W4-g22 — the female hurt family (`SoundFemaleHit[3]`,
+    // `LegacySoundPlayer.cs:198-200`): case 20 (`:911-923`) picks
+    // `Female_Hit_<Next(3)>`. The menuMode 2 gender toggle's male->female
+    // preview plays it (`Main.cs:49045`); the voice-variant-2 hurt arm
+    // (`Player.cs:38587`) is the same case.
+    ("Female_Hit_0", 20),
+    ("Female_Hit_1", 20),
+    ("Female_Hit_2", 20),
     // The legacy "Player Killed" id 5 (`Player.PlayDeathSound`,
     // `Player.cs:38745`) — the `Sounds/Player_Killed.xnb` asset.
     ("Player_Killed", 5),
@@ -1953,6 +1961,22 @@ impl Audio {
         Some(cue)
     }
 
+    /// W4-g22 — one female-hurt play (the menuMode 2 gender toggle's
+    /// male->female preview, `Main.cs:49043-49047` `PlaySound(20)`; the
+    /// voice-variant-2 hurt arm `Player.cs:38587` is the same case). The
+    /// preview is unpositioned (`PlayVoicePreview` parks the player at
+    /// `(-1, -1)`, `UICharacterCreation.cs:1522-1524`), so the attenuation
+    /// walk takes the `x == -1` flag arm — no distance gate, only the
+    /// volume-slider checks. The merge compose: delegates to W4-e10's
+    /// shared case-20 tail (the same one `Next(3)` pick, pitchOffset 0 —
+    /// the int overload draws NO `GetRandomPitch` NextFloat).
+    pub fn play_female_hit_sound(
+        &mut self,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        self.female_hit_play(-1.0, -1.0, 0.0, rng)
+    }
+
     /// W4-e10 — the female-voice hurt play (`Player.PlayHurtSound`'s
     /// `voiceOverride 2` arm `Player.cs:38587` / the `voiceVariant 2`
     /// default arm `:38707`): case 20, unpositioned for the local player
@@ -2894,6 +2918,28 @@ pub struct MusicEnv {
     /// and friends, `Main.cs:12463-12494`) — on the front end they come from
     /// the world-creation screen's seed text.
     pub menu_flags: tr_core::seeds::SeedFlags,
+    // — the W4-g22 MENU-FINAL menu-track arms (`Main.cs:12465-12489`) —
+    /// The micro-seed flags beside the classic ones: `Main.vampireSeed` is
+    /// `SecretSeed.vampirism.Enabled` (`WorldGen.cs:555-558`), read by the
+    /// drunk arm's vampire title track (`:12469-12472`).
+    pub menu_micro_flags: tr_core::seeds::MicroSeedFlags,
+    /// `Main.menuMode == 3000` (`:12486-12489`): the credits page plays
+    /// JourneysEnd (89) over every title track except the world-seed ones.
+    pub menu_credits: bool,
+}
+
+/// `Main.onlyShimmerOceanWorldsGeneration` (`Main.cs:2686-2696`): the
+/// property is `drunkWorldGen && tenthAnniversaryWorldGen &&
+/// !remixWorldGen && !everythingWorldGen && !notTheBees` — pure flag
+/// tests over the same `WorldGen.*` statics the menu ladder reads, so
+/// the front-end's seed flags decide it (W4-g22 MENU-FINAL, the 72 arm).
+fn shimmer_ocean_generation(flags: tr_core::seeds::SeedFlags) -> bool {
+    use tr_core::seeds::SeedFlags;
+    flags.contains(SeedFlags::DRUNK)
+        && flags.contains(SeedFlags::TENTH_ANNIVERSARY)
+        && !flags.contains(SeedFlags::REMIX)
+        && !flags.contains(SeedFlags::ZENITH)
+        && !flags.contains(SeedFlags::NOT_THE_BEES)
 }
 
 /// MS-ADPCM music player using the XACT wave bank.
@@ -3080,18 +3126,45 @@ impl MusicSystem {
             let flags = env.menu_flags;
             self.new_music = if flags.contains(tr_core::seeds::SeedFlags::DRUNK) {
                 if flags.contains(tr_core::seeds::SeedFlags::REMIX) {
-                    70 // `remixWorldGen` (`:12470`)
+                    70 // `remixWorldGen` (`:12463`)
+                } else if shimmer_ocean_generation(flags) {
+                    // W4-g22 MENU-FINAL — `Main.onlyShimmerOceanWorldsGeneration`
+                    // (`:12465-12468`): drunk + anniversary WITHOUT remix/
+                    // everything/bees (the property, `Main.cs:2686-2696`)
+                    // plays OtherworldSnow (72). The property's gates are
+                    // pure flag tests — ported as `shimmer_ocean_generation`.
+                    72
+                } else if env
+                    .menu_micro_flags
+                    .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM)
+                {
+                    // W4-g22 MENU-FINAL — `Main.vampireSeed` (`:12469-12472`):
+                    // the vampirism micro seed (`WorldGen.cs:555-558`) plays
+                    // OtherworldCrimson (75).
+                    75
                 } else if flags.contains(tr_core::seeds::SeedFlags::NOT_THE_BEES) {
-                    86 // `notTheBeesWorld` (`:12488`)
+                    86 // `notTheBeesWorld` (`:12473-12476`)
                 } else {
-                    60 // the plain drunk title (`:12498`)
+                    60 // the plain drunk title (`:12477-12480`)
                 }
             } else if flags.contains(tr_core::seeds::SeedFlags::REMIX) {
-                8 // `remixWorldGen` outside drunk (`:12503`)
+                8 // `remixWorldGen` outside drunk (`:12482-12485`)
+            } else if env.menu_credits {
+                // W4-g22 MENU-FINAL — `Main.menuMode == 3000` (`:12486-12489`):
+                // the credits page plays JourneysEnd (89); the port's
+                // `Page::Credits` feeds `menu_credits`.
+                89
             } else if flags.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY) {
-                11 // `tenthAnniversaryWorldGen` (`:12510`)
+                11 // `tenthAnniversaryWorldGen` (`:12490-12493`)
             } else {
-                51 // the tail's `default:` (`:12522`) — no titleMusicStyle
+                // The tail's `default:` (`:12517-12519`) — no titleMusicStyle
+                // setting in the port (the `playOldTile` sun/moon-grab 6 and
+                // the async-load intro 50 arms above it are unported states,
+                // census-recorded in research/90's MENU-FINAL section).
+                // `musicNoCrossFade[51] = true` (`:12217`): the title track
+                // skips the cross-fade ramp (`:12521-12524`).
+                self.music_fade[51] = 1.0;
+                51
             };
             return;
         }
@@ -3775,6 +3848,8 @@ mod tests {
             quiet_sky: true,
             menu: false,
             menu_flags: Default::default(),
+            menu_micro_flags: Default::default(),
+            menu_credits: false,
         }
     }
 
@@ -4987,6 +5062,104 @@ mod tests {
         assert_eq!(m.new_music, 51, "the menu arm is exclusive");
     }
 
+    /// W4-g22 MENU-FINAL witness — the three ported menu-track arms: the
+    /// shimmer-ocean drunk title 72 (`Main.cs:12465-12468`, the property
+    /// `:2686-2696`), the vampire drunk title 75 (`:12469-12472`,
+    /// `WorldGen.cs:555-558`), the credits JourneysEnd 89 (`:12486-12489`)
+    /// — plus the ladder order between them and the title track's
+    /// no-cross-fade jump (`:12217` + `:12521-12524`).
+    #[test]
+    fn menu_final_the_missing_title_arms_land() {
+        use tr_core::seeds::{MicroSeedFlags, SeedFlags};
+        // Drunk + anniversary without remix/everything/bees = the property
+        // holds -> 72, ahead of the plain drunk 60.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK | SeedFlags::TENTH_ANNIVERSARY);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 72, "the shimmer-ocean title");
+        // Every property gate cuts it back: remix wins with 70 first,
+        // everything/bees drop to the plain drunk 60, no anniversary too.
+        for (extra, want) in [
+            (SeedFlags::REMIX, 70),
+            (SeedFlags::ZENITH, 60),
+            (SeedFlags::NOT_THE_BEES, 86),
+        ] {
+            let mut m = system();
+            let mut e = env(false);
+            e.menu = true;
+            e.menu_flags =
+                SeedFlags::from(SeedFlags::DRUNK | SeedFlags::TENTH_ANNIVERSARY | extra);
+            m.decide_new_music(e);
+            assert_eq!(m.new_music, want, "gate {extra}");
+        }
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 60, "drunk alone is not shimmer-ocean");
+        // The vampirism micro seed plays 75 inside the drunk arm only.
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK);
+        e.menu_micro_flags = MicroSeedFlags::from(MicroSeedFlags::VAMPIRISM);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 75, "the vampire title");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_micro_flags = MicroSeedFlags::from(MicroSeedFlags::VAMPIRISM);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "vampirism alone is not drunk");
+        // The shimmer-ocean arm outranks the vampire arm (C# else-if order).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK | SeedFlags::TENTH_ANNIVERSARY);
+        e.menu_micro_flags = MicroSeedFlags::from(MicroSeedFlags::VAMPIRISM);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 72, "shimmer-ocean before vampire");
+        // Credits: 89 outside the seed arms, AFTER remix's 8, BEFORE the
+        // anniversary's 11 (the `:12486` else-if position).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_credits = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 89, "the credits track");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_credits = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::REMIX);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 8, "remix outranks the credits");
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_credits = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::TENTH_ANNIVERSARY);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 89, "the credits outrank the anniversary");
+        // The plain title jumps its fade (musicNoCrossFade[51], `:12217`).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51);
+        assert_eq!(m.music_fade[51], 1.0, "no cross-fade on the title");
+        // The other picks do NOT jump (only 51 is in the no-fade set).
+        let mut m = system();
+        let mut e = env(false);
+        e.menu = true;
+        e.menu_flags = SeedFlags::from(SeedFlags::DRUNK);
+        m.decide_new_music(e);
+        assert_eq!(m.music_fade[60], 0.0, "the drunk title ramps normally");
+    }
+
     /// The front-end tick keeps the volume gate: `musicVolume == 0` silences
     /// the menu track the same way as the world ones (`Main.cs:12461`).
     #[test]
@@ -5101,6 +5274,42 @@ mod tests {
         assert_eq!(sound_type("Item_35"), 2);
         assert_eq!(sound_type("player_hit_chicken"), 42);
         assert_eq!(sound_type("dst_male_hit_0"), 42);
+    }
+
+    /// W4-g22 — the female-hurt play (case 20, the menuMode 2 gender
+    /// toggle's male->female preview `Main.cs:49045`): ONE `Next(3)` slot
+    /// pick on the passed stream (`LegacySoundPlayer.cs:913`), NO pitch
+    /// draw; the muted gate refuses before any draw. The int overload draws
+    /// no GetRandomPitch. Written, not run (code-only mode).
+    #[test]
+    fn g22_the_female_hit_draws_one_next3_and_no_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_female_hit_sound(&mut rng);
+        let want = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // Muted: the gate precedes the switch — draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_female_hit_sound(&mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted female hit is draw-free");
+        // The bank rows resolve to the legacy id 20.
+        for n in 0..3 {
+            let name = format!("Female_Hit_{n}");
+            assert_eq!(sound_type(&name), 20);
+            assert!(SFX_CUES.iter().any(|(c, _)| *c == name), "{name} in the table");
+        }
     }
 
     /// S1-E-21f — the double-jump and splash plays: case 16 draws one

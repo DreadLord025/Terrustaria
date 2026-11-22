@@ -254,6 +254,8 @@ impl App {
         quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
         menu: false,
         menu_flags: Default::default(),
+        menu_micro_flags: Default::default(),
+        menu_credits: false,
         music_box: self.scene_metrics.active_music_box,
         music_box_silence: self.scene_metrics.music_box_silence,
     });

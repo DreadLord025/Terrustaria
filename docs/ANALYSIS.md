@@ -41632,3 +41632,288 @@ g24/g25 + d79/d80), the g21 coverage delta (+26 bare sites, the nurse
 Item4 façade, the Roar fix's −1), the seeds status (2/3 → d79, 4 → this
 family, 6 → d80). The module's D-row defects are unchanged by this pass
 (the family executes the seeds; it does not re-audit).
+## The Main.cs sound sites wave, part 2 (W4-g22, 2026-11-21, code-only mode) — sites 91-105
+
+**Claim read**: g21's claim commit `7e8a7946` (`task/W4-g21-sounds-main-1`,
+pushed) fixes the line-order thirds of the 271-site `Main.cs` `PlaySound`
+census: **g22 owns sites 91-180, lines `:44118`-`:49727`** (re-derived by
+`Select-String 'SoundEngine\.PlaySound\('` over the direct file path —
+271 total, 90 in the window). g23's branch exists locally at the wave-3 base
+with no claim commit; no co-lane overlap inside the window.
+
+**Batch 1 (sites 91-105)** — the in-game-window cue machines, landed as pure
+helpers in `crates/tr-app/src/main_sounds.rs` (module wired in `main.rs`)
+behind witnesses, the `npc_ai_style59` unwired precedent (the stylist hair
+window has no screen, the dresser UI is `chest.rs`'s documented
+out-of-scope, the builder/info-acc toggle rows are unported HUD):
+
+| site | C# | port |
+| --- | --- | --- |
+| 91 `:44118` | hair-cell pick 12 | `main_sounds::hair_cell_pick` (rect+edge; the 12 is the caller's) |
+| 92 `:44152` | OpenClothesWindow 10 | `open_clothes_window_cue(false)` |
+| 93 `:44176` | CancelClothesWindow 11 | `cancel_clothes_window_cue` (open && !quiet) |
+| 94 `:44197` | SaveClothesWindow 7 | `save_clothes_window_cue` (unconditional Grab) |
+| 95/96 `:44285`/`:44294` | Change-button hover enter/leave 12 | `clothes_window_text_hover` |
+| 97/98 `:44343`/`:44352` | Cancel-button hover enter/leave 12 | `clothes_window_text_hover` (shared latch shape) |
+| 99 `:44541` | colour-slot cell pick 12 | `clothes_window_click` (strict rect + edge) |
+| 100 `:44617` | player-dummy cycle 12 | `clothes_window_click` (Contains rect + edge) |
+| 101 `:45178` | TryMovingNPC 12 | LANDED earlier — `app/clicks.rs::handle_carried_housing_head` `Menu_Tick` on `moved` |
+| 102 `:45225` | carried-head right-drop 12 | LANDED earlier — same fn, `right_edge` arm |
+| 103 `:45601` | Settings-button hover-enter 12 | `settings_button_tick` WIRED in `app/frame.rs` after `refresh_button` (prev-frame `button_mouse_over` is the `ref mouseOver`; the `IgnoreMouseInterface`/`mouseInterface` gates are constants-on — the port's HUD hover does not model them) |
+| 104 `:47201` | hideInfo toggle 12 | `info_acc_hide_toggle` (pure flip; cue constant 12) |
+| 105 `:47413` | wire-mode toggle 12 | `builder_acc_toggle(8, s)` |
+
+The hair-window scroll machine (`hair_window_scroll`, `Main.cs:
+43726-43785`) rides along — its wheel/button sites `:43735`/`:43740`/
+`:43759`/`:43773` are g21's (<= `:43936`), recorded here because the
+clamp tail and the cell pick share the window.
+
+**RNG**: every batch-1 site is draw-free (ids 10/11/12/7-int-overload; the
+case-7 Grab pitch draw belongs to the `Audio::play_pickup_sound` seam that
+already landed S1-E-21f — the unwired save cue will ride it). No gameplay
+stream touched.
+
+**Menu seams staged** (`menu/mod.rs` `pending_cue` + `take_cue`,
+`menu/actions.rs` activation reset + Nav cue): the per-site cue queue the
+later batches drain; the App drain lands with batch 2.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+every helper re-read against the cited C# windows; 15 witness tests in
+`main_sounds.rs` WRITTEN NOT RUN.
+
+## W4-g22 batch 2 (2026-11-21, code-only) — sites 106-120 + the menu cue drain
+
+**Batch 2 (sites 106-120)** — the builder-toggle tail + the legacy-menu cue
+queue goes live:
+
+| site | C# | port |
+| --- | --- | --- |
+| 106-109 `:47433`/`:47453`/`:47473`/`:47493` | ruler-line/ruler-grid/paint-sprayer/actuation toggles 12 | `main_sounds::builder_acc_toggle` slots 0/1/3/2 (batch-1 helper, census rows land here) |
+| 110 `:47556` | wire-brightness cycle 12 | `builder_acc_toggle` slots 4/5/6/7/9 (wrap-at-3) |
+| 111 `:48489` | first-launch language pick 10 | `Act::SetLanguage` on `LanguageInitial` queues `Menu_Open` |
+| 112 `:48516` | language-page Back 11 | `Act::Nav` parent relation queues `Menu_Close` |
+| 113 `:48522` | language-page row 12 | `Act::SetLanguage` on `Language` queues `Menu_Tick` |
+| 114 `:48551` | join-password text edit 12 | `Menu::character`/Backspace change-diff queues `Menu_Tick` |
+| 115 `:48621` | connecting-cancel 11 | UNPORTED surface — the port's connecting overlay has no cancel row (the netglue drop path is the disconnect, not a menu click); recorded, no seam invented |
+| 116 `:48651` | mode-882 cancel 11 | UNPORTED surface (Steam join cancel, spec §9.1) — recorded |
+| 117 `:48675` | host-password text edit 12 | same `character`/Backspace seam as 114 |
+| 118 `:48786` | 889 lobby XOR 12 | `Toggle::ServerLobby` queues `Menu_Tick` |
+| 119/120 `:48790`/`:48794` | FriendsCanJoin/FriendsOfFriends XOR 12 | UNPORTED rows (blank without Steam, `pages.rs` server_settings_items) — the toggle arm's cue rule covers them when the rows land |
+
+**The App drain** (`app/loop.rs`): the click path replaces the blanket
+`Menu_Tick`-on-non-None-action with `m.take_cue()` (the C# plays 10/11/12 per
+site, never a uniform tick — the Quit row `:48975-48978` is silent); the key
+path drains after `character` and after `key`. The hover tick
+(`DoStatefulTickSound`, `:3244`/`:3256`) stays — g21's site, not this batch's.
+
+**Cue rules landed** (`menu/actions.rs`): Nav forward 10 / Back 11 via the
+`parent()` relation with the per-site exceptions (Settings→Volume plays 11
+`:49741`; the input Accept rows are cue-less; HostPassword Back is silent
+`ExitServerPasswordMenu :52020-52031`; the password Backs keep vanilla's 11
+despite the deviated targets); Out rows (Singleplayer/Achievements/ConfirmYes
+10, ConfirmNo/ReturnToWorld 11, Quit/Host/Join silent); toggles 12 except the
+silent cycles (MinimapFrame `:49945`, ResourceSets `:49951`, BossBarText
+`:49970` — the cycle helpers draw no sound) and the port's invented Zoom row;
+SetLanguage 10/12 by page; PickColor 10 (`:50256`/`:50265`); Escape parent-walk
+11 (the `flag5` gamepad-Back stand-in).
+
+**RNG**: all batch-2 sites draw-free (ids 10/11/12 int overload). The
+`:49076` randomize `Next(51)` chain is batch 3's — untouched here.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+7 menu witnesses + the batch-1 helpers' census rows WRITTEN NOT RUN. The
+in-flight Nav relation's swapped branches were fixed against the C# (Back =
+`parent(current) == target`, not the reverse).
+
+## W4-g22 batch 3 (2026-11-21, code-only) — sites 121-135
+
+**Batch 3 (sites 121-135)** — the legacy char-creation preview machines
+(menuModes 2/17/20/222, superseded by the 888 `UICharacterCreation` screen
+in the port) land as pure helpers behind witnesses, the `npc_ai_style59`
+unwired precedent; the case-20 female-hit play gains a live `Audio` seam:
+
+| site | C# | port |
+| --- | --- | --- |
+| 121 `:48802` | 889 Start -> host-password 10 | `Act::Nav(ServerSettings -> HostPassword)` queues `Menu_Open` (batch-2 Nav rule) |
+| 122 `:48806` | 889 Back 11 | `Act::Nav` parent relation queues `Menu_Close` |
+| 123 `:48822` | mode-15 disconnect-cancel 11 | UNPORTED surface (the connecting overlay has no cancel row) — recorded |
+| 124 `:48843` | mode-200 Load-Backup success 10 | UNPORTED surface (no corrupt-world recovery screen) — recorded |
+| 125 `:48849` | mode-200 no-backup 11 | UNPORTED — recorded |
+| 126 `:48857` | mode-200 Back 11 | UNPORTED — recorded |
+| 127 `:48876` | mode-201 Back 11 | UNPORTED — recorded |
+| 128 `:48917` | Singleplayer row 10 | LANDED batch 2 — `Act::Out(Singleplayer)` queues `Menu_Open` |
+| 129 `:48925` | Multiplayer row 10 | LANDED batch 2 — `Act::Nav(Main -> Multiplayer)` |
+| 130 `:48932` | Achievements row 10 | LANDED batch 2 — `Act::Out(Achievements)` |
+| 131 `:48942` | Workshop row 10 | UNPORTED (Steam Workshop, spec §9.1) — recorded |
+| 132 `:48954` | ResourcePacks row 10 | `Act::Hint` (the port's "not ported yet" notice) — the C# plays 10 then opens the packs menu; the port's Hint row is cue-less (the notice is not the vanilla open). Recorded deviation |
+| 133 `:48962` | Settings row 10 | LANDED batch 2 — `Act::Nav(Main -> Settings)` |
+| 134 `:48969` | Credits row 10 | LANDED batch 2 — `Act::Nav(Main -> Credits)` |
+| 135 `:48991` | mode-2 Hair-color open 10 | `main_sounds` legacy preview helper (the 888 `Click_ColorPicker` plays 12, a DIFFERENT site — the legacy mode-2 row is unwired) |
+
+**The pure helpers** (`main_sounds.rs`): `gender_toggle_cue` (the mode-2
+male<->female split, case 20 / case 1, `:49041-49052`),
+`randomize_hair_legacy` (the `Next(51)` legacy pool, NOT the 888's 213-id
+`AvailableHairstyles`, `:49076`), `rand_color_legacy` (the rejection-sampled
+`randColor`, three `Next(256)` while sum <= 150, `:47871-47883`),
+`hair_cycle_legacy` (the mode-17 +/- wrap at 51, `:49243-49259`),
+`cycle_clothing_style` (the gender variant-order walk skipping DLC 10/11,
+`:52397-52457` — NO RNG, a pure table walk).
+
+**The live audio seam** (`audio.rs`): `play_female_hit_sound` — case 20
+(`LegacySoundPlayer.cs:911-923`), ONE `Next(3)` slot pick on the caller's
+stream AFTER the unpositioned audibility gate, NO pitch draw; the
+`Female_Hit_0/1/2` bank rows resolve to legacy id 20. This is the seam the
+gender-toggle preview and the voice-variant-2 hurt arm (`Player.cs:38587`)
+will ride; the gameplay hurt drain stays variant-1 (the port has no voice
+setting, the standing deviation).
+
+**RNG**: the case-20 slot pick is the only draw in the live seam (one
+`Next(3)`, caller's stream, gate-first). The unwired legacy preview helpers
+draw on the caller's injected closure — `randomize_hair_legacy` one
+`Next(51)`, `rand_color_legacy` three `Next(256)` per rejection attempt;
+`cycle_clothing_style`/`hair_cycle_legacy`/`gender_toggle_cue` draw nothing.
+No gameplay stream touched (the helpers are unwired; the female-hit seam is
+caller-stream).
+
+**Scope note**: the 888 `UICharacterCreation` inline cues (`Click_ColorPicker
+:1239`, `UIDifficultyButton :84`, `UIHairStyleButton :82`, etc.) are a
+SEPARATE census from the `Main.cs` window g22 owns — they are NOT re-ported
+here (the port's blanket `Menu_Open` on the 888 clicks is the standing
+deviation, recorded for the UI-sounds lane). The legacy mode-2/17/20/222
+rows are unwired because the 888 screen superseded them.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+5 `main_sounds` witnesses + 1 `audio` witness WRITTEN NOT RUN.
+
+## W4-g22 batch 4 (2026-11-21, code-only) — sites 136-150
+
+**Batch 4 (sites 136-150)** — the legacy char-creation colour/difficulty/
+clothes row cues (menuModes 2/20/222/17) land as pure census helpers behind
+witnesses (the 888 `UICharacterCreation` superseded these screens; the rows
+are unwired, the `npc_ai_style59` precedent):
+
+| site | C# | port |
+| --- | --- | --- |
+| 136 `:48997` | mode-2 Eyes colour open 10 | `char_creation_row_cue(1)` |
+| 137 `:49003` | mode-2 Skin colour open 10 | `char_creation_row_cue(2)` |
+| 138 `:49009` | mode-2 Clothes open 10 | `char_creation_row_cue(3)` |
+| 139 `:49045` | mode-2 gender male->female 20 | LANDED batch 3 — `gender_toggle_cue(true)` + `Audio::play_female_hit_sound` |
+| 140 `:49050` | mode-2 gender female->male 1 | LANDED batch 3 — `gender_toggle_cue(false)` (case-1 seam `sound::player_hit_case1`) |
+| 141 `:49070` | mode-2 difficulty open 10 | `char_creation_row_cue(5)` |
+| 142 `:49075` | mode-2 Randomize 12 | `char_creation_row_cue(7)` + `randomize_hair_legacy` (batch 3) |
+| 143 `:49114` | mode-2 Back 11 | `char_creation_row_cue(8)` |
+| 144 `:49119` | mode-2 Create/name 10 | `char_creation_row_cue(6)` |
+| 145 `:49176` | mode-20 Shirt colour open 10 | `clothes_colour_row_cue(0)` |
+| 146 `:49182` | mode-20 Undershirt colour open 10 | `clothes_colour_row_cue(1)` |
+| 147 `:49188` | mode-20 Pants colour open 10 | `clothes_colour_row_cue(2)` |
+| 148 `:49195` | mode-20 Shoes colour open 10 | `clothes_colour_row_cue(3)` |
+| 149 `:49200` | mode-20 Back 11 | `clothes_colour_row_cue(5)` |
+| 150 `:49205` | mode-20 Style cycle 12 | `clothes_colour_row_cue(4)` + `cycle_clothing_style` (batch 3) |
+
+**The pure helpers** (`main_sounds.rs`): `char_creation_row_cue` (the mode-2
+per-row ids, the gender row `None` — gender-dependent), `difficulty_select_cue`
+(the mode-222 block is SILENT — no `PlaySound`, `:49154-49168`),
+`clothes_colour_row_cue` (the mode-20 colour opens 10 / Style cycle 12 /
+Back 11).
+
+**RNG**: every batch-4 site is draw-free (ids 10/11/12 int overload; the
+case-20/case-1 gender picks landed batch 3). The Randomize row's `Next(51)`
+chain is batch 3's `randomize_hair_legacy` — the cue (12) precedes the draw
+in the C# order (`:49075` then `:49076`). No gameplay stream touched.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+3 `main_sounds` witnesses WRITTEN NOT RUN.
+
+## W4-g22 batch 5 (2026-11-21, code-only) — sites 151-165
+
+**Batch 5 (sites 151-165)** — the hair-style screen, the colour-picker Backs,
+and the legacy world-creation difficulty/evil rows (menuModes 17/18/19/21/22/
+23/24/-7/-71/5/40) land as pure census helpers behind witnesses (the 888
+`UIWorldCreation`/HSL screens superseded them; unwired, the `npc_ai_style59`
+precedent). The mode-5/40 confirm rows are ALREADY wired through the batch-2
+`Act::Out(ConfirmYes/ConfirmNo)` cue arms:
+
+| site | C# | port |
+| --- | --- | --- |
+| 151 `:49245` | mode-17 forward hair cycle 12 | `hair_style_screen_cue(0, _)` + `hair_cycle_legacy` (batch 3) |
+| 152 `:49254` | mode-17 back hair cycle 12 | `hair_style_screen_cue(_, true)` |
+| 153 `:49265` | mode-17 Back 11 | `hair_style_screen_cue(2, false)` |
+| 154 `:49289` | mode-18 (Eyes colour) Back 11 | `colour_screen_back_cue` |
+| 155 `:49313` | mode-19 (Skin colour) Back 11 | `colour_screen_back_cue` |
+| 156 `:49337` | mode-21 (Shirt colour) Back 11 | `colour_screen_back_cue` |
+| 157 `:49361` | mode-22 (Undershirt colour) Back 11 | `colour_screen_back_cue` |
+| 158 `:49385` | mode-23 (Pants colour) Back 11 | `colour_screen_back_cue` |
+| 159 `:49409` | mode-24 (Shoes colour) Back 11 | `colour_screen_back_cue` |
+| 160 `:49430` | mode-5 confirm Yes 10 | LANDED batch 2 — `Act::Out(ConfirmYes)` |
+| 161 `:49436` | mode-5 confirm No 11 | LANDED batch 2 — `Act::Out(ConfirmNo)` |
+| 162 `:49457` | mode-40 discard Yes 10 | LANDED batch 2 — `Act::Out(ConfirmYes)` |
+| 163 `:49463` | mode-40 discard No 11 | LANDED batch 2 — `Act::Out(ConfirmNo)` |
+| 164 `:49506` | mode -7 Classic difficulty 10 | `world_difficulty_row_cue(2)` |
+| 165 `:49516` | mode -7 Expert difficulty 10 | `world_difficulty_row_cue(3)` |
+
+**The pure helpers** (`main_sounds.rs`): `hair_style_screen_cue` (the mode-17
+forward/back cycle 12 + Back 11, the `selectedMenu2` secondary-cursor read),
+`colour_screen_back_cue` (the six colour-picker Backs all play 11),
+`world_difficulty_row_cue` (the mode -7 Classic/Expert/Master 10 + Back 11),
+`world_evil_row_cue` (the mode -71 Corruption/Crimson/Random 10 + Back 11 —
+lands ahead of its census rows 168-171, the helper is shared).
+
+**RNG**: every batch-5 site is draw-free (ids 10/11/12 int overload). No
+gameplay stream touched.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+4 `main_sounds` witnesses WRITTEN NOT RUN.
+
+## W4-g22 batch 6 (2026-11-21, code-only) — sites 166-180 (WINDOW COMPLETE)
+
+**Batch 6 (sites 166-180)** — the world-evil tail, the world-select scroll
+machine (with its PlayerList/WorldList clamp quirk), the mode-9 confirm, the
+credits Back, and the settings-page forward rows. With this batch the g22
+window (sites 91-180, `Main.cs:44118-49727`) is COMPLETE — all 90 sites
+ported, wired, or recorded as unported surfaces:
+
+| site | C# | port |
+| --- | --- | --- |
+| 166 `:49526` | mode -7 Master difficulty 10 | `world_difficulty_row_cue(4)` (batch 5) |
+| 167 `:49536` | mode -7 Back 11 | `world_difficulty_row_cue(5)` (batch 5) |
+| 168 `:49558` | mode -71 Corruption 10 | `world_evil_row_cue(0)` (batch 5) |
+| 169 `:49566` | mode -71 Crimson 10 | `world_evil_row_cue(1)` (batch 5) |
+| 170 `:49574` | mode -71 Random evil 10 | `world_evil_row_cue(2)` (batch 5) |
+| 171 `:49582` | mode -71 Back 11 | `world_evil_row_cue(3)` (batch 5) |
+| 172 `:49645` | mode-8 world-scroll up 12 | `world_select_scroll` (up edge) |
+| 173 `:49654` | mode-8 world-scroll down 12 | `world_select_scroll` (down edge, the PlayerList-guard/WorldList-clamp quirk `:49656-49658`) |
+| 174 `:49664` | mode-8 Back 11 | the 888 `UIWorldSelect` Back (the port's `FlowClick::WorldBack` plays `Menu_Close`, `app/flow.rs:1267`) |
+| 175 `:49670` | mode-8 world-card pick 10 | the 888 `UIWorldListItem` play (the port's `FlowClick::WorldPlay` plays `Menu_Open`, `app/flow.rs:1269`) |
+| 176 `:49684` | mode-9 confirm Yes 10 | LANDED batch 2 — `Act::Out(ConfirmYes)` |
+| 177 `:49689` | mode-9 confirm No 11 | LANDED batch 2 — `Act::Out(ConfirmNo)` |
+| 178 `:49702` | mode-3000 credits Back 11 | LANDED batch 2 — `Act::Nav(Credits -> Main)` parent relation |
+| 179 `:49720` | mode-112 General open 10 | LANDED batch 2 — `Act::Nav(Settings -> General)`; census pin `settings_page_row_cue(0)` |
+| 180 `:49727` | mode-112 Interface open 10 | LANDED batch 2 — `Act::Nav(Settings -> Interface)`; census pin `settings_page_row_cue(1)` |
+
+**The pure helpers** (`main_sounds.rs`): `world_select_scroll` (the mode-8
+up/down 5-step machine, the C# clamp quirk kept — the down-step's overflow
+guard reads `PlayerList.Count - 7` but clamps to `WorldList.Count - 7`,
+`:49656-49658`), `settings_page_row_cue` (the mode-112 forward rows 10, the
+Volume 11 quirk, Back 11).
+
+**RNG**: every batch-6 site is draw-free (ids 10/11/12 int overload). No
+gameplay stream touched.
+
+**Window summary (91-180)**: 90 sites — the live seams (the menu cue queue
+`Menu::pending_cue`/`take_cue` drained by `app/loop.rs`, the Settings-button
+hover tick in `app/frame.rs`, the case-20 female-hit `Audio` seam, the
+housing-head 12s already landed) plus the pure census helpers for the
+unwired legacy screens (hair/clothes windows, builder/info-acc toggles, the
+char-creation preview modes 2/17/20/222, the colour-picker Backs, the
+world-creation difficulty/evil rows, the world-select scroll). The unported
+surfaces (the connecting-cancel, the corrupt-world recovery modes 200/201,
+the Steam Workshop/ResourcePacks opens, the 889 Friends XOR rows) are
+recorded, not invented. The 888 `UICharacterCreation`/`UIWorldCreation`
+inline cues are a SEPARATE census (not re-ported here).
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+3 `main_sounds` witnesses WRITTEN NOT RUN. Total g22 witnesses: 13 (batch 1)
++ 7 (batch 2 menu) + 6 (batch 3: 5 main_sounds + 1 audio) + 3 (batch 4)
++ 4 (batch 5) + 3 (batch 6) = 36 written, not run (28 main_sounds + 7 menu
++ 1 audio).
+
