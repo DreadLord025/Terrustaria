@@ -109,14 +109,14 @@ format and alpha behaviour as the vanilla XNA stack, so the frame is pixel-ident
 | Depth / rasterizer state | PORTED (by omission) | `sprite.rs:345-349`, `water_mask.rs:102-107` | Vanilla: `DepthStencilState.None` for the world, `DepthStencilState.Default` for the immediate batches (`Main.cs:23696`, `38835`), `RasterizerState.CullNone` in several places, `Main.Rasterizer` = `CullCounterClockwise`/`CullClockwise` elsewhere. Port: `depth_stencil: None`, `cull_mode: None` everywhere — draw order is the only ordering, which matches the vanilla's `CullNone` majority but silently accepts the two `CullCounterClockwise` batches (`Main.cs:57948`, `58037`) whose winding the port does not reproduce (D-6). |
 | Sampler state: `PointClamp` | PORTED | `sprite.rs:179-187` | One nearest + clamp-to-edge sampler for the whole atlas; matches `Main.DefaultSamplerState = PointClamp` (`Main.cs:2780`). |
 | Sampler state: `LinearClamp` (`Main.cs:45025`, `48204`, `55613`) | MISSING | — | The vanilla's UI/logo paths that sample linearly (and `Main.SamplerStateForCursor`, `Main.cs:45257`) cannot be reproduced; the port has one sampler for every draw. |
-| Scissor rects | MISSING | — | The vanilla saves/restores `GraphicsDevice.ScissorRectangle` around scissored batches (`Main.cs:25403-25424`, `Main.cs:40406-40414`, `Main.ScissorState` at `Main.cs:2329`). The port has **no scissor anywhere** — `grep set_scissor` over `crates/` returns nothing, and `tr-app/src/ui/char_creation.rs:1859` admits it: "the port has no scissor, so they are skipped" (`UIList.OverflowHidden`). |
+| Scissor rects | PORTED (S1-H-2/S1-G-5, 2026-11-13/14; W4-d67 2026-11-20) | `tr-render/src/clip.rs` (`ClipStack`/`intersect`/`NO_CLIP`), `SpriteInstance.clip` + the fragment discard in `sprite.wgsl`; consumers `ui/char_creation.rs` (hair list), `ui/char_select.rs`/`world_select.rs` (card lists), `ui/achievements.rs` (clipped text), `ui/bestiary.rs` (entry portraits), `ui/crafting.rs` (recipe grid, W4-d67) | The vanilla saves/restores `GraphicsDevice.ScissorRectangle` around scissored batches (`UIElement.cs:222-237`; the two `Main.cs` sites `25403-25424`/`40406-40414` are the deferred portrait dummies). The port batches all UI into one instanced draw, so the scissor is a per-instance rect + fragment discard (the recorded deviation, ANALYSIS "UI list clipping (S1-H-2)"), not `set_scissor_rect` device state. The old `char_creation.rs:1859` "no scissor" skip is gone. |
 | Screen shake / camera offset | PARTIAL | `tr-app/src/settings.rs:180,291` (flag only) | Vanilla: `Main.UseScreenShake` (435, default true at 66575) plus the `MoonLordShake` **screen filter** (`Main.cs:64976-64984`, `Main.cs:52194`). The port keeps the option flag but the filter is inert: `PASS_TABLE` maps `"MoonLordShake" → FilterMoonLordShake` with pass index **0** = passthrough (`post.rs:147`). No camera-offset shake exists in vanilla either (the only `shake` hits are `UseScreenShake`, `MoonLordShake`, tree shakes, `punchCameraModifier.IsAScreenShake`), so the camera model matches; the *filter* is missing (D-7). |
 | View transform / zoom | PARTIAL | `sprite.wgsl:85-89`, `frame.rs` (draw_cam) | Vanilla: `Main.Transform = GameViewMatrix.TransformationMatrix` (2743) — a CPU-side matrix; the zoom is `GameZoomTarget` clamped 1..2 (`Main.cs:16808`, `16812`) with `ForcedMinimumZoom` (243). Port: the transform is computed in the vertex shader from `Globals.cam`/`zoom`; the zoom clamp exists in the settings loader (`settings.rs:446`) but the *runtime* `GameZoomTarget` step and `ForcedMinimumZoom` have no located equivalent (module 01/02 territory). The port additionally snaps the camera to the zoom grid (`frame.rs:817` per module 02) — vanilla applies a raw scale matrix (D-8). |
 | Render-target format & alpha semantics | PORTED | `gpu.rs:87-92,94-112,145-176`, `post.rs:512` | The surface picks the first **sRGB** format; the offscreen scene target reuses `gpu.config.format` (`gpu.rs:145`) so the scene pass sRGB-encodes on store and the filter pass round-trips byte-exact (`post.rs:20-25`). Atlas and map textures are `Rgba8UnormSrgb` (`sprite.rs:143`, `541`); the font pages are BC2/DXT3 (`sprite.rs:443`) — the retail `SurfaceFormat.Dxt3`. Alpha: `alpha_mode = caps.alpha_modes[0]` (opaque on desktop) and the atlas keeps the authored alpha; the water mask is `R8Unorm` (`water_mask.rs:20`). |
 | Tiles 16 px on an 18 px sheet grid | PORTED | `atlas.rs::SheetLayout::Tile` (13-33) | `geometry() == (18, 0)` — matches AGENTS.md and `ANALYSIS.md:1416`. |
 | Walls 36 px cells with an 8 px inset | PORTED | `atlas.rs::SheetLayout::Wall` (13-33) | `geometry() == (36, 8)`; `ANALYSIS.md:1417` documents the vanilla's 32×32 source rect offset by −8 landing the inner 16×16 on the tile. |
 | Tree trunks 20×20 on a 22 px grid | PORTED | `tr-core/src/tree.rs:15,17` (`TRUNK_GRID = 22`, `TRUNK_SIZE = 20.0`), `assets.rs:2511-2512` | Matches AGENTS.md; trees bypass the 16×16 block-frame table (`assets.rs::rect_uv`). |
-| WGSL tint | PORTED (S1-G-4, 2026-11-14) | `sprite.wgsl` — the piecewise sRGB EOTF helpers (`srgb_decode`/`srgb_encode`) and the gamma-space product `decode(encode(painted) * tint)` | The vanilla's formats are plain `Color` (no decode), so its SpriteBatch multiplies sRGB bytes in gamma space and the backbuffer stores the product raw; the port's sRGB atlas + swapchain re-derive that byte exactly by linearising the product once. `tint_parity_with_the_csharp_byte_multiply` pins it over every `(tex, tint)` pair (exact against the rounded float product, ±1 against the truncating `Color * Color` reading); alpha stays un-linearised (correct). |
+| WGSL tint | PORTED (S1-G-4, 2026-11-14; re-verified W4-d67 2026-11-20) | `sprite.wgsl` — the piecewise sRGB EOTF helpers (`srgb_decode`/`srgb_encode`) and the gamma-space product `decode(encode(painted) * tint)` | The vanilla's formats are plain `Color` (no decode), so its SpriteBatch multiplies sRGB bytes in gamma space and the backbuffer stores the product raw; the port's sRGB atlas + swapchain re-derive that byte exactly by linearising the product once. `tint_parity_with_the_csharp_byte_multiply` pins it over every `(tex, tint)` pair (exact against the rounded float product, ±1 against the truncating `Color * Color` reading); alpha stays un-linearised (correct). |
 | Paint recolour | PARTIAL | `sprite.wgsl:113-170` | 32-entry `paint_rgb` table + `paint_recolor`; the vanilla's compiled HLSL passes are not in the decompile — the port washes the texel with the hue and lets the luminance carry detail (`ANALYSIS.md:673-684`). The wash runs on linear samples and the `paint_rgb`/dye constants decode with the same piecewise EOTF (S1-G-4); the wash *shape* itself stays the documented reconstruction (D-5's residue). |
 | Armor-dye passes | PARTIAL | `sprite.wgsl:181-195`, `sprite.rs:54-63,722` | Two reconstructed modes (colour wash, gradient) over a 48-slot uniform table; the vanilla's `.fx` bytecode is not in the decompile (documented in `sprite.wgsl:172-180`). |
 | Post-filter chain | PARTIAL | `post.rs` + `post.wgsl` | 9 of the 29 `Filters.Scene` rows are wired (Graveyard, Noir, BloodMoon, Sandstorm ×2, Blizzard ×2, Heat, Water); the other 20 resolve to the passthrough (`post.rs:136-175`). The distortion amplitudes are visual approximations (`post.wgsl:134-137`). |
@@ -208,7 +208,11 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   reconstruction (the `.fx` bytecode is not in the decompile — `ANALYSIS.md:673-684`).
   Tests: `srgb_eotf_round_trips_every_byte`, `tint_parity_with_the_csharp_byte_multiply`
   (256×256 pairs), `sprite_wgsl_compiles_headless`; the A/B shots show the corrected
-  output (max 9 LSB over the frame, deterministic).
+  output (max 9 LSB over the frame, deterministic). **W4-d67 re-verify 2026-11-20
+  (code-only):** helpers + all consumers intact, no `pow(2.2)` residue in any
+  `tr-render` shader, the CPU mirror matches branch-for-branch; no edit owed.
+  Goldens stale-by-design after the S1-G-12b repack — re-pin per
+  `docs/GOLDEN_REPIN.md` (b4).
 - **D-6 — Rasteriser culling not reproduced (pixel, low).** The vanilla flips
   `Main.Rasterizer` between `CullCounterClockwise` (56690) and `CullClockwise` (62006)
   and uses `RasterizerState.CullNone` for the immediate batches; the port is
@@ -230,7 +234,7 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   `Main.cs:61999`) has **no located equivalent** — the port therefore renders a wider
   world view than vanilla on wide screens. Module 01/02 own the camera; flagged here
   because it is a *graphics-layer* contract.
-- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors** **VERIFIED-DONE 2026-11-14 (S1-G-5):** the scissor landed with S1-H-2 (the `ClipStack` + the per-instance clip rect + the WGSL discard; the clipped UI rows = the lists and the achievements). The original text follows.
+- **D-9 — Scissor clipping absent (behavioural + pixel, medium).** Vanilla scissors** **VERIFIED-DONE 2026-11-14 (S1-G-5):** the scissor landed with S1-H-2 (the `ClipStack` + the per-instance clip rect + the WGSL discard; the clipped UI rows = the lists and the achievements). **W4-d67 (2026-11-20):** the crafting recipe grid joined the consumers (`ui/crafting.rs` `push_clip(l.list)`, the `GetGridParameters` origin fix, the `hit_test` clipped-ancestor rule). The original text follows.
   UI lists (`Main.ScissorState`, `Main.cs:2329`; `Main.cs:40406-40414`,
   `25403-25424`). The port has no scissor (`char_creation.rs:1859`); clipped UI
   regions (inventory/scroll lists, `UIList.OverflowHidden`) bleed or are skipped.
@@ -298,10 +302,19 @@ equation, the tint pre-linearisation, the draw-call count or the atlas UV phase.
   order. The instance data already carries a per-instance tint, so the port needs a
   per-range or per-instance blend selector (a small pipeline switch in
   `draw_ranges`). Depends on the S blend test (to keep both equations provable).
-- **M** — Add scissor support: a `wgpu::RenderPass::set_scissor_rect` driven by a
+- **M** — ~~Add scissor support: a `wgpu::RenderPass::set_scissor_rect` driven by a
   per-range scissor rect in `SpriteRenderer`, then port the two vanilla sites
   (`Main.cs:40405-40414` UI, `Main.cs:25403-25424` world) and the
-  `UIList.OverflowHidden` skip in `ui/char_creation.rs:1859`. Depends on nothing.
+  `UIList.OverflowHidden` skip in `ui/char_creation.rs:1859`~~ **consumed by
+  S1-H-2/S1-G-5 (2026-11-13/14) + W4-d67 (2026-11-20)**: the scissor landed as a
+  per-instance `clip` vec4 + fragment discard (`clip.rs`, `sprite.wgsl` — one
+  instanced draw ⇒ no device scissor state, the recorded deviation); the
+  `char_creation` hair-list skip became the `push_clip` consumer, the
+  char/world-select lists and achievements followed, and W4-d67 added the
+  crafting recipe grid (`ui/crafting.rs`, `UIList.cs:59`) with the
+  `GetGridParameters` origin fix. The two `Main.cs` sites are the bestiary/
+  dialogue portrait dummies — they ride the deferred `Main.DrawNPCPortrait`
+  system, not the scissor infrastructure. Depends on nothing.
 - **M** — Write down the *draw-order contract*: a golden list of the ranges and the
   vanilla buckets they correspond to (module 02 owns the phase order; this owns the
   intra-range order), plus a note in `docs/ANALYSIS.md` on D-11 (Deferred sorting).
