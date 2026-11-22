@@ -14,7 +14,7 @@ per `docs/superpowers` agreements).
 | 01 | Main update loop / time / camera / input | `01-main-update-loop.md` | рџ”„ |
 | 02 | Main draw pipeline / scene layers / effects | `02-main-draw-pipeline.md` | рџ”„ |
 | 03 | Player core (movement, life/mana, death) | `03-player-core.md` | рџ”„ |
-| 04 | Player combat (hurt/damage, item use, buffs) | `04-player-combat.md` | рџ”„ |
+| 04 | Player combat (hurt/damage, item use, buffs) | `04-player-combat.md` | ✅ SEALED (W4-f50 retire — the hurt-family bible; non-hurt M5-COMBAT seeds stay open) |
 | 05 | NPC core (defaults, AI dispatch, net sync) | `05-npc-core.md` | рџ”„ |
 | 06 | Projectile core (defaults, AI dispatch, damage) | `06-projectile-core.md` | рџ”„ |
 | 07 | Item core (defaults, prefixes, tooltips) | `07-item-core.md` | рџ”„ |
@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 97 | DOC-SWEEP lane 19: dodge/immune family (W4-d115: the afterimage DRAW port + ImmunityCooldownID table + CrossNecklace shield-layer census + the MISSING buff-321 stat arm + the stacking-order verify; code-only, 16 witnesses) | `97-doc-sweep-dodge.md` | ✅ |
+| W4-f50-retire | The hurt retire receipts (Panic-63 + rederive-ladder drop-hunks re-pinned at 18eeb4f44 + the NEW f48 third-copy sub-receipt; the f3-stealth mutual receipt — compose 1:1, f3-canonical; the g64-608 keep-yours note — no-608-row confirmed at 625c449e0, BlastRng→DustDraw fold; the d70-paladin MP-peer-Hurt task seed; research/04 SEALED + the hurt-family bible; the ONE-paragraph HURT merger-instruction) | `W4-f50-closeout.md` | ✅ receipts recorded (code-only) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

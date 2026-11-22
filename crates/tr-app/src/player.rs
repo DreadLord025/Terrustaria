@@ -1525,6 +1525,59 @@ pub struct Player {
     pub snake_cloak_override: bool,
     pub honey_comb: bool,
     pub strong_bees: bool,
+    /// `Player.panic` (`Player.cs:1154`): the Panic Necklace family's hurt
+    /// reaction flag — an accepted hit grants buff 63 (Panic!, `Hurt`
+    /// `:38237-38240`, `AddBuff(63, 480)`). Armed by the Panic Necklace 1290
+    /// (`:14892-14895`), the Sweetheart Necklace 1578 (`:15076-15080`) and the
+    /// Crossed Heart Necklace 6187 (`:14625-14628`); `ResetEffects` clears it
+    /// (`:18616`) and the equip rows re-arm per tick. W4-f50 (the d116
+    /// deferred hurt-reaction list, ANALYSIS wave B "Deferred families").
+    pub panic: bool,
+    /// W4-f50 — the Solar Flare / Beetle armor-set hurt-reaction state
+    /// (`Player.cs:896-912`/`:2816`). `set_solar`/`beetle_defense`/
+    /// `beetle_offense` are the completed-set flags (`ApplySetBonus_Solar`
+    /// `:16366`, `ApplySetBonus_BeetleDefense` `:16499`,
+    /// `ApplySetBonus_BeetleDamage` `:16529`); the orb/shield counts and
+    /// counters drive the hurt reductions (`Hurt` `:38305-38337`) and the
+    /// per-tick recharge machines. `ResetEffects` zeroes `beetle_orbs`/
+    /// `beetle_buff`/`solar_shields` (`:18501-18505`); the `Player.Update`
+    /// head clears the three set flags (`:25618-25620`).
+    pub set_solar: bool,
+    pub solar_shields: i32,
+    pub solar_counter: i32,
+    pub beetle_defense: bool,
+    pub beetle_offense: bool,
+    pub beetle_orbs: i32,
+    pub beetle_counter: f32,
+    pub beetle_countdown: i32,
+    pub beetle_buff: bool,
+    /// W4-f50 deviation 3 — `Player.beetlePos`/`beetleVel` (`Player.cs:964-
+    /// 966`, `Vector2[3]`): the orb-orbit positions the
+    /// `UpdateArmorSets_Always_Beetle` machine integrates
+    /// (`:16458-16496`) and `DrawPlayer_37_BeetleBuff` draws
+    /// (`PlayerDrawLayers.cs:4007-4031`). The per-orb `Next(-100,101)`
+    /// velocity jitter pair rides the `UpdatePlayers` stream.
+    pub beetle_pos: [Vec2; 3],
+    pub beetle_vel: [Vec2; 3],
+    /// `Player.beetleFrame`/`beetleFrameCounter` (`Player.cs:968-970`):
+    /// the 3-frame wing cycle — the counter pins at 1, so the frame
+    /// advances EVERY tick while a Beetle set is worn (`:16448-16457`).
+    pub beetle_frame: i32,
+    pub beetle_frame_counter: i32,
+    /// `Player.hasFootball` (`Player.cs:12906-12918`): the Football (4743)
+    /// in the inventory arms it; `ResetEffects` clears it (`:18345`). The
+    /// hurt arm (`:38255-38269`) spawns the 861 return + clears the slot.
+    /// W4-f50.
+    pub has_football: bool,
+    /// W4-f50 deviation 4 — `Player.boneArmor`/`frostArmor` (`Player.cs:
+    /// 1376`/`:1378`): the Necro/Frost texture-id sets
+    /// `ApplyArmorSoundAndDustChanges` derives (`:38167-38186`);
+    /// `ResetEffects` clears both (`:18350`/`:18352`). The hit-dust loop
+    /// keys on them (`:38538-38547`: frost 135 / bone 26); the
+    /// `PlayHurtSound` arms (`:38684-38693`) and the death burst
+    /// (`:39041-39052`) are the future wires.
+    pub bone_armor: bool,
+    pub frost_armor: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -1968,6 +2021,44 @@ pub struct Player {
     /// `hurt_inner` reads both from the counter (M4-HAZARD-1 — the
     /// lava/tile/bug-net lanes are not members).
     pending_retaliate: Option<crate::hurt_modifiers::RetaliateRequest>,
+    /// W4-f50 — the Solar Flare hurt blast request (`Player.cs:38316-38318`):
+    /// `(center, damage)` — the 608 projectile spawns at the player's center
+    /// with `(int)(150 * meleeDamage)` damage, kb 15, then immediately
+    /// `Kill()`s (its aiStyle-117 `Damage()` walks the 160×160 box). The
+    /// spawn + box walk need the projectile pool + NPC list, so `hurt_inner`
+    /// queues it and the world-sim drain resolves it (the `pending_retaliate`
+    /// convention). `None` when no charge was consumed.
+    pending_solar_blast: Option<((f32, f32), i32)>,
+    /// W4-f50 — the Solar Flare shield-grant dust burst flag
+    /// (`Player.cs:16387-16395`): 16 dust-6 particles at the player's box
+    /// (noGravity, scale 1.7, fadeIn 0.5, velocity ×5). The dust pool lives
+    /// on the App, so the set-bonus machine queues the flag and the
+    /// world-sim drain spawns them (the `pending_sticky_dust` convention).
+    pending_solar_grant_dust: bool,
+    /// W4-f50 — the player hurt combat-text request (`Player.cs:38382`):
+    /// `(amount, crit)` — `CombatText.NewText(playerRect, DamagedFriendly[ Crit],
+    /// num2, Crit)`. The C# draws it BEFORE the retaliate block (`:38401`),
+    /// so the drain spawns it ahead of the retaliate rolls on the hit lane's
+    /// stream. The caller owns `Main.combatText` (the `pending_mana_effect`
+    /// convention). `None` when no hit landed.
+    pending_hurt_text: Option<(i32, bool)>,
+    /// W4-f50 — the hit-dust loop request (`Player.cs:38527-38553`):
+    /// `(hit_direction, num2)` — the `statLife > 0` dust burst, `num2 /
+    /// statLifeMax2 * 100` particles keyed to the armor set (stoned 1 /
+    /// frost 135 / bone 26 / default 5). The dust pool lives on the App, so
+    /// the tick queues it and the world-sim drain spawns them (the
+    /// `pending_sticky_dust` convention). `None` when the hit killed.
+    pending_hurt_dust: Option<(i32, i32)>,
+    /// W4-f50 — the football hurt request (`Player.cs:38255-38269`): the
+    /// `hasFootball` flag — the drain scans the inventory for the Football
+    /// (4743) and spawns the 861 return at the player's center with
+    /// `(-hitDirection * 4, -6)`, damage 0, ai1 = 1, ai2 = stack, then
+    /// clears the slot. The projectile pool + inventory live on the App.
+    pending_football: Option<i32>,
+    /// W4-f50 — the golf-club hurt request (`Player.cs:38271-38280`): the
+    /// held item is a jousting lance (4788/4789/4790) — the drain kills
+    /// every owned 877/878/879 projectile. The pool lives on the App.
+    pending_golf_club_kill: bool,
     /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
     /// the damage source was a projectile of `ProjectileID.Sets.
     /// DismountsPlayersOnHit` (`ProjectileID.cs:546`, {877, 878, 879}) and a
@@ -2832,6 +2923,23 @@ impl Player {
             snake_cloak_override: false,
             honey_comb: false,
             strong_bees: false,
+            panic: false,
+            set_solar: false,
+            solar_shields: 0,
+            solar_counter: 0,
+            beetle_defense: false,
+            beetle_offense: false,
+            beetle_orbs: 0,
+            beetle_counter: 0.0,
+            beetle_countdown: 0,
+            beetle_buff: false,
+            beetle_pos: [Vec2::ZERO; 3],
+            beetle_vel: [Vec2::ZERO; 3],
+            beetle_frame: 0,
+            beetle_frame_counter: 0,
+            has_football: false,
+            bone_armor: false,
+            frost_armor: false,
             shadow_dodge_timer: 0,
             shadow_dodge_count: 0.0,
             brain_of_confusion_dodge_animation_counter: 0,
@@ -2947,6 +3055,12 @@ impl Player {
             pending_mana_effect: None,
             pending_heal_effect: None,
             pending_retaliate: None,
+            pending_solar_blast: None,
+            pending_solar_grant_dust: false,
+            pending_hurt_text: None,
+            pending_hurt_dust: None,
+            pending_football: None,
+            pending_golf_club_kill: false,
             pending_dismount: false,
             pending_dodge_sends: Vec::new(),
             pending_chillet_sound: None,
@@ -3526,6 +3640,43 @@ impl Player {
         self.pending_retaliate.take()
     }
 
+    /// W4-f50 — takes the Solar Flare hurt blast request (`Player.cs:38316-
+    /// 38318`): `(center, damage)` for the 608 spawn + immediate Kill. The
+    /// caller owns the projectile pool + NPC list (`world_sim` drain).
+    pub(crate) fn take_solar_blast(&mut self) -> Option<((f32, f32), i32)> {
+        self.pending_solar_blast.take()
+    }
+
+    /// W4-f50 — takes the Solar Flare shield-grant dust burst flag
+    /// (`Player.cs:16387-16395`). The caller owns the dust pool.
+    pub(crate) fn take_solar_grant_dust(&mut self) -> bool {
+        std::mem::take(&mut self.pending_solar_grant_dust)
+    }
+
+    /// W4-f50 — takes the player hurt combat-text request (`Player.cs:38382`):
+    /// `(amount, crit)`. The caller owns `Main.combatText`.
+    pub(crate) fn take_hurt_text(&mut self) -> Option<(i32, bool)> {
+        self.pending_hurt_text.take()
+    }
+
+    /// W4-f50 — takes the hit-dust loop request (`Player.cs:38527-38553`):
+    /// `(hit_direction, num2)`. The caller owns the dust pool.
+    pub(crate) fn take_hurt_dust(&mut self) -> Option<(i32, i32)> {
+        self.pending_hurt_dust.take()
+    }
+
+    /// W4-f50 — takes the football hurt request (`Player.cs:38255-38269`):
+    /// the hit direction. The caller owns the projectile pool + inventory.
+    pub(crate) fn take_football(&mut self) -> Option<i32> {
+        self.pending_football.take()
+    }
+
+    /// W4-f50 — takes the golf-club hurt request (`Player.cs:38271-38280`).
+    /// The caller owns the projectile pool.
+    pub(crate) fn take_golf_club_kill(&mut self) -> bool {
+        std::mem::take(&mut self.pending_golf_club_kill)
+    }
+
     /// S1-C-7 wave B: takes the dismount-on-hit request (`Player.cs:38396-
     /// 38400`) — the caller owns `&World` (`try_dismount`).
     pub(crate) fn take_dismount_request(&mut self) -> bool {
@@ -3734,6 +3885,12 @@ impl Player {
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
         self.pending_retaliate = None;
+        self.pending_solar_blast = None;
+        self.pending_solar_grant_dust = false;
+        self.pending_hurt_text = None;
+        self.pending_hurt_dust = None;
+        self.pending_football = None;
+        self.pending_golf_club_kill = false;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
@@ -4518,6 +4675,385 @@ impl Player {
         total
     }
 
+    /// `Player.ConsumeSolarFlare` (`Player.cs:56742-56762`): the Solar Flare
+    /// set's hurt shield — consumes one shield charge, deletes the 170-172
+    /// buff rows, re-grants the lower-tier buff (`170 + shields - 1`, 5 ticks)
+    /// while charges remain, and zeroes the recharge counter. Returns `true`
+    /// when a charge was consumed (the `Hurt` ×0.8 gate, `:38305`). W4-f50.
+    pub fn consume_solar_flare(&mut self) -> bool {
+        if self.set_solar && self.solar_shields > 0 {
+            self.solar_shields -= 1;
+            // `:56747-56753`: delete every 170-172 buff slot. The C# loops
+            // `DelBuff(i)` with NO rescan; `clear_buff` matches that shape.
+            for id in 170..=172 {
+                self.buffs.clear_buff(id);
+            }
+            // `:56754-56757`: `solarShields > 0 && whoAmI == Main.myPlayer`
+            // (always true single-player) → `AddBuff(170 + shields - 1, 5)`.
+            if self.solar_shields > 0 {
+                self.buffs.add_buff(170 + self.solar_shields - 1, 5);
+            }
+            self.solar_counter = 0;
+            return true;
+        }
+        false
+    }
+
+    /// `Player.ApplySetBonus_Solar` (`Player.cs:16366-16439`): the Solar
+    /// Flare set's per-tick bonus — `endurance += 0.12`, `setSolar = true`,
+    /// the shield recharge (one charge per 180 ticks, cap 3, the 170-172
+    /// buff ladder) and the dash-type grant. The shield-orbit positions
+    /// (`solarShieldPos`/`Vel`, `:16403-16428`) are cosmetic and unported;
+    /// the 16-dust grant burst (`:16387-16395`) queues for the world-sim
+    /// drain (the `pending_retaliate` convention). W4-f50.
+    pub fn apply_set_bonus_solar(&mut self) {
+        self.endurance += 0.12;
+        self.set_solar = true;
+        self.solar_counter += 1;
+        let num = 180;
+        if self.solar_counter >= num {
+            // `:16374-16383`: delete the 170-171 rows while 0 < shields < 3.
+            if self.solar_shields > 0 && self.solar_shields < 3 {
+                for id in 170..=171 {
+                    self.buffs.clear_buff(id);
+                }
+            }
+            if self.solar_shields < 3 {
+                // `:16386`: `AddBuff(170 + solarShields, 5)`.
+                self.buffs.add_buff(170 + self.solar_shields, 5);
+                // `:16387-16395`: the 16-dust grant burst (dust 6, noGravity,
+                // scale 1.7, fadeIn 0.5, velocity ×5) — queued for the drain.
+                self.pending_solar_grant_dust = true;
+                self.solar_counter = 0;
+            } else {
+                self.solar_counter = num;
+            }
+        }
+        // `:16429-16438`: the dash latch — `dashDelay >= 0` clears the dash
+        // state; `solarShields > 0 || (solarDashing && dashDelay < 0)` arms
+        // `dashType = 3`. The port's `solar_dashing` is unported (the dash
+        // machine is the melee lane's), so the second disjunct folds false.
+        if self.dash_delay >= 0 {
+            // solarDashing / solarDashConsumedFlare = false (no port fields).
+        }
+        if self.solar_shields > 0 {
+            self.dash_type = 3;
+        }
+    }
+
+    /// `Player.ApplySetBonus_BeetleDefense` (`Player.cs:16499-16527`): the
+    /// Beetle Scale Mail's per-tick bonus — `beetleDefense = true`, the orb
+    /// recharge (one orb per 180 ticks, cap 3, the 95-97 buff ladder). W4-f50.
+    pub fn apply_set_bonus_beetle_defense(&mut self) {
+        self.beetle_defense = true;
+        self.beetle_counter += 1.0;
+        let num = 180.0;
+        if self.beetle_counter < num {
+            return;
+        }
+        // `:16508-16517`: delete the 95-96 rows while 0 < orbs < 3.
+        if self.beetle_orbs > 0 && self.beetle_orbs < 3 {
+            for id in 95..=96 {
+                self.buffs.clear_buff(id);
+            }
+        }
+        if self.beetle_orbs < 3 {
+            // `:16520`: `AddBuff(95 + beetleOrbs, 5)`.
+            self.buffs.add_buff(95 + self.beetle_orbs, 5);
+            self.beetle_counter = 0.0;
+        } else {
+            self.beetle_counter = num;
+        }
+    }
+
+    /// `Player.ApplySetBonus_BeetleDamage` (`Player.cs:16529-16581`): the
+    /// Beetle Shell's per-tick bonus — `beetleOffense = true`, the damage-orb
+    /// decay (`beetleCounter -= 3 + beetleCountdown/20`, `beetleCountdown++`)
+    /// and the 98-100 buff ladder by the counter's tier (400/1600/5200). The
+    /// melee-hit `beetleCounter += num2` feed (`:44111-44115`) is the melee
+    /// lane's (unported here — the counter only decays). W4-f50.
+    pub fn apply_set_bonus_beetle_damage(&mut self) {
+        let mut num = 0;
+        self.beetle_offense = true;
+        self.beetle_counter -= 3.0;
+        // `:16534`: `beetleCounter -= this.beetleCountdown / 20` — C# int/int
+        // division (the countdown is an int), truncated before the subtract.
+        self.beetle_counter -= (self.beetle_countdown / 20) as f32;
+        self.beetle_countdown += 1;
+        if self.beetle_counter < 0.0 {
+            self.beetle_counter = 0.0;
+        }
+        let num2 = 400.0;
+        let num3 = 1200.0;
+        let num4 = 3600.0;
+        if self.beetle_counter > num2 + num3 + num4 + num3 {
+            self.beetle_counter = num2 + num3 + num4 + num3;
+        }
+        if self.beetle_counter > num2 + num3 + num4 {
+            self.buffs.add_buff(100, 5);
+            num = 3;
+        } else if self.beetle_counter > num2 + num3 {
+            self.buffs.add_buff(99, 5);
+            num = 2;
+        } else if self.beetle_counter > num2 {
+            self.buffs.add_buff(98, 5);
+            num = 1;
+        }
+        if num < self.beetle_orbs {
+            self.beetle_countdown = 0;
+        } else if num > self.beetle_orbs {
+            self.beetle_counter += 200.0;
+        }
+        if num == self.beetle_orbs || self.beetle_orbs <= 0 {
+            return;
+        }
+        // `:16574-16580`: delete the 98-100 rows that are not the new tier.
+        for id in 98..=100 {
+            if id != 97 + num {
+                self.buffs.clear_buff(id);
+            }
+        }
+    }
+
+    /// W4-f50 deviation 4 — `Player.ApplyArmorSoundAndDustChanges`
+    /// (`Player.cs:38167-38186`): the effective armour texture ids (the
+    /// vanity slot 10/11/12 overrides the functional 0/1/2 when its slot
+    /// id is >= 0), the werewolf override (38/21/20), then the Necro
+    /// (head 75 or 7, body 7, legs 7) and Frost (head 46, body 27, legs 26)
+    /// set flags. The werewolf half reads `wereWolf || forceWerewolf` and
+    /// `!hideWolf` — those fields are the unported werewolf family (the
+    /// Moon Charm 861 / Celestial Shell 3110 / Moon Charm 485 grants,
+    /// `:15137`/`:15405`/`:15184` + the buff-28 arm `:11893-11910`), so the
+    /// override folds false here (documented). The `GetEffectiveArmor`
+    /// loadout-share (`:5690-5710`) folds to the slot itself (no loadouts).
+    pub fn apply_armor_sound_and_dust_changes(&mut self) {
+        let slot_id = |kind: u16, f: fn(&crate::itemdata::ItemDef) -> i16| {
+            crate::registry::get(kind).map_or(-1, f)
+        };
+        // The vanity slot's id overrides the functional one when >= 0.
+        let head_v = slot_id(self.equipped[10], |d| d.head_slot);
+        let body_v = slot_id(self.equipped[11], |d| d.body_slot);
+        let legs_v = slot_id(self.equipped[12], |d| d.leg_slot);
+        let num = if head_v >= 0 { head_v } else { slot_id(self.equipped[0], |d| d.head_slot) };
+        let num2 = if body_v >= 0 { body_v } else { slot_id(self.equipped[1], |d| d.body_slot) };
+        let num3 = if legs_v >= 0 { legs_v } else { slot_id(self.equipped[2], |d| d.leg_slot) };
+        // The werewolf override folds false (the family is unported).
+        // `:38178-38185` — the Necro and Frost texture-id sets.
+        if (num == 75 || num == 7) && num2 == 7 && num3 == 7 {
+            self.bone_armor = true;
+        }
+        if num2 == 27 && num == 46 && num3 == 26 {
+            self.frost_armor = true;
+        }
+    }
+
+    /// `Player.UpdateArmorSets_Always_Solar` (`Player.cs:16358-16364`): the
+    /// counter zero when the set is not worn. W4-f50.
+    pub fn update_armor_sets_always_solar(&mut self) {
+        if !self.set_solar {
+            self.solar_counter = 0;
+        }
+    }
+
+    /// W4-f50 — the Beetle/Solar hurt-reaction tick (`Player.cs:16304-16312`
+    /// `UpdateArmorSets` + the `UpdateBuffs` buff-ladder arms `:10342-10443`):
+    /// the buff-ladder re-derivation (the counts + the 98-100 melee rows),
+    /// then the completed set's recharge machine and the always-counter
+    /// zeros. The port runs this at the `UpdateArmorSets` seam inside
+    /// `update_with_grapple` (after the set flags re-arm in the armor-set
+    /// match) — the C# runs the ladder in `UpdateBuffs` and the machines in
+    /// `UpdateArmorSets`, both inside `Player.Update`; the re-derivation is
+    /// idempotent per tick, so the relative order of the count reads is
+    /// preserved.
+    pub fn update_beetle_solar_sets(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
+        self.rederive_beetle_solar_buffs();
+        if self.set_solar {
+            self.apply_set_bonus_solar();
+        }
+        if self.beetle_defense {
+            self.apply_set_bonus_beetle_defense();
+        }
+        if self.beetle_offense {
+            self.apply_set_bonus_beetle_damage();
+        }
+        self.update_armor_sets_always_beetle(rng);
+        self.update_armor_sets_always_solar();
+        // W4-f50 deviation 4 — `UpdateArmorSets`' tail
+        // (`Player.cs:16312`): the Necro/Frost texture-id scan.
+        self.apply_armor_sound_and_dust_changes();
+    }
+
+    /// `Player.UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`):
+    /// the counter zero when neither Beetle set is worn, then the 3-frame
+    /// wing cycle, the unused-orb position clear and the orb-orbit
+    /// integration (deviation 3). The per-orb `Next(-100,101)` velocity
+    /// jitter pair draws from the passed stream (the `UpdatePlayers`
+    /// swap — `Player.Update` runs under `Main.cs:17754`); the test
+    /// wrapper's scratch stream stands in for gear-less players.
+    pub fn update_armor_sets_always_beetle(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
+        if !self.beetle_defense && !self.beetle_offense {
+            self.beetle_counter = 0.0;
+            return;
+        }
+        // `:16448-16457` — the frame counter pins at 1, so the frame
+        // advances every tick (0→1→2→0).
+        self.beetle_frame_counter += 1;
+        if self.beetle_frame_counter >= 1 {
+            self.beetle_frame_counter = 0;
+            self.beetle_frame += 1;
+            if self.beetle_frame > 2 {
+                self.beetle_frame = 0;
+            }
+        }
+        // `:16458-16462` — the unused orbs' positions zero.
+        for i in self.beetle_orbs.max(0) as usize..3 {
+            self.beetle_pos[i] = Vec2::ZERO;
+        }
+        // `:16463-16496` — the orbit integration, per live orb.
+        for j in 0..self.beetle_orbs.max(0) as usize {
+            self.beetle_pos[j] += self.beetle_vel[j];
+            // `:16466-16467` — the jitter pair, X then Y.
+            self.beetle_vel[j].x += rng.next_range(-100, 101) as f32 * 0.005;
+            self.beetle_vel[j].y += rng.next_range(-100, 101) as f32 * 0.005;
+            let mut x = self.beetle_pos[j].x;
+            let mut y = self.beetle_pos[j].y;
+            let mut num = (x * x + y * y).sqrt();
+            if num > 100.0 {
+                // `:16471-16479` — the far pull: 20/num, the 10-part blend.
+                num = 20.0 / num;
+                x *= 0.0 - num;
+                y *= 0.0 - num;
+                let num2 = 10;
+                self.beetle_vel[j].x =
+                    (self.beetle_vel[j].x * (num2 - 1) as f32 + x) / num2 as f32;
+                self.beetle_vel[j].y =
+                    (self.beetle_vel[j].y * (num2 - 1) as f32 + y) / num2 as f32;
+            } else if num > 30.0 {
+                // `:16480-16488` — the near pull: 10/num, the 20-part blend.
+                num = 10.0 / num;
+                x *= 0.0 - num;
+                y *= 0.0 - num;
+                let num3 = 20;
+                self.beetle_vel[j].x =
+                    (self.beetle_vel[j].x * (num3 - 1) as f32 + x) / num3 as f32;
+                self.beetle_vel[j].y =
+                    (self.beetle_vel[j].y * (num3 - 1) as f32 + y) / num3 as f32;
+            }
+            // `:16489-16494` — the speed damp past 2.
+            x = self.beetle_vel[j].x;
+            y = self.beetle_vel[j].y;
+            if (x * x + y * y).sqrt() > 2.0 {
+                self.beetle_vel[j] *= 0.9;
+            }
+            // `:16495` — the player-velocity drag.
+            self.beetle_pos[j] -= Vec2::new(self.vx, self.vy) * 0.25;
+        }
+    }
+
+    /// W4-f50 — the Beetle/Solar buff-ladder re-derivation (`Player.cs:10342-
+    /// 10443`): the slot-ordered `UpdateBuffs` arms that pin the 95-100/170-172
+    /// buffs at 5 ticks and set `beetleOrbs`/`solarShields` to the tier, with
+    /// the mismatch ladder (a lower tier deletes the slot + rescans, a higher
+    /// tier deletes the lower rows) and the set-flag gate (without the set the
+    /// count zeroes and the buff is deleted). The 98-100 melee damage/speed
+    /// rows (`0.1 * orbs`) fold here too.
+    pub fn rederive_beetle_solar_buffs(&mut self) {
+        // The C# `for (int j = 0; j < maxBuffs; j++)` chain with the
+        // `DelBuff(j); j--` rescan: a delete leaves the NET index unchanged
+        // (the compaction shifts the later buffs left, the `j--` cancels the
+        // loop's `j++`), so the shifted-in slot re-runs. The count assignment
+        // (`beetleOrbs = num8`) runs UNCONDITIONALLY — even after a mismatch
+        // delete — and the set-flag check may delete the (shifted) slot again.
+        let mut j = 0i32;
+        while (j as usize) < crate::buffs::MAX_BUFFS {
+            let ju = j as usize;
+            let buff = self.buffs.buff_type[ju];
+            if buff <= 0 || self.buffs.buff_time[ju] <= 0 {
+                j += 1;
+                continue;
+            }
+            // Each `DelBuff(j); j--` decrements the loop index; the loop's
+            // `j++` at the tail nets one advance per non-deleted slot.
+            let mut deletes = 0i32;
+            match buff {
+                // `:10342-10376` — the Beetle Defense ladder (95-97).
+                95..=97 => {
+                    self.buffs.buff_time[ju] = 5;
+                    let num8 = 1 + buff - 95;
+                    if self.beetle_orbs > 0 && self.beetle_orbs != num8 {
+                        if self.beetle_orbs > num8 {
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
+                        } else {
+                            for id in 95..=(95 + num8 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    self.beetle_orbs = num8;
+                    if !self.beetle_defense {
+                        self.beetle_orbs = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    } else {
+                        self.beetle_buff = true;
+                    }
+                }
+                // `:10377-10407` — the Solar Flare ladder (170-172).
+                170..=172 => {
+                    self.buffs.buff_time[ju] = 5;
+                    let num9 = 1 + buff - 170;
+                    if self.solar_shields > 0 && self.solar_shields != num9 {
+                        if self.solar_shields > num9 {
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
+                        } else {
+                            for id in 170..=(170 + num9 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    self.solar_shields = num9;
+                    if !self.set_solar {
+                        self.solar_shields = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    }
+                }
+                // `:10408-10443` — the Beetle Damage ladder (98-100).
+                98..=100 => {
+                    let num10 = 1 + buff - 98;
+                    if self.beetle_orbs > 0 && self.beetle_orbs != num10 {
+                        if self.beetle_orbs > num10 {
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
+                        } else {
+                            for id in 98..=(98 + num10 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    self.beetle_orbs = num10;
+                    self.melee_damage += 0.1 * self.beetle_orbs as f32;
+                    self.melee_speed_bonus += 0.1 * self.beetle_orbs as f32;
+                    if !self.beetle_offense {
+                        self.beetle_orbs = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    } else {
+                        self.beetle_buff = true;
+                    }
+                }
+                _ => {}
+            }
+            // The C# `for` tail: `j++` after the arm's `j--` per delete.
+            j += 1 - deletes;
+            if j < 0 {
+                j = 0;
+            }
+        }
+    }
+
     pub(crate) fn hurt_inner(
         &mut self,
         amount: i32,
@@ -4625,6 +5161,27 @@ impl Player {
                 return false;
             }
         }
+        // W4-f50 — the hurt-head reactions (`Player.cs:38237-38245`), after
+        // the dodge block and BEFORE the defense reduction: the Panic
+        // Necklace family's buff 63 (`AddBuff(63, 480)`, `:38237-38240`) and
+        // the Squire T2 set's Ballista Panic buff 205 (`AddBuff(205, 300)`,
+        // `:38241-38244`), then the stealth break (`stealth = 1f`, `:38245` —
+        // a hit always breaks the stealth). CROSS-NOTE (keep-one,
+        // f3-canonical): `task/W4-f3-dust-player-3` `4d820f7d` landed the
+        // FULL stealth-decay machine (`update_stealth`, `Player.cs:25733-
+        // 25899`: the Psycho-Knife/Shroomite/Vortex chain + the `stealth = 1f`
+        // fallback) and the SAME hurt write at this site, plus the field
+        // default fix 0.0 → C# 1f (`:1562`). This write composes 1:1 with
+        // that machine (same value, same post-dodge site, unconditional) —
+        // at merge keep ONE copy; the machine + the default fix are f3's,
+        // this branch does not duplicate them.
+        if self.panic {
+            self.buffs.add_buff(63, 480);
+        }
+        if self.set_squire_t2 {
+            self.buffs.add_buff(205, 300);
+        }
+        self.stealth = 1.0;
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
         // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
@@ -4641,8 +5198,32 @@ impl Player {
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         let raw = if crit { raw * 2 } else { raw };
+        // W4-f50 — the football hurt arm (`Player.cs:38255-38269`): with
+        // `hasFootball` armed, the drain scans the inventory for the Football
+        // (4743) and spawns the 861 return at the player's center with
+        // `(-hitDirection * 4, -6)`, damage 0, ai1 = 1, ai2 = stack, then
+        // clears the slot. The projectile pool + inventory live on the App,
+        // so the tick queues the hit direction (the `pending_retaliate`
+        // convention). The hit direction is the knockback dir.
+        if self.has_football {
+            let hit_dir = if self.x + self.width * 0.5 >= from_x { 1 } else { -1 };
+            self.pending_football = Some(hit_dir);
+        }
+        // W4-f50 — the golf-club hurt arm (`Player.cs:38271-38280`): the held
+        // item is a jousting lance (4788/4789/4790) — the drain kills every
+        // owned 877/878/879 projectile. The held item + pool live on the App,
+        // so the tick queues the flag and the drain checks the held kind.
+        self.pending_golf_club_kill = true;
+        // W4-f50 — the invis strip (`Player.cs:38281-38290`): a hurt clears
+        // the Invisibility buff (10) from every slot. The C# loops `DelBuff(k)`
+        // with NO rescan; `clear_buff` matches that shape (the compacted-in
+        // slot is skipped, the same quirk). Runs BEFORE the cuffs arm
+        // (`:38291`).
+        if self.invis {
+            self.buffs.clear_buff(10);
+        }
         // `Player.Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): after the
-        // invis strip (`:38281-38290`, unported) and BEFORE the endurance step
+        // invis strip (`:38281-38290`) and BEFORE the endurance step
         // (`:38304`) — `num3 = (int)(num * 1f)` is the raw damage (crit-doubled
         // at `:38248-38251`; every ported caller passes `crit = false`, the
         // single-player C# lanes all do), the
@@ -4658,11 +5239,71 @@ impl Player {
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
+        // W4-f50 — the Solar Flare shield (`Player.cs:38305-38320`): the
+        // Counter-set gate (`ImmunityCooldownID.Sets.Counter` = {General,
+        // BossNoCheese}, `ImmunityCooldownID.cs:50`) — the port's
+        // `retaliate_lane` carries the membership (the contact/projectile/
+        // fall/petrify lanes pass true, the lava/tile lanes false; the
+        // PaladinsShield-only difference from the Retaliate set is
+        // unreachable single-player). On a consumed charge
+        // `num2 = (int)(0.8 * num2)`; the 608 blast spawn + immediate Kill
+        // needs the projectile pool + NPC list, so it queues for the
+        // world-sim drain (the `pending_retaliate` convention).
+        let mut amount = amount;
+        if retaliate_lane && self.consume_solar_flare() {
+            amount = (0.800000011920929f32 * amount as f32) as i32;
+            self.pending_solar_blast = Some((self.center(), (150.0 * self.melee_damage) as i32));
+        }
+        // W4-f50 — the Beetle Defense orbs (`Player.cs:38321-38337`):
+        // `num2 = (int)((1 - 0.15 * beetleOrbs) * num2)`, one orb consumed,
+        // the 95-97 buff rows deleted and the lower-tier buff re-granted
+        // (`95 + orbs - 1`, 5 ticks) while orbs remain, `beetleCounter = 0`.
+        // No cooldown-set gate (the C# runs it on every lane).
+        if self.beetle_defense && self.beetle_orbs > 0 {
+            amount = ((1.0 - 0.15 * self.beetle_orbs as f32) * amount as f32) as i32;
+            self.beetle_orbs -= 1;
+            for id in 95..=97 {
+                self.buffs.clear_buff(id);
+            }
+            if self.beetle_orbs > 0 {
+                self.buffs.add_buff(95 + self.beetle_orbs - 1, 5);
+            }
+            self.beetle_counter = 0.0;
+        }
+        // W4-f50 deviation 5 — the paladin team share (`Player.cs:38338-
+        // 38368`) is SINGLE-PLAYER-UNREACHABLE and stays unported here. The
+        // gate: `defendedByPaladin && TeamDamageShare[cooldownCounter] &&
+        // num2 >= 4 && Damage < 9999`; the block scans the 255 players for
+        // the nearest OTHER `CanDefendWithPaladinsShield(this.team)` peer
+        // (`:38188-38195`: active && !dead && hasPaladinShield && team > 0
+        // && team == otherTeam && life > 25% max), cuts `num2` to
+        // `(int)(num2 * 0.75)` and redirects `(int)(num2 * 0.25)` to that
+        // peer via `Hurt(ByOther(20), .., PaladinsShield, dodgeable: false)`
+        // when it is the local player within `PaladinsShieldRange` (800,
+        // `:57100`). In single-player the only player is `whoAmI ==
+        // Main.myPlayer`, so the `m != whoAmI` scan finds no peer and the
+        // block no-ops. FUTURE-WIRE (MP): the `PlayerNet.team`/`dead` fields
+        // + `PlayerNet::paladin_shield()` landed on `task/W4-d70-moonlord-
+        // shake-screens` `ee4905939` (the DrawPaladinsShield peer loops,
+        // `Main.cs:57205-57231`); the hurt-side redirect needs the remote
+        // players' live `statLife`/`statLifeMax2` + a `Hurt` path on the
+        // peer (the port does not simulate remote equips/life — the d70
+        // deviation), so the share stays deferred until the MP player-sim
+        // lands. The `defendedByPaladin` buff-43 flag is ported
+        // (`buff_effects_misc.rs:675`); the `TeamDamageShare` set =
+        // {General, BossNoCheese} (`ImmunityCooldownID.cs:51`).
         // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
         // truncation can drive a hit to 0; the C# lifts it back to 1 (which
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
+        // W4-f50 — the player hurt combat text (`Player.cs:38382`):
+        // `CombatText.NewText(playerRect, Crit ? DamagedFriendlyCrit :
+        // DamagedFriendly, num2, Crit)`. The C# draws it BEFORE the retaliate
+        // block (`:38401`), so the drain spawns it ahead of the retaliate
+        // rolls on the hit lane's stream. The caller owns `Main.combatText`
+        // (the `pending_mana_effect` convention).
+        self.pending_hurt_text = Some((amount, crit));
         // `Player.Hurt`'s immunity window (`Player.cs:38382-38394`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
         // : (this.longInvince ? 40 : 20)));` then the per-counter write:
@@ -4754,6 +5395,22 @@ impl Player {
             self.vy = -3.5;
             self.fall_start = (self.y / TILE_PX) as i32;
             self.on_ground = false;
+        }
+        // W4-f50 — the hit-dust loop (`Player.cs:38527-38553`): on a surviving
+        // hit (`statLife > 0`), `num2 / statLifeMax2 * 100` particles burst
+        // from the player's box, keyed to the armor set (stoned 1 / frost 135
+        // / bone 26 / default 5). The dust pool lives on the App, so the tick
+        // queues `(hitDirection, num2)` and the world-sim drain spawns them
+        // (the `pending_sticky_dust` convention). The hit direction is the
+        // knockback dir (0 when the pop was suppressed — the C# `hitDirection`
+        // argument, which the fall/petrify lanes pass 0).
+        if self.hp > 0 {
+            let hit_dir = if knock_back {
+                if self.x + self.width * 0.5 >= from_x { 1 } else { -1 }
+            } else {
+                0
+            };
+            self.pending_hurt_dust = Some((hit_dir, amount));
         }
         true
     }
@@ -5742,12 +6399,23 @@ impl Player {
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
             // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
-            // The port has no `panic` field — the hurt buff `AddBuff(63,
-            // 480)` (`:38237-38240`) stays deferred (ANALYSIS, wave B).
-            1578 => self.honey_comb = true,
+            // W4-f50 wired the `panic` field — the hurt buff `AddBuff(63,
+            // 480)` (`:38237-38240`) now runs in `hurt_inner`.
+            1578 => {
+                self.honey_comb = true;
+                self.panic = true;
+            }
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
+            // W4-f50 — the panic family's other two sources: the bare Panic
+            // Necklace 1290 (`Player.cs:14892-14895`) and the Crossed Heart
+            // Necklace 6187 (`:14625-14628`, panic + longInvince).
+            1290 => self.panic = true,
+            6187 => {
+                self.panic = true;
+                self.long_invince = true;
+            }
             // S1-P-i10 + i37 keep-both (M1 re-sync): the Catalyst Band grants
             // BOTH flags — `Player.cs:14615-14619`: `accPoisonBarb`, `pStone`,
             // `catalystBand`. Magma Stone 1322 (`:15336-15339`): the bare flag;
@@ -5971,6 +6639,14 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // W4-f50 — `Player.Update`'s Beetle/Solar set-flag clears
+        // (`Player.cs:25618-25620`): `beetleDefense`/`beetleOffense`/`setSolar`
+        // reset here (after the buff timer head, before `UpdateArmorSets`
+        // `:25685` re-arms them from the worn set). The buff-scan arms
+        // (`:10342-10443`) read the flags to gate the orb counts.
+        self.beetle_defense = false;
+        self.beetle_offense = false;
+        self.set_solar = false;
         // `Player.Update` → `UpdateImmunity` (`Player.cs:25456`): the spawn
         // i-frames count down before the AI.
         self.update_immunity();
@@ -6351,6 +7027,27 @@ impl Player {
         self.snake_cloak_override = false;
         self.honey_comb = false;
         self.strong_bees = false;
+        // W4-f50 — `ResetEffects`' `panic = false` (`Player.cs:18616`): the
+        // Panic Necklace rows (1290/1578/6187) re-arm it per tick.
+        self.panic = false;
+        // W4-f50 — `ResetEffects`' Beetle/Solar orb clears (`Player.cs:18501-
+        // 18505`): `beetleOrbs = 0`, `beetleBuff = false`, `solarShields = 0`.
+        // The buff-scan arms (`:10342-10443`) re-derive the counts from the
+        // live 95-100/170-172 buffs each tick; the set flags clear at the
+        // `Player.Update` head (`:25618-25620`) and re-arm in `UpdateArmorSets`.
+        self.beetle_orbs = 0;
+        self.beetle_buff = false;
+        self.solar_shields = 0;
+        // W4-f50 — `ResetEffects`' `hasFootball = false` (`Player.cs:18345`):
+        // the `UpdateEquips` inventory scan (`:12906-12918`) re-arms it from
+        // the live Football (4743) slots.
+        self.has_football = false;
+        // W4-f50 deviation 4 — `ResetEffects`' `boneArmor = false` /
+        // `frostArmor = false` (`Player.cs:18350`/`:18352`): the
+        // `ApplyArmorSoundAndDustChanges` texture-id scan re-derives them
+        // per tick at the `UpdateArmorSets` seam (`:16312`).
+        self.bone_armor = false;
+        self.frost_armor = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -6693,6 +7390,24 @@ impl Player {
             (3381, 3382, 3383) => {
                 self.set_stardust = true;
             }
+            // W4-f50 — the Solar Flare triple (`ArmorSetBonuses.cs:479`,
+            // `Benefits.Solar` `:37-40`): arms `setSolar`. The recharge
+            // machine (`ApplySetBonus_Solar` `Player.cs:16366-16439`) runs
+            // after the buff re-derivation below (it reads the shield count).
+            (2763, 2764, 2765) => {
+                self.set_solar = true;
+            }
+            // W4-f50 — the Beetle set's two body variants (`ArmorSetBonuses.cs:
+            // 419-420`, head 2199 + legs 2202 shared): the Scale Mail (2201)
+            // is `BeetleDefense` (`:317-320`), the Shell (2200) is
+            // `BeetleDamage` (`:322-325`). The recharge machines run after the
+            // buff re-derivation below (they read the orb count).
+            (2199, 2201, 2202) => {
+                self.beetle_defense = true;
+            }
+            (2199, 2200, 2202) => {
+                self.beetle_offense = true;
+            }
             _ => {}
         }
         // The completed set's *stat* row (`ArmorSetBonuses.Benefits` — the
@@ -6751,6 +7466,10 @@ impl Player {
                 }
                 // `:9952-9955` — Swiftness (3): `moveSpeed += 0.25f`.
                 3 => self.move_speed += 0.25,
+                // W4-f50 — `:10130-10133`: Panic! (63): `moveSpeed++`. The
+                // hurt-head grants it (`:38239`); this is its per-tick reader
+                // (the `buff_effects.rs` pure-table row, now wired live).
+                63 => self.move_speed += 1.0,
                 // S1-P-i29 — `:10134-10137`: Mining (104) `pickSpeed -= 0.25f`
                 // (the port's positive bonus convention: a lower pickSpeed
                 // mines faster).
@@ -7198,12 +7917,22 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // W4-f50 — the Beetle/Solar hurt-reaction machines (`Player.cs:16304-
+        // 16312` `UpdateArmorSets`): the buff-ladder re-derivation (the
+        // `UpdateBuffs` arms `:10342-10443`) + the completed set's recharge
+        // machine + the always-counter zeros. The set flags re-armed in the
+        // armor-set match above; the counts re-derive from the live buffs
+        // before the machines read them (the C# order: `UpdateBuffs` →
+        // `UpdateArmorSets`, both inside `Player.Update`). Deviation 3: the
+        // orb-orbit's `Next(-100,101)` pair draws from the tick's stream.
+        self.update_beetle_solar_sets(rng);
         // W4-d115 — `Player.cs:25705-25708`: `if (this.shadowDodge && !this.
         // onHitDodge) this.ClearBuff(59)` — right after `UpdateArmorSets`
-        // (`:25685`). A buff-59 granted WITHOUT the Hallowed set (debug/net)
-        // is stripped the same tick the set comes off; with the set armed
-        // the buff survives until `ShadowDodge` deletes it. The flag itself
-        // stays armed for this tick (the C# clears it in `ResetEffects`).
+        // (`:25685`, the f50 machines above are its tail). A buff-59 granted
+        // WITHOUT the Hallowed set (debug/net) is stripped the same tick the
+        // set comes off; with the set armed the buff survives until
+        // `ShadowDodge` deletes it. The flag itself stays armed for this
+        // tick (the C# clears it in `ResetEffects`).
         if self.shadow_dodge && !self.on_hit_dodge {
             self.buffs.clear_buff(59);
         }
@@ -15834,6 +16563,376 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!(!p.star_cloak && !p.honey_comb && !p.bee_cloak_override);
         assert!(!p.strong_bees && !p.snake_cloak_override);
+    }
+
+    #[test]
+    fn w4_f50_the_panic_necklace_grants_the_hurt_buff_and_arms_from_all_three_sources() {
+        // `Player.Hurt`'s panic arm (`Player.cs:38237-38240`): an accepted
+        // hit with `panic` armed grants buff 63 (Panic!) for 480 ticks. The
+        // three sources — 1290 (`:14892-14895`), 1578 (`:15076-15080`) and
+        // 6187 (`:14625-14628`, + longInvince) — all arm the flag; the
+        // `ResetEffects` clear (`:18616`) re-folds.
+        for kind in [1290u16, 1578, 6187] {
+            let mut p = player_with_accessory(kind);
+            assert!(p.panic, "kind {kind} arms panic");
+            p.hurt_cd = 0.0;
+            p.immune = false;
+            assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+            let slot = p.buffs.find_buff_index(63).expect("the hurt grants Panic!");
+            assert_eq!(p.buffs.buff_time[slot], 480, "AddBuff(63, 480)");
+        }
+        let p = player_with_accessory(6187);
+        assert!(p.long_invince, "the Crossed Heart Necklace arms longInvince");
+        // The 1578 keeps its honeycomb (the retaliate family, unchanged).
+        let p = player_with_accessory(1578);
+        assert!(p.honey_comb && p.panic);
+        // Without a source the flag clears and the hurt grants nothing.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1290;
+        p.update(&w, PlayerInput::default());
+        assert!(p.panic);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.panic, "the ResetEffects clear (:18616)");
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.buffs.find_buff_index(63).is_none(), "no panic, no buff");
+    }
+
+    #[test]
+    fn w4_f50_the_squire_t2_set_grants_ballista_panic_on_hurt() {
+        // `Player.Hurt`'s setSquireT2 arm (`Player.cs:38241-38244`): an
+        // accepted hit grants buff 205 (Ballista Panic) for 300 ticks. The
+        // T2 triple (3800/3801/3802) arms the flag; the buff's own reader
+        // (`ballista_panic`, `:11843-11846`) re-derives per tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3800;
+        p.equipped[1] = 3801;
+        p.equipped[2] = 3802;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_squire_t2, "the Squire T2 triple arms the flag");
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let slot = p.buffs.find_buff_index(205).expect("the hurt grants Ballista Panic");
+        assert_eq!(p.buffs.buff_time[slot], 300, "AddBuff(205, 300)");
+    }
+
+    #[test]
+    fn w4_f50_the_hurt_breaks_stealth_and_strips_invisibility() {
+        // `Player.Hurt`'s stealth break (`Player.cs:38245`, `stealth = 1f`)
+        // and invis strip (`:38281-38290`, `DelBuff(10)` on every slot).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shroomite_stealth = true;
+        p.stealth = 0.3;
+        p.invis = true;
+        p.buffs.add_buff(10, 600);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.stealth, 1.0, "the hit breaks the stealth (:38245)");
+        assert!(p.buffs.find_buff_index(10).is_none(), "the invis buff is stripped (:38281)");
+        // A refused hit (iframes) breaks neither — the C# returns early.
+        let mut q = Player::spawn(&w);
+        q.stealth = 0.3;
+        q.invis = true;
+        q.buffs.add_buff(10, 600);
+        q.immune = true;
+        assert!(!q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.stealth, 0.3, "the refused hit leaves the stealth");
+        assert!(q.buffs.find_buff_index(10).is_some(), "the refused hit keeps the invis");
+    }
+
+    #[test]
+    fn w4_f50_the_panic_buff_raises_the_move_speed() {
+        // `Player.UpdateBuffs`' Panic! reader (`Player.cs:10130-10133`):
+        // `moveSpeed++` per live slot. The hurt-head grants the buff; the
+        // next tick's scan folds the +1 into the run-speed merge.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let base = p.move_speed;
+        p.buffs.add_buff(63, 480);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.move_speed - (base + 1.0)).abs() < 1e-4,
+            "the Panic! buff adds moveSpeed++ (base {base}, got {})",
+            p.move_speed
+        );
+    }
+
+    #[test]
+    fn w4_f50_the_solar_flare_shield_cuts_the_hurt_and_queues_the_blast() {
+        // `Player.Hurt`'s Solar Flare arm (`Player.cs:38305-38320`): a
+        // consumed charge cuts `num2` to `(int)(0.8 * num2)` and queues the
+        // 608 blast at the player's center with `(int)(150 * meleeDamage)`.
+        // `ConsumeSolarFlare` (`:56742-56762`) drops one shield, deletes the
+        // 170-172 rows, re-grants the lower tier and zeroes the counter.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_solar = true;
+        p.solar_shields = 2;
+        p.melee_damage = 1.0;
+        p.buffs.add_buff(171, 5); // the 2-shield tier
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        // 20 damage, no defense/endurance → num2 = 20 → 0.8*20 = 16.
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 16, "the shield cuts 20 → 16 (:38307)");
+        assert_eq!(p.solar_shields, 1, "one charge consumed");
+        assert_eq!(p.solar_counter, 0, "the counter zeroes (:56758)");
+        assert!(p.buffs.find_buff_index(171).is_none(), "the old tier deleted");
+        assert!(p.buffs.find_buff_index(170).is_some(), "the lower tier re-granted (:56756)");
+        let (center, damage) = p.take_solar_blast().expect("the blast queues");
+        assert_eq!(center, p.center());
+        assert_eq!(damage, 150, "(int)(150 * meleeDamage) (:38316)");
+        assert!(p.take_solar_blast().is_none(), "the request is a one-shot");
+        // No charge → no cut, no blast.
+        let mut q = Player::spawn(&w);
+        q.set_solar = true;
+        q.solar_shields = 0;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        let qhp = q.hp;
+        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, qhp - 20, "no charge, no cut");
+        assert!(q.take_solar_blast().is_none());
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_orbs_cut_the_hurt_by_fifteen_percent_each() {
+        // `Player.Hurt`'s Beetle Defense arm (`Player.cs:38321-38337`):
+        // `num2 = (int)((1 - 0.15 * beetleOrbs) * num2)`, one orb consumed,
+        // the 95-97 rows deleted + the lower tier re-granted, counter zeroed.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.beetle_orbs = 3;
+        p.buffs.add_buff(97, 5); // the 3-orb tier
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        // 20 damage → (1 - 0.45)*20 = 11.
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 11, "3 orbs cut 20 → 11 (:38323)");
+        assert_eq!(p.beetle_orbs, 2, "one orb consumed");
+        assert_eq!(p.beetle_counter, 0.0, "the counter zeroes (:38336)");
+        assert!(p.buffs.find_buff_index(97).is_none(), "the old tier deleted");
+        assert!(p.buffs.find_buff_index(96).is_some(), "the lower tier re-granted (:38334)");
+        // No orbs → no cut.
+        let mut q = Player::spawn(&w);
+        q.beetle_defense = true;
+        q.beetle_orbs = 0;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        let qhp = q.hp;
+        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, qhp - 20, "no orbs, no cut");
+    }
+
+    #[test]
+    fn w4_f50_the_solar_set_recharges_a_shield_every_180_ticks() {
+        // `ApplySetBonus_Solar` (`Player.cs:16366-16439`): endurance +0.12,
+        // `setSolar`, one shield per 180 ticks (cap 3), the 170-172 buff
+        // ladder, `dashType = 3` while shields remain. The always-machine
+        // (`:16358-16364`) zeroes the counter when the set is not worn.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2763;
+        p.equipped[1] = 2764;
+        p.equipped[2] = 2765;
+        // 180 ticks of recharge → the first shield.
+        for _ in 0..180 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.set_solar, "the Solar triple arms setSolar");
+        assert!(p.solar_shields >= 1, "a shield recharges after 180 ticks");
+        assert!(p.endurance >= 0.12, "the endurance +0.12 row");
+        assert_eq!(p.dash_type, 3, "the dash-type grant (:16437)");
+        assert!(p.buffs.find_buff_index(170).is_some(), "the 1-shield buff");
+        // The counter zeroes without the set.
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_solar);
+        assert_eq!(p.solar_counter, 0, "the always-machine zeroes (:16362)");
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_defense_set_recharges_an_orb_every_180_ticks() {
+        // `ApplySetBonus_BeetleDefense` (`Player.cs:16499-16527`): one orb
+        // per 180 ticks (cap 3), the 95-97 buff ladder. The Shell (2200) is
+        // the damage variant (`ApplySetBonus_BeetleDamage` `:16529-16581`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2199;
+        p.equipped[1] = 2201; // the Scale Mail (defense)
+        p.equipped[2] = 2202;
+        for _ in 0..180 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.beetle_defense, "the Scale Mail arms beetleDefense");
+        assert!(p.beetle_orbs >= 1, "an orb recharges after 180 ticks");
+        assert!(p.buffs.find_buff_index(95).is_some(), "the 1-orb buff");
+        // The Shell arms the offense flag instead.
+        let mut q = Player::spawn(&w);
+        q.equipped[0] = 2199;
+        q.equipped[1] = 2200; // the Shell (damage)
+        q.equipped[2] = 2202;
+        q.update(&w, PlayerInput::default());
+        assert!(q.beetle_offense, "the Shell arms beetleOffense");
+        assert!(!q.beetle_defense);
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_solar_buff_ladder_rederives_the_counts() {
+        // `Player.UpdateBuffs`' Beetle/Solar arms (`Player.cs:10342-10443`):
+        // the 95-100/170-172 buffs pin at 5 ticks and set the orb/shield
+        // count to the tier; without the set flag the count zeroes and the
+        // buff is deleted. The 98-100 melee rows add `0.1 * orbs`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.buffs.add_buff(97, 5); // the 3-orb tier
+        p.rederive_beetle_solar_buffs();
+        assert_eq!(p.beetle_orbs, 3, "the 97 buff sets 3 orbs");
+        assert!(p.beetle_buff);
+        // Without the set the orbs zero and the buff is deleted.
+        let mut q = Player::spawn(&w);
+        q.beetle_defense = false;
+        q.buffs.add_buff(97, 5);
+        q.rederive_beetle_solar_buffs();
+        assert_eq!(q.beetle_orbs, 0, "no set, no orbs");
+        assert!(q.buffs.find_buff_index(97).is_none(), "the buff is deleted");
+        // The Solar ladder.
+        let mut r = Player::spawn(&w);
+        r.set_solar = true;
+        r.buffs.add_buff(172, 5); // the 3-shield tier
+        r.rederive_beetle_solar_buffs();
+        assert_eq!(r.solar_shields, 3, "the 172 buff sets 3 shields");
+        // The damage ladder's melee rows.
+        let mut s = Player::spawn(&w);
+        s.beetle_offense = true;
+        s.buffs.add_buff(100, 5); // the 3-orb damage tier
+        let md = s.melee_damage;
+        s.rederive_beetle_solar_buffs();
+        assert_eq!(s.beetle_orbs, 3);
+        assert!(
+            (s.melee_damage - (md + 0.3)).abs() < 1e-4,
+            "the 98-100 melee row adds 0.1 * orbs (:10431)"
+        );
+    }
+
+    #[test]
+    fn w4_f50_the_hurt_queues_the_combat_text_and_hit_dust() {
+        // `Player.Hurt`'s combat text (`Player.cs:38382`) + hit-dust loop
+        // (`:38527-38553`): an accepted surviving hit queues `(num2, crit)`
+        // for the text and `(hitDirection, num2)` for the dust. A killing
+        // hit queues the text but no dust (`statLife > 0` gate).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.take_hurt_text(), Some((10, false)), "the text queues num2");
+        let (hit_dir, num2) = p.take_hurt_dust().expect("the dust queues");
+        assert_eq!(num2, 10);
+        // The player's center < from_x (p.x + 100) → hit_dir = -1.
+        assert_eq!(hit_dir, -1);
+        assert!(p.take_hurt_text().is_none(), "the text is a one-shot");
+        assert!(p.take_hurt_dust().is_none(), "the dust is a one-shot");
+        // A killing hit queues the text but no dust.
+        let mut q = Player::spawn(&w);
+        q.hp = 5;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, 0);
+        assert!(q.take_hurt_text().is_some(), "the killing hit still queues the text");
+        assert!(q.take_hurt_dust().is_none(), "no dust on a killing hit");
+    }
+
+    #[test]
+    fn w4_f50_the_football_and_golf_club_hurt_arms_queue() {
+        // `Player.Hurt`'s football arm (`Player.cs:38255-38269`) queues the
+        // hit direction when `hasFootball` is armed; the golf-club arm
+        // (`:38271-38280`) always queues (the drain checks the held kind).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.has_football = true;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.take_football().is_some(), "the football queues");
+        assert!(p.take_golf_club_kill(), "the golf-club flag queues");
+        // Without the football flag, no football request.
+        let mut q = Player::spawn(&w);
+        q.has_football = false;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(q.take_football().is_none(), "no football flag, no request");
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_orb_orbit_integrates_and_draws_the_jitter_pair() {
+        // `UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`): the
+        // frame cycle advances every tick, the unused orbs' positions zero,
+        // and each live orb integrates pos += vel, the Next(-100,101) jitter
+        // pair (X then Y), the far/near pulls, the speed damp and the
+        // player-velocity drag. Deviation 3.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.beetle_orbs = 2;
+        p.beetle_pos[0] = Vec2::new(10.0, 0.0);
+        p.beetle_vel[0] = Vec2::new(1.0, 0.0);
+        p.beetle_pos[2] = Vec2::new(50.0, 50.0); // unused → zeroed
+        p.vx = 4.0;
+        p.vy = 0.0;
+        // A counting stream: the jitter pair draws Next(-100,101) twice per
+        // live orb (X then Y). Here we assert the DRAW COUNT + order.
+        struct CountRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl tr_core::loot::DropRng for CountRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                0
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = CountRng { ranges: Vec::new() };
+        p.update_armor_sets_always_beetle(&mut rng);
+        // 2 live orbs × the X/Y jitter pair = 4 Next(-100,101) draws.
+        assert_eq!(
+            rng.ranges,
+            vec![(-100, 101), (-100, 101), (-100, 101), (-100, 101)],
+            "the jitter pair per live orb, X then Y (:16466-16467)"
+        );
+        // The frame advanced (0 → 1) and the counter reset.
+        assert_eq!(p.beetle_frame, 1);
+        assert_eq!(p.beetle_frame_counter, 0);
+        // The unused orb's position zeroed.
+        assert_eq!(p.beetle_pos[2], Vec2::ZERO);
+        // Orb 0: pos += vel (10+1, 0), jitter 0, no pull (len 11 < 30), no
+        // damp (vel len 1 < 2), then the drag -vx*0.25 = -1 → x = 10.
+        assert_eq!(p.beetle_pos[0], Vec2::new(10.0, 0.0));
+        // Without a set the counter zeroes and nothing draws.
+        let mut q = Player::spawn(&w);
+        q.beetle_counter = 5.0;
+        let mut rng2 = CountRng { ranges: Vec::new() };
+        q.update_armor_sets_always_beetle(&mut rng2);
+        assert_eq!(q.beetle_counter, 0.0);
+        assert!(rng2.ranges.is_empty(), "no set → no orbit draws");
     }
 
     #[test]

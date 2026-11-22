@@ -36411,6 +36411,50 @@ helm +0.1 (`:13852-13855`) and Stardust body/legs +0.15
 reads `owner.whipRangeMultiplier` (`Projectile.cs:48301`) instead of
 the pinned 1f.
 
+## W4-f50 HURT RETIRE (2026-11-21) — the receipts + the seal
+
+The retire pass on `task/W4-f50-hurt-reactions` (DONE tip 18eeb4f44,
+code-only — receipts + docs, no code change; the drop-hunks are merger
+instructions, both-halves-one-commit like f12's f49 bridge). Full record:
+`docs/research/W4-f50-closeout.md`; the hurt-family bible:
+`docs/research/04-player-combat.md` "RETIRE — SEALED".
+
+- **Panic-63 + rederive-ladder (f12 ledger owed-merger-action):** census
+  over every `origin/task/*` branch — the arms exist on f12 (canonical
+  dispatch), f48 (a THIRD copy, new finding) and f50 only; main carries
+  neither. f12's drop-hunks (ruled at the OLD f50 tip ff56e6e51) re-pinned
+  at 18eeb4f44: the inline 63 row `player.rs:7165-7168`, the whole
+  `rederive_beetle_solar_buffs` :4726-4828 + call :4642, the wrapper/call
+  doc rewords :4631-4640/:7599-7606, the :7607 post-scan lift, the
+  :6352-6354 flag-lifecycle fix + f12's OrbContext stub, the two witness
+  retargets :16199-16215/:16342-16379. NOT landed here (deleting the sole
+  reader/writer pre-merge would strand this branch's own witnesses).
+  NEW: f48 69d499c6b carries the same panic family (grants :4514-4531,
+  field/equip/clear, inline 63 row :6809-6814) — ruled f50-canonical hurt
+  head, f48's copies drop, its dodge block + DD2 205 grant stay.
+- **f3-stealth mutual receipt:** f3 tip 75f3f7347's PLAYER-MOVE-FAMILY
+  declaration names stealth f3-canonical (`update_stealth` :9856-9976 +
+  the 1f spawn). f50's hurt write :4907 composes 1:1 (same value, same
+  post-dodge site, verified at both blobs) — drop f50's write + the 0.0
+  spawn :3024 at merge; the invis strip + the joint witness stay f50's.
+- **g64-608 keep-yours:** g64 tip 625c449e0 re-censused — NO 608 row
+  (every `\b608\b` hit is a line-number coincidence). f50's
+  `solar_flare_blast_bodies` + the census oracle stay whole; the ONE
+  overlap is the adapter — `BlastRng`'s DustRng impl is arm-for-arm
+  g64's `DustDraw`; merge lifts f50's GoreRng impl onto `DustDraw` and
+  deletes `BlastRng` (stream-identical).
+- **d70-paladin future-wire:** d70 a7620eec3 carries `PlayerNet.team`
+  :580 / `dead` :585 / `paladin_shield()` :603-612 (ee4905939 ancestor).
+  The MP task seed (closeout Receipt 4) specs the remaining inputs: the
+  remote live life sim, a peer Hurt path with the PaladinsShield
+  cooldown counter, the :38338 gate + 0.75/0.25 split + the 800-range
+  redirect, the PaladinsShieldHit particle fold. SP-unreachable FINAL
+  stands.
+- **research/04 SEALED:** the hurt-family bible (every reaction → C# →
+  port → owner → ruling) seals the hurt rows; the non-hurt M5-COMBAT
+  seeds (projectile chain, ranged split, death reason, contact var)
+  stay open. INDEX row 04 ✅.
+
 **AI_062's target search (the census items 6a-d).** (a) The aim split:
 the Tempest/UFO/Cell branch aims at `position + Size * (0.5, 0.5)` with
 `Y = 0` ONLY for the UFO 423 (`Projectile.cs:65335-65339`), distances
@@ -39441,3 +39485,174 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-f50 — the player hurt REACTIONS (the d116 deferred list, 2026-11-21)
+
+Branch `task/W4-f50-hurt-reactions`, base a725acb0 (wave-3 complete).
+The d116 pushed branch (`task/W4-d116-player-hurt-armor`) ported the
+`NPC.StrikeNPC_Inner` damage tail and DEFERRED the player-side `Hurt`
+reactions (ANALYSIS wave B "Deferred families": the panic buff 63;
+"paladin/beetle/solar ride a later wave"; research/04's MISSING rows).
+This task ported that deferred list. The thorns reflect (S1-C-5) and the
+bee/star-cloak + honeycomb + brain retaliate block (S1-C-7 wave B) were
+re-verified FIRST: both are already on main (`npc.rs::contact` /
+`hurt_modifiers.rs`), unchanged here.
+
+### What landed (three phases + a fidelity round)
+
+- **Phase 1 — the hurt-head reactions** (`Player.cs:38237-38290`): the
+  `panic` flag (the Panic Necklace 1290 `:14892-14895`, the Sweetheart
+  Necklace 1578 `:15076-15080`, the Crossed Heart Necklace 6187
+  `:14625-14628` + longInvince) grants buff 63 (Panic!, 480 ticks) on an
+  accepted hit; the Squire T2 set grants buff 205 (Ballista Panic, 300
+  ticks); `stealth = 1f` breaks the shroomite stealth; the invis strip
+  (`DelBuff(10)` on every slot, the no-rescan `clear_buff` quirk). The
+  buff-63 `moveSpeed++` reader (`:10130-10133`) wired into the live
+  buff scan. `ResetEffects` clears `panic` (`:18616`).
+- **Phase 2 — the Solar Flare + Beetle hurt reductions** (`:38305-38337`):
+  `ConsumeSolarFlare` (`:56742-56762`) consumes a shield charge, cuts
+  `num2` to `(int)(0.8 * num2)`, deletes the 170-172 rows + re-grants
+  the lower tier, zeroes the counter; the 608 blast (`(int)(150 *
+  meleeDamage)`, kb 15) queues for the world-sim drain (the
+  `ProjectilePool::solar_flare_blast` seam: the 160x160 box walk + the
+  Item14 cue + the `solar_flare_blast_draws` census). The Beetle Defense
+  orbs cut `num2` to `(int)((1 - 0.15 * orbs) * num2)`, one orb
+  consumed, the 95-97 ladder + counter zero. The set-bonus recharge
+  machines (`ApplySetBonus_Solar` `:16366-16439`,
+  `ApplySetBonus_BeetleDefense` `:16499-16527`,
+  `ApplySetBonus_BeetleDamage` `:16529-16581`) + the buff-ladder
+  re-derivation (`:10342-10443`) + the always-counter zeros
+  (`:16358-16364`/`:16441-16497`) run at the `UpdateArmorSets` seam.
+  The Solar cut gates on the Counter-set membership (`retaliate_lane`,
+  `ImmunityCooldownID.cs:50`); the Beetle cut has no gate (every lane).
+- **Phase 3 — the hurt text + hit-dust + football/golf-club** (`:38382`,
+  `:38527-38553`, `:38255-38280`): the player hurt combat text
+  (`DamagedFriendly[ Crit]`, the final `num2`, drawn BEFORE the
+  retaliate block); the hit-dust loop (`num2 / statLifeMax2 * 100`
+  particles, stoned 1 / default 5 — the frost/bone texture-id keys are the
+  visual lane); the football 861 return (`(-hitDirection * 4, -6)`, ai1
+  = 1, ai2 = stack, the slot clears) + the golf-club lance-kill (the held
+  4788/4789/4790 kills every owned 877/878/879). The `hasFootball` equip
+  scan (`:12906-12918`) + `ResetEffects` clear (`:18345`).
+- **Fidelity round**: the hit-dust `num22` stays 0 (the C# never
+  increments it; the `NextFloat` draw is still consumed each iteration);
+  the `beetleCountdown / 20` integer division; the buff-ladder count
+  assignment runs unconditionally + the `DelBuff(j); j--` net-index
+  rescan (the C# for-loop shape, the double-delete included).
+
+### Deliberate deviations (recorded)
+
+- **The drain latency**: the C# runs the reactions inline inside `Hurt`
+  (mid-pass); the port queues them (`pending_hurt_text`/`pending_hurt_dust`/
+  `pending_football`/`pending_golf_club_kill`/`pending_solar_blast`/
+  `pending_solar_grant_dust`) and drains at the hitting pass's tail (the
+  S1-E-21c batch convention, the `pending_retaliate` precedent). The
+  combat text drains BEFORE the retaliate block on every lane (the C#
+  `:38382` < `:38401` order); the hit-dust/football/golf drains follow.
+- **The paladin team share** (`:38338-38368`) is single-player-
+  unreachable (`defendedByPaladin` needs a second team player; the
+  `m != whoAmI` scan finds no peer in SP) — NOT ported, documented at the
+  `hurt_inner` seam. FUTURE-WIRE (MP): the `PlayerNet.team`/`dead` fields
+  + `PlayerNet::paladin_shield()` landed on `task/W4-d70-moonlord-shake-
+  screens` `ee4905939` (the `DrawPaladinsShield` peer loops,
+  `Main.cs:57205-57231`, fed by 12 PlayerSpawn / 45 TeamChange / the 13
+  PlayerState port extension); the hurt-side redirect additionally needs
+  the remote players' live `statLife`/`statLifeMax2` + a peer `Hurt` path
+  (the port does not simulate remote equips/life — the d70 deviation), so
+  the share stays deferred until the MP player-sim lands. The
+  `defendedByPaladin` buff-43 flag is ported (`buff_effects_misc.rs`);
+  `CanDefendWithPaladinsShield` (`:38188-38195`) = active && !dead &&
+  hasPaladinShield && team > 0 && team == otherTeam && life > 25% max;
+  `PaladinsShieldRange` = 800 (`:57100`); the `TeamDamageShare` set =
+  {General, BossNoCheese} (`ImmunityCooldownID.cs:51`). The research/04
+  row stays MISSING for MP.
+- **The frost/bone armor dust keys** (`:38538-38547`) — **PORTED**
+  (deviation 4). `apply_armor_sound_and_dust_changes`
+  (`Player.cs:38167-38186`) derives the `bone_armor`/`frost_armor` flags
+  from the effective armour texture ids (the vanity slot 10/11/12
+  overrides the functional 0/1/2 when its id >= 0; the Necro set head
+  7/75 + body 7 + legs 7, the Frost set head 46 + body 27 + legs 26), at
+  the `UpdateArmorSets` seam (`:16312`); `ResetEffects` clears both
+  (`:18350`/`:18352`). The hit-dust loop now keys stoned 1 / frost 135 /
+  bone 26 / default 5. The werewolf override (`:38172-38177`) folds false
+  — the `wereWolf`/`forceWerewolf`/`hideWolf` family (the Moon Charm 861 /
+  Celestial Shell 3110 / 485 grants + the buff-28 arm `:11893-11910`) is
+  unported; the `GetEffectiveArmor` loadout-share folds to the slot (no
+  loadouts). The `PlayHurtSound` frost/bone arms (`:38684-38693`) and the
+  death-burst keys (`:39041-39052`) are the future wires. The `shader`
+  post-arms stay the dye layer's.
+- **The Solar shield-orbit positions** (`solarShieldPos`/`Vel`
+  `:16403-16428`) stay cosmetic/unported (the Solar shield draw is its own
+  lane). The `solarDashing` dash machine is the melee lane's (the
+  `dashType = 3` grant lands, the dash-state disjunct folds false).
+- **The Beetle orb-orbit** (`beetlePos`/`Vel` `:16458-16496`) — **PORTED**
+  (deviation 3, the visual lane). `update_armor_sets_always_beetle` now
+  integrates the orbit verbatim (the 3-frame wing cycle, the unused-orb
+  clear, pos += vel, the `Next(-100,101)` X-then-Y jitter pair per live
+  orb, the 100/30 far/near pulls with the 10/20-part blends, the >2 speed
+  damp ×0.9, the `-velocity * 0.25` drag), drawing from the tick's
+  `UpdatePlayers` stream. The draw-side pure fns (`beetle_ghost_scale`/
+  `beetle_ghost_color`/`beetle_orb_uv`/`beetle_orb_pos`) + the
+  `beetle_orb_layers` builder port `DrawPlayer_37_BeetleBuff`
+  (`PlayerDrawLayers.cs:4007-4031`: 5 trail ghosts + 1 body per orb, the
+  `0.5 - j*0.1` byte tint, the `Height/3*frame+1` / `Height/3-2` rect, the
+  `(W/2, H/6)` origin), wired through `PlayerCompositeState` +
+  `PlayerAssets.beetle_orb` (`Images/BeetleOrb`, `AssetInitializer.cs:578`).
+- **The 608 blast's dust/gore burst bodies** — **PORTED** (deviation 2,
+  through the dust seam in the g64-pattern adapter). g64's ledger
+  (`77616a7d`: 41 trail kinds + deferred 813/957/670/590) claims NO 608
+  row, so this branch ports `Projectile.cs:72183-72224` whole:
+  `solar_flare_blast_bodies` spawns the 4× dust 31 + 30× dust-6 pairs +
+  10× dust 6 + 10× dust 31 + 2× gore 61-63 with every post-arm
+  (noGravity/velocity ×/fadeIn 2.5/the UnitY+UnitX ring repositions),
+  `BlastRng` adapting `DustRng`/`GoreRng` over the machine's
+  `&mut dyn DropRng` (`Next(max) = Next(0, max)`, one Sample step —
+  g64's `DustDraw` is the same shape, keep-one at merge). The three
+  hurt lanes thread `app.dust`/`app.gore`/`spawn_ctx` through
+  `solar_flare_blast`. The old `solar_flare_blast_draws` census stays
+  as the `#[cfg(test)]` stream-parity oracle (252 explicit + 578
+  internal = 830 draws, ordered-subsequence witness). The `shader`
+  post-arms stay dropped (the dye layer).
+- **The stealth-decay machine** (`:25733-25898`): **f3-canonical keep-one**.
+  `task/W4-f3-dust-player-3` `4d820f7d` landed the FULL machine
+  (`update_stealth`: the Psycho-Knife 3106 / Shroomite / Vortex if-else-if
+  chain + the `stealth = 1f` fallback, the two ring dust sites
+  `:25877`/`:25887`, the grants/clears/toggle/dash/mount cancels, the
+  `GetWeaponKnockback` vortex arm) and the field default fix 0.0 → C# 1f
+  (`:1562`), plus the SAME `stealth = 1f` hurt write at the post-dodge
+  site. This branch's hurt write composes 1:1 with that machine (same
+  value, same site, unconditional — verified by reading `4d820f7d`'s
+  `player.rs`): at merge keep ONE copy of the write; the machine and the
+  default fix are f3's, no dup-machine here. Until f3 merges, this
+  branch's `stealth` default stays 0.0 (f3 owns the fix).
+
+### Verification
+
+Code-only mode: **no cargo/rustc/tests invoked**. Every step re-read
+against the cited C# windows (`Player.cs:38197-38567`, `:10342-10443`,
+`:16304-16581`, `:56742-56762`, `:12906-12918`, `:14892-14895`,
+`:15076-15080`, `:14625-14628`, `ImmunityCooldownID.cs:47-53`,
+`Projectile.cs:6554-6566`/`:72177-72225`); the call sites checked by
+read/grep (the three hurt lanes' drains, the `UpdateArmorSets` seam, the
+`ProjectilePool` spawn/box-walk/kill seams, the dust-pool `new_dust`
+signature). 14 witnesses WRITTEN NOT RUN (`player.rs` x11,
+`hurt_modifiers.rs` x3 — the panic/squire/stealth/invis head, the solar
+cut + blast queue, the beetle cut, the set recharge machines, the buff
+ladder, the hurt text/dust queues, the football/golf drains, the hit-dust
+burst).
+
+### Deviations round 2 (2026-11-21) — verification
+
+The five deviation items above were ported/verified code-only (no
+cargo/rustc/tests invoked). Each re-read against its C# window:
+`Player.cs:25733-25899` (f3's `update_stealth`, compose check),
+`Projectile.cs:72183-72224` + `Dust.cs:75-256`/`Gore.cs:1286-1462` (the
+burst bodies + the pool internal draws), `Player.cs:16441-16497` +
+`PlayerDrawLayers.cs:4007-4031` (the orb-orbit + the draw layer),
+`Player.cs:38167-38186`/`:38534-38551`/`:18350-18352` (the frost/bone
+keys), `Player.cs:38338-38368`/`:38188-38195`/`:57100` +
+`ImmunityCooldownID.cs:51` (the paladin share). The cross-branch claims
+read from the pushed tips: f3 `4d820f7d`/`b9575da6`, g64 `77616a7d`, d70
+`ee4905939`. 6 new witnesses WRITTEN NOT RUN (`player.rs` x1 orb-orbit,
+`hurt_modifiers.rs` x2 frost/bone, `projectile_ai_misc.rs` x2 burst
+bodies, `render/player_layers.rs` x1 orb draw) — 20 total.

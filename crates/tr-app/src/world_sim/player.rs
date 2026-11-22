@@ -1214,6 +1214,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &app.equip.armor,
                 app.inventory[app.selected].kind,
             );
+            // W4-f50 — `UpdateEquips`' Football scan (`Player.cs:12906-12918`):
+            // the Football (4743) in any of the 58 inventory slots (or the
+            // mouse slot 58) arms `hasFootball`. The hurt arm (`:38255`) reads
+            // it; `ResetEffects` clears it (`:18345`) and this re-derives per
+            // tick. The port's inventory is the 50-slot hotbar+inventory (the
+            // mouse slot is `app.mouse_item`).
+            p.has_football = app.inventory.iter().any(|s| s.count > 0 && s.kind == 4743)
+                || (app.mouse_item.count > 0 && app.mouse_item.kind == 4743);
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
@@ -1392,6 +1400,36 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-f50 — the Solar Flare shield-grant dust burst (`Player.cs:
+            // 16387-16395`): 16 dust-6 particles at the player's box, each
+            // `noGravity`, scale 1.7, fadeIn 0.5, velocity ×5. The set-bonus
+            // machine queued the flag; the dust pool lives on the App, so the
+            // drain spawns them on the `UpdatePlayers` stream (the
+            // `pending_sticky_dust` convention). The `NewDust` alpha is 100,
+            // scale 1 (the post-arm overrides it to 1.7).
+            if p.take_solar_grant_dust() {
+                for _ in 0..16 {
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        glam::Vec2::new(p.x, p.y),
+                        p.width as i32,
+                        p.height as i32,
+                        6,
+                        0.0,
+                        0.0,
+                        100,
+                        tr_core::particles::Color::default(),
+                        1.0,
+                    );
+                    let slot = app.dust.slot_mut(idx);
+                    slot.no_gravity = true;
+                    slot.scale = 1.7;
+                    slot.fade_in = 0.5;
+                    slot.velocity *= 5.0;
+                }
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -1422,6 +1460,35 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     rng,
                 );
             }
+            // W4-f50 — the player hurt combat text (`Player.cs:38382`): the
+            // C# draws it BEFORE the retaliate block (`:38401`), so the drain
+            // spawns it ahead of the retaliate rolls on the `UpdatePlayers`
+            // stream (the mana text above, `:38291`, already drew first).
+            if let Some((amount, crit)) = p.take_hurt_text() {
+                let text = amount.to_string();
+                let size = match app.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: p.x,
+                    y: p.y,
+                    width: p.width,
+                    height: p.height,
+                };
+                let color = crate::combat_text::damage_text_color(crit, true, false);
+                crate::combat_text::spawn_amount(
+                    &mut app.combat_texts,
+                    location,
+                    color,
+                    amount,
+                    crit,
+                    false,
+                    size,
+                    1.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             if let Some(req) = p.take_retaliate() {
                 // S1-C-7 wave B — the fall/petrify lane's retaliate block
                 // (`Player.cs:38401-38517`): those hits run inside
@@ -1442,6 +1509,55 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-f50 — the Solar Flare hurt blast (`Player.cs:38316-38318`):
+            // the fall/petrify lane's accepted hit consumed a shield charge
+            // and queued the 608 blast; the drain rides the `UpdatePlayers`
+            // stream (the `Main.cs:17754` swap), the S1-E-21c batch convention.
+            // Deviation 2 threads the dust/gore pools through (disjoint field
+            // borrows: `p` is `app.player`, the pools are `app.dust`/`app.gore`).
+            if let Some((center, damage)) = p.take_solar_blast() {
+                let dolls = p.doll_flags();
+                let luck = p.luck();
+                app.projectiles.solar_flare_blast(
+                    center,
+                    damage,
+                    app.local_id as u8,
+                    &mut app.npcs,
+                    dolls,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    luck,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &mut app.gore,
+                );
+            }
+            // W4-f50 — the hit-dust loop + football + golf-club hurt drains
+            // (`Player.cs:38527-38553` / `:38255-38280`): the fall/petrify
+            // lane's accepted hit queued them; the drain rides the
+            // `UpdatePlayers` stream (the S1-E-21c batch convention). The
+            // hit-dust draws follow the hurt sound's (`:38525` < `:38527`).
+            crate::hurt_modifiers::drain_hurt_dust(
+                p,
+                &mut app.dust,
+                &spawn_ctx,
+                &app.world,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            crate::hurt_modifiers::drain_football(
+                p,
+                &mut app.projectiles,
+                &mut app.inventory,
+                &mut app.mouse_item,
+                app.local_id as u8,
+            );
+            let held = app.inventory[app.selected].kind;
+            crate::hurt_modifiers::drain_golf_club_kill(
+                p,
+                &mut app.projectiles,
+                held,
+                app.local_id as u8,
+            );
             // `Player.PlayHurtSound` (`Player.cs:38525`): the hurt cue plays
             // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and
             // the retaliate block (`:38401-38517`), so its draw follows

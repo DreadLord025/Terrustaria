@@ -71,6 +71,9 @@ pub(crate) enum PlayerPart {
     FrontShoulderSleeve,
     FrontShoulderShirt,
     HeldItem,
+    /// `DrawPlayer_37_BeetleBuff` (`PlayerDrawLayers.cs:4007-4031`): the
+    /// Beetle orb sprites — 5 trail ghosts + 1 body per live orb.
+    BeetleOrb,
 }
 
 /// One drawable sprite produced by a layer builder: position and size in world
@@ -241,6 +244,16 @@ pub(crate) struct PlayerCompositeState {
     /// `Player.fullRotation` (`PlayerSleepingHelper.cs:73`): `PI/2 *
     /// (-direction)` while asleep.
     pub(crate) full_rotation: f32,
+    /// W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff`
+    /// (`PlayerDrawLayers.cs:4007-4031`): the live orb count, the 3-frame
+    /// wing cycle and the per-orb orbit position/velocity. The layer draws
+    /// only while a Beetle set is worn (`beetleOffense || beetleDefense`)
+    /// and the player is not a shadow draw.
+    pub(crate) beetle_orbs: i32,
+    pub(crate) beetle_frame: i32,
+    pub(crate) beetle_pos: [[f32; 2]; 3],
+    pub(crate) beetle_vel: [[f32; 2]; 3],
+    pub(crate) beetle_set: bool,
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -411,6 +424,69 @@ pub(crate) fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
     } else {
         uv
     }
+}
+
+/// W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff`
+/// (`PlayerDrawLayers.cs:4016-4023`): the trail ghost's tint scale
+/// `0.5f - j * 0.1f` applied to every byte channel (`(byte)((float)(int)
+/// channel * num)` — the float product truncated, then the byte wrap).
+pub(crate) fn beetle_ghost_scale(j: u32) -> f32 {
+    0.5 - j as f32 * 0.1
+}
+
+/// The ghost tint (`PlayerDrawLayers.cs:4018-4023`): the base armour-body
+/// colour's BYTES scaled by [`beetle_ghost_scale`] — `(byte)((float)(int)
+/// channel * num)`, the float product truncated then the byte wrap. The
+/// input/output are sRGB bytes (the C# `Color` channels); the draw side
+/// converts to linear when it stamps the sprite.
+pub(crate) fn beetle_ghost_color(base: [u8; 4], j: u32) -> [u8; 4] {
+    let num = beetle_ghost_scale(j);
+    [
+        (base[0] as f32 * num) as u8,
+        (base[1] as f32 * num) as u8,
+        (base[2] as f32 * num) as u8,
+        (base[3] as f32 * num) as u8,
+    ]
+}
+
+/// The BeetleOrb sheet's frame rect (`PlayerDrawLayers.cs:4025`):
+/// `Rectangle(0, Height/3 * beetleFrame + 1, Width, Height/3 - 2)` — the
+/// 3-row wing cycle, 1 px down and 2 px cropped. INTEGER division on the
+/// sheet height (the C# `Height()` is an int).
+pub(crate) fn beetle_orb_uv(tex: &BgTex, frame: i32) -> [f32; 4] {
+    let h = tex.h as i32;
+    let row_h = h / 3;
+    let y0 = row_h * frame + 1;
+    let cell_h = row_h - 2;
+    let du = tex.uv[2] - tex.uv[0];
+    let dv = tex.uv[3] - tex.uv[1];
+    [
+        tex.uv[0],
+        tex.uv[1] + dv * (y0 as f32 / tex.h),
+        tex.uv[0] + du,
+        tex.uv[1] + dv * ((y0 + cell_h) as f32 / tex.h),
+    ]
+}
+
+/// The orb sprite's draw position (`PlayerDrawLayers.cs:4025`/`:4028`):
+/// the integer-truncated player centre + `beetlePos[i]` + the ghost's
+/// `-beetleVel[i] * j` trail offset, minus the origin `(Width/2,
+/// Height/6)` (INTEGER division — the C# `new Vector2(W/2, H/6)`).
+pub(crate) fn beetle_orb_pos(
+    center: [f32; 2],
+    beetle_pos: [f32; 2],
+    beetle_vel: [f32; 2],
+    j: u32,
+    tex: &BgTex,
+) -> [f32; 2] {
+    let origin = [
+        (tex.w as i32 / 2) as f32,
+        (tex.h as i32 / 6) as f32,
+    ];
+    [
+        center[0].trunc() + beetle_pos[0] - beetle_vel[0] * j as f32 - origin[0],
+        center[1].trunc() + beetle_pos[1] - beetle_vel[1] * j as f32 - origin[1],
+    ]
 }
 
 fn tint(c: [f32; 3], part: [f32; 3]) -> [f32; 4] {
@@ -1538,6 +1614,65 @@ fn apply_dye(layers: &mut [LayerSprite], s: &PlayerCompositeState) {
     }
 }
 
+/// W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff`
+/// (`PlayerDrawLayers.cs:4007-4031`): per live orb, 5 trail ghosts (j =
+/// 0..4, the tint scaled `0.5 - j*0.1`, the position offset `-beetleVel *
+/// j`) then the full-tint body, all on the 3-frame wing sheet. The gate:
+/// a Beetle set worn and not a shadow draw (the port has no shadow pass,
+/// so the second disjunct folds false). The sprites centre on the
+/// integer-truncated player centre + `beetlePos[i]`, origin `(W/2, H/6)`.
+fn beetle_orb_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
+    let mut out = Vec::new();
+    if !s.beetle_set {
+        return out;
+    }
+    let Some(tex) = a.beetle_orb else {
+        return out;
+    };
+    let uv = beetle_orb_uv(&tex, s.beetle_frame);
+    // `drawinfo.Position` = `player.position + (0, gfxOffY)`
+    // (`LegacyPlayerRenderer.cs:468`), so the orb centre is `Position +
+    // (width/2, height/2)` = the hitbox centre (`origin + (20, 31)`, the
+    // 40x56 art box straddles the 20x42 hitbox at `(-10, -10)`).
+    let center = [s.origin[0] + 20.0, s.origin[1] + 31.0 + s.gfx_off_y];
+    let size = [tex.w, (tex.h as i32 / 3 - 2) as f32];
+    let flip = s.facing < 0.0;
+    for i in 0..s.beetle_orbs.max(0) as usize {
+        let bp = s.beetle_pos[i];
+        let bv = s.beetle_vel[i];
+        // The 5 trail ghosts.
+        for j in 0..5u32 {
+            let ghost = beetle_ghost_color([255, 255, 255, 255], j);
+            let color = [
+                s.light[0] * ghost[0] as f32 / 255.0,
+                s.light[1] * ghost[1] as f32 / 255.0,
+                s.light[2] * ghost[2] as f32 / 255.0,
+                ghost[3] as f32 / 255.0,
+            ];
+            out.push(LayerSprite {
+                part: PlayerPart::BeetleOrb,
+                pos: beetle_orb_pos(center, bp, bv, j, &tex),
+                size,
+                uv: flip_uv(uv, flip),
+                color,
+                rotation: 0.0,
+                dye: 0,
+            });
+        }
+        // The full-tint body.
+        out.push(LayerSprite {
+            part: PlayerPart::BeetleOrb,
+            pos: beetle_orb_pos(center, bp, bv, 0, &tex),
+            size,
+            uv: flip_uv(uv, flip),
+            color: [s.light[0], s.light[1], s.light[2], 1.0],
+            rotation: 0.0,
+            dye: 0,
+        });
+    }
+    out
+}
+
 /// The full player composition: body, then the held item in its
 /// `weaponDrawOrder` slot, then the front arm — the
 /// `LegacyPlayerRenderer.cs:185-255` sequence for the starter player. The
@@ -1572,6 +1707,9 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
     if let Some(front) = mount_front {
         out.push(front);
     }
+    // W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff` rides after the mount
+    // front (the layer list's tail, `PlayerDrawLayers.cs` order).
+    out.extend(beetle_orb_layers(s, a));
     apply_dye(&mut out, s);
     out
 }
@@ -2182,6 +2320,7 @@ mod tests {
             acc_neck: [None; 15],
             mount_back: [Some(sheet()); crate::mount::MOUNT_COUNT],
             mount_front: [Some(sheet()); crate::mount::MOUNT_COUNT],
+            beetle_orb: None,
         }
     }
 
@@ -2220,6 +2359,11 @@ mod tests {
             seat_y_offset: 0,
             sleeping: false,
             full_rotation: 0.0,
+            beetle_orbs: 0,
+            beetle_frame: 0,
+            beetle_pos: [[0.0; 2]; 3],
+            beetle_vel: [[0.0; 2]; 3],
+            beetle_set: false,
         }
     }
 
@@ -3028,6 +3172,61 @@ mod tests {
         assert!((arm.pos[0] - 99.0).abs() < 1e-6, "{:?}", arm.pos);
         assert!((arm.pos[1] - 201.0).abs() < 1e-6, "{:?}", arm.pos);
     }
+
+    #[test]
+    fn w4_f50_the_beetle_orb_layer_draws_five_ghosts_and_a_body_per_orb() {
+        // `DrawPlayer_37_BeetleBuff` (`PlayerDrawLayers.cs:4007-4031`):
+        // per live orb, 5 trail ghosts (the tint scaled 0.5 - j*0.1, the
+        // position offset -beetleVel*j) then the full-tint body. Deviation 3.
+        let orb = BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w: 20.0,
+            h: 60.0,
+        };
+        let a = PlayerAssets {
+            beetle_orb: Some(orb),
+            ..fixture()
+        };
+        let mut s = state();
+        s.beetle_set = true;
+        s.beetle_orbs = 2;
+        s.beetle_frame = 1;
+        s.beetle_pos[0] = [5.0, -3.0];
+        s.beetle_vel[0] = [1.0, 2.0];
+        let out = beetle_orb_layers(&s, &a);
+        // 2 orbs × (5 ghosts + 1 body) = 12 sprites.
+        assert_eq!(out.len(), 12);
+        assert!(out.iter().all(|sp| sp.part == PlayerPart::BeetleOrb));
+        // The frame rect: Height/3 = 20, frame 1 → y0 = 21, cell_h = 18.
+        // v from 21/60 to 39/60.
+        assert!((out[0].uv[1] - 21.0 / 60.0).abs() < 1e-6);
+        assert!((out[0].uv[3] - 39.0 / 60.0).abs() < 1e-6);
+        assert_eq!(out[0].size, [20.0, 18.0]);
+        // The ghost tint scales: j=0 → 0.5, j=4 → 0.1. White base 255 →
+        // (byte)(255*0.5) = 127, (byte)(255*0.1) = 25.
+        assert_eq!(beetle_ghost_color([255, 255, 255, 255], 0), [127, 127, 127, 127]);
+        assert_eq!(beetle_ghost_color([255, 255, 255, 255], 4), [25, 25, 25, 25]);
+        // The body (index 5) keeps the full tint.
+        assert_eq!(out[5].color, [1.0, 1.0, 1.0, 1.0]);
+        // The ghost position offset: -beetleVel*j. Orb 0's j=1 ghost sits
+        // one vel-step behind the body.
+        let body_pos = out[5].pos;
+        let ghost1_pos = out[1].pos;
+        assert!((ghost1_pos[0] - (body_pos[0] - 1.0)).abs() < 1e-6);
+        assert!((ghost1_pos[1] - (body_pos[1] - 2.0)).abs() < 1e-6);
+        // The origin (W/2, H/6) = (10, 10): the body centres on the integer
+        // player centre + beetlePos. origin [100,200] → centre [120,231]
+        // (the hitbox centre, `Position + (width/2, height/2)`).
+        assert!((body_pos[0] - (120.0 + 5.0 - 10.0)).abs() < 1e-6);
+        assert!((body_pos[1] - (231.0 - 3.0 - 10.0)).abs() < 1e-6);
+        // Without the set, nothing draws.
+        s.beetle_set = false;
+        assert!(beetle_orb_layers(&s, &a).is_empty());
+        // Without the sheet, nothing draws.
+        s.beetle_set = true;
+        let a2 = PlayerAssets { beetle_orb: None, ..fixture() };
+        assert!(beetle_orb_layers(&s, &a2).is_empty());
+    }
 }
 
 
@@ -3065,6 +3264,7 @@ mod player_draw_tests {
             acc_neck: [None; 15],
             mount_back: std::array::from_fn(|_| None),
             mount_front: std::array::from_fn(|_| None),
+            beetle_orb: None,
         }
     }
 
@@ -3103,6 +3303,11 @@ mod player_draw_tests {
             seat_y_offset: 0,
             sleeping: false,
             full_rotation: 0.0,
+            beetle_orbs: 0,
+            beetle_frame: 0,
+            beetle_pos: [[0.0; 2]; 3],
+            beetle_vel: [[0.0; 2]; 3],
+            beetle_set: false,
         }
     }
 

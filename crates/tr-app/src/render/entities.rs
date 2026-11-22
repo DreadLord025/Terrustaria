@@ -62,6 +62,10 @@ pub(crate) struct PlayerAssets {
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
     pub(crate) mount_back: [Option<BgTex>; crate::mount::MOUNT_COUNT],
     pub(crate) mount_front: [Option<BgTex>; crate::mount::MOUNT_COUNT],
+    /// W4-f50 deviation 3 — `TextureAssets.Beetle` (`Images/BeetleOrb`,
+    /// `AssetInitializer.cs:578`): the Beetle orb's 3-frame wing sheet
+    /// (`DrawPlayer_37_BeetleBuff`, `PlayerDrawLayers.cs:4007-4031`).
+    pub(crate) beetle_orb: Option<BgTex>,
 }
 
 impl Default for PlayerAssets {
@@ -86,6 +90,7 @@ impl Default for PlayerAssets {
             acc_neck: [None; 15],
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
+            beetle_orb: None,
         }
     }
 }
@@ -166,6 +171,9 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
                 }
             })
         }),
+        // W4-f50 deviation 3 — `TextureAssets.Beetle` loads `Images/BeetleOrb`
+        // (`AssetInitializer.cs:578`); a missing file stays `None`.
+        beetle_orb: sky_tex(atlas, "BeetleOrb", None),
     }
 }
 
@@ -1760,6 +1768,20 @@ pub(crate) fn player_draw_layers(
         seat_y_offset,
         sleeping: player.sleeping,
         full_rotation,
+        // W4-f50 deviation 3 — the Beetle orb draw inputs.
+        beetle_orbs: player.beetle_orbs,
+        beetle_frame: player.beetle_frame,
+        beetle_pos: [
+            [player.beetle_pos[0].x, player.beetle_pos[0].y],
+            [player.beetle_pos[1].x, player.beetle_pos[1].y],
+            [player.beetle_pos[2].x, player.beetle_pos[2].y],
+        ],
+        beetle_vel: [
+            [player.beetle_vel[0].x, player.beetle_vel[0].y],
+            [player.beetle_vel[1].x, player.beetle_vel[1].y],
+            [player.beetle_vel[2].x, player.beetle_vel[2].y],
+        ],
+        beetle_set: player.beetle_offense || player.beetle_defense,
     };
     let mut layers = assemble_layers(&state, assets);
     // `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the
