@@ -1979,6 +1979,9 @@ impl App {
         );
         world.spawn_x = info.spawn_tile_x as i32;
         world.spawn_y = info.spawn_tile_y as i32;
+        // `Main.dungeonX/Y` (`MessageBuffer.cs:653-654`).
+        world.dungeon_x = info.dungeon_x as i32;
+        world.dungeon_y = info.dungeon_y as i32;
         world.time = info.time as f64;
         world.day_time = info.day_time;
         world.moon_phase = info.moon_phase;
@@ -2082,6 +2085,8 @@ impl App {
             lobby_id: 0,
             sandstorm_severity: 0.0,
             extra_spawn_points: Vec::new(),
+            // `Main.dungeonX/Y` (`MessageBuffer.cs:653-654`) — owned since
+            // the W4-d103 tail (the hardmode anchor bias).
             dungeon_x: w.dungeon_x as i16,
             dungeon_y: w.dungeon_y as i16,
         }
@@ -3490,7 +3495,10 @@ fn npc_seed(
         | crate::npc::NpcKind::Poltergeist
         // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
         // hover ctor like the Poltergeist.
-        | crate::npc::NpcKind::Drippler => {
+        | crate::npc::NpcKind::Drippler
+        // W4-d103 WG-POST RETIRE — the Wraith (82, noGravity aiStyle 22)
+        // rides the hover ctor too (the g8 constants-copy, `80f7e7486`).
+        | crate::npc::NpcKind::Wraith => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

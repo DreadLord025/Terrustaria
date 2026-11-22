@@ -152,15 +152,15 @@ rather than a port of all 45k lines".
 | Desert (`DesertBiome` `:12500`, `Dunes` `:11517`, the four entrances) | PORTED | `desert.rs`, `desert_dunes.rs`, `desert_entrances.rs` | Inline `PlotLine`/`Shapes`/`Modifiers` ports; special-seed arms (`surfaceIsDesert`/`remix`/`tenthAnniversary`/`dualDungeons`) deferred |
 | Dungeon (`Dungeon` `:14757`, `DungeonCrawler.cs`) | PARTIAL | `dungeon.rs::generate_dungeon` | The faithful crawler (setup rolls, Legacy layout/hall/room walkers) replaced the shape pass 2026-11-09; out: the entrance-hall precalculation (`:520`), `DungeonGlobal*` feature passes, the biome styles (`dungeonGenerationStyles`, incl. dual-dungeon) |
 | Temple (`LihzahrdTemple` `:15834`, `makeTemple` `:33435`, `templePart2` `:34464`, `LihzahrdAltar` `:21943`) | PORTED (with follow-ups) | `temple.rs` (3 350 lines) | Placement search, rooms, corridors, sweeps, traps, chests, furniture, altar re-write — cargo row marks 🟡/🔄; loot tables / Golem gate / secret-seed arms remain |
-| Structures (shrines `:15977`, chests, altars `:15750`, pyramids `:15367`, pots `:17996`, hives `:15927`, hell forts `:32683`, mini-biomes) | PARTIAL | `structures.rs`, `mini_biomes.rs` | Shape-level for several; `Life Crystals`, `Statues`, `Traps`, `Piles`, `Larva` (bee larvae) passes have **no** step. S1-K-2 wave A (2026-11-18): `MahoganyTreeBiome` ported faithfully (`mini_biomes.rs::pass_mahogany_trees`, the Micro Biomes block `:21105-21123`); `DeadMansChestBiome`/`MiningExplosivesBiome` remain; `ThinIceBiome` is gated on the faithful `Generate Ice Biome` pass (its snow-dominance gate cannot pass in the compact terrain's one-row snow skin) |
+| Structures (shrines `:15977`, chests, altars `:15750`, pyramids `:15367`, pots `:17996`, hives `:15927`, hell forts `:32683`, mini-biomes) | PARTIAL | `structures.rs`, `mini_biomes.rs`, `crystals.rs` | Shape-level for several; `Statues`, `Traps`, `Piles`, `Larva` (bee larvae) passes have **no** step; `Life Crystals` landed 2026-11-20 (W4-d103 pass 22, `crystals.rs::pass_life_crystals`, code-only). S1-K-2 wave A (2026-11-18): `MahoganyTreeBiome` ported faithfully (`mini_biomes.rs::pass_mahogany_trees`, the Micro Biomes block `:21105-21123`); `DeadMansChestBiome`/`MiningExplosivesBiome` remain; `ThinIceBiome` is gated on the faithful `Generate Ice Biome` pass (its snow-dominance gate cannot pass in the compact terrain's one-row snow skin) |
 | Living trees (`:15476-15715`, `GrowLivingTree` `:27973`) | PORTED | `living_trees.rs` | Faithful, incl. the drunk/`extraLivingTrees` ladders; cargo row says done (ROADMAP's status table still says "parked") |
-| Floating islands (`:12924-13133`, houses `:17862`) | PARTIAL | `islands.rs` | Shape-level cloud disc + lake + house; snow/desert variants and furniture sets out |
+| Floating islands (`:12924-13133`, houses `:17859`) | PARTIAL | `islands.rs`, `island_houses.rs` | Shape-level cloud disc + lake; the houses landed 2026-11-20 (W4-d103 pass 27, `island_houses.rs::island_house` — the faithful sunplate build over the island ledger, the inline plank box retired); snow/desert island variants out |
 | Plants & surface dressing (`Planting Trees` `:20179`, `Herbs`, `Dye Plants`, `Weeds`, `Flowers`, `Mushrooms`, `Spreading Grass`, `Surface Ore and Stone`, `Place Fallen Log`, `Cactus…` `:21310`, `Water Plants` `:21973`) | PARTIAL | `surface.rs::plant_trees` (step `"trees"`→`"Planting Trees"`), `biome_detail`/`ocean` steps | Only the tree step, the weeds/flora step and the cacti/coral seaweed arms map to vanilla slots; `Herbs`, `Dye Plants`, `Flowers`, `Mushrooms`, `Moss Grass`, `Spreading Grass`, `Surface Ore and Stone`, `Place Fallen Log` are **MISSING** |
-| Liquids (`Settle Liquids` `:19620`, `Settle Liquids Again` `:22137`, `Lakes` `:14556`, `Waterfalls` `:16667`) | PARTIAL | `liquids.rs` (the `Lakes` step) | Static water/lava lakes only; **no liquid simulation pass** and therefore no equivalent of the `Invariant.Assert(Liquid.numLiquid == 0)` (`WorldGenerator.cs:508`); both `Settle Liquids` and `Waterfalls` are missing |
+| Liquids (`Settle Liquids` `:19620`, `Settle Liquids Again` `:22137`, `Lakes` `:14556`, `Waterfalls` `:16667`) | PARTIAL | `liquids.rs` (the `Lakes` step + `pass_waterfalls`, W4-d103 pass 20) | Static water/lava lakes; the `Waterfalls` half-brick sweeps landed 2026-11-20 (code-only, `:16610-16666`); **no liquid simulation pass** and therefore no equivalent of the `Invariant.Assert(Liquid.numLiquid == 0)` (`WorldGenerator.cs:508`); both `Settle Liquids` passes are missing |
 | Shimmer (`Shimmer` `:15195`) | MISSING | — | Not a worldgen liquid in the port (admitted in ANALYSIS M5-STRUCT-5's list) |
 | Spawn selection (`SpawnPoint` `:19460-19588`) | PARTIAL | `pipeline.rs::step_world_tail` `:2355-2401` | Classic: `map.spawn_center` and `heights[center]-6`; the vanilla pass scans for a valid cell (and the remix arm). No `randomSpawn`/`teamBasedSpawns` |
 | Starter NPC (`Guide` `:19850`) | MISSING | — | No spawn-starter-NPC step (spawning is module 24) |
-| Wall polish (`Cave Walls` `:17711`, `Wall Variety` `:16950`) | MISSING | — | The passes that re-texture cave walls are not ported |
+| Wall polish (`Cave Walls` `:17711`, `Wall Variety` `:16697`) | PORTED | `wall_variety.rs::pass_wall_variety` (W4-d103 pass 21), `cave_walls.rs::pass_cave_walls` (W4-d103 pass 26) | Both passes landed 2026-11-20 (code-only): the `Wall Variety` pocket retexture (`:16697-16754`, the flood-fill/outline framework inline) and the `Cave Walls` enclosed-pocket sweeps (`:17711-17839`, Spread.Wall/Wall2 + the jungle-flag countTiles) |
 | Cleanup (`Quick Cleanup` `:17949`, `Tile Cleanup` `:21200`, `Remove Broken Traps` `:22130`, `Final Cleanup` `:22141`) | MISSING | — | No steps; the port relies on its framing pass |
 | Special seeds (9 classic + 37 micro) | PARTIAL | `seeds.rs`, `finish_seeds.rs`, `micro_*.rs` | Framework (option table, BCrypt `to_secret`, flags on `World`/`GenOptions`, TRWLD v7) plus the ported arms; `noSurface`, `roundLandmasses`, `errorWorld`, `extraLiquid`, `dualDungeons`, `teamBasedSpawns`, `randomSpawn`, `addTeleporters`, `graveyardBloodmoonStart` deferred (admitted in ROADMAP M5-SEED-1/2) |
 | Skyblock world gen (`WorldGen.skyblockWorldGen` gate, the duplicated `Jungle` registration `WorldGen.cs:11509`) | MISSING | `VANILLA_CHAIN` gate text only | The gate is never read at runtime, so a skyblock seed runs the classic pipeline (behavioural) |
@@ -322,6 +322,53 @@ Every row below was re-read from code; ROADMAP `DONE` rows are treated as claims
     `GenVars.cs`), so any future pass needing e.g. `numOasis`, `shimmerPosition`,
     `DungeonX/Y` or the beach `shellStart*` quartet's full C# set finds no slot.
     Severity: behavioural (future work). Admitted: partially, per-feature.
+
+## W4-d10x lane split — unexecuted passes (2026-11-20)
+
+The six `task/W4-d10{1..6}-worldgen-passes-N` lanes port the passes that have
+no `EXECUTED_PIPELINE` step, **in C# registration order** (`VANILLA_CHAIN`
+anchors). Census at base `a725acb0` (67 executed steps): the audit's 52-name
+list minus `Granite` (folded into the `"Marble"` step, `biomes.rs:1496+` — a
+faithful `GraniteBiome` port) and `Surface Caves` (executed, WORLDGEN-CAVES)
+= **50 unexecuted passes**, ordered by `WorldGen.cs` anchor:
+
+1 Sand Patches :11689 · 2 Mount Caves :11784 · 3 Dirt Wall Backgrounds :11858 ·
+4 Clay :11959 · 5 Small Holes :12008 · 6 Dirt Layer Caves :12067 ·
+7 Rock Layer Caves :12107 · 8 Generate Ice Biome :12312 · 9 Silt :13143 —
+**d101 range (1-9)**.
+10 Webs :13607 · 11 Slush :14697 · 12 Mountain Caves :14873 · 13 Gems :15050 ·
+14 Shimmer :15195 · 15 Clean Up Dirt :15246 · 16 Dirt Rock Wall Runner :15461 ·
+17 Wood Tree Walls :15717 · 18 Settle Liquids :16132 — **d102 range (10-18)**.
+19 Oasis :16243 · 20 Waterfalls :16610 · 21 Wall Variety :16697 ·
+22 Life Crystals :16755 · 23 Statues :16853 · 24 Surface Chests :17130 ·
+25 Water Chests :17245 · 26 Cave Walls :17711 · 27 Floating Island Houses
+:17859 — **d103 range (19-27, this branch)**.
+Landed: 19 Oasis (90b7eee6), 20 Waterfalls (`liquids.rs::pass_waterfalls`,
+2026-11-20, code-only), 21 Wall Variety (`wall_variety.rs::pass_wall_variety`,
+2026-11-20, code-only), 22 Life Crystals (`crystals.rs::pass_life_crystals`,
+2026-11-20, code-only), 23 Statues (`statues.rs::pass_statues`, 2026-11-20,
+code-only), 24 Surface Chests (`buried_chest.rs::pass_surface_chests` +
+the AddBuriedChest core, 2026-11-20, code-only), 25 Water Chests
+(`water_chests.rs::pass_water_chests`, 2026-11-20, code-only), 26 Cave
+Walls (`cave_walls.rs::pass_cave_walls`, 2026-11-20, code-only), 27
+Floating Island Houses (`island_houses.rs::pass_floating_island_houses` +
+the islands-pass ledger split, 2026-11-20, code-only — pin re-pins deferred
+to the merge gate). **d103 range complete (19-27).**
+28 Quick Cleanup :17875 · 29 Hellforge :18187 · 30 Spreading Grass :18237 ·
+31 Surface Ore and Stone :18447 · 32 Place Fallen Log :18513 · 33 Traps :18657 ·
+34 Piles :18788 · 35 Spawn Point :19460 · 36 Grass Wall :19589 —
+**d104 range (28-36)**.
+37 Guide :19685 · 38 Sunflowers :19898 · 39 Herbs :19964 · 40 Dye Plants :19981 ·
+41 Flowers :20447 · 42 Mushrooms :20599 · 43 Random Gems :20729 ·
+44 Moss Grass :20769 · 45 Larva :20868 — **d105 range (37-45)**.
+46 Settle Liquids Again :21246 · 47 Tile Cleanup :21520 · 48 Stalac :22038 ·
+49 Remove Broken Traps :22121 · 50 Final Cleanup :22141 —
+**d106 range (46-50)**.
+
+Lane rules: verbatim ports into the pipeline at the vanilla slots, per-pass
+`pass_rng` streams (insertions are RNG-neutral for other steps), one commit
+per pass, hash re-pins documented (code-only lanes defer the measured re-pin
+to the merge gate — the `a == b` determinism asserts stay in place).
 
 ## Task seeds
 

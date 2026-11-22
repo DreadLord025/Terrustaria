@@ -897,6 +897,13 @@ pub(crate) fn full_desert(
             }
             if clusters.len() > 0 {
                 gv.desert_hive_bounds = Some((left, top, right, bottom));
+                // `UpdateDesertHiveBounds` (`WorldGen.cs:10989-10998`): the
+                // carve's extent tightens the Reset High/Low pair (the
+                // buried-chest desert arm's flag20 reads them, W4-d103
+                // pass 24). The port publishes the area's bounds once —
+                // the same min/max the per-cell walk accumulates.
+                gv.desert_hive_high = gv.desert_hive_high.min(top);
+                gv.desert_hive_low = gv.desert_hive_low.max(bottom);
             }
             // `AddTileVariance` (`:44` via `DesertHive.Place`).
             add_tile_variance(world, &desc, rng);

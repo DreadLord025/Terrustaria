@@ -337,6 +337,96 @@ mod tests {
     // W4-g40 hive-smooth (research 248, renumbered 246-248 at merge): the PostPlacementEffect walk adds
     // slope/half-brick states inside the hive — RNG-free, but the tile
     // bytes move, so this pin is stale-by-design too when the hive fires.
+    // W4-d103 pass 19 (2026-11-20, code-only): the `Oasis` pass
+    // (`WorldGen.cs:16243-16265` + `PlaceOasis` `:10707-10932`) lands on a
+    // fresh `pass_rng("Oasis")` stream between `remove water` and
+    // `shell piles`, and the `Cactus, Palm Trees, & Coral` oasis block
+    // (`:21326-21363`) wakes over the new `GenVars.numOasis` ledger.
+    // This pin is UNCHANGED by design: the pass's sub-vanilla width guard
+    // (`Next(680, maxTilesX - 680)` needs > 1360 wide) skips before any
+    // draw on the 512-wide world, and the oasis block draws nothing with
+    // `numOasis == 0`. The DEFAULT_WORLD re-pin below is deferred to the
+    // merge gate (no compiler on this branch); the a == b determinism
+    // asserts stay in place.
+    // W4-d103 pass 20 (2026-11-20, code-only): the `Waterfalls` pass
+    // (`WorldGen.cs:16610-16666`) lands on a fresh `pass_rng("Waterfalls")`
+    // stream after `living trees`. Unlike the Oasis width guard, the two
+    // sweeps run at EVERY width (the 20-tile margin only), so this pin is
+    // stale-by-design IF the 512 fixture carries a qualifying liquid edge
+    // (a solid cell with air on both sides beside liquid, or a half-brick
+    // shore) — unmeasured, no compiler on this branch. The gate re-pins
+    // whichever pin moved; the a == b determinism asserts stay in place
+    // (the pass draws only its own fresh stream).
+    // W4-d103 pass 21 (2026-11-20, code-only): the `Wall Variety` pass
+    // (`WorldGen.cs:16697-16754`) lands on a fresh `pass_rng("Wall Variety")`
+    // stream after `waterfalls`. The count is `(int)(300 * 512*512/5040000)`
+    // = 15 placements; the point band `Next(surface, 512-190)` is non-empty
+    // on the 512 fixture, so the pass RUNS there — whether a qualifying
+    // stone-floor pocket (>50 cells, drained, clean) exists is unmeasured
+    // (no compiler on this branch). Stale-by-design if one does; the gate
+    // re-pins. a == b stays (the pass draws only its own fresh stream).
+    // W4-d103 pass 22 (2026-11-20, code-only): the `Life Crystals` pass
+    // (`WorldGen.cs:16755-16852`) lands on a fresh `pass_rng("Life Crystals")`
+    // stream after `wall variety`. The classic y band needs height − 300
+    // above `(2*surface + rockLayer)/3` — on the 512-tall fixture the band
+    // is narrow but non-empty IF the surface sits low enough; the size
+    // guard skips before any draw otherwise. Unmeasured (no compiler on
+    // this branch); stale-by-design if crystals place. a == b stays.
+    // W4-d103 pass 23 (2026-11-20, code-only): the `Statues` pass
+    // (`WorldGen.cs:16853-16970`) lands on a fresh `pass_rng("Statues")`
+    // stream after `life crystals`. The count is
+    // `(int)(73*2 * 512/4200)` = 17 on the 512 fixture; the size guard
+    // needs height − 300 above the y-band floor — 512 − 300 = 212, so the
+    // pass runs IF the band floor sits below 212 (unmeasured). The new
+    // 105/349/135 frame-important boot bits are inert without the kinds.
+    // Stale-by-design if statues place; the gate re-pins. a == b stays.
+    // W4-d103 pass 24 (2026-11-20, code-only): the `Surface Chests` pass
+    // (`WorldGen.cs:17130-17210`) lands on a fresh `pass_rng("Surface
+    // Chests")` stream after `statues`, through the faithful AddBuriedChest
+    // core (the Reset hell-chest shuffle now draws 5 words on the Reset
+    // stream — the crimson roll's stream tail moves, but no executed pass
+    // reads the Reset stream after Reset, so the tiles are untouched by
+    // the shuffle alone). The size guard needs > 600 wide — the 512
+    // fixture skips before any draw, so this pin is UNCHANGED by the pass
+    // itself. a == b stays.
+    // W4-d103 pass 25 (2026-11-20, code-only): the `Water Chests` pass
+    // (`WorldGen.cs:17245-17355`) lands on a fresh `pass_rng("Water
+    // Chests")` stream after `surface chests`. The size guard needs
+    // UnderworldLayer (512−200=312) > 50 and the surface below it — the
+    // 512 fixture PASSES the guard, and the scatter's unbounded water
+    // re-draw spins on a waterless world. The fixture carries ocean water
+    // (the Beaches carve), so the pass runs; whether a style-17 chest
+    // lands is unmeasured (no compiler on this branch). Stale-by-design
+    // if one does; the gate re-pins. a == b stays.
+    // W4-d103 pass 26 (2026-11-20, code-only): the `Cave Walls` pass
+    // (`WorldGen.cs:17711-17839`) lands on a fresh `pass_rng("Cave Walls")`
+    // stream after `water chests`. The size guard needs > 400 wide — the
+    // 512 fixture PASSES it (512 > 400), and the y band (512−220=292)
+    // sits above the (surface+rock)/2 floor, so the pass runs; whether a
+    // counted pocket qualifies is unmeasured (no compiler on this branch).
+    // Stale-by-design if walls paint; the gate re-pins. a == b stays.
+    // W4-d103 pass 27 (2026-11-20, code-only): the `Floating Island Houses`
+    // pass (`WorldGen.cs:17859-17874` + IslandHouse `:79203-79484`) lands
+    // on a fresh `pass_rng("Floating Island Houses")` stream after `cave
+    // walls`, and the islands pass now DEFERS its house build to this slot
+    // (the vanilla ledger split — the inline shape-level plank box is
+    // retired for the faithful sunplate house). The 512 fixture's islands
+    // pass skips (the sky band is too thin), so the ledger is empty and
+    // this pin is UNCHANGED by the split itself. a == b stays.
+    // W4-d103 tail P2/P3/P4 (2026-11-21, code-only): the hardmode transform
+    // rewrite (the initializeHardMode head draws + the dungeon-side bias +
+    // the remix band + GERunner verbatim) runs only on the hardmode switch
+    // / the start_in_hardmode micro-seed — no classic pipeline step calls
+    // it. This pin is UNCHANGED. a == b stays.
+    // W4-d103 tail P8/P11/P13 (2026-11-21, code-only): the hardUpdateWorld
+    // rewrite (the hardModeWorldUpdates gate, the chlorophyte arms, the
+    // verbatim infection loops) is RUNTIME-only — `UpdateWorld` runs on the
+    // fixed-step growth tick, never inside the generation pipeline. This
+    // pin is UNCHANGED. a == b stays.
+    // W4-d103 tail P9 (2026-11-21, code-only): the underground moss arm
+    // (`UpdateWorld_UndergroundTile`'s `:73699-73755` branch) is RUNTIME-only
+    // — the growth tick, not the pipeline. This pin is UNCHANGED. a == b
+    // stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -524,6 +614,74 @@ mod tests {
     // moves iff its desert band seats a hive. Re-pin DEFERRED to the merge
     // gate; a==b kept (the three desert.rs hive-smooth witnesses pin the
     // map's arm-exactness, the slope delta and the RNG-neutral replay).
+    // W4-d103 pass 19 (code-only): the Oasis basins (the water carve, the
+    // sand rim, the bridge speckle) plus the awakened cacti-pass oasis
+    // block (palms/sea oats/oasis plants over each basin) move this pin BY
+    // DESIGN on the 4200-wide default world. The re-pin is DEFERRED to the
+    // merge gate (no compiler on this branch); a == b stays green — the
+    // pass draws only its own fresh stream.
+    // W4-d103 pass 20 (code-only): the Waterfalls half-brick sweeps (the
+    // liquid-edge pounds + the half-brick shore arms, the `tileSolid[191]`
+    // window over the living wood) move this pin BY DESIGN on the
+    // 4200-wide default world — the lake/ocean/cave liquid edges qualify.
+    // The re-pin is DEFERRED to the merge gate (no compiler on this
+    // branch); a == b stays green — the pass draws only its own fresh
+    // stream, and the half-brick flag rides the existing tile hash mix.
+    // W4-d103 pass 21 (code-only): the Wall Variety pocket retexture (the
+    // 196-215 unsafe-wall families over the drained >50-cell cave pockets,
+    // `(int)(300 * 4200*1200/5040000)` = 300 placements on the default
+    // world) moves this pin BY DESIGN — the cave fields qualify. The
+    // re-pin is DEFERRED to the merge gate (no compiler on this branch);
+    // a == b stays green — the pass draws only its own fresh stream, and
+    // the wall field rides the hash mix.
+    // W4-d103 pass 22 (code-only): the Life Crystals pass (100 heart
+    // crystals on the 4200x1200 default, the 2×2 tile-12 writes with their
+    // 18 px frames + the flattened supports) moves this pin BY DESIGN.
+    // The re-pin is DEFERRED to the merge gate (no compiler on this
+    // branch); a == b stays green — the pass draws only its own fresh
+    // stream.
+    // W4-d103 pass 23 (code-only): the Statues pass (146 statues on the
+    // 4200-wide default, the 3×2 tile-105/349 writes + the four wired
+    // pressure-plate traps) moves this pin BY DESIGN. The re-pin is
+    // DEFERRED to the merge gate (no compiler on this branch); a == b
+    // stays green — the pass draws only its own fresh stream (the wires
+    // are a side table, not hashed).
+    // W4-d103 pass 24 (code-only): the Surface Chests pass (21 chests on
+    // the 4200-wide default, the AddBuriedChest core's 2×2 tile-21 writes
+    // + the living-tree style-12 arm) moves this pin BY DESIGN. The re-pin
+    // is DEFERRED to the merge gate (no compiler on this branch); a == b
+    // stays green — the pass draws only its own fresh stream.
+    // W4-d103 pass 25 (code-only): the Water Chests pass (the ocean-cave
+    // treasure anchors + 18 scatter chests on the 4200-wide default, the
+    // style-17 water chests through the AddBuriedChest core) moves this
+    // pin BY DESIGN. The re-pin is DEFERRED to the merge gate (no compiler
+    // on this branch); a == b stays green — the pass draws only its own
+    // fresh stream.
+    // W4-d103 pass 26 (code-only): the Cave Walls pass (168 pocket
+    // retextures + 84 jungle-wall conversions on the 4200-wide default,
+    // the Spread.Wall/Wall2 floods) moves this pin BY DESIGN. The re-pin
+    // is DEFERRED to the merge gate (no compiler on this branch); a == b
+    // stays green — the pass draws only its own fresh stream.
+    // W4-d103 pass 27 (code-only): the Floating Island Houses pass (the
+    // faithful sunplate-202 houses over the island ledger — the door, the
+    // skyware chest, the fountain, the table/chairs, the banners) replaces
+    // the islands pass's inline shape-level plank box, moving this pin BY
+    // DESIGN on the 4200-wide default. The re-pin is DEFERRED to the merge
+    // gate (no compiler on this branch); a == b stays green — the pass
+    // draws only its own fresh stream.
+    // W4-d103 tail P2/P3/P4 (2026-11-21, code-only): the hardmode transform
+    // (`initializeHardMode` head + remix band + the verbatim GERunner) is a
+    // POST-pipeline runtime function — no executed step calls it on a
+    // classic world, so this pin is UNCHANGED by the rewrite. The
+    // `start_in_hardmode` micro-seed world changes by design (it has no
+    // pin). `World.dungeon_x/y` became owned state (the dungeon step
+    // publishes the anchor); neither field is hashed. a == b stays.
+    // W4-d103 tail P8/P11/P13 (2026-11-21, code-only): hardUpdateWorld +
+    // its gates are RUNTIME-only (the fixed-step growth tick) — no
+    // executed pipeline step calls them, classic or seeded. This pin is
+    // UNCHANGED. a == b stays.
+    // W4-d103 tail P9 (2026-11-21, code-only): the underground moss arm is
+    // RUNTIME-only (the growth tick). This pin is UNCHANGED. a == b stays.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

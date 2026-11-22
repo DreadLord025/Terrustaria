@@ -86,7 +86,7 @@ pub(crate) use grass::convert_wall_by_case;
 pub(crate) use grass::{conversion_hardened_sand_walls_contains, conversion_snow_walls_contains};
 // W4-f25 closeout: the Convert 16/18 wall-union seams (the dungeon-biome cells).
 pub(crate) use grass::{conversion_dirt_walls_contains, conversion_new_wall_set};
-use grass::{grow_moss_arm, SPREAD_UNDERGROUND};
+use grass::{grow_moss_arm, grow_moss_arm_underground, SPREAD_UNDERGROUND};
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public
 // seams stay on `growth` (verbatim move, behaviour frozen).
@@ -807,6 +807,24 @@ pub fn update_world_overground_tile(
         }
         return;
     }
+    // `:72218`: the hard-mode infection arm on every ACTIVE overground pick
+    // (the `hardModeWorldUpdates` gate inside reads the `:71501` derivation).
+    // Deviation: the C# reaches this arm only through the final
+    // `else if (nactive())` (`:72216` — the 518/519/liquid>32 arms take the
+    // earlier branches); the port's dispatcher runs it on every active pick
+    // ahead of the type arms. The infection kinds never overlap 518/519, so
+    // the divergence is the liquid>32 grass cells and the post-Plantera
+    // `Next(2)` draw on the earlier-branch kinds — the dispatcher's existing
+    // approximation shape (the dye head sits ahead of the alch arm too).
+    crate::spread::hard_update_world_gated(
+        world,
+        x,
+        y,
+        hard_mode_world_updates(world),
+        world.downed_plant_boss,
+        true,
+        rng,
+    );
     // `:72063-72067`: the tombstone arm — a grave cell rolls
     // `TryGrowingAbigailsFlower` once per update, ahead of the alch/beach
     // chain the C# walks next.
@@ -1130,22 +1148,18 @@ fn overworld_mushroom_growth(
     }
 }
 
-/// The crystal-shard arm of `hardUpdateWorld` (`:69603-69640`): the shard
-/// stones below the rock layer roll `Next(5)`, the 4-dir neighbour must be
-/// empty, the radius-6 density stays under 2, the style `Next(18)` (the big
-/// shard `18 + Next(6)` at 1/50).
+/// The crystal-shard PLACEMENT body of `hardUpdateWorld`
+/// (`WorldGen.cs:69609-69648`): the 4-dir neighbour must be empty, the
+/// radius-6 density stays under 2, the style `Next(18)` (the big shard
+/// `18 + Next(6)` at 1/50). The HEAD gates (the shard-stone kind, the
+/// rock-layer/remix depth, the `Next(5)` roll) live at the
+/// `hard_update_world` call site (`:69607`) — the C# short-circuits them
+/// into the arm's condition; this fn assumes they passed.
 pub fn grow_crystal_shards(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
     let Some(t) = world.tile(x, y) else {
         return;
     };
     if !t.active() || !CAN_GROW_CRYSTAL_SHARDS.contains(&t.kind) {
-        return;
-    }
-    // `((double)j > Main.rockLayer || remixWorld)`.
-    if (y as f64) <= world.rock_layer {
-        return;
-    }
-    if rng.next_max(5) != 0 {
         return;
     }
     // `:69609-69625`: the 4-dir pick — 0 left, 1 right, 2/3 down (the C#'s
@@ -1211,6 +1225,11 @@ pub fn update_world(
     if rate == 0 {
         return 0;
     }
+    // `WorldGen.UpdateWorld`'s head (`:71501`) derives the hardmode-update
+    // flag once (`hardMode || (remix && getGood && !anniversary)`); the
+    // port's dispatchers re-derive it per pick from the same world state
+    // (`hard_mode_world_updates`) — the flags cannot change mid-tick, so
+    // the reads agree. Pre-hardmode classic worlds skip the infection arms.
     // `WorldGen.UpdateWorld`'s setup (`:71503`, `:71508`): the infection
     // spread flag comes in from the caller (`AllowedToSpreadInfections`, set
     // from the journey `StopBiomeSpreadPower`) and the wall-arm box radius is
@@ -1247,8 +1266,8 @@ pub fn update_world(
         let x = rng.next_range(10, world.width - 10);
         let y = rng.next_range(world.world_surface as i32 - 1, world.height - 20);
         // The underground dispatcher (`UpdateWorld_UndergroundTile`
-        // `:73214-73614`) replaces the overground parity call; the dyed/
-        // moss/oyster arms inside it park (ANALYSIS).
+        // `:73214-73813`) replaces the overground parity call; the dyed/
+        // oyster arms inside it park (ANALYSIS).
         update_world_underground_tile(
             world,
             x,
@@ -1262,6 +1281,17 @@ pub fn update_world(
         picks += 1;
     }
     picks
+}
+
+/// `WorldGen.hardModeWorldUpdates` (`WorldGen.cs:71501`): the
+/// `UpdateWorld` head derives it once per tick — `Main.hardMode ||
+/// (Main.remixWorld && Main.getGoodWorld && !Main.tenthAnniversaryWorld)`.
+/// The `hardUpdateWorld` gate (`:69602`) reads it.
+pub fn hard_mode_world_updates(world: &World) -> bool {
+    world.hard_mode
+        || (world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+            && world.seeds.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY)
+            && !world.seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY))
 }
 
 /// `WorldGen.beachDistance` = 380 (`WorldGen.cs:86914`) — the shell arm's
@@ -1889,11 +1919,11 @@ pub(super) mod tests {
 
     #[test]
     fn the_underground_dispatcher_runs_the_passed_arms() {
-        // `UpdateWorld_UndergroundTile`'s ported arms (`:73214-73614`): the
+        // `UpdateWorld_UndergroundTile`'s ported arms (`:73214-73813`): the
         // alch plant grows, the grass family converts (underground), the lily
         // becomes 74, the grass growth re-runs the spikes and the cattail runs
         // its validity/growth pair. The parked arms (the 655 kill, the dye/
-        // seaweed, the 444/396 moss/oyster, the web/town-NPC) stay out.
+        // seaweed, the 444/396 oyster, the web/town-NPC) stay out.
         // The lily conversion: a lily (61) at Next(3)==0 over a non-226 tile
         // converts to 74.
         let mut w = world();
@@ -1925,6 +1955,87 @@ pub(super) mod tests {
             }
         }
         assert!(converted, "the grass arm runs underground");
+    }
+
+    /// W4-d103 POST FINAL item 1: the OVERGROUND dispatcher's hardUpdateWorld
+    /// call-site is LIVE (`WorldGen.cs:72216-72218` — the `else if (nactive())`
+    /// arm calls `hardUpdateWorld(i, j)` on every active overground pick). The
+    /// port's `update_world_overground_tile` runs `hard_update_world_gated`
+    /// ahead of the type arms (`growth.rs:722`); in hardmode an ebonstone 25
+    /// source corrupts the grass box around it, pre-hardmode the
+    /// `hardModeWorldUpdates` gate (`:69602`/`:71501`) freezes it. This pins
+    /// the WIRING (the dispatcher reaches the infection arm), not just the
+    /// ported body.
+    #[test]
+    fn w4_d103_post_the_overground_dispatcher_runs_hard_update_world() {
+        let build = || {
+            let mut w = world();
+            // The ±3 pick box (`spread_loop`) filled with grass 2, the
+            // ebonstone 25 source at the centre. Every non-centre pick is a
+            // convertible grass, so the infection arm fires on the first
+            // non-centre draw.
+            for x in 1997..=2003 {
+                for y in 47..=53 {
+                    put(&mut w, x, y, 2, 0);
+                }
+            }
+            put(&mut w, 2000, 50, 25, 0);
+            w
+        };
+        let any_corrupt = |w: &World| {
+            (1997..=2003).any(|x| (47..=53).any(|y| w.tile(x, y).is_some_and(|t| t.kind == 23)))
+        };
+        // Hardmode: the dispatcher's hard_update arm corrupts the box.
+        let mut w = build();
+        w.hard_mode = true;
+        let mut rng = UnifiedRandom::new(11);
+        for _ in 0..100 {
+            update_world_overground_tile(&mut w, 2000, 50, true, false, 0.0, 0.0, &mut rng);
+        }
+        assert!(any_corrupt(&w), "the overground dispatcher's hardUpdateWorld arm spreads");
+        // Pre-hardmode control: the gate freezes the infection (the box stays
+        // grass on every pick — the dispatcher's other arms never convert it).
+        let mut w2 = build();
+        let mut rng2 = UnifiedRandom::new(11);
+        for _ in 0..100 {
+            update_world_overground_tile(&mut w2, 2000, 50, true, false, 0.0, 0.0, &mut rng2);
+        }
+        assert!(!any_corrupt(&w2), "the pre-hardmode gate freezes the overground arm");
+    }
+
+    /// W4-d103 POST FINAL item 1: the UNDERGROUND dispatcher's hardUpdateWorld
+    /// call-site is LIVE (`WorldGen.cs:73252-73254` — the `else if (nactive())`
+    /// arm). The port's `update_world_underground_tile` runs
+    /// `hard_update_world_gated` on every active pick (`growth.rs:1733`); the
+    /// same ebonstone/grass box corrupts in hardmode and freezes pre-hardmode.
+    #[test]
+    fn w4_d103_post_the_underground_dispatcher_runs_hard_update_world() {
+        let build = || {
+            let mut w = world();
+            for x in 1997..=2003 {
+                for y in 197..=203 {
+                    put(&mut w, x, y, 2, 0);
+                }
+            }
+            put(&mut w, 2000, 200, 25, 0);
+            w
+        };
+        let any_corrupt = |w: &World| {
+            (1997..=2003).any(|x| (197..=203).any(|y| w.tile(x, y).is_some_and(|t| t.kind == 23)))
+        };
+        let mut w = build();
+        w.hard_mode = true;
+        let mut rng = UnifiedRandom::new(12);
+        for _ in 0..100 {
+            update_world_underground_tile(&mut w, 2000, 200, 3, true, true, false, &mut rng);
+        }
+        assert!(any_corrupt(&w), "the underground dispatcher's hardUpdateWorld arm spreads");
+        let mut w2 = build();
+        let mut rng2 = UnifiedRandom::new(12);
+        for _ in 0..100 {
+            update_world_underground_tile(&mut w2, 2000, 200, 3, true, true, false, &mut rng2);
+        }
+        assert!(!any_corrupt(&w2), "the pre-hardmode gate freezes the underground arm");
     }
 
     #[test]
@@ -2487,12 +2598,13 @@ pub(super) mod tests {
 
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
 /// underground growth dispatcher — the clamps, the alch/hard-mode arms, the
-/// grass growth (underground) + the spike arms, the lily conversion, the five
-/// vine families and, behind `allowed_to_spread`, the wall arms.
+/// grass growth (underground) + the spike arms, the moss arm (no `NextDouble`
+/// gate), the lily conversion, the five vine families and, behind
+/// `allowed_to_spread`, the wall arms.
 ///
 /// Parked (documented in ANALYSIS): the 655 life-fruit kill (the NPC store),
 /// `plantDye` (and its `Main.rand.Next(2500)`/`Next(10000)` head rolls),
-/// the 444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
+/// the 444/396 oyster arms (`PlayerLOS`/`AnchorValid`/
 /// `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the net sides,
 /// and the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer
 /// stream carries every draw).
@@ -2522,13 +2634,15 @@ pub fn update_world_underground_tile(
     // (`nactive()` false, `:73252`) path takes the else arm's web + walls.
     if TILE_ALCH.contains(&kind) {
         grow_alch(world, i, j, day_time, raining, rng);
-        // The C# alch arm (`:73248`) does not return — no later arm
+        // The C# alch arm (`:73248`) does not return - no later arm
         // matches 82/83/84, so the port falls through to the wall arms.
     } else if !active {
-        // The hard-mode infection arm (`:73252`) and the tail `else`'s web arm
-        // (`:73803-73806`: wall 62, no liquid). The dye/seaweed, 444/396 and
-        // town-NPC arms park.
-        crate::spread::hard_update_world(world, i, j, false, allowed_to_spread, rng);
+        // The C# `nactive` else-if (`:73252`) does not fire on an
+        // inactive cell - the hardUpdateWorld call rides the ACTIVE
+        // arm below (W4-d103 POST FINAL item 1, the wiring census).
+        // The tail `else`'s web arm (`:73803-73806`: wall 62, no
+        // liquid). The dye/seaweed, 444/396 oyster and town-NPC arms
+        // park.
         if world.tile(i, j).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
             grow_web(world, i, j, rng);
         }
@@ -2590,6 +2704,17 @@ fn underground_nactive_arms(
     max_j: i32,
     rng: &mut UnifiedRandom,
 ) {
+    // `:73254`: the hard-mode infection arm on every ACTIVE pick (the
+    // `hardModeWorldUpdates` gate inside reads the `:71501` derivation).
+    crate::spread::hard_update_world_gated(
+        world,
+        i,
+        j,
+        hard_mode_world_updates(world),
+        world.downed_plant_boss,
+        allowed_to_spread,
+        rng,
+    );
     // `:73255-73262`: the dye-plant head — `Main.rand.Next(2500)` on every
     // `nactive` pick, the exotic arm at `Next(10000)` in hardmode.
     if rng.next_max(2500) == 0 {
@@ -2619,6 +2744,15 @@ fn underground_nactive_arms(
         && rng.next_max(20) == 0
     {
         grow_check_seaweed(world, i, j, rng);
+    }
+    // The moss arm (`:73699-73755`): the `else if (tileMoss || tileMossBrick)`
+    // branch — NO `NextDouble` gate (unlike the overground twin), the box
+    // conversion + the 184 spray. The C# does NOT return here (the wall arms
+    // `:73809` run after the chain), so the port falls through too; the moss
+    // kinds match none of the later return-guards (the grass family, the lily,
+    // the vine arm). The 444/396 oyster arms ahead of it park.
+    if crate::tiledata::TILE_MOSS.has(kind) || crate::tiledata::SET_TILE_MOSS_BRICK.has(kind) {
+        grow_moss_arm_underground(world, i, j, min_i, max_i, min_j, max_j, rng);
     }
     // The grass family + the spikes (`:73280-73295`). The C# `else if`
     // chain does NOT return — the walk continues to the sapling arms

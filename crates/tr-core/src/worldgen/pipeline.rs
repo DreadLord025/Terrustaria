@@ -31,6 +31,8 @@
 
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
+use super::buried_chest;
+use super::cave_walls;
 use super::caves;
 use super::desert;
 use super::desert_dunes;
@@ -39,6 +41,7 @@ use super::finish_no_traps;
 use super::finish_remix;
 use super::hive;
 use super::config::{ConfigSection, WorldGenConfig};
+use super::crystals;
 use super::dungeon;
 use super::evil;
 use super::islands;
@@ -52,10 +55,13 @@ use super::mini_biomes;
 use super::noise::{Noise, Rng};
 use super::ocean;
 use super::spider_gem_moss;
+use super::statues;
 use super::structures;
 use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
+use super::wall_variety;
+use super::water_chests;
 use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
@@ -417,6 +423,32 @@ pub(crate) struct GenVars {
     /// shuffled `hellChestItem` table itself stays with the tr-app driver
     /// (the S1-A-4 seam); the core only carries the counter.
     pub(crate) hell_chest: usize,
+    /// `GenVars.numOasis`/`oasisPosition`/`oasisWidth` (`GenVars.cs:262-270`,
+    /// static ctor `:469-473`: `maxOasis` 20, `oasisHeight` 20) — the Oasis
+    /// pass's placed-basin ledger (`WorldGen.cs:10923-10928`), consumed by
+    /// the `Cactus, Palm Trees, & Coral` oasis block (`:21326-21363`).
+    /// `oasis_height` is the C# readonly static — 20, never redrawn.
+    pub(crate) num_oasis: i32,
+    pub(crate) oasis_position: [(i32, i32); 20],
+    pub(crate) oasis_width: [i32; 20],
+    pub(crate) oasis_height: i32,
+    /// `GenVars.hellChestItem`/`hellChest` (`GenVars.cs:272-274`, the Reset
+    /// shuffle `WorldGen.cs:11246-11258`): the five-item hell-chest main
+    /// table, shuffled once per world by the pick-and-remove draw, and the
+    /// wrap counter `AddBuriedChest`'s hell arm advances (`:36210-36217`).
+    /// W4-d103 pass 24: the faithful buried-chest core reads it; the
+    /// shuffle rides the Reset stand-in's own stream after the crimson
+    /// roll (the classic table {274, 220, 112, 218, 3019}, the remix swap
+    /// 112 → 683).
+    pub(crate) hell_chest_item: [u16; 5],
+    /// `GenVars.desertHiveHigh`/`desertHiveLow` (`GenVars.cs:142-144`, the
+    /// Reset values `WorldGen.cs:11147-11148`: maxTilesY / 0, tightened by
+    /// `UpdateDesertHiveBounds` `:10989-10998` as the hive carve walks).
+    /// W4-d103 pass 24: the buried-chest desert arm's `flag20` depth test
+    /// (`:36041`) reads them; the port mirrors the reset pair and the
+    /// hive-bounds publication tightens them.
+    pub(crate) desert_hive_high: i32,
+    pub(crate) desert_hive_low: i32,
 }
 
 impl Default for GenVars {
@@ -498,6 +530,19 @@ impl Default for GenVars {
             // `GenVars.numLarva = 0` (`WorldGen.cs:11245`), the arrays
             // zero-init (`GenVars.cs:446-447`).
             larva: hive::LarvaAnchors::default(),
+            // The C# static ctor (`GenVars.cs:469-473`): numOasis 0, the
+            // 20-slot arrays zero-filled, oasisHeight the readonly 20.
+            num_oasis: 0,
+            oasis_position: [(0, 0); 20],
+            oasis_width: [0; 20],
+            oasis_height: 20,
+            // The Reset shuffle overwrites the table before any pass runs;
+            // the unshuffled order is the C# list literal (`:11246`).
+            hell_chest_item: [274, 220, 112, 218, 3019],
+            // The Reset pair (`WorldGen.cs:11147-11148`): High = maxTilesY
+            // (the run() head re-stamps the real height), Low = 0.
+            desert_hive_high: i32::MAX,
+            desert_hive_low: 0,
         }
     }
 }
@@ -1461,9 +1506,51 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
     // World (`:16419`) — the M5-OCEAN phase-4 insertion.
     step!("remove water", "Remove Water From Sand", step_remove_water),
+    // The vanilla Oasis slot (`WorldGen.cs:16243`): after Remove Water From
+    // Sand (`:16211`), before Shell Piles (`:16266`) — W4-d103 pass 19.
+    step!("oasis", "Oasis", step_oasis),
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Waterfalls slot (`WorldGen.cs:16610`): after Smooth World
+    // (`:16419`) and Living Trees (`:15476`), before Planting Trees
+    // (`:20179`) — W4-d103 pass 20. The executed chain's Living Trees sits
+    // after `slopes` from the pre-scaffold order (vanilla runs it before
+    // Smooth World), so the step lands after the living wood exists — the
+    // sweep's `tileSolid[191] = false` window has its vanilla consumer.
+    step!("waterfalls", "Waterfalls", step_waterfalls),
+    // The vanilla Wall Variety slot (`WorldGen.cs:16697`): after Waterfalls
+    // (`:16610`) and Ice (`:16667`), before Life Crystals (`:16755`) —
+    // W4-d103 pass 21. The executed chain's `fragile ice` sits earlier (the
+    // pre-scaffold order), so the relative Waterfalls < Wall Variety and
+    // Ice < Wall Variety pairs both hold with the step after `waterfalls`.
+    step!("wall variety", "Wall Variety", step_wall_variety),
+    // The vanilla Life Crystals slot (`WorldGen.cs:16755`): after Wall
+    // Variety (`:16697`), before Statues (`:16853`) — W4-d103 pass 22.
+    step!("life crystals", "Life Crystals", step_life_crystals),
+    // The vanilla Statues slot (`WorldGen.cs:16853`): after Life Crystals
+    // (`:16755`), before the buried chests (`:16971`) — W4-d103 pass 23.
+    step!("statues", "Statues", step_statues),
+    // The vanilla Surface Chests slot (`WorldGen.cs:17130`): after Statues
+    // (`:16853`) and the buried chests (`:16971` — the port's grouped
+    // `cave houses` sits earlier), before the jungle chests (`:17211`) —
+    // W4-d103 pass 24.
+    step!("surface chests", "Surface Chests", step_surface_chests),
+    // The vanilla Water Chests slot (`WorldGen.cs:17245`): after Surface
+    // Chests (`:17130`) and the jungle chests (`:17211`), before Spider
+    // Caves (`:17356`) — W4-d103 pass 25. The executed chain's `chests`
+    // step covers the jungle-chest slot earlier (the pre-scaffold order).
+    step!("water chests", "Water Chests", step_water_chests),
+    // The vanilla Cave Walls slot (`WorldGen.cs:17711`): after Water
+    // Chests (`:17245`) and the temple (`:17701`), before the underground
+    // jungle trees (`:17840`) — W4-d103 pass 26. The executed chain's
+    // temple + jungle-trees steps sit earlier (the pre-scaffold order).
+    step!("cave walls", "Cave Walls", step_cave_walls),
+    // W4-d103 pass 27 keep-one (research/87 KEEP-1): the vanilla Floating
+    // Island Houses slot (`WorldGen.cs:17859`) stays at g44's registration
+    // over the islands ledger (the `w4_g44_the_island_houses_step_follows_
+    // the_islands` witness pins it); d103's after-cave-walls duplicate
+    // dropped at the merge.
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2114,6 +2201,9 @@ fn step_dungeon(
     dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
     // `Main.dungeonX/dungeonY` (`Main.cs:1115-1117`) — the entrance anchor
     // the Plantera bulb event's rectangle reads (W4-c31 jungle residuals).
+    // `Main.dungeonX/Y` (`WorldGen.cs:72486-72487`'s discovery writes — the
+    // crawler's hall anchor is the port's equivalent): the hardmode anchor
+    // bias (`initializeHardMode` `:31593`) and the `.wld` header read it.
     world.dungeon_x = dungeon_x;
     world.dungeon_y = surface_row;
 }
@@ -2719,7 +2809,7 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2789,6 +2879,234 @@ fn step_living_trees(
     );
 }
 
+/// The vanilla Waterfalls slot (`WorldGen.cs:16610`): the liquid-edge
+/// half-brick sweeps on a fresh `pass_rng("Waterfalls")` stream. The
+/// `Skyblock.denySomeGeneration` gate (`:16612`) rides the skyblock flag.
+fn step_waterfalls(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    liquids::pass_waterfalls(world, &mut streams.pass_rng("Waterfalls"));
+}
+
+/// The vanilla Wall Variety slot (`WorldGen.cs:16697`): the unsafe
+/// natural-wall retexture over enclosed cave pockets on a fresh
+/// `pass_rng("Wall Variety")` stream. The `Skyblock.denyAllGeneration` gate
+/// (`:16699`, `:3131` — plain skyblock) rides the skyblock flag. The shimmer
+/// safety loop reads `GenVars.shimmerPosition` — zero until the unported
+/// `Shimmer` pass (`:15195`) writes it (`WorldGen.cs:7039`/`:15241`), so the
+/// port passes the C# zero-init pair (the loop is inert at the origin, far
+/// below the surface band).
+fn step_wall_variety(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    wall_variety::pass_wall_variety(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        gv.lava_line,
+        (0.0, 0.0),
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        &mut streams.pass_rng("Wall Variety"),
+    );
+}
+
+/// The vanilla Life Crystals slot (`WorldGen.cs:16755`): the heart crystals
+/// on a fresh `pass_rng("Life Crystals")` stream. The
+/// `Skyblock.denySomeGeneration` gate (`:16757`) rides the skyblock flag;
+/// the `errorWorld`/`noSurface` mana-crystal arm (`:16812`) rides the micro
+/// flags. The `DoErrorWorldShuffleBlocks`/`NotTheBees()` transforms
+/// (`:16759-16770`) are unported (the module note).
+fn step_life_crystals(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    let mana_arm = opts
+        .micro_flags
+        .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
+    crystals::pass_life_crystals(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        mana_arm,
+        &mut streams.pass_rng("Life Crystals"),
+    );
+}
+
+/// The vanilla Statues slot (`WorldGen.cs:16853`): the statue cycle on a
+/// fresh `pass_rng("Statues")` stream. The `Skyblock.denySomeGeneration`
+/// gate (`:16855`) rides the skyblock flag; the no-traps ×15 count and the
+/// `actuallyNoTrapsForRealIMeanIt` plate veto ride their flags.
+fn step_statues(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    statues::pass_statues(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            || opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS),
+        &mut streams.pass_rng("Statues"),
+    );
+}
+
+/// The vanilla Surface Chests slot (`WorldGen.cs:17130`): the surface-band
+/// chests on a fresh `pass_rng("Surface Chests")` stream through the
+/// faithful `AddBuriedChest` core. The `Skyblock.denySomeGeneration` and
+/// `noSurface` gates (`:17132`) ride their flags.
+fn step_surface_chests(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+    {
+        return;
+    }
+    let layers = *gv.layers();
+    let flags = buried_chest::ChestSeedFlags {
+        remix: opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        get_good: opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        drunk: opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        anniversary: opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        not_the_bees: opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        dont_starve: opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE),
+        no_traps: opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS),
+        error_world: opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD),
+        crimson: opts.crimson,
+        crimson_left: gv.crimson_left,
+    };
+    buried_chest::pass_surface_chests(
+        world,
+        gv,
+        layers.surface_low,
+        layers.world_surface,
+        layers.rock_layer,
+        flags,
+        &mut streams.pass_rng("Surface Chests"),
+        streams.chest_stock.as_deref_mut(),
+    );
+}
+
+/// The vanilla Water Chests slot (`WorldGen.cs:17245`): the ocean-cave
+/// treasure + the water scatter on a fresh `pass_rng("Water Chests")`
+/// stream. The `Skyblock.denyAllGeneration` gate (`:17247`) rides the
+/// skyblock flag; the extraLiquid arms ride the micro flag.
+fn step_water_chests(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    let flags = buried_chest::ChestSeedFlags {
+        remix: opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        get_good: opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        drunk: opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        anniversary: opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        not_the_bees: opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        dont_starve: opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE),
+        no_traps: opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS),
+        error_world: opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD),
+        crimson: opts.crimson,
+        crimson_left: gv.crimson_left,
+    };
+    water_chests::pass_water_chests(
+        world,
+        gv,
+        layers.world_surface,
+        layers.rock_layer,
+        flags,
+        opts.micro_flags
+            .contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID),
+        &mut streams.pass_rng("Water Chests"),
+        streams.chest_stock.as_deref_mut(),
+    );
+}
+
+/// The vanilla Cave Walls slot (`WorldGen.cs:17711`): the enclosed-pocket
+/// wall retexture on a fresh `pass_rng("Cave Walls")` stream. The
+/// `Skyblock.denyAllGeneration` gate (`:17716`) rides the skyblock flag.
+fn step_cave_walls(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let layers = *gv.layers();
+    cave_walls::pass_cave_walls(
+        world,
+        layers.world_surface,
+        layers.rock_layer,
+        gv.lava_line,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        &mut streams.pass_rng("Cave Walls"),
+    );
+}
+
 fn step_trees(
     world: &mut World,
     gv: &mut GenVars,
@@ -2842,6 +3160,32 @@ fn step_remove_water(
     ocean::remove_water_from_sand(world, world_surface);
 }
 
+fn step_oasis(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The seed gate (`WorldGen.cs:16245`): !skyblock && !roundLandmasses &&
+    // !noSurface && (!notTheBees || dontStarve).
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::ROUND_LANDMASSES)
+        || opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+        || (opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
+            && !opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE))
+    {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    ocean::oasis(world, gv, world_surface, &mut streams.pass_rng("Oasis"));
+}
+
 fn step_shell_piles(
     world: &mut World,
     gv: &mut GenVars,
@@ -2882,12 +3226,13 @@ fn step_cacti(
     _pass_config: &ConfigSection,
 ) {
     // The faithful `Cactus, Palm Trees, & Coral` (`WorldGen.cs:21310`) —
-    // the three zones, the beach palms/coral/shells, the middle cactus, the
-    // sea oats — replacing the compact desert-only cactus scatter (the
-    // faithful middle zone's `PlantCactus` covers the desert's cacti).
+    // the oasis block (`:21326-21363`, W4-d103: the Oasis ledger is live)
+    // plus the three zones, the beach palms/coral/shells, the middle
+    // cactus, the sea oats.
     let layers = *gv.layers();
     ocean::cactus_palm_trees_and_coral(
         world,
+        gv,
         &layers,
         &mut streams.pass_rng("Cactus, Palm Trees, & Coral"),
     );
@@ -3049,6 +3394,13 @@ pub(crate) fn boot_statics(world: &mut World) {
     // cascade must reach the object (`TileFrameImportant`'s Check3x3 arm,
     // `WorldGen.cs:86000-86013`).
     world.frame_important[231] = true;
+    // The statues family (W4-d103 pass 23): the statue 105
+    // (`Main.cs:7707`), the jug 349 (`:7727`) and the pressure plate 135
+    // (`:7721`) are frame-important — the framer keeps the `Place2xX` /
+    // `Place1x1` stored frames the Statues pass writes.
+    world.frame_important[105] = true;
+    world.frame_important[349] = true;
+    world.frame_important[135] = true;
 }
 
 /// The vanilla `RunPass` shape over the ported steps: per step, build the
@@ -3096,6 +3448,20 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     }
     if opts.width > 6000 {
         gv.sky_lakes += 1;
+    }
+    // The hell-chest shuffle (`WorldGen.cs:11246-11258`): the uniform
+    // pick-and-remove over the five items, once per world. The port draws
+    // it after the crimson roll on the same Reset stream (the vanilla
+    // pre-pass genRand order; W4-d103 pass 24).
+    let mut list: Vec<u16> = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
+        vec![274, 220, 683, 218, 3019]
+    } else {
+        vec![274, 220, 112, 218, 3019]
+    };
+    for slot in gv.hell_chest_item.iter_mut() {
+        let index = reset_rng.range(0, list.len() as i32) as usize;
+        *slot = list[index];
+        list.remove(index);
     }
     gv
 }
@@ -3169,6 +3535,8 @@ pub(crate) fn run(
     config: &WorldGenConfig,
 ) -> GenOutcome {
     let mut gv = reset_genvars(&streams.core(), opts);
+    // The Reset desert-hive High (`WorldGen.cs:11147`): maxTilesY.
+    gv.desert_hive_high = world.height;
     if let Some(h) = streams.progress.as_mut() {
         h.begin_generation(total_weight(opts));
     }
@@ -3244,7 +3612,9 @@ impl GenerationRunner {
         world.micro_seeds = opts.micro_flags;
         boot_statics(&mut world);
         let core = StreamCore::new(opts.seed);
-        let gv = reset_genvars(&core, opts);
+        let mut gv = reset_genvars(&core, opts);
+        // The Reset desert-hive High (`WorldGen.cs:11147`): maxTilesY.
+        gv.desert_hive_high = height;
         GenerationRunner {
             world,
             gv,
@@ -3392,7 +3762,20 @@ mod tests {
         // `muds walls in jungle`.
         // W4-g44: + `floating island houses` (vanilla "Floating Island
         // Houses", `WorldGen.cs:17859`) after `floating islands`.
-        assert_eq!(names.len(), 69);
+        // W4-d103: + `oasis` (vanilla "Oasis", `WorldGen.cs:16243`) between
+        // `remove water` and `shell piles`; + `waterfalls` (vanilla
+        // "Waterfalls", `:16610`) after `living trees`; + `wall variety`
+        // (vanilla "Wall Variety", `:16697`) after `waterfalls`; + `life
+        // crystals` (vanilla "Life Crystals", `:16755`) after `wall variety`;
+        // + `statues` (vanilla "Statues", `:16853`) after `life crystals`;
+        // + `surface chests` (vanilla "Surface Chests", `:17130`) after
+        // `statues`; + `water chests` (vanilla "Water Chests", `:17245`)
+        // after `surface chests`; + `cave walls` (vanilla "Cave Walls",
+        // `:17711`) after `water chests`.
+        // W4-d103 pass 27 keep-one (research/87): the `floating island
+        // houses` slot stays g44's (over the islands ledger) - d103's
+        // after-cave-walls registration dropped at the merge.
+        assert_eq!(names.len(), 77);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3483,9 +3866,17 @@ mod tests {
                 "settle liquids",
                 "floating island houses",
                 "remove water",
+                "oasis",
                 "shell piles",
                 "slopes",
                 "living trees",
+                "waterfalls",
+                "wall variety",
+                "life crystals",
+                "statues",
+                "surface chests",
+                "water chests",
+                "cave walls",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3567,8 +3958,27 @@ mod tests {
     fn test_DW_4_4_late_ocean_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(names[pos("remove water") + 1], "shell piles");
+        // W4-d103: the Oasis pass (`WorldGen.cs:16243`) slots between
+        // Remove Water From Sand (`:16211`) and Shell Piles (`:16266`).
+        assert_eq!(names[pos("remove water") + 1], "oasis");
+        assert_eq!(names[pos("oasis") + 1], "shell piles");
         assert_eq!(names[pos("shell piles") + 1], "slopes");
+        // W4-d103 pass 20: the Waterfalls pass (`WorldGen.cs:16610`) slots
+        // after Living Trees (`:15476` — the executed chain runs it after
+        // `slopes`) and before Planting Trees (`:20179`); the vanilla
+        // Smooth World (`:16419`) < Waterfalls pair holds too.
+        assert_eq!(names[pos("living trees") + 1], "waterfalls");
+        assert_eq!(names[pos("waterfalls") + 1], "wall variety");
+        assert_eq!(names[pos("wall variety") + 1], "life crystals");
+        assert_eq!(names[pos("life crystals") + 1], "statues");
+        assert_eq!(names[pos("statues") + 1], "surface chests");
+        assert_eq!(names[pos("surface chests") + 1], "water chests");
+        assert_eq!(names[pos("water chests") + 1], "cave walls");
+        // W4-d103 pass 27 keep-one (research/87): the executed houses slot
+        // stays g44's (over the islands ledger, the adjacency witness pins
+        // it); d103's after-cave-walls duplicate dropped — the chain goes
+        // straight to the planting family here.
+        assert_eq!(names[pos("cave walls") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3579,8 +3989,46 @@ mod tests {
             .map(|p| p.name)
             .collect();
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
-        assert!(cpos("Remove Water From Sand") < cpos("Shell Piles"));
+        assert!(cpos("Remove Water From Sand") < cpos("Oasis"));
+        assert!(cpos("Oasis") < cpos("Shell Piles"));
         assert!(cpos("Shell Piles") < cpos("Smooth World"));
+        // W4-d103 pass 20: the vanilla Waterfalls pairs (`:15476` Living
+        // Trees / `:16419` Smooth World → `:16610` Waterfalls → `:16667` Ice).
+        assert!(cpos("Smooth World") < cpos("Waterfalls"));
+        assert!(cpos("Living Trees") < cpos("Waterfalls"));
+        assert!(cpos("Waterfalls") < cpos("Ice"));
+        // W4-d103 pass 21: the vanilla Wall Variety pairs (`:16610`
+        // Waterfalls / `:16667` Ice → `:16697` Wall Variety → `:16755` Life
+        // Crystals — the Life Crystals step is unported, the chain pair is
+        // the witness).
+        assert!(cpos("Waterfalls") < cpos("Wall Variety"));
+        assert!(cpos("Ice") < cpos("Wall Variety"));
+        assert!(cpos("Wall Variety") < cpos("Life Crystals"));
+        // W4-d103 pass 22: the vanilla Life Crystals pairs (`:16697` Wall
+        // Variety → `:16755` Life Crystals → `:16853` Statues).
+        assert!(cpos("Life Crystals") < cpos("Statues"));
+        // W4-d103 pass 23: the vanilla Statues pairs (`:16755` Life
+        // Crystals → `:16853` Statues → `:16971` Buried Chests).
+        assert!(cpos("Statues") < cpos("Buried Chests"));
+        // W4-d103 pass 24: the vanilla Surface Chests pairs (`:16971`
+        // Buried Chests → `:17130` Surface Chests → `:17211` Jungle
+        // Chests Placement).
+        assert!(cpos("Buried Chests") < cpos("Surface Chests"));
+        assert!(cpos("Surface Chests") < cpos("Jungle Chests Placement"));
+        // W4-d103 pass 25: the vanilla Water Chests pairs (`:17211` Jungle
+        // Chests Placement → `:17245` Water Chests → `:17356` Spider
+        // Caves).
+        assert!(cpos("Jungle Chests Placement") < cpos("Water Chests"));
+        assert!(cpos("Water Chests") < cpos("Spider Caves"));
+        // W4-d103 pass 26: the vanilla Cave Walls pairs (`:17701` Temple →
+        // `:17711` Cave Walls → `:17840` Jungle Trees).
+        assert!(cpos("Temple") < cpos("Cave Walls"));
+        assert!(cpos("Cave Walls") < cpos("Jungle Trees"));
+        // W4-d103 pass 27: the vanilla Floating Island Houses pairs
+        // (`:17840` Jungle Trees → `:17859` Floating Island Houses →
+        // `:17875` Quick Cleanup).
+        assert!(cpos("Jungle Trees") < cpos("Floating Island Houses"));
+        assert!(cpos("Floating Island Houses") < cpos("Quick Cleanup"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 
@@ -3682,16 +4130,22 @@ mod tests {
         assert_eq!(pos("mahogany trees") + 1, pos("webs and honey"));
     }
 
-    /// W4-g44: `floating island houses` sits immediately after `floating
-    /// islands` — the house build reads the islands ledger, so the
-    /// relative islands→houses order is the C#'s (`FloatingIslands`
-    /// `:12927` → `FloatingIslandHouses` `:17859`). The port's discs place
-    /// late in the grouped chain, so the pair rides together there.
+    /// W4-g44: `floating island houses` rides with `floating islands` in
+    /// the grouped chain — the house build reads the islands ledger, so
+    /// the relative islands→houses order is the C#'s (`FloatingIslands`
+    /// `:12927` → `FloatingIslandHouses` `:17859`). The merge keep-one
+    /// (research/87 KEEP-1) keeps g44's slot: W4-f25's `settle liquids`
+    /// sits between the pair (the f25 orphan adoption's `remove water`
+    /// adjacency), so the witness pins islands < houses + the houses'
+    /// `remove water` adjacency, not a strict +1.
     #[test]
     fn w4_g44_the_island_houses_step_follows_the_islands() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("floating island houses"), pos("floating islands") + 1);
+        assert!(pos("floating islands") < pos("floating island houses"));
+        assert_eq!(pos("settle liquids"), pos("floating islands") + 1);
+        assert_eq!(pos("floating island houses"), pos("settle liquids") + 1);
+        assert_eq!(pos("remove water"), pos("floating island houses") + 1);
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()

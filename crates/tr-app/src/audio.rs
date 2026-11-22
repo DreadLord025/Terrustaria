@@ -139,6 +139,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_51", 3),
     ("NPC_Hit_55", 3),
     ("NPC_Hit_57", 3),
+    // W4-d103 WG-POST RETIRE — the Wraith's hit cue (`NPC.cs:9862`'s
+    // NPCHit54; the g8 constants-copy — `Sounds/NPC_Hit_54.xnb` ships).
+    ("NPC_Hit_54", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -181,6 +184,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_59", 4),
     ("NPC_Killed_62", 4),
     ("NPC_Killed_66", 4),
+    // W4-d103 WG-POST RETIRE — the Wraith's death cue (`NPC.cs:9863`'s
+    // NPCDeath52; the g8 constants-copy).
+    ("NPC_Killed_52", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),

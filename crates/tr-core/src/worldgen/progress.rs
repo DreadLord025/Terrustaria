@@ -125,6 +125,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         // classic-world arm; the MarblePiles/SpikeCaves messages are the
         // Don't Starve / no-traps arms, not the classic feed).
         "spike pits" | "shell piles" => PassMessage::Key("WorldGeneration.ShellPiles"),
+        // WorldGen.cs:16247 (Oasis).
+        "oasis" => PassMessage::Key("WorldGeneration.Oasis"),
         // WorldGen.cs:20197.
         "vines" => PassMessage::Gen(43),
         // WorldGen.cs:12933.
@@ -135,6 +137,20 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
         // WorldGen.cs:16421.
         "slopes" => PassMessage::Gen(60),
+        // WorldGen.cs:16614 (Waterfalls).
+        "waterfalls" => PassMessage::Gen(69),
+        // WorldGen.cs:16701 (Wall Variety).
+        "wall variety" => PassMessage::Gen(79),
+        // WorldGen.cs:16771 (Life Crystals).
+        "life crystals" => PassMessage::Gen(28),
+        // WorldGen.cs:16857 (Statues).
+        "statues" => PassMessage::Gen(29),
+        // WorldGen.cs:17134 (Surface Chests).
+        "surface chests" => PassMessage::Gen(31),
+        // WorldGen.cs:17249 (Water Chests / UnderwaterChests).
+        "water chests" => PassMessage::Gen(33),
+        // WorldGen.cs:17718 (Cave Walls / CaveWallsInEnclosedSpaces).
+        "cave walls" => PassMessage::Gen(63),
         // WorldGen.cs:15480.
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.

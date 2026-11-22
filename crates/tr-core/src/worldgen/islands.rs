@@ -43,6 +43,9 @@ use crate::world::World;
 
 pub(crate) const TILE_CLOUD: u16 = 189;
 pub(crate) const TILE_RAIN_CLOUD: u16 = 196;
+/// `WallID.Cloud` (`WallID.cs`) — the cloud-disc interior wall 73
+/// (`flood_cloud_walls`). The island HOUSE interiors carry the sunplate
+/// wall 82 (the g44 IslandHouse survivor, research/87).
 pub(crate) const WALL_CLOUD: u16 = 73;
 /// `TileID.Sunplate` (`TileID.cs:1033`) — the island house's frame.
 const TILE_SUNPLATE: u16 = 202;

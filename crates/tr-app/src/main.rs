@@ -158,6 +158,11 @@ mod npc_ai_pillar;
 mod npc_ai_style71;
 mod npc_target;
 mod npc_ai_style21;
+// W4-d103 WG-POST RETIRE: the d24 aiStyle-22 ghost machine (the g8
+// branch's verbatim module) — the Wraith 82 rides it through the axis'
+// 22 arm (the SmashAltar wraith-spawn activation); the seven other
+// members stay UNWIRED until the g8 merge.
+mod npc_ai_style22;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;

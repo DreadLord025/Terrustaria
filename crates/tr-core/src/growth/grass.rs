@@ -372,9 +372,36 @@ fn moss_conversion(this_type: u16, other_type: u16) -> u16 {
 /// (`NetMessage.SendTileSquare`), the paint/coating copy (no color cache) and
 /// the `color` argument of `SpreadGrass` (the port's growth writes carry none).
 pub(super) fn grow_moss_arm(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_j: i32, max_j: i32, rng: &mut UnifiedRandom) {
+    // `:72373`: the overground-only `NextDouble() < 0.5` gate. The underground
+    // twin (`:73699`) has NO such gate — it calls [`moss_arm_body`] directly.
     if rng.next_double() >= 0.5 {
         return;
     }
+    moss_arm_body(world, i, j, min_i, max_i, min_j, max_j, rng);
+}
+
+/// `UpdateWorld_UndergroundTile`'s moss branch (`WorldGen.cs:73699-73755`):
+/// the SAME body as the overground arm but with NO `NextDouble` gate — every
+/// active moss/moss-brick pick converts its box and rolls the 184 spray. The
+/// `flag9` net gate (`:73720-73723`, `netMode == 2 & flag9`) is netcode and
+/// parks with the rest of the growth netcode.
+pub(super) fn grow_moss_arm_underground(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_j: i32, max_j: i32, rng: &mut UnifiedRandom) {
+    moss_arm_body(world, i, j, min_i, max_i, min_j, max_j, rng);
+}
+
+/// The shared moss-arm body (`WorldGen.cs:72375-72428` overground /
+/// `:73701-73754` underground — identical bar the caller's `NextDouble` gate):
+/// the clamped-box dirt/pearlstone conversion through [`moss_conversion`] +
+/// `SpreadGrass` + the per-cell re-frame, then the `Next(6)` / `Next(4)` loose
+/// moss 184 spray into a free 4-neighbour.
+///
+/// Deviation (shared with the overground arm, ANALYSIS): the C# spray routes
+/// through `PlaceTile(…, 184)` (`:59703-59721` — the solid-moss/moss-brick
+/// 4-neighbour support gate, `frameX = style*18`, `frameY = Next(3)*18`,
+/// `SquareTileFrame`); the port writes the 184 bare (no support gate, no
+/// `frameY` draw, no re-frame), the same approximation the overground slice
+/// landed. The paint/coating copy and the netcode park.
+fn moss_arm_body(world: &mut World, i: i32, j: i32, min_i: i32, max_i: i32, min_j: i32, max_j: i32, rng: &mut UnifiedRandom) {
     let Some(tile) = world.tile(i, j) else {
         return;
     };
@@ -396,15 +423,15 @@ pub(super) fn grow_moss_arm(world: &mut World, i: i32, j: i32, min_i: i32, max_i
             }
             spread_grass(world, m, n, neighbour.kind, converted);
             if world.tile(m, n).is_some_and(|t| t.kind == converted) {
-                // `SquareTileFrame(num17, num18)` (`:72396-72398`) — the
-                // converted cell's frames re-derive.
+                // `SquareTileFrame(num17, num18)` (`:72396-72398` /
+                // `:73714`) — the converted cell's frames re-derive.
                 crate::framing::reframe_area(world, m, n, 1, true);
             }
         }
     }
     if rng.next_max(6) == 0 {
-        // The ±1 spray (`:72404-72421`): a free neighbour takes the loose
-        // moss 184.
+        // The ±1 spray (`:72404-72421` / `:73728-73748`): a free neighbour
+        // takes the loose moss 184.
         let (mut tx, mut ty) = (i, j);
         match rng.next_max(4) {
             0 => tx -= 1,
@@ -1497,5 +1524,89 @@ mod tests {
             }
         }
         assert!(pinned_dry, "some stream hits the dry plant roll and misses the tree");
+    }
+
+    /// W4-d103 tail (P9): the underground moss arm (`WorldGen.cs:73699-73755`)
+    /// has NO `NextDouble` gate — every active moss pick converts its box.
+    /// The overground twin draws the gate first; the underground draws the
+    /// `Next(6)` spray roll as its FIRST word.
+    #[test]
+    fn w4_d103_p9_the_underground_moss_arm_has_no_double_gate() {
+        let build = || {
+            let mut w = World::new("t".into(), 64, 64);
+            w.world_surface = 30.0;
+            let midx = w.index(10, 20);
+            w.tiles[midx] = Tile { kind: 179, flags: FLAG_ACTIVE, ..Default::default() };
+            for &(x, y) in &[(9, 20), (10, 19), (11, 20), (10, 21)] {
+                let idx = w.index(x, y);
+                w.tiles[idx] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+            }
+            w
+        };
+        // The underground arm: ONE call converts the dirt neighbours (no
+        // gate roll can refuse it).
+        let mut w = build();
+        let mut rng = UnifiedRandom::new(7);
+        grow_moss_arm_underground(&mut w, 10, 20, 9, 11, 19, 21, &mut rng);
+        let converted = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 179)
+            .count();
+        assert!(converted > 1, "the ungated arm converts on the FIRST call");
+        // The stream mirror: the first draw is the Next(6) spray roll (no
+        // NextDouble ahead of it); the Next(4) direction only on a hit.
+        let mut mirror = UnifiedRandom::new(7);
+        let spray = mirror.next_max(6);
+        if spray == 0 {
+            let _dir = mirror.next_max(4);
+        }
+        assert_eq!(rng, mirror, "no NextDouble gate — the Next(6) leads");
+        // a == b: the twin replays byte-identical (the reframe draws ride
+        // world.frame_rng, seeded identically by World::new).
+        let mut w2 = build();
+        let mut rng2 = UnifiedRandom::new(7);
+        grow_moss_arm_underground(&mut w2, 10, 20, 9, 11, 19, 21, &mut rng2);
+        assert_eq!(rng, rng2, "a == b stream");
+        assert_eq!(w.tiles, w2.tiles, "a == b tiles");
+    }
+
+    /// W4-d103 tail (P9): the underground dispatcher routes a moss pick into
+    /// the ungated arm (`:73699`) — a moss 179 with dirt neighbours converts
+    /// through `update_world_underground_tile` (the classic pre-hardmode
+    /// world draws nothing from the infection gate ahead of it). The moss
+    /// kinds never join the grass/lily/vine arms, so the dispatcher's draw
+    /// prefix is the dye head's `Next(2500)` + the arm's own `Next(6)` spray
+    /// roll (and the `Next(4)` direction only on a spray hit).
+    #[test]
+    fn w4_d103_p9_the_underground_dispatcher_runs_the_moss_arm() {
+        let mut w = World::new("t".into(), 64, 64);
+        w.world_surface = 10.0;
+        w.rock_layer = 20.0;
+        let midx = w.index(20, 30);
+        w.tiles[midx] = Tile { kind: 179, flags: FLAG_ACTIVE, ..Default::default() };
+        for &(x, y) in &[(19, 30), (20, 29), (21, 30), (20, 31)] {
+            let idx = w.index(x, y);
+            w.tiles[idx] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = rng.clone();
+        crate::growth::update_world_underground_tile(
+            &mut w, 20, 30, 3, true, true, false, &mut rng,
+        );
+        let converted = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 179)
+            .count();
+        assert!(converted > 1, "the dispatcher's moss arm converts the dirt box");
+        assert_eq!(w.tile(20, 30).unwrap().kind, 179, "the source stays moss");
+        // The stream prefix: the dye head, then the spray pair.
+        let _dye = mirror.next_max(2500);
+        let spray = mirror.next_max(6);
+        if spray == 0 {
+            let _dir = mirror.next_max(4);
+        }
+        assert_eq!(rng, mirror, "the dispatcher draws exactly this prefix");
     }
 }

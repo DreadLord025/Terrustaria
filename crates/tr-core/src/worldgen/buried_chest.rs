@@ -14,6 +14,9 @@
 //! that shared d103's file stays with d103 (this lane claims only the
 //! core + the `IslandHouse` call site).
 //!
+//! W4-d103 pass 24 (the merge keep-one, research/87): the `Surface
+//! Chests` pass (`:17130-17210`) half stays d103's own claim below.
+//!
 //! Deviations (the S1-A-4 seam, ANALYSIS "World chest loot"): the
 //! stocking block (`:36218-37550`) lives in the tr-app hook
 //! (`chest_stock::stock_placed_chest`) — the family MAIN-ITEM draws
@@ -36,6 +39,10 @@ use super::structures::place_chest_kind;
 use crate::tile::LiquidKind;
 use crate::tiledata::{SET_BASIC_CHEST, SET_BOULDERS, TILE_SOLID, TILE_SOLID_TOP};
 use crate::world::World;
+
+/// `WorldGen.beachDistance` (380 - the `evil.rs` slice; the Surface
+/// Chests pass's ocean probe, W4-d103).
+const BEACH_DISTANCE: i32 = 380;
 
 /// `Main.wallDungeon` (`Main.cs:10598-10606`) — the `evil.rs` slice.
 const WALL_DUNGEON: [u16; 9] = [7, 8, 9, 94, 95, 96, 97, 98, 99];
@@ -244,13 +251,13 @@ pub(crate) fn add_buried_chest(
         let num7 = k;
         // `:35966-35985` — the style default (flag15) and the overrides.
         let mut num9;
-        let mut num10: i32;
+        let mut num10: i32 = 0;
         let flag15 = if flags.remix {
             num7 < world.height - 400
         } else {
             (num7 as f64) >= world_surface + 25.0
         };
-        num9 = if flag15 { 1 } else { 0 };
+        num9 = if flag15 || num10 > 0 { 1 } else { 0 };
         if chest_style >= 0 {
             num9 = chest_style;
         }
@@ -396,7 +403,6 @@ pub(crate) fn add_buried_chest(
             chest_tile_type = 467;
         }
         let _ = num; // the getGoodWorld denominator — the hook's overrides
-        let _ = num10; // the resolved main — the hook re-reads the caller's
         // `:36206` — PlaceChest(i-1, num7-1): the boulder-under veto, the
         // NearOtherChests exclusion, the 2×2 place. The port's place_chest
         // takes the TOP-left (the C# origin is the bottom-left, one row up).
@@ -437,6 +443,108 @@ pub(crate) fn add_buried_chest(
         return None;
     }
     None
+}
+
+/// `WorldGen.oceanDepths` (`WorldGen.cs:10963-10973`) — the `evil.rs`
+/// slice.
+fn ocean_depths(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
+    if y as f64 > ocean_level {
+        return false;
+    }
+    x < BEACH_DISTANCE || x > world.width - BEACH_DISTANCE
+}
+
+/// The `Surface Chests` pass (`WorldGen.cs:17130-17210`): `width * 0.005`
+/// chests in the surface band, the wall-2/59/244 gate (remix bypasses),
+/// the ±50 living-tree search over active origins, the 2000-failure
+/// budget. The skyblock/noSurface gates live in the step adapter.
+/// Sub-vanilla size guard: the x bands need > 600 wide and the y band
+/// needs surfaceLow < surface — the C# `Next` throws otherwise.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pass_surface_chests(
+    world: &mut World,
+    gv: &mut super::pipeline::GenVars,
+    world_surface_low: f64,
+    world_surface: f64,
+    rock_layer: f64,
+    flags: ChestSeedFlags,
+    rng: &mut Rng,
+    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
+) {
+    if world.width <= 600 || (world_surface_low as i32) >= world_surface as i32 {
+        return;
+    }
+    let ocean_level = (world_surface + rock_layer) / 2.0 + 40.0;
+    let count = (world.width as f64 * 0.005) as i32;
+    for _ in 0..count {
+        let mut flag = false;
+        let mut num2 = 0;
+        while !flag {
+            // `:17147-17160` — the point pair; remix redraws the y over
+            // the deep band, classic re-draws both out of the oceans.
+            let mut num3 = rng.range(200, world.width - 200);
+            let mut num4 = rng.range(world_surface_low as i32, world_surface as i32);
+            if flags.remix {
+                num4 = rng.range(world.height - 400, world.height - 150);
+            } else {
+                while ocean_depths(world, num3, num4, ocean_level) {
+                    num3 = rng.range(300, world.width - 300);
+                    num4 = rng.range(world_surface_low as i32, world_surface as i32);
+                }
+            }
+            // `:17161-17194` — the wall gate / the living-tree search.
+            let mut flag2 = false;
+            let mut flag3 = false;
+            let cell = world.tile(num3, num4);
+            if !cell.is_some_and(|t| t.active()) {
+                let wall = cell.map_or(0, |t| t.wall);
+                if wall == 2 || wall == 59 || wall == 244 || flags.remix {
+                    if wall == 244 {
+                        flag2 = true;
+                    }
+                    flag3 = true;
+                }
+            } else {
+                let mut num8 = 1;
+                for j in (num3 - 50..=num3 + 50).step_by(2) {
+                    for k in (num4 - 50..=num4 + 50).step_by(2) {
+                        if (k as f64) < world_surface
+                            && world.tile(j, k).is_some_and(|t| !t.active() && t.wall == 244)
+                            && rng.range(0, num8) == 0
+                        {
+                            flag2 = true;
+                            num8 += 1;
+                            flag3 = true;
+                            num3 = j;
+                            num4 = k;
+                        }
+                    }
+                }
+            }
+            // `:17195-17206` — the place + the budget.
+            let placed = if flag3 {
+                add_buried_chest(
+                    world, num3, num4, 0, true, if flag2 { 12 } else { -1 }, false, 0,
+                    world_surface, rock_layer, flags,
+                    gv.desert_hive_high, gv.desert_hive_low,
+                    &mut gv.hell_chest, gv.hell_chest_item.len(), rng,
+                )
+            } else {
+                None
+            };
+            if let Some(p) = placed {
+                super::chest_stock::stock_placed_chest(
+                    world, stock.as_deref_mut(), rng, p.x, p.y, p.style, p.kind, 0, true,
+                );
+                flag = true;
+            } else {
+                num2 += 1;
+                if num2 >= 2000 {
+                    flag = true;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -710,5 +818,26 @@ mod tests {
         );
         assert_eq!(p4.map(|c| (c.kind, c.style)), Some((21, 0)),
             "floor above worldSurface — IsUndergroundDesert refuses");
+    }
+
+    #[test]
+    fn surface_chests_pass_is_deterministic_for_a_seed() {
+        let base = pocket_world();
+        let mut a = base.clone();
+        let mut b = base.clone();
+        let mut gva = super::super::pipeline::GenVars::default();
+        let mut gvb = super::super::pipeline::GenVars::default();
+        pass_surface_chests(&mut a, &mut gva, 10.0, 20.0, 200.0, flags(), &mut Rng(42), None);
+        pass_surface_chests(&mut b, &mut gvb, 10.0, 20.0, 200.0, flags(), &mut Rng(42), None);
+        assert_eq!(a.tiles, b.tiles, "a == b");
+    }
+
+    #[test]
+    fn surface_chests_size_guard_draws_nothing() {
+        let mut world = World::new("tiny".into(), 100, 100);
+        let mut gv = super::super::pipeline::GenVars::default();
+        let mut rng = Rng(0x5EED);
+        pass_surface_chests(&mut world, &mut gv, 10.0, 20.0, 50.0, flags(), &mut rng, None);
+        assert_eq!(rng.0, 0x5EED, "the size guard draws nothing");
     }
 }
