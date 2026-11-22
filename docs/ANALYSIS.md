@@ -763,8 +763,11 @@ Deliberate deviations, all invisible in the current content set:
   ticked yet; `LightParams::cage_mode` is zeroed, which selects the dim cage colour.
 - `new Color(230,230,230,0).MultiplyRGBA(hsl) * 0.4f` (type 620) is reproduced with the
   XNA byte multiply (`>> 8`) and byte truncation, which can differ from XNA by one LSB.
-- The `Main.liquidAlpha[13]` blue boost needs `shimmer_alpha`, which the app still passes
-  as 0 (the shimmer biome does not exist yet).
+- The `Main.liquidAlpha[13]` blue boost (`TileLightScanner.cs:3160-3166`) stays at 0:
+  the W4-e19 aether census found NO C# writer ever raises `liquidAlpha[13]` — the
+  `DrawWaters` ramp (`Main.cs:57476-57489`) skips style 14 (`IsLiquidStyleWater`,
+  `:57456-57463`) and the capture loop (`:56701-56707`) only writes 0..=10 — so the
+  C# arm is dead code and the 0 feed is faithful, not a gap.
 - `Main.time` is `f32` here (the original is `double`); the affected comparisons
   (`time > 40500`, `time < 16200`) are exact at these magnitudes.
 - `demonTorch`, `DiscoR/G/B` and `mouseTextColor` advance once per *rendered* frame rather
@@ -11896,6 +11899,239 @@ dedupe, the FindFrame group arm loses its 676 member to f47's dedicated
 count-read shape. The family bible (the single-owner map + the merge
 checklist) is research/151 §7.
 
+  `NPC.GetShimmered`'s own transform (`NPC.cs:91548`, the map is ported as a
+  table); `Collision.shimmer`-driven entity wet flags beyond the item's box; the
+  shimmer tile's rendering/animation.
+
+### W4-e19 — the f47-second-half census (the item chain re-verified)
+
+The landed M7-SHIMMER-1 item chain was re-read against `WorldItem.cs:1691-1853`
++ `UpdateShimmer`/`MoveInWorld` (`:338-546`/`:772-864`) and corrected (branch
+`task/W4-e19-liquid-quicksell-shimmer`, code-only — witnesses WRITTEN NOT RUN).
+The six transform tables re-verified verbatim + order-preserved against the
+decompiled sets (316/114/6/1/6/4 entries — `ItemID.cs:353-356`/`:1318`,
+`NPCID.cs:10470`). Round 3 re-ran the census mechanically (the
+`CreateIntSet`/`CreateBoolSet` rows diffed entry-by-entry against
+`shimmer_tables.rs`: all six order-identical, zero unclaimed entries — the
+NPC-side `ShimmerTransformToItem`/`ShimmerTownTransform` sets are f47's phase-1
+claim, keep-one on merge). The ONE gap the census found was the lunar-brick
+moon-phase arm: `lunar_brick_for_moon_phase` read an inverted 0=empty/4=full
+convention, but `Main.GetMoonPhase()` is `(MoonPhase)Main.moonPhase`
+(`Main.cs:3199-3202`) over the RAW enum (`Enums/MoonPhase.cs`: Full 0,
+ThreeQuartersAtLeft 1, HalfAtLeft 2, QuarterAtLeft 3, Empty 4, QuarterAtRight
+5, HalfAtRight 6, ThreeQuartersAtRight 7 — the info-accessory names at
+`Main.cs:46897-46928` confirm 0=FullMoon/4=NewMoon, and the clock's
+`moon_phase` wraps 0..7 like `Main.moonPhase`). The switch now carries the
+enum's real indices (Full 0 → 5408, the `_` default Empty 4 → 5406); the two
+witnesses re-pinned. Fixes:
+
+- **The shared tail** (`:1835-1852`) now runs for EVERY arm that reaches it:
+  `shimmerTime = stack > 0 ? 1 : 0`, `shimmerWet = true`, `velocity *= 0.1f`,
+  `ShimmerEffect(Center)` (the `Item176` cue + 20 dust 309 with the `Next(6)`
+  four-colour switch, `:1661-1689`), `TurnToAir` at stack 0. The old port set
+  these only on the Transform arm and skipped `ShimmerEffect` entirely. The
+  draws ride `UpdateItems` (`Main.cs:17779`'s swap). `Item_176` joined the SFX
+  bank.
+- **The coin merge** calls `Player.add_coin_luck` (no eager `RecalculateLuck` —
+  the C# sets `luckNeedsSync` only, `Player.cs:18099`); copper (71) has no
+  switch case (x1).
+- **The transform** resolves `createTile`/`placeStyle` on the EQUIVALENT type
+  (`:1695`, `ShimmerTransforms.cs:95-108`), not the raw kind. No current
+  `ShimmerCountsAsItem` row exercises the trophy/lunar arm through a remap (all
+  six pairs are non-placeable) — the fix is structural, pinned by the cite.
+- **The decraft** spends `customShimmerResults` when present (the five
+  `Recipe.cs` rows: 278/4915/3509/3506/3507 — `AddCustomShimmerResult`
+  `:2193-2194`/`:2202-2203`/`:9664-9665`/`:9674-9675`/`:9694`), keyed by the
+  created type in `shimmer.rs::custom_shimmer_results` (the generator does not
+  extract the list yet). `SpawnShimmeredItem` (`:628-637`) spawns at the source
+  `Centre` with the alternating `n * (n % 2 * 2 - 1)` fan velocity + the shimmer
+  flags, `prefix: 0` — RNG-free apart from the alchemy `Next(3)` discount (the
+  old port ran the random scatter + prefix roll, a stream deviation). The arm
+  runs at `amount == 0` (`:1788` has no `amount > 0` guard); a surviving source
+  is NOT `shimmered` (`:1828-1833`).
+- **The release arm** (`:1766-1787`) runs the 50-attempt + free-slot budget loop
+  (`GetAvailableAmountOfNPCsToSpawnUpToSlot`, `NPC.cs:80635-80654`), decrementing
+  the stack BEFORE each release (a failed release still consumes a unit);
+  truncated `(int)Center.X`/`(int)Bottom.Y`, style 0 on a transform-map hit else
+  the item's `placeStyle`. Routes through `bug_net::release_npc` (the full
+  `NPC.ReleaseNPC` switch + `CanReleaseNPCs` gates) + the `shimmerTransparency =
+  1f` post-write; the 148 penguin draw is pre-rolled on `UpdateItems`. The 4986
+  arm spawns DIRECTLY via `NPC.NewNPC` (no `ReleaseNPC` gate), truncated coords
+  +4, the spawned NPC keeps the item velocity, the source is NOT `shimmered`.
+- **`downed_moonlord`** reads `world.downed_moon_lord` (was hardcoded false).
+- **The liquid physics** (`item.rs`): the shimmer-wet gravity head (0.065 / cap
+  4, `:380-385`) was missing — now read from the previous tick's `shimmerWet`;
+  the shimmered drop runs `MoveInWorld` (gravity 0 + friction + conveyor +
+  collision) like the C# (the old port skipped it with a bare `pos += vel`);
+  `UpdateShimmer`'s rise scan is the two-row centre probe (`:493-504`), split
+  from the ramp's `CanShimmerAtPosition` single above-top-left tile (`:762-763`);
+  `box_in_shimmer`/`box_is_wet` reuse the faithful `Collision.WetCollision`
+  ports (the centre-shrunk probe, the `(256-liquid)/32*2` surface offset, the
+  sloped-tile-under-liquid arm) — the old naive full-box overlap had none.
+
+The deferred list landed (W4-e19 round 2, commits `6d498224`→`41b8e5aa`,
+code-only — witnesses WRITTEN NOT RUN):
+
+- **The shimmered-item repulsion scan** (`:790-847`): the slice-level
+  `ItemDrop::repel_shimmered` (`item.rs`) — the 50-neighbour budget, the
+  centre-span gate on both axes, `span/distance` capped at 10, the ±3 bounds
+  (±3·span on the equal-X tie-break, lower slot only), the neighbours' live
+  velocities nudged in list order. The items pass runs it before the drop's
+  update (the C# runs it inside `MoveInWorld` before the gravity add); the
+  `flag` rides `ItemDrop::repulsed` into the ×0.8 tail (`:859-862`, after the
+  friction/snap). The span is the drop box (C# `WorldItem.width = 16`,
+  `:138`) — W4-e19 round 3 retired the old 14 px stand-in: `ItemDrop::SIZE`
+  is now 16 everywhere (grab rect, wet/lava probes, conveyor, TileCollision,
+  the repulsion span, the splash `width + 12`); the DRAW quad keeps the 14 px
+  visual centred in the box (`pos + 1`, `SIZE - 2`) so the pixels are
+  unchanged. The witnesses re-pinned at the 16 geometry (the wet-probe
+  parking, the repulsion 8 px pair, the flush landing 303→304, the magnet
+  centre-8 spawns, the grab-rect 42/43 edge, the light anchors).
+- **The `ItemNoGravity` float** (`:774-786`): the 16-row `ItemID.cs:1320` set
+  (`item_no_gravity`), the `!shimmered` gate, both-axis ×0.95 + the 0.1 snap,
+  no gravity add — the whole else arm skipped.
+- **The `wetVelocity` blend** (`:379-396`/`:1046-1084`): the head resolves the
+  factor with the gravity pair (air 0.5 / shimmer 0.375 / honey 0.25);
+  `move_in_world` runs the collision at FULL velocity, refreshes `wet_vel` on
+  the axes the collision changed (`:1052-1059`), and `ApplyMovement`
+  integrates a wet drop at `wetVelocity` (`:1076-1079`). The blocked-Y arm
+  keeps the flush residual as velocity in BOTH arms — round 3 retired the
+  dry snap-and-zero stand-in (`Collision.cs:2394`/`:2444`'s residual is the
+  same code path at `:1051`/`:1064`; `ApplyMovement:1082` steps the dry drop
+  flush). A landing tick carries the residual (one px above the floor →
+  vel 1.0); at flush rest the residual is 0, so the resting witnesses still
+  read vel 0. The wet re-probe moved into `MoveInWorld`'s
+  `:865-878` slot (after the conveyor, before the collision).
+- **The honey/water gravity arms + per-drop wet flags** (`:386-396`):
+  `ItemDrop` carries `wet`/`honey_wet`/`lava_wet`/`wet_count`; the probes
+  LATCH the kind flags (`:868`/`:873`/`:877`), `wet` follows the entry/exit
+  edges, the `!wet` tail clears the three (`:1036-1041`), the grabbed arm
+  clears all + the cooldown (`:427-431`). The ELSE-IF head: honey 0.05/3/0.25,
+  water 0.08/5 (the 0.5 air wet_step). The shimmer tail + `SpawnShimmeredItem`
+  set `wet` (`:1844`/`:635`).
+- **The entry/exit splash dust** (`:881-1045`): the `wetCount = 20` cooldown
+  gates both edges; the drop queues an `ItemSplash` and the items pass drains
+  it into the shared `DustPool` on the `UpdateItems` stream (the g67
+  rain-splash contract) — lava 35 ×5, shimmer 308 ×10 with the `Next(6)`
+  four-colour switch, honey 152 ×5, water `dustWater()` ×10 (scale ×0.8
+  MULTIPLY vs the shimmer's 0.8 SET; the water EXIT anchor drops the `- 8`,
+  `:1011`); the case-19 play rides style 4/5 for the shimmer entry/exit, the
+  default 1 otherwise, AFTER the dust loop. The SHIMMER seal made the ENTRY
+  gate verbatim: it reads the LOCAL `LavaCollision` result (`:886` `!flag2`,
+  `lava_now`), not the sticky flag (behaviourally equal at every reachable
+  entry edge — the 144 proof); the EXIT keeps the sticky read (`:965`). The
+  water style is the once-per-pass `TR_WATER_STYLE`-pinned read (the f47
+  seam adopted at the keep-one round).
+- **The crimson/corruption decraft variant** (`ShimmerTransforms.cs:15-31`):
+  `gen_recipes.py` extracts the 30 world-evil tags (15 crimson/corruption
+  pairs — the census: 273/287/300/556/3266/3267/3268/4076/4131/4745/5092/
+  5107/5120/5322/5457), `craft::Recipe` carries `crimson`/`corruption`, and
+  `decrafting_recipe_index` runs the `IsCraftedCrimson`/`IsCraftedCorruption`
+  LAST-tag-wins preference (the evil sets have NO `notDecraftable` gate,
+  `Recipe.cs:15249-15256`). Round 3 CONSUME: the preference reads the PERSISTED
+  `World.crimson` (the W4-g69 field, adopted verbatim from g69 `2c84e9b66` —
+  same field + ctor + three gen-entries + the `.wld` flags byte + the `.trwld`
+  v18 tail, keep-one g69-canonical on merge) through
+  `ShimmerContext.world_crimson`; the round-2 `world_crimson` thread-local +
+  `set_world_crimson` hook are deleted. The pre-v18 corruption default
+  (`WorldFile.cs:3507`'s fallback) decrafts the corruption row. The
+  `shop.rs`/`loot.rs` folds still carry their own defaults (their lanes' rows).
+
+The ramp-tick witness re-pinned to a 90..=93 band: the faithful surface offset
+starts the resting drop's ramp one tick later than the old naive probe (the
+91-tick ramp arithmetic is unchanged).
+
+### W4-e19 final — the AETHER biome census (the zone's music/bg seams)
+
+The C# "Aether" is `SceneMetrics.ZoneShimmer` — there is no separate ZoneAether
+field. Census (code-only, witnesses WRITTEN NOT RUN):
+
+- **The metric** (`SceneMetrics.cs:594`/`:252`/`:704-705`/`:921`):
+  `ShimmerTileCount = _liquidCounts[3]` (the shimmer LIQUID cells in the scan
+  window, not aetherium tiles), threshold 300, the depth window
+  `worldSurface + 84 < TileCenter.Y < maxTilesY - 396`, `!ZoneDungeon`.
+  ALREADY PORTED verbatim (`tr-core/scene.rs:795-800`, the
+  `scene_scan.rs:177-179` liquid count) — nothing to port.
+- **The music gate** (`Main.cs:12666-12669`): `ZoneShimmer → newMusic = 91`
+  (`MusicID.Aether`, `MusicID.cs:200`), after the eclipse, before the town/
+  sandstorm/underworld tail. ALREADY PORTED (`audio.rs:2708-2712`, fed by
+  `frame/world.rs:194`); a ladder-order witness added. The TOW ladder's 72
+  (`:11951-11953`) waits for the drunk-world swap (`Main.cs:11055-11074`) —
+  unported, the port always runs the normal ladder (deviation: the 72 arm is
+  unreachable until the swap lands).
+- **The bg arm** (`Main.cs:52800-52805`): `shimmerAlpha == 1` skips the whole
+  underground backdrop; `> 0` zeroes `ugBackTransition`. PORTED here (the
+  unclaimed small): `draw_background` takes the live `scene_state.shimmer_alpha`
+  and returns at 1. The port pins `undergroundBackground` 0 so the transition
+  zeroing is a no-op; g72's live `UgBackState` merge must zero its transition
+  on this arm (cross-note, research/146).
+- **The star dim** (`Main.cs:62086-62089`/`:63107-63110`): the natural star
+  field skips at alpha 1 and dims by `1 - alpha` otherwise (the i%3 channel
+  lerp at `:63090-63102` multiplies by `(1f - num * 0f)` = 1 — a decompile
+  no-op). PORTED here (the unclaimed small, g69d-star co-lane cross-note).
+  The ARTIFICIAL star pass (`:62199-62206`, the aether's coloured starfield
+  over the black backdrop) + the underground star UPDATE arm
+  (`:17256-17274`, the `Next(numStars)`/`Next(90)` fall roll) stay g69d's
+  claim — they need the star fall/respawn machine the port's static
+  `make_stars` field does not have.
+- **The monolith terms** (`SceneState.cs:285-289`): the ramp flag is
+  `ShimmerMonolithState == 1 || ZoneShimmer || shimmerMonolithShader ||
+  (player.shimmering && UndergroundForShimmering)`, and state 2 forces it
+  false. PORTED here (the unclaimed small): `SceneState::update_shimmer`
+  reads the already-scanned `shimmer_monolith_state` (tile 658 `frameY/54`,
+  `scene.rs:682`); the equipped-5347 shader term reads false (ApplyShader
+  unported — the accessory seam is M2's). Witness: state 1 ramps without the
+  zone, state 2 suppresses the zone, state 0 keeps the zone trigger.
+- **The liquidAlpha[13] blue boost** (`TileLightScanner.cs:3160-3166`): DEAD
+  CODE in the C# — no writer ever raises index 13 (the DrawWaters ramp skips
+  style 14, the capture loop writes 0..=10 only). The port's 0 feed is
+  faithful; the old "shimmer biome does not exist yet" ANALYSIS note retired.
+- **The black backdrop** (`Main.cs:62184-62187`): a `Black * shimmerAlpha`
+  full-screen quad after the world draw. UNCLAIMED but render-layer — the
+  port's `DrawBlack` coverage is folded into the tile pass's dark-cell merge
+  (`tiles.rs:769-798`); the aether quad needs a screen-fx seam
+  (`screen_fx.rs`) — deferred to the g72/g69d merge lane (research/146).
+
+### The shimmer family — the merger bible (W4-e19 SHIMMER SEAL, 2026-11-21)
+
+The family-wide owner map for 141/master, sealed on
+`task/W4-e19-liquid-quicksell-shimmer` (code-only; receipts in
+research/144-148, every co-lane tip re-read this round). One row per
+C# anchor → port → owner; the merge contracts live in the named receipts.
+
+| C# anchor | Port | Owner / verdict |
+| --- | --- | --- |
+| `WorldItem.cs:138` the 16 drop box | `item::SIZE = 16.0` + every probe + the centred 14 px draw quad | **e19** (`e2003946b`); f47 folded it on its own branch — identical values, trivial dedupe. Cross-lane witness repins: research/145 + its per-lane execution table (each lane on its own branch) |
+| `WorldItem.cs:865-1045` the entry/exit splash | `ItemSplash`/`pending_splash`/`take_splash` + the free-fn `item_splash` (the g67 DustPool/UpdateItems seam) | **e19 KEEPS** (research/144 + seal). The entry gate reads the LOCAL lava probe (`:886` verbatim, the seal fix); the water style is the once-per-pass `TR_WATER_STYLE`-pinned read (f47's seam adopted). f47's `Splash`/`splash_due`/method drain + its superseded witnesses DROP per 144's 8-row table |
+| `WorldItem.cs:1691-1853` the item transform chain | `shimmer.rs` (the shared tail, ShimmerEffect, the decraft/release arms, the equivalent-type resolve) | **e19** (phases 1-4 + round 2/3); f47's 121 agrees the boundary — its NPC drain half is disjoint |
+| `ShimmerTransforms.cs` the six ITEM tables + the evil decraft | `shimmer_tables.rs` + `decrafting_recipe_index(world_crimson)` | **e19** (the moon-phase RAW-enum re-pin, the persisted-crimson consume). `World.crimson` itself is **g69-canonical** (identical row, dedupe at merge) |
+| `NPC.cs:91548-91592` + the NPC/town shimmer sets | `tr-core/shimmer.rs::resolve_npc_shimmer`, the town state-25 arm | **f47** (its phase-1 claims — NOT dropped by the splash keep-one) |
+| `NPC.cs:61128-61150` the 676 ShimmerSlime light/dust | `npc_ai_slime` `wants_shimmer_slime_dust` + `npc_lights::shimmer_slime_light` | **f47** (its keep-one phase 3; the b1 `ai_001_slime_family` adapter is the live-route seam) |
+| `Collision.cs:2332`/`:1825` TileCollision/slope | f47's `tile_collision_opts`/`slope_collision_opts` wrappers | **f47's wrappers are the shared seam** — e19's hand-rolled flush half reconciles onto them at merge (both keep the `:2394`/`:2444` residual; both 144 receipts agree) |
+| `WorldItem.cs:493-504` the two-row rise scan | e19's `rise_over_shimmer` | **e19** (f47's single-tile `over_shimmer` is the ramp probe reused — its 144 concedes the merge takes e19's rise) |
+| `SceneMetrics.ZoneShimmer` + the 91 music gate | `tr-core/scene.rs` + `audio.rs` | already faithful (e19 census, research/146) — no owner conflict |
+| `SceneState.cs:285-289` the monolith ramp | `scene.rs::update_shimmer` states 1/2 | **e19** (the 5347 shader term reads false — ApplyShader unported) |
+| `Main.cs:52800-52805` the bg shimmer-skip | `render/bg.rs::draw_background` | **e19 + g72 same arm** — keep-one at merge, either side faithful; g72's `ug_back_step` keeps the `:52830-52833` transition-zero |
+| `Main.cs:62086-62089`/`:63107-63110` natural-star skip/dim | `render/sky.rs` (`artificial: false` half) | **e19**; the i%3 lerp `:63090-63102` is a decompile no-op (`num*0f`), cited not ported |
+| `Main.cs:62199-62206` the artificial star pass + `:17256-17274` the underground star update | unported (the star fall/respawn machine) | **g69d-star-visual** — DISJOINT from e19's natural half (the seal's 146 boundary table); g69e-clouds-retire touches only the cloud arms |
+| `Main.cs:62184-62187` the black backdrop quad | needs a screen-fx seam | **g72/g69d merge lane** (the artificial pass's backdrop) |
+| `Main.cs:21637-21643` the shimmerShine tint | unported | **g76-shimmer-draw** |
+| `TileLightScanner.cs:3160-3166` liquidAlpha[13] | the 0 feed | DEAD CODE in the C# (e19 census) — faithful, no action |
+| `Main.cs:45269-45310` cursorOverride (layer 36) | the six Cursor sheets + `draw_override` + the clicks.rs evaluation | **e19** (research/147) |
+| `Main.cs:45037-45115` cursorItemIcon (layer 40, 170 sites) | unported | **g86e-cursor-170-sites** — a DIFFERENT layer; compose keeps BOTH (147's seal contract: the two reset clocks stay separate) |
+| `ItemSlot.cs:198-218` the sell/trash hint + the coin math | `evaluate_cursor_override` + the round-3 coin witnesses | **e19** — the C# mouse hint IS the icon; `Lang.misc[75]` is gamepad-only (unported layer) |
+
+**Merge order**: the 16-box lands with whichever of e19/f47 merges first
+(identical constants); the splash shape follows 144 (e19 keeps, the f47
+drop-table applies to the SECOND merge); the per-lane repins execute on
+their own branches BEFORE merging (145's seal table) so the inherited
+blocks arrive pre-repinned; the aether/cursor co-lanes compose in any
+order (disjoint halves).
+
+**Standing deviations** (unchanged, all recorded above): the aggregate
+coin purse, the gamepad input layer (the BuildCommand hint chain, the
+ApplyShader seam, the TOW music swap), the liquidAlpha[13] dead-code 0
+feed, the g69d star machine, the aether black-quad screen-fx seam.
 ## Ocean passes fidelity (M5-OCEAN)
 
 The full ocean family landed 2026-11-08 (branch `M5-OCEAN`, commits
@@ -18435,6 +18671,21 @@ the charge/payout ride it directly and the no-room restore folds out. The
 (`Main.cs:41790-41797`) and the tooltip shop-lines
 (`MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448+`) are the chrome
 follow-up — `display_price_row` stays pinned by its golden vectors.
+
+W4-e19 round 3 quicksell census (code-only): the C# has NO quicksell-to-void-
+bag and NO trash-can sell — `Player.SellItem`'s only two call sites are the
+cursor-10 shift-sell (`ItemSlot.cs:854`) and the shop-cell action-4
+(`:1225`), both ported (`sell_slot_click`/`shop_slot_click`); the trash is a
+plain context-6 slot (the death `DropItems` airs it, `:54304`, ported in
+`death.rs`), and the void bag is a storage fallback, not a sell surface. The
+price math is complete: `sell_payout` = `GetItemExpectedPrice`'s selling ÷5
+min-1 × stack + the `min(memo, stack)` buy-price refund (`:35184-35195`),
+`get_item_expected_price` verbatim (`:35359-35398`, the f32 discount
+truncation + the banker's adjustment rounding + the buyOnce ÷5 clamp); the
+coin kinds 71-74 refuse the sell cursor (`GetSellOrTrash:204-207`). Two
+end-to-end COIN witnesses added (buy→shift-quicksell nets zero through the
+memo refund + the memo consumed by `AddItemToShop`'s `Remove`; the
+un-memo'd stack pays the fifth and re-stocks buyOnce) — WRITTEN NOT RUN.
 
 ## The wet statics rebase (R-03-1, 2026-11-13)
 

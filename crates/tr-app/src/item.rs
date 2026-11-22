@@ -940,8 +940,10 @@ pub struct ItemDrop {
     /// arms inline — the drain is same-tick, pool-pass order, ANALYSIS 121).
     pub splash_due: Option<Splash>,
     /// The shimmered-repulsion brake (`WorldItem.cs:789-862`'s `flag`):
-    /// the per-tick scan pass ([`shimmered_repulsion`]) arms it, the
-    /// movement half spends it on the extra `velocity.X *= 0.8f`.
+    /// the items pass runs the slice-level scan ([`Self::repel_shimmered`],
+    /// the e19 KEEP form per 379) before the drop's update and parks the
+    /// result here; the movement half spends it on the extra
+    /// `velocity.X *= 0.8f` and clears it. Transient.
     pub repulsion_brake: bool,
     /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
     /// `Item.cs:49730`); 0 = none.
@@ -1025,14 +1027,31 @@ impl ItemDrop {
         self.pos + Vec2::splat(SIZE * 0.5)
     }
 
-    /// `WorldItem.CanShimmerAtPosition` (`WorldItem.cs:756-768`): the tile
-    /// above the drop's center (the C# reads `Center.X / 16` and
-    /// `position.Y / 16 - 1`) is shimmer liquid.
+    /// `WorldItem.CanShimmerAtPosition` (`WorldItem.cs:756-770`): the RAMP
+    /// gate's tile probe — `(int)(Center.X / 16)`, `(int)(position.Y / 16 -
+    /// 1f)` (the tile above the drop's top-left), `liquid != 0 && shimmer()`.
+    /// Distinct from the shimmered-float rise scan ([`Self::rise_over_shimmer`],
+    /// `:493-504`'s two-row centre probe). W4-e19: the C# subtracts 1f BEFORE
+    /// the (int) truncation.
     pub fn over_shimmer(&self, world: &World) -> bool {
         let tx = (self.center().x / tr_core::TILE_PX) as i32;
-        let ty = (self.pos.y / tr_core::TILE_PX) as i32 - 1;
+        let ty = (self.pos.y / tr_core::TILE_PX - 1.0) as i32;
         world.tile(tx, ty)
             .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
+    }
+
+    /// `WorldItem.UpdateShimmer`'s shimmered-float rise scan
+    /// (`WorldItem.cs:493-504`, W4-e19): when NOT `shimmerWet`, the two rows
+    /// at the CENTRE (`(int)(Center.X/16)`, `(int)(Center.Y/16)` and `+1`) -
+    /// any shimmer liquid cell rises the drop. The old port reused the
+    /// ramp's single above-top-left tile (a different probe).
+    fn rise_over_shimmer(&self, world: &World) -> bool {
+        let tx = (self.center().x / tr_core::TILE_PX) as i32;
+        let ty = (self.center().y / tr_core::TILE_PX) as i32;
+        (ty..ty + 2).any(|y| {
+            world.tile(tx, y)
+                .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
+        })
     }
 
     /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`,
@@ -1088,13 +1107,21 @@ impl ItemDrop {
     /// (`:483`) — the movement half reads the overridden value.
     fn update_shimmer(&mut self, world: &World, dt: f32, gravity: &mut f32) {
         if self.shimmered {
-            // `:457-508` — gravity is zero for the transformed item; the rise
-            // applies over shimmer liquid (or already shimmerWet), floor -4.
+            // `:457-516` - gravity is zero for the transformed item (`:483`).
             *gravity = 0.0; // :483
-            let over = self.shimmer_wet || self.over_shimmer(world);
-            if over && self.vel.y > -4.0 {
-                self.vel.y -= 0.05;
-            } else if !over {
+            // The rise (W4-e19 KEEP per 379): `shimmerWet` directly
+            // (`:484-490`), else the two-row centre scan (`:493-504`);
+            // floor -4, else the ×0.9 dry damp.
+            let over = if self.shimmer_wet {
+                true
+            } else {
+                self.rise_over_shimmer(world)
+            };
+            if over {
+                if self.vel.y > -4.0 {
+                    self.vel.y -= 0.05;
+                }
+            } else {
                 self.vel.y *= 0.9;
             }
         }
@@ -1165,77 +1192,91 @@ impl ItemDrop {
         drained
     }
 
-    /// `WorldItem.MoveInWorld`'s shimmered-repulsion scan
-    /// (`WorldItem.cs:789-848`, W4-f47): a shimmered drop pushes away from
-    /// up to 50 OTHER shimmered drops whose centres are within
-    /// `(width_i + width_j) / 2` on BOTH axes. `num2 = halfWidthSum /
-    /// Distance` clamped at 10; the X push is ±0.1·num2 with the ±3·num2
-    /// self-cap and the ±3 other-cap (the equal-X arm uses ±3·num2 on the
-    /// other). Sets `repulsion_brake` (the `flag`) when any neighbour
-    /// matched — the movement half spends it on the extra ×0.8 X friction
-    /// (`:859-862`). The C# scans `Main.item[0..400]` skipping self; the
-    /// port's list order is the slot order (the recorded deviation).
-    /// RNG-free. Runs as a pre-pass over the whole list (the C# reads the
-    /// live `Main.item[]` velocities mid-scan; the port's two-phase split
-    /// reads the pre-tick velocities — the one-tick lag is the documented
-    /// pool-pass convention).
-    pub(crate) fn shimmered_repulsion(drops: &mut [ItemDrop]) {
-        // Precompute the centres (the scan reads them repeatedly).
-        let centers: Vec<Vec2> = drops.iter().map(|d| d.center()).collect();
-        for i in 0..drops.len() {
-            if !drops[i].shimmered {
+    /// `WorldItem.MoveInWorld`'s shimmered-item repulsion scan
+    /// (`WorldItem.cs:790-847`; W4-e19 KEEP per 379 - the keeper-agnostic
+    /// slice form; the f47 whole-list `shimmered_repulsion` pre-pass is
+    /// superseded: the C# scan runs per-drop inside MoveInWorld on the LIVE
+    /// velocities): a shimmered drop pushes apart from every other
+    /// shimmered drop whose centre lies within the half-width span on BOTH
+    /// axes, up to a 50-neighbour budget. The push scales by `span / distance`
+    /// (capped at 10) and nudges each side's `velocity.X` by `0.1 * span` toward
+    /// separation, bounded at `±3 * span` for self and `±3` for the neighbour
+    /// (the equal-centre tie-break uses `±3 * span` for both and only fires for
+    /// the lower slot). Returns the C#'s `flag` (any neighbour touched), which
+    /// the caller parks in [`Self::repulsion_brake`] for the `velocity.X *= 0.8f` tail
+    /// (`:859-862`). Runs on the live slice so neighbours feel the push this
+    /// tick; the port's list order stands in for `Main.item` slot order (the
+    /// `combine_nearby` deviation). The span is the drop box [`SIZE`] — the
+    /// C# 16 (`WorldItem.width = 16`, `:138`; W4-e19 round 3 retired the old
+    /// 14 px stand-in).
+    pub(crate) fn repel_shimmered(items: &mut [ItemDrop], i: usize) -> bool {
+        if !items[i].shimmered {
+            return false;
+        }
+        let mut flag = false;
+        let mut budget = 50i32;
+        let self_center = items[i].center();
+        for j in 0..items.len() {
+            // `:795` — skip self and non-shimmered slots (every port drop is
+            // active, so the C# `!Main.item[i].active` term is vacuous).
+            if j == i || !items[j].shimmered {
                 continue;
             }
-            let mut flag = false;
-            let mut budget = 50;
-            for j in 0..drops.len() {
-                if i == j || !drops[j].shimmered {
-                    continue;
+            // `:799-802` — `if (num-- <= 0) break`: the budget counts only
+            // shimmered candidates, 50 of them.
+            if budget <= 0 {
+                break;
+            }
+            budget -= 1;
+            let other_center = items[j].center();
+            // `:803` — `num2 = (width + item[i].width) / 2`.
+            let mut span = SIZE;
+            let dx = self_center.x - other_center.x;
+            let dy = self_center.y - other_center.y;
+            // `:804` — both axes must lie within the span.
+            if !(dx.abs() <= span) || !(dy.abs() <= span) {
+                continue;
+            }
+            flag = true;
+            // `:809-813` — `num2 /= Distance`, capped at 10. A zero distance
+            // (coincident centres) divides to +inf and caps to 10, like the C#.
+            let dist = (dx * dx + dy * dy).sqrt();
+            span /= dist;
+            if span > 10.0 {
+                span = 10.0;
+            }
+            let (mut svx, mut ovx) = (items[i].vel.x, items[j].vel.x);
+            if self_center.x < other_center.x {
+                // `:814-824` — self is left of the neighbour: push self left,
+                // neighbour right.
+                if svx > -3.0 * span {
+                    svx -= 0.1 * span;
                 }
-                if budget <= 0 {
-                    break;
+                if ovx < 3.0 {
+                    ovx += 0.1 * span;
                 }
-                budget -= 1;
-                // `num2 = (width + other.width) / 2` — both 16 → 16.
-                let mut num2 = (SIZE + SIZE) / 2.0;
-                let dx = (centers[i].x - centers[j].x).abs();
-                let dy = (centers[i].y - centers[j].y).abs();
-                if dx > num2 || dy > num2 {
-                    continue;
+            } else if self_center.x > other_center.x {
+                // `:825-835` — self is right: push self right, neighbour left.
+                if svx < 3.0 * span {
+                    svx += 0.1 * span;
                 }
-                flag = true;
-                let dist = (centers[i] - centers[j]).length();
-                num2 /= dist;
-                if num2 > 10.0 {
-                    num2 = 10.0;
+                if ovx > -3.0 {
+                    ovx -= 0.1 * span;
                 }
-                let push = 0.1 * num2;
-                if centers[i].x < centers[j].x {
-                    if drops[i].vel.x > -3.0 * num2 {
-                        drops[i].vel.x -= push;
-                    }
-                    if drops[j].vel.x < 3.0 {
-                        drops[j].vel.x += push;
-                    }
-                } else if centers[i].x > centers[j].x {
-                    if drops[i].vel.x < 3.0 * num2 {
-                        drops[i].vel.x += push;
-                    }
-                    if drops[j].vel.x > -3.0 {
-                        drops[j].vel.x -= push;
-                    }
-                } else if i < j {
-                    // The equal-X arm: the lower slot pushes left.
-                    if drops[i].vel.x > -3.0 * num2 {
-                        drops[i].vel.x -= push;
-                    }
-                    if drops[j].vel.x < 3.0 * num2 {
-                        drops[j].vel.x += push;
-                    }
+            } else if i < j {
+                // `:836-846` — coincident X: the lower slot pushes left, the
+                // higher right (both bounded at `±3 * span`).
+                if svx > -3.0 * span {
+                    svx -= 0.1 * span;
+                }
+                if ovx < 3.0 * span {
+                    ovx += 0.1 * span;
                 }
             }
-            drops[i].repulsion_brake = flag;
+            items[i].vel.x = svx;
+            items[j].vel.x = ovx;
         }
+        flag
     }
 
     /// One fixed 60 Hz step of `WorldItem.UpdateItem`'s physics half
@@ -1290,8 +1331,8 @@ impl ItemDrop {
     /// (the wetVelocity integration) and the slope pass. `gravity` /
     /// `max_fall` / `wet_vel` come from `update`'s ladder (the shimmered
     /// override already applied). The shimmered-repulsion scan runs as the
-    /// list pre-pass ([`Self::shimmered_repulsion`]) and arms
-    /// `repulsion_brake` — spent here on the extra ×0.8 X friction.
+    /// items pass's per-drop slice call ([`Self::repel_shimmered`], the e19
+    /// KEEP form per 379); the flag rides `repulsion_brake` - spent here on the extra ?0.8 X friction.
     fn move_in_world(&mut self, world: &World, gravity: f32, max_fall: f32, wet_vel: &mut Vec2) {
         if !self.shimmered && item_no_gravity(self.kind) {
             // `:774-786` — the floater arm: both axes ×0.95 + the 0.1 snap.
@@ -1907,8 +1948,10 @@ mod tests {
         assert!((item_tc2.vel[1] - 0.0).abs() < 1e-5, "a normal platform still blocks: {}", item_tc2.vel[1]);
     }
 
-    /// `WorldItem.cs:789-848` — two overlapping shimmered drops repel: the
+    /// `WorldItem.cs:789-848` - two overlapping shimmered drops repel: the
     /// left one pushes left, the right one pushes right, and the brake arms.
+    /// (Re-pinned at the batch-K merge onto the e19 slice form per 379 - the
+    /// items pass parks the returned flag in `repulsion_brake`.)
     #[test]
     fn w4_f47_the_shimmered_repulsion_pushes_apart() {
         // Two shimmered drops 8 px apart (centres), within the 16 px window.
@@ -1917,23 +1960,24 @@ mod tests {
         a.shimmered = true;
         b.shimmered = true;
         let mut drops = vec![a, b];
-        ItemDrop::shimmered_repulsion(&mut drops);
+        drops[0].repulsion_brake = ItemDrop::repel_shimmered(&mut drops, 0);
+        drops[1].repulsion_brake = ItemDrop::repel_shimmered(&mut drops, 1);
         assert!(drops[0].vel.x < 0.0, "the left drop pushes left: {}", drops[0].vel.x);
         assert!(drops[1].vel.x > 0.0, "the right drop pushes right: {}", drops[1].vel.x);
         assert!(drops[0].repulsion_brake && drops[1].repulsion_brake);
-        // Far apart → no push, no brake.
+        // Far apart - no push, no brake.
         let mut c = ItemDrop::new(11, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
         let mut d = ItemDrop::new(11, 1, 0, 200.0, 100.0, 0.0, 0.0, 0.0);
         c.shimmered = true;
         d.shimmered = true;
         let mut far = vec![c, d];
-        ItemDrop::shimmered_repulsion(&mut far);
+        far[0].repulsion_brake = ItemDrop::repel_shimmered(&mut far, 0);
         assert_eq!(far[0].vel.x, 0.0);
         assert!(!far[0].repulsion_brake);
     }
 
     /// Keep-one 144 (the e19 round-3 fold, `939e45dc8`'s witness pair):
-    /// `Collision.cs:2394`/`:2444` — the blocked-Y flush residual is the
+    /// `Collision.cs:2394`/`:2444` - the blocked-Y flush residual is the
     /// velocity in BOTH arms (the port's `tile_collision_opts` keeps it
     /// verbatim; no dry snap-and-zero stand-in ever existed on this lane).
     /// A dry drop one px above the floor lands flush in ONE tick with the
@@ -2834,4 +2878,326 @@ mod s1_p_i47_tests {
         pull_item_pickup(star.center(), &mut star.vel, pc, 12.0, 5);
         assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);
     }
+
+    // ---- W4-e19 KEEP family (379-ARBITER-v2: keeper-agnostic hunks) --------
+
+    /// A 32x32 world with a stone floor at y = 20 and a shimmer pool filling
+    /// rows 18-19 (the drop rests in the liquid).
+    fn shimmer_pool() -> World {
+        let mut w = ground();
+        for x in 0..32 {
+            for y in 18..=19 {
+                let j = w.index(x, y);
+                w.tiles[j] = Tile::default();
+                w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+                w.tiles[j].liquid = 255;
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn w4_e19_the_shimmer_wet_gravity_is_0065_cap_4() {
+        // `WorldItem.cs:380-385` — a shimmerWet drop falls at 0.065 / cap 4,
+        // not the air 0.1 / 7. The flag is read from the PREVIOUS tick.
+        let w = shimmer_pool();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        d.shimmer_wet = true; // the previous tick's probe
+        d.update(&w, 1.0 / 60.0);
+        // gravity 0.065 applied (the drop is above the pool, dry this tick,
+        // but the head read the carried shimmerWet).
+        assert!((d.vel.y - 0.065).abs() < 1e-6, "shimmer gravity: {}", d.vel.y);
+        // The cap: a fast fall clamps at 4, not 7.
+        let mut fast = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 6.0, 0.0);
+        fast.shimmer_wet = true;
+        fast.update(&w, 1.0 / 60.0);
+        assert!((fast.vel.y - 4.0).abs() < 1e-6, "shimmer cap 4: {}", fast.vel.y);
+    }
+
+    #[test]
+    fn w4_e19_the_shimmered_drop_rises_over_the_two_row_centre_scan() {
+        // `WorldItem.cs:493-504` — a shimmered drop NOT shimmerWet rises when
+        // either of the two centre rows is shimmer. The probe is at
+        // (int)(Center.X/16), (int)(Center.Y/16) and +1 — NOT the ramp's
+        // above-top-left tile.
+        let w = shimmer_pool();
+        // Centre in row 18 (the pool's top row): pos.y = 18*16 → centre
+        // y = 18*16 + 8 → row 18. shimmerWet false (the box probe is forced
+        // off by parking the drop so only the centre row hits).
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX, 0.0, 0.0, 0.0);
+        d.shimmered = true;
+        d.shimmer_wet = false;
+        d.vel = Vec2::new(0.0, 0.0);
+        // The rise scan finds row 18 shimmer → vel.y -= 0.05 (the centre row
+        // hits even though the 16-box wet probe already latched shimmerWet).
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.vel.y < 0.0, "the shimmered drop rises: {}", d.vel.y);
+    }
+
+    #[test]
+    fn w4_e19_the_shimmered_drop_damps_dry_with_09() {
+        // `WorldItem.cs:512-515` — a shimmered drop with NO shimmer under the
+        // centre scan damps vel.y *= 0.9 (not the rise).
+        let w = ground(); // dry world, no shimmer
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 2.0, 0.0);
+        d.shimmered = true;
+        d.shimmer_wet = false;
+        d.update(&w, 1.0 / 60.0);
+        // vel.y 2.0 * 0.9 = 1.8, then gravity 0 (shimmered) → 1.8.
+        assert!((d.vel.y - 1.8).abs() < 1e-5, "the dry damp: {}", d.vel.y);
+    }
+
+    /// W4-e19 — the shimmered-item repulsion scan (`WorldItem.cs:790-847`).
+    /// Two shimmered drops 8 px apart (within the 16 span): the left one is
+    /// pushed left, the right one right, by `0.1 * span/distance` capped at
+    /// 10 — here distance 8, span 16/8 = 2 → each nudge 0.2.
+    #[test]
+    fn w4_e19_shimmered_drops_push_apart() {
+        let mut a = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        let mut b = ItemDrop::new(2, 1, 0, 108.0, 100.0, 0.0, 0.0, 0.0);
+        a.shimmered = true;
+        b.shimmered = true;
+        let mut items = vec![a, b];
+        let flag = ItemDrop::repel_shimmered(&mut items, 0);
+        assert!(flag, "the neighbour was touched");
+        // distance 8 → num2 = 16/8 = 2 (≤ 10); the left drop: vx -= 0.1*2.
+        assert!((items[0].vel.x - -0.2).abs() < 1e-5, "self pushed left: {}", items[0].vel.x);
+        // The neighbour (right): vx += 0.1*2 (`:820-823`, bound < 3).
+        assert!((items[1].vel.x - 0.2).abs() < 1e-5, "neighbour pushed right: {}", items[1].vel.x);
+        // Running from slot 1 mirrors the pushes (self right, neighbour left).
+        let flag1 = ItemDrop::repel_shimmered(&mut items, 1);
+        assert!(flag1);
+        assert!((items[1].vel.x - 0.4).abs() < 1e-5);
+        assert!((items[0].vel.x - -0.4).abs() < 1e-5);
+    }
+
+    /// The scan's gates: non-shimmered drops never repel (`:790`/`:795`), and
+    /// a neighbour beyond the span on either axis is skipped (`:804`).
+    #[test]
+    fn w4_e19_the_repulsion_gates() {
+        // Plain drops: no scan at all.
+        let mut items = vec![
+            ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
+            ItemDrop::new(2, 1, 0, 101.0, 100.0, 0.0, 0.0, 0.0),
+        ];
+        assert!(!ItemDrop::repel_shimmered(&mut items, 0));
+        assert_eq!(items[0].vel.x, 0.0);
+        assert_eq!(items[1].vel.x, 0.0);
+        // A shimmered self with a NON-shimmered neighbour: skipped.
+        items[0].shimmered = true;
+        assert!(!ItemDrop::repel_shimmered(&mut items, 0));
+        assert_eq!(items[1].vel.x, 0.0, "the plain neighbour is not pushed");
+        // Both shimmered but 20 px apart on Y (> the 16 span): skipped.
+        items[1].shimmered = true;
+        items[1].pos.y = 120.0;
+        assert!(!ItemDrop::repel_shimmered(&mut items, 0));
+        assert_eq!(items[0].vel.x, 0.0);
+        assert_eq!(items[1].vel.x, 0.0);
+    }
+
+    /// The `span / distance` cap at 10 (`:810-813`): coincident centres give
+    /// +inf → 10, and the equal-X tie-break (`:836-846`) pushes the lower slot
+    /// left / the higher right, both bounded at `±3 * 10`.
+    #[test]
+    fn w4_e19_the_repulsion_caps_the_span_at_10_and_breaks_ties_by_slot() {
+        let mut a = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        let mut b = ItemDrop::new(2, 1, 0, 100.0, 100.0, 0.0, 0.0, 0.0);
+        a.shimmered = true;
+        b.shimmered = true;
+        let mut items = vec![a, b];
+        let flag = ItemDrop::repel_shimmered(&mut items, 0);
+        assert!(flag);
+        // distance 0 → num2 capped 10 → the tie-break nudge 0.1*10 = 1.0.
+        assert!((items[0].vel.x - -1.0).abs() < 1e-5, "lower slot left: {}", items[0].vel.x);
+        assert!((items[1].vel.x - 1.0).abs() < 1e-5, "higher slot right: {}", items[1].vel.x);
+        // From the higher slot the tie-break refuses (`whoAmI < i` false).
+        let flag1 = ItemDrop::repel_shimmered(&mut items, 1);
+        assert!(flag1, "flag set even when the tie-break declines the push");
+        assert!((items[0].vel.x - -1.0).abs() < 1e-5, "no second push");
+        assert!((items[1].vel.x - 1.0).abs() < 1e-5);
+    }
+
+    /// The ×0.8 damp tail (`:859-862`): `move_in_world` applies friction THEN
+    /// the repulsion damp. A repulsed drop with vx 1.0: ×0.95 → 0.95, ×0.8 →
+    /// 0.76. The flag clears after the tick.
+    #[test]
+    fn w4_e19_the_repulsion_flag_damps_x_by_08_after_friction() {
+        let w = ground();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
+        d.repulsion_brake = true;
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.vel.x - 0.76).abs() < 1e-5, "0.95 then 0.8: {}", d.vel.x);
+        assert!(!d.repulsion_brake, "the flag cleared");
+        // Without the flag: plain friction only.
+        let mut plain = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
+        plain.update(&w, 1.0 / 60.0);
+        assert!((plain.vel.x - 0.95).abs() < 1e-5);
+    }
+
+    /// W4-e19 — the `ItemNoGravity` float (`WorldItem.cs:774-786`): a Soul of
+    /// Light (520, `ItemID.cs:1320`) damps BOTH axes ×0.95 with the 0.1 snap
+    /// and takes NO gravity add — it never falls.
+    #[test]
+    fn w4_e19_the_no_gravity_kinds_float() {
+        assert!(item_no_gravity(520) && item_no_gravity(4143) && !item_no_gravity(2));
+        let w = ground();
+        let mut soul = ItemDrop::new(520, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 2.0, 0.0);
+        soul.update(&w, 1.0 / 60.0);
+        // ×0.95 on both axes, no +0.1 gravity on Y.
+        assert!((soul.vel.x - 1.9).abs() < 1e-5, "X damped: {}", soul.vel.x);
+        assert!((soul.vel.y - 1.9).abs() < 1e-5, "Y damped, no gravity: {}", soul.vel.y);
+        // The 0.1 rest snap on Y too: a slow float settles to zero.
+        let mut slow = ItemDrop::new(521, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.105, 0.105, 0.0);
+        slow.update(&w, 1.0 / 60.0);
+        assert_eq!(slow.vel.x, 0.0, "0.105*0.95 < 0.1 snaps");
+        assert_eq!(slow.vel.y, 0.0);
+        // A plain kind still falls (the else arm).
+        let mut dirt = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        dirt.update(&w, 1.0 / 60.0);
+        assert!((dirt.vel.y - 0.1).abs() < 1e-6);
+    }
+
+    /// The float's `!shimmered` gate (`:774`): a shimmered no-gravity kind
+    /// takes the ELSE arm — gravity (0 for shimmered) + the X-only friction.
+    #[test]
+    fn w4_e19_a_shimmered_no_gravity_kind_takes_the_gravity_arm() {
+        let w = ground(); // dry: the shimmered drop damps Y ×0.9 (UpdateShimmer)
+        let mut soul = ItemDrop::new(520, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 2.0, 0.0);
+        soul.shimmered = true;
+        soul.update(&w, 1.0 / 60.0);
+        // UpdateShimmer's dry damp: Y 2.0×0.9 = 1.8, gravity 0, no Y friction
+        // (the else arm frictions X only).
+        assert!((soul.vel.y - 1.8).abs() < 1e-5, "the else arm: {}", soul.vel.y);
+        assert!((soul.vel.x - 1.9).abs() < 1e-5);
+    }
+
+    /// W4-e19 — the `wetVelocity` blend (`WorldItem.cs:379-396`/`:1046-1084`):
+    /// a wet drop's collision pass runs at FULL velocity but `ApplyMovement`
+    /// integrates the free axes at the liquid fraction — shimmer-wet 0.375
+    /// (`:384`), the air default 0.5 (`:379`, the water arm's stand-in until
+    /// the per-drop wet flag lands).
+    #[test]
+    fn w4_e19_the_wet_drop_integrates_at_the_liquid_fraction() {
+        let w = shimmer_pool();
+        // A drop INSIDE the pool (rows 18-19), shimmerWet carried from the
+        // previous tick: gravity 0.065, wet_step 0.375.
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX + 4.0, 2.0, 0.0, 0.0);
+        d.shimmer_wet = true;
+        let before = d.pos;
+        d.update(&w, 1.0 / 60.0);
+        // X: 2.0 ×0.95 friction = 1.9, integrated ×0.375 = 0.7125.
+        assert!(
+            (d.pos.x - (before.x + 1.9 * 0.375)).abs() < 1e-4,
+            "the shimmer fraction: {}",
+            d.pos.x - before.x
+        );
+        // Y: gravity 0.065, integrated ×0.375 = 0.024375.
+        assert!(
+            (d.pos.y - (before.y + 0.065 * 0.375)).abs() < 1e-4,
+            "the Y fraction: {}",
+            d.pos.y - before.y
+        );
+        // The velocity itself stays FULL (the collision ran at 1.9 / 0.065).
+        assert!((d.vel.x - 1.9).abs() < 1e-5);
+        assert!((d.vel.y - 0.065).abs() < 1e-6);
+    }
+
+    /// The dry arm: full-velocity integration (`:1082`); at flush rest the
+    /// collision residual is 0, so the resting drop stays still (round 3
+    /// retired the snap-and-zero stand-in — both arms run the C# residual).
+    /// SPLIT per 379: the landing/rest half DROPS (the f47 `w4_f47k1_the_dry_
+    /// flush_landing_carries_the_residual_then_rests` covers it); the full-
+    /// velocity half is e19-unique and KEEPS.
+    #[test]
+    fn w4_e19_the_dry_drop_integrates_at_full_velocity() {
+        let w = ground();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 0.0);
+        let before = d.pos;
+        d.update(&w, 1.0 / 60.0);
+        assert!((d.pos.x - (before.x + 1.9)).abs() < 1e-5, "full X: {}", d.pos.x - before.x);
+        assert!((d.pos.y - (before.y + 0.1)).abs() < 1e-5, "full Y: {}", d.pos.y - before.y);
+    }
+
+    /// W4-e19 - the honey/water gravity arms (`WorldItem.cs:386-396`): the
+    /// ELSE-IF chain reads the PREVIOUS tick's per-drop flags. Honey 0.05 /
+    /// cap 3 / wet_step 0.25; water 0.08 / cap 5 / the 0.5 air wet_step.
+    #[test]
+    fn w4_e19_the_honey_and_water_gravity_arms() {
+        let w = ground(); // dry world — the flags are the carried ones
+        // Honey-wet: gravity 0.05, cap 3.
+        let mut h = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        h.honey_wet = true;
+        h.update(&w, 1.0 / 60.0);
+        assert!((h.vel.y - 0.05).abs() < 1e-6, "honey gravity: {}", h.vel.y);
+        let mut hfast = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 6.0, 0.0);
+        hfast.honey_wet = true;
+        hfast.update(&w, 1.0 / 60.0);
+        assert!((hfast.vel.y - 3.0).abs() < 1e-6, "honey cap 3: {}", hfast.vel.y);
+        // Water-wet: gravity 0.08, cap 5.
+        let mut aq = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        aq.wet = true;
+        aq.update(&w, 1.0 / 60.0);
+        assert!((aq.vel.y - 0.08).abs() < 1e-6, "water gravity: {}", aq.vel.y);
+        let mut afast = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 6.0, 0.0);
+        afast.wet = true;
+        afast.update(&w, 1.0 / 60.0);
+        assert!((afast.vel.y - 5.0).abs() < 1e-6, "water cap 5: {}", afast.vel.y);
+        // The chain order: shimmerWet beats honeyWet beats wet (`:380-396`).
+        let mut both = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        both.shimmer_wet = true;
+        both.honey_wet = true;
+        both.wet = true;
+        both.update(&w, 1.0 / 60.0);
+        assert!((both.vel.y - 0.065).abs() < 1e-6, "shimmer wins: {}", both.vel.y);
+    }
+
+    /// The per-drop wet flags latch from the faithful probes (`:865-878`)
+    /// and clear via the `!wet` tail (`:1036-1041`): a drop in a honey pool
+    /// carries honeyWet + wet; parked dry, both clear.
+    #[test]
+    fn w4_e19_the_wet_flags_latch_and_clear() {
+        let mut w = ground();
+        for x in 0..32 {
+            for y in 18..=19 {
+                let j = w.index(x, y);
+                w.tiles[j] = Tile::default();
+                w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Honey);
+                w.tiles[j].liquid = 255;
+            }
+        }
+        // Inside the honey pool: the probe sets honeyWet + wet.
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX + 4.0, 0.0, 0.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.wet && d.honey_wet, "the honey probe latched");
+        assert!(!d.shimmer_wet && !d.lava_wet);
+        // The NEXT tick's head reads the carried honey flag (0.05).
+        let mut d2 = d.clone();
+        d2.vel = Vec2::ZERO;
+        d2.update(&w, 1.0 / 60.0);
+        assert!((d2.vel.y - 0.05).abs() < 1e-6, "the carried honey gravity: {}", d2.vel.y);
+        // Parked dry (high above the pool): the exit clears wet, the !wet
+        // tail clears honeyWet.
+        let mut dry = d.clone();
+        dry.pos.y = 5.0 * TILE_PX;
+        dry.update(&w, 1.0 / 60.0);
+        assert!(!dry.wet && !dry.honey_wet, "the dry tail cleared the flags");
+    }
+
+    /// The grabbed arm clears ALL the wet flags (`:427-431`).
+    #[test]
+    fn w4_e19_the_grabbed_arm_clears_every_wet_flag() {
+        let w = ground();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
+        d.wet = true;
+        d.honey_wet = true;
+        d.lava_wet = true;
+        d.shimmer_wet = true;
+        d.being_grabbed = true;
+        d.update(&w, 1.0 / 60.0);
+        assert!(!d.wet && !d.honey_wet && !d.lava_wet && !d.shimmer_wet);
+        assert!(!d.being_grabbed);
+        // The full-velocity ApplyMovement (`:1082`): pos += vel, no fraction.
+        assert!((d.pos.x - (10.0 * TILE_PX + 1.0)).abs() < 1e-5);
+    }
+
 }

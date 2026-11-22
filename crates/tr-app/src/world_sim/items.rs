@@ -645,11 +645,10 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             i += 1;
         }
         // --- `WorldItem.UpdateItem`'s physics half -------------------------
-        // W4-f47 — the shimmered-repulsion pre-pass (`WorldItem.cs:789-848`):
-        // the scan reads the whole live list and arms `repulsion_brake`,
-        // which each drop's MoveInWorld spends on the extra ×0.8 X friction.
-        // RNG-free; runs before the per-drop physics loop.
-        crate::item::ItemDrop::shimmered_repulsion(items);
+        // The shimmered-repulsion scan runs PER-DROP below (the e19 KEEP
+        // slice form per 379 - the C# scan (WorldItem.cs:790-847) runs inside
+        // each drop's MoveInWorld on the LIVE velocities; the f47 whole-list
+        // pre-pass is superseded).
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
@@ -686,8 +685,19 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             let was_grabbed = drop.being_grabbed;
+            // `MoveInWorld`'s repulsion scan (`WorldItem.cs:790-847`, the
+            // e19 KEEP form per 379) runs at the head of the movement half,
+            // BEFORE the gravity add - the slice-level pass nudges the
+            // neighbours' live velocities (and this drop's own X) and parks
+            // the `flag` for the ?0.8 tail. A grabbed drop skips MoveInWorld
+            // entirely (`:425-435`), no scan. The clone re-reads its X
+            // afterwards - the scan wrote the slot.
+            if !was_grabbed && drop.shimmered {
+                drop.repulsion_brake = crate::item::ItemDrop::repel_shimmered(items, i);
+                drop.vel.x = items[i].vel.x;
+            }
             drop.update(world, step);
-            // Doc-sweep lane 36 — the splash arms (`WorldItem.cs:886-954`
+            // Doc-sweep lane 36 - the splash arms (`WorldItem.cs:886-954`
             // entry / `:965-1033` exit) run INSIDE MoveInWorld in the C#;
             // the port latches them in `update` and drains here, same tick,
             // same slot order, BEFORE the visual-effects draws (`:436` runs
@@ -1435,6 +1445,89 @@ mod shimmer_tests {
         // integrates the rise (`ApplyMovement`, `:1076-1078`).
         update_items(&mut app, 1.0 / 60.0);
         assert!(app.items[0].pos.y < before, "the item rises");
+    }
+
+
+    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
+
+    #[test]
+    fn w4_e19_the_transform_tail_cuts_velocity_and_resets_shimmer_time() {
+        // `WorldItem.cs:1835-1845` — after the transform the surviving drop
+        // gets shimmerTime = 1, shimmerWet = true, velocity *= 0.1.
+        let mut app = shimmer_world();
+        let mut d = resting_drop(11, 3);
+        d.vel = Vec2::new(2.0, 3.0);
+        app.items.push(d);
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let d = &app.items[0];
+        assert!(d.shimmered);
+        assert_eq!(d.kind, 699);
+        // The tail set shimmerTime = 1 at the transform tick (the stack
+        // survived). The decay arm (`:538-545`) is NOT gated on `!shimmered`
+        // (a shimmered drop's ramp condition is false, so it falls to the
+        // decay), so the 1.0 dries 0.01/tick over the remaining ~28 ticks —
+        // it is below 1 but still positive (the GrabItems gate re-opens at 0).
+        assert!(d.shimmer_time < 1.0 && d.shimmer_time > 0.0,
+            "the tail reset then decayed: {}", d.shimmer_time);
+        assert!(d.shimmer_wet, "the tail set shimmerWet");
+        // The velocity was cut ×0.1 at the transform tick (2.0→0.2, 3.0→0.3),
+        // then the shimmered float damps/rises it; the X friction (×0.95/tick)
+        // decays 0.2 toward 0. The cut is verified by the magnitude bound.
+        assert!(d.vel.x.abs() <= 0.2, "the ×0.1 cut bound: {}", d.vel.x);
+    }
+
+    #[test]
+    fn w4_e19_the_transform_spawns_the_shimmer_effect_dust() {
+        // `WorldItem.cs:1846` → `ShimmerEffect` (`:1669-1688`): 20 dust 309.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(11, 3));
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let n309 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 309).count();
+        assert!(n309 >= 20, "the ShimmerEffect burst: {n309} dust 309");
+    }
+
+    #[test]
+    fn w4_e19_the_decraft_spawns_shimmered_ingredients_at_the_center() {
+        // `WorldItem.cs:1825` → `SpawnShimmeredItem` (`:628-637`): the
+        // ingredient spawns shimmered (shimmerTime 1, shimmerWet) at the
+        // source's Centre with the alternating fan velocity, prefix 0.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(3077, 60)); // Silk Rope → 2 Cobweb units
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let spawn = app.items.iter().find(|d| d.kind == 225).expect("the cobweb spawn");
+        assert!(spawn.shimmered, "the ingredient is shimmered");
+        assert!(spawn.shimmer_wet, "SpawnShimmeredItem sets shimmerWet");
+        assert_eq!(spawn.prefix, 0, "SpawnShimmeredItem passes prefix 0");
+        // The first spawn (n=0) has fan velocity (0 * (0%2*2-1), 0) = (0, 0);
+        // the X friction keeps 0 at 0 (the shimmered float only writes vel.Y).
+        assert_eq!(spawn.vel.x, 0.0, "the n=0 fan has no horizontal velocity");
+        // The source aired out (60 - 2*30 = 0).
+        assert!(!app.items.iter().any(|d| d.kind == 3077));
+    }
+
+    #[test]
+    fn w4_e19_the_coin_merge_does_not_recalculate_luck_eagerly() {
+        // `Player.cs:18090-18101` — AddCoinLuck sets coinLuck + luckNeedsSync
+        // only; RecalculateLuck runs on the per-tick UpdateLuck, NOT here.
+        // The port's add_coin_luck adds the merged stack without rebuilding
+        // `luck` (the old apply called recalculate_luck eagerly).
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(72, 4)); // Silver → 400 copper-equivalent
+        let luck_before = app.player.as_ref().unwrap().luck_state.luck;
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.luck_state.coin_luck, 400.0, "the merged stack fed coinLuck");
+        // `luck` is rebuilt by the luck pass, not the coin arm — the items
+        // pass alone does not touch it (no UpdateLuck in update_items).
+        assert_eq!(p.luck_state.luck, luck_before, "no eager RecalculateLuck");
     }
 
     // -----------------------------------------------------------------

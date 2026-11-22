@@ -365,7 +365,18 @@ pub(crate) fn draw_background(
     // `Main.hellBlackBoxBottom` (`Main.cs:2463`): carried across frames — the black
     // box consumes the value the previous frame's magma pass produced.
     hell_black_box_bottom: &mut f32,
+    // `Main.shimmerAlpha` (`Main.cs:52800`): the SceneState ramp — 1 skips the
+    // whole pass (W4-e19 aether arm).
+    shimmer_alpha: f32,
 ) {
+    // `Main.cs:52800-52805`: full shimmer skips the pass (the aether's black
+    // backdrop replaces it) and zeroes `ugBackTransition`. The port pins
+    // `undergroundBackground` 0 (the cross-fade never runs — see
+    // `draw_background_update_background_styles`), so the zeroing is a no-op
+    // here; g72's live `UgBackState` merge must zero its transition on this arm.
+    if shimmer_alpha == 1.0 {
+        return;
+    }
     let Some(dirt) = sky.underground else {
         return;
     };

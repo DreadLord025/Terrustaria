@@ -2996,6 +2996,9 @@ impl GenerationRunner {
         let mut world = World::new(opts.name.clone(), width, height);
         world.seeds = opts.flags;
         world.micro_seeds = opts.micro_flags;
+        // `WorldGen.crimson` — the world evil type (W4-g69; the one-shot
+        // entries set the same field).
+        world.crimson = opts.crimson;
         boot_statics(&mut world);
         let core = StreamCore::new(opts.seed);
         let gv = reset_genvars(&core, opts);

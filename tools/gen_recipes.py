@@ -25,9 +25,13 @@ Handled C# forms (everything else in the body is tail bookkeeping and skipped):
                                                  item is a group member
   requiredTile = N | SetCraftingStation(N | TileID.X)
   needWater/needHoney/needLava/needSnowBiome/needGraveyardBiome = true
-  notDecraftable / corruption / crimson / AddCustomShimmerResult - ignored
-    (decrafting/shimmer bookkeeping; corruption|crimson do NOT gate crafting -
-    they only feed ItemID.Sets.IsCraftedCorruption/Crimson, `Recipe.cs:15252-15257`)
+  notDecraftable - the reverse platform/wall rows carry it (emitted below)
+  corruption / crimson - emitted as the recipe tags (W4-e19): they do NOT
+    gate crafting, they feed ItemID.Sets.IsCraftedCorruption/Crimson
+    (`Recipe.cs:15249-15256`) - the shimmer decraft's world-evil variant
+    preference (`ShimmerTransforms.GetDecraftingRecipeIndex`, `:22-29`)
+  AddCustomShimmerResult - ignored (the five rows live verbatim in
+    `shimmer.rs::custom_shimmer_results`)
   needTorchGodsFavor / needMechdusa - ported as the recipe flags (the gates
     are the player's unlockedBiomeTorches and the "for the worthy" seed)
   for (int i = A; i <= B; i++) { ... }         - textual expansion
@@ -488,8 +492,14 @@ def parse_block(text, env, ctx, origin):
         if m:
             row.flags[FLAG_MAP[m.group(1)]] = True
             continue
+        # W4-e19: the world-evil decraft tags (`Recipe.cs:98-100`, the
+        # `IsCraftedCrimson`/`IsCraftedCorruption` feed at `:15249-15256`).
+        m = re.match(r"Recipe\.currentRecipe\.(corruption|crimson) = true;$", line)
+        if m:
+            row.flags[m.group(1)] = True
+            continue
         if re.match(
-            r"Recipe\.currentRecipe\.(notDecraftable|corruption|crimson|acceptedGroups)"
+            r"Recipe\.currentRecipe\.(notDecraftable|acceptedGroups)"
             r"|Recipe\.currentRecipe\.AddCustomShimmerResult|Recipe\.currentRecipe\.Shimmer",
             line,
         ):
@@ -788,6 +798,11 @@ def emit(rows, ctx):
             lines.append("    alchemy: true,")
         if row.flags.get("not_decraftable"):
             lines.append("    not_decraftable: true,")
+        # W4-e19: the world-evil decraft tags (`Recipe.cs:98-100`).
+        if row.flags.get("crimson"):
+            lines.append("    crimson: true,")
+        if row.flags.get("corruption"):
+            lines.append("    corruption: true,")
         lines.append("    ..BASE")
         lines.append("},")
     lines.append("]")

@@ -813,6 +813,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_305",
         "UI/Cursor_0",
         "UI/Cursor_1",
+        // The cursor-override sheets (`Main.cs:45285-45309`): 3 favourite,
+        // 6 trash, 7 unequip/backpack, 8 from-chest, 9 to-chest, 10 sell
+        // (`ItemSlot.cs:213-218`'s AlternateClickAction ids). W4-e19.
+        "UI/Cursor_3",
+        "UI/Cursor_6",
+        "UI/Cursor_7",
+        "UI/Cursor_8",
+        "UI/Cursor_9",
+        "UI/Cursor_10",
         "Mana",
         "Inventory_Back13",
         // P2 inventory panels: coins/ammo/misc/trash backgrounds, page tabs and
@@ -2027,6 +2036,10 @@ pub struct Lookups {
     /// `Images/UI/Cursor_0` / `Cursor_1`: the vanilla mouse cursor
     /// (`Main.DrawCursor`; `[0]` normal, `[1]` smart).
     pub cursor: [Option<tr_render::SheetRect>; 2],
+    /// `Images/UI/Cursor_{3,6,7,8,9,10}`: the cursor-override sheets
+    /// (`Main.cs:45285-45309`), indexed by the override id minus 3 with the
+    /// 4/5 gap collapsed — see [`Lookups::cursor_override`]. W4-e19.
+    pub cursor_overrides: [Option<tr_render::SheetRect>; 6],
     /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
@@ -2277,6 +2290,23 @@ pub struct Lookups {
 }
 
 impl Lookups {
+    /// The cursor-override sheet for a `Main.cursorOverride` id
+    /// (`Main.cs:45285-45309`): 3 favourite, 6 trash, 7 unequip/backpack,
+    /// 8 from-chest, 9 to-chest, 10 sell. Ids 4/5 (the grab/smart cursors)
+    /// are not override ids; anything else answers `None`. W4-e19.
+    pub fn cursor_override(&self, id: i32) -> Option<tr_render::SheetRect> {
+        let slot = match id {
+            3 => 0,
+            6 => 1,
+            7 => 2,
+            8 => 3,
+            9 => 4,
+            10 => 5,
+            _ => return None,
+        };
+        self.cursor_overrides[slot]
+    }
+
     /// The bestiary NPC sheet's slot in `bestiary_npc_sheets` for a vanilla
     /// net id — `BESTIARY_NPC_SHEET_IDS` is the parallel order table (the
     /// ui's portraits derive their sheet from the entry's `net_id` this
@@ -2416,6 +2446,8 @@ impl Lookups {
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
+            cursor_overrides: [3, 6, 7, 8, 9, 10]
+                .map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
