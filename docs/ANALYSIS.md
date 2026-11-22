@@ -13090,7 +13090,7 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
   simulates remote players nowhere, so the wire body appends
   `on_ground`, `leg_frame`, `body_frame`, `hp`, `max_hp` after the C# fields
   (two-client compatibility only). The control BitsBytes ride as flags with
-  no port-side replay: each peer's input is local.
+  no port-side replay: each peer's input is local. **W4-d96 batch 6**: the
 - **`23 NPCInfo` now rides the verbatim C# body** (S1-I-1 d91, 2026-11-20):
   slot byte, generation byte, `position + Size * SyncAnchor` (the only
   non-zero anchor row is vanilla 50 King Slime `(0.5, 1)`, `NPCID.cs:10457`;
@@ -13106,6 +13106,24 @@ The entity messages and the smoothing are 1:1 ports; the deviations:
   `generation` byte bumps on a kind change so the client re-creates the slot
   — the C#'s `existing.generation != generation` spawn test. `hurt_cd` stays
   0 on clients until the `28 NPCStrike` apply arm lands (S1-I-4).
+
+  C# conditional tails are now VERBATIM — `(ushort)mount.Type` (flags_b bit
+  7), the potion-of-return use+home Vector2 pair (flags_c bit 6) and the
+  camera-target Vector2 (flags_d bit 5) encode/decode in the C# gate order
+  (`NetMessage.cs:492-508`, reader `MessageBuffer.cs:993-997`/`:1021-1038`/
+  `:1051`) ahead of the render extension. The remaining deviation narrows to
+  SIMULATION: the port stores the values but runs no mount/potion/camera
+  machinery (`SetMount`/`Dismount`, the potion null-out, the camera apply
+  are S1-I-4), and `player_state_of` keeps the gate bits clear so nothing
+  sends them yet.
+- **`23 NPCInfo` is the C# body minus the fields the port lacks**: `ai[]`
+  (the Rust NPC keeps `anim`/`frame` instead), `difficulty`,
+  `statsAreScaledForThisManyPlayers`, `releaseOwner`, `target` (u16 0) and
+  the per-type `SyncAnchor` (position is sent raw). The `generation` byte
+  bumps on a kind change so the client re-creates the slot вЂ” the C#'s
+  `existing.generation != generation` spawn test. `hurt_cd` stays 0 on
+  clients (`28 NPCStrike` is not ported), so a networked NPC shows no hit
+  flash yet.
 - **The cadence is the port's tick, not the C#'s per-NPC `netSpam` gate.**
   The host streams every live NPC at 10 Hz (the `netSpam` 30/5-tick per-NPC
   gate and the section culling are the M6-NET-3 follow-ups); the player
