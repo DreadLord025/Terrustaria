@@ -24958,6 +24958,37 @@ ids, the draw-free skips, the fragment products + negative-coordinate
 truncation, the essScale dimming and the 0.7/1.0 bounce; the integration
 witness above pins the slot order and stream isolation.
 
+### The shimmered-drop glow (W4-g20, 2026-11-20)
+
+The item family's **last RNG-free `AddLight` site**: `WorldItem.UpdateShimmer`'s
+`Lighting.AddLight(base.Center, (1f - shimmerTime) * 0.8f, …)`
+(`WorldItem.cs:482`) — a white glow only while `shimmered`, fading linearly as
+the 1.0 ramp dries back to 0 over 100 ticks (`:538-545`). Ported as
+`entity_lights.rs::shimmer_light`, fed from the frame pass **ahead of**
+`item_light` per drop (the C# calls `UpdateShimmer` at `:403`, before
+`UpdateItem_VisualEffects` at `:436`; list order is the frame feed's only
+ordering constraint). The anchor is the `AddLight(Vector2, …)` overload's
+per-axis quotient truncation (`Lighting.cs:140-143`, `XAnchor::Center`), NOT
+the torch arm's `(int)Center.X / 16`. RNG-free by the established skip
+convention: the `Main.rand.Next(30) == 0` dust branch ahead of the light line
+(`:459-481`, `NewDust` 309 + two `Next(-8, 5)` jitters + a `Next(6)` colour
+roll) stays skipped wholesale with the item shimmer dust pass, so the feed
+draws nothing.
+
+**Census (why this task lands one site, not ~25).** `Item.cs` contains **zero**
+`Lighting.AddLight` calls (its rarity rows are `ItemRarityColor` shop values;
+the glow is `glowMask` sprite data, drawn additively — no light-map source).
+`WorldItem.cs` has **69** call sites: 68 sit inside
+`UpdateItem_VisualEffects` (`:1204-1649`) and were landed by S1-E-5 (65-arm
+RNG-free table + the rand/essScale head; the 116 arm stays a draw-free skip,
+the 75/BossBag `% 12` dust halves with the dust pass). `:482` was the only
+remaining RNG-free site. The "rarity glow/shimmer" arms of the task seed map
+to `Main.DrawItem`'s `ItemSlot.GetItemLight`/glowmask draws
+(`Main.cs:38602-38788`) — sprite-side, no `AddLight`, out of this lane's scope.
+Tests (written NOT run, code-only): `entity_lights.rs::w4_g20_the_shimmered_glow_fades_with_the_ramp`
+(the gate, the 1.0→0 fade endpoints, the mid-ramp product) and
+`w4_g20_the_shimmered_glow_floors_negative_centres` (quotient truncation).
+
 ## The last four drop-rule classes (S1-E-14, 2026-11-16)
 
 `ItemDropRules` is now fully covered: `SlimeBodyItemDropRule`,
