@@ -542,8 +542,47 @@ impl App {
                     // world update, on the same step gate as the strike that
                     // spawns the numbers.
                     crate::combat_text::update_all(&mut self.combat_texts);
+                    // `Main.cs:18078` — `PopupText.UpdateItemText()` right after
+                    // the combat-text walk (`UpdateWorld_FloatingText`, W4-g57):
+                    // the reforge popups' rise/fade clock. Visual only — no RNG.
+                    self.update_popup_texts(screen);
                     self.phase("net");
                     self.net_tick(dt);
+    }
+
+    /// `PopupText.UpdateItemText` (`Main.cs:18078`, W4-g57): the pool's
+    /// per-tick walk beside the combat text. `TargetScale = UIScale /
+    /// RenderZoom.X` (`PopupText.cs:88`) — the port's applied UI scale over
+    /// the same `bg_zoom * zoom` product the draw half uses; the per-slot
+    /// sizes are `MeasureString(displayText)` (`:672`), the renderer-free
+    /// `text::ui_font_*` twins with the bitmap estimate fallback. No RNG.
+    fn update_popup_texts(&mut self, screen: Vec2) {
+        // `UpdateItemText` walks all 20 slots and refreshes `numActive` even
+        // when none is active (`PopupText.cs:752-764`) — no early return.
+        let ui_scale = self.settings.applied_ui_scale(screen.x, screen.y);
+        let render_zoom = App::forced_minimum_zoom((screen.x, screen.y)) * self.zoom;
+        let mut target_scale = if render_zoom > 0.0 { ui_scale / render_zoom } else { 0.0 };
+        if target_scale == 0.0 {
+            target_scale = 1.0; // `Main.cs:62398-62400`'s zero guard
+        }
+        let env = crate::popup_text::Env {
+            disco: self.disco,
+            master_color: self.master_color,
+            mouse_text_color: self.mouse_text_color,
+            global_time_wrapped_hourly: self.anim_time % 3600.0,
+            grav_dir: 1.0, // the port's player gravDir is unported (always 1)
+        };
+        let mut sizes = [[0.0f32; 2]; crate::popup_text::MAX_POPUPS];
+        for (i, slot) in sizes.iter_mut().enumerate() {
+            if let Some(t) = self.popup_texts.texts.get(i).filter(|t| t.active) {
+                *slot = [
+                    crate::ui::text::ui_font_width(&self.lookups, &t.display_text, 1.0)
+                        .unwrap_or(t.display_text.chars().count() as f32 * 8.0),
+                    crate::ui::text::ui_font_height(&self.lookups, 1.0).unwrap_or(8.0),
+                ];
+            }
+        }
+        crate::popup_text::update_all(&mut self.popup_texts, target_scale, env, &sizes);
     }
 
     /// The map reveal keeps the pause gate only (its C# source is the

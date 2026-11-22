@@ -357,6 +357,18 @@ impl App {
                     };
                     // `Main.CursorColor()` (`Main.cs:52477`): the cursor fade pulse.
                     self.cursor.update();
+                    // `Main.masterColor`'s ±0.05 cycle (`Main.cs:18225-18235`,
+                    // beside the cursor-colour clock above) — the master-rarity
+                    // pulse the reforge popup recolours by (`PopupText.cs:667`).
+                    self.master_color += self.master_color_dir as f32 * 0.05;
+                    if self.master_color > 1.0 {
+                        self.master_color = 1.0;
+                        self.master_color_dir = -1;
+                    }
+                    if self.master_color < 0.0 {
+                        self.master_color = 0.0;
+                        self.master_color_dir = 1;
+                    }
                     // `Main.DoUpdate_AnimateTileGlows`: the demon torch colour ramp.
                     self.demon_torch += self.demon_torch_dir * 0.01;
                     if self.demon_torch > 1.0 {
@@ -1601,6 +1613,38 @@ impl App {
                         world_zoom,
                         screen,
                     );
+                    // `Main.cs:62397-62402` — `PopupText.DrawItemTextPopups`
+                    // closes the floating-text pair right after the combat
+                    // text (W4-g57): the reforge reveal's rise/fade + the
+                    // best-tier rainbow. Same `TargetScale` the update tick
+                    // used (`PopupText.cs:88` + the `:62398-62400` guard).
+                    {
+                        let ui_scale = settings.applied_ui_scale(screen.x, screen.y);
+                        let mut target_scale = if world_zoom > 0.0 {
+                            ui_scale / world_zoom
+                        } else {
+                            0.0
+                        };
+                        if target_scale == 0.0 {
+                            target_scale = 1.0;
+                        }
+                        crate::popup_text::draw(
+                            renderer,
+                            lookups,
+                            &self.popup_texts,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            target_scale,
+                            crate::popup_text::Env {
+                                disco: self.disco,
+                                master_color: self.master_color,
+                                mouse_text_color: self.mouse_text_color,
+                                global_time_wrapped_hourly: anim_time % 3600.0,
+                                grav_dir: 1.0,
+                            },
+                        );
+                    }
                     draw_phase("entity_health_bars");
                     crate::render::entities::draw_npc_health_bars(
                         renderer,
@@ -1964,7 +2008,12 @@ impl App {
                                         )
                                     })
                                     .unwrap_or(0);
-                                (&self.reforge_slot, cost, self.reforge_cooldown)
+                                (
+                                    &self.reforge_slot,
+                                    cost,
+                                    self.reforge_scale,
+                                    self.mouse_reforge,
+                                )
                             }),
                             player.as_ref().and_then(|p| {
                                 crate::bank::bank_for_chest(p.chest)

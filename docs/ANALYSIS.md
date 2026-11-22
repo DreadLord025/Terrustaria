@@ -14687,6 +14687,52 @@ the ПКМ-collapse the Nurse/shop rows already use). The chat-button entry ride
 town-chatter UI task (S1-E-10b's deferred interaction buttons); the menu's behaviour
 once open is faithful.
 
+### W4-g57: the reforge UI animation (visual presentation only)
+
+The reveal + button presentation the i45 slice left as skips, ported VISUAL-only —
+the i45 RNG tail keeps its exact draw order, the new code draws NOTHING from any
+stream:
+
+- **`PopupText` module** (`popup_text.rs`, `PopupText.cs:10-991` reduced to the two
+  reforge contexts): the 20-slot pool, `ResetText`/`NewText` spawn (`:194-393` — the
+  merge loop always skips on `noStack`), `Update` (`:644-741`, the ±0.01 alpha
+  oscillation, the ×0.86/×0.4 velocity curve, the overlap lifetime extension, the
+  0.1/tick scale ramp + 0.03/tick shrink-out) and `DrawItemTextPopups`' non-effect
+  path (`:775-983`, the four shadow passes + fill; the best-tier rainbow
+  `hslToRgb(GlobalTimeWrappedHourly × 0.6 % 1, 1, 0.6) × 0.6`). Wired: spawn in
+  `reforge_click` at `Main.cs:41906`'s position (the player centre, gated on
+  `settings.pickup_text` = `Main.showItemText`), `UpdateItemText` beside
+  `CombatText.UpdateCombatText` (`Main.cs:18077-18078`, the same step gate), the draw
+  right after the combat-text pass (`Main.cs:62397-62402`) at
+  `TargetScale = UIScale / RenderZoom` (`PopupText.cs:88`). The `masterColor` ±0.05
+  clock (`Main.cs:18225-18235`, reset 1/+1 `:66833-66834`) lands beside the
+  cursor-colour clock for the master-rarity recolour (`PopupText.cs:667-670`).
+  Deliberate drops: the fancy effect styles (`ItemCraft`-only, never spawn from the
+  ported sites), the expert flag (the port's item table carries none — spawns pass
+  false), `gravDir` (unported, always 1). Witnesses: `popup_text.rs`'s test module +
+  `w4_g57_the_reforge_reveal_spawns_without_extra_draws` (the global stream still
+  equals roll+tail exactly), `w4_g57_the_pickup_text_setting_gates_the_reveal`,
+  `w4_g57_the_world_step_ticks_the_reveal`.
+- **The block draw** (`ui/reforge.rs`, `Main.cs:41581-41679`): the context-5 slot at
+  the literal (50, 270) at 0.85, the `Lang.inter[46]` label + the coin breakdown
+  (`Colors.AlphaDarken(Coin*).Hex3()` — lowercase, `Utils.cs:2000-2003`), the hammer
+  button `TextureAssets.Reforge[hover ? 1 : 0]` (`UI/Reforge_0/1`, now packed)
+  centred on (120, 310) at `Main.reforgeScale`, the `Lang.inter[20]` empty-slot hint
+  and the hovered button's `Lang.inter[19]` name through the pending-mouse-text
+  layer. The old placeholder labels ("Reforge - N copper" / "cooling down") are
+  gone — the C# has no cooldown label; the cooldown only gates the click.
+  Deliberate skips: `ItemSlot.DrawSavings` (`:41637`, no savings surface ported) and
+  the button's `UILinkPointNavigator.SetPosition` (`:41648`, gamepad-only).
+  Witnesses: `ui/reforge.rs`'s test module (the breakdown split, the AlphaDarken
+  truncation, the hover-name gate).
+
+**Note on the task's "hammer swing / icon spin" phrasing:** the C# reforge block has
+no hammer-swing or item-spin animation — the hammer button's presentation is the
+`reforgeScale` hover ramp (`Main.cs:41559-41572`, already ported by i45) and the
+new-prefix reveal is the `PopupText` rise/fade above (`Main.cs:41906`). The port
+follows the source, not the phrasing. All witnesses are WRITTEN NOT RUN (the
+code-only swarm has no compiler); the merge gate runs them.
+
 ## Named RNG streams (`Main.SwapRandom`, S1-A-2)
 
 `crates/tr-app/src/app/rng.rs` ports `Main._rngs` (`Main.cs:1294-1295`) and
