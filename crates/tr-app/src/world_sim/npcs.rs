@@ -1017,7 +1017,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         golfer_score: app.player.as_ref().map_or(0, |p| p.golfer_score),
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
-        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary.kills),
+        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary),
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,
@@ -3875,6 +3875,15 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // W4-c8 sweep (the e23 compose) — `Main.BestiaryTracker.Sights.
+    // ScanWorldForFinds()` (`Main.cs:17912-17915`, under `netMode != 1` —
+    // the port folds true): the critter proximity scan runs BEFORE the
+    // `UpdateNPC` loop (`:17948-17952`), so a critter that despawns this
+    // tick still earns its sight. RNG-free (the set insert + the
+    // achievement hook). The kill tracker's entries are untouched — the
+    // critter bestiary unlocks ride the SIGHT providers (the c37 gate
+    // table's Critter/GoldCritter arms).
+    crate::bestiary::scan_world_for_critter_sights(app);
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
     crate::world_sim::lunar::update_moon_lord_countdown(app);
@@ -13545,6 +13554,58 @@ mod worm_tests {
         }
         w.compute_column_surface();
         w
+    }
+
+    /// W4-e23 final 3 (the W4-c8 sweep compose) — `ScanWorldForFinds`
+    /// (`NPCWasNearPlayerTracker.cs:102-130`): a critter within the
+    /// player's 300×200-inflated hitbox registers its sight; a far one
+    /// does not; a non-critter (the zombie — lifeMax > 5) never does; a
+    /// dead critter is inactive; the insert is idempotent. The port's
+    /// roster critter today is the Goldfish 55 (the c8 crawler kinds
+    /// join when their ENTRIES rows land). WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_e23_the_critter_sight_scan_registers_proximity_once() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        app.player = Some(player);
+        // A Goldfish 100 px right of the player — inside the inflated box.
+        let mut near = Npc::new(NpcKind::Goldfish, 140.0, 40.0, 1, 0.0);
+        near.hp = near.max_hp;
+        // A Goldfish 2000 px away — outside.
+        let mut far = Npc::new(NpcKind::Goldfish, 2040.0, 40.0, 1, 0.0);
+        far.hp = far.max_hp;
+        // A zombie near — NOT a critter (lifeMax > 5).
+        let mut zombie = Npc::new(NpcKind::Zombie, 150.0, 40.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        app.npcs = vec![near, far, zombie];
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert!(app.bestiary.was_seen_near_player("Goldfish"), "the near critter");
+        assert!(!app.bestiary.was_seen_near_player("Zombie"), "not a critter");
+        // Idempotent: a second scan adds nothing new.
+        let count = app.bestiary.sights.len();
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert_eq!(app.bestiary.sights.len(), count, "the set insert dedups");
+        // The kill tracker is untouched — sights are the credit.
+        assert_eq!(app.bestiary.kills.get_kill_count("Goldfish"), 0);
+        // The Goldfish entry now reads tier 4 through the sight provider.
+        let fish = crate::bestiary::ENTRIES.iter().find(|e| e.net_id == 55).unwrap();
+        assert_eq!(
+            crate::bestiary::unlock_state(fish, &app.bestiary),
+            tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
+        );
+        // A dead critter never registers (the active gate).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        let mut p2 = Player::spawn(&app2.world);
+        p2.x = 40.0;
+        p2.y = 40.0;
+        app2.player = Some(p2);
+        let mut dead = Npc::new(NpcKind::Goldfish, 140.0, 40.0, 1, 0.0);
+        dead.hp = 0;
+        app2.npcs = vec![dead];
+        crate::bestiary::scan_world_for_critter_sights(&mut app2);
+        assert!(!app2.bestiary.was_seen_near_player("Goldfish"), "the dead one is inactive");
     }
 
     #[test]

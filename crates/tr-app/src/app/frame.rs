@@ -421,6 +421,20 @@ impl App {
         focus_paused
     }
 
+    /// `IngameFancyUI.OpenUIState` → `UIBestiaryTest.OnOpenPage`
+    /// (`UIBestiaryTest.cs:63-66`): the env-driven open (`TR_BESTIARY`)
+    /// builds its working set on the first open frame; the click-open
+    /// already ran `on_open`. Closing re-arms the latch. W4-e23.
+    fn bestiary_open_latch(&mut self, screen: Vec2) {
+        if self.bestiary_open {
+            if !self.bestiary_ui.opened {
+                self.bestiary_ui.on_open(&self.bestiary, screen);
+            }
+        } else {
+            self.bestiary_ui.opened = false;
+        }
+    }
+
     pub(crate) fn frame(&mut self) {
         // The frame's wall-clock stamp: the head derives `dt` from it (the
         // `TR_SHOT` pin aside) and the draw half's filter/render passes
@@ -441,6 +455,11 @@ impl App {
         // S1-B-8 — the in-world branch (`DoUpdateInWorld`'s port): one fn
         // per phase, in the C#'s order — see `frame/world.rs`.
         if !focus_paused && self.menu.is_none() && self.front.is_none() {
+            // `IngameFancyUI.OpenUIState` → `UIBestiaryTest.OnOpenPage`
+            // (`:63-66`): the env-driven open (`TR_BESTIARY`) builds its
+            // working set on the first open frame; the click-open already
+            // ran `on_open`. Closing re-arms the latch.
+            self.bestiary_open_latch(screen);
             // S1-E-17: `DoUpdate`'s capture gate (`Main.cs:16886-16890`):
             // `if (CaptureManager.Instance.IsCapturing) { FocusHelper.UpdateFocus;
             // return; }` — while a capture renders the ENTIRE game update

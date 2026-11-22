@@ -292,6 +292,11 @@ pub(crate) struct App {
     /// (`IngameOptions.Open`, `IngameOptions.cs:56`).
     pub(crate) ingame_options: crate::ui::ingame_options::IngameOptions,
     pub(crate) bestiary_selected: Option<usize>,
+    /// The `UIBestiaryTest` working-set state (W4-e23): the filter/sort
+    /// engine, the page offset, the option-grid latch and the search bar
+    /// (`ui::bestiary_screen::BestiaryUi`). Rebuilt on open
+    /// (`OnOpenPage:63-66`) and on every contents change.
+    pub(crate) bestiary_ui: crate::ui::bestiary_screen::BestiaryUi,
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
     pub(crate) chat: chat::ChatMonitor,
@@ -2681,6 +2686,60 @@ impl App {
         }
     }
 
+    /// The bestiary search bar's text input (`UISearchBar.DrawSelf:145-167`):
+    /// while `IsWritingText`, `Main.GetInputText` edits `actualContents`
+    /// every frame and `SetContents` fires `OnSearchContentsChanged` →
+    /// `UpdateBestiaryContents`. The port appends the character through the
+    /// bar's 50-unit cap (`SearchBar::set_contents`) and rebuilds.
+    pub(crate) fn bestiary_search_character(&mut self, c: char) {
+        let contents = {
+            let bar = &mut self.bestiary_ui.search;
+            if !bar.bar.is_writing_text {
+                return;
+            }
+            let next = format!("{}{}", bar.bar.actual_contents, c);
+            bar.set_contents(&next, false);
+            bar.search_string.clone()
+        };
+        let (sw, sh) = self.screen_size();
+        self.bestiary_ui
+            .on_search_changed(&contents, &self.bestiary, Vec2::new(sw, sh));
+        self.bestiary_selected = None;
+    }
+
+    /// The physical Backspace while the search bar writes —
+    /// `Utils.TrimLastCharacter` through the same contents path
+    /// (`UITextBox.Backspace:56-62`, the tail-drop form).
+    pub(crate) fn bestiary_search_backspace(&mut self) {
+        let contents = {
+            let bar = &mut self.bestiary_ui.search;
+            if !bar.bar.is_writing_text {
+                return;
+            }
+            let next = crate::ui::search_bar::trim_last_character(&bar.bar.actual_contents);
+            bar.set_contents(&next, false);
+            bar.search_string.clone()
+        };
+        let (sw, sh) = self.screen_size();
+        self.bestiary_ui
+            .on_search_changed(&contents, &self.bestiary, Vec2::new(sw, sh));
+        self.bestiary_selected = None;
+    }
+
+    /// Enter/Escape while the search bar writes — both toggle the input
+    /// latch off (`UISearchBar.DrawSelf:156-164`); Escape does NOT close
+    /// the screen while writing. Returns `true` when the key was consumed.
+    pub(crate) fn bestiary_search_end_input(&mut self) -> bool {
+        let bar = &mut self.bestiary_ui.search;
+        if bar.bar.is_writing_text {
+            bar.bar.toggle_taking_text();
+            bar.sync_focus_border();
+            true
+        } else {
+            false
+        }
+    }
+
     /// The physical Backspace — `Main.GetInputText` shrinks the string the
     /// same frame (`Main.cs:50793`'s handler the keyboard state feeds through).
     pub(crate) fn keyboard_backspace(&mut self) {
@@ -3779,6 +3838,7 @@ impl App {
                     None
                 }
             }),
+            bestiary_ui: crate::ui::bestiary_screen::BestiaryUi::default(),
             chat: {
                 // `TR_CHAT` opens the chat for the screenshot runs
                 // (the vanilla state opens on Enter only).

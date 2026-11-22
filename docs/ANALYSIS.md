@@ -14785,6 +14785,247 @@ Tests (written, not run): `ui::bestiary::tests` вЂ” `grid_range_text_matches
 `knockback_label_matches_the_four_way_gate`, `flavor_text_gates_at_tier_2_and_the_language_key`,
 `prettify_percent_display_trims_like_utils`.
 
+## The bestiary grid/filters/sort (W4-e23)
+
+**Code-only mode (2026-11-20):** no cargo/rustc/rustfmt invoked; the tests
+below are WRITTEN NOT RUN. Base: main + the W4-d81 element structs
+(1a1a5df3, merged keep-both) + the W4-c37 ladder data (3e138525, already in
+the base). The S1-E-26 wave C "Deferred" list above is now mostly closed.
+
+**What landed** (three phases, one commit each):
+
+- **Phase A - the tag/priority data half** (`tools/gen_bestiary_tags.py` ->
+  `bestiary_tags.rs`, GENERATED): the `CommonTags.SpawnConditions` catalog
+  (60 tags: language key + `Icon_Tags_Shadow` frame), the
+  `GetCommonInfoElementsForFilters` 57-filter order, the per-entry tag walk
+  (`AddNPCBiomeRelationships_Automated`/`_Manual` + `ModifyEntriesThatNeedIt`)
+  replayed in `Populate` phase order (`:544-555` - the relationships run
+  BEFORE the modify pass), the 19 `SearchAliasInfoElement` rows and the
+  three `NPCID.Sets.*BestiaryPriority` lists. **The preference-wrap rule:**
+  `BestiaryPortraitBackgroundProviderPreferenceInfoElement` adds a DIFFERENT
+  object to Info - `Filters.ByInfoElement`'s `Info.Contains` and
+  `GetLowestBiomeGroupIndex`'s `IndexOf` are reference checks, so a wrapped
+  tag never counts for filter membership or the sorting-id biome index;
+  the generator keeps the wrap rows (flagged `preferred`) for the future
+  flavor-text/portrait preference walk but the membership helpers skip
+  them. `Info.Remove` removes the first PLAIN occurrence only.
+- **Phase B - the filter/sort engine** (`bestiary_filter.rs`):
+  `EntryFilterer` (search gate -> active-OR, toggle/range/whitespace arms,
+  `EntryFilterer.cs:30-99`), `EntrySorter` (prioritized-step-first chain,
+  `EntrySorter.cs:17-50`), the four `Filters` + the `BySearch` provider
+  walk (name plate / tags / rare / boss / aliases at tier > 0, drop
+  INTERNAL item names at tier >= 2 - `ItemDropBestiaryInfoElement.cs:59`
+  reads `ItemsByType[id].Name`, not the localized tooltip), the nine
+  `SortingSteps` comparers, the saucer's boss-element `RemoveAll`
+  (`:668`), and the `ContentSamples.NpcBestiarySortingId` order over the
+  port roster (the nine `orderby` keys of
+  `GetSortedBestiaryEntriesList:768-770`, hidden entries removed, numbered
+  from 1; `working_set` = `FilterEntries` + `SortEntries`).
+- **Phase C - the screen** (`ui/bestiary_screen.rs` state+geometry,
+  `ui/bestiary_screen_draw.rs` chrome, `ui/bestiary.rs` rework, App
+  wiring): the `BuildPage` component tree resolved through the layout
+  pass (the (-90, 1) inner panel + (12, 8) padding, the 24 px top strip,
+  the (-50, 1)/Top-20 middle container, the (-242, -4) bestiary space
+  beside the ALWAYS-present 230 px info page, 12 px taller); the grid
+  PAGES over the working set (`OffsetLibraryByPages`, no row growth); the
+  card border layers swap on hover (`MouseOver`/`MouseOut:150-169`) and
+  the corner number reads `NpcBestiarySortingId`
+  (`NPCNetIdBestiaryInfoElement.cs:10`), not the roster position; the
+  locked icon draws natural-size centred (`UIBestiaryEntryIcon.cs:65`);
+  the info page is the side panel with the category-ordered rows +
+  separators + the 193x112 portrait card + the `CreateStarsContainer`
+  5-star row (`Icon_Rank_Light`/`Dim`, the W4-c37 star data's art half);
+  the top strip's page/range/sort/filter/search controls; the two option
+  grids (mutually exclusive, close-rebuilds, the sort re-click fallback,
+  the availability-gated filter buttons with the `-2`/0.5-fade shadow);
+  the Blue-theme wrapped search bar (focus border, 0.4 cancel dim, the
+  right-click clear + outside-click close); the search keyboard route
+  (`WritingText` gates the chat-open/world keys, Enter/Escape end the
+  input NOT the screen); the wheel consumed by the open screen; the
+  `OnOpenPage` frame latch for `TR_BESTIARY`. Atlas +10 sheets (measured
+  8119 -> 8142 px skyline via `tools/atlas_sim.js`, under the 8192 bound).
+
+**Deliberate deviations / remainders (documented, not silently dropped):**
+
+1. **Sorting-id numbers are the FULL vanilla set's (LANDED 2026-11-21,
+   remainder 5).** The C# numbers the FULL vanilla NPC set; the port now
+   does too — `tools/gen_bestiary_sorting_ids.py` replays
+   `ContentSamples.NpcBestiarySortingId` (the fresh Classic `SetDefaults`
+   sample per net id -65..696, the nine-key stable orderby of
+   `GetSortedBestiaryEntriesList:765-773`, the `Hide` rows removed `:771`,
+   numbered from 1 `:1083-1092`) into the generated `bestiary_sorting_ids.rs`
+   (546 entries). The corner index (`NPCNetIdBestiaryInfoElement.cs:10`) and
+   `ByBestiarySortingId` both read it — the absolute display numbers match
+   the vanilla (Blue Slime 132, Moon Lord 546, the town roster 1..41), not
+   the port's narrowed roster. The `Hide`-folded segments read 0 (the C#'s
+   absent dictionary keys). The earlier roster-relative narrowing is retired.
+2. **`Alphabetical` uses ordinal `str` order.** The C# `string.CompareTo`
+   is culture-aware (`SortingSteps.cs:136`); identical for the English
+   name column, may differ under other cultures' collation.
+3. **`BySearch` lowercases both sides** (`Filters.cs:30`'s
+   `ToLower().IndexOf(..., OrdinalIgnoreCase)`); culture case-folds beyond
+   ASCII are not modelled.
+4. **The info page draws the C#'s 2x2 stat grid + coin row (LANDED
+   2026-11-21, remainder 1).** `NPCStatsReportInfoElement.ProvideUIElement`
+   (`:64-256`): the 96x31 HP/Attack/Defense/Knockback icons on the 99/35
+   lattice with the value texts right-aligned inside each icon (`HAlign 1`,
+   `Left -10`, scale 1, the `UIText` `Y -= 2*scale` ride), the coin
+   separator + the `Stat_Platinum/Gold/Silver/Copper` row when `value > 0`
+   (the clamp/dash `coin_strings:99-119`, the 49-pitch rects with the
+   silver/copper +1 `:176-198`, the 0.85 texts at `Left -7`), the four
+   `ShowStats_*` hover tooltips (`:259-289`), the `stats_block_height`
+   70/108 (`:165`/`:249-251`). The kill counter is
+   `NPCKillCounterInfoElement`'s right-aligned `Stat_Panel` row (`:54-87`:
+   the 12/7 spliced (43,56,101) panel, the item-321 grave icon at 0.8 in the
+   32x32 `UIItemIcon`, the count at 0.85 `PaddingRight 5` `Left -3`, the
+   Slain hover). Atlas +3 coin sheets. The vertical `stat_row` list is retired.
+5. **The info-page scrollbar thumb draws + scrolls (LANDED 2026-11-21,
+   remainder 2).** The g53 `UIScrollbar` pattern: `draw_info_page` is the
+   `AddInfoToList` row model (`InfoRow`, the category order + between-group
+   separators `UIBestiaryEntryInfoPage.cs:128-163`) stacked by
+   `UIList.RecalculateChildren` (`UIList.cs:116-128`, `ListPadding 4`, the
+   single-row no-padding quirk `:122`); the rows ride `-ViewPosition` inside
+   the list's `OverflowHidden` clip (`UIList.DrawSelf:181`) and the thumb
+   draws over the reserved 20 px column via `panel::draw_scrollbar_themed`
+   (the bestiary's `new UIScrollbar()` is the default Blue theme
+   `UIScrollbar.cs:56-66` → `Images/UI/Scrollbar`, atlas +1 sheet). The wheel
+   routes to `UpdateScrollbar` (`UIBestiaryTest.cs:846-850` → `:59-65`,
+   `ViewPosition -= wheel` clamped by `SetView:72-78`), the thumb press grabs
+   the handle / jumps the track (`LeftMouseDown:126-143`), the drag follows
+   the pointer (`DrawSelf:109-112`), the release clears the latch
+   (`:145-149`). `BestiaryUi` carries `info_scroll` + `info_scroll_drag`; a
+   new selection resets the scroll (`FillInfoForEntry` clears the list `:113`).
+6. **The grid uses the raw CELL lattice.** `grid_cell_rect` pins the C#'s
+   fractional centring (`UIBestiaryEntryGrid.cs:50-66`); the draw/hit use
+   the raw 72 px lattice, exact when the space divides by 72 (the
+   documented S1-E-26 simplification, kept).
+7. **The biome portrait backdrops draw (LANDED 2026-11-21, remainder 3).**
+   The `CommonTags.SpawnConditions` background providers
+   (`SpawnConditionBestiaryInfoElement.cs:15-20`'s
+   `backgroundImagePath`/`backgroundColor` ctor args) now draw behind the
+   info-page portrait: `gen_bestiary_tags.py` extracts the per-tag bg sheet +
+   tint into `TagDef`, `portrait_backdrop` ports
+   `NPCPortraitInfoElement.ProvideUIElement`'s pick (`:36-84`: the first
+   preference-matched provider with an image wins `:43-57`, else the first
+   in entry order `:58-70`, the portrait color is the LAST provider's
+   `GetBackgroundColor:71-75`), the two world-evil preference rows 533/529
+   pick the corrupt arm
+   (`BestiaryPortraitBackgroundBasedOnWorldEvilProviderPreferenceInfoElement.cs:22-29`,
+   the port's `WorldGen.crimson == false` default), the Moon Lord's own
+   MapBG1+Black provider (`:639`). The backdrop draws `ScaleToFit` over the
+   portrait inner box tinted by the portrait color
+   (`UIBestiaryNPCEntryPortrait.cs:30-41`) via `Lookups::map_bg_sheet`.
+   Atlas +26 MapBG sheets (7728→7753 px skyline, under 8192). The decorative
+   overlays (`Visuals.*`, `UIBestiaryNPCEntryPortrait.cs:42-55`) and the
+   `TryGivingEntryFlavorTextIfItIsMissing` biome-flavor fallback (`:773-800`)
+   LANDED in the final phase (2026-11-21, see item 10 below).
+8. **The gamepad link points** (`SetupGamepadPoints`, ids 3000+) stay
+   unported (the whole gamepad-navigation layer is out of scope).
+9. **The hover sound ticks fire (LANDED 2026-11-21, remainder 4).** The
+   d81/d82 `hover_sound_tick` latch (`GroupOptionButton.cs:212-223`) wires to
+   the screen's controls via `ui/bestiary_hover.rs`: the option-grid buttons
+   tick the per-button draw-side one-shot (only the attached grid draws, the
+   detached grid's latches re-arm), the fixed controls (page back/forward,
+   sort/filter toggles, search magnifier + cancel) tick the
+   `UIImageButton.MouseOver:58-62` rising edge, the grid card ticks
+   `UIBestiaryEntryButton.MouseOver:150-152` on a hovered-slot change.
+   `BestiaryUi` carries the `BestiaryHoverSounds` state; the App ticks it once
+   per open frame in the click cluster and plays `Menu_Tick` (sound 12) on a
+   fired edge; the closed screen resets the latches. The click cues (sound
+   11/12) still play from the click handler.
+10. **The decorative overlays + the biome-flavor fallback + the Misc
+    spawn-condition rows draw (LANDED 2026-11-21, final phase).** Three
+    deferred pieces of the info page close together:
+    (a) `AddNPCBiomeRelationships_AddDecorations_Automated`
+    (`BestiaryDatabaseNPCsPopulator.cs:2028-2071`) replays in
+    `gen_bestiary_tags.py` BETWEEN the relationship passes and
+    `ModifyEntriesThatNeedIt` (the `Populate:544-555` order): the Rain arm
+    picks `Visuals.Blizzard` when the entry carries Snow else `Visuals.Rain`
+    and CONTINUES; Eclipse/NightTime/DayTime/PumpkinMoon/FrostMoon are
+    independent ifs; the Meteor biome adds Moon AND Meteor. The eight
+    `Visuals.*` rows join the tag catalog (ids 60-67, no key/frame — the
+    decorative class carries none, `SpawnConditionDecorativeOverlayInfoElement.cs:16`);
+    `TagDef` gains `overlay`/`overlay_color`/`text_priority`/
+    `hide_in_portrait_info`/`display_priority`/`order_priority` (the ctor
+    initializer flags). `portrait_overlays` ports
+    `NPCPortraitInfoElement.cs:77-83`: only when NO preference-matched
+    provider won the image (`!flag2`), the overlay providers collect in
+    entry order and `OrderBy` the stable `DisplayPriority`; the draw
+    (`UIBestiaryNPCEntryPortrait.cs:42-55`) pushes each `ScaleToFit` over the
+    inner box between the backdrop and the icon, tinted by its own color or
+    `Color.Lerp(White, portraitColor, 0.5)` (`npc_portrait_overlay_color`,
+    the dead-code allowance lifted). Atlas +9 `MapBGOverlay1..9` sheets
+    (measured 7753→7759 px skyline via `tools/atlas_sim.js`, under 8192; the
+    harness's deleted-L-8b-ref read now tolerates the pruned branch).
+    (b) `TryGivingEntryFlavorTextIfItIsMissing` (`:773-800`, run at `:637`)
+    replays into the generated `FLAVOR_FALLBACK` table (118 rows): entries
+    whose factory found no `Bestiary_FlavorText.npc_<Const>` row get the
+    first preference-wrapped spawn-condition tag's `Bestiary_BiomeText.biome_<Tail>`
+    key (the world-evil wrap class excepted — 533/529 fall through), else
+    the plain `SpawnConditionBestiaryInfoElement` with the highest
+    `DisplayTextPriority` (`>=`, ties to the later row; the overlay class
+    never feeds the scan). `flavor_text` falls back to it from tier 2 —
+    the element is added WITHOUT an Exists check (`:798`).
+    (c) The Misc info rows: `FilterProviderInfoElement.ProvideUIElement`
+    (`:55-95`) draws the entry's plain spawn-condition tags from tier 1 as
+    the (-14,1)x34 (43,56,101) panel rows — the framed `Icon_Tags_Shadow`
+    icon at Left 5 + the 0.8 display name at PaddingLeft 38 with the
+    `DynamicallyScaleDownToWidth` shrink, the `ShowButtonName` hover; the
+    group orders by `OrderPriority` descending (biomes 0, Times -1,
+    Events -2), `HideInPortraitInfo` (Blizzard) suppressed. The
+    `bestiary_info_category` Misc arm now has live rows.
+11. **The bestiary NOTES writer wires (LANDED 2026-11-21, final phase).**
+    The e16 closeout's hover-gate dead code lifts: the drop-line draw feeds
+    `info_item_shows_tooltip` (`UIBestiaryInfoItemLine.DrawSelf:112-119`),
+    the hovered non-locked line builds its display item (fresh
+    `SetDefaults(itemId)` count 1) and calls `draw_item_tooltip` with the
+    ctor-cached `BestiaryNotes` (`SetBestiaryNotesOnItemCache:137-156`).
+    `TooltipContext.bestiary_notes` is the f28 `HoverFlags.bestiary_notes`
+    compose seam; `item_tooltip_lines`' tail prints the
+    `Main.cs:21334-21342` rows (`bestiary_note_rows`). The port's
+    `DropRateInfo` carries no condition objects (the `loot.rs` gap), so
+    the cache joins the empty list today — the seam is live.
+12. **The c8 SIGHT-unlock compose (LANDED 2026-11-21, final phase).** The
+    c37 gate table gains `Gate::GoldCritter` (the 13-row peer dictionary
+    `:703-720` + the 14-id `GoldCrittersCollection` + the four critter-twin
+    `Highest` folds `:721-730`); `eval_gate`'s gold arm ports
+    `GoldCritterUICollectionInfoProvider.cs:21-75` (max(own, peers) sights
+    behind the any-gold-seen gate). `scan_world_for_critter_sights` lands
+    at the `update_npcs` head (`Main.cs:17914`, the 300×200-inflated player
+    box, the `CountsAsACritter` gate, the idempotent insert + the
+    BOOK_WORM hook). The UI/completion/shop/achievement dispatch already
+    rides the WorldBestiary through the c37 table — the c8
+    `unlock_state_world` semantics ARE the port's shape, no parallel
+    dispatch. The c8 crawler ENTRIES rows await the roster union; the
+    gold gate's peer credits resolve through `credit_id_for_net` then.
+
+Tests (written, not run): `bestiary_filter::tests` (10 + the final-phase
+d42-band coverage witness - the filter list,
+the active-OR + search gate, the saucer boss removal, the wrap-membership
+rule, the sort chain + re-click, the hidden steps, the town-first sorting
+id [repointed to the full-vanilla numbers], the search providers, the
+working set, the availability test);
+`ui::bestiary_screen::tests` (7 - the top-strip layout, the paging, the
+option-grid exclusivity, the sort re-click, the search rebuild, the
+panel-vs-button hit, the side-by-side info page);
+`ui::bestiary_screen_draw::tests` (2 - the tag-icon centring, the shadow
+frame); the reworked `ui::bestiary::tests` (the grid paging + the
+completion-bar rect repointed, + the remainder witnesses: the 2x2 stat
+grid / coin strings / coin row / block height / kill-counter panel, the
+row layout / view height / SetView clamp / scrollbar press, the backdrop
+preference / fallback / world-evil / Moon Lord / no-provider picks,
++ the final-phase witnesses: the decorations-pass Visuals rows, the
+overlay fallback arm + priority order, the overlay Lerp tint, the
+biome-flavor fallback keys + tier gate, the Misc row order + Hide gate,
+the bestiary-notes compose contract);
+`ui::bestiary_hover::tests` (3 - the MouseOver edge, the per-button latch,
+the card-change-only tick); `bestiary::tests` (+2 final-phase - the gold
+gate's three arms + the collection table, the completion sight-vs-kill);
+`world_sim::npcs::worm_tests` (+1 - the critter proximity scan
+once/far/zombie/dead/idempotent). The final-phase close-out report:
+`docs/research/237-bestiary-ui-final.md` (STATUS FINAL - the c8/f28/d42
+compose verdicts + the witness ledger).
+
 ## The pillar worms (M4-EVENT-14)
 
 The Crawltipede (412/413/414) is the Solar tower's worm: the head
@@ -40434,3 +40675,53 @@ clock rides `7 WorldData`), and g48's census FINAL (2b61530b4) records
   offsets; `netglue.rs` parked-offset drop + the `(int)` truncation ×
   strict-boundary composition through the net path). The clock-family
   bible (one owner per body, the merge order) is research/332 s5.
+
+## The bestiary unlock ladder's data half (W4-c37, code-only)
+
+The ladder maths (`tr_core::bestiary`) landed with S1-F-15; W4-c37 ports the
+DATA half the audit's research/30 gaps #4/#5 named:
+
+- `bestiary_data::gate` is `BestiaryDatabaseNPCsPopulator.ModifyEntriesThatNeedIt`
+  (`:649-730`): the town-NPC chat provider (the 22 manual rows, Guide included),
+  the critter sight provider (55 Goldfish / 549 Etherian Portal —
+  `CountsAsACritter`, `NPC.cs:6887-6897`), the four DD2 quick rows
+  (565/577/551/491, `:679-682`), the boss-credit fold dictionary verbatim
+  (`:683-702`, incl. the unported 116/139/658-660/454/521), and the Skeletron
+  head's Highest-of-two (own quick ladder OR Clothier chat, `:677`).
+- `quick_unlock` is the `BestiaryEntry.Enemy` factory flag (`BestiaryEntry.cs:37-41`:
+  `boss || ShouldBeCountedAsBossForBestiary`), ORed onto the provider's own
+  `quickUnlock` at evaluation — a flag, never a zeroed kill count.
+- The star tiers: `FillNpcRarities`' 137 override rows verbatim
+  (`ContentSamples.cs:1106-1242`) over the `GetNPCBestiaryRarityStarsCount`
+  formula (`:1245-1306`). The formula reads the Classic sample on a fresh
+  `Main`, so the two progression-gated stat rows keep their base values:
+  548 the Eternia Crystal 1000 HP / 14 defense (`NPC.cs:16003-16004`, NOT the
+  runtime 5000/20) and 59 the Lava Slime 50/15/10 (`:9518-9523`, NOT the
+  remix 25/7/2) — `sample_stats` carries the two corrections; every other
+  roster id's sample equals the port's `entry_stats` tables (verified
+  row-by-row against the `SetDefaults` if-chain).
+
+Deliberate remainders (recorded, not approximated):
+
+- The portrait star container (`NPCPortraitInfoElement.CreateStarsContainer`,
+  `:107-152`) draws `Icon_Rank_Light/Dim`; neither has an atlas slot, so the
+  star DATA is pinned by the 249-row census witness and the UI wiring lands
+  with the art. No text stand-in is drawn.
+- The sight/chat RECORDING (`NPCWasNearPlayerTracker.ScanWorldForFinds:102-130`
+  + the chat hook) stays state-only per the 2026-11-08 owner decision — town
+  and critter entries therefore stay locked in play until the recording wave;
+  the providers themselves are the C#'s.
+- The GoldCritter collection gate (`:703-720`), the Salamander/Shelly/Dad
+  world-roster gate (`:649-652`), the Tortured Soul 534 (`:653`), the Skeletron
+  hand 68 / Old Man 37 triples (`:676`/`:678`) and the critter-twin folds
+  (`:721-730`) have no port entries; `gate`'s doc lists them for the roster
+  waves.
+
+Verification: code-only — no cargo/tests invoked. Every table re-derived from
+the decompiled C# by scripted census (the boss/rarity rows from the
+`SetDefaults` if-chain, the 137 star overrides, the full banner chain over all
+249 roster ids, the per-entry star values through the port's own stat tables).
+13 witness tests written not run (`bestiary.rs` W4-c37 set: fresh-world,
+town-chat, critter-sight, minion folds, Skeletron OR, boss-flag census,
+threshold pins, star-formula pins, override-beats-formula, the 249-row star
+census; `ui/bestiary.rs` completion test repointed to `WorldBestiary`).

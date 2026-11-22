@@ -1681,7 +1681,8 @@ impl App {
                             self.map_style,
                             self.bestiary_open,
                             self.bestiary_selected,
-                            &self.bestiary.kills,
+                            &self.bestiary_ui,
+                            &self.bestiary,
                             &mut self.chat,
                             &self.emotes,
                             // BUG-11: the in-game options window's state

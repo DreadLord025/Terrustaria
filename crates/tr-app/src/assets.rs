@@ -855,6 +855,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/CharCreation/Separator1",
         "UI/Scrollbar2",
         "UI/ScrollbarInner",
+        // W4-e23 remainder: the bestiary info page's Blue-theme scrollbar
+        // track (`UIScrollbar.cs:61` — the default `ColorTheme.Blue`).
+        "UI/Scrollbar",
         "UI/Craft",
         "UI/Craft_Toggle_0",
         "UI/Craft_Toggle_1",
@@ -892,11 +895,31 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Bestiary/Icon_Locked",
         "UI/Bestiary/Portrait_Front",
         "UI/Bestiary/Button_Back",
+        // W4-e23: the bestiary screen's paging/filter/sort buttons + the
+        // option-grid icon sheets (`UIBestiaryTest.cs:222-299`,
+        // `UIBestiaryFilteringOptionsGrid.cs:134-143`,
+        // `NPCPortraitInfoElement.cs:118-142`). Measured atlas cost:
+        // 8119 -> 8142 px (tools/atlas_sim.js skyline, under the 8192 bound).
+        "UI/Bestiary/Button_Forward",
+        "UI/Bestiary/Button_Border",
+        "UI/Bestiary/Button_Filtering",
+        "UI/Bestiary/Button_Sorting",
+        "UI/Bestiary/Button_Wide_Border",
+        "UI/Bestiary/Icon_Tags_Shadow",
+        "UI/Bestiary/Icon_Rank_Light",
+        "UI/Bestiary/Icon_Rank_Dim",
+        "UI/Bestiary/Stat_Panel",
+        "UI/Bestiary/Button_Search",
         "UI/Bestiary/Stat_HP",
         "UI/Bestiary/Stat_Attack",
         "UI/Bestiary/Stat_Defense",
         "UI/Bestiary/Stat_Knockback",
         "UI/Bestiary/Stat_Copper",
+        // W4-e23 remainders: the coin row's other three denominations
+        // (`NPCStatsReportInfoElement.cs:179-198`).
+        "UI/Bestiary/Stat_Platinum",
+        "UI/Bestiary/Stat_Gold",
+        "UI/Bestiary/Stat_Silver",
         // The dedicated single-frame bestiary portraits — the
         // `CustomTexturePath` rows of `NPCID.Sets.NPCBestiaryDrawOffset`
         // (`UnlockableNPCEntryIcon.cs:74-81` requests them by path). One
@@ -1008,6 +1031,49 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "MapBG19", // 18 Spider wall (WallID 62/263)
         "MapBG32", // 31 rock layer
         "MapBG33", // 32 space
+        // W4-e23 remainder: the bestiary portrait backdrops — the
+        // `CommonTags.SpawnConditions` `backgroundImagePath` rows the map's
+        // `map_bg_index` never selects (`BestiaryDatabaseNPCsPopulator.cs`
+        // :32-246, drawn by `UIBestiaryNPCEntryPortrait.cs:30-41`).
+        "MapBG5",  // dungeon
+        "MapBG6",  // corruption
+        "MapBG7",  // crimson
+        "MapBG8",  // hallow
+        "MapBG9",  // jungle
+        "MapBG13", // underground jungle
+        "MapBG20", // surface mushroom
+        "MapBG21", // underground mushroom
+        "MapBG22", // underground hallow
+        "MapBG23", // underground corruption
+        "MapBG24", // underground crimson
+        "MapBG26", // blood moon
+        "MapBG27", // graveyard
+        "MapBG28", // nebula pillar
+        "MapBG29", // solar pillar
+        "MapBG30", // vortex pillar
+        "MapBG31", // stardust pillar
+        "MapBG34", // corrupt ice
+        "MapBG35", // crimson ice
+        "MapBG36", // hallow ice
+        "MapBG37", // corrupt desert
+        "MapBG38", // crimson desert
+        "MapBG39", // hallow desert
+        "MapBG40", // corrupt underground desert
+        "MapBG41", // crimson underground desert
+        "MapBG42", // hallow underground desert
+        // W4-e23 final phase: the portrait's decorative overlays — the
+        // `Visuals.*` + `Events.Sandstorm` overlay ctor paths
+        // (`BestiaryDatabaseNPCsPopulator.cs:112`/`:291-322`, drawn by
+        // `UIBestiaryNPCEntryPortrait.cs:42-55`).
+        "MapBGOverlay1", // sandstorm
+        "MapBGOverlay2", // rain
+        "MapBGOverlay3", // sun
+        "MapBGOverlay4", // moon
+        "MapBGOverlay5", // eclipse sun
+        "MapBGOverlay6", // blizzard
+        "MapBGOverlay7", // meteor
+        "MapBGOverlay8", // pumpkin moon
+        "MapBGOverlay9", // frost moon
         // P5 settings sliders (`AssetInitializer.cs:345-349`): the
         // `IngameOptions.DrawValueBar` chrome and the `Main.DrawMenu` HSL colour
         // sliders. `ColorHighlight` is `Images/UI/Slider_Highlight`, NOT
@@ -2066,6 +2132,10 @@ pub struct Lookups {
     pub ui_separator: Option<tr_render::SheetRect>,
     /// `UI/Scrollbar2`: the cyan scrollbar track (`UIScrollbar.cs:64`).
     pub ui_scrollbar: Option<tr_render::SheetRect>,
+    /// `UI/Scrollbar`: the Blue-theme scrollbar track — the `UIScrollbar`
+    /// ctor default (`UIScrollbar.cs:61`), the bestiary info page's bar
+    /// (`UIBestiaryEntryInfoPage.cs:47`). W4-e23 remainder.
+    pub ui_scrollbar_blue: Option<tr_render::SheetRect>,
     /// `UI/ScrollbarInner`: the scrollbar handle (`UIScrollbar.cs:67`).
     pub ui_scrollbar_inner: Option<tr_render::SheetRect>,
     /// `UI/Craft`: the detail-area craft icon (`NewCraftingUI.cs:460`).
@@ -2100,12 +2170,43 @@ pub struct Lookups {
     pub ui_bestiary_slot_overlay: Option<tr_render::SheetRect>,
     pub ui_bestiary_slot_front: Option<tr_render::SheetRect>,
     pub ui_bestiary_locked: Option<tr_render::SheetRect>,
+    /// W4-e23: the bestiary screen's paging buttons — the 28x28
+    /// `Button_Back`/`Button_Forward` pair + the shared `Button_Border`
+    /// hover frame (`UIBestiaryTest.AddBackAndForwardButtons`, `:220-255`).
+    pub ui_bestiary_page_back: Option<tr_render::SheetRect>,
+    pub ui_bestiary_page_forward: Option<tr_render::SheetRect>,
+    pub ui_bestiary_page_border: Option<tr_render::SheetRect>,
+    /// W4-e23: the 114x28 filter/sort toggle buttons + their shared wide
+    /// hover border (`AddSortAndFilterButtons`, `:257-300`).
+    pub ui_bestiary_filter_button: Option<tr_render::SheetRect>,
+    pub ui_bestiary_sort_button: Option<tr_render::SheetRect>,
+    pub ui_bestiary_wide_border: Option<tr_render::SheetRect>,
+    /// W4-e23: the 480x150 16x5 tag-icon sheet
+    /// (`FilterProviderInfoElement.GetFilterImage`, `:31-39`), the 14x14
+    /// rarity stars (`NPCPortraitInfoElement.CreateStarsContainer`,
+    /// `:129-142`) and the 31x31 stat/tag panel splice
+    /// (`FilterProviderInfoElement.ProvideUIElement`, `:65`).
+    pub ui_bestiary_tag_icons: Option<tr_render::SheetRect>,
+    pub ui_bestiary_star_light: Option<tr_render::SheetRect>,
+    pub ui_bestiary_star_dim: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_panel: Option<tr_render::SheetRect>,
+    /// W4-e23: the Blue-theme search magnifier
+    /// (`UIWrappedSearchBar.AddSearchBar`, `:97-101` — the bestiary keeps
+    /// the default Blue theme; the crafting bar's Red one rides
+    /// `ui_search_icon`).
+    pub ui_search_icon_blue: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Portrait_Front`: the info page's portrait backdrop.
     pub ui_bestiary_portrait: Option<tr_render::SheetRect>,
     /// The dedicated single-frame portraits — the `CustomTexturePath` rows
     /// of `NPCID.Sets.NPCBestiaryDrawOffset` (`UnlockableNPCEntryIcon.cs:74-81`),
     /// keyed by vanilla net id (`UI/Bestiary/NPCs/NPC_<id>`).
     pub bestiary_custom_portraits: std::collections::HashMap<i32, tr_render::SheetRect>,
+    /// W4-e23 remainder: the biome portrait backdrops — the `MapBG*` sheets
+    /// the `CommonTags.SpawnConditions` background providers reference
+    /// (`BestiaryDatabaseNPCsPopulator.cs:32-246`), keyed by bare sheet name
+    /// (`MapBG1` etc.). The info-page portrait draws the preference-picked
+    /// one (`UIBestiaryNPCEntryPortrait.cs:30-41`).
+    pub bestiary_backdrops: std::collections::HashMap<&'static str, tr_render::SheetRect>,
     /// The info page's stat icons (`UIBestiaryInfoItemLine`'s
     /// `Stat_HP`/`Stat_Attack`/`Stat_Defense`/`Stat_Knockback`/
     /// `Stat_Copper` sheets).
@@ -2114,6 +2215,11 @@ pub struct Lookups {
     pub ui_bestiary_stat_defense: Option<tr_render::SheetRect>,
     pub ui_bestiary_stat_knockback: Option<tr_render::SheetRect>,
     pub ui_bestiary_stat_copper: Option<tr_render::SheetRect>,
+    /// W4-e23 remainders: the coin row's other three denominations
+    /// (`NPCStatsReportInfoElement.cs:179-193`).
+    pub ui_bestiary_stat_platinum: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_gold: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_silver: Option<tr_render::SheetRect>,
     /// The twenty-two NPC portrait sheets — the `NpcAssets` set restated
     /// for the UI draws: `[slime, demon eye, wandering eye, zombie, king
     /// slime, guide, skeleton, undead miner, cave bat, jungle bat, hellbat,
@@ -2282,6 +2388,12 @@ impl Lookups {
         self.bestiary_npc_sheets.get(slot).and_then(|s| s.as_ref().map(|_| slot))
     }
 
+    /// The biome portrait backdrop sheet for a bare `MapBG*` name (the
+    /// `portrait_backdrop` pick's output). W4-e23 remainder.
+    pub fn map_bg_sheet(&self, name: &str) -> Option<&tr_render::SheetRect> {
+        self.bestiary_backdrops.get(name)
+    }
+
     pub fn build(
         atlas: &tr_render::Atlas,
         tile_names: impl Iterator<Item = (u16, String)>,
@@ -2430,6 +2542,7 @@ impl Lookups {
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
             ui_separator: atlas.sheet("UI/CharCreation/Separator1").copied(),
             ui_scrollbar: atlas.sheet("UI/Scrollbar2").copied(),
+            ui_scrollbar_blue: atlas.sheet("UI/Scrollbar").copied(),
             ui_scrollbar_inner: atlas.sheet("UI/ScrollbarInner").copied(),
             ui_craft_icon: atlas.sheet("UI/Craft").copied(),
             craft_toggles: std::array::from_fn(|i| {
@@ -2447,6 +2560,17 @@ impl Lookups {
             ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
             ui_bestiary_slot_front: atlas.sheet("UI/Bestiary/Slot_Front").copied(),
             ui_bestiary_locked: atlas.sheet("UI/Bestiary/Icon_Locked").copied(),
+            ui_bestiary_page_back: atlas.sheet("UI/Bestiary/Button_Back").copied(),
+            ui_bestiary_page_forward: atlas.sheet("UI/Bestiary/Button_Forward").copied(),
+            ui_bestiary_page_border: atlas.sheet("UI/Bestiary/Button_Border").copied(),
+            ui_bestiary_filter_button: atlas.sheet("UI/Bestiary/Button_Filtering").copied(),
+            ui_bestiary_sort_button: atlas.sheet("UI/Bestiary/Button_Sorting").copied(),
+            ui_bestiary_wide_border: atlas.sheet("UI/Bestiary/Button_Wide_Border").copied(),
+            ui_bestiary_tag_icons: atlas.sheet("UI/Bestiary/Icon_Tags_Shadow").copied(),
+            ui_bestiary_star_light: atlas.sheet("UI/Bestiary/Icon_Rank_Light").copied(),
+            ui_bestiary_star_dim: atlas.sheet("UI/Bestiary/Icon_Rank_Dim").copied(),
+            ui_bestiary_stat_panel: atlas.sheet("UI/Bestiary/Stat_Panel").copied(),
+            ui_search_icon_blue: atlas.sheet("UI/Bestiary/Button_Search").copied(),
             ui_bestiary_portrait: atlas.sheet("UI/Bestiary/Portrait_Front").copied(),
             // `UnlockableNPCEntryIcon.cs:74-81`: the `CustomTexturePath`
             // assets, one single-frame portrait per id (the 25 rows the
@@ -2463,11 +2587,21 @@ impl Lookups {
                     .map(|s| (id, s))
             })
             .collect(),
+            bestiary_backdrops: crate::bestiary_tags::TAGS
+                .iter()
+                .filter_map(|t| t.bg)
+                .chain(crate::bestiary_tags::TAGS.iter().filter_map(|t| t.overlay))
+                .chain(std::iter::once("MapBG1")) // the Moon Lord provider
+                .filter_map(|name| atlas.sheet(name).copied().map(|s| (name, s)))
+                .collect(),
             ui_bestiary_stat_hp: atlas.sheet("UI/Bestiary/Stat_HP").copied(),
             ui_bestiary_stat_attack: atlas.sheet("UI/Bestiary/Stat_Attack").copied(),
             ui_bestiary_stat_defense: atlas.sheet("UI/Bestiary/Stat_Defense").copied(),
             ui_bestiary_stat_knockback: atlas.sheet("UI/Bestiary/Stat_Knockback").copied(),
             ui_bestiary_stat_copper: atlas.sheet("UI/Bestiary/Stat_Copper").copied(),
+            ui_bestiary_stat_platinum: atlas.sheet("UI/Bestiary/Stat_Platinum").copied(),
+            ui_bestiary_stat_gold: atlas.sheet("UI/Bestiary/Stat_Gold").copied(),
+            ui_bestiary_stat_silver: atlas.sheet("UI/Bestiary/Stat_Silver").copied(),
             bestiary_npc_sheets: vec![
                 atlas.sheet("NPC_1").copied(),
                 atlas.sheet("NPC_2").copied(),

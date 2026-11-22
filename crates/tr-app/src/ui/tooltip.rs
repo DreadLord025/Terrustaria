@@ -206,6 +206,13 @@ pub struct TooltipContext<'a> {
     /// `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     /// held item's own crit, which the crit row subtracts (`Main.cs:20701`).
     pub held_crit: i32,
+    /// `Item.BestiaryNotes` — the bestiary hover line's condition cache
+    /// (`UIBestiaryInfoItemLine.SetBestiaryNotesOnItemCache:137-156` writes
+    /// it onto the line's display item; `Main.cs:21334-21342` prints it).
+    /// The W4-f28 tooltip salvage carries the same field on its
+    /// `HoverFlags.bestiary_notes` — this is the e23-side writer seam the
+    /// f28c compose folds onto (research/128 sec.7's remaining hover WIRE).
+    pub bestiary_notes: Option<&'a str>,
 }
 
 impl Default for TooltipContext<'_> {
@@ -215,6 +222,7 @@ impl Default for TooltipContext<'_> {
             stack: 1,
             player: None,
             held_crit: 0,
+            bestiary_notes: None,
         }
     }
 }
@@ -522,7 +530,26 @@ pub fn item_tooltip_lines(
             lines.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
         }
     }
+    lines.extend(bestiary_note_rows(ctx.bestiary_notes));
     lines
+}
+
+/// `Main.cs:21334-21342` — the bestiary notes: `Item.BestiaryNotes` (the
+/// `UIBestiaryInfoItemLine` hover cache) splits on `'\n'` into white rows,
+/// gated on `!string.IsNullOrWhiteSpace`. The f28 salvage's
+/// `tooltip_lines2` tail carries the identical block — this is the e23
+/// writer half of the compose contract (the drop-line hover stamps the
+/// notes; the tooltip prints them).
+pub(crate) fn bestiary_note_rows(notes: Option<&str>) -> Vec<(String, [f32; 4])> {
+    let mut rows = Vec::new();
+    if let Some(notes) = notes {
+        if !notes.trim().is_empty() {
+            for line in notes.split('\n') {
+                rows.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
+            }
+        }
+    }
+    rows
 }
 
 /// `Main.MouseText_DrawItemTooltip` (`Main.cs:20322-20446`): the generic tooltip box

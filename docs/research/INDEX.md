@@ -99,6 +99,7 @@ the seal in research/17 (re-probe citations only, the seal stands).
 | 284 | g52c net final-audit: the relay-host arms census (SEND side; the g48 FINAL-table feed, the 34 destroy keep-one, the 34/162 codec census; 139 stays RESERVED for g52c-net-master) | `284-g52c-relay-host-arms-census.md` | ✅ code-only |
 | 276 | Net APPLY audit (W4-f21b: the g48-g52 tip coverage census, the remaining-gap list 39/41/43/48/52/79/58-client/TE/144/150, the union keep-one notes; 57/76/58-host small arms WIRED; code-only; renumbered 239 → 276 per research/150 round-2 §6.3 — 239 belongs to d42's earlier push) | `276-f21b-net-apply-audit.md` | ✅ |
 | 332 | W4-c27 SEAL: the 18 SetTime lane FINAL (reader/codec/apply landed 6fb7bcb25/412b6bc0d) + the clock-family bible (one owner per body; 205→id-7 send switch = c28 PENDING per g48 244; sunModY/moonModY parked with the full title-screen-drag scope pin; code-only, 3 witnesses WRITTEN NOT RUN) | `332-c27-set-time-final.md` | ✅ SEALED |
+| 237 | Bestiary UI FINAL close (W4-e23 final phase: the overlays + biome-flavor fallback + Misc rows, the NOTES writer compose contract, the c8 sight-unlock gold-gate fold, the d42 sorting-table coverage; code-only) | `237-bestiary-ui-final.md` | ✅ FINAL |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

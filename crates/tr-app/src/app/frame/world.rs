@@ -28,6 +28,36 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The bestiary info-page scrollbar's drag frame (`UIScrollbar.DrawSelf`,
+    // `UIScrollbar.cs:109-112`): while the thumb is grabbed and the left
+    // button is held, the view follows the pointer. W4-e23 remainder.
+    if self.bestiary_open && self.mine_down && self.bestiary_ui.info_scroll_drag.is_some() {
+        let (sw, sh) = self.screen_size();
+        self.bestiary_info_scrollbar_drag(Vec2::new(sw, sh), self.mouse_pos.y);
+    }
+    // The bestiary's hover-sound ticks (W4-e23 remainder 4): the
+    // `GroupOptionButton.DrawSelf:212-223` / `UIImageButton.MouseOver:61`
+    // per-hover `PlaySound(12)` edges, once per open frame.
+    if self.bestiary_open {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let options = self.bestiary_ui.options;
+        let at = self.bestiary_ui.at;
+        let fired = crate::ui::bestiary_hover::tick(
+            &mut self.bestiary_ui.hover_sounds,
+            screen,
+            self.mouse_pos,
+            options,
+            &self.bestiary,
+            &self.bestiary_ui.working,
+            at,
+        );
+        if fired {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+        }
+    } else {
+        self.bestiary_ui.hover_sounds.reset();
+    }
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.

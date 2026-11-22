@@ -125,6 +125,79 @@ pub fn back_hit(panel: &[f32; 4], mouse: Vec2) -> bool {
     mouse.x >= r[0] && mouse.x <= r[0] + r[2] && mouse.y >= r[1] && mouse.y <= r[1] + r[3]
 }
 
+// --- EmotesGroupListItem (W4-d81 census row 3) ----------------------------------
+//
+// The port's wheel draws the flat emote roster on the shared 14x36 lattice
+// (`draw` below; the group titles/separators are a documented deviation, the
+// flat-roster note in the tests). These helpers port the C# group item's
+// geometry so the grouped layout can be adopted without re-deriving it.
+// Row 2 (`EmoteButton`) is fully landed already: the 20-tick blink counter
+// (`crate::emotes::EmoteSystem::button_frame`, `EmoteButton.cs:38-44`), the
+// frame pick (`:32-36`, `draw` below), the hover sound-12 edge
+// (`app/loop.rs:600-619`, `:77-88`), the border tint + `MouseText` name
+// (`:52-75`, `draw` below) and the click's emote+close (`:90-95`,
+// `app/clicks.rs:1170-1197`).
+
+/// `TITLE_HEIGHT = 20` / `SEPARATOR_HEIGHT = 10` (`EmotesGroupListItem.cs:11-13`)
+/// — declared but unused by the ctor, which lays out with 30/36 (`:35`, `:79`).
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub const GROUP_TITLE_HEIGHT: f32 = 20.0;
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub const GROUP_SEPARATOR_HEIGHT: f32 = 10.0;
+
+/// The ctor's row count (`EmotesGroupListItem.cs:30-34`):
+/// `emotes.Length / 14`, `+1` when the remainder is non-zero.
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub fn group_row_count(emote_count: usize) -> usize {
+    let mut rows = emote_count / COLS;
+    if emote_count % COLS != 0 {
+        rows += 1;
+    }
+    rows
+}
+
+/// The group item's height (`EmotesGroupListItem.cs:35`):
+/// `Height.Set(30 + 36 * rows, 0f)` — the 30 px header band plus the rows.
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub fn group_height(emote_count: usize) -> f32 {
+    30.0 + CELL * group_row_count(emote_count) as f32
+}
+
+/// The header container (`EmotesGroupListItem.cs:37-42`): `Height 30`,
+/// `Width (-20, 1)`, `HAlign 0.5` — 10 px in from each side of the group item.
+/// The separator (`VAlign 1`, `:45-51`) and the title (`VAlign 1`, `Top -6`,
+/// `:52-57`) hang off its bottom edge.
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub fn group_header_rect(group: &[f32; 4]) -> [f32; 4] {
+    [group[0] + 10.0, group[1], group[2] - 20.0, 30.0]
+}
+
+/// The header separator's tint (`EmotesGroupListItem.cs:50`):
+/// `Color.Lerp(Color.White, new Color(63, 65, 151), 0.85f) * 0.9f`.
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub fn group_separator_color() -> [u8; 4] {
+    let lerped = super::char_creation::lerp_rgb([255, 255, 255, 255], [63, 65, 151, 255], 0.85);
+    super::color::mul(lerped, 0.9)
+}
+
+/// Emote `i`'s button top-left inside the group item
+/// (`EmotesGroupListItem.cs:58-81`): `Top = 30 + row*36 + 6` (`num2 = 6f`,
+/// `:58`/`:79`), `Left = 36*col - num6` with `num6` hard-overwritten to `-16f`
+/// (`:74`) — the `num5` centring computation (`:64-73`) is dead code in the
+/// C#, every row starts 16 px in.
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub fn group_button_top_left(i: usize) -> [f32; 2] {
+    let row = (i / COLS) as f32; // `num3` (`:62`)
+    let col = (i % COLS) as f32; // `num4` (`:63`)
+    [30.0 + row * CELL + 6.0, col * CELL + 16.0]
+}
+
+/// `CompareTo` (`EmotesGroupListItem.cs:87-94`): groups sort by `_groupIndex`.
+#[allow(dead_code)] // the grouped wheel adopts these (W4-d81); the flat roster draws today
+pub fn compare_group_order(a: i32, b: i32) -> std::cmp::Ordering {
+    a.cmp(&b)
+}
+
 /// `EmoteBubble.GetPosition`'s entity arm (`EmoteBubble.cs:247-249`):
 /// `(entity.Top.X, VisualPosition.Y) + (-direction*width*0.75, 2)` in world
 /// px — `Top.X` is the hitbox's horizontal centre. Returns the anchor and
@@ -386,6 +459,37 @@ pub fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_group_item_geometry_follows_the_ctor() {
+        // `EmotesGroupListItem.cs:30-35`: ceil(count/14) rows, Height 30+36*n.
+        assert_eq!(group_row_count(0), 0);
+        assert_eq!(group_row_count(14), 1);
+        assert_eq!(group_row_count(15), 2);
+        assert_eq!(group_height(14), 66.0);
+        assert_eq!(group_height(15), 102.0);
+        assert_eq!(group_height(0), 30.0);
+        // The header container (`:37-42`): Width (-20, 1), HAlign 0.5.
+        let group = [100.0, 50.0, 590.0, 102.0];
+        assert_eq!(group_header_rect(&group), [110.0, 50.0, 570.0, 30.0]);
+        // The buttons (`:58-81`): Top 30 + row*36 + 6, Left 36*col + 16 —
+        // `num6` is hard-overwritten to -16 (`:74`), the centring walk dead.
+        assert_eq!(group_button_top_left(0), [36.0, 16.0]);
+        assert_eq!(group_button_top_left(13), [36.0, 13.0 * 36.0 + 16.0]);
+        assert_eq!(group_button_top_left(14), [72.0, 16.0]);
+        // `CompareTo` (`:87-94`) sorts by group index.
+        assert_eq!(compare_group_order(1, 2), std::cmp::Ordering::Less);
+        assert_eq!(compare_group_order(2, 2), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn the_group_separator_tint_is_the_white_to_inventory_lerp() {
+        // `EmotesGroupListItem.cs:50`: Lerp(White, (63,65,151), 0.85) * 0.9.
+        // Lerp: 255 + (63-255)*0.85 = 91.8 -> 91; 255 + (65-255)*0.85 = 93.5
+        // -> 93 (f32 truncation); 255 + (151-255)*0.85 = 166.6 -> 166.
+        // *0.9: (81, 83, 149, 229).
+        assert_eq!(group_separator_color(), [81, 83, 149, 229]);
+    }
 
     #[test]
     fn dw_4_1_the_in_game_container_is_the_c_sharp_split() {
