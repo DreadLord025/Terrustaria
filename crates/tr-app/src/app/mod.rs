@@ -1700,6 +1700,14 @@ impl App {
         if entry.item == 0 || entry.stack == 0 {
             return false; // `:2043`'s `inv[slot].type <= 0` / `:2060`'s stack gate
         }
+        // `Player.BuyItem`'s custom-currency arm (`Player.cs:35402-35405`)
+        // spends the medal wallet (`CustomCurrencySingleCoin.TryPurchasing`
+        // over the bank's 3817 stacks) — the wallet is unported, so a
+        // medal row refuses here rather than charging the coin purse
+        // (the recorded CustomCurrencyManager gap).
+        if entry.shop_special_currency != -1 {
+            return false;
+        }
         let price =
             crate::shop::buy_price_row(entry, self.discount_available, self.shop_mood) as u64;
         if self.coins < price {
@@ -1715,8 +1723,8 @@ impl App {
                 prefix: entry.prefix,
             };
         }
-        // `:2084-2087` — the sellback memo (no custom currencies in the
-        // port, so the `shopSpecialCurrency == -1` half is always true).
+        // `:2084-2087` — the sellback memo (the medal rows refuse above,
+        // so the `shopSpecialCurrency == -1` half is always true here).
         if !entry.buy_once {
             self.shop_sellback.add(entry.item, entry.prefix, 1);
         }
@@ -1731,6 +1739,7 @@ impl App {
                     item: 0,
                     when: crate::shop::StockWhen::Always,
                     shop_custom_price: None,
+                    shop_special_currency: -1,
                     buy_once: false,
                     is_a_shop_item: false,
                     prefix: 0,
@@ -5780,6 +5789,7 @@ mod s1_p_i44_tests {
             item: 9,
             when: crate::shop::StockWhen::Always,
             shop_custom_price: None,
+            shop_special_currency: -1,
             buy_once: true,
             is_a_shop_item: false,
             prefix: 0,

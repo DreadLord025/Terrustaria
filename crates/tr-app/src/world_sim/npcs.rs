@@ -535,6 +535,10 @@ pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
         NpcKind::Princess => 24,
         NpcKind::DyeTrader => 12,
         NpcKind::PartyGirl => 13,
+        // W4-d123: `Shop(550, 21)` (`NPCInteractions.cs:508`) — the
+        // Tavernkeep's medal shop. The Skeleton Merchant's `Shop(453, 20)`
+        // (`:507`) has no ported kind yet (the shop itself is ported).
+        NpcKind::DD2Bartender => 21,
         _ => return None,
     })
 }
@@ -890,6 +894,47 @@ fn coin_total(inventory: &[crate::item::ItemSlot], purse: u64) -> i64 {
     total
 }
 
+/// `TeleportPylonsSystem.DoesPositionHaveEnoughNPCs(2, center)`
+/// (`TeleportPylonsSystem.cs:221-238`, read by `Chest.cs:3472`'s pylon
+/// tail): two housed town NPCs whose home tile sits in the zone-scan
+/// rect centred on the player AND within 100 tiles of the NPC's own
+/// centre. The rect is `Utils.CenteredRectangle`'s Point form
+/// (`Utils.cs:952-955`) over `SceneMetrics.ZoneScanSize` (169×124,
+/// `SceneMetrics.cs:919`).
+fn pylon_enough_npcs(app: &App) -> bool {
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    let (cx, cy) = p.center();
+    let (cx, cy) = ((cx / 16.0) as i32, (cy / 16.0) as i32);
+    let (sw, sh) = tr_core::scene::ZONE_SCAN_SIZE;
+    let (rx, ry) = (cx - sw / 2, cy - sh / 2);
+    let mut count = 0;
+    for n in app.npcs.iter() {
+        if n.hp <= 0 || !n.kind.is_town_resident() {
+            continue;
+        }
+        let Some((hx, hy)) = n.home else {
+            continue; // `!nPC.homeless`
+        };
+        if hx < rx || hx >= rx + sw || hy < ry || hy >= ry + sh {
+            continue;
+        }
+        let (nw, nh) = n.size();
+        let ncx = (n.x + nw * 0.5) / 16.0;
+        let ncy = (n.y + nh * 0.5) / 16.0;
+        let dx = hx as f32 - ncx;
+        let dy = hy as f32 - ncy;
+        if (dx * dx + dy * dy).sqrt() < 100.0 {
+            count += 1;
+            if count == 2 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some(idx) = app.npcs.iter().position(|n| {
         n.hp > 0 && shop_index_for_kind(n.kind).is_some() && {
@@ -919,6 +964,12 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         blood_moon: app.world.blood_moon,
         zone_snow: app.scene_metrics.zone_snow,
         zone_jungle: app.scene_metrics.zone_jungle,
+        // W4-d123: `Main.player[Main.myPlayer].ZoneGraveyard` — the second-
+        // half shops' graveyard tails (`Chest.cs:2269`/`:2305`/`:2411`/
+        // `:2471`/`:2684`).
+        zone_graveyard: app.scene_metrics.zone_graveyard,
+        // W4-d123: `ZoneBeach` — the Pirate's 1180 row (`Chest.cs:2688`).
+        zone_beach: app.scene_metrics.zone_beach,
         // `NPC.downedBoss2`/`downedBoss3` — the world's own latches (the
         // chat context reads the same pair, `npc_chat`'s `downed_boss2/3`).
         downed_boss2: app.world.downed_eow,
@@ -934,6 +985,74 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,
+        // W4-d123: the Party Girl's second-half gates (`Chest.cs:2309-2345`)
+        // — the world-events scheduler's lantern/party states, the Golem
+        // latch; the Pirate's presence stays constants-off (no town kind).
+        lantern_night: crate::world_events::lanterns_up(&app.world_events),
+        pirate_present: false,
+        downed_golem: app.world.downed_golem,
+        party_is_up: crate::world_events::party_is_up(&app.world_events),
+        // W4-d123: `Main.eclipse` — the Cyborg shop's event gates
+        // (`Chest.cs:2368-2381`).
+        eclipse: app.world.eclipse,
+        // W4-d123: the Witch Doctor's / Painter's Plantera + roster gates
+        // (`Chest.cs:2630`/`:2475`/`:2618`) — the world latch and the live
+        // town scans (`NPC.AnyNPCs(124)`/`AnyNPCs(108)`).
+        downed_plant_boss: app.world.downed_plant_boss,
+        mechanic_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::Mechanic),
+        wizard_present: app
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == NpcKind::Wizard),
+        // W4-d123: the Skeleton Merchant's world-side gates
+        // (`Chest.cs:2822-2831`/`:2887`/`:2958`) — the remix bit, the
+        // live clock and the player's artisan-bread latch.
+        remix_world: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::REMIX),
+        world_time: app.world.time,
+        ate_artisan_bread: app
+            .player
+            .as_ref()
+            .is_some_and(|p| p.ate_artisan_bread),
+        // W4-d123: the Decor shop's / pylon tail's zone + position gates
+        // (`Chest.cs:2509-2612`/`:3472-3536`) — the scene metrics' zones,
+        // the storm flag, the player's below-surface/depth reads and the
+        // two-housed-NPC scan.
+        zone_crimson: app.scene_metrics.zone_crimson,
+        zone_corrupt: app.scene_metrics.zone_corrupt,
+        zone_hallow: app.scene_metrics.zone_hallow,
+        zone_desert: app.scene_metrics.zone_desert,
+        zone_dungeon: app.scene_metrics.zone_dungeon,
+        zone_sky_height: app.scene_metrics.zone_sky_height,
+        zone_glowshroom: app.scene_metrics.glowshroom,
+        zone_underworld_height: app.scene_metrics.zone_underworld_height,
+        storming: app.wind.storming,
+        shopping_below_surface: app.player.as_ref().is_some_and(|p| {
+            (p.center().1 / 16.0) as i32 as f64 > app.world.world_surface
+        }),
+        pylon_enough_npcs: pylon_enough_npcs(app),
+        pylon_remix_depth: app.player.as_ref().is_some_and(|p| {
+            let ty = p.center().1 / 16.0;
+            (ty as f64) > app.world.rock_layer && ty < (app.world.height - 350) as f32
+        }),
+        pylon_remix_ocean_depth: app.player.as_ref().is_some_and(|p| {
+            let ty = p.y / 16.0;
+            (ty as f64) > app.world.rock_layer && ty < (app.world.height - 350) as f32
+        }),
+        pylon_remix_edge: app.player.as_ref().is_some_and(|p| {
+            // `:3517-3518` — position (NOT center) / 16.
+            let tx = (p.x / 16.0) as f64;
+            tx < app.world.width as f64 * 0.43 || tx > app.world.width as f64 * 0.57
+        }),
+        beach_above_surface: app
+            .player
+            .as_ref()
+            .is_some_and(|p| (p.y as f64) < app.world.world_surface * 16.0),
         life_max_400: app.player.as_ref().is_some_and(|p| p.max_hp >= 400),
         mana_max_200: app.player.as_ref().is_some_and(|p| p.mana_max >= 200),
         coins_over_gold: coin_total(&app.inventory, app.coins) >= 1_000_000,

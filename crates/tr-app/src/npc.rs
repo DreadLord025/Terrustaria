@@ -22008,6 +22008,35 @@ mod tests {
         for id in [1071, 1072, 1100, 1097, 1099, 1098, 1966] {
             assert!(stock.contains(&id), "the paint row {id} missing");
         }
+        // W4-d123: the `:2451-2455` paint loop — every id 1073..=1084.
+        for id in 1073..=1084u16 {
+            assert!(stock.contains(&id), "the loop paint {id} missing");
+        }
+        // The default stock: 3 rollers + 12 loop paints + 3 paintings + 1966.
+        assert_eq!(stock.len(), 19, "the day stock: {stock:?}");
+        // The hardmode pair (`:2464-2470`).
+        let hard = crate::shop::ShopFlags { hard_mode: true, ..Default::default() };
+        let hr = crate::shop::resolve_stock(15, &hard, &[]);
+        assert!(hr.contains(&1967) && hr.contains(&1968));
+        // The graveyard arm (`:2471-2480`): 4668 on-zone, 5344 behind
+        // Plantera OR the Mechanic's presence.
+        assert!(!stock.contains(&4668), "no graveyard roller off-zone");
+        let grave = crate::shop::ShopFlags { zone_graveyard: true, ..Default::default() };
+        let gr = crate::shop::resolve_stock(15, &grave, &[]);
+        assert!(gr.contains(&4668), "the graveyard roller");
+        assert!(!gr.contains(&5344), "5344 needs Plantera or the Mechanic");
+        let grave_plant = crate::shop::ShopFlags {
+            zone_graveyard: true, downed_plant_boss: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(15, &grave_plant, &[]).contains(&5344));
+        let grave_mech = crate::shop::ShopFlags {
+            zone_graveyard: true, mechanic_present: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(15, &grave_mech, &[]).contains(&5344));
+        // Plantera alone (off-zone) does NOT open 5344 — the graveyard
+        // conjunct (`:2471`).
+        let plant_only = crate::shop::ShopFlags { downed_plant_boss: true, ..Default::default() };
+        assert!(!crate::shop::resolve_stock(15, &plant_only, &[]).contains(&5344));
     }
     #[test]
     fn eoc_hovers_dashes_and_phases() {
@@ -22115,11 +22144,56 @@ mod tests {
         // The arrival: the downedQueenBee gate (constants-off in the port).
         assert!(!crate::spawner::spawn_allowed_witch_doctor(false));
         assert!(crate::spawner::spawn_allowed_witch_doctor(true));
-        // The shop index 16: the Blowgun and the Flask always; the
-        // conditionals constants-off.
+        // The shop index 16 (W4-d123, `Chest.cs:2615-2671`): the Blowgun/
+        // Flask head + the ten always summon/flask rows.
         let stock = crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[]);
-        assert!(stock.contains(&1430) && stock.contains(&986));
+        for id in [1430, 986, 909, 910, 940, 941, 942, 943, 944, 945, 4922, 4417] {
+            assert!(stock.contains(&id), "the always row {id}");
+        }
         assert!(!stock.contains(&1158), "the night row leaks");
+        assert!(!stock.contains(&2999), "no Wizard-presence row");
+        assert!(!stock.contains(&6147), "no jungle row off-zone");
+        // The night row (`:2626`).
+        let night = crate::shop::ShopFlags { night: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(16, &night, &[]).contains(&1158));
+        // The Wizard-presence row (`:2618`).
+        let wiz = crate::shop::ShopFlags { wizard_present: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(16, &wiz, &[]).contains(&2999));
+        // The jungle row (`:2622`).
+        let jungle = crate::shop::ShopFlags { zone_jungle: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(16, &jungle, &[]).contains(&6147));
+        // The hardmode+Plantera imbuing block (`:2630-2640`).
+        let hp = crate::shop::ShopFlags {
+            hard_mode: true, downed_plant_boss: true, ..Default::default()
+        };
+        let hpr = crate::shop::resolve_stock(16, &hp, &[]);
+        for id in [1159, 1160, 1161, 1339] {
+            assert!(hpr.contains(&id), "the imbuing row {id}");
+        }
+        assert!(!hpr.contains(&1167), "1167 needs the jungle conjunct");
+        // Hardmode alone does NOT open the imbuing block (Plantera needed).
+        let hard = crate::shop::ShopFlags { hard_mode: true, ..Default::default() };
+        assert!(!crate::shop::resolve_stock(16, &hard, &[]).contains(&1159));
+        // The jungle conjunct inside the block (`:2635`) opens 1167.
+        let hpj = crate::shop::ShopFlags {
+            hard_mode: true, downed_plant_boss: true, zone_jungle: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(16, &hpj, &[]).contains(&1167));
+        // The hardmode+jungle 1171 (`:2641`) + the night+Plantera 1162 (`:2644`).
+        let hj = crate::shop::ShopFlags {
+            hard_mode: true, zone_jungle: true, ..Default::default()
+        };
+        let hjr = crate::shop::resolve_stock(16, &hj, &[]);
+        assert!(hjr.contains(&1171));
+        assert!(!hjr.contains(&1162), "1162 needs night + Plantera");
+        let hjnp = crate::shop::ShopFlags {
+            hard_mode: true, zone_jungle: true, night: true, downed_plant_boss: true,
+            ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(16, &hjnp, &[]).contains(&1162));
+        // The carried-item restocks (`:2659-2666`).
+        assert!(crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[1835]).contains(&1836));
+        assert!(crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[1258]).contains(&1261));
     }
 
     #[test]
@@ -24577,6 +24651,12 @@ mod tests {
         let phase2 =
             crate::shop::resolve_stock_moon(12, &crate::shop::ShopFlags::default(), &[], 4);
         assert!(!phase2.contains(&2871), "no moon-phase row at phase 4");
+        // W4-d123: `Chest.cs:2260` is `moonPhase == 0` EXACTLY — phase 1 (the
+        // other half of the /2 pair) must NOT carry it.
+        let phase1 =
+            crate::shop::resolve_stock_moon(12, &crate::shop::ShopFlags::default(), &[], 1);
+        assert!(!phase1.contains(&2871), "no moon-phase row at phase 1 (exact ==0)");
+        assert!(!phase1.contains(&2872), "its pair at phase 1");
         // The blood-moon-night row.
         let night = crate::shop::ShopFlags {
             night: true,
@@ -24585,12 +24665,20 @@ mod tests {
         };
         let rows = crate::shop::resolve_stock(12, &night, &[]);
         assert!(rows.contains(&4663), "the blood-moon row");
-        // The halloween and graveyard rows stay constants-off.
+        // The halloween row stays constants-off.
         assert!(!rows.contains(&3248), "no halloween hat");
-        assert!(!rows.contains(&4662), "no graveyard goggles");
+        // W4-d123: the graveyard goggles (`Chest.cs:2269`) ride ZoneGraveyard.
+        assert!(!rows.contains(&4662), "no graveyard goggles off-zone");
+        let grave = crate::shop::ShopFlags {
+            zone_graveyard: true,
+            ..Default::default()
+        };
+        let grave_rows = crate::shop::resolve_stock(12, &grave, &[]);
+        assert!(grave_rows.contains(&4662), "the graveyard goggles on-zone");
     }
 
-    /// The Party Girl's shop (`case 13`): the eighteen always rows.
+    /// The Party Girl's shop (`case 13`, W4-d123): the party set + the
+    /// golfer/graveyard/lantern/HasItem/Golem/hardmode/party gates.
     #[test]
     fn the_party_girl_shop_carries_the_party_rows() {
         let stock = crate::shop::resolve_stock(13, &crate::shop::ShopFlags::default(), &[]);
@@ -24599,8 +24687,7 @@ mod tests {
         ] {
             assert!(stock.contains(&id), "the {id} party row");
         }
-        // 1449 is the `Main.dayTime` row (the port carries no day gate), 4552
-        // the night half.
+        // 1449 is the `Main.dayTime` row, 4552 the night half (`:2285-2294`).
         assert!(stock.contains(&1449));
         assert!(!stock.contains(&4552), "the night row is off by day");
         let night = crate::shop::ShopFlags {
@@ -24609,13 +24696,201 @@ mod tests {
         };
         let rows = crate::shop::resolve_stock(13, &night, &[]);
         assert!(rows.contains(&4552), "the night row by night");
-        // The graveyard/lantern/golfer/pirate/golem/hardmode/party rows ride
-        // flags the port has not modelled.
+        assert!(!rows.contains(&1449), "the day row is off by night");
+        // The default flags carry none of the gated rows.
         assert!(!rows.contains(&4682), "no graveyard goggles");
         assert!(!rows.contains(&4743), "no football at score 0");
         assert!(!rows.contains(&3369), "no pirate row");
         assert!(!rows.contains(&3546), "no golem row");
         assert!(!rows.contains(&3749), "no party block");
+        assert!(!rows.contains(&4702), "no lantern row");
+        assert!(!rows.contains(&3214), "no hardmode dye set");
+        // W4-d123: each gate flips its own rows (`Chest.cs:2277-2358`).
+        let full = crate::shop::ShopFlags {
+            golfer_score: 500,
+            zone_graveyard: true,
+            lantern_night: true,
+            pirate_present: true,
+            downed_golem: true,
+            hard_mode: true,
+            party_is_up: true,
+            ..Default::default()
+        };
+        let full_rows = crate::shop::resolve_stock(13, &full, &[3548]);
+        for id in [4743, 4682, 4702, 3548, 3369, 3546, 3214, 2868, 970, 971, 972, 973] {
+            assert!(full_rows.contains(&id), "the gated row {id} missing");
+        }
+        for id in [3749, 3746, 3739, 3740, 3741, 3737, 3738, 3736, 3745, 3744, 3743] {
+            assert!(full_rows.contains(&id), "the party row {id} missing");
+        }
+        // The HasItem(3548) row needs the inventory scan hit.
+        let no_item = crate::shop::resolve_stock(13, &full, &[]);
+        assert!(!no_item.contains(&3548), "the carried-item row needs the scan");
+        // The golfer row is `>= 500` (`:2277`).
+        let under = crate::shop::ShopFlags {
+            golfer_score: 499,
+            ..Default::default()
+        };
+        assert!(!crate::shop::resolve_stock(13, &under, &[]).contains(&4743));
+    }
+
+    /// The Cyborg's shop (`case 14`, W4-d123, `Chest.cs:2360-2442`): the
+    /// rocket family's event/martians/hardmode/graveyard gates.
+    #[test]
+    fn the_cyborg_shop_carries_the_rocket_rows() {
+        let stock = crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[]);
+        // The always rows (`:2361`/`:2407-2410`/`:2440`).
+        for id in [771, 5598, 5599, 5928] {
+            assert!(stock.contains(&id), "the {id} always row");
+        }
+        // The default (day, no events) carries none of the gated rows.
+        for id in [772, 773, 774, 4445, 4446, 4459, 760, 1346, 5452, 5451, 5738, 4409, 4392, 2862, 3109, 3664] {
+            assert!(!stock.contains(&id), "the gated row {id} leaked");
+        }
+        // The night row (`:2368`) appears by night.
+        let night = crate::shop::ShopFlags { night: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(14, &night, &[]).contains(&773));
+        // The eclipse rows (`:2368`/`:2373`) — the eclipse alone (day) opens
+        // both 773 and 774.
+        let eclipse = crate::shop::ShopFlags { eclipse: true, ..Default::default() };
+        let er = crate::shop::resolve_stock(14, &eclipse, &[]);
+        assert!(er.contains(&773) && er.contains(&774));
+        // The blood-moon row (`:2363`).
+        let blood = crate::shop::ShopFlags { blood_moon: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(14, &blood, &[]).contains(&772));
+        // The plain martians rows (`:2378`/`:2430`) — NO hardmode conjunct.
+        let martians = crate::shop::ShopFlags { downed_martians: true, ..Default::default() };
+        let mr = crate::shop::resolve_stock(14, &martians, &[]);
+        for id in [4445, 2862, 3109] {
+            assert!(mr.contains(&id), "the plain martians row {id}");
+        }
+        // 4446 needs martians AND an event (`:2381`).
+        assert!(!mr.contains(&4446), "no event tail without blood/eclipse");
+        let martians_blood = crate::shop::ShopFlags {
+            downed_martians: true, blood_moon: true, ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(14, &martians_blood, &[]).contains(&4446));
+        // The hardmode cluster (`:2386-2406`).
+        let hard = crate::shop::ShopFlags { hard_mode: true, ..Default::default() };
+        let hr = crate::shop::resolve_stock(14, &hard, &[]);
+        for id in [4459, 760, 1346, 5452, 5451, 5738] {
+            assert!(hr.contains(&id), "the hardmode row {id}");
+        }
+        // The graveyard pair (`:2411-2420`).
+        let grave = crate::shop::ShopFlags { zone_graveyard: true, ..Default::default() };
+        let gr = crate::shop::resolve_stock(14, &grave, &[]);
+        assert!(gr.contains(&4409) && gr.contains(&4392));
+        // The carried-portal-gun restock (`:2435`) — either id opens 3664.
+        assert!(crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[3384]).contains(&3664));
+        assert!(crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[3664]).contains(&3664));
+        assert!(!crate::shop::resolve_stock(14, &crate::shop::ShopFlags::default(), &[999]).contains(&3664));
+    }
+
+    /// The Pirate's shop (`case 17`, W4-d123, `Chest.cs:2672-2697`): the
+    /// vanity set + the graveyard/beach/hardmode-mech-Party-Girl gates.
+    #[test]
+    fn the_pirate_shop_carries_the_vanity_rows() {
+        let stock = crate::shop::resolve_stock(17, &crate::shop::ShopFlags::default(), &[]);
+        // The six always rows (`:2673-2683`).
+        for id in [928, 929, 876, 877, 878, 2434] {
+            assert!(stock.contains(&id), "the {id} always row");
+        }
+        assert_eq!(stock.len(), 6, "the day stock: {stock:?}");
+        assert!(!stock.contains(&5926), "no graveyard row off-zone");
+        assert!(!stock.contains(&1180), "no beach row off-zone");
+        assert!(!stock.contains(&1337), "no hardmode row");
+        // The graveyard row (`:2684`).
+        let grave = crate::shop::ShopFlags { zone_graveyard: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(17, &grave, &[]).contains(&5926));
+        // The beach row (`:2688`).
+        let beach = crate::shop::ShopFlags { zone_beach: true, ..Default::default() };
+        assert!(crate::shop::resolve_stock(17, &beach, &[]).contains(&1180));
+        // The 1337 row needs ALL THREE conjuncts (`:2692`).
+        let two = crate::shop::ShopFlags {
+            hard_mode: true, downed_mech_any: true, ..Default::default()
+        };
+        assert!(!crate::shop::resolve_stock(17, &two, &[]).contains(&1337));
+        let three = crate::shop::ShopFlags {
+            hard_mode: true, downed_mech_any: true, party_girl_present: true,
+            ..Default::default()
+        };
+        assert!(crate::shop::resolve_stock(17, &three, &[]).contains(&1337));
+    }
+
+    /// The Skeleton Merchant's shop (`case 20`, W4-d123,
+    /// `Chest.cs:2811-2962`): the exact-phase head, the remix phase-2
+    /// split, the parity pair, the night/day arms, the two else-pairs,
+    /// the mod-4 ladder, the phase-pair trio, the hardmode block and the
+    /// artisan-bread tail.
+    #[test]
+    fn the_skeleton_merchant_shop_walks_the_moon_phases() {
+        // Phase 0 by day (the `resolve_stock_moon(_, _, _, 0)` view):
+        // 284 head, 3001 even, the phase-0 arm's 3002, the early clock
+        // 3004 (time 0), 3003 (phase 0 in {0,1,4,5}), 3310 (mod-4 0),
+        // the always 166/965. NO 3043 (day), no 5640-family, no 188.
+        let day0 = crate::shop::resolve_stock_moon(20, &crate::shop::ShopFlags::default(), &[], 0);
+        assert_eq!(
+            day0,
+            vec![284, 3001, 3002, 3004, 3003, 3310, 166, 965],
+            "the phase-0 day stock"
+        );
+        // The phase-0 NIGHT adds 3043 (`:2953`) — and the 5377 restock
+        // needs the carried Flower Boots (`:2876`).
+        let night = crate::shop::ShopFlags { night: true, ..Default::default() };
+        let n0 = crate::shop::resolve_stock_moon(20, &night, &[], 0);
+        assert!(n0.contains(&3043) && !n0.contains(&282));
+        assert!(!n0.contains(&5377), "no restock without the boots");
+        let n0b = crate::shop::resolve_stock_moon(20, &night, &[930], 0);
+        assert!(n0b.contains(&5377), "the boots restock");
+        // Phase 2 by day: 3069 (classic) vs 517 (remix) — the parity row
+        // stays 3001, the clock late arm stamps 8 (`:2887`'s else at time
+        // 31: 31*360 = 11160 > 10800), 40 replaces 3003, 3312 (mod-4 2),
+        // 5640 (phase 1|2).
+        let late = crate::shop::ShopFlags { world_time: 31.0, ..Default::default() };
+        let p2 = crate::shop::resolve_stock_moon(20, &late, &[], 2);
+        assert_eq!(
+            p2,
+            vec![3069, 3001, 282, 8, 40, 3312, 5640, 166, 965],
+            "the phase-2 late-clock stock"
+        );
+        let remix = crate::shop::ShopFlags { remix_world: true, world_time: 31.0, ..Default::default() };
+        let p2r = crate::shop::resolve_stock_moon(20, &remix, &[], 2);
+        assert!(p2r.contains(&517) && !p2r.contains(&3069), "the remix split");
+        // Phase 3 by night: 4341 head, 28 odd, 3002 (night), 3311 (mod-4
+        // 3), 5641 (phase 3|5), 5326 (the bread tail, phases 3..5). The
+        // odd+hardmode 188 needs hardmode; the bread row vanishes once
+        // the loaf was eaten.
+        let p3 = crate::shop::resolve_stock_moon(20, &night, &[], 3);
+        for id in [4341, 28, 3002, 3311, 5641, 5326] {
+            assert!(p3.contains(&id), "the phase-3 night row {id}");
+        }
+        assert!(!p3.contains(&188), "no hardmode row pre-hardmode");
+        let hard = crate::shop::ShopFlags { night: true, hard_mode: true, ..Default::default() };
+        let p3h = crate::shop::resolve_stock_moon(20, &hard, &[], 3);
+        assert!(p3h.contains(&188), "the odd+hardmode row");
+        assert!(p3h.contains(&3316) && p3h.contains(&3334), "the hardmode pair");
+        assert!(!p3h.contains(&5540), "no mech row without the latch");
+        let mech = crate::shop::ShopFlags { downed_mech_any: true, ..hard };
+        assert!(crate::shop::resolve_stock_moon(20, &mech, &[], 3).contains(&5540));
+        let blood = crate::shop::ShopFlags { blood_moon: true, ..hard };
+        assert!(crate::shop::resolve_stock_moon(20, &blood, &[], 3).contains(&3258));
+        let eaten = crate::shop::ShopFlags { ate_artisan_bread: true, ..night };
+        assert!(!crate::shop::resolve_stock_moon(20, &eaten, &[], 3).contains(&5326));
+        // The mod-4 ladder + the phase-pair trio across all eight phases
+        // (day flags): exactly one ladder row, at most one trio row.
+        for (phase, ladder, trio) in [
+            (0u32, 3310u16, None), (1, 3313, Some(5640u16)), (2, 3312, Some(5640)),
+            (3, 3311, Some(5641)), (4, 3310, None), (5, 3313, Some(5641)),
+            (6, 3312, Some(5642)), (7, 3311, Some(5642)),
+        ] {
+            let s = crate::shop::resolve_stock_moon(20, &crate::shop::ShopFlags::default(), &[], phase);
+            for id in [3310, 3313, 3312, 3311] {
+                assert_eq!(s.contains(&id), id == ladder, "phase {phase} ladder {id}");
+            }
+            for id in [5640, 5641, 5642] {
+                assert_eq!(s.contains(&id), Some(id) == trio, "phase {phase} trio {id}");
+            }
+        }
     }
 
     #[test]
@@ -24940,6 +25215,23 @@ mod tests {
             1,
         );
         assert!(night_odd.contains(&1981), "odd phase by night");
+        // `:2785-2788` — the graveyard mirror 5577 is the case's LAST row
+        // (after the always 5104), gated on ZoneGraveyard alone.
+        assert!(!stock.contains(&5577), "no mirror off the graveyard");
+        let grave = crate::shop::resolve_stock(
+            18,
+            &crate::shop::ShopFlags {
+                zone_graveyard: true,
+                ..Default::default()
+            },
+            &[],
+        );
+        assert_eq!(
+            grave.last(),
+            Some(&5577),
+            "the mirror rides the graveyard tail: {:?}",
+            grave
+        );
     }
 
     #[test]
