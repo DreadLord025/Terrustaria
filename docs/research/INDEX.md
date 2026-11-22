@@ -80,6 +80,8 @@ per `docs/superpowers` agreements).
 
 | 315 | The convert-tables family bible (W4-c32-convert FINAL: the c32 tables-only census, BiomeDungeonRoom→DungeonUtils.ChangeTileType NOT Convert, f25's zero-call-site 15/16/18/19 cells, g42's FOUR Convert(3) sites, the whole-switch ownership map + tip hashes + merger contracts; number 315 per registry 150 §9 UNIFIED FINAL, d54 b243c7086, chain 281→315 — the original 281 self-pick per the ≥281 free block, fresh 362-tip sweep) | `315-convert-tables-family-bible.md` | ✅ |
 
+| 68 | FindFrame wire-census (W4-d44 merger assist, refresh 5: per-kind ported/wired tables, g6/g7 twin-hook union plan, the FindFrame-family declaration §3.0/§10.4 [f26 7g-7k + f27 e10-e13 seams, the d38-kinds+d44-hooks merge-compose]; 198 WIRED [the wave-B residual 294/296 the LAST stand-in pair], the 480/481/482 trio RESOLVED keep-inline, the 634 SporeBat RNG-seam contract published, ZERO true no-coverage UNCLAIMED at the probe-time tips [53 module-claimed + 77 roster-arm-covered]; code-only) | `68-findframe-wire-status.md` | ✅ |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.
