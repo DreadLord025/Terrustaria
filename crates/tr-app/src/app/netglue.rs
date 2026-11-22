@@ -3083,7 +3083,7 @@ impl App {
     /// (`AchievementsHelper.cs:81-84`): the 100 % completion fires progression
     /// 29 (`BOOK_WORM`) — locally and, on a host, over the `98` wire.
     pub(crate) fn try_grant_bestiary_100_net(&mut self) -> Option<&'static str> {
-        if crate::bestiary::completion_percent(&self.bestiary.kills) < 1.0 {
+        if crate::bestiary::completion_percent(&self.bestiary) < 1.0 {
             return None;
         }
         self.notify_progression_net(29)

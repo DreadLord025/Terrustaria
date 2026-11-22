@@ -40921,3 +40921,48 @@ pipeline change. BOTH world-hash pins unchanged, a == b untouched.
 the DungeonUtils pair, the style statics' ordinals); the f25/g42/d1/d103/
 d107 tips re-fetched and their bodies read. 3 witnesses written NOT run.
 **No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
+
+## The bestiary unlock ladder's data half (W4-c37, code-only)
+The ladder maths (`tr_core::bestiary`) landed with S1-F-15; W4-c37 ports the
+DATA half the audit's research/30 gaps #4/#5 named:
+- `bestiary_data::gate` is `BestiaryDatabaseNPCsPopulator.ModifyEntriesThatNeedIt`
+  (`:649-730`): the town-NPC chat provider (the 22 manual rows, Guide included),
+  the critter sight provider (55 Goldfish / 549 Etherian Portal —
+  `CountsAsACritter`, `NPC.cs:6887-6897`), the four DD2 quick rows
+  (565/577/551/491, `:679-682`), the boss-credit fold dictionary verbatim
+  (`:683-702`, incl. the unported 116/139/658-660/454/521), and the Skeletron
+  head's Highest-of-two (own quick ladder OR Clothier chat, `:677`).
+- `quick_unlock` is the `BestiaryEntry.Enemy` factory flag (`BestiaryEntry.cs:37-41`:
+  `boss || ShouldBeCountedAsBossForBestiary`), ORed onto the provider's own
+  `quickUnlock` at evaluation — a flag, never a zeroed kill count.
+- The star tiers: `FillNpcRarities`' 137 override rows verbatim
+  (`ContentSamples.cs:1106-1242`) over the `GetNPCBestiaryRarityStarsCount`
+  formula (`:1245-1306`). The formula reads the Classic sample on a fresh
+  `Main`, so the two progression-gated stat rows keep their base values:
+  548 the Eternia Crystal 1000 HP / 14 defense (`NPC.cs:16003-16004`, NOT the
+  runtime 5000/20) and 59 the Lava Slime 50/15/10 (`:9518-9523`, NOT the
+  remix 25/7/2) — `sample_stats` carries the two corrections; every other
+  roster id's sample equals the port's `entry_stats` tables (verified
+  row-by-row against the `SetDefaults` if-chain).
+Deliberate remainders (recorded, not approximated):
+- The portrait star container (`NPCPortraitInfoElement.CreateStarsContainer`,
+  `:107-152`) draws `Icon_Rank_Light/Dim`; neither has an atlas slot, so the
+  star DATA is pinned by the 249-row census witness and the UI wiring lands
+  with the art. No text stand-in is drawn.
+- The sight/chat RECORDING (`NPCWasNearPlayerTracker.ScanWorldForFinds:102-130`
+  + the chat hook) stays state-only per the 2026-11-08 owner decision — town
+  and critter entries therefore stay locked in play until the recording wave;
+  the providers themselves are the C#'s.
+- The GoldCritter collection gate (`:703-720`), the Salamander/Shelly/Dad
+  world-roster gate (`:649-652`), the Tortured Soul 534 (`:653`), the Skeletron
+  hand 68 / Old Man 37 triples (`:676`/`:678`) and the critter-twin folds
+  (`:721-730`) have no port entries; `gate`'s doc lists them for the roster
+  waves.
+Verification: code-only — no cargo/tests invoked. Every table re-derived from
+the decompiled C# by scripted census (the boss/rarity rows from the
+`SetDefaults` if-chain, the 137 star overrides, the full banner chain over all
+249 roster ids, the per-entry star values through the port's own stat tables).
+13 witness tests written not run (`bestiary.rs` W4-c37 set: fresh-world,
+town-chat, critter-sight, minion folds, Skeletron OR, boss-flag census,
+threshold pins, star-formula pins, override-beats-formula, the 249-row star
+census; `ui/bestiary.rs` completion test repointed to `WorldBestiary`).

@@ -981,7 +981,7 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         golfer_score: app.player.as_ref().map_or(0, |p| p.golfer_score),
         // `Main.GetBestiaryProgressReport()` (`Chest.cs:3265`) — the
         // port's tracker over the ENTRIES' unlock states.
-        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary.kills),
+        bestiary_completion: crate::bestiary::completion_percent(&app.bestiary),
         // `NPC.unlockedPrincessSpawn` (`Main.cs:65948`) — the debug
         // override; the port's roster is the other half of her gate.
         unlocked_princess: false,

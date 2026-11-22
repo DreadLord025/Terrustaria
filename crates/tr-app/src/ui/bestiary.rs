@@ -12,7 +12,7 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
-use tr_core::bestiary::{KillTracker, UnlockState};
+use tr_core::bestiary::{UnlockState, WorldBestiary};
 
 use super::push_whole;
 use super::text;
@@ -355,7 +355,7 @@ pub fn draw_screen(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
-    tracker: &KillTracker,
+    tracker: &WorldBestiary,
     selected: Option<usize>,
     mouse: Vec2,
 ) {
@@ -468,7 +468,7 @@ fn draw_grid(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
-    tracker: &KillTracker,
+    tracker: &WorldBestiary,
     mouse: Vec2,
 ) {
     let panel = panel_rect(screen);
@@ -524,7 +524,7 @@ fn draw_card(
     lookups: &Lookups,
     cell: [f32; 4],
     entry: &crate::bestiary::BestiaryEntryDef,
-    tracker: &KillTracker,
+    tracker: &WorldBestiary,
     idx: usize,
     hover: bool,
 ) {
@@ -1676,7 +1676,7 @@ fn draw_info_page(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
-    tracker: &KillTracker,
+    tracker: &WorldBestiary,
     idx: usize,
     mouse: Vec2,
 ) {
@@ -1801,7 +1801,7 @@ fn draw_info_page(
     // (`NPCKillCounterInfoElement.cs:24-96`): the raw count (no "/needed" —
     // the progress fraction is the port's own earlier stand-in) from the
     // first kill, with the `BestiaryInfo.Slain` hover (`:90-96`).
-    let (kills, _needed) = crate::bestiary::kill_progress(entry, tracker);
+    let (kills, _needed) = crate::bestiary::kill_progress(entry, &tracker.kills);
     if let Some(count) = kill_counter_text(kills) {
         text::hud_text(r, lookups, tx, ty, 0.85, [0.8, 0.85, 1.0, 1.0], &count);
         if super::in_rect(mouse, [tx, ty, 60.0, 20.0]) {
@@ -2462,11 +2462,11 @@ mod tests {
         // `GetUnlockProgress` (`UIBestiaryTest.cs:497-513`) counts
         // `UnlockState > NotKnownAtAll_0` — one kill of the first entry
         // already moves the bar (the old tier-4-only count did not).
-        let mut kills = KillTracker::new();
+        let mut tracker = WorldBestiary::new();
         let first = &crate::bestiary::ENTRIES[0];
-        assert_eq!(crate::bestiary::completion_percent(&kills), 0.0);
-        kills.register_kill(first.credit_id);
-        let pct = crate::bestiary::completion_percent(&kills);
+        assert_eq!(crate::bestiary::completion_percent(&tracker), 0.0);
+        tracker.kills.register_kill(first.credit_id);
+        let pct = crate::bestiary::completion_percent(&tracker);
         assert!(pct > 0.0, "one kill must move the completion bar");
         assert_eq!(pct, 1.0 / crate::bestiary::ENTRIES.len() as f32);
     }
