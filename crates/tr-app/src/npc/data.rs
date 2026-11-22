@@ -586,7 +586,7 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // W4-d34 kinds 1-70 coverage wave: the port-local 266..285 band
+            // W4-d34 kinds 1-70 coverage wave: the port-local 266..280 band
             // (free in to_u16/from_u16 AND render_key; the vanilla types ride
             // cs_id/net_id, NOT these protocol ids — the S1-F-1 separation).
             NpcKind::AngryBones => 266,
@@ -604,11 +604,11 @@ impl NpcKind {
             NpcKind::Vulture => 278,
             NpcKind::Demon => 279,
             NpcKind::BlueJellyfish => 280,
-            NpcKind::PinkJellyfish => 281,
-            NpcKind::Crab => 282,
-            NpcKind::DungeonGuardian => 283,
-            NpcKind::Antlion => 284,
-            NpcKind::SpikeBall => 285,
+            // W4-d34 merge-side moves (367 §1, d37 tables): Crab 282→791,
+            // DungeonGuardian 283→792; the PinkJellyfish/Antlion/SpikeBall
+            // dups dropped (g8 owns 745-747). 281-285 cleared for d38.
+            NpcKind::Crab => 791,
+            NpcKind::DungeonGuardian => 792,
         }
     }
 
@@ -954,11 +954,10 @@ impl NpcKind {
             278 => NpcKind::Vulture,
             279 => NpcKind::Demon,
             280 => NpcKind::BlueJellyfish,
-            281 => NpcKind::PinkJellyfish,
-            282 => NpcKind::Crab,
-            283 => NpcKind::DungeonGuardian,
-            284 => NpcKind::Antlion,
-            285 => NpcKind::SpikeBall,
+            // W4-d34 merge-side moves (367 §1): Crab@791 / DungeonGuardian@792
+            // (the 281-285 squat cleared for d38's anchor band).
+            791 => NpcKind::Crab,
+            792 => NpcKind::DungeonGuardian,
             _ => return None,
         })
     }
@@ -1867,11 +1866,8 @@ impl NpcKind {
             NpcKind::Vulture => "NPC_Hit_28",         // :9563
             NpcKind::Demon => "NPC_Hit_21",           // :9576
             NpcKind::BlueJellyfish => "NPC_Hit_25",   // :9591
-            NpcKind::PinkJellyfish => "NPC_Hit_25",   // :9605
             NpcKind::Crab => "NPC_Hit_1",             // :9648
             NpcKind::DungeonGuardian => "NPC_Hit_2",  // :9660
-            NpcKind::Antlion => "NPC_Hit_31",         // :9674
-            NpcKind::SpikeBall => "NPC_Hit_1",        // :9689
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2190,11 +2186,8 @@ impl NpcKind {
             NpcKind::Vulture => "NPC_Killed_31",         // :9564
             NpcKind::Demon => "NPC_Killed_24",           // :9578
             NpcKind::BlueJellyfish => "NPC_Killed_28",   // :9592
-            NpcKind::PinkJellyfish => "NPC_Killed_28",   // :9606
             NpcKind::Crab => "NPC_Killed_1",             // :9649
             NpcKind::DungeonGuardian => "NPC_Killed_2",  // :9661
-            NpcKind::Antlion => "NPC_Killed_34",         // :9675
-            NpcKind::SpikeBall => "NPC_Killed_1",        // :9690
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2319,13 +2312,10 @@ impl NpcKind {
             // writes noGravity but kb 0 (`:9485`) — the Y-pop selector never
             // reaches it (the ManEater precedent).
             NpcKind::CorruptGoldfish | NpcKind::Vulture | NpcKind::Demon | NpcKind::BlueJellyfish => true,
-            // W4-d34 (phase 4): the PinkJellyfish's `noGravity = true`
-            // (`NPC.cs:9598`, kb 1 — no row). The Dungeon Guardian (68) and
-            // Spike Ball (70) write noGravity but kb 0 (`:9664`/`:9691`) —
-            // the Y-pop selector never reaches them (the ManEater precedent);
-            // the Antlion's noGravity is a runtime AI toggle (`:24510`), not
-            // a SetDefaults row, and the Crab is a grounded walker.
-            NpcKind::PinkJellyfish => true,
+            // W4-d34 (phase 4, merge-side): the Dungeon Guardian (68)
+            // writes noGravity but kb 0 (`:9664`) — the Y-pop selector never
+            // reaches it (the ManEater precedent); the Crab is a grounded
+            // walker. PinkJellyfish/Antlion/SpikeBall dropped (g8-owned).
             _ => false,
         }
     }
@@ -2591,11 +2581,8 @@ impl NpcKind {
             NpcKind::Vulture => 17,          // :9558
             NpcKind::Demon => 14,            // :9572
             NpcKind::BlueJellyfish => 18,    // :9587
-            NpcKind::PinkJellyfish => 18,    // :9601
             NpcKind::Crab => 3,              // :9644
             NpcKind::DungeonGuardian => 11,  // :9656
-            NpcKind::Antlion => 19,          // :9670
-            NpcKind::SpikeBall => 20,        // :9685
         }
     }
 
@@ -3146,11 +3133,8 @@ impl NpcKind {
             NpcKind::Vulture => (36.0, 36.0),         // :9556-9557
             NpcKind::Demon => (28.0, 48.0),           // :9570-9571
             NpcKind::BlueJellyfish => (26.0, 26.0),   // :9585-9586
-            NpcKind::PinkJellyfish => (26.0, 26.0),   // :9599-9600
             NpcKind::Crab => (28.0, 20.0),            // :9642-9643
             NpcKind::DungeonGuardian => (80.0, 102.0), // :9654-9655
-            NpcKind::Antlion => (24.0, 24.0),         // :9668-9669
-            NpcKind::SpikeBall => (34.0, 34.0),       // :9683-9684
         }
     }
 
@@ -3246,11 +3230,8 @@ impl NpcKind {
             NpcKind::Vulture => 61,
             NpcKind::Demon => 62,
             NpcKind::BlueJellyfish => 63,
-            NpcKind::PinkJellyfish => 64,
             NpcKind::Crab => 67,
             NpcKind::DungeonGuardian => 68,
-            NpcKind::Antlion => 69,
-            NpcKind::SpikeBall => 70,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3406,9 +3387,6 @@ impl NpcKind {
                 | NpcKind::BoneSerpentHead
                 | NpcKind::BoneSerpentBody
                 | NpcKind::BoneSerpentTail
-                // W4-d34 (phase 4): the Antlion's `behindTiles = true` row
-                // (`NPC.cs:9678`).
-                | NpcKind::Antlion
         )
     }
 
@@ -3844,11 +3822,8 @@ impl NpcKind {
             NpcKind::Vulture => 40,           // :9561
             NpcKind::Demon => 120,            // :9575
             NpcKind::BlueJellyfish => 34,     // :9590
-            NpcKind::PinkJellyfish => 70,     // :9604
             NpcKind::Crab => 40,              // :9647
             NpcKind::DungeonGuardian => 9999, // :9659
-            NpcKind::Antlion => 45,           // :9673
-            NpcKind::SpikeBall => 100,        // :9688
         }
     }
 
@@ -4229,11 +4204,8 @@ impl NpcKind {
             NpcKind::Vulture => 15,           // :9559
             NpcKind::Demon => 32,             // :9573
             NpcKind::BlueJellyfish => 25,     // :9588
-            NpcKind::PinkJellyfish => 30,     // :9602
             NpcKind::Crab => 20,              // :9645
             NpcKind::DungeonGuardian => 9999, // :9657
-            NpcKind::Antlion => 10,           // :9671
-            NpcKind::SpikeBall => 32,         // :9686
         }
     }
 }

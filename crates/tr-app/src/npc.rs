@@ -1172,14 +1172,9 @@ pub enum NpcKind {
     /// single-difficulty-off and the per-tick light (`:24209-24220`) is the
     /// documented draw-side skip.
     BlueJellyfish,
-    /// `NPCID.PinkJellyfish` (64) — the ocean water floater (`aiStyle 18`):
-    /// 26x26, dmg 30, def 6, 70 HP, kb 1 (no row — the class default
-    /// `:8533`), value 100, noGravity, alpha 20, NPCHit25/NPCDeath28
-    /// (`NPC.cs:9596-9609`). WIRED: the kind arm rides the same faithful
-    /// aiStyle-18 drift machine as the BlueJellyfish (the num266 0.2 /
-    /// num267 7.0 constants are shared for type 64); the FindFrame case-64
-    /// group rides the case-63 4-row pulse (`:73916-73960`).
-    PinkJellyfish,
+    // W4-d34 merge-side drop (367 §1, d37 tables): PinkJellyfish (64) is
+    // owned by g8@745 — d34@281's duplicate port dropped at the wave-1
+    // splice; g8 lands the canonical row + wiring.
     /// `NPCID.Crab` (67) — the ocean shore walker (`aiStyle 3`): 28x20,
     /// dmg 20, def 10, 40 HP, kb 1 (no row — the class default `:8533`),
     /// value 60, NPCHit1/NPCDeath1 (`NPC.cs:9640-9651`). WIRED: the kind arm
@@ -1198,23 +1193,10 @@ pub enum NpcKind {
     /// ImmuneToWhips (`NPCID.cs:6495-6501`) — the mask rides the documented
     /// `&[]` gap, the whip tag rides `whip_immune`.
     DungeonGuardian,
-    /// `NPCID.Antlion` (69) — the desert burrower (`aiStyle 19`): 24x24,
-    /// dmg 10, def 6, 45 HP, kb 0, value 60, behindTiles,
-    /// NPCHit31/NPCDeath34 (`NPC.cs:9666-9679`). UNWIRED: the aiStyle-19
-    /// machine (`NPC.cs:24407-24536`) needs the hive-tile probe (421/422),
-    /// the projectile-31 spit and the Main.rand dust tail (the wyvern
-    /// precedent — identity rows ship). The FindFrame case-69 walk cycle
-    /// (`:74291-74310`) is wired.
-    Antlion,
-    /// `NPCID.SpikeBall` (70) — the dungeon's bouncing trap (`aiStyle 20`):
-    /// 34x34, dmg 32, def 100, 100 HP, kb 0, no value, npcSlots 0.3,
-    /// noGravity + noTileCollide + dontTakeDamage, scale 1.5,
-    /// NPCHit1/NPCDeath1 (`NPC.cs:9680-9696`). UNWIRED: the aiStyle-20
-    /// bounce machine (`NPC.cs:24537-24614`) draws Main.rand.Next(15) for
-    /// the launch speed and needs the directionY bounce seam (the wyvern
-    /// precedent — identity rows ship). Hide=true (`NPCID.cs:1710-1716`)
-    /// but keeps its OWN bestiary entry (the BlazingWheel precedent).
-    SpikeBall,
+    // W4-d34 merge-side drops (367 §1, d37 tables): Antlion (69) is owned
+    // by g8@746 and SpikeBall (70) by g8@747 — d34@284/285's duplicate
+    // ports dropped at the wave-1 splice; g8 lands the canonical rows +
+    // wiring.
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3083,8 +3065,6 @@ impl Npc {
                 // the small-kinds wiring wave).
                 .unwrap_or(match kind {
                     NpcKind::BlazingWheel => 1.2,
-                    // W4-d34: the Spike Ball's `scale = 1.5f` row (`NPC.cs:9695`).
-                    NpcKind::SpikeBall => 1.5,
                     _ => 1.0,
                 }),
             net_offset: Vec2::ZERO,
@@ -3167,9 +3147,6 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
-                // W4-d34: the Spike Ball's `dontTakeDamage = true` row
-                // (`NPC.cs:9694`) — the trap is untouchable.
-                | NpcKind::SpikeBall
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3267,9 +3244,9 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
-                            // W4-d34: the BlueJellyfish's / PinkJellyfish's
-                            // `alpha = 20` rows (`NPC.cs:9594`/`:9608`).
-                            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 20,
+                            // W4-d34: the BlueJellyfish's `alpha = 20` row
+                            // (`NPC.cs:9594`).
+                            NpcKind::BlueJellyfish => 20,
                             _ => 0,
                         }
                     }),
@@ -3685,11 +3662,8 @@ impl Npc {
             NpcKind::Vulture => 0.8,          // :9562
             NpcKind::Demon => 0.8,            // :9577
             NpcKind::BlueJellyfish => 1.0,    // no row — the class default 1f (`:8533`)
-            NpcKind::PinkJellyfish => 1.0,    // no row — the class default 1f (`:8533`)
             NpcKind::Crab => 1.0,             // no row — the class default 1f (`:8533`)
             NpcKind::DungeonGuardian => 0.0,  // :9664
-            NpcKind::Antlion => 0.0,          // :9676
-            NpcKind::SpikeBall => 0.0,        // :9691
             _ => 0.4,
         }
     }
@@ -4085,11 +4059,8 @@ impl Npc {
             NpcKind::Vulture => 4,            // :9560
             NpcKind::Demon => 8,              // :9574
             NpcKind::BlueJellyfish => 4,      // :9589
-            NpcKind::PinkJellyfish => 6,      // :9603
             NpcKind::Crab => 10,              // :9646
             NpcKind::DungeonGuardian => 9999, // :9658
-            NpcKind::Antlion => 6,            // :9672
-            NpcKind::SpikeBall => 100,        // :9687
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4476,11 +4447,8 @@ impl Npc {
             NpcKind::Vulture => 60.0,         // :9565
             NpcKind::Demon => 300.0,          // :9579
             NpcKind::BlueJellyfish => 100.0,  // :9593
-            NpcKind::PinkJellyfish => 100.0,  // :9607
             NpcKind::Crab => 60.0,            // :9650
             NpcKind::DungeonGuardian => 0.0,  // no value row (`:9652-9665`)
-            NpcKind::Antlion => 60.0,         // :9677
-            NpcKind::SpikeBall => 0.0,        // no value row (`:9680-9696`)
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6517,18 +6485,13 @@ impl Npc {
             NpcKind::Vulture => self.update_vulture(world, player),
             NpcKind::Demon => self.update_cave_bat(world, player, rng),
             NpcKind::BlueJellyfish => self.update_jellyfish(world, player),
-            // W4-d34 (phase 4): the PinkJellyfish rides the same faithful
-            // aiStyle-18 drift machine; the Crab the aiStyle-3 walker (the
+            // W4-d34 (phase 4): the Crab rides the aiStyle-3 walker (the
             // 0.5 slow cap); the Dungeon Guardian the aiStyle-11 Skeletron
-            // machine (always enraged state 2); the Antlion's aiStyle-19
-            // burrower and the Spike Ball's aiStyle-20 bounce are UNWIRED
-            // (the wyvern precedent — the hive-tile/projectile/dust and the
-            // Main.rand launch seams; identity rows ship).
-            NpcKind::PinkJellyfish => self.update_jellyfish(world, player),
+            // machine (always enraged state 2). PinkJellyfish/Antlion/
+            // SpikeBall are g8-owned (745-747) — d34's dup arms dropped at
+            // the wave-1 splice (367 §1).
             NpcKind::Crab => self.update_skeleton(world, player, dt),
             NpcKind::DungeonGuardian => self.update_skeletron(world, player, rng, false),
-            NpcKind::Antlion => {}
-            NpcKind::SpikeBall => {}
 
         }
     }
@@ -7023,7 +6986,7 @@ impl Npc {
                 }
                 self.frame = (self.frame_counter / 5.0) as u32;
             }
-            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => {
+            NpcKind::BlueJellyfish => {
                 self.frame_counter += 1.0;
                 if self.frame_counter < 6.0 {
                     self.frame = 0;
@@ -7040,11 +7003,11 @@ impl Npc {
             }
 
             // W4-d34 (phase 4): the Crab rides the case-67 6-tick wrap over
-            // the 8-row strip (`NPC.cs:74571-74589`); the Antlion the case-69
-            // walk cycle (`:74291-74310`, the ai[0] < 190 gate); the Dungeon
-            // Guardian (68) and Spike Ball (70) have NO FindFrame case
-            // (`Main.npcFrameCount` 68/70 = 1) — the single frame never
-            // advances (the ForceBubble precedent).
+            // the 8-row strip (`NPC.cs:74571-74589`); the Dungeon Guardian
+            // (68) has NO FindFrame case (`Main.npcFrameCount` 68 = 1) — the
+            // single frame never advances (the ForceBubble precedent).
+            // Antlion/SpikeBall are g8-owned (746/747) — d34's dup arms
+            // dropped at the wave-1 splice (367 §1).
             NpcKind::Crab => {
                 if self.vy == 0.0 {
                     self.sprite_dir = self.facing;
@@ -7058,25 +7021,7 @@ impl Npc {
                     }
                 }
             }
-            NpcKind::Antlion => {
-                if self.ai[0] < 190.0 {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 6.0 {
-                        self.frame_counter = 0.0;
-                        self.frame += 1;
-                        if self.frame >= crate::render::entities::npc_rows(69) - 1 {
-                            self.frame = 0;
-                        }
-                    }
-                } else {
-                    self.frame_counter = 0.0;
-                    self.frame = crate::render::entities::npc_rows(69) - 1;
-                }
-            }
             NpcKind::DungeonGuardian => {
-                self.frame = 0;
-            }
-            NpcKind::SpikeBall => {
                 self.frame = 0;
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
@@ -9941,7 +9886,7 @@ impl Npc {
         self.integrate_flyer_collision(world);
     }
 
-    /// W4-d34 — the BlueJellyfish (63) / PinkJellyfish (64) through the faithful aiStyle-18
+    /// W4-d34 — the BlueJellyfish (63) through the faithful aiStyle-18
     /// machine (`NPC.AI`'s `if (this.aiStyle == 18)` block,
     /// `NPC.cs:24153-24406`): the wet drift (the slope flips, the collide
     /// bounces, the chase's 0.98 damp + the 7-px lunge when the velocity
@@ -19385,11 +19330,12 @@ impl Npc {
             NpcKind::Vulture => 278,
             NpcKind::Demon => 279,
             NpcKind::BlueJellyfish => 280,
-            NpcKind::PinkJellyfish => 281,
-            NpcKind::Crab => 282,
-            NpcKind::DungeonGuardian => 283,
-            NpcKind::Antlion => 284,
-            NpcKind::SpikeBall => 285,
+            // W4-d34 merge-side moves (367 §1, d37 tables): Crab 282→791,
+            // DungeonGuardian 283→792; PinkJellyfish/Antlion/SpikeBall
+            // dropped (g8 owns 745-747). The 281-285 squat is cleared for
+            // d38's anchor band.
+            NpcKind::Crab => 791,
+            NpcKind::DungeonGuardian => 792,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24755,12 +24701,11 @@ mod tests {
         NpcKind::Vulture,
         NpcKind::Demon,
         NpcKind::BlueJellyfish,
-        // W4-d34 kinds 1-70 coverage wave (phase 4).
-        NpcKind::PinkJellyfish,
+        // W4-d34 kinds 1-70 coverage wave (phase 4; merge-side: Crab/
+        // DungeonGuardian kept @791/792, the PinkJellyfish/Antlion/SpikeBall
+        // dups dropped — g8 owns 745-747, 367 §1).
         NpcKind::Crab,
         NpcKind::DungeonGuardian,
-        NpcKind::Antlion,
-        NpcKind::SpikeBall,
     ];
 
 
@@ -24999,20 +24944,18 @@ mod tests {
         assert_eq!(NpcKind::BlueJellyfish.death_sound(), Some("NPC_Killed_28"));
     }
 
-    /// W4-d34 kinds 1-70 coverage wave (phase 4) — the PinkJellyfish +
-    /// Crab + DungeonGuardian + Antlion + SpikeBall `SetDefaults` rows pin
-    /// against the C# (`NPC.cs:9596-9609` PinkJellyfish, `:9640-9651` Crab,
-    /// `:9652-9665` DungeonGuardian, `:9666-9679` Antlion, `:9680-9696`
-    /// SpikeBall). WRITTEN, NOT RUN (code-only mode).
+    /// W4-d34 kinds 1-70 coverage wave (phase 4, merge-side per 367 §1) —
+    /// the Crab + DungeonGuardian `SetDefaults` rows pin against the C#
+    /// (`NPC.cs:9640-9651` Crab, `:9652-9665` DungeonGuardian). The
+    /// PinkJellyfish/Antlion/SpikeBall dups dropped (g8 owns 745-747); the
+    /// protocol ids moved 282→791 / 283→792 (d37 tables). WRITTEN, NOT RUN
+    /// (code-only mode).
     #[test]
     fn w4_d34_phase4_the_defaults_match_the_csharp_rows() {
         // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
         let rows = [
-            (NpcKind::PinkJellyfish, 64u16, 18u8, 26.0, 26.0, 30, 6, 70, 1.0f32, 100.0f32),
-            (NpcKind::Crab, 67, 3, 28.0, 20.0, 20, 10, 40, 1.0, 60.0),
+            (NpcKind::Crab, 67u16, 3u8, 28.0, 20.0, 20, 10, 40, 1.0f32, 60.0f32),
             (NpcKind::DungeonGuardian, 68, 11, 80.0, 102.0, 9999, 9999, 9999, 0.0, 0.0),
-            (NpcKind::Antlion, 69, 19, 24.0, 24.0, 10, 6, 45, 0.0, 60.0),
-            (NpcKind::SpikeBall, 70, 20, 34.0, 34.0, 32, 100, 100, 0.0, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -25029,34 +24972,17 @@ mod tests {
             assert_eq!(shell.value(), value, "{kind:?} value");
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
         }
-        // The protocol ids ride the port-local 281..285 band.
-        assert_eq!(NpcKind::PinkJellyfish.to_u16(), 281);
-        assert_eq!(NpcKind::Crab.to_u16(), 282);
-        assert_eq!(NpcKind::DungeonGuardian.to_u16(), 283);
-        assert_eq!(NpcKind::Antlion.to_u16(), 284);
-        assert_eq!(NpcKind::SpikeBall.to_u16(), 285);
-        // The noGravity rows: only the PinkJellyfish (kb 1) rides the Y-pop
-        // selector; the Guardian / SpikeBall write noGravity but kb 0 (the
-        // ManEater precedent), the Antlion's is a runtime toggle, the Crab
-        // is grounded.
-        assert!(NpcKind::PinkJellyfish.no_gravity());
+        // The protocol ids ride the moved 791/792 rows (367 §1, d37 tables;
+        // the 281-285 squat cleared for d38's anchor band).
+        assert_eq!(NpcKind::Crab.to_u16(), 791);
+        assert_eq!(NpcKind::DungeonGuardian.to_u16(), 792);
+        // The noGravity rows: the Guardian writes noGravity but kb 0 (the
+        // ManEater precedent), the Crab is grounded.
         assert!(!NpcKind::Crab.no_gravity());
         assert!(!NpcKind::DungeonGuardian.no_gravity());
-        assert!(!NpcKind::Antlion.no_gravity());
-        assert!(!NpcKind::SpikeBall.no_gravity());
-        // The PinkJellyfish's alpha 20 row (`NPC.cs:9608`).
-        let pink = Npc::new(NpcKind::PinkJellyfish, 0.0, 0.0, 1, 0.0);
-        assert_eq!(pink.alpha, 20, "the pink jellyfish's alpha row");
-        // The Spike Ball's scale 1.5 + dontTakeDamage rows (`NPC.cs:9694-9695`).
-        let ball = Npc::new(NpcKind::SpikeBall, 0.0, 0.0, 1, 0.0);
-        assert_eq!(ball.scale, 1.5, "the spike ball's scale row");
-        assert!(ball.dont_take_damage, "the spike ball is untouchable");
         // The Guardian is damageable (9999 def, not a dontTakeDamage shield).
         let guard = Npc::new(NpcKind::DungeonGuardian, 0.0, 0.0, 1, 0.0);
         assert!(!guard.dont_take_damage, "the guardian takes damage");
-        // The Antlion's behindTiles row (`NPC.cs:9678`).
-        assert!(NpcKind::Antlion.behind_tiles());
-        assert!(!NpcKind::SpikeBall.behind_tiles());
         // The Crab's aiStyle-3 slow cap (`NPC.cs:57881-57906`).
         assert_eq!(NpcKind::Crab.ai3_walk_speed(), Some(0.5));
         // The Guardian is never dodgeable in its enraged state 2
@@ -25068,29 +24994,17 @@ mod tests {
         assert!(g2.is_damage_dodgeable(), "the non-enraged state is dodgeable");
         // The debuff immunity rows (`NPCID.cs` DebuffImmunitySets) — read
         // through the applied mask (`NpcBuffs::for_kind`).
-        for kind in [NpcKind::PinkJellyfish, NpcKind::Crab, NpcKind::Antlion] {
-            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
-            assert!(b.buff_immune[31], "{kind:?} immune 31");
-            assert!(!b.buff_immune[24], "{kind:?} not immune 24");
-        }
-        let ball_buffs = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::SpikeBall);
-        for id in [20, 24, 31, 39, 70, 395, 323] {
-            assert!(ball_buffs.buff_immune[id], "the Spike Ball's immune {id}");
-        }
+        let b = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Crab);
+        assert!(b.buff_immune[31], "Crab immune 31");
+        assert!(!b.buff_immune[24], "Crab not immune 24");
         // The Guardian's ImmuneToWhips tag (`NPCID.cs:6499`); the
         // ImmuneToAllBuffsThatAreNotWhips mask rides the documented `&[]` gap.
         assert!(crate::npc_buffs::whip_immune(NpcKind::DungeonGuardian));
         // The hit/death cues.
-        assert_eq!(NpcKind::PinkJellyfish.hit_sound(), Some("NPC_Hit_25"));
-        assert_eq!(NpcKind::PinkJellyfish.death_sound(), Some("NPC_Killed_28"));
         assert_eq!(NpcKind::Crab.hit_sound(), Some("NPC_Hit_1"));
         assert_eq!(NpcKind::Crab.death_sound(), Some("NPC_Killed_1"));
         assert_eq!(NpcKind::DungeonGuardian.hit_sound(), Some("NPC_Hit_2"));
         assert_eq!(NpcKind::DungeonGuardian.death_sound(), Some("NPC_Killed_2"));
-        assert_eq!(NpcKind::Antlion.hit_sound(), Some("NPC_Hit_31"));
-        assert_eq!(NpcKind::Antlion.death_sound(), Some("NPC_Killed_34"));
-        assert_eq!(NpcKind::SpikeBall.hit_sound(), Some("NPC_Hit_1"));
-        assert_eq!(NpcKind::SpikeBall.death_sound(), Some("NPC_Killed_1"));
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired

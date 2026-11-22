@@ -498,15 +498,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Vulture => &[31],             // :6445-6451
         NpcKind::Demon => &[24, 31, 153, 323], // :6452-6458
         NpcKind::BlueJellyfish => &[31],       // :6459-6465
-        NpcKind::PinkJellyfish => &[31],       // :6466-6472
         NpcKind::Crab => &[31],                // :6487-6493
         // The Dungeon Guardian's ImmuneToAllBuffsThatAreNotWhips +
         // ImmuneToWhips row (`NPCID.cs:6495-6501`) — the mask loop rides the
         // documented `&[]` gap (the saucer-family precedent); the whip tag
         // rides `whip_immune` below.
         NpcKind::DungeonGuardian => &[],
-        NpcKind::Antlion => &[31],             // :6502-6508
-        NpcKind::SpikeBall => &[20, 24, 31, 39, 70, 395, 323], // :6509-6515
     }
 }
 

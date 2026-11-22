@@ -1293,12 +1293,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_61",
         "NPC_62",
         "NPC_63",
-        // W4-d34 kinds 1-70 coverage wave (phase 4).
-        "NPC_64",
+        // W4-d34 kinds 1-70 coverage wave (phase 4; merge-side: NPC_64/69/70
+        // dropped with the g8-owned dups — 367 §1).
         "NPC_67",
         "NPC_68",
-        "NPC_69",
-        "NPC_70",
 ];
 
 
@@ -1886,7 +1884,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 201] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 198] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1928,8 +1926,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 201] = [
         39, 40, 41, 47, 48,
         // W4-d34 kinds 1-70 coverage wave (phase 3) — appended last.
         56, 57, 61, 62, 63,
-        // W4-d34 kinds 1-70 coverage wave (phase 4) — appended last.
-        64, 67, 68, 69, 70,
+        // W4-d34 kinds 1-70 coverage wave (phase 4) — appended last
+        // (merge-side: 64/69/70 dropped with the g8-owned dups — 367 §1).
+        67, 68,
     ];
 
 
@@ -2712,12 +2711,10 @@ impl Lookups {
                 atlas.sheet("NPC_61").copied(),
                 atlas.sheet("NPC_62").copied(),
                 atlas.sheet("NPC_63").copied(),
-                // W4-d34 kinds 1-70 coverage wave (phase 4).
-                atlas.sheet("NPC_64").copied(),
+                // W4-d34 kinds 1-70 coverage wave (phase 4; merge-side:
+                // 64/69/70 dropped with the g8-owned dups — 367 §1).
                 atlas.sheet("NPC_67").copied(),
                 atlas.sheet("NPC_68").copied(),
-                atlas.sheet("NPC_69").copied(),
-                atlas.sheet("NPC_70").copied(),
             ],
 
 

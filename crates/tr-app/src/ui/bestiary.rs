@@ -1668,16 +1668,9 @@ fn portrait_data(
                 .unwrap_or(26.0);
             (sheet_i, h, 26.0, h, white)
         }
-        // W4-d34 (phase 4): the PinkJellyfish the 7-row pulse strip; the
-        // Crab the 8-row walk strip; the Dungeon Guardian the single-frame
-        // 80x102 head; the Antlion the 5-row walk strip; the Spike Ball the
-        // single-frame 34x34 trap (the BlazingWheel Hide=true precedent).
-        (NpcKind::PinkJellyfish, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 7.0)
-                .unwrap_or(26.0);
-            (sheet_i, h, 26.0, h, white)
-        }
+        // W4-d34 (phase 4, merge-side): the Crab the 8-row walk strip; the
+        // Dungeon Guardian the single-frame 80x102 head. PinkJellyfish/
+        // Antlion/SpikeBall dropped with the g8-owned dups (367 §1).
         (NpcKind::Crab, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 8.0)
@@ -1685,18 +1678,6 @@ fn portrait_data(
             (sheet_i, h, 28.0, h, white)
         }
         (NpcKind::DungeonGuardian, _) => (sheet_i, 102.0, 80.0, 102.0, white),
-        (NpcKind::Antlion, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32 / 5.0)
-                .unwrap_or(24.0);
-            (sheet_i, h, 24.0, h, white)
-        }
-        (NpcKind::SpikeBall, _) => {
-            let h = entry_sheet(lookups, entry)
-                .map(|s| s.height as f32)
-                .unwrap_or(34.0);
-            (sheet_i, h, 34.0, h, white)
-        }
     }
 }
 
