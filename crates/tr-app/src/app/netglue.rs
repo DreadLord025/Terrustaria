@@ -2105,8 +2105,9 @@ impl App {
             rock_layer: w.rock_layer as i16,
             world_id: 1,
             world_name: w.name.clone(),
-            // `Main.GameMode` — the port has no mode byte yet; classic is 0.
-            game_mode: 0,
+            // `Main.GameMode` (W4-f45): the world's difficulty byte
+            // (`NetMessage.cs:243`'s `(byte)Main.GameMode`).
+            game_mode: w.game_mode as u8,
             unique_id: [0; 16],
             // `Main.ActiveWorldFileData.WorldGeneratorVersion` — the port's
             // generator version lives in the world seed's place; the save
@@ -2136,8 +2137,10 @@ impl App {
             ice_back_style: w.ice_back_style,
             jungle_back_style: w.jungle_back_style,
             hell_back_style: w.hell_back_style,
-            wind_speed_target: 0.0,
-            num_clouds: 0,
+            // W4-f45: the wind target + numClouds are World-owned now
+            // (`WorldFile.cs:1328`, `NetMessage.cs:276`'s `(byte)Main.numClouds`).
+            wind_speed_target: w.wind_speed_target,
+            num_clouds: w.num_clouds as u8,
             tree_x: [w.tree_x[0], w.tree_x[1], w.tree_x[2]],
             tree_style: [
                 w.tree_style[0] as u8,
@@ -2163,9 +2166,13 @@ impl App {
             invasion_type: 0,
             lobby_id: 0,
             sandstorm_severity: 0.0,
-            extra_spawn_points: Vec::new(),
-            dungeon_x: 0,
-            dungeon_y: 0,
+            // W4-f45: the extra respawn anchors are World-owned
+            // (`ExtraSpawnPointManager.Write`, the c46 lane).
+            extra_spawn_points: w.extra_spawn_points.clone(),
+            // W4-f45: the dungeon anchor is World-owned now (`WorldFile.cs:
+            // 1279-1280`); the wire carries it as the C#'s i16 pair.
+            dungeon_x: w.dungeon_x as i16,
+            dungeon_y: w.dungeon_y as i16,
         }
     }
 

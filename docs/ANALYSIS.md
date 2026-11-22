@@ -19312,6 +19312,269 @@ byte-compares offsets 2402-3827 (timestamp spliced); `the_write_envelope_is_pkcs
 pins the pad rule incl. the aligned full-block case. No new dependency вЂ”
 the existing `aes` crate's raw block API carries the PKCS7 by hand (13 lines).
 
+## The save files' wall clock + the SavePlayer envelope (W4-c43)
+
+`tr_core::clock` is the one seam for the .NET `DateTime` stamps both file
+formats carry: ticks are 100 ns units since 0001-01-01 (the Unix epoch sits
+at tick 621355968000000000), and `ToBinary` packs a 2-bit kind into bits
+62-63 (`Utc` = bit 62). Deliberate deviations:
+
+- **Every stamp the port writes is Utc-kind.** `CreationTime`'s C# source
+  is `DateTime.Now` (`WorldFile.CreateMetadata:600`, kind Local); the port
+  owns no time-zone database, so it stamps `UtcNow` instead. Reads mask
+  the kind bits off (`from_binary_ticks`); a foreign Local-kind stamp is
+  read as its stored ticks without the offset round-trip.
+- **`Guid.NewGuid` is a clock-seeded `UnifiedRandom` draw** shaped to v4
+  (version nibble 4, RFC-4122 variant bits) — .NET's GUID is cryptographic,
+  which a deterministic port cannot reproduce; the shape and
+  uniqueness-per-creation contract are what the format needs.
+- **The WorldId roll stays out of the worldgen streams.** The C# rolls
+  `WorldId = genRand.Next(int.MaxValue)` mid-`GenerateWorld`
+  (`WorldGen.cs:11337`); inserting that draw into the port's frozen
+  contract streams would move every world hash, so the creation tails roll
+  it from a fresh `identity_rng()` (same value range) after generation.
+
+The world identity lands as: the creation tails (`create_world_in`,
+`WorldGenJob`'s Completed arm) run `wld::stamp_created_identity`
+(`CreateMetadata:600-604`) + the WorldId roll; the save funnel stamps
+`world.last_played = utc_now_binary()` on every save (`SaveWorldFlags:1251`
+writes `UtcNow`, never the loaded value); `load_world` runs the load-side
+fallbacks (`LoadHeader:1962-1969`: a pre-181 `.wld` gets a fresh GUID, a
+v >= 181 one keeps its stored GUID even when Guid.Empty — only a pre-v18
+`.trwld`'s zero reads as absent; `GetFileData:315-318`'s mtime LastPlayed
+for a zero stamp). The native
+`.trwld` grows a **v18 identity tail** (generator version u64, GUID 16 B,
+world id i32, CreationTime/LastPlayed i64 each — `WorldFile.cs:1225-1227,
+1250-1251`); pre-v18 files load the zeros the old saves carried. The
+determinism contract narrows accordingly: a double-save pair is byte-equal
+**modulo the LastPlayed long** (the C# is wall-clock-bearing there too) —
+`test_DW_7_2`/`test_DW_7_3`/the `.bak` rotation test pin the normalized
+pairs; the worldgen tile hashes are untouched (the identity fields are not
+in `world_hash`'s fold).
+
+**The `.plr` envelope (Ph2).** The S1-J-5c "App stamps 0" policy is
+retired: `save_created_character` now stamps `utc_now_binary()` (the
+`Serialize:54909` `DateTime.UtcNow.ToBinary()` — `CreateAndSave` runs
+`SavePlayer` like any save, `PlayerFileData.cs:58`). The envelope completes
+`InternalSavePlayerFile`: an existing `.plr` is copied to `<path>.bak`
+before the write (`:54730-54733`), and the metadata revision rides
+`PlayerFileWrite::revision` (`:54739` writes the loaded `playerFile.
+Metadata` verbatim — `Write`, NOT `IncrementAndWrite`; a fresh character's
+`FromCurrentSettings` revision is 0, a re-save threads the read counter
+back). The reader now keeps `lastTimePlayerWasSaved`
+(`Deserialize:55687-55691`, the >= 202 gate) on
+`PlayerFile::last_saved_binary` and runs the `LoadPlayer:55096-55098`
+fallback — a zero stamp reads `File.GetLastWriteTimeUtc(path).ToBinary()`
+(`tr_core::clock::file_mtime_binary`; the port has no cloud saves, so the
+`!cloudSave` arm is the only one). Witnesses (written not run, code-only):
+`w4_c43_a_re_save_copies_the_previous_plr_into_the_bak`,
+`w4_c43_the_metadata_revision_rides_the_write`,
+`w4_c43_the_save_timestamp_round_trips` (incl. the C# fixture's pinned
+stamp), `w4_c43_a_zero_stamp_falls_back_to_the_file_mtime`,
+`w4_c43_the_timestamp_is_version_gated` (a 201-restamped stream with every
+post-201 gate stripped reads aligned, stamp 0). The golden byte-parity
+tests are untouched — the fixture's revision is 0 and its clock is the
+caller-supplied pin.
+
+## The `.wld` header/flags SECOND half (W4-f45)
+
+`task/W4-f45-wld-header-2` (code-only, 2026-11-21, base = W4-c43's tip
+`07697080`) claims the remaining header/flags fields that have live port
+state or a faithful gen/death source, in four phases. Every claim is a
+`World` field the `.wld` flags writer/reader (`wld/sections/flags.rs`)
+round-trips; the App-owned schedulers snapshot into the World at save
+(`saveglue.rs::save_world`, the `SetTempToOngoing` shape) and restore at
+load (`app/mod.rs`, `from_wld`-gated so a `.trwld`'s zeros never clobber the
+live defaults).
+
+- **Ph1 — the downed-flag census.** `downedClown`/`downedEmpressOfLight`
+  (`WorldFile.cs:1297`/`:1395`) round-trip (their kinds — Clown 109,
+  HallowBoss 636 — are unported, so no live setter yet). The five seasonal
+  bosses (`downedHalloweenKing/Tree`, `downedChristmasIceQueen/Santank/Tree`,
+  `:1347-1351`) gain their moon-gated death arms (`NPC.cs:79210-79239`):
+  the kill counts only while `pumpkin_moon`/`snow_moon` is up,
+  `SetEventFlagCleared`'s false→true transition guard fires the progression
+  notify, and `OnGameEventClearedForTheFirstTime` (`:78769-78793`) arms the
+  next lantern night for events 5/20 (the default arm) but NOT 4/21/22 (the
+  explicit no-op arm).
+- **Ph2 — the eight secret-seed bytes.** `forceHalloweenForever`/
+  `forceXMasForever`/`vampireSeed`/`infectedSeed`/`teamBasedSpawnsSeed`/
+  `dualDungeonsSeed`/`moreLightningSeed`/`noLightningSeed` (`:1418-1428`)
+  are the `InitializeSecretSeeds` mirrors of `World.micro_seeds`
+  (`WorldGen.cs:553-587`) — the same bits the `.trwld` v12 tail carries.
+  The `.wld` now derives them on load (the old "the `.wld` parse does not
+  derive `micro_seeds`" deviation is retired).
+- **Ph3 — the event snapshots + flavour.** `cultistDelay` (`:1340`), the
+  party quad + celebrant list (`:1361-1368`), the lantern quad
+  (`:1381-1384`), `windSpeedTarget` (`:1328`), `savedBartender` (`:1373`),
+  `dungeonX/Y` (`:1279-1280`) and `WorldGen.crimson` (`:1281`). The
+  schedulers' live state (`App.world_events`) and `App.wind.speed_target`
+  snapshot at save; the load restores them (the wind restores BOTH target
+  and current, `:2147`). The generator stamps the dungeon anchor
+  (`pipeline.rs::step_dungeon`, the drunk arm's `worldSurface + 70` row) and
+  the crimson flavour (`GenOptions.crimson`). **The flattened v107/108/109/
+  128 read gates are restored** (`LoadWorldFlags:2180-2208`): below 107
+  `invasionSizeStart` is re-derived by `FakeLoadInvasionStart`
+  (`Main.cs:64488-64514`), below 108 the cultist delay defaults to 86400,
+  below 109 the block ends, below 128 the dawn byte is absent. The angler
+  quest gate now reads `world.crimson` (the old "no evil-kind field"
+  deviation retired).
+- **Ph4 — the banner tally, the angler list, the spawn unlocks.**
+  `BannerSystem.killCount[]` (`:1341`) densifies from `App.banners` into
+  `World.banner_kill_counts` (the banner ids ARE the C# array indices —
+  `bestiary::npc_to_banner` mirrors `NPCtoBanner`); the claimable array
+  stays unowned (the port spawns the banner item at the death spot).
+  `anglerWhoFinishedToday` (`:1329-1333`) carries the real name list (the
+  turn-in pushes the player's name, the day reset clears it). The seven
+  spawn unlocks — `unlockedSlimeBlueSpawn` (King Slime death,
+  `NPC.cs:79411`) + the six arrival unlocks (`WorldGen.cs:5577-5608`) —
+  gain their setters and the `SpawnAllowed_*` overrides
+  (`NPC.cs:7069/7094/7119/7160/7177`).
+
+**Deliberate deviations.** The party celebrant list carries the C#'s stable
+`Main.npc` slots, but the port's live list indexes the compacted `Vec<Npc>`
+(the recorded `world_events.rs` deviation) — the slots are written as-is; a
+compacted-list remap is the follow-up. The Truffle's housing-gate consumer
+(`housing.rs:456`) keeps its parameter (the Truffle kind is unported, so the
+flag round-trips without a live reader). The Clown/Empress/bartender latches
+round-trip without live setters (their kinds/rescue paths are unported).
+
+**Still unowned (no port state, written at the C# default):** claimableBanners,
+the treeTop variation table, the world-gen manifest JSON (all three the W4-c44
+golden-fixture lane owns), and forceHalloweenForToday/forceXMasForToday (the
+W4-f39 season lane). The set below was claimed in the second pass (Ph5-Ph13).
+
+### Second pass (Ph5-Ph13): the remaining unowned census
+
+`task/W4-f45-wld-header-2` continues on the same branch (base `42b7363b`) and
+claims the rest of the header/flags fields that have a live port consumer in an
+in-flight lane or a faithful gen/death/use source. Every claim is a `World`
+field the `.wld` flags writer/reader round-trips; the byte offsets are
+hand-derived against the `flags_tail` running widths and pinned by the
+`expected_flags_block` independent table + the owned-world sweep.
+
+- **Ph5 — GameMode** (`WorldFile.cs:1240` write / `:1985` read): the world's
+  difficulty i32 (0 Classic / 1 Expert / 2 Master / 3 Journey), the W4-e25
+  expert/master scaling lane's consumer. The pre-209 read gates are ported: the
+  expert bool from 112 (`:2031`), the v208 master byte (`:2037-2040`), classic
+  below 112 (`:2035`). `GenOptions.game_mode` stamps the creation draft's
+  `_optionDifficulty` (`UIWorldCreation.cs:129`) through both create paths; the
+  `WorldInfo` wire carries the byte.
+- **Ph6 — the tree/cave back-style tables** (`:1253-1268` / `:2051-2066`):
+  `treeX[3]`/`treeStyle[4]`/`caveBackX[3]`/`caveBackStyle[4]` +
+  `iceBackStyle`/`jungleBackStyle`, the W4-g72 bg-layers lane's consumers. The
+  gen roll ports `RandomizeTreeStyle` (`WorldGen.cs:8117-8190`) +
+  `RandomizeCaveBackgrounds` (`:8192-8249`) — the per-size zone branches (small
+  2 / medium 3 / large 4), the distinct `Next(6)`/`Next(8)` style rolls with the
+  collision re-roll loops, the tree 0->4 reroll, the unused-boundary
+  `maxTilesX` fill. **Deviation:** the C# draws the tables BEFORE the moon/hell
+  rolls (`:11338-11341`); the port keeps its frozen moon->hell order (the
+  `worldgen_rolls_hell_back_style` pin) and draws the tables between them — the
+  port's xorshift stream is not byte-comparable with the C#'s Knuth one anyway
+  (research/35 #5), so this is the accepted stream deviation.
+- **Ph7 — cloudBGActive/numClouds** (`:1326-1327` / `:2142-2145`): the W4-g69
+  CloudField lane's mirrors. **Deviation:** the C# load reads `cloudBGActive`
+  then RE-ROLLS it (`:2144` `-genRand.Next(8640, 86400)`); the port reads the
+  stored value into the World mirror for the round-trip but the App's live
+  machine (the g69 lane) owns the re-roll. `numClouds` restores as-is (the short
+  cast).
+- **Ph8 — afterPartyOfDoom** (`:1305` / `:2109`, v257): the getfixedboi
+  anniversary doom party. The gen Reset arm (`WorldGen.cs:11128-11137`) stamps
+  it (tenth anniversary + get-good, not skyblock) plus the genuine party / 5-day
+  cooldown; the `UpdateWorld_NPCs` consumer (`Main.cs:17926-17943`) kills every
+  town NPC (minus the five exclusions — only TravellingMerchant 368 / Dryad 20
+  have ported kinds) once the party ends, clearing the mech/party-girl/princess/
+  rainbow/green unlocks + the bunny license. The strike is the port's hp=0
+  instant-kill deviation.
+- **Ph9 — meteorShowerCount/coinRain** (`:1422-1423` / `:2490-2491`, v291): the
+  starfall events. `StartMeteorShower` (`WorldGen.cs:6239-6244`) rolls
+  `Next(650,751)*4`; the `HandleMeteorFall` failed-pick arm now draws
+  `Next(3)==0` into it (`Main.cs:65497-65500` — the `resolve` previously skipped
+  the draw). `StartRain` stores `coinRain` (`Main.cs:64672-64673`), `StopRain`
+  clears it (`:64651`); `rain.rs`'s `start_rain`/`stop_rain`/`update_time` take
+  `&mut World`. The star/coin projectiles are unported, so the values round-trip
+  without spawns.
+- **Ph10 — extraSpawnPoints** (`:1425` / `:2501`, v297): the team-based extra
+  respawn anchors, the W4-c46 respawn lane's consumer.
+  `ExtraSpawnPointManager.cs:436-456`'s count byte + (i16 X, i16 Y) pairs; the
+  variable-length `expected_flags_block` splice carries them.
+- **Ph11 — boughtCat/Dog/Bunny** (`:1392-1394` / `:2358-2360`, v217): the pet
+  licenses, the W4-f43 town-spawn lane's `TailFlags` consumers. The license
+  use-setters (`Player.cs:45352-45366`) ride the item-use lane (the combat-book
+  v1 precedent — the latches round-trip).
+- **Ph12 — combatBookVolumeTwoWasUsed/peddlersSatchelWasUsed** (`:1407-1408` /
+  `:2418`/`:2426`, v259/260): the boosters, the W4-g89b lane co-claims the
+  consumers (`npc_ai_town.rs`'s `combat_book_two` env); the use-setters
+  (`Player.cs:45337-45383`) ride the item-use lane.
+- **Ph13 — the five remaining slime-colour unlocks** (green/old/purple/yellow/
+  copper, `:1409-1415` / `:2434-2440`, v261): the town-slime kinds are unported,
+  so the latches round-trip (the green arrival setter rides the f43 town-slime
+  lane; the doom party clears green, `Main.cs:17940`).
+
+**Determinism.** The new fields are not in `world_hash`'s fold (the tile
+hashes are untouched); the gen stamps (dungeon anchor, crimson, the tree/cave
+tables, the doom party) are deterministic functions of the options/seed. The
+`.wld` flags block grows by the variable celebrant/angler/extra-spawn lists —
+the `expected_flags_block` table computes the shifts, and the owned-world sweep
+pins the whole block.
+
+Witnesses (written NOT run, code-only): the Ph1 seasonal-death census
+(`world_sim/npcs.rs`), the Ph1-Ph13 offset+gate witnesses
+(`wld/mod.rs::w4_f45_*`), the tree/cave roll witness
+(`worldgen/pipeline.rs::w4_f45_the_tree_cave_rolls_follow_the_per_size_branches`),
+the meteor-shower witness (`worldgen/meteor.rs`), the coin-rain store witness
+(`rain.rs::test_DW_2_4`), and the extended `owned_world`/`assert_owned_fields`
+round-trip sweep. The compile window runs them.
+
+### Final phase: the full walk audit + the VERSION-gate census
+
+`task/W4-f45-wld-header-2` final phase (`2e13cfafc` + `ad153feb3`, code-only)
+publishes **research/279-wld-final-audit.md** (renumbered 137→279 per the
+research/150 registry §6.3 — 137 belongs to g84) — the complete
+`SaveWorldFlags:1238-1430` / `LoadWorldFlags:1981-2517` ownership table
+(every field, write/read line, gate, owner), the g90 booster-pair keep-one
+(the `.wld` halves byte-identical; the `.trwld` v18 tails ride the g71 §1-FULL
+107-byte union), the g71 cross-read boundary (the disjoint setBG seats, the
+byte-identical dedups, the g70 treeStyle conflation flagged, the Ph6 gen-roll
+copies defer to the g71/g72 canonical), and the gate census. **Four gate
+fixes landed:**
+
+- **The >326 later-version reject** (`WorldFile.cs:712`/`:197`): the port
+  walked a v327+ file as v326; `SectionTable::open` now bails it.
+- **The <88 lower boundary** (the off-by-one): the C# dispatch is `> 87 ->
+  Version2`, so v87 routes to the unported old loader; the `< 87` bail let it
+  into the Version2 walk. Now `< 88` bails the whole 1..87 range.
+- **The `flags_tail` legacy-u32 window** (299..312, `LoadWorldFlags:2512-2515`):
+  the test table lacked the 4 bytes, mis-aligning a v304 synthetic at the
+  manifest; the table carries the window, the Ph2 v304 witness re-pinned
+  `len-1` → `len-6`.
+- **`FixEndlessRainWorlds`** (`WorldFile.cs:3284-3298` via `:2130`): the v≤317
+  year-long-rain (≥5184000 ticks) clear unless the seed text carries
+  rainsForAYear. The header seed text is now retained for the
+  `GetSecretSeedCodes` '|' split; the check rides the golden-verified
+  `seeds::check_input_for_secret_seed`. The plaintext "bring a towel" was
+  verified against the registered code through an independent Python mirror
+  of the game's non-NUL BCrypt walk (controls pumpkinseason/arachnophobia +
+  the target all match). The post-walk placement is byte-equivalent (nothing
+  after `:2130` touches the rain triple).
+
+**Recorded observations (research/279 §5, not byte-walk defects):** the
+pre-267 zenith inference's `EVERYTHING_DEPS` widening (pre-existing, the C#
+sets zenithWorld only); `downedMechBossAny` derived vs stored (equivalent for
+C# files); the moonType/moonPhase read guards (no-ops for valid files); the
+pre-196 treeBG2-4 else-arm copy (g70 lane); TreeTops' min(count,13) vs the
+full-count skip (equivalent for C# files); `UpdateTimeRate`'s creative-fold
+ordering (the clock seam, a no-byte side-effect); the manifest empty-string
+write (the C# writes the null-field JSON even when empty — c44 fixture owns
+the payload).
+
+**The remaining-unowned census answer (research/279 §1.5):** five families —
+claimableBanners (no claim queue; the item spawns at the death spot), the
+TreeTops variation table (a derived mirror; the sources are owned), the
+world-gen manifest (no gen metadata), forceSeasonsForToday (f39), and the
+eight setBG seats (g70 forest four / g71 surface three + underworld). Every
+other flags field is owned. Witnesses written NOT run (code-only).
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

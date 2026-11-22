@@ -109,6 +109,55 @@ impl App {
         // the `.trwld` v11 section and the `.wld` flags block both read it
         // from `World.ore_tiers` (S1-J-3b).
         self.world.ore_tiers = self.ore_tiers;
+        // W4-f45 — `SetTempToOngoing` (`WorldFile.cs:1047-1063`): the event
+        // schedulers' live state (`App.world_events`) snapshots into the
+        // world's file payload — the cultist delay (`:1047`), the party
+        // quad + celebrant list (`:1048-1052`) and the lantern quad
+        // (`:1060-1063`). The wind target (`Main.windSpeedTarget`, `:1328`)
+        // snapshots from `App.wind`. The celebrant list carries the C#'s
+        // stable `Main.npc` slots; the port's live list indexes the compacted
+        // vec (the recorded `world_events.rs` deviation), so the slots are
+        // written as-is (the single-player roster's indices are stable enough
+        // for the round-trip; a compacted-list remap is the follow-up).
+        self.world.cultist_delay = self.world_events.cultist_delay;
+        self.world.party_manual = self.world_events.manual_party;
+        self.world.party_genuine = self.world_events.genuine_party;
+        self.world.party_cooldown = self.world_events.party_days_on_cooldown;
+        self.world.party_celebrants = self
+            .world_events
+            .celebrating_npcs
+            .iter()
+            .map(|&i| i as i32)
+            .collect();
+        self.world.lantern_night_cooldown = self.world_events.lantern_nights_on_cooldown;
+        self.world.lantern_night_genuine = self.world_events.genuine_lanterns;
+        self.world.lantern_night_manual = self.world_events.manual_lanterns;
+        self.world.lantern_night_next_night_is_genuine =
+            self.world_events.next_night_is_lantern_night;
+        self.world.wind_speed_target = self.wind.speed_target;
+        // W4-f45 Ph4 — `BannerSystem.Save` (`BannerSystem.cs:172-186`): the
+        // sparse kill map densifies into the C#'s 293-entry array (the banner
+        // ids ARE the array indices — `bestiary::npc_to_banner` mirrors
+        // `NPCtoBanner`). The claimable array stays unowned.
+        for (banner, kills) in self.banners.pairs() {
+            if banner >= 0 && (banner as usize) < self.world.banner_kill_counts.len() {
+                self.world.banner_kill_counts[banner as usize] = kills;
+            }
+        }
+        // `Main.anglerWhoFinishedToday` (`WorldFile.cs:1329-1333`): the port's
+        // single player collapses the list to the bool `angler_quest_turned_in`
+        // — when it is set, the one player's name rides the list.
+        self.world.angler_who_finished_today.clear();
+        if self.world.angler_quest_turned_in {
+            self.world
+                .angler_who_finished_today
+                .push(self.player_name.clone());
+        }
+        // `SaveWorldFlags:1251`: the LastPlayed slot is `DateTime.UtcNow.
+        // ToBinary()` at save time — the loaded file's value is never the
+        // writer's source. Both format branches below read the field, so
+        // stamp it once here (the `.trwld` v18 block, the `.wld` flags).
+        self.world.last_played = tr_core::clock::utc_now_binary();
         // `InternalSaveWorld`'s `array2` (`WorldFile.cs:916-918`): the previous
         // world file, captured before the write — the `.bak` source and the
         // failed-write restore source (S1-J-4).
@@ -705,17 +754,39 @@ mod tests {
         assert_eq!(sections.signs.len(), 1);
         assert_eq!(sections.tile_entities.len(), 2);
 
-        // The second save (F9) writes the same bytes with the revision bumped:
-        // deterministic apart from `FileMetadata`'s counter.
+        // The second save (F9) writes the same state with the revision bumped
+        // and LastPlayed re-stamped (`SaveWorldFlags:1251` writes
+        // `DateTime.UtcNow.ToBinary()` on every save, W4-c43) — the two
+        // wall-moving fields are the metadata revision (bytes 12..16) and
+        // the flags block's LastPlayed long; everything else is identical.
         app.save_world();
         let second = std::fs::read(&path).expect("read back");
         let table2 = tr_core::wld::SectionTable::open(&second).expect("opens");
         assert_eq!(table2.metadata().revision, 2, "increments per save");
-        // Everything past the 24-byte version+metadata head is identical.
+        let first_loaded = tr_core::wld::parse(&first).expect("first parses");
+        let second_loaded = tr_core::wld::parse(&second).expect("second parses");
+        assert!(
+            second_loaded.last_played >= first_loaded.last_played,
+            "LastPlayed re-stamps at save time"
+        );
+        assert_ne!(
+            second_loaded.last_played & (0x4000_0000_0000_0000u64 as i64),
+            0,
+            "the stamp carries the Utc kind bit"
+        );
+        // Locate the LastPlayed slot in the flags block by its own bytes and
+        // pin it as the only moved field past the metadata head.
+        let at = second
+            .windows(8)
+            .position(|w| w == second_loaded.last_played.to_le_bytes())
+            .expect("the LastPlayed long is in the file");
+        let mut normalized = second.clone();
+        normalized[12..16].copy_from_slice(&first[12..16]); // the revision
+        normalized[at..at + 8].copy_from_slice(&first_loaded.last_played.to_le_bytes());
         assert_eq!(
-            second[24..],
+            normalized[24..],
             first[24..],
-            "the revision is the only thing that moved"
+            "the revision and LastPlayed are the only things that moved"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -832,14 +903,14 @@ mod tests {
     #[test]
     fn test_DW_7_2_the_trwld_path_is_unchanged() {
         // DW-7.2: the native `.trwld` branch keeps its exact behaviour — the
-        // world and its sidecar round-trip, and a double-run pair is equal
-        // (both writers are deterministic: no clock, no revision counter).
-        // The workspace carries no hashing crate, so the pair is asserted as
-        // byte equality — strictly stronger than the SHA256 equality the
-        // determinism rule asks for (`tools/pixel_diff.py`'s pairs are taken
-        // at the tool level, outside the test suite). The branch's body is the
-        // pre-phase code verbatim; the only changes are the `&mut self`
-        // receiver and the field rename (see the discovery file's diff note).
+        // world and its sidecar round-trip. Since W4-c43 the v18 tail's
+        // LastPlayed is the save-time `UtcNow` stamp (`SaveWorldFlags:1251`),
+        // so a double-run pair is equal apart from that one long (the C# is
+        // wall-clock-bearing there too); the pair is pinned with the stamp
+        // normalized, strictly stronger than SHA256 equality for every other
+        // byte. The branch's body is the pre-phase code verbatim; the only
+        // changes are the `&mut self` receiver and the field rename (see the
+        // discovery file's diff note).
         let dir = scratch("trwld");
         let path = dir.join("native.trwld");
         let mut app = stocked_app();
@@ -850,11 +921,17 @@ mod tests {
         let one = std::fs::read(&path).expect("world written");
         let sidecar_one = std::fs::read(crate::persist::player_path(&path))
             .expect("the .trplayer sidecar written");
+        let stamp_one = app.world.last_played;
         app.save_world();
         let two = std::fs::read(&path).expect("world written");
         let sidecar_two = std::fs::read(crate::persist::player_path(&path))
             .expect("the .trplayer sidecar written");
-        assert_eq!(one, two, "the world pair is byte-equal");
+        // The v18 tail's LastPlayed long (the final 8 bytes) is the only
+        // wall-clock field — normalize it, then demand byte equality.
+        let mut two_norm = two.clone();
+        let n = two_norm.len();
+        two_norm[n - 8..].copy_from_slice(&stamp_one.to_le_bytes());
+        assert_eq!(one, two_norm, "the world pair is byte-equal modulo LastPlayed");
         assert_eq!(sidecar_one, sidecar_two, "the sidecar pair is byte-equal");
         // The world round-trips through the native reader, and no `.wld`-only
         // write appeared beside it.
@@ -1411,12 +1488,19 @@ mod chest_save_tests {
             ".bak carries the previous save"
         );
         // The third save shifts `.bak` into `.bak2` (the C#'s numbering) and
-        // writes the second save into `.bak`.
+        // writes the second save into `.bak`. The fresh file differs from the
+        // second only in the v18 tail's LastPlayed stamp (W4-c43: every save
+        // re-stamps `UtcNow`, `SaveWorldFlags:1251`).
+        let stamp_second = app.world.last_played;
         app.save_world();
+        let third = std::fs::read(&path).unwrap();
+        let mut third_norm = third.clone();
+        let n = third_norm.len();
+        third_norm[n - 8..].copy_from_slice(&stamp_second.to_le_bytes());
         assert_eq!(
-            std::fs::read(&path).unwrap(),
+            third_norm,
             second,
-            "the fresh file carries the latest save"
+            "the fresh file carries the latest save (modulo LastPlayed)"
         );
         assert_eq!(
             std::fs::read(backup_path(&path, 0)).unwrap(),
@@ -1428,6 +1512,37 @@ mod chest_save_tests {
             first,
             ".bak2 carries the two-saves-ago bytes"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    #[test]
+    fn w4_c43_save_world_stamps_last_played_in_both_formats() {
+        // `SaveWorldFlags:1251` — LastPlayed is `DateTime.UtcNow.ToBinary()`
+        // at save time in both format branches (the `.wld` flags block and
+        // the `.trwld` v18 tail); a never-played world's zero stamp is
+        // replaced, the Utc kind bit rides, and the stamp survives the load.
+        let dir = scratch("w4-c43-lastplayed");
+        for name in ["a.wld", "b.trwld"] {
+            let path = dir.join(name);
+            let mut app = app_for(
+                chest_rig(),
+                WorldSections::native(save::WorldSide::default()),
+                path.clone(),
+            );
+            app.player = None;
+            app.settings.map_enabled = false;
+            assert_eq!(app.world.last_played, 0, "the rig starts unstamped");
+            app.save_world();
+            assert!(app.world.last_played > tr_core::clock::TICKS_AT_UNIX_EPOCH);
+            let (world, _) = crate::app::load_world(&path).expect("the save reloads");
+            assert_eq!(world.last_played, app.world.last_played, "{name}");
+            assert_ne!(
+                world.last_played & (0x4000_0000_0000_0000u64 as i64),
+                0,
+                "{name}: the Utc kind bit"
+            );
+            let _ = std::fs::remove_file(&path);
+        }
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

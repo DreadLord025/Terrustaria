@@ -1981,6 +1981,19 @@ fn step_dungeon(
     let surface_row = gv.map().heights[dungeon_x as usize];
     let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
     dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
+    // W4-f45: the dungeon anchor the `.wld` flags block carries
+    // (`Main.dungeonX/dungeonY`, `WorldFile.cs:1279-1280`). The C# stamps the
+    // first open dungeon tile the `UpdateWorld` scan finds
+    // (`WorldGen.cs:72471-72489`); the port's generator knows its entrance
+    // column/row directly, so it stamps the same anchor at generation. The
+    // drunk arm pins the start row to `worldSurface + 70` (`dungeon.rs`'s
+    // `generate_dungeon` top), so the stamp mirrors that choice.
+    world.dungeon_x = dungeon_x;
+    world.dungeon_y = if world.seeds.contains(crate::seeds::SeedFlags::DRUNK) {
+        world.world_surface as i32 + 70
+    } else {
+        surface_row
+    };
 }
 
 fn step_ocean_caves(
@@ -2790,6 +2803,26 @@ fn step_world_tail(
     // surface rolls ride isolated `pass_rng` slots and shift nothing.
     world.moon_type = (streams.rng.next_u32() % 9) as u8;
     world.moon_phase = 0;
+    // The f45 Ph6 roll copies (randomize_tree_style/randomize_cave_backgrounds
+    // + the standalone hell/ice/jungle tail draws) DROP here per the f45/g71
+    // keep-one (research/279 §3.4 / research/218 §1-FULL): the canonical rolls
+    // ran above — g71's bg_rolls tree/surface seats + g72's cave_bg block (the
+    // hell Next(3) folded into its tail). A second draw would double-consume
+    // the stream and re-roll the styles.
+    // W4-f45 — `WorldGen.Reset`'s doom-party arm (`WorldGen.cs:11128-11137`):
+    // a tenth-anniversary world (not skyblock) opens with a genuine party on a
+    // 5-day cooldown; with get-good too, `afterPartyOfDoom` arms (the party's
+    // end kills the town — `Main.cs:17926-17943`). The C# sets these in Reset
+    // (pre-pass); the port stamps them in the tail (no RNG — the same values).
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    let skyblock = opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK);
+    let get_good = opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
+    world.after_party_of_doom = false;
+    if anniversary && !skyblock {
+        world.party_genuine = true;
+        world.party_cooldown = 5;
+        world.after_party_of_doom = get_good;
+    }
 }
 
 // --- the runner -------------------------------------------------------------
@@ -3988,5 +4021,66 @@ mod tests {
             PassMessage::Key("WorldGeneration.LivingTrees").resolve(&text),
             "<WorldGeneration.LivingTrees>"
         );
+    }
+
+    /// W4-f45 — `RandomizeTreeStyle`/`RandomizeCaveBackgrounds`
+    /// (`WorldGen.cs:8117-8249`): the per-size zone counts, the distinct style
+    /// rolls, the unused-boundary `maxTilesX` fill and the 0->4 tree reroll.
+    /// MERGER RE-PIN (research/279 §3.4): the f45 Ph6 roll copies dropped for
+    /// the g71/g72 canonical seats — the witness now drives
+    /// `bg_rolls::randomize_tree_style` + `cave_bg::randomize_cave_backgrounds`
+    /// directly (no full generate — the width branches are the contract).
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_tree_cave_rolls_follow_the_per_size_branches() {
+        use crate::rng::Xorshift64;
+        // Small (4200): 2 tree zones; the cave arm A pins the trailing
+        // boundaries to maxTilesX without a draw (`:8198-8199`).
+        let mut w = World::new("t".into(), 4200, 1200);
+        let mut rng = Xorshift64::from_seed(7);
+        let (tx, ts) = super::bg_rolls::randomize_tree_style(&mut rng, w.width);
+        w.tree_x = tx;
+        w.tree_style = ts;
+        let roll = super::cave_bg::randomize_cave_backgrounds(&mut rng, w.width, w.cave_back_style);
+        w.apply_cave_backgrounds(&roll);
+        assert_eq!(w.cave_back_x[1], 4200);
+        assert_eq!(w.cave_back_x[2], 4200);
+        assert!(w.tree_x[0] > 0 && w.tree_x[0] < 4200, "the band is in range");
+        assert_ne!(w.tree_style[0], w.tree_style[1], "distinct styles");
+        assert!(w.tree_style[0] < 6 && w.tree_style[1] < 6, "Next(6)");
+        assert!(w.tree_style[2] == 0 && w.tree_style[3] == 0, "unused styles 0");
+        assert_ne!(w.cave_back_style[0], w.cave_back_style[1]);
+        assert!(w.cave_back_style[0] < 8, "Next(8)");
+        // Medium (6400): 3 tree zones.
+        let mut w = World::new("t".into(), 6400, 1800);
+        let mut rng = Xorshift64::from_seed(7);
+        let (tx, ts) = super::bg_rolls::randomize_tree_style(&mut rng, w.width);
+        w.tree_x = tx;
+        w.tree_style = ts;
+        assert_eq!(w.tree_x[2], 6400, "medium: treeX[2] stays maxTilesX");
+        assert!(w.tree_x[1] < 6400, "the 2nd boundary is a band");
+        assert!(w.tree_style[2] != w.tree_style[0] && w.tree_style[2] != w.tree_style[1]);
+        // Large (8400): 4 zones, every boundary a band, 4 distinct styles.
+        let mut w = World::new("t".into(), 8400, 2400);
+        let mut rng = Xorshift64::from_seed(7);
+        let (tx, ts) = super::bg_rolls::randomize_tree_style(&mut rng, w.width);
+        w.tree_x = tx;
+        w.tree_style = ts;
+        let roll = super::cave_bg::randomize_cave_backgrounds(&mut rng, w.width, w.cave_back_style);
+        w.apply_cave_backgrounds(&roll);
+        assert!(w.tree_x[2] < 8400, "large: the 3rd boundary is a band");
+        let mut styles: Vec<i32> = w.tree_style.to_vec();
+        styles.sort_unstable();
+        styles.dedup();
+        assert_eq!(styles.len(), 4, "4 distinct tree styles");
+        let mut caves: Vec<i32> = w.cave_back_style.to_vec();
+        caves.sort_unstable();
+        caves.dedup();
+        assert_eq!(caves.len(), 4, "4 distinct cave styles");
+        // Determinism: the same seed rolls the same tables.
+        let (ax, ast) = super::bg_rolls::randomize_tree_style(&mut Xorshift64::from_seed(42), 8400);
+        let (bx, bst) = super::bg_rolls::randomize_tree_style(&mut Xorshift64::from_seed(42), 8400);
+        assert_eq!(ax, bx);
+        assert_eq!(ast, bst);
     }
 }

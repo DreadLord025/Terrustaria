@@ -3619,6 +3619,11 @@ impl App {
         }
         let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
         let world_seed = world.seed;
+        // W4-f45: the event/wind restore below applies only to a `.wld` load
+        // (the flags block is that format's home); a `.trwld`'s World carries
+        // the `World::new` zeros for these fields, so its schedulers keep
+        // their own defaults.
+        let from_wld = sections.from_wld;
         let mut wind = tr_core::wind::Wind::new(world_seed as u32);
         wind.world_surface = world.world_surface;
         wind.sway_enabled = !crate::env::no_wind();
@@ -3710,13 +3715,25 @@ impl App {
         let seeded_chests = crate::chest_gen::store_from_records(&world, &sections.native.chests);
         // M6-SAVE-1c: `BannerSystem.Load` (`BannerSystem.cs:188-212`) — the
         // v8 section's recorded counts restore the tally; the vanilla rides
-        // them inside the world-flags block.
-        let seeded_banners: Vec<(i32, i32)> = sections
-            .native
-            .banners
-            .iter()
-            .map(|b| (b.banner, b.kills))
-            .collect();
+        // them inside the world-flags block. W4-f45: a `.wld` load reads the
+        // dense kill array out of the flags block (`World.banner_kill_counts`)
+        // and re-sparsifies it (the non-zero entries, ascending banner id).
+        let seeded_banners: Vec<(i32, i32)> = if sections.from_wld {
+            world
+                .banner_kill_counts
+                .iter()
+                .enumerate()
+                .filter(|(_, &kills)| kills != 0)
+                .map(|(banner, &kills)| (banner as i32, kills))
+                .collect()
+        } else {
+            sections
+                .native
+                .banners
+                .iter()
+                .map(|b| (b.banner, b.kills))
+                .collect()
+        };
         let world_chests = if sections.from_wld {
             let mut loaded = crate::chest::from_wld(&sections.data.chests);
             // `LoadChests:2801-2804`: the pre-115 dresser pass runs after the
@@ -4358,6 +4375,35 @@ impl App {
         app.sandstorm.time_left = app.world.sandstorm_time_left;
         app.sandstorm.severity = app.world.sandstorm_severity;
         app.sandstorm.intended_severity = app.world.sandstorm_intended_severity;
+        // W4-f45 — `SetOngoingToTemps:163-176`: the cultist delay, the party
+        // quad + celebrant list and the lantern quad restore the schedulers'
+        // live state from the flags block (the save snapshots them in
+        // `saveglue.rs::save_world`). The celebrant slots come back as the
+        // file's `Main.npc` indices (the compacted-vec deviation recorded in
+        // `world_events.rs`). Only a `.wld` load carries these — a `.trwld`'s
+        // World keeps the `World::new` zeros, so its schedulers keep their
+        // own defaults.
+        if from_wld {
+            app.world_events.cultist_delay = app.world.cultist_delay;
+            app.world_events.manual_party = app.world.party_manual;
+            app.world_events.genuine_party = app.world.party_genuine;
+            app.world_events.party_days_on_cooldown = app.world.party_cooldown;
+            app.world_events.celebrating_npcs = app
+                .world
+                .party_celebrants
+                .iter()
+                .map(|&i| i.max(0) as usize)
+                .collect();
+            app.world_events.lantern_nights_on_cooldown = app.world.lantern_night_cooldown;
+            app.world_events.genuine_lanterns = app.world.lantern_night_genuine;
+            app.world_events.manual_lanterns = app.world.lantern_night_manual;
+            app.world_events.next_night_is_lantern_night =
+                app.world.lantern_night_next_night_is_genuine;
+            // `LoadWorldFlags:2146-2147`: the wind target restores BOTH the
+            // target and the current (`Main.windSpeedCurrent = windSpeedTarget`).
+            app.wind.speed_target = app.world.wind_speed_target;
+            app.wind.speed_current = app.world.wind_speed_target;
+        }
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
@@ -4454,6 +4500,34 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
             },
         )
     };
+    // The identity fallbacks the C# runs at load (W4-c43):
+    // * `LoadHeader:1962-1969`: a pre-181 `.wld` (no GUID field) gets
+    //   `UniqueId = Guid.NewGuid()` — the port's clock-seeded stand-in
+    //   (`wld::stamp_created_identity`'s GUID arm). A v >= 181 `.wld` keeps
+    //   its stored GUID even when it is Guid.Empty; a pre-v18 `.trwld` has
+    //   no GUID field at all, so its zero reads as absent.
+    // * `WorldFileData.GetFileData:315-318`: a file with no LastPlayed
+    //   field falls back to `File.GetLastWriteTimeUtc(file)`. The port's
+    //   zero stamp (a pre-v18 `.trwld`, a pre-284 `.wld`, or a never-saved
+    //   world) takes the same mtime fallback.
+    let guid_absent = if sections.from_wld {
+        sections.version < 181
+    } else {
+        world.unique_id == [0u8; 16]
+    };
+    if guid_absent {
+        let mut rng = tr_core::wld::identity_rng();
+        let mut guid = [0u8; 16];
+        rng.next_bytes(&mut guid);
+        guid[7] = (guid[7] & 0x0F) | 0x40;
+        guid[8] = (guid[8] & 0x3F) | 0x80;
+        world.unique_id = guid;
+    }
+    if world.last_played == 0 {
+        if let Some(stamp) = tr_core::clock::file_mtime_binary(world_path) {
+            world.last_played = stamp;
+        }
+    }
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
         world.name,

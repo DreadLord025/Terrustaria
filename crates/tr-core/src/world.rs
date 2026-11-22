@@ -183,6 +183,13 @@ pub struct World {
     pub chunk_has: Vec<bool>,
     /// Generation seed (`0` for worlds loaded from the original `.wld` format).
     pub seed: u64,
+    /// `Main.GameMode` (`WorldFile.cs:1240` write / `:1985` read): the world's
+    /// difficulty — 0 Classic / 1 Expert / 2 Master / 3 Journey
+    /// (`GameModeID.cs:15-22`, `Main.IsJourneyMode` `:2634`). The expert/master
+    /// scaling lane (W4-e25) reads it; the creation draft's `_optionDifficulty`
+    /// (`UIWorldCreation.cs:129`) is its source. The `.wld` stores an i32 from
+    /// v209; below that a bool (expert) plus the v208 master byte (`:2029-2040`).
+    pub game_mode: i32,
     /// The classic secret-seed flags (`Main.drunkWorld` & friends — the
     /// `WorldGen.Reset()` set, `WorldGen.cs:11115-11123`): the world's
     /// special-world identity. Runtime readers (loot/fish/variant/wind
@@ -288,6 +295,30 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    // --- W4-f45: the downed-flag census (`.wld` `SaveWorldFlags`) -----------
+    /// `NPC.downedClown` (`NPC.cs:6361`): the first Clown kill
+    /// (`DoDeathEvents` case 109, `:79376-79384`). The Clown kind is
+    /// unported, so the latch has no live setter yet — the file round-trips.
+    pub downed_clown: bool,
+    /// `NPC.downedEmpressOfLight` (`NPC.cs:6393`): the event flag 23
+    /// (`DoDeathEvents` case 636, `:79351-79352`). The HallowBoss kind is
+    /// unported (R7), so the latch has no live setter yet.
+    pub downed_empress_of_light: bool,
+    /// `NPC.downedHalloweenKing` (`NPC.cs:6373`): a Pumpking killed while
+    /// the Pumpkin Moon is up (case 327, `:79210-79215`, event flag 5).
+    pub downed_halloween_king: bool,
+    /// `NPC.downedHalloweenTree` (`NPC.cs:6371`): a Mourning Wood killed
+    /// while the Pumpkin Moon is up (case 325, `:79216-79221`, flag 4).
+    pub downed_halloween_tree: bool,
+    /// `NPC.downedChristmasIceQueen` (`NPC.cs:6375`): an Ice Queen killed
+    /// while the Frost Moon is up (case 345, `:79228-79233`, flag 20).
+    pub downed_christmas_ice_queen: bool,
+    /// `NPC.downedChristmasSantank` (`NPC.cs:6379`): a Santa-NK1 killed
+    /// while the Frost Moon is up (case 346, `:79234-79239`, flag 22).
+    pub downed_christmas_santank: bool,
+    /// `NPC.downedChristmasTree` (`NPC.cs:6377`): an Everscream killed
+    /// while the Frost Moon is up (case 344, `:79222-79227`, flag 21).
+    pub downed_christmas_tree: bool,
     /// The Skeletron Prime head's centre + the present flag (the limbs'
     /// tether reads — the WoF write-through shape).
     pub prime_present: bool,
@@ -344,6 +375,20 @@ pub struct World {
     /// (`Main.cs:65230`) and the orb-boss deaths (`NPC.cs:79450`) raise it;
     /// the 16200-tick resolution lands the ore (`HandleMeteorFall`).
     pub spawn_meteor: bool,
+    /// `WorldGen.meteorShowerCount` (`WorldFile.cs:1422` write / `:2490` read,
+    /// v291+, via `_tempMeteorShowerCount`): the falling-star shower's remaining
+    /// spawns. `StartMeteorShower` (`WorldGen.cs:6239-6244`) rolls
+    /// `Next(650,751)*4`; `SpawnFallingObjects` (`:71744-71761`) decrements it
+    /// per star (the dial fast-forward zeroes it). The star projectiles are
+    /// unported, so the count round-trips + the start arm rolls it (W4-f45).
+    pub meteor_shower_count: i32,
+    /// `Main.coinRain` (`WorldFile.cs:1423` write / `:2491` read, v291+, via
+    /// `_tempCoinRain`): the coin-rain event's remaining value. `StartRain`
+    /// (`Main.cs:64672-64673`) rolls `Next(75,151)*100*100 * maxTilesX/4200f`
+    /// on a luck hit; `StopRain` (`:64651`) zeroes it; `SpawnFallingObjects`
+    /// (`WorldGen.cs:71781-71821`) drains it per coin. The coin projectiles are
+    /// unported, so the value round-trips + the rain arms set it (W4-f45).
+    pub coin_rain: i32,
     /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
     /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
     /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
@@ -358,11 +403,48 @@ pub struct World {
     /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
     /// same Main-global standing-in (S1-P-i35).
     pub unlocked_slime_red_spawn: bool,
+    /// `NPC.unlockedSlimeGreenSpawn` (`WorldGen.cs:5606` — the Town Slime Green
+    /// 678's arrival; the doom party clears it, `Main.cs:17940`). The town-slime
+    /// kinds are unported, so the latch round-trips (W4-f45).
+    pub unlocked_slime_green_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`NPC.cs:19147` — `TransformElderSlime`, the
+    /// bound 685's rescue). Unported kind; the latch round-trips (W4-f45).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimePurpleSpawn` (`NPC.cs:81774` — the bound 686's death
+    /// transforms it to the Town Slime Purple 680). Unported; round-trips.
+    pub unlocked_slime_purple_spawn: bool,
+    /// `NPC.unlockedSlimeYellowSpawn` (`Projectile.cs:14750` — the shimmer
+    /// projectile transforms the bound 687 to the Town Slime Yellow 683).
+    /// Unported; the latch round-trips (W4-f45).
+    pub unlocked_slime_yellow_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.cs:19171` — `TransformCopperSlime`,
+    /// the convertible town NPC's shimmer). Unported; round-trips (W4-f45).
+    pub unlocked_slime_copper_spawn: bool,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
     /// (S1-P-i35).
     pub combat_book_was_used: bool,
+    /// `NPC.combatBookVolumeTwoWasUsed` (`WorldFile.cs:1407` write / `:2418`
+    /// read, v259+; the use arm `Player.cs:45337-45349`, item 5336). The g89b
+    /// boosters lane co-claims the consumer (`npc_ai_town.rs`'s `combat_book_two`
+    /// env); the file round-trips the latch (W4-f45).
+    pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`WorldFile.cs:1408` write / `:2426` read,
+    /// v260+; the use arm `Player.cs:45368-45383`, item 5343). The g89b lane
+    /// co-claims the consumer; the file round-trips the latch (W4-f45).
+    pub peddlers_satchel_was_used: bool,
+    /// `NPC.boughtCat` (`WorldFile.cs:1392` write / `:2358` read, v217+; the
+    /// license use `Player.cs:45356`, item 4829 -> the Cat 637). The f43 town-
+    /// spawn lane's `TailFlags.bought_cat` consumer; the file round-trips.
+    pub bought_cat: bool,
+    /// `NPC.boughtDog` (`WorldFile.cs:1393` / `:2359`; `Player.cs:45360`, item
+    /// 4830 -> the Dog 638). The f43 lane's consumer; round-trips (W4-f45).
+    pub bought_dog: bool,
+    /// `NPC.boughtBunny` (`WorldFile.cs:1394` / `:2360`; `Player.cs:45364`, item
+    /// 4910 -> the Bunny 656; the doom party clears it, `Main.cs:17941`). The
+    /// f43 lane's consumer; round-trips (W4-f45).
+    pub bought_bunny: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -419,6 +501,13 @@ pub struct World {
     pub total_invasion_points: f32,
     /// `Main.hardMode` (`AmbienceServer.cs:61`). Runtime-only, not saved.
     pub hard_mode: bool,
+    /// `Main.afterPartyOfDoom` (`WorldFile.cs:1305` write / `:2109` read,
+    /// v257+): the getfixedboi anniversary world's doom party — the C# arms it
+    /// at generation (`WorldGen.cs:11128-11137`: tenth anniversary + get-good,
+    /// not skyblock) and `UpdateWorld_NPCs` (`Main.cs:17926-17943`) kills every
+    /// town NPC (minus the five exclusions) once the party ends, clearing the
+    /// mech/party-girl/princess/rainbow/green unlocks + the bunny license.
+    pub after_party_of_doom: bool,
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
@@ -646,12 +735,111 @@ pub struct World {
     /// `Main.ActiveWorldFileData.WorldId` (`WorldFile.cs:1227`, footer `:1756`).
     pub world_id: i32,
     /// `Main.ActiveWorldFileData.LastPlayed` as `DateTime.ToBinary` ticks
-    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). 0 = unset/min.
+    /// (`WorldFile.cs:1251` write, `:2048`/`:313` read). The save funnel
+    /// stamps `UtcNow` on every save (`SaveWorldFlags:1251`); 0 = unset/min
+    /// for a world that never went through a save.
     pub last_played: i64,
     /// `Main.ActiveWorldFileData.CreationTime` as `DateTime.ToBinary` ticks
     /// (`WorldFile.cs:1250` write, `:2044` read; S1-J-3b). 0 = unset/min —
     /// the port stamps no wall clock; a loaded file's value round-trips.
     pub creation_time: i64,
+
+    // --- W4-f45: the event snapshots + flavour (`.wld` flags block) ---------
+    /// `WorldFile._tempCultistDelay` = `CultistRitual.delay`
+    /// (`WorldFile.cs:1340` write / `:2197` read, `SetTempToOngoing:1047` /
+    /// `SetOngoingToTemps:163`). The live owner is `App.world_events`
+    /// (`world_events.rs`); the save snapshots it here, the load restores it.
+    pub cultist_delay: i32,
+    /// `WorldFile._tempPartyManual` = `BirthdayParty.ManualParty` (`:1361`).
+    pub party_manual: bool,
+    /// `WorldFile._tempPartyGenuine` = `BirthdayParty.GenuineParty` (`:1362`).
+    pub party_genuine: bool,
+    /// `WorldFile._tempPartyCooldown` = `BirthdayParty.PartyDaysOnCooldown`
+    /// (`:1363`).
+    pub party_cooldown: i32,
+    /// `WorldFile.TempPartyCelebratingNPCs` = `BirthdayParty.CelebratingNPCs`
+    /// (`:1364-1368`): the celebrating NPC slots. The port's live list indexes
+    /// the compacted `Vec<Npc>` (the recorded `world_events.rs` deviation);
+    /// the file carries the C#'s stable `Main.npc` slots.
+    pub party_celebrants: Vec<i32>,
+    /// `WorldFile._tempLanternNightCooldown` = `LanternNight.
+    /// LanternNightsOnCooldown` (`:1381`).
+    pub lantern_night_cooldown: i32,
+    /// `WorldFile._tempLanternNightGenuine` = `LanternNight.GenuineLanterns`
+    /// (`:1382`).
+    pub lantern_night_genuine: bool,
+    /// `WorldFile._tempLanternNightManual` = `LanternNight.ManualLanterns`
+    /// (`:1383`).
+    pub lantern_night_manual: bool,
+    /// `WorldFile._tempLanternNightNextNightIsGenuine` = `LanternNight.
+    /// NextNightIsLanternNight` (`:1384`).
+    pub lantern_night_next_night_is_genuine: bool,
+    /// `Main.windSpeedTarget` (`WorldFile.cs:1328` write / `:2146` read):
+    /// the live owner is `App.wind.speed_target` (`wind.rs`); the save
+    /// snapshots it here, the load restores both target and current
+    /// (`:2147` `windSpeedCurrent = windSpeedTarget`).
+    pub wind_speed_target: f32,
+    /// `Main.cloudBGActive` (`WorldFile.cs:1326` write / `:2142` read): the
+    /// overcast state machine's timer — negative counts down to the next
+    /// overcast, >= 1 is the active bank. The C# writes the live value but the
+    /// load re-rolls it (`:2144` `-genRand.Next(8640, 86400)`), so the stored
+    /// value is informational; the g69 CloudField lane owns the live machine.
+    pub cloud_bg_active: i32,
+    /// `Main.numClouds` (`WorldFile.cs:1327` write / `:2145` read): the cloud
+    /// count (the C# casts to a short on write). The g69 CloudField lane's
+    /// `update_num_clouds` walk owns the live value; the file round-trips it.
+    pub num_clouds: i32,
+    /// `NPC.savedBartender` (`NPC.cs:6283`, set at `:52960`'s
+    /// `AI_007_TownEntities_UpdateSavedStates`): the bound bartender's
+    /// rescue flag. The rescue path is unported, so the file round-trips.
+    pub saved_bartender: bool,
+    /// `WorldGen.crimson` (`WorldFile.cs:1281` write / `:2080` read): the
+    /// evil biome's flavour — the generation options' `crimson` choice
+    /// (`worldgen::GenOptions.crimson`), stamped at generation.
+    pub crimson: bool,
+    /// `Main.dungeonX`/`Main.dungeonY` (`WorldFile.cs:1279-1280` write /
+    /// `:2078-2079` read): the dungeon's entrance anchor — the generator
+    /// stamps the entrance column/row (`worldgen/dungeon.rs`).
+    pub dungeon_x: i32,
+    pub dungeon_y: i32,
+
+    // --- W4-f45 Ph4: the banner tally, the angler list, the spawn unlocks ---
+    /// `BannerSystem.killCount[]` (`BannerSystem.cs:172-186`'s `Save`): the
+    /// per-banner kill counts as the C#'s dense 293-entry array. The live
+    /// owner is `App.banners` (the sparse map); the save densifies it here,
+    /// the load reads it back and the App re-sparsifies (`app/mod.rs`).
+    pub banner_kill_counts: Vec<i32>,
+    /// `Main.anglerWhoFinishedToday` (`WorldFile.cs:1329-1333` write /
+    /// `:2152-2156` read): the player names who handed in today's quest. The
+    /// port's single player collapses the list's meaning to the bool
+    /// `angler_quest_turned_in`, but the file carries the real name list.
+    pub angler_who_finished_today: Vec<String>,
+    /// `NPC.unlockedSlimeBlueSpawn` (`NPC.cs:79411-79414`): the King Slime's
+    /// death unlocks the Nerdy Slime (the `ViolentlySpawnNerdySlime` call).
+    pub unlocked_slime_blue_spawn: bool,
+    /// `NPC.unlockedMerchantSpawn` (`WorldGen.cs:5585`): the Merchant's
+    /// arrival unlock — overrides his 5000-copper gate (`NPC.cs:7177`).
+    pub unlocked_merchant_spawn: bool,
+    /// `NPC.unlockedDemolitionistSpawn` (`WorldGen.cs:5597`, override
+    /// `NPC.cs:7069`).
+    pub unlocked_demolitionist_spawn: bool,
+    /// `NPC.unlockedDyeTraderSpawn` (`WorldGen.cs:5588`, override
+    /// `NPC.cs:7119`).
+    pub unlocked_dye_trader_spawn: bool,
+    /// `NPC.unlockedTruffleSpawn` (`WorldGen.cs:5581`): the Truffle's arrival
+    /// unlock — the housing gate reads it (`housing.rs:456`).
+    pub unlocked_truffle_spawn: bool,
+    /// `NPC.unlockedArmsDealerSpawn` (`WorldGen.cs:5594`, override
+    /// `NPC.cs:7094`).
+    pub unlocked_arms_dealer_spawn: bool,
+    /// `NPC.unlockedNurseSpawn` (`WorldGen.cs:5591`, override `NPC.cs:7160`).
+    pub unlocked_nurse_spawn: bool,
+    /// `ExtraSpawnPointManager.extraSpawnPoints` (`WorldFile.cs:1425` write /
+    /// `:2501` read, v297+; `ExtraSpawnPointManager.cs:436-456`): the team-based
+    /// extra respawn anchors as (X, Y) tile pairs — a count byte then that many
+    /// i16 pairs. The c46 respawn lane's consumer reads them; the file
+    /// round-trips the list (W4-f45).
+    pub extra_spawn_points: Vec<(i16, i16)>,
 }
 
 impl World {
@@ -706,9 +894,20 @@ impl World {
             downed_golem: false,
             downed_fishron: false,
             downed_deerclops: false,
+            // W4-f45: the downed-flag census (the C# statics start false,
+            // `NPC.cs:95228-95244`'s WorldClear family).
+            downed_clown: false,
+            downed_empress_of_light: false,
+            downed_halloween_king: false,
+            downed_halloween_tree: false,
+            downed_christmas_ice_queen: false,
+            downed_christmas_santank: false,
+            downed_christmas_tree: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
+            meteor_shower_count: 0,
+            coin_rain: 0,
             golem_x: 0.0,
             skeletron_x: 0.0,
             prime_present: false,
@@ -734,7 +933,17 @@ impl World {
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
+            unlocked_slime_green_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_purple_spawn: false,
+            unlocked_slime_yellow_spawn: false,
+            unlocked_slime_copper_spawn: false,
             combat_book_was_used: false,
+            combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
+            bought_cat: false,
+            bought_dog: false,
+            bought_bunny: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
@@ -769,6 +978,9 @@ impl World {
             chunks_y: 0,
             chunk_has: Vec::new(),
             seed: 0,
+            // `Main.GameMode`'s classic default (`WorldFile.cs:2035`'s pre-112
+            // arm, `GameModeID.Normal`).
+            game_mode: 0,
             seeds: crate::seeds::SeedFlags::default(),
             micro_seeds: crate::seeds::MicroSeedFlags::default(),
             revision: 0,
@@ -789,6 +1001,7 @@ impl World {
             wave_kills: 0.0,
             total_invasion_points: 0.0,
             hard_mode: false,
+            after_party_of_doom: false,
 
             altars_smashed: 0,
             shadow_orb_smashed: false,
@@ -870,6 +1083,38 @@ impl World {
             world_id: 0,
             last_played: 0,
             creation_time: 0,
+            // W4-f45: the event snapshots start at their `World::new` zeros
+            // (the C# temps' file-absent defaults, `WorldFile.cs:1030-1037`);
+            // the cultist delay's pre-108 load fallback is 86400 (`:2193`).
+            cultist_delay: 0,
+            party_manual: false,
+            party_genuine: false,
+            party_cooldown: 0,
+            party_celebrants: Vec::new(),
+            lantern_night_cooldown: 0,
+            lantern_night_genuine: false,
+            lantern_night_manual: false,
+            lantern_night_next_night_is_genuine: false,
+            wind_speed_target: 0.0,
+            cloud_bg_active: 0,
+            num_clouds: 0,
+            saved_bartender: false,
+            crimson: false,
+            dungeon_x: 0,
+            dungeon_y: 0,
+            // W4-f45 Ph4: the dense banner array starts at the C# length, all
+            // zero (`BannerSystem.cs:1454`'s cctor); the angler list empty;
+            // the spawn unlocks false.
+            banner_kill_counts: vec![0; 293],
+            angler_who_finished_today: Vec::new(),
+            unlocked_slime_blue_spawn: false,
+            unlocked_merchant_spawn: false,
+            unlocked_demolitionist_spawn: false,
+            unlocked_dye_trader_spawn: false,
+            unlocked_truffle_spawn: false,
+            unlocked_arms_dealer_spawn: false,
+            unlocked_nurse_spawn: false,
+            extra_spawn_points: Vec::new(),
         }
     }
 

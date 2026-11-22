@@ -460,11 +460,29 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
         world.desert_bg_style,
         world.ocean_bg_style,
     ])?; // [47..50]
-    // [50..56] crimson + moon bosses (g69/c39 — other batches, placeholder).
-    w.write_all(&[0u8; 6])?;
+    // [50..56] crimson + moon bosses — the W4-f45 flags-second-half fields
+    // are World-owned now (the g69/c39 claimant hunks supersede at their
+    // landings; the values are the same World mirrors).
+    w.write_all(&[u8::from(world.crimson)])?; // [50] :1281
+    w.write_all(&[
+        u8::from(world.downed_halloween_king),
+        u8::from(world.downed_halloween_tree),
+        u8::from(world.downed_christmas_ice_queen),
+        u8::from(world.downed_christmas_santank),
+        u8::from(world.downed_christmas_tree),
+    ])?; // [51..56] :1347-1351
     w.write_all(&[world.underworld_bg_style])?; // [56] :1376 (g71 seat, live)
-    // [57..63] pets/empress/books (g87/d125/g90 — other batches, placeholder).
-    w.write_all(&[0u8; 6])?;
+    // [57..63] pets/empress/books — same f45-owned mirrors (g87/d125/g90).
+    w.write_all(&[
+        u8::from(world.bought_cat),
+        u8::from(world.bought_dog),
+        u8::from(world.bought_bunny),
+    ])?; // [57..60] :1392-1394
+    w.write_all(&[u8::from(world.downed_empress_of_light)])?; // [60] :1395
+    w.write_all(&[
+        u8::from(world.combat_book_volume_two_was_used),
+        u8::from(world.peddlers_satchel_was_used),
+    ])?; // [61..63] :1407-1408
     // [63..107] identity block (c43/f45 claim — the fields already live on
     // World; the .trwld never persisted them before v18).
     w.write_all(&world.generator_version.to_le_bytes())?; // [63..71]
@@ -878,9 +896,19 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.snow_bg_style = r.u8()?; // [47]
         world.desert_bg_style = r.u8()?; // [48]
         world.ocean_bg_style = r.u8()?; // [49]
-        r.skip(6)?; // [50..56] crimson + moon bosses — claimant batches
+        world.crimson = r.u8()? != 0; // [50] :1281
+        world.downed_halloween_king = r.u8()? != 0; // [51]
+        world.downed_halloween_tree = r.u8()? != 0; // [52]
+        world.downed_christmas_ice_queen = r.u8()? != 0; // [53]
+        world.downed_christmas_santank = r.u8()? != 0; // [54]
+        world.downed_christmas_tree = r.u8()? != 0; // [55]
         world.underworld_bg_style = r.u8()?; // [56] :1376
-        r.skip(6)?; // [57..63] pets/empress/books — claimant batches
+        world.bought_cat = r.u8()? != 0; // [57]
+        world.bought_dog = r.u8()? != 0; // [58]
+        world.bought_bunny = r.u8()? != 0; // [59]
+        world.downed_empress_of_light = r.u8()? != 0; // [60] :1395
+        world.combat_book_volume_two_was_used = r.u8()? != 0; // [61]
+        world.peddlers_satchel_was_used = r.u8()? != 0; // [62]
         world.generator_version = r.u64()?; // [63..71]
         world.unique_id = {
             let mut id = [0u8; 16];
@@ -1150,7 +1178,7 @@ mod tests {
         // DW-1.4: a pristine v3 file (the current stream stripped of the
         // v4 tail (2 bytes) and the v5 tail (1 presence byte — the world has
         // no bed spawn), the version field restored) loads with both
-        // cooldowns at 0.
+        // cooldowns at 0. (+44: the v18 identity block rides the stream end.)
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
@@ -1309,6 +1337,7 @@ mod tests {
         assert_eq!(back.micro_seeds, w.micro_seeds);
         // A v11 file (the same stream minus the v12 block and the v13..v16
         // tails, the version byte restored) loads as the classic world it was.
+        // (+44: the v18 identity block.)
         buf.truncate(buf.len() - 10 - EMPTY_V16_TAIL);
         buf[8..12].copy_from_slice(&11u32.to_le_bytes());
         let (back, _) = parse(&buf).unwrap();
@@ -1626,6 +1655,61 @@ mod tests {
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
+    }
+
+    #[test]
+    fn w4_c43_the_world_identity_round_trips_in_v18() {
+        // W4-c43: the v18 tail carries the `.wld` header's identity fields
+        // (`WorldFile.cs:1225-1227` + `SaveWorldFlags:1250-1251`) — a
+        // `.trwld` round trip used to drop them (the audit's placeholder
+        // finding, research/42).
+        let mut w = World::new("Test".into(), 32, 32);
+        w.generator_version = 140_015_933_8497; // `CreateMetadata:603`
+        w.unique_id = [1, 2, 3, 4, 5, 6, 7, 0x48, 0x89, 10, 11, 12, 13, 14, 15, 16];
+        w.world_id = 0x1234_5678;
+        w.creation_time = 0x48DF_4506_E391_C000u64 as i64; // the fixture clock
+        w.last_played = w.creation_time + 10_000_000; // +1 s of ticks
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert_eq!(back.generator_version, w.generator_version);
+        assert_eq!(back.unique_id, w.unique_id);
+        assert_eq!(back.world_id, w.world_id);
+        assert_eq!(back.creation_time, w.creation_time);
+        assert_eq!(back.last_played, w.last_played);
+        // A pre-v18 file (the block truncated, the version patched) loads the
+        // `World::new` zeros — the values the pre-W4-c43 saves carried.
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 107); // the whole v18 UNION head
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert_eq!(back.generator_version, 0);
+        assert_eq!(back.unique_id, [0u8; 16]);
+        assert_eq!(back.world_id, 0);
+        assert_eq!(back.creation_time, 0);
+        assert_eq!(back.last_played, 0);
+    }
+
+    #[test]
+    fn w4_c43_the_created_identity_stamp_follows_create_metadata() {
+        // `WorldFile.CreateMetadata` (`WorldFile.cs:600-604`): the stamp sets
+        // the version literal, a v4-shaped GUID and a Utc-kind CreationTime.
+        let mut w = World::new("Test".into(), 32, 32);
+        let mut rng = crate::unified_random::UnifiedRandom::new(1234);
+        crate::wld::stamp_created_identity(&mut w, &mut rng);
+        assert_eq!(w.generator_version, crate::wld::WORLD_GENERATOR_VERSION);
+        assert_eq!(w.unique_id[7] & 0xF0, 0x40, "the GUID version nibble is 4");
+        assert_eq!(w.unique_id[8] & 0xC0, 0x80, "the RFC-4122 variant bits");
+        assert_ne!(w.creation_time & (0x4000_0000_0000_0000u64 as i64), 0, "Utc kind");
+        assert!(w.creation_time > crate::clock::TICKS_AT_UNIX_EPOCH);
+        // The WorldId is NOT part of the stamp — the caller rolls it (the
+        // `WorldGen.cs:11337` stand-in), so the stamp leaves it untouched.
+        assert_eq!(w.world_id, 0);
+        // A different stream draws a different GUID (uniqueness per world).
+        let mut w2 = World::new("Test2".into(), 32, 32);
+        let mut rng2 = crate::unified_random::UnifiedRandom::new(4321);
+        crate::wld::stamp_created_identity(&mut w2, &mut rng2);
+        assert_ne!(w.unique_id, w2.unique_id);
     }
 
     #[test]

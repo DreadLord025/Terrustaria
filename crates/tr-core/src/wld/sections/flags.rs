@@ -56,7 +56,8 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.jungle_back_style as i32); // jungleBackStyle (`:1268`)
     w.i32(world.hell_back_style as i32); // hellBackStyle (`:1269`)
     // WorldFile.cs:1270-1281: spawn, layer heights, the time snapshot, the
-    // moon phase, the blood moon/eclipse, the dungeon anchor.
+    // moon phase, the blood moon/eclipse, the dungeon anchor. W4-f45 claims
+    // the dungeon anchor + the evil flavour (the generator stamps them).
     w.i32(world.spawn_x);
     w.i32(world.spawn_y);
     w.f64(world.world_surface);
@@ -66,9 +67,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.moon_phase as i32);
     w.boolean(world.blood_moon);
     w.boolean(world.eclipse);
-    w.i32(0); // dungeonX — unowned
-    w.i32(0); // dungeonY — unowned
-    w.boolean(false); // WorldGen.crimson — the evil flavour is unowned state
+    w.i32(world.dungeon_x); // dungeonX (W4-f45)
+    w.i32(world.dungeon_y); // dungeonY (W4-f45)
+    w.boolean(world.crimson); // WorldGen.crimson (W4-f45)
     write_downed_flags(w, world);
     // WorldFile.cs:1299-1305: the orbs, the meteor, the altar count, the
     // hardmode switch and the post-plantera party.
@@ -77,7 +78,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(world.shadow_orb_count as u8); // C# truncates to a byte
     w.i32(world.altars_smashed);
     w.boolean(world.hard_mode);
-    w.boolean(false); // afterPartyOfDoom — unowned
+    w.boolean(world.after_party_of_doom); // afterPartyOfDoom (W4-f45, `:1305`)
                       // WorldFile.cs:1306-1312: the invasion block.
     w.i32(world.invasion_delay);
     w.i32(world.invasion_size);
@@ -109,31 +110,38 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(world.crimson_bg_style); // setBG(5) crimsonBG
     w.u8(world.desert_bg_style); // setBG(6) desertBG
     w.u8(world.ocean_bg_style); // setBG(7) oceanBG
-    // WorldFile.cs:1326-1332: clouds and wind — the cloud state is unowned
-    // and the wind engine lives in tr-app.
-    w.i32(0); // cloudBGActive
-    w.i16(0); // numClouds
-    w.f32(0.0); // windSpeedTarget
-    // WorldFile.cs:1333-1338: today's fisherman list (empty — the port collapses
-    // `Main.anglerWhoFinishedToday` to the bool `World.angler_quest_turned_in`,
-    // so the name list has no store), then the saved-NPC flags and the quest index.
-    w.i32(0); // anglerWhoFinishedToday.Count
+    // WorldFile.cs:1326-1332: clouds and wind — W4-f45 claims the cloud pair
+    // (the g69 CloudField lane's consumers) beside the wind target
+    // (`App.wind.speed_target` snapshots into `World.wind_speed_target`).
+    w.i32(world.cloud_bg_active); // cloudBGActive (`:1326`)
+    w.i16(world.num_clouds as i16); // numClouds (`:1327`, the C# short cast)
+    w.f32(world.wind_speed_target); // windSpeedTarget (W4-f45)
+    // WorldFile.cs:1329-1338: today's fisherman list — W4-f45 claims the name
+    // list (`Main.anglerWhoFinishedToday`); the port's single player collapses
+    // its MEANING to the bool `angler_quest_turned_in`, but the file carries
+    // the real names. Then the saved-NPC flags and the quest index.
+    w.i32(world.angler_who_finished_today.len() as i32); // anglerWhoFinishedToday.Count
+    for name in &world.angler_who_finished_today {
+        w.cs_string(name);
+    }
     w.boolean(world.saved_angler); // savedAngler
     w.i32(world.angler_quest as i32); // anglerQuest
     w.boolean(world.saved_stylist); // savedStylist
     w.boolean(world.saved_tax_collector); // savedTaxCollector
     w.boolean(world.saved_golfer); // savedGolfer
     w.i32(world.invasion_size_start);
-    w.i32(0); // _tempCultistDelay — App-owned (`world_events.rs`), no World store
-              // WorldFile.cs:1341: `BannerSystem.Save` — the banner kill counts have
-              // no port store, so both arrays are written at their C# length, all zero.
+    w.i32(world.cultist_delay); // _tempCultistDelay (W4-f45; App.world_events snapshots it)
+    // WorldFile.cs:1341: `BannerSystem.Save` — W4-f45 claims the kill counts
+    // (`App.banners` densifies into `World.banner_kill_counts` at save). The
+    // claimable array stays unowned (the port spawns the banner item at the
+    // death spot instead of queueing a claim), so it is written all zero.
     w.i16(MAX_BANNER_TYPES);
-    for _ in 0..MAX_BANNER_TYPES {
-        w.i32(0); // killCount
+    for i in 0..MAX_BANNER_TYPES as usize {
+        w.i32(world.banner_kill_counts.get(i).copied().unwrap_or(0)); // killCount
     }
     w.i16(MAX_BANNER_TYPES);
     for _ in 0..MAX_BANNER_TYPES {
-        w.u16(0); // claimableBanners
+        w.u16(0); // claimableBanners — unowned
     }
     // WorldFile.cs:1342-1362: the dial fast-forward, the event bosses and
     // the lunar towers. `downedMartians`, the cultist/Moon Lord kills, the
@@ -145,11 +153,13 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.downed_martians);
     w.boolean(world.downed_ancient_cultist); // downedAncientCultist
     w.boolean(world.downed_moon_lord); // downedMoonlord
-    w.boolean(false); // downedHalloweenKing
-    w.boolean(false); // downedHalloweenTree
-    w.boolean(false); // downedChristmasIceQueen
-    w.boolean(false); // downedChristmasSantank
-    w.boolean(false); // downedChristmasTree
+    // W4-f45: the five seasonal bosses — the moon-event-gated kills
+    // (`NPC.cs:79210-79239`); the death arms raise them in world_sim/npcs.rs.
+    w.boolean(world.downed_halloween_king); // downedHalloweenKing
+    w.boolean(world.downed_halloween_tree); // downedHalloweenTree
+    w.boolean(world.downed_christmas_ice_queen); // downedChristmasIceQueen
+    w.boolean(world.downed_christmas_santank); // downedChristmasSantank
+    w.boolean(world.downed_christmas_tree); // downedChristmasTree
     w.boolean(world.downed_tower_solar); // downedTowerSolar
     w.boolean(world.downed_tower_vortex); // downedTowerVortex
     w.boolean(world.downed_tower_nebula); // downedTowerNebula
@@ -159,13 +169,18 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.tower_active_nebula); // TowerActiveNebula
     w.boolean(world.tower_active_stardust); // TowerActiveStardust
     w.boolean(world.lunar_apocalypse_is_up); // LunarApocalypseIsUp
-    // WorldFile.cs:1363-1368: the party snapshot — the birthday party state is
-    // App-owned (`world_events.rs`), no World store: manual/genuine false, the
-    // cooldown 0 and the celebrant list empty.
-    w.boolean(false); // _tempPartyManual
-    w.boolean(false); // _tempPartyGenuine
-    w.i32(0); // _tempPartyCooldown
-    w.i32(0); // TempPartyCelebratingNPCs.Count
+    // WorldFile.cs:1363-1368: the party snapshot — W4-f45 claims it: the
+    // birthday party state (`App.world_events`) snapshots into the World
+    // fields at save (`SetTempToOngoing:1048-1052`). The celebrant list
+    // carries the C#'s stable `Main.npc` slots (the port's live list indexes
+    // the compacted vec — the recorded `world_events.rs` deviation).
+    w.boolean(world.party_manual); // _tempPartyManual
+    w.boolean(world.party_genuine); // _tempPartyGenuine
+    w.i32(world.party_cooldown); // _tempPartyCooldown
+    w.i32(world.party_celebrants.len() as i32); // TempPartyCelebratingNPCs.Count
+    for &slot in &world.party_celebrants {
+        w.i32(slot);
+    }
               // WorldFile.cs:1369-1372: the sandstorm snapshot. `SetTempToOngoing:1053-1056`
               // copies `Sandstorm.Happening`/`TimeLeft`/`Severity`/`IntendedSeverity`
               // in before the write and `SetOngoingToTemps:169-172` restores them.
@@ -175,10 +190,11 @@ pub fn write(w: &mut Writer, world: &World) {
     w.f32(world.sandstorm_intended_severity); // _tempSandstormIntendedSeverity
     // WorldFile.cs:1373-1375: `NPC.savedBartender` + `DD2Event.Save`'s three
     // tier flags (`DD2Event.cs:151-156`). The tiers are `World::dd2_downed_t*`
-    // (S1-E-12c: the victory latches persist); `savedBartender` stays unowned
-    // and `dd2_latches` is the wave-boss death latches (never saved by the C#
+    // (S1-E-12c: the victory latches persist); W4-f45 claims `savedBartender`
+    // (the rescue path is unported, the file round-trips the latch);
+    // `dd2_latches` is the wave-boss death latches (never saved by the C#
     // either), NOT the tiers.
-    w.boolean(false); // savedBartender
+    w.boolean(world.saved_bartender); // savedBartender (W4-f45)
     w.boolean(world.dd2_downed_t1); // DownedInvasionT1
     w.boolean(world.dd2_downed_t2); // DownedInvasionT2
     w.boolean(world.dd2_downed_t3); // DownedInvasionT3
@@ -191,77 +207,89 @@ pub fn write(w: &mut Writer, world: &World) {
     w.u8(world.forest_bg_styles[2]); // treeBG3
     w.u8(world.forest_bg_styles[3]); // treeBG4
     w.boolean(world.combat_book_was_used); // combatBookWasUsed
-                      // WorldFile.cs:1380-1384: the lantern night snapshot — unowned.
-    w.i32(0); // _tempLanternNightCooldown
-    w.boolean(false); // _tempLanternNightGenuine
-    w.boolean(false); // _tempLanternNightManual
-    w.boolean(false); // _tempLanternNightNextNightIsGenuine
+    // WorldFile.cs:1380-1384: the lantern night snapshot — W4-f45 claims it
+    // (`App.world_events` snapshots into the World fields at save,
+    // `SetTempToOngoing:1060-1063`).
+    w.i32(world.lantern_night_cooldown); // _tempLanternNightCooldown
+    w.boolean(world.lantern_night_genuine); // _tempLanternNightGenuine
+    w.boolean(world.lantern_night_manual); // _tempLanternNightManual
+    w.boolean(world.lantern_night_next_night_is_genuine); // _tempLanternNightNextNightIsGenuine
                       // WorldFile.cs:1385: `WorldGen.TreeTops.Save` — the tree-top variation
                       // table has no port state; written at its C# length, all zero.
     w.i32(TREE_TOP_VARIATIONS);
     for _ in 0..TREE_TOP_VARIATIONS {
         w.i32(0); // _variations
     }
-    // WorldFile.cs:1386-1391: the forced seasonal events (unowned), the four
-    // pre-hardmode ore tiers (`World.ore_tiers`, `:1388-1391`) and the pets
-    // (unowned).
+    // WorldFile.cs:1386-1391: the forced seasonal events (unowned — the f39
+    // season lane), the four pre-hardmode ore tiers (`World.ore_tiers`,
+    // `:1388-1391`) and the pet licenses (W4-f45, the f43 lane).
     w.boolean(false); // forceHalloweenForToday
     w.boolean(false); // forceXMasForToday
     w.i32(world.ore_tiers.copper); // Copper
     w.i32(world.ore_tiers.iron); // Iron
     w.i32(world.ore_tiers.silver); // Silver
     w.i32(world.ore_tiers.gold); // Gold
-    w.boolean(false); // boughtCat
-    w.boolean(false); // boughtDog
-    w.boolean(false); // boughtBunny
+    w.boolean(world.bought_cat); // boughtCat (W4-f45, `:1392`; the f43 license lane)
+    w.boolean(world.bought_dog); // boughtDog (`:1393`)
+    w.boolean(world.bought_bunny); // boughtBunny (`:1394`)
     // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
-    // `downedDeerclops` are owned, the Empress has no port state.
-    w.boolean(false); // downedEmpressOfLight — unowned
+    // `downedDeerclops` are owned; W4-f45 claims `downedEmpressOfLight` too
+    // (the HallowBoss kind is unported, so the file round-trips the latch).
+    w.boolean(world.downed_empress_of_light); // downedEmpressOfLight
     w.boolean(world.downed_queen_slime); // downedQueenSlime
     w.boolean(world.downed_deerclops);
     // WorldFile.cs:1398-1410: the unlocked town-NPC spawns — set on the NPC's
     // arrival (`WorldGen.cs:5577-5604`), read at the spawn gates
-    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess). The party
-    // girl, the princess and the rainbow slime have World state; the other
-    // unlocks are unowned.
-    w.boolean(false); // unlockedSlimeBlueSpawn
-    w.boolean(false); // unlockedMerchantSpawn
-    w.boolean(false); // unlockedDemolitionistSpawn
+    // (`Main.cs:65785-65799` party girl, `:65949-65952` princess) and the
+    // `SpawnAllowed_*` overrides (`NPC.cs:7069/7094/7119/7160/7177`). W4-f45
+    // claims the six arrival unlocks + the King Slime's slime-blue unlock;
+    // the party girl, princess and rainbow/red slimes were already owned.
+    w.boolean(world.unlocked_slime_blue_spawn); // unlockedSlimeBlueSpawn (W4-f45)
+    w.boolean(world.unlocked_merchant_spawn); // unlockedMerchantSpawn (W4-f45)
+    w.boolean(world.unlocked_demolitionist_spawn); // unlockedDemolitionistSpawn (W4-f45)
     w.boolean(world.unlocked_party_girl); // unlockedPartyGirlSpawn
-    w.boolean(false); // unlockedDyeTraderSpawn
-    w.boolean(false); // unlockedTruffleSpawn
-    w.boolean(false); // unlockedArmsDealerSpawn
-    w.boolean(false); // unlockedNurseSpawn
+    w.boolean(world.unlocked_dye_trader_spawn); // unlockedDyeTraderSpawn (W4-f45)
+    w.boolean(world.unlocked_truffle_spawn); // unlockedTruffleSpawn (W4-f45)
+    w.boolean(world.unlocked_arms_dealer_spawn); // unlockedArmsDealerSpawn (W4-f45)
+    w.boolean(world.unlocked_nurse_spawn); // unlockedNurseSpawn (W4-f45)
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
-    w.boolean(false); // combatBookVolumeTwoWasUsed
-    w.boolean(false); // peddlersSatchelWasUsed
-    w.boolean(false); // unlockedSlimeGreenSpawn
-    w.boolean(false); // unlockedSlimeOldSpawn
-    w.boolean(false); // unlockedSlimePurpleSpawn
+    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed (W4-f45, `:1407`; g89b co-claim)
+    w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed (`:1408`; g89b co-claim)
+    w.boolean(world.unlocked_slime_green_spawn); // unlockedSlimeGreenSpawn (W4-f45, `:1409`)
+    w.boolean(world.unlocked_slime_old_spawn); // unlockedSlimeOldSpawn (`:1410`)
+    w.boolean(world.unlocked_slime_purple_spawn); // unlockedSlimePurpleSpawn (`:1411`)
     w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
     w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
-    w.boolean(false); // unlockedSlimeYellowSpawn
-    w.boolean(false); // unlockedSlimeCopperSpawn
+    w.boolean(world.unlocked_slime_yellow_spawn); // unlockedSlimeYellowSpawn (`:1414`)
+    w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn (`:1415`)
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
-    // seeds — the seasons/seeds have no World store (the port's `micro_seeds`
-    // bitmask rides the `.trwld` v12 tail only, `save.rs:382-383`); the two
-    // rain counters likewise.
+    // seeds — W4-f45 claims the eight `Main.*` seed bytes: they are the
+    // `InitializeSecretSeeds` mirrors of `World.micro_seeds` (`WorldGen.cs:
+    // 553-587`), the same bits the `.trwld` v12 tail carries (`save.rs:388-390`).
+    // W4-f45 also claims the two starfall counters (`:1422-1423`).
     w.boolean(world.fast_forward_to_dusk);
     w.u8(world.moondial_cooldown);
-    w.boolean(false); // forceHalloweenForever
-    w.boolean(false); // forceXMasForever
-    w.boolean(false); // vampireSeed
-    w.boolean(false); // infectedSeed
-    w.i32(0); // _tempMeteorShowerCount
-    w.i32(0); // _tempCoinRain
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)); // forceHalloweenForever (`WorldGen.cs:571-574`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)); // forceXMasForever (`:575-578`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::VAMPIRISM)); // vampireSeed (`:555-558`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)); // infectedSeed (`:559-562`)
+    w.i32(world.meteor_shower_count); // _tempMeteorShowerCount (W4-f45, `:1422`)
+    w.i32(world.coin_rain); // _tempCoinRain (W4-f45, `:1423`)
               // WorldFile.cs:1424-1426: team-based spawns plus the extra spawn point
-              // list (`ExtraSpawnPointManager.Write`) — unowned, so a zero count.
-    w.boolean(false); // teamBasedSpawnsSeed
-    w.u8(0); // extraSpawnPoints.Length
+              // list (`ExtraSpawnPointManager.Write`) — W4-f45 claims the list (the
+              // c46 respawn lane); the seed byte is the micro-seed mirror.
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:563-566`)
+    // `ExtraSpawnPointManager.Write` (`ExtraSpawnPointManager.cs:448-456`): a
+    // count byte then that many (i16 X, i16 Y) pairs (W4-f45, the c46 lane).
+    w.u8(world.extra_spawn_points.len() as u8); // extraSpawnPoints.Length (`:1425`)
+    for &(x, y) in &world.extra_spawn_points {
+        w.i16(x);
+        w.i16(y);
+    }
              // WorldFile.cs:1427-1429: the remaining secret seeds.
-    w.boolean(false); // dualDungeonsSeed
-    w.boolean(false); // moreLightningSeed
-    w.boolean(false); // noLightningSeed
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:567-570`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:579-582`)
+    w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::NO_LIGHTNING)); // noLightningSeed (`:583-586`)
                       // WorldFile.cs:1429: the world-generation manifest. The port has no
                       // JSON manifest, so the empty .NET string is written (deviation: the
                       // generator's own metadata is not persisted).
@@ -274,7 +302,7 @@ pub fn write(w: &mut Writer, world: &World) {
 /// introduction version (`SaveWorldFlags:1238-1250` / `LoadWorldFlags:1981-2041`);
 /// the pre-267 zenith back-compat inference is the reader's job (`:2020`).
 fn write_world_flavour(w: &mut Writer, world: &World) {
-    w.i32(0); // Main.GameMode — no port concept
+    w.i32(world.game_mode); // Main.GameMode (W4-f45; the e25 scaling lane reads it)
     for (min_version, flag) in [
         (222, crate::seeds::SeedFlags::DRUNK),
         (227, crate::seeds::SeedFlags::FOR_THE_WORTHY),
@@ -319,7 +347,7 @@ fn write_downed_flags(w: &mut Writer, world: &World) {
     w.boolean(world.saved_wizard); // savedWizard
     w.boolean(world.saved_mech); // savedMech
     w.boolean(world.downed_goblins);
-    w.boolean(false); // downedClown — unowned
+    w.boolean(world.downed_clown); // downedClown (W4-f45; the kind is unported, the file round-trips)
     w.boolean(world.downed_frost);
     w.boolean(world.downed_pirates);
 }
@@ -332,7 +360,7 @@ fn write_downed_flags(w: &mut Writer, world: &World) {
 pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()> {
     // WorldFile.cs:1982-2012 — game mode and the nine flavour bools.
     if version >= 209 {
-        r.skip(4)?; // GameMode
+        world.game_mode = r.i32()?; // GameMode (W4-f45, `:1985`)
         for (min_version, flag) in [
             (222, crate::seeds::SeedFlags::DRUNK),
             (227, crate::seeds::SeedFlags::FOR_THE_WORTHY),
@@ -362,11 +390,15 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
             );
         }
     } else {
+        // WorldFile.cs:2029-2040 — the pre-209 game mode: a bool (expert) from
+        // 112, else classic; the v208 master byte upgrades it to 2.
         if version >= 112 {
-            r.skip(1)?; // GameMode as bool
+            world.game_mode = if r.u8()? != 0 { 1 } else { 0 };
+        } else {
+            world.game_mode = 0;
         }
-        if version == 208 {
-            r.skip(1)?;
+        if version == 208 && r.u8()? != 0 {
+            world.game_mode = 2;
         }
     }
     // WorldFile.cs:2042-2049 — the two creation-time longs.
@@ -409,8 +441,9 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.moon_phase = (r.i32()? as u8) & 7;
     world.blood_moon = r.u8()? != 0;
     world.eclipse = r.u8()? != 0;
-    r.skip(2 * 4)?; // dungeonX/Y
-    r.skip(1)?; // WorldGen.crimson
+    world.dungeon_x = r.i32()?; // dungeonX (W4-f45, `:2078`)
+    world.dungeon_y = r.i32()?; // dungeonY (W4-f45, `:2079`)
+    world.crimson = r.bool()?; // WorldGen.crimson (W4-f45, `:2080`)
                 // WorldFile.cs:2084-2102 — the boss flags (with `downedSlimeKing` gated at 118).
     world.downed_eoc = r.bool()?; // downedBoss1
     world.downed_eow = r.bool()?; // downedBoss2
@@ -429,7 +462,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.saved_wizard = r.bool()?; // savedWizard
     world.saved_mech = r.bool()?; // savedMech
     world.downed_goblins = r.bool()?;
-    r.skip(1)?; // downedClown
+    world.downed_clown = r.bool()?; // downedClown (W4-f45)
     world.downed_frost = r.bool()?;
     world.downed_pirates = r.bool()?;
     // WorldFile.cs:2103-2117 — orbs, meteor, altars, hardmode, invasion.
@@ -439,7 +472,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.altars_smashed = r.i32()?;
     world.hard_mode = r.bool()?;
     if version >= 257 {
-        r.skip(1)?; // afterPartyOfDoom
+        world.after_party_of_doom = r.bool()?; // afterPartyOfDoom (W4-f45, `:2109`)
     }
     world.invasion_delay = r.i32()?;
     world.invasion_size = r.i32()?;
@@ -471,15 +504,26 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.crimson_bg_style = r.u8()?; // setBG(5) crimsonBG
     world.desert_bg_style = r.u8()?; // setBG(6) desertBG
     world.ocean_bg_style = r.u8()?; // setBG(7) oceanBG
-    r.skip(4)?; // cloudBGActive
-    r.skip(2)?; // numClouds
-    r.skip(4)?; // windSpeedTarget
+    // stored value, then `:2144` re-rolls cloudBGActive (`-genRand.Next(8640,
+    // 86400)`) — the load does NOT restore the stored timer (the g69 lane's
+    // live machine re-rolls it), so the port reads it into the World mirror
+    // for the round-trip but the App keeps its own re-roll. numClouds (`:2145`)
+    // restores as-is.
+    world.cloud_bg_active = r.i32()?; // cloudBGActive (`:2142`)
+    world.num_clouds = r.i16()? as i32; // numClouds (`:2145`)
+    // W4-f45: the wind target lands; `:2147` sets `windSpeedCurrent` to it
+    // (the App restores both from this one field, `app/mod.rs`).
+    world.wind_speed_target = r.f32()?; // windSpeedTarget (`:2146`)
     if version < 95 {
         return Ok(());
     }
-    // WorldFile.cs:2131-2135 — today's angler list: a count then that many names.
+    // WorldFile.cs:2152-2156 — today's angler list: a count then that many
+    // names (W4-f45 claims the list; the C# clears it first).
     let anglers = r.i32()?;
-    skip_strings(r, anglers)?;
+    world.angler_who_finished_today.clear();
+    for _ in 0..anglers.max(0) {
+        world.angler_who_finished_today.push(r.string()?);
+    }
     if version < 99 {
         return Ok(());
     }
@@ -498,14 +542,43 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 201 {
         world.saved_golfer = r.bool()?; // savedGolfer
     }
-    world.invasion_size_start = r.i32()?;
-    r.skip(4)?; // _tempCultistDelay
-                // WorldFile.cs:2157-2166 — `BannerSystem.Load` (the second array only from 289).
+    // WorldFile.cs:2180-2198 — the invasion-start + cultist-delay gates the
+    // S1-J-3b walk flattened: below 107 `invasionSizeStart` is not read at
+    // all (`FakeLoadInvasionStart` re-derives it from the invasion pair,
+    // `Main.cs:64488-64514`); below 108 the cultist delay defaults to 86400
+    // (`CultistRitual.delayStart`). W4-f45 restores both gates.
+    if version < 107 {
+        if world.invasion_type > 0 && world.invasion_size > 0 {
+            fake_load_invasion_start(world);
+        }
+    } else {
+        world.invasion_size_start = r.i32()?;
+    }
+    if version < 108 {
+        world.cultist_delay = 86400; // `CultistRitual.delayStart` (`:2193`)
+    } else {
+        world.cultist_delay = r.i32()?; // _tempCultistDelay (`:2197`, W4-f45)
+    }
+    if version < 109 {
+        return Ok(());
+    }
+    // WorldFile.cs:2203 — `BannerSystem.Load` (`BannerSystem.cs:188-212`):
+    // the kill counts land in the dense array (only the entries the array
+    // carries, `i < killCount.Length`); the claimable array (289+) stays
+    // unowned, skip-read. W4-f45 claims the kill counts.
     let kill_counts = r.i16()? as i32;
-    r.skip((kill_counts.max(0) as usize) * 4)?;
+    for i in 0..kill_counts.max(0) as usize {
+        let count = r.i32()?;
+        if i < world.banner_kill_counts.len() {
+            world.banner_kill_counts[i] = count;
+        }
+    }
     if version >= 289 {
         let claimable = r.i16()? as i32;
-        r.skip((claimable.max(0) as usize) * 2)?;
+        r.skip((claimable.max(0) as usize) * 2)?; // claimableBanners — unowned
+    }
+    if version < 128 {
+        return Ok(());
     }
     world.fast_forward_to_dawn = r.bool()?;
     if version < 131 {
@@ -515,7 +588,12 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     world.downed_martians = r.bool()?;
     world.downed_ancient_cultist = r.bool()?; // downedAncientCultist
     world.downed_moon_lord = r.bool()?; // downedMoonlord
-    r.skip(5)?; // downedHalloweenKing .. downedChristmasTree
+    // W4-f45: the five seasonal bosses (`LoadWorldFlags:2217-2221`, v131+).
+    world.downed_halloween_king = r.bool()?; // downedHalloweenKing
+    world.downed_halloween_tree = r.bool()?; // downedHalloweenTree
+    world.downed_christmas_ice_queen = r.bool()?; // downedChristmasIceQueen
+    world.downed_christmas_santank = r.bool()?; // downedChristmasSantank
+    world.downed_christmas_tree = r.bool()?; // downedChristmasTree
     if version < 140 {
         return Ok(());
     }
@@ -548,13 +626,18 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if world.tower_active_stardust {
         world.tower_shield_stardust = shield_max;
     }
-                // WorldFile.cs:2195-2206 — the party snapshot (cooldown i32, then a counted i32 list).
+    // WorldFile.cs:2251-2269 — the party snapshot (W4-f45): below 170 the
+    // four temps reset (`:2253-2256` — the World defaults already match),
+    // else manual/genuine/cooldown + a counted i32 slot list.
     if version >= 170 {
-        r.skip(1)?; // _tempPartyManual
-        r.skip(1)?; // _tempPartyGenuine
-        r.skip(4)?; // _tempPartyCooldown
+        world.party_manual = r.bool()?; // _tempPartyManual
+        world.party_genuine = r.bool()?; // _tempPartyGenuine
+        world.party_cooldown = r.i32()?; // _tempPartyCooldown
         let celebrants = r.i32()?;
-        r.skip((celebrants.max(0) as usize) * 4)?;
+        world.party_celebrants.clear();
+        for _ in 0..celebrants.max(0) {
+            world.party_celebrants.push(r.i32()?);
+        }
     }
     // WorldFile.cs:2277-2283 — the sandstorm snapshot: below 174 the four
     // temps are zeroed (`:2272-2275`), else read back.
@@ -568,7 +651,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     // (the C# clears the tiers below the gate, `DD2Event.cs:174` — the World
     // defaults already false).
     if version >= 178 {
-        r.skip(1)?; // savedBartender
+        world.saved_bartender = r.bool()?; // savedBartender (W4-f45)
         world.dd2_downed_t1 = r.bool()?; // DownedInvasionT1
         world.dd2_downed_t2 = r.bool()?; // DownedInvasionT2
         world.dd2_downed_t3 = r.bool()?; // DownedInvasionT3
@@ -589,12 +672,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
     if version >= 204 {
         world.combat_book_was_used = r.bool()?; // combatBookWasUsed
     }
-    // WorldFile.cs:2234-2239 — the lantern night snapshot.
+    // WorldFile.cs:2317-2330 — the lantern night snapshot (W4-f45): below
+    // 207 the four temps reset (`:2319-2322` — the World defaults match).
     if version >= 207 {
-        r.skip(4)?; // _tempLanternNightCooldown
-        r.skip(1)?; // _tempLanternNightGenuine
-        r.skip(1)?; // _tempLanternNightManual
-        r.skip(1)?; // _tempLanternNightNextNightIsGenuine
+        world.lantern_night_cooldown = r.i32()?; // _tempLanternNightCooldown
+        world.lantern_night_genuine = r.bool()?; // _tempLanternNightGenuine
+        world.lantern_night_manual = r.bool()?; // _tempLanternNightManual
+        world.lantern_night_next_night_is_genuine = r.bool()?; // _tempLanternNightNextNightIsGenuine
     }
     // WorldFile.cs:2240-2243 — `TreeTops.Load`: below 211 nothing is read. The C# reads
     // `min(count, 13)` entries; skipping the full count keeps the byte cursor
@@ -623,37 +707,52 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.ore_tiers.gold = -1;
     }
     if version >= 217 {
-        r.skip(3)?; // boughtCat/Dog/Bunny
+        // W4-f45: the pet-license trio lands (`:2358-2360`); the f43 lane's
+        // `TailFlags.bought_*` consumers read them.
+        world.bought_cat = r.bool()?; // boughtCat
+        world.bought_dog = r.bool()?; // boughtDog
+        world.bought_bunny = r.bool()?; // boughtBunny
     }
     if version >= 223 {
-        r.skip(1)?; // downedEmpressOfLight — unowned
+        world.downed_empress_of_light = r.bool()?; // downedEmpressOfLight (W4-f45)
         world.downed_queen_slime = r.bool()?; // downedQueenSlime
     }
     if version >= 240 {
         world.downed_deerclops = r.bool()?;
     }
     if version >= 250 {
-        r.skip(1)?; // unlockedSlimeBlueSpawn
+        world.unlocked_slime_blue_spawn = r.bool()?; // unlockedSlimeBlueSpawn (W4-f45)
     }
     if version >= 251 {
-        // WorldFile.cs:2396-2403 — the eight unlocks in write order; only the
-        // party girl (3rd) and the princess (8th) have World state.
-        r.skip(2)?; // unlockedMerchantSpawn, unlockedDemolitionistSpawn
+        // WorldFile.cs:2396-2403 — the eight unlocks in write order; W4-f45
+        // claims the six arrival unlocks beside the party girl/princess.
+        world.unlocked_merchant_spawn = r.bool()?; // unlockedMerchantSpawn
+        world.unlocked_demolitionist_spawn = r.bool()?; // unlockedDemolitionistSpawn
         world.unlocked_party_girl = r.bool()?; // unlockedPartyGirlSpawn
-        r.skip(4)?; // unlockedDyeTrader/Truffle/ArmsDealer/Nurse
+        world.unlocked_dye_trader_spawn = r.bool()?; // unlockedDyeTraderSpawn
+        world.unlocked_truffle_spawn = r.bool()?; // unlockedTruffleSpawn
+        world.unlocked_arms_dealer_spawn = r.bool()?; // unlockedArmsDealerSpawn
+        world.unlocked_nurse_spawn = r.bool()?; // unlockedNurseSpawn
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
-        r.skip(1)?; // combatBookVolumeTwoWasUsed
+        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed (W4-f45, `:2418`)
     }
     if version >= 260 {
-        r.skip(1)?; // peddlersSatchelWasUsed
+        world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed (`:2426`)
     }
     if version >= 261 {
-        r.skip(3)?; // unlockedSlimeGreen/Old/Purple
+        // W4-f45: the five remaining slime-colour unlocks land beside the
+        // rainbow/red pair (`:2434-2440`). The town-slime kinds are unported,
+        // so the latches round-trip (the green arrival setter rides the f43
+        // town-slime lane; the doom party clears green, `Main.cs:17940`).
+        world.unlocked_slime_green_spawn = r.bool()?; // unlockedSlimeGreenSpawn
+        world.unlocked_slime_old_spawn = r.bool()?; // unlockedSlimeOldSpawn
+        world.unlocked_slime_purple_spawn = r.bool()?; // unlockedSlimePurpleSpawn
         world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
         world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
-        r.skip(2)?; // unlockedSlimeYellow/Copper
+        world.unlocked_slime_yellow_spawn = r.bool()?; // unlockedSlimeYellowSpawn
+        world.unlocked_slime_copper_spawn = r.bool()?; // unlockedSlimeCopperSpawn
     }
     // WorldFile.cs:2306-2319 — the moondial, the forced seasons, the secret seeds, the
     // meteor shower, the team spawns and the extra spawn points.
@@ -662,28 +761,55 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.moondial_cooldown = r.u8()?;
     }
     if version >= 287 {
-        r.skip(2)?; // forceHalloweenForever, forceXMasForever
+        // W4-f45: the two forced-season bytes are the endlessHalloween/
+        // endlessChristmas micro-seed mirrors (`WorldGen.cs:571-578`).
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        }
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        }
     }
     if version >= 288 {
-        r.skip(1)?; // vampireSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::VAMPIRISM); // vampireSeed
+        }
     }
     if version >= 296 {
-        r.skip(1)?; // infectedSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED); // infectedSeed
+        }
     }
     if version >= 291 {
-        r.skip(2 * 4)?; // _tempMeteorShowerCount, _tempCoinRain
+        // W4-f45: the starfall pair lands (`SetOngoingToTemps:177-178` restores
+        // them to `WorldGen.meteorShowerCount` / `Main.coinRain`).
+        world.meteor_shower_count = r.i32()?; // _tempMeteorShowerCount (`:2490`)
+        world.coin_rain = r.i32()?; // _tempCoinRain (`:2491`)
     }
     if version >= 297 {
-        r.skip(1)?; // teamBasedSpawnsSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS); // teamBasedSpawnsSeed
+        }
+        // `ExtraSpawnPointManager.Read` (`ExtraSpawnPointManager.cs:436-446`):
+        // a count byte then that many (i16 X, i16 Y) pairs (W4-f45).
         let extra = r.u8()? as i32;
-        r.skip((extra.max(0) as usize) * 4)?; // ExtraSpawnPointManager.Read: (i16, i16) pairs
+        world.extra_spawn_points.clear();
+        for _ in 0..extra.max(0) {
+            world.extra_spawn_points.push((r.i16()?, r.i16()?));
+        }
     }
     if version >= 304 {
-        r.skip(1)?; // dualDungeonsSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS); // dualDungeonsSeed
+        }
     }
     if version >= 323 {
-        r.skip(1)?; // moreLightningSeed
-        r.skip(1)?; // noLightningSeed
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::MORE_LIGHTNING); // moreLightningSeed
+        }
+        if r.bool()? {
+            world.micro_seeds.insert(crate::seeds::MicroSeedFlags::NO_LIGHTNING); // noLightningSeed
+        }
     }
     // WorldFile.cs:2499-2501 — the legacy u32 only 299..312 read.
     if (299..313).contains(&version) {
@@ -714,10 +840,26 @@ fn skip_one_string(r: &mut Reader) -> Result<()> {
     r.skip(len)
 }
 
-/// Skips `count` .NET strings (the angler list).
-fn skip_strings(r: &mut Reader, count: i32) -> Result<()> {
-    for _ in 0..count.max(0) {
-        skip_one_string(r)?;
+/// `Main.FakeLoadInvasionStart` (`Main.cs:64488-64514`): the pre-107 load's
+/// `invasionSizeStart` re-derivation from the invasion pair — the per-type
+/// (base, step) ladder, then `base + ceil((size - base) / step) * step` when
+/// the ceiling is positive. W4-f45 (the `LoadWorldFlags:2180-2186` gate).
+fn fake_load_invasion_start(world: &mut World) {
+    let (base, step) = match world.invasion_type {
+        1 | 2 => (80, 40),
+        3 => (120, 60),
+        4 => (160, 40),
+        _ => (0, 0),
+    };
+    // The C# divides by `num2` unconditionally; the port guards the unknown
+    // type's zero step (the C# would throw there — an unreachable file shape).
+    let waves = if step > 0 {
+        ((world.invasion_size - base) as f32 / step as f32).ceil() as i32
+    } else {
+        0
+    };
+    world.invasion_size_start = base;
+    if waves > 0 {
+        world.invasion_size_start += waves * step;
     }
-    Ok(())
 }
