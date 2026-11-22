@@ -127,6 +127,29 @@ impl App {
         }
     }
 
+    /// W4-g66 gap-fill — the appearance producer: the session draft's
+    /// colours land on the live player at world entry
+    /// (`Main.ActivePlayerFileData.Player` carries the loaded/created
+    /// character; the port's `CharPlay` is routing-only, spec §9.4, so the
+    /// draft is the active player — the `active_player_difficulty`
+    /// precedent). `eyeColor`/`underShirtColor` feed the wings-33/38
+    /// `WingFrame` arms (`Player.cs:30324`/`:30425`) — the two fields the
+    /// live struct models; the draft's other five colours stay card-side
+    /// (the draw palette constants, `render/player_layers.rs`). No draft =
+    /// the `new Player()` initializers already on the struct. The
+    /// `.plr`-backed load rides the f44 save lane
+    /// (`PlayerFile.eye_color` etc.).
+    pub(crate) fn apply_session_appearance(&mut self) {
+        let Some(d) = self.session_draft.as_ref() else {
+            return;
+        };
+        let (eye, under) = (d.eye_color, d.undershirt_color);
+        if let Some(p) = self.player.as_mut() {
+            p.eye_color = eye;
+            p.under_shirt_color = under;
+        }
+    }
+
     /// `Main.ErasePlayer` (`Main.cs:4772-4791`): a disk-backed card deletes
     /// its `.plr` (the `.bak` and the folder side ride along in
     /// `save_list::erase_player`); a disk-less entry (the session stand-in or

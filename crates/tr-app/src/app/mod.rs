@@ -2734,6 +2734,10 @@ impl App {
         // world never enters paused. (`GameUpdateCount` resets through the
         // `OnWorldLoad` hook — the fresh [`App::new`] both install paths build.)
         self.game_paused = false;
+        // W4-g66 gap-fill — the session character's appearance lands on the
+        // live player (`Main.ActivePlayerFileData.Player`'s colours; the
+        // wings-33/38 dust arms read them).
+        self.apply_session_appearance();
         // S1-G-1f: the world-load animator reset (`Main.cs:8393-8394` —
         // `tileFrame[l] = 0; tileFrameCounter[l] = 0`, and
         // `weatherVaneBobframe = 0` at `:67242`).
@@ -3212,6 +3216,10 @@ impl App {
         let font_atlas = new_font_atlas.or_else(|| self.font_atlas.take());
         let settings = self.settings.clone();
         let shot_path = self.shot_path.clone();
+        // W4-g66 gap-fill — the session draft survives the world swap
+        // (`Main.PendingPlayer`/`ActivePlayerFileData` are world-independent;
+        // `enter_loaded_world` re-applies its appearance to the fresh player).
+        let session_draft = self.session_draft.take();
         let audio = std::mem::replace(&mut self.audio, audio::Audio::new(assets::content_dir()));
         let music = std::mem::replace(
             &mut self.music,
@@ -3246,6 +3254,7 @@ impl App {
         self.noise_tex = noise_tex;
         self.water_mask = water_mask;
         self.shot_path = shot_path;
+        self.session_draft = session_draft;
         // `App::new` builds fresh `None` caches; the decoded halves ride the swap
         // so the next Play is fast too (both are world-independent).
         self.static_sheets = static_cache;

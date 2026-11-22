@@ -1659,6 +1659,81 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_dash_dust() {
                 crate::player_dust::drain_dash_dust(app, burst);
             }
+            // W4-g66 gap-fill — the wall-cling dust (`Player.cs:26758-26766`,
+            // `WallClimbMovement`/`WallslideMovement` `:21607-21840`): the
+            // type-31 puff sits between the dash burst and DoubleJumpVisuals
+            // in the C# call order, same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_wall_dust() {
+                crate::player_trail_dust::drain_wall_dust(app, burst);
+            }
+            // W4-g66 — `DoubleJumpVisuals` (`Player.cs:26767`, `:21892-22021`):
+            // the per-tick performing-jump trail follows the dash burst in
+            // the C# call order, on the same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_double_jump_dust() {
+                crate::player_trail_dust::drain_double_jump_visuals(app, burst);
+            }
+            // W4-g66 — `WingAirVisuals` (`Player.cs:26817`, `:30750-31013`):
+            // the flag19 flying tick's per-wing rolls, snapshotted BEFORE
+            // `WingMovement` shaped the velocity.
+            if let Some(burst) = p.take_wing_air_dust() {
+                crate::player_wing_dust::drain_wing_air(app, burst);
+            }
+            // W4-g66 — `WingFrame`'s dust arms (`Player.cs:26820`,
+            // `:29468-30527`): the jetpack-4/Bat-30/Rainbow-45/Spooky-39
+            // rolls + the Nebula-29 rest roll; the frame machines ran in
+            // the tick (`wing_frame_visuals`).
+            if let Some(burst) = p.take_wing_frame_dust() {
+                crate::player_wing_dust::drain_wing_frame(app, burst);
+            }
+            // W4-g66 gap-fill — the boot/jetpack Item13/Item24 cue
+            // (`Player.cs:26884-26896`, `:29478`, `:30172`, `:27154`): the
+            // case-2 pitch draw rides `UpdatePlayers`, the same queued-sound
+            // convention as the flap Item32 below (the `pending_flap_sound`
+            // precedent — the play queues at the C# moment, the pitch draw
+            // lands at the drain; on a tick where a cue AND a dust arm both
+            // roll, the pitch-vs-dust interleave rides the queue order, the
+            // documented seam deviation). Placed before the boot flames:
+            // the boot cue (`:26884`) precedes `RocketBootVisuals` (`:26918`).
+            if let Some((idx, sx, sy)) = p.take_rocket_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-g66 — `RocketBootVisuals` (`Player.cs:26918`, `:29330-29458`):
+            // the thrust tick's flame pair, snapshotted before the thrust
+            // velocity writes.
+            if let Some(burst) = p.take_rocket_flame_dust() {
+                crate::player_boot_dust::drain_rocket_flames(app, burst);
+            }
+            // W4-g66 — the wing-glide dust (`Player.cs:27040-27315`): the
+            // jump-held falling arm's per-wing rolls; the frame machines ran
+            // in the tick (`wing_glide_frames`).
+            if let Some(burst) = p.take_wing_glide_dust() {
+                crate::player_wing_dust::drain_wing_glide(app, burst);
+            }
+            // W4-g66 — `FloorVisuals` → `MakeFloorDust` (`Player.cs:28271`,
+            // `:23790-24043`): the landing burst / running puffs after the
+            // movement block, before `PlayerFrame`'s draws (`:28286`). The
+            // landing Item177 cue rides inside the drain, before the loop.
+            if let Some(burst) = p.take_floor_dust() {
+                crate::player_trail_dust::drain_floor_dust(app, burst);
+            }
+            // W4-g66 — `PlayerFrame`'s walking-effect rolls
+            // (`Player.cs:35996-36136`): inside `PlayerFrame` (`:28286`),
+            // after the floor dust, in source order.
+            if let Some(burst) = p.take_walk_effect_dust() {
+                crate::player_boot_dust::drain_walk_effects(app, burst);
+            }
+            // W4-g66 — `PlayerFrame`'s Rudolph flight trail
+            // (`Player.cs:36164-36198`): the mount animator runs after the
+            // walking block, same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_rudolph_trail() {
+                crate::player_trail_dust::drain_rudolph_trail(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
