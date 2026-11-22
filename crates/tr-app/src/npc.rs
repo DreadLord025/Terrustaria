@@ -1198,6 +1198,64 @@ pub enum NpcKind {
     /// NOT list 181). The moan is its OWN `:57360` 500-roll, case 29
     /// style 8 — LIVE (`fighter_ambient_moans`).
     FaceMonster,
+    // ---- W4-d36 E4 batch 4 (the doc-110 §1 definitive table's next four:
+    // SnowFlinx 185→785, ArmoredViking 197→786, Lihzahrd 198→787,
+    // LihzahrdCrawler 199→788).
+    /// `NPCID.SnowFlinx` (185) — W4-d36 E4 (`NPC.cs` SetDefaults case 185,
+    /// `:11361-11374`): 28x28, aiStyle 3, dmg 26, def 12, 70 HP, kb 1.1,
+    /// value 200, NPCHit1/NPCDeath1, coldDamage (no port slot field — the
+    /// IceTortoise note). WIRED: the walker family (the num83 group base
+    /// 1.5 `:57606`) + the air-roll arm (`:58820-58831`: grounded zeroes
+    /// rotation + localAI[0]; airborne with the hit latch localAI[0]==1
+    /// rolls `vx * 0.05`; the latch is the `StrikeNPC_Inner` write
+    /// `:81364-81367`). The strong-hit knockback ×1.5 (`:81449-81452`)
+    /// rides `damage::knock_back_npc`'s type row. FindFrame's humanoid-
+    /// group case list (`:68575`) over the 12-row strip, the air row 1
+    /// (`:69647` does NOT list 185). The hit/death dust + gore 240
+    /// (`:89674-89689`) are the gore/dust wave's remainder.
+    SnowFlinx,
+    /// `NPCID.ArmoredViking` (197) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// 197, `:11520-11532`): 18x40, aiStyle 3, dmg 50, def 28, 280 HP,
+    /// kb 0.45, value 500, NPCHit2/NPCDeath2. WIRED: the walker family
+    /// (the cap-2 group `:57554`); FindFrame's humanoid-group case list
+    /// (`:68577`) over the 15-row strip, the air row 0 (`:69647` lists
+    /// 197 — the UndeadViking shape). The moan is the `:57340` 1000-roll
+    /// (197 IS in the list); the door bash rides the `:59996` flag24 list
+    /// (197 listed). The death gore 257/43/212 (`:88551-88558`) is the
+    /// gore/dust wave's remainder.
+    ArmoredViking,
+    /// `NPCID.Lihzahrd` (198) — W4-d36 E4 (`NPC.cs` SetDefaults case 198,
+    /// `:11533-11545`): 18x40, aiStyle 3, dmg 38, def 20, 400 HP, kb 0.4,
+    /// value 650, NPCHit26/NPCDeath29. WIRED: the walker family (the
+    /// num83 group base 1.5 `:57606`) + the form switch (`:57027-57030`:
+    /// at life <= lifeMax * 0.55 the host Transform(199)s into the
+    /// crawler — the `wants_transform` post-tick drain, the style75
+    /// one-tick fold). FindFrame's humanoid-group case list (`:68578`)
+    /// over the 16-row strip, the air row 1 (`:69647` does NOT list 198).
+    /// The bestiary credit FOLDS onto 199's name (`ContentSamples.cs:1052`,
+    /// 199 Hide=true `NPCID.cs:2577-2582`) — the entry emits at net 198
+    /// keyed on "LihzahrdCrawler" (the BlackRecluse 238 precedent). The
+    /// IdleSounds 1000-roll (`:90103-90106`, style Next(36,38)) is the
+    /// unported IdleSounds wave's remainder; the hit/death dust + gores
+    /// 258-260 (`:86807-86824`) the gore/dust wave's.
+    Lihzahrd,
+    /// `NPCID.LihzahrdCrawler` (199) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 199, `:11546-11558`): 42x30, aiStyle 3, dmg 60, def 30,
+    /// 400 HP, kb 0, value 650, NPCHit26/NPCDeath29. WIRED: the walker
+    /// family on the ladder's OWN 199 arm (`:57486-57519`: cap 4, accel
+    /// 0.1, the grounded ×0.8 over-brake AND counter-drift brake).
+    /// FindFrame case 199 (`:75030-75068`) over the 8-row strip: the
+    /// 0..3 intro band (+1 clock, >6 advance), the 3..7 walk band (|vx|
+    /// clock, >12 advance, wrap at 8 back to 3), airborne holds the walk
+    /// row. The bestiary row is Hide=true (`NPCID.cs:2577-2582`) — the
+    /// credit folds onto the 198 entry; the DRAW sheet stays 199
+    /// (`texture_net_id`'s own row, the BlackRecluse 163 precedent). The
+    /// cs_id hand row keeps 199 so the ladder's type arm stays live (the
+    /// BlackRecluse 163 precedent; s1_f_3's fold exemption). The flag8
+    /// false row (`:57072`) + the wide ahead-probe (`:59953`) ride the
+    /// unported fighter obstacle-scan remainder (the scan is zombie-
+    /// family scoped today).
+    LihzahrdCrawler,
     // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
     // R7-band slots 781/782/793, ascending vanilla order).
     /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
@@ -3691,6 +3749,14 @@ impl Npc {
             | NpcKind::PigronHallow
             | NpcKind::PigronCrimson => 0.5,
             NpcKind::CorruptPenguin => 1.0,
+            // W4-d36 E4 batch 4 (`NPC.cs:11371`/`:11530`/`:11543`/
+            // `:11556`): the Snow Flinx 1.1 (the light body flies), the
+            // Armored Viking 0.45, the Lihzahrd 0.4 (explicit — same as
+            // the stock below), the Lihzahrd Crawler 0 (immovable).
+            NpcKind::SnowFlinx => 1.1,
+            NpcKind::ArmoredViking => 0.45,
+            NpcKind::Lihzahrd => 0.4,
+            NpcKind::LihzahrdCrawler => 0.0,
             // W4-d36 hover batch (`NPC.cs:11180`/`:11232`/`:11634`):
             // Crimera/MossHornet 0.5, Moth 0.4.
             NpcKind::Crimera
@@ -4099,6 +4165,13 @@ impl Npc {
             | NpcKind::PigronHallow
             | NpcKind::PigronCrimson => 16,
             NpcKind::FaceMonster => 10,
+            // W4-d36 E4 batch 4 — case 185 defense 12 (`NPC.cs:11367`),
+            // case 197 defense 28 (`:11526`), case 198 defense 20
+            // (`:11539`), case 199 defense 30 (`:11552`).
+            NpcKind::SnowFlinx => 12,
+            NpcKind::ArmoredViking => 28,
+            NpcKind::Lihzahrd => 20,
+            NpcKind::LihzahrdCrawler => 30,
             // W4-d36 hover batch (`NPC.cs:11175`/`:11229`/`:11631`).
             NpcKind::Crimera => 8,
             NpcKind::MossHornet => 22,
@@ -4497,6 +4570,12 @@ impl Npc {
             | NpcKind::PigronHallow
             | NpcKind::PigronCrimson => 2000.0,
             NpcKind::FaceMonster => 200.0,
+            // W4-d36 E4 batch 4 (`NPC.cs:11372`/`:11531`/`:11544`/
+            // `:11557`).
+            NpcKind::SnowFlinx => 200.0,
+            NpcKind::ArmoredViking => 500.0,
+            NpcKind::Lihzahrd
+            | NpcKind::LihzahrdCrawler => 650.0,
             // W4-d36 hover batch (`NPC.cs:11181`/`:11234`/`:11636`).
             NpcKind::Crimera => 90.0,
             NpcKind::MossHornet => 600.0,
@@ -4604,6 +4683,12 @@ impl Npc {
         // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`) — the strike
         // tick the Hungry's recoil arm reads (S1-D-3 W-1/W-2).
         self.just_hit = true;
+        // W4-d36 E4 batch 4 — the Snow Flinx's air-roll latch
+        // (`NPC.cs:81364-81367`: `localAI[0] = 1f` on every strike); the
+        // AI's `:58827` arm rolls only while it holds.
+        if self.kind == NpcKind::SnowFlinx {
+            self.local_ai[0] = 1.0;
+        }
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -4619,6 +4704,7 @@ impl Npc {
             dir,
             self.kind.no_gravity(),
             expert,
+            self.kind.cs_id(),
         );
         self.vx = vx;
         self.vy = vy;
@@ -4657,6 +4743,10 @@ impl Npc {
         self.hurt_cd = 0.18;
         // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`).
         self.just_hit = true;
+        // The Snow Flinx's air-roll latch (`NPC.cs:81364-81367`).
+        if self.kind == NpcKind::SnowFlinx {
+            self.local_ai[0] = 1.0;
+        }
         let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -4670,6 +4760,7 @@ impl Npc {
             dir,
             self.kind.no_gravity(),
             expert,
+            self.kind.cs_id(),
         );
         self.vx = vx;
         self.vy = vy;
@@ -4768,6 +4859,10 @@ impl Npc {
         n.hurt_cd = 0.18;
         // `StrikeNPC_Inner`'s one-tick flag (`NPC.cs:81274`).
         n.just_hit = true;
+        // The Snow Flinx's air-roll latch (`NPC.cs:81364-81367`).
+        if n.kind == NpcKind::SnowFlinx {
+            n.local_ai[0] = 1.0;
+        }
         let (w, _) = n.size();
         let dir = if n.x + w * 0.5 >= from_x { 1 } else { -1 };
         let (vx, vy) = tr_core::damage::knock_back_npc(
@@ -4781,6 +4876,7 @@ impl Npc {
             dir,
             n.kind.no_gravity(),
             expert,
+            n.kind.cs_id(),
         );
         n.vx = vx;
         n.vy = vy;
@@ -6538,6 +6634,46 @@ impl Npc {
             // `:68574`) — the Frankenstein precedent.
             NpcKind::CorruptPenguin | NpcKind::FaceMonster => {
                 self.update_skeleton(world, player, dt)
+            }
+            // W4-d36 E4 batch 4 — the Armored Viking (197) rides the same
+            // aiStyle-3 walker family on the ladder's cap-2 row
+            // (`NPC.cs:57554`); the Lihzahrd Crawler (199) rides its OWN
+            // cap-4 arm (`:57486`). Their frame clocks are FindFrame's own
+            // arms below (the humanoid group `:68577`, case 199 `:75030`).
+            NpcKind::ArmoredViking | NpcKind::LihzahrdCrawler => {
+                self.update_skeleton(world, player, dt)
+            }
+            // W4-d36 E4 batch 4 — the Lihzahrd (198): the num83 base-1.5
+            // walker + the form switch (`NPC.cs:57027-57030`: at
+            // life <= lifeMax * 0.55 the host Transform(199)s into the
+            // crawler). The request rides the style75 `wants_transform`
+            // drain (the sim's post-AI pass, `world_sim/npcs.rs`); the
+            // C# transforms mid-AI and walks the SAME tick on the 199
+            // ladder arm — the port's drain folds that to the tick's end
+            // (the documented one-tick placement, the style75 precedent).
+            // The netMode != 1 gate folds true (the port is the host).
+            NpcKind::Lihzahrd => {
+                if (self.hp as f64) <= (self.max_hp as f64) * 0.55 {
+                    self.wants_transform = Some(199);
+                }
+                self.update_skeleton(world, player, dt)
+            }
+            // W4-d36 E4 batch 4 — the Snow Flinx (185): the num83 base-1.5
+            // walker + the air-roll arm (`NPC.cs:58820-58831`). The C#
+            // arm sits AFTER the velocity ladder, BEFORE integration; the
+            // port's `update_skeleton` integrates inside, so the roll reads
+            // the post-integration velocity (a one-tick placement fold on
+            // the grounded reset — the pigron integration-tail precedent).
+            NpcKind::SnowFlinx => {
+                self.update_skeleton(world, player, dt);
+                // `:58822-58826` — grounded zeroes the roll + the latch.
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    self.local_ai[0] = 0.0;
+                } else if self.local_ai[0] == 1.0 {
+                    // `:58827-58830` — airborne with the hit latch rolls.
+                    self.rotation += self.vx * 0.05;
+                }
             }
             // W4-d36 E4 batch 3 — the pigron trio (170/171/180): the
             // faithful `AI_002_FloatingEye` machine's OWN phase arm
@@ -8565,6 +8701,82 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 1;
+                }
+            }
+            // W4-d36 E4 batch 4 — the Snow Flinx (185) rides the same
+            // humanoid-group case list (`NPC.cs:68575`) on its 12-row
+            // strip (`Main.npcFrameCount[185]`, `Main.cs:67082`);
+            // airborne the group rests row 1 (`:69642-69646`) — 185 is
+            // NOT in the `:69647` row-0 override list (the FaceMonster
+            // shape).
+            NpcKind::SnowFlinx => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.humanoid_town_frame();
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // W4-d36 E4 batch 4 — the Lihzahrd (198) rides the same
+            // humanoid-group case list (`NPC.cs:68578`) on its 16-row
+            // strip; airborne the group rests row 1 — 198 is NOT in the
+            // `:69647` row-0 override list (the FaceMonster shape). The
+            // crawler form's clock is case 199 below.
+            NpcKind::Lihzahrd => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.humanoid_town_frame();
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // W4-d36 E4 batch 4 — the Armored Viking (197) rides the same
+            // humanoid-group case list (`NPC.cs:68577`) on its 15-row
+            // strip, but IS in the `:69647` row-0 override list, so its
+            // air rest is row 0 (the UndeadViking shape).
+            NpcKind::ArmoredViking => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.humanoid_town_frame();
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
+            // W4-d36 E4 batch 4 — the Lihzahrd Crawler (199), FindFrame
+            // case 199 (`NPC.cs:75030-75068`) over the 8-row strip
+            // (`Main.npcFrameCount[199]`, `Main.cs:67082`): grounded the
+            // sprite rides the facing (`:75031-75041`); rows 0..2 are the
+            // intro band (the +1 clock advances every >6, `:75042-75050`);
+            // at row >= 3 airborne HOLDS the row (`:75053-75056`), else
+            // the |vx| clock advances every >12 and wraps row 8 back to 3
+            // (`:75057-75066`).
+            NpcKind::LihzahrdCrawler => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.frame < 3 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                } else if self.vy == 0.0 {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 12.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 7 {
+                            self.frame = 3;
+                        }
+                    }
                 }
             }
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
@@ -19355,6 +19567,11 @@ impl Npc {
             NpcKind::PigronHallow => 565,
             NpcKind::PigronCrimson => 566,
             NpcKind::FaceMonster => 567,
+            // W4-d36 E4 batch 4 — the next fresh hash slots (injective).
+            NpcKind::SnowFlinx => 568,
+            NpcKind::ArmoredViking => 569,
+            NpcKind::Lihzahrd => 570,
+            NpcKind::LihzahrdCrawler => 571,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24423,7 +24640,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 288] = [
+    pub(super) const ALL_KINDS: [NpcKind; 292] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24726,6 +24943,11 @@ mod tests {
         NpcKind::PigronHallow,
         NpcKind::PigronCrimson,
         NpcKind::FaceMonster,
+        // W4-d36 E4 batch 4.
+        NpcKind::SnowFlinx,
+        NpcKind::ArmoredViking,
+        NpcKind::Lihzahrd,
+        NpcKind::LihzahrdCrawler,
     ];
 
     #[test]
@@ -25350,6 +25572,271 @@ mod tests {
         f.frame_counter = 6.0;
         f.find_frame();
         assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 16 -> 2");
+    }
+
+    /// W4-d36 E4 batch 4 — the Snow Flinx's `SetDefaults` row
+    /// (`NPC.cs:11361-11374`) + the air-roll arm (`:58820-58831`) + the
+    /// strike latch (`:81364-81367`) + the strong-hit ×1.5
+    /// (`:81449-81452`). The protocol id rides the doc-110 §1 slot 785.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_batch4_snow_flinx_pins_the_defaults_and_the_air_roll() {
+        let kind = NpcKind::SnowFlinx;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 185);
+        assert_eq!(kind.to_u16(), 785, "the R7-band slot");
+        assert_eq!(NpcKind::from_u16(785), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (28.0, 28.0));
+        assert_eq!(kind.contact_damage(), 26);
+        assert_eq!(shell.defense(), 12);
+        assert_eq!(kind.max_hp(), 70);
+        assert_eq!(shell.knock_back_resist(), 1.1);
+        assert_eq!(shell.value(), 200.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(1.5), "the num83 base (`:57606`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_1"));
+        // `NPCID.cs:7203-7209`: {44,324} — the frost pair, NO 20.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[44] && b.buff_immune[324] && !b.buff_immune[20]);
+        assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id, 185);
+        assert_eq!(crate::render::entities::npc_rows(185), 12);
+        assert_eq!(kind.humanoid_frame_count(), 12, "the walk band's strip");
+        // The strong-hit ×1.5 (`:81449-81452`): kb 5 resist 1 → num3 5,
+        // damage 20 → num4 200 > lifeMax 100 (strong). The X push reads
+        // the UN-scaled num3 (vx 5); the Y pop reads 5 × 1.5 = 7.5 →
+        // -5.625. Type 0 keeps the plain -3.75.
+        let (vx, vy) =
+            tr_core::damage::knock_back_npc(5.0, 1.0, false, false, 20, 100, (0.0, 0.0), 1, false, false, 185);
+        assert!((vx - 5.0).abs() < 1e-5, "the X push is un-scaled: {vx}");
+        assert!((vy - (-5.0 * 1.5 * 0.75)).abs() < 1e-5, "the ×1.5 pop: {vy}");
+        // The strike arms the latch (`:81364-81367`).
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+        assert!(n.hurt(1, 0.0, 0.0, false, false), "the strike lands");
+        assert_eq!(n.local_ai[0], 1.0, "the air-roll latch");
+        // Grounded the arm zeroes the roll + the latch (`:58822-58826`):
+        // place the flinx on the floor, pre-load a roll, step once.
+        let mut g = Npc::new(kind, 100.0, 30.0 * 16.0 - 28.0, 1, 0.0);
+        g.local_ai[0] = 1.0;
+        g.rotation = 0.5;
+        g.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!((g.rotation, g.local_ai[0]), (0.0, 0.0), "the grounded reset");
+        // Airborne with the latch the roll accumulates (`:58827-58830`):
+        // night forces the chase, so vx is non-zero after the step.
+        let mut w2 = ground();
+        w2.day_time = false;
+        let mut p2 = Player::spawn(&w2);
+        p2.x = 40.0 * 16.0;
+        let mut a = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+        a.local_ai[0] = 1.0;
+        a.update(&w2, &mut p2, 1.0 / 60.0);
+        assert!(a.vy != 0.0, "still airborne");
+        assert_ne!(a.rotation, 0.0, "the vx * 0.05 roll");
+        assert_eq!(a.local_ai[0], 1.0, "the latch holds airborne");
+        // FindFrame: the humanoid group's air row 1 (185 NOT in the
+        // `:69647` row-0 list), the 12-row walk band wraps to 2.
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (1, 0.0), "the air rest is row 1");
+        f.vy = 0.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 3.0), "the walk enters at row 2");
+        f.frame = 11;
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 12 -> 2");
+    }
+
+    /// W4-d36 E4 batch 4 — the Armored Viking's `SetDefaults` row
+    /// (`NPC.cs:11520-11532`): the cap-2 walker, the humanoid-group air
+    /// row 0 (`:69647` lists 197), the {20,44,324} immunity. The protocol
+    /// id rides the doc-110 §1 slot 786. WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_d36_batch4_armored_viking_pins_the_defaults_and_the_air_row_zero() {
+        let kind = NpcKind::ArmoredViking;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 197);
+        assert_eq!(kind.to_u16(), 786, "the R7-band slot");
+        assert_eq!(NpcKind::from_u16(786), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (18.0, 40.0));
+        assert_eq!(kind.contact_damage(), 50);
+        assert_eq!(shell.defense(), 28);
+        assert_eq!(kind.max_hp(), 280);
+        assert_eq!(shell.knock_back_resist(), 0.45);
+        assert_eq!(shell.value(), 500.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(2.0), "the cap-2 group (`:57554`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_2"));
+        // `NPCID.cs:7227-7233`: {20,44,324} — the UndeadViking row.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[20] && b.buff_immune[44] && b.buff_immune[324]);
+        assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id, 197);
+        assert_eq!(crate::render::entities::npc_rows(197), 15);
+        assert_eq!(kind.humanoid_frame_count(), 15, "the walk band's strip");
+        // The moan gate: 197 IS in the `:57340` 1000-roll list — the
+        // walker gate admits it (the roll itself rides the sim stream).
+        assert!(crate::ambient_sound::fighter_walker_kind(kind));
+        // FindFrame: the humanoid group's air row 0 (197 IS in the
+        // `:69647` override list — the UndeadViking shape), the 15-row
+        // walk band wraps to 2.
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (0, 0.0), "the air rest is row 0 (`:69649`)");
+        f.vy = 0.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 3.0), "the walk enters at row 2");
+        f.frame = 14;
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 15 -> 2");
+    }
+
+    /// W4-d36 E4 batch 4 — the Lihzahrd's `SetDefaults` row
+    /// (`NPC.cs:11533-11545`) + the 55%-life form switch
+    /// (`:57027-57030`) + the bestiary credit fold
+    /// (`ContentSamples.cs:1052`). The protocol id rides the doc-110 §1
+    /// slot 787. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_batch4_lihzahrd_pins_the_defaults_and_the_form_switch() {
+        let kind = NpcKind::Lihzahrd;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 198);
+        assert_eq!(kind.to_u16(), 787, "the R7-band slot");
+        assert_eq!(NpcKind::from_u16(787), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (18.0, 40.0));
+        assert_eq!(kind.contact_damage(), 38);
+        assert_eq!(shell.defense(), 20);
+        assert_eq!(kind.max_hp(), 400);
+        assert_eq!(shell.knock_back_resist(), 0.4);
+        assert_eq!(shell.value(), 650.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(1.5), "the num83 base (`:57606`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_26"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_29"));
+        // `NPCID.cs:7234-7240`: {20}.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[20] && !b.buff_immune[44]);
+        // The credit fold: the entry emits at net 198 keyed on the
+        // crawler's name (`ContentSamples.cs:1052`), displays "Lihzahrd".
+        let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 198);
+        assert_eq!(e.credit_id, "LihzahrdCrawler", "the 199 folded credit");
+        assert_eq!(e.name, "Lihzahrd");
+        assert_eq!(crate::render::entities::npc_rows(198), 16);
+        assert_eq!(kind.humanoid_frame_count(), 16, "the walk band's strip");
+        // The form switch (`:57027-57030`): at life <= 400 * 0.55 = 220
+        // the AI requests Transform(199); above it, no request.
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut n = Npc::new(kind, 100.0, 30.0 * 16.0 - 40.0, 1, 0.0);
+        n.hp = 221;
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(n.wants_transform, None, "above the 55% line");
+        n.hp = 220;
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(n.wants_transform, Some(199), "at the 55% line (`<=`)");
+        // The drain's Transform (`:81084-81114`): the kind swap keeps the
+        // integer life share (220 * 400 / 400 = 220), the box grows to
+        // the crawler's 42x30, the request clears.
+        n.transform_to_kind(&w, &player, NpcKind::LihzahrdCrawler);
+        assert_eq!(n.kind, NpcKind::LihzahrdCrawler);
+        assert_eq!(n.hp, 220);
+        assert_eq!(n.max_hp, 400);
+        assert_eq!(n.size(), (42.0, 30.0));
+        assert_eq!(n.wants_transform, None);
+        // FindFrame: the humanoid group's air row 1 (198 NOT in the
+        // `:69647` row-0 list), the 16-row walk band wraps to 2.
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (1, 0.0), "the air rest is row 1");
+        f.vy = 0.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 3.0), "the walk enters at row 2");
+        f.frame = 15;
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 16 -> 2");
+    }
+
+    /// W4-d36 E4 batch 4 — the Lihzahrd Crawler's `SetDefaults` row
+    /// (`NPC.cs:11546-11558`) + FindFrame case 199 (`:75030-75068`) +
+    /// the 199 draw sheet under the 198 credit fold. The protocol id
+    /// rides the doc-110 §1 slot 788. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_batch4_lihzahrd_crawler_pins_the_defaults_and_the_two_band_clock() {
+        let kind = NpcKind::LihzahrdCrawler;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        // The cs_id hand row keeps 199 — the ladder's `:57486` type arm
+        // reads it (the BlackRecluse 163 precedent).
+        assert_eq!(kind.cs_id(), 199);
+        assert_eq!(kind.to_u16(), 788, "the R7-band slot");
+        assert_eq!(NpcKind::from_u16(788), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (42.0, 30.0));
+        assert_eq!(kind.contact_damage(), 60);
+        assert_eq!(shell.defense(), 30);
+        assert_eq!(kind.max_hp(), 400);
+        assert_eq!(shell.knock_back_resist(), 0.0, "immovable (`:11556`)");
+        assert_eq!(shell.value(), 650.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(4.0), "the OWN 199 arm (`:57486`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_26"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_29"));
+        // `NPCID.cs:7241-7247`: {20}.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[20] && !b.buff_immune[44]);
+        // The Hide=true fold: the crawler resolves onto the 198 entry;
+        // the DRAW sheet stays its own 199 (`texture_net_id`).
+        let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 198, "the folded credit's entry");
+        assert_eq!(crate::render::entities::texture_net_id(kind), 199, "the 199 draw sheet");
+        assert_eq!(crate::render::entities::npc_rows(199), 8);
+        // FindFrame case 199: the intro band 0..3 rides the +1 clock
+        // (>6 advance, `:75042-75050`).
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (1, 0.0), "the >6 intro tick advances");
+        // The walk band 3..7 rides the |vx| clock (>12 advance,
+        // `:75057-75066`); grounded the sprite rides the facing.
+        f.frame = 3;
+        f.frame_counter = 8.0;
+        f.vx = 5.0;
+        f.facing = -1;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (4, 0.0), "the >12 walk tick advances");
+        assert_eq!(f.sprite_dir, -1, "the grounded flip (`:75037-75040`)");
+        // The wrap: row 8 falls back to 3 (`:75062-75065`).
+        f.frame = 7;
+        f.frame_counter = 12.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (3, 0.0), "the band wraps 8 -> 3");
+        // Airborne at row >= 3 HOLDS the row + the counter
+        // (`:75053-75056`'s break).
+        f.frame = 5;
+        f.frame_counter = 4.0;
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (5, 4.0), "the air hold");
+        // Airborne in the intro band still ticks (`:75042` has no ground
+        // gate).
+        f.frame = 0;
+        f.frame_counter = 0.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (0, 1.0), "the intro ticks airborne");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -28793,9 +29280,19 @@ mod s1_f_3_tests {
                 covered += 1;
                 // The entry-less kinds (the segments the roster skips) are
                 // exempt — their cs_id rides the sentinel or the hand row.
-                if let Some(e) = crate::bestiary::try_entry_for_npc(kind, SlimeVariant::Blue) {
-                    if e.net_id > 0 && e.net_id != id as i32 {
-                        bad.push(format!("{kind:?}: cs_id {id} vs net {}", e.net_id));
+                // The credit-fold kinds whose cs_id hand row keeps their
+                // OWN vanilla type (the ladder's type arm reads it) while
+                // the bestiary entry rides the folded credit's net are
+                // exempt too: 163 BlackRecluse → the 238 wall-crawler entry
+                // (E4 batch 2), 199 LihzahrdCrawler → the 198 entry (E4
+                // batch 4, `ContentSamples.cs:1052`). The DRAW sheets keep
+                // their own ids via `texture_net_id`.
+                let fold_exempt = matches!(kind, NpcKind::BlackRecluse | NpcKind::LihzahrdCrawler);
+                if !fold_exempt {
+                    if let Some(e) = crate::bestiary::try_entry_for_npc(kind, SlimeVariant::Blue) {
+                        if e.net_id > 0 && e.net_id != id as i32 {
+                            bad.push(format!("{kind:?}: cs_id {id} vs net {}", e.net_id));
+                        }
                     }
                 }
             }
@@ -28806,8 +29303,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            288,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein + E4 batch 2's three fighters + E4 batch 3's five (CorruptPenguin/pigron trio/FaceMonster), L-B gate)"
+            292,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein + E4 batch 2's three fighters + E4 batch 3's five (CorruptPenguin/pigron trio/FaceMonster) + E4 batch 4's four (SnowFlinx/ArmoredViking/Lihzahrd/LihzahrdCrawler), L-B gate)"
         );
         assert!(
             covered > 43,

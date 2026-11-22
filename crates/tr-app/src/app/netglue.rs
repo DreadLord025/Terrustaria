@@ -3586,7 +3586,14 @@ fn npc_seed(
         // W4-d36 E4 batch 3 — the Corrupt Penguin / Face Monster
         // (aiStyle 3) plant their feet like the fighters above.
         | crate::npc::NpcKind::CorruptPenguin
-        | crate::npc::NpcKind::FaceMonster => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::FaceMonster
+        // W4-d36 E4 batch 4 — the Snow Flinx / Armored Viking / Lihzahrd /
+        // Lihzahrd Crawler (aiStyle 3) plant their feet like the fighters
+        // above (the net state overwrites below).
+        | crate::npc::NpcKind::SnowFlinx
+        | crate::npc::NpcKind::ArmoredViking
+        | crate::npc::NpcKind::Lihzahrd
+        | crate::npc::NpcKind::LihzahrdCrawler => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::Penguin
         | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
         // W4-d36 E4 batch 3 — the pigron trio (aiStyle 2, the phase flyer)

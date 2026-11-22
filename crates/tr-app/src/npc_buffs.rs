@@ -508,6 +508,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::PigronHallow
         | NpcKind::PigronCrimson => &[],
         NpcKind::FaceMonster => &[20],
+        // W4-d36 E4 batch 4 (`NPCID.cs:7203-7209`/`:7227-7233`/`:7234-7240`/
+        // `:7241-7247`): 185 {44,324} (the frost pair — NO 20), 197
+        // {20,44,324} (the UndeadViking row), 198/199 {20}.
+        NpcKind::SnowFlinx => &[44, 324],
+        NpcKind::ArmoredViking => &[20, 44, 324],
+        NpcKind::Lihzahrd
+        | NpcKind::LihzahrdCrawler => &[20],
         // W4-d36 hover batch (`NPCID.cs:7125`/`:7146`/`:7277`): 173 {31},
         // 176/205 {20,31}.
         NpcKind::Crimera => &[31],

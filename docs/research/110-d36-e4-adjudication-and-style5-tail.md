@@ -168,24 +168,39 @@ frost/moonlord/darts/thrown sets) and from every `proj_data` range arm.
 
 ## 5. Kinds remaining (the E4 28-kind wave, at this note's commit)
 
-Landed on the branch (18): b0's five (141/148/149/153/154 @767-771), the
+Landed on the branch (22): b0's five (141/148/149/153/154 @767-771), the
 hover trio (173/176/205 @781/782/793), Wolf 155@772, Frankenstein 162@773,
-BlackRecluse 163@774, SwampThing 166@775, UndeadViking 167@776, and E4
+BlackRecluse 163@774, SwampThing 166@775, UndeadViking 167@776, E4
 batch 3's five (CorruptPenguin 168@777, PigronCorruption 170@778,
-PigronHallow 171@779, PigronCrimson 180@783, FaceMonster 181@784 — the
-prior dispatch's WIP COMPLETED: value/update_kind_ai/FindFrame/render_key
-563-567/immunities (181 {20}, `NPCID.cs:7175-7181`; the other four
-null-rows)/bestiary own entries + sheets + portraits + netglue seeds +
-the pigron trio WIRED onto `npc_ai_eye::floating_eye_ai` (the phase latch
-rides localAI[1], the moan the `wants_sound` FighterMoan(9) drain) + the
-two walkers on `update_skeleton`/the num83 ladder rows + the ambient
-fighter gate; pins 288/288/199, ENTRIES 259, D36_SHEETS 18, bijection
-ALL PINS HOLD (scripted, max id 793); 1 witness WRITTEN NOT RUN).
+PigronHallow 171@779, PigronCrimson 180@783, FaceMonster 181@784), and E4
+batch 4's four (SnowFlinx 185@785, ArmoredViking 197@786, Lihzahrd 198@787,
+LihzahrdCrawler 199@788 — all on `update_skeleton`/the ladder rows (185/198
+num83 base 1.5, 197 cap-2, 199 the OWN cap-4 arm `NPC.cs:57486`); the
+SnowFlinx air-roll `:58820-58831` + the strike latch `:81364-81367` + the
+strong-hit kb ×1.5 `:81449-81452` (`knock_back_npc`'s new type row); the
+Lihzahrd 55%-life Transform(199) `:57027-57030` (the `wants_transform`
+drain's 199 arm, the style75 one-tick fold); FindFrame humanoid-group
+`:68575`/`:68577`/`:68578` + case 199's two-band clock `:75030-75068`;
+bestiary 185/197 own entries + the Lihzahrd pair's ONE credit (199
+Hide=true `NPCID.cs:2577-2582`, `ContentSamples.cs:1052`
+`creditIds[198] = creditIds[199]` — the entry emits at net 198 keyed on
+"LihzahrdCrawler", the BlackRecluse 238 precedent; the 199 DRAW sheet
+stays its own via `texture_net_id`, the cs_id hand row keeps 199 so the
+ladder arm stays live, s1_f_3's fold exemption covers the pair);
+immunities 185 {44,324} / 197 {20,44,324} / 198+199 {20}
+(`NPCID.cs:7203`/`:7227`/`:7234`/`:7241`); cues NPCHit1/2/26 +
+NPCDeath1/2/29 (the bank rows added); sheets 202/D36_SHEETS 22, render_key
+568-571, pins 292/292/292, bijection ALL PINS HOLD (scripted, max id 793);
+4 witnesses WRITTEN NOT RUN). The Lihzahrd's solar-form remainder is the
+Transform ITSELF (landed) — the crawler form IS 199, ported in full; the
+`IdleSounds` 1000-roll (`:90103-90106`, style Next(36,38)) + the hit/death
+dust/gores (`:86807-86824`/`:88551-88558`/`:89674-89689`) + the 199
+flag8-false row (`:57072`) / wide ahead-probe (`:59953`, the zombie-scoped
+fighter scan) are the documented remainders.
 **Vampire 159: g8-OWNED** (verified §2 — their pushed tip's `Vampire =>
 762`), skipped on this branch; the wave ports 27, not the brief's 28.
-Remaining unclaimed (**9**): SnowFlinx 185, ArmoredViking 197, Lihzahrd
-198, LihzahrdCrawler 199, the bone trio 201/202/203, SpikedJungleSlime
+Remaining unclaimed (**5**): the bone trio 201/202/203, SpikedJungleSlime
 204, IcyMerman 206. The concurrent writer's in-flight batch may claim
 more — check the tip before taking rows (the AGENTS.md branch-claim
-rule). The next slots ride the §1 definitive table (SnowFlinx 185
-→ 785, ArmoredViking 197 → 786, …, IcyMerman 206 → **794**).
+rule). The next slots ride the §1 definitive table (HeadacheSkeleton 201
+→ 789, …, IcyMerman 206 → **794**).

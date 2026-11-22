@@ -614,6 +614,12 @@ impl NpcKind {
             NpcKind::PigronHallow => 779,
             NpcKind::PigronCrimson => 783,
             NpcKind::FaceMonster => 784,
+            // W4-d36 E4 batch 4 — the doc-110 §1 definitive table's next
+            // four (ascending vanilla order).
+            NpcKind::SnowFlinx => 785,
+            NpcKind::ArmoredViking => 786,
+            NpcKind::Lihzahrd => 787,
+            NpcKind::LihzahrdCrawler => 788,
             // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
             // R7-band slots (ascending vanilla order, the b0 convention).
             NpcKind::Crimera => 781,
@@ -971,6 +977,11 @@ impl NpcKind {
             779 => NpcKind::PigronHallow,
             783 => NpcKind::PigronCrimson,
             784 => NpcKind::FaceMonster,
+            // W4-d36 E4 batch 4 — the doc-110 §1 table's decode arms.
+            785 => NpcKind::SnowFlinx,
+            786 => NpcKind::ArmoredViking,
+            787 => NpcKind::Lihzahrd,
+            788 => NpcKind::LihzahrdCrawler,
             // W4-d36 census batch 1 — the hover trio's decode arms.
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
@@ -1870,7 +1881,9 @@ impl NpcKind {
             // W4-d36 E4 batch 3: the Corrupt Penguin / Face Monster's
             // NPCHit1 (`NPC.cs:11109`/`:11300`).
             | NpcKind::CorruptPenguin
-            | NpcKind::FaceMonster => "NPC_Hit_1",
+            | NpcKind::FaceMonster
+            // W4-d36 E4 batch 4: the Snow Flinx's NPCHit1 (`NPC.cs:11369`).
+            | NpcKind::SnowFlinx => "NPC_Hit_1",
             // W4-d36 E4 batch 3: the pigron trio's NPCHit27
             // (`NPC.cs:11136`/`:11149`/`:11287`) — the pig cue.
             NpcKind::PigronCorruption
@@ -1878,7 +1891,14 @@ impl NpcKind {
             | NpcKind::PigronCrimson => "NPC_Hit_27",
             // W4-d36 E4 batch 2: the Undead Viking's NPCHit2
             // (`NPC.cs:11096`) — the skeleton-family hit cue.
-            NpcKind::UndeadViking => "NPC_Hit_2",
+            NpcKind::UndeadViking
+            // W4-d36 E4 batch 4: the Armored Viking's NPCHit2
+            // (`NPC.cs:11528`) — the same skeleton-family cue.
+            | NpcKind::ArmoredViking => "NPC_Hit_2",
+            // W4-d36 E4 batch 4: the Lihzahrd pair's NPCHit26
+            // (`NPC.cs:11541`/`:11554`) — the lizard hit cue.
+            NpcKind::Lihzahrd
+            | NpcKind::LihzahrdCrawler => "NPC_Hit_26",
             // W4-d36 E4 batch 2: the Black Recluse's NPCHit29
             // (`NPC.cs:11038`) — the spider cue (the Wall Creeper's).
             NpcKind::BlackRecluse => "NPC_Hit_29",
@@ -2202,7 +2222,10 @@ impl NpcKind {
             | NpcKind::Wolf
             // W4-d36 E4 batch 3: the Corrupt Penguin's NPCDeath1
             // (`NPC.cs:11110`).
-            | NpcKind::CorruptPenguin => "NPC_Killed_1",
+            | NpcKind::CorruptPenguin
+            // W4-d36 E4 batch 4: the Snow Flinx's NPCDeath1
+            // (`NPC.cs:11370`).
+            | NpcKind::SnowFlinx => "NPC_Killed_1",
             // W4-d36 E4b: Frankenstein's NPCDeath2 (`NPC.cs:15433`).
             NpcKind::Frankenstein
             // W4-d36 E4 batch 2: the Swamp Thing / Undead Viking NPCDeath2
@@ -2211,7 +2234,14 @@ impl NpcKind {
             | NpcKind::UndeadViking
             // W4-d36 E4 batch 3: the Face Monster's NPCDeath2
             // (`NPC.cs:11301`).
-            | NpcKind::FaceMonster => "NPC_Killed_2",
+            | NpcKind::FaceMonster
+            // W4-d36 E4 batch 4: the Armored Viking's NPCDeath2
+            // (`NPC.cs:11529`).
+            | NpcKind::ArmoredViking => "NPC_Killed_2",
+            // W4-d36 E4 batch 4: the Lihzahrd pair's NPCDeath29
+            // (`NPC.cs:11542`/`:11555`) — the lizard death cue.
+            NpcKind::Lihzahrd
+            | NpcKind::LihzahrdCrawler => "NPC_Killed_29",
             // W4-d36 E4 batch 3: the pigron trio's NPCDeath30
             // (`NPC.cs:11137`/`:11150`/`:11288`) — the pig death cue.
             NpcKind::PigronCorruption
@@ -2612,7 +2642,14 @@ impl NpcKind {
             // W4-d36 E4 batch 3: 168/181 aiStyle 3 (`NPC.cs:11105`/
             // `:11296`) — the num83 group's base-1.5 rows.
             | NpcKind::CorruptPenguin
-            | NpcKind::FaceMonster => 3,
+            | NpcKind::FaceMonster
+            // W4-d36 E4 batch 4: 185/197/198/199 aiStyle 3 (`NPC.cs:11365`/
+            // `:11524`/`:11537`/`:11550`) — the num83 base / cap-2 / num83
+            // base / the own 199 ladder arm.
+            | NpcKind::SnowFlinx
+            | NpcKind::ArmoredViking
+            | NpcKind::Lihzahrd
+            | NpcKind::LihzahrdCrawler => 3,
             // W4-d36 E4 batch 3: the pigron trio aiStyle 2
             // (`NPC.cs:11132`/`:11145`/`:11283`) — AI_002_FloatingEye's
             // OWN 170/171/180 arm (`:52326-52424`), NOT the eyes' chase.
@@ -2701,6 +2738,14 @@ impl NpcKind {
             // remainder — the ladder's `:225` note).
             NpcKind::CorruptPenguin
             | NpcKind::FaceMonster => 1.5,
+            // W4-d36 E4 batch 4 — the Snow Flinx (185) / Lihzahrd (198)
+            // ride the num83 group base 1.5 (`NPC.cs:57606`), the Armored
+            // Viking (197) the cap-2 group (`:57554`), the Lihzahrd
+            // Crawler (199) its OWN arm's cap 4 (`:57486-57519`).
+            NpcKind::SnowFlinx
+            | NpcKind::Lihzahrd => 1.5,
+            NpcKind::ArmoredViking => 2.0,
+            NpcKind::LihzahrdCrawler => 4.0,
             // S1-D-3ff wave A — the `num107` group's per-type rows
             // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
             // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
@@ -3204,6 +3249,13 @@ impl NpcKind {
             // W4-d36 E4 batch 3 (`NPC.cs:11294-11295`): the Face Monster
             // 18x44.
             NpcKind::FaceMonster => (18.0, 44.0),
+            // W4-d36 E4 batch 4 (`NPC.cs:11363-11364`/`:11522-11523`/
+            // `:11535-11536`/`:11548-11549`): the Snow Flinx 28x28, the
+            // Armored Viking / Lihzahrd 18x40, the Lihzahrd Crawler 42x30.
+            NpcKind::SnowFlinx => (28.0, 28.0),
+            NpcKind::ArmoredViking
+            | NpcKind::Lihzahrd => (18.0, 40.0),
+            NpcKind::LihzahrdCrawler => (42.0, 30.0),
             // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
             // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
             NpcKind::Crimera => (30.0, 30.0),
@@ -3332,6 +3384,15 @@ impl NpcKind {
             NpcKind::PigronHallow => 171,
             NpcKind::PigronCrimson => 180,
             NpcKind::FaceMonster => 181,
+            // W4-d36 E4 batch 4 (`NPCID.cs:11047`/`:11071`/`:11073`/
+            // `:11075`). The Lihzahrd Crawler keeps its OWN 199 hand row
+            // even though its bestiary credit folds onto the 198 entry —
+            // the ladder's `:57486` type arm reads cs_id (the BlackRecluse
+            // 163 precedent; s1_f_3's fold exemption covers the pair).
+            NpcKind::SnowFlinx => 185,
+            NpcKind::ArmoredViking => 197,
+            NpcKind::Lihzahrd => 198,
+            NpcKind::LihzahrdCrawler => 199,
             // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
             NpcKind::Crimera => 173,
             NpcKind::MossHornet => 176,
@@ -3390,12 +3451,25 @@ impl NpcKind {
             NpcKind::Frankenstein
             // W4-d36 E4 batch 2 — the Undead Viking rides the same
             // humanoid-group case list (`NPC.cs:68572`), 15-frame strip.
-            | NpcKind::UndeadViking => 15,
+            | NpcKind::UndeadViking
+            // W4-d36 E4 batch 4 — the Armored Viking rides the same
+            // humanoid-group case list (`NPC.cs:68577`), 15-frame strip
+            // (`Main.npcFrameCount[197]`, `Main.cs:67082`).
+            | NpcKind::ArmoredViking => 15,
             // W4-d36 E4 batch 3 — the Face Monster rides the same
             // humanoid-group case list (`NPC.cs:68574`) on its 16-frame
             // strip (`Main.npcFrameCount[181]`, `Main.cs:67082`; no
             // ExtraFramesCount row — `NPCID.cs:10464` skips 181).
             NpcKind::FaceMonster => 16,
+            // W4-d36 E4 batch 4 — the Lihzahrd rides the same humanoid-
+            // group case list (`NPC.cs:68578`) on its 16-frame strip
+            // (`Main.npcFrameCount[198]`, `Main.cs:67082`; no
+            // ExtraFramesCount row — `NPCID.cs:10464` skips 198).
+            NpcKind::Lihzahrd => 16,
+            // W4-d36 E4 batch 4 — the Snow Flinx rides the humanoid-group
+            // case list (`NPC.cs:68575`) on its 12-frame strip
+            // (`Main.npcFrameCount[185]`, `Main.cs:67082`).
+            NpcKind::SnowFlinx => 12,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
@@ -3917,6 +3991,12 @@ impl NpcKind {
             | NpcKind::PigronHallow
             | NpcKind::PigronCrimson => 210,
             NpcKind::FaceMonster => 70,
+            // W4-d36 E4 batch 4 (`NPC.cs:11368`/`:11527`/`:11540`/
+            // `:11553`).
+            NpcKind::SnowFlinx => 70,
+            NpcKind::ArmoredViking => 280,
+            NpcKind::Lihzahrd
+            | NpcKind::LihzahrdCrawler => 400,
             // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
             NpcKind::Crimera => 40,
             NpcKind::MossHornet => 220,
@@ -4307,6 +4387,12 @@ impl NpcKind {
             | NpcKind::PigronHallow
             | NpcKind::PigronCrimson => 70,
             NpcKind::FaceMonster => 25,
+            // W4-d36 E4 batch 4 (`NPC.cs:11366`/`:11525`/`:11538`/
+            // `:11551`).
+            NpcKind::SnowFlinx => 26,
+            NpcKind::ArmoredViking => 50,
+            NpcKind::Lihzahrd => 38,
+            NpcKind::LihzahrdCrawler => 60,
             // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
             NpcKind::Crimera => 22,
             NpcKind::MossHornet => 70,

@@ -671,6 +671,19 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             // LIVE in `fighter_ambient_moans` below.
             | CorruptPenguin
             | FaceMonster
+            // W4-d36 E4 batch 4 — the four ride the same plain
+            // `update_skeleton` walker (the Lihzahrd's transform request
+            // returns nothing before it), so their `ai[3]` is free for
+            // the idle counter. The moan arms: 197 IS in the `:57340`
+            // 1000-roll list (LIVE below); 185 is in NEITHER AI_003 moan
+            // list; 198/199 carry their OWN `IdleSounds` 1000-roll
+            // (`NPC.cs:90103-90106`, style Next(36,38)) — the unported
+            // IdleSounds wave's remainder, so the gate keeps their
+            // AI_003 draw shape exact (the rolls never fire).
+            | SnowFlinx
+            | ArmoredViking
+            | Lihzahrd
+            | LihzahrdCrawler
     )
 }
 

@@ -1125,6 +1125,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // but its DRAW sheet is its own NPC_163 (the ground crawler's art)
         // — the fishron-hazard precedent. The 238 wall form is d37's kind.
         NpcKind::BlackRecluse => 163,
+        // W4-d36 E4 batch 4: the Lihzahrd Crawler's bestiary credit folds
+        // onto the 198 entry (`ContentSamples.cs:1052`, Hide=true
+        // `NPCID.cs:2577-2582`), but its DRAW sheet is its own NPC_199
+        // (the crawler form's art) — the BlackRecluse precedent.
+        NpcKind::LihzahrdCrawler => 199,
         _ => kind.net_id() as u16,
     }
 }
@@ -1266,7 +1271,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// render nothing. Batch 0: 141/148/149/153/154; hover batch:
 /// 173/176/205; E4: 155; E4b: 162; E4 batch 2: 163/166/167 (163 is the
 /// DRAW sheet — the bestiary credit folds onto 238, `texture_net_id`).
-pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181];
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181, 185, 197, 198, 199];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3215,7 +3220,15 @@ pub(crate) fn draw_npcs(
             | NpcKind::PigronCorruption
             | NpcKind::PigronHallow
             | NpcKind::PigronCrimson
-            | NpcKind::FaceMonster => {
+            | NpcKind::FaceMonster
+            // W4-d36 E4 batch 4 — the four kinds' own strips (185 = 12,
+            // 197 = 15, 198 = 16, 199 = 8, `Main.cs:67082`). The Lihzahrd
+            // Crawler's `texture_net_id` row keeps the 199 draw sheet
+            // under the 198 credit fold.
+            | NpcKind::SnowFlinx
+            | NpcKind::ArmoredViking
+            | NpcKind::Lihzahrd
+            | NpcKind::LihzahrdCrawler => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
@@ -3391,6 +3404,11 @@ pub(crate) fn draw_npcs(
                     | NpcKind::PigronCorruption
                     | NpcKind::PigronHallow
                     | NpcKind::PigronCrimson
+                    // W4-d36 E4 batch 4: the Snow Flinx's air roll
+                    // (`NPC.cs:58829`, `rotation += vx * 0.05` behind the
+                    // localAI[0] hit latch) — the generic draw rotates by
+                    // npc.rotation (`Main.cs:26632`).
+                    | NpcKind::SnowFlinx
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

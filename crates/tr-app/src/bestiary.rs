@@ -2345,6 +2345,42 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Face Monster",
     },
+    // W4-d36 E4 batch 4 — the Snow Flinx / Armored Viking own entries (no
+    // Hide row — `NPCID.cs:2481-2487`/`:2563-2569` carry Velocity=1f only;
+    // the credit ids are the `NPCID.Search.GetName` names,
+    // `ContentSamples.cs:868-870`). The populator adds the UndergroundSnow
+    // biome to 185 (`BestiaryDatabaseNPCsPopulator.cs:1182`) and 197
+    // (`:1552`). The Lihzahrd pair shares ONE credit: 199 is `Hide = true`
+    // (`NPCID.cs:2577-2582`) and 198's credit folds onto 199's name
+    // (`ContentSamples.cs:1052`: `creditIds[198] = creditIds[199]`), so the
+    // entry emits at net 198 keyed on "LihzahrdCrawler" (the BlackRecluse
+    // 238 precedent — the hidden form's credit, the visible form's net).
+    // Both display "Lihzahrd" (the en-US `NPCs.Lihzahrd*.DisplayName` rows);
+    // the populator attaches TheTemple to 198 (`:1468`) and 199 (`:1395`).
+    BestiaryEntryDef {
+        credit_id: "SnowFlinx",
+        net_id: 185,
+        kind: NpcKind::SnowFlinx,
+        variant: None,
+        quick_unlock: false,
+        name: "Snow Flinx",
+    },
+    BestiaryEntryDef {
+        credit_id: "ArmoredViking",
+        net_id: 197,
+        kind: NpcKind::ArmoredViking,
+        variant: None,
+        quick_unlock: false,
+        name: "Armored Viking",
+    },
+    BestiaryEntryDef {
+        credit_id: "LihzahrdCrawler",
+        net_id: 198,
+        kind: NpcKind::Lihzahrd,
+        variant: None,
+        quick_unlock: false,
+        name: "Lihzahrd",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2466,6 +2502,11 @@ pub fn try_entry_for_npc(
         // kill credit is "Sharkron" — only the UI provider maps onto 370,
         // `BestiaryDatabaseNPCsPopulator.cs:691`).
         NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
+        // W4-d36 E4 batch 4 — the Lihzahrd Crawler (199) is Hide=true
+        // (`NPCID.cs:2577-2582`); its credit folds onto the 198 entry
+        // (`ContentSamples.cs:1052`: `creditIds[198] = creditIds[199]`),
+        // keyed on the crawler's name (the BlackRecluse 238 precedent).
+        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2537,6 +2578,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-d36 E4 batch 4 — the Lihzahrd Crawler folds onto the 198 entry
+        // (the `try_entry_for_npc` twin above; `ContentSamples.cs:1052`).
+        NpcKind::LihzahrdCrawler => NpcKind::Lihzahrd,
         other => other,
     };
     ENTRIES

@@ -1710,6 +1710,30 @@ fn portrait_data(
                 .unwrap_or(44.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // W4-d36 E4 batch 4 portraits — the sheet's frame height (the
+        // vanilla strips: 185 = 12, 197 = 15, 198 = 16, `Main.cs:67082`)
+        // with the padded box width (the b0 convention). The Lihzahrd
+        // entry carries the 198 net id (the 199 folded credit), so its
+        // portrait samples the visible form's 16-row strip; the crawler
+        // kind folds onto that entry (`entry_for_npc`).
+        (NpcKind::SnowFlinx, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 32.0, h, white)
+        }
+        (NpcKind::ArmoredViking, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::Lihzahrd | NpcKind::LihzahrdCrawler, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
     }
 }
 

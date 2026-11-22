@@ -99,13 +99,16 @@ pub fn strike_npc_damage(damage: i32, defense: i32, crit: bool) -> i32 {
 /// STRONG hit (`num4 > lifeMax`, `:81423-81462`): the X push-away
 /// (`:81425-81448`) AND the Y pop (`:81453-81461`, `-num3 * 0.75`, `* 0.5`
 /// for no-gravity flyers) — the Y pop lives INSIDE the gate, not outside it.
-/// The type-185 x1.5 (`:81449-81452`) has no ported `NpcKind` (SnowFlinx,
-/// `NPCID.cs:11047`) and is skipped.
+/// The type-185 x1.5 (`:81449-81452`, the Snow Flinx — W4-d36 E4 batch 4)
+/// scales num3 AFTER the X push, BEFORE the Y pop: only the pop grows.
 ///
 /// WEAK hit (else, `:81463-81474`): the velocity is SET outright —
 /// `Y = -num3 * 0.75 * knockBackResist` (no-gravity `* 0.5 * knockBackResist`)
 /// and `X = num3 * hitDirection * knockBackResist` (the resist multiplies a
 /// second time, verbatim). Returns the new velocity.
+///
+/// `npc_type` is the vanilla `NPC.type` (`cs_id`); 0 for the type-less
+/// test fixtures (no type row fires).
 pub fn knock_back_npc(
     knock_back: f32,
     knock_back_resist: f32,
@@ -117,6 +120,7 @@ pub fn knock_back_npc(
     hit_direction: i32,
     no_gravity: bool,
     expert: bool,
+    npc_type: u16,
 ) -> (f32, f32) {
     let (mut vx, mut vy) = velocity;
     if knock_back > 0.0 && knock_back_resist > 0.0 {
@@ -164,6 +168,12 @@ pub fn knock_back_npc(
                 if vx > num3 {
                     vx = num3;
                 }
+            }
+            // The type-185 ×1.5 (`NPC.cs:81449-81452`, W4-d36 E4 batch 4):
+            // the Snow Flinx's light body pops 1.5× higher — AFTER the X
+            // push (which read the un-scaled num3), BEFORE the Y pop.
+            if npc_type == 185 {
+                num3 *= 1.5;
             }
             // The Y pop (`NPC.cs:81453-81461`) — INSIDE the strong-hit gate:
             // upward unless the target is a no-gravity flyer (pushed at 0.5).
@@ -356,14 +366,14 @@ mod tests {
         // SET, not nudged: X = num3 * hitDirection * resist, Y = -num3 * 0.75
         // * resist (no-gravity 0.5). The resist multiplies a SECOND time.
         // kb 5, resist 0.8 -> num3 = 4; damage 2 -> num4 = 20 <= lifeMax 100.
-        let (vx, vy) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), 1, false, false);
+        let (vx, vy) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), 1, false, false, 0);
         assert!((vx - 4.0 * 1.0 * 0.8).abs() < 1e-5, "vx {vx}");
         assert!((vy - (-4.0 * 0.75 * 0.8)).abs() < 1e-5, "vy {vy}");
         // The no-gravity flyer's weak branch uses 0.5 (`:81471`).
-        let (_, vy) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), 1, true, false);
+        let (_, vy) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), 1, true, false, 0);
         assert!((vy - (-4.0 * 0.5 * 0.8)).abs() < 1e-5, "vy {vy}");
         // The hit direction flips the X sign (`:81473`).
-        let (vx, _) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), -1, false, false);
+        let (vx, _) = knock_back_npc(5.0, 0.8, false, false, 2, 100, (3.0, 1.0), -1, false, false, 0);
         assert!((vx - (-4.0 * 0.8)).abs() < 1e-5, "vx {vx}");
     }
 
@@ -372,19 +382,19 @@ mod tests {
         // NPC.cs:81423-81461 — the Y pop runs only when `num4 > lifeMax`.
         // kb 5, resist 1 -> num3 = 5; damage 20 -> num4 = 200 > lifeMax 100.
         // Starting vy 0 > pop -3.75, so vy += -3.75 -> -3.75.
-        let (vx, vy) = knock_back_npc(5.0, 1.0, false, false, 20, 100, (0.0, 0.0), 1, false, false);
+        let (vx, vy) = knock_back_npc(5.0, 1.0, false, false, 20, 100, (0.0, 0.0), 1, false, false, 0);
         assert!((vx - 5.0).abs() < 1e-5, "vx {vx}");
         assert!((vy - (-5.0 * 0.75)).abs() < 1e-5, "vy {vy}");
         // A WEAK hit with the same velocity must NOT pop Y (the gate): the
         // old port popped unconditionally — this pins the fix.
-        let (_, vy) = knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 0.0), 1, false, false);
+        let (_, vy) = knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 0.0), 1, false, false, 0);
         // Weak branch sets vy = -5 * 0.75 * 1 = -3.75 too, but via the SET
         // path; the distinguishing case is a falling target (vy > 0): the
         // strong path ADDS the pop, the weak path OVERWRITES.
         let (_, vy_strong) =
-            knock_back_npc(5.0, 1.0, false, false, 20, 100, (0.0, 2.0), 1, false, false);
+            knock_back_npc(5.0, 1.0, false, false, 20, 100, (0.0, 2.0), 1, false, false, 0);
         let (_, vy_weak) =
-            knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 2.0), 1, false, false);
+            knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 2.0), 1, false, false, 0);
         assert!((vy_strong - (2.0 - 3.75)).abs() < 1e-5, "strong adds: {vy_strong}");
         assert!((vy_weak - (-3.75)).abs() < 1e-5, "weak overwrites: {vy_weak}");
     }
@@ -393,11 +403,11 @@ mod tests {
     fn knockback_on_fire2_lifts_the_impulse_ten_percent() {
         // NPC.cs:81390-81393 — onFire2 multiplies num3 by 1.1 BEFORE the caps.
         // kb 5, resist 1 -> num3 = 5 -> 5.5; weak hit sets vy = -5.5*0.75.
-        let (_, vy) = knock_back_npc(5.0, 1.0, true, false, 2, 100, (0.0, 0.0), 1, false, false);
+        let (_, vy) = knock_back_npc(5.0, 1.0, true, false, 2, 100, (0.0, 0.0), 1, false, false, 0);
         assert!((vy - (-5.0 * 1.1 * 0.75)).abs() < 1e-4, "vy {vy}");
         // Without the debuff the impulse is the plain 5.
         let (_, vy_plain) =
-            knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 0.0), 1, false, false);
+            knock_back_npc(5.0, 1.0, false, false, 2, 100, (0.0, 0.0), 1, false, false, 0);
         assert!((vy_plain - (-5.0 * 0.75)).abs() < 1e-5, "vy {vy_plain}");
     }
 
@@ -406,7 +416,7 @@ mod tests {
         // NPC.cs:81414-81417 — the crit x1.4 lands after the cap chain. A
         // capped impulse (num3 = 16) crits to 22.4, NOT capped again.
         // kb 30, resist 1 -> raw 30 -> caps to 16; weak hit vy = -16*1.4*0.75.
-        let (_, vy) = knock_back_npc(30.0, 1.0, false, true, 2, 100, (0.0, 0.0), 1, false, false);
+        let (_, vy) = knock_back_npc(30.0, 1.0, false, true, 2, 100, (0.0, 0.0), 1, false, false, 0);
         assert!((vy - (-16.0 * 1.4 * 0.75)).abs() < 1e-4, "vy {vy}");
     }
 
@@ -416,9 +426,9 @@ mod tests {
         // damage 8: classic num4 = 80 <= lifeMax 100 (weak), expert 120 > 100
         // (strong). The strong path adds the pop to vy 2; the weak overwrites.
         let (_, vy_classic) =
-            knock_back_npc(5.0, 1.0, false, false, 8, 100, (0.0, 2.0), 1, false, false);
+            knock_back_npc(5.0, 1.0, false, false, 8, 100, (0.0, 2.0), 1, false, false, 0);
         let (_, vy_expert) =
-            knock_back_npc(5.0, 1.0, false, false, 8, 100, (0.0, 2.0), 1, false, true);
+            knock_back_npc(5.0, 1.0, false, false, 8, 100, (0.0, 2.0), 1, false, true, 0);
         assert!((vy_classic - (-3.75)).abs() < 1e-5, "classic weak: {vy_classic}");
         assert!((vy_expert - (2.0 - 3.75)).abs() < 1e-5, "expert strong: {vy_expert}");
     }

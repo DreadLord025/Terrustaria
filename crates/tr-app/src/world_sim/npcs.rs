@@ -6183,9 +6183,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.npcs.extend(new_bubbles);
     }
     // The aiStyle-75 carrier-gone Transform requests (`NPC.cs:36056-36063`:
-    // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
-    // (`:81084-81114`) in place — the bottom-anchored reposition, the
-    // SetDefaults swap, TargetClosest and the integer life rescale.
+    // 390 → 382 RayGunner, 416 → 518 SolarSpearman) + the Lihzahrd's
+    // wounded form switch (`NPC.cs:57027-57030`: 198 → 199 at 55% life,
+    // W4-d36 E4 batch 4): `NPC.Transform` (`:81084-81114`) in place — the
+    // bottom-anchored reposition, the SetDefaults swap, TargetClosest and
+    // the integer life rescale.
     {
         let player_ref = app.player.as_ref();
         let world_ref = &app.world;
@@ -6196,6 +6198,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        199 => NpcKind::LihzahrdCrawler,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
