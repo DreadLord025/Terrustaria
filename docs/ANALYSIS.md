@@ -3064,6 +3064,44 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
   unported (research/19 deviation 14).
 * **The keyboard draws the desktop layer only** (`ShowGamepadHints` false
   without a gamepad); the 50-key grid layer is kept behind `TR_VK_GRID=1`.
+* **Text-entry bindings (W4-c25)** — `ui/keyboard.rs` now carries the field-less
+  text-entry layer (`TextField`, `get_input_text`, `BackspaceRepeat`). The
+  1.4.5.8 decompilation has **no `UITextField.cs`**: the semantics port from
+  `UITextBox.cs:11-78` (caret/insert/backspace/cursor), `Main.GetInputText`
+  (`Main.cs:20010-20121` — shortcuts, typed queue, flags, repeat) and ReLogic's
+  `Clipboard.SanitizeClipboardText`. Documented mappings/deviations:
+  (1) the caret is a `char` index, not the C# UTF-16 code-unit index — the
+  port's strings are `char`-indexed and `TrimUserString`'s dangling-surrogate
+  guard (`Utils.cs:2845-2848`) has no reachable arm; (2) there is no ranged
+  selection in any of the sources — copy/cut take the whole string;
+  (3) `GetInputText`'s `ChatManager.ParseMessage` snippet-delete arm
+  (`Main.cs:20110-20111`) is not ported — no text-field consumer produces chat
+  markup, so the plain `TrimLastCharacter` arm is the live one; (4) the
+  bindings are pure (clipboard in/out through parameters, no OS access, no
+  IME — `imeCompositionActive` gates are caller-side and currently always
+  false); (5) no consumer is wired yet — the crafting search box
+  (`ItemFilters.BySearch`) and the chest rename keep their current paths until
+  their own tasks attach the field.
+  **W4-c25 RETIRE FINAL (SEALED, `docs/research/314-c25-keyboard-text-field-final.md`)**:
+  the two-commit census (`420fa3ecf` bindings + `e5daa96f7` docs/anchors),
+  the f22 sign co-lane compose re-verified at the moved f22 tip `c727ebc02`
+  (the retire-4 instruction `a2fdf86fb` stands — keyboard.rs auto-merges
+  ZERO conflicts, composed blob `2400d944b` = f22 + c25's two blocks
+  verbatim, +516/−0; the ONLY conflicts are the anchors.txt/PORT_MAP.md
+  append races, keep BOTH sides' rows), the chat/sign/text-input ownership
+  split (f22 the sign session + sign-aware NPCChatPanel, c25 the pure
+  caret/GetInputText bindings, c24 the `journey.search_writing` event.text
+  stand-in until a consumer attaches — the ONE future seam is
+  `UIVirtualKeyboard.DrawSelf:750`'s `GetInputText` call), and the
+  KEYBOARD-FAMILY bible SEALED (f22-sign-CANONICAL + c25-text-entry-
+  CANONICAL + c24-search-STAND-IN + the M3 chest-rename path; no further
+  keyboard port work on any lane). Registry: 314 per research/150 §8.1
+  ROUND 4 FINAL (d54 `a15cb634b`; chain 281→314 — the 281-block self-pick
+  race; the original 281 pick per §6.3 round 2 after a fresh 719-ref
+  sweep, the provisional 246 double-taken f19/g43). 3 new SEAL witnesses WRITTEN
+  NOT RUN (the sign Enter newline outside the pass, the pinned-caret
+  TextField/KeyboardState agreement, the search 50-cap/stop-flag seam);
+  12 c25 tests total. No c25 follow-up open.
 * ~~**The Advanced seed tab is out of scope**~~ **STALE — closed**: the
   Advanced tab + secret-seeds list landed (W4-d85 rows 11-12,
   `ui/world_creation_advanced.rs` + `ui/secret_seeds_list.rs`); the
