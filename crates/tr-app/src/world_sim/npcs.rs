@@ -4377,6 +4377,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-c10 — `Player.IsThisCenx()` pre-stamp for the aiStyle-68 poop
+    // gate's Cenx bypass (`NPC.cs:34629`): the player name lives on the
+    // App, outside the AI's `&Player` borrow (the wind pre-stamp's
+    // convention). Only the four swimmers read it. W4-c10 roster tail:
+    // the GoldBird's aiStyle-24 poop gate (`NPC.cs:25319`) reads the
+    // same flag; the essScale/cloudAlpha stamps feed the 66 flicker
+    // (`:34257`) and the 24 ctx (`:25343`).
+    {
+        let is_cenx = crate::npc_ai_style24::is_this_cenx(&app.player_name);
+        let ess = app.ess_scale;
+        // `Main.cloudAlpha`'s port carrier (the scene-filter feed's own
+        // source, `app/frame/world.rs:197`).
+        let cloud = app.rain.visual_alpha();
+        for n in app.npcs.iter_mut() {
+            if matches!(
+                n.kind,
+                NpcKind::Duck2
+                    | NpcKind::DuckWhite2
+                    | NpcKind::Seagull2
+                    | NpcKind::Grebe2
+                    | NpcKind::GoldBird
+            ) {
+                n.player_is_cenx = is_cenx;
+            }
+            if n.kind == NpcKind::EnchantedNightcrawler {
+                n.ess_scale = ess;
+            }
+            if n.kind == NpcKind::GoldBird {
+                n.cloud_alpha = cloud;
+            }
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
@@ -4411,6 +4443,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // borrow) — a second `app.spawn_ctx()` here would re-borrow `*app`
     // immutably while `npcs_rng` holds it mutable (E0502).
     let dust_ctx = dust_spawn_ctx;
+    // W4-c10 roster tail — the GoldWorm sparkle's `Lighting.GetColor`
+    // read (`NPC.cs:92348`): the last draw's computed LightMap (the
+    // ess_scale stamp's one-frame convention — the sim runs ahead of the
+    // draw that refreshes it).
+    let app_light = &app.light;
     // Limit the scope of borrows to just the tick closure
     {
         // S1-D-3 W-1: `&mut` — the WoF arm's band/index statics write back
@@ -4507,6 +4544,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         }
                     }
                 }
+                // W4-c10 roster tail — the GoldButterfly's threat-scan
+                // pool (`NPC.cs:45071-45079`: `Main.npc[0..maxNPCs]` in
+                // slot order — active, damage > 0, !friendly, the
+                // int-truncated Hitbox). The c9 Shimmerfly pre-pass's
+                // shape: the views are stamped before the slot loop;
+                // ORDER DEVIATION (documented): the C# scans at the
+                // fly's own slot turn, the port reads the tick-start
+                // pool — one tick of lag for later slots. RNG-free.
+                if npcs.iter().any(|n| n.kind == NpcKind::GoldButterfly && n.hp > 0) {
+                    let views: Vec<crate::npc_ai_style64::Ai64NpcView> = npcs
+                        .iter()
+                        .map(|m| {
+                            let (mw, mh) = m.size();
+                            crate::npc_ai_style64::Ai64NpcView {
+                                active: m.hp > 0,
+                                damage: m.damage_override.unwrap_or(m.kind.contact_damage()),
+                                friendly: m.friendly,
+                                x: m.x,
+                                y: m.y,
+                                width: mw as i32,
+                                height: mh as i32,
+                            }
+                        })
+                        .collect();
+                    for fi in 0..npcs.len() {
+                        if npcs[fi].kind == NpcKind::GoldButterfly && npcs[fi].hp > 0 {
+                            npcs[fi].butterfly_threat_views = views.clone();
+                        }
+                    }
+                }
                 // The single session player as slot 0 (the S1-D-3p
                 // convention — the aiStyle-75 `TargetClosest` reads).
                 let cand = crate::npc_target::session_candidate(player);
@@ -4538,6 +4605,62 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // `:90534-90556`): the wild critter's 90-tick
                         // friendly window ticks down pre-AI, in slot order.
                         crate::bug_net::tick_catchable_immunity(n);
+                        // W4-c10 roster tail — `UpdateNPC_CastLights`'s
+                        // IsGoldCritter sparkle (`NPC.cs:92345-92368`,
+                        // called BEFORE `AI()` at `:90320`): of the new
+                        // kinds only the GoldWorm 448 is in the family's
+                        // set (the module's census; the other six golds
+                        // are the gold-critter wave's feed). The tile
+                        // light rides the last draw's LightMap (the
+                        // ess_scale stamp's one-frame convention); the
+                        // ONE Next(300) gate draw rides the UpdateNPCs
+                        // stream here, the dust-43 spawn is the standing
+                        // visual skip (the FungiSpore precedent — the
+                        // draw is kept so the stream order holds).
+                        if n.kind == NpcKind::GoldWorm && n.hp > 0 {
+                            let (nw, nh) = n.size();
+                            let pos = glam::Vec2::new(n.x, n.y) + n.net_offset;
+                            let cx = pos.x + nw * 0.5;
+                            let cy = pos.y + nh * 0.5;
+                            let l = app_light.get((cx as i32) / 16, (cy as i32) / 16);
+                            let bytes = [
+                                (l[0].clamp(0.0, 1.0) * 255.0) as u8,
+                                (l[1].clamp(0.0, 1.0) * 255.0) as u8,
+                                (l[2].clamp(0.0, 1.0) * 255.0) as u8,
+                            ];
+                            let _spawn_dust_43 = crate::npc_ai_style66::gold_worm_sparkle(
+                                bytes, npcs_rng,
+                            );
+                        }
+                        // W4-c10 roster tail — the crawler FindFrame's
+                        // slope probe (`NPC.cs:72806-72827`/`:72861-72882`):
+                        // GetTileSafely at the truncated centre column /
+                        // position row; slope 0 re-reads the row below.
+                        // `find_frame` holds no `&World`, so the verdict
+                        // is stamped here (the wind pre-stamp convention;
+                        // the PRE-AI position — the C# probes post-AI,
+                        // the one-tick lag is the documented deviation).
+                        if matches!(
+                            n.kind,
+                            NpcKind::Worm
+                                | NpcKind::GoldWorm
+                                | NpcKind::EnchantedNightcrawler
+                                | NpcKind::Grubby
+                                | NpcKind::Sluggy
+                                | NpcKind::Buggy
+                        ) {
+                            let (nw, _nh) = n.size();
+                            let col = ((n.x + nw * 0.5) as i32) / 16;
+                            let row = (n.y as i32) / 16;
+                            let slope_at = |r: i32| {
+                                world.tile(col, r).map_or(0, |t| t.slope())
+                            };
+                            let mut s = slope_at(row);
+                            if s == 0 {
+                                s = slope_at(row + 1);
+                            }
+                            n.frame_slope = if s == 1 || s == 2 { s } else { 0 };
+                        }
                         if crate::ambient_sound::fighter_walker_kind(n.kind) {
                             let (nw, nh) = n.size();
                             let player_intersects = n.x < player.x + crate::player::WIDTH
@@ -4734,12 +4857,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // draws — the table's rolls, then the legacy family's
                     // slot/pitch draws. The C#'s `Main.netMode == 2` gate
                     // (`NPC.cs:92245`) is the dedicated server's; the port
-                    // has none. No ported kind matches the critter table
-                    // yet (M4-NPC's roster has no critter ids), so the
-                    // emitter stays silent until they land.
+                    // has none. W4-c10 roster tail: the table's members
+                    // are now ported (442's chirp ladder, 445's croak,
+                    // 447's squeak — `NPC.cs:92264-92312`); the key is
+                    // the VANILLA id (`cs_id` — `to_u16` is the port's
+                    // protocol space, the waterfowl 602/603 rows already
+                    // ride it correctly only because those ids coincide).
                     let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
                     let cue = crate::ambient_sound::critter_sound_cue(
-                        n.kind.to_u16() as i32,
+                        n.kind.cs_id() as i32,
                         world.day_time,
                         world.time,
                         (world.world_surface * 16.0) as f32,
@@ -4763,6 +4889,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         });
     }
     app.npc_step.cap_backlog();
+    // W4-c10 roster tail — the EnchantedNightcrawler's flicker light
+    // (`NPC.cs:34258`, the aiStyle-66 head): the AI queued the
+    // `(tileX, tileY, rgb)` on `wants_critter_light` (the Next(90,111)
+    // draw already rode the UpdateNPCs stream at the C# call position);
+    // the drain lands it in the shared `EntityLights` list (the
+    // `item_lights::rand_light` feed's shape, `world_sim/items.rs:689`).
+    for n in app.npcs.iter_mut() {
+        if let Some((x, y, rgb)) = n.wants_critter_light.take() {
+            app.entity_lights.add(x, y, rgb);
+        }
+    }
     // `NPC.cs:90504`: the switch-tile bridge — an NPC whose box reaches a
     // pressure plate trips the wiring (the C#'s call sits right after the
     // NPC's collision pass, inside `NPC.Update`). The port runs it as a
@@ -6298,6 +6435,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
     // (`:81084-81114`) in place — the bottom-anchored reposition, the
     // SetDefaults swap, TargetClosest and the integer life rescale.
+    // W4-c10 sweep (the W4-b3 co-lane seam): the waterfowl takeoff
+    // (`NPC.cs:53180-53184`, the town arm's `TownOutputs::waterfowl_takeoff`
+    // → `wants_transform`) joins the drain — 362→363 / 364→365 /
+    // 602→603 / 608→609. The b3 adapter's drain wiring queues the
+    // request; until it lands the walkers ride `waterfowl_walker_step`'s
+    // in-place gate (both paths run the same `transform_to_kind`).
     {
         let player_ref = app.player.as_ref();
         let world_ref = &app.world;
@@ -6308,6 +6451,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        // W4-c10 sweep — the waterfowl takeoff targets.
+                        363 => NpcKind::Duck2,
+                        365 => NpcKind::DuckWhite2,
+                        603 => NpcKind::Seagull2,
+                        609 => NpcKind::Grebe2,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
@@ -18420,5 +18568,157 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+}
+#[cfg(test)]
+mod w4_c10_tail_wiring_tests {
+    //! W4-c10 roster tail — the sim wiring witnesses: the threat-view
+    //! pre-pass, the essScale stamp + the flicker-light drain, the slope
+    //! stamp, the release round-trip through the new bestiary rows.
+    //! WRITTEN NOT RUN (code-only mode).
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    /// The GoldButterfly's threat-view pre-pass stamps the slot-ordered
+    /// pool before the tick; the 65 arm consumes it (the take empties
+    /// the carrier — the c9 Shimmerfly convention).
+    #[test]
+    fn w4_c10_tail_the_butterfly_threat_views_stamp_and_drain() {
+        let (mut app, _player) = app_with_player();
+        app.npc_timer = 10.0; // hold the ambient spawner off
+        let mut fly = Npc::new(NpcKind::GoldButterfly, 160.0 * TILE_PX, 1700.0, 1, 0.0);
+        fly.hp = fly.max_hp;
+        fly.ai[2] = 4.0; // a rolled colour — skip the ladder
+        fly.ai[3] = 1.0; // a latched scale
+        fly.local_ai[0] = 50.0; // a live rearm timer
+        app.npcs.push(fly);
+        let mut zombie = Npc::new(NpcKind::Zombie, 161.0 * TILE_PX, 1700.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        app.npcs.push(zombie);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let fly = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::GoldButterfly)
+            .expect("the fly lives");
+        assert!(fly.butterfly_threat_views.is_empty(), "the arm took the views");
+        // The flee fired: the zombie sits inside the 100-px rect band,
+        // so the averaged push moved the fly's velocity off the blend.
+        assert!(fly.vx != 0.0 || fly.vy != 0.0, "the threat push landed");
+    }
+
+    /// The EnchantedNightcrawler's flicker: the sim stamps ess_scale,
+    /// the 66 arm draws Next(90,111) on the UpdateNPCs stream and queues
+    /// the light; the post-tick drain lands it in EntityLights and
+    /// clears the carrier.
+    #[test]
+    fn w4_c10_tail_the_nightcrawler_flicker_drains_into_entity_lights() {
+        let (mut app, _player) = app_with_player();
+        app.npc_timer = 10.0;
+        app.ess_scale = 0.7;
+        let mut n = Npc::new(NpcKind::EnchantedNightcrawler, 160.0 * TILE_PX, 1916.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.vy = 0.0;
+        n.local_ai[1] = 500.0; // no timer expiry — the flicker draws alone
+        app.npcs.push(n);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let n = app
+            .npcs
+            .iter()
+            .find(|m| m.kind == NpcKind::EnchantedNightcrawler)
+            .expect("the crawler lives");
+        assert_eq!(n.ess_scale, 0.7, "the pre-pass stamped essScale");
+        assert!(n.wants_critter_light.is_none(), "the drain cleared the carrier");
+    }
+
+    /// The crawler slope stamp: a slope-1 tile under the worm's centre
+    /// column lands frame_slope = 1 and the FindFrame rotation +0.785f
+    /// with the localAI[0] = 0 marker.
+    #[test]
+    fn w4_c10_tail_the_slope_stamp_steers_the_crawler_frame() {
+        let (mut app, _player) = app_with_player();
+        app.npc_timer = 10.0;
+        // The worm at (1600, 1916): centre column 100, position row 119
+        // (air) → the probe falls through to row 120 (the ground).
+        let i = app.world.index(100, 120);
+        app.world.tiles[i].set_slope(1);
+        let mut n = Npc::new(NpcKind::Worm, 1600.0, 1916.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.local_ai[1] = 500.0;
+        app.npcs.push(n);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let n = app
+            .npcs
+            .iter()
+            .find(|m| m.kind == NpcKind::Worm)
+            .expect("the worm lives");
+        assert_eq!(n.frame_slope, 1, "the row-below probe");
+        assert_eq!(n.rotation, 0.785, "the slope rotation");
+        assert_eq!(n.local_ai[0], 0.0, "the slope marker");
+    }
+
+    /// The release round-trip: every new critter item's makeNPC resolves
+    /// a kind through the new bestiary rows (`kind_from_net_id`), so
+    /// `release_npc` spawns the ported kind instead of dropping the
+    /// request on the roster gap.
+    #[test]
+    fn w4_c10_tail_the_critter_items_release_their_kinds() {
+        for (item, ty, kind) in [
+            (2002u16, 357i32, NpcKind::Worm),
+            (2889, 442, NpcKind::GoldBird),
+            (2890, 443, NpcKind::GoldBunny),
+            (2891, 444, NpcKind::GoldButterfly),
+            (2892, 445, NpcKind::GoldFrog),
+            (2893, 446, NpcKind::GoldGrasshopper),
+            (2894, 447, NpcKind::GoldMouse),
+            (2895, 448, NpcKind::GoldWorm),
+            (3191, 484, NpcKind::EnchantedNightcrawler),
+            (3192, 485, NpcKind::Grubby),
+            (3193, 486, NpcKind::Sluggy),
+            (3194, 487, NpcKind::Buggy),
+        ] {
+            assert_eq!(crate::registry::make_npc(item) as i32, ty, "item {item} makeNPC");
+            let (k, _) = crate::npc::kind_from_net_id(ty)
+                .unwrap_or_else(|| panic!("net {ty} resolves"));
+            assert_eq!(k, kind, "net {ty} kind");
+            let (mut app, _player) = app_with_player();
+            app.npc_timer = 10.0;
+            crate::bug_net::release_npc(&mut app, 1600, 1920, ty, 0, app.local_id as u8);
+            let n = app
+                .npcs
+                .iter()
+                .find(|m| m.kind == kind)
+                .unwrap_or_else(|| panic!("{kind:?} released"));
+            assert_eq!(n.release_owner, app.local_id as u8, "the releaser owns it");
+            assert_eq!(n.catchable_immunity, 90, "the ctor window (the tick zeroes it)");
+        }
     }
 }
