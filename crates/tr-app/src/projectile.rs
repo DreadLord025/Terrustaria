@@ -129,6 +129,88 @@ fn refuses_friendly(n: &Npc, kind: u16, kill_guide: bool, kill_clothier: bool) -
     true
 }
 
+/// `Damage_PVE_Inner`'s hit-time `switch (this.type)` (`Projectile.cs:
+/// 13409-13533`): every NPC contact COMPOUNDS the projectile's STORED damage
+/// by the kind's multiplier — `(int)` truncation, the C#'s `(double)`/
+/// `(float)` cast widths kept verbatim (the f32 arms 1115/301/76-78/1117
+/// round differently from f64 at some magnitudes). The 1125 arm zeroes the
+/// store outright (the Cascade Explosion's post-hit damage cut). The switch
+/// mutates ONLY `this.damage`: the strike's `dmg` was derived at `:12852`/
+/// `:12938` BEFORE it, so the current hit keeps full damage and the NEXT
+/// hit (or the post-strike spawn arms, `:13707-13809`) reads the decayed
+/// store. Kinds without a case return the store unchanged.
+fn hit_time_damage(kind: u16, damage: i32) -> i32 {
+    match kind {
+        // `:13411-13413` — the Shadowbeam Staff's beam.
+        SHADOWBEAM => (damage as f64 * 0.9) as i32,
+        // `:13414-13419` — the Poison Fang / Venom Fang.
+        POISON_FANG | VENOM_FANG => (damage as f64 * 0.75) as i32,
+        // `:13420-13422` — the friendly Unholy Trident.
+        UNHOLY_TRIDENT => (damage as f64 * 0.9) as i32,
+        // `:13423-13425` — the Cascade Explosion zeroes its store.
+        CASCADE_EXPLOSION => 0,
+        // `:13426-13428` — the Glacier Fang shot (the `(float)` cast).
+        1115 => (damage as f32 * 0.66) as i32,
+        // `:13429-13431` — the friendly Paladin's Hammer (the `(float)` cast).
+        301 => (damage as f32 * 0.9) as i32,
+        // `:13432-13436` — the Magical Harp's notes (the `(float)` cast).
+        QUARTER_NOTE | EIGHTH_NOTE | TIED_EIGHTH_NOTE => (damage as f32 * 0.95) as i32,
+        // `:13437-13442` — the Flamethrower's Flames / the Foxsparks flames.
+        85 | 1106 => (damage as f64 * 0.85) as i32,
+        // `:13443-13445` — the Bouncing Shield.
+        866 => (damage as f64 * 0.8) as i32,
+        // `:13446-13451` — the Slime Whip / Cob Whip.
+        SLIME_WHIP | COB_WHIP => (damage as f64 * 0.4) as i32,
+        // `:13452-13454` — the Bland Whip (Leather Whip).
+        BLAND_WHIP => (damage as f64 * 0.5) as i32,
+        // `:13455-13463` — the Corrupt/Crimson/Thorn whips.
+        CORRUPT_WHIP | CRIMSON_WHIP | THORN_WHIP => (damage as f64 * 0.6) as i32,
+        // `:13464-13466` — the Meteor Whip.
+        METEOR_WHIP => (damage as f64 * 0.7) as i32,
+        // `:13467-13469` — the Bone Whip.
+        BONE_WHIP => (damage as f64 * 0.9) as i32,
+        // `:13470-13472` — the Fire Whip (Firecracker).
+        FIRE_WHIP => (damage as f64 * 0.66) as i32,
+        // `:13473-13475` — the Cool Whip.
+        COOL_WHIP => (damage as f64 * 0.7) as i32,
+        // `:13476-13478` — the Sword Whip (Durendal).
+        SWORD_WHIP => (damage as f64 * 0.8) as i32,
+        // `:13479-13481` — the Flower Whip.
+        FLOWER_WHIP => (damage as f64 * 0.85) as i32,
+        // `:13482-13484` — the Mace Whip.
+        MACE_WHIP => (damage as f64 * 0.95) as i32,
+        // `:13485-13487` — the Scythe Whip (Dark Harvest).
+        SCYTHE_WHIP => (damage as f64 * 0.9) as i32,
+        // `:13488-13490` — the Eel Whip.
+        EEL_WHIP => (damage as f64 * 0.95) as i32,
+        // `:13491-13493` — the Rainbow Whip.
+        RAINBOW_WHIP => (damage as f64 * 0.8) as i32,
+        // `:13494-13496` — the Constellation.
+        CONSTELLATION_WHIP => (damage as f64 * 0.9) as i32,
+        // `:13497-13499` — the Moon Lord Whip (Kaleidoscope).
+        MOON_LORD_WHIP => (damage as f64 * 0.95) as i32,
+        // `:13500-13502` — the Fairy Queen's magic-item shot (Empress Blade).
+        931 => (damage as f64 * 0.8) as i32,
+        // `:13503-13505` — the High Velocity Bullet.
+        HIGH_VELOCITY_BULLET => (damage as f64 * 0.85) as i32,
+        // `:13506-13511` — the Stake / the Jester's Arrow.
+        323 | JESTERS_ARROW => (damage as f64 * 0.9) as i32,
+        // `:13512-13514` — the Unholy Arrow.
+        UNHOLY_ARROW => (damage as f64 * 0.95) as i32,
+        // `:13515-13520` — the friendly Frost Blast / the Terra Beam.
+        FROST_BLAST_FRIENDLY | TERRA_BEAM => (damage as f64 * 0.85) as i32,
+        // `:13521-13523` — the Terra Blade's second shot.
+        985 => (damage as f64 * 0.75) as i32,
+        // `:13524-13526` — the Princess Weapon (Resonance Scepter).
+        950 => (damage as f64 * 0.98) as i32,
+        // `:13527-13529` — the friendly Insanity Shadow.
+        964 => (damage as f64 * 0.85) as i32,
+        // `:13530-13532` — the Lightning Strike shot (the `(float)` cast).
+        1117 => (damage as f32 * 0.8) as i32,
+        _ => damage,
+    }
+}
+
 /// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
 /// the per-tile permission for the bomb crater. The hardmode gates (the
 /// ores 107/108/111/221-223, the chests 37/58, the altars 77) stay closed —
@@ -24218,6 +24300,22 @@ impl ProjectilePool {
             // position on the pass's `UpdateProjectiles` stream (S1-P-i24 —
             // the resync dropped main's post-strike copy, it doubled the
             // draw).
+            // W4-a4 — `Damage_PVE_Inner`'s hit-time `this.damage` switch
+            // (`Projectile.cs:13409-13533`): every contact COMPOUNDS the
+            // slot's stored damage by the kind's truncation multiplier.
+            // The switch mutates ONLY the store — `dmg` was derived at
+            // `:12852`/`:12938` from the pre-switch value, so THIS hit keeps
+            // full damage and the next hit (or the post-strike spawn arms)
+            // reads the decayed store. The mutation is ungated (the 477
+            // retarget below the strike is the landed-gate precedent); the
+            // old post-strike 294-only arm moved here and folded into the
+            // table. Deviation (the moon-lord precedent): the port snapshots
+            // `damage` once per pass, so a second NPC in the SAME pass still
+            // reads the pre-decay base; the C# re-reads `this.damage` per
+            // `Damage_PVE_Inner` call (`:12852`). Compounding across passes
+            // (the two-hit pin) is exact.
+            let p = &mut self.slots[slot];
+            p.damage = hit_time_damage(p.kind, p.damage);
             if is_whip {
                 self.whip_debuffs(slot, &mut npcs[idx], rng);
             }
@@ -24520,16 +24618,11 @@ impl ProjectilePool {
                 if matches!(p.kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL) {
                     p.damage = (p.damage as f64 * 0.96) as i32;
                 }
-                // S1-P-i21 — `Damage_PVE_Inner`'s type-294 arm
-                // (`Projectile.cs:13411-13413`): the Shadowbeam's stored damage
-                // decays ×0.9 (the `(int)((double)damage * 0.9)` truncation) on
-                // every landed hit — the switch runs before `StrikeNPC`, but
-                // the strike reads the local `dmg` (computed at `:12938` from
-                // the pre-decay value), so this hit keeps full damage and the
-                // NEXT hit reads the decayed store (the moon-lord precedent).
-                if p.kind == SHADOWBEAM {
-                    p.damage = (p.damage as f64 * 0.9) as i32;
-                }
+                // (W4-a4: the old post-strike 294-only decay arm moved into
+                // the pre-strike hit-time switch above — the C# position,
+                // `Projectile.cs:13411-13413`. The strike still reads the
+                // local `dmg` from the pre-decay store, so this hit keeps
+                // full damage and the NEXT hit reads the decayed store.)
                 p.penetrate -= 1;
                 if p.penetrate == 0 {
                     break;
@@ -46398,5 +46491,473 @@ mod w4_a9_forbidden_minion_tests {
         // draw the frame-0 Next(7) hold gate until ai[0] hits 124 and pins
         // frame 5 — the attack frames then early-return past the gate.)
         assert_eq!(rng.draws.last(), Some(&(105, 115)), "the fire re-arm draw (:37580)");
+    }
+}
+
+/// W4-a4 — `Damage_PVE_Inner`'s hit-time `this.damage` switch
+/// (`Projectile.cs:13409-13533`): the COMPOUNDING slot mutation. Witnesses
+/// written, NOT run (code-only mode).
+#[cfg(test)]
+mod w4_a4_hit_time_tests {
+    use super::*;
+
+    /// A flat empty world — the PVE walk is pure rectangle math, no tiles
+    /// are read.
+    fn air() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// A zero-variance stream: `DamageVar`'s `Next(-15, 16)` returns 0, so
+    /// the hit damage is the store verbatim; the class-crit `Next(1, 101)`
+    /// returns 100 (never crits at the base-0 class stats); the ThornWhip's
+    /// pre-strike poison `Next(0, 5)` returns 0 (the debuff lands, the
+    /// damage math is untouched). Every other draw panics, so an unexpected
+    /// roll cannot hide in the witness.
+    struct NoVarRng;
+    impl DropRng for NoVarRng {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            match (min, max) {
+                (-15, 16) => 0,
+                (1, 101) => 100,
+                (0, 5) => 0,
+                _ => panic!("unexpected draw ({min}, {max})"),
+            }
+        }
+        fn next_float(&mut self) -> f32 {
+            panic!("no float draw in the hit-time witnesses");
+        }
+    }
+
+    /// A parked, defense-zero victim: the slot's box sits inside it.
+    fn victim() -> Npc {
+        let mut n = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+        n.hp = 10_000;
+        n.max_hp = 10_000;
+        n.defense_override = Some(0);
+        n
+    }
+
+    /// One PVE pass on one NPC, no player/flail/owner anchor.
+    fn hit(pool: &mut ProjectilePool, slot: usize, npc: &mut Npc) {
+        pool.damage_pve(
+            &air(),
+            slot,
+            std::slice::from_mut(npc),
+            None,
+            None,
+            None,
+            &mut NoVarRng,
+        );
+    }
+
+    /// `:13411-13413` — the Shadowbeam's two-hit COMPOUNDING pin: the store
+    /// truncates ×0.9 on EVERY contact while the strike reads the pre-switch
+    /// `dmg` (`:12852`/`:12938`), so hit 1 deals the full 100 and leaves 90;
+    /// hit 2 deals 90 and leaves 81. The 7-store chain separates the
+    /// per-hit truncation from a one-shot product: 7 → 6 → 5 (6·0.9 = 5.4
+    /// → 5), while a flat ×0.81 would read (int)(7·0.81) = 5 on hit 2 with
+    /// hit 2's STRIKE at 7, not 6.
+    #[test]
+    fn w4_a4_the_shadowbeam_compounds_the_slot_on_every_hit() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SHADOWBEAM, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 90, "hit 1 compounds the store");
+        assert_eq!(10_000 - npc.hp, 100, "hit 1 strikes the PRE-decay store");
+        // The beam's stock penetrate −1 keeps the slot alive; the stock
+        // per-owner window (penetrate != 1) sets immune[0] = 10 — clear it
+        // for the re-hit (the NPC update's decrement stand-in).
+        npc.immune[0] = 0;
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 81, "hit 2 compounds again");
+        assert_eq!(10_000 - npc.hp, 190, "hit 2 strikes the decayed 90");
+        // The truncation-chain separator.
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data(SHADOWBEAM, 100.0, 100.0, 0.0, 0.0, 7, 0.0)
+            .unwrap();
+        let mut n2 = victim();
+        hit(&mut pool2, s2, &mut n2);
+        assert_eq!(pool2.slots()[s2].damage, 6, "(int)(7·0.9) = 6");
+        n2.immune[0] = 0;
+        hit(&mut pool2, s2, &mut n2);
+        assert_eq!(pool2.slots()[s2].damage, 5, "(int)(6·0.9) = 5");
+        assert_eq!(10_000 - n2.hp, 13, "7 then 6 — the per-hit truncation chain");
+    }
+
+    /// `:13414-13419` — the Poison Fang / Venom Fang ×0.75 pair, and
+    /// `:13420-13422` — the friendly Unholy Trident ×0.9. The fangs are
+    /// local-immunity rows (cooldown 10): the re-hit clears the slot's
+    /// local row, the C# `immuneArray` decrement stand-in.
+    #[test]
+    fn w4_a4_the_fangs_and_the_trident_decay_their_stores() {
+        for (kind, mult) in [(POISON_FANG, 0.75), (VENOM_FANG, 0.75), (UNHOLY_TRIDENT, 0.9)] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+                .unwrap();
+            // The single-hit rows die on contact (penetrate 1 → 0 breaks
+            // the walk); open the budget so the second pass re-hits.
+            pool.slots_mut()[slot].penetrate = -1;
+            pool.slots_mut()[slot].max_penetrate = -1;
+            let mut npc = victim();
+            hit(&mut pool, slot, &mut npc);
+            let want = (100.0 * mult) as i32;
+            assert_eq!(pool.slots()[slot].damage, want, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[slot * 256] = 0;
+            hit(&mut pool, slot, &mut npc);
+            assert_eq!(
+                pool.slots()[slot].damage,
+                (want as f64 * mult) as i32,
+                "kind {kind} hit 2 compounds"
+            );
+            assert_eq!(10_000 - npc.hp, 100 + want, "kind {kind} hit 2 reads the decay");
+        }
+    }
+
+    /// `:13423-13425` — the Cascade Explosion's store ZEROES on contact:
+    /// hit 1 still strikes full (the local-immunity row, cooldown −1, keeps
+    /// the slot alive), every later pass deals nothing (the walk's
+    /// `damage <= 0` refusal, `:12559`).
+    #[test]
+    fn w4_a4_the_cascade_explosion_zeroes_its_store_on_contact() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(CASCADE_EXPLOSION, 100.0, 100.0, 0.0, 0.0, 40, 0.0)
+            .unwrap();
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 0, "the store zeroes (`:13424`)");
+        assert_eq!(10_000 - npc.hp, 40, "hit 1 strikes the pre-switch store");
+        // The −1 sentinel blocks the re-hit anyway; clear it to prove the
+        // zeroed store alone refuses the pass.
+        pool.local_immunity[slot * 256] = 0;
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(10_000 - npc.hp, 40, "the zeroed store deals nothing after");
+    }
+
+    /// The unlisted kinds keep their store verbatim — the switch's default
+    /// arm is a no-op (the wooden arrow is not in the C# switch).
+    #[test]
+    fn w4_a4_unlisted_kinds_keep_their_store() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(WOODEN_ARROW, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].penetrate = -1;
+        pool.slots_mut()[slot].max_penetrate = -1;
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 100, "no case, no decay");
+        npc.immune[0] = 0;
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 100, "still no decay on hit 2");
+        assert_eq!(10_000 - npc.hp, 200, "both hits strike full");
+    }
+
+    /// A hand-built rowless slot (the 1115/301 kinds have no `proj_data`
+    /// row): the stock box at (100, 100), owner 0, no class flags (the crit
+    /// block draws nothing), penetrate −1 so the re-hit passes.
+    fn rowless(kind: u16, damage: i32) -> ProjectilePool {
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = Projectile {
+            active: true,
+            kind,
+            owner: 0,
+            pos: Vec2::new(100.0, 100.0),
+            damage,
+            penetrate: -1,
+            max_penetrate: -1,
+            ..Default::default()
+        };
+        pool
+    }
+
+    /// `:13426-13428` — the Glacier Fang shot's `(float)` 0.66f cast: at
+    /// store 50 the f32 product is 33.0000013 → 33, while a `(double)`
+    /// 0.66 would give 32.9999999 → 32. The cast width is the witness.
+    #[test]
+    fn w4_a4_the_glacier_fang_uses_the_float_cast() {
+        let mut pool = rowless(1115, 50);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 33, "(int)(50f·0.66f) = 33, not 32");
+        assert_eq!(10_000 - npc.hp, 50, "hit 1 strikes the pre-switch store");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        // 33f·0.66f = 21.7800009 → 21.
+        assert_eq!(pool.slots()[0].damage, 21, "hit 2 compounds in f32");
+        assert_eq!(10_000 - npc.hp, 83, "hit 2 strikes the decayed 33");
+    }
+
+    /// `:13429-13431` — the friendly Paladin's Hammer's `(float)` 0.9f
+    /// cast: at store 10 the f32 product is 8.9999998 → 8, while a
+    /// `(double)` 0.9 would give 9.0000000000000002 → 9.
+    #[test]
+    fn w4_a4_the_paladins_hammer_uses_the_float_cast() {
+        let mut pool = rowless(301, 10);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 8, "(int)(10f·0.9f) = 8, not 9");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        // 8f·0.9f = 7.1999998 → 7.
+        assert_eq!(pool.slots()[0].damage, 7, "hit 2 compounds in f32");
+        assert_eq!(10_000 - npc.hp, 18, "10 then 8");
+    }
+
+    /// `:13432-13436` — the Magical Harp's three notes share the `(float)`
+    /// 0.95f arm: 100f·0.95f = 94.9999988 → 94 (NOT 95), then 94 → 89.
+    /// The local-immunity rows (cooldown 30) clear their slot row for the
+    /// re-hit.
+    #[test]
+    fn w4_a4_the_harp_notes_decay_in_float() {
+        for kind in [QUARTER_NOTE, EIGHTH_NOTE, TIED_EIGHTH_NOTE] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+                .unwrap();
+            let mut npc = victim();
+            hit(&mut pool, slot, &mut npc);
+            assert_eq!(pool.slots()[slot].damage, 94, "kind {kind}: (int)(100f·0.95f)");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[slot * 256] = 0;
+            hit(&mut pool, slot, &mut npc);
+            // 94f·0.95f = 89.2999989 → 89.
+            assert_eq!(pool.slots()[slot].damage, 89, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 194, "kind {kind} hit 2 strikes 94");
+        }
+    }
+
+    /// A whip slot parked on the victim with its `GetWhipSettings` cache
+    /// armed (the plain walk early-returns on a whip with no settings).
+    /// The sweep itself is bypassed — the witness drives `damage_pve`
+    /// directly, so only the settings-presence gate matters.
+    fn whip_slot(kind: u16, damage: i32) -> ProjectilePool {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, damage, 0.0)
+            .unwrap();
+        pool.set_whip_params(slot, 0, 0, 30.0);
+        pool
+    }
+
+    /// `:13437-13442` — the Flamethrower's Flames (85) and the Foxsparks
+    /// flames (1106) ×0.85. The 85 is a local-immunity row (the overlay's
+    /// −1 sentinel): the re-hit clears the slot row. The 1106 has no row —
+    /// hand-built.
+    #[test]
+    fn w4_a4_the_flames_decay_their_stores() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(85, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+            .unwrap();
+        let mut npc = victim();
+        hit(&mut pool, slot, &mut npc);
+        assert_eq!(pool.slots()[slot].damage, 85, "(int)(100·0.85)");
+        assert_eq!(10_000 - npc.hp, 100, "hit 1 strikes full");
+        npc.immune[0] = 0;
+        pool.local_immunity[slot * 256] = 0;
+        hit(&mut pool, slot, &mut npc);
+        // 85·0.85 = 72.25 → 72.
+        assert_eq!(pool.slots()[slot].damage, 72, "hit 2 compounds");
+        assert_eq!(10_000 - npc.hp, 185, "hit 2 strikes 85");
+        // The rowless Foxsparks twin.
+        let mut pool2 = rowless(1106, 100);
+        let mut n2 = victim();
+        hit(&mut pool2, 0, &mut n2);
+        assert_eq!(pool2.slots()[0].damage, 85, "the 1106 shares the 0.85 arm");
+        n2.immune[0] = 0;
+        hit(&mut pool2, 0, &mut n2);
+        assert_eq!(pool2.slots()[0].damage, 72, "hit 2 compounds");
+    }
+
+    /// `:13443-13445` — the Bouncing Shield (866, rowless) ×0.8:
+    /// 100 → 80 → 64.
+    #[test]
+    fn w4_a4_the_bouncing_shield_decays_its_store() {
+        let mut pool = rowless(866, 100);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 80, "(int)(100·0.8)");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 64, "hit 2 compounds");
+        assert_eq!(10_000 - npc.hp, 180, "100 then 80");
+    }
+
+    /// `:13446-13451` — the Slime Whip / Cob Whip ×0.4, the steepest cut in
+    /// the switch: 100 → 40 → 16.
+    #[test]
+    fn w4_a4_the_slime_and_cob_whips_decay_their_stores() {
+        for kind in [SLIME_WHIP, COB_WHIP] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, 40, "kind {kind}: (int)(100·0.4)");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, 16, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 140, "kind {kind} hit 2 strikes 40");
+        }
+    }
+
+    /// `:13452-13466` — the Bland Whip ×0.5, the Corrupt/Crimson/Thorn
+    /// trio ×0.6 and the Meteor Whip ×0.7. The ThornWhip's pre-strike 1/5
+    /// poison roll draws `Next(0, 5)` — the witness stream returns 0 for
+    /// it (the debuff lands, the damage math is untouched).
+    #[test]
+    fn w4_a4_the_bland_corrupt_crimson_thorn_meteor_whips_decay() {
+        for (kind, m1, m2) in [
+            (BLAND_WHIP, 50, 25),
+            (CORRUPT_WHIP, 60, 36),
+            (CRIMSON_WHIP, 60, 36),
+            (THORN_WHIP, 60, 36),
+            (METEOR_WHIP, 70, 49),
+        ] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
+        }
+    }
+
+    /// `:13467-13481` — the Bone Whip ×0.9, the Fire Whip (Firecracker)
+    /// ×0.66, the Cool Whip ×0.7, the Sword Whip (Durendal) ×0.8 and the
+    /// Flower Whip ×0.85. The Firecracker's 0.66 is the `(double)` form
+    /// (66.0 → 66), unlike the Glacier Fang's `(float)` 0.66f.
+    #[test]
+    fn w4_a4_the_bone_fire_cool_sword_flower_whips_decay() {
+        for (kind, m1, m2) in [
+            (BONE_WHIP, 90, 81),
+            (FIRE_WHIP, 66, 43),
+            (COOL_WHIP, 70, 49),
+            (SWORD_WHIP, 80, 64),
+            (FLOWER_WHIP, 85, 72),
+        ] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
+        }
+    }
+
+    /// `:13482-13496` — the Mace Whip ×0.95, the Scythe Whip (Dark
+    /// Harvest) ×0.9, the Eel Whip ×0.95, the Rainbow Whip ×0.8 and the
+    /// Constellation ×0.9. The Mace/Eel 0.95 is the `(double)` form
+    /// (95.0 → 95), unlike the harp notes' `(float)` 0.95f (94).
+    #[test]
+    fn w4_a4_the_mace_scythe_eel_rainbow_constellation_whips_decay() {
+        for (kind, m1, m2) in [
+            (MACE_WHIP, 95, 90),
+            (SCYTHE_WHIP, 90, 81),
+            (EEL_WHIP, 95, 90),
+            (RAINBOW_WHIP, 80, 64),
+            (CONSTELLATION_WHIP, 90, 81),
+        ] {
+            let mut pool = whip_slot(kind, 100);
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            pool.local_immunity[0] = 0;
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
+        }
+    }
+
+    /// `:13497-13532` — the switch's tail: the Moon Lord Whip ×0.95, the
+    /// Empress Blade ×0.8, the High Velocity Bullet ×0.85, the Stake /
+    /// Jester's Arrow ×0.9, the Unholy Arrow ×0.95, the Frost Blast / Terra
+    /// Beam ×0.85, the Terra Blade's second shot ×0.75, the Resonance
+    /// Scepter ×0.98, the Insanity Shadow ×0.85 and the Lightning Strike
+    /// ×0.8f. `(kind, hit1 store, hit2 store)` — the rowless kinds are
+    /// hand-built, the rowed ones spawn through the seam.
+    #[test]
+    fn w4_a4_the_switch_tail_decays_every_remaining_kind() {
+        // (kind, has_row, local_immunity_row, m1, m2)
+        let cases: &[(u16, bool, bool, i32, i32)] = &[
+            (MOON_LORD_WHIP, true, true, 95, 90),
+            (931, false, false, 80, 64),
+            (HIGH_VELOCITY_BULLET, true, true, 85, 72),
+            (323, true, false, 90, 81),
+            (JESTERS_ARROW, true, false, 90, 81),
+            (UNHOLY_ARROW, true, false, 95, 90),
+            (FROST_BLAST_FRIENDLY, true, false, 85, 72),
+            (TERRA_BEAM, true, true, 85, 72),
+            (985, false, false, 75, 56),
+            (950, false, false, 98, 96),
+            (964, false, false, 85, 72),
+            (1117, false, false, 80, 64),
+        ];
+        for &(kind, has_row, local_row, m1, m2) in cases {
+            let mut pool = if has_row {
+                let mut p = ProjectilePool::new();
+                let s = p
+                    .spawn_with_data(kind, 100.0, 100.0, 0.0, 0.0, 100, 0.0)
+                    .unwrap();
+                if tr_core::whip::is_whip(kind) {
+                    p.set_whip_params(s, 0, 0, 30.0);
+                } else {
+                    // Open the penetrate budget so the re-hit passes (the
+                    // single-hit rows break the walk at penetrate 0).
+                    p.slots_mut()[s].penetrate = -1;
+                    p.slots_mut()[s].max_penetrate = -1;
+                }
+                p
+            } else {
+                rowless(kind, 100)
+            };
+            let mut npc = victim();
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m1, "kind {kind} hit 1");
+            assert_eq!(10_000 - npc.hp, 100, "kind {kind} strikes full on hit 1");
+            npc.immune[0] = 0;
+            if local_row {
+                pool.local_immunity[0] = 0;
+            }
+            hit(&mut pool, 0, &mut npc);
+            assert_eq!(pool.slots()[0].damage, m2, "kind {kind} hit 2 compounds");
+            assert_eq!(10_000 - npc.hp, 100 + m1, "kind {kind} hit 2 strikes the decay");
+        }
+    }
+
+    /// `:13530-13532` — the Lightning Strike's `(float)` 0.8f cast: at
+    /// store 10 the f32 product is 8.0000001 → 8 (the f64 0.8 also gives
+    /// 8 here), but at store 5 the f32 product is 4.0000001 → 4 while a
+    /// naive 0.8 double gives 4.0 → 4 too — the 15-store pin separates:
+    /// 15f·0.8f = 12.0000005 → 12, then 12f·0.8f = 9.6000004 → 9.
+    #[test]
+    fn w4_a4_the_lightning_strike_compounds_in_float() {
+        let mut pool = rowless(1117, 15);
+        let mut npc = victim();
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 12, "(int)(15f·0.8f) = 12");
+        npc.immune[0] = 0;
+        hit(&mut pool, 0, &mut npc);
+        assert_eq!(pool.slots()[0].damage, 9, "(int)(12f·0.8f) = 9");
+        assert_eq!(10_000 - npc.hp, 27, "15 then 12");
     }
 }
