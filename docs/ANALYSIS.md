@@ -39390,3 +39390,104 @@ A's draw-census skip.
 
 RNG: the strike's stream, wave A's contract; the witnesses replay the
 cited draws on twin streams (WRITTEN, NOT RUN - code-only mode).
+## The NPC HitEffect gore table (W4-f10, wave C, task/W4-f10-gore-sites-3, 2026-11-21, code-only mode)
+
+The THIRD batch of `NPC.HitEffect`'s per-NPC gore/dust death arms
+(`NPC.cs:81654+`). **OVERRUN-DELETE LANDED (f5 research/111 §8 / g60
+§12.8 drop-hunks):** the waves' later `:85560-89832` port (sites 562-1441,
+the b138-170 appends) duplicated f5's claimed window and was DELETED at
+the live tip `012bdcec3` — re-censused with g60's committed scripts
+(`g60_f10_overrun.py` + `g60_f10_gates.py` @ `30fea0fe1`). The delete at
+this tip: **band A `:3692-8872` (152 fn bodies incl. the cite-less
+`five_gore_ladder`/`smoke_99_trio`/`mech_explosion_tail`/
+`red_hat_skeletron_adjustments_enabled` helpers + the straddling
+`town_pet_death`, 597 gore literals), band B `:9296-9966` (147 dispatch
+gates incl. the 5 comment-less), band C `:12314-15633` (157 witnesses),
+the header scope rows `:136-270` (sites 562-1441) and the
+`king_slime_babies`/`maggot_zombie_spawns`/`destroyer_probe_drop` outcome
+fields** — 9 328 lines, a pure delete (byte-verified against the pre-image
+minus exactly those ranges). The b157→live drift: +21 fns / +19 gates /
++19 witnesses (the Skeletron-RedHat through RedDevil tail, b158-170) and
+the third seam field. What KEEPS: sites 1-561 (`:82206-85559`), the legit
+385 sites — the DD2 band (incl. the 558/559/560 `wyvern_death` NAME-TWIN,
+the overrun 87-92 twin dropped), the 3 substring-collision witnesses
+(`blood_squid`/`desert_scorpion`/`martian_probe`, all min-cite < 85560),
+the Slimer 561 tail + `slimer_spawn` seam, the flipped-Betsy dispatch
+witness — 94 legit witnesses + 1 new delete-receipt witness
+(`w4_f10_the_overrun_delete_leaves_the_f5_window_unclaimed`, WRITTEN NOT
+RUN). f5's 853-canonical (`npc_hit_effect_d.rs`) owns `:85560+`; the
+`:86532` WanderingEye latch replacement is f5 §7.3's wiring-caller (the
+merger's). Post-delete module: ~6 370 lines, 95 witnesses.
+
+### The original wave-C record (pre-delete, historical)
+
+The port covered `NPC.cs:82206-89831` — from the 551 Betsy
+flipped branch to the terminal 156 RedDevil `else` where the C# chain
+closes (`:89832-89834`): 1441 numbered gore sites across 170 commits (first
+`215bcd2d5`, tip `1fb60ae39`; base `a725acb0`), ported into the
+self-contained `crates/tr-app/src/npc_hit_effect_c.rs` (~15 660 lines,
+251 witness tests). Wave A (d55, sites 1-30, `:81660-81941`) and wave B
+(e5/g16/g17) claims were probed clean at start and left untouched; the
+non-flipped Betsy branch stays wave B's.
+
+### Shape
+
+- `pub fn hit_effect_c(npc: &mut Npc, npc_type, hit_direction, dmg, gore,
+  dust, dust_ctx, rng, world) -> HitEffectOutcomeC` — a pure dispatcher;
+  `&mut Npc` only for the WanderingEye `local_ai[0]` latch. Every arm is
+  life-gated (`hp <= 0`) unless the C# fires on every hit (the snails
+  359/360/655, the party-slime `ai[1]==1345`, the WanderingEye 133, the
+  426/9999-dmg Cultist Tablet dmg gate).
+- The strike-stream RNG contract: every `NewDust`/`NewGore` draw rides
+  the caller's `UnifiedRandom` in exact C# order — the 6 default-block
+  dust draws (Next(w-4), Next(h-4), Next(-20,21)x2, Next(3),
+  Next(-20,21)), the type-6/242 tweak's extra Next(-10,6), the post-spawn
+  gates (472's Next(3) noGravity), the count draws (Wyvern Next(1,4)
+  FIRST), the per-gore type draws (Next(61,64)/Next(11,14) BEFORE the
+  kicks), and the NewGore kicks (Y Next(10,31) subtracted, X Next(-20,21)
+  added). The twin-stream witnesses replay the census and pin
+  `rng.peek()` equality.
+- Shared helpers: `death_dust_loop`, `five_gore_type5_death`,
+  `five_gore_ladder`, `blood_zombie_ladder`, `smoke_99_trio` (the
+  -10/h2-15/h-20 ladder), `mech_explosion_tail` (the type-31 + paired
+  type-6 + quadrant-gore explosion shared by the Destroyer/ElfCopter/
+  SantaNK1/SkeletronPrime/Prime-limb deaths),
+  `red_hat_skeletron_adjustments_enabled` (`NPC.cs:66671-66682`), plus
+  the rotation/select/anchor helpers.
+
+### Documented stand-ins (deliberate deviations)
+
+- `this.color` -> `Color::default()` — the ported kinds set no
+  SetDefaults color; the tinted arms (hornet 18, ManEater 40) pass
+  `this.alpha`/`this.scale` through but the color stays the stand-in.
+- `altTexture` -> treated as 0 (no port field): every `altTexture == 0`
+  head gate fires; the `altTexture == 2` variants never fire (documented
+  per arm).
+- `IsShimmerVariant` -> `variation_index == 1 &&
+  npc_ai_town::shimmer_town_transform(type)` (the ported shimmer set).
+- `NPCID.Sets.IsTownPet` -> the existing `npc_ai_town::is_town_pet`
+  (637/638/656/670/678-684, `ID/NPCID.cs:10118`).
+- The 265 Plantera branch inside the 262/263/264 gate is dead code (the
+  gate excludes 265) — documented, not ported.
+- The 590/591 wet-gate dust detail is deferred to the wiring wave.
+
+### Roster/projectile seams (`HitEffectOutcomeC`)
+
+The spawns this module cannot reach are returned as anchors for the
+wiring wave: `nebula_brain_spawn`, `nebula_predictor_shot`,
+`dutchman_death_shots`, `slimer_spawn`, `king_slime_babies`,
+`maggot_zombie_spawns`, and (wave C) `destroyer_probe_drop` — the 135
+DestroyerBody's non-fatal `ai[2]` probe latch (`:89268-89284`): the
+`IsMechQueenUp` read, the Next(25/50) draw, the latch and the NPC-139
+spawn are the wiring wave's; the anchor `(pos.X + width/2, pos.Y +
+height)` is returned.
+
+### Verification
+
+Code-only: every arm re-read against the cited <=100-line C# windows; the
+pool APIs (`GorePool::new_gore` kicks/sticky/ChildSafety, `DustPool::
+new_dust` default block + tweak chain, `slot_mut` post-writes) checked
+by read against `tr-core/src/gore.rs`/`particles.rs`. The 251 witness
+tests are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
+graphify invoked**. The `:91340` loveStruck heart gore is in a different
+function (not HitEffect) and stays out of scope.
