@@ -449,9 +449,28 @@ pub enum NpcKind {
     /// value 1200; emits light at `base.Top` with colour (0.6, 0.6, 0.3) —
     /// `Lighting.AddLight(base.Top, 0.6f, 0.6f, 0.3f)`, `NPC.cs:21360`).
     DesertDjinn,
+    /// `NPCID.RuneWizard` (172) — the hardmode cavern caster (`aiStyle 8`,
+    /// `NPC.cs:11154-11167`: 18x40, 600 HP, damage 200, defense 30, kb 0.3,
+    /// value 5000, rarity 4). The alpha ramp (`NPC.cs:20844-20854`) fades
+    /// it out over 255 ticks; a strike resets alpha to 0. Fires the 129
+    /// RuneBlast (`NPC.cs:21264-21274`). The protocol id is port-local 827
+    /// (the vanilla 172 collides with DD2DarkMageT3's port-local slot; the
+    /// RETIRE round moved it off 354 — d37's corridor, research/322).
+    RuneWizard,
+    /// `NPCID.LibrarianSkeleton` (693) — the dungeon book caster (`aiStyle
+    /// 8`, `NPC.cs:17723-17735`: 18x40, 70 HP, damage 18, defense 2, kb 0.6,
+    /// value 160, npcSlots 2). The localAI clock (`NPC.cs:20839-20842`/
+    /// `:20994-21005`/`:21106-21111`) drives the book teleport
+    /// (`AI_AttemptToFindTeleportSpotNearBooks`, `:19009-19085`) and the
+    /// 1092 book shot (`AI_FindNearbyBook`, `:62308-62364` / `:21248-21263`).
+    LibrarianSkeleton,
     /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
     /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
-    /// folds here (identical stats and name, `NPC.cs:17398`).
+    /// folds here (R4 FINAL, research/322: stat-identical rows
+    /// `NPC.cs:15699-15713`/`:17403-17417`, one aiStyle-9 arm `:21519`,
+    /// one {31} immunity row, one "Chaos Ball" name; the banner split
+    /// 665→177/30→39 is unreachable — both are Hide=true bestiary
+    /// exclusions, no kill credit drains).
     ChaosBall,
     /// `NPCID.BurningSphere` (25) — the Fire Imp's sphere (`aiStyle 9`,
     /// `NPC.cs:9093`).
@@ -1722,6 +1741,12 @@ pub struct Npc {
     /// point — the 4th slot carries `NPC.NewNPC`'s `ai3` argument
     /// (`NPC.cs:21246`'s `flag4 ? 1 : 0`; every other caller passes 0).
     pub wants_sphere: Vec<(NpcKind, f32, f32, f32)>,
+    /// The Djinn's curse-volley spawn requests (`NPC.cs:21155`, W4-g5
+    /// draw-parity): the accepted tile's CENTRE `(x*16+8, y*16+8)` and
+    /// `ai0 = this.target`. The sim drains them into the 596
+    /// DesertDjinnCurse (damage 0, knockback 1, zero velocity) after the
+    /// update pass (the `wants_sphere` borrow-safe shape).
+    pub wants_djinn_curse: Vec<(f32, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce
     /// flip — the retired `update_slime` stand-in's private mirror; the
     /// faithful machine writes `ai[3]` directly (W4-b1).
@@ -3363,6 +3388,7 @@ impl Npc {
             step_speed: 0.0,
             kb_resist_override: None,
             wants_sphere: Vec::new(),
+            wants_djinn_curse: Vec::new(),
         local_ai: [0.0; 4],
             swim_phase: 0.0,
             worm_id: 0,
@@ -3972,11 +3998,16 @@ impl Npc {
             // The snail family + its shimmer target (W4-c9): the
             // `SetDefaults` rows write no knockBackResist — the head's
             // 1f (`NPC.cs:8533`) stands (the ForceBubble precedent).
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            // The gold critters (W4-c9): the GoldBird writes kb 0.8
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 1.0,
+            // The gold critters (W4-c9): the GoldBird writes kb 0.8
             // (`NPC.cs:14256`); the GoldGrasshopper/GoldMouse write none —
             // the head's 1f (`NPC.cs:8533`) stands.
             NpcKind::GoldBird => 0.8,
             NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 1.0,
+            // W4-g5 — the two casters' `knockBackResist` rows: 172 0.3
+            // (`NPC.cs:11164`), 693 0.6 (`:17731`).
+            NpcKind::RuneWizard => 0.3,
+            NpcKind::LibrarianSkeleton => 0.6,
             _ => 0.4,
         }
     }
@@ -4398,9 +4429,14 @@ impl Npc {
             | NpcKind::Maggot => 0,
             // The snail family + its shimmer target (W4-c9): defense 0
             // each (`NPC.cs:13579` / `:13593` / `:17286` / `:17585`).
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            // The gold critters (W4-c9): defense 0 each (`NPC.cs:14253` /
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0,
+            // The gold critters (W4-c9): defense 0 each (`NPC.cs:14253` /
             // `:14309` / `:14324` / `:14268` / `:14296`).
             NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 0,
+            // W4-g5 — the two casters' `defense` rows: 172 30
+            // (`NPC.cs:11160`), 693 2 (`:17728`).
+            NpcKind::RuneWizard => 30,
+            NpcKind::LibrarianSkeleton => 2,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4814,9 +4850,14 @@ impl Npc {
             | NpcKind::Maggot => 0.0,
             // The snail family + its shimmer target (W4-c9): the rows
             // write no value — the head's 0f (`NPC.cs:8544`) stands.
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            // The gold critters (W4-c9): the rows write no value — the
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0.0,
+            // The gold critters (W4-c9): the rows write no value — the
             // head's 0f (`NPC.cs:8544`) stands.
             NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 0.0,
+            // W4-g5 — the two casters' `value` rows (copper): 172 5000
+            // (`NPC.cs:11165`), 693 160 (`:17732`).
+            NpcKind::RuneWizard => 5000.0,
+            NpcKind::LibrarianSkeleton => 160.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -7974,7 +8015,8 @@ impl Npc {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => {
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn
+            | NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => {
                 self.update_caster(world, player, rng)
             }
             // S1-D-3: the aiStyle-9 sphere family (25/30+665/33) rides the
@@ -10403,7 +10445,19 @@ impl Npc {
             // is the cast windup (`ai[1] > 0`), row 2 airborne. The Dark
             // Caster's Skeletron pose (`localAI[3]`, `:77050-77053`) rides
             // the skeleton-head work.
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
+            | NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => {
+                // `NPC.cs:77030-77039`: the grounded spriteDirection snap
+                // (the C# snaps it for the whole case 29/32/45/172/281-286/
+                // 693 group; the port's caster arm was missing it).
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
                 self.frame = if self.vy != 0.0 {
                     2
                 } else if self.cast_windup > 0 {
@@ -21167,6 +21221,13 @@ impl Npc {
             NpcKind::Sluggy => 486,
             NpcKind::Buggy => 487,
             NpcKind::Maggot => 606,
+            // W4-g5 — the two casters: the RuneWizard's render key rides
+            // its port-local protocol id 827 (the RETIRE renumber,
+            // research/322 — was 354, d37's CochinealBeetle corridor; the
+            // vanilla 172 is DD2DarkMageT3's key above); the
+            // LibrarianSkeleton's 693 is free (vanilla).
+            NpcKind::RuneWizard => 827,
+            NpcKind::LibrarianSkeleton => 693,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23252,9 +23313,9 @@ mod tests {
     fn the_desert_djinn_rides_its_own_trigger_and_wrap() {
         // `NPC.cs:21031-21038` — the Djinn's single trigger at `ai[0] == 180`
         // sets `ai[1] = 181` (not the standard 100/200/300 → 30); the wrap
-        // fires at 360 (`:21079-21082`), never at the standard 650. The
-        // curse volley draws `Main.rand` (`:21140-21141`/`:21195-21196`)
-        // and is skipped wholesale — the Djinn never requests a sphere.
+        // fires at 360 (`:21079-21082`), never at the standard 650. W4-g5
+        // draw-parity: the curse volley is LIVE — the Djinn fires the 596
+        // PROJECTILE through `wants_djinn_curse` (never a sphere).
         let mut w = ground_air();
         let mut player = surface_player(&w);
         let mut djinn = Npc::new(NpcKind::DesertDjinn, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
@@ -23271,7 +23332,7 @@ mod tests {
             djinn.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
             assert!(
                 djinn.wants_sphere.is_empty(),
-                "the Djinn's rand-drawing volley stays skipped"
+                "the Djinn fires a projectile, never a sphere"
             );
             // The trigger tick: `ai[1] = 181` (`:21035`) then the same
             // tick's `ai[1]--` (`:21116`) — the windup reads 180 exactly
@@ -26256,7 +26317,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 306] = [
+    pub(super) const ALL_KINDS: [NpcKind; 308] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -26582,6 +26643,9 @@ mod tests {
         // The gold critters (W4-c9): the bunny + the frog.
         NpcKind::GoldBunny,
         NpcKind::GoldFrog,
+        // W4-g5 — the two unclaimed aiStyle-8 casters.
+        NpcKind::RuneWizard,
+        NpcKind::LibrarianSkeleton,
     ];
 
     #[test]
@@ -26675,6 +26739,69 @@ mod tests {
         assert_eq!(NpcKind::ForceBubble.to_u16(), 213);
         for (kind, _, _, _, _, _, _, _, _, _) in rows {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-g5 — the two unclaimed aiStyle-8 casters' `SetDefaults` rows
+    /// (`NPC.cs:11154-11167` the RuneWizard, `:17723-17735` the
+    /// LibrarianSkeleton): size, aiStyle, lifeMax, damage, defense, value,
+    /// knockBackResist, sounds and the {20, 31} debuff immunity
+    /// (`NPCID.cs:7119`/`:10060`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g5_the_two_casters_setdefaults_rows() {
+        // (kind, vanilla, protocol, w, h, ai, hp, dmg, def, value, kb)
+        let rows = [
+            (NpcKind::RuneWizard, 172u16, 827u16, 18.0, 40.0, 8u8, 600, 200, 30, 5000.0, 0.3f32),
+            (NpcKind::LibrarianSkeleton, 693, 693, 18.0, 40.0, 8, 70, 18, 2, 160.0, 0.6),
+        ];
+        for (kind, vanilla, protocol, w, h, ai, hp, dmg, def, value, kb) in rows {
+            assert_eq!(kind.to_u16(), protocol, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(protocol), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.cs_id(), vanilla, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), vanilla as i32, "{kind:?} net id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
+            // The {20, 31} immunity (Poisoned + Confused).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[20], "{kind:?} immune to 20");
+            assert!(b.buff_immune[31], "{kind:?} immune to 31");
+            // The casters are grounded (no noGravity row) and visible at
+            // spawn (no alpha row — the 172's ramp starts at 0).
+            assert!(!kind.no_gravity(), "{kind:?} grounded");
+            assert_eq!(n.alpha, 0, "{kind:?} spawn alpha");
+        }
+    }
+
+    /// W4-g5 — the two casters ride the case-29/32/45/172/281-286/693
+    /// FindFrame arm (`NPC.cs:77019-77054`): row 0 standing, row 1 while
+    /// the windup (ai[1] > 0) runs, row 2 airborne; the grounded
+    /// spriteDirection snap. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g5_the_two_casters_find_frame_three_rows() {
+        for kind in [NpcKind::RuneWizard, NpcKind::LibrarianSkeleton] {
+            let mut n = bare(kind);
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.facing = 1;
+            n.sprite_dir = -1;
+            n.cast_windup = 0;
+            n.find_frame();
+            assert_eq!(n.frame, 0, "{kind:?} standing row 0");
+            assert_eq!(n.sprite_dir, 1, "{kind:?} the grounded snap");
+            n.cast_windup = 10;
+            n.find_frame();
+            assert_eq!(n.frame, 1, "{kind:?} windup row 1");
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 2, "{kind:?} airborne row 2");
         }
     }
 
@@ -30765,8 +30892,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            306,
-            "every decodable kind resolves (the wire roster's size - 306 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon + W4-c3's style-10 three + W4-c7's firefly four (E8 renumber 735/736 executed) + W4-c8's nine crawling critters + W4-c9's snail trio + five gold critters (the Shimmerfly dedupes to c7), L-B gate + W4-d25 STYLE-26 wiring's Unicorn; the Wolf/Tumbleweed dropped per keep-one f5f486c7c; the c3 34/289 kind rows re-pin to d34@267/d38@289 at their merges, research/329 E8)"
+            308,
+            "every decodable kind resolves (the wire roster's size - 308 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's seven dragonflies + W4-d33 wiring's three fairies + the windy balloon + W4-c3's style-10 three + W4-c7's firefly four (E8 renumber 735/736 executed) + W4-c8's nine crawling critters + W4-c9's snail trio + five gold critters (the Shimmerfly dedupes to c7) + W4-g5's two casters, L-B gate + W4-d25 STYLE-26 wiring's Unicorn; the Wolf/Tumbleweed dropped per keep-one f5f486c7c; the c3 34/289 kind rows re-pin to d34@267/d38@289 at their merges, research/329 E8)"
         );
         assert!(
             covered > 43,
@@ -34370,6 +34497,9 @@ mod s1_d_2_tests {
         (NpcKind::Tim, 8),
         (NpcKind::DarkCaster, 8),
         (NpcKind::FireImp, 8),
+        // W4-g5 — the two unclaimed aiStyle-8 casters (`NPC.cs:11158`/`:17727`).
+        (NpcKind::RuneWizard, 8),
+        (NpcKind::LibrarianSkeleton, 8),
         (NpcKind::ChaosBall, 9),
         (NpcKind::BurningSphere, 9),
         (NpcKind::WaterSphere, 9),

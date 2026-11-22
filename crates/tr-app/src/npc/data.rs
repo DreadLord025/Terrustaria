@@ -665,6 +665,15 @@ impl NpcKind {
             NpcKind::GoldMouse => 447,
             NpcKind::GoldBunny => 443,
             NpcKind::GoldFrog => 445,
+            // W4-g5 — the two unclaimed aiStyle-8 casters. The RuneWizard's
+            // vanilla 172 collides with DD2DarkMageT3's port-local 172, so
+            // it takes a port-local id; the RETIRE round moved it 354 → 827
+            // (research/322: 354 squats d37's CochinealBeetle corridor
+            // 354-399, the research/108 E2 kinds-lane rule; 827 is above
+            // d39's pushed 817-823 band + the R7 817-826 pin). The
+            // LibrarianSkeleton's 693 is free (vanilla).
+            NpcKind::RuneWizard => 827,
+            NpcKind::LibrarianSkeleton => 693,
         }
     }
 
@@ -1047,6 +1056,9 @@ impl NpcKind {
             447 => NpcKind::GoldMouse,
             443 => NpcKind::GoldBunny,
             445 => NpcKind::GoldFrog,
+            // W4-g5 — the two unclaimed aiStyle-8 casters (`to_u16` above).
+            827 => NpcKind::RuneWizard,
+            693 => NpcKind::LibrarianSkeleton,
             _ => return None,
         })
     }
@@ -1988,6 +2000,9 @@ impl NpcKind {
             NpcKind::FairyCritterPink
             | NpcKind::FairyCritterGreen
             | NpcKind::FairyCritterBlue => "NPC_Hit_1",
+            // W4-g5 — the two casters' `HitSound` rows: `SoundID.NPCHit2`
+            // (`NPC.cs:11162`/`:17729`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Hit_2",
             _ => return None,
         })
     }
@@ -2342,6 +2357,9 @@ impl NpcKind {
             // (`NPC.cs:16716`, `SoundID.cs:1377`). d42 batch-3's row,
             // constants-copy (keep-one d37c-E3).
             NpcKind::WindyBalloon => "NPC_Killed_63",
+            // W4-g5 — the two casters' `DeathSound` rows: `SoundID.NPCDeath2`
+            // (`NPC.cs:11163`/`:17730`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Killed_2",
             _ => return None,
         })
     }
@@ -2574,8 +2592,9 @@ impl NpcKind {
             NpcKind::Clothier | NpcKind::TravellingMerchant | NpcKind::Angler | NpcKind::Stylist | NpcKind::TaxCollector |
             NpcKind::Golfer | NpcKind::Zoologist | NpcKind::Princess | NpcKind::DyeTrader | NpcKind::PartyGirl |
             NpcKind::Wizard | NpcKind::Mechanic | NpcKind::GoblinTinkerer => 7,
-            // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
+            // aiStyle 8 - NPC.cs:9083, :9125, :9326, :11158, :14978, :15690, :17727
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn
+            | NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => 8,
             // aiStyle 9 - NPC.cs:9097, :9139, :15703
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => 9,
             // aiStyle 11 - NPC.cs:9170
@@ -3379,6 +3398,9 @@ impl NpcKind {
             // 12x10 (`:14292-14293`).
             NpcKind::GoldBunny => (18.0, 20.0),
             NpcKind::GoldFrog => (12.0, 10.0),
+            // W4-g5 — the two casters' `SetDefaults` boxes: 172 18x40
+            // (`NPC.cs:11156-11157`), 693 18x40 (`:17725-17726`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => (18.0, 40.0),
         }
     }
 
@@ -4148,9 +4170,14 @@ impl NpcKind {
             | NpcKind::Maggot => 5,
             // The snail family + its shimmer target (W4-c9): lifeMax 5
             // each (`NPC.cs:13580` / `:13594` / `:17287` / `:17586`).
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            // The gold critters (W4-c9): lifeMax 5 each (`NPC.cs:14254` /
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 5,
+            // The gold critters (W4-c9): lifeMax 5 each (`NPC.cs:14254` /
             // `:14310` / `:14325` / `:14269` / `:14297`).
             NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 5,
+            // W4-g5 — the two casters' `lifeMax` rows: 172 600
+            // (`NPC.cs:11161`), 693 70 (`:17728`).
+            NpcKind::RuneWizard => 600,
+            NpcKind::LibrarianSkeleton => 70,
         }
     }
 
@@ -4557,9 +4584,14 @@ impl NpcKind {
             | NpcKind::Maggot => 0,
             // The snail family + its shimmer target (W4-c9): damage 0
             // each (`NPC.cs:13578` / `:13592` / `:17285` / `:17584`).
-            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail |            // The gold critters (W4-c9): damage 0 each (`NPC.cs:14252` /
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0,
+            // The gold critters (W4-c9): damage 0 each (`NPC.cs:14252` /
             // `:14308` / `:14323` / `:14267` / `:14295`).
             NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => 0,
+            // W4-g5 — the two casters' `damage` rows: 172 200
+            // (`NPC.cs:11159`), 693 18 (`:17727`).
+            NpcKind::RuneWizard => 200,
+            NpcKind::LibrarianSkeleton => 18,
         }
     }
 }

@@ -1711,6 +1711,9 @@ fn portrait_data(
         (NpcKind::GoldMouse, _) => (sheet_i, 12.0, 14.0, 12.0, white),
         (NpcKind::GoldBunny, _) => (sheet_i, 20.0, 18.0, 20.0, white),
         (NpcKind::GoldFrog, _) => (sheet_i, 10.0, 12.0, 10.0, white),
+        // W4-g5 — the two casters' 18x40 `SetDefaults` box
+        // (`NPC.cs:11156-11157`/`:17725-17726`).
+        (NpcKind::RuneWizard | NpcKind::LibrarianSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
     }
 }
 

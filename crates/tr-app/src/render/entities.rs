@@ -514,6 +514,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(PLANTERA_MINION_SHEETS)
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
+            .chain(G5_CASTER_SHEETS)
             .chain(SMALL_KIND_SHEETS)
             .chain(DRAGONFLY_SHEETS)
             .chain(FAIRY_BALLOON_SHEETS)
@@ -1270,6 +1271,11 @@ pub(crate) const HOLIDAY_ZOMBIE_SHEETS: &[u32] = &[319, 320, 321, 331, 332];
 /// its 9-row humanoid strip, 490 its 8-row flap strip
 /// (`Main.npcFrameCount`, `Main.cs:67132`).
 pub(crate) const BLOOD_MOON_SHEETS: &[u32] = &[489, 490];
+
+/// W4-g5 — the two unclaimed aiStyle-8 casters' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `BLOOD_MOON_SHEETS`.
+pub(crate) const G5_CASTER_SHEETS: &[u32] = &[172, 693];
 
 pub(crate) const PUMPKIN_SHEETS: &[u32] = &[
     305, 306, 307, 308, 309, 310, 311, 312, 313, 314, // Scarecrow1-10
@@ -3479,6 +3485,18 @@ pub(crate) fn draw_npcs(
             NpcKind::GoldBird | NpcKind::GoldGrasshopper | NpcKind::GoldMouse | NpcKind::GoldBunny | NpcKind::GoldFrog => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-g5 — the two casters' own NPC_172/NPC_693 sheets (3-frame
+            // strips, `Main.npcFrameCount[172/693]` = 3), the generic
+            // centred anchor (the pumpkin arm's shape). The RuneWizard's
+            // alpha ramp rides the generic `n.alpha` fade below; the
+            // LibrarianSkeleton's Extra[289] book-circle overlay
+            // (`Main.cs:22825-22860`) is the render follow-up.
+            NpcKind::RuneWizard => {
+                pumpkin_moon_draw(assets.npc_sheet(172), npc_rows(172), n, w, h)
+            }
+            NpcKind::LibrarianSkeleton => {
+                pumpkin_moon_draw(assets.npc_sheet(693), npc_rows(693), n, w, h)
             }
         };
         let Some(tex) = tex else {

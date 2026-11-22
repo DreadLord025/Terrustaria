@@ -524,6 +524,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_24",
         // The Desert Djinn (S1-E-5) — the 16-frame NPC_533 strip.
         "NPC_533",
+        // W4-g5 — the two casters' own sheets (NPC_172 3-frame, NPC_693
+        // 3-frame; `Main.npcFrameCount[172/693]` = 3, `Main.cs:67082`).
+        "NPC_172",
+        "NPC_693",
         "NPC_30",
         "NPC_25",
         "NPC_33",
@@ -1911,7 +1915,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 205] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 207] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1973,6 +1977,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 205] = [
         // The gold critters (W4-c9) — appended last for the same reason.
         442, 446, 447,
         443, 445,
+        // W4-g5 — the two casters' bestiary sheets, appended last so the
+        // earlier slots keep their indexes.
+        172, 693,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2781,6 +2788,9 @@ impl Lookups {
                 // the 13-row NPC_445 strips (`Main.cs:67128`/`:67118`).
                 atlas.sheet("NPC_443").copied(),
                 atlas.sheet("NPC_445").copied(),
+                // W4-g5 — the two casters' bestiary sheets (3-frame strips).
+                atlas.sheet("NPC_172").copied(),
+                atlas.sheet("NPC_693").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
