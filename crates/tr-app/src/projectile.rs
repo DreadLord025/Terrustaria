@@ -10996,7 +10996,10 @@ impl Projectile {
     /// rings shift **once per update call** вЂ” after the AI sub-steps, ahead of
     /// the `timeLeft--` at `:17201` вЂ” so a sub-stepped kind records one entry
     /// per tick, not one per sub-step. The modes 4/5 arms (`:17168-17196`) are
-    /// absent: their kinds (933/1100/106) are not ported.
+    /// absent: W4-d19 rowed the mode-4 kinds 933/1100 (the Zenith illusions)
+    /// but their owner-delta push + 60-entry cache stay the recorded
+    /// trail-density deviation (`projectile_ai_sword_styles` module doc);
+    /// the mode-5 kind 106 is still unported.
     fn shift_trailing_history(&mut self) {
         let mode = trailing_mode(self.kind);
         if mode < 0 {
@@ -15279,9 +15282,12 @@ fn shift_ring<T: Copy>(ring: &mut [T]) {
 ///
 /// The table is the in-scope slice over the ported kinds (`Projectile.cs`
 /// `17091-17195`'s chain). The C# set's 1120 (the Forbidden sign's shot) and the
-/// rest of the unported kinds default to в€’1 here, as the source's factory
-/// default does for every id the set omits. Modes 4/5 have no ported kind
-/// (933/1100/106) and no arm.
+/// rest of the unported kinds default to −1 here, as the source's factory
+/// default does for every id the set omits. Mode 4's kinds 933/1100 (the
+/// Zenith illusions) are rowed by W4-d19 but keep the −1 default here —
+/// their owner-delta push + 60-entry cache are the recorded trail-density
+/// deviation (`projectile_ai_sword_styles` module doc); mode 5's kind 106
+/// is still unported.
 pub(crate) fn trailing_mode(kind: u16) -> i32 {
     match kind {
         // `:17091`'s mode-0 kinds among the ported rows (the positions only;
@@ -16204,8 +16210,9 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-348`)
 /// вЂ” `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
-/// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+/// uses it for the turn rate and the close-range pull. `pub(crate)` for the
+/// W4-d10 wave — the aiStyle-92 clouds' ramps share it (keep-one).
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
@@ -20262,7 +20269,136 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // aiStyle 193 вЂ” the Flamethrower Flames
+                        // W4-d19 — the aiStyles 182-186/190 census slice
+                        // (`projectile_ai_sword_styles`). Each arm owns its
+                        // state; the movement is the post-arm `kill_step`
+                        // (HandleMovement's default, `:17015` before the
+                        // `!active` return `:17027`) EXCEPT 182, whose kinds
+                        // sit in `UpdatePosition`'s skip list (`:20435`).
+                        // aiStyle 182 — the Zenith illusions (933/1100,
+                        // `AI_182_FinalFractal` `:43111-43176`): the orbit,
+                        // the opacity window, the dust-trail draws.
+                        182 => {
+                            let owner_view = if self.slots[i].owner == local_owner {
+                                player.as_deref().map(|pl| {
+                                    let (mcx, mcy) = pl.mounted_center();
+                                    crate::projectile_ai_sword_styles::FractalOwner {
+                                        mounted_center: Vec2::new(mcx, mcy),
+                                    }
+                                })
+                            } else {
+                                None
+                            };
+                            crate::projectile_ai_sword_styles::ai_final_fractal(
+                                &mut self.slots[i],
+                                owner_view.as_ref(),
+                                rng,
+                            );
+                            // `UpdatePosition` (`:20435`) names 933/1100 —
+                            // NO integration after the AI (the Centre pin
+                            // is the whole movement).
+                        }
+                        // aiStyle 183 — the Zoologist strikes (880/929,
+                        // `AI_183_ZoologistStrike` `:43095-43109`): the
+                        // velocity brake, the facing, the frame clamp.
+                        183 => {
+                            crate::projectile_ai_sword_styles::ai_zoologist_strike(
+                                &mut self.slots[i],
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d19 follow-up — aiStyle 92, the drifting
+                        // cloud family (the inline `AI()` arm
+                        // `Projectile.cs:32558-32820`): the 511-513 toxic
+                        // clouds, the 1007 gas trap, the 1128 spore child.
+                        // A POOL-side step — the mutual repulsion scans
+                        // write the OTHER cloud slots (`dragon_step`
+                        // shape); the 1007 gas buff reads the player +
+                        // the NPC vec.
+                        92 => {
+                            crate::projectile_ai_clouds::cloud_family_step(
+                                &mut self.slots,
+                                i,
+                                world,
+                                player.as_deref_mut(),
+                                npcs,
+                                rng,
+                            );
+                            // tileCollide false (`:32567`) — the free
+                            // integrate, even on the lifetime-kill tick
+                            // (`:17015` before the `!active` return).
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 184 — the Torch God's fireball (949,
+                        // `AI_184_BadTorchLuck` `:42787-42822`): the
+                        // owner-gated self-hurt, the cue, the ai[1] drain
+                        // that re-arms tileCollide, the four-dust trail.
+                        184 => {
+                            crate::projectile_ai_sword_styles::ai_bad_torch_luck(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 185 — the Soul Drain (476,
+                        // `AI_185_LifeDrain` `:42631-42665`): the first-tick
+                        // hitbox scan + the mana-pay latch.
+                        185 => {
+                            crate::projectile_ai_sword_styles::ai_life_drain(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                &npcs[..],
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 186 — the Resonance Scepter's blast (950,
+                        // `AI_186_PrincessWeapon` `:42667-42785`): the
+                        // 60-tick life, the eased scale, the dust rings.
+                        186 => {
+                            crate::projectile_ai_sword_styles::ai_princess_weapon(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 190 — the seven big-sword slashes
+                        // (`AI_190_NightsEdge` `:41972-42227`): the shared
+                        // spine + the per-kind dust gates; the 1126 spore
+                        // machine's child intents ride back out.
+                        190 => {
+                            let spores = crate::projectile_ai_sword_styles::ai_nights_edge(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            // W4-d19 follow-up — the child drain landed:
+                            // the 1128 clouds spawn through the data seam
+                            // (the row + the aiStyle-92 arm are this
+                            // round's census); the 1129 slam spawns once
+                            // W4-d21's row merges (the documented
+                            // cross-branch contract — the seam no-ops
+                            // without the row). The C# spawns inline
+                            // mid-AI (`:41944`/`:41967`/`:42172`); the
+                            // port drains at the arm's tail on the same
+                            // tick (the spear sub-shot precedent — the
+                            // children's first AI runs next tick either
+                            // way, the slot scan already passed them).
+                            if !spores.clouds.is_empty() || spores.slam.is_some() {
+                                let owner_id = self.slots[i].owner;
+                                crate::projectile_ai_clouds::drain_claymore_spores(
+                                    self,
+                                    owner_id,
+                                    spores,
+                                );
+                            }
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 193 — the Flamethrower Flames
                         // (`AI_193_Flamethrower` `:41337-41401`): the
                         // 72-tick life, the 60-tick decay, the two dust
                         // gates' draws.
@@ -27765,6 +27901,35 @@ impl ProjectilePool {
             if hellfire_clamp {
                 self.slots[slot].time_left = 1;
             }
+            // W4-d19 follow-up — `Damage_PVE_Inner`'s toxic-cloud hit
+            // counter (`Projectile.cs:13218-13222`): every contact bumps
+            // `ai[1]` (the aiStyle-92 arm's triple-age +
+            // `Damage_CanDealDamage` refusal read it — one hit, then the
+            // cloud fades without dealing again). The C# site sits ABOVE
+            // the strike, so even a defence-zeroed hit counts.
+            if (511..=513).contains(&pkind) {
+                self.slots[slot].ai[1] += 1.0;
+                self.slots[slot].net_update = true;
+            }
+            // W4-d19 follow-up — `Damage_PVE_Inner`'s Soul Drain /
+            // Resonance Scepter direction arm (`Projectile.cs:13198-
+            // 13209`, the `(type == 476 || type == 950) && !npcProj`
+            // gate — the port has no npcProj, both kinds are player
+            // shots): the facing points from the OWNER's centre at the
+            // victim, and the strike's hit direction follows it (the
+            // C# `num23 = base.direction` at `:13598` reads the write).
+            // The port's `from_x` knockback origin takes the owner's
+            // centre so `strike_projectile`'s sign derivation matches.
+            // The PvP twin (`:14655-14666`) folds out — the single-
+            // player port's PvP lane refuses (the 185 module doc).
+            if matches!(pkind, SOUL_DRAIN | PRINCESS_WEAPON) {
+                if let Some((owner_cx, _)) = owner {
+                    let (npc_cx, _) = n.center();
+                    let dir = if npc_cx < owner_cx { -1 } else { 1 };
+                    self.slots[slot].direction = dir;
+                    from_x = owner_cx;
+                }
+            }
             // `Damage_PVE_Inner`'s aiStyle-99 arm (`Projectile.cs:13256-
             // 13300`, S1-P-i09): the dropped twin squashes its velocity to
             // len/5 and takes the `Next(50, 81) * 0.1` upward lift (clamped
@@ -28068,6 +28233,13 @@ impl ProjectilePool {
                 // Ichor), called at `:13580` вЂ” BEFORE the tag application.
                 // The rolls ride the pass's `UpdateProjectiles` stream.
                 match self.slots[slot].kind {
+                    // W4-d19 follow-up — `StatusNPC`'s Soul Drain arm
+                    // (`Projectile.cs:11474-11477`): LifeDrain (151) for
+                    // 30 ticks, no roll. The debuff's heal-over-time is
+                    // the buff layer's follow-up (the 185 module doc).
+                    SOUL_DRAIN => {
+                        npcs[idx].buffs.add_buff(151, 30);
+                    }
                     267 => {
                         // `:11637-11644` вЂ” Next(3): 1/3 the 3600-tick
                         // Poisoned, else 1800.
@@ -30453,11 +30625,11 @@ mod tests {
         }
     }
 
-    /// W4-d11 DOC-SWEEP вЂ” the Nebula set's magic on-hit pickup proc
+    /// W4-d11 DOC-SWEEP ╨▓╨ВтАЭ the Nebula set's magic on-hit pickup proc
     /// (`Projectile.cs:13826-13830`): a magic shot, the owner wearing the set
     /// (`setNebula`), the 30-tick cooldown at 0 and a 1/3 gate spawn one of
     /// the three pickups at the victim's centre. The C# draw order: the
-    /// Next(3) gate FIRST (the `&&` short-circuit вЂ” magic/set/cooldown draw
+    /// Next(3) gate FIRST (the `&&` short-circuit ╨▓╨ВтАЭ magic/set/cooldown draw
     /// nothing), then the SelectRandom pick (one Next(3)), then the two
     /// velocity draws (Next(10,31) and Next(-20,1)). The crit Next(1,101) and
     /// DamageVar Next(-15,16) precede them on the same stream. WRITTEN NOT RUN.
@@ -30527,7 +30699,7 @@ mod tests {
         assert!(pool.slots()[slot].wants_nebula_pickup.is_none(), "taken");
     }
 
-    /// W4-d11 DOC-SWEEP вЂ” the proc's gates: no set bonus (`setNebula` false),
+    /// W4-d11 DOC-SWEEP ╨▓╨ВтАЭ the proc's gates: no set bonus (`setNebula` false),
     /// a live cooldown, or the aiStyle-59 exclusion (the Spectre Wrath 356
     /// flips friendly past its hostile window but must NOT proc, `:13659`'s
     /// `aiStyle != 59`) each refuse the proc and draw NOTHING for it.
@@ -30584,12 +30756,118 @@ mod tests {
                 "case {case}: no proc"
             );
             assert_eq!(player.nebula_cd, cd, "case {case}: the cooldown unchanged");
-            // Only the crit + DamageVar draws ran вЂ” no nebula Next(3)/velocity.
+            // Only the crit + DamageVar draws ran ╨▓╨ВтАЭ no nebula Next(3)/velocity.
             assert!(
                 !rng.ranges.contains(&(0, 3)) && !rng.ranges.contains(&(10, 31)),
                 "case {case}: the proc drew nothing"
             );
         }
+    }
+
+    /// W4-d19 follow-up тАФ the 186 PrincessWeapon per-kind overlay census:
+    /// `Damage_PVE_Inner`'s `(type == 476 || type == 950) && !npcProj`
+    /// direction arm (`Projectile.cs:13198-13209`) points the shot's
+    /// facing from the OWNER's centre at the victim, and the strike's
+    /// knockback follows it (`num23 = base.direction`, `:13598`). The
+    /// 476's `StatusNPC` LifeDrain (151, 30) arm (`:11474-11477`) lands
+    /// with it. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d19_the_princess_and_soul_drain_face_from_the_owner() {
+        let w = ground();
+        for kind in [PRINCESS_WEAPON, SOUL_DRAIN] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            // The NPC LEFT of the owner centre (the owner stands at the
+            // spawn (20, 20) тЖТ centre тЙИ (330, 341)); the shot overlaps
+            // the NPC but its OWN centre sits RIGHT of it тАФ the stock
+            // facing would knock the wrong way without the overlay.
+            let owner_cx = 20.0 * TILE_PX + crate::player::WIDTH * 0.5;
+            npc.x = owner_cx - 60.0;
+            npc.y = 24.0 * TILE_PX;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x - 40.0, npc.y, 0.0, 0.0, 50, 4.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                Some((owner_cx, 341.0)),
+                None,
+                &mut rng,
+            );
+            assert!(npc.hp < 10_000, "kind {kind} lands");
+            assert_eq!(
+                pool.slots()[slot].direction, -1,
+                "kind {kind}: the victim is left of the OWNER (`:13201-13208`)"
+            );
+            // The knockback pushes AWAY from the owner (leftward).
+            assert!(npc.vx <= 0.0, "kind {kind}: the hit direction follows the facing");
+            if kind == SOUL_DRAIN {
+                assert!(npc.buffs.has_buff(151), "the LifeDrain debuff (`:11476`)");
+            }
+        }
+    }
+
+    /// W4-d19 follow-up тАФ `Damage_CanDealDamage`'s cloud terms
+    /// (`Projectile.cs:12448`): the 1007 gas never deals contact damage;
+    /// the 1128 sweep clouds (ai1 >= 1) refuse while the bloom clouds
+    /// (ai1 = 0) hit; the 511 toxic cloud hits ONCE (the `:13220` counter
+    /// bumps ai[1] pre-strike, the next walk refuses). WRITTEN NOT RUN.
+    #[test]
+    fn w4_d19_the_cloud_damage_gates_are_verbatim() {
+        let w = ground();
+        // The gas: an overlapping NPC takes NOTHING.
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(1007, npc.x, npc.y, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert_eq!(npc.hp, 10_000, "the gas deals no contact damage");
+        // The 1128 sweep seed refuses; the bloom cloud hits.
+        for (ai1, hits) in [(90.0f32, false), (0.0, true)] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let slot = pool
+                .spawn_with_data_ai(1128, npc.x, npc.y, 0.0, 0.0, 50, 0.0, 0.0, ai1)
+                .unwrap();
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            assert_eq!(npc.hp < 10_000, hits, "1128 ai1={ai1}: the `:12448` gate");
+        }
+        // The toxic cloud: one hit, then the counter refuses the re-hit.
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(511, npc.x, npc.y, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert!(npc.hp < 10_000, "the first toxic hit lands");
+        assert_eq!(pool.slots()[slot].ai[1], 1.0, "the hit counter (`:13220`)");
+        let hp_after = npc.hp;
+        // Clear the id-static stamp so ONLY the ai[1] gate can refuse
+        // (the group cooldown would block the re-hit too).
+        pool.id_static.clear();
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert_eq!(npc.hp, hp_after, "the ai[1] >= 1 refusal (`:12448`)");
     }
 
     #[test]

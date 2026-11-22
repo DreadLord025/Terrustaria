@@ -235,6 +235,20 @@ mod projectile_ai_101_110;
 // Code-only mode — witness tests written not run.
 mod projectile_ai_explosions;
 mod projectile_ai_dd2;
+// W4-d19 — the aiStyles 182-186/190 census slice: the Zenith illusions
+// (182), the Zoologist strikes (183), the Torch God's fireball (184), the
+// Soul Drain's mana latch (185), the Resonance Scepter's blast (186) and
+// the seven big-sword slashes (190). The rows land in projectile/data.rs;
+// the dispatch arms are wired in projectile.rs::update. Code-only mode —
+// witness tests written not run.
+mod projectile_ai_sword_styles;
+// W4-d19 follow-up — the aiStyle-92 cloud family (the 511-513 toxic
+// clouds, the 1007 gas trap, the 1128 Chlorophyte Claymore spore child)
+// + the 1126 spore machine's 1128/1129 child drain. The rows land in
+// projectile/data.rs; the dispatch arm + the drain are wired in
+// projectile.rs::update. The 1129 row/arm are W4-d21's claim (the
+// documented cross-branch contract). Code-only — witnesses written not run.
+mod projectile_ai_clouds;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

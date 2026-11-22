@@ -804,6 +804,71 @@ pub fn drown_collision(
     false
 }
 
+/// `Collision.IsWorldPointSolid` (`Collision.cs:1434-1491`) — the single-point
+/// solid probe the aiStyle-92 cloud wall-bounce reads (`Projectile.cs:32708`,
+/// `treatPlatformsAsNonSolid: true`). The tile gate is the `Main.tileSolid`
+/// read (the port's [`solid_kind`], the 192 leaf-block exception included);
+/// the platform arm refuses `TileID.Sets.Platforms` + the planter box 380.
+/// The point then tests against the tile's `blockType()` shape: full block,
+/// half brick (the bottom 8 px) or one of the four slope triangles.
+///
+/// Verbatim quirk: the slope arm's bounds guard (`:1470`) ANDs
+/// `pos.X < left` with `pos.X > right` — always false, so it never returns
+/// early; the `% 16` triangle tests run for every point in the cell (the
+/// C#'s float remainder, negative coordinates included). The guard FOLDS
+/// OUT here (a provably-dead conjunction — the W4-d10 keep-one adjudication,
+/// research/26g-clouds-keep-one.md; d10's module-private twin kept the
+/// literal dead `if`, this shared copy keeps the behaviour). The tile
+/// solidity read is [`solid_kind`] — the LIVE `Main.tileSolid` state
+/// (`WorldGen.cs:15715` clears 192 after generation; d10's raw-set read
+/// wrongly counted leaf blocks solid).
+pub fn is_world_point_solid(
+    world: &World,
+    x: f32,
+    y: f32,
+    treat_platforms_as_non_solid: bool,
+) -> bool {
+    // `Utils.ToTileCoordinates` (`Utils.cs:1807-1810`): `(int)X >> 4` — the
+    // arithmetic shift floors negatives (unlike `/ 16`).
+    let px = (x as i32) >> 4;
+    let py = (y as i32) >> 4;
+    // `WorldGen.InWorld(point.X, point.Y, 1)` (`WorldGen.cs:9688-9695`).
+    if px < 1 || px >= world.width - 1 || py < 1 || py >= world.height - 1 {
+        return false;
+    }
+    let Some(t) = world.tile(px, py) else {
+        return false;
+    };
+    if !t.active() || t.inactive() || !solid_kind(t.kind) {
+        return false;
+    }
+    if treat_platforms_as_non_solid && t.kind > 0 && (td::SET_PLATFORMS.has(t.kind) || t.kind == 380)
+    {
+        return false;
+    }
+    let bx = (px * 16) as f32;
+    let by = (py * 16) as f32;
+    match block_type(t) {
+        // `:1453-1458` — the full block: the closed 16×16 cell.
+        0 => x >= bx && x <= bx + 16.0 && y >= by && y <= by + 16.0,
+        // `:1459-1464` — the half brick: the bottom 8 px only.
+        1 => x >= bx && x <= bx + 16.0 && y >= by + 8.0 && y <= by + 16.0,
+        // `:1465-1488` — the four slopes (`blockType` 2-5 = slope 1-4).
+        n @ 2..=5 => {
+            let num2 = x % 16.0;
+            let num3 = y % 16.0;
+            match n {
+                3 => num2 + num3 >= 16.0,
+                2 => num3 >= num2,
+                5 => num3 <= num2,
+                4 => num2 + num3 <= 16.0,
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 /// `Utils.FloatIntersect` (`Utils.cs:982-989`): the two boxes overlap. The
 /// C#'s comparisons are strict, so a touching edge still counts as an
 /// overlap.
@@ -2488,6 +2553,57 @@ mod tests {
         let (vx, vy) = head_probe(150.0, 100.0);
         assert_eq!(vx, 155.0);
         assert_eq!(vy, 113.0);
+    }
+
+    /// `Collision.IsWorldPointSolid` (`:1434-1491`) — the aiStyle-92
+    /// clouds' wall probe (the W4-d19/d10 keep-one survivor, the shared
+    /// copy). Full block closed-box, half-brick bottom 8, slope
+    /// triangles, the platform + planter-380 exclusion, the actuated /
+    /// leaf-192 refusals, the fluff-1 bounds and the negative-coordinate
+    /// FLOOR (`(int)X >> 4`, not truncation). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn the_world_point_solid_probe_is_verbatim() {
+        use tr_core::tile::{FLAG_HALF_BRICK, FLAG_INACTIVE};
+        let mut w = world();
+        // A full stone block at (10, 10) = [160,176]×[160,176].
+        put(&mut w, 10, 10, 1);
+        assert!(is_world_point_solid(&w, 168.0, 168.0, true));
+        assert!(is_world_point_solid(&w, 160.0, 160.0, true), "closed edges");
+        assert!(!is_world_point_solid(&w, 159.9, 168.0, true));
+        // The half brick: only the bottom 8 px (`:1459-1464`).
+        w.tiles[w.index(10, 10)].flags |= FLAG_HALF_BRICK;
+        assert!(!is_world_point_solid(&w, 168.0, 164.0, true), "the top half is open");
+        assert!(is_world_point_solid(&w, 168.0, 172.0, true));
+        w.tiles[w.index(10, 10)].flags &= !FLAG_HALF_BRICK;
+        // Slope 1 (blockType 2): num3 >= num2 — the lower-left triangle.
+        w.tiles[w.index(10, 10)].set_slope(1);
+        assert!(is_world_point_solid(&w, 162.0, 170.0, true), "y%16 ≥ x%16");
+        assert!(!is_world_point_solid(&w, 170.0, 162.0, true));
+        w.tiles[w.index(10, 10)].set_slope(0);
+        // Actuated tiles are walk-through (`:1442`).
+        w.tiles[w.index(10, 10)].flags |= FLAG_INACTIVE;
+        assert!(!is_world_point_solid(&w, 168.0, 168.0, true));
+        w.tiles[w.index(10, 10)].flags &= !FLAG_INACTIVE;
+        // The platform exclusion (`:1446`): kind 19 platform + the 380
+        // planter box refuse under treatPlatformsAsNonSolid, count solid
+        // without it.
+        put(&mut w, 12, 10, 19);
+        assert!(!is_world_point_solid(&w, 200.0, 168.0, true));
+        assert!(is_world_point_solid(&w, 200.0, 168.0, false));
+        put(&mut w, 13, 10, 380);
+        assert!(!is_world_point_solid(&w, 216.0, 168.0, true));
+        // The leaf-block 192: the LIVE tileSolid read (WorldGen.cs:15715).
+        put(&mut w, 14, 10, 192);
+        assert!(!is_world_point_solid(&w, 232.0, 168.0, true), "192 went non-solid");
+        // The fluff-1 bounds: column 0 / row 0 refuse even when solid.
+        put(&mut w, 0, 5, 1);
+        assert!(!is_world_point_solid(&w, 8.0, 88.0, true));
+        // Negative coordinates FLOOR (`(int)X >> 4`): (-17, 168) reads
+        // tile (-2, 10), not d10's truncated (-1, 10) — both refuse
+        // behind the fluff-1 gate (the divergence is unreachable), but
+        // the floor is the structurally verbatim form.
+        assert!(!is_world_point_solid(&w, -1.0, -1.0, true));
+        assert!(!is_world_point_solid(&w, -17.0, 168.0, true));
     }
 
     /// The liquid's surface offset (`:1421-1423`): a half-full tile only
