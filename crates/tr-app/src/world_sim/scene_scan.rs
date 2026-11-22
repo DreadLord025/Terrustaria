@@ -770,6 +770,78 @@ mod tests {
     }
 
     #[test]
+    fn w4_e28_the_bast_and_torch_campfire_scan_arms() {
+        // W4-e28 census witnesses — `SceneMetrics.cs:394-401`: the torch
+        // campfire (405, `frameX < 54`) and the Bast statue (506,
+        // `frameX < 72`) raise the SAME aura flags the grants read.
+        let m = scan_scene_at(
+            &aura_world(506, 0, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(m.has_cat_bast);
+        assert!(m.auras().cat_bast, "the snapshot the Player reads");
+        // The unlit/extinguished frame (>= 72) does not count.
+        let m = scan_scene_at(
+            &aura_world(506, 72, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(!m.has_cat_bast);
+        // The torch campfire 405 counts on frameX < 54.
+        let m = scan_scene_at(
+            &aura_world(405, 36, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(m.has_campfire && m.auras().campfire);
+        let m = scan_scene_at(
+            &aura_world(405, 54, 0),
+            [100.0 * 16.0, 95.0 * 16.0],
+            false,
+            false,
+            false,
+        );
+        assert!(!m.has_campfire);
+    }
+
+    #[test]
+    fn w4_e28_the_aura_proximity_window_gates_the_scan() {
+        // `ZoneScanSize` (`SceneMetrics.cs:917-919`): 169x124 tiles centred
+        // on the player's tile — a lit campfire INSIDE the window raises the
+        // aura, one OUTSIDE it does not.
+        let mut w = aura_world(215, 0, 0);
+        // Move the campfire out of the ±84-tile half-width (x 100 → 195).
+        let i = w.index(100, 95);
+        w.tiles[i] = tr_core::Tile::default();
+        let i = w.index(195, 95);
+        w.tiles[i] = tr_core::Tile {
+            kind: 215,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let m = scan_scene_at(&w, [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(!m.has_campfire, "95 tiles away is outside the 84-tile half");
+        // Pull it back inside the window (x 150 — 50 tiles away).
+        let i = w.index(195, 95);
+        w.tiles[i] = tr_core::Tile::default();
+        let i = w.index(150, 95);
+        w.tiles[i] = tr_core::Tile {
+            kind: 215,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let m = scan_scene_at(&w, [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(m.has_campfire, "50 tiles away is inside the window");
+    }
+
+    #[test]
     fn the_sunflower_count_and_the_graveyard_cancel() {
         // `AggregateTileCounts` (`:617-624`): a sunflower (27) in the window
         // raises HasSunflower; a graveyard above GraveyardTileMin cancels it.

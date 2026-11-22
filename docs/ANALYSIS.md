@@ -41445,3 +41445,137 @@ The retire record is research/93a's updated §§1-receipt/3b/7/8 (FINAL):
 - **The FINAL merger instruction** is 93a §8 (the 949 dedupe → the event
   as-is → the 5043 keep-f33 → the v11 persist per 103 §9 → music stands).
   The branch retires; no follow-up pass needed.
+
+## The proximity-buff census (W4-e28, 2026-11-20, code-only)
+
+The six station/aura proximity buffs censused against the C# Player
+tile-buff scan:
+
+**Already verbatim (no change, witnesses added):**
+- The scan arms (`SceneMetrics.cs:378-409` → `scene_scan.rs`'s match):
+  campfire 215 `frameY < 36`, torch campfire 405 `frameX < 54`, heart
+  lantern 42 `frameY 324..=358`, star bottle 42 `frameY 252..=286`,
+  bast statue 506 `frameX < 72`, the three candles 49/372/646
+  `frameX < 18`. The proximity window is `ZoneScanSize` 169x124 tiles
+  centred on the player (`SceneMetrics.cs:917-919`).
+- The 2-tick grants (`Player.cs:25532-25547` → `player.rs`'s auras
+  block): campfire → 87, bast → 215, star → 158, heart → 89 (+ sunflower
+  146, shadow candle 350). The grants refresh per tick from the scan
+  snapshot; the effect arms read the previous tick's grant (the source
+  order).
+- The effect arms: campfire +1 regen & ×1.1 ramp / heart +2
+  (`Player.cs:19170-19177` → `regen.rs:177-208`, fed from the aura
+  snapshot not the buff slot), 158 → +10 manaRegenBonus (`:9931-9934`),
+  215 → +5 statDefense (`:10106-10109`), 93 → ammoBox (`:10078-10081`,
+  the sim's `grant_ammo_mastery` seam), 29 → Clairvoyance's
+  crit+2/damage+0.05/mana+20/cost−0.02 (`:11886-11892`).
+
+**Ported this task (the missing arms):** `TileInteractionsUse`'s two
+station-buff branches — the Crystal Ball (tile 125, `Player.cs:32594-
+32599`: `AddBuff(29, 108000)` then `SoundID.Item4`) and the Ammo Box
+(tile 287, `:32630-32635`: `AddBuff(93, 108000)` then `SoundID.Item149`).
+`tr_core::edit::interact_at` gains `TileInteraction::StationBuff` (the
+kind literals before the dial branches, matching the C# chain order);
+the app arm in `editing/doors.rs` grants THEN plays — the cue rides
+`base.position` (the PLAYER's position), not the tile's, so it bypasses
+the tile-anchored `interaction_events` cue table. `Item_149` joins
+`SFX_CUES` (`SoundID.cs:1533`, `Sounds/Item_149.xnb` exists). Both arms
+are RNG-free by construction: `AddBuff` draws nothing and `play_at` is
+the unpitched path (no case-2 pitch roll) — witness
+`w4_e28_the_station_grants_draw_no_rng` pins the UpdatePlayers + global
+streams across the click and the re-click refresh
+(`AddBuff_TryUpdatingExistingBuffTime`, `Player.cs:5402-5426`: refresh,
+never stack).
+
+**Deliberately out (their own lanes):** the neighbouring station-buff
+arms 621 (192), 464 (348), 699 (366), 377 (159), 354 (150)
+(`Player.cs:32600-32629`) and the banner 147 / sandstorm 194 /
+water-peace candle 86/157 grant rows (`:25520-25531`, `:25552-25559`) —
+the scan inputs (`has_banner`, candle counts) exist but their grant +
+consumer rows belong to the banner/candle/sandstorm tasks.
+
+### Verification
+
+Code-only: the arms re-read against the cited C# windows; every seam
+checked by read/grep (`BuffSlots::add_buff`/`find_buff_index`,
+`grant_ammo_mastery`, `Audio::play_at`/`played_count`, `NamedRngs`
+stream clones, the `flow_app`/`object_world`/`set_tile` test rigs). The
+11 witness tests (scene_scan 2, player 4, edit 1, doors 3, audio 1)
+are WRITTEN, NOT RUN — no
+cargo/rustc/rustfmt/tests/graphify invoked.
+
+## The proximity buffs, second half (W4-f34, 2026-11-21, code-only)
+
+The census the W4-e28 note left open ("the neighbouring station-buff arms
+621 (192), 464 (348), 699 (366), 377 (159), 354 (150) ... their own lanes")
+plus the honey/bubble remainder, re-read against the C# Player tile-scan
+and landed here.
+
+**Ported this task:**
+- The five neighbour `TileInteractionsUse` station-buff arms
+  (`Player.cs:32600-32629`), in the C# chain order 125 → 621 → 464 → 699 →
+  377 → 354 → 287 before the dials: Slice of Cake 621 → `AddBuff(192,
+  7200)` + Item2 (:32600-32605), War Table 464 → `AddBuff(348, 108000)` +
+  Item4 (:32606-32611), Dead Cells Potion Station 699 → `AddBuff(366,
+  108000)` + Item179 (:32612-32617), Sharpening Station 377 →
+  `AddBuff(159, 108000)` + Item37 (:32618-32623), Bewitching Table 354 →
+  `AddBuff(150, 108000)` + Item4 (:32624-32629). The dispatch
+  (`tr_core::edit::interact_at`) extends the e28 `StationBuff` row; the
+  app arm (`editing/doors.rs`) maps the cue per buff id and plays at
+  `base.position` (the PLAYER, not the tile). The 699 capture supersedes
+  the old station-tail craft-filter click: the C# arm grants the buff and
+  never reaches `:33279` — the adjacency alchemy-table flag
+  (`craft.rs`'s `AdjTiles`, `:35646-35649`) is a separate path and stays.
+- The missing effect rows: Sugar Rush 192 `pickSpeed -= 0.2f; moveSpeed +=
+  0.2f` (`:9935-9939`, the port's positive pick_speed_bonus convention)
+  and the Dead Cells Potion Station 366 flag (`:10185-10188`) with its
+  `ResetEffects` clear (`:18362`) — the flag feeds the `AddBuff` chain's
+  1.2× time extension (`:5430-5433`), which the timer engine already
+  carried source-less. The 150/348 cap arms were already live
+  (`update_summon_buff_arms`, `:10175-10183`); 159/29/93 were e28's.
+- The honey-contact grant (`Player.cs:27744-27748`): `AddBuff(48, 1800)`
+  every tick in honey, refresh-not-stack (`:5402-5426`). The
+  `!this.shimmering` guard is vacuous in the port (no absorbed state,
+  S1-E-16 — the same deviation the splash block records at `:27777`).
+  The grant folds ahead of the splash block — observation-identical
+  (AddBuff draws no RNG, the splash reads only the wet flags, the effect
+  rows run later in the same tick).
+- The honey regen adds (`:19134-19138`): `lifeRegenTime += 2f; lifeRegen
+  += 2` while held, folded through `update_survival`'s `extra_regen` /
+  `extra_time` slots (the engine applies them after the ramp-time++ and
+  before the campfire/heart aura adds — the C# order). The drain
+  mitigation (`:19096-19103`) was already live in `derive_dot_inputs`;
+  the DW-2.5 witness is re-derived onto the landed +2 rows (−30 venom +
+  4 mitigation + 2 honey = −24; honey-alone = +2 flat, ramp-time 3).
+
+**Censused, deliberately out:**
+- "bubble" — tile 379 (`TileID.Bubble`, `TileID.cs:1387`) is a
+  liquid-container block, NOT a buff station: the C# Player tile-scan has
+  no 379 buff arm (its only Player reads are the spawn-floor refusal
+  `:37909`, the actuator exclusion `:40644` and the `CheckSpawn`
+  tileSolid window `:54535-54538` — all ported). No bubble buff exists in
+  `BuffID.cs`; nothing to grant.
+- The honey-grant siblings: the Queen Bee contact `AddBuff(48, 1800)`
+  (`:31362`, NPC type 1 ai[1]==1125 — the NPC lane) and the Honey Comb
+  hurt grant `AddBuff(48, 300)` (`:38515` — already ported,
+  `hurt_modifiers.rs:248`).
+- The cue pitch rolls: the station cues keep the e28-recorded unpitched
+  `play_at` stand-in (no case-2 `Main.rand` pitch draw); the STATIC
+  volume halves ride volume_scale — Item179's `WithVolume(0.6f)`
+  (`SoundID.cs:1563`) and Item37's case-2 ×0.5 tweak
+  (`LegacySoundPlayer.cs:564-565`). The faithful pitched path
+  (`play_use_sound`) is the item-use lane's.
+- The Warmth 124 / resistCold AddBuff chain stays source-less (its own
+  buff-wave lane); the 366 flag now has its source.
+
+### Verification
+
+Code-only: every arm re-read against the cited C# windows; the seams
+checked by read/grep (`BuffSlots::add_buff`/`clear_buff`/
+`find_buff_index`, the `dead_cells_potion_station` field + the 1.2×
+extension witness `buffs.rs:570`, `Audio::play_at`/`played_count`/
+`sound_type`, `SOUND_STYLES` Item179 row `soundid.rs:332`, the
+`station_app`/`object_world`/`set_tile`/`ground_world` rigs,
+`RegenState` field visibility, `teleport_style`). The 8 new witness
+tests (edit 1, doors 3, audio 1, player 3) plus the DW-2.5 re-derivation
+are WRITTEN, NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked.

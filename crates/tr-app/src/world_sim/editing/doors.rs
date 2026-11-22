@@ -334,6 +334,36 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
             return true;
         }
+        edit::TileInteraction::StationBuff {
+            buff_type,
+            buff_time,
+        } => {
+            // W4-e28 + W4-f34 — the seven station-buff arms
+            // (`Player.cs:32594-32635`): `AddBuff(id, time)` THEN the cue at
+            // `base.position` — the PLAYER's position, not the tile's (the
+            // generic cue mapping below plays at the cell, so this arm owns
+            // its own play). The click is consumed (`flag2 = true`). The
+            // cue per arm: 29/348/150 → Item4 (:32598/:32610/:32628),
+            // 192 → Item2 (:32604), 366 → Item179 (:32616, the style's own
+            // `WithVolume(0.6f)`, `SoundID.cs:1563`), 159 → Item37 (:32622,
+            // the case-2 ×0.5 volume tweak, `LegacySoundPlayer.cs:564-565`),
+            // 93 → Item149 (:32634). The plain `play_at` path keeps the
+            // e28-recorded unpitched stand-in (no case-2 pitch roll); the
+            // STATIC volume halves ride the volume_scale argument.
+            let (cue, volume) = match *buff_type {
+                192 => ("Item_2", 1.0),
+                366 => ("Item_179", 0.6),
+                159 => ("Item_37", 0.5),
+                93 => ("Item_149", 1.0),
+                _ => ("Item_4", 1.0), // 29 / 348 / 150
+            };
+            if let Some(p) = app.player.as_mut() {
+                p.buffs.add_buff(*buff_type, *buff_time);
+                app.audio.play_at(cue, p.x, p.y, volume);
+            }
+            app.world_key = None;
+            return true;
+        }
         edit::TileInteraction::CandleToggled => {
             app.world_key = None;
             return true;
@@ -432,6 +462,10 @@ fn interaction_events(
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::BedSleep { .. } => (None, Vec::new()),
         edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
+        // W4-e28: the station-buff grant is consumed in `interact_tile`
+        // ahead of this mapping — its cue plays at the PLAYER's position
+        // (`base.position`), not the tile's, so it never rides this table.
+        edit::TileInteraction::StationBuff { .. } => (None, Vec::new()),
         // The bank open is consumed in `interact_tile` ahead of this
         // mapping (the SoundID 10/11/12 keys are absent from the cue set).
         edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
@@ -708,6 +742,147 @@ mod tests {
         .unwrap();
         assert_eq!(cue, None);
         assert_eq!(events, vec![(32, 10, 17)]);
+    }
+
+    // ---- W4-e28: the Crystal Ball / Ammo Box station buffs -----------------
+
+    /// A station app: the object-world floor with the station tile at
+    /// (10, 19) and the player spawned on the floor.
+    fn station_app(kind: u16) -> App {
+        let mut w = object_world();
+        set_tile(&mut w, 10, 19, kind);
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let player = Player::spawn(&app.world);
+        app.player = Some(player);
+        app
+    }
+
+    #[test]
+    fn w4_e28_the_crystal_ball_grants_clairvoyance_and_plays_item4() {
+        // `Player.cs:32594-32599`: the click on tile 125 grants buff 29 for
+        // 108000 ticks (30 min) and plays `SoundID.Item4` at the PLAYER's
+        // position. The click is consumed; the cell keeps its kind.
+        let mut app = station_app(125);
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(29).expect("Clairvoyance granted");
+        assert_eq!(p.buffs.buff_time[slot], 108000);
+        assert_eq!(app.audio.played_count(), played0 + 1, "one cue played");
+        assert_eq!(app.world.tile(10, 19).unwrap().kind, 125, "no world write");
+    }
+
+    #[test]
+    fn w4_e28_the_ammo_box_grants_buff_93_and_plays_item149() {
+        // `Player.cs:32630-32635`: tile 287 grants buff 93 for 108000 ticks
+        // and plays `SoundID.Item149`. The buff's effect arm
+        // (`:10078-10081`) sets `ammoBox` — the 1/5 not-consume roll's flag.
+        let mut app = station_app(287);
+        let played0 = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19));
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(93).expect("Ammo Box granted");
+        assert_eq!(p.buffs.buff_time[slot], 108000);
+        assert_eq!(app.audio.played_count(), played0 + 1);
+        // The effect lands through the sim's buff-flag seam
+        // (`grant_ammo_mastery`, the `:10080` arm — the buff loop's flag
+        // the 1/5 not-consume roll reads).
+        let mut p = app.player.take().unwrap();
+        crate::world_sim::player::grant_ammo_mastery(
+            &mut p,
+            &app.equip.armor,
+            &app.equip.misc_equips,
+        );
+        assert!(p.ammo_box, "the 1/5 not-consume flag");
+        app.player = Some(p);
+    }
+
+    #[test]
+    fn w4_e28_the_station_grants_draw_no_rng() {
+        // RNG-free verify: the C# arms call only `AddBuff` + `PlaySound`
+        // (the plain `play_at` path draws no pitch roll) — no stream moves.
+        let mut app = station_app(125);
+        let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let global0 = app.rngs.global().clone();
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            players0,
+            "UpdatePlayers untouched"
+        );
+        assert_eq!(*app.rngs.global(), global0, "global untouched");
+        // The re-click refreshes the time, still no draws (the AddBuff
+        // update-in-place path, `Player.cs:5402-5426`).
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            players0
+        );
+        let p = app.player.as_ref().unwrap();
+        let slot = p.buffs.find_buff_index(29).unwrap();
+        assert_eq!(p.buffs.buff_time[slot], 108000, "refreshed, not stacked");
+    }
+
+    // ---- W4-f34: the five neighbour station buffs -------------------------
+
+    #[test]
+    fn w4_f34_the_cake_war_table_and_dead_cells_station_grant_their_buffs() {
+        // `Player.cs:32600-32617`: tile 621 grants buff 192 (Sugar Rush) for
+        // 7200 ticks + Item2; tile 464 grants 348 (War Table) for 108000 +
+        // Item4; tile 699 grants 366 for 108000 + Item179. Each consumes the
+        // click, plays ONE cue at the player position and writes no world.
+        for (kind, buff, time) in [(621u16, 192, 7_200), (464, 348, 108_000), (699, 366, 108_000)]
+        {
+            let mut app = station_app(kind);
+            let played0 = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the grant");
+            assert_eq!(p.buffs.buff_time[slot], time, "tile {kind}'s duration");
+            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
+            assert_eq!(app.world.tile(10, 19).unwrap().kind, kind, "no world write");
+        }
+    }
+
+    #[test]
+    fn w4_f34_the_sharpening_and_bewitching_tables_grant_their_buffs() {
+        // `Player.cs:32618-32629`: tile 377 grants buff 159 (Sharpened) for
+        // 108000 ticks + Item37 (the case-2 ×0.5 volume rides the arm);
+        // tile 354 grants 150 (Bewitched) for 108000 + Item4.
+        for (kind, buff) in [(377u16, 159), (354u16, 150)] {
+            let mut app = station_app(kind);
+            let played0 = app.audio.played_count();
+            assert!(interact_tile(&mut app, 10, 19), "tile {kind} consumed");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).expect("the grant");
+            assert_eq!(p.buffs.buff_time[slot], 108000);
+            assert_eq!(app.audio.played_count(), played0 + 1, "one cue");
+        }
+    }
+
+    #[test]
+    fn w4_f34_the_neighbour_grants_draw_no_rng_and_refresh_not_stack() {
+        // RNG-free verify (the e28 pattern): the C# arms call only `AddBuff`
+        // + `PlaySound` — the plain `play_at` seam draws no pitch roll. The
+        // re-click refreshes in place (`AddBuff_TryUpdatingExistingBuffTime`,
+        // `Player.cs:5402-5426`), never stacks; the cake's 7200 stays 7200.
+        for (kind, buff, time) in [(621u16, 192, 7_200), (699u16, 366, 108_000)] {
+            let mut app = station_app(kind);
+            let players0 = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+            let global0 = app.rngs.global().clone();
+            assert!(interact_tile(&mut app, 10, 19));
+            assert!(interact_tile(&mut app, 10, 19), "the re-click");
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                players0,
+                "tile {kind}: UpdatePlayers untouched"
+            );
+            assert_eq!(*app.rngs.global(), global0, "tile {kind}: global untouched");
+            let p = app.player.as_ref().unwrap();
+            let slot = p.buffs.find_buff_index(buff).unwrap();
+            assert_eq!(p.buffs.buff_time[slot], time, "refreshed, not stacked");
+        }
     }
 
     #[test]
