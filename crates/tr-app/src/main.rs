@@ -25,6 +25,7 @@ mod buff_effects_summons;
 mod buff_effects_orbs;
 mod buff_effects_potions_sets;
 mod buff_effects_status;
+mod buff_effects_orbs;
 mod buffs;
 mod buff_effects_accessory;
 mod buff_effects_boosters;
