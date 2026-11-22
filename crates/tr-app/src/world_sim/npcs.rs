@@ -1161,6 +1161,12 @@ fn play_npc_sound_request(
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
+        NpcSoundCue::FighterMoan(style) => {
+            // The case-29 moan family (`play_fighter_moan`): the
+            // attenuation gate first, the playing guard + pitch draws on
+            // the caller's stream (the S1-E-21e contract).
+            audio.play_fighter_moan(29, style, req.x, req.y, rng);
+        }
     }
 }
 

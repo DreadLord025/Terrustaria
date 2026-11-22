@@ -1154,6 +1154,50 @@ pub enum NpcKind {
     /// case list (`:68572`) over the 15-row strip, the air row 0
     /// (`:69647` lists 167). The ambient moan is the `:57340` 1000-roll.
     UndeadViking,
+    // ---- W4-d36 E4 batch 3 (the doc-110 §1 definitive table:
+    // CorruptPenguin 168→777, PigronCorruption 170→778, PigronHallow
+    // 171→779, PigronCrimson 180→783, FaceMonster 181→784; 780 stays
+    // free — the hover trio's 781/782 are fixed).
+    /// `NPCID.CorruptPenguin` (168) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 168, `:11101-11112`): 16x34, aiStyle 3, dmg 20, def 4, 70 HP,
+    /// NO kb row (the head's 1f default `:8533`), value 500,
+    /// NPCHit1/NPCDeath1. WIRED: the walker family (the num83 group base
+    /// 1.5 `:57606`); FindFrame case 148/149/168 (`:76392-76457`) over
+    /// the 12-row strip — 168 never rolls the localAI[0] colour band
+    /// (`:53162` names 148/149 only), so its rows ride band 0. The
+    /// blood-moon penguin Transform (`:91960`) + the `:60205` close-range
+    /// dash are the documented remainders.
+    CorruptPenguin,
+    /// `NPCID.PigronCorruption` (170) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 170, `:11128-11140`): 44x36, aiStyle 2, dmg 70, def 16,
+    /// 210 HP, kb 0.5, value 2000, NPCHit27/NPCDeath30. WIRED: the
+    /// pigron machine's OWN 170/171/180 arm (`AI_002_FloatingEye`,
+    /// `:52276-52424`): the 300-tick CanHit counter, the ai[1]
+    /// phase-through-walls latch (alpha 200 + noTileCollide), the
+    /// vy*0.1*direction tilt + the 4/2.5 speed caps. FindFrame case
+    /// 170/171/180 (`:73418-73432`) over the 14-row strip.
+    PigronCorruption,
+    /// `NPCID.PigronHallow` (171) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 171, `:11141-11153`): the Corruption pigron's stat row
+    /// VERBATIM (44x36, aiStyle 2, dmg 70, def 16, 210 HP, kb 0.5,
+    /// value 2000, NPCHit27/NPCDeath30) — the three variants share the
+    /// machine; only the hit-effect dust colour (16 vs 54) and the
+    /// bestiary biome differ.
+    PigronHallow,
+    /// `NPCID.PigronCrimson` (180) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 180, `:11279-11291`): the same shared row (44x36, aiStyle 2,
+    /// dmg 70, def 16, 210 HP, kb 0.5, value 2000, NPCHit27/NPCDeath30).
+    PigronCrimson,
+    /// `NPCID.FaceMonster` (181) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// 181, `:11292-11314`): 18x44, aiStyle 3, dmg 25, def 10, 70 HP,
+    /// kb 0.4, value 200, NPCHit1/NPCDeath2. WIRED: the walker family
+    /// (the num83 group base 1.5 `:57606`; the remixWorld 3.75 row
+    /// `:57609-57612` + the remix stat scaling `:11304-11313` are the
+    /// unported seed's remainder); FindFrame's humanoid-group case list
+    /// (`:68574`) over the 16-row strip, the air row 1 (`:69647` does
+    /// NOT list 181). The moan is its OWN `:57360` 500-roll, case 29
+    /// style 8 — LIVE (`fighter_ambient_moans`).
+    FaceMonster,
     // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
     // R7-band slots 781/782/793, ascending vanilla order).
     /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
@@ -1266,6 +1310,12 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    /// `PlaySound(29, pos, style)` — the moan case (the fighter-moan
+    /// slot family): the pigron trio's `AI_002` 1000-roll ambient moan
+    /// (`NPC.cs:52278`, style 9). The attenuation gate first, then the
+    /// case-29 playing guard + one `Next(-10, 11)` pitch draw on the
+    /// caller's stream (`play_fighter_moan`, the S1-E-21e contract).
+    FighterMoan(i32),
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -3633,6 +3683,14 @@ impl Npc {
             NpcKind::BlackRecluse => 0.25,
             NpcKind::SwampThing => 0.2,
             NpcKind::UndeadViking => 0.5,
+            // W4-d36 E4 batch 3 (`NPC.cs:11138`/`:11151`/`:11289`): the
+            // pigron trio 0.5. The Corrupt Penguin keeps the head's 1f
+            // default (case 168 writes NO kb row, `NPC.cs:8533`); the
+            // Face Monster rides the stock 0.4 (`:11302`) below.
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => 0.5,
+            NpcKind::CorruptPenguin => 1.0,
             // W4-d36 hover batch (`NPC.cs:11180`/`:11232`/`:11634`):
             // Crimera/MossHornet 0.5, Moth 0.4.
             NpcKind::Crimera
@@ -4033,6 +4091,14 @@ impl Npc {
             NpcKind::BlackRecluse => 40,
             NpcKind::SwampThing => 26,
             NpcKind::UndeadViking => 10,
+            // W4-d36 E4 batch 3 — case 168 defense 4 (`NPC.cs:11107`),
+            // the pigron trio defense 16 (`:11134`/`:11147`/`:11285`),
+            // Face Monster defense 10 (`:11298`).
+            NpcKind::CorruptPenguin => 4,
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => 16,
+            NpcKind::FaceMonster => 10,
             // W4-d36 hover batch (`NPC.cs:11175`/`:11229`/`:11631`).
             NpcKind::Crimera => 8,
             NpcKind::MossHornet => 22,
@@ -4424,6 +4490,13 @@ impl Npc {
             NpcKind::BlackRecluse => 500.0,
             NpcKind::SwampThing => 1000.0,
             NpcKind::UndeadViking => 200.0,
+            // W4-d36 E4 batch 3 (`NPC.cs:11111`/`:11139`/`:11152`/
+            // `:11290`/`:11303`).
+            NpcKind::CorruptPenguin => 500.0,
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => 2000.0,
+            NpcKind::FaceMonster => 200.0,
             // W4-d36 hover batch (`NPC.cs:11181`/`:11234`/`:11636`).
             NpcKind::Crimera => 90.0,
             NpcKind::MossHornet => 600.0,
@@ -5335,6 +5408,66 @@ impl Npc {
                 .push((crate::projectile::STINGER, s.x, s.y, s.vx, s.vy, s.damage));
         }
         self.wants_item_sounds.extend(out.sounds);
+    }
+
+    /// W4-d36 E4 batch 3 — the pigron trio's aiStyle-2 adapter: the live
+    /// `Npc` fields ride into the faithful `AI_002_FloatingEye` machine
+    /// (`npc_ai_eye::floating_eye_ai`, `NPC.cs:52274-52731`, landed UNWIRED
+    /// by the eye re-port — this is its first wiring, scoped to 170/171/180
+    /// ONLY; the seven live eye kinds keep their byte-identical
+    /// `update_eye` stand-in until their own migration round). The machine
+    /// writes velocity/steering/state; the integration tail is the C#'s
+    /// `UpdateNPC` movement split (`NPC.cs:90490-90498`): raw
+    /// `position += velocity` while phasing (`noTileCollide`), else the
+    /// flyer collision with the collideX/Y latches the NEXT tick's bounce
+    /// kicks read (`:52283-52306`) — `integrate_flyer_collision`'s shape.
+    /// RNG: the machine's ONE `Next(1000)` moan draw per tick (`:52276`)
+    /// rides the caller's stream; the `PlaySound(29, …, 9)` cue queues on
+    /// `wants_sound` (the sim drain, the S1-E-21g shape). The eye kinds'
+    /// `Next(40)` dust gate short-circuits on the type list — the pigrons
+    /// draw NOTHING there (module doc's order).
+    fn ai_002_pigron_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let players = [crate::npc_target::session_candidate(player)];
+        // The fresh-NPC target 255 folds to slot 0 ahead of the machine
+        // (the C# `ClearTarget` sentinel; `TargetClosest`'s own fallback
+        // keeps slot 0, `NPC.cs:77731-77734` — the phase arm indexes
+        // `Main.player[target]` directly, `:52328`).
+        if self.target < 0 || self.target >= 255 {
+            self.target = 0;
+        }
+        // The phase latch has no `Npc` field (the module fold note): it
+        // lives in localAI[1] — 170/171/180 write no other localAI row
+        // (the colour band `:53162` names 148/149 only).
+        let env = crate::npc_ai_eye::EyeEnv {
+            world,
+            players: &players,
+            player_graveyards: &[false],
+            no_tile_collide: self.local_ai[1] == 1.0,
+            ticker: 0,
+        };
+        let out = crate::npc_ai_eye::floating_eye_ai(
+            self,
+            self.kind.cs_id() as i32,
+            &env,
+            rng,
+        );
+        if out.pigron_moan {
+            // `NPC.cs:52278` — `PlaySound(29, pos, 9)`, the moan case
+            // (the fighter-moan slot family, style 9).
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::FighterMoan(9),
+                x: self.x,
+                y: self.y,
+            });
+        }
+        if let Some(ntc) = out.no_tile_collide {
+            self.local_ai[1] = if ntc { 1.0 } else { 0.0 };
+            if ntc {
+                self.integrate_no_tile_collide();
+                return;
+            }
+        }
+        self.integrate_flyer_collision(world);
     }
 
     /// S1-D-3: the aiStyle-9 family arm — `NPC.AI()`'s
@@ -6396,6 +6529,24 @@ impl Npc {
                 self.update_skeleton(world, player, dt)
             }
             NpcKind::SwampThing => self.update_swamp_thing(world, player, dt, rng),
+            // W4-d36 E4 batch 3 — the Corrupt Penguin (168) / Face Monster
+            // (181) ride the same aiStyle-3 walker family on the ladder's
+            // num83 base-1.5 rows (`npc_ai3_speeds`: the `:57606` group;
+            // 181's remixWorld 3.75 row `:57609-57612` is the unported
+            // seed's remainder). Their frame clocks are FindFrame's own
+            // arms below (case 148/149/168 `:76392`, the humanoid group
+            // `:68574`) — the Frankenstein precedent.
+            NpcKind::CorruptPenguin | NpcKind::FaceMonster => {
+                self.update_skeleton(world, player, dt)
+            }
+            // W4-d36 E4 batch 3 — the pigron trio (170/171/180): the
+            // faithful `AI_002_FloatingEye` machine's OWN phase arm
+            // (`npc_ai_eye::floating_eye_ai`, `NPC.cs:52326-52424`) —
+            // NOT the eyes' live `update_eye` stand-in (the module's
+            // wiring contract: the machine keys on the vanilla type).
+            NpcKind::PigronCorruption | NpcKind::PigronHallow | NpcKind::PigronCrimson => {
+                self.ai_002_pigron_family(world, player, rng)
+            }
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
             // slice C. In 1.4.5.8 the 330 path carries no shot; its offence
@@ -6885,10 +7036,13 @@ impl Npc {
                     if self.frame > 1 { self.frame = 0; }
                 }
             }
-            NpcKind::Penguin | NpcKind::PenguinBlack => {
-                // `case 148/149` (`NPC.cs:76392-76457`): the localAI[0]
-                // colour band (0/3/6/9) offsets the 3-row walk strip; the
-                // port keeps band 0 until the critter colour roll lands.
+            NpcKind::Penguin | NpcKind::PenguinBlack | NpcKind::CorruptPenguin => {
+                // `case 148/149/168/470` (`NPC.cs:76392-76457`): the
+                // localAI[0] colour band (0/3/6/9) offsets the 3-row walk
+                // strip; the port keeps band 0 until the critter colour
+                // roll lands. 168 NEVER rolls the band (`:53162` names
+                // 148/149 only), so its rows ride band 0 by construction
+                // (W4-d36 E4 batch 3).
                 let num40 = match self.local_ai[0] as i32 { 2=>3, 3=>6, 4=>9, _=>0 };
                 if self.vy == 0.0 {
                     if self.facing == 1 { self.sprite_dir = 1; }
@@ -8381,6 +8535,36 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 6;
+                }
+            }
+            // W4-d36 E4 batch 3 — the pigron trio (170/171/180), FindFrame
+            // case 170/171/180 (`NPC.cs:73418-73432`): the sprite rides
+            // the facing, the +1 clock advances one row every >= 4 ticks
+            // over the 14-row strip (`Main.npcFrameCount[170]`,
+            // `Main.cs:67082`), wrapping at 14.
+            NpcKind::PigronCorruption | NpcKind::PigronHallow | NpcKind::PigronCrimson => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 14 {
+                    self.frame = 0;
+                }
+            }
+            // W4-d36 E4 batch 3 — Face Monster (181) rides the same
+            // humanoid-group case list (`NPC.cs:68574`) on its 16-row
+            // strip; airborne the group rests row 1 (`:69642-69646`) —
+            // 181 is NOT in the `:69647` row-0 override list (the
+            // Frankenstein shape).
+            NpcKind::FaceMonster => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.humanoid_town_frame();
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
                 }
             }
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
@@ -19165,6 +19349,12 @@ impl Npc {
             NpcKind::BlackRecluse => 560,
             NpcKind::SwampThing => 561,
             NpcKind::UndeadViking => 562,
+            // W4-d36 E4 batch 3 — the next fresh hash slots (injective).
+            NpcKind::CorruptPenguin => 563,
+            NpcKind::PigronCorruption => 564,
+            NpcKind::PigronHallow => 565,
+            NpcKind::PigronCrimson => 566,
+            NpcKind::FaceMonster => 567,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24233,7 +24423,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 283] = [
+    pub(super) const ALL_KINDS: [NpcKind; 288] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24530,6 +24720,12 @@ mod tests {
         NpcKind::Crimera,
         NpcKind::MossHornet,
         NpcKind::Moth,
+        // W4-d36 E4 batch 3.
+        NpcKind::CorruptPenguin,
+        NpcKind::PigronCorruption,
+        NpcKind::PigronHallow,
+        NpcKind::PigronCrimson,
+        NpcKind::FaceMonster,
     ];
 
     #[test]
@@ -25029,6 +25225,131 @@ mod tests {
         u.vx = 0.0;
         u.find_frame();
         assert_eq!((u.frame, u.frame_counter), (0, 0.0), "the standstill rests row 0");
+    }
+
+    /// W4-d36 E4 batch 3 — the five kinds' `SetDefaults` rows pin against
+    /// the C# through the port's tables (`NPC.cs:11101-11112` case 168,
+    /// `:11128-11140`/`:11141-11153`/`:11279-11291` the pigron trio,
+    /// `:11292-11314` case 181 — the fighters' pin shape). The protocol
+    /// ids ride the doc-110 §1 R7-band slots 777/778/779/783/784 (780
+    /// stays free; the hover trio's 781/782 are fixed). WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_d36_batch3_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, proto, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::CorruptPenguin, 168u16, 777u16, 3u8, 16.0, 34.0, 20, 4, 70, 1.0f32, 500.0f32),
+            (NpcKind::PigronCorruption, 170u16, 778u16, 2u8, 44.0, 36.0, 70, 16, 210, 0.5f32, 2000.0f32),
+            (NpcKind::PigronHallow, 171u16, 779u16, 2u8, 44.0, 36.0, 70, 16, 210, 0.5f32, 2000.0f32),
+            (NpcKind::PigronCrimson, 180u16, 783u16, 2u8, 44.0, 36.0, 70, 16, 210, 0.5f32, 2000.0f32),
+            (NpcKind::FaceMonster, 181u16, 784u16, 3u8, 18.0, 44.0, 25, 10, 70, 0.4f32, 200.0f32),
+        ];
+        for (kind, ty, proto, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} the R7-band slot");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} round-trip");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // 168 writes NO kb row (the head's 1f, `NPC.cs:8533`); the pigron
+        // trio's noGravity is the AI_002 head write (`:52280`), not a
+        // SetDefaults row; 168/181 walk under gravity.
+        assert!(!NpcKind::CorruptPenguin.no_gravity());
+        assert!(!NpcKind::FaceMonster.no_gravity());
+        for kind in [NpcKind::PigronCorruption, NpcKind::PigronHallow, NpcKind::PigronCrimson] {
+            assert!(kind.no_gravity(), "{kind:?} the AI_002 head write");
+        }
+        // The two walkers ride the num83 base 1.5 (`NPC.cs:57606`; 181's
+        // remix 3.75 row `:57609-57612` is the unported seed's remainder).
+        assert_eq!(NpcKind::CorruptPenguin.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::FaceMonster.ai3_walk_speed(), Some(1.5));
+        assert_eq!(NpcKind::PigronCorruption.ai3_walk_speed(), None);
+        // The hit/death cues (`NPC.cs:11109-11110`/`:11136-11137`/
+        // `:11149-11150`/`:11287-11288`/`:11300-11301`).
+        assert_eq!(NpcKind::CorruptPenguin.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CorruptPenguin.death_sound(), Some("NPC_Killed_1"));
+        for kind in [NpcKind::PigronCorruption, NpcKind::PigronHallow, NpcKind::PigronCrimson] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_27"), "{kind:?}");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_30"), "{kind:?}");
+        }
+        assert_eq!(NpcKind::FaceMonster.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::FaceMonster.death_sound(), Some("NPC_Killed_2"));
+        // The immunities (`NPCID.cs:7108`/`:7116`/`:7117`/`:7174` null
+        // rows; `:7175-7181` 181 {20}) — read through `for_kind` (the
+        // derived rules add 30/375 off the 20, the `:533-535` fold).
+        for kind in [NpcKind::CorruptPenguin, NpcKind::PigronCorruption, NpcKind::PigronHallow, NpcKind::PigronCrimson] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!b.buff_immune.iter().any(|&x| x), "{kind:?} null row");
+        }
+        let fm = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::FaceMonster);
+        assert!(fm.buff_immune[20] && !fm.buff_immune[44], "181 {{20}}");
+        // Own bestiary entries, no folds (none of the five carries a
+        // Hide=true draw-modifier row, `NPCID.cs:2384-2477`); the three
+        // pigrons display "Pigron" (the en-US DisplayName rows).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CorruptPenguin, SlimeVariant::Blue).net_id, 168);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::PigronCorruption, SlimeVariant::Blue).net_id, 170);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::PigronHallow, SlimeVariant::Blue).net_id, 171);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::PigronCrimson, SlimeVariant::Blue).net_id, 180);
+        let fm_entry = crate::bestiary::entry_for_npc(NpcKind::FaceMonster, SlimeVariant::Blue);
+        assert_eq!(fm_entry.net_id, 181);
+        assert_eq!(fm_entry.name, "Face Monster");
+        // The strips (`Main.cs:67082`): 168 = 12, 170/171/180 = 14,
+        // 181 = 16 — the draw sheets ride the vanilla ids (no folds).
+        assert_eq!(crate::render::entities::npc_rows(168), 12);
+        assert_eq!(crate::render::entities::npc_rows(170), 14);
+        assert_eq!(crate::render::entities::npc_rows(181), 16);
+        assert_eq!(NpcKind::FaceMonster.humanoid_frame_count(), 16, "the walk band's strip");
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::CorruptPenguin), 168);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::PigronCrimson), 180);
+        // The FindFrame clocks: the Corrupt Penguin rides the penguins'
+        // band-0 walk (`NPC.cs:76392-76457`; 168 never rolls the colour
+        // band, `:53162`); airborne rests the strip's row 2.
+        let mut p = Npc::new(NpcKind::CorruptPenguin, 0.0, 0.0, 1, 0.0);
+        p.find_frame();
+        assert_eq!((p.frame, p.frame_counter), (0, 0.0), "the standstill rests row 0");
+        p.vx = 3.0;
+        p.find_frame();
+        assert_eq!((p.frame, p.frame_counter), (0, 3.0), "the <6 clock holds row 0");
+        p.find_frame();
+        assert_eq!((p.frame, p.frame_counter), (1, 6.0), "the <12 band rides row 1");
+        p.vy = 2.0;
+        p.find_frame();
+        assert_eq!((p.frame, p.frame_counter), (2, 0.0), "the air rest is row 2 (`:76449`)");
+        // The pigron flap: +1 clock, one row every >= 4, wrap at 14
+        // (`NPC.cs:73418-73432`).
+        let mut g = Npc::new(NpcKind::PigronCorruption, 0.0, 0.0, 1, 0.0);
+        for _ in 0..3 {
+            g.find_frame();
+        }
+        assert_eq!((g.frame, g.frame_counter), (0, 3.0), "the 3-clock tick holds");
+        g.find_frame();
+        assert_eq!((g.frame, g.frame_counter), (1, 0.0), "the >=4 tick advances");
+        g.frame = 13;
+        g.frame_counter = 3.0;
+        g.find_frame();
+        assert_eq!((g.frame, g.frame_counter), (0, 0.0), "the strip wraps 14 -> 0");
+        assert_eq!(g.sprite_dir, 1, "the sprite rides the facing (`:73421`)");
+        // Face Monster: the humanoid-group walk on the 16-row strip, the
+        // air rest row 1 (181 NOT in the `:69647` row-0 list).
+        let mut f = Npc::new(NpcKind::FaceMonster, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (1, 0.0), "the air rest is row 1 (`:69645`)");
+        f.vy = 0.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 3.0), "the walk enters at row 2");
+        f.frame = 15;
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 16 -> 2");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -28485,8 +28806,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            283,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein + E4 batch 2's three fighters, L-B gate)"
+            288,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein + E4 batch 2's three fighters + E4 batch 3's five (CorruptPenguin/pigron trio/FaceMonster), L-B gate)"
         );
         assert!(
             covered > 43,

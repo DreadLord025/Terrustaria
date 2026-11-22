@@ -1266,7 +1266,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// render nothing. Batch 0: 141/148/149/153/154; hover batch:
 /// 173/176/205; E4: 155; E4b: 162; E4 batch 2: 163/166/167 (163 is the
 /// DRAW sheet — the bestiary credit folds onto 238, `texture_net_id`).
-pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167];
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3208,7 +3208,14 @@ pub(crate) fn draw_npcs(
             // under the 238 credit fold.
             | NpcKind::BlackRecluse
             | NpcKind::SwampThing
-            | NpcKind::UndeadViking => {
+            | NpcKind::UndeadViking
+            // W4-d36 E4 batch 3 — the five kinds' own strips (168 = 12,
+            // 170/171/180 = 14, 181 = 16, `Main.cs:67082`).
+            | NpcKind::CorruptPenguin
+            | NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson
+            | NpcKind::FaceMonster => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
@@ -3377,6 +3384,13 @@ pub(crate) fn draw_npcs(
                     | NpcKind::Crimera
                     | NpcKind::MossHornet
                     | NpcKind::Moth
+                    // W4-d36 E4 batch 3: the pigron trio's velocity tilt
+                    // (`NPC.cs:52358`, `rotation = vy * 0.1 * direction`)
+                    // — the generic draw rotates by npc.rotation
+                    // (`Main.cs:26632`).
+                    | NpcKind::PigronCorruption
+                    | NpcKind::PigronHallow
+                    | NpcKind::PigronCrimson
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

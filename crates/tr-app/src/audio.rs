@@ -146,6 +146,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // the spider cue); the `Sounds/NPC_Hit_29.xnb` asset ships with the
     // content.
     ("NPC_Hit_29", 3),
+    // W4-d36 E4 batch 3 — the pigron trio's NPCHit27 (`NPC.cs:11136`/
+    // `:11149`/`:11287`, the pig cue); the `Sounds/NPC_Hit_27.xnb` asset
+    // ships with the content.
+    ("NPC_Hit_27", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -177,6 +181,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // the spider death cue); the `Sounds/NPC_Killed_32.xnb` asset ships
     // with the content.
     ("NPC_Killed_32", 4),
+    // W4-d36 E4 batch 3 — the pigron trio's NPCDeath30 (`NPC.cs:11137`/
+    // `:11150`/`:11288`, the pig death cue); the `Sounds/NPC_Killed_30.xnb`
+    // asset ships with the content.
+    ("NPC_Killed_30", 4),
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the

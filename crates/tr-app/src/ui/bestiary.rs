@@ -1689,6 +1689,27 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // W4-d36 E4 batch 3 portraits — the sheet's frame height (the
+        // vanilla strips: 168 = 12, 170/171/180 = 14, 181 = 16,
+        // `Main.cs:67082`) with the padded box width (the b0 convention).
+        (NpcKind::CorruptPenguin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::PigronCorruption | NpcKind::PigronHallow | NpcKind::PigronCrimson, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 48.0, h, white)
+        }
+        (NpcKind::FaceMonster, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 22.0, h, white)
+        }
     }
 }
 

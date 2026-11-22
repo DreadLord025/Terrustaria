@@ -1,7 +1,10 @@
 //! S1-D-3 (eye re-port, audit A-1 seed A1-3): `AI_002_FloatingEye`
-//! (`NPC.cs:52274-52731`) ported WHOLE as a pure step + `EyeEnv` seam,
-//! landed UNWIRED — the live `npc.rs::update_eye` stand-in keeps running
-//! byte-identical until the wiring round (the caster/style10 precedent).
+//! (`NPC.cs:52274-52731`) ported WHOLE as a pure step + `EyeEnv` seam.
+//! W4-d36 E4 batch 3: the PIGRON trio (170/171/180) is WIRED —
+//! `npc.rs::ai_002_pigron_family` feeds this machine (the phase latch
+//! rides `local_ai[1]`, the moan cue `wants_sound`'s `FighterMoan(9)`);
+//! the seven live eye kinds keep the byte-identical `update_eye` stand-in
+//! until their own migration round (the caster/style10 precedent).
 //!
 //! The A-1 audit (`docs/research/54-audit-slime-eye.md` §2, branch
 //! `docs/audit-slime-eye`) found the live arm is a normalized-aim
@@ -27,12 +30,14 @@
 //! (`ID/NPCID.cs:10681`/`:10909`/`:10943`/`:11017-11037`/`:11057-11065`/
 //! `:11311-11313`.) The port's seven `NpcKind`s (DemonEye 2, WanderingEye
 //! 133, CataractEye 190, SleepyEye 191, DialatedEye 192, GreenEye 193,
-//! PurpleEye 194) ride the default/133 arms; 116/170/171/180/317/318 have
+//! PurpleEye 194) ride the default/133 arms; W4-d36 E4 batch 3 landed the
+//! Pigron trio's kinds (PigronCorruption 170, PigronHallow 171,
+//! PigronCrimson 180) and WIRED their phasing branch; 116/317/318 have
 //! no kinds yet — their branches are ported here in full, keyed on the
 //! vanilla `npc_type` (the `npc_ai_style10.rs` convention), so the wiring
 //! only needs the kind rows. Like style10, the machine keys on the
 //! explicit type, never on `npc.kind`; the wiring passes
-//! `npc.kind.net_id()`.
+//! `npc.kind.cs_id()`.
 //!
 //! ## RNG order (by construction)
 //!

@@ -3582,9 +3582,21 @@ fn npc_seed(
         // feet on the column surface (the net state overwrites below).
         | crate::npc::NpcKind::BlackRecluse
         | crate::npc::NpcKind::SwampThing
-        | crate::npc::NpcKind::UndeadViking => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::UndeadViking
+        // W4-d36 E4 batch 3 — the Corrupt Penguin / Face Monster
+        // (aiStyle 3) plant their feet like the fighters above.
+        | crate::npc::NpcKind::CorruptPenguin
+        | crate::npc::NpcKind::FaceMonster => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::Penguin
         | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
+        // W4-d36 E4 batch 3 — the pigron trio (aiStyle 2, the phase flyer)
+        // rides the hover placement (the net state overwrites below).
+        crate::npc::NpcKind::PigronCorruption
+        | crate::npc::NpcKind::PigronHallow
+        | crate::npc::NpcKind::PigronCrimson => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         // W4-d36 hover batch — the aiStyle-5 trio rides the hover
         // placement (the net state overwrites the position below).
         crate::npc::NpcKind::Crimera

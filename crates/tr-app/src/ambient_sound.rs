@@ -663,6 +663,14 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | BlackRecluse
             | SwampThing
             | UndeadViking
+            // W4-d36 E4 batch 3 — the Corrupt Penguin / Face Monster ride
+            // the same plain `update_skeleton` walker, so their `ai[3]` is
+            // free for the idle counter. The moan arms: 168 is in NEITHER
+            // moan list (its `:57340` absence keeps the draw shape exact);
+            // 181 carries its OWN `:57360` 500-roll, case 29 style 8 —
+            // LIVE in `fighter_ambient_moans` below.
+            | CorruptPenguin
+            | FaceMonster
     )
 }
 

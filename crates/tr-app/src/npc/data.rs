@@ -607,6 +607,13 @@ impl NpcKind {
             NpcKind::BlackRecluse => 774,
             NpcKind::SwampThing => 775,
             NpcKind::UndeadViking => 776,
+            // W4-d36 E4 batch 3 — the doc-110 §1 definitive table
+            // (780 stays free; the hover trio's 781/782 are fixed).
+            NpcKind::CorruptPenguin => 777,
+            NpcKind::PigronCorruption => 778,
+            NpcKind::PigronHallow => 779,
+            NpcKind::PigronCrimson => 783,
+            NpcKind::FaceMonster => 784,
             // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
             // R7-band slots (ascending vanilla order, the b0 convention).
             NpcKind::Crimera => 781,
@@ -958,6 +965,12 @@ impl NpcKind {
             774 => NpcKind::BlackRecluse,
             775 => NpcKind::SwampThing,
             776 => NpcKind::UndeadViking,
+            // W4-d36 E4 batch 3 — the doc-110 §1 table's decode arms.
+            777 => NpcKind::CorruptPenguin,
+            778 => NpcKind::PigronCorruption,
+            779 => NpcKind::PigronHallow,
+            783 => NpcKind::PigronCrimson,
+            784 => NpcKind::FaceMonster,
             // W4-d36 census batch 1 — the hover trio's decode arms.
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
@@ -1853,7 +1866,16 @@ impl NpcKind {
             // W4-d36 E4b: Frankenstein's NPCHit1 (`NPC.cs:15432`).
             | NpcKind::Frankenstein
             // W4-d36 E4 batch 2: the Swamp Thing's NPCHit1 (`NPC.cs:15445`).
-            | NpcKind::SwampThing => "NPC_Hit_1",
+            | NpcKind::SwampThing
+            // W4-d36 E4 batch 3: the Corrupt Penguin / Face Monster's
+            // NPCHit1 (`NPC.cs:11109`/`:11300`).
+            | NpcKind::CorruptPenguin
+            | NpcKind::FaceMonster => "NPC_Hit_1",
+            // W4-d36 E4 batch 3: the pigron trio's NPCHit27
+            // (`NPC.cs:11136`/`:11149`/`:11287`) — the pig cue.
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => "NPC_Hit_27",
             // W4-d36 E4 batch 2: the Undead Viking's NPCHit2
             // (`NPC.cs:11096`) — the skeleton-family hit cue.
             NpcKind::UndeadViking => "NPC_Hit_2",
@@ -2177,13 +2199,24 @@ impl NpcKind {
             | NpcKind::Penguin
             | NpcKind::PenguinBlack
             // W4-d36 E4: the Wolf's NPCDeath1 (`NPC.cs:10970`).
-            | NpcKind::Wolf => "NPC_Killed_1",
+            | NpcKind::Wolf
+            // W4-d36 E4 batch 3: the Corrupt Penguin's NPCDeath1
+            // (`NPC.cs:11110`).
+            | NpcKind::CorruptPenguin => "NPC_Killed_1",
             // W4-d36 E4b: Frankenstein's NPCDeath2 (`NPC.cs:15433`).
             NpcKind::Frankenstein
             // W4-d36 E4 batch 2: the Swamp Thing / Undead Viking NPCDeath2
             // (`NPC.cs:15446`/`:11097`) — the zombie death cue.
             | NpcKind::SwampThing
-            | NpcKind::UndeadViking => "NPC_Killed_2",
+            | NpcKind::UndeadViking
+            // W4-d36 E4 batch 3: the Face Monster's NPCDeath2
+            // (`NPC.cs:11301`).
+            | NpcKind::FaceMonster => "NPC_Killed_2",
+            // W4-d36 E4 batch 3: the pigron trio's NPCDeath30
+            // (`NPC.cs:11137`/`:11150`/`:11288`) — the pig death cue.
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => "NPC_Killed_30",
             // W4-d36 E4 batch 2: the Black Recluse's NPCDeath32
             // (`NPC.cs:11039`) — the spider death cue.
             NpcKind::BlackRecluse => "NPC_Killed_32",
@@ -2231,7 +2264,13 @@ impl NpcKind {
             | NpcKind::SleepyEye
             | NpcKind::DialatedEye
             | NpcKind::GreenEye
-            | NpcKind::PurpleEye => true,
+            | NpcKind::PurpleEye
+            // W4-d36 E4 batch 3 — the pigron trio rides the SAME AI_002
+            // head write (`NPC.cs:52280` — no SetDefaults row, the AI
+            // sets it every tick), kb 0.5 (`:11138`/`:11151`/`:11289`).
+            | NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => true,
             // The aiStyle-14 bat block (`NPC.cs:22851`) — the bat family and
             // the Voodoo Demon (66, `NPC.cs:9629`).
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => true,
@@ -2569,7 +2608,17 @@ impl NpcKind {
             // `:15441`/`:11092`) — the walker family's per-type rows.
             | NpcKind::BlackRecluse
             | NpcKind::SwampThing
-            | NpcKind::UndeadViking => 3,
+            | NpcKind::UndeadViking
+            // W4-d36 E4 batch 3: 168/181 aiStyle 3 (`NPC.cs:11105`/
+            // `:11296`) — the num83 group's base-1.5 rows.
+            | NpcKind::CorruptPenguin
+            | NpcKind::FaceMonster => 3,
+            // W4-d36 E4 batch 3: the pigron trio aiStyle 2
+            // (`NPC.cs:11132`/`:11145`/`:11283`) — AI_002_FloatingEye's
+            // OWN 170/171/180 arm (`:52326-52424`), NOT the eyes' chase.
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => 2,
             // W4-d36 census batch 1: 173/176/205 aiStyle 5
             // (`NPC.cs:11173`/`:11227`/`:11629`) — the style axis claims
             // them (`ai_005_hover_family`).
@@ -2646,6 +2695,12 @@ impl NpcKind {
             // group base 1.5 (`:57606`).
             NpcKind::SwampThing => 3.0,
             NpcKind::UndeadViking => 1.5,
+            // W4-d36 E4 batch 3 — the Corrupt Penguin (168) / Face Monster
+            // (181) ride the num83 group base 1.5 (`NPC.cs:57606`; the 181
+            // remixWorld 3.75 row `:57609-57612` is the unported seed's
+            // remainder — the ladder's `:225` note).
+            NpcKind::CorruptPenguin
+            | NpcKind::FaceMonster => 1.5,
             // S1-D-3ff wave A — the `num107` group's per-type rows
             // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
             // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
@@ -3138,6 +3193,17 @@ impl NpcKind {
             // W4-d36 E4 batch 2 (`NPC.cs:11032-11033`): the Black Recluse
             // 50x20 (the wall-crawler body).
             NpcKind::BlackRecluse => (50.0, 20.0),
+            // W4-d36 E4 batch 3 (`NPC.cs:11103-11104`): the Corrupt
+            // Penguin 16x34 (the penguins' own box).
+            NpcKind::CorruptPenguin => (16.0, 34.0),
+            // W4-d36 E4 batch 3 (`NPC.cs:11130-11131`/`:11143-11144`/
+            // `:11281-11282`): the pigron trio 44x36.
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => (44.0, 36.0),
+            // W4-d36 E4 batch 3 (`NPC.cs:11294-11295`): the Face Monster
+            // 18x44.
+            NpcKind::FaceMonster => (18.0, 44.0),
             // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
             // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
             NpcKind::Crimera => (30.0, 30.0),
@@ -3259,6 +3325,13 @@ impl NpcKind {
             NpcKind::BlackRecluse => 163,
             NpcKind::SwampThing => 166,
             NpcKind::UndeadViking => 167,
+            // W4-d36 E4 batch 3 (`NPCID.cs:11013`/`:11017`/`:11019`/
+            // `:11037`/`:11039`).
+            NpcKind::CorruptPenguin => 168,
+            NpcKind::PigronCorruption => 170,
+            NpcKind::PigronHallow => 171,
+            NpcKind::PigronCrimson => 180,
+            NpcKind::FaceMonster => 181,
             // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
             NpcKind::Crimera => 173,
             NpcKind::MossHornet => 176,
@@ -3318,14 +3391,23 @@ impl NpcKind {
             // W4-d36 E4 batch 2 — the Undead Viking rides the same
             // humanoid-group case list (`NPC.cs:68572`), 15-frame strip.
             | NpcKind::UndeadViking => 15,
+            // W4-d36 E4 batch 3 — the Face Monster rides the same
+            // humanoid-group case list (`NPC.cs:68574`) on its 16-frame
+            // strip (`Main.npcFrameCount[181]`, `Main.cs:67082`; no
+            // ExtraFramesCount row — `NPCID.cs:10464` skips 181).
+            NpcKind::FaceMonster => 16,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
             // W4-d36 census batch 0 — the penguins' 12-frame colour-band
             // strip (`Main.npcFrameCount[148/149]`, `Main.cs:67082`).
+            // W4-d36 E4 batch 3 — the Corrupt Penguin rides the same
+            // 12-frame strip (`Main.npcFrameCount[168]`, `Main.cs:67082`;
+            // it never rolls the colour band, `NPC.cs:53162`).
             NpcKind::Penguin
-            | NpcKind::PenguinBlack => 12,
+            | NpcKind::PenguinBlack
+            | NpcKind::CorruptPenguin => 12,
             _ => 1,
         }
     }
@@ -3828,6 +3910,13 @@ impl NpcKind {
             NpcKind::BlackRecluse => 350,
             NpcKind::SwampThing => 450,
             NpcKind::UndeadViking => 70,
+            // W4-d36 E4 batch 3 (`NPC.cs:11108`/`:11135`/`:11148`/
+            // `:11286`/`:11299`).
+            NpcKind::CorruptPenguin => 70,
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => 210,
+            NpcKind::FaceMonster => 70,
             // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
             NpcKind::Crimera => 40,
             NpcKind::MossHornet => 220,
@@ -4211,6 +4300,13 @@ impl NpcKind {
             NpcKind::BlackRecluse => 90,
             NpcKind::SwampThing => 70,
             NpcKind::UndeadViking => 24,
+            // W4-d36 E4 batch 3 (`NPC.cs:11106`/`:11133`/`:11146`/
+            // `:11284`/`:11297`).
+            NpcKind::CorruptPenguin => 20,
+            NpcKind::PigronCorruption
+            | NpcKind::PigronHallow
+            | NpcKind::PigronCrimson => 70,
+            NpcKind::FaceMonster => 25,
             // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
             NpcKind::Crimera => 22,
             NpcKind::MossHornet => 70,

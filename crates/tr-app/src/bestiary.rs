@@ -2296,6 +2296,55 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Undead Viking",
     },
+    // W4-d36 E4 batch 3 — own entries (none of the five carries a
+    // `Hide = true` draw-modifier row — `NPCID.cs:2384-2477`'s offsets;
+    // the credit ids are the `NPCID.Search.GetName` names,
+    // `ContentSamples.cs:868-870`). The populator adds the BloodMoon
+    // event to 168 (`BestiaryDatabaseNPCsPopulator.cs:1280`), the
+    // CorruptIce/HallowIce/CrimsonIce biomes to 170/171/180
+    // (`:1565`/`:1566`/`:1568`) and TheCrimson + UndergroundCrimson to
+    // 181 (`:612`/`:1569`/`:1792`). All three pigrons display "Pigron"
+    // (the en-US `NPCs.Pigron*.DisplayName` rows).
+    BestiaryEntryDef {
+        credit_id: "CorruptPenguin",
+        net_id: 168,
+        kind: NpcKind::CorruptPenguin,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "PigronCorruption",
+        net_id: 170,
+        kind: NpcKind::PigronCorruption,
+        variant: None,
+        quick_unlock: false,
+        name: "Pigron",
+    },
+    BestiaryEntryDef {
+        credit_id: "PigronHallow",
+        net_id: 171,
+        kind: NpcKind::PigronHallow,
+        variant: None,
+        quick_unlock: false,
+        name: "Pigron",
+    },
+    BestiaryEntryDef {
+        credit_id: "PigronCrimson",
+        net_id: 180,
+        kind: NpcKind::PigronCrimson,
+        variant: None,
+        quick_unlock: false,
+        name: "Pigron",
+    },
+    BestiaryEntryDef {
+        credit_id: "FaceMonster",
+        net_id: 181,
+        kind: NpcKind::FaceMonster,
+        variant: None,
+        quick_unlock: false,
+        name: "Face Monster",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

@@ -500,6 +500,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlackRecluse
         | NpcKind::SwampThing => &[20],
         NpcKind::UndeadViking => &[20, 44, 324],
+        // W4-d36 E4 batch 3 (`NPCID.cs:7108`/`:7116`/`:7117`/`:7174`):
+        // 168/170/171/180 null-rows (no immunity); 181 {20} (`:7175-7181`,
+        // the poisoned row — the Face Monster).
+        NpcKind::CorruptPenguin
+        | NpcKind::PigronCorruption
+        | NpcKind::PigronHallow
+        | NpcKind::PigronCrimson => &[],
+        NpcKind::FaceMonster => &[20],
         // W4-d36 hover batch (`NPCID.cs:7125`/`:7146`/`:7277`): 173 {31},
         // 176/205 {20,31}.
         NpcKind::Crimera => &[31],

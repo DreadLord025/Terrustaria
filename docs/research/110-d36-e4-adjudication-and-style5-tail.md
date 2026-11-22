@@ -168,17 +168,24 @@ frost/moonlord/darts/thrown sets) and from every `proj_data` range arm.
 
 ## 5. Kinds remaining (the E4 28-kind wave, at this note's commit)
 
-Landed on the branch (13): b0's five (141/148/149/153/154 @767-771), the
+Landed on the branch (18): b0's five (141/148/149/153/154 @767-771), the
 hover trio (173/176/205 @781/782/793), Wolf 155@772, Frankenstein 162@773,
-BlackRecluse 163@774, SwampThing 166@775, UndeadViking 167@776.
+BlackRecluse 163@774, SwampThing 166@775, UndeadViking 167@776, and E4
+batch 3's five (CorruptPenguin 168@777, PigronCorruption 170@778,
+PigronHallow 171@779, PigronCrimson 180@783, FaceMonster 181@784 — the
+prior dispatch's WIP COMPLETED: value/update_kind_ai/FindFrame/render_key
+563-567/immunities (181 {20}, `NPCID.cs:7175-7181`; the other four
+null-rows)/bestiary own entries + sheets + portraits + netglue seeds +
+the pigron trio WIRED onto `npc_ai_eye::floating_eye_ai` (the phase latch
+rides localAI[1], the moan the `wants_sound` FighterMoan(9) drain) + the
+two walkers on `update_skeleton`/the num83 ladder rows + the ambient
+fighter gate; pins 288/288/199, ENTRIES 259, D36_SHEETS 18, bijection
+ALL PINS HOLD (scripted, max id 793); 1 witness WRITTEN NOT RUN).
 **Vampire 159: g8-OWNED** (verified §2 — their pushed tip's `Vampire =>
 762`), skipped on this branch; the wave ports 27, not the brief's 28.
-Remaining unclaimed (**14**): CorruptPenguin 168, the pigron trio
-170/171/180, FaceMonster 181, SnowFlinx 185, ArmoredViking 197, Lihzahrd
+Remaining unclaimed (**9**): SnowFlinx 185, ArmoredViking 197, Lihzahrd
 198, LihzahrdCrawler 199, the bone trio 201/202/203, SpikedJungleSlime
 204, IcyMerman 206. The concurrent writer's in-flight batch may claim
 more — check the tip before taking rows (the AGENTS.md branch-claim
-rule). The next slots ride the §1 definitive table (CorruptPenguin 168
-→ 777, PigronCorruption 170 → 778, PigronHallow 171 → 779, 780 free,
-the hover 781/782 fixed, PigronCrimson 180 → 783, …, IcyMerman 206 →
-**794**).
+rule). The next slots ride the §1 definitive table (SnowFlinx 185
+→ 785, ArmoredViking 197 → 786, …, IcyMerman 206 → **794**).
