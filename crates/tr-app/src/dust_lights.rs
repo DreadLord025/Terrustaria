@@ -28,11 +28,15 @@
 //!   so the stream position is untouched — the same rule the item/NPC
 //!   families follow. The scale/velocity mutations that share an arm with a
 //!   light (206's `scale -= 0.1f` `:766`, 174's `scale -= 0.01f` `:807`, the
-//!   family's `velocity.Y += 0.05f` `:826`) belong to S1-E-3's per-type
-//!   chain port (`DustPool::update_dust`'s `type_arm` hook); where the C#
-//!   computes the light from the POST-mutation scale (206, 174), this port
-//!   applies the same decrement to its local copy so the emitted colour is
-//!   the one the C# arm would emit.
+//!   family's `velocity.Y += 0.05f` `:826`) belong to the per-type chain
+//!   (`tr_core::dust_physics::type_chain`, WIRED as the `type_arm` hook at
+//!   W4-d50): the feed reads the POST-update pool record, so the former
+//!   local-decrement compensations are RETIRED arm-by-arm (research/69 §5):
+//!   206/174 read `d.scale` directly (post-decrement), 230 recovers the
+//!   PRE-increment `d.scale - 0.02` (the C# light reads it before `:639`),
+//!   309 recovers the PRE-shrink `d.scale / 0.97` (the light precedes
+//!   `:486`), 261 recovers the PRE-drift scale (the light precedes
+//!   `:695-704`: undo the −0.0025 and the fadeIn-gated +0.0025).
 //! * **`customData` is dropped** (`particles.rs`'s `Dust` record): the 75
 //!   (CursedTorch) arm's `customData is float` branch (`:867-870`,
 //!   `num30 * (float)customData`) cannot fire, so the arm always takes its
@@ -207,12 +211,17 @@ pub(crate) fn dust_light(d: &Dust, p: &LightParams) -> Option<(i32, i32, [f32; 3
     let rgb: [f32; 3] = match d.dust_type {
         // `:483-487` — ShimmerSpark: `color/255 * scale` per channel, the
         // `AddLight(Vector2, r, g, b)` overload (`Lighting.cs:140-143`).
-        // The `scale *= 0.97f` half is S1-E-3's.
-        309 => [
-            d.color.r as f32 / 255.0 * d.scale,
-            d.color.g as f32 / 255.0 * d.scale,
-            d.color.b as f32 / 255.0 * d.scale,
-        ],
+        // The light reads the PRE-shrink scale (`:485` precedes `:486`'s
+        // `scale *= 0.97f`, now the chain's): recover it from the POST-update
+        // record (research/69 §5 retire, the 309 key).
+        309 => {
+            let pre = d.scale / 0.97;
+            [
+                d.color.r as f32 / 255.0 * pre,
+                d.color.g as f32 / 255.0 * pre,
+                d.color.b as f32 / 255.0 * pre,
+            ]
+        }
         // `:488-498` — PinkPhaseblade: gate both flags, `scale*0.6` cap 1,
         // quadratic (1.05, 0.1, 0.4).
         325 => {
@@ -303,10 +312,12 @@ pub(crate) fn dust_light(d: &Dust, p: &LightParams) -> Option<(i32, i32, [f32; 3
             ]
         }
         // `:630-640` — type 230: NO gate, NO cap; `num10 = scale*0.6`,
-        // multipliers (0.5, 0.9, 1). The `scale += 0.02f` (`:639`) runs
-        // AFTER the colour is computed — S1-E-3's.
+        // multipliers (0.5, 0.9, 1). The colour is computed BEFORE the
+        // `scale += 0.02f` (`:639`, now the chain's): the POST-update record
+        // carries the incremented scale, so recover the PRE-increment value
+        // (research/69 §5 retire, the 230 key — d50's `:208-213` citation).
         230 => {
-            let num10 = d.scale * 0.6;
+            let num10 = (d.scale - 0.02) * 0.6;
             [num10 * (num10 * 0.5), num10 * (num10 * 0.9), num10 * num10]
         }
         // `:656-664` — type 172: `scale*0.5` cap 1, (0, 0.25, 1).
@@ -324,12 +335,26 @@ pub(crate) fn dust_light(d: &Dust, p: &LightParams) -> Option<(i32, i32, [f32; 3
             [num16 * num16, num16 * (num16 * 0.2), num16 * (num16 * 0.1)]
         }
         // `:684-694` — AncientLight: gate both flags, `scale*0.3` cap 1,
-        // `(0.4, 0.6, 0.7) * num17`, the Vector2 overload.
+        // `(0.4, 0.6, 0.7) * num17`, the Vector2 overload. The light reads
+        // the PRE-drift scale (`:693` precedes the `:695-704` noGravity
+        // grow + the −0.0025 shrink, now the chain's): undo the net drift
+        // on the POST-update record (research/69 §5 retire, the 261 key).
+        // The C# gates the grow on the PRE-arm fadeIn; the chain's ramp
+        // (`:2101`) may have zeroed it since — a record standing at
+        // `fadeIn == 0` after a ramp tick (scale crossed it) took the grow,
+        // so the net is 0 there too; the residual boundary (a ramp tick
+        // whose PRE fadeIn was non-zero but whose scale did NOT cross) is
+        // indistinguishable on the record — documented in ANALYSIS.
         261 => {
             if d.no_light || d.no_light_emittance {
                 return None;
             }
-            let num17 = cap(d.scale * 0.3, 1.0);
+            let pre = if d.no_gravity && d.fade_in == 0.0 {
+                d.scale
+            } else {
+                d.scale + 0.0025
+            };
+            let num17 = cap(pre * 0.3, 1.0);
             [0.4 * num17, 0.6 * num17, 0.7 * num17]
         }
         // `:711-719` — CrystalPulse: `scale*0.35` cap 1, (0.9, 0.1, 0.75).
@@ -375,10 +400,12 @@ pub(crate) fn dust_light(d: &Dust, p: &LightParams) -> Option<(i32, i32, [f32; 3
             [num21 * (num21 * 0.25), num21 * num21, num21 * (num21 * 0.5)]
         }
         // `:764-769` — type 206: the C# decrements `scale -= 0.1f` FIRST
-        // (`:766`), then lights from the new scale. The decrement itself is
-        // S1-E-3's; the light reads the post-decrement value (module docs).
+        // (`:766`), then lights from the new scale. The decrement is the
+        // chain's now (W4-d50 wiring): the POST-update record already
+        // carries it — the former local compensation is RETIRED
+        // (research/69 §5, the 206 key).
         206 => {
-            let num22 = (d.scale - 0.1) * 0.4;
+            let num22 = d.scale * 0.4;
             [num22 * (num22 * 0.1), num22 * (num22 * 0.6), num22 * num22]
         }
         // `:770-774` — type 163: `scale*0.25`, (0.25, 1, 0.05).
@@ -413,10 +440,11 @@ pub(crate) fn dust_light(d: &Dust, p: &LightParams) -> Option<(i32, i32, [f32; 3
             torch_rgb(13, d.scale * 0.6, p)
         }
         // `:805-814` — InfernoFlame: `scale -= 0.01f` FIRST (`:807`), then
-        // `num29 = scale*1` cap 0.6, (1, 0.4, 0). The decrement is S1-E-3's
-        // (module docs).
+        // `num29 = scale*1` cap 0.6, (1, 0.4, 0). The decrement is the
+        // chain's now (W4-d50 wiring): the POST-update record carries it —
+        // the local compensation RETIRED (research/69 §5, the 174 key).
         174 => {
-            let num29 = cap(d.scale - 0.01, 0.6);
+            let num29 = cap(d.scale, 0.6);
             [num29, num29 * 0.4, 0.0]
         }
         // `:822-1023` — the torch/fire family (its own else-if chain after
@@ -659,10 +687,11 @@ mod tests {
     #[test]
     fn the_uncapped_arms_stay_uncapped() {
         let p = params();
-        // 230 (`:630-640`): no gate, no cap. Scale 2 -> num10 = 1.2.
-        let n = 1.2f32;
+        // 230 (`:630-640`): no gate, no cap. POST-update record 2.02 (the
+        // chain's +0.02 from 2.0) -> pre 2.0 -> num10 = 1.2 (the §5 retire).
+        let n = (2.02f32 - 0.02) * 0.6;
         assert_eq!(
-            dust_light(&dust(230, 2.0, Vec2::ZERO), &p).unwrap().2,
+            dust_light(&dust(230, 2.02, Vec2::ZERO), &p).unwrap().2,
             [n * (n * 0.5), n * (n * 0.9), n * n]
         );
         // 156 (`:785-794`): torch 12 at scale*0.6, no cap. Scale 2 -> 1.2.
@@ -679,34 +708,83 @@ mod tests {
 
     #[test]
     fn the_post_decrement_arms_read_the_decremented_scale() {
+        // W4-d50 retire (research/69 §5): the records below are POST-update
+        // (the chain already ran the decrement) — the feed reads them
+        // directly, no local compensation.
         let p = params();
-        // 206 (`:764-769`): scale 1 -> 0.9 after the -= 0.1, num22 = 0.36.
-        let n = (1.0f32 - 0.1) * 0.4;
+        // 206 (`:764-769`): the record's 0.9 IS the post-`-= 0.1` scale
+        // (the C# arm ran from 1.0); num22 = 0.36.
+        let n = 0.9f32 * 0.4;
         assert_eq!(
-            dust_light(&dust(206, 1.0, Vec2::ZERO), &p).unwrap().2,
+            dust_light(&dust(206, 0.9, Vec2::ZERO), &p).unwrap().2,
             [n * (n * 0.1), n * (n * 0.6), n * n]
         );
-        // 174 (`:805-814`): scale 1 -> 0.99, num29 = 0.99 -> cap 0.6.
+        // 174 (`:805-814`): the record's 0.99 IS post-`-= 0.01` -> cap 0.6.
         assert_eq!(
-            dust_light(&dust(174, 1.0, Vec2::ZERO), &p).unwrap().2,
+            dust_light(&dust(174, 0.99, Vec2::ZERO), &p).unwrap().2,
             [0.6, 0.6 * 0.4, 0.0]
         );
-        // Scale 0.3 -> 0.29, under the cap.
-        let n = 0.3f32 - 0.01;
+        // Record 0.29 (post-decrement from 0.3), under the cap.
+        let n = 0.29f32;
         assert_eq!(
-            dust_light(&dust(174, 0.3, Vec2::ZERO), &p).unwrap().2,
+            dust_light(&dust(174, 0.29, Vec2::ZERO), &p).unwrap().2,
             [n, n * 0.4, 0.0]
         );
     }
 
     #[test]
-    fn the_shimmer_spark_rides_its_own_colour() {
-        // 309 (`:483-487`): color/255 * scale, no gate.
-        let mut d = dust(309, 0.5, Vec2::ZERO);
-        d.color = Color::new(200, 100, 50, 255);
+    fn w4_d50_the_230_recovers_the_pre_increment_scale() {
+        // `:630-640`: the C# light reads the scale BEFORE `+= 0.02` (`:639`).
+        // The POST-update record 1.02 (the chain grew it from 1.0) recovers
+        // num10 = 1.0 * 0.6 (research/69 §5, the 230 retire key).
+        let n = (1.02f32 - 0.02) * 0.6;
+        assert_eq!(
+            dust_light(&dust(230, 1.02, Vec2::ZERO), &params()).unwrap().2,
+            [n * (n * 0.5), n * (n * 0.9), n * n]
+        );
+    }
+
+    #[test]
+    fn w4_d50_the_261_recovers_the_pre_drift_scale() {
+        // `:684-704`: the light precedes the noGravity grow (+0.0025 when
+        // fadeIn == 0) and the −0.0025 shrink. POST-update records:
+        // (a) noGravity + fadeIn 0: net drift 0 — read the record directly.
+        let mut d = dust(261, 1.0, Vec2::ZERO);
+        d.no_gravity = true;
+        d.fade_in = 0.0;
+        let n = 1.0f32 * 0.3;
         assert_eq!(
             dust_light(&d, &params()).unwrap().2,
-            [200.0 / 255.0 * 0.5, 100.0 / 255.0 * 0.5, 50.0 / 255.0 * 0.5]
+            [0.4 * n, 0.6 * n, 0.7 * n]
+        );
+        // (b) gravity: the record lost 0.0025 — recover 0.9975 + 0.0025 = 1.
+        let d = dust(261, 0.9975, Vec2::ZERO);
+        let n = (0.9975f32 + 0.0025) * 0.3;
+        assert_eq!(
+            dust_light(&d, &params()).unwrap().2,
+            [0.4 * n, 0.6 * n, 0.7 * n]
+        );
+        // (c) noGravity + live fadeIn: no grow, only the shrink — same undo.
+        let mut d = dust(261, 0.9975, Vec2::ZERO);
+        d.no_gravity = true;
+        d.fade_in = 5.0;
+        assert_eq!(
+            dust_light(&d, &params()).unwrap().2,
+            [0.4 * n, 0.6 * n, 0.7 * n]
+        );
+    }
+
+    #[test]
+    fn the_shimmer_spark_rides_its_own_colour() {
+        // 309 (`:483-487`): color/255 * the PRE-shrink scale — the light
+        // precedes `*= 0.97` (`:486`). POST-update record 0.485 (= 0.5 *
+        // 0.97) recovers 0.5 (research/69 §5, the 309 retire key).
+        let mut d = dust(309, 0.5 * 0.97, Vec2::ZERO);
+        d.color = Color::new(200, 100, 50, 255);
+        let pre = (0.5f32 * 0.97) / 0.97;
+        assert_eq!(
+            dust_light(&d, &params()).unwrap().2,
+            [200.0 / 255.0 * pre, 100.0 / 255.0 * pre, 50.0 / 255.0 * pre]
         );
     }
 
@@ -770,14 +848,14 @@ mod tests {
         let mut b = setup();
         let mut ra = UnifiedRandom::new(42);
         let mut rb = UnifiedRandom::new(42);
-        a.update_dust(&ctx, &mut ra, |_| false);
-        b.update_dust(&ctx, &mut rb, |_| false);
+        a.update_dust(&ctx, &mut ra, |_, _| false);
+        b.update_dust(&ctx, &mut rb, |_, _| false);
         // The feed under test — only on A.
         let mut lights = EntityLights::default();
         feed_dust_lights(&a, &params(), &mut lights);
         // A second update (more potential rolls), then the raw streams.
-        a.update_dust(&ctx, &mut ra, |_| false);
-        b.update_dust(&ctx, &mut rb, |_| false);
+        a.update_dust(&ctx, &mut ra, |_, _| false);
+        b.update_dust(&ctx, &mut rb, |_, _| false);
         for _ in 0..32 {
             assert_eq!(ra.next_max(1_000_000), rb.next_max(1_000_000));
         }
