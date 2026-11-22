@@ -693,6 +693,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // alongside NPC_127/131.
         "Bone_Eyes",
         "Bone_Laser",
+        // W4-c6 style-59 — the Pumpking blade's two-link arm chain
+        // (`TextureAssets.PumpkingArm`, `Main.cs:22693`): drawn from the
+        // blade toward its carrier, one full-sheet quad per link.
+        "PumpkingArm",
         // The towers' per-pillar glow masks (`Main.cs:24177-24233`): each
         // pillar's arm draws four ghost copies of its own sheet at the
         // velocity-rotated offsets.
@@ -1302,6 +1306,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_325",
         "NPC_326",
         "NPC_327",
+        // W4-c6 style-59 wiring: the Pumpking blade's own sheet
+        // (`PUMPKING_BLADE_SHEET` — the draw arm asks `npc_sheet(328)`).
+        "NPC_328",
         "NPC_329",
         "NPC_330",
         // The Frost Moon wave family's sheets (`S1-F-13c` slice A): one per

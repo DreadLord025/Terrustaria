@@ -2004,6 +2004,11 @@ fn portrait_data(
         (NpcKind::HeadlessHorseman, _) => (sheet_i, 70.0, 74.0, 70.0, white),
         (NpcKind::MourningWood, _) => (sheet_i, 154.0, 164.0, 154.0, white),
         (NpcKind::Pumpking, _) => (sheet_i, 100.0, 100.0, 100.0, white),
+        // W4-c6 style-59 wiring: the blade's portrait rests its 80x80
+        // `SetDefaults` box (`NPC.cs:13160-13161`) — the Hide=true entry
+        // (`NPCID.cs:3398-3403`) folds onto the Pumpking, so this arm
+        // never renders (the ForceBubble precedent); the shape stands.
+        (NpcKind::PumpkingBlade, _) => (sheet_i, 80.0, 80.0, 80.0, white),
         (NpcKind::Hellhound, _) => (sheet_i, 30.0, 46.0, 30.0, white),
         (NpcKind::Poltergeist, _) => (sheet_i, 44.0, 24.0, 44.0, white),
         // The Frost Moon wave family (`S1-F-13c` slice B): the portrait

@@ -112,7 +112,8 @@ pub fn moon_boss_slots(npc_type: u16) -> Option<f32> {
 /// the vanilla ids, so the count goes live for exactly those three (1.0/3.0/
 /// 5.0 - their `SetDefaults` `npcSlots` rows); `S1-F-13c` slices A+B add the
 /// Everscream (344, 3.0), the Ice Queen (345, 5.0) and Santa-NK1 (346, 4.0).
-/// 328 stays unported and contributes nothing.
+/// W4-c6 lands the blade kind (328): its row is live but `npcSlots = 0f`
+/// (`NPC.cs:13172`), so a living blade still contributes nothing.
 pub fn moon_boss_cap_count(npcs: &[Npc]) -> f32 {
     npcs.iter()
         .filter(|n| n.hp > 0)

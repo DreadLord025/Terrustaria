@@ -5027,6 +5027,61 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         }
                     }
                 }
+                // W4-c6 style-59 wiring — the Pumpking blade's carrier
+                // feed (`NPC.cs:33200-33218`): the arm reads
+                // `Main.npc[(int)MathHelper.Clamp(ai[1], 0f, 199f)]`
+                // live, which the per-NPC `&mut self` update cannot see
+                // — the pre-pass resolves the link (the stable
+                // `carrier_uid`, the ForceBubble host pre-pass's shape)
+                // and stamps the carrier facts ahead of the slot loop.
+                // ORDER DEVIATION (documented, ANALYSIS "W4-c6
+                // style-59"): the C# reads the carrier at the blade's
+                // own slot turn; the port stamps at tick start, so a
+                // carrier whose slot is LATER reads its previous-tick
+                // centre (the one-tick lag the carrier write-through
+                // family already carries). RNG-free by construction.
+                for bi in 0..npcs.len() {
+                    if npcs[bi].kind != NpcKind::PumpkingBlade || npcs[bi].hp <= 0 {
+                        continue;
+                    }
+                    let mut link = npcs[bi].carrier_uid;
+                    if link == 0 {
+                        // A net-joined blade carries no uid link — fall
+                        // back to the first living Pumpking (the Moon
+                        // Lord parts' family fallback, the
+                        // `npc_snapshot` scan's shape).
+                        link = npcs
+                            .iter()
+                            .find(|m| m.kind == NpcKind::Pumpking && m.hp > 0)
+                            .map(|m| m.uid)
+                            .unwrap_or(0);
+                        npcs[bi].carrier_uid = link;
+                    }
+                    // `:33203` — the gate: active AND aiStyle 58 (the
+                    // Pumpking is the style's only kind).
+                    let carrier_slot = npcs.iter().position(|m| {
+                        m.uid != 0
+                            && m.uid == link
+                            && m.hp > 0
+                            && m.kind == NpcKind::Pumpking
+                    });
+                    // `:33201` — the C#'s ai[1] holds the slot; keep it
+                    // aligned for the net body (the ForceBubble ai[0]
+                    // write-through).
+                    npcs[bi].ai[1] =
+                        carrier_slot.map(|s| s as f32).unwrap_or(-1.0);
+                    npcs[bi].pumpking_blade_carrier = carrier_slot.map(|s| {
+                        let c = &npcs[s];
+                        let (ccx, ccy) = c.center();
+                        crate::npc_ai_style59::PumpkingCarrier {
+                            center_x: ccx,
+                            center_y: ccy,
+                            top_y: c.y,
+                            ai1: c.ai[1],
+                            ai3: c.ai[3],
+                        }
+                    });
+                }
                 // The single session player as slot 0 (the S1-D-3p
                 // convention — the aiStyle-75 `TargetClosest` reads).
                 let cand = crate::npc_target::session_candidate(player);
@@ -7016,9 +7071,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
     for (banner, shot) in ai_shots {
+        // W4-c6 style-59: the BladeShot carries the C#'s CENTRE
+        // (`NPC.cs:33230` passes `base.Center.X/Y`; `NewProjectile`
+        // subtracts half the extent, `Projectile.cs:10876-10877`) — the
+        // port's spawn takes the top-left (the fishron-bolt precedent).
+        // Every other ai-lane requester keeps its established convention.
+        let (sx, sy) = if shot.kind == crate::projectile::FLAMING_SCYTHE {
+            let d = crate::projectile::proj_data(shot.kind);
+            (
+                shot.x - d.map_or(0.0, |d| d.w) * 0.5,
+                shot.y - d.map_or(0.0, |d| d.h) * 0.5,
+            )
+        } else {
+            (shot.x, shot.y)
+        };
         let slot = app.projectiles.spawn_hostile_ai(
             shot.kind,
-            Vec2::new(shot.x, shot.y),
+            Vec2::new(sx, sy),
             Vec2::new(shot.vx, shot.vy),
             shot.damage,
             0.0,
@@ -7223,6 +7292,60 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
         app.npcs.extend(new_bubbles);
+    }
+    // W4-c6 style-59 wiring — the Pumpking's blade pair (`NPC.cs:33093-33103`,
+    // the aiStyle-58 init arm): the carrier raised `wants_blade_pair`; the
+    // drain spawns the two 328s Bottom-placed at the carrier's TRUNCATED
+    // centre (`NewNPC`, `NPC.cs:80770` — `(int)base.Center.X/Y`), LEFT first
+    // (`ai[0] = -1`, `:33094`), RIGHT second (`ai[0] = 1` with the 150-tick
+    // `ai[3]` phase lead, `:33099-33101`), both linked through the stable
+    // `carrier_uid` (the C#'s `ai[1] = whoAmI` — the pre-pass keeps the slot
+    // write-through aligned) with the carrier's post-`TargetClosest` target
+    // copied (`:33096`/`:33102`). `timeLeft = (int)(activeTime * 1.25)` = 937
+    // (`:80772`, `activeTime = 750` `:95186`). The two `NewNPC` calls draw no
+    // `Main.rand` outside the `getGoodWorld` variant roll (`:80752`,
+    // constants-off), so the stream is untouched. ORDER DEVIATION (the
+    // ForceBubble drain's family): the C# spawns mid-`UpdateNPCs` at the
+    // carrier's slot turn; the port drains after the tick, so the placement
+    // reads the carrier's POST-integration centre and the blades first tick
+    // on the NEXT tick.
+    {
+        let mut new_blades: Vec<Npc> = Vec::new();
+        let mut next = app.next_npc_uid;
+        for n in app.npcs.iter_mut() {
+            if n.kind != NpcKind::Pumpking || !n.wants_blade_pair {
+                continue;
+            }
+            n.wants_blade_pair = false;
+            let (cx, cy) = n.center();
+            let (bw, bh) = NpcKind::PumpkingBlade.size();
+            for side in [-1.0f32, 1.0] {
+                // `NewNPC`'s `Bottom = (X, Y)` with X/Y = `(int)Center`
+                // (`NPC.cs:33093`/`:33098`): the truncation is the C#'s.
+                let mut b = Npc::new(
+                    NpcKind::PumpkingBlade,
+                    cx as i32 as f32 - bw * 0.5,
+                    cy as i32 as f32 - bh,
+                    1,
+                    0.0,
+                );
+                b.hp = b.max_hp;
+                b.ai[0] = side;
+                if side > 0.0 {
+                    b.ai[3] = 150.0; // `:33101` — the right blade's lead.
+                }
+                b.target = n.target;
+                // `:80772` — the spawn timeLeft (the port's despawn timer).
+                b.encourage_despawn(937);
+                b.uid = next;
+                next += 1;
+                b.carrier_uid = n.uid;
+                b.net_update = true;
+                new_blades.push(b);
+            }
+        }
+        app.next_npc_uid = next;
+        app.npcs.extend(new_blades);
     }
     // The aiStyle-75 carrier-gone Transform requests (`NPC.cs:36056-36063`:
     // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
@@ -10758,6 +10881,111 @@ mod probe_tests {
         // 300 - 1 = 299 raised the 5, then the tail tick decremented it.
         assert_eq!(ret.despawn_timer, 298, "the discourage raise ran through the axis");
         assert_eq!(spaz.despawn_timer, 299, "the healthy timer only ticks down");
+    }
+
+    /// W4-c6 style-59 wiring — the Pumpking's init arm raises
+    /// `wants_blade_pair` (`NPC.cs:33087-33104`) and the sim's drain spawns
+    /// the two 328s: LEFT first (`ai[0] = -1`), RIGHT second (`ai[0] = 1`,
+    /// `ai[3] = 150`), Bottom-placed at the carrier's TRUNCATED centre
+    /// (`NewNPC`, `:80770`), uid-linked, target copied, `timeLeft` 937
+    /// (`:80772` — the drain runs after the tick's despawn pass, so the
+    /// first decrement lands on the NEXT tick). The next tick's carrier
+    /// pre-pass resolves the link (`ai[1]` slot write-through +
+    /// `PumpkingCarrier` stamp) and both blades live. WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c6_the_pumpking_init_drains_the_blade_pair() {
+        let (mut app, _player) = app_with_player();
+        app.world.day_time = false;
+        let mut pk = Npc::new(NpcKind::Pumpking, 60.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        pk.hp = pk.max_hp;
+        app.npcs.push(pk);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let pk_uid = app.npcs[0].uid;
+        assert!(!app.npcs[0].wants_blade_pair, "the drain consumed the request");
+        let blades: Vec<&Npc> = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::PumpkingBlade)
+            .collect();
+        assert_eq!(blades.len(), 2, "the pair spawned (:33093/:33098)");
+        let (ccx, ccy) = app.npcs[0].center();
+        for (b, side) in blades.iter().zip([-1.0f32, 1.0]) {
+            assert_eq!(b.ai[0], side, "left -1 first, right +1 second");
+            // `NewNPC`'s Bottom placement: (int)Center − (w/2, h).
+            assert_eq!(b.x, ccx as i32 as f32 - 40.0);
+            assert_eq!(b.y, ccy as i32 as f32 - 80.0);
+            assert_eq!(b.carrier_uid, pk_uid, "the ai[1] = whoAmI link");
+            assert_eq!(b.target, app.npcs[0].target, "the target copy");
+            assert_eq!(b.despawn_timer, 937, "(int)(750 * 1.25) (:80772)");
+            assert!(b.net_update);
+            assert_eq!(b.hp, b.max_hp);
+        }
+        assert_eq!(blades[0].ai[3], 0.0);
+        assert_eq!(blades[1].ai[3], 150.0, "the right blade's lead (:33101)");
+        // The second tick: the pre-pass feeds the carrier facts, the
+        // blades live and no third blade spawns (ai[0] == 1 now). The
+        // stamp reads the tick-START centre (the pre-pass runs ahead of
+        // the slot loop — the carrier's own hover moves it later).
+        let (pcx, pcy) = app.npcs[0].center();
+        update_npcs(&mut app, 1.0 / 60.0);
+        let count = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::PumpkingBlade)
+            .count();
+        assert_eq!(count, 2, "the init arm is one-time");
+        for b in app.npcs.iter().filter(|n| n.kind == NpcKind::PumpkingBlade) {
+            assert!(b.hp > 0, "the linked blade does not despawn");
+            assert_eq!(b.ai[1], 0.0, "the slot write-through (:33201)");
+            let c = b.pumpking_blade_carrier.expect("the pre-pass stamped");
+            assert_eq!((c.center_x, c.center_y), (pcx, pcy));
+            assert_eq!(b.despawn_timer, 936, "the next tick's decrement");
+        }
+    }
+
+    /// W4-c6 style-59 wiring — the face-mode volley end to end: the
+    /// pre-pass stamps `ai3 = 2`, the axis' 59 arm fires the 91st-tick
+    /// [`BladeShot`] onto `wants_hostile_shot_ai` and the drain spawns the
+    /// Flaming Scythe 329 CENTRED (`NewProjectile`'s half-extent subtract,
+    /// `Projectile.cs:10876-10877`) with the rotation/sprite ai0/ai1
+    /// payload (`NPC.cs:33230`), damage 60, hostile, the row's 420-tick
+    /// life and 80×80 box (`Projectile.cs:4215-4225`). WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c6_the_blade_volley_drains_a_centred_flaming_scythe() {
+        let (mut app, _player) = app_with_player();
+        app.world.day_time = false;
+        let mut pk = Npc::new(NpcKind::Pumpking, 60.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        pk.hp = pk.max_hp;
+        pk.uid = 41;
+        pk.ai[0] = 1.0; // past the init arm — no pair spawn
+        pk.ai[3] = 2.0; // the scythe-face volley state (:33067's pick)
+        app.npcs.push(pk);
+        let mut blade = Npc::new(NpcKind::PumpkingBlade, 62.0 * TILE_PX, 42.0 * TILE_PX, 1, 0.0);
+        blade.hp = blade.max_hp;
+        blade.ai[0] = -1.0;
+        blade.carrier_uid = 41;
+        blade.target = 0;
+        blade.local_ai[1] = 90.0; // ++ → 91 > 90: fires THIS tick
+        blade.rotation = 0.25;
+        app.npcs.push(blade);
+        let (bcx, bcy) = app.npcs[1].center();
+        update_npcs(&mut app, 1.0 / 60.0);
+        let shot = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == crate::projectile::FLAMING_SCYTHE)
+            .expect("the volley's 329 spawned");
+        // The C#'s centre → the port's top-left (−40, −40 on the 80×80).
+        assert_eq!((shot.pos.x, shot.pos.y), (bcx - 40.0, bcy - 40.0));
+        assert_eq!((shot.w, shot.h), (80.0, 80.0), "the :4217-4218 box");
+        assert_eq!(shot.damage, 60, ":33230's Damage 60");
+        assert_eq!(shot.knock_back, 0.0);
+        assert!(!shot.friendly, "the hostile fold");
+        assert_eq!(shot.time_left, 420, "the :4224 row");
+        assert_eq!(shot.ai[0], 0.25, "rotation rides ai0 (:33230)");
+        assert_eq!(shot.ai[1], 1.0, "spriteDirection = -(-1) rides ai1");
+        assert_eq!(app.npcs[1].local_ai[1], 0.0, "the counter reset");
     }
 
     #[test]
