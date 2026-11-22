@@ -141,11 +141,10 @@ mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
-// W4-e9 — the Collision_WaterCollision splash layer (the wiring half of
-// npc.rs::water_collision_splash, NPC.cs:93052-93275).
-mod npc_water_collision;
-// W4-e9 tail — the remaining unclaimed NPC.cs PlaySound sites' pure
-// sound decisions (the unported kinds' wiring seams).
+// W4-f2 closeout (research/94 §10) — the tail census's two UNCLAIMED
+// sites' pure staged decisions (the Medusa gaze + the BigMimic reflect).
+// The merge fold (research/94 §4/§15): e9's npc_water_collision module
+// DROPPED — f2's water_collision_sounds pass is the superset keeper.
 mod npc_sounds_tail;
 mod npc_ai_style30;
 mod npc_ai_style31;

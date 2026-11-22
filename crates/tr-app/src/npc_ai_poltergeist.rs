@@ -243,19 +243,19 @@ pub fn poltergeist_ai(npc: &mut Npc, world: &World, player: &Player, rng: &mut U
     npc.y += npc.vy;
 }
 
-/// W4-e9 — the Ghost's (type 316) flee cry (`NPC.cs:24686-24701`, the
-/// same aiStyle-22 arm's 316 branch): when the target is dead or farther
-/// than 3000 px and `ai[3] == 1` (the fade state), the FIRST such tick
-/// (`localAI[3] == 0`) latches `localAI[3] = 1` and plays
-/// `SoundID.NPCDeath55` at `(int)base.Center.X/Y` — the style façade
-/// (`SoundEngine.cs:93-99`, the NextFloat rides the audio-only stream),
-/// case 4's one pitch draw on the `UpdateNPCs` stream. Queues on
-/// `wants_sound`; RNG-free (the push draws nothing). Returns whether the
-/// latch fired (the caller runs the `Opacity -= 0.025` fade + the
-/// `active = false` drop — the port's `Npc` has no Opacity field yet, the
-/// 316 kind's wiring owns it). The `ai[3] != 1` else-arm's
-/// `TargetClosest`/`EncourageDespawn(10)` is the 316 machine's, not this
-/// sound seam's.
+/// W4-f2 reconcile (e9 union, research/94 §3) — the Ghost's (type 316)
+/// flee cry (`NPC.cs:24686-24701`, the same aiStyle-22 arm's 316 branch):
+/// when the target is dead or farther than 3000 px and `ai[3] == 1` (the
+/// fade state), the FIRST such tick (`localAI[3] == 0`) latches
+/// `localAI[3] = 1` and plays `SoundID.NPCDeath55` at
+/// `(int)base.Center.X/Y` — the style façade (`SoundEngine.cs:93-99`, the
+/// NextFloat rides the audio-only stream), case 4's one pitch draw on the
+/// `UpdateNPCs` stream. Queues on `wants_sound`; RNG-free (the push draws
+/// nothing). Returns whether the latch fired (the caller runs the
+/// `Opacity -= 0.025` fade + the `active = false` drop — the port's `Npc`
+/// has no Opacity field yet, the 316 kind's wiring owns it). The
+/// `ai[3] != 1` else-arm's `TargetClosest`/`EncourageDespawn(10)` is the
+/// 316 machine's, not this sound seam's.
 #[allow(dead_code)] // the Ghost 316 kind's wiring consumes the cry
 pub fn ghost_flee_cry(npc: &mut Npc, target_dead: bool, target_distance: f32) -> bool {
     // `:24686` — the outer gate: dead target OR distance > 3000.
@@ -393,42 +393,6 @@ mod tests {
         assert_eq!(n.vx, 10.0, "the C# clamps only inside the approach");
     }
 
-    /// W4-e9 — `NPC.cs:24686-24694`: the Ghost's flee cry latches ONCE
-    /// (`localAI[3]` 0→1), queues the NPCDeath55 façade at the CENTRE,
-    /// and draws nothing; a live close target, the non-fade state and the
-    /// already-latched tick all queue nothing.
-    #[test]
-    fn w4_e9_the_ghost_flee_cry_latches_once_at_the_centre() {
-        let w = world();
-        let mut n = polt(60.0 * TILE_PX, 60.0 * TILE_PX);
-        n.ai[3] = 1.0; // the fade state
-        let mut rng = UnifiedRandom::new(7);
-        let peek = rng.peek();
-        // A live, close target: no cry.
-        assert!(!ghost_flee_cry(&mut n, false, 100.0));
-        assert!(n.wants_sound.is_empty());
-        // Dead target: the latch fires, ONE queue entry at the centre.
-        assert!(ghost_flee_cry(&mut n, true, 100.0));
-        assert_eq!(n.local_ai[3], 1.0);
-        assert_eq!(n.wants_sound.len(), 1);
-        let req = n.wants_sound[0];
-        assert_eq!(req.cue, crate::npc::NpcSoundCue::NpcDeath55);
-        let (cx, cy) = n.center();
-        assert_eq!((req.x, req.y), (cx, cy), "the C# plays at Center");
-        // The latched tick never re-queues (the fade continues silently).
-        assert!(!ghost_flee_cry(&mut n, true, 100.0));
-        assert_eq!(n.wants_sound.len(), 1);
-        // The distance arm (> 3000) fires the same latch on a fresh body.
-        let mut m = polt(60.0 * TILE_PX, 60.0 * TILE_PX);
-        m.ai[3] = 1.0;
-        assert!(ghost_flee_cry(&mut m, false, 3000.5));
-        // ai[3] != 1 (not yet fading): nothing.
-        let mut k = polt(60.0 * TILE_PX, 60.0 * TILE_PX);
-        assert!(!ghost_flee_cry(&mut k, true, 5000.0));
-        assert!(k.wants_sound.is_empty());
-        assert_eq!(rng.peek(), peek, "the latch + push draw nothing");
-    }
-
     /// The left-facing mirror: −3.95 → −4.0, and the opposite-direction
     /// 0.9 damping + the 0.1/0.05 approach steps (`:25160-25199`).
     #[test]
@@ -480,6 +444,42 @@ mod tests {
         n.vy = 2.95;
         poltergeist_ai(&mut n, &w, &p, &mut rng);
         assert_eq!(n.vy, 3.0);
+    }
+
+    /// W4-f2 reconcile (e9 union, research/94 §5) — `NPC.cs:24686-24694`:
+    /// the Ghost's flee cry latches ONCE (`localAI[3]` 0→1), queues the
+    /// NPCDeath55 façade at the CENTRE, and draws nothing; a live close
+    /// target, the non-fade state and the already-latched tick all queue
+    /// nothing.
+    #[test]
+    fn w4_e9_the_ghost_flee_cry_latches_once_at_the_centre() {
+        let mut n = polt(60.0 * TILE_PX, 60.0 * TILE_PX);
+        n.ai[3] = 1.0; // the fade state
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        // A live, close target: no cry.
+        assert!(!ghost_flee_cry(&mut n, false, 100.0));
+        assert!(n.wants_sound.is_empty());
+        // Dead target: the latch fires, ONE queue entry at the centre.
+        assert!(ghost_flee_cry(&mut n, true, 100.0));
+        assert_eq!(n.local_ai[3], 1.0);
+        assert_eq!(n.wants_sound.len(), 1);
+        let req = n.wants_sound[0];
+        assert_eq!(req.cue, crate::npc::NpcSoundCue::NpcDeath55);
+        let (cx, cy) = n.center();
+        assert_eq!((req.x, req.y), (cx, cy), "the C# plays at Center");
+        // The latched tick never re-queues (the fade continues silently).
+        assert!(!ghost_flee_cry(&mut n, true, 100.0));
+        assert_eq!(n.wants_sound.len(), 1);
+        // The distance arm (> 3000) fires the same latch on a fresh body.
+        let mut m = polt(60.0 * TILE_PX, 60.0 * TILE_PX);
+        m.ai[3] = 1.0;
+        assert!(ghost_flee_cry(&mut m, false, 3000.5));
+        // ai[3] != 1 (not yet fading): nothing.
+        let mut k = polt(60.0 * TILE_PX, 60.0 * TILE_PX);
+        assert!(!ghost_flee_cry(&mut k, true, 5000.0));
+        assert!(k.wants_sound.is_empty());
+        assert_eq!(rng.peek(), peek, "the latch + push draw nothing");
     }
 
     /// RNG witness: the flee branch draws exactly one `Next(-1, 2)`

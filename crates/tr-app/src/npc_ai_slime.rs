@@ -1249,4 +1249,42 @@ mod tests {
         w.tiles[idx].liquid = 0;
         assert_eq!(wet_collision(&w, 160.0, 16.0, 24, 18), (false, false, false));
     }
+
+    /// W4-f2 closeout (e9b union, research/94 §9) — the surface inset
+    /// (`Collision.cs:1610-1612`): a liquid-1 cell's top drops by
+    /// `(256-1)/32*2 ≈ 15.94` px and its height shrinks to 1 — a shallow
+    /// probe ABOVE the inset surface misses where the full cell would
+    /// hit. e9b's re-derived witness adapted to the port's shared probe
+    /// (the zombie-sized 18×40 box at y=940 spans the centred 950..970;
+    /// the full cell (61,60) surface 960..976 overlaps, the inset
+    /// 975.94..976.94 does not).
+    #[test]
+    fn w4_f2_the_wet_probe_surface_inset_misses_a_shallow_box() {
+        let mut w = air();
+        for x in 60..64 {
+            for y in 60..70 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        // Full cells: the centred box overlaps the column.
+        assert!(wet_collision(&w, 61.0 * 16.0, 940.0, 18, 40).0, "full cells hit");
+        // Liquid 1: every cell's surface sits at the cell bottom — the
+        // probe ends at 970, above the 975.94 inset top of row 60 (the
+        // rows above are dry — e9b's column placement).
+        for x in 60..64 {
+            for y in 60..70 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 1;
+            }
+        }
+        assert!(
+            !wet_collision(&w, 61.0 * 16.0, 940.0, 18, 40).0,
+            "the inset surface sits below the probe"
+        );
+        // A box reaching INTO the inset band (row 60's 975.94..976.94)
+        // still wets: the centred box of an 18×40 body at y=958 spans
+        // 968..988 — overlaps row 60's inset sliver.
+        assert!(wet_collision(&w, 61.0 * 16.0, 958.0, 18, 40).0, "the inset band hits");
+    }
 }

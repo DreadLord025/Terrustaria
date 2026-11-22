@@ -57,10 +57,12 @@
 //!   platforms, so the flag has no effect here — the wiring step passes
 //!   `fall = true` into the shared `TileCollision` port.
 //! * The thunder ambient roll (`NPC.cs:90111-90113`: `Next(700) == 0`
-//!   then `Next(41, 44)`) is `UpdateNPC`'s sound layer — unported; when
-//!   it lands it draws BEFORE the AI arm each tick. The `HitEffect`
-//!   dust/gore rows (`:88959-88979`, cloud puff 54) are the dust-layer
-//!   skip (the S1-D-3e/f precedent).
+//!   then `Next(41, 44)`) is `UpdateNPC`'s sound layer — LANDED by W4-f2
+//!   (`ambient_sound::idle_sounds` arm 9, wired pre-machine at `:90422`);
+//!   it draws BEFORE the AI arm each tick (the wiring witness
+//!   `w4_f2_the_nimbus_idle_roll_rides_the_stream_before_the_ai`). The
+//!   `HitEffect` dust/gore rows (`:88959-88979`, cloud puff 54) are the
+//!   dust-layer skip (the S1-D-3e/f precedent).
 #![allow(dead_code)] // WIRED by S1-D-3-wire-smallkinds (axis 49 → nimbus_step); the defaults row + witnesses stay as the audit cross-check
 
 use crate::npc::Npc;

@@ -42234,3 +42234,368 @@ PlaySound hits; neither ambient table names 595-601; d33's 114
 still the ONLY wired axis arm). The npc-sound-tail-family bible is
 research/141 §9f; the 232 count re-run = 232. Code-only, docs + 1
 anchors row.
+## The NPC.cs sound sites wave, batch 3 (W4-f2, 2026-11-21, code-only mode) — CLAIM
+
+**Census + claim.** `Select-String 'PlaySound'` over
+`decompiled/Terraria/NPC.cs` yields **232 sites** (first `:19415`,
+last `:93269`). The pushed claims read: **c13**
+(`task/W4-c13-npc-hit-sounds`, tip `09a3accf`) owns the StrikeNPC
+tail — the type-1 voice switch `:81495-81541`, the HitSound fallbacks
+`:81546`/`:81553`, the HitEffect bubble/sphere cues
+`:84231`/`:89528`/`:89540`/`:89692`; **e9**
+(`task/W4-e9-npc-sounds-2`, in flight — its uncommitted `audio.rs`
+claim registers `NPC_Killed_9` for the Vile Spit `:21480`) works the
+early line-order band from the top. The mid-file AI sites are either
+landed (E21g's 19, the style75 Item12/Item39 drains, the pillar
+dissolve/shield cues, the WoF `:25720`/`:25942` pair on the d127
+sibling) or unported-machine deferrals (the Pal/StatueMimic/Deerclops/
+DD2-boss families). **This lane (f2) claims the NEXT 40 UNCLAIMED
+sites: the two generic `UpdateNPCs`-stream emitters that remain —**
+
+* **`NPC.IdleSounds`** (`NPC.cs:90075-90208`, called at `:90422`
+  immediately BEFORE `AI()`): **32 sites** `:90081`-`:90205`, one
+  else-if chain of per-type `Main.rand.Next(N) == 0` gates playing
+  legacy case 29 (the Style-is-the-slot zombie bank,
+  `LegacySoundPlayer.cs:1008-1050` — the full per-style switch already
+  ported by S1-E-21e "for the later waves' callers", styles 24-87 at
+  ×0.5). The `shimmerTransparency > 0` head gate `:90077` wraps the
+  whole chain; the `base.wet` term rides arm 6 (types 63/64/103).
+* **`NPC.Collision_WaterCollision`'s splash cues**
+  (`NPC.cs:93052-93275`, inside `UpdateCollision` `:92526`, AFTER
+  `AI()`): **8 sites** — the entry quartet `:93121` (shimmer style
+  4) / `:93138` (honey default 1) / `:93154` (water 0) / `:93171`
+  (lava default 1) and the exit quartet `:93219` (shimmer 5) /
+  `:93236` (honey 1) / `:93252` (water 0) / `:93269` (lava 1), all
+  legacy case 19 (`LegacySoundPlayer.cs:871-910` — the
+  `splash_case19` styles-4/5 arms S1-E-21f ported are THIS wave's
+  callers). The `wetCount` 10-tick cooldown, the never-wet head gate
+  `:93055`, the aiStyle-116 pin `:93077-93080` and the per-liquid
+  kind/noGravity exclusion gates ride along; the exit-lava gate
+  `:93267` DROPS the `type != 147` term its entry twin `:93169`
+  carries (a C# quirk kept verbatim).
+
+**Seams (the landed conventions, g21's claim text).** The idle chain
+queues through the existing `Audio::play_fighter_moan` case-29 path
+(attenuation BEFORE the guard/pitch draw, the `UpdateNPCs` stream);
+the splash quartets through `Audio::play_splash_sound` (case 19).
+`Npc` gains `wet_count`/`lava_wet`/`honey_wet`/`shimmer_wet`
+(`wet` exists); `NpcKind::no_tile_collide()` joins `no_gravity()`
+(the 87-kind SetDefaults census + the pumpkin/frost defaults fold).
+The idle pass runs at the C# call position (pre-machine); the water
+pass at the per-NPC tail (post-machine, the `UpdateCollision`
+position). **Skips (documented):** the splash dust bursts (30/10-dust
+loops incl. the shimmer `Next(6)` colour rolls — the dust lanes'
+territory, the E21f player-splash precedent), the type-620 exit jump
+`:93181-93184` (movement), `TryRemovingWaterPerishableEffects`
+(buff seam), the lava strike/buff `:93325-93337` (combat seam).
+Commits land ≤10 sites each. Code-only: no cargo/tests/graphify;
+witnesses WRITTEN NOT RUN.
+
+### Landing (40/40, commits `34d347b4`/`473bb1ba`/`98ed0ad1`/`1925f3ba`)
+
+**IdleSounds — all 32 arms** (`ambient_sound.rs::idle_sounds`, a pure
+else-if chain over `npc_type`/`wet`/`shimmer_transparency` + the caller
+stream + a `play` callback). The chain order, gate windows and style
+ranges are verbatim `NPC.cs:90079-90206`; the witness
+`w4_f2_idle_sounds_the_first_ten_arms_draw_in_the_c_order` (extended to
+all 32 arms across the batches) replays each arm's gate→style→pitch
+draw sequence against a same-seeded `UnifiedRandom` mirror (seed 146
+draws 0 on every gate — the derived witness seed; the JS mirror of
+`UnifiedRandom.cs` validated the per-arm style rolls). The draw-free
+paths are pinned separately
+(`w4_f2_idle_sounds_the_gates_and_fall_throughs_draw_nothing_extra`):
+the shimmer head gate, a failed gate's ONE draw + else-if fall-out, the
+dry wet-trio fall-through (the `base.wet` term inside arm 6's
+condition), an unlisted type's zero draws. The case-29 bank: the
+`Zombie_24-87` rows join `SFX_CUES` at legacy id 29 and `zombie_asset`
+gains the 64 slot arms (the ×0.5 band,
+`w4_f2_the_idle_case29_slots_resolve_the_bank` +
+`w4_f2_the_idle_case29_bank_rows_play_with_one_pitch_draw`). The sim
+wires the chain at the C# `:90422` position — the pre-machine scoped
+block, ahead of `update_rng_dust`/the style-75 pool step, on the
+`UpdateNPCs` stream.
+
+**Collision_WaterCollision — all 8 splash sites**
+(`ambient_sound.rs::water_collision_sounds` + `water_collision_tail`,
+pure fns over a `WaterWetState` snapshot). The entry quartet
+(`:93121`/`:93138`/`:93154`/`:93171`) and exit quartet
+(`:93219`/`:93236`/`:93252`/`:93269`) play case-19 styles 4/1/0/1 and
+5/1/0/1 through the landed `Audio::play_splash_sound` (the
+`splash_case19` styles-4/5 ×0.75 + `Next(-20,1)` arms S1-E-21f ported
+are these callers; the E21f stream witness already pins all six
+styles). The pass itself draws NOTHING — the pitch rides inside the
+play after the attenuation gate + playing guard. The gates are
+verbatim: the never-wet head (`:93055`, the 690/72/21/67/376/579/541/
+town-25 set), the aiStyle-116 `wetCount` pin (`:93077-93080`), the
+10-tick cooldown, the water/shimmer long gate vs the honey/lava short
+gate, the type-615 override, and the **exit-lava quirk** — `:93267`
+drops the `type != 147` term its entry twin `:93169` carries (two
+distinct gates, both kept). The tail (`:92527-92536`) clears the three
+latches on the dry state and decrements `wetCount`. Witnesses:
+`w4_f2_water_collision_the_entry_quartet_plays_the_per_liquid_style`,
+`..._the_exit_quartet_reads_the_old_latches`,
+`..._the_gates_block_and_the_lava_quirk`. The sim wires the pass at the
+per-NPC tail (post-machine, the `UpdateCollision` position), gated on
+`!NpcKind::no_tile_collide()` (the `:90490` head — the noTileCollide
+kinds skip `UpdateCollision` entirely), reusing
+`npc_ai_slime::wet_collision` + `player::lava_collision` (the type-441
+refusal `:93318-93321` applied) for the overlap probes.
+
+**Infrastructure.** `Npc` gains `wet_count`/`lava_wet`/`honey_wet`/
+`shimmer_wet` (spawn 0/false, the `Entity` defaults); `wet` exists (the
+swimmer caches keep their reads — the water pass re-derives the same
+flag). `NpcKind::no_tile_collide()` joins `no_gravity()` in
+`npc/data.rs`: the 87-kind `SetDefaults` census (the
+`this.noTileCollide = true` rows over `NPC.cs:8426-17859`, 139 vanilla
+ids, cross-referenced through the kind enum's doc-comment ids + the
+bestiary net ids) plus the pumpkin/frost defaults fold (Pumpking 327 /
+Poltergeist 330). The AI machines' LIVE phase-flip writes are not
+modelled — the `SetDefaults` row stands (the `no_gravity` table's
+documented granularity).
+
+**RNG argument.** Both emitters ride the `UpdateNPCs` stream
+(`Main.cs:17767`) at their C# call positions: IdleSounds pre-machine
+(`:90422`), the water pass post-machine (`:92526`). The idle chain's
+else-if structure means a type consumes at most its own gate roll (+
+style + pitch on a hit); the water pass is draw-free by construction
+(the case-19 pitch is inside the play). No other stream is touched;
+the dust-burst skips are the documented visual deviation (the E21f
+player-splash precedent — the plays' relative order is kept, the
+interleaved dust draws are not).
+
+**Verification.** Code-only: every arm re-read against its C# window
+(≤100 lines), the gate windows/style ranges transcribed verbatim, the
+seam signatures checked by read/grep (`play_fighter_moan`,
+`play_splash_sound`, `wet_collision`, `lava_collision`, `cs_id`,
+`ai_style`, `no_gravity`, the `Npc` fields). The 7 witness tests
+(`ambient_sound.rs` 6 + `audio.rs` 1) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/graphify invoked**. The case-19 six-style
+stream contract is already pinned by the landed
+`s1_e_21f_the_jump_and_splash_draws_ride_the_passed_stream`.
+
+
+## The NPC-sound dup-reconcile + doc-sweep (W4-f2, 2026-11-21, code-only mode)
+
+**Scope.** The e9 (`task/W4-e9-npc-sounds-2`, tip `3793fef8`) vs f2
+(`9de95697`) duplicate reconcile — both branches ported the same 40
+sites (the 32-arm IdleSounds ladder + the 8 Collision_WaterCollision
+splash cues). The full arm-by-arm compare, the KEEP union, the naming
+union, the witness union and the DROP list live in
+`docs/research/94-npc-sound-reconcile.md`. Summary of the landed
+decisions:
+
+* **f2 is the union branch.** Its `idle_sounds` ladder and
+  `water_collision_sounds`/`water_collision_tail` pass are the keepers
+  (both ladders verbatim on all 32 arms; f2's water pass is the faithful
+  superset — e9's decision fn lacks the never-wet head, the aiStyle-116
+  pin, the tail and BOTH exit-gate 147-quirks, and has no state/wiring).
+  The `Zombie_24-87` bank superset, the `Npc` wet fields and the
+  `no_tile_collide` census stay.
+* **Two fidelity fixes** (commit `9d9c94fe`): the exit-WATER gate
+  (`NPC.cs:93250`) DROPS `type != 147` — the second 147-quirk, missed by
+  BOTH branches' original passes (a distinct `water_exit_gate`, the
+  quirk witness extended); the idle wiring gains e9's `hp > 0` dead
+  guard (the C#'s `life <= 0` return `:90385-90392` precedes the
+  `:90422` call).
+* **e9's extras unioned verbatim** (commit `c6f74db1`): the VileSpit
+  `ai[0]==2` cry (`npc_ai_style9::vile_spit_queue_cry`, STAGED — the
+  112/666 kinds unported; `NPC_Killed_9` + the int style-9 arm) and the
+  Ghost flee cry (`npc_ai_poltergeist::ghost_flee_cry`, STAGED — the 316
+  kind unported; `NpcDeath55` cue + dispatch + `NPC_Killed_55` + the
+  style-55 façade arm), their three witnesses, and e9's nimbus wiring
+  stream witness adapted as `w4_f2_the_nimbus_idle_roll_rides_the_stream_before_the_ai`.
+  The style49 module's cited-skip note repointed to the landed arm. The
+  merger can drop e9 wholesale (the DROP list, research/94 §4).
+* **e9b (SandShark `:40632`)**: no `e9b` branch exists on origin and the
+  e9 pushed tip has no SandShark content — the claimed work is unpushed.
+  The site is already claimed by d33's UNWIRED `npc_ai_style103.rs`
+  (`ee8b2668`, the `(14, 542)` sounds entry); research/94 §7 records the
+  C# window for the eventual reconcile.
+
+**Doc-sweep (commit `b5da9106`) — the two documented f2 skips ported**
+(both unclaimed; `git grep` over all origin task branches):
+
+* **The type-620 exit jump** (`NPC.cs:93181-93184`):
+  `ambient_sound.rs::water_exit_jump`, a staged pure helper (the −8
+  velocity.Y delta, the strict `<` target-centre gate). Census: the
+  GoblinShark 620 ONLY. STAGED — the kind is unported and 620 rides
+  `NPCID.Sets.UsesNewTargeting` (the NPC-target axis the port lacks);
+  the caller passes the resolved target centre when the kind lands.
+* **The lava strike/buff** (`NPC.cs:93325-93337`):
+  `NpcKind::lava_immune()` (the 49-id `SetDefaults` census — the
+  underworld four, the DD2 band 548/549 + 551-578 minus the town 550,
+  the cultist/hell-critter/boss rows; 33 ported kinds, the 16 unported
+  ids land with their kinds; the LIVE FairyCritter/Plantera writes not
+  modelled — the `no_gravity` granularity precedent) +
+  `Npc::lava_collision_combat(remix_world)` (the
+  `!lavaImmune && !dontTakeDamage && immune[255]==0` gate, the
+  `immune[255]=30` arm, the remix `AddBuff(24,180)`-no-strike vs vanilla
+  `AddBuff(24,420)`+strike arms; `Main.netMode != 1` folds to the host
+  constant). Wired at the `Collision_LavaCollision` position inside the
+  f2 water block (the `:92526` argument-evaluation order — the combat
+  half precedes the splash pass), the strike through the owner-255
+  pooled seam (`strike_projectile` + `strike_npc_damage(50, defense,
+  false)`, knockback 0) + the `:90516` `justHit` tail clear. The block
+  re-binds `npcs[i]` (the `n` alias yields to the pool borrow — the WoF
+  write-back precedent). The strike's HitSound tail is c13's StrikeNPC
+  lane (the port's strike fns are soundless). The buff rides the landed
+  `NpcBuffs::add_buff` (the `buffImmune[24]` rows refuse it there); the
+  OnFire DoT is the landed `npc_buffs` engine's.
+
+**Remaining documented skips (unchanged):** the splash dust bursts (the
+dust lanes), `TryRemovingWaterPerishableEffects` (`:93277-93301`, the
+buff seam), the shimmer `TryAddingRepeatedBuff(353, 100)`
+(`:93071-93074`, the buff seam), the exit velocity.X halving (`:93179`,
+the movement lane). *(The halving is NO LONGER a skip — the closeout
+below adopts it into the pass.)*
+
+**Verification.** Code-only: every C# window re-read (≤100 lines), the
+census derived by a scripted scan of the `SetDefaults` band, the seam
+signatures checked by read/grep (`strike_projectile`,
+`strike_npc_damage`, `add_buff`, `find_buff_index`, `lava_collision`,
+`wet_collision`, the `Npc` fields). The 8 new/extended witnesses
+(`ambient_sound.rs` 2 — the extended quirk test + the jump test;
+`audio.rs` 1; `npc_ai_style9.rs` 1; `npc_ai_poltergeist.rs` 1;
+`world_sim/npcs.rs` 2 — the nimbus stream + the lava-pool tick;
+`npc.rs` 1; `npc/data.rs` 1) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/graphify invoked**.
+
+## The NPC-sound CLOSEOUT (W4-f2, 2026-11-21, code-only mode) — FINAL
+
+**Scope.** e9 pushed past the reconcile's read: tip `a41b2b72` (the
+water wiring `npc_water_collision.rs` + the 27 tail sites
+`npc_sounds_tail.rs` + the Math.Sign/surface-inset fix round). The
+full re-adjudication, the exact fold-list both ways, the tail-census
+union and the staged helpers' activation reads live in
+`docs/research/94-npc-sound-reconcile.md` §§9-11 — **research/94 is
+COMPLETE**. Summary:
+
+* **The water re-adjudication (§9a):** e9b's wiring landed the state +
+  probes + edges §2 listed absent, but the decision fn it wires is
+  UNCHANGED — both exit-gate 147-quirks still missed, the probes
+  duplicate the landed shared fns, the kind gate is a hand-list
+  (vs f2's SetDefaults census), the lava combat half + the 620 jump
+  are cited skips. **f2's pass remains the faithful superset; the
+  KEEP verdict stands.** Two e9b points ADOPTED: (1) the `wet_prev`
+  edge latch — re-derived: the bat-family wrappers overwrite
+  `Npc.wet` pre-AI with the `is_wet` stand-in AND those kinds are
+  `!no_tile_collide()` (the C# aiStyle-14 block writes only
+  `noGravity`, `:22851`), so they reach the water block with a
+  clobbered `wet`; the edge now keys on `Npc::wet_prev` (e9b's field
+  verbatim), stamped alongside `wet` at the `:93175`/`:93180` tail.
+  (2) The exit velocity.X halving (`:93179`) into the pure pass via
+  `WaterWetState.vx` (the exit-quartet witness pins 4→2). e9b's
+  surface-inset + wiring-stream witnesses adapted onto f2's shapes
+  (`npc_ai_slime.rs` + `world_sim/npcs.rs`).
+* **The 27-tail-site census union (§10):** e9b's "every one on an
+  UNPORTED kind" claim is stale — 25 of the 27 sites are owned by
+  pushed d-band machines (d24 style-19, d32 style-86, d33
+  style-103/112/113/117/121/122/125/126/127; g8 wires the Antlion).
+  Their decision helpers DROP (the machines' sounds out-structs own
+  the sites — the SandShark keep-one d33 precedent); the BANK
+  SUPERSET is adopted into f2: `NPC_Killed_17/63` + the int-17/
+  façade-63 arms, `Item_150/167/170/172`, `Zombie_115-117` + the
+  case-65 critter arm + `play_queen_slime_moan`, the 7 Pal/
+  StatueMimic trackables + `play_npc_trackable`, the 7 `NpcSoundCue`
+  tail variants + dispatch. The TWO genuinely-unclaimed sites
+  (Medusa gaze `:56403` — d22 claims only the 22 plain walkers, d40
+  is data-only; BigMimic reflect `:66429` — d32 emits the scan
+  request but no branch ports the sound body) land STAGED in f2's
+  own `npc_sounds_tail.rs` (2 helpers + 1 witness).
+* **The staged helpers' activation reads (§11):** VileSpit 112 —
+  d35 ports the data row but EXCLUDES it from the style axis
+  (`9 if !matches!(...)`, the no-op until the AI wave); 666 unported
+  → the cry STAYS STAGED. Ghost 316 — d38 wires `ghost_ai` with the
+  cry inlined as `NpcDeath(55)`, but d38's int player has no 55 arm
+  (a silent gap on its own branch); the merge repoints that push to
+  f2's `NpcDeath55` façade (the C# `:24693` IS the SoundID overload)
+  and f2's staged helper retires as the duplicate. GoblinShark 620 —
+  d42's roster-complete tip ports the data row, the kind arm is the
+  idle stand-in (aiStyle 107 UNWIRED); d43 unpushed → the jump STAYS
+  STAGED (the `UsesNewTargeting` resolved-centre axis still absent).
+
+**Verification.** Code-only: the e9b full diff re-read
+(`npc_water_collision.rs` 488 lines, `npc_sounds_tail.rs` 646, the
+npc/audio/ambient/world_sim deltas), every cited C# window re-read
+≤100 lines (`NPC.cs:92520-92594`/`:93050-93344`/`:21470-21489`/
+`:24680-24709`/`:40545-40639`/`:42975-43004`/`:43555-43616`/
+`:43713-43728`/`:44840-44851`/`:45548-45565`/`:45748-45762`/
+`:47248-47297`/`:47935-47962`/`:48048-48065`/`:48320-48329`/
+`:48462-48477`/`:48538-48549`/`:48645-48684`/`:56395-56409`/
+`:66390-66434`/`:8505-8524`/`:16708-16725`/`:17628-17647`,
+`Collision.cs:1572-1656`, `LegacySoundPlayer.cs:1376-1405`), the
+full-branch `git grep` ownership sweeps, the d-band tips re-fetched
+(d33 `b08acf463`, d35 `e5558b0a9`, d38 `6f9dd02db`, d40 `8fe1d6d31`,
+d42 `9b22c091a`, d43 = base `a725acb04` unpushed, g8 `82c93cecf`).
+The 6 new witnesses (`world_sim/npcs.rs` 2 — the wet_prev latch +
+the adapted splash stream; `npc_ai_slime.rs` 1 — the surface inset;
+`ambient_sound.rs` 1 — the case-65 guards; `audio.rs` 1 — the tail
+bank overload split; `npc_sounds_tail.rs` 1 — the two staged
+helpers) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/
+graphify invoked**.
+
+## The NPC-sound RETIRE (W4-f2, 2026-11-21, code-only mode) — FINAL-FINAL
+
+**Scope.** e9's final tip `4c515d47` (research/141, the tail-activation
+re-probe) cross-receipted; the one cross-lane code fix it named for f2
+applied; the d38 repoint hunk published; the 232-site FINAL declaration
+written. research/94 §§12-14 carry the detail — **research/94 is
+COMPLETE, FINAL-FINAL**. Summary:
+
+* **The critter-key fix APPLIED (`c3e5b814`):** e9c `c7523984`'s
+  census fix (research/141 §3's cross-note) — the
+  `UpdateNPC_CritterSounds` wiring keyed `to_u16()` (the protocol
+  space), so every attached Golem head (protocol 74 = the C# Bird's
+  critter id, `NPC.cs:92271`) rolled the bird's day `Next(400)` +
+  `Next(3)` on the `UpdateNPCs` stream — a live determinism drift in
+  every Golem fight (the MERGER-L7 mis-route class). Now keys
+  `cs_id()` (the head folds onto the body's bestiary 245, outside the
+  table — zero draws). The seam witness re-keyed + the GolemHead-74
+  census witness adapted
+  (`w4_f2_the_critter_key_is_cs_id_not_the_protocol_golem_head_74`,
+  WRITTEN NOT RUN). The fix is now on BOTH branches (e9 `c7523984`,
+  f2 `c3e5b814`) — the merger dedupes the identical hunks.
+* **The d38 NpcDeath55 gap — the exact hunk (research/94 §12):** d38's
+  `npc_ai_ghost.rs:67` queues `NpcDeath(55)` (the INT spelling) but
+  its `play_npc_death_int` has only the 6/22 arms — a silent bank gap.
+  The C# `:24693` is the SoundID façade (the NextFloat IS consumed),
+  so the one-line repoint to f2's `NpcDeath55` variant is published as
+  an exact diff for d38d/merger; f2's staged `ghost_flee_cry` retires
+  as the duplicate post-merge.
+* **The 232-site FINAL declaration (research/94 §13):** the count
+  re-verified mechanically (232); the site-family ledger
+  (163 landed + 32 idle + 8 water + 2 extras + 27 tail); the
+  NPC-sound-family merger-bible paragraph (f2 canonical, e9 wholesale
+  DROP, the d-band machines keep their sites as one-call consumers);
+  the d33 `out.sounds` consumer map verified against `b08acf463`
+  (incl. the `statuemimic_laugh` → `_0` pin); the activation re-probe
+  at the CURRENT tips (d41 `5d036721d` rows 494-506 only, d42
+  `2d7ac08c3` rows the tail kinds but ALL unwired stand-ins, d43 still
+  zero commits, d40 still data-only — every tail cue stays
+  staged/unwired).
+* **The e9d cross-receipt (research/94 §14):** the §9b DROP items 8-12
+  re-verified against `4c515d47`'s code (the water module's fn list,
+  the tail module's 19 fns + 10 tests, the cue/field duplicates) — all
+  stand, with ONE correction: e9's exit-LAVA gate still keeps
+  `type != 147` (`honey_splash_gate` reused) — the second quirk
+  remains missed on e9's tip, f2 carries both. The co-lane verdicts
+  received with the keeper retargeted (f47's buff-353 add folds into
+  f2's shimmer-latch arm, `shimmer_wet_contact_pass` drops whole).
+  The §10 fairy label corrected (583-585 FairyCritter, not 653-655 —
+  those are the hell critters, `NPCID.cs:11843-11847`/`:11983-11987`).
+* **The d41 cs_id-fold caveat (research/94 §13, merge-time):** d41's
+  bestiary-fold cs_id rows mis-route ONE idle arm — `Crawdad2.cs_id()`
+  folds to 494 (arm 15 plays; the C# 495 is silent). The
+  GiantShelly2→496 and Salamander3-9→499 folds are behaviour-correct
+  (the same arm / inside the range). The one-line feed fix is
+  cross-noted to the merger, NOT applied here (d41's kinds are not on
+  f2's tree).
+
+**Verification.** Code-only: the e9d/d38/d33/d41/d42/d40/d34/g8 tips
+re-fetched + read by direct git show/grep, the C# windows re-read
+≤100 lines (the exit-lava gate `:93262-93273`, the ghost cry
+`:24686-24697`, the shimmer latch `:93063-93078`,
+`TryAddingRepeatedBuff` `:93303-93315`, the idle arms, the critter
+table, the Pixie hum, the NPCID/ContentSamples rows), the 232 count
+re-run read-only. The 1 new witness + the re-keyed seam witness are
+WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/graphify invoked**.

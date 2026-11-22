@@ -129,8 +129,9 @@ pub fn vile_spit_counter_tick(ai0: f32) -> (f32, bool) {
     (ai0, ai0 == 2.0)
 }
 
-/// W4-e9 — the Vile Spits' `ai[0] == 2` tick sound (`NPC.cs:21478-21480`):
-/// AFTER the double move (`position += velocity`) the arm plays
+/// W4-f2 reconcile (e9 union, research/94 §3) — the Vile Spits'
+/// `ai[0] == 2` tick sound (`NPC.cs:21478-21480`): AFTER the double move
+/// (`position += velocity`) the arm plays
 /// `PlaySound(4, (int)position.X, (int)position.Y, 9)` — the int overload
 /// (`SoundEngine.cs:102-108`, NO NextFloat), case 4's one pitch draw on
 /// the `UpdateNPCs` stream. Queues on `wants_sound` at the MOVED position
@@ -413,10 +414,10 @@ mod tests {
         assert_eq!(vile_spit_counter_tick(3.0), (3.0, false));
     }
 
-    /// W4-e9 — `NPC.cs:21478-21480`: the double-move tick queues ONE
-    /// int-death style-9 cry at the MOVED position (`position += velocity`
-    /// precedes the play), and the push draws nothing. The counter's
-    /// other ticks queue nothing.
+    /// W4-f2 reconcile (e9 union, research/94 §5) — `NPC.cs:21478-21480`:
+    /// the double-move tick queues ONE int-death style-9 cry at the MOVED
+    /// position (`position += velocity` precedes the play), and the push
+    /// draws nothing. The counter's other ticks queue nothing.
     #[test]
     fn w4_e9_the_vile_spit_cry_queues_at_the_moved_position() {
         let mut n = Npc::new(NpcKind::ChaosBall, 100.0, 200.0, 1, 0.0);

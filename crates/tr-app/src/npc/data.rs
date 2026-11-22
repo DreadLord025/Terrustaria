@@ -2204,6 +2204,170 @@ impl NpcKind {
         }
     }
 
+    /// W4-f2 — `NPC.noTileCollide` for this kind: the `SetDefaults`
+    /// census (the `this.noTileCollide = true;` rows over
+    /// `NPC.cs:8426-17859`, 139 vanilla ids; the ported 87 below) plus
+    /// the pumpkin/frost family defaults fold (the `no_gravity` shape).
+    /// The water-collision splash gates read it (`NPC.cs:93119`/
+    /// `:93136`/`:93152`/`:93169` + the exit twins' `!this.noGravity`
+    /// companions) and the `UpdateCollision` head gate (`:90490`).
+    /// The AI machines' LIVE `noTileCollide` writes (the phase flips)
+    /// are not modelled — the `SetDefaults` row stands (the `no_gravity`
+    /// table's documented granularity).
+    pub fn no_tile_collide(self) -> bool {
+        if let Some(d) = self.pumpkin_moon_defaults() {
+            return d.no_tile_collide;
+        }
+        if let Some(d) = self.frost_moon_defaults() {
+            return d.no_tile_collide;
+        }
+        matches!(
+            self,
+            NpcKind::AncientCultist
+                | NpcKind::BrainOfCthulhu
+                | NpcKind::BurningSphere
+                | NpcKind::ChaosBall
+                | NpcKind::Creeper
+                | NpcKind::DD2Betsy
+                | NpcKind::DD2KoboldFlyerT2
+                | NpcKind::DD2KoboldFlyerT3
+                | NpcKind::DD2LanePortal
+                | NpcKind::DD2WyvernT1
+                | NpcKind::DD2WyvernT2
+                | NpcKind::DD2WyvernT3
+                | NpcKind::Deerclops
+                | NpcKind::DetonatingBubble
+                | NpcKind::DevourerBody
+                | NpcKind::DevourerHead
+                | NpcKind::DevourerTail
+                | NpcKind::DukeFishron
+                | NpcKind::DungeonSpirit
+                | NpcKind::EaterOfWorldsBody
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::EaterOfWorldsTail
+                | NpcKind::ElfCopter
+                | NpcKind::EyeOfCthulhu
+                | NpcKind::Flocko
+                | NpcKind::FlyingDutchmanCannon
+                | NpcKind::ForceBubble
+                | NpcKind::FungiSpore
+                | NpcKind::GiantWormBody
+                | NpcKind::GiantWormHead
+                | NpcKind::GiantWormTail
+                | NpcKind::Hungry
+                | NpcKind::IceQueen
+                | NpcKind::LeechBody
+                | NpcKind::LeechHead
+                | NpcKind::LeechTail
+                | NpcKind::MartianDrone
+                | NpcKind::MartianSaucer
+                | NpcKind::MartianSaucerCannon
+                | NpcKind::MartianSaucerCore
+                | NpcKind::MartianSaucerTurret
+                | NpcKind::MeteorHead
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordFreeEye
+                | NpcKind::MoonLordHand
+                | NpcKind::MoonLordHead
+                | NpcKind::MoonLordLeechBlob
+                | NpcKind::NebulaFloater
+                | NpcKind::NebulaTower
+                | NpcKind::Plantera
+                | NpcKind::PlanterasHook
+                | NpcKind::PlanterasTentacle
+                | NpcKind::Poltergeist
+                | NpcKind::PrimeCannon
+                | NpcKind::PrimeLaser
+                | NpcKind::PrimeSaw
+                | NpcKind::PrimeVice
+                | NpcKind::Probe
+                | NpcKind::Pumpking
+                | NpcKind::QueenBee
+                | NpcKind::Retinazer
+                | NpcKind::ServantOfCthulhu
+                | NpcKind::SkeletronHand
+                | NpcKind::SkeletronHead
+                | NpcKind::SkeletronPrime
+                | NpcKind::SolarCorite
+                | NpcKind::SolarCrawltipedeBody
+                | NpcKind::SolarCrawltipedeHead
+                | NpcKind::SolarCrawltipedeTail
+                | NpcKind::SolarTower
+                | NpcKind::Spazmatism
+                | NpcKind::Spore
+                | NpcKind::StardustTower
+                | NpcKind::StardustWormHead
+                | NpcKind::TheDestroyer
+                | NpcKind::TheDestroyerBody
+                | NpcKind::TheDestroyerTail
+                | NpcKind::VortexTower
+                | NpcKind::WallOfFlesh
+                | NpcKind::WallOfFleshEye
+                | NpcKind::WaterSphere
+                | NpcKind::WyvernBody
+                | NpcKind::WyvernBody2
+                | NpcKind::WyvernBody3
+                | NpcKind::WyvernHead
+                | NpcKind::WyvernLegs
+                | NpcKind::WyvernTail
+        )
+    }
+
+    /// W4-f2 doc-sweep (research/94 §8b) — `NPC.lavaImmune` for this
+    /// kind: the `SetDefaults` census (the `this.lavaImmune = true;`
+    /// rows over `NPC.cs:8426-17859`, 49 vanilla ids after the `:8511`
+    /// false reset): 24 FireImp, 59 LavaSlime, 60 Hellbat, 62 Demon,
+    /// 66 VoodooDemon, 151 Lavabat, 156 RedDevil, 379/380 the Cultist
+    /// Archers, 438 CultistDevote, 534 DemonTaxCollector, the DD2 band
+    /// 548/549 + 551-578 minus 550 (the Bartender is town — no row),
+    /// 620 GoblinShark, 653/654/655 the hell critters, 657 QueenSlime,
+    /// 661 EmpressButterfly, 662 PirateGhost, 690 StatueMimic. The 33
+    /// ported kinds below; the 16 unported ids (62/151/156/379/380/438/
+    /// 534/578/620/653/654/655/657/661/662/690) land with their kinds.
+    /// `Collision_LavaCollision`'s strike/buff gate reads it
+    /// (`NPC.cs:93325`). The LIVE writes (the FairyCritter's per-state
+    /// flips `:48091`/`:48114`/`:48155`, Plantera's phase-2 `:60715`)
+    /// are not modelled — the `SetDefaults` row stands (the
+    /// `no_gravity`/`no_tile_collide` granularity precedent).
+    pub fn lava_immune(self) -> bool {
+        matches!(
+            self,
+            NpcKind::FireImp
+                | NpcKind::LavaSlime
+                | NpcKind::Hellbat
+                | NpcKind::VoodooDemon
+                | NpcKind::DD2EterniaCrystal
+                | NpcKind::DD2LanePortal
+                | NpcKind::DD2Betsy
+                | NpcKind::DD2GoblinT1
+                | NpcKind::DD2GoblinT2
+                | NpcKind::DD2GoblinT3
+                | NpcKind::DD2GoblinBomberT1
+                | NpcKind::DD2GoblinBomberT2
+                | NpcKind::DD2GoblinBomberT3
+                | NpcKind::DD2WyvernT1
+                | NpcKind::DD2WyvernT2
+                | NpcKind::DD2WyvernT3
+                | NpcKind::DD2JavelinT1
+                | NpcKind::DD2JavelinT2
+                | NpcKind::DD2JavelinT3
+                | NpcKind::DD2DarkMage
+                | NpcKind::DD2DarkMageT3
+                | NpcKind::DD2SkeletonT1
+                | NpcKind::DD2SkeletonT3
+                | NpcKind::DD2WitherBeast
+                | NpcKind::DD2WitherBeastT3
+                | NpcKind::DD2DrakinT2
+                | NpcKind::DD2DrakinT3
+                | NpcKind::DD2KoboldWalkerT2
+                | NpcKind::DD2KoboldWalkerT3
+                | NpcKind::DD2KoboldFlyerT2
+                | NpcKind::DD2KoboldFlyerT3
+                | NpcKind::DD2OgreT2
+                | NpcKind::DD2OgreT3
+        )
+    }
+
     /// The C#'s `aiStyle` for this kind - the first dispatch axis of
     /// `NPC.AI` (`NPC.cs:19819-41132`, the `if (this.aiStyle == N)` chain).
     /// Every row is the `SetDefaults` assignment for the kind's vanilla
@@ -4041,5 +4205,63 @@ pub(crate) fn entry_stats(kind: NpcKind, variant: SlimeVariant) -> EntryStats {
         defense: shell.defense(),
         value: shell.value(),
         kb: shell.knock_back_resist(),
+    }
+}
+#[cfg(test)]
+mod w4_f2_lava_immune_tests {
+    use super::*;
+
+    /// W4-f2 doc-sweep (research/94 §8b) — the `lavaImmune` SetDefaults
+    /// census spot-checks: the underworld four (24/59/60/66), the DD2
+    /// band (548/549 + 551-578 minus the town 550), and the false
+    /// defaults (the zombie/slime/guide rows — the `:8511` reset).
+    #[test]
+    fn w4_f2_the_lava_immune_census_matches_the_setdefaults_rows() {
+        // The underworld four (`NPC.cs:9090`/`:9528`/`:9552`/`:9637`).
+        for kind in [
+            NpcKind::FireImp,
+            NpcKind::LavaSlime,
+            NpcKind::Hellbat,
+            NpcKind::VoodooDemon,
+        ] {
+            assert!(kind.lava_immune(), "{kind:?}: the underworld row");
+        }
+        // The DD2 band (`:16029-16550`): the crystal/portal pair, Betsy,
+        // the goblins/bombers/javelins/skeletons/mages/beasts/drakins/
+        // kobolds/ogres/wyverns.
+        for kind in [
+            NpcKind::DD2EterniaCrystal,
+            NpcKind::DD2LanePortal,
+            NpcKind::DD2Betsy,
+            NpcKind::DD2GoblinT3,
+            NpcKind::DD2GoblinBomberT2,
+            NpcKind::DD2JavelinT1,
+            NpcKind::DD2SkeletonT3,
+            NpcKind::DD2DarkMage,
+            NpcKind::DD2DarkMageT3,
+            NpcKind::DD2WitherBeast,
+            NpcKind::DD2WitherBeastT3,
+            NpcKind::DD2DrakinT2,
+            NpcKind::DD2DrakinT3,
+            NpcKind::DD2KoboldWalkerT2,
+            NpcKind::DD2KoboldFlyerT3,
+            NpcKind::DD2OgreT2,
+            NpcKind::DD2OgreT3,
+            NpcKind::DD2WyvernT1,
+            NpcKind::DD2WyvernT3,
+        ] {
+            assert!(kind.lava_immune(), "{kind:?}: the DD2 row");
+        }
+        // The false defaults: the town Bartender (550 — NO row in the
+        // band), the zombie/slime/guide (the `:8511` reset stands).
+        for kind in [
+            NpcKind::DD2Bartender,
+            NpcKind::Zombie,
+            NpcKind::Slime,
+            NpcKind::Guide,
+            NpcKind::DemonEye,
+        ] {
+            assert!(!kind.lava_immune(), "{kind:?}: no SetDefaults row");
+        }
     }
 }
