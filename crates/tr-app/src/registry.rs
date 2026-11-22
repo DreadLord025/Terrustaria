@@ -298,6 +298,23 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         // resolved app-side as `TreeDropEvent::Gem`/`Mushroom`) — never the
         // `by_tile` fallback (S1-P-i30).
         72 | 583..=589 => None,
+        // The glowing-mushroom PLANT 71 drops through the same `case 71/72`
+        // RNG record (`TreeDropEvent::Mushroom`, W4-g42 tail D1) — item 183
+        // places the potted 190, so `by_tile(71)` is None anyway; the record
+        // carries the seeds/mushroom roll.
+        71 => None,
+        // The grass blocks drop the MUD/dirt block, NOT the seed item that
+        // places them (`KillTile_GetItemDrops`, W4-g42 tail D2): the mushroom
+        // grass 70 → Mud 176 (`case 70`, `:64702-64704`); the jungle grasses
+        // 60/661/662 → Mud 176 (`case 59/60/661/662`, `:64936-64941`). The
+        // `by_tile` fallback would leak the seed items 194/195/2171/369.
+        70 | 60 | 661 | 662 => Some(176),
+        // The dye plants 227 drop by `frameX/34` style (`case 227`,
+        // `:65048-65055`) — the ladder lives in `cell_drops` (it needs
+        // `frame_x`, which this `frame_y`-only signature lacks); the fallback
+        // here would drop 1107 for every style, so 227 is gated out (W4-g42
+        // tail D3, the herb precedent).
+        227 => None,
         // The demon/crimson altar (`KillTile_GetItemDrops`'s empty case 26
         // group, `WorldGen.cs:65758` → `:66090`): the altar is destroyed, not
         // dropped — the `by_tile` fallback would leak the Journey-mode item
@@ -621,6 +638,26 @@ mod tests {
         }
         assert_eq!(tile_drop(82, 0), None, "by_tile(82) must not yield 307");
         assert_eq!(by_tile(82), Some(307), "the fallback itself is intact");
+    }
+
+    /// W4-g42 tail D2: the grass blocks drop the MUD block 176, not the seed
+    /// item that places them (`KillTile_GetItemDrops` `case 70` `:64702-64704`,
+    /// `case 59/60/661/662` `:64936-64941`). The mushroom grass 70 and the
+    /// jungle grasses 60/661/662 all → 176; the `by_tile` fallback would leak
+    /// the seed items 194/195.
+    #[test]
+    fn w4_g42_tail_grass_blocks_drop_the_mud_block() {
+        for tile in [70u16, 60, 661, 662] {
+            assert_eq!(tile_drop(tile, 0), Some(176), "tile {tile} drops mud 176");
+        }
+        // The fallback itself still finds the seed items (the rows override it).
+        assert_eq!(by_tile(70), Some(194), "the seeds place the mushroom grass");
+        assert_eq!(by_tile(60), Some(195), "the seeds place the jungle grass");
+        // D1: the glowing-mushroom plant 71 drops through its RNG record, not
+        // the fallback (item 183 places the potted 190, so by_tile(71) is None).
+        assert_eq!(tile_drop(71, 0), None, "71 rides the Mushroom record");
+        // D3: the dye plants 227 ride the cell_drops frameX ladder, gated here.
+        assert_eq!(tile_drop(227, 0), None, "227 rides the cell_drops style ladder");
     }
 
     // DW-2.3: the M4-PROJ-6 corrections of the GenItemData placeholder band.

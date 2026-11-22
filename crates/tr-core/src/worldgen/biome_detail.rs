@@ -389,12 +389,14 @@ pub(crate) fn pass_wet_jungle(world: &mut World, world_surface_low: f64, world_s
 
 /// The glowing-mushroom and jungle plants
 /// (`GlowingMushroomPlantsUndergroundAndJunglePlants`, `:20122-20164`): the
-/// tile-70 mushroom arm keeps the port's shape-level placement (the mushroom
-/// half is M5-BIOME-2's row); the jungle arms are faithful — tile 60 grows
-/// plant 61 on every free cell, tile 226 (the temple brick) draws `Next(5)`
-/// against the `TooManyJunglePlantsNearby` density gate (`:20155`). The
-/// `PlaceTile(…, 61)` internals draw too (`:59581-59625`); the pass runs on
-/// its own `pass_rng("Glowing Mushrooms and Jungle Plants")`.
+/// tile-70 mushroom arm is verbatim (W4-g42 G5) — the triple
+/// `TryGrowingTreeByType(5, i, j)` retry (each gated on the above-cell still
+/// free) then `PlaceTile(i, j-1, 71, mute: true)`; the jungle arms are
+/// faithful — tile 60 grows plant 61 on every free cell, tile 226 (the temple
+/// brick) draws `Next(5)` against the `TooManyJunglePlantsNearby` density
+/// gate (`:20155`). The `PlaceTile(…, 61)` internals draw too
+/// (`:59581-59625`); the pass runs on its own
+/// `pass_rng("Glowing Mushrooms and Jungle Plants")`.
 pub(crate) fn pass_mushroom_and_jungle_plants(
     world: &mut World,
     world_surface: f64,
@@ -412,16 +414,21 @@ pub(crate) fn pass_mushroom_and_jungle_plants(
             let kind = t.kind; // copied — the arms below mutate (i, j − 1) only
             let above_active = active_at(world, i, j - 1);
             if j >= world_surface as i32 && kind == TILE_MUSHROOM_GRASS && !above_active {
-                // `:20133-20147`: the glowing mushroom on the free cell (the
-                // triple tree retry collapses to the plant placement — the
-                // shape-level arm M5-BIOME-2 owns).
-                let idx = world.index(i, j - 1);
-                world.tiles[idx] = Tile {
-                    kind: TILE_GLOWING_MUSHROOM,
-                    frame_x: 0,
-                    ..Default::default()
-                };
-                world.tiles[idx].flags |= FLAG_ACTIVE;
+                // `:20133-20147`: the triple tree retry, each gated on the
+                // above-cell still free, then the glowing-mushroom plant.
+                // `TryGrowingTreeByType(5)` → `GrowTree` (the tile-5 trunk on
+                // the mushroom grass — the giant "tree" the old shape-level
+                // arm never grew).
+                crate::growth::try_growing_tree_by_type(world, 5, i, j, rng);
+                if !active_at(world, i, j - 1) {
+                    crate::growth::try_growing_tree_by_type(world, 5, i, j, rng);
+                    if !active_at(world, i, j - 1) {
+                        crate::growth::try_growing_tree_by_type(world, 5, i, j, rng);
+                        if !active_at(world, i, j - 1) {
+                            place_tile_glowing_mushroom(world, i, j - 1, world_surface, rng);
+                        }
+                    }
+                }
             }
             // The second empty check re-read the tile (`:20149`) — the
             // mushroom arm may have filled the cell above.
@@ -440,6 +447,36 @@ pub(crate) fn pass_mushroom_and_jungle_plants(
             }
         }
     }
+}
+
+/// `WorldGen.PlaceTile`'s type-71 arm (`WorldGen.cs:59652-59676`) — the
+/// glowing-mushroom plant the plants pass places on a free mushroom-grass
+/// cell. The below-gate (active, no slope/half-brick, type 70) skips every
+/// draw when it fails. The cattail branch (`j > worldSurface` →
+/// `PlaceCatTail`, `:59656-59659`) is **c33's claimed helper** (research/
+/// 12j-g42) — documented out here; the plain arm (`:59670-59674`) writes
+/// `active/type/frameX = Next(5) * 18`. The outer `PlaceTile` gate
+/// (`Collision.EmptyTile || !tileSolid[71]`, `:59369`) always passes for the
+/// non-solid 71 on a free cell (no players/NPCs at gen time).
+fn place_tile_glowing_mushroom(world: &mut World, i: i32, j: i32, _world_surface: f64, rng: &mut Rng) {
+    // The below-gate (`:59653`).
+    let below_ok = j + 1 < world.height
+        && world.tile(i, j + 1).is_some_and(|t| {
+            t.active() && t.slope() == 0 && !t.half_brick() && t.kind == TILE_MUSHROOM_GRASS
+        });
+    if !below_ok {
+        return;
+    }
+    // The cattail branch (`:59655-59669`) is c33's PlaceCatTail — out of this
+    // lane; the plain arm runs (the documented deviation).
+    // `tile.active(true); tile.type = 71; tile.frameX = Next(5) * 18`
+    // (`:59670-59674`).
+    let fx = (rng.range(0, 5) * 18) as i16;
+    let idx = world.index(i, j);
+    let t = &mut world.tiles[idx];
+    t.flags |= FLAG_ACTIVE;
+    t.kind = TILE_GLOWING_MUSHROOM;
+    t.frame_x = fx;
 }
 
 /// `WorldGen.PlaceTile`'s type-61 arm (`WorldGen.cs:59581-59625`) — the
@@ -1420,6 +1457,15 @@ mod tests {
                         let (kind, fx) = plant_draws(&mut replay);
                         outcomes.push((i, kind, fx, true));
                     }
+                    (16, 60) => {
+                        // W4-g42 G5: the verbatim mushroom arm — the lone 70
+                        // anchor has no side-70 neighbour, so each of the
+                        // three `GrowTree` attempts fails at the neighbour
+                        // gate BEFORE any draw (the height roll is past it),
+                        // then `PlaceTile(71)` draws `Next(5)` for frameX.
+                        let fx = (replay.range(0, 5) * 18) as i16;
+                        outcomes.push((i, TILE_GLOWING_MUSHROOM, fx, true));
+                    }
                     (18, 60) => {
                         let gate = replay.range(0, 5) == 0;
                         if gate {
@@ -1451,11 +1497,95 @@ mod tests {
         }
         // The blocked cell stayed stone.
         assert_eq!(w.tile(14, 59).unwrap().kind, 1);
-        // The mushroom arm kept the shape-level placement.
+        // The mushroom arm placed the 71 plant with the rolled frameX
+        // (the lone anchor never grows a tree — no side-70 neighbour).
         let t = w.tile(16, 59).unwrap();
-        assert!(t.active() && t.kind == 71 && t.frame_x == 0);
+        assert!(t.active() && t.kind == 71, "the glowing mushroom placed");
+        assert!(matches!(t.frame_x, 0 | 18 | 36 | 54 | 72), "the Next(5)*18 frameX");
         // Both grass anchors placed something (61 or the rare 69).
         assert!(outcomes.iter().any(|&(x, _, _, p)| x == 10 && p));
+    }
+
+    /// W4-g42 G5: the verbatim mushroom arm grows the giant tile-5 tree when
+    /// the ground has a side-70 neighbour (`GrowTree`'s neighbour gate) — the
+    /// triple retry's FIRST attempt succeeds and fills the above-cell, so the
+    /// later retries and the `PlaceTile(71)` are skipped. The old shape-level
+    /// arm never grew a tree.
+    #[test]
+    fn w4_g42_the_mushroom_arm_grows_the_giant_tree() {
+        let mut w = World::new("t".into(), 40, 80);
+        // A 5-wide mushroom-grass row at y=60 (the side-70 neighbours exist),
+        // centred at x=20; the cells above are free. worldSurface=50 so the
+        // arm is live (j=60 >= 50).
+        for dx in -2i32..=2 {
+            let idx = w.index(20 + dx, 60);
+            w.tiles[idx].kind = TILE_MUSHROOM_GRASS;
+            w.tiles[idx].flags |= FLAG_ACTIVE;
+        }
+        let mut rng = Rng(0x5EED);
+        pass_mushroom_and_jungle_plants(&mut w, 50.0, 100.0, &mut rng);
+        // The first GrowTree attempt grew a tile-5 trunk above the ground.
+        let trunk = (40..60)
+            .filter(|&row| w.tile(20, row).is_some_and(|t| t.active() && t.kind == 5))
+            .count();
+        assert!(trunk >= 5, "the giant tree trunk grew ({trunk})");
+        // The above-cell (20, 59) is the trunk base, NOT a 71 plant.
+        let above = w.tile(20, 59).unwrap();
+        assert!(above.active() && above.kind == 5, "the trunk base, not the plant");
+    }
+
+    /// W4-g42 G5: the lone mushroom-grass anchor (no side-70) fails all three
+    /// `GrowTree` attempts at the neighbour gate (no draws) and falls through
+    /// to `PlaceTile(71)` — the glowing-mushroom plant with `Next(5)*18`.
+    #[test]
+    fn w4_g42_the_lone_mushroom_anchor_places_the_plant() {
+        let mut w = World::new("t".into(), 40, 80);
+        let idx = w.index(20, 60);
+        w.tiles[idx].kind = TILE_MUSHROOM_GRASS;
+        w.tiles[idx].flags |= FLAG_ACTIVE;
+        let mut rng = Rng(0x5EED);
+        pass_mushroom_and_jungle_plants(&mut w, 50.0, 100.0, &mut rng);
+        let t = w.tile(20, 59).unwrap();
+        assert!(t.active() && t.kind == TILE_GLOWING_MUSHROOM, "the 71 plant");
+        assert!(matches!(t.frame_x, 0 | 18 | 36 | 54 | 72), "the Next(5)*18 frameX");
+        // No tree grew (the neighbour gate refused every attempt).
+        let trunk = (40..60)
+            .filter(|&row| w.tile(20, row).is_some_and(|t| t.active() && t.kind == 5))
+            .count();
+        assert_eq!(trunk, 0, "no tree on the lone anchor");
+    }
+
+    /// W4-g42 G5: `PlaceTile(71)`'s below-gate (`:59653`) — a non-70 below, a
+    /// sloped/half-brick below, or an out-of-world below all refuse (no draw,
+    /// no write).
+    #[test]
+    fn w4_g42_place_tile_71_below_gate() {
+        // A 70 below: places.
+        let mut w = World::new("t".into(), 40, 80);
+        let idx = w.index(20, 61);
+        w.tiles[idx].kind = TILE_MUSHROOM_GRASS;
+        w.tiles[idx].flags |= FLAG_ACTIVE;
+        let mut rng = Rng(0x5EED);
+        place_tile_glowing_mushroom(&mut w, 20, 60, 50.0, &mut rng);
+        assert!(w.tile(20, 60).unwrap().active(), "the 70 below places");
+        // A dirt below: refuses.
+        let mut w2 = World::new("t".into(), 40, 80);
+        let idx = w2.index(20, 61);
+        w2.tiles[idx].kind = 1;
+        w2.tiles[idx].flags |= FLAG_ACTIVE;
+        let mut rng2 = Rng(0x5EED);
+        let before = rng2.0;
+        place_tile_glowing_mushroom(&mut w2, 20, 60, 50.0, &mut rng2);
+        assert!(!w2.tile(20, 60).unwrap().active(), "the dirt below refuses");
+        assert_eq!(rng2.0, before, "no draw on the refused gate");
+        // A half-brick 70 below: refuses.
+        let mut w3 = World::new("t".into(), 40, 80);
+        let idx = w3.index(20, 61);
+        w3.tiles[idx].kind = TILE_MUSHROOM_GRASS;
+        w3.tiles[idx].flags |= FLAG_ACTIVE | crate::tile::FLAG_HALF_BRICK;
+        let mut rng3 = Rng(0x5EED);
+        place_tile_glowing_mushroom(&mut w3, 20, 60, 50.0, &mut rng3);
+        assert!(!w3.tile(20, 60).unwrap().active(), "the half-brick below refuses");
     }
 
     // --- DW-5.2: JunglePlantsPart2 -------------------------------------------------

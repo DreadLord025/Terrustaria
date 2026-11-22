@@ -45,7 +45,19 @@ pub(crate) fn run(world: &mut World, streams: &mut Streams, opts: &GenOptions) {
         surface_is_in_space(world);
     }
     if micro.contains(MicroSeedFlags::SURFACE_IS_MUSHROOMS) {
-        surface_is_mushrooms(world, &mut streams.pass_rng("DoSurfaceIsMushrooms"));
+        // `FinalizeSecretSeeds` (`WorldGen.cs:607-613`): `if (!noSurface)
+        // DoSurfaceIsMushrooms(); DoSurfaceIsMushrooms();` — the second call
+        // ALWAYS runs, on the SAME continuing genRand stream (W4-g42 G6).
+        // The noSurface arm itself is the documented M5-SEED-2 skip (no
+        // noSurface world state), so under that flag both calls stand down.
+        // The mid-pipeline third call (`MudCavesToJungleGrass`, `:12474-
+        // 12477`) needs the step seam + a continuing stream — the documented
+        // follow-up (research/12j-g42).
+        if !micro.contains(MicroSeedFlags::NO_SURFACE) {
+            let mut rng = streams.pass_rng("DoSurfaceIsMushrooms");
+            surface_is_mushrooms(world, &mut rng);
+            surface_is_mushrooms(world, &mut rng);
+        }
     }
     if micro.contains(MicroSeedFlags::WORLD_IS_FROZEN) {
         world_is_frozen(world, &mut streams.pass_rng("DoWorldIsFrozen"), micro, active);
@@ -210,38 +222,59 @@ fn surface_is_in_space(world: &mut World) {
 }
 
 /// `DoSurfaceIsMushrooms` (`WorldGen.cs:2087-2173`), the normal (non-noSurface)
-/// arm: the per-column band `worldSurface + Next(3)` conversions. The C#'s
-/// two `Convert(k, l, 3, 0)` calls (the 60-tile and wall-15 arms) are the
-/// `Conversion` machine's "mushroom" flavour; the port has no mushroom
-/// conversion table, so those two arms take the direct-equivalent writes the
-/// C# itself performs in its noSurface twin and the difference is
-/// documented.
+/// arm, verbatim (W4-g42 G6): per column k, the inner `for` CONDITION draws
+/// `Next(3)` EVERY iteration — `for (l = 0; (double)l < worldSurface +
+/// Next(3); l++)` — so the band wobbles per row and the stream takes one draw
+/// per visited row plus one failing draw per column. The C#'s tile reads are
+/// UNGATED by active (`.type` reads the stored kind even on inactive cells —
+/// the port's `kind_at` matches). The two `Convert(k, l, 3, 0)` calls (the
+/// 60-tile and wall-15 arms) ride the mushroom conversion cell
+/// ([`crate::spread::convert_cell_mushroom`], G7): 60 → 70 (NOT the old 59
+/// stand-in) and the wall-15 → 80 arm. The noSurface arm (`:2094-2116`)
+/// stays the documented M5-SEED-2 skip; the skyblock early-out (`:2089-2092`)
+/// reads the classic flag the port carries.
 fn surface_is_mushrooms(world: &mut World, rng: &mut super::Rng) {
-    let band = world.world_surface as i32 + rng.range(0, 3);
+    // `if (WorldGen.skyblockWorldGen) return` (`:2089-2092`).
+    if world.seeds.contains(SeedFlags::SKYBLOCK) {
+        return;
+    }
     for x in 0..world.width {
-        for y in 0..band.min(world.height) {
+        // The condition-draw loop (`:2120`): `l < worldSurface + Next(3)`
+        // re-evaluated every iteration. The `.min(height)` clamp is the
+        // port's bounds guard (the C# indexes the tile array directly).
+        let mut y = 0i32;
+        while (y as f64) < world.world_surface + rng.range(0, 3) as f64
+            && y < world.height
+        {
             let kind = kind_at(world, x, y);
             let wall = wall_at(world, x, y);
-            // `if (type == 60) Convert(k, l, 3, 0)` — the mushroom world's own
-            // conversion clears the jungle grass to the mushroom grass' dirt
-            // base (the noSurface twin writes 59 for the inert cells).
+            // `if (type == 60) Convert(k, l, 3, 0)` (`:2122-2125`).
             if kind == 60 {
+                spread::convert_cell_mushroom(world, x, y);
+            }
+            // `if (wall == 15) Convert(k, l, 3, 0)` (`:2126-2129`) — the
+            // wall re-read: the first Convert may have changed it.
+            if wall_at(world, x, y) == 15 {
+                spread::convert_cell_mushroom(world, x, y);
+            }
+            // The direct writes (`:2130-2169`) — the kind re-read per arm
+            // (the C# reads `Main.tile[k, l].type` fresh each `if`).
+            if kind_at(world, x, y) == 0 {
                 set_kind(world, x, y, 59);
             }
-            if wall == 15 {
-                set_kind(world, x, y, 59);
-            }
-            if kind == 0 {
-                set_kind(world, x, y, 59);
-            }
-            if kind == 2 {
+            if kind_at(world, x, y) == 2 {
                 set_kind(world, x, y, 60);
             }
-            if matches!(wall, 63 | 65 | 66 | 68 | 64 | 205 | 206 | 207) {
-                if let Some(t) = world.tile_mut(x, y) {
-                    t.wall = 80;
+            // The eight wall arms, in the C#'s source order (63, 65, 66, 68,
+            // 64, 205, 206, 207 → 80) — one write each, the wall re-read.
+            for from in [63u16, 65, 66, 68, 64, 205, 206, 207] {
+                if wall_at(world, x, y) == from {
+                    if let Some(t) = world.tile_mut(x, y) {
+                        t.wall = 80;
+                    }
                 }
             }
+            y += 1;
         }
     }
 }
@@ -528,6 +561,73 @@ mod tests {
         );
     }
 
+    /// W4-g42 G6: the verbatim `DoSurfaceIsMushrooms` (`:2118-2172`) on a
+    /// small fixture — the condition-draw band, the 60 → 70 Convert arm
+    /// (NOT the old 59 stand-in), the wall-15 → 80 Convert arm, the direct
+    /// 0 → 59 / 2 → 60 writes and the eight-wall → 80 set. The stream
+    /// replay pins the per-row `Next(3)` condition draws (one per visited
+    /// row plus one failing draw per column).
+    #[test]
+    fn w4_g42_the_mushroom_seed_arm_is_verbatim() {
+        let mut w = World::new("t".into(), 40, 60);
+        w.world_surface = 10.0;
+        // Column 5: jungle grass at row 3 (active), mud wall 15 at row 4
+        // (inactive), dirt 0 at row 5, grass 2 at row 6, wall 63 at row 7.
+        let put = |w: &mut World, x: i32, y: i32, kind: u16, wall: u16, active: bool| {
+            let i = w.index(x, y);
+            w.tiles[i] = crate::tile::Tile { kind, wall, ..Default::default() };
+            if active {
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        };
+        put(&mut w, 5, 3, 60, 0, true);
+        put(&mut w, 5, 4, 0, 15, false);
+        put(&mut w, 5, 5, 0, 0, true);
+        put(&mut w, 5, 6, 2, 0, true);
+        put(&mut w, 5, 7, 1, 63, true);
+        let mut rng = super::super::Rng(0x5EED);
+        surface_is_mushrooms(&mut w, &mut rng);
+        // The Convert arms: 60 → 70, wall 15 → 80 (the wall arm runs on the
+        // inactive cell — the type-3 cell's `!active && wall <= 0` gate
+        // passes because wall 15 > 0).
+        assert_eq!(w.tile(5, 3).unwrap().kind, 70, "the jungle grass converts");
+        assert_eq!(w.tile(5, 4).unwrap().wall, 80, "the mud wall converts");
+        // The direct writes: the inert dirt 0 → 59 (the C# reads the stored
+        // type ungated), the grass 2 → 60, the wall 63 → 80.
+        assert_eq!(w.tile(5, 5).unwrap().kind, 59, "dirt → mud");
+        assert_eq!(w.tile(5, 6).unwrap().kind, 60, "grass → jungle grass");
+        assert_eq!(w.tile(5, 7).unwrap().wall, 80, "the grass wall → 80");
+        // The stream replay: per column, one Next(3) per visited row plus
+        // one failing draw. The band is `worldSurface + Next(3)` ∈ [10, 13),
+        // so every column visits rows 0..=9 at minimum; the exact count is
+        // data-dependent — replay the same loop shape and compare states.
+        let mut replay = super::super::Rng(0x5EED);
+        for _x in 0..40 {
+            let mut y = 0i32;
+            while (y as f64) < 10.0 + replay.range(0, 3) as f64 && y < 60 {
+                y += 1;
+            }
+        }
+        assert_eq!(rng.0, replay.0, "the condition-draw ledger");
+    }
+
+    /// W4-g42 G6: the skyblock early-out (`:2089-2092`) — the flag-carrying
+    /// world draws NOTHING and writes nothing.
+    #[test]
+    fn w4_g42_the_mushroom_seed_arm_skips_skyblock() {
+        let mut w = World::new("t".into(), 40, 60);
+        w.world_surface = 10.0;
+        w.seeds |= SeedFlags::SKYBLOCK;
+        let i = w.index(5, 3);
+        w.tiles[i] = crate::tile::Tile { kind: 60, ..Default::default() };
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        let mut rng = super::super::Rng(0x5EED);
+        let before = rng.0;
+        surface_is_mushrooms(&mut w, &mut rng);
+        assert_eq!(rng.0, before, "no draws on skyblock");
+        assert_eq!(w.tile(5, 3).unwrap().kind, 60, "no writes on skyblock");
+    }
+
     /// `surfaceIsDesert` sands the surface band (`:2517-2592`) and the
     /// sandstone walls follow in the Finish arm.
     #[test]
@@ -565,6 +665,41 @@ mod tests {
             MicroSeedFlags::START_IN_HARDMODE,
         )));
         assert!(hard.hard_mode, "the world starts in hardmode");
+    }
+
+    /// W4-g42: the surfaceIsMushrooms seed world is deterministic (a == b)
+    /// across two full generations — the verbatim `DoSurfaceIsMushrooms`
+    /// (the per-row condition draws + the double-call dispatch) and the
+    /// mushroom-biome lane's tile changes replay byte-identically. The
+    /// classic control stays a == b too (the flag-gated arm draws nothing).
+    #[test]
+    fn w4_g42_the_mushroom_seed_world_is_deterministic() {
+        let mk = |micro: MicroSeedFlags| {
+            crate::worldgen::generate(&GenOptions {
+                micro_flags: micro,
+                seed: 42,
+                ..Default::default()
+            })
+        };
+        let a = mk(MicroSeedFlags::from(MicroSeedFlags::SURFACE_IS_MUSHROOMS));
+        let b = mk(MicroSeedFlags::from(MicroSeedFlags::SURFACE_IS_MUSHROOMS));
+        assert_eq!(a.tiles.len(), b.tiles.len());
+        for (x, y) in a.tiles.iter().zip(&b.tiles) {
+            assert_eq!(
+                (x.kind, x.wall, x.frame_x, x.frame_y, x.liquid, x.flags, x.meta),
+                (y.kind, y.wall, y.frame_x, y.frame_y, y.liquid, y.flags, y.meta),
+                "the mushroom seed world replays"
+            );
+        }
+        // The seed arm actually fired: the mushroom grass 70 grew over the
+        // classic (the Convert 60 → 70 + the surface conversions).
+        let classic = mk(MicroSeedFlags::none());
+        assert!(
+            count(&a, 70) > count(&classic, 70),
+            "the mushroom grass grew: {} vs {}",
+            count(&a, 70),
+            count(&classic, 70)
+        );
     }
 
     /// The count gate reads the classic flags too (the `Variations`

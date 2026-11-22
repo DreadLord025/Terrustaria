@@ -248,6 +248,16 @@ mod tests {
     // kill_tile drops ride deterministic position seeds), so every other
     // step's stream is untouched. The re-pin is DEFERRED to the merge gate
     // (no compiler on this branch); the a == b determinism assert stays.
+    // W4-g42 (2026-11-21, code-only): the glowing-mushroom biome lane moves
+    // this pin BY DESIGN — the `GlowingMushroomPatches` verbatim deltas
+    // (the double cluster bound, the ShroomPatch first-ring activation guard
+    // + the py advance + the vy one-off, the underground-desert veto) change
+    // the mud/grass tiles, and the plants-pass mushroom arm now grows the
+    // tile-5 giant trees (the triple `GrowTree` retry) instead of the
+    // shape-level 71 write. The 512-wide world runs 1 cluster (512/700 →
+    // ceil 1) whose patches + trees land. The re-pin is DEFERRED to the
+    // merge gate (no compiler on this branch); the `a == b` determinism
+    // half stays untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -326,6 +336,13 @@ mod tests {
     // choice is DISCARD (no worldgen loot side channel, the C# gen-time
     // noItem gate :63546-63549) — recorded in 12g per 70's witness table.
     // The f25e/g42e seal rounds are comment/witness-only — no pin effect.
+    // W4-g42 (2026-11-21, code-only): the glowing-mushroom biome lane moves
+    // this pin BY DESIGN (see SEED42_512 above) — the default 4200-wide
+    // world runs 6 clusters, the verbatim ShroomPatch + the plants-pass
+    // giant trees change every mushroom patch's tiles, and the
+    // `DoSurfaceIsMushrooms` seed arm (flag-gated, classic draws nothing)
+    // leaves the classic world's stream untouched. The re-pin is DEFERRED
+    // to the merge gate; the `a == b` determinism half stays untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
