@@ -15550,6 +15550,15 @@ powers/research вЂ” each needs its own scope.
   id, `NPCKilledCondition.cs:70-79`): `STAR_DESTROYER` 4, `BUCKETS_OF_BOLTS` 3,
   `GELATIN_WORLD_TOUR` 24, `SLAYER_OF_WORLDS` 15 (preserving folded groups where
   the C# does). `STAR_DESTROYER` is therefore no longer vacuously complete.
+  **W4-e22 (2026-11-20)** re-verified the whole table against
+  `AchievementInitializer.cs:16-443` with an independent C#-vs-Rust diff
+  (kinds, ids, condition-name keys, trackers, icons, categories — 0
+  mismatches across the 137 rows / 180 conditions) and landed the permanent
+  witness: `achievements_data.rs::tests` carries a second verbatim
+  transcription (`CONDITION_COUNTS`) that
+  `every_rows_conditions_match_the_initializer_verbatim` compares against
+  `ROWS` entry by entry, so the lossy-`CreateMany` class of bug fails the
+  test pass instead of silently shipping.
 - **The category filter cannot name the `None` row.** Vanilla's `FilterList`
   indexes `_categoryButtons[(int)achievement.Category]`, and
   `GAIN_TORCH_GODS_FAVOR` is the one row `RegisterAchievementCategory` never
