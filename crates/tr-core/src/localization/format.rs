@@ -122,20 +122,46 @@ impl VariableText {
         })
     }
 
-    /// `VariableText.TryFormat`: `None` when a condition or a variable is missing.
+    /// `VariableText.CheckConditionsAndLoadArgs` (`VariableText.cs:73-94`):
+    /// every `{?Name}`/`{!Name}` condition must equal its required bool
+    /// (a missing/non-bool lookup answers false) AND every `{Name}` variable
+    /// must resolve non-null. The args land in `out` in variable order.
+    fn check_conditions_and_load_args(
+        &self,
+        lookup: &dyn Fn(&str) -> Option<Substitution>,
+        out: &mut Vec<String>,
+    ) -> bool {
+        for c in &self.conditions {
+            let got = lookup(&c.name).and_then(|v| v.as_bool()).unwrap_or(false);
+            if got != c.required_value {
+                return false;
+            }
+        }
+        for v in &self.variables {
+            match lookup(v) {
+                Some(value) => out.push(value.display()),
+                None => return false,
+            }
+        }
+        true
+    }
+
+    /// `VariableText.ConditionsMet` (`VariableText.cs:96-99`): the same
+    /// check `TryFormat` runs — conditions AND non-null variables.
+    pub(super) fn conditions_met(&self, lookup: &dyn Fn(&str) -> Option<Substitution>) -> bool {
+        let mut args = Vec::with_capacity(self.variables.len());
+        self.check_conditions_and_load_args(lookup, &mut args)
+    }
+
+    /// `VariableText.TryFormat` (`VariableText.cs:101-112`): `None` when a
+    /// condition or a variable is missing.
     pub(super) fn try_format(
         &self,
         lookup: &dyn Fn(&str) -> Option<Substitution>,
     ) -> Option<String> {
-        for c in &self.conditions {
-            let got = lookup(&c.name).and_then(|v| v.as_bool()).unwrap_or(false);
-            if got != c.required_value {
-                return None;
-            }
-        }
         let mut args = Vec::with_capacity(self.variables.len());
-        for v in &self.variables {
-            args.push(lookup(v)?.display());
+        if !self.check_conditions_and_load_args(lookup, &mut args) {
+            return None;
         }
         Some(format_net(&self.format, &args))
     }
