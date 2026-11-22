@@ -36310,6 +36310,278 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The HitWireSingle remainder arms (W4-f11, code-only)
+
+The fourth wiring-arms lane (c42/e20/e21 own the first three). c42 pushed one
+fix-round commit (de176ccd: 144/421/422 SquareTileFrame wakes + actuator guard,
+235/226 downedPlantBoss guards, 506 onto the shared validator) on the
+ALREADY-PORTED arms; e20/e21 pushed nothing. This lane ports the MISSING set —
+the arms `hit_wire_single` lacked vs the C# `HitWireSingle` switch
+(`Wiring.cs:996-2554`):
+
+- **Batch 1 (8773057a)**: torch 4 (`ToggleTorch` `:2903-2918`, frameX ±66),
+  campfire 215 (`ToggleCampFire` `:3000-3042`, the 3×2 anchor + the shared
+  `validate_tile_square` + the anchor-frameY ±36 flip), the 130/131 stone-slab
+  pair (`:1423-1439`; the 130 gate's `CanKillTile` conjunct is OUTSIDE the
+  above-active disjunction — unlike DeActive's fold — and a null above tile
+  refuses), switch track 314 (`:1744-1749`, `CheckMech(5)` +
+  `Minecart.FlipSwitchTrack`). New `tr-core/src/minecart.rs` ports the
+  `Initialize` connection tables (`Minecart.cs:125-427`, hand-transcribed
+  from the sequential `num++` rows), `GetNearbyTilesSetLookupIndex`
+  (`:1170-1198`), `FrameTrack` (`:943-1168`) and `FlipSwitchTrack`
+  (`:1296-1319`) — the `edit/hammer.rs` `Consumed` seam's other half.
+- **Batch 2 (fac8362e)**: doors 10/11 (`:1461-1488`; `OpenDoor`'s one
+  `Next(2)` direction draw + the opposite retry, `CloseDoor(forced: true)`),
+  trapdoors 386/387 (`:1440-1453` → `ShiftTrapdoor` `WorldGen.cs:51447-51596`,
+  playerAbove-true-then-false), tall gates 388/389 (`:1454-1460` →
+  `ShiftTallGate` `:51723-51775`, closing = type==389). `open_door`/
+  `close_door` gain the `Wiring.running`-gated `wire_skips` seam
+  (`:37717-37725`/`:31895-31899`; all callers updated, the interaction/NPC
+  paths pass `None`). The case-8/9 door cues queue as `door_sounds` and
+  drain on the `UpdateWorldGen` stream (the `switch_clicks` precedent).
+- **Batch 3 (e0d1f245)**: hoppers 21/467 (`:1986-1989` → `Hopper`
+  `:2638-2678`) + extractinators 219/642 (`:1990-1993` → `Extractinator`
+  `:2554-2584`). The engine resolves the 2×2/3×3 anchor + `CheckMech(60)`
+  and queues `hopper_requests`/`extractinator_requests`; the app half
+  (`world_sim/wiring_devices.rs`) runs the chest-store lookup, the locked/
+  in-use gates, the 192×192 grab walk (`TryToPutItemInChest`/`TryAddingToStack`/
+  `TryAddingToEmptySlot`/`TryMoveCoinsInChest` `:2680-2798`,
+  `Utils.CoinsSplit`/`CoinsCount`) and `TryFindChestForExtractinator`
+  (`:2586-2608`) + the reverse slot roll.
+
+**Deliberate deviations (code-only mode — no cargo/rustc/tests invoked):**
+- The door/trapdoor/tall-gate `SoundEngine.PlaySound(8/9)` sites fold into one
+  cue per attempt outcome (a successful shift plays case 8 at the anchor, the
+  all-refused trapdoor path plays case 9 at the hit cell); the C#'s per-branch
+  positions (`ShiftTrapdoor` `:51470`/`:51512`/`:51563`/`:51594`) are cited but
+  the port queues the anchor/hit-cell position. The pitch draw rides the
+  caller's `UpdateWorldGen` stream, never the wiring stand-in.
+- The hopper's `playerIndexTheItemIsReservedFor == Main.myPlayer` gate folds
+  to "all drops" (the port's single-player i51 model — `WorldItem.cs:139`
+  netMode 0 → myPlayer); the `SyncItem`/`VisualizeChestTransfer` particle
+  tails are unported seams (the particles task).
+- The extractinator roll + `Item.NewItem` spawn ride the wiring stand-in
+  stream (the S1-L-6c contract, the `actuation_drops` precedent); the C# truth
+  is `Main.rand` at the `HitWireSingle` site under the `UpdateWorldGen` swap.
+- The `FrameTrack` pound branch's `array[num4]` read carries a `.max(0)`
+  defensive clamp for the degenerate front-not-in-options state (the C# would
+  throw IndexOutOfRange, `Minecart.cs:1085`).
+- The trapdoor/tall-gate `TileFrame` walks use the port's superset
+  `reframe_area` wake (the `open_door` precedent), not the C#'s exact
+  per-cell loop bounds.
+
+25 witness tests WRITTEN NOT RUN (10 batch-1 [6 wiring + 4 minecart] + 6
+batch-2 + 9 batch-3 [4 engine + 3 app drain + 2 wiring_devices unit]). The
+`validate_tile_square` helper went `pub(crate)` (the c42 fix-round precedent,
+shared with the campfire/tall-gate/trapdoor validators).
+
+## The Wiring.cs device residuals (W4-f11, code-only)
+
+The fifth pass over this lane: the five recorded ANALYSIS deviations plus the
+`Wiring.cs` census beyond `HitWireSingle`. Commits `ad80daaa` (engine) +
+`24fa39f1` (app).
+
+**(1) `HitWire` (the multi-tile entry, `:837-995`) vs landed.** The flood
+itself was already 1:1 (research-23 D1/D2 closed); the residual was the
+entry/exit map lifecycle: the C# clears ONLY `_wireDirectionList` at entry
+(`:839`) and `_wireSkip`/`_toProcess` at the EXIT (`:977-978`) — the port
+cleared both maps at entry too. Redundant on every standalone path (the
+previous pass exited clean), so the entry clears are gone; the seed loop
+re-inserts every seed (`Add(point, 4)` + `SkipWire`, `:843-844`). The
+`_toProcess.Add` site (`:973`) cannot throw a duplicate key: an entry exists
+⇔ the `TryGetValue` arm decremented and `continue`d (no enqueue), and it is
+removed exactly at zero, after which the fresh enqueue re-Adds. The C#'s
+nested gate-trip (`LogicGatePass` → `TripWire` while the outer flood's maps
+are live) wipes the outer state on its own exit — a static-sharing
+re-entrancy quirk the port's per-call structure does not reproduce
+(recorded, not chased: the gate chains re-trip from scratch either way).
+
+**(2) `CheckMech` cooldown machinery — full census.** All 38 C# call sites
+map 1:1: `HitSwitch` 18000 (`:303`) / 60 (`:362`); the cannons 480/3600
+(`:1330` via the style table) + snowball 60 (`:1391`); the toilet 60
+(`:1500`), fireworks box/fountain 30 (`:1516`/`:1528`), switch track 5
+(`:1745`), geyser 200 (`:3097`); the trap family 200/300/90 (`:1774`/
+`:1810`/`:1856`/`:1891`/`:1907`/`:1923`/`:1940`/`:1966`); the boulder
+statue 900 (`:2000`); the statues 30/600/300 (`:2266-2443`); the
+extractinator 60 (`:2561`) and hopper 60 (`:2651`). The queue cap is 999
+(`:464`, `MAX_MECHS`), the dedupe is per-position. Two `UpdateMech` fixes:
+the out-of-world/null branch does `_numMechs--` WITHOUT shifting (`:165-
+175`, research-23 D16) — `Vec::pop`, not `remove` (the dead slot survives
+until the descending loop drains past it); and the gate is `InWorld(x, y,
+1)` — fluff 1, one cell inside each edge (the port used fluff-0
+`in_bounds`).
+
+**(3) `SkipWire`/`running` lifecycle.** Three gaps closed: (a)
+`LogicGatePass` clears `blockPlayerTeleportationForOneIteration` at its
+tail (`:714-717`) — the plate poke (`PressurePlateHelper.PokeLocation`)
+and the PlayerAbove sensor arm set it, and without the clear the flag
+latched forever and every later teleporter pad refused the player; (b)
+`ClearAll` (`:125-143`) — the mech + pump queues empty on world load
+(`WorldGen.cs:6959`, the `WorldFile.cs:1977`/`:3455` sites), hooked into
+`enter_loaded_world`; (c) two per-arm SkipWire sets: case-216
+`LaunchRocket`'s `SkipWire(i, j)` AFTER the launch (`:1492`, the port
+dropped it) and the fireworks box's full 2×2 (`:1512-1515`, the port
+skipped only the left column — the fountain's 1×2 at `:1526-1527` was
+already right). The `running` flag's readers (the `SwitchMB`/
+`SwitchFountain`/`SwitchMonolith`/door-family `wire_skips` seams) were
+already ported; the census confirmed every `Wiring.running` gate in
+`WorldGen.cs` (`:31895`/`:37717`/`:50994`/`:51137`/`:51186`/`:51459`/
+`:51501`/`:51556`/`:51748`) has its port seam.
+
+**(4) Mass-wire 109/110 apply-side.** The d93 codecs (`5c32b508`) landed
+PARKED; the g48-g51 apply lanes were read and leave 109/110 unclaimed
+(the `netglue.rs` parked arms cite S1-I-4). This lane ports the operation
+(research-23 task 6 / D17): `mass_wire_operation_step` (`Wiring.cs:3329-
+3421`) — the Red→Green→Blue→Yellow→Actuator placement order (NOT the
+colour-pass order), the dry-stock `Some(false)` halt, the cutter half's
+cached kills; `mass_wire_operation_inner` (`:3235-3327`) — the L-shaped
+walk (column leg then row leg, the bend cell included, the endpoint once
+more, the ps corner never re-walked); and the app half
+(`wiring_devices::mass_wire_operation`, `:419-453`) — the 58-slot stock
+census (the port chains inventory+coins+ammo in the C# index order), the
+bill via `ConsumeItem` (`Player.cs:9269-9308`, forward scan), and the
+`DropCache` spawns at `master.Center` on `UpdatePlayers`. The Multicolor
+Wrench (3625) use arm (`Player.cs:46903-46918`) lands in
+`use_wiring_tool`: the ToolMode Actuator-strip (`:46908`), the
+`wireOperationsCooldown` gate (`:52075-52078`), the single-cell `ps==pe`
+operation. `Player.wire_operations_cooldown` + the `ResetEffects`
+decrement (`:18798-18800`) and `App.wire_tool_mode` (`WiresUI.cs:23`,
+default Red `:94`) are the new state.
+
+**(5) Hopper/extractinator engine seams — verified live.** The batch-3
+drains run at `world_sim/wiring.rs:362-367` inside the wiring tick
+(`take_hopper_requests` → `run_hopper`, `take_extractinator_requests` →
+`run_extractinator`), with the three app witnesses
+(`w4_f11_the_hopper_sucks_a_nearby_drop_into_the_chest`,
+`w4_f11_a_locked_chest_refuses_the_hopper`,
+`w4_f11_the_extractinator_rolls_a_chest_input`). No gap.
+
+**Deliberate deviations (code-only mode — no cargo/rustc/tests invoked):**
+- The mass-wire bill folds the two msg-110 round trips (`Wiring.cs:441-
+  442`) into the direct `ConsumeItem` loops (`:445-452`) — the port's
+  single-player i51 model (netMode 0). The 110 client arm
+  (`MessageBuffer.cs:3789-3807`) stays parked with the net lanes; the
+  `wireOperationsCooldown = 0` clear it carries has no positive setter in
+  1.4.5.8 (the only write is the clear), so the field + decrement + gate
+  keep the shape without a live throttle.
+- The cut cache (`Item.StartCachingType`/`DropCache`, `:3244-3245`/
+  `:3325-3326`) is a per-operation `(i32, i32)` counter, not the C#'s
+  global `cachedItemSpawnsByType` array — the mass operation is the only
+  cacher, and the totals drop in `maxStack` chunks at `master.Center`
+  with the `Item.NewItem` velocity rolls on `UpdatePlayers` (the C#'s
+  zero-spread call still draws them). The per-edit `SendData(17)` and
+  `PlaySound(0)` inside `Place*`/`Kill*` stay the caller's seams (the
+  port's `edit::place_wire` family is silent, the S1-K-4d precedent).
+- The Grand Design (3611) drag rides projectile 651
+  (`Projectile.cs:72053-72066`) — d13 landed the aiStyle-125 arm + the
+  Kill-hook request seam (`take_mass_wire_ops` →
+  `app.pending_mass_wire_ops`); the APPLY drain onto this lane's
+  `mass_wire_operation` is the union-merge follow-up (research/235).
+  The `WiresRadial` UI's LOGIC half landed W4-f11 (`ui/wires_radial.rs` —
+  the flower/line state machine + the six-slot ToolMode toggles write
+  `wire_tool_mode`); the ~450-line draw passes are the research/234
+  contract remainder.
+- The `CanDoWireStuffHere` dual-dungeons temple arm
+  (`Player.cs:46934-46937`) has no ported seed — the wall-87 gate alone
+  runs (the S1-D-3 precedent).
+
+15 witness tests WRITTEN NOT RUN (10 core `w4_f11_residual_tests` + 3
+use-arm + 2 `wiring_devices` unit). The plate witness
+(`destroy_plate_releases_a_pressed_plate_and_pokes_the_switch`) was
+re-pinned for the gate-pass clear: the block now reads false after the
+poke (the C# truth), and the no-poke arm arms the flag manually to prove
+the unpressed plate leaves it untouched.
+
+## The wiring union-sync (W4-f11 → c42c canonical, code-only)
+
+The union-sync pass over research/95 (the wiring MASTER reconcile,
+`ec568b3e` on the c42 branch) + research/71 (**EXECUTED** on e20
+`cf0b8f9c` — the full canonical device superset). Deliverable:
+`docs/research/133-f11-unique-folds.md` — the per-fix cherry-pick hunks
+for the f11 UNIQUES (none exists on c42: `clear_all`, the UpdateMech
+pop-not-remove + fluff-1, the LogicGatePass teleport-block clear, the
+HitWire entry/exit lifecycle, the case-216/fireworks-box SkipWire fixes,
+the mass-wire core + app + the 3625 use arm + the cooldown/ToolMode
+fields), the 95-ruled KEEP shapes inside the dup arms (the doors Option
+skip seam, `only_close_or_open`, `top_left_and_styles` pub(crate), the
+torch set-guard, the three unique dup-arm witnesses), and the
+DEPRECATED-BY-UNION inventory.
+
+**Deprecation banners (this pass, comments only — NO code deleted; the
+merger drops per the 95 playbook, deleting breaks the pushed-history
+consumers):** `tr-core/src/minecart.rs` (whole module → e20
+TRACK_FRAMES), `world_sim/wiring_devices.rs` (the hopper/extractinator
+halves → e20; the mass-wire append KEEPS), `edit.rs` `shift_trapdoor`/
+`shift_tall_gate` (→ c42 `edit/shift.rs`), `wiring.rs` `wire_trapdoor`'s
+cue fold + the tall-gate arm cue (→ c42 in-body cues) + `toggle_campfire`
+(KEEP-ONE + d6's forced gate), `world_sim/wiring.rs`'s single door-cue
+drain (→ c42's drain-site union).
+
+**OLD-shape flags (95 §9.1 — c42 fix round `de176ccd` FIRST):** f11's
+144/421/422 (no SquareTileFrame wakes, no actuator guard), 235/226 (no
+`downed_plant_boss` conjunct) and 506 (inline validator, no kill-cascade)
+carry inline OLD-SHAPE comments pointing at the c42 side; a merge taking
+f11's arm region wholesale would silently revert the fixes. Verified
+against both tips (f11 `wiring.rs:2304/:2306-2307/:2347/:3346/:2863-2869`
+old vs c42 `:2226/:2270/:3223/:2781` fixed). No f11 witness pins the old
+behaviour of these arms (the multi-tile seed witness flips a non-actuated
+422 — identical under the fix).
+
+Nothing to cherry-pick device-side: the f11 must-merge wins (PlaySound(7)
++ the pitch draw, the OnceLock 64-mask cache, the six rebased witnesses)
+are ALREADY on e20 (`f167082e`/`6336e3b4`/`b0d0836f`/`5272cd52`), plus
+e20's slot-Vec fix (`a2d6cdad`). The `frame_track` non-pound/hammer half
+stays the 95 §8.8 follow-up salvage note.
+
+**WIRING-UNIQUE SEAL (2026-11-21, research/133 §8 — the LIVE contract):**
+the c42 tip moved to `15810df4a` (its final phase closed 95 §8.1/
+§8.2-core/§8.4/§8.9 in c42's OWN shape: the stamped-boxes `entity_boxes`
+gate + the `door_echoes` tuple queue), so 133 §7.1/§7.2's CORE hunks are
+SUPERSEDED-BY-C42 — the f11 `CellBlocked`/`install_entity_gate` +
+`door_toggles` struct shapes DROP, never ship both. The surviving f11
+uniques (the §8.5 bible): the `send_door_toggle` send-half (g48 has NO
+production send — the tuple-arg re-shape + the 14-site drain re-point
+hunk is §8.2), the kite `drop_rng` param (re-targeted at the c42-moved
+fn `world_sim/wiring.rs:1089`/`:1143`; the direct drain REPLACES d13's
+buffer park, §8.4), the `wires_radial` whole module, and the
+forced-gate/entity/echo witness legs c42's own pins lack. The
+radial-draw texture census (355-tip sweep): NO lane loads
+`UI/Wires_0..11` + `UI/BuilderIcons` (CORRECTED content names,
+`AssetInitializer.cs:299-303` — the "WireUI_*"/"BuilderAcc" spellings
+were C# field names); the draw executor owns the 13 loads (measured
+20 980 px² padded ≈ 3 atlas rows), the claim attaches to d35
+research/113's union as a §14 new-claimant delta. The g48 research/237
+minecart fail-tail fix was taken VERBATIM (`b46556b2d`, blob `8a7c149cb`
+= g48's; the later seal-note header is the only delta — the f11×g48
+minecart merge is a comment-only dedupe); the
+drop-for-e20 ruling stands, any surviving `frame_track` keeps the
+fail-tail NO-OP for the net-17 reader's `mute:false`.
+
+**Batch-H merge execution note (integration/batch-H):** the §8 contract
+was EXECUTED at this merge — the f11 deprecated halves dropped
+(`world_sim/wiring_devices.rs`, `tr-core/src/minecart.rs`, the `edit.rs`
+shift copies, the `CellBlocked`/`install_entity_gate` +
+`door_toggles`/`DoorToggle` engine shapes, the dup light/door/device
+match arms); `send_door_toggle` re-shaped to the c42 tuple args with the
+drain re-pointed at ALL 14 production discard sites (the npcs.rs site
+hoists past the parts borrow via a collected vec — the `switch_sends`
+precedent); the `drop_rng` param landed on the c42-moved
+`mass_wire_operation` (the 3625 arm + the unit pins pass `UpdatePlayers`;
+the kite witness re-pointed). The `wires_radial` module DROPS per the
+LATER g81 seal (research/382 §2 — g81's `ui/wires_ui.rs` is the superset
+keep-one; f11's `line_clicks` ports the DEAD `WiresRadial.DrawLine` as a
+non-vanilla interaction and never ships); the §8.3 texture census is
+STALE the same way — g81 IS the radial-draw executor (it loads
+`UI/Wires_0..11` + `UI/BuilderIcons`). The forced-gate/entity/echo
+witness legs landed re-pointed at the kept c42 free fns / stamped boxes /
+tuple queue (`w4_f11_the_unified_light_family_honours_the_forced_state`,
+`w4_f11_the_forced_door_closes_through_a_full_blocker`,
+`w4_f11_the_gate_close_echo_and_the_refusal_queue_nothing`,
+`w4_f11_the_npc_box_blocks_the_wired_tall_gate`). The net.rs 19 codec
+stays f11's copy as the documented fallback until g48's byte-identical
+keep-one lands (133 §7.6); the netglue no-op apply arms stay until g48's
+dispatch replaces them.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

@@ -11,6 +11,7 @@ use glam::Vec2;
 use crate::app::App;
 use crate::npc::Npc;
 use crate::npc::NpcKind;
+use crate::player::Player;
 
 /// The research/95 §8.1 entity-half stamp: copies the live player/NPC
 /// rectangles into the wiring engine right before a trip entry
@@ -436,10 +437,14 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 app.rngs.stream(crate::app::RngKey::UpdateWorldGen),
             );
         }
-        // The §8.2 echoes: SP discards (the C# `SendData` netMode-0
-        // return, `NetMessage.cs:341-344`); the MP relay attaches with
-        // the g48b `19` codec lane (contract note).
-        let _ = app.wiring.take_door_echoes();
+        // The §8.2 echoes (f11 §8.2 drain re-point): the send-half rides
+        // `send_door_toggle` — SP's `Off` arm is the C# `SendData` netMode-0
+        // return (`NetMessage.cs:341-344`); in MP the echo reaches the wire
+        // at the site that produced it. The apply/relay dispatch is g48's
+        // `net_apply.rs` (its own lane's union).
+        for (n, x, y, d) in app.wiring.take_door_echoes() {
+            app.send_door_toggle(n, x, y, d);
+        }
     });
     for _ in 0..party_credits {
         let _ = app.notify_progression_net(25);
@@ -1114,7 +1119,17 @@ fn consume_one(
 /// (`Item.DropCache`, `:3325-3326`) spawn at `master.Center` with zero
 /// spread on the caller's stage stream — the use path rides
 /// `UpdatePlayers` (the `world_sim/editing/wiring.rs` cutter precedent).
-pub(crate) fn mass_wire_operation(app: &mut App, ps: (i32, i32), pe: (i32, i32), mode: u8) {
+/// `drop_rng` is the f11 §8.4(a) stream param (batch-H): the 3625 use arm
+/// passes `UpdatePlayers` (behaviour frozen); the Grand Design's kite
+/// Kill-hook drain passes `UpdateProjectiles` (the Kill's stage,
+/// `Main.cs:17775`) — that drain lands at the d13/g81 pool-seam union.
+pub(crate) fn mass_wire_operation(
+    app: &mut App,
+    ps: (i32, i32),
+    pe: (i32, i32),
+    mode: u8,
+    drop_rng: crate::app::RngKey,
+) {
     // `:423-433` — the stock census over the 58 carry slots.
     let mut wire_count: i32 = 0;
     let mut actuator_count: i32 = 0;
@@ -1160,7 +1175,7 @@ pub(crate) fn mass_wire_operation(app: &mut App, ps: (i32, i32), pe: (i32, i32),
     // (`:3325-3326`): the cached kills drop in `maxStack` chunks
     // (`Item.cs:466-475`). The port's `spawn_item_drop_px` carries the
     // `Item.NewItem` velocity rolls (the zero-spread C# call still draws
-    // them) on the use path's `UpdatePlayers` stream.
+    // them) on the caller's `drop_rng` stage stream (f11 §8.4(a)).
     for (kind, total) in [(530u16, cut_cache.0), (849u16, cut_cache.1)] {
         let mut left = total;
         while left > 0 {
@@ -1168,7 +1183,7 @@ pub(crate) fn mass_wire_operation(app: &mut App, ps: (i32, i32), pe: (i32, i32),
             left -= chunk;
             crate::world_sim::items::spawn_item_drop_px(
                 &mut app.items,
-                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                app.rngs.stream(drop_rng),
                 kind,
                 chunk as u32,
                 Vec2::new(drop_point.0, drop_point.1),
@@ -1247,6 +1262,78 @@ mod tests {
     fn trip_and_tick(app: &mut App) {
         app.wiring.trip_wire(&mut app.world, 8, 20, 1, 1);
         update_wiring(app, 1.0 / 60.0);
+    }
+
+    /// Research/95 §8.1 (f11 §8.5 row 5, batch-H re-shape onto the c42
+    /// stamped-boxes stamp): an NPC standing in a tall-gate row refuses the
+    /// wired shift through `trip_wire`'s real flood; the same trip with the
+    /// NPC moved away opens the gate; the touching-edges-free rectangle
+    /// math pins the stamp's `Rectangle.Intersects` semantics (the legs
+    /// c42's own pins lack). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_the_npc_box_blocks_the_wired_tall_gate() {
+        let rig = || {
+            let mut app = app_with(388, 0, 0);
+            // Extend the gate to its full 1×5 column (rows 20..=24) and
+            // run the wire down it (the flood reaches every row).
+            let steps = [20, 18, 18, 18, 20];
+            let mut fy = 0i16;
+            for dy in 0..5i32 {
+                let i = app.world.index(10, 20 + dy);
+                app.world.tiles[i] = Tile { kind: 388, frame_x: 0, frame_y: fy, ..Default::default() };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+                fy += steps[dy as usize] as i16;
+            }
+            app
+        };
+        // An NPC parked over row 22 (its box intersects the gate column).
+        let mut blocked = rig();
+        let npc = npc_of(NpcKind::Zombie, 10.0 * 16.0, 22.0 * 16.0);
+        blocked.npcs.push(npc);
+        stamp_wiring_entity_boxes(&mut blocked);
+        blocked.wiring.trip_wire(&mut blocked.world, 8, 20, 1, 1);
+        assert_eq!(blocked.world.tile(10, 20).unwrap().kind, 388, "the NPC refused the shift");
+        // The same rig, the NPC one column over — free, the gate opens.
+        let mut free = rig();
+        let npc = npc_of(NpcKind::Zombie, 12.0 * 16.0, 22.0 * 16.0);
+        free.npcs.push(npc);
+        stamp_wiring_entity_boxes(&mut free);
+        free.wiring.trip_wire(&mut free.world, 8, 20, 1, 1);
+        assert_eq!(free.world.tile(10, 20).unwrap().kind, 389, "the gate opened");
+        // The snapshot rectangle math: touching edges are free (XNA
+        // `Rectangle.Intersects`), strict overlap blocks. A 20×42 player
+        // at (32, 32) spans [32,52]×[32,74].
+        let mut app = rig();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 32.0;
+        player.y = 32.0;
+        app.player = Some(player);
+        // The stamp's rectangle math through the REAL flood: a closed
+        // trapdoor (386, styleX 0) at each probe cell — the open needs the
+        // destination row free (`WorldGen.cs:51499`). Only the overlapping
+        // cell (2,2) refuses; the touching-edge (1,2) and past-the-edge
+        // (4,2) cells shift open.
+        let probe = |app: &mut App, x: i32, y: i32| -> bool {
+            for dx in 0..2i32 {
+                for dy in 0..2i32 {
+                    let i = app.world.index(x + dx, y + dy);
+                    app.world.tiles[i] = Tile {
+                        kind: 386,
+                        frame_x: (dx * 18) as i16,
+                        frame_y: (dy * 18) as i16,
+                        ..Default::default()
+                    };
+                    app.world.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            app.world.wires.set(x, y, tr_core::wiring::WireColor::Red, true);
+            stamp_wiring_entity_boxes(app);
+            app.wiring.trip_wire(&mut app.world, x, y, 1, 1);
+            app.world.tile(x, y).is_some_and(|t| t.active() && t.kind == 387)
+        };
+        assert!(!probe(&mut app, 2, 2), "the player box overlaps cell (2,2) — refused");
+        assert!(probe(&mut app, 4, 2), "x=64 is past the box's right edge — free");
+        assert!(probe(&mut app, 1, 2), "the cell [16,32] touches x=32 — free");
     }
 
     fn npc_of(kind: crate::npc::NpcKind, x: f32, y: f32) -> crate::npc::Npc {
@@ -2218,9 +2305,38 @@ mod tests {
         app.inventory[0] = crate::item::ItemSlot { kind: 530, name: "", count: 10, prefix: 0 };
         let mode = tr_core::smart_cursor::multi_tool_mode::RED
             | tr_core::smart_cursor::multi_tool_mode::BLUE;
-        mass_wire_operation(&mut app, (10, 19), (10, 19), mode);
+        mass_wire_operation(&mut app, (10, 19), (10, 19), mode, crate::app::RngKey::UpdatePlayers);
         assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
         assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Blue));
         assert_eq!(app.inventory[0].count, 8, "two channels billed two wires");
     }
-}
+
+
+    /// W4-f11 — the d13 activation contract's composition (research/235):
+    /// the Grand Design's kite Kill passes the RAW ToolMode (the Actuator
+    /// bit NOT stripped — `Wiring.cs:3241`; only the 3625 click arm masks,
+    /// `Player.cs:46908`) and the `UpdateProjectiles` stage stream (the
+    /// Kill runs inside that swap, `Main.cs:17775`). The apply places the
+    /// actuator alongside the wire and bills both stocks. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f11_the_kite_apply_keeps_the_actuator_bit_and_the_proj_stream() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = tr_core::world::World::new("t".into(), 40, 40);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        for x in 5..=15 {
+            let i = app.world.index(x, 19);
+            app.world.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        app.inventory[0] = crate::item::ItemSlot { kind: 530, name: "", count: 10, prefix: 0 };
+        app.inventory[1] = crate::item::ItemSlot { kind: 849, name: "", count: 10, prefix: 0 };
+        // The RAW mode: Red + Actuator (the wrench arm would strip it).
+        let mode = tr_core::smart_cursor::multi_tool_mode::RED
+            | tr_core::smart_cursor::multi_tool_mode::ACTUATOR;
+        mass_wire_operation(&mut app, (10, 19), (10, 19), mode, crate::app::RngKey::UpdateProjectiles);
+        assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
+        let t = app.world.tile(10, 19).unwrap();
+        assert!(t.flags & tr_core::tile::FLAG_ACTUATOR != 0, "the actuator landed unmasked");
+        assert_eq!(app.inventory[0].count, 9, "one wire billed");
+        assert_eq!(app.inventory[1].count, 9, "one actuator billed");
+    }

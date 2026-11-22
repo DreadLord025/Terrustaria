@@ -61,7 +61,9 @@ pub(crate) fn update_tile_entities(app: &mut App, dt: f32) {
         }
         // The §8.2 echoes: SP discards (the C# `SendData` netMode-0
         // return); the queue must still drain so it never lingers.
-        let _ = app.wiring.take_door_echoes();
+        for (n, x, y, d) in app.wiring.take_door_echoes() {
+            app.send_door_toggle(n, x, y, d);
+        }
     });
     app.te_step.cap_backlog();
 }

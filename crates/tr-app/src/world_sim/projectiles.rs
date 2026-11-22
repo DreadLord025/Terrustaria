@@ -420,6 +420,33 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-f11 — the Grand Design's release-death mass-wire apply
+    // (`Projectile.cs:72051-72067` → `Wiring.MassWireOperation`): the
+    // ACTIVATION CONTRACT for the d13 union (research/235). d13's pool
+    // Kill hook queues `(owner, ps, pe)` (`take_mass_wire_ops`) and parks
+    // them on `app.pending_mass_wire_ops` at THIS seam; the merge wave
+    // drains them right here through the f11 apply. SEAL RE-TARGET
+    // (research/133 §8.4): the union calls the c42-MOVED copy
+    // `crate::world_sim::wiring::mass_wire_operation` (this module drops
+    // per §4a) and the direct drain REPLACES d13's park line — the
+    // buffer field drops, one drain shape, never both:
+    //   for (owner, psx, psy, pex, pey) in app.projectiles.take_mass_wire_ops() {
+    //       if owner as u32 != app.local_id { continue; } // the Kill gate
+    //       crate::world_sim::wiring::mass_wire_operation(
+    //           app, (psx, psy), (pex, pey),
+    //           app.wire_tool_mode,                  // RAW ToolMode (:3241)
+    //           crate::app::RngKey::UpdateProjectiles, // the Kill's stage
+    //       );
+    //   }
+    // (Batch-H: the `drop_rng` param is LANDED on the c42-moved fn per
+    // §8.4(a); g81's own `drain_mass_wire_ops` 2-tuple seam dedupes to d13's
+    // pool shape at the d13 union — 382 §3/§4.)
+    // The f11 half is READY: `mass_wire_operation` now takes the caller's
+    // stage stream (`drop_rng` — the d13 stream note closed); the mode is
+    // UNMASKED (the kite does not strip the Actuator bit — only the 3625
+    // click arm masks, `Player.cs:46908`); no cooldown gate (the Kill hook
+    // has none). The pool seam itself is d13's unmerged code — nothing
+    // drains on this branch yet (the documented deferral, both sides).
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-
@@ -635,7 +662,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     );
                 }
                 // The §8.2 echoes: SP discards (the netMode-0 return).
-                let _ = app.wiring.take_door_echoes();
+                for (n, x, y, d) in app.wiring.take_door_echoes() {
+                    app.send_door_toggle(n, x, y, d);
+                }
                 if let Some(text) = chat {
                     app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
                 }
@@ -688,7 +717,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     );
                 }
                 // The §8.2 echoes: SP discards (the netMode-0 return).
-                let _ = app.wiring.take_door_echoes();
+                for (n, x, y, d) in app.wiring.take_door_echoes() {
+                    app.send_door_toggle(n, x, y, d);
+                }
             }
             crate::projectile_ai_golf::GolfEffect::PlayerWrites {
                 facing,

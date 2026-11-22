@@ -95,6 +95,13 @@ pub mod id {
     pub const ADD_NPC_BUFF: u8 = 53; // MessageBuffer.cs:2565-2575 / NetMessage.cs:1019-1022
     pub const NPC_BUFFS: u8 = 54; // MessageBuffer.cs:2577-2593 / NetMessage.cs:1024-1039
     pub const HIT_SWITCH: u8 = 59; // MessageBuffer.cs:2682-2693 / NetMessage.cs:1063-1066
+    /// `19 ToggleDoorState` (`MessageID.cs:60` — W4-f11 seam 8.2): the
+    /// wiring arms' door/gate/trapdoor echo (`Wiring.cs:1450`/`:1458`/
+    /// `:1465`/`:1480`/`:1485` → `NetMessage.cs:537-542`,
+    /// `MessageBuffer.cs:1299-1334`). KEEP-ONE-BY-UNION: g48's
+    /// `net_apply.rs` lands the same id/struct/codec — byte-identical body,
+    /// trivial merge dedupe.
+    pub const DOOR_TOGGLE: u8 = 19;
     pub const PLAYER_CHEST_INDEX: u8 = 80; // MessageBuffer.cs:3216-3227 / NetMessage.cs:1175-1178
     pub const CHEST_SIZE: u8 = 155; // MessageBuffer.cs:4429-4438 / NetMessage.cs:1650-1653
     pub const CHEST_NAME: u8 = 69; // MessageBuffer.cs:3059-3078 / NetMessage.cs:1334-1341
@@ -1385,6 +1392,22 @@ pub struct HitSwitch {
     pub y: i16,
 }
 
+/// `msg 19 ToggleDoorState`'s body (`NetMessage.cs:537-542` — W4-f11 seam
+/// 8.2): the action byte, the tile and `number4 == 1f` → a direction byte
+/// (1 = right/down). The reader maps 0/1 open/close door, 2/3 trapdoor
+/// up/down, 4/5 tall gate open/close and relays with the normalised
+/// direction (`MessageBuffer.cs:1299-1334`). KEEP-ONE-BY-UNION: g48's
+/// `net.rs` carries the same struct — byte-identical, merge dedupe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DoorToggle {
+    /// `b5` — 0 open, 1 close, 2/3 trapdoor, 4/5 tall gate.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+    /// `num47`: the reader reads `!= 0` → 1 else -1; the wire byte is 0/1.
+    pub direction: u8,
+}
+
 /// `msg 80 SyncPlayerChestIndex`'s body (`NetMessage.cs:1175-1178`): which
 /// chest a player has open (`-3..8000`, `MessageBuffer.cs:3216-3227`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1631,6 +1654,10 @@ pub enum C2s {
     /// `59 HitSwitch` - a client tripped a switch (`Collision.cs:3303-3304`,
     /// `Player.cs:32178` and the other `HitSwitch` call sites).
     HitSwitch(HitSwitch),
+    /// `19 ToggleDoorState` — this client's wiring flood shifted a door/
+    /// gate/trapdoor (the W4-f11 arms' `SendData(19)` echoes,
+    /// `Wiring.cs:1450-1485`; research/95 §8.2).
+    DoorToggle(DoorToggle),
     /// `53 AddNPCBuff` - a client applied a buff to an NPC
     /// (`NPC.AddBuff`'s `netMode == 1` send, `NPC.cs:89932-89935`).
     AddNpcBuff(AddNpcBuff),
@@ -1727,6 +1754,10 @@ pub enum S2c {
     /// `59 HitSwitch` - the switch a peer tripped, relayed
     /// (`MessageBuffer.cs:2691`).
     HitSwitch(HitSwitch),
+    /// `19 ToggleDoorState` — a wiring flood's door/gate/trapdoor shift,
+    /// relayed with the NORMALISED direction byte
+    /// (`MessageBuffer.cs:1330`; the W4-f11 seam 8.2 echoes).
+    DoorToggle(DoorToggle),
     /// `80 SyncPlayerChestIndex` - which chest a player has open
     /// (`MessageBuffer.cs:1886`, `:1980`, `NetMessage.cs:2906`).
     PlayerChestIndex(PlayerChestIndex),
@@ -1851,6 +1882,7 @@ impl C2s {
             Self::SignRequest(_) => id::SIGN_REQUEST,
             Self::SignData(_) => id::SIGN_DATA,
             Self::HitSwitch(_) => id::HIT_SWITCH,
+            Self::DoorToggle(_) => id::DOOR_TOGGLE,
             Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
@@ -1916,6 +1948,9 @@ impl C2s {
                 w.u16(0)
             }
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
+            // `NetMessage.cs:537-542`: action byte, two shorts, the
+            // normalised direction byte (the caller folded `== 1`).
+            Self::DoorToggle(d) => w.u8(d.action).i16(d.x).i16(d.y).u8(d.direction),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
@@ -2014,6 +2049,12 @@ impl C2s {
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
+            }),
+            id::DOOR_TOGGLE => Self::DoorToggle(DoorToggle {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                direction: r.u8()?,
             }),
             id::ADD_NPC_BUFF => Self::AddNpcBuff(AddNpcBuff {
                 npc: r.i16()?,
@@ -2195,6 +2236,7 @@ impl S2c {
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::NpcBuffs(_) => id::NPC_BUFFS,
             Self::HitSwitch(_) => id::HIT_SWITCH,
+            Self::DoorToggle(_) => id::DOOR_TOGGLE,
             Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
             Self::ChestSize(_) => id::CHEST_SIZE,
             Self::ChestName(_) => id::CHEST_NAME,
@@ -2316,6 +2358,9 @@ impl S2c {
                 w.u16(0)
             }
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
+            // `NetMessage.cs:537-542`: action byte, two shorts, the
+            // normalised direction byte (the caller folded `== 1`).
+            Self::DoorToggle(d) => w.u8(d.action).i16(d.x).i16(d.y).u8(d.direction),
             Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
             Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
             Self::ChestName(c) => w.i16(c.chest).i16(c.x).i16(c.y).str(&c.name),
@@ -2472,6 +2517,12 @@ impl S2c {
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
+            }),
+            id::DOOR_TOGGLE => Self::DoorToggle(DoorToggle {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                direction: r.u8()?,
             }),
             id::PLAYER_CHEST_INDEX => Self::PlayerChestIndex(PlayerChestIndex {
                 player_id: r.u8()?,
@@ -4044,6 +4095,9 @@ mod tests {
                 buffs: vec![1, 2, 24],
             }),
             C2s::HitSwitch(HitSwitch { x: 40, y: 50 }),
+            // W4-f11 seam 8.2 — the `19` wiring echo (`NetMessage.cs:537-542`).
+            C2s::DoorToggle(DoorToggle { action: 3, x: 100, y: 200, direction: 1 }),
+            C2s::DoorToggle(DoorToggle { action: 4, x: -5, y: 300, direction: 0 }),
             C2s::AddNpcBuff(AddNpcBuff {
                 npc: 6,
                 buff_type: 24,
@@ -4342,6 +4396,9 @@ mod tests {
                 buffs: vec![(24, 300), (20, 60)],
             }),
             S2c::HitSwitch(HitSwitch { x: -1, y: 400 }),
+            // W4-f11 seam 8.2 — the relayed `19` (normalised direction byte).
+            S2c::DoorToggle(DoorToggle { action: 0, x: 40, y: 50, direction: 1 }),
+            S2c::DoorToggle(DoorToggle { action: 5, x: 40, y: 50, direction: 0 }),
             S2c::PlayerChestIndex(PlayerChestIndex {
                 player_id: 3,
                 chest: -3,

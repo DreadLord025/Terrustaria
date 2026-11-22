@@ -5806,7 +5806,9 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             );
         }
         // The §8.2 echoes: SP discards (the netMode-0 return).
-        let _ = app.wiring.take_door_echoes();
+        for (n, x, y, d) in app.wiring.take_door_echoes() {
+            app.send_door_toggle(n, x, y, d);
+        }
     }
     // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
     // above the break loses its support and the falling kind spawns the
@@ -18966,7 +18968,9 @@ mod wall_placement_tests {
         assert_eq!(app.world.tile(14, 20).unwrap().kind, 387, "the press opened it");
         let _ = app.wiring.take_door_cues();
         let _ = app.wiring.take_switch_clicks();
-        let _ = app.wiring.take_door_echoes();
+        for (n, x, y, d) in app.wiring.take_door_echoes() {
+            app.send_door_toggle(n, x, y, d);
+        }
         break_tile(&mut app, 10, 20);
         // The release poke closes the trapdoor (the 387 pair closes back
         // to 386, `:51534-51592`) — the poke saw the LIVE plate (the

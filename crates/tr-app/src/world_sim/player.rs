@@ -1185,7 +1185,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 );
             }
             // The §8.2 echoes: SP discards (the netMode-0 return).
-            let _ = app.wiring.take_door_echoes();
+            for (n, x, y, d) in app.wiring.take_door_echoes() {
+                app.send_door_toggle(n, x, y, d);
+            }
             // `PressurePlateHelper.UpdatePlayerPosition(this)`
             // (`Player.cs:28276`): the weighted pressure plates (428) the
             // player stands on. The §8.1 stamp (parts form): the poke can
@@ -1229,7 +1231,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 );
             }
             // The §8.2 echoes: SP discards (the netMode-0 return).
-            let _ = app.wiring.take_door_echoes();
+            for (n, x, y, d) in app.wiring.take_door_echoes() {
+                app.send_door_toggle(n, x, y, d);
+            }
             if run_eligible && p.vy == 0.0 {
                 run_pixels += (p.x - run_x0).abs();
             }
@@ -1404,7 +1408,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     );
                 }
                 // The §8.2 echoes: SP discards (the netMode-0 return).
-                let _ = app.wiring.take_door_echoes();
+                for (n, x, y, d) in app.wiring.take_door_echoes() {
+                    app.send_door_toggle(n, x, y, d);
+                }
             }
             // The wheel-spark drain: the tick queued fully-rolled dust-213
             // particles (`Minecart.WheelSparks` → `DelegateMethods.Minecart.Sparks`)

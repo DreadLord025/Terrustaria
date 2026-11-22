@@ -240,7 +240,9 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                 );
             }
             // The §8.2 echoes: SP discards (the netMode-0 return).
-            let _ = app.wiring.take_door_echoes();
+            for (n, x, y, d) in app.wiring.take_door_echoes() {
+                app.send_door_toggle(n, x, y, d);
+            }
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
             app.world_key = None;
             return true;

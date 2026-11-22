@@ -4645,6 +4645,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `:3347`): collected by the scan below, sent once the `app.wiring`/
     // `app.world` borrows (and the `player` borrow) release.
     let mut switch_sends: Vec<(i32, i32)> = Vec::new();
+    // The §8.2 echoes (f11 §8.2 drain re-point): collected per NPC in play
+    // order, sent once the `app.wiring` borrow releases (the `switch_sends`
+    // precedent — `send_door_toggle` needs `&self.net`). SP's `Off` arm is
+    // the same discard; in MP the echo reaches the wire from this site.
+    let mut door_echo_sends: Vec<(i32, i32, i32, i32)> = Vec::new();
     {
         // The §8.1 stamp (parts form — the loop below re-borrows npcs):
         // an NPC-tripped plate can shift a wired trapdoor/gate.
@@ -4693,8 +4698,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             for (open, px, py) in wiring.take_door_cues() {
                 audio.play_door_sound(open, px as f32, py as f32, npcs_rng);
             }
-            // The §8.2 echoes: SP discards (the netMode-0 return).
-            let _ = wiring.take_door_echoes();
+            // The §8.2 echoes: drained per NPC (play order), sent below.
+            door_echo_sends.extend(wiring.take_door_echoes());
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
@@ -4703,6 +4708,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // precedent at the pass tail) so the mutable borrow ends here.
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
+    }
+    for (n, x, y, d) in door_echo_sends {
+        app.send_door_toggle(n, x, y, d);
     }
     // S1-D-3z (zombie fighter audit) — `AI_003_Fighters`' door-bash drain
     // (`NPC.cs:59990-60086`): the obstacle scan

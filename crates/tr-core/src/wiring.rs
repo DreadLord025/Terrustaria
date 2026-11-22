@@ -7574,6 +7574,67 @@ mod w4_c42_batch1_tests {
 
     #[test]
     fn c42_the_active_stone_block_swaps_and_wakes() {
+    /// Research/95 §4 unification (research/233, f11 §8.5 row 4) — the
+    /// forced-state half on the KEPT c42 free-fn family (batch-H re-point:
+    /// the f11 method-centric shape dropped): `Some(off)` refuses (the C#
+    /// `HasValue && !Value == flag` early return), `Some(!off)` flips,
+    /// `None` flips (the wire path). The campfire's validate-kill runs
+    /// BEFORE the forced gate (`Wiring.cs:3012-3020`, the `drops`
+    /// out-param), and the skips out-collector gathers the 3×2 only when
+    /// the flip runs. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f11_the_unified_light_family_honours_the_forced_state() {
+        let rig = || {
+            let mut w = world();
+            for dx in 0..3i32 {
+                for dy in 0..2i32 {
+                    put(&mut w, 10 + dx, 20 + dy, 215, (dx * 18) as i16, (dy * 18) as i16);
+                }
+            }
+            w
+        };
+        let mut w = rig();
+        let mut drops = Vec::new();
+        // Lit campfire (anchor frameY 0 < 36 → off=false): forced ON
+        // (Some(true)) refuses — no flip, no skips.
+        let mut skips = Vec::new();
+        toggle_campfire(&mut w, 10, 20, Some(true), Some(&mut skips), &mut drops);
+        assert_eq!(w.tile_frame_y(10, 20), 0, "forced ON on a lit body refuses");
+        assert!(skips.is_empty(), "no SkipWire on refusal");
+        // Forced OFF (Some(false)) flips the whole body + collects the skips.
+        toggle_campfire(&mut w, 10, 20, Some(false), Some(&mut skips), &mut drops);
+        assert_eq!(w.tile_frame_y(10, 20), 36, "forced OFF unlit the body");
+        assert_eq!(skips.len(), 6, "the 3×2 skip set");
+        // None (the wire path) flips back.
+        toggle_campfire(&mut w, 10, 20, None, None, &mut drops);
+        assert_eq!(w.tile_frame_y(10, 20), 0, "null forced flips");
+        // The single-cell families carry the same gate: the holiday light
+        // (149, OFF = frameX >= 54) and the candle (33, OFF = frameX > 0).
+        put(&mut w, 20, 20, 149, 0, 0);
+        toggle_holiday_light(&mut w, 20, 20, Some(true));
+        assert_eq!(w.tile_frame_x(20, 20), 0, "forced ON on a lit light refuses");
+        toggle_holiday_light(&mut w, 20, 20, Some(false));
+        assert_eq!(w.tile_frame_x(20, 20), 54, "forced OFF flips +54");
+        put(&mut w, 21, 20, 33, 18, 0);
+        toggle_candle(&mut w, 21, 20, Some(false));
+        assert_eq!(w.tile_frame_x(21, 20), 18, "forced OFF on an OFF candle refuses");
+        toggle_candle(&mut w, 21, 20, Some(true));
+        assert_eq!(w.tile_frame_x(21, 20), 0, "forced ON re-lights (−18)");
+        // The anchor-keyed families: the chandelier (34) reads the anchor's
+        // `% 108` flag, not the clicked cell's.
+        for dx in 0..3i32 {
+            for dy in 0..3i32 {
+                put(&mut w, 30 + dx, 20 + dy, 34, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        // Click the middle cell (frameX 18): anchor (30, 20), frameX 0 → lit.
+        toggle_chandelier(&mut w, 31, 21, Some(true), None);
+        assert_eq!(w.tile_frame_x(30, 20), 0, "the anchor gate refused");
+        toggle_chandelier(&mut w, 31, 21, Some(false), None);
+        assert_eq!(w.tile_frame_x(30, 20), 54, "forced OFF flipped the 3×3");
+        assert_eq!(w.tile_frame_x(32, 22), 54 + 36, "every cell rode the ±54");
+    }
+
         // `Wiring.cs:1423-1432`: air above + CanKillTile passes → 130 → 131.
         let mut w = world();
         put(&mut w, 10, 20, 130, 0, 0);
@@ -7932,6 +7993,95 @@ mod w4_c42_batch2_tests {
         // 388 has no `check_object` arm — the kills produce no object-drop
         // records (the item drop rides the app's `registry::tile_drop`).
         let _ = wiring.take_actuation_drops();
+}
+
+#[cfg(test)]
+mod w4_f11_witness_legs {
+    //! W4-f11 §8.5 witness-only KEEPs (research/133 rows 5/6), re-shaped
+    //! onto the c42 stamped-boxes gate + door_echoes tuple queue at the
+    //! batch-H merge (the f11 CellBlocked/DoorToggle shapes dropped per
+    //! §8.1). WRITTEN NOT RUN (code-only).
+
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, frame_x: fx, frame_y: fy, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn closed_door(w: &mut World) {
+        for row in 0..3i32 {
+            put(w, 10, 17 + row, 10, 0, (row * 18) as i16);
+        }
+    }
+    /// Research/95 §8.1 (f11 §8.5 row 5, batch-H re-shape onto the c42
+    /// stamped-boxes gate): the forced door-11 close runs THROUGH a full
+    /// blocker — `CloseDoor(forced: true)` skips the occupancy gate
+    /// (`Wiring.cs:1463`); the trapdoor/gate refusal legs are pinned by
+    /// `w4_c42_final_seam_tests` (the dedupe). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f11_the_forced_door_closes_through_a_full_blocker() {
+        let mut w = world();
+        closed_door(&mut w);
+        let mut wiring = Wiring::new();
+        wiring.seed_rand(7);
+        wiring.hit_wire_single(&mut w, 10, 18); // open first (no boxes)
+        let open_cell = (17..20)
+            .flat_map(|y| [(10, y), (11, y), (9, y)])
+            .find(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 11))
+            .expect("an open cell");
+        // Block EVERYTHING (one world-covering box) — the forced close still runs.
+        wiring.set_entity_boxes(vec![(0.0, 0.0, 1024.0, 1024.0)]);
+        wiring.hit_wire_single(&mut w, open_cell.0, open_cell.1);
+        assert!(
+            w.tile(10, 17).is_some_and(|t| t.active() && t.kind == 10),
+            "the forced close ran despite the blocker"
+        );
+    }
+
+    /// Research/95 §8.2 (f11 §8.5 row 6, batch-H re-shape onto the c42
+    /// `door_echoes` tuple queue): the tall-gate CLOSE direction (389 →
+    /// action 5, unconditional — `Wiring.cs:1458` sits after the ignored
+    /// `ShiftTallGate` result) + the refusal-queues-nothing leg (the
+    /// trapdoor's stamped-box refusal produces NO echo). The open/close-1/
+    /// open-0+lean legs are pinned by
+    /// `c42_the_door_echo_queue_computes_the_send_data_19_fields` (the
+    /// dedupe). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f11_the_gate_close_echo_and_the_refusal_queue_nothing() {
+        // The tall gate: open (388 → action 4) then close (389 → action 5),
+        // both unconditional, direction 0 (the C# `number4` default).
+        let mut w = world();
+        let steps = [20, 18, 18, 18, 20];
+        let mut fy = 0i16;
+        for dy in 0..5i32 {
+            put(&mut w, 10, 17 + dy, 388, 0, fy);
+            fy += steps[dy as usize] as i16;
+        }
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 10, 17);
+        assert_eq!(wiring.take_door_echoes(), vec![(4, 10, 17, 0)]);
+        wiring.hit_wire_single(&mut w, 10, 17);
+        assert_eq!(wiring.take_door_echoes(), vec![(5, 10, 17, 0)]);
+        // A refused trapdoor shift (boxes over both destination rows)
+        // queues NOTHING.
+        let mut w3 = world();
+        for dx in 0..2i32 {
+            for dy in 0..2i32 {
+                put(&mut w3, 10 + dx, 18 + dy, 386, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        let mut wiring3 = Wiring::new();
+        wiring3.set_entity_boxes(vec![(160.0, 288.0, 32.0, 32.0)]);
+        wiring3.hit_wire_single(&mut w3, 10, 18);
+        assert!(wiring3.take_door_echoes().is_empty(), "no echo on refusal");
+    }
     }
 }
 
