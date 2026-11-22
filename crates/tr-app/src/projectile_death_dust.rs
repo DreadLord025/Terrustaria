@@ -58,6 +58,15 @@
 //! stand-ins that DOUBLE-FEED the stream once g16's bodies are live. The
 //! per-kind drop-hunks are pinned in research/346 §2c (execute at the
 //! g65×g16 merge, g16's bodies KEEP — they carry the bodies AND the draws).
+//! MERGER RECEIPT (integration/batch-G): hunks 18-29 EXECUTED — the
+//! 645/617/452/454/448/240/284/286/41/955/681 censuses dropped whole, the
+//! shared arms gated per-kind (the DD2 census rides the 706 only, 459|709
+//! the 709 only, 9|503 the 503 only — the unconditional Next(16,18) kept),
+//! the 178 confetti caller passes gores=0 (the 289 keeps 15); the 12's two
+//! loops and the KEEP set stay. §2b hunks 15-17 EXECUTED: the 358/406/1042
+//! gun arms + smoke_puff + its witness dropped (d6's gun_splash survives,
+//! research/298 §3.3). §2a hunks 1-14 target d77/g3/g1 lanes NOT in this
+//! batch — they ride those lanes' own merges (obligation recorded).
 //! The bomb family needs no drop: `explode_bomb`'s gore rows ride the pass
 //! stream while its `Damage()` walk keeps the frozen zero-rng `FastRandom`
 //! (the M4-PROJ-9 deviation) — no double-feed, and none of the bomb kinds
@@ -284,7 +293,12 @@ fn dd2_explosion_dust(
         d.velocity *= 3.0;
     }
     // `:71888-71900` — the trailing gore loop (scatter + lift variant).
-    gore_census(rng, ngore, true, true);
+    // MERGER DROP (346 §2c hunk 18): g16's FLAME_BURST_SHOT_1|2|3 arm
+    // (`gore_death_arms`, the 664/666/668 rows) spawns the loop live; the
+    // 706 is UNROWED in g16 — its census stays the stream's only consumer.
+    if s.kind == 706 {
+        gore_census(rng, ngore, true, true);
+    }
 }
 
 /// The trail-position dust PAIR (`:77064-77073`): for `i in start..end`, two
@@ -2071,7 +2085,8 @@ fn death_bursts(
                     d.no_light = true;
                 }
             }
-            gore_census(rng, 1, false, false);
+            // MERGER DROP (346 s2c hunk 19): the 645 gore is g16's kill645_gore
+            // (gore_death_arms) - live body carries the draws.
         }
         // `:72226-72277` — the 661 nebula blaze explosion: resize 160×160
         // centred; the spawn box is Center−(20,20) 40×40 (NOT the resized
@@ -2167,7 +2182,8 @@ fn death_bursts(
                 d.no_gravity = true;
                 d.velocity *= 3.0;
             }
-            gore_census(rng, 2, true, false);
+            // MERGER DROP (346 s2c hunk 20): the 617 gores are g16's
+            // kill608_617_gores - live body carries the draws (608 is d12's).
         }
         // `:72394-72417` — the 620/618 nebula spark: 10× dust-(int)ai[0]
         // speed vel×0.1 scale 0.5, the crystal-spark Next(3) gate (0 →
@@ -2409,7 +2425,8 @@ fn death_bursts(
                 d.velocity *= 2.0;
                 d.no_gravity = true;
             }
-            gore_census(rng, 1, false, false);
+            // MERGER DROP (346 s2c hunk 21): the 452 gore is g16's kill_row_gores
+            // - live body carries the draws; d78's EVP half stays (s2a).
         }
         // `:73014-73045` — the 454: resize 208×208 centred; 7× dust-31
         // alpha 100 scale 1.5 (gravity ON) + 60 PAIRS dust-229 (alpha 0
@@ -2435,7 +2452,8 @@ fn death_bursts(
                 d.velocity *= 1.0;
                 d.no_gravity = true;
             }
-            gore_census(rng, 3, false, false);
+            // MERGER DROP (346 s2c hunk 21): the 454 gores are g16's kill_row_gores
+            // - live body carries the draws; d78's EVP half stays (s2a).
         }
         // `:73046-73092` — the 467: resize 176×176 centred; 4× dust-31
         // alpha 100 scale 1.5 Y-scatter÷2 (gravity ON); 30 PAIRS dust-6
@@ -2614,7 +2632,12 @@ fn death_bursts(
                 d.no_gravity = true;
                 d.velocity *= 1.0;
             }
-            gore_census(rng, ngore, false, false);
+            // MERGER DROP (346 s2c hunk 22): the 459 gores are g16's
+            // CHARGED_BLASTER_ORB row (scale>=1 count 2) - live body carries
+            // the draws; the 709 is UNROWED in g16, its census stays.
+            if s.kind == 709 {
+                gore_census(rng, ngore, false, false);
+            }
         }
         // `:73431-73441` — the 639 moonlord arrow: Next(5,10)× dust-220
         // at Center 0×0 alpha 100 scale 0.5, vel×1.6 then Y−−, position =
@@ -2694,7 +2717,9 @@ fn death_bursts(
                 d.velocity *= 2.0;
                 d.no_gravity = true;
             }
-            gore_census(rng, 1, false, false);
+            // MERGER DROP (346 s2c hunk 23): the 448 gore is g16's
+            // kill448_616_424_gores - live body carries the draws; d78's
+            // state/EVP half stays (s2a).
         }
         // `:73646-73674` — the 616: resize 80×80 centred; 4× dust-31 alpha
         // 100 scale 1.5 (gravity ON); 40 PAIRS dust-229 BOTH alpha 200
@@ -2801,15 +2826,11 @@ fn death_bursts(
                 dust.slot_mut(idx).velocity *= 3.0;
             }
         }
-        // `:74029-74062` — the 358: the smoke puff, 50× dust-211 alpha 75
-        // scale 1.2, small 0.6, vel += newVel.
-        358 => smoke_puff(s, dust, rng, ctx, world, 50, 211, 75, Color::default(), 1.2, 0.6, 1.0, false),
-        // `:74063-74098` — the 406: the smoke puff, 40× dust-4 alpha 175
-        // (0,80,255,100) scale 1.6, small 0.6.
-        406 => smoke_puff(s, dust, rng, ctx, world, 40, 4, 175, Color::new(0, 80, 255, 100), 1.6, 0.6, 1.0, false),
-        // `:74099-74147` — the 1042: the smoke puff, 50× dust-324 alpha 75
-        // scale 1.25, small 0.8, vel += newVel×0.8, + the Next(6) colour.
-        1042 => smoke_puff(s, dust, rng, ctx, world, 50, 324, 75, Color::default(), 1.25, 0.8, 0.8, true),
+        // `:74029-74147` — the 358/406/1042 gun smoke puffs are d6's
+        // (`projectile_gun_splash.rs`, research/298 §3.3 keep-one: d6 has
+        // the TRUE old_velocity latch + the style-60 scale-death ×5 base +
+        // the corpse vel write; g65's copies DROPPED per research/346 §2b
+        // hunks 15-17). The guns fall through to the default — no draws.
         // `:74182-74203` — the 323: 20× dust-7 defaults; Next(2) gate 0 →
         // noGravity scale 1.3 vel×1.5 −= oldVel×0.5 vel×1.5; else vel×0.75
         // −= oldVel×0.25 scale 0.8 (gravity ON).
@@ -2910,7 +2931,10 @@ fn death_bursts(
             }
         }
         // `:74565-74589` — the 178: 85 confetti dust + 40 gore rows.
-        178 => confetti_burst(s, dust, rng, ctx, world, 85, 40),
+        // MERGER DROP (346 §2c hunk 29): the 178's 40 gore rows are g16's
+        // confetti_gores - pass gores=0 (the dust half stays); the 289
+        // caller KEEPS 15 (kill289_confetti NOT wired in g16).
+        178 => confetti_burst(s, dust, rng, ctx, world, 85, 0),
         // `:74590-74614` — the 289: 30 confetti dust + 15 gore rows.
         289 => confetti_burst(s, dust, rng, ctx, world, 30, 15),
         // `:74615-74678` — the 475/505/506: the trail walk at dust 3 /
@@ -3383,11 +3407,8 @@ fn death_bursts(
                 let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
                 dust.slot_mut(idx).velocity *= 3.0;
             }
-            for _ in 0..4 {
-                let _ = rng.next_range(61, 64);
-                let _ = rng.next_range(10, 31);
-                let _ = rng.next_range(-20, 21);
-            }
+            // MERGER DROP (346 §2c hunk 24): the 240 corner gores are g16's
+            // kill240_corner_gores - live body carries the draws.
         }
         // `:75899-75910` — the 282: 10× dust-171 alpha 100 scale Next(1,10)
         // ×0.1 noGravity fadeIn 1.5 vel×0.75 (the 379 shape at count 10).
@@ -3713,10 +3734,16 @@ fn death_bursts(
             for _ in 0..count {
                 dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 58, vel.x * 0.1, vel.y * 0.1, 150, Color::default(), 1.2);
             }
-            for _ in 0..gores {
-                let _ = rng.next_range(16, 18);
-                let _ = rng.next_range(10, 31);
-                let _ = rng.next_range(-20, 21);
+            // MERGER DROP (346 §2c hunk 25): the 9's gores are g16's STARFURY
+            // row (×3) - live body carries the draws. The 503 is UNROWED in
+            // g16: its 2 rows keep the census INCLUDING the unconditional
+            // Next(16,18) roll-then-override (the 16c7e9d8a stream fix).
+            if s.kind == 503 {
+                for _ in 0..gores {
+                    let _ = rng.next_range(16, 18);
+                    let _ = rng.next_range(10, 31);
+                    let _ = rng.next_range(-20, 21);
+                }
             }
         }
         // `:75684-75712` — the 12 sparkle ring: 7× dust-58 speed vel×0.1
@@ -3818,18 +3845,8 @@ fn death_bursts(
                 d.velocity.y += rng.next_range(-50, 51) as f32 * 0.05;
                 d.scale *= 1.0 + rng.next_range(-30, 31) as f32 * 0.01;
             }
-            for _ in 0..5 {
-                let _ = rng.next_range(276, 283);
-                let _ = rng.next_range(10, 31);
-                let _ = rng.next_range(-20, 21);
-                let _ = rng.next_range(-50, 51);
-                let _ = rng.next_range(-50, 51);
-                let _ = rng.next_range(-50, 51);
-                let _ = rng.next_range(-50, 51);
-                let _ = rng.next_range(-20, 21);
-                let _ = rng.next_range(-50, 51);
-                let _ = rng.next_range(-50, 51);
-            }
+            // MERGER DROP (346 §2c hunk 27): the 284 confetti gores are g16's
+            // kill284_confetti - live body carries the 10-draw ladder ×5.
         }
         // `:76000-76018` — the 286 ExplodingBullet: 7× dust-31 alpha 100
         // scale 1.5; 3 PAIRS dust-6 alpha 100 (scale 2.5 noGravity vel×3,
@@ -3848,11 +3865,8 @@ fn death_bursts(
                 let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
                 dust.slot_mut(idx).velocity *= 2.0;
             }
-            let _ = rng.next_range(61, 64);
-            let _ = rng.next_range(10, 31);
-            let _ = rng.next_range(-20, 21);
-            let _ = rng.next_range(-10, 11);
-            let _ = rng.next_range(-10, 11);
+            // MERGER DROP (346 §2c hunk 28): the 286 gore row is g16's
+            // kill286_gore - live body carries the type+kicks+nudges.
         }
         // `:76308-76330` — the 41 Hellfire: 10× dust-31 alpha 100 scale
         // 1.5; 5 PAIRS dust-6 alpha 100 (scale 2.5 noGravity vel×3, then
@@ -3872,13 +3886,8 @@ fn death_bursts(
                 let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
                 dust.slot_mut(idx).velocity *= 2.0;
             }
-            for _ in 0..2 {
-                let _ = rng.next_range(61, 64);
-                let _ = rng.next_range(10, 31);
-                let _ = rng.next_range(-20, 21);
-                let _ = rng.next_range(-10, 11);
-                let _ = rng.next_range(-10, 11);
-            }
+            // MERGER DROP (346 §2c hunk 29): the 41 gore pair is g16's
+            // kill41_gores - live body carries the type+kicks+nudges ×2.
         }
         // `:75684-75712` — the 955: the 12 sparkle ring WITHOUT the
         // damage<100 extra burst (7 dust-58 + 8 CornflowerBlue/HotPink +
@@ -3911,12 +3920,9 @@ fn death_bursts(
                 dust.slot_mut(idx).no_gravity = true;
                 num += 0.25;
             }
-            for _ in 0..7 {
-                let _ = rng.next_float();
-                let _ = rng.next_from_slice(&[16, 17, 17, 17, 17, 17, 17, 17]);
-                let _ = rng.next_range(10, 31);
-                let _ = rng.next_range(-20, 21);
-            }
+            // MERGER DROP (346 §2c hunk 29): the 955 star gores are g16's
+            // kill12_star_gores (screen-gated) - live body carries the
+            // NextFloat+Next(8)+kicks ×7.
         }
         // `:71052-71067` — the 1116: num37 = Remap(alpha,0,255,1,0); 4×
         // dust-306 Perfect at Center+Circular(10,10)×scale vel Zero, scale
@@ -4424,11 +4430,8 @@ fn death_bursts(
                 let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 6, 0.0, 0.0, 100, Color::default(), 1.5);
                 dust.slot_mut(idx).velocity *= 3.0;
             }
-            for _ in 0..4 {
-                let _ = rng.next_range(61, 64);
-                let _ = rng.next_range(10, 31);
-                let _ = rng.next_range(-20, 21);
-            }
+            // MERGER DROP (346 §2c hunk 29): the 681 corner gores are g16's
+            // goblin_bomb_gores - live body carries the 4× type+kicks.
         }
         // `:75374-75424` — the 1120: the gem-bolt shape at dust-170 (the
         // num669=87 then =170 overwrite); dir = vel.SafeNormalize(Zero)
@@ -4846,59 +4849,6 @@ fn chlorophyte_ring(
         d.color = lerp_color(Color::new(c[0], c[1], c[2], c[3]), Color::WHITE, 0.3);
         d.no_gravity = true;
         d.scale = 0.7;
-    }
-}
-
-/// `Kill()`'s 358/406/1042 smoke puff (`:74029-74147`): the corpse velocity
-/// is REWRITTEN to oldVelocity×0.2 first; `count` dust at pos alpha
-/// `alpha` scale `scale`; THREE Next(2) alpha+25 gates, then a Next(2)
-/// scale=`small_scale` ELSE noGravity gate; vel×0.3 += newVel×`vel_add`,
-/// ×= 1+Next(−100,101)×0.01, X/Y += Next(−50,51)×0.015 each; position =
-/// Center. The 1042 adds a trailing Next(6) colour pick.
-fn smoke_puff(
-    s: &DeathSnapshot,
-    dust: &mut DustPool,
-    rng: &mut UnifiedRandom,
-    ctx: &SpawnCtx,
-    world: &World,
-    count: i32,
-    dust_type: i32,
-    alpha: i32,
-    color: Color,
-    scale: f32,
-    small_scale: f32,
-    vel_add: f32,
-    color_pick: bool,
-) {
-    let new_vel = s.old_vel * 0.2;
-    let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
-    for _ in 0..count {
-        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, 0.0, alpha, color, scale);
-        let d = dust.slot_mut(idx);
-        for _ in 0..3 {
-            if rng.next_max(2) == 0 {
-                d.alpha += 25;
-            }
-        }
-        if rng.next_max(2) == 0 {
-            d.scale = small_scale;
-        } else {
-            d.no_gravity = true;
-        }
-        d.velocity *= 0.3;
-        d.velocity += new_vel * vel_add;
-        d.velocity *= 1.0 + rng.next_range(-100, 101) as f32 * 0.01;
-        d.velocity.x += rng.next_range(-50, 51) as f32 * 0.015;
-        d.velocity.y += rng.next_range(-50, 51) as f32 * 0.015;
-        d.position = center;
-        if color_pick {
-            d.color = match rng.next_max(6) {
-                0 => Color::new(255, 255, 220, 255),
-                1 => Color::new(230, 255, 255, 255),
-                2 => Color::new(255, 210, 255, 255),
-                _ => Color::new(225, 210, 255, 255),
-            };
-        }
     }
 }
 
@@ -6629,26 +6579,6 @@ mod tests {
         assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 10);
         assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 40);
         assert_eq!(active[15..].iter().filter(|d| d.no_gravity).count(), 20);
-    }
-
-    /// The 358/406/1042 smoke puffs: 50/40/50 dust at the corpse centre,
-    /// alpha 75/175/75 (+0/25/50/75 from the three gates), the scale-or-
-    /// noGravity split; the 1042's colours are the 4-way pick.
-    #[test]
-    fn w4_g65_the_smoke_puffs() {
-        let w = world();
-        let center = Vec2::new(105.0, 105.0);
-        for (kind, count, dust_type, alpha) in [(358u16, 50, 211, 75), (406, 40, 4, 175), (1042, 50, 324, 75)] {
-            let mut dust = DustPool::new();
-            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
-            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
-            assert_eq!(active.len(), count, "kind {kind}");
-            assert!(active.iter().all(|d| d.dust_type == dust_type && d.position == center), "kind {kind}");
-            assert!(active.iter().all(|d| d.alpha >= alpha && d.alpha <= alpha + 75 && (d.alpha - alpha) % 25 == 0), "kind {kind}");
-            // Each dust is EITHER small-scale with gravity OR noGravity.
-            let small = if kind == 1042 { 0.8 } else { 0.6 };
-            assert!(active.iter().all(|d| (d.scale == small && !d.no_gravity) || d.no_gravity), "kind {kind}");
-        }
     }
 
     /// The 323: 20 dust-7; the noGravity ones scale 1.3, the gravity ones
