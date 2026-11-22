@@ -15,7 +15,7 @@
 //! the shared `TryGettingDevArmor` roll (`Player.cs:7885-8026`) and the
 //! bag money tail (`:7744-7882`).
 //!
-//! Census: `docs/research/65-expert-drop-trees-census.md`.
+//! Census: `docs/research/184-expert-drop-trees-census.md`.
 //!
 //! ## The RNG contract
 //!

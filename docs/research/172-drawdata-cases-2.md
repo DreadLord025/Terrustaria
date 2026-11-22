@@ -1,6 +1,6 @@
-# 62 — DrawData case census, slice 2 (W4-d62)
+# 172 — DrawData case census, slice 2 (W4-d62; renumbered 62->172 per research/150 registry)
 
-> Wave 4 · researched 2026-11-20 · branch `task/W4-d62-drawdata-cases-2` @ base a725acb0 ·
+> Wave 4 · researched 2026-11-20 · branch `task/W4-d172-drawdata-cases-2` @ base a725acb0 ·
 > code-only mode (no builds/tests run) · sources: `decompiled/Terraria/GameContent/Drawing/TileDrawing.cs`,
 > `crates/tr-core/src/drawdata.rs`, `crates/tr-core/src/drawdata_furniture.rs`,
 > `crates/tr-app/src/drawdata_cases_a.rs`, `crates/tr-app/src/drawdata_cases_b.rs`,

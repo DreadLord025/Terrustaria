@@ -40,7 +40,7 @@
 //!   hat drops and `ResetBadgerHatTime` clears both. The statics also
 //!   reset at dusk (`Main.cs:65221`, `UpdateTime_StartNight`).
 //!
-//! Census: `docs/research/65-expert-drop-trees-census.md`.
+//! Census: `docs/research/184-expert-drop-trees-census.md`.
 
 #![allow(dead_code)] // the npcs.rs death-feed wiring lands with its commit
 

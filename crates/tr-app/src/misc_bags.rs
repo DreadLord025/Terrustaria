@@ -45,7 +45,7 @@
 //!   (`:9460-9474`): 1/10 pink 4414, else 1/3 black 4413, else white
 //!   4412; the Shucked Oyster 4411 ALWAYS grants (`:9475`).
 //!
-//! Census: `docs/research/65-expert-drop-trees-census.md`.
+//! Census: `docs/research/184-expert-drop-trees-census.md`.
 
 #![allow(dead_code)] // the clicks.rs dispatch lands with the wiring commit
 

@@ -50,7 +50,7 @@
 //!   [`CrateEnv::skyblock_low_tiles`] is the seam (wiring passes false,
 //!   the e25-style constants-off note).
 //!
-//! Census: `docs/research/65-expert-drop-trees-census.md`.
+//! Census: `docs/research/184-expert-drop-trees-census.md`.
 
 #![allow(dead_code)] // the clicks.rs dispatch lands with the wiring commit
 

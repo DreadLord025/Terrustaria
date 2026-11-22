@@ -41,7 +41,7 @@
 //!   (1851, 1852) where 1851 ALSO sits in the 1/10 painting range
 //!   (`:9522`).
 //!
-//! Census: `docs/research/65-expert-drop-trees-census.md`.
+//! Census: `docs/research/184-expert-drop-trees-census.md`.
 
 #![allow(dead_code)] // the clicks.rs dispatch lands with the wiring commit
 

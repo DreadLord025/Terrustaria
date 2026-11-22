@@ -1,7 +1,7 @@
 //! W4-f35 DOC-SWEEP — the bag OPEN mechanics + the master-mode bag
 //! drop rates: the census.
 //!
-//! Companion to `65-expert-drop-trees-census.md` (the per-boss grant
+//! Companion to `184-expert-drop-trees-census.md` (the per-boss grant
 //! trees). This doc sweeps the MECHANICS around the open — the
 //! right-click dispatch, the luck question, the death-side rule gates
 //! and the master-mode rates — and records the three stream-fidelity

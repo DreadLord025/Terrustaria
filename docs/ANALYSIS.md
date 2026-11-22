@@ -39675,7 +39675,7 @@ sites, verdict "N/A (latent)") is now ported: all 29 sites, line-ordered,
 in three tr-core modules (`worldgen_dust.rs`, `worldgen_dust_wall.rs`,
 `worldgen_dust_tile.rs`). The in-flight probe found d54/e4/f6 at base
 with zero pushed commits — g14 adopted the whole lane (the census +
-claim doc: `docs/research/65-dust-worldgen-sites-claims.md`).
+claim doc: `docs/research/183-dust-worldgen-sites-claims.md`).
 
 **The two type ladders are RNG-bearing and port verbatim.**
 `KillWall_MakeWallDust` (`WorldGen.cs:61345-62158`, 11 genRand draws)
@@ -40134,7 +40134,7 @@ commits + the contract final-status; the full record is
   run — code-only, no cargo/tests/rustfmt/graphify in this phase.
 ## The expert/master boss bag open trees (W4-f35, code-only mode)
 
-The census (`docs/research/65-expert-drop-trees-census.md`) splits the
+The census (`docs/research/184-expert-drop-trees-census.md`) splits the
 boss loot into two trees. The DEATH side — `NPC.NPCLoot`
 (`NPC.cs:78830-78899`) → `NPCLoot_DropItems` (`:78925-78937`) → the
 `ItemDropDatabase` boss registrations, where `ItemDropRule.BossBag`
@@ -40405,7 +40405,7 @@ table/draw-shape, the midas/blood-moon stream deltas, the statue
 early-mode refusal, the loot-coins-heals order twin, the Twins
 first-death zero, the entry-gate table, the boss-death announcement, the
 Dungeon Spirit summon, the blue-slime-only rain counter). The census +
-the loot-family declaration: `docs/research/65-expert-drop-trees-census.md`.
+the loot-family declaration: `docs/research/184-expert-drop-trees-census.md`.
 ## The projectile aiStyles 201-210 (W4-d21, task/W4-d21-proj-ai-201-210, 2026-11-21, code-only mode)
 
 The census (`docs/research/162-projectile-ai-201-210-census.md`, renumbered
