@@ -268,8 +268,8 @@ pub const ZONE_SCAN_SIZE: (i32, i32) = (1920 / 16 + 25 * 2 - 1, 1200 / 16 + 25 *
 /// verdict table's inputs (`Player.ZoneSnow`-family, `Player.cs:17924-18036`).
 /// `ZoneLihzhardTemple` rides `SceneMetrics.zone_lihzhard_temple` since
 /// S1-D-3 (the Golem's enrage gate reads it, `NPC.cs:19513`); the torch-luck
-/// skip gate `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) still runs on
-/// dungeon only — deviation recorded in ANALYSIS.
+/// skip gate `!ZoneDungeon && !ZoneLihzhardTemple` (`:17923`) reads both
+/// flags verbatim since W4-e27.
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Zones {
     pub snow: bool,
