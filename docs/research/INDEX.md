@@ -80,6 +80,10 @@ per `docs/superpowers` agreements).
 | 231 | PROJ-DUST master coverage census (W4-e3: the 1195-site Projectile.cs scan, the Kill-tail 15 + the AI-INLINE-40 + the AI_001 edges ported, the FINAL activation-order table + the three-disjoint-KEEP family bible; was 125 — the registry-150 rename, d125 wins the 125 key) | `231-proj-dust-coverage.md` | ✅ SEALED |
 | 66 | World dust sites SECOND batch (W4-e4: orch 41-61 + mount 1-19, 40 sites; wiring wave + RainbowRodHit keep-one + orch-family bible; code-only) | `66-dust-world-sites-2-claims.md` | ✅ SEALED |
 
+| 303 | HeightOffset family seam + portableStool deferral (movement-lane task seed: the 5 offset getters, the fold-to-0 sites, the consumers-list, the stool machine's blast radius; the lane-owner recommendation + the 6-step task-seed for the merger/future-wave; W4-f3 retire + seal, code-only; renumber-chain 65→303, registry-150 §7.3 round-1 owed — 65 = f17's round-1 winner `65-kinds-coverage-1.md`) | `303-heightoffset-stool-seam.md` | seed |
+| 66 | The f3 × g66 player-move mutual receipt (trail-final compose: WallClimb/carpet IDENTICAL keep-f3, the integer-half corner + the should_draw_wings mount-gate adopted into f3, g66's wing/boot/trail own-lanes kept, the wing-glide overlap dedupes to g66; g66 tip 248f0ff4d NOW PUSHED; W4-f3 seal, code-only) | `66-f3-g66-player-move-receipt.md` | receipt |
+| 378 | The e1b-141 reconcile: e1 drop-hunks + keep-lanes (the 5-deviation wall copy + the vortex-arm-only machine + stealth:0.0 spawn dropped; the stoned/drown/splash/floor/double-jump duplicate drains dedupe to f3; the falling head capture + drain order + integer halves + sandstorm gore argument-draw adopted into f3; e1's pre-21654 own-lanes kept; e1 tip 3245d624, no e1b branch; W4-f3 seal, code-only; renumber-chain 67→378, registry-150 §10.2 — 67 = d54's dust-union lineage) | `378-e1b-141-e1-drop-hunks.md` | reconcile |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.

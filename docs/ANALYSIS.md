@@ -39767,3 +39767,770 @@ buff-VFX + draw-pass LightningSmall callers, Shimmerfly 677's NPC death
 emitters stay reachable via `spawn_orchestra`/the module, no call site
 invented. Witnesses WRITTEN NOT RUN — **no cargo/rustc/rustfmt/tests/
 graphify invoked**; the merge-verify wave compiles and runs them.
+## The dust physics chain (W4-d50, task/W4-d50-dust-type-table, 2026-11-20, code-only mode)
+
+The dust foundation was PARTIAL on main: the `Dust` record + `DustPool` + the
+verbatim `NewDust` family (`particles.rs`, S1-E-1), the generic `UpdateDust`
+skeleton with its `type_arm` hook (S1-E-3), the colour/fade table
+(`dust_table.rs`, S1-E-2) and the `DUST_ID` names (`id_tables.rs`, S1-F-6) all
+landed. The missing piece вЂ” the ROADMAP S1-E-2/E-3 remainder "E-2's if-chain
+arms at `:467-2334`" вЂ” is the **per-type physics chain** the hook dispatches.
+Only 213/268 were hand-dispatched (`minecart::tick`); every other type fell
+through to the generic gravity tail.
+
+`crates/tr-core/src/dust_physics.rs` ports `Dust.cs:467-2334` verbatim as a
+pure, UNWIRED module (the `npc_ai_*` code-only precedent), sibling to
+`dust_table`'s colour half:
+
+* `pre_move` (`:468-476`) вЂ” the 299/300/301/305 family shrink+lift and the 35
+  lava-bubble counter, which the C# runs BEFORE `position += velocity` (`:477`).
+* `type_chain` (`:478-2334`) вЂ” the whole post-move if-chain over a
+  `DustPhysicsEnv` seam (the `solid_collision`/`wet_collision`/`light_color`
+  probes, the player velocity/wet/centre snapshot, the sandstorm-visuals flag,
+  the child-spawn sink, the `SandStormCount` delta). The hook's `bool` is the
+  SECOND-chain match (`:2130-2334`), so the skeleton's final
+  `else if (type != 304 && noGravity)` gravity tail (`:2335`) is suppressed
+  exactly as the C#'s else-if structure does; the FIRST-ladder standalone arms
+  (213/268 included) return `false` and take the tail alongside вЂ” the corrected
+  S1-E-3 chain reading.
+
+**RNG `NewDust` census.** Every `Main.rand` draw in the chain is preserved in
+per-slot C# order on the caller's stream (the module header carries the full
+table): 235's dead `vector3` two `Next(-100,101)` (`:817`, computed never used вЂ”
+the draws kept), the 159/164/173/160/162 jitter pairs + child-spawn gates
+(`Next(5)`/`Next(10)`/`Next(50)`), the 168 pair, the 34/35/152 wet `Next(2)` +
+`Next(-10,10)` (dry path draws nothing), and the 41/44 jitter pairs. The five
+child `NewDust` requests are recorded in `DustPhysicsEnv::spawns` and drained by
+the caller after the pass (the `wants_*` sink precedent); the deferral is
+stream-neutral for every current consumer (only 213/268 are live, neither spawns
+children). A scripted-RNG witness pins each census order exactly; 38 `w4_d50_*`
+tests incl. a full-pool integration (pre_move + move + type_chain + tail).
+
+**Deliberate deviations / drops (each cited at its arm):**
+
+* **Lights** вЂ” every `Lighting.AddLight` in the chain is the S1-E-5 column
+  (`tr-app::dust_lights`, which already feeds the 42 RNG-free FIRST-ladder arms).
+  The physics mutations land here; the light feed must read the POST-update
+  record. **Wiring-wave reconciliation owed:** `dust_lights` currently applies a
+  LOCAL decrement to its copy for 206 (`:766`), 174 (`:807`) and 230 (`:639`) to
+  recover the post-mutation scale; once the physics chain is wired those local
+  compensations must be RETIRED (the pool record already carries the mutation)
+  or the light double-counts the decrement. 309 (`:486`) and 261 (`:695-704`)
+  likewise read post-mutation scale.
+* **`customData`** вЂ” dropped with the field (`particles.rs`'s `Dust` record): the
+  Player/Projectile/NPC/Vector2/Color/int/float follower halves never fire. The
+  31 `else if (noGravity)` arm (`:1297`) becomes reachable BECAUSE the NPC
+  `customData` branch (`:1277`) is dropped вЂ” noted at the arm.
+* **`Main.snowDust`** (`:1747`, the 76 arm) вЂ” a `Main` static (`Main.cs:621`), not
+  a `Dust` one; the pool does not carry it (the skeleton's documented drop).
+* **43's death check** reads the PRE-ramp scale (`:1406-1414` precedes `:1415`),
+  ported in that order; the `light_color` probe is the real `Lighting.GetColor`
+  sample at the wiring wave (until then the caller passes the bright default, so
+  43 never spuriously dies).
+
+**Wiring (the d51-54 / e1-e4 sites' wave):** the generic loop calls `pre_move`
+over the active slots before the move, then `update_dust` with `type_chain` as
+the hook, then adds the `SandStormCount` delta and drains the child-spawn sink
+through `DustPool::new_dust` (post-write `no_gravity = true; scale = spawn.scale`).
+The `minecart::tick` 213/268 hand-dispatch and `sand::type_268_arm` retire into
+the chain at that wave (their bodies are already the chain's 213/268 arms).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 38 witnesses are owed a compile window before merge.
+
+## The player dust sites, third batch (W4-f3, task/W4-f3-dust-player-3, 2026-11-21, code-only mode)
+
+The d51 lane (extra-jump `Player.cs:20818-21012`, dash `:21259-21512`, fast-run
+`:20217-20298`) merged into this branch; the sticky lane (`:23036-23076`) already
+rides `take_sticky_dust`. e1 (`task/W4-e1-dust-sites-player-2`) has **no pushed
+claims** (clean worktree at base, no remote branch). The next contiguous unclaimed
+block is **`Player.cs:21654-27933` — exactly 40 sites** (46 minus the 6 already-ported
+sticky sites). W4-f3 addresses all 40 in four commits of 10 (C# line order): 31
+ported dust sites + 9 cited zero-draw deferrals (unported host state). The pre-20217
+cluster (`:12569-20320`, the equip/vanity lanes) is left for e1.
+
+**Ported lanes (the queue convention — the tick snapshots at the C# read moment,
+the drain replays on the `UpdatePlayers` stream, `player_dust.rs`):**
+
+* **DoubleJumpVisuals** (`:21892-22021`, 8 sites) — the performing-jump per-tick
+  trail, 6 arms (Cloud/Sandstorm/Fart/Unicorn/Sail/Blizzard). The single
+  `performing_jump` stands in for the seven `isPerformingJump_*` flags;
+  `CancelAllJumpVisualEffects` clears at the `jump == 0` gate (`:26755`), the CCed
+  flight arm (`:26811`) and the grapple pose (`:36493`). The Sandstorm `Gore.NewGore`
+  sibling (`:21922`) is the gore lane's (W4-d55 skip).
+* **Stoned transition** (`:25228`, 1) — 20 type-1 puffs + the per-puff `Next(2)`
+  noGravity roll; the `PlaySound(0)` (`:25225`) is a cited seam (the stoned hurt
+  rides `hurt_inner`'s own cue).
+* **Drowning bubble** (`:23316`, 1) — the `Next(20)` gate on the tick (draws only
+  while drowning), the type-34 wet-probe kill rides `new_dust`. The breathing-reed /
+  mount-mouth offsets (`:23293-23314`) fold to the base mouth position.
+* **MakeFloorDust** (`:23983`, 1) — `FloorVisuals` captures the floor tile + the
+  slope carve-out (`:23736`) + the dry/non-cart gate (`:23740`); the `falling` latch
+  (`:28073`) feeds the 1-vs-20 count. The drain replays the per-type gate rolls, the
+  `Next(100)` walking gate, the kind-to-dust map + colours, the scale arms and the
+  falling velocity post-arms. The shimmer-block orchestrator (`:23792-23818`, tiles
+  659/667) and the `Item177` landing cue (`:23830`) are cited seams.
+* **Wing-glide** (`:27040-27337`, 10 sites) — the glide arm queues the per-wing
+  snapshot; the drain replays wings 10/34/51/9/29/6/5/4/26/37. `noLightEmittance`
+  (`wingsLogic != wings`, `:27036`) folds false (the port's single wing field); the
+  `cWings` shader is dropped; the wings-4 `wingFrame` machine + `Item13` cadence
+  (`:27149-27191`) are cited seams (the port's `WingFrame` owns the frame machine).
+* **Liquid splash** (`:27783-27940`, 8 sites) — the wet-edge host queues the per-kind
+  arm; the drain replays the shimmer `Next(6)` colour pick / honey / `dustWater()` /
+  lava chains BEFORE the splash sound (the C# dust-loop-then-`PlaySound(19)` order).
+  The water style is `biome::calculate_water_style` under the player.
+
+**Cited zero-draw deferrals (unported host state — the dust gate never fires):**
+
+* **WallClimbMovement** (`:21654`/`:21678`) + **WallslideMovement**
+  (`:21729`/`:21790`/`:21826`, 5 sites) — the wall-climb/slide movement machines are
+  unported (the `spikedBoots` grant exists but the machines do not run), so the
+  type-31 wall dust never fires. The `cShoe` shader is a dropped field.
+* **UpdateHairDyeDust** (`:24274`, 1) — no `Player.hairDye` field (the team-dye
+  cosmetic is unported); the `Next(45)` gate never passes. The `Gore.NewGore` sibling
+  (`:24285`) is the gore lane's.
+* **Mana-heat shimmer** (`:24641`, 1) — `manaHeat` is reset to 1 every tick
+  (`:18593`) with no writer (the buff-396 decay `:10328-10341` and the star-pickup
+  `TryApplyManaHeat` lane are deferred), so `manaHeat != 1f` never holds.
+* **Vortex stealth** (`:25877`/`:25887`, 2) — no `setVortex`/`vortexStealthActive`
+  fields (the vortex stealth system is unported), so the `flag11` dust gate never
+  fires.
+
+**RNG contract:** every gate roll + `NewDust` internal + post-arm draw rides the
+`UpdatePlayers` stream in C# order (the `Main.cs:17754` swap). The drains run in the
+`world_sim/player.rs` tick closure in lane order (stoned, fast-run, jump, dash,
+double-jump, splash-dust, splash-sound, drown-gasp, drown-bubble, floor, wing-glide);
+the cross-lane ordering is the port's documented queue-convention approximation (the
+d51 precedent), the within-lane order is verbatim.
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 19 draw-mirror witnesses are owed a compile window before merge.
+
+## The wallclimb + vortex-stealth machines (W4-f3 escalation, task/W4-f3-dust-player-3, 2026-11-21, code-only mode)
+
+The H-h2 escalation un-defers the third batch's two unported-host clusters: the
+**wall-climb/wallslide movement machines** (the 5 type-31 dust sites
+`Player.cs:21654`/`:21678`/`:21729`/`:21790`/`:21826`) and the **Vortex-stealth
+system** (the 2 ring sites `:25877`/`:25887`). Both hosts now run; the dust drains
+ride the same `UpdatePlayers` queue convention. Two commits, one per machine.
+
+### Machine 1 — WallClimbMovement / WallslideMovement (`Player.cs:21607-21840`)
+
+Ported verbatim into `player.rs` (`wall_climb_movement` / `wallslide_movement`),
+called at the C# `:26758-26765` slot (after `DashMovement`, before
+`DoubleJumpVisuals`), inside the `grappling[0] == -1 && !tongued` movement block
+(`:26494`). The Rat mount (type 55) runs the climb machine, everyone else the
+wallslide — the exclusive dispatch is the C#'s own.
+
+* **The grants land** (`apply_equip_functional`): Climbing Claws 953 / Shoe Spikes
+  975 `spikedBoots++` (`:15040`/`:15044`), Tiger Climbing Gear 976 `+= 2`
+  (`:15048`), Master Ninja Gear 984 `= 2` (the ASSIGNMENT, `:15066`), the frog
+  family 3994/3995/3996 (the auto-jump + 1.6 jump-speed + 10 safe-fall bundle;
+  3994/3995 add `accFlipper`, 3995/3996 add `spikedBoots += 2`,
+  `:14426-14444`). The Rat's own +1 (`Mount.cs:3002`) already rode
+  `update_equips`' tail. `ResetEffects` clears (`:18660`).
+* **The state machine**: the shared wall probe (one pixel beyond the hitbox edge
+  on the `slideDir` side at the foot row; the wallslide needs the two-high pair,
+  `:21771`), the level-2 cling (`vy = -gravity + 1e-5`, the Featherfall `/3`
+  `/10` variants via `TryingToHoverUp`), the climb-up `-3` / climb-down `4` /
+  level-1 `-2`/`4`/`0.5` arms, `fallStart` refresh, `sliding` latch. The
+  `slideDir` capture already rode `move_vanilla` (`:28083`/`:28242-28252`).
+* **The consumers land**: the wall-jump (`sliding` counts as resting at the
+  `:20670` trigger; `vx = 3 * -slideDir` at `:20778`), the auto-jump disarm
+  (`:20632`), the `:26057` rest arm (`RefreshDoubleJumps` while sliding — the
+  `clear_stale_jumps` call site now carries it), the airborne body row 3
+  (`:36552`, already coded), the wing/rocket rest refills (`:26777`/`:26859`,
+  already read `sliding`), the Rat's frame machine (`Mount.cs:3603-3606`, already
+  reads `sliding`).
+* **The dust**: all five sites share one chain — type-31, box 8x8 at
+  `(x + width/2 + (width/2-4)*slideDir, y + height/2 + (height/2-4)*gravDir)`,
+  post-arms `slideDir<0 -> X-=10`, `velocity *= 0.1`, `scale *= 1.2`, `noGravity`,
+  the Rat's `scale *= 0.5`. The drain (`player_dust::drain_wall_dust`) runs after
+  the dash dust. The Rat's ceiling-suppression probe (`:21652` et al. —
+  `SafeNormalize(0, vy)*10` from the centre, `ToTileCoordinates` is `(int)>>4`)
+  rides the tick side (it reads the NEW climb velocity). The `cShoe` shader is a
+  dropped field; the `gravDir == -1` mirrors fold to their `+1` arms.
+* **Cited seams**: `CarpetMovement` (`:26766`) stays unported (the Magic Carpet
+  grant/machine are another lane); the `mount.BlockExtraJumps` arm (`:26045`)
+  has no mount row that sets it. The pulley `CancelAllJumpVisualEffects` site
+  (`:26135`) stays folded — the pulley MOVEMENT (`FindPulley` `:26122`) is still
+  unported, so that host never fires (the wall machines are not its host).
+
+### Machine 2 — the Vortex stealth system (`Player.cs:25733-25899`)
+
+The fields land: `set_vortex` (`:2818`), `vortex_stealth_active` (`:2852`),
+`stealth_timer` (`:1560`); the `stealth` default is FIXED from the port's wrong
+`0.0` to the C# `1f` (`:1562`). The full if-else-if chain ports as
+`player.rs::update_stealth`, called after `UpdateArmorSets` (`:25685`) and before
+the Mana Sickness tail (`:25900`):
+
+* **The Psycho Knife (3106) arm** (`:25733-25783`): swinging reveals (+0.1, the
+  15-tick grace), still fades (-0.02 once the grace runs out), moving reveals;
+  the melee x(1+(1-stealth)*3) / +30 crit (cap 100) / -750 aggro bonuses.
+* **The Shroomite arm** (`:25785-25825`): the run-speed dead-band still-fade
+  (-0.015, the 30-tick grace), the (|vx|+|vy|)*0.0075 moving recovery, the
+  `Utils.Remap(stealth, 1, 0.75, 1, 0)` ranged/crit/aggro bonuses. The Shroomite
+  triples (1546/1547/1548 + 1549 + 1550, `ArmorSetBonuses.cs:392-394`) now grant
+  `shroomiteStealth` (the field existed but no writer did); `ResetEffects`
+  clears it (`:18326`).
+* **The Vortex arm** (`:25826-25895`): active fades -0.04 toward 0 (the ranged
+  x(1+(1-stealth)*0.8) / +20 crit / -1200 aggro bonuses + the `accRunSpeed`/
+  `maxRunSpeed` x0.3 cut), inactive recovers +0.04 toward 1; `flag11` (the value
+  changed without clamping) queues the ring. The Vortex triple (2757/2758/2759,
+  `ArmorSetBonuses.cs:480`) grants `setVortex`; `ResetEffects` clears it
+  (`:18743`); `UpdateArmorSets_Always_Vortex` (`:16317`) drops the toggle on set
+  loss; the down-double-tap toggles it (`:56775`, `key_double_tap_down`); a dash
+  cancels it (`:21379`); a mount cancels it (`:25852`); a landed hit reveals
+  (`:38245`, `hurt_inner`); `GetWeaponKnockback`'s vortex arm (`:53364`) lands.
+  `aggro` now resets to 0 per tick (`:18377`) — the stealth writers subtract.
+* **The dust** (`player_dust::drain_vortex_stealth`): two independent `Next(2)`
+  gates; the type-229 outer ring (`UnitY.RotatedByRandom(2pi)` — TWO `NextDouble`,
+  `Utils.cs:1697-1700`; `NewDust` at `Center - vector*30`; `position = Center -
+  vector*Next(5,11)`; `velocity = vector.RotatedBy(pi/2)*4`; `scale = 0.5 +
+  NextFloat`; `fadeIn = 0.5`) and the type-240 inner ring (fresh spin, `*12`
+  radius, `-pi/2` x2 velocity). The drain follows the stoned burst (the machine
+  runs at `:25826`, after the stoned edge `:25228`). A refused gate spends no
+  draws beyond the gate itself.
+* **Cited folds**: the `NetMessage.SendData(84)` edges (`:25753`/`:25800`/
+  `:25843`/`:25869`) are MP-only; the `UpdateDead` set-flag clear (`:16977`) is
+  not ported (the port's `update_dead` does not clear the set flags — the
+  respawn's `ResetEffects` covers the live path); the `UpdateArmorLights`
+  vortex-stealth gate (`:31151`) is the light layer's.
+
+**RNG contract:** unchanged — every gate roll + `NewDust` internal + post-arm
+draw rides the `UpdatePlayers` stream in C# order. The wall dust drains after the
+dash dust (the `:26757`->`:26760` order); the vortex ring drains after the stoned
+burst (the `:25228`->`:25826` order). The drain lane order is now: stoned,
+**vortex-ring**, fast-run, jump, dash, **wall**, double-jump, splash-dust,
+splash-sound, drown-gasp, drown-bubble, floor, wing-glide.
+
+**Ownership note:** the e1 claim ledger (`docs/research/64-dust-sites-player-2.md`,
+commit `7c4b7d15`) lists these 7 sites in its batch-2/4 scope, but e1 has no
+pushed code (its branch tip is the claim doc only) and the H-h2 escalation
+explicitly reassigns the unported-host machines to this branch. The vortex
+stealth is unclaimed by any i-armor lane (no `set_vortex`/`vortex_stealth_active`
+field existed anywhere in `crates/`).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 15 new witnesses (8 wall + 7 stealth) are owed a compile
+window before merge.
+
+## The pulley + carpet folded hosts (W4-f3, task/W4-f3-dust-player-3, 2026-11-21, code-only mode)
+
+The H-h2 escalation's folded hosts (3)/(4)/(5) of the third-batch dust census:
+the **rope-pulley attach/move/dismount machine** and the **Magic Carpet fly
+machine** — the two unported hosts the wallclimb escalation cited (`CarpetMovement`
+`:26766` "another lane", the pulley `:26135` cancel-host "stays folded"). Both now
+run. **Neither machine has a single dust site** — a line-by-line scan of
+`FindPulley` (`:19644-19749`), `CanMoveForwardOnRope` (`:24247-24266`),
+`CarpetMovement` (`:21842-21890`) and the Update rope block (`:26100-26493`)
+found ZERO `Dust.NewDust`/`Gore.NewGore` calls. Host (3) ("WallClimb DUST
+remaining in the pulley/carpet machines") is therefore a **zero-site census**:
+the wall type-31 dust already landed with the wallclimb escalation; the pulley
+and carpet contribute no new dust. Two commits, one per machine.
+
+### Machine 1 — the rope-pulley machine (`Player.cs:19644-19749` + `:26116-26493`)
+
+Ported verbatim into `player.rs` (`find_pulley` / `can_move_forward_on_rope` /
+`update_pulley_direction` / `pulley_sidestep` / `pulley_ride`), called at the C#
+slots: the head block (`:26116-26287`) after the extra-jump maintenance, the ride
+(`:26300-26493`) as the `else if`-replacement of the whole `:26494` movement arm.
+
+* **The attach** (`FindPulley`, `:19644-19749`): up/down held over a rope cell
+  (`WorldGen.IsRope`, the port's `render::ropes::is_rope`), the nearest-of-three
+  hang pick (+6 / centre / -6, strict `<` ties keep the earlier candidate), the
+  +6 → -6 solid-body fallback (the dir/facing writes land BEFORE each probe and
+  stay mutated even when all three refuse — the C#'s own behaviour). A lone rope
+  cell (no rope-kind neighbour above/below) snaps the hang to `row*16 + 22` and
+  captures the old-Y delta in `gfxOffY`; `stepSpeed = 2.5`, `velocity.X = 0`.
+* **The direction machine** (`:26128-26287`): `pulleyDir` 1 (centre) / 2 (side),
+  the fresh-press-or-8-tick-hold swing (`releaseLeft || leftTimer == 0`), the
+  `:26150` `|| rightTimer == 0` quirk OUTSIDE the direction/control parens
+  (verbatim), the lateral rope step (`CanMoveForwardOnRope`), the released-key /
+  velocity / rope-loss / CC dismounts, the jump-off (`:26281-26286`). The
+  **`:26135` `CancelAllJumpVisualEffects` host NOW FIRES** — the wallclimb
+  escalation cited it folded while this machine was unported.
+* **The ride** (`:26300-26493`): the climb (-0.2/tick past -3, cap -8) / descend
+  (+0.2/tick past 3, cap `maxFallSpeed`) / rest (×0.7, ±0.1 dead-band) velocity
+  machine, the head/foot-room probes + the side-step fallback, the rope-end
+  down-drop (`ropeCount = 10` re-attach lockout, 1 px/tick start), the X snap +
+  the 2-frame `|vy*0.75| + 0.75` cadence (>10 wrap), the per-tick flight refills
+  (`RefreshDoubleJumps`, `canCarpet = true`, wing/rocket budgets). The ride
+  REPLACES the `:26494` movement block — the port gates the jump/dash/wall/flight
+  arms off on a ride tick and calls the ride's own `:26491` `DashMovement`.
+* **The latches**: `releaseLeft`/`releaseRight` + `leftTimer`/`rightTimer` (the
+  7-tick hold timers, `:27618-27652`) and the
+  `instantMovementAccumulatedThisFrame.X` rope-step accumulator (`:24377` zero,
+  `:26200`/`:26204` ±1). The accumulator's only C# consumer is the accStopwatch
+  speed readout (`Main.cs:47089`) — unported (no stopwatch info-accessory row), a
+  cited seam.
+* **The rope-coil interplay** (host 5): the pulley attaches to the SAME
+  `td::TILE_ROPE` set the rope-coil placement writes (W4-g82/d4 —
+  213/214/353/365/366/504/449/450/451). A placed coil column climbs; a natural
+  vine never does (the g83 disjoint-set pin, `vine_checks.rs`
+  `w4_g83_vines_and_ropes_are_disjoint_sets`). The raw `Main.tileRope` probe
+  (`tile_rope_kind`) is distinct from `WorldGen.IsRope` (no platform/track column
+  probe) — the C# uses both (`:19665` raw, `:19652` IsRope).
+* **Cited folds**: `portableStoolInfo.IsInUse` (`:19646`, the Portable Stool has
+  no row), `gravDir != 1` (`:26269`/`:26112`, no gravity flip), the `Main.cameraX`
+  compensation snaps (`:19706`/`:26237`/`:26462`, render seams — the port's camera
+  follows the position), `rocketFrame` (`:26488`, no port field), the
+  `UpdateControlHolds` `releaseUp` latch (`:26492`/`:29080`, no port consumer —
+  the grapple jump-off reads `input.up` directly).
+
+### Machine 2 — the Magic Carpet fly (`Player.cs:21842-21890`)
+
+Ported verbatim into `player.rs` (`carpet_movement`), called at `:26766` right
+after the wall machines (pulley-ride-gated). The grant is item **934**
+(`:15034-15037`) — NOT 4989 (the Soaring Insignia, already ported as
+`empress_brooch`).
+
+* **The launch gate** (`:21845`): the carpet accessory + ALL nine extra-jump
+  can-flags spent + `jump == 0` + airborne + no rocket/wing budget + no mount. A
+  jump press while `canCarpet` arms the 300-tick budget (`:21847-21851`); holding
+  jump pins the rise at `-(gravity + 1e-6)` and runs the 6-frame `1 + |vx*0.5|`
+  glide cadence (>8 wrap, frame 0..5). `slowFall = false` — the carpet overrides
+  Featherfall (`:21888`).
+* **The re-arm** (`:26100-26115`): resting (`vy == 0`) or sliding re-arms
+  `canCarpet` and zeroes the budget/cadence; without the accessory the gate + pose
+  clear. The ride's `:26483` and the grapple head's `:22624` also set
+  `canCarpet = true`.
+* **The consumers**: the `:26613-26617` glide run boost (acceleration ×1.25, max
+  ×1.5 — reads the PREVIOUS tick's `carpetFrame`, since `CarpetMovement` runs
+  later at `:26766`) and the `:28066`/`:23537` step-up gate (`carpetFrame != -1`
+  steps up even while rising — the carpet climbs ledges mid-flight).
+  `ResetEffects` clears `carpet` (`:18657`).
+* **NO dust sites** — the carpet is a pure movement machine. The `gravDir == -1`
+  rise mirror (`:21862-21865`) folds to the `+1` arm.
+
+### Hosts (3)/(4) — the census results
+
+* **(3) WallClimb DUST remaining**: ZERO new sites. The pulley/carpet machines
+  carry no dust; the wall type-31 sites already landed with the wallclimb
+  escalation (`drain_wall_dust`). No shared-corner-chain drain needed here.
+* **(4) climbing-claw accessories**: VERIFIED already landed — the Climbing
+  Claws 953 / Shoe Spikes 975 (`spikedBoots++`, `:15040`/`:15044`), Tiger
+  Climbing Gear 976 (`+= 2`, `:15048`), Master Ninja Gear 984 (`= 2`, `:15066`),
+  the frog family 3994/3995/3996 (`:14426-14444`). The `:20600` region consumers
+  (the `:20632` auto-jump disarm, the `:20670`/`:20778` wall-jump) landed with
+  the wallclimb escalation; `spikedBoots`' only readers are the wall machines
+  (`:21637`/`:21753`/`:21775`) — no claw-specific arm remains unported.
+
+**RNG contract:** unchanged — neither machine draws from any stream (no dust, no
+sound, no gore). The pulley/carpet are deterministic velocity/position machines.
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
+(user directive). The 17 new witnesses (11 pulley + 6 carpet) are owed a compile
+window before merge.
+
+### The continuation close-out (0e332c61 / e011d3da / f017f239, re-verified 2026-11-21)
+
+The three continuation commits past `0b11548f` (carpet keep-one union, the
+`UpdateControlHolds` cited-fold, the rope-coil chain witness) were re-verified
+against the CURRENT sibling tips and the decompiled source; this section records
+the evidence and the merge-lane decisions.
+
+**(a) Carpet keep-one — for the e1b-141 merge lane.** The g66 branch tip is
+STILL `7213f3c7` (the tip `0e332c61` unioned against; no g66 carpet change since).
+The two `carpet_movement` bodies (this port `player.rs:10582-10635` vs g66
+`player.rs:10693-10744`) were byte-compared after normalising comments, the local
+name (`flag`/`glide`), `TILE_PX`→`16.0` and `1E-06`→`1e-6`: **IDENTICAL** — SHA256
+`69492c6bd052d307dbac9618fa110ac76df844dd7cef38ba9703e23b9be3f3ad` on both. The
+union's shadow-read (g66's `:26745-26752` pre-zero emulation) is already in both.
+**KEEP THIS PORT'S copy; drop g66's at the e1b-141 merge.** The machines are
+behaviour-identical, but the CALL SITES differ: this port gates the whole wall/
+carpet block on `!grappling && !self.tongued && !pulley_ride` (`player.rs:8089`),
+while g66 gates only `!grappling` (`player.rs:8016`) — g66 never ported the
+pulley, so its carpet would fire on a ride tick. This port's consumers
+(`:26613-26617` run boost, `:28066`/`:23537` step-up) have no g66 counterpart.
+The g66 `carpet`/`can_carpet`/`carpet_time`/`carpet_frame_counter` FIELDS are the
+same fields — one definition survives; the g66 wall-dust queue in its wallslide
+arm is the wallclimb escalation's `queue_wall_dust` sibling, deduped by the
+wall-machine keep-one, not by this note.
+
+**(b) portableStool census — NOT self-contained, note stands.** Verified against
+the decompiled source: the equip row is items **4341/5126** (`:14544-14546`,
+`SetStats(26, 26, 26)`), `Reset` at `:18783`, the usage machine
+`UpdatePortableStoolUsage` (`:29193-29205`: HasAStool + controlUp + !gravControl
++ !mount + zero velocity + !pulley + no grapple + `CanFitSpace(HeightBoost)` →
+`IsInUse = true` + `ResizeHitbox`), called at `:25647`. The machine is NOT
+portable alone: `ResizeHitbox` (`:29207-29222`) writes `height = 42 +
+HeightOffsetBoost`, and the offset family (`HeightOffsetVisual` `:3237-3249`,
+`HeightOffsetHitboxCenter` `:3253-3263`, `HeightOffsetBoost` `:3281-3291`,
+`HeightMapOffset` `:3297-3309`) is the SHARED mount hitbox-offset seam — the port's
+`mounted_center`/`mounted_top` fold it to 0. Every consumer needs that seam:
+`:19614` (`jumpHeight += 5`), `:19646` (the FindPulley stool gate — folded false
+in `find_pulley`, `player.rs:10191`), `:20768-20774` (the jump-off unboost +
+`StoolJump` camera modifier), the `Center`/`Bottom`/`Top` properties
+(`:3341-3367`) and the held-item draw offset (`:42604`/`:42846`). The
+`cPortableStool` dye slot (`:2976`/`:9735`) is a third seam. A small-port would
+need the offset family FIRST; deferred with the seam, not dropped.
+**Retire-pass update:** the full census + the seam task's shape now live in
+`docs/research/303-heightoffset-stool-seam.md` (the movement-lane task seed —
+the five getters, every fold-to-0 site, the consumers-list incl. the
+`mounted_center`/`mounted_top` accessor leverage and the duplicate
+`player_layers.rs` offset table).
+
+**(c) UpdateControlHolds — port verified, one init fix.** `release_up` +
+`update_control_holds` (`player.rs:12786-12789`, the pure `!controlUp` mirror
+`:29093-29100`), refreshed once at the tick end (`player.rs:8514`). The C#'s
+three call slots (`:26492`/`:26742`/`:27398`) all write the same mirror — one
+refresh per tick is behaviour-identical because no consumer runs between the
+slots with a changed `controlUp`. **Init corrected:** `e011d3da` seeded
+`release_up: true` citing "`:1756`, init true", but the C# field (`:1756`) has
+NO initializer — the default is `false`; the port now spawns `false` (the
+witness pins the spawn default). The pre-existing `release_down: true`
+(`723ac493`, the i27 lane) has the same C# mismatch (`:1780` default false) —
+left for that lane, noted here. The flexible-wand
+cycle head (`:29082-29092`) folds (no `GetFlexibleTileWand` row). ALL FIVE
+`releaseUp` readers verified in the source: `:25041` (up double-tap), `:25267`
+(hover-up latch), `:26696`/`:26716` (grav-flip toggles), `:26738` (hover-mount
+up-nudge) — each folded with its unported machine as cited in `e011d3da`.
+
+**(d) The rope-coil chain witness — contracts re-verified against the landed
+siblings.** `w4_f3_the_rope_coil_chain_place_attach_ride_refund`
+(`player.rs:24042-24096`) mirrors two sibling machines as contracts; both were
+checked against the ACTUAL landed code, not the commit messages:
+* Link 1 vs g82 `projectile_rope_coil.rs::coil_rope_kind` (`59139eb1`,
+  `:109-114`): 171→213 / 475→353 / 505→365 / 506→366 — the witness's `coil_rope`
+  closure matches arm-for-arm. The `ai[1]` placed-counter increment
+  (`:27283`) is the `p.ai[1] += 1.0` at the placement arm (`:275-276` of the
+  module) — the witness's `placed = 3.0` seats a 3-link column.
+* Link 4 vs g82 `coil_death_drop` (`:426-437`): the (coil, rope) pairs
+  171→(985,965) / 475→(3005,2996) / 505→(3079,3077) / 506→(3080,3078) and the
+  ladder (0 → 1 coil, <10 → 10−placed rope, 10 → none) match the witness's
+  `refund` closure exactly. d4 (`cafec722`) wires the drain at its
+  `projectile.rs:20403` — the refund rides the kill hook, as mirrored.
+* Links 2/3 are LIVE on this branch (`find_pulley`/`pulley_ride`); the g83 vine
+  disjoint pin holds (vine 52 never attaches, the sibling test above).
+The chain witness stays a CONTRACT mirror until the three branches merge — at
+the e1b merge it can be upgraded to call the real `coil_rope_kind` /
+`coil_death_drop` (both `pub(crate)`, same crate).
+
+**Witness ledger:** 29 `w4_f3_*` test fns total (10 wall/stealth + 11 pulley
+[incl. the chain] + 8 carpet [incl. the union-arm + the up-release latch]), all
+WRITTEN NOT RUN (code-only). The continuation added 3 new fns + reworked the
+carpet refusal witness to equip a wing tier. No behaviour change beyond the
+union shadow-read already recorded in `0e332c61`.
+
+### The retire pass (2026-11-21, code-only) — item 1: the release_down init fix
+
+**Branch probe:** `origin/task/W4-i27` does NOT exist — the i27 lane
+(`723ac493`, S1-P-i27 minion target-command) is already IN `origin/main`
+(`git merge-base --is-ancestor 723ac493a origin/main` → 0; main tip
+`a725acb0` "Land wave-3 magic+summon lane … S1-P-i19-i27/i56"). No lane branch
+to hand the fix to, so the fix lands HERE (this branch carries the same field)
+and this note is the merger record.
+
+**The one-line fix (published):** `Player.releaseDown` (`Player.cs:1780`) has
+NO initializer — the C# bool default is `false`, exactly the `releaseUp`
+(`:1756`) mismatch `100730dd` fixed. The i27 port seeded `release_down: true`
+(`723ac493`). This branch's spawn (`player.rs` ctor, the `release_up: false`
+sibling row) now reads `release_down: false`. The refresh writer is unchanged:
+`releaseDown = !controlDown` (`:27636`, the port's
+`update_minion_rest_command` tail) — one idle tick arms the latch.
+
+**Behaviour delta (C#-faithful):** the VERY FIRST down press of a fresh
+player is swallowed — `flag5 = controlDown && releaseDown` (`:25037`) reads
+the un-armed latch, so no window arm on tick 1; the C# behaves the same. The
+i27 window witness (`s1_p_i27_the_double_tap_window_and_the_hold_counter`)
+gains one leading idle tick so its first press arms the window as before. The
+other i27/f3 witnesses call `key_double_tap_down` directly — unaffected. One
+new witness `w4_f3_the_down_release_latch_spawns_false` pins the spawn default
++ the arm/clear refresh. WRITTEN NOT RUN (code-only).
+
+### The retire pass — item 2: the e1b-141 three-way reconcile input (f3 × g66 × e1)
+
+Inputs: THIS branch tip (post-`100730dd`), g66 `origin/task/W4-g66-player-trail-dust`
+tip `7213f3c7` PLUS its unpushed local tip `248f0ff4d` ("final phase 1: the f3
+wall/carpet keep-one inputs" — present in the shared object store, NOT on the
+remote branch), and e1 `origin/task/W4-e1-dust-sites-player-2` tip `3245d624`
+(the e1b-active player-dust lane, 40/40 sites + the fidelity-fix round). All
+compares below ran against those exact trees (`git show <ref>:<path>`), not
+commit messages.
+
+**(a) WallClimb/Wallslide f3 `1a719d30` × g66 `b2dcd063` — byte-compare:
+IDENTICAL after normalisation; KEEP f3, drop g66's machines.** Normalisation:
+comments stripped, `TILE_PX`→`16.0`, `1E-05`→`1e-5`, `flag3/flag4`→`up/down`,
+`!(vy > 0)`↔`vy <= 0`, one redundant grouping paren, f3's
+`wall_probe`/`wall_dust_suppressed` helpers ↔ g66's inline probe/guard forms,
+the `num3` slow-fall block and the level-1 ternary canonicalised. SHA256 both
+sides: `wall_climb_movement`
+`93ea3c817ad711b3f5e435841c51cdfa4a5c6ec607da7d2d188a816b37064866`,
+`wallslide_movement`
+`dcf476cc4049bd22f6e148d66967c4c245d2add13f2218d8f563de0bff428f11`.
+KEEP f3: the helpers are the readable form, the call site carries the
+`!pulley_ride` gate g66 lacks (g66 never ported the pulley), and the
+`:20670`/`:20778`/`:20632`/`:26057` sliding consumers are f3's. **One g66 arm
+KEPT and adopted HERE this pass:** the wall-puff corner uses INTEGER halves
+(`(float)(base.width / 2)`, `:21654`) — f3's float halves drifted 0.5 px on
+odd hitboxes (the g66 `248f0ff4d` verdict, re-verified against the C# cast).
+`player_dust.rs::drain_wall_dust` now computes `hw = width as i32 / 2` /
+`hh = height as i32 / 2`; a new odd-hitbox (21×43) witness pins the corner.
+The even-hitbox witnesses are unchanged (same values).
+
+**(b) Carpet keep-one — re-verified at BOTH g66 tips; KEEP f3.** The
+`carpet_movement` bodies f3 `player.rs:10585-10638` × g66 origin `7213f3c7`
+`player.rs:10693-10744` × g66 local `248f0ff4d` `player.rs:10705-10758` are
+byte-identical after normalisation (comments, `flag`↔`glide`, `TILE_PX`,
+`1E-06`): SHA256
+`0a5410776a2b155bd0f383833feb991a777a8e52edef15c2dd601fab795f7a67` on all
+three (this pass's normaliser; the `69492c6b…` hash in the close-out above is
+the same equality under its own normaliser). The union shadow-read
+(`:26745-26752` pre-zero emulation) is in all three. KEEP f3's copy: the call
+site `player.rs:8092` gates `!grappling && !self.tongued && !pulley_ride`
+(the C# `:26494` else-if + the ride bypass); g66 local `248f0ff4d` adopted the
+tongue gate (`:8028`) but still lacks `!pulley_ride` — its carpet would fire
+on a ride tick. g66 local ALSO ported the two consumers (`:26613-26617` run
+boost at its `:7727`, `:28066`/`:23537` step-up at its `:12895`) as "f3
+keep-one inputs" — at the e1b merge those are DEDUPED against f3's (f3's
+survive; same behaviour, f3's citations).
+
+**(c) The 934 census — NOT f3-unique, NOT g66-misattributed: BOTH ports carry
+it, byte-identical.** C# `Player.cs:15034-15037`: `if (currentItem.type ==
+934) { this.carpet = true; }`. f3 `player.rs:5941` and g66 `player.rs:5941`
+(both tips) read `934 => self.carpet = true,` — the same line. The g66
+`b2dcd063` commit message lists 934 among its grants and that is accurate;
+the close-out's "934 NOT unique" note stands. e1 does NOT port the grant (no
+`carpet` field; its `carpet_frame` is the rest-pin reader only). One grant
+survives the merge — f3's row. The climbing grants census: f3 953|975 `+= 1`
+(`:5933`), 976 `+= 2` (`:5934`), 984 `= 2` (`:5922`), frog 3995/3996 `+= 2`
+(`:5663`/`:5669`), Rat +1 (`:5448`, `Mount.cs:3002`); g66's rows (`:5942`/
+`:5943`/`:5987`/`:5723-5736` + the Rat tail) are semantically identical; e1
+ports ONLY the Rat +1 (`:5145`) — its wall machines read a `spiked_boots`
+that no accessory ever raises, so e1's wallslide dust never fires on foot.
+KEEP f3's grant block.
+
+**(d) e1's wall-machine copy — DROP at the merge (five verified deviations
+from the gravDir-1 C#).** e1 `player.rs:10041-10197` +
+`player_dust2.rs::wall_cling_puff`:
+1. `:10079` keeps `&& !(self.vy < gravity)` in the climb gate — the C#
+   `:21639` clause `(!(vy < gravity) || gravDir != -1)` is VACUOUS at
+   gravDir 1; e1's extra AND blocks the early return, so a resting Rat
+   (vy ≤ 0, no keys) wrongly clings + sets `sliding` where the C# returns.
+2. `:10105` the same vacuous-clause bug on the level-1 gate (`:21709`'s
+   `!(vy < -0.5) || gravDir != -1`): e1 proceeds while rising fast.
+3. `:10171` the wallslide `:21777` gate, same bug (clings at rest).
+4. `:10186` `else if (wall && vy > 0.5) || vy < -0.5` — the second disjunct
+   is the C# `:21814` gravDir −1 arm, UNGUARDED in e1: a rising player
+   slides with NO wall.
+5. `:10130` `climb_probe_solid` divides (`(probe.x / TILE_PX) as i32`)
+   where `ToTileCoordinates` is `(int)v >> 4` (`Utils.cs:1807-1810`) — the
+   arithmetic shift differs on negative probe coordinates.
+f3's copy has none of these (the folds are cited per-arm). e1's
+`WallClingDust`/`wall_cling_puff`/`take_wall_cling_dust` + the two host
+machines are dropped wholesale; f3's `WallDust`/`drain_wall_dust` survive.
+
+**(e) Stealth — KEEP f3's chain; e1's spawn default is WRONG.** C#
+`Player.cs:1562`: `public float stealth = 1f;` — f3 spawns `stealth: 1.0`
+(`player.rs:3306`), e1 spawns `stealth: 0.0` (its `:3063`). f3's
+`update_stealth` is the FULL `:25733-25899` else-if chain (shroomite arm +
+vortex arm + the `else stealth = 1` reset); e1's `update_vortex_stealth`
+(`:10290-10331`) is the vortex arm only, with the reset deferred to "the
+shroomite lane" (its own comment) — but f3 IS that lane, already landed.
+The ring drains are chain-identical (f3 `drain_vortex_stealth`
+`player_dust.rs:985` × e1 `vortex_stealth_rings` `player_dust2.rs:1117`,
+both replay `:25874-25893` draw-for-draw); KEEP f3's queue + drain, drop
+e1's `VortexRingDust` + `update_vortex_stealth`. e1's set-loss disarm
+(`3245d624`, `:16315-16321`) is already f3's (`player.rs:7056`).
+
+**(f) The shared-site overlaps beyond wall/carpet/stealth — merge verdicts.**
+* `DoubleJumpVisuals` (`:21892-22021`): THREE copies (f3
+  `drain_double_jump_dust` `player_dust.rs:748`, g66
+  `player_trail_dust::drain_double_jump_visuals`, e1
+  `player_dust2::double_jump_visuals`). KEEP f3's (the d51-merged
+  performing-jump lifecycle + the cancel sites are f3's); the g66/e1
+  drains are the same six-arm chain.
+* `MakeFloorDust` (`:23983`): three copies; **KEEP-E1's falling-flag
+  capture** — e1 `3245d624` captures `falling` at the movement head
+  (`:28073-28081`) so landing ticks fire the 20-dust burst; f3's capture
+  sits on the REST path (`player.rs:8453`, `vy == 0` gate) where
+  `vy > gravity || vy < -gravity` is always false — f3's landing burst
+  never fires. At the e1b merge the f3/g66 floor drains survive but the
+  `falling` input MUST come from e1's head capture (a one-line re-site,
+  not a machine rewrite). e1's drain-order fidelity round (hair-dye/
+  manaHeat before stoned/Vortex/drowning/splash/floor; floor after the
+  splash sound) is the EXECUTION order (`Player.Update` runs those
+  machines before `CheckDrowning`/`FloorVisuals`) — the merged
+  `world_sim/player.rs` drain sequence follows e1's order with f3's
+  wall/double-jump slots between dash and splash.
+* e1's pre-21654 lanes (Yoraiz0r eye, GlassSlipper, Solar, teleport,
+  regen sparkles, MowTheLawn, hair-dye, manaHeat, stoned, drowning,
+  splash) have NO f3/g66 counterpart — they land as-is.
+
+**Net e1b-141 merge recipe (player-move family):** f3's machines + grants +
+queues survive; g66 contributes the integer-half corner (ALREADY adopted
+here) and its wing/boot/trail lanes (no f3 overlap); e1 contributes its
+disjoint site lanes + the falling-flag capture + the drain execution order;
+e1's wall machines, wall-cling drain, vortex machine/rings and `stealth: 0.0`
+spawn are dropped. 1 new witness (odd-hitbox corner) WRITTEN NOT RUN
+(code-only).
+
+### The retire pass — item 4: the PLAYER-MOVE-FAMILY declaration
+
+**Canonical owner: THIS branch (`task/W4-f3-dust-player-3`).** The four
+player movement machines below are f3-canonical at the e1b-141 merge; the
+sibling copies are dropped per the verdicts above. This declaration is the
+merge lane's single lookup table.
+
+| Machine | C# | f3 canonical (this branch) | g66 drop | e1 drop |
+| --- | --- | --- | --- | --- |
+| **Pulley** (FindPulley / CanMoveForwardOnRope / the Update rope block) | `Player.cs:19644-19749` / `:24247-24266` / `:26116-26493` | `find_pulley` (`player.rs:10198`) / `tile_rope_kind` (`:10180`) / the ride block (`:7868` `update_pulley_direction` + `pulley_ride`, the `:26135` cancel host, the `:26483` canCarpet refill, the releaseLeft/Right 7-tick latches) | never ported (its carpet/wall lack the `!pulley_ride` gate) | never ported |
+| **Carpet** (CarpetMovement + the 934 grant + re-arms) | `:21842-21890` / `:15034-15037` / `:26100-26115` / `:22624` | `carpet_movement` (`player.rs:10585-10638`, the union shadow-read), grant `:5941`, call gate `:8092` (`!grappling && !tongued && !pulley_ride`), the `:26613-26617` run boost + `:28066`/`:23537` step-up consumers | `carpet_movement` (origin `:10693`, local `248f0ff4d` `:10705`) + grant `:5941` + the local consumer copies (`:7727`/`:12895`) — byte-identical, dedupe to f3 | no machine, no grant (`carpet_frame` rest-pin reader only — that field is shared, one definition survives) |
+| **WallClimb / Wallslide** (+ the 5 type-31 dust sites + the climbing grants) | `:21607-21840` / `:15038-15066` / `:14426-14444` / `Mount.cs:3002` | `wall_climb_movement` / `wallslide_movement` / `wall_probe` / `wall_dust_suppressed` / `queue_wall_dust` (`player.rs:9998-10171`), `WallDust` + `player_dust::drain_wall_dust` (integer halves, this pass), grants `:5922-5941`/`:5653-5670`/`:5448`, the sliding consumers (`:20670`/`:20778`/`:20632`/`:26057`) | `wall_climb_movement` / `wallslide_movement` / `queue_wall_dust` (origin `:10536-10687`) + `player_trail_dust::drain_wall_dust` + grants — machines byte-identical, the corner form adopted INTO f3 | `wall_climb_movement` / `wallslide_movement` / `climb_probe_solid` (`:10041-10197`) + `player_dust2::wall_cling_puff` + `WallClingDust` — 5 verified C# deviations (verdict (d)) |
+| **Stealth** (Shroomite + Vortex chain + the 2 ring sites + the toggle + set-loss) | `:25733-25899` / `:56775-56778` / `:16315-16321` | `update_stealth` (the full else-if chain, `player.rs:9856-9976`), `stealth: 1.0` spawn (`:3306`, C# `:1562`), `key_double_tap_down` toggle (`:12709`), the Always_Vortex disarm (`:7056`), `VortexStealthDust` + `player_dust::drain_vortex_stealth` | no stealth machine | `update_vortex_stealth` (`:10290-10331`, vortex-arm-only, reset deferred) + `stealth: 0.0` spawn (WRONG vs `:1562`) + `player_dust2::vortex_stealth_rings` + `VortexRingDust` — chain-identical drain, dedupe to f3 |
+
+**Shared fields (one definition survives, f3's):** `carpet` / `can_carpet` /
+`carpet_time` / `carpet_frame` / `carpet_frame_counter`, `spiked_boots`,
+`sliding` / `slide_dir`, `stealth` / `shroomite_stealth` / `stealth_timer` /
+`set_vortex` / `vortex_stealth_active`, `pulley` / `pulley_dir`,
+`release_up` / `release_down` (both spawn false — the retire item-1 fix).
+
+**g66 keeps its own lanes** (no f3 overlap, NOT dropped): the wing dust
+(33/38/47/49/50 + WingAirVisuals/WingFrame), the boot flames + Item13/Item24
+cues, the Rudolph trail, its DoubleJumpVisuals/FloorDust drains (deduped to
+f3's per verdict (f), with e1's falling-flag capture adopted).
+
+**e1 keeps its own lanes** (no f3/g66 overlap, NOT dropped): the pre-21654
+equip/vanity dust lanes + hair-dye + manaHeat + stoned + drowning + splash,
+the falling-flag head capture, the drain execution order, the Hair Dye
+Remover / Vortex set-loss fidelity fixes (the latter already f3's).
+
+**Deferred with the seam (NOT part of the family's merge):** portableStool +
+the HeightOffset family — `docs/research/303-heightoffset-stool-seam.md` (the
+movement-lane task seed, retire item 3). The FindPulley stool gate stays
+folded false until that seam lands.
+
+**Witness ledger after the retire pass:** 54 `w4_f3_*` test fns across
+`player.rs` (30) + `player_dust.rs` (24) — the retire pass added 2 (the
+down-release spawn default + the odd-hitbox corner; the close-out's "29"
+counted the `player.rs` machine fns only, pre-retire). All WRITTEN NOT RUN
+(code-only). The i27 window witness gained a leading idle tick (the
+C#-faithful first-press swallow).
+
+### The seal pass (2026-11-21, code-only) — the 141-reconcile SEALED + the PLAYER-MOVE-FAMILY bible FINAL
+
+The retire pass left the reconcile as INPUT (verdicts + a recipe). The seal pass
+COMPOSES it: it re-verified every verdict against the CURRENT sibling tips, adopted
+the verified-correct sibling arms into f3's canonical copies (so the merge is a
+pure drop, not a re-edit), and published the two-sided receipts. The reconcile is
+**SEALED** — the e1b-141 merger reads the declaration + research/66 + research/378
+as the single lookup table; no re-compare is owed.
+
+**The sibling tips at the seal (re-probed, exact trees):**
+* g66 `origin/task/W4-g66-player-trail-dust` = **`248f0ff4d`** — NOW PUSHED (the
+  close-out's "unpushed local tip" caveat is retired; `7213f3c7` is its parent).
+  The `248f0ff4d` delta is exactly the "f3 wall/carpet keep-one inputs" (the tongue
+  gate + the two carpet consumers + the arm-by-arm verdicts), so the keep-one
+  equality holds at the new tip.
+* e1 `origin/task/W4-e1-dust-sites-player-2` = **`3245d624`** (2026-11-21 07:08,
+  the 40/40-site completion + the fidelity-fix round). **There is NO `task/W4-e1b*`
+  branch** — e1 itself is the active player-dust lane; "e1b-141" is the merge
+  lane's label, not a worker branch.
+
+**The seal's re-verification found the retire(2) bible UNDERSTATED the overlaps.**
+The bible listed stoned/drowning/splash as "pre-21654, no f3/g66 counterpart", but
+f3's batch 1/2/4 ALSO ported them (`drain_stoned_dust`/`drain_drown_bubble`/
+`drain_splash_dust`/`drain_floor_dust`/`drain_double_jump_dust`), and f3's batch 3
+ported a partial wing-glide drain that overlaps g66's complete wing lane. The seal
+re-compared each pair against the C# and corrected the verdicts (research/378 §3,
+research/66 §4a). The corrected keep/drop table is the FINAL bible below.
+
+**The seven sibling arms ADOPTED into f3's canonical copies (the seal's code):**
+1. **The falling-flag head capture** (KEEP-E1, e1 `3245d624` / g66 `248f0ff4d`) —
+   `player.rs:8334` captures `falling` BEFORE `move_vanilla` (the pre-integration
+   velocity, `Player.cs:28073-28081`), so a landing tick fires the 20-dust burst.
+   The old rest-path capture never fired it. Witness
+   `w4_f3_the_landing_tick_captures_falling_at_the_head`.
+2. **The floor-dust integer half** (KEEP-E1) — `player_dust.rs:1203`
+   `(b.width as i32 / 2)` (`:24026` `(float)(base.width/2)`), the wall-corner class.
+3. **The splash integer half** (KEEP-E1) — `player_dust.rs` `splash_shimmer` /
+   `splash_simple` `(b.height as i32 / 2)` (`:27785` et al.).
+4. **The sandstorm integer half** (KEEP-E1) — `player_dust.rs` `dj_sandstorm`
+   `(b.height as i32 / 2)` (`:21915` `(float)(num3/2)`).
+5. **The sandstorm gore argument-draw** (KEEP-E1) — `DoubleJumpDust` gains
+   `sandstorm_gore_gate`; `dj_sandstorm` spends the `Next(220,223)` type-argument
+   draw (`:21922`) on `UpdatePlayers` when the `miscCounter % 3 == 0` gate fires.
+   The gore BODY is d55's (unported), but the argument draw is NOT — f3 previously
+   skipped it, shifting every later draw (a determinism defect). Witness
+   `w4_f3_the_sandstorm_gore_gate_draws_the_argument`.
+6. **The `should_draw_wings` mount-gate fix** (KEEP-g66, g66 `248f0ff4d`) —
+   `player.rs:9213` `mount.can_use_wings()` (not `data().is_some_and`);
+   `Mount.cs:570-580` returns TRUE when `_data == null || !_active`. The stale form
+   starved the Rainbow/Spooky/Bat leg arms unmounted.
+7. **The drain execution order** (KEEP-E1) — `world_sim/player.rs` now drains
+   wing-glide right after DoubleJumpVisuals (the `WingMovement` `:26818` slot),
+   then drown-gasp → drown-bubble → splash-dust → splash-sound → floor (the
+   `CheckDrowning` `:27655` → splash `:27783` → `FloorVisuals` `:28271` order). The
+   old f3 order drained wing-glide after floor and drown after splash.
+
+All seven are C#-correctness fixes (the integer halves change a POSITION expression
+0.5 px on odd hitboxes, not a draw count; the falling capture / drain order / gore
+argument-draw RESTORE draws the C# spends). No net RNG stream shift beyond the
+restored C# draws. 2 new witnesses WRITTEN NOT RUN (code-only).
+
+#### The PLAYER-MOVE-FAMILY bible — FINAL (the e1b-141 single lookup table)
+
+**Canonical owner: `task/W4-f3-dust-player-3`.** The four movement machines are
+f3-canonical; the sibling copies drop per the table. The shared fields have ONE
+definition (f3's). The deferred seam (portableStool + HeightOffset) is NOT part of
+the family's merge.
+
+| Machine | C# | f3 canonical (this branch) | g66 | e1 |
+| --- | --- | --- | --- | --- |
+| **Pulley** (FindPulley / CanMoveForwardOnRope / the Update rope block) | `:19644-19749` / `:24247-24266` / `:26116-26493` | `find_pulley` `:10198` / `tile_rope_kind` `:10185` / `can_move_forward_on_rope` `:10288` / `update_pulley_direction` `:10304` / `pulley_sidestep` `:10444` / `pulley_ride` `:10471`, the ride block `:7868`/`:8114`, the `:26135` cancel host, the `:26483` canCarpet refill, the releaseLeft/Right 7-tick latches | never ported (its carpet/wall lack the `!pulley_ride` gate) | never ported |
+| **Carpet** (CarpetMovement + the 934 grant + re-arms) | `:21842-21890` / `:15034-15037` / `:26100-26115` / `:22624` | `carpet_movement` `:10590` (the union shadow-read), grant `:5946`, call gate `:8097` (`!grappling && !tongued && !pulley_ride`), the `:26613-26617` run boost `:7748` + `:28066`/`:23537` step-up `:13180` | DROP `carpet_movement` `:10705` + grant `:5941` + the local consumer copies `:7727`/`:12895` (byte-identical, dedupe to f3) | no machine, no grant (`carpet_frame` rest-pin reader only — shared field, one definition) |
+| **WallClimb / Wallslide** (+ the 5 type-31 sites + the climbing grants) | `:21607-21840` / `:15038-15066` / `:14426-14444` / `Mount.cs:3002` | `wall_climb_movement` `:10057` / `wallslide_movement` `:10129` / `wall_probe` `:10003` / `wall_dust_suppressed` `:10021` / `queue_wall_dust` `:10038`, `WallDust` + `drain_wall_dust` `:953` (integer halves), grants `:5921-5946`/`:5657-5670`/`:5453`, the sliding consumers (`:20670`/`:20778`/`:20632`/`:26057`) | DROP `wall_climb_movement` `:10574` / `wallslide_movement` `:10650` / `queue_wall_dust` `:10548` + `player_trail_dust::drain_wall_dust` `:33` + grants (machines byte-identical, the corner form adopted INTO f3) | DROP `wall_climb_movement` `:10041` / `wallslide_movement` `:10137` / `climb_probe_solid` `:10125` + `player_dust2::wall_cling_puff` `:546` + `WallClingDust` `:536` (5 verified C# deviations, research/378 §1) |
+| **Stealth** (Shroomite + Vortex chain + the 2 ring sites + the toggle + set-loss) | `:25733-25899` / `:56775-56778` / `:16315-16321` | `update_stealth` `:9856` (the full else-if chain), `stealth: 1.0` spawn `:3311` (C# `:1562`), `key_double_tap_down` toggle `:12714`, the Always_Vortex disarm `:7064`, `VortexStealthDust` + `drain_vortex_stealth` `:991` | no stealth machine | DROP `update_vortex_stealth` `:10290` (vortex-arm-only, reset deferred) + `stealth: 0.0` spawn `:3063` (WRONG vs `:1562`) + `player_dust2::vortex_stealth_rings` `:1117` + `VortexRingDust` `:1106` (chain-identical drain, dedupe to f3) |
+
+**The shared dust-site drains (f3 canonical, e1/g66 duplicates drop):**
+`drain_stoned_dust` `:1033` (`:25226`), `drain_drown_bubble` `:1065` (`:23283`),
+`drain_splash_dust` `:1374` (`:27783`, integer half adopted), `drain_floor_dust`
+`:1114` (`:23790`, integer half + falling capture adopted), `drain_double_jump_dust`
+`:748` (`:21892`, sandstorm integer half + gore argument-draw adopted). e1's
+`stoned_burst`/`drown_bubble`/`liquid_splash`/`make_floor_dust`/`double_jump_visuals`
+(`player_dust2.rs`) + their host machines + drain calls DROP (research/378 §3).
+
+**The wing-glide drain — g66 canonical (f3's partial copy DROPS):** g66's
+`player_wing_dust::drain_wing_glide` `:263` is the complete wing lane (the
+`always_animated` snapshot field + the `wing_glide_frames` tick machine + the
+wings-4 Item13 cadence + the per-arm `noLightEmittance`). f3's
+`player_dust::drain_wing_glide` `:1223` is a partial duplicate (lacks the
+`always_animated` field + the frame machine) — DROP at the merge, with its
+`w4_f3_the_wings_10/4/26_*` witnesses. The `should_draw_wings` predicate fix is
+still adopted into f3 (the leg-frame consumer `:8715` is f3's, outside the drain).
+
+**Shared fields (one definition survives, f3's):** `carpet` / `can_carpet` /
+`carpet_time` / `carpet_frame` / `carpet_frame_counter`, `spiked_boots`,
+`sliding` / `slide_dir`, `stealth` / `shroomite_stealth` / `stealth_timer` /
+`set_vortex` / `vortex_stealth_active`, `pulley` / `pulley_dir`,
+`release_up` / `release_down` (both spawn false — the retire item-1 fix).
+
+**g66 keeps its own lanes** (no f3 overlap, NOT dropped): the wing dust
+(air/glide/frame, `player_wing_dust.rs`), the boot flames + Item13/Item24 cues
+(`player_boot_dust.rs`), the Rudolph trail (`player_trail_dust::drain_rudolph_trail`).
+Its DoubleJumpVisuals/FloorDust drains dedupe to f3's; the falling-flag head capture
++ the `should_draw_wings` fix are already adopted into f3.
+
+**e1 keeps its own lanes** (no f3/g66 overlap, NOT dropped): the pre-21654
+equip/vanity dust lanes (Yoraiz0r eye, GlassSlipper, Solar, teleport, regen
+sparkles, MowTheLawn) + hair-dye + manaHeat (`player_dust2.rs`), the falling-flag
+head capture + the drain execution order + the integer halves + the sandstorm gore
+argument-draw (all adopted into f3), the Hair Dye Remover / Vortex set-loss fidelity
+fixes (the latter already f3's).
+
+**Deferred with the seam (NOT part of the family's merge):** portableStool + the
+HeightOffset family — `docs/research/303-heightoffset-stool-seam.md` (the
+movement-lane task seed, §5: the lane-owner recommendation + the 6-step task-seed
+for the merger/future-wave). The FindPulley stool gate stays folded false until
+that seam lands.
+
+**The receipts:** research/66 (the f3 × g66 mutual receipt, both sides sign) +
+research/378 (the e1 drop-hunks + keep-lanes). The merger reads these + this bible;
+the reconcile is SEALED.
+
+**Witness ledger after the seal:** 56 `w4_f3_*` test fns (the retire's 54 + the
+seal's 2: the falling-capture + the sandstorm-gore-argument). The f3 wing-glide
+witnesses (3) are marked for drop with the partial copy at the merge. All WRITTEN
+NOT RUN (code-only).
+
