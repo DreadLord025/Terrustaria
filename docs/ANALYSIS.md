@@ -40724,3 +40724,92 @@ with the d20b-agreed dedupe (Item 2): ONE surviving 1080 machine.
 **Cross-note to d76:** your map's shape is kept; only the 1080 arm
 moves into the c10 hook — the cue payload your witness pins is
 byte-identical to the c10 hook's queue entry.
+
+## The dual-dungeons dither snake (W4-c30, 2026-11-21, code-only mode)
+The `DitherSnakePass` port — `crates/tr-core/src/worldgen/dither_snake.rs`
+(whole-file port of `DitherSnake.cs:10-199`, `DitherSnakePass.cs:13-145`,
+`DungeonControlLine.cs:9-285`) plus the setup slices the pass consumes:
+the dual style lists (`DungeonCrawler.cs:111-127` over the
+`DungeonGenerationStyles.cs` statics — the paint-relevant quintuples only),
+`CreatePotentialDungeonBounds` (`DungeonUtils.cs:2067-2087` with the
+`DungeonBounds.cs` clamped setters + `CalculateHitbox`), the Reset dual
+block's location rolls + safe constant (`WorldGen.cs:11441-11466`) and the
+4x4 Bayer matrix. Wired at the C# call-sites: the `EXECUTED_PIPELINE` slot
+between `liquids` (Lakes `:14556`) and `dungeon` (`:14757`) — the vanilla
+`AddGenerationPass` site `:14755` — behind the new
+`pass_registration_gate_closed` (the conditional registration `:14753`:
+`!Skyblock.denyAllGeneration && SecretSeed.dualDungeons.Enabled`; the port
+has no skyblock step, that arm is vacuous). The gate rides all three driver
+seams: `apply_step`, `GenerationRunner.advance`'s skip loop and
+`total_weight`.
+### Structure mapping
+- `DitherSnake : List<DungeonControlLine>` with per-line `Prev`/`Next`
+  object links → `Vec<ControlLine>` with `index ± 1` neighbours (the `Add`
+  override links consecutive entries only, `DitherSnake.cs:16-26`).
+- `Style` reference-equality on the shared statics → the `StyleId` enum's
+  equality. The style-0 entry is one per dungeon colour, so two lists'
+  style-0 entries never meet inside one snake.
+- The cached normals/cross-tangent (`CacheNormals`) are recomputed per
+  query — pure functions of the tangents, same values, no stored-state
+  drift.
+- `Vector2D` (double pair) → `Vec2D` with only the operations the family
+  uses; `Normalize` keeps the reciprocal-sqrt multiply (not a divide) for
+  bit-exactness (`Vector2D.cs:294-300`).
+- The `Utils.PlotLine` walk (`jump: true`) in `IsLineInsideBorder` is
+  inlined with the bool short-circuit (the shared `plot_line` plots without
+  a return value).
+- The `GetRoomPositionInsideBorder` orientation out-param → a
+  `(Vec2D, SnakeOrientation)` return.
+### Deliberate deviations (recorded)
+1. **Per-pass RNG isolation** — the C# draws the location rolls, colour
+   rolls, radius walks and edge frays on the shared `WorldGen.genRand`; the
+   port draws them all on `pass_rng("Dual Dungeons Dither Snake")` (the
+   house per-pass convention since M5-GEN-1). The relative draw order is
+   kept: locations (dungeon 0 then 1, Reset `:11443-11460`), colours
+   (dungeon 0 then 1, Dunes slot `:11519-11524`), then per-snake
+   calculate+paint (`DitherSnakePass.cs:26-30`). `NextFloat`'s port stand-in
+   is `next_f64` (the recorded fraction convention, `rng.rs`).
+2. **Fixed dungeon side** — the port's dungeon 0 side is Right (M5-BIOME
+   Decision #10, no `Next(2)` side draw); the dual block flips dungeon 1 to
+   Left (`WorldGen.cs:11454`). The beach anchors' extra-width arms already
+   assume this (the `Beaches`-stream Reset stand-in).
+3. **Sub-vanilla guard** — on a narrow world the location bands invert
+   (`Next(leftBeachEnd+50, 0.2·width)` with `0.2·width < leftBeachEnd+50`);
+   the C# throws, the port skips the pass body before any draw (the evil
+   pass's width-guard convention).
+4. **The border/room query half is dead code until W4-c32+** —
+   `position_along_snake`, the circle/line border tests and
+   `room_position_inside_border` compile citation-complete with
+   `#![allow(dead_code)]`; the dual-dungeon crawler is their consumer.
+   `GenVars.dither_snakes` stores the calculated chains
+   (`DitherSnakePass.cs:26/:29`) for that crawler.
+5. **The classic dungeon step still runs after the snake** — the port's
+   `step_dungeon` is the classic crawler; the dual-dungeon layout provider
+   (`DungeonType.DualDungeon`) is W4-c32's scope. On a dual world today the
+   snake paints both biome bands and the classic crawler then carves its
+   dungeon over the right band — the recorded intermediate state.
+### Determinism / hash contract
+Both classic pins (`SEED42_512`, `DEFAULT_WORLD`) are UNCHANGED by
+construction: the registration gate keeps the step out of a classic world
+entirely (no tiles, no draws, no weight) and the pass owns a fresh
+name-mixed stream, so no existing stream shifts. The dual-world witness
+`w4_c30_a_dual_dungeons_world_paints_the_snakes_deterministically` asserts
+a == b over `world_hash` + the tile grid, the 350-band paint, the Snow
+style signature (161/71) and the runner/one-shot equality; the module
+tests pin the Bayer literal, the style quintuples, the bounds clamps, the
+`CanPaint` algebra, the border band, `SetTangents`, the builder a == b and
+the paint-driver a == b.
+### Verification
+Code-only: every block re-read against the cited C# windows
+(`DitherSnake.cs`, `DitherSnakePass.cs`, `DungeonControlLine.cs` whole;
+`DungeonCrawler.cs:54-134`, `DungeonUtils.cs:2067-2087`,
+`DungeonBounds.cs:33-99/:310-322`, the `DungeonGenerationStyles.cs` statics,
+`DualDungeonUnbreakableWallTiers.cs:17-25`,
+`WorldGen.cs:11335-11466/:11505-11525/:14753-14755`,
+`GenVars.cs:302-314/:452`, the `Utils.cs`
+Lerp/Remap/GetLerpValue/RotatedBy/ToPoint/SafeNormalize/PlotLine windows,
+`Vector2D.cs` Length/Dot/Cross/Normalize, `Tile.cs:110-121`,
+`Main.cs:2790`, `GenPassNameID.cs:256`, the en-US Game.json message key).
+The 12 module tests + 2 pipeline tests + the repointed shape/hook tests are
+WRITTEN, NOT RUN — no cargo/rustc/tests/graphify invoked (task constraint);
+the gate runs them.

@@ -90,6 +90,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "evil" => PassMessage::Gen(72),
         // WorldGen.cs:14560.
         "liquids" => PassMessage::Gen(19),
+        // DitherSnakePass.cs:24 — the dual-dungeons snake pass's message.
+        "Dual Dungeons Dither Snake" => PassMessage::Key("WorldGeneration.DualDungeonsDitherSnake"),
         // DungeonCrawler.cs:346 — the pass's first progress message
         // (the later UpdateDungeonProgress rows are the faithful-pass work).
         "dungeon" => PassMessage::Key("WorldGeneration.DungeonVariableSetup"),
