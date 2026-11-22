@@ -389,7 +389,7 @@ fn gem_cave(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
 // --- the spider cave ---------------------------------------------------------
 
 /// `WorldGen.PlaceTight` (`WorldGen.cs:38303-38325`) → the stalactite.
-fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) {
+pub(crate) fn place_tight(world: &mut World, rng: &mut Rng, x: i32, y: i32, spiders: bool) {
     let blocked = world
         .tile(x, y)
         .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer);

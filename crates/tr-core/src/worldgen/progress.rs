@@ -100,10 +100,14 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "wavy caves" => PassMessage::Key("WorldGeneration.WavyCaves"),
         // WorldGen.cs:13127.
         "dirt to mud" => PassMessage::Gen(14),
+        // WorldGen.cs:13147 (W4-d102).
+        "silt" => PassMessage::Gen(15),
         // WorldGen.cs:13649.
         "ash blobs" => PassMessage::Gen(18),
         // WorldGen.cs:13186.
         "ores and gems" => PassMessage::Gen(16),
+        // WorldGen.cs:13611 (W4-d102).
+        "webs" => PassMessage::Gen(17),
         // WorldGen.cs:13945.
         "evil" => PassMessage::Gen(72),
         // WorldGen.cs:14560.
@@ -113,10 +117,16 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         // DungeonCrawler.cs:346 — the pass's first progress message
         // (the later UpdateDungeonProgress rows are the faithful-pass work).
         "dungeon" => PassMessage::Key("WorldGeneration.DungeonVariableSetup"),
+        // WorldGen.cs:14877 (W4-d102).
+        "mountain caves" => PassMessage::Gen(21),
         // WorldGen.cs:14899.
         "beaches" => PassMessage::Gen(22),
         // WorldGen.cs:15142.
         "gravitating sand" => PassMessage::Gen(24),
+        // WorldGen.cs:15054 (W4-d102).
+        "gems" => PassMessage::Gen(23),
+        // WorldGen.cs:15256 (W4-d102).
+        "clean up dirt" => PassMessage::Gen(25),
         // WorldGen.cs:15180.
         "ocean caves" => PassMessage::Gen(90),
         // WorldGen.cs:17845 (Jungle Trees).
@@ -172,6 +182,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "piles" => PassMessage::Gen(89),
         // WorldGen.cs:19460 — the Spawn Point pass sets only
         // progress.Set(1.0), no message (W4-d104): absent from the table.
+        // WorldGen.cs:15721 (W4-d102) — the same key as Living Trees.
+        "wood tree walls" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.
