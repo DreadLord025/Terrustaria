@@ -152,6 +152,11 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // The §8.1 stamp: the timer re-trips inside `update` can shift
         // trapdoors/gates — the entity gate reads the live boxes.
         stamp_wiring_entity_boxes(app);
+        // `BirthdayParty.PartyIsUp` at the `HitWireSingle` site
+        // (`Wiring.cs:2304`): the statue style-9 arm reads the live party
+        // state — mirror the app's `WorldEvents` book in before the step.
+        app.wiring
+            .set_party_is_up(crate::world_events::party_is_up(&app.world_events));
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
         // every living player/NPC standing in a pad's 48×48 box moves to the
@@ -284,11 +289,19 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 // field borrows). It spawns once the boulder family (aiStyle
                 // 25) carries a `proj_data` row, and drops with the ANALYSIS
                 // note until then (the not-yet-ported-family path).
+                // Batch-H (research/365 §4, 367 §2 flag 7): the −15.5 half-box
+                // lift is applied HERE — `NewProjectile` converts the centre
+                // anchor to top-left (`Projectile.cs:10876-10877`, the 31×31
+                // boulder box `:1835-1836`), while `spawn_with_data_ai` takes
+                // top-left. d3's direct-spawn arm is the keep-one when d3
+                // lands (NOT in this batch); until then e21's seam carries
+                // the same faithful conversion. Do NOT widen
+                // `spawn_device_kind` — the blast/trap families share it.
                 tr_core::wiring::StatueSpawn::Boulder { x, y } => {
                     device_shots.push(tr_core::wiring::DeviceShot {
                         kind: 99,
-                        x: x as f32,
-                        y: y as f32,
+                        x: x as f32 - 15.5,
+                        y: y as f32 - 15.5,
                         vx: 0.0,
                         vy: 0.0,
                         damage: 70,
@@ -565,6 +578,10 @@ fn statue_npc(npc_id: i16, x: i32, y: i32) -> Option<Npc> {
         21 => NpcKind::Zombie,
         24 => NpcKind::FireImp,
         42 => NpcKind::Hornet,
+        // The bunny statue's pair (`Wiring.cs:2301-2313`): 46 plain, 540
+        // while `BirthdayParty.PartyIsUp` — the engine picks the id.
+        46 => NpcKind::Bunny,
+        540 => NpcKind::PartyBunny,
         49 => NpcKind::CaveBat,
         55 => NpcKind::Goldfish,
         58 => NpcKind::Piranha,
@@ -1351,6 +1368,58 @@ mod tests {
         let mut app = app_with(105, 66 * 36, 0); // style 66 → the Wraith (82)
         trip_and_tick(&mut app);
         assert!(app.npcs.is_empty(), "the unported kind drops");
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_statue_spawns_the_plain_bunny() {
+        // The Bunny statue = style 9 (`Wiring.cs:2301-2313`): no party → the
+        // plain bunny 46 at the verbatim bottom-center anchor (y − 12). The
+        // kind is now rostered (`NpcKind::Bunny`, the 18x20 aiStyle-7 critter).
+        let mut app = app_with(105, 9 * 36, 0);
+        trip_and_tick(&mut app);
+        assert_eq!(app.npcs.len(), 1, "the bunny spawns");
+        let npc = &app.npcs[0];
+        assert_eq!(npc.kind, NpcKind::Bunny);
+        assert_eq!(npc.kind.cs_id(), 46);
+        let (w, h) = npc.kind.size();
+        let anchor_x = 10.0 * 16.0 + 16.0;
+        let anchor_y = (20.0 + 3.0) * 16.0 - 12.0;
+        assert!((npc.x - (anchor_x - w * 0.5)).abs() < 0.01, "bottom-center x");
+        assert!((npc.y - (anchor_y - h)).abs() < 0.01, "bottom-center y");
+        assert!(npc.spawned_from_statue, "Wiring.cs:2475");
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_statue_spawns_the_party_bunny_while_the_party_is_up() {
+        // `BirthdayParty.PartyIsUp` (`Wiring.cs:2304-2307`): the party bunny
+        // 540 replaces the plain bunny 46. The app mirrors the party state in
+        // before the wiring step (`set_party_is_up`), so the request id — and
+        // the spawned kind — follow it.
+        let mut app = app_with(105, 9 * 36, 0);
+        app.world_events.manual_party = true;
+        trip_and_tick(&mut app);
+        assert_eq!(app.npcs.len(), 1, "the party bunny spawns");
+        let npc = &app.npcs[0];
+        assert_eq!(npc.kind, NpcKind::PartyBunny);
+        assert_eq!(npc.kind.cs_id(), 540);
+        assert!(npc.spawned_from_statue, "Wiring.cs:2475");
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_group_cap_counts_both_bunny_kinds() {
+        // `NPC.MechSpawn`'s bunny group (`NPC.cs:7443-7449`): 46/540/303/337
+        // count together. Ten live bunnies (the global cap) block the statue
+        // even though the request is the party bunny 540 and the live ones
+        // are the plain 46 — the group, not the exact type.
+        let mut app = app_with(105, 9 * 36, 0);
+        app.world_events.manual_party = true;
+        for i in 0..10 {
+            let mut npc = npc_of(NpcKind::Bunny, 400.0 + i as f32 * 4.0, 400.0);
+            npc.spawned_from_statue = true;
+            app.npcs.push(npc);
+        }
+        trip_and_tick(&mut app);
+        assert_eq!(app.npcs.len(), 10, "the bunny-group cap blocks the 11th");
     }
 
     #[test]

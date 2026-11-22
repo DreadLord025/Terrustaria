@@ -864,6 +864,15 @@ fn portrait_data(
         (NpcKind::Goldfish, _) => (sheet_i, 18.0, 20.0, 18.0, white),
         (NpcKind::Piranha, _) => (sheet_i, 20.0, 18.0, 20.0, white),
         (NpcKind::Shark, _) => (sheet_i, 24.0, 100.0, 24.0, white),
+        // W4-e21 — the bunny pair's portrait: the 18x20 `SetDefaults` box
+        // (`NPC.cs:9338-9339`) over the 7-row NPC_46/NPC_540 strips; the
+        // frame height rides the sheet itself (the Goldfish's shape).
+        (NpcKind::Bunny | NpcKind::PartyBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
         // The worm segments: the square sheets.
         (NpcKind::DevourerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::DevourerBody, _) => (sheet_i, 22.0, 22.0, 22.0, white),

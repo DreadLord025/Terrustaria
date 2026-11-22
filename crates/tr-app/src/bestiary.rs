@@ -678,6 +678,26 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Shark",
     },
+    // W4-e21 — the bunny statue's pair: `BestiaryEntry.Critter(46)` /
+    // `Critter(540)` (the automated populator, `BestiaryDatabaseNPCsPopulator
+    // .cs:851-868` — `CountsAsACritter`); the 540 name rides the vanilla
+    // `Lang.GetNPCName` ("Party Bunny"), the 46 "Bunny".
+    BestiaryEntryDef {
+        credit_id: "Bunny",
+        net_id: 46,
+        kind: NpcKind::Bunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "PartyBunny",
+        net_id: 540,
+        kind: NpcKind::PartyBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Party Bunny",
+    },
     BestiaryEntryDef {
         credit_id: "DevourerHead",
         net_id: 7,

@@ -3335,6 +3335,11 @@ fn npc_seed(
         crate::npc::NpcKind::Goldfish
         | crate::npc::NpcKind::Piranha
         | crate::npc::NpcKind::Shark => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        // W4-e21 — the bunny pair (46/540): the surface critter plants its
+        // feet on the column surface like the swimmers' seed (the net state
+        // overwrites the position below).
+        crate::npc::NpcKind::Bunny
+        | crate::npc::NpcKind::PartyBunny => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // The worm segments: the net spawns each link standalone (the chain
         // links rebuild through the init — the head; a lone body/tail dies
         // finding no leader — the net-chain sync lands with the netglue

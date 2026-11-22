@@ -58,6 +58,16 @@ pub enum NpcKind {
     EaterOfSouls,
     /// `NPCID.Hornet` (42) — the jungle hover (`aiStyle 5`).
     Hornet,
+    /// `NPCID.Bunny` (46) — the passive surface critter (`aiStyle 7`, the
+    /// town-critter hop): 18x20, dmg 0, def 0, 5 HP, catchItem 2019,
+    /// NPCHit1/NPCDeath1 (`NPC.cs:9336-9347`); `npcFrameCount[46]` = 7
+    /// (`Main.cs:67088`). W4-e21: the bunny statue's plain spawn.
+    Bunny,
+    /// `NPCID.PartyBunny` (540) — the party bunny: the SAME `SetDefaults`
+    /// row as 46 (`NPC.cs:9336-9347`), `npcFrameCount[540]` = 7
+    /// (`Main.cs:67138`), its own NPC_540 sheet. W4-e21: the bunny statue
+    /// spawns it while `BirthdayParty.PartyIsUp` (`Wiring.cs:2304-2307`).
+    PartyBunny,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
     /// `NPCID.GoblinThief` (27) — the invasion runner (`NPC.cs`: 18×38,
@@ -3530,6 +3540,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-e21 — the bunny pair writes NO knockBackResist row
+            // (`NPC.cs:9336-9347`), so the class default 1f stands
+            // (`:8533`); the stock `_ => 0.4` below never sees them.
+            NpcKind::Bunny | NpcKind::PartyBunny => 1.0,
             _ => 0.4,
         }
     }
@@ -3730,6 +3744,8 @@ impl Npc {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 2,
             NpcKind::Shark => 2,
+            // W4-e21 — the bunny pair: defense 0 (`NPC.cs:9342`).
+            NpcKind::Bunny | NpcKind::PartyBunny => 0,
             // The worms: the head 2/0/2, the body 6/4/4, the tail 10/6/8.
             NpcKind::DevourerHead => 2,
             NpcKind::DevourerBody => 6,
@@ -4118,6 +4134,10 @@ impl Npc {
             NpcKind::Goldfish => 0.0,
             NpcKind::Piranha => 50.0,
             NpcKind::Shark => 400.0,
+            // W4-e21 — the bunny pair: no value row (the `SetDefaults`
+            // head's `value = 0f`, `NPC.cs:8544`; the catch item 2019
+            // rides the critter-catch work).
+            NpcKind::Bunny | NpcKind::PartyBunny => 0.0,
             // The worms: the per-segment coin value (`:8763`'s 140, `:8850`'s
             // 40, `:8903`'s 800 — the body/tail rows carry the same value).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 140.0,
@@ -5752,6 +5772,12 @@ impl Npc {
             | NpcKind::DyeTrader
             | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
+            // W4-e21 — the bunny pair (46/540, aiStyle 7): the town-critter
+            // hop rides the port's aiStyle-7 walker stand-in (`update_guide`,
+            // the Guide precedent); the faithful `AI_007_TownEntities`
+            // TownCritter arm (`NPC.cs:53730-53760`/`:54191-54194`) is the
+            // M4-NPC critter wave's (ANALYSIS "The bunny statue's pair").
+            NpcKind::Bunny | NpcKind::PartyBunny => self.update_guide(world, dt),
             NpcKind::QueenBee => {
                 unreachable!("aiStyle 43 rides the style axis (S1-D-3 W-3)")
             }
@@ -8568,6 +8594,41 @@ impl Npc {
                 // town machine — 26 rows).
                 self.humanoid_town_frame();
             }
+            // W4-e21 — the bunny pair's `case 46 : case 540` group
+            // (`NPC.cs:76851-76904`): grounded latches the sprite direction,
+            // the idle snaps to row 0, the hop walks the `|vx| + 1`
+            // accumulator advancing every >6 and wrapping at
+            // `Main.npcFrameCount[46/540]` = 7 (`Main.cs:67088`/`:67138`);
+            // the air pins row 4 rising / row 6 falling.
+            NpcKind::Bunny | NpcKind::PartyBunny => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() + 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 7 {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
             NpcKind::GolemHeadFree => {
                 // `FindFrame`'s case 249 (`NPC.cs:72963-72976`): the mouth
                 // row reads the STORED `localAI[0]` flag (the arm writes
@@ -10047,7 +10108,10 @@ impl Npc {
     /// one-tile obstacles. The chase/doors/talk arms land with their
     /// systems.
     fn update_guide(&mut self, world: &World, _dt: f32) {
-        let (w, h) = NpcKind::Guide.size();
+        // W4-e21: the kind's own box — every town NPC is 18x40 (the Guide's
+        // size, unchanged), but the bunny pair riding this stand-in is 18x20
+        // (`NPC.cs:9338-9339`), so the collision reads `self.kind.size()`.
+        let (w, h) = self.kind.size();
         // The wander: a walking pace with the random turn every few
         // seconds (`ai[3]`'s idle timer shape).
         self.anim += 1.0;
@@ -18602,6 +18666,12 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-e21 — the bunny pair's render-key terms: the port-local
+            // protocol ids 229/237 (the vanilla 46 is the WallOfFlesh's key
+            // above — the G6 key stays injective; the wyvern renumber's
+            // precedent). `cs_id` keeps the real 46/540 for the caps.
+            NpcKind::Bunny => 229,
+            NpcKind::PartyBunny => 237,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -20887,6 +20957,73 @@ mod tests {
         assert!(shark.x > start + 10.0, "the shark closed in");
         let speed = (shark.vx * shark.vx + shark.vy * shark.vy).sqrt();
         assert!(speed > 1.0, "the chase reached speed ({speed})");
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_pair_rows_match_setdefaults() {
+        // `NPC.cs:9336-9347` — 46/540 share ONE row: 18x20, aiStyle 7, dmg 0,
+        // def 0, 5 HP, NPCHit1/NPCDeath1, catchItem 2019 (the catch work), no
+        // value/knockBackResist rows (the head's 0 / 1f, `:8544`/`:8533`).
+        for kind in [NpcKind::Bunny, NpcKind::PartyBunny] {
+            assert_eq!(kind.size(), (18.0, 20.0), "{kind:?} box");
+            assert_eq!(kind.ai_style(), 7, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} HitSound");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} DeathSound");
+            assert!(!kind.no_gravity(), "{kind:?} gravity");
+            // The Npc-level accessors (defense/value/kb read the kind tables).
+            let n = bare(kind);
+            assert_eq!(n.defense(), 0, "{kind:?} defense");
+            assert_eq!(n.value(), 0.0, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), 1.0, "{kind:?} kb (head default)");
+        }
+        assert_eq!(NpcKind::Bunny.cs_id(), 46);
+        assert_eq!(NpcKind::PartyBunny.cs_id(), 540);
+        // The protocol round-trip (the port-local 229/237 holes).
+        assert_eq!(NpcKind::from_u16(NpcKind::Bunny.to_u16()), Some(NpcKind::Bunny));
+        assert_eq!(
+            NpcKind::from_u16(NpcKind::PartyBunny.to_u16()),
+            Some(NpcKind::PartyBunny)
+        );
+    }
+
+    #[test]
+    fn w4_e21_the_bunny_find_frame_hops_and_pins_the_air_rows() {
+        // `NPC.FindFrame`'s `case 46 : case 540` group (`NPC.cs:76851-76904`):
+        // grounded idle snaps to row 0; the grounded hop walks the `|vx| + 1`
+        // accumulator advancing every >6 and wrapping at 7; the air pins row 4
+        // rising / row 6 falling. Both kinds share the arm.
+        for kind in [NpcKind::Bunny, NpcKind::PartyBunny] {
+            let mut n = bare(kind);
+            // Grounded idle: vx 0, vy 0 → row 0, counter 0.
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.frame = 3;
+            n.frame_counter = 5.0;
+            n.find_frame();
+            assert_eq!(n.frame, 0, "{kind:?} idle row 0");
+            assert_eq!(n.frame_counter, 0.0, "{kind:?} idle counter reset");
+            // Grounded hop: vx 1 → counter += 2 each tick; after 4 ticks the
+            // counter passes 6 and the row advances.
+            n.vx = 1.0;
+            n.vy = 0.0;
+            n.frame = 0;
+            n.frame_counter = 0.0;
+            for _ in 0..4 {
+                n.find_frame();
+            }
+            assert!(n.frame >= 1, "{kind:?} the hop advanced ({})", n.frame);
+            // Rising: vy < 0 → row 4, counter 0.
+            n.vy = -2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 4, "{kind:?} rising row 4");
+            assert_eq!(n.frame_counter, 0.0);
+            // Falling: vy > 0 → row 6.
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 6, "{kind:?} falling row 6");
+        }
     }
 
     #[test]
@@ -23670,7 +23807,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 272] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23949,6 +24086,9 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-e21 — the bunny statue's pair (46/540).
+        NpcKind::Bunny,
+        NpcKind::PartyBunny,
     ];
 
     #[test]
@@ -27560,8 +27700,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            272,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-e21's bunny pair 46/540)"
         );
         assert!(
             covered > 43,
