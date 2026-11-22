@@ -9,6 +9,7 @@ pub mod composite;
 pub mod font_atlas;
 pub mod gpu;
 pub mod post;
+pub mod quality_light;
 pub mod sprite;
 pub mod targets;
 pub mod water_mask;

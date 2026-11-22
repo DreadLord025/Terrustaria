@@ -30,6 +30,12 @@ pub(crate) mod special_tiles;
 // is the family's merge step.
 pub(crate) mod te_furniture;
 pub(crate) mod tile_cracks;
+// W4-g28 pass 1: UNWIRED Draw main-pass orchestration (TileDrawing.cs:465-
+// 742 head/tail, GetScreenDrawArea :6549-6586, ClearCachedTileDraws :6588-
+// 6599, the :504-506 loop margins, the frozen PostDrawTiles order :414-442)
+// — the draw_tiles seam is contested by the in-flight pass siblings
+// (g29-g32 own passes 2-5); wiring is the family's merge step.
+pub(crate) mod tile_pass;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
