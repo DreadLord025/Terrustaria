@@ -3,7 +3,9 @@
 Status: ADJUDICATION EXECUTED + ITEM-4 PORTED, WIRED (the concurrent
 writer's batch-2 pass adopted this session's module) + the timed-row FIX
 (this session's follow-up commit); the walker batches are the concurrent
-writer's (see §2).
+writer's (see §2). **BAND COMPLETE (§6): batch 5 landed the last five
+kinds with the Lead v640 ID correction (795/796), bijection ALL PINS
+HOLD — roster 297, d36 27/27 (Vampire 159 g8-owned@762 excluded).**
 
 ## 1. The Lead adjudication (E4-KINDS-CONTINUE item 2) — EXECUTED
 
@@ -26,9 +28,13 @@ GiantTortoise 770 / IceTortoise 771, tip `8c5839b03`). Ruling:
   PigronCrimson 180 → 783,
   FaceMonster 181 → 784, SnowFlinx 185 → 785, ArmoredViking 197 → 786,
   Lihzahrd 198 → 787, LihzahrdCrawler 199 → 788, HeadacheSkeleton 201 → 789,
-  MisassembledSkeleton 202 → 790, PantlessSkeleton 203 → 791,
-  SpikedJungleSlime 204 → 792, (Moth 205 → 793 — landed), IcyMerman 206 →
+  MisassembledSkeleton 202 → 790, PantlessSkeleton 203 → ~~791~~ **795**,
+  SpikedJungleSlime 204 → ~~792~~ **796**, (Moth 205 → 793 — landed), IcyMerman 206 →
   **794**. Band headroom: R7's 767-816 ceiling holds (794 ≤ 816); i16-safe.
+  **ID CORRECTION (Lead v640, see §6): the 791/792 assignments above are
+  VOID — d37 reserves 791 → Crab / 792 → DungeonGuardian, both already in
+  main via d34. The landed slots are 795 (PantlessSkeleton) / 796
+  (SpikedJungleSlime); max id 796 ≤ 816.**
 - **The stash is PRESERVED, not landed** (`d36-inflight-4` intact; the
   colliding band claim is void, the stat rows/FindFrame arms are the
   re-port's source material). Wolf landed first at the adjudicated slot:
@@ -204,3 +210,155 @@ Remaining unclaimed (**5**): the bone trio 201/202/203, SpikedJungleSlime
 more — check the tip before taking rows (the AGENTS.md branch-claim
 rule). The next slots ride the §1 definitive table (HeadacheSkeleton 201
 → 789, …, IcyMerman 206 → **794**).
+
+## 6. The band-COMPLETE receipt (E4 batch 5, the SEAL — 2026-11-22)
+
+The LAST five kinds are landed on this branch and the d36 band is
+**SEALED**: `python tools/_d36_bijection.py` → **ALL PINS HOLD — roster
+297, d36 27/28, max id 796** (297/297/297 to/from/enum, ALL_KINDS
+297/297/297, s1_f_3 297, all 12 hard exhaustive sites + bestiary
+entry/fold coverage PASS). The 28th slot is **Vampire 159, g8-OWNED
+@762** (verified §2 against `origin/task/W4-g8-npc-kind-wire-1`'s pushed
+`Vampire => 388` cs row / 762 protocol row) — excluded by design, so the
+wave's port count is **27/27**, not the brief's 28.
+
+### The ID CORRECTION (Lead v640) — §1's 791/792 rows are VOID
+
+The d37 tables reserve protocol **791 → Crab** and **792 →
+DungeonGuardian**, and both kinds are **ALREADY IN MAIN via d34**. The
+§1 definitive table's old `PantlessSkeleton 203 → 791` /
+`SpikedJungleSlime 204 → 792` assignments are therefore VOID; batch 5
+uses the corrected slots (verified free pre-edit: no `to_u16` arm
+carried 795/796, and 791/792 stay unclaimed on this branch —
+`from_u16(791) == None`, `from_u16(792) == None` pinned in the
+witnesses):
+
+| kind | vanilla | protocol | note |
+| --- | --- | --- | --- |
+| HeadacheSkeleton | 201 | **789** | §1 slot, unchanged |
+| MisassembledSkeleton | 202 | **790** | §1 slot, unchanged |
+| PantlessSkeleton | 203 | **795** | CORRECTED (791 = d37 Crab) |
+| SpikedJungleSlime | 204 | **796** | CORRECTED (792 = d37 DungeonGuardian) |
+| IcyMerman | 206 | **794** | §1 slot, unchanged |
+
+`render_key` is a separate hash space: the five take the next free
+injective slots **572-576** (571 was batch 4's max; scripted-verified
+each appears exactly once).
+
+### The five kinds (SetDefaults VERBATIM + the wiring)
+
+- **The bone trio 201/202/203** (`NPC.cs:11572-11584`/`:11585-11597`/
+  `:11598-11610`): 18x40 aiStyle 3; dmg 20/18/22, def 12/8/8, HP
+  55/65/60, kb 0.5, value 130/120/110, NPCHit2/NPCDeath2. All ride
+  `update_skeleton` on the ladder's EXISTING num83 rows — the OWN caps
+  **1.1/0.9/1.2** (`:57625-57636`, already in `npc_ai3_speeds`) + the
+  `:57693` `1 + (1 - scale)` factor (1 at the stock scale). FindFrame's
+  humanoid-group case list (`:68579-68581`): 201/202 the 15-row strips
+  with the air row **0** (`:69647` lists 201/202), 203 the 16-row strip
+  with the air row **1** (the list names 201/202, **NOT 203** — the
+  Lead's row-0 correction). All three ARE in the `:57340` 1000-roll
+  moan list (the ambient gate admits them; the moan arms were already
+  live) and in the `:59996` flag24 door-bash list (the zombie-scoped
+  fighter scan's remainder keeps the bash unported for them, the
+  batch-4 note). Immunities {20} (`NPCID.cs:7249`/`:7256`/`:7263`).
+  Death gores 265/267+43/44, 268+43/44, 269+43/266
+  (`:88569-88596`) — the gore/dust wave's remainder.
+- **SpikedJungleSlime 204** (`NPC.cs:11611-11624`): 24x18 aiStyle 1,
+  dmg 28, def 8, HP 65, **scale 1.15**, **alpha 50**, value 300,
+  NPCHit1/NPCDeath1, NO kb row (the head's 1f default `:8533`). Rides
+  `update_slime` (the wave-A routing) + the wave-A FindFrame bridge —
+  the slime-group case list (`:70810`) over the 2-row strip
+  (`FindFrameKind::SpikedJungleSlime` added to all four module sites +
+  the count pin). The scale rides `Npc::scale` (the ToxicSludge
+  precedent) and the draw's `scaled_anchor`; the alpha rides the ctor
+  row. The `AI_001` shooter block (`:61386-61439`: flag3-true + the
+  80-tick expert five-spike fan / the 65-tick classic lob, the 176
+  JungleSpike at dmg 13) is the pure `npc_ai_slime` module's census —
+  the flag3 row keeps the machine whole, the shots land with the
+  module's wiring swap (the 184 precedent). The **176 JungleSpike**
+  `proj_data` row IS landed (`Projectile.cs:2621-2629`: 6x6 aiStyle 1
+  penetrate −1 alpha 255) + its `ai_arrow` fade hook
+  (`:55109-55128`: alpha −50, the first-tick ai[1] latch + the Item17
+  cue on `wants_sound`; the dust 22 skipped). Immunity {20}
+  (`NPCID.cs:7270`). Hit/death dust 4 in the (149,208,104) tint
+  (`:85010-85026`) — the gore/dust wave's remainder.
+- **IcyMerman 206** (`NPC.cs:11640-11653`): 18x40 aiStyle 3, dmg 60,
+  def 30, HP 280, kb 0.5, value 500, NPCHit1/NPCDeath1, coldDamage (no
+  port slot field — the IceTortoise note). Rides the aiStyle-3 shooter
+  block on `update_martian_shooter` (the pirate/martian precedent):
+  the **50-tick** stop timer (`:59131-59134`), the **EXACT-half fire**
+  (`:59208` `ai[1] == num163`, 25 — kind-gated so the older kinds keep
+  their window shape), the **7-speed 177 IcewaterSpit at dmg 37**
+  (`:59219-59222`/`:59408-59411`/`:59462-59465`), the **centre −10
+  chaser anchor** (`:59284-59287`, both the aim's +10 − |dx|×0.1 lead
+  drop and the spawn Y), the ±40 integer jitter with NO rescale
+  (`:59392-59396`), the `ai[2] <= 0` + grounded stop-entry gate
+  (`:59634`) and the default **1/0.07/0.8** walk (`:59717-59719`; the
+  ladder declines 206 via `shooter_excluded`, `:58322`). FindFrame
+  case 206 (`:76060-76098`) over the **20-row** strip: the grounded
+  facing flip, the ai[2] attack-row hold, the walk band rows 6..19
+  (|vx|×3 clock, >6 advance, wrap at the strip's end back to 6), the
+  air row 0. The **177 IcewaterSpit** `proj_data` row IS landed
+  (`Projectile.cs:2630-2640`: 10x10 aiStyle 28 penetrate −1 alpha 255,
+  coldDamage no slot field — the ai_frost_bolt flight). Immunity
+  {44,324} (`NPCID.cs:7284`, NO 20); in NEITHER AI_003 moan list (the
+  walker gate excludes it, the shooter precedent). The flag8-false row
+  (`:57072`) rides the zombie-scoped fighter-scan remainder; the
+  hit/death dust 137 + gores 273-275 (`:86828-86847`) the gore/dust
+  wave's; the 177's Chilled 1500 / Frozen Next(30,120) rolls
+  (`Projectile.cs:12366-12373`) the player-debuff layer's unported
+  hit-time draws (the QUEEN_BEE_STINGER precedent).
+
+### The surfaces (all scripted-verified)
+
+Bestiary: five OWN entries (no Hide row — `NPCID.cs:2592-2618` carries
+Velocity=1f only for 201/202/203/206, 204 has no draw-modifier row; no
+`ContentSamples` fold), the bone trio all display "Skeleton" (en-US
+NPCs.json); populator refs Caverns 201/202/203
+(`BestiaryDatabaseNPCsPopulator.cs:1469-1471`), UndergroundJungle 204
+(`:1132`), UndergroundSnow 206 (`:1529`). ENTRIES 270 → **275** unique
+credits. Sheets: NPC_201/202/203/204/206 in STATIC_SHEET_NAMES,
+BESTIARY_NPC_SHEET_IDS 202 → **207** == the parallel vec order
+(scripted), D36_SHEETS 22 → **27**. Cues: NPCHit2/NPCDeath2 (trio) +
+NPCHit1/NPCDeath1 (204/206) — all four banks already ship (no new
+audio rows). netglue: the trio + 206 the cave-walker seed, 204 the
+wave-A surface seed. ALL_KINDS + s1_f_3 **292 → 297**; `update_kind_ai`
+exactly-one-arm per kind (297, no dups, scripted). 5 witnesses WRITTEN
+NOT RUN (`w4_d36_batch5_{headache_skeleton,misassembled_skeleton,
+pantless_skeleton,spiked_jungle_slime,icy_merman}_*`).
+
+### The 27-kind d36 roster (the sealed band)
+
+| # | kind | vanilla | protocol | batch |
+| --- | --- | --- | --- | --- |
+| 1 | ToxicSludge | 141 | 767 | b0 |
+| 2 | Penguin | 148 | 768 | b0 |
+| 3 | PenguinBlack | 149 | 769 | b0 |
+| 4 | GiantTortoise | 153 | 770 | b0 |
+| 5 | IceTortoise | 154 | 771 | b0 |
+| 6 | Wolf | 155 | 772 | E4 |
+| 7 | Frankenstein | 162 | 773 | E4b |
+| 8 | BlackRecluse | 163 | 774 | E4 batch 2 |
+| 9 | SwampThing | 166 | 775 | E4 batch 2 |
+| 10 | UndeadViking | 167 | 776 | E4 batch 2 |
+| 11 | CorruptPenguin | 168 | 777 | E4 batch 3 |
+| 12 | PigronCorruption | 170 | 778 | E4 batch 3 |
+| 13 | PigronHallow | 171 | 779 | E4 batch 3 |
+| 14 | Crimera | 173 | 781 | hover |
+| 15 | MossHornet | 176 | 782 | hover |
+| 16 | PigronCrimson | 180 | 783 | E4 batch 3 |
+| 17 | FaceMonster | 181 | 784 | E4 batch 3 |
+| 18 | SnowFlinx | 185 | 785 | E4 batch 4 |
+| 19 | ArmoredViking | 197 | 786 | E4 batch 4 |
+| 20 | Lihzahrd | 198 | 787 | E4 batch 4 |
+| 21 | LihzahrdCrawler | 199 | 788 | E4 batch 4 |
+| 22 | HeadacheSkeleton | 201 | 789 | E4 batch 5 |
+| 23 | MisassembledSkeleton | 202 | 790 | E4 batch 5 |
+| 24 | PantlessSkeleton | 203 | **795** | E4 batch 5 (corrected) |
+| 25 | SpikedJungleSlime | 204 | **796** | E4 batch 5 (corrected) |
+| 26 | Moth | 205 | 793 | hover |
+| 27 | IcyMerman | 206 | 794 | E4 batch 5 |
+
+Excluded: **Vampire 159 → 762 (g8-owned)**. Free in the band: 780 (the
+batch-3 gap), 791/792 (d37-reserved, in main via d34). Max id 796 ≤
+R7's 816 ceiling; i16-safe. **The d36 band is COMPLETE — 27/27.**

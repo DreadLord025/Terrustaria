@@ -684,6 +684,16 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | ArmoredViking
             | Lihzahrd
             | LihzahrdCrawler
+            // W4-d36 E4 batch 5 — the bone trio ride the same plain
+            // `update_skeleton` walker, so their `ai[3]` is free for the
+            // idle counter; all three ARE in the `:57340` 1000-roll moan
+            // list (LIVE in `fighter_ambient_moans`). The Icy Merman
+            // rides the shooter machine (the pirate/martian precedent —
+            // the shooters stay OUT of this gate) and is in NEITHER moan
+            // list, so it keeps no arm here.
+            | HeadacheSkeleton
+            | MisassembledSkeleton
+            | PantlessSkeleton
     )
 }
 

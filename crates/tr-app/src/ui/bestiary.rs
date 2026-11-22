@@ -1734,6 +1734,33 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // W4-d36 E4 batch 5 portraits — the sheet's frame height (the
+        // vanilla strips: 201/202 = 15, 203 = 16, 204 = 2, 206 = 20,
+        // `Main.cs:67104`) with the padded box width (the b0 convention).
+        (NpcKind::HeadacheSkeleton | NpcKind::MisassembledSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::PantlessSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        (NpcKind::SpikedJungleSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::IcyMerman, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 22.0, h, white)
+        }
     }
 }
 

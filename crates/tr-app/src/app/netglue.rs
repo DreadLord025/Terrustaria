@@ -3185,6 +3185,9 @@ fn npc_seed(
         | crate::npc::NpcKind::IceSlime
         | crate::npc::NpcKind::Crimslime
         | crate::npc::NpcKind::SpikedIceSlime
+        // W4-d36 E4 batch 5 — the Spiked Jungle Slime (aiStyle 1) plants
+        // its feet on the column surface like the wave-A slimes.
+        | crate::npc::NpcKind::SpikedJungleSlime
         | crate::npc::NpcKind::UmbrellaSlime
         | crate::npc::NpcKind::DoctorBones
         | crate::npc::NpcKind::TheGroom
@@ -3593,7 +3596,14 @@ fn npc_seed(
         | crate::npc::NpcKind::SnowFlinx
         | crate::npc::NpcKind::ArmoredViking
         | crate::npc::NpcKind::Lihzahrd
-        | crate::npc::NpcKind::LihzahrdCrawler => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::LihzahrdCrawler
+        // W4-d36 E4 batch 5 — the bone trio / Icy Merman (aiStyle 3)
+        // plant their feet like the fighters above (the net state
+        // overwrites below).
+        | crate::npc::NpcKind::HeadacheSkeleton
+        | crate::npc::NpcKind::MisassembledSkeleton
+        | crate::npc::NpcKind::PantlessSkeleton
+        | crate::npc::NpcKind::IcyMerman => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::Penguin
         | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
         // W4-d36 E4 batch 3 — the pigron trio (aiStyle 2, the phase flyer)

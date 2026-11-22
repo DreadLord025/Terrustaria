@@ -927,6 +927,17 @@ pub const INFERNO_BLAST: u16 = 296;
 pub const VENOM_FANG: u16 = 355;
 /// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
 pub const FROST_BOLT: u16 = 359;
+/// `ProjectileID.JungleSpike` (176, `ProjectileID.cs:906`) — the Spiked
+/// Jungle Slime's hostile spike (`NPC.cs:61415`/`:61435`, the AI_001
+/// shooter block): 6x6, aiStyle 1, hostile, `penetrate = -1`, alpha 255
+/// (`Projectile.cs:2621-2629`). W4-d36 E4 batch 5.
+pub const JUNGLE_SPIKE: u16 = 176;
+/// `ProjectileID.IcewaterSpit` (177, `ProjectileID.cs:908`) — the Icy
+/// Merman's hostile spit (`NPC.cs:59592`, the aiStyle-3 shooter block):
+/// 10x10, aiStyle 28, hostile, `penetrate = -1`, alpha 255, coldDamage
+/// (no port slot field — the module doc), `Projectile.cs:2630-2640`.
+/// W4-d36 E4 batch 5.
+pub const ICEWATER_SPIT: u16 = 177;
 /// The fishing bobbers (S1-P-i35): the plain pole family 360-366
 /// (`ProjectileID.BobberWooden`..`BobberSittingDuck`), the Fleshcatcher /
 /// Hotline 381/382, the Blood rod 760 and the Scarab 775
@@ -2753,6 +2764,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:4497-4507` — the frost staff's bolt: 14x14, aiStyle 28,
             // alpha 255, `penetrate = 2` (coldDamage — no slot field yet).
             FROST_BOLT => (14.0, 14.0, 28, 2, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d36 E4 batch 5 — `Projectile.cs:2621-2629`: the Spiked
+            // Jungle Slime's spike (176): 6x6, aiStyle 1, hostile,
+            // `penetrate = -1`, alpha 255, the stock tileCollide true /
+            // 3600 life. The `:55109-55128` alpha −50 fade + the Item17
+            // first-tick cue ride the aiStyle-1 rider hook below.
+            JUNGLE_SPIKE => (6.0, 6.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d36 E4 batch 5 — `Projectile.cs:2630-2640`: the Icy
+            // Merman's spit (177): 10x10, aiStyle 28 (the frost-bolt
+            // flight), hostile, `penetrate = -1`, alpha 255, coldDamage
+            // (no slot field yet — the module doc), the stock 3600 life.
+            ICEWATER_SPIT => (10.0, 10.0, 28, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6461-6470` + `ApplyGemStaffStats` (`:10683-10689`) — the
             // Amber Staff's bolt, the gem-bolt family's seventh kind.
             GEM_BOLT_AMBER => (10.0, 10.0, 29, 1, 300, 0, true, false, false, (true, 60, false, -1, 255, 1.0)),

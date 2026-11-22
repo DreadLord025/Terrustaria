@@ -5266,6 +5266,26 @@ impl Projectile {
     /// generic flight instead of duplicating it) — the delegation is
     /// behaviour-identical, pinned by the arrow tests below.
     fn ai_arrow(&mut self, world: &World) {
+        // W4-d36 E4 batch 5 — the JungleSpike 176 (the Spiked Jungle
+        // Slime's spike, `Projectile.cs:55109-55128`): the `alpha -= 50`
+        // fade (the 255 start, `:2623`) and the first-tick `ai[1] = 1f`
+        // latch BEFORE the flight (the C#'s AI_001 per-type block sits
+        // above the gravity/flight tail). The dust 22 at alpha 0
+        // (`:55113-55117`) is SKIPPED (no dust layer); the
+        // `SoundID.Item17` cue (`:55127`) rides the wants_sound seam (the
+        // aiStyle-28 first-tick convention). 176 is NOT on the `flag3 =
+        // false` list (`:55947-56032`), so the flight keeps its counting
+        // counter (the gravity arm) — the generic arrow shape.
+        if self.kind == JUNGLE_SPIKE {
+            if self.alpha > 0 {
+                self.alpha -= 50;
+            }
+            self.alpha = self.alpha.max(0);
+            if self.ai[1] == 0.0 {
+                self.ai[1] = 1.0;
+                self.wants_sound = Some((2, 17, self.pos.x, self.pos.y, 0.0));
+            }
+        }
         self.ai_style1_flight(world, true);
     }
 

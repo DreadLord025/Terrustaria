@@ -1270,8 +1270,10 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// overflows 8192); the draw arms reference the sheets, absent ones
 /// render nothing. Batch 0: 141/148/149/153/154; hover batch:
 /// 173/176/205; E4: 155; E4b: 162; E4 batch 2: 163/166/167 (163 is the
-/// DRAW sheet — the bestiary credit folds onto 238, `texture_net_id`).
-pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181, 185, 197, 198, 199];
+/// DRAW sheet — the bestiary credit folds onto 238, `texture_net_id`);
+/// E4 batch 3: 168/170/171/180/181; E4 batch 4: 185/197/198/199;
+/// E4 batch 5 (the SEAL): 201/202/203/204/206.
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 162, 173, 176, 205, 163, 166, 167, 168, 170, 171, 180, 181, 185, 197, 198, 199, 201, 202, 203, 204, 206];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3229,6 +3231,23 @@ pub(crate) fn draw_npcs(
             | NpcKind::ArmoredViking
             | NpcKind::Lihzahrd
             | NpcKind::LihzahrdCrawler => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d36 E4 batch 5 — the SEAL batch's five own strips
+            // (201/202 = 15, 203 = 16, 204 = 2, 206 = 20,
+            // `Main.cs:67104`). The Spiked Jungle Slime's `scale = 1.15`
+            // row (`NPC.cs:11619`) rides `scaled_anchor` (the
+            // BlazingWheel convention); the four 1f-scale kinds keep the
+            // generic anchor.
+            NpcKind::SpikedJungleSlime => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton
+            | NpcKind::IcyMerman => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }

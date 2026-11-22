@@ -71,6 +71,10 @@ pub enum FindFrameKind {
     Crimslime,
     /// `NPCID.SpikedIceSlime` = 184 (`NPCID.cs:11045`).
     SpikedIceSlime,
+    /// `NPCID.SpikedJungleSlime` = 204 (`NPCID.cs:11085`) — W4-d36 E4
+    /// batch 5: the slime-group case list carries 204 (`NPC.cs:70810`),
+    /// the same 2-row hop strip.
+    SpikedJungleSlime,
     /// `NPCID.UmbrellaSlime` = 225 (`NPCID.cs:11127`).
     UmbrellaSlime,
     // The eye group — `FindFrame`'s case 2/23/121/169/190-194/317/318/
@@ -137,6 +141,7 @@ impl FindFrameKind {
             Self::IceSlime => 147,
             Self::Crimslime => 183,
             Self::SpikedIceSlime => 184,
+            Self::SpikedJungleSlime => 204,
             Self::UmbrellaSlime => 225,
             Self::CataractEye => 190,
             Self::SleepyEye => 191,
@@ -184,6 +189,8 @@ impl FindFrameKind {
             // Main.cs:67102 (entries 183/184): 2, 2.
             Self::Crimslime => 2,
             Self::SpikedIceSlime => 2,
+            // Main.cs:67104 (entry 204): 2 — W4-d36 E4 batch 5.
+            Self::SpikedJungleSlime => 2,
             // Main.cs:67106 (entry 225): 2.
             Self::UmbrellaSlime => 2,
             // Main.cs:67103 (entries 190-194): 2, 2, 2, 2, 2.
@@ -233,6 +240,7 @@ pub fn find_frame_kind(kind: crate::npc::NpcKind) -> Option<FindFrameKind> {
         K::IceSlime => FindFrameKind::IceSlime,
         K::Crimslime => FindFrameKind::Crimslime,
         K::SpikedIceSlime => FindFrameKind::SpikedIceSlime,
+        K::SpikedJungleSlime => FindFrameKind::SpikedJungleSlime,
         K::UmbrellaSlime => FindFrameKind::UmbrellaSlime,
         K::CataractEye => FindFrameKind::CataractEye,
         K::SleepyEye => FindFrameKind::SleepyEye,
@@ -331,6 +339,9 @@ pub fn find_frame_a(kind: FindFrameKind, s: &mut FrameState, i: &FrameInput) {
         | FindFrameKind::IceSlime
         | FindFrameKind::Crimslime
         | FindFrameKind::SpikedIceSlime
+        // W4-d36 E4 batch 5 — the Spiked Jungle Slime rides the same
+        // slime-group arm (`NPC.cs:70810`).
+        | FindFrameKind::SpikedJungleSlime
         | FindFrameKind::UmbrellaSlime => {
             s.counter += 1.0;
             if num2 > 0 {
@@ -475,6 +486,7 @@ mod tests {
             (FindFrameKind::IceSlime, 147, 2),
             (FindFrameKind::Crimslime, 183, 2),
             (FindFrameKind::SpikedIceSlime, 184, 2),
+            (FindFrameKind::SpikedJungleSlime, 204, 2),
             (FindFrameKind::UmbrellaSlime, 225, 2),
             (FindFrameKind::CataractEye, 190, 2),
             (FindFrameKind::SleepyEye, 191, 2),
@@ -517,6 +529,7 @@ mod tests {
             FindFrameKind::IceSlime,
             FindFrameKind::Crimslime,
             FindFrameKind::SpikedIceSlime,
+            FindFrameKind::SpikedJungleSlime,
             FindFrameKind::UmbrellaSlime,
         ] {
             let rows = rows_over(kind, input(0.0, 0.0), 16);

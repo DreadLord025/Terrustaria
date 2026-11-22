@@ -2381,6 +2381,55 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Lihzahrd",
     },
+    // W4-d36 E4 batch 5 — the SEAL batch's five own entries (no Hide row
+    // — `NPCID.cs:2592-2618` carries Velocity=1f only for 201/202/203/206,
+    // and 204 has NO draw-modifier row at all; the credit ids are the
+    // `NPCID.Search.GetName` names, `ContentSamples.cs:868-870` — none of
+    // the five folds). The bone trio all display "Skeleton" (the en-US
+    // `NPCs.HeadacheSkeleton/MisassembledSkeleton/PantlessSkeleton.
+    // DisplayName` rows); the populator adds Caverns to 201/202/203
+    // (`BestiaryDatabaseNPCsPopulator.cs:1469-1471`), UndergroundJungle to
+    // 204 (`:1132`) and UndergroundSnow to 206 (`:1529`).
+    BestiaryEntryDef {
+        credit_id: "HeadacheSkeleton",
+        net_id: 201,
+        kind: NpcKind::HeadacheSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "MisassembledSkeleton",
+        net_id: 202,
+        kind: NpcKind::MisassembledSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "PantlessSkeleton",
+        net_id: 203,
+        kind: NpcKind::PantlessSkeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "SpikedJungleSlime",
+        net_id: 204,
+        kind: NpcKind::SpikedJungleSlime,
+        variant: None,
+        quick_unlock: false,
+        name: "Spiked Jungle Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "IcyMerman",
+        net_id: 206,
+        kind: NpcKind::IcyMerman,
+        variant: None,
+        quick_unlock: false,
+        name: "Icy Merman",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

@@ -515,6 +515,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::ArmoredViking => &[20, 44, 324],
         NpcKind::Lihzahrd
         | NpcKind::LihzahrdCrawler => &[20],
+        // W4-d36 E4 batch 5 (`NPCID.cs:7249-7255`/`:7256-7262`/`:7263-
+        // 7269`/`:7270-7276`/`:7284-7290`): the bone trio + the Spiked
+        // Jungle Slime {20}; the Icy Merman {44,324} (the frost pair —
+        // NO 20, the SnowFlinx shape).
+        NpcKind::HeadacheSkeleton
+        | NpcKind::MisassembledSkeleton
+        | NpcKind::PantlessSkeleton
+        | NpcKind::SpikedJungleSlime => &[20],
+        NpcKind::IcyMerman => &[44, 324],
         // W4-d36 hover batch (`NPCID.cs:7125`/`:7146`/`:7277`): 173 {31},
         // 176/205 {20,31}.
         NpcKind::Crimera => &[31],

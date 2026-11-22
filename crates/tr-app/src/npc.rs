@@ -1256,6 +1256,74 @@ pub enum NpcKind {
     /// unported fighter obstacle-scan remainder (the scan is zombie-
     /// family scoped today).
     LihzahrdCrawler,
+    // ---- W4-d36 E4 batch 5 (the SEAL batch — the doc-110 §1 table with
+    // the Lead v640 ID CORRECTION: HeadacheSkeleton 201→789,
+    // MisassembledSkeleton 202→790, PantlessSkeleton 203→795 (NOT the
+    // VOID 791 — d37 reserves it for Crab), SpikedJungleSlime 204→796
+    // (NOT the VOID 792 — d37 reserves it for DungeonGuardian), IcyMerman
+    // 206→794. 791/792 are ALREADY IN MAIN via d34).
+    /// `NPCID.HeadacheSkeleton` (201) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 201, `:11572-11584`): 18x40, aiStyle 3, dmg 20, def 12,
+    /// 55 HP, kb 0.5, value 130, NPCHit2/NPCDeath2. WIRED: the walker
+    /// family on the num83 group's OWN 1.1 cap (`:57625-57628`) + the
+    /// `:57693` `1 + (1 - scale)` factor (1 at the stock scale).
+    /// FindFrame's humanoid-group case list (`:68579`) over the 15-row
+    /// strip, the air row 0 (`:69647` lists 201). The moan is the
+    /// `:57340` 1000-roll (201 IS in the list); the door bash rides the
+    /// `:59996` flag24 list (201 listed). The death gores 265/267/43/44
+    /// (`:88569-88578`) are the gore/dust wave's remainder.
+    HeadacheSkeleton,
+    /// `NPCID.MisassembledSkeleton` (202) — W4-d36 E4 (`NPC.cs`
+    /// SetDefaults case 202, `:11585-11597`): 18x40, aiStyle 3, dmg 18,
+    /// def 8, 65 HP, kb 0.5, value 120, NPCHit2/NPCDeath2. WIRED: the
+    /// walker family on the num83 group's OWN 0.9 cap (`:57629-57632`).
+    /// FindFrame's humanoid-group case list (`:68580`) over the 15-row
+    /// strip, the air row 0 (`:69647` lists 202). The moan + door bash
+    /// ride the same lists (202 in both). The death gores 268/43/44
+    /// (`:88579-88587`) are the gore/dust wave's remainder.
+    MisassembledSkeleton,
+    /// `NPCID.PantlessSkeleton` (203) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 203, `:11598-11610`): 18x40, aiStyle 3, dmg 22, def 8,
+    /// 60 HP, kb 0.5, value 110, NPCHit2/NPCDeath2. WIRED: the walker
+    /// family on the num83 group's OWN 1.2 cap (`:57633-57636`).
+    /// FindFrame's humanoid-group case list (`:68581`) over the 16-row
+    /// strip, the air row 1 (`:69647` does NOT list 203 — the Lead's
+    /// row-0 correction). The moan + door bash ride the same lists
+    /// (203 in both). The death gores 269/43/266 (`:88588-88596`) are
+    /// the gore/dust wave's remainder.
+    PantlessSkeleton,
+    /// `NPCID.SpikedJungleSlime` (204) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// case 204, `:11611-11624`): 24x18, aiStyle 1, dmg 28, def 8,
+    /// 65 HP, scale 1.15, alpha 50, value 300, NPCHit1/NPCDeath1, NO
+    /// kb row (the head's 1f default, `:8533`). WIRED: the aiStyle-1
+    /// hop machine (`update_slime`, the wave-A routing). FindFrame's
+    /// slime-group case list (`:70810`) over the 2-row strip — the
+    /// wave-A bridge. The `AI_001` shooter block (`:61386-61439`: the
+    /// flag3-true row + the 80-tick expert five-spike fan / the 65-tick
+    /// classic lob, the 176 JungleSpike at dmg 13) rides the pure
+    /// `npc_ai_slime` module's census (`ai_001_slimes` keeps the flag3
+    /// row; the shots land with the module's wiring swap). The hit/
+    /// death dust 4 (`:85010-85026`, the (149,208,104) tint) is the
+    /// gore/dust wave's remainder.
+    SpikedJungleSlime,
+    /// `NPCID.IcyMerman` (206) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// 206, `:11640-11653`): 18x40, aiStyle 3, dmg 60, def 30, 280 HP,
+    /// kb 0.5, value 500, NPCHit1/NPCDeath1, coldDamage (no port slot
+    /// field — the IceTortoise note). WIRED: the shooter block
+    /// (`update_martian_shooter`, the pirate/martian precedent): the
+    /// 50-tick stop timer (`:59131-59134`), the 7-speed 177 IcewaterSpit
+    /// at dmg 37 (`:59219-59222`/`:59408-59411`/`:59462-59465`), the
+    /// centre −10 spawn anchor (`:59284-59287`), the default 1/0.07/0.8
+    /// walk (`:59717-59719`). FindFrame case 206 (`:76060-76098`) over
+    /// the 20-row strip: the grounded facing flip, the ai[2] attack-row
+    /// hold, the walk band rows 6..19 (|vx|×3 clock, >6 advance), the
+    /// air row 0. The frost pair {44,324} immunity (`NPCID.cs:7284-
+    /// 7290`); NOT in either AI_003 moan list. The flag8-false row
+    /// (`:57072`) rides the zombie-scoped fighter-scan remainder; the
+    /// hit/death dust 137 + gores 273-275 (`:86828-86847`) the
+    /// gore/dust wave's; the 177's Chilled/Frozen rolls
+    /// (`Projectile.cs:12366-12373`) the player-debuff layer's.
+    IcyMerman,
     // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
     // R7-band slots 781/782/793, ascending vanilla order).
     /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
@@ -3146,7 +3214,7 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else if kind == NpcKind::ToxicSludge { 1.1 } /* W4-d36 case 141 scale (`NPC.cs:10788`) */ else { 1.0 }),
+                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else if kind == NpcKind::ToxicSludge { 1.1 } /* W4-d36 case 141 scale (`NPC.cs:10788`) */ else if kind == NpcKind::SpikedJungleSlime { 1.15 } /* W4-d36 E4 batch 5 case 204 scale (`NPC.cs:11619`) — the draw-only scale, the ToxicSludge precedent */ else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -3326,6 +3394,10 @@ impl Npc {
                             // W4-d36 — the ToxicSludge `alpha = 55` row
                             // (case 141, `NPC.cs:10786`).
                             NpcKind::ToxicSludge => 55,
+                            // W4-d36 E4 batch 5 — the Spiked Jungle
+                            // Slime's `alpha = 50` row (case 204,
+                            // `NPC.cs:11622`).
+                            NpcKind::SpikedJungleSlime => 50,
                             _ => 0,
                         }
                     }),
@@ -3686,6 +3758,10 @@ impl Npc {
             | NpcKind::CorruptSlime
             | NpcKind::IceSlime
             | NpcKind::Crimslime
+            // W4-d36 E4 batch 5: the Spiked Jungle Slime writes NO kb
+            // row (`NPC.cs:11611-11624`) — the head's 1f default
+            // (`:8533`), the SpikedIceSlime row's shape.
+            | NpcKind::SpikedJungleSlime
             | NpcKind::SpikedIceSlime => 1.0,
             NpcKind::IlluminantSlime => 0.85,
             NpcKind::UmbrellaSlime => 0.75,
@@ -3757,6 +3833,12 @@ impl Npc {
             NpcKind::ArmoredViking => 0.45,
             NpcKind::Lihzahrd => 0.4,
             NpcKind::LihzahrdCrawler => 0.0,
+            // W4-d36 E4 batch 5 (`NPC.cs:11582`/`:11595`/`:11608`/
+            // `:11650`): the bone trio + the Icy Merman 0.5.
+            NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton
+            | NpcKind::IcyMerman => 0.5,
             // W4-d36 hover batch (`NPC.cs:11180`/`:11232`/`:11634`):
             // Crimera/MossHornet 0.5, Moth 0.4.
             NpcKind::Crimera
@@ -4097,6 +4179,9 @@ impl Npc {
             NpcKind::IceSlime => 4,
             NpcKind::Crimslime => 26,
             NpcKind::SpikedIceSlime => 8,
+            // W4-d36 E4 batch 5: the Spiked Jungle Slime defense 8
+            // (`NPC.cs:11617`) — the SpikedIceSlime row's shape.
+            NpcKind::SpikedJungleSlime => 8,
             NpcKind::UmbrellaSlime => 5,
             NpcKind::CataractEye | NpcKind::PurpleEye => 4,
             NpcKind::SleepyEye | NpcKind::DialatedEye => 2,
@@ -4172,6 +4257,13 @@ impl Npc {
             NpcKind::ArmoredViking => 28,
             NpcKind::Lihzahrd => 20,
             NpcKind::LihzahrdCrawler => 30,
+            // W4-d36 E4 batch 5 — case 201 defense 12 (`NPC.cs:11578`),
+            // case 202/203 defense 8 (`:11591`/`:11604`), case 206
+            // defense 30 (`:11646`).
+            NpcKind::HeadacheSkeleton => 12,
+            NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton => 8,
+            NpcKind::IcyMerman => 30,
             // W4-d36 hover batch (`NPC.cs:11175`/`:11229`/`:11631`).
             NpcKind::Crimera => 8,
             NpcKind::MossHornet => 22,
@@ -4507,6 +4599,9 @@ impl Npc {
             NpcKind::CorruptSlime | NpcKind::IlluminantSlime | NpcKind::Crimslime => 400.0,
             NpcKind::IceSlime => 50.0,
             NpcKind::SpikedIceSlime | NpcKind::UmbrellaSlime => 200.0,
+            // W4-d36 E4 batch 5 (`NPC.cs:11623`): the Spiked Jungle
+            // Slime's value 300.
+            NpcKind::SpikedJungleSlime => 300.0,
             NpcKind::CataractEye
             | NpcKind::SleepyEye
             | NpcKind::DialatedEye
@@ -4576,6 +4671,12 @@ impl Npc {
             NpcKind::ArmoredViking => 500.0,
             NpcKind::Lihzahrd
             | NpcKind::LihzahrdCrawler => 650.0,
+            // W4-d36 E4 batch 5 (`NPC.cs:11583`/`:11596`/`:11609`/
+            // `:11651`).
+            NpcKind::HeadacheSkeleton => 130.0,
+            NpcKind::MisassembledSkeleton => 120.0,
+            NpcKind::PantlessSkeleton => 110.0,
+            NpcKind::IcyMerman => 500.0,
             // W4-d36 hover batch (`NPC.cs:11181`/`:11234`/`:11636`).
             NpcKind::Crimera => 90.0,
             NpcKind::MossHornet => 600.0,
@@ -6113,6 +6214,12 @@ impl Npc {
             | NpcKind::IceSlime
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
+            // W4-d36 E4 batch 5 — the Spiked Jungle Slime (204) rides the
+            // same aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one
+            // arm for every slime type; the `:61386-61439` shooter block
+            // is the pure module's census — the flag3 row keeps the
+            // machine whole, the shots land with the wiring swap).
+            | NpcKind::SpikedJungleSlime
             | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
             NpcKind::DemonEye
             | NpcKind::WanderingEye
@@ -6643,6 +6750,23 @@ impl Npc {
             NpcKind::ArmoredViking | NpcKind::LihzahrdCrawler => {
                 self.update_skeleton(world, player, dt)
             }
+            // W4-d36 E4 batch 5 — the bone trio (201/202/203) ride the
+            // same aiStyle-3 walker family on the ladder's OWN num83
+            // cap rows (`npc_ai3_speeds`: 1.1/0.9/1.2, `NPC.cs:57625-
+            // 57636`) + the `:57693` scale factor. Their frame clocks
+            // are FindFrame's humanoid-group arms below (`:68579-68581`).
+            NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton => self.update_skeleton(world, player, dt),
+            // W4-d36 E4 batch 5 — the Icy Merman (206): the aiStyle-3
+            // shooter block's stop-and-fire cycle (`NPC.cs:59069-59800`)
+            // on the pirate/martian machine — the 50-tick timer
+            // (`:59131`), the 7-speed 177 IcewaterSpit at dmg 37
+            // (`:59219`/`:59408`/`:59462`), the centre −10 anchor
+            // (`:59284`), the default 1/0.07/0.8 walk (`:59717`). The
+            // ladder declines 206 (`shooter_excluded`, `:58322`), so the
+            // walk rides the machine's params — the PirateArcher shape.
+            NpcKind::IcyMerman => self.update_martian_shooter(world, player, rng),
             // W4-d36 E4 batch 4 — the Lihzahrd (198): the num83 base-1.5
             // walker + the form switch (`NPC.cs:57027-57030`: at
             // life <= lifeMax * 0.55 the host Transform(199)s into the
@@ -8393,6 +8517,10 @@ impl Npc {
             | NpcKind::IceSlime
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
+            // W4-d36 E4 batch 5 — the Spiked Jungle Slime (204) rides the
+            // same slime-group case list (`NPC.cs:70810`) on its 2-row
+            // strip (`Main.npcFrameCount[204]`, `Main.cs:67104`).
+            | NpcKind::SpikedJungleSlime
             | NpcKind::UmbrellaSlime => {
                 self.find_frame_wave_a(
                     crate::npc_findframe_a::find_frame_kind(self.kind)
@@ -8777,6 +8905,73 @@ impl Npc {
                             self.frame = 3;
                         }
                     }
+                }
+            }
+            // W4-d36 E4 batch 5 — the Headache / Misassembled Skeletons
+            // (201/202) ride the humanoid-group case list (`NPC.cs:68579-
+            // 68580`) on their 15-row strips, and ARE in the `:69647`
+            // row-0 override list, so the air rest is row 0 (the
+            // ArmoredViking shape).
+            NpcKind::HeadacheSkeleton | NpcKind::MisassembledSkeleton => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.humanoid_town_frame();
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                }
+            }
+            // W4-d36 E4 batch 5 — the Pantless Skeleton (203) rides the
+            // same humanoid-group case list (`NPC.cs:68581`) on its
+            // 16-row strip, but is NOT in the `:69647` row-0 override
+            // list (the Lead's correction — the list names 201/202, NOT
+            // 203), so the air rest is row 1 (the FaceMonster shape).
+            NpcKind::PantlessSkeleton => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    self.humanoid_town_frame();
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            // W4-d36 E4 batch 5 — the Icy Merman (206), FindFrame case
+            // 206 (`NPC.cs:76060-76098`) over the 20-row strip
+            // (`Main.npcFrameCount[206]`, `Main.cs:67104`): grounded the
+            // sprite rides the facing (`:76063-76070`); the ai[2] attack
+            // row holds with the counter zeroed (`:76071-76077`); else
+            // the walk band climbs from row 6 on the |vx|×3 clock (>6
+            // advance, `:76078-76091`, wrap at the strip's end back to
+            // 6); airborne zeroes the counter and rests row 0
+            // (`:76093-76097`).
+            NpcKind::IcyMerman => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = self.ai[2] as u32;
+                        self.frame_counter = 0.0;
+                    } else {
+                        if self.frame < 6 {
+                            self.frame = 6;
+                        }
+                        self.frame_counter += self.vx.abs() * 3.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= self.rows() {
+                            self.frame = 6;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
                 }
             }
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
@@ -12328,6 +12523,10 @@ impl Npc {
             NpcKind::PirateCaptain => (60, 9.0, 180, 30),
             NpcKind::RayGunner => (80, 7.0, 438, 30),
             NpcKind::BrainScrambler => (80, 11.0, 436, 24),
+            // W4-d36 E4 batch 5 — the Icy Merman (206): the 50-tick stop
+            // (`NPC.cs:59131-59134`), the 7-speed IcewaterSpit 177
+            // (`:59219-59222`/`:59462-59465`), dmg 37 (`:59408-59411`).
+            NpcKind::IcyMerman => (50, 7.0, 177, 37),
             _ => (80, 11.0, 436, 24),
         }
     }
@@ -12382,9 +12581,25 @@ impl Npc {
             // no jitter) on the rolling `max(60, 180 - localAI[3]*20)`
             // cooldown (the port's `cast_windup` as `localAI[3]`).
                 let captain_wounded = self.kind == NpcKind::PirateCaptain && self.caster_counter >= 20;
-                if self.ai[1] * 2.0 >= cooldown as f32 {
+                // W4-d36 E4 batch 5 — the Icy Merman fires at the EXACT
+                // half-cooldown tick (`NPC.cs:59208`: `ai[1] == num163`,
+                // num163 = 50 / 2 = 25, `:59184`); the pirate/martian
+                // window shape stays untouched for the older kinds.
+                let fire_now = if self.kind == NpcKind::IcyMerman {
+                    self.ai[1] == (cooldown / 2) as f32
+                } else {
+                    self.ai[1] * 2.0 >= cooldown as f32
+                };
+                if fire_now {
                     let mut ax = dx;
                     let mut ay = dy;
+                    // W4-d36 E4 batch 5 — the Icy Merman's aim reads the
+                    // centre −10 chaser anchor (`NPC.cs:59284-59287`)
+                    // with the |dx|×0.1 lead drop (`:59310`/`:59344`):
+                    // num167 = pcy − (cy − 10) − |num165|×0.1.
+                    if self.kind == NpcKind::IcyMerman {
+                        ay = dy + 10.0 - dx.abs() * 0.1;
+                    }
                     // The per-kind aim jitter (`NPC.cs:59326-59377`): the
                     // BrainScrambler 381 / RayGunner 382 rays
                     // `Next(-100, 101) * 0.4f` + the `Next(85, 116) * 0.01f`
@@ -12398,6 +12613,10 @@ impl Npc {
                             NpcKind::PirateCaptain => (-50, 51, 1.0, false),
                             NpcKind::PirateArcher => (-45, 46, 1.0, false),
                             NpcKind::PirateCorsair => (-40, 41, 1.0, false),
+                            // W4-d36 E4 batch 5 — the Icy Merman rides
+                            // the default `else` arm's ±40 integer
+                            // jitter (`NPC.cs:59392-59396`), NO rescale.
+                            NpcKind::IcyMerman => (-40, 41, 1.0, false),
                             _ => (-100, 101, 0.4, true),
                         }
                     };
@@ -12417,10 +12636,15 @@ impl Npc {
                     (proj, dmg)
                 };
                 let inv = shot_speed / len;
+                // W4-d36 E4 batch 5 — the Icy Merman's spawn anchor is
+                // the centre −10 chaser position (`NPC.cs:59592` spawns
+                // at chaserPosition2, `:59284-59287`), NOT the +6 the
+                // pirate/martian rows use.
+                let spawn_y = if self.kind == NpcKind::IcyMerman { cy - 10.0 } else { cy + 6.0 };
                 self.wants_hostile_shot.push((
                     shot_proj,
                     cx,
-                    cy + 6.0,
+                    spawn_y,
                     ax * inv,
                     ay * inv,
                     shot_dmg,
@@ -12433,8 +12657,13 @@ impl Npc {
         } else {
             // The aggression/stop entry (`:59630-59697`): grounded +
             // `ai[1] <= 0` and the aim under 700 px → the stop with the
-            // 80-tick timer.
+            // 80-tick timer. W4-d36 E4 batch 5 — the Icy Merman's entry
+            // gates on `ai[2] <= 0` AND grounded (`:59634`), reads the
+            // |dx|×0.1 lead drop (`:59650-59651`) BEFORE the jitter, and
+            // arms its OWN 50-tick timer (`:59688`, num162 `:59131`).
+            let icy = self.kind == NpcKind::IcyMerman;
             if self.ai[1] <= 0.0
+                && (!icy || (self.ai[2] <= 0.0 && self.vy == 0.0))
                 && player.hp > 0
                 && crate::projectile::can_hit(
                     world,
@@ -12450,11 +12679,12 @@ impl Npc {
             {
                 // `Next(-40, 41)` on each axis (`NPC.cs:59653-59657`).
                 let mut ax = dx + rng.next_range(-40, 41) as f32;
-                let mut ay = dy + rng.next_range(-40, 41) as f32;
+                let mut ay = dy - if icy { dx.abs() * 0.1 } else { 0.0 }
+                    + rng.next_range(-40, 41) as f32;
                 if (ax * ax + ay * ay).sqrt() < 700.0 {
                     self.vx *= 0.5;
                     self.ai[2] = octant(ax, ay);
-                    self.ai[1] = 80.0;
+                    self.ai[1] = if icy { cooldown as f32 } else { 80.0 };
                 }
                 let _ = (&mut ax, &mut ay);
             }
@@ -19572,6 +19802,14 @@ impl Npc {
             NpcKind::ArmoredViking => 569,
             NpcKind::Lihzahrd => 570,
             NpcKind::LihzahrdCrawler => 571,
+            // W4-d36 E4 batch 5 — the SEAL batch's fresh hash slots
+            // (injective; the render_key space is separate from the
+            // protocol ids — 572+ verified free).
+            NpcKind::HeadacheSkeleton => 572,
+            NpcKind::MisassembledSkeleton => 573,
+            NpcKind::PantlessSkeleton => 574,
+            NpcKind::SpikedJungleSlime => 575,
+            NpcKind::IcyMerman => 576,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24640,7 +24878,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 292] = [
+    pub(super) const ALL_KINDS: [NpcKind; 297] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24948,6 +25186,12 @@ mod tests {
         NpcKind::ArmoredViking,
         NpcKind::Lihzahrd,
         NpcKind::LihzahrdCrawler,
+        // W4-d36 E4 batch 5 (the SEAL batch).
+        NpcKind::HeadacheSkeleton,
+        NpcKind::MisassembledSkeleton,
+        NpcKind::PantlessSkeleton,
+        NpcKind::SpikedJungleSlime,
+        NpcKind::IcyMerman,
     ];
 
     #[test]
@@ -25837,6 +26081,305 @@ mod tests {
         f.frame_counter = 0.0;
         f.find_frame();
         assert_eq!((f.frame, f.frame_counter), (0, 1.0), "the intro ticks airborne");
+    }
+
+    /// W4-d36 E4 batch 5 — the Headache Skeleton's `SetDefaults` row
+    /// (`NPC.cs:11572-11584`): the OWN num83 cap 1.1 (`:57625-57628`),
+    /// the humanoid-group air row 0 (`:69647` lists 201), the {20}
+    /// immunity. The protocol id rides the doc-110 §1 slot 789.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_batch5_headache_skeleton_pins_the_defaults_and_the_air_row_zero() {
+        let kind = NpcKind::HeadacheSkeleton;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 201);
+        assert_eq!(kind.to_u16(), 789, "the doc-110 §1 slot");
+        assert_eq!(NpcKind::from_u16(789), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (18.0, 40.0));
+        assert_eq!(kind.contact_damage(), 20);
+        assert_eq!(shell.defense(), 12);
+        assert_eq!(kind.max_hp(), 55);
+        assert_eq!(shell.knock_back_resist(), 0.5);
+        assert_eq!(shell.value(), 130.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(1.1), "the OWN num83 cap (`:57627`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_2"));
+        // `NPCID.cs:7249-7255`: {20} — the poison chain derives 30/375.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[20] && b.buff_immune[30] && b.buff_immune[375]);
+        assert!(!b.buff_immune[44]);
+        let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!((e.net_id, e.credit_id, e.name), (201, "HeadacheSkeleton", "Skeleton"));
+        assert_eq!(crate::render::entities::npc_rows(201), 15);
+        assert_eq!(kind.humanoid_frame_count(), 15, "the walk band's strip");
+        assert_eq!(shell.render_key(), 572 << 5, "the fresh hash slot");
+        // The moan gate: 201 IS in the `:57340` 1000-roll list.
+        assert!(crate::ambient_sound::fighter_walker_kind(kind));
+        // FindFrame: the humanoid group's air row 0 (201 IS in the
+        // `:69647` override list), the 15-row walk band wraps to 2.
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (0, 0.0), "the air rest is row 0 (`:69649`)");
+        f.vy = 0.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 3.0), "the walk enters at row 2");
+        f.frame = 14;
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 15 -> 2");
+    }
+
+    /// W4-d36 E4 batch 5 — the Misassembled Skeleton's `SetDefaults` row
+    /// (`NPC.cs:11585-11597`): the OWN num83 cap 0.9 (`:57629-57632`),
+    /// the humanoid-group air row 0 (`:69647` lists 202). The protocol
+    /// id rides the doc-110 §1 slot 790. WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_d36_batch5_misassembled_skeleton_pins_the_defaults_and_the_slow_cap() {
+        let kind = NpcKind::MisassembledSkeleton;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 202);
+        assert_eq!(kind.to_u16(), 790, "the doc-110 §1 slot");
+        assert_eq!(NpcKind::from_u16(790), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (18.0, 40.0));
+        assert_eq!(kind.contact_damage(), 18);
+        assert_eq!(shell.defense(), 8);
+        assert_eq!(kind.max_hp(), 65);
+        assert_eq!(shell.knock_back_resist(), 0.5);
+        assert_eq!(shell.value(), 120.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(0.9), "the OWN num83 cap (`:57631`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_2"));
+        // `NPCID.cs:7256-7262`: {20}.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[20] && !b.buff_immune[44]);
+        let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!((e.net_id, e.credit_id, e.name), (202, "MisassembledSkeleton", "Skeleton"));
+        assert_eq!(crate::render::entities::npc_rows(202), 15);
+        assert_eq!(kind.humanoid_frame_count(), 15, "the walk band's strip");
+        assert_eq!(shell.render_key(), 573 << 5, "the fresh hash slot");
+        assert!(crate::ambient_sound::fighter_walker_kind(kind));
+        // FindFrame: the air row 0 (202 IS in the `:69647` list), the
+        // 15-row walk band wraps to 2.
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (0, 0.0), "the air rest is row 0");
+        f.vy = 0.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 3.0), "the walk enters at row 2");
+        f.frame = 14;
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 15 -> 2");
+    }
+
+    /// W4-d36 E4 batch 5 — the Pantless Skeleton's `SetDefaults` row
+    /// (`NPC.cs:11598-11610`): the OWN num83 cap 1.2 (`:57633-57636`),
+    /// the humanoid-group air row 1 (`:69647` names 201/202, NOT 203 —
+    /// the Lead's row-0 correction), the 16-row strip. The protocol id
+    /// rides the CORRECTED slot 795 (the VOID 791 is d37's Crab).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_batch5_pantless_skeleton_pins_the_defaults_and_the_air_row_one() {
+        let kind = NpcKind::PantlessSkeleton;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 203);
+        assert_eq!(kind.to_u16(), 795, "the CORRECTED slot (791 is d37's Crab)");
+        assert_eq!(NpcKind::from_u16(795), Some(kind), "round-trip");
+        assert_eq!(NpcKind::from_u16(791), None, "791 stays d37-reserved");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (18.0, 40.0));
+        assert_eq!(kind.contact_damage(), 22);
+        assert_eq!(shell.defense(), 8);
+        assert_eq!(kind.max_hp(), 60);
+        assert_eq!(shell.knock_back_resist(), 0.5);
+        assert_eq!(shell.value(), 110.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(1.2), "the OWN num83 cap (`:57635`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_2"));
+        // `NPCID.cs:7263-7269`: {20}.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[20] && !b.buff_immune[44]);
+        let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!((e.net_id, e.credit_id, e.name), (203, "PantlessSkeleton", "Skeleton"));
+        assert_eq!(crate::render::entities::npc_rows(203), 16);
+        assert_eq!(kind.humanoid_frame_count(), 16, "the walk band's strip");
+        assert_eq!(shell.render_key(), 574 << 5, "the fresh hash slot");
+        assert!(crate::ambient_sound::fighter_walker_kind(kind));
+        // FindFrame: the air row 1 (203 NOT in the `:69647` list — the
+        // FaceMonster shape), the 16-row walk band wraps to 2.
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (1, 0.0), "the air rest is row 1");
+        f.vy = 0.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 3.0), "the walk enters at row 2");
+        f.frame = 15;
+        f.frame_counter = 6.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (2, 0.0), "the band wraps 16 -> 2");
+    }
+
+    /// W4-d36 E4 batch 5 — the Spiked Jungle Slime's `SetDefaults` row
+    /// (`NPC.cs:11611-11624`): the 1.15 scale + the alpha 50, the NO-kb
+    /// head default 1f, the slime-group 2-row hop strip (`:70810`) and
+    /// the 176 JungleSpike's `proj_data` row. The protocol id rides the
+    /// CORRECTED slot 796 (the VOID 792 is d37's DungeonGuardian).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_batch5_spiked_jungle_slime_pins_the_defaults_and_the_hop_strip() {
+        let kind = NpcKind::SpikedJungleSlime;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 204);
+        assert_eq!(kind.to_u16(), 796, "the CORRECTED slot (792 is d37's DungeonGuardian)");
+        assert_eq!(NpcKind::from_u16(796), Some(kind), "round-trip");
+        assert_eq!(NpcKind::from_u16(792), None, "792 stays d37-reserved");
+        assert_eq!(kind.ai_style(), 1);
+        assert_eq!(kind.size(), (24.0, 18.0));
+        assert_eq!(kind.contact_damage(), 28);
+        assert_eq!(shell.defense(), 8);
+        assert_eq!(kind.max_hp(), 65);
+        assert_eq!(shell.knock_back_resist(), 1.0, "NO kb row — the head's 1f (`:8533`)");
+        assert_eq!(shell.value(), 300.0);
+        assert_eq!(shell.scale, 1.15, "the `:11619` scale row");
+        assert_eq!(shell.alpha, 50, "the `:11622` alpha row");
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_1"));
+        // `NPCID.cs:7270-7276`: {20}.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[20] && !b.buff_immune[44]);
+        let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!((e.net_id, e.credit_id, e.name), (204, "SpikedJungleSlime", "Spiked Jungle Slime"));
+        assert_eq!(crate::render::entities::npc_rows(204), 2);
+        assert_eq!(shell.render_key(), 575 << 5, "the fresh hash slot");
+        // The wave-A bridge maps it (the slime-group case list `:70810`).
+        assert_eq!(
+            crate::npc_findframe_a::find_frame_kind(kind),
+            Some(crate::npc_findframe_a::FindFrameKind::SpikedJungleSlime)
+        );
+        // FindFrame: the idle hop steps at the 8th tick over the 2 rows;
+        // moving (num2 = 1) doubles the clock (the wave-A shape).
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.frame_counter = 7.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (1, 0.0), "the 8th idle tick steps");
+        f.frame = 1;
+        f.frame_counter = 7.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (0, 0.0), "the strip wraps 2 -> 0");
+        f.frame = 0;
+        f.frame_counter = 6.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (1, 0.0), "the moving clock doubles");
+        // The 176 JungleSpike's data row (`Projectile.cs:2621-2629`).
+        let spike = crate::projectile::proj_data(crate::projectile::JUNGLE_SPIKE).unwrap();
+        assert_eq!((spike.w, spike.h, spike.ai_style, spike.penetrate, spike.alpha), (6.0, 6.0, 1, -1, 255));
+    }
+
+    /// W4-d36 E4 batch 5 — the Icy Merman's `SetDefaults` row
+    /// (`NPC.cs:11640-11653`) + the shooter cycle's 50-tick timer /
+    /// exact-half fire / centre −10 anchor (`:59131`/`:59208`/`:59284`)
+    /// + FindFrame case 206's attack-row hold and walk band
+    /// (`:76060-76098`). The protocol id rides the doc-110 §1 slot 794.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_batch5_icy_merman_pins_the_defaults_and_the_shooter_cycle() {
+        let kind = NpcKind::IcyMerman;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 206);
+        assert_eq!(kind.to_u16(), 794, "the doc-110 §1 slot");
+        assert_eq!(NpcKind::from_u16(794), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 3);
+        assert_eq!(kind.size(), (18.0, 40.0));
+        assert_eq!(kind.contact_damage(), 60);
+        assert_eq!(shell.defense(), 30);
+        assert_eq!(kind.max_hp(), 280);
+        assert_eq!(shell.knock_back_resist(), 0.5);
+        assert_eq!(shell.value(), 500.0);
+        assert!(!kind.no_gravity());
+        assert_eq!(kind.ai3_walk_speed(), Some(1.0), "the shooter default (`:59717`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_1"));
+        // `NPCID.cs:7284-7290`: {44,324} — the frost pair, NO 20.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[44] && b.buff_immune[324] && !b.buff_immune[20]);
+        let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+        assert_eq!((e.net_id, e.credit_id, e.name), (206, "IcyMerman", "Icy Merman"));
+        assert_eq!(crate::render::entities::npc_rows(206), 20);
+        assert_eq!(shell.render_key(), 576 << 5, "the fresh hash slot");
+        // The shooter stays OUT of the walker moan gate (206 is in
+        // NEITHER AI_003 moan list).
+        assert!(!crate::ambient_sound::fighter_walker_kind(kind));
+        // The shooter params: the 50-tick stop, the 7-speed 177 spit at
+        // dmg 37 (`:59131`/`:59219`/`:59408`/`:59462`).
+        assert_eq!(Npc::shooter_params(kind), (50, 7.0, 177, 37));
+        // The exact-half fire (`:59208`): ai[1] 26 ticks down to 25 and
+        // fires ONE 177 at the centre −10 anchor; at 26 it does NOT (the
+        // window shape would have fired — this pins the == gate).
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 40.0 * TILE_PX;
+        player.y = 100.0;
+        let mut rng = UnifiedRandom::new(7);
+        let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+        n.ai[2] = 1.0;
+        n.ai[1] = 27.0;
+        n.update_martian_shooter(&w, &player, &mut rng);
+        assert!(n.wants_hostile_shot.is_empty(), "26 != 25 — no fire");
+        // Re-pin the box: the machine's walk integrated between the calls
+        // (the C# reads the position at AI time each tick).
+        n.x = 100.0;
+        n.y = 100.0;
+        n.update_martian_shooter(&w, &player, &mut rng);
+        assert_eq!(n.wants_hostile_shot.len(), 1, "25 == 50/2 — the fire tick");
+        let (proj, _sx, sy, svx, svy, dmg) = n.wants_hostile_shot[0];
+        assert_eq!((proj, dmg), (177, 37));
+        assert_eq!(sy, 100.0 + 40.0 * 0.5 - 10.0, "the centre −10 anchor (`:59286`)");
+        let speed = (svx * svx + svy * svy).sqrt();
+        assert!((speed - 7.0).abs() < 1e-3, "the 7-speed normalise: {speed}");
+        // FindFrame case 206: airborne rests row 0 with the counter
+        // zeroed (`:76093-76097`).
+        let mut f = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        f.vy = 2.0;
+        f.frame = 9;
+        f.frame_counter = 4.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (0, 0.0), "the air rest is row 0");
+        // The ai[2] attack row holds with the facing flip (`:76071-76077`).
+        f.vy = 0.0;
+        f.facing = -1;
+        f.ai[2] = 3.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter, f.sprite_dir), (3, 0.0, -1), "the attack hold");
+        // The walk band climbs from row 6 on the |vx|×3 clock (>6
+        // advance, `:76078-76087`).
+        f.ai[2] = 0.0;
+        f.frame = 2;
+        f.frame_counter = 0.0;
+        f.vx = 2.1;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (7, 0.0), "the band enters at 6, the >6 tick steps");
+        // The wrap at the strip's end back to 6 (`:76088-76091`).
+        f.frame = 19;
+        f.frame_counter = 6.0;
+        f.vx = 1.0;
+        f.find_frame();
+        assert_eq!((f.frame, f.frame_counter), (6, 0.0), "the band wraps 20 -> 6");
+        // The 177 IcewaterSpit's data row (`Projectile.cs:2630-2640`).
+        let spit = crate::projectile::proj_data(crate::projectile::ICEWATER_SPIT).unwrap();
+        assert_eq!((spit.w, spit.h, spit.ai_style, spit.penetrate, spit.alpha), (10.0, 10.0, 28, -1, 255));
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -29303,8 +29846,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            292,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein + E4 batch 2's three fighters + E4 batch 3's five (CorruptPenguin/pigron trio/FaceMonster) + E4 batch 4's four (SnowFlinx/ArmoredViking/Lihzahrd/LihzahrdCrawler), L-B gate)"
+            297,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein + E4 batch 2's three fighters + E4 batch 3's five (CorruptPenguin/pigron trio/FaceMonster) + E4 batch 4's four (SnowFlinx/ArmoredViking/Lihzahrd/LihzahrdCrawler) + E4 batch 5's five SEAL kinds (bone trio/SpikedJungleSlime/IcyMerman), L-B gate)"
         );
         assert!(
             covered > 43,

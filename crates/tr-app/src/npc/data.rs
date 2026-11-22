@@ -620,6 +620,17 @@ impl NpcKind {
             NpcKind::ArmoredViking => 786,
             NpcKind::Lihzahrd => 787,
             NpcKind::LihzahrdCrawler => 788,
+            // W4-d36 E4 batch 5 (the SEAL batch) — the doc-110 §1 table
+            // with the Lead v640 ID CORRECTION: the d37 tables reserve
+            // 791→Crab / 792→DungeonGuardian (both ALREADY IN MAIN via
+            // d34), so doc-110's old 791/792 assignments are VOID —
+            // PantlessSkeleton jumps to 795 and SpikedJungleSlime to
+            // 796 (verified free: no to_u16 arm carries them).
+            NpcKind::HeadacheSkeleton => 789,
+            NpcKind::MisassembledSkeleton => 790,
+            NpcKind::PantlessSkeleton => 795,
+            NpcKind::SpikedJungleSlime => 796,
+            NpcKind::IcyMerman => 794,
             // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
             // R7-band slots (ascending vanilla order, the b0 convention).
             NpcKind::Crimera => 781,
@@ -982,6 +993,14 @@ impl NpcKind {
             786 => NpcKind::ArmoredViking,
             787 => NpcKind::Lihzahrd,
             788 => NpcKind::LihzahrdCrawler,
+            // W4-d36 E4 batch 5 — the SEAL batch's decode arms (the Lead
+            // v640 correction: 791/792 stay d37-reserved, 795/796 take
+            // the PantlessSkeleton / SpikedJungleSlime).
+            789 => NpcKind::HeadacheSkeleton,
+            790 => NpcKind::MisassembledSkeleton,
+            795 => NpcKind::PantlessSkeleton,
+            796 => NpcKind::SpikedJungleSlime,
+            794 => NpcKind::IcyMerman,
             // W4-d36 census batch 1 — the hover trio's decode arms.
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
@@ -1883,7 +1902,11 @@ impl NpcKind {
             | NpcKind::CorruptPenguin
             | NpcKind::FaceMonster
             // W4-d36 E4 batch 4: the Snow Flinx's NPCHit1 (`NPC.cs:11369`).
-            | NpcKind::SnowFlinx => "NPC_Hit_1",
+            | NpcKind::SnowFlinx
+            // W4-d36 E4 batch 5: the Spiked Jungle Slime / Icy Merman's
+            // NPCHit1 (`NPC.cs:11620`/`:11648`).
+            | NpcKind::SpikedJungleSlime
+            | NpcKind::IcyMerman => "NPC_Hit_1",
             // W4-d36 E4 batch 3: the pigron trio's NPCHit27
             // (`NPC.cs:11136`/`:11149`/`:11287`) — the pig cue.
             NpcKind::PigronCorruption
@@ -1894,7 +1917,12 @@ impl NpcKind {
             NpcKind::UndeadViking
             // W4-d36 E4 batch 4: the Armored Viking's NPCHit2
             // (`NPC.cs:11528`) — the same skeleton-family cue.
-            | NpcKind::ArmoredViking => "NPC_Hit_2",
+            | NpcKind::ArmoredViking
+            // W4-d36 E4 batch 5: the bone trio's NPCHit2 (`NPC.cs:11580`/
+            // `:11593`/`:11606`) — the same skeleton-family cue.
+            | NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton => "NPC_Hit_2",
             // W4-d36 E4 batch 4: the Lihzahrd pair's NPCHit26
             // (`NPC.cs:11541`/`:11554`) — the lizard hit cue.
             NpcKind::Lihzahrd
@@ -2225,7 +2253,11 @@ impl NpcKind {
             | NpcKind::CorruptPenguin
             // W4-d36 E4 batch 4: the Snow Flinx's NPCDeath1
             // (`NPC.cs:11370`).
-            | NpcKind::SnowFlinx => "NPC_Killed_1",
+            | NpcKind::SnowFlinx
+            // W4-d36 E4 batch 5: the Spiked Jungle Slime / Icy Merman's
+            // NPCDeath1 (`NPC.cs:11621`/`:11649`).
+            | NpcKind::SpikedJungleSlime
+            | NpcKind::IcyMerman => "NPC_Killed_1",
             // W4-d36 E4b: Frankenstein's NPCDeath2 (`NPC.cs:15433`).
             NpcKind::Frankenstein
             // W4-d36 E4 batch 2: the Swamp Thing / Undead Viking NPCDeath2
@@ -2237,7 +2269,12 @@ impl NpcKind {
             | NpcKind::FaceMonster
             // W4-d36 E4 batch 4: the Armored Viking's NPCDeath2
             // (`NPC.cs:11529`).
-            | NpcKind::ArmoredViking => "NPC_Killed_2",
+            | NpcKind::ArmoredViking
+            // W4-d36 E4 batch 5: the bone trio's NPCDeath2 (`NPC.cs:11581`/
+            // `:11594`/`:11607`).
+            | NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton => "NPC_Killed_2",
             // W4-d36 E4 batch 4: the Lihzahrd pair's NPCDeath29
             // (`NPC.cs:11542`/`:11555`) — the lizard death cue.
             NpcKind::Lihzahrd
@@ -2394,6 +2431,9 @@ impl NpcKind {
             | NpcKind::IceSlime
             | NpcKind::Crimslime
             | NpcKind::SpikedIceSlime
+            // W4-d36 E4 batch 5: the Spiked Jungle Slime (204) rides the
+            // same aiStyle-1 hop machine (`NPC.cs:11615`).
+            | NpcKind::SpikedJungleSlime
             | NpcKind::UmbrellaSlime => 1,
             // aiStyle 2 - NPC.cs:8590, :10650
             NpcKind::DemonEye
@@ -2649,7 +2689,16 @@ impl NpcKind {
             | NpcKind::SnowFlinx
             | NpcKind::ArmoredViking
             | NpcKind::Lihzahrd
-            | NpcKind::LihzahrdCrawler => 3,
+            | NpcKind::LihzahrdCrawler
+            // W4-d36 E4 batch 5: the bone trio aiStyle 3 (`NPC.cs:11576`/
+            // `:11589`/`:11602`) — the num83 group's OWN 1.1/0.9/1.2 cap
+            // rows (`:57625-57636`) + the `:57693` scale factor; the Icy
+            // Merman (206, `:11644`) — the shooter-block exclusion
+            // (`:58322`/`:59069`), its own stop-and-fire cycle.
+            | NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton
+            | NpcKind::IcyMerman => 3,
             // W4-d36 E4 batch 3: the pigron trio aiStyle 2
             // (`NPC.cs:11132`/`:11145`/`:11283`) — AI_002_FloatingEye's
             // OWN 170/171/180 arm (`:52326-52424`), NOT the eyes' chase.
@@ -2746,6 +2795,16 @@ impl NpcKind {
             | NpcKind::Lihzahrd => 1.5,
             NpcKind::ArmoredViking => 2.0,
             NpcKind::LihzahrdCrawler => 4.0,
+            // W4-d36 E4 batch 5 — the bone trio's OWN num83 cap rows
+            // (`NPC.cs:57625-57636`): 201 1.1f, 202 0.9f, 203 1.2f (the
+            // `:57693` `1 + (1 - scale)` factor is 1 at the stock 1f
+            // scale — the ladder carries the row verbatim). The Icy
+            // Merman (206) rides the shooter block's default cap 1f
+            // (`:59717` num180, no per-type override).
+            NpcKind::HeadacheSkeleton => 1.1,
+            NpcKind::MisassembledSkeleton => 0.9,
+            NpcKind::PantlessSkeleton => 1.2,
+            NpcKind::IcyMerman => 1.0,
             // S1-D-3ff wave A — the `num107` group's per-type rows
             // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
             // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
@@ -3256,6 +3315,16 @@ impl NpcKind {
             NpcKind::ArmoredViking
             | NpcKind::Lihzahrd => (18.0, 40.0),
             NpcKind::LihzahrdCrawler => (42.0, 30.0),
+            // W4-d36 E4 batch 5 (`NPC.cs:11574-11575`/`:11587-11588`/
+            // `:11600-11601`/`:11613-11614`/`:11642-11643`): the bone
+            // trio + the Icy Merman 18x40, the Spiked Jungle Slime
+            // 24x18 (its 1.15 scale rides `Npc::scale`, the draw only —
+            // the ToxicSludge precedent).
+            NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton
+            | NpcKind::PantlessSkeleton
+            | NpcKind::IcyMerman => (18.0, 40.0),
+            NpcKind::SpikedJungleSlime => (24.0, 18.0),
             // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
             // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
             NpcKind::Crimera => (30.0, 30.0),
@@ -3393,6 +3462,13 @@ impl NpcKind {
             NpcKind::ArmoredViking => 197,
             NpcKind::Lihzahrd => 198,
             NpcKind::LihzahrdCrawler => 199,
+            // W4-d36 E4 batch 5 (`NPCID.cs:11079`/`:11081`/`:11083`/
+            // `:11085`/`:11089`).
+            NpcKind::HeadacheSkeleton => 201,
+            NpcKind::MisassembledSkeleton => 202,
+            NpcKind::PantlessSkeleton => 203,
+            NpcKind::SpikedJungleSlime => 204,
+            NpcKind::IcyMerman => 206,
             // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
             NpcKind::Crimera => 173,
             NpcKind::MossHornet => 176,
@@ -3456,6 +3532,17 @@ impl NpcKind {
             // humanoid-group case list (`NPC.cs:68577`), 15-frame strip
             // (`Main.npcFrameCount[197]`, `Main.cs:67082`).
             | NpcKind::ArmoredViking => 15,
+            // W4-d36 E4 batch 5 — the Headache / Misassembled Skeletons
+            // ride the same humanoid-group case list (`NPC.cs:68579-
+            // 68580`) on their 15-frame strips (`Main.npcFrameCount
+            // [201/202]`, `Main.cs:67104`; no ExtraFramesCount row —
+            // `NPCID.cs:10464` skips both).
+            NpcKind::HeadacheSkeleton
+            | NpcKind::MisassembledSkeleton => 15,
+            // W4-d36 E4 batch 5 — the Pantless Skeleton rides the same
+            // humanoid-group case list (`NPC.cs:68581`) on its 16-frame
+            // strip (`Main.npcFrameCount[203]`, `Main.cs:67104`).
+            NpcKind::PantlessSkeleton => 16,
             // W4-d36 E4 batch 3 — the Face Monster rides the same
             // humanoid-group case list (`NPC.cs:68574`) on its 16-frame
             // strip (`Main.npcFrameCount[181]`, `Main.cs:67082`; no
@@ -3997,6 +4084,13 @@ impl NpcKind {
             NpcKind::ArmoredViking => 280,
             NpcKind::Lihzahrd
             | NpcKind::LihzahrdCrawler => 400,
+            // W4-d36 E4 batch 5 (`NPC.cs:11579`/`:11592`/`:11605`/
+            // `:11618`/`:11647`).
+            NpcKind::HeadacheSkeleton => 55,
+            NpcKind::MisassembledSkeleton => 65,
+            NpcKind::PantlessSkeleton => 60,
+            NpcKind::SpikedJungleSlime => 65,
+            NpcKind::IcyMerman => 280,
             // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
             NpcKind::Crimera => 40,
             NpcKind::MossHornet => 220,
@@ -4393,6 +4487,13 @@ impl NpcKind {
             NpcKind::ArmoredViking => 50,
             NpcKind::Lihzahrd => 38,
             NpcKind::LihzahrdCrawler => 60,
+            // W4-d36 E4 batch 5 (`NPC.cs:11577`/`:11590`/`:11603`/
+            // `:11616`/`:11645`).
+            NpcKind::HeadacheSkeleton => 20,
+            NpcKind::MisassembledSkeleton => 18,
+            NpcKind::PantlessSkeleton => 22,
+            NpcKind::SpikedJungleSlime => 28,
+            NpcKind::IcyMerman => 60,
             // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
             NpcKind::Crimera => 22,
             NpcKind::MossHornet => 70,
