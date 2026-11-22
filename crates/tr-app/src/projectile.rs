@@ -15605,6 +15605,20 @@ impl ProjectilePool {
         }
     }
 
+    /// The `29` wire kill (`MessageBuffer.cs:1829-1843`): a finite position
+    /// snaps the slot there before `Kill` (`:1835-1839`), NaN/Inf just
+    /// deactivates (`:1840-1843`). The port's kill is the `kill_remote`
+    /// stand-in (no death effects on a remote slot).
+    pub fn kill_remote_at(&mut self, slot: usize, owner: u8, generation: u16, x: f32, y: f32) {
+        if x.is_finite() && y.is_finite() && slot < MAX_PROJECTILES {
+            let p = &mut self.slots[slot];
+            if p.active && p.owner == owner && p.generation == generation {
+                p.pos = Vec2::new(x, y);
+            }
+        }
+        self.kill_remote(slot, owner, generation);
+    }
+
     /// Creates or patches a slot from a `27 Projectile` body
     /// (`NewProjectileSetup` + the field assignment,
     /// `MessageBuffer.cs:1729-1755`): a key match patches in place, anything
