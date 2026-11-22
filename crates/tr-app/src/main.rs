@@ -204,6 +204,10 @@ mod projectile_ai_style42;
 mod projectile_ai_style43;
 mod projectile_ai_style46;
 mod projectile_ai_style49;
+// W4-d7: UNWIRED projectile aiStyle machines (research/26e) — the rows +
+// dispatch arms are the wiring round (the d5 / npc_ai_style25 precedent).
+mod projectile_ai_style63;
+mod projectile_ai_style69;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

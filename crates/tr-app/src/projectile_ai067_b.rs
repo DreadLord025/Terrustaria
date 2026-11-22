@@ -26,10 +26,15 @@
 //! (`unified_random.rs:209-211`), so the stream advances identically; the
 //! values are discarded with the dust pool, so the f32 cast is unobservable.
 //! No other draw exists on these types: no scan, no bite, no burst, no blink.
-//! The 653 (scream/darkness `Next(10)`/`Next(30,120)`/`Next(5)`/`Next(30)`,
-//! `:49494-49554`) and the 1090 (`NextVector2CircularEdge` +
-//! `RotatedByRandom` steering, `:49744-49818`) are deferred precisely because
-//! their draws feed observable state.
+//! **W4-d7 F3** landed the two deferred pets: the 653 Companion Cube (the
+//! scream `Next(10)` + the darkness `Next(30,120)`/`Next(5)`/`Next(30)` chain
+//! with the `Player.Hurt`, `:49494-49554`, `companion_cube_tick` below) and
+//! the 1090 Rainbow Boulder Pet (the `NextVector2CircularEdge` shimmer +
+//! `RotatedByRandom` steering, `:49744-49818`). Their draws feed observable
+//! state, so each stays verbatim on the stream. The 1036 Cob Whip spider's
+//! `Kill()` dust census (`:71068-71076`) rides
+//! [`cob_whip_spider_kill_draws`]; the spider's AI is the sibling
+//! `ai_freaking_pirates`' `flag7` arm.
 //!
 //! Deviations (the standing S1-D-4b-7 precedents, ANALYSIS "The pirate family,
 //! first slice" + "slice B"): the dust spawns and the 500's
@@ -49,8 +54,9 @@ use tr_core::loot::DropRng;
 
 use crate::player::Player;
 use crate::projectile::{
-    BOULDER_PET, CRIMSON_HEART, DIRTIEST_BLOCK, Projectile, angle_lerp, angle_towards, box_solid,
-    csign, get_lerp_value, proj_frames, safe_normalize, solid_tile, wrap_angle,
+    BOULDER_PET, COMPANION_CUBE, CRIMSON_HEART, DIRTIEST_BLOCK, RAINBOW_BOULDER_PET, Projectile,
+    angle_lerp, angle_towards, box_solid, csign, get_lerp_value, proj_frames, safe_normalize,
+    solid_tile, wrap_angle,
 };
 
 /// The pets' idle home spot (`Projectile.cs:49441-49453`): the 500 stands
@@ -65,12 +71,14 @@ pub(crate) fn pet_home_spot(kind: u16, player_center: Vec2, facing: i32) -> Vec2
             vector.x -= 40.0 * facing as f32;
         }
         // `:49446-49449` — `vector.X = player.Center.X` (a no-op on the
-        // centre-initialised spot, kept for the citation).
-        DIRTIEST_BLOCK => {
+        // centre-initialised spot, kept for the citation). The 653 shares it
+        // (`:49458-49461`, W4-d7 F3).
+        DIRTIEST_BLOCK | COMPANION_CUBE => {
             vector.x = player_center.x;
         }
-        // `:49450-49453`
-        BOULDER_PET => {
+        // `:49450-49453` — the 1056; the 1090 shares it (`:49454-49457`,
+        // W4-d7 F3).
+        BOULDER_PET | RAINBOW_BOULDER_PET => {
             vector.x -= (15.0 + crate::player::WIDTH * 0.5) * facing as f32;
         }
         _ => {}
@@ -88,10 +96,11 @@ pub(crate) fn pet_home_spot(kind: u16, player_center: Vec2, facing: i32) -> Vec2
 /// the slot's `should_fall_through` into `pirate_movement`.
 pub(crate) fn pet_fall_through(kind: u16, player_bottom: f32, proj_bottom: f32) -> bool {
     match kind {
-        // `:17488-17495` (500) / `:17496-17503` (1018, shared with the 653)
-        CRIMSON_HEART | DIRTIEST_BLOCK => player_bottom > proj_bottom + 4.0,
-        // `:17480-17487` — the projPet rule (1056; `Main.projPet[1018]` is
-        // also true but the `:17496` type arm overrides it afterwards).
+        // `:17488-17495` (500) / `:17496-17503` (1018, shared with the 653 —
+        // W4-d7 F3).
+        CRIMSON_HEART | DIRTIEST_BLOCK | COMPANION_CUBE => player_bottom > proj_bottom + 4.0,
+        // `:17480-17487` — the projPet rule (1056/1090; `Main.projPet[1018]`
+        // is also true but the `:17496` type arm overrides it afterwards).
         _ => player_bottom - 12.0 > proj_bottom,
     }
 }
@@ -107,6 +116,7 @@ impl Projectile {
         world: &World,
         mut player: Option<&mut Player>,
         rng: &mut dyn DropRng,
+        cube_light: Option<(f32, f32)>,
     ) {
         // `:49133` — the gravity base.
         let num = 0.4f32;
@@ -120,11 +130,11 @@ impl Projectile {
         // `flag10` (petting) folds to false (the port has no petting system,
         // the sibling precedent).
         let num4 = 300.0f32;
-        // `:49328-49375` — the pets' keep-alive pins: `num3 = 200` for all
-        // three (the ladder default overridden); the buff flags ride
-        // `Player.pet_flags` (the `buff_effects_accessory` granters,
-        // `Player.cs:11019-11032` etc.).
-        let num3 = 200.0f32;
+        // `:49328-49387` — the pets' keep-alive pins: `num3 = 200` for the
+        // 500/1018/1056/1090, `num3 = 300` for the 653 (`:49342`, W4-d7 F3);
+        // the buff flags ride `Player.pet_flags` (the `buff_effects_accessory`
+        // granters, `Player.cs:11019-11032` etc.).
+        let num3 = if self.kind == COMPANION_CUBE { 300.0f32 } else { 200.0f32 };
         {
             let p = player.as_deref_mut().unwrap();
             let held = p.pet_flags[self.kind as usize];
@@ -134,12 +144,17 @@ impl Projectile {
                 self.time_left = 2;
             }
         }
-        let p = player.as_deref().unwrap();
-        let (pcx, pcy) = p.center();
-        let player_center = Vec2::new(pcx, pcy);
-        let player_bottom = p.y + p.height;
+        // The player scalars the pet machine reads (snapshot before the
+        // per-tick match — the Companion Cube's block re-borrows `player`
+        // mutably for the darkness bite's Hurt, so no immutable `p` borrow
+        // may be live across it).
+        let (p_misc_counter, p_vx, p_vy, player_center, player_bottom, p_facing) = {
+            let pl = player.as_deref().unwrap();
+            let (pcx, pcy) = pl.center();
+            (pl.misc_counter, pl.vx, pl.vy, Vec2::new(pcx, pcy), pl.y + pl.height, pl.facing)
+        };
         // `:49405` + `:49441-49453` — the idle home spot.
-        let mut vector = pet_home_spot(self.kind, player_center, p.facing);
+        let mut vector = pet_home_spot(self.kind, player_center, p_facing);
         // `:49462-49493` — the per-tick pet blocks, BEFORE the state machine.
         match self.kind {
             CRIMSON_HEART => {
@@ -166,9 +181,21 @@ impl Projectile {
             DIRTIEST_BLOCK => {
                 self.rot += self.vel.x / 20.0;
             }
-            // `:49490-49493` (the 1090's half is deferred)
-            BOULDER_PET => {
+            // `:49490-49493` — the 1056/1090 share the /16 spin (W4-d7 F3).
+            BOULDER_PET | RAINBOW_BOULDER_PET => {
                 self.rot += self.vel.x / 16.0;
+            }
+            // `:49494-49555` — the Companion Cube (W4-d7 F3): the /20 spin,
+            // the lava scream and the darkness bite. The scream cooldown is
+            // a per-owner static (`_CompanionCubeScreamCooldown`, `:49500`);
+            // the port folds it to the slot's `local_ai[2]` (one cube per
+            // owner, the pet-flag convention — recorded in ANALYSIS). The
+            // darkness read needs the light map (the pool's `cube_light`
+            // snapshot, the `set_disco` precedent); `None` folds the bite
+            // inert (the pool-only tests).
+            COMPANION_CUBE => {
+                self.rot += self.vel.x / 20.0;
+                self.companion_cube_tick(world, player.as_deref_mut(), rng, cube_light);
             }
             _ => {}
         }
@@ -183,13 +210,22 @@ impl Projectile {
         // unreachable for the pets (nothing arms them).
         // `:49742-49953` — state 1: fly back to the owner.
         if self.ai[0] == 1.0 {
-            // `:49744-49752` — the 1090's shimmer particle is deferred.
+            // `:49744-49752` — the 1090's shimmer particle (W4-d7 F3): the
+            // miscCounter%2 gate, the NextVector2CircularEdge(w/2,h/2) draw
+            // (ONE NextFloat, Utils.cs:1261-1263/1271-1273) stays on the
+            // stream; the particle body is the render skip.
+            if self.kind == RAINBOW_BOULDER_PET && p_misc_counter % 2 == 0 {
+                let _ = rng.next_float();
+            }
             self.tile_collide = false;
             let num17 = 0.2f32;
             let mut num18 = 10.0f32;
             let num19 = 200.0f32;
-            // `:49757-49760` — the 1090's 18 is deferred.
-            let pv_speed = p.vx.abs() + p.vy.abs();
+            // `:49757-49760` — the 1090's speed floor is 18 (W4-d7 F3).
+            if self.kind == RAINBOW_BOULDER_PET {
+                num18 = 18.0;
+            }
+            let pv_speed = p_vx.abs() + p_vy.abs();
             if num18 < pv_speed {
                 num18 = pv_speed;
             }
@@ -202,25 +238,46 @@ impl Projectile {
             }
             // `:49771-49779` — arrived below the owner's feet: land.
             if num20 < num19
-                && p.vy == 0.0
+                && p_vy == 0.0
                 && self.pos.y + self.h <= player_bottom
                 && !box_solid(world, self.pos, self.w, self.h)
             {
                 self.ai[0] = 0.0;
+                self.net_update = true; // `:49774`
                 if self.vel.y < -6.0 {
                     self.vel.y = -6.0;
                 }
             }
             // `:49780-49785` — the Cattiva mount snap is deferred.
-            let num21 = 60.0f32;
-            // `:49787-49790` — the 1090's 350 is deferred.
+            let mut num21 = 60.0f32;
+            // `:49787-49790` — the 1090's close radius is 350 (W4-d7 F3).
+            if self.kind == RAINBOW_BOULDER_PET {
+                num21 = 350.0;
+            }
             if num20 < num21 {
-                // `:49791-49802` — close: bleed the speed (the 1090's
-                // normalize arm is deferred).
+                // `:49791-49802` — close: bleed the speed; the 1090 also
+                // renormalizes to num18 when slower (W4-d7 F3).
                 self.local_ai[0] = 0.0;
+                if self.kind == RAINBOW_BOULDER_PET && self.vel.length() < num18 {
+                    if self.vel == Vec2::ZERO {
+                        self.vel = Vec2::new(0.0, -1.0);
+                    }
+                    self.vel = safe_normalize(self.vel) * num18;
+                }
             } else {
-                // `:49803-49855` — far: steer at the owner (the 1090's
-                // `RotatedByRandom` arm `:49807-49819` is deferred).
+                // `:49803-49855` — far: steer at the owner. The 1090's
+                // `RotatedByRandom(0.5236)` arm (`:49807-49819`, W4-d7 F3)
+                // replaces the per-axis accel: TWO NextDouble draws
+                // (Utils.cs:1697-1700), the bounce particle skipped.
+                if self.kind == RAINBOW_BOULDER_PET {
+                    let aim = safe_normalize(spinninpoint) * num18;
+                    let a = rng.next_double() * 0.5235987901687622
+                        - rng.next_double() * 0.5235987901687622;
+                    self.vel = crate::bow_launch::rotated_by(aim, a);
+                    if self.local_ai[0] == 0.0 {
+                        self.local_ai[0] = 1.0;
+                    }
+                } else {
                 let aim = safe_normalize(spinninpoint) * num18;
                 if self.vel.x < aim.x {
                     self.vel.x += num17;
@@ -246,6 +303,7 @@ impl Projectile {
                         self.vel.y -= num17 * 1.5;
                     }
                 }
+                }
             }
             // `:49856-49859` — the facing.
             if self.vel.x != 0.0 {
@@ -253,15 +311,15 @@ impl Projectile {
             }
             // `:49860-49941` — no pet arm (the Flinx/pirate/Cattiva/frog/
             // tiger/Clay-Pot flight frames belong to the deferred kinds).
-            // `:49942-49945` — the boulder's flight spin (the 1090's half is
-            // deferred).
-            if self.kind == BOULDER_PET {
+            // `:49942-49945` — the boulder's flight spin (the 1056/1090 share
+            // it, W4-d7 F3).
+            if self.kind == BOULDER_PET || self.kind == RAINBOW_BOULDER_PET {
                 self.rot += 0.5 * self.sprite_direction as f32;
             }
             // `:49946-49952` — the Dirtiest Block's flight dust: the
             // `miscCounter % 3` gate, the spawn skipped, the
             // `RotatedByRandom(0.2617…)` pair on the stream.
-            if self.kind == DIRTIEST_BLOCK && p.misc_counter % 3 == 0 {
+            if self.kind == DIRTIEST_BLOCK && p_misc_counter % 3 == 0 {
                 let _ = (rng.next_float(), rng.next_float());
             }
         }
@@ -284,6 +342,7 @@ impl Projectile {
             }
             if flag18 {
                 self.ai[0] = 1.0;
+                self.net_update = true; // `:50294`
             }
         }
         // `:50301-51149` — state 0: the ground walk (state 3 is the deferred
@@ -354,15 +413,15 @@ impl Projectile {
             let num46 = 4.0f32;
             let mut num47 = 4.0f32;
             let num48 = 0.1f32;
-            let pv_speed = p.vx.abs() + p.vy.abs();
+            let pv_speed = p_vx.abs() + p_vy.abs();
             if num47 < pv_speed {
                 num47 = pv_speed;
                 num45 = 0.7;
             }
-            // `:50423-50434` — the 1018 (and the deferred 653) cap the walk
-            // speed at the owner's actual speed.
-            if self.kind == DIRTIEST_BLOCK {
-                let mut num49 = Vec2::new(p.vx, p.vy).length();
+            // `:50423-50434` — the 1018/653 cap the walk speed at the owner's
+            // actual speed (W4-d7 F3: the 653 shares the 1018 arm).
+            if self.kind == DIRTIEST_BLOCK || self.kind == COMPANION_CUBE {
+                let mut num49 = Vec2::new(p_vx, p_vy).length();
                 if num49 < 0.1 {
                     num49 = 0.0;
                 }
@@ -377,11 +436,11 @@ impl Projectile {
             let my_center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
             let num51 = vector.x - my_center.x;
             let vector13 = vector - my_center;
-            if self.kind == BOULDER_PET && num51.abs() < 50.0 {
-                // `:50444-50464` — the boulder's near-home settle: the
-                // owner-speed cap, the slow-spin angle lerp and the 0.9
-                // bleed with the 0.1 snap.
-                let mut num52 = Vec2::new(p.vx, p.vy).length();
+            if (self.kind == BOULDER_PET || self.kind == RAINBOW_BOULDER_PET) && num51.abs() < 50.0 {
+                // `:50444-50464` — the boulder's near-home settle (the
+                // 1056/1090 share it, W4-d7 F3): the owner-speed cap, the
+                // slow-spin angle lerp and the 0.9 bleed with the 0.1 snap.
+                let mut num52 = Vec2::new(p_vx, p_vy).length();
                 if num52 < 0.1 {
                     num52 = 0.0;
                 }
@@ -398,6 +457,14 @@ impl Projectile {
             } else if self.kind == DIRTIEST_BLOCK && num51.abs() < 50.0 {
                 // `:50465-50473` — the block's near-home settle: the 0.2
                 // angle-towards and the same bleed/snap.
+                self.rot = angle_towards(self.rot, 0.0, 0.2);
+                self.vel.x *= 0.9;
+                if self.vel.x.abs() < 0.1 {
+                    self.vel.x = 0.0;
+                }
+            } else if self.kind == COMPANION_CUBE && num51.abs() < 150.0 {
+                // `:50474-50482` — the cube's near-home settle (W4-d7 F3):
+                // the 150-px band, the 0.2 angle-towards, the same bleed/snap.
                 self.rot = angle_towards(self.rot, 0.0, 0.2);
                 self.vel.x *= 0.9;
                 if self.vel.x.abs() < 0.1 {
@@ -420,14 +487,16 @@ impl Projectile {
                         self.vel.x += num48;
                     }
                 }
-                // `:50509-50557` — the jump intent: the 1018 never
-                // auto-jumps (`:50530-50533`), the boulder only above 5
-                // speed (`:50534-50537`); the 500 keeps the stock true.
+                // `:50509-50557` — the jump intent: the 1018/653 never
+                // auto-jump (`:50526-50533`, W4-d7 F3), the boulder only
+                // above 5 speed (`:50534-50537`); the 500 keeps the stock true.
                 let mut flag21 = true;
-                if self.kind == DIRTIEST_BLOCK {
+                if self.kind == DIRTIEST_BLOCK || self.kind == COMPANION_CUBE {
                     flag21 = false;
                 }
-                if self.kind == BOULDER_PET && self.vel.length() <= 5.0 {
+                if (self.kind == BOULDER_PET || self.kind == RAINBOW_BOULDER_PET)
+                    && self.vel.length() <= 5.0
+                {
                     flag21 = false;
                 }
                 if flag21 {
@@ -454,15 +523,15 @@ impl Projectile {
                 }
             }
             // `:50585-50600` — the pets' motion jump intents: the 500 jumps
-            // whenever it moves sideways, the 1018 above 3, the boulder
-            // above 5 total speed.
+            // whenever it moves sideways, the 1018/653 above 3 (W4-d7 F3),
+            // the boulder above 5 total speed.
             if self.kind == CRIMSON_HEART && self.vel.x != 0.0 {
                 flag19 = true;
             }
-            if self.kind == DIRTIEST_BLOCK && self.vel.x.abs() > 3.0 {
+            if (self.kind == DIRTIEST_BLOCK || self.kind == COMPANION_CUBE) && self.vel.x.abs() > 3.0 {
                 flag19 = true;
             }
-            if self.kind == BOULDER_PET && self.vel.length() > 5.0 {
+            if (self.kind == BOULDER_PET || self.kind == RAINBOW_BOULDER_PET) && self.vel.length() > 5.0 {
                 flag19 = true;
             }
             // `:50605` — the step-up.
@@ -612,8 +681,135 @@ impl Projectile {
                 self.vel.y = 10.0;
             }
         }
-        // `:51150-51200` — the pirates' idle burst and the 1090's frame
-        // cycle/localAI[2] fade don't apply to the slice-B pets.
+        // `:51150-51171` — the pirates' idle burst doesn't apply to the pets.
+        // `:51172-51200` — the 1090's frame cycle + localAI[2] fade (W4-d7 F3).
+        if self.kind == RAINBOW_BOULDER_PET {
+            self.frame_counter += 1;
+            if self.frame_counter >= 2 {
+                self.frame_counter = 0;
+                self.frame += 1;
+                if self.frame >= 100 {
+                    self.frame = 0;
+                }
+            }
+            let num70 = 0.025f32;
+            if self.ai[0] == 1.0 {
+                self.local_ai[2] += num70;
+                if self.local_ai[2] >= 1.0 {
+                    self.local_ai[2] = 1.0;
+                }
+            } else {
+                self.local_ai[2] -= num70;
+                if self.local_ai[2] <= 0.0 {
+                    self.local_ai[2] = 0.0;
+                }
+            }
+        }
+    }
+
+    /// `AI_067`'s Companion Cube per-tick block (`Projectile.cs:49494-49555`,
+    /// W4-d7 F3): the lava scream (`localAI[0]` ramps in lava, kills at 20,
+    /// the owner-gated scream cue on a 1/10 roll) and the darkness bite
+    /// (`localAI[1]` ramps in the dark, the 1/5 fake-scream vs the 3-damage
+    /// bite). The scream cooldown is the per-owner static
+    /// `_CompanionCubeScreamCooldown` (`:49500`); the port folds it to the
+    /// slot's `local_ai[2]` (one cube per owner, the pet-flag convention —
+    /// ANALYSIS). The darkness read rides the pool's `cube_light` snapshot
+    /// (the `set_disco` precedent); the caller passes it. `flag12` (the
+    /// owner-slot gate) folds true (the pool simulates local-owned slots).
+    fn companion_cube_tick(
+        &mut self,
+        world: &World,
+        player: Option<&mut Player>,
+        rng: &mut dyn DropRng,
+        cube_light: Option<(f32, f32)>,
+    ) {
+        // `:49500-49504` — the scream cooldown decays (the slot fold).
+        self.local_ai[2] -= 1.0;
+        if self.local_ai[2] < 0.0 {
+            self.local_ai[2] = 0.0;
+        }
+        // `:49506-49515` — the lava ramp: the centre tile's lava raises
+        // localAI[0], else it falls; clamp [0, 20].
+        let cx = (self.pos.x + self.w * 0.5) / tr_core::TILE_PX;
+        let cy = (self.pos.y + self.h * 0.5) / tr_core::TILE_PX;
+        let in_lava = world
+            .tile(cx as i32, cy as i32)
+            .filter(|t| t.liquid > 0)
+            .is_some_and(|t| t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
+        if in_lava {
+            self.local_ai[0] += 1.0;
+        } else {
+            self.local_ai[0] -= 1.0;
+        }
+        self.local_ai[0] = self.local_ai[0].clamp(0.0, 20.0);
+        // `:49516-49524` — the scream + kill at 20. The C# does NOT return
+        // here — the darkness block (`:49525`) still runs on the kill tick.
+        if self.local_ai[0] >= 20.0 {
+            if self.local_ai[2] == 0.0 {
+                self.local_ai[2] = 3600.0;
+                // `:49521` — Next(10)==0 → NPCDeath61 (4,61) else NPCDeath59
+                // (4,59). The draw stays on the stream.
+                let style = if rng.next_range(0, 10) == 0 { 61 } else { 59 };
+                self.wants_sound = Some((4, style, self.pos.x, self.pos.y, 0.0));
+            }
+            self.kill_time_left = self.time_left;
+            self.active = false;
+            self.time_left = 0;
+        }
+        // `:49525-49554` — the darkness bite (local owner only). The light
+        // snapshot is the two GetColor lengths; None folds it inert.
+        let Some((cube_len, player_len)) = cube_light else {
+            return;
+        };
+        let Some(p) = player else {
+            return;
+        };
+        if cube_len < 0.15 && player_len < 0.15 {
+            self.local_ai[1] += 1.0;
+        } else if self.local_ai[1] > 0.0 {
+            self.local_ai[1] -= 1.0;
+        }
+        self.local_ai[1] = self.local_ai[1].clamp(-3600.0, 120.0);
+        // `:49538` — the Next(30,120) threshold draw runs FIRST (the &&
+        // short-circuits on the player gates AFTER it).
+        let threshold = rng.next_range(30, 120) as f32;
+        if self.local_ai[1] > threshold && !p.immune && p.vx == 0.0 && p.vy == 0.0 {
+            if rng.next_range(0, 5) == 0 {
+                // `:49542-49543` — the fake scream: Item16, localAI[1] = -600.
+                self.wants_sound = Some((2, 16, self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5, 0.0));
+                self.local_ai[1] = -600.0;
+            } else {
+                // `:49547-49551` — the bite: Item1, Hurt(3), the i-frame
+                // clear, localAI[1] = -300 + Next(30)*-10. The C# passes
+                // hitDirection 0 — `Hurt`'s knockback gate (`Player.cs:38519`
+                // `hitDirection != 0`) takes NO pop; the port's `hurt_inner`
+                // with knock_back false (the fall lane's precedent).
+                self.wants_sound = Some((2, 1, self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5, 0.0));
+                let cx = self.pos.x + self.w * 0.5;
+                p.hurt_inner(3, cx, false, rng, true, false, None, true);
+                p.immune = false;
+                p.immune_time = 0;
+                // The port's collapsed cooldown rides `hurt_cd` too — clear
+                // it with the i-frames or the next bite is swallowed (the
+                // C# has no such second gate).
+                p.hurt_cd = 0.0;
+                self.local_ai[1] = -300.0 + rng.next_range(0, 30) as f32 * -10.0;
+            }
+        }
+    }
+}
+
+/// `Kill()`'s 1036 dust census (`Projectile.cs:71068-71076`, W4-d7 F3):
+/// 3× dust 5 (`NewDustPerfect`), each with ONE `NextVector2Circular(4,4)`
+/// position roll — TWO `NextFloat` draws (`Utils.cs:1266-1268`: the
+/// `NextVector2Unit` angle + the radius scale). The dust BODIES are the
+/// documented skip (no draw layer); the six float draws stay on the stream.
+/// The wiring caller gates the kind.
+pub(crate) fn cob_whip_spider_kill_draws(rng: &mut dyn DropRng) {
+    for _ in 0..3 {
+        let _ = rng.next_float(); // the unit angle (`:1263`)
+        let _ = rng.next_float(); // the radius scale (`:1268`)
     }
 }
 
@@ -726,11 +922,11 @@ mod s1_d_4b_12_tests {
             let mut proj = pet(kind, 16.0, 16.0, Vec2::new(100.0, 100.0));
             proj.time_left = 500;
             let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
-            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
             assert_eq!(proj.time_left, 2, "kind {kind}: the pin");
             p.dead = true;
             proj.time_left = 500;
-            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
             assert!(!p.pet_flags[kind as usize], "kind {kind}: death clears");
             assert_eq!(proj.time_left, 500, "kind {kind}: no pin when dead");
         }
@@ -749,7 +945,7 @@ mod s1_d_4b_12_tests {
         let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
         for _ in 0..5 {
             proj.vel = Vec2::ZERO;
-            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         }
         assert_eq!(census.floats, 10, "two draws per tick, five ticks");
         assert!(census.ranges.is_empty(), "the pets draw no integer ranges");
@@ -760,7 +956,7 @@ mod s1_d_4b_12_tests {
         // The rotation accumulates vel.x / 20 (`:49478`).
         proj.vel.x = 2.0;
         let rot = proj.rot;
-        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         assert!((proj.rot - rot - 0.1).abs() < 1e-6, "`rotation += velocity.X / 20`");
     }
 
@@ -778,7 +974,7 @@ mod s1_d_4b_12_tests {
             p.misc_counter = tick;
             proj.ai[0] = 1.0;
             let before = census.floats;
-            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
             let drawn = census.floats - before;
             assert_eq!(drawn, if tick % 3 == 0 { 2 } else { 0 }, "tick {tick}");
         }
@@ -798,15 +994,15 @@ mod s1_d_4b_12_tests {
         let mut proj = pet(DIRTIEST_BLOCK, 16.0, 16.0, Vec2::new(cx - 8.0, cy - 8.0));
         let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
         proj.vel = Vec2::ZERO;
-        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         assert_eq!(census.floats, 12, "six RotatedByRandom pairs");
         assert_eq!(proj.local_ai[2], 1.0, "the burst latch");
         proj.vel = Vec2::ZERO;
-        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         assert_eq!(census.floats, 12, "the latch holds — no second burst");
         // Airborne: the latch re-arms (`:50729-50732`), no draws.
         proj.vel.y = 2.0;
-        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         assert_eq!(proj.local_ai[2], 0.0, "airborne re-arms");
         assert_eq!(census.floats, 12);
         assert!(census.ranges.is_empty());
@@ -823,7 +1019,7 @@ mod s1_d_4b_12_tests {
         let mut proj = pet(BOULDER_PET, 32.0, 32.0, Vec2::new(cx - 41.0, cy - 16.0));
         let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
         proj.vel = Vec2::new(0.5, 0.0);
-        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         assert_eq!(census.floats, 0, "the boulder draws nothing");
         assert!(census.ranges.is_empty());
         // 0.5 * 0.9 = 0.45 — above the 0.1 snap, below the 0.3 spin gate.
@@ -832,7 +1028,7 @@ mod s1_d_4b_12_tests {
         assert!((proj.rot - 0.5 / 16.0).abs() < 1e-6, "`rotation += velocity.X / 16`");
         // A second tick: 0.45 * 0.9 = 0.405, still above the snap.
         proj.vel.y = 0.0;
-        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         assert!((proj.vel.x - 0.405).abs() < 1e-6);
         assert_eq!(census.floats, 0);
     }
@@ -847,10 +1043,10 @@ mod s1_d_4b_12_tests {
             let (cx, cy) = p.center();
             let mut proj = pet(kind, 16.0, 16.0, Vec2::new(cx + 201.0 - 8.0, cy - 8.0));
             let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
-            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
             assert_eq!(proj.ai[0], 1.0, "kind {kind}: 201 px flies home");
             let mut proj = pet(kind, 16.0, 16.0, Vec2::new(cx + 199.0 - 8.0, cy - 8.0));
-            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+            proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
             assert_eq!(proj.ai[0], 0.0, "kind {kind}: 199 px keeps walking");
         }
     }
@@ -867,7 +1063,7 @@ mod s1_d_4b_12_tests {
         proj.ai[0] = 1.0;
         proj.vel = Vec2::new(0.0, -9.0);
         let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
-        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
         assert_eq!(proj.ai[0], 0.0, "the landing");
         // The clamp (`:49775-49778`) then the SAME tick's walk gravity
         // (`:51144`, the landing flips `ai[0]` to 0 before the walk block):
@@ -878,5 +1074,152 @@ mod s1_d_4b_12_tests {
             "the -6 clamp + the walk gravity with the fall-through lift"
         );
         assert!(proj.tile_collide, "the same-tick walk re-enables collide (`:50365`)");
+    }
+
+    /// W4-d7 F3 — the Companion Cube's lava scream (`:49506-49524`): the
+    /// localAI[0] ramps in lava, kills at 20, the scream cue on the cooldown
+    /// reset (the Next(10) pick). The centre tile's lava drives the ramp.
+    #[test]
+    fn w4_d7_f3_the_companion_cube_lava_scream() {
+        let mut w = world();
+        // A lava tile at the cube's centre (tile 20, 20 → px 320, 320).
+        let i = w.index(20, 20);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        let mut proj = pet(COMPANION_CUBE, 30.0, 30.0, Vec2::new(305.0, 305.0));
+        proj.local_ai[0] = 19.0; // one tick from the scream
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        proj.companion_cube_tick(&w, None, &mut census, None);
+        assert!(!proj.active, "the 20th lava tick kills");
+        assert_eq!(proj.local_ai[2], 3600.0, "the scream cooldown reset");
+        assert_eq!(census.ranges, vec![(0, 10)], "the Next(10) scream pick");
+        assert!(proj.wants_sound.is_some(), "the scream cue");
+    }
+
+    /// W4-d7 F3 — the Companion Cube's darkness bite (`:49525-49554`): the
+    /// localAI[1] ramps in the dark, the Next(30,120) threshold draw runs
+    /// FIRST, the 1/5 fake-scream vs the bite. A lit snapshot folds it inert.
+    #[test]
+    fn w4_d7_f3_the_companion_cube_darkness_bite() {
+        let w = world();
+        let mut p = player(&w);
+        p.vx = 0.0;
+        p.vy = 0.0;
+        // immune=true blocks the bite AFTER the threshold draw (the C# &&
+        // short-circuit: the Next(30,120) draws first, then !player.immune).
+        p.immune = true;
+        let mut proj = pet(COMPANION_CUBE, 30.0, 30.0, Vec2::new(305.0, 305.0));
+        proj.local_ai[1] = 119.0; // one tick from the 120 cap
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        // Dark at both samples: the ramp climbs, the threshold draw runs.
+        proj.companion_cube_tick(&w, Some(&mut p), &mut census, Some((0.0, 0.0)));
+        assert_eq!(proj.local_ai[1], 120.0, "the dark ramp clamps at 120");
+        assert_eq!(census.ranges, vec![(30, 120)], "the threshold draw runs first, the immune gate blocks the bite");
+        // A lit snapshot: no ramp, no threshold draw.
+        let mut proj2 = pet(COMPANION_CUBE, 30.0, 30.0, Vec2::new(305.0, 305.0));
+        proj2.local_ai[1] = 50.0;
+        let mut census2 = CensusRng { ranges: Vec::new(), floats: 0 };
+        proj2.companion_cube_tick(&w, Some(&mut p), &mut census2, Some((1.0, 1.0)));
+        assert_eq!(proj2.local_ai[1], 49.0, "the lit decay");
+        assert!(census2.ranges.is_empty(), "no threshold draw when lit");
+    }
+
+    /// W4-d7 F3 — the Rainbow Boulder Pet's flight steering (`:49807-49819`):
+    /// the far-arm RotatedByRandom(0.5236) draws TWO NextDouble (the f64 seam),
+    /// the close-arm renormalizes to num18=18. The shimmer particle's
+    /// miscCounter%2 gate draws ONE NextFloat.
+    #[test]
+    fn w4_d7_f3_the_rainbow_boulder_flight_steering() {
+        let w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        // Far from the owner (>350): the RotatedByRandom arm.
+        let mut proj = pet(RAINBOW_BOULDER_PET, 32.0, 32.0, Vec2::new(cx + 500.0, cy));
+        proj.ai[0] = 1.0;
+        p.misc_counter = 1; // odd → no shimmer draw
+        let mut rng = tr_core::UnifiedRandom::new(1090);
+        let mut oracle = tr_core::UnifiedRandom::new(1090);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut rng, None);
+        // The two RotatedByRandom draws (the f64 seam).
+        let _ = oracle.next_double();
+        let _ = oracle.next_double();
+        assert_eq!(rng.next_range(0, 1), oracle.next_range(0, 1), "exactly two draws");
+        assert_eq!(proj.local_ai[0], 1.0, "the bounce-particle latch");
+    }
+
+    /// W4-d7 F3 — the Companion Cube's bite (`:49547-49551`): Hurt(3) with
+    /// hitDirection 0 — NO knockback pop (`Player.cs:38519`'s
+    /// `hitDirection != 0` gate), the i-frame clear INCLUDING the port's
+    /// collapsed `hurt_cd`, localAI[1] = -300 + Next(30)*-10.
+    #[test]
+    fn w4_d7_f3_the_companion_cube_bite_takes_no_pop() {
+        // A scripted stream: the threshold 30, the Next(5) bite pick 1
+        // (non-zero → the bite, not the fake scream), the Next(30) cooldown 0.
+        struct ScriptRng {
+            rolls: std::collections::VecDeque<i32>,
+        }
+        impl DropRng for ScriptRng {
+            fn next_range(&mut self, _min: i32, _max: i32) -> i32 {
+                self.rolls.pop_front().unwrap()
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let w = world();
+        let mut p = player(&w);
+        p.vx = 0.0;
+        p.vy = 0.0;
+        p.immune = false;
+        p.hurt_cd = 0.0;
+        let hp = p.hp;
+        let mut proj = pet(COMPANION_CUBE, 30.0, 30.0, Vec2::new(305.0, 305.0));
+        proj.local_ai[1] = 119.0;
+        let mut rng = ScriptRng { rolls: [30, 1, 0].into_iter().collect() };
+        proj.companion_cube_tick(&w, Some(&mut p), &mut rng, Some((0.0, 0.0)));
+        assert_eq!(p.hp, hp - 3, "the 3-damage bite (no defense)");
+        assert_eq!((p.vx, p.vy), (0.0, 0.0), "hitDirection 0 — no pop");
+        assert!(!p.immune, "the i-frame clear");
+        assert_eq!(p.immune_time, 0);
+        assert_eq!(p.hurt_cd, 0.0, "the collapsed cooldown clears too");
+        assert_eq!(proj.local_ai[1], -300.0, "-300 + Next(30)*-10 with the 0 roll");
+        assert_eq!(proj.wants_sound, Some((2, 1, 320.0, 320.0, 0.0)), "Item1 at the centre");
+    }
+
+    /// W4-d7 F3 — the 1090's frame cycle + localAI[2] fade (`:51172-51200`):
+    /// the 2-tick frame counter (the 100-wrap), the ±0.025 ramp keyed on
+    /// ai[0] == 1. Below the owner's feet the landing never fires, so the
+    /// flight state holds; the close arm draws nothing.
+    #[test]
+    fn w4_d7_f3_the_rainbow_boulder_frame_cycle_and_fade() {
+        let w = world();
+        let mut p = player(&w);
+        let (cx, cy) = p.center();
+        // Below the owner's feet (no landing), inside the 350 close radius.
+        let mut proj = pet(RAINBOW_BOULDER_PET, 32.0, 32.0, Vec2::new(cx - 16.0, cy + 40.0));
+        proj.ai[0] = 1.0;
+        proj.local_ai[2] = 0.5;
+        p.misc_counter = 1; // odd → no shimmer draw
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
+        assert_eq!(proj.frame_counter, 1, "tick 1: the counter climbs");
+        assert_eq!(proj.frame, 0);
+        proj.ai_freaking_pirates_pets(&w, Some(&mut p), &mut census, None);
+        assert_eq!(proj.frame_counter, 0, "tick 2: the 2-tick wrap");
+        assert_eq!(proj.frame, 1);
+        assert!((proj.local_ai[2] - 0.55).abs() < 1e-6, "the +0.025 flight ramp");
+        assert_eq!(census.floats, 0, "the close arm + odd miscCounter draw nothing");
+        assert!(census.ranges.is_empty());
+    }
+
+    /// W4-d7 F3 — the 1036's `Kill()` dust census (`:71068-71076`): 3× dust 5,
+    /// each ONE `NextVector2Circular(4,4)` = TWO NextFloat draws — six floats,
+    /// no integer ranges.
+    #[test]
+    fn w4_d7_f3_the_cob_whip_spider_kill_census() {
+        let mut census = CensusRng { ranges: Vec::new(), floats: 0 };
+        cob_whip_spider_kill_draws(&mut census);
+        assert_eq!(census.floats, 6, "two draws per dust, three dusts");
+        assert!(census.ranges.is_empty());
     }
 }

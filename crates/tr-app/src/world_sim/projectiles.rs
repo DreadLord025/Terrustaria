@@ -328,6 +328,48 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
     });
     app.projectiles.set_bobber_inputs(bobber_inputs);
+    // W4-d7 F3 — the Companion Cube's darkness read (`Projectile.cs:49527-
+    // 49528`): the two `Lighting.GetColor` samples (the cube's centre tile +
+    // the owner's centre tile) as `Color.ToVector3()` lengths. `GetColor`
+    // (`Lighting.cs:216-242`) byte-quantizes `(int)(engineColor * GlobalBrightness
+    // * 255)` clamped to 255, then `ToVector3` divides by 255 — so the length is
+    // the brightness-scaled, byte-truncated colour. GlobalBrightness is 1.2
+    // (`Lighting.cs:91`), dropped to 1.0 by the Darkness debuff's `blind` flag
+    // (`:114`). Sampled from the live light map before the pass (the `set_disco`
+    // precedent); only when a cube is owned.
+    let cube_light = app.player.as_ref().and_then(|p| {
+        let cube = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == crate::projectile::COMPANION_CUBE && s.owner == 0)?;
+        let brightness = if p.blind { 1.0 } else { tr_core::lighting::GLOBAL_BRIGHTNESS };
+        // `Lighting.cs:224` precomputes `num = GlobalBrightness * 255f` ONCE,
+        // then `(int)(color.X * num)` — the multiply order matters for the
+        // byte truncation, so fold the scale first (not `v * b * 255`).
+        let scale = brightness * 255.0;
+        let len = |wx: f32, wy: f32| {
+            let c = app.light.get((wx / 16.0) as i32, (wy / 16.0) as i32);
+            let byte = |v: f32| ((v * scale) as i32).min(255) as f32 / 255.0;
+            let (r, g, b) = (byte(c[0]), byte(c[1]), byte(c[2]));
+            (r * r + g * g + b * b).sqrt()
+        };
+        let (pcx, pcy) = p.center();
+        Some((
+            len(cube.pos.x + cube.w * 0.5, cube.pos.y + cube.h * 0.5),
+            len(pcx, pcy),
+        ))
+    });
+    app.projectiles.set_cube_light(cube_light);
+    // W4-d7 F3 — the Storm Tigers' special-attack gem count
+    // (`ownedProjectileCounts[831]`, `Projectile.cs:49039`) + the
+    // `Main.timeForVisualEffects` draw clock (the state-5 cosine bob,
+    // `:49683`; the `anim_time * 60 % 216000` form, `frame/draw.rs:374`).
+    let gem_counts = app.player.as_ref().map_or((0, 0), |p| {
+        (p.owned_projectile_counts[831], p.owned_projectile_counts[970])
+    });
+    app.projectiles.set_tiger_gem_counts(gem_counts);
+    app.projectiles.set_time_for_visuals((app.anim_time * 60.0) % 216000.0);
     // `Main.DiscoR/G/B` as the aiStyle-123 crystal's shard-hue roll reads
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
