@@ -25277,13 +25277,35 @@ wired; the rest of wave B stays documented callbacks.
   (one draw per placement, twin worlds byte-equal, non-random defs draw
   nothing, `frame_rng` untouched).
 
-Still wave B (documented callbacks): the tile-based `GetTileData(Tile)` frameY
-resolution (`TileObjectData.cs:5196-5261`, the `GetStyle_Detritus`/`SmallPiles`/
-`Stalactite` tags :5294-5327) and the runtime hook bodies
+**Wave B GetStyleOverride resolution DONE (W4-d112, 2026-11-20, code-only)**:
+`tileobject::resolve_tile_def` ports the tile-based `GetTileData(Tile)`
+overload (`TileObjectData.cs:5196-5261`) 1:1 — the frameX/frameY cell decode
+(:5212-5213), the wrap-0→1 fold (:5214-5218), the horizontal/vertical style
+layout (:5219), the multiplier split (:5220-5221), the `GetStyleOverride`
+short-circuit (:5222-5226 → `apply_style_override`, the three `GetStyle_*`
+bodies :5294-5327 with their exact thresholds 36/18/36-72-90), the
+`StyleLineSkip` re-decode (:5227-5240), the null-padded sub-tile lookup
+(:5241-5248) and the FIRST-match `[Style, Style+RandomStyleRange]` alternate
+window scan with INCLUSIVE upper bound (:5249-5259). Documented deviations:
+the null-Tile arm is the caller's `world.tile()` `None`; the out-of-range-type
+throw (:5203-5206) degrades to `None` like `def_for_tile`; the override bodies
+index the sub-tile pair slice positionally (the three override kinds' lists
+are dense from 0 — `addSubTile(0)` :4973/:4984, `addSubTile(0/1/2)`
+:4999/:5005/:5011). No consumer is re-wired: `object_tiles_at` and the kill
+cascade keep their base-def frame math (their C# counterparts are the
+`WorldGen.Check*` loops, not this overload); the framing/liquid-death
+consumers wire in with their own tasks. Witnesses WRITTEN NOT RUN (task
+constraint): `tests/tileobject_resolve_witness_d112.rs` (10 tests — the three
+override thresholds incl. boundaries, chair multiplier + sub-tile-own
+alternates, door line-skip re-decode + style-19 sub-tile, lamp zero-wrap
+line-skip, sunflower overlapping range windows, torch sub-tile→alternate
+walk, the 3-kind override tag census). Registry NOT regenerated (wave A
+frozen).
+
+Still wave B (documented callbacks): the runtime hook bodies
 (`Chest.FindEmptyChest`, `WorldGen.PlantCheck_CanPlaceHook`, the `TE*`
 tile-entity hooks). The generated defs carry the C# method NAME in
-`PlacementHook::callback` with `hook: None`; the `GetStyleOverride` tag is
-generated data.
+`PlacementHook::callback` with `hook: None`.
 
 ## The legacy lighting engine (S1-E-19 wave A, 2026-11-18)
 

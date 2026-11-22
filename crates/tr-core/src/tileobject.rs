@@ -36,7 +36,7 @@
 //! | `WaterPlacement` / `LavaPlacement` | `water_placement` / `lava_placement` |
 //! | `WaterDeath` / `LavaDeath` :508/:541 | `water_death` / `lava_death` |
 //! | `UsesCustomCanPlace` / `UsesGlobalLiquidChecks` :144/:157 | `uses_custom_can_place` / `uses_global_liquid_checks` |
-//! | `GetStyleOverride` :728 | `get_style_override` (the tag; resolution is wave B) |
+//! | `GetStyleOverride` :728 | `get_style_override` + [`resolve_tile_def`] (the frameY consumer, W4-d112) |
 //! | `HookCheckIfCanPlace` / `HookPlaceOverride` / `HookPostPlaceMyPlayer` | `hook_check_if_can_place` / `hook_place_override` / `hook_post_place_my_player` |
 //! | `CoordinateHeights` :1417 | `coordinate_heights` |
 //! | `CoordinateWidth` :1503 / `CoordinatePadding` :1537 | `coordinate_width` / `coordinate_padding` |
@@ -60,9 +60,14 @@
 //!   seam. The bodies read runtime state (chests, tile entities, plants)
 //!   outside this task; the hook *branches* in `can_place`/`place` are ported.
 //!   The M3-CHEST-UI seam is unchanged: the chest is a pure tile object here.
-//! - **`GetStyleOverride` resolution** (the frameY-based `GetTileData(Tile)`
-//!   overload :5196-5261): the tag is generated data; the tile-based resolution
-//!   is a framing/cascade consumer (wave B remaining).
+//! - **`GetStyleOverride` resolution — DONE (W4-d112, S1-F-7 wave B)**: the
+//!   tile-based `GetTileData(Tile)` overload (:5196-5261) is ported as
+//!   [`resolve_tile_def`] — the frameX/frameY style decode, the three
+//!   `GetStyle_*` overrides (:5294-5327), the `StyleLineSkip` re-decode and the
+//!   sub-tile/alternate range walk. Consumers: `object_tiles_at` and the
+//!   kill-cascade anchor lookup keep their base-def frame math (their C#
+//!   counterparts are the `WorldGen.Check*` loops, not this overload); the
+//!   framing/liquid-death consumers wire in with their own tasks.
 //! - **`onlyCheck`/preview** (`TileObjectPreviewData.placementCache`,
 //!   `objectPreview`, the anchor `Rectangle` bookkeeping TileObject.cs:219-321):
 //!   dead code when `onlyCheck=false` (verified by reading; the rectangle and
@@ -104,8 +109,8 @@ pub use registry::{BY_KIND, FRAME_IMPORTANT, KILL_TILE_NO_CELL_DROP, TABLE};
 
 /// `TileObjectData.GetStyleOverride` (`TileObjectData.cs:728-748`, the three
 /// implementations :5294-5327). The frameY-based resolution is the tile-based
-/// `GetTileData(Tile)` overload (:5196-5261) — a framing/cascade consumer
-/// (wave B); wave A carries the tag as data.
+/// `GetTileData(Tile)` overload (:5196-5261), ported as [`resolve_tile_def`]
+/// (W4-d112, S1-F-7 wave B); the tag itself is generated data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GetStyleOverride {
     #[default]
@@ -561,6 +566,138 @@ pub fn get_tile_data(
         resolved = resolved.alternates.get(alt as usize)?;
     }
     Some(resolved)
+}
+
+/// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
+/// frame-based resolution consumer (W4-d112, S1-F-7 wave B): decodes the
+/// stored `frameX`/`frameY` into a style/alternate pair and walks the def's
+/// sub-tiles and alternates. The `GetStyleOverride` hook (:5222-5226) wins
+/// over the whole decode when present ([`apply_style_override`], the three
+/// `GetStyle_*` bodies :5294-5327).
+///
+/// C# deviations (documented): a null `Tile` is the caller's `world.tile()`
+/// `None`; the out-of-range-type throw (:5203-5206) degrades to `None` like
+/// [`def_for_tile`] (the port never indexes past `BY_KIND`). Integer division
+/// truncates toward zero in both languages (negative frames degrade the same
+/// way). The sub-tile null-padding (`addSubTile` :2085-2091) is the port's
+/// (style, def) pair lookup — a null slot keeps the current def, 1:1.
+pub fn resolve_tile_def(tile: &Tile) -> Option<&'static TileObjectDef> {
+    // :5198-5201 — inactive tiles resolve nothing.
+    if !tile.active() {
+        return None;
+    }
+    // :5202-5211 — `_data[type]`, null for unregistered kinds.
+    let mut resolved = def_for_tile(tile.kind)?;
+    // :5212-5213 — the frame cell inside the coordinate grid.
+    let num = tile.frame_x as i32 / resolved.coordinate_full_width();
+    let num2 = tile.frame_y as i32 / resolved.coordinate_full_height();
+    // :5214-5218 — StyleWrapLimit 0 means 1.
+    let mut num3 = resolved.style_wrap_limit;
+    if num3 == 0 {
+        num3 = 1;
+    }
+    // :5219 — horizontal sheets lay styles out row-major, vertical column-major.
+    let num4 = if !resolved.style_horizontal {
+        num * num3 + num2
+    } else {
+        num2 * num3 + num
+    };
+    // :5220-5221 — style (sub-tile index) and alternate (range offset).
+    let mut num5 = num4 / resolved.style_multiplier;
+    let mut num6 = num4 % resolved.style_multiplier;
+    // :5222-5226 — the override hook replaces the entire decode.
+    if resolved.get_style_override != GetStyleOverride::None {
+        return apply_style_override(resolved.get_style_override, tile, resolved);
+    }
+    // :5227-5240 — StyleLineSkip re-decodes around the skipped frame lines.
+    let style_line_skip = resolved.style_line_skip;
+    if style_line_skip > 1 {
+        if resolved.style_horizontal {
+            num5 = num2 / style_line_skip * num3 + num;
+            num6 = num2 % style_line_skip;
+        } else {
+            num5 = num / style_line_skip * num3 + num2;
+            num6 = num % style_line_skip;
+        }
+    }
+    // :5241-5248 — SubTiles[num5] when present and non-null.
+    if num5 >= 0 {
+        if let Some((_, sub)) = resolved
+            .subtiles
+            .iter()
+            .find(|(sub_style, _)| *sub_style as i32 == num5)
+        {
+            resolved = sub;
+        }
+    }
+    // :5249-5259 — the FIRST alternate whose [Style, Style+RandomStyleRange]
+    // window contains num6 wins (inclusive upper bound, list order).
+    if let Some(alt) = alternate_in_style_range(resolved, num6) {
+        return Some(alt);
+    }
+    // :5260
+    Some(resolved)
+}
+
+/// The alternate-window scan of `GetTileData(Tile)` (`TileObjectData.cs:5249-
+/// 5259`): the first alternate whose `[Style, Style + RandomStyleRange]`
+/// window contains the decoded offset wins — the upper bound is INCLUSIVE
+/// and list order breaks overlapping windows.
+fn alternate_in_style_range(
+    def: &'static TileObjectDef,
+    offset: i32,
+) -> Option<&'static TileObjectDef> {
+    for alt in def.alternates {
+        if offset >= alt.style && offset <= alt.style + alt.random_style_range {
+            return Some(alt);
+        }
+    }
+    None
+}
+
+/// The three `GetStyleOverride` bodies (`TileObjectData.cs:5294-5327`), called
+/// from [`resolve_tile_def`] at :5222-5226. Each indexes `current.SubTiles`
+/// POSITIONALLY (C# list index, not style): the generated sub-tile pairs of
+/// the three override kinds are dense from 0 (`addSubTile(0)` :4973/:4984,
+/// `addSubTile(0/1/2)` :4999/:5005/:5011), so the pair slice index is the C#
+/// list index. A missing slot degrades to `None` (C# throws).
+fn apply_style_override(
+    tag: GetStyleOverride,
+    tile: &Tile,
+    current: &'static TileObjectDef,
+) -> Option<&'static TileObjectDef> {
+    let sub = |i: usize| current.subtiles.get(i).map(|(_, def)| *def);
+    match tag {
+        GetStyleOverride::None => Some(current),
+        // GetStyle_Detritus (:5294-5301).
+        GetStyleOverride::Detritus => {
+            if tile.frame_y >= 36 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+        // GetStyle_SmallPiles (:5303-5310).
+        GetStyleOverride::SmallPiles => {
+            if tile.frame_y >= 18 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+        // GetStyle_Stalactite (:5312-5327) — descending thresholds.
+        GetStyleOverride::Stalactite => {
+            if tile.frame_y >= 90 {
+                sub(2)
+            } else if tile.frame_y >= 72 {
+                sub(1)
+            } else if tile.frame_y >= 36 {
+                sub(0)
+            } else {
+                Some(current)
+            }
+        }
+    }
 }
 
 /// `TileObjectData.CalculatePlacementStyle` (`TileObjectData.cs:1990-1998`).
