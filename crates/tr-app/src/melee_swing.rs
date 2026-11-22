@@ -1,11 +1,11 @@
 //! The broadsword (useStyle 1) melee swing interaction — the hitbox half of
 //! `Player.ItemCheck` (`Player.cs:43644-43686`), the arc half of
 //! `ItemCheck_ApplyUseStyle` (`:50686-50864`) and the per-NPC hit cooldowns
-//! (`:44212-44239`). S1-P-i04, code-only mode: the module lands UNWIRED (the
-//! `npc_ai_town.rs` precedent) — the live melee arm in
-//! `world_sim/editing.rs:1120-1365` still uses the cursor-point stand-in;
-//! replacing it is the follow-up (it touches the `attack_cd`/swing pacing and
-//! the crit/DamageVar draw sites, so it needs its own verified round).
+//! (`:44212-44239`). S1-P-i04 landed the module UNWIRED (the
+//! `npc_ai_town.rs` precedent); W4-a1 phase 1 wired the hitbox half into
+//! `world_sim/editing.rs::melee_swing_tick` — the useStyle-1 swing-rect
+//! scan that replaced the cursor-point stand-in (the cooldown/`attack_cd`
+//! pacing pass is W4-a1 phase 2).
 //!
 //! The render-side arc math (`item_rotation`/`item_location`,
 //! `render/player_layers.rs`) was ported by S1-G-17/18; this module re-ports
@@ -19,7 +19,7 @@
 //! (`Main.rand.Next(1, 101)` crit `:44298`, `Main.DamageVar` `:44342`) stay
 //! with the caller in C# order — the witness tests mirror them on
 //! `UnifiedRandom` clones.
-#![allow(dead_code)] // wiring deferred — the editing.rs melee-arm replacement is the follow-up
+#![allow(dead_code)] // the arc/particle halves still await their render/pacing seams (W4-a1 phase 2)
 
 /// A C# `Rectangle` — the melee `itemRectangle` is integer arithmetic
 /// throughout (`(int)` truncation toward zero, `Player.cs:45102-45159`).
