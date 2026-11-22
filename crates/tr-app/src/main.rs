@@ -40,6 +40,7 @@ mod item_lights;
 mod npc_lights;
 mod npc_lights_a;
 mod npc_lights_b;
+mod npc_lights_c;
 mod player_lights;
 mod player_lights_b;
 mod proj_ai_lights;
