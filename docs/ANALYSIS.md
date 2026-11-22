@@ -10978,6 +10978,48 @@ Deviations:
   `map_object_name(lookup_id)` (the C#'s signature) and
   `map_object_name_for_tile(tile, option)` over the same table.
 
+## Language load order + NPC-name seam (S1-L-12c re-pin, task/W4-c23, 2026-11-20)
+
+**Manifest order, not alphabetical.** The 2026-11-13 S1-L-12c fix sorted the
+discovered `Terraria.Localization.Content.*.json` files by name — deterministic,
+but still a divergence: C# loads them in the assembly **manifest order**
+(`GetManifestResourceNames` preserves the `Terraria.csproj` `EmbeddedResource`
+declaration order, `:133-219`; `LanguageManager.GetLanguageFilesForCulture`
+`:85-89` filters that list, `LoadFilesForCulture` `:127-155` loads it in order).
+The order is observable: `BuffDescription` spans TWO files per culture
+(`en-US.Game.json` + `en-US.Items.json`), so `IndexedFromCategory` index 0 maps
+to the Game-file rows for en-US (Items is declared first, `csproj:135`) but to
+the Items-file rows for the other nine 1.4.4 cultures (base declared first).
+`lang.rs::MANIFEST_ORDER` + `manifest_rank` pin the exact per-culture order;
+unknown cultures/groups sort last by name so the order stays total. The three
+later cultures (ja-JP, ko-KR, zh-Hant) are declared alphabetically per culture
+(`csproj:199-219`). Witness:
+`s1_l12c_tests::resource_registration_follows_the_csharp_manifest_order`.
+
+**The `npc_name_or` seam.** `Lang.GetNPCNameValue(netID)` (`Lang.cs:175-178`)
+is the C#'s name-render accessor; the port's `lang::npc_name_or(net_id,
+english)` answers the localized `NPCName.*` row or the caller's bundled
+English when the manager answers the bare key / empty (the `item_name`
+resource-less fallback pattern). Consumers after this pass:
+
+* the banner milestone announcement (`banners.rs`, `BannerSystem.AddNPCKillBy`
+  `BannerSystem.cs:231-258`) — `Game.EnemiesDefeatedByAnnouncement`
+  (`en-US.json:816`, `"{0} has defeated the {1}th {2}!"`) with the name riding
+  `Lang.GetNPCName(netID).Key`; the resource-less fallback keeps the C# en-US
+  wording (the old port text `"{player} has defeated {count} {npc}!"` was not
+  the vanilla row). The player-less `Game.EnemiesDefeatedAnnouncement` arm
+  (`:251`) has no port caller — every kill pass names its local player.
+* both bestiary name fallbacks (`ui/bestiary.rs` hover + info page);
+* `SlimeVariant::localized_name` (`npc/data.rs`) — the negative-id rows
+  (`Lang.cs:520-533`); `SlimeVariant::name` stays the English fallback half.
+
+Deviations: the housing tooltip, `town.rs`'s Truffle message, the DD2 wave
+roster and the banner-buff hover list keep the plain `npc_name` accessor
+(their kinds all resolve from the shipped rows; the fallback seam only matters
+where a bundled English column exists). The debug panel's NPC list keeps its
+dev-only English labels. Code-only pass — witnesses WRITTEN NOT RUN, no
+compiler invoked.
+
 ## Localization runtime + retail fonts (M6-LOCALIZE-wire-fonts, 2026-11-07)
 
 **Resource source:** the C# embeds its 84 strings files as assembly manifest

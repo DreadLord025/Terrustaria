@@ -120,8 +120,10 @@ impl SlimeVariant {
         }
     }
 
-    /// The `Lang._negativeNpcNameCache` names (localization keys are the C#
-    /// strings; the port keeps the English base names).
+    /// The English base names of the `Lang._negativeNpcNameCache` rows
+    /// (`Lang.cs:520-533`) — the resource-less fallback half of
+    /// [`Self::localized_name`], NOT the display seam: every name render
+    /// reads the `NPCName.*` language row (`task/W4-c23-lang-fsorder-npcnames`).
     pub fn name(self) -> &'static str {
         match self {
             SlimeVariant::Blue => "Blue Slime",
@@ -133,6 +135,28 @@ impl SlimeVariant {
             SlimeVariant::Red => "Red Slime",
             SlimeVariant::Yellow => "Yellow Slime",
         }
+    }
+
+    /// The variant's vanilla net id — blue is `NPCID.BlueSlime` 1, the rest
+    /// ride the negative ids (`Lang.cs:520-533`, the `loot_db` constants).
+    pub fn net_id(self) -> i32 {
+        match self {
+            SlimeVariant::Blue => crate::loot_db::BLUE_SLIME,
+            SlimeVariant::Green => crate::loot_db::GREEN_SLIME,
+            SlimeVariant::Pinky => crate::loot_db::PINKY,
+            SlimeVariant::Baby => crate::loot_db::BABY_SLIME,
+            SlimeVariant::Black => crate::loot_db::BLACK_SLIME,
+            SlimeVariant::Purple => crate::loot_db::PURPLE_SLIME,
+            SlimeVariant::Red => crate::loot_db::RED_SLIME,
+            SlimeVariant::Yellow => crate::loot_db::YELLOW_SLIME,
+        }
+    }
+
+    /// `Lang.GetNPCNameValue(netID)` (`Lang.cs:175-178`) for the variant —
+    /// the localized `NPCName.*` row through the shared `npc_name_or` seam,
+    /// with [`Self::name`]'s English base as the resource-less fallback.
+    pub fn localized_name(self) -> String {
+        crate::lang::npc_name_or(self.net_id(), self.name())
     }
 }
 

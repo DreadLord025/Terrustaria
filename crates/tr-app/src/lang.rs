@@ -21,10 +21,68 @@ use std::sync::{Mutex, OnceLock};
 
 use tr_core::localization::{CULTURES, GameCulture, LanguageManager, Substitution};
 
-/// The resource groups `Main`'s assembly ships per culture
-/// (`Assembly.GetManifestResourceNames()` order is irrelevant — the manager
-/// filters by culture, `LoadFilesForCulture`).
-const RESOURCE_GROUPS: [&str; 7] = ["", ".Items", ".Game", ".NPCs", ".Projectiles", ".Town", ".Legacy"];
+/// The per-culture resource registration order — the C# manifest order of
+/// `Terraria.Localization.Content.<culture>[.<group>].json` in
+/// `Terraria.csproj` (`EmbeddedResource` declarations, `:133-219`), which
+/// `Assembly.GetManifestResourceNames()` preserves:
+/// `LanguageManager.GetLanguageFilesForCulture` (`LanguageManager.cs:85-89`)
+/// filters that list and `LoadFilesForCulture` (`:127-155`) loads it in order.
+///
+/// The order is observable: `BuffDescription` spans TWO files per culture
+/// (`en-US.Game.json` + `en-US.Items.json`), so `category_grouped_keys` /
+/// `IndexedFromCategory` (`LanguageManager.cs:422`) maps index 0 to the
+/// Game-file rows for en-US (Items is declared first, `csproj:135`) but to the
+/// Items-file rows for the other nine 1.4.4 cultures (base is declared first,
+/// e.g. `de-DE.json` `csproj:133` before `de-DE.Items.json` `:152`). Registering
+/// in `read_dir` order (or a blanket alphabetical sort — Game sorts before
+/// Items) diverges from the C# for at least one culture either way; the
+/// manifest rank below is the exact load order (S1-L-12c, re-pinned by
+/// `task/W4-c23-lang-fsorder-npcnames`).
+const MANIFEST_ORDER: &[(&str, &[&str])] = &[
+    // The nine 1.4.4 cultures share one group run (`csproj:133-195`):
+    // base, Town (declared per culture `:134-151`), Items (`:152-159`),
+    // Legacy (`:160-168`), Projectiles (`:169-177`), NPCs (`:178-186`),
+    // Game (`:187-195`).
+    ("de-DE", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    // en-US alone declares Items FIRST (`csproj:135`), then base (`:136`),
+    // Town (`:137`), Legacy (`:161`), Projectiles (`:170`), NPCs (`:179`),
+    // Game (`:187`).
+    ("en-US", &[".Items", "", ".Town", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    ("es-ES", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    ("fr-FR", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    ("it-IT", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    ("pl-PL", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    ("pt-BR", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    ("ru-RU", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    ("zh-Hans", &["", ".Town", ".Items", ".Legacy", ".Projectiles", ".NPCs", ".Game"]),
+    // The three later cultures are declared alphabetically per culture
+    // (`csproj:199-219`): Game, Items, base, Legacy, NPCs, Projectiles, Town.
+    ("ja-JP", &[".Game", ".Items", "", ".Legacy", ".NPCs", ".Projectiles", ".Town"]),
+    ("ko-KR", &[".Game", ".Items", "", ".Legacy", ".NPCs", ".Projectiles", ".Town"]),
+    ("zh-Hant", &[".Game", ".Items", "", ".Legacy", ".NPCs", ".Projectiles", ".Town"]),
+];
+
+/// The manifest rank of one resource file name — `(culture index, group
+/// index)` in [`MANIFEST_ORDER`]; an unknown culture/group sorts last, by
+/// name, so the order stays total and deterministic.
+fn manifest_rank(name: &str) -> (usize, usize, String) {
+    let tail = name
+        .strip_prefix("Terraria.Localization.Content.")
+        .and_then(|t| t.strip_suffix(".json"))
+        .unwrap_or(name);
+    let (culture, group) = match tail.split_once('.') {
+        Some((c, g)) => (c, format!(".{g}")),
+        None => (tail, String::new()),
+    };
+    for (ci, (c, groups)) in MANIFEST_ORDER.iter().enumerate() {
+        if *c == culture {
+            if let Some(gi) = groups.iter().position(|g| *g == group) {
+                return (ci, gi, name.to_string());
+            }
+        }
+    }
+    (MANIFEST_ORDER.len(), 0, name.to_string())
+}
 
 static MANAGER: OnceLock<Mutex<LanguageManager>> = OnceLock::new();
 
@@ -75,10 +133,11 @@ pub fn init(culture: GameCulture) {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        // `read_dir` order is filesystem-dependent; register resources in a
-        // deterministic (sorted by file name) order so `IndexedFromCategory` /
-        // `category_grouped_keys` mappings are stable (`Lang.cs` loads embedded
-        // resources in manifest order; S1-L-12c).
+        // `read_dir` order is filesystem-dependent; register resources in the
+        // C# MANIFEST order ([`MANIFEST_ORDER`], `Terraria.csproj:133-219`) so
+        // `IndexedFromCategory` / `category_grouped_keys` mappings match the
+        // original per culture — `BuffDescription` spans Game+Items and the
+        // two cultures groups declare them in different orders (S1-L-12c).
         let mut resources: Vec<(String, String)> = entries
             .flatten()
             .filter_map(|entry| {
@@ -91,7 +150,7 @@ pub fn init(culture: GameCulture) {
                 Some((name.to_string(), text))
             })
             .collect();
-        resources.sort_by(|a, b| a.0.cmp(&b.0));
+        resources.sort_by_cached_key(|(name, _)| manifest_rank(name));
         if resources.is_empty() {
             continue;
         }
@@ -538,27 +597,47 @@ mod s1_l12b_tests {
 
 #[cfg(test)]
 mod s1_l12c_tests {
+    use super::manifest_rank;
+
     #[test]
-    fn resource_registration_uses_sorted_file_names() {
+    fn resource_registration_follows_the_csharp_manifest_order() {
         // `lang::init` must register `Terraria.Localization.Content.*.json`
-        // in deterministic (sorted) file-name order (S1-L-12c) so
-        // `IndexedFromCategory` mappings do not depend on `read_dir` order.
+        // in the C# MANIFEST order (`Terraria.csproj:133-219` —
+        // `GetManifestResourceNames` preserves declaration order,
+        // `LanguageManager.cs:85-89`), NOT `read_dir` order and NOT a blanket
+        // alphabetical sort: en-US declares Items FIRST (`csproj:135`) while
+        // de-DE declares base first (`:133`), and `BuffDescription` spans
+        // Game+Items so `IndexedFromCategory` index 0 differs per culture
+        // (S1-L-12c, re-pinned by `task/W4-c23-lang-fsorder-npcnames`).
         let mut names = vec![
             "Terraria.Localization.Content.en-US.Town.json",
             "Terraria.Localization.Content.en-US.Game.json",
+            "Terraria.Localization.Content.en-US.json",
             "Terraria.Localization.Content.en-US.Items.json",
+            "Terraria.Localization.Content.de-DE.Game.json",
+            "Terraria.Localization.Content.de-DE.Items.json",
+            "Terraria.Localization.Content.de-DE.json",
         ];
-        let mut sorted = names.clone();
-        sorted.sort();
-        names.sort_by(|a, b| a.cmp(b));
-        assert_eq!(names, sorted);
+        names.sort_by_cached_key(|n| manifest_rank(n));
         assert_eq!(
             names,
             vec![
-                "Terraria.Localization.Content.en-US.Game.json",
+                // de-DE (`csproj:133` base, `:152` Items, `:188` Game) …
+                "Terraria.Localization.Content.de-DE.json",
+                "Terraria.Localization.Content.de-DE.Items.json",
+                "Terraria.Localization.Content.de-DE.Game.json",
+                // … then en-US (`csproj:135` Items, `:136` base, `:137`
+                // Town, `:187` Game).
                 "Terraria.Localization.Content.en-US.Items.json",
+                "Terraria.Localization.Content.en-US.json",
                 "Terraria.Localization.Content.en-US.Town.json",
+                "Terraria.Localization.Content.en-US.Game.json",
             ]
+        );
+        // An unknown culture sorts last (the total-order tail), never first.
+        assert!(
+            manifest_rank("Terraria.Localization.Content.xx-XX.json")
+                > manifest_rank("Terraria.Localization.Content.zh-Hant.Town.json")
         );
     }
 }
@@ -819,7 +898,7 @@ fn const_name(table: &'static [(i32, &'static str)], id: i32) -> Option<&'static
         })
 }
 
-/// `Lang.GetNPCName(netID)` (`Lang.cs:188-195`): `NPCName.{const name}`.
+/// `Lang.GetNPCName(netID)` (`Lang.cs:180-191`): `NPCName.{const name}`.
 ///
 /// A negative net id walks the negative cache (`Lang.cs:524-526`): the
 /// `NPCID.FromNetId` map first, then the twelve explicit slime rows.
@@ -846,6 +925,21 @@ pub fn npc_name(id: i32) -> String {
         }
     };
     text(&key)
+}
+
+/// `Lang.GetNPCNameValue(netID)` (`Lang.cs:175-178`) with the port's
+/// resource-less fallback (the [`item_name`] pattern): the localized
+/// `NPCName.*` row, or the caller's bundled English name when the manager
+/// answers the bare key (no resources loaded) or an empty row (unknown id).
+/// The banner announcement, the bestiary name column and the slime variant
+/// names all read this seam (`task/W4-c23-lang-fsorder-npcnames`).
+pub fn npc_name_or(net_id: i32, english: &str) -> String {
+    let value = npc_name(net_id);
+    if value.is_empty() || value.starts_with("NPCName.") {
+        english.to_string()
+    } else {
+        value
+    }
 }
 
 /// The twelve explicit negative-name rows (`Lang.cs:528-533`): the slime
@@ -1106,6 +1200,31 @@ mod tests {
         assert_eq!(emoji_name(0), "сердце");
         assert_eq!(map_object_name_for_tile(6, 0), "Железо");
         set_language(GameCulture::English);
+    }
+
+    /// S1-L-12c / `task/W4-c23-lang-fsorder-npcnames` — the `npc_name_or`
+    /// seam (`Lang.GetNPCNameValue`, `Lang.cs:175-178`): the localized row
+    /// wins, an unknown id falls back to the caller's English base, and the
+    /// slime variants read their negative-id rows through the same seam.
+    #[test]
+    fn the_npc_name_or_seam_localizes_and_falls_back() {
+        let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        init(GameCulture::English);
+        // The localized row wins over the English base column.
+        assert_eq!(npc_name_or(1, "bundled"), "Blue Slime");
+        set_language(GameCulture::Russian);
+        assert_eq!(npc_name_or(22, "bundled"), "Гид");
+        // The slime family rides its negative net ids (`Lang.cs:524-533`)
+        // through `SlimeVariant::localized_name` — no hardcoded English.
+        use crate::npc::SlimeVariant;
+        assert_eq!(SlimeVariant::Blue.localized_name(), "Синий слизень");
+        assert_eq!(SlimeVariant::Green.localized_name(), "Зеленый слизень");
+        assert_eq!(SlimeVariant::Pinky.localized_name(), "Пинки");
+        assert_eq!(npc_name_or(-1, "bundled"), "Слизлинг");
+        set_language(GameCulture::English);
+        // An id outside the caches answers the caller's English fallback
+        // (`Lang.GetNPCName` → `LocalizedText.Empty`, `Lang.cs:190`).
+        assert_eq!(npc_name_or(i32::MAX, "bundled"), "bundled");
     }
 
     /// The manager answers from the shipped resources when they are present
