@@ -1225,12 +1225,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // BLOOD_MOON_SHEETS): 489 the Blood Zombie, 490 the Drippler.
         "NPC_489",
         "NPC_490",
-        // W4-c4 — the style-44 swimmers' sheets (`render/entities.rs`'s
-        // STYLE44_SHEETS): 224 the Flying Fish, 509 the Giant Antlion
-        // Swarmer, 581 the Antlion Swarmer, 587 the Wandering Eye Fish.
-        // Skyline-measured headroom: +46 px on the main set (7757) and
-        // +24 px on the full gore+font set (8143) — both under 8192.
-        "NPC_224",
+        // W4-c4 - the style-44 swimmers' sheets (STYLE44_SHEETS): 509
+        // the Giant Antlion Swarmer, 581 the Antlion Swarmer, 587 the
+        // Wandering Eye Fish. E8 merge: NPC_224 rides d37's row above.
         "NPC_509",
         "NPC_581",
         "NPC_587",
@@ -1243,14 +1240,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // set 8143 → 8150 px — both under 8192. The Orca's NPC_692
         // (136×992) overflows the full set (8226) — atlas-deferred (the
         // wyvern precedent).
-        "NPC_57",
+        // E8 merge: NPC_57/NPC_241 ride d34/d37's rows above; NPC_688
+        // lands with d43 (the sheet census survives, research/144/148).
         "NPC_157",
-        "NPC_241",
         "NPC_465",
         "NPC_592",
         "NPC_607",
         "NPC_615",
-        "NPC_688",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in
