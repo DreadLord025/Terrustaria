@@ -43864,3 +43864,64 @@ roll, the two-stream boulder census, the nature-fly gust window, the
 rubble count/surface cut, the shine/shimmer arms, the herb styles, the
 star-cloud gore-pair copy, the pumpkin tier chain, the chimney wind push
 and the lantern-petal cadence — WRITTEN, NOT RUN (no cargo/rustc invoked).
+
+## The UIElement band d82 (W4-d82, task/W4-d82-ui-elements-2, 2026-11-20, code-only mode)
+The middle band of the 64-class element census (research/18b rows 22-34,
+13 classes; d81 takes rows 1-21, d83 rows 35-64). Code-only lane: pure state
+machines + geometry under `crates/tr-app/src/ui/`, one module per family,
+every block cited to its C# window; the retained-tree draw seams stay with
+the immediate screens (the S1-H-13 `panel::scrollbar_*` pattern).
+**Re-audit finding:** five band classes already had faithful immediate ports
+(the census gap table predates S1-E-17 and S1-H-7); the lane kept them and
+ported only the missing halves: `UIGenProgressBar` (nothing left),
+`UIHeader` (the `Text` setter change-gate + measure pin),
+`UIHorizontalSeparator` (ctor sheet pick/size + `ContainsPoint => false`),
+`UIDifficultyButton`/`UIHairStyleButton` (the DrawSelf one-shot hover
+sound `:49-60` + the hair preview frame-skip).
+**Landed modules** (8 anchors, 21 witness tests WRITTEN NOT RUN):
+`ui/buttons.rs` (`HoverSoundLatch` shared once by both creation buttons +
+`HairPreviewSkip`), `ui/chrome_elements.rs` (`separator_sheet`/
+`separator_contains_point`/`HeaderText`), `ui/images.rs`
+(`CyclingImage` 45-frame cycler), `ui/creative_powers.rs`
+(`CreativePowerButton` - the C# class is EMPTY in 1.4.5.8, a unit-type
+marker), `ui/debug_items.rs` (`command_can_be_used` SinglePlayer mask,
+chat seeds, sort keys, `RowColors` hover/rest swap, `position_items`
+bands), `ui/item_collection.rs` (44px grid: `update_size`,
+`grid_parameters` cull window, `item_slot_hitbox`, the `draw_plan`
+budget walk - 1/draw + 1/unloaded, prefetch 4/load),
+`ui/creative_items.rs` (slot context 29/34, hover/shiny effects, filter
+strip theme/sizing/tint), `ui/creative_display.rs` (the 60-frame sacrifice
+animation: progress `GetLerpValue(60,0)`, piston cascade 1..8, cog speed
+`0.05*(1+lerp^2*2)` with 2/1.1428572/-1 offsets, sound 63@56 + 64@40
+schedule, description remember/forget latch, sacrifice outcome arms,
+tracker `LastEditId` rebuild gate, page switch).
+### Documented deviations
+* **The sacrifice particle RNG rolls** (`UICreativeInfiniteItemsDisplay.cs:351-364`):
+  at `timeLeft == 56` the burst rolls `Main.rand.NextVector2Circular(4f, 3f)`
+  15 times. The port keeps the *schedule* (`sacrifice_sound_events` returns
+  the spawn flag) and the burst constants (15 particles, acceleration
+  `(0, 0.16350001)`, scale offset `-1/60`) but NOT the rolls - wiring it
+  must not perturb the shared `Main.rand` stream before the particle seam
+  exists. The velocity shaping (Y-negate + `-2f`) rides the future seam.
+* **The loadout sort's culture order** (`UIDebugLoadoutItem.cs:26-29`):
+  `string.CompareTo` is culture-aware; the port uses Rust byte order. The
+  names are ASCII identifiers, so the orders agree for the shipped loadout
+  names; a non-ASCII name could sort differently.
+* **C# int-division throws the port absorbs**: `UpdateSize` under one
+  column (`UIDynamicItemCollection.cs:160-165` divides by `itemsPerLine`)
+  and the `CyclingImage` empty-list ctor (`_textureAssets[0]`) throw in
+  C#; the port returns `(0, 0)` / clamps the count to 1 and the caller must
+  not lay out / must supply a real sheet.
+* **Cross-lane duplication (merge-time note):** d81's batch 1
+  (`0b815a62`, pushed AFTER this lane's census publication) also ports
+  `UICyclingImage` + `UICreativePowerButton` in `ui/elements.rs`. Both
+  copies are faithful to the same windows; the merge owner should keep one
+  (the anchors rows name distinct paths, so the canary survives either way).
+Code-only: **no cargo/rustc/rustfmt/tests/graphify invoked**. Every port
+re-read against its cited C# window (`UIDynamicItemCollection.cs:40-97`,
+`UICreativeInfiniteItemsDisplay.cs:326-459`, `UIDifficultyButton.cs:35-99`,
+`UIHeader.cs:8-62`, `UIDebugCommandItem.cs:70-114`,
+`UICreativeItemsInfiniteFilteringOptions.cs:38-112`); external symbols
+checked by grep (`tr_core::scene::get_lerp_value`, `ui::color::mul`,
+the `ui/mod.rs` module rows, the 8 anchors markers). The 21 witness tests
+are WRITTEN NOT RUN.
