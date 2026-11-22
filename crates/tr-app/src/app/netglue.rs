@@ -869,6 +869,10 @@ impl App {
             // `:3570-3597`) have bodies + codecs (`net.rs`); the host
             // apply/relay arms land with the send-path pass (S1-I-4).
             C2s::HealPlayer(_) | C2s::MinionRestTarget(_) | C2s::MinionAttackTarget(_) => {}
+            // S1-I-1 wave d95: `68 Unknown68` — the C# host reads the UUID
+            // string and drops it (`MessageBuffer.cs:3056-3058`), so the
+            // codec's read IS the whole arm; nothing to apply or relay.
+            C2s::ClientUuid(_) => {}
         }
     }
 
@@ -2024,6 +2028,11 @@ impl App {
             // netOffset zero) + 108 cannon redirect (`:3758-3773` owner-gated
             // ShootFromCannon) — same wave, same parking.
             S2c::NpcPortalTeleport(_) | S2c::WiredCannonShot(_) => {}
+            // S1-I-1 wave d95: `91 SyncEmoteBubble`'s client read site
+            // (`MessageBuffer.cs:3394-3441`: DeserializeNetAnchor +
+            // emoteTime = 360 on a player anchor + the byID table) lands
+            // with the send-path pass (S1-I-4) — nothing sends it yet.
+            S2c::EmoteBubble(_) => {}
         }
     }
 
