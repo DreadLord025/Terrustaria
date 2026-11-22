@@ -146,6 +146,43 @@ pub mod id {
     pub const MISC_EVENT_VALUES: u8 = 140;
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
+    /// `157 TeamChangeFromUI` (`MessageID.cs:328`) — the writer shares 45's
+    /// case (`NetMessage.cs:970-974`) so the body is the same `TeamChange`;
+    /// the reader adds the team-spawn tail (`MessageBuffer.cs:2355-2363`:
+    /// `teamBasedSpawnsSeed` + an extra spawn point → `CheckSection` +
+    /// `158 ExtraSpawnSectionLoaded`).
+    pub const TEAM_CHANGE_UI: u8 = 157;
+
+    // ---- S1-I-1 wave B: the world-sync region (section send / tile square /
+    // spawn tile), census against `MessageID.cs` — bodies + codecs only, the
+    // dispatcher apply/relay arms and the send fan-out are S1-I-4. ----
+    /// `17 TileManipulation` (`MessageID.cs:43`) — the single-tile edit,
+    /// still live: writer `NetMessage.cs:524-530`, reader
+    /// `MessageBuffer.cs:1119-1288` (host relay `:1285`, the `20` fallback
+    /// `SendTileSquare(-1, x, y, 5)` when a placement survives, `:1281`).
+    /// research/17 called it superseded by 20 — wrong, both are sent; the
+    /// port's internal `INT_EDIT` stand-in is unchanged by this body.
+    pub const TILE_EDIT: u8 = 17;
+    /// `11 TileFrameSection` (`MessageID.cs:29-30`) — marked deprecated and
+    /// never sent (`grep SendData(11` = 0 sites), but `GetData` still reads
+    /// it at `netMode == 1` (`MessageBuffer.cs:895-900` →
+    /// `WorldGen.SectionTileFrame`, `WorldGen.cs:80343`): four `short`s.
+    pub const TILE_FRAME_SECTION: u8 = 11;
+    pub const DOOR_TOGGLE: u8 = 19; // MessageID.cs:47 / NetMessage.cs:537-542 / MessageBuffer.cs:1299-1334
+    pub const TILE_PAINT: u8 = 63; // MessageID.cs:139 / NetMessage.cs:1081-1087 / MessageBuffer.cs:2909-2928
+    pub const WALL_PAINT: u8 = 64; // MessageID.cs:141 / NetMessage.cs:1081-1087 / MessageBuffer.cs:2929-2948
+    pub const TILE_PICKING: u8 = 125; // MessageID.cs:264 / NetMessage.cs:1509-1514 / MessageBuffer.cs:4023-4042
+    /// `158 ExtraSpawnSectionLoaded` (`MessageID.cs:330`) — the team-swap
+    /// respawn after the extra spawn section streamed in
+    /// (`NetMessage.cs:1659-1661`; reader `MessageBuffer.cs:4450-4456`
+    /// calls `Spawn(PlayerSpawnContext.TeamSwap)`).
+    pub const EXTRA_SPAWN_LOADED: u8 = 158;
+    /// `159 RequestSection` (`MessageID.cs:332`) — the client asks for a
+    /// section (`NetMessage.cs:1662-1665` writes `short`s; the reader reads
+    /// `ushort`s, `MessageBuffer.cs:4457-4462` → `SendSection`). The port
+    /// streams unrequested (`host_stream_sections`); this is the body for
+    /// the on-request path.
+    pub const SECTION_REQUEST: u8 = 159;
 
     // ---- S1-I-1 wave B (W4-d92): the NPC family's SECOND half ----
     // Census: the NPC-family ids whose body centres on `Main.npc` / the NPC
@@ -1522,8 +1559,9 @@ pub struct PlayerMana {
 
 /// `msg 45 TeamChange`'s body (`NetMessage.cs:970-974`): the player id then
 /// `Player.team` as a byte (`MessageBuffer.cs:2325-2336`). `157
-/// TeamChangeFromUI` shares the body but adds the team-spawn tail
-/// (`:2355-2363`); it is not a join-bundle id and stays unported.
+/// TeamChangeFromUI` shares the case and the body (`NetMessage.cs:970-971`)
+/// but adds the team-spawn tail (`MessageBuffer.cs:2355-2363` → `158`);
+/// its id + codec landed with wave B (`id::TEAM_CHANGE_UI`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TeamChange {
     pub player_id: u8,
@@ -1723,6 +1761,81 @@ pub struct NpcExtraValue {
     pub y: f32,
 }
 
+// ---- S1-I-1 wave B: the world-sync region's payload bodies ----
+
+/// `msg 17 TileManipulation`'s body (`NetMessage.cs:524-530`): the edit kind
+/// byte, the tile as two `short`s, the `short` payload and a `byte` style.
+/// The reader (`MessageBuffer.cs:1119-1288`) dispatches kinds 0-23
+/// (KillTile/PlaceTile/KillWall/PlaceWall/wires/slope/actuator/gates/replace,
+/// `:1157-1275`); the host counts spam (`:1141-1146`), forces `fail` when the
+/// section was never sent (`:1148-1151`) and relays as `17` — or a
+/// `SendTileSquare(-1, x, y, 5)` when the placement survived (`:1281`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileEdit {
+    /// `b13` — the edit kind (`MessageBuffer.cs:1157-1275`).
+    pub kind: u8,
+    pub x: i16,
+    pub y: i16,
+    /// `num152` — the tile/wall type or the slope id; kind 14's slope.
+    pub value: i16,
+    /// `num153` — `PlaceTile`'s style (`MessageBuffer.cs:1173`).
+    pub style: u8,
+}
+
+/// `msg 11 TileFrameSection`'s body (`NetMessage.cs:427-432`): four `short`s
+/// naming the rectangle to re-frame (`MessageBuffer.cs:895-900` →
+/// `WorldGen.SectionTileFrame(startX, startY, endXInclusive, endYInclusive)`,
+/// `WorldGen.cs:80343`). Deprecated, never sent — the body exists so the
+/// reader arm is 1:1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TileFrameSection {
+    pub start_x: i16,
+    pub start_y: i16,
+    pub end_x: i16,
+    pub end_y: i16,
+}
+
+/// `msg 19 ToggleDoorState`'s body (`NetMessage.cs:537-542`): the action
+/// byte, the tile and `number4 == 1f` → a direction byte (1 = right/down).
+/// The reader maps 0/1 open/close door, 2/3 trapdoor up/down, 4/5 tall gate
+/// open/close and relays with the normalised direction
+/// (`MessageBuffer.cs:1299-1334`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DoorToggle {
+    /// `b5` — 0 open, 1 close, 2/3 trapdoor, 4/5 tall gate.
+    pub action: u8,
+    pub x: i16,
+    pub y: i16,
+    /// `num47`: the reader reads `!= 0` → 1 else -1; the wire byte is 0/1.
+    pub direction: u8,
+}
+
+/// `msg 63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating`'s shared body
+/// (`NetMessage.cs:1081-1087`): the tile, the paint id byte and the coat flag
+/// byte — `coat == 0` paints (`WorldGen.paintTile`/`paintWall`), anything
+/// else coats (`paintCoatTile`/`paintCoatWall`,
+/// `MessageBuffer.cs:2909-2948`), then the host relays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TilePaint {
+    pub x: i16,
+    pub y: i16,
+    pub paint: u8,
+    /// `b12`/`b10`: 0 = paint, non-zero = illuminant coat.
+    pub coat: u8,
+}
+
+/// `msg 125 SyncTilePicking`'s body (`NetMessage.cs:1509-1514`): the player
+/// id (host-overridden to the sender), the picked tile and the pick damage
+/// byte (`Player.GetOtherPlayersPickTile`, `Player.cs:53751`; the host
+/// relays to the others, `MessageBuffer.cs:4023-4042`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TilePicking {
+    pub player_id: u8,
+    pub x: i16,
+    pub y: i16,
+    pub damage: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1848,6 +1961,36 @@ pub enum C2s {
     /// (`WorldItem.cs:1193`); the host accumulates + relays the total
     /// (`MessageBuffer.cs:3455-3459`).
     NpcExtraValue(NpcExtraValue),
+    // ---- S1-I-1 wave B: the world-sync region (bodies + codecs; the
+    // dispatcher arms are S1-I-4) ----
+    /// `17 TileManipulation` - a client's single-tile edit
+    /// (`Player.cs:39626`, `DelegateMethods.cs:515`; host relay
+    /// `MessageBuffer.cs:1285`).
+    TileEdit(TileEdit),
+    /// `19 ToggleDoorState` - a client opened/closed a door/trapdoor/gate
+    /// (`Player.cs:32844-32861`, `:32301-32310`; relay
+    /// `MessageBuffer.cs:1330`).
+    DoorToggle(DoorToggle),
+    /// `63 SyncTilePaintOrCoating` - a client painted/coated a tile
+    /// (`MessageBuffer.cs:2909-2928` relays it).
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` - a client painted/coated a wall
+    /// (`MessageBuffer.cs:2929-2948` relays it).
+    WallPaint(TilePaint),
+    /// `125 SyncTilePicking` - a client's pickaxe hit on a tile
+    /// (`MessageBuffer.cs:4023-4042` overrides the id and relays).
+    TilePicking(TilePicking),
+    /// `157 TeamChangeFromUI` - the team change from the UI
+    /// (`Main.cs:42766`); same body as `45`, the reader adds the team-spawn
+    /// tail (`MessageBuffer.cs:2355-2363`). The host relays as `45`.
+    TeamChangeUi(TeamChange),
+    /// `159 RequestSection` - a client asks for a section
+    /// (`Player.cs:41534`, `WorldItem.cs:375`); the writer writes `short`s,
+    /// the reader reads `ushort`s (`MessageBuffer.cs:4460`).
+    SectionRequest {
+        section_x: u16,
+        section_y: u16,
+    },
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2024,6 +2167,32 @@ pub enum S2c {
     /// `20 SectionRange` — a rectangle of tile changes
     /// (`SendTileSquare`, `NetMessage.cs:2627-2630`).
     SectionRange(Box<SectionRange>),
+    // ---- S1-I-1 wave B: the world-sync region (bodies + codecs; the
+    // dispatcher arms are S1-I-4) ----
+    /// `11 TileFrameSection` — deprecated, never sent by the C# (0 sites),
+    /// but read at `netMode == 1` (`MessageBuffer.cs:895-900`).
+    TileFrameSection(TileFrameSection),
+    /// `17 TileManipulation` — the host's relay of a client's edit
+    /// (`MessageBuffer.cs:1285`).
+    TileEdit(TileEdit),
+    /// `19 ToggleDoorState` — the host's door/trapdoor/gate relay
+    /// (`MessageBuffer.cs:1330`).
+    DoorToggle(DoorToggle),
+    /// `63 SyncTilePaintOrCoating` — the host's paint relay
+    /// (`MessageBuffer.cs:2925`).
+    TilePaint(TilePaint),
+    /// `64 SyncWallPaintOrCoating` — the host's paint relay
+    /// (`MessageBuffer.cs:2945`).
+    WallPaint(TilePaint),
+    /// `125 SyncTilePicking` — another player's pickaxe hit
+    /// (`MessageBuffer.cs:4039`).
+    TilePicking(TilePicking),
+    /// `158 ExtraSpawnSectionLoaded` — the team-swap respawn: the extra
+    /// spawn section is in, `Spawn(TeamSwap)` (`MessageBuffer.cs:4450-4456`,
+    /// sent by the `157` tail `:2361`).
+    ExtraSpawnLoaded {
+        player_id: u8,
+    },
     /// `23 NPCInfo` — one NPC's state (the C#'s per-NPC `SendData(23)`,
     /// `NPC.cs:90613`).
     NpcInfo(Box<NpcInfo>),
@@ -2093,6 +2262,13 @@ impl C2s {
             Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
             Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
+            Self::TileEdit(_) => id::TILE_EDIT,
+            Self::DoorToggle(_) => id::DOOR_TOGGLE,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
+            Self::TilePicking(_) => id::TILE_PICKING,
+            Self::TeamChangeUi(_) => id::TEAM_CHANGE_UI,
+            Self::SectionRequest { .. } => id::SECTION_REQUEST,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2176,6 +2352,29 @@ impl C2s {
             }
             // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
+            // ---- S1-I-1 wave B ----
+            // `NetMessage.cs:524-530`: byte kind + short x + short y +
+            // short value + byte style.
+            Self::TileEdit(t) => w.u8(t.kind).i16(t.x).i16(t.y).i16(t.value).u8(t.style),
+            // `NetMessage.cs:537-542`: byte action + short x + short y +
+            // byte direction (the C# writes `number4 == 1f`).
+            Self::DoorToggle(d) => w.u8(d.action).i16(d.x).i16(d.y).u8(d.direction),
+            // `NetMessage.cs:1081-1087`: short x + short y + byte paint +
+            // byte coat.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
+            }
+            // `NetMessage.cs:1509-1514`: byte player + short x + short y +
+            // byte damage.
+            Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
+            // `NetMessage.cs:970-974` — 157 shares 45's case.
+            Self::TeamChangeUi(t) => w.u8(t.player_id).u8(t.team),
+            // `NetMessage.cs:1662-1665`: two `(short)`s (the reader reads
+            // them as ushorts, `MessageBuffer.cs:4460` — same bytes).
+            Self::SectionRequest {
+                section_x,
+                section_y,
+            } => w.u16(*section_x).u16(*section_y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2323,6 +2522,55 @@ impl C2s {
                 x: r.f32()?,
                 y: r.f32()?,
             }),
+            // ---- S1-I-1 wave B ----
+            // `MessageBuffer.cs:1121-1125`: byte, short, short, short, byte.
+            id::TILE_EDIT => Self::TileEdit(TileEdit {
+                kind: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                value: r.i16()?,
+                style: r.u8()?,
+            }),
+            // `MessageBuffer.cs:1301-1306`: byte, short, short, byte.
+            id::DOOR_TOGGLE => Self::DoorToggle(DoorToggle {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                direction: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2911-2914` / `:2931-2934`: short, short,
+            // byte, byte.
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
+            // `MessageBuffer.cs:4025-4028`: byte, short, short, byte.
+            id::TILE_PICKING => Self::TilePicking(TilePicking {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                damage: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2325-2333` — 157 shares 45's reader arm.
+            id::TEAM_CHANGE_UI => Self::TeamChangeUi(TeamChange {
+                player_id: r.u8()?,
+                team: r.u8()?,
+            }),
+            // `MessageBuffer.cs:4460`: two ReadUInt16 (the writer wrote
+            // shorts — the non-negative section indices are the same bytes).
+            id::SECTION_REQUEST => Self::SectionRequest {
+                section_x: r.u16()?,
+                section_y: r.u16()?,
+            },
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2491,6 +2739,13 @@ impl S2c {
             Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
             Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
+            Self::TileFrameSection(_) => id::TILE_FRAME_SECTION,
+            Self::TileEdit(_) => id::TILE_EDIT,
+            Self::DoorToggle(_) => id::DOOR_TOGGLE,
+            Self::TilePaint(_) => id::TILE_PAINT,
+            Self::WallPaint(_) => id::WALL_PAINT,
+            Self::TilePicking(_) => id::TILE_PICKING,
+            Self::ExtraSpawnLoaded { .. } => id::EXTRA_SPAWN_LOADED,
         }
     }
 
@@ -2671,6 +2926,21 @@ impl S2c {
             // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y
             // — the host relay carries the accumulated extraValue.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
+            // ---- S1-I-1 wave B ----
+            // `NetMessage.cs:427-432`: four shorts.
+            Self::TileFrameSection(f) => w.i16(f.start_x).i16(f.start_y).i16(f.end_x).i16(f.end_y),
+            // `NetMessage.cs:524-530`.
+            Self::TileEdit(t) => w.u8(t.kind).i16(t.x).i16(t.y).i16(t.value).u8(t.style),
+            // `NetMessage.cs:537-542`.
+            Self::DoorToggle(d) => w.u8(d.action).i16(d.x).i16(d.y).u8(d.direction),
+            // `NetMessage.cs:1081-1087`.
+            Self::TilePaint(p) | Self::WallPaint(p) => {
+                w.i16(p.x).i16(p.y).u8(p.paint).u8(p.coat)
+            }
+            // `NetMessage.cs:1509-1514`.
+            Self::TilePicking(p) => w.u8(p.player_id).i16(p.x).i16(p.y).u8(p.damage),
+            // `NetMessage.cs:1659-1661`: one byte.
+            Self::ExtraSpawnLoaded { player_id } => w.u8(*player_id),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2923,6 +3193,50 @@ impl S2c {
                 loadout: r.u8()?,
                 hide_accessory: r.u16()?,
             }),
+            // ---- S1-I-1 wave B ----
+            // `MessageBuffer.cs:898`: four ReadInt16.
+            id::TILE_FRAME_SECTION => Self::TileFrameSection(TileFrameSection {
+                start_x: r.i16()?,
+                start_y: r.i16()?,
+                end_x: r.i16()?,
+                end_y: r.i16()?,
+            }),
+            id::TILE_EDIT => Self::TileEdit(TileEdit {
+                kind: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                value: r.i16()?,
+                style: r.u8()?,
+            }),
+            id::DOOR_TOGGLE => Self::DoorToggle(DoorToggle {
+                action: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                direction: r.u8()?,
+            }),
+            id::TILE_PAINT | id::WALL_PAINT => {
+                let p = TilePaint {
+                    x: r.i16()?,
+                    y: r.i16()?,
+                    paint: r.u8()?,
+                    coat: r.u8()?,
+                };
+                if msg_id == id::TILE_PAINT {
+                    Self::TilePaint(p)
+                } else {
+                    Self::WallPaint(p)
+                }
+            }
+            id::TILE_PICKING => Self::TilePicking(TilePicking {
+                player_id: r.u8()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                damage: r.u8()?,
+            }),
+            // `MessageBuffer.cs:4453`: one byte, then Spawn(TeamSwap).
+            id::EXTRA_SPAWN_LOADED => Self::ExtraSpawnLoaded {
+                player_id: r.u8()?,
+            },
             _ => return None,
         })
     }
@@ -5376,5 +5690,247 @@ mod tests {
         for (i, v) in region.iter().enumerate() {
             assert_eq!(*v as usize, i + 1, "MessageID region slot {}", i + 1);
         }
+    }
+
+    // ---- S1-I-1 wave B: per-id round trips for the world-sync region ----
+    // Same convention as wave A: pin the id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+
+    #[test]
+    fn s1_i_1b_tile_edit_round_trips() {
+        // `NetMessage.cs:524-530`: (byte)kind + (short)x + (short)y +
+        // (short)value + (byte)style.
+        let t = TileEdit {
+            kind: 1,
+            x: 4180,
+            y: 1130,
+            value: 30,
+            style: 2,
+        };
+        let f = S2c::TileEdit(t).encode();
+        assert_eq!(f[2], 17);
+        let mut body = vec![1];
+        body.extend_from_slice(&4180i16.to_le_bytes());
+        body.extend_from_slice(&1130i16.to_le_bytes());
+        body.extend_from_slice(&30i16.to_le_bytes());
+        body.push(2);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEdit(d) => assert_eq!(d, t),
+            other => panic!("expected 17, got {:?}", other.msg_id()),
+        }
+        let c = C2s::TileEdit(t).encode();
+        assert_eq!(c[2], 17);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TileEdit(d) => assert_eq!(d, t),
+            other => panic!("expected 17, got {:?}", other.msg_id()),
+        }
+        // Kind 0 (KillTile) with the fail flag riding `value` = 1
+        // (`DelegateMethods.cs:571`'s `1f` → the host relay's num152).
+        let kill = TileEdit { kind: 0, x: -3, y: 0, value: 1, style: 0 };
+        let k = C2s::TileEdit(kill).encode();
+        match C2s::decode(k[2], &mut NetReader::new(&k[3..])).expect("decode") {
+            C2s::TileEdit(d) => assert_eq!(d, kill),
+            other => panic!("expected 17, got {:?}", other.msg_id()),
+        }
+        // A truncated body (4 of 8 bytes) must not decode.
+        assert!(C2s::decode(17, &mut NetReader::new(&body[..4])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_tile_frame_section_round_trips() {
+        // `NetMessage.cs:427-432`: four shorts; the reader feeds
+        // `WorldGen.SectionTileFrame(startX, startY, endXInclusive,
+        // endYInclusive)` (`MessageBuffer.cs:898`, `WorldGen.cs:80343`).
+        let f = TileFrameSection {
+            start_x: 200,
+            start_y: 150,
+            end_x: 399,
+            end_y: 299,
+        };
+        let frame = S2c::TileFrameSection(f).encode();
+        assert_eq!(frame[2], 11);
+        let mut body = Vec::new();
+        for v in [200i16, 150, 399, 299] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(&frame[3..], &body);
+        match S2c::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode") {
+            S2c::TileFrameSection(d) => assert_eq!(d, f),
+            other => panic!("expected 11, got {:?}", other.msg_id()),
+        }
+        // Read-side only (deprecated, 0 SendData sites) — no C2s codec.
+        assert!(C2s::decode(11, &mut NetReader::new(&body)).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_door_toggle_round_trips() {
+        // `NetMessage.cs:537-542`: (byte)action + (short)x + (short)y +
+        // ((number4 == 1f) ? 1 : 0).
+        let d = DoorToggle {
+            action: 0,
+            x: 4200,
+            y: 1100,
+            direction: 1,
+        };
+        let f = S2c::DoorToggle(d).encode();
+        assert_eq!(f[2], 19);
+        let mut body = vec![0];
+        body.extend_from_slice(&4200i16.to_le_bytes());
+        body.extend_from_slice(&1100i16.to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DoorToggle(dd) => assert_eq!(dd, d),
+            other => panic!("expected 19, got {:?}", other.msg_id()),
+        }
+        let c = C2s::DoorToggle(d).encode();
+        assert_eq!(c[2], 19);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::DoorToggle(dd) => assert_eq!(dd, d),
+            other => panic!("expected 19, got {:?}", other.msg_id()),
+        }
+        // The tall-gate close (action 5) rides direction 0 — the reader
+        // maps `!= 0` to 1 else -1 (`MessageBuffer.cs:1306`).
+        let gate = DoorToggle { action: 5, x: 10, y: 20, direction: 0 };
+        let g = C2s::DoorToggle(gate).encode();
+        assert_eq!(g[3], 5);
+        assert_eq!(*g.last().unwrap(), 0);
+    }
+
+    #[test]
+    fn s1_i_1b_tile_and_wall_paint_round_trip() {
+        // `NetMessage.cs:1081-1087` — 63 and 64 share the case: (short)x +
+        // (short)y + (byte)paint + (byte)coat.
+        let p = TilePaint {
+            x: 4210,
+            y: 1120,
+            paint: 13,
+            coat: 1,
+        };
+        let mut body = Vec::new();
+        body.extend_from_slice(&4210i16.to_le_bytes());
+        body.extend_from_slice(&1120i16.to_le_bytes());
+        body.push(13);
+        body.push(1);
+        for (mk, sid, rid) in [
+            (C2s::TilePaint as fn(TilePaint) -> C2s, 63u8, 63u8),
+            (C2s::WallPaint as fn(TilePaint) -> C2s, 64, 64),
+        ] {
+            let c = mk(p).encode();
+            assert_eq!(c[2], sid);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+                C2s::TilePaint(d) if rid == 63 => assert_eq!(d, p),
+                C2s::WallPaint(d) if rid == 64 => assert_eq!(d, p),
+                other => panic!("expected {rid}, got {:?}", other.msg_id()),
+            }
+        }
+        for (mk, sid) in [
+            (S2c::TilePaint as fn(TilePaint) -> S2c, 63u8),
+            (S2c::WallPaint as fn(TilePaint) -> S2c, 64),
+        ] {
+            let f = mk(p).encode();
+            assert_eq!(f[2], sid);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TilePaint(d) if sid == 63 => assert_eq!(d, p),
+                S2c::WallPaint(d) if sid == 64 => assert_eq!(d, p),
+                other => panic!("expected {sid}, got {:?}", other.msg_id()),
+            }
+        }
+        // coat == 0 is the plain-paint arm (`MessageBuffer.cs:2915-2922`).
+        let plain = TilePaint { coat: 0, ..p };
+        let c = C2s::TilePaint(plain).encode();
+        assert_eq!(*c.last().unwrap(), 0);
+    }
+
+    #[test]
+    fn s1_i_1b_tile_picking_round_trips() {
+        // `NetMessage.cs:1509-1514`: (byte)player + (short)x + (short)y +
+        // (byte)damage.
+        let p = TilePicking {
+            player_id: 6,
+            x: 4220,
+            y: 1140,
+            damage: 35,
+        };
+        let mut body = vec![6];
+        body.extend_from_slice(&4220i16.to_le_bytes());
+        body.extend_from_slice(&1140i16.to_le_bytes());
+        body.push(35);
+        let c = C2s::TilePicking(p).encode();
+        assert_eq!(c[2], 125);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+        let f = S2c::TilePicking(p).encode();
+        assert_eq!(f[2], 125);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TilePicking(d) => assert_eq!(d, p),
+            other => panic!("expected 125, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1b_team_change_ui_shares_the_45_body() {
+        // `NetMessage.cs:970-974` — 157 shares 45's writer case: (byte)player
+        // + (byte)team. The reader tail (`MessageBuffer.cs:2355-2363`) is the
+        // dispatcher's job (S1-I-4).
+        let t = TeamChange { player_id: 3, team: 2 };
+        let c = C2s::TeamChangeUi(t).encode();
+        assert_eq!(c[2], 157);
+        assert_eq!(&c[3..], &[3, 2]);
+        // Byte-identical body to the 45 codec, only the id byte differs.
+        let plain = C2s::TeamChange(t).encode();
+        assert_eq!(&c[3..], &plain[3..]);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::TeamChangeUi(d) => assert_eq!(d, t),
+            other => panic!("expected 157, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn s1_i_1b_extra_spawn_loaded_round_trips() {
+        // `NetMessage.cs:1659-1661`: one (byte)player; the reader spawns with
+        // `PlayerSpawnContext.TeamSwap` = 3 (`MessageBuffer.cs:4453-4454`,
+        // `PlayerSpawnContext.cs:5-8`).
+        let f = S2c::ExtraSpawnLoaded { player_id: 4 }.encode();
+        assert_eq!(f[2], 158);
+        assert_eq!(&f[3..], &[4]);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ExtraSpawnLoaded { player_id } => assert_eq!(player_id, 4),
+            other => panic!("expected 158, got {:?}", other.msg_id()),
+        }
+        // Read-side only — the C# sends it from the server's 157 tail.
+        assert!(C2s::decode(158, &mut NetReader::new(&[4])).is_none());
+    }
+
+    #[test]
+    fn s1_i_1b_section_request_round_trips() {
+        // `NetMessage.cs:1662-1665` writes two (short)s; the reader reads two
+        // ReadUInt16 (`MessageBuffer.cs:4460`) — the non-negative section
+        // indices are the same bytes either way.
+        let c = C2s::SectionRequest { section_x: 21, section_y: 7 }.encode();
+        assert_eq!(c[2], 159);
+        let mut body = Vec::new();
+        body.extend_from_slice(&21u16.to_le_bytes());
+        body.extend_from_slice(&7u16.to_le_bytes());
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SectionRequest { section_x, section_y } => {
+                assert_eq!((section_x, section_y), (21, 7));
+            }
+            other => panic!("expected 159, got {:?}", other.msg_id()),
+        }
+        // The section math the request keys on: `Netplay.GetSectionX/Y`
+        // (`Netplay.cs:770-777`) = the port's `section_x/y` — a spawn at
+        // tile (4200, 1100) asks for section (21, 7).
+        assert_eq!(section_x(4200), 21);
+        assert_eq!(section_y(1100), 7);
+        // Truncated body must not decode.
+        assert!(C2s::decode(159, &mut NetReader::new(&body[..3])).is_none());
     }
 }

@@ -28477,7 +28477,7 @@ dependency tier of `SyncConnectedPlayer` (`NetMessage.cs:2806-2822`) /
 
 - `30 TogglePVP` вЂ” `(byte)plr + hostile` (`NetMessage.cs:856-859`).
 - `42 Unknown42` вЂ” the mana sync, `(byte)plr + (short)statMana + (short)statManaMax` (`:961-965`). Named `PLAYER_MANA` for readability; the C# name is `Unknown42` (`MessageID.cs:95`).
-- `45 TeamChange` вЂ” `(byte)plr + (byte)team` (`:970-974`). `157 TeamChangeFromUI` shares the writer arm but its read side adds the team-based-spawn tail (`MessageBuffer.cs:2355-2363`); 157 is not a join-bundle id and stays unported.
+- `45 TeamChange` вЂ” `(byte)plr + (byte)team` (`:970-974`). `157 TeamChangeFromUI` shares the writer arm but its read side adds the team-based-spawn tail (`MessageBuffer.cs:2355-2363`); 157 is not a join-bundle id вЂ” its id + codec landed with wave B below.
 - `60 Unknown60` вЂ” the NPC household banner, `(short)npc + (short)homeX + (short)homeY + (byte)status` (`:1067-1072`); the status is `WorldGen.TownManager.GetHouseholdStatus` (`:2845`). Named `NPC_HOUSE`.
 - `72 TravelMerchantItems` вЂ” exactly `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`) `(short)` item types, no count prefix (`:1134-1141`, reader `MessageBuffer.cs:3121-3124`).
 - `74 AnglerQuest` вЂ” `(byte)Main.anglerQuest + anglerWhoFinishedToday.Contains(recipient name)` (`:1145-1148`); the wire's bool is per-recipient, the client stores it as `anglerQuestFinished` (`MessageBuffer.cs:3147-3153`).
@@ -28524,6 +28524,65 @@ wrong reading cannot resurface. Tests `net::tests::s1_i_1b_*` (3) pin the
 11-body bytes + truncation failure, the 15 bare frame, and the full 1..=16
 constant census. Code-only wave: tests written, NOT run (no cargo).
 
+
+## The world-sync message ids (S1-I-1 wave B, 2026-11-20)
+Wave B of the message-id remap censuses the **section-send / tile-square /
+spawn-tile region** of the `MessageID` enum against `net.rs` and ports the
+missing ids as wire bodies + `C2s`/`S2c` codecs (the wave-A convention).
+Already ported in the region: `8 SpawnRequest` (`NetMessage.cs:414-418`),
+`10 TileSection` (the deflate codec), `12 PlayerSpawn` (`:433-444`),
+`20 AreaTileChange`/`SendTileSquare` (the uncompressed per-tile codec,
+`:543-644`), `49 InitialSpawn`, `9 Status`. The nine new ids:
+- `11 TileFrameSection` вЂ” four `(short)`s (`NetMessage.cs:427-432`), read at
+  `netMode == 1` into `WorldGen.SectionTileFrame(startX, startY,
+  endXInclusive, endYInclusive)` (`MessageBuffer.cs:895-900`,
+  `WorldGen.cs:80343`). Deprecated (`MessageID.cs:29-30`) and **never sent**
+  (`SendData(11` = 0 sites across `decompiled/`); the body exists so the
+  reader arm is 1:1. S2c only.
+- `17 TileManipulation` вЂ” `(byte)kind + (short)x + (short)y + (short)value +
+  (byte)style` (`NetMessage.cs:524-530`). **Census correction:** research/17
+  called 17 "superseded by 20" вЂ” wrong: both are live. 17 has ~30 direct
+  send sites (`Player.cs:39626`, `DelegateMethods.cs:515`, `Liquid.cs:1204`,
+  `Collision.cs:3353`, вЂ¦) and the host relays client edits as 17
+  (`MessageBuffer.cs:1285`), falling back to `SendTileSquare(-1, x, y, 5)`
+  only when a placement survives (`:1281`). The port's `INT_EDIT` (201)
+  stand-in is unchanged by this body вЂ” the swap is S1-I-4's.
+- `19 ToggleDoorState` вЂ” `(byte)action + (short)x + (short)y + (byte)dir`
+  (`NetMessage.cs:537-542`, the C# writes `number4 == 1f`). Actions 0/1
+  door open/close, 2/3 trapdoor, 4/5 tall gate; the reader normalises
+  `dir != 0` to 1 else -1 and relays (`MessageBuffer.cs:1299-1334`).
+- `63/64 SyncTilePaintOrCoating / SyncWallPaintOrCoating` вЂ” shared writer
+  case, `(short)x + (short)y + (byte)paint + (byte)coat`
+  (`NetMessage.cs:1081-1087`); `coat == 0` paints, else illuminant-coats
+  (`MessageBuffer.cs:2909-2948`), then the host relays.
+- `125 SyncTilePicking` вЂ” `(byte)plr + (short)x + (short)y + (byte)damage`
+  (`NetMessage.cs:1509-1514`); the host overrides the id to the sender and
+  relays to the others (`MessageBuffer.cs:4023-4042`,
+  `Player.GetOtherPlayersPickTile` `Player.cs:53751`).
+- `157 TeamChangeFromUI` вЂ” shares 45's writer case (`NetMessage.cs:970-971`),
+  so the same `TeamChange` body under a new id; the reader's team-spawn tail
+  (`MessageBuffer.cs:2355-2363`: `teamBasedSpawnsSeed` +
+  `ExtraSpawnPointManager.TryGetExtraSpawnPointForTeam` в†’ `CheckSection` +
+  `SendData(158)`) is dispatcher work. C2s only вЂ” the host relays as 45
+  (`:2342`). Sent from the team UI (`Main.cs:42766`).
+- `158 ExtraSpawnSectionLoaded` вЂ” `(byte)plr` (`NetMessage.cs:1659-1661`);
+  the client spawns with `PlayerSpawnContext.TeamSwap` = 3
+  (`MessageBuffer.cs:4450-4456`, `PlayerSpawnContext.cs:5-8`). S2c only.
+- `159 RequestSection` вЂ” the writer writes two `(short)`s
+  (`NetMessage.cs:1662-1665`), the reader reads two `ReadUInt16`
+  (`MessageBuffer.cs:4460` в†’ `SendSection`) вЂ” same bytes for non-negative
+  section indices; the codec carries `u16`. C2s only
+  (`Player.cs:41534`, `WorldItem.cs:375`). The port streams unrequested
+  (`host_stream_sections`); the on-request arm is S1-I-4's.
+Deliberate scope boundary (same as wave A): **bodies + codecs only**. The
+`netglue` dispatchers carry parked arms; the apply/relay sites
+(`MessageBuffer.cs:1119-1288` incl. the spam counters `:1141-1146` and the
+unsent-section fail-force `:1148-1151`, `:1299-1334`, `:2909-2948`,
+`:4023-4042`, `:2355-2363`, `:4450-4462`) and the send fan-out land with
+S1-I-4, so the live net message order is unchanged. The per-id round-trip
+tests `net::tests::s1_i_1b_*` (8) pin the id byte, the exact C# body bytes
+and the decode round trip; the tile-edit and section-request tests also pin
+truncated-body rejection, and the 157 test pins byte-identity with 45's body.
 ## The buff misc block (S1-E-7 wave D, 2026-11-18)
 
 `crates/tr-app/src/buff_effects_misc.rs` ports the `Player.UpdateBuffs`
