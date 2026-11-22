@@ -727,6 +727,85 @@ pub fn hover_step(npc: &mut Npc, world: &World, target: HoverTarget, params: Hov
     npc.facing = if target.center_x >= cx { 1 } else { -1 };
 }
 
+/// W4-f4 — `AI_005_EaterOfSouls`'s dust gate (`NPC.cs:50656-50713`,
+/// sites 50702/50710). The `:50656` kind list splits the arms:
+///
+/// * the bounce-list kinds (6/619/23/42/94/139/173/176/205/210/211/
+///   231-235) roll `Next(20) == 0` (`:50695`) UNLESS the type is in the
+///   exclusion list 42/139/176/205/210/211/252/231-235 — of the ported
+///   kinds the Eater of Souls (6) and the Meteor Head (23) draw, the
+///   Hornet (42), the Probe (139) and the volley bees (210/211) draw
+///   NOTHING (the `&&` short-circuits before `Main.rand`). On 0 a dust
+///   spawns at `(x, y + h*0.25)` over `width × (int)(h*0.5)`, type 18
+///   (the `num16` default; the 173→5 override has no ported kind), the
+///   NPC's `velocity.X` and the literal 2f, alpha 75, `this.color`,
+///   `this.scale` (site 50702);
+/// * the else arm (the servant 5 — outside the `:50656` list) rolls
+///   `Next(40) == 0` (`:50708`, gated `type != 252`): type 5, the same
+///   box/velocity pair, the DEFAULT alpha 0 / colour / scale 1f (site
+///   50710 — the 7-arg overload, `Dust.cs:75`).
+///
+/// Both arms post `velocity.X *= 0.5` / `velocity.Y *= 0.1`. The colour
+/// census: NO hover kind ever writes `NPC.color` (the `SetDefaults`
+/// colour rows are the slimes -3..-10/1/16/537 and the rainbow slime's
+/// `AI_001_SetRainbowSlimeColor` only, `NPC.cs:7685-7753`/`:8583`/
+/// `:8975`/`:15869`/`:61727`) — `this.color` reads `default(Color)`
+/// (`:8526`), so the port passes `Color::default()` and models no
+/// colour field (the d22 census, cross-noted).
+///
+/// The gate draw rides the caller's `UpdateNPCs` stream EVERY tick the
+/// kind qualifies; the pool internals roll inside `new_dust` (types
+/// 18/5 hit no per-type tweak, `Dust.cs:214-252`). `bounced` = the
+/// `:50656` list membership; `excluded` = the `:50695` exclusion (only
+/// meaningful when `bounced`). The netOffset round trip
+/// (`:50689`/`:50706`) is zero single-player — dropped. The C# runs the
+/// gate AFTER the bounce and BEFORE the integration (`:90498`); the
+/// port's `hover_step` integrates inside, so the gate reads the
+/// post-move box (a one-tick position deviation of the stand-in; the
+/// velocity is the fresh post-approach value — exact). The d22
+/// fidelity wave owns the AI/integration split (ANALYSIS).
+pub fn hover_dust_gate(
+    npc: &Npc,
+    world: &World,
+    bounced: bool,
+    excluded: bool,
+    rng: &mut UnifiedRandom,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    let pos = glam::Vec2::new(npc.x, npc.y + h * 0.25);
+    let (bw, bh) = (w as i32, (h * 0.5) as i32);
+    let idx = if bounced {
+        if excluded {
+            return; // `:50695`'s exclusion list — the gate never draws
+        }
+        // `:50695-50705` — the Next(20) gate, site 50702.
+        if rng.next_max(20) != 0 {
+            return;
+        }
+        dust.new_dust(
+            rng, dust_ctx, world, pos, bw, bh, 18,
+            npc.vx, 2.0, 75,
+            tr_core::particles::Color::default(), npc.scale,
+        )
+    } else {
+        // `:50708-50712` — the Next(40) gate, site 50710 (the 7-arg
+        // overload: alpha 0, default colour, scale 1f).
+        if rng.next_max(40) != 0 {
+            return;
+        }
+        dust.new_dust(
+            rng, dust_ctx, world, pos, bw, bh, 5,
+            npc.vx, 2.0, 0,
+            tr_core::particles::Color::default(), 1.0,
+        )
+    };
+    let dd = dust.slot_mut(idx);
+    dd.velocity.x *= 0.5;
+    dd.velocity.y *= 0.1;
+}
+
 // S1-D-3: the aiStyle-8 caster family (`CasterParams`/`CasterPhase`/
 // `caster_cycle`/`find_teleport_spot`) moved to `npc_ai_bat.rs` —
 // `ai_style_8_step` + `attempt_find_teleport_spot`, the faithful
@@ -1234,6 +1313,136 @@ mod tests {
             (3.25, 0.018),
             "the Hornet must not ship type 205's constants"
         );
+    }
+
+    // ---- W4-f4 witnesses: the hover dust gate (sites 50702/50710) ----
+    // WRITTEN NOT RUN (code-only). The mirror replays the gate draw +
+    // the pool internals draw-for-draw; the colour census pins
+    // `this.color` = default on every hover kind.
+
+    /// W4-f4 — site 50702 (`NPC.cs:50695-50705`): the Eater of Souls /
+    /// Meteor Head arm. The Next(20) gate draws EVERY tick; on 0 the
+    /// type-18 dust spawns at (x, y+h*0.25) over width×(int)(h*0.5),
+    /// velocity (vx, 2), alpha 75, default colour, this.scale, then the
+    /// ×0.5/×0.1 velocity posts. Type 18 hits no per-type tweak.
+    #[test]
+    fn w4_f4_the_hover_bounce_arm_mirrors_site_50702() {
+        let w = World::new("t".into(), 200, 200);
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut npc = Npc::new(NpcKind::EaterOfSouls, 100.0, 100.0, 1, 0.0);
+        npc.vx = 1.5;
+        npc.scale = 1.2;
+        let (nw, nh) = npc.size();
+        let mut rng = UnifiedRandom::new(42);
+        let mut witness = rng.clone();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        // Find a seed-42 tick where Next(20) == 0 (the gate fires), and
+        // mirror the whole run: the gate draw every tick, the internals
+        // on the hits.
+        let mut fired = 0;
+        for _ in 0..60 {
+            let g = witness.next_max(20);
+            if g == 0 {
+                let idx = mirror.new_dust(
+                    &mut witness, &dctx, &w,
+                    glam::Vec2::new(npc.x, npc.y + nh * 0.25),
+                    nw as i32, (nh * 0.5) as i32, 18,
+                    npc.vx, 2.0, 75,
+                    tr_core::particles::Color::default(), npc.scale,
+                );
+                let dd = mirror.slot_mut(idx);
+                dd.velocity.x *= 0.5;
+                dd.velocity.y *= 0.1;
+                fired += 1;
+            }
+            hover_dust_gate(&npc, &w, true, false, &mut rng, &mut dust, &dctx);
+            assert_eq!(rng, witness, "the gate ledger tick-by-tick");
+        }
+        assert!(fired > 0, "seed 42 fires the Next(20) gate within 60 ticks");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(act.len(), fired);
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 18);
+            assert_eq!(d.position, m.position, "the y+h*0.25 box");
+            assert_eq!(d.velocity, m.velocity, "the ×0.5/×0.1 posts");
+            assert_eq!(d.scale, m.scale, "this.scale rides the spawn");
+            assert_eq!(d.alpha, 75);
+            assert_eq!(d.color, tr_core::particles::Color::default());
+        }
+    }
+
+    /// W4-f4 — site 50710 (`NPC.cs:50708-50712`): the servant's else arm.
+    /// The Next(40) gate, type 5, the DEFAULT alpha 0 / colour / scale 1f
+    /// (the 7-arg overload — NOT the bounce arm's 75/this.scale).
+    #[test]
+    fn w4_f4_the_hover_else_arm_mirrors_site_50710() {
+        let w = World::new("t".into(), 200, 200);
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut npc = Npc::new(NpcKind::ServantOfCthulhu, 100.0, 100.0, 1, 0.0);
+        npc.vx = -2.0;
+        npc.scale = 1.4; // the else arm ignores this.scale — the stock 1f
+        let (nw, nh) = npc.size();
+        let mut rng = UnifiedRandom::new(9);
+        let mut witness = rng.clone();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        let mut fired = 0;
+        for _ in 0..120 {
+            let g = witness.next_max(40);
+            if g == 0 {
+                let idx = mirror.new_dust(
+                    &mut witness, &dctx, &w,
+                    glam::Vec2::new(npc.x, npc.y + nh * 0.25),
+                    nw as i32, (nh * 0.5) as i32, 5,
+                    npc.vx, 2.0, 0,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+                let dd = mirror.slot_mut(idx);
+                dd.velocity.x *= 0.5;
+                dd.velocity.y *= 0.1;
+                fired += 1;
+            }
+            hover_dust_gate(&npc, &w, false, false, &mut rng, &mut dust, &dctx);
+            assert_eq!(rng, witness, "the else-arm ledger tick-by-tick");
+        }
+        assert!(fired > 0, "seed 9 fires the Next(40) gate within 120 ticks");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(act.len(), fired);
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 5);
+            assert_eq!(d.position, m.position);
+            assert_eq!(d.velocity, m.velocity);
+            assert_eq!(d.alpha, 0, "the 7-arg overload's default alpha");
+            // The scale is the stock 1f × the pool jitter — NOT ×1.4.
+            assert_eq!(d.scale, m.scale);
+            assert!(d.scale < 1.25, "the stock scale, not this.scale ({})", d.scale);
+        }
+    }
+
+    /// W4-f4 — the `:50695` exclusion census: the Hornet (42), the Probe
+    /// (139) and the volley bees (210/211) are in the bounce list but
+    /// EXCLUDED — the gate draws NOTHING (the `&&` short-circuits before
+    /// Main.rand). The colour census: no hover kind writes NPC.color.
+    #[test]
+    fn w4_f4_the_excluded_hover_kinds_draw_nothing() {
+        let w = World::new("t".into(), 200, 200);
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        for kind in [NpcKind::Hornet, NpcKind::Probe, NpcKind::Bee, NpcKind::BeeSmall] {
+            let npc = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            let mut rng = UnifiedRandom::new(42);
+            let before = rng.peek();
+            let mut dust = tr_core::particles::DustPool::new();
+            for _ in 0..200 {
+                hover_dust_gate(&npc, &w, true, true, &mut rng, &mut dust, &dctx);
+            }
+            assert_eq!(rng.peek(), before, "{kind:?}: the exclusion draws nothing");
+            assert!((0..6000).all(|i| !dust.slot(i).active), "{kind:?}: no dust");
+        }
     }
 }
 

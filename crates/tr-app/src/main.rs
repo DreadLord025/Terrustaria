@@ -162,6 +162,9 @@ mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
+// W4-f4 wave E: the 17 unclaimed out-of-HitEffect gore sites (research/211)
+// — UNWIRED standalone machines, the hosts' wiring is the follow-up round.
+mod npc_hit_effect_e;
 mod persist;
 mod grapple;
 mod gore_seam;
