@@ -1417,6 +1417,164 @@ mod tests {
         assert_ne!(m.tiles[i].ty, 1);
     }
 
+    /// W4-c35 — `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): the
+    /// drain order is deterministic — `UpdateTiles` first (`:66`, FIFO
+    /// enqueue order), then `UpdateAreas` (`:67`, area enqueue order, each
+    /// area walked column-major `i` outer / `j` inner, `:76-79`). A tile
+    /// whose flag the tile pass consumed does not report twice.
+    #[test]
+    fn w4_c35_drain_order_is_tiles_fifo_then_areas_column_major() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let cells = [(100, 70), (101, 70), (100, 71), (101, 71)];
+        for (x, y) in cells {
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+        }
+        for (x, y) in cells {
+            world.tiles[world.index(x, y)] = Tile::default(); // the edit
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 101, 70); // FIFO: second column first
+        q.add_tile(&mut m, 100, 71);
+        q.add_area(&mut m, 100, 70, 2, 2); // arms (100,70) + (101,71)
+        let changed = q.update(&world, &mut m);
+        assert_eq!(
+            changed,
+            vec![(101, 70), (100, 71), (100, 70), (101, 71)],
+            "tiles FIFO, then the area walk column-major, no duplicates"
+        );
+        assert!(q.update(&world, &mut m).is_empty(), "both queues cleared");
+    }
+
+    /// W4-c35 — `MapUpdateQueue.Add`'s budget (`MapUpdateQueue.cs:49-55`):
+    /// at `MAX_QUEUED_UPDATES` the entry drops, but `QueueUpdate` armed the
+    /// flag BEFORE the cap check (`:43`), so an area walk still refreshes
+    /// the tile (`UpdateAreas` reads the flag, not the tile queue).
+    #[test]
+    fn w4_c35_at_the_budget_the_entry_drops_but_the_flag_stays_armed() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 70);
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        world.tiles[i] = Tile::default(); // the edit
+        let mut q = MapUpdateQueue::default();
+        // Fill the tile queue to the cap with out-of-bounds dummies (the
+        // drain's `UpdateType` bounds-check refuses them, `WorldMap.cs:65`).
+        q.tiles = vec![(-1, -1); MAX_QUEUED_UPDATES];
+        q.add_tile(&mut m, 100, 70);
+        assert_eq!(q.tiles.len(), MAX_QUEUED_UPDATES, "the entry dropped");
+        assert!(m.tiles[i].update_queued(), "the flag armed before the cap");
+        assert!(q.update(&world, &mut m).is_empty(), "no tile-queue entry");
+        assert!(m.tiles[i].update_queued(), "the drain never saw the tile");
+        // The area path recovers it (`:30-37` queues the rect regardless of
+        // the per-tile budget; `:80` consumes the flag).
+        q.add_area(&mut m, 100, 70, 1, 1);
+        assert_eq!(q.update(&world, &mut m), vec![(100, 70)]);
+        assert!(!m.tiles[i].update_queued());
+    }
+
+    /// W4-c35 — `WorldGen.RangeFrame` (`WorldGen.cs:80400-80413`): the
+    /// vanilla rect width `startX - endX + 4` (`:80402`) is inverted for a
+    /// range wider than 4, so the clamped area walk runs empty; the refresh
+    /// rides the per-tile walk, which covers `[start-1, end+1]` inclusive
+    /// (`:80403`'s `num = endX + 1` compared `< num + 1`).
+    #[test]
+    fn w4_c35_range_frame_walks_start_minus_1_to_end_plus_1() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        // The two extreme corners of the walk, plus a tile the "fixed"
+        // (positive-width) rect would have covered at (95, 70).
+        for (x, y) in [(99, 69), (111, 81), (95, 70)] {
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+        }
+        for (x, y) in [(99, 69), (111, 81)] {
+            world.tiles[world.index(x, y)] = Tile::default();
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_range_frame(&mut m, 100, 70, 110, 80);
+        assert!(
+            !m.tiles[world.index(95, 70)].update_queued(),
+            "the inverted rect's area walk ran empty"
+        );
+        assert_eq!(
+            q.update(&world, &mut m),
+            vec![(99, 69), (111, 81)],
+            "both walk corners refresh, column-major"
+        );
+    }
+
+    /// W4-c35 — `WorldGen.TileFrame`'s border gate (`WorldGen.cs:81330-81334`):
+    /// the 5-tile world border skips BEFORE the `Add`, so a border tile
+    /// never arms its flag even inside the range walk.
+    #[test]
+    fn w4_c35_range_frame_skips_the_5_tile_world_border() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        for (x, y) in [(5, 6), (6, 6)] {
+            let t = world.tile_mut(x, y).unwrap();
+            t.kind = 1;
+            t.flags |= FLAG_ACTIVE;
+            assert!(update_map_lighting(&world, &mut m.tiles, x, y, 200));
+            world.tiles[world.index(x, y)] = Tile::default();
+        }
+        let mut q = MapUpdateQueue::default();
+        q.add_range_frame(&mut m, 4, 4, 6, 6);
+        assert!(!m.tiles[world.index(5, 6)].update_queued(), "i <= 5 skips");
+        assert_eq!(q.update(&world, &mut m), vec![(6, 6)], "the first interior tile");
+    }
+
+    /// W4-c35 — the reveal interaction: `UpdateLighting`'s rebuild goes
+    /// through `MapTile.Create` (`MapTile.cs:98-101`), whose `_extraData`
+    /// is `color | 0x80` — the `UpdateQueued` bit is CLEARED. A reveal that
+    /// rebuilds a queued tile consumes the flag; the later drain finds
+    /// nothing (`WorldMap.cs:71-74`) and does not report twice.
+    #[test]
+    fn w4_c35_a_reveal_rebuild_consumes_the_queued_flag() {
+        let mut world = ground_world();
+        let mut m = WorldMap::new(&world);
+        let i = world.index(100, 70);
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        world.tiles[i] = Tile::default(); // the edit
+        let mut q = MapUpdateQueue::default();
+        q.add_tile(&mut m, 100, 70);
+        assert!(m.tiles[i].update_queued());
+        // The reveal window reaches the tile first: the rebuild derives the
+        // CURRENT world state at the brighter light and clears the flag.
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 255));
+        assert!(!m.tiles[i].update_queued(), "Create resets _extraData");
+        assert_eq!(m.tiles[i].light, 255);
+        assert!(
+            q.update(&world, &mut m).is_empty(),
+            "the drain's UpdateType refuses the consumed flag"
+        );
+    }
+
+    /// W4-c35 — `.map` IO compat: the serializer writes only type/light/
+    /// colour (`MapHelper.cs:3135-3226`), and the loader rebuilds through
+    /// `MapTile.Create` (`:4004`) — a queued flag armed at save time never
+    /// survives the round trip, and the loaded tile queues fresh.
+    #[test]
+    fn w4_c35_the_queued_flag_does_not_survive_a_map_round_trip() {
+        let world = test_world();
+        let mut original = test_tiles(40, 40);
+        original[7].set_update_queued(true); // (7, 0), light 30
+        original[10].set_update_queued(true); // (10, 0), painted
+        let dir = unique_dir("c35flag");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("flag.map");
+        save_map_file(&world, &original, &path).unwrap();
+        let mut loaded = vec![MapTile::default(); original.len()];
+        assert!(load_map_file(&world, &mut loaded, &path).unwrap());
+        assert_eq!(loaded, test_tiles(40, 40), "the flags stripped, pixels kept");
+        assert!(loaded[7].is_changed(), "Create always arms IsChanged");
+        assert!(!loaded[7].update_queued());
+        // The loaded tile enqueues fresh (the flag is free again).
+        let mut m = WorldMap::new(&world);
+        m.tiles = loaded;
+        assert!(m.queue_update(7, 0));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn reveal_window_marks_tiles_around_the_player() {
         let world = ground_world();
@@ -2107,15 +2265,25 @@ pub struct MapUpdateQueue {
     tiles: Vec<(i32, i32)>,
 }
 
+/// `MapUpdateQueue.MAX_QUEUED_UPDATES` (`MapUpdateQueue.cs:11`): the per-tile
+/// queue's hard budget. The C# grows a `Point16[1024]` by doubling (`:55`)
+/// until this cap; the port's `Vec` growth is the same semantics without the
+/// array resizes.
+const MAX_QUEUED_UPDATES: usize = 262_144;
+
 impl MapUpdateQueue {
     /// `MapUpdateQueue.Add(Rectangle)` (`MapUpdateQueue.cs:23-41`): the
-    /// world-clamped rect queues every tile it covers.
+    /// world-clamped rect queues every tile it covers. The clamp is
+    /// `WorldUtils.ClampToWorld(area)` at `fluff = 0` (`WorldUtils.cs:9-14`):
+    /// each edge clamps independently, so an inverted rect keeps a negative
+    /// extent and both walks run empty (vanilla's `RangeFrame` rect relies on
+    /// this — see [`Self::add_range_frame`]).
     pub fn add_area(&mut self, map: &mut WorldMap, x: i32, y: i32, w: i32, h: i32) {
         let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
-        let x0 = x.max(0);
-        let y0 = y.max(0);
-        let x1 = (x + w).min(mw);
-        let y1 = (y + h).min(mh);
+        let x0 = x.clamp(0, mw);
+        let y0 = y.clamp(0, mh);
+        let x1 = (x + w).clamp(0, mw);
+        let y1 = (y + h).clamp(0, mh);
         self.areas.push([x0, y0, x1 - x0, y1 - y0]);
         for i in x0..x1 {
             for j in y0..y1 {
@@ -2130,12 +2298,58 @@ impl MapUpdateQueue {
         if !map.queue_update(x, y) {
             return; // `:44`: the gate skips the enqueue
         }
+        // `:49-55`: at the budget the entry drops — but the `UpdateQueued`
+        // flag stays armed (the C# sets it inside `QueueUpdate` BEFORE the
+        // cap check), so the tile refreshes only when an area walk, a reveal
+        // rebuild or a later `UpdateType` consumes the flag.
+        if self.tiles.len() >= MAX_QUEUED_UPDATES {
+            return;
+        }
         self.tiles.push((x, y));
+    }
+
+    /// `WorldGen.RangeFrame`'s map enqueue (`WorldGen.cs:80399-80411`, the
+    /// `MessageBuffer.cs:1438` net-`20` tail): the area add plus the
+    /// `TileFrame` walk's per-tile adds. The vanilla rect width is
+    /// `startX - endX + 4` (`:80402`) — inverted for a normal range, so the
+    /// clamped area walk runs empty and the refresh rides the per-tile adds
+    /// alone; the expression is kept verbatim. The walk covers
+    /// `[start-1, end+1]` inclusive — `:80403` sets `num = endX + 1` and the
+    /// loops compare `i < num + 1` (`:80405-80407`) — and each `TileFrame`
+    /// gates the 5-tile world border BEFORE its `Add`
+    /// (`WorldGen.cs:81329-81334`).
+    pub fn add_range_frame(
+        &mut self,
+        map: &mut WorldMap,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) {
+        self.add_area(
+            map,
+            start_x - 2,
+            start_y - 2,
+            start_x - end_x + 4,
+            start_y - end_y + 4,
+        );
+        let (mw, mh) = (map.tiles_w as i32, map.tiles_h as i32);
+        for i in (start_x - 1)..(end_x + 2) {
+            for j in (start_y - 1)..(end_y + 2) {
+                if i <= 5 || j <= 5 || i >= mw - 5 || j >= mh - 5 {
+                    continue; // `WorldGen.cs:81329-81332`
+                }
+                self.add_tile(map, i, j);
+            }
+        }
     }
 
     /// `MapUpdateQueue.Update` (`MapUpdateQueue.cs:62-71`): both queues drain
     /// through `WorldMap.UpdateType`; the changed tiles return (the C#'s
-    /// `MapRenderer.QueueChange`).
+    /// `MapRenderer.QueueChange`). The drain order is deterministic and the
+    /// C#'s: `UpdateTiles` first (`:66`, FIFO enqueue order), then
+    /// `UpdateAreas` (`:67`, area enqueue order, each area walked
+    /// column-major `i` outer / `j` inner — `:76-79`), both cleared after.
     pub fn update(&mut self, world: &World, map: &mut WorldMap) -> Vec<(i32, i32)> {
         let mut changed = Vec::new();
         for (x, y) in std::mem::take(&mut self.tiles) {

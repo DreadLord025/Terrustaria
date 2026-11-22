@@ -271,8 +271,12 @@ Structural (already admitted in `docs/ANALYSIS.md` or the Rust "ruling" comments
   `MapHelper.cs:3347-3585`/`:3587-3747`). `LoadMapVersion1`/`LoadMapVersionCompressed`/
   `DecompressChunk` have no counterpart, so a legacy map file is rejected as a foreign version
   (`file.rs::read_map_prefix`) rather than migrated; only v326 loads.
-- **D14 — no `MapUpdateQueue`.** behavioural · *not admitted* (no Rust counterpart at all; grep for
-  `MapUpdateQueue` in `crates/` is empty). Tile edits made outside the player's reveal window
+- **D14 — no `MapUpdateQueue`.** behavioural · *closed (W4-c35)* — `tr-app/src/map.rs::MapUpdateQueue`
+  ports `MapUpdateQueue.cs:21-108` (the 262144 budget with the flag-armed-before-cap drop, the
+  `ClampToWorld` edge clamps, `RangeFrame`'s inverted rect + `[start-1, end+1]` border-gated walk,
+  the deterministic `UpdateTiles`-FIFO-then-`UpdateAreas`-column-major drain); the net-5/10/20
+  enqueue hooks ride `app/netglue.rs` and the drain rides `frame/world.rs::map_phase`. Historical
+  finding: tile edits made outside the player's reveal window
   (worldgen after load, net-received tile changes `MessageBuffer.cs:1153`,
   `NetMessage.cs:2456`, `WorldGen.cs:80347/80402/81334`) never refresh their map pixel until the
   reveal window revisits them with ≥ light. Since `update_map_lighting` keeps the *brighter* light

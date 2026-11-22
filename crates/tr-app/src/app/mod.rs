@@ -2492,6 +2492,55 @@ impl App {
         }
     }
 
+    /// The single-tile map enqueue — `MapUpdateQueue.Add(x, y)` at
+    /// `MessageBuffer.cs:1153`'s head of the net-`5` tile-change arm (BEFORE
+    /// the KillTile/PlaceTile dispatch). The `Main.dedServ` gate
+    /// (`MapUpdateQueue.cs:23/43`) is structural: a dedicated server has no
+    /// map — the port's listen-server host DOES keep one (`netMode == 2` but
+    /// not `dedServ`), so its arm queues too; the
+    /// `generatingWorld`/`!mapEnabled` gates ride the callers as elsewhere.
+    pub(crate) fn queue_map_tile(&mut self, x: i32, y: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_tile(m, x, y);
+    }
+
+    /// `MapUpdateQueue.Add(Rectangle)` behind the map-enabled gate — the
+    /// `NetMessage.cs:2456` tail of `DecompressTileBlock` (the net-`10`
+    /// section snapshot queues its whole rect).
+    pub(crate) fn queue_map_area(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_area(m, x, y, w, h);
+    }
+
+    /// `WorldGen.RangeFrame`'s map half — the net-`20` tail
+    /// (`MessageBuffer.cs:1438`): the (vanilla-inverted) area add plus the
+    /// border-gated per-tile walk (`WorldGen.cs:80402-80411`).
+    pub(crate) fn queue_map_range_frame(
+        &mut self,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+    ) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(m) = self.map.as_mut() else {
+            return;
+        };
+        self.map_queue.add_range_frame(m, start_x, start_y, end_x, end_y);
+    }
+
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
         world_sim::editing::update_editing(self, dt, screen);
     }
