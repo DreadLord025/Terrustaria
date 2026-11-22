@@ -21139,6 +21139,92 @@ NOT RUN. The old `the_actuator_item_marks_the_tile` test is renamed
 `the_actuator_item_marks_the_tile_and_consumes_one`.
 
 
+## The wire DRAW overlay census and fixes (S1-W4-g81, 2026-11-21)
+
+A verbatim re-read of `Main.DrawWires` (`Main.cs:58218-58675`) against
+`render/wires.rs` (the M7-WIRE-3 draw + the S1-P-i34 visibility gate). The
+visibility half (i34) verified FAITHFUL — `wire_view` keeps the held-mech /
+lens-toggle / no-traps gates and the `builderAccStatus` channel picks
+(`:58224-58243`). The DRAW half carried four WRONGs and one MISSING; all
+fixed in the same file, byte-maths first. Scope: the overlay DRAW only —
+the wiring arms (tool use, `HitWireSingle`, `Wiring`'s trip scan) belong to
+the sibling lanes (c42/e20/e21/f11) and are untouched.
+
+**WRONG 1 — float tints instead of XNA bytes.** The C# tint chain is
+`Lighting.GetColor(j, i)` (`Lighting.cs:216-242`: `(int)(light *
+GlobalBrightness * 255)` per channel, clamp 255, alpha 255) → the channel
+switch (`Main.cs:58318-58329`: White / `color *= 0.5f` / Transparent) →
+`color * (1f / num7)` (`:58405`). XNA's `Color * float` is
+`(int)(byte * scale)` on EVERY channel INCLUDING alpha — the faded channel
+draws at alpha 127 and the overlap dim at `255/num7` truncated (127, not
+127.5). The v1 port ran `style.shade` floats and divided by `num7` in
+float space, losing every truncation and the alpha entirely. Now
+`light_color_bytes`/`channel_tint`/`scale_color` carry the byte chain; the
+per-mode `LightStyle::shade` transforms (White/Retro/Trippy) do NOT apply —
+the C# draws the raw `GetColor` bytes in every light mode (the legacy
+engine's own colour already rides the light map). `GlobalBrightness` rides
+`style.brightness` (the blind drop 1.2 → 1.0 is applied at the frame seam).
+
+**WRONG 2 — the overlap strips rode the dim.** `:58405` draws the main
+quad at `color2 * (1f / num7)` but `:58410` draws the 6 px strip at plain
+`color2` — the channel-tinted colour BEFORE the dim. The v1 port passed
+the already-dimmed colour to both. `wire_tint` now returns the pair.
+
+**WRONG 3 — the strip table indexed the wrong sides.** The v1 strip array
+was ordered up/down/right/left but indexed `sides[k]`/`claimed[k]`
+directly on `[up, right, down, left]` — the down strip checked the RIGHT
+claim and vice versa. The `STRIPS` table now carries the side index
+explicitly, in the C#'s draw order (`flag8` up, `flag9` down, `flag7`
+right, `flag6` left — `:58406-58437`), with the source rects
+`(18, Y, 16, 6)` / `(72, Y+10, 16, 6)` at +10y / `(46, Y, 6, 16)` at +10x /
+`(144, Y, 6, 16)`.
+
+**WRONG 4 — the actuator gate + the guard scope.** The plate's draw gate
+is `Lighting.Brightness(j, i) > 0f` (`:58643`) — the RAW light mean ×
+GlobalBrightness (`Lighting.cs:118-122`), not the v1's per-channel any-positive
+on the shaded colour. And the C#'s `flag && CanShowWireStuffHere` guard
+(`:58266`) wraps ONLY the four wire colours: the actuator plate (`:58643`)
+and the 423 collection (`:58660`) sit outside it and draw inside the
+pre-Golem temple and under `HideWires`. The v1 `continue`d the whole tile.
+The plate's `color5 * num` (`:58658`) is a byte scale too (the rod's ×0.5
+halves the alpha). A Transparent actuator channel draws an alpha-0 quad in
+the C# (premultiplied blend: no-op); the port skips it — pixel-identical.
+
+**MISSING — the tile-423 range rectangle.** `DrawWiresSpecialTiles`
+(`:58223`/`:58660-58672`): every active 423 with `frameY == 36` collects
+during the walk; after the loop each draws `Utils.DrawRectangle` from
+`(j*16-33, i*16-161)` to `(j*16+49, i*16+1)` in `Color.LightSeaGreen`
+(32, 178, 170, 255), width 2. `Utils.DrawRectangle` (`Utils.cs:2619-2625`)
+is four `DrawLine` calls (left, top, bottom, right); `DrawLine`
+(`:2689-2702`) draws `min(5, (int)distance)` segments — collapsed to ONE
+when `colorStart == colorEnd` (the 423 case) — each a `BlackTile` quad
+scaled `(num/num2/16, width/16)`, rotated `(end-start).ToRotation()` about
+the origin `(0, 8)` (source px — the destination anchor is `(0, width/2)`,
+the left-middle). Ported as `special_tile_rect`/`line_segments`/
+`draw_line`/`draw_rectangle` through the solid-white pixel block (no
+`BlackTile` sheet — the `ui/crafting.rs` precedent). The port has no
+placeable 423 yet, but `.wld` worlds carry the sensor (`tile_entities.rs`).
+
+**Kept deviations (documented, unchanged):** the unified `claimed` walk
+(the C# red claims its sides unconditionally, the later colours only on
+draw — unreachable in practice: the UI cycle wraps at 3 so Transparent is
+never selected, `Main.cs:47551-47555`); the `dualDungeonsSeed` temple-wall
+style check in `CanShowWireStuffHere` (`Player.cs:46955`) has no ported
+seed; the screen-range walk keeps the port's ±1-tile margin form.
+
+**RNG:** the draw pass draws no random numbers — no stream touched.
+
+**Verification: code-only mode — no cargo/rustc/rustfmt/tests/graphify
+invoked.** 13 witnesses in `render/wires.rs::tests` WRITTEN, NOT RUN: the
+four i34 visibility tests kept, plus the GetColor byte truncation/clamp,
+the channel switch's alpha truncation (255 → 127, 101 → 50), the overlap
+dim's byte truncation (255/2 = 127, 255/3 = 85), the strip-colour escape
+from the dim (main 76 vs strip 153 at ×0.5 on 0.5 light), the raw
+brightness mean, the 424/445 junction offsets, the temple guard's scope
+(the 423 collects behind wall 87), the strip side mapping, the 82×162 rect
+corners, and the DrawLine single-segment collapse + gradient plan.
+
+
 ## The Deerclops' ice-spike rows (S1-D-4b-5b, 2026-11-14)
 
 `AI_123_Deerclops_MakeSpikesForward`/`MakeSpikesBothSides` +
@@ -40021,3 +40107,227 @@ byte-identical, proven by the draw-stream twin witness); the held tick
 draws only through the caller's UpdatePlayers stream on the wrap.
 6 new witnesses WRITTEN, NOT RUN (spelunker_helper 3, edit/kill 1,
 items 1, wiring 1).
+
+## The wire-visual residuals census close (S1-W4-g81 residuals, 2026-11-21, code-only)
+
+The census re-ran against the task's listed visual gaps: wire-count badges /
+actuator hammer-icon preview, the wire-placement ghost preview, the
+junction-box hover highlight, the wire-cutter preview, and the WiresUI
+ToolMode drawing. **Verdict: the `Main.DrawWires` region
+(`Main.cs:58218-58675`) is fully covered by 6f046998** (the previous census
+section, four WRONGs + the 423 rect fixed). Every listed residual visual
+lives OUTSIDE that region and was unported; all were ported on this branch
+except the junction-box highlight, which is recorded below as a generic
+subsystem gap. Scope stayed visuals-only: the wiring ARMS belong to
+c42/e20/e21/f11 (their commit logs verified pure device arms, no visuals)
+and are untouched.
+
+### 1. Badges / hammer / cutter / ToolMode = `WiresUI.cs` WiresRadial
+
+Ported verbatim as `ui/wires_ui.rs` (commit 48b4de52, wired 071a0d56,
+icon-latch fold 851a73e1): `FlowerUpdate` (`WiresUI.cs:150-187`),
+`LineUpdate` (`:114-148`), `DrawFlower` (`:342-509`), `DrawCursorArea`
+(`:511-691`), plus `Settings.DrawToolModeUI`/`DrawToolAllowActuators`
+(`:59-90` - the getter's SIDE EFFECT: holding 3611 latches 2, 3625 latches
+1, the latch survives the switch-away). **`WiresRadial.DrawLine`
+(`:195-340`) is DEAD CODE - no caller anywhere in the decompilation; not
+ported.** Verbatim quirks kept: the petal draw order is
+red/green/blue/yellow but the click bits swap (i1 -> GREEN, i2 -> BLUE,
+`:477-497`); the badge channel map is the double swap (i0->3, i1->1,
+i2->2, i3->0, i4->5, `:556-586`); the i==5 raw `1 << i` test is overridden
+to the ACTUATOR bit; the angle-cone hover test computes then the
+non-gamepad distance test OVERRIDES it (the cone is dead under the mouse);
+the off-badge dim is the byte lerp `c + (0-c)*0.65` truncated
+([253,58,61,255] -> [88,20,21,89]); the opacity ramp is the double
+`0.05 * Math.Sign` step with the `< 0.05` snap - f32 accumulation reaches
+0.75 at total tick 14 (0.6500001 + 0.05 lands 0.7000001, the 0.04999989
+remainder snaps). **`Math.Sign(0f)` is 0 but Rust `f32::signum(+0.0)` is
++1** - at opacity 1.0 the raw signum overshot to 1.05 and the snap left it
+there; the three-way sign keeps the C# tie (100e9d83).
+`App.wire_tool_mode` seeds `TOOL_MODE_DEFAULT = 1` (Red, the static ctor
+`:92-95`) and feeds the `smart_cursor` `Lookup::tool_mode` seam; the
+radial draws at the DrawInterface_9 slot (`Main.cs:46196-46204`) before
+`draw_hud`; the petal hover folds into the `over_ui_slot` mine-suppression
+(`frame/world.rs`, the `WiresUI.cs:499` mouseInterface write).
+
+### 2. The ghost preview = the Wire Kite projectile 651
+
+The placement ghost is NOT a UI draw - it is proj 651 (`Projectile.cs:
+6990-7000`: 10x10, aiStyle 125, friendly, ignoreWater, penetrate -1,
+drawLayer 5). Ported (48b4de52): the data row (`projectile/data.rs`,
+`ignoreWater = true` carried in ababd039 per `:6996`), the aiStyle-125 arm
+(`Projectile.cs:35697-35833` -> `projectile_ai_kite.rs`: the cursor ride
+with the one-tick localAI[1] cooldown, the `(int)Center.X / 16` anchor
+latch - cast BEFORE the divide, vs the release cell's `(int)(Center.X /
+16f)` - both verbatim and tested; the release arms localAI[0] = 1 THEN
+Kill; the ChangeDir reads `Math.Sign` on the RAW velocity - a 0.5 velocity
+flips, the int-truncated signum dropped it, fixed de8ce9c4; the
+heldProj/SetDummyItemTime(2)/itemRotation tail; the two dead L-walk tile
+reads not ported), Kill's 651 mass-op intent (`:72051-72067`), the ghost
+DRAW (`Main.cs:31620-31907` -> `render/wire_kite.rs`: the byte-lerp
+channel mix - RED [191,63,63], RGB [95,95,95], YELLOW [191,191,63],
+RED+YELLOW [212,127,42]; the Yellow lerp does NOT increment num246; the
+cutter grey swap [50,50,50]; the L-path caps/middles/corner column sums
+36+18=54 right / 144+72=216 left; the WireUi[11] actuator stamp), in the
+over-wire slot right after `draw_wires` (`Main.cs:62303` -> `:62315`), the
+generic projectile pass skips 651. The 3611 use gate
+(`Player.cs:52063-52066` no-channel refusal) + the zero-velocity centre
+spawn + the `TryUpdateChannel` tail landed in `world_sim/editing.rs`.
+**Deviations (documented):** the ghost pushes to the port's UI range
+(pre-transformed screen pixels) rather than a world batch - the push
+order matches the C# (`DrawCachedProjsOverWiresUI` `Main.cs:57034` right
+after `DrawWires` `:57030`, before the projectile/player passes), but the
+UI range draws OVER the scene filter where the C# ghost draws UNDER it
+(the filter-order deviation). **The alpha-0 tints are CORRECT, not a
+deviation** (the seal fix, research/382): the C# batch is
+`BlendState.AlphaBlend` (premultiplied `One, OneMinusSrcAlpha`), so
+`color47.A = 0` (`:31657`) with non-zero RGB is an ADDITIVE term
+(`src + dst`) - the visible ghost glow; `color46` keeps alpha 0 normally
+/ 255 with the cutter. The port's pipeline is the same equation
+(`sprite.wgsl` keeps rgb un-premultiplied, alpha = `tex.a * color.a`), so
+the C# alpha values reproduce the additive ghost verbatim. The earlier
+alpha-255 override (a misread of the blend as non-premultiplied) turned
+it into a semi-transparent REPLACE - removed at the seal.
+`Wiring.MassWireOperation` is UNPORTED
+ON THIS BRANCH - the kill intents drain and drop in
+`world_sim/projectiles.rs` with the note; the ghost preview + the
+anchor/release machine are the ported visuals. **The seal's compose
+verdict (research/382 §4)**: the apply is NOT an open gap - c42 owns it
+(`world_sim/wiring.rs::mass_wire_operation`, fold-133 `05ae5cc6`, the
+58-slot stock census + the core L-walk + the ConsumeItem bill), f11
+threads the `drop_rng` param (research/133 §8.4a), d13 owns the pool
+seam; the merger replaces this lane's drop with the published
+direct-drain hunk (f11 research/133 §8.4b - RAW ToolMode, no Actuator
+strip, no cooldown gate, `owner == local_id`, `UpdateProjectiles`).
+The Multicolor Wrench 3625 use arm rides the same c42 apply
+(`editing/wiring.rs:207`, the Actuator-strip mask `Player.cs:46908`).
+
+### 3. Junction-box hover highlight - CORRECTED at the seal (research/382)
+
+The census-close called this the GENERIC smart-cursor tile-outline
+subsystem (`TileDrawing.GetTileOutlineInfo` `TileDrawing.cs:4478-4489`,
+`Main.InSmartCursorHighlightArea` `Main.cs:3945-3957`) and recorded it
+MISSING. **The seal re-read corrects the attribution**: the junction box
+is tile 424 (`TileID.WirePipe`, `TileID.cs:1477`; the Pixel Box is 445,
+`:1519`), and **neither 424 nor 445 nor the 423 LogicSensor is in
+`TileID.Sets.HasOutlines`** (`TileID.cs:551` - the full set re-read, the
+three ids absent). The outline subsystem CANNOT highlight them: the
+`GetTileOutlineInfo` call is gated on `HasOutlines[typeCache]`
+(`TileDrawing.cs:893-895`). There is also NO 424/445/423 arm in
+`TileInteractionsMouseOver` (`Player.cs:33587-34743`, the g86
+research/244 101-arm site-list - the only 42x/44x arms are 441/440).
+**No junction-box hover highlight exists in the C#.** What DOES exist:
+* the tile-423 LogicSensor (style 2 "Above", `frameY == 36`) RANGE
+  rectangle - the always-on LightSeaGreen box `DrawWires` draws for
+  every such sensor (`Main.cs:58660-58672`), NOT a hover highlight.
+  **Ported** (`render/wires.rs::special_tile_rect`/`draw_rectangle`,
+  the S1-W4-g81 census commit 6f046998).
+* the generic outline subsystem itself (the `HasOutlines` tiles: chests
+  21/467, doors 10/11, altars 26/237, ...) - **g86 owns it**
+  (`render/tile_outlines.rs` + `world_sim/smart_interact.rs`, the
+  `task/W4-g86-altar-draw` tip): the draw pass, the HighlightMask sheets,
+  the `SmartInteractLookup` feed and the pylon/void-lens selection glow
+  all landed there. The g81 census-close's "needs its own lane" verdict
+  stands, but the lane EXISTS and has landed - the PORT_MAP row is
+  re-pointed, not left MISSING.
+
+### 4. Wire-adjacent residuals found unported and ported
+
+* The builder-accessory toggle column `DrawBuilderAccToggles`
+  (`Main.cs:47353-47590`) + the side icons `DrawBlockReplacementIcon`
+  (`:42518-42556`) / `DrawTorchBiomeSwapIcon` (`:42558-42596`) ->
+  `ui/builder_toggles.rs` (6789a055): the wire-channel 0/1/2 cycle (the
+  Hidden arm unreachable), the MultiplyRGBA 0.66/0.33 byte tints
+  (127*168/255 = 83), the InfoIcon[13] hover ring, the hover texts, the
+  DrawInterface_31 slot + the sound-12 (Menu_Tick) click cue.
+  `Player.ruler_line/ruler_grid/auto_paint/sign` fields added at the C#
+  defaults (false/-1); the sign UI stays unported. The tint is computed
+  BEFORE the click (`:47403` precedes `:47412`) - the click frame draws
+  the OLD status's tint (0e452382).
+* The held-tool cursor icon `DrawInterface_40_InteractItemIcon`
+  (`Main.cs:45037-45115`) + `ItemIconCacheUpdate`/`Verification`
+  (`:46515-46540`: the 10-frame re-arm, the non-zero-move decrement, the
+  >4 px zero, the kind-switch zero) + `MouseOversClear`'s per-update
+  enable clear (`:17035` -> `:46503`) -> `ui/mod.rs` draw_hud icon pass +
+  `app/mod.rs` cache + `app/frame.rs` clear + the wiring/mining in-reach
+  latch in `update_editing` (`Player.cs:46752-46760`), 18e53dd0; the
+  radial's icon_enabled folds onto the same sim latch (851a73e1).
+
+### Stand-ins / unported (documented)
+
+`wireOperationsCooldown` (`Player.cs:52075`) and `blockRange` unported
+(0 stand-ins); the gamepad arms fold out (no gamepad);
+`HoveringOverAnNPC`/`SmartInteractShowingGenuine`/`lastMouseInterface`
+false stand-ins; the sign UI unported (the toggle column's sign gate
+reads the -1 default).
+
+### RNG
+
+None of the ported visuals draws random numbers - no stream touched.
+
+### Verification
+
+Code-only mode - **no cargo/rustc/rustfmt/tests/graphify invoked.**
+37 witnesses WRITTEN, NOT RUN: `projectile_ai_kite.rs` 8 (the seal added
+the negative-centre floor pin), `render/wire_kite.rs` 10,
+`ui/wires_ui.rs` 14, `ui/builder_toggles.rs` 5.
+The witness maths were verified by python f32 emulation (struct-pack):
+the ghost mixes above, the badge dim [88,20,21,89], the faded tint 83,
+the f32 opacity ramp's tick-14 snap, the petal angles (3*2pi/5 - pi/11
+-> [-42.383, -15.122]; the no-actuator i0 lands 270 deg), the corner
+sums 54/216, the InWorld(x,y,1) middle-skip counts.
+
+Commits: 48b4de52 (kite + radial + tool-mode machine), 071a0d56 (radial
+frame slot), 6789a055 (toggle column), 18e53dd0 (cursor icon + cache),
+851a73e1 (icon-latch fold), de8ce9c4 (witness fix-round + facing sign),
+0e452382 (pre-click tint), 100e9d83 (opacity tie), ababd039
+(ignoreWater), + the census-close docs commit.
+
+### The seal round (research/382, 2026-11-21)
+
+Six code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
+77505fa0, + the ghost-alpha fix):
+1. **The `flow_app` ctor carried NONE of the six new App fields** - the
+   exhaustive test literal (`app/flow.rs:2134`, no `..Default` spread)
+   would not compile (E0063) against 344 `flow_app` callers. The six
+   fields (`wire_tool_mode`/`wires_radial`/`cursor_item_icon_enabled` +
+   the cache triple) now mirror `App::new` (the two-literal census the
+   c42 fold-133 `wire_tool_mode` precedent pins).
+2. **The kite's owner tail runs on the KILL tick** - the C# else-if
+   chain (`Projectile.cs:35706-35723`) has NO return after the kill
+   arms; `:35825-35832` (ChangeDir/heldProj/SetDummyItemTime(2)/
+   itemRotation) follows it. The port's early returns dropped those
+   writes on the release frame; the arms now fall through (the d13
+   census shape). 3 kill-tick tail pins added.
+3. **The release cell + the ghost draw's `pe` use `(int)X >> 4`** -
+   `Utils.ToTileCoordinates` (`Utils.cs:1807-1810`) casts to int FIRST
+   then arithmetic-shifts (floors negatives); the truncating-divide
+   form differed there. 1 new witness pins centre (-1,-1) -> tile
+   (-1,-1). The anchor latch keeps its OWN verbatim form
+   (`(int)Center.X / 16`, `:35739` - cast before divide, int division).
+4. **The draw pass's three whole-`self` method calls inside the field
+   destructure become disjoint-field forms** - the destructure holds
+   `renderer`/`lookups` mutably, so `self.slot_at_mouse()`/
+   `self.coin_ammo_at_mouse()`/`self.item_icon_cache_verification()`
+   would E0502 against the live borrows (the base's only self-method
+   call sits OUTSIDE the block). `slot_at_mouse_fields`/
+   `coin_ammo_at_mouse_fields` free fns in `clicks.rs` carry the bodies
+   verbatim (the App methods delegate); the cache-verification body
+   inlines in the draw pass (the C#'s only call site `:45062`).
+5. **The callerless `App::item_icon_cache_verification` drops** - the
+   inline is the single body (the C# has one caller); the doc-note
+   records where it lives.
+6. **The ghost's alpha-255 override REMOVED** - the C# batch is
+   `BlendState.AlphaBlend` (premultiplied `One, OneMinusSrcAlpha`), so
+   `color47.A = 0` (`Main.cs:31657`) with non-zero RGB is an ADDITIVE
+   term (`src + dst`), the visible ghost glow; `color46` keeps alpha 0
+   normally / 255 with the cutter. The port's pipeline is the same
+   equation (`sprite.wgsl` keeps rgb un-premultiplied, alpha =
+   `tex.a * color.a`), so the C# alpha values reproduce the additive
+   ghost verbatim. The earlier override (a misread of the blend as
+   non-premultiplied, the stale `liquids.rs` comment) turned it into a
+   semi-transparent REPLACE. The 5 colour-mix witnesses re-derived to
+   the C# alpha (the RGB bytes unchanged).
+The mass-op drop notes re-point at the compose verdict (§2 above +
+research/382 §4); the radial's icon_enabled doc-comments drop the stale
+"stand-in" wording (the field IS the sim latch since 851a73e1).

@@ -2332,7 +2332,20 @@ pub(crate) mod front_flow_tests {
             pointer_ms: 0.0,
             pointer_event: None,
             mouse_pos: Vec2::ZERO,
+            // S1-W4-g81 residuals — the WiresUI state the App::new ctor
+            // carries (`WiresUI.cs:23`/`:92-95` — the static ctor seeds
+            // ToolMode = Red; the radial starts closed), mirrored here so
+            // the test ctor matches (the two-literal census, the c42
+            // fold-133 wire_tool_mode precedent).
+            wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
+            wires_radial: ui::wires_ui::WiresRadial::default(),
             cursor: ui::cursor::CursorState::default(),
+            // S1-W4-g81 residuals — the held-tool cursor-icon latch +
+            // the 10-frame cache (`Main.cs:2411-2415`), both start off.
+            cursor_item_icon_enabled: false,
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
@@ -2417,7 +2430,6 @@ pub(crate) mod front_flow_tests {
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
-            wire_tool_mode: tr_core::smart_cursor::multi_tool_mode::RED,
             golf_state: tr_core::golf_state::GolfState::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),

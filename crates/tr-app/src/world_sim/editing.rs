@@ -2200,6 +2200,31 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         eprintln!("[trace] past the reach gate");
     }
     let held = app.inventory[app.selected];
+    // S1-W4-g81 residuals — the wiring tools' cursor-icon latch
+    // (`Player.ItemCheck_UseWiringTools`, `Player.cs:46752-46760`): the
+    // tool in reach arms `cursorItemIconEnabled` + `ItemIconCacheUpdate`
+    // BEFORE the use gates — the icon shows while hovering, not only while
+    // placing. The reach is `IsInTileInteractionRange(Simple, tileBoost +
+    // blockRange)`; the port's `mining_tile_range` carries the same
+    // journey/accessory/Toolbox grants (blockRange has no port field — 0).
+    // The mining tools' twin latch (`:45620-45624`) rides the same seam.
+    {
+        let tool_kind = held.kind;
+        let is_wiring = matches!(tool_kind, 509 | 510 | 849 | 850 | 851 | 3612 | 3620 | 3625);
+        let is_mining = crate::registry::get(tool_kind)
+            .is_some_and(|d| d.pick > 0 || d.axe > 0 || d.hammer > 0);
+        if held.count > 0 && (is_wiring || is_mining) {
+            let tb = crate::registry::get(tool_kind).map_or(0, |d| d.tile_boost);
+            let (rx, ry) = mining_tile_range(app);
+            let in_reach = app.player.as_ref().is_some_and(|p| {
+                tile_in_reach_rect(p, tx, ty, rx, ry, tb)
+            });
+            if in_reach {
+                app.cursor_item_icon_enabled = true;
+                app.item_icon_cache_update(tool_kind);
+            }
+        }
+    }
     #[cfg(test)]
     eprintln!(
         "[flow-dbg] reached: kind={} mine_down={}",
@@ -2572,6 +2597,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // starts while held).
         let drill_tool =
             registry::get(held.kind).is_some_and(|d| d.channel && (d.pick > 0 || d.axe > 0));
+        // S1-W4-g81 residuals — `Player.ItemCheck_CheckCanUse_Inner`
+        // (`Player.cs:52063-52066`): the Wire Kite (3611) refuses the use
+        // start while NO placement channel is selected (the ToolMode
+        // bitfield minus the Cutter). The `wireOperationsCooldown` gate
+        // (`:52075-52078`) is unported (no cooldown field — ANALYSIS).
+        if held.kind == 3611
+            && app.wire_tool_mode
+                & (tr_core::smart_cursor::multi_tool_mode::RED
+                    | tr_core::smart_cursor::multi_tool_mode::GREEN
+                    | tr_core::smart_cursor::multi_tool_mode::BLUE
+                    | tr_core::smart_cursor::multi_tool_mode::YELLOW
+                    | tr_core::smart_cursor::multi_tool_mode::ACTUATOR)
+                == 0
+        {
+            return;
+        }
         if app.attack_cd <= 0.0
             && app.reuse_delay <= 0.0
             && throw_ready
@@ -2782,6 +2823,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // (S1-P-i39 — the resync keep-both: this gate runs FIRST,
                 // the staff-buff grant below never sees a hook item.)
                 if crate::grapple::is_hook_projectile(proj) {
+                    return;
+                }
+                // S1-W4-g81 residuals — the Wire Kite's spawn
+                // (`Player.cs:49437`'s generic tail for 3611): the ghost
+                // spawns at the player centre with ZERO velocity (the
+                // aiStyle-125 arm rides it to the cursor on its first
+                // tick), damage 0 / knockback 0 (`Item.cs`'s 3611 row:
+                // damage -1 → GetWeaponDamage 0). The generic
+                // `fire_non_ammo_shot` would aim it at shootSpeed 10 —
+                // the kite is a channel hold, not a throw.
+                if held.kind == 3611 {
+                    let (cx, cy) = p.center();
+                    let owner = app.local_id as u8;
+                    app.projectiles.spawn_with_data_ai_owned(
+                        proj, owner, cx - 5.0, cy - 5.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0,
+                    );
+                    // `NewProjectile`'s `TryUpdateChannel` tail
+                    // (`Projectile.cs:11097-11100`) — the same-tick track
+                    // the generic path applies below (the early return
+                    // must not skip it).
+                    if let Some(p) = app.player.as_mut() {
+                        app.projectiles.apply_channel_tracks(p);
+                    }
                     return;
                 }
                 // S1-P-i25 — `Player.ItemCheck_ApplyPetBuffs`' summon-staff

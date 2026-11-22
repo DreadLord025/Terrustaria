@@ -10274,6 +10274,13 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // S1-W4-g81 residuals — the Wire Kite (651) draws through its own
+        // over-wire ghost pass (`render/wire_kite.rs`, the frame's
+        // post-`draw_wires` slot — `Main.CacheProjDraws` routes drawLayer
+        // 5 out of the main walk, `Main.cs:38177-38178`).
+        if self.kind == crate::projectile::WIRE_KITE {
+            return;
+        }
         // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
         // ahead of the generic emit (`Main.cs:28143-28144` →
         // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the
@@ -14532,6 +14539,21 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// S1-W4-g81 residuals — the Wire Kite's per-tick owner snapshot
+    /// (`Main.player[owner]` + `Main.MouseWorld` + the right-press pair,
+    /// `Projectile.cs:35699-35745`). The world-sim pass sets it before
+    /// `update` (the `set_bobber_inputs` precedent); `None` keeps the
+    /// aiStyle-125 arm inert (the pool-only tests).
+    kite_ctx: Option<(crate::projectile_ai_kite::KiteOwner, Vec2, bool)>,
+    /// The kite arm's queued owner writes (`KiteTick`), drained by the
+    /// world-sim pass after `update` (the golf `PlayerWrites` shape).
+    kite_ticks: Vec<(usize, crate::projectile_ai_kite::KiteTick)>,
+    /// `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`):
+    /// `(ps, pe)` per dying local kite with `localAI[0] == 1`. The world
+    /// sim drains them; the apply is UNPORTED ON THIS BRANCH (c42 owns
+    /// it — the compose verdict, research/382), so the drain drops them
+    /// with the documented note; the merger swaps in the f11 §8.4b hunk.
+    pending_mass_wire_ops: Vec<((i32, i32), (i32, i32))>,
 }
 
 impl Default for ProjectilePool {
@@ -14921,6 +14943,9 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            kite_ctx: None,
+            kite_ticks: Vec::new(),
+            pending_mass_wire_ops: Vec::new(),
         }
     }
 
@@ -16203,6 +16228,30 @@ impl ProjectilePool {
     /// `update` (the `drain_mark_spawns` shape).
     pub fn drain_golf_effects(&mut self) -> Vec<crate::projectile_ai_golf::GolfEffect> {
         std::mem::take(&mut self.golf_effects)
+    }
+
+    /// S1-W4-g81 residuals — the Wire Kite's per-tick context setter: the
+    /// world-sim pass builds `(KiteOwner, mouse_world, right_press)` from
+    /// the App (the pool cannot borrow the player mid-slot).
+    pub fn set_kite_context(
+        &mut self,
+        ctx: Option<(crate::projectile_ai_kite::KiteOwner, Vec2, bool)>,
+    ) {
+        self.kite_ctx = ctx;
+    }
+
+    /// The kite arm's queued owner writes, drained by the world-sim pass
+    /// after `update` (the golf `PlayerWrites` shape).
+    pub fn drain_kite_ticks(&mut self) -> Vec<(usize, crate::projectile_ai_kite::KiteTick)> {
+        std::mem::take(&mut self.kite_ticks)
+    }
+
+    /// `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`),
+    /// drained by the world-sim pass. The apply is UNPORTED ON THIS
+    /// BRANCH (c42's `mass_wire_operation` is the merger keep-one,
+    /// research/382) — the drain drops them with the note.
+    pub fn drain_mass_wire_ops(&mut self) -> Vec<((i32, i32), (i32, i32))> {
+        std::mem::take(&mut self.pending_mass_wire_ops)
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -17791,6 +17840,26 @@ impl ProjectilePool {
                         // retarget reads `Main.npc` and the owner gate.
                         129 => {
                             self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref())
+                        }
+                        // S1-W4-g81 residuals — the Wire Kite's aiStyle-125
+                        // placement machine (`Projectile.cs:35697-35833`):
+                        // owner-local, rides the cursor while the channel
+                        // holds, the release arms the mass-op flag + Kill.
+                        // The context is the pass's snapshot (the pool
+                        // cannot borrow the player); `None` keeps the slot
+                        // held (the orphan convention).
+                        125 => {
+                            if self.slots[i].owner == local_owner {
+                                if let Some((ko, mouse_world, right_press)) = self.kite_ctx {
+                                    let tick = crate::projectile_ai_kite::ai_wire_kite(
+                                        &mut self.slots[i],
+                                        ko,
+                                        mouse_world,
+                                        right_press,
+                                    );
+                                    self.kite_ticks.push((i, tick));
+                                }
+                            }
                         }
                         // S1-D-5: the duplicate `1 => ai_arrow`, `3 =>
                         // ai_boomerang`, `14 => ai_spear`, `16 => ai_bomb`
@@ -19956,6 +20025,16 @@ impl ProjectilePool {
                 if !died_out_of_world {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
+                    }
+                    // S1-W4-g81 residuals — `Kill()`'s type-651 arm
+                    // (`Projectile.cs:72051-72067`): the released kite
+                    // queues its mass-wire operation (the world sim
+                    // drains it; the apply is c42's at the merge,
+                    // research/382 — dropped here with the note).
+                    if let Some(op) =
+                        crate::projectile_ai_kite::kill_mass_wire_op(&self.slots[i])
+                    {
+                        self.pending_mass_wire_ops.push(op);
                     }
                 }
                 self.spawn_inferno_blast(i);

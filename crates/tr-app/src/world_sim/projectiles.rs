@@ -383,6 +383,32 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(ctx) = golf_ctx {
         app.projectiles.set_golf_context(ctx);
     }
+    // S1-W4-g81 residuals — the Wire Kite's per-tick context
+    // (`Projectile.cs:35699-35745`): the owner snapshot + `Main.MouseWorld`
+    // (`screenPosition + MouseScreen`, the same math the yoyo aim reads) +
+    // the right-press conjunction (`Main.mouseRight &&
+    // Main.mouseRightRelease`, `:35710`). The C# re-latches the release
+    // flag at the END of every interface draw (`Main.cs:62458-62465`), so
+    // within one update the conjunction is the press-after-release edge —
+    // `place_prev_down` holds the previous tick's button (the projectile
+    // pass runs before `update_editing` refreshes it, the `drop_right_edge`
+    // ordering precedent).
+    let kite_ctx = app.player.as_ref().map(|p| {
+        (
+            crate::projectile_ai_kite::KiteOwner {
+                refuse: p.no_items || p.cced() || p.dead,
+                channel: p.channel,
+                direction: p.facing,
+                vel_x: p.vx,
+            },
+            Vec2::new(
+                app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+            ),
+            app.place_down && !app.place_prev_down,
+        )
+    });
+    app.projectiles.set_kite_context(kite_ctx);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update(
             &mut app.world,
@@ -766,6 +792,55 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                 }
             }
         }
+    }
+    // S1-W4-g81 residuals — the Wire Kite's owner writes
+    // (`Projectile.cs:35825-35832`), drained after the walk (the golf
+    // `PlayerWrites` shape): ChangeDir(Sign(velocity.X)), heldProj,
+    // SetDummyItemTime(2), itemRotation = 0, and the right-click kill's
+    // Main.blockMouse.
+    for (slot, tick) in app.projectiles.drain_kite_ticks() {
+        if let Some(p) = app.player.as_mut() {
+            if let Some(dir) = tick.facing {
+                p.facing = dir;
+            }
+            if tick.held_proj {
+                p.held_proj = slot as i32;
+            }
+            if tick.zero_item_rotation {
+                p.item_rotation = 0.0;
+            }
+        }
+        if let Some(frames) = tick.dummy_item_time {
+            // `SetDummyItemTime(2)` — the swing/item timers re-arm to 2
+            // ticks so the held kite never starts a new use (the spear
+            // hold's write-back precedent).
+            app.swing = frames as f32 / 60.0;
+            app.item_time = frames as f32 / 60.0;
+        }
+        if tick.block_mouse {
+            app.block_mouse = true;
+        }
+    }
+    // `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067` →
+    // `Wiring.MassWireOperation`): the DIRECT DRAIN (f11 research/133
+    // §8.4b, executed at the batch-H c42×g81 compose per research/382 §4).
+    // RAW ToolMode (`Wiring.cs:3241` — the kite does NOT strip the Actuator
+    // bit; that mask is the 3625 arm's, `Player.cs:46908`), no cooldown
+    // gate (the Kill hook has none), `RngKey::UpdateProjectiles` (the
+    // Kill's stage, `Main.cs:17775`). The owner gate already ran at the
+    // queue site (`kill_mass_wire_op`'s `p.owner != 0` refusal — the SP
+    // `owner == local_id` fold, g81's 2-tuple shape). ONE drain shape:
+    // at the d13 union this seam dedupes to d13's 5-tuple pool shape
+    // (research/382 §3 — d13's pool seam is the keep-one; the apply call
+    // here is the same c42 fn either way).
+    for (ps, pe) in app.projectiles.drain_mass_wire_ops() {
+        crate::world_sim::wiring::mass_wire_operation(
+            app,
+            ps,
+            pe,
+            app.wire_tool_mode,
+            crate::app::RngKey::UpdateProjectiles,
+        );
     }
 }
 

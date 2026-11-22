@@ -124,7 +124,10 @@ pub(crate) fn repoint(app: &mut App, tx: i32, ty: i32, mouse: (f32, f32)) -> Opt
         // `Player.controlUseItem` — the continuity lock's held-button
         // condition.
         use_item_held: app.place_down || app.mine_down,
-        tool_mode: 0,
+        // `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`) — the multicolor
+        // wrench's channel bitfield, owned by the App since S1-W4-g81
+        // (the radial's petal clicks XOR it, `ui/wires_ui.rs`).
+        tool_mode: app.wire_tool_mode,
         actuation_rod_lock: false,
         actuation_rod_lock_setting: false,
         using_gamepad: false,

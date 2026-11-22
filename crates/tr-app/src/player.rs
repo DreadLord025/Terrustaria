@@ -1026,6 +1026,20 @@ pub struct Player {
     /// Cleared in `ResetEffects` (`:18524`), re-granted by
     /// `RefreshMechanicalAccsFromItemType` (`:12801-12804`).
     pub info_acc_mech_show_wires: bool,
+    /// `Player.rulerLine` / `rulerGrid` / `autoPaint` (`Player.cs:2360`/
+    /// `:2358`/`:2472`, all default false): the Ruler / Mechanical Ruler /
+    /// Paint Sprayer accessory grants. The builder-toggle column
+    /// (`Main.DrawBuilderAccToggles`, `Main.cs:47418`/`:47438`/`:47458`)
+    /// reads them; the ruler DRAW passes are unported, so the grants ride
+    /// the toggle column only (S1-W4-g81 residuals).
+    pub ruler_line: bool,
+    pub ruler_grid: bool,
+    pub auto_paint: bool,
+    /// `Player.sign` (`Player.cs:1440`, default -1): the open sign's index.
+    /// The sign UI is unported (the `can_pause_game` deviation), so the
+    /// field stays -1; the builder-toggle column's `sign >= 0` early return
+    /// (`Main.cs:47361-47364`) reads it (S1-W4-g81 residuals).
+    pub sign: i32,
     /// `Player.autoActuator` (`Player.cs:2474`): the Actuation Accessory
     /// (3624) auto-places actuators on solid tiles while building. Cleared
     /// in `ResetEffects` (`:18534`), re-granted by
@@ -2654,6 +2668,10 @@ impl Player {
             wire_operations_cooldown: 0,
             quick_grapple_cooldown: 0,
             info_acc_mech_show_wires: false,
+            ruler_line: false,
+            ruler_grid: false,
+            auto_paint: false,
+            sign: -1,
             auto_actuator: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.

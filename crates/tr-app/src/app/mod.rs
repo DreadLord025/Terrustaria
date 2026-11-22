@@ -682,9 +682,31 @@ pub(crate) struct App {
     /// delegate delivery (`UserInterface.cs:55-70`) without a listener table.
     pub(crate) pointer_event: Option<ui::pointer::PointerEvent>,
     pub(crate) mouse_pos: Vec2,
+    /// `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`, the static ctor
+    /// seeds Red `:94`): the multicolor wrench's channel bitfield
+    /// (`MultiToolMode`, `:13-21`). The radial's petal clicks XOR it
+    /// (`ui/wires_ui.rs`), the smart-cursor lookup reads it
+    /// (`Lookup::tool_mode`) and the kite ghost's tint mixes from it
+    /// (`render/wire_kite.rs`). S1-W4-g81 residuals.
+    pub(crate) wire_tool_mode: u8,
+    /// `WiresUI.radial` (`WiresUI.cs:694-707`): the tool-mode radial's
+    /// flower/badge state machine (`ui/wires_ui.rs`).
+    pub(crate) wires_radial: ui::wires_ui::WiresRadial,
     /// `Main.cursorAlpha`/`cursorColorDirection`/`cursorScale`: the vanilla cursor
     /// pulse, advanced once per frame by `Main.CursorColor` (`Main.cs:52477`).
     pub(crate) cursor: ui::cursor::CursorState,
+    /// `Player.cursorItemIconEnabled` (`Player.cs:1856`): the held-tool
+    /// cursor-icon latch — the wiring/mining tools arm it in reach
+    /// (`Player.cs:46756-46760`/`:45620-45624`), `MouseOversClear` clears
+    /// it per update (`Main.cs:46503-46513`, `:17035`). S1-W4-g81.
+    pub(crate) cursor_item_icon_enabled: bool,
+    /// `Main._itemIconCacheScreenPosition`/`_itemIconCacheSelectedItemID`/
+    /// `_itemIconCacheTime` (`Main.cs:2411-2415`): the 10-frame icon
+    /// linger after the tool leaves reach (`ItemIconCacheUpdate`
+    /// `:46515-46520`, `ItemIconCacheVerification` `:46522-46540`).
+    pub(crate) item_icon_cache_pos: Vec2,
+    pub(crate) item_icon_cache_kind: u16,
+    pub(crate) item_icon_cache_time: i32,
     /// Last value passed to `Window::set_cursor_visible`, so the OS pointer is only
     /// toggled when the in-world HUD (and thus the vanilla cursor) appears.
     pub(crate) os_cursor_hidden: Option<bool>,
@@ -875,11 +897,6 @@ pub(crate) struct App {
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
     pub(crate) wiring_step: FixedStepper,
-    /// `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`): the multi-wrench's
-    /// channel bitfield (`multi_tool_mode`). The static ctor starts at
-    /// `MultiToolMode.Red` (`WiresUI.cs:94`); the WiresRadial UI owns the
-    /// setting (unported — the field keeps the default until it lands).
-    pub(crate) wire_tool_mode: u8,
     /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
     /// logic sensors' per-tick scan, M7-TE-2).
     pub(crate) te_step: FixedStepper,
@@ -1312,6 +1329,22 @@ impl App {
             self.gfx_quality.max_dust_to_draw,
         )
     }
+
+    /// `Main.ItemIconCacheUpdate` (`Main.cs:46515-46520`): the tool-icon
+    /// linger re-arm — the mouse position, the selected kind, 10 frames.
+    /// S1-W4-g81 residuals.
+    pub(crate) fn item_icon_cache_update(&mut self, kind: u16) {
+        self.item_icon_cache_pos = self.mouse_pos;
+        self.item_icon_cache_kind = kind;
+        self.item_icon_cache_time = 10;
+    }
+
+    /// `Main.ItemIconCacheVerification` (`Main.cs:46522-46540`) lives
+    /// INLINE in the draw pass (`app/frame/draw.rs`, after the layer-40
+    /// icon draw — the C#'s only call site `:45062`): the field
+    /// destructure there holds `renderer`, so a whole-`self` method
+    /// would conflict; the body reads the cache triple + `mouse_pos` +
+    /// `inventory[selected]` verbatim (the S1-W4-g81 seal).
 
     /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
     /// clamped by the 600 px equipment push-up — the same value `frame()`
@@ -3910,6 +3943,12 @@ impl App {
                 crate::env::mouse_pin().unwrap_or(Vec2::ZERO)
             },
             cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
+            cursor_item_icon_enabled: false,
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
+            wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
+            wires_radial: ui::wires_ui::WiresRadial::default(),
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
@@ -3999,7 +4038,6 @@ impl App {
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
-            wire_tool_mode: tr_core::smart_cursor::multi_tool_mode::RED,
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
