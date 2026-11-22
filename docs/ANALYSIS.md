@@ -353,9 +353,39 @@ Ported pieces (`tr-core/src/framing.rs`):
      known gap of the merge-relation extractor (top-level `TileMergeAttempt` calls):
      ore tiles next to grass show edge frames where the original merges them.
 
+6. **SelfFrame8Way** (W4-d110) — `Framing.SelfFrame8Way` + `BlockStyle`/`FindBlockStyle`/
+   `WillItBlend` (`Framing.cs:9-23, 92-98, 141-144, 180-324`) and the full 47-row
+   `selfFrame8WayLookup` (`Framing.cs:45-91`, const-built 256-mask table). Dispatch:
+   `frame_of_variant` routes ids 255-268 AND 385/446/447/448 to it — the C#'s
+   `case 385/446/447/448: break` exits the inner switch and falls into `goto case 255`
+   (`WorldGen.cs:81409-81413`, `:84818`), so the crystal block and silly balloons ride
+   the same arm (the research-08 row only named 255-268). Side slots join only when both
+   blocks present the touching side (`blockType`: half brick hides top, slope s hides
+   the two sides of `blockStyleLookup[s+1]`); corners need both adjacent sides joined
+   plus the corner's two facing sides. `WillItBlend` verbatim: ForcedDirtMerging→dirt,
+   tileBrick×tileBrick (which blends ALL gemspark groups — every gemspark id is
+   `Main.tileBrick`, `Main.cs:9455-9470`), then the `GemsparkFramingTypes` equality.
+   The reset roll stays with the pass functions (the d109/S1-A-3 variant mechanism is
+   untouched — this task adds merge logic only). **Deviation:** an unlisted mask (only
+   reachable for sloped/half-brick gemsparks whose style combination has no
+   `Add8WayLookup` row) is a null row in the C# (it would throw); the port returns
+   `None` and leaves the stored frame. Generated worlds never hammer gemsparks.
+7. **WallFrame head gates** (W4-d110) — `wall_frame_head` ports `Framing.cs:328-342`:
+   `wall >= WallID.Count` clamps to 0 BEFORE any roll, and a wall-less tile runs
+   `wallColor(0)` + `ClearWallPaintAndCoating()` (`Tile.cs:911-916` — wall paint +
+   invisibleWall + fullbrightWall bits; the block-side coating survives). Runs in
+   `reframe_area` for every tile of the square (the C# `SquareWallFrame` calls
+   `WallFrame` on all nine) and in `frame_walls`' copy phase for the skipped cells.
+   The pure read `wall_frame_of_variant` treats an out-of-range id as wall-less.
+   **Deviation:** `frame_walls` computes all masks from the pre-pass state, then runs
+   the heads in the copy phase — the C# interleaves clamp/reset with mask reads, so a
+   wall-less echo-coated TruncatesWalls tile mid-pass could differ for one framing
+   pass (the same band-parallel stand-in as the variant streams). The remaining two
+   gates of the research-08 list (TruncatesWalls neighbour term, invisibleWall term)
+   already landed with S1-P-i33; the wall-21 roll and phlebas/lazure arms with S1-A-3.
+
 Not yet ported: the per-type special-case branches (cactus, vines, `TileFrameImportant`
-multi-tile objects), `TileID.Sets.TruncatesWalls`, paint and coating. Those are listed in
-the roadmap.
+multi-tile objects). Those are listed in the roadmap.
 
 `tools/GenTileData` parses `Terraria.ID/TileID.cs`, `Main.cs` and `WorldGen.cs` and emits
 the `tiledata/` modules; rerun it after touching those tables.
