@@ -46643,3 +46643,17 @@ NewDust-family sites + the CloneDust + the pool ctor/UpdateDust/DrawDust/
 DrawCapture-cull/counter windows map to the union-table owners. The
 ONE-paragraph merger instruction for dust-master 131 is research/116
 §7.2. Code-only; the `main_dust.rs` RETIRE-NOTE re-worded to the receipt.
+
+SEAL (research/116 §8, 2026-11-21): research/116 is SEALED with the four
+receipts — (1) the union-chain git-log census at `2e978b279` (the 6 gaps
+re-verified in code, seam-6 key-summon NO-DUP); (2) the g61d spawn-seal
+MUTUAL at `6e922fc6` — now PUSHED (origin == tip, the §7.1 +9 push-owed
+flag retired; the seal's own receipt names this lane's tip), the 7 g61
+DEPRECATED banners re-read g11-canonical (5 `npc_spawn_visuals.rs` + 1
+`wiring.rs` + 1 `npcs.rs`), poof/mimic/transform/`play_teleport_cue`
+STAY g61; (3) the d54 bible (research/131 §8.3 item 4 at `38bfd1d22`)
+resolves `main_dust.rs` THREE-WAY per research/116 §6's per-fn table;
+(4) the teleport-family bible — ONE body (`teleport_dust.rs`) + ONE
+seam set (`main_dust.rs` dispatcher + replays), the g61/g12/d54
+fold-sources DROP, the witness union ALL WRITTEN NOT RUN. No further
+g11 commits planned; §7.2 is the merger's complete instruction.
