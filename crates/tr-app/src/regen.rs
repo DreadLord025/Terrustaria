@@ -919,6 +919,61 @@ mod tests {
         assert!(!refilled, "already full — no trigger");
     }
 
+    /// W4-f49 lane 12 census — the Mana Regeneration Potion (item 293,
+    /// buffType 6 / buffTime 28800, `Item.cs:4872-4885`) ladder, end to end
+    /// on the engine. Buff 6 (`:9964-9967` → `RegenInputs::mana_regen_buff`)
+    /// acts at FOUR sites, all pinned here against the no-buff twin at the
+    /// same bar fraction (moving, so `standing_still`/`grappling` cannot
+    /// masquerade as the buff):
+    /// 1. the delay cap 20 (`:19399-19402`, pre-V2 — under the shipped V2
+    ///    cap both land at 4, the i19 witness pins that);
+    /// 2. the extra delay decrement (`:19426-19429`);
+    /// 3. the regen-line doubling (`:19449-19452`);
+    /// 4. `num9 = 1` (`:19462-19465`) — the mana-fraction scaler pins at
+    ///    1.0 instead of ramping 0.5→1.0 with the bar.
+    /// There is NO per-tier ladder: buff 6 is a single boolean, one slot.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_buff_six_ladder_doubles_the_line_and_pins_the_scaler() {
+        // Site 2 — the countdown: delay 4, moving. Without the buff −1 → 3
+        // (inside the V2 sub-4 window, ×0.05); with it −1 −1 → 2.
+        let mut off = RegenState { mana_regen_delay: 4.0, ..Default::default() };
+        let mut on = RegenState { mana_regen_delay: 4.0, ..Default::default() };
+        let in_off = inputs(400, 200);
+        let mut in_on = inputs(400, 200);
+        in_on.mana_regen_buff = true;
+        let mut mana = 100;
+        update_mana_regen(&mut off, &in_off, &mut mana, ManaRegenFlags::default());
+        update_mana_regen(&mut on, &in_on, &mut mana, ManaRegenFlags::default());
+        assert_eq!(off.mana_regen_delay, 3.0);
+        assert_eq!(on.mana_regen_delay, 2.0, "the buff's extra decrement");
+        // Both are inside the (0,4) window → the ×0.05 floor arm: base 67,
+        // off 67 × 0.75 × 0.05 = 2.5125 → 2; on 134 × 1.0 × 0.05 = 6.7 → 6.
+        assert_eq!(off.mana_regen, 2);
+        assert_eq!(on.mana_regen, 6, "doubled line × pinned scaler, floored");
+        // Sites 3+4 — the expired-delay line at the SAME fraction (0.5):
+        // off 67 × (0.5 + 0.5·0.5) = 50.25 → 50; on (67×2) × 1.0 = 134.
+        let mut off = RegenState::default();
+        let mut on = RegenState::default();
+        let mut mana = 100;
+        update_mana_regen(&mut off, &in_off, &mut mana, ManaRegenFlags::default());
+        update_mana_regen(&mut on, &in_on, &mut mana, ManaRegenFlags::default());
+        assert_eq!(off.mana_regen, 50, "the 0.5-base fraction ramp");
+        assert_eq!(on.mana_regen, 134, "the doubling + the 1.0 scaler");
+        // The scaler pin holds at an EMPTY bar too (num6 = 0): off would
+        // halve (67 × 0.5 = 33.5 → 33), the buff keeps the full 134.
+        let mut off = RegenState::default();
+        let mut on = RegenState::default();
+        let mut mana = 0;
+        update_mana_regen(&mut off, &in_off, &mut mana, ManaRegenFlags::default());
+        update_mana_regen(&mut on, &in_on, &mut mana, ManaRegenFlags::default());
+        assert_eq!(off.mana_regen, 33, "0.5 at the empty bar");
+        assert_eq!(on.mana_regen, 134, "num9 = 1 ignores the fraction");
+        // The buff does NOT stack per slot: `manaRegenBuff` is a bool assign
+        // (`:9966`), two 6-slots leave the same ladder (the scan witness in
+        // player.rs pins the flag; here the engine takes one bool).
+    }
+
     // ---- W4-d117: the mana-regen census fill --------------------------------
 
     #[test]

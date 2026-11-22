@@ -36256,6 +36256,294 @@ split, the field flow through `update_survival`/ResetEffects, the dead-
 player tail clamps) are WRITTEN, NOT RUN — code-only mode, no compiler
 invoked.
 
+### The W4-f49 mana-regen second half (i12/i19/i37/i52 leftovers)
+
+The continuation of the d117 census on `task/W4-f49-mana-regen-2` (branched
+on 0dbcb013). Four remaining pieces, each re-censused against the C#:
+
+- **Mana Sickness stacking — already faithful, witnessed.** The grant stacks
+  ADDITIVELY: `AddBuff_TryUpdatingExistingBuffTime` (`Player.cs:5410-5418`)
+  reads `BuffID.Sets.AddBuffTimeAdditivelyToCap[94] = 600` (`BuffID.cs:53`),
+  so a second drink inside the window lifts `buffTime` 300 → 600 (capped),
+  not a refresh. The reduction is one ASSIGN per scan tick (`:10326`,
+  `0.25 × buffTime/300`), so it can exceed 0.25 (up to 0.5 at the cap) but
+  never compounds across ticks. 94 is absent from
+  `BuffTimeIsExtendedWithGameDifficulty` (`BuffID.cs:50`) — expert worlds do
+  not extend it. The port's `buffs.rs` additive-cap + the `apply_mana_sickness_arm`
+  assign already matched; `w4_f49_mana_sickness_stacks_additively_to_the_six_hundred_cap`
+  pins it. The death buff-sweep (`UpdateDead` `:16995-17002`, 94 is not
+  `Main.persistentBuff`) stays the death-system lane's (recorded gap,
+  `world_sim/player.rs` DW-2 note).
+- **Mana-flower auto-potion — the `CheckMana` flower lane landed.** The pure
+  `regen::check_mana` (the pool-side pay) has no inventory reach; the new
+  `potions::check_mana_with_flower[_on]` is the App-level twin running the
+  WHOLE `CheckMana` (`Player.cs:52576-52617`): the entry clear (`:52578`),
+  the enough-mana pay (`:52579-52586`), then the flower arm (`:52588-52609`)
+  — `QuickMana()` (`:52592`) + the post-drink RE-CHECK/pay (`:52594-52601`);
+  a failed/absent drink falls to the SAME ManaV2 empty arm (`:52602-52606`).
+  The weapon use path (`world_sim/editing.rs`'s `ActuallyPayMana` site) now
+  calls it; the borrow restructure re-binds the player per site so the drink
+  can walk the inventory. The entry clear runs BEFORE the drink, so the
+  drink's `UndoSlowMagicUse` gate (`:51946`) sees `slowMagicUse == false` —
+  the mid-swing timer shrink never fires on the flower path (the C# order).
+  The Last Prism interval pay (`AI_075`, `Projectile.cs:66613`) runs pool-side
+  on `&mut Player`; it records a `wants_prism_flower_drink` intent on the
+  short+flower interval and the `world_sim/projectiles.rs` pass-tail drains it
+  through the same twin on the `UpdateProjectiles` stream (`Main.cs:17775`) —
+  the `pending_spear_hold`/`drain_npc_hit_sounds` convention. `quick_mana` /
+  `spawn_heal_text` grew `_on(key)` variants so the two callers keep their own
+  named streams. `blockQuickMana` (`:52576`'s third arg) is false at every
+  source call site; the parameter is kept for structure.
+- **Magnet pickup — the Treasure Magnet grant landed.** The `mana_magnet` /
+  `life_magnet` flags + their accessory/buff grants + the `GrabFlags` feed
+  were already live (S1-P-i52); the `treasure_magnet` flag had NO Player
+  field/grant/reset/feed. Added `Player.treasure_magnet` (`:936`), the
+  Treasure Magnet 5010 grant (`ApplyEquipFunctional` `:14551-14553`), the
+  Hand Of Creation 5126 `treasureMagnet` half (`:15292`, split off the shared
+  `4056 | 5126` chisel arm), the `ResetEffects` clear (`:18493`) and the
+  `world_sim/items.rs` `GrabFlags` feed. The +150 range row on EVERY kind
+  (`GetItemGrabRange` `:35149-35152`, `Item.treasureGrabRange = 150`) was
+  already in `item.rs::get_item_grab_range`. The nebula-trio / 4143 consume
+  arms (`PickupItem` `:35045-35058`/`:35080-35098`) stay out — their
+  `NebulaLevelup` buff-scan derivation is the c16/c17 buff-effects lane's
+  (in flight), and the mana-band tier write (`UpdateBuffs_NebulaBuffs`
+  `:12070-12079`) has no port writer yet; d117 landed the regen READ side.
+  *(Superseded by the W4-f49 DOC-SWEEP lane 12 below: the consume arms, the
+  `NebulaLevelup` grant AND the tier writer all landed on this branch — the
+  f12 buff-frame lane owns only the Life-regen/Damage CONSUMERS now.)*
+- **Arcane crystal 5339 USE arm — landed here (was the crystals/powerups
+  lane's).** `world_sim/editing.rs::use_arcane_crystal` ports
+  `ItemCheck_UseShimmerPermanentItems` (`Player.cs:45399-45404`): the
+  `!usedArcaneCrystal && ItemTimeIsZero && itemAnimation > 0` gate →
+  `ApplyItemTime` (useTime 45) + `usedArcaneCrystal = true` + the generic
+  consumable tail (stack--, the empty-slot `itemTime = itemAnimation` fold).
+  The flag is a permanent (no ResetEffects clear); d117's two regen read arms
+  (`:19430-19433` delay −0.05, `:19453-19456` regen +max/50) pick it up. The
+  five siblings (5337/5338/5340/5341/5342) stay the crystals/powerups lane's.
+  The 5339 kind joins the mid-swing `is_summon` gate (the same
+  `ItemTimeIsZero && itemAnimation > 0` precondition as the boss spawners).
+
+Witnesses (`potions.rs` ×7: the flower drink+repay, the no-potion V2 arm, the
+blockQuickMana skip, the enough-mana no-drink, the no-timer-shrink order pin,
+the sickness stacking, the stream-key routing; `player.rs` ×1: the treasure
+magnet grants + range feed; `editing.rs` ×3: the crystal use-once, the used
+refusal, the flower weapon drink+fire; `projectile.rs` ×1: the prism flower
+intent) are WRITTEN, NOT RUN — code-only mode, no compiler invoked.
+
+### The W4-f49 DOC-SWEEP lane 12 (mana/magic, 2026-11-21)
+
+The doc-sweep continuation on the same branch: five lane items mined from
+ANALYSIS + the regen/potion censuses (full report:
+`docs/research/85-doc-sweep-mana.md`). Two REAL gaps ported, three census
+verdicts witnessed:
+
+- **The Nebula/4143 pickup consume arms landed** (the f49-first-half leftover
+  above). `world_sim/items.rs`'s `IsAPickup` skip-gate is GONE — all four
+  kinds now consume on touch in the C# `PickupItem` chain order
+  (`Player.cs:35045-35098`): the nebula trio 3453-3455
+  (`ItemID.Sets.NebulaPickup`, `ItemID.cs:1324`) plays the POSITIONED
+  `PlaySound(7, (int)position.X, (int)position.Y)` (the shared
+  `audio::play_grab_sound_at`, split out of the chest-eat chime) and calls
+  the new `Player::nebula_levelup` (`NebulaLevelup` `:57030-57059`: the
+  `DelBuff(i--)` family wipe, tier +1 clamped 0..3, `AddBuff(base + tier −
+  1, 480)`; the buffType rows `Item.cs:31008-31016` map 3453→179, 3454→173,
+  3455→176). The Mana Cloak star 4143 (`:35080-35098`) restores 50 capped
+  AFTER the raw-50 `ManaEffect` text + `TryApplyManaHeat(0.2f, 2f)` — the
+  100-star arm's shape at 50. The nebula PULL arm (`:34953-34956`,
+  `PullItem_Pickup(12f, 5)`) lands with them; the +100 grab-range row was
+  already live (i52). The 4143 PRODUCER (the 723 ManaCloakStar projectile's
+  Kill drop, `Projectile.cs:75174-75177`) stays the projectile-Kill lane's —
+  the consume arm is complete for any 4143 drop.
+- **The mana-band tier WRITER landed** (d117 landed only the READ side).
+  `Player::update_buffs_nebula_buffs` ports `UpdateBuffs_NebulaBuffs`
+  (`:12070-12079`) — the assign-derivation `1 + buffType[b] − base` and the
+  `buffTime == 2 && tier > 1` step-down (buffType−−, buffTime = 480) — wired
+  as the three scan arms 176-178/173-175/179-181 (`:10444-10461`) in the
+  existing buff loop, C# chain order. The `nebula_level_life` /
+  `nebula_level_damage` fields join `nebula_level_mana` with the SHARED
+  `ResetEffects` chained zero (`:18755`). The Life arm's `lifeRegen += 6 ×
+  tier` (`:10451`) and the Damage arm's `0.15 × tier` four-class adds
+  (`:10456-10460`) stay the W4-f12 buff-frame lane's consumers (its
+  `orb_scan` twins on `task/W4-f12-buff-frame-wiring`, 7b9fb486 — NOT in
+  this branch's tree; the merge reconciles one writer). The pickup→writer→
+  reader chain now runs end to end: 3455 → buff 176 → tier 1 →
+  `ApplyNebulaBuffMana`'s 6-counter grant (witnessed).
+- **Mana sickness drink-while-sick — census COMPLETE, witnessed.** No use
+  gate exists for Mana Sickness anywhere in `ItemCheck` (the `:52217` gate
+  reads `potionDelay`, and mana potions are NOT `potion`-flagged —
+  `Item.cs`'s 110 row); a sick player drinks freely, each `AddBuff(94, 300)`
+  stacks additively to 600 (`BuffID.cs:53`), the scan assigns `0.25 ×
+  time/300` (up to 0.5), the recalc tail cuts once per tick. QuickMana rides
+  the same lane (`manaPotionDelay = 0` at `:51937` keeps its gate open). The
+  f49-first-half stacking witness covered the AddBuff cap; the new
+  `potions.rs` witness covers the FULL drink→stack→scan→damage-cut path
+  including the QuickMana drink while sick.
+- **Magic Cuffs damage-to-mana — already faithful, no port needed.** The
+  `Hurt` arm (`:38291-38303`) landed with S1-C-7 wave A (ANALYSIS "The magic
+  cuffs"): raw-`num` restore, max cap, `ManaEffect(num3)`, the
+  before-endurance position. The i19 +40-max rows and the 1595/2221 grants
+  + `ResetEffects` clear are live; the S1-C-7 witnesses pin raw/cap/no-cuffs.
+- **Mana Regeneration Potion buff-6 ladder — already faithful, witnessed.**
+  Item 293 (`Item.cs:4872-4885`: buffType 6, buffTime 28800, NOT
+  potion-flagged) → the `:9964-9967` bool → the engine's four read sites
+  (delay cap 20 pre-V2, extra decrement `:19426-19429`, line doubling
+  `:19449-19452`, `num9 = 1` scaler pin `:19462-19465`). No per-tier ladder
+  exists — one bool, one slot. The new `regen.rs` witness pins all four
+  sites against no-buff twins at equal bar fractions.
+- **Star-power mana crystals 20-ladder — SKIPPED per lane assignment**
+  (g88b owns the crystals lane).
+
+Witnesses (`player.rs` ×4: the levelup ladder/family isolation, the scan
+derive + time-2 step-down on all three families, the end-to-end
+pickup→scan→engine feed, the chained trio reset; `world_sim/items.rs` ×3:
+the trio consume+buff+second-pickup step, the 4143 restore/heat/full-mana
+consume, the nebula 12/5 pull; `potions.rs` ×1: drink-while-sick full path;
+`regen.rs` ×1: the buff-6 four-site ladder) are WRITTEN, NOT RUN — code-only
+mode, no compiler invoked.
+
+### The W4-f49 MANA RESIDUALS (2026-11-21, the five-item follow-up)
+
+Full report + the f12 merge recipe: `docs/research/85-doc-sweep-mana.md`
+(addendum R1-R5). Verdicts:
+
+- **The Charged Blaster Cannon's `flag3` pay was a REAL CheckMana gap —
+  PORTED.** The i22 `charged_blaster_step` hand-rolled the pay: no
+  `manaCost` scale, the pre-V2 refusal KILLED the holder on a short bar,
+  no flower lane. Now `regen::check_mana` (the shipped ManaV2 never
+  refuses — drain to 0, arm the slow cast, holder lives) + the shared
+  `wants_prism_flower_drink` intent (the `:66613` prism convention; the
+  drain walks all slots). The charge clock also hard-coded 1f "no ManaV2"
+  — `:66362` reads `GetSlowMagicUseRate()` (1/2.5 under the slow cast);
+  fixed. The remaining CheckMana sites (439 Laser Machinegun `:66204`,
+  1115 Glacier Fang `:36943`, Life Drain `:42662`, Medusa Head `:44567`,
+  `CommandForbiddenStorm` `:56870`) ride UNPORTED AI bodies — recorded
+  gaps of those lanes, not new ones.
+- **The manaMagnet chain is complete (i52) — three stale notes fixed**
+  (the PORT_MAP cuffs row, `item.rs` GrabFlags' doc, `player.rs`' 4000
+  comment). The 2221 upgrade's delta over 1595 is exactly the magnet;
+  witnessed end to end (equip tick → GrabFlags → +300 range → 12/5 pull →
+  the `:34947` full-mana gate).
+- **The f12 nebula reconcile CONTRACT published** (research/85 R3): the
+  merge keeps f12's `apply_orb_arm` as the ONE tier writer, bridges
+  `orb_scan.nebula_level_mana` → `Player.nebula_level_mana` in `fold_orb`
+  (the regen engine reads the Player field), deletes this branch's three
+  inline scan arms + helper, and LIFTS `update_survival` after the wiring
+  seam — the C# order is scan (`:25566`) → regen (`:25977/:25995`) →
+  GrabItems (`:27428`); the lift also repairs f12's own `buff_life_regen`
+  feed (its fold currently lands after the regen read and is wiped by
+  the next reset before any read sees it).
+- **The star pickup cue is the UNPOSITIONED id-7 Grab chime**
+  (`Player.cs:35067`), NOT Item style 23/25; `ManaEffect` is text-only.
+  The i52 `play_pickup_sound(false, UpdatePlayers)` verified; witnessed
+  (count+1, the pitch draw, the silent refusal).
+- **The four mana-potion tiers MATCH the generated rows** (110/50,
+  189/100, 500/200, 2209/400 — `Item.cs:2680/:3701/:7336/:22346`); none
+  potion-flagged; the QuickMana chooser is first-fit. Witnessed.
+
+6 new witnesses WRITTEN, NOT RUN (code-only).
+
+### The W4-f49 MANA FINAL (2026-11-21, the lane's final phase)
+
+Full report + the merger receipt: `docs/research/85-doc-sweep-mana.md`
+(FINAL-STATUS F1-F4). The R3 one-writer contract is EXECUTED on this
+branch (8eb20d8b): the three inline nebula scan arms +
+`update_buffs_nebula_buffs` are DELETED (f12's g27 `apply_orb_arm` is the
+ONE tier writer — the f12 sweep census verified the two writers
+semantically identical), the `fold_orb_nebula_bridge` ASSIGN stub carries
+the three bridge lines f12's `fold_orb` lands at the merge, and
+`nebula_levelup` + both ResetEffects zeros + `items.rs` stay.
+
+**The ordering fix (the lift).** `update_survival` (the regen engine's
+`UpdateLifeRegen`/`UpdateManaRegen` reads, `Player.cs:25977`/`:25995`)
+was LIFTED out of `update_with_grapple` to the world-sim seam in
+`world_sim/player.rs`, AFTER `update_summon_buff_arms` — the `:25566`
+`UpdateBuffs` scan position where f12's `update_buff_frame` hooks — and
+BEFORE the accessory pass. The C# order is scan → `UpdateEquips`
+(`:25633`) → regen (`:25977`/`:25995`) → `GrabItems` (`:27428`); the
+pre-lift position read the PREVIOUS tick's reset-zeroed nebula tier.
+The lift ALSO repairs f12's own `buff_life_regen` feed: on f12's tree the
+fold lands after the regen read and the next tick's reset wipes it
+before any read sees it — the Nebula Life regen add never reached
+`update_life_regen`. The standalone `Player::update` wrapper re-adds the
+call for the no-wiring callers (its nebula tier stays 0 — the wiring
+owns the scan, the f12 gap-3 convention).
+
+**The five CheckMana sites' d-lane census UPDATED** (0e91e70e): d21
+LANDED AI_208 Glacier Fang 1115 (`ai_glacier_fang_shot`, the `:36943`
+charge pay already rides `check_mana`), d19 LANDED AI_185 Life Drain 476
+(`ai_life_drain`, the `:42662` first-tick pay), d10 LANDED AI_100 Medusa
+Head 535 (`ai_medusa_head`, the `:44567` fire pay) — all three on the
+SHARED `regen::check_mana` machine. The 439 Laser Machinegun (`:66204`,
+AI_075's holder arm — no d-lane covers it) and CommandForbiddenStorm
+(`:56870`, the flat 20 pay) stay their lanes'. The `potions.rs`
+constants-copy block pins the five pay amounts (witness pins only — the
+AI lanes read the registry rows).
+
+**The Last Prism flower-lane coverage COMPLETE** (9ee912e71): the one
+missing link was the end-to-end pass-tail — a real 633 holder's
+short-pay intent drained by `update_projectiles` through
+`check_mana_with_flower_on`. Now witnessed (the drink, the re-pay, the
+sickness, the stream isolation).
+
+5 new/re-targeted witnesses WRITTEN, NOT RUN (code-only).
+
+### The W4-f49 MANA RETIRE (2026-11-21, after cded6714)
+
+The retire receipts live in `docs/research/85-doc-sweep-mana.md` (RETIRE
+RT1-RT4). **RT1 — the f12 mutual bridge receipt:** f12's RETIRE (tip
+22ce2a41) receipt 2 said "R3-exec STILL NOT landed" — STALE, written
+against f49 tip 6c0ee2aa2; the execution landed at **8eb20d8b** (the scan
+arms + helper deleted, the `fold_orb_nebula_bridge` ASSIGN stub, the
+`update_survival` lift — all re-verified at cded6714). The mutual record:
+f12-writer-canonical (g27 `apply_orb_arm`, blob c6bcb017b identical at
+f12 22ce2a41 and g27 1cd7ac36) + f49-bridge-stub + lift-EXECUTED. The
+published `fold_orb` hunk compiles as-is (`p.orb_scan.nebula_level_mana`
+— `fold_orb(p, e)` has no scan-state parameter); the three-line stub
+call is the equivalent all-tiers form. The merger-remainder-list FINAL:
+the wiring at the marked seam, the bridge in the SAME commit, `items.rs`
+to f49 wholesale, the `extra_regen` sum kept from f12 (`player.rs:11492`
+— f49's lifted read at :11345 lacks the `buff_life_regen` term), the
+94-drink one-line resolution, the post-merge sweep + anchors verify.
+
+**RT2 — the d79 three-way keep-one:** d79 sweep 2 (b78b02022, tip
+b98130d6) landed a FULL third nebula copy (the consume arms + levelup +
+a second `:12070-12079` scan + the Life/Damage stat folds + a
+Player-method `apply_nebula_buff_mana`). The R3 deletion stands for all
+three trees: the g27 writer is the ONE tier writer, the d117 engine the
+ONE mana cadence (the counter lives in `RegenState`, d79's
+`Player.nebula_mana_counter` drops), f12's `fold_orb` the ONE Life/Damage
+consumer (d79's stat-loop/post-loop folds would double the adds). KEEP:
+the f49 consume arms/levelup/zeros/pull (the cue rewired onto d79's
+`play_grab_sound` single-slot pool facade — f49's `play_grab_sound_at`
+has no Stop/re-create and retires), d79's full-mana refill queue/drain
+(no f49 counterpart; the capture lands on the LIFTED `update_survival`,
+the engine already returns the `refilled` flag). The per-fn C#-position
+single-chain table (13 rows) + the witness keep-one rulings:
+research/85 RETIRE RT2.
+
+**RT3 — the MANA-FAMILY declaration (the merger-bible):** one canonical
+home per family member — the regen ENGINE d117 (`regen.rs`, adopted by
+f49), the nebula mana cadence d117/f49 (`apply_nebula_buff_mana`, the
+counter in `RegenState`), the tier WRITER f12/g27 (`nebula_buffs` via
+`apply_orb_arm`), the tier fields + bridge f49
+(`fold_orb_nebula_bridge`), the pickup grant/consume arms/pull f49
+(`nebula_levelup` + `items.rs` wholesale, the cue on d79's facade), the
+lifecycle zeros f49 + f12's `orb_scan.reset_effects()` (both objects),
+the flower cuffs f49 (the flag chain + the ONE −0.08 fold + the cuffs
+Hurt arm), the shared CheckMana machine f49/i19 (`check_mana` +
+`check_mana_with_flower[_on]`), the potions f49 (the four tiers MATCH,
+the 94 grant ONE line with f12), the sound cues d79 (the pool facades).
+The merged-tick single chain: timer head → both resets → UpdateEquips →
+`update_buff_frame` (scan + bridge) → the LIFTED `update_survival` (+
+the d79 refill capture) → the refill drain → projectiles (the prism
+flower pass-tail) → items (the consume arms → `nebula_levelup`). Full
+table: research/85 RETIRE RT3.
+
+**RT4 — research/85 SEALED.** The report is closed (the SEALED banner +
+RT4); the lane's code half was FINAL at cded6714, the retire phase is
+doc-only. The retire commits: RT1 12d9414d, RT2 b2c9a71f, RT3 fb771bfb,
+RT4 the seal. No further f49 commits touch research/85.
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:
@@ -38492,7 +38780,8 @@ excluded, and the Player fields/clocks/scan arms it referenced landed.
   consume-on-touch arms (`PickupItem` `:35045-35098`) are i52's (hearts/
   stars) or have no ported buff route (nebula/mana). `item_space` still
   answers `can_take` for them (the C# predicate), so the seam is one
-  dispatch arm wide.
+  dispatch arm wide. *(Superseded: the nebula/4143 arms landed with the
+  W4-f49 DOC-SWEEP lane 12 — ALL `IsAPickup` kinds now consume on touch.)*
 - The accessory margins (`goldRing`/`manaMagnet`/`lifeMagnet`/
   `treasureMagnet`) ride the `GrabFlags` seam with false defaults - the
   equipment grants are unported families (the `manaMagnet` note at
@@ -39197,7 +39486,9 @@ Code-only round, branch `task/S1-P-i52-heart-star-pickup` pushed unmerged.
    the calendar windows are unported.
 5. **The nebula trio 3453-3455 and the ManaCloak star 4143** (the other
    `IsAPickup` members, `PickupItem` `:35045-35058`/`:35080-35098`)
-   are out of scope — their pickup arms stay unported.
+   are out of scope — their pickup arms stay unported. *(Superseded by the
+   W4-f49 DOC-SWEEP lane 12: all four consume arms + the `NebulaLevelup`
+   ladder + the tier-writer scan arms landed.)*
 6. **The direct-pickup held-item gate** (`inventory[selectedItem].type
    != 0 || itemAnimation <= 0`, `:34919`) is not modelled — the port's
    items pass has no itemAnimation snapshot (the standing ITEMS-2

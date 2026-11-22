@@ -306,6 +306,17 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
 /// manaSickTime`. The `DebugOptions.ManaPotionDelay` mirror (`:10320-10323`)
 /// is constants-off (false retail static). Called from the per-tick buff
 /// scan for every live 94 slot; the LAST live slot wins, like the C# chain.
+/// W4-f49 stacking census: the grant stacks ADDITIVELY on the drink —
+/// `AddBuff_TryUpdatingExistingBuffTime` (`:5410-5418`) reads
+/// `BuffID.Sets.AddBuffTimeAdditivelyToCap[94] = 600` (`BuffID.cs:53`):
+/// `buffTime += 300` capped at 600, so a second drink inside the window
+/// lifts the timer (and, on the next scan, the reduction) instead of
+/// refreshing it. The reduction can therefore EXCEED 0.25 — up to 0.5 at
+/// the 600 cap; it is one ASSIGN per scan tick (`:10326`), not a multiply,
+/// so the damage cut never compounds across ticks. The 94 id is absent
+/// from `BuffTimeIsExtendedWithGameDifficulty` (`BuffID.cs:50`) — expert
+/// worlds do NOT extend it. 94 is NOT `Main.persistentBuff` — the death
+/// sweep (`:16995-17002`) drops it.
 pub fn apply_mana_sickness_arm(p: &mut Player, buff_time: i32) {
     p.mana_sick = true; // `:10325`
     p.mana_sick_reduction = 0.25f32 * (buff_time as f32 / MANA_SICK_TIME as f32); // `:10324-10326`
@@ -347,6 +358,113 @@ pub fn adjust_remaining_potion_sickness(p: &mut Player) {
 pub fn potion_use_blocked(p: &Player, def: &ItemDef) -> bool {
     def.potion && p.potion_delay > 0
 }
+
+/// W4-f49 — `Player.CheckMana` WITH the mana-flower auto-drink lane
+/// (`Player.cs:52576-52617`), the App-level twin of [`crate::regen::check_mana`]
+/// for callers that can reach the inventory: the entry clear (`:52578`), the
+/// enough-mana pay (`:52579-52586`), then the flower arm (`:52588-52609`) —
+/// `QuickMana()` (`:52592`, the C#'s vestigial `if (true)` wrapper included)
+/// and the post-drink RE-CHECK/pay (`:52594-52601`); a failed/absent drink
+/// falls to the SAME ManaV2 empty arm as the plain lane (`:52602-52606` /
+/// `:52610-52614`: drain to 0, `DoRunOutOfManaEffect`, true). The entry
+/// clear runs BEFORE the drink, so the drink's `UndoSlowMagicUse` gate
+/// (`:51946`) sees `slowMagicUse == false` — the mid-swing timer shrink
+/// never fires on the flower path (the C# order, witnessed).
+/// `block_quick_mana` (`CheckMana`'s third arg `:52576`) is false at every
+/// call site in the source (`ActuallyPayMana` `:52650`, the Last Prism
+/// interval pay `Projectile.cs:66613`); a true caller keeps the plain V2
+/// empty arm with NO drink.
+pub fn check_mana_with_flower(app: &mut App, amount: i32, pay: bool, block_quick_mana: bool) -> bool {
+    check_mana_with_flower_on(app, amount, pay, block_quick_mana, crate::app::RngKey::UpdatePlayers)
+}
+
+/// W4-f49 — [`check_mana_with_flower`] with an explicit named-stream key for
+/// the flower drink's draws (the Last Prism interval pay runs under
+/// `UpdateProjectiles`, `Main.cs:17775`; the weapon use path under
+/// `UpdatePlayers`, `:17754`).
+pub fn check_mana_with_flower_on(
+    app: &mut App,
+    amount: i32,
+    pay: bool,
+    block_quick_mana: bool,
+    key: crate::app::RngKey,
+) -> bool {
+    let (num, flower) = {
+        let Some(p) = app.player.as_mut() else {
+            return false;
+        };
+        p.slow_magic_use = false; // `:52578`
+        let num = (amount as f32 * p.mana_cost) as i32; // `:52579`
+        if p.mana >= num {
+            if pay {
+                p.mana -= num; // `:52584`
+            }
+            return true; // `:52586`
+        }
+        (num, p.mana_flower)
+    };
+    if flower && !block_quick_mana {
+        quick_mana_on(app, key); // `:52590-52593` — the drink's own gates decide
+        let Some(p) = app.player.as_mut() else {
+            return false;
+        };
+        if p.mana >= num {
+            if pay {
+                p.mana -= num; // `:52596-52599`
+            }
+            return true; // `:52600`
+        }
+        // `:52602-52606` — the flower lane's ManaV2 twin of the empty arm.
+        p.mana = 0;
+        p.slow_magic_use = true; // `DoRunOutOfManaEffect` `:52619-52622`
+        return true;
+    }
+    // No flower (or blocked): the plain lane's V2 empty arm (`:52610-52614`).
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    p.mana = 0;
+    p.slow_magic_use = true;
+    true
+}
+
+/// W4-f49 MANA FINAL — the CheckMana constants-copy convention for the
+/// AI-lane ports (research/85 FINAL-STATUS): the d-lanes' projectile AI
+/// bodies call `crate::regen::check_mana` (the pure pool-side pay) and,
+/// where the flower lane is owed, record the shared
+/// `wants_prism_flower_drink` intent — the pass-tail drain re-runs the
+/// FULL CheckMana through [`check_mana_with_flower_on`] on the
+/// `UpdateProjectiles` stream. The five R1-census sites:
+/// - `Projectile.cs:66204` (AI_075 type 439, Laser Machinegun) — the AI
+///   body is STILL unported (the i22 OUT list; no d-lane covers the 75
+///   holder's 439 arm). The site rides that lane; the constants below
+///   are its pay's shape when it lands.
+/// - `Projectile.cs:36943` (AI_208, Glacier Fang 1115) — d21 LANDED the
+///   body (`projectile_ai_201_210.rs::ai_glacier_fang_shot`, tip
+///   9fa9e9ba0): the every-20-tick `ai[0] <= 60` charge pay rides
+///   `check_mana` on the held row's mana (6153: 10).
+/// - `Projectile.cs:42662` (AI_185, Life Drain / Soul Drain 476) — d19
+///   LANDED the body (`projectile_ai_sword_styles.rs::ai_life_drain`,
+///   tip 1054c396a): the first-tick overlap pay rides `check_mana` on
+///   the held row's mana (3006: 10), then latches `localAI[0] = 1`.
+/// - `Projectile.cs:44567` (AI_100, Medusa Head 535) — d10 LANDED the
+///   body (`projectile_ai_91_100.rs::ai_medusa_head`, tip 1f0b60e96):
+///   the fire-cadence pay rides `check_mana` on the held row's mana
+///   (3269: 15); the `!flag ||` short-circuit never skips it.
+/// - `Player.cs:56870` (CommandForbiddenStorm) — the storm command's
+///   lane (deferred, ANALYSIS): the flat 20-mana pay + the
+///   ApplyManaRegenerationDelay follow-up. The constants-copy below
+///   pins the pay's shape for that lane.
+/// The held-row mana values are the generated itemdata rows (the
+/// constants-copy: the AI lanes read `registry::item(...).mana`, never
+/// a hand-typed number — these constants are the WITNESS pins only).
+pub const LASER_MACHINEGUN_MANA: i32 = 6; // itemdata 2795 (Item.cs row)
+pub const GLACIER_FANG_MANA: i32 = 10; // itemdata 6153
+pub const SOUL_DRAIN_MANA: i32 = 10; // itemdata 3006
+pub const MEDUSA_HEAD_MANA: i32 = 15; // itemdata 3269
+/// `Player.CommandForbiddenStorm`'s flat pay (`Player.cs:56870`:
+/// `this.CheckMana(20, pay: true)`) — NOT a held-row read.
+pub const FORBIDDEN_STORM_MANA: i32 = 20;
 
 /// Whether the held kind rides the potion/buff drink arm: a `potion`-flagged
 /// item, one carrying healLife/healMana, or a buff consumable in the
@@ -746,6 +864,15 @@ pub fn quick_heal(app: &mut App) -> bool {
 /// the potion delay (mana potions are NOT potion-flagged, so this is a no-op
 /// for them — kept for the C# structure), the restore and the consume.
 pub fn quick_mana(app: &mut App) -> bool {
+    quick_mana_on(app, crate::app::RngKey::UpdatePlayers)
+}
+
+/// W4-f49 — [`quick_mana`] with an explicit named-stream key. The hotkey /
+/// mana-flower weapon path runs under `UpdatePlayers` (`Main.cs:17754`); the
+/// Last Prism's interval-pay flower drink runs under `UpdateProjectiles`
+/// (`Main.cs:17775`, the `AI_075` caller). Every draw + the heal text ride
+/// the passed key so the two callers keep their own streams.
+pub fn quick_mana_on(app: &mut App, key: crate::app::RngKey) -> bool {
     {
         let Some(p) = app.player.as_ref() else {
             return false;
@@ -789,17 +916,17 @@ pub fn quick_mana(app: &mut App) -> bool {
         }
         if let Some((idx, pitch)) = crate::item::initial_use_sound(held.kind) {
             let (x, y) = (p.x, p.y);
-            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            let rng = app.rngs.stream(key);
             app.audio.play_use_sound(idx, x, y, pitch, rng); // `:5613`
         }
-        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let rng = app.rngs.stream(key);
         if def.potion {
             apply_potion_delay(p, def, &times, rng, dont_starve, remix); // `:5614-5617`
         }
         apply_life_and_or_mana(p, def, rng) // `:5618`
     };
     if let Some(amount) = heal_text {
-        spawn_heal_text(app, amount);
+        spawn_heal_text_on(app, amount, key);
     }
     // `:5618` → `ApplyLifeAndOrMana`'s ManaV2 `UndoSlowMagicUse` arm
     // (`:51946-51948`) — the QuickMana drink rides it too (the i19 fold).
@@ -841,6 +968,12 @@ pub fn undo_slow_magic_use(app: &mut App) {
 /// stream. Shared by the ItemCheck and quick-use paths. Reads the player
 /// coords into locals first so the pool/rng borrows stay disjoint.
 pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
+    spawn_heal_text_on(app, amount, crate::app::RngKey::UpdatePlayers);
+}
+
+/// W4-f49 — [`spawn_heal_text`] with an explicit stream key (the prism
+/// flower drink's text rides `UpdateProjectiles`, `Main.cs:17775`).
+fn spawn_heal_text_on(app: &mut App, amount: i32, key: crate::app::RngKey) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
@@ -856,7 +989,7 @@ pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
         width: crate::player::WIDTH,
         height,
     };
-    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+    let rng = app.rngs.stream(key);
     crate::combat_text::spawn_amount(
         &mut app.combat_texts,
         location,
@@ -1621,5 +1754,431 @@ mod tests {
         update_hunger_buffs(&mut q, true, true);
         let i = q.buffs.find_buff_index(333).unwrap();
         assert_eq!(q.buffs.buff_time[i], 28800, "the remix+dontStarve row");
+    }
+
+    // ---- W4-f49: the mana-flower auto-drink lane + the sickness stacking ----
+    // WRITTEN NOT RUN (code-only mode, no compiler invoked).
+
+    /// `Player.CheckMana`'s flower lane (`Player.cs:52588-52609`): a short
+    /// bar with the Mana Flower armed drinks the FIRST healMana potion
+    /// (`QuickMana` `:52592`) and re-pays the scaled cost (`:52594-52601`).
+    /// The Lesser Mana Potion 110 restores 50 capped at the 20 max; the
+    /// Ruby Staff's 9-mana pay then leaves 11. The drink grants Mana
+    /// Sickness 94 for 300 (`ApplyLifeAndOrMana` `:51938`) and consumes one.
+    #[test]
+    fn w4_f49_the_flower_drinks_and_repays_on_a_short_bar() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 3); // Lesser Mana Potion, healMana 50
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0; // short of the 9-mana pay
+        }
+        assert!(check_mana_with_flower(&mut app, 9, true, false));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 11, "50 restored capped at 20, then 9 paid");
+        assert!(!p.slow_magic_use, "the drink covered the cost — no slow cast");
+        let i = p.buffs.find_buff_index(MANA_SICKNESS).expect("the drink grants 94");
+        assert_eq!(p.buffs.buff_time[i], 300);
+        assert_eq!(app.inventory[0].count, 2, "one potion consumed");
+    }
+
+    /// The flower lane with NO potion available: the failed drink falls to
+    /// the SAME ManaV2 empty arm as the plain lane (`:52602-52606`) — drain
+    /// to 0, arm the slow cast, return true (never refuse).
+    #[test]
+    fn w4_f49_the_flower_without_a_potion_keeps_the_v2_empty_arm() {
+        let mut app = drink_app();
+        app.selected = 0; // empty inventory — no healMana item
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 3; // short of 9, and nothing to drink
+        }
+        assert!(check_mana_with_flower(&mut app, 9, true, false));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 0, "the V2 empty arm drains the bar");
+        assert!(p.slow_magic_use, "DoRunOutOfManaEffect armed");
+        assert!(p.buffs.find_buff_index(MANA_SICKNESS).is_none(), "no drink, no 94");
+    }
+
+    /// `blockQuickMana = true` (CheckMana's third arg, `:52576`): the flower
+    /// lane is skipped entirely — the plain V2 empty arm runs with NO drink
+    /// even though the flower is armed and a potion sits in the inventory.
+    #[test]
+    fn w4_f49_block_quick_mana_skips_the_flower_drink() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 3);
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0;
+        }
+        assert!(check_mana_with_flower(&mut app, 9, true, true));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 0);
+        assert!(p.slow_magic_use);
+        assert_eq!(app.inventory[0].count, 3, "the blocked lane drinks nothing");
+    }
+
+    /// The enough-mana arm (`:52580-52586`) returns BEFORE the flower gate:
+    /// a full bar pays the scaled cost and never drinks, even with the
+    /// flower armed. The entry clear (`:52578`) drops a stale slowMagicUse.
+    #[test]
+    fn w4_f49_the_enough_mana_arm_never_drinks() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 3);
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 20;
+            p.slow_magic_use = true; // stale — the entry clear drops it
+        }
+        assert!(check_mana_with_flower(&mut app, 9, true, false));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 11, "20 − 9, no drink");
+        assert!(!p.slow_magic_use, "the entry clear (:52578)");
+        assert_eq!(app.inventory[0].count, 3, "no consume");
+        assert!(p.buffs.find_buff_index(MANA_SICKNESS).is_none());
+    }
+
+    /// The mana-flower drink's `UndoSlowMagicUse` gate (`:51946`) sees
+    /// `slowMagicUse == false`: CheckMana's entry clear (`:52578`) runs
+    /// BEFORE the flower lane, so the mid-swing timer shrink never fires on
+    /// the flower path (the C# order). A stale armed flag + a running swing
+    /// must NOT shrink the timers through the flower drink.
+    #[test]
+    fn w4_f49_the_flower_drink_does_not_shrink_the_swing_timers() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 3);
+        app.selected = 0;
+        app.swing = 0.5;
+        app.swing_max = 0.5;
+        app.item_time = 0.5;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0;
+            p.slow_magic_use = true; // stale — cleared at the entry
+        }
+        assert!(check_mana_with_flower(&mut app, 9, true, false));
+        // The entry clear dropped the flag before the drink, so
+        // UndoSlowMagicUse's gate (`:51946`) refused — the timers are intact.
+        assert!((app.swing - 0.5).abs() < 1e-6, "no 1/2.5 shrink");
+        assert!((app.item_time - 0.5).abs() < 1e-6);
+    }
+
+    /// W4-f49 stacking census: the Mana Sickness grant stacks ADDITIVELY to
+    /// the 600 cap (`AddBuff_TryUpdatingExistingBuffTime` `:5410-5418`,
+    /// `BuffID.Sets.AddBuffTimeAdditivelyToCap[94] = 600`, `BuffID.cs:53`).
+    /// Two drinks inside the window lift the timer 300 → 600; a third caps.
+    /// The reduction is one ASSIGN per scan (`:10326`), so it can exceed
+    /// 0.25 (up to 0.5 at the cap) but never compounds across ticks.
+    #[test]
+    fn w4_f49_mana_sickness_stacks_additively_to_the_six_hundred_cap() {
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(MANA_SICKNESS, MANA_SICK_TIME); // 300
+        let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 300);
+        p.buffs.add_buff(MANA_SICKNESS, MANA_SICK_TIME); // +300 → 600
+        assert_eq!(p.buffs.buff_time[i], 600, "additive, not a refresh");
+        p.buffs.add_buff(MANA_SICKNESS, MANA_SICK_TIME); // +300 → capped 600
+        assert_eq!(p.buffs.buff_time[i], 600, "the 600 cap");
+        // The scan assigns 0.25 × 600/300 = 0.5 — the stacked reduction.
+        apply_mana_sickness_arm(&mut p, 600);
+        assert!((p.mana_sick_reduction - 0.5).abs() < 1e-6);
+        // One assign per tick: re-running the arm does NOT compound.
+        apply_mana_sickness_arm(&mut p, 600);
+        assert!((p.mana_sick_reduction - 0.5).abs() < 1e-6, "assign, not multiply");
+        // 94 is absent from BuffTimeIsExtendedWithGameDifficulty — expert
+        // worlds do not extend it (the add_buff path keeps 300).
+        let mut q = Player::spawn(&w);
+        q.buffs.expert_mode = true;
+        q.buffs.add_buff(MANA_SICKNESS, MANA_SICK_TIME);
+        let j = q.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+        assert_eq!(q.buffs.buff_time[j], 300, "no expert extension for 94");
+    }
+
+    /// W4-f49 lane 12 drink-while-sick census — the FULL interaction: mana
+    /// potions are NOT `potion`-flagged (`Item.cs`'s 110 row sets no
+    /// `potion`), so the Potion Sickness clock (`:52217-52220`) never gates
+    /// them, and Mana Sickness itself has NO use gate anywhere in
+    /// `ItemCheck` — a sick player drinks freely. Each drink's `AddBuff(94,
+    /// 300)` (`:51938`) stacks ADDITIVELY to the 600 cap
+    /// (`AddBuff_TryUpdatingExistingBuffTime` `:5410-5418`,
+    /// `BuffID.cs:53`), the next buff scan assigns `0.25 × time/300`
+    /// (`:10326` — up to 0.5 at the cap), and the recalc tail multiplies
+    /// `magicDamage` by `1 − reduction` ONCE per tick (`:25900-25903`).
+    /// The `manaPotionDelay = 0` write (`:51937`) keeps the QuickMana gate
+    /// open (the retail `ManaPotionDelay` debug flag is false).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_drinking_while_mana_sick_stacks_the_timer_and_deepens_the_cut() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 5);
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana = 0;
+            p.mana_max = 200;
+        }
+        // Drink 1 — grants 94 @ 300 even with a Potion Sickness clock up
+        // (the mana potion is not potion-flagged, `:52217` never fires).
+        app.player.as_mut().unwrap().potion_delay = 3000;
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
+        {
+            let p = app.player.as_ref().unwrap();
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+            assert_eq!(p.buffs.buff_time[i], 300);
+            assert_eq!(p.mana, 50);
+            assert_eq!(p.mana_potion_delay, 0, ":51937 keeps QuickMana open");
+        }
+        // Drink 2 WHILE SICK — no gate refuses; the timer stacks to 600.
+        app.swing = 0.0;
+        app.attack_cd = 0.0;
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held), "no sick-drink gate exists");
+        {
+            let p = app.player.as_ref().unwrap();
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+            assert_eq!(p.buffs.buff_time[i], 600, "additive to the cap");
+            assert_eq!(p.mana, 100);
+        }
+        // Drink 3 — capped at 600, never beyond.
+        app.swing = 0.0;
+        app.attack_cd = 0.0;
+        let held = app.inventory[0];
+        assert!(use_potion_item(&mut app, held));
+        {
+            let p = app.player.as_ref().unwrap();
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+            assert_eq!(p.buffs.buff_time[i], 600, "the 600 cap");
+        }
+        // The scan + recalc: the stacked timer halves magic damage (0.5 at
+        // the cap), ONE multiply per tick — not compounded. The 601 grant
+        // leaves 600 after the tick-head decrement (`:9871-9873`), the
+        // editing.rs i19 witness convention.
+        let w = crate::test_world_helpers::ground();
+        {
+            let mut p = Player::spawn(&w);
+            p.buffs.add_buff(MANA_SICKNESS, 601);
+            p.update(&w, PlayerInput::default());
+            assert!(
+                (p.mana_sick_reduction - 0.5).abs() < 1e-4,
+                "0.25 × 600/300 after the head decrement: {}",
+                p.mana_sick_reduction
+            );
+            assert!(
+                (p.magic_damage - 0.5).abs() < 1e-4,
+                "the tail cut once: {}",
+                p.magic_damage
+            );
+            // A second tick at the same timer re-derives from the reset 1.0
+            // base — still 0.5, never 0.25 (no compounding).
+            p.buffs.buff_time[p.buffs.find_buff_index(MANA_SICKNESS).unwrap()] = 601;
+            p.update(&w, PlayerInput::default());
+            assert!(
+                (p.magic_damage - 0.5).abs() < 1e-4,
+                "assign-per-tick, not multiply: {}",
+                p.magic_damage
+            );
+        }
+        // The QuickMana path drinks while sick too (the chooser's only
+        // sickness gate is the POTION clock on potion-flagged rows).
+        let mut app2 = drink_app();
+        app2.inventory[0] = slot(110, 2);
+        {
+            let p = app2.player.as_mut().unwrap();
+            p.mana = 0;
+            p.mana_max = 200;
+            p.buffs.add_buff(MANA_SICKNESS, 600);
+            p.mana_sick = true;
+            p.mana_sick_reduction = 0.5;
+        }
+        assert!(quick_mana(&mut app2), "QuickMana has no mana-sick gate");
+        let p = app2.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(MANA_SICKNESS).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 600, "the quick drink stacks to the cap");
+    }
+
+    /// The flower drink's draws ride the PASSED stream key: the weapon path
+    /// uses UpdatePlayers, the Last Prism interval pay uses UpdateProjectiles
+    /// (`Main.cs:17775`). A pure mana potion (healLife 0) queues only the
+    /// ManaEffect text (drained by the items pass, not here) and the silent
+    /// listener spends no use-sound pitch — so the drink is draw-free on BOTH
+    /// keys in this rig; the census pins that neither stream moves.
+    #[test]
+    fn w4_f49_the_flower_drink_rides_the_passed_stream_key() {
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 3);
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0;
+        }
+        assert!(check_mana_with_flower_on(
+            &mut app,
+            9,
+            true,
+            false,
+            crate::app::RngKey::UpdateProjectiles,
+        ));
+        // healLife 0 → no HealEffect text; silent listener → no pitch draw.
+        // The ManaEffect (healMana) rides `pending_mana_effect`, drained by
+        // the items pass — not a stream draw here. Both keys stay at seed 0.
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+            UnifiedRandom::new(0),
+            "the mana-potion flower drink is draw-free under a silent listener"
+        );
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            UnifiedRandom::new(0),
+            "UpdatePlayers untouched"
+        );
+        // The ManaEffect amount queued for the items-pass drain (the RAW 50).
+        assert_eq!(app.player.as_mut().unwrap().take_mana_effect(), Some(50));
+    }
+
+    /// W4-f49 residuals — the mana-potion TIER census: the four rows'
+    /// healMana against the C# `SetDefaults` arms (ItemID.cs:1903/2061/
+    /// 2683/6101 → Item.cs:2680-2691/3701-3713/7336-7348/22346-22358):
+    /// 110 Lesser 50, 189 Mana 100, 500 Greater 200, 2209 Super 400. All
+    /// four are useStyle 9 / consumable / useTurn, NONE `potion`-flagged
+    /// (no Potion Sickness — only Mana Sickness 94 via `:51938`), and the
+    /// drink through `ApplyLifeAndOrMana` restores the RAW amount capped
+    /// at `statManaMax2` (`:51920-51928`), queues the RAW ManaEffect
+    /// (`:51950`) and keeps `manaPotionDelay = 0` (`:51937`). WRITTEN NOT
+    /// RUN (code-only).
+    #[test]
+    fn w4_f49_the_mana_potion_tiers_match_the_csharp_rows() {
+        // (id, C# healMana, Item.cs SetDefaults line).
+        let rows = [(110u16, 50i32), (189, 100), (500, 200), (2209, 400)];
+        for (id, heal) in rows {
+            let def = registry::get(id).expect("the generated row exists");
+            assert_eq!(def.heal_mana, heal, "item {id}: the C# healMana");
+            assert_eq!(def.heal_life, 0, "item {id}: mana-only");
+            assert_eq!(def.use_style, 9, "item {id}: the drink style");
+            assert!(def.consumable && def.use_turn, "item {id}");
+            assert_eq!(def.use_time, 17, "item {id}");
+            assert_eq!(def.use_animation, 17, "item {id}");
+            assert!(!def.potion, "item {id}: NOT potion-flagged (no 21)");
+            // The drink: cap at max, RAW ManaEffect, sickness 300, delay 0.
+            let w = crate::test_world_helpers::ground();
+            let mut p = Player::spawn(&w);
+            p.mana_max = 300;
+            p.mana = 300 - heal / 2; // the cap eats half the restore
+            let mut rng = UnifiedRandom::new(0);
+            let heal_text = apply_life_and_or_mana(&mut p, def, &mut rng);
+            assert_eq!(heal_text, None, "item {id}: no HealLife text");
+            assert_eq!(p.mana, 300, "item {id}: capped at statManaMax2");
+            assert_eq!(p.take_mana_effect(), Some(heal), "item {id}: the RAW text");
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).expect("94 granted");
+            assert_eq!(p.buffs.buff_time[i], MANA_SICK_TIME);
+            assert!(p.buffs.find_buff_index(POTION_SICKNESS).is_none());
+            assert_eq!(p.mana_potion_delay, 0, ":51937");
+            assert!(drinkable(def), "item {id}: rides the drink seam");
+        }
+        // The chooser takes the FIRST healMana row in slot order — a Super
+        // behind a Lesser does NOT win (QuickMana_GetItemToUse :5629-5649
+        // is first-fit, not best-fit).
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 1);
+        app.inventory[1] = slot(2209, 1);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 500;
+            p.mana = 0;
+        }
+        assert!(quick_mana(&mut app));
+        assert_eq!(app.player.as_ref().unwrap().mana, 50, "the Lesser won");
+        assert_eq!(app.inventory[0].count, 0);
+        assert_eq!(app.inventory[1].count, 1, "the Super untouched");
+    }
+
+    /// W4-f49 MANA FINAL item 2 — the five R1-census CheckMana sites'
+    /// pay shapes, armed through the SHARED machinery via the
+    /// constants-copy (the d-lane AI bodies read `registry::item(...).mana`,
+    /// never a hand-typed number; the constants are the witness pins).
+    /// The d-lanes LANDED three of the five bodies on their own branches
+    /// (d21 AI_208 Glacier Fang 1115, d19 AI_185 Life Drain 476, d10
+    /// AI_100 Medusa Head 535) — each already calls `regen::check_mana`;
+    /// the 439 Laser Machinegun (AI_075's holder arm) and the
+    /// CommandForbiddenStorm stay their lanes'. This witness pins the
+    /// pay contract those bodies ride: the generated row's mana, the
+    /// `manaCost` scale, the shipped ManaV2 empty arm (drain to 0, slow
+    /// cast, never refuse), and the flower lane's full re-check.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_five_checkmana_sites_pay_through_the_shared_machine() {
+        // The four held-row sites: (item id, the constants-copy pin).
+        let rows = [
+            (2795u16, LASER_MACHINEGUN_MANA), // 439 holder, AI_075 :66204
+            (6153, GLACIER_FANG_MANA),        // 1115, AI_208 :36943 (d21)
+            (3006, SOUL_DRAIN_MANA),          // 476, AI_185 :42662 (d19)
+            (3269, MEDUSA_HEAD_MANA),         // 535, AI_100 :44567 (d10)
+        ];
+        for (id, pin) in rows {
+            let def = registry::get(id).expect("the generated row exists");
+            assert_eq!(def.mana, pin, "item {id}: the constants-copy pin");
+            // The enough-mana pay scales by manaCost (`:52579`).
+            let mut mana = 100;
+            let mut slow = false;
+            assert!(crate::regen::check_mana(&mut mana, &mut slow, pin, 0.5, true));
+            assert_eq!(mana, 100 - (pin as f32 * 0.5) as i32, "item {id}: scaled");
+            assert!(!slow, "the exact pay never arms the slow cast");
+            // The short bar takes the ManaV2 empty arm (`:52610-52614`):
+            // drain to 0, arm the slow cast, return true (never refuse).
+            let mut mana = 1;
+            let mut slow = false;
+            assert!(crate::regen::check_mana(&mut mana, &mut slow, pin, 1.0, true));
+            assert_eq!(mana, 0, "item {id}: the V2 empty arm drains");
+            assert!(slow, "item {id}: DoRunOutOfManaEffect armed");
+        }
+        // The flower lane's full re-check (the pass-tail drain convention):
+        // a short bar with the flower armed drinks the first healMana
+        // potion and re-pays. The Soul Drain's 10-mana pay at manaCost 1
+        // needs 10; the Lesser 50 restores capped at 20, then 10 paid → 10.
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 2);
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0;
+        }
+        assert!(check_mana_with_flower_on(
+            &mut app,
+            SOUL_DRAIN_MANA,
+            true,
+            false,
+            crate::app::RngKey::UpdateProjectiles,
+        ));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 10, "50 capped at 20, then the 10-mana pay");
+        assert!(!p.slow_magic_use, "the drink covered the cost");
+        // CommandForbiddenStorm's FLAT 20 pay (`Player.cs:56870`) — NOT a
+        // held-row read — plus the ApplyManaRegenerationDelay follow-up
+        // (`:56873`). The storm command's lane owns the spawn; this pins
+        // the pay + the delay reset the constants-copy carries.
+        let mut mana = 100;
+        let mut slow = false;
+        assert!(crate::regen::check_mana(
+            &mut mana,
+            &mut slow,
+            FORBIDDEN_STORM_MANA,
+            1.0,
+            true,
+        ));
+        assert_eq!(mana, 80, "the flat 20 pay");
+        let mut st = crate::regen::RegenState::default();
+        crate::regen::apply_mana_regen_delay(&mut st, 200, mana, false);
+        assert_eq!(st.mana_regen_delay, 4.0, "the V2 pin after the pay (:56873)");
     }
 }

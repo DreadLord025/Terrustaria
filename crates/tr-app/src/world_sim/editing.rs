@@ -2043,6 +2043,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let is_summon = matches!(
             held.kind,
             43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
+            // W4-f49 — the Arcane Crystal 5339 (`ItemCheck_UseShimmerPermanentItems`
+            // `Player.cs:45399-45404`): the same `ItemTimeIsZero && itemAnimation > 0`
+            // mid-swing gate as the boss spawners (`:43607` calls it inside
+            // `ItemCheck_OwnerOnlyCode`'s per-tick arm).
+            | 5339
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -2121,6 +2126,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
         // keeps its own fn above).
         if held.count > 0 && use_boss_summon_item(app) {
+            return;
+        }
+        // W4-f49 — the Arcane Crystal 5339 (`ItemCheck_UseShimmerPermanentItems`,
+        // `Player.cs:45399-45404`): `ApplyItemTime` + `usedArcaneCrystal = true`,
+        // the ONE-TIME permanent the regen engine reads (delay −0.05/tick
+        // `:19430-19433`, regen +max/50 `:19453-19456` — W4-d117's read arms).
+        if held.kind == 5339 && held.count > 0 && use_arcane_crystal(app) {
             return;
         }
     }
@@ -2675,30 +2687,34 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             let base_mana = held_fx.map(|s| s.mana).unwrap_or(0);
             // `StartChanneling(sItem)`'s `item.channel` gate (`:52960`).
             let def_is_channel = registry::get(held.kind).is_some_and(|d| d.channel);
-            // The mutable player borrow covers the whole throw (the mana
-            // pay + the reads the block makes through it).
-            let Some(p) = app.player.as_mut() else {
-                unreachable!()
-            };
-            // `Player.ItemCheck_CheckCanUse` (`Player.cs:52221-52224`): the
-            // Silenced debuff (35) refuses every mana-paying item — the gate
-            // reads the item's BASE mana, before the manaCost scale (S1-E-7
-            // wave A; the buff arm is `UpdateBuffs` `:10043`). This refusal is
-            // upstream of CheckMana and survives ManaV2.
-            if base_mana > 0 && p.silence {
-                return;
-            }
-            // `Player.ItemCheck_CheckCanUse_Inner` (`Player.cs:52112-52115`): a wet
-            // (non-lava) player refuses the fire spells — the Flamelash (shoot 34)
-            // among the listed staves; the 85/15/1122 kinds keep the verbatim set.
-            // `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`); the
-            // port splits the kinds (`player.rs:4315-4358`), so the water/honey/
-            // shimmer union stands in, and `!lavaWet` is the lava flag itself.
-            if (p.wet || p.honey_wet || p.shimmer_wet)
-                && !p.lava_wet
-                && matches!(registry::projectile(held.kind), Some(85 | 15 | 34 | 1122))
+            // W4-f49 — the gates read immutable snapshots: the flower drink
+            // below (`check_mana_with_flower`) needs the whole `&mut App`
+            // (the QuickMana ladder walks the inventory), so the mutable
+            // player borrow re-binds AFTER the pay.
             {
-                return;
+                let Some(p) = app.player.as_ref() else {
+                    unreachable!()
+                };
+                // `Player.ItemCheck_CheckCanUse` (`Player.cs:52221-52224`): the
+                // Silenced debuff (35) refuses every mana-paying item — the gate
+                // reads the item's BASE mana, before the manaCost scale (S1-E-7
+                // wave A; the buff arm is `UpdateBuffs` `:10043`). This refusal is
+                // upstream of CheckMana and survives ManaV2.
+                if base_mana > 0 && p.silence {
+                    return;
+                }
+                // `Player.ItemCheck_CheckCanUse_Inner` (`Player.cs:52112-52115`): a wet
+                // (non-lava) player refuses the fire spells — the Flamelash (shoot 34)
+                // among the listed staves; the 85/15/1122 kinds keep the verbatim set.
+                // `base.wet` is `WetCollision` (ANY liquid, `Collision.cs:1605-1645`); the
+                // port splits the kinds (`player.rs:4315-4358`), so the water/honey/
+                // shimmer union stands in, and `!lavaWet` is the lava flag itself.
+                if (p.wet || p.honey_wet || p.shimmer_wet)
+                    && !p.lava_wet
+                    && matches!(registry::projectile(held.kind), Some(85 | 15 | 34 | 1122))
+                {
+                    return;
+                }
             }
             // S1-C-12 wave D — `ItemCheck_PayMana_ShouldSkipManaUse`'s
             // spaceGun arm (`Player.cs:52695-52698`): the Meteor set makes
@@ -2707,25 +2723,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // — no pay, no delay. The 3269 arm (`:52691-52694`) and the
             // turret/minion alt-fire arms (`:52699-52706`) stay out (no
             // port items/seam).
-            let skip_mana = crate::armor_sets::space_gun_skips_mana(p.space_gun, held.kind);
+            let skip_mana = app
+                .player
+                .as_ref()
+                .is_some_and(|p| crate::armor_sets::space_gun_skips_mana(p.space_gun, held.kind));
             if base_mana > 0 && !skip_mana {
                 // `CheckMana(rawAmountToPay, pay: true)` (`:52650`): the
                 // entry clears `slowMagicUse` (`:52578`); the ManaV2 empty
                 // arm re-arms it. `ItemCheck_PayMana_GetManaCostToPay`
                 // (`:52679-52687`) is the plain `item.mana` here (the 3852
                 // alt-fire ×2 has no port seam).
-                crate::regen::check_mana(
-                    &mut p.mana,
-                    &mut p.slow_magic_use,
-                    base_mana,
-                    p.mana_cost,
-                    true,
-                );
+                // W4-f49 — the App-level twin runs the WHOLE `CheckMana`
+                // (`:52576-52617`) including the mana-flower auto-drink lane
+                // (`:52588-52609`): on a short bar the flower drinks the
+                // first healMana potion (`QuickMana` `:52592`) and re-pays;
+                // a failed drink keeps the same V2 empty arm. The pure
+                // `regen::check_mana` stays for the pool-side pays.
+                crate::potions::check_mana_with_flower(app, base_mana, true, false);
                 // The use-start tick's `ItemCheck_ApplyManaRegenDelay`
                 // (`Player.cs:42808-42813` → `:50587-50593`): the animation
                 // was just armed by `StartActualUse`, so the delay re-arms
                 // from the POST-pay mana this same tick. The ongoing
                 // animation ticks re-arm it at the `update_editing` head.
+                let p = app.player.as_mut().unwrap();
                 crate::regen::apply_mana_regen_delay(
                     &mut p.regen,
                     p.mana_max,
@@ -2735,8 +2755,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             } else if base_mana > 0 {
                 // spaceGun skip: `ItemCheck_ActuallyPayMana`'s skipUsageCheck
                 // arm clears `slowMagicUse` (`:52645-52648`) and pays nothing.
-                p.slow_magic_use = false;
+                app.player.as_mut().unwrap().slow_magic_use = false;
             }
+            // W4-f49 — no long-lived player borrow across the shoot block:
+            // `fire_non_ammo_shot` takes the whole app (the flower drink
+            // above already re-bound it); the channel/buff writes re-borrow
+            // per site (the `apply_channel_tracks` tail's convention).
             // `Player.StartChanneling(sItem)` (`Player.cs:52958-52968`, called
             // by `ItemCheck_StartActualUse` `:51677` AFTER the mana pay): a
             // `channel` item arms the hold and seeds the cancel key with its
@@ -2747,6 +2771,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // snapshots it); seed it here so the spawn tick already carries
             // the clamped cursor (S1-P-i23).
             if def_is_channel {
+                let p = app.player.as_mut().unwrap();
                 let (cx, cy) = p.center();
                 p.channel = true;
                 p.channel_item = held.kind;
@@ -2764,9 +2789,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 p.channel_shoot = registry::projectile(held.kind).unwrap_or(0);
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
-            // rides the use start (the prefixed instance value). The direct
-            // field write keeps the player borrow (`p`) alive for the throw
-            // below — the same value [`arm_reuse_delay`] applies elsewhere.
+            // rides the use start (the prefixed instance value). W4-f49 —
+            // the direct field write no longer needs to keep a player borrow
+            // alive (the flower drink re-binds per site); the same value
+            // [`arm_reuse_delay`] applies elsewhere.
             app.reuse_delay = crate::prefix::prefixed_stats(held.kind, held.prefix)
                 .map(|s| s.reuse_delay)
                 .or_else(|| registry::get(held.kind).map(|d| d.reuse_delay))
@@ -2807,7 +2833,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if crate::projectile::MINION_STAFF_PET_BUFF_ITEMS.contains(&held.kind)
                     && def.buff_type > 0
                 {
-                    p.buffs.add_buff(def.buff_type, 3600);
+                    app.player.as_mut().unwrap().buffs.add_buff(def.buff_type, 3600);
                 }
                 // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
                 // `Player.FreeUpPetsAndMinions` frees the budget at the use
@@ -2815,7 +2841,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // `item.buffType > 0` grant rides the same use
                 // (`Player.cs:42879-42884`, the 90/27 exclusions).
                 if def.buff_type > 0 && def.buff_type != 90 && def.buff_type != 27 {
-                    p.buffs.add_buff(def.buff_type, def.buff_time);
+                    app.player.as_mut().unwrap().buffs.add_buff(def.buff_type, def.buff_time);
                 }
                 // `Player.cs:42778` — the free-up gate:
                 // `item.shoot >= 0 && item.shoot < ProjectileID.Count &&
@@ -2828,6 +2854,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     && (crate::projectile::PROJ_PET.contains(&proj)
                         || crate::projectile::LIGHT_PET_PROJ.contains(&proj))
                 {
+                    let p = app.player.as_mut().unwrap();
                     app.projectiles
                         .free_up_pets_and_minions(p, proj, held.kind, app.local_id as u8);
                 }
@@ -14370,6 +14397,72 @@ mod tests {
         assert!((p.magic_damage - 1.0).abs() < 1e-4);
     }
 
+    // ---- W4-f49: the arcane crystal use arm + the flower weapon drink ------
+    // WRITTEN NOT RUN (code-only mode, no compiler invoked).
+
+    /// `Player.ItemCheck_UseShimmerPermanentItems` (`Player.cs:45399-45404`):
+    /// the Arcane Crystal 5339 use arms `usedArcaneCrystal` ONCE (the
+    /// `!usedArcaneCrystal` gate), re-arms the action cadence to useTime 45
+    /// and consumes one through the generic consumable tail. The flag is a
+    /// permanent — the regen engine's two read arms (W4-d117) pick it up.
+    #[test]
+    fn w4_f49_the_arcane_crystal_use_arms_the_permanent_once() {
+        let mut app = staff_app(5339, "Arcane Crystal");
+        app.player.as_mut().unwrap().used_arcane_crystal = false;
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.used_arcane_crystal, "the permanent armed (:45402)");
+        assert_eq!(app.inventory[app.selected].count, 0, "one consumed");
+        // A second crystal cannot re-fire the flag arm (the gate), but the
+        // permanent stays armed across ResetEffects (no clear site).
+        let w = World::new("t".into(), 64, 800);
+        let mut q = crate::player::Player::spawn(&w);
+        q.used_arcane_crystal = true;
+        q.update(&w, crate::player::PlayerInput::default());
+        assert!(q.used_arcane_crystal, "ResetEffects keeps the permanent");
+    }
+
+    /// The arcane crystal's use is a no-op once the permanent is armed: the
+    /// `!usedArcaneCrystal` gate (`:45399`) refuses, the stack stays intact
+    /// through the flag arm (the generic tail still consumes on a real use,
+    /// but the flag arm itself never re-fires).
+    #[test]
+    fn w4_f49_the_used_arcane_crystal_refuses_the_flag_arm() {
+        let mut app = staff_app(5339, "Arcane Crystal");
+        app.player.as_mut().unwrap().used_arcane_crystal = true;
+        assert!(!use_arcane_crystal(&mut app), "the gate refuses (:45399)");
+        assert_eq!(app.inventory[app.selected].count, 1, "no consume on refusal");
+    }
+
+    /// The mana-flower auto-drink through the WEAPON pay path
+    /// (`ItemCheck_ActuallyPayMana` → `CheckMana` `:52650` → `:52588-52609`):
+    /// a short bar with the flower armed drinks the first healMana potion
+    /// and re-pays. The Ruby Staff's 9-mana cost: 0 mana → drink 50 (capped
+    /// 20) → pay 9 → 11, the bolt fires, Mana Sickness 94 granted.
+    #[test]
+    fn w4_f49_the_flower_weapon_pay_drinks_and_fires() {
+        let mut app = staff_app(743, "Ruby Staff");
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 110,
+            name: "Lesser Mana Potion",
+            count: 3,
+            prefix: 0,
+        };
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0;
+        }
+        fire_once(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 11, "50 restored capped 20, then 9 paid");
+        assert!(!p.slow_magic_use, "the drink covered the cost");
+        assert!(p.buffs.find_buff_index(94).is_some(), "the drink grants 94");
+        assert_eq!(app.inventory[20].count, 2, "one potion consumed");
+        let bolts = app.projectiles.slots().iter().filter(|p| p.active).count();
+        assert_eq!(bolts, 1, "the staff still fires after the flower drink");
+    }
+
     #[test]
     fn s1_e_7a_the_silenced_debuff_refuses_mana_items() {
         // `Player.cs:52221-52224`: `sItem.mana > 0 && silence` blocks the use
@@ -16097,6 +16190,51 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         .filter(|t| *t > 0)
         .map(|t| t as f32 * ONE_TICK_SECS)
         .unwrap_or(app.swing_max);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// W4-f49 — the Arcane Crystal 5339 (`Player.ItemCheck_UseShimmerPermanentItems`,
+/// `Player.cs:45399-45404`): `sItem.type == 5339 && itemAnimation > 0 &&
+/// !usedArcaneCrystal && ItemTimeIsZero` → `ApplyItemTime(sItem)` +
+/// `usedArcaneCrystal = true` (+ the msg-4 MP sync, no port). The flag is a
+/// PERMANENT — no ResetEffects clear (`:45399` is its only write outside the
+/// ctor `:56080` and the file round-trip `:54783`/`:55257`); the regen
+/// engine's two read arms landed with W4-d117 (`:19430-19433` delay −0.05,
+/// `:19453-19456` regen +max/50). The stack pays one through the generic
+/// consumable tail (`:43280-43326` — `consumable: true`, no ForceConsumption
+/// row, `CanConsumeConsumableItem` true): the tail gate is `itemTimeMax != 0
+/// && itemTime == itemTimeMax`, which the flag arm's `ApplyItemTime` arms on
+/// the FIRST use only — an already-used crystal's refused flag arm leaves
+/// `itemTime`/`itemTimeMax` at 0, so the tail does NOT consume it (the port's
+/// `use_arcane_crystal` returns false before the consume, same observable).
+/// The five siblings (5337/5338/5340/5341/5342) stay the crystals/powerups
+/// lane's.
+pub(crate) fn use_arcane_crystal(app: &mut App) -> bool {
+    let already_used = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.used_arcane_crystal);
+    if already_used {
+        return false; // `!this.usedArcaneCrystal` (`:45399`)
+    }
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    p.used_arcane_crystal = true; // `:45402`
+    // `ApplyItemTime(sItem)` (`:45401` → `:4416-4419` `SetItemTime(useTime)`):
+    // the ACTION cadence re-arms to the item's useTime (45, `Item.cs` row);
+    // the swing keeps running — the boss-spawner convention.
+    app.item_time = crate::item::use_time_secs(5339);
+    // The generic consumable tail (`:43317-43324`): stack--, the empty slot
+    // arms `itemTime = itemAnimation` (the port's TurnToAir fold).
+    let slot = &mut app.inventory[app.selected];
+    slot.count = slot.count.saturating_sub(1);
+    if slot.count == 0 {
+        slot.kind = 0;
+        app.item_time = app.swing; // `:43321-43324`
+    }
     app.mine_target = None;
     app.mine_timer = 0.0;
     true

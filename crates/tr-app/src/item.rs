@@ -577,11 +577,13 @@ pub const HEART_KINDS: [u16; 3] = [58, 1734, 1867];
 pub const STAR_KINDS: [u16; 3] = [184, 1735, 1868];
 /// `ItemID.Sets.IsAPickup`'s heart/star subset (`ItemID.cs:493` — the full
 /// set also holds the nebula trio 3453-3455 and the Mana Cloak star 4143,
-/// unported consume arms): `Player.ItemSpace` returns `CanTakeItem: true`
-/// unconditionally for them (`Player.cs:39155-39158`) — an inventory-full
-/// player still grabs them, and a FULL-life/full-mana player consumes them
-/// too (the heal/restore caps; only the star's PULL is gated at full mana,
+/// whose consume arms landed with W4-f49 lane 12): `Player.ItemSpace`
+/// returns `CanTakeItem: true` unconditionally for them
+/// (`Player.cs:39155-39158`) — an inventory-full player still grabs them,
+/// and a FULL-life/full-mana player consumes them too (the heal/restore
+/// caps; only the star's PULL is gated at full mana,
 /// `Player.cs:34947`).
+#[allow(dead_code)] // the skip-gate caller landed out with W4-f49 lane 12
 pub fn is_heart_or_star(kind: u16) -> bool {
     HEART_KINDS.contains(&kind) || STAR_KINDS.contains(&kind)
 }
@@ -675,11 +677,12 @@ const FRICTION_X: f32 = 0.95;
 const FRICTION_EPSILON: f32 = 0.1;
 
 /// The accessory flags `GetItemGrabRange`/`GrabItems` read
-/// (`Player.cs:35133-35151`/`:34943-34963`). The port's equipment pass has
-/// not landed the Mana Magnet / Treasure Magnet grants (the `manaMagnet`
-/// family is a recorded unported seam, `player.rs:986`); the Gold Ring's
-/// `gold_ring` flag is live (S1-P-i50); the Lifeforce buff's `lifeMagnet`
-/// (`buff_effects.rs:52`) wires here when the accumulator lands on Player.
+/// (`Player.cs:35133-35151`/`:34943-34963`). ALL grants are live: the
+/// `manaMagnet` family (2219/2220/2221/4000, S1-P-i52) + the Heartreach
+/// buff-105 `lifeMagnet` arm (i52) + the Treasure Magnet 5010 / Hand Of
+/// Creation 5126 (W4-f49) + the Gold Ring (S1-P-i50); the `world_sim/
+/// items.rs` grab pass feeds them from the live Player fields each tick
+/// (the pre-i52 "unported seam" note is superseded — W4-f49 residuals).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct GrabFlags {
     pub gold_ring: bool,

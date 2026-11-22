@@ -1918,6 +1918,24 @@ impl Audio {
         y: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        self.play_grab_sound_at(x, y, rng)
+    }
+
+    /// W4-f49 lane 12 — the shared POSITIONED case-7 play (the chest eat
+    /// chime above and the Nebula pickup's `PlaySound(7, (int)position.X,
+    /// (int)position.Y)`, `Player.cs:35047`): the attenuation gate first
+    /// (`LegacySoundPlayer.cs:369-436`), then the same `Next(-10, 11) * 0.01`
+    /// Grab-family pitch draw as [`Audio::play_pickup_sound`]. The caller
+    /// owns the stream (the nebula pickup rides `UpdatePlayers`, the
+    /// `GrabItems` swap `Main.cs:17754`; the chest site the bare-`Main.rand`
+    /// stand-in). Returns the cue played; `None` when the gate refused (no
+    /// draw spent).
+    pub fn play_grab_sound_at(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         // The attenuation gate first (`LegacySoundPlayer.cs:369-436`).
         if sound::play_sound(7, x, y, self.listener, 1.0).is_none() {
             return None;

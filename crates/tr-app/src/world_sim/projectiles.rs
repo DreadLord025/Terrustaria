@@ -480,6 +480,27 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(p) = app.player.as_mut() {
         app.projectiles.apply_channel_tracks(p);
     }
+    // W4-f49 — the pool-side CheckMana pays' mana-flower auto-drink
+    // (`Player.CheckMana` `:52588-52609` reached from the Last Prism's
+    // interval pay `Projectile.cs:66613`, the Charged Blaster Cannon's
+    // `flag3` pay `:66479`, and the d-lane AI bodies' pays on their
+    // branches — the Glacier Fang `:36943` (d21), the Life Drain `:42662`
+    // (d19), the Medusa Head `:44567` (d10); the 439 holder `:66204` and
+    // the Forbidden storm `Player.cs:56870` ride their lanes): the
+    // pool-side pay took the ManaV2 empty arm on a short pay tick; the
+    // flower lane re-runs the FULL CheckMana (the
+    // QuickMana drink + the post-drink re-pay) here, where the inventory is
+    // reachable. The draws + the heal text ride `UpdateProjectiles`
+    // (`Main.cs:17775`, the AI_075 caller's swap) — the drain convention.
+    for amount in app.projectiles.drain_prism_flower_drinks() {
+        crate::potions::check_mana_with_flower_on(
+            app,
+            amount,
+            true,
+            false,
+            crate::app::RngKey::UpdateProjectiles,
+        );
+    }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
     for (kind, x, y, vx, vy) in app.projectiles.drain_mark_spawns() {
@@ -1188,5 +1209,108 @@ mod s1_p_i09_yoyo_snapshot_tests {
         app.player.as_mut().unwrap().frozen = true;
         update_projectiles(&mut app, 1.0 / 60.0);
         assert_eq!(app.projectiles.slots()[0].ai[0], -1.0, "the CC releases");
+    }
+}
+
+/// W4-f49 MANA FINAL item 3 — the Last Prism flower-lane FINAL witness
+/// coverage: the end-to-end pass-tail (the one link the pool-side and
+/// potions-side witnesses did not drive together). The holder's short
+/// interval pay takes the ManaV2 empty arm and records the shared
+/// `wants_prism_flower_drink` intent (`Projectile.cs:66613`); the
+/// `update_projectiles` pass-tail drains it through
+/// `potions::check_mana_with_flower_on` on `UpdateProjectiles` — the
+/// QuickMana drink + the post-drink re-pay (`Player.cs:52588-52609`).
+/// WRITTEN NOT RUN (code-only).
+#[cfg(test)]
+mod w4_f49_prism_flower_pass_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::projectile::LAST_PRISM;
+
+    /// A mid-channel player on the Last Prism row (item 3541, mana 12),
+    /// the holder parked so the FIRST pass tick is an interval tick
+    /// (ai[0] 29 → 30, `30 % 30 == 0`), a Lesser Mana Potion in slot 0,
+    /// the flower armed, the SILENT listener (the drink is draw-free).
+    fn prism_flower_app(mana: i32, flower: bool) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.x = 54.0;
+        p.y = 43.0;
+        p.channel = true;
+        p.channel_item = 3541;
+        p.channel_proj_expected = LAST_PRISM;
+        p.mana_flower = flower;
+        p.mana = mana;
+        let (cx, cy) = p.center();
+        p.channel_target = Vec2::new(cx + 40.0, cy);
+        app.player = Some(p);
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 110,
+            name: crate::registry::name(110),
+            count: 2,
+            prefix: 0,
+        };
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let holder = app
+            .projectiles
+            .spawn_with_data_ai_owned(LAST_PRISM, 0, 56.0, 56.0, 30.0, 0.0, 100, 0.25, 29.0, 0.0)
+            .unwrap();
+        app.projectiles.slots_mut()[holder].friendly = true;
+        app
+    }
+
+    #[test]
+    fn w4_f49_the_prism_flower_drink_drains_end_to_end_through_the_pass() {
+        // Short bar (5 < 12) + flower: the pool pay drains to 0 and arms
+        // the slow cast; the intent rides the slot; the pass-tail drink
+        // restores 50 capped at 20, re-pays 12 → 8, clears the slow cast,
+        // grants Mana Sickness 94 and consumes one potion.
+        let mut app = prism_flower_app(5, true);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 8, "50 capped at 20, then the 12-mana re-pay");
+        assert!(!p.slow_magic_use, "the drink covered the cost (:52600)");
+        assert!(
+            p.buffs.find_buff_index(crate::potions::MANA_SICKNESS).is_some(),
+            "the drink grants 94 (:51938)"
+        );
+        assert_eq!(app.inventory[0].count, 1, "one potion consumed");
+        let holder = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == LAST_PRISM)
+            .expect("ManaV2: the holder lives");
+        assert_eq!(holder.wants_prism_flower_drink, None, "the drain took it");
+        // The silent mana-potion drink is draw-free on BOTH keys (the
+        // w4_f49 stream-key witness's shape, now through the real pass).
+        for key in crate::app::RngKey::ALL {
+            assert_eq!(
+                *app.rngs.stream(key),
+                tr_core::UnifiedRandom::new(0),
+                "{} pristine",
+                key.name()
+            );
+        }
+        // Full bar: the interval pays cleanly, NO drink, NO intent.
+        let mut app = prism_flower_app(20, true);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        assert_eq!(app.player.as_ref().unwrap().mana, 8, "20 − 12, no drink");
+        assert_eq!(app.inventory[0].count, 2, "no consume");
+        // Flowerless short bar: the V2 empty arm, no drink owed.
+        let mut app = prism_flower_app(5, false);
+        update_projectiles(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 0, "the plain V2 empty arm");
+        assert!(p.slow_magic_use);
+        assert_eq!(app.inventory[0].count, 2, "no flower, no drink");
     }
 }
