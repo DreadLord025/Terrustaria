@@ -53,6 +53,7 @@ mod eoc_fight;
 mod input_map;
 mod input_profiles;
 mod inv;
+mod loadout;
 mod luck;
 mod wiring_stub;
 mod yoyo_string;

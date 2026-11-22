@@ -1850,6 +1850,17 @@ impl App {
                                         ),
                                     )
                                 }),
+                            // `Player.CurrentLoadoutIndex` (`Player.cs:3207`) +
+                            // the loadout-change flash (`ItemSlot.cs:2786-2791`)
+                            // + the hovered-button latch (`Main.cs:41990`).
+                            player.as_ref().map_or(0, |p| p.current_loadout_index),
+                            ui::inventory::loadout_flash(
+                                self.loadout_change_time,
+                                (self.anim_time * 60.0) % 216000.0,
+                                settings.flashy_effects_interface,
+                            ),
+                            &mut self.loadout_mouse_over,
+                            self.equip_share_flags,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

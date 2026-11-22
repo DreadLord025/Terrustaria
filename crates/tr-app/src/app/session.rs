@@ -344,6 +344,10 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // The Journey research pairs: a fresh character has none.
         research: Vec::new(),
         powers: crate::player_file::CreativePowersSave::written_fresh(),
+        // A freshly-created character is on loadout 0 with three empty sets
+        // (`Player.cs:3200-3207`).
+        current_loadout_index: 0,
+        loadouts: Default::default(),
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

@@ -27,10 +27,38 @@ pub struct SavedPlayer {
     /// with none. Vanilla keeps the same pairs in world-file section 11
     /// (`NPCKillsTracker.Save`, M6-SAVE-1's scope).
     pub kills: Vec<(String, i32)>,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`) — version 7; older
+    /// files load on loadout 0. The active set rides the `armor`/`dye` lines
+    /// above; this is which of the three sets is live.
+    pub current_loadout_index: usize,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`) — version 7; older files
+    /// load three empty sets. Each stored set is 20 armor kinds + 10 dye
+    /// kinds + 10 hide flags + the 30-bit share word (the port's sidecar
+    /// keeps kinds, like the `armor`/`dye` lines — no prefix/stack).
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+    /// The LIVE equip set's share flags (`Item.favorited` over armor[0..20]
+    /// then dye[0..10]) — version 7; older files load 0.
+    pub equip_share_flags: u32,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
     world.with_extension("trplayer")
+}
+
+/// One stored loadout slot from its kind: a single-stack item (the sidecar
+/// carries kinds only, like the `armor`/`dye` lines — no prefix/stack), or
+/// air for kind 0.
+fn loadout_item(kind: u16) -> crate::item::ItemSlot {
+    if kind == 0 {
+        crate::item::EMPTY_SLOT
+    } else {
+        crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        }
+    }
 }
 
 /// The explored-map sidecar (`<world>.map`) next to the world file. Vanilla names
@@ -48,8 +76,9 @@ pub fn save(
     armor: [u16; 3],
     dye: &[u16; 10],
     kills: &[(String, i32)],
+    equip_share_flags: u32,
 ) -> std::io::Result<()> {
-    let mut s = format!("6\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("7\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -69,6 +98,23 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
+    // Version 7: the loadout block (`Player.cs:3200-3207`). The index, the
+    // live set's share word, then each stored set as 20 armor kinds + 10 dye
+    // kinds + 10 hide flags + its share word. Kinds only, like the armor/dye
+    // lines above (the sidecar carries no prefix/stack).
+    s.push_str(&format!("{} {}\n", player.current_loadout_index, equip_share_flags));
+    for loadout in &player.loadouts {
+        for item in loadout.armor {
+            s.push_str(&format!("{} ", item.kind));
+        }
+        for item in loadout.dye {
+            s.push_str(&format!("{} ", item.kind));
+        }
+        for hide in loadout.hide {
+            s.push_str(&format!("{} ", hide as u8));
+        }
+        s.push_str(&format!("{}\n", loadout.favorited));
+    }
     std::fs::write(player_path(world), s)
 }
 
@@ -78,12 +124,17 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
-        // tile/wall/weapon/coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" => false,
+        // dye kinds; 7 the loadout block; 3 stores vanilla `ItemID`s; 1 and 2
+        // stored the ad-hoc tile/wall/weapon/coin ranges and are converted on
+        // load.
+        "3" | "4" | "5" | "6" | "7" => false,
         "1" | "2" => true,
         _ => return None,
     };
+    let has_armor = matches!(version, "4" | "5" | "6" | "7");
+    let has_kills = matches!(version, "5" | "6" | "7");
+    let has_dye = matches!(version, "6" | "7");
+    let has_loadouts = version == "7";
     let mut pos = lines.next()?.split_whitespace();
     let x = pos.next()?.parse().ok()?;
     let y = pos.next()?.parse().ok()?;
@@ -107,7 +158,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if version == "4" || version == "5" || version == "6" {
+    if has_armor {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -115,7 +166,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if version == "5" || version == "6" {
+    if has_kills {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -130,10 +181,39 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if version == "6" {
+    if has_dye {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
+        }
+    }
+    // Version 7 adds the loadout block; older files load on loadout 0 with
+    // three empty sets and no live shares.
+    let mut current_loadout_index = 0usize;
+    let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
+    let mut equip_share_flags = 0u32;
+    if has_loadouts {
+        let mut idx_line = lines.next()?.split_whitespace();
+        current_loadout_index = idx_line
+            .next()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0)
+            .min(2);
+        equip_share_flags = idx_line.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+        for loadout in loadouts.iter_mut() {
+            let mut parts = lines.next()?.split_whitespace();
+            for item in loadout.armor.iter_mut() {
+                let kind: u16 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                *item = loadout_item(kind);
+            }
+            for item in loadout.dye.iter_mut() {
+                let kind: u16 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                *item = loadout_item(kind);
+            }
+            for hide in loadout.hide.iter_mut() {
+                *hide = parts.next().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0) != 0;
+            }
+            loadout.favorited = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
         }
     }
     Some(SavedPlayer {
@@ -145,6 +225,9 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         armor,
         dye,
         kills,
+        current_loadout_index,
+        loadouts,
+        equip_share_flags,
     })
 }
 
@@ -179,6 +262,7 @@ mod tests {
             [89, 80, 76],
             &dye,
             &[("BlueSlime".into(), 7)],
+            0,
         )
         .unwrap();
         let s = load(&path).expect("sidecar");
@@ -238,6 +322,52 @@ mod tests {
         let s = load(&path).expect("v4 sidecar");
         assert_eq!(s.armor, [91, 82, 78]);
         assert_eq!(s.dye, [0; 10]);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g55 — the v7 loadout block round-trips: the index, the live share
+    /// word, and each stored set's armor/dye kinds + hide flags + share word.
+    #[test]
+    fn w4_g55_the_loadout_block_round_trips() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.current_loadout_index = 1;
+        p.loadouts[2].armor[0] = loadout_item(90); // Iron Helmet stored in set 2
+        p.loadouts[2].dye[1] = loadout_item(1007); // Red Dye
+        p.loadouts[2].hide[4] = true;
+        p.loadouts[2].set_shared(0, true);
+        let dir = crate::test_world_helpers::test_scratch("persist-loadout");
+        let path = dir.join("tr-persist-loadout.trwld");
+        let inv = [(0u16, 0u32); 50];
+        save(&path, &p, inv, 0, [0, 0, 0], &[0; 10], &[], 1 << 5).unwrap();
+        let s = load(&path).expect("v7 sidecar");
+        assert_eq!(s.current_loadout_index, 1);
+        assert_eq!(s.equip_share_flags, 1 << 5);
+        assert_eq!(s.loadouts[2].armor[0].kind, 90);
+        assert_eq!(s.loadouts[2].dye[1].kind, 1007);
+        assert!(s.loadouts[2].hide[4]);
+        assert!(s.loadouts[2].is_shared(0));
+        assert_eq!(s.loadouts[0], crate::loadout::EquipmentLoadout::default());
+        assert_eq!(s.loadouts[1], crate::loadout::EquipmentLoadout::default());
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g55 — a v6 sidecar (no loadout block) loads on loadout 0 with three
+    /// empty sets and no live shares — the version-7 read is gated.
+    #[test]
+    fn w4_g55_a_v6_sidecar_loads_empty_loadouts() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v6-loadout");
+        let path = dir.join("tr-persist-v6-loadout.trwld");
+        let mut line = String::from("6\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 0 0 0 0 0 \n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v6 sidecar");
+        assert_eq!(s.current_loadout_index, 0);
+        assert_eq!(s.equip_share_flags, 0);
+        assert_eq!(s.loadouts, [crate::loadout::EquipmentLoadout::default(); 3]);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

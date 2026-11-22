@@ -2996,6 +2996,7 @@ pub(crate) mod front_flow_tests {
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
+            pending_item_reuse: false,
             window: None,
             gpu: None,
             renderer: None,
@@ -3074,6 +3075,10 @@ pub(crate) mod front_flow_tests {
             // back into `equip_page` every frame.
             equip_page_selected: 0,
             dye_swap_counter: 0,
+            equip_share_flags: 0,
+            loadout_change_time: f32::NEG_INFINITY,
+            loadout_mouse_over: -1,
+            loadout_clone: crate::loadout::LoadoutClone::default(),
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
@@ -3392,6 +3397,8 @@ pub(crate) mod front_flow_tests {
                 last_saved_binary: 0,
                 research: Vec::new(),
                 powers: crate::player_file::CreativePowersSave::written_fresh(),
+                current_loadout_index: 0,
+                loadouts: Default::default(),
             },
         )
         .unwrap();

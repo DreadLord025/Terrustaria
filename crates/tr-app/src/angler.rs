@@ -149,7 +149,9 @@ pub fn angler_quest_swap(gates: &QuestGates, rng: &mut UnifiedRandom) -> u16 {
 ///
 /// `owned_ids` is the reward's accessory filter input
 /// (`DropAnglerAccByMissing`'s inventory/armor/bank/loadout scan,
-/// `Player.cs:56585-56683`): the port's single inventory + the armor slots.
+/// `Player.cs:56585-56683`): the caller collects the inventory, the armor
+/// slots, the four banks and the three stored loadouts' Armor
+/// (`:56620-56627`, W4-g55 loadout-rest — the Dye arrays are not scanned).
 /// The price adjustment is the Angler's mood multiplier (the merchant's
 /// `currentShoppingSettings.PriceAdjustment`, `:56306`).
 pub fn angler_reward(
@@ -307,6 +309,15 @@ fn remove_acc_options(pool: &mut Vec<u16>, owned: u16) {
         }
         _ => pool.retain(|v| *v != owned),
     }
+}
+
+/// The `remove_acc_options` filter as a test seam — the W4-g55 loadout-rest
+/// witness in `world_sim/npcs.rs` drives the same pool filter the reward roll
+/// reads, over the stored-loadout owned-ids the `give_angler_reward` caller
+/// collects (`Player.cs:56620-56627`).
+#[cfg(test)]
+pub(crate) fn remove_acc_options_for_test(pool: &mut Vec<u16>, owned: u16) {
+    remove_acc_options(pool, owned);
 }
 
 /// `Player.GetAnglerReward_Decoration` (`Player.cs:56465-56496`): the

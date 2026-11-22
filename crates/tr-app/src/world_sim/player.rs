@@ -955,6 +955,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         for i in 0..20 {
             p.equipped[i] = app.equip.armor[i].kind;
             p.equipped_prefix[i] = app.equip.armor[i].prefix;
+            // The live items for the `GetEffectiveArmor` share scan
+            // (`Player.cs:5690-5710`).
+            p.armor_items[i] = app.equip.armor[i];
         }
         // `:22676-22679` — the Track Hook hands the player to the equipped
         // cart mount (the misc-equip 2) when it is a cart row; the wooden
@@ -981,10 +984,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.void_vault_enabled = holds_lens;
         }
         // `Player.dye`/`miscDyes`' kinds snapshot — `UpdateDyes`' input
-        // through `GetEffectiveDye` (`Player.cs:5742-5764`; no loadouts in
-        // the port, the slot itself is the source).
+        // through `GetEffectiveDye` (`Player.cs:5742-5764`): an air live slot
+        // takes the first shared loadout dye, else the slot itself.
         for i in 0..10 {
-            p.dye_slots[i] = app.equip.dye[i].kind;
+            p.dye_items[i] = app.equip.dye[i];
+            p.dye_slots[i] = p.get_effective_dye(i).0.kind;
         }
         for i in 0..5 {
             p.misc_dye_slots[i] = app.equip.misc_dyes[i].kind;

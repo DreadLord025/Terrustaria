@@ -296,6 +296,30 @@ pub(crate) struct App {
     /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
     /// slot `DyeSwap` starts its empty scan from and advances past.
     pub(crate) dye_swap_counter: usize,
+    /// The LIVE equip set's loadout-share flags — `Item.favorited` over
+    /// `Player.armor[0..20]` then `Player.dye[0..10]` (bit `i` = armor slot
+    /// `i`, bit `20 + j` = dye slot `j`). In the equip contexts the flag is
+    /// the share toggle (`ItemSlot.canLoadoutShareAt`, `ItemSlot.cs:395-399`),
+    /// not the grid favourite (`App.favorite_slots` owns those). Swaps with
+    /// the stored sets on a loadout change (`EquipmentLoadout.Swap`).
+    pub(crate) equip_share_flags: u32,
+    /// `ItemSlot._lastTimeForVisualEffectsThatLoadoutWasChanged`
+    /// (`ItemSlot.cs:312`, `RecordLoadoutChange` `:2794-2797`): the
+    /// `Main.timeForVisualEffects` stamp of the last loadout swap — the
+    /// equipment-slot white flash decays over 30 frames from it
+    /// (`GetColorByLoadout`, `:2786`). `f32::NEG_INFINITY` = never changed.
+    pub(crate) loadout_change_time: f32,
+    /// `Main.loadoutMouseOver` (`Main.cs:41990`'s `DoStatefulTickSound` ref):
+    /// the hovered loadout button index, -1 = none — the 12 cue fires on a
+    /// change onto a button (`Main.cs:3249-3259`).
+    pub(crate) loadout_mouse_over: i32,
+    /// `Main.clientPlayer`'s loadout item-array snapshot — the
+    /// `clientCloneLoadouts` half of `Player.clientClone`
+    /// (`Player.cs:54522-54531`, the c28 `ClientClone` carries the scalar
+    /// half). `TrySwitchingLoadout`'s tail clones the swapped sets into it
+    /// (`:5670`) so the next `TrySyncingMyPlayer` array diff
+    /// (`Main.cs:17557-17575`) sees them as already-synced.
+    pub(crate) loadout_clone: crate::loadout::LoadoutClone,
     pub(crate) selected: usize,
     /// `Player.selectedItemState` (`Player.cs:414-568`) — the buffered /
     /// overridden halves of the selection machine (S1-P-i54); the live
@@ -349,6 +373,13 @@ pub(crate) struct App {
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
+    /// `Player.pendingItemReuse` (`Player.cs:1460`): the fourth member of
+    /// `UsingOrReusingItem` (`:4068-4078`). Set when a non-autoReuse swing's
+    /// animation decrements to 0 with the use button held and the release
+    /// latch forced (`:42819-42822`), cleared at the top of the next
+    /// `ItemCheck` (`:42597`) or when the held slot airs out (`:42824-42828`).
+    /// The loadout-swap gate (`:5663`) reads it through `UsingOrReusingItem`.
+    pub(crate) pending_item_reuse: bool,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1, the full
     /// 137-row initializer table with M6-ACH-2).
     pub(crate) achievements: achievements::AchievementManager,
@@ -1430,6 +1461,103 @@ impl App {
 
     pub(crate) fn update_player(&mut self, dt: f32) {
         world_sim::player::update_player(self, dt);
+    }
+
+    /// `Player.TrySwitchingLoadout` (`Player.cs:5661-5682`) over the live App
+    /// state: the swap core runs on `Player` + `App.equip`, then the local
+    /// tails fire — `Main.mouseLeftRelease = false` (`:5671`),
+    /// `ItemSlot.RecordLoadoutChange` (`:5672`), `SoundEngine.PlaySound(12)`
+    /// (`:5673`) and `NetMessage.TrySendData(147)` (`:5674`, the
+    /// `send_sync_loadout` MP push). `UsingOrReusingItem` (`:4068-4078`) is
+    /// summarised from the port's swing/reuse/channel timers (`App.swing` =
+    /// itemAnimation > 0, `App.reuse_delay` = reuseDelay > 0, `Player.channel`)
+    /// plus the `pendingItemReuse` latch (`App.pending_item_reuse`, `:4074` —
+    /// the fourth member, armed at the animation-zero tick of a held
+    /// non-autoReuse swing, `world_sim/editing.rs`). The `clientCloneLoadouts`
+    /// (`:5670`) and particle (`:5675-5679`) tails are the clone/visual systems'.
+    pub(crate) fn try_switching_loadout(&mut self, index: usize) -> bool {
+        let using_or_reusing = self.swing > 0.0
+            || self.reuse_delay > 0.0
+            || self.pending_item_reuse
+            || self.player.as_ref().is_some_and(|p| p.channel);
+        let ok = match self.player.as_mut() {
+            Some(p) => p.try_switching_loadout(
+                index,
+                &mut self.equip.armor,
+                &mut self.equip.dye,
+                &mut self.equip_share_flags,
+                using_or_reusing,
+            ),
+            None => false,
+        };
+        if ok {
+            // `clientCloneLoadouts(Main.clientPlayer)` (`:5670`): the swapped
+            // sets clone into the client-clone snapshot so the next
+            // `TrySyncingMyPlayer` array diff sees them as already-synced.
+            if let Some(p) = self.player.as_ref() {
+                self.loadout_clone = crate::loadout::LoadoutClone::clone_from(
+                    &self.equip.armor,
+                    &self.equip.dye,
+                    self.equip_share_flags,
+                    &p.loadouts,
+                );
+            }
+            self.ui_left_press = false; // `Main.mouseLeftRelease = false` (`:5671`)
+            // `RecordLoadoutChange` (`:5672`): stamp the visual clock.
+            self.loadout_change_time = (self.anim_time * 60.0) % 216000.0;
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:5673`)
+            // `NetMessage.TrySendData(147, -1, -1, null, whoAmI, loadoutIndex)`
+            // (`:5674`): the MP push (no-op while `NetRole::Off`).
+            self.send_sync_loadout(index);
+        }
+        ok
+    }
+
+    /// `ItemSlot.ToggleLoadoutShare` (`ItemSlot.cs:879-889`): flip the equip
+    /// slot's share flag (`Item.favorited` in the `canLoadoutShareAt` contexts)
+    /// + `PlaySound(12)`; turning it ON clears the same slot's share in every
+    /// stored loadout (`ClearSlotShareInOtherLoadouts`, `:891-912`). `context`
+    /// 8/9/10/11 index `Player.armor`, 12 `Player.dye`; `idx` is the array
+    /// index. Returns `true` when the toggle ran (the caller plays the cue).
+    pub(crate) fn toggle_loadout_share(&mut self, context: i32, idx: usize) -> bool {
+        if !crate::ui::loadout::can_loadout_share_at(context) {
+            return false;
+        }
+        let is_dye = context == 12;
+        let cap = if is_dye { crate::inv::DYE } else { crate::inv::ARMOR };
+        if idx >= cap {
+            return false;
+        }
+        let bit = if is_dye { crate::inv::ARMOR + idx } else { idx };
+        let now_on = self.equip_share_flags & (1 << bit) == 0;
+        if now_on {
+            self.equip_share_flags |= 1 << bit;
+            // `Player.Settings.DisableLoadoutShareHint` (`ItemSlot.cs:886` →
+            // `Player.cs:394-401`): the turn-ON arm clears the hint flag and
+            // re-saves the config (only when it was still true).
+            if self.settings.show_loadout_share_hint {
+                self.settings.show_loadout_share_hint = false;
+                let _ = self.settings.save();
+            }
+            // `ClearSlotShareInOtherLoadouts` (`:891-912`): the stored sets'
+            // same-slot share clears (the live set is not in `Loadouts`).
+            if let Some(p) = self.player.as_mut() {
+                for loadout in p.loadouts.iter_mut() {
+                    loadout.set_shared(bit, false);
+                }
+            }
+        } else {
+            self.equip_share_flags &= !(1 << bit);
+        }
+        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:883`)
+        true
+    }
+
+    /// The equip slot's live share flag (`Item.favorited` in the
+    /// `canLoadoutShareAt` contexts) — the draw's shared-item overlay reads it.
+    pub(crate) fn equip_slot_shared(&self, context: i32, idx: usize) -> bool {
+        let bit = if context == 12 { crate::inv::ARMOR + idx } else { idx };
+        bit < 30 && self.equip_share_flags & (1 << bit) != 0
     }
 
     /// `Main.mouseNPC`'s per-frame lifecycle
@@ -3163,6 +3291,9 @@ impl App {
         let mut armor_kinds = [0u16; 3];
         // `Player.dye[0..10]`'s item kinds (sidecar v6), same restore path.
         let mut dye_kinds = [0u16; 10];
+        // The live equip set's share word (sidecar v7); older sidecars load 0.
+        // The stored sets + index ride the Player directly in the restore below.
+        let mut loaded_share_flags = 0u32;
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
             0 => ItemSlot {
                 kind: 2, // ItemID.DirtBlock
@@ -3234,6 +3365,11 @@ impl App {
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
+                    // The loadout block (sidecar v7): the stored sets + index
+                    // ride the Player; the live share word rides the App.
+                    p.loadouts = saved.loadouts;
+                    p.current_loadout_index = saved.current_loadout_index;
+                    loaded_share_flags = saved.equip_share_flags;
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,
@@ -3997,6 +4133,10 @@ impl App {
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             dye_swap_counter: 0,
+            equip_share_flags: loaded_share_flags,
+            loadout_change_time: f32::NEG_INFINITY,
+            loadout_mouse_over: -1,
+            loadout_clone: crate::loadout::LoadoutClone::default(),
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
@@ -4086,6 +4226,7 @@ impl App {
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
+            pending_item_reuse: false,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern). An open chest closes it

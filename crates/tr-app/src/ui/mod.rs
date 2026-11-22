@@ -23,6 +23,7 @@ pub mod ingame_options;
 pub mod housing;
 pub mod inventory;
 pub mod journey;
+pub mod loadout;
 pub mod keyboard;
 pub mod manage_controls;
 pub mod minimap;
@@ -753,6 +754,17 @@ pub fn draw_hud(
         // (windSpeedTarget, cloudAlpha, maxRaining)
         (f32, f32, f32),
     )>,
+    // `Player.CurrentLoadoutIndex` (`Player.cs:3207`) — the equipment-slot
+    // palette + the loadout buttons' active frame.
+    current_loadout: usize,
+    // The loadout-change flash factor (`ItemSlot.GetColorByLoadout:2786-2791`).
+    loadout_flash: f32,
+    // `Main.loadoutMouseOver` (`Main.cs:41990`) — the hovered-button latch the
+    // `DoStatefulTickSound` 12 cue reads and writes.
+    loadout_mouse_over: &mut i32,
+    // The LIVE equip set's share word (`App.equip_share_flags`) — the
+    // Extra_310-312 badge on a non-air shared slot (`ItemSlot.cs:2485-2488`).
+    equip_share_flags: u32,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -906,10 +918,51 @@ pub fn draw_hud(
     // PVP/team icons (`Main.cs:42053-42056`); the C# clears it at the top of
     // `DrawNPCHousesInUI` and reads it in `DrawPVPIcons`, which runs after.
     let mut hide_pvp_icons = false;
+    // The hovered loadout button's `UI.LoadoutN` mouse text
+    // (`Main.DrawLoadoutButtons:41972`), printed instead of an item tooltip.
+    let mut loadout_hover_text: Option<String> = None;
     if inventory_open {
+        // `GetEffectiveArmor`/`GetEffectiveDye` (`Player.cs:5690-5764`): the
+        // shared item + its source loadout for each AIR equip slot (the ghost
+        // icon + the Extra_313-315 badge). A live slot returns itself
+        // (`sharedFromLoadout == None`), so only the genuinely shared ones
+        // carry `Some`.
+        let shared_armor: [Option<(ItemSlot, usize)>; 20] = std::array::from_fn(|i| {
+            player.and_then(|p| {
+                let (item, from) = p.get_effective_armor(i);
+                from.map(|f| (item, f))
+            })
+        });
+        let shared_dye: [Option<(ItemSlot, usize)>; 10] = std::array::from_fn(|i| {
+            player.and_then(|p| {
+                let (item, from) = p.get_effective_dye(i);
+                from.map(|f| (item, f))
+            })
+        });
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
         // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
         // the trash slot and the "Inventory"/"Coins"/"Ammo" labels.
+        // `Main.DoStatefulTickSound(ref Main.loadoutMouseOver, state)`
+        // (`Main.cs:41990`, `:3249-3259`): the 12 cue fires when the hovered
+        // button changes onto a button (not on leaving to -1). The hover is
+        // probed before the draw so the audio borrow precedes `chest_panel`'s
+        // move into `chest::draw` below.
+        let loadout_hover = if equip_page == 0 {
+            loadout::button_hit(
+                screen.x,
+                inventory::equip_page_base_y(screen.y, m_h),
+                [mouse_pos.x, mouse_pos.y],
+            )
+            .map_or(-1, |i| i as i32)
+        } else {
+            -1
+        };
+        if *loadout_mouse_over != loadout_hover {
+            *loadout_mouse_over = loadout_hover;
+            if loadout_hover != -1 {
+                chest_panel.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+            }
+        }
         let hit = inventory::draw(
             r,
             lookups,
@@ -930,10 +983,18 @@ pub fn draw_hud(
             // accessory visible/hidden ticks (`Main.cs:41425-41460`).
             hide_visible_accessory,
             mouse_item_is_air,
+            current_loadout,
+            loadout_flash,
+            &shared_armor,
+            &shared_dye,
+            equip_share_flags,
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;
         hide_pvp_icons = hit.hide_pvp_icons;
+        if hit.loadout_hover >= 0 {
+            loadout_hover_text = Some(loadout::hover_label(hit.loadout_hover as usize));
+        }
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
         let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
@@ -1243,7 +1304,10 @@ pub fn draw_hud(
     // head rides the cursor.
     let hover_item: Option<(i32, &ItemSlot)> = if mouse_npc.carried() {
         None
-    } else if pvp_hover_text.is_some() || housing_hover_text.is_some() {
+    } else if pvp_hover_text.is_some()
+        || housing_hover_text.is_some()
+        || loadout_hover_text.is_some()
+    {
         None
     } else if journey_hover.as_ref().is_some_and(|h| h.text_drawn) {
         // A journey `MouseTextNoOverride` line already owns the hover text
@@ -1315,6 +1379,9 @@ pub fn draw_hud(
         tooltip::draw_mouse_text(r, lookups, mouse_pos, &text, screen, pulse);
     }
     if let Some(text) = housing_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
+        tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
+    }
+    if let Some(text) = loadout_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 

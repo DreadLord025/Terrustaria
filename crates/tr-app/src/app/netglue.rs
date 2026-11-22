@@ -807,15 +807,28 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // `case 147` — a client switched loadout (`MessageBuffer.cs:
+            // 4328-4343`): the host forces the subject to the sender
+            // (`:4330-4333`), runs `TrySwitchingLoadout` + the accessory-
+            // visibility read (`:4336-4337`), then relays to the OTHERS
+            // (`:4338-4341`, `ignoreClient = num68`). The port does not
+            // simulate a remote player's equipment swap (no per-peer
+            // `EquipmentLoadout` arrays), so the loadout index + visibility
+            // bits are stored-not-simulated on the peer snapshot; the local
+            // player's own `147` runs the real swap (`player.rs`).
+            C2s::SyncLoadout(mut l) => {
+                l.player_id = id as u8; // `:4332`
+                self.remote_players.entry(id).or_default().loadout = Some(l);
+                server.broadcast_except(&S2c::SyncLoadout(l), id); // `:4340`
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
+            // `:4282-4297`) land with the send-path pass (S1-I-4).
             C2s::TogglePvp(_)
             | C2s::PlayerMana(_)
             | C2s::TeamChange(_)
-            | C2s::ProjectileTrackers(_)
-            | C2s::SyncLoadout(_) => {}
+            | C2s::ProjectileTrackers(_) => {}
         }
     }
 
@@ -1851,11 +1864,46 @@ impl App {
                     }
                 }
             }
+            // `case 147`'s client half (`MessageBuffer.cs:4336-4337`):
+            // `TrySwitchingLoadout` + `ReadAccessoryVisibility` on
+            // `Main.player[num68]`. The LOCAL player runs the real swap core
+            // (`player.rs`, the same `EquipmentLoadout` two-swap) then unpacks
+            // the visibility bits (`MessageBuffer.cs:4494-4501`, bit i per
+            // slot); the swap gate's `whoAmI != Main.myPlayer` arm passes for
+            // a network-applied switch (`Player.cs:5663`). A peer's loadout is
+            // stored-not-simulated on the render snapshot (no per-peer
+            // equipment arrays).
+            S2c::SyncLoadout(l) => {
+                if l.player_id as u32 == self.local_id {
+                    let idx = l.loadout as usize;
+                    if let Some(p) = self.player.as_mut() {
+                        // `:4336` — the swap core only (the local tails —
+                        // clone/12 cue/147/particles — are the `myPlayer`
+                        // arm's, `:5668-5680`, and a network apply is not it).
+                        p.try_switching_loadout(
+                            idx,
+                            &mut self.equip.armor,
+                            &mut self.equip.dye,
+                            &mut self.equip_share_flags,
+                            false,
+                        );
+                        // `:4337` — ReadAccessoryVisibility.
+                        for i in 0..p.hide_visible_accessory.len() {
+                            p.hide_visible_accessory[i] = (l.hide_accessory & (1 << i)) != 0;
+                        }
+                    }
+                } else {
+                    self.remote_players
+                        .entry(l.player_id as u32)
+                        .or_default()
+                        .loadout = Some(l);
+                }
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
             // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
-            // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
+            // `:4195-4203`, `:4238-4249`, `:4282-4297`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
             | S2c::PlayerMana(_)
@@ -1866,8 +1914,7 @@ impl App {
             | S2c::RevengeMarker(_)
             | S2c::DeadPlayer { .. }
             | S2c::MiscEventValue(_)
-            | S2c::ProjectileTrackers(_)
-            | S2c::SyncLoadout(_) => {}
+            | S2c::ProjectileTrackers(_) => {}
         }
     }
 
@@ -1892,6 +1939,24 @@ impl App {
             hp: hp.clamp(0, i16::MAX as i32) as i16,
             max_hp: max_hp.clamp(0, i16::MAX as i32) as i16,
         });
+        // `MessageBuffer.cs:253` — the join push's `147 SyncLoadout`: the
+        // current loadout index + the accessory-visibility mask, ahead of the
+        // `5` inventory arrays (`:254-272`).
+        let (loadout, hide) = self
+            .player
+            .as_ref()
+            .map(|p| {
+                (
+                    p.current_loadout_index as u8,
+                    accessory_visibility_mask(&p.hide_visible_accessory),
+                )
+            })
+            .unwrap_or((0, 0));
+        client.send(&C2s::SyncLoadout(net::SyncLoadout {
+            player_id: me,
+            loadout,
+            hide_accessory: hide,
+        }));
         // The 59 grid slots, in `PlayerItemSlotID.Inventory0..58` order.
         for (i, slot) in self.inventory.iter().enumerate() {
             client.send(&C2s::Inventory {
@@ -2939,6 +3004,32 @@ impl App {
         }
     }
 
+    /// `Player.TrySwitchingLoadout`'s `147` send (`Player.cs:5674` →
+    /// `NetMessage.cs:1624-1628`): `(byte)whoAmI + (byte)loadoutIndex` + the
+    /// `hideVisibleAccessory` ushort (`WriteAccessoryVisibility`,
+    /// `NetMessage.cs:1882-1893`, bit i per slot). On a client it goes to the
+    /// server (`TrySendData(147, -1, -1, ...)`); on the host it broadcasts to
+    /// every client (the host's own switch reaches the peers the same way the
+    /// relayed client switch does, `MessageBuffer.cs:4340`). `number` is the
+    /// local player's id, `number2` the new loadout index.
+    pub(crate) fn send_sync_loadout(&self, loadout: usize) {
+        let hide = self
+            .player
+            .as_ref()
+            .map(|p| accessory_visibility_mask(&p.hide_visible_accessory))
+            .unwrap_or(0);
+        let msg = net::SyncLoadout {
+            player_id: self.local_id as u8,
+            loadout: loadout as u8,
+            hide_accessory: hide,
+        };
+        match &self.net {
+            NetRole::Host(server) => server.broadcast(&S2c::SyncLoadout(msg)),
+            NetRole::Client(client) => client.send(&C2s::SyncLoadout(msg)),
+            NetRole::Off => {}
+        }
+    }
+
     /// A local switch trip in MP — the C#'s `NetMessage.SendData(59, -1, -1,
     /// null, i, j)` (`Collision.cs:3304`/`:3318`/`:3324`/`:3347`,
     /// `Player.cs:32178`, `:32226`, `:32340`): on a client it goes to the
@@ -3131,6 +3222,20 @@ impl App {
 
 /// `PlayerItemSlotID`'s M6-NET-1 subset (`Terraria/ID/PlayerItemSlotID.cs`) —
 /// the slot arithmetic the C# inventory messages use.
+/// `NetMessage.WriteAccessoryVisibility` (`NetMessage.cs:1882-1893`): the
+/// `hideVisibleAccessory` `bool[10]` (`Player.cs:1708`) packed into one
+/// `ushort` — bit `i` set when slot `i` is hidden. The reader unpacks it
+/// (`MessageBuffer.ReadAccessoryVisibility`, `:4494-4501`).
+fn accessory_visibility_mask(hide: &[bool; 10]) -> u16 {
+    let mut num = 0u16;
+    for (i, &hidden) in hide.iter().enumerate() {
+        if hidden {
+            num |= 1 << i;
+        }
+    }
+    num
+}
+
 mod player_item_slot {
     /// The 1:1 `PlayerItemSlotID` block arithmetic the inventory messages use
     /// (`Terraria/ID/PlayerItemSlotID.cs`); the 59 grid slots are sent as
@@ -3911,6 +4016,95 @@ mod handshake_tests {
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
         assert!(relayed > 0, "the relayed inventory slots");
+    }
+
+    /// W4-g55 `147 SyncLoadout` — `WriteAccessoryVisibility`
+    /// (`NetMessage.cs:1882-1893`) packs `bool[10]` bit-i-per-slot into one
+    /// ushort, and the reader (`MessageBuffer.cs:4494-4501`) unpacks it back.
+    #[test]
+    fn w4_g55_the_accessory_visibility_mask_round_trips() {
+        let mut hide = [false; 10];
+        hide[0] = true;
+        hide[3] = true;
+        hide[9] = true;
+        let mask = accessory_visibility_mask(&hide);
+        assert_eq!(mask, (1 << 0) | (1 << 3) | (1 << 9));
+        // The unpack (`:4497-4500`): bit i -> slot i.
+        let mut back = [false; 10];
+        for (i, slot) in back.iter_mut().enumerate() {
+            *slot = (mask & (1 << i)) != 0;
+        }
+        assert_eq!(back, hide);
+        assert_eq!(accessory_visibility_mask(&[false; 10]), 0);
+    }
+
+    /// W4-g55 `147 SyncLoadout` — a local `TrySwitchingLoadout` sends the `147`
+    /// (`Player.cs:5674`); the host forces the subject to the sender
+    /// (`MessageBuffer.cs:4332`) and stores the peer's loadout
+    /// (stored-not-simulated — no per-peer equipment arrays).
+    #[test]
+    fn w4_g55_a_client_loadout_switch_reaches_the_host_snapshot() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        client_app.player.as_mut().unwrap().hide_visible_accessory[2] = true;
+        // The client switches to loadout 1 (the swap core + the 147 send).
+        assert!(client_app.try_switching_loadout(1));
+        assert_eq!(client_app.player.as_ref().unwrap().current_loadout_index, 1);
+        let me = client_app.local_id as u32;
+        let mut stored = None;
+        for _ in 0..60 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            stored = host_app.remote_players.get(&me).and_then(|p| p.loadout);
+            if stored.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let l = stored.expect("the host stored the client's 147");
+        assert_eq!(l.player_id, me as u8, "the subject forced to the sender");
+        assert_eq!(l.loadout, 1, "the new loadout index");
+        assert_eq!(l.hide_accessory, 1 << 2, "slot 2 hidden rides the mask");
+    }
+
+    /// W4-g55 `147 SyncLoadout`'s client half (`MessageBuffer.cs:4336-4337`):
+    /// the LOCAL player runs the real swap core then unpacks the visibility
+    /// bits; the swap gate's `whoAmI != Main.myPlayer` arm passes for a
+    /// network-applied switch (`Player.cs:5663`).
+    #[test]
+    fn w4_g55_the_local_147_runs_the_swap_and_unpacks_visibility() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // Loadout 1 stores an Ancient Iron Helmet; the live set is air-headed.
+        client_app.player.as_mut().unwrap().loadouts[1].armor[0] = crate::item::ItemSlot {
+            kind: 954,
+            name: crate::registry::name(954),
+            count: 1,
+            prefix: 0,
+        };
+        let me = client_app.local_id as u8;
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::SyncLoadout(net::SyncLoadout {
+                    player_id: me,
+                    loadout: 1,
+                    hide_accessory: 0b1001, // slots 0 and 3 hidden
+                })),
+            );
+        }
+        client_app.net = role;
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.current_loadout_index, 1, "the swap core ran");
+        assert_eq!(client_app.equip.armor[0].kind, 954, "loadout 1's head is live");
+        assert!(p.hide_visible_accessory[0], "bit 0 hid slot 0");
+        assert!(!p.hide_visible_accessory[1]);
+        assert!(p.hide_visible_accessory[3], "bit 3 hid slot 3");
+        assert!(!p.hide_visible_accessory[4]);
     }
 
     #[test]

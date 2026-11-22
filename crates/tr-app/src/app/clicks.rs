@@ -586,6 +586,14 @@ impl App {
     /// `RightClick` ladder's vanity swap (`:1678-1684`) or the shared paced
     /// pickup split.
     fn equip_slot_click(&mut self, context: i32, idx: usize, left: bool, right_edge: bool) {
+        // `OverrideLeftClick`'s cursor-3 arm (`ItemSlot.cs:745-756`): the
+        // equip contexts are `canLoadoutShareAt`, so Alt+click toggles the
+        // loadout share (`ToggleLoadoutShare`, `:879-889`) and consumes the
+        // press before the movement arms (`LeftClick:922-926` returns on it).
+        if left && self.cursor_override == CURSOR_FAVORITE {
+            self.toggle_loadout_share(context, idx);
+            return;
+        }
         // `LeftClick`'s busy gate (`ItemSlot.cs:922-926`): while an item
         // animation or the use cooldown runs, the press does nothing (the
         // `OverrideLeftClick` half rides the cursor-override arms above).
@@ -2133,6 +2141,23 @@ impl App {
             }
             return;
         }
+        // `Main.DrawLoadoutButtons`' click arm (`Main.cs:41965-41978`): a left
+        // press-edge on a loadout button switches the set. The buttons draw
+        // only on the equipment page (`EquipPage == 0`, `Main.cs:41394`), and
+        // sit right of the armour column, so they are probed before the slots.
+        if left && self.inventory_open && self.equip_page == 0 {
+            let (sw, sh) = self.screen_size();
+            let base_y = ui::inventory::equip_page_base_y(sh, self.main_m_h());
+            if let Some(i) =
+                ui::loadout::button_hit(sw, base_y, [self.mouse_pos.x, self.mouse_pos.y])
+            {
+                // `TrySwitchingLoadout` plays the 12 cue + consumes the press
+                // itself (`Player.cs:5671-5673`); the press is already consumed
+                // at the head of this handler.
+                self.try_switching_loadout(i);
+                return;
+            }
+        }
         // The equipment columns (`Main.cs:41288,41450,41491,41519`): armour,
         // vanity, dye and — on the misc page — the misc-equip/misc-dye pair.
         // `ItemSlot.Handle` runs for every cell `DrawInventory` draws, so the
@@ -2639,6 +2664,27 @@ impl App {
                 if slot < crate::item::INV
                     && self.inventory[slot].count > 0
                     && chest::can_favorite_at(0)
+                {
+                    self.cursor_override = CURSOR_FAVORITE;
+                    return;
+                }
+            }
+            // `ItemSlot.cs:616-619` + `:752-756`: the equip contexts
+            // (8/9/10/11/12) are `canLoadoutShareAt`, not `canFavoriteAt` —
+            // Alt+hover lights the same cursor-3, and the click toggles the
+            // loadout share (`ToggleLoadoutShare`) instead of the favourite.
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            if let Some((ctx, idx)) = ui::inventory::equip_cell_at(
+                self.mouse_pos,
+                screen,
+                self.main_m_h(),
+                self.equip_page,
+                cell,
+            ) {
+                if self.equip_cell(ctx, idx).count > 0
+                    && ui::loadout::can_loadout_share_at(ctx)
                 {
                     self.cursor_override = CURSOR_FAVORITE;
                     return;
@@ -4508,6 +4554,105 @@ mod tests {
         assert!(!app.debug_commands_open);
         assert!(app.debug_commands_search.is_empty());
         assert_eq!(app.debug_commands_scroll, 0.0);
+    }
+
+    /// W4-g55 — a left press-edge on a loadout button switches the set
+    /// (`Main.DrawLoadoutButtons:41975-41977` → `Player.TrySwitchingLoadout`).
+    /// At the headless 1280x720 the buttons sit at x 1236, y 174/210/246.
+    #[test]
+    fn w4_g55_a_loadout_button_click_switches_the_set() {
+        let mut app = inv_app();
+        app.equip_page = 0;
+        // The live set (loadout 0) wears an Iron Helmet; loadout 1 stores an
+        // Ancient Iron Helmet.
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        // Click button 1 (centre 1252, 226).
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
+        assert_eq!(app.equip.armor[0].kind, 954, "loadout 1's head is live");
+        assert_eq!(
+            app.player.as_ref().unwrap().loadouts[0].armor[0].kind,
+            90,
+            "the old head stored in loadout 0"
+        );
+        // Clicking the active button again is a no-op (same index).
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
+    }
+
+    /// W4-g55 — the loadout buttons draw only on the equipment page; on the
+    /// misc page (`EquipPage == 2`) the same coordinates hit no button.
+    #[test]
+    fn w4_g55_the_loadout_buttons_are_equipment_page_only() {
+        let mut app = inv_app();
+        app.equip_page = crate::ui::inventory::EQUIP_PAGE_MISC;
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().current_loadout_index,
+            0,
+            "no switch on the misc page"
+        );
+    }
+
+    /// W4-g55 — `ToggleLoadoutShare` (`ItemSlot.cs:879-912`): the toggle flips
+    /// the live share flag, and turning it ON clears the same slot's share in
+    /// every stored loadout AND disables the share hint
+    /// (`DisableLoadoutShareHint`, `:886` → `Player.cs:394-401`); a non-share
+    /// context refuses.
+    #[test]
+    fn w4_g55_toggle_loadout_share_flips_and_clears_the_stored_sets() {
+        let mut app = inv_app();
+        app.equip.armor[0] = slot(90, 1);
+        // Loadout 1 already shares the head slot.
+        app.player.as_mut().unwrap().loadouts[1].set_shared(0, true);
+        // The hint starts on (the static-ctor default, `Player.cs:412`).
+        assert!(app.settings.show_loadout_share_hint);
+        // Toggle ON: the live flag sets, the stored share clears, the hint
+        // disables (`ItemSlot.cs:886`).
+        assert!(app.toggle_loadout_share(8, 0));
+        assert!(app.equip_slot_shared(8, 0));
+        assert!(!app.player.as_ref().unwrap().loadouts[1].is_shared(0));
+        assert!(!app.settings.show_loadout_share_hint, "the turn-ON arm disabled the hint");
+        // Toggle OFF: the live flag clears; the hint stays off (the C# only
+        // disables on turn-ON, never re-enables).
+        assert!(app.toggle_loadout_share(8, 0));
+        assert!(!app.equip_slot_shared(8, 0));
+        assert!(!app.settings.show_loadout_share_hint);
+        // The dye context (12) maps to bit 20 + idx.
+        app.equip.dye[1] = slot(1007, 1);
+        assert!(app.toggle_loadout_share(12, 1));
+        assert!(app.equip_slot_shared(12, 1));
+        // A non-share context (the grid, 0) refuses.
+        assert!(!app.toggle_loadout_share(0, 0));
+    }
+
+    /// W4-g55 — `UsingOrReusingItem`'s `pendingItemReuse` half (`Player.cs:4074`,
+    /// the `:5663` gate): a set latch refuses the loadout swap even with the
+    /// swing/reuse/channel timers clear; clearing it lets the swap run.
+    #[test]
+    fn w4_g55_pending_item_reuse_blocks_the_loadout_swap() {
+        let mut app = inv_app();
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        // The timers are clear, but the pendingItemReuse latch is set.
+        app.swing = 0.0;
+        app.reuse_delay = 0.0;
+        app.pending_item_reuse = true;
+        assert!(!app.try_switching_loadout(1), "the latch refuses the swap");
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 0);
+        // Clearing the latch lets the swap run.
+        app.pending_item_reuse = false;
+        assert!(app.try_switching_loadout(1));
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
     }
 
     /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click

@@ -773,6 +773,13 @@ pub struct Player {
     /// (`Player.cs:9610`, `:14378`). Indices 0..2 are the armour slots and keep
     /// their ticks switched off, exactly like the vanilla's `num38 > 2` gate.
     pub hide_visible_accessory: [bool; 10],
+    /// `Player.Loadouts` (`Player.cs:3200-3204`): the three `EquipmentLoadout`
+    /// sets — the *inactive* armor/dye/hide arrays; the active set rides
+    /// `App.equip` + `hide_visible_accessory` above. `TrySwitchingLoadout`
+    /// swaps twice (`:5665-5666`) to rotate them.
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`): 0..2, default 0.
+    pub current_loadout_index: usize,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -1035,11 +1042,18 @@ pub struct Player {
     /// update's grant pass reads (`UpdateEquips`, `Player.cs:12892`). Filled
     /// from `App.equip` per tick.
     pub equipped: [u16; 20],
+    /// The LIVE `Player.armor[0..20]` items (not just kinds) — the
+    /// `GetEffectiveArmor` share scan (`Player.cs:5690-5710`) reads the live
+    /// slot's `IsAir` and the stored sets' favorited items. Filled from
+    /// `App.equip.armor` per tick next to `equipped`.
+    pub armor_items: [ItemSlot; 20],
     /// `Player.dye[0..10]`'s kinds — `UpdateDyes`' input through
-    /// `GetEffectiveDye` (`Player.cs:5742-5764`; the port has no loadouts, so
-    /// the slot itself is the source). Filled from `App.equip` per tick next
-    /// to `equipped`.
+    /// `GetEffectiveDye` (`Player.cs:5742-5764`). Filled from `App.equip` per
+    /// tick next to `equipped`.
     pub dye_slots: [u16; 10],
+    /// The LIVE `Player.dye[0..10]` items — the `GetEffectiveDye` share scan
+    /// (`Player.cs:5748-5764`). Filled from `App.equip.dye` per tick.
+    pub dye_items: [ItemSlot; 10],
     /// `Player.miscDyes[0..5]`'s kinds (`Player.cs:1494`; pet/light/cart/
     /// mount/hook). Filled from `App.equip` per tick.
     pub misc_dye_slots: [u16; 5],
@@ -2626,6 +2640,9 @@ impl Player {
             hostile: false,
             team: 0,
             hide_visible_accessory: [false; 10],
+            // `Player.cs:3200-3207`: three fresh `EquipmentLoadout()`s, index 0.
+            loadouts: Default::default(),
+            current_loadout_index: 0,
             dead_time: 0,
             respawn_timer: 0,
             immune: false,
@@ -2791,7 +2808,9 @@ impl Player {
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
+            armor_items: [crate::item::EMPTY_SLOT; 20],
             dye_slots: [0; 10],
+            dye_items: [crate::item::EMPTY_SLOT; 10],
             misc_dye_slots: [0; 5],
             hide_misc: [false; 2],
             c_head: 0,
@@ -9362,6 +9381,158 @@ impl Player {
         self.frozen || self.webbed || self.buffs.find_buff_index(156).is_some()
     }
 
+    /// `Player.TrySwitchingLoadout` (`Player.cs:5661-5682`) — the swap core.
+    /// The local-player gate is `!UsingOrReusingItem && !CCed && !dead`
+    /// (`:5663`); `using_or_reusing` is the caller's summary of
+    /// `UsingOrReusingItem` (`:4068-4078` — itemAnimation/reuseDelay/channel/
+    /// pendingItemReuse). The index must differ from the current one and lie
+    /// in `0..Loadouts.Length`. On success the current set swaps INTO its
+    /// slot and the target set swaps OUT (`:5665-5666`), the index advances,
+    /// and the caller runs the local tails (`clientCloneLoadouts`, the 12 cue,
+    /// `RecordLoadoutChange`, the `147` send, `:5670-5679`). Returns `true`
+    /// when the swap ran. The particle tail (`:5675-5679`) is the visual
+    /// system's (ANALYSIS).
+    pub fn try_switching_loadout(
+        &mut self,
+        loadout_index: usize,
+        armor: &mut [crate::item::ItemSlot; crate::inv::ARMOR],
+        dye: &mut [crate::item::ItemSlot; crate::inv::DYE],
+        live_favorited: &mut u32,
+        using_or_reusing: bool,
+    ) -> bool {
+        if using_or_reusing || self.cced() || self.dead {
+            return false; // `:5663`
+        }
+        if loadout_index == self.current_loadout_index
+            || loadout_index >= self.loadouts.len()
+        {
+            return false; // `:5663`
+        }
+        let current = self.current_loadout_index;
+        self.loadouts[current].swap(
+            armor,
+            dye,
+            &mut self.hide_visible_accessory,
+            live_favorited,
+        );
+        self.loadouts[loadout_index].swap(
+            armor,
+            dye,
+            &mut self.hide_visible_accessory,
+            live_favorited,
+        );
+        self.current_loadout_index = loadout_index;
+        true
+    }
+
+    /// `Player.TrySwitchingToNextLoadout` (`Player.cs:5651-5654`):
+    /// `(CurrentLoadoutIndex + 1) % Loadouts.Length`.
+    pub fn try_switching_to_next_loadout(
+        &mut self,
+        armor: &mut [crate::item::ItemSlot; crate::inv::ARMOR],
+        dye: &mut [crate::item::ItemSlot; crate::inv::DYE],
+        live_favorited: &mut u32,
+        using_or_reusing: bool,
+    ) -> bool {
+        let next = (self.current_loadout_index + 1) % self.loadouts.len();
+        self.try_switching_loadout(next, armor, dye, live_favorited, using_or_reusing)
+    }
+
+    /// `Player.TrySwitchingToPreviousLoadout` (`Player.cs:5656-5659`):
+    /// `(CurrentLoadoutIndex - 1 + Loadouts.Length) % Loadouts.Length`.
+    pub fn try_switching_to_previous_loadout(
+        &mut self,
+        armor: &mut [crate::item::ItemSlot; crate::inv::ARMOR],
+        dye: &mut [crate::item::ItemSlot; crate::inv::DYE],
+        live_favorited: &mut u32,
+        using_or_reusing: bool,
+    ) -> bool {
+        let prev =
+            (self.current_loadout_index + self.loadouts.len() - 1) % self.loadouts.len();
+        self.try_switching_loadout(prev, armor, dye, live_favorited, using_or_reusing)
+    }
+
+    /// `Player.GetEffectiveArmor` (`Player.cs:5690-5710`): when the live
+    /// `armor[slot]` is air, the FIRST loadout whose stored `Armor[slot]` is a
+    /// favorited (shared) non-air item that `CanShareArmor` accepts supplies
+    /// it; the returned `Option<usize>` is the sharing loadout's index
+    /// (`sharedFromLoadout`). Otherwise the live slot itself. Reads the live
+    /// `armor_items` snapshot (filled from `App.equip` per tick).
+    pub fn get_effective_armor(&self, slot: usize) -> (ItemSlot, Option<usize>) {
+        if slot >= crate::inv::ARMOR {
+            return (crate::item::EMPTY_SLOT, None);
+        }
+        let live = self.armor_items[slot];
+        if live.count == 0 {
+            for (i, loadout) in self.loadouts.iter().enumerate() {
+                let item = loadout.armor[slot];
+                if item.count != 0 && loadout.is_shared(slot) {
+                    if !self.can_share_armor(&item, slot) {
+                        break; // `:5699-5702` — the first shared item refuses
+                    }
+                    return (item, Some(i));
+                }
+            }
+        }
+        (live, None)
+    }
+
+    /// `Player.CanShareArmor` (`Player.cs:5712-5740`): the shared item must
+    /// fit the slot (`CanEquipInArmorSlot`), and walking the accessory rows
+    /// below it (`slot % 10 > 3`), every air live row's first shared loadout
+    /// item must be co-equippable (`CanEquipBothAccessories`) — a non-air live
+    /// row is skipped (`continue`).
+    fn can_share_armor(&self, share_item: &ItemSlot, slot: usize) -> bool {
+        if !crate::app::equip_swap::can_equip_in_armor_slot(
+            share_item,
+            slot,
+            self,
+            &self.armor_items,
+        ) {
+            return false;
+        }
+        let vanity = slot >= 10;
+        let mut s = slot;
+        while s % 10 > 3 {
+            s -= 1;
+            if self.armor_items[s].count != 0 {
+                continue;
+            }
+            for loadout in &self.loadouts {
+                let item = loadout.armor[s];
+                if item.count != 0 && loadout.is_shared(s) {
+                    if crate::app::equip_swap::can_equip_both_accessories(
+                        share_item, &item, vanity,
+                    ) {
+                        break;
+                    }
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// `Player.GetEffectiveDye` (`Player.cs:5748-5764`): when the live
+    /// `dye[slot]` is air, the FIRST loadout whose stored `Dye[slot]` is a
+    /// favorited non-air item supplies it (no `CanShare` gate — dyes always
+    /// share). Reads the live `dye_items` snapshot.
+    pub fn get_effective_dye(&self, slot: usize) -> (ItemSlot, Option<usize>) {
+        if slot >= crate::inv::DYE {
+            return (crate::item::EMPTY_SLOT, None);
+        }
+        let live = self.dye_items[slot];
+        if live.count == 0 {
+            for (i, loadout) in self.loadouts.iter().enumerate() {
+                let item = loadout.dye[slot];
+                if item.count != 0 && loadout.is_shared(crate::inv::ARMOR + slot) {
+                    return (item, Some(i));
+                }
+            }
+        }
+        (live, None)
+    }
+
     /// `Player.ClearBuff` (`Player.cs:5472-5481`): every slot whose
     /// `buffType == type` dels — NO `buffImmune` or `buffTime >= 1` gate
     /// (those are `FindBuffIndex`'s, `:5249-5255`; the old port looped
@@ -12243,6 +12414,134 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
         }
     }
     false
+}
+
+#[cfg(test)]
+mod w4_g55_loadout_tests {
+    use super::*;
+    use crate::inv::{ARMOR, DYE};
+    use crate::item::{EMPTY_SLOT, ItemSlot};
+
+    fn slot(kind: u16) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        }
+    }
+
+    fn rig() -> (Player, [ItemSlot; ARMOR], [ItemSlot; DYE], u32) {
+        let p = Player::spawn(&World::new("t".into(), 64, 800));
+        (p, [EMPTY_SLOT; ARMOR], [EMPTY_SLOT; DYE], 0)
+    }
+
+    /// W4-g55 — `TrySwitchingLoadout` (`Player.cs:5661-5682`): the two-swap
+    /// rotation moves the live set into the old slot and the target set out;
+    /// switching back restores it. The index advances only on a real swap.
+    #[test]
+    fn w4_g55_the_two_swap_rotation_moves_the_sets() {
+        let (mut p, mut armor, mut dye, mut fav) = rig();
+        armor[0] = slot(90); // Iron Helmet on the live set (loadout 0)
+        p.loadouts[1].armor[0] = slot(954); // Ancient Iron Helmet stored in 1
+        assert!(p.try_switching_loadout(1, &mut armor, &mut dye, &mut fav, false));
+        assert_eq!(p.current_loadout_index, 1);
+        assert_eq!(armor[0].kind, 954, "loadout 1's head is now live");
+        assert_eq!(p.loadouts[0].armor[0].kind, 90, "the old head stored in 0");
+        assert_eq!(p.loadouts[1].armor[0], EMPTY_SLOT);
+        // Back to 0: the original head returns.
+        assert!(p.try_switching_loadout(0, &mut armor, &mut dye, &mut fav, false));
+        assert_eq!(armor[0].kind, 90);
+        assert_eq!(p.current_loadout_index, 0);
+    }
+
+    /// W4-g55 — the `:5663` gate: same index, out-of-range index, mid-use,
+    /// CCed and dead all refuse; the hide flags + share word ride the swap.
+    #[test]
+    fn w4_g55_the_switch_gate_and_the_hide_share_ride() {
+        let (mut p, mut armor, mut dye, mut fav) = rig();
+        p.hide_visible_accessory[3] = true;
+        fav |= 1 << 5;
+        p.loadouts[2].hide[4] = true;
+        p.loadouts[2].set_shared(21, true);
+        // Same index / out of range refuse.
+        assert!(!p.try_switching_loadout(0, &mut armor, &mut dye, &mut fav, false));
+        assert!(!p.try_switching_loadout(3, &mut armor, &mut dye, &mut fav, false));
+        // Mid-use refuses (`UsingOrReusingItem`).
+        assert!(!p.try_switching_loadout(2, &mut armor, &mut dye, &mut fav, true));
+        // CCed refuses.
+        p.frozen = true;
+        assert!(!p.try_switching_loadout(2, &mut armor, &mut dye, &mut fav, false));
+        p.frozen = false;
+        // Dead refuses.
+        p.dead = true;
+        assert!(!p.try_switching_loadout(2, &mut armor, &mut dye, &mut fav, false));
+        p.dead = false;
+        // The real swap carries hide + shares.
+        assert!(p.try_switching_loadout(2, &mut armor, &mut dye, &mut fav, false));
+        assert!(!p.hide_visible_accessory[3], "the live hide moved into storage");
+        assert!(p.hide_visible_accessory[4], "loadout 2's hide came out");
+        assert_eq!(fav, 1 << 21, "the share word swapped");
+        assert!(p.loadouts[0].hide[3]);
+        assert!(p.loadouts[0].is_shared(5));
+    }
+
+    /// W4-g55 — next/previous wrap modulo 3 (`Player.cs:5651-5659`).
+    #[test]
+    fn w4_g55_next_and_previous_wrap_modulo_three() {
+        let (mut p, mut armor, mut dye, mut fav) = rig();
+        assert!(p.try_switching_to_next_loadout(&mut armor, &mut dye, &mut fav, false));
+        assert_eq!(p.current_loadout_index, 1);
+        assert!(p.try_switching_to_next_loadout(&mut armor, &mut dye, &mut fav, false));
+        assert_eq!(p.current_loadout_index, 2);
+        assert!(p.try_switching_to_next_loadout(&mut armor, &mut dye, &mut fav, false));
+        assert_eq!(p.current_loadout_index, 0, "2 -> 0 wraps");
+        assert!(p.try_switching_to_previous_loadout(&mut armor, &mut dye, &mut fav, false));
+        assert_eq!(p.current_loadout_index, 2, "0 -> 2 wraps back");
+    }
+
+    /// W4-g55 — `GetEffectiveArmor` (`Player.cs:5690-5710`): an air live head
+    /// slot takes the first loadout's shared head; a live (non-air) slot keeps
+    /// itself; an unshared stored item does not supply.
+    #[test]
+    fn w4_g55_get_effective_armor_shares_the_first_favorited() {
+        let (mut p, _armor, _dye, _fav) = rig();
+        // Loadout 1 stores a shared Iron Helmet in the head slot.
+        p.loadouts[1].armor[0] = slot(90);
+        p.loadouts[1].set_shared(0, true);
+        // The live head is air → the shared item supplies, from loadout 1.
+        let (item, from) = p.get_effective_armor(0);
+        assert_eq!(item.kind, 90);
+        assert_eq!(from, Some(1));
+        // A live head keeps itself (no share).
+        p.armor_items[0] = slot(954);
+        let (item, from) = p.get_effective_armor(0);
+        assert_eq!(item.kind, 954);
+        assert_eq!(from, None);
+        // An unshared stored item does not supply an air slot.
+        p.armor_items[0] = EMPTY_SLOT;
+        p.loadouts[1].set_shared(0, false);
+        let (item, from) = p.get_effective_armor(0);
+        assert_eq!(item, EMPTY_SLOT);
+        assert_eq!(from, None);
+    }
+
+    /// W4-g55 — `GetEffectiveDye` (`Player.cs:5748-5764`): an air live dye slot
+    /// takes the first loadout's shared dye (no CanShare gate).
+    #[test]
+    fn w4_g55_get_effective_dye_shares_the_first_favorited() {
+        let (mut p, _armor, _dye, _fav) = rig();
+        p.loadouts[2].dye[0] = slot(1007); // Red Dye
+        p.loadouts[2].set_shared(crate::inv::ARMOR + 0, true);
+        let (item, from) = p.get_effective_dye(0);
+        assert_eq!(item.kind, 1007);
+        assert_eq!(from, Some(2));
+        // A live dye keeps itself.
+        p.dye_items[0] = slot(1015);
+        let (item, from) = p.get_effective_dye(0);
+        assert_eq!(item.kind, 1015);
+        assert_eq!(from, None);
+    }
 }
 
 #[cfg(test)]
