@@ -3,6 +3,7 @@
 pub mod animated_tiles;
 pub mod atlas;
 pub mod batch;
+pub mod chest_frames;
 pub mod clip;
 pub mod font_atlas;
 pub mod gpu;
@@ -20,6 +21,7 @@ pub use animated_tiles::{
     VisionDust, VisionLight, BIOME_DUST_GATE, DANGER_DUST_GATE, SPELUNKER_DUST_GATE,
 };
 pub use atlas::{Atlas, AtlasImage, SheetLayout, SheetRect};
+pub use chest_frames::{chest_anchor, chest_frame_adjust, ChestFrameAdjust};
 pub use clip::{intersect as clip_intersect, ClipStack, NO_CLIP};
 pub use font_atlas::{FontAtlas, FontPageData, PageRect};
 pub use gpu::Gpu;

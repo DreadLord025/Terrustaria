@@ -152,6 +152,52 @@ pub(crate) fn find_chest(chests: &[WorldChest], x: i32, y: i32) -> Option<usize>
         .position(|c| !is_removed(c) && c.tile == (x, y))
 }
 
+/// W4-d58: the draw-side `_chestPositions` lookup
+/// (`TileDrawing.cs:4291-4303` + `:4309-4311`). The anchor key steps
+/// left/up off the 36 px grid (`tr_render::chest_anchor`, `:4292-4299`),
+/// the `FindChest` result is cached per draw in `positions` (the C# dict,
+/// cleared each draw by `ClearLegacyCachedDraws`, `:6613-6615` — the port
+/// hands a fresh map per `draw_tiles` call), and the answer is the chest's
+/// lid `frame` (`Chest.cs:86`) or `None` for the `-1` miss. Read-only over
+/// the store: the draw side never rolls RNG and never writes sim state —
+/// the frame is produced by [`update_chest_frames`] on the world step.
+pub(crate) fn chest_draw_frame(
+    chests: &[WorldChest],
+    positions: &mut std::collections::HashMap<(i32, i32), Option<i32>>,
+    x: i32,
+    y: i32,
+    frame_x: i16,
+    frame_y: i16,
+) -> Option<i32> {
+    let key = tr_render::chest_anchor(x, y, frame_x, frame_y);
+    *positions
+        .entry(key)
+        .or_insert_with(|| find_chest(chests, key.0, key.1).map(|i| chests[i].frame))
+}
+
+/// W4-d58 G6 key input: a hash of every live chest's anchor + lid frame —
+/// the values [`chest_draw_frame`] feeds the chest rewrite inside the
+/// cached world range. FNV-1a over the raw `i32` little-endian bytes (the
+/// `TileAnimator::anim_key` convention): deterministic, order-sensitive,
+/// no RNG. Coords ride along so a lazily-created or moved entry changes
+/// the key even while every frame is 0; removed (null) slots are skipped
+/// like the C#'s null array entries.
+pub(crate) fn chest_frame_key(chests: &[WorldChest]) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    let mut feed = |v: i32| {
+        for b in v.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    for c in chests.iter().filter(|c| !is_removed(c)) {
+        feed(c.tile.0);
+        feed(c.tile.1);
+        feed(c.frame);
+    }
+    h
+}
+
 /// `Chest.FindEmptyChest` (`Chest.cs:522-541`): the first null slot index, or
 /// `None` for the C# `-1` — either because a chest already exists at the
 /// coords (`Chest.cs:529-533`, the collision rule) or because the store is
@@ -4111,6 +4157,95 @@ mod tests {
         assert_eq!(cues, vec![0], "the :3628-3631 chime");
         assert_eq!(chests[0].eating_animation_time, 8);
         assert_eq!(chests[0].frame_counter, 8);
+    }
+
+    // --- W4-d58: the draw-side frame-state witnesses --------------------------
+
+    /// W4-d58 — `chest_draw_frame` (`TileDrawing.cs:4291-4311`): all four
+    /// sub-cells of the 2×2 chest resolve through the ONE anchor key, the
+    /// `FindChest` miss answers `None`, and the per-draw cache holds one
+    /// entry per anchor (`_chestPositions`, `:4300-4303`). The lookup is
+    /// read-only — the store is untouched (no sim state, no RNG).
+    #[test]
+    fn w4_d58_chest_draw_frame_walks_the_anchor_grid_and_caches() {
+        let mut chests = vec![chest_at(10, 18, "A")];
+        chests[0].frame = 1;
+        let before = format!("{chests:?}");
+        let mut positions = std::collections::HashMap::new();
+        // The four sub-cells: (fx, fy) in {0,18}² — the anchor steps back
+        // to (10, 18) for each (`chest_anchor`, :4292-4299).
+        for (x, y, fx, fy) in [
+            (10, 18, 0, 0),
+            (11, 18, 18, 0),
+            (10, 19, 0, 18),
+            (11, 19, 18, 18),
+        ] {
+            assert_eq!(
+                chest_draw_frame(&chests, &mut positions, x, y, fx, fy),
+                Some(1),
+                "sub-cell ({x},{y}) reads the lid frame"
+            );
+        }
+        assert_eq!(positions.len(), 1, "one cache entry per anchor");
+        // A chest-less anchor: the -1 miss (:4309), cached too.
+        assert_eq!(chest_draw_frame(&chests, &mut positions, 30, 40, 0, 0), None);
+        assert_eq!(positions.len(), 2);
+        assert_eq!(format!("{chests:?}"), before, "the draw lookup writes nothing");
+    }
+
+    /// W4-d58 frame-state witness: the i43 animator's whole open/close walk
+    /// (`Chest.cs:3603-3662`) reaches the draw selection — tick 0 closed
+    /// (+0), ticks 1..9 half-open (+38), tick 10 open (+76), and the close
+    /// walk replays the bands in reverse. The selection is
+    /// `tr_render::chest_frame_adjust` over the live `WorldChest.frame`.
+    #[test]
+    fn w4_d58_the_lid_states_reach_the_draw_selection() {
+        let mut chests = vec![chest_at(10, 18, "A")];
+        let mut positions = std::collections::HashMap::new();
+        let row = |chests: &[WorldChest], positions: &mut std::collections::HashMap<
+            (i32, i32),
+            Option<i32>,
+        >| {
+            // A fresh cache per draw (ClearLegacyCachedDraws, :6613-6615).
+            positions.clear();
+            let lid = chest_draw_frame(chests, positions, 10, 18, 0, 0);
+            tr_render::chest_frame_adjust(21, 0, 0, 16, 16, lid).add_fr_y
+        };
+        assert_eq!(row(&chests, &mut positions), 0, "tick 0: closed");
+        for tick in 1..=10 {
+            update_chest_frames(&mut chests, 0);
+            let want = if tick == 10 { 76 } else { 38 };
+            assert_eq!(row(&chests, &mut positions), want, "open tick {tick}");
+        }
+        for tick in 1..=10 {
+            update_chest_frames(&mut chests, -1);
+            let want = if tick == 10 { 0 } else { 38 };
+            assert_eq!(row(&chests, &mut positions), want, "close tick {tick}");
+        }
+    }
+
+    /// W4-d58 — `chest_frame_key`: deterministic (no RNG), tracks the lid
+    /// frame and the anchor, and skips removed (null) slots like the C#
+    /// array walk. Two identical stores hash equal; a lid tick or a moved
+    /// anchor changes the hash.
+    #[test]
+    fn w4_d58_chest_frame_key_is_deterministic_and_tracks_the_lid() {
+        let mut chests = vec![chest_at(10, 18, "A"), chest_at(30, 40, "B")];
+        let k0 = chest_frame_key(&chests);
+        assert_eq!(k0, chest_frame_key(&chests.clone()), "no RNG, same state");
+        update_chest_frames(&mut chests, 0);
+        let k1 = chest_frame_key(&chests);
+        assert_ne!(k0, k1, "the lid tick rides the key");
+        assert_eq!(k1, chest_frame_key(&chests), "a still store hashes equal");
+        // The anchor rides too (a lazily-created entry changes the pixels).
+        chests[1].tile = (31, 40);
+        assert_ne!(k1, chest_frame_key(&chests));
+        // A removed slot drops out of the hash entirely.
+        let k2 = chest_frame_key(&chests);
+        remove_chest(&mut chests, 1);
+        let solo = vec![chests[0].clone()];
+        assert_eq!(chest_frame_key(&chests), chest_frame_key(&solo));
+        assert_ne!(k2, chest_frame_key(&chests));
     }
 
     /// S1-P-i43 — `Chest.GetCurrentlyOpenChests` (`Chest.cs:283-294`): the

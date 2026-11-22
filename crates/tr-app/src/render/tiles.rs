@@ -325,6 +325,11 @@ pub(crate) fn draw_tiles(
     // weather-vane bob (`Main.cs:2237`). Ticked once per client update by
     // `App::animate_tiles_phase` (`Main.cs:17150`).
     tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    // W4-d58: `Main.chest[]` (`Main.cs:66994`) — the chest rewrite
+    // (`CacheSpecialDraws_Part2`, `TileDrawing.cs:4289-4330`) reads each
+    // chest's lid `frame` (the S1-P-i43 animator's `Chest.frame`, advanced
+    // on the world step). Read-only: the draw side rolls no RNG.
+    chests: &[crate::chest::WorldChest],
 ) -> TileDrawStats {
     let t_total = Instant::now();
     // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
@@ -586,6 +591,13 @@ pub(crate) fn draw_tiles(
     let mut vine_roots: Vec<(i32, i32)> = Vec::new();
     let mut vine_roots_seen: std::collections::HashSet<(i32, i32)> =
         std::collections::HashSet::new();
+    // W4-d58: `TileDrawing._chestPositions` (`TileDrawing.cs:96`,
+    // `:4300-4303`) — the anchor → `Chest.FindChest` result cache, cleared
+    // each draw (`ClearLegacyCachedDraws`, `:6613-6615`): a fresh map per
+    // `draw_tiles` call. The cached value is the chest's lid frame (`None`
+    // = the `-1` miss), read through `chest::chest_draw_frame`.
+    let mut chest_positions: std::collections::HashMap<(i32, i32), Option<i32>> =
+        std::collections::HashMap::new();
     for ty in y0..=y1 {
         scratch.cur.clear();
         let mut run_start = -1i32;
@@ -731,6 +743,39 @@ pub(crate) fn draw_tiles(
                     let _glow = crate::drawdata_cases_a::apply_cases_a(
                         &mut dd, world, tile, tx, ty, cell_bytes, 255, 0.0,
                     );
+                    // W4-d58: `CacheSpecialDraws_Part2`'s BasicChest block
+                    // (`TileDrawing.cs:4289-4330`), which `DrawSingleTile`
+                    // runs AFTER `GetTileDrawData` + both switches (`:993`)
+                    // and BEFORE the source rectangle (`:1007`). The lid
+                    // frame comes from the store through the per-draw
+                    // `_chestPositions` cache; `tr_render::chest_frame_adjust`
+                    // owns the +0/38/76 row maths + the bottom-row 18 px
+                    // clamp. The golden-style glow rect (`:4326-4329`) is
+                    // recorded but unbound (the glow pass is TILE-DRAW-2).
+                    // Read-only — no sim RNG on the draw side.
+                    if tr_core::drawdata_furniture::is_basic_chest(tile.kind) {
+                        let lid = crate::chest::chest_draw_frame(
+                            chests,
+                            &mut chest_positions,
+                            tx,
+                            ty,
+                            tile.frame_x,
+                            tile.frame_y,
+                        );
+                        let adj = tr_render::chest_frame_adjust(
+                            tile.kind,
+                            tile.frame_x,
+                            tile.frame_y,
+                            dd.width as i16,
+                            dd.height as i16,
+                            lid,
+                        );
+                        dd.add_fr_x = adj.add_fr_x;
+                        dd.add_fr_y = adj.add_fr_y;
+                        if let Some(h) = adj.height_override {
+                            dd.height = h as u16;
+                        }
+                    }
                     dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
@@ -1871,6 +1916,48 @@ mod tests {
         assert_eq!(dd_block.matches("anim_row,").count(), 3);
         assert!(dd_block.contains("anim_counter,"));
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
+    }
+
+    /// W4-d58 draw-feed witness: the chest rewrite sits at the C#
+    /// `CacheSpecialDraws_Part2` position — AFTER the whole `GetTileDrawData`
+    /// dispatch (static table + world corrections + slice B + slice A) and
+    /// BEFORE the source-rect resolution (`DrawSingleTile`,
+    /// `TileDrawing.cs:993` vs `:1007`), gated on `BasicChest` and keyed on
+    /// the per-draw `_chestPositions` cache. The lid frame comes from the
+    /// store (`Main.chest[i].frame`, `:4311`) — read-only, no RNG draw.
+    #[test]
+    fn w4_d58_the_chest_rewrite_runs_after_the_dispatch_before_the_rect() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let dd_block = &body[body.find("let dd = if active").unwrap()
+            ..body.find("// Resolve the drawn tile frame once").unwrap()];
+        let cases_a = dd_block.find("apply_cases_a").expect("slice A dispatch");
+        let chest = dd_block
+            .find("is_basic_chest(tile.kind)")
+            .expect("the chest rewrite gate");
+        assert!(
+            cases_a < chest,
+            "the chest rewrite runs after GetTileDrawData (TileDrawing.cs:993)"
+        );
+        assert!(
+            dd_block[chest..].contains("tr_render::chest_frame_adjust"),
+            "the +0/38/76 selection lives in tr-render"
+        );
+        assert!(
+            dd_block[chest..].contains("crate::chest::chest_draw_frame"),
+            "the lid frame rides the _chestPositions cache (:4300-4303)"
+        );
+        // Exactly one rewrite site, and the per-draw cache is fresh per call
+        // (ClearLegacyCachedDraws, :6613-6615). Count the CALL (`let adj =`),
+        // not the name — the citation comment above the gate mentions it too.
+        assert_eq!(body.matches("let adj = tr_render::chest_frame_adjust").count(), 1);
+        assert!(body.contains("let mut chest_positions"));
+        // The rewrite writes addFr + the height clamp, nothing else.
+        let rewrite = &dd_block[chest..];
+        assert!(rewrite.contains("dd.add_fr_x = adj.add_fr_x;"));
+        assert!(rewrite.contains("dd.add_fr_y = adj.add_fr_y;"));
+        assert!(rewrite.contains("dd.height = h as u16;"));
     }
 
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain

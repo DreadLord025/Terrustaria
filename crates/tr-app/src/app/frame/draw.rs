@@ -1010,6 +1010,39 @@ impl App {
                                 0
                             }
                         },
+                        // W4-d58: the chest lid frames feed the chest
+                        // rewrite's source rects inside the cached range
+                        // (`CacheSpecialDraws_Part2`,
+                        // `TileDrawing.cs:4309-4320`). Gated on a
+                        // BasicChest tile (21/467) being active in the
+                        // view rect (the tile_anim convention): a
+                        // chest-free view keeps the pre-wiring cache
+                        // behaviour bit-for-bit. The hash covers every
+                        // live chest's anchor + frame — the lid animator
+                        // ticks on the world step, so an opening chest
+                        // rebuilds the range with the camera still.
+                        chest_frames: {
+                            let vh = screen * 0.5 / *zoom;
+                            let vx0 = ((camera.x - vh.x) / TILE_PX).floor() as i32 - 1;
+                            let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
+                            let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
+                            let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
+                            let any_chest = (vy0..=vy1).any(|ty| {
+                                (vx0..=vx1).any(|tx| {
+                                    world.tile(tx, ty).is_some_and(|t| {
+                                        t.active()
+                                            && tr_core::drawdata_furniture::is_basic_chest(
+                                                t.kind,
+                                            )
+                                    })
+                                })
+                            });
+                            if any_chest {
+                                crate::chest::chest_frame_key(&self.world_chests)
+                            } else {
+                                0
+                            }
+                        },
                         net_key: {
                             // FNV-1a over the peers' smoothed state and the NPC
                             // smoothing accumulators (`npc_key` covers the base
@@ -1186,6 +1219,9 @@ impl App {
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,
+                            // W4-d58: `Main.chest[]` — the chest rewrite's
+                            // lid-frame input (`TileDrawing.cs:4311`).
+                            &self.world_chests,
                         );
                         *world_key = Some(key);
                     }
