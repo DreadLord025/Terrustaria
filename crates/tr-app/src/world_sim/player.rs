@@ -189,13 +189,15 @@ pub(crate) fn grant_ammo_mastery(
 /// `:15295-15298`) runs on the selected slot.
 ///
 /// Scope: the Mechanical Lens (3619) and Wire Kite (3611) grant
-/// `InfoAccMechShowWires` (`:12801-12804`); the Actuation Accessory (3624)
-/// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
-/// halves (`:12805-12812`) and the auto-paint family are out of this wiring
-/// wave. The `autoActuator` placement consumer
-/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
-/// follow-up — the flag is granted and read by the visibility gate, but the
-/// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
+/// `InfoAccMechShowWires` (`:12801-12804`); the Paint Sprayer (2216) /
+/// Architect Gizmo Pack (3061) / Hand Of Creation (5126) grant `autoPaint`
+/// (`:12813-12816`); the Actuation Accessory (3624) grants `autoActuator`
+/// (`:12817-12820`). The Wire Kite's ruler-line/grid halves (`:12805-12812`)
+/// stay out of this wiring wave. The placement consumer
+/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594-40669`) is
+/// PORTED — both halves (`world_sim/editing/auto_actuator.rs` +
+/// `auto_paint.rs`, wired at the `place_tile` tail); the block-swap
+/// consumer (`:39892/:39909`) is ported in `block_swap.rs`.
 pub(crate) fn grant_mechanical_accs(
     p: &mut Player,
     inventory: &[ItemSlot],
@@ -226,6 +228,13 @@ fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     // `:12801-12804` — the Mechanical Lens / Wire Kite show the wires.
     if kind == 3619 || kind == 3611 {
         p.info_acc_mech_show_wires = true;
+    }
+    // `:12813-12816` — the Paint Sprayer / Architect Gizmo Pack / Hand Of
+    // Creation auto-paint. The held-item arms (`:15271-15274`/:15279-15285/
+    // :15286-15294) grant the same flag for the same three kinds — the
+    // caller's held-kind pass covers them (the 3624 precedent).
+    if kind == 2216 || kind == 3061 || kind == 5126 {
+        p.auto_paint = true;
     }
     // `:12817-12820` — the Actuation Accessory auto-places actuators.
     if kind == 3624 {

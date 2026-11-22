@@ -411,10 +411,15 @@ pub(crate) fn draw_tiles(
     // S1-F-9 slice B: the `GetTileDrawData` engine-driven case arm's extra
     // inputs — `PressurePlateHelper.PressurePlatesPressed` (case 428),
     // `BirthdayParty.PartyIsUp` (case 455) and
-    // `TileDrawing._shouldShowInvisibleBlocks` (case 541).
+    // `TileDrawing._shouldShowInvisibleBlocks` (case 541). W4-g80:
+    // `rain_cloud_alpha` (`Main.cloudAlpha`) feeds the 83 herb-maturity sheet
+    // swap's waterleaf gate (`WorldGen.IsAlchemyPlantHarvestable`,
+    // `TileDrawing.cs:1450-1455`); the probe's day/night/moon inputs read
+    // `world.*` internally.
     wiring: &tr_core::wiring::Wiring,
     party_is_up: bool,
     show_invisible_blocks: bool,
+    rain_cloud_alpha: f32,
     // S1-G-1f: the wired tile animator (`Main.tileFrame`/`tileFrameCounter`,
     // `Main.cs:1596-1597`) — `GetTileDrawData`'s `Main.tileFrame[typeCache]`
     // row (`TileDrawing.cs:4533`), slice B's per-type counter and the
@@ -847,6 +852,17 @@ pub(crate) fn draw_tiles(
                     // The world-probing frame corrections C# applies in
                     // `GetTileDrawData` (palm biome row 323, dye plants 227)
                     // and `DrawSingleTile` (cactus 80, cog 272).
+                    // The 83 herb-maturity probe reads `world.day_time`/
+                    // `world.time`/`world.blood_moon`/`world.moon_phase`
+                    // internally (`IsAlchemyPlantHarvestable`); the WeatherCtx
+                    // carries the live rain/clouds. `Main.remixWorld` has no
+                    // port state (the M5-SEED-2 arm, same as the smart-cursor
+                    // harvest arm, `world_sim/smart_cursor.rs`).
+                    let herb_wx = tr_core::growth::WeatherCtx {
+                        raining: params.raining,
+                        cloud_alpha: rain_cloud_alpha,
+                        remix_world: false,
+                    };
                     dd.apply_world_corrections(
                         world,
                         tile.kind,
@@ -855,6 +871,7 @@ pub(crate) fn draw_tiles(
                         tile.frame_x,
                         tile.frame_y,
                         anim_row,
+                        &herb_wx,
                     );
                     // S1-F-9 slice B: the engine-driven special-tile cases
                     // (wind, the player, the party, pressed plates, echo
@@ -994,7 +1011,10 @@ pub(crate) fn draw_tiles(
                         atlas,
                         is_tree,
                         trunk_offset,
-                        tile.kind,
+                        // `case 83`'s `GetTileDrawTexture` re-pick
+                        // (TileDrawing.cs:1149-1151 → :1450-1455): the
+                        // harvestable herb draws the mature sheet 84.
+                        dd.sheet_kind_override.unwrap_or(tile.kind),
                         tile.frame_x,
                         tile.frame_y,
                         &dd,
@@ -1017,10 +1037,20 @@ pub(crate) fn draw_tiles(
                 // `DrawSingleTile_Flames` draws their self-lit overlay over the
                 // black sprite (`TileDrawing.cs:985-1016` sets `flag` for
                 // `Main.tileFlame`/glow types regardless of light), so their cells
-                // must keep their own quad.
+                // must keep their own quad. W4-g80: 692 (RainbowMossBlock)
+                // carries GlowMask 341 (`Main.cs:10043`), so the C# `flag`
+                // (`TileDrawing.cs:971`) lifts it out of the dark merge even
+                // before the glow bind lands (TILE-DRAW-2 / W4-f15) — its
+                // positional-switch disco `finalColor` (`:1078-1088`) draws
+                // over the black. 160 (RainbowBrick) has NO mask/flame row:
+                // the C# `!flag` return (`:1014-1017`) precedes the switch,
+                // so a dark 160 cell draws black in the C# too — the port's
+                // merge is faithful there.
+                let glow_mask_tile = active && tile.kind == 692;
                 let flame_tile = active
                     && (tr_core::flame::tile_flame(tile.kind)
-                        || tr_core::flame::has_glow_branch(tile.kind));
+                        || tr_core::flame::has_glow_branch(tile.kind)
+                        || glow_mask_tile);
                 if light_is_zero(l)
                     && !flame_tile
                     && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
@@ -1050,6 +1080,19 @@ pub(crate) fn draw_tiles(
                     tx as f32 * TILE_PX + dd.draw_dx as f32,
                     ty as f32 * TILE_PX + dd.draw_dy as f32,
                 ];
+                // W4-g80: `case 160/692` (`TileDrawing.cs:1078-1088`) —
+                // `finalColor = new Color(Main.DiscoR, Main.DiscoG,
+                // Main.DiscoB, 255)`, then `inActive → Tile.actColor`
+                // (`Tile.cs:272-280`, the double 0.4 truncation). The
+                // override REPLACES `GetFinalLight`'s light colour, so the
+                // arms that draw `finalColor` (flat/sized/slope/half) take
+                // these bytes; the sliced arm draws its own per-slice
+                // `tileLight` (`:3578-3601`) and never reads `finalColor`.
+                let disco_final: Option<[f32; 4]> = if dd.disco_override {
+                    Some(disco_final_color(params.disco, inactive))
+                } else {
+                    None
+                };
                 // Walls are drawn in their own pass above (`Main.DrawWalls`).
                 // `DrawTile_LiquidBehindTile` (solid layer): a slope that stands in
                 // liquid draws the water mask behind its open half, so the shoreline
@@ -1152,6 +1195,7 @@ pub(crate) fn draw_tiles(
                         anim_time,
                         tile.paint(),
                         &dd,
+                        None,
                     );
                     stats.quads += 1;
                 } else if tile.kind == 27 {
@@ -1257,20 +1301,29 @@ pub(crate) fn draw_tiles(
                         anim_time,
                         tile.paint(),
                         &dd,
+                        disco_final,
                     );
                     stats.quads += 1;
                 } else if tile.slope() != 0 {
-                    stats.quads +=
-                        push_slope(r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope());
+                    stats.quads += push_slope(
+                        r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope(), disco_final,
+                    );
                 } else if tile.half_brick() {
                     // The C#'s half-brick arm rebuilds its own rect from
                     // `tileFrameX/Y + addFrX/addFrY` (`TileDrawing.cs:1298`) —
                     // case 80's biome shift lands on `normalTileRect` only, so
                     // the half-brick draw never carries `src_y_shift`.
-                    push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
+                    push_half(r, pos, tf.uv, l, style, tx, ty, anim_time, disco_final);
                     stats.quads += 1;
                 } else if style.sliced_blocks
                     && solid
+                    // W4-g80: `flag = !TileID.Sets.DontDrawTileSliced`
+                    // (`TileDrawing.cs:1509`, the `:1630` sliced gate) —
+                    // the set (TileID.cs:482) includes 160, so the
+                    // RainbowBrick's disco `finalColor` always reaches the
+                    // flat draw; the set's other kinds take the flat path
+                    // exactly like the C#.
+                    && !td::SET_DONT_DRAW_TILE_SLICED.has(tile.kind)
                     && raw_l[0].max(raw_l[1]).max(raw_l[2]) > MEDIUM_LIGHT
                 {
                     stats.quads += push_sliced(
@@ -1315,6 +1368,7 @@ pub(crate) fn draw_tiles(
                         anim_time,
                         tile.paint(),
                         &dd,
+                        disco_final,
                     );
                     stats.quads += 1;
                     // `TileDrawing.cs:6849-6855` + `EmitLivingTreeLeaf`
@@ -1826,6 +1880,26 @@ fn flat_src_uv(
         .uv
 }
 
+/// W4-g80: the `case 160/692` final colour (`TileDrawing.cs:1078-1088`):
+/// `Color color = new Color(Main.DiscoR, Main.DiscoG, Main.DiscoB, 255)`
+/// (the 3-byte ctor sets alpha 255), then `if (tileCache.inActive()) color =
+/// tileCache.actColor(color)` — the `Color` overload's double 0.4 truncating
+/// multiply (`Tile.cs:272-280`), alpha preserved. Returned as the instance
+/// tint (the WGSL multiplies the sRGB bytes in gamma space, S1-G-4).
+fn disco_final_color(disco: [u8; 3], inactive: bool) -> [f32; 4] {
+    let mut c = [disco[0], disco[1], disco[2], 255u8];
+    if inactive {
+        c = tr_core::drawdata::act_color_bytes(c);
+    }
+    [
+        c[0] as f32 / 255.0,
+        c[1] as f32 / 255.0,
+        c[2] as f32 / 255.0,
+        c[3] as f32 / 255.0,
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
 fn push_lit(
     r: &mut SpriteRenderer,
     pos: [f32; 2],
@@ -1838,9 +1912,17 @@ fn push_lit(
     time: f32,
     paint: u8,
     dd: &tr_core::drawdata::TileDrawData,
+    final_override: Option<[f32; 4]>,
 ) {
     // `finalColor = tileLight * 0.5f` for the cobwebs (`TileDrawing.cs:1078`)
-    // and the shard alpha (`:1091`) ride the shaded light.
+    // and the shard alpha (`:1091`) ride the shaded light. W4-g80: the
+    // 160/692 disco arm's `finalColor` override (`:1078-1088`) replaces the
+    // whole colour — the C# draws `drawData.finalColor` verbatim, no light
+    // scale or shard alpha rides on it (those arms are other types').
+    if let Some(c) = final_override {
+        r.push_sprite_paint(pos, size, uv, c, 0.0, paint);
+        return;
+    }
     let c = style.shade(light, tx, ty, time);
     let k = dd.light_scale;
     r.push_sprite_paint(
@@ -1882,6 +1964,8 @@ pub(crate) fn sub_uv_frac(
 
 /// `DrawBasicTile` slope path: eight 2 px columns plus a 2 px strip, sampling the
 /// tile's own 16x16 frame. Slopes 1/2 are ground slopes, 3/4 ceiling slopes.
+/// Every quad draws `drawData.finalColor` (`TileDrawing.cs:1580-1583`), so the
+/// W4-g80 disco override replaces the shaded light on all of them.
 #[allow(clippy::too_many_arguments)]
 fn push_slope(
     r: &mut SpriteRenderer,
@@ -1893,9 +1977,15 @@ fn push_slope(
     ty: i32,
     time: f32,
     slope: u8,
+    final_override: Option<[f32; 4]>,
 ) -> u32 {
-    let c = style.shade(light, tx, ty, time);
-    let color = [c[0], c[1], c[2], 1.0];
+    let color = match final_override {
+        Some(c) => c,
+        None => {
+            let c = style.shade(light, tx, ty, time);
+            [c[0], c[1], c[2], 1.0]
+        }
+    };
     let mut quads = 0;
     for i in 0..8u8 {
         let f = i as f32 * 2.0;
@@ -1927,6 +2017,9 @@ fn push_slope(
 }
 
 /// Half bricks keep the top half of the art and sit on the bottom 8 px of the cell.
+/// The draw colour is `drawData.finalColor` (`TileDrawing.cs:1643-1644`), so the
+/// W4-g80 disco override rides here too.
+#[allow(clippy::too_many_arguments)]
 fn push_half(
     r: &mut SpriteRenderer,
     pos: [f32; 2],
@@ -1936,13 +2029,20 @@ fn push_half(
     tx: i32,
     ty: i32,
     time: f32,
+    final_override: Option<[f32; 4]>,
 ) {
-    let c = style.shade(light, tx, ty, time);
+    let color = match final_override {
+        Some(c) => c,
+        None => {
+            let c = style.shade(light, tx, ty, time);
+            [c[0], c[1], c[2], 1.0]
+        }
+    };
     r.push_sprite(
         [pos[0], pos[1] + 8.0],
         [16.0, 8.0],
         sub_uv(uv, 0.0, 0.0, 16.0, 8.0),
-        [c[0], c[1], c[2], 1.0],
+        color,
     );
 }
 
@@ -2578,7 +2678,7 @@ mod tests {
             }
             let mut dd = tr_core::drawdata::TileDrawData::default();
             let tile = *w.tile(20, 19).unwrap();
-            dd.apply_world_corrections(&w, 80, 20, 19, 0, 0, 0);
+            dd.apply_world_corrections(&w, 80, 20, 19, 0, 0, 0, &Default::default());
             let uv = flat_src_uv(&dd, &tile, tf, Some(&atlas), &lookups);
             (dd.src_y_shift, uv[1])
         };
@@ -2651,6 +2751,82 @@ mod tests {
             },
         );
         assert!(bottom.is_some(), "sunflower bottom row resolves");
+    }
+
+    /// W4-g80 DOC-SWEEP: the 83 herb-maturity sheet swap reaches the pixels.
+    /// `DrawSingleTile` case 83 (`TileDrawing.cs:1149-1151`) re-picks the draw
+    /// texture through `GetTileDrawTexture` (`:1450-1455`): a harvestable
+    /// herb samples `Tiles_84` at the SAME frame, an unharvestable one keeps
+    /// `Tiles_83`. The renderer consumes `dd.sheet_kind_override` at the
+    /// `resolve_tile_frame` call.
+    #[test]
+    fn w4_g80_the_harvestable_herb_draws_the_mature_sheet() {
+        let atlas = sheet_atlas(&["Tiles_83", "Tiles_84"], 126, 148);
+        let mut lookups = assets::Lookups::build(
+            &atlas,
+            [
+                (83_u16, "Tiles_83".to_string()),
+                (84, "Tiles_84".to_string()),
+            ]
+            .into_iter(),
+            std::iter::empty(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = true; // daybloom (style 0) harvests by day
+        let dry = tr_core::growth::WeatherCtx::default();
+        let mut dd = tr_core::drawdata::draw_data(83, 10, 20, 0, 0, 0, false);
+        dd.apply_world_corrections(&w, 83, 10, 20, 0, 0, 0, &dry);
+        assert_eq!(dd.sheet_kind_override, Some(84));
+        let mature = resolve_tile_frame(
+            &mut lookups,
+            Some(&atlas),
+            false,
+            0,
+            dd.sheet_kind_override.unwrap_or(83),
+            0,
+            0,
+            &dd,
+        )
+        .expect("the mature herb frame resolves");
+        let own = lookups.frame_tex(&atlas, 83, 0, 0).expect("Tiles_83 (0,0)");
+        let sheet84 = lookups.frame_tex(&atlas, 84, 0, 0).expect("Tiles_84 (0,0)");
+        assert_eq!(mature.uv, sheet84.uv, "the swap samples Tiles_84");
+        assert_ne!(mature.uv, own.uv, "not the herb's own sheet");
+        // Night: no swap — the same call shape keeps Tiles_83.
+        w.day_time = false;
+        let mut dd = tr_core::drawdata::draw_data(83, 10, 20, 0, 0, 0, false);
+        dd.apply_world_corrections(&w, 83, 10, 20, 0, 0, 0, &dry);
+        assert_eq!(dd.sheet_kind_override, None);
+        let green = resolve_tile_frame(
+            &mut lookups,
+            Some(&atlas),
+            false,
+            0,
+            dd.sheet_kind_override.unwrap_or(83),
+            0,
+            0,
+            &dd,
+        )
+        .expect("the green herb frame resolves");
+        assert_eq!(green.uv, own.uv, "the unharvestable herb keeps its sheet");
+        // The dispatch witness: the production resolve call consumes the
+        // override (a dropped unwrap_or would silently keep Tiles_83).
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert!(
+            body.contains("dd.sheet_kind_override.unwrap_or(tile.kind)"),
+            "the resolve call must consume the case-83 sheet override"
+        );
+        assert!(
+            body.contains("&herb_wx,"),
+            "apply_world_corrections must receive the live weather"
+        );
     }
 
     // fix/vines-destroy-walls: the wall pass draws BEHIND vine cells. C#
@@ -2832,5 +3008,81 @@ mod tests {
             3,
             "all three exits (halves, extras, tail) park the stream"
         );
+    }
+
+    // ---- W4-g80: the actuated draw lane — disco finalColor + ghost ----
+
+    /// W4-g80 witness — the 160/692 final colour (`TileDrawing.cs:1078-1088`):
+    /// the disco bytes with alpha 255 (the 3-byte `Color` ctor), actuated →
+    /// `Tile.actColor` double 0.4 truncation (255 → 102, alpha stays 255 —
+    /// the `Color` overload preserves A, unlike the wire plate's
+    /// `Color * float` which scales alpha too).
+    #[test]
+    fn w4_g80_the_disco_final_colour_ghosts_through_act_color() {
+        // Active: the raw disco cycle, alpha 255.
+        let c = disco_final_color([255, 128, 0], false);
+        assert_eq!(c, [1.0, 128.0 / 255.0, 0.0, 1.0]);
+        // Actuated: 0.4*255=102, 0.4*128=51.2→51, 0.4*0=0 — alpha 255 kept.
+        let g = disco_final_color([255, 128, 0], true);
+        assert_eq!(g, [102.0 / 255.0, 51.0 / 255.0, 0.0, 1.0]);
+        // The vanilla boot state (DiscoR 255, G/B 0, `Main.Initialize`).
+        let boot = disco_final_color([255, 0, 0], true);
+        assert_eq!(boot, [102.0 / 255.0, 0.0, 0.0, 1.0]);
+    }
+
+    /// W4-g80 witness — the override replaces the WHOLE final colour: the
+    /// caller's `tileLight` ghost (`tiles.rs`'s `l = raw * 0.4`) must not
+    /// ride on top (that would square the factor to 0.16 on the disco
+    /// bytes). `push_lit`'s override branch draws the resolved bytes and
+    /// skips the light shade / `light_scale` / `src_alpha` entirely —
+    /// pinned by source order: the `final_override` early-return precedes
+    /// the `style.shade` call.
+    #[test]
+    fn w4_g80_push_lit_draws_the_override_before_the_light_shade() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("fn push_lit(").unwrap()..];
+        // Cut at the next item's doc comment (CRLF-safe).
+        let body = &body[..body.find("/// Sub-rectangle").unwrap()];
+        let ov = body.find("if let Some(c) = final_override").unwrap();
+        let shade = body.find("style.shade").unwrap();
+        assert!(ov < shade, "the override branch must precede the shade");
+        // The disco resolution feeds `Tile.actColor`'s byte overload, never
+        // the ghosted `l`.
+        let walk = &src[src.find("let disco_final: Option<[f32; 4]>").unwrap()..];
+        let walk = &walk[..walk.find("};").unwrap()];
+        assert!(walk.contains("disco_final_color(params.disco, inactive)"));
+        assert!(!walk.contains("* 0.4"), "no double ghost on the override");
+    }
+
+    /// W4-g80 witness — the sliced-block gate carries
+    /// `TileID.Sets.DontDrawTileSliced` (`TileDrawing.cs:1509`, the set at
+    /// `TileID.cs:482` includes 160): the RainbowBrick never takes the
+    /// per-slice `tileLight` path, so its disco `finalColor` always reaches
+    /// the flat draw. 692 is NOT in the set, but the sliced arm draws
+    /// per-slice light colours (`:3578-3601`) and never reads `finalColor`
+    /// — the C# behaves identically, the override simply does not apply
+    /// there.
+    #[test]
+    fn w4_g80_rainbow_brick_is_dont_draw_tile_sliced() {
+        assert!(td::SET_DONT_DRAW_TILE_SLICED.has(160), "TileID.cs:482");
+        assert!(!td::SET_DONT_DRAW_TILE_SLICED.has(692));
+        // The walk gate reads the set (source-order pin).
+        let src = include_str!("tiles.rs");
+        assert!(src.contains("!td::SET_DONT_DRAW_TILE_SLICED.has(tile.kind)"));
+    }
+
+    /// W4-g80 witness — the dark-cell merge exempts 692: its GlowMask 341
+    /// (`Main.cs:10043`) sets the C# draw `flag` (`TileDrawing.cs:971`)
+    /// regardless of light, so the cell keeps its own quad (the disco
+    /// sprite draws over the black). 160 has no mask/flame row — the C#
+    /// `!flag` return (`:1014-1017`) precedes the positional switch, so a
+    /// dark 160 cell draws black in the C# too; the merge stays faithful.
+    #[test]
+    fn w4_g80_the_glow_mask_kind_escapes_the_dark_merge() {
+        let src = include_str!("tiles.rs");
+        let gate = &src[src.find("let glow_mask_tile").unwrap()..];
+        let gate = &gate[..gate.find("if light_is_zero").unwrap()];
+        assert!(gate.contains("tile.kind == 692"));
+        assert!(gate.contains("|| glow_mask_tile"));
     }
 }

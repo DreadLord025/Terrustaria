@@ -22160,7 +22160,9 @@ Deferred (recorded follow-ups, NOT ported):
 2. The `autoActuator` placement consumer
    (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `Player.cs:40594`) — the
    flag is granted and read by the visibility gate, but the auto-place-on-build
-   pass is out of this wave.
+   pass is out of this wave. (PORTED 2026-11-21, W4-g80 — the actuator half,
+   `world_sim/editing/auto_actuator.rs`; ANALYSIS "The autoActuator build
+   pass". The autoPaint half stays deferred.)
 3. The wire-removal dust (five dust-50 particles, `WorldGen.cs:58133-58135`,
    and the actuator twin `:58032-58035`) and the net messages — the port has
    no dust engine on this path and the local wire state is the truth.
@@ -44996,7 +44998,7 @@ getGood twin arms are ported behind `ScalingEnv.get_good_world`
 `MOON_POINT_SCALAR` 1.0 constants-off (`tr_core::world.rs:882-885`) and
 the `HalloweenWeapons` caps (`loot.rs:149-151`) stay caller-supplied.
 11 witnesses (`w4_e25_scaling_tests`) WRITTEN NOT RUN — no compiler
-invoked.
+invoked.** 8 witnesses WRITTEN, NOT RUN: `drawdata.rs` ×2 (the actColor
 
 ## The proximity-buff census (W4-e28, 2026-11-20, code-only)
 The six station/aura proximity buffs censused against the C# Player
@@ -47874,3 +47876,210 @@ f10 +1 receipt, g62 +3). The merger's remaining work: the 8-step
 200×200 renames `air_tall()`, 64 call sites), the `last_hit_dir`
 ONE-declaration (BOTH fuse resets keep), one compile window for the
 418, and the wiring wave executing the 221 strips.
+
+## The actuator draw census and fixes (W4-g80, 2026-11-21)
+The actuated-tile DRAW lane: the grey-out/inactive ghost draw + the
+actuator icon overlay, censused against `TileDrawing.cs` / `Tile.cs` /
+`Main.DrawWires`. In-flight probe first: the wiring ARMS (c42/e20/e21,
+`HitWireSingle`/`SquareTileFrame` wakes) are separate lanes and untouched;
+the actuator ICON overlay (`Main.cs:58643-58658`, the `TextureAssets.
+Actuator` plate inside `DrawWires`) is owned by the pushed W4-g81 lane
+(6f046998 + 0017d32a — byte tints, the raw `Lighting.Brightness` mean gate,
+the outside-guard scope, the tile-423 rect); this lane does NOT duplicate
+it. The d56 `final_light` chain (5d80b38a, `tr-render::animated_tiles`,
+UNWIRED) was read: the actuated-fullbright-ghosts-102 order
+(`GetFinalLight` `:4376-4387` — fullbright repaints white, then the ghost
+still runs) is pinned there and stays that lane's to wire.
+**PORTED, verified (no change):** the flat/sized ghost grey-out —
+`tiles.rs`'s per-cell `l = raw_l * 0.4` on `FLAG_INACTIVE`
+(`Tile.actColor`'s Vector3 overload, `Tile.cs:282-288`) feeding every
+`finalColor` arm, and the per-slice ghost in `sliced_light`
+(`TileDrawing.cs:3578-3581`, S1-G-9's single-×0.4 keep-one). The
+`GetFinalLight` byte chain (`:4358-4389`) + `ShouldTileShine`/`Main.shine`
+are d56's UNWIRED port; the actuation arm's ORDER (ghost beats shine, the
+`else if` at `:4384`) is recorded there.
+**MISSING 1 — the disco arm's actuation ghost (`TileDrawing.cs:1078-1088`).**
+`case 160`/`case 692` (RainbowBrick/RainbowMossBlock): `finalColor = new
+Color(Main.DiscoR, Main.DiscoG, Main.DiscoB, 255)`, then `if (tileCache.
+inActive()) color = tileCache.actColor(color)` — the **Color** overload
+(`Tile.cs:272-280`), a DOUBLE 0.4 multiply truncated per channel
+(`(byte)(0.4 * (double)R)`), alpha PRESERVED (255 stays 255 — unlike the
+wire plate's `Color * float` which scales alpha). The port had the arm
+parked (`drawdata.rs`'s "disco arms stay parked" comment) — an actuated
+rainbow brick drew the ghosted LIGHT instead of the ghosted disco colour,
+and an active one drew light-tinted instead of the raw cycle. Ported:
+`TileDrawData.disco_override` (the positional-switch arm in
+`apply_world_corrections`), `drawdata::act_color_bytes` (the Color
+overload verbatim), `render/tiles.rs::disco_final_color` (the resolved
+instance tint) threaded through `push_lit`/`push_slope`/`push_half` — the
+arms that draw `drawData.finalColor`. The override REPLACES
+`GetFinalLight`'s colour wholesale: the caller's `tileLight` ghost must
+NOT ride on top (that would square the factor to 0.16), so the override
+branch precedes the shade and skips `light_scale`/`src_alpha` (other
+types' arms). The sliced arm never reads `finalColor` (per-slice
+`tileLight`, `:3578-3601`) — the C# behaves identically; 160 is in
+`DontDrawTileSliced` (`TileID.cs:482`) anyway, and the walk's sliced gate
+now reads `SET_DONT_DRAW_TILE_SLICED` (the set was generated but unread;
+the gate is the sliced twin of d59's `SET_DONT_DRAW_TILE_SLOPES` walk
+gate — it moves the set's other 17 kinds off the sliced path onto the
+flat draw exactly as the C# `flag` at `:1509` does; keep-one at merge if
+a sibling lands the same gate).
+**MISSING 2 — the behind-liquid actuated refusal (`TileDrawing.cs:3858`).**
+`DrawTile_LiquidBehindTile`'s gate carries `tileCache.inActive()`: an
+actuated block stands in liquid like air, the behind-mask never draws.
+The port's bail (`liquids.rs`) had `!active() || !tileSolid ||
+tileSolidTop` but NOT the inactive term — an actuated sloped block drew
+the water mask behind its ghost. Ported as `liquid_behind_refused` (the
+`:3858` terms the port carries, cited). The C#'s half-brick +
+`waterfallManager.CheckForWaterfall` clause stays a recorded deviation
+(no waterfall probe at this seam); `DebugOptions.hideWater` rides the
+caller's `env::no_liqbehind()`.
+**Dark-cell census (verified, one narrow fix):** the C# `!flag` return
+(`:1014-1017`) PRECEDES the positional switch, so a dark cell whose kind
+sets no `flag` arm draws black — the disco `finalColor` never runs there.
+692 carries GlowMask 341 (`Main.cs:10043`), so its `flag` (`:971`) is true
+even in the dark: the port's greedy dark-merge would have erased the
+disco sprite; the walk now exempts 692 (`glow_mask_tile`, the f15
+glow-record seam's static shadow until TILE-DRAW-2 wires the table). 160
+has NO mask/flame/IgnoreDrawLightConditions row (`TileID.cs:623` =
+{144, 300, 303, 306}) — a dark 160 cell draws black in the C# too, the
+merge is faithful, no exemption.
+**Kept deviations (recorded):** the per-mode `LightStyle::shade`
+transforms still ride the non-override arms (the d56/g81 byte-chain
+reconciliation is those lanes'); the `Main.tileGlowMask` table is
+unported (692's exemption is the one hard-coded row this lane needs); the
+sliced arm's `Main.shine` stays d56's; the minecart-track `colorTint`
+(`:3788`) stays out (the track draw is its own residual).
+**RNG:** the draw pass draws no random numbers — no stream touched. The
+disco colour is engine state (`App.disco`, `DoUpdate_AnimateDiscoRGB`),
+read-only here.
+**Verification: code-only mode — no cargo/rustc/rustfmt/tests/graphify
+double-truncation byte pins 255→102/100→40/1→0/3→1 + alpha preservation;
+the disco arm marks exactly 160/692 with the default shape, the cobweb
+51/697 half-light arm untouched, 11 neighbour kinds negative),
+`render/tiles.rs` ×4 (the disco final colour active/actuated/boot-state,
+the override-before-shade source-order pin + no double ghost, the
+DontDrawTileSliced membership 160∈/692∉ + the walk-gate pin, the 692
+dark-merge exemption pin), `render/liquids.rs` ×2 (the actuated refusal
+independent of the actuator bit; the gate's other :3858 terms — !active,
+solidTop 19, non-solid 4, BlocksWater 54 unsloped-only). Set memberships
+verified mechanically against the generated bitsets (TILE_SOLID/
+TILE_SOLID_TOP/SET_DONT_DRAW_TILE_SLICED word decode).
+## The actuation/inactive DOC-SWEEP + the 83 herb-maturity sheet (W4-g80 lane 21, 2026-11-21)
+The actuation BEHAVIOUR census (Collision/WorldGen/wiring/place-side), the
+visual-transition and inactive-wall verdicts, and the next parked
+positional-switch arm. Full evidence: `docs/research/100-doc-sweep-actuation.md`.
+**Census verdicts (no code change):** the actuated-tile behaviour is ported
+across the collision family (`tr-app/collision.rs` + the per-consumer
+`solid_tile` twins), the wiring toggle (`tr-core/wiring.rs::actuate`/
+`actuate_forced`/`de_active`/`re_active` with the `NotReallySolid` /
+{314,379,386-389,476} / `PreventsActuationUnder` sets verbatim), the
+actuator item's place/cut/rod arms (`world_sim/editing/wiring.rs`, S1-P-i34)
+and the .wld persistence (`wld/sections/tiles.rs`). The actuation visual is
+INSTANT in C# (no fade/timer anywhere — `Wiring.DeActive`/`ReActive` flip the
+bit and reframe; the draw reads it the same frame) and the port matches.
+Walls have NO actuation (`WallDrawing.cs` has zero `inActive`/`actColor`
+references; `Tile.inActive` is a block-only flag) — the port matches.
+**Gaps found, parked to their owning lanes (NOT fixed here):**
+- `housing.rs::solid_tiles_in_box` cites `Collision.cs:1862-1878` — a stale
+  citation (the real `Collision.SolidTiles` is `:3455-3488`) — and drops the
+  `!inActive()` term plus the `!tileSolidTop` term; the `ScoreRoom` home-spot
+  probes (`housing.rs:289/:299/:313`) drop `nactive()` too. An actuated floor
+  scores as a home spot in the port but not in C#. OWNED by the in-flight
+  W4-d118/d119 housing lanes — recorded, not touched.
+- The snowfall projectiles 411-414's second collision pass
+  (`Collision.AnyCollisionWithSpecificTiles(..., TileID.Sets.Falling,
+  evenActuated: true)`, `Projectile.cs:17601`) — the port's falling-tile
+  flight (`projectile.rs:19824-19829`) integrates gravity + position with no
+  tile collision at all (a wider AI_010 gap, not actuation-specific). The
+  `evenActuated` parameter has no port counterpart; its ONLY C# caller is
+  this snow arm. Recorded for the projectile lane.
+- The `autoActuator` placement consumer
+  (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `Player.cs:40594-40669`)
+  stays the recorded follow-up (`world_sim/player.rs:163-166`): the flag is
+  granted (3624) and read by the visibility gate, the auto-place-on-build
+  pass is not ported. It needs the `tileDataCaches` pre-placement snapshot.
+  (RESOLVED 2026-11-21, W4-g80 1284dc63 — the actuator half + the snapshot
+  ported as `world_sim/editing/auto_actuator.rs`, wired at the `place_tile`
+  tail; ANALYSIS "The autoActuator build pass". The housing gap's
+  `solid_tiles_in_box` half is FIXED on the pushed d118 tip; the ScoreRoom
+  `nactive` residue + the snow seed are cross-noted in
+  `docs/research/101-g80-task-seeds.md`.)
+**PORTED — the 83 herb-maturity sheet swap (the parked positional-switch
+arm, `TileDrawing.cs:1149-1151` → `GetTileDrawTexture` `:1450-1455`).**
+`DrawSingleTile` case 83 re-picks the draw texture through
+`GetTileDrawTexture(tile, x, y)`, whose case-83 arm swaps `key.TileType` to
+84 while `WorldGen.IsAlchemyPlantHarvestable(tile.frameX / 18, tileY)` holds
+— the mature (blooming) herb sprite, the FRAME untouched. The port had it
+parked ("the texture override (83) stays parked — it needs the per-tile
+sheet override"). Ported: `TileDrawData.sheet_kind_override: Option<u16>`
+(the re-pick), the case-83 arm in `apply_world_corrections` (now takes a
+`&WeatherCtx` — the live rain/clouds; the predicate's day/night/moon/time
+inputs read `world.*` internally), and the `resolve_tile_frame` call
+consumes `dd.sheet_kind_override.unwrap_or(kind)`. The predicate itself
+(`growth::is_alchemy_plant_harvestable`, `WorldGen.cs:66148-66175`) was
+already ported for the harvest arm — reused, not duplicated. The clouds
+ride `draw_tiles`' new `rain_cloud_alpha: f32` param (`Main.cloudAlpha`),
+fed from `rain.visual_alpha()`; the per-cell `herb_wx` WeatherCtx combines
+it with `params.raining`. `remixWorld` stays the M5-SEED-2 stand-in
+(`false`), matching the smart-cursor arm.
+**G6 key coverage (the swap's non-light inputs):** the harvest predicate
+reads `cloudAlpha > 0` (waterleaf), `blood_moon || moonPhase == 0` (deathweed)
+and `time > 40500` (fireblossom) — none of which the light key carries
+(`day_time`/`raining`/`time` already ride `light_params`). A new
+`WorldFrameKey.herb_weather: u32` carries the three-gate bitmask, gated on an
+herb 83 active in the view rect (the vine-grid key's convention) so herb-free
+worlds keep the pre-wiring cache behaviour bit-for-bit.
+**RNG:** the draw pass draws no random numbers; the harvest predicate is
+pure world/weather state — no stream touched.
+invoked.** 3 witnesses WRITTEN, NOT RUN: `drawdata.rs`
+`w4_g80_the_harvestable_herb_swaps_to_the_mature_sheet` (the five-style
+harvest matrix → sheet 84 / own sheet, the frame/metrics untouched, 82/84
+negative), `render/tiles.rs`
+`w4_g80_the_harvestable_herb_draws_the_mature_sheet` (the UV samples
+Tiles_84 at the same frame by day / Tiles_83 by night + the dispatch-source
+pin that the resolve call consumes the override and the corrections receive
+the weather), `app/mod.rs` `herb_weather_gates_change_the_frame_key` (each
+of the three gates flips the key; unchanged gates do not).
+## The autoActuator build pass (W4-g80, 2026-11-21, code-only mode)
+The recorded follow-up from the wiring-tools waves, now ported: the
+Actuation Accessory (3624) auto-places an actuator on every newly placed
+solid block. C#: `Player.PlaceThing_Tiles_GetAutoAccessoryCache`
+(`Player.cs:40460-40488`, the pre-placement 11×11 snapshot) + the actuator
+half of `PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate` (`:40594-40669`),
+called at the `PlaceThing_Tiles_PlaceIt` tail (`:40163`).
+Port: `crates/tr-app/src/world_sim/editing/auto_actuator.rs` —
+`auto_accessory_cache` (the snapshot: active cells (kind, frameX, frameY),
+inactive (-1,-1,-1), null keeps the (0,0,0) default) +
+`auto_actuate_after_place`, wired in `editing.rs::place_tile`: the cache
+is taken BEFORE `place_item_and_consume` (the C# `:40115` order), the
+pass runs after the placement's net 17/1 (`request_edit`). Kept verbatim:
+the `builderAccStatus[2]` toggle gate (hoisted to one check — nothing in
+the pass mutates it), the target-cell window shrink
+(`!tileFrameImportant || Platforms` → the single cell, `:40608-40612`),
+the flag2 frame-exact families (BasicChest/Fake/Dresser/Campfires/Torches),
+the flag3 platform-pair skip QUIRK (`:40628` — flag3 true / flag2 false
+fires neither disjunct, so an unchanged platform is re-acted every
+placement), the DeActive solid gate WITHOUT the above-cell/CanKillTile rule
+(`:40640-40652`), `FindItem(849)`'s first-slot scan (the 50-slot grid;
+the coin/ammo rows never hold actuators), `PlaceActuator` + burn-one +
+`SetDefaults(0)` on empty (`:40657-40665`). Sound 0 rides the shared
+`wire_placed_feedback` seam (now `pub(super)`).
+Deliberate deviations: the autoPaint half (`:40632-40635`,
+`builderAccStatus[3]`) is unported (no `auto_paint` flag — the auto-paint
+family stays out); the block-swap consumer (`:39892/:39909`,
+`PlaceThing_TryReplacingTiles`) stays parked with the BlockSwap mechanic
+(no `WorldGen.ReplaceTile` route); the net 17/8 (`:40660`) has no wire
+flavour in the port's edit kinds (the S1-P-i34 Actuator tool arm's
+convention — the local tile state is the truth).
+RNG: the pass draws no random numbers (`PlaceActuator`'s sound 0 is the
+fixed Dig cue on the wiring feedback seam).
+Verification: code-only mode — no cargo/rustc/rustfmt/tests/graphify
+invoked. 8 witnesses WRITTEN, NOT RUN (`auto_actuator.rs`: the placed
+block marks + burns one, the unchanged neighbour skips, the toggle off, the
+empty inventory, the last-actuator slot clear, the snapshot's
+inactive/-1 cell + write isolation, the platform-pair quirk + the set-bit
+second-pass refusal, the 314 exception kind). The round's censuses (the
+actuator-DRAW re-verification, actuators-in-walls, the snow evenActuated
+seed for the AI_010 lane, the housing nactive residue cross-note for
+d118/d119) live in `docs/research/101-g80-task-seeds.md`.

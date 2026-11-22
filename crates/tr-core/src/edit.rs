@@ -24,6 +24,13 @@ pub use hammer::{
     can_pound_tile, forbids_sloping, is_a_hammer_target, is_tile_poundable, pound_damage,
     pound_tile, slope_tile, try_finding_wall_to_hammer, try_pound_tile, PoundOutcome,
 };
+mod paint;
+pub use paint::{paint_coat_tile, paint_coat_wall, paint_tile, paint_wall};
+mod replace;
+pub use replace::{
+    is_tile_replaceable, move_replace_anchor, replace_tile_write, would_tile_replacement_work,
+    Replaced,
+};
 mod kill;
 pub use kill::{
     actuation_square_frame, can_kill_tile, kill_tile, kill_tile_sound, pot_break_sound,
