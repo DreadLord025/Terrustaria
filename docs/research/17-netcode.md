@@ -180,6 +180,77 @@ parked for I-4 — see the map's per-row notes).
 | 160-162 | ItemPosition / HostToken / DamageNPCAck | NOT-FOUND | `161` compares against `Netplay.HostToken` (`MessageBuffer.cs:4471-4476`) |
 | 201-205 | *(internal)* | `INT_EDIT/PICKUP/JOINED/LEFT/TIME` | `net.rs:90-94`, deliberately outside 1..162 so the gate rejects them pre-spawn |
 
+### The W4-f21 tail census (2026-11-21) — supersedes the NOT-FOUND rows above for the tail ids
+
+The f21 lane re-censused **MessageID 1-162** against `net.rs` (54 base ids)
+plus every pushed/in-flight codec lane (c27 18/36/41/43/51/55/62/84; d89
+11/15; d90 17/19/63/64/125/157/158/159; d91 23 re-verify + 24 dead; d92
+56/92/130/131/136/137/153/162; d93 27/28/29/95/109/110/128; d94
+66/99/100/101/106/108/115; d95 68/91; d96 4/5/12/13/14/16/35/36/40/41/43
+fixes; d97 102/117/118/120/134/150/157; d98 21/22/30-34/35/36/80/81; d99
+51/61/65/73/75/77/78/96/103/112/113/114/116/127/141/143; d100 none) and
+found **44 missing ids**. **132 PlayLegacySound is dead** — zero
+`PlayNetSound(` call-sites tree-wide (only the definition,
+`NetMessage.cs:2615-2619`) — and is skipped per the task. The f21 branch
+ports the other **43**, bodies + codecs verbatim, dispatcher arms parked
+for the g48-g52 apply-wiring lanes / S1-I-4:
+
+| id | C# name | Rust | Evidence (writer / reader) |
+| --- | --- | --- | --- |
+| 24 | UnusedMeleeStrike | `id::UNUSED_MELEE_STRIKE` (census-only) | dead: zero send sites, reader `Assert(false)` reads nothing (`NetMessage.cs:765-768` / `MessageBuffer.cs:1706-1708`); no variant invented |
+| 25/26/44/67/83/93 | the reader ignore group | `S2c::Unused25/Unused26/Unknown44/Unknown67/Unused83/SocialHandshake` | bare frames (`MessageBuffer.cs:4483-4490`); 93 alone is accept-gate-whitelisted (`:165`) |
+| 39 | ReleaseItemOwnership | `ReleaseItemOwnership` both ways | `:948-951` / `:2232-2255`; short slot + force bool |
+| 48 | LiquidUpdate | `LiquidUpdate` both ways | `:987-995` / `:2407-2446`; two shorts + liquid + liquidType bytes |
+| 52 | LockAndUnlock | `C2s::LockAndUnlock` | `:1014-1018` / `:2531-2564`; byte action + two shorts, player id NOT written |
+| 57 | Unknown57 | `S2c::WorldEvilBytes` | `:1054-1058` / `:2631-2638`; tGood/tEvil/tBlood three bytes |
+| 58 | InstrumentSound | both ways | `:1059-1062` / `:2639-2681`; byte player + raw float pitch |
+| 76 | QuestsCountSync | both ways | `:1149-1153` / `:3164-3182`; byte + two ints; the relay `:3178` is the only live send |
+| 79 | PlaceObject | both ways | `:1166-1174` / `:3192-3215`; the sbyte random + direction bool |
+| 85 | QuickStackChests | `C2s::QuickStackRequest` / `S2c::QuickStackBlockedChests` | `:1205-1215` / `:3261-3271`; the netMode-split writer kept as TWO variants (`QuickStacking.cs:299-341`) |
+| 86 | TileEntitySharing | `S2c::TileEntitySharing` | `:1216-1226` / `:3272-3293`; the full 11-kind `TileEntityData` table (`TileEntitiesManager.cs:26-39`), networkSend path |
+| 87 | TileEntityPlacement | `C2s::TileEntityPlacement` | `:1227-1231` / `:3294-3305` |
+| 88 | ItemTweaker | `S2c::ItemTweaker` | `:1232-1296` / `:3306-3376`; the two-BitsByte conditional stats |
+| 89/123/133/149 | the TryPlacing quadruplets | `C2s::ItemFrameTryPlacing/WeaponsRackTryPlacing/FoodPlatterTryPlacing/DeadCellsJarTryPlacing` | `:1297-1306`/`:1479-1488`/`:1545-1554`/`:1629-1638`; one shared `TryPlacingItem` body, byte-equality pinned |
+| 90 | SpawnInstancedItem | `S2c::SpawnInstancedItem` | shares case 21 (`:646-647` / `:1445-1446`); the client instanced tail `:1489-1493` |
+| 94 | DevCommands | both ways | `:1327-1332` / `:3463-3518`; plain string + int + two floats |
+| 104 | ShopOverride | `S2c::ShopOverride` | `:1387-1394` / `:3715-3735`; the writer-float/reader-short stack MISMATCH kept verbatim (zero send sites, dead vanilla bug) |
+| 105 | GemLockToggle | `C2s::GemLockToggle` | `:1395-1399` / `:3736-3741` |
+| 107 | SmartTextMessage | `S2c::SmartTextMessage` | `:769-775` / `:3752-3757`; r/g/b bytes + NetworkText + short width |
+| 111 | ToggleParty | `C2s::ToggleParty` | NO writer case; bare frame (`BirthdayParty.cs:154` / `:3809-3814`) |
+| 119 | CombatTextString | `S2c::CombatTextString` | `:1188-1196` / `:3235-3242`; the 81 twin's text half; zero live sends |
+| 121 | TEDisplayDollDataSync | both ways | `:1458-1474` / `:3920-3941`; the command-keyed WriteData/WriteDummySync (byte-width-identical fallbacks) |
+| 122 | RequestTileEntityInteraction | both ways | `:1475-1478` / `:3942-3977`; int id (-1 clear) + byte player |
+| 124 | TEHatRackItemSync | both ways | `:1489-1508` / `:3995-4022`; the dye +2 fold/unfold, wire slot kept verbatim |
+| 129 | FinishedConnectingToServer | `S2c::FinishedConnecting` | NO writer case; bare frame (`MessageBuffer.cs:937` / `:4075-4085`) |
+| 138 | ClientSyncedInventory | `C2s::ClientSyncedInventory` | NO writer AND NO reader case; bare frame, default-arm drop (`Main.cs:17700`) |
+| 139 | SetCountsAsHostForGameplay | `S2c::CountsAsHost` | `:1587-1590` / `:4230-4237`; the join push `:934` |
+| 144 | RequestQuestEffect | `C2s::RequestQuestEffect` | NO writer case; bare frame (`Main.cs:40287` / `:4304-4309`) |
+| 145/148 | the shimmer/enemy-lock deprecated pair | census constants only | neither arm, zero sites; superseded by 146 / the 21 bit-3 tail (d98) |
+| 146 | ShimmerActions | `S2c::ShimmerAction` | `:1611-1623` / `:4310-4327`; kind 0 Vector2 / kind 1 Vector2+int / unknown no tail |
+| 152 | ItemUseSound | both ways | `:1643-1645` / `:4386-4407`; byte player only |
+| 156 | TELeashedEntityAnchorPlaceItem | `C2s::LeashedAnchorPlaceItem` | `:1654-1658` / `:4439-4449`; three shorts |
+| 160 | ItemPosition | `S2c::ItemPosition` | `:1666-1672` / `:4463-4470`; short slot + Vector2, no velocity |
+| 161 | HostToken | `C2s::HostToken` | `:1673-1675` / `:4471-4476`; plain string, gate-whitelisted (`:165`) |
+
+Witnesses: `net.rs::tests::w4_f21_*` — one byte-pinned round trip per id
+(or per shape family), the 104 misalignment pin, the 90-vs-21 and
+TryPlacing-quadruplet byte-equality pins, and the 43-id census witness.
+WRITTEN NOT RUN (code-only lane). With the sibling lanes merged, the
+MessageID 1-162 census closes: every id has a constant, a codec, or a
+documented dead/ignore verdict; 132 stays the one deliberate dead skip.
+
+### The f21b apply audit (2026-11-21) — research/276
+
+The apply-arm coverage census across the g48/g49/g50/g51/g52 tips, the
+remaining-gap list (39/41/43/48/52/79/58-client/TE families/144/150) and the
+union keep-one notes live in `276-f21b-net-apply-audit.md` (renumbered
+239 → 276 per research/150 round-2 §6.3 — 239 belongs to d42's earlier push).
+The f21b round WIRED the small unclaimed arms: **57** client store + join push
+(`World.t_good/t_evil/t_blood`), **76** host force/store/relay + both own-echo
+gates, **58** host id-force/relay (`PlayerNet.angler_quests_finished/
+golfer_score`); `w4_f21b_*` witnesses WRITTEN NOT RUN. Nothing from the net
+lanes is in `origin/main` yet (checked at exec time, `a725acb04`).
+
 NetModules map 11/12: Liquid, Text, Ping, Ambience, Bestiary, CreativeUnlocks,
 CreativePowers, CreativeUnlocksReport, TeleportPylon, Particles,
 CreativePowerPermissions — `netmodules.rs::module_id` (34-45). **NetDebugModule has no

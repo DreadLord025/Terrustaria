@@ -696,6 +696,40 @@ pub mod id {
     /// `InsertItem`). Client sends: `TELeashedEntityAnchorWithItem.cs:60`,
     /// `TEKiteAnchor.cs:66`. C2s-only. W4-g51 FINAL.
     pub const LEASHED_ANCHOR_PLACE_ITEM: u8 = 156;
+
+    // ---- S1-I-1 W4-f21: the net-id TAIL census (MessageID 1-162 vs net.rs +
+    // the d89-d100/c27 lanes). Bodies + codecs only; the dispatcher apply/relay
+    // arms are the g48-g52 apply-wiring lanes / S1-I-4. ----
+    /// `24 UnusedMeleeStrike` (`MessageID.cs:57`) — DEAD: no `SendData(24)`
+    /// call site anywhere; the writer arm exists (`NetMessage.cs:765-768`,
+    /// `(short)npc + (byte)player`) but the reader asserts false
+    /// (`MessageBuffer.cs:1706-1708`, `Invariant.Assert(false,
+    /// "UnusedMeleeStrike")`) and reads NOTHING — there is no live reader
+    /// codec to port. d91 censused it dead; constant + census doc only, the
+    /// writer bytes recorded above verbatim (no variant is invented for an
+    /// asserting reader).
+    pub const UNUSED_MELEE_STRIKE: u8 = 24;
+    /// `25 Unused25` (`MessageID.cs:59-60`, `[Old("Deprecated. Use
+    /// NetTextModule instead.")]`) — no writer arm, no body; the reader's
+    /// ignore group (`MessageBuffer.cs:4483-4490`, shared with
+    /// 15/26/44/67/83/93) accepts and drops it.
+    pub const UNUSED_25: u8 = 25;
+    /// `26 Unused26` (`MessageID.cs:62-63`, `[Old("Deprecated.")]`) — no
+    /// writer arm, no body; the same reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`).
+    pub const UNUSED_26: u8 = 26;
+    /// `39 ReleaseItemOwnership` (`MessageID.cs:89`) — live: writer
+    /// `NetMessage.cs:948-951`, reader
+    /// `MessageBuffer.cs:2232-2255`; the client releases its reservation
+    /// (`WorldItem.cs:256`), the host re-assigns and may answer with `22`
+    /// (`WorldItem.cs:264` sends it to one client).
+    pub const RELEASE_ITEM_OWNERSHIP: u8 = 39;
+    /// `93 SocialHandshake` (`MessageID.cs:200`) — no writer arm, no body;
+    /// the reader ignore group (`MessageBuffer.cs:4483-4490`). Unlike its
+    /// group peers it IS accept-gate-whitelisted pre-spawn
+    /// (`MessageBuffer.cs:165`'s `b != 93` escape) — the C# accepts the
+    /// frame early, then drops it.
+    pub const SOCIAL_HANDSHAKE: u8 = 93;
 }
 
 // ===========================================================================
@@ -3208,6 +3242,10 @@ pub enum C2s {
     /// a kite/critter anchor (`MessageBuffer.cs:4439-4449`, host-only).
     /// C2s-only. W4-g51.
     LeashedAnchorPlaceItem(LeashedAnchorPlaceItem),
+    /// `39 ReleaseItemOwnership` — a client releases its item reservation
+    /// (`WorldItem.FindOwner`'s `netMode == 1` arm, `WorldItem.cs:256`;
+    /// reader `MessageBuffer.cs:2232-2255`).
+    ReleaseItemOwnership(ReleaseItemOwnership),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -3635,6 +3673,21 @@ pub enum S2c {
         time: f64,
         day: bool,
     },
+    /// `25 Unused25` — deprecated (`MessageID.cs:59-60`), no body; the
+    /// reader's ignore group accepts and drops it
+    /// (`MessageBuffer.cs:4483-4490`, shared with 15/26/44/67/83/93).
+    Unused25,
+    /// `26 Unused26` — deprecated (`MessageID.cs:62-63`), no body; the same
+    /// reader ignore group (`MessageBuffer.cs:4483-4490`).
+    Unused26,
+    /// `39 ReleaseItemOwnership` — the host's release notice to one client
+    /// (`WorldItem.cs:264`'s `SendData(39, num, …)`; the reader's
+    /// `netMode == 1` arm re-runs `FindOwner(forceAssignToServer: true)`,
+    /// `MessageBuffer.cs:2237-2243`).
+    ReleaseItemOwnership(ReleaseItemOwnership),
+    /// `93 SocialHandshake` — no body; the reader ignore group
+    /// (`MessageBuffer.cs:4483-4490`), accept-gate-whitelisted (`:165`).
+    SocialHandshake,
     Edit {
         x: i32,
         y: i32,
@@ -3739,6 +3792,7 @@ impl C2s {
             Self::RequestQuestEffect => id::REQUEST_QUEST_EFFECT,
             Self::DeadCellsJarTryPlacing(_) => id::DEAD_CELLS_JAR_TRY_PLACING,
             Self::LeashedAnchorPlaceItem(_) => id::LEASHED_ANCHOR_PLACE_ITEM,
+            Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -4048,6 +4102,8 @@ impl C2s {
             // `NetMessage.cs:1327-1332`: string command, int number, float
             // number2, float number3.
             Self::DevCommands(d) => w.str(&d.command).i32(d.number).f32(d.number2).f32(d.number3),
+            // `NetMessage.cs:948-951`: (short)slot + (number2 != 0f) bool.
+            Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::Pickup { drop } => w.u32(*drop),
             Self::NetModule { module, body } => w.u16(*module).raw(body),
@@ -4607,6 +4663,11 @@ impl C2s {
                 number2: r.f32()?,
                 number3: r.f32()?,
             }),
+            // `MessageBuffer.cs:2234-2236`: ReadInt16 + ReadBoolean.
+            id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
+                slot: r.i16()?,
+                force_assign_to_server: r.bool()?,
+            }),
             _ => return None,
         })
     }
@@ -4758,6 +4819,10 @@ impl S2c {
             Self::Unused93 => id::UNUSED_93,
             Self::QuickStackBlocked(_) => id::QUICK_STACK_CHESTS,
             Self::DevCommands(_) => id::DEV_COMMANDS,
+            Self::Unused25 => id::UNUSED_25,
+            Self::Unused26 => id::UNUSED_26,
+            Self::ReleaseItemOwnership(_) => id::RELEASE_ITEM_OWNERSHIP,
+            Self::SocialHandshake => id::SOCIAL_HANDSHAKE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::ChestItem(_) => id::CHEST_ITEM,
             Self::ChestUpdates(_) => id::CHEST_UPDATES,
@@ -4906,6 +4971,16 @@ impl S2c {
             Self::NpcStrike(st) => st.write_to(w),
             // `SendData` has no case 162 — the bare id is the whole frame.
             Self::NpcStrikeAck => w,
+            // `25/26/44/67/83` have no writer arm; bare frames mirror the
+            // reader's ignore group (`MessageBuffer.cs:4483-4490`).
+            Self::Unused25
+            | Self::Unused26
+            | Self::Unknown44
+            | Self::Unknown67
+            | Self::Unused83
+            | Self::SocialHandshake => w,
+            // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
+            Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::Edit { x, y, kind, tile } => w.i32(*x).i32(*y).u8(*kind).u16(*tile),
             Self::ChestItem(c) => w
                 .i16(c.chest)
@@ -5290,8 +5365,6 @@ impl S2c {
             Self::HatRackItemSync(h) => h
                 .item
                 .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
-            // `SendData` has no case 162 — the bare id is the whole frame.
-            Self::NpcStrikeAck => w,
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -5977,6 +6050,17 @@ impl S2c {
                 entity_id: r.i32()?,
                 wire_slot: r.u8()?,
                 item: TeItem::read_slot(r)?,
+            }),
+            // `25/26/44/67/83` — the reader's ignore group reads nothing
+            // (`MessageBuffer.cs:4483-4490`); bare frames decode.
+            id::UNUSED_25 => Self::Unused25,
+            id::UNUSED_26 => Self::Unused26,
+            id::SOCIAL_HANDSHAKE => Self::SocialHandshake,
+            // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
+            // reader reads the same shapes on both sides.
+            id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
+                slot: r.i16()?,
+                force_assign_to_server: r.bool()?,
             }),
             _ => return None,
         })
@@ -13094,6 +13178,1306 @@ mod tests {
         server.mark_section_checked(1, 0, 0, 500);
         assert!(server.is_section_active(1, -3, -7, 560));
     }
+
+    // ---- S1-I-1 W4-f21: the net-id tail census witnesses (WRITTEN NOT RUN,
+    // code-only). Each pins the id byte + the exact C# body bytes. ----
+
+    #[test]
+    fn w4_f21_unused_melee_strike_is_censused_dead() {
+        // `24` — no `SendData(24)` site exists; the reader asserts false and
+        // reads nothing (`MessageBuffer.cs:1706-1708`). The constant records
+        // the id; the writer's `(short)npc + (byte)player` bytes
+        // (`NetMessage.cs:765-768`) are documented at the constant, NOT
+        // ported as a live codec (an asserting reader has no decode).
+        assert_eq!(id::UNUSED_MELEE_STRIKE, 24);
+        // The writer shape, pinned as raw bytes for the census record:
+        let w = NetWriter::open(id::UNUSED_MELEE_STRIKE).i16(7).u8(3).finish();
+        assert_eq!(w[2], 24);
+        assert_eq!(&w[3..], &[7, 0, 3]);
+        // No S2c/C2s decode arm exists for 24 (the reader asserts).
+        assert!(S2c::decode(24, &mut NetReader::new(&[])).is_none());
+        assert!(C2s::decode(24, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_unused_25_is_a_bare_no_op_frame() {
+        // `25` — `[Old("Deprecated. Use NetTextModule instead.")]`
+        // (`MessageID.cs:59-60`); the reader's ignore group
+        // (`MessageBuffer.cs:4483-4490`) reads nothing.
+        let f = S2c::Unused25.encode();
+        assert_eq!(f[2], 25);
+        assert_eq!(f.len(), 3); // bare frame, no body
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::Unused25 => {}
+            other => panic!("expected 25, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_f21_release_item_ownership_round_trips_both_directions() {
+        // `NetMessage.cs:948-951`: (short)number + (number2 != 0f) bool.
+        // `WorldItem.cs:256` sends force=true/false from the client;
+        // `:264`'s host notice carries the default false.
+        for force in [false, true] {
+            let b = ReleaseItemOwnership {
+                slot: 399,
+                force_assign_to_server: force,
+            };
+            let mut body = 399i16.to_le_bytes().to_vec();
+            body.push(u8::from(force));
+            let f = C2s::ReleaseItemOwnership(b).encode();
+            assert_eq!(f[2], 39);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::ReleaseItemOwnership(d) => assert_eq!(d, b),
+                other => panic!("expected 39, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            let f = S2c::ReleaseItemOwnership(b).encode();
+            assert_eq!(f[2], 39);
+            assert_eq!(&f[3..], &body);
+            match S2c::decode(39, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::ReleaseItemOwnership(d) => assert_eq!(d, b),
+                other => panic!("expected 39, got {:?}", other.msg_id()),
+            }
+        }
+        // Negative slots ride the (short) verbatim; a truncated bool fails.
+        let f = C2s::ReleaseItemOwnership(ReleaseItemOwnership {
+            slot: -1,
+            force_assign_to_server: true,
+        })
+        .encode();
+        assert_eq!(&f[3..], &[0xFF, 0xFF, 1]);
+        assert!(C2s::decode(39, &mut NetReader::new(&[1, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_liquid_update_round_trips_both_directions() {
+        // `NetMessage.cs:987-995`: (short)x + (short)y + tile.liquid byte +
+        // tile.liquidType() byte (`Tile.cs:235-238`: (bTileHeader & 0x60)
+        // >> 5 — 0 water / 1 lava / 2 honey / 3 shimmer).
+        let b = LiquidUpdate {
+            x: -12,
+            y: 340,
+            liquid: 255,
+            liquid_type: 3, // shimmer
+        };
+        let mut body = (-12i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.push(255);
+        body.push(3);
+        let f = C2s::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::LiquidUpdate(b).encode();
+        assert_eq!(f[2], 48);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(48, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::LiquidUpdate(d) => assert_eq!(d, b),
+            other => panic!("expected 48, got {:?}", other.msg_id()),
+        }
+        // The drained-tile shape (`MessageBuffer.cs:2439-2442` re-pushes it).
+        let drained = LiquidUpdate {
+            x: 5,
+            y: 6,
+            liquid: 0,
+            liquid_type: 0,
+        };
+        let f = S2c::LiquidUpdate(drained).encode();
+        assert_eq!(&f[3..], &[5, 0, 6, 0, 0, 0]);
+        // A truncated liquidType byte must not decode.
+        assert!(S2c::decode(48, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_lock_and_unlock_round_trips() {
+        // `NetMessage.cs:1014-1018`: (byte)number2 + (short)number3 +
+        // (short)number4 — the player id `number` is NOT on the wire (the
+        // host relay re-sends it as 0, `MessageBuffer.cs:2541`).
+        for action in [1u8, 2, 3, 0, 255] {
+            let b = LockAndUnlock {
+                action,
+                x: -5,
+                y: 1200,
+            };
+            let mut body = vec![action];
+            body.extend_from_slice(&(-5i16).to_le_bytes());
+            body.extend_from_slice(&1200i16.to_le_bytes());
+            let f = C2s::LockAndUnlock(b).encode();
+            assert_eq!(f[2], 52);
+            assert_eq!(f.len(), 3 + 5);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::LockAndUnlock(d) => assert_eq!(d, b),
+                other => panic!("expected 52, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+        }
+        // C2s-only: the reader arm is host-gated, no S2c variant exists.
+        assert!(S2c::decode(52, &mut NetReader::new(&[1, 0, 0, 0, 0])).is_none());
+        // A truncated y must not decode.
+        assert!(C2s::decode(52, &mut NetReader::new(&[1, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_world_evil_bytes_round_trips() {
+        // `NetMessage.cs:1054-1058`: tGood, tEvil, tBlood — three raw bytes
+        // in the writer's order; the reader assigns the same order
+        // (`MessageBuffer.cs:2634-2636`).
+        let b = WorldEvilBytes {
+            good: 200,
+            evil: 100,
+            blood: 50,
+        };
+        let f = S2c::WorldEvilBytes(b).encode();
+        assert_eq!(f[2], 57);
+        assert_eq!(&f[3..], &[200, 100, 50]);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::WorldEvilBytes(d) => assert_eq!(d, b),
+            other => panic!("expected 57, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only: no C2s variant (the reader is netMode==1-gated).
+        assert!(C2s::decode(57, &mut NetReader::new(&[1, 2, 3])).is_none());
+        // A truncated blood byte must not decode.
+        assert!(S2c::decode(57, &mut NetReader::new(&[1, 2])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_instrument_sound_round_trips_both_directions() {
+        // `NetMessage.cs:1059-1062`: (byte)number + raw float number2 (no
+        // cast — the pitch rides as a full float, `Player.cs:46544`'s num6).
+        let b = InstrumentSound {
+            player_id: 4,
+            pitch: 0.45,
+        };
+        let mut body = vec![4u8];
+        body.extend_from_slice(&0.45f32.to_le_bytes());
+        let f = C2s::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::InstrumentSound(b).encode();
+        assert_eq!(f[2], 58);
+        match S2c::decode(58, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::InstrumentSound(d) => assert_eq!(d, b),
+            other => panic!("expected 58, got {:?}", other.msg_id()),
+        }
+        // A negative pitch rides verbatim (the drums' num9 can be negative
+        // before the round; the wire is the raw float).
+        let neg = InstrumentSound {
+            player_id: 0,
+            pitch: -0.25,
+        };
+        let f = C2s::InstrumentSound(neg).encode();
+        let mut body = vec![0u8];
+        body.extend_from_slice(&(-0.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        // A truncated pitch must not decode.
+        assert!(C2s::decode(58, &mut NetReader::new(&[4, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_quests_count_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1149-1153`: (byte)number + raw int
+        // anglerQuestsFinished + raw int golferScoreAccumulated.
+        let b = QuestsCountSync {
+            player_id: 2,
+            angler_quests_finished: 42,
+            golfer_score: 1_000_000_000, // the AccumulateGolfingScore cap
+        };
+        let mut body = vec![2u8];
+        body.extend_from_slice(&42i32.to_le_bytes());
+        body.extend_from_slice(&1_000_000_000i32.to_le_bytes());
+        let f = C2s::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        assert_eq!(f.len(), 3 + 9);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::QuestsCountSync(b).encode();
+        assert_eq!(f[2], 76);
+        match S2c::decode(76, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::QuestsCountSync(d) => assert_eq!(d, b),
+            other => panic!("expected 76, got {:?}", other.msg_id()),
+        }
+        // A truncated golf score must not decode.
+        assert!(S2c::decode(76, &mut NetReader::new(&body[..8])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_place_object_round_trips_both_directions() {
+        // `NetMessage.cs:1166-1174`: (short)x + (short)y + (short)type +
+        // (short)style + (byte)alt + (sbyte)random + (number7 == 1) bool.
+        let b = PlaceObject {
+            x: -3,
+            y: 500,
+            kind: 21, // a chest
+            style: 4,
+            alternative: 2,
+            random: -7,
+            direction: true,
+        };
+        let mut body = (-3i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&500i16.to_le_bytes());
+        body.extend_from_slice(&21i16.to_le_bytes());
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.push(2);
+        body.push((-7i8) as u8);
+        body.push(1);
+        let f = C2s::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        assert_eq!(f.len(), 3 + 12);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::PlaceObject(b).encode();
+        assert_eq!(f[2], 79);
+        match S2c::decode(79, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlaceObject(d) => assert_eq!(d, b),
+            other => panic!("expected 79, got {:?}", other.msg_id()),
+        }
+        // direction=false rides as 0 (the reader maps it to -1).
+        let left = PlaceObject {
+            direction: false,
+            ..b
+        };
+        let f = C2s::PlaceObject(left).encode();
+        assert_eq!(*f.last().unwrap(), 0);
+        // A truncated direction byte must not decode.
+        assert!(C2s::decode(79, &mut NetReader::new(&body[..11])).is_none());
+    }
+
+    #[test]
+    #[test]
+    fn w4_f21_tile_entity_placement_round_trips() {
+        // `NetMessage.cs:1227-1231`: (short)x + (short)y + (byte)type —
+        // the type is the manager's registration id
+        // (`TileEntitiesManager.cs:26-39`: ItemFrame = 1).
+        let b = TileEntityPlacement {
+            x: -8,
+            y: 900,
+            entity_type: 1,
+        };
+        let mut body = (-8i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&900i16.to_le_bytes());
+        body.push(1);
+        let f = C2s::TileEntityPlacement(b).encode();
+        assert_eq!(f[2], 87);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::TileEntityPlacement(d) => assert_eq!(d, b),
+            other => panic!("expected 87, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only: the reader is host-gated, no S2c variant.
+        assert!(S2c::decode(87, &mut NetReader::new(&body)).is_none());
+        // A truncated type byte must not decode.
+        assert!(C2s::decode(87, &mut NetReader::new(&body[..4])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_tile_entity_sharing_item_frame_round_trips() {
+        // `NetMessage.cs:1216-1226` + `TileEntity.cs:173-197` (net path):
+        // int id + bool + type byte + (short)x + (short)y + extra data.
+        // ItemFrame's extra is one (short)type + (byte)prefix + (short)stack
+        // (`TEItemFrame.cs:40-45`).
+        let t = TileEntitySharing {
+            id: 42,
+            x: 100,
+            y: 200,
+            entity: Some(TileEntityData::ItemFrame(TeItem {
+                kind: 3093,
+                prefix: 81,
+                stack: 1,
+            })),
+        };
+        let mut body = 42i32.to_le_bytes().to_vec();
+        body.push(1); // exists
+        body.push(1); // type: ItemFrame
+        body.extend_from_slice(&100i16.to_le_bytes());
+        body.extend_from_slice(&200i16.to_le_bytes());
+        body.extend_from_slice(&3093i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&1i16.to_le_bytes());
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        assert_eq!(f[2], 86);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The removal frame: id + false, NO tail (`MessageBuffer.cs:3279`).
+        let rm = TileEntitySharing {
+            id: 42,
+            x: 0,
+            y: 0,
+            entity: None,
+        };
+        let f = S2c::TileEntitySharing(Box::new(rm.clone())).encode();
+        let mut body = 42i32.to_le_bytes().to_vec();
+        body.push(0);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(86, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, rm),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        // An invalid type id fails the read (InvalidEntityID).
+        let mut bad = 1i32.to_le_bytes().to_vec();
+        bad.push(1);
+        bad.push(11); // one past CritterAnchor
+        bad.extend_from_slice(&[0, 0, 0, 0]);
+        assert!(S2c::decode(86, &mut NetReader::new(&bad)).is_none());
+    }
+
+    #[test]
+    fn w4_f21_tile_entity_sharing_doll_hat_rack_flags() {
+        // The doll's three flag bytes + pose (`TEDisplayDoll.cs:159-184`):
+        // equip[0] + equip[8] (bits3[1]) + dyes[8] (bits3[2]) + misc[0]
+        // (bits3[0]) non-air; the triples ride equips→dyes→misc in order.
+        let mut equip = [TeItem::default(); 9];
+        let mut dyes = [TeItem::default(); 9];
+        let mut misc = [TeItem::default(); 1];
+        equip[0] = TeItem { kind: 100, prefix: 0, stack: 1 };
+        equip[8] = TeItem { kind: 200, prefix: 5, stack: 1 };
+        dyes[8] = TeItem { kind: 300, prefix: 0, stack: 1 };
+        misc[0] = TeItem { kind: 400, prefix: 2, stack: 1 };
+        let t = TileEntitySharing {
+            id: 7,
+            x: 10,
+            y: 20,
+            entity: Some(TileEntityData::DisplayDoll { equip, dyes, misc, pose: 3 }),
+        };
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        assert_eq!(f[2], 86);
+        // body: id(4) + exists(1) + type(1) + x(2) + y(2) + b1(1) + b2(1)
+        // + pose(1) + b3(1) + 4 triples x 5 bytes.
+        let b = &f[3..];
+        assert_eq!(b[4], 1); // exists
+        assert_eq!(b[5], 3); // DisplayDoll
+        assert_eq!(b[10], 0b0000_0001); // b1: equip[0]
+        assert_eq!(b[11], 0); // b2: no low dyes
+        assert_eq!(b[12], 3); // pose
+        assert_eq!(b[13], 0b0000_0111); // b3: misc + equip8 + dye8
+        assert_eq!(f.len(), 3 + 14 + 20);
+        let mut r = NetReader::new(b);
+        match S2c::decode(86, &mut r).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The hat rack's single flag byte (`TEHatRack.cs:58-63`): items[1]
+        // + dyes[0] non-air → bits 1 and 2.
+        let t = TileEntitySharing {
+            id: 8,
+            x: 1,
+            y: 2,
+            entity: Some(TileEntityData::HatRack {
+                items: [
+                    TeItem::default(),
+                    TeItem { kind: 500, prefix: 0, stack: 1 },
+                ],
+                dyes: [
+                    TeItem { kind: 600, prefix: 1, stack: 1 },
+                    TeItem::default(),
+                ],
+            }),
+        };
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        let b = &f[3..];
+        assert_eq!(b[5], 5); // HatRack
+        assert_eq!(b[10], 0b0000_0110); // items[1] | dyes[0]
+        assert_eq!(f.len(), 3 + 11 + 10);
+        match S2c::decode(86, &mut NetReader::new(b)).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+        // LogicSensor writes NOTHING on the net path
+        // (`TELogicSensor.cs:380-387`'s !networkSend gate); the pylon has
+        // no override at all.
+        for e in [TileEntityData::LogicSensor, TileEntityData::TeleportationPylon] {
+            let t = TileEntitySharing { id: 9, x: 3, y: 4, entity: Some(e) };
+            let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+            assert_eq!(f.len(), 3 + 10); // id + bool + type + position only
+            match S2c::decode(86, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+                other => panic!("expected 86, got {:?}", other.msg_id()),
+            }
+        }
+        // The leashed anchors' (short)itemType tail
+        // (`TELeashedEntityAnchorWithItem.cs:10-13`).
+        let t = TileEntitySharing {
+            id: 10,
+            x: 5,
+            y: 6,
+            entity: Some(TileEntityData::KiteAnchor { item_type: 4765 }),
+        };
+        let f = S2c::TileEntitySharing(Box::new(t.clone())).encode();
+        assert_eq!(&f[3 + 10..], &4765i16.to_le_bytes());
+        match S2c::decode(86, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::TileEntitySharing(d) => assert_eq!(*d, t),
+            other => panic!("expected 86, got {:?}", other.msg_id()),
+        }
+    }
+
+    #[test]
+    fn w4_f21_item_tweaker_round_trips() {
+        // `NetMessage.cs:1232-1296`: (short)slot + BitsByte 1 + gated
+        // fields; BitsByte 2 rides only under bit 7. The CommonCode.cs
+        // sends use number2 = 1f → damage-only (bit 1).
+        let dmg_only = ItemTweaker {
+            slot: 12,
+            damage: Some(50),
+            ..Default::default()
+        };
+        let f = S2c::ItemTweaker(dmg_only).encode();
+        assert_eq!(f[2], 88);
+        let mut body = 12i16.to_le_bytes().to_vec();
+        body.push(0b0000_0010); // bit 1: damage
+        body.extend_from_slice(&50u16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, dmg_only),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The full two-byte form: every field set.
+        let full = ItemTweaker {
+            slot: 400,
+            color: Some(0xFF_80_40_20),
+            damage: Some(999),
+            knockback: Some(7.5),
+            use_animation: Some(20),
+            use_time: Some(15),
+            shoot: Some(-3),
+            shoot_speed: Some(12.25),
+            width: Some(30),
+            height: Some(40),
+            scale: Some(1.5),
+            ammo: Some(40),
+            use_ammo: Some(97),
+            not_ammo: Some(true),
+        };
+        let f = S2c::ItemTweaker(full).encode();
+        let b = &f[3..];
+        assert_eq!(b[2], 0xFF); // all 8 bits of BitsByte 1
+        // b1 fields: color 4 + damage 2 + kb 4 + anim 2 + time 2 + shoot 2
+        // + speed 4 = 20 bytes, then BitsByte 2 at offset 2+1+20 = 23.
+        assert_eq!(b[23], 0b0011_1111); // all 6 bits of BitsByte 2
+        let mut r = NetReader::new(b);
+        match S2c::decode(88, &mut r).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, full),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The empty form: slot + a zero flag byte, no second byte.
+        let empty = ItemTweaker { slot: -1, ..Default::default() };
+        let f = S2c::ItemTweaker(empty).encode();
+        assert_eq!(&f[3..], &[0xFF, 0xFF, 0]);
+        match S2c::decode(88, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemTweaker(d) => assert_eq!(d, empty),
+            other => panic!("expected 88, got {:?}", other.msg_id()),
+        }
+        // A second-byte-only tweak still rides bit 7 + the byte.
+        let scale_only = ItemTweaker { slot: 0, scale: Some(2.0), ..Default::default() };
+        let f = S2c::ItemTweaker(scale_only).encode();
+        assert_eq!(&f[3..5], &[0, 0]);
+        assert_eq!(f[5], 0b1000_0000); // bit 7 only
+        assert_eq!(f[6], 0b0000_0100); // scale bit 2
+        // A truncated gated field must not decode.
+        assert!(S2c::decode(88, &mut NetReader::new(&[12, 0, 2, 50])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_frame_try_placing_round_trips() {
+        // `NetMessage.cs:1297-1306`: (short)x + (short)y + (short)type +
+        // prefix byte + (short)stack — the player/slot indices select the
+        // item on the writer side only, never on the wire.
+        let b = TryPlacingItem {
+            x: -2,
+            y: 700,
+            kind: 3093,
+            prefix: 81,
+            stack: 1,
+        };
+        let mut body = (-2i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&700i16.to_le_bytes());
+        body.extend_from_slice(&3093i16.to_le_bytes());
+        body.push(81);
+        body.extend_from_slice(&1i16.to_le_bytes());
+        let f = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f[2], 89);
+        assert_eq!(f.len(), 3 + 9);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ItemFrameTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 89, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only: the reader is host-gated.
+        assert!(S2c::decode(89, &mut NetReader::new(&body)).is_none());
+        // A truncated stack must not decode.
+        assert!(C2s::decode(89, &mut NetReader::new(&body[..8])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_spawn_instanced_item_shares_the_case_21_body() {
+        // `NetMessage.cs:646-647`: case 21 and case 90 share the writer —
+        // the same ItemState bytes under a different id byte.
+        let d = ItemState {
+            slot: 401,
+            x: 100.5,
+            y: -20.25,
+            vx: 1.0,
+            vy: -2.0,
+            stack: 3,
+            prefix: 81,
+            kind: 757,
+            shimmered: false,
+            shimmer_time: 0.0,
+        };
+        let f90 = S2c::SpawnInstancedItem(Box::new(d)).encode();
+        let f21 = S2c::ItemState(Box::new(d)).encode();
+        assert_eq!(f90[2], 90);
+        assert_eq!(f21[2], 21);
+        assert_eq!(&f90[3..], &f21[3..]); // identical bodies
+        let mut r = NetReader::new(&f90[3..]);
+        match S2c::decode(f90[2], &mut r).expect("decode") {
+            S2c::SpawnInstancedItem(got) => assert_eq!(*got, d),
+            other => panic!("expected 90, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The shimmer tail rides the shared body too.
+        let sh = ItemState { shimmered: true, shimmer_time: 12.5, ..d };
+        let f = S2c::SpawnInstancedItem(Box::new(sh)).encode();
+        match S2c::decode(90, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SpawnInstancedItem(got) => assert_eq!(*got, sh),
+            other => panic!("expected 90, got {:?}", other.msg_id()),
+        }
+        // S2c-only: no C2s arm (MakeInstanced is host-gated).
+        assert!(C2s::decode(90, &mut NetReader::new(&f90[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_social_handshake_is_a_bare_whitelisted_frame() {
+        // `93` — the reader ignore group's last member
+        // (`MessageBuffer.cs:4483-4490`); unlike 15/25/26/44/67/83 it IS
+        // accept-gate-whitelisted pre-spawn (`:165`'s `b != 93` escape).
+        let f = S2c::SocialHandshake.encode();
+        assert_eq!(f[2], 93);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::SocialHandshake => {}
+            other => panic!("expected 93, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_f21_dev_commands_round_trips_both_directions() {
+        // `NetMessage.cs:1327-1332`: plain string (NOT NetworkText) + int
+        // + float + float. `DebugOptions.cs:68`'s /showdebug shape.
+        let d = DevCommands {
+            command: "/showdebug".to_string(),
+            arg_int: 0,
+            arg_float: 1.0,
+            arg_float2: 0.0,
+        };
+        let mut body = vec![10u8]; // the 7-bit length of "/showdebug"
+        body.extend_from_slice(b"/showdebug");
+        body.extend_from_slice(&0i32.to_le_bytes());
+        body.extend_from_slice(&1.0f32.to_le_bytes());
+        body.extend_from_slice(&0.0f32.to_le_bytes());
+        let f = C2s::DevCommands(d.clone()).encode();
+        assert_eq!(f[2], 94);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::DevCommands(got) => assert_eq!(got, d),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::DevCommands(d.clone()).encode();
+        assert_eq!(f[2], 94);
+        match S2c::decode(94, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DevCommands(got) => assert_eq!(got, d),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
+        }
+        // The /setserverping shape carries a real int + float
+        // (`DebugOptions.cs:70`: number2 = Shared_ServerPing).
+        let ping = DevCommands {
+            command: "/setserverping".to_string(),
+            arg_int: 0,
+            arg_float: 250.0,
+            arg_float2: 0.0,
+        };
+        let f = C2s::DevCommands(ping.clone()).encode();
+        match C2s::decode(94, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DevCommands(got) => assert_eq!(got, ping),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
+        }
+        // A truncated float tail must not decode.
+        assert!(C2s::decode(94, &mut NetReader::new(&body[..body.len() - 1])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_shop_override_keeps_the_writer_reader_mismatch_verbatim() {
+        // The WRITER (`NetMessage.cs:1387-1394`): byte + short + FLOAT
+        // stack + byte + int + byte = 13 body bytes.
+        let s = ShopOverride {
+            slot: 3,
+            kind: 757,
+            stack: 5.0,
+            prefix: 81,
+            value: 10000,
+            flags: 1, // buyOnce
+        };
+        let f = S2c::ShopOverride(s).encode();
+        assert_eq!(f[2], 104);
+        let mut body = vec![3u8];
+        body.extend_from_slice(&757i16.to_le_bytes());
+        body.extend_from_slice(&5.0f32.to_le_bytes()); // the FLOAT stack
+        body.push(81);
+        body.extend_from_slice(&10000i32.to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        assert_eq!(f.len(), 3 + 13);
+        // The READER (`MessageBuffer.cs:3719-3724`) reads a SHORT stack —
+        // 11 body bytes. Feeding the writer's frame to the reader
+        // misaligns exactly as the C# does: the short eats the float's
+        // low two bytes (5.0f32 = 0x40A00000 → low short 0), the prefix
+        // byte eats the float's third byte (0xA0 = 160), the int eats
+        // [0x40, 81, 0x10, 0x27] and the flags byte eats 0x00.
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(104, &mut r).expect("decode") {
+            S2c::ShopOverride(d) => {
+                assert_eq!(d.slot, 3);
+                assert_eq!(d.kind, 757);
+                assert_eq!(d.stack, 0.0); // the float's low short
+                assert_eq!(d.prefix, 0xA0); // the float's third byte
+                assert_eq!(d.value, i32::from_le_bytes([0x40, 81, 0x10, 0x27]));
+                assert_eq!(d.flags, 0);
+            }
+            other => panic!("expected 104, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 2); // the writer's two extra bytes
+        // A clean READER-shaped frame round trips through decode.
+        let mut rbody = vec![3u8];
+        rbody.extend_from_slice(&757i16.to_le_bytes());
+        rbody.extend_from_slice(&5i16.to_le_bytes()); // the SHORT stack
+        rbody.push(81);
+        rbody.extend_from_slice(&10000i32.to_le_bytes());
+        rbody.push(1);
+        match S2c::decode(104, &mut NetReader::new(&rbody)).expect("decode") {
+            S2c::ShopOverride(d) => {
+                assert_eq!(d.stack, 5.0);
+                assert_eq!(d.prefix, 81);
+                assert_eq!(d.value, 10000);
+                assert_eq!(d.flags, 1);
+            }
+            other => panic!("expected 104, got {:?}", other.msg_id()),
+        }
+        // The negative-stack clamp: (short)(-3f) < 0 → the writer sends 0f.
+        let neg = ShopOverride { stack: -3.0, ..s };
+        let f = S2c::ShopOverride(neg).encode();
+        assert_eq!(&f[6..10], &0.0f32.to_le_bytes());
+        // S2c-only: no C2s arm.
+        assert!(C2s::decode(104, &mut NetReader::new(&rbody)).is_none());
+    }
+
+    #[test]
+    fn w4_f21_gem_lock_toggle_round_trips() {
+        // `NetMessage.cs:1395-1399`: (short)x + (short)y + (number3 == 1f)
+        // bool — `Player.cs:32547` sends 1f (on), `:32559` the default 0f.
+        for on in [true, false] {
+            let b = GemLockToggle { x: -9, y: 800, on };
+            let mut body = (-9i16).to_le_bytes().to_vec();
+            body.extend_from_slice(&800i16.to_le_bytes());
+            body.push(u8::from(on));
+            let f = C2s::GemLockToggle(b).encode();
+            assert_eq!(f[2], 105);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::GemLockToggle(d) => assert_eq!(d, b),
+                other => panic!("expected 105, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+        }
+        // C2s-only in practice: no S2c variant.
+        assert!(S2c::decode(105, &mut NetReader::new(&[0, 0, 0, 0, 1])).is_none());
+        // A truncated bool must not decode.
+        assert!(C2s::decode(105, &mut NetReader::new(&[0, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    #[test]
+    fn w4_f21_toggle_party_is_a_bodyless_client_ask() {
+        // `111` has NO writer case — `SendData(111)` (BirthdayParty.cs:154)
+        // writes only the frame header; the host reader reads nothing
+        // (`MessageBuffer.cs:3809-3814`).
+        let f = C2s::ToggleParty.encode();
+        assert_eq!(f[2], 111);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ToggleParty => {}
+            other => panic!("expected 111, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only: no S2c arm (the reader is host-gated).
+        assert!(S2c::decode(111, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_combat_text_string_round_trips() {
+        // `NetMessage.cs:1188-1196`: float x + float y + WriteRGB +
+        // NetworkText — the 81 int twin's text half (d98 owns 81).
+        let c = CombatTextString {
+            x: 123.75,
+            y: -45.5,
+            color: Rgb(255, 240, 20),
+            text: NetText("Immune!".to_string()),
+        };
+        let f = S2c::CombatTextString(c.clone()).encode();
+        assert_eq!(f[2], 119);
+        let mut body = 123.75f32.to_le_bytes().to_vec();
+        body.extend_from_slice(&(-45.5f32).to_le_bytes());
+        body.extend_from_slice(&[255, 240, 20]);
+        body.push(0); // literal mode
+        body.push(7); // "Immune!" length
+        body.extend_from_slice(b"Immune!");
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::CombatTextString(d) => assert_eq!(d, c),
+            other => panic!("expected 119, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The raw floats ride (the reader's (int) truncation is apply-side).
+        // S2c-only: no C2s arm.
+        assert!(C2s::decode(119, &mut NetReader::new(&body)).is_none());
+        // A truncated text must not decode.
+        assert!(S2c::decode(119, &mut NetReader::new(&body[..body.len() - 1])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_display_doll_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1458-1474`: (byte)player + int id + (byte)slot +
+        // (byte)command + WriteData. Command 0/1/3 = the WriteItem slot
+        // order (ushort type + ushort STACK + byte PREFIX —
+        // TEDisplayDoll.cs:758-764), command 2 = the pose byte.
+        let d = DisplayDollSync {
+            player_id: 1,
+            entity_id: 77,
+            item_index: 4,
+            command: 0,
+            data: DollSyncData::Item(TeItem { kind: 100, prefix: 81, stack: 1 }),
+        };
+        let mut body = vec![1u8];
+        body.extend_from_slice(&77i32.to_le_bytes());
+        body.push(4);
+        body.push(0);
+        body.extend_from_slice(&100u16.to_le_bytes());
+        body.extend_from_slice(&1u16.to_le_bytes()); // stack BEFORE prefix
+        body.push(81);
+        let f = C2s::DisplayDollSync(d).encode();
+        assert_eq!(f[2], 121);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::DisplayDollSync(got) => assert_eq!(got, d),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::DisplayDollSync(d).encode();
+        assert_eq!(f[2], 121);
+        match S2c::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DisplayDollSync(got) => assert_eq!(got, d),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // The pose command (2) carries ONE byte
+        // (`TEDisplayDoll.cs:785-789`, the :907 pose-sync send).
+        let pose = DisplayDollSync {
+            command: 2,
+            item_index: 3, // the pose rides item_index at :907
+            data: DollSyncData::Pose(3),
+            ..d
+        };
+        let f = C2s::DisplayDollSync(pose).encode();
+        assert_eq!(f.len(), 3 + 7 + 1);
+        match C2s::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DisplayDollSync(got) => assert_eq!(got, pose),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // The dummy fallback is byte-width-identical: command 2 → one
+        // zero byte (decodes Pose(0)); else int 0 + byte 0 (decodes an
+        // air TeItem) — `WriteDummySync` :824-833.
+        let dummy_pose = DisplayDollSync { command: 2, data: DollSyncData::Dummy, ..d };
+        let f = C2s::DisplayDollSync(dummy_pose).encode();
+        assert_eq!(*f.last().unwrap(), 0);
+        match C2s::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DisplayDollSync(got) => assert_eq!(got.data, DollSyncData::Pose(0)),
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        let dummy_item = DisplayDollSync { command: 1, data: DollSyncData::Dummy, ..d };
+        let f = C2s::DisplayDollSync(dummy_item).encode();
+        assert_eq!(f.len(), 3 + 7 + 5);
+        match C2s::decode(121, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DisplayDollSync(got) => {
+                assert_eq!(got.data, DollSyncData::Item(TeItem::default()));
+            }
+            other => panic!("expected 121, got {:?}", other.msg_id()),
+        }
+        // A truncated slot tail must not decode.
+        assert!(C2s::decode(121, &mut NetReader::new(&body[..body.len() - 1])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_tile_entity_interaction_round_trips_both_directions() {
+        // `NetMessage.cs:1475-1478`: int entityId + (byte)player. The -1
+        // clear (`TileEntity.cs:280`, `Main.cs:17605`) and the open
+        // (`TileEntity.cs:285`).
+        for entity_id in [-1i32, 42] {
+            let t = TileEntityInteraction { entity_id, player_id: 2 };
+            let mut body = entity_id.to_le_bytes().to_vec();
+            body.push(2);
+            let f = C2s::TileEntityInteraction(t).encode();
+            assert_eq!(f[2], 122);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::TileEntityInteraction(got) => assert_eq!(got, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            let f = S2c::TileEntityInteraction(t).encode();
+            assert_eq!(f[2], 122);
+            match S2c::decode(122, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::TileEntityInteraction(got) => assert_eq!(got, t),
+                other => panic!("expected 122, got {:?}", other.msg_id()),
+            }
+        }
+        // A truncated player byte must not decode.
+        assert!(C2s::decode(122, &mut NetReader::new(&[42, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_weapons_rack_try_placing_is_the_89_twin() {
+        // `NetMessage.cs:1479-1488` — the exact 89 body under id 123.
+        let b = TryPlacingItem {
+            x: 12,
+            y: 300,
+            kind: 3384,
+            prefix: 0,
+            stack: 1,
+        };
+        let f123 = C2s::WeaponsRackTryPlacing(b).encode();
+        let f89 = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f123[2], 123);
+        assert_eq!(f89[2], 89);
+        assert_eq!(&f123[3..], &f89[3..]); // identical bodies
+        let mut r = NetReader::new(&f123[3..]);
+        match C2s::decode(f123[2], &mut r).expect("decode") {
+            C2s::WeaponsRackTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 123, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(123, &mut NetReader::new(&f123[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_hat_rack_item_sync_round_trips_both_directions() {
+        // `NetMessage.cs:1489-1508`: (byte)player + int id + (byte)slot
+        // with the dye +2 fold, then WriteItem (ushort type + ushort
+        // stack + byte prefix, TEHatRack.cs:385-387).
+        for wire_slot in [0u8, 1, 2, 3] {
+            let h = HatRackItemSync {
+                player_id: 1,
+                entity_id: 55,
+                wire_slot,
+                item: TeItem { kind: 100, prefix: 81, stack: 1 },
+            };
+            let mut body = vec![1u8];
+            body.extend_from_slice(&55i32.to_le_bytes());
+            body.push(wire_slot);
+            body.extend_from_slice(&100u16.to_le_bytes());
+            body.extend_from_slice(&1u16.to_le_bytes());
+            body.push(81);
+            let f = C2s::HatRackItemSync(h).encode();
+            assert_eq!(f[2], 124);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::HatRackItemSync(d) => {
+                    assert_eq!(d, h);
+                    // The reader's unfold (:4005-4009).
+                    assert_eq!(d.is_dye(), wire_slot >= 2);
+                    assert_eq!(d.slot_index(), wire_slot % 2);
+                }
+                other => panic!("expected 124, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+            let f = S2c::HatRackItemSync(h).encode();
+            assert_eq!(f[2], 124);
+            match S2c::decode(124, &mut NetReader::new(&f[3..])).expect("decode") {
+                S2c::HatRackItemSync(d) => assert_eq!(d, h),
+                other => panic!("expected 124, got {:?}", other.msg_id()),
+            }
+        }
+        // The no-entity fallback (`NetMessage.cs:1505-1506`: int 0 +
+        // byte 0) is the same 5 bytes as an air slot — decodes air.
+        let fallback = HatRackItemSync {
+            player_id: 0,
+            entity_id: -1,
+            wire_slot: 0,
+            item: TeItem::default(),
+        };
+        let f = C2s::HatRackItemSync(fallback).encode();
+        assert_eq!(f.len(), 3 + 6 + 5);
+        match C2s::decode(124, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::HatRackItemSync(d) => assert_eq!(d.item, TeItem::default()),
+            other => panic!("expected 124, got {:?}", other.msg_id()),
+        }
+        // A truncated prefix byte must not decode.
+        assert!(C2s::decode(124, &mut NetReader::new(&[1, 55, 0, 0, 0, 0, 100, 0, 1, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_finished_connecting_is_a_bodyless_join_notice() {
+        // `129` has NO writer case — `TrySendData(129, whoAmI)`
+        // (`MessageBuffer.cs:937`, the State-3→10 arm) writes only the
+        // header; the client reader reads nothing (`:4075-4085`).
+        let f = S2c::FinishedConnecting.encode();
+        assert_eq!(f[2], 129);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::FinishedConnecting => {}
+            other => panic!("expected 129, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only.
+        assert!(C2s::decode(129, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_food_platter_try_placing_is_the_89_twin() {
+        // `NetMessage.cs:1545-1554` — the exact 89 body under id 133.
+        let b = TryPlacingItem {
+            x: 40,
+            y: 600,
+            kind: 5000,
+            prefix: 0,
+            stack: 1,
+        };
+        let f133 = C2s::FoodPlatterTryPlacing(b).encode();
+        let f89 = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f133[2], 133);
+        assert_eq!(&f133[3..], &f89[3..]); // identical bodies
+        let mut r = NetReader::new(&f133[3..]);
+        match C2s::decode(f133[2], &mut r).expect("decode") {
+            C2s::FoodPlatterTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 133, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(133, &mut NetReader::new(&f133[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_client_synced_inventory_is_a_bodyless_default_drop() {
+        // `138` — NO writer case (`SendData(138)` at Main.cs:17700 writes
+        // a bare frame) and NO reader case: the default arm
+        // (`MessageBuffer.cs:4477-4482`) reads nothing.
+        let f = C2s::ClientSyncedInventory.encode();
+        assert_eq!(f[2], 138);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ClientSyncedInventory => {}
+            other => panic!("expected 138, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(138, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_counts_as_host_round_trips() {
+        // `NetMessage.cs:1587-1590`: (byte)player + (number2 == 1f) bool;
+        // the join arm sends flag13.ToInt() (`MessageBuffer.cs:934`).
+        for flag in [true, false] {
+            let c = CountsAsHost { player_id: 3, counts_as_host: flag };
+            let f = S2c::CountsAsHost(c).encode();
+            assert_eq!(f[2], 139);
+            assert_eq!(&f[3..], &[3, u8::from(flag)]);
+            let mut r = NetReader::new(&f[3..]);
+            match S2c::decode(f[2], &mut r).expect("decode") {
+                S2c::CountsAsHost(d) => assert_eq!(d, c),
+                other => panic!("expected 139, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+        }
+        // S2c-only.
+        assert!(C2s::decode(139, &mut NetReader::new(&[3, 1])).is_none());
+        // A truncated bool must not decode.
+        assert!(S2c::decode(139, &mut NetReader::new(&[3])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_request_quest_effect_is_a_bodyless_client_ask() {
+        // `144` has NO writer case — `SendData(144)` (Main.cs:40287, the
+        // Stardew dryad bit) writes only the header; the host reader reads
+        // nothing (`MessageBuffer.cs:4304-4309`).
+        let f = C2s::RequestQuestEffect.encode();
+        assert_eq!(f[2], 144);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::RequestQuestEffect => {}
+            other => panic!("expected 144, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(144, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_shimmer_items_deprecated_is_censused_dead() {
+        // `145` — no writer case, no reader case, zero send sites; the
+        // shimmer item sync became 146. Constant + census doc only (the
+        // 24 precedent: no variant for a frame with neither arm).
+        assert_eq!(id::SHIMMER_ITEMS_DEPRECATED, 145);
+        assert!(C2s::decode(145, &mut NetReader::new(&[])).is_none());
+        assert!(S2c::decode(145, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_shimmer_actions_round_trips() {
+        // `NetMessage.cs:1611-1623`: (byte)kind; 0 → Vector2, 1 →
+        // Vector2 + (int)amount, else nothing.
+        let fx = ShimmerAction::Effect { x: 100.5, y: -20.25 };
+        let f = S2c::ShimmerAction(fx).encode();
+        assert_eq!(f[2], 146);
+        let mut body = vec![0u8];
+        body.extend_from_slice(&100.5f32.to_le_bytes());
+        body.extend_from_slice(&(-20.25f32).to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, fx),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The coin-luck arm (`WorldItem.cs:1716`: the stack rides number4).
+        let coin = ShimmerAction::CoinLuck { x: 1.0, y: 2.0, amount: 10000 };
+        let f = S2c::ShimmerAction(coin).encode();
+        let mut body = vec![1u8];
+        body.extend_from_slice(&1.0f32.to_le_bytes());
+        body.extend_from_slice(&2.0f32.to_le_bytes());
+        body.extend_from_slice(&10000i32.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(146, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, coin),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        // An unknown kind writes/reads NOTHING after the byte.
+        let f = S2c::ShimmerAction(ShimmerAction::Unknown(7)).encode();
+        assert_eq!(&f[3..], &[7]);
+        match S2c::decode(146, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ShimmerAction(d) => assert_eq!(d, ShimmerAction::Unknown(7)),
+            other => panic!("expected 146, got {:?}", other.msg_id()),
+        }
+        // S2c-only.
+        assert!(C2s::decode(146, &mut NetReader::new(&[0, 0, 0, 0, 0, 0, 0, 0, 0])).is_none());
+        // A truncated coin amount must not decode.
+        assert!(S2c::decode(146, &mut NetReader::new(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_enemy_lock_deprecated_is_censused_dead() {
+        // `148` — no writer case, no reader case, zero send sites; the
+        // enemy-grab lock became the 21 bit-3 tail (d98's wave I).
+        // Constant + census doc only (the 24/145 precedent).
+        assert_eq!(id::ITEM_ENEMY_LOCK_DEPRECATED, 148);
+        assert!(C2s::decode(148, &mut NetReader::new(&[])).is_none());
+        assert!(S2c::decode(148, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_dead_cells_jar_try_placing_is_the_89_twin() {
+        // `NetMessage.cs:1629-1638` — the exact 89 body under id 149.
+        let b = TryPlacingItem {
+            x: 60,
+            y: 400,
+            kind: 5335,
+            prefix: 0,
+            stack: 1,
+        };
+        let f149 = C2s::DeadCellsJarTryPlacing(b).encode();
+        let f89 = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f149[2], 149);
+        assert_eq!(&f149[3..], &f89[3..]); // identical bodies
+        let mut r = NetReader::new(&f149[3..]);
+        match C2s::decode(f149[2], &mut r).expect("decode") {
+            C2s::DeadCellsJarTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 149, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(149, &mut NetReader::new(&f149[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_use_sound_round_trips_both_directions() {
+        // `NetMessage.cs:1643-1645`: (byte)player only — the sound itself
+        // is re-derived from the peer's held item on the client
+        // (`MessageBuffer.cs:4399-4404`).
+        let f = C2s::ItemUseSound { player_id: 5 }.encode();
+        assert_eq!(f[2], 152);
+        assert_eq!(&f[3..], &[5]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ItemUseSound { player_id } => assert_eq!(player_id, 5),
+            other => panic!("expected 152, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::ItemUseSound { player_id: 5 }.encode();
+        assert_eq!(f[2], 152);
+        match S2c::decode(152, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemUseSound { player_id } => assert_eq!(player_id, 5),
+            other => panic!("expected 152, got {:?}", other.msg_id()),
+        }
+        // A missing byte must not decode.
+        assert!(C2s::decode(152, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_leashed_anchor_place_item_round_trips() {
+        // `NetMessage.cs:1654-1658`: three (short)s — x, y, itemType.
+        let b = LeashedAnchorPlaceItem { x: -4, y: 500, item_type: 4765 };
+        let mut body = (-4i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&500i16.to_le_bytes());
+        body.extend_from_slice(&4765i16.to_le_bytes());
+        let f = C2s::LeashedAnchorPlaceItem(b).encode();
+        assert_eq!(f[2], 156);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::LeashedAnchorPlaceItem(d) => assert_eq!(d, b),
+            other => panic!("expected 156, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(156, &mut NetReader::new(&body)).is_none());
+        // A truncated itemType must not decode.
+        assert!(C2s::decode(156, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_position_round_trips() {
+        // `NetMessage.cs:1666-1672`: (short)slot + WriteVector2(position)
+        // — no velocity (the section-sweep snap, WorldItem.cs:1864).
+        let p = ItemPosition { slot: 399, x: 1234.5, y: -67.25 };
+        let mut body = 399i16.to_le_bytes().to_vec();
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-67.25f32).to_le_bytes());
+        let f = S2c::ItemPosition(p).encode();
+        assert_eq!(f[2], 160);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::ItemPosition(d) => assert_eq!(d, p),
+            other => panic!("expected 160, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only.
+        assert!(C2s::decode(160, &mut NetReader::new(&body)).is_none());
+        // A truncated y must not decode.
+        assert!(S2c::decode(160, &mut NetReader::new(&body[..9])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_host_token_round_trips() {
+        // `NetMessage.cs:1673-1675`: one plain string (text.ToString());
+        // the join push sends Netplay.HostToken (`MessageBuffer.cs:275`).
+        let token = "a-host-token-123".to_string();
+        let f = C2s::HostToken(token.clone()).encode();
+        assert_eq!(f[2], 161);
+        let mut body = vec![token.len() as u8];
+        body.extend_from_slice(token.as_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::HostToken(d) => assert_eq!(d, token),
+            other => panic!("expected 161, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The empty token is a bare 0 length byte (the reader's
+        // IsNullOrWhiteSpace gate then refuses it, :4474).
+        let f = C2s::HostToken(String::new()).encode();
+        assert_eq!(&f[3..], &[0]);
+        // C2s-only.
+        assert!(S2c::decode(161, &mut NetReader::new(&body)).is_none());
+        // A truncated payload must not decode.
+        assert!(C2s::decode(161, &mut NetReader::new(&[16, b'a'])).is_none());
+    }
+
+    #[test]
+    #[test]
+    fn w4_f21_deprecated_ignore_group_26_44_67_83_are_bare_frames() {
+        // `26 Unused26` (`MessageID.cs:62-63`), `44 Unknown44`
+        // (`MessageID.cs:99-100`), `67 Unknown67` (`MessageID.cs:147`) and
+        // `83 Unused83` (`MessageID.cs:179-180`) share the reader's ignore
+        // group with 15/25/93 (`MessageBuffer.cs:4483-4490`): no writer arm,
+        // no body, accepted and dropped.
+        for (msg, expect_id) in [
+            (S2c::Unused26, 26u8),
+            (S2c::Unknown44, 44u8),
+            (S2c::Unknown67, 67u8),
+            (S2c::Unused83, 83u8),
+        ] {
+            let f = msg.encode();
+            assert_eq!(f[2], expect_id);
+            assert_eq!(f.len(), 3);
+            let mut r = NetReader::new(&f[3..]);
+            let d = S2c::decode(f[2], &mut r).expect("decode");
+            assert_eq!(d.msg_id(), expect_id);
+            assert_eq!(r.remaining(), 0);
+        }
+    }
 }
 
 /// `msg 119 CombatTextString`'s body (`NetMessage.cs:1188-1196`, W4-g50):
@@ -14396,4 +15780,204 @@ pub enum RelayCtx {
         ignores_sections: bool,
         section: (i32, i32),
     },
+}
+
+// ---- S1-I-1 W4-f21: the net-id tail census bodies ----
+
+/// `msg 39 ReleaseItemOwnership`'s body (`NetMessage.cs:948-951`): the item
+/// slot `(short)` then `number2 != 0f` as a bool (`forceAssignToServer`).
+/// The reader (`MessageBuffer.cs:2232-2255`) releases the reservation when
+/// it belongs to the reader's player and calls `FindOwner`; the host may
+/// answer with a `22 ItemOwner` re-announcement (`:2251`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReleaseItemOwnership {
+    pub slot: i16,
+    pub force_assign_to_server: bool,
+}
+
+/// The per-kind extra data of a tile entity on the `networkSend: true`
+/// path — the manager's registration order IS the type byte
+/// (`TileEntitiesManager.cs:26-39`): 0 TrainingDummy, 1 ItemFrame,
+/// 2 LogicSensor, 3 DisplayDoll, 4 WeaponsRack, 5 HatRack, 6 FoodPlatter,
+/// 7 TeleportationPylon, 8 DeadCellsDisplayJar, 9 KiteAnchor,
+/// 10 CritterAnchor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TileEntityData {
+    /// 0 — `(short)npc` (`TETrainingDummy.cs:119-127`).
+    TrainingDummy { npc: i16 },
+    /// 1 — one item triple (`TEItemFrame.cs:40-53`).
+    ItemFrame(TeItem),
+    /// 2 — NOTHING on the net path: `WriteExtraData` is
+    /// `if (!networkSend)`-gated (`TELogicSensor.cs:380-396`).
+    LogicSensor,
+    /// 3 — the doll's three flag bytes + pose + the non-air triples
+    /// (`TEDisplayDoll.cs:157-278`): equip bits 0-7, dye bits 0-7, pose
+    /// byte, then bits3 (misc[0], equip[8], dye[8]); the reader folds
+    /// bits3[1]/[2] into the 9th equip/dye slots (`:236`/`:248`).
+    DisplayDoll {
+        equip: [TeItem; 9],
+        dyes: [TeItem; 9],
+        misc: [TeItem; 1],
+        pose: u8,
+    },
+    /// 4 — one item triple (`TEWeaponsRack.cs:53-66`).
+    WeaponsRack(TeItem),
+    /// 5 — one flag byte (items 0/1, dyes 0/1) + the non-air triples
+    /// (`TEHatRack.cs:56-110`).
+    HatRack { items: [TeItem; 2], dyes: [TeItem; 2] },
+    /// 6 — one item triple (`TEFoodPlatter.cs:41-54`).
+    FoodPlatter(TeItem),
+    /// 7 — no `WriteExtraData` override: the base no-op
+    /// (`TETeleportationPylon.cs`, `TileEntity.cs:209-215`).
+    TeleportationPylon,
+    /// 8 — one item triple (`TEDeadCellsDisplayJar.cs:40-53`).
+    DeadCellsDisplayJar(TeItem),
+    /// 9 — `(short)itemType` (`TEKiteAnchor` inherits
+    /// `TELeashedEntityAnchorWithItem.cs:10-18`).
+    KiteAnchor { item_type: i16 },
+    /// 10 — `(short)itemType` (the same base, `TECritterAnchor.cs:7`).
+    CritterAnchor { item_type: i16 },
+}
+
+impl TileEntityData {
+    /// The manager's type byte (`TileEntitiesManager.RegisterAll` order).
+    pub fn type_id(&self) -> u8 {
+        match self {
+            Self::TrainingDummy { .. } => 0,
+            Self::ItemFrame(_) => 1,
+            Self::LogicSensor => 2,
+            Self::DisplayDoll { .. } => 3,
+            Self::WeaponsRack(_) => 4,
+            Self::HatRack { .. } => 5,
+            Self::FoodPlatter(_) => 6,
+            Self::TeleportationPylon => 7,
+            Self::DeadCellsDisplayJar(_) => 8,
+            Self::KiteAnchor { .. } => 9,
+            Self::CritterAnchor { .. } => 10,
+        }
+    }
+
+    /// `WriteExtraData(writer, networkSend: true)` — the per-kind tail.
+    fn write_extra(&self, w: NetWriter) -> NetWriter {
+        match self {
+            Self::TrainingDummy { npc } => w.i16(*npc),
+            Self::ItemFrame(i) | Self::WeaponsRack(i) | Self::FoodPlatter(i) => i.write_to(w),
+            Self::DeadCellsDisplayJar(i) => i.write_to(w),
+            Self::LogicSensor | Self::TeleportationPylon => w,
+            Self::KiteAnchor { item_type } | Self::CritterAnchor { item_type } => w.i16(*item_type),
+            Self::DisplayDoll {
+                equip,
+                dyes,
+                misc,
+                pose,
+            } => {
+                // `TEDisplayDoll.cs:159-184`: equip bits, dye bits, pose,
+                // then bits3 = misc[0] | equip[8]<<1 | dyes[8]<<2.
+                let mut b1 = BitsByte::new();
+                let mut b2 = BitsByte::new();
+                let mut b3 = BitsByte::new();
+                for i in 0..8 {
+                    b1.set(i, !equip[i].is_air());
+                    b2.set(i, !dyes[i].is_air());
+                }
+                b3.set(0, !misc[0].is_air());
+                b3.set(1, !equip[8].is_air());
+                b3.set(2, !dyes[8].is_air());
+                let mut w = w.bitsbyte(b1).bitsbyte(b2).u8(*pose).bitsbyte(b3);
+                // The triples ride in array order, non-air only
+                // (`:185-214`): all 9 equips, all 9 dyes, the 1 misc.
+                for i in equip.iter().chain(dyes.iter()).chain(misc.iter()) {
+                    if !i.is_air() {
+                        w = i.write_to(w);
+                    }
+                }
+                w
+            }
+            Self::HatRack { items, dyes } => {
+                // `TEHatRack.cs:58-83`: one flag byte (items 0/1 then
+                // dyes 0/1), then the non-air triples items-first.
+                let mut b = BitsByte::new();
+                b.set(0, !items[0].is_air());
+                b.set(1, !items[1].is_air());
+                b.set(2, !dyes[0].is_air());
+                b.set(3, !dyes[1].is_air());
+                let mut w = w.bitsbyte(b);
+                for i in items.iter().chain(dyes.iter()) {
+                    if !i.is_air() {
+                        w = i.write_to(w);
+                    }
+                }
+                w
+            }
+        }
+    }
+
+    /// `ReadExtraData(reader, gameVersion: 326, networkSend: true)` — the
+    /// per-kind read (`MessageBuffer.cs:3288` passes 326, so the doll's
+    /// `>= 307`/`>= 308` gates are both live and the `== 311` quirk is
+    /// dead). Absent slots decode as air (the C# `new Item()` default).
+    fn read_extra(kind: u8, r: &mut NetReader) -> Option<Self> {
+        Some(match kind {
+            0 => Self::TrainingDummy { npc: r.i16()? },
+            1 => Self::ItemFrame(TeItem::read_from(r)?),
+            2 => Self::LogicSensor,
+            4 => Self::WeaponsRack(TeItem::read_from(r)?),
+            6 => Self::FoodPlatter(TeItem::read_from(r)?),
+            7 => Self::TeleportationPylon,
+            8 => Self::DeadCellsDisplayJar(TeItem::read_from(r)?),
+            9 => Self::KiteAnchor {
+                item_type: r.i16()?,
+            },
+            10 => Self::CritterAnchor {
+                item_type: r.i16()?,
+            },
+            3 => {
+                let b1 = r.bitsbyte()?;
+                let b2 = r.bitsbyte()?;
+                let pose = r.u8()?; // gameVersion 326 >= 307
+                let b3 = r.bitsbyte()?; // 326 >= 308; the == 311 quirk is dead
+                let mut equip = [TeItem::default(); 9];
+                let mut dyes = [TeItem::default(); 9];
+                let mut misc = [TeItem::default(); 1];
+                // `:236`: the equip mask folds b3[1] into slot 8.
+                for (i, slot) in equip.iter_mut().enumerate() {
+                    if b1.get(i) || (i == 8 && b3.get(1)) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                // `:248`: the dye mask folds b3[2] into slot 8.
+                for (i, slot) in dyes.iter_mut().enumerate() {
+                    if b2.get(i) || (i == 8 && b3.get(2)) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                if b3.get(0) {
+                    misc[0] = TeItem::read_from(r)?;
+                }
+                Self::DisplayDoll {
+                    equip,
+                    dyes,
+                    misc,
+                    pose,
+                }
+            }
+            5 => {
+                let b = r.bitsbyte()?;
+                let mut items = [TeItem::default(); 2];
+                let mut dyes = [TeItem::default(); 2];
+                for (i, slot) in items.iter_mut().enumerate() {
+                    if b.get(i) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                for (i, slot) in dyes.iter_mut().enumerate() {
+                    if b.get(i + 2) {
+                        *slot = TeItem::read_from(r)?;
+                    }
+                }
+                Self::HatRack { items, dyes }
+            }
+            _ => return None, // InvalidEntityID (TileEntitiesManager.cs:17-24)
+        })
+    }
 }

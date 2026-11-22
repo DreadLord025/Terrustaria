@@ -40130,3 +40130,91 @@ byte-census): **research/284** (139 stays RESERVED for g52c-net-master).
 heartbeat, the dusk boundary, the join NPC/pet burst, the
 houses/shop/quest/marker bundle) — **no compiler invoked**.
 
+## The net-id tail census (S1-I-1 W4-f21, 2026-11-21)
+
+The f21 lane re-censused `MessageID` 1-162 against `net.rs` (54 base
+ids) plus every pushed/in-flight codec lane (c27/d89-d100; the in-flight
+probe read each lane's diff, g48 was mid-merge with UU conflicts and was
+left untouched) and found **44 missing ids**. The branch ports **43**
+bodies + codecs verbatim into `net.rs` (the per-id table lives in
+`docs/research/17-netcode.md`'s f21 census section); the dispatcher
+apply/relay arms are parked for the g48-g52 apply-wiring lanes / S1-I-4.
+
+Deliberate verdicts (no behaviour change, code-only):
+
+- **132 PlayLegacySound — dead, skipped per the task.** Zero
+  `PlayNetSound(` call-sites tree-wide (only the definition,
+  `NetMessage.cs:2615-2619`); the writer/reader arms exist but nothing
+  sends. No constant, no variant.
+- **24 UnusedMeleeStrike / 145 / 148 — census constants only.** 24's
+  reader is `Invariant.Assert(false)` and reads NOTHING
+  (`MessageBuffer.cs:1706-1708`); 145/148 have neither arm. No variant
+  is invented for a frame with no live reader (the writer bytes are
+  documented at the constants).
+- **25/26/44/67/83/93 — the reader ignore group**
+  (`MessageBuffer.cs:4483-4490`): bare S2c frames, the d89 id-15
+  precedent. 93 alone is accept-gate-whitelisted (`:165`).
+- **111/129/138/144 — bodyless frames**: no writer case (111/129/144) or
+  no reader case either (138, the default-arm drop). Bare frames pinned.
+- **85 QuickStackChests — the netMode-split writer kept as TWO variants**
+  (`C2s::QuickStackRequest` int+shorts+smart-byte vs
+  `S2c::QuickStackBlockedChests` int+ushorts): one ambiguous body would
+  be unfaithful to `NetMessage.cs:1205-1215`.
+- **104 ShopOverride — the writer/reader stack-width MISMATCH kept
+  verbatim**: the writer sends a 4-byte float stack
+  (`NetMessage.cs:1390`, negative `(short)` clamp to 0f), the reader
+  reads a 2-byte short (`MessageBuffer.cs:3721`) and misaligns the
+  rest. Zero `SendData(104)` sites — dead vanilla code; encode keeps
+  the writer shape, decode the reader shape, the witness pins the exact
+  misaligned read.
+- **86 TileEntitySharing — the full 11-kind networkSend serializer**
+  (`TileEntitiesManager.cs:26-39` registration order = the type byte):
+  the doll's 3-BitsByte+pose form with the bits3[1]/[2] slot-8 fold
+  (gameVersion 326: >=307/>=308 live, ==311 quirk dead), the hat rack's
+  1-flag-byte form, the logic sensor's NOTHING (`!networkSend` gate),
+  the pylon's base no-op, the anchors' short itemType. `IsAir` =
+  `type <= 0 || stack <= 0` (`Item.cs:385-394`).
+- **121/124 — the doll/hat-rack slot order is STACK-BEFORE-PREFIX**
+  (`WriteItem`: ushort type + ushort stack + byte prefix), DISTINCT
+  from the extra-data triple's prefix-before-stack; both helpers live on
+  `TeItem`. The dummy fallbacks are byte-width-identical to the real
+  shapes, so they decode as Pose(0)/air slots exactly as the C#
+  `ReadDummySync` consumes them. 124's dye +2 fold rides the wire slot
+  verbatim (`is_dye`/`slot_index` helpers mirror the reader unfold).
+- **90 SpawnInstancedItem shares the case-21 ItemState body** — d98's
+  wave-I bit-3 enemyGrabDelay extension of that struct merges with the
+  new variant; f21 did not touch the contested fields.
+
+Witnesses: `net.rs::tests::w4_f21_*` — byte-pinned round trips per
+id/shape family, the 104 misalignment pin, the 90-vs-21 and
+TryPlacing-quadruplet (89/123/133/149) byte-equality pins, and the 43-id
+census witness. WRITTEN NOT RUN — no cargo/rustc/rustfmt/tests/graphify
+invoked (code-only lane).
+
+## The f21b small apply arms (S1-I-1 W4-f21b, 2026-11-21, code-only)
+
+The apply-audit resume (research/276, renumbered from 239 per research/150
+round-2 §6.3) censused the g48-g52 lane tips and WIRED the three small
+unclaimed arms whose consumers exist in the port:
+
+- **57 Unknown57**: the client stores the three world-evil bytes into new
+  `World.t_good/t_evil/t_blood` (`WorldGen.cs:4180-4184`); the join push
+  is wired at `MessageBuffer.cs:867`'s position (ahead of 49). Deliberate
+  park: the `CountTiles` recount producer (`WorldGen.cs:71148-71173`)
+  is the tile-count pass's - the fields ride the wire store until it lands.
+- **76 QuestsCountSync**: host own-echo gate (`:3167` runs BEFORE the
+  `:3169` force - a frame naming the host's own slot drops whole), the
+  sender-force, the `PlayerNet.angler_quests_finished/golfer_score` store
+  (new fields; the local Player already had both) and the relay-except;
+  the client own-echo skip + peer store. Deliberate deviation: the
+  `Main.ServerSideCharacter` escape does not exist (the port never SSCs),
+  so the own-echo skip always applies to self.
+- **58 InstrumentSound**: the HOST half only - id-force + relay-except,
+  raw float pitch, no host sound (`MessageBuffer.cs:2642-2650`). The
+  client instrument switch stays parked: PlayGuitarChord/PlayDrums/
+  musicPitch are unported audio players (research/276's gap list).
+
+Witnesses: `netglue::tests::w4_f21b_*` (5) - the join-push store, the
+3-app force/relay pin (bogus wire id 99), both own-echo gates, the raw-frame
+58 relay drain. WRITTEN NOT RUN - no cargo/rustc/rustfmt/tests/graphify
+invoked (code-only lane).
