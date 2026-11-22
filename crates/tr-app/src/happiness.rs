@@ -1,9 +1,14 @@
 //! The town-NPC happiness and the shop prices — `ShopHelper.cs` +
 //! `GameContent/Personalities/*`. The vanilla computes the price multiplier
-//! when a shop opens (`Main.ShopHelper.OpenShop`): the mood factors (the
+//! at the TALK open (`Player.SetTalkNPC` → `ShopHelper.GetShoppingSettings`,
+//! `Player.cs:4383-4390`): the mood factors (the loveStruck buff, the
 //! homelessness, the distance from home, the player's evil biomes, the
 //! crowding) and the personality traits (the biome/neighbor affection)
-//! multiply together, clamped to 0.75..1.5 and rounded to the cents.
+//! multiply together, clamped to 0.75..1.5 and rounded to the cents
+//! (banker's). batch-L merge (research/68 §2-4 + research/240/241): f37's
+//! faithful `process_mood` core + g58's full NPCID-keyed DATA tables, the
+//! report builder and the `ShoppingSettings` latch; one capture, two
+//! consumers (`shop_mood` mirror + `shopping_settings`), zero re-scans.
 
 use crate::npc::NpcKind;
 use tr_core::World;
@@ -48,7 +53,7 @@ impl AffectionLevel {
 }
 
 /// The shopping biomes (`GameContent/Personalities/*Biome.cs`) — the
-/// report/localization keys land with the shop dialog (M4-TOWN-3).
+/// report/localization keys ride [`biome_name_key`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BiomeKind {
     Forest,
@@ -114,6 +119,9 @@ pub fn biome_preferences_by_id(id: u16) -> &'static [BiomePreference] {
         208 => &[bp(L, Hallow), bp(D, Underground)], // `:137-141` the Party Girl
         550 => &[bp(L, Hallow), bp(D, Snow)],      // `:142-146` the Tavernkeep
         160 => &[bp(L, Mushroom)],                 // `:147` the Truffle
+        // The Princess (663) has NO `Register` row — her affection rides the
+        // `AllPersonalitiesModifier` random-love picks alone
+        // (`AllPersonalitiesModifier.cs:15-36`).
         _ => &[],
     }
 }
@@ -228,78 +236,54 @@ pub fn neighbor_preferences_by_id(id: u16) -> &'static [(AffectionLevel, u16)] {
     }
 }
 
-/// The kind-keyed view — the neighbor ids map back through the port's
-/// `cs_id` roster; a row for an UNPORTED kind drops out (the vanilla can
-/// never have that neighbor either — the kind does not exist).
-pub fn neighbor_preferences(kind: NpcKind) -> &'static [(AffectionLevel, NpcKind)] {
-    // The reverse `cs_id` table for the town roster — built once, the
-    // switch's rows resolve at first read.
+/// The kind-keyed view — batch-L keep-one (research/68 §3 item 4): a
+/// DIRECT wrapper over the id table returning the VERBATIM rows (the
+/// unported-neighbor ids stay — they never match until the kind lands,
+/// and the Princess's whole-roster picks need them). g58's
+/// `OnceLock`/`Box::leak` filtered kind view DROPPED; the payload is f37's
+/// `i32` vanilla id (the merged `MoodFlag::NpcAffection` contract).
+pub fn neighbor_preferences(kind: NpcKind) -> &'static [(AffectionLevel, i32)] {
     use std::sync::OnceLock;
-    static ROWS: OnceLock<Vec<&'static [(AffectionLevel, NpcKind)]>> = OnceLock::new();
-    static IDS: &[NpcKind] = &[
-        NpcKind::Guide,
-        NpcKind::Merchant,
-        NpcKind::Nurse,
-        NpcKind::ArmsDealer,
-        NpcKind::Dryad,
-        NpcKind::Demolitionist,
-        NpcKind::Clothier,
-        NpcKind::GoblinTinkerer,
-        NpcKind::Angler,
-        NpcKind::Wizard,
-        NpcKind::Mechanic,
-        NpcKind::Stylist,
-        NpcKind::TaxCollector,
-        NpcKind::Golfer,
-        NpcKind::Zoologist,
-        NpcKind::Princess,
-        NpcKind::DyeTrader,
-        NpcKind::PartyGirl,
-        NpcKind::Painter,
-        NpcKind::WitchDoctor,
-        // The Tavernkeep (550) — `NPCID.DD2Bartender` IS the town Tavernkeep
-        // (`NPC.cs:16261-16274`: `townNPC = true`, aiStyle 7). There is NO
-        // separate event twin: NPCID 109 is the Clown, and 109 is only the
-        // port's wire id (`to_u16`), not his `cs_id` (which resolves 550
-        // through the bestiary). His rows + the rows that name him land.
-        NpcKind::DD2Bartender,
+    static ROWS: OnceLock<Vec<&'static [(AffectionLevel, i32)]>> = OnceLock::new();
+    // The full C# switch-key set (the 25 cases) — the id-keyed rows widen
+    // to i32 once at first read (the &'static contract).
+    static IDS: &[u16] = &[
+        17, 18, 227, 207, 208, 369, 353, 38, 20, 550, 19, 107, 228, 54, 124, 441, 229, 108,
+        178, 209, 142, 588, 22, 160, 633,
     ];
     let rows = ROWS.get_or_init(|| {
         IDS.iter()
-            .map(|k| {
-                let v: Vec<(AffectionLevel, NpcKind)> = neighbor_preferences_by_id(k.cs_id())
+            .map(|id| {
+                let v: Vec<(AffectionLevel, i32)> = neighbor_preferences_by_id(*id)
                     .iter()
-                    .filter_map(|(lv, id)| {
-                        IDS.iter()
-                            .find(|o| o.cs_id() == *id)
-                            .map(|o| (*lv, *o))
-                    })
+                    .map(|(lv, oid)| (*lv, *oid as i32))
                     .collect();
-                // Leaked ONCE at first read — the &'static contract the
-                // old hand-table carried.
                 &*Box::leak(v.into_boxed_slice())
             })
             .collect()
     });
-    let idx = IDS.iter().position(|k| *k == kind);
-    match idx {
+    let id = kind.cs_id();
+    match IDS.iter().position(|o| *o == id) {
         Some(i) => rows[i],
         None => &[],
     }
 }
 
-/// The resolved mood flags — the report-text keys land with the shop dialog
-/// (`AddHappinessReportText`'s categories; the trait rows carry the
-/// affection payload for the `LikeBiome`/`LikeNPC` text families).
+/// The resolved mood flags — the report-text keys ride
+/// [`happiness_report`] (`AddHappinessReportText`'s categories; the trait
+/// rows carry the affection payload for the `LikeBiome`/`LikeNPC` text
+/// families). batch-L merged enum (research/68 §2/§3): f37's i32-carrying
+/// `NpcAffection` + g58's `HateBiomeNamed`/`PrincessLove` report payloads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MoodFlag {
     NoHome,
     FarFromHome,
+    /// The name-less legacy marker — kept for the price-side callers/tests;
+    /// the mood pass emits [`MoodFlag::HateBiomeNamed`] instead.
     HateBiomeEvil,
     /// `IsPlayerInEvilBiomes`' named row (`ShopHelper.cs:353-356`) — the
-    /// evil biome carries its `BiomeName` substitute; supersedes the
-    /// name-less `HateBiomeEvil` marker in the mood pass (the marker stays
-    /// for the price-side callers/tests).
+    /// evil biome carries its `BiomeName` substitute (g58's report half;
+    /// f37's name-less push replaced per research/68 §3 item 7).
     HateBiomeNamed(BiomeKind),
     DislikeCrowded,
     HateCrowded,
@@ -310,12 +294,16 @@ pub enum MoodFlag {
     HateLonely,
     Content,
     BiomeAffection(AffectionLevel, BiomeKind),
-    NpcAffection(AffectionLevel, NpcKind),
+    /// The neighbor affection carries the VANILLA id (f37's contract) —
+    /// the rows reference unported kinds too (Steampunker 178, Cyborg
+    /// 209, …); the report resolves the name through `lang_tables::NPC_ID`.
+    NpcAffection(AffectionLevel, i32),
     /// The Princess's random three-loves head (`AllPersonalitiesModifier.cs:
     /// 15-36`): each pick is a Love ×0.88 whose report key is the dedicated
     /// `LoveNPC_{NPCID.Search.GetName(npcType)}` (`ShopHelper.LoveNPCByTypeName`,
-    /// `:243-250`), NOT the plain `LoveNPC`. The kind carries the name.
-    PrincessLove(NpcKind),
+    /// `:243-250`), NOT the plain `LoveNPC`. The i32 vanilla id carries the
+    /// name (the merged contract — g58's NpcKind payload widens).
+    PrincessLove(i32),
 }
 
 /// The mood outcome — the multiplier rides the caller's shop math, the
@@ -335,40 +323,51 @@ pub struct Mood {
 /// `NPC.SetDefaults` `NPC.cs:17224`/`:17308`/`:17494`/`:17607`) crowd each
 /// other, never the humans (category 0), and vice versa. The port's
 /// `town::can_npcs_live_with_each_other` carries the same comparison (the
-/// housing lane's port); no pet kind ships yet, so every ported pair is
-/// 0 == 0 → counted — the filter is live for when pets land.
+/// housing lane's port); the g10 pet kinds are LIVE on this tree, so the
+/// filter is armed (g58's latch-round half folded into the f37 core).
 fn crowd_neighbor_counts(judge_net_id: i32, other_net_id: i32) -> bool {
     !crate::town::can_npcs_live_with_each_other(judge_net_id, other_net_id)
 }
 
 /// `ShopHelper.ProcessMood` (`ShopHelper.cs:95-174`) + the personality
-/// traits. `raining`/`sandstorm_happening` ride the scene scan's zone
-/// calculation like the player-side scans. The loveStruck ×0.9 rides the
-/// buff pass (the port's buff 87 hook). `roll` stands in for the bare
-/// `Main.rand.Next(n)` the Princess's random three-loves head draws
-/// (`AllPersonalitiesModifier.cs:31`) — the call chain runs outside every
-/// `SwapRandom` stage (`SetTalkNPC` ← `HoverOverNPCs` ← `DrawMouseOver` ←
-/// `DrawInterface_39_MouseOver`, `Main.cs:43081`/`:42939`/`:45150`), so the
-/// caller threads `NamedRngs::global()`. Non-Princess judges never draw.
+/// traits (`BiomePreferenceListTrait.cs:38-53`, `AllPersonalitiesModifier.cs:
+/// 12-506`) — the f37 faithful core (research/68 §2 KEEP): the loveStruck
+/// head BEFORE the exclusions, the remix return, the 37/368/453 exclusion
+/// set, the Tavernkeep-counting crowd roster + the housingCategory filter,
+/// the Princess RNG loves + HateLonely, the ungated traits, the player-zone
+/// judge + single best-affection row, the banker's-cents tail. `rng` is the
+/// bare `Main.rand` stand-in (`app.rngs.global()`) — the ONLY draw is the
+/// Princess's up-to-3 random loves (`:31`). The biome traits judge the
+/// PLAYER's zones (`AShoppingBiome.IsInBiome(info.player)`), not the NPC's
+/// home scene.
 pub fn process_mood(
     world: &World,
     all_npcs: &[crate::npc::Npc],
     npc: &crate::npc::Npc,
     player_center: (f32, f32),
     raining: bool,
-    roll: &mut dyn FnMut(i32) -> i32,
+    rng: &mut tr_core::UnifiedRandom,
 ) -> Mood {
     let mut flags: Vec<MoodFlag> = Vec::new();
     // `:97-98`: the reset.
     let mut adjustment = 1.0f32;
+    // `:99-102`: the loveStruck ×0.9 — BEFORE the exclusions, so even the
+    // travelling sellers keep it. `NPC.loveStruck` is buff 119's flag
+    // (`NPC.cs:92057-92060`); the port derives it from the live buff slots.
+    if npc.buffs.has_buff(119) {
+        adjustment *= 0.9;
+    }
     // `:103-106`: the exclusions — the remix world, the two travelling
-    // sellers and the town pets return before any mood work. The
-    // Travelling Merchant is the port's 368 (`npc.type == 368`), so his
-    // prices ride the plain `PriceAdjustment = 1f` with an empty report
-    // — no homelessness sentinel, no crowd, no biome prefs.
-    if npc.kind == crate::npc::NpcKind::TravellingMerchant {
+    // sellers (368/453), the town pets and `IsNotReallyTownNPC` (37/368/453,
+    // `:363-371`) return before any mood work, with the UNROUNDED adjustment
+    // (the `LimitAndRoundMultiplier` tail never runs on this path).
+    let net_id = npc.kind.net_id();
+    if world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+        || matches!(net_id, 37 | 368 | 453)
+        || npc.kind.is_town_pet()
+    {
         return Mood {
-            multiplier: 1.0,
+            multiplier: adjustment,
             flags,
         };
     }
@@ -398,61 +397,60 @@ pub fn process_mood(
         }
     }
 
-    // `:115-118`: the player in the evil biomes (`:28-34`'s three) pushes
-    // the sentinel too.
-    if adjustment < 1000.0 {
-        let pm = scan_scene_at(
-            world,
-            [player_center.0, player_center.1],
-            raining,
-            false,
-            false,
-        );
-        if pm.zone_corrupt || pm.zone_crimson || pm.zone_dungeon {
-            // `_dangerousBiomes` order (`:28-34`): Corruption first, then
-            // Crimson, then Dungeon — the first hit names the report row.
-            let evil = if pm.zone_corrupt {
-                BiomeKind::Corruption
-            } else if pm.zone_crimson {
-                BiomeKind::Crimson
-            } else {
-                BiomeKind::Dungeon
-            };
-            flags.push(MoodFlag::HateBiomeNamed(evil));
-            adjustment = 1000.0;
-        }
+    // The player's scene — scanned once for BOTH the evil-biome sentinel and
+    // the biome traits (the C# reads the live `player.Zone*` flags).
+    let pm = scan_scene_at(
+        world,
+        [player_center.0, player_center.1],
+        raining,
+        false,
+        false,
+    );
+
+    // `:115-118`: the player in the evil biomes (`:28-34`'s three, in the
+    // array order Corruption → Crimson → Dungeon) pushes the sentinel too.
+    // g58's named row (research/68 §3 item 7): the first hit names the
+    // report's `BiomeName` substitute (`:353-356`).
+    if adjustment < 1000.0 && (pm.zone_corrupt || pm.zone_crimson || pm.zone_dungeon) {
+        let evil = if pm.zone_corrupt {
+            BiomeKind::Corruption
+        } else if pm.zone_crimson {
+            BiomeKind::Crimson
+        } else {
+            BiomeKind::Dungeon
+        };
+        flags.push(MoodFlag::HateBiomeNamed(evil));
+        adjustment = 1000.0;
     }
 
-    // `:119-156`: the crowd — the resident neighbors within 25 tiles of the
-    // home anchor (the 120-tile village ring counts for LoveSpace only).
+    // `GetNearbyResidentNPCs` (`:288-325`): every active town NPC except the
+    // not-really-town trio and the different-housing-category roommates
+    // (`TownRoomManager.cs:153-161` — `housingCategory` differs; the g10
+    // pets are category 1, the humans category 0). Within 25 tiles of the
+    // home anchor = house; 25..120 = village.
     let mut within_house = 0u32;
     let mut within_village = 0u32;
-    let mut nearby_types: Vec<NpcKind> = Vec::new();
+    let mut nearby_ids: Vec<i32> = Vec::new();
     for other in all_npcs {
         if other.hp <= 0 || std::ptr::eq(other, npc) {
             continue;
         }
-        // `:305` — `nPC.active && nPC.townNPC && !IsNotReallyTownNPC(nPC)`
-        // (`:363-371`: 37 OldMan / 368 Travelling Merchant / 453 Skeleton
-        // Merchant). The port's `is_town_resident` carries the `townNPC`
-        // flag but omits the Tavernkeep and includes the Travelling
-        // Merchant, so the gate re-derives the C# pair: admit the
-        // Tavernkeep (550 — `NPCID.DD2Bartender` IS the town Tavernkeep,
-        // `NPC.cs:16261-16274`; no separate event twin exists, NPCID 109
-        // is the Clown / the port's wire id) and drop the Travelling
-        // Merchant (the only ported `IsNotReallyTownNPC` kind). The pets'
-        // housingCategory filter (`CanNPCsLiveWithEachOther_ShopHelper`,
-        // `TownRoomManager.cs:153-161`) is inert — no pets ported.
-        let town_npc = other.kind.is_town_resident() || other.kind == NpcKind::DD2Bartender;
-        if !town_npc || other.kind == NpcKind::TravellingMerchant {
+        // `nPC.townNPC` (`:305`) — the port's town-like set plus the
+        // Tavernkeep (550, `NPC.cs`'s `townNPC = true` arm; the shared
+        // `is_town_npc_like` omits him, the mood scan must not).
+        if !other.kind.is_town_npc_like() && other.kind != NpcKind::DD2Bartender {
             continue;
+        }
+        let oid = other.kind.net_id();
+        if matches!(oid, 37 | 368 | 453) {
+            continue; // IsNotReallyTownNPC (`:363-371`)
         }
         // `:305`'s last gate — `!WorldGen.TownManager.
         // CanNPCsLiveWithEachOther_ShopHelper(npc, nPC)`
         // (`TownRoomManager.cs:153-161`): CanLive = the housingCategories
         // DIFFER, so the mood pass admits only SAME-category neighbors
         // (pets count toward pets, humans toward humans).
-        if !crowd_neighbor_counts(npc.kind.net_id(), other.kind.net_id()) {
+        if !crowd_neighbor_counts(net_id, oid) {
             continue;
         }
         let (ox, oy) = match other.home {
@@ -464,26 +462,26 @@ pub fn process_mood(
         };
         let dist = ((home_x - ox).powi(2) + (home_y - oy).powi(2)).sqrt();
         if dist < 25.0 {
-            nearby_types.push(other.kind);
+            nearby_ids.push(oid);
             within_house += 1;
         } else if dist < 120.0 {
             within_village += 1;
         }
     }
-    // `:120-131`: the Princess's crowd overrides — `flag = false` (no
-    // LoveSpace), `num = 1f` (the crowd multiply is inert), and the
-    // HateLonely sentinel when fewer than 2 within-house AND fewer than 2
-    // within-village neighbors.
-    let is_princess = npc.kind == NpcKind::Princess;
-    let love_space_ok = !is_princess;
-    let crowd_mult = if is_princess { 1.0 } else { 1.05 };
-    if is_princess && within_house < 2 && within_village < 2 {
+    // `:120-131`: the Princess (663) — `flag = false` kills her crowd
+    // multiply AND her LoveSpace; alone (< 2 house AND < 2 village) she
+    // hates the loneliness at the sentinel.
+    let princess = net_id == 663;
+    let crowd_step = if princess { 1.0 } else { 1.05 };
+    if princess && within_house < 2 && within_village < 2 {
         flags.push(MoodFlag::HateLonely);
         adjustment = 1000.0;
     }
+    // `:132-146`: the crowd — each resident past the third multiplies (the
+    // sentinel does NOT stop it; only the final clamp tames it).
     if within_house > 3 {
         for _ in 3..within_house {
-            adjustment *= crowd_mult;
+            adjustment *= crowd_step;
         }
         flags.push(if within_house > 6 {
             MoodFlag::HateCrowded
@@ -491,128 +489,142 @@ pub fn process_mood(
             MoodFlag::DislikeCrowded
         });
     }
-    if love_space_ok && within_house <= 2 && within_village < 4 {
+    // `:147-151`: LoveSpace — `flag && npcsWithinHouse <= 2 &&
+    // npcsWithinVillage < 4` (the Princess's flag is false).
+    if !princess && within_house <= 2 && within_village < 4 {
         flags.push(MoodFlag::LoveSpace);
         adjustment *= 0.95;
     }
 
-    // `:152-168`: the personality traits run UNCONDITIONALLY (the C# has
-    // no `< 1000` gate here — the sentinel rides the clamp at `:178`, but
-    // the report rows + the Princess's RNG draws still land).
-    // `BiomePreferenceListTrait.ModifyShopPrice` (`:38-53`) tests the
-    // PLAYER's zones (`info.player`, `:44`) and picks the HIGHEST affection
-    // among the matching biomes, applying ONE row (`ApplyPreference`,
-    // `:55-73`) — NOT the home tile and NOT every matching row.
-    {
-        let pm = scan_scene_at(
-            world,
-            [player_center.0, player_center.1],
-            raining,
-            false,
-            false,
-        );
-        // `:41-48` — the highest-affection pick among the biomes the player
-        // is in; the first row wins a tie (the `<` compare keeps the
-        // earlier row on equal affection).
-        let mut best: Option<&BiomePreference> = None;
-        for pref in biome_preferences(npc.kind) {
-            if biome_is_in(pref.biome, &pm)
-                && best.is_none_or(|b| b.level.affection_value() < pref.level.affection_value())
-            {
-                best = Some(pref);
+    // `:152-168`: the personality traits — ALWAYS applied (no sentinel
+    // gate); the clamp at the tail tames whatever they multiply into 1000.
+    // The biome trait (`BiomePreferenceListTrait.ModifyShopPrice`,
+    // `:38-53`): among the rows whose biome the PLAYER is in, the single
+    // HIGHEST-affection row wins (`AffectionLevel` Love 100 > Like 50 >
+    // Dislike -50 > Hate -100, `AffectionLevel.cs:5-8`) — one multiply, not
+    // one per matching row.
+    let zones = shopping_zones(&pm, player_center, world);
+    let mut best: Option<&BiomePreference> = None;
+    for pref in biome_preferences(npc.kind) {
+        if biome_in(&zones, pref.biome)
+            && best.is_none_or(|b| b.level.affection_value() < pref.level.affection_value())
+        {
+            best = Some(pref);
+        }
+    }
+    if let Some(pref) = best {
+        flags.push(MoodFlag::BiomeAffection(pref.level, pref.biome));
+        adjustment *= pref.level.multiplier();
+    }
+    // `AllPersonalitiesModifier` (`:12-506`): the Princess's random loves
+    // first (`:15-36` — up to 3 draws off the nearby-type list, each removing
+    // its pick; the report key is the dedicated `LoveNPC_{name}`,
+    // `LoveNPCByTypeName` `:243-250` — the `PrincessLove` flag), then
+    // everyone-but-her likes a nearby Princess (`:37-40`, the dedicated
+    // `LikeNPC_Princess` key), then the per-kind switch rows (`:41-505`) in
+    // source order.
+    if princess {
+        let mut picks: Vec<i32> = nearby_ids.clone();
+        picks.sort_unstable(); // the bool[NPCID.Count] scan is id order
+        picks.dedup();
+        for _ in 0..3 {
+            if picks.is_empty() {
+                break;
             }
+            let index = rng.next_max(picks.len() as i32) as usize;
+            let id = picks.remove(index);
+            flags.push(MoodFlag::PrincessLove(id));
+            adjustment *= AffectionLevel::Love.multiplier();
         }
-        if let Some(pref) = best {
-            flags.push(MoodFlag::BiomeAffection(pref.level, pref.biome));
-            adjustment *= pref.level.multiplier();
-        }
-        // `AllPersonalitiesModifier.ModifyShopPrice_Relationships` (`:12-
-        // 505`): the Princess's random three-loves head FIRST (`:15-36`),
-        // then the universal LikePrincess row (`:37-40`), then the static
-        // switch (`:41-505`).
-        //
-        // The Princess head (`:15-36`): the list is the nearby resident
-        // TYPES in ascending NPCID order (`nearbyNPCsByType` is a
-        // `bool[NPCID.Count]`, `:152-156`, so the `for i` walk is ascending
-        // and deduped by type); three picks, each `Main.rand.Next(list.Count)`
-        // then `RemoveAt` (no replacement), each a Love ×0.88 whose report
-        // key is `LoveNPC_{name}` (`LoveNPCByTypeName`, `:243-250`).
-        if is_princess {
-            let mut list: Vec<NpcKind> = nearby_types.clone();
-            list.sort_by_key(|k| k.cs_id());
-            list.dedup();
-            for _ in 0..3 {
-                if list.is_empty() {
-                    break;
-                }
-                let index = roll(list.len() as i32) as usize;
-                let kind = list.remove(index);
-                flags.push(MoodFlag::PrincessLove(kind));
-                adjustment *= AffectionLevel::Love.multiplier();
-            }
-        }
-        // The universal LikePrincess row (`:37-40`): every NON-Princess
-        // town NPC likes a nearby Princess (×0.94).
-        if !is_princess && nearby_types.contains(&NpcKind::Princess) {
-            flags.push(MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Princess));
-            adjustment *= AffectionLevel::Like.multiplier();
-        }
-        // The static switch (`:41-505`): the NpcAffection flags feed the
-        // report UI (the row order is the C# `if` order). The Princess has
-        // no static rows (`neighbor_preferences_by_id(663)` is empty).
-        for (level, other_kind) in neighbor_preferences(npc.kind) {
-            if nearby_types.iter().any(|t| t == other_kind) {
-                flags.push(MoodFlag::NpcAffection(*level, *other_kind));
-                adjustment *= level.multiplier();
-            }
+    } else if nearby_ids.contains(&663) {
+        flags.push(MoodFlag::NpcAffection(AffectionLevel::Like, 663));
+        adjustment *= AffectionLevel::Like.multiplier();
+    }
+    for (level, id) in neighbor_preferences(npc.kind) {
+        if nearby_ids.contains(id) {
+            flags.push(MoodFlag::NpcAffection(*level, *id));
+            adjustment *= level.multiplier();
         }
     }
 
     if flags.is_empty() {
         flags.push(MoodFlag::Content);
     }
-    // `:173-181`: the clamp 0.75..1.5 and the cents rounding.
-    let multiplier = (adjustment.clamp(0.75, 1.5) * 100.0).round() / 100.0;
+    // `LimitAndRoundMultiplier` (`:176-181`): the clamp 0.75..1.5, then
+    // `Math.Round(x * 100) / 100` — the BANKER'S round (the shop.rs helper).
+    let clamped = adjustment.clamp(0.75, 1.5);
+    let multiplier = crate::shop::round_half_to_even(clamped * 100.0) as f32 / 100.0;
     Mood { multiplier, flags }
 }
 
-/// `AShoppingBiome.IsInBiome(player)` per biome — each reads one player
-/// zone flag (`Player.Zone*` = `SceneMetrics.Zone*`, `Player.cs:16705-
-/// 16713`), except the two shopping-zone properties:
-/// * Forest (`ForestBiome.cs:10-13`): `ShoppingZone_Forest` =
-///   `!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`
-///   (`Player.cs:3837-3847`); `ShoppingZone_AnyBiome` (`:3823-3833`) is
-///   the nine-zone OR (Dungeon/Corrupt/Crimson/Glowshroom/Hallow/Jungle/
-///   Snow/Beach/Desert).
-/// * Underground (`UndergroundBiome.cs:10-13`): `ShoppingZone_BelowSurface`
-///   = `Center.ToTileCoordinates().Y > Main.worldSurface`
-///   (`Player.cs:3835`) — the scan's `below_surface`.
-/// * Mushroom (`MushroomBiome.cs:10-13`): `ZoneGlowshroom` =
-///   `EnoughTilesForGlowingMushroom` (`SceneMetrics.cs:677`).
-fn biome_is_in(biome: BiomeKind, pm: &tr_core::scene::SceneMetrics) -> bool {
+/// The player's shopping-zone snapshot — the ten `AShoppingBiome.IsInBiome`
+/// inputs. Eight are plain `player.Zone*` flags; the Forest and Underground
+/// rows ride the special getters (`Player.cs:3823-3847`):
+/// `ShoppingZone_BelowSurface = Center tile Y > Main.worldSurface`,
+/// `ShoppingZone_Forest = !AnyBiome && !BelowSurface` where `AnyBiome` is
+/// any of the eight named zones (Desert included).
+struct ShoppingZones {
+    corrupt: bool,
+    crimson: bool,
+    dungeon: bool,
+    glowshroom: bool,
+    hallow: bool,
+    jungle: bool,
+    snow: bool,
+    beach: bool,
+    desert: bool,
+    forest: bool,
+    below_surface: bool,
+}
+
+fn shopping_zones(
+    pm: &tr_core::scene::SceneMetrics,
+    player_center: (f32, f32),
+    world: &World,
+) -> ShoppingZones {
+    let z = pm.zones();
+    let any_biome = z.dungeon
+        || z.corrupt
+        || z.crimson
+        || z.glowshroom
+        || z.hallow
+        || z.jungle
+        || z.snow
+        || pm.zone_beach
+        || z.desert;
+    // `(int)Center.Y >> 4` (`Utils.cs:1809`) vs `Main.worldSurface` (double).
+    let tile_y = (player_center.1 as i32) >> 4;
+    let below_surface = f64::from(tile_y) > world.world_surface;
+    ShoppingZones {
+        corrupt: z.corrupt,
+        crimson: z.crimson,
+        dungeon: z.dungeon,
+        glowshroom: z.glowshroom,
+        hallow: z.hallow,
+        jungle: z.jungle,
+        snow: z.snow,
+        beach: pm.zone_beach,
+        desert: z.desert,
+        forest: !any_biome && !below_surface,
+        below_surface,
+    }
+}
+
+/// One `AShoppingBiome.IsInBiome` row over the snapshot (the ten
+/// `GameContent/Personalities/*Biome.cs` classes).
+fn biome_in(z: &ShoppingZones, biome: BiomeKind) -> bool {
     match biome {
-        BiomeKind::Forest => {
-            let any_biome = pm.zone_dungeon
-                || pm.zone_corrupt
-                || pm.zone_crimson
-                || pm.enough_tiles_for_glowing_mushroom()
-                || pm.zone_hallow
-                || pm.zone_jungle
-                || pm.zone_snow
-                || pm.zone_beach
-                || pm.zone_desert;
-            !any_biome && !pm.below_surface
-        }
-        BiomeKind::Ocean => pm.zone_beach,
-        BiomeKind::Snow => pm.zone_snow,
-        BiomeKind::Desert => pm.zone_desert,
-        BiomeKind::Jungle => pm.zone_jungle,
-        BiomeKind::Underground => pm.below_surface,
-        BiomeKind::Hallow => pm.zone_hallow,
-        BiomeKind::Mushroom => pm.enough_tiles_for_glowing_mushroom(),
-        BiomeKind::Corruption => pm.zone_corrupt,
-        BiomeKind::Crimson => pm.zone_crimson,
-        BiomeKind::Dungeon => pm.zone_dungeon,
+        BiomeKind::Forest => z.forest,
+        BiomeKind::Ocean => z.beach,
+        BiomeKind::Snow => z.snow,
+        BiomeKind::Desert => z.desert,
+        BiomeKind::Jungle => z.jungle,
+        BiomeKind::Underground => z.below_surface,
+        BiomeKind::Hallow => z.hallow,
+        BiomeKind::Mushroom => z.glowshroom,
+        BiomeKind::Corruption => z.corrupt,
+        BiomeKind::Crimson => z.crimson,
+        BiomeKind::Dungeon => z.dungeon,
     }
 }
 
@@ -651,14 +663,23 @@ pub fn npc_full_name(all_npcs: &[crate::npc::Npc], kind: NpcKind) -> String {
     crate::lang::npc_name(kind.cs_id() as i32)
 }
 
+/// The i32-id twin (the merged `NpcAffection`/`PrincessLove` payload): a
+/// ported id resolves through `kind_from_net_id`; an unported id answers
+/// the plain `Lang.GetNPCNameValue` type name (the no-resident arm).
+fn npc_full_name_by_id(all_npcs: &[crate::npc::Npc], id: i32) -> String {
+    match crate::npc::kind_from_net_id(id) {
+        Some((kind, _)) => npc_full_name(all_npcs, kind),
+        None => crate::lang::npc_name(id),
+    }
+}
+
 /// `NPC.CanShowHomelessText` (`NPC.cs:94828-94841`): the homeless NPC
 /// that is not the Old Man (37) / Travelling Merchant (368) / Skeleton
 /// Merchant (453). The port's homeless stand-in is `home == None` (the
-/// `Npc.homeless` field); the Old Man / Skeleton Merchant kinds are
-/// unported, the Travelling Merchant is.
+/// `Npc.homeless` field); the exclusion set rides the vanilla net ids.
 pub fn can_show_homeless_text(npc: Option<&crate::npc::Npc>) -> bool {
     match npc {
-        Some(n) => n.home.is_none() && n.kind != NpcKind::TravellingMerchant,
+        Some(n) => n.home.is_none() && !matches!(n.kind.net_id(), 37 | 368 | 453),
         None => false,
     }
 }
@@ -725,7 +746,10 @@ fn biome_name(key: &str) -> String {
 /// factors landed, and every call PREPENDS). The evil-biome row names the
 /// biome (`IsPlayerInEvilBiomes` `:353-356` passes `BiomeName`); the
 /// LikePrincess row uses the `LikeNPC_Princess` key
-/// (`AllPersonalitiesModifier.cs:37-40` → `ShopHelper.cs:252-259`).
+/// (`AllPersonalitiesModifier.cs:37-40` → `ShopHelper.cs:252-259`); the
+/// Princess's picks use `LoveNPC_{name}` (`LoveNPCByTypeName` `:243-250`).
+/// batch-L: the i32-id payloads resolve through `lang_tables::NPC_ID` /
+/// `kind_from_net_id` (research/68 §4's report-builder adaptation).
 pub fn happiness_report(
     kind: NpcKind,
     transformed: bool,
@@ -778,26 +802,22 @@ pub fn happiness_report(
             MoodFlag::NpcAffection(level, other) => {
                 // The LikePrincess row's dedicated key (`ShopHelper.cs:
                 // 252-259` — `LikeNPC_Princess` with the Princess's name).
-                let (key, name_kind) =
-                    if *level == AffectionLevel::Like && *other == NpcKind::Princess {
-                        ("LikeNPC_Princess", *other)
-                    } else {
-                        (
-                            match level {
-                                AffectionLevel::Love => "LoveNPC",
-                                AffectionLevel::Like => "LikeNPC",
-                                AffectionLevel::Dislike => "DislikeNPC",
-                                AffectionLevel::Hate => "HateNPC",
-                            },
-                            *other,
-                        )
-                    };
+                let key = if *level == AffectionLevel::Like && *other == 663 {
+                    "LikeNPC_Princess"
+                } else {
+                    match level {
+                        AffectionLevel::Love => "LoveNPC",
+                        AffectionLevel::Like => "LikeNPC",
+                        AffectionLevel::Dislike => "DislikeNPC",
+                        AffectionLevel::Hate => "HateNPC",
+                    }
+                };
                 prepend_report(
                     &mut report,
                     kind,
                     transformed,
                     key,
-                    &[("NPCName", npc_full_name(all_npcs, name_kind))],
+                    &[("NPCName", npc_full_name_by_id(all_npcs, *other))],
                 );
             }
             MoodFlag::PrincessLove(other) => {
@@ -807,7 +827,7 @@ pub fn happiness_report(
                 // (`kind`), the key names the picked neighbor.
                 let Some(name) = crate::lang_tables::NPC_ID
                     .iter()
-                    .find(|(id, _)| *id == other.cs_id() as i32)
+                    .find(|(id, _)| *id == *other)
                     .map(|(_, n)| *n)
                 else {
                     continue;
@@ -817,7 +837,7 @@ pub fn happiness_report(
                     kind,
                     transformed,
                     &format!("LoveNPC_{name}"),
-                    &[("NPCName", npc_full_name(all_npcs, *other))],
+                    &[("NPCName", npc_full_name_by_id(all_npcs, *other))],
                 );
             }
         }
@@ -831,17 +851,20 @@ pub fn happiness_report(
 /// folds them through `AddHappinessReportText`'s prepend. The Zoologist's
 /// `Transformed` category suffix reads her shapeshift form off the world
 /// clock (`ShouldBestiaryGirlBeLycantrope`, the predicate `UpdateAltTexture`
-/// writes `altTexture = 2` on — `NPC.cs:90225-90227`). `roll` is the bare
+/// writes `altTexture = 2` on — `NPC.cs:90225-90227`). `rng` is the bare
 /// `Main.rand` stand-in the Princess head draws (`NamedRngs::global()`).
+/// batch-L (research/68 §3 item 8): this is the struct-building helper the
+/// capture sites call WITH the rng — `set_talk_npc` + the gated shop-open
+/// are the ONLY callers.
 pub fn shopping_settings(
     world: &World,
     all_npcs: &[crate::npc::Npc],
     npc: &crate::npc::Npc,
     player_center: (f32, f32),
     raining: bool,
-    roll: &mut dyn FnMut(i32) -> i32,
+    rng: &mut tr_core::UnifiedRandom,
 ) -> ShoppingSettings {
-    let mood = process_mood(world, all_npcs, npc, player_center, raining, roll);
+    let mood = process_mood(world, all_npcs, npc, player_center, raining, rng);
     let transformed =
         should_bestiary_girl_be_lycantrope(world.blood_moon, world.day_time, world.moon_phase);
     ShoppingSettings {
@@ -849,7 +872,6 @@ pub fn shopping_settings(
         happiness_report: happiness_report(npc.kind, transformed, &mood.flags, all_npcs),
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -857,20 +879,15 @@ mod tests {
     use tr_core::World;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
-    /// A no-draw `Main.rand` stand-in for the non-Princess judges — their
-    /// random three-loves head never runs, so the closure is never called.
-    fn no_roll() -> impl FnMut(i32) -> i32 {
-        |_n: i32| 0
-    }
-
-    /// The forest test ground: dirt from y = 120 on a 1000-wide world —
-    /// no special zones. The width exceeds 2×`BEACH_DISTANCE` (380) so the
-    /// middle columns (x≈500) are NOT ocean (`WorldGen.oceanDepths`,
-    /// `WorldGen.cs:4447`); `worldSurface` 130 sits below the player row
-    /// (y≈110) so `ShoppingZone_BelowSurface` is false and the Forest
-    /// predicate (`!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`,
-    /// `Player.cs:3837-3847`) holds. The action centres on x = 500.
+    /// The forest test ground: dirt from y = 120 — no special zones (the
+    /// home rows sit below the beach's ocean level, so the Forest
+    /// fallthrough holds).
     fn forest_world() -> World {
+        // batch-L merged fixture: g58's 1000-wide ground (the width exceeds
+        // 2×BEACH_DISTANCE so the x≈500 columns are NOT ocean — its hallow/
+        // judge witnesses need the band) + f37's `world_surface = 120.0`
+        // (research/68 §4: the player-zone judge needs the player above the
+        // surface for the Forest row; f37's x≈60 rigs stay non-beach too).
         let mut w = World::new("t".into(), 1000, 200);
         for x in 0..1000 {
             for y in 120..200 {
@@ -882,7 +899,7 @@ mod tests {
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
-        w.world_surface = 130.0;
+        w.world_surface = 120.0;
         w.rock_layer = 140.0;
         w.compute_column_surface();
         w
@@ -894,6 +911,15 @@ mod tests {
         g.hp = g.max_hp;
         g
     }
+
+    /// A no-draw `Main.rand` stand-in for the non-Princess judges — their
+    /// random three-loves head never runs (batch-L: the merged core takes
+    /// `&mut UnifiedRandom`; the seed-0 stream stands in for g58's no_roll
+    /// closure, never drawn).
+    fn no_roll() -> tr_core::UnifiedRandom {
+        tr_core::UnifiedRandom::new(0)
+    }
+
 
     /// A hallow patch around (cx, cy) on the forest ground — pearlstone
     /// (109) counts toward `HolyTileCount` (`SceneMetrics.cs:589`); 125+
@@ -915,8 +941,6 @@ mod tests {
             }
         }
     }
-
-
     #[test]
     fn the_travelling_merchant_ignores_the_mood() {
         // `ShopHelper.cs:103-106`'s early return: `npc.type == 368` (and the
@@ -933,7 +957,7 @@ mod tests {
             &m,
             (60.0 * 16.0, 110.0 * 16.0),
             false,
-            &mut no_roll(),
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert_eq!(mood.multiplier, 1.0, "the plain multiplier");
         assert!(mood.flags.is_empty(), "no happiness report");
@@ -958,14 +982,14 @@ mod tests {
         // Like ×0.94 (`:27-30`'s Register(22)) = 0.893 → the cents round
         // 0.89 (`:176-181`).
         let w = forest_world();
-        let guide = housed_guide(&w, (500, 120));
+        let guide = housed_guide(&w, (60, 120));
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (500.0 * 16.0, 110.0 * 16.0),
+            (60.0 * 16.0, 110.0 * 16.0),
             false,
-            &mut no_roll(),
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(
             (mood.multiplier - 0.89).abs() < 0.001,
@@ -994,7 +1018,7 @@ mod tests {
             &guide,
             (60.0 * 16.0, 110.0 * 16.0),
             false,
-            &mut no_roll(),
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!((mood.multiplier - 1.5).abs() < 0.001);
         assert!(mood.flags.contains(&MoodFlag::NoHome));
@@ -1028,9 +1052,11 @@ mod tests {
             &guide,
             (57.0 * 16.0, 112.0 * 16.0),
             false,
-            &mut no_roll(),
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!((mood.multiplier - 1.5).abs() < 0.001);
+        // batch-L re-pin (research/68 §3 item 7): the evil arm pushes the
+        // NAMED row (g58's report payload), not the name-less marker.
         assert!(mood.flags.contains(&MoodFlag::HateBiomeNamed(BiomeKind::Corruption)));
     }
 
@@ -1039,15 +1065,22 @@ mod tests {
         // `:132-146`: the residents within 25 tiles past the third push
         // ×1.05 each; the LoveSpace gate closes (within_house > 2).
         let w = forest_world();
-        let guide = housed_guide(&w, (500, 120));
+        let guide = housed_guide(&w, (60, 120));
         let mut all = vec![guide.clone()];
         for (dx, dy) in [(4, 0), (-4, 0), (0, -6), (7, 3)] {
-            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the neighbor spawns");
-            other.home = Some((500 + dx, 120 + dy));
+            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the neighbor spawns");
+            other.home = Some((60 + dx, 120 + dy));
             other.hp = other.max_hp;
             all.push(other);
         }
-        let mood = process_mood(&w, &all, &all[0], (500.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
+        let mood = process_mood(
+            &w,
+            &all,
+            &all[0],
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
         // 4 neighbors → 1 × 1.05; the forest Like ×0.94 → 0.987 → 0.99.
         assert!(
             (mood.multiplier - 0.99).abs() < 0.001,
@@ -1063,15 +1096,22 @@ mod tests {
         // `:147-151`: within_house ≤ 2 AND within_village < 4 — a packed
         // village (the neighbors 25..120 tiles out) keeps LoveSpace off.
         let w = forest_world();
-        let guide = housed_guide(&w, (500, 120));
+        let guide = housed_guide(&w, (60, 120));
         let mut all = vec![guide.clone()];
         for dx in [30, 60, 90, 110] {
-            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the villager spawns");
-            other.home = Some((500 + dx, 120));
+            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the villager spawns");
+            other.home = Some((60 + dx, 120));
             other.hp = other.max_hp;
             all.push(other);
         }
-        let mood = process_mood(&w, &all, &all[0], (500.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
+        let mood = process_mood(
+            &w,
+            &all,
+            &all[0],
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
         // within_house = 0, within_village = 4 → no LoveSpace; the forest
         // Like alone → 0.94.
         assert!(
@@ -1117,6 +1157,363 @@ mod tests {
             biome_preferences(NpcKind::GoblinTinkerer)[1].biome,
             BiomeKind::Jungle
         );
+    }
+
+    /// W4-f37 — `loveStruck` (buff 119, `NPC.cs:92057-92060`) multiplies ×0.9
+    /// BEFORE the exclusions (`ShopHelper.cs:99-106`): the travelling seller
+    /// keeps the 0.9 (UNROUNDED — the early return skips the cents tail),
+    /// the forest Guide rides 0.893 × 0.9 = 0.8037 → 0.80.
+    #[test]
+    fn the_love_struck_multiply_precedes_the_exclusions() {
+        let w = forest_world();
+        let mut m = Npc::new(NpcKind::TravellingMerchant, 60.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        m.home = None;
+        m.buffs.add_buff(119, 600);
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&m),
+            &m,
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!(
+            (mood.multiplier - 0.9).abs() < 1e-5,
+            "the exclusion keeps the raw 0.9, got {}",
+            mood.multiplier
+        );
+        assert!(mood.flags.is_empty());
+        let mut guide = housed_guide(&w, (60, 120));
+        guide.buffs.add_buff(119, 600);
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&guide),
+            &guide,
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!(
+            (mood.multiplier - 0.80).abs() < 0.001,
+            "0.95 × 0.94 × 0.9 → 0.80, got {}",
+            mood.multiplier
+        );
+    }
+
+    /// W4-f37 — `Main.remixWorld` (`ShopHelper.cs:103`): EVERY town NPC drops
+    /// out before the mood work — even the homeless Guide keeps 1.0 (the
+    /// sentinel never runs), with no report.
+    #[test]
+    fn the_remix_world_skips_every_mood() {
+        let mut w = forest_world();
+        w.seeds.insert(tr_core::seeds::SeedFlags::REMIX);
+        let mut guide = Npc::spawn_guide(&w, 60).expect("the guide spawns");
+        guide.home = None; // homeless — would be the 1.5 ceiling on classic
+        guide.hp = guide.max_hp;
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&guide),
+            &guide,
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert_eq!(mood.multiplier, 1.0);
+        assert!(mood.flags.is_empty());
+    }
+
+    /// W4-f37 — the Princess (663, `ShopHelper.cs:122-131` +
+    /// `AllPersonalitiesModifier.cs:15-36`): alone she hates the loneliness
+    /// (the sentinel → 1.5); with neighbors she draws up to 3 random loves
+    /// off `Main.rand` (each removing its pick) and NEVER rides the crowd
+    /// ×1.05 or LoveSpace (flag = false).
+    #[test]
+    fn the_princess_hates_loneliness_and_skips_the_crowd_rows() {
+        let w = forest_world();
+        let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((60, 120));
+        princess.hp = princess.max_hp;
+        // Alone: HateLonely at the sentinel (the clamp ceiling).
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&princess),
+            &princess,
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!((mood.multiplier - 1.5).abs() < 0.001);
+        assert!(mood.flags.contains(&MoodFlag::HateLonely));
+        assert!(!mood.flags.contains(&MoodFlag::LoveSpace));
+        // Four neighbors (past the crowd gate): the Princess's num = 1f
+        // kills the ×1.05s, but the REPORT still lands (`:138-145` is not
+        // flag-gated); LoveSpace stays off (flag = false); her loves alone
+        // (one deduped Guide type → one ×0.88 → 0.88).
+        let mut all = vec![princess.clone()];
+        for (dx, dy) in [(4, 0), (-4, 0), (0, -6), (7, 3)] {
+            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the neighbor spawns");
+            other.home = Some((60 + dx, 120 + dy));
+            other.hp = other.max_hp;
+            all.push(other);
+        }
+        let mood = process_mood(
+            &w,
+            &all,
+            &all[0],
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!(
+            (mood.multiplier - 0.88).abs() < 0.001,
+            "one deduped love, no crowd multiply, got {}",
+            mood.multiplier
+        );
+        assert!(mood.flags.contains(&MoodFlag::DislikeCrowded), "the report still lands");
+        assert!(!mood.flags.contains(&MoodFlag::LoveSpace));
+        assert!(!mood.flags.contains(&MoodFlag::HateLonely));
+    }
+
+    /// W4-f37 — the Princess's picks dedup by TYPE (the `bool[NPCID.Count]`
+    /// scan, `AllPersonalitiesModifier.cs:14-24`): two Guides nearby are ONE
+    /// entry — one love draw ×0.88 → 0.88. A Guide + a Merchant are two
+    /// entries — two draws, and the RNG replay pins WHICH order.
+    #[test]
+    fn the_princess_picks_dedup_by_type_and_ride_the_global_stream() {
+        let w = forest_world();
+        let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((60, 120));
+        princess.hp = princess.max_hp;
+        let mut all = vec![princess.clone()];
+        for dx in [4, -4] {
+            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the neighbor spawns");
+            other.home = Some((60 + dx, 120));
+            other.hp = other.max_hp;
+            all.push(other);
+        }
+        let mut rng = tr_core::UnifiedRandom::new(0);
+        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut rng);
+        assert!(
+            (mood.multiplier - 0.88).abs() < 0.001,
+            "one deduped type → one love, got {}",
+            mood.multiplier
+        );
+        assert_eq!(
+            mood.flags
+                .iter()
+                .filter(|f| matches!(f, MoodFlag::PrincessLove(_)))
+                .count(),
+            1
+        );
+        // batch-L re-pin: the picks ride the dedicated `PrincessLove` flag
+        // (g58's LoveNPC_{name} report key), not the plain NpcAffection.
+        assert!(mood.flags.contains(&MoodFlag::PrincessLove(22)));
+        // Two TYPES: the draws replay off the same seed — first
+        // `Next(2)` picks the index, `RemoveAt` shrinks the list.
+        let mut merchant = Npc::new(NpcKind::Merchant, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        merchant.home = Some((64, 120));
+        merchant.hp = merchant.max_hp;
+        all[2] = merchant;
+        let mut rng = tr_core::UnifiedRandom::new(0);
+        let mut expect = tr_core::UnifiedRandom::new(0);
+        let first = expect.next_max(2) as usize;
+        let mut picks = vec![17i32, 22];
+        let pick1 = picks.remove(first);
+        // The second draw is `Next(1)` — it still consumes the stream.
+        let _ = expect.next_max(1);
+        let pick2 = picks.remove(0);
+        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut rng);
+        assert_eq!(rng, expect, "the picks ride the passed stream verbatim");
+        assert!(mood.flags.contains(&MoodFlag::PrincessLove(pick1)));
+        assert!(mood.flags.contains(&MoodFlag::PrincessLove(pick2)));
+        assert!(
+            (mood.multiplier - 0.77).abs() < 0.001,
+            "0.88² → 0.77, got {}",
+            mood.multiplier
+        );
+    }
+
+    /// W4-f37 — everyone BUT the Princess likes a nearby Princess
+    /// (`AllPersonalitiesModifier.cs:37-40`), and the Guide DOES carry
+    /// switch rows (case 22, `:451-468`): a nearby Clothier (54) is a Like.
+    /// Forest Like ×0.94 × LikePrincess ×0.94 × LikeNPC(54) ×0.94 with
+    /// LoveSpace ×0.95 (2 in house) → 0.95 × 0.94³ = 0.789… → 0.79.
+    #[test]
+    fn the_guide_likes_a_nearby_princess_and_clothier() {
+        let w = forest_world();
+        let guide = housed_guide(&w, (60, 120));
+        let mut all = vec![guide.clone()];
+        let mut princess = Npc::new(NpcKind::Princess, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        princess.home = Some((64, 120));
+        princess.hp = princess.max_hp;
+        all.push(princess);
+        let mut clothier = Npc::new(NpcKind::Clothier, 56.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        clothier.home = Some((56, 120));
+        clothier.hp = clothier.max_hp;
+        all.push(clothier);
+        let mood = process_mood(
+            &w,
+            &all,
+            &all[0],
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!(mood.flags.contains(&MoodFlag::NpcAffection(AffectionLevel::Like, 663)));
+        assert!(mood.flags.contains(&MoodFlag::NpcAffection(AffectionLevel::Like, 54)));
+        assert!(
+            (mood.multiplier - 0.79).abs() < 0.001,
+            "0.95 × 0.94³ = 0.789 → 0.79, got {}",
+            mood.multiplier
+        );
+        // The report order: LoveSpace, the biome Like, LikePrincess, then
+        // the switch rows (`ShopHelper.cs:164-168` — the traits before the
+        // AllPersonalitiesModifier? NO: the database traits run FIRST, then
+        // AllPersonalities — the biome row precedes the princess like).
+        let idx = |f: MoodFlag| mood.flags.iter().position(|x| *x == f).unwrap();
+        assert!(idx(MoodFlag::BiomeAffection(AffectionLevel::Like, BiomeKind::Forest))
+            < idx(MoodFlag::NpcAffection(AffectionLevel::Like, 663)));
+        assert!(idx(MoodFlag::NpcAffection(AffectionLevel::Like, 663))
+            < idx(MoodFlag::NpcAffection(AffectionLevel::Like, 54)));
+    }
+
+    /// W4-f37 — the biome trait judges the PLAYER's zones, not the NPC's
+    /// home scene (`BiomePreferenceListTrait.cs:44` —
+    /// `IsInBiome(info.player)`): the Guide's home sits in the forest, the
+    /// PLAYER stands in the underground (below `Main.worldSurface`) — no
+    /// Forest row, no Underground row (the Guide has none), so the mood is
+    /// LoveSpace alone ×0.95. The old home-anchor port gave 0.89 here.
+    #[test]
+    fn the_biome_traits_judge_the_player_not_the_npc_home() {
+        let w = forest_world();
+        let guide = housed_guide(&w, (60, 120));
+        // The player BELOW the surface line (tile y 130 > 120) — the dirt
+        // there carries no special zone, so only ShoppingZone_BelowSurface.
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&guide),
+            &guide,
+            (60.0 * 16.0, 130.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!(
+            (mood.multiplier - 0.95).abs() < 0.001,
+            "LoveSpace alone, got {}",
+            mood.multiplier
+        );
+        assert!(!mood.flags.iter().any(|f| matches!(f, MoodFlag::BiomeAffection(..))));
+    }
+
+    /// W4-f37 — the single BEST-affection row wins
+    /// (`BiomePreferenceListTrait.cs:44`'s `Affection <` compare,
+    /// `AffectionLevel.cs:5-8`): the Tinkerer underground AND in the jungle
+    /// rides the Like Underground ×0.94 ALONE (not ×1.06 for the jungle
+    /// Dislike too). The rig: the player below the surface inside a jungle
+    /// patch (the scan's 140-tile threshold).
+    #[test]
+    fn the_best_affection_row_wins_over_the_lower_ones() {
+        let mut w = forest_world();
+        // Jungle grass (kind 60) under the player — enough for the zone.
+        for x in 40..80 {
+            for y in 125..160 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 60,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut tink = Npc::new(NpcKind::GoblinTinkerer, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        tink.home = Some((60, 120));
+        tink.hp = tink.max_hp;
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&tink),
+            &tink,
+            (60.0 * 16.0, 130.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!(mood.flags.contains(&MoodFlag::BiomeAffection(
+            AffectionLevel::Like,
+            BiomeKind::Underground
+        )));
+        assert!(!mood.flags.contains(&MoodFlag::BiomeAffection(
+            AffectionLevel::Dislike,
+            BiomeKind::Jungle
+        )));
+        // LoveSpace ×0.95 × Like ×0.94 = 0.893 → 0.89.
+        assert!(
+            (mood.multiplier - 0.89).abs() < 0.001,
+            "got {}",
+            mood.multiplier
+        );
+    }
+
+    /// W4-f37 — the cents round is the BANKER'S round
+    /// (`ShopHelper.cs:179` — `Math.Round(x * 100) / 100`): 0.925 → 92.5 →
+    /// 92 (even), not 93. The rig: LoveSpace ×0.95 × Dislike ×1.06 =
+    /// 1.007 → 1.01 is not a half case; the direct helper pins the tie.
+    #[test]
+    fn the_cents_round_is_bankers() {
+        // The helper the tail rides (shop.rs's Math.Round port).
+        assert_eq!(crate::shop::round_half_to_even(92.5), 92);
+        assert_eq!(crate::shop::round_half_to_even(93.5), 94);
+        assert_eq!(crate::shop::round_half_to_even(88.5), 88);
+        // A full-chain tie: 0.95 (LoveSpace) × 0.94 (Like) × 0.94
+        // (LikeNPC) = 0.83942 → 83.942 → 84 — no tie; the half-case needs
+        // the raw product to land exactly on .5, which the f32 chain
+        // rarely does — the helper pins the CONTRACT, the chain pins the
+        // plumbing.
+        let w = forest_world();
+        let guide = housed_guide(&w, (60, 120));
+        let mut clothier = Npc::new(NpcKind::Clothier, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        clothier.home = Some((64, 120));
+        clothier.hp = clothier.max_hp;
+        let all = vec![guide.clone(), clothier];
+        let mood = process_mood(
+            &w,
+            &all,
+            &all[0],
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        // 0.95 × 0.94 × 0.94 = 0.83942 → 0.84.
+        assert!(
+            (mood.multiplier - 0.84).abs() < 0.001,
+            "got {}",
+            mood.multiplier
+        );
+    }
+
+    /// W4-f37 — the traits run even at the sentinel
+    /// (`ShopHelper.cs:152-168` has NO `< 1000` gate): the homeless Guide
+    /// still collects LoveSpace + the Forest Like into the report; the
+    /// clamp lands the product on the 1.5 ceiling either way.
+    #[test]
+    fn the_traits_run_at_the_sentinel_too() {
+        let w = forest_world();
+        let mut guide = Npc::spawn_guide(&w, 60).expect("the guide spawns");
+        guide.home = None;
+        guide.hp = guide.max_hp;
+        let mood = process_mood(
+            &w,
+            std::slice::from_ref(&guide),
+            &guide,
+            (60.0 * 16.0, 110.0 * 16.0),
+            false,
+            &mut tr_core::UnifiedRandom::new(0),
+        );
+        assert!((mood.multiplier - 1.5).abs() < 0.001);
+        assert!(mood.flags.contains(&MoodFlag::NoHome));
+        assert!(mood.flags.contains(&MoodFlag::LoveSpace));
+        assert!(mood.flags.contains(&MoodFlag::BiomeAffection(
+            AffectionLevel::Like,
+            BiomeKind::Forest
+        )));
     }
 
     /// W4-g58 witnesses — the DATA tables against the C# source rows.
@@ -1209,29 +1606,28 @@ mod tests {
             assert!(neighbor_preferences_by_id(663).is_empty());
         }
 
-        /// The kind-keyed view resolves through `cs_id` and drops the
-        /// unported neighbor kinds (the vanilla can never house them).
+        /// The kind-keyed view — batch-L RE-PIN (research/68 §3 item 4):
+        /// the wrapper returns the VERBATIM id rows (no unported-neighbor
+        /// drop — the ids never match until the kind lands, and the
+        /// Princess's whole-roster picks need them).
         #[test]
         fn the_kind_view_filters_the_unported_neighbors() {
             // The Guide (`:451-468`): Clothier like, Steampunker dislike
-            // (UNPORTED — drops), Painter hate, Zoologist like.
+            // (178 unported — the row STAYS verbatim), Painter hate,
+            // Zoologist like.
             let guide = neighbor_preferences(NpcKind::Guide);
             assert_eq!(
                 guide,
-                &[
-                    (L, NpcKind::Clothier),
-                    (H, NpcKind::Painter),
-                    (L, NpcKind::Zoologist),
-                ]
+                &[(L, 54), (D, 178), (H, 227), (L, 633)]
             );
             // The Merchant: the Angler hate row survives (369 ports).
             let merchant = neighbor_preferences(NpcKind::Merchant);
             assert_eq!(merchant.len(), 4);
-            assert_eq!(merchant[3], (H, NpcKind::Angler));
-            // The Tax Collector's Santa hate row drops (142 unported).
+            assert_eq!(merchant[3], (H, 369));
+            // The Tax Collector's Santa hate row STAYS (142 unported).
             let tax = neighbor_preferences(NpcKind::TaxCollector);
-            assert_eq!(tax.len(), 4);
-            assert!(!tax.iter().any(|(_, k)| k.cs_id() == 142));
+            assert_eq!(tax.len(), 5);
+            assert!(tax.iter().any(|(_, id)| *id == 142));
         }
 
         /// The Tavernkeep (550) is a town NPC — `NPCID.DD2Bartender` IS the
@@ -1248,19 +1644,14 @@ mod tests {
             let tk = neighbor_preferences(NpcKind::DD2Bartender);
             assert_eq!(
                 tk,
-                &[
-                    (V, NpcKind::Demolitionist),
-                    (L, NpcKind::GoblinTinkerer),
-                    (D, NpcKind::Guide),
-                    (H, NpcKind::DyeTrader),
-                ]
+                &[(V, 38), (L, 107), (D, 22), (H, 207)]
             );
             // The rows that NAME him survive: the Angler hates him (`:141-
             // 158`), the Demolitionist loves him (`:177-194`).
             let angler = neighbor_preferences(NpcKind::Angler);
-            assert!(angler.contains(&(H, NpcKind::DD2Bartender)));
+            assert!(angler.contains(&(H, 550)));
             let demo = neighbor_preferences(NpcKind::Demolitionist);
-            assert!(demo.contains(&(V, NpcKind::DD2Bartender)));
+            assert!(demo.contains(&(V, 550)));
             // The crowd gate admits him: a housed Tavernkeep beside a
             // housed Guide is one within-house neighbor (the Guide alone
             // would be LoveSpace; two housed NPCs still ≤2 → LoveSpace,
@@ -1396,12 +1787,16 @@ mod tests {
             assert_eq!(santa[1].level, AffectionLevel::Hate);
             assert_eq!(santa[1].biome, BiomeKind::Desert);
             // A scene that is BOTH snow and desert: the pick is Love Snow.
+            // (batch-L re-pin: the merged judge is f37's `shopping_zones`/
+            // `biome_in` snapshot — the g58 `biome_is_in(pm)` twin dropped.)
             let mut pm = tr_core::scene::SceneMetrics::new();
             pm.zone_snow = true;
             pm.zone_desert = true;
+            let w = forest_world();
+            let zones = shopping_zones(&pm, (500.0 * 16.0, 110.0 * 16.0), &w);
             let mut best: Option<&BiomePreference> = None;
             for pref in santa {
-                if biome_is_in(pref.biome, &pm)
+                if biome_in(&zones, pref.biome)
                     && best.is_none_or(|b| b.level.affection_value() < pref.level.affection_value())
                 {
                     best = Some(pref);
@@ -1413,17 +1808,23 @@ mod tests {
             assert_eq!(pick.level.multiplier(), 0.88, "ONE row, not 0.88×1.12");
         }
 
-        /// A scripted `Main.rand.Next(n)` stand-in: each call pops the next
-        /// pre-seeded index (the C# `Main.rand.Next(list.Count)` draw) and
-        /// asserts the index is in range. The draw-count witness uses a
-        /// separate counting closure.
-        fn scripted_roll(indices: &[i32]) -> impl FnMut(i32) -> i32 + '_ {
-            let mut cursor = 0usize;
-            move |n: i32| {
-                let idx = indices.get(cursor).copied().unwrap_or(0);
-                cursor += 1;
-                assert!(idx < n, "the draw index {idx} must be < list.Count {n}");
-                idx
+        /// A scripted `Main.rand` stand-in (batch-L re-pin): a
+        /// `CountingRandom` wrapper is not available on the merged core's
+        /// `&mut UnifiedRandom` signature, so the scripted-draw witnesses
+        /// ride f37's stream-replay shape —
+        /// `the_princess_picks_dedup_by_type_and_ride_the_global_stream`
+        /// above pins the draw order/count against a mirrored
+        /// `UnifiedRandom`; this g58 twin pins the ASCENDING-list +
+        /// no-replacement semantics with a seed whose first three
+        /// `Next(3)/Next(2)/Next(1)` draws are all 0 (the [0,0,0] script).
+        fn zero_head_seed() -> i32 {
+            let mut seed = 0;
+            loop {
+                let mut r = tr_core::UnifiedRandom::new(seed);
+                if r.next_max(3) == 0 && r.next_max(2) == 0 && r.next_max(1) == 0 {
+                    return seed;
+                }
+                seed += 1;
             }
         }
 
@@ -1439,14 +1840,13 @@ mod tests {
             let mut princess = Npc::new(NpcKind::Princess, 500.0 * 16.0, 118.0 * 16.0, 1, 0.0);
             princess.home = Some((500, 120));
             princess.hp = princess.max_hp;
-            let mut roll = |_n: i32| 0;
             let mood = process_mood(
                 &w,
                 std::slice::from_ref(&princess),
                 &princess,
                 (500.0 * 16.0, 110.0 * 16.0),
                 false,
-                &mut roll,
+                &mut no_roll(),
             );
             assert!(mood.flags.contains(&MoodFlag::HateLonely));
             assert!(!mood.flags.contains(&MoodFlag::LoveSpace), "flag = false (`:124`)");
@@ -1478,20 +1878,19 @@ mod tests {
                 n.hp = n.max_hp;
                 all.push(n);
             }
-            // within_house = 3 → no HateLonely (needs < 2). Draws [0,0,0]:
-            // pick list[0]=17 (Merchant), then list[0]=18 (Nurse), then
-            // list[0]=22 (Guide).
-            let draws = [0, 0, 0];
-            let mut roll = scripted_roll(&draws);
+            // within_house = 3 → no HateLonely (needs < 2). The zero-head
+            // seed draws [0,0,0]: pick list[0]=17 (Merchant), then
+            // list[0]=18 (Nurse), then list[0]=22 (Guide).
+            let mut rng = tr_core::UnifiedRandom::new(zero_head_seed());
             let mood = process_mood(
                 &w,
                 &all,
                 &all[0],
                 (500.0 * 16.0, 110.0 * 16.0),
                 false,
-                &mut roll,
+                &mut rng,
             );
-            let loves: Vec<NpcKind> = mood
+            let loves: Vec<i32> = mood
                 .flags
                 .iter()
                 .filter_map(|f| match f {
@@ -1501,7 +1900,7 @@ mod tests {
                 .collect();
             assert_eq!(
                 loves,
-                vec![NpcKind::Merchant, NpcKind::Nurse, NpcKind::Guide],
+                vec![17, 18, 22],
                 "ascending NPCID list, no replacement"
             );
             // 3 Love ×0.88 = 0.681472; the Princess has no biome row and no
@@ -1531,21 +1930,22 @@ mod tests {
             // within_house = 1 < 2 AND within_village = 0 < 2 → HateLonely
             // sentinel, but the head STILL draws (the traits run
             // unconditionally, `:164-168`). One neighbor → one pick.
-            let mut draws = 0i32;
-            let mut roll = |_n: i32| {
-                draws += 1;
-                0
-            };
+            // batch-L re-pin: the draw count rides the stream-replay twin
+            // (a `Next(1)` still consumes the stream — one draw, then the
+            // list-empty break).
+            let mut rng = tr_core::UnifiedRandom::new(0);
+            let mut expect = tr_core::UnifiedRandom::new(0);
+            let _ = expect.next_max(1);
             let mood = process_mood(
                 &w,
                 &all,
                 &all[0],
                 (500.0 * 16.0, 110.0 * 16.0),
                 false,
-                &mut roll,
+                &mut rng,
             );
-            assert_eq!(draws, 1, "one neighbor → one draw, then the break");
-            let loves: Vec<NpcKind> = mood
+            assert_eq!(rng, expect, "one neighbor → one draw, then the break");
+            let loves: Vec<i32> = mood
                 .flags
                 .iter()
                 .filter_map(|f| match f {
@@ -1553,7 +1953,7 @@ mod tests {
                     _ => None,
                 })
                 .collect();
-            assert_eq!(loves, vec![NpcKind::Nurse]);
+            assert_eq!(loves, vec![18]);
             assert!(mood.flags.contains(&MoodFlag::HateLonely));
         }
 
@@ -1565,7 +1965,7 @@ mod tests {
         fn the_princess_love_report_uses_the_named_key() {
             let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
             crate::lang::init(tr_core::localization::GameCulture::English);
-            let flags = [MoodFlag::PrincessLove(NpcKind::Guide)];
+            let flags = [MoodFlag::PrincessLove(22)];
             let report = happiness_report(NpcKind::Princess, false, &flags, &[]);
             let expected = crate::lang::text_format_with(
                 "TownNPCMood_Princess.LoveNPC_Guide",
@@ -1644,7 +2044,7 @@ mod tests {
                 crate::npc::Npc::new(NpcKind::Clothier, 0.0, 0.0, 1, 0.0);
             clothier.hp = clothier.max_hp;
             clothier.given_name = "Isaac".into();
-            let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Clothier)];
+            let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, 54)];
             let report = happiness_report(NpcKind::Guide, false, &flags, &[clothier]);
             let full = crate::lang::text_args(
                 "Game.NPCTitle",
@@ -1663,7 +2063,7 @@ mod tests {
         fn the_princess_row_uses_its_own_key() {
             let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
             crate::lang::init(tr_core::localization::GameCulture::English);
-            let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, NpcKind::Princess)];
+            let flags = [MoodFlag::NpcAffection(AffectionLevel::Like, 663)];
             let report = happiness_report(NpcKind::Guide, false, &flags, &[]);
             let expected = crate::lang::text_format_with(
                 "TownNPCMood_Guide.LikeNPC_Princess",

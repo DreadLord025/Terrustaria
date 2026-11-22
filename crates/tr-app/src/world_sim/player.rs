@@ -1108,6 +1108,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
+            // W4-f37 — `Player.Update`'s post-`UpdateEquips` discount
+            // refresh (`Player.cs:25636-25639`): `if (Main.npcShop <= 0)
+            // discountAvailable = discountEquipped`. `update_with_grapple`
+            // below runs the ResetEffects → UpdateEquips chain that arms
+            // `discount_equipped` (the 854/3035 rows); the shop-open tick
+            // LATCHES the previous value (the vanilla never re-reads it
+            // while `npcShop > 0`), the shop-closed tick mirrors the flag.
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1121,6 +1128,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &app.npcs,
                 app.talk_npc,
             );
+            // W4-f37 — the refresh itself (`Player.cs:25636-25639`): only
+            // the shop-CLOSED ticks copy `discountEquipped` into the App's
+            // `discount_available` mirror; an open shop keeps its latch.
+            if app.shop_npc.is_none() {
+                app.discount_available = p.discount_equipped;
+            }
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
             // sits right after `FloorVisuals`, inside `Player.Update`).
@@ -3678,5 +3691,45 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    /// W4-f37 — `Player.Update`'s discount refresh (`Player.cs:25636-25639`):
+    /// `if (Main.npcShop <= 0) discountAvailable = discountEquipped`. The
+    /// shop-CLOSED ticks mirror the equipped flag; an OPEN shop latches the
+    /// value it had when it opened — equipping or unequipping the Discount
+    /// Card mid-shop never changes the open shop's prices (the vanilla
+    /// re-reads only after the shop closes).
+    #[test]
+    fn the_discount_available_refresh_latches_while_the_shop_is_open() {
+        let mut app = ammo_app();
+        // No card, no shop: the mirror stays false.
+        tick_ammo(&mut app);
+        assert!(!app.discount_available);
+        // Equip the Discount Card (854) with the shop closed: the refresh
+        // copies `discountEquipped` into the App mirror.
+        app.player.as_mut().unwrap().equipped[3] = 854;
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().discount_equipped);
+        assert!(app.discount_available, "the closed-shop tick mirrors");
+        // Open a shop, then UNEQUIP: the open shop keeps the latch.
+        app.shop_npc = Some(0);
+        app.player.as_mut().unwrap().equipped[3] = 0;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().discount_equipped);
+        assert!(app.discount_available, "the open shop latches true");
+        // Close the shop: the next tick re-reads the (now false) flag.
+        app.shop_npc = None;
+        tick_ammo(&mut app);
+        assert!(!app.discount_available, "the closed-shop tick mirrors");
+        // The reverse latch: open WITHOUT the card, equip mid-shop — the
+        // open shop keeps false until it closes.
+        app.shop_npc = Some(0);
+        app.player.as_mut().unwrap().equipped[3] = 854;
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().discount_equipped);
+        assert!(!app.discount_available, "the open shop latches false");
+        app.shop_npc = None;
+        tick_ammo(&mut app);
+        assert!(app.discount_available);
     }
 }

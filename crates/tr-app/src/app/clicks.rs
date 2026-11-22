@@ -1142,6 +1142,9 @@ impl App {
             // 11 + the panel's `Close` reset.
             self.set_talk_npc(None);
             self.npc_chat_text.clear();
+            // `SetTalkNPC(-1)` (`Player.cs:4383-4386`): NotInShop — the
+            // captured mood resets (W4-f37).
+            self.shop_mood = 1.0;
             crate::chest::play_menu_sound(self, 11);
             self.npc_chat_last_hovered = -1;
         } else if hovered == 1 && self.ui_left_press {

@@ -1753,6 +1753,14 @@ pub(crate) fn draw_player(
         seat_y_offset,
         sleeping: player.sleeping,
         full_rotation,
+        // W4-f37: the live hair tint (`Player.hairColor`, `Player.cs:2554`)
+        // — the hair window's sliders write it; the default reproduces the
+        // former HAIR constant.
+        hair_color: [
+            player.hair_color[0] as f32 / 255.0,
+            player.hair_color[1] as f32 / 255.0,
+            player.hair_color[2] as f32 / 255.0,
+        ],
     };
     let mut layers = assemble_layers(&state, assets);
     // `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the

@@ -974,6 +974,17 @@ pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
 /// W4-f49 — [`spawn_heal_text`] with an explicit stream key (the prism
 /// flower drink's text rides `UpdateProjectiles`, `Main.cs:17775`).
 fn spawn_heal_text_on(app: &mut App, amount: i32, key: crate::app::RngKey) {
+    let rng = app.rngs.stream(key);
+    spawn_heal_text_with(app, amount, rng);
+}
+
+/// W4-f37 — [`spawn_heal_text`] with the caller's stream — the nurse-heal
+/// click (`NPCChatText_DoNurseHeal`, `Main.cs:40112`) draws the two
+/// `CombatText.NewText` position jitters (`CombatText.cs:88-89`) on the
+/// bare-`Main.rand` stand-in (`app.rngs.global()`, the S1-A-11 §4 click
+/// convention), NOT the UpdatePlayers swap. (batch-L compose: f49's
+/// stream-KEY wrapper + f37's stream-REF core, one body.)
+pub(crate) fn spawn_heal_text_with(app: &mut App, amount: i32, rng: &mut tr_core::UnifiedRandom) {
     let Some(p) = app.player.as_ref() else {
         return;
     };
@@ -989,7 +1000,6 @@ fn spawn_heal_text_on(app: &mut App, amount: i32, key: crate::app::RngKey) {
         width: crate::player::WIDTH,
         height,
     };
-    let rng = app.rngs.stream(key);
     crate::combat_text::spawn_amount(
         &mut app.combat_texts,
         location,

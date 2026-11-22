@@ -536,6 +536,9 @@ pub(crate) fn spawn_recall(app: &mut App) {
     p.prev_x = p.x;
     p.prev_y = p.y - 1.0;
     // `:37648-37652` SetTalkNPC(-1) + npcChatCornerItem = 0.
+    // `:37648-37652` SetTalkNPC(-1) + npcChatCornerItem = 0. The seam
+    // resets BOTH latches (`shopping_settings` NotInShop + f37's
+    // `shop_mood = 1.0`, research/68 §6).
     app.set_talk_npc(None);
     // `:37665-37672` the RecallFromItem immune arm: immuneTime = 60 (not the
     // ReviveFromDeath 180 / pvpDeath 300), immuneNoBlink when !hostile.
