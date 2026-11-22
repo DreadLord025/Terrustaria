@@ -92,6 +92,11 @@ pub mod id {
     pub const SIGN_REQUEST: u8 = 46; // MessageBuffer.cs:2366-2375
     pub const SIGN_DATA: u8 = 47; // MessageBuffer.cs:2376-2405 / NetMessage.cs:979-986
     pub const PLAYER_BUFFS: u8 = 50; // MessageBuffer.cs:2454-2480 / NetMessage.cs:996-1008
+    /// `51 MiscDataSync` (`MessageID.cs:115`): the (player, kind) pair —
+    /// kind 5 is the Torch God bestiary-kill request (`Player.cs:45241`'s
+    /// `SendData(51, …, 5f)` → `MessageBuffer.cs:2514-2520` registers the
+    /// 664 kill on the server). W4-f33.
+    pub const MISC_DATA_SYNC: u8 = 51; // MessageBuffer.cs:2482-2530 / NetMessage.cs:1010-1013
     pub const ADD_NPC_BUFF: u8 = 53; // MessageBuffer.cs:2565-2575 / NetMessage.cs:1019-1022
     pub const NPC_BUFFS: u8 = 54; // MessageBuffer.cs:2577-2593 / NetMessage.cs:1024-1039
     pub const HIT_SWITCH: u8 = 59; // MessageBuffer.cs:2682-2693 / NetMessage.cs:1063-1066
@@ -575,6 +580,18 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Player.unlockedBiomeTorches` — fed by `4 PlayerInfo`'s bitsByte16
+    /// bit 2 (`NetMessage.cs:184` / `MessageBuffer.cs:345`, W4-f33). The
+    /// peer's own conversion gates read it locally in the C#; the port
+    /// carries it for parity with the wire (the 5043 use's `SendData(4)`
+    /// re-announces it, `Player.cs:45240`).
+    pub unlocked_biome_torches: bool,
+    /// `Player.UsingBiomeTorches` — bitsByte16 bit 0 (`NetMessage.cs:182` /
+    /// `MessageBuffer.cs:343`, W4-f33): the builder-toggle half of the pair.
+    pub using_biome_torches: bool,
+    /// `Player.happyFunTorchTime` — bitsByte16 bit 1 (`NetMessage.cs:183` /
+    /// `MessageBuffer.cs:344`, W4-f33): the Torch God event runs on the peer.
+    pub happy_fun_torch_time: bool,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1646,6 +1663,14 @@ pub enum C2s {
     PlayerChest(PlayerChest),
     /// `50 PlayerBuffs` - this client's buff ids (`Main.cs:17675`).
     PlayerBuffs(PlayerBuffs),
+    /// `51 MiscDataSync` — the (player, kind) misc-event pair
+    /// (`NetMessage.cs:1010-1013`). Kind 5: the Torch God's Favor use asks
+    /// the server to register the 664 bestiary kill (`Player.cs:45241`,
+    /// `MessageBuffer.cs:2514-2520`). W4-f33.
+    MiscDataSync {
+        player_id: u8,
+        kind: u8,
+    },
     /// `59 HitSwitch` - a client tripped a switch (`Collision.cs:3303-3304`,
     /// `Player.cs:32178` and the other `HitSwitch` call sites).
     HitSwitch(HitSwitch),
@@ -1872,6 +1897,7 @@ impl C2s {
             Self::AddNpcBuff(_) => id::ADD_NPC_BUFF,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
+            Self::MiscDataSync { .. } => id::MISC_DATA_SYNC,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
             Self::PlayerMana(_) => id::PLAYER_MANA,
             Self::TeamChange(_) => id::TEAM_CHANGE,
@@ -1933,6 +1959,8 @@ impl C2s {
                 }
                 w.u16(0)
             }
+            // `NetMessage.cs:1010-1013` — the (byte) player, (byte) kind.
+            Self::MiscDataSync { player_id, kind } => w.u8(*player_id).u8(*kind),
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::AddNpcBuff(a) => w.i16(a.npc).u16(a.buff_type).i16(a.time),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
@@ -2029,6 +2057,10 @@ impl C2s {
                 player_id: r.u8()?,
                 buffs: read_terminated_u16(r),
             }),
+            id::MISC_DATA_SYNC => Self::MiscDataSync {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            },
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
@@ -3432,6 +3464,15 @@ pub struct Slot {
     pub sections: Vec<bool>,
     /// The grid width the latch is sized for (0 = not allocated yet).
     pub sections_w: i32,
+    /// `Main.player[id].unlockedBiomeTorches` — the server's copy, fed by
+    /// `4 PlayerInfo`'s bitsByte16 bit 2 (`MessageBuffer.cs:345`, W4-f33).
+    pub unlocked_biome_torches: bool,
+    /// `Main.player[id].UsingBiomeTorches` — bitsByte16 bit 0
+    /// (`MessageBuffer.cs:343`, W4-f33).
+    pub using_biome_torches: bool,
+    /// `Main.player[id].happyFunTorchTime` — bitsByte16 bit 1
+    /// (`MessageBuffer.cs:344`, W4-f33).
+    pub happy_fun_torch_time: bool,
 }
 
 type Slots = Arc<Mutex<HashMap<u32, Slot>>>;
@@ -3502,6 +3543,9 @@ impl Server {
                         inventory: HashMap::new(),
                         sections: Vec::new(),
                         sections_w: 0,
+                        unlocked_biome_torches: false,
+                        using_biome_torches: false,
+                        happy_fun_torch_time: false,
                     },
                 );
                 let Ok(mut reader) = stream.try_clone() else {
@@ -3599,6 +3643,32 @@ impl Server {
                 c.name = name;
             }
         }
+    }
+
+    /// The server's `Main.player[id]` biome-torch trio write
+    /// (`MessageBuffer.cs:343-345`, W4-f33): `UsingBiomeTorches` (bit 0),
+    /// `happyFunTorchTime` (bit 1), `unlockedBiomeTorches` (bit 2) of the
+    /// `4 PlayerInfo` bitsByte16.
+    pub fn set_slot_torch_flags(&self, id: u32, using: bool, happy: bool, unlocked: bool) {
+        if let Ok(mut s) = self.slots.lock() {
+            if let Some(c) = s.get_mut(&id) {
+                c.using_biome_torches = using;
+                c.happy_fun_torch_time = happy;
+                c.unlocked_biome_torches = unlocked;
+            }
+        }
+    }
+
+    /// The server's copy of the peer's biome-torch trio (a snapshot).
+    pub fn slot_torch_flags(&self, id: u32) -> (bool, bool, bool) {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| {
+                s.get(&id)
+                    .map(|c| (c.using_biome_torches, c.happy_fun_torch_time, c.unlocked_biome_torches))
+            })
+            .unwrap_or((false, false, false))
     }
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
@@ -4728,6 +4798,50 @@ mod tests {
         assert_eq!(packed, hide);
         for (i, f) in flags.iter().enumerate() {
             assert_eq!((packed & (1 << i)) != 0, *f);
+        }
+    }
+
+    /// W4-f33 — `51 MiscDataSync`'s (byte player, byte kind) body
+    /// (`NetMessage.cs:1010-1013`): the 5043 use's kind-5 bestiary-kill
+    /// request round-trips. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f33_the_misc_data_sync_pair_round_trips() {
+        let m = C2s::MiscDataSync {
+            player_id: 3,
+            kind: 5,
+        };
+        let f = m.encode();
+        assert_eq!(f[2], 51, "MessageID.MiscDataSync");
+        assert_eq!(&f[3..], &[3, 5], "the (player, kind) pair");
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::MiscDataSync { player_id, kind } => {
+                assert_eq!((player_id, kind), (3, 5));
+            }
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-f33 — the `4 PlayerInfo` bitsByte16 biome-torch trio
+    /// (`NetMessage.cs:182-184` / `MessageBuffer.cs:343-345`): bit 0
+    /// UsingBiomeTorches, bit 1 happyFunTorchTime, bit 2
+    /// unlockedBiomeTorches ride the identity push's flags2.
+    #[test]
+    fn w4_f33_the_player_info_torch_trio_round_trips() {
+        let mut pi = PlayerInfo::with_name(1, "TorchBearer");
+        pi.flags2.set(0, true); // UsingBiomeTorches
+        pi.flags2.set(1, true); // happyFunTorchTime
+        pi.flags2.set(2, true); // unlockedBiomeTorches
+        let f = C2s::PlayerInfo(pi.clone()).encode();
+        match C2s::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::PlayerInfo(d) => {
+                assert!(d.flags2.get(0), "bit 0 UsingBiomeTorches");
+                assert!(d.flags2.get(1), "bit 1 happyFunTorchTime");
+                assert!(d.flags2.get(2), "bit 2 unlockedBiomeTorches");
+                // The artisan-bread bit (flags3 bit 6, the g90 lane) stays
+                // independent of the trio.
+                assert!(!d.flags3.get(6));
+            }
+            other => panic!("expected 4, got {:?}", other.msg_id()),
         }
     }
 }

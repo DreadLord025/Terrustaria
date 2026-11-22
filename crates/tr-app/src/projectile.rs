@@ -17962,6 +17962,25 @@ impl ProjectilePool {
                         // the four variation choreographies and the alpha
                         // ramp.
                         187 => self.slots[i].ai_insanity_shadow(world),
+                        // W4-f33 — the aiStyle-184 Torch God shot (949,
+                        // `AI_184_BadTorchLuck` `Projectile.cs:42787-42822`):
+                        // the owner-gated SelfHurtPlayers, the Item8 latch,
+                        // the ai[1] budget drain (tileCollide arms at 0)
+                        // and the 4-dust census. The movement integrate is
+                        // `kill_step` (HandleMovement's default — free
+                        // flight until the budget arms the tile collide,
+                        // then kill-on-tile).
+                        184 => {
+                            crate::projectile_ai_torch_god::ai_184_bad_torch_luck(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            if self.slots[i].active {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
                         // The aiStyle-188 Light's Bane slash
                         // (`:42229-42262`): the scale latch, the 3-tick
                         // frame machine and the velocity rotation.
@@ -20305,6 +20324,12 @@ impl ProjectilePool {
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    // W4-f33 — the Torch God shot (949) is exempt: the C#
+                    // stock `hostile = false` (`Projectile.cs:764`) makes
+                    // `Damage_EVP` refuse (`:14775`); its player hurt rides
+                    // the AI's own `SelfHurtPlayers` (`:42791`), which
+                    // never kills the shot (`penetrate = -1`).
+                    && self.slots[i].kind != TORCH_GOD
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
                 }
@@ -20470,6 +20495,21 @@ impl ProjectilePool {
                 // C# body order: the 932 dust chain precedes the 715 arm.
                 if self.slots[i].kind == 932 {
                     crate::projectile_ai_misc::fairy_queen_death_draws(rng);
+                }
+                // W4-f33 — `Kill()`'s 949 arm (`Projectile.cs:70976-70995`):
+                // the Item10 cue + the 20-dust census (each dust's NewDust
+                // draws + the Next(3) noGravity roll), on the same
+                // UpdateProjectiles stream. The cue rides the pool's sound
+                // queue (the pass-tail drain, the S1-E-21c convention).
+                // The out-of-world guard (`:16696`) deactivates WITHOUT
+                // `Kill()`, so its deaths draw nothing (the channel-cancel
+                // head's `!died_out_of_world` gate, same reason).
+                if self.slots[i].kind == TORCH_GOD && !died_out_of_world {
+                    crate::projectile_ai_torch_god::kill_census(
+                        &self.slots[i],
+                        rng,
+                        &mut self.pending_proj_sounds,
+                    );
                 }
                 self.celeb2_death(
                     i,
@@ -23855,6 +23895,14 @@ impl ProjectilePool {
             // pull-in latch (the 709's Kill sets `ai[1] = 1` on the nearby
             // circles, `:73379`), so the gate carries it too.
             if matches!(p.kind, 443 | SKY_DRAGONS_FURY_ELECTROSPHERE) && !p.friendly {
+                continue;
+            }
+            // W4-f33 — the Torch God shot (949): the stock `friendly =
+            // false` (`Projectile.cs:788` — the 949 arm `:8948-8955` never
+            // sets it), so `Damage_PVE_Inner`'s `!friendly` refusal
+            // (`:12611`) means it hits NO NPC — the rain hurts only the
+            // player, through the AI's own SelfHurtPlayers.
+            if p.kind == TORCH_GOD {
                 continue;
             }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {

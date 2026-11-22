@@ -23594,11 +23594,17 @@ code-only mode).
   builderAccStatus[11] == 0`: the port reads `p.unlocked_biome_torches`
   (without the Torch God unlock the plain torch stays plain) and folds the
   builder toggle to 0 (on). `happyFunTorchTime` folds to false (no field).
+  **(W4-f33 update: the conversion callers read the `using_biome_torches()`
+  PROPERTY now — the toggle slot is live state, the 5043 use arms it; the
+  toggle CLICK stays unported. `happyFunTorchTime` has a field now, the
+  held-torch light gate reads it.)**
 * `BiomeTorchHoldStyle` (`:40291-40346`): the `ZoneShimmer` (`:40297`),
   `ZoneLihzhardTemple` (`:40305`), `ZoneUndergroundDesert` and remix-world
   desert arms (`:40337-40344`) read fields the port's `Zones` does not carry
   and are skipped **in place**; the dungeon arm (`:40301`, before the
   underworld one) and the surface-desert half land.
+  **(W4-f33 update: ALL arms live — the temple + remix landed at S1-P-i42,
+  the shimmer + underground-desert flags ride the `Zones` snapshot now.)**
 * The `ItemCheck` gate `!JustDroppedAnItem && IsAllowedToHoldItems`
   (`:42847`) folds to true (neither flag ported); `ApplyItemPositionOffsetFromMount`
   folds to zero (no mount offsets); 4952's `petting.isPetting` gate folds
@@ -37537,12 +37543,56 @@ Census first; the WRONGs fixed verbatim with C# cites.
 via `BiomeTorchPlaceStyle` (`:40236-40289`). The hold-light family already read
 the unlock (`player_lights.rs::biome_torch_hold_style`); the placement half was
 absent. **Fix**: `world_sim/editing.rs::biome_torch_place_style` + the
-`place_tile` conversion. The ZoneShimmer / ZoneUndergroundDesert arms read
-unported `Zones` fields — skipped in place; the temple (`Zones.temple`) and
-remix (`SeedFlags::REMIX`) arms ARE ported, the remaining arms keep their
-C# order (the player_lights precedent). The hold-style half also regained its
-dropped `ZoneLihzhardTemple` and remix-desert arms (`player_lights.rs`,
+`place_tile` conversion. The temple (`Zones.temple`) and remix
+(`SeedFlags::REMIX`) arms ARE ported, the remaining arms keep their C# order
+(the player_lights precedent). The hold-style half also regained its dropped
+`ZoneLihzhardTemple` and remix-desert arms (`player_lights.rs`,
 `Player.cs:40305-40308`/`:40341-40344`).
+**W4-f33 update — ALL twelve arms live now.** The ZoneShimmer /
+ZoneUndergroundDesert arms were skipped while the `Zones` SNAPSHOT dropped the
+flags — but `SceneMetrics` carried `zone_shimmer`/`zone_underground_desert` all
+along (`scene.rs:87`/`:152`); the skip was a copy gap, not an unported system.
+The snapshot carries both now (`scene.rs::zones`), the shimmer arm returns the
+Aether torch FIRST (23 place / 5353 hold, `:40240`/`:40297`) and the desert arm
+ORs the underground-desert zone into the surface gate (`:40280`/`:40337`).
+Both conversion gates read the `UsingBiomeTorches` PROPERTY
+(`p.using_biome_torches()` — the unlock AND `builderAccStatus[11] == 0`,
+`Player.cs:3950-3959`), not the raw unlock flag; the builder-toggle CLICK
+(`Main.cs:42532-42585`) stays unported, so the slot holds the ctor's 0 (on) in
+play. The 5043 use arms both halves (`:45231-45232`). Witnesses: the full
+arm table + order pins + the placement frameY route (`editing.rs`
+`w4_f33_the_place_style_arms…`/`…place_route…`/`…plain_torch_only`), the hold
+arm ids + the toggle gate (`player_lights.rs`). The d6 aiStyle-60 Shimmer
+stream's conversion (`Projectile.cs:29142`, `useWithoutTorchGodsFavor: true`)
+calls the same `pub(crate)` body — the visibility matches d6's `5d81f2de`.
+**Campfire family — the placement conversion LANDED (W4-f33c).**
+`BiomeCampfirePlaceStyle` (`Player.cs:40348-40401`, the 966 item → tile 215)
+is ported as `editing.rs::biome_campfire_place_style` with the C#'s OWN arm
+order — NOT the torch ladder's: glowshroom is SECOND (before temple and
+dungeon), temple/jungle share style 13, dungeon 7 (Bone), underworld 2
+(Demon), shimmer 15 first. The method carries the `style == 0` gate inside
+its body (`:40350`), so the biome campfire items' own placeStyle rides
+verbatim. The conversion runs in `place_tile` ahead of `place_item_tile`'s
+`CanPlace` (the campfire rides the TileObject route, `D_215`
+`uses_custom_can_place`), matching `FigureOutWhatToPlace` (`:43426-43429`)
+which BOTH the preview and the live placement read. The converted style
+writes the frameX column (54 × style, `D_215` horizontal) that
+`TileLightScanner.cs:1062-1151` lights — the biome-light half of the favour.
+Witnesses: the full campfire arm table + order pins + the style gate + the
+remix arm + the placement-route frameX/frameY write (`editing.rs`
+`w4_f33c_the_campfire_…`), and the scanner's 16-column RGB census
+(`scanner.rs::w4_f33c_the_campfire_biome_columns_…`). **The scanner's
+Ultra Bright green constant was a 1-ULP drift — FIXED**: `1.2825` rounded to
+f32 `0x3fa428f6`, but the C# `TileLightScanner.cs:1095` is `1.2824999f`
+(`0x3fa428f5`); the literal is now verbatim. STILL unported: the held-item
+draw conversion `BiomeCampfireHoldStyle` (`:40403-40460`,
+`PlayerDrawLayers.cs:3063` / `Main.cs:45053` — a DRAW-layer concern, the
+torch hold-light family is the light seam already ported), the tile-
+replacement callers (`PlaceThing_TryReplacingTiles` `:39899` /
+`PlaceThing_ValidTileForReplacement` `:39923`, unported with
+`WorldGen.ReplaceTile` itself, `liquid.rs:709`'s recorded gap), and the
+`GetCampfireItemDrop` break-drop style table (`WorldGen.cs:50039-50074` —
+the kill-cascade `tile_drop` lane, not the light lane).
 
 **Glowstick throw — the rows + AI were absent, now ported.** The six glowstick
 kinds (50/53/473/515/870/1089) had NO `proj_data` rows, so
@@ -37635,7 +37685,9 @@ never reads localAI[2]).
   `AddLight` lands; the flood-fill writes the light map directly).
 - The torch `checkingLiquid()` gate half folds to false (no checking bit).
 - The biome-torch ZoneShimmer/ZoneUndergroundDesert arms fold (unported
-  `Zones` fields); the temple + remix arms are ported.
+  `Zones` fields); the temple + remix arms are ported. **(W4-f33: RESTORED —
+  the `Zones` snapshot carries both flags now, all twelve arms live; see
+  "Biome-torch place style" above.)**
 - The flare's `StatusPlayer` mirror (`Projectile.cs:11983-11997`) is NOT wired:
   its only call sites are `Damage_EVP` (hostile shots — the flares are
   friendly), `SelfHurtPlayers` (bombs/bad-torch only) and `Damage_PVP` uses
@@ -41054,3 +41106,342 @@ rowless kinds with LIVE AI arms dispositioned:
 
 Witnesses (WRITTEN NOT RUN): the 981 row census + spawn/flight + ProjLight
 pins (3). No cargo/rustc/tests/graphify invoked.
+
+## The Torch God event + favor (W4-f33, task/W4-f33-torch-god-favor, 2026-11-21, code-only mode)
+
+The C# has NO `TorchGod.cs`/`TorchGodPunishment` files — the event is the
+`Player.happyFunTorchTime` machine inline in `Player.cs`. Ported to
+`crates/tr-app/src/torch_god.rs` (the event + the favor grant) and
+`projectile_ai_torch_god.rs` (the 949 aiStyle-184 shot), wired through
+`luck.rs`'s scan seam, `player.rs::update_luck`/`start_death` and the
+`world_sim/player.rs` drain. Ownership: W4-f33 owns the EVENT + the favor
+ITEM grant; a6 owns the 5043 use arm (`ItemCheck_UseTorchGodsFavor`,
+`Player.cs:45226-45243`); e27 owns the torch-luck scan (untouched — the
+seam only adds the C# head/trigger around it).
+
+Ported verbatim: the trigger tail (`:18066-18086` — cooldown 0, locked
+biome torches, >100 lit torches, below surface, no 5043 in the 59-slot
+inventory), the scan-replacing head (`:17733-17742`), `TorchAttack`
+(`:17813-17910` — the 21-tick cadence, the x-outer/y-inner ±100-tile scan
+into the 400-slot candidate cap with both breaks, the ONE `Next(num)`
+volley pick, the `frameX += 66` snuff + unlit list, the 95-survival /
+200-cap ends, the `−180` finale delay), `RelightTorches`
+(`:17797-17811` — the 3600 cooldown + the `−66` loop over active torch
+tiles), `EndOngoingTorchGodEvent` (`:17718-17729`, called from the
+surface abort + `KillMe` `:38857`), the 949 `SetDefaults` row
+(`Projectile.cs:8948-8955` — 4×4/184/−1/no-tileCollide), `AI_184`
+(`:42787-42822` — the owner+unlock-gated `SelfHurtPlayers`, the Item8
+latch, the ai[1] budget drain, the 4-dust trail), `SelfHurtPlayers` for
+the 949 (`:15025-15062` — rect-rect `Colliding`, `DamageVar(dmg, −luck)`,
+non-PVP Hurt, the shot NEVER dies), the `Kill()` 20-dust + Item10 census
+(`:70976-70995`), and `TorchID.Dust` (`TorchID.cs:179-184`).
+
+RNG contract (the exact-draw discipline): the event's draws ride the
+`UpdatePlayers` stream IN-TICK inside `update_luck` (the C# call
+position, `Player.cs:25645`) — one `Next(num)` per volley (`:17881`),
+the grant's `Item.NewItem` velocity pair `Next(-30,31)`/`Next(-40,-15)`
+(`Item.cs:49749-49750`; `Prefix(0)` draws NOTHING, `:511-514`). The
+949's dust censuses ride `UpdateProjectiles`: per dust the six
+`Dust.NewDust` draws (`Dust.cs:170-175`/`:190`, the empress precedent)
++ the torch-family seventh `Next(-10,6)` (`Dust.cs:214-219` — every
+`TorchID.Dust` id except 156/234/66) + the AI's `Next(3)` noGravity roll
+= 8 draws/dust (7 for 156/234/66): 32/tick (28 rainbow), 160 on death
+(140 rainbow). The pool-pressure skip draws (`Dust.cs:114-148`) and the
+off-screen early-out (`:98`) are the documented no-skip assumption;
+`ChildSafety.Disabled = true` by default (`ChildSafety.cs:33`).
+
+Deliberate folds/deviations:
+- **The deferred-write seam**: the decision + ALL RNG run in-tick; the
+  tile snuff/relight, the pool spawn and the item push land at the
+  `world_sim` drain right after the player tick (the `pending_*`
+  convention — the player tick holds `&World`). Same fixed step, zero
+  draw-order change; the next tick's scans see the writes like the C#.
+- **The favor drop keeps the C# call's own RNG**: the generic
+  `spawn_item_drop_px` pins the −1 natural roll + the phase triple; the
+  grant's `RequestNewItem(..., prefix: 0)` draws only the velocity pair —
+  a dedicated push (`push_favor_drop`), not the generic seam.
+  `ReserveForLocalPlayer` in single-player is a no-op
+  (`WorldItem.cs:295-305`) — no grab delay.
+- **Difficulty**: `Main.Difficulty` folds to Classic 1.0 (the
+  `MOON_POINT_SCALAR` precedent) → the volley damage is 40; the
+  `HostileProjectileDamageMultiplier` curve (`GameDifficultyData.cs:85`)
+  is ported as the identity line with the 0.5 clamp and witnessed at all
+  four difficulties (20/40/80/120).
+- **The dead player's event abort** drains on the dead branch (the C#
+  `KillMe` runs it for `Main.myPlayer`); `update_dead` never reaches
+  `update_luck`.
+- **Dust visuals / sounds**: the dust bodies are the documented pool skip
+  (the censuses keep the draws); the Item8/Item10 cues ride the
+  `wants_sound`/`pending_proj_sounds` pass-tail drain (the S1-E-21c batch
+  convention — the deferred pitch draw is the recorded sound-wave
+  deviation).
+- **The 949's lane exclusions**: stock `friendly = false`/`hostile =
+  false` — the PVE walk refuses it (a new kind gate beside the 443/266
+  ones) and the hostile-contact lane exempts it (the hurt rides the AI's
+  own `SelfHurtPlayers`); the out-of-world guard's deaths skip the Kill
+  census (no `Kill()` call, `:16696`).
+- **XNA float forms**: the launch aim + the budget drain use the
+  f32-sum/f64-sqrt `Length` and the reciprocal-multiply `Normalize`
+  (NaN on zero, no guard — the `npc_ai_style64` precedent).
+- The `TorchGodsFlavor` buff-376 cosmetic (`Player.cs:40185-40234`, the
+  1084 helper) is NOT this task's scope; `unlocked_biome_torches` stays the
+  shared flag both read. The favor USE arm landed here too (a6's claim died
+  at census) — see "The Torch God's Favor use arm + consumers" below.
+
+Verification: code-only — **no cargo/rustc/tests/graphify invoked**. 24
+witness tests WRITTEN NOT RUN (`torch_god.rs` 14: the curve, the cadence,
+the one-draw-per-volley stream pin, the 400 cap + x-outer order, the
+no-candidate/95/200 ends, the finale −180, the surface abort, the relight
+loop, the five trigger gates, the head, the full scan-seam trigger, the
+death abort; `projectile_ai_torch_god.rs` 10: the row, the dust table,
+the budget drain, the Item8 latch, the 32/28 + 160/140 census stream
+pins, the SelfHurt hit + i-frames, the unlock immunity, the
+dead/owner/overlap gates, the aim forms).
+
+### The 949 duplicate — keep-one recommendation (W4-f33 vs W4-d19)
+
+`origin/task/W4-d19-proj-ai-181-190` (`a4185f89`) ports the SAME aiStyle-184
+arm into `projectile_ai_sword_styles.rs` (its census slice 182-186/190).
+The arm-by-arm comparison lives in `docs/research/219-torch-god-949-keep-one.md`;
+the verdict: **KEEP the f33 module, DROP d19's 184 section + dispatch arm +
+duplicate row** (d19b is active — the note is the coordination hand-off,
+the merge keeper executes the dedupe). The deciding gaps: d19's trail
+census keeps only the four explicit `Next(3)` gates (4 draws/tick vs the
+C#'s 32 — the `NewDust` six + the torch-family seventh are real
+`Main.rand` draws on the shared `UpdateProjectiles` stream, the
+`npc_ai_empress` precedent); d19 has NO `Kill()` census (the Item10 cue +
+the 160-draw death burst, `:70976-70995`); its hitbox reads the constant
+`WIDTH` instead of the live mount hitbox; its drain uses glam's f32
+`length()` instead of XNA's f64-intermediate form; and its shipped witness
+asserts `tileCollide` on the drain tick itself, contradicting the C#
+if/else (`333479e0` fixed the f33 witness for exactly this). The row
+tuples are identical — one row survives with both comment halves.
+
+## The Torch God's Favor use arm + consumers (W4-f33, task/W4-f33-torch-god-favor, 2026-11-21, code-only mode)
+
+The 5043 USE arm (`Player.ItemCheck_UseTorchGodsFavor`,
+`Player.cs:45226-45243`, called at the `ItemCheck_OwnerOnlyCode`
+permanent-item seam `:43600`) lands in `torch_god_favor_use.rs` — a6's
+claim died at census (no 5043 use arm on any sibling branch), so the
+task's explicit "favor item 5043 permanent buff" scope is fulfilled here.
+The mid-swing `ItemTimeIsZero && itemAnimation > 0 &&
+!unlockedBiomeTorches` machine is the recall/boss-spawner shape
+(`recall_teleport::recall_item_check`): the use START
+(`ItemCheck_StartActualUse` → `ApplyItemAnimation`, `:51680`) runs on the
+press tick, the grant fires on the first action tick (the start leaves
+`itemTime` at 0 while the animation is full, `:4066`), `ApplyItemTime`
+(`:4416-4419`) re-arms the 30-tick cadence (`Item.cs:40443` useTime 30).
+
+Ported verbatim: the gate (`:45228`), `ApplyItemTime` (`:45230`),
+`unlockedBiomeTorches = true` (`:45231`), `UsingBiomeTorches = true`
+(`:45232` → the `builderAccStatus[11] = 0` setter, `:3960-3963` — the port's
+`Player::set_using_biome_torches`), `HandleSpecialEvent(24)` (`:45233` →
+`GAIN_TORCH_GODS_FAVOR` "Use", `AchievementsHelper.cs:367-369`), the
+`netMode == 0` bestiary kill credit (`:45234-45239` — a `SetDefaults(664)`
+NPC's "TorchGod" row, `NPCID.cs:12005`, `NPC.cs:17398-17402` lifeMax 20
+boss), and the generic consumable tail (`:43280-43326` — the stack pays
+one, the 0-stack re-arms `itemTime = itemAnimation` `:43323` then airs
+out). The `SendData(4)`/`SendData(51, …, 5f)` tails (`:45240-45241`) are
+net-only.
+
+Deliberate folds/deviations:
+- **The named-condition dispatcher**: `HandleSpecialEvent(24)` rides
+  `AchievementManager::handle_special_event` → `complete_condition`, the
+  NAMED `GetCondition("GAIN_TORCH_GODS_FAVOR", "Use").Complete()` — NOT the
+  broadcast `notify_custom("Use")`, which would complete all nine "Use"
+  rows (STAR_POWER, GET_A_LIFE, …). The potions.rs drowning arm's broadcast
+  predates this seam (its over-completion is the recorded deviation to fix
+  when the dispatcher absorbs it).
+- **The bestiary credit** is the free-form `"TorchGod"` string
+  (`NPCID.Search.GetName(664)`); the `KillTracker` map carries it without a
+  catalog row (664 is not a spawnable `NpcKind`). The new-key
+  `TryGrantingBestiary100PercentAchievement` hook (`NPCKillsTracker.cs:46-49`)
+  runs through the App's net-aware `try_grant_bestiary_100_net`.
+- **The builder toggle** (`builderAccStatus[11]`) folds to 0/on in play —
+  the toggle UI (`Main.cs:42532-42585`) is unported; the use arm still
+  writes the slot verbatim, and `using_biome_torches()` reads
+  `unlocked && slot == 0` (the C# getter).
+- **The permanence**: the `.plr` pair (`:54777-54778` write /
+  `:55241-55242` read, the 229+ unlock block's first two bools) round-trips
+  through `player_file.rs`; the `.trplayer` sidecar carries it on a new
+  version-7 line (the in-play restore, `app/mod.rs::enter_loaded_world`).
+  The golden-fixture sample stays false/false (byte parity unaffected).
+- **The use-start cue** (Item4, `Item.cs:40444`) plays through
+  `start_swing_extras` (`:51681-51698`); its case-2 pitch draw rides the
+  `UpdatePlayers` stream. The grant itself draws NOTHING (witnessed: every
+  RngKey pristine with the audio muted).
+- **The net sync** (`:45240-45241`): `SendData(4)`'s biome-torch trio rides
+  the `4 PlayerInfo` bitsByte16 bits 0/1/2 (`NetMessage.cs:182-184` /
+  `MessageBuffer.cs:343-345`) — the identity push (`client_send_identity`),
+  the host's join-bundle relay and the server slot copy
+  (`Server::set_slot_torch_flags`) all carry it; the remote snapshot
+  (`PlayerNet`) reads it back. The port has no per-use `SendData(4)` seam —
+  the flags are state, the next identity sync re-announces them (recorded
+  fold). `SendData(51, …, 5f)` is the new `C2s::MiscDataSync` (msg 51, the
+  (player, kind) byte pair): a CLIENT's kind-5 request registers the 664
+  kill on the server (`MessageBuffer.cs:2514-2520`'s `netMode == 2` arm) +
+  the kill-count broadcast; the HOST + single-player register locally in
+  the use arm (the bestiary is per-world content,
+  `BestiaryUnlocksTracker : IPersistentPerWorldContent` — the host IS the
+  server the C# client requests). The other msg-51 kinds (Skeletron 1, the
+  roars 2, the sundial 3, the mimic smoke 4, the moondial 6) stay no-ops
+  (their systems unported). Witnesses: the msg-51 pair + the bitsByte16
+  trio round-trips (`net.rs`).
+- **The sidecar version-7 collision (merge coordination)**: W4-g90's pushed
+  branch (`1f1b88f0`) ALSO writes a version-7 `.trplayer` line — the
+  artisan-bread flag (ONE token). f33's v7 line is the biome-torch PAIR
+  (TWO tokens). The two branches diverge from the same v6 base, so the
+  merge keeper must reconcile: the recommended resolution is a version-8
+  line carrying BOTH (the bread flag + the torch pair, in the g90-then-f33
+  order), with the v7 reader accepting either shape (a 1-token v7 line is
+  g90's bread — the torch pair loads false; a 2-token v7 line is f33's pair
+  — the bread loads false). f33's reader is already token-count tolerant
+  (`parts.next().is_some_and` — a missing second token reads false), so a
+  g90 v7 file loads without error (the unlock stays false, the correct
+  default for a character that never used the favor). The `SavedPlayer`
+  struct keeps both fields; the g90 merge adds `ate_artisan_bread`.
+  **SUPERSEDED at closeout** by `docs/research/221-torch-god-fold-input-addendum.md`
+  §1: the g88 superset is now writer **v10** (`c8985b53`, the six-token
+  unlock line — research/103 is THE merger contract), and a 2-token v7
+  line reads as the LIFE pair under its walk (the maxima corrupt to 1 —
+  the v8-line recommendation above predates the superset). The addendum's
+  fold recipe: the torch pair rides its OWN 2-token line appended AFTER
+  the loadout block (103 §6 rule 5, the v11 bump), the lone-2-token v7
+  ambiguity resolves life-pair-first (the bounded pre-fold f33 loss
+  documented like 103 §3's bread→aegis case); the pair is NOT a line-8
+  unlock token (it sits outside the `.plr` `:54780-54787` family). a6
+  carries NO torch persistence (both `.plr` bools hardcoded false) — f33
+  is the only pushed writer of the pair.
+
+The `happyFunTorchTime` consumers (the event flag now exists,
+`torch_god.happy_fun_torch_time`):
+- **The torch-hold body row** (`Player.cs:36455` — `!happyFunTorchTime ||
+  createTile != 4`): `world_sim/player.rs` fills `torch_hold_ok` from the
+  event flag + the registry's `tile` field (was pinned true).
+- **The held-light gate** (`Player.cs:49817` — `!happyFunTorchTime`):
+  `player_lights.rs::held_item_lights` gates the whole torch family (plain
+  + water) on the flag (was folded false).
+- **The draw-hide** (`PlayerDrawLayers.cs:3089` — `happyFunTorchTime &&
+  createTile == 4 && itemAnimation == 0`): `render/player_layers.rs::
+  held_item_layers` hides the resting torch sprite; the composite state
+  carries `happy_fun_torch_time` + `held_create_tile` (filled in
+  `render/entities.rs`).
+- **The music** (`SceneMetrics.cs:770-773` InTorchGodMinigame →
+  `Main.cs:12542` track 101): `tr-core/scene.rs` carries the field,
+  `world_sim/scene_scan.rs` fills it from the player flag, `audio.rs`'s
+  `MusicEnv` + ladder arm pick 101 ABOVE the boss-flag ladder (the C#
+  order: credits-roll 89, then this, then the bosses; the TOW ladder's
+  track-87 arm `:11863` is the unported getGoodWorld/swapMusic path).
+
+Verification: code-only — **no cargo/rustc/tests/graphify invoked**. 13
+witness tests WRITTEN NOT RUN (`torch_god_favor_use.rs` 6: the unlock +
+cadence + consume, the achievement + bestiary credit + the named-row
+isolation, the once-ever refusal, the press-edge/stack gates, the RNG
+silence, the dead/CCed gate; `player_file.rs` 1: the .plr pair round-trip;
+`persist.rs` 2: the v7 sidecar round-trip + the v6 back-compat;
+`player_lights.rs` 1: the event kills the held-torch light;
+`render/player_layers.rs` 1: the draw-hide; `audio.rs` 1: the track-101
+ladder order; `player.rs` 1: the torch-hold body-row drop).
+
+### The achievement census — GAIN_TORCH_GODS_FAVOR is a USE flag, not a progression
+
+The brief's "f30 progression-45?" question resolves at census: the f30 tail
+(`origin/task/W4-f30-achievement-notify-2`, research/30) covers progression
+ids 21/33-46 — id 45 is TRASH_COMPACTOR (`CheckResearchAchievement`), and
+**no progression id names the torch row**. `GAIN_TORCH_GODS_FAVOR` is
+`CustomFlagCondition.Create("Use")` (`AchievementInitializer.cs:360-362`,
+the registry's one `Category::None` row, icon 109). Its ONLY notify site in
+the whole C# is the 5043 use's `HandleSpecialEvent(this, 24)`
+(`Player.cs:45233` → `AchievementsHelper.cs:367-369`'s
+`GetCondition("GAIN_TORCH_GODS_FAVOR", "Use").Complete()`).
+
+**The event-end grant fires NO achievement.** `TorchAttack`'s survival arm
+(`Player.cs:17870-17873`) drops the 5043 item and nothing else — no
+`HandleSpecialEvent`, no `NotifyProgressionEvent`; the item PICKUP is not a
+condition either (the row is a Use flag, not `ItemPickupCondition(5043)`).
+So the achievement completes when the player USES the favor, not when they
+survive the event — the port's `torch_god.rs` event-end correctly stays
+silent, and the use arm's `handle_special_event(24)` is the one wire.
+Witnesses: `achievements.rs::w4_f33_the_torch_god_row_is_a_use_flag_not_a_progression`
+(the row's condition shape + no progression id completes it) and
+`w4_f33_special_event_24_completes_only_the_torch_row` (the named complete
+leaves the other eight "Use" rows open, queues the completion event once,
+the second 24 is a no-op).
+
+### Closeout cross-lane verification (W4-f33, 2026-11-21, code-only)
+
+The full closeout record is `docs/research/221-torch-god-fold-input-addendum.md`
+(research/93a). Verified at probe:
+
+- **The c36 achievement row EXISTS and the chain terminates on it.**
+  `origin/task/W4-c36-achievement-notify-save` (`585fa0a8`) carries a
+  blob-identical `achievements_data.rs` (`e0486920`): the
+  `GAIN_TORCH_GODS_FAVOR` row (`:1004-1010`, the one `Category::None`
+  Use-flag row). The chain: the f33 use arm (`torch_god_favor_use.rs:117`)
+  → `handle_special_event(24)` (`achievements.rs:484`) →
+  `complete_condition("GAIN_TORCH_GODS_FAVOR", "Use")` (`:446`) → the c36
+  row. The three pushed 5043 use arms adjudicate KEEP f33 (the named
+  dispatcher + the full C# body + the permanence), DROP a6's
+  `powerups.rs:344` (the broadcast `notify_custom("Use")` over-completes
+  all nine Use rows) and c36's `editing.rs:16332` (a reduced copy); c36's
+  enter-world re-check (`achievement_hooks.rs:173-176`) SURVIVES — it is
+  the `OnPlayerEnteredWorld` `:192-195` wire, idempotent on the completed
+  row (addendum §3).
+- **The d19 949 keep-one drop-hunks re-pinned to the d19b tip**
+  (`1054c396` — the parked-intents follow-up landed AFTER the 93 note's
+  `a4185f89` probe): the 184 section `:392-481`, the wrong drain witness
+  `:1457-1482`, the NEW dodge witness `:1484-1525` (its contract re-pinned
+  on the f33 arm — `w4_f33_the_self_hurt_is_dodgeable`), the dispatch arm
+  `projectile.rs:17398-17410`, the const/row dups + the header/anchor
+  repoints; d19b's "f33 NOT on origin" clauses are STALE (f33 IS pushed)
+  (addendum §2).
+- **The music-101 priority census**: every `new_music` writer in
+  `audio.rs` vs the minigame flag — 101 holds against every world branch;
+  the only overrides are C#-faithful (the volume mute, the front-end
+  ladder, the music box). Witness
+  `w4_f33_the_minigame_track_holds_against_every_world_branch` (all 26
+  below-ladder inputs armed at once → still 101; the box overrides; the
+  flag cleared → the ladder resumes) (addendum §4).
+- **The persist fold-input**: the v7 biome-torch pair's exact
+  shape/position published for the g88 v10 superset (the v11 torch-line
+  recommendation, the mapping table, the bounded lone-2-token ambiguity);
+  a6 carries NO torch persistence — f33 is the only pushed writer
+  (addendum §1, superseding the v8-line recommendation above).
+
+Closeout witnesses: 2 WRITTEN NOT RUN (`projectile_ai_torch_god.rs` the
+dodge contract; `audio.rs` the full-ladder sweep). No cargo/rustc/tests/
+graphify invoked.
+
+### RETIRE pass (W4-f33, 2026-11-21, code-only) — the branch final state
+
+The retire record is research/93a's updated §§1-receipt/3b/7/8 (FINAL):
+
+- **The g88 v11 fold LANDED** (`a9f1c29d`, research/103 §2b): f33's pair
+  is the superset's line 16; the v7 reader's lone-all-0/1-pair rule reads
+  f33's torch-only files LOSSLESSLY (the closeout's life-pair-first
+  bounded-loss recommendation is superseded). f33's `persist.rs`
+  writer/reader sites carry DEPRECATED-BY-SUPERSET banner comments
+  (`46ceb43d`, comments-only, still compiling); the conditional line-drop
+  stays gated on 132 §2c's two seams (character-load hydration + the
+  exit `.plr` re-save).
+- **The a6b 5043 re-compare** (138 pushed at `d7de8bd5`, read): a6's
+  achievement credit is row-targeted now — the broadcast objection is
+  RETIRED — but the f33 full-body arm stays the keeper (ApplyItemTime
+  before the grant, the `UsingBiomeTorches` property accessor the v11
+  writer reads, the host/client bestiary split + the msg-51 request, the
+  `:43323` 0-stack re-arm). Both dispatchers are faithful → keep ONE,
+  the f33 full body; the `complete_condition` helper dedups a6b == c36
+  == f33 (93a §3b). 138's stale "f33 completes NO achievement" probe
+  (`333479e0`, pre-use-arm) is corrected there; its four other fidelity
+  fixes + the persist-layer split + the v18 65-byte union stand endorsed.
+- **The EVENT final-verify**: `Player.cs:17813-17910` re-read WHOLE vs
+  `torch_god.rs` — every leg ported (the 21-tick cadence, the ±100 box +
+  `Utils.Clamp` fold, the 400-cap x-outer scan, the one-`Next(num)`
+  volley draw, the snuff/unlit-list/counter order, the XNA
+  Length/Normalize aim, the `friendly = false` + `netUpdate` spawn tail,
+  the −180 finale, the 95-survival NewItem velocity pair, the 200-cap);
+  the surrounding arms (`:17718-17811`/`:18060-18088`/`KillMe:38855`)
+  re-verified. **No C# arm missed; nothing to fix** (93a §7).
+- **The FINAL merger instruction** is 93a §8 (the 949 dedupe → the event
+  as-is → the 5043 keep-f33 → the v11 persist per 103 §9 → music stands).
+  The branch retires; no follow-up pass needed.

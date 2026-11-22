@@ -88,6 +88,8 @@ per `docs/superpowers` agreements).
 | 224 | Gem-moss biome gen census + fidelity port (W4-c29: Spread.Gem duplicate-visit redraw / the 178 PlaceTile anchor gate / neonMossBiome clamps / moss arm A ledger + arm F live sweep vs WorldGen.cs; g41 co-lane claim check; code-only) — renumbered 95 → 224 per registry 150 (c42 keeps 95) | `224-gem-moss-census.md` | 🟡 |
 | 260 | DOC-SWEEP lane 40 gem/moss residuals (W4-c29 sweep: gemsparkle DRAW d60-claimed / moss PAINT f25-C8-wired / extraction faithful / neon CONVERT d103 / 627 no-def refuted; the REAL gap = the gem/moss per-cell break-drop slice ported 55555fb9b; code-only) — SEALED + the gem-family bible + the dead-man's-chest re-census (FAITHFUL); renumbered 130 → 260 per registry 150 (f28 keeps 130) | `260-doc-sweep-gem-moss.md` | ✅ SEALED |
 
+| 219 | The 949 Torch God keep-one (W4-f33 vs W4-d19, chain 93→219 per registry-150 §3 executed at batch-O merge): the arm-by-arm verdict — KEEP f33's `projectile_ai_torch_god.rs` (the 32-draw census, the Kill arm, the live hitbox, the XNA float forms) | `219-torch-god-949-keep-one.md` | ✅ recommendation |
+| 221 | The f33 closeout fold-input + RETIRE FINAL (chain 93-addendum→221 per registry-150 §3 backfill, executed at batch-O merge: the v7 pair's fold-input CONSUMED by g88 v11 `a9f1c29d` — §1-receipt ↔ 103 §2b; the d19b-tip exact 949 drop-hunks; the c36 row-chain verification; the music-101 census; §3b the a6b `d7de8bd5` 5043 re-compare — KEEP the f33 full body; §7 the whole-window event final-verify — no arm missed; §8 the FINAL merger instruction) | `221-torch-god-fold-input-addendum.md` | ✅ FINAL (retire) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

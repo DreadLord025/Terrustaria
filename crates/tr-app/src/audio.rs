@@ -2595,6 +2595,10 @@ pub struct MusicEnv {
     // `Main.cs:12187-12988`), in ladder order —
     /// `Main.eclipse` with the surface gate (`:12644`).
     pub eclipse: bool,
+    /// `SceneMetrics.InTorchGodMinigame` (`Main.cs:12542`, W4-f33): the Torch
+    /// God event runs → track 101, ABOVE the boss-flag ladder (the C# order:
+    /// the credits-roll 89 arm, then this, then the bosses).
+    pub in_torch_god_minigame: bool,
     /// `SceneMetrics.ZoneShimmer` (`:12668`).
     pub shimmer: bool,
     /// `SceneMetrics.TownNPCCount` (`:12199`) — 0 until M4-TOWN lands.
@@ -2863,6 +2867,13 @@ impl MusicSystem {
             } else {
                 51 // the tail's `default:` (`:12522`) — no titleMusicStyle
             };
+            return;
+        }
+        // `:12542-12545` (W4-f33): the Torch God minigame — track 101, ABOVE
+        // the boss-flag ladder (the C# order: credits-roll 89, then this,
+        // then the bosses). The credits-roll event is unported (folds off).
+        if env.in_torch_god_minigame {
+            self.new_music = 101;
             return;
         }
         if let Some(boss) = env.boss_music {
@@ -3495,6 +3506,7 @@ mod tests {
             boss_music: None,
             clock: 27000.0,
             eclipse: false,
+            in_torch_god_minigame: false,
             shimmer: false,
             town_npcs: 0,
             shadow_candle: false,
@@ -3598,6 +3610,98 @@ mod tests {
         e.boss_music = Some(93);
         m.decide_new_music(e);
         assert_eq!(m.new_music, 93);
+    }
+
+    #[test]
+    fn w4_f33_the_torch_god_minigame_track_beats_the_boss_ladder() {
+        // `Main.cs:12542-12545` — InTorchGodMinigame → track 101, ABOVE the
+        // boss-flag ladder (the C# order: credits-roll 89, then this, then
+        // the bosses). The event outranks even a live boss.
+        let mut m = system();
+        let mut e = env(true);
+        e.in_torch_god_minigame = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 101);
+        // A boss nearby does not shadow the event track.
+        let mut m = system();
+        let mut e = env(true);
+        e.in_torch_god_minigame = true;
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 101, "the event outranks the boss");
+        // The event over, the boss ladder resumes.
+        let mut m = system();
+        let mut e = env(true);
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93);
+        // The menu ladder still wins (the gameMenu arm returns first).
+        let mut m = system();
+        let mut e = env(true);
+        e.in_torch_god_minigame = true;
+        e.menu = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 51, "the title track on the front end");
+    }
+
+    /// The closeout music-priority census (research/93 addendum §4):
+    /// every below-ladder world input armed AT ONCE behind the minigame
+    /// flag — track 101 still holds (the arm returns before the boss
+    /// ladder and every biome branch, `Main.cs:12542-12545`). The ONE
+    /// override above it is the C#-faithful music-box chain
+    /// (`Main.cs:11076-11350` runs AFTER DecideOnNewMusic); the volume
+    /// mute is the user's slider, not a track. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f33_the_minigame_track_holds_against_every_world_branch() {
+        let mut m = system();
+        let mut e = env(false);
+        e.in_torch_god_minigame = true;
+        // Every input the ladder reads below the minigame arm, armed.
+        e.boss_music = Some(93);
+        e.eclipse = true;
+        e.shimmer = true;
+        e.town_npcs = 5;
+        e.sandstorm = true;
+        e.underworld = true;
+        e.underground = true;
+        e.space_band = true;
+        e.temple_wall = true;
+        e.dungeon = true;
+        e.mushroom_bg = true;
+        e.corrupt = true;
+        e.crimson = true;
+        e.blood_leads_evil = true;
+        e.meteor = true;
+        e.graveyard = true;
+        e.desert = true;
+        e.jungle = true;
+        e.snow = true;
+        e.hallow = true;
+        e.storm = true;
+        e.ocean = true;
+        e.blood_moon = true;
+        e.rain = true;
+        e.windy_music = true;
+        e.quiet_sky = false;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 101, "no world branch overrides the event");
+        // The music box DOES override (the C# box chain sits behind
+        // DecideOnNewMusic — the faithful exception, not a deviation).
+        e.music_box = 42;
+        m.decide_new_music(e);
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 42, "the box beats the minigame (C# order)");
+        // The silence box cuts it to 0.
+        e.music_box = -1;
+        e.music_box_silence = true;
+        m.decide_new_music(e);
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 0);
+        // The flag cleared, the same armed env falls to the boss ladder.
+        e.music_box_silence = false;
+        e.in_torch_god_minigame = false;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93, "the event over, the ladder resumes");
     }
 
     #[test]

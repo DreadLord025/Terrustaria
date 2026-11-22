@@ -49,6 +49,12 @@ mod eoc_fight;
 mod input_map;
 mod inv;
 mod luck;
+mod torch_god;
+mod projectile_ai_torch_god;
+// W4-f33 — the Torch God's Favor (5043) permanent-upgrade use path
+// (ItemCheck_UseTorchGodsFavor, Player.cs:45226-45243), wired at the
+// ItemCheck_OwnerOnlyCode permanent-item seam (:43600).
+mod torch_god_favor_use;
 mod wiring_stub;
 mod yoyo_string;
 mod item;

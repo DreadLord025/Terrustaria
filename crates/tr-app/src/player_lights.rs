@@ -68,12 +68,15 @@
 //!   `accSnappingStoneLightUp`), and the phase-blade held light
 //!   (`:44916`, needs `Item.GetPhaseColor`). The gemspark `essScale`
 //!   rows are WorldItem's (already documented).
-//! * `happyFunTorchTime` (the Torch God's favor burn) has no port field
-//!   — it folds to false. `Player.UsingBiomeTorches`
+//! * `happyFunTorchTime` (the Torch God event, W4-f33) now has a port field
+//!   (`p.torch_god.happy_fun_torch_time`): the held-torch light gate
+//!   (`Player.cs:49817`) reads it — during the event the held torch emits
+//!   no light. `Player.UsingBiomeTorches`
 //!   (`Player.cs:3950-3959`) is `unlockedBiomeTorches &&
-//!   builderAccStatus[11] == 0`; the port carries
-//!   `p.unlocked_biome_torches` and reads it, while the builder toggle
-//!   folds to 0 (on) — documented deviation.
+//!   builderAccStatus[11] == 0`; the port reads the property
+//!   (`p.using_biome_torches()`, W4-f33 — the 5043 use arms both halves).
+//!   The builder-toggle CLICK is unported (`Main.cs:42532-42585`), so the
+//!   slot stays at the ctor's 0 (on) in play — documented deviation.
 
 use glam::Vec2;
 use tr_core::lighting::LightParams;
@@ -94,11 +97,12 @@ const HELD_LIGHT_ALLOWED: bool = true;
 /// `Player.BiomeTorchHoldStyle` (`Player.cs:40291-40346`): the plain torch
 /// (8) becomes the biome torch while `UsingBiomeTorches`
 /// (`:3950-3959` — `unlockedBiomeTorches && builderAccStatus[11] == 0`;
-/// the port reads `p.unlocked_biome_torches`, the builder toggle folds
-/// to 0/on, ANALYSIS deviation). The arm order is the C#'s verbatim;
-/// `ZoneShimmer` (`:40297`) and `ZoneUndergroundDesert` (`:40337`) read
-/// fields the port's `Zones` does not carry and are skipped in place (the
-/// remaining arms keep their order). `ZoneLihzhardTemple` (`:40305`) rides
+/// the caller passes `p.using_biome_torches()`, W4-f33 — the builder
+/// toggle click is unported so the slot stays 0/on, ANALYSIS deviation).
+/// The arm order is the C#'s verbatim — ALL twelve arms now live (W4-f33:
+/// `ZoneShimmer` `:40297` and `ZoneUndergroundDesert` `:40337` were skipped
+/// while the `Zones` snapshot dropped the flags; the snapshot carries them
+/// now, `scene.rs::zones`). `ZoneLihzhardTemple` (`:40305`) rides
 /// `Zones.temple` and the remix-world desert arm (`:40341`) reads the
 /// world's REMIX seed flag (S1-P-i42: both restored — the pre-fix port
 /// dropped them, so a temple/remix torch held the wrong colour).
@@ -112,6 +116,10 @@ fn biome_torch_hold_style(
     // `:40293` — `!UsingBiomeTorches || itemType != 8` returns unchanged.
     if !using_biome_torches || kind != 8 {
         return kind;
+    }
+    // `:40297-40300` — the shimmer arm comes FIRST (the Aether torch 5353).
+    if zones.shimmer {
+        return 5353;
     }
     // `:40301-40304` — the dungeon arm comes BEFORE the temple/underworld.
     if zones.dungeon {
@@ -145,10 +153,12 @@ fn biome_torch_hold_style(
     if zones.jungle {
         return 4388; // `:40333-40336`
     }
-    // `:40337-40340` — the surface-desert half reads the zone flag and the
-    // world-surface line like the C#; `ZoneUndergroundDesert` is unported
-    // (the `Zones` struct carries no such flag — documented skip).
-    if zones.desert && pos_y < world.world_surface as f32 * TILE_PX {
+    // `:40337-40340` — `(ZoneDesert && position.Y < worldSurface * 16.0) ||
+    // ZoneUndergroundDesert` (W4-f33: the underground half restored — the
+    // `Zones` snapshot carries `underground_desert` now).
+    if (zones.desert && pos_y < world.world_surface as f32 * TILE_PX)
+        || zones.underground_desert
+    {
         return 4383;
     }
     // `:40341-40344` — `ZoneDesert && Main.remixWorld`: the remix seed's
@@ -370,11 +380,13 @@ pub(crate) fn held_item_lights(
     };
 
     // `:49817-49940` — the torch family: `(Torches[type] && !wet) ||
-    // WaterTorches[type]`, `!happyFunTorchTime` (unported, folds false).
+    // WaterTorches[type]`, `!pulley && !happyFunTorchTime` (W4-f33: the
+    // event flag now exists — during the Torch God event the held torch
+    // emits no light, the favor burn).
     let torch = crate::entity_lights::TORCHES.contains(&kind);
     let water_torch = crate::entity_lights::WATER_TORCHES.contains(&kind);
-    if (torch && !p.wet) || water_torch {
-        let style = biome_torch_hold_style(kind, p.unlocked_biome_torches, zones, p.y, world);
+    if ((torch && !p.wet) || water_torch) && !p.torch_god.happy_fun_torch_time {
+        let style = biome_torch_hold_style(kind, p.using_biome_torches(), zones, p.y, world);
         let id = torch_id_for_hold_style(style);
         let rgb = tr_core::tile_light::torch_color(id, params);
         // `:49918` / `:49938` — the light rides `velocity` (the dust
@@ -555,6 +567,8 @@ mod tests {
             glowshroom: false,
             dungeon: false,
             temple: false,
+            shimmer: false,
+            underground_desert: false,
         }
     }
 
@@ -740,6 +754,58 @@ mod tests {
         assert_eq!(lights[0].2, tr_core::tile_light::torch_color(13, &params()));
     }
 
+    /// W4-f33 — the RESTORED hold arms: shimmer (`:40297-40300`, the Aether
+    /// torch 5353 → id 23) shadows everything; the underground-desert half
+    /// of `:40337` converts below the surface line without the remix seed.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f33_the_shimmer_and_underground_desert_hold_arms() {
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        p.unlocked_biome_torches = true;
+        let w = World::new("t".into(), 64, 800);
+        // Shimmer FIRST: it shadows the dungeon + snow arms.
+        let mut z = zones();
+        z.shimmer = true;
+        z.dungeon = true;
+        z.snow = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(23, &params()));
+        // Underground desert: below the surface line, no remix, no snow —
+        // the `|| ZoneUndergroundDesert` half fires (`:40337`).
+        let mut z = zones();
+        z.underground_desert = true;
+        p.y = (w.world_surface as f32 + 10.0) * TILE_PX;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(16, &params()));
+        // The jungle arm (`:40333-40336`) → 4388 → id 21.
+        let mut z = zones();
+        z.jungle = true;
+        p.y = 176.0;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(21, &params()));
+        // The temple arm (`:40305-40308`) shares the jungle torch 4388.
+        let mut z = zones();
+        z.temple = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(21, &params()));
+        // The glowshroom arm (`:40313-40316`) → 5293 → id 22.
+        let mut z = zones();
+        z.glowshroom = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(22, &params()));
+        // The corrupt/crimson pair (`:40321-40328`) → 4385/4386 → 18/19.
+        let mut z = zones();
+        z.corrupt = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(18, &params()));
+        let mut z = zones();
+        z.crimson = true;
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(19, &params()));
+    }
+
     #[test]
     fn the_biome_torch_needs_the_torch_god_unlock() {
         // `UsingBiomeTorches` (`:3950-3959`) reads `unlockedBiomeTorches`
@@ -754,6 +820,66 @@ mod tests {
         z.snow = true;
         let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
         assert_eq!(lights[0].2, tr_core::tile_light::torch_color(0, &params()));
+    }
+
+    /// W4-f33 — the builder-toggle half of `UsingBiomeTorches`
+    /// (`Player.cs:3958`): the unlock alone is not enough —
+    /// `builderAccStatus[11] == 1` (the toggle OFF) keeps the plain torch
+    /// plain even with the favor used. The 5043 use sets the slot to 0
+    /// (`:45232` → the setter `:3960-3963`); the toggle click
+    /// (`Main.cs:42532-42585`) is unported, so this pins the property's
+    /// gate shape for when it lands. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f33_the_builder_toggle_gates_the_hold_conversion() {
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        p.unlocked_biome_torches = true;
+        let w = World::new("t".into(), 64, 800);
+        let mut z = zones();
+        z.snow = true;
+        // The ctor slot 0 (on): the snow conversion fires.
+        assert!(p.using_biome_torches());
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(9, &params()));
+        // Toggle OFF (`builderAccStatus[11] = 1`): the property reads
+        // false (`:3958`) and the torch stays plain (`:40293`).
+        p.builder_acc_status[11] = 1;
+        assert!(!p.using_biome_torches());
+        let lights = held_item_lights(&p, 8, 20.0, z, &w, &params());
+        assert_eq!(lights[0].2, tr_core::tile_light::torch_color(0, &params()));
+        // The setter pair (`:3960-3963`): true → 0, false → 1.
+        p.set_using_biome_torches(true);
+        assert_eq!(p.builder_acc_status[11], 0);
+        p.set_using_biome_torches(false);
+        assert_eq!(p.builder_acc_status[11], 1);
+        // The unlock gates the property regardless of the slot.
+        p.builder_acc_status[11] = 0;
+        p.unlocked_biome_torches = false;
+        assert!(!p.using_biome_torches());
+    }
+
+    #[test]
+    fn w4_f33_the_torch_god_event_kills_the_held_torch_light() {
+        // `Player.cs:49817` — `!happyFunTorchTime`: during the Torch God
+        // event the held torch (plain OR water) emits no light. The candle
+        // family is unaffected (the gate is torch-only).
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        let w = World::new("t".into(), 64, 800);
+        // Baseline: the plain torch lights.
+        assert_eq!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).len(), 1);
+        // The event runs → the torch goes dark.
+        p.torch_god.happy_fun_torch_time = true;
+        assert!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).is_empty());
+        // The water torch (523) too — the gate covers the whole family.
+        assert!(held_item_lights(&p, 523, 20.0, zones(), &w, &params()).is_empty());
+        // The candle (105) keeps its light — the gate is torch-only.
+        assert_eq!(held_item_lights(&p, 105, 20.0, zones(), &w, &params()).len(), 1);
+        // The event ends → the torch lights again.
+        p.torch_god.happy_fun_torch_time = false;
+        assert_eq!(held_item_lights(&p, 8, 20.0, zones(), &w, &params()).len(), 1);
     }
 
     #[test]

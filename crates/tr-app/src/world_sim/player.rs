@@ -594,6 +594,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 def.tile == Some(4) && (def.place_style as usize) < crate::luck::TORCH_ID_COUNT
             })
             .map(|def| def.place_style as u8);
+        // W4-f33 — the Torch God trigger's inventory scan
+        // (`Player.cs:18069-18076`): ANY inventory slot holding the favor
+        // (5043) blocks the event. The C# walks all 59 `inventory` slots
+        // (`Player.cs:1576` — the 50-grid + coins + ammo); the port's
+        // mouse item (slot 58) joins the scan (the drop-item convention).
+        p.has_torch_gods_favor = app
+            .inventory
+            .iter()
+            .chain(app.equip.coins.iter())
+            .chain(app.equip.ammo.iter())
+            .chain(std::iter::once(&app.mouse_item))
+            .any(|slot| slot.count > 0 && slot.kind == crate::torch_god::TORCH_GODS_FAVOR);
         // `Player.statDefense` is derived inside `Player.Update` now
         // (`Player::update`'s reset block: `GrantArmorBenefits`' piece rows +
         // the set bonus + the buff arms, M3-EQUIP-5). Assigning it here used to
@@ -671,6 +683,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);
             });
+            // W4-f33 — the death abort's deferred relight (`KillMe` →
+            // `EndOngoingTorchGodEvent`, `Player.cs:38855-38858`): the
+            // `start_death` call queued it; the tile loop lands here
+            // (zero RNG). The dead player's `update_dead` never reaches
+            // `update_luck`, so this is the abort's only drain.
+            crate::torch_god::drain_pending(
+                p,
+                &mut app.world,
+                &mut app.projectiles,
+                &mut app.items,
+                app.local_id as u8,
+            );
             if respawn_now {
                 // `Player.Spawn`'s bed re-validation (`Player.cs:37571-37575`):
                 // a broken bed or an invalid room reverts the spawn to the
@@ -1051,11 +1075,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 item_rotation,
                 // `num21 = itemRotation * direction` (`Player.cs:36423`).
                 aim_relative: item_rotation * dir,
-                // `!wet || !item.noWet` and `!happyFunTorchTime ||
-                // createTile != 4` — the port has neither item field, so both
-                // gates are open (documented in ANALYSIS).
+                // `!wet || !item.noWet` (`Player.cs:36455`): the port has no
+                // `Item.noWet` field, so the gate stays open (ANALYSIS).
                 hold_style_dry: true,
-                torch_hold_ok: true,
+                // `!happyFunTorchTime || createTile != 4` (`Player.cs:36455`,
+                // W4-f33): during the Torch God event a held torch
+                // (`createTile == 4`) drops the torch-hold body row. The
+                // event flag now exists (`torch_god.happy_fun_torch_time`);
+                // `createTile` rides the registry's `tile` field.
+                torch_hold_ok: !p.torch_god.happy_fun_torch_time
+                    || crate::registry::get(kind).is_none_or(|d| d.tile != Some(4)),
                 grapple_dx: dx,
                 grapple_dy: dy,
             };
@@ -1113,6 +1142,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.rain.is_raining(),
                 Some(&app.wind),
                 rng,
+            );
+            // W4-f33 — the Torch God event's deferred writes (the tile
+            // snuff/relight, the 949 spawn, the favor drop): the decision
+            // + RNG ran inside `update_luck` (the C# call position), the
+            // writes land here in the same fixed step (the `pending_*`
+            // convention). Zero draws — the field-wise split keeps the
+            // closure's `p` borrow apart from the app fields.
+            crate::torch_god::drain_pending(
+                p,
+                &mut app.world,
+                &mut app.projectiles,
+                &mut app.items,
+                app.local_id as u8,
             );
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call

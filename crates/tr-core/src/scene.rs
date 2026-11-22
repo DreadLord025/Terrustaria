@@ -156,6 +156,10 @@ pub struct SceneMetrics {
     pub zone_peace_candle: bool,
     /// `metrics.ZoneShadowCandle` (`:708`).
     pub zone_shadow_candle: bool,
+    /// `metrics.InTorchGodMinigame` (`SceneMetrics.cs:770-773`, W4-f33): the
+    /// perspective player's `happyFunTorchTime` — the Torch God event runs.
+    /// The music ladder reads it (`Main.cs:12542` → track 101).
+    pub in_torch_god_minigame: bool,
     // — the M6-AUDIO-2 music-box fields (`SceneMetrics.cs:4489-4501`) —
     /// `ActiveMusicBox`: the box id playing in the window (`frameY / 36`),
     /// -1 = none.
@@ -281,6 +285,15 @@ pub struct Zones {
     /// family's enrage gate input (`NPC.cs:19513`/`:31136`/`:19238`/
     /// `:31359`).
     pub temple: bool,
+    /// `ZoneShimmer` (`SceneMetrics.cs:798` — the shimmer-tile threshold) —
+    /// the FIRST biome-torch conversion arm (`Player.cs:40240`/`:40297`,
+    /// W4-f33: the snapshot carried the flag all along, the `Zones` copy
+    /// dropped it).
+    pub shimmer: bool,
+    /// `ZoneUndergroundDesert` (`SceneMetrics.cs:823` — the desert zone
+    /// below the surface line) — the second half of the desert conversion
+    /// arm (`Player.cs:40280`/`:40337`, W4-f33).
+    pub underground_desert: bool,
 }
 
 /// The static thresholds from `SceneMetrics`'s static ctor (`:922-943`).
@@ -393,6 +406,7 @@ impl SceneMetrics {
             zone_water_candle: false,
             zone_peace_candle: false,
             zone_shadow_candle: false,
+            in_torch_god_minigame: false,
             active_music_box: -1,
             music_box_silence: false,
             inside_unbreakable_walls: false,
@@ -443,6 +457,8 @@ impl SceneMetrics {
             glowshroom: self.enough_tiles_for_glowing_mushroom(),
             dungeon: self.zone_dungeon,
             temple: self.zone_lihzhard_temple,
+            shimmer: self.zone_shimmer,
+            underground_desert: self.zone_underground_desert,
         }
     }
 

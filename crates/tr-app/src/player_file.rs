@@ -120,6 +120,14 @@ pub struct PlayerFile {
     pub inv_favorites: u64,
     pub is_favorite: bool,
     pub revision: u32,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:2046`, save `:54777` /
+    /// load `:55241` at release >= 229) — the Torch God's Favor permanent
+    /// unlock (W4-f33). Older releases carry no unlock block; false.
+    pub unlocked_biome_torches: bool,
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3963` — the
+    /// `builderAccStatus[11] == 0` property, save `:54778` / load `:55242`).
+    /// The builder-toggle half of the pair; the use arm sets both.
+    pub using_biome_torches: bool,
 }
 
 #[derive(Debug)]
@@ -325,9 +333,13 @@ fn read_player_fields(
     mana = mana.min(400); // `:55231-55234`
     // The unlock/seed bools (`:55235-55262`).
     let _extra = r.boolean().ok_or(PlayerFileError::Truncated("extra"))?; // gate 125
+    // W4-f33 — the biome-torch pair (`:55241-55242`): the Torch God's Favor
+    // permanent unlock + the UsingBiomeTorches builder toggle.
+    let mut unlocked_biome_torches = false;
+    let mut using_biome_torches = false;
     if version >= 229 {
-        r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
-        r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
+        unlocked_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt1"))?;
+        using_biome_torches = r.boolean().ok_or(PlayerFileError::Truncated("bt2"))?;
         if version >= 256 {
             r.boolean().ok_or(PlayerFileError::Truncated("bread"))?;
         }
@@ -647,6 +659,8 @@ fn read_player_fields(
         inv_favorites,
         is_favorite,
         revision,
+        unlocked_biome_torches,
+        using_biome_torches,
     ))
 }
 
@@ -667,6 +681,8 @@ fn finish_player_file(
     inv_favorites: u64,
     is_favorite: bool,
     revision: u32,
+    unlocked_biome_torches: bool,
+    using_biome_torches: bool,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
     PlayerFile {
@@ -689,6 +705,8 @@ fn finish_player_file(
         inv_favorites,
         is_favorite,
         revision,
+        unlocked_biome_torches,
+        using_biome_torches,
     }
 }
 
@@ -725,10 +743,14 @@ fn read_legacy_port_subset(
     mana_max = mana_max.min(200);
     mana = mana.min(400);
     // extraAccessory, biome-torch pair, artisan bread, six unlocks, dd2 —
-    // the 11 bools the old subset writer emitted (no 324 dead slot).
-    for _ in 0..11 {
-        r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
+    // the 11 bools the old subset writer emitted (no 324 dead slot). The
+    // biome-torch pair is bools 2-3 (W4-f33: the Torch God's Favor unlock).
+    let mut unlock_bools = [false; 11];
+    for b in unlock_bools.iter_mut() {
+        *b = r.boolean().ok_or(PlayerFileError::Truncated("unlock"))?;
     }
+    let unlocked_biome_torches = unlock_bools[1];
+    let using_biome_torches = unlock_bools[2];
     let _tax = r.i32().ok_or(PlayerFileError::Truncated("tax"))?;
     let _pve = r.i32().ok_or(PlayerFileError::Truncated("pve"))?;
     let _pvp = r.i32().ok_or(PlayerFileError::Truncated("pvp"))?;
@@ -784,6 +806,8 @@ fn read_legacy_port_subset(
         inv_favorites,
         is_favorite,
         revision,
+        unlocked_biome_torches,
+        using_biome_torches,
     })
 }
 
@@ -816,6 +840,12 @@ pub struct PlayerFileWrite {
     /// the golden-fixture test pins the harness's `FixtureClock` value
     /// (2026-11-18T00:00:00Z, kind Utc → kind bits 01, no offset).
     pub last_saved_binary: i64,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:54777`) — the Torch God's
+    /// Favor permanent unlock (W4-f33). A fresh character is false.
+    pub unlocked_biome_torches: bool,
+    /// `Player.UsingBiomeTorches` (`Player.cs:54778`) — the builder-toggle
+    /// half (`builderAccStatus[11] == 0`); the use arm sets both.
+    pub using_biome_torches: bool,
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
@@ -864,8 +894,8 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(file.mana); // `:54774`
     w.i32(file.mana_max); // `:54775`
     w.boolean(false); // `:54776` extraAccessory (ctor `:56076`)
-    w.boolean(false); // `:54777` unlockedBiomeTorches
-    w.boolean(false); // `:54778` UsingBiomeTorches (unlocked=false -> false)
+    w.boolean(file.unlocked_biome_torches); // `:54777` unlockedBiomeTorches (W4-f33)
+    w.boolean(file.using_biome_torches); // `:54778` UsingBiomeTorches (W4-f33)
     w.boolean(false); // `:54779` ateArtisanBread (ctor `:56077`)
     w.boolean(false); // `:54780` the hardcoded `false` (the dead 324 slot)
     w.boolean(false); // `:54781` usedAegisCrystal (ctor `:56078`)
@@ -972,7 +1002,11 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // `:54899-54902` builderAccStatus[12] (`Player.cs:814`,
     // `BuilderAccToggleIDs.Count = 12`, `Player.cs:47-75`): a fresh int[12]
     // with the ctor's `builderAccStatus[0] = 1` (`:56092`, the ruler-line
-    // toggle starts ON).
+    // toggle starts ON); every other slot keeps the int-array default 0.
+    // Slot 11 is the UsingBiomeTorches backing (`Player.cs:3960-3963`): the
+    // ctor never writes it (stays 0), the use arm's `UsingBiomeTorches =
+    // true` keeps it 0, and a `false` toggle would write 1 (W4-f33 — the
+    // port's fresh character is locked, so the slot stays at the ctor 0).
     w.i32(1);
     for _ in 0..11 {
         w.i32(0);
@@ -1148,6 +1182,8 @@ mod tests {
             inventory,
             inv_favorites: 1 << 0 | 1 << 2, // slots 0 and 2 starred
             last_saved_binary: 0,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
         }
     }
 
@@ -1211,6 +1247,34 @@ mod tests {
         // The empty slots read false — their favourited byte is consumed with
         // the rest of the triple (`:55363`).
         assert_eq!(file.inventory[30], (0, 0, 0));
+    }
+
+    /// W4-f33 — the Torch God's Favor biome-torch pair round-trips the
+    /// release-326 `.plr` (`Player.cs:54777-54778` write / `:55241-55242`
+    /// read, the 229+ unlock block's first two bools): the permanent unlock
+    /// + the UsingBiomeTorches toggle survive a save + load, and the
+    /// surrounding unlock bools stay aligned (the inventory after the block
+    /// reads unchanged).
+    #[test]
+    fn w4_f33_the_biome_torch_pair_round_trips_the_plr() {
+        let written = PlayerFileWrite {
+            unlocked_biome_torches: true,
+            using_biome_torches: true,
+            ..sample()
+        };
+        let bytes = write_player_bytes(&written);
+        let file = read_player_bytes(&cbc_decrypt(&bytes)).expect("the unlock file reads");
+        assert!(file.unlocked_biome_torches, "the :54777 bool survived");
+        assert!(file.using_biome_torches, "the :54778 bool survived");
+        // The walk stayed aligned through the unlock block — the fields
+        // AFTER it match the sample's.
+        assert_eq!(file.inventory, sample().inventory);
+        assert_eq!(file.inv_favorites, sample().inv_favorites);
+        // The fresh sample writes false and reads false.
+        let plain_file =
+            read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(!plain_file.unlocked_biome_torches);
+        assert!(!plain_file.using_biome_torches);
     }
 
     /// The 322+ armour/dye favourited bytes are version-gated on read: a
@@ -1454,6 +1518,8 @@ mod tests {
             // 2026-11-18T00:00:00Z, DateTimeKind.Utc → kind bits 01, no
             // offset: ticks 639305568000000000 | 0x4000000000000000.
             last_saved_binary: 0x48DF_4506_E391_C000,
+            unlocked_biome_torches: false,
+            using_biome_torches: false,
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");
