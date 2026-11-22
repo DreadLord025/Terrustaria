@@ -93,6 +93,10 @@ mod npc_ai_sand_elemental;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
+mod npc_ai_style17;
+mod npc_ai_style18;
+mod npc_ai_style19;
+mod npc_ai_style20;
 mod npc_ai_style24;
 mod npc_ai_style28;
 mod npc_ai_style29;
@@ -174,6 +178,7 @@ mod npc_target;
 // waterfowl pairs are VISUALLY SILENT (the census verdict, witnessed).
 mod npc_transform_visuals;
 mod npc_ai_style21;
+mod npc_ai_style22;
 mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
