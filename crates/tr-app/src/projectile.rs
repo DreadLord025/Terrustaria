@@ -129,6 +129,198 @@ fn refuses_friendly(n: &Npc, kind: u16, kill_guide: bool, kill_clothier: bool) -
     true
 }
 
+/// `Projectile.Damage_CanDealDamage`'s 85/1106 fade-out gate
+/// (`Projectile.cs:12460-12467`): the flamethrower flames deal damage
+/// ONLY below `localAI[0] = 54` — the smoke tail (ticks 54..71 of the
+/// style-193 life, `AI_193_Flamethrower` `:41337-41401`) is harmless.
+/// The C# gate wraps `Damage()` whole (`:12497` — PVE, PVP and EVP
+/// alike); the port carries it per-kind in each damage walk (the
+/// d4-sweep 188 launch-ramp precedent). The `ai_flamethrower` arm
+/// counts `localAI[0]` per sub-step, so the gate closes mid-flight.
+fn flames_faded(p: &Projectile) -> bool {
+    matches!(p.kind, 85 | FOXSPARKS_FLAMES) && p.local_ai[0] >= 54.0
+}
+
+/// `Projectile.Damage_CanDealDamage`'s kind/state census
+/// (`Projectile.cs:12448-12456`) — the terms REACHABLE from this branch's
+/// rows, ported verbatim (W4-d18 full-switch census; the 85/1106 fade
+/// rides [`flames_faded`] above, `:12460-12467`). The C# gate wraps
+/// `Damage()` whole (`:12497`); the port carries it in each damage walk.
+///
+/// Claimed elsewhere (cross-notes, NOT re-ported here):
+/// * 188 `localAI[0] < 5` — W4-d4's DOC-SWEEP gate (tip 509b9943c);
+/// * the aiStyle-113 sticker family 598/636/614/971/975/1024 `ai[0] == 1`
+///   — W4-d12's census (tip 719ffb76c, the whole-arm stuck gate);
+/// * aiStyle 15 `ai[0] == 0 && localAI[1] <= 12` — already ported in
+///   `flail_damage_adjust` (`:12448`, the hold's first 12 ticks).
+///
+/// PROJ-171 RETIRE: the row-less conditional terms are now ported ARM-TOTAL
+/// (434/451/631/537/261/818/281/511-513/1128/1092 `:12448`, 1091/1122
+/// `:12468-12475`, aiStyles 93 `:12452` / 25 `:12476`). They read `p.kind`
+/// literals + `proj_data().ai_style`, so they AUTO-ACTIVATE the moment a
+/// d-lane lands the kind's row (the activation contract — no re-port needed).
+/// The `projPet` block (`:12480`) is ported too ([`proj_pet_contact_refuses`]):
+/// every pet/minion refuses contact damage EXCEPT the exception ladder.
+///
+/// Known row deviation surfaced by the census: the `CANNON_EXPLOSIVE`
+/// const is 601 = C# `PortalGunBolt` (`ProjectileID.cs:1756`), but its row
+/// (M7-WIRE-2's, NOT this lane's) carries `penetrate = -1` / `alpha = 0`
+/// where the true C# 601 (`:6502-6510`) keeps the stock 1 / `alpha = 255`.
+/// The true 601 is the damage-less portal bolt (aiStyle 1, this gate refuses
+/// it); its teleport AI (`PortalHelper.TryPlacingPortal` `:18099`) is
+/// unported — cross-noted to the d6 wiring lane (ANALYSIS), not fixed here.
+fn damage_kind_gate_refuses(p: &Projectile) -> bool {
+    // `:12448` — the unconditional type list, verbatim (the row-less ids
+    // never spawn; the arm-total port keeps the census 1:1).
+    if matches!(
+        p.kind,
+        18 | 72 | 86 | 87 | 226 | 378 | 613 | 650 | 882 | 888 | 895 | 896
+            | 439 | 444 | 500 | 653 | 1018 | 1056 | 1090 | 460 | 633
+            | 600 | 601 | 602 | 535 | 651 | 831 | 970 | 861 | 1007
+    ) {
+        return true;
+    }
+    // `:12448` — the Storm Tigers' pounce state (`ai[0] == 4`): the
+    // airborne pounce deals nothing (the bite window is the damage arm).
+    if matches!(p.kind, STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3) && p.ai[0] == 4.0 {
+        return true;
+    }
+    // `:12448` — the Mushroom Boi's spore state (`ai[2] > 0`).
+    if p.kind == 1022 && p.ai[2] > 0.0 {
+        return true;
+    }
+    // `:12448` — the row-less conditionals, ARM-TOTAL (PROJ-171 retire).
+    // Every kind below is row-less on every pushed tip today; the terms
+    // auto-activate when a d-lane lands the row (the kind-literal shape).
+    // 434 localAI[0] != 0; 631 localAI[1] == 0; 537 localAI[0] <= 30;
+    // 818 ai[0] < 1; 281 ai[0] == -3; 1092 ai[0] <= 1.
+    if (p.kind == 434 && p.local_ai[0] != 0.0)
+        || (p.kind == 631 && p.local_ai[1] == 0.0)
+        || (p.kind == 537 && p.local_ai[0] <= 30.0)
+        || (p.kind == 818 && p.ai[0] < 1.0)
+        || (p.kind == 281 && p.ai[0] == -3.0)
+        || (p.kind == 1092 && p.ai[0] <= 1.0)
+    {
+        return true;
+    }
+    // `:12448` — 451: `((int)(ai[0] - 1) / penetrate == 0 || ai[1] < 5) &&
+    // ai[0] != 0`. The C# `(int)` cast truncates toward zero; the division
+    // is integer (penetrate 3 on the row, `:5235`). Guard the zero divisor
+    // (the C# would throw; the row never carries 0 — the guard is the
+    // arm-total shape for a row-less kind).
+    if p.kind == 451 && p.ai[0] != 0.0 && p.penetrate != 0 {
+        let quotient = (p.ai[0] - 1.0) as i32 / p.penetrate;
+        if quotient == 0 || p.ai[1] < 5.0 {
+            return true;
+        }
+    }
+    // `:12448` — 261: velocity.Length() < 1.5 (the slow boulder).
+    if p.kind == 261 && p.vel.length() < 1.5 {
+        return true;
+    }
+    // `:12448` — 511-513 / 1128: ai[1] >= 1 (the spent-shot state).
+    if matches!(p.kind, 511..=513 | 1128) && p.ai[1] >= 1.0 {
+        return true;
+    }
+    // `:12468-12475` — 1091 / 1122: localAI[0] <= 0 (the unlit state).
+    if matches!(p.kind, 1091 | 1122) && p.local_ai[0] <= 0.0 {
+        return true;
+    }
+    // `:12448` — the Empress telegraph: the lance 919 / sun dance 923
+    // deal nothing while `localAI[0] <= 60` (the S1-D-4 damage-side slice,
+    // closed here — `projectile_ai_empress`'s doc).
+    if matches!(p.kind, FAIRY_QUEEN_LANCE | FAIRY_QUEEN_SUN_DANCE) && p.local_ai[0] <= 60.0 {
+        return true;
+    }
+    let style = proj_data(p.kind).map(|d| d.ai_style);
+    // `:12448` — `aiStyle == 31 || aiStyle == 32`: the sprays are
+    // harmless (the 145 + the seven W4-d18 solution rows; 32 row-less).
+    if matches!(style, Some(31 | 32)) {
+        return true;
+    }
+    // `:12448` — `aiStyle == 137 && ai[0] != 0`: the Lightning Aura zaps
+    // only on the wrap tick (the counter resets to 0 at the period,
+    // `AI_137_LightningAura` `:68886-68907`); every counting tick refuses.
+    if style == Some(137) && p.ai[0] != 0.0 {
+        return true;
+    }
+    // `:12448` — `aiStyle == 138`: the Explosive Trap sentry itself deals
+    // NOTHING — its damage is the spawned 144x144 explosion (style 139,
+    // not gated).
+    if style == Some(138) {
+        return true;
+    }
+    // `:12456` — `aiStyle == 10 && localAI[1] == -1`: the falling-sand
+    // rest latch. The debris trio's arm pins `localAI[1] = 0` every tick
+    // (`:57952`, the ANALYSIS note) and the sand tail never writes −1 —
+    // unreachable today, kept for the arm-total shape.
+    if style == Some(10) && p.local_ai[1] == -1.0 {
+        return true;
+    }
+    // `:12452` — `aiStyle == 93 && ai[0] != 0 && ai[0] != 2`: row-less
+    // today (no style-93 row), arm-total for the d-lane activation.
+    if style == Some(93) && p.ai[0] != 0.0 && p.ai[0] != 2.0 {
+        return true;
+    }
+    // `:12476` — `aiStyle == 25 && type not 1021/1047/1005/1014 &&
+    // localAI[2] <= 7`: row-less today, arm-total.
+    if style == Some(25)
+        && !matches!(p.kind, 1021 | 1047 | 1005 | 1014)
+        && p.local_ai[2] <= 7.0
+    {
+        return true;
+    }
+    // `:12480` — the projPet block: every pet/minion refuses contact
+    // damage EXCEPT the exception ladder (PROJ-171 retire).
+    if proj_pet_contact_refuses(p) {
+        return true;
+    }
+    false
+}
+
+/// `Damage_CanDealDamage`'s `Main.projPet` block (`Projectile.cs:12480`):
+/// `projPet[type]` refuses contact damage UNLESS the kind is on the
+/// exception ladder. The table is [`PROJ_PET`] (`Main.cs:8728-8852`).
+/// The ladder, decoded verbatim from the single C# `if`:
+/// * unconditional exceptions: 266/407/317, 390-392, 393-395,
+///   1093/1112/1118, 625-628, 758/951/963/1022, 833/834/835, 864;
+/// * 388 / 623: `ai[0] == 2` (the attack state);
+/// * 533: `ai[0]` in 6..=8 (the DeadlySphere's damage window);
+/// * 755 / 946: `ai[0] != 0` (the BatOfLight / Empress-of-Light summon);
+/// * 759: `frame != projFrames[type] - 1` (the baby bird bites EXCEPT on
+///   its last/perch frame — the C# `(type != 759 || frame == projFrames-1)`
+///   keeps the refusal when the frame IS the last one).
+///
+/// The port's PVE walk historically hits regardless of `friendly` (the
+/// recorded deviation); this block is the C# contact gate the pets/minions
+/// ride. The rowed attack-minions (266/533/623/833-835/759/388/755/946/
+/// 625-628/390-395/1093/1112/1118/758/951/963/1022/864) are ALL ladder
+/// exceptions, so their attack windows keep biting; the inert pets and the
+/// row-less pygmies (191-194, no attack arm here) refuse, faithful to C#.
+fn proj_pet_contact_refuses(p: &Projectile) -> bool {
+    if !PROJ_PET.contains(&p.kind) {
+        return false;
+    }
+    // The unconditional exceptions — these kinds always deal contact damage.
+    if matches!(
+        p.kind,
+        266 | 407 | 317 | 390..=392 | 393..=395 | 1093 | 1112 | 1118
+            | 625..=628 | 758 | 951 | 963 | 1022 | 833 | 834 | 835 | 864
+    ) {
+        return false;
+    }
+    // The conditional exceptions — allowed only in the attack state.
+    match p.kind {
+        388 | 623 => p.ai[0] != 2.0,
+        533 => !(6.0..=8.0).contains(&p.ai[0]),
+        755 | 946 => p.ai[0] == 0.0,
+        759 => p.frame == proj_frames(p.kind) as i32 - 1,
+        // Every other projPet kind refuses (the inert pets / light pets /
+        // the row-less pygmies and Pal summons).
+        _ => true,
+    }
+}
+
 /// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
 /// the per-tile permission for the bomb crater. The hardmode gates (the
 /// ores 107/108/111/221-223, the chests 37/58, the altars 77) stay closed вЂ”
@@ -15125,7 +15317,15 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         // W4-d17 вЂ” `ProjectileID.cs:521`'s `857, 0` entry: the First
         // Fractal's mode-0 ring (positions only).
         FIRST_FRACTAL => 0,
-        // `:17140`'s mode 3 вЂ” the three aimed spells with a trail drawer.
+        // W4-d18 tail — `ProjectileID.cs:521`'s mode-2 empress entries: the
+        // hostile prismatic bolt 873 + the lasting rainbow 872 (the S1-D-4
+        // module's documented trail rings) and the two friendly weapon
+        // variants 931/1039. The C# `TrailCacheLength` is 60/120/20/20
+        // (`ProjectileID.cs:522`) — the port's fixed 10-entry ring is the
+        // recorded trail-density deviation (ANALYSIS, the moon-lord precedent).
+        HALLOW_BOSS_RAINBOW_STREAK | HALLOW_BOSS_LASTING_RAINBOW
+        | FAIRY_QUEEN_MAGIC_ITEM_SHOT | CONSTELLATION_STAR => 2,
+        // `:17140`'s mode 3 — the three aimed spells with a trail drawer.
         MAGIC_MISSILE | FLAMELASH | RAINBOW_ROD_BULLET => 3,
         _ => -1,
     }
@@ -17301,6 +17501,29 @@ impl ProjectilePool {
             }
         }
         (index, sep_attack, sep_home)
+    }
+
+    /// W4-d18 — `AI_GetMyGroupIndexAndFillBlackList(null, ...)`
+    /// (`Projectile.cs:51895-51911`), the titanium shard's `(index,
+    /// totalIndexesInGroup)` pair: the count of this owner's active
+    /// same-kind slots at lower indices, and the group total. The 759
+    /// perch gate and the 1119 localAI[0] gate of `:51902` never fire for
+    /// the 908 (the only kind this helper serves — the baby bird keeps
+    /// its own [`ProjectilePool::baby_bird_group`]). The blacklist out-arg
+    /// stays null at the call site (`:45334`), so nothing is filled.
+    fn shard_group(&self, me: usize) -> (i32, i32) {
+        let this = &self.slots[me];
+        let mut index = 0i32;
+        let mut total = 0i32;
+        for (i, other) in self.slots.iter().enumerate() {
+            if other.active && other.owner == this.owner && other.kind == this.kind {
+                if me > i {
+                    index += 1;
+                }
+                total += 1;
+            }
+        }
+        (index, total)
     }
 
     /// Sets the slot's crit flag (the throw path rolls it at spawn time).
@@ -20051,11 +20274,11 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d16 вЂ” aiStyle 151, the Super Star Cannon's
+                        // W4-d16 ╨▓╨ВтАЭ aiStyle 151, the Super Star Cannon's
                         // star (`AI_151_SuperStar` `:22138-22168`): the
                         // alpha ramp, the Item9 cue re-arm, the spin, the
                         // on-screen gore gate + the two dust gates. The
-                        // row keeps tileCollide true (`:7665`) вЂ” the
+                        // row keeps tileCollide true (`:7665`) ╨▓╨ВтАЭ the
                         // kill_step probe is HandleMovement's default arm.
                         151 => {
                             crate::projectile_ai_misc::ai_super_star(
@@ -20066,11 +20289,11 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d16 вЂ” aiStyle 152, the four slashes
+                        // W4-d16 ╨▓╨ВтАЭ aiStyle 152, the four slashes
                         // (`AI_152_SuperStarSlash` `:22230-22351`): the
                         // 729 cannon slash, the Zenith's 977/976, the
                         // Moon Lord whip's 1045. The arm pins
-                        // tileCollide false (`:22350`) вЂ” the kill_step
+                        // tileCollide false (`:22350`) ╨▓╨ВтАЭ the kill_step
                         // is the free integrate.
                         152 => {
                             crate::projectile_ai_misc::ai_super_star_slash(
@@ -20081,11 +20304,11 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d16 вЂ” aiStyle 153, the toilet's pop
+                        // W4-d16 ╨▓╨ВтАЭ aiStyle 153, the toilet's pop
                         // (`AI_153_ToiletPop` `:52198-52236`): the
                         // first-tick 6-dust/1-gore burst, the 1-in-5 gore
                         // ticks, the past-10 kill. The row keeps
-                        // tileCollide false вЂ” the free integrate.
+                        // tileCollide false ╨▓╨ВтАЭ the free integrate.
                         153 => {
                             crate::projectile_ai_misc::ai_toilet_pop(
                                 &mut self.slots[i],
@@ -20094,15 +20317,15 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d16 вЂ” aiStyle 154, the Void Lens
+                        // W4-d16 ╨▓╨ВтАЭ aiStyle 154, the Void Lens
                         // (`AI_154_VoidLens` `:52154-52196`): the
                         // owner-gated same-type dedupe scans the LIVE
-                        // pool (`:52157-52176` вЂ” the C# reads
+                        // pool (`:52157-52176` ╨▓╨ВтАЭ the C# reads
                         // `Main.projectile` while killing), so the scan
                         // is pool-side here (the dragon_step shape); the
                         // post-dedupe body lives in the misc module.
                         // `HadAnActiveInteractableProjectile` (`:52156`)
-                        // is a frame flag with no port consumer вЂ” skipped.
+                        // is a frame flag with no port consumer ╨▓╨ВтАЭ skipped.
                         154 => {
                             let mut survived = true;
                             if self.slots[i].owner == local_owner {
@@ -20133,7 +20356,7 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // W4-d16 вЂ” aiStyle 155, the Mystic Snake's rope
+                        // W4-d16 ╨▓╨ВтАЭ aiStyle 155, the Mystic Snake's rope
                         // coil (`AI_155_MysticSnakeCoil` `:51939-52112`):
                         // the rise machine + the owner-gated PlaceTile-504
                         // column + the attached conversion/death walks.
@@ -20155,7 +20378,124 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
-                        // S1-P-i56 вЂ” `AI()`'s `else if (this.aiStyle == 120)`
+                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 172)`
+                        // (`Projectile.cs:36651-36654`) ->
+                        // `AI_172_HallowBossRainbowPelletStorm` (`:45569-45604`):
+                        // the Split-Shot Core (871), the style's ONLY SetDefaults
+                        // row (`:8380-8392`), so no kind gate. The 91-tick grow-in,
+                        // the 210-tick storm life and the six three-bullet fans.
+                        // The empress gate does NOT claim 871 (its own arm serves
+                        // it тАФ `projectile_ai_empress` module doc). ZERO rand draws.
+                        172 => {
+                            crate::projectile_ai_misc::ai_pellet_storm(&mut self.slots[i]);
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 174)`
+                        // (`Projectile.cs:36659-36662`) ->
+                        // `AI_174_MultisegmentPet` (`:45345-45427`): the
+                        // three worm-segment pets (883/887/893), the style's
+                        // ONLY SetDefaults rows (`:8474-8485`/`:8496-8507`/
+                        // `:8531-8542`), so no kind gate. The keep-alive,
+                        // the teleport, the steering and the world clamp.
+                        // The owner writes ride the mutable player channel
+                        // (the ai026_b shape). ZERO rand draws.
+                        174 => {
+                            crate::projectile_ai_misc::ai_multisegment_pet(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                world,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 175)`
+                        // (`Projectile.cs:36663-36666`) ->
+                        // `AI_175_TitaniumStormShards` (`:45319-45343`):
+                        // the Titanium Storm Shard (908), the style's ONLY
+                        // SetDefaults row (`:8626-8637`), so no kind gate.
+                        // The buff-gated kill, the first-tick frame/rotation
+                        // roll and the group-index orbit. The group pair is
+                        // pre-computed from the pool (the baby_bird_group
+                        // shape); the buff read is the owner's slot scan.
+                        175 => {
+                            let (group_index, group_total) = self.shard_group(i);
+                            let has_buff = player
+                                .as_deref()
+                                .is_some_and(|pl| pl.buffs.find_buff_index(306).is_some());
+                            crate::projectile_ai_misc::ai_titanium_storm_shard(
+                                &mut self.slots[i],
+                                player.as_deref(),
+                                has_buff,
+                                group_index,
+                                group_total,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 176)`
+                        // (`Projectile.cs:36667-36670`) ->
+                        // `AI_176_EdgyLightning` (`:45058-45095`): the
+                        // Dark Harvest scythe bolt (916), the style's ONLY
+                        // SetDefaults row (`:8676-8688`), so no kind gate.
+                        // The target latch/acquire, the 10-px chase and the
+                        // 3-tick frame roll. The slot's local-immunity row
+                        // rides the per-slot slice (the special_bullets shape).
+                        176 => {
+                            crate::projectile_ai_misc::ai_edgy_lightning(
+                                &mut self.slots[i],
+                                &npcs[..],
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 177)`
+                        // (`Projectile.cs:36671-36674`) ->
+                        // `AI_177_IceWhipSlicer` (`:45117-45265`): the Cool
+                        // Whip snowflake (917) + the Weather Pain twister
+                        // (969), the style's ONLY SetDefaults rows
+                        // (`:8701-8713`/`:9169-9181`), so no kind gate. The
+                        // 969 sibling-sync scan runs AFTER the core (the
+                        // pool borrow the slot arm cannot take тАФ the
+                        // minion_separation pattern).
+                        177 => {
+                            let sync = crate::projectile_ai_misc::ai_ice_whip_slicer(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            if sync {
+                                crate::projectile_ai_misc::weather_pain_sync_siblings(
+                                    &mut self.slots,
+                                    i,
+                                );
+                            }
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d18 тАФ `AI()`'s `else if (this.aiStyle == 178)`
+                        // (`Projectile.cs:36675-36678`) ->
+                        // `AI_178_FireExplosion` (`:45267-45317`): the
+                        // Firecracker explosion flash (918), the style's
+                        // ONLY SetDefaults row (`:8689-8700`), so no kind
+                        // gate. The first-tick burst census + the 10-tick
+                        // kill. The Item14 cue rides the wants_sound seam.
+                        178 => {
+                            crate::projectile_ai_misc::ai_fire_explosion(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // S1-P-i56 тАФ `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
                         // Stardust Guardian (623), the style's ONLY
@@ -23209,7 +23549,36 @@ impl ProjectilePool {
                         65 => {
                             self.slots[i].ai_sharknado_bolt(world, player.as_deref());
                         }
-                        // S1-D-4 empress proj вЂ” the Empress of Light's
+                        // W4-d18 tail — `AI()`'s `else if (this.aiStyle ==
+                        // 171)` (`Projectile.cs:36647-36650`) serves the
+                        // FRIENDLY weapon variants 931/1039 through their
+                        // own kind gate (`handles_fairy_weapon`): the
+                        // parameter overrides, the 238-tick dust burst,
+                        // the friendly FindTargetWithLineOfSight acquire
+                        // and the NPC homing + speed ramp. The movement
+                        // is the `:18592-18602` full-axis bounce on the
+                        // 4×4 collision box (`:20017-20021`), NOT the
+                        // hostile arm's free integrate. The gate sits
+                        // AHEAD of the hostile empress catch-arm below;
+                        // the two kind sets are disjoint.
+                        _ if crate::projectile_ai_empress::handles_fairy_weapon(self.slots[i].kind) => {
+                            crate::projectile_ai_empress::fairy_weapon_tick(
+                                &mut self.slots[i],
+                                i,
+                                world,
+                                &npcs[..],
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                                rng,
+                            );
+                            // HandleMovement's bounce arm + UpdatePosition
+                            // (`:18592-18602`/`:20445`), before the !active
+                            // return (`:17015`/`:17027`).
+                            crate::projectile_ai_empress::fairy_weapon_bounce(
+                                &mut self.slots[i],
+                                world,
+                            );
+                        }
+                        // S1-D-4 empress proj — the Empress of Light's
                         // five projectile kinds (872/873/874/919/923,
                         // aiStyles 173/171/0/179/180 вЂ” none had an arm
                         // here before, they rode the `_ => {}` no-op).
@@ -27159,6 +27528,14 @@ impl ProjectilePool {
             if DUNGEON_DEBRIS.contains(&p.kind) {
                 continue;
             }
+            // W4-d18 — `Damage_CanDealDamage` (`:12460-12467`): the 85/1106
+            // flames' smoke tail (localAI[0] >= 54) deals nothing. The C#
+            // gate wraps `Damage()` whole (`:12497`); carried per-kind in
+            // each walk (the d4-sweep 188 precedent). The full-switch
+            // census (`:12448-12456`) rides `damage_kind_gate_refuses`.
+            if flames_faded(p) || damage_kind_gate_refuses(p) {
+                continue;
+            }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
             if !single_hit && n.immune[owner_idx] != 0 {
@@ -27996,6 +28373,12 @@ impl ProjectilePool {
         // base-4 default is the player's; the death-burst callers pass no
         // player вЂ” the per-hit roll still rides the stream in the C# order).
         let owned_by_someone = owner < 255 && !self.slots[slot].trap;
+        // W4-d18 — the 85/1106 smoke-tail refusal (`Damage_CanDealDamage`
+        // `:12460-12467`) + the full-switch census (`:12448-12456`), the
+        // boxed walk's copy.
+        if flames_faded(&self.slots[slot]) || damage_kind_gate_refuses(&self.slots[slot]) {
+            return;
+        }
         // W4-d12 F1 вЂ” the card's Г—1.5 return multiplier (`:14553-14556`,
         // `(int)(damage * mult)` `:12852`): the inline return-transition
         // walk runs at ai[0]==2.
@@ -28153,6 +28536,13 @@ impl ProjectilePool {
         };
         let p = &self.slots[slot];
         if p.damage <= 0 {
+            return;
+        }
+        // W4-d18 — `Damage_CanDealDamage` (`:12460-12467`, the `Damage()`
+        // wrap `:12497` covers EVP too): the 85/1106 smoke tail hurts no
+        // player either (`localAI[0] >= 54`). The full-switch census
+        // (`:12448-12456`) rides the same wrap.
+        if flames_faded(p) || damage_kind_gate_refuses(p) {
             return;
         }
         let cx = p.pos.x + p.w * 0.5;
@@ -28612,6 +29002,9 @@ mod tests {
             .filter(|&k| {
                 crate::projectile_frost_shots::handles(k)
                     || crate::projectile_ai_empress::handles(k)
+                    // W4-d18 tail: the friendly 931/1039 ride their own
+                    // `handles_fairy_weapon` catch-arm (style 171).
+                    || crate::projectile_ai_empress::handles_fairy_weapon(k)
             })
             .filter_map(|k| proj_data(k).map(|d| d.ai_style))
             .collect();
@@ -29451,7 +29844,353 @@ mod tests {
         assert!(!pool.slots[1].active, "the finite-penetrate shot dies on hit");
     }
 
-    /// The shielded NPC refuses the shot вЂ” `Damage_PVE`'s outer gate
+    /// W4-d18 — the 85/1106 smoke-tail damage refusal
+    /// (`Damage_CanDealDamage` `Projectile.cs:12460-12467`: `type == 85 ||
+    /// type == 1106` with `localAI[0] >= 54` deals nothing). The
+    /// `ai_flamethrower` arm counts the counter per sub-step and kills at
+    /// 72 (`:41341-41344`) — the 54..71 window is pure smoke. All three
+    /// walks carry the gate: the plain PVE pass, the boxed `Damage()`
+    /// walk and the hostile player-contact pass. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_d18_the_flames_smoke_tail_deals_no_damage() {
+        let w = ground();
+        for kind in [85u16, FOXSPARKS_FLAMES] {
+            // The plain PVE walk: fresh flames bite, the smoke tail does not.
+            for (counter, bites) in [(0.0, true), (53.0, true), (54.0, false), (71.0, false)] {
+                let mut pool = ProjectilePool::new();
+                let slot = pool
+                    .spawn_with_data_ai(kind, 300.0, 300.0, 8.0, 0.0, 40, 2.0, 0.0, 0.0)
+                    .expect("the flames row spawns");
+                pool.slots_mut()[slot].local_ai[0] = counter;
+                let mut npc = one_npc(&w);
+                npc.x = 300.0;
+                npc.y = 300.0;
+                npc.hp = 10_000;
+                npc.max_hp = 10_000;
+                pool.damage_pve(
+                    &w,
+                    slot,
+                    std::slice::from_mut(&mut npc),
+                    None,
+                    None,
+                    None,
+                    &mut tr_core::tile_light::FastRandom::new(7),
+                );
+                if bites {
+                    assert!(npc.hp < 10_000, "kind {kind} @ {counter}: the flame bites");
+                } else {
+                    assert_eq!(npc.hp, 10_000, "kind {kind} @ {counter}: smoke deals nothing (`:12460-12467`)");
+                }
+            }
+            // The boxed walk's copy.
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(kind, 300.0, 300.0, 8.0, 0.0, 40, 2.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots_mut()[slot].local_ai[0] = 54.0;
+            let mut npc = one_npc(&w);
+            npc.x = 300.0;
+            npc.y = 300.0;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            pool.damage_pve_boxed(
+                slot,
+                std::slice::from_mut(&mut npc),
+                (false, false),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0.0,
+            );
+            assert_eq!(npc.hp, 10_000, "kind {kind}: the boxed walk refuses too");
+            // The player-contact walk's copy — a hostile-flagged slot inside
+            // the player: the smoke tail neither hurts nor consumes.
+            let mut player = crate::player::Player::spawn(&w);
+            let (pcx, pcy) = player.center();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(kind, pcx - 3.0, pcy - 3.0, 0.0, 0.0, 25, 0.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots_mut()[slot].friendly = false;
+            pool.slots_mut()[slot].local_ai[0] = 54.0;
+            let hp0 = player.hp;
+            pool.damage_player(
+                slot,
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            assert_eq!(player.hp, hp0, "kind {kind}: the smoke hurts no player");
+            assert!(pool.slots()[slot].active, "kind {kind}: the refused contact keeps the shot");
+            // Below the gate the contact lands and consumes the shot.
+            pool.slots_mut()[slot].local_ai[0] = 53.0;
+            pool.damage_player(
+                slot,
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            assert!(player.hp < hp0, "kind {kind}: tick 53 still bites");
+            assert!(!pool.slots()[slot].active, "the landed contact consumes the shot");
+        }
+    }
+
+    /// W4-d18 — the full `Damage_CanDealDamage` kind census
+    /// (`Projectile.cs:12448-12456`): the unconditional type list refuses
+    /// at ANY state; the state terms (the Storm Tigers' pounce `ai[0]==4`,
+    /// the Mushroom Boi's spore `ai[2]>0`, the Empress telegraph
+    /// `localAI[0]<=60`) refuse only in-window; the sprays (aiStyle 31)
+    /// refuse always. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d18_the_damage_kind_gate_census() {
+        let bare = |kind: u16| Projectile { active: true, kind, damage: 10, ..Default::default() };
+        // The unconditional list — every row-less id included (arm-total).
+        for kind in [
+            18u16, 72, 86, 87, 226, 378, 613, 650, 882, 888, 895, 896,
+            439, 444, 500, 653, 1018, 1056, 1090, 460, 633, 600, 601, 602,
+            535, 651, 831, 970, 861, 1007,
+        ] {
+            assert!(damage_kind_gate_refuses(&bare(kind)), "kind {kind} refuses (`:12448`)");
+        }
+        // The Storm Tigers: only the pounce state refuses.
+        for kind in [STORM_TIGER_1, STORM_TIGER_2, STORM_TIGER_3] {
+            let mut p = bare(kind);
+            assert!(!damage_kind_gate_refuses(&p), "kind {kind}: state 0 bites");
+            p.ai[0] = 4.0;
+            assert!(damage_kind_gate_refuses(&p), "kind {kind}: the pounce refuses (`:12448`)");
+            p.ai[0] = 2.0;
+            assert!(!damage_kind_gate_refuses(&p), "kind {kind}: the bite window bites");
+        }
+        // The Mushroom Boi: only the spore state refuses.
+        let mut p = bare(1022);
+        assert!(!damage_kind_gate_refuses(&p), "1022: ai[2]=0 bites");
+        p.ai[2] = 1.0;
+        assert!(damage_kind_gate_refuses(&p), "1022: the spore refuses (`:12448`)");
+        // The Empress telegraph: <= 60 refuses, 61 bites.
+        for kind in [FAIRY_QUEEN_LANCE, FAIRY_QUEEN_SUN_DANCE] {
+            let mut p = bare(kind);
+            assert!(damage_kind_gate_refuses(&p), "kind {kind}: tick 0 refuses (`:12448`)");
+            p.local_ai[0] = 60.0;
+            assert!(damage_kind_gate_refuses(&p), "kind {kind}: tick 60 still refuses");
+            p.local_ai[0] = 61.0;
+            assert!(!damage_kind_gate_refuses(&p), "kind {kind}: tick 61 bites");
+        }
+        // The sprays: aiStyle 31 refuses always (145 + the seven solutions).
+        for kind in [145u16, 146, 147, 148, 149, 1015, 1016, 1017] {
+            assert!(damage_kind_gate_refuses(&bare(kind)), "spray {kind} refuses (`:12448`)");
+        }
+        // The aiStyle-10 rest latch: -1 refuses, 0 (the debris pin) bites.
+        let mut p = bare(42);
+        assert!(!damage_kind_gate_refuses(&p), "42: localAI[1]=0 keeps the C# shape");
+        p.local_ai[1] = -1.0;
+        assert!(damage_kind_gate_refuses(&p), "42: the rest latch refuses (`:12456`)");
+        // The Lightning Aura: only the wrap tick (ai[0]==0) may zap.
+        let mut p = bare(LIGHTNING_AURA_1);
+        assert!(!damage_kind_gate_refuses(&p), "aura: the wrap tick zaps (`:12448`)");
+        p.ai[0] = 1.0;
+        assert!(damage_kind_gate_refuses(&p), "aura: counting ticks refuse");
+        // The Explosive Trap sentry never deals contact damage; its blast
+        // (style 139) is NOT gated.
+        assert!(damage_kind_gate_refuses(&bare(EXPLOSIVE_TRAP_1)), "trap sentry refuses (`:12448`)");
+        assert!(!damage_kind_gate_refuses(&bare(EXPLOSIVE_TRAP_EXPLOSION_1)), "the blast bites");
+        // Untouched kinds keep their pre-gate behaviour (the freeze).
+        for kind in [SHURIKEN, WOODEN_ARROW, MAGIC_MISSILE, BONE_JAVELIN, 85, FOXSPARKS_FLAMES] {
+            assert!(!damage_kind_gate_refuses(&bare(kind)), "kind {kind}: no census term");
+        }
+        // A walk witness: the unconditional-list refusal reaches the NPC
+        // pass — a Spider Egg (378) overlapping an NPC deals nothing.
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SPIDER_EGG, 300.0, 300.0, 0.0, 0.0, 40, 2.0, 0.0, 0.0)
+            .expect("the 378 row spawns");
+        let mut npc = one_npc(&w);
+        npc.x = 300.0;
+        npc.y = 300.0;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            None,
+            &mut tr_core::tile_light::FastRandom::new(7),
+        );
+        assert_eq!(npc.hp, 10_000, "the 378 spider egg deals nothing (`:12448`)");
+    }
+
+    /// PROJ-171 RETIRE — the row-less conditional terms, ARM-TOTAL
+    /// (`Projectile.cs:12448` + `:12468-12476`). Every kind is row-less on
+    /// every pushed tip today; the terms read `p.kind` literals +
+    /// `proj_data().ai_style`, so they AUTO-ACTIVATE when a d-lane lands the
+    /// row (the activation contract). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d18_the_rowless_conditionals_census() {
+        let bare = |kind: u16| Projectile { active: true, kind, damage: 10, ..Default::default() };
+        // 434 localAI[0] != 0; 631 localAI[1] == 0; 537 localAI[0] <= 30;
+        // 818 ai[0] < 1; 281 ai[0] == -3; 1092 ai[0] <= 1.
+        let mut p = bare(434);
+        assert!(!damage_kind_gate_refuses(&p), "434: localAI[0]=0 bites");
+        p.local_ai[0] = 1.0;
+        assert!(damage_kind_gate_refuses(&p), "434: localAI[0]!=0 refuses (`:12448`)");
+        let mut p = bare(631);
+        assert!(damage_kind_gate_refuses(&p), "631: localAI[1]=0 refuses (`:12448`)");
+        p.local_ai[1] = 1.0;
+        assert!(!damage_kind_gate_refuses(&p), "631: localAI[1]!=0 bites");
+        let mut p = bare(537);
+        assert!(damage_kind_gate_refuses(&p), "537: localAI[0]=0 refuses (`:12448`)");
+        p.local_ai[0] = 31.0;
+        assert!(!damage_kind_gate_refuses(&p), "537: localAI[0]=31 bites");
+        let mut p = bare(818);
+        assert!(damage_kind_gate_refuses(&p), "818: ai[0]=0 refuses (`:12448`)");
+        p.ai[0] = 1.0;
+        assert!(!damage_kind_gate_refuses(&p), "818: ai[0]=1 bites");
+        let mut p = bare(281);
+        assert!(!damage_kind_gate_refuses(&p), "281: ai[0]=0 bites");
+        p.ai[0] = -3.0;
+        assert!(damage_kind_gate_refuses(&p), "281: ai[0]=-3 refuses (`:12448`)");
+        let mut p = bare(1092);
+        assert!(damage_kind_gate_refuses(&p), "1092: ai[0]=0 refuses (`:12448`)");
+        p.ai[0] = 2.0;
+        assert!(!damage_kind_gate_refuses(&p), "1092: ai[0]=2 bites");
+        // 451: ((int)(ai[0]-1)/penetrate == 0 || ai[1] < 5) && ai[0] != 0.
+        // penetrate 3 (the row, `:5235`): ai[0]=1..3 → quotient 0 → refuse;
+        // ai[0]=4 → quotient 1, ai[1]>=5 → bite; ai[1]<5 always refuses.
+        let mut p = bare(451);
+        p.penetrate = 3;
+        assert!(!damage_kind_gate_refuses(&p), "451: ai[0]=0 bites (the outer gate)");
+        p.ai[0] = 1.0;
+        p.ai[1] = 9.0;
+        assert!(damage_kind_gate_refuses(&p), "451: quotient 0 refuses (`:12448`)");
+        p.ai[0] = 4.0;
+        assert!(!damage_kind_gate_refuses(&p), "451: quotient 1 + ai[1]>=5 bites");
+        p.ai[1] = 4.0;
+        assert!(damage_kind_gate_refuses(&p), "451: ai[1]<5 refuses (`:12448`)");
+        // 261: velocity.Length() < 1.5 (the slow boulder).
+        let mut p = bare(261);
+        assert!(damage_kind_gate_refuses(&p), "261: at rest refuses (`:12448`)");
+        p.vel = Vec2::new(2.0, 0.0);
+        assert!(!damage_kind_gate_refuses(&p), "261: speed 2 bites");
+        // 511-513 / 1128: ai[1] >= 1 (the spent-shot state).
+        for kind in [511u16, 512, 513, 1128] {
+            let mut p = bare(kind);
+            assert!(!damage_kind_gate_refuses(&p), "kind {kind}: ai[1]=0 bites");
+            p.ai[1] = 1.0;
+            assert!(damage_kind_gate_refuses(&p), "kind {kind}: ai[1]>=1 refuses (`:12448`)");
+        }
+        // 1091 / 1122: localAI[0] <= 0 (the unlit state, `:12468-12475`).
+        for kind in [1091u16, 1122] {
+            let mut p = bare(kind);
+            assert!(damage_kind_gate_refuses(&p), "kind {kind}: localAI[0]=0 refuses");
+            p.local_ai[0] = 1.0;
+            assert!(!damage_kind_gate_refuses(&p), "kind {kind}: localAI[0]=1 bites");
+        }
+        // aiStyle 93 (`:12452`) / 25 (`:12476`): row-less today, arm-total.
+        // No style-93/25 row exists, so the terms are unreachable — the
+        // shape is pinned for the d-lane activation (the style read is the
+        // gate's own `proj_data().ai_style`).
+        assert!(proj_data(434).is_none(), "434 stays row-less (activation contract)");
+        assert!(proj_data(451).is_none(), "451 stays row-less");
+        assert!(proj_data(281).is_none(), "281 stays row-less (the bunny cannon)");
+    }
+
+    /// PROJ-171 RETIRE — the `Main.projPet` block (`Projectile.cs:12480`):
+    /// every pet/minion refuses contact damage EXCEPT the exception ladder.
+    /// The rowed attack-minions are ALL ladder exceptions (their attack
+    /// windows keep biting); the inert pets / row-less pygmies refuse.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d18_the_proj_pet_contact_ladder() {
+        let bare = |kind: u16| Projectile { active: true, kind, damage: 10, ..Default::default() };
+        // Non-pet kinds are untouched by the block.
+        for kind in [SHURIKEN, WOODEN_ARROW, 85, FOXSPARKS_FLAMES] {
+            assert!(!proj_pet_contact_refuses(&bare(kind)), "kind {kind}: not projPet");
+        }
+        // The unconditional exceptions always bite.
+        for kind in [266u16, 407, 317, 390, 391, 392, 393, 394, 395, 1093, 1112, 1118,
+                     625, 626, 627, 628, 758, 951, 963, 1022, 833, 834, 835, 864] {
+            assert!(!proj_pet_contact_refuses(&bare(kind)), "kind {kind}: unconditional exception");
+        }
+        // 388 / 623: ai[0] == 2 bites, else refuses.
+        for kind in [388u16, 623] {
+            let mut p = bare(kind);
+            assert!(proj_pet_contact_refuses(&p), "kind {kind}: ai[0]=0 refuses");
+            p.ai[0] = 2.0;
+            assert!(!proj_pet_contact_refuses(&p), "kind {kind}: ai[0]=2 bites (`:12480`)");
+        }
+        // 533: ai[0] in 6..=8 bites, else refuses.
+        let mut p = bare(533);
+        assert!(proj_pet_contact_refuses(&p), "533: ai[0]=0 refuses");
+        p.ai[0] = 6.0;
+        assert!(!proj_pet_contact_refuses(&p), "533: ai[0]=6 bites");
+        p.ai[0] = 8.0;
+        assert!(!proj_pet_contact_refuses(&p), "533: ai[0]=8 bites");
+        p.ai[0] = 9.0;
+        assert!(proj_pet_contact_refuses(&p), "533: ai[0]=9 refuses");
+        // 755 / 946: ai[0] != 0 bites, else refuses.
+        for kind in [755u16, 946] {
+            let mut p = bare(kind);
+            assert!(proj_pet_contact_refuses(&p), "kind {kind}: ai[0]=0 refuses");
+            p.ai[0] = 1.0;
+            assert!(!proj_pet_contact_refuses(&p), "kind {kind}: ai[0]!=0 bites (`:12480`)");
+        }
+        // 759: the baby bird bites EXCEPT on its last/perch frame
+        // (projFrames[759] = 5, `Main.cs:8506`).
+        let mut p = bare(759);
+        assert!(!proj_pet_contact_refuses(&p), "759: frame 0 bites");
+        p.frame = 3;
+        assert!(!proj_pet_contact_refuses(&p), "759: frame 3 bites");
+        p.frame = 4;
+        assert!(proj_pet_contact_refuses(&p), "759: the perch frame refuses (`:12480`)");
+        // The inert pets / row-less pygmies refuse at any state.
+        for kind in [191u16, 192, 193, 194, 373, 375, 387, 883, 887, 893, 175, 197] {
+            assert!(proj_pet_contact_refuses(&bare(kind)), "kind {kind}: inert pet refuses");
+        }
+        // A walk witness: the 266 slime minion (an unconditional exception)
+        // still bites through the gate, while the 373 hornet (no exception)
+        // refuses — the block reaches the PVE pass.
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let slime = pool
+            .spawn_with_data_ai(SLIME_MINION, 300.0, 300.0, 0.0, 0.0, 40, 2.0, 0.0, 0.0)
+            .expect("the 266 row spawns");
+        let mut npc = one_npc(&w);
+        npc.x = 300.0;
+        npc.y = 300.0;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        pool.slots_mut()[slime].friendly = true;
+        pool.damage_pve(&w, slime, std::slice::from_mut(&mut npc), None, None, None,
+            &mut tr_core::tile_light::FastRandom::new(7));
+        assert!(npc.hp < 10_000, "the 266 exception still bites (`:12480`)");
+    }
+
+    /// PROJ-171 RETIRE — the 601 CANNON_EXPLOSIVE row-shape cross-note
+    /// (d6-lane). 601 is C# `PortalGunBolt` (`ProjectileID.cs:1756`), the
+    /// damage-less portal bolt: the gate refuses it (`:12448`) faithful to
+    /// the id, regardless of the M7-WIRE-2 row's mislabeled penetrate/alpha.
+    /// The row-shape fix (penetrate 1 / alpha 255) + the teleport AI
+    /// (`PortalHelper.TryPlacingPortal` `:18099`) are the d6 lane's — this
+    /// witness pins the gate refusal + documents the deviation, NOT a fix.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d18_the_601_portal_bolt_gate_refusal_cross_note() {
+        let bare = |kind: u16| Projectile { active: true, kind, damage: 10, ..Default::default() };
+        // The gate refuses 601 at ANY state (the unconditional list, `:12448`).
+        assert!(damage_kind_gate_refuses(&bare(CANNON_EXPLOSIVE)), "601 refuses (`:12448`)");
+        // The true C# 601 is aiStyle 1 (`Projectile.cs:6506`), NOT 0 — the
+        // row carries 1 (the mislabel is the penetrate/alpha, not the style).
+        let d = proj_data(CANNON_EXPLOSIVE).expect("the 601 row exists (M7-WIRE-2)");
+        assert_eq!(d.ai_style, 1, "601 is aiStyle 1 (`:6506`), not 0");
+        assert_eq!(d.extra_updates, 30, "`extraUpdates = 30` (`:6509`)");
+        // The DOCUMENTED deviation (the d6-lane fix, NOT applied here): the
+        // M7-WIRE-2 row carries penetrate -1 / alpha 0 where the true C# 601
+        // keeps stock penetrate 1 (`:774`) + alpha 255 (`:6507`). The gate
+        // is behaviour-neutral either way (601 deals no contact damage in C#).
+        assert_eq!(d.penetrate, -1, "the mislabeled row (d6-lane fix pending)");
+        assert_eq!(d.alpha, 0, "the mislabeled row (d6-lane fix pending: alpha 255)");
+    }
+
+    /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
     /// (`Projectile.cs:12583`): `!nPC.dontTakeDamage`. The Moon Lord's
     /// core wears the shield until its parts are dead; the Brain's
     /// Creeper shield blocks the hits while it lives.
@@ -40875,6 +41614,11 @@ mod magic_ai_tests {
             GEM_BOLT_AMBER,
             GRADIENT_YOYO,
             BETSY_FIREBALL,
+            // W4-d18 tail: the empress mode-2 entries (`ProjectileID.cs:521`).
+            HALLOW_BOSS_RAINBOW_STREAK,
+            HALLOW_BOSS_LASTING_RAINBOW,
+            FAIRY_QUEEN_MAGIC_ITEM_SHOT,
+            CONSTELLATION_STAR,
         ] {
             assert_eq!(trailing_mode(kind), 2, "kind {kind} records the triple");
         }
@@ -46008,6 +46752,37 @@ mod s1_d_4b_1_tests {
         assert_eq!(blast.alpha, 255);
         assert!(blast.uses_local_immunity);
         assert_eq!(blast.local_hit_cooldown, -1);
+    }
+
+    /// W4-d18 tail — the residual armed-but-unrowed kinds' rows
+    /// (`SetDefaults` `:9127-9142` / `:10303-10315`): the friendly Insanity
+    /// shadow 964 (187) and the Foxsparks flames 1106 (193). Their arms
+    /// already exist on main (`ai_insanity_shadow` / `ai_flamethrower`);
+    /// these rows let `spawn_with_data` accept them. PROJ-171 retire: the
+    /// 978 Volcano block is DROPPED (keep-d12c — d12c's 9e668d0f0 owns the
+    /// 978 row + `proj_frames[978] = 5`; the d19 verdict 6e80e4201).
+    #[test]
+    fn w4_d18_the_residual_rows_carry_the_csharp_set_defaults() {
+        let d = proj_data(INSANITY_SHADOW_FRIENDLY).expect("964 row");
+        assert_eq!((d.w, d.h, d.ai_style), (40.0, 40.0, 187));
+        assert_eq!(d.penetrate, 3);
+        assert_eq!(d.alpha, 255);
+        assert!(!d.tile_collide && d.ignore_water);
+        assert_eq!(d.extra_updates, 1);
+        assert_eq!(d.scale, 0.7);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+        // PROJ-171 retire (978 dup, keep-d12c): the 978 row is NOT here —
+        // d12c's 9e668d0f0 is the superset. The spawn declines until d12c
+        // merges (the row is the spawn's only gate).
+        assert!(proj_data(978).is_none(), "the 978 row rides d12c, not d18");
+        let d = proj_data(FOXSPARKS_FLAMES).expect("1106 row");
+        assert_eq!((d.w, d.h, d.ai_style), (6.0, 6.0, 193));
+        assert_eq!(d.penetrate, 4);
+        assert_eq!(d.alpha, 255);
+        assert_eq!(d.extra_updates, 2);
+        assert!(d.tile_collide && !d.ignore_water, "the stock flags");
+        assert!(d.uses_id_static_immunity && d.id_static_hit_cooldown == 15);
+        assert!(!d.uses_local_immunity);
     }
 }
 

@@ -270,11 +270,12 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-36-14 | The OOA's invasion id — set `invasion_type = 3` (`DD2Event.cs:47`) and route the progress through `invasion_progress_icon = 3` | 36 | S | behavioural (UI) | — | 36-cinematics-film.md:207 |
 | R-36-15 | Replace the `DD2Event.Ongoing` stub (`dd2.rs:17-19`) with the world's real flag and re-enable the sentry-persistence gate | 36 | S | behavioural (low) | — | 36-cinematics-film.md:210 |
 
-### (d) missing subsystems — 51 seeds
+### (d) missing subsystems — 52 seeds
 
 | id | One-line title | Module | Size | Severity | Dependencies | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | R-26-8 | Port `AI_099_1_Counterweights` (67380) + the counterweight rows 556-561/1079 | 26 | L | behavioural (medium) | — | 26-projectile-ai-audit.md:171 |
+| R-26-13 | The 601 PortalGunBolt d6-gap: fix the M7-WIRE-2 row shape (penetrate 1 / alpha 255, rename CANNON_EXPLOSIVE → PORTAL_GUN_BOLT) + port the teleport AI (`HandleMovement` :18084-18103 → `PortalHelper.TryPlacingPortal` :216-244 + the line/AddPortal helpers + the 602 row); EXACT C# spec published for the d6 lane (`7edfcd49`) | 26 | M | behavioural (medium) | the d6 wiring lane; the dust/light/sound draws deferred | 26h-projectile-ai-171-180-census.md (seal continuation §1) |
 | R-26-9 | Port the remaining ~150 vanilla aiStyles (the 1.4 boss/event families 130-210 and the pre-1.3 groups 30-99), one family per row | 26 | L | behavioural (high) | R-26-5 | 26-projectile-ai-audit.md:172 |
 | R-12-3 | Port the cheap missing passes (Life Crystals, Statues/Traps/Piles, Sunflowers, Flowers, Mushrooms, Herbs/Dye Plants) | 12 | M | behavioural (medium) | — | 12-worldgen.md:338 |
 | R-12-5 | Liquid settlement pass — a minimal `Liquid` update that satisfies `WorldGenerator.cs:508`'s invariant, then the two `Settle Liquids` passes | 12 | M | behavioural (high) | R-11-5 | 12-worldgen.md:353 |

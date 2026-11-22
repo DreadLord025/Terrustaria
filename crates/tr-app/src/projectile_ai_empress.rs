@@ -22,19 +22,34 @@
 //! 924 (FairyQueenHymn) are NOT spawned by `AI_120` — 871's only spawner is
 //! the Queen Slime's gore-adjacent path (`NPC.cs:83753` is a different 871 —
 //! a dust id; no `NewProjectile(871)` exists in `NPC.cs`/`Player.cs`) and 924
-//! has no `SetDefaults` arm at all (an unused id). Both stay unclaimed.
+//! has no `SetDefaults` arm at all (an unused id). Both stay unclaimed BY
+//! THIS GATE — W4-d18 rowed 871 with its own aiStyle-172 arm
+//! (`projectile_ai_misc::ai_pellet_storm`); 924 stays unrowed.
 //!
 //! Boundaries honoured: R56 owns aiStyle 194 (untouched); R19b owns the
-//! ai001 slice-C kinds (none of these five is aiStyle 1); the style-171
+//! ai001 slice-C kinds (none of these five is aiStyle 1). The style-171
 //! weapon variants **931/1039** (`FairyQueenMagicItemShot` /
-//! `Starlight`-family, `:8826`/`:9807`) are EXCLUDED from the gate — their
-//! `AI_171` parameter overrides (`:45462-45492`, `:45551-45554`) and the
-//! friendly `FindTargetWithLineOfSight` branch (`:45507-45526`) belong to
-//! the player-weapon port. For hostile 873 the friendly flag is constant
-//! false (`SetDefaults` `:8361`, no reflect/parry seam in the port), so the
-//! friendly branch is unreachable BY CONSTRUCTION here.
+//! `ConstellationStar`, `:8826`/`:9807`) were EXCLUDED from the hostile
+//! gate by S1-D-4; **W4-d18's tail rowed them and ported their friendly
+//! arm here** ([`fairy_weapon_tick`] + [`fairy_weapon_bounce`], the
+//! `handles_fairy_weapon` gate): the `AI_171` parameter overrides
+//! (`:45462-45492`, `:45551-45554`), the friendly
+//! `FindTargetWithLineOfSight` acquire (`:45507-45526`) and the NPC homing
+//! (`:45535-45548`), with the `HandleMovement` bounce (`:18592-18602`,
+//! 4×4 collision box `:20017-20021`). For hostile 873 the friendly flag is
+//! constant false (`SetDefaults` `:8361`, no reflect/parry seam in the
+//! port), so the friendly branch is unreachable BY CONSTRUCTION in the
+//! hostile arm.
 //!
 //! RNG by construction (every `Main.rand` draw cited, dust skips included):
+//! * **931/1039: 24 draws on the 238-tick, ZERO otherwise.** The burst
+//!   (`:45485-45490`) is 3× `NewDustPerfect(Center, 267, …)`: each
+//!   `NextVector2CircularEdge(3,3)` = `NextVector2Unit`'s one `NextFloat`
+//!   (`Utils.cs:1261-1264`/`:1271-1274`) + the radius `NextFloat` (1) +
+//!   `Dust.NewDust`'s 6 internals (`Dust.cs:170-175`, `:190`) = 8 draws;
+//!   the colour helpers draw nothing for non-dev names (`:21665-22041`).
+//!   The acquire/homing/ramp roll nothing. The `Kill()` death burst
+//!   (`:71149-71191`) is the pool-wide kill-dust skip (the 873 precedent).
 //! * **872 / 874 / 923: ZERO draws.** `AI_173` is pure maths; style 0 has no
 //!   arm; `AI_180`'s only effects are `SoundID.Item159` (`:44988`, skipped —
 //!   no sound layer) and the 13-point `CastLightOpen` walk (`:45020-45024`,
@@ -71,7 +86,9 @@
 //!   overlap;
 //! * the damage-side slices stay with the wiring: the telegraph invuln
 //!   (`Damage_CanDealDamage` `:12448` — 919/923 deal no damage while
-//!   `localAI[0] <= 60`), the BossNoCheese immunity group (`Damage_EVP`
+//!   `localAI[0] <= 60`) is CLOSED by W4-d18's full-switch census
+//!   (`projectile.rs::damage_kind_gate_refuses`); the BossNoCheese
+//!   immunity group (`Damage_EVP`
 //!   `:14788-14796`), 919's line hitbox (`Colliding` `:15625-15641`, ±40 px
 //!   along the rotation, width 8), 923's three-segment beam hitbox
 //!   (`:15642-15668`, 510/660/800 × scale at widths 100/60/10 × 0.7 scale),
@@ -90,7 +107,8 @@
 //!   [`EmpressNpcRef`]).
 //!
 //! Witness tests are WRITTEN, NOT RUN (code-only mode — no compiler invoked):
-//! 9 tests pin the rows, the gate, and each arm's maths + RNG order.
+//! the S1-D-4 nine pin the rows, the gate, and each arm's maths + RNG order;
+//! W4-d18's tail adds the 931/1039 row/gate/arm/bounce witnesses.
 
 #![allow(dead_code)] // wiring deferred (S1-D-4, code-only mode)
 
@@ -101,13 +119,16 @@ use tr_core::loot::DropRng;
 
 use crate::npc::Npc;
 use crate::projectile::{
-    get_lerp_value, Projectile, FAIRY_QUEEN_LANCE, FAIRY_QUEEN_SUN_DANCE,
+    chaseable, find_target_with_line_of_sight, get_lerp_value, npc_center, Projectile,
+    CONSTELLATION_STAR, FAIRY_QUEEN_LANCE, FAIRY_QUEEN_MAGIC_ITEM_SHOT, FAIRY_QUEEN_SUN_DANCE,
     HALLOW_BOSS_DEATH_AURORA, HALLOW_BOSS_LASTING_RAINBOW, HALLOW_BOSS_RAINBOW_STREAK,
 };
 
-/// The claimed kind set — the five `AI_120_HallowBoss` spawns. 871/924 and
-/// the style-171 weapon variants 931/1039 are deliberately NOT here (module
-/// doc); every unclaimed kind keeps its pre-existing dispatch byte-identical.
+/// The claimed kind set — the five `AI_120_HallowBoss` spawns. 871/924 stay
+/// out (871 rides its own style-172 arm, 924 unrowed); the style-171 weapon
+/// variants 931/1039 ride their OWN friendly gate ([`handles_fairy_weapon`],
+/// W4-d18 tail), NOT this hostile set. Every unclaimed kind keeps its
+/// pre-existing dispatch byte-identical.
 pub(crate) const EMPRESS_PROJ_KINDS: [u16; 5] = [
     HALLOW_BOSS_LASTING_RAINBOW, // 872
     HALLOW_BOSS_RAINBOW_STREAK,  // 873
@@ -119,6 +140,15 @@ pub(crate) const EMPRESS_PROJ_KINDS: [u16; 5] = [
 /// The dispatch gate: only these kinds leave the `_ => {}` fall-through.
 pub(crate) fn handles(kind: u16) -> bool {
     EMPRESS_PROJ_KINDS.contains(&kind)
+}
+
+/// W4-d18 tail — the aiStyle-171 FRIENDLY weapon variants' gate: the
+/// Nightglow bolt 931 and the Constellation star 1039 ride their own arm
+/// ([`fairy_weapon_tick`]), NOT the hostile five-kind gate above. The C#
+/// `AI_171` kind checks (`:45462`/`:45467`/`:45480`/`:45551`) name exactly
+/// these two kinds; every other style-171 kind keeps the hostile arm.
+pub(crate) fn handles_fairy_weapon(kind: u16) -> bool {
+    matches!(kind, FAIRY_QUEEN_MAGIC_ITEM_SHOT | CONSTELLATION_STAR)
 }
 
 /// One `Main.npc[i]` slot as the sun dance reads it (`:45008-45014`):
@@ -319,6 +349,176 @@ fn ai_171_rainbow_streak(p: &mut Projectile, who_am_i: usize, players: &[(f32, f
     p.rot = to_rotation(p.vel) + PI / 2.0;
 }
 
+/// W4-d18 tail — `AI_171_HallowBossRainbowStreak`'s FRIENDLY weapon arm
+/// (`Projectile.cs:45451-45558`), the Nightglow bolt 931 and the
+/// Constellation star 1039. The hostile 873 keeps [`ai_171_rainbow_streak`];
+/// this arm adds the C# kind-gated branches the hostile gate excluded:
+/// * the parameter overrides (`:45462-45474`): the swirl window 180, the
+///   homing floor 20, the ×0.97 damp, the 0.075/0.125 SmoothStep amounts;
+///   1039's homing speed 60 (`:45464`) is reset to 30 by the shared
+///   931||1039 block (`:45471`) — a verbatim dead store — but its acquire
+///   range 1600 (`:45465`) SURVIVES (the shared block has no maxRange line);
+/// * the 238-tick dust burst (`:45475-45491`): the alpha save/restore
+///   around the colour helper (which draws nothing for non-dev names,
+///   `:21665-22041`), then 3× `NewDustPerfect(Center, 267, …)` — each
+///   `NextVector2CircularEdge(3,3)` (1 float, `Utils.cs:1271-1274`) + the
+///   radius `NextFloat` (1) + `NewDust`'s 6 internals = 8 draws, 24 total;
+/// * the friendly acquire (`:45507-45526`): the `CanBeChasedBy` validity
+///   drop + the `FindTargetWithLineOfSight(maxRange)` re-acquire, both
+///   stamping `netUpdate`;
+/// * the friendly homing (`:45535-45548`): an in-range NPC pins
+///   `timeLeft >= 10` and aims at its centre ×30; an out-of-range index
+///   spends one extra `timeLeft--`;
+/// * the 931/1039 speed ramp (`:45551-45554`): ×Lerp(0.85, 1,
+///   GetLerpValue(0, 90, timeLeft)).
+///
+/// Movement is the dispatch's bounce step ([`fairy_weapon_bounce`],
+/// `HandleMovement` `:18592-18602`'s full-axis −1 reflection on the 4×4
+/// collision box, `GetCollisionParams` `:20017-20021`), NOT the hostile
+/// arm's free integrate. RNG: 24 draws on the 238-tick, ZERO otherwise
+/// (the acquire/homing/ramp roll nothing).
+pub(crate) fn fairy_weapon_tick(
+    p: &mut Projectile,
+    who_am_i: usize,
+    world: &tr_core::World,
+    npcs: &[Npc],
+    immune: &[i32],
+    rng: &mut dyn DropRng,
+) {
+    // `:45455-45461` — the hostile defaults.
+    let (mut num, mut num2, mut num3) = (140.0f32, 30.0f32, 0.98f32);
+    let (mut value, mut value2) = (0.05f32, 0.1f32);
+    let mut num4 = 30.0f32;
+    let mut max_range = 800.0f32;
+    // `:45462-45466` — 1039's speed/range override. num4 is reset below
+    // (a dead store); maxRange 1600 survives (the shared block has no
+    // maxRange line).
+    if p.kind == CONSTELLATION_STAR {
+        num4 = 60.0;
+        max_range = 1600.0;
+    }
+    // `:45467-45474` — the shared weapon parameter block. NOTE: it resets
+    // num4 to 30 (1039's 60 is a dead store) but NOT maxRange — 1039 keeps
+    // its 1600 acquire range (the C# block has no maxRange line).
+    num = 180.0;
+    num2 = 20.0;
+    num4 = 30.0;
+    num3 = 0.97;
+    value = 0.075;
+    value2 = 0.125;
+    // `:45475-45491` — the 238-tick dust burst.
+    if p.time_left == 238 {
+        // `:45477-45484` — the alpha save/restore around the colour helper
+        // (GetFairyQueenWeaponsColor / GetConstellationColor draw nothing
+        // for non-dev names, `:21665-22041`); the colour feeds only dust.
+        let num5 = p.alpha;
+        p.alpha = 0;
+        p.alpha = num5;
+        // `:45485-45490` — 3× NewDustPerfect(Center, 267, …).
+        for _ in 0..3 {
+            // `:45487` — NextVector2CircularEdge(3,3): NextVector2Unit's
+            // one NextFloat (Utils.cs:1261-1264, :1271-1274).
+            let _ = rng.next_float();
+            // `:45487` — the radius scale's NextFloat.
+            let _ = rng.next_float();
+            // Dust.NewDust's 6 internals (Dust.cs:170-175, :190; w/h = 0 →
+            // clamped 5 → Next(1) ×2). The dust VISUALS are the pool-wide
+            // skip; the draws are CONSUMED in C# order.
+            let _ = rng.next_range(0, 1); // position.X
+            let _ = rng.next_range(0, 1); // position.Y
+            let _ = rng.next_range(-20, 21); // velocity.X
+            let _ = rng.next_range(-20, 21); // velocity.Y
+            let _ = rng.next_range(0, 3); // frame.Y
+            let _ = rng.next_range(-20, 21); // scale
+        }
+    }
+    // `:45493-45500` — the phase flags.
+    let flag = p.time_left as f32 > num;
+    let flag2 = !flag && p.time_left as f32 > num2;
+    if flag {
+        // `:45503-45505` — the swirl: damp then the cos-phased rotation.
+        let arg = (who_am_i as f32 % 6.0) / 6.0 + p.pos.x / 320.0 + p.pos.y / 160.0;
+        let num6 = (arg as f64).cos() as f32;
+        p.vel *= num3;
+        p.vel = rotated_by(p.vel, num6 * (PI * 2.0) * 0.125 * 1.0 / 30.0);
+    }
+    // `:45507-45526` — the friendly acquire (both weapon kinds are friendly).
+    let mut num7 = p.ai[0] as i32; // `:45509`
+    // `:45510-45515` — IndexInRange && !CanBeChasedBy → drop the target.
+    if num7 >= 0 && (num7 as usize) < npcs.len() && !chaseable(&npcs[num7 as usize]) {
+        num7 = -1;
+        p.ai[0] = -1.0;
+        p.net_update = true;
+    }
+    // `:45516-45525` — the no-target re-acquire.
+    if num7 == -1 {
+        let num8 = find_target_with_line_of_sight(world, npcs, p.pos, p.w, p.h, max_range, immune);
+        if num8 != -1 {
+            num7 = num8;
+            p.ai[0] = num8 as f32;
+            p.net_update = true;
+        }
+    }
+    if flag2 {
+        let num9 = p.ai[0] as i32; // `:45529`
+        let mut value3 = p.vel; // `:45530`
+        // `:45531-45534` — the hostile arm: unreachable for the friendly
+        // weapon kinds (`hostile = false`), kept out by construction.
+        // `:45535-45548` — the friendly homing.
+        if num9 >= 0 && (num9 as usize) < npcs.len() {
+            // `:45539-45542` — pin the life at 10 while a target holds.
+            if p.time_left < 10 {
+                p.time_left = 10;
+            }
+            // `:45543` — aim at the NPC centre ×num4.
+            let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            value3 = safe_normalize(npc_center(&npcs[num9 as usize]) - center) * num4;
+        } else {
+            // `:45547` — no target: one extra life tick.
+            p.time_left -= 1;
+        }
+        // `:45550` — SmoothStep at the timeLeft-lerped amount.
+        let amount = lerp(value, value2, get_lerp_value(num, 30.0, p.time_left as f32));
+        p.vel = Vec2::new(
+            smooth_step(p.vel.x, value3.x, amount),
+            smooth_step(p.vel.y, value3.y, amount),
+        );
+        // `:45551-45554` — the 931/1039 speed ramp.
+        p.vel *= lerp(0.85, 1.0, get_lerp_value(0.0, 90.0, p.time_left as f32));
+    }
+    // `:45556-45557` — the opacity + rotation tail.
+    let opacity = get_lerp_value(240.0, 220.0, p.time_left as f32);
+    set_opacity(p, opacity);
+    p.rot = to_rotation(p.vel) + PI / 2.0;
+}
+
+/// W4-d18 tail — the 931/1039 movement: `HandleMovement`'s blocked-move arm
+/// (`Projectile.cs:18592-18602`) reflects EACH blocked axis at full speed
+/// (−1×lastVelocity), then `UpdatePosition` integrates (`:20445`). The
+/// collision box is the 4×4 centre inset (`GetCollisionParams`
+/// `:20017-20021`, resizeAnchor 0.5/0.5 → the box centres on the sprite).
+/// The port's probe is the per-axis destination-box stand-in the arrow
+/// arms use (`kill_step`'s shape) — the swept `TileCollision` span is the
+/// recorded approximation; the reflection + integrate order is verbatim.
+pub(crate) fn fairy_weapon_bounce(p: &mut Projectile, world: &tr_core::World) {
+    let cx = p.pos.x + p.w * 0.5;
+    let cy = p.pos.y + p.h * 0.5;
+    let (bx, by) = (cx - 2.0, cy - 2.0);
+    let last = p.vel;
+    let hit_x = crate::player::collides_rect(world, bx + p.vel.x, by, 4.0, 4.0);
+    let hit_y = crate::player::collides_rect(world, bx, by + p.vel.y, 4.0, 4.0);
+    // `:18594-18601` — reflect each blocked axis (the C# tests
+    // `velocity.X != lastVelocity.X` after TileCollision zeroed the axis).
+    if hit_x {
+        p.vel.x = -last.x;
+    }
+    if hit_y {
+        p.vel.y = -last.y;
+    }
+    // `UpdatePosition` (`:20445`) — the free integrate of the resolved vel.
+    p.pos += p.vel;
+}
+
 /// `AI_179_FairyQueenLance` (`Projectile.cs:45032-45056`) — the ethereal
 /// lance (919): a 60-tick telegraph (velocity stays at the spawn's zero,
 /// the alpha fades in over the first 20), then the dash —
@@ -501,8 +701,9 @@ mod tests {
             assert!(d.ignore_water, "kind {kind} ignoreWater");
             assert_eq!(d.extra_updates, 0, "kind {kind} extraUpdates");
         }
-        // The unclaimed neighbours stay unrowed (871/924 — module doc).
-        assert!(proj_data(871).is_none());
+        // The unclaimed neighbours: 924 stays unrowed; 871 was rowed by
+        // W4-d18 with its OWN style-172 arm — this gate still does not
+        // claim it (the gate witness below).
         assert!(proj_data(924).is_none());
     }
 
@@ -763,5 +964,183 @@ mod tests {
         }
         assert_eq!(p6.alpha, 0);
         assert!(rng.draws.is_empty(), "AI_180 draws nothing");
+    }
+
+    // ===== W4-d18 tail: the aiStyle-171 friendly weapon variants =====
+
+    fn weapon(kind: u16) -> Projectile {
+        let mut p = shot(kind);
+        p.friendly = true;
+        p
+    }
+
+    fn target_at(x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, x, y, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        n
+    }
+
+    fn open_world() -> tr_core::World {
+        tr_core::World::new("t".into(), 300, 200)
+    }
+
+    /// The two rows carry their `SetDefaults` slices (`:8826-8841` /
+    /// `:9807-9820`): 30x30, aiStyle 171, alpha 255, timeLeft 240,
+    /// tileCollide TRUE, ignoreWater, extraUpdates 1; 931 penetrate 3 +
+    /// local(30) + magic, 1039 penetrate 1 + local(-1) + no class flag.
+    #[test]
+    fn w4_d18_the_weapon_rows_carry_the_csharp_set_defaults() {
+        let d = proj_data(FAIRY_QUEEN_MAGIC_ITEM_SHOT).expect("931 row");
+        assert_eq!((d.w, d.h, d.ai_style), (30.0, 30.0, 171));
+        assert_eq!(d.penetrate, 3);
+        assert_eq!(d.time_left, 240);
+        assert_eq!(d.alpha, 255);
+        assert!(d.tile_collide && d.ignore_water);
+        assert_eq!(d.extra_updates, 1);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == 30);
+        assert!(d.magic && !d.melee && !d.ranged);
+        let d = proj_data(CONSTELLATION_STAR).expect("1039 row");
+        assert_eq!((d.w, d.h, d.ai_style), (30.0, 30.0, 171));
+        assert_eq!(d.penetrate, 1, "the stock penetrate (`:774`)");
+        assert_eq!(d.time_left, 240);
+        assert!(d.tile_collide && d.ignore_water);
+        assert_eq!(d.extra_updates, 1);
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1);
+        assert!(!d.magic && !d.melee && !d.ranged, "no class flag");
+    }
+
+    /// The friendly gate claims exactly 931/1039; the hostile gate does NOT
+    /// claim them (and the friendly gate does not claim the hostile five).
+    #[test]
+    fn w4_d18_the_friendly_gate_is_disjoint_from_the_hostile_one() {
+        assert!(handles_fairy_weapon(FAIRY_QUEEN_MAGIC_ITEM_SHOT));
+        assert!(handles_fairy_weapon(CONSTELLATION_STAR));
+        assert!(!handles(FAIRY_QUEEN_MAGIC_ITEM_SHOT));
+        assert!(!handles(CONSTELLATION_STAR));
+        for kind in EMPRESS_PROJ_KINDS {
+            assert!(!handles_fairy_weapon(kind));
+        }
+        for kind in [14u16, 871, 924, 932] {
+            assert!(!handles_fairy_weapon(kind));
+        }
+    }
+
+    /// The 238-tick dust burst (`:45475-45491`): the alpha save/restore,
+    /// then 3× (CircularEdge float + radius float + NewDust's 6) = 24 draws
+    /// in C# order; the alpha ends restored.
+    #[test]
+    fn w4_d18_the_238_tick_burst_consumes_24_draws_in_order() {
+        let mut p = weapon(FAIRY_QUEEN_MAGIC_ITEM_SHOT);
+        p.time_left = 238;
+        p.alpha = 123;
+        let w = open_world();
+        let mut rng = RecordRng::default();
+        fairy_weapon_tick(&mut p, 0, &w, &[], &[], &mut rng);
+        assert_eq!(p.alpha, 123, "the alpha save/restore (`:45477-45484`)");
+        let mut expect: Vec<String> = Vec::new();
+        for _ in 0..3 {
+            expect.push("float".into()); // NextVector2CircularEdge
+            expect.push("float".into()); // the radius NextFloat
+            expect.push("range(0,1)".into());
+            expect.push("range(0,1)".into());
+            expect.push("range(-20,21)".into());
+            expect.push("range(-20,21)".into());
+            expect.push("range(0,3)".into());
+            expect.push("range(-20,21)".into());
+        }
+        assert_eq!(rng.draws, expect, "24 draws, exact order");
+        // A non-238 tick draws nothing.
+        let mut p2 = weapon(CONSTELLATION_STAR);
+        p2.time_left = 200;
+        let mut rng2 = RecordRng::default();
+        fairy_weapon_tick(&mut p2, 0, &w, &[], &[], &mut rng2);
+        assert!(rng2.draws.is_empty(), "no burst off the 238-tick");
+    }
+
+    /// The friendly acquire (`:45507-45526`): a dead target drops to -1 and
+    /// re-acquires the nearest chaseable NPC; both stamp netUpdate.
+    #[test]
+    fn w4_d18_the_friendly_acquire_drops_and_reacquires() {
+        let w = open_world();
+        let mut p = weapon(FAIRY_QUEEN_MAGIC_ITEM_SHOT);
+        p.time_left = 200; // > 180: the swirl phase, no homing
+        p.ai[0] = 0.0;
+        // A dead NPC at index 0, a live one at index 1.
+        let mut dead = target_at(600.0, 335.0);
+        dead.hp = 0;
+        let live = target_at(700.0, 335.0);
+        let npcs = [dead, live];
+        let mut rng = RecordRng::default();
+        fairy_weapon_tick(&mut p, 0, &w, &npcs, &[], &mut rng);
+        assert_eq!(p.ai[0], 1.0, "re-acquired the live NPC");
+        assert!(p.net_update, "the acquire stamps netUpdate");
+        assert!(rng.draws.is_empty(), "the acquire rolls nothing");
+    }
+
+    /// The friendly homing (`:45535-45548`) + the speed ramp
+    /// (`:45551-45554`): an in-range NPC pins timeLeft >= 10 and aims at
+    /// its centre ×30; the SmoothStep amount is Lerp(0.075, 0.125, …) and
+    /// the velocity scales by Lerp(0.85, 1, GetLerpValue(0, 90, timeLeft)).
+    #[test]
+    fn w4_d18_the_friendly_homing_pins_life_and_ramps_speed() {
+        let w = open_world();
+        let mut p = weapon(FAIRY_QUEEN_MAGIC_ITEM_SHOT);
+        p.vel = Vec2::new(10.0, 0.0);
+        p.time_left = 100; // 180 ≥ 100 > 20: the homing phase
+        p.ai[0] = 0.0;
+        let npcs = [target_at(960.0, 315.0)]; // centre (969,335) — level with proj centre (495,335)
+        let mut rng = RecordRng::default();
+        fairy_weapon_tick(&mut p, 0, &w, &npcs, &[], &mut rng);
+        // amount = Lerp(0.075, 0.125, GetLerpValue(180, 30, 100)).
+        let t = get_lerp_value(180.0, 30.0, 100.0);
+        let amount = lerp(0.075, 0.125, t);
+        let s = 3.0 * amount * amount - 2.0 * amount * amount * amount;
+        let ramp = lerp(0.85, 1.0, get_lerp_value(0.0, 90.0, 100.0));
+        assert!((p.vel.x - (10.0 + 20.0 * s) * ramp).abs() < 1e-3);
+        assert!(p.vel.y.abs() < 1e-4);
+        assert!(rng.draws.is_empty());
+        // The life pin: a target holds the life at >= 10. Seed timeLeft 21
+        // (> 20, the homing window) with a target — the pin keeps it >= 10.
+        let mut p2 = weapon(CONSTELLATION_STAR);
+        p2.time_left = 21;
+        p2.ai[0] = 0.0;
+        fairy_weapon_tick(&mut p2, 0, &w, &npcs, &[], &mut rng);
+        assert!(p2.time_left >= 10, "the life pin");
+        // No target: one extra life tick (the homing else, `:45547`).
+        let mut p3 = weapon(FAIRY_QUEEN_MAGIC_ITEM_SHOT);
+        p3.time_left = 100;
+        p3.ai[0] = -1.0;
+        let before = p3.time_left;
+        fairy_weapon_tick(&mut p3, 0, &w, &[], &[], &mut rng);
+        assert_eq!(p3.time_left, before - 1, "the no-target life tick");
+    }
+
+    /// The bounce (`:18592-18602`): a blocked axis reflects at −1×last and
+    /// the position integrates the resolved velocity; open air integrates
+    /// straight. The collision box is the 4×4 centre inset (`:20017`).
+    #[test]
+    fn w4_d18_the_bounce_reflects_the_blocked_axis() {
+        // Open air: straight integrate.
+        let w = open_world();
+        let mut p = weapon(FAIRY_QUEEN_MAGIC_ITEM_SHOT);
+        p.pos = Vec2::new(480.0, 320.0);
+        p.vel = Vec2::new(5.0, -3.0);
+        fairy_weapon_bounce(&mut p, &w);
+        assert_eq!(p.pos, Vec2::new(485.0, 317.0));
+        assert_eq!(p.vel, Vec2::new(5.0, -3.0));
+        // A solid tile to the right: the X axis reflects, Y keeps.
+        let mut w2 = open_world();
+        // The 4×4 box centre is (495, 335); place a solid at tile (31, 20)
+        // = px (496..512, 320..336) so the +X destination box overlaps it.
+        let i = w2.index(31, 20);
+        w2.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w2.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p2 = weapon(CONSTELLATION_STAR);
+        p2.pos = Vec2::new(480.0, 320.0);
+        p2.vel = Vec2::new(5.0, 0.0);
+        fairy_weapon_bounce(&mut p2, &w2);
+        assert_eq!(p2.vel.x, -5.0, "the X reflection (`:18596`)");
+        assert_eq!(p2.pos.x, 475.0, "integrate the reflected velocity");
     }
 }
