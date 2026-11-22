@@ -452,6 +452,196 @@ pub(crate) fn no_spider_caves_i_lied(world: &mut World) {
     }
 }
 
+// --- Quick Cleanup (W4-d104 pass 29) -----------------------------------------
+
+/// `WorldGen.beachDistance` = 380 (`WorldGen.cs:4154`) +
+/// `WorldGen.oceanLevel` (`:4447`: `(worldSurface + rockLayer) / 2 + 40`)
+/// — the `oceanDepths` probe (`:10963-10973`), the evil.rs copy's twin.
+fn ocean_depths_qc(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
+    if y as f64 > ocean_level {
+        return false;
+    }
+    x < 380 || x > world.width - 380
+}
+
+/// `WorldGen.SolidTile(i, j)` (`WorldGen.cs:70111-70132`) under the Quick
+/// Cleanup window: the pass flips `tileSolid[137]` (Traps) and
+/// `tileSolid[130]` (ActiveStoneBlock) false for the sweep and restores
+/// them after (`:17884-17885`, `:17991-17992`). The port's table is
+/// static, so the window rides the predicate (the temple `spike_solid`
+/// precedent). A null tile reads solid (`:70116`).
+fn solid_tile_qc(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    if t.kind == 137 || t.kind == 130 {
+        return false;
+    }
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+        && !t.inactive()
+}
+
+/// The `Quick Cleanup` pass (`WorldGen.cs:17875-17993`, W4-d104 pass 29):
+/// the full-world tidy sweep — the ocean lava→water swap, the beach sand
+/// drip (the per-iteration `Next(4, 7)` condition draw — the C# re-rolls
+/// the loop bound on EVERY condition check), the sandstone/hardened-sand
+/// wall retypes + liquid arms, the surface-sand wall inheritance, and the
+/// slope/half-brick clear family. The `Skyblock.denyAllGeneration` gate
+/// (`:3131`: skyblock) rides the step adapter; the `NotTheBees()` call
+/// (`:17881-17883`) is the seed lane's (the whole-world hive conversion
+/// is unported — biomes.rs's documented scope).
+pub(crate) fn pass_quick_cleanup(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    rng: &mut super::Rng,
+) {
+    let ocean_level = (world_surface + rock_layer) / 2.0 + 40.0;
+    let round_landmasses = world
+        .micro_seeds
+        .contains(MicroSeedFlags::ROUND_LANDMASSES);
+    let dual_dungeons = world.micro_seeds.contains(MicroSeedFlags::DUAL_DUNGEONS);
+    for i in 20..(world.width - 20) {
+        for j in 20..(world.height - 20) {
+            // `:17892-17896`: the ocean non-water liquid → water.
+            if ocean_depths_qc(world, i, j, ocean_level) {
+                if let Some(t) = world.tile_mut(i, j) {
+                    if t.liquid > 0 && t.liquid_kind() != crate::tile::LiquidKind::Water {
+                        t.set_liquid_kind(crate::tile::LiquidKind::Water);
+                    }
+                }
+            }
+            // `:17897-17909`: the beach sand drip — the surface sand over
+            // open air fills dirt downward. The C# condition draws
+            // `Next(4, 7)` on EVERY check (the bound is inside the for's
+            // condition), so the port re-rolls per iteration too.
+            let sand_top = (j as f64) < world_surface
+                && ocean_depths_qc(world, i, j, ocean_level)
+                && !round_landmasses
+                && world.tile(i, j).is_some_and(|t| t.kind == 53 && t.active());
+            if sand_top {
+                if let Some(t) = world.tile_mut(i, j) {
+                    if t.bottom_slope() {
+                        t.set_slope(0);
+                    }
+                }
+                let mut k = j + 1;
+                loop {
+                    let limit = j + rng.range(4, 7);
+                    if k >= limit {
+                        break;
+                    }
+                    let clear_at = |world: &World, y: i32, allow_495: bool| {
+                        world.tile(i, y).is_none_or(|t| {
+                            !t.active()
+                                || (t.kind != 397 && t.kind != 53 && (!allow_495 || t.kind != 495))
+                        })
+                    };
+                    if !clear_at(world, k, false)
+                        || !clear_at(world, k + 1, true)
+                        || !clear_at(world, k + 2, true)
+                    {
+                        break;
+                    }
+                    if let Some(t) = world.tile_mut(i, k) {
+                        t.kind = 0;
+                        t.flags |= crate::tile::FLAG_ACTIVE;
+                        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                        t.set_slope(0);
+                    }
+                    k += 1;
+                }
+            }
+            // `:17910-17929`: the sandstone/hardened-sand wall family.
+            let wall = world.tile(i, j).map(|t| t.wall).unwrap_or(0);
+            if wall == 187 || wall == 216 {
+                if let Some(t) = world.tile_mut(i, j) {
+                    if matches!(t.kind, 59 | 123 | 224 | 368 | 367) {
+                        t.kind = 397;
+                    }
+                    if !dual_dungeons {
+                        if (j as f64) <= rock_layer {
+                            t.liquid = 0;
+                        } else if t.liquid > 0 {
+                            t.liquid = u8::MAX;
+                            t.set_liquid_kind(crate::tile::LiquidKind::Lava);
+                        }
+                    }
+                }
+            }
+            // `:17930-17951`: the surface-sand wall inheritance — the ±3
+            // box's LAST walled column wins (the C# `break` exits only the
+            // inner loop).
+            let inherits = (j as f64) < world_surface
+                && world.tile(i, j).is_some_and(|t| t.active() && t.kind == 53)
+                && world.tile(i, j + 1).map(|t| t.wall).unwrap_or(0) == 0
+                && !solid_tile_qc(world, i, j + 1);
+            if inherits {
+                let mut num = 0u16;
+                for l in (i - 3)..=(i + 3) {
+                    for m in (j - 3)..=(j + 3) {
+                        let w = world.tile(l, m).map(|t| t.wall).unwrap_or(0);
+                        if w > 0 {
+                            num = w;
+                            break;
+                        }
+                    }
+                }
+                if num > 0 {
+                    if let Some(t) = world.tile_mut(i, j + 1) {
+                        t.wall = num;
+                    }
+                    if let Some(t) = world.tile_mut(i, j) {
+                        if t.wall == 0 {
+                            t.wall = num;
+                        }
+                    }
+                }
+            }
+            // `:17952-17988`: the slope/half-brick clear family.
+            let (active, kind, top, half, bottom) = {
+                let Some(t) = world.tile(i, j) else {
+                    continue;
+                };
+                (t.active(), t.kind, t.top_slope(), t.half_brick(), t.bottom_slope())
+            };
+            if !active || !super::tile_runner::save_slopes(kind as i32) {
+                // `Tile.ClearSlope` (`Tile.cs:130-134`).
+                if let Some(t) = world.tile_mut(i, j) {
+                    t.set_slope(0);
+                    t.flags &= !crate::tile::FLAG_HALF_BRICK;
+                }
+            } else if !crate::tiledata::SET_PLATFORMS.has(kind)
+                && crate::tiledata::SET_CAN_BE_CLEARED_DURING_GENERATION.has(kind)
+            {
+                let trap_neighbour = world.tile(i + 1, j).is_some_and(|t| t.kind == 137)
+                    || world.tile(i - 1, j).is_some_and(|t| t.kind == 137);
+                if top || half {
+                    if kind != 225 || !half {
+                        let clear = !solid_tile_qc(world, i, j + 1) || trap_neighbour;
+                        if clear {
+                            if let Some(t) = world.tile_mut(i, j) {
+                                t.flags &= !crate::tile::FLAG_ACTIVE;
+                            }
+                        }
+                    }
+                } else if bottom {
+                    let clear = !solid_tile_qc(world, i, j - 1) || trap_neighbour;
+                    if clear {
+                        if let Some(t) = world.tile_mut(i, j) {
+                            t.flags &= !crate::tile::FLAG_ACTIVE;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,5 +796,81 @@ mod tests {
             };
             assert_eq!(wall, expected, "column {i} wall {wall} != {expected}");
         }
+    }
+
+    // --- W4-d104 pass 29: Quick Cleanup -------------------------------------
+
+    /// A tidy-sweep world: stone ground at row 60, the surface line at 50.
+    fn qc_world() -> World {
+        let mut w = World::new("qc".into(), 900, 200);
+        for x in 0..w.width {
+            for y in 60..w.height {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    /// W4-d104 pass 29: the sweep replays byte-equal on the same stream
+    /// (the a == b witness) and retypes the sandstone-wall mud + clears
+    /// the unsupported slopes.
+    #[test]
+    fn w4_d104_29_the_cleanup_sweep_replays_and_tidies() {
+        let mut a = qc_world();
+        let mut b = qc_world();
+        for w in [&mut a, &mut b] {
+            // A mud block under a sandstone wall (`:17912-17914`).
+            let i = w.index(450, 70);
+            w.tiles[i].kind = 59;
+            w.tiles[i].wall = 187;
+            // An unsupported top-slope stone over air (`:17960-17970`).
+            let i = w.index(460, 40);
+            w.tiles[i].kind = 1;
+            w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            w.tiles[i].set_slope(1);
+            // A lava pocket under the sandstone wall below rockLayer
+            // (`:17924-17927` — the full-lava arm).
+            let i = w.index(470, 100);
+            w.tiles[i].wall = 216;
+            w.tiles[i].liquid = 40;
+            w.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Water);
+        }
+        pass_quick_cleanup(&mut a, 50.0, 80.0, &mut crate::worldgen::noise::Rng(42));
+        pass_quick_cleanup(&mut b, 50.0, 80.0, &mut crate::worldgen::noise::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b: the pass stream replays");
+        assert_eq!(a.tile(450, 70).unwrap().kind, 397, "the mud retypes");
+        assert!(!a.tile(460, 40).unwrap().active(), "the unsupported slope clears");
+        let lava = a.tile(470, 100).unwrap();
+        assert_eq!(lava.liquid, 255, "the deep wall pocket fills");
+        assert_eq!(lava.liquid_kind(), crate::tile::LiquidKind::Lava, "as lava");
+    }
+
+    /// W4-d104 pass 29: the ocean lava→water swap (`:17892-17896`) fires
+    /// inside the beach band above the ocean level only.
+    #[test]
+    fn w4_d104_29_the_ocean_lava_becomes_water() {
+        let mut w = qc_world();
+        // Inside the left beach band (x < 380), above oceanLevel
+        // ((50 + 80)/2 + 40 = 105).
+        let i = w.index(100, 40);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Lava);
+        // The middle keeps its lava.
+        let i = w.index(450, 40);
+        w.tiles[i].liquid = 200;
+        w.tiles[i].set_liquid_kind(crate::tile::LiquidKind::Lava);
+        pass_quick_cleanup(&mut w, 50.0, 80.0, &mut crate::worldgen::noise::Rng(7));
+        assert_eq!(
+            w.tile(100, 40).unwrap().liquid_kind(),
+            crate::tile::LiquidKind::Water,
+            "the ocean lava swaps"
+        );
+        assert_eq!(
+            w.tile(450, 40).unwrap().liquid_kind(),
+            crate::tile::LiquidKind::Lava,
+            "the inland lava stays"
+        );
     }
 }

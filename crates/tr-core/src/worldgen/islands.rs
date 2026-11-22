@@ -1,29 +1,31 @@
 //! The floating islands — the compact port of the `FloatingIslands` pass
 //! (`WorldGen.cs:12924-13133`) + `CloudIsland` (`:78132-78540`) +
-//! `CloudLake` (`:78539+`) + the island houses (`FloatingIslandHouses`
-//! `:17862+`).
+//! `CloudLake` (`:78539+`).
 //!
 //! The C# island body is the cloud block 189 (the `Clouds` set), the lake
-//! islands line with the rain cloud 196, the house interiors carry the
-//! cloud wall 73, the surface grows the grass cap. The islands sit at
-//! `Next(90, worldSurface − 100)`, the x spread over the 10-90 % band with
-//! the ±180 spacing and the spawn exclusion.
+//! islands line with the rain cloud 196, the surface grows the grass cap.
+//! The islands sit at `Next(90, worldSurface − 100)`, the x spread over the
+//! 10-90 % band with the ±180 spacing and the spawn exclusion.
+//!
+//! The houses moved to their own vanilla pass — `Floating Island Houses`
+//! (`:17859`, W4-d104 pass 28, [`super::island_houses`]): this pass records
+//! the `GenVars.floatingIslandHouseX/Y/Style/skyLake` ledger
+//! (`:13108-13111`) and the house pass builds the faithful sunplate houses
+//! from it at its slot.
 //!
 //! Deviations (ANALYSIS "Floating islands (M1.4-WGEN-4)"): the disc shape
 //! approximates the C#'s shrinking-ring walk (`FloatingIsland`'s
 //! `Next(80,120)` diameter with the ±20 % wobble); the snow/desert island
 //! variants (`SnowCloudIsland`/`DesertCloudIsland`) are out (the port's
 //! snow band sits east — the variant rim tiles land with the biome-tint
-//! follow-up); the house builds are shape-level (the C#'s
-//! `skyIslandHouseCount` furniture sets are the follow-up).
+//! follow-up).
 
-use super::structures::place_chest;
+use super::island_houses::IslandHouseSlot;
 use crate::tile::{FLAG_ACTIVE, Tile};
 use crate::world::World;
 
 pub(crate) const TILE_CLOUD: u16 = 189;
 pub(crate) const TILE_RAIN_CLOUD: u16 = 196;
-pub(crate) const WALL_CLOUD: u16 = 73;
 
 fn put_cloud(world: &mut World, x: i32, y: i32, kind: u16) {
     if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
@@ -111,73 +113,19 @@ fn build_island(world: &mut World, cx: i32, cy: i32, radius: i32, lake: bool, rn
     }
 }
 
-/// The island house (`FloatingIslandHouses`, `:17862+`): the plank box on
-/// the island's surface with the cloud-wall interior and the chest. The
-/// chest arm is `IslandHouse`'s (`WorldGen.cs:79344-79394`): the
-/// `skyIslandHouseCount` cycle picks the main item (the `> 3 → Next(4)`
-/// re-roll), the style is 13 — or 2 under `getGoodWorldGen` — and
-/// `skyIslandHouseCount++` runs after the place (`:79394`). S1-A-4: the
-/// stock rides inline.
-fn build_house(
-    world: &mut World,
+/// The island house slot record (`WorldGen.cs:13108-13111`):
+/// `GenVars.floatingIslandHouseX/Y/Style[numIslandHouses]` +
+/// `GenVars.skyLake[numIslandHouses]` — the compact island model's anchors
+/// (`cx`, the disc top row) and style 0 for classic worlds. The build
+/// itself is the `Floating Island Houses` pass's (W4-d104 pass 28,
+/// [`super::island_houses`]); this pass only records the ledger.
+fn record_house(
+    slots: &mut Vec<IslandHouseSlot>,
     cx: i32,
     top: i32,
-    rng: &mut super::Rng,
-    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
-    get_good: bool,
-    sky_count: &mut u32,
+    lake: bool,
 ) {
-    let hw = rng.range(4, 7);
-    let hh = rng.range(3, 5);
-    for px in (cx - hw)..=(cx + hw) {
-        for py in (top - hh)..=top {
-            if px < 2 || py < 2 || px >= world.width - 2 || py >= world.height - 2 {
-                continue;
-            }
-            let edge = px == cx - hw || px == cx + hw || py == top - hh || py == top;
-            let i = world.index(px, py);
-            if edge {
-                let t = &mut world.tiles[i];
-                t.kind = 9; // `TileID.Planks` — the house frame
-                t.flags |= FLAG_ACTIVE;
-                t.set_slope(0);
-            } else {
-                world.tiles[i] = Tile::default();
-                world.tiles[i].wall = WALL_CLOUD;
-            }
-        }
-    }
-    // The chest inside on the floor (`:79371/:79375`'s arms).
-    let mut num16 = *sky_count;
-    if num16 > 3 {
-        num16 = rng.range(0, 4) as u32;
-    }
-    let main = match num16 {
-        0 => 159,
-        1 => 65,
-        2 => 158,
-        _ => 2219,
-    };
-    let chest_style = if get_good { 2 } else { 13 };
-    let style =
-        super::structures::resolved_chest_style(chest_style, main, top - 1, world.world_surface);
-    let chest_x = cx + hw - 2;
-    if place_chest(world, chest_x, top - 1, style) {
-        super::chest_stock::stock_placed_chest(
-            world,
-            stock.as_deref_mut(),
-            rng,
-            chest_x,
-            top - 1,
-            style,
-            21,
-            main,
-            false,
-        );
-    }
-    // `GenVars.skyIslandHouseCount++` (`:79394`) — once per house, after
-    // the place.
-    *sky_count += 1;
+    slots.push(IslandHouseSlot { x: cx, y: top, style: 0, sky_lake: lake });
 }
 
 /// `SecretSeed.Variations.extraFloatingIslandsNormalAmount`
@@ -282,15 +230,13 @@ fn island_count(world: &World) -> (i32, i32) {
 ///   (make a lake), which is the port's `lake` flag.
 /// * **the house cap** (`:13117-13119`): `GenVars.numIslandHouses` is capped
 ///   at `num3 * 2`, the PRE-multiplier count — the discs still place, only the
-///   houses stop. The port mirrors that: `build_house` is skipped past the
-///   cap, and the port's house count is capped the same way.
+///   house slots stop. The port mirrors that: the slot ledger is truncated to
+///   the cap after the loop, exactly the C#'s post-loop clamp.
 pub(crate) fn pass_floating_islands(
     world: &mut World,
-    surface: &[i32],
+    _surface: &[i32],
     rng: &mut super::Rng,
-    mut stock: Option<&mut super::chest_stock::ChestStockHook<'_>>,
-    get_good: bool,
-    sky_count: &mut u32,
+    slots: &mut Vec<IslandHouseSlot>,
 ) -> u32 {
     // The C# worlds are 4200+ wide; the tiny test worlds (the sky band
     // thinner than `Next(90, worldSurface − 100)` plus the disc) skip.
@@ -312,7 +258,6 @@ pub(crate) fn pass_floating_islands(
     let house_cap = if extra { count_base * 2 } else { i32::MAX };
     let mut placed: Vec<(i32, i32)> = Vec::new();
     let mut lakes = 0u32;
-    let mut houses = 0i32;
     // `:12970-12973`: the spawn-exclusion half-width (`num8` = 150 → 100).
     let exclusion = if extra { 100 } else { 340 };
     // `:12982-12985`: the island-house spacing (`num9` = 180 → 100).
@@ -325,6 +270,7 @@ pub(crate) fn pass_floating_islands(
         loop {
             attempts += 1;
             if attempts > 200 {
+                slots.truncate(house_cap.max(0) as usize);
                 return lakes;
             }
             let x = rng.range((world.width as f32 * 0.1) as i32, (world.width as f32 * 0.9) as i32);
@@ -379,17 +325,19 @@ pub(crate) fn pass_floating_islands(
         // half-width 40-60 and the vertical half-extent ≈ half of that.
         let radius = rng.range(40, 61);
         build_island(world, cx, cy, radius, lake, rng);
-        // `:13117-13119`: the house cap — the island still places, the house
-        // does not.
-        if houses < house_cap {
-            build_house(world, cx, cy - radius / 2, rng, stock.as_deref_mut(), get_good, sky_count);
-            houses += 1;
-        }
+        // `:13108-13111`: the house ledger records EVERY placed island —
+        // lake slots included (the `Floating Island Houses` pass's
+        // `!skyLake[i]` gate skips them there). The compact model's anchor
+        // is the disc top row, the classic style 0.
+        record_house(slots, cx, cy - radius / 2, lake);
         placed.push((cx, cy));
         if lake {
             lakes += 1;
         }
     }
+    // `:13117-13119`: the post-loop cap — the discs placed, the slot
+    // ledger truncates to `num3 * 2`.
+    slots.truncate(house_cap.max(0) as usize);
     lakes
 }
 
@@ -463,45 +411,46 @@ mod tests {
     fn the_flag_multiplies_the_placed_islands_and_caps_the_houses() {
         // The pass-level effect: over a seed sweep the flagged world places
         // strictly more cloud tiles (islands) than the classic control, while
-        // its houses stay capped at `num3 * 2` — the chest count follows the
-        // cap, not the multiplied island count.
+        // its house SLOT ledger stays capped at `num3 * 2` (W4-d104 pass 28:
+        // the builds moved to the `Floating Island Houses` pass — this pass
+        // records the `:13108-13111` ledger, lakes included).
         let surface = flat_surface(4200, 520);
         let mut classic_cloud = 0usize;
         let mut extra_cloud = 0usize;
-        let mut classic_chests = 0usize;
-        let mut extra_chests = 0usize;
-        let mut sky_count = 0u32;
+        let mut classic_slots = 0usize;
+        let mut extra_slots = 0usize;
+        let mut extra_lake_slots = 0usize;
         for seed in 1..=6u64 {
             let mut classic = sky_world(4200, 1200, 520);
-            pass_floating_islands(&mut classic, &surface, &mut Rng(seed), None, false, &mut sky_count);
+            let mut cslots = Vec::new();
+            pass_floating_islands(&mut classic, &surface, &mut Rng(seed), &mut cslots);
             classic_cloud += count_kind(&classic, TILE_CLOUD);
-            classic_chests += count_kind(&classic, 9);
+            classic_slots += cslots.len();
 
             let mut extra = sky_world(4200, 1200, 520);
             extra.micro_seeds |= MicroSeedFlags::EXTRA_FLOATING_ISLANDS;
-            pass_floating_islands(&mut extra, &surface, &mut Rng(seed), None, false, &mut sky_count);
+            let mut eslots = Vec::new();
+            pass_floating_islands(&mut extra, &surface, &mut Rng(seed), &mut eslots);
             extra_cloud += count_kind(&extra, TILE_CLOUD);
-            extra_chests += count_kind(&extra, 9);
+            extra_slots += eslots.len();
+            extra_lake_slots += eslots.iter().filter(|s| s.sky_lake).count();
+            assert!(eslots.len() <= 8, "the slot ledger caps at num3 * 2 = 8");
         }
         assert!(
             extra_cloud > classic_cloud * 2,
             "the flagged world places more islands: extra {extra_cloud} vs classic {classic_cloud}"
         );
-        // The plank-frame tiles (9) are the island houses: the classic world
-        // houses every island it places, while the flagged one caps at
-        // `num3 * 2 = 8` — more houses than classic, but far fewer than the
-        // 40 islands its multiplied count attempts.
+        // The classic world records a slot for every island it places; the
+        // flagged one caps at `num3 * 2 = 8` per world — more slots than
+        // classic, but far fewer than the 40 islands its multiplied count
+        // attempts.
         assert!(
-            classic_chests > 0 && extra_chests > classic_chests,
-            "houses: extra {extra_chests} vs classic {classic_chests}"
+            classic_slots > 0 && extra_slots > classic_slots,
+            "house slots: extra {extra_slots} vs classic {classic_slots}"
         );
-        // The cap is `num3 * 2 = 8` per world, and the 200-attempt budget per
-        // island stops the loop long before the 40 attempted islands are
-        // exhausted — but every world that DID place houses placed at most
-        // `num3 * 2` of them.
-        assert!(
-            extra_chests >= classic_chests,
-            "the flagged world houses at least as many islands"
-        );
+        // The lake slots are recorded too (`GenVars.skyLake[i]`, `:13069`):
+        // the flagged world's forced lakes ride the ledger with the gate
+        // flag set.
+        assert!(extra_lake_slots > 0, "the lake slots ride the ledger");
     }
 }
