@@ -135,6 +135,12 @@ pub const BONE_JAVELIN: u16 = 598;
 /// spear, the `AI_001` 507/508/662/680/685 gravity group (`Projectile.cs:5770-5778`,
 /// `:57471-57478`).
 pub const JAVELIN: u16 = 507;
+/// `ProjectileID.Meowmere` (502, `ProjectileID.cs:1558`) — the Meowmere
+/// sword's bouncing star: aiStyle 8 with its OWN kind-first bounce arm
+/// (`Projectile.cs:18206-18254`, the five-bounce chime ladder the d75
+/// part-4 owed gate serves), `penetrate = 5`, melee, local immunity 10
+/// (`:5732-5742`). S1-E-21h d75 part 5 — the row that arms the gate.
+pub const MEOWMERE: u16 = 502;
 /// `ProjectileID.Glowstick` (50) — the thrown light, aiStyle 14
 /// (`Projectile.cs:1326-1336`). S1-P-i42.
 pub const GLOWSTICK: u16 = 50;
@@ -1794,6 +1800,41 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:5732-5742` — the Meowmere star (502): 16x16,
+            // aiStyle 8, friendly (the pool's stock true), melee,
+            // `penetrate = 5`, `usesLocalNPCImmunity = true` +
+            // `localNPCHitCooldown = 10`. The stock `timeLeft = 3600`
+            // (`:787`), `tileCollide` (`:775`), `extraUpdates = 0`, alpha 0
+            // and scale 1 stand — the arm writes NO override. The bounce
+            // ladder + chime ride the kind-first arm in `ai_ball_of_fire`
+            // (`:18206-18254`, the d75 part-4 owed gate this row arms);
+            // the `:24346-24352` velocity rotation is ported beside it.
+            // S1-E-21h d75 part 5.
+            MEOWMERE => (16.0, 16.0, 8, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0)),
+            // `Projectile.cs:10006-10021` — the phaseblade/phaser SMALL
+            // group (1059-1064 + 1071/1075/1101): 38x38, aiStyle 3,
+            // friendly (the pool's stock true), melee, `penetrate = -1`,
+            // `netImportant`, `usesLocalNPCImmunity = true` +
+            // `localNPCHitCooldown = 10`. The stock `timeLeft = 3600`
+            // (`:787`), `tileCollide` (`:775`), `extraUpdates = 0` stand —
+            // the arm writes no override (the 1101's `glowMask = 372` is
+            // a draw-layer field with no port carrier). S1-E-21h d75
+            // part 6 — the `IsAPhaseblade` set rows (`ProjectileID.cs:192`,
+            // 19 kinds; the 1073 trap is NOT in the set, `:10038-10046`).
+            1059..=1064 | 1071 | 1075 | 1101 => {
+                (38.0, 38.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0))
+            }
+            // `Projectile.cs:10022-10037` — the LARGE group (1065-1070 +
+            // 1072/1076/1102): the same arm at 46x46 (the 1102's
+            // `glowMask = 373` likewise rides the unported glow layer).
+            1065..=1070 | 1072 | 1076 | 1102 => {
+                (46.0, 46.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0))
+            }
+            // `Projectile.cs:10047-10058` — the 1074 White Phaseblade's
+            // OWN arm: 46x46, the same flags, no glowMask write. The
+            // phaser's Item7/Item182 cue pair rides `ai_boomerang`'s
+            // kind-gated arms (the 1074 exception at every site).
+            1074 => (46.0, 46.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0)),
             // `Projectile.cs:5770-5778` — the Javelin (507): 16x16, aiStyle 1,
             // `penetrate = 3`, friendly+ranged; the stock `timeLeft = 3600`
             // (`:787`) and `tileCollide` (`:775`). The flight is the `AI_001`
@@ -4134,7 +4175,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // S1-E-21h d75 part 6 — the phaseblade rows' `netImportant = true`
+            // (`Projectile.cs:10014`/`:10030`/`:10055`, the 19-kind
+            // `IsAPhaseblade` set).
+            || matches!(kind, 1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102),
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4241,9 +4286,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // yoyo on-hit shots (1125/1130/1134/1135,
                 // `:10535`/`:10605`/`:10648`/`:10661`), the flail helpers
                 // (248/405/928, `:3312`/`:4866`/`:8801`).
+                // S1-E-21h d75 part 5 — the Meowmere star (502, `:5738`).
+                // S1-E-21h d75 part 6 — the 19 phaseblade/phaser kinds
+                // (`ProjectileID.cs:192`'s `IsAPhaseblade` set; the melee
+                // writes `:10013`/`:10029`/`:10054`).
                 ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG
                     | SWORD_BEAM | TERRA_BEAM | LIGHT_BEAM | NIGHT_BEAM | ENCHANTED_BEAM
-                    | LIGHTS_BANE | TERRARIAN_BEAM
+                    | LIGHTS_BANE | TERRARIAN_BEAM | MEOWMERE
+                    | 1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
             ),
@@ -4780,6 +4830,72 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// S1-E-21h d75 part 5 — the 502 Meowmere row (`Projectile.cs:5732-5742`):
+    /// the verbatim `SetDefaults` arm — 16x16, aiStyle 8, `penetrate = 5`,
+    /// melee, local immunity 10; everything else keeps the stock reset.
+    #[test]
+    fn s1_e_21h_d75_p5_the_meowmere_row_is_the_verbatim_arm() {
+        let d = proj_data(MEOWMERE).expect("the 502 row arms the owed gate");
+        assert_eq!((d.w, d.h), (16.0, 16.0));
+        assert_eq!(d.ai_style, 8);
+        assert_eq!(d.penetrate, 5);
+        assert!(d.melee, "`:5738`");
+        assert!(!d.ranged && !d.magic);
+        assert!(d.uses_local_immunity, "`:5740`");
+        assert_eq!(d.local_hit_cooldown, 10, "`:5741`");
+        assert!(!d.uses_id_static_immunity);
+        // The stock reset the arm never overrides.
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 0);
+        assert_eq!(d.scale, 1.0);
+        assert_eq!(d.light, 0.0, "no `this.light` line — ProjLight stays off");
+        assert!(!d.arrow && !d.trap && !d.minion && !d.sentry);
+        assert!(!d.ignore_water && !d.net_important);
+        assert!(!d.applies_immunity_time_on_single_hits);
+        // The sheet packs (`spawnable_kinds` feeds the atlas walk).
+        assert!(spawnable_kinds().contains(&MEOWMERE));
+    }
+
+    /// S1-E-21h d75 part 6 — the 19 phaseblade/phaser rows
+    /// (`ProjectileID.cs:192`'s `IsAPhaseblade` set): the small group
+    /// (`Projectile.cs:10006-10021`, 38x38) and the large group
+    /// (`:10022-10037`, 46x46) + the 1074's own arm (`:10047-10058`,
+    /// 46x46) — all aiStyle 3, melee, `penetrate = -1`, local immunity
+    /// 10, `netImportant`; the stock reset stands. The 1073 trap
+    /// (`:10038-10046`) is NOT in the set and stays rowless.
+    #[test]
+    fn s1_e_21h_d75_p6_the_phaseblade_rows_are_the_verbatim_groups() {
+        for kind in [1059u16, 1060, 1061, 1062, 1063, 1064, 1065, 1066, 1067,
+            1068, 1069, 1070, 1071, 1072, 1074, 1075, 1076, 1101, 1102]
+        {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            let small = matches!(kind, 1059..=1064 | 1071 | 1075 | 1101);
+            let box_size = if small { 38.0 } else { 46.0 };
+            assert_eq!((d.w, d.h), (box_size, box_size), "kind {kind}");
+            assert_eq!(d.ai_style, 3, "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert!(d.melee, "kind {kind}: `:10013`/`:10029`/`:10054`");
+            assert!(!d.ranged && !d.magic, "kind {kind}");
+            assert!(d.uses_local_immunity, "kind {kind}");
+            assert_eq!(d.local_hit_cooldown, 10, "kind {kind}");
+            assert!(d.net_important, "kind {kind}: `:10014`/`:10030`/`:10055`");
+            // The stock reset the arms never override.
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {kind}");
+            assert_eq!(d.extra_updates, 0, "kind {kind}");
+            assert!(d.tile_collide, "kind {kind}");
+            assert_eq!(d.alpha, 0, "kind {kind}");
+            assert_eq!(d.scale, 1.0, "kind {kind}");
+            assert!(!d.arrow && !d.trap && !d.minion && !d.sentry, "kind {kind}");
+            assert!(!d.ignore_water, "kind {kind}");
+            assert!(spawnable_kinds().contains(&kind), "kind {kind} packs");
+        }
+        // The 1073 DartTrap shot is NOT a phaseblade (`:10038-10046`:
+        // 10x10 aiStyle 1 hostile trap — a different lane's row).
+        assert!(proj_data(1073).is_none(), "the 1073 stays out of the set");
     }
 
     #[test]

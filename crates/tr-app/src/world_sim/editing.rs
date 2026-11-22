@@ -2667,6 +2667,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     crate::projectile::ENCHANTED_BOOMERANG
                     | crate::projectile::WOODEN_BOOMERANG
                     | crate::projectile::ICE_BOOMERANG => Some(1),
+                    // S1-E-21h d75 part 6 — the phaseblade rows join the
+                    // single-flight list (`Player.cs:52162`'s
+                    // `IsAPhaseblade[sItem.shoot]` term).
+                    1059..=1072 | 1074 | 1075 | 1076 | 1101 | 1102 => Some(1),
                     _ => None,
                 };
                 if let Some(limit) = limit {

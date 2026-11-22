@@ -543,7 +543,7 @@ pub fn critter_legacy_voice(
 /// The zombie bank's asset name (`LegacySoundPlayer.cs:221`'s
 /// `Sounds/Zombie_ + k`, the 131-entry bank `:112`) — the slots the critter
 /// table's cases can name.
-fn zombie_asset(slot: usize) -> &'static str {
+pub(crate) fn zombie_asset(slot: usize) -> &'static str {
     match slot {
         10 => "Zombie_10",
         11 => "Zombie_11",
@@ -587,6 +587,9 @@ fn zombie_asset(slot: usize) -> &'static str {
         21 => "Zombie_21",
         22 => "Zombie_22",
         23 => "Zombie_23",
+        // S1-E-21h d75 part 3 — the Phantasmal Deathray's case-29 slot 104
+        // (`Projectile.cs:31504`).
+        104 => "Zombie_104",
         109 => "Zombie_109",
         _ => "Zombie_0",
     }

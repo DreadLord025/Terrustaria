@@ -34490,6 +34490,798 @@ against the `wants_mark_spawn` precedent and the wave-C drain order, and
 the four new bank assets were confirmed on disk. The 7 new `s1_e_21h_*`
 witness tests (5 pool/arm, 1 audio façade, 1 pass-stream) are WRITTEN,
 NOT RUN — **no compiler invoked**.
+
+### Part 1 (d75, 2026-11-20, code-only mode) — the first-tick latch batch
+
+`task/W4-d75-proj-sounds-1`, commit 1 of 2. **11 sites**, every one a
+first-tick/state latch on a ported arm, queued draw-free on the existing
+`wants_sound` → `pending_proj_sounds` seam (no new RNG draw in any arm —
+the latch cues' case-2 pitch rolls at the drain, the standing deviation):
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:23281`/`:23326` (aiStyle 2, kinds 162/281) | Item14 | `ai_style2`'s `ai[1]` latch |
+| `:23371` (aiStyle 2, kind 240) | Item14 | `ai_dutchman_shell`'s `ai[1]` latch |
+| `:23601` (aiStyle 2, kind 300) | Item1 | `ai_style2`'s `ai[0] == 0` gate (BEFORE the bump) |
+| `:23704` (aiStyle 4) | Item8 at Center | `ai_style4`'s `localAI[0]` latch (the 494 Item101 variant unported) |
+| `:24872` (aiStyle 14, kind 346) | Item1 | `projectile_ai_frostmoon::ornament`'s latch |
+| `:25372` (aiStyle 18, kind 44) | Item8 | `ai_demon_scythe`'s `ai[1]` latch (the 45 scythe never plays) |
+| `:33699` (aiStyle 88 ritual, 578/579) | Item117 | `ai_vortex_ritual`'s `localAI[1]` latch (`flag53` unconditional over the rows) |
+| `:33790` (ritual charge at `ai[0] == 90`) | Item113 | the same arm's 90th-tick payload (the `:33794` else-Item8 arm names only unported kinds) |
+| `:37274` (`AI_053_FrostHydra` placement) | Item46 | the aiStyle-53 dispatch's `localAI[0]` latch |
+| `:37864` (gem staff first tick) | style 205 (`StackableItem8ForRubyStaff`) | `ai_gem_staff`'s `soundDelay = -1` latch (the 1120 Item72 variant unported) |
+
+**The aiStyle-48 correction.** The in-flight draft gated `:28231`'s Item8
+on `HEAT_RAY` (260) — a misread: the C# arm is `type == 290`
+(`ShadowBeamHostile`, `ProjectileID.cs:1134`), an UNPORTED kind. The site
+is deferred; the ported 255/260/294 rows queue nothing (witness
+`s1_e_21h_d75_the_magnet_bolt_rows_play_nothing_on_tick_one`).
+
+Bank: `Item_46`/`Item_205` join `SFX_CUES` (both `.xnb` verified on disk);
+every other style the batch names was already registered.
+
+Witnesses (8 new `s1_e_21h_d75_*`, written NOT run): the style-2 latch
+family (4 kinds), the Vilethorn Center cue, the sickle latch, the
+magnet-bolt negative, the ritual 117/113 pair, the gem-staff 205 latch,
+the ornament latch (draw-free assertion) and the pool-level sentry
+placement drain (one cue, then silence).
+
+### Part 1 (d75) commit 2 — the cooldown/bounce batch (2026-11-20, code-only)
+
+**10 sites**, the `soundDelay` cooldown families and the tile-bounce
+cues. Two carry a NEW gameplay draw (the falling-star `Next(40)` re-arm,
+both rows) — threaded onto the pool's `UpdateProjectiles` rng seam
+(`Main.cs:17775`), the C# statement order (roll BEFORE the cue queues):
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:23884` (aiStyle 5, kinds 9/955) | Item9, `20 + Next(40)` re-arm | `ai_falling_star` (rng threaded) |
+| `:23884` (aiStyle 5, kind 92) | Item9, same re-arm | `special_arrows::falling_star_step` (rng threaded) |
+| `:25514`/`:25519` (aiStyle 20 drills/chainsaws) | Item190 + 15 (held pick > 0) / Item189 + 20 | `ai_drill`'s `soundDelay <= 0` gate, `YoyoInputs.held_pick_positive` snapshot |
+| `:66248` (`AI_075`'s 445 arm) | Item132 + 23 | the same shared arm, kind-gated (the draft's pick-read would have misfired on the Laser Drill) |
+| `:25604` (aiStyle 21 music note) | Item26, −1 latch | `ai_music_note` |
+| `:19575` (aiStyle 8 bounce, type ≠ 96) | Item10 | `ai_ball_of_fire`'s tile bounce (BEFORE the `ai[0]++`) |
+| `:19808` (Sword Beam 116 bounce) | Item10 | `unholy_step` (AFTER the `ai[2]` bump; the fourth impact kills cue-less) |
+| `:18050` (gem bounce, `flag7 & flag8`) | Dig (int id 0) | `gem_bolt_move`'s CanBounce arm (the FastThenSlow bypass keeps flag8 false — no cue) |
+| `:40249` (aiStyle-197 stuck latch) | Dig (int id 0) | `sentry_turret_step` |
+| `:40256` (1025 barnacle follow-up) | Item167 | the same latch — the LAST intent wins the one-cue-per-tick slot |
+
+Deviations (deliberate, recorded):
+- **The drill hum queues AHEAD of the orphan/channel gates** — the C#
+  plays at `:25510-25522` before its `Main.player[owner]` reads, so the
+  cue fires even on the release/orphan tick (the port's kill guard moved
+  below the hum block to keep the statement order).
+- **The music note's `Main.musicPitch = ai[0]` write** (`:25603`) is
+  dropped — the case-2 façade plays the music-box styles at pitch 0 with
+  the ×0.75 volume (the standing `sound.rs::item_use_case2` music-pitch
+  stand-in).
+- **The falling-star re-arm is the batch's only new gameplay draw** — it
+  rides the `UpdateProjectiles` stream in the C# order (the `20 +
+  Next(40)` roll, then the Item9 queue). The 92's dust/gore gates
+  (`:24054-24061`) stay skipped with their draws; the 1037/1049 gate is
+  unconditional over the ported rows.
+- **The turret pair folds to one cue per tick** (the `wants_sound`
+  single-intent slot): the 1025's Item167 REPLACES the Dig intent, the
+  same fold as the boomerang head + wall thud. The non-1025 rows keep
+  the Dig play.
+
+Bank: `Item_26/132/167/189/190` join `SFX_CUES` (all five `.xnb`
+verified on disk).
+
+Witnesses (7 new, written NOT run): the falling-star cooldown (the
+`UnifiedRandom` twin-stream roll witness + the expiry re-arm), the drill
+hum's four-row pick table (incl. the Laser Drill's pick-independence and
+the orphan-tick cue), the music-note latch, the gem bounce thud + bypass
+negative, the Sword Beam's three-impact budget, the aiStyle-8 bounce
+(the 96 pre-latched to isolate the bounce arm) and the turret pair's
+last-intent fold. The bounce fixtures sit at x 72 against the (5, 4)
+tile's 80-px edge — the probe's −0.01 inset keeps the flush edge out.
+
+### Part 2 (d75, 2026-11-21, code-only mode) — the remainder of the first-120 range
+
+`task/W4-d75-proj-sounds-1`, part 2. **Lane boundary: C# `Projectile.cs`
+PlaySound sites #1–#120 in line order — site #120 = `:41968`
+(`AI_191_TrueNightsEdge`'s spawn-position Item167).** d76 takes sites
+#121–#240 (from `:41978`), d77 the remainder (#241–#436; the file carries
+436 `SoundEngine.PlaySound` sites + one `WorldGen.KillTile_PlaySounds`
+call at `:70219` that is not a cue site).
+
+**The range census.** Of the first 120 sites, part 1 landed 21 and the
+earlier S1-E-21h wave had already taken the aiStyle-8 latch pair
+(`:24238`/`:24243`), the 27/28/50/51 latches (`:26534`–`:28421`), the
+ritual else-arm negative (`:33794`), the boomerang whoosh (`:38889`) and
+the shared wall thud (`:19571`). The meteor-shot bounce (`:19283`) was
+already live in `projectile_special_bullets` (S1-P-i18). **Part 2 ports
+10 more sites**; every other site in the range names an unported kind,
+an unported style arm, or a non-id-2 façade with no port consumer (the
+full deferral list below).
+
+| C# site | cue | Rust seam |
+| --- | --- | --- |
+| `:18090`/`:18094` (601 portal bolt impact, `alpha > 0`) | Item114 (`ai[1] != 0`) / Item115 | `projectile_ai001_b::finish_flight`'s blocked-hit arm (the PRE-move position, then the kill) |
+| `:20751`/`:20765` (sonar bite, item/enemy arms) | SonarPotion (id 42, style 311) | `projectile_bobber::sonar_bite_cues` — the item arm first, the enemy intent REPLACES it when both land (the single-slot fold) |
+| `:25066` (Spider Egg 378, `localAI[0]` latch) | Item17 | `ai_spear`'s head (the cue BEFORE the latch bump) |
+| `:25193` (Saucer Scrap 450, `ai[1]` latch) | Item13 | `ai_spear`'s post-flight block (the latch THEN the cue) |
+| `:25255` (Greek fires 326-328, `ai[1]` latch) | Item13 | the same arm — the wet kill (`:25248`) runs FIRST, a wet fire dies cue-less |
+| `:25943` (Crystal Shard 1134, `ai[0] == 0` gate) | Shatter (int 13, style 0, ×0.35) | `ai_crystal_storm`'s first-tick block — the `localAI[0]` latch fires on EVERY shard, the cue only on the lead (`ai0 = 0`); the Chik's four `ai0 = 1` followers latch silently |
+| `:36821`/`:36825`/`:36830` (yoyo dash 1130 first tick) | Roar 15 / dash-roar 36 / Item20 at Center | `ai_yoyo_shot` (rng threaded) — the `Next(100)` roll ALWAYS draws; the rare tick draws `Next(6)` + the `0.1 − NextFloat()·0.2` jitter in the C# argument order |
+
+**The :25280 dead gate (re-read).** The C#'s 400-402/1107-1109 overlay
+carries an inner `type >= 326 && type <= 328` sound gate (`:25277`) that
+can NEVER hold inside its own outer kind gate — dead code. The molotov
+fires and the swordfish bones play nothing there; the port queues
+nothing (witness-pinned). The 1107-1109 twins' own overlay half (wet
+kill / friction / rotation) is a gameplay gap outside this sound lane —
+deferred.
+
+Deviations (deliberate, recorded):
+- **The yoyo dash's rare-roar pair** drops the jitter VALUE and the 0.35
+  volumeScale at the roar façade (the slots play at their own
+  pitch/volume; case 36's −1 → +0.6 stands) — the draws themselves are
+  kept inline on the `UpdateProjectiles` stream in the C# order
+  (`Next(100)`, then `Next(6)`, then the `NextFloat`). The common Item20
+  arm's `0.08f` is a **pitchOffset** (the style overload's third
+  argument, `SoundEngine.cs:88`), carried in the intent's fifth slot.
+- **The 601 impact cue plays at the PRE-move position** and the port's
+  kill-without-step shape stands (the C# steps once more before its
+  Kill; the slice-B flight's pre-existing deviation).
+  `PortalHelper.TryPlacingPortal` stays unported.
+- **The sonar pair folds to one cue per tick** (the `wants_sound`
+  single-intent slot): both-land keeps the enemy arm's intent, the same
+  fold as the turret pair. The popup text stays a skipped draw seam; the
+  style's `GetRandomPitch` NextFloat (variance 0.03) is audio-only.
+- **The Shatter play** carries its ×0.35 volumeScale through the new
+  `Audio::play_shatter_sound` façade (case 13 draws nothing,
+  `LegacySoundPlayer.cs:783-792`; the instance Stop is the standing D4
+  deviation).
+- **The drain's new arms**: id 13 → `play_shatter_sound`, id 15/36 →
+  the wave-G roar façades, id 42 → wave A's trackable façade
+  (`play_proj_sound` now admits id 42 alongside id 2). All draw-free at
+  the drain; the attenuation gate precedes everything.
+
+**Deferred in the first-120 range** (no ported arm/kind or a non-id-2
+façade with no consumer): the snapping-stone trio (`:14385-14393`, the
+accessory unported), the liquid-entry/exit splash family
+(`:16871-16994`, the pool's wet-transition machine unported — the bobber
+splash seam covers only `DoASplash`), the 37-style star (`:18209`, kind
+502 unported), the style-99 dropped-yoyo Dig (`:18411`, the 999 row's
+`ai[0] == -2` state has no spawn), the 1023/1055-family/1021/1013/727/
+1054/1048/655/1024/1081 bounce Digs (all unported kinds), the
+phaseblade/383 explosion (`:19531`), the 261 earth boulder (`:19649`),
+the Rainbow Boulder (`:20104`), the super-star families (`:22149`/
+`:22263-22277`, styles 151/152 unported), the 288 hostile golden shower
+(`:24506`), the Golem Fist (`:24781`, kind 262), the style-14 538/326-328
+second-gate dead code (`:25166`/`:25280` — the 538 Twinkle unported),
+the aiStyle-17 sign placement (`:25357`, unported), the 187 flamethrower
+trap (`:27506`, style 38), the crystal leaf (`:27866`, kind 227), the
+chlorophyte orb (`:27926`, kind 229), the 281 cannon bunny's style-49
+arm (`:28259` — the kind's `ai_style2` latch is part 1's; the C# style-49
+arm is a DIFFERENT machine, unported), the 291 hostile inferno
+(`:28329`), the cultist ice-mist/lightning (`:31832`/`:31943`, kinds
+464/465), the 490 nebula eye variant (`:32290`, style 89 unported), the
+117 explosion family (`:34504`/`:34539`, kinds 612/953/978/624/1044),
+the Glommer (`:35524`), the 654/670 sandnado family (`:35926`/`:36008`/
+`:36092`, styles 126/127/128), the Glacier Fang (`:36940`/`:36961`,
+style 208), the RC car (`:38108`, style 205 unported), the Digtoise
+(`:38517-38535`/`:38682`, style 204), the phaseblade whoosh family
+(`:39080-39393`, the `IsAPhaseblade` set unported), the storm lightning
+(`:39786`, style 203), the torch god (`:39931`, style 202), the petal
+(`:40481`, style 196), the Foxparks flame (`:41369`, kind 1106
+unported), the True Night's Edge (`:41656`/`:41968`, style 191 — the
+range's last two sites, d76's boundary neighbours).
+
+Bank: `Item_114`/`Item_115` join `SFX_CUES`, `sonar_potion` joins
+`ITEM_CUSTOM_CUES` (all three `.xnb` verified on disk); every other
+style the batch names was already registered.
+
+Witnesses (8 new, written NOT run): the spider-egg latch, the style-14
+Item13 family (the wet-kill negative + the 400 dead-gate negative), the
+crystal-shard lead/follower split, the yoyo dash's twin-stream roll
+witness (the common + rare arms, the three-draw order), the portal
+bolt's impact pair (the alpha-0 negative), the sonar bite's fold table,
+the Shatter/sonar façade contracts (draw-free, muted refusal) and the
+pass-stream witness (the Shatter drain draws nothing; the dash's
+Next(100) is the pass's only pre-drain draw).
+
+**Verification.** Code-only: every edited arm re-read against its C#
+block (the latch orders, the wet-kill precedence, the dead-gate
+re-derivation, the style-overload argument semantics at
+`SoundEngine.cs:88-108`), the three new bank assets confirmed on disk.
+No cargo/rustc/tests invoked — the witnesses are WRITTEN, NOT RUN.
+
+### Part 3 (d75, 2026-11-21, code-only mode) — the deferral census re-run
+
+`task/W4-d75-proj-sounds-1`, part 3. The Lead's directive: re-census the
+first-120 deferral list against the PUSHED sibling AI-lane branches — many
+of the "unported kind/style" deferrals have since landed arms (and cues) on
+`origin/task/W4-d*`. **All siblings branch from the same `a725acb0` as this
+branch; NONE is merged into `origin/main` yet** (every `git merge-base
+--is-ancestor origin/task/W4-d* origin/main` returns 1). So the arms are NOT
+in this worktree's tree — the census records, per deferred site, whether a
+sibling now owns the arm AND queues the cue (the merge owner reconciles), or
+whether the site is still genuinely unported. The one site whose arm IS in
+this tree and whose cue was missing from the part-2 census — `:31504` — is
+PORTED here.
+
+**The :31504 port (the census gap).** The 455 Phantasmal Deathray's
+first-tick zombie-voice cue, `PlaySound(29, (int)X, (int)Y, 104)`
+(`Projectile.cs:31500-31505`). The arm `ai_phasmal_deathray` (the aiStyle-84
+else branch) is in this tree; the part-2 census never listed the site (it is
+a non-id-2 façade, but the E21e `play_fighter_moan` case-29 consumer EXISTS —
+`Audio::play_fighter_moan`, `ambient_sound::critter_legacy_voice`'s 29 arm).
+The cue queues `(29, 104, pos.x, pos.y, 0.0)` on `wants_sound` at
+`kind == 455 && localAI[0] == 0` (BEFORE the increment), at the POST-ellipse
+position; the drain gains an id-29 arm routing to `play_fighter_moan(29,
+style, …)` (the ×0.55 style-104 volume, the playing guard, the one
+`Next(-10, 11)` pitch on the UpdateProjectiles stream, attenuation first,
+the int overload draws no GetRandomPitch). Bank: `Zombie_104` joins
+`SFX_CUES` (id 29) + `zombie_asset`'s slot-104 row (the `.xnb` verified on
+disk); `zombie_asset` widened `pub(crate)` for the witness. The kind gate is
+the C#'s — the shared else arm keeps a future 537/642 routing cue-less.
+Witnesses (3 new, WRITTEN NOT RUN): the deathray's one-cue latch + the
+post-ellipse position, the 455-only negative (a 537 routed through the arm
+queues nothing), and the case-29 style-104 façade contract (one pitch draw,
+muted/far draw-free, the bank row + asset mapper).
+
+**The re-census table.** Every part-2 deferred site, re-classified against
+the pushed sibling tips (hashes are the sibling commit that landed the arm;
+"cue" = the sibling queues it on `wants_sound`/`pending_proj_sounds`):
+
+| C# site(s) | part-2 label | sibling arm + cue | verdict |
+| --- | --- | --- | --- |
+| `:14385-14393` | snapping-stone trio | none (the accessory seam) | STILL DEFERRED |
+| `:16871-16994` | liquid splash family | none (the generic wet block, d53's skip) | STILL DEFERRED |
+| `:18209` | 37-style star (502) | no row on any branch (part-4 re-probe: d1 `e271b5bc8` style-8 machine verify-only, 502 unrowed) — the owed bounce gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE |
+| `:18292` | (unlisted) 1024 Item10 | d12 `719ffb76c` rows 1024, `kill_step` move — NO `:18292` cue | SIBLING GAP (merge owner) |
+| `:18411` | dropped-yoyo Dig | the `-2` state needs M3-EQUIP-3's magicString (flag never set) | STILL DEFERRED |
+| `:18780/:18959/:18978/:18994/:19067/:19090/:19178/:19241/:19270/:19845` | bounce Digs (1023/1053-family/1055/1021/1013/727/1054/1048/655/1081) | part-4 re-probe: d3 `2d01693ca` rows+arms the boulder family (99/727/1013/1014/1053/1054/1055/1057/1005/1021/655/1047/1048/763) — every bounce cue QUEUED (`bounce_ladder`'s dig closure + the 1048 Item177); 1023/1081 still unrowed | SIBLING-CUED (boulders, d3) / STILL DEFERRED (1023/1081) |
+| `:19373` | (unlisted) aiStyle-39 Dig | d4 `5771c1f0` piranha 190 sets `tile_collide=false` — the bounce never runs | SIBLING GAP (merge owner) |
+| `:19531` | phaseblade/383 explosion | no 383/phaseblade row (part-4 re-probe stands) — the 383 owed explosion gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE (383) |
+| `:19649` | 261 earth boulder | no row (part-4 re-probe: d2 `f430ccf83` style-14 census — the flail-machine is aiStyle 15, NOT 14; 261 unrowed) | STILL DEFERRED |
+| `:20104` | Rainbow Boulder | d3 `2d01693ca` — `rainbow_check_bounce` queues `(42,274)` on the hard bounce; the bank row + the id-42 route landed HERE (part 4) | SIBLING-CUED (audible after merge) |
+| `:22149` | super-star (151) | d16 `a03fbcbd4` — cue `(2,9)` | SIBLING-CUED |
+| `:22263/:22268/:22277` | super-star slash (152) | d16 `939816d43` — cues `(2,1)`/`(2,9)` | SIBLING-CUED |
+| `:24506` | 288 hostile golden shower | no 288 row (part-4 re-probe stands; the style-12 machine is in THIS tree) — the owed first-tick Item17 gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE |
+| `:24781` | Golem Fist (262) | d2 `15e5448a9` — cue `(2,14)` | SIBLING-CUED |
+| `:25166/:25280` | style-14 second-gate dead code | dead in C# (part-2 re-derivation) | DEAD CODE |
+| `:25357` | aiStyle-17 sign placement | d2 `61c47ed79` — cue `(0,0)` at tile×16 | SIBLING-CUED |
+| `:27506` | 187 flamethrower trap | d4 `a336f4aa7` — cue `(2,34)` | SIBLING-CUED |
+| `:27866` | crystal leaf (227) | d5 `6004751f9` — cue `(6,1)` (id-6 drain follow-up) | SIBLING-CUED |
+| `:27926` | chlorophyte orb (229) | g2 `da1cc410` — cue `(2,8)` | SIBLING-CUED |
+| `:28231` | HeatRay-290 (part-1 deferred) | g2 `8d3cdcb16` — 290 row + cue `(2,8)` at localAI[0]==1 | SIBLING-CUED |
+| `:28259` | 281 cannon bunny style-49 | d5 `5f7390a30` — cue `(2,14)` fuse re-arm | SIBLING-CUED |
+| `:28329` | 291 hostile inferno | g2 `8d3cdcb16` — cue `(2,20)` | SIBLING-CUED |
+| `:31504` | (CENSUS GAP) 455 zombie-voice | THIS BRANCH part 3 — cue `(29,104)` | PORTED HERE |
+| `:31832` | cultist ice-mist (464) | d9 `eb1f19b60` — cue `(2,120)` | SIBLING-CUED |
+| `:31943` | cultist lightning (465) | no 465 row on any branch (part-4 re-probe: d9 `667e1f0c2` rows 464/490/578/580, NOT 465; the style-88 machine is in THIS tree) — the owed first-tick Item121 gate ARMED HERE (part 4) | STILL DEFERRED (row) / CUE ARMED HERE |
+| `:32290` | 490 ritual (style 89) | d9 `a9035b6fd` — cue `(2,123)` | SIBLING-CUED |
+| `:34504/:34539` | 117 explosion family | d12 `f0150a695` — cue `(2,14)` (612/953/978/624; 1044 silent) | SIBLING-CUED |
+| `:35524` | Glommer (957) | d13 `69edd7fc4` — arm landed, GlommerBounce TRACKABLE deferred | SIBLING GAP (trackable) |
+| `:35926` | geyser/ogre (654/670) | d13 `fe72ebcc5` — cue `(2,34)` | SIBLING-CUED |
+| `:36008` | sandnado column (656/657) | d13 `e9be56fe6` — cue `(2,82)` | SIBLING-CUED |
+| `:36092` | sandnado mark (658) | d13 `6808d262e` — cue `(2,60)` | SIBLING-CUED |
+| `:36940/:36961` | Glacier Fang (208) | d21 `20fe4b3ed` — arm landed, sound body SKIPPED | SIBLING GAP (sound skip) |
+| `:38108` | RC car (205) | d21 `20fe4b3ed` — tracked-loop sound SKIPPED | SIBLING GAP (sound skip) |
+| `:38517/:38531/:38535/:38682` | Digtoise (204) | d21 `20fe4b3ed` — arm landed, sound bodies SKIPPED | SIBLING GAP (sound skip) |
+| `:39080-39393` | phaseblade whoosh family | no phaseblade row (part-4 re-probe: d1 `e271b5bc8` style-3 census verify-only — the 1059-1076/1101/1102 rows unported on EVERY pushed tip) | STILL DEFERRED |
+| `:39786` | storm lightning (203) | d21 `20fe4b3ed` — sound body SKIPPED | SIBLING GAP (sound skip) |
+| `:39931` | torch god (202) | d21 `20fe4b3ed` — Item8 cue SKIPPED | SIBLING GAP (sound skip) |
+| `:40481` | petal (196) | d20 `f4e660a20` — cue `(2,17)` | SIBLING-CUED |
+| `:41369` | Foxparks flame (1106) | d18 `18916087b` rows 1106 (6x6, aiStyle 193, pen 4, extraUpdates 2, ID-static 15); the sound gate was SKIPPED on d18/d20 — ARMED HERE (part 4, the `(2,-34)` named-row marker + the by-name façade) | SIBLING GAP → CUE ARMED HERE |
+| `:41656` | True Night's Edge (191) | d20 `2b2b71a71` — cue `(2,8)` (973 first tick) | SIBLING-CUED |
+| `:41968` | True Night's Edge spore (191) | d19 `a4185f898` — cue `(2,167)` at spawnPosition | SIBLING-CUED |
+
+**Style-label corrections.** The part-2 list labelled several sites by
+aiStyle as if the STYLE were the unported sound ("style 208/204/205/202/203/
+196/126/127/128/89 unported"). The C# `SoundID` rows are plain id-2 styles
+(`GlacierFang_Charging` = 2/210, `GlacierFang_Muzzle` = 2/201, `Item199` =
+2/199, `Item8` = 2/8, `NPCHit34` = 3/34, `Item17` = 2/17, `Item34/82/60` =
+2/34/82/60, `Item123` = 2/123) — the deferral was the unported ARM, not an
+unportable sound. The d21 arms landed with their sound bodies SKIPPED (the
+no-audio-layer fold), so those sites remain cue-less even after the sibling
+merge — a sound-lane follow-up, recorded as SIBLING GAP.
+
+**The :28231 HeatRay-290 resolution (the Lead's census row).** Part 1
+deferred `:28231` as "C# type 290 unported — draft Heat Ray gate misread".
+The g2 branch (`8d3cdcb16`) now rows the hostile 290 (`SHADOWBEAM_HOSTILE`)
+and queues the Item8 one-shot at `localAI[0] == 1` (post-increment) on
+`wants_sound`, plus the delay-3 snapshot + the 290/294 reflect. This tree's
+`ai_magnet_bolt` keeps the 255/260/294 rows cue-less (the part-1 negative
+witness stands); the 290 cue lands with g2's merge. NOT re-ported here.
+
+**Verification.** Code-only: the :31504 arm re-read against
+`Projectile.cs:31500-31521` (the gate order, the post-ellipse position, the
+kind gate), the case-29 façade against `LegacySoundPlayer.cs:1008-1050` +
+`ambient_sound::critter_legacy_voice`'s 29 arm (the ×0.55 style-104 mult, the
+playing guard, the one pitch draw), the `Zombie_104.xnb` asset confirmed on
+disk. Every sibling verdict cited to a pushed commit hash + the queued tuple
+read from the branch source. No cargo/rustc/tests/graphify invoked — the 3
+new witnesses are WRITTEN, NOT RUN.
+
+### Part 4 (d75, 2026-11-21, code-only mode) — the STILL-DEFERRED re-probe
+
+`task/W4-d75-proj-sounds-1`, part 4. The Lead's directive: re-fetch d3 +
+all d-lane tips and re-probe the part-3 STILL-DEFERRED list
+(502/288/465/1106/383/261/RainbowBoulder/phaseblades). **d3's boulder
+family landed AFTER the part-3 census** (`f9d2759e8` AI arm → `241cbae09`
+rows → `40f8cbe3d` dispatch/death hooks → `affd7fa90` drains →
+`2d01693ca` the PreventSpam gate; tip `2d01693ca`). The re-probe scanned
+EVERY pushed `origin/task/W4-*` tip (354 branches) for the eight kinds'
+`proj_data` rows and constants.
+
+**The re-probe verdicts (per kind).**
+
+- **The boulder family (d3, NOW ROWED + CUED).** The 13 kinds' rows ride
+  `241cbae09` (`projectile/data.rs`: the shared 31x31 trap block, the
+  1054's 300 / the 1055's 900 timeLeft, the 1021 hostile-only ×3, the
+  1047 friendly-only ignoreWater, the 763 spike). d3's
+  `projectile_ai_boulder::bounce_ladder` queues EVERY first-120 bounce
+  cue itself — the `dig` closure parks `(0,0,pos,0)` for
+  `:18959/:18978/:18994/:19067/:19090/:19178/:19270` and the 1048 arm
+  parks `(2,177,pos,0)` for `:19241`; `rainbow_check_bounce` parks
+  `(42,274,pos,0)` for `:20104`; `boulder_kill` pushes the death cues
+  (`:74857-74876`: the 1048 Item16, the 1053 Item14, the 1054 NPCHit29
+  `(3,29)`, the 1055 NPCDeath6 `(4,6)`, the rest the Dig) and the 1047
+  death `(42,274)` at Center. **Constants copied, machines NOT re-ported**
+  — this branch's half is the SOUND LAYER those intents need: the
+  `rainbow_boulder` trackable joins `ITEM_CUSTOM_CUES` (the part-2
+  id-42 drain route already serves it), `NPC_Hit_29` joins `SFX_CUES`,
+  the drain gains the id-3 arm (→ wave C's `play_npc_hit_sound`, the
+  style overload's audio-only GetRandomPitch + case 3's one pitch draw)
+  and the id-4 arm (→ `play_npc_death_style`, whose style table gains
+  the 6 row). The 1023 DeadCellsBarrel / 1081 MudBallPlayer bounce Digs
+  (`:18780`/`:19845`) stay STILL DEFERRED — unrowed on every tip.
+- **502 Meowmere (`:18209`, aiStyle 8).** d1's tip `e271b5bc8` is the
+  style-1..10 census: style 8 verify-only (`ai_ball_of_fire`), the 502
+  row UNPORTED (the arm's own doc: "the 502 velocity rotation has no
+  ported row"). The Lead's `:18231` is the dust-ring line — the sound
+  site is `:18209`. **The owed bounce gate ARMED HERE**: the kind-first
+  502 arm ahead of the style-8 arm in `ai_ball_of_fire`'s blocked-move
+  block (the C# chain order `:18206` before `:19573`): the clamp-1..5
+  `ai[0]` bump THEN `PlaySound(37, x, y, 5 + ai[0])` (the intent
+  `(37, 6..10, pos, 0)`), the fifth bounce steps into the wall and kills,
+  else the blocked axes reverse. The drain gains the id-37 arm →
+  `Audio::play_star_chime` + `sound::star_chime_case37`
+  (`LegacySoundPlayer.cs:1326-1336`: the `Next(57,59)` slot pick FIRST,
+  the `Style×0.05` volume, then the `Next(-40,41)*0.01` pitch — TWO
+  gameplay draws, the int overload draws no GetRandomPitch; the
+  starGame ×0.15 arm folds off, the case-38 precedent). `Item_57`/
+  `Item_58` join the bank. The hue dust ring (`:18226-18237`) and the
+  owner-gated Damage resize (`:18238-18253`) are the row-porter's half.
+- **261 BoulderOfEarth (`:19649`, aiStyle 14).** The Lead's flail
+  question resolved: the flail machine is aiStyle **15**
+  (`AI_015_Flails`), NOT 14 — d2's tip `f430ccf83` rows the style-14
+  spear/spiky-ball/glowstick families, the 261 row UNPORTED on every
+  tip. The `:19649` Dig rides `HandleMovement`'s style-14 block
+  (`:19643`'s ±3 velocity gate + `MakeBoulderOfEarthExplosion`
+  `:20391`), a machine this tree's `ai_spear` does not model (the port's
+  style-14 movement is the tile-kill scan). STILL DEFERRED — no owed
+  gate possible without the movement half (the row-porter owns both).
+- **288 GoldenShowerHostile (`:24506`, aiStyle 12).** Unrowed on every
+  tip; the style-12 machine IS in this tree (`ai_aqua_scepter` →
+  `ai_golden_shower`). **The owed first-tick gate ARMED HERE**: the
+  `localAI[0] == 0` Item17 play-then-latch at the arm's TOP
+  (`:24503-24507`, ahead of the 280/288 shared block), and the shared
+  block now serves both kinds (`:24508`) with the 288's `ai[0] = 4`
+  arc latch (`:24515-24517`). `Item_17` was already banked (part 1).
+- **465 CultistBossLightningOrb (`:31943`, aiStyle 88).** d9's tip
+  `667e1f0c2` rows 464/490/578/580 — NOT 465. The style-88 dispatch IS
+  in this tree (the 580's `ai_vortex_bolt`). **The owed first-tick gate
+  ARMED HERE**: `cultist_lightning_latch` at the dispatch head — the
+  Item121 play at `base.position` THEN the `localAI[1] = 1` latch
+  (`:31939-31945`), kind-gated so the 580 stays cue-less. `Item_121`
+  joins the bank. The orb's alpha/life machine (`:31946-31990`) is the
+  row-porter's half.
+- **1106 FoxparksFlames (`:41369`, aiStyle 193).** d18's tip `18916087b`
+  NOW ROWS the 1106 (6x6, pen 4, extraUpdates 2, ID-static 15) and
+  carries the style-193 dispatch + `ai_flamethrower` (the same S1-D-4
+  machine this tree owns) with the sound gate SKIPPED — d20's tip
+  `13de9ccf6` carries the same skip. **ARMED HERE**: `ai_flamethrower`
+  gains the `who_am_i`
+  parameter (the dispatch's slot index — the C# `base.whoAmI`) and the
+  `soundDelay == 0 && whoAmI % 3 == 0` gate (`:41366-41370`): the −1
+  latch + the FoxparksFlame play at `base.Center`. **The named-row
+  marker `(2, -34)`**: `SoundID.FoxparksFlame` is `(2, 34)
+  .WithVolume(0.15f)` (`SoundID.cs:1725`) — the SAME tuple as Item34
+  (volume 1.0), which d76's Nebula Blaze latch queues as plain +34; the
+  negative sentinel keeps the two apart (the dash-roar −1 precedent)
+  and the drain routes −34 to `Audio::play_foxparks_flame` (the by-name
+  row pin, the `play_chillet_sound` precedent — one audio-only
+  GetRandomPitch + one case-2 gameplay pitch).
+- **383 Anchor (`:19531`, aiStyle 3).** Unrowed on every tip (the
+  phaseblade set's neighbour); the aiStyle-3 machine IS in this tree
+  (`ai_boomerang`). **The owed explosion gate ARMED HERE**: the 383's
+  own arm in the blocked-move block — at `ai[1] >= 10` the
+  `localAI[0] = 300` latch + the Item14 play at the PRE-move position,
+  the return arms (`ai[0] = 1`) WITHOUT reversing the axes (`:19564`'s
+  `type != 383`); below 10 only the tail's Dig thud. The whoosh head's
+  383/phaseblade exclusions (`:38868`) are now EXPLICIT (they were
+  implicit — no rowed kind hit them). The single-intent fold keeps the
+  Item14 over the tail thud (recorded).
+- **The phaseblades (`:39080-39393` + the `:19375` bounce arm).** d1's
+  style-3 census is verify-only; the 1059-1076/1101/1102 rows are
+  UNPORTED on every pushed tip (the full 354-branch scan). The Lead's
+  `:19392/:19401/:19468` are the bounce arm's DUST lines — the arm
+  carries NO PlaySound at all; the whoosh family's sites
+  (`:39080/:39086/:39098/:39104/:39312/:39356/:39360/:39384/:39388/
+  :39393`) ride `AI_003_Boomerang`'s unported phaseblade machine.
+  STILL DEFERRED — no cue can arm without the rows + the machine.
+
+**Deviations (deliberate, recorded).**
+- The owed gates (502/288/465/383/1106) are KIND-GATED arms on machines
+  this tree already owns; the rows stay on their lanes (or unported) —
+  `spawn_with_data`'s row guard keeps every gate inert until the merge
+  (the f1 owed-arm convention). The 502/383 gates carry their movement
+  halves (the bounce reversal / the no-reverse return) because the C#
+  sound sites sit INSIDE those movement arms — a cue-only gate would
+  misplace the play position.
+- The `(2, -34)` marker is a port-only sentinel (the C# has one tuple
+  space per overload); the drain's route table is the seam. d76's
+  6-tuple `wants_sound` widening (its own tip) merges independently —
+  the −34 style value survives the widening (the fifth/sixth slots are
+  pitch/volume, not style).
+- The 383 explosion's `HitTilesInACircle` and the 502's dust ring/Damage
+  resize are skipped effects (the pool's standing dust/effect census);
+  their EXPLICIT draws belong to the row-porter's arm completion.
+- The star chime's starGame ×0.15 volume arm folds off (the seed is
+  unported — the case-38 coin precedent, ANALYSIS S1-E-21f).
+
+Bank: `rainbow_boulder` joins `ITEM_CUSTOM_CUES`; `NPC_Hit_29`,
+`Item_57`, `Item_58`, `Item_121` join `SFX_CUES` (all four `.xnb`
+verified on disk; the `rainbow_boulder.xnb` too). Every other style the
+batch names was already registered (`Item_14/16/17/34/177`,
+`NPC_Killed_6`).
+
+Witnesses (9 new `s1_e_21h_d75_p4_*`, WRITTEN NOT RUN): the Meowmere
+five-bounce chime ladder + the fifth-bounce kill, the Anchor's
+ten-tick explosion gate + the no-reverse return + the below-10 thud,
+the cultist lightning's one-cue latch + the 580 negative, the hostile
+golden shower's Item17 latch + the tick-one arc + the 280 negative, the
+Foxparks flame's %3 gate + the −1 latch + the 85 negative, the rainbow
+trackable's draw-free drain, the star chime's two-draw order, the
+FoxparksFlame named-row volume pin, and the drain routes' stream
+contract (the (42,274)/(2,−34)/(3,29)/(4,6)/(37,style) intents through
+a rowed carrier — muted refusal draw-free, one/two draws per case).
+
+**Verification.** Code-only: every owed gate re-read against its C#
+block (the kind-first chain orders, the play-then-latch statement
+orders, the `:19564` no-reverse exclusion, the `:24508` shared block,
+the `:41366` %3 gate), the case-37/3/4/42 draw contracts against
+`LegacySoundPlayer.cs`, the d3 cue tuples against the pushed
+`projectile_ai_boulder.rs`/`boulder_kill` source (read via `git show`,
+constants NOT machines), the five new bank assets confirmed on disk.
+No cargo/rustc/tests/rustfmt/graphify invoked — the 9 witnesses are
+WRITTEN, NOT RUN.
+
+### Part 5 (d75, 2026-11-21, code-only mode) — the 502 row + the final census + the f1/d77 compose-receipt
+
+`task/W4-d75-proj-sounds-1`, part 5. The Lead's directive: (1) row the 502
+Meowmere if no sibling did, (2) close the first-120 census with the parts
+1-4 coverage, (3) receipt the f1/d77 composition against this branch's
+AI-side gates.
+
+**The 502 row (PORTED HERE).** Re-probed `origin/task/W4-d1-proj-ai-1-10`
+tip `e271b5bc8` (`git show …:crates/tr-app/src/projectile/data.rs` — zero
+`502`/`Meowmere` hits), d77 `d61e6362d` and f1 `bcdfcd62e` (same, zero
+hits): the row was unported on every relevant tip. The C# `SetDefaults`
+arm is an **else-if chain, not a switch** — there is no `case 502`; the
+block is `Projectile.cs:5732-5742` (`this.type == 502`): `width = 16`,
+`height = 16`, `aiStyle = 8`, `friendly = true`, `melee = true`,
+`penetrate = 5`, `usesLocalNPCImmunity = true`, `localNPCHitCooldown = 10`.
+Ported verbatim as the `MEOWMERE` row in `projectile/data.rs` (placed in
+`SetDefaults` order ahead of the Javelin 507): the state group
+`(true, 10, false, -1, 0, 1.0)`, the stock `timeLeft = 3600` (`:787`),
+`tileCollide` (`:775`), `extraUpdates = 0`; `friendly` is the pool's stock
+true (the seam's convention); `melee` joins the explicit melee census
+(`:5738`). The row arms the part-4 owed bounce gate through
+`spawn_with_data`'s row guard — the `(37, 6..10)` chime ladder is now
+live, no merge dependency left for the 502. The `:24346-24352` velocity
+rotation ported beside it (`rotation = velocity.ToRotation() + π/2`,
+`spriteDirection = direction = Sign(velocity.X)` on non-zero X — the
+`atan2` stand-in the skull arm uses); every other style-8 kind keeps the
+`+0.3` default. The rowless-set witness
+(`test_dw_2_1_the_out_of_scope_kinds_stay_rowless`) drops the 502 with
+the migration note. **Still skipped** (the row-porter's effect census,
+recorded): the `:18226-18237` hue dust ring (NextFloat draws), the
+`:18238-18253` owner-gated Damage resize, the `:24302-24308` disco
+`AddLight` (the row keeps `light = 0` — the C# arm sets no `this.light`),
+the `:73675-73687` Kill dust trail, the `:22367-22371` Shimmer lift and
+the `:79208` GetAlpha 200-alpha tint (draw-only). The
+`ProjectileID.cs:521-522` trail sets (`TrailingMode` 0 / `TrailCacheLength`
+25 for the 502) ride the unported trail layer — no `proj_data` field.
+
+**The first-120 final census (parts 1-4 coverage).** The range (sites
+#1-#120, end boundary `:41968`) closes as: 21 sites ported in part 1
+(11 latch + 10 cooldown/bounce), 10 in part 2, the `:31504` census gap in
+part 3, the owed gates armed in part 4 (502/288/465/383/1106 + the d3
+boulder sound layer), and the 502 row here — every SIBLING-CUED verdict
+of the part-3 table stands with its cited hash. **The remaining unrowed
+list after part 5** (no `proj_data` row on ANY pushed tip, re-confirmed
+against d1 `e271b5bc8` / d77 `d61e6362d` / f1 `bcdfcd62e`):
+
+- **261 BoulderOfEarth** (`:19649`, aiStyle 14 — the flail machine is
+  style 15, part 4's correction stands). Needs the row AND the style-14
+  boulder movement half (`HandleMovement` `:19643`'s ±3 gate +
+  `MakeBoulderOfEarthExplosion` `:20391`); no owed gate possible.
+- **1023 DeadCellsBarrel** (`:18780` bounce Dig) and **1081
+  MudBallPlayer** (`:19845` bounce Dig) — unrowed; d3's boulder family
+  stopped short of both (its `2d01693ca` rows 13 kinds, neither of
+  these). The bounce Digs arm with their rows + movement.
+- **The phaseblades** — `ProjectileID.cs:192`'s `IsAPhaseblade` set:
+  **1059-1072, 1074, 1075, 1076, 1101, 1102** (19 kinds; the 1073 is NOT
+  in the set). All unrowed on every pushed tip; the whoosh family
+  (`:39080-39393`) rides the unported `AI_003` phaseblade machine. The
+  part-4 dust-not-sound correction stands (`:19392/:19401/:19468` are
+  dust lines; the bounce arm carries no PlaySound).
+- The other owed kinds stay owed: **288** (gate armed, style-12 machine
+  in-tree), **465** (gate armed, style-88 in-tree), **383** (gate armed,
+  style-3 in-tree) — their rows belong to the AI lanes, the gates arm on
+  the row merge exactly as the 502's did here.
+
+**The f1/d77 compose-receipt (AI-side gates vs the kill-tail).** Read
+`origin/task/W4-d77-proj-sounds-3` tip `d61e6362d` (seam `9d35874af` +
+waves `2a0c2c1b2`/`75044e750`) and `origin/task/W4-f1-proj-sounds-4` tip
+`bcdfcd62e` (the 6-tuple adoption `4233ddb4b` + the final owed wave
+`45abf4235`). **The kind sets are DISJOINT**: d75's AI-side gates are
+502/288/465/383/1106 (wants_sound arms on `ai_ball_of_fire`,
+`ai_aqua_scepter`/`ai_golden_shower`, the style-88 head, `ai_boomerang`,
+`ai_flamethrower`) + the 455 `:31504` latch + the d3 boulder intents
+(1054 `(3,29)`, 1055 `(4,6)`, 1047 `(42,274)`); d77's `kill_tail_cue` and
+f1's `kill_sound_cue` maps carry NONE of those kinds (checked both pushed
+maps arm-by-arm — the only near-misses are the shared `Damage_GetHitbox`
+inflation reads at 383/1106/1023/1024, which are hitbox maths, not cues).
+The 502's Kill tail (`:73675-73687`) is dust-only — no death cue exists
+to overlap. Merge notes for the composer (d77c):
+
+- **The queue shape**: d75 is still 5-tuple `(id, style, x, y, pitch)`;
+  d77/f1 both carry the 6-tuple `volumeScale` widening. Every d75
+  `wants_sound` push folds to `volume = 1.0` (the f1 adoption precedent
+  — all d75 cues are stock-volume; the −34 Foxparks marker keeps its
+  volume INSIDE the by-name façade, and the Shatter ×0.35 inside
+  `play_shatter_sound`). The `(2,-34)` sentinel survives the widening
+  (the sixth slot is volume, not style — part 4's note confirmed against
+  the pushed shapes).
+- **The drain id-4 collision (the one real seam conflict)**: d75 routes
+  id 4 → `play_npc_death_style` (the STYLE overload — d3's
+  `PlaySound(SoundID.NPCDeath6, …)` is `SoundEngine.cs:88-99`, ONE
+  audio-only GetRandomPitch NextFloat); d77 routes id 4 →
+  `play_npc_death_int` (the int overload, no NextFloat — its 385/454
+  sites are `PlaySound(4, x, y, style)`). f1 routes both through
+  `play_proj_sound_scaled`'s int match (its doc labels the `(3,29)`/
+  `(4,6)` boulder calls "the int facade" — a MISREAD: they are style
+  calls). The composer must keep BOTH overload paths: d75's id-4 style
+  route for the boulder `(4,6)` intent, d77's int route for its
+  kill-tail 454/385/655 cues — the payload alone cannot distinguish
+  them (both `(4,6)`), so either a sentinel (the −34 precedent) or the
+  producer-side façade call is the seam. Same for id 29: d75's 455
+  `(29,104)` is the int overload (no truncation at the drain — the
+  façade truncates), d77's 452 `(29,103)` int too, but d77's drain
+  truncates x/y before `play_fighter_moan` while d75's does not (the
+  façade truncates anyway — the two are draw-identical, keep either).
+- **The id-29 gate-position wrinkle (the second seam note)**: d77's
+  drain truncates x/y BEFORE `play_fighter_moan`, so its attenuation
+  gate probes the truncated position; d75's 455 passes the untruncated
+  position (the gate probes it, `play_critter` truncates only the emit).
+  The C# 455 site is `PlaySound(29, (int)X, (int)Y, 104)` — the gate
+  probes the TRUNCATED position, so d77's shape is the faithful one;
+  the composer should keep the drain-side truncation for id 29 (d75's
+  455 witness pins the untruncated intent, not the gate probe — the two
+  differ only inside the last pixel of the attenuation radius).
+- **The boulder death-cue duplicates**: f1's final owed wave rows the
+  1054/1055/1047/1048/1053/99/727/1013/1014/1021/1057/1005/655 kinds on
+  `kill_sound_cue` — the SAME sites d3's `boulder_kill` already queues
+  on its own arms (d75 part 4 serves those intents). Keep-one applies
+  exactly as f1's doc recommends for its own map vs d77: with d3 merged,
+  the f1/d77c kill-map arms for the boulder family would DOUBLE-PLAY
+  (d3 parks the intent mid-Kill; the death hook fires again). Drop the
+  boulder-kind arms from the surviving kill map (or gate them on d3's
+  arm absence) — recorded here so the composer sees it.
+- **No other overlap**: d75's id-3 `(3,29)`/id-37/id-42 routes and the
+  `play_star_chime`/`play_foxparks_flame` façades are d75-unique; d77's
+  id-6/id-13 wall-break routes and f1's `play_npc_hit_int` style-29
+  route are theirs. The bank rows union cleanly (`Item_57/58/121`,
+  `NPC_Hit_29`, `rainbow_boulder`, `Zombie_104` from d75; d77/f1 add
+  `Zombie_103`, `NPC_Killed_19`, `Item_89` etc. — no shared-key
+  conflicts, the same asset per name).
+
+Witnesses (3 new `s1_e_21h_d75_p5_*`, WRITTEN NOT RUN): the verbatim row
+(the state group + every stock default + the sheet-pack membership), the
+live spawn path (the row resolves, the first blocked tick chimes style 6,
+the pre-bounce rotation faces +π/2 with direction 1), and the rotation's
+sign arms (−X flips the pair to −1, zero-X holds it). The rowless-set
+witness updated (502 leaves the OUT list).
+
+**Verification.** Code-only: the `:5732-5742` block re-read whole (no
+`case 502` exists — the else-if chain confirmed by grep), the
+`:24346-24352` rotation against `ToRotation` semantics, the sibling
+data.rs zero-hit greps via `git show`, both pushed kill maps read
+arm-by-arm for the disjointness claim, the d77/f1 drain shapes read from
+the pushed `world_sim/projectiles.rs`. No cargo/rustc/tests/rustfmt/
+graphify invoked — the witnesses are WRITTEN, NOT RUN.
+
+### Part 6 (d75, 2026-11-21, code-only mode) — the SEAL: the phaseblade row-set + machine, the 261/1023 seeds, the moved-tip re-probe
+
+`task/W4-d75-proj-sounds-1`, the seal phase. The Lead's directive:
+(1) the 19-kind phaseblade set unrowed — port the rows small-batch or
+task-seed the projectile-row lane; (2) the 261 flail-style-15 question
+(d2 owns the machine? the movement-half gap) + the 1023/1081 d3-stopped
+kinds; (3) the d77c id-4 style-vs-int both-paths receipt + the
+boulder-kill-map double-play keep-one; (4) the f1e/d77d compose (the
+f1 `kill_sound_cue` + `rocket_kill_census` DROP per d77c, d75's gates
+AI-side disjoint); (5) research/32 SEALED + the first-120 sounds-family
+bible.
+
+**The moved-tip re-probe (the part-5 census was STALE).** Every sibling
+tip advanced since part 5's `e271b5bc8`/`d61e6362d`/`bcdfcd62e` scan:
+d1 `212516a82`, d2 `f430ccf83`, d3 `740026af6` (its own SEAL,
+research/248), d76 `ede24bb4f`, d77 `5f10560b2` (the Kill-host wave
+`0573b70f2`), f1 `3065492b0` (the RETIRE). The headline correction:
+**the 1081 MudBallPlayer is ROWED + CUED** — d1 wave 3c `e47181798`
+rows it (`:10087-10094`, 12×12 aiStyle 10 pen −1) and
+`projectile_ai_falling.rs` cues the `:19845` Dig (`local_ai[0]` latch →
+`(0,0)` intent). The part-5 "1081 unrowed" flag is RETIRED (d3's SEAL
+§4 reached the same verdict). The 1023 stays UNROWED at every tip —
+d3's SEAL task-seeded it **S1-P-i58** (research/248 §4; the row + AI/
+movement halves owed, the Kill dust g65 b26 / gore g16 wave K /
+particles d54 b7 staged). The 261 stays UNROWED — d2's aiStyle-14
+census has no 261 (its `ai_spear` is the generic dart/spear stand-in),
+d3's boulder family is aiStyle 25 (a different machine); this seal
+task-seeds it **S1-P-i61** (i57=d53, i58=d3, i59/i60=g65 taken; i61
+first free at the all-tip scan).
+
+**The phaseblade row-set (PORTED HERE, small-batch).** The
+`IsAPhaseblade` set (`ProjectileID.cs:192`, 19 kinds: 1059-1072, 1074,
+1075, 1076, 1101, 1102 — the 1073 trap NOT in it) was unrowed on every
+pushed tip. The three `SetDefaults` arms ported verbatim into
+`projectile/data.rs`: the small group (`Projectile.cs:10006-10021`,
+1059-1064 + 1071/1075/1101, 38×38), the large group (`:10022-10037`,
+1065-1070 + 1072/1076/1102, 46×46) and the 1074's own arm
+(`:10047-10058`, 46×46) — all aiStyle 3, friendly (the pool's stock
+true), melee, `penetrate = -1`, `netImportant`, local immunity 10; the
+stock 3600 life / tileCollide / scale stand. The melee census
+(`:10013`/`:10029`/`:10054`) and the `net_important` slice gain the
+set; the 1101/1102 `glowMask` 372/373 writes ride the unported glow
+layer (no `proj_data` field). All 19 `Projectile_{id}.xnb` sheets
+verified on disk.
+
+**The phaseblade machine (PORTED HERE — the whoosh family rides it).**
+The part-5 census deferred the `:39080-39393` whoosh family to "the
+unported AI_003 phaseblade machine"; this seal ports that machine into
+`ai_boomerang` (the aiStyle-3 dispatch arm the rows now reach):
+
+- The head block (`:38985-39023`): the out-of-world return arm
+  (`ai[0] = 1` past the 10-tile margin), the living-owner
+  `timeLeft < 5` keep-alive pin, the ±2π rotation wrap. The held-item
+  release arm (`:39009-39013`) rides the use-wiring lane (no held-item
+  snapshot here — recorded); the `GetPhaseColor` AddLight pair
+  (`:39014-39022`) is the c19/e6 light lane's.
+- The outbound arm (`phaseblade_outbound`, `:39041-39108`): below 30
+  ticks the 0.4 × direction spin + the whoosh (the 1074: Item7 −0.3 /
+  `soundDelay = 11`; else Item15 / 14); at `ai[1] >= 30` the fall
+  (`velocity.Y++` 16-cap, X ×0.96), the rotation ease toward 2.335 /
+  −3.948 while rising (the `(rot*4+t)/5` short-way vs the
+  `(rot*9+t±2π)/10` wrap arm), the spin + falling whoosh once Y > 0
+  (the 1074: Item7 pitch 0 / 9; else Item15 / 14). The whoosh head's
+  phaseblade exclusion (`:38868`, already explicit since part 4) keeps
+  these the family's ONLY outbound cues.
+- The wall arm (`:19375-19511`, the else-if AHEAD of the aiStyle-3
+  bounce): `ai[0] = 2` (the stuck state), NO reversal, NO Dig thud —
+  the blocked components zero (`Collision.TileCollision`'s response).
+  The part-4 dust-not-sound correction STANDS: the `:19392/:19401/
+  :19468` lines are the ground-landing dust rings (the 1074 15×
+  census, the 5× colour-dust census), not sound; both stay skipped
+  effects with their draws.
+- The stuck state (`:39342-39363`): the upward-Y halving, the 2.335
+  rotation pin, X zeroed / Y++ per tick; the one-shot `localAI[1]`
+  cue — the 1074 plays Item182 and parks `localAI[0] = -1` (the
+  return-cue selector), every other phaseblade plays Item15.
+- The return head (`:39367-39397`): the owner-side direction pin, the
+  `velocity.ToRotation() − 2.335` rotation, the one-shot
+  `localAI[0] <= 0` cue (the 1074: Item182 −0.2 after a stick, Item7
+  −0.5 fresh; else Item15). The seek runs at 40/3 with NO meleeSpeed
+  remap (`:39402-39407`'s `flag3 = false`); the extraUpdates re-derive
+  from the owner distance (`(int)(dist/3000)`, the 1074 +1, cap 20,
+  `:39482-39490`) and the 3000-px kill NEVER fires for the family.
+- The stuck-state damage modifiers (`damage_pve`, `:13306-13333`):
+  ×0.6 damage (the large blades ×0.5 — 1065-1070/1072/1076), ×0.6
+  knockback, the owner-side direction pin — on the POST-DamageVar
+  `dmg`, the f64 truncation kept. The `Damage_GetHitbox` −14 X
+  narrowing (`:14962-14965`) and the NPC-hit reverse exclusion
+  (`:13068`) were already in-tree.
+- The single-flight use gate (`Player.cs:52162`'s `IsAPhaseblade`
+  term) joins `editing.rs`'s boomerang stack-limit list (limit 1).
+
+`Item_182` joins the bank (`SoundID.cs:1566`, the 1074's swing cue;
+`Sounds/Item_182.xnb` verified). The `:22384-22402` Shimmer lift and
+the `:78862-78864` GetAlpha white tint stay skipped effects (the
+shimmer-liquid / draw layers).
+
+**The 261/1023 owed arms (ARMED HERE, the rows task-seeded).** The
+sound lane arms the cues it owns; the row + movement halves are the
+AI lanes' (the 383/465 owed-arm convention):
+
+- **1023** (`:18752-18781`): the bounce arm in the aiStyle-1 dispatch
+  — the generic flight's block-kill is the C#'s `velocity !=
+  lastVelocity` signal; the arm undoes it, zeroes the blocked axes,
+  reverses from `lastVelocity` with the ±5 floor (X: |Δ| < 5 → ±5;
+  Y: 0 < last < 5 → −5), latches `localAI[1] = 1` (the ×1.33 flag,
+  `:14557-14560`) and queues the Dig thud on EVERY bounce (no latch).
+  Inert until S1-P-i58's row. The Kill cue (`:76868`, the trackable
+  `DeadCellsBarrelLauncherExplode` ×0.6, `SoundID.cs:1728`) is the d77
+  kill-tail lane's — NOT armed here (the trackable pool is R-32-6's).
+- **261** (`:13568-13572`): the < 3.5 px/tick damage/knockback halving
+  in `damage_pve` (post-DamageVar `dmg /= 2`, `kb /= 2`). Inert until
+  S1-P-i61's row. The bounce cue (`:19649`, the ±3 gate + the Dig at
+  Center + `MakeBoulderOfEarthExplosion`) and the Kill Dig (`:74426`)
+  ride d2's movement half — the seed's scope.
+
+**The f1e/d77d compose-receipt (re-pinned at the MOVED tips).** Read
+d77 `5f10560b2` (`kill_tail_cue`, `projectile.rs:20211`) and f1
+`3065492b0` (the RETIRE banners). The part-5 verdicts STAND, now
+against the moved tips:
+
+- **The kind sets stay DISJOINT.** d75's AI-side gates
+  (502/288/465/383/1106 + the 455 latch + the d3 boulder intents + the
+  new phaseblade/1023/261 arms) share NO kind with d77's `kill_tail_cue`
+  map (re-scanned arm-by-arm at `5f10560b2`: the 77 numeric arms carry
+  none of 502/288/465/383/1106/455/261/1023/1081/1059-1076/1101/1102).
+  The phaseblade Kill tail is dust-only (no death cue to overlap).
+- **The f1 DROP per d77c.** f1's RETIRE (`3065492b0`) banners
+  `kill_sound_cue` + the `rocket_kill_census` cue pushes +
+  `play_proj_sound_scaled`'s int-match DEPRECATED-BY-UNION — d77's
+  `kill_tail_cue` is the canonical survivor (a strict superset of f1's
+  part-4/5 base map + the absorbed part-6 arms). At merge: DROP those
+  f1 halves, FOLD the f1-UNIQUE remainder (the second owed wave minus
+  523/12/321, the Flame Burst derived recentre incl. the 706 sibling).
+  d75's lanes are AI-side — they neither fold nor drop; they compose
+  alongside d77's kill-tail.
+- **The id-4 style-vs-int collision — BOTH paths needed (d77c).** d75
+  routes id 4 → `play_npc_death_style` (the STYLE overload — d3's
+  `PlaySound(SoundID.NPCDeath6, …)`, one audio-only GetRandomPitch);
+  d77 routes id 4 → `play_npc_death_int` (the int overload, no
+  NextFloat — its 454/385/539 kill-tail sites are `PlaySound(4, x, y,
+  style)`). The payload alone cannot distinguish them (both `(4,6)`),
+  so the composer keeps BOTH routes — a sentinel (the −34 precedent)
+  or the producer-side façade call is the seam. f1's "int facade"
+  label on the `(3,29)`/`(4,6)` boulder calls is a MISREAD (they are
+  style calls); d3's SEAL §2 re-confirmed the split.
+- **The id-29 gate truncation.** d77's drain truncates x/y BEFORE
+  `play_fighter_moan` (`x.trunc(), y.trunc()`, the faithful gate probe
+  — the C# 455 site is `PlaySound(29, (int)X, (int)Y, 104)`); d75's
+  455 passes the untruncated position (the façade truncates the emit).
+  The composer keeps d77's drain-side truncation for id 29.
+- **The boulder kill-map DOUBLE-PLAY — keep-one.** f1's final owed
+  wave rows the d3-cued kinds (1054/1055/1047/1048/1053/99/727/1013/
+  1014/1021/1057/1005/655) on `kill_sound_cue` — the SAME sites d3's
+  `boulder_kill` already queues (d75 part 4 serves those intents).
+  With d3 merged, the f1/d77c kill-map arms for the boulder family
+  would DOUBLE-PLAY. Drop the boulder-kind arms from the surviving
+  kill map (or gate them on d3's arm absence). d3's SEAL §3 reached
+  the same keep-one verdict for the g65 Kill-309 compose.
+- **The 6-tuple fold.** d75 is still 5-tuple `(id, style, x, y,
+  pitch)`; d77/f1 carry the 6-tuple `volumeScale` widening. Every d75
+  push folds to volume 1.0 (the −34 Foxparks marker keeps its volume
+  inside the by-name façade, the Shatter ×0.35 inside
+  `play_shatter_sound`). The `(2,-34)` sentinel survives the widening.
+
+Witnesses (7 new `s1_e_21h_d75_p6_*`, WRITTEN NOT RUN): the verbatim
+row-set (the 19 kinds' box/style/flags + the 1073 exclusion), the
+outbound whoosh ladder (the 1059/1074 pair + the cooldown hold), the
+30-tick fall ease + the falling whoosh + the 16 cap, the wall-stick
+(no reversal, the one-shot Item15/Item182 + the 1074's −1 selector),
+the return cues + the 40/3 unremapped seek + the extraUpdates
+re-derive + the no-distance-kill, the 1023 bounce floors (the hard/soft
+X + the Y soft floor), the 261 < 3.5 halving (the scripted DamageVar
+pin). The data.rs row witness pins the group boxes + the stock reset.
+
+**Verification.** Code-only: the three `SetDefaults` arms re-read
+whole (`:10006-10058`), the `AI_003` phaseblade blocks re-read
+(`:38985-39108`/`:39342-39555`/`:19375-19511`/`:13306-13333`), the
+moved sibling tips re-probed via `git show` (d1's 1081 row + cue, d3's
+SEAL §4, d77's `kill_tail_cue` map, f1's RETIRE banners), the 19
+sheets + `Item_182.xnb` verified on disk. No cargo/rustc/tests/
+rustfmt/graphify invoked — the witnesses are WRITTEN, NOT RUN.
+
 ## The lunar/DD2 small WRONGs (B-6d, 2026-11-19, code-only mode)
 
 Audit source: `docs/research/53-audit-pillars.md` (branch
