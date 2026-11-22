@@ -216,11 +216,8 @@ impl App {
                     inventory,
                     selected,
                     edit_target,
-                    mine_target,
-                    mine_timer,
-                    mine_hardness,
-                    mine_crack_style,
-                    mine_crack_target,
+                    hit_tile,
+                    mine_crack_styles,
                     mine_crack_rng,
                     camera,
                     zoom,
@@ -1187,15 +1184,24 @@ impl App {
                         *world_key = Some(key);
                     }
 
-                    // S1-G-1 wave C: the tile-crack overlay
-                    // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
-                    // solid-layer sites `TileDrawing.cs:732-733`). It rides
-                    // the per-frame world range right after the cached tile
-                    // pass — the damage timer advances every frame, so the
-                    // crack cannot live inside the G6-cached range (the
-                    // `WorldFrameKey` is untouched). The port's stand-in for
-                    // the solid-layer site; ANALYSIS "The tile-crack
-                    // overlay (S1-G-1 wave C)".
+                    // S1-G-1 wave C / W4-g77: the tile-crack overlay
+                    // (`Main.DrawTileCracks`, `Main.cs:61533-61626`) over
+                    // the local player's real i29 `HitTile` book — all
+                    // four sites in the C# layer order: the wall pair
+                    // (`WallDrawing.cs:203-204`, crack type 2) then the
+                    // solid-tile pair (`TileDrawing.cs:732-733`, crack
+                    // type 1), `hitReplace` before `hitTile` (both
+                    // `hitReplace` sites empty — no replacement-mining
+                    // book yet). Every damaged slot draws its crack
+                    // stage, TTL decay included. It rides the per-frame
+                    // world range right after the cached tile pass — the
+                    // book decays every tick, so the crack cannot live
+                    // inside the G6-cached range (the `WorldFrameKey` is
+                    // untouched). The port's stand-in for the two layer
+                    // epilogues; the deviations live in the
+                    // `render/tile_cracks.rs` module doc (ANALYSIS
+                    // "The tile-crack overlay (S1-G-1 wave C)" — the
+                    // W4-g77 re-arm supersedes its projection paragraph).
                     crate::render::tile_cracks::draw_mining_cracks(
                         renderer,
                         world,
@@ -1203,12 +1209,10 @@ impl App {
                         &style,
                         draw_cam,
                         anim_time,
-                        *mine_target,
-                        *mine_timer,
-                        *mine_hardness,
+                        hit_tile,
+                        mine_crack_styles,
                         mine_crack_rng,
-                        mine_crack_style,
-                        mine_crack_target,
+                        crate::env::show_invisible(),
                     );
                     // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
                     // false)`'s pylon / trophy / void-lens passes
