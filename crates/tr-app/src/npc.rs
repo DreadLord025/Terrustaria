@@ -28,6 +28,29 @@ pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     false
 }
 
+/// The phase-1 town door seam — a NO-OP `TownDoorOps` (W4-b3): every
+/// attempt fails, so the arm takes the C#'s all-fail direction flip
+/// (`NPC.cs:54047-54078`) and the latch stays clear — tick-exact against
+/// a world where no door mutation runs yet. Phase 2 implements the trait
+/// over `tr_core::edit::{open_door, close_door}` (`edit.rs:704`/`:826`);
+/// `shift_tall_gate` stays false even then (`WorldGen.ShiftTallGate` is
+/// UNPORTED in tr-core — the cited skip: tall gates 388/389 never
+/// open/close). The draws are unaffected: the door gate's `Next(10)`
+/// (`NPC.cs:54043`) runs before the attempts.
+struct NoOpTownDoors;
+
+impl crate::npc_ai_town::TownDoorOps for NoOpTownDoors {
+    fn open_door(&mut self, _x: i32, _y: i32, _direction: i32) -> bool {
+        false
+    }
+    fn close_door(&mut self, _x: i32, _y: i32) -> bool {
+        false
+    }
+    fn shift_tall_gate(&mut self, _x: i32, _y: i32, _closing: bool) -> bool {
+        false
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NpcKind {
     Slime,
@@ -37,8 +60,9 @@ pub enum NpcKind {
     WanderingEye,
     Zombie,
     KingSlime,
-    /// `NPCID.Guide` (22) — the first town NPC (`aiStyle 7`): the port's
-    /// walker is the zombie machine minus the chase (the town NPC wanders).
+    /// `NPCID.Guide` (22) — the first town NPC (`aiStyle 7`): W4-b3 rides
+    /// the faithful `npc_ai_town::town_npc_ai` arm (the `update_guide`
+    /// stand-in is retired).
     Guide,
     /// `NPCID.Skeleton` (21) — the cave walker (`aiStyle 3`, the 15-frame
     /// humanoid strip).
@@ -1336,6 +1360,13 @@ pub struct Npc {
     /// world-file persistence lands with M6-SAVE-1's NPC sections
     /// (M6-SAVE-1e).
     pub home: Option<(i32, i32)>,
+    /// `NPC.closeDoor`/`doorX`/`doorY` (`NPC.cs:6511-6513`) — the town
+    /// arm's door latch (W4-b3 wiring): the aiStyle-7 adapter hands these
+    /// to `npc_ai_town::town_npc_ai` as its `TownDoorLatch` and copies
+    /// them back after the arm (the open-success latch + the close pass).
+    pub town_door_close: bool,
+    pub town_door_x: i32,
+    pub town_door_y: i32,
     /// `NPC.GivenName` (`NPC.cs:6497`, `SaveNPCs:1719`): the town NPC's
     /// display name — empty carries the kind's static name, exactly the
     /// vanilla's "give it a name at the first world-file save" convention.
@@ -2992,6 +3023,9 @@ impl Npc {
             wants_door_bash: None,
             wants_minion_batch: 0,
             home: None,
+            town_door_close: false,
+            town_door_x: 0,
+            town_door_y: 0,
             variation_index: 0,
             homeless_despawn: false,
             look_for_home_timeout: 0,
@@ -4806,6 +4840,20 @@ impl Npc {
                 let _ = crate::npc_ai_style21::ai_style21(self, world, &[cand], 0, 255);
                 crate::npc_ai_style21::collision_move_blazing_wheel(self, world);
             }
+            // `if (this.aiStyle == 7) { this.AI_007_TownEntities(); return; }`
+            // (`NPC.cs:20812-20815`). W4-b3 wiring (phase 1): the 21 town
+            // kinds ride the faithful `npc_ai_town::town_npc_ai` re-port
+            // (S1-D-3-town-ai); the retired `update_guide` stand-in's
+            // 240-tick fixed flip + constant 0.5 px/tick + invented −6.2
+            // jump are GONE. RNG: the stand-in drew ZERO; the wired arm
+            // draws the module header's per-state ladder on the caller's
+            // `UpdateNPCs` stream (idle day tick: one Next(80) + the
+            // social gates — the draw-delta census in ANALYSIS "The
+            // town-NPC aiStyle-7 wiring (W4-b3)"). The adapter owns the
+            // solo seams (one session player, empty NPC list, classic
+            // difficulty, the no-op door ops) — phase 2 drains the
+            // TownOutputs through the sim.
+            7 => self.ai_007_town_family(world, player, rng),
             // `if (this.aiStyle == 9) { ... }` (`NPC.cs:21377-21571`) -
             // S1-D-3: the caster-sphere family (25/30+665/33) rides the
             // new module's arm; the unported 112/666/516 branches wait
@@ -6043,6 +6091,10 @@ impl Npc {
             // walker (`NPC.cs:14609`); its `num107` cap is the
             // distance-scaled 489 row (`npc_ai3_speeds.rs:550`).
             | NpcKind::BloodZombie => self.update_zombie(world, player, dt),
+            // W4-b3: the 21 town kinds' aiStyle 7 rides the style axis
+            // above (`ai_007_town_family` → `npc_ai_town::town_npc_ai`);
+            // `ai_style()` maps them unconditionally, so the fallthrough
+            // never reaches them (the aiStyle-5/9 marker precedent).
             NpcKind::Guide
             | NpcKind::DD2Bartender
             | NpcKind::Merchant
@@ -6064,7 +6116,9 @@ impl Npc {
             | NpcKind::Princess
             | NpcKind::DyeTrader
             | NpcKind::PartyGirl
-            | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
+            | NpcKind::GoblinTinkerer => {
+                unreachable!("aiStyle 7 rides the style axis (W4-b3 town wiring)")
+            }
             NpcKind::QueenBee => {
                 unreachable!("aiStyle 43 rides the style axis (S1-D-3 W-3)")
             }
@@ -10389,48 +10443,197 @@ impl Npc {
             && self.y + h > player.y
     }
 
-    /// `AI_007_TownNPCs`'s walk subset (`NPC.cs:10586+`): the town NPC
-    /// wanders on the ground, turns at the walls/ledges, jumps the
-    /// one-tile obstacles. The chase/doors/talk arms land with their
-    /// systems.
-    fn update_guide(&mut self, world: &World, _dt: f32) {
-        let (w, h) = NpcKind::Guide.size();
-        // The wander: a walking pace with the random turn every few
-        // seconds (`ai[3]`'s idle timer shape).
-        self.anim += 1.0;
-        // The deterministic turn: every 240 ticks the wander flips (the
-        // per-NPC randomness rides the shared streams' order).
-        if self.anim % 240.0 < 1.0 {
-            self.facing = -self.facing;
-            self.sprite_dir = self.facing;
-        }
-        self.vx = self.facing as f32 * 0.5;
-        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+    /// W4-b3 wiring (phase 1) — the aiStyle-7 family arm: `NPC.AI()`'s
+    /// `if (this.aiStyle == 7)` block (`NPC.cs:20812-20815`) through the
+    /// faithful `npc_ai_town::town_npc_ai` (`AI_007_TownEntities`,
+    /// `NPC.cs:52965-55561`, the S1-D-3-town-ai re-port). The retired
+    /// `update_guide` stand-in (the 240-tick fixed flip, the constant
+    /// 0.5 px/tick, the invented −6.2 jump — none of it in the C# arm)
+    /// is GONE. This adapter owns only the seams the pure arm cannot
+    /// (the `ai_002_eye_family` precedent): this tick's `Entity.wet`,
+    /// the SOLO session-player candidate, the classic-solo `TownEnv`
+    /// (empty NPC list, the world's live flags, the unported statics
+    /// folded false — the style31 CLASSIC_SOLO convention), the kind
+    /// defaults from the port's tables, the caller-carried door latch,
+    /// a NO-OP `TownDoorOps` (phase 2 implements it over
+    /// `tr_core::edit::{open_door, close_door}` — the arm's inline
+    /// attempts all fail → the C#'s all-fail direction flip, tick-exact
+    /// against a world with no door port yet), and the generic
+    /// `UpdateNPC` tail the arm never runs (`NPC.cs:90465-90498`: the
+    /// depth-scaled 0.3 gravity + 10 fall cap, the ±0.005 double
+    /// deadband, `UpdateCollision`'s dry/wet move). The `TownOutputs`
+    /// drain (shots/strikes/partner writes/home updates/saved states)
+    /// is phase 2's — the requests are DISCARDED here but every DRAW
+    /// already ran on the caller's stream (the eye wiring's `let _ =
+    /// out` precedent).
+    fn ai_007_town_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        // `Entity.wet` — the port latches it pre-AI (the eye convention);
+        // the wet flee/drown tails read it (`:53644`/`:53725`).
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let players = [crate::npc_ai_town::TownPlayer {
+            candidate: crate::npc_target::session_candidate(player),
+            // `Player.talkNPC` lives on the App (`app/mod.rs:161`), not
+            // the Player — the solo seam reads nobody talking (phase 2).
+            talk_npc: -1,
+            // Buff 120 (stink potion) — the flee-target gate (`:53534`).
+            stinky: player.buffs.buff_type.contains(&120),
+            sitting: player.sitting,
+            // `Player.CanBeTalkedTo` (`Player.cs:3888-3898`): active,
+            // alive, drawn, `stealth == 1f` — the port's stealth folds
+            // the INVERTED sense (0 = visible, the spawn default), so
+            // the stock player reads talkable; `ShouldNotDraw` has no
+            // ported field (false).
+            can_be_talked_to: !player.dead && player.stealth == 0.0,
+        }];
+        let env = crate::npc_ai_town::TownEnv {
+            world,
+            day_time: world.day_time,
+            raining: world.raining,
+            eclipse: world.eclipse,
+            slime_rain: world.slime_rain,
+            // `Main.IsItStorming` — the wind/storm scan is unported.
+            storming: false,
+            net_mode: 0, // the host path (the port's fold)
+            expert_mode: player.buffs.expert_mode,
+            master_mode: false, // single-difficulty (the style31 fold)
+            players: &players,
+            npcs: &[], // the solo seam — phase 2 threads the live list
+            // `Main.dungeonX/Y` — no ported field; the Old Man 37 has no
+            // ported kind, so the home stamp never fires.
+            dungeon_x: 0,
+            dungeon_y: 0,
+            combat_book: world.combat_book_was_used,
+            combat_book_two: false, // volume two unported
+            party_up: false,        // BirthdayParty unported
+            skyblock_low_tiles: false,
+            infected_seed: world.seeds.contains(tr_core::seeds::SeedFlags::ZENITH),
+            only_shimmer_ocean: false,
+            x_mas: false, // the seasonal clock unported (Santa has no kind)
+            town_damage_multiplier: 1.0, // Classic
+            downed_slime_king: world.downed_slime_king,
+            downed_boss1: world.downed_eoc,
+            downed_deerclops: world.downed_deerclops,
+            downed_boss2: world.downed_eow,
+            downed_boss3: world.downed_skeletron,
+            downed_queen_bee: world.downed_queen_bee,
+            hard_mode: world.hard_mode,
+            downed_queen_slime: world.downed_queen_slime,
+            downed_mech1: world.downed_mech_boss1,
+            downed_mech2: world.downed_mech_boss2,
+            downed_mech3: world.downed_mech_boss3,
+            downed_plant: world.downed_plant_boss,
+            downed_empress: false, // no ported flag yet
+            downed_fishron: world.downed_fishron,
+            downed_golem: world.downed_golem,
+            downed_cultist: world.downed_ancient_cultist,
+            // The port folds homeless into `home == None` (the module's
+            // seam note); the wiring latches the distinct flag later.
+            homeless: self.home.is_none(),
+            breath: 200, // `NPC.breath` unported — the stock full breath
+            shimmering: false,
+        };
+        // The kind defaults the stat ladder reads: the port's
+        // SetDefaults rows (`max_hp`/`defense` tables — every town kind
+        // 250/15, the Bartender 250/15 too).
+        let stats = crate::npc_ai_town::TownKindStats {
+            def_life_max: self.kind.max_hp(),
+            def_defense: self.defense(),
+        };
+        let mut door = crate::npc_ai_town::TownDoorLatch {
+            close_door: self.town_door_close,
+            door_x: self.town_door_x,
+            door_y: self.town_door_y,
+        };
+        let mut doors = NoOpTownDoors;
+        let mut out = crate::npc_ai_town::TownOutputs::default();
+        crate::npc_ai_town::town_npc_ai(
+            self, &env, stats, &mut door, &mut doors, 0, rng, &mut out,
+        );
+        self.town_door_close = door.close_door;
+        self.town_door_x = door.door_x;
+        self.town_door_y = door.door_y;
+        // The out drain is phase 2's (see the fn doc); the draws ran.
+        let _ = out;
+        self.integrate_town_collision(world);
+    }
 
-        let nx = self.x + self.vx;
-        if !collides_rect(world, nx, self.y, w, h) {
-            self.x = nx;
-        } else if self.on_ground {
-            self.vy = -6.2;
-            self.on_ground = false;
+    /// The generic `NPC.UpdateNPC` tail for the town arm (`NPC.cs`
+    /// `:90465-90498` + `UpdateCollision` `:92523-92608`): the
+    /// depth-scaled gravity (`UpdateNPC_UpdateGravity` `:90878-90955` —
+    /// the Golem body's shared `body_gravity`, wet 0.2/7 override), the
+    /// ±0.005 DOUBLE X deadband, then `Collision_MoveNormal`'s
+    /// `TileCollision` velocity clip + the dry/wet move
+    /// (`Collision_MoveWhileDry` `:92591-92608` /
+    /// `Collision_MoveWhileWet` `:92785-92805` — the wet move keeps the
+    /// CLIPPED axis at full speed, halves only the free one). The
+    /// oldVelocity latch feeds the town walk's stuck test (`:54226`).
+    /// The slope/stair pass (`Collision_MoveSlopesAndStairFall`) is the
+    /// recorded fold — the flat-tile `TileCollision` clip stands in
+    /// (the bat/fish tail's convention, ANALYSIS).
+    fn integrate_town_collision(&mut self, world: &World) {
+        let (w, h) = self.size();
+        // `:90878-90955` — gravity + fall cap (the wet override reads
+        // the PRE-move wet latch, the C#'s `base.wet` from last tick's
+        // WaterCollision — the port's pre-AI latch is the same value).
+        let (gravity, max_fall) = if self.wet {
+            (0.2, 7.0)
         } else {
+            (
+                crate::npc_ai_golem::body_gravity(self.y, world.width as i32, world.world_surface),
+                10.0,
+            )
+        };
+        self.vy = (self.vy + gravity).min(max_fall);
+        // `:90473-90476` — the double-compare deadband.
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
             self.vx = 0.0;
         }
-
-        let ny = self.y + self.vy;
-        if !collides_rect(world, self.x, ny, w, h) {
-            self.y = ny;
-            self.on_ground = false;
-        } else if self.vy > 0.0 {
-            let ty = ((ny + h) / TILE_PX).floor() as i32;
-            self.y = ty as f32 * TILE_PX - h;
-            self.vy = 0.0;
-            self.on_ground = true;
-        } else if self.vy < 0.0 {
-            let ty = (ny / TILE_PX).floor() as i32;
-            self.y = (ty + 1) as f32 * TILE_PX;
-            self.vy = 0.0;
+        // `:92538-92540` — oldVelocity captured, the collide flags reset.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        // `Collision_MoveNormal` (`:92723-92726`): the velocity clip
+        // (fallThrough false — the town DecideFallThroughPlatforms arm
+        // is the recorded fold).
+        let tc = crate::collision::tile_collision(
+            world, [self.x, self.y], [self.vx, self.vy], w, h, false, false,
+        );
+        self.vx = tc.vel[0];
+        self.vy = tc.vel[1];
+        // The dry/wet move pair.
+        if self.wet {
+            // `:92785-92805` — ×0.5 on the FREE axes; a clipped axis
+            // moves at full clipped speed and raises its collide flag.
+            let mut mx = self.vx * 0.5;
+            let mut my = self.vy * 0.5;
+            if self.vx != self.old_vx {
+                mx = self.vx;
+                self.collide_x = true;
+            }
+            if self.vy != self.old_vy {
+                my = self.vy;
+                self.collide_y = true;
+            }
+            self.x += mx;
+            self.y += my;
+        } else {
+            // `:92591-92608` — the ceiling bump's 0.01, the flags on the
+            // clip, full-speed integration.
+            if tc.up {
+                self.vy = 0.01;
+            }
+            if self.old_vx != self.vx {
+                self.collide_x = true;
+            }
+            if self.old_vy != self.vy {
+                self.collide_y = true;
+            }
+            self.x += self.vx;
+            self.y += self.vy;
         }
+        self.on_ground = self.collide_y && self.vy >= 0.0;
     }
 
     /// `AI_003_Fighters` for the skeleton family (`NPC.cs:10586+`): the
@@ -34442,5 +34645,145 @@ mod w4_b2b_eye_wiring_witnesses {
             "drag then buoyancy, got {}",
             n.vy
         );
+    }
+}
+
+#[cfg(test)]
+mod w4_b3_town_wiring_witnesses {
+    //! W4-b3 — the aiStyle-7 WIRING witnesses (the axis adapter, not the
+    //! pure arm: `npc_ai_town.rs`'s own tests pin the machine). The census
+    //! draw delta: the retired `update_guide` stand-in drew ZERO
+    //! `Main.rand`; the wired arm draws the module header's per-state
+    //! ladder on the caller's `UpdateNPCs` stream. Mirrored-oracle stream
+    //! witnesses over the LIVE `update_rng` path (preamble + axis +
+    //! FindFrame + contact — the Guide's `humanoid_town_frame` and the
+    //! town-kind contact guard draw NOTHING, so the oracle covers the
+    //! whole tick). Code-only mode: WRITTEN NOT RUN.
+    use super::*;
+    use super::tests::bare;
+    use crate::test_world_helpers::ground;
+
+    /// The Guide parked on its resting spot, day, no weather — the idle
+    /// census: the ±25-band wander `Next(80)` (`NPC.cs:53782`'s else-if
+    /// position, localAI[3] == 0) then the social ladder's SEVEN reached
+    /// gates in else-if order (talk 300, gossip 1800, party 1200,
+    /// bartender 600, small-talk 1800, tax 600, player-talk 1200 — the
+    /// sit/interact gates need ai[0] == 1 and are skipped); the
+    /// attack-chance ladder draws NOTHING (the Guide's AttackType is 1,
+    /// the type-0 else-if short-circuits before its draw, the type-2/3
+    /// `if`s fail on AttackType, and flag32 is false with no danger).
+    /// The stand-in drew ZERO — this tick draws EIGHT.
+    #[test]
+    fn w4_b3_the_idle_day_tick_draws_the_wander_and_seven_social_gates() {
+        let w = ground(); // day_time defaults true, surface 50, floor row 120
+        let mut n = bare(NpcKind::Guide);
+        n.x = 60.0 * TILE_PX;
+        n.y = 120.0 * TILE_PX - 40.0; // Bottom on the floor row
+        n.home = Some((60, 120));
+        n.ai[1] = 500.0; // the idle timer never expires this tick
+        n.local_ai[3] = 0.0;
+        // The player parks ON the resting spot (the module witness's
+        // position): inside the night/rain safe rect, so the teleport
+        // scan never runs; the town contact guard is total (no draw).
+        let mut player = Player::spawn(&w);
+        player.x = 60.0 * TILE_PX;
+        player.y = 120.0 * TILE_PX - 42.0;
+        // A seed where every reached gate draws NON-zero (a zero would
+        // run a gate BODY and add draws); the Next(80) wander result is
+        // free (its body only flips the facing, no draw).
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            let _ = r.next_max(80);
+            if r.next_max(300) != 0
+                && r.next_max(1800) != 0
+                && r.next_max(1200) != 0
+                && r.next_max(600) != 0
+                && r.next_max(1800) != 0
+                && r.next_max(600) != 0
+                && r.next_max(1200) != 0
+            {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut oracle = rng.clone();
+        let _ = oracle.next_max(80); // the wander gate
+        let _ = oracle.next_max(300); // the talk gate
+        let _ = oracle.next_max(1800); // the gossip gate
+        let _ = oracle.next_max(1200); // the party gate (drawn, body skipped)
+        let _ = oracle.next_max(600); // the bartender gate
+        let _ = oracle.next_max(1800); // the small-talk gate
+        let _ = oracle.next_max(600); // the tax gate (drawn, type gate fails)
+        let _ = oracle.next_max(1200); // the player-talk gate
+        n.update_rng(&w, &mut player, 0.0, &mut rng);
+        assert_eq!(rng, oracle, "the live tick's eight draws, in C# order");
+        assert_eq!(n.ai[0], 0.0, "still idle");
+        assert_eq!(n.ai[1], 499.0, "the idle timer decremented");
+        // The generic UpdateNPC tail ran: the floor clips the gravity
+        // step (collide_y + on_ground), the resting NPC holds its spot.
+        assert!(n.on_ground, "the tail landed on the floor");
+        assert_eq!(n.vy, 0.0, "TileCollision clipped the fall");
+        assert_eq!(n.x, 60.0 * TILE_PX);
+        assert_eq!(n.y, 120.0 * TILE_PX - 40.0);
+    }
+
+    /// The night go-home start through the axis: night flips the go-home
+    /// flag (`NPC.cs:52983-52985`), the away-from-home idle arm starts
+    /// the walk with `Next(200)` (`:53688`) and faces home. The walk arm
+    /// does NOT run the same tick (the state machine is one if/else-if
+    /// chain), so the walk-end / door / ledge / stuck draws stay
+    /// unreached; the wander-bounds gate is skipped whole (night + not
+    /// at rest fails its `!flag || IsInAGoodRestingSpot` guard, so no
+    /// `Next(80)`). The social ladder's ai[0] == 0 gates all short-circuit
+    /// (ai[0] == 1 now); only the walk-up sit `Next(300)` and the
+    /// interact `Next(600)` gates draw (their bodies need a
+    /// chair/interactable — absent, and the seed keeps the draws
+    /// non-zero). THREE draws total. Then the generic tail's gravity
+    /// latch: the floor clips vy to 0 and collide_y stamps — the NEXT
+    /// tick's walk stuck test reads oldVelocity from here.
+    #[test]
+    fn w4_b3_the_night_go_home_walk_and_the_gravity_tail() {
+        let mut w = ground();
+        w.day_time = false; // night → the go-home flag
+        let mut n = bare(NpcKind::Guide);
+        n.x = 40.0 * TILE_PX; // 20 tiles left of home: outside the ±25 band
+        n.y = 120.0 * TILE_PX - 40.0;
+        n.home = Some((60, 120));
+        n.local_ai[3] = 0.0;
+        let mut player = Player::spawn(&w);
+        // Near the NPC: inside the teleport safe rect, so no teleport.
+        player.x = 40.0 * TILE_PX;
+        player.y = 120.0 * TILE_PX - 42.0;
+        // A seed whose walk-social gates (sit Next(300), interact
+        // Next(600)) draw non-zero — the census stays exactly three.
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            let _ = r.next_max(200);
+            if r.next_max(300) != 0 && r.next_max(600) != 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut oracle = rng.clone();
+        let go_home = oracle.next_max(200);
+        let _ = oracle.next_max(300); // the walk-up sit gate (no chair)
+        let _ = oracle.next_max(600); // the interact gate (nothing to poke)
+        n.update_rng(&w, &mut player, 0.0, &mut rng);
+        assert_eq!(rng, oracle, "the night tick's three draws, in C# order");
+        assert_eq!(n.ai[0], 1.0, "the night idle starts the go-home walk");
+        assert_eq!(n.ai[1], 200.0 + go_home as f32, "Next(200) on the timer");
+        assert_eq!(n.facing, 1, "home is to the right");
+        // The gravity tail: oldVelocity captures the PRE-clip gravity
+        // step, the floor clips vy to 0, collide_y stamps for the next
+        // tick's stuck test.
+        assert!(n.on_ground);
+        assert!(n.collide_y, "the floor clip raised collide_y");
+        assert!(n.old_vy > 0.0, "oldVelocity holds the pre-clip fall");
+        assert_eq!(n.vy, 0.0);
+        assert_eq!(n.y, 120.0 * TILE_PX - 40.0, "the clipped move holds the spot");
     }
 }

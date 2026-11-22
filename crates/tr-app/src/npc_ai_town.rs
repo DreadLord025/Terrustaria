@@ -5,21 +5,30 @@
 //!
 //! IDENTITY: the C# dispatch is aiStyle 7 → the town-NPC family (this
 //! module, `task/S1-D-3-town-ai`) and aiStyle 8 → the caster arm
-//! (`npc_ai_caster.rs`, sibling S1-D-3). The port's live town walk is
-//! `npc.rs::update_guide` (`:7471`): a 240-tick fixed flip at a constant
-//! 0.5 px/tick with an invented −6.2 jump — a stand-in, not the C# arm.
+//! (`npc_ai_caster.rs`, sibling S1-D-3).
 //!
-//! UNWIRED (code-only mode, the `npc_ai_caster.rs` precedent): the live
-//! dispatch still routes the town kinds through `update_guide`. The
-//! migration replaces that call with [`town_npc_ai`], drains
-//! [`TownShot`]/[`TownStrike`]/[`TownPartnerWrite`] through the NPC
-//! spawn/strike seams, implements the inline [`TownDoorOps`] trait over
-//! `tr_core::edit::{open_door, close_door}` (+ `ShiftTallGate` when it
-//! lands), registers the door latch fields on `Npc` (the C#'s
-//! `closeDoor`/`doorX`/`doorY`, `NPC.cs:6511-6513`) and applies
-//! [`HomeTileUpdate`] through `TownRooms` + message 60. The contested
-//! pieces stay untouched: the housing validation (`town.rs`), the chat
-//! selection (`npc_chat`), and the caster aiStyle-8 arm.
+//! WIRED — phase 1 (W4-b3, `task/W4-b3-npc-ai-town-wire`): the aiStyle
+//! axis in `npc.rs::update_rng_dust` claims style 7 through
+//! `Npc::ai_007_town_family`, which builds the solo classic [`TownEnv`]
+//! (one session player, empty NPC list, the unported statics folded
+//! false), the kind defaults ([`TownKindStats`]), the caller-carried
+//! door latch (the `Npc`'s `town_door_close/x/y`, `NPC.cs:6511-6513`)
+//! and a NO-OP [`TownDoorOps`] — every attempt fails, so the arm takes
+//! the C#'s all-fail direction flip (tick-exact against a world with no
+//! door port yet). The retired `update_guide` stand-in (the 240-tick
+//! fixed flip, the constant 0.5 px/tick, the invented −6.2 jump) is
+//! GONE. The adapter also runs the generic `UpdateNPC` tail the arm
+//! never reaches (`integrate_town_collision`: depth-scaled gravity, the
+//! ±0.005 deadband, `TileCollision` clip + dry/wet move). PHASE 2
+//! remainder: drain [`TownOutputs`] (shots/strikes/partner writes/home
+//! updates/saved states) through the sim's spawn/strike/housing seams,
+//! implement [`TownDoorOps`] over `tr_core::edit::{open_door,
+//! close_door}` (+ `ShiftTallGate` when it lands), thread the live NPC
+//! list + `App.talk_npc`, and apply [`HomeTileUpdate`] through
+//! `TownRooms` + message 60. The contested pieces stay untouched: the
+//! housing validation (`town.rs`), the chat selection (`npc_chat`), and
+//! the caster aiStyle-8 arm. The draw-delta census + the wiring
+//! witnesses: ANALYSIS "The town-NPC aiStyle-7 wiring (W4-b3)".
 //!
 //! SCOPE — the whole arm's STRUCTURE with the branches the port's town
 //! kinds take (the ten housed kinds + the eleven town-like sellers,
@@ -122,7 +131,7 @@
 //! are pure tile reads, `UpdateHomeTileState` is RNG-free. The witness
 //! tests below pin the stream position for each case (WRITTEN NOT RUN —
 //! code-only mode).
-#![allow(dead_code)] // wiring lands with the update_guide migration
+#![allow(dead_code)] // phase 2 drains the TownOutputs seams (W4-b3 wired phase 1)
 
 use crate::npc::{Npc, NpcKind};
 use crate::npc_target::TargetCandidate;
@@ -747,9 +756,9 @@ pub trait TownDoorOps {
 }
 
 /// The door latch the caller keeps on the NPC (the C#'s
-/// `closeDoor`/`doorX`/`doorY`, `NPC.cs:6511-6513`). The port's `Npc`
-/// has no such fields yet — the wiring adds them; until then the
-/// caller carries this beside the NPC.
+/// `closeDoor`/`doorX`/`doorY`, `NPC.cs:6511-6513`). W4-b3 registered
+/// the fields on `Npc` (`town_door_close/x/y`); the aiStyle-7 adapter
+/// copies them into this latch before the arm and back after.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TownDoorLatch {
     pub close_door: bool,
