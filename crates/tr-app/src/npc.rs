@@ -1086,6 +1086,135 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.AngryBones` (31) — the dungeon walker (`aiStyle 3`): 18x40,
+    /// dmg 26, def 8, 80 HP, kb 0.8, value 130, NPCHit2/NPCDeath2
+    /// (`NPC.cs:9108-9120`). The `num83` walk group (`NPC.cs:57606`).
+    AngryBones,
+    /// `NPCID.CursedSkull` (34) — the dungeon caster-skull (`aiStyle 10`):
+    /// 26x28, dmg 35, def 6, 40 HP, kb 0.2, value 150, npcSlots 0.75,
+    /// noGravity + noTileCollide, NPCHit2/NPCDeath2 (`NPC.cs:9150-9165`).
+    /// WIRED: the kind arm rides `npc_ai_style10::style10_ai`.
+    CursedSkull,
+    /// `NPCID.OldMan` (37) — the dungeon's town-flagged NPC (`aiStyle 7`):
+    /// 18x40, dmg 10, def 15, 250 HP, kb 0.5, townNPC + friendly,
+    /// NPCHit1/NPCDeath1 (`NPC.cs:9197-9210`). The town wander stand-in.
+    OldMan,
+    /// `NPCID.ManEater` (43) — the jungle's anchored biter (`aiStyle 13`):
+    /// 30x30, dmg 34, def 10, 110 HP, kb 0, value 350, noGravity +
+    /// noTileCollide, NPCHit1/NPCDeath1 (`NPC.cs:9293-9307`). The style-13
+    /// plant machine is UNWIRED (the wyvern precedent); the identity rows
+    /// and the FindFrame arm ship here.
+    ManEater,
+    /// `NPCID.Bunny` (46) — the surface critter (`aiStyle 7`): 18x20,
+    /// dmg 0, def 0, 5 HP, catchItem 2019, NPCHit1/NPCDeath1
+    /// (`NPC.cs:9336-9347`). The catchable arm spawns it friendly with the
+    /// 90-tick window (`bug_net::npc_catchable`).
+    Bunny,
+    /// `NPCID.BoneSerpentHead` (39) — the underworld worm head (`aiStyle 6`):
+    /// 22x22, dmg 36, def 12, 300 HP, kb 0, value 1200, npcSlots 6, netAlways,
+    /// noGravity + noTileCollide, behindTiles, NPCHit2/NPCDeath5
+    /// (`NPC.cs:9225-9242`). WIRED: the chain rides the world-sim worm pass
+    /// (`AI_006`, the Devourer precedent); the head's 9/0.1 dig tunables
+    /// (`NPC.cs:51764-51767`) and the 14..23 budget (`:51319-51321`).
+    BoneSerpentHead,
+    /// `NPCID.BoneSerpentBody` (40) — the Bone Serpent's mid link (`aiStyle 6`):
+    /// 22x22, dmg 20, def 18, 300 HP, kb 0, value 1200, netAlways, noGravity +
+    /// noTileCollide, behindTiles, dontCountMe, NPCHit2/NPCDeath5
+    /// (`NPC.cs:9243-9260`). Hide=true bestiary fold onto the head
+    /// (`NPCID.cs:1527-1532`).
+    BoneSerpentBody,
+    /// `NPCID.BoneSerpentTail` (41) — the Bone Serpent's tail (`aiStyle 6`):
+    /// 22x22, dmg 16, def 18, 300 HP, kb 0, value 1200, netAlways, noGravity +
+    /// noTileCollide, behindTiles, dontCountMe, NPCHit2/NPCDeath5
+    /// (`NPC.cs:9261-9278`). Hide=true bestiary fold onto the head
+    /// (`NPCID.cs:1533-1539`).
+    BoneSerpentTail,
+    /// `NPCID.CorruptBunny` (47) — the corruption's bunny fighter (`aiStyle 3`):
+    /// 18x20, dmg 20, def 4, 70 HP, value 500, NPCHit1/NPCDeath1
+    /// (`NPC.cs:9348-9359`). The `num83` walk group (`NPC.cs:57606`); the
+    /// FindFrame case-46 hop (`:76852`).
+    CorruptBunny,
+    /// `NPCID.Harpy` (48) — the sky flyer (`aiStyle 14`): 24x34, dmg 25, def 8,
+    /// 100 HP, kb 0.6, value 300, NPCHit1/NPCDeath1 (`NPC.cs:9360-9372`).
+    /// WIRED: the kind arm rides the faithful `npc_ai_style14::bat_ai`; the
+    /// feather shot (`:23416-23436`) is UNWIRED (the module's documented skip).
+    Harpy,
+    /// `NPCID.Snatcher` (56) — the jungle plant (`aiStyle 13`): 30x30, dmg 25,
+    /// def 10, 60 HP, kb 0, value 90, noGravity + noTileCollide,
+    /// NPCHit1/NPCDeath1 (`NPC.cs:9474-9488`). UNWIRED: the aiStyle-13 plant
+    /// machine needs the anchor tile + `FixExploitManEaters` (the ManEater
+    /// precedent — identity rows ship).
+    Snatcher,
+    /// `NPCID.CorruptGoldfish` (57) — the corruption's fish fighter
+    /// (`aiStyle 16`): 18x20, dmg 30, def 6, 100 HP, kb 1 (no row — the class
+    /// default `:8533`), value 500, noGravity, NPCHit1/NPCDeath1
+    /// (`NPC.cs:9489-9501`). WIRED: the kind arm rides the faithful
+    /// `npc_ai_style16::ai_016_step` (the Goldfish machine); the FindFrame
+    /// case-57 group (`:74182-74226`).
+    CorruptGoldfish,
+    /// `NPCID.Vulture` (61) — the desert flyer (`aiStyle 17`): 36x36, dmg 15,
+    /// def 4, 40 HP, kb 0.8, value 60, NPCHit28/NPCDeath31
+    /// (`NPC.cs:9554-9566`). WIRED: the faithful aiStyle-17 perch/flight
+    /// machine (`NPC.cs:24022-24152`); the FindFrame case-61 6-row flap
+    /// (`:73537-73557`).
+    Vulture,
+    /// `NPCID.Demon` (62) — the underworld flyer (`aiStyle 14`): 28x48,
+    /// dmg 32, def 8, 120 HP, kb 0.8, value 300, npcSlots 2, lavaImmune,
+    /// NPCHit21/NPCDeath24 (`NPC.cs:9567-9581`). WIRED: the kind arm rides
+    /// the faithful `npc_ai_style14::bat_ai` — the type-62 Demon Sickle shot
+    /// (`:23437-23457`) drains through `wants_hostile_shot`.
+    Demon,
+    /// `NPCID.BlueJellyfish` (63) — the cavern water floater (`aiStyle 18`):
+    /// 26x26, dmg 25, def 4, 34 HP, kb 1 (no row — the class default
+    /// `:8533`), value 100, noGravity, alpha 20, NPCHit25/NPCDeath28
+    /// (`NPC.cs:9582-9595`). WIRED: the faithful aiStyle-18 drift machine
+    /// (`NPC.cs:24153-24406`); the expert shock arm (`:24164-24203`) is
+    /// single-difficulty-off and the per-tick light (`:24209-24220`) is the
+    /// documented draw-side skip.
+    BlueJellyfish,
+    /// `NPCID.PinkJellyfish` (64) — the ocean water floater (`aiStyle 18`):
+    /// 26x26, dmg 30, def 6, 70 HP, kb 1 (no row — the class default
+    /// `:8533`), value 100, noGravity, alpha 20, NPCHit25/NPCDeath28
+    /// (`NPC.cs:9596-9609`). WIRED: the kind arm rides the same faithful
+    /// aiStyle-18 drift machine as the BlueJellyfish (the num266 0.2 /
+    /// num267 7.0 constants are shared for type 64); the FindFrame case-64
+    /// group rides the case-63 4-row pulse (`:73916-73960`).
+    PinkJellyfish,
+    /// `NPCID.Crab` (67) — the ocean shore walker (`aiStyle 3`): 28x20,
+    /// dmg 20, def 10, 40 HP, kb 1 (no row — the class default `:8533`),
+    /// value 60, NPCHit1/NPCDeath1 (`NPC.cs:9640-9651`). WIRED: the kind arm
+    /// rides the aiStyle-3 walker (`update_skeleton`) at the 67/220/428 slow
+    /// cap 0.5 (`NPC.cs:57881-57906`); the FindFrame case-67 6-tick wrap over
+    /// the 8-row strip (`:74571-74589`).
+    Crab,
+    /// `NPCID.DungeonGuardian` (68) — the dungeon's enraged head
+    /// (`aiStyle 11`): 80x102, dmg/def/life 9999, kb 0, no value,
+    /// noGravity + noTileCollide, NPCHit2/NPCDeath2 (`NPC.cs:9652-9665`).
+    /// WIRED: the kind arm rides `update_skeletron` — the type-68 term of
+    /// the enrage gate (`:21958`) keeps it ALWAYS in the invulnerable 8-px
+    /// rush state 2; the first-tick roar latch (`:21943`) already reads
+    /// cs_id 68. The sim's hand-spawn pass keys on SkeletronHead, so no
+    /// hands spawn (`:21928` excludes 68). ImmuneToAllBuffsThatAreNotWhips +
+    /// ImmuneToWhips (`NPCID.cs:6495-6501`) — the mask rides the documented
+    /// `&[]` gap, the whip tag rides `whip_immune`.
+    DungeonGuardian,
+    /// `NPCID.Antlion` (69) — the desert burrower (`aiStyle 19`): 24x24,
+    /// dmg 10, def 6, 45 HP, kb 0, value 60, behindTiles,
+    /// NPCHit31/NPCDeath34 (`NPC.cs:9666-9679`). UNWIRED: the aiStyle-19
+    /// machine (`NPC.cs:24407-24536`) needs the hive-tile probe (421/422),
+    /// the projectile-31 spit and the Main.rand dust tail (the wyvern
+    /// precedent — identity rows ship). The FindFrame case-69 walk cycle
+    /// (`:74291-74310`) is wired.
+    Antlion,
+    /// `NPCID.SpikeBall` (70) — the dungeon's bouncing trap (`aiStyle 20`):
+    /// 34x34, dmg 32, def 100, 100 HP, kb 0, no value, npcSlots 0.3,
+    /// noGravity + noTileCollide + dontTakeDamage, scale 1.5,
+    /// NPCHit1/NPCDeath1 (`NPC.cs:9680-9696`). UNWIRED: the aiStyle-20
+    /// bounce machine (`NPC.cs:24537-24614`) draws Main.rand.Next(15) for
+    /// the launch speed and needs the directionY bounce seam (the wyvern
+    /// precedent — identity rows ship). Hide=true (`NPCID.cs:1710-1716`)
+    /// but keeps its OWN bestiary entry (the BlazingWheel precedent).
+    SpikeBall,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2952,7 +3081,12 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
+                .unwrap_or(match kind {
+                    NpcKind::BlazingWheel => 1.2,
+                    // W4-d34: the Spike Ball's `scale = 1.5f` row (`NPC.cs:9695`).
+                    NpcKind::SpikeBall => 1.5,
+                    _ => 1.0,
+                }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -3033,6 +3167,9 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+                // W4-d34: the Spike Ball's `dontTakeDamage = true` row
+                // (`NPC.cs:9694`) — the trap is untouchable.
+                | NpcKind::SpikeBall
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3045,6 +3182,7 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
+                || kind == NpcKind::OldMan
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
                 // 90-tick window (S1-P-i36).
@@ -3129,6 +3267,9 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-d34: the BlueJellyfish's / PinkJellyfish's
+                            // `alpha = 20` rows (`NPC.cs:9594`/`:9608`).
+                            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 20,
                             _ => 0,
                         }
                     }),
@@ -3529,6 +3670,26 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults knockBackResist; 46 the
+            // class default 1f `:8533`).
+            NpcKind::AngryBones => 0.8,   // :9118
+            NpcKind::CursedSkull => 0.2,  // :9163
+            NpcKind::OldMan => 0.5,       // :9209
+            NpcKind::ManEater => 0.0,     // :9304
+            NpcKind::Bunny => 1.0,
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 0.0, // :9239/:9256/:9274
+            NpcKind::CorruptBunny => 1.0,     // no row — the class default 1f (`:8533`)
+            NpcKind::Harpy => 0.6,            // :9369
+            NpcKind::Snatcher => 0.0,         // :9485
+            NpcKind::CorruptGoldfish => 1.0,  // no row — the class default 1f (`:8533`)
+            NpcKind::Vulture => 0.8,          // :9562
+            NpcKind::Demon => 0.8,            // :9577
+            NpcKind::BlueJellyfish => 1.0,    // no row — the class default 1f (`:8533`)
+            NpcKind::PinkJellyfish => 1.0,    // no row — the class default 1f (`:8533`)
+            NpcKind::Crab => 1.0,             // no row — the class default 1f (`:8533`)
+            NpcKind::DungeonGuardian => 0.0,  // :9664
+            NpcKind::Antlion => 0.0,          // :9676
+            NpcKind::SpikeBall => 0.0,        // :9691
             _ => 0.4,
         }
     }
@@ -3909,6 +4070,26 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults defense).
+            NpcKind::AngryBones => 8,   // :9114
+            NpcKind::CursedSkull => 6,  // :9156
+            NpcKind::OldMan => 15,      // :9205
+            NpcKind::ManEater => 10,    // :9301
+            NpcKind::Bunny => 0,        // :9342
+            NpcKind::BoneSerpentHead => 12,   // :9233
+            NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 18, // :9250/:9268
+            NpcKind::CorruptBunny => 4,       // :9354
+            NpcKind::Harpy => 8,              // :9366
+            NpcKind::Snatcher => 10,          // :9482
+            NpcKind::CorruptGoldfish => 6,    // :9496
+            NpcKind::Vulture => 4,            // :9560
+            NpcKind::Demon => 8,              // :9574
+            NpcKind::BlueJellyfish => 4,      // :9589
+            NpcKind::PinkJellyfish => 6,      // :9603
+            NpcKind::Crab => 10,              // :9646
+            NpcKind::DungeonGuardian => 9999, // :9658
+            NpcKind::Antlion => 6,            // :9672
+            NpcKind::SpikeBall => 100,        // :9687
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4462,25 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults value; 37/46 write none).
+            NpcKind::AngryBones => 130.0,  // :9119
+            NpcKind::CursedSkull => 150.0, // :9162
+            NpcKind::OldMan => 0.0,
+            NpcKind::ManEater => 350.0,    // :9306
+            NpcKind::Bunny => 0.0,
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 1200.0, // :9241/:9258/:9276
+            NpcKind::CorruptBunny => 500.0,   // :9358
+            NpcKind::Harpy => 300.0,          // :9371
+            NpcKind::Snatcher => 90.0,        // :9487
+            NpcKind::CorruptGoldfish => 500.0, // :9500
+            NpcKind::Vulture => 60.0,         // :9565
+            NpcKind::Demon => 300.0,          // :9579
+            NpcKind::BlueJellyfish => 100.0,  // :9593
+            NpcKind::PinkJellyfish => 100.0,  // :9607
+            NpcKind::Crab => 60.0,            // :9650
+            NpcKind::DungeonGuardian => 0.0,  // no value row (`:9652-9665`)
+            NpcKind::Antlion => 60.0,         // :9677
+            NpcKind::SpikeBall => 0.0,        // no value row (`:9680-9696`)
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4311,14 +4511,16 @@ impl Npc {
     /// `Hurt(dodgeable: ..)` value (`Player.cs:31423`). The Skeletron heads
     /// are dodgeable only outside their `ai[1] == 2f` state (`case 35`
     /// `NPCID.SkeletronHead`, `case 127` `NPCID.SkeletronPrime`; the Dungeon
-    /// Guardian, `case 68`, rides the same arm but has no port kind yet).
+    /// Guardian, `case 68`, rides the same arm — W4-d34 ported it).
     /// Both machines maintain `ai[1]` (`update_prime`/`update_skeletron`);
     /// everything else defaults true; the Empress of Light's
     /// `case 636` arm (`!ShouldEmpressBeEnraged()`) is out with its unported
     /// kind (docs/ANALYSIS.md, "The dodge family").
     pub fn is_damage_dodgeable(&self) -> bool {
         match self.kind {
-            NpcKind::SkeletronHead | NpcKind::SkeletronPrime => self.ai[1] != 2.0,
+            NpcKind::SkeletronHead | NpcKind::SkeletronPrime | NpcKind::DungeonGuardian => {
+                self.ai[1] != 2.0
+            }
             _ => true,
         }
     }
@@ -6287,6 +6489,47 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // W4-d34 kinds 1-70: the aiStyle-3 walker (Angry Bones) rides the
+            // skeleton family; the aiStyle-7 town/critter wander (Old Man,
+            // Bunny) rides the guide stand-in; the Cursed Skull rides the
+            // faithful aiStyle-10 machine; the ManEater's aiStyle-13 plant
+            // machine is UNWIRED (the wyvern precedent — identity rows ship).
+            NpcKind::AngryBones => self.update_skeleton(world, player, dt),
+            NpcKind::OldMan | NpcKind::Bunny => self.update_guide(world, dt),
+            NpcKind::CursedSkull => self.update_cursed_skull(world, player, rng),
+            NpcKind::ManEater => {}
+            // W4-d34: the Bone Serpent chain rides the world-sim worm pass
+            // (the Devourer precedent — the per-NPC step is a no-op); the
+            // CorruptBunny rides the aiStyle-3 walker; the Harpy rides the
+            // faithful aiStyle-14 bat machine.
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => {}
+            NpcKind::CorruptBunny => self.update_skeleton(world, player, dt),
+            NpcKind::Harpy => self.update_cave_bat(world, player, rng),
+            // W4-d34 (phase 3): the Snatcher's aiStyle-13 plant machine is
+            // UNWIRED (the ManEater precedent — the anchor tile +
+            // FixExploitManEaters need the world-edit seam); the
+            // CorruptGoldfish rides the faithful aiStyle-16 fish machine;
+            // the Vulture the faithful aiStyle-17 perch/flight machine; the
+            // Demon the aiStyle-14 bat machine (the sickle shot drains);
+            // the BlueJellyfish the faithful aiStyle-18 drift machine.
+            NpcKind::Snatcher => {}
+            NpcKind::CorruptGoldfish => self.update_swimmer(world, player, rng),
+            NpcKind::Vulture => self.update_vulture(world, player),
+            NpcKind::Demon => self.update_cave_bat(world, player, rng),
+            NpcKind::BlueJellyfish => self.update_jellyfish(world, player),
+            // W4-d34 (phase 4): the PinkJellyfish rides the same faithful
+            // aiStyle-18 drift machine; the Crab the aiStyle-3 walker (the
+            // 0.5 slow cap); the Dungeon Guardian the aiStyle-11 Skeletron
+            // machine (always enraged state 2); the Antlion's aiStyle-19
+            // burrower and the Spike Ball's aiStyle-20 bounce are UNWIRED
+            // (the wyvern precedent — the hive-tile/projectile/dust and the
+            // Main.rand launch seams; identity rows ship).
+            NpcKind::PinkJellyfish => self.update_jellyfish(world, player),
+            NpcKind::Crab => self.update_skeleton(world, player, dt),
+            NpcKind::DungeonGuardian => self.update_skeletron(world, player, rng, false),
+            NpcKind::Antlion => {}
+            NpcKind::SpikeBall => {}
+
         }
     }
 
@@ -6649,6 +6892,192 @@ impl Npc {
                 if self.frame >= 3 {
                     self.frame = 0;
                 }
+            }
+            // W4-d34: the Angry Bones / Old Man ride the humanoid-group walk
+            // (`NPC.cs:68552-68553`); the Cursed Skull's case 34 (`:77055-77066`)
+            // steps one row every 4 ticks over its 3-row strip; the ManEater's
+            // case 43 (`:74970-74994`) is the 3-row bite cycle; the Bunny's
+            // case 46 (`:76851-76904`) is the 7-row hop.
+            NpcKind::AngryBones | NpcKind::OldMan => {
+                self.humanoid_town_frame();
+            }
+            NpcKind::CursedSkull => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= crate::render::entities::npc_rows(34) {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::ManEater => {
+                self.frame_counter += 1.0;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 1;
+                }
+                if self.frame_counter == 23.0 {
+                    self.frame_counter = 0.0;
+                }
+            }
+            NpcKind::Bunny => {
+                self.bunny_frame();
+            }
+            // W4-d34: the Bone Serpent segments are single-frame
+            // (`Main.npcFrameCount` 39..41 = 1, no FindFrame case — the worm
+            // precedent); the CorruptBunny rides the case-46 hop (`:76852`);
+            // the Harpy the case-48 bat group (`:74823`, the 5-tick cadence).
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => {}
+            NpcKind::CorruptBunny => {
+                self.bunny_frame();
+            }
+            NpcKind::Harpy => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= crate::render::entities::npc_rows(48) {
+                    self.frame = 0;
+                }
+            }
+            // W4-d34 (phase 3): the Snatcher rides the case-43/56 bite cycle
+            // (`NPC.cs:74970-74994`, the shared 3-row strip); the
+            // CorruptGoldfish the case-57 group's wet flap / dry flop
+            // (`:74182-74226`); the Vulture the case-61 6-row flap
+            // (`:73537-73557`); the Demon the case-62/66 5-row flap
+            // (`:73887-73902`); the BlueJellyfish the case-63 4-row pulse
+            // (`:73916-73960` — the expert shock rows 4..6 never arm in
+            // classic).
+            NpcKind::Snatcher => {
+                self.frame_counter += 1.0;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 1;
+                }
+                if self.frame_counter == 23.0 {
+                    self.frame_counter = 0.0;
+                }
+            }
+            NpcKind::CorruptGoldfish => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                if self.wet {
+                    if self.frame_counter < 6.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 18.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 3;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                } else if self.frame_counter < 6.0 {
+                    self.frame = 4;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 5;
+                } else {
+                    self.frame_counter = 0.0;
+                }
+            }
+            NpcKind::Vulture => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 25.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame = (self.frame_counter / 5.0) as u32 + 1;
+                }
+            }
+            NpcKind::Demon => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 25.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = (self.frame_counter / 5.0) as u32;
+            }
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => {
+                self.frame_counter += 1.0;
+                if self.frame_counter < 6.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 18.0 {
+                    self.frame = 2;
+                } else {
+                    self.frame = 3;
+                    if self.frame_counter >= 23.0 {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+
+            // W4-d34 (phase 4): the Crab rides the case-67 6-tick wrap over
+            // the 8-row strip (`NPC.cs:74571-74589`); the Antlion the case-69
+            // walk cycle (`:74291-74310`, the ai[0] < 190 gate); the Dungeon
+            // Guardian (68) and Spike Ball (70) have NO FindFrame case
+            // (`Main.npcFrameCount` 68/70 = 1) — the single frame never
+            // advances (the ForceBubble precedent).
+            NpcKind::Crab => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= crate::render::entities::npc_rows(67) {
+                        self.frame = 0;
+                    }
+                }
+            }
+            NpcKind::Antlion => {
+                if self.ai[0] < 190.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= crate::render::entities::npc_rows(69) - 1 {
+                            self.frame = 0;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = crate::render::entities::npc_rows(69) - 1;
+                }
+            }
+            NpcKind::DungeonGuardian => {
+                self.frame = 0;
+            }
+            NpcKind::SpikeBall => {
+                self.frame = 0;
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -9335,6 +9764,340 @@ impl Npc {
         }
     }
 
+    /// W4-d34 — the Cursed Skull (34) through the faithful aiStyle-10
+    /// machine (`npc_ai_style10::style10_ai`, `NPC.cs:21572-21918`). The
+    /// step owns the whole C# state machine and ends with the noTileCollide
+    /// integration (`NPC.cs:92538-92540` + `:92605-92607`); the type-34 path
+    /// writes no knockBackResist / sound / spawn (the 289/694 tails only),
+    /// so the returned `Style10Out` is inert here. `justHit` rides the
+    /// strike flag; `netMode` folds 0 (single-player).
+    fn update_cursed_skull(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let _ = crate::npc_ai_style10::style10_ai(
+            self,
+            world,
+            player,
+            crate::npc_ai_style10::CURSED_SKULL,
+            self.just_hit,
+            0,
+            rng,
+        );
+    }
+
+    /// W4-d34 — `FindFrame`'s `case 46` bunny hop (`NPC.cs:76851-76904`):
+    /// grounded the sprite faces `direction`, the idle pins row 0, the walk
+    /// accumulator `|vx| + 1` steps one row every >6 over the 7-row strip
+    /// (`Main.npcFrameCount[46] = 7`); airborne row 4 rising / row 6 falling.
+    fn bunny_frame(&mut self) {
+        let rows = crate::render::entities::npc_rows(self.kind.cs_id());
+        if self.vy == 0.0 {
+            if self.facing == 1 {
+                self.sprite_dir = 1;
+            }
+            if self.facing == -1 {
+                self.sprite_dir = -1;
+            }
+            if self.vx == 0.0 {
+                self.frame = 0;
+                self.frame_counter = 0.0;
+            } else {
+                self.frame_counter += self.vx.abs();
+                self.frame_counter += 1.0;
+                if self.frame_counter > 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= rows {
+                    self.frame = 0;
+                }
+            }
+        } else if self.vy < 0.0 {
+            self.frame_counter = 0.0;
+            self.frame = 4;
+        } else {
+            self.frame_counter = 0.0;
+            self.frame = 6;
+        }
+    }
+
+    /// W4-d34 — the Vulture (61) through the faithful aiStyle-17 machine
+    /// (`NPC.AI`'s `if (this.aiStyle == 17)` block, `NPC.cs:24022-24152`):
+    /// the perched state (`ai[0] == 0`) waits for the player's approach
+    /// (the ±100 box or any damage) or motion, then takes off; the flight
+    /// state bounces off the collide latches, chases at the 0.1 accel /
+    /// 3 cap with the 50-px hover band, and the wet tail floats. The
+    /// `noGravity` head write (`:24024`) rides `kind.no_gravity()`; the
+    /// perched tick's `noGravity = false` (`:24027`) is the gravity seam —
+    /// the port's flyer integration is the no-gravity stand-in
+    /// (`integrate_flyer_collision`), so the perched tick integrates the
+    /// same way (the documented granularity, the bat/fish reconcile).
+    /// RNG: the arm draws NOTHING (`TargetClosest` is deterministic).
+    fn update_vulture(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        // `:24025-24047` — the perched state.
+        if self.ai[0] == 0.0 {
+            crate::npc_target::target_closest(self, world, &players, true, 17, 0);
+            // `:24029-24045` — the `Main.netMode != 1` gate folds true (the
+            // port is single-player).
+            if self.vx != 0.0 || self.vy < 0.0 || self.vy > 0.3 {
+                self.ai[0] = 1.0;
+                self.net_update = true;
+            } else {
+                // `:24038-24044` — the ±100 approach box or any damage.
+                let near = self.x - 100.0 < player.x + crate::player::WIDTH
+                    && self.x + w + 100.0 > player.x
+                    && self.y - 100.0 < player.y + crate::player::HEIGHT
+                    && self.y + h + 100.0 > player.y;
+                if near || self.hp < self.max_hp {
+                    self.ai[0] = 1.0;
+                    self.vy -= 6.0;
+                    self.net_update = true;
+                }
+            }
+        } else if !player.dead {
+            // `:24048-24137` — the flight state.
+            // `:24050-24061` — the collideX bounce.
+            if self.collide_x {
+                self.vx = self.old_vx * -0.5;
+                if self.facing == -1 && self.vx > 0.0 && self.vx < 2.0 {
+                    self.vx = 2.0;
+                }
+                if self.facing == 1 && self.vx < 0.0 && self.vx > -2.0 {
+                    self.vx = -2.0;
+                }
+            }
+            // `:24062-24073` — the collideY bounce.
+            if self.collide_y {
+                self.vy = self.old_vy * -0.5;
+                if self.vy > 0.0 && self.vy < 1.0 {
+                    self.vy = 1.0;
+                }
+                if self.vy < 0.0 && self.vy > -1.0 {
+                    self.vy = -1.0;
+                }
+            }
+            crate::npc_target::target_closest(self, world, &players, true, 17, 0);
+            // `:24075-24106` — the X chase (the 0.1 accel, the 0.05/0.1
+            // counter-drift arms, the ±3 cap).
+            if self.facing == -1 && self.vx > -3.0 {
+                self.vx -= 0.1;
+                if self.vx > 3.0 {
+                    self.vx -= 0.1;
+                } else if self.vx > 0.0 {
+                    self.vx -= 0.05;
+                }
+                if self.vx < -3.0 {
+                    self.vx = -3.0;
+                }
+            } else if self.facing == 1 && self.vx < 3.0 {
+                self.vx += 0.1;
+                if self.vx < -3.0 {
+                    self.vx += 0.1;
+                } else if self.vx < 0.0 {
+                    self.vx += 0.05;
+                }
+                if self.vx > 3.0 {
+                    self.vx = 3.0;
+                }
+            }
+            // `:24107-24136` — the Y hover: the 50-px band lifts the aim
+            // 100 px; the 0.05 accel with the 0.01 counter-drift; the ±3 cap.
+            let num261 = (self.x + w * 0.5 - (player.x + crate::player::WIDTH * 0.5)).abs();
+            let mut num262 = player.y - h * 0.5;
+            if num261 > 50.0 {
+                num262 -= 100.0;
+            }
+            if self.y < num262 {
+                self.vy += 0.05;
+                if self.vy < 0.0 {
+                    self.vy += 0.01;
+                }
+            } else {
+                self.vy -= 0.05;
+                if self.vy > 0.0 {
+                    self.vy -= 0.01;
+                }
+            }
+            if self.vy < -3.0 {
+                self.vy = -3.0;
+            }
+            if self.vy > 3.0 {
+                self.vy = 3.0;
+            }
+        }
+        // `:24138-24150` — the wet tail (runs in BOTH states).
+        if self.wet {
+            if self.vy > 0.0 {
+                self.vy *= 0.95;
+            }
+            self.vy -= 0.5;
+            if self.vy < -4.0 {
+                self.vy = -4.0;
+            }
+            crate::npc_target::target_closest(self, world, &players, true, 17, 0);
+        }
+        self.integrate_flyer_collision(world);
+    }
+
+    /// W4-d34 — the BlueJellyfish (63) / PinkJellyfish (64) through the faithful aiStyle-18
+    /// machine (`NPC.AI`'s `if (this.aiStyle == 18)` block,
+    /// `NPC.cs:24153-24406`): the wet drift (the slope flips, the collide
+    /// bounces, the chase's 0.98 damp + the 7-px lunge when the velocity
+    /// stalls inside ±0.2, the idle 0.02 X drift / ±0.01 Y bob with the
+    /// liquid-line probe) and the dry fall (the 0.2 gravity / 10 cap).
+    /// The expert shock arm (`:24164-24203`, `Main.expertMode`) is
+    /// single-difficulty-off (the port is classic — the `ai[1]` shock latch
+    /// never arms, so `flag26` stays false and the `dontTakeDamage` reset
+    /// (`:24162`) runs every tick); the per-tick `Lighting.AddLight`
+    /// (`:24209-24220`) is the documented draw-side skip (the entity-lights
+    /// feed lands with its wave). RNG: the arm draws NOTHING.
+    fn update_jellyfish(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let players = [cand];
+        // `:24155-24163` — flag26: the expert shock latch never arms in
+        // classic, so the else-branch's `dontTakeDamage = false` stands.
+        self.dont_take_damage = false;
+        // `:24221-24224` — `if (base.direction == 0) this.TargetClosest();`.
+        if self.facing == 0 {
+            crate::npc_target::target_closest(self, world, &players, true, 18, 0);
+        }
+        if self.wet {
+            // `:24231-24258` — the slope flips at the feet (the integer
+            // divisions of the truncated pixel coordinates).
+            let num264 = (self.x + w * 0.5) as i32 / 16;
+            let num265 = (self.y + h) as i32 / 16;
+            let foot = world
+                .tile(num264, num265)
+                .filter(|t| matches!(t.slope(), 1 | 2))
+                .or_else(|| {
+                    world
+                        .tile(num264, num265 + 1)
+                        .filter(|t| matches!(t.slope(), 1 | 2))
+                });
+            if let Some(t) = foot {
+                if matches!(t.slope(), 2 | 4) {
+                    self.facing = -1;
+                    self.vx = self.vx.abs() * -1.0;
+                } else {
+                    self.facing = 1;
+                    self.vx = self.vx.abs();
+                }
+            }
+            // `:24259-24278` — the collide bounces.
+            if self.collide_x {
+                self.vx *= -1.0;
+                self.facing *= -1;
+            }
+            if self.collide_y {
+                if self.vy > 0.0 {
+                    self.vy = self.vy.abs() * -1.0;
+                    self.direction_y = -1;
+                    self.ai[0] = -1.0;
+                } else if self.vy < 0.0 {
+                    self.vy = self.vy.abs();
+                    self.direction_y = 1;
+                    self.ai[0] = 1.0;
+                }
+            }
+            // `:24279-24287` — flag27: the player-wet + alive + CanHit gate
+            // (the `!friendly` fold — the jellyfish is hostile).
+            let mut flag27 = false;
+            crate::npc_target::target_closest(self, world, &players, false, 18, 0);
+            if player.wet
+                && !player.dead
+                && crate::projectile::can_hit(
+                    world, self.x, self.y, w, h, player.x, player.y,
+                    crate::player::WIDTH, crate::player::HEIGHT,
+                )
+            {
+                flag27 = true;
+            }
+            if flag27 {
+                // `:24288-24330` — the chase.
+                self.local_ai[2] = 1.0;
+                self.rotation = self.vy.atan2(self.vx) + 1.57;
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                // `:24293` — num266 = 0.2 (the type-63/64 row; the 103/221/242
+                // overrides are unported kinds).
+                let num266 = 0.2;
+                if self.vx > -num266 && self.vx < num266 && self.vy > -num266 && self.vy < num266 {
+                    crate::npc_target::target_closest(self, world, &players, true, 18, 0);
+                    // `:24316-24328` — the 7-px lunge at the player's centre.
+                    let num267 = 7.0;
+                    let cx = self.x + w * 0.5;
+                    let cy = self.y + h * 0.5;
+                    let mut dx = player.x + crate::player::WIDTH * 0.5 - cx;
+                    let mut dy = player.y + crate::player::HEIGHT * 0.5 - cy;
+                    let num270 = num267 / (dx * dx + dy * dy).sqrt();
+                    dx *= num270;
+                    dy *= num270;
+                    self.vx = dx;
+                    self.vy = dy;
+                }
+                self.integrate_flyer_collision(world);
+                return;
+            }
+            // `:24332-24387` — the idle drift.
+            self.local_ai[2] = 0.0;
+            self.vx += self.facing as f32 * 0.02;
+            self.rotation = self.vx * 0.4;
+            if self.vx < -1.0 || self.vx > 1.0 {
+                self.vx *= 0.95;
+            }
+            if self.ai[0] == -1.0 {
+                self.vy -= 0.01;
+                if self.vy < -1.0 {
+                    self.ai[0] = 1.0;
+                }
+            } else {
+                self.vy += 0.01;
+                if self.vy > 1.0 {
+                    self.ai[0] = -1.0;
+                }
+            }
+            // `:24355-24383` — the liquid-line probe: water above + a solid
+            // tile 1-2 below flips the bob up; no water above pins it down.
+            let num271 = (self.x + w * 0.5) as i32 / 16;
+            let num272 = (self.y + h * 0.5) as i32 / 16;
+            let liquid_above = world
+                .tile(num271, num272 - 1)
+                .is_some_and(|t| t.liquid > 128);
+            if liquid_above {
+                if world.tile(num271, num272 + 1).is_some_and(|t| t.active())
+                    || world.tile(num271, num272 + 2).is_some_and(|t| t.active())
+                {
+                    self.ai[0] = -1.0;
+                }
+            } else {
+                self.ai[0] = 1.0;
+            }
+            if self.vy > 1.2 || self.vy < -1.2 {
+                self.vy *= 0.99;
+            }
+            self.integrate_flyer_collision(world);
+            return;
+        }
+        // `:24390-24404` — the dry fall.
+        self.rotation += self.vx * 0.1;
+        if self.vy == 0.0 {
+            self.vx *= 0.98;
+            if self.vx > -0.01 && self.vx < 0.01 {
+                self.vx = 0.0;
+            }
+        }
+        self.vy += 0.2;
+        if self.vy > 10.0 {
+            self.vy = 10.0;
+        }
+        self.ai[0] = 1.0;
+        self.integrate_flyer_collision(world);
+    }
+
     /// Simplified `AI_015_KingSlime`: big hops toward the player, a teleport when the
     /// player escapes, and a burst of blue slimes when it lands. Minion spawning is
     /// reported through `spawn_minion` so the app can add them to its NPC list.
@@ -10046,7 +10809,7 @@ impl Npc {
     /// one-tile obstacles. The chase/doors/talk arms land with their
     /// systems.
     fn update_guide(&mut self, world: &World, _dt: f32) {
-        let (w, h) = NpcKind::Guide.size();
+        let (w, h) = self.kind.size();
         // The wander: a walking pace with the random turn every few
         // seconds (`ai[3]`'s idle timer shape).
         self.anim += 1.0;
@@ -10259,7 +11022,7 @@ impl Npc {
                 if self.ai[2] == 8.0 {
                     let sx = self.x + w * 0.5 - (self.facing * 12) as f32;
                     let sy = self.y + h * 0.25;
-                    let ax = player.x + crate::player::WIDTH as f32 / 2.0 - sx;
+                    let ax = player.x + crate::player::WIDTH / 2.0 - sx;
                     let ay = player.y - sy;
                     let len = (ax * ax + ay * ay).sqrt();
                     let inv = if len > 0.0 { 10.0 / len } else { 0.0 };
@@ -10887,8 +11650,10 @@ impl Npc {
                 self.ai[1] = 3.0;
             }
         }
-        // `:21958-21962` — the daytime → the enraged state.
-        if world.day_time && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
+        // `:21958-21962` — the daytime → the enraged state. W4-d34: the
+        // Dungeon Guardian (68) is ALWAYS enraged (`this.type == 68 ||
+        // Main.IsItDay()`), so the type term joins the gate.
+        if (self.kind.cs_id() == 68 || world.day_time) && self.ai[1] != 3.0 && self.ai[1] != 2.0 {
             self.ai[1] = 2.0;
         }
         // S1-E-21g — `NPC.cs:21943-21947`: the Dungeon Guardian's (68)
@@ -18221,6 +18986,8 @@ impl Npc {
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
+                    // W4-d34: the Old Man is friendly — never contact-damages.
+                    | NpcKind::OldMan
             ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -18601,6 +19368,28 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d34 kinds 1-70: the port-local protocol band (injective; the
+            // vanilla 31/34/37/43/46 collide with the port's own ids above).
+            NpcKind::AngryBones => 266,
+            NpcKind::CursedSkull => 267,
+            NpcKind::OldMan => 268,
+            NpcKind::ManEater => 269,
+            NpcKind::Bunny => 270,
+            NpcKind::BoneSerpentHead => 271,
+            NpcKind::BoneSerpentBody => 272,
+            NpcKind::BoneSerpentTail => 273,
+            NpcKind::CorruptBunny => 274,
+            NpcKind::Harpy => 275,
+            NpcKind::Snatcher => 276,
+            NpcKind::CorruptGoldfish => 277,
+            NpcKind::Vulture => 278,
+            NpcKind::Demon => 279,
+            NpcKind::BlueJellyfish => 280,
+            NpcKind::PinkJellyfish => 281,
+            NpcKind::Crab => 282,
+            NpcKind::DungeonGuardian => 283,
+            NpcKind::Antlion => 284,
+            NpcKind::SpikeBall => 285,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +24458,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 290] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,7 +24737,33 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d34 kinds 1-70 coverage wave (phase 1).
+        NpcKind::AngryBones,
+        NpcKind::CursedSkull,
+        NpcKind::OldMan,
+        NpcKind::ManEater,
+        NpcKind::Bunny,
+        // W4-d34 kinds 1-70 coverage wave (phase 2).
+        NpcKind::BoneSerpentHead,
+        NpcKind::BoneSerpentBody,
+        NpcKind::BoneSerpentTail,
+        NpcKind::CorruptBunny,
+        NpcKind::Harpy,
+        // W4-d34 kinds 1-70 coverage wave (phase 3).
+        NpcKind::Snatcher,
+        NpcKind::CorruptGoldfish,
+        NpcKind::Vulture,
+        NpcKind::Demon,
+        NpcKind::BlueJellyfish,
+        // W4-d34 kinds 1-70 coverage wave (phase 4).
+        NpcKind::PinkJellyfish,
+        NpcKind::Crab,
+        NpcKind::DungeonGuardian,
+        NpcKind::Antlion,
+        NpcKind::SpikeBall,
     ];
+
+
 
     #[test]
     fn the_protocol_id_space_round_trips_every_kind() {
@@ -23994,6 +24809,288 @@ mod tests {
             ALL_KINDS.len(),
             "from_u16 decodes an id no kind encodes to"
         );
+    }
+
+    /// W4-d34 kinds 1-70 coverage wave (phase 1) — the five kinds'
+    /// `SetDefaults` rows pin against the C# (`NPC.cs:9108-9120` AngryBones,
+    /// `:9150-9165` CursedSkull, `:9197-9210` OldMan, `:9293-9307` ManEater,
+    /// `:9336-9347` Bunny), through the port's tables — the small-kinds pin's
+    /// shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d34_phase1_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::AngryBones, 31u16, 3u8, 18.0, 40.0, 26, 8, 80, 0.8f32, 130.0f32),
+            (NpcKind::CursedSkull, 34, 10, 26.0, 28.0, 35, 6, 40, 0.2, 150.0),
+            (NpcKind::OldMan, 37, 7, 18.0, 40.0, 10, 15, 250, 0.5, 0.0),
+            (NpcKind::ManEater, 43, 13, 30.0, 30.0, 34, 10, 110, 0.0, 350.0),
+            (NpcKind::Bunny, 46, 7, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The protocol ids ride the port-local 266..270 band (NOT the vanilla
+        // types — the S1-F-1 separation); the render hash is injective there.
+        assert_eq!(NpcKind::AngryBones.to_u16(), 266);
+        assert_eq!(NpcKind::CursedSkull.to_u16(), 267);
+        assert_eq!(NpcKind::OldMan.to_u16(), 268);
+        assert_eq!(NpcKind::ManEater.to_u16(), 269);
+        assert_eq!(NpcKind::Bunny.to_u16(), 270);
+        // The Cursed Skull's noGravity row (`NPC.cs:9160`); the ManEater writes
+        // noGravity but kb 0, so the strike-time selector keeps it out.
+        assert!(NpcKind::CursedSkull.no_gravity());
+        assert!(!NpcKind::ManEater.no_gravity());
+        // The Old Man is town-flagged + friendly (`NPC.cs:9199-9200`); the
+        // Bunny is catchable-friendly via `bug_net::npc_catchable` (46).
+        assert!(NpcKind::OldMan.is_town_npc_like());
+        assert!(NpcKind::OldMan.is_friendly());
+        let bunny = Npc::new(NpcKind::Bunny, 0.0, 0.0, 1, 0.0);
+        assert!(bunny.friendly, "the catchable bunny spawns friendly");
+        assert_eq!(bunny.catchable_immunity, 90, "the 90-tick catch window");
+        // The hit/death cues (`NPC.cs` SetDefaults HitSound/DeathSound).
+        assert_eq!(NpcKind::AngryBones.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::AngryBones.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::Bunny.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Bunny.death_sound(), Some("NPC_Killed_1"));
+    }
+
+    /// W4-d34 kinds 1-70 coverage wave (phase 2) — the Bone Serpent trio +
+    /// CorruptBunny + Harpy `SetDefaults` rows pin against the C#
+    /// (`NPC.cs:9225-9278` BoneSerpent, `:9348-9359` CorruptBunny,
+    /// `:9360-9372` Harpy). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d34_phase2_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BoneSerpentHead, 39u16, 6u8, 22.0, 22.0, 36, 12, 300, 0.0f32, 1200.0f32),
+            (NpcKind::BoneSerpentBody, 40, 6, 22.0, 22.0, 20, 18, 300, 0.0, 1200.0),
+            (NpcKind::BoneSerpentTail, 41, 6, 22.0, 22.0, 16, 18, 300, 0.0, 1200.0),
+            (NpcKind::CorruptBunny, 47, 3, 18.0, 20.0, 20, 4, 70, 1.0, 500.0),
+            (NpcKind::Harpy, 48, 14, 24.0, 34.0, 25, 8, 100, 0.6, 300.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The head keeps its vanilla cs_id 39; the body/tail fold onto the
+        // head's bestiary net id (the s1_f_3 cs_id==net_id invariant).
+        assert_eq!(NpcKind::BoneSerpentHead.cs_id(), 39);
+        assert_eq!(NpcKind::BoneSerpentHead.net_id(), 39);
+        assert_eq!(NpcKind::BoneSerpentBody.net_id(), 39);
+        assert_eq!(NpcKind::BoneSerpentTail.net_id(), 39);
+        assert_eq!(NpcKind::CorruptBunny.cs_id(), 47);
+        assert_eq!(NpcKind::Harpy.cs_id(), 48);
+        // The protocol ids ride the port-local 271..275 band.
+        assert_eq!(NpcKind::BoneSerpentHead.to_u16(), 271);
+        assert_eq!(NpcKind::BoneSerpentBody.to_u16(), 272);
+        assert_eq!(NpcKind::BoneSerpentTail.to_u16(), 273);
+        assert_eq!(NpcKind::CorruptBunny.to_u16(), 274);
+        assert_eq!(NpcKind::Harpy.to_u16(), 275);
+        // The worm-family wiring: the chain roles + the head's dig tunables.
+        assert!(NpcKind::BoneSerpentHead.is_worm());
+        assert!(NpcKind::BoneSerpentHead.is_worm_head());
+        assert!(NpcKind::BoneSerpentBody.is_worm_mid());
+        assert!(!NpcKind::BoneSerpentTail.is_worm_head());
+        assert!(NpcKind::BoneSerpentHead.shares_carrier_life());
+        assert_eq!(NpcKind::BoneSerpentHead.worm_next(), NpcKind::BoneSerpentBody);
+        assert_eq!(NpcKind::BoneSerpentBody.worm_next(), NpcKind::BoneSerpentTail);
+        assert_eq!(NpcKind::BoneSerpentTail.worm_next(), NpcKind::BoneSerpentTail);
+        assert_eq!(NpcKind::BoneSerpentHead.worm_tunables(), (9.0, 0.1));
+        assert!(NpcKind::BoneSerpentHead.behind_tiles());
+        // The Harpy's noGravity (the aiStyle-14 head write); the Bone Serpent
+        // writes noGravity but kb 0, so the strike-time selector keeps it out.
+        assert!(NpcKind::Harpy.no_gravity());
+        assert!(!NpcKind::BoneSerpentHead.no_gravity());
+        // The bestiary fold: the body/tail credit the head's entry.
+        let head = crate::bestiary::entry_for_npc(NpcKind::BoneSerpentHead, SlimeVariant::Blue);
+        assert_eq!(head.credit_id, "BoneSerpentHead");
+        let body = crate::bestiary::entry_for_npc(NpcKind::BoneSerpentBody, SlimeVariant::Blue);
+        assert_eq!(body.credit_id, "BoneSerpentHead");
+        // The hit/death cues.
+        assert_eq!(NpcKind::BoneSerpentHead.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::BoneSerpentHead.death_sound(), Some("NPC_Killed_5"));
+        assert_eq!(NpcKind::Harpy.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CorruptBunny.death_sound(), Some("NPC_Killed_1"));
+    }
+
+    /// W4-d34 kinds 1-70 coverage wave (phase 3) — the Snatcher +
+    /// CorruptGoldfish + Vulture + Demon + BlueJellyfish `SetDefaults` rows
+    /// pin against the C# (`NPC.cs:9474-9488` Snatcher, `:9489-9501`
+    /// CorruptGoldfish, `:9554-9566` Vulture, `:9567-9581` Demon,
+    /// `:9582-9595` BlueJellyfish). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d34_phase3_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Snatcher, 56u16, 13u8, 30.0, 30.0, 25, 10, 60, 0.0f32, 90.0f32),
+            (NpcKind::CorruptGoldfish, 57, 16, 18.0, 20.0, 30, 6, 100, 1.0, 500.0),
+            (NpcKind::Vulture, 61, 17, 36.0, 36.0, 15, 4, 40, 0.8, 60.0),
+            (NpcKind::Demon, 62, 14, 28.0, 48.0, 32, 8, 120, 0.8, 300.0),
+            (NpcKind::BlueJellyfish, 63, 18, 26.0, 26.0, 25, 4, 34, 1.0, 100.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The protocol ids ride the port-local 276..280 band.
+        assert_eq!(NpcKind::Snatcher.to_u16(), 276);
+        assert_eq!(NpcKind::CorruptGoldfish.to_u16(), 277);
+        assert_eq!(NpcKind::Vulture.to_u16(), 278);
+        assert_eq!(NpcKind::Demon.to_u16(), 279);
+        assert_eq!(NpcKind::BlueJellyfish.to_u16(), 280);
+        // The noGravity rows: the four kb>0 kinds ride the Y-pop selector;
+        // the Snatcher writes noGravity but kb 0, so it stays out (the
+        // ManEater precedent).
+        assert!(NpcKind::CorruptGoldfish.no_gravity());
+        assert!(NpcKind::Vulture.no_gravity());
+        assert!(NpcKind::Demon.no_gravity());
+        assert!(NpcKind::BlueJellyfish.no_gravity());
+        assert!(!NpcKind::Snatcher.no_gravity());
+        // The BlueJellyfish's alpha 20 row (`NPC.cs:9594`).
+        let jelly = Npc::new(NpcKind::BlueJellyfish, 0.0, 0.0, 1, 0.0);
+        assert_eq!(jelly.alpha, 20, "the jellyfish's alpha row");
+        // The debuff immunity rows (`NPCID.cs` DebuffImmunitySets) — read
+        // through the applied mask (`NpcBuffs::for_kind`).
+        let snatcher_buffs = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Snatcher);
+        assert!(snatcher_buffs.buff_immune[31]);
+        assert!(!snatcher_buffs.buff_immune[24]);
+        let demon_buffs = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::Demon);
+        for id in [24, 31, 153, 323] {
+            assert!(demon_buffs.buff_immune[id], "the Demon's immune {id}");
+        }
+        // The hit/death cues.
+        assert_eq!(NpcKind::Vulture.hit_sound(), Some("NPC_Hit_28"));
+        assert_eq!(NpcKind::Vulture.death_sound(), Some("NPC_Killed_31"));
+        assert_eq!(NpcKind::Demon.hit_sound(), Some("NPC_Hit_21"));
+        assert_eq!(NpcKind::Demon.death_sound(), Some("NPC_Killed_24"));
+        assert_eq!(NpcKind::BlueJellyfish.hit_sound(), Some("NPC_Hit_25"));
+        assert_eq!(NpcKind::BlueJellyfish.death_sound(), Some("NPC_Killed_28"));
+    }
+
+    /// W4-d34 kinds 1-70 coverage wave (phase 4) — the PinkJellyfish +
+    /// Crab + DungeonGuardian + Antlion + SpikeBall `SetDefaults` rows pin
+    /// against the C# (`NPC.cs:9596-9609` PinkJellyfish, `:9640-9651` Crab,
+    /// `:9652-9665` DungeonGuardian, `:9666-9679` Antlion, `:9680-9696`
+    /// SpikeBall). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d34_phase4_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::PinkJellyfish, 64u16, 18u8, 26.0, 26.0, 30, 6, 70, 1.0f32, 100.0f32),
+            (NpcKind::Crab, 67, 3, 28.0, 20.0, 20, 10, 40, 1.0, 60.0),
+            (NpcKind::DungeonGuardian, 68, 11, 80.0, 102.0, 9999, 9999, 9999, 0.0, 0.0),
+            (NpcKind::Antlion, 69, 19, 24.0, 24.0, 10, 6, 45, 0.0, 60.0),
+            (NpcKind::SpikeBall, 70, 20, 34.0, 34.0, 32, 100, 100, 0.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The protocol ids ride the port-local 281..285 band.
+        assert_eq!(NpcKind::PinkJellyfish.to_u16(), 281);
+        assert_eq!(NpcKind::Crab.to_u16(), 282);
+        assert_eq!(NpcKind::DungeonGuardian.to_u16(), 283);
+        assert_eq!(NpcKind::Antlion.to_u16(), 284);
+        assert_eq!(NpcKind::SpikeBall.to_u16(), 285);
+        // The noGravity rows: only the PinkJellyfish (kb 1) rides the Y-pop
+        // selector; the Guardian / SpikeBall write noGravity but kb 0 (the
+        // ManEater precedent), the Antlion's is a runtime toggle, the Crab
+        // is grounded.
+        assert!(NpcKind::PinkJellyfish.no_gravity());
+        assert!(!NpcKind::Crab.no_gravity());
+        assert!(!NpcKind::DungeonGuardian.no_gravity());
+        assert!(!NpcKind::Antlion.no_gravity());
+        assert!(!NpcKind::SpikeBall.no_gravity());
+        // The PinkJellyfish's alpha 20 row (`NPC.cs:9608`).
+        let pink = Npc::new(NpcKind::PinkJellyfish, 0.0, 0.0, 1, 0.0);
+        assert_eq!(pink.alpha, 20, "the pink jellyfish's alpha row");
+        // The Spike Ball's scale 1.5 + dontTakeDamage rows (`NPC.cs:9694-9695`).
+        let ball = Npc::new(NpcKind::SpikeBall, 0.0, 0.0, 1, 0.0);
+        assert_eq!(ball.scale, 1.5, "the spike ball's scale row");
+        assert!(ball.dont_take_damage, "the spike ball is untouchable");
+        // The Guardian is damageable (9999 def, not a dontTakeDamage shield).
+        let guard = Npc::new(NpcKind::DungeonGuardian, 0.0, 0.0, 1, 0.0);
+        assert!(!guard.dont_take_damage, "the guardian takes damage");
+        // The Antlion's behindTiles row (`NPC.cs:9678`).
+        assert!(NpcKind::Antlion.behind_tiles());
+        assert!(!NpcKind::SpikeBall.behind_tiles());
+        // The Crab's aiStyle-3 slow cap (`NPC.cs:57881-57906`).
+        assert_eq!(NpcKind::Crab.ai3_walk_speed(), Some(0.5));
+        // The Guardian is never dodgeable in its enraged state 2
+        // (`NPC.cs:78748-78751`, case 68 rides the 35/127 arm).
+        let mut g2 = Npc::new(NpcKind::DungeonGuardian, 0.0, 0.0, 1, 0.0);
+        g2.ai[1] = 2.0;
+        assert!(!g2.is_damage_dodgeable(), "the enraged guardian is not dodgeable");
+        g2.ai[1] = 0.0;
+        assert!(g2.is_damage_dodgeable(), "the non-enraged state is dodgeable");
+        // The debuff immunity rows (`NPCID.cs` DebuffImmunitySets) — read
+        // through the applied mask (`NpcBuffs::for_kind`).
+        for kind in [NpcKind::PinkJellyfish, NpcKind::Crab, NpcKind::Antlion] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} immune 31");
+            assert!(!b.buff_immune[24], "{kind:?} not immune 24");
+        }
+        let ball_buffs = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::SpikeBall);
+        for id in [20, 24, 31, 39, 70, 395, 323] {
+            assert!(ball_buffs.buff_immune[id], "the Spike Ball's immune {id}");
+        }
+        // The Guardian's ImmuneToWhips tag (`NPCID.cs:6499`); the
+        // ImmuneToAllBuffsThatAreNotWhips mask rides the documented `&[]` gap.
+        assert!(crate::npc_buffs::whip_immune(NpcKind::DungeonGuardian));
+        // The hit/death cues.
+        assert_eq!(NpcKind::PinkJellyfish.hit_sound(), Some("NPC_Hit_25"));
+        assert_eq!(NpcKind::PinkJellyfish.death_sound(), Some("NPC_Killed_28"));
+        assert_eq!(NpcKind::Crab.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Crab.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::DungeonGuardian.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::DungeonGuardian.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::Antlion.hit_sound(), Some("NPC_Hit_31"));
+        assert_eq!(NpcKind::Antlion.death_sound(), Some("NPC_Killed_34"));
+        assert_eq!(NpcKind::SpikeBall.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::SpikeBall.death_sound(), Some("NPC_Killed_1"));
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -27559,7 +28656,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
+            290,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

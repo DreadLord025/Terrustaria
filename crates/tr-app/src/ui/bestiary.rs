@@ -1595,6 +1595,108 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d34 kinds 1-70: the portrait rests the kind's SetDefaults box /
+        // the sheet's own row height (the generic-anchor convention).
+        (NpcKind::AngryBones, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::CursedSkull, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::OldMan, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::ManEater, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        // W4-d34: the Bone Serpent's square 22x22 segments (the Devourer
+        // precedent); the CorruptBunny the 7-row hop strip; the Harpy the
+        // 6-row bat strip.
+        (NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail, _) =>
+            (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::CorruptBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Harpy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::Bunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d34 (phase 3): the Snatcher the 3-row bite strip; the
+        // CorruptGoldfish the 6-row fish strip; the Vulture the 6-row flap
+        // (row 0 is the perch); the Demon the 5-row flap; the BlueJellyfish
+        // the 7-row pulse strip (the classic rows 0..3).
+        (NpcKind::Snatcher, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::CorruptGoldfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Vulture, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(36.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::Demon, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::BlueJellyfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        // W4-d34 (phase 4): the PinkJellyfish the 7-row pulse strip; the
+        // Crab the 8-row walk strip; the Dungeon Guardian the single-frame
+        // 80x102 head; the Antlion the 5-row walk strip; the Spike Ball the
+        // single-frame 34x34 trap (the BlazingWheel Hide=true precedent).
+        (NpcKind::PinkJellyfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::Crab, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::DungeonGuardian, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        (NpcKind::Antlion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(24.0);
+            (sheet_i, h, 24.0, h, white)
+        }
+        (NpcKind::SpikeBall, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(34.0);
+            (sheet_i, h, 34.0, h, white)
+        }
     }
 }
 

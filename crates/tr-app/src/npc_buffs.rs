@@ -484,6 +484,29 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d34 kinds 1-70 (`NPCID.cs` DebuffImmunitySets).
+        NpcKind::AngryBones => &[20],          // :6266-6270
+        NpcKind::CursedSkull => &[20, 31],     // :6287-6291
+        NpcKind::OldMan => &[31],              // :6308-6312
+        NpcKind::ManEater => &[20, 31],        // :6350-6354
+        NpcKind::Bunny => &[31],               // :6371-6375
+        NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => &[20, 24, 31, 323], // :6322-6340
+        NpcKind::CorruptBunny => &[],          // :6377 null row
+        NpcKind::Harpy => &[31],               // :6379-6383
+        NpcKind::Snatcher => &[31],            // :6410-6416
+        NpcKind::CorruptGoldfish => &[31],     // :6417-6423
+        NpcKind::Vulture => &[31],             // :6445-6451
+        NpcKind::Demon => &[24, 31, 153, 323], // :6452-6458
+        NpcKind::BlueJellyfish => &[31],       // :6459-6465
+        NpcKind::PinkJellyfish => &[31],       // :6466-6472
+        NpcKind::Crab => &[31],                // :6487-6493
+        // The Dungeon Guardian's ImmuneToAllBuffsThatAreNotWhips +
+        // ImmuneToWhips row (`NPCID.cs:6495-6501`) — the mask loop rides the
+        // documented `&[]` gap (the saucer-family precedent); the whip tag
+        // rides `whip_immune` below.
+        NpcKind::DungeonGuardian => &[],
+        NpcKind::Antlion => &[31],             // :6502-6508
+        NpcKind::SpikeBall => &[20, 24, 31, 39, 70, 395, 323], // :6509-6515
     }
 }
 
@@ -491,11 +514,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// (`:6499`/`:6528`/`:8378`/`:8601`/`:8899`/`:9194`/`:9415`/`:9423`/`:9431`/
 /// `:10034`/`:10042`): DungeonGuardian 68, BlazingWheel 72, MartianSaucer 392,
 /// CultistBossClone 440, FlyingDutchman 491, DD2LanePortal 549, the fairy
-/// critters 583/584/585, the bound town slimes 686/687. Only the saucer and
-/// the pirate ship are on the ported roster — the whip tag gate
+/// critters 583/584/585, the bound town slimes 686/687. The saucer, the
+/// pirate ship and the Dungeon Guardian (W4-d34) are on the ported roster —
+/// the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
+    matches!(
+        kind,
+        NpcKind::MartianSaucer | NpcKind::FlyingDutchman | NpcKind::DungeonGuardian
+    )
 }
 
 impl NpcBuffs {

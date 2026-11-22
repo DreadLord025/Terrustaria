@@ -122,6 +122,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_18", 3),
     ("NPC_Hit_19", 3),
     ("NPC_Hit_21", 3),
+    // W4-d34 kinds 1-70: the Vulture's NPCHit28 (`NPC.cs:9563`), the Antlion's
+    // NPCHit31 (`:9674`) — the `Sounds/NPC_Hit_*.xnb` assets ship; the bank close.
+    ("NPC_Hit_28", 3),
+    ("NPC_Hit_31", 3),
+
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
     // Nimbus' NPCHit30 (`NPC.cs:12229`), the Dungeon Spirit's NPCHit36
     // (`:12747`) and the Force Bubble's NPCHit43 (`:13889`) — the
@@ -163,6 +168,12 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_21", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
+    // W4-d34 kinds 1-70: the jellyfish pair's NPCDeath28 (`NPC.cs:9592`/`:9606`),
+    // the Vulture's NPCDeath31 (`:9564`), the Antlion's NPCDeath34 (`:9675`).
+    ("NPC_Killed_28", 4),
+    ("NPC_Killed_31", 4),
+    ("NPC_Killed_34", 4),
+
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the

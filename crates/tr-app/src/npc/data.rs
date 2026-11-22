@@ -586,6 +586,29 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d34 kinds 1-70 coverage wave: the port-local 266..285 band
+            // (free in to_u16/from_u16 AND render_key; the vanilla types ride
+            // cs_id/net_id, NOT these protocol ids — the S1-F-1 separation).
+            NpcKind::AngryBones => 266,
+            NpcKind::CursedSkull => 267,
+            NpcKind::OldMan => 268,
+            NpcKind::ManEater => 269,
+            NpcKind::Bunny => 270,
+            NpcKind::BoneSerpentHead => 271,
+            NpcKind::BoneSerpentBody => 272,
+            NpcKind::BoneSerpentTail => 273,
+            NpcKind::CorruptBunny => 274,
+            NpcKind::Harpy => 275,
+            NpcKind::Snatcher => 276,
+            NpcKind::CorruptGoldfish => 277,
+            NpcKind::Vulture => 278,
+            NpcKind::Demon => 279,
+            NpcKind::BlueJellyfish => 280,
+            NpcKind::PinkJellyfish => 281,
+            NpcKind::Crab => 282,
+            NpcKind::DungeonGuardian => 283,
+            NpcKind::Antlion => 284,
+            NpcKind::SpikeBall => 285,
         }
     }
 
@@ -916,6 +939,26 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            266 => NpcKind::AngryBones,
+            267 => NpcKind::CursedSkull,
+            268 => NpcKind::OldMan,
+            269 => NpcKind::ManEater,
+            270 => NpcKind::Bunny,
+            271 => NpcKind::BoneSerpentHead,
+            272 => NpcKind::BoneSerpentBody,
+            273 => NpcKind::BoneSerpentTail,
+            274 => NpcKind::CorruptBunny,
+            275 => NpcKind::Harpy,
+            276 => NpcKind::Snatcher,
+            277 => NpcKind::CorruptGoldfish,
+            278 => NpcKind::Vulture,
+            279 => NpcKind::Demon,
+            280 => NpcKind::BlueJellyfish,
+            281 => NpcKind::PinkJellyfish,
+            282 => NpcKind::Crab,
+            283 => NpcKind::DungeonGuardian,
+            284 => NpcKind::Antlion,
+            285 => NpcKind::SpikeBall,
             _ => return None,
         })
     }
@@ -980,6 +1023,11 @@ impl NpcKind {
                 // outside the `:51301` spawn lists, so `is_worm_head`
                 // stays false and the init never grows links).
                 | NpcKind::StardustWormHead
+                // W4-d34: the Bone Serpent chain (`NPC.cs:51301`/`:51350`/
+                // `:51436`'s type-39/40 lists).
+                | NpcKind::BoneSerpentHead
+                | NpcKind::BoneSerpentBody
+                | NpcKind::BoneSerpentTail
         )
     }
 
@@ -1020,6 +1068,11 @@ impl NpcKind {
                 | NpcKind::WyvernBody2
                 | NpcKind::WyvernBody3
                 | NpcKind::WyvernTail
+                // W4-d34: the Bone Serpent shares the head's life pool
+                // (`NPC.cs:51307-51308`: ai[3]/realLife = whoAmI).
+                | NpcKind::BoneSerpentHead
+                | NpcKind::BoneSerpentBody
+                | NpcKind::BoneSerpentTail
         )
     }
 
@@ -1046,6 +1099,7 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
                 | NpcKind::SolarCrawltipedeHead
+                | NpcKind::BoneSerpentHead
         )
     }
 
@@ -1060,6 +1114,7 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::LeechBody
                 | NpcKind::SolarCrawltipedeBody
+                | NpcKind::BoneSerpentBody
         )
     }
 
@@ -1073,6 +1128,9 @@ impl NpcKind {
             NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
             NpcKind::LeechHead => NpcKind::LeechBody,
+            NpcKind::BoneSerpentHead => NpcKind::BoneSerpentBody,
+            NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => NpcKind::BoneSerpentTail,
+
             // W-A2-3 (T3e): the budget-exhausted body spawns `type + 1`
             // = the 119 tail (`NPC.cs:51357`); the tail closes the chain
             // (it sits outside both spawn lists, `:51301`/`:51350`).
@@ -1099,6 +1157,10 @@ impl NpcKind {
             | NpcKind::SolarCrawltipedeTail => (10.0, 0.3),
             NpcKind::DevourerHead => (9.0, 0.1),
             NpcKind::GiantWormHead => (6.0, 0.05),
+            // W4-d34: the Bone Serpent head's 9/0.1 (`NPC.cs:51764-51767`;
+            // the getGood 10/0.12 is unported — single-difficulty).
+            NpcKind::BoneSerpentHead => (9.0, 0.1),
+
             NpcKind::EaterOfWorldsHead => (10.0, 0.07),
             // The wyvern head's 11/0.25 (`:51720-51724`). The kind stays
             // OUT of `is_worm`/`is_worm_head` (the StardustWormHead
@@ -1156,6 +1218,9 @@ impl NpcKind {
                     | NpcKind::PartyGirl
                     | NpcKind::Wizard
                     | NpcKind::Mechanic
+                    // W4-d34: the Old Man carries `townNPC = true`
+                    // (`NPC.cs:9199`) — `isLikeATownNPC` (`NPC.cs:6856`).
+                    | NpcKind::OldMan
             )
     }
 
@@ -1788,6 +1853,25 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults HitSound).
+            NpcKind::AngryBones => "NPC_Hit_2",   // :9116
+            NpcKind::CursedSkull => "NPC_Hit_2",  // :9158
+            NpcKind::OldMan => "NPC_Hit_1",       // :9207
+            NpcKind::ManEater => "NPC_Hit_1",     // :9303
+            NpcKind::Bunny => "NPC_Hit_1",        // :9344
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => "NPC_Hit_2", // :9235/:9252/:9270
+            NpcKind::CorruptBunny => "NPC_Hit_1",  // :9356
+            NpcKind::Harpy => "NPC_Hit_1",         // :9368
+            NpcKind::Snatcher => "NPC_Hit_1",         // :9484
+            NpcKind::CorruptGoldfish => "NPC_Hit_1",  // :9498
+            NpcKind::Vulture => "NPC_Hit_28",         // :9563
+            NpcKind::Demon => "NPC_Hit_21",           // :9576
+            NpcKind::BlueJellyfish => "NPC_Hit_25",   // :9591
+            NpcKind::PinkJellyfish => "NPC_Hit_25",   // :9605
+            NpcKind::Crab => "NPC_Hit_1",             // :9648
+            NpcKind::DungeonGuardian => "NPC_Hit_2",  // :9660
+            NpcKind::Antlion => "NPC_Hit_31",         // :9674
+            NpcKind::SpikeBall => "NPC_Hit_1",        // :9689
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2176,25 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults DeathSound).
+            NpcKind::AngryBones => "NPC_Killed_2",   // :9117
+            NpcKind::CursedSkull => "NPC_Killed_2",  // :9159
+            NpcKind::OldMan => "NPC_Killed_1",       // :9208
+            NpcKind::ManEater => "NPC_Killed_1",     // :9305
+            NpcKind::Bunny => "NPC_Killed_1",        // :9345
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => "NPC_Killed_5", // :9236/:9253/:9271
+            NpcKind::CorruptBunny => "NPC_Killed_1",  // :9357
+            NpcKind::Harpy => "NPC_Killed_1",         // :9370
+            NpcKind::Snatcher => "NPC_Killed_1",         // :9486
+            NpcKind::CorruptGoldfish => "NPC_Killed_1",  // :9499
+            NpcKind::Vulture => "NPC_Killed_31",         // :9564
+            NpcKind::Demon => "NPC_Killed_24",           // :9578
+            NpcKind::BlueJellyfish => "NPC_Killed_28",   // :9592
+            NpcKind::PinkJellyfish => "NPC_Killed_28",   // :9606
+            NpcKind::Crab => "NPC_Killed_1",             // :9649
+            NpcKind::DungeonGuardian => "NPC_Killed_2",  // :9661
+            NpcKind::Antlion => "NPC_Killed_34",         // :9675
+            NpcKind::SpikeBall => "NPC_Killed_1",        // :9690
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2200,6 +2303,29 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d34: the Cursed Skull's `noGravity = true` (`NPC.cs:9160`,
+            // kb 0.2 `:9163`). The ManEater (43) writes noGravity but kb 0
+            // (`:9304`) — the Y-pop selector never reaches it (leech precedent).
+            NpcKind::CursedSkull => true,
+            // W4-d34: the Harpy's aiStyle-14 head write (`NPC.cs:22851`, kb 0.6
+            // `:9369`). The Bone Serpent writes noGravity but kb 0 (`:9239`) —
+            // the Y-pop selector never reaches it (the leech precedent).
+            NpcKind::Harpy => true,
+            // W4-d34 (phase 3): the CorruptGoldfish's `noGravity = true`
+            // (`NPC.cs:9491`, kb 1 — no row); the Vulture's aiStyle-17 head
+            // write (`:24024`, kb 0.8 `:9562`); the Demon's aiStyle-14 head
+            // write (`:22851`, kb 0.8 `:9577`); the BlueJellyfish's
+            // `noGravity = true` (`:9584`, kb 1 — no row). The Snatcher (56)
+            // writes noGravity but kb 0 (`:9485`) — the Y-pop selector never
+            // reaches it (the ManEater precedent).
+            NpcKind::CorruptGoldfish | NpcKind::Vulture | NpcKind::Demon | NpcKind::BlueJellyfish => true,
+            // W4-d34 (phase 4): the PinkJellyfish's `noGravity = true`
+            // (`NPC.cs:9598`, kb 1 — no row). The Dungeon Guardian (68) and
+            // Spike Ball (70) write noGravity but kb 0 (`:9664`/`:9691`) —
+            // the Y-pop selector never reaches them (the ManEater precedent);
+            // the Antlion's noGravity is a runtime AI toggle (`:24510`), not
+            // a SetDefaults row, and the Crab is a grounded walker.
+            NpcKind::PinkJellyfish => true,
             _ => false,
         }
     }
@@ -2451,6 +2577,25 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults aiStyle rows).
+            NpcKind::AngryBones => 3,   // :9112
+            NpcKind::CursedSkull => 10, // :9154
+            NpcKind::OldMan => 7,       // :9203
+            NpcKind::ManEater => 13,    // :9299
+            NpcKind::Bunny => 7,        // :9340
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 6, // :9230/:9247/:9265
+            NpcKind::CorruptBunny => 3,  // :9352
+            NpcKind::Harpy => 14,        // :9364
+            NpcKind::Snatcher => 13,         // :9480
+            NpcKind::CorruptGoldfish => 16,  // :9494
+            NpcKind::Vulture => 17,          // :9558
+            NpcKind::Demon => 14,            // :9572
+            NpcKind::BlueJellyfish => 18,    // :9587
+            NpcKind::PinkJellyfish => 18,    // :9601
+            NpcKind::Crab => 3,              // :9644
+            NpcKind::DungeonGuardian => 11,  // :9656
+            NpcKind::Antlion => 19,          // :9670
+            NpcKind::SpikeBall => 20,        // :9685
         }
     }
 
@@ -2472,6 +2617,8 @@ impl NpcKind {
         Some(match self {
             NpcKind::Zombie => 1.0,             // the num107 default (`:58322`)
             NpcKind::Skeleton => 1.5,           // the num83 group (`:57606`)
+            NpcKind::AngryBones => 1.5,        // the num83 group (`:57606`)
+            NpcKind::CorruptBunny => 1.5,      // the num83 group (`:57606`)
             NpcKind::UndeadMiner => 1.0,        // the num107 default
             NpcKind::GoblinPeon => 1.5,         // the num83 group
             NpcKind::GoblinThief => 2.0,        // the cap-2 group (`:57554`)
@@ -2559,6 +2706,10 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d34 (phase 4): the Crab (67) rides the 67/220/428 slow arm
+            // (`NPC.cs:57881-57906`) — cap 0.5, accel 0.03, brake 0.7 (the
+            // `npc_ai3_speeds.rs:340` arm already carries the per-type step).
+            NpcKind::Crab => 0.5,
             _ => return None,
         })
     }
@@ -2981,6 +3132,25 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults width/height).
+            NpcKind::AngryBones => (18.0, 40.0),  // :9110-9111
+            NpcKind::CursedSkull => (26.0, 28.0), // :9152-9153
+            NpcKind::OldMan => (18.0, 40.0),      // :9201-9202
+            NpcKind::ManEater => (30.0, 30.0),    // :9297-9298
+            NpcKind::Bunny => (18.0, 20.0),       // :9338-9339
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => (22.0, 22.0), // :9228/:9245/:9263
+            NpcKind::CorruptBunny => (18.0, 20.0),  // :9350-9351
+            NpcKind::Harpy => (24.0, 34.0),         // :9362-9363
+            NpcKind::Snatcher => (30.0, 30.0),        // :9478-9479
+            NpcKind::CorruptGoldfish => (18.0, 20.0), // :9492-9493
+            NpcKind::Vulture => (36.0, 36.0),         // :9556-9557
+            NpcKind::Demon => (28.0, 48.0),           // :9570-9571
+            NpcKind::BlueJellyfish => (26.0, 26.0),   // :9585-9586
+            NpcKind::PinkJellyfish => (26.0, 26.0),   // :9599-9600
+            NpcKind::Crab => (28.0, 20.0),            // :9642-9643
+            NpcKind::DungeonGuardian => (80.0, 102.0), // :9654-9655
+            NpcKind::Antlion => (24.0, 24.0),         // :9668-9669
+            NpcKind::SpikeBall => (34.0, 34.0),       // :9683-9684
         }
     }
 
@@ -3057,6 +3227,30 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            // W4-d34 kinds 1-70: the vanilla `NPC.type` rows (the AI arms'
+            // type gates + the statue caps read these, not the protocol ids).
+            NpcKind::AngryBones => 31,
+            NpcKind::CursedSkull => 34,
+            NpcKind::OldMan => 37,
+            NpcKind::ManEater => 43,
+            NpcKind::Bunny => 46,
+            NpcKind::BoneSerpentHead => 39,
+            // The Bone Serpent's body/tail keep NO hand row — like every
+            // folded segment family they fall through to the bestiary net id
+            // (the head's 39; the s1_f_3 cs_id==net_id invariant, the
+            // Destroyer precedent).
+            NpcKind::CorruptBunny => 47,
+            NpcKind::Harpy => 48,
+            NpcKind::Snatcher => 56,
+            NpcKind::CorruptGoldfish => 57,
+            NpcKind::Vulture => 61,
+            NpcKind::Demon => 62,
+            NpcKind::BlueJellyfish => 63,
+            NpcKind::PinkJellyfish => 64,
+            NpcKind::Crab => 67,
+            NpcKind::DungeonGuardian => 68,
+            NpcKind::Antlion => 69,
+            NpcKind::SpikeBall => 70,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
             NpcKind::Goldfish => 55,
@@ -3131,6 +3325,10 @@ impl NpcKind {
             NpcKind::GoblinArcher => 21,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
+            // W4-d34: the Angry Bones (31) rides the humanoid-group case list
+            // (`NPC.cs:68552`) on its 15-row strip; the Old Man (37) on 21.
+            NpcKind::AngryBones => 15,
+            NpcKind::OldMan => 21,
             // The Zombie Elf trio (`S1-F-13c`): `FindFrame`'s humanoid-group
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
@@ -3168,6 +3366,8 @@ impl NpcKind {
             | NpcKind::Stylist
             | NpcKind::Princess => 7,
             NpcKind::Angler | NpcKind::Mechanic => 9,
+            // W4-d34: the Old Man's `ExtraFramesCount[37] = 5` (`NPCID.cs:10464`).
+            NpcKind::OldMan => 5,
             _ => 0,
         }
     }
@@ -3201,6 +3401,14 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-d34: the Bone Serpent's `behindTiles = true` rows
+                // (`NPC.cs:9240`/`:9257`/`:9275`).
+                | NpcKind::BoneSerpentHead
+                | NpcKind::BoneSerpentBody
+                | NpcKind::BoneSerpentTail
+                // W4-d34 (phase 4): the Antlion's `behindTiles = true` row
+                // (`NPC.cs:9678`).
+                | NpcKind::Antlion
         )
     }
 
@@ -3622,6 +3830,25 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults lifeMax).
+            NpcKind::AngryBones => 80,   // :9115
+            NpcKind::CursedSkull => 40,  // :9157
+            NpcKind::OldMan => 250,      // :9206
+            NpcKind::ManEater => 110,    // :9302
+            NpcKind::Bunny => 5,         // :9343
+            NpcKind::BoneSerpentHead | NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => 300, // :9234/:9251/:9269
+            NpcKind::CorruptBunny => 70,   // :9355
+            NpcKind::Harpy => 100,         // :9367
+            NpcKind::Snatcher => 60,          // :9483
+            NpcKind::CorruptGoldfish => 100,  // :9497
+            NpcKind::Vulture => 40,           // :9561
+            NpcKind::Demon => 120,            // :9575
+            NpcKind::BlueJellyfish => 34,     // :9590
+            NpcKind::PinkJellyfish => 70,     // :9604
+            NpcKind::Crab => 40,              // :9647
+            NpcKind::DungeonGuardian => 9999, // :9659
+            NpcKind::Antlion => 45,           // :9673
+            NpcKind::SpikeBall => 100,        // :9688
         }
     }
 
@@ -3986,6 +4213,27 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d34 kinds 1-70 (`NPC.cs` SetDefaults damage).
+            NpcKind::AngryBones => 26,   // :9113
+            NpcKind::CursedSkull => 35,  // :9155
+            NpcKind::OldMan => 10,       // :9204
+            NpcKind::ManEater => 34,     // :9300
+            NpcKind::Bunny => 0,         // :9341
+            NpcKind::BoneSerpentHead => 36,   // :9232
+            NpcKind::BoneSerpentBody => 20,   // :9249
+            NpcKind::BoneSerpentTail => 16,   // :9267
+            NpcKind::CorruptBunny => 20,      // :9353
+            NpcKind::Harpy => 25,             // :9365
+            NpcKind::Snatcher => 25,          // :9481
+            NpcKind::CorruptGoldfish => 30,   // :9495
+            NpcKind::Vulture => 15,           // :9559
+            NpcKind::Demon => 32,             // :9573
+            NpcKind::BlueJellyfish => 25,     // :9588
+            NpcKind::PinkJellyfish => 30,     // :9602
+            NpcKind::Crab => 20,              // :9645
+            NpcKind::DungeonGuardian => 9999, // :9657
+            NpcKind::Antlion => 10,           // :9671
+            NpcKind::SpikeBall => 32,         // :9686
         }
     }
 }

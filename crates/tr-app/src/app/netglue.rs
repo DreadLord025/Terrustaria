@@ -3428,7 +3428,9 @@ fn npc_seed(
         | crate::npc::NpcKind::BlazingWheel
         | crate::npc::NpcKind::AngryNimbus
         | crate::npc::NpcKind::DungeonSpirit
-        | crate::npc::NpcKind::ForceBubble => {
+        | crate::npc::NpcKind::ForceBubble
+        // W4-d34 (phase 4): the Spike Ball seeds like the wheel trap.
+        | crate::npc::NpcKind::SpikeBall => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
@@ -3566,6 +3568,64 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d34 kinds 1-70: the walkers plant on the column surface; the
+        // Cursed Skull hovers (noTileCollide); the ManEater anchors in air.
+        crate::npc::NpcKind::AngryBones
+        | crate::npc::NpcKind::OldMan
+        | crate::npc::NpcKind::Bunny => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::CursedSkull | crate::npc::NpcKind::ManEater => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d34: the Bone Serpent links seed standalone (the chain rebuilds
+        // through the worm pass — the leech net shape); the CorruptBunny plants
+        // on the surface; the Harpy hangs in the air (the bat net shape).
+        crate::npc::NpcKind::BoneSerpentHead
+        | crate::npc::NpcKind::BoneSerpentBody
+        | crate::npc::NpcKind::BoneSerpentTail
+        | crate::npc::NpcKind::Harpy => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::CorruptBunny => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // W4-d34 (phase 3): the Snatcher anchors in air (the ManEater net
+        // shape); the CorruptGoldfish plants like the swimmers; the Vulture
+        // perches on the column surface; the Demon hangs in the air (the bat
+        // net shape); the BlueJellyfish seeds in the water column (the
+        // swimmer net shape).
+        crate::npc::NpcKind::Snatcher => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::CorruptGoldfish
+        | crate::npc::NpcKind::BlueJellyfish
+        | crate::npc::NpcKind::PinkJellyfish => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::Vulture => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::Demon => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
+        }
+        // W4-d34 (phase 4): the Crab plants on the surface and the Antlion
+        // anchors on the sand (the aiStyle-3 walker net shape, behindTiles);
+        // the Dungeon Guardian hangs in the air (the Skeletron net shape).
+        // The PinkJellyfish seeds in the water column (grouped above); the
+        // Spike Ball hangs in the air (the BlazingWheel trap net shape).
+        crate::npc::NpcKind::Crab | crate::npc::NpcKind::Antlion => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::DungeonGuardian => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+
     })
 }
 

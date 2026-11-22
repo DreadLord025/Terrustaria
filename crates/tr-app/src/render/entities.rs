@@ -837,6 +837,20 @@ fn npc_add_height(n: &Npc) -> f32 {
         // `:22083` 62/66/156 (the Demon Eye's 62 is a charm id; 66 the
         // Voodoo Demon, 156 the Wandering Eye — no port kind for 156).
         VoodooDemon => 14.0,
+        // W4-d34: `Main.cs:22069` 48 → 32; `:22125` 39/40/41 → 26.
+        Harpy => 32.0,
+        BoneSerpentHead | BoneSerpentBody | BoneSerpentTail => 26.0,
+        // W4-d34 (phase 3): `Main.cs:22081` 62 → 14 (the 62/66/156 group);
+        // `:22085` 63/64 → 4. The Snatcher (56), CorruptGoldfish (57) and
+        // Vulture (61) have NO arm — the default 0 (`Main.cs:22004`).
+        Demon => 14.0,
+        BlueJellyfish | PinkJellyfish => 4.0,
+        // W4-d34 (phase 4): `Main.cs:22093` 69 → 4; `:22097` 70 → -4. The
+        // Crab (67) and Dungeon Guardian (68) have NO arm — the default 0
+        // (`Main.cs:22004`).
+        Antlion => 4.0,
+        SpikeBall => -4.0,
+
         // `:22087` 63/64/103 (the goblin townsfolk + the javelin T3) — the
         // Golem Head's 64 is resolved out by the town test above.
         BoundGoblin | GoblinTinkerer | DD2JavelinT3 => 4.0,
@@ -1108,6 +1122,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // sheets are their own `TextureAssets.Npc[type]` (371/373).
         NpcKind::DetonatingBubble => 371,
         NpcKind::Sharkron2 => 373,
+        // W4-d34: the Bone Serpent's body/tail bestiary credits fold onto the
+        // head, but their DRAW sheets are their own NPC_40/41 (the Destroyer
+        // precedent).
+        NpcKind::BoneSerpentBody => 40,
+        NpcKind::BoneSerpentTail => 41,
+
         // S1-F-13d: the Force Bubble's bestiary credit folds onto the
         // Officer (Hide=true), but its DRAW sheet is its own NPC_384
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
@@ -1245,7 +1265,15 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+    // W4-d34 kinds 1-70 coverage wave (phases 1-3): the coverage kinds'
+    // own sheets (the vanilla's `TextureAssets.Npc[type]`), keyed by the
+    // vanilla net id in `NpcAssets::npc_sheets` exactly like the rows above.
+    31, 34, 37, 43, 46, // phase 1
+    39, 40, 41, 47, 48, // phase 2
+    56, 57, 61, 62, 63, // phase 3
+    64, 67, 68, 69, 70, // phase 4
 ];
+
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3170,6 +3198,73 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-d34 kinds 1-70: each kind draws its own sheet at the
+            // SetFrameSize row height over Main.npcFrameCount[type], the
+            // generic centred anchor (the pumpkin arm's shape).
+            NpcKind::AngryBones => {
+                humanoid_draw(assets.npc_sheet(31), npc_rows(31), n, w, h)
+            }
+            NpcKind::CursedSkull => {
+                pumpkin_moon_draw(assets.npc_sheet(34), npc_rows(34), n, w, h)
+            }
+            NpcKind::OldMan => {
+                humanoid_draw(assets.npc_sheet(37), npc_rows(37), n, w, h)
+            }
+            NpcKind::ManEater => {
+                pumpkin_moon_draw(assets.npc_sheet(43), npc_rows(43), n, w, h)
+            }
+            NpcKind::Bunny => {
+                pumpkin_moon_draw(assets.npc_sheet(46), npc_rows(46), n, w, h)
+            }
+            // W4-d34: the Bone Serpent's single-frame segments at the generic
+            // anchor (the wyvern shape); the CorruptBunny + Harpy their strips.
+            NpcKind::BoneSerpentHead => generic_anchor(assets.npc_sheet(39), 1, n, w, h),
+            NpcKind::BoneSerpentBody => generic_anchor(assets.npc_sheet(40), 1, n, w, h),
+            NpcKind::BoneSerpentTail => generic_anchor(assets.npc_sheet(41), 1, n, w, h),
+            NpcKind::CorruptBunny => {
+                pumpkin_moon_draw(assets.npc_sheet(47), npc_rows(47), n, w, h)
+            }
+            NpcKind::Harpy => {
+                pumpkin_moon_draw(assets.npc_sheet(48), npc_rows(48), n, w, h)
+            }
+            // W4-d34 (phase 3): each kind draws its own sheet at the
+            // SetFrameSize row height (the pumpkin arm's shape).
+            NpcKind::Snatcher => {
+                pumpkin_moon_draw(assets.npc_sheet(56), npc_rows(56), n, w, h)
+            }
+            NpcKind::CorruptGoldfish => {
+                pumpkin_moon_draw(assets.npc_sheet(57), npc_rows(57), n, w, h)
+            }
+            NpcKind::Vulture => {
+                pumpkin_moon_draw(assets.npc_sheet(61), npc_rows(61), n, w, h)
+            }
+            NpcKind::Demon => {
+                pumpkin_moon_draw(assets.npc_sheet(62), npc_rows(62), n, w, h)
+            }
+            NpcKind::BlueJellyfish => {
+                pumpkin_moon_draw(assets.npc_sheet(63), npc_rows(63), n, w, h)
+            }
+            // W4-d34 (phase 4): the PinkJellyfish / Crab / Antlion draw their
+            // own strips at the SetFrameSize row height; the Dungeon Guardian
+            // its single-frame head at the generic anchor; the Spike Ball its
+            // single frame through `scaled_anchor` (the 1.5 scale row rides
+            // n.scale — the BlazingWheel precedent).
+            NpcKind::PinkJellyfish => {
+                pumpkin_moon_draw(assets.npc_sheet(64), npc_rows(64), n, w, h)
+            }
+            NpcKind::Crab => {
+                pumpkin_moon_draw(assets.npc_sheet(67), npc_rows(67), n, w, h)
+            }
+            NpcKind::DungeonGuardian => {
+                generic_anchor(assets.npc_sheet(68), npc_rows(68), n, w, h)
+            }
+            NpcKind::Antlion => {
+                pumpkin_moon_draw(assets.npc_sheet(69), npc_rows(69), n, w, h)
+            }
+            NpcKind::SpikeBall => {
+                scaled_anchor(assets.npc_sheet(70), npc_rows(70), n, w, h)
+            }
+
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3414,26 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-d34: the Cursed Skull's aim rotation (`NPC.cs:21750-21766`).
+                    | NpcKind::CursedSkull
+                    // W4-d34: the Bone Serpent's chain rotation (`NPC.cs:51878`/
+                    // `:52201`) and the Harpy's velocity tilt (`:74858`).
+                    | NpcKind::BoneSerpentHead
+                    | NpcKind::BoneSerpentBody
+                    | NpcKind::BoneSerpentTail
+                    | NpcKind::Harpy
+                    // W4-d34 (phase 3): the Vulture's velocity tilt
+                    // (`NPC.cs:73540`), the Demon's (`:73891`), the
+                    // BlueJellyfish's chase aim / idle tilt (`:24291`/
+                    // `:24334`/`:24390`).
+                    | NpcKind::Vulture
+                    | NpcKind::Demon
+                    | NpcKind::BlueJellyfish
+                    // W4-d34 (phase 4): the PinkJellyfish's chase aim / idle
+                    // tilt (the shared aiStyle-18 machine) and the Dungeon
+                    // Guardian's enraged spin (`NPC.cs:22260`).
+                    | NpcKind::PinkJellyfish
+                    | NpcKind::DungeonGuardian
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

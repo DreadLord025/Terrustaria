@@ -2163,6 +2163,162 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Dungeon Spirit",
     },
+    // W4-d34 kinds 1-70 coverage wave: the populator registers each by its
+    // vanilla net id (`BestiaryDatabaseNPCsPopulator.cs`'s automated pass).
+    BestiaryEntryDef {
+        credit_id: "AngryBones",
+        net_id: 31,
+        kind: NpcKind::AngryBones,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Bones",
+    },
+    BestiaryEntryDef {
+        credit_id: "CursedSkull",
+        net_id: 34,
+        kind: NpcKind::CursedSkull,
+        variant: None,
+        quick_unlock: false,
+        name: "Cursed Skull",
+    },
+    BestiaryEntryDef {
+        credit_id: "OldMan",
+        net_id: 37,
+        kind: NpcKind::OldMan,
+        variant: None,
+        quick_unlock: false,
+        name: "Old Man",
+    },
+    BestiaryEntryDef {
+        credit_id: "ManEater",
+        net_id: 43,
+        kind: NpcKind::ManEater,
+        variant: None,
+        quick_unlock: false,
+        name: "Man Eater",
+    },
+    // W4-d34 kinds 1-70 (phase 2): the Bone Serpent's ONE entry on the head's
+    // id 39 — the body/tail Hide=true (`NPCID.cs:1527-1539`) fold onto it (the
+    // Devourer precedent). The CorruptBunny + Harpy register by their ids.
+    BestiaryEntryDef {
+        credit_id: "BoneSerpentHead",
+        net_id: 39,
+        kind: NpcKind::BoneSerpentHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Bone Serpent",
+    },
+    BestiaryEntryDef {
+        credit_id: "CorruptBunny",
+        net_id: 47,
+        kind: NpcKind::CorruptBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "Harpy",
+        net_id: 48,
+        kind: NpcKind::Harpy,
+        variant: None,
+        quick_unlock: false,
+        name: "Harpy",
+    },
+    // W4-d34 kinds 1-70 (phase 3): the five register by their vanilla ids
+    // (the populator's automated pass).
+    BestiaryEntryDef {
+        credit_id: "Snatcher",
+        net_id: 56,
+        kind: NpcKind::Snatcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Snatcher",
+    },
+    BestiaryEntryDef {
+        credit_id: "CorruptGoldfish",
+        net_id: 57,
+        kind: NpcKind::CorruptGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Vulture",
+        net_id: 61,
+        kind: NpcKind::Vulture,
+        variant: None,
+        quick_unlock: false,
+        name: "Vulture",
+    },
+    BestiaryEntryDef {
+        credit_id: "Demon",
+        net_id: 62,
+        kind: NpcKind::Demon,
+        variant: None,
+        quick_unlock: false,
+        name: "Demon",
+    },
+    BestiaryEntryDef {
+        credit_id: "BlueJellyfish",
+        net_id: 63,
+        kind: NpcKind::BlueJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Jellyfish",
+    },
+    // W4-d34 kinds 1-70 (phase 4): the five register by their vanilla ids
+    // (the populator's automated pass). The Dungeon Guardian's provider is
+    // quickUnlock (`BestiaryDatabaseNPCsPopulator.cs:676`). The Spike Ball
+    // is Hide=true (`NPCID.cs:1710-1716`) but keeps its OWN entry — the
+    // BlazingWheel precedent (72 is Hide=true too, `NPCID.cs:1717-1723`).
+    BestiaryEntryDef {
+        credit_id: "PinkJellyfish",
+        net_id: 64,
+        kind: NpcKind::PinkJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Jellyfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Crab",
+        net_id: 67,
+        kind: NpcKind::Crab,
+        variant: None,
+        quick_unlock: false,
+        name: "Crab",
+    },
+    BestiaryEntryDef {
+        credit_id: "DungeonGuardian",
+        net_id: 68,
+        kind: NpcKind::DungeonGuardian,
+        variant: None,
+        quick_unlock: true,
+        name: "Dungeon Guardian",
+    },
+    BestiaryEntryDef {
+        credit_id: "Antlion",
+        net_id: 69,
+        kind: NpcKind::Antlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "SpikeBall",
+        net_id: 70,
+        kind: NpcKind::SpikeBall,
+        variant: None,
+        quick_unlock: false,
+        name: "Spike Ball",
+    },
+    BestiaryEntryDef {
+        credit_id: "Bunny",
+        net_id: 46,
+        kind: NpcKind::Bunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
     BestiaryEntryDef {
         credit_id: "ForceBubble",
         net_id: 384,
@@ -2263,6 +2419,7 @@ pub fn try_entry_for_npc(
     let kind = match kind {
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
+        NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => NpcKind::BoneSerpentHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
         // The Destroyer's segments + the Probe fold onto the head
         // (`BestiaryDatabaseNPCsPopulator.cs:688-690`: {135,134},{136,134},
@@ -2308,6 +2465,7 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
     // whole worm to the head's bestiary id — one entry per credit).
     let kind = match kind {
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
+        NpcKind::BoneSerpentBody | NpcKind::BoneSerpentTail => NpcKind::BoneSerpentHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
         // The Destroyer's segments (Hide=true, `NPCID.cs:2192-2205`) and
