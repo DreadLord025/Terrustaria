@@ -1358,12 +1358,18 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 /// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
 /// which is where the two vocabularies meet.
 ///
-/// One of the twelve has no executed step in the port yet (`Shimmer`);
-/// listing it keeps the table 1:1 with the C# so a future step cannot
-/// silently un-prune itself. (`Larva` — `GenPassNameID.BeeLarvaInBeehives`
-/// — landed with W4-c31's hive rewrite.)
+/// One of the twelve has no executed step in the port yet (`Generate Ice
+/// Biome`); listing it keeps the table 1:1 with the C# so a future step
+/// cannot silently un-prune itself. (`Larva` — `GenPassNameID.BeeLarvaInBeehives`
+/// — landed with W4-c31's hive rewrite; `Shimmer` with W4-g36 A1.)
+///
+/// W4-d107 name fix: the C# compares `GenPassNameID.IceBiome`, whose value is
+/// `"Generate Ice Biome"` (`ID/GenPassNameID.cs:239`) — NOT `"Ice"`, which is
+/// `GenPassNameID.FragileIceOverIceBiomeWater` (`:280`). The first landing
+/// pruned the port's `fragile ice` step by mistake; the C# leaves fragile ice
+/// enabled under dualDungeons, so the port must too.
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
-    "Ice",                     // GenPassNameID.IceBiome            "Generate Ice Biome"
+    "Generate Ice Biome",      // GenPassNameID.IceBiome            (:239)
     "Full Desert",             // GenPassNameID.DesertBiome         "Full Desert"
     "Jungle",                  // GenPassNameID.Jungle              "Jungle"
     "Jungle Chests",           // GenPassNameID.JungleShrines       "Jungle Chests"
@@ -5906,12 +5912,14 @@ mod tests {
     /// The twelve names are the `GenPassNameID` strings the C# compares
     /// (`WorldGen.cs:22504`), i.e. `GenPassNameID.cs:239-325`'s values —
     /// pinned literally so a rename in the chain cannot silently detach one.
+    /// `IceBiome` is `"Generate Ice Biome"` (`:239`), not `"Ice"` (that is
+    /// `FragileIceOverIceBiomeWater`, `:280` — stays enabled under the seed).
     #[test]
     fn s1_k_1_dual_dungeons_disables_the_twelve_csharp_named_passes() {
         assert_eq!(
             DUAL_DUNGEON_DISABLED_PASSES,
             [
-                "Ice",
+                "Generate Ice Biome",
                 "Full Desert",
                 "Jungle",
                 "Jungle Chests",
@@ -5952,6 +5960,10 @@ mod tests {
         }
         // A pass outside the list stays enabled under the seed.
         assert!(!pass_disabled_by_special_seeds("Terrain", dual, no_classic));
+        // W4-d107: fragile ice ("Ice" = FragileIceOverIceBiomeWater,
+        // `GenPassNameID.cs:280`) is NOT IceBiome ("Generate Ice Biome",
+        // `:239`) — the C# leaves it enabled under dualDungeons.
+        assert!(!pass_disabled_by_special_seeds("Ice", dual, no_classic));
         // Another micro-seed does not prune.
         let other = MicroSeedFlags::from_sum(MicroSeedFlags::EXTRA_LIQUID);
         assert!(!pass_disabled_by_special_seeds("Jungle", other, no_classic));

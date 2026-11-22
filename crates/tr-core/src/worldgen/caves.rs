@@ -4,8 +4,8 @@ use super::noise::{Noise, Rng};
 use super::terrain::Layers;
 use super::tile_runner::{tile_runner, TileRunnerOpts};
 use super::{
-    TILE_ASH, TILE_CRIMTANE, TILE_DEMONITE, TILE_DIRT, TILE_GOLD, TILE_HELLSTONE, TILE_IRON,
-    TILE_LEAD, TILE_PLATINUM, TILE_STONE, TILE_TIN, TILE_TUNGSTEN,
+    TILE_ASH, TILE_COPPER, TILE_CRIMTANE, TILE_DEMONITE, TILE_DIRT, TILE_GOLD, TILE_HELLSTONE,
+    TILE_IRON, TILE_LEAD, TILE_PLATINUM, TILE_SILVER, TILE_STONE, TILE_TIN, TILE_TUNGSTEN,
 };
 use crate::ores::SavedOreTiers;
 use crate::tile::FLAG_ACTIVE;
@@ -122,9 +122,9 @@ fn roll_tiers(rng: &mut Rng, flags: crate::seeds::SeedFlags) -> SavedOreTiers {
 /// The band table (`WorldGen.cs:13399-13573`): (kind, density, y0, y1,
 /// strength lo/hi, steps lo/hi) with the GenVars quartet truncated exactly as
 /// the C# `(int)` casts truncate. Bands 10-11 sit behind `!noSurface &&
-/// !surfaceIsInSpace` (`:13543`) — no such seeds here, they always run. The
-/// drunk per-blob tier re-rolls that precede each band's `TileRunner`
-/// (`:13194` … `:13562`) are deferred — see `ores_and_shinies`.
+/// !surfaceIsInSpace` (`:13543`) — the gate is applied in `ores_and_shinies`.
+/// The drunk per-blob tier re-rolls that precede each band's `TileRunner`
+/// (`:13401` … `:13562`) ride [`DRUNK_TIER_PAIRS`] — see `ores_and_shinies`.
 fn band_table(
     tiers: &SavedOreTiers,
     layers: &Layers,
@@ -168,23 +168,95 @@ fn band_table(
     ]
 }
 
-/// The `OresAndShinies` generation pass (`WorldGen.cs:13182-13606`, the
-/// normal branch `:13397-13603`): the four tier coin-flips in the C# setup
-/// order, then twelve `TileRunner` band loops carrying the per-tile density
-/// table, closed by the evil band. The gem veins and the hellstone blobs keep
-/// their shape-model placement after the bands — vanilla runs them in the
-/// `Gems` (`WorldGen.cs:15050`) and `Underworld` (`:13805`) passes
-/// (ANALYSIS "OresAndShinies fidelity (M5-ORES-1)").
+/// The remix branch's band table (`WorldGen.cs:13189-13395`): the same nine
+/// underground bands as the normal branch with two y-window deltas — the
+/// silver deep band runs `[Main.worldSurface, Main.rockLayer)` at `0.00015`
+/// (`:13317`) and the gold deep band the same window (`:13333`), where the
+/// normal branch runs both from `rockLayerLow` to the bottom (`:13524`,
+/// `:13540`). The two sky bands keep the `!noSurface && !surfaceIsInSpace`
+/// gate (`:13336`) and the normal-branch rows. The closing evil band differs:
+/// `[worldSurface, rockLayer)` at `4.25E-05` (`:13384`/`:13391`) instead of
+/// the normal `[rockLayer, maxTilesY)` at `2.25E-05`.
+fn remix_band_table(
+    tiers: &SavedOreTiers,
+    layers: &Layers,
+    width: i32,
+    height: i32,
+    crimson: bool,
+) -> [(i32, f64, i32, i32, i32, i32, i32, i32); 12] {
+    let mut table = band_table(tiers, layers, width, height, crimson);
+    let world_surface = layers.world_surface as i32;
+    let rock_layer = layers.rock_layer as i32;
+    // The silver deep band (`:13304-13318`): `[worldSurface, rockLayer)`.
+    table[7].2 = world_surface;
+    table[7].3 = rock_layer;
+    // The gold deep band (`:13320-13334`): the same window.
+    table[8].2 = world_surface;
+    table[8].3 = rock_layer;
+    // The closing evil band (`:13382-13395`): the shallower window, denser.
+    table[11].1 = 4.25e-5;
+    table[11].2 = world_surface;
+    table[11].3 = rock_layer;
+    table
+}
+
+/// The drunk per-blob tier re-roll pairs (`WorldGen.cs:13401-13573`, the
+/// normal branch; the remix branch's identical arms at `:13194-13366`): each
+/// of the eleven ore bands precedes its `TileRunner` call with
+/// `if (drunkWorldGen) { if (Next(2) == 0) GenVars.X = normal; else
+/// GenVars.X = alternate; }`. The pairs in band order — copper ×3, iron ×3,
+/// silver ×2, gold ×1, sky silver, sky gold (`(normal, alternate)` tile ids,
+/// `TileID.cs`: tin 166, lead 167, tungsten 168, platinum 169).
+///
+/// The re-roll mutates the shared `GenVars.X` statics, NOT `SavedOreTiers`
+/// (set once by the Reset flips `:11274-11297` and saved,
+/// `WorldFile.cs:1388-1391`) — so `world.ore_tiers` keeps the Reset roll and
+/// only the placed blob's kind re-rolls. The two drunk evil half-bands
+/// (`:13579-13586`) carry NO tier re-roll — their kinds are literal 204/22.
+const DRUNK_TIER_PAIRS: [(i32, i32); 11] = [
+    (TILE_COPPER as i32, TILE_TIN as i32),
+    (TILE_COPPER as i32, TILE_TIN as i32),
+    (TILE_COPPER as i32, TILE_TIN as i32),
+    (TILE_IRON as i32, TILE_LEAD as i32),
+    (TILE_IRON as i32, TILE_LEAD as i32),
+    (TILE_IRON as i32, TILE_LEAD as i32),
+    (TILE_SILVER as i32, TILE_TUNGSTEN as i32),
+    (TILE_SILVER as i32, TILE_TUNGSTEN as i32),
+    (TILE_GOLD as i32, TILE_PLATINUM as i32),
+    (TILE_SILVER as i32, TILE_TUNGSTEN as i32),
+    (TILE_GOLD as i32, TILE_PLATINUM as i32),
+];
+/// The `OresAndShinies` generation pass (`WorldGen.cs:13182-13606`): the four
+/// tier coin-flips in the C# setup order, then twelve `TileRunner` band loops
+/// carrying the per-tile density table, closed by the evil band. The gem
+/// veins and the hellstone blobs keep their shape-model placement after the
+/// bands — vanilla runs them in the `Gems` (`WorldGen.cs:15050`) and
+/// `Underworld` (`:13805`) passes (ANALYSIS "OresAndShinies fidelity
+/// (M5-ORES-1)").
 ///
 /// M5-SEED-1: the seed flags ride in on `world.seeds` (set once by
 /// `worldgen::generate` from `GenOptions::flags`, `mod.rs:118`), so the tier
 /// flips and the walkers' own arms see the same secret-seed identity the rest
-/// of the pipeline does. The drunk-only pieces of the pass stay deferred:
-/// the 22 per-blob tier re-rolls (`if (drunkWorldGen) { Next(2) → GenVars.X }`,
-/// at `:13194` … `:13562`) and the drunk evil-band split into two
-/// half-density crimtane/demonite loops (`:13370-13378`, `:13577-13586`),
-/// which replace the single evil band (`:13589-13602`) in a drunk world. Both
-/// are owned by the drunk-world follow-up; a classic world draws neither.
+/// of the pipeline does.
+///
+/// W4-d107: the deferred seed branches land —
+/// * the drunk per-blob tier re-rolls (`:13401` … `:13573`, the remix twins
+///   `:13194` … `:13366`): one `Next(2)` BEFORE each of the eleven ore bands'
+///   four placement draws picks the normal or alternate tier for that blob
+///   ([`DRUNK_TIER_PAIRS`]). The re-roll mutates the placement kind only —
+///   `world.ore_tiers` keeps the Reset roll, like the C#'s `SavedOreTiers`
+///   (`WorldFile.cs:1388-1391` saves the Reset values, not the last blob's).
+/// * the drunk evil split (`:13577-13587`, remix `:13370-13380`): two extra
+///   half-density loops (`area * 2.25E-05 / 2.0`), crimtane 204 FIRST then
+///   demonite 22, `[rockLayer, maxTilesY)`, no tier re-roll — they run BEFORE
+///   the closing evil band, which still runs in full.
+/// * the sky-band gate (`:13543`, remix `:13336`): bands 10-11 run only when
+///   `!SecretSeed.noSurface.Enabled && !SecretSeed.surfaceIsInSpace.Enabled`.
+/// * the remix branch (`:13189-13396`): [`remix_band_table`]'s two y-window
+///   deltas plus the shallower, denser closing evil band; the band ORDER,
+///   densities and strength/steps tables are otherwise the normal branch's.
+/// A classic world draws none of the extra rolls — its stream is
+/// byte-identical to the pre-branch pass.
 pub(crate) fn ores_and_shinies(
     world: &mut World,
     rng: &mut Rng,
@@ -196,18 +268,68 @@ pub(crate) fn ores_and_shinies(
     // The secret-seed flags of the world being generated — a copy, so the
     // mutable `world` borrow stays free for the walkers.
     let flags = world.seeds;
+    let drunk = flags.contains(crate::seeds::SeedFlags::DRUNK);
+    let remix = flags.contains(crate::seeds::SeedFlags::REMIX);
     let tiers = roll_tiers(rng, flags);
     // The setup roll is per-world state in vanilla (`GenerateWorld`'s once
     // per world, `Main.cs:11266-11297`), so it rides the World for the save
-    // (M6-SAVE-1f) and the App's runtime copy reads it back.
+    // (M6-SAVE-1f) and the App's runtime copy reads it back. The drunk
+    // per-blob re-rolls below do NOT touch it (the C# re-rolls `GenVars.X`,
+    // not `SavedOreTiers.X`).
     world.ore_tiers = tiers;
-    let bands = band_table(&tiers, layers, width, height, crimson);
+    let bands = if remix {
+        remix_band_table(&tiers, layers, width, height, crimson)
+    } else {
+        band_table(&tiers, layers, width, height, crimson)
+    };
+    // The sky-band gate (`:13543` normal / `:13336` remix): the two surface
+    // silver/gold bands are skipped whole under noSurface / surfaceIsInSpace.
+    let sky_bands = !world.micro_seeds.contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+        && !world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::SURFACE_IS_IN_SPACE);
     let area = (width * height) as f64;
-    for &(kind, density, y0, y1, s0, s1, t0, t1) in &bands {
+    for (i, &(kind, density, y0, y1, s0, s1, t0, t1)) in bands.iter().enumerate() {
+        if (i == 9 || i == 10) && !sky_bands {
+            continue;
+        }
+        // The drunk evil split (`:13577-13587` / `:13370-13380`), before the
+        // closing evil band in both branches: crimtane first, demonite
+        // second, each at half the evil density, no tier re-roll.
+        if i == 11 && drunk {
+            let half = (area * 2.25e-5 / 2.0) as i32;
+            for evil in [TILE_CRIMTANE as i32, TILE_DEMONITE as i32] {
+                for _ in 0..half {
+                    let x = rng.range(0, width);
+                    let y = rng.range(layers.rock_layer as i32, height);
+                    let strength = rng.range(3, 6);
+                    let steps = rng.range(4, 8);
+                    tile_runner(
+                        world,
+                        rng,
+                        x,
+                        y,
+                        strength as f64,
+                        steps,
+                        evil,
+                        layers.world_surface,
+                        &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
+                    );
+                }
+            }
+        }
         // `(int)((double)(maxTilesX * maxTilesY) * density)` (`:13399` and
         // friends): the C# multiplies the int area first.
         let count = (area * density) as i32;
         for _ in 0..count {
+            // The drunk tier re-roll precedes the placement draws (`:13401`
+            // and friends) — eleven bands carry it, the evil band does not.
+            let kind = if drunk && i < 11 {
+                let (normal, alternate) = DRUNK_TIER_PAIRS[i];
+                if rng.range(0, 2) == 0 { normal } else { alternate }
+            } else {
+                kind
+            };
             let x = rng.range(0, width);
             let y = rng.range(y0, y1);
             let strength = rng.range(s0, s1);
@@ -221,9 +343,7 @@ pub(crate) fn ores_and_shinies(
                 steps,
                 kind,
                 layers.world_surface,
-                &TileRunnerOpts {
-                    flags: world.seeds, ..TileRunnerOpts::default()
-                },
+                &TileRunnerOpts { flags, ..TileRunnerOpts::default() },
             );
         }
     }
@@ -269,8 +389,13 @@ fn ore_blob(world: &mut World, x: i32, y: i32, kind: u16, size: i32, rng: &mut R
 /// the group's strength/steps/speed table. The draw order is the C#'s:
 /// column roll(s) → strength → steps → speed X, then the runner's own
 /// ledger. Group 5's `Caverer` call (`:12251-12268`) is deferred (it needs
-/// `digTunnel`, `WorldGen.cs:79110+`); the remix `×3` arms are out with the
-/// remix seeds themselves.
+/// `digTunnel`, `WorldGen.cs:79110+`).
+///
+/// W4-d107: the pass-level seed gates land — the whole pass is skipped under
+/// `SecretSeed.noSurface` (`:12164`), and the remix seed triples the first
+/// three group counts (`:12170-12175`: `num *= 3; num2 *= 3; num3 *= 3;` —
+/// group 4's `num7` at `:12232` is NOT tripled). A classic world draws the
+/// identical ledger.
 pub(crate) fn surface_caves(
     world: &mut World,
     rng: &mut Rng,
@@ -278,11 +403,26 @@ pub(crate) fn surface_caves(
     left_beach_end: i32,
     right_beach_start: i32,
 ) {
+    // The pass gate (`:12164`): `!Skyblock.denyAllGeneration &&
+    // !SecretSeed.noSurface.Enabled` — the skyblock half stays with the
+    // skyblock generator (unported); noSurface skips every draw.
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::NO_SURFACE)
+    {
+        return;
+    }
+    // The remix count triple (`:12170-12175`).
+    let triple = if world.seeds.contains(crate::seeds::SeedFlags::REMIX) {
+        3
+    } else {
+        1
+    };
     let width = world.width;
     let world_surface = layers.world_surface;
     let scan_to = layers.surface_high;
     // Group 1 (`:12176-12192`): the small diggers, `maxTilesX * 0.002`.
-    for _ in 0..((width as f64) * 0.002) as i32 {
+    for _ in 0..(((width as f64) * 0.002) as i32) * triple {
         let x = open_column(rng, width, 0.45, 0.55, left_beach_end, right_beach_start);
         if let Some(j) = first_active(world, x, scan_to) {
             let strength = rng.range(3, 6);
@@ -292,7 +432,7 @@ pub(crate) fn surface_caves(
         }
     }
     // Group 2 (`:12194-12210`): the mid diggers, `maxTilesX * 0.0007`.
-    for _ in 0..((width as f64) * 0.0007) as i32 {
+    for _ in 0..(((width as f64) * 0.0007) as i32) * triple {
         let x = open_column(rng, width, 0.43, 0.57, left_beach_end, right_beach_start);
         if let Some(j) = first_active(world, x, scan_to) {
             let strength = rng.range(10, 15);
@@ -303,7 +443,7 @@ pub(crate) fn surface_caves(
     }
     // Group 3 (`:12212-12230`): the large three-runner digs,
     // `maxTilesX * 0.0003` — the trio's draw order is the call order.
-    for _ in 0..((width as f64) * 0.0003) as i32 {
+    for _ in 0..(((width as f64) * 0.0003) as i32) * triple {
         let x = open_column(rng, width, 0.4, 0.6, left_beach_end, right_beach_start);
         if let Some(j) = first_active(world, x, scan_to) {
             let (s1, t1) = (rng.range(12, 25), rng.range(150, 500));
@@ -667,6 +807,156 @@ mod worldgen_caves {
         assert!(small >= 1 && small <= 40, "the min-parameter vein: {small}");
     }
 
+    /// W4-d107 — the remix branch's band deltas (`WorldGen.cs:13304-13334`,
+    /// `:13382-13395`): the silver/gold deep bands move to
+    /// `[worldSurface, rockLayer)`, the closing evil band densifies to
+    /// `4.25E-05` on the same shallow window; every other row keeps the
+    /// normal branch's values (`:13191-13301` vs `:13399-13508`).
+    #[test]
+    fn w4_d107_the_remix_band_table_moves_the_deep_silver_gold_and_evil_windows() {
+        let layers = layers_for(60, 240);
+        let tiers = SavedOreTiers::new();
+        let normal = band_table(&tiers, &layers, 4200, 240, false);
+        let remix = remix_band_table(&tiers, &layers, 4200, 240, false);
+        let ws = layers.world_surface as i32;
+        let rl = layers.rock_layer as i32;
+        // Bands 1-6 and the sky pair are identical rows.
+        for i in [0, 1, 2, 3, 4, 5, 6, 9, 10] {
+            assert_eq!(remix[i], normal[i], "band {i} must match the normal branch");
+        }
+        // The silver deep band (`:13317`): [worldSurface, rockLayer).
+        assert_eq!((remix[7].2, remix[7].3), (ws, rl));
+        assert_eq!(remix[7].1, 1.5e-4);
+        // The gold deep band (`:13333`): the same window.
+        assert_eq!((remix[8].2, remix[8].3), (ws, rl));
+        assert_eq!(remix[8].1, 1.2e-4);
+        // The closing evil band (`:13391-13393`): denser, shallower.
+        assert_eq!(remix[11].1, 4.25e-5);
+        assert_eq!((remix[11].2, remix[11].3), (ws, rl));
+        assert_eq!(remix[11].0, 22);
+        let crimson = remix_band_table(&tiers, &layers, 4200, 240, true);
+        assert_eq!(crimson[11].0, 204);
+    }
+
+    /// W4-d107 — the drunk per-blob re-roll pairs (`WorldGen.cs:13401-13573`):
+    /// copper ×3, iron ×3, silver ×2, gold, sky silver, sky gold — normal on
+    /// `Next(2) == 0`, alternate otherwise, one draw per blob before the
+    /// placement quad.
+    #[test]
+    fn w4_d107_the_drunk_pairs_follow_the_band_order() {
+        assert_eq!(
+            DRUNK_TIER_PAIRS,
+            [
+                (7, 166),
+                (7, 166),
+                (7, 166),
+                (6, 167),
+                (6, 167),
+                (6, 167),
+                (9, 168),
+                (9, 168),
+                (8, 169),
+                (9, 168),
+                (8, 169),
+            ]
+        );
+    }
+
+    /// W4-d107 — a drunk world places BOTH tiers of a pair inside one band's
+    /// window (the re-roll is live), keeps `world.ore_tiers` at the Reset
+    /// roll, and grows both evil ores from the half-density split
+    /// (`:13577-13587`). The classic control on the same seed and stream
+    /// start places only the rolled tier per band.
+    #[test]
+    fn w4_d107_the_drunk_world_mixes_tiers_and_splits_the_evil_band() {
+        use crate::seeds::SeedFlags;
+        let (w, h) = (420, 240);
+        let surface = 60;
+        let layers = layers_for(surface, h);
+        let mut drunk_world = flat_world(w, h, surface);
+        drunk_world.seeds = SeedFlags::from(SeedFlags::DRUNK);
+        let mut rng = Rng(0xD8D8);
+        ores_and_shinies(&mut drunk_world, &mut rng, &layers, w, h, false);
+        let copper = drunk_world.ore_tiers.copper as u16;
+        let alt_copper = if copper == 7 { 166 } else { 7 };
+        let kinds = |world: &World, kind: u16| {
+            world.tiles.iter().filter(|t| t.active() && t.kind == kind).count()
+        };
+        assert!(kinds(&drunk_world, copper) > 0, "the normal tier places");
+        assert!(
+            kinds(&drunk_world, alt_copper) > 0,
+            "the drunk re-roll places the alternate tier too"
+        );
+        // The drunk evil split places both flavours regardless of crimson.
+        assert!(kinds(&drunk_world, 204) > 0, "the drunk crimtane half-band");
+        assert!(kinds(&drunk_world, 22) > 0, "the drunk demonite half-band");
+        // The saved tiers keep the Reset roll (the C# re-rolls GenVars.X,
+        // not SavedOreTiers.X — WorldFile.cs:1388-1391).
+        let mut replay = Rng(0xD8D8);
+        let reset = roll_tiers(&mut replay, SeedFlags::from(SeedFlags::DRUNK));
+        assert_eq!(drunk_world.ore_tiers.copper, reset.copper);
+        assert_eq!(drunk_world.ore_tiers.iron, reset.iron);
+        // The classic control: no alternate copper, no split flavours on the
+        // same canvas and stream start (the corruption world's evil band is
+        // demonite-only).
+        let mut classic = flat_world(w, h, surface);
+        let mut rng = Rng(0xD8D8);
+        ores_and_shinies(&mut classic, &mut rng, &layers, w, h, false);
+        let classic_copper = classic.ore_tiers.copper as u16;
+        let classic_alt = if classic_copper == 7 { 166 } else { 7 };
+        assert_eq!(kinds(&classic, classic_alt), 0, "classic places one tier");
+        assert_eq!(kinds(&classic, 204), 0, "classic corruption: no crimtane");
+    }
+
+    /// W4-d107 — the sky-band gate (`WorldGen.cs:13543`): under
+    /// `SecretSeed.noSurface` (or `surfaceIsInSpace`) the two sky silver/gold
+    /// bands draw NOTHING — the whole pass's stream lands exactly where the
+    /// ten-band pass leaves it, while a classic world draws on. Observable
+    /// via the shared stream state after the bands (the gem/hellstone tails
+    /// draw equally in both, so the state delta is the skipped bands').
+    #[test]
+    fn w4_d107_no_surface_skips_the_sky_bands_whole() {
+        use crate::seeds::MicroSeedFlags;
+        let (w, h) = (420, 240);
+        let surface = 60;
+        let layers = layers_for(surface, h);
+        let run = |micro: MicroSeedFlags| {
+            let mut world = flat_world(w, h, surface);
+            world.micro_seeds = micro;
+            let mut rng = Rng(0x5151);
+            ores_and_shinies(&mut world, &mut rng, &layers, w, h, false);
+            (world, rng)
+        };
+        let (classic, classic_rng) = run(MicroSeedFlags::none());
+        let (no_surface, ns_rng) =
+            run(MicroSeedFlags::from_sum(MicroSeedFlags::NO_SURFACE));
+        assert_ne!(
+            classic_rng.0, ns_rng.0,
+            "the skipped sky bands must not draw on the noSurface world"
+        );
+        // The sky window [0, surface_low) carries silver/gold in the classic
+        // world; the noSurface world has none (bands 10-11 are the only
+        // writers above surface_low — the walkers' reach is ≤ ~10 tiles and
+        // surface_low sits 58 rows above the first underground band).
+        let sky_kinds = |world: &World| {
+            (0..(layers.surface_low as i32 - 20))
+                .flat_map(|y| (0..w).map(move |x| (x, y)))
+                .filter(|&(x, y)| {
+                    world
+                        .tile(x, y)
+                        .is_some_and(|t| t.active() && matches!(t.kind, 9 | 168 | 8 | 169))
+                })
+                .count()
+        };
+        assert!(sky_kinds(&classic) > 0, "the classic sky bands place ore");
+        assert_eq!(sky_kinds(&no_surface), 0, "noSurface skips the sky bands");
+        // surfaceIsInSpace gates the same two bands (`:13543`'s second term).
+        let (space, space_rng) =
+            run(MicroSeedFlags::from_sum(MicroSeedFlags::SURFACE_IS_IN_SPACE));
+        assert_eq!(sky_kinds(&space), 0);
+        assert_eq!(space_rng.0, ns_rng.0, "both gates skip the same draws");
+    }
+
     /// t4 — the SurfaceCaves passages open the surface: the C# scan starts
     /// every runner at the first active tile from the sky
     /// (`WorldGen.cs:12184-12191`), so each passage's mouth is the surface
@@ -718,5 +1008,56 @@ mod worldgen_caves {
             oy > surface,
             "the pinned passage at ({ox},{oy}) is not a surface breach"
         );
+    }
+
+    /// W4-d107 — the SurfaceCaves remix triple (`WorldGen.cs:12170-12175`):
+    /// groups 1-3 run `count * 3` runners; group 4 does not. Observable on
+    /// the stream state — a remix world draws strictly more than the classic
+    /// one on the same seed (the extra column rolls + runner ledgers), and
+    /// the world hash moves.
+    #[test]
+    fn w4_d107_the_remix_seed_triples_the_first_three_groups() {
+        use crate::seeds::SeedFlags;
+        let (w, h) = (4200, 400);
+        let surface = 60;
+        let layers = layers_for(surface, h);
+        let run = |flags: SeedFlags| {
+            let mut world = flat_world(w, h, surface);
+            world.seeds = flags;
+            let mut rng = Rng(0xCAFE);
+            surface_caves(&mut world, &mut rng, &layers, 0, w);
+            (world_hash(&world), rng)
+        };
+        let (classic_hash, classic_rng) = run(SeedFlags::none());
+        let (remix_hash, remix_rng) = run(SeedFlags::from(SeedFlags::REMIX));
+        assert_ne!(
+            classic_rng.0, remix_rng.0,
+            "the tripled groups draw more than the classic ledger"
+        );
+        assert_ne!(classic_hash, remix_hash, "the extra digs move the world");
+    }
+
+    /// W4-d107 — the SurfaceCaves noSurface gate (`WorldGen.cs:12164`): the
+    /// whole pass returns before any draw — the stream state is untouched
+    /// and the canvas stays flat.
+    #[test]
+    fn w4_d107_no_surface_skips_the_whole_pass() {
+        use crate::seeds::MicroSeedFlags;
+        let (w, h) = (4200, 400);
+        let surface = 60;
+        let layers = layers_for(surface, h);
+        let mut world = flat_world(w, h, surface);
+        world.micro_seeds = MicroSeedFlags::from_sum(MicroSeedFlags::NO_SURFACE);
+        let mut rng = Rng(0xCAFE);
+        let before = rng.0;
+        surface_caves(&mut world, &mut rng, &layers, 0, w);
+        assert_eq!(rng.0, before, "noSurface draws nothing");
+        // Every column still opens at the flat surface row — no passage.
+        for x in 0..w {
+            assert!(
+                world.tile(x, surface).is_some_and(|t| t.active()),
+                "column {x} was dug despite noSurface"
+            );
+        }
     }
 }
