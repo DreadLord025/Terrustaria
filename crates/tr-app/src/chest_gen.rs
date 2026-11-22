@@ -1564,10 +1564,11 @@ mod tests {
         w
     }
 
-    /// The sky probe reads the port's own writer: the floating-island houses
-    /// write `WALL_CLOUD` = 73 (`worldgen/islands.rs:26`/`:133`), not the
-    /// vanilla 216/187 cloud walls (216 is the underground desert's shell —
-    /// `worldgen/desert.rs`).
+    /// The sky probe reads wall 73 — the pre-W4-d104 island houses wrote
+    /// `WALL_CLOUD` = 73; the faithful `IslandHouse` port writes the
+    /// vanilla sunplate wall 82 (`worldgen/island_houses.rs`), so the
+    /// probe's live writer is the loaded-world path — the fixture plants
+    /// the wall directly.
     #[test]
     fn the_sky_probe_reads_the_cloud_wall() {
         let mut w = rig();
@@ -2126,9 +2127,10 @@ mod tests {
             let _ = slot;
             put_chest(&mut w, *x, 199);
         }
-        // The cycle itself moved to the site (`islands.rs::build_house`,
-        // `GenVars.skyIslandHouseCount`); the hook inserts the site's pick
-        // (`main_item`) into slot 0 — the walk order rides the same table.
+        // The cycle itself moved to the site (`island_houses.rs`'s
+        // `IslandHouse` port, `GenVars.skyIslandHouseCount` — W4-d104); the
+        // hook inserts the site's pick (`main_item`) into slot 0 — the walk
+        // order rides the same table.
         let mut stock = ChestStock::new(0x5EED, false);
         let mut stock2 = ChestStock::new(0x5EED, false);
         let mut mains = Vec::new();
