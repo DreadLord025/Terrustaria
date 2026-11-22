@@ -519,6 +519,63 @@ mod tests {
     // pass takes the sub-vanilla width guard (no shimmer placed →
     // `shimmer_position` None → the arm's zero-sentinel early return), so even
     // wired the arm is a no-op on the 512 pin. a == b untouched.
+    // W4-g37 B1 (code-only): the Statues pass (`WorldGen.cs:16853-16970`,
+    // `passes_b.rs::pass_statues`) lands before `cave houses`. On a 512-wide
+    // world the whole x band sits inside the ±380 `oceanDepths` beach margin
+    // (`x < 380 || x > 132` covers every roll), so all 17 candidates are
+    // rejected and no statue places — this pin is UNCHANGED by B1 alone (the
+    // isolated `pass_rng("Statues")` stream shifts no other ledger). The
+    // DEFAULT_WORLD pin below moves BY DESIGN; deferred to the gate. The
+    // a == b halves stay untouched.
+    // W4-g37 B2 (code-only): the Surface Chests pass
+    // (`WorldGen.cs:17130-17210`, `passes_b.rs::pass_surface_chests`) lands
+    // after `cave houses` — the count `(int)(512*0.005) = 2` surface chests
+    // place on their own `pass_rng("Surface Chests")` stream (the y band sits
+    // above the oceanLevel line, so oceanDepths never re-rolls them), moving
+    // this pin BY DESIGN; deferred to the gate. The a == b halves stay
+    // untouched.
+    // W4-g37 B3 (code-only): the Water Chests pass
+    // (`WorldGen.cs:17245-17355`, `passes_b.rs::pass_water_chests`) lands
+    // after `surface chests` — the ocean-cave treasure chests + the 9-wide
+    // water scatter place on their own stream, moving this pin BY DESIGN;
+    // deferred. (The 512-world's ocean-cave treasure count may be 0, but the
+    // scatter still runs.) a == b untouched.
+    // W4-g37 B4 (code-only): the Cave Walls pass
+    // (`WorldGen.cs:17711-17839`, `passes_b.rs::pass_cave_walls`) lands after
+    // the temple family — the enclosed-space + jungle wall fills repaint the
+    // cave walls on their own stream, moving this pin BY DESIGN; deferred.
+    // a == b untouched.
+    // W4-g37 B5 (code-only): the Floating Island Houses pass
+    // (`WorldGen.cs:17859-17874`, `passes_b.rs::pass_floating_island_houses`)
+    // now builds the recorded island sites (the FloatingIslands pass no longer
+    // builds houses inline) — the sunplate shells + skyware interiors + chests
+    // move this pin BY DESIGN; deferred. a == b untouched.
+    // W4-g37 B6 (code-only): the Quick Cleanup pass
+    // (`WorldGen.cs:17875-17995`, `passes_b.rs::pass_quick_cleanup`) lands
+    // after the island houses — the ocean/desert/slope sweep retypes + clears
+    // tiles on its own stream (the sand-column fill draws Next(4,7)), moving
+    // this pin BY DESIGN; deferred. a == b untouched.
+    // W4-g37 B7 (code-only): the Hellforge pass
+    // (`WorldGen.cs:18187-18236`, `passes_b.rs::pass_hellforge`) lands after
+    // `pots` — the width/200 hellforges place on the hell-fort walls on their
+    // own stream, moving this pin BY DESIGN; deferred. a == b untouched.
+    // W4-g37 B8 (code-only): the Spreading Grass pass
+    // (`WorldGen.cs:18237-18446`, `passes_b.rs::pass_spreading_grass`) lands
+    // after `hellforge` — the surface mud/ore conversion + grass spread retype
+    // tiles (no RNG draw), moving this pin BY DESIGN; deferred. a == b
+    // untouched.
+    // W4-g37 B9 (code-only): the Surface Ore and Stone pass
+    // (`WorldGen.cs:18447-18512`, `passes_b.rs::pass_surface_ore_and_stone`)
+    // lands after `spreading grass` — the surface ore veins + stone blobs
+    // place on their own stream, moving this pin BY DESIGN; deferred. a == b
+    // untouched.
+    // W4-g37 gap-fill (code-only): the Final Cleanup pass
+    // (`WorldGen.cs:22141-22490`, `final_cleanup.rs::pass_final_cleanup`)
+    // lands after `water plants` — the whole-map sweep runs on the 512 world
+    // too (the wall-hole fill, the sand hardening, the dungeon liquid resets
+    // are tile-state arms), so this pin moves BY DESIGN; deferred to the
+    // gate. Only the 668 dirt-throw scatter is width-guarded out (the
+    // `Next(50, maxX-50)` band collapses at 512). a == b untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -834,6 +891,36 @@ mod tests {
     // to the gate. Own draws ride the caller's `pass_rng("Final Cleanup")`
     // stream (the two NextDouble jitter rolls per outer-sweep cell); a == b
     // untouched (the W:7 witnesses replay it).
+    // W4-g37 B1 (code-only): the Statues pass (see SEED42_512 above) places
+    // its 73-style cycle on the default 4200-wide world — the statue bodies,
+    // the four trap plates and their red wires move this pin BY DESIGN;
+    // deferred to the gate.
+    // W4-g37 B2 (code-only): the Surface Chests pass (see SEED42_512 above)
+    // places its ~21 surface chests + the AddBuriedChest floor scans on the
+    // default world — this pin moves BY DESIGN; deferred to the gate.
+    // W4-g37 B3 (code-only): the Water Chests pass (see SEED42_512 above) —
+    // the treasure + scatter chests move this pin BY DESIGN; deferred.
+    // W4-g37 B4 (code-only): the Cave Walls pass (see SEED42_512 above) — the
+    // wall fills move this pin BY DESIGN; deferred.
+    // W4-g37 B5 (code-only): the Floating Island Houses pass (see SEED42_512
+    // above) — the island houses move this pin BY DESIGN; deferred.
+    // W4-g37 B6 (code-only): the Quick Cleanup pass (see SEED42_512 above) —
+    // the cleanup sweep moves this pin BY DESIGN; deferred.
+    // W4-g37 B7 (code-only): the Hellforge pass (see SEED42_512 above) — the
+    // hellforges move this pin BY DESIGN; deferred.
+    // W4-g37 B8 (code-only): the Spreading Grass pass (see SEED42_512 above) —
+    // the surface conversion moves this pin BY DESIGN; deferred.
+    // W4-g37 B9 (code-only): the Surface Ore and Stone pass (see SEED42_512
+    // above) — the ore veins + stone blobs move this pin BY DESIGN; deferred.
+    // W4-g37 gap-fill (code-only): the Final Cleanup pass
+    // (`WorldGen.cs:22141-22490`, `final_cleanup.rs::pass_final_cleanup`)
+    // lands after `water plants` — the wall-hole fill, the falling-sand
+    // hardening, the boulder re-seats, the dungeon-wall liquid resets and the
+    // 668 dirt throws move this pin BY DESIGN; deferred to the gate. The
+    // dirt-throw scatter's `Next(50, maxX-50)` band collapses on the 512
+    // world (the sub-vanilla guard skips it), but the sweep arms still run
+    // there — SEED42_512 moves too, deferred. a == b untouched (the scatter
+    // rides its own `pass_rng("Final Cleanup")` stream).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

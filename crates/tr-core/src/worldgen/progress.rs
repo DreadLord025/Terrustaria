@@ -125,6 +125,22 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "lihzahrd temple" => PassMessage::Gen(70),
         // WorldGen.cs:16980.
         "cave houses" => PassMessage::Gen(30),
+        // W4-g37 B1/B2/B3/B4/B5 KEEP-ONE (matrix-88 §2.7-2.11): the statues /
+        // surface chests / water chests / cave walls / floating island houses
+        // arms are d103/g44-owned (the d103 arms sit below) — g37's duplicate
+        // rows dropped. B6/B7/B8/B9 (quick cleanup / hellforge / spreading
+        // grass / surface ore and stone) are d104-owned, unmerged at this gate;
+        // the arms stay for the loading feed when d104 lands.
+        // WorldGen.cs:17879 (W4-g37 B6).
+        "quick cleanup" => PassMessage::Key("WorldGeneration.QuickCleanup"),
+        // WorldGen.cs:18191 (W4-g37 B7).
+        "hellforge" => PassMessage::Gen(36),
+        // WorldGen.cs:18241 (W4-g37 B8).
+        "spreading grass" => PassMessage::Gen(37),
+        // WorldGen.cs:18447 (W4-g37 B9 — the pass sets progress.Set(1.0) with
+        // no message; the slot keeps the prior step's message in vanilla, so
+        // the port maps it to the same Gen(37) row for the loading feed).
+        "surface ore and stone" => PassMessage::Gen(37),
         // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
         "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the

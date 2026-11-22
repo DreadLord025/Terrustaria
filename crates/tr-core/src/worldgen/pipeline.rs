@@ -1509,6 +1509,9 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("exposed gems", "Gems In Ice Biome", step_exposed_gems),
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
+    // W4-g37 B2/B3 KEEP-ONE (matrix-88 §2.8/§2.9): Surface Chests + Water
+    // Chests are d103-owned (buried_chest.rs / water_chests.rs) — g37's
+    // passes_b copies dropped; the d103 slots sit after `statues` below.
     // The vanilla slots (`WorldGen.cs:17356`, `:17428`, `:17472`): after the
     // chest family (the `UnderwaterChests` environs `:17245`, which the port's
     // "chests" step covers) and before the temple (`:17701`) — the M5-STRUCT-5
@@ -1524,10 +1527,16 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("wet jungle", "Wet Jungle", step_wet_jungle),
     step!("pyramids", "Pyramids", step_pyramids),
     step!("pots", "Pots", step_pots),
+    // W4-g37 B7/B8/B9 KEEP-ONE (matrix-88 §2.13/§2.14/§2.15): Hellforge +
+    // Spreading Grass + Surface Ore and Stone are d104-owned (unmerged at
+    // this gate) — g37's passes_b copies dropped; the slots re-land with d104.
     step!("beehives", "Hives", step_beehives),
     step!("hell forts", "", step_hell_forts),
     step!("lihzahrd temple", "Jungle Temple", step_temple),
     step!("temple part 2", "Temple", step_temple_part2),
+    // W4-g37 B4/B1 KEEP-ONE (matrix-88 §2.10/§2.7): Cave Walls + Statues are
+    // d103-owned (cave_walls.rs / statues.rs) — g37's passes_b copies dropped;
+    // the d103 slots sit after `waterfalls`/`life crystals` below.
     step!("cave houses", "Buried Chests", step_cave_houses),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
@@ -2870,6 +2879,12 @@ fn step_cave_houses(
         streams.chest_stock.as_deref_mut(),
     );
 }
+
+// W4-g37 B1/B2/B3/B4 KEEP-ONE (matrix-88 §2.7/§2.8/§2.9/§2.10): the
+// step_statues / step_surface_chests / step_water_chests / step_cave_walls
+// passes_b copies dropped — d103's statues.rs / buried_chest.rs /
+// water_chests.rs / cave_walls.rs own those passes (the d103 step fns sit
+// after step_life_crystals below).
 
 fn step_campsites(
     world: &mut World,
@@ -4576,7 +4591,9 @@ mod tests {
     fn test_DW_5_6_cave_decor_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("spider caves"), pos("chests") + 1);
+        // W4-g37 B2/B3: the chest-family grouping inserts `surface chests` +
+        // `water chests` between `chests` and `spider caves`.
+        assert_eq!(pos("spider caves"), pos("water chests") + 1);
         assert_eq!(pos("gem caves"), pos("spider caves") + 1);
         assert_eq!(pos("moss"), pos("gem caves") + 1);
         assert_eq!(names[pos("moss") + 1], "altars");
