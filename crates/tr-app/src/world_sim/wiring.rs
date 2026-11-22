@@ -246,6 +246,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         on_conveyor: false,
                         age_ticks: 0,
                         enemy_grab_delay_time: 0,
+                        instanced: false,
                     });
                 }
                 tr_core::wiring::StatueSpawn::Teleport { x, y, roster } => {
@@ -872,6 +873,7 @@ mod tests {
                 on_conveyor: false,
                 age_ticks: 0,
                 enemy_grab_delay_time: 0,
+                instanced: false,
             });
         }
         trip_and_tick(&mut app);

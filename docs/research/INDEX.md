@@ -90,6 +90,7 @@ per `docs/superpowers` agreements).
 
 | 219 | The 949 Torch God keep-one (W4-f33 vs W4-d19, chain 93→219 per registry-150 §3 executed at batch-O merge): the arm-by-arm verdict — KEEP f33's `projectile_ai_torch_god.rs` (the 32-draw census, the Kill arm, the live hitbox, the XNA float forms) | `219-torch-god-949-keep-one.md` | ✅ recommendation |
 | 221 | The f33 closeout fold-input + RETIRE FINAL (chain 93-addendum→221 per registry-150 §3 backfill, executed at batch-O merge: the v7 pair's fold-input CONSUMED by g88 v11 `a9f1c29d` — §1-receipt ↔ 103 §2b; the d19b-tip exact 949 drop-hunks; the c36 row-chain verification; the music-101 census; §3b the a6b `d7de8bd5` 5043 re-compare — KEEP the f33 full body; §7 the whole-window event final-verify — no arm missed; §8 the FINAL merger instruction) | `221-torch-god-fold-input-addendum.md` | ✅ FINAL (retire) |
+| 284 | g52c net final-audit: the relay-host arms census (SEND side; the g48 FINAL-table feed, the 34 destroy keep-one, the 34/162 codec census; 139 stays RESERVED for g52c-net-master; number per registry-150 §9.1 — 284=g52 pre-§8 KEEP) | `284-g52c-relay-host-arms-census.md` | ✅ code-only |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

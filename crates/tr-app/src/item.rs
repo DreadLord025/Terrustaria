@@ -1001,6 +1001,12 @@ pub struct ItemDrop {
     /// `:405` row too. Distinct from [`Self::grab_delay_time`] (the PLAYER
     /// grab clock).
     pub enemy_grab_delay_time: i32,
+    /// `WorldItem.instanced` (`WorldItem.cs:36`): a per-player loot split drop.
+    /// The `SendData(21)` pre-switch refuses to sync it (`NetMessage.cs:92-95`)
+    /// — it exists only for its reserved owner. No host spawn path sets it yet
+    /// (the instanced-loot split is unported); the `90` client apply carries the
+    /// reservation through `net_reserved` (W4-g50).
+    pub instanced: bool,
 }
 
 // 347 §2.1 — the g15 `SplashKind` enum RETIRED with the splash third form;
@@ -1042,6 +1048,7 @@ impl ItemDrop {
             on_conveyor: false,
             age_ticks: 0,
             enemy_grab_delay_time: 0,
+            instanced: false,
         }
     }
 
@@ -1049,6 +1056,13 @@ impl ItemDrop {
     /// shared `DustPool` + the case-19 play — the g67 rain-splash pattern).
     pub(crate) fn take_splash(&mut self) -> Option<ItemSplash> {
         self.pending_splash.take()
+    }
+
+    /// `Item.IsAir` (`Item.cs:385-395`): type 0 is air, otherwise a non-positive
+    /// stack is air. The `SendData(21)` pre-switch reads it to rewrite the send
+    /// to `151 SyncItemDespawn` (`NetMessage.cs:96-99`).
+    pub fn is_air(&self) -> bool {
+        self.kind == 0 || self.count == 0
     }
 
     /// `WorldItem.ApplySpawnOwnership`'s `GrabDelayForLocalPlayer` /
