@@ -39,6 +39,7 @@ mod entity_lights;
 mod item_lights;
 mod npc_lights;
 mod npc_lights_b;
+mod npc_lights_c;
 mod player_lights;
 mod player_lights_b;
 mod proj_lights;
