@@ -62,6 +62,17 @@ impl LocalizedText {
         LocalizedText::new("", "", true)
     }
 
+    /// `LocalizedText.ConditionsMet` (`LocalizedText.cs:35-45`): a plain
+    /// value is always met; a `VariableText` value asks its conditions
+    /// (`VariableText.ConditionsMet` → `CheckConditionsAndLoadArgs`,
+    /// `VariableText.cs:73-99`).
+    pub fn conditions_met(&self, lookup: &dyn Fn(&str) -> Option<Substitution>) -> bool {
+        match &self.parsed {
+            Some(parsed) => parsed.conditions_met(lookup),
+            None => true,
+        }
+    }
+
     pub fn key(&self) -> &str {
         &self.key
     }
@@ -119,6 +130,13 @@ impl LocalizedText {
 #[derive(Clone, Debug)]
 pub struct LanguageManager {
     localized_texts: HashMap<String, LocalizedText>,
+    /// The `_localizedTexts` Dictionary's INSERTION order — .NET's
+    /// `Dictionary<TKey,TValue>` enumerates in insertion order while no
+    /// removals happen (the manager never removes), and `FindAll` /
+    /// `SelectRandom` (`LanguageManager.cs:379-411`) walk that order. The
+    /// chatter picks index into it, so the order is behaviour, not an
+    /// implementation detail (W4-d120).
+    text_order: Vec<String>,
     category_grouped_keys: HashMap<String, Vec<String>>,
     text_variations: HashMap<String, HashMap<String, String>>,
     fallback_culture: GameCulture,
@@ -143,6 +161,10 @@ impl LanguageManager {
         localized_texts.insert(String::new(), LocalizedText::empty());
         LanguageManager {
             localized_texts,
+            // The empty-key `LocalizedText.Empty` row is the Dictionary's
+            // first entry (`LanguageManager.cs:25`'s initializer + the
+            // ctor's `Add("", Empty)` shape).
+            text_order: vec![String::new()],
             category_grouped_keys: HashMap::new(),
             text_variations: HashMap::new(),
             fallback_culture: GameCulture::DEFAULT,
@@ -316,9 +338,19 @@ impl LanguageManager {
     pub fn get_text(&mut self, key: &str) -> &LocalizedText {
         if !self.localized_texts.contains_key(key) {
             let text = LocalizedText::new(key, key, false);
-            self.localized_texts.insert(key.to_string(), text);
+            self.insert_text(key.to_string(), text);
         }
         &self.localized_texts[key]
+    }
+
+    /// One `_localizedTexts[key] = text` insertion that keeps the
+    /// enumeration order ([`Self::text_order`]) in step — the Dictionary's
+    /// indexer only appends to the order when the key is new.
+    pub(super) fn insert_text(&mut self, key: String, text: LocalizedText) {
+        if !self.localized_texts.contains_key(&key) {
+            self.text_order.push(key.clone());
+        }
+        self.localized_texts.insert(key, text);
     }
 
     /// `LanguageManager.GetTextValue(key)`.
@@ -378,13 +410,79 @@ impl LanguageManager {
         self.get_text(&format!("{category}.{name}")).clone()
     }
 
-    /// `LanguageManager.FindAll(LanguageSearchFilter)`.
+    /// `LanguageManager.FindAll(LanguageSearchFilter)`
+    /// (`LanguageManager.cs:379-390`): the matching texts in the
+    /// `_localizedTexts` Dictionary's insertion order.
     pub fn find_all(&self, filter: impl Fn(&str, &LocalizedText) -> bool) -> Vec<LocalizedText> {
-        self.localized_texts
+        self.text_order
             .iter()
-            .filter(|(k, v)| filter(k, v))
-            .map(|(_, v)| v.clone())
+            .filter_map(|k| self.localized_texts.get(k))
+            .filter(|v| filter(v.key(), v))
+            .cloned()
             .collect()
+    }
+
+    /// `Language.SelectRandom(Lang.CreateDialogFilter(prefix))`
+    /// (`LanguageManager.cs:392-411`) with the caller's drawn index: the
+    /// count walk, then the SECOND walk picks by `--num == index` — the
+    /// **reverse** position: index 0 answers the LAST matching row,
+    /// index `count-1` the first. `LocalizedText.Empty` when nothing
+    /// matches (`:410`). The C# draws `Main.rand.Next(count)` itself
+    /// (`:402`); the port takes the draw as the parameter so the stream
+    /// stays the caller's — INCLUDING the `Next(0)` draw of an empty
+    /// category (the C# pays it, `UnifiedRandom.cs:140`).
+    pub fn select_random_from_dialog(&mut self, prefix: &str, index: i32) -> LocalizedText {
+        let matches: Vec<String> = self
+            .text_order
+            .iter()
+            .filter(|k| {
+                k.starts_with(prefix)
+                    && self.localized_texts[*k]
+                        .conditions_met(&|name| self.substitution(name))
+            })
+            .cloned()
+            .collect();
+        let mut num = matches.len() as i32;
+        for key in &matches {
+            num -= 1;
+            if num == index {
+                return self.get_text(key).clone();
+            }
+        }
+        LocalizedText::empty()
+    }
+
+    /// The matching-row count of [`Self::select_random_from_dialog`] —
+    /// the `num` the C# counts before its `Next(num)` (`:394-402`).
+    pub fn dialog_category_count(&self, prefix: &str) -> usize {
+        self.text_order
+            .iter()
+            .filter(|k| {
+                k.starts_with(prefix)
+                    && self.localized_texts[*k]
+                        .conditions_met(&|name| self.substitution(name))
+            })
+            .count()
+    }
+
+    /// The i-th matching row of the dialog filter in insertion order —
+    /// the `Language.FindAll(filter)[i]` arm (`NPC.GetChat`'s
+    /// `array[num - k]` picks, `NPC.cs:93976-93984`).
+    pub fn dialog_row(&mut self, prefix: &str, index: usize) -> LocalizedText {
+        let key = self
+            .text_order
+            .iter()
+            .filter(|k| {
+                k.starts_with(prefix)
+                    && self.localized_texts[*k]
+                        .conditions_met(&|name| self.substitution(name))
+            })
+            .nth(index)
+            .cloned();
+        match key {
+            Some(k) => self.get_text(&k).clone(),
+            None => LocalizedText::empty(),
+        }
     }
 }
 
@@ -529,6 +627,67 @@ mod tests {
         assert_eq!(
             m.get_text("Missing.Thing").unformatted_value(),
             "Missing.Thing"
+        );
+    }
+
+    /// W4-d120 — `SelectRandom` (`LanguageManager.cs:392-411`) picks by
+    /// `--num == index`: index 0 is the LAST matching row, `count-1` the
+    /// first, in the Dictionary's insertion order. The conditional rows
+    /// (`{?Day}`…) only count while their substitution holds
+    /// (`Lang.CreateDialogFilter`'s `ConditionsMet` gate, `Lang.cs:424`).
+    #[test]
+    fn select_random_picks_reverse_insertion_order_with_conditions() {
+        let json = r#"{"Chatter":{"A":"first","B":"second","C":"{?Night}third"}}"#;
+        let mut m = manager_with(json);
+        // Night unset → C fails its condition: two matches, A then B.
+        assert_eq!(m.dialog_category_count("Chatter."), 2);
+        assert_eq!(
+            m.select_random_from_dialog("Chatter.", 0).unformatted_value(),
+            "second"
+        );
+        assert_eq!(
+            m.select_random_from_dialog("Chatter.", 1).unformatted_value(),
+            "first"
+        );
+        // Night true → three matches; index 0 now answers C.
+        m.set_substitution("Night", true);
+        assert_eq!(m.dialog_category_count("Chatter."), 3);
+        assert_eq!(
+            m.select_random_from_dialog("Chatter.", 0).unformatted_value(),
+            "third"
+        );
+        assert_eq!(
+            m.select_random_from_dialog("Chatter.", 2).unformatted_value(),
+            "first"
+        );
+        // The FindAll[i] arm walks FORWARD (`array[num - k]`'s array).
+        assert_eq!(m.dialog_row("Chatter.", 0).unformatted_value(), "first");
+        assert_eq!(m.dialog_row("Chatter.", 2).unformatted_value(), "third");
+        // No match → `LocalizedText.Empty` (`:410`).
+        assert_eq!(
+            m.select_random_from_dialog("Nope.", 0).unformatted_value(),
+            ""
+        );
+        assert_eq!(m.dialog_category_count("Nope."), 0);
+    }
+
+    /// W4-d120 — a plain `{Name}` variable with no substitution fails
+    /// `ConditionsMet` too (`VariableText.cs:87-90`'s null check), so the
+    /// row drops out of the dialog filter until the name resolves.
+    #[test]
+    fn dialog_filter_needs_every_variable_resolved() {
+        let json = r#"{"Chatter":{"A":"hi {PlayerName}","B":"plain"}}"#;
+        let mut m = manager_with(json);
+        assert_eq!(m.dialog_category_count("Chatter."), 1);
+        assert_eq!(
+            m.select_random_from_dialog("Chatter.", 0).unformatted_value(),
+            "plain"
+        );
+        m.set_substitution("PlayerName", "Bob");
+        assert_eq!(m.dialog_category_count("Chatter."), 2);
+        assert_eq!(
+            m.select_random_from_dialog("Chatter.", 0).unformatted_value(),
+            "hi {PlayerName}"
         );
     }
 

@@ -586,6 +586,16 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d120 — the unclaimed chatter kinds' port-local band
+            // (the claim doc `tools/_d120_claim.md`; the vanilla
+            // 142/160/178/209 collide with the crawltipede/Stylist/
+            // kobold/SwampZombie slots above, 579 is free but the family
+            // keeps one band). Free on main + every pushed sibling.
+            NpcKind::SantaClaus => 241,
+            NpcKind::Truffle => 242,
+            NpcKind::Steampunker => 243,
+            NpcKind::Cyborg => 244,
+            NpcKind::BartenderUnconscious => 245,
         }
     }
 
@@ -916,6 +926,12 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d120 — the chatter kinds' port-local band (`to_u16` above).
+            241 => NpcKind::SantaClaus,
+            242 => NpcKind::Truffle,
+            243 => NpcKind::Steampunker,
+            244 => NpcKind::Cyborg,
+            245 => NpcKind::BartenderUnconscious,
             _ => return None,
         })
     }
@@ -950,6 +966,13 @@ impl NpcKind {
                 | NpcKind::Princess
                 | NpcKind::DyeTrader
                 | NpcKind::PartyGirl
+                // W4-d120 — the four town kinds' `townNPC = true` rows
+                // (`NPC.cs:10793`/`:11005`/`:11254`/`:11684`): the
+                // save/resident-count set (the M4-TOWN-19 precedent).
+                | NpcKind::SantaClaus
+                | NpcKind::Truffle
+                | NpcKind::Steampunker
+                | NpcKind::Cyborg
         )
     }
 
@@ -1156,6 +1179,13 @@ impl NpcKind {
                     | NpcKind::PartyGirl
                     | NpcKind::Wizard
                     | NpcKind::Mechanic
+                    // W4-d120 — the four town kinds' `townNPC` flag
+                    // (`NPC.cs:10793`/`:11005`/`:11254`/`:11684`); the
+                    // talk/melee/net consumers read this set.
+                    | NpcKind::SantaClaus
+                    | NpcKind::Truffle
+                    | NpcKind::Steampunker
+                    | NpcKind::Cyborg
             )
     }
 
@@ -1176,6 +1206,10 @@ impl NpcKind {
                     | NpcKind::WebbedStylist
                     | NpcKind::SleepingAngler
                     | NpcKind::SleepingGolfer
+                    // W4-d120 — the bound Tavernkeep's `friendly = true`
+                    // row (`NPC.cs:16556`), NOT townNPC (`Sets.BoundTownNPCs`,
+                    // `NPCID.cs:10441`).
+                    | NpcKind::BartenderUnconscious
             )
     }
 
@@ -1788,6 +1822,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d120 — SetDefaults HitSound rows: 142/160/178 NPCHit1
+            // (`NPC.cs:10801`/`:11013`/`:11262`), 209 NPCHit4 (`:11690`),
+            // 579 NPCHit1 (`:16563`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => "NPC_Hit_1",
+            NpcKind::Cyborg => "NPC_Hit_4",
+            NpcKind::BartenderUnconscious => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2132,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d120 — SetDefaults DeathSound rows: 142/160/178/209
+            // NPCDeath1 (`NPC.cs:10802`/`:11014`/`:11263`/`:11692`),
+            // 579 NPCDeath6 (`:16564`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
+                "NPC_Killed_1"
+            }
+            NpcKind::BartenderUnconscious => "NPC_Killed_6",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2451,6 +2498,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d120 — the four town kinds' aiStyle 7 (`NPC.cs:10797`/
+            // `:11009`/`:11258`/`:11688`); the bound Tavernkeep's aiStyle 0
+            // (`:16560`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => 7,
+            NpcKind::BartenderUnconscious => 0,
         }
     }
 
@@ -2981,6 +3033,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d120 — SetDefaults width/height rows: the four town kinds
+            // 18x40 (`NPC.cs:10795-10796`/`:11007-11008`/`:11256-11257`/
+            // `:11686-11687`), the bound Tavernkeep 34x8 (`:16558-16559`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
+                (18.0, 40.0)
+            }
+            NpcKind::BartenderUnconscious => (34.0, 8.0),
         }
     }
 
@@ -3026,6 +3085,14 @@ impl NpcKind {
             NpcKind::PartyGirl => 208,
             NpcKind::Painter => 227,
             NpcKind::WitchDoctor => 228,
+            // W4-d120 — the chatter kinds' vanilla types (`NPCID.cs:10961`/
+            // `:10997`/`:11033`/`:11095`/`:11835`); the protocol ids ride
+            // the port-local 241-245 band (`to_u16`).
+            NpcKind::SantaClaus => 142,
+            NpcKind::Truffle => 160,
+            NpcKind::Steampunker => 178,
+            NpcKind::Cyborg => 209,
+            NpcKind::BartenderUnconscious => 579,
             NpcKind::Skeleton => 21, // `NPCID.Skeleton` (the net id's correction, S1-F-3)
             // The Destroyer head keeps its vanilla type; the body/tail/Probe
             // have NO hand row — like every folded segment family (Devourer/
@@ -3126,8 +3193,15 @@ impl NpcKind {
             | NpcKind::Stylist
             | NpcKind::Zoologist
             | NpcKind::Princess
-            | NpcKind::PartyGirl => 23,
+            | NpcKind::PartyGirl
+            // W4-d120 — the Truffle/Steampunker's 23-row strips
+            // (`Main.npcFrameCount[160/178]`, `Main.cs:67082`).
+            | NpcKind::Truffle
+            | NpcKind::Steampunker => 23,
             NpcKind::Dryad => 21,
+            // W4-d120 — Santa's 25 / the Cyborg's 26 (`Main.cs:67082`).
+            NpcKind::SantaClaus => 25,
+            NpcKind::Cyborg => 26,
             NpcKind::GoblinArcher => 21,
             NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => 16,
             NpcKind::Skeleton | NpcKind::UndeadMiner => 15,
@@ -3166,8 +3240,14 @@ impl NpcKind {
             | NpcKind::Clothier
             | NpcKind::Wizard
             | NpcKind::Stylist
-            | NpcKind::Princess => 7,
+            | NpcKind::Princess
+            // W4-d120 — the Truffle's 7 attack rows (`NPCID.cs:10464`).
+            | NpcKind::Truffle => 7,
             NpcKind::Angler | NpcKind::Mechanic => 9,
+            // W4-d120 — Santa/Steampunker 9, the Cyborg 10
+            // (`NPCID.cs:10464`'s ExtraFramesCount rows).
+            NpcKind::SantaClaus | NpcKind::Steampunker => 9,
+            NpcKind::Cyborg => 10,
             _ => 0,
         }
     }
@@ -3622,6 +3702,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d120 — SetDefaults lifeMax rows: 142/160/178/579 250
+            // (`NPC.cs:10800`/`:11012`/`:11261`/`:16562`), 209 500
+            // (`:11691`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 250,
+            NpcKind::Cyborg => 500,
+            NpcKind::BartenderUnconscious => 250,
         }
     }
 
@@ -3986,6 +4072,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d120 — SetDefaults damage rows: all five write 10
+            // (`NPC.cs:10798`/`:11010`/`:11259`/`:11689`/`:16561`).
+            NpcKind::SantaClaus
+            | NpcKind::Truffle
+            | NpcKind::Steampunker
+            | NpcKind::Cyborg
+            | NpcKind::BartenderUnconscious => 10,
         }
     }
 }

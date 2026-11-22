@@ -1133,6 +1133,39 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d120 — the unclaimed chatter kinds (the claim doc
+    // `tools/_d120_claim.md`; the d36/d39/d41/d42/d43 lanes were 0 ahead).
+    /// `NPCID.SantaClaus` (142, `NPCID.cs:10961`) — the seasonal town NPC
+    /// (`NPC.cs:10791-10804`): townNPC + friendly, 18x40, aiStyle 7,
+    /// dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
+    /// `npcFrameCount[142]` = 25 (`Main.cs:67082`), ExtraFramesCount 9
+    /// (`NPCID.cs:10464`). The arrival gate (`downedFrost && xMas`) rides
+    /// the f43 lane's `town_arrival_pets.rs`.
+    SantaClaus,
+    /// `NPCID.Truffle` (160, `NPCID.cs:10997`) — the mushroom town NPC
+    /// (`NPC.cs:11003-11016`): townNPC + friendly, 18x40, aiStyle 7,
+    /// dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
+    /// `npcFrameCount[160]` = 23, ExtraFramesCount 7. The hardmode
+    /// surface-mushroom arrival gate rides the c41 lane.
+    Truffle,
+    /// `NPCID.Steampunker` (178, `NPCID.cs:11033`) — the mechanic-boss
+    /// town NPC (`NPC.cs:11252-11265`): townNPC + friendly, 18x40,
+    /// aiStyle 7, dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
+    /// `npcFrameCount[178]` = 23, ExtraFramesCount 9.
+    Steampunker,
+    /// `NPCID.Cyborg` (209, `NPCID.cs:11095`) — the post-Plantera town NPC
+    /// (`NPC.cs:11682-11695`): townNPC + friendly, 18x40, aiStyle 7,
+    /// dmg 10, def 30, 500 HP, kb 0.25, NPCHit4/NPCDeath1 (the machine's
+    /// own hit cue); `npcFrameCount[209]` = 26, ExtraFramesCount 10.
+    Cyborg,
+    /// `NPCID.BartenderUnconscious` (579, `NPCID.cs:11835`) — the bound
+    /// Tavernkeep (`NPC.cs:16554-16568`): friendly (NOT townNPC), 34x8,
+    /// aiStyle 0, dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath6,
+    /// rarity 1; `Sets.BoundTownNPCs` (`NPCID.cs:10441`), the bestiary
+    /// draw modifier Hide=true (`NPCID.cs:5178-5184`) folds it onto the
+    /// Tavernkeep's entry. The talk transforms 579 → 550
+    /// (`NPC.cs:19857-19860`) — the wiring lane's arm.
+    BartenderUnconscious,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3112,6 +3145,9 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
+                // W4-d120 — the bound Tavernkeep's explicit
+                // `friendly = true` row (`NPC.cs:16556`; NOT townNPC).
+                || kind == NpcKind::BartenderUnconscious
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
                 // 90-tick window (S1-P-i36).
@@ -3826,6 +3862,12 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d120 — SetDefaults knockBackResist rows: 142/160/178/579
+            // 0.5 (`NPC.cs:10803`/`:11015`/`:11264`/`:16565`), 209 0.25
+            // (`:11693`).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 0.5,
+            NpcKind::Cyborg => 0.25,
+            NpcKind::BartenderUnconscious => 0.5,
             _ => 0.4,
         }
     }
@@ -4206,6 +4248,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d120 — SetDefaults defense rows: 142/160/178/579 15
+            // (`NPC.cs:10799`/`:11011`/`:11260`/`:16562` region), 209 30
+            // (`:11691` region).
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 15,
+            NpcKind::Cyborg => 30,
+            NpcKind::BartenderUnconscious => 15,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4578,6 +4626,13 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d120 — none of the five writes a `value` row (the
+            // SetDefaults stock 0, `NPC.cs:8544`).
+            NpcKind::SantaClaus
+            | NpcKind::Truffle
+            | NpcKind::Steampunker
+            | NpcKind::Cyborg
+            | NpcKind::BartenderUnconscious => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6050,7 +6105,14 @@ impl Npc {
             | NpcKind::Princess
             | NpcKind::DyeTrader
             | NpcKind::PartyGirl
-            | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
+            | NpcKind::GoblinTinkerer
+            // W4-d120 — the four town kinds ride the town-wander stand-in
+            // (the M4-TOWN roster's shape; the faithful aiStyle-7 machine
+            // is `npc_ai_town.rs`, the b3 lane).
+            | NpcKind::SantaClaus
+            | NpcKind::Truffle
+            | NpcKind::Steampunker
+            | NpcKind::Cyborg => self.update_guide(world, dt),
             NpcKind::QueenBee => {
                 unreachable!("aiStyle 43 rides the style axis (S1-D-3 W-3)")
             }
@@ -6139,6 +6201,10 @@ impl Npc {
             NpcKind::BoundMechanic => {}
             NpcKind::WebbedStylist => {}
             NpcKind::SleepingGolfer => {}
+            // W4-d120 — the bound Tavernkeep (579, aiStyle 0,
+            // `NPC.cs:16560`): the still stand; the 579 → 550 talk
+            // transform (`:19857-19860`) is the wiring lane's arm.
+            NpcKind::BartenderUnconscious => {}
             NpcKind::GoblinArcher => self.update_archer(world, player, rng),
             // S1-D-3 golem-audit: all four arms ride the faithful
             // `update_golem_rng` (the numeric cores in npc_ai_golem.rs).
@@ -8811,6 +8877,15 @@ impl Npc {
             // (`Main.cs:67142`) and `FindFrame` has no case for the bound
             // form — the still stand's row stands.
             NpcKind::SleepingGolfer => {}
+            // W4-d120 — the bound Tavernkeep: `Main.npcFrameCount[579]` = 1
+            // (`Main.cs:67082`) and no `FindFrame` case — one row.
+            NpcKind::BartenderUnconscious => {}
+            // W4-d120 — the four town kinds ride the humanoid-group case
+            // list (`NPC.cs:68568`/`:68570`/`:68573`/`:68584`): the shared
+            // town walk over each kind's own strip.
+            NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
+                self.humanoid_town_frame();
+            }
             NpcKind::SleepingAngler => {
                 // `Main.npcFrameCount[376]` = 2 (`Main.cs:67121`) and
                 // `FindFrame`'s `case 376` (`NPC.cs:71007-71018`): the
@@ -18521,6 +18596,13 @@ impl Npc {
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
+                    // W4-d120 — the four town kinds + the bound Tavernkeep
+                    // are friendly: never contact-damage.
+                    | NpcKind::SantaClaus
+                    | NpcKind::Truffle
+                    | NpcKind::Steampunker
+                    | NpcKind::Cyborg
+                    | NpcKind::BartenderUnconscious
             ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -18902,6 +18984,15 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d120 — the chatter kinds' G6 keys: the port-local band
+            // (the vanilla 160/178 collide with the Stylist/kobold arms
+            // above; 142/209/579 are free but the family keeps one band —
+            // the wyvern precedent). Injective either way.
+            NpcKind::SantaClaus => 241,
+            NpcKind::Truffle => 242,
+            NpcKind::Steampunker => 243,
+            NpcKind::Cyborg => 244,
+            NpcKind::BartenderUnconscious => 245,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23970,7 +24061,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24249,6 +24340,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d120 — the unclaimed chatter kinds.
+        NpcKind::SantaClaus,
+        NpcKind::Truffle,
+        NpcKind::Steampunker,
+        NpcKind::Cyborg,
+        NpcKind::BartenderUnconscious,
     ];
 
     #[test]
@@ -27860,8 +27957,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            275,
+            "every decodable kind resolves (the wire roster's size - 275 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d120's five chatter kinds, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31503,6 +31600,13 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
+        // W4-d120 — the chatter kinds (`NPC.cs:10797`/`:11009`/`:11258`/
+        // `:11688` aiStyle 7; `:16560` aiStyle 0).
+        (NpcKind::SantaClaus, 7),
+        (NpcKind::Truffle, 7),
+        (NpcKind::Steampunker, 7),
+        (NpcKind::Cyborg, 7),
+        (NpcKind::BartenderUnconscious, 0),
     ];
 
     #[test]
@@ -33985,5 +34089,174 @@ mod w4_c24_difficulty_scale_tests {
         b.scale_stats_by_difficulty(2.0);
         assert_eq!(b.max_hp, 24);
         assert_eq!(b.difficulty_damage, Some(24));
+    }
+}
+
+#[cfg(test)]
+mod w4_d120_kind_witnesses {
+    //! W4-d120 (code-only): the five unclaimed chatter kinds' identity
+    //! rows, WRITTEN NOT RUN. The SetDefaults pins are verbatim against
+    //! `NPC.cs:10791-10804` (142), `:11003-11016` (160), `:11252-11265`
+    //! (178), `:11682-11695` (209), `:16554-16568` (579).
+    use super::*;
+    use crate::npc::tests::bare;
+
+    /// The SetDefaults rows through the port's tables — the d38-b7
+    /// witness shape. (kind, vanilla, protocol, aiStyle, w, h, dmg, def,
+    /// life, kb, hit, death)
+    #[test]
+    fn w4_d120_the_setdefaults_rows() {
+        let rows = [
+            (NpcKind::SantaClaus, 142u16, 241u16, 7u8, 18.0, 40.0, 10, 15, 250, 0.5f32, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Truffle, 160, 242, 7, 18.0, 40.0, 10, 15, 250, 0.5, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Steampunker, 178, 243, 7, 18.0, 40.0, 10, 15, 250, 0.5, "NPC_Hit_1", "NPC_Killed_1"),
+            (NpcKind::Cyborg, 209, 244, 7, 18.0, 40.0, 10, 30, 500, 0.25, "NPC_Hit_4", "NPC_Killed_1"),
+            (NpcKind::BartenderUnconscious, 579, 245, 0, 34.0, 8.0, 10, 15, 250, 0.5, "NPC_Hit_1", "NPC_Killed_6"),
+        ];
+        for (kind, ty, proto, ai, w, h, dmg, def, life, kb, hit, death) in rows {
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(n.value(), 0.0, "{kind:?} value (no row)");
+            assert_eq!(n.hp, life, "{kind:?} spawn hp");
+            assert!(n.friendly, "{kind:?} friendly = true");
+            assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit cue");
+            assert_eq!(kind.death_sound(), Some(death), "{kind:?} death cue");
+            // All five: SpecificallyImmuneTo {31} (NPCID.cs's rows).
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31] && !b.buff_immune[20], "{kind:?} immunity");
+        }
+    }
+
+    /// The town flags + the bestiary rows: the four town kinds are
+    /// residents/town-like (the save + talk sets), the bound Tavernkeep
+    /// is friendly-only and folds onto the Tavernkeep's entry (Hide=true,
+    /// `NPCID.cs:5178-5184`).
+    #[test]
+    fn w4_d120_the_town_flags_and_bestiary_folds() {
+        for (kind, ty) in [
+            (NpcKind::SantaClaus, 142),
+            (NpcKind::Truffle, 160),
+            (NpcKind::Steampunker, 178),
+            (NpcKind::Cyborg, 209),
+        ] {
+            assert!(kind.is_town_resident(), "{kind:?} resident");
+            assert!(kind.is_town_npc_like(), "{kind:?} town-like");
+            assert!(kind.is_friendly(), "{kind:?} friendly");
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, ty, "{kind:?} own entry");
+        }
+        let bound = NpcKind::BartenderUnconscious;
+        assert!(!bound.is_town_resident(), "579 is NOT townNPC");
+        assert!(!bound.is_town_npc_like(), "579 is NOT isLikeATownNPC");
+        assert!(bound.is_friendly(), "579 friendly = true (:16556)");
+        let e = crate::bestiary::entry_for_npc(bound, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 550, "the Hide fold onto the Tavernkeep");
+        assert_eq!(e.credit_id, "DD2Bartender");
+    }
+
+    /// The frame strips: the humanoid walk wraps BEFORE the attack rows
+    /// (`humanoid_town_frame`'s count − ExtraFramesCount band); the bound
+    /// Tavernkeep holds row 0 (no FindFrame case, one row).
+    #[test]
+    fn w4_d120_the_frame_strips() {
+        for (kind, count, extra) in [
+            (NpcKind::SantaClaus, 25u32, 9u32),
+            (NpcKind::Truffle, 23, 7),
+            (NpcKind::Steampunker, 23, 9),
+            (NpcKind::Cyborg, 26, 10),
+        ] {
+            assert_eq!(kind.humanoid_frame_count(), count, "{kind:?} strip");
+            assert_eq!(kind.extra_frames_count(), extra, "{kind:?} attack rows");
+            let mut n = bare(kind);
+            n.vx = 2.0;
+            n.vy = 0.0;
+            for _ in 0..240 {
+                n.find_frame();
+                assert!(n.frame < count - extra, "{kind:?} walk band");
+            }
+        }
+        let mut bound = bare(NpcKind::BartenderUnconscious);
+        bound.vx = 2.0;
+        for _ in 0..60 {
+            bound.find_frame();
+        }
+        assert_eq!(bound.frame, 0, "579 holds row 0");
+    }
+}
+
+#[cfg(test)]
+mod w4_d120_shop_button_witnesses {
+    //! W4-d120 final census (code-only): the shop-button chain —
+    //! `NPCInteractions.Initialize`'s 25-row registry
+    //! (`NPCInteractions.cs:488-512`) vs the port's kind→index map.
+    //! WRITTEN NOT RUN.
+    use super::*;
+    use crate::world_sim::npcs::shop_index_for_kind;
+
+    /// The claimed kinds' registry rows: `Shop(142, 9)`/`Shop(160, 10)`/
+    /// `Shop(178, 11)`/`Shop(209, 14)` (`:496-501`); the sibling lanes'
+    /// Pirate `Shop(229, 17)` (`:504`) and SkeletonMerchant
+    /// `Shop(453, 20)` (`:507`) ride the cs_id fallback.
+    #[test]
+    fn w4_d120_the_claimed_kinds_shop_indices() {
+        for (kind, index) in [
+            (NpcKind::SantaClaus, 9u32),
+            (NpcKind::Truffle, 10),
+            (NpcKind::Steampunker, 11),
+            (NpcKind::Cyborg, 14),
+        ] {
+            assert_eq!(shop_index_for_kind(kind), Some(index), "{kind:?}");
+        }
+        // The bound Tavernkeep (579) has NO shop — the C# registers
+        // Shop(550, 21) only, and 579 transforms to 550 on the talk
+        // (`NPC.cs:19857-19860`) before any button could show.
+        assert_eq!(shop_index_for_kind(NpcKind::BartenderUnconscious), None);
+        // The no-shop set (`Initialize` registers no row for them):
+        // Nurse 18, Guide 22, TaxCollector 441, Angler 369, the bound
+        // forms.
+        for kind in [
+            NpcKind::Nurse,
+            NpcKind::Guide,
+            NpcKind::TaxCollector,
+            NpcKind::Angler,
+            NpcKind::BoundGoblin,
+            NpcKind::BoundWizard,
+            NpcKind::BoundMechanic,
+            NpcKind::WebbedStylist,
+            NpcKind::SleepingAngler,
+            NpcKind::SleepingGolfer,
+        ] {
+            assert_eq!(shop_index_for_kind(kind), None, "{kind:?} no shop");
+        }
+    }
+
+    /// The chain's shape: `GetChat` answers the ladder line on the talk
+    /// (`Main.cs:43081-43082`); the SHOP is a panel interaction button
+    /// (`OpenShop.GetText` = `Lang.inter[28]`, `NPCInteractions.cs:64-71`)
+    /// whose `Interact` runs `Main.OpenShop(shopIndex)`
+    /// (`Main.cs:40459-40467`) — inventory open, stackSplit 9999, the
+    /// chat text CLEARED, SetupShop, sound 12. NO draw in the whole
+    /// chain. The port's cursor-open stand-in drains the same side
+    /// effects (`try_open_town_shop_at_cursor`); the button row itself
+    /// is the panel lane's (f22's interaction_rects generalize it).
+    #[test]
+    fn w4_d120_the_shop_label_is_inter_28_and_the_open_draws_nothing() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        assert_eq!(crate::lang::inter(28), "Shop", "OpenShop.GetText");
+        // The second Painter row's custom label (`:512`).
+        assert_eq!(
+            crate::lang::text("GameUI.PainterDecor"),
+            "Decor",
+            "the decor button's custom text key"
+        );
     }
 }

@@ -484,6 +484,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d120 — all five carry `SpecificallyImmuneTo {31}` (the
+        // Confused debuff; `NPCID.cs`'s DebuffImmunitySets rows for
+        // 142/160/178/209/579).
+        NpcKind::SantaClaus
+        | NpcKind::Truffle
+        | NpcKind::Steampunker
+        | NpcKind::Cyborg
+        | NpcKind::BartenderUnconscious => &[31],
     }
 }
 

@@ -122,6 +122,21 @@ impl VariableText {
         })
     }
 
+    /// `VariableText.ConditionsMet` (`VariableText.cs:96-99`) →
+    /// `CheckConditionsAndLoadArgs` (`:73-94`): every `{?Name}`/`{!Name}`
+    /// condition must match its (bool) substitution AND every plain
+    /// `{Name}` variable must resolve — a missing variable fails the
+    /// condition too (`:87-90`'s null check).
+    pub(super) fn conditions_met(&self, lookup: &dyn Fn(&str) -> Option<Substitution>) -> bool {
+        for c in &self.conditions {
+            let got = lookup(&c.name).and_then(|v| v.as_bool()).unwrap_or(false);
+            if got != c.required_value {
+                return false;
+            }
+        }
+        self.variables.iter().all(|v| lookup(v).is_some())
+    }
+
     /// `VariableText.TryFormat`: `None` when a condition or a variable is missing.
     pub(super) fn try_format(
         &self,
