@@ -1698,9 +1698,63 @@ pub(crate) fn draw_tiles(
                         disco_final,
                     );
                     stats.quads += 1;
-                } else if tile.slope() != 0 {
-                    stats.quads += push_slope(
-                        r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope(), disco_final,
+                } else if tile.slope() != 0 && !td::SET_DONT_DRAW_TILE_SLOPES.has(tile.kind) {
+                    // `DrawBasicTile`'s slope family (`TileDrawing.cs:1510-1584`).
+                    // `flag2 = !DontDrawTileSlopes` (`:1510`): gated kinds skip
+                    // every slope arm and fall through to the sliced/plain
+                    // draws below, exactly like the C# `if` chain.
+                    if td::SET_PLATFORMS.has(tile.kind) {
+                        // The platform-slope arm (`TileDrawing.cs:1515-1545`):
+                        // the FULL normal rect draws flat (`:1523`, never the
+                        // column path), plus one behind-tiles side-fill quad
+                        // when the cell below-left/right joins a solid block.
+                        // The C# returns early (`:1544`) — no slope columns.
+                        push_lit(
+                            r,
+                            pos,
+                            [TILE_PX, TILE_PX],
+                            flip_uv(flat_src_uv(&dd, tile, tf, atlas, lookups), dd.flip),
+                            l,
+                            style,
+                            tx,
+                            ty,
+                            anim_time,
+                            tile.paint(),
+                            &dd,
+                        );
+                        stats.quads += 1;
+                        stats.quads += draw_platform_side_fill(
+                            r, world, lookups, atlas, tile, &dd, pos, l, style, tx, ty,
+                            anim_time, show_invisible_blocks,
+                        );
+                    } else if td::SET_HAS_SLOPE_FRAMES.has(tile.kind) {
+                        // `HasSlopeFrames` (`TileDrawing.cs:1546-1550`): the
+                        // kind's sheet carries pre-sloped frames — one flat
+                        // 16x16 draw from `tileFrameX/Y + addFrX/addFrY`.
+                        push_lit(
+                            r,
+                            pos,
+                            [TILE_PX, TILE_PX],
+                            flip_uv(tf.uv, dd.flip),
+                            l,
+                            style,
+                            tx,
+                            ty,
+                            anim_time,
+                            tile.paint(),
+                            &dd,
+                        );
+                        stats.quads += 1;
+                    } else {
+                        stats.quads +=
+                            push_slope(r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope(), disco_final);
+                    }
+                } else if let Some(join) = half_brick_join(world, tile, tx, ty) {
+                    // The half-brick neighbour joins (`TileDrawing.cs:1586-1629`):
+                    // a full solid block beside half bricks rebuilds its top
+                    // strip from the sheet's join columns (126/90/144/148/156).
+                    stats.quads += push_half_brick_join(
+                        r, lookups, atlas, tile, &dd, pos, l, style, tx, ty, anim_time, &join,
                     );
                 } else if tile.half_brick() {
                     // The C#'s half-brick arm rebuilds its own rect from
@@ -2446,6 +2500,211 @@ fn push_half(
         sub_uv(uv, 0.0, 0.0, 16.0, 8.0),
         color,
     );
+}
+
+/// The platform-slope side-fill draw hook (`DrawBasicTile`,
+/// `TileDrawing.cs:1515-1545`): the cell's normal rect already drew flat
+/// (`:1523`); this pushes the ONE behind-tiles fill quad one cell below when
+/// the below-left/right neighbour joins a solid block. The neighbour facts
+/// carry the real Echo bit (`FillNeighbor::from_world`); the source rect's Y
+/// is `drawData.tileFrameY` (`:1527`/`:1537`) and the sheet is the platform's
+/// own painted `drawTexture` (`:1532`/`:1542`). The tint is
+/// `drawData.finalColor` — the shaded light with `light_scale`/`src_alpha`,
+/// exactly the `push_lit` colour. The behind-tiles LAYER decision rides
+/// `PlatformSideFill.behind_tiles` until S1-G-13 lands (the quad draws into
+/// the world range meanwhile); the glow arm's twin fill (`:1367-1401`) rides
+/// the still-unwired glow pass (TILE-DRAW-2). Returns the quad count (0/1).
+#[allow(clippy::too_many_arguments)]
+fn draw_platform_side_fill(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &assets::Lookups,
+    atlas: Option<&Atlas>,
+    tile: &tr_core::tile::Tile,
+    dd: &tr_core::drawdata::TileDrawData,
+    pos: [f32; 2],
+    light: [f32; 3],
+    style: &LightStyle,
+    tx: i32,
+    ty: i32,
+    time: f32,
+    show_invisible_blocks: bool,
+) -> u32 {
+    use crate::render::special_tiles::{
+        platform_side_fill, push_platform_side_fill, FillNeighbor,
+    };
+    // `Main.tile[tileX, tileY+1]` / `[tileX-1, tileY+1]` / `[tileX+1, tileY+1]`
+    // (`TileDrawing.cs:1519-1521`).
+    let below = FillNeighbor::from_world(world, tx, ty + 1);
+    let left_below = FillNeighbor::from_world(world, tx - 1, ty + 1);
+    let right_below = FillNeighbor::from_world(world, tx + 1, ty + 1);
+    let frame_y = dd.frame_y_override.unwrap_or(tile.frame_y);
+    let Some(fill) = platform_side_fill(
+        tile.slope(),
+        frame_y,
+        &below,
+        &left_below,
+        &right_below,
+        show_invisible_blocks,
+    ) else {
+        return 0;
+    };
+    let c = style.shade(light, tx, ty, time);
+    let k = dd.light_scale;
+    let color = [c[0] * k, c[1] * k, c[2] * k, dd.src_alpha];
+    let sheet_uv = |sx: f32, sy: f32, sw: f32, sh: f32| {
+        atlas
+            .and_then(|a| {
+                lookups.rect_uv(a, tile.kind, sx as i16, sy as i16, sw as u32, sh as u32)
+            })
+            .map(|t| t.uv)
+    };
+    push_platform_side_fill(r, sheet_uv, pos, &fill, color, dd.flip, tile.paint())
+}
+
+/// The half-brick neighbour-join decision (`TileDrawing.cs:1586`): a FULL
+/// solid block with a half-brick neighbour on either side rebuilds its top
+/// strip from the sheet's join columns. `None` when any gate fails — the
+/// `flag2` (`!DontDrawTileSlopes`), `!Platforms`,
+/// `!IgnoresNearbyHalfbricksWhenDrawn`, `tileSolid`, `!NotReallySolid` and
+/// `!halfBrick` chain, then the left/right half-brick probe (the C# reads the
+/// neighbours' `halfBrick()` bit WITHOUT an active test).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HalfBrickJoin {
+    left: bool,
+    right: bool,
+    /// `AllBlocksWithSmoothBordersToResolveHalfBlockIssue` (`:1601`/`:1616`):
+    /// the corner strip shrinks from 4 px to 2 px.
+    smooth: bool,
+    /// The both-sides arm's column pick (`:1592-1595`): an active same-kind
+    /// tile above that is NOT a bottom slope swaps join column 126 → 90.
+    same_above: bool,
+}
+
+fn half_brick_join(
+    world: &World,
+    tile: &tr_core::tile::Tile,
+    tx: i32,
+    ty: i32,
+) -> Option<HalfBrickJoin> {
+    let kind = tile.kind;
+    // TileDrawing.cs:1586 — the gate chain, in the C# order.
+    if td::SET_DONT_DRAW_TILE_SLOPES.has(kind)
+        || td::SET_PLATFORMS.has(kind)
+        || td::SET_IGNORES_NEARBY_HALFBRICKS_WHEN_DRAWN.has(kind)
+        || !td::TILE_SOLID.has(kind)
+        || td::SET_NOT_REALLY_SOLID.has(kind)
+        || tile.half_brick()
+    {
+        return None;
+    }
+    let left = world.tile(tx - 1, ty).is_some_and(|t| t.half_brick());
+    let right = world.tile(tx + 1, ty).is_some_and(|t| t.half_brick());
+    if !left && !right {
+        return None;
+    }
+    Some(HalfBrickJoin {
+        left,
+        right,
+        smooth: td::SET_ALL_BLOCKS_WITH_SMOOTH_BORDERS_TO_RESOLVE_HALF_BLOCK_ISSUE.has(kind),
+        same_above: world
+            .tile(tx, ty - 1)
+            .is_some_and(|t| t.active() && !t.bottom_slope() && t.kind == kind),
+    })
+}
+
+/// The half-brick join's draw rects (`TileDrawing.cs:1588-1627`), as
+/// `(dx, dy, srcX, srcY, w, h)` in draw order: the bottom 8 px of the cell's
+/// own frame, then the join-column top strip(s). Every rect rides
+/// `tileFrameX/Y + addFrX/addFrY` EXCEPT the right arm's corner strips,
+/// which read the sheet's fixed (144+16-n, 0) / (156, 0) columns with NO
+/// addFr (`:1622`/`:1625`).
+fn half_brick_join_rects(
+    tile: &tr_core::tile::Tile,
+    dd: &tr_core::drawdata::TileDrawData,
+    join: &HalfBrickJoin,
+) -> Vec<(f32, f32, i32, i32, i32, i32)> {
+    let fx = dd.frame_x_override.unwrap_or(tile.frame_x) as i32;
+    let fy = dd.frame_y_override.unwrap_or(tile.frame_y) as i32;
+    let (afx, afy) = (dd.add_fr_x as i32, dd.add_fr_y as i32);
+    let (tw, th) = (dd.width as i32, dd.height as i32);
+    let mut rects = Vec::with_capacity(4);
+    // The bottom half of the cell's own frame (`:1590`/`:1605`/`:1620`).
+    rects.push((0.0, 8.0, fx + afx, fy + afy + 8, tw, 8));
+    if join.left && join.right {
+        // `:1591-1596` — the 16x8 top strip from join column 126 (90 under a
+        // same-kind non-bottom-slope block above); the row is addFrY only.
+        let col = if join.same_above { 90 } else { 126 };
+        rects.push((0.0, 0.0, col + afx, afy, 16, 8));
+    } else if join.left {
+        // `:1598-1611` — the left neighbour's half brick: the body shifts
+        // right by n, the corner strip fills the top-left n x 8.
+        let n = if join.smooth { 2 } else { 4 };
+        rects.push((n as f32, 0.0, fx + n + afx, afy + fy, tw - n, th));
+        rects.push((0.0, 0.0, 144 + afx, afy, n, 8));
+        if n == 2 {
+            rects.push((0.0, 0.0, 148 + afx, afy, 2, 2));
+        }
+    } else {
+        // `:1613-1626` — the mirror arm: the body keeps its left edge and
+        // loses n px on the right; the corner strips read FIXED sheet
+        // columns (no addFrX/addFrY).
+        let n = if join.smooth { 2 } else { 4 };
+        rects.push((0.0, 0.0, fx + afx, afy + fy, tw - n, th));
+        rects.push(((16 - n) as f32, 0.0, 144 + (16 - n), 0, n, 8));
+        if n == 2 {
+            rects.push((14.0, 0.0, 156, 0, 2, 2));
+        }
+    }
+    rects
+}
+
+/// Push the half-brick join rects: all draws carry `finalColor` (the shaded
+/// light with `light_scale`/`src_alpha`), the painted `drawTexture` and
+/// `tileSpriteEffect`. Returns the quad count.
+#[allow(clippy::too_many_arguments)]
+fn push_half_brick_join(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    atlas: Option<&Atlas>,
+    tile: &tr_core::tile::Tile,
+    dd: &tr_core::drawdata::TileDrawData,
+    pos: [f32; 2],
+    light: [f32; 3],
+    style: &LightStyle,
+    tx: i32,
+    ty: i32,
+    time: f32,
+    join: &HalfBrickJoin,
+) -> u32 {
+    let Some(a) = atlas else {
+        return 0;
+    };
+    let c = style.shade(light, tx, ty, time);
+    let k = dd.light_scale;
+    let color = [c[0] * k, c[1] * k, c[2] * k, dd.src_alpha];
+    let paint = tile.paint();
+    let mut quads = 0u32;
+    for (dx, dy, sx, sy, w, h) in half_brick_join_rects(tile, dd, join) {
+        if w <= 0 || h <= 0 {
+            continue;
+        }
+        let Some(t) =
+            lookups.rect_uv(a, tile.kind, sx as i16, sy as i16, w as u32, h as u32)
+        else {
+            continue;
+        };
+        r.push_sprite_paint(
+            [pos[0] + dx, pos[1] + dy],
+            [w as f32, h as f32],
+            flip_uv(t.uv, dd.flip),
+            color,
+            0.0,
+            paint,
+        );
+        quads += 1;
+    }
+    quads
 }
 
 /// `DrawSingleTile_SlicedBlock`'s per-slice light (`TileDrawing.cs:3578-3581`,
@@ -3623,5 +3882,191 @@ mod tests {
         let gate = &gate[..gate.find("if light_is_zero").unwrap()];
         assert!(gate.contains("tile.kind == 692"));
         assert!(gate.contains("|| glow_mask_tile"));
+    }
+
+    // ---- W4-d59: the DrawBasicTile slope family wiring --------------------
+
+    /// 40x40 world; `place` activates a tile of `kind` at (x, y).
+    fn join_world(tiles: &[(i32, i32, u16)]) -> World {
+        let mut w = World::new("joins".into(), 40, 40);
+        for &(x, y, kind) in tiles {
+            let t = w.tile_mut(x, y).unwrap();
+            t.kind = kind;
+            t.flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w
+    }
+
+    fn half_at(w: &mut World, x: i32, y: i32, kind: u16) {
+        let t = w.tile_mut(x, y).unwrap();
+        t.kind = kind;
+        t.flags |= tr_core::tile::FLAG_ACTIVE | tr_core::tile::FLAG_HALF_BRICK;
+    }
+
+    // `TileDrawing.cs:1586`'s gate chain: only a FULL solid, really-solid,
+    // non-platform, non-ignoring, slope-drawing block with a half-brick
+    // neighbour joins.
+    #[test]
+    fn half_brick_join_gates_match_the_csharp_chain() {
+        // Stone (1) with a half-brick stone on the left joins.
+        let mut w = join_world(&[(20, 20, 1)]);
+        half_at(&mut w, 19, 20, 1);
+        let t = *w.tile(20, 20).unwrap();
+        let j = half_brick_join(&w, &t, 20, 20).expect("stone joins");
+        assert!(j.left && !j.right && !j.smooth && !j.same_above);
+        // The neighbour's halfBrick() bit is read WITHOUT an active test
+        // (`:1586` reads `Main.tile[x-1, y].halfBrick()` directly).
+        w.tile_mut(19, 20).unwrap().flags &= !tr_core::tile::FLAG_ACTIVE;
+        assert!(half_brick_join(&w, &t, 20, 20).is_some());
+        // No half-brick neighbours: no join.
+        let w2 = join_world(&[(20, 20, 1), (19, 20, 1), (21, 20, 1)]);
+        assert!(half_brick_join(&w2, w2.tile(20, 20).unwrap(), 20, 20).is_none());
+        // Platforms (19) never join (`!TileID.Sets.Platforms`).
+        let mut w3 = join_world(&[(20, 20, 19)]);
+        half_at(&mut w3, 19, 20, 1);
+        assert!(half_brick_join(&w3, w3.tile(20, 20).unwrap(), 20, 20).is_none());
+        // NotReallySolid (10, the wooden beam) never joins.
+        let mut w4 = join_world(&[(20, 20, 10)]);
+        half_at(&mut w4, 19, 20, 1);
+        assert!(half_brick_join(&w4, w4.tile(20, 20).unwrap(), 20, 20).is_none());
+        // DontDrawTileSlopes + IgnoresNearbyHalfbricks (137, the detector).
+        let mut w5 = join_world(&[(20, 20, 137)]);
+        half_at(&mut w5, 19, 20, 1);
+        assert!(half_brick_join(&w5, w5.tile(20, 20).unwrap(), 20, 20).is_none());
+        // The block itself a half brick: no join (`!drawData.tileCache.halfBrick()`).
+        let mut w6 = join_world(&[]);
+        half_at(&mut w6, 20, 20, 1);
+        half_at(&mut w6, 19, 20, 1);
+        assert!(half_brick_join(&w6, w6.tile(20, 20).unwrap(), 20, 20).is_none());
+    }
+
+    // The smooth-border set shrinks the corner strip 4 → 2 (`:1601`/`:1616`),
+    // and the both-sides column pick reads the tile ABOVE (`:1592-1595`).
+    #[test]
+    fn half_brick_join_smooth_and_same_above_flags() {
+        // Grey brick (38) is in AllBlocksWithSmoothBorders…; stone is not.
+        let mut w = join_world(&[(20, 20, 38)]);
+        half_at(&mut w, 19, 20, 1);
+        assert!(half_brick_join(&w, w.tile(20, 20).unwrap(), 20, 20).unwrap().smooth);
+        let mut w2 = join_world(&[(20, 20, 1)]);
+        half_at(&mut w2, 19, 20, 1);
+        half_at(&mut w2, 21, 20, 1);
+        let j = half_brick_join(&w2, w2.tile(20, 20).unwrap(), 20, 20).unwrap();
+        assert!(j.left && j.right && !j.same_above);
+        // An active same-kind full block above swaps 126 → 90.
+        let t = w2.tile_mut(20, 19).unwrap();
+        t.kind = 1;
+        t.flags |= tr_core::tile::FLAG_ACTIVE;
+        assert!(half_brick_join(&w2, w2.tile(20, 20).unwrap(), 20, 20).unwrap().same_above);
+        // A bottom slope above (3/4) keeps 126 (`!bottomSlope()`).
+        w2.tile_mut(20, 19).unwrap().set_slope(3);
+        assert!(!half_brick_join(&w2, w2.tile(20, 20).unwrap(), 20, 20).unwrap().same_above);
+        // A different kind above keeps 126.
+        let t = w2.tile_mut(20, 19).unwrap();
+        t.set_slope(0);
+        t.kind = 0;
+        assert!(!half_brick_join(&w2, w2.tile(20, 20).unwrap(), 20, 20).unwrap().same_above);
+    }
+
+    // The join rects (`TileDrawing.cs:1588-1627`) with frame (36, 18):
+    // the bottom strip rides the cell frame + 8; the both-sides top strip
+    // reads join column 126/90 at row addFrY ONLY.
+    #[test]
+    fn half_brick_join_rects_both_sides() {
+        let mut t = tr_core::tile::Tile::default();
+        t.frame_x = 36;
+        t.frame_y = 18;
+        let dd = tr_core::drawdata::TileDrawData::default();
+        let both = HalfBrickJoin { left: true, right: true, smooth: false, same_above: false };
+        assert_eq!(
+            half_brick_join_rects(&t, &dd, &both),
+            vec![(0.0, 8.0, 36, 26, 16, 8), (0.0, 0.0, 126, 0, 16, 8)]
+        );
+        let above = HalfBrickJoin { same_above: true, ..both };
+        assert_eq!(half_brick_join_rects(&t, &dd, &above)[1], (0.0, 0.0, 90, 0, 16, 8));
+        // addFrX/addFrY ride both rects (`:1590-1591`).
+        let dd2 = tr_core::drawdata::TileDrawData { add_fr_x: 2, add_fr_y: 4, ..dd };
+        assert_eq!(
+            half_brick_join_rects(&t, &dd2, &both),
+            vec![(0.0, 8.0, 38, 30, 16, 8), (0.0, 0.0, 128, 4, 16, 8)]
+        );
+    }
+
+    // The one-sided arms: n = 4 (2 for smooth-border kinds); the LEFT arm's
+    // corner strips carry addFr, the RIGHT arm's read FIXED sheet columns
+    // (`:1607`/`:1610` vs `:1622`/`:1625`).
+    #[test]
+    fn half_brick_join_rects_one_sided_arms() {
+        let mut t = tr_core::tile::Tile::default();
+        t.frame_x = 36;
+        t.frame_y = 18;
+        let dd = tr_core::drawdata::TileDrawData::default();
+        let left = HalfBrickJoin { left: true, right: false, smooth: false, same_above: false };
+        assert_eq!(
+            half_brick_join_rects(&t, &dd, &left),
+            vec![
+                (0.0, 8.0, 36, 26, 16, 8),
+                (4.0, 0.0, 40, 18, 12, 16),
+                (0.0, 0.0, 144, 0, 4, 8),
+            ]
+        );
+        let right = HalfBrickJoin { left: false, right: true, smooth: false, same_above: false };
+        assert_eq!(
+            half_brick_join_rects(&t, &dd, &right),
+            vec![
+                (0.0, 8.0, 36, 26, 16, 8),
+                (0.0, 0.0, 36, 18, 12, 16),
+                (12.0, 0.0, 156, 0, 4, 8),
+            ]
+        );
+        // Smooth kinds: n = 2, the extra 2x2 corner pixel (148 left / 156
+        // right), and the right arm's strips ignore addFr entirely.
+        let dd2 = tr_core::drawdata::TileDrawData { add_fr_x: 2, add_fr_y: 4, ..dd };
+        let smooth_left = HalfBrickJoin { smooth: true, ..left };
+        assert_eq!(
+            half_brick_join_rects(&t, &dd2, &smooth_left),
+            vec![
+                (0.0, 8.0, 38, 30, 16, 8),
+                (2.0, 0.0, 40, 22, 14, 16),
+                (0.0, 0.0, 146, 4, 2, 8),
+                (0.0, 0.0, 150, 4, 2, 2),
+            ]
+        );
+        let smooth_right = HalfBrickJoin { smooth: true, ..right };
+        assert_eq!(
+            half_brick_join_rects(&t, &dd2, &smooth_right),
+            vec![
+                (0.0, 8.0, 38, 30, 16, 8),
+                (0.0, 0.0, 38, 22, 14, 16),
+                (14.0, 0.0, 158, 0, 2, 8),
+                (14.0, 0.0, 156, 0, 2, 2),
+            ]
+        );
+    }
+
+    // Draw-order witness: the slope family sits in the C# `if`-chain order —
+    // the platform arm (with its side-fill) BEFORE the generic slope columns,
+    // the HasSlopeFrames arm between them, and the half-brick join arm BEFORE
+    // the cell's own half-brick arm (`TileDrawing.cs:1515-1629`).
+    #[test]
+    fn slope_family_dispatch_matches_the_csharp_chain() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let gate = body.find("SET_DONT_DRAW_TILE_SLOPES.has(tile.kind)").expect("flag2 gate");
+        let platform = body.find("td::SET_PLATFORMS.has(tile.kind)").expect("the platform arm");
+        let side_fill = body.find("draw_platform_side_fill(").expect("the side-fill hook");
+        let slope_frames = body.find("SET_HAS_SLOPE_FRAMES.has(tile.kind)").expect("HasSlopeFrames");
+        let columns = body.find("push_slope(r, pos").expect("the generic slope columns");
+        let join = body.find("half_brick_join(world, tile, tx, ty)").expect("the join arm");
+        let half = body.find("else if tile.half_brick()").expect("the half-brick arm");
+        assert!(gate < platform, "flag2 gates the whole slope family (:1515)");
+        assert!(platform < side_fill && side_fill < slope_frames, "the platform arm draws its fill first (:1517-1545)");
+        assert!(slope_frames < columns, "HasSlopeFrames precedes the columns (:1546)");
+        assert!(columns < join && join < half, "the join arm precedes the half-brick arm (:1586)");
+        // The platform arm draws the FULL normal rect flat (never columns).
+        let arm = &body[platform..slope_frames];
+        assert!(arm.contains("flat_src_uv"), "the platform rect is normalTileRect (:1523)");
+        assert!(!arm.contains("push_slope"), "the C# returns early (:1544)");
     }
 }
