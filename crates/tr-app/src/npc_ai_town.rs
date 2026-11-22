@@ -734,15 +734,33 @@ pub enum SavedState {
 /// social ladder later in the same tick), so the wiring implements
 /// this trait over `tr_core::edit::{open_door, close_door}` + the
 /// tall-gate port when it lands; the tests drive a recording fake.
+/// The REAL sound-complete adapter is `world_sim::editing::doors::
+/// AppTownDoors` (W4-g24 doc-sweep — the W4-b3 phase-2 seam): it plays
+/// the pitched 8/9 cues on `UpdateNpcs` and spawns the cleanup drops.
+///
+/// ADOPTION STATUS (W4-g24 FINAL, re-read of b3 @ `96a5d88f`): b3 phase 2
+/// has NOT landed — `npc.rs::ai_007_town_family` still passes its
+/// branch-local `NoOpTownDoors` (every attempt false). Keep-one verdict:
+/// `AppTownDoors` is the survivor (b3's NoOp is a placeholder, not a
+/// competing door-sound impl — no cue overlap to reconcile). The adoption
+/// is a one-binding swap at the b3 call site plus the caller re-shape
+/// (the arm's `world`/`player` snapshot borrows fold into the adapter's
+/// `&mut App`); the `&mut dyn TownDoorOps` object-safety + the one-cue-
+/// per-success `UpdateNpcs` contract are pinned by
+/// `doors.rs::w4_g24_the_b3_adoption_contract_is_dyn_compatible`.
 pub trait TownDoorOps {
     /// `WorldGen.OpenDoor(x, y, direction)` (`WorldGen.cs:37630`).
     fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool;
     /// `WorldGen.CloseDoor(x, y)` (`WorldGen.cs:31810`).
     fn close_door(&mut self, x: i32, y: i32) -> bool;
-    /// `WorldGen.ShiftTallGate(x, y, closing)` — UNPORTED in tr-core
-    /// (no `shift_tall_gate` yet); the wiring's impl returns false
-    /// until it lands (the cited skip: tall gates 388/389 never
-    /// open/close, the arm takes the all-fail flip).
+    /// `WorldGen.ShiftTallGate(x, y, closing)` — PORTED in tr-core
+    /// (W4-g24, `edit::shift_tall_gate`, `WorldGen.cs:51723-51775`); the
+    /// real adapter (`AppTownDoors`) drives it with the pitched-8 cue.
+    /// b3's phase-1 `NoOpTownDoors` still returns false until the town
+    /// lane adopts the adapter (the cited skip: tall gates 388/389 never
+    /// open/close through THAT seam, the arm takes the all-fail flip —
+    /// the player interact and the zombie bash already drive the core
+    /// function).
     fn shift_tall_gate(&mut self, x: i32, y: i32, closing: bool) -> bool;
 }
 

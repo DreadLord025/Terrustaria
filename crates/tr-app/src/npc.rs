@@ -1293,7 +1293,8 @@ pub struct Npc {
     /// (`ai[1] >= 10`): the drain plays the `KillTile(fail: true)` thud
     /// on every bash and, when `open`, calls `edit::open_door` (a refusal
     /// sets `ai[3] = num57`, `:60064`) + the `Door_Opened` cue. The tall
-    /// gate (388) `ShiftTallGate` is unported — the bash still counts.
+    /// gate (388) `ShiftTallGate` is PORTED (W4-g24) — the drain shifts it
+    /// (`edit::shift_tall_gate`) + the pitched-8 cue, refusal `ai[3]`.
     pub wants_door_bash: Option<(i32, i32, i32, bool)>,
     /// The King Slime's minion batch count (`AI_015` `:44233`'s
     /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).

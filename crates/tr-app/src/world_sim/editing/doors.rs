@@ -68,6 +68,74 @@ fn use_golem_altar(app: &mut App) -> bool {
     true
 }
 
+/// The golden-door key walk (`Player.cs:32798-32837`): the 58-slot
+/// inventory scan for the Golden Key 1141 (`:32800-32817`) — the first
+/// stack decrements, an emptied slot turns to air, `WorldGen.UnlockDoor`
+/// shifts the frames and the Unlock cue plays at the door's middle row
+/// (`WorldGen.cs:37614`, `PlaySound(22, i * 16, num * 16 + 16)` — case 22
+/// draws NOTHING, `LegacySoundPlayer.cs:937-946`), then the progression
+/// event 22 (`:37627`). The scan breaks on the first key (`:32815`). With
+/// no inventory key and the Void Bag open, the bank4 walk mirrors it
+/// (`:32818-32836`). The 4-per-row dust 11 (`:37622-37625`) is the visual
+/// seam (no dust engine on this path).
+fn unlock_golden_door(app: &mut App, tx: i32, ty: i32) {
+    const GOLDEN_KEY: u16 = 1141; // `Player.cs:32798`
+    let mut unlocked = false;
+    // `:32800` — `for (num48 = 0; num48 < 58; num48++)`: the inventory grid
+    // (0-49) + coins (50-53) + ammo (54-57); the trash slot 58 is outside.
+    for slot in app
+        .inventory
+        .iter_mut()
+        .chain(app.equip.coins.iter_mut())
+        .chain(app.equip.ammo.iter_mut())
+    {
+        if slot.kind != GOLDEN_KEY || slot.count == 0 {
+            continue;
+        }
+        slot.count -= 1;
+        if slot.count == 0 {
+            *slot = crate::item::EMPTY_SLOT;
+        }
+        fire_unlock_door(app, tx, ty);
+        unlocked = true;
+        break; // `:32815`
+    }
+    // `:32818-32836` — the void-bag fallback (`useVoidBag()`).
+    if !unlocked && crate::chest::use_void_bag(app) {
+        if let Some(p) = app.player.as_mut() {
+            for slot in p.banks[3].iter_mut() {
+                if slot.kind != GOLDEN_KEY || slot.count == 0 {
+                    continue;
+                }
+                slot.count -= 1;
+                if slot.count == 0 {
+                    *slot = crate::item::EMPTY_SLOT;
+                }
+                fire_unlock_door(app, tx, ty);
+                break;
+            }
+        }
+    }
+}
+
+/// One `WorldGen.UnlockDoor` call + its cue/progression tail
+/// (`WorldGen.cs:37614`/:37627). The Unlock play is draw-free (case 22)
+/// and 2D-attenuated at the door's middle row — the plain `play_at` path
+/// (the `Chest.Unlock` precedent, `chest.rs:1061`).
+fn fire_unlock_door(app: &mut App, tx: i32, ty: i32) {
+    let Some(top) = edit::unlock_door(&mut app.world, tx, ty) else {
+        return;
+    };
+    app.audio.play_at(
+        "Unlock",
+        tx as f32 * TILE_PX,
+        (top + 1) as f32 * TILE_PX,
+        1.0,
+    );
+    let _ = app.notify_progression_net(22); // `:37627`
+    app.world_key = None;
+}
+
 /// `NPC.SpawnOnPlayer`'s case-245 arm (`NPC.cs:80475-80531`): the
 /// ±20-tile scan around the player for the altar's origin cell
 /// (`type == 237 && frameX == 18 && frameY == 0`), the 50-tile solid
@@ -233,6 +301,115 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         return true;
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
+    // W4-g24 — the golden-door unlock arm (`TileInteractionsUse`'s locked
+    // type-10 branch, `Player.cs:32793-32835`): a locked door with a Golden
+    // Key 1141 in the 58-slot inventory scan consumes one key and runs
+    // `WorldGen.UnlockDoor` (`:32810`); the void-bag fallback (`:32818-32835`)
+    // scans bank4 when no inventory key fired. The arm consumes the click
+    // (`flag2 = true` at `:32795`) whether or not a key was found. The
+    // `SendData(52)` client mirror (`:32813`) has no port wire flavour —
+    // the local frame shift is the truth (the wire-tools precedent).
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && edit::is_locked_door(t))
+    {
+        unlock_golden_door(app, tx, ty);
+        return true;
+    }
+    // W4-g24 — the trapdoor/tall-gate arms (`TileInteractionsUse`'s
+    // 386/387 branch `Player.cs:32290-32303` and the 388/389 branch
+    // `:32304-32312`): both consume the click (`flag2 = true`) before the
+    // shift attempt. The trapdoor tries the player's side first, then the
+    // mirror on a refuse (`:32294-32298`); the tall gate's `closing` is the
+    // OPEN kind (389 → close). The cues ride the UpdatePlayers stream (the
+    // tile use runs in `Player.ItemCheck`, `Main.cs:17754`); the pitched
+    // case-8/9 draws happen only after the attenuation gate.
+    let door_kind = app.world.tile(tx, ty).filter(|t| t.active()).map(|t| t.kind);
+    if matches!(door_kind, Some(386 | 387)) {
+        let (player, npcs) = (&app.player, &app.npcs);
+        let blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
+        let above = app
+            .player
+            .as_ref()
+            .is_some_and(|p| (ty as f32 * TILE_PX) > p.center().1);
+        let (res1, cue1) =
+            edit::shift_trapdoor(&mut app.world, tx, ty, above, -1, &blocked);
+        let (res, cue) = if res1.shifted {
+            (res1, cue1)
+        } else {
+            // `:32295-32298` — the mirror attempt with the flipped side.
+            // The C# passes `myX, myY` (the ORIGINAL click) to both calls;
+            // each `GetTopLeftAndStyles` re-snaps from there.
+            let (res2, cue2) =
+                edit::shift_trapdoor(&mut app.world, tx, ty, !above, -1, &blocked);
+            if res2.shifted {
+                // The first call refused (its fall-through 9 already played
+                // below); the second shifted — its 8 plays instead.
+                if let Some((cx, cy)) = res1.refuse_cue {
+                    app.audio.play_door_sound(
+                        false,
+                        cx as f32,
+                        cy as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
+                (res2, cue2)
+            } else {
+                // Both refused: the C# plays the fall-through 9 inside EACH
+                // call (`:51594`) — two Door_Closed plays, in call order.
+                if let Some((cx, cy)) = res1.refuse_cue {
+                    app.audio.play_door_sound(
+                        false,
+                        cx as f32,
+                        cy as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                }
+                (res2, cue2)
+            }
+        };
+        if let Some((cx, cy)) = cue {
+            // `:51470`/:51512/:51563 — the pitched 8 at the arm's position.
+            app.audio.play_door_sound(
+                true,
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        } else if let Some((cx, cy)) = res.refuse_cue {
+            // `:51594` — the (second) fall-through refuse plays the pitched 9.
+            app.audio.play_door_sound(
+                false,
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+        spawn_shift_drops(app, &res.object_drops);
+        app.world_key = None;
+        return true;
+    }
+    if matches!(door_kind, Some(388 | 389)) {
+        let closing = door_kind == Some(389); // `:32307` — flag4
+        let (player, npcs) = (&app.player, &app.npcs);
+        let blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
+        let (res, cue) =
+            edit::shift_tall_gate(&mut app.world, tx, ty, closing, false, &blocked);
+        if let Some((cx, cy)) = cue {
+            // `:51762` — the pitched 8 (both directions play the OPEN cue,
+            // the C# has one play site).
+            app.audio.play_door_sound(
+                true,
+                cx as f32,
+                cy as f32,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+        }
+        spawn_shift_drops(app, &res.object_drops);
+        app.world_key = None;
+        return true;
+    }
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
     // closing column must be free of the player and NPCs. Disjoint field
     // borrows — the world write happens inside `interact_at`.
@@ -555,6 +732,18 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     true
 }
 
+/// The shift arms' cleanup drops (`validate_tile_square`'s refusal kills,
+/// the closing row's cut/drip kills) — the `interaction_events` shape: the
+/// registry tile_drop at the record cell, the UpdatePlayers stream.
+fn spawn_shift_drops(app: &mut App, drops: &[edit::ObjectDrop]) {
+    for d in drops {
+        if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            spawn_item_drop(&mut app.items, rng, item, 1, d.x, d.y);
+        }
+    }
+}
+
 /// `Player.IsWithinSnappngRangeToTile` (`Player.cs:17365-17372`): the tile
 /// centre to `(Center.X, Bottom.Y - 16)` distance — the sit (40 px) and
 /// sleep (96 px) snap gates.
@@ -737,6 +926,114 @@ fn cell_blocked_by_entity(player: Option<&Player>, npcs: &[Npc], x: i32, y: i32)
     })
 }
 
+/// The shared entity gate for the NPC-side callers (the zombie bash's tall
+/// gate, W4-g24) — the same `Collision.EmptyTile` half the interaction path
+/// uses, re-exported so `world_sim/npcs.rs` need not duplicate the rect math.
+pub(crate) fn cell_blocked_by_entity_pub(
+    player: Option<&Player>,
+    npcs: &[Npc],
+    x: i32,
+    y: i32,
+) -> bool {
+    cell_blocked_by_entity(player, npcs, x, y)
+}
+
+/// The REAL `TownDoorOps` (W4-g24 doc-sweep — the W4-b3 phase-2 seam): the
+/// aiStyle-7 arm's inline door attempts (`npc_ai_town::town_npc_ai`,
+/// `NPC.cs:54047-54073`/`:53838-53854`) mutate the world through
+/// `tr_core::edit::{open_door, close_door, shift_tall_gate}` and play the
+/// success cues — b3's phase-1 `NoOpTownDoors` (every attempt false) is
+/// replaced by this adapter when the town lane adopts it. The cues ride
+/// the `UpdateNpcs` stream: the C# plays them inside `NPC.UpdateNPC` under
+/// the `Main.cs:17767` swap (the zombie bash drain's convention,
+/// `world_sim/npcs.rs`). The cleanup drops spawn on the same stream (the
+/// bash drain's shape).
+// The production consumer is the b3 phase-2 town wiring (the aiStyle-7
+// dispatch still routes through `update_guide` on this branch); the test
+// module exercises the adapter in every build. The allow keeps the default
+// build warning-clean until the town lane adopts it.
+#[allow(dead_code)]
+pub(crate) struct AppTownDoors<'a> {
+    pub app: &'a mut App,
+}
+
+impl crate::npc_ai_town::TownDoorOps for AppTownDoors<'_> {
+    /// `WorldGen.OpenDoor` (`WorldGen.cs:37630-37784`): the pitched 8 at
+    /// `(i*16, j*16)` (`:37727`) on success only; the refusal is silent.
+    fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool {
+        let mut drops = Vec::new();
+        let opened = edit::open_door(&mut self.app.world, x, y, direction, &mut drops);
+        if opened {
+            self.app.audio.play_door_sound(
+                true,
+                x as f32 * TILE_PX,
+                y as f32 * TILE_PX,
+                self.app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            );
+            self.app.world_key = None;
+        }
+        spawn_town_door_drops(self.app, &drops);
+        opened
+    }
+
+    /// `WorldGen.CloseDoor` (`WorldGen.cs:31805-31910`): the pitched 9 at
+    /// `(i*16, j*16)` (`:31908`) on success only. `forced = false` — the
+    /// town arm calls the plain overload (`NPC.cs:53838`).
+    fn close_door(&mut self, x: i32, y: i32) -> bool {
+        let mut drops = Vec::new();
+        let (player, npcs) = (&self.app.player, &self.app.npcs);
+        let blocked = |bx: i32, by: i32| cell_blocked_by_entity(player.as_ref(), npcs, bx, by);
+        let closed =
+            edit::close_door(&mut self.app.world, x, y, false, &blocked, &mut drops);
+        if closed {
+            self.app.audio.play_door_sound(
+                false,
+                x as f32 * TILE_PX,
+                y as f32 * TILE_PX,
+                self.app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            );
+            self.app.world_key = None;
+        }
+        spawn_town_door_drops(self.app, &drops);
+        closed
+    }
+
+    /// `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`, PORTED —
+    /// W4-g24 batch 2): the pitched 8 at the returned cue position
+    /// (`:51762`, both directions play the OPEN cue — one play site).
+    /// `forced = false` — the town arm calls the plain overload
+    /// (`NPC.cs:53850`/`:54065`).
+    fn shift_tall_gate(&mut self, x: i32, y: i32, closing: bool) -> bool {
+        let (player, npcs) = (&self.app.player, &self.app.npcs);
+        let blocked = |bx: i32, by: i32| cell_blocked_by_entity(player.as_ref(), npcs, bx, by);
+        let (res, cue) =
+            edit::shift_tall_gate(&mut self.app.world, x, y, closing, false, &blocked);
+        if let Some((cx, cy)) = cue {
+            self.app.audio.play_door_sound(
+                true,
+                cx as f32,
+                cy as f32,
+                self.app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            );
+            self.app.world_key = None;
+        }
+        spawn_town_door_drops(self.app, &res.object_drops);
+        res.shifted
+    }
+}
+
+/// The town door attempts' cleanup drops — the bash drain's shape
+/// (`world_sim/npcs.rs`): the registry tile_drop at the record cell, the
+/// `UpdateNpcs` stream.
+fn spawn_town_door_drops(app: &mut App, drops: &[edit::ObjectDrop]) {
+    for d in drops {
+        if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            spawn_item_drop(&mut app.items, rng, item, 1, d.x, d.y);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,7 +1043,7 @@ mod tests {
     use tr_core::tile::{FLAG_ACTIVE, Tile};
     use tr_core::World;
 
-    use super::super::tests::{object_world, set_tile};
+    use super::super::tests::{object_world, set_tile, slot};
 
     /// The bed rig: a floor row at y 60 with a style-0 bed placed at
     /// (40, 59) — columns 39-42, rows 58-59 (`place_item_tile`'s y is the
@@ -928,6 +1225,250 @@ mod tests {
             *app2.rngs.stream(crate::app::RngKey::UpdatePlayers),
             rng_before,
             "the muted Mech click is draw-free"
+        );
+    }
+
+    /// W4-g24 — the golden-door unlock arm (`Player.cs:32793-32837`): a
+    /// locked door with a Golden Key 1141 consumes ONE key, shifts the
+    /// three rows +54 and plays the Unlock cue; the click is consumed
+    /// (`flag2 = true`) even with no key. The cue is draw-free (case 22).
+    #[test]
+    fn w4_g24_the_golden_key_unlocks_the_door_and_burns_one_key() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        // The locked golden door at column 10, rows 17-19.
+        for (row, fy) in [(17, 594i16), (18, 612), (19, 630)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.player = Some(Player::spawn(&app.world));
+        app.inventory[0] = slot(1141, 2);
+        let before = app.audio.played_count();
+        // The click on the bottom row: consumed, one key burned, the frames
+        // shifted, one Unlock play.
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.inventory[0].count, 1, "one key consumed");
+        assert_eq!(app.world.tile(10, 17).unwrap().frame_y, 648);
+        assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 684);
+        assert_eq!(app.audio.played_count(), before + 1, "the Unlock cue");
+        // The unlocked door now opens through the normal door arm (the
+        // unlock arm no longer claims it).
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.world.tile(10, 19).unwrap().kind, 11, "the door opened");
+    }
+
+    /// W4-g24 — no key: the locked-door click is still consumed
+    /// (`Player.cs:32795`'s `flag2 = true` before the scan), nothing shifts
+    /// and no cue plays.
+    #[test]
+    fn w4_g24_the_locked_door_without_a_key_consumes_silently() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        for (row, fy) in [(17, 594i16), (18, 612), (19, 630)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.player = Some(Player::spawn(&app.world));
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 19), "the click is consumed");
+        assert_eq!(app.world.tile(10, 17).unwrap().frame_y, 594, "no shift");
+        assert_eq!(app.audio.played_count(), before, "no cue");
+    }
+
+    /// W4-g24 — the trapdoor interact arm (`Player.cs:32290-32303`): the
+    /// click on the open 2x2 closes it (the pitched 8 plays), the click is
+    /// consumed; the mirror re-click re-opens it. The tall gate (388/389)
+    /// flips through its own arm (`:32304-32312`).
+    #[test]
+    fn w4_g24_the_trapdoor_and_tall_gate_interact_arms() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.player = Some(Player::spawn(&app.world));
+        // The open trapdoor 2x2 at (10, 18)-(11, 19), style 0.
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let i = app.world.index(10 + dx, 18 + dy);
+            app.world.tiles[i] = Tile {
+                kind: 386,
+                frame_x: (dx * 18) as i16,
+                frame_y: (dy * 18) as i16,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[386] = true;
+        app.world.frame_important[387] = true;
+        // Park the player well clear (left of the door, same height) so the
+        // entity gate passes; `player_above` reads false (centre below the
+        // clicked row), the X==0 arm closes the door upward.
+        let p = app.player.as_mut().unwrap();
+        p.x = 4.0 * 16.0;
+        p.y = 18.0 * 16.0;
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 18), "the click is consumed");
+        // The door closed (one of the rows became 387).
+        let closed = (0..2).any(|dx| {
+            app.world.tile(10 + dx, 18).is_some_and(|t| t.kind == 387)
+                || app.world.tile(10 + dx, 19).is_some_and(|t| t.kind == 387)
+        });
+        assert!(closed, "the trapdoor shifted");
+        assert!(app.audio.played_count() > before, "the pitched cue played");
+        // The tall gate: a closed 388 column at (15, 14-18).
+        let fys = [0i16, 18, 34, 50, 66];
+        for (row, fy) in fys.iter().enumerate() {
+            let i = app.world.index(15, 14 + row as i32);
+            app.world.tiles[i] = Tile {
+                kind: 388,
+                frame_x: 0,
+                frame_y: *fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[388] = true;
+        app.world.frame_important[389] = true;
+        let before = app.audio.played_count();
+        assert!(interact_tile(&mut app, 15, 16), "the gate click consumed");
+        assert_eq!(app.world.tile(15, 14).unwrap().kind, 389, "the gate opened");
+        assert!(app.audio.played_count() > before, "the gate cue played");
+    }
+
+    /// W4-g24 doc-sweep — the REAL `TownDoorOps` (`AppTownDoors`, the
+    /// W4-b3 phase-2 seam): the open/close/gate attempts mutate the world
+    /// AND play the pitched cues on the `UpdateNpcs` stream (the C# plays
+    /// inside `NPC.UpdateNPC`, `Main.cs:17767`). Each success draws exactly
+    /// ONE `Next(-20, 21)` pitch (`LegacySoundPlayer.cs:736`/:747); the
+    /// wrong-kind refusal is silent and draw-free.
+    #[test]
+    fn w4_g24_the_town_door_adapter_plays_the_real_cues() {
+        use crate::npc_ai_town::TownDoorOps;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        // A closed door (tile 10) at column 10, rows 17-19.
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.world.frame_important[11] = true;
+        let mut player = Player::spawn(&app.world);
+        player.x = 4.0 * 16.0;
+        player.y = 18.0 * 16.0;
+        app.player = Some(player);
+        // Open: one pitch draw on UpdateNpcs, the door turns to 11.
+        let mut witness = tr_core::unified_random::UnifiedRandom::new(0);
+        let _ = witness.next_range(-20, 21);
+        let before = app.audio.played_count();
+        assert!(AppTownDoors { app: &mut app }.open_door(10, 18, 1));
+        assert_eq!(app.world.tile(10, 18).unwrap().kind, 11, "the door opened");
+        assert_eq!(app.audio.played_count(), before + 1, "the pitched 8");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdateNpcs).peek(),
+            witness.peek(),
+            "exactly one door-pitch draw on UpdateNpcs"
+        );
+        // Close: the pitched 9, the hinge turns back to 10.
+        let before = app.audio.played_count();
+        assert!(AppTownDoors { app: &mut app }.close_door(10, 18));
+        assert_eq!(app.audio.played_count(), before + 1, "the pitched 9");
+        assert_eq!(app.world.tile(10, 18).unwrap().kind, 10, "the door closed");
+        // The tall gate: a closed 388 column at (15, 14-18) opens through
+        // the adapter (the core port, the pitched-8 cue at the gate centre).
+        let fys = [0i16, 18, 34, 50, 66];
+        for (row, fy) in fys.iter().enumerate() {
+            let i = app.world.index(15, 14 + row as i32);
+            app.world.tiles[i] = Tile {
+                kind: 388,
+                frame_x: 0,
+                frame_y: *fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[388] = true;
+        app.world.frame_important[389] = true;
+        let before = app.audio.played_count();
+        assert!(AppTownDoors { app: &mut app }.shift_tall_gate(15, 16, false));
+        assert_eq!(app.world.tile(15, 14).unwrap().kind, 389, "the gate opened");
+        assert_eq!(app.audio.played_count(), before + 1, "the gate cue");
+        // The wrong-kind refusal: silent, draw-free.
+        let peek = app.rngs.stream(crate::app::RngKey::UpdateNpcs).peek();
+        let before = app.audio.played_count();
+        assert!(!AppTownDoors { app: &mut app }.open_door(20, 18, 1));
+        assert_eq!(app.audio.played_count(), before, "no cue on refusal");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdateNpcs).peek(),
+            peek,
+            "the refusal draws nothing"
+        );
+    }
+
+    /// W4-g24 FINAL — the b3 co-lane adoption contract: the b3 phase-1
+    /// wiring (`origin/task/W4-b3-npc-ai-town-wire` @ `96a5d88f`,
+    /// `npc.rs::ai_007_town_family`) passes `NoOpTownDoors` into
+    /// `town_npc_ai`; adopting `AppTownDoors` is a ONE-LINE swap
+    /// (`let mut doors = NoOpTownDoors;` → `let mut doors = AppTownDoors
+    /// { app };` — the arm's `world`/`player` borrows must move into the
+    /// adapter's `&mut App` first, the b3 phase-2 caller re-shape). This
+    /// witness pins the CONTRACT the swap relies on: the adapter satisfies
+    /// the SAME `&mut dyn TownDoorOps` object-safety the arm's signature
+    /// demands (`npc_ai_town.rs:1520`), and one dyn-dispatched open/close
+    /// pair plays exactly one cue each on `UpdateNpcs` — the same stream
+    /// the b3 caller passes (`world_sim/npcs.rs`'s `RngKey::UpdateNpcs`).
+    #[test]
+    fn w4_g24_the_b3_adoption_contract_is_dyn_compatible() {
+        use crate::npc_ai_town::TownDoorOps;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.world.frame_important[11] = true;
+        let mut player = Player::spawn(&app.world);
+        player.x = 4.0 * 16.0;
+        player.y = 18.0 * 16.0;
+        app.player = Some(player);
+        // The dyn coercion the town arm's `doors: &mut dyn TownDoorOps`
+        // parameter takes — NoOpTownDoors and AppTownDoors are drop-in
+        // interchangeable at that seam (b3 phase 2 swaps the binding).
+        let before = app.audio.played_count();
+        {
+            let mut adapter = AppTownDoors { app: &mut app };
+            let doors: &mut dyn TownDoorOps = &mut adapter;
+            assert!(doors.open_door(10, 18, 1), "the dyn open lands");
+            assert!(doors.close_door(10, 18), "the dyn close lands");
+        }
+        assert_eq!(
+            app.audio.played_count(),
+            before + 2,
+            "one pitched cue per success through the dyn seam"
         );
     }
 

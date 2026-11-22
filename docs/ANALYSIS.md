@@ -41916,4 +41916,225 @@ inline cues are a SEPARATE census (not re-ported here).
 + 7 (batch 2 menu) + 6 (batch 3: 5 main_sounds + 1 audio) + 3 (batch 4)
 + 4 (batch 5) + 3 (batch 6) = 36 written, not run (28 main_sounds + 7 menu
 + 1 audio).
+## The WorldGen.cs sound sites wave (W4-g24, 2026-11-21, code-only mode) вЂ” CLAIM
+
+**Census**: `Select-String 'PlaySound'` over `decompiled/Terraria/WorldGen.cs`
+(ascending line order) yields 83 `SoundEngine.PlaySound` sites plus the
+`KillWall_PlaySounds`/`KillTile_PlaySounds` tables and their call seams.
+**Already landed, kept untouched**: the liquid-merge cues `:4636-4651`
+(S1-E-25 `play_liquid_change`), `CloseDoor` `:31908` / `OpenDoor` `:37727`
+(S1-E-21i `play_door_sound`), the `PlaceTile` tail switch `:60268-60280`
+(S1-E-21b `place_tile_sound`), `PlaceWall` `:75141`, the `KillWall_PlaySounds`
+table `:60423-60441` + the fail arm + explosion walk (S1-E-21i, c15 27aab255),
+the `KillTile_PlaySounds` table `:66427-66575` (S1-E-21c), `CheckPot`
+`:56858-56866` (`pot_break_sound`), `SlopeTile`/`PoundTile` `:80782`/`:80822`
+(i31/i42 `play_place_sound`), and `SaveAndQuit`'s `:6703`/`:6676`
+(`saveglue::save_and_quit`). **Claimed by g24** (this branch,
+`task/W4-g24-sounds-worldgen`), in C# line order:
+(1) `SecretSeed.Enable` `:539` (the tracked `MenuAccept`, once per
+`TryApplyingCopiedSeed` list вЂ” `WorldFileData.cs:268-272` flips `playSound`
+false after the first Enable), (2) `worldGenCallback` `:6593` (the
+generation-start 10; the completion `:6603` already plays in
+`update_world_load`), (3) `playWorldCallBack` `:6843` (the world-enter 11),
+(4) `serverLoadWorldCallBack` `:6921` (the host-load 10 вЂ” the port hosts on
+the live world, so the seam is the Host action), (5) `UnlockDoor` `:37614`
+(the legacy 22 Unlock + the golden-door frame walk), (6) `Check2x1`'s
+piggy `:47235` / bowl `:47255` Shatter tails (the 103 bowl check joins so
+its cue has a live path; the 462/16/18/134/185 drop arms stay as-is),
+(7) `PlaceObject` `:51441` (covered by the landed `place_tile` cue вЂ” the
+`routes_through_tile_object` kinds play the plain 0; witness only),
+(8) `ShiftTrapdoor` `:51470`/`:51512`/`:51563` + the refuse `:51594`
+(the 8/9 pitched plays, the 2x2/2x1 toggles 386в†”387),
+(9) `ShiftTallGate` `:51762` (the 8 play; 388в†”389, the 1x5 gate вЂ” the
+town-NPC `doors.shift_tall_gate` stub gets its real impl in a later batch),
+(10) `CheckOrb` `:54337`/`:54341` (the crimson-4 / shadow-13 tail at the
+TRIGGER cell), (11) the ten wiring-tool Dig-0 sites `:58015`/`:58026`/
+`:58115`/`:58126`/`:58145`/`:58156`/`:58175`/`:58186`/`:58205`/`:58216`
+(the `wire_placed_feedback` stand-in plays a pinned `Dig_1` with NO draws вЂ”
+upgraded to the faithful case-0 variation+pitch on `UpdatePlayers`, the
+S1-E-21i convention). **Deferred, recorded**: `JustQuit` `:6631-6632` +
+`StopWaterfallAmbienceAudio` `:6693-6694` (the 34/35 liquid-loop stops вЂ”
+the loop layer's `set_liquid_loop(ch, 0.0)` seam exists; `JustQuit` has no
+port caller yet), `serverLoadWorldCallBack`'s retry ladder (load-failure
+UI, out of scope). RNG contract: every gameplay draw keeps its exact slot
+on the C# statement order, on the named stream of the enclosing pass
+(world-pass slots: the world-enter/gen cues are menu-thread 2D plays with
+no `Main.rand` draws вЂ” cases 10/11/13/22 draw NOTHING,
+`LegacySoundPlayer.cs:750-792`/`:937-946`; the int overload
+`SoundEngine.cs:102-108` draws no NextFloat). Attenuation BEFORE any case
+draw; commits в‰¤10 sites; witnesses WRITTEN NOT RUN (no
+cargo/rustc/rustfmt/tests/graphify invoked).
+
+
+### W4-g24 batch 1 (2026-11-21) вЂ” the menu/world-flow cues + the Check tails (10 sites)
+
+Landed sites (C# line order): `SecretSeed.Enable` `WorldGen.cs:539` (the
+tracked `MenuAccept` вЂ” `audio::menu_accept_style`, the
+`KeyboardTail::WorldSeed` submit arm plays it once when the resolve finds
+a micro seed; `TryApplyingCopiedSeed`'s first-Enable-only semantics,
+`WorldFileData.cs:268-272`; the port is stateless so every submit with a
+micro seed plays once вЂ” the fresh-screen equivalence), `worldGenCallback`
+`:6593` (the generation-start 10 in `finish_creating_world`'s job-start
+arm), `playWorldCallBack` `:6843` (the world-enter 11 in `swap_world`'s
+`enter_loaded_world` tail вЂ” the net client install keeps its silence, it
+is the S2c path not `playWorld`), `serverLoadWorldCallBack` `:6921` (the
+host-load 10 вЂ” the port hosts on the live world, so the seam is the new
+`App::start_hosting` success arm; the retry/backup ladder `:6876-6920`
+stays out of scope), `UnlockDoor` `:37614` (the legacy 22 Unlock at the
+door's MIDDLE row вЂ” `edit::unlock_door` walks the column to the frameY-594
+top and shifts +54; the golden-key arm `Player.cs:32793-32837` consumes
+one 1141 from the 58-slot scan with the void-bag bank4 fallback, the
+progression 22 fires, the dust 11 is the visual seam), `Check2x1`'s piggy
+`:47235` + bowl `:47255` Shatter tails (the new `TileKill::check_cues`
+channel вЂ” the cue lands at the cell whose `TileFrame` ran the check, the
+SURVIVING pair cell: the C# clears the hit cell to type 0 before
+`SquareTileFrame`; the tails are not `noItem`-gated, the piggy drop now
+carries item 87), the bowl check itself (case-103 joins the dispatch вЂ”
+the plain-table OR Table-anchor support, the style drop 356/2235/2242/
+2243), `CheckOrb`'s tail `:54337`/`:54341` (crimson-4 / shadow-13 at the
+framed member cell, outside the netMode/generatingWorld gate), and
+`PlaceObject` `:51441` (COVERAGE ONLY вЂ” the landed `place_tile` cue switch
+already plays the plain 0 for every `routes_through_tile_object` kind;
+witness pins the equivalence). RNG: cases 10/11/13/22 draw NOTHING
+(`LegacySoundPlayer.cs:750-792`/`:937-946`), the tracked MenuAccept draws
+only the audio-only style streams; no gameplay stream touched. The
+`Check*` cue drain rides the pinned-cue `kill_cue` path (research D3 вЂ”
+no per-play variation/pitch, the sibling kill-cue convention). 8
+witnesses WRITTEN NOT RUN (edit.rs unlock walk, kill.rs piggy/bowl/orb
+tails, doors.rs key/no-key, flow.rs seed submit, session.rs gen-start,
+clicks.rs host start, audio.rs style, editing.rs PlaceObject coverage,
+mod.rs swap cue вЂ” 11 total). The `insert_test_cue`/`tracked_count_for`
+headless seams are test-only.
+
+
+### W4-g24 batch 2 (2026-11-21) вЂ” ShiftTrapdoor + ShiftTallGate (5 sites)
+
+Landed sites: `ShiftTrapdoor`'s three success cues `WorldGen.cs:51470`
+(X==0 close, the 2x2 centre), `:51512` (X==1 close, the top-row centre) and
+`:51563` (the 387в†’386 re-open) + the fall-through refuse `:51594` (the
+pitched 9 at the SNAPPED cell вЂ” `GetTopLeftAndStyles` mutates x/y by ref
+before the fall-through), and `ShiftTallGate`'s `:51762` (the pitched 8 at
+the gate's second-row centre, both directions). The core ports
+(`edit::shift_trapdoor`/`edit::shift_tall_gate`, the `ShiftResult` channel
+with `refuse_cue` distinguishing the fall-through 9 from the silent in-arm
+refusals) carry the full bodies: the 2x2/2x1 snaps, the
+`ValidateTileSquareIsActiveAndOfType` cleanup kills (drops collected), the
+`Collision.EmptyTile(ignoreTiles:true)` entity gates (the app's
+`cell_blocked_by_entity`), the X==1 arm's UNCONDITIONAL bottom-row
+`ClearTile` (the C# asymmetry vs the X==0 guarded clear), the closing row's
+cut/drip kills, the `BlockColorAndCoating`в†’`UseBlockColors` paint carry on
+the re-open, the above/below sheet halves (`frameX = col*18 +
+playerAbove*36`), the `CoordinateHeights` {18,16,16,16,18} row walk (full
+height 94) and the exact `TileFrame` rectangles (`tile_frame_rect` вЂ” the
+non-square rings the square `reframe_area` cannot stand in: the X==1 arm's
+one-row-shorter ring kept). The `Wiring.SkipWire` quads are the standing
+no-wiring skip. Callers: the player interact arm
+(`Player.cs:32290-32312` вЂ” the trapdoor's mirror re-attempt on refuse with
+the per-call fall-through 9s, the tall gate's `closing = kind==389`), the
+zombie bash drain (`NPC.cs:60072-60084` вЂ” the gate shift + refusal
+`ai[3]=num57` + the pitched 8 on UpdateNPCs; the `cell_blocked_by_entity_pub`
+re-export). The town-NPC `TownDoorOps::shift_tall_gate` seam stays a fake
+(the module is unwired) вЂ” its doc now points at the landed core function.
+RNG: cases 8/9 draw one `Next(-20,21)*0.01` each AFTER the attenuation gate
+(`play_door_sound`, the S1-E-21i path), on UpdatePlayers (the interact) /
+UpdateNPCs (the bash). 3 witnesses WRITTEN NOT RUN (the core flip/gate
+walks + the app interact arms). The double-refuse plays two Door_Closed
+(the C# plays the 9 inside each refused call).
+
+
+### W4-g24 batch 3 (2026-11-21) вЂ” the wiring-tool Dig-0 upgrade (10 sites)
+
+Landed sites: the ten identical `PlaySound(0, i * 16, j * 16)` calls inside
+`PlaceActuator`/`KillActuator` and the four `PlaceWireN`/`KillWireN` pairs
+(`WorldGen.cs:58015`/`:58026`/`:58115`/`:58126`/`:58145`/`:58156`/`:58175`/
+`:58186`/`:58205`/`:58216`). The v1 `wire_placed_feedback` stand-in played a
+pinned `Dig_1` with NO draws; W4-g24 upgrades it to the faithful case 0
+(`play_place_sound((0,1), ...)`, the S1-E-21b path): the `Next(3)` variation
++ the `Next(-10,11)*0.01` pitch (`LegacySoundPlayer.cs:442`/:450`) ride the
+`UpdatePlayers` stream (the tools run in `Player.ItemCheck` under the
+`Main.cs:17754` swap), only AFTER the attenuation gate. **Draw-order fix**:
+the C# plays the sound INSIDE `KillActuator`/`KillWireN` BEFORE the
+`Item.NewItem` drop roll (`:58026` precedes `:58030`, `:58126` precedes
+`:58130`, etc.) вЂ” the cutter arms now call `wire_placed_feedback` ahead of
+`spawn_item_drop` so the two cue draws precede the drop's velocity/prefix
+rolls on the same stream (the v1 order had the drop first). The placement
+arms (wrench/actuator) draw exactly two (no drop follows). The Actuation
+Rod plays nothing (the C# `Wiring.Actuate` has no cue). 1 witness WRITTEN
+NOT RUN (the two-draw replay pin + the cutter's stream advance). The net
+message 17 stays the local-state truth; the five dust 50 stay the visual
+seam.
+
+## The WorldGen.cs sound deferrals — DOC-SWEEP lane 26 (W4-g24, 2026-11-21, code-only)
+
+The five wave deferrals closed; full evidence in `docs/research/106-doc-sweep-wg-sounds.md`.
+
+**§1 StopWaterfallAmbienceAudio (PORTED)** — `WorldGen.cs:6689-6699` plays the
+34/35 sentinel pair `(-1,-1,0)`: the `x == -1 || y == -1` STOP arms
+(`LegacySoundPlayer.cs:1257-1262`/:1287-1292`), draw-free, no fade.
+`Audio::stop_waterfall_ambience` stops both `liquid_loops` sinks immediately;
+wired into `save_and_quit` at the `:6704` position + `stop_tracked_sounds`
+(`SoundPlayer.StopAll`, `SoundPlayer.cs:79-86`) at `:6715`. The g75
+`sound::liquid_ambience` consumer is the per-tick RE-VOLUME path; this is the
+immediate QUIT stop — complementary, not a dup. The prior "the frame's menu-mode
+flip covers it" note was a quarter-second-late approximation; the immediate seam
+is now faithful.
+
+**§2 JustQuit (PORTED)** — `WorldGen.cs:6627-6662`. Census: the ONLY vanilla
+caller is the `/quit` debug chat command (`ToolkitDebugCommands.cs:232-237`,
+`CommandRequirement.Client`); the F3 debug panel is the dispatcher stand-in
+(S1-E-29), so a real consumer exists. `saveglue::just_quit` ports the body (the
+inline sentinel pair, the invasion reset, the netMode-0 drop, the tracked drain,
+the fast-forward clears, single-player `GoToWorldSelect` + player-origin reset
+`:6655-6656` vs the client's main-menu arm `:6660`). F3 World tab row 15 "Quit
+(no save)" drives it (`row_count` 15→16).
+
+**§3 serverLoad retry ladder (DOC-SKIP)** — `WorldGen.cs:6873-6924` has ZERO
+`PlaySound` sites in the ladder; the only cue is the `:6921` success tail (already
+landed on `start_hosting`). `serverLoadWorld()` is called ONLY from
+`Main.DedServ()` (`Main.cs:5671`), where every `PlaySound` is null
+(`SoundEngine.cs:104`). MP/dedServ-only + no audible cue → skip, documented.
+
+**§4 TownDoorOps (PORTED, the b3 phase-2 seam)** — `AppTownDoors`
+(`world_sim/editing/doors.rs`) implements the trait over
+`edit::{open_door, close_door, shift_tall_gate}` with the pitched 8/9 cues
+(`WorldGen.cs:37727`/:31908/:51762`) on `UpdateNpcs` + the cleanup drops. b3's
+`NoOpTownDoors` (`96a5d88f`, branch-local) is replaced by this sound-complete
+adapter when the town lane adopts it; b3's "ShiftTallGate UNPORTED" note is stale
+(g24 batch 2 landed it). Wrong-kind refusals silent/draw-free.
+
+**§5 c14 dup cue-order (KEEP-ONE + fix)** — c14's `TileKill::check_sounds` and
+g24's `TileKill::check_cues` both port the `Check*` break tails. The C# plays them
+AFTER the check's kill loop (`Check2x1` `:47235`/:47255 follow `:47108-47116`;
+`CheckOrb` `:54335-54342` follows `:54214-54223`), so c14's after-loop position is
+faithful and g24's before-loop was early. **Fix**: `check_cues.extend(plan.cues)`
+moved after `kill_plan_cells` (`kill.rs:528`). **Keep-one for the merger**: keep
+ONE channel — g24's `check_cues` (now after-loop) + its unique case-103 bowl arm,
+DROP c14's `check_sounds` (functionally identical once the order matches; the bowl
+arm is the only behavioural delta). Never keep both (a double play of every
+piggy/orb tail). 5 witnesses WRITTEN NOT RUN.
+
+**§6 the quit-stop DUP — cross-receipt with g73 (RETIRE phase, 2026-11-21)** —
+g73's closeout `4e7e3f58` wired the same `:6704` `save_and_quit` stop as g24's
+doc-sweep `c3eccb77` (+ the `7ca8b087` dead_code allows). **g73's own retire
+adjudication `bce01ece8` (`task/W4-g73-waterfall-draw` tip, read fresh) rules
+g24's shape the SUPERSET**: g24 carries the direct sink-kill body (g73's
+route-through-`set_liquid_loop(ch, 0.0)` no-ops headless — the cue/output-handle
+gates precede its stop arm), the `liquid_ambience_stops` counter seam,
+`stop_tracked_sounds` (`:6715`/:6646`), the full `JustQuit` port (`:6627-6662`)
+and the F3 World row 15. **Keep-one verdict (both sides now agree): ONE
+`stop_waterfall_ambience` fn + ONE `:6704` call site; at the family merge the
+g73 branch's folded copies are kept (g73 already absorbed g24's shape in
+`bce01ece8`), g24's identical hunks dedupe onto them; g24's
+`SecretSeed.Enable` → `menu_accept_style` production caller stays on the g24
+branch (g73 carries the fn under a dead_code allow until that merge).**
+The one correction g73 found on g24's side is ADOPTED here: the
+`s1_e_29_the_world_tab_keeps_its_fifteen_rows` witness was left STALE by the
+doc-sweep's 15→16 row bump (`row_count`/`world_rows` return 16, the witness
+pinned 15 — it would fail); now renamed `..._sixteen_rows`, pins 16/16 + the
+`Quit (no save)` tail row — the same pins as `bce01ece8`'s corrected copy.
+g73's closeout witness `the_quit_stop_kills_both_liquid_loop_channels` is
+retired on ITS side into g24's
+`w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain` (its dead-slot/
+idempotence assertions carried over) — no witness dup survives the merge.
+Cross-receipt hashes: g24 `c3eccb77`/`7ca8b087` ⇄ g73 `4e7e3f58` → `bce01ece8`.
 

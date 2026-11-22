@@ -3420,7 +3420,9 @@ pub(crate) mod front_flow_tests {
         assert_eq!(session.request.max_length, usize::MAX);
         assert_eq!(session.tail, KeyboardTail::WorldSeed);
         // The submit tail: the trimmed seed lands (`OnFinishedSettingSeed`,
-        // `:817-819`), the creator returns.
+        // `:817-819`), the creator returns. W4-g24 — the plain "51" carries
+        // no micro seed, so no tracked MenuAccept lands (the classic-option
+        // 24 of `:834` is a UIWorldCreation site outside this wave).
         app.keyboard_character('5');
         app.keyboard_character('1');
         app.keyboard_submit();
@@ -3428,6 +3430,12 @@ pub(crate) mod front_flow_tests {
             panic!("the creator returns");
         };
         assert_eq!(draft.seed, "51");
+        assert_eq!(
+            app.audio
+                .tracked_count_for(&crate::audio::menu_accept_style()),
+            0,
+            "a plain seed plays no MenuAccept"
+        );
         // The title is the `UI.EnterSeed` key, not a literal: the keyboard
         // header follows the culture.
         crate::lang::set_language(tr_core::localization::GameCulture::Russian);
@@ -3436,6 +3444,144 @@ pub(crate) mod front_flow_tests {
             "Укажите семечко (не заполняйте для случайного выбора)"
         );
         crate::lang::set_language(tr_core::localization::GameCulture::English);
+    }
+
+    /// W4-g24 — `OnFinishedSettingSeed`'s secret-seed cue
+    /// (`UIWorldCreation.cs:820`/:841 → `WorldGen.SecretSeed.Enable`,
+    /// `WorldGen.cs:537-540`): a seed text carrying a micro seed plays the
+    /// tracked `MenuAccept` ONCE per submit (`TryApplyingCopiedSeed`'s loop
+    /// flips `playSound` false after the first Enable,
+    /// `WorldFileData.cs:268-272`); a plain seed plays nothing.
+    #[test]
+    fn w4_g24_the_seed_submit_plays_menu_accept_once_for_a_micro_seed() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        app.mouse_pos = Vec2::new(
+            l.seed_plate[0] + l.seed_plate[2] * 0.5,
+            l.seed_plate[1] + l.seed_plate[3] * 0.5,
+        );
+        app.handle_front_click();
+        // Two micro seeds joined: ONE MenuAccept (the first Enable only —
+        // `TryApplyingCopiedSeed` flips playSound false after the first).
+        // The silent test cue lets the tracked path run headless (the pool
+        // add follows the cue gate; no output device is needed).
+        app.audio.insert_test_cue("menu_accept");
+        for c in "pumpkinseason|arachnophobia|12345".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        let style = crate::audio::menu_accept_style();
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            1,
+            "the first secret seed's Enable plays ONE tracked MenuAccept"
+        );
+        let Some(FrontScreen::WorldCreation(draft)) = app.front.as_ref() else {
+            panic!("the creator returns");
+        };
+        assert_eq!(draft.seed, "pumpkinseason|arachnophobia|12345");
+        // The resolve the arm reads: two micro seeds, one Enable-with-sound.
+        let (micro, _, _) = tr_core::seeds::resolve_seed_text(&draft.seed);
+        assert_eq!(micro.count(), 2, "both micro seeds resolve");
+        // A plain seed submit: the arm's gate is false — no tracked call.
+        let count_before = app.audio.tracked_count_for(&style);
+        app.mouse_pos = Vec2::new(
+            l.seed_plate[0] + l.seed_plate[2] * 0.5,
+            l.seed_plate[1] + l.seed_plate[3] * 0.5,
+        );
+        app.handle_front_click();
+        for c in "5162020".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            count_before,
+            "a classic seed plays no MenuAccept"
+        );
+    }
+
+    /// W4-g24 FINAL — `OnFinishedSettingSeed`'s classic-option arm
+    /// (`UIWorldCreation.cs:830-835`): a seed text naming a classic option
+    /// ("for the worthy") takes the ELSE branch's `SelectOption` +
+    /// `SoundEngine.PlaySound(24)` (`SoundID.Chat`, case 24 draw-free).
+    /// The arm is exclusive with the micro-seed MenuAccept: a joined
+    /// micro-seed text plays ONE tracked MenuAccept and NO Chat; a plain
+    /// numeric text plays neither (the `InternalSubmit` 10 is the
+    /// keyboard's own, `UIVirtualKeyboard.cs:975`, present on every submit).
+    #[test]
+    fn w4_g24_the_classic_option_seed_plays_the_chat_cue() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        let seed_plate = Vec2::new(
+            l.seed_plate[0] + l.seed_plate[2] * 0.5,
+            l.seed_plate[1] + l.seed_plate[3] * 0.5,
+        );
+        app.audio.insert_test_cue("menu_accept");
+        let style = crate::audio::menu_accept_style();
+        // The classic-option text: one Chat play (:834), no MenuAccept.
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "for the worthy".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(
+            app.audio.played_count(),
+            before + 2,
+            "the submit 10 + the classic-option 24 (:834)"
+        );
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            0,
+            "the classic arm plays no MenuAccept"
+        );
+        // A joined micro-seed text: ONE MenuAccept, NO Chat (the arms are
+        // exclusive — the TryApplyingCopiedSeed success never reaches :834).
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "pumpkinseason|5162020".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the submit 10 only — no Chat on the micro arm"
+        );
+        assert_eq!(app.audio.tracked_count_for(&style), 1, "one MenuAccept");
+        // A plain numeric text: the submit 10 only, neither arm fires.
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "5162020".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(app.audio.played_count(), before + 1, "the submit 10 only");
+        assert_eq!(app.audio.tracked_count_for(&style), 1, "no new MenuAccept");
+        // The SINGLE (unjoined) micro-seed text (`:836-841`): the plain
+        // "pumpkinseason" submit plays ONE tracked MenuAccept — the
+        // CheckInputForSecretSeed arm the batch-1 joined-form gate missed.
+        app.mouse_pos = seed_plate;
+        app.handle_front_click();
+        let before = app.audio.played_count();
+        for c in "pumpkinseason".chars() {
+            app.keyboard_character(c);
+        }
+        app.keyboard_submit();
+        assert_eq!(app.audio.played_count(), before + 1, "the submit 10 only");
+        assert_eq!(
+            app.audio.tracked_count_for(&style),
+            2,
+            "the single micro seed's Enable plays MenuAccept (:841)"
+        );
     }
 
     #[test]

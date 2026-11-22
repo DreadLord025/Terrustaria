@@ -2636,28 +2636,57 @@ impl App {
                 }
                 self.enter_front(back);
             }
-            // `OnFinishedSettingSeed` (`:817-831`): the trimmed seed lands
-            // (`TryApplyingCopiedSeed`'s secret-seed paths are the out-of-
-            // scope Advanced tab, plan Uncertainty 4).
+            // `OnFinishedSettingSeed` (`:817-842`): the trimmed seed lands.
+            // W4-g24 — `SecretSeed.Enable`'s cue (`WorldGen.cs:537-540`):
+            // the first secret seed the text unlocks plays the tracked
+            // `SoundID.MenuAccept` — `TryApplyingCopiedSeed`'s Enable loop
+            // flips `playSound` false after the first (`WorldFileData.cs:
+            // 268-272`), and the plain-text arm (`:836-841`) enables at most
+            // one. The port is stateless (no `seed.Enabled` session cache),
+            // so every submit with a micro seed plays once — the
+            // first-enable-per-entry semantics of a fresh creation screen.
+            // W4-g24 FINAL — the classic-option arm's 24 (`:830-835`):
+            // `GetOptionFromSeedText` resolves the ELSE-branch text (the
+            // `TryApplyingCopiedSeed` join failed), `SelectOption` runs and
+            // `SoundEngine.PlaySound(24)` (`SoundID.Chat`, `SoundID.cs:70`,
+            // case 24 draw-free — `LegacySoundPlayer.cs:957-962`). Cue
+            // only: the `_isSpecialSeedText`/`SelectOption` draft-state
+            // half is the d85 Advanced-tab surface (its `WorldSeed` arm
+            // carries `option_for_seed_text` + `select_option`; the
+            // created world's flags already ride `resolve_seed_text`'s
+            // classic half) — keep-one note in research/146 §3.
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
-                    draft.seed = name.clone();
-                    // W4-g22 DOC-SWEEP — `SoundEngine.PlaySound(24)`
-                    // (`UIWorldCreation.cs:834`): the seed text resolving a
-                    // special generation option (`GetOptionFromSeedText !=
-                    // null`, `:829-833`) plays the Chat cue (SoundID.Chat =
-                    // 24, `SoundID.cs:70`). The port's resolution is the
-                    // pure `seed_flags` (`tr_core::seeds`); a non-empty
-                    // classic flag set is the option hit. The secret-seed
-                    // `Enable` trackable sound (`WorldGen.cs:539`,
-                    // SoundID.MenuAccept) stays with the Advanced tab
-                    // (documented deviation).
-                    if !name.is_empty()
-                        && ui::world_creation::seed_flags(&name)
-                            != tr_core::seeds::SeedFlags::none()
-                    {
-                        self.audio.play("Chat");
+                    // The merge keep-one (W4-g24 FINAL over W4-g22's
+                    // seed_flags probe): g24's three-arm resolution is the
+                    // faithful `OnFinishedSettingSeed` shape — the joined
+                    // micro-seed `TryApplyingCopiedSeed` arm, the
+                    // classic-option Chat (24) arm and the single-secret
+                    // `Enable` MenuAccept arm.
+                    draft.seed = name;
+                    let (micro, _, _) = tr_core::seeds::resolve_seed_text(&draft.seed);
+                    if micro.count() > 0 {
+                        self.audio
+                            .play_tracked_global(crate::audio::menu_accept_style());
+                    } else if tr_core::seeds::option_for_seed_text(&draft.seed).is_some() {
+                        // `:834` — the classic-option text plays Chat (24).
+                        // The else-if mirrors the C#'s branch exclusivity:
+                        // a joined micro-seed text took the `TryApplying-
+                        // CopiedSeed` success arm, never the 24.
+                        self.audio.play("Chat"); // `SoundEngine.PlaySound(24)`
+                    } else if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some() {
+                        // `:836-841` — the SINGLE (unjoined) micro-seed
+                        // text: `CheckInputForSecretSeed` resolves it and
+                        // `Enable(secretSeed)` plays the same tracked
+                        // MenuAccept (`WorldGen.cs:539`). The joined form
+                        // took the first arm above; this one covers the
+                        // plain "pumpkinseason" submit the batch-1 arm
+                        // missed (`resolve_seed_text` counts only the
+                        // `|`-prefixed parts). Stateless once-per-submit,
+                        // the batch-1 convention.
+                        self.audio
+                            .play_tracked_global(crate::audio::menu_accept_style());
                     }
                 }
                 self.enter_front(back);
@@ -2846,6 +2875,13 @@ impl App {
         // the select-world Play loaded the world and then drew the lobby over
         // it instead of entering the world (BUG-21).
         self.enter_loaded_world();
+        // W4-g24 — `playWorldCallBack`'s tail (`WorldGen.cs:6843`):
+        // `SoundEngine.PlaySound(11)` after the spawn (`:6840`) — the
+        // world-enter close cue. Case 11 (`LegacySoundPlayer.cs:760-768`)
+        // draws NOTHING; the 2D play rides no RNG stream. The net client
+        // install (`client_install_world`) is the S2c world-state path, not
+        // `playWorld` — it keeps its own silence.
+        self.audio.play("Menu_Close");
         // `loop`'s boot block (`loop.rs:88-100`): the camera lands on the
         // world's spawn and the zoom on the setting, before the first frame.
         self.camera = Vec2::new(
@@ -5245,7 +5281,15 @@ pub(crate) mod tr_hooks {
         assert!(app.menu.is_some(), "the boot App opens the lobby");
 
         // The Play: the world swaps in and the lobby must not come back.
+        // W4-g24 — `playWorldCallBack`'s tail (`WorldGen.cs:6843`): the
+        // world-enter plays the Menu_Close (11) exactly once per swap.
+        let plays_before = app.audio.played_count();
         app.swap_world(&paths[1]).expect("first swap");
+        assert_eq!(
+            app.audio.played_count(),
+            plays_before + 1,
+            "the world-enter cue (case 11, draw-free)"
+        );
         assert!(app.menu.is_none(), "the lobby must not come back");
         assert!(app.front.is_none(), "the 888 side clears too");
         assert_eq!(app.world.name, "Beta", "the selected world is live");
