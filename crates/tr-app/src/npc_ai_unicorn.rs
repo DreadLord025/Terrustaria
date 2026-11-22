@@ -2,10 +2,12 @@
 //! Pumpkin Moon's Headless Horseman (315) and Hellhound (329), S1-F-13b2
 //! slice A. The C# machine also serves the Unicorn (155), the lunar
 //! pillar mobs (410's kamikaze, 423's NebulaBeast charge) and the Sand
-//! Elemental (546). 155/410/546 are not in the port's roster and 423
-//! rides its own ported machine (`npc.rs::update_nebula_beast`,
-//! M4-EVENT-9), so only the 315/329 arms are ported here — the shared
-//! core is verbatim, the other types' branches are cited and skipped.
+//! Elemental (546). 155/546 are not in the port's roster and 410/423
+//! ride their own ported machines (`npc.rs::update_stardust_spider_small`
+//! / `update_nebula_beast`, M4-EVENT-9; W4-g9 moved both onto the
+//! kind-gated aiStyle-26 axis arms), so only the 315/329 arms are ported
+//! here — the shared core is verbatim, the other types' branches are
+//! cited and skipped.
 //!
 //! RNG (`Main.rand` rides the `UpdateNPCs` stream —
 //! `Main.cs:17767-17769`'s `SwapRandom("UpdateNPCs")` around
@@ -98,8 +100,9 @@ fn cand_of(player: &Player) -> TargetCandidate {
 }
 
 /// The shared chase/turn state machine + movement core of
-/// `AI_026_Unicorns`, one fixed step. Called from `Npc::update_kind_ai`'s
-/// 315/329 arm with the caller's `UpdateNPCs` stream.
+/// `AI_026_Unicorns`, one fixed step. Called from `Npc::update_rng`'s
+/// kind-gated aiStyle-26 axis arm (W4-g9; the 315/329 kind-match arm is
+/// an `unreachable!` marker now) with the caller's `UpdateNPCs` stream.
 pub(crate) fn unicorn_step(
     npc: &mut Npc,
     world: &World,

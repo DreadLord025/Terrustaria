@@ -6456,6 +6456,66 @@ impl Npc {
                 self.x += self.vx;
                 self.y += self.vy;
             }
+            // W4-g9 kind-axis lane 2 (the 231-460 band census): the
+            // aiStyle-26 kinds — the Pumpkin pair 315/329
+            // (`AI_026_Unicorns`, `NPC.cs:25631-25634` -> `:62366-62924`,
+            // the S1-F-13b2 slice-A machine) and the celestial pair
+            // 410/423 (the 410 burst `:62470-62495` + the 423 charge
+            // `:62497-62556` + the shared walk tail). The kind-gated
+            // claim mirrors the style-57 MourningWood arm (a global 26
+            // claim would misroute the UNPORTED style-26 roster — the
+            // unicorns 155/259/260, the Sand Elemental 546 etc.); the
+            // 315/329 bodies ride the SAME `unicorn_step` the kind arm
+            // called, 410/423 their own LIVE-INLINE machines — machines
+            // UNCHANGED (verify-only, the S1-D-2 migration step).
+            26 if self.kind == NpcKind::HeadlessHorseman || self.kind == NpcKind::Hellhound => {
+                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+            }
+            26 if self.kind == NpcKind::StardustSpiderSmall => {
+                self.update_stardust_spider_small(world, player, rng)
+            }
+            26 if self.kind == NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
+            // `else if (this.aiStyle == 39)` (`NPC.cs:29145-29665`) —
+            // the SolarSroller (417, `SetDefaults` `:15355-15367`), the
+            // style's only ported user (the tortoises 153/154 + the
+            // shellies 496/497 are unported kinds). The kind arm's body
+            // ALREADY rides the faithful `npc_ai_style39::style39_step`
+            // (the W83 re-port) — the axis claim moves the SAME wrapper
+            // (`update_solar_sroller`: the ctx seam + the gravity +
+            // the `Collision_MoveSolarSroller` bounce tail,
+            // `NPC.cs:92736-92757`) onto the axis; machine UNCHANGED.
+            39 => self.update_solar_sroller(world, player, rng),
+            // `else if (this.aiStyle == 45) { this.AI_045_Golem(); }`
+            // (`NPC.cs:31125-31128`) — the Golem body (245,
+            // `SetDefaults` `:12163-12178`), the style's only user. The
+            // faithful `update_golem_rng` body arm (the S1-D-3 audit,
+            // `npc_ai_golem`'s numeric cores) claims the axis; the head
+            // 246 keeps the W4-c5 lane's wiring and the fists 247/248
+            // the style-47 claim above — machines UNCHANGED.
+            45 => self.update_golem_rng(world, player, rng, dust, dust_ctx),
+            // `else if (this.aiStyle == 48)` (`NPC.cs:31351-31586`) —
+            // the free Golem head (249, `SetDefaults` `:12207-12220`),
+            // the style's only user. The SAME `update_golem_rng` free-
+            // head arm the kind match called claims the axis (the
+            // R22/R23 audit machine); UNCHANGED verify-only.
+            48 => self.update_golem_rng(world, player, rng, dust, dust_ctx),
+            // `else if (this.aiStyle == 95)` (`NPC.cs:39384-39429`) —
+            // the small Star Cell (406, `SetDefaults` `:15036-15048`),
+            // the style's only user. The LIVE-INLINE damping/scale/
+            // Transform(405) machine moves to the axis UNCHANGED (the
+            // W4-d33 census's PORTED row; the 405 big cell rides the
+            // W4-d32 lane's style-85 claim, not this one).
+            95 => self.update_stardust_cell(world, player, rng),
+            // `else if (this.aiStyle == 96)` (`NPC.cs:39430-39472`) —
+            // the Star Jellyfish (407, `SetDefaults` `:15087-15100`),
+            // the style's only user. The LIVE-INLINE band-steer + the
+            // 70-tick 539 ring machine moves UNCHANGED.
+            96 => self.update_stardust_jellyfish(world, player, rng),
+            // `else if (this.aiStyle == 97)` (`NPC.cs:39473-39619`) —
+            // the Nebula Floater (420, `SetDefaults` `:15157-15171`),
+            // the style's only user. The LIVE-INLINE emission window +
+            // teleport-cycle machine moves UNCHANGED.
+            97 => self.update_nebula_floater(world, player, rng),
             // `else if (this.aiStyle == 30)` (`NPC.cs:26405-27014`) -
             // the Retinazer (125), the style's only user. S1-D-3
             // wire-retinazer: the faithful machine lives in
@@ -9055,19 +9115,21 @@ impl Npc {
             NpcKind::WebbedStylist => {}
             NpcKind::SleepingGolfer => {}
             NpcKind::GoblinArcher => self.update_archer(world, player, rng),
-            // S1-D-3 golem-audit: all four arms ride the faithful
+            // S1-D-3 golem-audit: the head + fists arms ride the faithful
             // `update_golem_rng` (the numeric cores in npc_ai_golem.rs).
             // The fists' aiStyle-47 axis claim above delegates to the same
             // machine (the three-way reconcile, TR-D3s48 note: the most
             // complete faithful version per arm wins - golem-audit's fists
             // carry the full-velocity anchor, the balance ladders, the real
             // collideX/Y exit and the state-3 hover; npc_ai_style47 stays
-            // the unwired reference).
-            NpcKind::Golem
-            | NpcKind::GolemHead
-            | NpcKind::GolemFistLeft
-            | NpcKind::GolemFistRight
-            | NpcKind::GolemHeadFree => self.update_golem_rng(world, player, rng, dust, dust_ctx),
+            // the unwired reference). W4-g9: the body (245, aiStyle 45)
+            // and the free head (249, aiStyle 48) claim the style axis
+            // above — their arms are unreachable through `update_rng`.
+            NpcKind::GolemHead | NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                self.update_golem_rng(world, player, rng, dust, dust_ctx)
+            }
+            NpcKind::Golem => unreachable!("aiStyle 45 rides the style axis (W4-g9)"),
+            NpcKind::GolemHeadFree => unreachable!("aiStyle 48 rides the style axis (W4-g9)"),
             NpcKind::Deerclops => self.update_deerclops(world, player, rng),
             NpcKind::Skeleton => {
                 unreachable!("aiStyle 3's plain walkers ride the style axis (W4-d22)")
@@ -9250,7 +9312,11 @@ impl Npc {
             // the drakomire mount + its rider, the sroller, the corite and
             // the selenian.
             NpcKind::StardustSpiderBig => self.update_stardust_spider_big(world, player, rng),
-            NpcKind::StardustSpiderSmall => self.update_stardust_spider_small(world, player, rng),
+            // W4-g9: the baby spider (410, aiStyle 26) claims the style
+            // axis above — this arm is unreachable through `update_rng`.
+            NpcKind::StardustSpiderSmall => {
+                unreachable!("aiStyle 26's StardustSpiderSmall rides the style axis (W4-g9)")
+            }
             NpcKind::StardustSoldier => self.update_stardust_soldier(world, player, rng),
             NpcKind::SolarDrakomire => self.update_solar_drakomire(world, player),
             // The drakomire's rider: aiStyle 75 rides the style axis
@@ -9258,7 +9324,10 @@ impl Npc {
             NpcKind::SolarDrakomireRider => {
                 unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
             }
-            NpcKind::SolarSroller => self.update_solar_sroller(world, player, rng),
+            // W4-g9: the sroller (417, aiStyle 39) claims the style axis
+            // above (the SAME `update_solar_sroller` wrapper) — this arm
+            // is unreachable through `update_rng`.
+            NpcKind::SolarSroller => unreachable!("aiStyle 39 rides the style axis (W4-g9)"),
             // The corite: aiStyle 74 rides the style axis (W4-c12) — this
             // arm is unreachable.
             NpcKind::SolarCorite => {
@@ -9268,7 +9337,9 @@ impl Npc {
             // The nebula trio: the floater's aiStyle-97 teleport cycle, the
             // suckler's aiStyle-85 hover + attachment, the predictor's
             // 573 fan.
-            NpcKind::NebulaFloater => self.update_nebula_floater(world, player, rng),
+            // W4-g9: the floater (420, aiStyle 97) claims the style axis
+            // above — this arm is unreachable through `update_rng`.
+            NpcKind::NebulaFloater => unreachable!("aiStyle 97 rides the style axis (W4-g9)"),
             NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
             NpcKind::Predictor => self.update_nebula_predictor(world, player, rng),
             // The vortex trio: the hunter's shooter arm, the alien's dive
@@ -9279,10 +9350,19 @@ impl Npc {
             NpcKind::VortexHeadcrab => self.update_vortex_headcrab(world, player, rng),
             // The pillar shards: the aiStyle-95/96/85/26 machines and the
             // Vortex pair's aiStyle-3 riders.
-            NpcKind::StardustCellSmall => self.update_stardust_cell(world, player, rng),
-            NpcKind::StardustJellyfishBig => self.update_stardust_jellyfish(world, player, rng),
+            // W4-g9: the three claim the style axis above (95 / 96 / the
+            // kind-gated 26) — these arms are unreachable through
+            // `update_rng`.
+            NpcKind::StardustCellSmall => {
+                unreachable!("aiStyle 95 rides the style axis (W4-g9)")
+            }
+            NpcKind::StardustJellyfishBig => {
+                unreachable!("aiStyle 96 rides the style axis (W4-g9)")
+            }
             NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
-            NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
+            NpcKind::NebulaBeast => {
+                unreachable!("aiStyle 26's NebulaBeast rides the style axis (W4-g9)")
+            }
             NpcKind::VortexRifleman => self.update_vortex_rifleman(world, player, rng),
             // `:57681`: the soldier's walk speed is the 4-px cap. W4-d22:
             // the style axis claims it (the num83 row rides the ladder).
@@ -9628,13 +9708,14 @@ impl Npc {
             // (`AI_026_Unicorns`, `NPC.cs:62366-62924`, the caller arm
             // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
             // `npc_ai_unicorn.rs` (the stuck windows, the Horseman's
-            // 480-tick pumpkin lob, the hop/walk/step-up/jump core). The
-            // other aiStyle-26 kinds keep their own routings below — this
-            // arm is kind-scoped, not a style-axis claim. The gallop dust
-            // (with its draws), the FindFrame 315/329 arms and the
-            // AddLight ride slice B (module docs + ANALYSIS).
+            // 480-tick pumpkin lob, the hop/walk/step-up/jump core).
+            // W4-g9: the pair claims the style axis above (the kind-gated
+            // 26 arm rides the SAME `unicorn_step`) — these arms are
+            // unreachable through `update_rng`. The gallop dust (with its
+            // draws), the FindFrame 315/329 arms and the AddLight ride
+            // slice B (module docs + ANALYSIS).
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
-                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+                unreachable!("aiStyle 26's unicorn pair rides the style axis (W4-g9)")
             }
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
             // machine (`NPC.cs:24666-25234`, the 330 branches) — S1-F-13b2
@@ -20903,6 +20984,8 @@ impl Npc {
     /// — S1-D-4 W-10 WIRES the faithful `npc_ai_style39::style39_step`
     /// (S1-D-3 module, W83 audit) over the invented v1 (the
     /// `5 + ai[2]*0.6` speed, the `60*ai[2]` exit, the 0.5 wind-up rate).
+    /// W4-g9: the aiStyle-39 axis arm calls this SAME wrapper (the kind
+    /// arm retired to an `unreachable!` marker).
     /// The module owns the AI states; this wrapper owns the caller-side
     /// seams the module doc names: the ctx fill (classic difficulty, the
     /// `hurt_cd > 0` justHit stand-in, the ticker-0 stand-in), the
@@ -48040,5 +48123,220 @@ mod w4_g7_wire2_high2_tests {
         }
         assert_eq!(rows, vec![1, 2, 1, 1], "the 8/16/24/32 bands + row-hold");
         assert_eq!(n.frame_counter, 0.0, "the >=32 tail zeroes the counter");
+    }
+}
+
+/// W4-g9 NPC-kind AXIS WIRING lane 2 (the C# kinds 231-460 census,
+/// code-only mode): the ten band kinds whose AI ran ONLY through
+/// `update_kind_ai`'s kind match now claim `update_rng`'s aiStyle axis —
+/// Golem 245 (45), GolemHeadFree 249 (48), HeadlessHorseman 315 +
+/// Hellhound 329 + StardustSpiderSmall 410 + NebulaBeast 423 (the
+/// kind-gated 26), SolarSroller 417 (39), StardustCellSmall 406 (95),
+/// StardustJellyfishBig 407 (96), NebulaFloater 420 (97). Every claim
+/// routes to the SAME landed machine the kind arm called (the S1-D-2
+/// migration step, machines UNCHANGED verify-only); the kind arms are
+/// `unreachable!` markers. The band's other rows already ride the axis
+/// (the S1-D-3/S1-F-13 waves) or belong to in-flight lanes (7/15/16/22/
+/// 32/33/41/42/44/46/51-54/59/64/73/74/76-85/93/94/105-110 — probed,
+/// not touched). Witnesses WRITTEN NOT RUN (no compiler invoked).
+#[cfg(test)]
+mod w4_g9_kind_axis_census_tests {
+    use super::*;
+    use super::tests::ground;
+
+    fn dust_ctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// The census rows: each kind's `ai_style()` is its C# `SetDefaults`
+    /// assignment, its `cs_id()` the vanilla `NPC.type`, and the stat
+    /// rows the same `SetDefaults` block (the wiring's dispatch keys).
+    #[test]
+    fn w4_g9_the_ten_band_kinds_carry_their_csharp_styles_and_rows() {
+        // (kind, C# type, aiStyle, SetDefaults cite, box, lifeMax)
+        let rows: [(NpcKind, u16, u8, &str, (f32, f32), i32); 10] = [
+            (NpcKind::Golem, 245, 45, "NPC.cs:12163-12178", (140.0, 140.0), 15000),
+            // The free head folds onto the Golem's bestiary entry (the
+            // Hide=true part, `entry_for_npc`'s fold) — `cs_id()` reads
+            // 245, the s1_f_3 cs_id==net_id invariant; the vanilla type
+            // 249 rides the render/net seams, not cs_id.
+            (NpcKind::GolemHeadFree, 245, 48, "NPC.cs:12207-12220", (70.0, 70.0), 16000),
+            (NpcKind::HeadlessHorseman, 315, 26, "NPC.cs:12978-12990", (74.0, 70.0), 5000),
+            (NpcKind::Hellhound, 329, 26, "NPC.cs:13175-13187", (46.0, 30.0), 1800),
+            (NpcKind::StardustCellSmall, 406, 95, "NPC.cs:15036-15048", (22.0, 22.0), 300),
+            (NpcKind::StardustJellyfishBig, 407, 96, "NPC.cs:15087-15100", (40.0, 60.0), 1500),
+            (NpcKind::StardustSpiderSmall, 410, 26, "NPC.cs:15074-15086", (22.0, 22.0), 200),
+            (NpcKind::SolarSroller, 417, 39, "NPC.cs:15355-15367", (46.0, 52.0), 700),
+            (NpcKind::NebulaFloater, 420, 97, "NPC.cs:15157-15171", (40.0, 40.0), 1300),
+            (NpcKind::NebulaBeast, 423, 26, "NPC.cs:15117-15129", (50.0, 44.0), 850),
+        ];
+        for (kind, cs, style, cite, size, hp) in rows {
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle ({cite})");
+            assert_eq!(kind.cs_id(), cs, "{kind:?} vanilla type ({cite})");
+            assert_eq!(kind.size(), size, "{kind:?} SetDefaults box ({cite})");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} SetDefaults lifeMax ({cite})");
+        }
+        // The lane boundary: the band's other style-26/39/45/48/95/96/97
+        // users are NOT claimed here — the head 246 keeps the W4-c5 lane,
+        // the fists 247/248 the style-47 reconcile, the big cell 405 the
+        // W4-d32 style-85 lane (all still kind-match/other-axis at base).
+        assert_eq!(NpcKind::GolemHead.ai_style(), 46);
+        assert_eq!(NpcKind::GolemFistLeft.ai_style(), 47);
+        assert_eq!(NpcKind::StardustCellBig.ai_style(), 85);
+    }
+
+    /// The pre-axis wrapper, verbatim: `update_rng_dust`'s preamble +
+    /// gfxOffY decay + the OLD kind-match body + the justHit clear +
+    /// find_frame + contact (`npc.rs`'s axis tail). The A/B's legacy
+    /// side runs exactly what the kind arm ran before the claim.
+    fn legacy_step(n: &mut Npc, w: &World, p: &mut Player, rng: &mut UnifiedRandom) {
+        n.update_preamble(1.0 / 60.0);
+        n.gfx_off_y = crate::npc_ai_unicorn_b::gfx_off_y_decay(n.gfx_off_y, n.vx, n.step_speed);
+        match n.kind {
+            NpcKind::Golem | NpcKind::GolemHeadFree => n.update_golem_rng(w, p, rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(w)),
+            NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
+                crate::npc_ai_unicorn::unicorn_step(n, w, p, rng)
+            }
+            NpcKind::StardustSpiderSmall => n.update_stardust_spider_small(w, p, rng),
+            NpcKind::NebulaBeast => n.update_nebula_beast(w, p, rng),
+            NpcKind::SolarSroller => n.update_solar_sroller(w, p, rng),
+            NpcKind::StardustCellSmall => n.update_stardust_cell(w, p, rng),
+            // The 300-tick Transform(405) continuity: after the swap the
+            // pre-axis kind match ran the big cell's own arm.
+            NpcKind::StardustCellBig => n.update_stardust_cell_big(w, p),
+            NpcKind::StardustJellyfishBig => n.update_stardust_jellyfish(w, p, rng),
+            NpcKind::NebulaFloater => n.update_nebula_floater(w, p, rng),
+            _ => unreachable!("the census's ten kinds only"),
+        }
+        n.just_hit = false;
+        n.find_frame();
+        n.contact(p, rng);
+    }
+
+    /// The frozen-behaviour A/B + stream parity (the W4-d31/d32
+    /// precedent): the axis-routed tick must produce the exact pre-axis
+    /// state sequence — the claims call the SAME machines with the same
+    /// args. 500 ticks covers the spider's 240-tick burst/self-destruct,
+    /// the cell's 300-tick Transform(405) hand-off, the Horseman's
+    /// 481st-tick pumpkin lob and the floater's 480-tick teleport cycle.
+    #[test]
+    fn w4_g9_the_axis_claims_keep_the_machine_behaviour_and_stream() {
+        let mut w = ground();
+        // The free head's body-present gate + the fireball tiers read
+        // the world's golem carrier fields (`npc.rs`'s free-head arm).
+        w.golem_present = true;
+        w.golem_hp = 9000;
+        w.golem_max_hp = 15000;
+        w.pumpkin_moon = true; // the unicorn pair's event context
+        for kind in [
+            NpcKind::Golem,
+            NpcKind::GolemHeadFree,
+            NpcKind::HeadlessHorseman,
+            NpcKind::Hellhound,
+            NpcKind::StardustCellSmall,
+            NpcKind::StardustJellyfishBig,
+            NpcKind::StardustSpiderSmall,
+            NpcKind::SolarSroller,
+            NpcKind::NebulaFloater,
+            NpcKind::NebulaBeast,
+        ] {
+            let mut pa = Player::spawn(&w);
+            pa.x = 50.0 * TILE_PX;
+            pa.y = 20.0 * TILE_PX;
+            let mut pb = pa.clone();
+            let mut axis = Npc::new(kind, 10.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+            axis.hp = axis.max_hp;
+            axis.target = 0;
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(231);
+            let mut rng_b = UnifiedRandom::new(231);
+            for tick in 0..500 {
+                axis.update_rng(&w, &mut pa, 1.0 / 60.0, &mut rng_a);
+                legacy_step(&mut legacy, &w, &mut pb, &mut rng_b);
+                assert_eq!(axis.kind, legacy.kind, "{kind:?} kind @{tick}");
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                for i in 0..4 {
+                    assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "{kind:?} ai[{i}] @{tick}");
+                    assert_eq!(
+                        axis.local_ai[i].to_bits(),
+                        legacy.local_ai[i].to_bits(),
+                        "{kind:?} localAI[{i}] @{tick}"
+                    );
+                }
+                assert_eq!(axis.hp, legacy.hp, "{kind:?} hp @{tick}");
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(axis.scale.to_bits(), legacy.scale.to_bits(), "{kind:?} scale @{tick}");
+                assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "{kind:?} rot @{tick}");
+                assert_eq!(axis.wants_hostile_shot.len(), legacy.wants_hostile_shot.len(), "{kind:?} shots @{tick}");
+                assert_eq!(axis.wants_hostile_shot_ai.len(), legacy.wants_hostile_shot_ai.len(), "{kind:?} ai shots @{tick}");
+                assert_eq!(axis.wants_sphere.len(), legacy.wants_sphere.len(), "{kind:?} sphere requests @{tick}");
+                assert_eq!(rng_a.peek(), rng_b.peek(), "{kind:?} stream @{tick}");
+            }
+        }
+    }
+
+    /// The zero-draw census: the small Star Cell's whole aiStyle-95 arm
+    /// (`NPC.cs:39384-39429`) takes NO `Main.rand` — the damping, the
+    /// scale ramp and the Transform(405) are deterministic (the port's
+    /// machine takes no stream at all). 300 ticks walks the full ramp
+    /// and the transform without moving the stream.
+    #[test]
+    fn w4_g9_the_style95_arm_draws_nothing() {
+        let w = ground();
+        let p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(406);
+        let witness = rng.clone();
+        let mut cell = Npc::new(NpcKind::StardustCellSmall, 10.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        cell.hp = cell.max_hp;
+        for _ in 0..300 {
+            cell.update_stardust_cell(&w, &p);
+        }
+        assert_eq!(cell.kind, NpcKind::StardustCellBig, "the 300-tick Transform(405) ran");
+        assert_eq!(rng, witness, "the 95 arm is draw-free");
+    }
+
+    /// The retirement guard: all ten kind arms are `unreachable!`
+    /// markers — a direct `update_kind_ai` call on any band kind panics
+    /// (the axis claims their styles first; the MourningWood/Everscream
+    /// precedent). `catch_unwind` covers the whole set in one witness.
+    #[test]
+    fn w4_g9_the_ten_kind_arms_are_retired() {
+        let w = ground();
+        for kind in [
+            NpcKind::Golem,
+            NpcKind::GolemHeadFree,
+            NpcKind::HeadlessHorseman,
+            NpcKind::Hellhound,
+            NpcKind::StardustCellSmall,
+            NpcKind::StardustJellyfishBig,
+            NpcKind::StardustSpiderSmall,
+            NpcKind::SolarSroller,
+            NpcKind::NebulaFloater,
+            NpcKind::NebulaBeast,
+        ] {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut p = Player::spawn(&w);
+                let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+                let mut rng = UnifiedRandom::new(0);
+                n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+            }));
+            let err = result.unwrap_err();
+            let msg = err
+                .downcast_ref::<String>()
+                .map(|s| s.as_str())
+                .or_else(|| err.downcast_ref::<&str>().copied())
+                .unwrap_or("");
+            assert!(msg.contains("rides the style axis"), "{kind:?} guard message: {msg}");
+        }
     }
 }
