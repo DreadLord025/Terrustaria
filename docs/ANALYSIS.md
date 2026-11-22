@@ -47031,3 +47031,90 @@ meet at the merge. Merger note: keep e8's `tile_lights.rs` as the single
 port copy; this test file is disjoint (new `tests/` file, no src edits).
 One `anchors.txt` row protects the freeze itself from a lossy merge (the
 canary's purpose); the ROADMAP S1-E-5 row carries the census-freeze note.
+
+## The Item.cs sound sites lane (W4-g25, 2026-11-21, code-only mode) — CLAIM + CENSUS CLOSE
+**Census verdict: `Item.cs` has ZERO `PlaySound(` call sites.** The lane
+seed ("use/pickup sounds per item") maps to the item's *sound data
+provisions*, not play calls: `Select-String 'PlaySound\('` over
+`decompiled/Terraria/Item.cs` answers 0; the 736 `Sound`-token lines are
+the `UseSound`/`useSoundPitch` field declarations (`:199`/`:201`), **702
+`this.UseSound = …` writes** (691 `SoundID.X` + 11 `null`), **2
+`useSoundPitch` writes** (`:18499` −0.5f the Paladin's Hammer 1513,
+`:48946` 0f the `ResetStats` stock), and the `DefaultToFood` gulp
+arguments (85 calls, 27 `useGulpSound: true`). The play call itself is
+`Player.ItemCheck_StartActualUse` (`Player.cs:51681-51698`,
+`PlaySound(sItem.UseSound, base.Center, sItem.useSoundPitch)`) — a
+Player.cs site, landed by **S1-E-21 wave A** (`item.rs::initial_use_sound`
++ `audio.rs::play_use_sound` + the generated `itemdata.rs`/`soundid.rs`).
+The pickup cue is `Player.GetItem`'s `PlaySound(7)` (`Player.cs:39491`
+et al., landed as `audio.rs::play_pickup_sound`) — also NOT an Item.cs
+site. So this lane closes as a **census-close + witness audit** (the
+W4-g20 precedent), not a re-port.
+**Independent audit (this lane, 2026-11-21): ZERO drift.** A line-order
+simulation of every `SetDefaults1-5`/`SetFoodDefaults` case body — direct
+writes, `DefaultTo*` helper provisions (helpers with no `UseSound` write
+are TRANSPARENT: `SetShopValues`/`SetWeaponValues`/`DefaultToPlaceableTile`
+etc. keep the prior value), the four range-if blocks (`:21253` hair dyes
+1977-1986, `:23081` rods 2421-2422, `:23112` Rockfish 2320, `:40351`
+Flaming Mace 5012), the post-helper overrides (`:4057` Whoopie Cushion
+Item16 over the voice-accessory null, `:43427` Axe Fairy Item25 over the
+vanity-pet Item2, `:47560` Arc Surge Item15 over the staff Item43,
+`:48372` Rock Candy Item2 over the gulp Item3), the food gulp split
+(`DefaultToFood` `:48543-48558`: gulp → Item3 + useStyle 9, else Item2 +
+useStyle 2; the marshmallows 967/969 re-style to 9 AFTER the non-gulp
+helper, `:48235`/`:48304`), the `IsFood` dispatch (`Item.cs:48689` —
+Eggnog 1912 rides `SetFoodDefaults`' `DefaultToHealingPotion` Item3
+`:48387`/`:48572`, NOT the `SetDefaults2` case `:20741`), and the
+`Deprecated` → `TurnToAir` epilogue (`:48922-48925`, `ItemID.cs:1316` —
+2772/2773/2775/4722/6143's case writes are zeroed to air) — compared
+against all 6 196 generated rows: **858 ids carry sound events, every
+effective value matches the table**. The 978 `Some` rows = the direct
+SoundID writes minus deprecated/overridden, plus helper provisions plus
+food. The generator round-trip is green: `python tools/GenItemData/gen.py
+--check` → `check ok (6196 rows, 5977098 bytes)`;
+`python tools/GenItemData/test_gen.py` → `ALL GEN TESTS PASSED` (both RUN
+— the python generator checks are not the banned cargo/rustc/tests; the
+Rust witnesses below are WRITTEN NOT RUN).
+**RNG slot: none claimed.** The `SetDefaults` pass is pure data
+provisioning — it draws from NO stream (Item.cs's 14 `Main.rand` sites
+are the prefix roll `:528`/`:1139` and the `NewItem` velocity jitter
+`:49744-49745`, never sound). The play side keeps wave A's slots
+unchanged: the case-2 volume/pitch draws ride the caller's
+`UpdatePlayers` stream AFTER the attenuation gate, the `GetRandomPitch`
+NextFloat rides the audio-only `sound_style_random` (`audio.rs:1064`).
+No new stream, no re-pin.
+**Witness batches (10 sites each, WRITTEN NOT RUN)** land in
+`item.rs::tests` as `w4_g25_*`, pinning the provisions wave A's own tests
+do not cover: batch 1 the food/range-if/pitch family, batch 2 the
+null/trackable/deprecated/override family. The landed seams
+(`initial_use_sound`, `play_use_sound`, `ITEM_CORRECTIONS`) are KEPT
+untouched.
+**Witness record (20 sites, 2 tests, WRITTEN NOT RUN).**
+`w4_g25_batch1_the_food_and_range_if_sound_rows` (10): Ale 353 gulp
+Item3+style9 (`:48380`/`:48545`/`:48553`), Marshmallow 967 + Cooked 969
+non-gulp Item2 with the post-helper useStyle-9 re-style (`:48302-48304`/
+`:48233-48235` — the style write leaves `UseSound`), Rock Candy 5645 gulp
+Item3 overridden to Item2 (`:48371-48372`), Eggnog 1912 the `IsFood`
+dispatch → `SetFoodDefaults`' `DefaultToHealingPotion` Item3 (`:48689`/
+`:48387`/`:48572`, NOT the `SetDefaults2` case `:20741`), Golden Delight
+4022 non-gulp Item2+style2 (`:48045`), hair dye 1977 the range-if
+1977-1986 Item3+style9 (`:21235`/`:21253-21254`, the 1970-1976 gemspark
+group stays silent), Fleshcatcher 2421 range-if Item1 (`:23074`/`:23081`),
+Rockfish 2320 if-block Item1 (`:23099`/`:23112`), Flaming Mace 5012 the
+shared 5011/5012 case Item1+style5 (`:40333`/`:40336`/`:40351`, the
+`:40346` arm swaps shoot only).
+`w4_g25_batch2_the_null_trackable_deprecated_and_override_rows` (10):
+Medusa Head 3269 null+style4 (`:30324`/`:30314`), Zenith 4956 null
+(`:40004`), Portal Gun 3384 null+style5 (`:30958`/`:30951`), Leaf Blower
+1178 the named id-2 style `(2,34).WithVolume(0.13)` NOT trackable
+(`:14469`, `SoundID.cs:1726`), Palworld Chillet 5665 the `PalSummon`
+trackable id42 `pal_summon` `WithVolume(0.15)` (`:44514`,
+`SoundID.cs:1712`), Glacier Fang 6153 the named `(2,210)` (`:47431`,
+`SoundID.cs:1594`), Vortex Axe 2772 + First Fractal 4722 the
+`Deprecated`→`TurnToAir` zeroing to name "None"/style0/no-sound despite
+the case Item1 writes (`:26478`/`:38793`, `ItemID.cs:1316`,
+`Item.cs:48922-48925`), Whoopie Cushion 215 the voice-accessory null
+overridden to Item16+style10 (`:4049`/`:47788`/`:4057`/`:4056`), Arc Surge
+6173 the staff Item43 overridden to Item15 (`:47556`/`:48021`/`:47560`).
+One batch-1 fix round: Flaming Mace 5012's useStyle is 5 (`:40336`), not
+1 — re-read the window, the witness pinned the wrong style byte.
