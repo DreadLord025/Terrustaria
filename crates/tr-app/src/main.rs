@@ -43,12 +43,14 @@ mod proj_lights;
 mod eoc_fight;
 mod input_map;
 mod inv;
+mod house_banners;
 mod luck;
 mod wiring_stub;
 mod yoyo_string;
 mod item;
 mod itemdata;
 mod item_sorting;
+mod quick_stack;
 mod sortdata;
 mod lang;
 mod lang_tables;
@@ -150,6 +152,11 @@ mod npc_ai_style74;
 mod npc_ai_style75;
 mod npc_ai_wyvern;
 mod npc_ai_style9;
+// W4-f2 closeout (research/94 §10) — the tail census's two UNCLAIMED
+// sites' pure staged decisions (the Medusa gaze + the BigMimic reflect).
+// The merge fold (research/94 §4/§15): e9's npc_water_collision module
+// DROPPED — f2's water_collision_sounds pass is the superset keeper.
+mod npc_sounds_tail;
 mod npc_ai_style30;
 mod npc_ai_style31;
 mod npc_ai_style47;
@@ -217,6 +224,10 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-g1 lane a — the six functional Kill() hooks missing for rowed+armed
+// kinds (452/454/459/521/448/80, census research/160) + the 522 split shard's
+// AI arm.
+mod projectile_kill_hooks_a;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in
@@ -290,6 +301,12 @@ mod shimmer;
 mod signs;
 mod sound;
 mod soundid;
+// W4-g22: the Main.cs PlaySound census batch 2 (sites 91-180 of 271,
+// :44118-:49727) — the hair-window scroll machine, the clothes-window
+// open/cancel/save cue arms, the builder-accessory toggle cycles and the
+// case-20 female-hit slot pick. The menu-half cues ride Menu::pending_cue
+// (code-only mode — witnesses written not run).
+mod main_sounds;
 mod test_world_helpers;
 mod town;
 mod town_arrival;

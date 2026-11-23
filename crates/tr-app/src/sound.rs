@@ -446,6 +446,26 @@ pub fn splash_case19(
     Some((tweak, pitch))
 }
 
+/// One `LegacySoundPlayer.PlaySound` case-37 (the star chime) play's
+/// decisions (`LegacySoundPlayer.cs:1326-1336`, S1-E-21h d75 part 4):
+/// `Main.rand.Next(57, 59)` picks the `SoundItem[57..58]` slot FIRST,
+/// then the volume scales by `Style * 0.05` (the `starGame` seed folds
+/// off — unported, the case-38 precedent) and
+/// `Main.rand.Next(-40, 41) * 0.01` rolls the pitch — TWO draws, slot
+/// first. The slot is overwritten WITHOUT a Stop (`:1329`). The caller
+/// must gate on audibility BEFORE drawing (`:390-436`). The 502
+/// Meowmere's bounce (`Projectile.cs:18209`) passes Style `5 + ai[0]`
+/// (6..10 → ×0.30..0.50).
+pub fn star_chime_case37(
+    style: i32,
+    rng: &mut dyn FnMut(i32, i32) -> i32,
+) -> (i32, f32, f32) {
+    let slot = rng(57, 59);
+    let tweak = style as f32 * 0.05;
+    let pitch = rng(-40, 41) as f32 * 0.01;
+    (slot, tweak, pitch)
+}
+
 /// One `LegacySoundPlayer.PlaySound` case-38 (coin pickup) play's decisions
 /// (`LegacySoundPlayer.cs:1337-1350`, S1-E-21f): `star_game`
 /// (`Main.starGame`, the `star` seed) cuts the volume ×0.15 (`:1339-1342`),

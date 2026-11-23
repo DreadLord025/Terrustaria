@@ -28,6 +28,13 @@ pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     false
 }
 
+// (The merge fold, research/94 §4.4/§15: e9's WaterSplashDecision +
+// water_splash_gate/honey_splash_gate + water_collision_splash DROPPED —
+// f2's ambient_sound::water_collision_sounds/water_collision_tail is the
+// superset keeper: the never-wet head, the 116 pin, BOTH exit 147-quirks
+// (water_exit_gate + lava_exit_gate), the wet_prev edge latch, the exit
+// vx halving and the lava combat half.)
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NpcKind {
     Slime,
@@ -2207,9 +2214,27 @@ pub enum NpcSoundCue {
     NpcHit(i32),
     /// `PlaySound(4, pos, style)` — the int killed overload: the tower
     /// dissolve's 60-tick cry (`NPC.cs:39059`, style 22), the Moon
-    /// parts' laser wind-up (`:41838`/`:42338`/`:42611`, style 6);
-    /// case 4's one pitch draw, NO NextFloat.
+    /// parts' laser wind-up (`:41838`/`:42338`/`:42611`, style 6), the
+    /// Vile Spits' every-`ai[0]==2`-tick cry (`:21480`, style 9, the e9
+    /// union — research/94 §3); case 4's one pitch draw, NO NextFloat.
     NpcDeath(i32),
+    /// W4-f2 reconcile (e9 union) — `PlaySound(SoundID.NPCDeath55,
+    /// (int)Center.X, (int)Center.Y)` — the Ghost's flee cry
+    /// (`NPC.cs:24693`, the aiStyle-22 type-316 `localAI[3]` 0→1 latch,
+    /// the style façade); case 4.
+    NpcDeath55,
+    /// W4-f2 closeout (e9b tail union, research/94 §10) —
+    /// `PlaySound(SoundID.NPCHit6, base.position)` — the Pirate Ghost's
+    /// spawn cue (`NPC.cs:44848`, the aiStyle-122 `localAI[0]` 0→1 latch,
+    /// the style façade — NPCHit6 is the legacy id-3 style 6,
+    /// `SoundID.cs:1262`); case 3's one pitch draw + the façade NextFloat.
+    NpcHit6,
+    /// W4-f2 closeout (e9b tail union, research/94 §10) —
+    /// `PlaySound(SoundID.NPCDeath63, base.position)` — the balloon pops'
+    /// `this.DeathSound` (`NPC.cs:43726` the ClumsySlimeBalloon 686,
+    /// `:47951`/`:48062` the WindyBalloon 594; `SetDefaults`
+    /// `:17636`/`:16716`'s NPCDeath63); the style façade, case 4.
+    NpcDeath63,
     /// `PlaySound(SoundID.NPCDeath61, Center)` — the Moon Lord core's
     /// crash cry (`NPC.cs:41432`, the style façade); case 4.
     NpcDeath61,
@@ -2220,6 +2245,42 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    /// W4-f2 closeout (e9b tail union, research/94 §10) —
+    /// `PlaySound(SoundID.ItemN, pos)` — the NPC AI sites' item cues:
+    /// the Antlion's spit (`NPC.cs:24449`, Item5 — g8's `Item5` folds
+    /// here), the ShadowFlameApparition/Squidhead teleports
+    /// (`:37268`/`:37321`, Item8 — the `Item8` variant's callers keep
+    /// their own arm), the Queen Slime's landing thud (`:45558`,
+    /// Item167), the Blood Nautilus' volley/scream
+    /// (`:47263`/`:47268`/`:47293`, Item170/172), the Big Mimic's
+    /// reflect tink (`:66429`, Item150) and the FairyEffects
+    /// shimmer-release chime (`:48682`, Item4). The style façade +
+    /// case 2's one pitch draw.
+    ItemCue(i32),
+    /// W4-f2 closeout (e9b tail union) — `PlaySound(14, base.Center,
+    /// 542)` — the Sand Shark's style-542 cry (`NPC.cs:40632`, the
+    /// aiStyle-103 chase latch): the int overload, case 14's style-542
+    /// slot-7 path (NO draws, ×0.4). The d33 machine owns the site (its
+    /// sounds out-struct); this cue is the queue-side spelling.
+    SandSharkCry,
+    /// W4-f2 closeout (e9b tail union) — `PlaySound(65, base.position)`
+    /// — the Queen Slime's idle moan (`NPC.cs:45759`, the `Next(360) ==
+    /// 0` gate): the int overload, case 65's `Next(115, 118)` slot pick
+    /// behind the 115/116/117 playing guards, ×0.5, NO pitch draw.
+    QueenSlimeMoan,
+    /// W4-f2 closeout (e9b tail union) — `PlaySound(27, (int)position.X,
+    /// (int)position.Y)` — the FairyCritter's Pixie hum
+    /// (`NPC.cs:48327`/`:48473`/`:48545`): the int overload, case 27's
+    /// one `Next(-10, 11)` pitch draw (the live-slot update returns null
+    /// but the draw still happens).
+    Pixie,
+    /// W4-f2 closeout (e9b tail union) — the Pal pain/joy cries
+    /// (`NPC.cs:42983`/`:42987`/`:42997`/`:43001`) and the Statue Mimic's
+    /// scare/jump/laugh (`:43562`/`:43569`/`:43580`/`:43608`): the
+    /// `Sounds/Custom/` trackables, case 42 — the façade NextFloat on
+    /// the audio-only stream, NO gameplay draw, the pinned first
+    /// variation.
+    Trackable(&'static str),
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -2340,7 +2401,8 @@ pub struct Npc {
     /// (`ai[1] >= 10`): the drain plays the `KillTile(fail: true)` thud
     /// on every bash and, when `open`, calls `edit::open_door` (a refusal
     /// sets `ai[3] = num57`, `:60064`) + the `Door_Opened` cue. The tall
-    /// gate (388) `ShiftTallGate` is unported — the bash still counts.
+    /// gate (388) `ShiftTallGate` is PORTED (W4-g24) — the drain shifts it
+    /// (`edit::shift_tall_gate`) + the pitched-8 cue, refusal `ai[3]`.
     pub wants_door_bash: Option<(i32, i32, i32, bool)>,
     /// The King Slime's minion batch count (`AI_015` `:44233`'s
     /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
@@ -2938,8 +3000,37 @@ pub struct Npc {
     /// `NPC.wet`: the liquid-overlap flag the swimmer machine caches each
     /// tick (`NPC.cs:90474`'s `CheckFacetedLiquid` write); `FindFrame`'s
     /// swimmer cases read it for the wet flap vs the dry flop
-    /// (`NPC.cs:74181`/`:74654`).
+    /// (`NPC.cs:74181`/`:74654`). W4-f2: the water-collision pass
+    /// (`Collision_WaterCollision`, `NPC.cs:93052-93275`) owns the
+    /// authoritative write (`:93175`/`:93180`) — but the bat/swimmer
+    /// wrappers overwrite it pre-AI with the `is_wet` stand-in for the
+    /// machine reads, so the splash EDGE keys on [`Npc::wet_prev`]
+    /// (e9b's point, adopted — research/94 §9).
     pub wet: bool,
+    /// W4-f2 closeout (e9b union, research/94 §9) — the PREVIOUS
+    /// `Collision_WaterCollision` pass's `base.wet` (the edge detector's
+    /// `was_wet`). The port's bat/swimmer wrappers (`update_cave_bat`/
+    /// `update_swimmer`) probe `self.wet` fresh pre-AI for the machine's
+    /// reads (the documented `is_wet` stand-in — those kinds are
+    /// `!no_tile_collide()` and DO reach the water block), so the splash
+    /// edge cannot key on `self.wet` — it keys on this latch, which the
+    /// sim stamps at the pass's tail alongside `wet` (the C#'s `base.wet`
+    /// write, `NPC.cs:93175`/`:93180`). e9b's `wet_prev` field, adopted
+    /// verbatim (the name and the rationale).
+    pub wet_prev: bool,
+    /// W4-f2 — `Entity.wetCount` (`NPC.cs:93058`/`:93089`/`:93187`): the
+    /// splash cooldown, armed to 10 on a wet entry/exit edge, decremented
+    /// once per `UpdateCollision` (`:92533-92536`); the never-wet head
+    /// gate zeroes it (`:93058`), aiStyle 116 pins it to 10 (`:93079`).
+    pub wet_count: i32,
+    /// W4-f2 — `Entity.lavaWet`/`honeyWet`/`shimmerWet`
+    /// (`NPC.cs:93064-93075`/`:93324`): the per-liquid overlap flags the
+    /// water-collision pass latches; `UpdateCollision` clears all three
+    /// when the NPC leaves the liquid (`:92527-92532`). The exit splash
+    /// arms read the OLD flags (the C#'s `base.lavaWet` at `:93188`).
+    pub lava_wet: bool,
+    pub honey_wet: bool,
+    pub shimmer_wet: bool,
     /// `NPC.spriteDirection` (`NPC.cs:6515`, the default -1) — the DISPLAY
     /// direction the `DrawNPCDirect` flip reads (`Main.cs:23124-23128`:
     /// `spriteDirection == 1` is exactly when the sheet flips). The C# keeps
@@ -4409,6 +4500,15 @@ impl Npc {
             },
             head_turn: 0,
             wet: false,
+            // e9b union (research/94 §9) — the splash edge latch spawns
+            // false (the Entity default; the first pass sees a dry NPC).
+            wet_prev: false,
+            // W4-f2 — `Entity.wetCount`/`lavaWet`/`honeyWet`/`shimmerWet`
+            // spawn at 0/false (`Entity.cs`'s field defaults).
+            wet_count: 0,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
             carrier_timer: -1.0,
             carrier_phase: 0.0,
             carrier_rot: 0.0,
@@ -6736,6 +6836,47 @@ impl Npc {
             crate::npc_ai_style70::bubble_check_dead(n);
         }
         true
+    }
+
+    /// W4-f2 doc-sweep (research/94 §8b) — `Collision_LavaCollision`'s
+    /// strike/buff half (`NPC.cs:93325-93337`), run by the caller AFTER
+    /// the overlap probe (the type-441 refusal `:93318-93321` applied)
+    /// and the `lavaWet = true` latch (`:93324`): on
+    /// `!lavaImmune && !dontTakeDamage && Main.netMode != 1 &&
+    /// immune[255] == 0` the body arms `immune[255] = 30`, then the
+    /// remix-world arm (`Main.remixWorld && !friendly`) adds ONLY
+    /// `AddBuff(24, 180)`; the vanilla arm adds `AddBuff(24, 420)` and
+    /// fires `StrikeNPCNoInteraction(50, 0f, 0)`. Returns whether the
+    /// 50-damage strike fires — the caller runs the strike seam
+    /// (`strike_projectile` with owner 255, the NoInteraction shape
+    /// `NPC.cs:81184-81187`, knockback 0, the defense fold
+    /// `strike_npc_damage`, `:81239`). `Main.netMode != 1` folds to the
+    /// port's host/single-player constant (the established convention).
+    /// The buff rides `NpcBuffs::add_buff` (the `buffImmune[24]` rows —
+    /// e.g. LavaSlime's `[20, 24, 323]` — refuse it there, the C#'s
+    /// `AddBuff` head `:89928-89931`); the OnFire DoT is the landed
+    /// `npc_buffs` engine's. RNG-free.
+    pub fn lava_collision_combat(&mut self, remix_world: bool) -> bool {
+        // `:93325` — the four-term gate.
+        if self.kind.lava_immune()
+            || self.dont_take_damage
+            || self.immune[255] != 0
+        {
+            return false;
+        }
+        // `:93327` — the 30-tick self-i-frame (the immune[255] slot the
+        // `:90452-90458` decay ticks down).
+        self.immune[255] = 30;
+        if remix_world && !self.friendly {
+            // `:93328-93331` — the remix arm: the short burn, NO strike.
+            self.buffs.add_buff(24, 180);
+            false
+        } else {
+            // `:93332-93336` — the vanilla arm: the long burn + the
+            // 50-damage NoInteraction strike (the caller's seam).
+            self.buffs.add_buff(24, 420);
+            true
+        }
     }
 
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
@@ -25805,6 +25946,12 @@ mod s1_d_3_moonlord_rng_witnesses {
 
 #[cfg(test)]
 mod tests {
+    // (The merge fold, research/94 §4.7: e9's two water-decision witnesses
+    // DROPPED — they drove the retired water_collision_splash; f2's
+    // entry/exit/gates witnesses in ambient_sound.rs cover the same plus
+    // the never-wet head, the 116 pin and BOTH exit 147-quirks.)
+    use super::*;
+
     /// S1-E-21a — the per-kind hit/death cues (`NPC.HitSound`/`NPC.DeathSound`,
     /// `NPC.cs:6475-6477`, the `SetDefaults` assignments).
     #[test]
@@ -45128,5 +45275,69 @@ mod w4_c9_snail_wiring_tests {
             );
             assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
         }
+    }
+}
+#[cfg(test)]
+mod w4_f2_lava_combat_tests {
+    use super::*;
+
+    /// W4-f2 doc-sweep (research/94 §8b) — `Collision_LavaCollision`'s
+    /// strike/buff half (`NPC.cs:93325-93337`): the four-term gate, the
+    /// `immune[255] = 30` arm, the remix short-burn-no-strike arm vs the
+    /// vanilla long-burn + strike arm, and the longer-time-wins refresh
+    /// riding `NpcBuffs::add_buff`.
+    #[test]
+    fn w4_f2_the_lava_combat_gate_arms_the_burn_and_the_strike() {
+        // The vanilla arm: a zombie takes the 420-tick OnFire + the
+        // strike request + the 30-tick self-i-frame.
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        assert!(n.lava_collision_combat(false), "the vanilla strike fires");
+        assert_eq!(n.immune[255], 30);
+        let slot = n.buffs.find_buff_index(24).expect("the OnFire buff");
+        // add_buff stores the C#'s time (the tick decrements later).
+        assert_eq!(n.buffs.buff_time[slot], 420);
+        // The i-frame gate: the second overlap inside the window is a
+        // no-op (no refresh, no second strike).
+        assert!(!n.lava_collision_combat(false));
+        assert_eq!(n.buffs.buff_time[slot], 420);
+        // The window spends: at immune[255] == 0 the arm re-fires (the
+        // longer existing time wins inside add_buff — no refresh).
+        n.immune[255] = 0;
+        assert!(n.lava_collision_combat(false));
+        assert_eq!(n.buffs.buff_time[slot], 420, "the longer time wins");
+        // The remix arm: the 180-tick burn, NO strike.
+        let mut r = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        assert!(!r.lava_collision_combat(true), "the remix arm never strikes");
+        assert_eq!(r.immune[255], 30);
+        let slot = r.buffs.find_buff_index(24).expect("the remix burn");
+        assert_eq!(r.buffs.buff_time[slot], 180);
+        // The remix gate's friendly term: a friendly body takes the
+        // VANILLA arm even on remix (`remixWorld && !friendly` fails).
+        let mut f = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        f.friendly = true;
+        assert!(f.lava_collision_combat(true));
+        let slot = f.buffs.find_buff_index(24).unwrap();
+        assert_eq!(f.buffs.buff_time[slot], 420);
+        // The lavaImmune census gate: the LavaSlime/Hellbat/FireImp/
+        // VoodooDemon + the DD2 kinds take NOTHING.
+        for kind in [
+            NpcKind::LavaSlime,
+            NpcKind::Hellbat,
+            NpcKind::FireImp,
+            NpcKind::VoodooDemon,
+            NpcKind::DD2GoblinT1,
+            NpcKind::DD2Betsy,
+            NpcKind::DD2EterniaCrystal,
+        ] {
+            let mut m = Npc::new(kind, 100.0, 200.0, 1, 0.0);
+            assert!(!m.lava_collision_combat(false), "{kind:?} is lava-immune");
+            assert_eq!(m.immune[255], 0, "{kind:?}: no i-frame arm");
+            assert!(m.buffs.find_buff_index(24).is_none(), "{kind:?}: no burn");
+        }
+        // The dontTakeDamage gate.
+        let mut d = Npc::new(NpcKind::Zombie, 100.0, 200.0, 1, 0.0);
+        d.dont_take_damage = true;
+        assert!(!d.lava_collision_combat(false));
+        assert_eq!(d.immune[255], 0);
     }
 }

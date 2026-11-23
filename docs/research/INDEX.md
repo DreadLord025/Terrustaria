@@ -1,4 +1,4 @@
-﻿# Research index вЂ” full C# Terraria audit
+# Research index вЂ” full C# Terraria audit
 
 Map of the research effort backing the new ROADMAP. One file per module,
 `docs/research/NN-slug.md`. Status: вњ… done В· рџ”„ in flight В· в¬њ planned.
@@ -46,6 +46,9 @@ per `docs/superpowers` agreements).
 | 25 | NPC AI families (aiStyle dispatch) | `25-npc-ai-audit.md` | в¬њ |
 | 26 | Projectile AI families (aiStyle dispatch) | `26-projectile-ai-audit.md` | в¬њ |
 | 26h | Projectile aiStyles 171-180 FINAL band census (W4-d18) - SEALED (PROJ-171 retire: rowless+projPet ported, 978 dup keep-d12c, 601 cross-note d6; seal continuation: the 601 d6 seed R-26-13 EXACT spec, the f25 spray DUP keep-one, the d43/d33 projPet compose, the d12c superset confirm) | `26h-projectile-ai-171-180-census.md` | sealed |
+| 372 | d78 FINAL Kill dedupe (g1-dup / g3 keep-one / the 620 d77 co-claim / the drop-vs-keep tables) — SEALED §6: g1-drop-hunks refreshed (602ln), the d77-617-drop mutual receipt, the g3-cue-position-fix hunks, the blasts-family bible (renumber 26f→372 per registry §10.2; 26f belongs to f20) | `372-d78-final-kill-dedupe.md` | sealed |
+| 160 | g1 Kill-hook census (SEALED — g1 keeps 459/521/522/80, the 452/454/448 EVP trio folded to d78 per 26f §1) — renumbered 26d → 160-round-1 per registry §10.4 | `160-projectile-kill-hooks-census.md` | done |
+| 373 | the proj-missing-a family bible (lane ledger + the g1×d78/f20/d15/g65/d77 merge instructions) — renumbered 26d-g1 → 373 per registry §10 | `373-g1-proj-missing-a-family-bible.md` | done |
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
 | 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |
@@ -106,6 +109,13 @@ UNASSIGNED (reserved); this lane's new retire-phase docs take 145/148.
 | 349 | The snail-family FINAL bible + the W4-c9 seal census (the 279-roster bijection, the d37 ALL_KINDS hunk EXECUTED-VERIFIED superseded, the c8 sight-gate auto-cover, the f26-7j 655 delegation, the merger contract + the five-gold-critter c10 drop-hunks) — rename chain 281→312→349 per registry-150 §7 round-3 then §8.7 AMENDMENT-3 BATCH FROZEN (`9dddb32b4`: d106 keeps 312, c9's 312 self-pick → 349; NO-SELF-PICKS enforced) | `349-snail-family-final.md` | ✅ FINAL |
 | 270 | W4-c10 waterfowl band FINAL (aiStyle-68 + walkers + 1080 drop: the one-paragraph bible, band-complete ledger, the b3/d20/d76/d36/g8/d40 cross-lane contracts incl the roster-tail + d76 keep-ones, 37-witness index, merge checklist; code-only; renumber chain 145→149→270 — g89's rod doc pushed first at 145, e20's devices bible pushed first at 149, see the doc's renumber notes + d54's 150 registry §6.3) | `270-waterfowl-band-final.md` | ✅ SEALED |
 | 263 | W4-g87 closeout fold-input + RETIRE (RENUMBERED 143 → 263 per research/150 §6.3 — c4 keeps 143): §1-§5 the closeout record (the a6 dup adjudication, a6's 4 fidelity deltas folded, the 5289 flag-gate hypothesis REFUTED — both ALWAYS-spawn; the slot-8 UI/draw census + port); §6 the g87c retire receipts SUPERSEDE the fold tables — the dh line g88h DEFAULT-DROP (138 §10.4 / 132 §2f, DD2 keeps v12), the pets seat [57..60] in the SEALED 107-byte v18 union (103 L3-ARBITER A3, the 24/68-byte tables retired), the use-arm survivor seats on a6's machine (138 §12.3), the pet-license Success leg activation-contracted (g10 DONE → f43b splice → the one-line dispatch, the g87-side hunk in code comment), the FINAL demonheart-family bible | `263-g87-fold-input.md` | ✅ SEALED |
+| 106 | DOC-SWEEP lane 26: the WorldGen.cs sound deferrals (W4-g24: the quit-path 34/35 stops + JustQuit, the serverLoad dedServ skip, the AppTownDoors b3 seam, the c14 keep-one; code-only) | `106-doc-sweep-wg-sounds.md` | ✅ |
+| 146 | WG-SOUND FINAL (W4-g24: the b3 adoption contract + keep-one, the 79-site census re-sweep ledger, the secret-seed cues vs the g23 union + the two WorldSeed-arm remainders ported, the gen-progress census vs d85/f23; code-only) — renumbered 107 → 146 in the retire phase (f21b owns 107; 145 double-claimed by e19/g89); §5 RETIRE: the g73 quit-stop cross-receipt + the b3 monitor + FINAL-FINAL + the wg-sound-family declaration | `146-wg-sounds-final.md` | ✅ |
+
+| W4-e10 | Voice-family SEAL receipts (the f44g hydration closure + the d79 rewire hunks + the g21 disjointness + the f3 65-seam compose-note + the voice bible; docs-only over 8e0d951fc) | `W4-e10-voice-seal.md` | ✅ SEALED 2026-11-21 |
+| W4-e10 gap | The 51-unclaimed gap census: 4 PORTED (pet grants 17306/17338 + sign tails 33537/33547) → 211/164/47; the d79 cross-check (16 strict instrument sites, 63/64/65/66 zero Player.cs) + the owner-contract task seeds (instruments/Journey/QueenSlime/type-75 + the 23-site backlog); code-only, 10 witnesses written not run | `W4-e10-gap-census.md` | 🟡 CODE-ONLY 2026-11-21 |
+
+| 141 | NPC-sound FINAL census (W4-e9): the 27-tail activation census (all UNWIRED — d33b/d41r/d42r/d43r do not exist), the second 147-quirk + the critter cs_id key fixes, the f2/f47/d53/g2 co-lane keep-ones, the 32/32 idle-loop census; §8 TAIL-ACTIVATION-2 re-probe after the roster pushes (d42 vanilla-free 43-kind row, d33's wired-114-only axis activates ZERO tail cues, :24449 machine-owned-LIVE on f42/g8, the per-kind activation contract + the ten-tip critter-rekey scan with the exact f2 hunk); **§9 SEALED — the npc-sound-tail-family bible (e9 wholesale DROP / f2-canonical `b754bdcd`, the exit-LAVA hunk MOOT under the DROP, the twelve-tip rekey re-scan + d43-rowed/c10-fixed deltas, the Frog/Duck arm-label correction, the style-114 ZERO-tail-cues re-verify)** | `141-npc-sound-final-census.md` | SEALED (code-only) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

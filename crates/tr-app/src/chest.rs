@@ -988,7 +988,9 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     // `npcChatText = ""`: the port's dialog + shop close
     // (`Main.SetNPCShopIndex(-1)`'s equivalent) plus the talk-NPC latch and
     // the chat text (S1-P-i43 — the C# clears the chatter before opening;
-    // `CloseSign`'s sign half has no port state, `npcChatCornerItem` neither).
+    // `npcChatCornerItem` has no port field). W4-e10: `CloseSign()` runs
+    // with its DEFAULT quiet=false — an open sign plays the `:33537` cue.
+    crate::signs::close_sign(app, false); // `:33087`
     app.close_shop();
     app.talk_npc = None; // `:33088` — `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:33090` — `Main.npcChatText = ""`
@@ -1206,7 +1208,9 @@ pub(crate) fn try_open_dresser_at_cursor(app: &mut App, world_pos: Vec2) -> bool
     let ox = x - i32::from(t.frame_x) / 18 % 3;
     let oy = y - i32::from(t.frame_y) / 18;
     // `:32871-32876` — the prologue: `CancelClothesWindow(quiet)` (no port
-    // clothes window), the sign/talk/chat clears (the world route's mapping).
+    // clothes window), the sign/talk/chat clears (the world route's
+    // mapping). W4-e10: `CloseSign()` `:32873` is the default quiet=false.
+    crate::signs::close_sign(app, false); // `:32873`
     app.close_shop();
     app.talk_npc = None; // `:32874` — `SetTalkNPC(-1)`
     app.npc_chat_text.clear(); // `:32876` — `npcChatText = ""`

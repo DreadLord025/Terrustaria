@@ -281,6 +281,9 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
     };
     let text = crate::npc_chat::get_chat(&app.npcs[i], &mut ctx);
     app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
+    // `:43083` — `SoundEngine.PlaySound(24)` (`SoundID.Chat`) AFTER the
+    // `GetChat` answer, inside the fresh-talk arm (`talkNPC != i`).
+    app.audio.play("Chat");
     Some(text)
 }
 
@@ -617,6 +620,9 @@ pub(crate) fn rescue_bound_angler(n: &mut Npc, world: &mut tr_core::World) {
 /// decrement, the `anglerQuestsFinished++` and the reward
 /// (`Player.GetAnglerReward`, `Player.cs:56302`).
 pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
+    // `:40229-40230` — `npcChatCornerItem = 0` (no port state) then sound 12
+    // FIRST, before the day gate / `FindItem` scan.
+    crate::chest::play_menu_sound(app, 12);
     let mut handed = false;
     // `:40232`'s gate: the day's quest is open and this player has not
     // already handed it in (`anglerWhoFinishedToday`'s single-player
@@ -633,6 +639,9 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
                 app.inventory[slot].kind = 0;
             }
             handed = true;
+            // `:40243` — sound 24 (`SoundID.Chat`) AFTER the stack drop,
+            // BEFORE `anglerQuestsFinished++` (`:40244`) and the reward.
+            app.audio.play("Chat");
             // `:40244`: the counter++ BEFORE the reward table reads it.
             if let Some(p) = app.player.as_mut() {
                 p.angler_quests_finished += 1;
@@ -1155,11 +1164,36 @@ fn play_npc_sound_request(
         NpcSoundCue::NpcDeath61 => {
             audio.play_npc_death_style(61, req.x, req.y, rng);
         }
+        NpcSoundCue::NpcDeath55 => {
+            audio.play_npc_death_style(55, req.x, req.y, rng);
+        }
+        // W4-f2 closeout (e9b tail union, research/94 §10).
+        NpcSoundCue::NpcHit6 => {
+            audio.play_npc_hit_sound("NPC_Hit_6", req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath63 => {
+            audio.play_npc_death_style(63, req.x, req.y, rng);
+        }
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
+        }
+        NpcSoundCue::ItemCue(style) => {
+            audio.play_npc_item_cue(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::SandSharkCry => {
+            audio.play_fighter_moan(14, 542, req.x, req.y, rng);
+        }
+        NpcSoundCue::QueenSlimeMoan => {
+            audio.play_queen_slime_moan(req.x, req.y, rng);
+        }
+        NpcSoundCue::Pixie => {
+            audio.play_pixie(req.x, req.y, rng);
+        }
+        NpcSoundCue::Trackable(cue) => {
+            audio.play_npc_trackable(cue, req.x, req.y);
         }
     }
 }
@@ -2192,9 +2226,15 @@ pub(crate) fn update_destroyers(app: &mut App) {
             ));
         }
         if ev.roar {
-            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, pos)` (Roar_0).
+            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, x, y)`: the int
+            // overload's DEFAULT Style = 1 (`SoundEngine.cs:102`) → `Roar_1`,
+            // through the case-15 attenuation gate + slot guard
+            // (`Audio::play_roar`, S1-E-21g). W4-g21 d79-receipt fix: the old
+            // bare `play_at("Roar_0")` was wrong twice (no guard, wrong
+            // slot) — d79 §F4's keep-d79 ruling applied on the landed seam
+            // (the drain at `:1144` already rides it for the queued roars).
             let (nx, ny) = (app.npcs[i].x, app.npcs[i].y);
-            app.audio.play_at("Roar_0", nx, ny, 1.0);
+            app.audio.play_roar(1, nx, ny);
         }
         if ev.wants_death {
             // The orphan death wrote life = 0 in place; the death pass
@@ -4926,6 +4966,32 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                                 player_intersects,
                             );
                         }
+                        // W4-f2 — `NPC.IdleSounds` (`NPC.cs:90075-90208`,
+                        // called at `:90422` immediately BEFORE `AI()`):
+                        // the per-type case-29 idle chain runs HERE, at the
+                        // C# call position, on the `UpdateNPCs` stream ahead
+                        // of the machine's own draws. The else-if chain's
+                        // gate roll is the only draw a non-matching type
+                        // consumes (a matching type's failed gate draws once
+                        // and falls out); the style/pitch draws ride inside
+                        // `play_fighter_moan` after the attenuation gate.
+                        // The `hp > 0` guard is the C#'s `life <= 0` early
+                        // return (`:90385-90392`) which precedes the call —
+                        // the e9 wiring's point, adopted in the reconcile
+                        // (research/94 §6): a mid-pass-killed NPC draws
+                        // nothing at its own slot turn.
+                        if n.hp > 0 {
+                            let (nx, ny) = (n.x, n.y);
+                            crate::ambient_sound::idle_sounds(
+                                n.kind.cs_id() as i32,
+                                n.wet,
+                                n.shimmer_transparency,
+                                npcs_rng,
+                                &mut |legacy_case, style, rng| {
+                                    audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
+                                },
+                            );
+                        }
                     }
                     // The DungeonSpirit's arm (`NPC.AI()`'s aiStyle-56
                     // block, `NPC.cs:32742-32760`): TargetClosest + the
@@ -5050,6 +5116,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         };
                         crate::npc_ai_style44::style44_step(&mut npcs[i], &mut env);
                     }
+                    // (The merge fold, research/94 §4.5: e9's duplicate
+                    // idle wiring DROPPED — f2's hp>0-guarded idle_sounds
+                    // block above is the keeper, same C# position.)
                     // S1-D-3-wire-saucer: the aiStyle-75 mount family is a
                     // POOL step (the host/crew slot links read `App::npcs`
                     // live) — it runs here, in slot order, on the
@@ -5208,6 +5277,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // clears at the update's end — the strike tick only
                     // (S1-D-3 W-1: the Hungry's recoil arm reads it).
                     n.just_hit = false;
+                    // (The merge fold, research/94 §4.4/§9b.8: e9's
+                    // npc_water_collision wiring DROPPED — f2's
+                    // water_collision_sounds pass below is the superset
+                    // keeper, same C# UpdateCollision position.)
                     // S1-E-21g — the AI machine's queued sound plays
                     // (the `wants_hostile_shot` shape): drained right
                     // after the machine's draws, BEFORE the moan/critter
@@ -5218,6 +5291,106 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     for req in n.wants_sound.drain(..) {
                         play_npc_sound_request(audio, req, npcs_rng);
                     }
+                    // W4-f2 — `Collision_WaterCollision`'s splash cues
+                    // (`NPC.cs:93052-93275`, inside `UpdateCollision`
+                    // `:92526`, AFTER `AI()`): the entry/exit edges play
+                    // case 19 at the C# collision position, on the
+                    // `UpdateNPCs` stream after the machine's draws. The
+                    // `noTileCollide` kinds skip `UpdateCollision`
+                    // entirely (`:90490-90503`'s else arm) — their wet
+                    // state never updates here (the SetDefaults census).
+                    // The pass draws nothing itself; the case-19 pitch
+                    // rides inside `play_splash_sound` after the gate.
+                    // The block reads/writes `npcs[i]` (NOT the `n`
+                    // alias) — the doc-sweep's lava strike re-borrows the
+                    // whole pool (research/94 §8b); `n` re-binds after.
+                    if !npcs[i].kind.no_tile_collide() {
+                        let (nw, nh) = npcs[i].size();
+                        let lava = crate::player::lava_collision(world, npcs[i].x, npcs[i].y, nw, nh)
+                            && npcs[i].kind.cs_id() != 441; // `:93318-93321`
+                        let (wet_now, honey_now, shimmer_now) =
+                            crate::npc_ai_slime::wet_collision(
+                                world, npcs[i].x, npcs[i].y, nw as i32, nh as i32,
+                            );
+                        let mut wstate = crate::ambient_sound::WaterWetState {
+                            // e9b union (research/94 §9) — the edge keys on
+                            // the pass latch: `wet` itself is overwritten
+                            // pre-AI by the bat/swimmer `is_wet` wrappers.
+                            wet: npcs[i].wet_prev,
+                            wet_count: npcs[i].wet_count,
+                            lava_wet: npcs[i].lava_wet,
+                            honey_wet: npcs[i].honey_wet,
+                            shimmer_wet: npcs[i].shimmer_wet,
+                            // `:93179` — the exit halving rides the pass
+                            // (e9b union, research/94 §9).
+                            vx: npcs[i].vx,
+                        };
+                        // `Collision_LavaCollision` latches lavaWet on a
+                        // lava overlap (`:93322-93324`), BEFORE the water
+                        // pass reads it for the entry/exit arms.
+                        if lava {
+                            wstate.lava_wet = true;
+                            // W4-f2 doc-sweep (research/94 §8b) — the
+                            // strike/buff half (`:93325-93337`) runs HERE,
+                            // inside Collision_LavaCollision (the `:92526`
+                            // argument-evaluation order — it precedes the
+                            // water pass). The remix flag rides the world's
+                            // seed set (the wind module's precedent).
+                            let remix = world
+                                .seeds
+                                .contains(tr_core::seeds::SeedFlags::REMIX);
+                            if npcs[i].lava_collision_combat(remix) {
+                                // `StrikeNPCNoInteraction(50, 0f, 0)`
+                                // (`:93335` → `:81184-81187`): the owner-255
+                                // strike through the pooled seam, the
+                                // defense fold the port's strike callers
+                                // apply (`strike_npc_damage`, `:81239`),
+                                // knockback 0 (the zero-impulse no-op). The
+                                // strike's HitSound tail is c13's StrikeNPC
+                                // lane (the port's strike fns are soundless).
+                                let dmg = tr_core::damage::strike_npc_damage(
+                                    50,
+                                    npcs[i].defense(),
+                                    false,
+                                );
+                                let sx = npcs[i].x;
+                                let _ = Npc::strike_projectile(
+                                    npcs, i, dmg, sx, 0.0, false, Some(255), false,
+                                );
+                                // `:90516` — the C# clears `justHit` at
+                                // the UpdateNPC tail AFTER UpdateCollision,
+                                // so the lava strike's flag never reaches
+                                // a machine; the port's clear ran pre-pass.
+                                npcs[i].just_hit = false;
+                            }
+                        }
+                        let (nx, ny) = (npcs[i].x, npcs[i].y);
+                        crate::ambient_sound::water_collision_sounds(
+                            npcs[i].kind.cs_id() as i32,
+                            npcs[i].kind.ai_style() as i32,
+                            npcs[i].ai[0],
+                            npcs[i].kind.no_gravity(),
+                            &mut wstate,
+                            wet_now,
+                            honey_now,
+                            shimmer_now,
+                            lava,
+                            &mut |style| {
+                                audio.play_splash_sound(style, nx, ny, npcs_rng);
+                            },
+                        );
+                        crate::ambient_sound::water_collision_tail(&mut wstate);
+                        npcs[i].wet = wstate.wet;
+                        // `:93175`/`:93180` — stamp the edge latch with the
+                        // same write (e9b's `wet_prev`, research/94 §9).
+                        npcs[i].wet_prev = wstate.wet;
+                        npcs[i].vx = wstate.vx;
+                        npcs[i].wet_count = wstate.wet_count;
+                        npcs[i].lava_wet = wstate.lava_wet;
+                        npcs[i].honey_wet = wstate.honey_wet;
+                        npcs[i].shimmer_wet = wstate.shimmer_wet;
+                    }
+                    let n = &mut npcs[i];
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
@@ -5279,6 +5452,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // the VANILLA id (`cs_id` — `to_u16` is the port's
                     // protocol space, the waterfowl 602/603 rows already
                     // ride it correctly only because those ids coincide).
+                    // has none. W4-f2 retire: the key is cs_id() (the
+                    // vanilla `this.type`), NOT to_u16 — e9c's c7523984
+                    // census fix adopted (research/141 §3's cross-note:
+                    // the protocol space puts GolemHead on 74, the C#
+                    // Bird's critter id `NPC.cs:92271`, so the pre-fix key
+                    // rolled the bird's day Next(400)+Next(3) for every
+                    // attached Golem head — the MERGER-L7 mis-route class
+                    // the idle wiring's cs_id key already avoids). No
+                    // ported kind's cs_id matches the critter table yet
+                    // (the roster has no critter ids), so the emitter
+                    // stays silent until they land — but a Golem head no
+                    // longer rolls the bird's Next(400).
                     let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
                     let cue = crate::ambient_sound::critter_sound_cue(
                         n.kind.cs_id() as i32,
@@ -5381,8 +5566,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // then, when `ai[1] >= 10` (`flag28`), `WorldGen.OpenDoor`
     // (`:60061`) + the `Door_Opened` cue (`WorldGen.cs:37732`'s
     // `PlaySound(8)`); a refusal sets `ai[3] = num57` (`:60064`). The
-    // tall gate (388) `ShiftTallGate` is unported — the bash still
-    // counted its +2 and plays the thud, the gate never shifts
+    // tall gate (388) `ShiftTallGate` is PORTED (W4-g24) — the drain
+    // shifts it + the pitched-8 cue on the same stream, refusal `ai[3]`
     // (ANALYSIS "The zombie fighter audit").
     for i in 0..app.npcs.len() {
         let Some((tx, ty, dir, open)) = app.npcs[i].wants_door_bash.take() else {
@@ -5449,8 +5634,49 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // `:60072-60084` — the tall gate (388) `ShiftTallGate`: unported
-        // (the module docs' stand-in) — no shift, no refusal.
+        // `:60072-60084` — the tall gate (388) `ShiftTallGate(closing:
+        // false)`: W4-g24 ports it. A refusal sets `ai[3] = num57` (the
+        // door arm's shape); the success plays the pitched 8 on the
+        // UpdateNPCs stream (the C# plays inside `NPC.UpdateNPC`,
+        // `Main.cs:17767`). The entity gate reads the live player/NPCs.
+        if app.world.tile(tx, ty).is_some_and(|t| t.kind == 388) {
+            let (player, npcs) = (&app.player, &app.npcs);
+            let blocked = |x: i32, y: i32| {
+                crate::world_sim::editing::doors::cell_blocked_by_entity_pub(
+                    player.as_ref(),
+                    npcs,
+                    x,
+                    y,
+                )
+            };
+            let (res, cue) =
+                tr_core::edit::shift_tall_gate(&mut app.world, tx, ty, false, false, &blocked);
+            if !res.shifted {
+                app.npcs[i].ai[3] = 60.0;
+                app.npcs[i].net_update = true;
+            }
+            if let Some((cx, cy)) = cue {
+                app.audio.play_door_sound(
+                    true,
+                    cx as f32,
+                    cy as f32,
+                    app.rngs.stream(RngKey::UpdateNpcs),
+                );
+                app.world_key = None;
+            }
+            for d in res.object_drops {
+                if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+                    crate::world_sim::items::spawn_item_drop(
+                        &mut app.items,
+                        app.rngs.stream(RngKey::UpdateNpcs),
+                        item,
+                        1,
+                        d.x,
+                        d.y,
+                    );
+                }
+            }
+        }
     }
     // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517`): the accepted contact hit queued its retaliate request
@@ -7912,14 +8138,16 @@ mod tests {
     /// `NPC.cs:92244-92340`): an NPC the critter table does not name consumes
     /// no `Main.rand` draws — the port's roster has no critter kinds yet
     /// (M4-NPC), so the zombie's id 3 must leave the per-NPC stream
-    /// untouched through the `NPC.cs:90323` seam.
+    /// untouched through the `NPC.cs:90323` seam. W4-f2 retire: the key
+    /// is cs_id() (the vanilla `this.type`), NOT the protocol id
+    /// (e9c c7523984's fix, adopted).
     #[test]
     fn the_critter_seam_consumes_no_rolls_outside_the_table() {
         let mut rng = UnifiedRandom::new(0);
         let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
         assert_eq!(
             crate::ambient_sound::critter_sound_cue(
-                NpcKind::Zombie.to_u16() as i32,
+                NpcKind::Zombie.cs_id() as i32,
                 true,
                 1000.0,
                 3000.0,
@@ -7935,6 +8163,62 @@ mod tests {
             UnifiedRandom::new(0),
             "out-of-table types consume no draws"
         );
+    }
+
+    /// W4-f2 retire — e9c c7523984's critter-key census fix, adopted and
+    /// re-witnessed: GolemHead's PROTOCOL id is 74 (`to_u16`, data.rs:403),
+    /// the C# Bird's critter id — the pre-fix `to_u16` key rolled the
+    /// bird's day `Next(400)` gate + `Next(3)` slot pick for every
+    /// attached Golem head (the MERGER-L7 mis-route class). The cs_id()
+    /// key folds the head onto the body's 245 (`bestiary.rs:2035`),
+    /// outside the table: zero draws, no cue. The protocol-key call
+    /// still hits the bird arm — the pin that the spaces differ.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_f2_the_critter_key_is_cs_id_not_the_protocol_golem_head_74() {
+        assert_eq!(NpcKind::GolemHead.to_u16(), 74, "the protocol collision");
+        assert_eq!(NpcKind::GolemHead.cs_id(), 245, "the bestiary fold");
+        // The faithful key: outside the table, no draws (day AND night —
+        // the bird arm is day-gated but the 611/689 night arm must not
+        // catch the head either).
+        for day in [true, false] {
+            let mut rng = UnifiedRandom::new(3);
+            let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+            assert_eq!(
+                crate::ambient_sound::critter_sound_cue(
+                    NpcKind::GolemHead.cs_id() as i32,
+                    day,
+                    1000.0,
+                    3000.0,
+                    3000.0,
+                    0.0,
+                    &mut hi_roll
+                ),
+                None,
+                "the Golem head is outside the critter table (day={day})"
+            );
+            assert_eq!(rng, UnifiedRandom::new(3), "no draws (day={day})");
+        }
+        // The pre-fix protocol key DOES enter the bird arm (the witness
+        // that the fix changes behaviour for exactly this kind): the
+        // day gate rolls Next(400) even on failure.
+        let mut rng = UnifiedRandom::new(3);
+        let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+        let _ = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true,
+            1000.0,
+            3000.0,
+            3000.0,
+            0.0,
+            &mut hi_roll,
+        );
+        let mut witness = UnifiedRandom::new(3);
+        let hit = witness.next_max(400) == 0;
+        if hit {
+            let _ = witness.next_max(3);
+        }
+        assert_eq!(rng, witness, "the protocol key rolls the bird's gate");
     }
 
     /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
@@ -8521,6 +8805,19 @@ mod tests {
         assert!(app.world.angler_quest_finished, "the day closes");
         assert!(app.world.angler_quest_turned_in, "the player's slot");
         assert!(app.items.len() > before, "the reward drops spawn");
+        // W4-g21 — the turn-in's two cues (`Main.cs:40230`, `:40243`): the
+        // sound-12 tick plays FIRST (before the day gate), the sound-24
+        // `Chat` cue only inside the hand-in arm. A second click on the same
+        // day still ticks (`:40230` runs unconditionally) but never chats.
+        let cues = app.audio.played_count();
+        assert!(cues >= 2, "the tick + the Chat cue played");
+        let before = app.audio.played_count();
+        assert!(angler_turn_in(&mut app, idx), "the repeat click is consumed");
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the repeat ticks only — no second Chat (`:40243` is gated)"
+        );
         // `AchievementsHelper.HandleAnglerService` (`Main.cs:40260`,
         // `AchievementsHelper.cs:411-418`): the flag and the four `Finish`
         // counters advance on the turn-in.
@@ -18815,6 +19112,225 @@ mod dw3_tests {
         let before = app.audio.played_count();
         update_npcs(&mut app, 1.0 / 60.0);
         assert_eq!(app.audio.played_count() - before, 0, "one roar per charge");
+    }
+
+    /// W4-f2 reconcile (e9's wiring witness adapted, research/94 §5) —
+    /// the IdleSounds wiring's stream contract (`NPC.cs:90422`, the
+    /// style49 module's cited obligation): the AngryNimbus's `Next(700)`
+    /// gate roll runs BEFORE the AI arm on the `UpdateNPCs` stream —
+    /// consumed even on failure; a hit adds the `Next(41, 44)` slot pick
+    /// and (the gate + slot guard passing) the case-29 `Next(-10, 11)`
+    /// pitch. The cloud parks out of the rain window, so the AI arm
+    /// itself draws nothing (`nimbus_step`'s one draw is the 9th
+    /// qualifying shot tick).
+    #[test]
+    fn w4_f2_the_nimbus_idle_roll_rides_the_stream_before_the_ai() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // Inside the headless listener's radius, horizontally OFF the
+        // player's box (the rain window fails → zero AI draws).
+        let mut cloud = Npc::new(NpcKind::AngryNimbus, 1400.0, 1000.0, 1, 0.0);
+        cloud.hp = cloud.max_hp;
+        app.npcs.push(cloud);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        // The mirror stream: the gate roll always; a hit adds the slot
+        // pick (Next(3) ≡ Next(41, 44) on the sample) + the case-29 pitch.
+        let mut witness = UnifiedRandom::new(7);
+        let hit = witness.next_max(700) == 0;
+        if hit {
+            let _ = witness.next_max(3);
+            let _ = witness.next_range(-10, 11);
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the idle gate roll rides the stream before the (draw-free) AI"
+        );
+        assert_eq!(
+            app.audio.played_count() - before,
+            u64::from(hit),
+            "the cry plays exactly when the gate hits"
+        );
+    }
+
+    /// W4-f2 doc-sweep (research/94 §8b) — the lava strike/buff wiring
+    /// (`NPC.cs:93325-93337` at the `:92526` Collision_LavaCollision
+    /// position): a zombie standing in a lava pool takes the 420-tick
+    /// OnFire + the defense-folded 50 strike (`strike_npc_damage(50, 6,
+    /// false)` = 47) + `immune[255] = 30`; a LavaSlime beside it takes
+    /// NOTHING (the census gate). The lavaWet latch rides both. The
+    /// buff/immune decays run in the PRE-machine preamble, so the fresh
+    /// arm's values stand undecayed at the tick's end.
+    #[test]
+    fn w4_f2_the_lava_overlap_burns_and_strikes_the_non_immune() {
+        use tr_core::tile::{LiquidKind, Tile, FLAG_ACTIVE};
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        // A lava pool at rows 118-119, columns 90-110 (above the ground
+        // at 120 — inside the probes' maxTilesY-40 band).
+        for x in 90..110 {
+            for y in 118..120 {
+                let i = world.index(x, y);
+                world.tiles[i] = Tile { ..Default::default() };
+                world.tiles[i].flags |= FLAG_ACTIVE;
+                world.tiles[i].liquid = 255;
+                world.tiles[i].set_liquid_kind(LiquidKind::Lava);
+            }
+        }
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 110.0 * TILE_PX;
+        app.player = Some(player);
+        // The zombie in the pool (the 18x40 box overlaps rows 118-119).
+        // The body is HP-boosted so the 47-damage strike does not kill it
+        // (the stock 45-HP zombie would ride the death retain).
+        let mut z = Npc::new(NpcKind::Zombie, 95.0 * TILE_PX, 117.5 * TILE_PX, 1, 0.0);
+        z.max_hp = 500;
+        z.hp = z.max_hp;
+        let hp0 = z.hp;
+        app.npcs.push(z);
+        // The LavaSlime beside it — lava-immune, untouched.
+        let mut ls = Npc::new(NpcKind::LavaSlime, 100.0 * TILE_PX, 117.5 * TILE_PX, 1, 0.0);
+        ls.hp = ls.max_hp;
+        let ls_hp0 = ls.hp;
+        app.npcs.push(ls);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let z = &app.npcs[0];
+        assert!(z.lava_wet, "the lavaWet latch (:93324)");
+        assert_eq!(z.immune[255], 30, "the 30-tick arm (the decay ran pre-AI)");
+        let slot = z.buffs.find_buff_index(24).expect("the OnFire burn");
+        assert_eq!(z.buffs.buff_time[slot], 420, "the buff tick ran pre-AI");
+        // The strike: 50 raw − 6 defense/2 = 47. The fresh burn's DoT
+        // lands NEXT tick (the buff block precedes the collision pass).
+        assert_eq!(z.hp, hp0 - 47, "the defense-folded 50 strike");
+        assert!(!z.just_hit, "the :90516 tail clear after the lava strike");
+        let ls = &app.npcs[1];
+        assert!(ls.lava_wet, "the latch rides the immune body too");
+        assert_eq!(ls.immune[255], 0, "the immune body arms nothing");
+        assert!(ls.buffs.find_buff_index(24).is_none());
+        assert_eq!(ls.hp, ls_hp0, "no strike on the LavaSlime");
+    }
+
+    /// W4-f2 closeout (e9b union, research/94 §9) — the splash EDGE keys
+    /// on the `wet_prev` latch, not `wet`: a CaveBat (aiStyle 14,
+    /// `!noTileCollide` — it DOES reach the water block) overwrites
+    /// `self.wet` pre-AI with the `is_wet` stand-in
+    /// (`npc.rs::update_cave_bat`). Parked inside a water column, the
+    /// machine's probe sets `wet = true` BEFORE the pass — keying the
+    /// edge on `wet` would see wet→wet and MISS the entry edge entirely.
+    /// The latch stays false, so the entry fires: `wetCount` arms 10
+    /// (`:93089` — even though the bat's `noGravity` refuses the play
+    /// gate) and decays to 9, and BOTH `wet` and `wet_prev` stamp true
+    /// at the tail (`:93175`). The next tick is a true wet→wet: the
+    /// cooldown decays 9→8 with no second arming.
+    #[test]
+    fn w4_f2_the_splash_edge_keys_on_the_wet_prev_latch() {
+        use tr_core::tile::LiquidKind;
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.day_time = true;
+        world.world_surface = 50.0;
+        // A water column ABOVE the surface line (x 60..64, y 40..50).
+        for x in 60..64 {
+            for y in 40..50 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+                world.tiles[i].set_liquid_kind(LiquidKind::Water);
+            }
+        }
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        let mut bat = Npc::new(NpcKind::CaveBat, 61.0 * 16.0, 42.0 * 16.0, 1, 0.0);
+        bat.hp = bat.max_hp;
+        assert!(!bat.wet_prev, "the latch spawns false");
+        app.npcs.push(bat);
+        app.rngs = crate::app::rng::NamedRngs::new(7);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let b = &app.npcs[0];
+        assert!(b.wet, "the machine probe + the pass both set wet");
+        assert!(b.wet_prev, "the tail stamps the latch (:93175)");
+        assert_eq!(b.wet_count, 9, "the entry armed 10 (:93089 — the noGravity gate refuses only the PLAY), the tail decayed");
+        assert!(b.wants_sound.is_empty(), "the queue drained (nothing queued — the gate refused)");
+        // The next tick: wet_prev true → no edge, no re-arming.
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count() - before,
+            0,
+            "no re-splash while the latch is wet"
+        );
+        assert_eq!(app.npcs[0].wet_count, 8);
+    }
+
+    /// W4-f2 closeout (e9b union, research/94 §9) — the water wiring's
+    /// stream contract (`NPC.cs:90492` → `:92526`), e9b's witness adapted
+    /// to f2's inline play: the splash pass runs AFTER the AI machine's
+    /// draws and spends exactly ONE case-19 `Next(-10, 11)` pitch on the
+    /// `UpdateNPCs` stream. A lone zombie inside a water column above
+    /// the surface by day: the idle ladder has no type-3 arm and the
+    /// fighter-moan gate closes (`NPC.cs:60302`), so the AI is draw-free
+    /// and the splash is the pass's only draw. The entry edge arms
+    /// `wetCount` 10 (decayed to 9) and sets `wet`; the next tick
+    /// (wet→wet) plays nothing and draws nothing.
+    #[test]
+    fn w4_f2_the_water_splash_wiring_spends_one_case19_pitch() {
+        let build = || {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.day_time = true;
+            world.world_surface = 50.0;
+            // A water column ABOVE the surface line (x 60..64, y 40..50).
+            for x in 60..64 {
+                for y in 40..50 {
+                    let i = world.index(x, y);
+                    world.tiles[i].liquid = 255;
+                }
+            }
+            app.world = world;
+            // Far from the zombie: no contact-damage variance roll.
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            let mut zombie = Npc::new(NpcKind::Zombie, 61.0 * 16.0, 42.0 * 16.0, 1, 0.0);
+            zombie.hp = zombie.max_hp;
+            app.npcs.push(zombie);
+            app.rngs = crate::app::rng::NamedRngs::new(7);
+            app
+        };
+        let mut app = build();
+        let before = app.audio.played_count();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 1, "the entry splash played");
+        assert!(app.npcs[0].wet && app.npcs[0].wet_prev, "base.wet set (:93175)");
+        assert_eq!(app.npcs[0].wet_count, 9, "10 armed, then :92535's decay");
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11); // the case-19 pitch, the only draw
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs),
+            witness,
+            "the splash spends exactly one case-19 pitch on the NPC stream"
+        );
+        // The next tick: wet→wet, no edge, no second play, no draw.
+        let before = app.audio.played_count();
+        let peek = app.rngs.stream(RngKey::UpdateNpcs).peek();
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count() - before, 0, "no re-splash while wet");
+        assert_eq!(
+            app.rngs.stream(RngKey::UpdateNpcs).peek(),
+            peek,
+            "the wet→wet tick is draw-free"
+        );
     }
 
     /// S1-E-21g — the drain's stream contract in isolation (the machines'

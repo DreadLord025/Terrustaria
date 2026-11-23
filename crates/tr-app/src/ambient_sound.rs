@@ -298,6 +298,9 @@ pub fn critter_sound_cue(
     None
 }
 
+// (The merge fold, research/94 §4.1: e9's duplicate idle_sound_cue ladder
+// + roll_range DROPPED — f2's idle_sounds below is the ONE ladder keeper.)
+
 /// The per-thunder-strike cue family (`LegacySoundPlayer.cs:454-476`'s case
 /// 43): the slot pick re-rolls while the picked instance is still playing —
 /// one initial `Next(6)` draw plus up to six re-rolls inside the loop — then
@@ -478,6 +481,24 @@ pub fn critter_legacy_voice(
             }
             Some(voice(109, 0.3, roll(-10, 11)))
         }
+        // W4-f2 closeout (e9b tail union, research/94 §10) — case 65
+        // (`:1382-1402`): the Queen Slime's idle moan (`NPC.cs:45759`'s
+        // `Next(360) == 0` site — the 657 kind is unported on f2, d33's
+        // machine owns it; the arm lands table-complete). The 115/116/117
+        // playing guards refuse BEFORE any draw; `Next(115, 118)` picks
+        // the slot, ×0.5, NO pitch draw (the case sets Volume/Pan only).
+        65 => {
+            if is_playing(115) || is_playing(116) || is_playing(117) {
+                return None;
+            }
+            let slot = roll(115, 118).max(0) as usize;
+            Some(CritterVoice {
+                slot,
+                asset: zombie_asset(slot),
+                volume_mult: 0.5,
+                pitch: 0.0,
+            })
+        }
         // S1-E-21e — the fighter-moan cases (`AI_003_Fighters`,
         // `NPC.cs:57340-57367`). Case 14 (`:793-824`): NO pitch draw and no
         // playing guard — the style-542 slot 7, the 489/586 `Next(21, 24)`
@@ -547,7 +568,7 @@ pub fn critter_legacy_voice(
 /// The zombie bank's asset name (`LegacySoundPlayer.cs:221`'s
 /// `Sounds/Zombie_ + k`, the 131-entry bank `:112`) — the slots the critter
 /// table's cases can name.
-fn zombie_asset(slot: usize) -> &'static str {
+pub(crate) fn zombie_asset(slot: usize) -> &'static str {
     match slot {
         10 => "Zombie_10",
         11 => "Zombie_11",
@@ -591,7 +612,83 @@ fn zombie_asset(slot: usize) -> &'static str {
         21 => "Zombie_21",
         22 => "Zombie_22",
         23 => "Zombie_23",
+        // W4-f2 - the IdleSounds Style-is-the-slot rows 24-87
+        // (NPC.cs:90081-90205; the case-29 full switch's x0.5 band,
+        // LegacySoundPlayer.cs:1009-1011).
+        24 => "Zombie_24",
+        25 => "Zombie_25",
+        26 => "Zombie_26",
+        27 => "Zombie_27",
+        28 => "Zombie_28",
+        29 => "Zombie_29",
+        30 => "Zombie_30",
+        31 => "Zombie_31",
+        32 => "Zombie_32",
+        33 => "Zombie_33",
+        34 => "Zombie_34",
+        35 => "Zombie_35",
+        36 => "Zombie_36",
+        37 => "Zombie_37",
+        38 => "Zombie_38",
+        39 => "Zombie_39",
+        40 => "Zombie_40",
+        41 => "Zombie_41",
+        42 => "Zombie_42",
+        43 => "Zombie_43",
+        44 => "Zombie_44",
+        45 => "Zombie_45",
+        46 => "Zombie_46",
+        47 => "Zombie_47",
+        48 => "Zombie_48",
+        49 => "Zombie_49",
+        50 => "Zombie_50",
+        51 => "Zombie_51",
+        52 => "Zombie_52",
+        53 => "Zombie_53",
+        54 => "Zombie_54",
+        55 => "Zombie_55",
+        56 => "Zombie_56",
+        57 => "Zombie_57",
+        58 => "Zombie_58",
+        59 => "Zombie_59",
+        60 => "Zombie_60",
+        61 => "Zombie_61",
+        62 => "Zombie_62",
+        63 => "Zombie_63",
+        64 => "Zombie_64",
+        65 => "Zombie_65",
+        66 => "Zombie_66",
+        67 => "Zombie_67",
+        68 => "Zombie_68",
+        69 => "Zombie_69",
+        70 => "Zombie_70",
+        71 => "Zombie_71",
+        72 => "Zombie_72",
+        73 => "Zombie_73",
+        74 => "Zombie_74",
+        75 => "Zombie_75",
+        76 => "Zombie_76",
+        77 => "Zombie_77",
+        78 => "Zombie_78",
+        79 => "Zombie_79",
+        80 => "Zombie_80",
+        81 => "Zombie_81",
+        82 => "Zombie_82",
+        83 => "Zombie_83",
+        84 => "Zombie_84",
+        85 => "Zombie_85",
+        86 => "Zombie_86",
+        87 => "Zombie_87",
+        // W4-f2 closeout (e9b tail union) — the Queen Slime moan's case-65
+        // slots (`LegacySoundPlayer.cs:1396`'s `Next(115, 118)`).
+        115 => "Zombie_115",
+        116 => "Zombie_116",
+        117 => "Zombie_117",
         109 => "Zombie_109",
+        // S1-E-21h d77 deferred-arm wave — the Phantasmal Eye's death moan
+        // slot 103 (`Projectile.cs:72989`, case 29's ×0.4 arm).
+        103 => "Zombie_103",
+
         _ => "Zombie_0",
     }
 }
@@ -988,6 +1085,464 @@ pub fn fighter_ambient_moans(
     }
 }
 
+/// W4-f2 — `NPC.IdleSounds` (`NPC.cs:90075-90208`), called from
+/// `UpdateNPC` at `:90422` immediately BEFORE `AI()`: ONE else-if chain
+/// of per-type `Main.rand.Next(N) == 0` gates, each playing legacy case
+/// 29 (the Style-is-the-slot zombie bank, `LegacySoundPlayer.cs:
+/// 1008-1050` — the full per-style switch S1-E-21e ported "for the later
+/// waves' callers"; every style this chain names sits in the 24-87
+/// ×0.5 band). The chain is ELSE-IF — a type matches at most one arm,
+/// and the FIRST matching arm's gate roll is the only one consumed
+/// (a failed gate draws once and falls out; the later arms' rolls never
+/// run for that type). The `shimmerTransparency > 0` head gate
+/// (`:90077`) wraps the whole chain; arm 6 carries the `base.wet` term
+/// (`:90099`) INSIDE its condition, so a dry 63/64/103 falls through to
+/// the later arms' type tests (none match those types — the chain ends
+/// draw-free for them).
+///
+/// The caller's `play` is [`crate::audio::Audio::play_fighter_moan`]
+/// with legacy id 29 — the attenuation gate runs FIRST inside it, then
+/// the case-29 playing guard, then the one `Next(-10, 11)` pitch draw,
+/// all on the `UpdateNPCs` stream (`Main.cs:17767`). The style-roll
+/// arms (`Next(24, 26)` etc.) draw AFTER the gate roll passed and
+/// BEFORE the play's own guard/pitch (the C#'s argument evaluation
+/// order, `:90081`).
+pub fn idle_sounds(
+    npc_type: i32,
+    wet: bool,
+    shimmer_transparency: f32,
+    rng: &mut tr_core::UnifiedRandom,
+    play: &mut dyn FnMut(u32, i32, &mut tr_core::UnifiedRandom),
+) {
+    // `:90077` — the shimmered state silences the whole chain.
+    if shimmer_transparency > 0.0 {
+        return;
+    }
+    // `:90079-90082` — the Hungry pair's 900-roll, styles Next(24, 26).
+    if (npc_type == 239 || npc_type == 240) && rng.next_max(900) == 0 {
+        let style = rng.next_range(24, 26);
+        play(29, style, rng);
+    }
+    // `:90083-90086` — the 62/156 pair's 700-roll, Next(26, 30).
+    else if (npc_type == 62 || npc_type == 156) && rng.next_max(700) == 0 {
+        let style = rng.next_range(26, 30);
+        play(29, style, rng);
+    }
+    // `:90087-90090` — type 177's 600-roll, Next(30, 32).
+    else if npc_type == 177 && rng.next_max(600) == 0 {
+        let style = rng.next_range(30, 32);
+        play(29, style, rng);
+    }
+    // `:90091-90094` — type 226's 800-roll, pinned style 32.
+    else if npc_type == 226 && rng.next_max(800) == 0 {
+        play(29, 32, rng);
+    }
+    // `:90095-90098` — type 153's 1000-roll, pinned style 33.
+    else if npc_type == 153 && rng.next_max(1000) == 0 {
+        play(29, 33, rng);
+    }
+    // `:90099-90102` — the wet 63/64/103 trio's 1000-roll, Next(34, 36).
+    // The `base.wet` term is INSIDE the condition: a dry trio member
+    // falls through (no later arm names those types — zero further draws).
+    else if wet && (npc_type == 63 || npc_type == 64 || npc_type == 103)
+        && rng.next_max(1000) == 0
+    {
+        let style = rng.next_range(34, 36);
+        play(29, style, rng);
+    }
+    // `:90103-90106` — the 198/199 pair's 1000-roll, Next(36, 38).
+    else if (npc_type == 198 || npc_type == 199) && rng.next_max(1000) == 0 {
+        let style = rng.next_range(36, 38);
+        play(29, style, rng);
+    }
+    // `:90107-90110` — the 170/180/171 trio's 600-roll, Next(38, 41).
+    else if (npc_type == 170 || npc_type == 180 || npc_type == 171)
+        && rng.next_max(600) == 0
+    {
+        let style = rng.next_range(38, 41);
+        play(29, style, rng);
+    }
+    // `:90111-90114` — the Angry Nimbus's 700-roll, Next(41, 44).
+    else if npc_type == 250 && rng.next_max(700) == 0 {
+        let style = rng.next_range(41, 44);
+        play(29, style, rng);
+    }
+    // `:90115-90118` — type 580's 800-roll, pinned style 44.
+    else if npc_type == 580 && rng.next_max(800) == 0 {
+        play(29, 44, rng);
+    }
+    // `:90119-90122` — type 582's 800-roll, pinned style 44.
+    else if npc_type == 582 && rng.next_max(800) == 0 {
+        play(29, 44, rng);
+    }
+    // `:90123-90126` — type 581's 800-roll, Next(44, 47).
+    else if npc_type == 581 && rng.next_max(800) == 0 {
+        let style = rng.next_range(44, 47);
+        play(29, style, rng);
+    }
+    // `:90127-90130` — type 508's 800-roll, pinned style 44.
+    else if npc_type == 508 && rng.next_max(800) == 0 {
+        play(29, 44, rng);
+    }
+    // `:90131-90134` — type 509's 800-roll, Next(44, 47).
+    else if npc_type == 509 && rng.next_max(800) == 0 {
+        let style = rng.next_range(44, 47);
+        play(29, style, rng);
+    }
+    // `:90135-90138` — type 494's 600-roll, pinned style 47.
+    else if npc_type == 494 && rng.next_max(600) == 0 {
+        play(29, 47, rng);
+    }
+    // `:90139-90142` — the Deadly Sphere's 700-roll, Next(48, 50).
+    else if npc_type == 467 && rng.next_max(700) == 0 {
+        let style = rng.next_range(48, 50);
+        play(29, style, rng);
+    }
+    // `:90143-90146` — type 468's 700-roll, Next(50, 53).
+    else if npc_type == 468 && rng.next_max(700) == 0 {
+        let style = rng.next_range(50, 53);
+        play(29, style, rng);
+    }
+    // `:90147-90150` — the Dungeon Spirit's 400-roll, Next(53, 55).
+    else if npc_type == 288 && rng.next_max(400) == 0 {
+        let style = rng.next_range(53, 55);
+        play(29, style, rng);
+    }
+    // `:90151-90154` — the 524-527 quartet's 700-roll, Next(55, 57).
+    else if (npc_type == 524 || npc_type == 525 || npc_type == 526 || npc_type == 527)
+        && rng.next_max(700) == 0
+    {
+        let style = rng.next_range(55, 57);
+        play(29, style, rng);
+    }
+    // `:90155-90158` — the 496/497 pair's 600-roll, Next(57, 59).
+    else if (npc_type == 496 || npc_type == 497) && rng.next_max(600) == 0 {
+        let style = rng.next_range(57, 59);
+        play(29, style, rng);
+    }
+    // `:90159-90162` — type 389's 800-roll, Next(59, 61).
+    else if npc_type == 389 && rng.next_max(800) == 0 {
+        let style = rng.next_range(59, 61);
+        play(29, style, rng);
+    }
+    // `:90163-90166` — the Goblin Summoner's 600-roll, Next(61, 63).
+    else if npc_type == 471 && rng.next_max(600) == 0 {
+        let style = rng.next_range(61, 63);
+        play(29, style, rng);
+    }
+    // `:90167-90170` — type 482's 600-roll, Next(63, 66).
+    else if npc_type == 482 && rng.next_max(600) == 0 {
+        let style = rng.next_range(63, 66);
+        play(29, style, rng);
+    }
+    // `:90171-90174` — the Martian Drone's 700-roll, Next(66, 69).
+    else if npc_type == 388 && rng.next_max(700) == 0 {
+        let style = rng.next_range(66, 69);
+        play(29, style, rng);
+    }
+    // `:90175-90178` — the Martian Walker's 800-roll, Next(69, 73).
+    else if npc_type == 520 && rng.next_max(800) == 0 {
+        let style = rng.next_range(69, 73);
+        play(29, style, rng);
+    }
+    // `:90179-90182` — Mothron's 600-roll, pinned style 73.
+    else if npc_type == 477 && rng.next_max(600) == 0 {
+        play(29, 73, rng);
+    }
+    // `:90183-90186` — type 258's 700-roll, Next(74, 78).
+    else if npc_type == 258 && rng.next_max(700) == 0 {
+        let style = rng.next_range(74, 78);
+        play(29, style, rng);
+    }
+    // `:90187-90190` — type 252's 700-roll, pinned style 78.
+    else if npc_type == 252 && rng.next_max(700) == 0 {
+        play(29, 78, rng);
+    }
+    // `:90191-90194` — type 469's 700-roll, Next(79, 81).
+    else if npc_type == 469 && rng.next_max(700) == 0 {
+        let style = rng.next_range(79, 81);
+        play(29, style, rng);
+    }
+    // `:90195-90198` — the 253/82 pair's 700-roll, Next(81, 84).
+    else if (npc_type == 253 || npc_type == 82) && rng.next_max(700) == 0 {
+        let style = rng.next_range(81, 84);
+        play(29, style, rng);
+    }
+    // `:90199-90202` — the 498-506 range's 600-roll, Next(84, 86).
+    else if (498..=506).contains(&npc_type) && rng.next_max(600) == 0 {
+        let style = rng.next_range(84, 86);
+        play(29, style, rng);
+    }
+    // `:90203-90206` — the Scutlix's 700-roll, Next(86, 87) (a one-slot
+    // range — the draw still happens, `UnifiedRandom.cs:126-130`).
+    else if npc_type == 391 && rng.next_max(700) == 0 {
+        let style = rng.next_range(86, 87);
+        play(29, style, rng);
+    }
+}
+
+/// W4-f2 — the `Collision_WaterCollision` splash state
+/// (`NPC.cs:93052-93275`), the `Entity` wet flags the pass reads/writes.
+/// Kept as a plain snapshot so the pass stays a pure fn of its inputs
+/// (the `idle_sounds` shape); the sim copies the `Npc` fields in and the
+/// mutated state back out.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WaterWetState {
+    /// `Entity.wet` — the previous tick's liquid-overlap flag. The sim
+    /// snapshots `Npc::wet_prev` here (NOT `Npc::wet` — the bat/swimmer
+    /// wrappers overwrite that pre-AI with the `is_wet` stand-in; the
+    /// edge keys on the pass latch, e9b's point — research/94 §9).
+    pub wet: bool,
+    /// `Entity.wetCount` — the 10-tick splash cooldown.
+    pub wet_count: i32,
+    /// `Entity.lavaWet`/`honeyWet`/`shimmerWet` — the per-liquid latches.
+    pub lava_wet: bool,
+    pub honey_wet: bool,
+    pub shimmer_wet: bool,
+    /// `Entity.velocity.X` — the exit edge halves it (`NPC.cs:93179`,
+    /// BEFORE the wet clear + the splash arms). e9b's wiring write,
+    /// adopted into the pure pass (research/94 §9): the sim snapshots
+    /// `Npc::vx` in and copies it back out; only the exit edge writes.
+    pub vx: f32,
+}
+
+/// W4-f2 — `NPC.Collision_WaterCollision`'s splash-cue half
+/// (`NPC.cs:93052-93275`, called from `UpdateCollision` `:92526` AFTER
+/// `AI()`): the entry/exit edges arm the `wetCount` 10-tick cooldown and
+/// play legacy case 19 (`LegacySoundPlayer.cs:871-910` — the
+/// `splash_case19` styles-4/5 arms S1-E-21f ported for THIS wave).
+///
+/// The never-wet head gate (`:93055`) zeroes `wetCount` and forces
+/// `lava = false` for its kinds/styles; aiStyle 116 pins `wetCount` to
+/// 10 every tick (`:93077-93080`). The entry edge (`flag && !wet &&
+/// wetCount == 0`, `:93087`) plays shimmer 4 / honey 1 / water 0 / lava
+/// 1; the exit edge (`!flag && wet && wetCount == 0`, `:93185`) plays
+/// shimmer 5 / honey 1 / water 0 / lava 1 — the exit arms read the OLD
+/// per-liquid latches. The per-liquid kind/noGravity exclusion gates
+/// ride each arm; BOTH exit gates drop the `type != 147` term their
+/// entry twins carry — the exit-lava gate (`:93267` vs `:93169`) and the
+/// exit-WATER gate (`:93250` vs `:93152`, the reconcile finding,
+/// research/94 §6) — the C# quirks kept verbatim.
+///
+/// RNG: the pass itself draws NOTHING — the case-19 pitch draw rides
+/// inside the caller's `play` (`Audio::play_splash_sound`) after the
+/// attenuation gate and the playing guard, on the `UpdateNPCs` stream.
+/// The dust bursts (`:93096-93118` etc.) are the documented visual skip
+/// (the dust lanes' territory, the E21f player-splash precedent); the
+/// exit velocity.X halving (`:93179`) rides [`WaterWetState::vx`] (the
+/// e9b union, research/94 §9); the type-620 exit jump (`:93181-93184`)
+/// is staged as [`water_exit_jump`] (the reconcile doc-sweep,
+/// research/94 §8a — the 620 kind is unported).
+///
+/// `wet_now`/`honey_now`/`shimmer_now` are THIS tick's
+/// `Collision.WetCollision` results (`npc_ai_slime::wet_collision`);
+/// `lava` is the `Collision_LavaCollision` result with the type-441
+/// refusal (`:93318-93321`) already applied by the caller.
+pub fn water_collision_sounds(
+    npc_type: i32,
+    ai_style: i32,
+    ai0: f32,
+    no_gravity: bool,
+    state: &mut WaterWetState,
+    wet_now: bool,
+    honey_now: bool,
+    shimmer_now: bool,
+    lava: bool,
+    play: &mut dyn FnMut(i32),
+) {
+    // `:93055-93060` — the never-wet head gate.
+    let never_wet = (npc_type == 690 && ai0 == 0.0)
+        || npc_type == 72
+        || ai_style == 21
+        || ai_style == 67
+        || npc_type == 376
+        || npc_type == 579
+        || npc_type == 541
+        || (ai_style == 7 && ai0 == 25.0);
+    let mut lava = lava;
+    let flag;
+    if never_wet {
+        flag = false;
+        state.wet_count = 0;
+        lava = false;
+    } else {
+        // `:93063-93075` — WetCollision + the honey/shimmer latches.
+        flag = wet_now;
+        if honey_now {
+            state.honey_wet = true;
+        }
+        if shimmer_now {
+            state.shimmer_wet = true;
+        }
+    }
+    // `:93077-93080` — aiStyle 116 pins the cooldown.
+    if ai_style == 116 {
+        state.wet_count = 10;
+    }
+    // The shared water/shimmer exclusion gate (`:93119`/`:93152`/
+    // `:93217`/`:93250`): the long kind/style list OR the type-615
+    // override. The honey/lava gates use the shorter list (no 376/579/
+    // 362/364/361/445/68 terms).
+    let water_gate = (npc_type != 376
+        && npc_type != 579
+        && ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && ai_style != 68
+        && npc_type != 362
+        && npc_type != 364
+        && npc_type != 361
+        && npc_type != 445
+        && !no_gravity)
+        || npc_type == 615;
+    let honey_gate = ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && !no_gravity;
+    // W4-f2 reconcile (research/94 §6) — the exit-WATER gate (`:93250`)
+    // DROPS the `type != 147` term its entry twin (`:93152`) carries —
+    // the SECOND 147-quirk (both e9 and the original f2 pass reused the
+    // entry gate here). Latent in practice (147 Pinky is aiStyle 1,
+    // excluded everywhere) but kept verbatim like the lava twin.
+    let water_exit_gate = (npc_type != 376
+        && npc_type != 579
+        && ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && ai_style != 68
+        && npc_type != 362
+        && npc_type != 364
+        && npc_type != 361
+        && npc_type != 445
+        && !no_gravity)
+        || npc_type == 615;
+    // The entry-lava gate (`:93169`) carries `type != 147`; the exit-lava
+    // gate (`:93267`) drops it — two distinct gates, kept verbatim.
+    let lava_entry_gate = ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && !no_gravity;
+    let lava_exit_gate = ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && !no_gravity;
+    if flag {
+        // `:93087-93175` — the entry edge.
+        if !state.wet && state.wet_count == 0 {
+            state.wet_count = 10;
+            if !lava {
+                if state.shimmer_wet {
+                    if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                        if water_gate {
+                            play(4); // `:93121`
+                        }
+                    }
+                } else if state.honey_wet {
+                    if honey_gate {
+                        play(1); // `:93138` — the default Style 1
+                    }
+                } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                    if water_gate {
+                        play(0); // `:93154`
+                    }
+                }
+            } else if lava_entry_gate {
+                play(1); // `:93171` — the lava arm, default Style 1
+            }
+        }
+        state.wet = true; // `:93175`
+    } else if state.wet {
+        // `:93177-93272` — the exit edge. The velocity halving
+        // (`:93179`) runs FIRST, before the wet clear + the arms (e9b's
+        // wiring write, adopted into the pass — research/94 §9); the
+        // type-620 jump (`:93181-93184`) is staged as [`water_exit_jump`]
+        // (the 620 kind is unported — research/94 §8a).
+        state.vx *= 0.5; // `:93179`
+        state.wet = false; // `:93180`
+        if state.wet_count == 0 {
+            state.wet_count = 10;
+            if !state.lava_wet {
+                if state.shimmer_wet {
+                    if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                        if water_gate {
+                            play(5); // `:93219`
+                        }
+                    }
+                } else if state.honey_wet {
+                    if honey_gate {
+                        play(1); // `:93236`
+                    }
+                } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                    if water_exit_gate {
+                        play(0); // `:93252` — the gate at `:93250` drops 147
+                    }
+                }
+            } else if lava_exit_gate {
+                play(1); // `:93269`
+            }
+        }
+    }
+}
+
+/// W4-f2 doc-sweep (research/94 §8a) — the type-620 water-exit jump
+/// (`NPC.cs:93181-93184`, inside `Collision_WaterCollision`'s exit edge
+/// AFTER the velocity.X halving + wet clear, BEFORE the wetCount check):
+/// `if (type == 620 && GetTargetData().Center.Y < base.Center.Y)
+/// velocity.Y -= 8f` — the GoblinShark leaps when its target sits ABOVE
+/// it. Census: type 620 ONLY (`NPCID.GoblinShark`, `NPCID.cs:11917`;
+/// SetDefaults `NPC.cs:16950-16968`, the aiStyle-107 improved walker).
+/// Returns the velocity.Y delta (−8 or 0); the caller adds it at the
+/// exit edge. STAGED: the 620 kind is unported, and 620 is in
+/// `NPCID.Sets.UsesNewTargeting` (`NPCID.cs:10434`) — its `GetTargetData`
+/// (`NPC.cs:6901-6912`) can return an NPC target, an axis the port lacks;
+/// the caller passes the RESOLVED target centre when the kind lands
+/// (the default-invalid centre is (0,0), `NPCAimedTarget.cs:20-22`).
+/// The strict `<` is verbatim — equal centres do NOT jump. RNG-free.
+#[allow(dead_code)] // the GoblinShark 620 kind's wiring consumes the leap
+pub fn water_exit_jump(npc_type: i32, target_center_y: f32, center_y: f32) -> f32 {
+    if npc_type == 620 && target_center_y < center_y {
+        -8.0 // `:93183`
+    } else {
+        0.0
+    }
+}
+
+/// W4-f2 — `UpdateCollision`'s post-water-collision tail
+/// (`NPC.cs:92527-92536`): the dry clear of the three per-liquid latches
+/// and the `wetCount` decrement. Runs AFTER [`water_collision_sounds`]
+/// (the C#'s order — the exit arms read the OLD latches before the
+/// clear). The sim calls it once per NPC at the collision position.
+pub fn water_collision_tail(state: &mut WaterWetState) {
+    // `:92527-92532` — `if (!base.wet)` clears the latches.
+    if !state.wet {
+        state.lava_wet = false;
+        state.honey_wet = false;
+        state.shimmer_wet = false;
+    }
+    // `:92533-92536` — the cooldown ticks down.
+    if state.wet_count > 0 {
+        state.wet_count -= 1;
+    }
+}
+
 /// `Main.cs:58741-58759`'s thunder strike tick (the `currentDayRateIteration
 /// == 0` arm of `UpdateWeather`): decrements `thunder_delay` and, on the tick
 /// it reaches 0, returns the cue position — or `None` when the focus/skip gate
@@ -1057,6 +1612,84 @@ mod tests {
                 0
             } else {
                 1 % hi.max(1)
+            }
+        }
+    }
+
+    // (The merge fold, research/94 В§4.6: e9's two idle-ladder witnesses
+    // DROPPED вЂ” they drove the retired idle_sound_cue; f2's 32-arm
+    // seed-146 draw-order witness + the case-29 bank witnesses cover
+    // the same contracts.)
+
+    /// TAIL-ACTIVATION-2 (research/141 §8.1) — the landed roster lanes'
+    /// ambient-key census witness, table-side (WRITTEN NOT RUN; the
+    /// kinds live on d42/f42, not this base). The `IdleSounds` ladder
+    /// names the antlion trio (580/581/582, `:90115-90126`) but NEVER the
+    /// buried Antlion 69 — f42's rowed 69 draws nothing through the idle
+    /// seam, while d42's WalkingAntlion 580 / LarvaeAntlion 582 pin slot
+    /// 44 and f42's FlyingAntlion 581 ranges Next(44, 47). The
+    /// `UpdateNPC_CritterSounds` table names the Owl 611 + Seagull
+    /// 602/603 + Rat 610 (d42-rowed) but NEVER the dragonflies 595-601
+    /// (d33's LIVE axis) — the wired family is ambient-silent by C#, not
+    /// by omission. The cs_id key space (`world_sim/npcs.rs:4501/:4685`)
+    /// is what these vanilla ids must ride. The merge fold: the idle-half
+    /// probes retired with e9's `idle_sound_cue` (f2's 32-arm seed-146
+    /// draw-order witness pins the ladder); the critter-table half stays.
+    #[test]
+    fn w4_e9_tail_activation_2_the_landed_roster_ambient_census() {
+        // The buried Antlion 69 (f42 `75f055fc`, cs_id 69 via the
+        // bestiary net_id fallback): no critter arm.
+        let mut rolls = Rolls::new();
+        assert_eq!(
+            critter_sound_cue(69, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            None
+        );
+        assert_eq!(rolls.calls, 0, "69 is outside the critter table");
+        // The d42 critter rows: the Owl 611 hoots only at night
+        // (`:92249`, Next(700), case 46); the Seagull 602/603 pair only
+        // by day (`:92253`, Next(1200), case 44); the Rat 610 any time
+        // (`:92337`, Next(1800), case 33). The day-gated arms draw
+        // NOTHING off-gate (the `&&` short-circuit precedes the roll).
+        let mut rolls = Rolls::new();
+        assert_eq!(
+            critter_sound_cue(611, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            None
+        );
+        assert_eq!(rolls.calls, 0, "the owl is night-only, the day gate draws nothing");
+        let mut rolls = Rolls::with_zero(0);
+        assert_eq!(
+            critter_sound_cue(611, false, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            Some((46, 1.0))
+        );
+        for ty in [602, 603] {
+            let mut rolls = Rolls::with_zero(0);
+            assert_eq!(
+                critter_sound_cue(ty, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+                Some((44, 1.0))
+            );
+            let mut rolls = Rolls::new();
+            assert_eq!(
+                critter_sound_cue(ty, false, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+                None
+            );
+            assert_eq!(rolls.calls, 0, "the seagulls are day-only");
+        }
+        let mut rolls = Rolls::with_zero(0);
+        assert_eq!(
+            critter_sound_cue(610, true, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+            Some((33, 1.0))
+        );
+        // The dragonflies 595-601 (d33 `b08acf46`, the LIVE axis): the
+        // critter table skips them — no draws day or night (the idle
+        // ladder's skip rides f2's fall-through witness).
+        for ty in 595..=601 {
+            for day in [true, false] {
+                let mut rolls = Rolls::new();
+                assert_eq!(
+                    critter_sound_cue(ty, day, 1000.0, 3000.0, 3000.0, 0.0, &mut roll(&mut rolls)),
+                    None
+                );
+                assert_eq!(rolls.calls, 0, "type {ty}: no critter arm (day={day})");
             }
         }
     }
@@ -2052,5 +2685,355 @@ mod tests {
         assert!(gate(299, true), "the critter set returns true");
         assert!(gate(425, true), "the case list breaks to true");
         assert!(gate(528, true), "the 528-532 break arm");
+    }
+
+    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90206`, all 32
+    /// arms): a matching type consumes its gate roll, then (on a hit) the
+    /// style roll, then the play's case-29 pitch draw — in that order, on
+    /// the caller's stream. Seed 146 draws 0 on every gate (the derived
+    /// witness seed); the `play` stand-in consumes the one
+    /// `Next(-10, 11)` pitch like `play_fighter_moan`'s case-29 path.
+    #[test]
+    fn w4_f2_idle_sounds_the_first_ten_arms_draw_in_the_c_order() {
+        use tr_core::UnifiedRandom;
+        // (type, wet, gate N, style roll range or None for a pinned style,
+        //  expected style) — the C#'s arms 1-10 in chain order.
+        let arms: &[(i32, bool, i32, Option<(i32, i32)>, i32)] = &[
+            (239, false, 900, Some((24, 26)), 25),
+            (240, false, 900, Some((24, 26)), 25),
+            (62, false, 700, Some((26, 30)), 28),
+            (156, false, 700, Some((26, 30)), 28),
+            (177, false, 600, Some((30, 32)), 31),
+            (226, false, 800, None, 32),
+            (153, false, 1000, None, 33),
+            (63, true, 1000, Some((34, 36)), 35),
+            (64, true, 1000, Some((34, 36)), 35),
+            (103, true, 1000, Some((34, 36)), 35),
+            (198, false, 1000, Some((36, 38)), 37),
+            (199, false, 1000, Some((36, 38)), 37),
+            (170, false, 600, Some((38, 41)), 39),
+            (180, false, 600, Some((38, 41)), 39),
+            (171, false, 600, Some((38, 41)), 39),
+            (250, false, 700, Some((41, 44)), 42),
+            (580, false, 800, None, 44),
+            // Batch 2 — arms 11-20 (`:90119-90158`).
+            (582, false, 800, None, 44),
+            (581, false, 800, Some((44, 47)), 45),
+            (508, false, 800, None, 44),
+            (509, false, 800, Some((44, 47)), 45),
+            (494, false, 600, None, 47),
+            (467, false, 700, Some((48, 50)), 49),
+            (468, false, 700, Some((50, 53)), 51),
+            (288, false, 400, Some((53, 55)), 54),
+            (524, false, 700, Some((55, 57)), 56),
+            (525, false, 700, Some((55, 57)), 56),
+            (526, false, 700, Some((55, 57)), 56),
+            (527, false, 700, Some((55, 57)), 56),
+            (496, false, 600, Some((57, 59)), 58),
+            (497, false, 600, Some((57, 59)), 58),
+            // Batch 3 — arms 21-30 (`:90159-90198`).
+            (389, false, 800, Some((59, 61)), 60),
+            (471, false, 600, Some((61, 63)), 62),
+            (482, false, 600, Some((63, 66)), 64),
+            (388, false, 700, Some((66, 69)), 67),
+            (520, false, 800, Some((69, 73)), 71),
+            (477, false, 600, None, 73),
+            (258, false, 700, Some((74, 78)), 76),
+            (252, false, 700, None, 78),
+            (469, false, 700, Some((79, 81)), 80),
+            (253, false, 700, Some((81, 84)), 82),
+            (82, false, 700, Some((81, 84)), 82),
+            // Batch 4 — arms 31-32 (`:90199-90206`), the chain's tail.
+            (498, false, 600, Some((84, 86)), 85),
+            (506, false, 600, Some((84, 86)), 85),
+            (391, false, 700, Some((86, 87)), 86),
+        ];
+        for &(ty, wet, gate, style_roll, style) in arms {
+            let mut rng = UnifiedRandom::new(146);
+            let mut witness = UnifiedRandom::new(146);
+            let _gate = witness.next_max(gate);
+            if let Some((lo, hi)) = style_roll {
+                let _style = witness.next_range(lo, hi);
+            }
+            let _pitch = witness.next_range(-10, 11);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            idle_sounds(ty, wet, 0.0, &mut rng, &mut |case, st, r| {
+                plays.push((case, st));
+                // The case-29 play's one pitch draw (the guard is free
+                // headless — the fresh-slot table, the E21e precedent).
+                let _ = r.next_range(-10, 11);
+            });
+            assert_eq!(plays, vec![(29, style)], "type {ty}");
+            assert_eq!(rng.peek(), witness.peek(), "type {ty}: gate+style+pitch");
+        }
+    }
+
+    /// W4-f2 — the chain's draw-free paths: the shimmer head gate
+    /// (`:90077`), a failed gate (ONE draw, the else-if falls out — no
+    /// later arm's roll runs), the dry wet-trio fall-through (`:90099`'s
+    /// `base.wet` term is inside the condition), and an unlisted type
+    /// (zero draws — no arm's type test matches).
+    #[test]
+    fn w4_f2_idle_sounds_the_gates_and_fall_throughs_draw_nothing_extra() {
+        use tr_core::UnifiedRandom;
+        // The shimmer gate wraps the whole chain — zero draws.
+        let mut rng = UnifiedRandom::new(146);
+        let peek = rng.peek();
+        let mut plays = 0;
+        idle_sounds(239, false, 1.0, &mut rng, &mut |_, _, _| plays += 1);
+        assert_eq!(plays, 0);
+        assert_eq!(rng.peek(), peek, "the shimmer head gate draws nothing");
+        // A failed gate: seed 1 draws 223 on Next(900) — ONE draw, no play,
+        // and the else-if chain ends (no later arm's roll for type 239).
+        let mut rng = UnifiedRandom::new(1);
+        let mut witness = UnifiedRandom::new(1);
+        let g = witness.next_max(900);
+        assert_ne!(g, 0, "the witness seed's gate must fail");
+        let mut plays = 0;
+        idle_sounds(239, false, 0.0, &mut rng, &mut |_, _, _| plays += 1);
+        assert_eq!(plays, 0);
+        assert_eq!(rng.peek(), witness.peek(), "the failed gate's one draw only");
+        // The dry 63/64/103 trio: the wet term fails INSIDE arm 6's
+        // condition; no later arm names those types — zero draws.
+        for ty in [63, 64, 103] {
+            let mut rng = UnifiedRandom::new(146);
+            let peek = rng.peek();
+            let mut plays = 0;
+            idle_sounds(ty, false, 0.0, &mut rng, &mut |_, _, _| plays += 1);
+            assert_eq!(plays, 0, "dry type {ty}");
+            assert_eq!(rng.peek(), peek, "dry type {ty}: the chain falls out");
+        }
+        // An unlisted type (the zombie 3): no arm matches — zero draws.
+        let mut rng = UnifiedRandom::new(146);
+        let peek = rng.peek();
+        let mut plays = 0;
+        idle_sounds(3, false, 0.0, &mut rng, &mut |_, _, _| plays += 1);
+        assert_eq!(plays, 0);
+        assert_eq!(rng.peek(), peek, "an unlisted type draws nothing");
+    }
+
+    /// W4-f2 — the case-29 bank rows this wave registers: every
+    /// IdleSounds style 24-87 resolves to its `Zombie_<style>` asset at
+    /// the ×0.5 band (`LegacySoundPlayer.cs:1009-1011`), and the asset
+    /// table names each slot (the `zombie_asset` arms).
+    #[test]
+    fn w4_f2_the_idle_case29_slots_resolve_the_bank() {
+        for style in 24u32..=87 {
+            let voice = critter_legacy_voice(
+                29,
+                style,
+                &mut |_, _| 0,
+                &|_| false,
+            )
+            .expect("a free slot plays");
+            assert_eq!(voice.slot, style as usize);
+            assert_eq!(voice.volume_mult, 0.5, "the 24-87 band is x0.5");
+            assert_eq!(voice.pitch, 0.0, "the forced 0 pitch roll");
+            // The asset name is the slot's own file — the Zombie_0
+            // fallback would mean a missing `zombie_asset` arm.
+            assert_ne!(voice.asset, "Zombie_0", "style {style} has no asset arm");
+        }
+        assert_eq!(zombie_asset(24), "Zombie_24");
+        assert_eq!(zombie_asset(87), "Zombie_87");
+        // The busy-slot guard refuses BEFORE the pitch draw (the case-29
+        // contract the idle plays inherit).
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(29, 25, &mut signed_roll(&mut state, &|_, _, _| Some(0)), &|s| s
+                == 25)
+            .is_none(),
+            "a busy idle slot blocks the cue"
+        );
+        assert_eq!(state.calls, 0, "the guard precedes the pitch draw");
+    }
+
+    /// W4-f2 — the water-collision entry quartet (`NPC.cs:93121`/
+    /// `:93138`/`:93154`/`:93171`): a dry→wet edge arms `wetCount` 10 and
+    /// plays the per-liquid style (shimmer 4 / honey 1 / water 0 / lava
+    /// 1). The pass draws NOTHING itself (the case-19 pitch rides inside
+    /// the caller's play); the `play` stand-in records the style.
+    #[test]
+    fn w4_f2_water_collision_the_entry_quartet_plays_the_per_liquid_style() {
+        // (shimmer_now, honey_now, lava, expected style) — a plain
+        // ground kind (type 3, aiStyle 3, gravity) passes every gate.
+        for &(shimmer, honey, lava, style) in &[
+            (true, false, false, 4),
+            (false, true, false, 1),
+            (false, false, false, 0),
+            (false, false, true, 1),
+        ] {
+            let mut st = WaterWetState::default();
+            let mut plays: Vec<i32> = Vec::new();
+            water_collision_sounds(
+                3, 3, 0.0, false, &mut st,
+                true, honey, shimmer, lava,
+                &mut |s| plays.push(s),
+            );
+            assert_eq!(plays, vec![style], "shimmer={shimmer} honey={honey} lava={lava}");
+            assert_eq!(st.wet_count, 10, "the entry arms the cooldown");
+            assert!(st.wet, "the entry sets wet");
+            // The pass itself is draw-free (no rng parameter at all).
+        }
+    }
+
+    /// W4-f2 — the water-collision exit quartet (`NPC.cs:93219`/
+    /// `:93236`/`:93252`/`:93269`): a wet→dry edge reads the OLD
+    /// per-liquid latches (shimmer 5 / honey 1 / water 0 / lava 1) and
+    /// arms the cooldown; the tail then clears the latches.
+    #[test]
+    fn w4_f2_water_collision_the_exit_quartet_reads_the_old_latches() {
+        for &(lava_wet, shimmer_wet, honey_wet, style) in &[
+            (false, true, false, 5),
+            (false, false, true, 1),
+            (false, false, false, 0),
+            (true, false, false, 1),
+        ] {
+            let mut st = WaterWetState {
+                wet: true,
+                wet_count: 0,
+                lava_wet,
+                honey_wet,
+                shimmer_wet,
+                vx: 4.0,
+            };
+            let mut plays: Vec<i32> = Vec::new();
+            water_collision_sounds(
+                3, 3, 0.0, false, &mut st,
+                false, false, false, false,
+                &mut |s| plays.push(s),
+            );
+            assert_eq!(plays, vec![style], "lava={lava_wet} shimmer={shimmer_wet} honey={honey_wet}");
+            assert_eq!(st.wet_count, 10);
+            assert!(!st.wet, "the exit clears wet");
+            assert_eq!(st.vx, 2.0, ":93179's halving (e9b union, research/94 §9)");
+            // The tail clears the latches on the dry state + ticks down.
+            water_collision_tail(&mut st);
+            assert!(!st.lava_wet && !st.honey_wet && !st.shimmer_wet);
+            assert_eq!(st.wet_count, 9);
+        }
+    }
+
+    /// W4-f2 — the water-collision gates: the never-wet head (`:93055`)
+    /// zeroes the cooldown and forces lava false; the `wetCount != 0`
+    /// cooldown suppresses the play; the noGravity/kind exclusion gates
+    /// block the cue; the exit-lava gate drops the `type != 147` term
+    /// its entry twin carries (`:93169` vs `:93267`); the exit-WATER gate
+    /// (`:93250`) drops it too — the reconcile's second quirk pin.
+    #[test]
+    fn w4_f2_water_collision_the_gates_block_and_the_lava_quirk() {
+        // The never-wet head: aiStyle 21 (the Blazing Wheel) — wetCount
+        // zeroed, no play even on a wet overlap.
+        let mut st = WaterWetState { wet_count: 5, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(72, 21, 0.0, false, &mut st, true, false, false, true, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the never-wet head plays nothing");
+        assert_eq!(st.wet_count, 0, "the head zeroes the cooldown");
+        // The cooldown: a wet entry with wetCount != 0 plays nothing.
+        let mut st = WaterWetState { wet_count: 3, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(3, 3, 0.0, false, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the cooldown suppresses the entry");
+        assert!(st.wet, "wet still sets");
+        // The noGravity exclusion: a floating kind plays no water cue.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(3, 3, 0.0, true, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "noGravity blocks the water gate");
+        // The type-615 override: it plays despite noGravity.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(615, 0, 0.0, true, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert_eq!(plays, vec![0], "the 615 override plays water");
+        // The lava quirk: type 147 (the pinky slime) — the ENTRY lava gate
+        // carries `type != 147` (blocks), the EXIT lava gate drops it
+        // (plays). Entry: lava overlap, dry→wet.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 1, 0.0, false, &mut st, true, false, false, true, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the entry lava gate blocks type 147 (aiStyle 1 too)");
+        // Exit: type 147 with aiStyle 0 (so only the 147 term differs),
+        // lavaWet latched — the exit gate plays.
+        let mut st = WaterWetState { wet: true, lava_wet: true, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 0, 0.0, false, &mut st, false, false, false, false, &mut |s| plays.push(s));
+        assert_eq!(plays, vec![1], "the exit lava gate drops the 147 term");
+        // W4-f2 reconcile (research/94 §6) — the SECOND quirk: the
+        // exit-WATER gate (`:93250`) drops 147 too (the entry twin
+        // `:93152` carries it). Entry: type 147 @ aiStyle 0, water
+        // overlap — the entry gate blocks.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 0, 0.0, false, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the entry water gate blocks type 147");
+        // Exit: the same body leaves the water — the exit gate plays.
+        let mut st = WaterWetState { wet: true, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 0, 0.0, false, &mut st, false, false, false, false, &mut |s| plays.push(s));
+        assert_eq!(plays, vec![0], "the exit water gate drops the 147 term");
+    }
+
+    /// W4-f2 doc-sweep (research/94 §8a) — `NPC.cs:93181-93184`: the
+    /// type-620 exit jump fires ONLY for 620 with the target centre
+    /// STRICTLY above the body's centre (the −8 velocity.Y delta); any
+    /// other type, an equal centre or a below-target draws the zero.
+    #[test]
+    fn w4_f2_the_goblin_shark_exit_jump_is_type_and_height_gated() {
+        // 620, target above (smaller Y): the −8 leap.
+        assert_eq!(water_exit_jump(620, 100.0, 200.0), -8.0);
+        // Equal centres: the strict `<` refuses.
+        assert_eq!(water_exit_jump(620, 200.0, 200.0), 0.0);
+        // Target below: no leap.
+        assert_eq!(water_exit_jump(620, 300.0, 200.0), 0.0);
+        // Any other type: nothing, whatever the heights (the census is
+        // the single 620 row — the BloodEel 621 / BloodSquid 619
+        // neighbours do NOT jump).
+        assert_eq!(water_exit_jump(619, 100.0, 200.0), 0.0);
+        assert_eq!(water_exit_jump(621, 100.0, 200.0), 0.0);
+        assert_eq!(water_exit_jump(3, 100.0, 200.0), 0.0);
+        // The default-invalid target centre (0,0) is ABOVE any positive
+        // body centre — the C# reads it raw (the empress precedent).
+        assert_eq!(water_exit_jump(620, 0.0, 200.0), -8.0);
+    }
+
+    /// W4-f2 closeout (e9b tail union, research/94 §10) — case 65
+    /// (`LegacySoundPlayer.cs:1382-1402`): the Queen Slime moan's slot
+    /// pick is `Next(115, 118)` behind the 115/116/117 playing guards;
+    /// ×0.5, NO pitch draw. The guards refuse BEFORE the slot draw.
+    #[test]
+    fn w4_f2_the_case65_moan_picks_115_118_behind_the_guards() {
+        // A hitting slot roll (lo=115): the pick lands the rolled slot,
+        // ×0.5, pitch 0 — exactly ONE roll call.
+        let mut calls = 0u32;
+        let voice = critter_legacy_voice(
+            65,
+            0,
+            &mut |lo, hi| {
+                calls += 1;
+                assert_eq!((lo, hi), (115, 118), "the slot window");
+                lo + 1 // slot 116
+            },
+            &|_| false,
+        )
+        .expect("the guards clear");
+        assert_eq!(calls, 1, "the slot pick is the only draw");
+        assert_eq!(voice.slot, 116);
+        assert_eq!(voice.asset, "Zombie_116");
+        assert_eq!(voice.volume_mult, 0.5);
+        assert_eq!(voice.pitch, 0.0, "case 65 sets Volume/Pan only");
+        // Each playing guard refuses BEFORE any draw.
+        for busy in [115usize, 116, 117] {
+            let mut calls = 0u32;
+            let v = critter_legacy_voice(
+                65,
+                0,
+                &mut |_, _| {
+                    calls += 1;
+                    0
+                },
+                &|slot| slot == busy,
+            );
+            assert!(v.is_none(), "slot {busy} playing refuses");
+            assert_eq!(calls, 0, "the guard precedes the draw");
+        }
     }
 }

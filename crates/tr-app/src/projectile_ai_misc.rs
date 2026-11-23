@@ -38,7 +38,10 @@
 //!   `NextFloat` gate while `localAI[0] >= num2` (`:41391`); the taken
 //!   branch's `RotatedByRandom` pair (`:41394`), the `NextVector2Circular`
 //!   pair (`:41395`) and the scale/customData floats (`:41398-41399`).
-//!   Only the `NewDust*` INTERNAL rolls go with the dust pool.
+//!   Only the `NewDust*` INTERNAL rolls go with the dust pool. The 1106's
+//!   sound gate (`:41366-41370`, S1-E-21h d75 part 4) draws NOTHING — the
+//!   style overload's GetRandomPitch is audio-only and case 2's pitch
+//!   rides the drain.
 //! - 147: the rocket AI itself draws only the state-1 ring's per-particle
 //!   colour `NextFloat` (`:52940`); the explosion censuses are in
 //!   [`celeb2_explosion`]'s doc.
@@ -122,17 +125,25 @@ pub(crate) fn ai_spray(p: &mut Projectile, world: &mut World, local_owner: u8) {
 
 /// `AI_193_Flamethrower` (`Projectile.cs:41337-41401`) — the Flamethrower's
 /// Flames (85). The 1106 Foxparks variant keeps its constants arm; its
-/// sound gate (`:41366-41370`) is skipped (no sound layer, no `soundDelay`
-/// slot field). The 1106 row landed with the d18 census residual
-/// (18916087); the 85/1106 `localAI[0] >= 54` damage gate
-/// (`:12460-12467`) rides the pool's damage walks (`flames_faded`).
+/// sound gate (`:41366-41370`) is ARMED (S1-E-21h d75 part 4): the
+/// `soundDelay == 0 && whoAmI % 3 == 0` latch queues `SoundID.FoxparksFlame`
+/// at `base.Center` on `wants_sound` as the named-row marker `(2, -34)`
+/// (the plain `(2, 34)` tuple is Item34's — d76's Nebula Blaze owns it),
+/// `sound_delay = -1` (one cue per life). `who_am_i` is the dispatch's slot
+/// index (the C# `base.whoAmI`); the 1106 row rides d18's pushed tip
+/// `18916087b` — until the merge the kind cannot spawn and the gate stays
+/// inert (the owed-arm convention).
 ///
 /// The `Kill()` at 72 (`:41341-41344`) has NO return in the C# — the arm
 /// runs on into the velocity decay and the dust gates; the port keeps that
 /// shape. `HandleMovement` then runs before the `!active` return
 /// (`:17015`/`:17027`), so the dispatch's `kill_step` integrates the dead
 /// slot's last step too (a nothing-reads write, faithful to the C#).
-pub(crate) fn ai_flamethrower(p: &mut Projectile, rng: &mut dyn DropRng) {
+pub(crate) fn ai_flamethrower(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    who_am_i: usize,
+) {
     // `:41339-41348` — the age counter, the 72-tick kill, the 60-tick decay.
     p.local_ai[0] += 1.0;
     let num = 60.0f32;
@@ -151,11 +162,29 @@ pub(crate) fn ai_flamethrower(p: &mut Projectile, rng: &mut dyn DropRng) {
         num2 = 0.0;
         num3 = num;
     }
-    // `:41357-41371` — the per-kind dust constants (the 1106 sound gate is
-    // the documented skip).
+    // `:41357-41371` — the per-kind dust constants. S1-E-21h d75 part 4 —
+    // the 1106's sound gate (`:41366-41370`): `soundDelay == 0 &&
+    // whoAmI % 3 == 0` latches −1 and queues FoxparksFlame at `base.Center`.
+    // The intent's style slot carries −34, the NAMED-row marker: the real
+    // (2, 34) tuple is ambiguous (Item34 volume 1.0 vs FoxparksFlame 0.15,
+    // `SoundID.cs:1725`) and d76's Nebula Blaze queues the plain +34 — the
+    // negative sentinel keeps the two apart (the dash-roar −1 precedent).
+    // The drain routes −34 to `play_foxparks_flame` (the by-name façade).
+    // The dust-window constants num4/num5 (60/50 → 15/15 for the 1106,
+    // `:41363-41364`) feed only the skipped dust bodies — not carried.
     let mut chance_flame = 0.25f32;
     if p.kind == 1106 {
         chance_flame *= 0.5;
+        if p.sound_delay == 0 && who_am_i % 3 == 0 {
+            p.sound_delay = -1;
+            p.wants_sound = Some((
+                2,
+                -34,
+                p.pos.x + p.w * 0.5,
+                p.pos.y + p.h * 0.5,
+                0.0,
+            ));
+        }
     }
     let chance_smoke = 0.5f32;
     // `:41372-41390` — the flame dust gate: the `NextFloat` draw stays; on
@@ -463,6 +492,310 @@ pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
             let _ = rng.next_float();
             let _ = rng.next_float();
         }
+    }
+}
+
+/// S1-E-21h d77 — `Kill()`'s 710 DD2BetsyArrow death census
+/// (`Projectile.cs:71660-71678`): the 2-iteration dust-31 lead
+/// (`:71660-71664`) — per step a `RotatedByRandom(π)` pair (2 floats) +
+/// a `NextDouble` radius; the 10-iteration dust-6 loop (`:71665-71671`)
+/// — the same shape; the 5-iteration dust-31 tail (`:71672-71678`) —
+/// per step a `RotatedByRandom(π)` pair only (the `UnitX` spin's
+/// `.RotatedBy(velocity.ToRotation())` is draw-free). The `NewDust`
+/// internals go with the dust pool (the module's RNG contract).
+pub(crate) fn betsy_arrow_death_draws(rng: &mut dyn DropRng) {
+    for _ in 0..2 {
+        let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom
+        let _ = rng.next_double(); // radius
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..5 {
+        let _ = (rng.next_float(), rng.next_float());
+    }
+}
+
+/// S1-E-21h d77 — `Kill()`'s 617 NebulaArcanum death census
+/// (`Projectile.cs:72287-72326`): the 4-iteration dust-240 lead
+/// (`:72287-72291`) — per step a `RotatedByRandom(π)` pair + a
+/// `NextDouble` radius; the 30-iteration loop (`:72292-72304`) — per
+/// step the dust-62's pair + double, then the dust-90's pair + double;
+/// the 10-iteration dust-62 (`:72305-72311`) and dust-240
+/// (`:72312-72318`) tails — per step a pair only; then 2 gore rows
+/// (`:72319-72326`), each 7 ranges + a pair + a double: the position
+/// `Next(100)` pair, the `Next(61, 64)` type, the `NewGore` kicks
+/// `Next(10, 31)`/`Next(-20, 21)` (`Gore.cs:1327-1328`), the reposition
+/// `RotatedByRandom(π)` pair + `NextDouble` radius, and the two
+/// `Next(-10, 11)` velocity kicks. The dust/gore BODIES skip.
+pub(crate) fn nebula_arcanum_death_draws(rng: &mut dyn DropRng) {
+    for _ in 0..4 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..30 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float());
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float());
+    }
+    for _ in 0..2 {
+        let _ = rng.next_range(0, 100); // position X
+        let _ = rng.next_range(0, 100); // position Y
+        let _ = rng.next_range(61, 64); // gore type
+        let _ = rng.next_range(10, 31); // NewGore Y kick
+        let _ = rng.next_range(-20, 21); // NewGore X kick
+        let _ = (rng.next_float(), rng.next_float()); // reposition spin
+        let _ = rng.next_double(); // reposition radius
+        let _ = rng.next_range(-10, 11); // velocity X kick
+        let _ = rng.next_range(-10, 11); // velocity Y kick
+    }
+}
+
+/// S1-E-21h d77 — `Kill()`'s 618/620 Nebula subshot/shard death census
+/// (`Projectile.cs:72394-72417`, the shared `type == 620 || type == 618`
+/// arm): the 10-iteration dust loop — per step a `Next(3)` gate
+/// (`:72403`); the taken branch (`== 0`) adds the fadeIn/scale
+/// `Next(-10, 11)` pair (`:72406-72407`). The dust TYPE is `(int)ai[0]`
+/// (the 618's `Kill()` latches it to 86 at `:72398` — a state write the
+/// caller owns); the colour/scale bodies skip. ZERO further draws.
+pub(crate) fn nebula_shard_kill_draws(rng: &mut dyn DropRng) {
+    for _ in 0..10 {
+        if rng.next_range(0, 3) == 0 {
+            let _ = rng.next_range(-10, 11); // fadeIn
+            let _ = rng.next_range(-10, 11); // scale
+        }
+    }
+}
+
+/// `Kill()`'s aimed-spell resize (`Projectile.cs:71332-71337` / `:71412-71417`
+/// / `:71260-71265`): `Resize(side, side)` snaps the position to the old
+/// centre, grows the box, then recentres on the new half-box. The caller
+/// saves the old box, runs [`ProjectilePool::damage_pve_boxed`] through the
+/// resized box, then restores (the `gem_bolt_aoe` shape). RNG-free.
+pub(crate) fn aimed_spell_kill_resize(p: &mut Projectile, side: f32) {
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    p.w = side;
+    p.h = side;
+    p.pos = center - Vec2::splat(side * 0.5);
+}
+
+/// `Kill()`'s Magic Missile trail-death dust census
+/// (`Projectile.cs:71340-71407`): the 10-step `oldPos` ring — each step rolls
+/// a colour `NextFloat` (`:71347`) + a `Next(1, 4)` count (`:71348`),
+/// decrements the count past the ring's 0.3/0.75 marks (`:71350-71357`), then
+/// per spawned dust a `Next(3)` gate (`:71362`): the taken branch draws THREE
+/// floats (velocity scale `:71365`, scale `:71367`, fadeIn `:71368`), the else
+/// branch one DISCARDED `Next(2)` (`:71381`) + one fadeIn float (`:71386`).
+/// Then the 20-pair tail (`:71393-71406`): per pair a `NextVector2Circular`
+/// (2 floats), a scale float, a `Next(1, 16)` position draw, then a second
+/// dust's scale float + `Next(1, 16)`. The `CloneDust`/`NewDust` internals go
+/// with the dust pool; a negative count spawns nothing (the C# loop guard).
+pub(crate) fn magic_missile_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
+    for step in 0..p.old_pos.len() {
+        if p.old_pos[step] == Vec2::ZERO {
+            break; // `:71343-71346`
+        }
+        let _ = rng.next_float(); // `:71347` colour
+        let mut count = rng.next_range(1, 4); // `:71348`
+        let n = p.old_pos.len() as f32;
+        if step as f32 >= n * 0.3 {
+            count -= 1; // `:71350-71353`
+        }
+        if step as f32 >= n * 0.75 {
+            count -= 2; // `:71354-71357`
+        }
+        for _ in 0..count.max(0) {
+            if rng.next_range(0, 3) == 0 {
+                // `:71362-71377` — the 267 dust's three explicit floats.
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            } else {
+                // `:71378-71389` — the 15 dust: the discarded Next(2) + fadeIn.
+                let _ = rng.next_range(0, 2);
+                let _ = rng.next_float();
+            }
+        }
+    }
+    for _ in 0..20 {
+        // `:71393-71406` — the two NewDustDirect(15) per pair.
+        let _ = (rng.next_float(), rng.next_float()); // NextVector2Circular
+        let _ = rng.next_float(); // scale
+        let _ = rng.next_range(1, 16); // position
+        let _ = rng.next_float(); // second dust's scale
+        let _ = rng.next_range(1, 16); // second dust's position
+    }
+}
+
+/// `Kill()`'s Flamelash trail-death dust census
+/// (`Projectile.cs:71420-71488`): the 10-step ring — colour `NextFloat`
+/// (`:71427`) + `Next(1, 5)` count (`:71428`), the 0.3/0.75 decrements, then
+/// per dust a `Next(3)` gate (`:71442`): the taken branch THREE floats
+/// (`:71445-71447`), the else branch one `Next(2)` gate (`:71457`, its body
+/// rolls nothing) . Then the 20-pair tail (`:71474-71487`): per pair one
+/// fadeIn float (the first dust) and no explicit draw on the second.
+pub(crate) fn flamelash_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
+    for step in 0..p.old_pos.len() {
+        if p.old_pos[step] == Vec2::ZERO {
+            break; // `:71423-71426`
+        }
+        let _ = rng.next_float(); // `:71427` colour
+        let mut count = rng.next_range(1, 5); // `:71428`
+        let n = p.old_pos.len() as f32;
+        if step as f32 >= n * 0.3 {
+            count -= 1; // `:71430-71433`
+        }
+        if step as f32 >= n * 0.75 {
+            count -= 2; // `:71434-71437`
+        }
+        for _ in 0..count.max(0) {
+            if rng.next_range(0, 3) == 0 {
+                // `:71442-71455` — the 267 dust's three explicit floats.
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+                let _ = rng.next_float();
+            } else {
+                // `:71456-71467` — the 6 dust's Next(2) gate (body rolls nothing).
+                let _ = rng.next_range(0, 2);
+            }
+        }
+    }
+    for _ in 0..20 {
+        // `:71474-71487` — the first dust's fadeIn float; the second draws none.
+        let _ = rng.next_float();
+    }
+}
+
+/// `Kill()`'s Rainbow Rod trail-death dust census
+/// (`Projectile.cs:71268-71327`): one lead `NextFloat` (`:71268`), the 10-step
+/// ring — `Next(1, 4)` count (`:71275`) with the 0.3/0.65/0.85 decrements
+/// (`:71278-71289`), then per spawned dust FOUR floats (velocity scale
+/// `:71295`, scale `:71297`, fadeIn `:71298`, and the clone's colour is fixed)
+/// — no `Next(3)` gate here (every dust is the 267 branch). Then the 14-dust
+/// tail (`:71320-71326`): one colour `NextFloat` each. The `CloneDust`/
+/// `NewDust` internals go with the dust pool.
+pub(crate) fn rainbow_rod_death_draws(p: &Projectile, rng: &mut dyn DropRng) {
+    let _ = rng.next_float(); // `:71268` lead hue
+    for step in 0..p.old_pos.len() {
+        if p.old_pos[step] == Vec2::ZERO {
+            break; // `:71271-71274`
+        }
+        let mut count = rng.next_range(1, 4); // `:71275`
+        let n = p.old_pos.len() as f32;
+        if step as f32 >= n * 0.3 {
+            count -= 1; // `:71278-71281`
+        }
+        if step as f32 >= n * 0.65 {
+            count -= 2; // `:71282-71285`
+        }
+        if step as f32 >= n * 0.85 {
+            count -= 3; // `:71286-71289`
+        }
+        for _ in 0..count.max(0) {
+            // `:71292-71308` — the 267 dust's three explicit floats.
+            let _ = rng.next_float();
+            let _ = rng.next_float();
+            let _ = rng.next_float();
+        }
+    }
+    for _ in 0..14 {
+        let _ = rng.next_float(); // `:71322` colour
+    }
+}
+
+/// `Kill()`'s Nebula Blaze death census (`Projectile.cs:71995-72050`): one
+/// leading `SelectRandom` dust-type pick (`:71997`, `Next(5)` for 634 /
+/// `Next(3)` for 635 — `Utils.SelectRandom` draws `Next(choices.Length)`),
+/// then the 40-iteration loop (`:72021-72041`): per step a SECOND type pick
+/// (`:72023`/`:72026`), the first dust's `RotatedByRandom` pair (2 floats) +
+/// `NextDouble` radius + `NextFloat` velocity (`:72029-72032`), the second
+/// dust's `RotatedByRandom` pair + `NextDouble` + `NextFloat` (`:72034-72040`).
+/// Then the 20-iteration tail (`:72042-72049`): per step a `RotatedByRandom`
+/// pair + one `NextFloat` velocity. The `NewDust` internals go with the pool.
+pub(crate) fn nebula_blaze_death_draws(kind: u16, rng: &mut dyn DropRng) {
+    // `:71997`/`:72008` — the leading SelectRandom (5 choices for 634, 3 for 635).
+    let _ = rng.next_range(0, if kind == 635 { 3 } else { 5 });
+    for _ in 0..40 {
+        // `:72023`/`:72026` — the per-step type pick (same choice count).
+        let _ = rng.next_range(0, if kind == 635 { 3 } else { 5 });
+        // `:72029-72032` — first dust: RotatedByRandom(2) + NextDouble + NextFloat.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = rng.next_float();
+        // `:72034-72040` — second dust: same shape.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = rng.next_float();
+    }
+    for _ in 0..20 {
+        // `:72045-72048` — RotatedByRandom(2) + NextFloat velocity.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_float();
+    }
+}
+
+/// `Kill()`'s Spirit Flame death census (`Projectile.cs:72512-72541`): the
+/// 30-iteration loop (`:72515-72531`) — per step one scale `NextFloat`
+/// (`:72517`); the first 15 steps add a fadeIn float + a velocity float
+/// (`:72521-72524`), the last 15 a `RotatedByRandom` pair + a radius float +
+/// a fadeIn float (`:72527-72529`). Then the 10-iteration tail
+/// (`:72532-72540`): per step a `RotatedByRandom` pair + a fadeIn float.
+pub(crate) fn spirit_flame_death_draws(rng: &mut dyn DropRng) {
+    for step in 0..30 {
+        let _ = rng.next_float(); // `:72517` scale
+        if step < 15 {
+            let _ = rng.next_float(); // `:72521` fadeIn
+            let _ = rng.next_float(); // `:72524` velocity
+        } else {
+            let _ = (rng.next_float(), rng.next_float()); // `:72527` RotatedByRandom
+            let _ = rng.next_float(); // `:72527` radius
+            let _ = rng.next_float(); // `:72528` fadeIn
+        }
+    }
+    for _ in 0..10 {
+        let _ = (rng.next_float(), rng.next_float()); // `:72535` RotatedByRandom
+        let _ = rng.next_float(); // `:72536` fadeIn
+    }
+}
+
+/// `Kill()`'s Onyx Black Bolt death census (`Projectile.cs:72236-72276`): the
+/// 4-iteration lead (`:72238-72241`) — per step a `RotatedByRandom` pair + a
+/// `NextDouble` radius. The 20-iteration loop (`:72242-72260`) — per step the
+/// first dust's `RotatedByRandom` pair + `NextDouble` + a `NextFloat` velocity
+/// boost (`:72248`), the second dust's `RotatedByRandom` pair + `NextDouble`
+/// (`:72251-72252`, its velocity boost is the fixed 8f). The 20-iteration
+/// (`:72261-72268`) and 70-iteration (`:72269-72276`) tails — per step a
+/// `RotatedByRandom` pair + `NextDouble` radius (the velocity boosts are
+/// fixed). The `NewDust` internals go with the pool.
+pub(crate) fn onyx_bolt_death_draws(rng: &mut dyn DropRng) {
+    for _ in 0..4 {
+        let _ = (rng.next_float(), rng.next_float()); // RotatedByRandom
+        let _ = rng.next_double(); // radius
+    }
+    for _ in 0..20 {
+        // first dust: RotatedByRandom + NextDouble + NextFloat boost.
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+        let _ = rng.next_float(); // `:72248`
+        // second dust: RotatedByRandom + NextDouble (fixed 8f boost).
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..20 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
+    }
+    for _ in 0..70 {
+        let _ = (rng.next_float(), rng.next_float());
+        let _ = rng.next_double();
     }
 }
 
@@ -840,7 +1173,7 @@ mod tests {
         // Ticks 1..49: the flame gate alone — 1 gate + 2 circular + 1
         // Next(4) per tick.
         for _ in 0..49 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         assert_eq!(rng.floats, 49 * 3, "the flame gate + its circular pair");
         assert_eq!(rng.ranges, vec![(0, 4); 49], "the noGravity picks");
@@ -849,24 +1182,24 @@ mod tests {
         // flame window closes at 50 — `localAI[0] < 50` fails at 50).
         // At tick 50 the flame gate's `localAI[0] < num3` is FALSE — only
         // the smoke gate rolls: 1 + 6 floats, no ranges.
-        ai_flamethrower(&mut p, &mut rng);
+        ai_flamethrower(&mut p, &mut rng, 0);
         assert_eq!(rng.floats, 49 * 3 + 7, "tick 50: smoke only");
         assert_eq!(rng.ranges.len(), 49);
         // Ticks 51..60: the smoke gate alone (7 floats each). The decay
         // (`localAI[0] >= 60`) lands on tick 60 — one 0.95 step.
         for _ in 0..10 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         assert_eq!(rng.floats, 49 * 3 + 11 * 7);
         assert_eq!(p.vel.x, 8.0f32 * 0.95, "the first decay at tick 60 (`:41345-41348`)");
         // Tick 61: a second decay; the smoke gate keeps rolling. The C#'s
         // f32 accumulation — repeated * 0.95, not a pow.
-        ai_flamethrower(&mut p, &mut rng);
+        ai_flamethrower(&mut p, &mut rng, 0);
         assert_eq!(p.vel.x, 8.0f32 * 0.95 * 0.95, "the second decay at tick 61");
         assert_eq!(rng.floats, 49 * 3 + 12 * 7);
         // Ticks 62..72: the kill lands at 72 but the arm runs on.
         for _ in 0..11 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         assert!(!p.active, "the 72-tick kill (`:41341-41344`)");
         assert_eq!(p.time_left, 0);
@@ -882,11 +1215,53 @@ mod tests {
         p.ai[0] = 1.0;
         let mut rng = census();
         for _ in 0..72 {
-            ai_flamethrower(&mut p, &mut rng);
+            ai_flamethrower(&mut p, &mut rng, 0);
         }
         // Ticks 1..59: gate + 2 floats + Next(4); ticks 60..72: no gate.
         assert_eq!(rng.floats, 59 * 3, "one window, 59 taken ticks");
         assert_eq!(rng.ranges.len(), 59, "no smoke window");
+    }
+
+    /// S1-E-21h d75 part 4 — the 1106 Foxparks sound gate
+    /// (`Projectile.cs:41366-41370`): at `soundDelay == 0 && whoAmI % 3
+    /// == 0` the arm latches `sound_delay = -1` and queues the named-row
+    /// marker `(2, -34)` at `base.Center`, ONCE per life; the gate draws
+    /// NOTHING extra on the pass stream (the style play's pitch rides the
+    /// drain). The row lives on d18's pushed tip — the fixture builds the
+    /// slot by hand (the owed-arm convention).
+    #[test]
+    fn s1_e_21h_d75_p4_the_foxparks_flame_latches_once_at_center() {
+        let mut p = proj(85);
+        p.kind = 1106;
+        p.w = 6.0;
+        p.h = 6.0;
+        p.pos = Vec2::new(1600.0, 800.0);
+        let mut rng = census();
+        // whoAmI 1: 1 % 3 != 0 — no cue, soundDelay untouched.
+        ai_flamethrower(&mut p, &mut rng, 1);
+        assert_eq!(p.wants_sound, None, "the %3 gate refuses slot 1");
+        assert_eq!(p.sound_delay, 0);
+        // whoAmI 3: the latch fires at Center, the −1 keeps it down.
+        ai_flamethrower(&mut p, &mut rng, 3);
+        assert_eq!(
+            p.wants_sound,
+            Some((2, -34, 1603.0, 803.0, 0.0)),
+            "the named-row marker at Center"
+        );
+        assert_eq!(p.sound_delay, -1, "the one-cue-per-life latch");
+        // Later ticks: the −1 latch never re-fires (the pool's decrement
+        // is positive-only, `:16768-16771`).
+        p.wants_sound = None;
+        for _ in 0..20 {
+            ai_flamethrower(&mut p, &mut rng, 3);
+        }
+        assert_eq!(p.wants_sound, None, "no second cue");
+        // The 85 Flames twin: the kind gate keeps it silent.
+        let mut q = proj(85);
+        let mut rng2 = census();
+        ai_flamethrower(&mut q, &mut rng2, 0);
+        assert_eq!(q.wants_sound, None, "the 85 plays nothing here");
+        assert_eq!(q.sound_delay, 0);
     }
 
     /// Style 181 (`:43180-43183`): the alpha ramp truncates the XNA lerp

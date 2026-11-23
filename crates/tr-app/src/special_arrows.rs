@@ -616,16 +616,24 @@ pub(crate) fn bee_arrow_kill(
 /// localAI[0] latch, `alpha += (int)(25 * localAI[0])` with the 200/0
 /// bounce), the spin (`:23952` — `rotation += (|vx|+|vy|) * 0.01 *
 /// direction`), the light 0.9 (`:24053`). The star's `soundDelay` arm
-/// (`:23881-23885`, `20 + Next(40)`) and the 1/10 dust + 1/20 gore gates
-/// (`:24054-24061`) are the documented sound/dust skips — their draws go
-/// with the layers (the pool-wide convention; the sound cue itself is
-/// queued draw-free like the other AI_001 latches).
-pub(crate) fn falling_star_step(p: &mut Projectile, world: &World) {
+/// (`:23881-23885`, `20 + Next(40)`) is ported (S1-E-21h d75): the re-arm
+/// roll rides the arm's rng seam, the Item9 cue queues draw-free. The
+/// 1/10 dust + 1/20 gore gates (`:24054-24061`) stay the documented dust
+/// skips — their draws go with the layer.
+pub(crate) fn falling_star_step(p: &mut Projectile, world: &World, rng: &mut dyn DropRng) {
     // `:23858-23864` — the 92 arm: below the spawn floor the star
     // collides with tiles (above it, it falls through — the Holy Arrow
     // spawns it 600-900 px up with ai[1] = the arrow's death Y).
     if p.pos.y > p.ai[1] {
         p.tile_collide = true;
+    }
+    // S1-E-21h d75 — `:23881-23885`: the hum cooldown (the 92 is neither
+    // 1037 nor 1049 — the gate is unconditional over this row). The
+    // `20 + Main.rand.Next(40)` re-arm rolls on the UpdateProjectiles
+    // stream BEFORE the Item9 cue queues at `base.position`.
+    if p.sound_delay == 0 {
+        p.sound_delay = 20 + rng.next_range(0, 40);
+        p.wants_sound = Some((2, 9, p.pos.x, p.pos.y, 0.0));
     }
     // `:23928-23945` — the generic alpha pulse (the 92 is not on any of
     // the special-case lists above it).
@@ -1151,24 +1159,34 @@ mod tests {
         p.ai[1] = 900.0; // the floor below the star
         p.vel = Vec2::new(0.0, 22.0);
         assert!(!p.tile_collide);
-        falling_star_step(&mut p, &w);
+        let mut rng = ScriptRng::new(vec![7, 7]);
+        falling_star_step(&mut p, &w, &mut rng);
         assert!(!p.tile_collide, "above the floor: falls through");
         assert_eq!(p.alpha, 75, "50 + 25");
         assert_eq!(p.light, 0.9);
+        // S1-E-21h d75 — the hum: the first tick re-arms 20 + Next(40)
+        // and queues the Item9 cue; the cooldown holds the next tick.
+        assert_eq!(p.sound_delay, 27, "20 + the scripted 7");
+        assert_eq!(p.wants_sound, Some((2, 9, p.pos.x, p.pos.y, 0.0)));
+        assert_eq!(rng.ranges, vec![(0, 40)]);
+        p.wants_sound = None;
         p.pos.y = 950.0;
-        falling_star_step(&mut p, &w);
+        falling_star_step(&mut p, &w, &mut rng);
         assert!(p.tile_collide, "below the floor: collides");
+        assert_eq!(p.wants_sound, None, "the cooldown holds");
+        assert_eq!(rng.ranges.len(), 1, "no second re-arm roll");
         // Drive the pulse to the 200 cap and the flip: 50 +25×6 = 200 on
         // step 6 (NOT > 200, no flip yet); step 7 rolls 225 → clamps 200
         // and flips localAI[0] to −1.
         let mut q = shot(FALLING_STAR);
         q.ai[1] = 100000.0;
+        let mut rng2 = ScriptRng::new(vec![7]);
         for _ in 0..7 {
-            falling_star_step(&mut q, &w);
+            falling_star_step(&mut q, &w, &mut rng2);
         }
         assert_eq!(q.alpha, 200);
         assert_eq!(q.local_ai[0], -1.0, "the cap flips the pulse");
-        falling_star_step(&mut q, &w);
+        falling_star_step(&mut q, &w, &mut rng2);
         assert_eq!(q.alpha, 175, "200 − 25");
     }
 

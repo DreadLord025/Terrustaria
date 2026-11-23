@@ -188,6 +188,8 @@ impl Menu {
             Page::ConfirmDeleteWorld => self.confirm_delete_world_items(),
             Page::ConfirmDiscard => self.confirm_discard_items(),
             Page::Credits => self.credits_items(),
+            Page::LoadFailedBackup => self.load_failed_backup_items(),
+            Page::LoadFailedNoBackup => self.load_failed_no_backup_items(),
         }
     }
 
@@ -1072,5 +1074,36 @@ impl Menu {
     // click (or `flag5`) returns to menuMode 0 (`:49700-49703`).
     fn credits_items(&self) -> Vec<Item> {
         vec![Item::new(crate::lang::menu(5), Act::Nav(Page::Main)).scaled(0.9)]
+    }
+
+    // W4-g22 DOC-SWEEP — menuMode 200 (`Main.cs:48827-48861`): the header
+    // `Lang.menu[9]` "Load failed!" (`:48830`), row 1 `Lang.menu[10]`
+    // "Load Backup" at `array4[1] = 70` (`:48834-48835`), row 2
+    // `Lang.menu[6]` "Cancel" at `array4[2] = 50` (`:48836`). The Yes arm
+    // moves `.wld` -> `.bad` + `.bak` -> `.wld` and plays 10 (`:48843`)
+    // when the backup exists, else 11 + menuMode 0 (`:48849`); Cancel (or
+    // `flag5`) plays 11 + menuMode 0 (`:48857`). The port's `.trwld`
+    // rolling backups are not written (research-90 42-3), so the backup
+    // probe is the `.bak` sidecar's existence — the same `FileUtilities.
+    // Exists` shape (`:48839`).
+    fn load_failed_backup_items(&self) -> Vec<Item> {
+        vec![
+            Item::new(crate::lang::menu(9), Act::None).heading(),
+            Item::new(crate::lang::menu(10), Act::Out(Action::LoadBackup)).at(70.0),
+            Item::new(crate::lang::menu(6), Act::Out(Action::CancelLoadFailed)).at(50.0),
+        ]
+    }
+
+    // W4-g22 DOC-SWEEP — menuMode 201 (`Main.cs:48862-48880`): the same
+    // header, row 1 `Lang.menu[11]` "No backup found" NON-clickable
+    // (`array[1] = true`, `:48867`) at `array4[1] = -30` (`:48869`), row 2
+    // `Lang.menu[5]` "Back" at `array4[2] = 50` (`:48870`) — the click (or
+    // `flag5`) plays 11 + menuMode 0 (`:48876`).
+    fn load_failed_no_backup_items(&self) -> Vec<Item> {
+        vec![
+            Item::new(crate::lang::menu(9), Act::None).heading(),
+            Item::new(crate::lang::menu(11), Act::None).heading().at(-30.0),
+            Item::new(crate::lang::menu(5), Act::Out(Action::CancelLoadFailed)).at(50.0),
+        ]
     }
 }

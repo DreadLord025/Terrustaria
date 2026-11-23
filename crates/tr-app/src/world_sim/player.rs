@@ -157,10 +157,12 @@ pub(crate) fn grant_ammo_mastery(
 /// `:15295-15298`) runs on the selected slot.
 ///
 /// Scope: the Mechanical Lens (3619) and Wire Kite (3611) grant
-/// `InfoAccMechShowWires` (`:12801-12804`); the Actuation Accessory (3624)
-/// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
-/// halves (`:12805-12812`) and the auto-paint family are out of this wiring
-/// wave. The `autoActuator` placement consumer
+/// `InfoAccMechShowWires` (`:12801-12804`); the Ruler (486) / Wire Kite grant
+/// `rulerLine` (`:12805-12808`), the Laser Ruler (2799) / Wire Kite
+/// `rulerGrid` (`:12809-12812`), the Paint Sprayer (2216) / Architect Gizmo
+/// Pack (3061) / Presserator (5126) `autoPaint` (`:12813-12816`); the
+/// Actuation Accessory (3624) grants `autoActuator` (`:12817-12820`). The
+/// `autoActuator` placement consumer
 /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
 /// follow-up — the flag is granted and read by the visibility gate, but the
 /// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
@@ -189,11 +191,24 @@ pub(crate) fn grant_mechanical_accs(
 }
 
 /// `Player.RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12820`),
-/// the wiring-relevant arms only.
+/// the builder-toggle arms (the `preventAllItemPickups` arm `:12821-12824`
+/// stays out of the wiring scope).
 fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     // `:12801-12804` — the Mechanical Lens / Wire Kite show the wires.
     if kind == 3619 || kind == 3611 {
         p.info_acc_mech_show_wires = true;
+    }
+    // `:12805-12808` — the Ruler / Wire Kite show the ruler line.
+    if kind == 486 || kind == 3611 {
+        p.ruler_line = true;
+    }
+    // `:12809-12812` — the Laser Ruler / Wire Kite show the ruler grid.
+    if kind == 2799 || kind == 3611 {
+        p.ruler_grid = true;
+    }
+    // `:12813-12816` — the Paint Sprayer / Gizmo Pack / Presserator auto-paint.
+    if kind == 2216 || kind == 3061 || kind == 5126 {
+        p.auto_paint = true;
     }
     // `:12817-12820` — the Actuation Accessory auto-places actuators.
     if kind == 3624 {
@@ -1197,6 +1212,29 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // draw order are unchanged.
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
+            // W4-e10 gap census — `Player.Update`'s myPlayer block right
+            // after `UpdateBuffs` (`Player.cs:25567-25574`): `UpdatePet`
+            // then `UpdatePetLight` re-grant the equipped pet's absent
+            // buff (3600) and play the item's `UseSound` at
+            // `base.position` (`:17306`/`:17338`). The style façade's
+            // case-2 pitch rides `UpdatePlayers` after the attenuation
+            // gate (the S1-E-21f precedent); the fairy-27 pick's one
+            // `Next(3)` (`:17335`) rides the same stream BEFORE the
+            // sound's draws — the C# call order.
+            let pet_sound = p.update_pet_grant(&app.equip.misc_equips[0]);
+            let light_sound = p.update_light_pet_grant(
+                &app.equip.misc_equips[1],
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            for idx in [pet_sound, light_sound].into_iter().flatten() {
+                app.audio.play_use_sound(
+                    idx,
+                    p.x,
+                    p.y,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -1352,7 +1390,32 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 }
             }
             for cue in p.take_cart_sounds() {
-                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                // W4-e10 — the cart cues are `SoundID.ItemNN` STYLE plays
+                // (`Player.cs:19870`/`:19928` Item55, `DelegateMethods.cs:
+                // 250`/`:255` Item53/56): the wave-A façade — the
+                // `GetRandomPitch` NextFloat audio-only, then case 2's
+                // per-style pitch draw (53: `Next(-20, -11) * 0.02`, 55:
+                // its negation, 56: `Next(-50, 51) * 0.002` + the 0.6
+                // volume, `LegacySoundPlayer.cs:610-634`) on
+                // `UpdatePlayers` after the gate — the cart tick runs in
+                // the player pass (`Main.cs:17754`). The unpositioned
+                // `play_at` stand-in is retired.
+                let style = match cue.cue {
+                    "Item_53" => 53,
+                    "Item_55" => 55,
+                    "Item_56" => 56,
+                    _ => {
+                        app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                        continue;
+                    }
+                };
+                app.audio.play_proj_sound(
+                    (2, style),
+                    cue.x,
+                    cue.y,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
@@ -1445,24 +1508,73 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and
             // the retaliate block (`:38401-38517`), so its draw follows
             // theirs on the stream. The C# plays the local player's hurt
-            // sound non-positionally (`Player.cs:38572`). S1-E-21f upgrades
-            // the plain play to case 1 (`LegacySoundPlayer.cs:503-515`): the
-            // `Main.rand.Next(3)` slot pick rides the `UpdatePlayers` stream
+            // sound non-positionally (`Player.cs:38572`). W4-e10 ports the
+            // WHOLE decision tree (`:38569-38712`): stoned → voiceOverride →
+            // mount → werewolf → frost/bone armor → DST-world → voiceVariant.
+            // Every gameplay draw rides the `UpdatePlayers` stream
             // (`Player.Hurt` runs under the `Main.cs:17754` swap), only after
-            // the unpositioned gate. The port has no voice setting — variant
-            // 1, `voicePitchOffset` 0 (`Player.cs:38699-38704`).
+            // the attenuation gate; the style façades' `GetRandomPitch`
+            // NextFloat rides the audio-only stream.
             if p.take_hurt_sound().is_some() {
-                app.audio.play_hurt_sound(
-                    0.0,
-                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
-                );
+                let dont_starve = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+                let remix = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+                let voice = p.hurt_voice(dont_starve, remix);
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                match voice {
+                    Some(crate::player::HurtVoice::Stoned) => {
+                        // `:38578` — `PlaySound(0, vector)`, case 0 Dig.
+                        app.audio.play_no_space_sound(-1.0, -1.0, rng);
+                    }
+                    Some(crate::player::HurtVoice::Male(pitch)) => {
+                        app.audio.play_hurt_sound(pitch, rng);
+                    }
+                    Some(crate::player::HurtVoice::Female(pitch)) => {
+                        app.audio.play_female_hurt_sound(pitch, rng);
+                    }
+                    Some(crate::player::HurtVoice::Style(name, pitch)) => {
+                        app.audio.play_voice_style(name, -1.0, -1.0, pitch, rng);
+                    }
+                    Some(crate::player::HurtVoice::Chicken) => {
+                        // `:38602-38609` — the `Next(5) == 0` rare pick.
+                        let name = if rng.next_range(0, 5) == 0 {
+                            "ChickenHurtRare"
+                        } else {
+                            "ChickenHurt"
+                        };
+                        app.audio.play_voice_style(name, -1.0, -1.0, 0.0, rng);
+                    }
+                    Some(crate::player::HurtVoice::Npc(id, style)) => {
+                        app.audio.play_hurt_npc_int(id, style, -1.0, -1.0, rng);
+                    }
+                    None => {}
+                }
             }
             if p.take_death_sound().is_some() {
-                // S1-E-21f — `Player.PlayDeathSound`'s default arm plays at
-                // `base.position` (`Player.cs:38745`), the TOP-LEFT — not the
-                // centre. Case 5 (`LegacySoundPlayer.cs:696-705`) draws
-                // nothing; the attenuation gate still applies.
-                app.audio.play_death_sound(p.x, p.y);
+                // W4-e10 — `Player.PlayDeathSound`'s decision tree
+                // (`Player.cs:38715-38746`), at `base.position` (the
+                // TOP-LEFT, not the centre). Case 5 draws nothing; the style
+                // arms ride the wave-A façade (the NextFloat on the
+                // audio-only stream).
+                let dont_starve = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::DONT_STARVE);
+                let tenth = app
+                    .world
+                    .seeds
+                    .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+                match p.death_voice(dont_starve, tenth) {
+                    crate::player::DeathVoice::Killed => {
+                        app.audio.play_death_sound(p.x, p.y);
+                    }
+                    crate::player::DeathVoice::Style(name) => {
+                        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                        app.audio.play_voice_style(name, p.x, p.y, 0.0, rng);
+                    }
+                }
             }
             // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
             // fast-run footstep at the player's top-left position — the
@@ -1515,9 +1627,124 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if p.take_drown_sound() {
                 app.audio.play_drown_sound();
             }
+            // W4-e10 — the petrification transition (`Player.cs:25225-
+            // 25232`, between the drown check and `UpdateManaRegen`): the
+            // case-0 Dig play at the top-left (the `Next(3)` variation +
+            // the `Next(-10, 11)` pitch after the gate), then 20 type-1
+            // dust — each `NewDust`'s six internals, then the `Next(2)`
+            // noGravity roll. All on `UpdatePlayers`.
+            if p.take_stoned_transition() {
+                app.audio.play_no_space_sound(
+                    p.x,
+                    p.y,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+                let (pos, w, h) = (glam::Vec2::new(p.x, p.y), crate::player::WIDTH as i32, p.height as i32);
+                for _ in 0..20 {
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        pos,
+                        w,
+                        h,
+                        1,
+                        0.0,
+                        0.0,
+                        0,
+                        tr_core::particles::Color::default(),
+                        1.0,
+                    );
+                    let no_gravity = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(0, 2)
+                        == 0;
+                    if no_gravity && idx != tr_core::particles::DUST_SENTINEL {
+                        app.dust.slot_mut(idx).no_gravity = true;
+                    }
+                }
+            }
+            // W4-e10 — the full-bar mana trigger (`Player.cs:19550-19559`,
+            // `UpdateManaRegen` at `:25995` — after the drown check, before
+            // the wing/splash blocks): the unpositioned case-25 chime (no
+            // draws), then 5 type-45 dust over the player's box — alpha
+            // 255, `default` colour, the scale `Next(20, 26) * 0.1` draw
+            // BEFORE each `NewDust`'s internals, noLight + noGravity,
+            // velocity halved. All on `UpdatePlayers` (`Main.cs:17754`).
+            if p.take_mana_full() {
+                app.audio.play_max_mana_sound();
+                let (pos, w, h) = (glam::Vec2::new(p.x, p.y), crate::player::WIDTH as i32, p.height as i32);
+                for _ in 0..5 {
+                    let scale = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(20, 26) as f32
+                        * 0.1;
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        pos,
+                        w,
+                        h,
+                        45,
+                        0.0,
+                        0.0,
+                        255,
+                        tr_core::particles::Color::default(),
+                        scale,
+                    );
+                    if idx != tr_core::particles::DUST_SENTINEL {
+                        let d = app.dust.slot_mut(idx);
+                        d.no_light = true;
+                        d.no_gravity = true;
+                        d.velocity *= 0.5;
+                    }
+                }
+            }
+            // W4-e10 — the hive/honey landing cue (`Player.cs:23830`,
+            // `MakeFloorDust` via `FloorVisuals` `:28271` — after
+            // `UpdateManaRegen` `:25995` in the C# Update): the
+            // `SoundID.Item177` style façade at `((int)Center.X,
+            // (int)Bottom.Y)` — the case-2 default pitch draw
+            // (`Next(-6, 7) * 0.01`) on `UpdatePlayers` after the gate.
+            if let Some((sx, sy)) = p.take_honey_land_sound() {
+                app.audio.play_proj_sound(
+                    (2, 177),
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.
             if let Some((idx, sx, sy)) = p.take_flap_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-e10 — the `WingFrame` rocket cue (`Player.cs:27154`/
+            // `:29478`/`:30172`): wave A's façade. It drains BEFORE the boot
+            // trigger cue — the C# `WingFrame` (`:26820`) runs ahead of the
+            // rocket trigger (`:26867`) in `Player.Update`.
+            if let Some((idx, sx, sy)) = p.take_wing_rocket_sound() {
+                app.audio.play_use_sound(
+                    idx,
+                    sx,
+                    sy,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-e10 — the rocket-boot trigger cue (`Player.cs:26889`/
+            // `:26894`): wave A's façade, gated by `rocketSoundDelay`.
+            if let Some((idx, sx, sy)) = p.take_rocket_sound() {
                 app.audio.play_use_sound(
                     idx,
                     sx,
@@ -1686,6 +1913,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    // W4-e10 gap census — the per-tick sign range close
+    // (`Player.cs:27504-27519`, beside the talk close): a record gone or
+    // out of the Simple reach closes the sign WITH the Menu_Close cue
+    // (`:33537` via `CloseSign()`).
+    crate::signs::tick_sign_range_close(app);
     if map_open {
         app.update_map_input();
     }
@@ -2137,6 +2369,29 @@ mod tests {
             app.player.as_ref().unwrap().auto_actuator,
             "3624 held grants autoActuator"
         );
+        // The ruler/paint arms (`Player.cs:12805-12816`): the ruler LINE is
+        // on by default — `ResetEffects` re-sets it every tick (`:18693`);
+        // the grid and paint flags start off and clear per tick (`:18692`,
+        // `:18533`).
+        app.inventory[app.selected] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(p.ruler_line, "rulerLine defaults true (:18693)");
+            assert!(!p.ruler_grid && !p.auto_paint, "grid/paint clear");
+        }
+        // The Wire Kite (3611) grants line + grid on top of the wires.
+        app.equip.armor[4] = slot(3611);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().ruler_grid, "3611 grants rulerGrid");
+        app.equip.armor[4] = EMPTY_SLOT;
+        // The Paint Sprayer (2216) grants autoPaint; unequip clears it.
+        app.equip.armor[4] = slot(2216);
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().auto_paint, "2216 grants autoPaint");
+        app.equip.armor[4] = EMPTY_SLOT;
+        tick_ammo(&mut app);
+        assert!(!app.player.as_ref().unwrap().auto_paint, "autoPaint cleared");
     }
 
     /// DW-3.3 (the buff half) — the three buff-granted flags (16 Archery,
@@ -2552,6 +2807,79 @@ mod tests {
         assert_eq!(braking_pool_count(seed), 3);
     }
 
+    /// W4-e10 — the cart-cue drain rides the wave-A style façade
+    /// (`Player.cs:19870`/`:19928` Item55, `DelegateMethods.cs:250`/`:255`
+    /// Item53/56): the audible ride's Item55 plays spend ONE case-2
+    /// `Next(-20, -11)` pitch draw each on `UpdatePlayers` (style 55's
+    /// negated arm, `LegacySoundPlayer.cs:614-616`), AFTER the spark gate
+    /// rolls the producer queued; the silent twin plays nothing and the
+    /// stream sees the gate rolls only.
+    #[test]
+    fn w4_e10_the_cart_cues_ride_the_style_facade_on_update_players() {
+        let ride = |audible: bool| {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = World::new("cart".into(), 64, 32);
+            for x in 4..=56 {
+                let i = app.world.index(x, 12);
+                app.world.tiles[i] = Tile {
+                    kind: 314,
+                    frame_x: 1,
+                    frame_y: -1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            let mut p = Player::spawn(&app.world);
+            p.mount_cart();
+            p.x = 12.0 * 16.0 + 8.0 - 10.0;
+            p.y = 12.0 * 16.0 + 6.0 - 52.0;
+            p.prev_x = p.x;
+            p.prev_y = p.y;
+            p.vx = 12.0;
+            app.camera = Vec2::new(p.x + 10.0, p.y + 26.0);
+            app.player = Some(p);
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (p.x + 10.0, p.y + 26.0),
+                sound_volume: if audible { 1.0 } else { 0.0 },
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+            // Hold right so the rolling arm fires (`controlRight &&
+            // vx < maxRunSpeed`, `Player.cs:19905`); the settle tick brings
+            // `onTrack` up and drains its own cue.
+            app.keys.insert(KeyCode::KeyD);
+            update_player(&mut app, 1.0 / 60.0);
+            // Re-seed AFTER the settle so the twin starts clean. The
+            // producer's spark gate rolls ride the SEPARATE spark_rng
+            // (Splitmix, `player.rs`'s `rolling_wheel_sparks` call) — the
+            // UpdatePlayers stream sees ONLY the drain's pitch draws.
+            *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(77);
+            let mut twin = UnifiedRandom::new(77);
+            let before = app.audio.played_count();
+            update_player(&mut app, 1.0 / 60.0);
+            let plays = app.audio.played_count() - before;
+            if audible {
+                assert!(plays >= 1, "the rolling Item55 plays");
+                // One case-2 style-55 pitch draw per play.
+                for _ in 0..plays {
+                    let _ = twin.next_range(-20, -11);
+                }
+            } else {
+                assert_eq!(plays, 0, "silent: the gate refuses before the draw");
+            }
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdatePlayers),
+                twin,
+                "one pitch per audible cue, nothing else"
+            );
+        };
+        ride(true);
+        ride(false);
+    }
+
     /// Finds a stream seed where one rolling call at `|vx| = vel_x` queues
     /// exactly `want` sparks — the gate rolls interleave with the per-spark
     /// request rolls (the rain.rs seed-search idiom, run against the same
@@ -2576,6 +2904,214 @@ mod tests {
             }
         }
         unreachable!()
+    }
+
+    /// W4-e10 — the full-bar mana drain (`Player.cs:19550-19559`): the
+    /// last-point chunk queues the flag; the drain plays the unpositioned
+    /// case-25 chime (no draws) and spawns 5 type-45 dust — each with the
+    /// scale `Next(20, 26)` draw BEFORE `NewDust`'s six internals, all on
+    /// `UpdatePlayers`. The silent twin: no chime, but the C# dust still
+    /// spawns (the sound gate does not wrap the dust loop) — the draws
+    /// match.
+    #[test]
+    fn w4_e10_the_full_mana_bar_plays_and_sparks_draw_exact() {
+        let run = |audible: bool| {
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = crate::test_world_helpers::ground();
+            let mut p = Player::spawn(&app.world);
+            // Park on the surface so the tick stands still (the regen
+            // line's standing-still double).
+            p.y = 120.0 * 16.0 - p.height;
+            p.vy = 0.0;
+            p.fall_start = 117; // the parked row — no fall-damage hit
+            p.mana = 19;
+            p.mana_max = 20;
+            p.regen.mana_regen_count = 119;
+            p.regen.mana_regen_delay = 0.0;
+            app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+            app.player = Some(p);
+            app.gfx_quality.max_dust_to_draw = 6000;
+            app.audio.set_listener(crate::sound::Listener {
+                camera_center: (app.camera.x, app.camera.y),
+                sound_volume: if audible { 1.0 } else { 0.0 },
+                ambient_volume: 1.0,
+                quiet_ambient_sounds: false,
+                game_menu: false,
+                generating_or_loading: false,
+                server: false,
+            });
+            let seed = 0x4655_4C4Ci32;
+            *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+            let mut twin = UnifiedRandom::new(seed);
+            let before = app.audio.played_count();
+            update_player(&mut app, 1.0 / 60.0);
+            let p = app.player.as_ref().unwrap();
+            assert_eq!(p.mana, 20, "the last point landed");
+            let plays = app.audio.played_count() - before;
+            assert_eq!(plays, u64::from(audible), "the chime is the only play");
+            let active: Vec<_> = (0..tr_core::particles::DUST_SENTINEL)
+                .filter(|&i| app.dust.slot(i).active && app.dust.slot(i).dust_type == 45)
+                .collect();
+            assert_eq!(active.len(), 5, "the five mana sparkles (both listeners)");
+            for &i in &active {
+                let d = app.dust.slot(i);
+                assert!(d.no_light && d.no_gravity);
+                assert_eq!(d.alpha, 255);
+            }
+            // The draw twin: per dust the scale roll, then the six
+            // internals (box 20x42, no pressure band, type 45 has no
+            // tweak/ChildSafety draws).
+            for _ in 0..5 {
+                let _ = twin.next_range(20, 26);
+                let _ = twin.next_max(16);
+                let _ = twin.next_max(38);
+                let _ = twin.next_range(-20, 21);
+                let _ = twin.next_range(-20, 21);
+                let _ = twin.next_max(3);
+                let _ = twin.next_range(-20, 21);
+            }
+            assert_eq!(
+                *app.rngs.stream(RngKey::UpdatePlayers),
+                twin,
+                "the chime is draw-free; the dust chain is exact"
+            );
+        };
+        run(true);
+        run(false);
+    }
+
+    /// W4-e10 — the petrification transition's un-stone edge
+    /// (`Player.cs:25219-25233`): the buff clearing fires the case-0 Dig
+    /// at the top-left (the `Next(3)` variation + the `Next(-10, 11)`
+    /// pitch after the gate) and 20 type-1 dust — each `NewDust`'s six
+    /// internals then the `Next(2)` noGravity roll. The full draw chain
+    /// on `UpdatePlayers`: 2 + 20×7 = 142.
+    #[test]
+    fn w4_e10_the_unstone_edge_plays_dig_and_twenty_dust() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&app.world);
+        p.y = 120.0 * 16.0 - p.height;
+        p.vy = 0.0;
+        p.fall_start = 117; // the parked row — no fall-damage hit
+        p.buffs.add_buff(156, 600);
+        app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+        app.player = Some(p);
+        app.gfx_quality.max_dust_to_draw = 6000;
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        // Tick 1: the stone edge (hurt + Dig + dust) — drains, latches
+        // last_stoned.
+        update_player(&mut app, 1.0 / 60.0);
+        // Clear the buff and the pool; re-seed so the un-stone tick's
+        // chain starts clean.
+        app.player.as_mut().unwrap().buffs.clear_buff(156);
+        app.dust = tr_core::particles::DustPool::new();
+        let seed = 0x5354_4F4Ei32;
+        *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut twin = UnifiedRandom::new(seed);
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the un-stone Dig (no hurt on this edge)"
+        );
+        let active: Vec<_> = (0..tr_core::particles::DUST_SENTINEL)
+            .filter(|&i| app.dust.slot(i).active && app.dust.slot(i).dust_type == 1)
+            .collect();
+        assert_eq!(active.len(), 20, "the twenty stone puffs");
+        // The twin: the Dig's variation + pitch, then per dust the six
+        // internals + the noGravity gate.
+        let _ = twin.next_range(0, 3);
+        let _ = twin.next_range(-10, 11);
+        let mut no_gravity = 0;
+        for _ in 0..20 {
+            let _ = twin.next_max(16);
+            let _ = twin.next_max(38);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_max(3);
+            let _ = twin.next_range(-20, 21);
+            if twin.next_range(0, 2) == 0 {
+                no_gravity += 1;
+            }
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "2 + 20x7 draws, exact order"
+        );
+        let flagged = active
+            .iter()
+            .filter(|&&i| app.dust.slot(i).no_gravity)
+            .count();
+        assert_eq!(flagged, no_gravity, "the Next(2) arms landed");
+    }
+
+    /// W4-e10 — the hive/honey landing cue (`Player.cs:23830`): a falling
+    /// landing on the Hive 666 queues the `SoundID.Item177` style play;
+    /// the drain spends ONE case-2 default pitch draw (`Next(-6, 7)`) on
+    /// `UpdatePlayers`. A standing tick (falling false) stays silent.
+    #[test]
+    fn w4_e10_the_hive_landing_plays_item177_once() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        // Replace the surface row under the spawn column with Hive 666.
+        let mut p = Player::spawn(&app.world);
+        let col = ((p.x + p.width * 0.5) / 16.0) as i32;
+        for tx in (col - 2)..=(col + 2) {
+            let i = app.world.index(tx, 120);
+            app.world.tiles[i].kind = 666;
+        }
+        // Park one tick above the surface with a falling velocity: the
+        // move integrates onto the hive, the collision zeroes vy, the
+        // falling latch (pre-move vy > gravity) is up. The hive itself
+        // zeroes the fall-damage counter (`Player.cs:25337`), and the
+        // fall_start pin keeps the grace honest.
+        p.y = 120.0 * 16.0 - p.height - 6.0;
+        p.vy = 6.0;
+        p.fall_start = 117;
+        app.camera = Vec2::new(p.x + 10.0, 120.0 * 16.0 - 20.0);
+        app.player = Some(p);
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        let seed = 0x4849_5645i32;
+        *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut twin = UnifiedRandom::new(seed);
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.vy, 0.0, "the landing settled");
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the Item177 landing chime"
+        );
+        let _ = twin.next_range(-6, 7); // the one case-2 default pitch
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "one pitch draw, nothing else"
+        );
+        // The next tick stands still (falling false) — no re-fire.
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(app.audio.played_count(), before, "the edge fires once");
     }
 
     #[test]
@@ -3331,5 +3867,197 @@ mod tests {
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
         );
+    }
+
+    // ---- W4-e10 gap census: the pet-grant arms (WRITTEN NOT RUN) ------------
+
+    /// A slot helper for the pet rigs.
+    fn pet_slot(kind: u16) -> crate::item::ItemSlot {
+        crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        }
+    }
+
+    /// W4-e10 — `Player.UpdatePet` (`Player.cs:17298-17309`): an equipped
+    /// pet with no live buff re-grants it at 3600 ticks and plays the
+    /// item's UseSound once (`:17305-17306`); a live buff refuses both;
+    /// `hideMisc[0]` refuses the whole arm. The Carrot 603 grants (the CE
+    /// gate folds true — the retail copy ships the CE content).
+    #[test]
+    fn w4_e10_the_pet_grant_rebuffs_and_plays_the_use_sound_once() {
+        let mut app = ammo_app();
+        app.equip.misc_equips[0] = pet_slot(603); // the Carrot, buff 40
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(40).is_some(), "`:17305` AddBuff");
+        assert!(
+            (3590..=3600).contains(&p.buffs.buff_time[p.buffs.find_buff_index(40).unwrap()]),
+            "the 3600 grant (the tick's timers may spend a few)"
+        );
+        assert_eq!(app.audio.played_count(), before + 1, "`:17306` once");
+        // A live buff: no re-grant, no second cue.
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "`FindBuffIndex != -1`");
+        // The hide refusal (`:17303` !hideMisc[0]): clear the buff, hide,
+        // and the arm stays silent.
+        app.player.as_mut().unwrap().buffs.clear_buff(40);
+        app.player.as_mut().unwrap().hide_misc[0] = true;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.buffs.find_buff_index(40), None, "the hide refused");
+        assert_eq!(app.audio.played_count(), mid, "no cue while hidden");
+    }
+
+    /// W4-e10 — `Player.UpdatePetLight`'s fairy pick (`Player.cs:17322-
+    /// 17338`) at the FUNCTION level: one `Next(3)` maps {27, 102, 101}
+    /// (`:17335` Utils.SelectRandom), the UseSound style comes back for
+    /// the caller's façade; a live 102 OR 101 fairy satisfies the alias
+    /// ladder (`:17323-17330`) — refused, DRAW-FREE; a plain non-27 buff
+    /// (152) grants with NO pick draw (`:17333` is the 27-only arm).
+    #[test]
+    fn w4_e10_the_fairy_pick_is_one_next3_and_the_alias_is_draw_free() {
+        let w = World::new("pet".into(), 8, 8);
+        // The pick: replay the stream by hand — the granted buff is the
+        // trio member the SAME Next(3) picks, and exactly one draw ran.
+        let mut p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let pick = witness.next_range(0, 3);
+        let idx = p.update_light_pet_grant(&pet_slot(425), &mut rng);
+        assert_eq!(idx, crate::registry::get(425).unwrap().use_sound);
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pick draw");
+        assert!(
+            p.buffs.find_buff_index([27, 102, 101][pick as usize]).is_some(),
+            "the pick's fairy landed"
+        );
+        // The alias refusals: 102 or 101 already live → no grant, no draw.
+        for live in [102, 101] {
+            let mut p = Player::spawn(&w);
+            p.buffs.add_buff(live, 3600);
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(p.update_light_pet_grant(&pet_slot(425), &mut rng), None);
+            assert_eq!(rng.peek(), peek, "the alias ladder is draw-free");
+        }
+        // The plain 152 grant: buff + style, ZERO draws (the pitch is the
+        // façade's, on the caller's stream — the wave-A contract).
+        let mut p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let idx = p.update_light_pet_grant(&pet_slot(3043), &mut rng);
+        assert_eq!(idx, crate::registry::get(3043).unwrap().use_sound);
+        assert!(p.buffs.find_buff_index(152).is_some());
+        assert_eq!(rng.peek(), peek, "no pick outside the 27 arm");
+        // The vanity twin is draw-free too (no 27 ladder at all).
+        let mut p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            p.update_pet_grant(&pet_slot(603)),
+            crate::registry::get(603).unwrap().use_sound
+        );
+        assert!(p.buffs.find_buff_index(40).is_some());
+        assert_eq!(rng.peek(), peek, "UpdatePet draws nothing itself");
+    }
+
+    /// W4-e10 — the fairy grant through the TICK (`Player.cs:25574` →
+    /// `:17338`): one of the trio lands, ONE cue plays, and the stream
+    /// replay is exact — the standing rig's only unconditional
+    /// `UpdatePlayers` draw is the tick-tail Revolver decay (the i14
+    /// census), so the grant tick spends pick `Next(3)` → the façade's
+    /// case-2 pitch `Next(-6,7)` → decay `Next(3)`, in that order, off
+    /// the pristine seed-0 stream. The muted twin proves the gate
+    /// precedes the pitch: `soundVolume = 0` spends pick → decay only.
+    #[test]
+    fn w4_e10_the_fairy_grant_tick_spends_the_pick_then_the_pitch() {
+        let mut app = ammo_app();
+        app.equip.misc_equips[1] = pet_slot(425);
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        let granted = [27, 102, 101]
+            .iter()
+            .find(|&&b| app.player.as_ref().unwrap().buffs.find_buff_index(b).is_some())
+            .copied();
+        assert!(granted.is_some(), "one of the fairy trio landed");
+        assert_eq!(app.audio.played_count(), before + 1, "one grant cue");
+        let mut replay = UnifiedRandom::new(0);
+        let pick = replay.next_range(0, 3);
+        assert_eq!(granted, Some([27, 102, 101][pick as usize]), "the pick");
+        let _pitch = replay.next_range(-6, 7); // style 25's default window
+        let _decay = replay.next_max(3); // the i14 tick-tail draw
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            replay,
+            "pick → pitch → decay on UpdatePlayers, nothing else"
+        );
+        // The muted twin: the gate refuses BEFORE the pitch draw.
+        let mut muted = ammo_app();
+        muted.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        muted.equip.misc_equips[1] = pet_slot(425);
+        tick_ammo(&mut muted);
+        let mut m = UnifiedRandom::new(0);
+        let _ = m.next_range(0, 3); // the pick still runs (pre-façade)
+        let _ = m.next_max(3); // the decay; NO pitch
+        assert_eq!(
+            *muted.rngs.stream(RngKey::UpdatePlayers),
+            m,
+            "the muted grant is pick + decay only (the wave-A gate order)"
+        );
+        // Isolation: every other stage stream stays pristine.
+        for key in RngKey::ALL {
+            if key == RngKey::UpdatePlayers {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} — the pet arm rides only UpdatePlayers",
+                key.name()
+            );
+        }
+        // The alias refusal through the tick: no second cue.
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "the live fairy refuses");
+    }
+
+    /// W4-e10 — the plain light-pet grant through the TICK: the Magic
+    /// Lantern (3043, buff 152) re-grants at 3600 and plays ONE UseSound
+    /// cue; the grant itself draws nothing (the function-level witness
+    /// pins that) — the tick's only extra spend is the façade's pitch.
+    #[test]
+    fn w4_e10_the_plain_light_pet_grant_rebuffs_and_plays_once() {
+        let mut app = ammo_app();
+        app.equip.misc_equips[1] = pet_slot(3043); // buff 152
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(152).is_some());
+        assert_eq!(app.audio.played_count(), before + 1, "`:17338` once");
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "the live buff refuses");
+        // hideMisc[1] refuses the whole arm.
+        app.player.as_mut().unwrap().buffs.clear_buff(152);
+        app.player.as_mut().unwrap().hide_misc[1] = true;
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().buffs.find_buff_index(152),
+            None,
+            "the hide refused (`:17318`)"
+        );
+        assert_eq!(app.audio.played_count(), mid, "no cue while hidden");
     }
 }

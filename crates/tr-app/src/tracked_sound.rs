@@ -370,6 +370,16 @@ impl SoundPlayer {
             .find(|(_, sound)| sound.as_ref().is_some_and(|s| s.style.cue == style.cue))
             .and_then(|(_, sound)| sound.as_ref())
     }
+
+    /// The pool-entry count of one style, NO `IsPlaying` filter (the
+    /// `find_active_sound` semantics) — the test seam the headless flows
+    /// count plays through (no output device ever drains an entry).
+    pub fn count_style_entries(&self, style: &TrackedStyle) -> usize {
+        self.tracked_sounds
+            .pairs()
+            .filter(|(_, sound)| sound.as_ref().is_some_and(|s| s.style.cue == style.cue))
+            .count()
+    }
 }
 
 #[cfg(test)]

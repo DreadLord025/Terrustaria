@@ -339,13 +339,19 @@ impl App {
     /// `WorldGen.SaveAndQuit()`). The C# queues the callback on the thread
     /// pool behind the mode-10 "saving" screen; the port saves inline and
     /// lands straight on `menuMode = 0` (the main menu), the same menu-reopen
-    /// shape `net_disconnect` uses. The tracked-sound stop /
-    /// `CaptureInterface.ResetFocus` halves are not modelled; the frame's
-    /// audio listener flips to menu mode off `menu.is_some()`
-    /// (`frame.rs:256`), covering `StopWaterfallAmbienceAudio`'s effect.
+    /// shape `net_disconnect` uses. `CaptureInterface.ResetFocus` is not
+    /// modelled; the frame's audio listener flips to menu mode off
+    /// `menu.is_some()` (`frame.rs:256`), covering the ¼ s ambience tick —
+    /// the IMMEDIATE `StopWaterfallAmbienceAudio`/`StopTrackedSounds` halves
+    /// are wired below (W4-g24 doc-sweep).
     pub(crate) fn save_and_quit(&mut self) {
         // `WorldGen.cs:6703`: `SoundEngine.PlaySound(11)`.
         self.audio.play("Menu_Close");
+        // `WorldGen.cs:6704`: `StopWaterfallAmbienceAudio()` — the 34/35
+        // sentinel pair stops both liquid loops at the quit moment
+        // (`WorldGen.cs:6689-6699`, the `LegacySoundPlayer.cs:1257`/:1287
+        // `x == -1 || y == -1` stop arms).
+        self.audio.stop_waterfall_ambience();
         // `WorldGen.cs:6705-6708`: the invasion bar resets.
         self.invasion_progress = -1;
         self.invasion_progress_display_left = 0;
@@ -354,6 +360,11 @@ impl App {
         // `WorldGen.cs:6714`: `InGameNotificationsTracker.Clear()` — the
         // unlock toasts never survive onto the menu (S1-E-26 wave A).
         self.notifications.clear();
+        // `WorldGen.cs:6715`: `SoundEngine.StopTrackedSounds()` — the
+        // tracked pool empties (`SoundPlayer.StopAll`, `SoundPlayer.cs:
+        // 79-86`). The legacy one-shot cues already playing ride out their
+        // tails (the C# does not stop those either).
+        self.audio.stop_tracked_sounds();
         // `SaveAndQuitCallBack` (`WorldGen.cs:6669-6677`): StopPlayTimer +
         // `Player.SavePlayer` + `WorldFile.SaveWorld` (single-player's
         // `Main.netMode == 0` arm) — the port's one save funnel writes the
@@ -374,6 +385,72 @@ impl App {
                 self.settings.clone(),
                 self.player_name.clone(),
             ));
+        }
+    }
+
+    /// `WorldGen.JustQuit` (`WorldGen.cs:6627-6662`): exit the world WITHOUT
+    /// saving — the `/quit` debug chat command (`ToolkitDebugCommands.cs:
+    /// 232-237`, `CommandRequirement.Client`: single-player or a net client)
+    /// is the ONLY vanilla caller; the port's F3 debug panel is the chat
+    /// dispatcher's stand-in (the S1-E-29 recorded deviation), so the World
+    /// tab's quit row drives this. The C# body in C# order: the inline
+    /// `StopWaterfallAmbienceAudio` pair (`:6631-6632`), the invasion reset
+    /// (`:6637-6640`), the mode-10/gameMenu/Disconnect/netMode-0 block
+    /// (`:6642-6645` — the port's `net_disconnect` drop shape), the tracked
+    /// stop (`:6646`), the fast-forward clears (`:6649-6650`), then the
+    /// single-player arm's `GoToWorldSelect` + the player-position reset
+    /// (`:6653-6657`) or the multiplayer arm's mode 0 (`:6660`).
+    /// `CaptureInterface.ResetFocus`/`StopPlayTimer`/`UpdateTimeRate`/
+    /// `ClearVisualPostProcessEffects` are engine-side (not modelled — the
+    /// port keeps no play timer and the frame's listener flip covers the
+    /// menu transition).
+    // The only production caller is the F3 debug panel's quit row (the
+    // `debug` feature, OFF by default); the test module exercises it in
+    // every build. The allow keeps the default build warning-clean.
+    #[allow(dead_code)]
+    pub(crate) fn just_quit(&mut self) {
+        // `WorldGen.cs:6631-6632`: the inlined 34/35 sentinel pair (the
+        // `StopWaterfallAmbienceAudio` body, `:6693-6694`).
+        self.audio.stop_waterfall_ambience();
+        // `WorldGen.cs:6637-6640`: the invasion bar resets.
+        self.invasion_progress = -1;
+        self.invasion_progress_display_left = 0;
+        self.invasion_progress_alpha = 0.0;
+        self.invasion_progress_icon = 0;
+        // `WorldGen.cs:6641`: `flag = Main.netMode == 0` — read BEFORE the
+        // netMode drop, so a client quit takes the main-menu arm.
+        let single = matches!(self.net, crate::app::NetRole::Off);
+        // `WorldGen.cs:6644-6645`: `Netplay.Disconnect = true; Main.netMode
+        // = 0` — the port's role drop (the `net_disconnect` shape, without
+        // its reason banner: the C# quit shows none).
+        self.net_dropped = true;
+        self.net_state = crate::net::client_state::NOT_CONNECTED;
+        self.remote_players.clear();
+        self.local_id = 0;
+        self.net = crate::app::NetRole::Off;
+        // `WorldGen.cs:6646`: `SoundEngine.StopTrackedSounds()`.
+        self.audio.stop_tracked_sounds();
+        // `WorldGen.cs:6649-6650`: both fast-forward flags drop.
+        self.world.fast_forward_to_dawn = false;
+        self.world.fast_forward_to_dusk = false;
+        if single {
+            // `WorldGen.cs:6655`: `Main.GoToWorldSelect()` (`Main.cs:
+            // 48176-48180`: menuMode 888 + the world-select UIState) — the
+            // port's front-screen hop re-lists the worlds.
+            self.enter_front(crate::app::flow::FrontScreen::WorldSelect);
+            // `WorldGen.cs:6656`: the local player parks at the origin.
+            if let Some(p) = self.player.as_mut() {
+                p.x = 0.0;
+                p.y = 0.0;
+            }
+        } else {
+            // `WorldGen.cs:6660`: `Main.menuMode = 0` — the main menu.
+            if self.menu.is_none() {
+                self.menu = Some(crate::menu::Menu::new(
+                    self.settings.clone(),
+                    self.player_name.clone(),
+                ));
+            }
         }
     }
 
@@ -865,6 +942,48 @@ mod tests {
             "no `.wld` beside a `.trwld`"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// W4-g24 doc-sweep — the quit paths' audio stops: `SaveAndQuit`
+    /// (`WorldGen.cs:6704`/:6715) calls `StopWaterfallAmbienceAudio` then
+    /// `StopTrackedSounds`; `JustQuit` (`:6631-6632`/:6646) inlines the same
+    /// pair. Both drain the tracked pool; the sentinel-stop counter pins
+    /// the immediate liquid-loop stop (the frame's ¼ s tick is NOT the
+    /// seam under test).
+    #[test]
+    fn w4_g24_the_quit_paths_stop_the_ambience_and_the_tracked_pool() {
+        let style = crate::audio::menu_accept_style();
+        // Save & Quit: the world write runs, then the menu reopens.
+        let dir = scratch("quit-stop");
+        let mut app = stocked_app();
+        app.world_path = dir.join("native.trwld");
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.audio.insert_test_cue("menu_accept");
+        let _ = app.audio.play_tracked_global(style.clone());
+        assert_eq!(app.audio.tracked_count_for(&style), 1);
+        app.save_and_quit();
+        assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6704 stop");
+        assert_eq!(app.audio.tracked_count_for(&style), 0, "the :6715 drain");
+        assert!(app.menu.is_some(), "the main menu reopened");
+        let _ = std::fs::remove_dir_all(&dir);
+        // Just Quit (single-player): no save, the world-select hop, the
+        // player parked at the origin (`:6656`).
+        let mut app = stocked_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.audio.insert_test_cue("menu_accept");
+        let _ = app.audio.play_tracked_global(style.clone());
+        app.world.fast_forward_to_dawn = true;
+        app.just_quit();
+        assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6631 pair");
+        assert_eq!(app.audio.tracked_count_for(&style), 0, "the :6646 drain");
+        assert!(matches!(
+            app.front,
+            Some(crate::app::flow::FrontScreen::WorldSelect)
+        ), "GoToWorldSelect (:6655)");
+        let p = app.player.as_ref().unwrap();
+        assert_eq!((p.x, p.y), (0.0, 0.0), "the position reset (:6656)");
+        assert!(!app.world.fast_forward_to_dawn, "the :6649 clear");
+        assert!(matches!(app.net, crate::app::NetRole::Off), "netMode 0");
     }
 }
 mod chest_save_tests {

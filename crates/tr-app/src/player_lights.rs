@@ -71,9 +71,10 @@
 //! * `happyFunTorchTime` (the Torch God's favor burn) has no port field
 //!   — it folds to false. `Player.UsingBiomeTorches`
 //!   (`Player.cs:3950-3959`) is `unlockedBiomeTorches &&
-//!   builderAccStatus[11] == 0`; the port carries
-//!   `p.unlocked_biome_torches` and reads it, while the builder toggle
-//!   folds to 0 (on) — documented deviation.
+//!   builderAccStatus[11] == 0`; the port reads
+//!   `p.using_biome_torches()` — both halves wired, the builder toggle
+//!   flips on the `DrawTorchBiomeSwapIcon` click (W4-g21 batch 5 host 73,
+//!   `Main.cs:42585`; the old "toggle folds to 0" deviation retired).
 
 use glam::Vec2;
 use tr_core::lighting::LightParams;
@@ -94,8 +95,9 @@ const HELD_LIGHT_ALLOWED: bool = true;
 /// `Player.BiomeTorchHoldStyle` (`Player.cs:40291-40346`): the plain torch
 /// (8) becomes the biome torch while `UsingBiomeTorches`
 /// (`:3950-3959` — `unlockedBiomeTorches && builderAccStatus[11] == 0`;
-/// the port reads `p.unlocked_biome_torches`, the builder toggle folds
-/// to 0/on, ANALYSIS deviation). The arm order is the C#'s verbatim;
+/// the port reads `p.using_biome_torches()`, the builder toggle wired by
+/// the `DrawTorchBiomeSwapIcon` click, W4-g21 batch 5 host 73). The arm
+/// order is the C#'s verbatim;
 /// `ZoneShimmer` (`:40297`) and `ZoneUndergroundDesert` (`:40337`) read
 /// fields the port's `Zones` does not carry and are skipped in place (the
 /// remaining arms keep their order). `ZoneLihzhardTemple` (`:40305`) rides
@@ -374,7 +376,7 @@ pub(crate) fn held_item_lights(
     let torch = crate::entity_lights::TORCHES.contains(&kind);
     let water_torch = crate::entity_lights::WATER_TORCHES.contains(&kind);
     if (torch && !p.wet) || water_torch {
-        let style = biome_torch_hold_style(kind, p.unlocked_biome_torches, zones, p.y, world);
+        let style = biome_torch_hold_style(kind, p.using_biome_torches(), zones, p.y, world);
         let id = torch_id_for_hold_style(style);
         let rgb = tr_core::tile_light::torch_color(id, params);
         // `:49918` / `:49938` — the light rides `velocity` (the dust

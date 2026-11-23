@@ -12,7 +12,11 @@ use crate::world::World;
 /// `fail` path too (`KillWall_CheckFailure` `:60410-60421`: the dungeon
 /// walls before Skeletron, wall 87 before Golem); the port's `break_wall`
 /// has no fail path, so the cue rides the successful break only (ANALYSIS,
-/// S1-E-21i).
+/// S1-E-21i). The SECOND call site — `ReplaceWall` (`:62550`, the
+/// unsafe→safe conversion, S1-P-i33) — drains the same table through
+/// `place_wall_route`'s replacement arm (`world_sim/editing.rs`, the old
+/// wall's cue before its drop on `UpdatePlayers`); W4-g24 FINAL re-sweep
+/// confirmed both call sites covered.
 ///
 /// The arms: the glass/stone family → the legacy id 13 (Shatter, no pitch
 /// draw, `LegacySoundPlayer.cs:783-792`); the grass/jungle family → id 6

@@ -1740,8 +1740,10 @@ impl App {
                 }
             }
             // `case 47` — a sign's text (`MessageBuffer.cs:2376-2405`): the
-            // record is rewritten and, when the sender is us, the editor
-            // opens (unported — S1-E-26 records the gap).
+            // record is rewritten and, when the sender is us and bit 0 of
+            // the flags byte is clear, `OpenSign` runs (`:2400-2403`) —
+            // W4-e10: the latch + the Menu_Open cue (`Player.cs:33547`);
+            // the sign EDITOR itself stays S1-E-26's.
             S2c::SignData(sd) => {
                 if sd.sign < 0 || sd.sign >= crate::signs::MAX_SIGNS {
                     return; // `:2384`
@@ -1753,6 +1755,23 @@ impl App {
                     sd.y as i32,
                     sd.text.clone(),
                 );
+                // `:2400` — netMode 1 (this arm IS the client), the sender
+                // is us, the record survived `TextSign`, `!bitsByte5[0]`.
+                // The dense-store deviation: `text_sign` splices a dead-
+                // tile record (the later indices shift), so the C#'s
+                // `Main.sign[num58] != null` probe is "a record still sits
+                // at this tile" and the open uses THAT record's index
+                // (ANALYSIS, the W4-e10 gap-census phase).
+                let live_idx = self
+                    .world
+                    .signs
+                    .iter()
+                    .position(|r| r.x == sd.x as i32 && r.y == sd.y as i32);
+                if u32::from(sd.sender) == self.local_id && sd.flags & 1 == 0 {
+                    if let Some(idx) = live_idx {
+                        crate::signs::open_sign(self, idx as i32);
+                    }
+                }
             }
             // `case 50` — a player's buff ids (`MessageBuffer.cs:2454-2480`):
             // ours is skipped (`:2461-2464`), a peer's lands in its record
@@ -5752,5 +5771,84 @@ mod message_family_tests {
             count,
             "the join snapshot's module-4 body applies"
         );
+    }
+
+    /// W4-e10 gap census — `case 47`'s client tail (`MessageBuffer.cs:
+    /// 2400-2403`) over the live pair: the client's `46` request answers
+    /// with a `47` addressed to the asker (`:2372`), and the client's
+    /// dispatch opens the sign (`Player.OpenSign` — the latch, the text,
+    /// ONE Menu_Open `Player.cs:33547`). The sign EDITOR stays S1-E-26.
+    #[test]
+    fn w4_e10_the_47_answer_opens_our_sign_with_one_menu_open() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        // A 2-wide sign at (3, 2)/(4, 2) on BOTH sides (the rename-test
+        // convention: the world transfer already ran, the fixture plants
+        // matching tiles directly — the client's `TextSign` needs the
+        // live tile to keep the record).
+        for app in [&mut host_app, &mut client_app] {
+            for x in [3, 4] {
+                let i = app.world.index(x, 2);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 55,
+                    frame_x: if x == 3 { 0 } else { 18 },
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let idx = crate::signs::find_or_create(&mut host_app.world.signs, 3, 2).unwrap();
+        host_app.world.signs[idx].text = "ahoy".into();
+        let before = client_app.audio.played_count();
+        // The client asks (`46`); the host answers `47` to the asker.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::SignRequest(net::SignRequest { x: 4, y: 2 }));
+        }
+        let mut opened = false;
+        for _ in 0..60 {
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = client_app.player.as_ref().is_some_and(|p| p.sign >= 0);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the 47 answer opened the sign (:2402)");
+        let p = client_app.player.as_ref().unwrap();
+        assert_eq!(p.sign, 0, "the dense-store index");
+        assert_eq!(client_app.world.signs[0].text, "ahoy", "TextSign (:2394)");
+        assert_eq!(client_app.npc_chat_text, "ahoy", "`:33549`");
+        assert_eq!(client_app.audio.played_count(), before + 1, "`:33547` once");
+        // The flags bit set: the host pushes a quiet `47` — the record
+        // lands, no re-open, no cue.
+        crate::signs::close_sign(&mut client_app, true);
+        let mid = client_app.audio.played_count();
+        if let NetRole::Host(server) = &host_app.net {
+            server.send(
+                1,
+                &S2c::SignData(net::SignData {
+                    sign: 0,
+                    x: 3,
+                    y: 2,
+                    text: "quiet".into(),
+                    sender: 1,
+                    flags: 1,
+                }),
+            );
+        }
+        let mut landed = false;
+        for _ in 0..60 {
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = client_app.world.signs.first().is_some_and(|r| r.text == "quiet");
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the quiet 47 rewrote the record");
+        assert_eq!(client_app.player.as_ref().unwrap().sign, -1, "bit 0 refuses");
+        assert_eq!(client_app.audio.played_count(), mid, "no cue");
     }
 }

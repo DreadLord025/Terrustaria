@@ -182,6 +182,9 @@ impl App {
             let (sw, sh) = self.screen_size();
             let (m_h, mouse) = (self.main_m_h(), self.mouse_pos);
             let dead = self.player.as_ref().is_some_and(|p| p.dead);
+            // W4-g22 — the previous frame's `Main.mouseExit` latch: the C#'s
+            // `ref mouseOver` reads last frame's value at `:45599`.
+            let was_over = self.ingame_options.button_mouse_over;
             crate::ui::ingame_options::refresh_button(
                 &mut self.ingame_options,
                 &self.lookups,
@@ -194,6 +197,18 @@ impl App {
                 crate::ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()).count(),
                 false,
             );
+            // W4-g22 — `Main.DrawSettingButton`'s hover-enter cue
+            // (`Main.cs:45599-45603`): ONE sound 12 on the `!mouseOver` edge.
+            // The `IgnoreMouseInterface`/`mouseInterface` gates (`:45595`/
+            // `:45597`) are not modelled by the port's HUD hover (the pointer
+            // lockout covers the 888 side only) — constants-on here.
+            if let Some(cue) = crate::main_sounds::settings_button_tick(
+                self.ingame_options.button_mouse_over,
+                was_over,
+                true,
+            ) {
+                self.audio.play(cue);
+            }
         }
         // `Main.DrawPageIcons`' tail (`Main.cs:42864-42867`): the drawn page is
         // whatever the held item forces (`ItemSlot.SelectEquipPage`), else the
@@ -385,6 +400,26 @@ impl App {
                     // vanilla's `LoadWorld` failure keeps `Main.gameMenu`).
                     log::warn!("world load failed: {e:#}");
                     self.front_hint = Some(format!("world load failed: {e:#}"));
+                    // W4-g22 DOC-SWEEP — `WorldGen.playWorldCallBack`'s
+                    // failure hop (`WorldGen.cs:6766-6790`): after the
+                    // double `LoadWorld` retry fails, the `.bak` probe
+                    // picks menuMode 200 (backup) / 201 (none). The port's
+                    // single `load_world` attempt is the retry stand-in
+                    // (documented); the probe is the same `.bak` sidecar
+                    // existence (`:6772`). The page's rows carry the
+                    // 10/11 cues (`Main.cs:48843-48876`).
+                    let has_backup = {
+                        let mut bak = path.as_os_str().to_os_string();
+                        bak.push(".bak");
+                        std::path::Path::new(&bak).exists()
+                    };
+                    self.front = None;
+                    self.park_menu();
+                    self.menu = Some(crate::menu::Menu::open_load_failed(
+                        self.settings.clone(),
+                        path.clone(),
+                        has_backup,
+                    ));
                 }
             }
         }
