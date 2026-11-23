@@ -76,9 +76,9 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | `frameNumber` per-tile RNG (`genRand` `:319`, `:390`) | PARTIAL | `framing.rs:138`, `:1097` | replaced by a position hash (documented) |
 | `Main.tileLargeFrames` variant override | PORTED | `framing.rs:988-995`, `tiledata/merge.rs:10` | `LARGE_FRAMES` 0/1/2 arms |
 | `frame_world` / `Main.tileFrameImportant` gate | PORTED | `framing.rs:1010-1063` | band-parallel, skips important tiles |
-| `Framing.SelfFrame8Way` + `BlockStyle` + `WillItBlend` | NOT-FOUND | — | no `self_frame`/`eight_way` symbol in `crates/`; sole caller `WorldGen.cs:84833` (ids 255-268) |
+| `Framing.SelfFrame8Way` + `BlockStyle` + `WillItBlend` | PORTED (W4-d110, code-only) | `framing.rs::self_frame_8way` | full 47-row lookup + style gates; dispatch covers 255-268 AND the 385/446/447/448 `goto case 255` fallthrough (`WorldGen.cs:81409-81413`/`:84818`); witnesses `w4_d110_*` written NOT run |
 | `SquareTileFrame` / `SquareWallFrame` (3×3 refresh) | PARTIAL | `framing.rs:1132-1175` (`reframe_area`) | square re-frame, radius clamped 1..4 (superset of 3×3) |
-| `Framing.WallFrame` | PARTIAL | `framing.rs:1106-1128` | missing `TruncatesWalls`/`invisibleWall` gates, `wallLargeFrames` arms, wall-21 roll, wall==0 reset |
+| `Framing.WallFrame` | PORTED | `framing.rs::wall_frame_of_variant` + `wall_frame_head` | `TruncatesWalls`/`invisibleWall` gates (S1-P-i33), `wallLargeFrames` arms + wall-21 roll (S1-A-3), wall-id clamp + wall==0 paint/coating reset (W4-d110, code-only) |
 | `wallFrameLookup` / `centerWallFrameLookup` | PORTED | `framing.rs:1069-1093` | 20×3 table + the mask-15 offset add |
 | phlebas/lazure wall lookups (`Framing.cs:35-39`, `:378-387`) | NOT-FOUND | — | large-frame walls keep the generic mask |
 | `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
@@ -117,16 +117,25 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
    `wallFrameLookup` column) and the wall-21 quirk. The hash functions are gone
    (framing.rs no longer has `variant`/`wall_variant`).
 
-- **`Framing.SelfFrame8Way` not ported** — *behavioural*. Its only caller is
-  `WorldGen.cs:84833` for ids 255-268; those tile ids get the generic merge path in the
-  port (no `self_frame` symbol exists). Touched ids include torch/statue-family frames.
-- **`WallFrame` incomplete** — *behavioural/pixel*. Missing: the `TruncatesWalls[tile.type]`
-  neighbour condition (`Framing.cs:348/356/364/372`), the `ShouldShowInvisibleBlocksAndWalls`
-  / `invisibleWall()` gate (`:344`), and the `wall == 0` →
-  `wallColor(0)` + `ClearWallPaintAndCoating()` reset (`:337-342`). Consequence: walls
-  behind echo-coated/invisible blocks frame one variant off. (S1-A-3 landed the rest of
-  this list: the `wallLargeFrames == 1/2` phlebas/lazure arms with their re-store and
-  the wall-21 third-variant roll.)
+- **~~`Framing.SelfFrame8Way` not ported~~ — RESOLVED by W4-d110 (2026-11-20, code-only)**.
+  `self_frame_8way` + `find_block_style`/`will_it_blend` + the const 256-mask lookup port
+  `Framing.cs:9-23/92-98/141-191/193-324` verbatim; dispatch in `frame_of_variant` covers
+  255-268 AND 385/446/447/448 — the earlier claim "sole caller ids 255-268" missed the
+  inner-switch `case 385/446/447/448: break` + `goto case 255` fallthrough
+  (`WorldGen.cs:81409-81413`, `:84818`). Variant rolls stay with the d109/S1-A-3 pass
+  mechanism. Deviation: null lookup rows (sloped/half gemspark masks with no
+  `Add8WayLookup` entry) return `None` instead of the C#'s throw (ANALYSIS "Autotiling").
+  Witnesses `w4_d110_*` written NOT run.
+- **~~`WallFrame` incomplete~~ — RESOLVED (S1-P-i33 + S1-A-3 + W4-d110)**. The
+  `TruncatesWalls[tile.type]` neighbour condition and the `invisibleWall()` gate landed
+  with S1-P-i33 (`wall_mask_neighbour`); the `wallLargeFrames == 1/2` phlebas/lazure arms
+  with their re-store and the wall-21 third-variant roll with S1-A-3; the wall-id clamp
+  (`wall >= WallID.Count` → 0, `Framing.cs:332-335`) and the `wall == 0` →
+  `wallColor(0)` + `ClearWallPaintAndCoating()` reset (`:337-342`) with W4-d110
+  (`wall_frame_head`, code-only). Remaining deviation:
+  `ShouldShowInvisibleBlocksAndWalls()` reads as false (unmodelled, the
+  `render/tile_cracks.rs` precedent), and `frame_walls` runs the heads in the copy phase
+  after the parallel mask reads (ANALYSIS "Autotiling" item 7).
 - **Wiring + coatings moved out of `Tile`** — *cosmetic/structural*. `WireState` uses four
   `HashSet<(i32,i32)>` (`wiring.rs:91-96`) and wall paint/coatings use
   `World::extras: HashMap<u32,u8>` (`world.rs:20`, `wld/mod.rs:460-511`). Memory/perf
