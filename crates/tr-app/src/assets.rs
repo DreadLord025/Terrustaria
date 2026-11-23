@@ -502,6 +502,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Armor_Head_2",
         "Armor_Head_3",
         "Armor_Head_4",
+        // W4-f41 — the Party Hat vanity head (`ArmorIDs.Head.PartyHat = 195`,
+        // item 3732's headSlot) + the hat-hair ALT strip its `hatHair`
+        // setting draws (`PlayerDrawLayers.cs:2104-2109`).
+        "Armor_Head_195",
+        "Player_HairAlt_1",
         "Armor_Legs_1",
         "Armor_Legs_2",
         "Armor_Legs_3",

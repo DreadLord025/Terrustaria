@@ -4576,11 +4576,19 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::Extractinator => {
                     log::info!("TR_TOGGLE {},{} -> extractinator", op.x, op.y)
                 }
+                // W4-e28: the station-buff grant needs the player's buff
+                // slots (none at load) — the dispatch only reports the row.
+                edit::TileInteraction::StationBuff { buff_type, .. } => {
+                    log::info!("TR_TOGGLE {},{} -> station buff {buff_type}", op.x, op.y)
+                }
                 edit::TileInteraction::BankOpen { bank } => {
                     log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)
                 }
                 edit::TileInteraction::HitSwitch { x, y } => {
                     log::info!("TR_TOGGLE {},{} -> switch {x},{y}", op.x, op.y)
+                }
+                edit::TileInteraction::PartyMonolithToggle => {
+                    log::info!("TR_TOGGLE {},{} -> party monolith (no events at load)", op.x, op.y)
                 }
             }
         }

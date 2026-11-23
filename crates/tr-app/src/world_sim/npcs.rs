@@ -227,6 +227,39 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43077` — the same NPC re-clicked falls through
     }
     app.talk_npc = Some(i); // `:43081` — `player.SetTalkNPC(i)`
+    // `FreeCakeDialogue.GetChatAndClearCondition`'s side effects
+    // (`ConditionalDialogue.cs:58-66`), BEFORE the text draw (research/70
+    // §3: the C# gifts at `:64` THEN draws `Next(1,4)` at `:65`, all on the
+    // bare `Main.rand` — `GetChat`'s one caller `Main.cs:43082` sits
+    // outside every SwapRandom stage, S1-A-10). The latched row
+    // (`Npc.next_dialogue`, the `CheckDialogue` poll's product) gates the
+    // gift; the condition clears (`NPC.freeCake = false`, `:60`) and the
+    // Slice Of Cake (3750) rides `QuickSpawnItem(GiftRecieved)` →
+    // `GetOrDropItem` (`Player.cs:7187-7200`): exactly ONE item —
+    // `GetItem` merges into the first occupied slot with room, else the
+    // first empty hotbar slot (`Player.cs:39330-39399`), so one
+    // `slot_for_pickup` call is exact (count < maxStack ⇒ +1 ≤ maxStack);
+    // the overflow drops at the player centre keeping prefix 0 (the gift
+    // rides `SetDefaults(3750)` with NO prefix roll, `:62-63`). The
+    // `SendData(51, …, 10f)` net sync has no single-player consumer.
+    if app.npcs[i].next_dialogue {
+        app.world_events.free_cake = false;
+        match crate::item::slot_for_pickup(&mut app.inventory, 3750, 0) {
+            Some(s) => app.inventory[s].count += 1,
+            None => {
+                if let Some(p) = app.player.as_ref() {
+                    let (cx, cy) = p.center();
+                    crate::world_sim::items::spawn_item_drop_px(
+                        &mut app.items,
+                        app.rngs.global(),
+                        3750,
+                        1,
+                        Vec2::new(cx, cy),
+                    );
+                }
+            }
+        }
+    }
     // The context off the live state. The world flags the port does not
     // carry yet (the storm clock, the happy-windy-day, `BirthdayParty`,
     // `LanternNight`, the remix world, `WorldGen.crimson`, the Moon Lord)
@@ -299,6 +332,11 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         golfer_score,
     };
     let text = crate::npc_chat::get_chat(&app.npcs[i], &mut ctx);
+    // The pending row clears at talk — the C# leaves `nextDialogue` set
+    // until the next `CheckDialogue` tick clears it (the condition fell);
+    // unobservable either way (the same-NPC re-talk declines `:43077`),
+    // the port's early clear is the recorded timing note (research/70 §3).
+    app.npcs[i].next_dialogue = false;
     app.npc_chat_text = text.clone(); // `:43082` — `Main.npcChatText = GetChat()`
     Some(text)
 }
@@ -937,6 +975,12 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .npcs
             .iter()
             .any(|n| n.hp > 0 && n.kind == NpcKind::PartyGirl),
+        // W4-f41 final sweep — the live scheduler gates: the Merchant's
+        // Rainbow Glowstick + the Party Girl's gift block
+        // (`BirthdayParty.PartyIsUp`, `Chest.cs:1435`/:2345) and her
+        // Release Lantern row (`LanternNight.LanternsUp`, `:2309`).
+        party_up: crate::world_events::party_is_up(&app.world_events),
+        lanterns_up: crate::world_events::lanterns_up(&app.world_events),
         downed_mech_any: app.world.downed_mech_boss1
             || app.world.downed_mech_boss2
             || app.world.downed_mech_boss3,
@@ -3796,6 +3840,24 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
         app.next_npc_uid = next;
+    }
+    // `NPC.CheckDialogue` (`NPC.cs:90510`/`:90519-90532`): the conditional
+    // dialogue probe — every 10th tick per NPC, else the failed-condition
+    // clear. The C# runs it inside each NPC's own `UpdateNPC` after the AI;
+    // the port batches it at the phase head (the pre-pass convention — the
+    // only consumer is the right-click `GetChat`, a separate input path, so
+    // the intra-tick position is unobservable). `who` = the stable uid.
+    // The `hp > 0` gate is the CALLER's half of `UpdateNPC`'s active check
+    // (research/70 §1c): a corpse never polls — the predicate itself is
+    // freeCake-only (`check_dialogue`). The poll is draw-free.
+    {
+        let free_cake = app.world_events.free_cake;
+        let count = app.game_update_count;
+        for n in app.npcs.iter_mut() {
+            if n.hp > 0 {
+                crate::npc_chat::check_dialogue(n, count, n.uid, free_cake);
+            }
+        }
     }
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead

@@ -1317,6 +1317,13 @@ pub struct Npc {
     /// display name — empty carries the kind's static name, exactly the
     /// vanilla's "give it a name at the first world-file save" convention.
     pub given_name: String,
+    /// `NPC.nextDialogue` (`NPC.cs:6539`): the pending conditional dialogue
+    /// — the port's registry carries one row (`FreeCakeDialogue`,
+    /// `ConditionalDialogue.cs:51-67`), so `true` = the cake is pending.
+    /// `CheckDialogue` (`NPC.cs:90519-90532`) re-probes every 10th tick and
+    /// clears it the moment the condition fails; `GetChat` consumes it
+    /// (`:93768-93771`). Transient — never saved (the C# saves no field).
+    pub next_dialogue: bool,
     /// `NPC.townNpcVariationIndex` (`SaveNPCs:1731`): the selected variation
     /// of the town NPC's looks — 0 the default, 1 the shimmer variant
     /// (`NPC.cs:80850`), rolled from the profile otherwise.
@@ -2928,6 +2935,7 @@ impl Npc {
             vx: 0.0,
             vy: 0.0,
             given_name: String::new(),
+            next_dialogue: false,
             hp: kind.max_hp(),
             max_hp: kind.max_hp(),
             on_ground: false,
@@ -24246,8 +24254,8 @@ mod tests {
         ] {
             assert!(stock.contains(&id), "the {id} party row");
         }
-        // 1449 is the `Main.dayTime` row (the port carries no day gate), 4552
-        // the night half.
+        // 1449 is the `Main.dayTime` row (`StockWhen::Day`, W4-f41 final
+        // sweep), 4552 the night half — exactly one stocks.
         assert!(stock.contains(&1449));
         assert!(!stock.contains(&4552), "the night row is off by day");
         let night = crate::shop::ShopFlags {
@@ -24256,8 +24264,10 @@ mod tests {
         };
         let rows = crate::shop::resolve_stock(13, &night, &[]);
         assert!(rows.contains(&4552), "the night row by night");
-        // The graveyard/lantern/golfer/pirate/golem/hardmode/party rows ride
-        // flags the port has not modelled.
+        // The graveyard/golfer/pirate/golem/hardmode rows ride flags the
+        // port has not modelled; the lantern/party blocks ride the live
+        // schedulers (off on the default flags — the dedicated W4-f41
+        // shop.rs witnesses pin the on-state).
         assert!(!rows.contains(&4682), "no graveyard goggles");
         assert!(!rows.contains(&4743), "no football at score 0");
         assert!(!rows.contains(&3369), "no pirate row");

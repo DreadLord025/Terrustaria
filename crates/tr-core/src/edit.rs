@@ -27,7 +27,8 @@ pub use hammer::{
 mod kill;
 pub use kill::{
     actuation_square_frame, attempt_fossil_shattering, can_kill_tile, kill_tile, kill_tile_sound,
-    pot_break_sound, square_tile_frame_default, HerbEvent, KillSounds, ObjectDrop, PileLootEvent,
+    pot_break_sound, square_tile_frame_default, HerbEvent, KillSounds, ObjectDrop, PigronataEvent,
+    PileLootEvent,
     PotEvent, SoundCue, TileKill, TreeDropEvent,
 };
 pub(crate) use kill::{
@@ -241,6 +242,15 @@ pub enum TileInteraction {
     /// changes and no sound plays. No object drops — the dial arms kill no
     /// tiles.
     DialRefused,
+    /// The party monolith branch (tile 455, `Player.cs:32278-32284`):
+    /// `flag2 = true`, `SoundEngine.PlaySound(28, myX * 16, myY * 16, 0)`
+    /// (the mech cue — app-side, the case-28 pitch draw rides the tile-use
+    /// stream) and `BirthdayParty.ToggleManualParty()` — the party state
+    /// lives on the App's `WorldEvents`, so the toggle itself is app-side
+    /// (the wiring lane's `take_party_toggles` drain is the same body,
+    /// `BirthdayParty.cs:202-217`). `GamepadEnableGrappleCooldown` is
+    /// gamepad-only (unported input census). No world write here.
+    PartyMonolithToggle,
     /// The Extractinator branch (tiles 219/642) ran: the clicked tile is an
     /// extractinator and the held item decides the rest (`Player.cs:41665-41697`
     /// — the C# arm is item-anchored inside `PlaceThing`, so it rides the
@@ -249,6 +259,21 @@ pub enum TileInteraction {
     /// the consumption). No world write here — the extraction only consumes the
     /// held item and spawns the output.
     Extractinator,
+    /// The station-buff arms (W4-e28 + W4-f34, `Player.cs:32594-32635`): the
+    /// Crystal Ball (125, `:32594-32599`) grants Clairvoyance (29), the
+    /// Slice of Cake (621, `:32600-32605`) Sugar Rush (192) for 7200 ticks,
+    /// the War Table (464, `:32606-32611`) its buff 348, the Dead Cells
+    /// Potion Station (699, `:32612-32617`) its buff 366, the Sharpening
+    /// Station (377, `:32618-32623`) Sharpened (159), the Bewitching Table
+    /// (354, `:32624-32629`) Bewitched (150) and the Ammo Box (287,
+    /// `:32630-32635`) Ammo Box (93) — all but the cake `AddBuff(id,
+    /// 108000)` (30 min) then `SoundEngine.PlaySound(cue, base.position)`
+    /// — the buff slots and the cue are app-side (the core has neither);
+    /// the sound rides the PLAYER's position, not the tile's.
+    StationBuff {
+        buff_type: i32,
+        buff_time: i32,
+    },
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
@@ -283,6 +308,33 @@ pub fn interact_at(
     if matches!(t.kind, 132 | 136 | 144) {
         return TileInteraction::HitSwitch { x: i, y: j };
     }
+    // The station-buff arms (W4-e28 + W4-f34, `Player.cs:32594-32635`): the
+    // C# chain tests the kind literals in this order before the dials —
+    // 125 Crystal Ball → 29 (:32594-32599), 621 Slice of Cake → 192 for
+    // 7200 (:32600-32605), 464 War Table → 348 (:32606-32611), 699 Dead
+    // Cells Potion Station → 366 (:32612-32617), 377 Sharpening Station →
+    // 159 (:32618-32623), 354 Bewitching Table → 150 (:32624-32629), 287
+    // Ammo Box → 93 (:32630-32635). All but the cake grant 108000 ticks;
+    // every arm consumes the click (`flag2 = true`). The buff + cue land
+    // app-side. The 699 capture supersedes the old station-tail craft-filter
+    // click: the C# arm grants the buff and never reaches `:33279` (the
+    // adjacency alchemy-table flag, `craft.rs`'s `AdjTiles`, is separate).
+    let station = match t.kind {
+        125 => Some((29, 108_000)),
+        621 => Some((192, 7_200)),
+        464 => Some((348, 108_000)),
+        699 => Some((366, 108_000)),
+        377 => Some((159, 108_000)),
+        354 => Some((150, 108_000)),
+        287 => Some((93, 108_000)),
+        _ => None,
+    };
+    if let Some((buff_type, buff_time)) = station {
+        return TileInteraction::StationBuff {
+            buff_type,
+            buff_time,
+        };
+    }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
     // defs for 356/663 (they place through the legacy single-tile route), so
@@ -290,6 +342,17 @@ pub fn interact_at(
     if t.kind == 356 || t.kind == 663 {
         return dial_interaction(world, t.kind == 356);
     }
+    // The party monolith (`Player.cs:32278-32284`): the C# chain's own
+    // `else if` sits right after the `SwitchMonolith` family (410/480/509/
+    // 657/658/720/721/725/733 — unported kinds) and BEFORE the furniture
+    // arms; the registry def's interaction is `None`, so the kind-literal
+    // arm runs ahead of the registry lookup like the dials/banks.
+    if t.kind == 455 {
+        return TileInteraction::PartyMonolithToggle;
+    }
+    // The cake (621, `Player.cs:32600-32605`) rides W4-f34's `StationBuff`
+    // dispatch above (the seven-row kind match, `621 => Some((192, 7_200))`,
+    // research/70 §1f — the anchor-bearing superset route); no arm here.
     // The bank tiles (tiles 29/97/463/491, `Player.cs:33056-33138`): the
     // num73 switch maps 29 -> -2, 97 -> -3, 463 -> -4, 491 -> -5. The
     // vanilla opens via `OpenChest(num74, num75, num76)`; the port's banks
@@ -1176,6 +1239,72 @@ mod tests {
         assert_eq!(w.tile(11, 17).unwrap().frame_x, 0);
     }
 
+    /// W4-f41 — the party monolith dispatch (`Player.cs:32278-32284`): the
+    /// kind-literal arm answers `PartyMonolithToggle` for any active 455
+    /// cell and writes NO world state (the mech cue, the manual-party
+    /// toggle and the achievement edge are the app layer's).
+    #[test]
+    fn w4_f41_the_party_monolith_dispatches_the_toggle() {
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 455);
+        let revision = w.revision;
+        let blocked = |_: i32, _: i32| false;
+        let hit = interact_at(&mut w, 10, 19, 1, &blocked);
+        assert!(matches!(hit, TileInteraction::PartyMonolithToggle));
+        assert!(w.tile(10, 19).unwrap().active(), "no world write");
+        assert_eq!(w.revision, revision);
+        // An inactive cell never reaches the chain (`TileInteractionsCheck`
+        // gates on active tiles only, `Player.cs:32031-32041`).
+        let i = w.index(10, 19);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        let hit = interact_at(&mut w, 10, 19, 1, &blocked);
+        assert!(matches!(hit, TileInteraction::None));
+    }
+
+    /// W4-f41 final sweep — the monolith's ITEM-USE placement half
+    /// (`Item.cs:33176-33188`: 3747 `createTile = 455`, consumable,
+    /// placeStyle 0; `TileObjectData.cs:4099-4101`: Style3x3 +
+    /// DrawYOffset 2 — origin (1, 2), the SWTSS+Table bottom anchor over
+    /// the width, `UsesCustomCanPlace` true with NO hook): the click at
+    /// the bottom-centre writes the 3x3 object through the registry
+    /// route, and every cell answers the right-click toggle. The break
+    /// records are the kill.rs witnesses' half.
+    #[test]
+    fn w4_f41_the_monolith_item_places_the_3x3_and_toggles() {
+        let mut w = object_world();
+        assert!(
+            crate::tileobject::routes_through_tile_object(455, 0),
+            "the CustomPlace route (TileObjectData.cs:3101/4101)"
+        );
+        // Clicking (11, 19) with origin (1, 2) → the object spans
+        // x 10..=12, y 17..=19 (the bottom-centre click, as vanilla).
+        assert!(place_item_tile(&mut w, 11, 19, 455, 0, 1));
+        for dy in 0..3i32 {
+            for dx in 0..3i32 {
+                let t = w.tile(10 + dx, 17 + dy).unwrap();
+                assert!(t.active(), "cell ({dx},{dy}) written");
+                assert_eq!(t.kind, 455);
+                assert_eq!(
+                    (t.frame_x, t.frame_y),
+                    ((dx * 18) as i16, (dy * 18) as i16),
+                    "the style-0 frames"
+                );
+            }
+        }
+        // Every cell of the placed object answers the toggle dispatch
+        // (`Player.cs:32278-32284`'s kind test).
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 12, 17, 1, &blocked),
+            TileInteraction::PartyMonolithToggle
+        ));
+        // A floating click (no solid floor under the object) is refused —
+        // the bottom anchor gate, and the world stays unchanged.
+        let mut w2 = object_world();
+        assert!(!place_item_tile(&mut w2, 11, 10, 455, 0, 1));
+        assert!(!w2.tile(11, 10).unwrap().active());
+    }
+
     #[test]
     fn the_chair_sit_decodes_the_seat() {
         // `PlayerSittingHelper.cs:163-182` + `:317-319`: the seat is the
@@ -1977,6 +2106,86 @@ mod tests {
         let mut w = soil_world(2);
         let hit = interact_at(&mut w, 10, 20, 1, &|_, _| false);
         assert!(matches!(hit, TileInteraction::StationInteract { .. }));
+    }
+
+    #[test]
+    fn w4_e28_the_station_buff_arms_dispatch_the_grants() {
+        // W4-e28 — `Player.cs:32594-32599`: tile 125 (Crystal Ball) grants
+        // buff 29 for 108000 ticks; `:32630-32635`: tile 287 (Ammo Box)
+        // grants buff 93 for 108000. Both consume the click; the buff slots
+        // and the cue are the app's, the dispatch only carries the row.
+        for (kind, buff) in [(125u16, 29), (287u16, 93)] {
+            let mut w = object_world();
+            set_active(&mut w, 10, 19, kind);
+            let blocked = no_blocker as fn(i32, i32) -> bool;
+            match interact_at(&mut w, 10, 19, 1, &blocked) {
+                TileInteraction::StationBuff {
+                    buff_type,
+                    buff_time,
+                } => {
+                    assert_eq!(buff_type, buff, "tile {kind}");
+                    assert_eq!(buff_time, 108000, "the 30-minute grant");
+                }
+                other => panic!("expected StationBuff for {kind}, got {other:?}"),
+            }
+            // No world write: the cell keeps its kind and frame.
+            let t = w.tile(10, 19).unwrap();
+            assert_eq!((t.kind, t.frame_x, t.frame_y), (kind, 0, 0));
+        }
+        // The neighbouring kinds keep the station tail (no over-capture).
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 126);
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &no_blocker),
+            TileInteraction::StationInteract { .. }
+        ));
+    }
+
+    #[test]
+    fn w4_f34_the_five_neighbour_station_arms_dispatch_the_grants() {
+        // W4-f34 — the census's remaining `TileInteractionsUse` station
+        // buffs, verbatim rows (`Player.cs:32600-32629`): 621 Slice of Cake
+        // → buff 192 for 7200 ticks + Item2 (:32600-32605), 464 War Table →
+        // 348 + Item4 (:32606-32611), 699 Dead Cells Potion Station → 366 +
+        // Item179 (:32612-32617), 377 Sharpening Station → 159 + Item37
+        // (:32618-32623), 354 Bewitching Table → 150 + Item4
+        // (:32624-32629). All consume the click; no world write.
+        for (kind, buff, time) in [
+            (621u16, 192, 7_200),
+            (464, 348, 108_000),
+            (699, 366, 108_000),
+            (377, 159, 108_000),
+            (354, 150, 108_000),
+        ] {
+            let mut w = object_world();
+            set_active(&mut w, 10, 19, kind);
+            let blocked = no_blocker as fn(i32, i32) -> bool;
+            match interact_at(&mut w, 10, 19, 1, &blocked) {
+                TileInteraction::StationBuff {
+                    buff_type,
+                    buff_time,
+                } => {
+                    assert_eq!(buff_type, buff, "tile {kind}");
+                    assert_eq!(buff_time, time, "tile {kind}'s grant duration");
+                }
+                other => panic!("expected StationBuff for {kind}, got {other:?}"),
+            }
+            // No world write: the cell keeps its kind and frame.
+            let t = w.tile(10, 19).unwrap();
+            assert_eq!((t.kind, t.frame_x, t.frame_y), (kind, 0, 0));
+        }
+        // The inactive cell of a station kind is invisible to the use path
+        // (`TileInteractionsCheck`, `Player.cs:32031-32041`).
+        let mut w = object_world();
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 699,
+            ..Default::default()
+        };
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &no_blocker),
+            TileInteraction::None
+        ));
     }
 
     // ---- Phase 2 (M1.4-BG-21): the dial triggers (356/663) -----------------

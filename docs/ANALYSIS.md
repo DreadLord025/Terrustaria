@@ -40875,3 +40875,182 @@ Deferred (unchanged): the skyblock generator, group 5 Caverer, the
 `ore_blob` gem/hellstone shape tails (no seed arms in the C# bands), the
 dualDungeons world content itself (the second dungeon), and the genRand
 interleave (A1-gated, S1-K-1's open half).
+## Birthday-party second half (W4-f41)
+
+The three unclaimed party-furniture slices land (c39 owns the event
+triggers/hats/bubbles; this lane took the items):
+
+- **The right-click arms** (`Player.cs:32278-32284`/`:32600-32605`):
+  `edit::interact_at` gains the `PartyMonolithToggle` (455) kind-literal
+  arm ahead of the registry lookup (the dials/banks shape — the def
+  carries `Interaction::None`). The app arm rides
+  `world_sim/editing/doors.rs::interact_tile`: the monolith plays the
+  case-28 mech cue on the UpdatePlayers stream (the switch-click path's
+  one `Next(-10,11)*0.01` behind the playing guard) then flips
+  `manual_party` with the THROW_A_PARTY up-edge (the wiring drain's
+  identical body). The cake's 621 right-click (SugarRush 192/7200 + the
+  Item2 cue) rides **W4-f34's `StationBuff` route** — the seven-row kind
+  match `621 => Some((192, 7_200))` + the shared `add_buff`-then-cue app
+  arm (the unpitched e28 stand-in is f34's recorded deviation). This
+  lane's `CakeSlice` variant/dispatch/app arms and their two witnesses
+  were DROPPED in the union-exec (research/70 §5 drop 6 — the f34 route
+  is the anchor-bearing superset); folding this lane's faithful pitched
+  case-2 play (`play_npc_item_cue(2, …)`, the `Next(-6,7)*0.01` draw)
+  into the `StationBuff` arm was the recorded follow-up (§1f) —
+  **LANDED in the final sweep** (b4ca66e9, research/70 §8a): the 192 row
+  now plays the faithful pitched cue on the UpdatePlayers stream; the
+  other six rows keep the e28 unpitched stand-in. **Census**: tile 457 (the
+  party present) has NO right-click arm in the C# chain, and item 3749 is
+  NOT in `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`) — the present is
+  place/break-only; `OpenPresent` fires for 1869 alone
+  (`ItemSlot.cs:1852-1855`).
+- **SugarRush** (`Player.cs:9935-9939`): `pickSpeed -= 0.2` (the port's
+  positive-bonus convention, the Mining-104 precedent) +
+  `moveSpeed += 0.2` per live slot, rebased every tick. The union keeps
+  **W4-f34's byte-identical `192 =>` arm** (two arms in one match would
+  not compile — research/70 §5 drop 5); this lane's rebase/expiry
+  witness (`w4_f41_sugar_rush_speeds_the_pick_and_the_run`) stays in the
+  union beside f34's verbatim-arm witness (disjoint aspects, §4).
+- **The break records**: 455 joins `check_3x3_bottom`'s dispatch (the
+  `:53114` support group via the `:85526` gate; drop `case 455` → 3747
+  `:53224`); 621 joins the renamed `check_2x2` (the `:85796` group; drop
+  `case 621` → 3750 `:48609`); 457 gets `check_2x2_style` verbatim
+  (`Check2x2Style` `:52293-52436` via the `type != 457` gate `:85649` →
+  `goto case 254` `:85950`): the `:52300-52314` style decode, the
+  `:52323` **frameX-ONLY** integrity scan (frameY is never read), the
+  `:52328` floor gate, drop 3749 `:52395`, the 4x4 tail ring via
+  `region_ring`. The candelabra/sink slice keeps its deferred-pop
+  convention (ring: None) — recorded.
+- **The freeCake gift chain** (the reconciled union form, research/70 §3
+  — EXECUTED on this branch): `NPC.freeCake` rides `WorldEvents`
+  (field-placement deviation — its writers are all party-machine sites:
+  `NaturalAttempt` `:106` arms, StartNight `Main.cs:65222` and clearWorld
+  `WorldGen.cs:6945` clear). **f38's `Npc.next_dialogue`** stands in for
+  the one-row `ConditionalDialogue` registry (`Init` `:124` registers
+  FreeCakeDialogue(208) alone); the `check_dialogue`/`pending_dialogue`/
+  `conditions_met` helpers (`npc_chat.rs`) carry `CheckDialogue`'s
+  `(GameUpdateCount + whoAmI) % 10` replace-on-poll + between-poll
+  condition-fall clear (`NPC.cs:90519-90532`), called per-NPC from
+  `update_npcs` behind the **`hp > 0` CALLER gate** (f41's alive check
+  moved to the caller — `UpdateNPC` never runs for a corpse; the
+  predicate itself stays freeCake-only). The talk seam
+  (`talk_to_npc`) drains the gift's side effects **BEFORE** the text
+  draw (d120/f41 order — `ConditionalDialogue.cs:60-65` gifts at `:64`
+  THEN draws at `:65`): `free_cake = false`, ONE SliceOfCake 3750
+  prefix-free via a single `slot_for_pickup` (`count += 1`;
+  `SetDefaults(3750)` + `QuickSpawnItem(GiftRecieved)`), the
+  `GetOrDropItem` overflow dropping at the player centre on
+  `rngs.global()` behind `if let Some(p)` (no invented fallback site);
+  **then** `get_chat`'s head (`:93768-93771`, inside `get_chat` ahead of
+  the ladder) answers `PartyGirlSpecialText.Cake<Next(1,4)>` on the same
+  bare-Main.rand stand-in (the talk sits outside every SwapRandom stage,
+  S1-A-10); **then** the latch clears — the C# leaves `nextDialogue`
+  until the next poll tick; the early clear is unobservable (the
+  same-NPC re-talk declines `:43077`) and recorded (§3 latch-clear
+  note). The `NetMessage.SendData(51)` NPC-effect broadcast is the net
+  lane's. The merger grafts this chain onto d120's canonical `GetChat`
+  ladder body + f38's naming/broadcast layer + f34's `StationBuff`
+  route (research/70 §2 KEEP sheet).
+
+Verification: code-only — every arm re-read against the cited C# windows
+in ≤100-line reads; the union-exec witness set is 18 tests WRITTEN NOT
+RUN (the 15 original minus the 2 dropped CakeSlice witnesses, plus f38's
+3 kept chain witnesses and d120's 2 pinned-draw witnesses RE-DERIVED to
+latch the row first per research/70 §4) — no cargo/rustc/tests/graphify
+invoked.
+
+### Final sweep (2026-11-21, research/70 §8)
+
+Six commits on top of the union (b4ca66e9, be4cb841, eec344ce, 73f4f4d4,
+9bab93f3, 5ab4a25d):
+
+- **§8a** f34's `StationBuff` keep-one + the single `192 =>` arm landed
+  here, the cake row's cue upgraded to the pitched case-2 play (the §1f
+  follow-up, its own noted change); f34's neighbour no-draw witness
+  re-derived (621 → the new pitched-roll witness), Item_149/Item_179
+  registered.
+- **§8b** the party-gift shop rows: `StockWhen::PartyUp`/`LanternsUp`/
+  `Day`, the Merchant's 5643 + the Party Girl's eleven-row gift block in
+  the C# num order + the 4702 lantern row, live `party_is_up`/
+  `lanterns_up` feeds at the shop-open seam; the 1449/4552 Always+Night
+  double-stock bug fixed to the C# if/else. Census: PartyBullet 1349 is
+  break/craft-only; ConfettiGun is 1000 (5089 = GlommerPetItem).
+- **§8c** the monolith 455 placement was ALREADY complete (item row +
+  D_455 Style3x3 def + the registry route); 2 end-to-end witnesses added,
+  nothing wired.
+- **§8d** the player-worn Party Hat: item 3732 headSlot 195 is a VANITY
+  head (no C# Player.partyHat field exists — the NPC hat family is
+  c39's); the hatHair ALT-hair-under-hat draw + the vanity-head feed
+  resolution (`Player.cs:35765`) + the gated G6 key input landed.
+- **§8e/§8f** the natural-start gates are ALL claimed (c39: anniversary
+  Next(7), can_npc_party, roster prune; f38: dawn/dusk broadcasts) —
+  census comments only, nothing ported; c39's research/114 does not
+  exist, its cake lane cross-read instead with keep-one DROP verdicts
+  recorded for the eventual merge.
+
+All final-sweep witnesses WRITTEN NOT RUN (code-only).
+
+### Party closeout (2026-11-21, post-final-sweep)
+
+- **The Pigronata break loot** (research/70 §8g, 97724ea7): the C# sends
+  tile 454 to `CheckChand` alongside the chandelier 34
+  (`WorldGen.cs:85510-85513`); the port only dispatched 34, so the
+  Pigronata had no integrity check and no loot. `check_chandelier` is now
+  kind-parameterised (the 4-wide style walk, the 37-row second-block skip,
+  the ox+1 ceiling anchor — one LEFT of the registry origin column, the
+  `nactive` gate verbatim; the old stand-in's liquid allowance and
+  Check3x3 attribution were not the C#), the kill loop wraps
+  `destroyObject`, and the tail is the FULL (width+2)x5 `TileFrame` ring
+  (outer-x/inner-y) for BOTH 34 and 454 — the other checks keep the
+  8-point perimeter sample. The 454 break records one `PigronataEvent` at
+  the checked cell; the app resolves the `Next(9)` table
+  (`:52880-52963`) on the UpdatePlayers stream — silver rain (2/3/4),
+  silver + Flask of Party 1358 (5/6), silver + one Gold 73 (7), the
+  jackpot 100 silver + 30-90 PartyBullet 1349 + flask + gold (8), the
+  clamp-to-budget stack loops verbatim; not `noItem`-gated (the pot/pile
+  convention). Recorded deviation: the C# spawns the loot in 32x32/52x52
+  rects around the cell; the port's drop spawn folds the rect into the
+  cell-origin pop (the house convention). The break dust is g14's claimed
+  `KillTile_MakeTileDust` 454 => 139 confetti row — not re-ported. 34's
+  drop record unchanged (the chandelier style rows stay its lane's).
+  5 witnesses WRITTEN NOT RUN.
+- **The party-center-of-attention census** (research/70 §8h, d118ff9d):
+  NO C# gathering behavior exists — town NPCs do not cluster near the
+  party-giver; `AI_007_TownEntities` reads home tiles only. Every party-NPC
+  site is co-lane-claimed (b3 talk-gate wiring + party_up feed, c39/d55
+  hats, d120 chat, b1 slime insides, spawner PartyBunny, UI emotes, wiring
+  bunny-statue, town-spawn 678 gate, seed afterPartyOfDoom, worldgen
+  starting roster); census comment at the npc_ai_town.rs talk gate,
+  nothing ported.
+- **The 114 receipt** (research/70 §8i): c39's pushed tip 8ecb288a carries
+  research/114 §7 EXECUTED; its cake-side drops name f41c f1f95be4
+  canonical — §8f's verdicts agree. The f34-StationBuff merge-scope piece
+  is ALREADY carried by this branch (b4ca66e9: the seven-row dispatch, the
+  pitched-cue app arm, the single 192 arm, the cues/witnesses/TR_TOGGLE
+  arm) — the merger drops f34's duplicate dispatch/app/192 hunks and keeps
+  this branch's anchor-bearing superset; f34's non-party scope (the
+  honey-contact grant, the 366 player arm + reset, the +2/+2 regen fold
+  and their witnesses) stays f34's own merge.
+
+**SEALED (research/70 §9)** — the party-family bible + the four co-lane
+receipts close the lane: (9a) c39 retired `7dd785dc5` — its cake-side
+drops name f41c canonical (the §8f verdicts stand), the hats are
+DISJOINT (this branch's player vanity 3732/head 195 vs c39's NPC
+`party_hat.rs` draw layer — both keep), the scheduler fold's mechanical
+re-derive census (the clock feed + 7 witness sites gain the
+`tenth_anniversary` arg), and the shop case-13 superset survives f40's
+`LanternNight→LanternsUp` rename (105 §9.2) + the g58/d122
+no-party-rows census; (9b) b3 phase-1 receipt — the aiStyle-7 axis
+(npc.rs:4722) + adapter (:10121) are b3's, the live `party_up` feed is
+its phase-2 contract (npc.rs:10160 still false; the source expression
+is the shop-feed precedent `world_events::party_is_up`), the
+party-center-FALSE census confirms the talk gate + facing machine are
+the ONLY party town behavior — nothing else to wire; (9c) the EXACT
+f34-drop-hunks published (10 hunks with f34-tip line numbers + the
+surviving superset forms; the neighbour no-draw witness must not
+survive as written — 621 now draws the pitch roll) + the non-party KEEP
+list verified absent here; (9d) the g14 loot-vs-dust DISJOINT receipt —
+dust = `KillTile_MakeTileDust` 454=>139 + `Next(4)` confetti
+(WorldGen.cs:66946-66948/:69156-69158, g14's worldgen_dust_tile.rs:2070/
+:1721, witness :1883), loot = this branch's CheckChand `Item.NewItem`
+block (kill.rs carries zero dust references); no overlap at the merge.
