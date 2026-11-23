@@ -55,6 +55,7 @@ mod item_sorting;
 mod sortdata;
 mod lang;
 mod lang_tables;
+mod loadout;
 mod loot_db;
 mod loot_db_gen;
 mod map;
@@ -72,6 +73,7 @@ mod revenge;
 mod npc_ai;
 mod npc_ai_prime_limbs;
 mod npc_ai_style64;
+mod npc_ai_style65;
 mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;
@@ -160,10 +162,10 @@ mod npc_ai_bat;
 mod npc_ai_eye;
 mod npc_ai_golem;
 mod npc_ai_slime;
-// S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
-// the live npc.rs::update_lunatic_cultist stub stays byte-identical
-// until the wiring round (the npc_ai_fishron precedent; states 4/7/8
-// deferred, see the module doc).
+// S1-D-3 cultist / W4-c1: WIRED Lunatic Cultist machine (AI_084, 439) -
+// the aiStyle-84 axis arm (npc.rs::ai_084_cultist) claims the dispatch;
+// the old update_lunatic_cultist stub is retired. The 440 clone has no
+// port kind (solo path); states 4/7/8 deferred, see the module doc.
 mod npc_ai_cultist;
 // S1-D-3 (B-6a): UNWIRED pillar machine (aiStyle 94) - the dispatch swap
 // + the checkDead intercept are the wiring wave; R72 wires the 629
@@ -270,12 +272,21 @@ mod projectile_bobber;
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-g63 — the projectile TRAIL dust lane 1 (kinds 1-400): the per-kind
+// trailing/ambient dust arms inside Projectile.AI(), re-armed onto the live
+// DustPool on the UpdateProjectiles stream (research/66; g64 owns 401+, g65
+// the Kill death dust).
+mod projectile_trail_dust;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
 // helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
 mod recall_teleport;
+// W4-d51: the player-tick `Dust.NewDust` drain lanes — the extra-jump chain
+// (`Player.JumpMovement`, Player.cs:20818-21012) first; the tick queues the
+// box/velocity snapshot, this module replays on the `UpdatePlayers` stream.
+mod player_dust;
 mod regen;
 mod research;
 mod sand;

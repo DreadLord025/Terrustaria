@@ -687,3 +687,948 @@ pub(crate) fn pass_hell_forts(
     }
     placed
 }
+
+/// `TileID.Hellforge` (`TileID.cs`: 77) — the 3×2 forge the hell houses
+/// host (`WorldGen.cs:60079-60083` routes it through `Place3x2`).
+pub(crate) const TILE_HELLFORGE: u16 = 77;
+
+/// `WorldGen.PlaceTile(i, j, 77)` (`WorldGen.cs:59342-60295`), the slice
+/// the Hellforge pass runs — the g37 B7 PlaceTile route grafted onto this
+/// lane's correctly-ordered pass (research/86 §6.2; g37 research/75 §2.7
+/// recommended the graft, its own slot ordering was the bug). The arms
+/// that bind for kind 77:
+/// - `:59345` the gen-time existing-488 veto;
+/// - `:59373` the entry gate `forced || EmptyTile || !tileSolid[77]` —
+///   `Main.tileSolid[77]` is FALSE (no `Main.cs` assignment; the port's
+///   generated `TILE_SOLID` bit 77 is 0), so the entry ALWAYS admits,
+///   even over an active solid cell (the Place3x2 body scan then
+///   refuses); `Collision.EmptyTile` reduces to `!active` at gen time;
+/// - `:59454-59471` the liquid gate — 77 is neither a torch nor in the
+///   refusal list, so liquid never vetoes;
+/// - `:59473-59476` the inactive-cell `Clear(Tile|TilePaint|Slope)`
+///   (`Tile.cs:744-790` — type/active/frames zeroed, paint + coatings +
+///   slope + halfBrick cleared; wall, liquid, wiring, actuator survive);
+/// - `:59477-59482` the `ResetsHalfBrickPlacementAttempt[77]` arm (the
+///   set is default-true, `TileID.cs:497` — 77 is NOT in the false
+///   list): an active non-frame-important cell loses halfBrick + frames
+///   even when the placement then fails;
+/// - `:60079-60083` the 77 dispatch → `Place3x2` + `SquareTileFrame`;
+/// - `:60255-60262` the tail: `TruncatesWalls[77]` is false
+///   (`TileID.cs:595`), the second `SquareTileFrame` runs, `result` =
+///   the centre cell ended active. The sound/dust block is gen-inert.
+/// Returns the C# `result`; the pass itself checks `type == 77`.
+fn place_tile_hellforge(world: &mut World, x: i32, y: i32) -> bool {
+    // `:59345`: during generation an existing fallen log blocks placement.
+    if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 488) {
+        return false;
+    }
+    // `:59349` (`77 < TileID.Count`) and `:59354` (bounds).
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return false;
+    }
+    let active_here = world.tile(x, y).is_some_and(|t| t.active());
+    // `:59373`: `forced(false) || EmptyTile || !tileSolid[77]` — the
+    // third disjunct always admits (77 is non-solid); ported verbatim.
+    let entry = !active_here || !crate::tiledata::TILE_SOLID.has(TILE_HELLFORGE);
+    if !entry {
+        return false;
+    }
+    // `:59375-59453`: the grass/moss/coral/drip guards — other kinds.
+    // `:59454-59471`: the liquid gate passes for 77 (see the doc).
+    if !active_here {
+        // `:59473-59476`: `Clear(Tile | TilePaint | Slope)`.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 0;
+            t.flags &= !FLAG_ACTIVE;
+            t.frame_x = 0;
+            t.frame_y = 0;
+            t.set_paint(0);
+            t.flags &= !crate::tile::FLAG_FULLBRIGHT;
+            t.set_slope(0);
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+        }
+        world.set_invisible_block(x, y, false);
+    } else if !world
+        .tile(x, y)
+        .is_some_and(|t| crate::tileobject::frame_important(t.kind))
+    {
+        // `:59477-59482`: `ResetsHalfBrickPlacementAttempt[77]` is true —
+        // an active non-frame-important cell loses halfBrick + frames.
+        if let Some(t) = world.tile_mut(x, y) {
+            t.flags &= !crate::tile::FLAG_HALF_BRICK;
+            t.frame_y = 0;
+            t.frame_x = 0;
+        }
+    }
+    // `:60079-60083`: the 77 dispatch — `Place3x2` + `SquareTileFrame`.
+    super::evil::place_3x2(world, x, y, TILE_HELLFORGE, 0);
+    crate::edit::square_tile_frame_gen(world, x, y);
+    // `:60255-60262`: the tail re-frame + result (`TruncatesWalls[77]`
+    // is false — no `SquareWallFrame`).
+    if world.tile(x, y).is_some_and(|t| t.active()) {
+        crate::edit::square_tile_frame_gen(world, x, y);
+        return true;
+    }
+    false
+}
+
+/// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
+/// `maxTilesX / 200` forges, each a retry loop — the `Next(1, maxTilesX)`
+/// column + the `Next(maxTilesY - 250, maxTilesY - 30)` row, the wall
+/// 13/14 (the hell-house brick walls) gate, the drop to the first active
+/// cell (`j < maxTilesY - 20` bound), then `PlaceTile(num3, j - 1, 77)`
+/// (the full PlaceTile route — [`place_tile_hellforge`], the g37 B7
+/// graft). The 10000-failure valve ends the retry. The C#'s `try/catch`
+/// covers the out-of-bounds reads — the port's bounds-checked `tile`
+/// reads stand in (a miss counts as a failure). The slot stays AFTER
+/// `hell forts` (the wall-14 producer, `AddHellHouses` `:13840` inside
+/// Underworld `:13645`) — g37's before-hell-forts slot never fires
+/// (research/86 §1 B7 / §6.2).
+pub(crate) fn pass_hellforge(world: &mut World, rng: &mut super::Rng) -> u32 {
+    let num = world.width / 200;
+    // The sub-vanilla guard (the g37 graft): the C#
+    // `Next(maxTilesY - 250, maxTilesY - 30)` band goes negative below
+    // height 250 (the C# throws); a zero count draws nothing.
+    if world.height <= 250 || num <= 0 {
+        return 0;
+    }
+    let mut placed = 0u32;
+    for _ in 0..num {
+        let mut flag = false;
+        let mut num2 = 0;
+        while !flag {
+            let num3 = rng.range(1, world.width);
+            let mut j = rng.range(world.height - 250, world.height - 30);
+            let wall = world.tile(num3, j).map(|t| t.wall).unwrap_or(0);
+            if wall == 13 || wall == 14 {
+                // The drop scan (`:18205-18208`): the first active cell,
+                // bounded by `maxTilesY - 20`.
+                while !world.tile(num3, j).is_some_and(|t| t.active()) && j < world.height - 20 {
+                    j += 1;
+                }
+                j -= 1;
+                // `PlaceTile(num3, j, 77)` — the full route (the entry
+                // gate, the Clear arm, the halfBrick reset, the Place3x2
+                // dispatch + the SquareTileFrame calls).
+                place_tile_hellforge(world, num3, j);
+                if world.tile(num3, j).is_some_and(|t| t.kind == TILE_HELLFORGE) {
+                    flag = true;
+                    placed += 1;
+                } else {
+                    num2 += 1;
+                    if num2 >= 10000 {
+                        flag = true;
+                    }
+                }
+            }
+            // The C#'s wall-miss arm draws again with no failure count
+            // (only the place-failure and the catch arms bump `num2`).
+        }
+    }
+    placed
+}
+
+// --- Piles (W4-d104 pass 35) -------------------------------------------------
+
+/// `Main.tileDungeon` (`Main.cs:7992-7997`).
+fn pile_tile_dungeon(kind: u16) -> bool {
+    matches!(kind, 41 | 43 | 44 | 677 | 678 | 679)
+}
+
+/// `Main.wallDungeon` (`Main.cs:10596-10607`).
+fn pile_wall_dungeon(wall: u16) -> bool {
+    matches!(wall, 7 | 8 | 9 | 94..=99)
+}
+
+/// `WorldGen.GetPileGenerationAttempts` (`WorldGen.cs:23647-23655`):
+/// `maxTilesX / 2`, the skyblock /10.
+fn pile_attempts(world: &World) -> i32 {
+    let mut num = world.width / 2;
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        num /= 10;
+    }
+    num
+}
+
+/// The Piles window's `SolidTile2` floor predicate
+/// (`WorldGen.cs:70134-70151`): the pass flips the cloud/sunplate/geyser/
+/// boulder kinds non-solid (`:18794-18805`), so the pile seats on them
+/// refuse. The port's table is static — the window rides the predicate.
+fn pile_floor(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return true;
+    };
+    if matches!(t.kind, 379 | 229 | 190 | 196 | 189 | 717 | 718 | 719 | 202 | 460 | 484) {
+        return false;
+    }
+    t.active()
+        && crate::tiledata::TILE_SOLID.has(t.kind)
+        && t.slope() == 0
+        && !t.half_brick()
+        && !t.inactive()
+}
+
+/// `WorldGen.PlaceSmallPile` (`WorldGen.cs:46815-46873`) under the Piles
+/// window — the seat reads [`pile_floor`], the 185 boulder veto
+/// (`InvalidTileForPilesOrSpeleothems`) is inert during worldgen (D20).
+fn place_small_pile_window(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    pile_style: i32,
+    pile_size: i32,
+) -> bool {
+    let frame_y = (pile_size * 18) as i16;
+    if world
+        .tile(x, y)
+        .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Lava)
+    {
+        return false;
+    }
+    if pile_size == 1 {
+        let frame_x = (pile_style * 36) as i16;
+        let seat = pile_floor(world, x, y + 1)
+            && pile_floor(world, x + 1, y + 1)
+            && !world.tile(x, y).is_some_and(|t| t.active())
+            && !world.tile(x + 1, y).is_some_and(|t| t.active());
+        if !seat {
+            return false;
+        }
+        for (i, fx) in [(x, frame_x), (x + 1, frame_x + 18)] {
+            if let Some(t) = world.tile_mut(i, y) {
+                t.kind = 185;
+                t.flags |= FLAG_ACTIVE;
+                t.frame_x = fx;
+                t.frame_y = frame_y;
+            }
+        }
+        true
+    } else if pile_floor(world, x, y + 1) && !world.tile(x, y).is_some_and(|t| t.active()) {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.kind = 185;
+            t.flags |= FLAG_ACTIVE;
+            t.frame_x = (pile_style * 18) as i16;
+            t.frame_y = frame_y;
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// The `PlaceTile(num4, j, 186/187, style)` route — both pile kinds go
+/// through `Place3x2` (`WorldGen.cs:59993-60002`).
+fn place_pile(world: &mut World, x: i32, y: i32, kind: u16, style: i32) {
+    super::evil::place_3x2(world, x, y, kind, style);
+}
+
+/// The small-pile cluster the large-pile scatters append
+/// (`:18910-18924` etc.): `Next(1, 5)` satellites at `±Next(-10, 11)` /
+/// `-Next(5)`, each dropped to its floor and `PlaceSmallPile(Next(12, 36),
+/// 0, 185)`.
+fn pile_cluster(world: &mut World, x: i32, y: i32, rng: &mut super::Rng) {
+    let num7 = rng.range(1, 5);
+    for _ in 0..num7 {
+        let num8 = x + rng.range(-10, 11);
+        let mut l = y - rng.range(0, 5);
+        if !world.tile(num8, l).is_some_and(|t| t.active()) {
+            while !world.tile(num8, l + 1).is_some_and(|t| t.active()) && l < world.height - 5 {
+                l += 1;
+            }
+            place_small_pile_window(world, num8, l, rng.range(12, 36), 0);
+        }
+    }
+}
+
+/// The `Piles` pass (`WorldGen.cs:18788-19458`, W4-d104 pass 35): the
+/// seven decor scatters — the large-pile underground (`width*0.06`), the
+/// large-pile deep (`width*0.01`), the large-pile surface (`width*0.03`),
+/// the large-pile walled-surface (`width*0.0035`), the small-pile
+/// underground (`width*0.6`), the small-pile surface (`width*0.02`), the
+/// small-pile dirt/snow-wall surface (`width*0.15`). The
+/// `Skyblock.denySomeGeneration` gate rides the step adapter; the
+/// `tileSolid` window rides [`pile_floor`].
+pub(crate) fn pass_piles(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    rng: &mut super::Rng,
+) {
+    // The sub-vanilla width guard: the column draw `Next(25, width-25)`
+    // throws on a ≤50-wide world.
+    if world.width <= 50 {
+        return;
+    }
+    let ocean_level = (world_surface + rock_layer) / 2.0 + 40.0;
+    let attempts = pile_attempts(world);
+    // --- scatter 1: the large-pile underground (`:18809-18927`) ---------
+    let num2 = (world.width as f32 * 0.06) as i32;
+    for _ in 0..num2 {
+        let mut num3 = attempts;
+        let mut flag = false;
+        while !flag && num3 > 0 {
+            num3 -= 1;
+            let mut num4 = rng.range(25, world.width - 25);
+            let mut j = rng.range(world_surface as i32, world.height - 300);
+            while super::traps::ocean_depths_trap(world, num4, j, ocean_level) {
+                num4 = rng.range(25, world.width - 25);
+                j = rng.range(world_surface as i32, world.height - 300);
+            }
+            if !world.tile(num4, j).is_some_and(|t| t.active()) {
+                let mut num5: u16 = 186;
+                while !world.tile(num4, j + 1).is_some_and(|t| t.active()) && j < world.height - 5 {
+                    j += 1;
+                }
+                let wall = world.tile(num4, j).map(|t| t.wall).unwrap_or(0);
+                let shimmer = world
+                    .tile(num4, j)
+                    .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer);
+                let Some(below) = world.tile(num4, j + 1).copied() else {
+                    continue;
+                };
+                if below.active() {
+                    let mut num6 = rng.range(0, 22);
+                    if (16..=22).contains(&num6) {
+                        num6 = rng.range(0, 22);
+                    }
+                    if (below.kind == 0 || below.kind == 1 || crate::tiledata::TILE_MOSS.has(below.kind))
+                        && rng.range(0, 5) == 0
+                    {
+                        num6 = rng.range(23, 29);
+                        num5 = 187;
+                    }
+                    if j > world.height - 300
+                        || pile_wall_dungeon(wall)
+                        || below.kind == 30
+                        || below.kind == 19
+                        || below.kind == 25
+                        || below.kind == 203
+                    {
+                        num6 = rng.range(0, 7);
+                        num5 = 186;
+                    }
+                    if matches!(below.kind, 147 | 161 | 162) {
+                        num6 = rng.range(26, 32);
+                        num5 = 186;
+                    }
+                    if below.kind == 60 {
+                        num5 = 187;
+                        num6 = rng.range(0, 6);
+                    }
+                    if matches!(below.kind, 57 | 58) && rng.range(0, 3) < 2 {
+                        num5 = 187;
+                        num6 = rng.range(6, 9);
+                    }
+                    if below.kind == 226 {
+                        num5 = 187;
+                        num6 = rng.range(18, 23);
+                    }
+                    if below.kind == 70 {
+                        num6 = rng.range(32, 35);
+                        num5 = 186;
+                    }
+                    if matches!(below.kind, 396 | 397 | 404) {
+                        num6 = rng.range(29, 35);
+                        num5 = 187;
+                    }
+                    if below.kind == 368 {
+                        num6 = rng.range(35, 41);
+                        num5 = 187;
+                    }
+                    if below.kind == 367 {
+                        num6 = rng.range(41, 47);
+                        num5 = 187;
+                    }
+                    if num5 == 186 && (7..=15).contains(&num6) && rng.range(0, 75) == 0 {
+                        num5 = 187;
+                        num6 = 17;
+                    }
+                    if pile_wall_dungeon(wall) && rng.range(0, 3) != 0 {
+                        flag = true;
+                    } else {
+                        // `:18903`: the `anyShimmer` veto.
+                        if !shimmer {
+                            place_pile(world, num4, j, num5, num6);
+                        }
+                        if world.tile(num4, j).is_some_and(|t| t.kind == 186 || t.kind == 187) {
+                            flag = true;
+                        }
+                        if flag && num5 == 186 && num6 <= 7 {
+                            pile_cluster(world, num4, j, rng);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // --- scatter 2: the large-pile deep (`:18928-18993`) ----------------
+    let num2 = (world.width as f32 * 0.01) as i32;
+    for _ in 0..num2 {
+        let mut num9 = attempts;
+        let mut flag2 = false;
+        while !flag2 && num9 > 0 {
+            num9 -= 1;
+            let mut num10 = rng.range(25, world.width - 25);
+            let mut n = rng.range(world.height - 300, world.height - 10);
+            if !world.tile(num10, n).is_some_and(|t| t.active()) {
+                let mut num11: u16 = 186;
+                while !world.tile(num10, n + 1).is_some_and(|t| t.active()) && n < world.height - 5 {
+                    n += 1;
+                }
+                let wall = world.tile(num10, n).map(|t| t.wall).unwrap_or(0);
+                let Some(below) = world.tile(num10, n + 1).copied() else {
+                    continue;
+                };
+                if below.active() {
+                    let mut num12 = rng.range(0, 22);
+                    if (16..=22).contains(&num12) {
+                        num12 = rng.range(0, 22);
+                    }
+                    if n > world.height - 300 || pile_wall_dungeon(wall) || below.kind == 30 || below.kind == 19 {
+                        num12 = rng.range(0, 7);
+                    }
+                    if matches!(below.kind, 57 | 58) && rng.range(0, 3) < 2 {
+                        num11 = 187;
+                        num12 = rng.range(6, 9);
+                    }
+                    if matches!(below.kind, 147 | 161 | 162) {
+                        num12 = rng.range(26, 32);
+                    }
+                    place_pile(world, num10, n, num11, num12);
+                    if world.tile(num10, n).is_some_and(|t| t.kind == 186 || t.kind == 187) {
+                        flag2 = true;
+                    }
+                    if flag2 && num11 == 186 && num12 <= 7 {
+                        pile_cluster(world, num10, n, rng);
+                    }
+                }
+            }
+        }
+    }
+    // --- scatter 3: the large-pile surface (`:18994-19054`) -------------
+    let num2 = (world.width as f32 * 0.03) as i32;
+    for _ in 0..num2 {
+        let mut num18 = attempts;
+        let mut flag3 = false;
+        while !flag3 && num18 > 0 {
+            num18 -= 1;
+            let mut num19: u16 = 186;
+            let mut num20 = rng.range(25, world.width - 25);
+            let mut num21 = rng.range(10, world_surface as i32);
+            while super::traps::ocean_depths_trap(world, num20, num21, ocean_level) {
+                num20 = rng.range(25, world.width - 25);
+                num21 = rng.range(10, world_surface as i32);
+            }
+            if !world.tile(num20, num21).is_some_and(|t| t.active()) {
+                while !world.tile(num20, num21 + 1).is_some_and(|t| t.active()) && num21 < world.height - 5 {
+                    num21 += 1;
+                }
+                let wall = world.tile(num20, num21).map(|t| t.wall).unwrap_or(0);
+                let Some(below) = world.tile(num20, num21 + 1).copied() else {
+                    continue;
+                };
+                if below.active() {
+                    let mut num22 = rng.range(7, 13);
+                    if num21 > world.height - 300
+                        || pile_wall_dungeon(wall)
+                        || matches!(below.kind, 30 | 19 | 25 | 204 | 234 | 112)
+                        || pile_tile_dungeon(below.kind)
+                    {
+                        num22 = -1;
+                    }
+                    if matches!(below.kind, 147 | 161 | 162) {
+                        num22 = rng.range(26, 32);
+                    }
+                    if below.kind == 53 {
+                        num19 = 187;
+                        num22 = rng.range(52, 55);
+                    }
+                    let grass_side = |world: &World, px: i32| {
+                        world.tile(px, num21 + 1).is_some_and(|t| t.active() && t.kind == 2)
+                    };
+                    if below.kind == 2 || grass_side(world, num20 - 1) || grass_side(world, num20 + 1) {
+                        num19 = 187;
+                        num22 = rng.range(14, 17);
+                    }
+                    if matches!(below.kind, 151 | 274) {
+                        num19 = 186;
+                        num22 = rng.range(0, 7);
+                    }
+                    if num22 >= 0 {
+                        place_pile(world, num20, num21, num19, num22);
+                    }
+                    if world.tile(num20, num21).is_some_and(|t| t.kind == num19) {
+                        flag3 = true;
+                    }
+                }
+            }
+        }
+    }
+    // --- scatter 4: the large-pile walled surface (`:19055-19125`) ------
+    let num2 = (world.width as f32 * 0.0035) as i32;
+    for _ in 0..num2 {
+        let mut num24 = attempts;
+        let mut flag4 = false;
+        while !flag4 && num24 > 0 {
+            num24 -= 1;
+            let mut num25 = rng.range(25, world.width - 25);
+            let mut num26 = rng.range(10, world_surface as i32);
+            if world.tile(num25, num26).is_some_and(|t| !t.active() && t.wall > 0) {
+                let mut num27: u16 = 186;
+                while !world.tile(num25, num26 + 1).is_some_and(|t| t.active()) && num26 < world.height - 5 {
+                    num26 += 1;
+                }
+                let wall = world.tile(num25, num26).map(|t| t.wall).unwrap_or(0);
+                let Some(below) = world.tile(num25, num26 + 1).copied() else {
+                    continue;
+                };
+                if below.active() {
+                    let mut num28 = rng.range(7, 13);
+                    if num26 > world.height - 300
+                        || pile_wall_dungeon(wall)
+                        || below.kind == 30
+                        || below.kind == 19
+                        || pile_tile_dungeon(below.kind)
+                    {
+                        num28 = -1;
+                    }
+                    if below.kind == 25 {
+                        num28 = rng.range(0, 7);
+                    }
+                    if matches!(below.kind, 147 | 161 | 162) {
+                        num28 = rng.range(26, 32);
+                    }
+                    let grass_side = |world: &World, px: i32| {
+                        world.tile(px, num26 + 1).is_some_and(|t| t.active() && t.kind == 2)
+                    };
+                    if below.kind == 2 || grass_side(world, num25 - 1) || grass_side(world, num25 + 1) {
+                        num27 = 187;
+                        num28 = rng.range(14, 17);
+                    }
+                    if matches!(below.kind, 151 | 274) {
+                        num27 = 186;
+                        num28 = rng.range(0, 7);
+                    }
+                    if num28 >= 0 {
+                        place_pile(world, num25, num26, num27, num28);
+                    }
+                    if world.tile(num25, num26).is_some_and(|t| t.kind == num27) {
+                        flag4 = true;
+                    }
+                    if flag4 && num28 <= 7 {
+                        pile_cluster(world, num25, num26, rng);
+                    }
+                }
+            }
+        }
+    }
+    // --- scatter 5: the small-pile underground (`:19126-19287`) ---------
+    let num2 = (world.width as f32 * 0.6) as i32;
+    for _ in 0..num2 {
+        let mut num34 = attempts;
+        let mut flag5 = false;
+        while !flag5 && num34 > 0 {
+            num34 -= 1;
+            let mut num35 = rng.range(25, world.width - 25);
+            let mut num36 = rng.range(world_surface as i32, world.height - 20);
+            if world.tile(num35, num36).is_some_and(|t| t.wall == 87) && rng.range(0, 2) == 0 {
+                num35 = rng.range(25, world.width - 25);
+                num36 = rng.range(world_surface as i32, world.height - 20);
+            }
+            while super::traps::ocean_depths_trap(world, num35, num36, ocean_level) {
+                num35 = rng.range(25, world.width - 25);
+                num36 = rng.range(world_surface as i32, world.height - 20);
+            }
+            if !world.tile(num35, num36).is_some_and(|t| t.active()) {
+                while !world.tile(num35, num36 + 1).is_some_and(|t| t.active()) && num36 < world.height - 5 {
+                    num36 += 1;
+                }
+                let (wall, liquid, shimmer) = world
+                    .tile(num35, num36)
+                    .map(|t| {
+                        (
+                            t.wall,
+                            t.liquid,
+                            t.liquid > 0 && t.liquid_kind() == crate::tile::LiquidKind::Shimmer,
+                        )
+                    })
+                    .unwrap_or((0, 0, false));
+                let Some(below) = world.tile(num35, num36 + 1).copied() else {
+                    continue;
+                };
+                if below.active() {
+                    let num37 = rng.range(0, 2);
+                    let mut num38 = rng.range(0, 36);
+                    if (28..=35).contains(&num38) {
+                        num38 = rng.range(0, 36);
+                    }
+                    if num37 == 1 {
+                        num38 = rng.range(0, 25);
+                        if (16..=24).contains(&num38) {
+                            num38 = rng.range(0, 25);
+                        }
+                    }
+                    if num36 > world.height - 300 {
+                        if num37 == 0 {
+                            num38 = rng.range(12, 28);
+                        }
+                        if num37 == 1 {
+                            num38 = rng.range(6, 16);
+                        }
+                    }
+                    if pile_wall_dungeon(wall)
+                        || wall == 87
+                        || matches!(below.kind, 30 | 19 | 25 | 203)
+                    {
+                        if num37 == 0 && num38 < 12 {
+                            num38 += 12;
+                        }
+                        if num37 == 1 && num38 < 6 {
+                            num38 += 6;
+                        }
+                        if num37 == 1 && num38 >= 17 {
+                            num38 -= 10;
+                        }
+                    }
+                    if matches!(below.kind, 147 | 161 | 162) {
+                        if num37 == 0 && num38 < 12 {
+                            num38 += 36;
+                        }
+                        if num37 == 1 && num38 >= 20 {
+                            num38 += 6;
+                        }
+                        if num37 == 1 && num38 < 6 {
+                            num38 += 25;
+                        }
+                    }
+                    if liquid == 0 && matches!(below.kind, 53 | 397 | 396) {
+                        if num37 == 0 {
+                            num38 = rng.range(73, 78);
+                        }
+                        if num37 == 1 {
+                            num38 = rng.range(62, 65);
+                        }
+                    }
+                    if matches!(below.kind, 151 | 274) {
+                        if num37 == 0 {
+                            num38 = rng.range(12, 28);
+                        }
+                        if num37 == 1 {
+                            num38 = rng.range(12, 19);
+                        }
+                    }
+                    if below.kind == 368 {
+                        if num37 == 0 {
+                            num38 = rng.range(60, 66);
+                        }
+                        if num37 == 1 {
+                            num38 = rng.range(47, 53);
+                        }
+                    }
+                    if below.kind == 367 {
+                        if num37 == 0 {
+                            num38 = rng.range(66, 72);
+                        }
+                        if num37 == 1 {
+                            num38 = rng.range(53, 59);
+                        }
+                    }
+                    if pile_tile_dungeon(below.kind) {
+                        flag5 = false;
+                    } else if pile_wall_dungeon(wall) && rng.range(0, 3) != 0 {
+                        flag5 = true;
+                    } else if !shimmer {
+                        // `:19269`: the `anyShimmer` veto.
+                        flag5 = place_small_pile_window(world, num35, num36, num38, num37);
+                    }
+                    if flag5 && num37 == 1 && (6..=15).contains(&num38) {
+                        pile_cluster(world, num35, num36, rng);
+                    }
+                }
+            }
+        }
+    }
+    // --- scatter 6: the small-pile surface (`:19288-19366`) -------------
+    let num2 = (world.width as f32 * 0.02) as i32;
+    for _ in 0..num2 {
+        let mut num44 = attempts;
+        let mut flag6 = false;
+        while !flag6 && num44 > 0 {
+            num44 -= 1;
+            let mut num45 = rng.range(25, world.width - 25);
+            let mut num46 = rng.range(15, world_surface as i32);
+            while super::traps::ocean_depths_trap(world, num45, num46, ocean_level) {
+                num45 = rng.range(25, world.width - 25);
+                num46 = rng.range(15, world_surface as i32);
+            }
+            if !world.tile(num45, num46).is_some_and(|t| t.active()) {
+                while !world.tile(num45, num46 + 1).is_some_and(|t| t.active()) && num46 < world.height - 5 {
+                    num46 += 1;
+                }
+                let (wall, liquid) = world
+                    .tile(num45, num46)
+                    .map(|t| (t.wall, t.liquid))
+                    .unwrap_or((0, 0));
+                let Some(below) = world.tile(num45, num46 + 1).copied() else {
+                    continue;
+                };
+                if below.active() {
+                    let num47 = rng.range(0, 2);
+                    let mut num48 = rng.range(0, 11);
+                    if num47 == 1 {
+                        num48 = rng.range(0, 5);
+                    }
+                    if matches!(below.kind, 147 | 161 | 162) {
+                        if num47 == 0 && num48 < 12 {
+                            num48 += 36;
+                        }
+                        if num47 == 1 && num48 >= 20 {
+                            num48 += 6;
+                        }
+                        if num47 == 1 && num48 < 6 {
+                            num48 += 25;
+                        }
+                    }
+                    if liquid == 0 && matches!(below.kind, 53 | 397 | 396) {
+                        if num47 == 0 {
+                            num48 = rng.range(73, 77);
+                        }
+                        if num47 == 1 {
+                            num48 = rng.range(62, 65);
+                        }
+                    }
+                    if below.kind == 2 && num47 == 1 {
+                        num48 = rng.range(38, 41);
+                    }
+                    if matches!(below.kind, 151 | 274) {
+                        if num47 == 0 {
+                            num48 = rng.range(12, 28);
+                        }
+                        if num47 == 1 {
+                            num48 = rng.range(12, 19);
+                        }
+                    }
+                    if !pile_wall_dungeon(wall)
+                        && !matches!(below.kind, 30 | 19 | 41 | 43 | 44 | 481 | 482 | 483 | 45 | 46 | 47 | 175 | 176 | 177 | 25 | 203)
+                        && !pile_tile_dungeon(below.kind)
+                    {
+                        flag6 = place_small_pile_window(world, num45, num46, num48, num47);
+                    }
+                }
+            }
+        }
+    }
+    // --- scatter 7: the small-pile dirt/snow-wall surface (`:19367-19440`)
+    let num2 = (world.width as f32 * 0.15) as i32;
+    for _ in 0..num2 {
+        let mut num50 = attempts;
+        let mut flag7 = false;
+        while !flag7 && num50 > 0 {
+            num50 -= 1;
+            let mut num51 = rng.range(25, world.width - 25);
+            let mut num52 = rng.range(15, world_surface as i32);
+            if world.tile(num51, num52).is_some_and(|t| !t.active() && (t.wall == 2 || t.wall == 40)) {
+                while !world.tile(num51, num52 + 1).is_some_and(|t| t.active()) && num52 < world.height - 5 {
+                    num52 += 1;
+                }
+                let (wall, liquid) = world
+                    .tile(num51, num52)
+                    .map(|t| (t.wall, t.liquid))
+                    .unwrap_or((0, 0));
+                let Some(below) = world.tile(num51, num52 + 1).copied() else {
+                    continue;
+                };
+                if below.active() {
+                    let num53 = rng.range(0, 2);
+                    let mut num54 = rng.range(0, 11);
+                    if num53 == 1 {
+                        num54 = rng.range(0, 5);
+                    }
+                    if matches!(below.kind, 147 | 161 | 162) {
+                        if num53 == 0 && num54 < 12 {
+                            num54 += 36;
+                        }
+                        if num53 == 1 && num54 >= 20 {
+                            num54 += 6;
+                        }
+                        if num53 == 1 && num54 < 6 {
+                            num54 += 25;
+                        }
+                    }
+                    if liquid == 0 && matches!(below.kind, 53 | 397 | 396) {
+                        if num53 == 0 {
+                            num54 = rng.range(73, 77);
+                        }
+                        if num53 == 1 {
+                            num54 = rng.range(62, 65);
+                        }
+                    }
+                    if below.kind == 2 && num53 == 1 {
+                        num54 = rng.range(38, 41);
+                    }
+                    if matches!(below.kind, 151 | 274) {
+                        if num53 == 0 {
+                            num54 = rng.range(12, 28);
+                        }
+                        if num53 == 1 {
+                            num54 = rng.range(12, 19);
+                        }
+                    }
+                    if (liquid != u8::MAX || below.kind != 53 || wall != 0)
+                        && !pile_wall_dungeon(wall)
+                        && !matches!(below.kind, 30 | 19 | 41 | 43 | 44 | 481 | 482 | 483 | 45 | 46 | 47 | 175 | 176 | 177 | 25 | 203)
+                        && !pile_tile_dungeon(below.kind)
+                    {
+                        flag7 = place_small_pile_window(world, num51, num52, num54, num53);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// W4-d104 pass 30: the forge lands on a hell-house wall column's
+    /// floor, and two same-stream runs replay byte-equal (a == b).
+    #[test]
+    fn w4_d104_30_the_hellforge_places_and_replays() {
+        let build = || {
+            let mut w = World::new("hf".into(), 400, 600);
+            // A hell-house block: wall 14 over rows 400..500, the floor
+            // at 500 (the drop scan stops there).
+            for x in 100..140 {
+                for y in 400..500 {
+                    let i = w.index(x, y);
+                    w.tiles[i].wall = 14;
+                }
+                for y in 500..600 {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = TILE_HELL_BRICK;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                    w.tiles[i].wall = 14;
+                }
+            }
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        let pa = pass_hellforge(&mut a, &mut crate::worldgen::noise::Rng(42));
+        let pb = pass_hellforge(&mut b, &mut crate::worldgen::noise::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b: the pass stream replays");
+        assert_eq!(pa, pb);
+        assert!(pa > 0, "the forge placed ({pa})");
+        assert!(
+            a.tiles.iter().any(|t| t.active() && t.kind == TILE_HELLFORGE),
+            "the 77 tiles exist"
+        );
+    }
+
+    /// W4-d104 pass 30 graft (research/86 §6.2): the PlaceTile-77 Clear
+    /// arm (`:59473-59476`) — an inactive seat carrying stale
+    /// frames/paint/coating/slope/halfBrick is cleared BEFORE the
+    /// Place3x2 write (the bare pre-graft route left them on the forge).
+    #[test]
+    fn w4_d104_30_the_placetile_clear_arm_cleans_the_seat() {
+        let mut w = World::new("hf".into(), 100, 100);
+        // A solid floor at row 61 under columns 49..52.
+        for x in 49..52 {
+            let i = w.index(x, 61);
+            w.tiles[i].kind = TILE_STONE;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        // The seat (50, 60): inactive but carrying residue.
+        let i = w.index(50, 60);
+        w.tiles[i].kind = TILE_STONE;
+        w.tiles[i].frame_x = 99;
+        w.tiles[i].frame_y = 54;
+        w.tiles[i].set_paint(5);
+        w.tiles[i].set_slope(2);
+        w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK | crate::tile::FLAG_FULLBRIGHT;
+        w.set_invisible_block(50, 60, true);
+        assert!(place_tile_hellforge(&mut w, 50, 60), "the forge places");
+        let t = w.tile(50, 60).unwrap();
+        assert_eq!(t.kind, TILE_HELLFORGE);
+        assert_eq!(t.paint(), 0, "Clear zeroed the paint");
+        assert_eq!(t.slope(), 0, "Clear zeroed the slope");
+        assert!(!t.half_brick(), "Clear dropped the halfBrick");
+        assert!(!t.fullbright_block(), "Clear dropped the Glow coating");
+        assert!(!w.invisible_block(50, 60), "Clear dropped the Echo coating");
+        assert_eq!(t.frame_x, 18, "the Place3x2 centre frame (54*0 + 18)");
+        assert_eq!(t.frame_y, 18, "the Place3x2 bottom-row frame");
+    }
+
+    /// W4-d104 pass 30 graft: the `ResetsHalfBrickPlacementAttempt[77]`
+    /// arm (`:59477-59482`, the set is default-true — `TileID.cs:497`) —
+    /// an ACTIVE non-frame-important seat loses halfBrick + frames even
+    /// though the Place3x2 body scan then refuses the placement. The
+    /// entry gate itself always admits (`tileSolid[77]` is false). The
+    /// C# `result` is the centre-cell-active flag (`:60255-60262`), so
+    /// it reads TRUE here — the pass's own `type == 77` check is what
+    /// counts the failure.
+    #[test]
+    fn w4_d104_30_the_halfbrick_reset_fires_on_a_refused_seat() {
+        let mut w = World::new("hf".into(), 100, 100);
+        // An active half-bricked stone seat with a stale frame.
+        let i = w.index(50, 60);
+        w.tiles[i].kind = TILE_STONE;
+        w.tiles[i].flags |= FLAG_ACTIVE | crate::tile::FLAG_HALF_BRICK;
+        w.tiles[i].frame_x = 54;
+        w.tiles[i].frame_y = 18;
+        assert!(
+            place_tile_hellforge(&mut w, 50, 60),
+            "result = centre active (the stone seat stays active)"
+        );
+        let t = w.tile(50, 60).unwrap();
+        assert_eq!(t.kind, TILE_STONE, "the body scan refused the forge");
+        assert!(t.active());
+        assert!(!t.half_brick(), "the reset dropped the halfBrick");
+        assert_eq!(t.frame_x, 0, "the reset zeroed frameX");
+        assert_eq!(t.frame_y, 0, "the reset zeroed frameY");
+    }
+
+    /// W4-d104 pass 30 graft: the gen-time existing-488 veto (`:59345`)
+    /// refuses before any write.
+    #[test]
+    fn w4_d104_30_the_existing_log_vetoes() {
+        let mut w = World::new("hf".into(), 100, 100);
+        let i = w.index(50, 60);
+        w.tiles[i].kind = 488;
+        w.tiles[i].flags |= FLAG_ACTIVE | crate::tile::FLAG_HALF_BRICK;
+        assert!(!place_tile_hellforge(&mut w, 50, 60));
+        let t = w.tile(50, 60).unwrap();
+        assert_eq!(t.kind, 488, "the log stays");
+        assert!(t.half_brick(), "the veto ran before the reset arm");
+    }
+
+    /// W4-d104 pass 35: the pile scatters land decor on the cave floors
+    /// and two same-stream runs replay byte-equal (a == b).
+    #[test]
+    fn w4_d104_35_the_piles_place_and_replay() {
+        let build = || {
+            let mut w = World::new("pi".into(), 900, 600);
+            // A stone floor at row 200 with air above (the drop scans
+            // seat the piles on it).
+            for x in 0..w.width {
+                for y in 200..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i].kind = 1;
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w.world_surface = 100.0;
+            w
+        };
+        let mut a = build();
+        let mut b = build();
+        pass_piles(&mut a, 100.0, 300.0, &mut crate::worldgen::noise::Rng(42));
+        pass_piles(&mut b, 100.0, 300.0, &mut crate::worldgen::noise::Rng(42));
+        assert_eq!(a.tiles, b.tiles, "a == b: the pass stream replays");
+        assert!(
+            a.tiles.iter().any(|t| t.active() && matches!(t.kind, 185 | 186 | 187)),
+            "a pile landed"
+        );
+    }
+}

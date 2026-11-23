@@ -2,6 +2,7 @@
 
 pub mod animated_tiles;
 pub mod atlas;
+pub mod batch;
 pub mod clip;
 pub mod font_atlas;
 pub mod gpu;

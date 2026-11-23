@@ -1035,6 +1035,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/ButtonCloudActive",
         "UI/ButtonCloudInactive",
         "UI/Divider",
+        // W4-d85 FINAL: the issue-report indicator's button pair
+        // (`IssueReportsIndicator.cs:41-42`).
+        "UI/Workshop/IssueButton",
+        "UI/Workshop/IssueButton_Outline",
         "UI/InnerPanelBackground",
         "UI/PlayerBackground",
         "UI/IconCrimson",
@@ -1097,6 +1101,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldCreation/PreviewSizeSmall",
         "UI/WorldCreation/PreviewSizeMedium",
         "UI/WorldCreation/PreviewSizeLarge",
+        // W4-d85: the Advanced tab's seed-option icons
+        // (`AWorldGenerationOption.cs:61` — `Images/UI/WorldCreation/{KeyName}`)
+        // and the secret-seed button's icon (`UIWorldCreationAdvanced.cs:182`).
+        "UI/WorldCreation/Seed_Normal",
+        "UI/WorldCreation/Seed_NotTheBees",
+        "UI/WorldCreation/Seed_Drunk",
+        "UI/WorldCreation/Seed_Celebration",
+        "UI/WorldCreation/Seed_TheConstant",
+        "UI/WorldCreation/Seed_ForTheWorthy",
+        "UI/WorldCreation/Seed_NoTraps",
+        "UI/WorldCreation/Seed_Remix",
+        "UI/WorldCreation/Seed_Everything",
+        "UI/WorldCreation/Seed_Skyblock",
+        "UI/WorldCreation/Seed_Secret",
         "UI/VK_Shift",
         "UI/VK_Backspace",
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
@@ -2518,6 +2536,12 @@ pub struct Lookups {
     pub card_cloud: [Option<tr_render::SheetRect>; 2],
     /// `UI/Divider` 8x4 (`UICharacterListItem.cs:52`).
     pub ui_divider: Option<tr_render::SheetRect>,
+    /// `UI/Workshop/IssueButton` (`IssueReportsIndicator.cs:41`) — the
+    /// menu-tail issue-report button (W4-d85 FINAL).
+    pub ui_issue_button: Option<tr_render::SheetRect>,
+    /// `UI/Workshop/IssueButton_Outline` (`IssueReportsIndicator.cs:42`) —
+    /// the hover outline over the button.
+    pub ui_issue_button_outline: Option<tr_render::SheetRect>,
     /// `UI/InnerPanelBackground` 24x27 — the card info panels (`:53`, `DrawPanel`
     /// `:310-315` splices it 8/8/8/8).
     pub ui_inner_panel: Option<tr_render::SheetRect>,
@@ -2591,6 +2615,13 @@ pub struct Lookups {
     pub wc_preview_evil: [Option<tr_render::SheetRect>; 3],
     /// `PreviewSizeSmall/Medium/Large` 76x76 (`:60-62`).
     pub wc_preview_size: [Option<tr_render::SheetRect>; 3],
+    /// W4-d85: the Advanced tab's seed-option icons, in the
+    /// `WorldGenerationOptions` registration order
+    /// (`AWorldGenerationOption.cs:61`, `UIWorldCreationAdvanced.cs:241-250`).
+    pub wc_seed_icons: [Option<tr_render::SheetRect>; 10],
+    /// `UI/WorldCreation/Seed_Secret` — the secret-seed button's icon
+    /// (`UIWorldCreationAdvanced.cs:182`).
+    pub wc_seed_secret: Option<tr_render::SheetRect>,
     /// `UI/VK_Shift` 26x26 (`UIVirtualKeyboard.cs:171`).
     pub vk_shift: Option<tr_render::SheetRect>,
     /// `UI/VK_Backspace` 54x26 (`UIVirtualKeyboard.cs:172`).
@@ -3205,6 +3236,8 @@ atlas.sheet("NPC_442").copied(),
             card_cloud: ["UI/ButtonCloudActive", "UI/ButtonCloudInactive"]
                 .map(|n| atlas.sheet(n).copied()),
             ui_divider: atlas.sheet("UI/Divider").copied(),
+            ui_issue_button: atlas.sheet("UI/Workshop/IssueButton").copied(),
+            ui_issue_button_outline: atlas.sheet("UI/Workshop/IssueButton_Outline").copied(),
             ui_inner_panel: atlas.sheet("UI/InnerPanelBackground").copied(),
             ui_player_background: atlas.sheet("UI/PlayerBackground").copied(),
             ui_world_icon: atlas.sheet("UI/IconCrimson").copied(),
@@ -3303,6 +3336,20 @@ atlas.sheet("NPC_442").copied(),
                 "UI/WorldCreation/PreviewSizeLarge",
             ]
             .map(|n| atlas.sheet(n).copied()),
+            wc_seed_icons: [
+                "UI/WorldCreation/Seed_Normal",
+                "UI/WorldCreation/Seed_NotTheBees",
+                "UI/WorldCreation/Seed_Drunk",
+                "UI/WorldCreation/Seed_Celebration",
+                "UI/WorldCreation/Seed_TheConstant",
+                "UI/WorldCreation/Seed_ForTheWorthy",
+                "UI/WorldCreation/Seed_NoTraps",
+                "UI/WorldCreation/Seed_Remix",
+                "UI/WorldCreation/Seed_Everything",
+                "UI/WorldCreation/Seed_Skyblock",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_seed_secret: atlas.sheet("UI/WorldCreation/Seed_Secret").copied(),
             vk_shift: atlas.sheet("UI/VK_Shift").copied(),
             vk_backspace: atlas.sheet("UI/VK_Backspace").copied(),
             minimap_frames: std::array::from_fn(|i| {
@@ -4167,6 +4214,23 @@ mod tests {
             );
         }
         assert!(lookups.npc_heads[0].is_none(), "the query cell has no head");
+    }
+
+    /// W4-d85 FINAL — the issue-report indicator's button pair reaches the
+    /// atlas (`IssueReportsIndicator.cs:41-42`'s two `Main.Assets.Request`
+    /// names); the draw reads the sheet's own size (`value.Frame()`), so the
+    /// pin is presence + non-zero, not a hand-copied dimension.
+    #[test]
+    fn the_issue_indicator_button_pair_packs() {
+        let (_, lookups) = content_lookups();
+        let button = lookups
+            .ui_issue_button
+            .expect("UI/Workshop/IssueButton must reach the atlas");
+        let outline = lookups
+            .ui_issue_button_outline
+            .expect("UI/Workshop/IssueButton_Outline must reach the atlas");
+        assert!(button.width > 0 && button.height > 0, "a real button sheet");
+        assert!(outline.width > 0 && outline.height > 0, "a real outline sheet");
     }
 
     #[test]

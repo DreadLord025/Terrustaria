@@ -38,6 +38,7 @@ use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
+use super::island_houses;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -52,6 +53,7 @@ use super::structures;
 use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
+use super::traps;
 use super::wavy;
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
 use crate::tiledata as td;
@@ -366,6 +368,29 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.floatingIslandHouseX/Y/Style` + `skyLake`
+    /// (`WorldGen.cs:13108-13111`) — the house-slot ledger the
+    /// `Floating Islands` pass records and the `Floating Island Houses`
+    /// pass (`:17859`, W4-d104 pass 28) consumes.
+    pub(crate) island_house_slots: Vec<super::island_houses::IslandHouseSlot>,
+    /// `GenVars.orePatchX[..numOrePatch]` (`GenVars.cs:240-244`,
+    /// `maxOrePatch = 50` `:461`, reset `WorldGen.cs:8323`) — the surface
+    /// ore-patch columns the `Surface Ore and Stone` pass (`:18447`,
+    /// W4-d104 pass 32) records and reads for the ±200/±100 spacing.
+    pub(crate) ore_patch_x: Vec<i32>,
+    /// `GenVars.logX/logY` (`GenVars.cs:252-254`, reset
+    /// `WorldGen.cs:11210`) — the fallen log the `Place Fallen Log` pass
+    /// (`:18513`, W4-d104 pass 33) records on its 1-in-2 roll; the Guide
+    /// pass (`:20468-20536`, lane 5) consumes it.
+    pub(crate) log_anchor: Option<(i32, i32)>,
+    /// `GenVars.shimmerPosition` (`GenVars.cs:282`, reset Zero
+    /// `WorldGen.cs:7039`) — the shimmer biome's anchor; the shimmer
+    /// lane (d102) publishes it, the Traps pass's 100-tile veto reads it.
+    pub(crate) shimmer_position: (i32, i32),
+    /// `GenVars.boulderPetsPlaced` (`GenVars.cs`, reset
+    /// `WorldGen.cs:8321`) — the pet-boulder cap counter the Traps pass
+    /// (W4-d104 pass 34) advances.
+    pub(crate) boulder_pets_placed: i32,
 }
 
 impl Default for GenVars {
@@ -403,6 +428,11 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            island_house_slots: Vec::new(),
+            ore_patch_x: Vec::new(),
+            log_anchor: None,
+            shimmer_position: (0, 0),
+            boulder_pets_placed: 0,
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1376,6 +1406,59 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
+    // The vanilla Floating Island Houses slot (`WorldGen.cs:17859`):
+    // after the `Living Trees` block (`:16419` region, the port's compact
+    // chain order) and before Planting Trees (`:19940`) — W4-d104 pass 28.
+    // The house draws move off the shared `drng` (the islands pass was its
+    // last consumer) onto the fresh per-pass stream, so the insertion
+    // shifts no other step's ledger.
+    step!(
+        "floating island houses",
+        "Floating Island Houses",
+        step_floating_island_houses
+    ),
+    // The vanilla Quick Cleanup slot (`WorldGen.cs:17875`): right after
+    // Floating Island Houses, before Pots (`:17996`, the port's earlier
+    // `pots` step — a pre-scaffold deviation) — W4-d104 pass 29. The
+    // sweep's only draws are the beach sand drip's per-check `Next(4, 7)`
+    // on the fresh `pass_rng("Quick Cleanup")` stream.
+    step!("quick cleanup", "Quick Cleanup", step_quick_cleanup),
+    // The vanilla Hellforge slot (`WorldGen.cs:18187`): after Quick
+    // Cleanup (`:17875`), before Spreading Grass (`:18237`) — W4-d104
+    // pass 30. The retry draws ride the fresh `pass_rng("Hellforge")`
+    // stream.
+    step!("hellforge", "Hellforge", step_hellforge),
+    // The vanilla Spreading Grass slot (`WorldGen.cs:18237`): after
+    // Hellforge (`:18187`), before Surface Ore and Stone (`:18447`) —
+    // W4-d104 pass 31. The classic arm draws no RNG; the remix arm is the
+    // seed lane's.
+    step!("spreading grass", "Spreading Grass", step_spreading_grass),
+    // The vanilla Surface Ore and Stone slot (`WorldGen.cs:18447`): after
+    // Spreading Grass (`:18237`), before Place Fallen Log (`:18513`) —
+    // W4-d104 pass 32. The scatter draws ride the fresh
+    // `pass_rng("Surface Ore and Stone")` stream.
+    step!(
+        "surface ore and stone",
+        "Surface Ore and Stone",
+        step_surface_ore_and_stone
+    ),
+    // The vanilla Place Fallen Log slot (`WorldGen.cs:18513`, the
+    // FallenLogsAndWaterFeatures pass's classic arm): after Surface Ore
+    // and Stone (`:18447`), before Traps (`:18657`) — W4-d104 pass 33.
+    step!("place fallen log", "Place Fallen Log", step_place_fallen_log),
+    // The vanilla Traps slot (`WorldGen.cs:18657`): after Place Fallen
+    // Log (`:18513`), before Piles (`:18788`) — W4-d104 pass 34. The
+    // scatter draws ride the fresh `pass_rng("Traps")` stream.
+    step!("traps", "Traps", step_traps),
+    // The vanilla Piles slot (`WorldGen.cs:18788`): after Traps
+    // (`:18657`), before Spawn Point (`:19460`) — W4-d104 pass 35. The
+    // seven scatters draw on the fresh `pass_rng("Piles")` stream.
+    step!("piles", "Piles", step_piles),
+    // The vanilla Spawn Point slot (`WorldGen.cs:19460`): after Piles
+    // (`:18788`), before Grass Wall (`:19589`, lane 5) — W4-d104 pass 36.
+    // The spawn search draws on the fresh `pass_rng("Spawn Point")`
+    // stream; the world tail keeps only the moon/hell draws.
+    step!("spawn point", "Spawn Point", step_spawn_point),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2554,7 +2637,7 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
@@ -2563,9 +2646,267 @@ fn step_floating_islands(
         world,
         &heights,
         &mut streams.drng,
+        &mut gv.island_house_slots,
+    );
+}
+
+/// The `Floating Island Houses` pass (`WorldGen.cs:17859-17874`, W4-d104
+/// pass 28): the sunplate houses over the island-slot ledger, on the
+/// fresh `pass_rng("Floating Island Houses")` stream. The
+/// `Skyblock.denyFloatingIslands` gate (`:17861`, `:3087-3096`:
+/// skyblock && !extraFloatingIslands) rides the step.
+fn step_floating_island_houses(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        && !world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::EXTRA_FLOATING_ISLANDS)
+    {
+        return;
+    }
+    let slots = std::mem::take(&mut gv.island_house_slots);
+    island_houses::pass_floating_island_houses(
+        world,
+        &slots,
+        &mut streams.pass_rng("Floating Island Houses"),
         streams.chest_stock.as_deref_mut(),
         opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        opts.crimson,
+        gv.crimson_left,
         &mut gv.sky_island_house_count,
+    );
+    gv.island_house_slots = slots;
+}
+
+/// The `Quick Cleanup` pass (`WorldGen.cs:17875-17993`, W4-d104 pass 29):
+/// the full-world tidy sweep on the fresh `pass_rng("Quick Cleanup")`
+/// stream. The `Skyblock.denyAllGeneration` gate (`:3131`) rides here.
+fn step_quick_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    micro_finish::pass_quick_cleanup(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Quick Cleanup"),
+    );
+}
+
+/// The `Hellforge` pass (`WorldGen.cs:18187-18234`, W4-d104 pass 30):
+/// the hell-house forges on the fresh `pass_rng("Hellforge")` stream.
+/// The `Skyblock.denyAllGeneration` gate rides here.
+fn step_hellforge(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    structures::pass_hellforge(world, &mut streams.pass_rng("Hellforge"));
+}
+
+/// The `Spreading Grass` pass (`WorldGen.cs:18237-18446`, W4-d104 pass
+/// 31): the classic surface sweeps. The `Skyblock.denyAllGeneration` +
+/// `notTheBees && !remix && !tenthAnniversary` gate (`:18239`) rides
+/// here. The classic arm draws no RNG — the stream slot is the remix
+/// arm's future home.
+fn step_spreading_grass(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    let anniversary = opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+    if not_the_bees && !remix && !anniversary {
+        return;
+    }
+    let (world_surface, surface_high) = {
+        let l = gv.layers();
+        (l.world_surface, l.surface_high)
+    };
+    surface::pass_spreading_grass(
+        world,
+        world_surface,
+        surface_high,
+        gv.jungle_min_x,
+        gv.jungle_max_x,
+    );
+}
+
+/// The `Surface Ore and Stone` pass (`WorldGen.cs:18447-18511`, W4-d104
+/// pass 32): the ore/stone patch scatters on the fresh
+/// `pass_rng("Surface Ore and Stone")` stream. The
+/// `Skyblock.denyAllGeneration` gate rides here.
+fn step_surface_ore_and_stone(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if world.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let (surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface)
+    };
+    let copper = world.ore_tiers.copper as u16;
+    let iron = world.ore_tiers.iron as u16;
+    surface::pass_surface_ore_and_stone(
+        world,
+        surface_low,
+        world_surface,
+        copper,
+        iron,
+        &mut gv.ore_patch_x,
+        &mut streams.pass_rng("Surface Ore and Stone"),
+    );
+}
+
+/// The `Place Fallen Log` pass (`WorldGen.cs:18513-18655`, W4-d104 pass
+/// 33): the fallen-log scatter on the fresh `pass_rng("Place Fallen
+/// Log")` stream. The `Skyblock.denySomeGeneration` gate rides the pass
+/// body (it reads the micro-seed surface-shape flags).
+fn step_place_fallen_log(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    let world_surface = gv.layers().world_surface;
+    surface::pass_place_fallen_log(
+        world,
+        world_surface,
+        opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        &mut gv.log_anchor,
+        &mut streams.pass_rng("Place Fallen Log"),
+    );
+}
+
+/// The `Traps` pass (`WorldGen.cs:18657-18786`, W4-d104 pass 34): the
+/// trap + sand-trap scatters on the fresh `pass_rng("Traps")` stream.
+/// The `Skyblock.denySomeGeneration` + `actuallyNoTrapsForRealIMeanIt`
+/// + `notTheBees && !noTraps && !remix` gate (`:18659`) rides here.
+fn step_traps(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    // `Variations.actuallyNoTrapsForRealIMeanIt` (`:293-303`):
+    // actuallyNoTraps && activeSecretSeedCount < 4.
+    let count = crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds);
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::ACTUALLY_NO_TRAPS)
+        && count < 4
+    {
+        return;
+    }
+    let not_the_bees = opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let no_traps = opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS);
+    let remix = opts.flags.contains(crate::seeds::SeedFlags::REMIX);
+    if not_the_bees && !no_traps && !remix {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    traps::pass_traps(
+        world,
+        world_surface,
+        rock_layer,
+        gv.lava_line,
+        opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        gv.shimmer_position,
+        &mut gv.boulder_pets_placed,
+        &mut streams.pass_rng("Traps"),
+    );
+}
+
+/// The `Piles` pass (`WorldGen.cs:18788-19458`, W4-d104 pass 35): the
+/// seven decor scatters on the fresh `pass_rng("Piles")` stream. The
+/// `Skyblock.denySomeGeneration` gate rides here.
+fn step_piles(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    structures::pass_piles(world, world_surface, rock_layer, &mut streams.pass_rng("Piles"));
+}
+
+/// The `Spawn Point` pass (`WorldGen.cs:19460-19587`, W4-d104 pass 36):
+/// the spawn search on the fresh `pass_rng("Spawn Point")` stream. The
+/// pass has no skyblock deny gate — the skyblock arm is its own branch.
+fn step_spawn_point(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    surface::pass_spawn_point(
+        world,
+        world_surface,
+        opts.flags,
+        &mut streams.pass_rng("Spawn Point"),
     );
 }
 
@@ -2693,39 +3034,17 @@ fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     // Not a vanilla pass — the generate() tail writes plus the final two rng
     // draws. They MUST stay the last rng-consuming step
-    // (`worldgen_rolls_hell_back_style` pins the order).
+    // (`worldgen_rolls_hell_back_style` pins the order). The spawn moved
+    // to its own `Spawn Point` step (W4-d104 pass 36).
     let layers = gv.layers();
-    let map = gv.map();
     world.world_surface = layers.world_surface;
     world.rock_layer = layers.rock_layer;
-    // `WorldGen.cs:19574-19584`'s remix spawn arm (M5-SEED-1): the bottom
-    // centre of the map instead of the surface anchor — the first air cell
-    // scanning up from `maxTilesY - 10` at the centre column.
-    let remix_spawn = if opts.flags.contains(crate::seeds::SeedFlags::REMIX) {
-        let x = world.width / 2;
-        let mut y = world.height - 10;
-        while y > 0 && world.tile(x, y).is_some_and(|t| t.active()) {
-            y -= 1;
-        }
-        Some((x, (y + 1).max(1)))
-    } else {
-        None
-    };
-    let (spawn_x, spawn_y) = match remix_spawn {
-        Some((x, y)) => (x, y),
-        None => (
-            map.spawn_center,
-            (map.heights[map.spawn_center as usize] - 6).max(1),
-        ),
-    };
-    world.spawn_x = spawn_x;
-    world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
@@ -3424,6 +3743,42 @@ mod tests {
         assert!(cpos("Moss") == cpos("Gem Caves") + 1);
         assert!(cpos("Temple") == cpos("Moss") + 1);
         assert!(cpos("Webs And Honey") < cpos("Glowing Mushrooms and Jungle Plants"));
+    }
+
+    /// W4-d104 pass 28: `floating island houses` sits between the
+    /// `living trees` block and `trees` (Planting Trees,
+    /// `WorldGen.cs:19940`); the vanilla chain carries Floating Island
+    /// Houses (`:17859`) before Planting Trees too.
+    #[test]
+    fn w4_d104_28_the_island_houses_step_sits_before_the_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("floating island houses"), pos("living trees") + 1);
+        assert_eq!(pos("floating island houses") + 1, pos("quick cleanup"));
+        assert_eq!(pos("quick cleanup") + 1, pos("hellforge"));
+        assert_eq!(pos("hellforge") + 1, pos("spreading grass"));
+        assert_eq!(pos("spreading grass") + 1, pos("surface ore and stone"));
+        assert_eq!(pos("surface ore and stone") + 1, pos("place fallen log"));
+        assert_eq!(pos("place fallen log") + 1, pos("traps"));
+        assert_eq!(pos("traps") + 1, pos("piles"));
+        assert_eq!(pos("piles") + 1, pos("spawn point"));
+        assert!(pos("spawn point") < pos("trees"));
+        assert!(pos("floating islands") < pos("floating island houses"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Floating Islands") < cpos("Floating Island Houses"));
+        assert!(cpos("Floating Island Houses") < cpos("Planting Trees"));
+        // W4-d104 pass 29: Quick Cleanup follows the houses in the chain.
+        assert_eq!(cpos("Quick Cleanup"), cpos("Floating Island Houses") + 1);
+        // W4-d104 pass 30: Hellforge follows Quick Cleanup (Pots sits
+        // between in vanilla but executed earlier — the pre-scaffold
+        // deviation the lane doc records).
+        assert!(cpos("Hellforge") > cpos("Quick Cleanup"));
+        assert!(cpos("Hellforge") < cpos("Planting Trees"));
     }
 
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's

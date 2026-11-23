@@ -383,8 +383,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(ctx) = golf_ctx {
         app.projectiles.set_golf_context(ctx);
     }
+    // W4-g63 — the trail-dust lane's live seam: the frame's spawn ctx
+    // (`Main.screenPosition/width/height` + the gfx budget) captured
+    // BEFORE the step closure's `&mut app.world`/`&mut app.dust` field
+    // borrows (the `world_sim/npcs.rs` `dust_spawn_ctx` convention).
+    let dust_spawn_ctx = app.spawn_ctx();
     app.projectile_step.tick(dt.min(0.25), |_| {
-        app.projectiles.update(
+        app.projectiles.update_dust(
             &mut app.world,
             &mut app.npcs,
             owner,
@@ -395,6 +400,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
             local_owner,
             hostile_local,
+            &mut app.dust,
+            &dust_spawn_ctx,
         );
     });
     app.projectile_step.cap_backlog();

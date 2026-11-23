@@ -378,6 +378,50 @@ fn place_platform(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     true
 }
 
+/// `WorldGen.PlaceChest(x, y, type, notNearOtherChests, style)`'s tile-write
+/// half (`WorldGen.cs:57813-57845`): the boulder-support refusal (`:57816-57819`),
+/// then `TileObject.CanPlace`/`Place` (`:57820-57829`). Returns the placed
+/// object's TOP-LEFT coords — the `Chest.CreateChest(objectData.xCoord,
+/// objectData.yCoord)` inputs (`:57830`) — or `None` for the C# `-1` refusal.
+/// The `notNearOtherChests` flag is `false` at every `34` host call site
+/// (`MessageBuffer.cs:2003/:2045/:2080`), so the `NearOtherChests` gate
+/// (`:57823-57826`) never fires there; the chest-store creation and the net
+/// sends are app-scope (the `34 ChestUpdates` host arm, W4-g52).
+pub fn place_chest(world: &mut World, x: i32, y: i32, kind: u16, style: i32) -> Option<(i32, i32)> {
+    // `:57816-57819` — a boulder under either support column refuses. The C#
+    // reads `Main.tile[…].type` directly (no `active` test); an inactive cell's
+    // type is 0, which is not a boulder, so the port's kind read matches.
+    let boulder_below = |w: &World, cx: i32| {
+        w.tile(cx, y + 1)
+            .is_some_and(|t| td::SET_BOULDERS.has(t.kind))
+    };
+    if boulder_below(world, x) || boulder_below(world, x + 1) {
+        return None;
+    }
+    let def = crate::tileobject::def_for_tile(kind)?;
+    // `TileObject.CanPlace(x, y, type, style, 1, out objectData)` (`:57820`) —
+    // dir 1, the world's placement stream + stickiness cache (the
+    // `place_item_tile` registry-route precedent, S1-F-7b).
+    let mut rand = std::mem::take(&mut world.place_rng);
+    let instance = crate::tileobject::can_place(
+        world,
+        x,
+        y,
+        def,
+        style,
+        1,
+        None,
+        &mut rand,
+        world.tile_object_random_cache,
+    );
+    world.place_rng = rand;
+    let instance = instance?;
+    if !crate::tileobject::place(world, &instance) {
+        return None;
+    }
+    Some((instance.x_coord, instance.y_coord))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)
@@ -388,6 +432,23 @@ mod tests {
     };
     use super::*;
     use crate::tile::FLAG_ACTIVE;
+
+    /// W4-g52 — `WorldGen.PlaceChest`'s tile-write half (`WorldGen.cs:
+    /// 57813-57845`): the boulder-support refusal and the top-left return the
+    /// `Chest.CreateChest` call reads.
+    #[test]
+    fn w4_g52_place_chest_returns_the_top_left_and_refuses_boulders() {
+        let mut w = object_world();
+        // Target (14,19), origin (0,1) → top-left (14,18), support row 20.
+        assert_eq!(place_chest(&mut w, 14, 19, 21, 0), Some((14, 18)));
+        assert!(w.tile(14, 18).is_some_and(|t| t.active() && t.kind == 21));
+        assert!(w.tile(15, 19).is_some_and(|t| t.active() && t.kind == 21));
+        // A boulder under either support column refuses (`:57816-57819`).
+        let bi = w.index(20, 20);
+        w.tiles[bi].kind = 138; // `TileID.Sets.Boulders`
+        assert_eq!(place_chest(&mut w, 20, 19, 21, 0), None);
+        assert!(!w.tile(20, 18).is_some_and(|t| t.active() && t.kind == 21));
+    }
 
     #[test]
     fn break_then_place_round_trips_a_tile() {

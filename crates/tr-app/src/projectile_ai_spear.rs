@@ -162,7 +162,9 @@ pub(crate) struct SpearOwner {
 /// (`:46183`). The helper also re-centres the box and sets
 /// `direction`/`spriteDirection` (`:46086-46097`) — the caller does that once
 /// (the AI already centred at `:45864`); this fn returns the scalar only.
-fn spear_offset(kind: u16, item_animation: i32, item_animation_max: i32) -> f32 {
+/// `pub(crate)` since W4-d57: the display-doll preview's aiStyle-19 arm
+/// (`Projectile.cs:22913`) calls the same helper with itemAnimationMax 100.
+pub(crate) fn spear_offset(kind: u16, item_animation: i32, item_animation_max: i32) -> f32 {
     let num = item_animation_max;
     let num2 = item_animation;
     let num3 = item_animation_max / 3;
