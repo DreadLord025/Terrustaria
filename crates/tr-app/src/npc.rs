@@ -2902,21 +2902,6 @@ pub struct Npc {
     /// slot turn (the `item_lights::rand_light` fixed-step precedent);
     /// the solo `update_rng` wrapper queues it for the caller. W4-c7.
     pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
-    /// The aiStyle-66 EnchantedNightcrawler flicker's
-    /// `Lighting.AddLight(i, j, r, g, b)` request (`NPC.cs:34258`) —
-    /// `(tile_x, tile_y, [r, g, b])`, the colour already scaled by the
-    /// `Next(90,111)` roll and `Main.essScale`, the tile coords the
-    /// quotient-truncated centre (`(int)((X + width/2) / 16f)`). The sim
-    /// drains it into the shared `EntityLights` pair at the NPC's slot
-    /// turn (the `item_lights::rand_light` fixed-step precedent); the
-    /// solo `update_rng` wrapper queues it for the caller. W4-c8.
-    pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
-    /// `Main.essScale` as of the last draw pass (`App::ess_scale`,
-    /// `item_lights::update_ess_scale`) — the sim stamps it before the
-    /// tick for the aiStyle-66 flicker (`NPC.cs:34257`), the
-    /// `wind_speed_current` pre-stamp convention. The solo wrapper reads
-    /// the 1.0 stock (the `App::new` init). W4-c8.
-    pub ess_scale: f32,
     /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
     /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
     /// machines decrement it by 10 per tick and the draw reads it as
@@ -4319,9 +4304,6 @@ impl Npc {
             snail_no_gravity: true,
             wants_item_sounds: Vec::new(),
             wants_ai_light: Vec::new(),
-            // `Main.essScale`'s stock 1.0 (the `App::new` init) — the sim
-            // pre-stamps the live value each tick (W4-c8).
-            ess_scale: 1.0,
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
@@ -7211,17 +7193,11 @@ impl Npc {
             // The arm is pure velocity — the integration tail is the
             // shared `ai_064_integrate` (the `UpdateCollision`/raw split).
             64 => self.update_rng_style64_solo(world, player, rng),
-            // `else if (this.aiStyle == 66)` (`NPC.cs:34253-34347`) — the
-            // crawling critters (357/374/448/484-487/606). W4-c8: the
-            // faithful `npc_ai_style66::ai_style66` arm claims the style
-            // (the S1-D-3 code-only port wired). The arm needs no sibling
-            // pool (the dig proximity scan reads the PLAYERS only), so the
-            // solo path is the live route — the sim's tick closure runs
-            // `update_rng_dust` and drains the light/Transform requests at
-            // the slot turn. The integration tail is the family arm's own
-            // (the depth-scaled gravity + the ground UpdateCollision
-            // stand-in).
-            66 => self.ai_066_crawler_family(world, player, rng),
+            // E8 merge: the c8 `66 => self.ai_066_crawler_family(...)` arm is
+            // the SAME style key as the c10 arm above — the FIRST arm wins,
+            // so the duplicate never ran (the S1-D-4c dead-arm purge). The
+            // `ai_066_crawler_family` body stays (it is the c8 record; the
+            // c10 `ai_066_crawler` superset is the live route).
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -8693,6 +8669,9 @@ impl Npc {
     // dead arm silently no-ops (the DD2Bartender town-group duplicate and the
     // saucer trio duplicate were purged here). One live arm per kind: a
     // duplicate is a hard error, the `to_u16` guard's precedent (S1-F-1).
+    // E8 merge: the c8 `ai_066_crawler_family` arm and this dispatch's own
+    // style-66 arm were the same machine twice — the c10 `ai_066_crawler`
+    // superset above is the live route, so this body is the c8 record only.
     #[deny(unreachable_patterns)]
     fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         match self.kind {
@@ -9877,8 +9856,11 @@ impl Npc {
             // (`ai_066_crawler_family`), so these arms are unreachable
             // through `update_rng`.
             // E8 merge: the 5 d40-owned dups ride d40's unreachable arms
-            // above (the same axis-66 claim - keep-one).
+            // above (the same axis-66 claim - keep-one). GoldWorm (448,
+            // aiStyle 66) belongs on this axis too - the c8 arm that used
+            // to claim it was the duplicate purged at the style dispatch.
             NpcKind::Worm
+            | NpcKind::GoldWorm
             | NpcKind::TruffleWorm
             | NpcKind::Maggot => {
                 unreachable!("aiStyle 66 rides the style axis (W4-c8)")
@@ -10682,7 +10664,7 @@ impl Npc {
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly => {
                 self.sprite_dir = self.facing;
                 self.frame_counter += 1.0;
-                let row = if self.frame_counter < 4.0 {
+                let mut row = if self.frame_counter < 4.0 {
                     0
                 } else {
                     if self.frame_counter >= 7.0 {
@@ -14993,6 +14975,469 @@ impl Npc {
             // case-445 arm above owns it.
             // E8 merge: the c10 GoldGrasshopper/GoldMouse find_frame dups
             // dropped - c9's case-446/447 arms above own them.
+            // W4-d42 - `FindFrame` case 611/689 (`NPC.cs:73681-73746`):
+            // the mirrored sprite + vx*0.1 tilt; the idle head-turn
+            // table (:73687-73731) draws Main.rand.Next(80)/Next(3) -
+            // find_frame has no RNG seam, so the idle HOLDS row 0
+            // (the documented stand-in; the blink cycle rides the
+            // frame-machine wiring wave). The flight rows 8..12 step
+            // every 5 ticks verbatim.
+            NpcKind::Owl => {
+                self.sprite_dir = -self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 13 || self.frame < 8 {
+                        self.frame = 8;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 612/613 (`NPC.cs:69773-69834`):
+            // the row-0 idle gate draws Main.rand.Next(180) - the
+            // RNG-free stand-in keeps the counter running (the
+            // documented fold; the 1/180 blink rides the wiring
+            // wave). The ai[1]/velocity row-4 pins, the 2/10/60
+            // strides and the 5-row wrap are verbatim.
+            NpcKind::WaterStrider | NpcKind::GoldWaterStrider => {
+                self.frame_counter += 1.0;
+                if self.vx != 0.0 {
+                    self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                }
+                let mut num286 = 10.0;
+                let flag14 = self.vx.abs() > 1.0;
+                if self.ai[1] == 1.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+                if self.vy.abs() > 0.1 || flag14 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else if self.frame == 0 {
+                    num286 = 2.0;
+                }
+                if self.frame == 4 {
+                    num286 = if flag14 { 60.0 } else { 2.0 };
+                }
+                if self.frame_counter >= num286 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 5 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 614 (`NPC.cs:76858-76904`, the
+            // bunny group): the ground walk on the |vx|+1 accumulator
+            // (>6, wrap over 7 rows), the rise row 4, the fall row 6.
+            NpcKind::ExplosiveBunny => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 7 {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            // W4-d42 - `FindFrame` case 616/617 (`NPC.cs:76686-76731`):
+            // the wet paddle rows 8..13 (>5, >10 idle), the dry walk
+            // rows 0..7 (>8), the stand pin and the air row 8.
+            NpcKind::Turtle | NpcKind::TurtleJungle => {
+                let num193 = if self.vx == 0.0 { 10.0 } else { 5.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num193 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 13 {
+                            self.frame = 8;
+                        }
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 7 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                    if self.vy != 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 8;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 618 (`NPC.cs:67000-67010`): the 5-tick counter over
+            // the 4-frame strip.
+            NpcKind::BloodNautilus => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 619 (`NPC.cs:67011-67021`): the 6-tick counter over
+            // the 6-frame strip.
+            NpcKind::BloodSquid => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 6 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 620 (`NPC.cs:68423-68542`): the
+            // attack rows 14..20 (the ai[0]/ai[1] gate, the 16/17
+            // 3-tick pair, the 18->16 loop), the wet swim rows 8..13
+            // with the atan2 turn, the dry walk rows 2..7 (|vx|+1 at
+            // >9), the air row 1.
+            NpcKind::GoblinShark => {
+                if self.ai[1] > 0.0 && self.ai[0] > 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.frame < 14 || self.frame > 20 || self.ai[1] == 59.0 {
+                        self.frame = 14;
+                        self.frame_counter = 0.0;
+                    }
+                    let num42 = if self.frame == 17 || self.frame == 16 { 3.0 } else { 5.0 };
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= num42 && self.frame < 20 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.ai[1] > 0.0 && self.frame == 18 {
+                            self.frame = 16;
+                        }
+                    }
+                } else if self.wet {
+                    if self.vx < 0.0 {
+                        self.facing = -1;
+                    }
+                    if self.vx > 0.0 {
+                        self.facing = 1;
+                    }
+                    if self.sprite_dir != self.facing {
+                        self.rotation *= -1.0;
+                        self.sprite_dir = self.facing;
+                    }
+                    let num43 = (self.vy * self.facing as f32)
+                        .atan2(self.vx * self.facing as f32);
+                    if (self.rotation - num43).abs() >= std::f32::consts::PI {
+                        if num43 < self.rotation {
+                            self.rotation -= std::f32::consts::PI * 2.0;
+                        } else {
+                            self.rotation += std::f32::consts::PI * 2.0;
+                        }
+                    }
+                    self.rotation = (self.rotation * 4.0 + num43) / 5.0;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 13 {
+                        self.frame = 8;
+                    } else if self.frame < 8 {
+                        self.frame = 13;
+                    }
+                } else {
+                    if (self.rotation as f64) > 3.14 {
+                        self.rotation -= 6.28;
+                    }
+                    if (self.rotation as f64) > -0.01 && (self.rotation as f64) < 0.01 {
+                        self.rotation = 0.0;
+                    } else {
+                        self.rotation *= 0.9;
+                    }
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                        if self.vx == 0.0 {
+                            self.frame = 0;
+                            self.frame_counter = 0.0;
+                        } else {
+                            if self.frame < 2 {
+                                self.frame = 2;
+                            }
+                            self.frame_counter += self.vx.abs();
+                            self.frame_counter += 1.0;
+                            if self.frame_counter > 9.0 {
+                                self.frame += 1;
+                                self.frame_counter = 0.0;
+                            }
+                            if self.frame > 7 {
+                                self.frame = 2;
+                            }
+                        }
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame = 1;
+                    }
+                }
+            }
+            // W4-d42 - no per-kind animation: 621 `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)`, 622 `NPC.cs:16988-17006`, 623 `NPC.cs:17007-17025` - row 0 holds
+            // (the ForceBubble/wyvern-segment precedent).
+            NpcKind::BloodEelHead | NpcKind::BloodEelBody | NpcKind::BloodEelTail => {
+                self.frame = 0;
+            }
+            // W4-d42 - `FindFrame` case 624 (`NPC.cs:77067-77102`): the
+            // stand row 0, the rise row 9, the fall row 10, the walk
+            // rows 1..8 on the |vx| accumulator (>8, subtractive).
+            NpcKind::Gnome => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 9;
+                } else if self.vy > 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 10;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter -= 8.0;
+                        self.frame += 1;
+                        if self.frame > 8 {
+                            self.frame = 1;
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 625 (`NPC.cs:76732-76779`): the
+            // wet paddle rows 6..11 (>4, >8 idle), the dry walk rows
+            // 0..5 (>7) with the stand pin.
+            NpcKind::SeaTurtle => {
+                let num185 = if self.vx == 0.0 { 8.0 } else { 4.0 };
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    if self.frame < 6 {
+                        self.frame = 6;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > num185 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 11 {
+                            self.frame = 6;
+                        }
+                    }
+                } else {
+                    if self.frame > 5 {
+                        self.frame = 0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 7.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    }
+                    if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 626/627 (`NPC.cs:76780-76819`):
+            // the velocity-sign sprite flip; dry row 0, the wet drift
+            // rows 3/2/1/0 by |velocity| > 0.15/0.05/0.025.
+            NpcKind::Seahorse | NpcKind::GoldSeahorse => {
+                if self.vx != 0.0 {
+                    self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                }
+                if !self.wet {
+                    self.frame = 0;
+                } else {
+                    let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame = if speed > 0.15 {
+                        3
+                    } else if speed > 0.05 {
+                        2
+                    } else if speed > 0.025 {
+                        1
+                    } else {
+                        0
+                    };
+                }
+            }
+            // W4-d42 - `FindFrame` case 628 (`NPC.cs:77103-77201`): the
+            // wind-facing sprite pin and the wind-speed accumulator
+            // read `Main.WindForVisuals` (unported - the 0 stand-in,
+            // the documented fold); the ai[0]==0 sway rows 0..6 and
+            // the localAI[0]==0 attack rows 6..10 are verbatim. The
+            // localAI[0]==1 lerp arm (:77182-77199) rides the
+            // aiStyle-119 wiring wave.
+            NpcKind::Dandelion => {
+                // `Main.WindForVisuals` is unported - 0f (the sprite
+                // pins +1, the accumulator rides the plain 1f).
+                let wind = 0.0f32;
+                self.sprite_dir = if wind > 0.0 { -1 } else { 1 };
+                if self.ai[0] == 0.0 {
+                    if self.frame == 6 {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame = 0;
+                        }
+                    } else if self.frame > 5 {
+                        self.frame_counter = 0.0;
+                        self.frame = 6;
+                    } else {
+                        self.frame_counter += 1.0 + 0.5 * wind.abs();
+                        if self.frame_counter > 8.0 {
+                            self.frame_counter -= 8.0;
+                            self.frame += 1;
+                            if self.frame > 5 {
+                                self.frame = 0;
+                            }
+                        }
+                    }
+                } else if self.local_ai[0] == 0.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        if self.frame == 6 {
+                            self.frame = 7;
+                        } else if self.frame < 7 {
+                            self.frame = 6;
+                        } else {
+                            self.frame += 1;
+                            if self.frame > 10 {
+                                self.frame = 7;
+                            }
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 85/341/629 (`NPC.cs:73445-73515`,
+            // the chest group): the closed row 0, the open/close
+            // counter (-1 grounded / +1 airborne, clamped 0..12), the
+            // 3-tick phase rows 1..5 and the ai[3] hop offsets.
+            NpcKind::IceMimic => {
+                if self.ai[0] == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    if self.vy == 0.0 {
+                        self.frame_counter -= 1.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.frame_counter < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > 12.0 {
+                        self.frame_counter = 12.0;
+                    }
+                    self.frame = if self.frame_counter < 3.0 {
+                        1
+                    } else if self.frame_counter < 6.0 {
+                        2
+                    } else if self.frame_counter < 9.0 {
+                        3
+                    } else if self.frame_counter < 12.0 {
+                        4
+                    } else {
+                        // The clamp caps the counter at 12, so the
+                        // `<15` arm (`:73486-73489`) is the live one:
+                        // row 5. The `<21`/else arms (`:73490-73504`)
+                        // are unreachable under the clamp.
+                        5
+                    };
+                }
+                if self.ai[3] == 2.0 {
+                    self.frame += 6;
+                } else if self.ai[3] == 3.0 {
+                    self.frame += 12;
+                }
+            }
+            // W4-d42 - `FindFrame`'s humanoid-group case list (630 `NPC.cs:17107-17119`);
+            // the 16-row strip rides `humanoid_frame_count`.
+            NpcKind::BloodMummy => {
+                self.humanoid_town_frame();
+            }
+            // W4-d35 (A): the 73/74/75/77/78 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::GoblinScout
+            | NpcKind::Bird
+            | NpcKind::Pixie
+            | NpcKind::ArmoredSkeleton
+            | NpcKind::Mummy => {}
+            // W4-d35 (B): the 79/80/82/83/84 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::DarkMummy
+            | NpcKind::LightMummy
+            | NpcKind::Wraith
+            | NpcKind::CursedHammer
+            | NpcKind::EnchantedSword => {}
+            // W4-d35 (C): the 85/86/93/94/95 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Mimic
+            | NpcKind::Unicorn
+            | NpcKind::GiantBat
+            | NpcKind::Corruptor
+            | NpcKind::DiggerHead => {}
+            // W4-d35 (D): the 96/97/98/99/100 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::DiggerBody
+            | NpcKind::DiggerTail
+            | NpcKind::SeekerHead
+            | NpcKind::SeekerBody
+            | NpcKind::SeekerTail => {}
+            // W4-d35 (E): the 101/102/103/104/109 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Clinger
+            | NpcKind::AnglerFish
+            | NpcKind::GreenJellyfish
+            | NpcKind::Werewolf
+            | NpcKind::Clown => {}
+            // W4-d35 (F): the 110/112/116/120/121 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::SkeletonArcher
+            | NpcKind::VileSpit
+            | NpcKind::TheHungryII
+            | NpcKind::ChaosElemental
+            | NpcKind::Slimer => {}
+            // W4-d35 (G): the 122/137/140 kinds' FindFrame arms are UNWIRED
+            // (data-only); the frame rests row 0 until the AI wave.
+            NpcKind::Gastropod
+            | NpcKind::IlluminantBat
+            | NpcKind::PossessedArmor => {}
         }
     }
 

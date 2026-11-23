@@ -19522,13 +19522,14 @@ mod w4_c10_tail_wiring_tests {
             assert_eq!(k, kind, "net {ty} kind");
             let (mut app, _player) = app_with_player();
             app.npc_timer = 10.0;
-            crate::bug_net::release_npc(&mut app, 1600, 1920, ty, 0, app.local_id as u8);
+            let local_id = app.local_id as u8;
+            crate::bug_net::release_npc(&mut app, 1600, 1920, ty, 0, local_id);
             let n = app
                 .npcs
                 .iter()
                 .find(|m| m.kind == kind)
                 .unwrap_or_else(|| panic!("{kind:?} released"));
-            assert_eq!(n.release_owner, app.local_id as u8, "the releaser owns it");
+            assert_eq!(n.release_owner, local_id, "the releaser owns it");
             assert_eq!(n.catchable_immunity, 90, "the ctor window (the tick zeroes it)");
         }
     }

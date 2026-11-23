@@ -2441,6 +2441,22 @@ fn portrait_data(
             (sheet_i, h, 28.0, 22.0, white)
         }
         // E8 merge: the c10 12-critter portrait tail dropped (d40/c8's arms above).
+        // The Hide-folds: these kinds fold onto their credit's entry
+        // (`entry_for_npc`), so `entry.kind` never reaches these arms —
+        // they exist to keep the match exhaustive and restate the fold
+        // target's shape (the Wyvern-segment precedent).
+        (NpcKind::GoldfishWalker, _) => (sheet_i, 18.0, 20.0, 18.0, white),
+        (NpcKind::JungleCreeper | NpcKind::BloodCrawler, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(20.0);
+            (sheet_i, h, 50.0, 20.0, white)
+        }
+        (NpcKind::BartenderUnconscious, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 16.0).unwrap_or(40.0);
+            (sheet_i, h, 34.0, 8.0, white)
+        }
+        (NpcKind::ArmedTorchZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::Seagull2 | NpcKind::Grebe2, _) => (sheet_i, 26.0, 22.0, 26.0, white),
+        (NpcKind::BloodEelBody | NpcKind::BloodEelTail, _) => (sheet_i, 28.0, 28.0, 28.0, white),
     }
 }
 
