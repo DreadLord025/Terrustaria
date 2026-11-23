@@ -867,6 +867,10 @@ pub fn draw_hud(
             // accessory visible/hidden ticks (`Main.cs:41425-41460`).
             hide_visible_accessory,
             mouse_item_is_air,
+            // `Main.cs:41381-41382`: the LIVE Demon Heart / master show pair
+            // (`Player.cs:4276-4292`, W4-g87) — the slot-8 row joins the
+            // columns once the unlock (or a stored item) shows it.
+            inventory::ExtraAccessoryShow::of(player),
         );
         open_hover = hit.hovered;
         open_housing = hit.housing;

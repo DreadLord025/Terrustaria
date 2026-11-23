@@ -145,7 +145,7 @@ rather than a port of all 45k lines".
 | `Reset` (`WorldGen.cs:11109-11282`) | PARTIAL | `run` `:2505-2512` | `crimson_left` drawn from `pass_rng("Reset")`, `flip_infections` derived; the other ~20 Reset rolls (hell chest pool shuffle `:11274-11297`, `slimeRainTime`, the `crimStone/ebonStone` swap) are scattered into the owning passes or missing |
 | Terrain (`TerrainPass.cs`) | PARTIAL | `terrain.rs:71-372` | Height map + column fill + `Layers` quartet are load-bearing; the surface curve is FBM value noise (`noise.rs:16-45`), not the C#'s; the ≥20 recentering (`TerrainPass.cs:217-228`) is skipped (`terrain.rs:54-61`); the `surfaceIsInSpace` band/headroom is mapped onto the compact model with a documented approximation (`terrain.rs:230-260`) |
 | Cave family (`Tunnels` `:11817`, `Mount Caves`, `Clay`, `Small Holes`, `Rock/Dirt Layer Caves`, `Surface Caves`) | PARTIAL | `caves.rs::step_cave_fields` (step `vanilla: "Tunnels"`) | One compact cavern+worm field covers five C# passes; `Sand Patches`, `Slush`, `Silt`, `Clay` have no step |
-| Ores (`OresAndShinies` `:13182-13606`, `TileRunner` `:76770-77142`) | PORTED | `caves.rs` (`ores_and_shinies`, `roll_tiers`, `band_table`), `tile_runner.rs` | Density bands, tier flips `:11274-11297`, the walker and its draw ledger are ported and ledger-tested |
+| Ores (`OresAndShinies` `:13182-13606`, `TileRunner` `:76770-77142`) | PORTED | `caves.rs` (`ores_and_shinies`, `roll_tiers`, `band_table`, `remix_band_table`, `DRUNK_TIER_PAIRS`), `tile_runner.rs` | Density bands, tier flips `:11274-11297`, the walker and its draw ledger are ported and ledger-tested; W4-d107 landed the drunk re-rolls + evil split, the remix branch and the noSurface/surfaceIsInSpace sky-band gate |
 | Evil (`CorruptionAndCrimson` `:13866-14554`) | PORTED | `evil.rs` | Verbat-ish port incl. `ChasmRunner`/`Crim*`, the shell tables, the anchors; at the vanilla slot between `ores and gems` and `liquids` |
 | Jungle family (`JunglePass.cs`, `Mud Caves To Grass` `:12468`, `Dirt To Mud` `:13123`, `Wet Jungle` `:15810`, plants `:20122`…, `MudsWallsInJungle` `:20813`) | PORTED | `biomes.rs`, `biome_detail.rs` | Faithful per-need passes with their own streams |
 | Ocean family (`Ocean Sand` `:11580`, `Beaches` `:14888`, `TuneOceanDepth` `:26960`, `Gravitating Sand` `:15138`, `oceanCave` `:76452`, `Remove Water From Sand` `:16211`, `Shell Piles` `:16266`, coral/palms `:21310`) | PORTED | `ocean.rs` (+ `desert_dunes.rs` for `Dunes` `:11517`) | All six M5-OCEAN phases landed; the oasis block is dead in the port (`ocean.rs:1806-1811`) |
@@ -275,6 +275,10 @@ Every row below was re-read from code; ROADMAP `DONE` rows are treated as claims
    `SeedOptionId::Skyblock` / `dualDungeons` produce a classic-shaped world.
    Severity: behavioural. Admitted: the `dualDungeons` half is in M5-SEED-1/2's
    deferred list; the skyblock half is not listed anywhere.
+   **Update (S1-K-1 + W4-d107)**: the dualDungeons PRUNING is live
+   (`pass_disabled_by_special_seeds` in `run`/`advance`; W4-d107 fixed the
+   IceBiome name — `"Generate Ice Biome"` `:239`, not `"Ice"` `:280`); the
+   second-dungeon CONTENT and the skyblock generator remain unported.
 7. **`Settle Liquids` has no equivalent, so the C#'s post-pass liquid invariant
    cannot be honoured.** `WorldGenerator.cs:508` asserts `Liquid.numLiquid == 0`
    after every pass; the port has no liquid-flux simulation, so generated water is

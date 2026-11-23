@@ -507,6 +507,68 @@ mod tests {
         }
     }
 
+    /// W4-d107: the affected-seed determinism witnesses — every seed whose
+    /// world this task's branches move regenerates byte-identically (a == b,
+    /// the `generation_is_reproducible_for_a_seed` pattern over the full
+    /// stored tile state), and differs from its seed-matched classic
+    /// control. Affected: drunk (ore tier re-rolls + evil split), remix
+    /// (ore band table + SurfaceCaves triple), getfixedboi (both), the
+    /// noSurface / surfaceIsInSpace micro-seeds (sky-band gate; noSurface
+    /// also skips SurfaceCaves) and dualDungeons (the pruning name fix —
+    /// fragile ice now RUNS, `GenPassNameID.cs:239` vs `:280`). The classic
+    /// pins (`world_hash.rs`) are untouched — no flag, no new draw.
+    #[test]
+    fn w4_d107_the_affected_seeds_are_deterministic() {
+        use crate::seeds::{MicroSeedFlags, SeedFlags};
+        let opts = |flags: SeedFlags, micro: MicroSeedFlags| GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            flags,
+            micro_flags: micro,
+            ..Default::default()
+        };
+        let none = SeedFlags::none();
+        let no_micro = MicroSeedFlags::none();
+        let classic = world_hash::world_hash(&generate(&opts(none, no_micro)));
+        let cases: [(&str, SeedFlags, MicroSeedFlags); 6] = [
+            ("drunk", SeedFlags::from_sum(SeedFlags::DRUNK), no_micro),
+            ("remix", SeedFlags::from_sum(SeedFlags::REMIX), no_micro),
+            (
+                "getfixedboi",
+                SeedFlags::from_seed_text("getfixedboi"),
+                no_micro,
+            ),
+            (
+                "noSurface",
+                none,
+                MicroSeedFlags::from_sum(MicroSeedFlags::NO_SURFACE),
+            ),
+            (
+                "surfaceIsInSpace",
+                none,
+                MicroSeedFlags::from_sum(MicroSeedFlags::SURFACE_IS_IN_SPACE),
+            ),
+            (
+                "dualDungeons",
+                none,
+                MicroSeedFlags::from_sum(MicroSeedFlags::DUAL_DUNGEONS),
+            ),
+        ];
+        for (name, flags, micro) in cases {
+            let o = opts(flags, micro);
+            let a = generate(&o);
+            let b = generate(&o);
+            let ha = world_hash::world_hash(&a);
+            let hb = world_hash::world_hash(&b);
+            assert_eq!(ha, hb, "{name}: a == b determinism");
+            assert_ne!(ha, classic, "{name}: the seed branches must move the world");
+            // The pin-doc convention: the measured value rides the test log
+            // for the gate's per-seed constant re-pin (world_hash.rs).
+            eprintln!("w4_d107 {name}: {ha}");
+        }
+    }
+
     #[test]
     fn the_biome_passes_place_the_missing_biomes() {
         // The 4200-wide world carries the jungle (60/59), the evil band

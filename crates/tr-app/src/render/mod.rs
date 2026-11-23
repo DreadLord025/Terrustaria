@@ -21,6 +21,11 @@ pub(crate) mod sky;
 // in-flight S1-G-1 siblings; wiring is the family's merge step.
 pub(crate) mod special_tiles;
 pub(crate) mod tile_cracks;
+// W4-g29 pass 2: UNWIRED Draw orchestration (prologue/loop bounds/black
+// strips/epilogue/PostDrawTiles order) — the draw_tiles seam is contested
+// by the in-flight pass siblings (g28/g30/g31/g32, f15); wiring is the
+// pass-family merge step.
+pub(crate) mod tile_pass;
 pub(crate) mod tiles;
 pub(crate) mod vines;
 pub(crate) mod wires;
