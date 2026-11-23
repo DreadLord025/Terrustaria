@@ -60,6 +60,22 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "dunes" => PassMessage::Gen(1),
         // WorldGen.cs:11584.
         "ocean sand" => PassMessage::Key("WorldGeneration.OceanSand"),
+        // WorldGen.cs:11693 (Sand Patches, W4-d101).
+        "sand patches" => PassMessage::Key("WorldGeneration.SandPatches"),
+        // WorldGen.cs:11789 (Mount Caves, W4-d101 — Lang.gen[2]).
+        "mount caves" => PassMessage::Gen(2),
+        // WorldGen.cs:11862 (Dirt Wall Backgrounds, W4-d101 — Lang.gen[3]).
+        "dirt wall backgrounds" => PassMessage::Gen(3),
+        // WorldGen.cs:11963 (Clay, W4-d101 — Lang.gen[6]).
+        "clay" => PassMessage::Gen(6),
+        // WorldGen.cs:12012 (Small Holes, W4-d101 — Lang.gen[7]).
+        "small holes" => PassMessage::Gen(7),
+        // WorldGen.cs:12071 (Dirt Layer Caves, W4-d101 — Lang.gen[8]).
+        "dirt layer caves" => PassMessage::Gen(8),
+        // WorldGen.cs:12111 (Rock Layer Caves, W4-d101 — Lang.gen[9]).
+        "rock layer caves" => PassMessage::Gen(9),
+        // WorldGen.cs:12316 (Generate Ice Biome, W4-d101 — Lang.gen[56]).
+        "generate ice biome" => PassMessage::Gen(56),
         // JunglePass.cs:21.
         "jungle" => PassMessage::Gen(11),
         // WorldGen.cs:12472.
@@ -70,8 +86,10 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "mushroom patches" => PassMessage::Gen(13),
         // WorldGen.cs:11722 (Tunnels).
         "cave fields" => PassMessage::Key("WorldGeneration.SurfaceTunnels"),
-        // WorldGen.cs:12761 (Marble; the granite half shares the pass slot).
-        "granite and marble" => PassMessage::Gen(80),
+        // WorldGen.cs:12761 (Marble — the W4-d101 pass-9 split row).
+        "marble" => PassMessage::Gen(80),
+        // WorldGen.cs:12843 (Granite — Lang.gen[81], the pass-9 split row).
+        "granite" => PassMessage::Gen(81),
         // WorldGen.cs:11900.
         "stone-in-dirt blobs" => PassMessage::Gen(4),
         // WorldGen.cs:11930.
