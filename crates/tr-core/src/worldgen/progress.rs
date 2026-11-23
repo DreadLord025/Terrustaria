@@ -100,10 +100,14 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "wavy caves" => PassMessage::Key("WorldGeneration.WavyCaves"),
         // WorldGen.cs:13127.
         "dirt to mud" => PassMessage::Gen(14),
+        // WorldGen.cs:13147 (W4-d102).
+        "silt" => PassMessage::Gen(15),
         // WorldGen.cs:13649.
         "ash blobs" => PassMessage::Gen(18),
         // WorldGen.cs:13186.
         "ores and gems" => PassMessage::Gen(16),
+        // WorldGen.cs:13611 (W4-d102).
+        "webs" => PassMessage::Gen(17),
         // WorldGen.cs:13945.
         "evil" => PassMessage::Gen(72),
         // WorldGen.cs:14560.
@@ -115,10 +119,16 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "dither snake" => PassMessage::Key("WorldGeneration.DualDungeonsDitherSnake"),
         // WorldGen.cs:22513 — the gated skyblock generator's message.
         "skyblock" => PassMessage::Gen(12),
+        // WorldGen.cs:14877 (W4-d102).
+        "mountain caves" => PassMessage::Gen(21),
         // WorldGen.cs:14899.
         "beaches" => PassMessage::Gen(22),
         // WorldGen.cs:15142.
         "gravitating sand" => PassMessage::Gen(24),
+        // WorldGen.cs:15054 (W4-d102).
+        "gems" => PassMessage::Gen(23),
+        // WorldGen.cs:15256 (W4-d102).
+        "clean up dirt" => PassMessage::Gen(25),
         // WorldGen.cs:15180.
         "ocean caves" => PassMessage::Gen(90),
         // WorldGen.cs:15256 (W4-g36 A2).

@@ -666,7 +666,7 @@ pub(super) fn allows_plants_to_grow(wall: u16) -> bool {
     ALLOWS_PLANTS_TO_GROW.contains(&wall)
 }
 
-const ALLOWS_PLANTS_TO_GROW: [u16; 27] = [
+pub(crate) const ALLOWS_PLANTS_TO_GROW: [u16; 27] = [
     0, 150, 138, 145, 107, 152, 140, 139, 141, 106, 245, 315, 317, 63, 64, 65, 66, 67, 68, 69, 81, 70,
     264, 268, 265, 74, 80,
 ];

@@ -91,6 +91,7 @@ use grass::{grow_moss_arm, grow_moss_arm_underground, SPREAD_UNDERGROUND};
 // tree above the converted cell (`WorldGen.cs:75222` → `:54802-54902`) —
 // the same helper the growth-tick slice uses (S1-K-3 seam).
 pub(crate) use trees::kill_invalid_tree_above;
+pub(crate) use trees::ALLOWS_PLANTS_TO_GROW;
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public
 // seams stay on `growth` (verbatim move, behaviour frozen).

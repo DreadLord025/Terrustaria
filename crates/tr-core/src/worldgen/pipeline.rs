@@ -58,6 +58,7 @@ use super::noise::{Noise, Rng};
 use super::ocean;
 use super::shimmer;
 use super::passes1;
+use super::passes2;
 use super::spider_gem_moss;
 use super::statues;
 use super::structures;
@@ -1581,14 +1582,29 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // for d102's Slush sweep.
     step!("generate ice biome", "Generate Ice Biome", step_generate_ice_biome),
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
+    // The vanilla Silt slot (`WorldGen.cs:13143`): after Dirt To Mud
+    // (`:13123`) and before Shinies (`:13182`) — W4-d102 pass 1. The step
+    // draws from its own `pass_rng("Silt")` stream, so the insertion shifts
+    // no other step's ledger.
+    step!("silt", "Silt", step_silt),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
+    // The vanilla Webs slot (`WorldGen.cs:13607`): after Shinies (`:13182`)
+    // and before Underworld (`:13645`) — W4-d102 pass 2. Own
+    // `pass_rng("Webs")` stream; the first-`numMCaves` anchor override is a
+    // no-op until d101's Mount Caves producer lands.
+    step!("webs", "Webs", step_webs),
     // The vanilla Corruption slot (`WorldGen.cs:13866`): after Shinies
     // (`:13182`) and Underworld (`:13645`), before Lakes (`:14556`) — the
     // M5-BIOME phase-4 move (was between `mud caves to grass` and
     // `mushroom patches`).
     step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
+    // The vanilla Slush slot (`WorldGen.cs:14697`): after Lakes (`:14556`)
+    // and before Dungeon (`:14757`) — W4-d102 pass 3. A pure retype sweep
+    // (no draws); a no-op on the empty snow rect until d101's Generate Ice
+    // Biome producer lands.
+    step!("slush", "Slush", step_slush),
     // W4-f24 B6: the gated Dual Dungeons Dither Snake slot
     // (`WorldGen.cs:14755`): between Lakes (`:14556`)/Slush (`:14697`) and
     // Dungeon (`:14757`). A classic world's step is a no-op (the producer
@@ -1599,6 +1615,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // horizontal two-row lava caver (`LavaLayerCaverer`, `:73950-74060`),
     // called from the Dungeon pass when the seed is on — M5-SEED-1.
     step!("constant lava layer", "", step_constant_lava_layer),
+    // The vanilla Mountain Caves slot (`WorldGen.cs:14873`): after Dungeon
+    // (`:14757`) and before Beaches (`:14888`) — W4-d102 pass 4. Own
+    // `pass_rng("Mountain Caves")` stream; a no-op until d101's Mount
+    // Caves producer writes the mCave anchors.
+    step!("mountain caves", "Mountain Caves", step_mountain_caves),
     // The vanilla Beaches + Gravitating Sand slots (`WorldGen.cs:14888`,
     // `:15138`): after Dungeon (`:14757`) and before Create Ocean Caves
     // (`:15167`) — the M5-OCEAN phase-2 insertion.
@@ -1608,6 +1629,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Gravitating Sand",
         step_gravitating_sand
     ),
+    // The vanilla Gems slot (`WorldGen.cs:15050`): the lane plan groups it
+    // after the port's `gravitating sand` step (the GravitatingSandCleanup
+    // `:15138`) and before `ocean caves` (`:15167`) — W4-d102 pass 5. (The
+    // C# anchor order is Gems `:15050` < sand cleanup `:15138`; the port's
+    // grouping keeps the sand family together, and the isolated stream
+    // makes the relative order RNG-neutral.) Own `pass_rng("Gems")` stream.
+    step!("gems", "Gems", step_gems),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
     // The vanilla Shimmer slot (`WorldGen.cs:15195`): immediately after
     // Create Ocean Caves (`:15167`), before Clean Up Dirt (`:15246`,
@@ -1615,6 +1643,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // dualDungeons prune (`DUAL_DUNGEON_DISABLED_PASSES`) now finds a real
     // step to skip.
     step!("shimmer", "Shimmer", step_shimmer),
+    // The vanilla Clean Up Dirt slot (`WorldGen.cs:15246`): after Shimmer
+    // (`:15195`) and before Pyramids (`:15360`) — W4-d102 pass 7. Own
+    // `pass_rng("Clean Up Dirt")` stream; the noSurface micro-seed arm
+    // fills the top instead of scrubbing.
+    step!("clean up dirt", "Clean Up Dirt", step_clean_up_dirt),
     // W4-g36 A2/A3 KEEP-ONE (matrix-88 §2.2/§2.3): Clean Up Dirt + Dirt Rock
     // Wall Runner are d102-owned (passes2.rs, unmerged at this gate) — g36's
     // micro_finish copies dropped; the slots re-land with d102.
@@ -1650,6 +1683,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (`:15750`), before the temple (`:15834`) — the M5-BIOME phase-5
     // insertion.
     step!("wet jungle", "Wet Jungle", step_wet_jungle),
+    // The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461`): after
+    // Pyramids (`:15360`) and before Living Trees (`:15476`) — W4-d102
+    // pass 8. Own `pass_rng("Dirt Rock Wall Runner")` stream.
+    step!(
+        "dirt rock wall runner",
+        "Dirt Rock Wall Runner",
+        step_dirt_rock_wall_runner
+    ),
     step!("pots", "Pots", step_pots),
     // W4-g37 B7/B8/B9 KEEP-ONE (matrix-88 §2.13/§2.14/§2.15): Hellforge +
     // Spreading Grass + Surface Ore and Stone are d104-owned (unmerged at
@@ -2347,6 +2388,141 @@ fn step_dirt_to_mud(
         lava_line,
         world_surface,
         &mut streams.pass_rng("Dirt To Mud"),
+    );
+}
+
+/// The vanilla Silt slot (`WorldGen.cs:13143-13181`) — W4-d102 pass 1: the
+/// two kind-123 TileRunner loops over `GenVars.rockLayerHigh..maxTilesY`
+/// (the remix band swap to `worldSurface..rockLayer` rides the pass fn).
+fn step_silt(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (rock_high, world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.rock_high, l.world_surface, l.rock_layer)
+    };
+    passes2::pass_silt(
+        world,
+        rock_high,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Silt"),
+    );
+}
+
+/// The vanilla Webs slot (`WorldGen.cs:13607-13644`) — W4-d102 pass 2: the
+/// ceiling-hugging cobweb runners with the mountain-cave anchor override.
+fn step_webs(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (surface_high, surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_high, l.surface_low, l.world_surface)
+    };
+    passes2::pass_webs(
+        world,
+        surface_high,
+        surface_low,
+        world_surface,
+        gv.num_m_caves,
+        &gv.m_cave_x,
+        &gv.m_cave_y,
+        &mut streams.pass_rng("Webs"),
+    );
+}
+
+/// The vanilla Slush slot (`WorldGen.cs:14697-14752`) — W4-d102 pass 3:
+/// the snow-rect retype sweep. No RNG — the pass draws nothing in C#.
+fn step_slush(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    passes2::pass_slush(world, gv.snow_top, gv.snow_bottom, &gv.snow_min_x, &gv.snow_max_x);
+}
+
+/// The vanilla Mountain Caves slot (`WorldGen.cs:14873-14887`) — W4-d102
+/// pass 4: CaveOpenater + the recursive Cavinator per mCave anchor.
+fn step_mountain_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let rock_layer = gv.layers().rock_layer;
+    passes2::pass_mountain_caves(
+        world,
+        rock_layer,
+        gv.num_m_caves,
+        &gv.m_cave_x,
+        &gv.m_cave_y,
+        &mut streams.pass_rng("Mountain Caves"),
+    );
+}
+
+/// The vanilla Gems slot (`WorldGen.cs:15050-15137`) — W4-d102 pass 5:
+/// the six gem-kind runner bands + the two-direction sand-edge slide.
+fn step_gems(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_gems(
+        world,
+        world_surface,
+        gv.underground_desert,
+        &mut streams.pass_rng("Gems"),
+    );
+}
+
+/// The vanilla Clean Up Dirt slot (`WorldGen.cs:15246-15359`) — W4-d102
+/// pass 7: the two surface wall-scrub sweeps (the noSurface fill arm).
+fn step_clean_up_dirt(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_clean_up_dirt(world, world_surface, &mut streams.pass_rng("Clean Up Dirt"));
+}
+
+/// The vanilla Dirt Rock Wall Runner slot (`WorldGen.cs:15461-15475` +
+/// DirtyRockRunner `:77145-77210`) — W4-d102 pass 8: the wall-2→59 blobs.
+fn step_dirt_rock_wall_runner(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let world_surface = gv.layers().world_surface;
+    passes2::pass_dirt_rock_wall_runner(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Dirt Rock Wall Runner"),
     );
 }
 
@@ -4763,6 +4939,12 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
         gv.snow_origin_left = left;
         gv.snow_origin_right = right;
     }
+    // The snow per-row arrays (`WorldGen.cs:11178-11179`: `new
+    // int[Main.maxTilesY]`) — zero-filled until Generate Ice Biome (d101)
+    // writes the spans.
+    let height = opts.height.max(512) as usize;
+    gv.snow_min_x = vec![0; height];
+    gv.snow_max_x = vec![0; height];
     gv
 }
 
@@ -5091,10 +5273,10 @@ mod tests {
         // W4-d106 R1-R6: + `grass wall`/`settle liquids again`/`tile cleanup`/
         // `stalac`/`remove broken traps`/`final cleanup` (the six lane-6 passes).
         // W4-f24 B6: + `dither snake` (vanilla "Dual Dungeons Dither Snake",
-        // `WorldGen.cs:14755`) between `liquids` and `dungeon` — gated, a
+        // `WorldGen.cs:14755`) between `liquids` and `dungeon` тАФ gated, a
         // classic world's step is a no-op.
         // W4-f24 A4: + `skyblock` (vanilla "Skyblock", `WorldGen.cs:11511`)
-        // after `plan biome spans`, before `dunes` — gated, classic no-op.
+        // after `plan biome spans`, before `dunes` тАФ gated, classic no-op.
         // W4-g36 A1: + `shimmer` (vanilla "Shimmer", `WorldGen.cs:15195`)
         // between `ocean caves` and `fragile ice`.
         // W4-g36 A2: + `clean up dirt` (vanilla "Clean Up Dirt",
@@ -5124,9 +5306,9 @@ mod tests {
         // W4-g38 C8: + `dye plants` (vanilla "Dye Plants",
         // `WorldGen.cs:19981`) after `herbs`.
         // W4-c33: the faithful `pyramids` moves to its vanilla slot
-        // (`WorldGen.cs:15360`) after `shimmer` (a move, not an addition —
-        // the count stays). KEEP-ONE (matrix-88 §2.9): c33's `water chests`
-        // registration between `chests` and `spider caves` dropped — the
+        // (`WorldGen.cs:15360`) after `shimmer` (a move, not an addition тАФ
+        // the count stays). KEEP-ONE (matrix-88 ┬з2.9): c33's `water chests`
+        // registration between `chests` and `spider caves` dropped тАФ the
         // d103 water_chests.rs slot after `surface chests` stands (already
         // counted above).
         // W4-d101 pass 1: + `sand patches` (vanilla "Sand Patches",
@@ -5146,34 +5328,35 @@ mod tests {
         // W4-d101 pass 8: + `generate ice biome` (vanilla "Generate Ice
         // Biome", `WorldGen.cs:12312`) after `wavy caves`.
         // W4-d101 pass 9: `granite and marble` splits into `marble` +
-        // `granite` (vanilla `:12757` / `:12839`) — same order, same
+        // `granite` (vanilla `:12757` / `:12839`) тАФ same order, same
         // streams, +1 row.
-        assert_eq!(names.len(), 104);
+        // W4-d102: + `silt`/`webs`/`slush`/`mountain caves`/`gems`/`clean up dirt`/`dirt rock wall runner` (7 rows).
+        assert_eq!(names.len(), 111);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
         sorted.dedup();
         assert_eq!(sorted.len(), count, "step names must be unique");
         // The order: the pre-scaffold generate() call order with the two
-        // M5-BIOME phase-3 insertions — `mud caves to grass` right after
-        // `jungle` (vanilla `:12466` → `:12468`) and `dirt to mud` between
+        // M5-BIOME phase-3 insertions тАФ `mud caves to grass` right after
+        // `jungle` (vanilla `:12466` тЖТ `:12468`) and `dirt to mud` between
         // `dirt-in-stone blobs` and `ash blobs` (satisfies the vanilla
-        // DirtToMud < Shinies and DirtToMud < Underworld relative pairs) —
+        // DirtToMud < Shinies and DirtToMud < Underworld relative pairs) тАФ
         // the phase-4 move of `evil` to its vanilla slot between
         // `ores and gems`/Shinies (`:13182`) and `liquids`/Lakes (`:14556`),
-        // the three phase-5 insertions — `wet jungle` right after
-        // `altars` (vanilla `:15750` → `:15810`), `jungle plants` right
-        // after `mushroom and jungle plants` (vanilla `:20122` → `:20165`)
+        // the three phase-5 insertions тАФ `wet jungle` right after
+        // `altars` (vanilla `:15750` тЖТ `:15810`), `jungle plants` right
+        // after `mushroom and jungle plants` (vanilla `:20122` тЖТ `:20165`)
         // and `muds walls in jungle` between `vines` and `floating islands`
-        // (vanilla `:20193` → `:20813`) — the four M5-STRUCT-5 cave
+        // (vanilla `:20193` тЖТ `:20813`) тАФ the four M5-STRUCT-5 cave
         // decorations (`spider caves` + `gem caves` + `moss` between `chests`
-        // and `altars`, vanilla `:17245` → `:17356` → `:17428` → `:17472`,
+        // and `altars`, vanilla `:17245` тЖТ `:17356` тЖТ `:17428` тЖТ `:17472`,
         // and `webs and honey` before `mushroom and jungle plants`, vanilla
-        // `:19995` → `:20122`) — and the three M5-OCEAN phase-2
+        // `:19995` тЖТ `:20122`) тАФ and the three M5-OCEAN phase-2
         // insertions: `ocean sand` right after `plan biome spans`
-        // (vanilla `:11517` → `:11580`), and `beaches` + `gravitating sand`
-        // between `dungeon` (`:14757`) and `ocean caves` (`:14888` →
-        // `:15138` → `:15167`).
+        // (vanilla `:11517` тЖТ `:11580`), and `beaches` + `gravitating sand`
+        // between `dungeon` (`:14757`) and `ocean caves` (`:14888` тЖТ
+        // `:15138` тЖТ `:15167`).
         assert_eq!(
             names,
             vec![
@@ -5193,7 +5376,7 @@ mod tests {
                 "mount caves",
                 "dirt wall backgrounds",
                 // M5-BIOME-2: granite moved after the cave carve (the vanilla
-                // order) — the `GraniteBiome.CanPlace` inactive-origin gate
+                // order) тАФ the `GraniteBiome.CanPlace` inactive-origin gate
                 // needs the pre-carved caves. W4-d101 pass 9: the two halves
                 // carry their own vanilla rows now.
                 "marble",
@@ -5228,8 +5411,8 @@ mod tests {
                 "exposed gems",
                 "jungle shrines",
                 "chests",
-                // W4-c33 KEEP-ONE (matrix-88 §2.9): the c33 water-chests
-                // registration dropped — the d103 slot after `surface
+                // W4-c33 KEEP-ONE (matrix-88 ┬з2.9): the c33 water-chests
+                // registration dropped тАФ the d103 slot after `surface
                 // chests` below stands.
                 "spider caves",
                 "gem caves",
@@ -5296,7 +5479,7 @@ mod tests {
     }
 
     /// W4-d101 pass 1: `sand patches` sits in the vanilla Sand Patches slot
-    /// (`WorldGen.cs:11689`) — after Ocean Sand (`:11580`) and immediately
+    /// (`WorldGen.cs:11689`) тАФ after Ocean Sand (`:11580`) and immediately
     /// before the Tunnels step (`cave fields`, `:11718`). The port's grouped
     /// surface-biome steps sit earlier (the pinned pre-scaffold order), so
     /// the adjacency asserted is the Tunnels one; the chain order is the
@@ -5318,7 +5501,7 @@ mod tests {
     }
 
     /// W4-d101 pass 2: `mount caves` sits in the vanilla Mount Caves slot
-    /// (`WorldGen.cs:11784`) — immediately after the Tunnels step
+    /// (`WorldGen.cs:11784`) тАФ immediately after the Tunnels step
     /// (`cave fields`, `:11718`) and before Rocks In Dirt (`:11896`, the
     /// port's `stone-in-dirt blobs`).
     #[test]
@@ -5336,12 +5519,12 @@ mod tests {
         assert!(cpos("Mount Caves") == cpos("Tunnels") + 1);
         assert!(cpos("Mount Caves") < cpos("Rocks In Dirt"));
         // The later Mountain Caves opener pass (`:14873`, d102's lane) is
-        // a DIFFERENT declaration — the anchors this step publishes feed it.
+        // a DIFFERENT declaration тАФ the anchors this step publishes feed it.
         assert!(cpos("Mountain Caves") > cpos("Dungeon"));
     }
 
     /// W4-d101 pass 3: `dirt wall backgrounds` sits in its vanilla slot
-    /// (`WorldGen.cs:11858`) — immediately after Mount Caves (`:11784`)
+    /// (`WorldGen.cs:11858`) тАФ immediately after Mount Caves (`:11784`)
     /// and immediately before Rocks In Dirt (`:11896`).
     #[test]
     fn w4_d101_dirt_wall_backgrounds_sits_between_mount_caves_and_rocks_in_dirt() {
@@ -5360,7 +5543,7 @@ mod tests {
     }
 
     /// W4-d101 pass 4: `clay` sits in its vanilla slot
-    /// (`WorldGen.cs:11959`) — immediately after Dirt In Rocks (`:11926`,
+    /// (`WorldGen.cs:11959`) тАФ immediately after Dirt In Rocks (`:11926`,
     /// the port's `dirt-in-stone blobs`) and before Small Holes (`:12008`,
     /// the next lane pass). The port's `surface caves` (`:12162`) and
     /// `wavy caves` (`:12271`) sit between them until passes 5-7 land.
@@ -5381,7 +5564,7 @@ mod tests {
     }
 
     /// W4-d101 pass 5: `small holes` sits in its vanilla slot
-    /// (`WorldGen.cs:12008`) — immediately after Clay (`:11959`) and
+    /// (`WorldGen.cs:12008`) тАФ immediately after Clay (`:11959`) and
     /// before Dirt Layer Caves (`:12067`, the next lane pass).
     #[test]
     fn w4_d101_small_holes_sits_after_clay() {
@@ -5400,7 +5583,7 @@ mod tests {
     }
 
     /// W4-d101 pass 6: `dirt layer caves` sits in its vanilla slot
-    /// (`WorldGen.cs:12067`) — immediately after Small Holes (`:12008`)
+    /// (`WorldGen.cs:12067`) тАФ immediately after Small Holes (`:12008`)
     /// and before Rock Layer Caves (`:12107`, the next lane pass).
     #[test]
     fn w4_d101_dirt_layer_caves_sits_after_small_holes() {
@@ -5419,7 +5602,7 @@ mod tests {
     }
 
     /// W4-d101 pass 7: `rock layer caves` sits in its vanilla slot
-    /// (`WorldGen.cs:12107`) — immediately after Dirt Layer Caves
+    /// (`WorldGen.cs:12107`) тАФ immediately after Dirt Layer Caves
     /// (`:12067`) and immediately before Surface Caves (`:12162`).
     #[test]
     fn w4_d101_rock_layer_caves_sits_before_surface_caves() {
@@ -5438,7 +5621,7 @@ mod tests {
     }
 
     /// W4-d101 pass 8: `generate ice biome` sits in its vanilla slot
-    /// (`WorldGen.cs:12312`) — immediately after Wavy Caves (`:12271`)
+    /// (`WorldGen.cs:12312`) тАФ immediately after Wavy Caves (`:12271`)
     /// and before Grass (`:12423`). The port's `micro grass` step sits
     /// earlier (the pinned pre-scaffold order), so the forward neighbour
     /// asserted is `dirt to mud`; the chain carries the vanilla pair.
@@ -5461,7 +5644,7 @@ mod tests {
     }
 
     /// W4-d101 pass 9: the `marble` + `granite` rows sit adjacent in the
-    /// vanilla order (Marble `WorldGen.cs:12757` → Granite `:12839`),
+    /// vanilla order (Marble `WorldGen.cs:12757` тЖТ Granite `:12839`),
     /// after the cave carve (the M5-BIOME-2 CanPlace-gate move stands).
     /// The split is RNG-neutral: same call order, same per-pass streams.
     #[test]
@@ -5478,7 +5661,7 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Granite") == cpos("Marble") + 1);
         // Every classic pass now has an executed row except the other
-        // lanes' unexecuted slices — Granite is off the missing list.
+        // lanes' unexecuted slices тАФ Granite is off the missing list.
         let executed: std::collections::HashSet<&str> = EXECUTED_PIPELINE
             .iter()
             .map(|s| s.vanilla)
@@ -5488,13 +5671,13 @@ mod tests {
     }
 
     /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla
-    /// positions — `mud caves to grass` immediately after `jungle`
-    /// (vanilla `:12466` → `:12468`) and `dirt to mud` between
+    /// positions тАФ `mud caves to grass` immediately after `jungle`
+    /// (vanilla `:12466` тЖТ `:12468`) and `dirt to mud` between
     /// `dirt-in-stone blobs` and `ash blobs` (the vanilla DirtToMud <
-    /// Shinies and DirtToMud < Underworld relative pairs, research §5.3).
+    /// Shinies and DirtToMud < Underworld relative pairs, research ┬з5.3).
     /// M5-SEED-1 inserts the Constant's `wavy caves` between them (the
     /// vanilla Wavy Caves slot, `:12271`), so the dirt-to-mud adjacency is
-    /// +2 now — the relative pairs themselves still hold.
+    /// +2 now тАФ the relative pairs themselves still hold.
     #[test]
     fn test_DW_3_3_new_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
@@ -5516,11 +5699,11 @@ mod tests {
     }
 
     /// DW-2.3: the three M5-OCEAN phase-2 ocean steps sit in their vanilla
-    /// positions — `ocean sand` immediately after the `dunes` step (the
-    /// M5-DESERT-structures `:11517` Dunes → `:11580` Ocean Sand pair; the
+    /// positions тАФ `ocean sand` immediately after the `dunes` step (the
+    /// M5-DESERT-structures `:11517` Dunes тЖТ `:11580` Ocean Sand pair; the
     /// dunes step is after `plan biome spans`, whose planner the dunes' origin
     /// roll reads), and `beaches` + `gravitating sand` between `dungeon`
-    /// (`:14757`) and `ocean caves` (vanilla `:14888` → `:15138` → `:15167`).
+    /// (`:14757`) and `ocean caves` (vanilla `:14888` тЖТ `:15138` тЖТ `:15167`).
     #[test]
     fn test_DW_2_3_ocean_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
@@ -5532,10 +5715,10 @@ mod tests {
         assert_eq!(pos("dunes"), pos("skyblock") + 1);
         assert_eq!(names[pos("ocean sand") + 1], "micro grass"); // + the M5-SEED-2 Grass slot
         assert_eq!(names[pos("micro grass") + 1], "jungle");
-        assert_eq!(pos("beaches"), pos("dungeon") + 2); // + the seed Constant lava layer (M5-SEED-1)
-        // W4-f24 B6: the gated dither snake sits between liquids and dungeon.
+        assert_eq!(pos("beaches"), pos("dungeon") + 3); // + Constant lava layer (M5-SEED-1) + mountain caves (W4-d102)
+        // W4-f24 B6: the gated dither snake sits between slush (W4-d102) and dungeon.
         assert_eq!(pos("dither snake"), pos("dungeon") - 1);
-        assert_eq!(pos("dither snake"), pos("liquids") + 1);
+        assert_eq!(pos("dither snake"), pos("slush") + 1);
         assert_eq!(pos("gravitating sand"), pos("beaches") + 1);
         assert_eq!(names[pos("gravitating sand") + 1], "ocean caves");
         // The vanilla chain carries the same relative order.
@@ -5553,11 +5736,11 @@ mod tests {
         assert!(cpos("Gravitating Sand") < cpos("Create Ocean Caves"));
     }
 
-    /// DW-4.4 / M5-TEMPLE: the late steps sit in their vanilla positions —
+    /// DW-4.4 / M5-TEMPLE: the late steps sit in their vanilla positions тАФ
     /// `remove water` + `shell piles` right before `slopes` (vanilla
-    /// `:16211`/`:16266` → Smooth World `:16419`), and `water plants` right
-    /// after `cacti` (vanilla `:21310` → `:21973`) with the M5-TEMPLE
-    /// `lihzahrd altar` between them (vanilla `Lihzahrd Altars` `:21943` →
+    /// `:16211`/`:16266` тЖТ Smooth World `:16419`), and `water plants` right
+    /// after `cacti` (vanilla `:21310` тЖТ `:21973`) with the M5-TEMPLE
+    /// `lihzahrd altar` between them (vanilla `Lihzahrd Altars` `:21943` тЖТ
     /// `Water Plants` `:21963`).
     #[test]
     fn test_DW_4_4_late_ocean_steps_sit_in_their_vanilla_positions() {
@@ -5569,7 +5752,7 @@ mod tests {
         assert_eq!(names[pos("oasis") + 1], "shell piles");
         assert_eq!(names[pos("shell piles") + 1], "slopes");
         // W4-d103 pass 20: the Waterfalls pass (`WorldGen.cs:16610`) slots
-        // after Living Trees (`:15476` — the executed chain runs it after
+        // after Living Trees (`:15476` тАФ the executed chain runs it after
         // `slopes`) and before Planting Trees (`:20179`); the vanilla
         // Smooth World (`:16419`) < Waterfalls pair holds too.
         assert_eq!(names[pos("living trees") + 1], "waterfalls");
@@ -5581,7 +5764,7 @@ mod tests {
         assert_eq!(names[pos("water chests") + 1], "cave walls");
         // W4-d103 pass 27 keep-one (research/87): the executed houses slot
         // stays g44's (over the islands ledger, the adjacency witness pins
-        // it); d103's after-cave-walls duplicate dropped — the chain goes
+        // it); d103's after-cave-walls duplicate dropped тАФ the chain goes
         // straight to the Grass Wall + planting family here (d106 R1).
         assert_eq!(names[pos("cave walls") + 1], "grass wall");
         assert_eq!(names[pos("grass wall") + 1], "trees");
@@ -5590,7 +5773,7 @@ mod tests {
         assert_eq!(names[pos("lihzahrd altar") - 1], "tile cleanup");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         // W4-d106 R4/R5: `stalac` + `remove broken traps` now sit between
-        // `water plants` and the world tail (the vanilla Stalac `:22038` →
+        // `water plants` and the world tail (the vanilla Stalac `:22038` тЖТ
         // Remove Broken Traps `:22121` slots).
         assert_eq!(names[pos("water plants") + 1], "stalac");
         // W4-d106 R6: `final cleanup` sits between `remove broken traps` and
@@ -5608,39 +5791,39 @@ mod tests {
         assert!(cpos("Oasis") < cpos("Shell Piles"));
         assert!(cpos("Shell Piles") < cpos("Smooth World"));
         // W4-d103 pass 20: the vanilla Waterfalls pairs (`:15476` Living
-        // Trees / `:16419` Smooth World → `:16610` Waterfalls → `:16667` Ice).
+        // Trees / `:16419` Smooth World тЖТ `:16610` Waterfalls тЖТ `:16667` Ice).
         assert!(cpos("Smooth World") < cpos("Waterfalls"));
         assert!(cpos("Living Trees") < cpos("Waterfalls"));
         assert!(cpos("Waterfalls") < cpos("Ice"));
         // W4-d103 pass 21: the vanilla Wall Variety pairs (`:16610`
-        // Waterfalls / `:16667` Ice → `:16697` Wall Variety → `:16755` Life
-        // Crystals — the Life Crystals step is unported, the chain pair is
+        // Waterfalls / `:16667` Ice тЖТ `:16697` Wall Variety тЖТ `:16755` Life
+        // Crystals тАФ the Life Crystals step is unported, the chain pair is
         // the witness).
         assert!(cpos("Waterfalls") < cpos("Wall Variety"));
         assert!(cpos("Ice") < cpos("Wall Variety"));
         assert!(cpos("Wall Variety") < cpos("Life Crystals"));
         // W4-d103 pass 22: the vanilla Life Crystals pairs (`:16697` Wall
-        // Variety → `:16755` Life Crystals → `:16853` Statues).
+        // Variety тЖТ `:16755` Life Crystals тЖТ `:16853` Statues).
         assert!(cpos("Life Crystals") < cpos("Statues"));
         // W4-d103 pass 23: the vanilla Statues pairs (`:16755` Life
-        // Crystals → `:16853` Statues → `:16971` Buried Chests).
+        // Crystals тЖТ `:16853` Statues тЖТ `:16971` Buried Chests).
         assert!(cpos("Statues") < cpos("Buried Chests"));
         // W4-d103 pass 24: the vanilla Surface Chests pairs (`:16971`
-        // Buried Chests → `:17130` Surface Chests → `:17211` Jungle
+        // Buried Chests тЖТ `:17130` Surface Chests тЖТ `:17211` Jungle
         // Chests Placement).
         assert!(cpos("Buried Chests") < cpos("Surface Chests"));
         assert!(cpos("Surface Chests") < cpos("Jungle Chests Placement"));
         // W4-d103 pass 25: the vanilla Water Chests pairs (`:17211` Jungle
-        // Chests Placement → `:17245` Water Chests → `:17356` Spider
+        // Chests Placement тЖТ `:17245` Water Chests тЖТ `:17356` Spider
         // Caves).
         assert!(cpos("Jungle Chests Placement") < cpos("Water Chests"));
         assert!(cpos("Water Chests") < cpos("Spider Caves"));
-        // W4-d103 pass 26: the vanilla Cave Walls pairs (`:17701` Temple →
-        // `:17711` Cave Walls → `:17840` Jungle Trees).
+        // W4-d103 pass 26: the vanilla Cave Walls pairs (`:17701` Temple тЖТ
+        // `:17711` Cave Walls тЖТ `:17840` Jungle Trees).
         assert!(cpos("Temple") < cpos("Cave Walls"));
         assert!(cpos("Cave Walls") < cpos("Jungle Trees"));
         // W4-d103 pass 27: the vanilla Floating Island Houses pairs
-        // (`:17840` Jungle Trees → `:17859` Floating Island Houses →
+        // (`:17840` Jungle Trees тЖТ `:17859` Floating Island Houses тЖТ
         // `:17875` Quick Cleanup).
         assert!(cpos("Jungle Trees") < cpos("Floating Island Houses"));
         assert!(cpos("Floating Island Houses") < cpos("Quick Cleanup"));
@@ -5648,7 +5831,7 @@ mod tests {
     }
 
     /// DW-4.3: the evil step sits between `ores and gems`/Shinies
-    /// (`WorldGen.cs:13182`) and `liquids`/Lakes (`:14556`) — the vanilla
+    /// (`WorldGen.cs:13182`) and `liquids`/Lakes (`:14556`) тАФ the vanilla
     /// Corruption slot (`:13866`), with Underworld (`:13645`) before it too.
     #[test]
     fn test_DW_4_3_evil_step_sits_between_ores_and_liquids() {
@@ -5669,13 +5852,13 @@ mod tests {
     }
 
     /// DW-5.3: the three M5-BIOME phase-5 steps sit in their vanilla
-    /// positions — `wet jungle` immediately after `altars` (the vanilla
-    /// adjacent pair Altars `:15750` → Wet Jungle `:15810` → Jungle Temple
+    /// positions тАФ `wet jungle` immediately after `altars` (the vanilla
+    /// adjacent pair Altars `:15750` тЖТ Wet Jungle `:15810` тЖТ Jungle Temple
     /// `:15834`), `jungle plants` immediately after `mushroom and jungle
-    /// plants` (vanilla `:20122` → `:20165`, before Vines `:20193`) and
+    /// plants` (vanilla `:20122` тЖТ `:20165`, before Vines `:20193`) and
     /// `muds walls in jungle` between `vines` and `floating islands` (the
     /// plan's slot; vanilla carries Muds Walls In Jungle after Vines,
-    /// `:20193` → `:20813`).
+    /// `:20193` тЖТ `:20813`).
     #[test]
     fn test_DW_5_3_new_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
@@ -5684,7 +5867,7 @@ mod tests {
         assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
         assert_eq!(pos("muds walls in jungle"), pos("vines") + 1);
         // W4-c31: the `larva` step slots between them (vanilla Muds Walls
-        // In Jungle `:20813` → Larva `:20868`).
+        // In Jungle `:20813` тЖТ Larva `:20868`).
         assert_eq!(names[pos("muds walls in jungle") + 1], "larva");
         assert_eq!(names[pos("larva") + 1], "floating islands");
         // The vanilla chain carries the same relative pairs.
@@ -5701,20 +5884,20 @@ mod tests {
     }
 
     /// DW-5.6: the four M5-STRUCT-5 cave-decor steps sit in their vanilla
-    /// positions — `spider caves` + `gem caves` + `moss` between the chest
-    /// family and `altars` (vanilla Underwater Chests `:17245` → Spider
-    /// Caves `:17356` → Gem Caves `:17428` → Moss `:17472` → Jungle Temple
+    /// positions тАФ `spider caves` + `gem caves` + `moss` between the chest
+    /// family and `altars` (vanilla Underwater Chests `:17245` тЖТ Spider
+    /// Caves `:17356` тЖТ Gem Caves `:17428` тЖТ Moss `:17472` тЖТ Jungle Temple
     /// `:17701`, with the port's `lihzahrd temple` standing in for the
     /// temple; the d103 `water chests` slot sits late over the buried-chest
-    /// core — W4-c33's between-chests registration dropped, matrix-88
-    /// §2.9), and `webs and honey` immediately
+    /// core тАФ W4-c33's between-chests registration dropped, matrix-88
+    /// ┬з2.9), and `webs and honey` immediately
     /// before `mushroom and jungle plants` (vanilla Webs And Honey
-    /// `:19995` → Glowing Mushrooms and Jungle Plants `:20122`).
+    /// `:19995` тЖТ Glowing Mushrooms and Jungle Plants `:20122`).
     #[test]
     fn test_DW_5_6_cave_decor_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        // W4-g37 B2/B3 + W4-c33 KEEP-ONE (matrix-88 §2.9): the d103 `water
+        // W4-g37 B2/B3 + W4-c33 KEEP-ONE (matrix-88 ┬з2.9): the d103 `water
         // chests` rides after `surface chests` (the DW-4.4 witness pins that
         // adjacency); `spider caves` follows `chests` directly here.
         assert_eq!(pos("spider caves"), pos("chests") + 1);
@@ -5737,7 +5920,7 @@ mod tests {
     }
 
     /// S1-K-2 wave A: `mahogany trees` sits in the Micro Biomes pass's
-    /// vanilla slot — after `sword shrines` (`WorldGen.cs:20979`) and
+    /// vanilla slot тАФ after `sword shrines` (`WorldGen.cs:20979`) and
     /// before `webs and honey` (the port's grouped neighbour; the mahogany
     /// block itself is `:21105`). Wave B slots `mining explosives`
     /// (`:21066`) between them.
@@ -5751,9 +5934,9 @@ mod tests {
     }
 
     /// W4-g44: `floating island houses` rides with `floating islands` in
-    /// the grouped chain — the house build reads the islands ledger, so
-    /// the relative islands→houses order is the C#'s (`FloatingIslands`
-    /// `:12927` → `FloatingIslandHouses` `:17859`). The merge keep-one
+    /// the grouped chain тАФ the house build reads the islands ledger, so
+    /// the relative islandsтЖТhouses order is the C#'s (`FloatingIslands`
+    /// `:12927` тЖТ `FloatingIslandHouses` `:17859`). The merge keep-one
     /// (research/87 KEEP-1) keeps g44's slot: W4-f25's `settle liquids`
     /// sits between the pair (the f25 orphan adoption's `remove water`
     /// adjacency), so the witness pins islands < houses + the houses'
@@ -5777,7 +5960,7 @@ mod tests {
     }
 
     /// S1-K-2 wave C: `thin ice` sits in the Micro Biomes pass's vanilla
-    /// slot — the thin-ice block (`WorldGen.cs:20941`) runs before the
+    /// slot тАФ the thin-ice block (`WorldGen.cs:20941`) runs before the
     /// sword shrines (`:20979`), the campsites (`:21031`) and the
     /// mahogany block (`:21105`); the port groups it right after the
     /// cave houses, ahead of `campsites`. (W4-g38 C7 slots `herbs`
@@ -5793,11 +5976,11 @@ mod tests {
         assert!(pos("thin ice") < pos("mahogany trees"));
     }
 
-    /// W4-d106 R1: `grass wall` sits ahead of the port's `trees` step — the
+    /// W4-d106 R1: `grass wall` sits ahead of the port's `trees` step тАФ the
     /// vanilla chain's relative order Spawn Point (`WorldGen.cs:19460`,
-    /// unported) → Grass Wall (`:19589`) → Guide (`:19685`, d105) → Planting
+    /// unported) тЖТ Grass Wall (`:19589`) тЖТ Guide (`:19685`, d105) тЖТ Planting
     /// Trees (`:19940`) puts the pass ahead of the trees. At the batch-B merge
-    /// the d103 passes (waterfalls … cave walls) sit between `living trees`
+    /// the d103 passes (waterfalls тАж cave walls) sit between `living trees`
     /// and `grass wall`, so the witness pins grass wall < trees + the
     /// cave-walls adjacency, not a strict living-trees +1.
     #[test]
@@ -5806,7 +5989,7 @@ mod tests {
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert!(pos("living trees") < pos("grass wall"));
         assert_eq!(pos("grass wall"), pos("cave walls") + 1);
-        // W4-g36 A4 keep-one (matrix-88 §2.4): wood tree walls rides between
+        // W4-g36 A4 keep-one (matrix-88 ┬з2.4): wood tree walls rides between
         // grass wall and trees (the d102 owner is unmerged; g36's body stands
         // in at the gate, the slot is the vanilla :15717 relative order).
         assert_eq!(pos("grass wall") + 1, pos("wood tree walls"));
@@ -5824,9 +6007,9 @@ mod tests {
         assert!(cpos("Grass Wall") < cpos("Planting Trees"));
     }
 
-    /// W4-g36 A1: `shimmer` sits immediately after `ocean caves` — the
-    /// vanilla adjacent pair Create Ocean Caves (`WorldGen.cs:15167`) →
-    /// Shimmer (`:15195`). KEEP-ONE (matrix-88 §2.2/§2.3): the Clean Up Dirt
+    /// W4-g36 A1: `shimmer` sits immediately after `ocean caves` тАФ the
+    /// vanilla adjacent pair Create Ocean Caves (`WorldGen.cs:15167`) тЖТ
+    /// Shimmer (`:15195`). KEEP-ONE (matrix-88 ┬з2.2/┬з2.3): the Clean Up Dirt
     /// + Dirt Rock Wall Runner steps are d102-owned (unmerged), so g36's
     /// A2/A3 registrations dropped; `fragile ice` follows shimmer directly.
     #[test]
@@ -5834,7 +6017,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
-        assert_eq!(names[pos("shimmer") + 1], "fragile ice");
+        assert_eq!(names[pos("shimmer") + 1], "clean up dirt");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -5849,9 +6032,9 @@ mod tests {
         assert!(cpos("Dirt Rock Wall Runner") < cpos("Living Trees"));
     }
 
-    /// W4-g36 A4: `wood tree walls` sits ahead of `trees` — the vanilla
-    /// relative order Living Trees (`WorldGen.cs:15476`) → Wood Tree Walls
-    /// (`:15717`) → Altars (`:15750`, the port's altars step sits earlier in
+    /// W4-g36 A4: `wood tree walls` sits ahead of `trees` тАФ the vanilla
+    /// relative order Living Trees (`WorldGen.cs:15476`) тЖТ Wood Tree Walls
+    /// (`:15717`) тЖТ Altars (`:15750`, the port's altars step sits earlier in
     /// the grouped chain). At the batch-B merge the d103/d106 passes sit
     /// between living trees and wood tree walls, so the witness pins the
     /// trees adjacency, not a strict living-trees +1.
@@ -5872,11 +6055,11 @@ mod tests {
         assert!(cpos("Wood Tree Walls") < cpos("Altars"));
     }
 
-    /// W4-d103 pass 21/22 KEEP-ONE (matrix-88 §2.5/§2.6): `wall variety` +
+    /// W4-d103 pass 21/22 KEEP-ONE (matrix-88 ┬з2.5/┬з2.6): `wall variety` +
     /// `life crystals` are d103-owned (wall_variety.rs / crystals.rs); g36's
     /// A6/A7 duplicates dropped. The d103 slots sit after `waterfalls`
-    /// (the vanilla Waterfalls `:16610` → Wall Variety `:16697` → Life
-    /// Crystals `:16755` → Statues `:16853` relative order).
+    /// (the vanilla Waterfalls `:16610` тЖТ Wall Variety `:16697` тЖТ Life
+    /// Crystals `:16755` тЖТ Statues `:16853` relative order).
     #[test]
     fn w4_g36_a6_the_wall_variety_step_sits_after_the_slopes() {
         let names = executed_pass_names();
@@ -5896,10 +6079,10 @@ mod tests {
         assert!(cpos("Life Crystals") < cpos("Statues"));
     }
 
-    /// W4-g38 C1: `fallen log` sits after the port's `cave houses` step —
+    /// W4-g38 C1: `fallen log` sits after the port's `cave houses` step тАФ
     /// the vanilla chain's relative order Buried Chests (`WorldGen.cs:
-    /// 16971`) → Surface Ore and Stone (`:18447`, g37's B9) → Place Fallen
-    /// Log (`:18513`) → Traps (`:18657`, C2) puts the pass ahead of the
+    /// 16971`) тЖТ Surface Ore and Stone (`:18447`, g37's B9) тЖТ Place Fallen
+    /// Log (`:18513`) тЖТ Traps (`:18657`, C2) puts the pass ahead of the
     /// grouped micro family and behind the chest work.
     #[test]
     fn w4_g38_c1_the_fallen_log_step_sits_after_the_cave_houses() {
@@ -5920,9 +6103,9 @@ mod tests {
         assert!(cpos("Place Fallen Log") < cpos("Spawn Point"));
     }
 
-    /// W4-g38 C2: `traps` sits after `fallen log` and before `piles` — the
+    /// W4-g38 C2: `traps` sits after `fallen log` and before `piles` тАФ the
     /// vanilla chain's relative order Place Fallen Log (`WorldGen.cs:18513`)
-    /// → Traps (`:18657`) → Piles (`:18788`, C3) → Spawn Point (`:19460`)
+    /// тЖТ Traps (`:18657`) тЖТ Piles (`:18788`, C3) тЖТ Spawn Point (`:19460`)
     /// puts the pass ahead of the micro group.
     #[test]
     fn w4_g38_c2_the_traps_step_sits_after_the_fallen_log() {
@@ -5943,8 +6126,8 @@ mod tests {
     }
 
     /// W4-g38 C3: `piles` sits after `traps` and before the grouped micro
-    /// family — the vanilla chain's relative order Traps (`WorldGen.cs:
-    /// 18657`) → Piles (`:18788`) → Spawn Point (`:19460`, C4) puts the pass
+    /// family тАФ the vanilla chain's relative order Traps (`WorldGen.cs:
+    /// 18657`) тЖТ Piles (`:18788`) тЖТ Spawn Point (`:19460`, C4) puts the pass
     /// ahead of the micro group.
     #[test]
     fn w4_g38_c3_the_piles_step_sits_after_the_traps() {
@@ -5965,8 +6148,8 @@ mod tests {
     }
 
     /// W4-g38 C4: `spawn point` sits after `piles` and before the grouped
-    /// micro family — the vanilla chain's relative order Piles
-    /// (`WorldGen.cs:18788`) → Spawn Point (`:19460`) → the grass-wall /
+    /// micro family тАФ the vanilla chain's relative order Piles
+    /// (`WorldGen.cs:18788`) тЖТ Spawn Point (`:19460`) тЖТ the grass-wall /
     /// vegetation family puts the pass ahead of the micro group.
     #[test]
     fn w4_g38_c4_the_spawn_point_step_sits_after_the_piles() {
@@ -5986,8 +6169,8 @@ mod tests {
     }
 
     /// W4-g38 C5: `guide` sits after `spawn point` and before the grouped
-    /// micro family — the vanilla chain's relative order Spawn Point
-    /// (`WorldGen.cs:19460`) → Guide (`:19685`) → Sunflowers (`:19898`, C6)
+    /// micro family тАФ the vanilla chain's relative order Spawn Point
+    /// (`WorldGen.cs:19460`) тЖТ Guide (`:19685`) тЖТ Sunflowers (`:19898`, C6)
     /// puts the pass ahead of the micro group.
     #[test]
     fn w4_g38_c5_the_guide_step_sits_after_the_spawn_point() {
@@ -6007,8 +6190,8 @@ mod tests {
     }
 
     /// W4-g38 C6: `sunflowers` sits after `guide` and before the grouped
-    /// micro family — the vanilla chain's relative order Guide
-    /// (`WorldGen.cs:19685`) → Sunflowers (`:19898`) → Planting Trees
+    /// micro family тАФ the vanilla chain's relative order Guide
+    /// (`WorldGen.cs:19685`) тЖТ Sunflowers (`:19898`) тЖТ Planting Trees
     /// (`:19940`) puts the pass ahead of the micro group.
     #[test]
     fn w4_g38_c6_the_sunflowers_step_sits_after_the_guide() {
@@ -6028,9 +6211,9 @@ mod tests {
     }
 
     /// W4-g38 C7: `herbs` sits after `sunflowers` and before the grouped
-    /// micro family — the vanilla chain's relative order Sunflowers
-    /// (`WorldGen.cs:19898`) → Planting Trees (`:19940`) → Herbs (`:19964`)
-    /// → Dye Plants (`:19981`, C8) puts the pass ahead of the micro group.
+    /// micro family тАФ the vanilla chain's relative order Sunflowers
+    /// (`WorldGen.cs:19898`) тЖТ Planting Trees (`:19940`) тЖТ Herbs (`:19964`)
+    /// тЖТ Dye Plants (`:19981`, C8) puts the pass ahead of the micro group.
     #[test]
     fn w4_g38_c7_the_herbs_step_sits_after_the_sunflowers() {
         let names = executed_pass_names();
@@ -6049,8 +6232,8 @@ mod tests {
     }
 
     /// W4-g38 C8: `dye plants` sits after `herbs` and before the grouped
-    /// micro family — the vanilla chain's relative order Herbs
-    /// (`WorldGen.cs:19964`) → Dye Plants (`:19981`) → Webs And Honey
+    /// micro family тАФ the vanilla chain's relative order Herbs
+    /// (`WorldGen.cs:19964`) тЖТ Dye Plants (`:19981`) тЖТ Webs And Honey
     /// (`:19995`) puts the pass ahead of the micro group.
     #[test]
     fn w4_g38_c8_the_dye_plants_step_sits_after_the_herbs() {
@@ -6071,7 +6254,7 @@ mod tests {
 
     // --- W4-g38 C4: the Spawn Point pass unit witnesses ---------------------
 
-    /// A flat dirt-2 ground row at `ground` with air above — the spawn seat.
+    /// A flat dirt-2 ground row at `ground` with air above тАФ the spawn seat.
     fn spawn_floor_world(ground: i32) -> World {
         let mut w = World::new("spawn".into(), 120, 120);
         boot_statics(&mut w);
@@ -6095,7 +6278,7 @@ mod tests {
         let mut w = spawn_floor_world(40);
         let mut rng = Rng(3);
         pass_spawn_point(&mut w, 60.0, 100, &mut rng, &GenOptions::default());
-        // The seat is the ground row (40) at a column within ±5 of centre.
+        // The seat is the ground row (40) at a column within ┬▒5 of centre.
         assert_eq!(w.spawn_y, 40);
         assert!((w.spawn_x - 60).abs() <= 5);
         assert!(w.tile(w.spawn_x, w.spawn_y).is_some_and(|t| t.active()));
@@ -6127,7 +6310,7 @@ mod tests {
         assert!(!spawn_bubble_nearby(&w, w.spawn_x, w.spawn_y, 10));
     }
 
-    /// W4-g38 C4: the skyblock arm settles the spawn with SolidTile3 — drop
+    /// W4-g38 C4: the skyblock arm settles the spawn with SolidTile3 тАФ drop
     /// to solid, rise to air, accept within 20 rows.
     #[test]
     fn w4_g38_c4_skyblock_settles_the_spawn() {
@@ -6160,7 +6343,7 @@ mod tests {
         opts.flags.insert(crate::seeds::SeedFlags::REMIX);
         let mut rng = Rng(3);
         pass_spawn_point(&mut w, 60.0, 100, &mut rng, &opts);
-        // Scanning up from 110: 110..105 air → num14 = 104 (the first solid
+        // Scanning up from 110: 110..105 air тЖТ num14 = 104 (the first solid
         // below the pocket), spawn_y = 105.
         assert_eq!(w.spawn_x, 60);
         assert_eq!(w.spawn_y, 105);
@@ -6210,7 +6393,7 @@ mod tests {
     }
 
     /// The seam proof: the scaffolded runner must reproduce the straight-line
-    /// `generate()` tile-for-tile (the FULL `Tile` — all 8 fields — not just
+    /// `generate()` tile-for-tile (the FULL `Tile` тАФ all 8 fields тАФ not just
     /// the `generation_is_reproducible_for_a_seed` 5-tuple). While `generate()` still holds
     /// its own body this is a genuine A/B; after Phase 3 rewires it, the FNV
     /// pins in `world_hash.rs` take over as the permanent proof.
@@ -6286,7 +6469,7 @@ mod tests {
         assert_ne!(jungle, streams.drng.0);
         assert_ne!(jungle, streams.srng.0);
         // And every distinct vanilla pass name keys a distinct stream (the
-        // skyblock "Jungle" is a deliberate duplicate name → same stream).
+        // skyblock "Jungle" is a deliberate duplicate name тЖТ same stream).
         let mut hashes: Vec<u64> = VANILLA_CHAIN
             .iter()
             .map(|p| streams.pass_rng(p.name).0)
@@ -6299,9 +6482,9 @@ mod tests {
         assert_eq!(hashes.len(), names.len(), "pass names must not collide");
     }
 
-    /// The GenVars defaults carry the C# reset values — the unset sentinels
+    /// The GenVars defaults carry the C# reset values тАФ the unset sentinels
     /// (`WorldGen.cs:11176-11177`) and the static zero-inits
-    /// (`GenVars.cs:166-200`) — so adding the fields shifts no behaviour
+    /// (`GenVars.cs:166-200`) тАФ so adding the fields shifts no behaviour
     /// (DW-1.2's "no behavioral change" arm on the state side).
     #[test]
     fn genvars_defaults_carry_the_csharp_reset_values() {
@@ -6345,7 +6528,7 @@ mod tests {
     // --- Phase 6: temple stub -------------------------------------------------
 
     /// DW-6.1: `step_temple` publishes the shell's bounds and the altar
-    /// anchor into `GenVars.temple` — the reachability seam the M5-TEMPLE
+    /// anchor into `GenVars.temple` тАФ the reachability seam the M5-TEMPLE
     /// passes (`templePart2`/`LihzahrdAltar`) read. The 512-tall world has
     /// no vanilla y band (`maxTilesY - 600 <= 0`), so the valve sends the
     /// search to the fallback: `x = maxTilesX - dungeon_x`,
@@ -6376,7 +6559,7 @@ mod tests {
         let mut streams = Streams::new(opts.seed);
         step_temple(&mut world, &mut gv, &mut streams, &opts, &noise, &config);
         // The faithful publication (M5-TEMPLE phase 2): the walk's room-union
-        // ± 10 and the final room count (`WorldGen.cs:34231-34235`) — on the
+        // ┬▒ 10 and the final room count (`WorldGen.cs:34231-34235`) тАФ on the
         // sub-vanilla scale the walk rolls a single resized room.
         let tb = gv.temple;
         assert_eq!(tb.t_rooms, 1, "t_rooms");
@@ -6390,7 +6573,7 @@ mod tests {
         );
     }
 
-    /// Decision #15 (verified): the temple tiles the shell writes — the dart
+    /// Decision #15 (verified): the temple tiles the shell writes тАФ the dart
     /// trap 137 (`Main.cs:7431`) and the Lihzahrd altar 237
     /// (`Main.cs:10234`) are frame-important and the framer must keep their
     /// stored frames; the Lihzahrd brick 226 is not.
@@ -6403,7 +6586,7 @@ mod tests {
         assert!(!w.frame_important[226], "the Lihzahrd brick 226");
     }
 
-    /// The chest family's boot statics (`Main.cs:7655-7659`) — and the load
+    /// The chest family's boot statics (`Main.cs:7655-7659`) тАФ and the load
     /// behaviour they buy: a chest tile keeps its 2x2 anchor frames through
     /// `frame_world` with the bit set, and loses them without it (the control
     /// that made every generated world's chest anchors unscannable).
@@ -6429,7 +6612,7 @@ mod tests {
         let t = w.tile(8, 8).unwrap();
         assert_eq!((t.frame_x, t.frame_y), (0, 0), "the anchor frames survive");
         // The control: the same world with the bit cleared re-frames the tile
-        // through its object def — the anchor is lost.
+        // through its object def тАФ the anchor is lost.
         let mut control = w.clone();
         control.frame_important[21] = false;
         crate::framing::frame_world(&mut control);
@@ -6444,10 +6627,10 @@ mod tests {
     // --- S1-K-1: `DisablePassesForSpecialSeeds` ----------------------------
 
     /// The twelve names are the `GenPassNameID` strings the C# compares
-    /// (`WorldGen.cs:22504`), i.e. `GenPassNameID.cs:239-325`'s values —
+    /// (`WorldGen.cs:22504`), i.e. `GenPassNameID.cs:239-325`'s values тАФ
     /// pinned literally so a rename in the chain cannot silently detach one.
     /// `IceBiome` is `"Generate Ice Biome"` (`:239`), not `"Ice"` (that is
-    /// `FragileIceOverIceBiomeWater`, `:280` — stays enabled under the seed).
+    /// `FragileIceOverIceBiomeWater`, `:280` тАФ stays enabled under the seed).
     #[test]
     fn s1_k_1_dual_dungeons_disables_the_twelve_csharp_named_passes() {
         assert_eq!(
@@ -6468,7 +6651,7 @@ mod tests {
             ]
         );
         // The C# loop can only disable a pass that exists in `_passes`; every
-        // name must therefore be a real chain name — `Larva` is the one slot
+        // name must therefore be a real chain name тАФ `Larva` is the one slot
         // the port's chain does not declare yet (research/12's missing-pass
         // list), so it is allowed to be absent and pruned vacuously.
         // (`Shimmer` declared its chain row with W4-g36 A1.)
@@ -6496,7 +6679,7 @@ mod tests {
         assert!(!pass_disabled_by_special_seeds("Terrain", dual, no_classic));
         // W4-d107: fragile ice ("Ice" = FragileIceOverIceBiomeWater,
         // `GenPassNameID.cs:280`) is NOT IceBiome ("Generate Ice Biome",
-        // `:239`) — the C# leaves it enabled under dualDungeons.
+        // `:239`) тАФ the C# leaves it enabled under dualDungeons.
         assert!(!pass_disabled_by_special_seeds("Ice", dual, no_classic));
         // Another micro-seed does not prune.
         let other = MicroSeedFlags::from_sum(MicroSeedFlags::EXTRA_LIQUID);
@@ -6504,7 +6687,7 @@ mod tests {
     }
 
     /// End to end: a `dualDungeons` world runs the shrunken chain. The jungle
-    /// step is the observable one — it paints the jungle grass — so its tile
+    /// step is the observable one тАФ it paints the jungle grass тАФ so its tile
     /// count drops to zero with the seed on, while the control world proves
     /// the same seed places them. The rock count shows the rest still ran.
     #[test]
@@ -6536,19 +6719,19 @@ mod tests {
         );
         assert!(
             count(&dual, 1) > 1000,
-            "every other pass still ran — the world is populated"
+            "every other pass still ran тАФ the world is populated"
         );
     }
 
     // --- S1-E-17: the progress hook -----------------------------------------
-    // (the byte-identity + abort tests live in `worldgen::tests` —
+    // (the byte-identity + abort tests live in `worldgen::tests` тАФ
     // `s1_e_17_the_progress_hook_does_not_change_the_world` /
     // `s1_e_17_queued_abort_stops_the_pipeline`, over the real
     // `GenerationProgress`.)
 
     /// The message table covers the executed steps whose vanilla pass sets
     /// a `progress.Message`, and every entry resolves through the text seam
-    /// (the `Lang.gen[i]` → `LegacyWorldGen.i` mapping, `Lang.cs:475-477`).
+    /// (the `Lang.gen[i]` тЖТ `LegacyWorldGen.i` mapping, `Lang.cs:475-477`).
     #[test]
     fn the_step_message_table_resolves_through_the_text_seam() {
         use super::super::progress::{step_message, PassMessage};
@@ -6582,4 +6765,199 @@ mod tests {
             "<WorldGeneration.LivingTrees>"
         );
     }
+
+    /// W4-d102 pass 1: `silt` sits in its vanilla slot тАФ after `dirt to mud`
+    /// (Dirt To Mud `WorldGen.cs:13123`) and before `ash blobs` (Underworld
+    /// `:13645`) / `ores and gems` (Shinies `:13182`); the Silt anchor is
+    /// `:13143`.
+    #[test]
+    fn w4_d102_the_silt_step_sits_between_dirt_to_mud_and_shinies() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("silt"), pos("dirt to mud") + 1);
+        assert_eq!(names[pos("silt") + 1], "ash blobs");
+        assert!(pos("silt") < pos("ores and gems"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dirt To Mud") < cpos("Silt"));
+        assert!(cpos("Silt") < cpos("Shinies"));
+        assert!(cpos("Silt") < cpos("Underworld"));
+    }
+
+
+    /// W4-d102 pass 2: `webs` sits in its vanilla slot тАФ after `ores and
+    /// gems` (Shinies `WorldGen.cs:13182`) and before `evil` (Corruption
+    /// `:13866`); the Webs anchor is `:13607`, Underworld `:13645` between.
+    #[test]
+    fn w4_d102_the_webs_step_sits_between_shinies_and_underworld() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("webs"), pos("ores and gems") + 1);
+        assert_eq!(names[pos("webs") + 1], "evil");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shinies") < cpos("Webs"));
+        assert!(cpos("Webs") < cpos("Underworld"));
+        assert!(cpos("Underworld") < cpos("Corruption"));
+    }
+
+
+    /// W4-d102 pass 3: `slush` sits in its vanilla slot тАФ after `liquids`
+    /// (Lakes `WorldGen.cs:14556`) and before `dungeon` (`:14757`); the
+    /// Slush anchor is `:14697`.
+    #[test]
+    fn w4_d102_the_slush_step_sits_between_lakes_and_dungeon() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("slush"), pos("liquids") + 1);
+        assert_eq!(names[pos("slush") + 1], "dungeon");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Lakes") < cpos("Slush"));
+        assert!(cpos("Slush") < cpos("Dungeon"));
+    }
+
+
+    /// W4-d102 pass 4: `mountain caves` sits in its vanilla slot тАФ after
+    /// `dungeon` (`WorldGen.cs:14757`, with the port's Constant lava-layer
+    /// tail between) and before `beaches` (`:14888`); the
+    /// MountainCaveOpenings anchor is `:14873`.
+    #[test]
+    fn w4_d102_the_mountain_caves_step_sits_between_dungeon_and_beaches() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mountain caves"), pos("constant lava layer") + 1);
+        assert_eq!(names[pos("mountain caves") + 1], "beaches");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Dungeon") < cpos("Mountain Caves"));
+        assert!(cpos("Mountain Caves") < cpos("Beaches"));
+        // The producer/consumer pair: Mount Caves (d101) writes the
+        // anchors this pass reads.
+        assert!(cpos("Mount Caves") < cpos("Mountain Caves"));
+    }
+
+
+    /// W4-d102 pass 5: `gems` sits between `gravitating sand` and `ocean
+    /// caves` (the lane plan's grouping; the vanilla Gems anchor
+    /// `WorldGen.cs:15050` precedes the sand cleanup `:15138` and Create
+    /// Ocean Caves `:15167`).
+    #[test]
+    fn w4_d102_the_gems_step_sits_before_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("gems"), pos("gravitating sand") + 1);
+        assert_eq!(names[pos("gems") + 1], "ocean caves");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Beaches") < cpos("Gems"));
+        assert!(cpos("Gems") < cpos("Create Ocean Caves"));
+    }
+
+
+    /// W4-d102 pass 6: `shimmer` sits in its vanilla slot тАФ after `ocean
+    /// caves` (Create Ocean Caves `WorldGen.cs:15167`) and before `fragile
+    /// ice` (the port's next executed step); the Shimmer anchor is
+    /// `:15195`, Clean Up Dirt `:15246` follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_shimmer_step_sits_after_the_ocean_caves() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("shimmer"), pos("ocean caves") + 1);
+        assert_eq!(names[pos("shimmer") + 1], "clean up dirt");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Create Ocean Caves") < cpos("Shimmer"));
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+    }
+
+
+    /// W4-d102 pass 7: `clean up dirt` sits in its vanilla slot тАФ after
+    /// `shimmer` (`WorldGen.cs:15195`) and before the port's `fragile ice`
+    /// step; the Clean Up Dirt anchor is `:15246`, Pyramids `:15360`
+    /// follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_clean_up_dirt_step_sits_after_the_shimmer() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("clean up dirt"), pos("shimmer") + 1);
+        assert!(pos("clean up dirt") < pos("fragile ice"));
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shimmer") < cpos("Clean Up Dirt"));
+        assert!(cpos("Clean Up Dirt") < cpos("Pyramids"));
+    }
+
+
+    /// W4-d102 pass 8: `dirt rock wall runner` sits in its vanilla slot тАФ
+    /// after `pyramids` (`WorldGen.cs:15360`) and before the port's `pots`
+    /// step; the Dirt Rock Wall Runner anchor is `:15461`, Living Trees
+    /// `:15476` follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_dirt_rock_wall_runner_step_sits_after_the_pyramids() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dirt rock wall runner"), pos("pyramids") + 1);
+        assert_eq!(names[pos("dirt rock wall runner") + 1], "pots");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Pyramids") < cpos("Dirt Rock Wall Runner"));
+        assert!(cpos("Dirt Rock Wall Runner") < cpos("Living Trees"));
+    }
+
+
+    /// W4-d102 pass 9: `wood tree walls` sits in its vanilla slot тАФ after
+    /// `living trees` (`WorldGen.cs:15476`) and before the port's `trees`
+    /// step; the Wood Tree Walls anchor is `:15717`, Altars `:15750`
+    /// follows it in the vanilla chain.
+    #[test]
+    fn w4_d102_the_wood_tree_walls_step_sits_after_the_living_trees() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert!(pos("living trees") < pos("wood tree walls"));
+        assert_eq!(names[pos("wood tree walls") + 1], "trees");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Living Trees") < cpos("Wood Tree Walls"));
+        assert!(cpos("Wood Tree Walls") < cpos("Altars"));
+    }
+
 }

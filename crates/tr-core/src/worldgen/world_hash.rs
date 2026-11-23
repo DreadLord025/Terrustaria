@@ -692,6 +692,65 @@ mod tests {
     // RNG-NEUTRAL — same call order, same per-pass streams, no new tiles —
     // so this pin does not move from it (only the progress weight sum
     // gains the Granite slot's own weight, which draws nothing).
+    // W4-d102 pass 1 (2026-11-20, code-only): the Silt pass
+    // (`WorldGen.cs:13143-13181`, `worldgen/passes2.rs::pass_silt`) lands
+    // between `dirt to mud` and `ash blobs` on its own `pass_rng("Silt")`
+    // stream — the two kind-123 TileRunner loops run on EVERY world
+    // (0.0001·area big blobs + 0.0005·area small ones over
+    // rockLayerHigh..maxTilesY), so this pin moves BY DESIGN. The re-pin is
+    // DEFERRED to the merge gate (no compiler on this branch); the a == b
+    // determinism assert stays in place.
+    // W4-d102 pass 2 (code-only): the Webs pass
+    // (`WorldGen.cs:13607-13644`, `passes2.rs::pass_webs`) lands between
+    // `ores and gems` and `evil` — the 0.0006·area cobweb runners grow on
+    // every world with cave pockets (the port's carved caves qualify), so
+    // this pin moves BY DESIGN too; deferred to the merge gate.
+    // W4-d102 pass 3 (code-only): the Slush sweep
+    // (`WorldGen.cs:14697-14752`, `passes2.rs::pass_slush`) lands between
+    // `liquids` and `dungeon` — a pure retype over the GenVars snow rect,
+    // which is EMPTY (snowTop == snowBottom == 0) until d101's Generate
+    // Ice Biome producer lands, so this pin is UNCHANGED by this pass
+    // alone (the silt/ice kinds it would retype do not occur in the empty
+    // rect; the sweep draws nothing).
+    // W4-d102 pass 4 (code-only): the Mountain Caves openings
+    // (`WorldGen.cs:14873-14887` + CaveOpenater `:80085-80166` + Cavinator
+    // `:79984-80083`, `passes2.rs::pass_mountain_caves`) land between
+    // `constant lava layer` and `beaches` — a no-op while
+    // `GenVars.numMCaves == 0` (d101's Mount Caves producer not yet on
+    // this branch), so this pin is UNCHANGED by this pass alone; the
+    // merged tree re-pins once the anchors exist.
+    // W4-d102 pass 5 (code-only): the Gems pass
+    // (`WorldGen.cs:15050-15137`, `passes2.rs::pass_gems`) lands between
+    // `gravitating sand` and `ocean caves` — the six gem-kind runner bands
+    // vein stone on every world and the sand-edge slide shuffles the
+    // shore columns, so this pin moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 6 (code-only): the Shimmer pass
+    // (`WorldGen.cs:15195-15245` + ShimmerMakeBiome `:34853-35057`,
+    // `worldgen/shimmer.rs`) lands after `ocean caves` — UNCHANGED by this
+    // pass alone on the 512-wide world: the sub-vanilla valve (the x band
+    // `Next(200, 0.2·512)` collapses) skips the pass BEFORE any draw, so
+    // neither the tiles nor the stream move. The full-size worlds gain the
+    // shimmer pool (DEFAULT_WORLD below); the merged tree re-pins.
+    // W4-d102 pass 7 (code-only): the Clean Up Dirt pass
+    // (`WorldGen.cs:15246-15359`, `passes2.rs::pass_clean_up_dirt`) lands
+    // after `shimmer` — the two wall-scrub sweeps clear the dirt-wall
+    // band the terrain/Dirt-Wall-Backgrounds model leaves in the surface
+    // rows (the ±1 unconditional neighbour arms reach the shallower
+    // columns beside every first-active row), so this pin moves BY
+    // DESIGN; deferred to the gate. The noSurface arm replaces the scrub
+    // with the top-100/101 fill (a classic world reads no flag).
+    // W4-d102 pass 8 (code-only): the Dirt Rock Wall Runner pass
+    // (`WorldGen.cs:15461-15475` + DirtyRockRunner `:77145-77210`,
+    // `passes2.rs::pass_dirt_rock_wall_runner`) lands after `pyramids` —
+    // one candidate per column retypes wall-2 blobs to 59 in the surface
+    // band on every world ≥20 wide (the 512 world qualifies), so this pin
+    // moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 9 (code-only): the Wood Tree Walls sweep
+    // (`WorldGen.cs:15717-15749`, `passes2.rs::pass_wood_tree_walls`)
+    // lands after `living trees` — draws nothing; wall 244 fills the
+    // living-wood 191 interiors wherever the Living Trees step planted
+    // them (the 512 world's count roll can rescue one tree). If a tree
+    // exists this pin moves BY DESIGN; deferred to the gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -1137,6 +1196,31 @@ mod tests {
     // snow band's dirt/stone/clay/sand into 147/161 (+ wall 40) — a large
     // deliberate move; deferred to the gate.
     // W4-d101 pass 9: the marble/granite row split is RNG-neutral (above).
+    // W4-d102 pass 1 (code-only): the Silt pass (see SEED42_512 above)
+    // retypes stone to silt 123 across the rock layer on every world —
+    // this pin moves BY DESIGN too; deferred to the merge gate.
+    // W4-d102 pass 2 (code-only): the Webs pass (see SEED42_512 above) —
+    // the cobweb 51 tiles move this pin BY DESIGN; deferred to the gate.
+    // W4-d102 pass 3 (code-only): the Slush sweep (see SEED42_512 above)
+    // is a no-op on the empty snow rect — UNCHANGED by this pass alone.
+    // W4-d102 pass 4 (code-only): the Mountain Caves openings (see
+    // SEED42_512 above) are a no-op while numMCaves == 0 — UNCHANGED by
+    // this pass alone.
+    // W4-d102 pass 5 (code-only): the Gems pass (see SEED42_512 above) —
+    // the gem veins + sand slide move this pin BY DESIGN; deferred.
+    // W4-d102 pass 6 (code-only): the Shimmer pass (see SEED42_512 above)
+    // carves the shimmer pool + stone shell on every full-size world (the
+    // 4200-wide default qualifies; only the sub-vanilla widths skip) —
+    // this pin moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 7 (code-only): the Clean Up Dirt pass (see SEED42_512
+    // above) scrubs the surface dirt-wall band on every world — this pin
+    // moves BY DESIGN; deferred to the gate.
+    // W4-d102 pass 8 (code-only): the Dirt Rock Wall Runner pass (see
+    // SEED42_512 above) retypes the wall-2 blobs to 59 — this pin moves
+    // BY DESIGN; deferred to the gate.
+    // W4-d102 pass 9 (code-only): the Wood Tree Walls sweep (see
+    // SEED42_512 above) walls the living-tree interiors on the full-size
+    // worlds — this pin moves BY DESIGN; deferred to the gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +
