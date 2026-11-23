@@ -42227,6 +42227,9 @@ mod b1_skeletron_tests {
 #[cfg(test)]
 mod s1_f_13d_tests {
     use super::*;
+    // The witnesses below reuse the main tests module's scratch helpers
+    // (the restored-c10 scope fix).
+    use super::tests::{bare, ground};
 
     /// The two kinds' verbatim `SetDefaults` rows: the bubble
     /// (`NPC.cs:13882-13894`) and the turret (`:13922-13934`). The bubble

@@ -25,6 +25,7 @@
 
 use super::biomes::{TILE_JUNGLE_GRASS, TILE_MUSHROOM_GRASS};
 use super::Rng;
+use super::TILE_GRASS;
 use crate::tile::{
     FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_INACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA,
     FLAG_LIQUID_SHIMMER, Tile,
