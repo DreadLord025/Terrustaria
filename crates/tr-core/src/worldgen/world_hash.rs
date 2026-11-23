@@ -238,6 +238,12 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-d109 (code-only, the save half of S1-A-3): the `.trwld` v18 tail
+    // persists `World::variants` and the framing passes reuse them on a save
+    // load. This pin is UNCHANGED by that change: `generate()` runs only the
+    // pipeline steps and never frames (framing is the app-side post-pipeline
+    // seam), and `variants` is not a hashed `Tile` field — the pin hashes an
+    // un-framed world. (The S1-P-i33 deferred re-pin above still stands.)
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +287,9 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-d109 (code-only): the `.trwld` v18 variants persistence leaves this
+    // pin UNCHANGED for the same reason as SEED42_512 above — `generate()`
+    // never frames and `variants` is unhashed. The i33 deferred re-pin stands.
     const DEFAULT_WORLD: u32 = 3647283075;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +

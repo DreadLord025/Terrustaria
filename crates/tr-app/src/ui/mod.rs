@@ -21,6 +21,7 @@ pub mod ingame_options;
 pub mod housing;
 pub mod inventory;
 pub mod keyboard;
+pub mod manage_controls;
 pub mod minimap;
 pub mod notifications;
 pub(crate) mod npc_chat;
@@ -37,6 +38,7 @@ pub mod uistate;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;
+pub mod workshop_publish_info;
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};

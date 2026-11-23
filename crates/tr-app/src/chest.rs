@@ -95,7 +95,9 @@ pub(crate) struct WorldChest {
     /// `Main.cs:17810`). `Default` 0 — the C# field's zero init.
     pub(crate) frame_counter: i32,
     /// `Chest.frame` (`Chest.cs:86`): the draw frame the chest rewrite reads
-    /// (`TileDrawing.cs:4309-4320`, `render/special_tiles.rs::chest_frame_adjust`)
+    /// (`TileDrawing.cs:4309-4320`; the keep-one selection is
+    /// `tr-render/src/chest_frames.rs::chest_frame_adjust`, the W4-d58 move
+    /// wired by `draw_tiles` via `chest_draw_frame` — W4-f16 dedupe)
     /// — 0 closed, 1 half-open, 2 open.
     pub(crate) frame: i32,
     /// `Chest.eatingAnimationTime` (`Chest.cs:88`): the hopper/vacuum eat

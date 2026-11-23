@@ -156,23 +156,24 @@ Screens already covered by immediate ports are listed for completeness at the en
 
 | C# state (file) | Lines | Rust counterpart | Notes |
 | --- | --- | --- | --- |
-| `UIWorkshopHub` | 13 | none | Steam Workshop hub |
-| `UIWorkshopSelectResourcePackToPublish` | 17 | none | |
-| `UIWorkshopSelectWorldToPublish` | 16 | none | |
-| `UIWorkshopWorldImport` | 18 | none | |
-| `UIResourcePackSelectionMenu` | 17 | none | |
-| `UIResourcePackInfoMenu` | 15 | none | |
-| `UIDebugCommandsList` | 15 | none | debug |
-| `UIDebugLoadoutsList` | 14 | none | debug |
-| `UIDebugLoadoutItem`-family screens | — | none | debug |
-| `UIReportsPage` | 16 | none | |
-| `UIWorldCreationAdvanced` | 16 | none | ROADMAP:953 lists it; world_creation.rs covers the base screen only |
-| `UIWorldCreationAdvancedSecretSeedsList` | 17 | none | same |
-| `UIWorldGenDebug` | 27 | none | debug |
-| `UICreativePowersMenu` | 13 | none | journey-mode powers |
-| `UITextWrappingTest` | 14 | none | test-only screen |
-| `UIManageControls` | 20 | none | keybinding screen; `input_map.rs` has the data, not the screen |
-| `UIWorldLoad` | 16 | `world_select.rs`/`save_list.rs` (folded in) | PARTIAL — verify no screen is lost |
+| `UIWorkshopHub` | 13 | none | Steam Workshop hub — d84 claim; EXCLUDED-BY-DESIGN fallback (research/18c, ANALYSIS "Not ported and not planned") |
+| `UIWorkshopSelectResourcePackToPublish` | 17 | none | d84 claim; same Workshop exclusion fallback |
+| `UIWorkshopSelectWorldToPublish` | 16 | none | d84 claim; same Workshop exclusion fallback |
+| `UIWorkshopWorldImport` | 18 | none | d84 claim; same Workshop exclusion fallback |
+| `UIResourcePackSelectionMenu` | 17 | none | d84 claim; MISSING-with-dependency fallback (no AssetSourceController/ResourcePackList port — research/18c) |
+| `UIResourcePackInfoMenu` | 15 | none | same |
+| `UIDebugCommandsList` | 15 | none | debug — d85 claim (research/18c reconciled split) |
+| `UIDebugLoadoutsList` | 14 | none | debug — d85 claim |
+| `UIDebugLoadoutItem`-family screens | — | none | debug — d85 claim (row elements: d82 `ui/debug_items.rs`) |
+| `UIReportsPage` | 16 | none | d85 claim (+ the IProvideReports data family) |
+| `UIWorldCreationAdvanced` | 16 | none | ROADMAP:953 lists it; world_creation.rs covers the base screen only — d85 claim |
+| `UIWorldCreationAdvancedSecretSeedsList` | 17 | none | same — d85 claim |
+| `UIWorldGenDebug` | 27 | none | debug — EXCLUDED (dev-only worldgen inspector, Testing/** subsystem; research/18c scope-outs) |
+| `UICreativePowersMenu` | 13 | none | journey-mode powers — c24 lane |
+| `UITextWrappingTest` | 14 | none | test-only screen — EXCLUDED (dev text-wrap harness; closes research/38-7's undocumented absence, research/18c) |
+| `UIManageControls` | 20 | `ui/manage_controls.rs` + `input_profiles.rs` (d86) | PORTED (d86) — screen state machine + the PlayerInputProfile data; rows: d83 `ui/keybinding_rows.rs`; `input_map.rs` keeps the 14+6 bind DATA for the input pass |
+| `AWorkshopPublishInfoState` (+ForResourcePack/ForWorld) | — | `ui/workshop_publish_info.rs` (d86) | data/state half PORTED (d86); Steam I/O excluded with Social/** (research/18c pair decision) |
+| `UIWorldLoad` | 16 | `ui/world_load.rs` (first-class `FrontScreen::WorldLoad`, S1-E-17) | PORTED — re-verified against UIWorldLoad.cs:16-137 (research/18c); nothing was folded into world_select/save_list; deferrals recorded (drunk Main.rand arms, gameTips, F5 debug scope-out, gamepad squiggle) |
 | `NewCraftingUI` | 21 | `crafting.rs` | PORTED (immediate) |
 | `UICharacterSelect/UICharacterCreation/UIWorldSelect/UIWorldCreation/UIVirtualKeyboard/UIAchievementsMenu/UIBestiaryTest/UIEmotesMenu` | — | `char_*`, `world_*`, `keyboard.rs`, `achievements.rs`, `bestiary.rs`, `emotes.rs` | PORTED |
 

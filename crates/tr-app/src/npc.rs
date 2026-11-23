@@ -10451,6 +10451,93 @@ impl Npc {
             }
             _ => {}
         }
+
+    }
+    /// W4-f27 slice 11 — the bridge into `npc_findframe_extra11`'s
+    /// pure machines (the 549-fix bridge shape): copy the four
+    /// `FindFrame` fields out, run one tick, copy them back. The DD2
+    /// attack gates read `ai[0]`/`ai[1]` (the goblins' ai[0] > 0, the
+    /// bombers'/javelineers' ai[1] > 0 && ai[0] > 0, the wyverns'
+    /// ai[0] == 2 dive); `direction` is `facing` (the C#'s
+    /// `Entity.direction`). The wyvern arms write sprite/rotation
+    /// every tick — all four fields copy back.
+    fn find_frame_extra11(&mut self, kind: crate::npc_findframe_extra11::FindFrameExtra11Kind) {
+        let mut s = crate::npc_findframe_extra11::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra11::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+        };
+        crate::npc_findframe_extra11::find_frame_extra11(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
+    /// W4-f27 slice 12 — the bridge into `npc_findframe_extra12`'s
+    /// pure machine (the 549-fix bridge shape, the e11 precedent):
+    /// copy the four `FindFrame` fields out, run one tick, copy them
+    /// back. Betsy reads ONLY ai[0] (the phase) / ai[1] (the timer) —
+    /// no velocity, no sprite/rotation write — but all four fields
+    /// ride the same bridge shape.
+    fn find_frame_extra12(&mut self, kind: crate::npc_findframe_extra12::FindFrameExtra12Kind) {
+        let mut s = crate::npc_findframe_extra12::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra12::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+        };
+        crate::npc_findframe_extra12::find_frame_extra12(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+    }
+
+    /// W4-f27 slice 13 — the bridge into `npc_findframe_extra13`'s pure
+    /// machines (the 549-fix bridge shape, the e11/e12 precedent): copy
+    /// the four `FindFrame` fields out, run one tick, copy them back.
+    /// The skeletons read velocity/direction only; the drakins' ladder
+    /// reads ai[0]/ai[1] (the > 0 gate + the == 59 reset); `direction`
+    /// is `facing` (the C#'s `Entity.direction`). No arm writes
+    /// rotation — all four fields ride the same bridge shape.
+    fn find_frame_extra13(&mut self, kind: crate::npc_findframe_extra13::FindFrameExtra13Kind) {
+        let mut s = crate::npc_findframe_extra13::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+        };
+        let i = crate::npc_findframe_extra13::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai0: self.ai[0],
+            ai1: self.ai[1],
+            ai2: self.ai[2],
+        };
+        crate::npc_findframe_extra13::find_frame_extra13(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
     }
 
     pub(crate) fn find_frame(&mut self) {
@@ -11204,61 +11291,114 @@ impl Npc {
                     4
                 };
             }
-            // The DD2 goblins: the 14-frame humanoid strip
-            // (`Main.npcFrameCount` 552-554).
+            // The DD2 goblins (`NPC.cs:67452-67492`, the 14-row sheet):
+            // the ai[0] > 0 attack ladder rows 10-13 (the ai[1] == 29
+            // reset) + the walk (air 8, idle 9, the |vx| >= 64 reset +
+            // counter/8 row). W4-f27 slice 11: the v1 `(vx != 0) + 0.6
+            // >= 8` free strip here was WRONG (the M4-EVENT-19 stand-in
+            // — no attack ladder, no air/idle pins, the invented
+            // cadence); the arm delegates to the extra-11 machine (the
+            // 549-fix bridge shape). cs_id 552-554 via the bestiary
+            // net_id rows (`bestiary.rs`).
             NpcKind::DD2GoblinT1 | NpcKind::DD2GoblinT2 | NpcKind::DD2GoblinT3 => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 14;
-                }
+                let kind = match self.kind {
+                    NpcKind::DD2GoblinT1 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2GoblinT1,
+                    NpcKind::DD2GoblinT2 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2GoblinT2,
+                    _ => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2GoblinT3,
+                };
+                self.find_frame_extra11(kind);
             }
-            // The support families: the bombers/javelineers/skeletons ride
-            // the humanoid strips (the same accumulator; the skeletons'
-            // materialize cycle drives their own timer).
+            // The DD2 bombers (`NPC.cs:67797-67837`, the 17-row sheet):
+            // the ai[1] > 0 && ai[0] > 0 attack ladder rows 10-16 (the
+            // ai[1] == 41 reset) + the walk (air 1, idle 0, the |vx|
+            // >= 64 reset + counter/8+2 strip). W4-f27 slice 11: the v1
+            // free strip was WRONG (the M4-EVENT-19 stand-in); the arm
+            // delegates to the extra-11 machine (the 549-fix bridge
+            // shape). cs_id 555-557 via the bestiary net_id rows.
             NpcKind::DD2GoblinBomberT1
             | NpcKind::DD2GoblinBomberT2
-            | NpcKind::DD2GoblinBomberT3
-            | NpcKind::DD2JavelinT1
-            | NpcKind::DD2JavelinT2
-            | NpcKind::DD2JavelinT3
-            | NpcKind::DD2SkeletonT1
-            | NpcKind::DD2SkeletonT3 => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 14;
-                }
+            | NpcKind::DD2GoblinBomberT3 => {
+                let kind = match self.kind {
+                    NpcKind::DD2GoblinBomberT1 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2GoblinBomberT1,
+                    NpcKind::DD2GoblinBomberT2 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2GoblinBomberT2,
+                    _ => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2GoblinBomberT3,
+                };
+                self.find_frame_extra11(kind);
             }
-            // Betsy: the 11-frame dragon strip.
+            // The DD2 javelineers (`NPC.cs:67756-67796`, the 14-row
+            // sheet): the goblin shape with the ai[1] > 0 && ai[0] > 0
+            // attack gate (rows 10-13, the ai[1] == 89 reset). W4-f27
+            // slice 11: the v1 free strip was WRONG; the arm delegates
+            // to the extra-11 machine. cs_id 561-563 via the bestiary
+            // net_id rows.
+            NpcKind::DD2JavelinT1 | NpcKind::DD2JavelinT2 | NpcKind::DD2JavelinT3 => {
+                let kind = match self.kind {
+                    NpcKind::DD2JavelinT1 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2JavelinT1,
+                    NpcKind::DD2JavelinT2 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2JavelinT2,
+                    _ => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2JavelinT3,
+                };
+                self.find_frame_extra11(kind);
+            }
+            // The DD2 skeletons (`NPC.cs:67559-67583`, the 9-row
+            // sheet): the grounded walk ONLY (air 8, idle 0, the |vx|
+            // >= 64 reset + counter/8 row 0-7) — no attack ladder, no
+            // ai reads. W4-f27 slice 13: the v1 `(vx != 0) + 0.6 >= 8`
+            // free strip was WRONG twice (the M4-EVENT-19 stand-in —
+            // the strip AND the `% 14` count, the sheet is 9 rows,
+            // `Main.cs:67140` slots 6/7); the arm delegates to the
+            // extra-13 machine (the 549-fix bridge shape). cs_id
+            // 566/567 via the bestiary net_id rows
+            // (`bestiary.rs:1545`/`:1553`).
+            NpcKind::DD2SkeletonT1 | NpcKind::DD2SkeletonT3 => {
+                let kind = match self.kind {
+                    NpcKind::DD2SkeletonT1 => crate::npc_findframe_extra13::FindFrameExtra13Kind::DD2SkeletonT1,
+                    _ => crate::npc_findframe_extra13::FindFrameExtra13Kind::DD2SkeletonT3,
+                };
+                self.find_frame_extra13(kind);
+            }
+            // Betsy (`NPC.cs:67258-67451`, the 11-row dragon sheet):
+            // the ai[0] phase ladders — 4/3 the breath machines (the
+            // (int)ai[1] counter over the >= 5/54/57/60/123/128/133
+            // and >= 5/34/37/40/98/103/108 rungs), 5 the row-3 pin,
+            // 6 the 8-tick landing ladder, else row 0. W4-f27 slice
+            // 12: the v1 `(vx != 0) + 0.6 >= 8` free strip was WRONG
+            // (the M4-EVENT-19 stand-in — Betsy's row NEVER reads
+            // velocity); the arm delegates to the extra-12 machine
+            // (the 549-fix bridge shape). cs_id 551 via the bestiary
+            // net_id row (`bestiary.rs:1569`).
             NpcKind::DD2Betsy => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 11;
-                }
+                self.find_frame_extra12(
+                    crate::npc_findframe_extra12::FindFrameExtra12Kind::DD2Betsy,
+                );
             }
-            // The WitherBeast: `Main.npcFrameCount[568/569]` = 17 rows.
+            // The WitherBeast T2 (`NPC.cs:67025-67257`, the 17-row
+            // sheet): the ai[0] > 0 aura ladder (the 27-rung 5-tick
+            // machine + the >= 270 counter-10 tail) + the walk (air 4,
+            // idle 6, the |vx| >= 56 reset + counter/8 row 0-6). W4-f27
+            // slice 12: the v1 `(vx != 0) + 0.6 >= 8` free strip was
+            // WRONG (the M4-EVENT-19 stand-in — no aura ladder, no
+            // air/idle pins); the arm delegates to the extra-12 machine
+            // (the 549-fix bridge shape). cs_id 568 via the bestiary
+            // net_id row.
             NpcKind::DD2WitherBeast => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(
-                            crate::render::entities::texture_net_id(self.kind),
-                        );
-                }
+                self.find_frame_extra12(
+                    crate::npc_findframe_extra12::FindFrameExtra12Kind::DD2WitherBeastT2,
+                );
             }
-            // The tavernkeeper: `Main.npcFrameCount[550]` = 25 rows.
+            // The tavernkeeper (`NPC.cs:68616` in the humanoid group,
+            // the 25-row sheet): the TOWN walk — num57 =
+            // ExtraFramesCount[550] = 9 (`NPCID.cs:10464`), the wrap at
+            // 25-9 = 16, num108 = 6, idle row 0, air row 1. W4-f27
+            // slice 11: the v1 `(vx != 0) + 0.6 >= 8` free strip was
+            // WRONG (the M4-EVENT-19 stand-in — no town wrap, no
+            // air/idle pins); the arm delegates to the extra-11
+            // machine (the 549-fix bridge shape). The ai[0] pose zones
+            // (`:68662-69488`) are the documented skip. cs_id 550 via
+            // the bestiary net_id row (`bestiary.rs`).
             NpcKind::DD2Bartender => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(
-                            crate::render::entities::texture_net_id(self.kind),
-                        );
-                }
+                self.find_frame_extra11(
+                    crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2Bartender,
+                );
             }
             // The Old One's Army's tier-2/3 families (M4-EVENT-19): the
             // `FindFrame` arms' frame counts off `Main.npcFrameCount` —
@@ -11267,17 +11407,21 @@ impl Npc {
             // the Wither Beast T3's 17, the drakins' 16, the kobold
             // walkers' 18 and the ogres' 10.
             NpcKind::DD2WyvernT1 | NpcKind::DD2WyvernT2 | NpcKind::DD2WyvernT3 => {
-                // `:67838-67863`: the dive (`ai[0] == 2`) parks on the last
-                // row, otherwise the strip walks at 6 ticks a row.
-                if self.ai[0] == 2.0 {
-                    self.frame = 4;
-                } else {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 6.0 {
-                        self.frame_counter = 0.0;
-                        self.frame = (self.frame + 1) % 5;
-                    }
-                }
+                // `NPC.cs:67838-67873`: the vx-sign sprite + the
+                // ToRotation aim (+PI when vx < 0, the vx*0.1 non-dive
+                // override) + the ai[0] == 2 dive row-4 pin else the
+                // >= 6 step over rows 0-3. W4-f27 slice 11: the v1 arm
+                // missed the sprite AND rotation writes entirely (the
+                // M4-EVENT-19 stand-in); the arm delegates to the
+                // extra-11 machine (the 549-fix bridge shape — all four
+                // fields copy back). cs_id 558-560 via the bestiary
+                // net_id rows.
+                let kind = match self.kind {
+                    NpcKind::DD2WyvernT1 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2WyvernT1,
+                    NpcKind::DD2WyvernT2 => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2WyvernT2,
+                    _ => crate::npc_findframe_extra11::FindFrameExtra11Kind::DD2WyvernT3,
+                };
+                self.find_frame_extra11(kind);
             }
             NpcKind::DD2KoboldFlyerT2 | NpcKind::DD2KoboldFlyerT3 => {
                 // `:67887-67900`: while flying the strip altimeter-walks
@@ -11314,25 +11458,33 @@ impl Npc {
                         );
                 }
             }
+            // The WitherBeast T3 (`NPC.cs:67025-67257`, the 17-row
+            // sheet): the SAME aura-ladder + walk machine as the T2
+            // (the shared case). W4-f27 slice 12: the v1 free strip was
+            // WRONG; the arm delegates to the extra-12 machine (the
+            // 549-fix bridge shape). cs_id 569 via the bestiary net_id
+            // row.
             NpcKind::DD2WitherBeastT3 => {
-                // `Main.npcFrameCount[568/569]` = 17.
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(
-                            crate::render::entities::texture_net_id(self.kind),
-                        );
-                }
+                self.find_frame_extra12(
+                    crate::npc_findframe_extra12::FindFrameExtra12Kind::DD2WitherBeastT3,
+                );
             }
+            // The DD2 drakins (`NPC.cs:67711-67755`, the 16-row sheet):
+            // the ai[1] > 0 && ai[0] > 0 attack ladder rows 10-15 (the
+            // ai[1] == 59 reset, num188 = 5 EXCEPT row 14 = 35, the
+            // row-15 counter-keep-growing quirk) + the walk (air 1,
+            // idle 9, the |vx| >= 64 reset + (int)(counter/8 + 2) row
+            // 2-9). W4-f27 slice 13: the v1 `(vx != 0) + 0.6 >= 8`
+            // free strip was WRONG (the M4-EVENT-19 stand-in); the arm
+            // delegates to the extra-13 machine (the 549-fix bridge
+            // shape). cs_id 570/571 via the bestiary net_id rows
+            // (`bestiary.rs:1651`/`:1659`).
             NpcKind::DD2DrakinT2 | NpcKind::DD2DrakinT3 => {
-                // `:67036`-family's stand-and-shoot strip: the aiming rows
-                // ride `ai[0]` 1-5, the walk rows otherwise.
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 16;
-                }
+                let kind = match self.kind {
+                    NpcKind::DD2DrakinT2 => crate::npc_findframe_extra13::FindFrameExtra13Kind::DD2DrakinT2,
+                    _ => crate::npc_findframe_extra13::FindFrameExtra13Kind::DD2DrakinT3,
+                };
+                self.find_frame_extra13(kind);
             }
             NpcKind::DD2KoboldWalkerT2 | NpcKind::DD2KoboldWalkerT3 => {
                 // `:63198`'s `localAI[3]` spawn-in rides `caster_counter`;
@@ -11352,18 +11504,86 @@ impl Npc {
                     self.frame = (self.frame + 1) % 10;
                 }
             }
-            // The cultist + the towers: the 1-frame strips.
-            NpcKind::AncientCultist
-            | NpcKind::StardustTower
+            // The cultist boss (439) rides the SAME `case 439/440`
+            // pose ladder as the clone (`NPC.cs:72017-72101` — the
+            // case list carries BOTH ids; the extra-7 wave's 440
+            // machine is this arm). The v1 1-frame pin here was
+            // WRONG vs the ladder (the slice-7 note): the
+            // `localAI[2]` pose selector picks the idle poses 0/1/2
+            // (the off-home bands + the >= 15 home snap), the attack
+            // poses 10/11/12 (the keep-cycling bands) and the ritual
+            // 13 (rows 13-15); the counter++ runs AFTER the switch.
+            // The `IsABestiaryIconDummy` branch is the display-only
+            // skip (the extra-7 header). No sprite/rotation write —
+            // the ladder never touches them, so only row/counter
+            // copy back (the `find_frame_wave_a` bridge shape).
+            NpcKind::AncientCultist => {
+                let mut s = crate::npc_findframe_extra7::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                };
+                let i = crate::npc_findframe_extra7::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai: self.ai,
+                    ai_action: self.ai_action,
+                    local_ai2: self.local_ai[2],
+                };
+                crate::npc_findframe_extra7::find_frame_extra7(
+                    crate::npc_findframe_extra7::FindFrameExtra7Kind::CultistBossClone,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+            }
+            // The towers: the 1-frame strips (422/493/507/517 have
+            // NO FindFrame case — `Main.npcFrameCount` 1).
+            NpcKind::StardustTower
             | NpcKind::NebulaTower
             | NpcKind::VortexTower
             | NpcKind::SolarTower => {
                 self.frame = 0;
             }
             // The Old One's Army's lane gate: `ai[1]` drives its scale
-            // fade in the sim's gate pass; the machine here is 1-frame.
+            // fade in the sim's gate pass. `case 549` (`NPC.cs:67980-
+            // 67992`): the spriteDirection = 1 + rotation = 0 snap
+            // every tick + the `++frameCounter >= 6` step over the
+            // FULL 8 rows (`Main.npcFrameCount[549]` = 8,
+            // `Main.cs:67138` slot 9). W4-f27 slice 10: the v1 row-0
+            // pin here was WRONG ("the machine here is 1-frame" — the
+            // sheet is 8 rows and the portal spins); the arm
+            // delegates to the extra-10 machine (the 439-fix bridge
+            // shape — all four fields copy back, the arm writes
+            // sprite/rotation every tick). cs_id 549 via the bestiary
+            // net_id row (`bestiary.rs:1601`) + the world-hash hand
+            // row below.
             NpcKind::DD2LanePortal => {
-                self.frame = 0;
+                let mut s = crate::npc_findframe_extra10::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                };
+                let i = crate::npc_findframe_extra10::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai0: self.ai[0],
+                    ai_action: self.ai_action,
+                };
+                crate::npc_findframe_extra10::find_frame_extra10(
+                    crate::npc_findframe_extra10::FindFrameExtra10Kind::DD2LanePortal,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+                self.sprite_dir = s.sprite_dir;
+                self.rotation = s.rotation;
             }
             // The lunar families' own machines - one `case` per vanilla id
             // (`Main.npcFrameCount` = the row count of the kind's sheet, the
@@ -11903,17 +12123,41 @@ impl Npc {
                         );
                 }
             }
-            // The Dutchman: the 1-frame ship strip; its cannons ride the
-            // 9-frame strip (`Main.npcFrameCount`).
+            // The Dutchman: the 1-frame ship strip (491 PirateShip
+            // has NO FindFrame case — `Main.npcFrameCount[491]` = 1,
+            // `Main.cs:67133`; the row-0 pin is correct-by-
+            // construction, the 478 MothronEgg precedent). Its
+            // cannons ride `case 492` (`NPC.cs:71156-71158`): the
+            // row is `(int)ai[2]` — the aim octant the aiStyle-75
+            // machine owns (`NPC.cs:35789-35820`, ported verbatim in
+            // `npc_ai_style75.rs`'s 492 block). W4-f27 slice 9: the
+            // v1 free `(vx != 0) + 0.6 >= 8` strip here was WRONG —
+            // the cannon does not animate on velocity at all. Only
+            // row copies back (the arm never touches the counter/
+            // sprite/rotation — the 439-fix bridge shape).
             NpcKind::FlyingDutchman => {
                 self.frame = 0;
             }
             NpcKind::FlyingDutchmanCannon => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 9;
-                }
+                let mut s = crate::npc_findframe_extra9::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                    direction: self.facing,
+                };
+                let i = crate::npc_findframe_extra9::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai: self.ai,
+                };
+                crate::npc_findframe_extra9::find_frame_extra9(
+                    crate::npc_findframe_extra9::FindFrameExtra9Kind::PirateShipCannon,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
             }
             // The pirates: the 16/20-frame humanoid strips (the same
             // accumulator).
@@ -11932,12 +12176,38 @@ impl Npc {
                     self.frame = (self.frame + 1) % count;
                 }
             }
+            // W4-f27 slice 9: the Goblin Summoner (471) rides
+            // `case 471` (`NPC.cs:75532-75617`) — the ai[3] phase
+            // machine: the shadowflame bands rows 17/18/19/18 with
+            // the >= 23 reset-tick row-18 hold, the summon row-16
+            // pin, the > 7 walk stride over rows 2..15, the air row
+            // 1, the idle row 0. The v1 free `(vx != 0) + 0.6 >= 8`
+            // strip here was WRONG (the 439-fix precedent). The
+            // machine writes row/counter/sprite only — the AI owns
+            // the rotation (`NPC.cs:56520`'s ×0.9 decay), so it is
+            // not copied back.
             NpcKind::GoblinSummoner => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1) % 20;
-                }
+                let mut s = crate::npc_findframe_extra9::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                    direction: self.facing,
+                };
+                let i = crate::npc_findframe_extra9::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai: self.ai,
+                };
+                crate::npc_findframe_extra9::find_frame_extra9(
+                    crate::npc_findframe_extra9::FindFrameExtra9Kind::GoblinSummoner,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+                self.sprite_dir = s.sprite_dir;
             }
             // The hungry (3 frames) / the leech segments (1).
             // Case 115 — the Hungry (`NPC.cs:74995-75017`): the 3-row
@@ -35836,6 +36106,600 @@ mod s1_d_3b_tests {
             n.ai[0], -1.0,
             "cultist should remain in AI_084 spawn-in intro"
         );
+    }
+
+    #[test]
+    fn f27s8_the_cultist_boss_rides_the_439_440_pose_ladder() {
+        // W4-f27 slice 8: the v1 `npc.rs` 1-frame pin for
+        // AncientCultist (cs_id 439 via the bestiary net_id) was WRONG
+        // vs the C#'s `case 439/440` shared ladder
+        // (`NPC.cs:72017-72101` — the case list carries BOTH ids).
+        // The arm now delegates to the extra-7 CultistBossClone
+        // machine; the towers keep their row-0 pin.
+        assert_eq!(NpcKind::AncientCultist.cs_id(), 439);
+        // Pose 0 from an off-home row: the bands 4/5/6 then the
+        // >= 15 home-row-0 snap, the counter++ AFTER the switch.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.frame = 4;
+        n.frame_counter = 0.0;
+        n.local_ai[2] = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..17 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 0, 0]);
+        // Pose 10 keeps cycling through the reset (no home snap).
+        let mut n = bare(NpcKind::AncientCultist);
+        n.local_ai[2] = 10.0;
+        let mut rows = Vec::new();
+        for _ in 0..17 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 4, 4]);
+        // Pose 13: the ritual rows 13-15.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.local_ai[2] = 13.0;
+        n.find_frame();
+        assert_eq!(n.frame, 13);
+        // An unknown selector writes NO frame but still ticks.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.frame = 3;
+        n.frame_counter = 2.0;
+        n.local_ai[2] = 7.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (3, 3.0));
+        // The ladder never writes sprite/rotation — the bridge does
+        // not copy them back.
+        let mut n = bare(NpcKind::AncientCultist);
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.local_ai[2] = 10.0;
+        n.find_frame();
+        assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
+        // The towers keep the row-0 pin (no FindFrame case).
+        let mut t = bare(NpcKind::StardustTower);
+        t.frame = 2;
+        t.find_frame();
+        assert_eq!(t.frame, 0);
+    }
+
+    #[test]
+    fn f27s9_the_summoner_and_the_cannon_ride_their_faithful_arms() {
+        // W4-f27 slice 9: the v1 free-strip arms for GoblinSummoner
+        // (cs_id 471 via the bestiary net_id, `bestiary.rs:1285`) and
+        // FlyingDutchmanCannon (cs_id 492, `bestiary.rs:1465`) were
+        // WRONG vs the C#'s `case 471` ai[3] machine
+        // (`NPC.cs:75532-75617`) and `case 492`'s `(int)ai[2]`
+        // one-liner (`NPC.cs:71156-71158`). Both arms now delegate
+        // to the extra-9 machines; the 491 ship keeps its row-0 pin
+        // (no FindFrame case). Expectations identical to the e9
+        // module witness (mechanical replay).
+        assert_eq!(NpcKind::GoblinSummoner.cs_id(), 471);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        // The summoner's grounded walk: vx 1 → +3 a tick, the > 7
+        // step every 3rd tick over rows 2..15.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.vx = 1.0;
+        n.vy = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6]);
+        // The shadowflame phase: |v| = 5 → +3.5 a tick, the bands
+        // 17/18/18/19/19/18/18(reset)/17 — the reset tick HOLDS 18.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.vx = 3.0;
+        n.vy = 4.0;
+        n.ai[3] = -1.0;
+        let mut rows = Vec::new();
+        for _ in 0..8 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![17, 18, 18, 19, 19, 18, 18, 17]);
+        // The summoning pin + the air pin + the idle snap.
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.frame = 5;
+        n.frame_counter = 9.0;
+        n.ai[3] = 1.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (16, 0.0));
+        n.ai[3] = 0.0;
+        n.vy = -2.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The machine never writes rotation — the bridge does not
+        // copy it back (the AI owns the ×0.9 decay).
+        let mut n = bare(NpcKind::GoblinSummoner);
+        n.rotation = 0.5;
+        n.vx = 1.0;
+        n.find_frame();
+        assert_eq!(n.rotation, 0.5);
+        // The cannon's row is (int)ai[2] — the counter/sprite/
+        // rotation are NEVER touched (the style75 machine owns the
+        // aim octant).
+        let mut c = bare(NpcKind::FlyingDutchmanCannon);
+        c.frame = 3;
+        c.frame_counter = 5.0;
+        c.sprite_dir = -1;
+        c.rotation = 0.5;
+        c.ai[2] = 4.0;
+        c.find_frame();
+        assert_eq!(c.frame, 4);
+        assert_eq!(c.frame_counter, 5.0);
+        assert_eq!((c.sprite_dir, c.rotation), (-1, 0.5));
+        c.ai[2] = 8.9;
+        c.find_frame();
+        assert_eq!(c.frame, 8, "the (int) truncation");
+        c.ai[2] = 0.0;
+        c.find_frame();
+        assert_eq!(c.frame, 0, "the no-sight clear");
+        // The 491 ship keeps the row-0 pin (no FindFrame case,
+        // npcFrameCount 1).
+        let mut ship = bare(NpcKind::FlyingDutchman);
+        ship.frame = 2;
+        ship.find_frame();
+        assert_eq!(ship.frame, 0);
+    }
+
+    #[test]
+    fn f27s10_the_lane_portal_spins_its_full_eight_rows() {
+        // W4-f27 slice 10: the v1 row-0 pin for DD2LanePortal (cs_id
+        // 549 via the bestiary net_id, `bestiary.rs:1601`) was WRONG
+        // vs the C#'s `case 549` (`NPC.cs:67980-67992`): the
+        // spriteDirection = 1 + rotation = 0 snap every tick + the
+        // `++frameCounter >= 6` step over the FULL 8 rows
+        // (`Main.npcFrameCount[549]` = 8, `Main.cs:67138` slot 9).
+        // The arm now delegates to the extra-10 machine; expectations
+        // identical to the e10 module witness (mechanical replay).
+        assert_eq!(NpcKind::DD2LanePortal.cs_id(), 549);
+        // The 6-tick step: rows 0(x5)/1(x6)/2(x6)/3...
+        let mut n = bare(NpcKind::DD2LanePortal);
+        let mut rows = Vec::new();
+        for _ in 0..20 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3]
+        );
+        // The sprite/rotation snap fires EVERY tick (the hold ticks
+        // included) — the bridge copies all four fields back.
+        let mut n = bare(NpcKind::DD2LanePortal);
+        n.frame = 3;
+        n.frame_counter = 2.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.7;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (3, 3.0));
+        assert_eq!((n.sprite_dir, n.rotation), (1, 0.0));
+        // The wrap: row 7 + counter 5 → the step lands 8, the >= 8
+        // wrap snaps 0.
+        let mut n = bare(NpcKind::DD2LanePortal);
+        n.frame = 7;
+        n.frame_counter = 5.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The velocity never feeds the portal (the C# reads none).
+        let mut n = bare(NpcKind::DD2LanePortal);
+        n.vx = 9.0;
+        n.vy = -9.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2]);
+    }
+
+    #[test]
+    fn f27s11_the_dd2_goblins_bombers_javelineers_ride_the_extra11_machines() {
+        // W4-f27 slice 11: the v1 `(vx != 0) + 0.6 >= 8` free strips for
+        // the DD2 goblins/bombers/javelineers (the M4-EVENT-19 stand-ins)
+        // were WRONG vs the C#'s attack ladders + the >= 64 walk reset.
+        // The arms now delegate to the extra-11 machines; expectations
+        // identical to the e11 module witnesses (mechanical replay).
+        assert_eq!(NpcKind::DD2GoblinT1.cs_id(), 552);
+        assert_eq!(NpcKind::DD2GoblinBomberT1.cs_id(), 555);
+        assert_eq!(NpcKind::DD2JavelinT1.cs_id(), 561);
+        // The goblin walk: vx 4 — the counter/8 row, the >= 64 reset
+        // tick shows row 0.
+        let mut n = bare(NpcKind::DD2GoblinT1);
+        n.vx = 4.0;
+        let mut rows = Vec::new();
+        for _ in 0..16 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 0]);
+        // The goblin attack ladder: ai[0] 1 — rows 10(x5)/11/12(x6)/13.
+        let mut n = bare(NpcKind::DD2GoblinT2);
+        n.ai[0] = 1.0;
+        let mut rows = Vec::new();
+        for _ in 0..20 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(
+            rows,
+            vec![10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 13, 13, 13]
+        );
+        // The bomber walk: vx 4 — the counter/8+2 strip, the reset tick
+        // shows row 2.
+        let mut n = bare(NpcKind::DD2GoblinBomberT3);
+        n.vx = 4.0;
+        let mut rows = Vec::new();
+        for _ in 0..16 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 2]);
+        // The bomber attack gate needs BOTH ai slots > 0.
+        let mut n = bare(NpcKind::DD2GoblinBomberT1);
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 10);
+        // The javelineer walk: vx 4 — the goblin shape.
+        let mut n = bare(NpcKind::DD2JavelinT2);
+        n.vx = 4.0;
+        let mut rows = Vec::new();
+        for _ in 0..16 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 0]);
+        // The javelineer ai[1] == 89 reset: row 10, counter 0 THEN ++ → 1.
+        let mut n = bare(NpcKind::DD2JavelinT3);
+        n.ai[0] = 1.0;
+        n.ai[1] = 89.0;
+        n.frame = 12;
+        n.frame_counter = 3.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (10, 1.0));
+    }
+
+    #[test]
+    fn f27s11_the_bartender_walks_the_town_wrap_and_the_wyvern_aims() {
+        // W4-f27 slice 11: the bartender's v1 free strip missed the town
+        // wrap (num57 = 9, the wrap at 16); the wyvern's v1 arm missed
+        // the sprite AND rotation writes. The arms now delegate to the
+        // extra-11 machines; expectations identical to the e11 module
+        // witnesses (mechanical replay).
+        assert_eq!(NpcKind::DD2Bartender.cs_id(), 550);
+        assert_eq!(NpcKind::DD2WyvernT1.cs_id(), 558);
+        // The bartender walk: vx 1 — the > 6 step every 3rd tick, the
+        // lift-to-2.
+        let mut n = bare(NpcKind::DD2Bartender);
+        n.vx = 1.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6]);
+        // The bartender wrap: row 15 + counter 6 → step 16 → wrap 2.
+        let mut n = bare(NpcKind::DD2Bartender);
+        n.vx = 1.0;
+        n.frame = 15;
+        n.frame_counter = 6.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // The bartender idle snap: row 0 (NOT the 140/489 row-1 pair).
+        let mut n = bare(NpcKind::DD2Bartender);
+        n.frame = 7;
+        n.frame_counter = 4.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The wyvern walk: the >= 6 step over rows 0-3.
+        let mut n = bare(NpcKind::DD2WyvernT1);
+        n.vx = 1.0;
+        let mut rows = Vec::new();
+        for _ in 0..20 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3]
+        );
+        // The wyvern dive pin: ai[0] == 2 → row 4, the counter
+        // UNTOUCHED, the sprite -1 (vx < 0), the rotation the aim + PI.
+        let mut n = bare(NpcKind::DD2WyvernT2);
+        n.vx = -2.0;
+        n.vy = -2.0;
+        n.ai[0] = 2.0;
+        n.frame = 1;
+        n.frame_counter = 3.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (4, 3.0, -1));
+        let expect = (-2.0f32).atan2(-2.0) + std::f32::consts::PI;
+        assert!((n.rotation - expect).abs() < 1e-6);
+        // The wyvern non-dive override: rotation = vx*0.1.
+        let mut n = bare(NpcKind::DD2WyvernT3);
+        n.vx = 3.0;
+        n.vy = 9.0;
+        n.find_frame();
+        assert_eq!(n.rotation, 3.0 * 0.1);
+        assert_eq!(n.sprite_dir, 1);
+    }
+
+    #[test]
+    fn f27s12_betsy_rides_the_extra12_phase_machine() {
+        // W4-f27 slice 12: Betsy's v1 `(vx != 0) + 0.6 >= 8` free strip
+        // (the M4-EVENT-19 stand-in) was WRONG — the C#'s row NEVER
+        // reads velocity (`NPC.cs:67258-67451`, the ai[0] phase
+        // ladders). The arm now delegates to the extra-12 machine;
+        // expectations identical to the e12 module witness
+        // (mechanical replay).
+        assert_eq!(NpcKind::DD2Betsy.cs_id(), 551);
+        // Velocity NEVER feeds the machine: vx 9 + vy -9 with ai[0]
+        // 0 still snaps row 0, counter UNTOUCHED.
+        let mut n = bare(NpcKind::DD2Betsy);
+        n.vx = 9.0;
+        n.vy = -9.0;
+        n.frame = 9;
+        n.frame_counter = 42.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 42.0));
+        // The long breath (ai0 4): the timer ladder — 0→5, 5→6,
+        // 54→7, 57→8, 60→9, 63→10, 123→8, 128→7, 133→0.
+        for (ai1, row) in [
+            (0.0, 5u32), (5.0, 6), (54.0, 7), (57.0, 8), (60.0, 9),
+            (63.0, 10), (123.0, 8), (128.0, 7), (133.0, 0),
+        ] {
+            let mut n = bare(NpcKind::DD2Betsy);
+            n.ai[0] = 4.0;
+            n.ai[1] = ai1;
+            n.frame = 7;
+            n.frame_counter = 99.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (row, ai1), "ai1 {ai1}");
+        }
+        // The short breath (ai0 3): 34→7, 37→8, 40→10 (40/3%2 = 1),
+        // 98→8, 103→7, 108→0.
+        for (ai1, row) in [(34.0, 7u32), (37.0, 8), (40.0, 10), (98.0, 8), (103.0, 7), (108.0, 0)] {
+            let mut n = bare(NpcKind::DD2Betsy);
+            n.ai[0] = 3.0;
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (row, ai1), "ai1 {ai1}");
+        }
+        // The row-3 pin (ai0 5): counter UNTOUCHED.
+        let mut n = bare(NpcKind::DD2Betsy);
+        n.ai[0] = 5.0;
+        n.ai[1] = 7.0;
+        n.frame = 9;
+        n.frame_counter = 42.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (3, 42.0));
+        // The landing ladder (ai0 6): 8→2, 24→4, 32→3, 56→2, 72→0.
+        for (ai1, row) in [(8.0, 2u32), (24.0, 4), (32.0, 3), (56.0, 2), (72.0, 0)] {
+            let mut n = bare(NpcKind::DD2Betsy);
+            n.ai[0] = 6.0;
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (row, ai1), "ai1 {ai1}");
+        }
+        // No sprite/rotation write — the bridge copies them back
+        // unchanged.
+        let mut n = bare(NpcKind::DD2Betsy);
+        n.ai[0] = 4.0;
+        n.ai[1] = 60.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.find_frame();
+        assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
+    }
+
+    #[test]
+    fn f27s12_the_wither_beasts_ride_the_extra12_aura_ladder() {
+        // W4-f27 slice 12: the wither beasts' v1 `(vx != 0) + 0.6 >= 8`
+        // free strip (the M4-EVENT-19 stand-in) was WRONG — the C#'s
+        // ai[0] > 0 aura ladder (the 27-rung 5-tick machine + the
+        // >= 270 counter-10 tail) + the walk (air 4, idle 6, the |vx|
+        // >= 56 reset). The arms now delegate to the extra-12 machine;
+        // expectations identical to the e12 module witness (mechanical
+        // replay). cs_id 568/569 via the bestiary net_id rows.
+        assert_eq!(NpcKind::DD2WitherBeast.cs_id(), 568);
+        assert_eq!(NpcKind::DD2WitherBeastT3.cs_id(), 569);
+        for kind in [NpcKind::DD2WitherBeast, NpcKind::DD2WitherBeastT3] {
+            // The aura ladder (ai0 1): the entry row-0 reset fires, the
+            // first tick is row 7 counter 1; the 5-tick rungs 8 at 5,
+            // 9 at 10, 10 at 15, then the 7/8/9/10 cycle.
+            let mut n = bare(kind);
+            n.ai[0] = 1.0;
+            n.frame = 0;
+            n.frame_counter = 99.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (7, 1.0));
+            // The >= 270 tail: counter 268 → 269 (row 14), then 270 →
+            // 260 (row 14, the counter-10 cycle).
+            let mut n = bare(kind);
+            n.ai[0] = 1.0;
+            n.frame = 7;
+            n.frame_counter = 268.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (14, 269.0));
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (14, 260.0));
+            // The walk (ai0 0): vx 4 — the (int)(counter/8) row, the
+            // >= 56 reset tick shows row 0.
+            let mut n = bare(kind);
+            n.vx = 4.0;
+            let mut rows = Vec::new();
+            for _ in 0..15 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 0, 0]);
+            // The air pin row 4, the idle snap row 6.
+            let mut n = bare(kind);
+            n.vx = 4.0;
+            n.vy = 2.0;
+            n.frame = 9;
+            n.frame_counter = 40.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (4, 0.0));
+            n.vy = 0.0;
+            n.vx = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (6, 0.0));
+            // The aura ladder's UNCONDITIONAL sprite copy; no rotation
+            // write (the bridge copies it back unchanged).
+            let mut n = bare(kind);
+            n.ai[0] = 1.0;
+            n.facing = -1;
+            n.sprite_dir = 1;
+            n.rotation = 0.5;
+            n.find_frame();
+            assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
+        }
+    }
+
+    #[test]
+    fn f27s13_the_skeletons_walk_the_extra13_goblin_shape() {
+        // W4-f27 slice 13: the skeletons' v1 `(vx != 0) + 0.6 >= 8`
+        // free strip (the M4-EVENT-19 stand-in) was WRONG twice — the
+        // strip AND the `% 14` count (the sheet is 9 rows,
+        // `Main.cs:67140` slots 6/7; `NPC.cs:67559-67583` is the walk
+        // ONLY, no attack ladder). The arm now delegates to the
+        // extra-13 machine; expectations identical to the e13 module
+        // witness (mechanical replay).
+        assert_eq!(NpcKind::DD2SkeletonT1.cs_id(), 566);
+        assert_eq!(NpcKind::DD2SkeletonT3.cs_id(), 567);
+        // The walk: vx 4 — the counter/8 rows 0-7, the >= 64 reset
+        // tick shows row 0.
+        let mut n = bare(NpcKind::DD2SkeletonT1);
+        n.vx = 4.0;
+        let mut rows = Vec::new();
+        for _ in 0..16 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 0]);
+        // The air pin: row 8, counter zeroed, the sprite UNTOUCHED
+        // (the vy == 0 copy skipped), rotation UNTOUCHED.
+        let mut n = bare(NpcKind::DD2SkeletonT3);
+        n.vx = 4.0;
+        n.vy = -3.0;
+        n.facing = -1;
+        n.frame = 3;
+        n.frame_counter = 9.0;
+        n.sprite_dir = 1;
+        n.rotation = 0.5;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (8, 0.0));
+        assert_eq!((n.sprite_dir, n.rotation), (1, 0.5));
+        // The backpedal pin: direction -1 + vx +2 → row 8, but the
+        // grounded sprite copy fires FIRST (-1).
+        let mut n = bare(NpcKind::DD2SkeletonT1);
+        n.vx = 2.0;
+        n.facing = -1;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (8, 0.0, -1));
+        // The idle snap: row 0 (NOT the goblins' row 9).
+        let mut n = bare(NpcKind::DD2SkeletonT3);
+        n.frame = 5;
+        n.frame_counter = 4.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // No ai reads: the drakin-style gate slots never lift the
+        // skeleton out of the walk.
+        let mut n = bare(NpcKind::DD2SkeletonT1);
+        n.vx = 4.0;
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 4.0));
+    }
+
+    #[test]
+    fn f27s13_the_drakins_ride_the_extra13_ladder_and_walk() {
+        // W4-f27 slice 13: the drakins' v1 `(vx != 0) + 0.6 >= 8` free
+        // strip (the M4-EVENT-19 stand-in) was WRONG vs the C#'s
+        // `NPC.cs:67711-67755` ladder (rows 10-15, the ai[1] == 59
+        // reset, the row-14 num188 = 35 hold) + the counter/8+2 walk.
+        // The arm now delegates to the extra-13 machine; expectations
+        // identical to the e13 module witness (mechanical replay).
+        assert_eq!(NpcKind::DD2DrakinT2.cs_id(), 570);
+        assert_eq!(NpcKind::DD2DrakinT3.cs_id(), 571);
+        // The ladder: ai[0] 1 + ai[1] 1 — the 5-tick stride, rows
+        // 10(x4)/11(x5)/12(x5)/13(x5)/14.
+        let mut n = bare(NpcKind::DD2DrakinT2);
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0;
+        let mut rows = Vec::new();
+        for _ in 0..20 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(
+            rows,
+            vec![10, 10, 10, 10, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 14]
+        );
+        // The row-14 hold: num188 = 35 — 34 hold ticks then step 15.
+        let mut n = bare(NpcKind::DD2DrakinT3);
+        n.ai[0] = 1.0;
+        n.ai[1] = 1.0;
+        n.frame = 14;
+        for tick in 1..=35 {
+            n.find_frame();
+            if tick < 35 {
+                assert_eq!((n.frame, n.frame_counter), (14, tick as f32), "tick {tick}");
+            } else {
+                assert_eq!((n.frame, n.frame_counter), (15, 0.0));
+            }
+        }
+        // The row-15 quirk: the counter keeps growing, NO reset.
+        n.frame_counter = 10.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (15, 11.0));
+        // The ai[1] == 59 reset: row 12 + counter 3 → row 10, ++ → 1.
+        let mut n = bare(NpcKind::DD2DrakinT2);
+        n.ai[0] = 1.0;
+        n.ai[1] = 59.0;
+        n.frame = 12;
+        n.frame_counter = 3.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (10, 1.0));
+        // The gate needs BOTH slots: ai[0] alone falls to the walk.
+        let mut n = bare(NpcKind::DD2DrakinT3);
+        n.vx = 4.0;
+        n.ai[0] = 1.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (2, 4.0));
+        // The walk: vx 4 — the counter/8+2 strip, the reset tick
+        // shows row 2.
+        let mut n = bare(NpcKind::DD2DrakinT2);
+        n.vx = 4.0;
+        let mut rows = Vec::new();
+        for _ in 0..16 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 2]);
+        // The air pin: row 1; the idle snap: row 9.
+        let mut n = bare(NpcKind::DD2DrakinT3);
+        n.vx = 4.0;
+        n.vy = -3.0;
+        n.frame = 5;
+        n.frame_counter = 4.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (9, 0.0));
     }
 
     #[test]

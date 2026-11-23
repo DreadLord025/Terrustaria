@@ -534,9 +534,10 @@ pub fn kill_tile_no_cell_drop(kind: u16) -> bool {
 }
 
 /// `TileObjectData.GetTileData(type, style, alternate)` for an already-resolved
-/// tile def (`TileObjectData.cs:5126-5194`): `style` picks a sub-tile,
+/// tile def (`TileObjectData.cs:5126-5161`): `style` picks a sub-tile,
 /// `alternate - 1` indexes the alternates (`alternate = 0` → the def itself,
-/// which is how the `CanPlace` loop addresses the base def).
+/// which is how the `CanPlace` loop addresses the base def); an out-of-range
+/// alternate keeps the resolved def (W4-e12, :5150-5159).
 pub fn get_tile_data(
     def: &'static TileObjectDef,
     style: i32,
@@ -556,10 +557,18 @@ pub fn get_tile_data(
     {
         resolved = sub;
     }
-    // :5148-5157 — `alternate--`, then index the alternates.
+    // :5148-5157 — `alternate--`, then index the alternates. C# replaces the
+    // def ONLY with a non-null in-range entry; a null slot or an index past
+    // the list KEEPS the current def (:5152-5159). W4-e12: the old `?` here
+    // answered None on an out-of-range alternate — a divergence for the
+    // `TileObject.Place`/`DrawPreview` callers that carry an arbitrary
+    // `alternate` (the `CanPlace` loop only ever passes 0..=AlternatesCount,
+    // :203-208, so it never noticed).
     let alt = alternate - 1;
     if alt >= 0 {
-        resolved = resolved.alternates.get(alt as usize)?;
+        if let Some(a) = resolved.alternates.get(alt as usize) {
+            resolved = a;
+        }
     }
     Some(resolved)
 }
@@ -2615,8 +2624,80 @@ mod tests {
         assert_eq!(get_tile_data(&WITH_SUBS, 5, 0).unwrap().height, 7);
         // alternate - 1 indexes the alternates of the resolved def.
         assert_eq!(get_tile_data(&WITH_SUBS, 0, 1).unwrap().height, 9);
-        // An alternate index past the list -> None.
-        assert!(get_tile_data(&WITH_SUBS, 0, 2).is_none());
+        // An alternate index past the list KEEPS the resolved def
+        // (:5150-5159, W4-e12 — the old port answered None here).
+        assert_eq!(get_tile_data(&WITH_SUBS, 0, 2).unwrap().height, 1);
+        // The sub-tile carries NO alternates: an out-of-range alternate
+        // keeps the SUB-TILE, not the base (:5141-5148 runs first).
+        assert_eq!(get_tile_data(&WITH_SUBS, 5, 1).unwrap().height, 7);
+    }
+
+    /// W4-e12 — the alternate tail of `GetTileData(int,int,int)`
+    /// (`TileObjectData.cs:5150-5159`) on the REAL registry: a non-null
+    /// in-range entry replaces the def, anything else keeps it. The
+    /// consumers are `TileObject.Place` (:31, arbitrary `toBePlaced.alternate`)
+    /// and `DrawPreview` (:859); the `CanPlace` loop (:203-208) only passes
+    /// 0..=AlternatesCount, which is why the old None-on-overflow never bit.
+    #[test]
+    fn test_w4_e12_alternate_overflow_keeps_the_resolved_def() {
+        // Chair 15: base 1 alternate (A1, height 2), sub-tile S16 carries
+        // its OWN single alternate (registry D_15_S16_A1).
+        let chair = def_for_tile(15).unwrap();
+        assert_eq!(chair.alternates.len(), 1);
+        let s16 = chair
+            .subtiles
+            .iter()
+            .find(|(s, _)| *s == 16)
+            .unwrap()
+            .1;
+        assert_eq!(s16.alternates.len(), 1);
+        // In range: the alternate replaces (:5154-5158).
+        assert!(std::ptr::eq(
+            get_tile_data(chair, 0, 1).unwrap(),
+            &chair.alternates[0]
+        ));
+        assert!(std::ptr::eq(
+            get_tile_data(chair, 16, 1).unwrap(),
+            &s16.alternates[0]
+        ));
+        // Past the list: the resolved def stands (base / sub-tile).
+        for alt in [2, 7, i32::MAX] {
+            assert!(std::ptr::eq(get_tile_data(chair, 0, alt).unwrap(), chair));
+            assert!(std::ptr::eq(get_tile_data(chair, 16, alt).unwrap(), s16));
+        }
+        // alternate 0 and negatives: `alternate--` < 0 skips the list
+        // entirely (:5150-5152).
+        for alt in [0, -1, -9] {
+            assert!(std::ptr::eq(get_tile_data(chair, 0, alt).unwrap(), chair));
+        }
+        // Table 14: base alternates EMPTY, sub-tiles 13/25 carry none —
+        // every alternate index keeps the resolved node.
+        let table = def_for_tile(14).unwrap();
+        assert!(table.alternates.is_empty());
+        let s13 = table.subtiles.iter().find(|(s, _)| *s == 13).unwrap().1;
+        assert!(std::ptr::eq(get_tile_data(table, 0, 3).unwrap(), table));
+        assert!(std::ptr::eq(get_tile_data(table, 13, 3).unwrap(), s13));
+    }
+
+    /// W4-e12 — the consumer end of the overflow fix: `TileObject.Place`
+    /// (`TileObject.cs:31-35`) resolves through `get_tile_data` with the
+    /// instance's arbitrary `alternate`; an overflow keeps the def, so the
+    /// placement RUNS (the old None refused it before any world write).
+    #[test]
+    fn test_w4_e12_place_rides_the_alternate_overflow() {
+        let w = world();
+        let chair = def_for_tile(15).unwrap();
+        // Facing left keeps the base def (alternate 0).
+        let mut obj = must_place(&w, 10, 19, chair, -1);
+        assert_eq!(obj.alternate, 0);
+        let mut w_ok = world();
+        obj.alternate = 5; // past the 1-entry list -> the base def stands.
+        assert!(place(&mut w_ok, &obj));
+        // Byte-equal to the alternate-0 placement (same resolved def).
+        let mut w_ref = world();
+        obj.alternate = 0;
+        assert!(place(&mut w_ref, &obj));
+        assert_eq!(w_ok.tiles, w_ref.tiles);
     }
 
     // ---- W4-d113: TryGetTileBounds coordinate walk (TileObjectData.cs:5163-5194)

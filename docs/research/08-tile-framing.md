@@ -83,7 +83,7 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
 | phlebas/lazure wall lookups (`Framing.cs:35-39`, `:378-387`) | NOT-FOUND | — | large-frame walls keep the generic mask |
 | `TileObjectData` registry | PARTIAL | `tileobject.rs:293-330` | 36 defs registered out of the C#'s full registry (`Initialize` `:2110`); ROADMAP:1319 admits "remaining: the full-registry generator" |
 | `TileObjectData` style alternation (`RandomStyleRange`, `GetStyle_Detritus/SmallPiles/Stalactite` `:5294-5312`) | PARTIAL | `tileobject.rs::base_def` + `edit.rs:2600-2612` | base/style routing ported; dynamic stalactite/detritus arms not found |
-| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` |
+| `GetTileData` / `CustomPlace` / `TryGetTileBounds` / coordinate pickup | PORTED (subset) | `tileobject.rs` (tests `get_tile_data_resolution`, `coordinate_full_extents`; W4-d113: `try_get_tile_bounds` — the :5163-5194 coordinate walk, resolver-parameterised on d112's `GetTileData(Tile)` seam, tests `w4_d113_walk_*`) | `CoordinateFullWidth/Height` `:256-263` `coordinate_full_extents`) | `CoordinateFullWidth/Height` `:256-263`; **W4-e12**: the int overload's alternate tail corrected 1:1 (:5150-5159 — an out-of-range alternate KEEPS the resolved def, the port answered None; consumers `TileObject.Place` :31 / `DrawPreview` :859; witnesses `test_w4_e12_*` written-not-run). The Tile overload :5196-5261 + bounds :5163-5194 are the d112/d113/e11/d114 branch claims |
 | `tiledata` sets | PARTIAL | `tiledata/sets.rs` | 46 `TileSet`s vs 152 `Factory.CreateBoolSet(` sites in `TileID.cs` (upper bound: nested/Conversion sets) |
 | `tiledata` merge relation | PORTED | `tiledata/merge.rs` | dense 754×12-word bitset, generated |
 | emissive tile/wall tables | PORTED | `tiledata/emissive.rs` | full coverage 754 + 367 |
@@ -115,7 +115,11 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
    (the ANALYSIS "Autotiling" section records the deliberate stream deviations), the
    phlebas/lazure wall lookups with their re-store (which exposed the missing fourth
    `wallFrameLookup` column) and the wall-21 quirk. The hash functions are gone
-   (framing.rs no longer has `variant`/`wall_variant`).
+   (framing.rs no longer has `variant`/`wall_variant`). **W4-d109 (2026-11-20) added the
+   save half**: the port's `.trwld` v18 tail persists `World::variants` and a v18 load
+   reuses the stored values in the full passes (`World::variants_from_save`) — a
+   port-only extension, since the C# `.wld` never serializes the bits (the refutation
+   above stands for the vanilla file). ANALYSIS "Autotiling" records the old→new.
 
 - **`Framing.SelfFrame8Way` not ported** — *behavioural*. Its only caller is
   `WorldGen.cs:84833` for ids 255-268; those tile ids get the generic merge path in the
@@ -177,3 +181,62 @@ decode in `crates/tr-core/src/wld/mod.rs:441-564`.
   and the variant policy). Depends on the `frameNumber` decision above.
 - **S** — Perf hardening (optional, behaviour-frozen): replace `WireState`'s four
   `HashSet`s with an index-keyed bitset (same `get/set` API) — measure with `TR_STATS`.
+
+## W4-e12 — TileObjectData remainder census (2026-11-20, code-only)
+
+> Sixth/remainder lane of the TileObjectData batch (d111–d114/e11 before). The
+> "missing defs" premise of the row above is **STALE**: S1-F-7 wave A already
+> generated the FULL registry. Re-verified against source, not docs:
+>
+> - `python tools/GenTileObjectData/gen.py . --check` → `registry.rs is current
+>   (389 tiles, 604 defs)`.
+> - The distinct `addTile` kinds of `Initialize` (`TileObjectData.cs:2110-5014`,
+>   incl. the `435..439` loop `:2149-2160`) == the registry's top-level kinds
+>   exactly: **389 == 389, set-difference empty both ways**. Zero placement defs
+>   are missing.
+>
+> **The genuinely missing TileObjectData DATA is the draw-field class.** `gen.py`
+> PARSES `DrawXOffset/DrawYOffset/DrawFlipHorizontal/DrawFlipVertical/DrawStepDown`
+> (`TileObjectData.cs:778-941`), `DrawStyleOffset` (`:1637-1671`),
+> `DrawFrameOffsets` (`:1460-1501`) and the two visual overrides
+> `StyleWrapLimitVisualOverride`/`styleLineSkipVisualOverride` (`:1042-1106`)
+> through the same copy-on-write machinery, but does NOT emit them (the
+> documented S1-F-9 DrawData remainder, `tileobject.rs:50-55`). 254 top-level
+> kinds carry a non-default draw value. The sole C# consumer is
+> `TileObject.DrawPreview` (`TileObject.cs:855-953`): `num5 = DrawYOffset` `:864`,
+> `drawXOffset = DrawXOffset` `:865`, `num3 += DrawStyleOffset` `:866`, the two
+> visual overrides `:869-876`, the `DrawStepDown` solid-above bump `:900-903`,
+> the 567 top-row special `:904-907`, the parity flips `:929-936`, and the
+> `DrawFrameOffsets[i,j]` source-rect add `:946-953`. Emitting these fields is a
+> generator + struct + freeze-hash change owned by S1-F-9, NOT this data lane.
+>
+> **This lane's range (collision-free with the sibling batches):** emission
+> indices **501–604** of `registry.rs` = the last **104 defs**, owned by tile
+> kinds **605–753** (76 kinds). Verified kind-disjoint: every def owned by those
+> kinds falls exactly in the tail (no def of an earlier kind leaks in, no tail
+> def belongs to an earlier kind). Deliverable = a verbatim per-def witness
+> (`crates/tr-core/tests/tileobject_e12_defs.rs`) pinning the range's placement
+> identity fields against the C#-interpreted values, plus the draw-field
+> remainder table below. Data-only; no production behaviour touched; RNG
+> untouched (pure data). Witnesses WRITTEN NOT RUN (code-only mode).
+>
+> Draw-field remainder for the range (the non-default values, verbatim from the
+> interpreted `Initialize`; `Y`=`DrawYOffset`, `X`=`DrawXOffset`, `FH`=
+> `DrawFlipHorizontal`, `FO`=`DrawFrameOffsets`, `WVO`/`LSVO`= the visual
+> overrides). All other range kinds carry the `SetupBaseObject` defaults
+> (`:1793-1796`, X/Y/step 0, flips false) and null `DrawFrameOffsets`:
+>
+> | kind(s) | draw values | C# anchor |
+> |---|---|---|
+> | 605–614, 619–623, 629, 632, 640, 642–645, 647–654, 657, 658, 699, 705, 706, 710, 720, 721, 725, 753 | Y=2 | the per-kind `DrawYOffset = 2` writes |
+> | 615, 637, 703 | FH=true | `:4964`/`:4324`/`:4296` chains |
+> | 617 (+A1) | Y=2, WVO=2, LSVO=0 | `:3426-3435` |
+> | 646 | Y=−4 | `:2373` chain |
+> | 660 | Y=−2; A1 Y=−10 | `:2464-2468` |
+> | 698 (+S1/S2/A1s) | X=10, Y=−2 (alts Y=−10), FO=[[0,0,20,0],[0,−2,20,28]] (sub1 X+20, sub2 X+40) | `:2470-2502` |
+> | 700 | Y=2, FH=true | `:4268` chain |
+> | 701 | Y=−16, FH=true | `:4280` chain |
+> | 711 | FO=[[0,0,0,0],[0,0,2,0]],[[0,0,0,2],[0,0,2,2]] | `:3638-3649` |
+> | 723/724 | base Y=2; A1 Y=−2, A2 X=2, A3 X=−2 | `:4517`/`:4549` chains |
+> | 733 | Y=2, FO=3×3 all [54,0,0,0] | `:4125` chain |
+> | 751 | X=9, Y=−8, FO=[[0,0,34,32],[0,0,−16,−16]],[[0,0,−16,−16],[0,0,−16,−16]] | `:4015` chain |

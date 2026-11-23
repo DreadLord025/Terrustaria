@@ -586,6 +586,20 @@ pub(crate) struct StickyDust {
 
 #[derive(Clone, Debug)]
 pub struct Player {
+    /// `Player.hair` (`Player.cs:2568`, default 0): the hairstyle index the
+    /// hair window picks (`Main.DrawHairWindow`, `Main.cs:44117`) and the
+    /// `Player_Hair_*` sheet draw reads. W4-f37: the field lands with the
+    /// hair-window state machine; the world draw still renders the one
+    /// decoded `Player_Hair_1` strip (the 213-sheet decode is the
+    /// char-creation lane's, `ui/char_creation.rs:1701`), so the index is
+    /// state-only until the sheets land. The `.trplayer` sidecar carries
+    /// no hair row (the recorded M6-SAVE deviation) — a bought style does
+    /// not survive a world swap.
+    pub hair: i32,
+    /// `Player.hairColor` (`Player.cs:2554`, `new Color(215, 90, 55)`):
+    /// the hair tint the window's HSL sliders write (`Main.cs:44091-44092`)
+    /// and the hair layer reads. RGB bytes, XNA `Color` order.
+    pub hair_color: [u8; 3],
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
     // crit 4 and a 1.0 damage multiplier; the equipment modifies them
     // (M3-EQUIP).
@@ -1422,11 +1436,22 @@ pub struct Player {
     /// `Player.goldRing` (`Player.cs:2642`) — the Gold Ring family's coin
     /// grab-range/pull flag: 3033 Gold Ring (`:14980-14983`), 3034 Coin Ring
     /// (`:14984-14989`, + the lucky coin), 3035 Greedy Ring (`:14990-14996`,
-    /// + the lucky coin + `discountEquipped` — the discount half has no port
-    /// consumer yet, the shop-price lane). `ResetEffects` clears it
+    /// + the lucky coin + `discountEquipped` — the discount half rides
+    /// [`Self::discount_equipped`] below, the shop-price lane W4-f37).
+    /// `ResetEffects` clears it
     /// (`:18504`); the consumers are `GetItemGrabRange` (`:35133`) and
     /// `GrabItems`' pull arm (`:34961`).
     pub gold_ring: bool,
+    /// `Player.discountEquipped` (`Player.cs:2634`): the Discount Card 854
+    /// (`ApplyEquipFunctional` `:14971-14974`) and the Greedy Ring 3035
+    /// (`:14990-14996`) arm it per tick; `ResetEffects` clears it
+    /// (`:18759`). The consumer is `Player.Update`'s refresh
+    /// (`:25636-25639`): `if (Main.npcShop <= 0) discountAvailable =
+    /// discountEquipped` — a shop being open LATCHES `discountAvailable`
+    /// (the vanilla keeps the open-time value until the shop closes).
+    /// `App::discount_available` mirrors it on the shop-closed ticks
+    /// (`world_sim/player.rs`); the shop open itself never re-reads it.
+    pub discount_equipped: bool,
     /// `Player.hasLuckyCoin` (`Player.cs:2638`) — the Lucky Coin family's
     /// melee-hit coin proc flag: 855 Lucky Coin (`:14975-14979`), 3034 Coin
     /// Ring (`:14987`), 3035 Greedy Ring (`:14993`). `ResetEffects` clears it
@@ -2495,6 +2520,10 @@ impl Player {
         };
         Self {
             dead: false,
+            // `Player.cs:2568`/`:2554` — the hairstyle index 0 and the
+            // default hair tint (215, 90, 55).
+            hair: 0,
+            hair_color: [215, 90, 55],
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -2750,6 +2779,7 @@ impl Player {
             long_invince: false,
             magic_cuffs: false,
             gold_ring: false,
+            discount_equipped: false,
             has_lucky_coin: false,
             mana_magnet: false,
             life_magnet: false,
@@ -5388,16 +5418,21 @@ impl Player {
                 self.magic_cuffs = true;
                 self.mana_magnet = true;
             }
+            // The Discount Card (`Player.cs:14971-14974`): 854 arms
+            // `discountEquipped` alone — the shop-price lane's writer
+            // (W4-f37).
+            854 => self.discount_equipped = true,
             // The Lucky Coin family (`Player.cs:14975-14996`): 855 Lucky
             // Coin arms `hasLuckyCoin` + `hasLuck_LuckyCoin`; 3033 Gold Ring
             // arms `goldRing` alone; 3034 Coin Ring arms goldRing + the
-            // lucky coin; 3035 Greedy Ring adds `discountEquipped` (no port
-            // consumer — the shop-price lane). The two lucky flags are
-            // always set/cleared together (`:14977-14978`/`:14987-14988`/
-            // `:14993-14994`, `:18760`/`:18762`), so one bool carries both;
-            // the +0.05 luck add is the UpdateEquips TAIL's single
-            // `hasLuck_LuckyCoin` gate (`:13066-13069`), applied once after
-            // the slot loop — NOT per accessory (two rings still add 0.05).
+            // lucky coin; 3035 Greedy Ring adds `discountEquipped`
+            // (`:14995` — the writer the shop-price lane consumes). The
+            // two lucky flags are always set/cleared together
+            // (`:14977-14978`/`:14987-14988`/`:14993-14994`,
+            // `:18760`/`:18762`), so one bool carries both; the +0.05 luck
+            // add is the UpdateEquips TAIL's single `hasLuck_LuckyCoin`
+            // gate (`:13066-13069`), applied once after the slot loop —
+            // NOT per accessory (two rings still add 0.05).
             855 => self.has_lucky_coin = true,
             3033 => self.gold_ring = true,
             3034 => {
@@ -5407,6 +5442,7 @@ impl Player {
             3035 => {
                 self.gold_ring = true;
                 self.has_lucky_coin = true;
+                self.discount_equipped = true;
             }
             // The Magnet Flower 4000's manaMagnet + manaFlower arm lives in
             // the flower-flag block above (deduped keep-one — the per-item
@@ -6785,10 +6821,12 @@ impl Player {
         self.update_dye_cache();
         self.jump_boost = false;
         self.no_fall_dmg = false;
-        // `:18504` goldRing, `:18760` hasLuckyCoin — the Gold/Lucky Coin
-        // family's per-tick clears (the equip pass below re-arms them).
+        // `:18504` goldRing, `:18760` hasLuckyCoin, `:18759`
+        // discountEquipped — the Gold/Lucky Coin + Discount Card family's
+        // per-tick clears (the equip pass below re-arms them).
         self.gold_ring = false;
         self.has_lucky_coin = false;
+        self.discount_equipped = false;
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
@@ -11481,6 +11519,17 @@ impl Player {
         // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
         // invalidate the cached range or the offset animation freezes.
         h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
+        // W4-f37: the hair tint feeds the hair layer's pixels
+        // (`player_layers.rs`'s `hair_color` tint) — a slider drag inside
+        // the hair window must invalidate the cached world range. Gated on
+        // a NON-default tint so the default-hair frames keep their
+        // pre-wiring key values bit-for-bit (the G6 rule: a new pixel input
+        // rides the key, but an unchanged input must not shift the cache).
+        if self.hair_color != [215, 90, 55] {
+            h ^= (self.hair_color[0] as u32) << 24;
+            h ^= (self.hair_color[1] as u32) << 12;
+            h ^= (self.hair_color[2] as u32) << 4;
+        }
         // The mount's animator state feeds the mount sprites' pixels
         // (`Mount.Draw`'s frame rect + the per-frame player offset).
         if self.mount.is_active() {
@@ -14653,6 +14702,43 @@ mod tests {
             "the descent dampened: vy={}",
             p.vy
         );
+    }
+
+    /// W4-f37 — the Discount Card writer (`Player.cs:14971-14974`): 854 arms
+    /// `discountEquipped` alone; the Greedy Ring 3035 (`:14990-14996`) arms it
+    /// alongside goldRing + the lucky coin. 855/3033/3034 never arm it.
+    /// `ResetEffects` clears it per tick (`:18759`) — unequipping drops the
+    /// flag on the next update. The consumer is the shop-latched
+    /// `discountAvailable` refresh (`:25636-25639`, `world_sim/player.rs`).
+    #[test]
+    fn the_discount_card_and_greedy_ring_arm_discount_equipped() {
+        for kind in [854u16, 3035] {
+            let p = player_with_accessory(kind);
+            assert!(p.discount_equipped, "kind {kind} arms the discount");
+        }
+        // 3035's full bundle (`:14992-14995`).
+        let p = player_with_accessory(3035);
+        assert!(p.gold_ring);
+        assert!(p.has_lucky_coin);
+        // 854 arms the discount ALONE (`:14971-14974`).
+        let p = player_with_accessory(854);
+        assert!(!p.gold_ring);
+        assert!(!p.has_lucky_coin);
+        // The rest of the coin family never arms it.
+        for kind in [855u16, 3033, 3034] {
+            let p = player_with_accessory(kind);
+            assert!(!p.discount_equipped, "kind {kind} has no discount row");
+        }
+        // The per-tick clear (`:18759`): the equip pass re-arms only while
+        // the accessory sits in a functional slot.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 854;
+        p.update(&w, PlayerInput::default());
+        assert!(p.discount_equipped);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.discount_equipped, "ResetEffects cleared the flag");
     }
 
     /// Places `kind` in the accessory slot 0 (= `armor[3]`), runs the tick's

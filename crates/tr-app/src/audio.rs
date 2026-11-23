@@ -377,6 +377,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_59", 2),
     ("Item_60", 2),
     ("Item_61", 2),
+    // S1-E-21h d76 DOC-SWEEP — the Kill()-tail blast cue (the Jim's Drone /
+    // RC Car's `SoundID.Item62`, `Projectile.cs:70865`; the asset is on disk).
+    ("Item_62", 2),
     ("Item_63", 2),
     ("Item_64", 2),
     ("Item_66", 2),
@@ -412,6 +415,26 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_109", 2),
     ("Item_111", 2),
     ("Item_113", 2),
+    // S1-E-21h d76 — the second projectile-sound wave's bank gaps: the
+    // Cannon Explosive's portal pair (`Projectile.cs:54089`/`:54093`), the
+    // Phantasmal Bolt's `Next(2)` cue pick (`:55274`/`:55278`), the golf
+    // strike's Item126 (`:52467`), the Laser Drill's hum (`:66248`), the
+    // whip tip's Item153/193 (`:47732`/`:47728`) and the Sun Dance's
+    // Item159 (`:44988`). All `.xnb` assets verified on disk.
+    ("Item_114", 2),
+    ("Item_115", 2),
+    ("Item_124", 2),
+    ("Item_125", 2),
+    ("Item_126", 2),
+    ("Item_132", 2),
+    ("Item_153", 2),
+    ("Item_159", 2),
+    ("Item_193", 2),
+    // Item42 IS a legacy id-2 style (`SoundID.cs:1425`) — the SantaNK1
+    // missile's latch (`Projectile.cs:55161`, S1-E-21h d76). The landed
+    // wave's "trackable" deferral was a misclassification; the Flaming
+    // Wood 325's twin (`:55194`) stays as landed (slice A, keep-one).
+    ("Item_42", 2),
     ("Item_117", 2),
     ("Item_128", 2),
     ("Item_130", 2),
@@ -1163,6 +1186,28 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        self.play_use_sound_scaled(style_index, x, y, pitch_offset, 1.0, rng)
+    }
+
+    /// S1-E-21h d76 DOC-SWEEP — the volumeScale-carrying peer of
+    /// [`Audio::play_use_sound`]. `volume_scale` is the C# call's fourth
+    /// argument (`SoundEngine.cs:99` folds it into `type.Volume * volumeScale`,
+    /// which the legacy player applies as the POST-gate `instance.Volume *=
+    /// volumeScale`, `LegacySoundPlayer.cs:1411`). The Corrupt Whip's ×0.6 tip
+    /// cue (`Projectile.cs:47720`) and the Lights Bane slash's `0.15 * ai[0]`
+    /// (`:42237`) ride it. The attenuation gate still reads the UNSCALED
+    /// `style.volume` (`:369-436` precedes the scale), and the scale multiplies
+    /// the case-2 volume AFTER the tweak — exactly the C# order. `1.0` is the
+    /// no-scale default every other caller passes.
+    pub fn play_use_sound_scaled(
+        &mut self,
+        style_index: u16,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        call_volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
         let style = &crate::soundid::SOUND_STYLES[style_index as usize];
         // `SoundEngine.cs:99` — `pitchOffset + type.GetRandomPitch()`; the
         // NextFloat draw is consumed even at variance 0 (`SoundStyle.cs:42`).
@@ -1212,7 +1257,10 @@ impl Audio {
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        self.emit(name, x, y, volume_scale, pitch);
+        // `LegacySoundPlayer.cs:1411` — the call's volumeScale multiplies the
+        // instance volume AFTER the case tweak (the gate above read the
+        // unscaled `style.volume`).
+        self.emit(name, x, y, volume_scale * call_volume_scale, pitch);
         Some(name)
     }
 
@@ -1335,7 +1383,7 @@ impl Audio {
         // variance 0 (`SoundStyle.cs:42`), before the legacy gate.
         let draw = self.sound_style_random.next_float();
         let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
-        self.npc_hit_play(cue, style, pitch_offset, x, y, rng)
+        self.npc_hit_play(cue, style, pitch_offset, 1.0, x, y, rng)
     }
 
     /// S1-E-21g — the int-overload peer of [`Audio::play_npc_hit_sound`]
@@ -1359,7 +1407,7 @@ impl Audio {
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Hit_", 3)?;
-        self.npc_hit_play(cue, style, 0.0, x, y, rng)
+        self.npc_hit_play(cue, style, 0.0, 1.0, x, y, rng)
     }
 
     /// The shared case-3 tail of both hit overloads: the attenuation gate
@@ -1370,6 +1418,7 @@ impl Audio {
         cue: &'static str,
         style: &crate::soundid::SoundStyleDef,
         pitch_offset: f32,
+        call_volume_scale: f32,
         x: f32,
         y: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
@@ -1392,6 +1441,8 @@ impl Audio {
                 (pitch + pitch_offset).clamp(-1.0, 1.0),
             )
         };
+        // `LegacySoundPlayer.cs:1411` — the call's volumeScale, post-tweak.
+        let volume_scale = volume_scale * call_volume_scale;
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if style.sound_id == 3 {
             // `:663-667` — Stop the slot's old instance, then re-create.
@@ -1433,7 +1484,7 @@ impl Audio {
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
         let draw = self.sound_style_random.next_float();
         let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
-        self.npc_death_play(cue, style, pitch_offset, x, y, rng)
+        self.npc_death_play(cue, style, pitch_offset, 1.0, x, y, rng)
     }
 
     /// S1-E-21g — one case-4 play resolved from a `SoundID.NPCDeathN`
@@ -1460,7 +1511,7 @@ impl Audio {
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
         let draw = self.sound_style_random.next_float();
         let pitch_offset = sound::get_random_pitch(style.pitch_variance, draw);
-        self.npc_death_play(cue, style, pitch_offset, x, y, rng)
+        self.npc_death_play(cue, style, pitch_offset, 1.0, x, y, rng)
     }
 
     /// S1-E-21g — the int-overload peer of [`Audio::play_npc_death_sound`]
@@ -1484,7 +1535,7 @@ impl Audio {
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
-        self.npc_death_play(cue, style, 0.0, x, y, rng)
+        self.npc_death_play(cue, style, 0.0, 1.0, x, y, rng)
     }
 
     /// The shared case-4 tail of both death overloads: the attenuation
@@ -1495,6 +1546,7 @@ impl Audio {
         cue: &'static str,
         style: &crate::soundid::SoundStyleDef,
         pitch_offset: f32,
+        call_volume_scale: f32,
         x: f32,
         y: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
@@ -1519,6 +1571,10 @@ impl Audio {
                 (pitch + pitch_offset).clamp(-1.0, 1.0),
             )
         };
+        // `LegacySoundPlayer.cs:1411` — the call's volumeScale multiplies the
+        // instance volume AFTER the case-4 tweak (the Corrupt Whip's ×0.6 tip
+        // cue, `Projectile.cs:47720`); the gate above read the unscaled volume.
+        let volume_scale = volume_scale * call_volume_scale;
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if style.sound_id == 4 {
             // `:690` — the array entry is replaced with no Stop.
@@ -2059,33 +2115,64 @@ impl Audio {
     /// gates), the boomerang whoosh (`AI_003` `:38868-38891`), the Magic
     /// Missile hum (`AI_009` `:43361-43367`), the Light's Bane slash
     /// (`AI_188` `:42231-42239`) and the bomb blast
-    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). Every ported site is
-    /// a `SoundID.ItemN` style play — the same façade as wave A
+    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). The id-2 sites are
+    /// `SoundID.ItemN` style plays — the same façade as wave A
     /// (`SoundEngine.cs:93-99`: the `GetRandomPitch` NextFloat on the
     /// audio-only `sound_style_random`, then the attenuation gate
     /// `LegacySoundPlayer.cs:369-436`, then case 2's `Main.rand` pitch
-    /// roll). The gameplay draw rides the caller's stream — the pool pass
-    /// drains the queue under the `Main.cs:17775` `UpdateProjectiles`
-    /// swap. `pitch_offset` is the C# call's third argument (the ported
-    /// sites all pass none; the 301 Stacked Discs' −0.33 arm is deferred).
-    /// Returns the cue played; `None` when the gate refused or the style
-    /// is not a legacy id-2 row (the trackable families ride their own
-    /// façades — deferred, ANALYSIS S1-E-21h).
+    /// roll). S1-E-21h d76 adds the whip tip's id-3/4 NPC-family cues
+    /// (`AI_165_Whip` `:47720`/`:47724`) — the case-3/4 façades. The
+    /// gameplay draw rides the caller's stream — the pool pass drains the
+    /// queue under the `Main.cs:17775` `UpdateProjectiles` swap.
+    /// `pitch_offset` is the C# call's third argument (the ported sites all
+    /// pass none; the 301 Stacked Discs' −0.33 arm is deferred).
+    /// `volume_scale` is the C# call's fourth argument (`SoundEngine.cs:99`
+    /// `volumeScale`): `1.0` for every default-volume site; the Corrupt Whip's
+    /// ×0.6 tip cue (`:47720`) and the Lights Bane slash's `0.15 * ai[0]`
+    /// (`:42237`) carry their scale here (S1-E-21h d76 DOC-SWEEP — the
+    /// post-gate `instance.Volume *= volumeScale`, `LegacySoundPlayer.cs:1411`).
+    /// Returns the cue played; `None` when the gate refused or the family is
+    /// unported (the case-42 trackables ride their own façades — deferred,
+    /// ANALYSIS).
     pub fn play_proj_sound(
         &mut self,
         (id, style): (u16, i32),
         x: f32,
         y: f32,
         pitch_offset: f32,
+        volume_scale: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        // S1-E-21h d76 — the whip tip's NPC-family cues (`AI_165_Whip`
+        // `Projectile.cs:47720`/`:47724`): the Crimson Whip's NPCHit9 (id 3)
+        // and the Corrupt Whip's NPCDeath1 (id 4) ride their own case-3/4
+        // façades, resolved through the same `npc_sound_style` helper the
+        // wave-C/G plays use. The Corrupt Whip's ×0.6 volumeScale rides
+        // `volume_scale` (the DOC-SWEEP port — the case-4 tail applies it
+        // post-tweak, `LegacySoundPlayer.cs:1411`).
+        if id == 3 || id == 4 {
+            let (prefix, sid) = if id == 3 { ("NPC_Hit_", 3) } else { ("NPC_Killed_", 4) };
+            let cue = format!("{prefix}{style}");
+            let style_def = npc_sound_style(&cue, prefix, sid)?;
+            // `SoundEngine.cs:99` — the GetRandomPitch NextFloat rides the
+            // audio-only stream (variance 0 on every NPCHitN/NPCDeathN row,
+            // the draw still happens), then the case gate + pitch roll.
+            let draw = self.sound_style_random.next_float();
+            let offset = pitch_offset + sound::get_random_pitch(style_def.pitch_variance, draw);
+            let name = SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue)?;
+            return if id == 3 {
+                self.npc_hit_play(name, style_def, offset, volume_scale, x, y, rng)
+            } else {
+                self.npc_death_play(name, style_def, offset, volume_scale, x, y, rng)
+            };
+        }
         if id != 2 {
             return None;
         }
         let idx = crate::soundid::SOUND_STYLES
             .iter()
             .position(|s| s.sound_id == 2 && s.style == style)?;
-        self.play_use_sound(idx as u16, x, y, pitch_offset, rng)
+        self.play_use_sound_scaled(idx as u16, x, y, pitch_offset, volume_scale, rng)
     }
 
     /// S1-E-21i — one wall-break cue (`tr_core::edit::kill_wall_sound`, the
@@ -3862,7 +3949,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(7);
         let mut witness = UnifiedRandom::new(7);
         let roll = witness.next_range(-6, 7);
-        let cue = audio.play_proj_sound((2, 14), 0.0, 0.0, 0.0, &mut rng);
+        let cue = audio.play_proj_sound((2, 14), 0.0, 0.0, 0.0, 1.0, &mut rng);
         assert_eq!(cue, Some("Item_14"));
         assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
         assert!((-0.06..=0.06).contains(&(roll as f32 * 0.01)));
@@ -3873,14 +3960,14 @@ mod tests {
         audio.set_listener(l);
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
-        assert_eq!(audio.play_proj_sound((2, 7), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_proj_sound((2, 7), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the muted play is draw-free");
         // Out of attenuation range: also draw-free (`:390-397`).
         let mut audio = Audio::new(None);
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
         assert_eq!(
-            audio.play_proj_sound((2, 60), 5000.0, 0.0, 0.0, &mut rng),
+            audio.play_proj_sound((2, 60), 5000.0, 0.0, 0.0, 1.0, &mut rng),
             None
         );
         assert_eq!(rng.peek(), peek, "the inaudible play is draw-free");
@@ -3890,15 +3977,108 @@ mod tests {
             let mut audio = Audio::new(None);
             let mut rng = UnifiedRandom::new(3);
             let cue = audio
-                .play_proj_sound((2, style), 0.0, 0.0, 0.0, &mut rng)
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, 1.0, &mut rng)
                 .unwrap_or_else(|| panic!("style {style} resolves"));
             assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
         }
         // A non-id-2 family (the deferred trackables) refuses draw-free.
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
-        assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
         assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d76 — the second wave's bank gaps resolve (the cannon portal
+    /// pair 114/115, the phantasmal pick 124/125, the golf strike 126, the
+    /// drill hum 132, the whip tip 153/193, the sun dance 159, the missile
+    /// latch 42) and the whip tip's id-3/4 NPC families ride the case-3/4
+    /// façades (one gameplay pitch draw each, after the gate).
+    #[test]
+    fn s1_e_21h_d76_the_proj_bank_gaps_and_the_whip_npc_families() {
+        use tr_core::unified_random::UnifiedRandom;
+        for style in [42, 114, 115, 124, 125, 126, 132, 153, 159, 193] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(3);
+            let cue = audio
+                .play_proj_sound((2, style), 0.0, 0.0, 0.0, 1.0, &mut rng)
+                .unwrap_or_else(|| panic!("style {style} resolves"));
+            assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
+        }
+        // The Crimson Whip's NPCHit9 (id 3): one Next(-10, 11) pitch draw.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((3, 9), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("NPC_Hit_9")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "the case-3 pitch draw");
+        // The Corrupt Whip's NPCDeath1 (id 4): one Next(-10, 11) pitch draw.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, 1.0, &mut rng),
+            Some("NPC_Killed_1")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "the case-4 pitch draw");
+        // The muted whip play draws nothing.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, 1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21h d76 DOC-SWEEP — the volumeScale term rides the queue→drain
+    /// path without touching the RNG contract: the Corrupt Whip's ×0.6 tip
+    /// cue (`Projectile.cs:47720`, the case-4 post-tweak multiply
+    /// `LegacySoundPlayer.cs:1411`) and the Lights Bane slash's `0.15*ai[0]`
+    /// (`:42237`, the case-2 peer) draw EXACTLY the same gameplay draws as
+    /// their volume-1 twins — the scale is a volume-only term. WRITTEN NOT
+    /// RUN (code-only mode).
+    #[test]
+    fn s1_e_21h_d76_sweep_the_volume_scale_is_draw_free() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The case-4 pair: ×0.6 vs 1.0 — one Next(-10, 11) pitch draw each.
+        for vol in [0.6f32, 1.0] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _ = witness.next_range(-10, 11);
+            assert_eq!(
+                audio.play_proj_sound((4, 1), 0.0, 0.0, 0.0, vol, &mut rng),
+                Some("NPC_Killed_1"),
+                "vol {vol}: the cue still plays"
+            );
+            assert_eq!(rng.peek(), witness.peek(), "vol {vol}: the same one pitch draw");
+        }
+        // The case-2 pair (the Lights Bane Item60): ×0.15 vs 1.0 — the same
+        // case-2 draw count either way.
+        for vol in [0.15f32, 1.0] {
+            let mut audio = Audio::new(None);
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let cue1 = audio.play_proj_sound((2, 60), 0.0, 0.0, 0.0, vol, &mut rng);
+            let mut audio2 = Audio::new(None);
+            let cue2 = audio2.play_proj_sound((2, 60), 0.0, 0.0, 0.0, 1.0, &mut witness);
+            assert_eq!(cue1, cue2, "vol {vol}: the same cue as the volume-1 twin");
+            assert_eq!(rng.peek(), witness.peek(), "vol {vol}: the same case-2 draws");
+        }
+        // The scaled play still gates on attenuation BEFORE any draw: an
+        // out-of-range ×0.6 play is draw-free.
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_proj_sound((4, 1), 5000.0, 0.0, 0.0, 0.6, &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the scaled inaudible play is draw-free");
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract
