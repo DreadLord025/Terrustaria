@@ -310,6 +310,16 @@ pub struct World {
     /// `PrepareFishingContext` context) — the world-field standing-in
     /// (S1-P-i35).
     pub combat_book_was_used: bool,
+    /// `NPC.boughtCat` (`WorldFile.cs:1392` / `:2358`) — the 4829 Cat License's
+    /// town-pet unlock (`ItemCheck_UsePetLicenses` `Player.cs:45354-45357`,
+    /// `NPC.UnlockOrExchangePet` `NPC.cs:80894-80918`). W4-g87.
+    pub bought_cat: bool,
+    /// `NPC.boughtDog` (`WorldFile.cs:1393` / `:2359`) — the 4830 Dog License's
+    /// town-pet unlock (`Player.cs:45358-45361`). W4-g87.
+    pub bought_dog: bool,
+    /// `NPC.boughtBunny` (`WorldFile.cs:1394` / `:2360`) — the 4910 Bunny
+    /// License's town-pet unlock (`Player.cs:45362-45365`). W4-g87.
+    pub bought_bunny: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -682,6 +692,9 @@ impl World {
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
             combat_book_was_used: false,
+            bought_cat: false,
+            bought_dog: false,
+            bought_bunny: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,

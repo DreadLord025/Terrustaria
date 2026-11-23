@@ -1387,7 +1387,11 @@ impl App {
         {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
-            let base_y = ui::inventory::equip_page_base_y(screen.y, self.main_m_h());
+            let base_y = ui::inventory::equip_page_base_y(
+                screen.y,
+                self.main_m_h(),
+                ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
+            );
             let cells = ui::housing::layout(
                 &ui::housing::heads_for(&self.npcs),
                 [screen.x, screen.y],
@@ -1453,11 +1457,20 @@ impl App {
                     .as_ref()
                     .map(|s| (s.width as f32, s.height as f32))
                     .unwrap_or((16.0, 16.0));
-                let base_y = ui::inventory::equip_page_base_y(screen.y, m_h);
+                let base_y = ui::inventory::equip_page_base_y(
+                    screen.y,
+                    m_h,
+                    ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
+                );
                 let air = self.mouse_item.kind == 0 || self.mouse_item.count == 0;
-                if let Some(i) =
-                    ui::inventory::accessory_tick_click(screen, base_y, self.mouse_pos, tick, air)
-                {
+                if let Some(i) = ui::inventory::accessory_tick_click(
+                    screen,
+                    base_y,
+                    self.mouse_pos,
+                    tick,
+                    air,
+                    ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
+                ) {
                     if let Some(p) = self.player.as_mut() {
                         p.hide_visible_accessory[i] = !p.hide_visible_accessory[i];
                     }
@@ -1809,10 +1822,23 @@ impl App {
             let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
             // The housing page owns its own cells — `equip_cell_at` answers
             // `None` there, so it falls through to the grid probe below.
-            if let Some((ctx, idx)) =
-                ui::inventory::equip_cell_at(self.mouse_pos, screen, m_h, self.equip_page, cell)
-            {
-                self.equip_slot_click(ctx, idx, left, right_edge);
+            if let Some((ctx, idx)) = ui::inventory::equip_cell_at(
+                self.mouse_pos,
+                screen,
+                m_h,
+                self.equip_page,
+                cell,
+                ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()),
+            ) {
+                // `Main.cs:41450`/`:41491`/`:41519`: `ItemSlot.Handle(...,
+                // flag6 || Main.mouseItem.IsAir)` — a shown-but-LOCKED row
+                // (a stored item, no unlock) refuses the interact while the
+                // cursor holds a stack; an air cursor may still lift it out.
+                let show = ui::inventory::ExtraAccessoryShow::of(self.player.as_ref());
+                let air = self.mouse_item.kind == 0 || self.mouse_item.count == 0;
+                if show.slot_unlocked(idx) || air {
+                    self.equip_slot_click(ctx, idx, left, right_edge);
+                }
                 return;
             }
         }
@@ -4640,8 +4666,9 @@ mod tests {
         let mut app = inv_app();
         let (sw, sh) = app.screen_size();
         let screen = Vec2::new(sw, sh);
-        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
-        let tick = ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0));
+        let show = ui::inventory::ExtraAccessoryShow::of(app.player.as_ref());
+        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h(), show);
+        let tick = ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0), show);
         let (idx, rect) = tick[0];
         assert_eq!(idx, 3, "the first tick belongs to the first accessory");
         app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
@@ -4679,8 +4706,10 @@ mod tests {
             app.equip_page = page;
             let (sw, sh) = app.screen_size();
             let screen = Vec2::new(sw, sh);
-            let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
-            let (_, rect) = ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0))[0];
+            let show = ui::inventory::ExtraAccessoryShow::of(app.player.as_ref());
+            let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h(), show);
+            let (_, rect) =
+                ui::inventory::accessory_tick_rects(screen, base_y, (16.0, 16.0), show)[0];
             app.mouse_pos = Vec2::new(rect[0] + 2.0, rect[1] + 2.0);
             app.ui_left_press = true;
             app.handle_inventory_clicks();
@@ -4851,10 +4880,13 @@ mod tests {
         let screen = Vec2::new(sw, sh);
         let m_h = app.main_m_h();
         let cell = app.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+        let show = ui::inventory::ExtraAccessoryShow::of(app.player.as_ref());
         for y in 0..sh as i32 {
             for x in sw as i32 - 240..sw as i32 {
                 let p = Vec2::new(x as f32, y as f32);
-                if ui::inventory::equip_cell_at(p, screen, m_h, page, cell) == Some((context, idx)) {
+                if ui::inventory::equip_cell_at(p, screen, m_h, page, cell, show)
+                    == Some((context, idx))
+                {
                     return p;
                 }
             }
@@ -5602,7 +5634,11 @@ mod housing_query_tests {
     /// `(1280 - 64 - 28, 174)` = `(1188, 174)`, 44.2 px wide (52 * 0.85).
     fn housing_cells(app: &App) -> Vec<ui::housing::Cell> {
         let (sw, sh) = app.screen_size();
-        let base_y = ui::inventory::equip_page_base_y(sh, app.main_m_h());
+        let base_y = ui::inventory::equip_page_base_y(
+            sh,
+            app.main_m_h(),
+            ui::inventory::ExtraAccessoryShow::of(app.player.as_ref()),
+        );
         ui::housing::layout(
             &ui::housing::heads_for(&app.npcs),
             [sw, sh],

@@ -215,6 +215,97 @@ def test_acyclic_and_shape():
     print("ok S1-F-7.6 acyclic registry (%d defs)" % len(refs))
 
 
+# ---------------------------------------------------------------------------
+# W4-d113 — third-block (TileID 240-359) per-family pins, hand-derived from
+# the C# Initialize chains (docs/research/08-d113-tileobjectdata-third.md).
+# ---------------------------------------------------------------------------
+def test_d113_third_block_census():
+    i = interp()
+    registered = [k for k in range(240, 360) if i.data[k] is not None]
+    check(len(registered) == 64, "64 registered kinds in 240-359, got %d" % len(registered))
+    check(registered[0] == 240 and registered[-1] == 359, "block endpoints 240/359")
+    # The unregistered plain blocks/gemspark/falls of the block stay None.
+    for k in [248, 255, 268, 272, 284, 326, 330, 336, 352]:
+        check(i.data[k] is None, "kind %d unregistered (legacy PlaceTile route)" % k)
+    print("ok W4-d113 census (64 registered kinds of 240-359)")
+
+
+def test_d113_third_block_families():
+    i = interp()
+    d = i.data
+
+    # Style6x3 preset (:2696-2706) → BunnyCage 275 (:2707-2708): 6x3,
+    # origin (3,2), 16-px rows, bottom anchor SolidTile|Table|SolidSide = 13.
+    cage = d[275]
+    check((cage.get("Width"), cage.get("Height")) == (6, 3), "cage 6x3 (:2696-2697)")
+    check(cage.get("Origin") == (3, 2), "cage origin (:2698)")
+    check(cage.get("CoordinateHeights") == [16, 16, 16], "cage rows (:2701)")
+    check((cage.get("CoordinateWidth"), cage.get("CoordinatePadding")) == (16, 2), "cage 16+2 (:2702-2703)")
+    check(cage.get("AnchorBottom") == (13, 6, 0), "cage bottom anchor (:2699)")
+    check(cage.get("LavaDeath") is True and cage.uses_custom is True, "cage death/custom (:2700/:2705)")
+    check(cage.get("DrawYOffset") == 2, "cage DrawYOffset 2 (:2704, draw-only)")
+
+    # Style1x2Top preset (:2432-2441) → FireflyinaBottle 270 (:2442-2448):
+    # 1x2 top-anchored, platform alternate with DrawYOffset -10.
+    bottle = d[270]
+    check((bottle.get("Width"), bottle.get("Height")) == (1, 2), "bottle 1x2 (:2432-2433)")
+    check(bottle.get("CoordinateHeights") == [16, 16], "bottle rows (:2437)")
+    # SolidTile|SolidSide|PlanterBox = 1|8|512 = 521.
+    check(bottle.get("AnchorTop") == (521, 1, 0), "bottle top anchor (:2435)")
+    check(bottle.get("DrawYOffset") == -2, "bottle DrawYOffset -2 (:2443)")
+    alt = bottle.modules["alternates"]["data"][0]
+    check(alt.get("AnchorTop") == (256, 1, 0), "bottle platform alternate (:2445, Platform=256)")
+    check(alt.get("DrawYOffset") == -10, "bottle alternate DrawYOffset -10 (:2446)")
+    check(alt.get("Style") == 0, "bottle addAlternate(0) (:2447)")
+
+    # Style3x3 → HeavyWorkBench 283 (:4062-4064): 3x3, origin (1,2).
+    bench = d[283]
+    check((bench.get("Width"), bench.get("Height")) == (3, 3), "bench 3x3")
+    check(bench.get("Origin") == (1, 2), "bench origin")
+    check(bench.get("CoordinateHeights") == [16, 16, 16], "bench rows")
+    check(bench.get("AnchorBottom") == (11, 3, 0), "bench bottom anchor 1|2|8")
+    check(bench.get("DrawYOffset") == 2, "bench DrawYOffset 2 (:4063)")
+
+    # AmmoBox 287 registered THREE times (:3617-3618, :3621-3622,
+    # :3782-3783) — every chain is a plain CopyFrom(Style2x2), so the last
+    # addTile overwrite (_data[287], :2011) leaves the untouched preset.
+    ammo = d[287]
+    check((ammo.get("Width"), ammo.get("Height")) == (2, 2), "ammo Style2x2 2x2")
+    check(ammo.get("Origin") == (0, 1), "ammo origin (0,1)")
+    check(ammo.get("CoordinateHeights") == [16, 16], "ammo rows")
+    check(ammo.get("AnchorBottom") == (15, 2, 0), "ammo bottom anchor 1|2|4|8")
+    check(ammo.get("StyleWrapLimit") == 0 and ammo.get("StyleMultiplier") == 1, "ammo no style overrides")
+
+    # BeachPiles 324 (:4430-4439): Style1x1 + 20-px cell, wrap 3 horizontal.
+    # Census correction: NO GetStyleOverride here — only 233/185/165 are
+    # tagged (:4968/:4979/:4993).
+    piles = d[324]
+    check(piles.get("CoordinateHeights") == [20] and piles.get("CoordinateWidth") == 20, "piles 20-px cell (:4435-4436)")
+    check(piles.get("StyleWrapLimit") == 3 and piles.get("StyleHorizontal") is True, "piles wrap 3 horizontal (:4433-4434)")
+    check(piles.get("AnchorBottom") == (15, 1, 0), "piles bottom anchor (:4438)")
+    check(piles.get("DrawYOffset") == -2 and piles.get("DrawFlipHorizontal") is True, "piles draw flags (:4432/:4437)")
+    check(piles.modules["hooks"]["getStyleMethod"] is None, "324 has NO GetStyleOverride (census correction)")
+
+    # MushroomStatue 349 (:2960-2967): Style2xX, wrap 7, PlaceLeft +
+    # PlaceRight alternate at style 7.
+    statue = d[349]
+    check(statue.get("StyleWrapLimit") == 7, "statue wrap 7 (:2962)")
+    check(statue.get("Direction") == 1, "statue PlaceLeft (:2963)")
+    check(statue.get("LavaDeath") is False, "statue Style2xX LavaDeath=false")
+    salt = statue.modules["alternates"]["data"][0]
+    check(salt.get("Direction") == 2 and salt.get("Style") == 7, "statue PlaceRight alt(7) (:2965-2966)")
+
+    # The three GetStyleOverride-tagged kinds (d112's consumer inputs):
+    # 233 Detritus 1 sub-tile (:4968-4974), 185 SmallPiles 1 (:4979-4985),
+    # 165 Stalactite 3 (:4993-5012).
+    for k, tag, nsub in [(233, "Detritus", 1), (185, "SmallPiles", 1), (165, "Stalactite", 3)]:
+        gs = d[k].modules["hooks"]["getStyleMethod"]
+        check(gs is not None and gs[1] == tag, "kind %d GetStyle_%s" % (k, tag))
+        subs = [s for s in d[k].modules["subTiles"]["data"] if s is not None]
+        check(len(subs) == nsub, "kind %d %d sub-tiles" % (k, nsub))
+    print("ok W4-d113 third-block families (cages/bottles/benches/ammo/piles/statues/overrides)")
+
+
 def main():
     test_idempotent_regen()
     test_committed_table_is_current()
@@ -222,6 +313,8 @@ def main():
     test_spot_families()
     test_csharp_bugs_reproduced()
     test_acyclic_and_shape()
+    test_d113_third_block_census()
+    test_d113_third_block_families()
     print("ALL GEN TESTS PASSED")
 
 

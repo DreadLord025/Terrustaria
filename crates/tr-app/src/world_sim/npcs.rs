@@ -1164,6 +1164,94 @@ fn play_npc_sound_request(
     }
 }
 
+/// W4-c12 — the aiStyle-74 death feed: `NPC.HitEffect`'s 388 death arm
+/// (`NPC.cs:84470-84501`) and 418 death arm (`:82959-82993`), drawn in C#
+/// order when the death retain picks the corpse up. The 388: the flat 10
+/// dust 226 (`-2.5×hitDirection, -2.5`, scale 0.5 — the count rides
+/// `npc_ai_style74::drone_hit_dust_plan`), then the two gores 605/606 at
+/// `Center - (10, 10)` with `this.scale`; the `ai[0] == 3` implosion death
+/// rides `rotation.ToRotationVector2()` (X flipped at `spriteDirection ==
+/// 1`) ×5 instead of the velocity (`:84489-84497`). The 418: 20 × (dust
+/// 241 at `hitDirection, -1` + dust 6 with noGravity/scale 1.5/fadeIn 1/
+/// velocity ×3, `:82987-82991` — the count rides `corite_hit_dust_plan`),
+/// then the five gores at `Center`: 841 + 842×2 at velocity ×0.8, 843×2
+/// at ×0.9, all Scale-default 1f (the C# calls omit the argument).
+/// The dust/gore internals roll inside `DustPool::new_dust`/
+/// `GorePool::new_gore` (the S1-E-1/S1-E-4 contracts). RNG placement: the
+/// C# runs HitEffect inside StrikeNPC / the AI fuse (the striking stage's
+/// stream); the port batches deaths into the NPC pass, so every draw
+/// rides `UpdateNPCs` — the S1-E-21c recorded deviation (the death-cue
+/// precedent). The fuse death's `hitDirection` is 0 (the adapter reset,
+/// `NPC.cs:35497`'s argument-less `HitEffect()`).
+pub(crate) fn style74_death_feed(app: &mut App, npc: &Npc) {
+    use tr_core::particles::Color;
+    let ctx = app.spawn_ctx();
+    let (w, h) = npc.size();
+    let (cx, cy) = npc.center();
+    let pos = Vec2::new(npc.x, npc.y);
+    let hit_dir = npc.last_hit_dir;
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    match npc.kind {
+        NpcKind::MartianDrone => {
+            // `:84483-84487` — the flat 10 dust 226, scale 0.5.
+            let count = crate::npc_ai_style74::drone_hit_dust_plan(npc.hp, 0.0, npc.max_hp);
+            for _ in 0..count {
+                let idx = app.dust.new_dust(
+                    rng, &ctx, &app.world, pos, w as i32, h as i32, 226,
+                    -2.5 * hit_dir as f32, -2.5, 0, Color::default(), 1.0,
+                );
+                app.dust.slot_mut(idx).scale = 0.5;
+            }
+            // `:84488-84497` — the gore velocity: the implosion death's
+            // rotation vector ×5 (the f64 trig over the f32 angle, the
+            // `Utils.ToRotationVector2` shape) or the raw velocity.
+            let mut vel = Vec2::new(npc.vx, npc.vy);
+            if npc.ai[0] == 3.0 {
+                vel = Vec2::new(
+                    (npc.rotation as f64).cos() as f32,
+                    (npc.rotation as f64).sin() as f32,
+                );
+                if npc.sprite_dir == 1 {
+                    vel.x *= -1.0;
+                }
+                vel *= 5.0;
+            }
+            let gpos = Vec2::new(cx - 10.0, cy - 10.0);
+            app.gore.new_gore(rng, &app.world, gpos, vel, 605, npc.scale);
+            app.gore.new_gore(rng, &app.world, gpos, vel, 606, npc.scale);
+        }
+        NpcKind::SolarCorite => {
+            // `:82985-82992` — the 20 (241 + 6) pairs.
+            let count = crate::npc_ai_style74::corite_hit_dust_plan(npc.hp, 0.0, npc.max_hp);
+            for _ in 0..count {
+                app.dust.new_dust(
+                    rng, &ctx, &app.world, pos, w as i32, h as i32, 241,
+                    hit_dir as f32, -1.0, 0, Color::default(), 1.0,
+                );
+                let idx = app.dust.new_dust(
+                    rng, &ctx, &app.world, pos, w as i32, h as i32, 6,
+                    0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                let d = app.dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale = 1.5;
+                d.fade_in = 1.0;
+                d.velocity *= 3.0;
+            }
+            // `:82987-82991` — the five gores, Scale-default 1f.
+            let c = Vec2::new(cx, cy);
+            let v8 = Vec2::new(npc.vx, npc.vy) * 0.8;
+            let v9 = Vec2::new(npc.vx, npc.vy) * 0.9;
+            app.gore.new_gore(rng, &app.world, c, v8, 841, 1.0);
+            app.gore.new_gore(rng, &app.world, c, v8, 842, 1.0);
+            app.gore.new_gore(rng, &app.world, c, v8, 842, 1.0);
+            app.gore.new_gore(rng, &app.world, c, v9, 843, 1.0);
+            app.gore.new_gore(rng, &app.world, c, v9, 843, 1.0);
+        }
+        _ => {}
+    }
+}
+
 /// The worm pass's core — the pieces the tests drive directly (the world,
 /// the player centre, the Vec, the RNG stream, the id counter). The
 /// centre-only seam defaults the gate inputs (`dead = false`, no evil
@@ -5621,6 +5709,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // single running event walks alone.
         app.world.report_frost_moon_kill(npc.kind.to_u16());
         app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
+        // W4-c12 — the aiStyle-74 death feed: the 388/418 `HitEffect`
+        // death arms' dust/gore draws (`NPC.cs:84470-84501`/`:82959-
+        // 82993`), on the UpdateNPCs stream (the death-cue deviation
+        // below). BEFORE the death cue: the C# runs HitEffect at
+        // `:81488`, ahead of checkDead's DeathSound (`:81559` →
+        // `:78186`). Every other kind's HitEffect stays the documented
+        // visual skip.
+        if matches!(npc.kind, NpcKind::MartianDrone | NpcKind::SolarCorite) {
+            style74_death_feed(app, npc);
+        }
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
         // faithful case-4 path (S1-E-21 wave C): the volume arms + the
@@ -10392,6 +10490,203 @@ mod drone_tests {
         app.world.invasion_type = 0;
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(!app.npcs.iter().any(|m| m.kind == NpcKind::MartianDrone));
+    }
+
+    /// W4-c12 — the STAND-IN RETIREMENT witness: the 388 rides the wired
+    /// aiStyle-74 axis (`npc_ai_style74::style74_step` through
+    /// `ai_074_hover_charge`). Only the faithful arm runs `TargetClosest`
+    /// (`NPC.cs:35220`), writes the difficulty-scaled kb (`:35310`, the
+    /// `kb_resist_override` seam) and rolls the trail `NewDust` 226 into
+    /// the LIVE pool (`:35276-35290`) — the retired `update_martian_drone`
+    /// did none of the three. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c12_the_drone_rides_the_wired_axis() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = UnifiedRandom::new(7);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(
+                world.width as f32 * TILE_PX,
+                world.height as f32 * TILE_PX,
+            ),
+            max_dust_to_draw: 6000,
+        };
+        let mut n = Npc::new(NpcKind::MartianDrone, 145.0 * TILE_PX, 1760.0, 0, 0.0);
+        n.hp = n.max_hp;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        n.update_rng_dust(&world, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(n.target, 0, "TargetClosest scanned (`:35220`)");
+        assert_eq!(n.kb_resist_override, Some(0.4), "the state-0 kb write (`:35310`)");
+        assert_eq!(n.ai[0], 1.0, "the in-line sight latches the charge (`:35350`)");
+        assert!(
+            dust.slots().iter().any(|d| d.active && d.dust_type == 226),
+            "the trail NewDust 226 landed in the live pool (`:35276-35290`)"
+        );
+    }
+
+    /// W4-c12 — the WIRED RNG census: the 418's state-4 cooldown tick draws
+    /// EXACTLY the two `Next(3)` ember gates (`NPC.cs:35291-35307`, every
+    /// state incl. 4) — the menu ctx refuses `NewDust` BEFORE any draw
+    /// (`Dust.cs:77`), isolating the explicit gates on the caller's
+    /// stream. The retired `update_solar_corite` drew NOTHING. WRITTEN
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c12_the_wired_corite_ember_gate_census() {
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = UnifiedRandom::new(11);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: true,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(
+                world.width as f32 * TILE_PX,
+                world.height as f32 * TILE_PX,
+            ),
+            max_dust_to_draw: 6000,
+        };
+        let mut n = Npc::new(NpcKind::SolarCorite, 150.0 * TILE_PX, 1760.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 4.0; // the cooldown — the ember dust still runs
+        n.ai[1] = 30.0;
+        let mut witness = rng.clone();
+        let _g1 = witness.next_max(3);
+        let _g2 = witness.next_max(3);
+        n.update_rng_dust(&world, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(rng, witness, "exactly two Next(3) ember gates, no other draw");
+        assert_eq!(n.ai[1], 27.0, "the state-4 cooldown ran (`:35432-35442`)");
+    }
+
+    /// W4-c12 — the 388 DEATH-FEED draw census (`NPC.cs:84483-84499`):
+    /// exactly 10 dust 226 spawns (scale 0.5, SpeedX = -2.5×hitDirection)
+    /// then the two gores 605/606 at `Center - (10,10)` — the ai[0] == 3
+    /// implosion death rides the rotation vector (X flipped at
+    /// spriteDirection == 1) ×5. The twin pools replay the same spawn
+    /// sequence on a cloned stream: any extra/reordered draw breaks the
+    /// equality. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c12_the_drone_death_feed_draw_census() {
+        use tr_core::particles::Color;
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut n = Npc::new(NpcKind::MartianDrone, 40.0, 40.0, 1, 0.0);
+        n.hp = 0;
+        n.ai[0] = 3.0; // the implosion death — the rotation-vector gores
+        n.sprite_dir = 1;
+        n.rotation = 0.3;
+        n.vx = 7.0;
+        n.vy = -2.0;
+        n.last_hit_dir = -1;
+        app.camera = Vec2::new(60.0, 55.0); // the corpse on-screen
+        // The full dust budget (the fresh GfxQuality default is 0 — every
+        // slot would sit past the 0.9 pressure band and roll refusals).
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let world = app.world.clone();
+        let ctx = app.spawn_ctx();
+        let mut twin_rng = app.rngs.stream(RngKey::UpdateNpcs).clone();
+        let mut twin_dust = tr_core::particles::DustPool::new();
+        let mut twin_gore = tr_core::gore::GorePool::new();
+        style74_death_feed(&mut app, &n);
+        // The C# order replayed on the twins (`:84483-84499`).
+        let (w, h) = n.size();
+        for _ in 0..10 {
+            let idx = twin_dust.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(n.x, n.y),
+                w as i32, h as i32, 226, 2.5, -2.5, 0, Color::default(), 1.0,
+            );
+            twin_dust.slot_mut(idx).scale = 0.5;
+        }
+        let (cx, cy) = n.center();
+        let mut vel = Vec2::new(
+            (n.rotation as f64).cos() as f32,
+            (n.rotation as f64).sin() as f32,
+        );
+        vel.x *= -1.0; // spriteDirection == 1
+        vel *= 5.0;
+        let gpos = Vec2::new(cx - 10.0, cy - 10.0);
+        twin_gore.new_gore(&mut twin_rng, &world, gpos, vel, 605, n.scale);
+        twin_gore.new_gore(&mut twin_rng, &world, gpos, vel, 606, n.scale);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs), twin_rng,
+            "the death feed spends exactly the 10-dust + 2-gore ladder"
+        );
+        let live: Vec<_> = app.dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10, "the flat 10 dust 226");
+        assert!(live.iter().all(|d| d.dust_type == 226 && d.scale == 0.5));
+        let gores: Vec<_> = app.gore.slots().iter().filter(|g| g.active).collect();
+        assert_eq!(gores.len(), 2, "the 605/606 pair");
+        assert_eq!((gores[0].gore_type, gores[1].gore_type), (605, 606));
+        assert_eq!(gores[0].position, gpos);
+        assert_eq!(gores[0].velocity, twin_gore.slot(0).velocity);
+    }
+
+    /// W4-c12 — the 418 DEATH-FEED draw census (`NPC.cs:82985-82991`):
+    /// exactly 20 × (dust 241 + dust 6) pairs — the 6s carry noGravity /
+    /// scale 1.5 / fadeIn 1 / velocity ×3 — then the five gores 841,
+    /// 842×2 (velocity ×0.8) and 843×2 (×0.9) at `Center`, Scale-default
+    /// 1f. Twin-pool stream replay, the drone witness's shape. WRITTEN
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c12_the_corite_death_feed_pairs_and_gores() {
+        use tr_core::particles::Color;
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut n = Npc::new(NpcKind::SolarCorite, 40.0, 40.0, 1, 0.0);
+        n.hp = 0;
+        n.vx = 3.0;
+        n.vy = 1.0;
+        n.last_hit_dir = 1;
+        app.camera = Vec2::new(59.0, 59.0);
+        app.gfx_quality.max_dust_to_draw = 6000;
+        let world = app.world.clone();
+        let ctx = app.spawn_ctx();
+        let mut twin_rng = app.rngs.stream(RngKey::UpdateNpcs).clone();
+        let mut twin_dust = tr_core::particles::DustPool::new();
+        let mut twin_gore = tr_core::gore::GorePool::new();
+        style74_death_feed(&mut app, &n);
+        let (w, h) = n.size();
+        for _ in 0..20 {
+            twin_dust.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(n.x, n.y),
+                w as i32, h as i32, 241, 1.0, -1.0, 0, Color::default(), 1.0,
+            );
+            let idx = twin_dust.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(n.x, n.y),
+                w as i32, h as i32, 6, 0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let d = twin_dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+        let (cx, cy) = n.center();
+        let c = Vec2::new(cx, cy);
+        let v8 = Vec2::new(n.vx, n.vy) * 0.8;
+        let v9 = Vec2::new(n.vx, n.vy) * 0.9;
+        for (vel, ty) in [(v8, 841), (v8, 842), (v8, 842), (v9, 843), (v9, 843)] {
+            twin_gore.new_gore(&mut twin_rng, &world, c, vel, ty, 1.0);
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateNpcs), twin_rng,
+            "the death feed spends exactly the 40-dust + 5-gore ladder"
+        );
+        let live: Vec<_> = app.dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 40, "20 (241 + 6) pairs");
+        let sixes: Vec<_> = live.iter().filter(|d| d.dust_type == 6).collect();
+        assert_eq!(sixes.len(), 20);
+        assert!(sixes.iter().all(|d| d.no_gravity && d.scale == 1.5 && d.fade_in == 1.0));
+        let gores: Vec<_> = app.gore.slots().iter().filter(|g| g.active).collect();
+        assert_eq!(gores.len(), 5, "the 841/842×2/843×2 fan");
+        let types: Vec<_> = gores.iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![841, 842, 842, 843, 843]);
+        assert!(gores.iter().all(|g| g.position == c && g.scale == 1.0));
     }
 }
 
@@ -15608,8 +15903,12 @@ mod tower_mob_tests {
 
     #[test]
     fn the_corite_implodes_on_contact() {
-        // `:35447-35497`'s implosion: the 3-tick delay then the death (with
-        // the 80-damage blast request).
+        // W4-c12 reconcile onto the faithful aiStyle-74 arm
+        // (`NPC.cs:35455-35499`): the implosion swells the box to 192×192
+        // about the OLD centre, the scaled 80 damage + alpha 255 land on
+        // the FIRST state-3 tick, and the 3-tick fuse kills it. The C#
+        // arm has NO blast projectile — the retired stand-in's
+        // `wants_blast` was an invention (ANALYSIS).
         let (_app, mut player) = {
             let mut a = flow_app(None, vec![], vec![]);
             let p = Player::spawn(&a.world);
@@ -15625,20 +15924,23 @@ mod tower_mob_tests {
         );
         n.hp = n.max_hp;
         n.ai[0] = 3.0; // the implosion state
+        let (old_cx, old_cy) = n.center();
         player.x = 170.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         let mut rng = UnifiedRandom::new(7);
-        let mut blasted = false;
-        for _ in 0..8 {
-            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
-            if n.wants_blast {
-                blasted = true;
-                break;
-            }
-        }
-        assert!(blasted, "the implosion blast");
-        assert!(n.hp <= 0, "the corite dies with it");
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.size_override, Some((192.0, 192.0)), "the 192-box swell");
+        let (cx, cy) = n.center();
+        assert_eq!((cx, cy), (old_cx, old_cy), "the centre holds");
         assert_eq!(n.damage_override, Some(80), "the implosion's hit");
+        assert_eq!(n.alpha, 255, "`:35461`'s alpha");
+        assert!(!n.wants_blast, "no blast projectile in the C# arm");
+        // Ticks 2 and 3 burn the fuse; the death tick's damage zero
+        // mirrors the mid-update deactivation (the adapter).
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(n.hp > 0, "the fuse ticks");
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "the 3-tick fuse kills the corite");
     }
 }
 

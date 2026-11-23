@@ -282,6 +282,21 @@ mod tests {
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
     const DEFAULT_WORLD: u32 = 3647283075;
+    // W4-d107 (2026-11-20, code-only): the special-seed branches land in
+    // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +
+    // remix band table, `WorldGen.cs:13189-13602`; the SurfaceCaves noSurface
+    // gate + remix triple, `:12164`/`:12170-12175`) and the dualDungeons
+    // pruning name fix (`pipeline.rs` — `IceBiome` is "Generate Ice Biome",
+    // `GenPassNameID.cs:239`, NOT "Ice" `:280`). BOTH CLASSIC PINS STAY:
+    // every new draw is flag-gated and every pruning change needs the
+    // dualDungeons micro-seed — a classic world runs the byte-identical
+    // ledger. The AFFECTED SEEDS' hashes move by design and are pinned as
+    // a==b witnesses instead of constants (no compiler on this branch):
+    // `w4_d107_*` in `caves.rs` (drunk/remix/noSurface/surfaceIsInSpace pass
+    // level) and `w4_d107_the_affected_seeds_are_deterministic` in
+    // `worldgen/mod.rs` (whole-world a==b per affected seed + dualDungeons).
+    // If a later gate measures per-seed constants, pin them there; the
+    // classic constants above must NOT move for this task.
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
     // x-jitter (`WorldGen.cs:10170-10196`/`:17220`), the pyramid's main-item

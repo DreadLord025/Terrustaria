@@ -1684,6 +1684,11 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-g87: the three town-pet license flags (WorldFile.cs:1392-1394,
+        // v217) ride the round-trip at non-default values.
+        world.bought_cat = true;
+        world.bought_dog = true;
+        world.bought_bunny = true;
         world
     }
 
@@ -1910,6 +1915,10 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-g87: the three town-pet license flags (WorldFile.cs:1392-1394).
+        assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
+        assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
+        assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
     }
 
     #[test]
@@ -2049,6 +2058,12 @@ mod tests {
         tail[1906] = u8::from(world.lunar_apocalypse_is_up); // (`:1360`)
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
         tail[2025] = u8::from(world.downed_queen_slime); // (`:1396`)
+        // W4-g87: the three town-pet license flags (`WorldFile.cs:1392-1394`)
+        // sit right after the pre-hardmode quartet (2005..2020, 16 bytes):
+        // cat@2021, dog@2022, bunny@2023 (the empress byte follows at 2024).
+        tail[2021] = u8::from(world.bought_cat); // boughtCat (`:1392`)
+        tail[2022] = u8::from(world.bought_dog); // boughtDog (`:1393`)
+        tail[2023] = u8::from(world.bought_bunny); // boughtBunny (`:1394`)
         // The unlocks: 2026 deerclops + 1 slimeBlue = 2028 merchant, +1 demo,
         // +1 partyGirl; +4 dyeTrader/truffle/armsDealer/nurse, +1 princess.
         tail[2030] = u8::from(world.unlocked_party_girl); // (`:1401`)

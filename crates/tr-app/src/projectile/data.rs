@@ -793,6 +793,11 @@ pub const LIGHTS_BANE: u16 = 974;
 // `npc_ai_empress.rs` `EmpressRequest::Projectile` set). Ids verified against
 // `ID/ProjectileID.cs`; the aiStyle + box + flags against each `SetDefaults`
 // arm. The AI cores live in `projectile_ai_empress.rs` (unwired, code-only).
+/// `ProjectileID.HallowBossSplitShotCore` (871, `ProjectileID.cs:2296`) —
+/// the pellet-storm core, aiStyle 172 (`Projectile.cs:8380-8392`). W4-d18:
+/// the empress module's census left it unclaimed (no `AI_120` spawner);
+/// the AI arm is `projectile_ai_misc::ai_pellet_storm`.
+pub const HALLOW_BOSS_SPLIT_SHOT_CORE: u16 = 871;
 /// `ProjectileID.HallowBossLastingRainbow` (872, `ProjectileID.cs:2298`) —
 /// the lasting-rainbow ring bolt, aiStyle 173 (`Projectile.cs:8403-8415`).
 pub const HALLOW_BOSS_LASTING_RAINBOW: u16 = 872;
@@ -808,6 +813,77 @@ pub const FAIRY_QUEEN_LANCE: u16 = 919;
 /// `ProjectileID.FairyQueenSunDance` (923, `ProjectileID.cs:2400`) — the
 /// boss-tethered sun-dance beam, aiStyle 180 (`Projectile.cs:8757-8770`).
 pub const FAIRY_QUEEN_SUN_DANCE: u16 = 923;
+/// `ProjectileID.FairyQueenMagicItemShot` (931, `ProjectileID.cs:2416`) —
+/// the Nightglow's homing prismatic bolt, aiStyle 171's FRIENDLY weapon
+/// variant (`Projectile.cs:8826-8841`, `AI_171` `:45451-45558`). W4-d18
+/// tail: the empress boundary left it unrowed; the friendly arm is
+/// `projectile_ai_empress::fairy_weapon_tick`.
+pub const FAIRY_QUEEN_MAGIC_ITEM_SHOT: u16 = 931;
+/// `ProjectileID.ConstellationStar` (1039, `ProjectileID.cs:2632`) — the
+/// Constellation whip's homing star, aiStyle 171's other FRIENDLY weapon
+/// variant (`Projectile.cs:9807-9820`). W4-d18 tail: same friendly arm.
+pub const CONSTELLATION_STAR: u16 = 1039;
+
+// ===== W4-d18 tail: the residual armed-but-unrowed kinds (181-210 census) =====
+// These kinds' aiStyles already have dispatch arms on main (187/189/193),
+// but the kinds themselves had no `proj_data` row and no W4 branch claimed
+// them (the all-branch claim scan). The arms serve them once rowed.
+/// `ProjectileID.InsanityShadowFriendly` (964, `ProjectileID.cs:2482`) —
+/// the friendly Insanity shadow, aiStyle 187 (`Projectile.cs:9127-9142`,
+/// `AI_187_ShadowHand` `:42502-42591` — `ai_insanity_shadow`).
+pub const INSANITY_SHADOW_FRIENDLY: u16 = 964;
+// PROJ-171 retire (978 dup, keep-d12c): the `VOLCANO` const + row + the
+// ignoreWater/melee overlay terms + the witness block that were here are
+// DROPPED — d12c's 9e668d0f0 is the adjudicated superset (it alone adds
+// `proj_frames[978] = 5`, `Main.cs:8493`; the d19 verdict 6e80e4201). The
+// 978 row rides d12c; this branch keeps only the 964/1106 residuals. The
+// exact drop-hunk is published in research/26h for the merger.
+/// `ProjectileID.PalworldMinionFoxsparksFlames` (1106,
+/// `ProjectileID.cs:2766`) — the Foxsparks flamethrower, aiStyle 193
+/// (`Projectile.cs:10303-10315`, `AI_193_Flamethrower` `:41337-41401` —
+/// `ai_flamethrower`'s 1106 constants arm).
+pub const FOXSPARKS_FLAMES: u16 = 1106;
+
+// ===== W4-d18: the aiStyle-174 multisegment pets =====
+// `AI_174_MultisegmentPet` (`Projectile.cs:45345-45427`) — the three
+// worm-segment pets share one arm; the per-type keep-alive flags ride the
+// port's `pet_flags` array (the `projectile_ai026_b` precedent).
+/// `ProjectileID.EaterOfWorldsPet` (883, `ProjectileID.cs:2320`) —
+/// aiStyle 174 (`Projectile.cs:8474-8485`).
+pub const EATER_OF_WORLDS_PET: u16 = 883;
+/// `ProjectileID.DestroyerPet` (887, `ProjectileID.cs:2328`) —
+/// aiStyle 174 (`Projectile.cs:8496-8507`).
+pub const DESTROYER_PET: u16 = 887;
+/// `ProjectileID.LunaticCultistPet` (893, `ProjectileID.cs:2340`) —
+/// aiStyle 174 (`Projectile.cs:8531-8542`).
+pub const LUNATIC_CULTIST_PET: u16 = 893;
+
+// ===== W4-d18: the aiStyle-175 titanium storm shard =====
+/// `ProjectileID.TitaniumStormShard` (908, `ProjectileID.cs:2370`) —
+/// the orbiting defensive shard, aiStyle 175 (`Projectile.cs:8626-8637`,
+/// `AI_175_TitaniumStormShards` `:45319-45343`).
+pub const TITANIUM_STORM_SHARD: u16 = 908;
+
+// ===== W4-d18: the aiStyle-176 edgy lightning =====
+/// `ProjectileID.ScytheWhipProj` (916, `ProjectileID.cs:2386`) — the
+/// Dark Harvest's homing scythe bolt, aiStyle 176
+/// (`Projectile.cs:8676-8688`, `AI_176_EdgyLightning` `:45058-45095`).
+pub const SCYTHE_WHIP_PROJ: u16 = 916;
+
+// ===== W4-d18: the aiStyle-177 ice-whip slicers =====
+/// `ProjectileID.CoolWhipProj` (917, `ProjectileID.cs:2388`) — the
+/// Cool Whip's snowflake slicer, aiStyle 177 (`Projectile.cs:8701-8713`,
+/// `AI_177_IceWhipSlicer` `:45117-45265`).
+pub const COOL_WHIP_PROJ: u16 = 917;
+/// `ProjectileID.WeatherPainShot` (969, `ProjectileID.cs:2492`) — the
+/// Weather Pain's twister, aiStyle 177 (`Projectile.cs:9169-9181`).
+pub const WEATHER_PAIN_SHOT: u16 = 969;
+
+// ===== W4-d18: the aiStyle-178 fire explosion =====
+/// `ProjectileID.FireWhipProj` (918, `ProjectileID.cs:2390`) — the
+/// Firecracker's explosion flash, aiStyle 178 (`Projectile.cs:8689-8700`,
+/// `AI_178_FireExplosion` `:45267-45317`).
+pub const FIRE_WHIP_PROJ: u16 = 918;
 
 /// The projectile kinds `proj_data` carries — the set the atlas packs
 /// `Images/Projectile_{id}` for. Derived from the table itself rather than a
@@ -2307,6 +2383,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             EXPLOSIVES_BLAST => (260.0, 260.0, 16, -1, 2, 0, false, false, true, RESET_STATE),
             LANDMINE_BLAST => (128.0, 128.0, 16, -1, 2, 0, false, false, false, RESET_STATE),
             CANNON_BOMB => (10.0, 10.0, 1, -1, 2, 0, true, false, false, RESET_STATE),
+            // PROJ-171 retire cross-note (d6-lane, NOT fixed here): 601 is
+            // C# `PortalGunBolt` (`ProjectileID.cs:1756`), aiStyle 1
+            // (`Projectile.cs:6506`) — NOT cannon ammo. This M7-WIRE-2 row
+            // (blame 85e1d416e) carries penetrate -1 / alpha 0 where the true
+            // C# 601 keeps stock penetrate 1 (`:774`) + alpha 255 (`:6507`).
+            // The damage gate refuses 601 faithfully (`:12448`); the teleport
+            // AI (`PortalHelper.TryPlacingPortal` `:18099`) is unported. The
+            // row-shape fix + teleport port are the d6 wiring lane's — see
+            // ANALYSIS "W4-d18 Damage_CanDealDamage" (the 601 finding).
             CANNON_EXPLOSIVE => (
                 10.0,
                 10.0,
@@ -3335,6 +3420,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // ammo and then decline the spawn.
             85 => (6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false, RESET_STATE),
             145 => (6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false, RESET_STATE),
+            // W4-d18 — the seven solution sprays: `Projectile.cs:2350-2397`
+            // (146 Hallowed / 147 Corrupt / 148 Crimson / 149 Mushroom, four
+            // byte-identical blocks) and `:9633-9636` → `DefaultToSpray`
+            // (`:10691-10702`, 1015 Blue / 1016 Red / 1017 Purple — the
+            // TerraToilet solutions). Every block is the 145 shape VERBATIM:
+            // 6x6, aiStyle 31, friendly, `alpha = 255`, `penetrate = -1`,
+            // `extraUpdates = 2`, `tileCollide = false`, `ignoreWater = true`
+            // (the overlay below). Unclaimed on every pushed tip (f25 wired
+            // the conversion cells at its `ai_spray` but left the rows — its
+            // tip b004f4f1b has only 145; d4's tip the same); the `ai_spray`
+            // ladder's conversion types 1-7 stay no-ops here until f25's
+            // wiring merges (the counter/cap/spin run for every kind).
+            146..=149 | 1015..=1017 => (
+                6.0, 6.0, 31, -1, TIME_LEFT_DEFAULT, 2, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
             1088 => (20.0, 20.0, 16, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The Fairy Queen's shot 932 (`:8842-8856`): 10x10, aiStyle 181,
             // arrow, `penetrate = 5`, `timeLeft = 120`, `alpha = 0` and
@@ -3757,6 +3858,77 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // alpha 255, timeLeft 840.
             CTHULUNADO => (150.0, 42.0, 64, -1, 840, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
             // ===== S1-D-4: the Empress of Light's projectiles =====
+            // W4-d18 — `Projectile.cs:8380-8392`: the Split-Shot Core (871):
+            // 30x30, aiStyle 172, `alpha = 255`, `penetrate = -1`, hostile,
+            // `timeLeft = 240`, `tileCollide = false`, `ignoreWater = true`
+            // (the overlay below). The AI is the pellet-storm machine.
+            HALLOW_BOSS_SPLIT_SHOT_CORE => (
+                30.0, 30.0, 172, -1, 240, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // ===== W4-d18: the aiStyle-174 multisegment pets =====
+            // `Projectile.cs:8474-8485` — the Eater of Worlds Pet (883):
+            // 20x20, aiStyle 174, `penetrate = -1`, `timeLeft *= 5`
+            // (the stock 3600 → 18000), friendly, `ignoreWater = true`,
+            // `tileCollide = false`, `netImportant = true` (the overlays
+            // below). NOT a minion (no `minion`/`minionSlots` write).
+            EATER_OF_WORLDS_PET => (
+                20.0, 20.0, 174, -1, 18000, 0, false, false, false, RESET_STATE,
+            ),
+            // `Projectile.cs:8496-8507` — the Destroyer Pet (887): the
+            // identical block (20x20, 174, -1, ×5 life, the three flags).
+            DESTROYER_PET => (
+                20.0, 20.0, 174, -1, 18000, 0, false, false, false, RESET_STATE,
+            ),
+            // `Projectile.cs:8531-8542` — the Lunatic Cultist Pet (893):
+            // the identical block again.
+            LUNATIC_CULTIST_PET => (
+                20.0, 20.0, 174, -1, 18000, 0, false, false, false, RESET_STATE,
+            ),
+            // ===== W4-d18: the aiStyle-175 titanium storm shard =====
+            // `Projectile.cs:8626-8637` — the Titanium Storm Shard (908):
+            // 14x14, aiStyle 175, `tileCollide = false`, `ignoreWater =
+            // true` (the overlay below), friendly, `penetrate = 1`,
+            // `timeLeft = 3600`, `drawLayer = 3` (draw-only, no port field).
+            TITANIUM_STORM_SHARD => (
+                14.0, 14.0, 175, 1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE,
+            ),
+            // ===== W4-d18: the aiStyle-176 edgy lightning =====
+            // `Projectile.cs:8676-8688` — the Scythe Whip Proj (916):
+            // 18x18, aiStyle 176, friendly, `tileCollide = false`,
+            // `penetrate = 3`, the local-immunity pair (true, −1),
+            // `extraUpdates = 2`. `armorPenetration = 50` is damage-side
+            // (no port field — the melee port's slice).
+            SCYTHE_WHIP_PROJ => (
+                18.0, 18.0, 176, 3, TIME_LEFT_DEFAULT, 2, false, false, false,
+                (true, -1, false, -1, 0, 1.0),
+            ),
+            // ===== W4-d18: the aiStyle-177 ice-whip slicers =====
+            // `Projectile.cs:8701-8713` — the Cool Whip Proj (917):
+            // 30x30, aiStyle 177, friendly, `tileCollide = false`,
+            // `penetrate = -1`, local-immunity (true, 20), `coldDamage`
+            // + `armorPenetration = 30` are damage-side (no port fields).
+            COOL_WHIP_PROJ => (
+                30.0, 30.0, 177, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 20, false, -1, 0, 1.0),
+            ),
+            // `Projectile.cs:9169-9181` — the Weather Pain Shot (969):
+            // 56x64, aiStyle 177, friendly, magic (the overlay below),
+            // `tileCollide = true`, `penetrate = 15`, the id-static pair
+            // (true, 25), `armorPenetration = 10` damage-side.
+            WEATHER_PAIN_SHOT => (
+                56.0, 64.0, 177, 15, TIME_LEFT_DEFAULT, 0, true, false, false,
+                (false, -2, true, 25, 0, 1.0),
+            ),
+            // ===== W4-d18: the aiStyle-178 fire explosion =====
+            // `Projectile.cs:8689-8700` — the Fire Whip Proj (918):
+            // 96x96, aiStyle 178, friendly, `tileCollide = false`,
+            // `penetrate = -1`, the local-immunity pair (true, −1),
+            // `alpha = 255`. The stock 3600 life (the AI kills at 10).
+            FIRE_WHIP_PROJ => (
+                96.0, 96.0, 178, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:8403-8415` — the Lasting Rainbow (872): 30x30,
             // aiStyle 173, `alpha = 255`, `penetrate = -1`, hostile
             // (`friendly = false` rides the pool's `!friendly` proxy),
@@ -3796,6 +3968,49 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             FAIRY_QUEEN_SUN_DANCE => (
                 30.0, 30.0, 180, -1, 180, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // ===== W4-d18 tail: the aiStyle-171 FRIENDLY weapon variants =====
+            // `Projectile.cs:8826-8841` — the Nightglow bolt (931): 30x30,
+            // aiStyle 171, `alpha = 255`, `penetrate = 3`, friendly,
+            // `timeLeft = 240`, magic, `tileCollide = TRUE` (it BOUNCES —
+            // `HandleMovement` `:18592-18602`), `ignoreWater = true`,
+            // `extraUpdates = 1`, the local-immunity pair (true, 30).
+            FAIRY_QUEEN_MAGIC_ITEM_SHOT => (
+                30.0, 30.0, 171, 3, 240, 1, true, false, false,
+                (true, 30, false, -1, 255, 1.0),
+            ),
+            // `Projectile.cs:9807-9820` — the Constellation star (1039): the
+            // identical 30x30/171/alpha255/friendly/240/tileCollide-true/
+            // ignoreWater/extraUpdates-1 block EXCEPT `penetrate` stays the
+            // stock 1 (`:774`) and the local cooldown is -1 (`:9819`). No
+            // damage-class flag (the C# arm sets none).
+            CONSTELLATION_STAR => (
+                30.0, 30.0, 171, 1, 240, 1, true, false, false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
+            // ===== W4-d18 tail: the residual armed-but-unrowed kinds =====
+            // `Projectile.cs:9127-9142` — the friendly Insanity shadow (964):
+            // 40x40, aiStyle 187, `alpha = 255`, `penetrate = 3`, friendly,
+            // local-immunity (true, -1), `ignoreWater = true`,
+            // `tileCollide = false`, `extraUpdates = 1`, `scale = 0.7`.
+            // `armorPenetration = 20` is damage-side (no port field). The
+            // stock 3600 life (the AI's variation machine kills it).
+            INSANITY_SHADOW_FRIENDLY => (
+                40.0, 40.0, 187, 3, TIME_LEFT_DEFAULT, 1, false, false, false,
+                (true, -1, false, -1, 255, 0.7),
+            ),
+            // PROJ-171 retire (978 dup, keep-d12c): the `VOLCANO => (...)`
+            // row that sat here is DROPPED — d12c's 9e668d0f0 owns the 978
+            // row (the superset with `proj_frames[978] = 5`). The 964/1106
+            // residuals stay; the 978 spawn declines here until d12c merges.
+            // `Projectile.cs:10303-10315` — the Foxsparks flames (1106):
+            // 6x6, aiStyle 193, friendly, `alpha = 255`, `penetrate = 4`,
+            // `extraUpdates = 2`, the ID-static pair (true, 15).
+            // `drawLayer = 4` is render-side (no port field). The stock
+            // tileCollide true / ignoreWater false (`:775`/`:752`).
+            FOXSPARKS_FLAMES => (
+                6.0, 6.0, 193, 4, TIME_LEFT_DEFAULT, 2, true, false, false,
+                (false, -2, true, 15, 255, 1.0),
             ),
             // The Frost Moon family (S1-D-4, `ProjectileID.cs:1244-1258`):
             // the 345/346/348/349/350/351/352 rows are the S1-F-13c wiring
@@ -4166,6 +4381,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
+            // W4-d18: the multisegment pets' `netImportant = true`
+            // (`Projectile.cs:8484`/`:8506`/`:8541`).
+            || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -4229,12 +4447,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
                 kind,
-                HALLOW_BOSS_LASTING_RAINBOW
+                HALLOW_BOSS_SPLIT_SHOT_CORE
+                    | HALLOW_BOSS_LASTING_RAINBOW
                     | HALLOW_BOSS_RAINBOW_STREAK
                     | HALLOW_BOSS_DEATH_AURORA
                     | FAIRY_QUEEN_LANCE
                     | FAIRY_QUEEN_SUN_DANCE
             )
+            // W4-d18 tail: the two aiStyle-171 weapon variants'
+            // `ignoreWater = true` (`Projectile.cs:8837`/`:9816`).
+            || matches!(kind, FAIRY_QUEEN_MAGIC_ITEM_SHOT | CONSTELLATION_STAR)
+            // W4-d18 tail: the friendly Insanity shadow (`:9137`) sets
+            // `ignoreWater = true`; the Foxsparks flames (1106) do NOT
+            // (`:10303-10315` has no line). PROJ-171 retire: the 978
+            // Volcano's `ignoreWater` term (`:9260`) is DROPPED with its
+            // row (keep-d12c — d12c's 9e668d0f0 owns the 978 overlay).
+            || kind == INSANITY_SHADOW_FRIENDLY
+            // W4-d18: the multisegment pets' `ignoreWater = true`
+            // (`Projectile.cs:8482`/`:8504`/`:8539`).
+            || matches!(kind, EATER_OF_WORLDS_PET | DESTROYER_PET | LUNATIC_CULTIST_PET)
+            // W4-d18: the titanium storm shard's `ignoreWater = true`
+            // (`Projectile.cs:8629`).
+            || kind == TITANIUM_STORM_SHARD
             // `Projectile.cs:6868`/`:6883`/`:6898` — the moon-lord drop
             // shots' `ignoreWater = true` (S1-D-4).
             || matches!(kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL)
@@ -4261,7 +4495,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == GOLF_CLUB_HELPER
             // W4-c3 — `Projectile.cs:3903`: the Shadowflames bolt (299) sets
             // `ignoreWater = true`.
-            || kind == SHADOWFLAMES,
+            || kind == SHADOWFLAMES
+            // W4-d18 — the seven solution sprays' `ignoreWater = true`
+            // (`Projectile.cs:2358`/`:2370`/`:2382`/`:2394` — the four
+            // 146-149 blocks — and `DefaultToSpray` `:10701` for
+            // 1015-1017). The 145 row's dropped alpha/ignoreWater is the
+            // pre-existing M3-ITEM-6 deviation (its row comment), unchanged.
+            || matches!(kind, 146..=149 | 1015..=1017),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4296,6 +4536,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // PROJ-171 retire: the 978 Volcano's `melee = true`
+                    // term (`Projectile.cs:9267`) is DROPPED with its row
+                    // (keep-d12c — d12c's 9e668d0f0 owns the 978 melee flag).
             ),
         ranged: matches!(
             kind,
@@ -4361,6 +4604,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // W4-c3 — the Shadowflames bolt's `magic = true`
                 // (`Projectile.cs:3902`).
                 | SHADOWFLAMES
+            // W4-d18: the Weather Pain twister's `magic = true`
+            // (`Projectile.cs:9175`).
+                | WEATHER_PAIN_SHOT
+            // W4-d18 tail: the Nightglow bolt's `magic = true`
+            // (`Projectile.cs:8835`); the Constellation star sets none.
+                | FAIRY_QUEEN_MAGIC_ITEM_SHOT
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4634,6 +4883,24 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // (`:60240-60247`).
         SKELETRON_PET => 10,
         SKELETRON_PRIME_PET => 11,
+        // W4-d18: the multisegment pets' sheets (`Main.cs:8671` 883 → 3,
+        // `:8675` 887 → 3, `:8681` 893 → 4). `AI_174` writes no `frame`
+        // (the worm segments draw from the trail, not the sheet rows).
+        EATER_OF_WORLDS_PET | DESTROYER_PET => 3,
+        LUNATIC_CULTIST_PET => 4,
+        // W4-d18: the titanium storm shard's 12-frame sheet
+        // (`Main.cs:8690`) — the first-tick `rand.Next(12)` frame roll
+        // (`Projectile.cs:45330`) picks one row.
+        TITANIUM_STORM_SHARD => 12,
+        // W4-d18: the scythe whip bolt's 6-frame sheet (`Main.cs:8453`)
+        // — the 3-tick frame machine's `rand.Next(projFrames)` roll
+        // (`Projectile.cs:45088`) picks one row.
+        SCYTHE_WHIP_PROJ => 6,
+        // W4-d18: the Weather Pain twister's 8-frame sheet
+        // (`Main.cs:8707`) — the 5-tick frame machine wraps at it
+        // (`Projectile.cs:45233`). The 917 snowflake has no override
+        // (the init loop's 1 — its arm never reads `frame`).
+        WEATHER_PAIN_SHOT => 8,
         // AI_026 slice C: the slime minion's 12-frame sheet
         // (`Main.cs:8612`) — the fly-out frames 8-11
         // (`Projectile.cs:61209`) and the ground frames 0-7
@@ -4804,6 +5071,11 @@ mod tests {
         // flag (`:2338-2349`/`:10145-10152`) — the census stays exact.
         assert_eq!(flags(145), (false, false, false));
         assert_eq!(flags(1088), (false, false, false));
+        // W4-d18 — the seven solution sprays set none either
+        // (`:2350-2397`/`DefaultToSpray` `:10691-10702`).
+        for k in (146..=149).chain(1015..=1017) {
+            assert_eq!(flags(k), (false, false, false), "kind {k}");
+        }
         // The magic spells.
         assert_eq!(flags(CRYSTAL_STORM), (false, false, true));
         assert_eq!(flags(SPARK), (false, false, true));
@@ -4833,6 +5105,35 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// W4-d18 — the seven solution-spray rows (`Projectile.cs:2350-2397`
+    /// the four 146-149 blocks, `:9633-9636` → `DefaultToSpray`
+    /// `:10691-10702` for 1015-1017): every block is the 145 shape
+    /// verbatim — 6x6, aiStyle 31, penetrate −1, the stock 3600 life (the
+    /// arm caps it at 133), extraUpdates 2, tileCollide false, alpha 255,
+    /// ignoreWater true, NO class flag, NO immunity pair. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_d18_the_solution_spray_rows_are_the_145_shape() {
+        for k in (146..=149u16).chain(1015..=1017) {
+            let d = proj_data(k).unwrap_or_else(|| panic!("kind {k} row"));
+            assert_eq!((d.w, d.h), (6.0, 6.0), "kind {k} box");
+            assert_eq!(d.ai_style, 31, "kind {k} style");
+            assert_eq!(d.penetrate, -1, "kind {k} penetrate");
+            assert_eq!(d.time_left, 3600, "kind {k} stock life");
+            assert_eq!(d.extra_updates, 2, "kind {k} extraUpdates");
+            assert!(!d.tile_collide, "kind {k} tileCollide false");
+            assert!(d.ignore_water, "kind {k} ignoreWater (`:2358`/`:10701`)");
+            assert_eq!(d.alpha, 255, "kind {k} alpha (`:2356`/`:10697`)");
+            assert!(!d.uses_local_immunity && !d.uses_id_static_immunity, "kind {k} stock immunity");
+            assert!(!d.melee && !d.ranged && !d.magic, "kind {k} no class flag");
+        }
+        // The rows enter the atlas pack set (the sheets exist for all seven).
+        let spawnable = spawnable_kinds();
+        for k in (146..=149u16).chain(1015..=1017) {
+            assert!(spawnable.contains(&k), "kind {k} packs");
+        }
     }
 
     #[test]
