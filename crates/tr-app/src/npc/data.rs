@@ -6395,11 +6395,11 @@ impl NpcKind {
             // W4-c10 — the waterfowl family's `lifeMax = 5` rows
             // (`NPC.cs:13620`/`:13632`/`:13644`/`:13656`/`:16746`/
             // `:16758`/`:16816`/`:16828`).
+            // E8 merge: Seagull/Grebe's lifeMax rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's lifeMax rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 5,
@@ -7050,11 +7050,11 @@ impl NpcKind {
             // W4-c10 — the waterfowl family's `damage = 0` rows
             // (`NPC.cs:13618`/`:13630`/`:13642`/`:13654`/`:16744`/
             // `:16756`/`:16814`/`:16826`).
+            // E8 merge: Seagull/Grebe's damage rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's damage rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0,

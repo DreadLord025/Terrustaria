@@ -81,6 +81,9 @@ mod npc_ai3_speeds;
 mod npc_ai_fighter_scan;
 mod npc_ai_drippler;
 mod npc_ai_dungeon_shooter;
+// W4-c9: the gold town-critters' AI_007 wander/hop subset (GoldBunny 443 /
+// GoldFrog 445 / GoldMouse 447) - the TownCritter walk core, the housing/
+// danger states deferred (see the module doc).
 mod npc_ai_critter;
 mod npc_ai_ghost;
 mod npc_ai_poltergeist;
@@ -140,7 +143,6 @@ mod npc_ai_style66;
 // GoldButterfly 444 wiring) + the d38 TownCritter wander/hop subset
 // (the GoldBunny/GoldFrog/GoldMouse 443/445/447).
 mod npc_ai_style65;
-mod npc_ai_critter;
 mod npc_ai_style72;
 mod npc_ai_style73;
 mod npc_ai_style74;
@@ -154,10 +156,6 @@ mod npc_ai_bat;
 mod npc_ai_eye;
 mod npc_ai_golem;
 mod npc_ai_slime;
-// W4-c9: the gold town-critters' AI_007 wander/hop subset (GoldBunny 443 /
-// GoldFrog 445 / GoldMouse 447) - the TownCritter walk core, the housing/
-// danger states deferred (see the module doc).
-mod npc_ai_critter;
 // S1-D-3 cultist: UNWIRED Lunatic Cultist machine (AI_084, 439/440) -
 // the live npc.rs::update_lunatic_cultist stub stays byte-identical
 // until the wiring round (the npc_ai_fishron precedent; states 4/7/8

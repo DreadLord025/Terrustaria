@@ -5088,11 +5088,11 @@ impl Npc {
             // (`NPC.cs:13613-13636`/`:13637-13660`/`:16739-16762`/
             // `:16809-16832`), so the class default 1f stands (`:8533`) —
             // the stock `_ => 0.4` below never sees them.
+            // E8 merge: Seagull/Grebe's kb rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's kb rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 1.0,
@@ -5752,11 +5752,11 @@ impl Npc {
             // W4-c10 — the waterfowl family's `defense = 0` rows
             // (`NPC.cs:13619`/`:13631`/`:13643`/`:13655`/`:16745`/
             // `:16757`/`:16815`/`:16827`).
+            // E8 merge: Seagull/Grebe's defense rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's defense rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0,
@@ -6415,11 +6415,11 @@ impl Npc {
             NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => 0.0,
             // W4-c10 — the waterfowl family writes no value row (the
             // head's `value = 0f`, `NPC.cs:8544`).
+            // E8 merge: Seagull/Grebe's value rows are d42's above.
             NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
-            // E8 merge: Seagull/Grebe's value rows are d42's above.
-            NpcKind::Duck
+            | NpcKind::Duck
             | NpcKind::Duck2
             | NpcKind::DuckWhite
             | NpcKind::DuckWhite2 => 0.0,
