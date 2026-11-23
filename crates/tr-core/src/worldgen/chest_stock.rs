@@ -34,8 +34,10 @@ pub struct ChestCtx {
     /// `flag6` — the living-tree family (wall 244 at the anchor,
     /// `:36135-36144`).
     pub living_tree: bool,
-    /// The pyramid probe (wall 187 — the C#'s own wall probe for the
-    /// structure's chest).
+    /// The pyramid probe (walls 187/34 — the shape-level port's sandstone
+    /// 187 and the faithful `Pyramid` chamber's sandstone-brick wall 34,
+    /// W4-c33; the C#'s own `flag11` is the 848/857/934 main-item test
+    /// `:36172-36175`, which the pre-set main carries).
     pub pyramid: bool,
     /// `flag3`'s hardened-sand half (wall 216 — the C#'s
     /// `IsUndergroundDesert` probe's second wall).
@@ -53,6 +55,8 @@ pub struct ChestCtx {
     pub dungeon: bool,
     /// The sky probe (wall 73 the cloud disc / wall 82 the disc-wall house
     /// interior — the skyware house family, W4-g44's verbatim IslandHouse).
+    /// W4-c33d: the stocking's flag12 is style/main based, this probe is a
+    /// POSITIONAL read and gates no loot row.
     pub sky: bool,
     /// `flag13` — the water family (the underwater chest probe).
     pub water: bool,
@@ -131,7 +135,7 @@ pub fn context_at(world: &World, x: i32, y: i32) -> ChestCtx {
     ChestCtx {
         jungle: near(60),
         living_tree: wall_near(244),
-        pyramid: wall_near(187),
+        pyramid: wall_near(187) || wall_near(34),
         desert: wall_near(216),
         mahogany: wall_near(63),
         ice: near(147) || near(161) || near(162) || near(197),
@@ -140,8 +144,9 @@ pub fn context_at(world: &World, x: i32, y: i32) -> ChestCtx {
         dungeon: wall_near_where(&dungeon_wall),
         // W4-g44: the verbatim IslandHouse interior is the disc wall 82
         // (`WorldGen.cs:79222`); the cloud disc flood keeps wall 73. Both
-        // read as the skyware family (the C# `flag12` gates on the house's
-        // main item / style 13, which the port probes by the house walls).
+        // read as the positional sky probe. W4-c33d: the probe no longer
+        // gates any loot row — the stocking's flag12 is the style/main
+        // test (`:36176`), computed in `chest_gen.rs::stock_chest`.
         sky: wall_near(73) || wall_near(82),
         water: near(4869) || wall_near(24),
     }
@@ -178,6 +183,18 @@ pub struct ChestSiteEvent {
     pub world_surface: f64,
     pub rock_layer: f64,
     pub height: i32,
+    /// `GenVars.lavaLine` (`TerrainPass.cs:211-236`) — the deep band's
+    /// lava-charm gate `flag24` (`WorldGen.cs:36882/:36892`). The site
+    /// threads the pipeline's drawn value; the load-time/test shims fall
+    /// back to the vanilla mid-world estimate (the documented residual).
+    pub lava_line: i32,
+    /// `SavedOreTiers.Silver == 168` (`WorldGen.cs:37246`) — the deepest
+    /// band's bullet row picks the TungstenBullet 4915 over the
+    /// SilverBullet 278 on a tungsten world.
+    pub silver_is_tungsten: bool,
+    /// The world's rolled ore tiers (`WorldGen.Reset` `:11266-11297`) —
+    /// the bar rows read the tier-aware `GenVars.*Bar` ids through it.
+    pub ore_tiers: crate::ores::SavedOreTiers,
 }
 
 /// The pass's stream, as the stocking sees it — the C#'s `genRand` draws
@@ -259,6 +276,9 @@ pub(crate) fn stock_placed_chest(
         world_surface: world.world_surface,
         rock_layer: world.rock_layer,
         height: world.height,
+        lava_line: world.lava_line,
+        silver_is_tungsten: world.ore_tiers.silver == 168,
+        ore_tiers: world.ore_tiers,
     };
     let rows = hook(&ev, rng);
     world.chests.push(crate::save::ChestRecord {

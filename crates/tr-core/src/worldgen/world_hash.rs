@@ -639,6 +639,26 @@ mod tests {
     // 312) / [rockLayer, 312)) — the tile-227 dye, the 82-84 stage rolls
     // and the 656/752 objects move the hash. Re-pin DEFERRED to the merge
     // gate; a == b stays green.
+    // W4-c33 pass 2 (code-only): the faithful `Pyramids` rewrite moves this
+    // pin too — the pass now consumes the published pyr anchors on its own
+    // `pass_rng("Pyramids")` stream (was `srng`: the later srng consumers —
+    // pots, beehives, cave houses — shift), and the 151 hull replaces the
+    // shape-level 480 wherever an anchor passes the sand-column gate.
+    // Stale-by-design; the gate re-pins it (a == b stays).
+    // W4-c33 pass 3 (code-only; MERGE KEEP-ONE matrix-88 §2.9: the pass
+    // body is d103's water_chests.rs — the c33 pass_underwater_chests copy
+    // dropped, the d103 slot after `surface chests` stands): its own stream
+    // draws nothing from the
+    // shared ledgers, but the placed style-17 chests retype water cells
+    // (and the trySlope flatten touches the floor slopes), so this pin
+    // moves by design wherever the scatter finds water. Stale-by-design;
+    // the gate re-pins it (a == b stays).
+    // W4-c33 pass 4 (code-only): the Water Plants j-loop (the lily/cattail/
+    // bamboo arms) joins ahead of the seaweed walk on the SAME
+    // `pass_rng("Water Plants")` stream — the deferred draws now interleave
+    // with the seaweed rolls (the documented d103 deferral closes), and the
+    // 518/519/571 plants retype surface water cells. Stale-by-design; the
+    // gate re-pins it (a == b stays).
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -1029,6 +1049,41 @@ mod tests {
     // and the budget loops place the 2 glow tulips (656) + the 6 chillet
     // eggs (752) — this pin moves BY DESIGN. The pass draws only its own
     // fresh stream. Re-pin DEFERRED to the merge gate; a == b stays green.
+    // W4-c33 pass 2 (2026-11-20, code-only): the faithful `Pyramids`
+    // rewrite (`WorldGen.cs:15360-15460` + `Pyramid` `:27669-27971`) —
+    // the anchor loop over `GenVars.PyrX/PyrY/numPyr` (the Dunes/Ocean
+    // Sand producers), the 151 sandstone-brick hull with the wall-34
+    // sweep, the entrance shaft, the zig-zag tunnel with the chamber
+    // (the Pharaoh chest via the shared `AddBuriedChest` half, the 185
+    // piles, the four 91 banners, the 28 pot row) and the post-chamber
+    // surface tunnel — on its own `pass_rng("Pyramids")` stream, moved
+    // to the vanilla slot after `ocean caves`. The pyramid tiles/walls
+    // move directly, the srng tail shifts, and the downstream
+    // tile-dependent passes re-roll around the new hulls. Stale-by-
+    // design; the re-pin is DEFERRED to the merge gate (no compiler on
+    // this branch). The a == b determinism halves stay untouched.
+    // W4-c33 pass 3 (2026-11-21, code-only; MERGE KEEP-ONE matrix-88 §2.9:
+    // d103's water_chests.rs owns the pass — the c33 copy dropped, the
+    // slot note stands): `UnderwaterChests` / "Water
+    // Chests" (`WorldGen.cs:17245-17355`) lands — the ocean-cave treasure
+    // loop (the NextFromList main, the widening jitter box, the liquid>250
+    // gate) + the 9·width/4200 scatter (the Next(10) 863 override, the
+    // 186/4404/277/187 cycle, the two 10000-cap water hunts, the beach-band
+    // trySlope) through the shared `AddBuriedChest` half (style 17), on its
+    // own `pass_rng("Water Chests")` stream at the vanilla slot after
+    // `chests`. The style-17 chests + the flattened floor slopes move the
+    // water cells directly; the flag5 loot pair (4425/4460) joins the
+    // stocking hook. Stale-by-design; the re-pin is DEFERRED to the merge
+    // gate. The a == b halves stay untouched.
+    // W4-c33 pass 4 (2026-11-21, code-only): the lily/cattail/bamboo arms
+    // of `LilypadsCattailsBambooAndSeaweed` (`WorldGen.cs:21988-22017` +
+    // `PlaceLilyPad` `:59086-59200`, `PlaceCatTail` `:58629-58742`,
+    // `GrowCatTail` `:58974-59084`, `PlaceBamboo` `:58391-58445`) join
+    // `ocean.rs::water_plants` ahead of the seaweed walk — the d103
+    // deferral closes, the deferred draws join the same stream in vanilla
+    // order, the 518/519/571 plants grow on the surface waters (the 571
+    // frame-important boot bit lands). Stale-by-design; the re-pin is
+    // DEFERRED to the merge gate. The a == b halves stay untouched.
     const DEFAULT_WORLD: u32 = 3647283075;
     // W4-d107 (2026-11-20, code-only): the special-seed branches land in
     // `caves.rs` (the drunk ore tier re-rolls + evil split + sky-band gate +

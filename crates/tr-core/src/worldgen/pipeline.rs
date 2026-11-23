@@ -1524,8 +1524,14 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("shimmer", "Shimmer", step_shimmer),
     // W4-g36 A2/A3 KEEP-ONE (matrix-88 §2.2/§2.3): Clean Up Dirt + Dirt Rock
     // Wall Runner are d102-owned (passes2.rs, unmerged at this gate) — g36's
-    // micro_finish copies dropped; the slots re-land with d102. `fragile ice`
-    // follows shimmer directly on the merged chain.
+    // micro_finish copies dropped; the slots re-land with d102.
+    // The vanilla Pyramids slot (`WorldGen.cs:15360`): after Create Ocean
+    // Caves (`:15167`) / Shimmer (`:15195`) / Clean Up Dirt (`:15246`,
+    // unported) and before Dirt Rock Wall Runner (`:15461`, unported) —
+    // the W4-c33 move (was after `wet jungle`). The pass reads only the
+    // published pyr anchors + the sand columns, so the move is world-safe;
+    // its own stream keeps every other step's ledger intact.
+    step!("pyramids", "Pyramids", step_pyramids),
     step!("fragile ice", "Ice", step_fragile_ice),
     step!(
         "underground jungle trees",
@@ -1535,12 +1541,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("exposed gems", "Gems In Ice Biome", step_exposed_gems),
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
-    // W4-g37 B2/B3 KEEP-ONE (matrix-88 §2.8/§2.9): Surface Chests + Water
-    // Chests are d103-owned (buried_chest.rs / water_chests.rs) — g37's
-    // passes_b copies dropped; the d103 slots sit after `statues` below.
+    // W4-g37 B2/B3 + W4-c33 KEEP-ONE (matrix-88 §2.8/§2.9): Surface Chests +
+    // Water Chests are d103-owned (buried_chest.rs / water_chests.rs) —
+    // g37's passes_b copies AND c33's pass_underwater_chests copy dropped;
+    // the d103 slots sit after `statues` below.
     // The vanilla slots (`WorldGen.cs:17356`, `:17428`, `:17472`): after the
-    // chest family (the `UnderwaterChests` environs `:17245`, which the port's
-    // "chests" step covers) and before the temple (`:17701`) — the M5-STRUCT-5
+    // chest family and before the temple (`:17701`) — the M5-STRUCT-5
     // insertion. Everything these three passes key on (the cave pockets of
     // `Tunnels`, the gem veins of `Shinies`, the hive walls) already exists.
     step!("spider caves", "Spider Caves", step_spider_caves),
@@ -1551,7 +1557,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // (`:15750`), before the temple (`:15834`) — the M5-BIOME phase-5
     // insertion.
     step!("wet jungle", "Wet Jungle", step_wet_jungle),
-    step!("pyramids", "Pyramids", step_pyramids),
     step!("pots", "Pots", step_pots),
     // W4-g37 B7/B8/B9 KEEP-ONE (matrix-88 §2.13/§2.14/§2.15): Hellforge +
     // Spreading Grass + Surface Ore and Stone are d104-owned (unmerged at
@@ -2116,6 +2121,9 @@ fn step_terrain_fill(
     };
     gv.water_line = water_line;
     gv.lava_line = lava_line;
+    // The chest-stocking seam reads it off the World (the `ChestSiteEvent`
+    // `lava_line` field, W4-c33) — publish the drawn value beside the tiers.
+    world.lava_line = lava_line;
     gv.layers = Some(layers);
 }
 
@@ -2712,21 +2720,38 @@ fn step_altars(
     structures::pass_altars(world, opts.crimson, &mut streams.srng);
 }
 
+// W4-c33 KEEP-ONE (research/120 §1/§9 FINAL): c33's `step_water_chests`
+// adapter + `structures::pass_underwater_chests` body are DROPPED here.
+// d103 owns the Water Chests pass (`water_chests.rs::pass_water_chests`);
+// its step adapter sits in the vanilla slot after `statues` below. The
+// c33 stocking superset composes through the shared `ChestSiteEvent` seam
+// (research/120 §4), so no c33 code is lost.
+
+/// `Pyramids` (`WorldGen.cs:15360-15460`) — the faithful anchor-loop port
+/// (W4-c33): consumes `GenVars.PyrX/PyrY/numPyr` (the Dunes + Ocean Sand
+/// producers publish them), on its own `pass_rng("Pyramids")` stream (was
+/// the shared `srng` — the later `srng` consumers shift, the accepted world
+/// change). The step moves to the vanilla slot after `ocean caves`
+/// (Shimmer/Clean Up Dirt are unported; `:15360` sits between them and
+/// `DirtRockWallRunner` `:15461`).
 fn step_pyramids(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
+    let dungeon_x = gv.spans().dungeon_x;
+    let drunk = opts.flags.contains(crate::seeds::SeedFlags::DRUNK);
     structures::pass_pyramids(
         world,
-        map.desert_start,
-        map.desert_end,
-        &map.heights,
-        &mut streams.srng,
+        &gv.pyr_x,
+        &gv.pyr_y,
+        gv.num_pyr,
+        dungeon_x,
+        drunk,
+        &mut streams.pass_rng("Pyramids"),
         streams.chest_stock.as_deref_mut(),
     );
 }
@@ -4296,8 +4321,9 @@ pub(crate) fn boot_statics(world: &mut World) {
     // The water plants (`Main.cs:7366-7378`): the lily pad 518, the cattail
     // 519, the seaweed 549 and the sea oats 529 are frame-important, so the
     // framer keeps the frame rows their growth arms write (`GrowCatTail`
-    // `WorldGen.cs:58974-59082`, `GrowCheckSeaweed` `:58917`).
-    for kind in [518u16, 519, 529, 549] {
+    // `WorldGen.cs:58974-59082`, `GrowCheckSeaweed` `:58917`). The bamboo
+    // 571 joins with W4-c33's lily/cattail/bamboo arms (`Main.cs:7238`).
+    for kind in [518u16, 519, 529, 549, 571] {
         world.frame_important[kind as usize] = true;
     }
     // `Main.tileFrameImportant` boot statics for the M1.4-TO-4 families
@@ -4838,6 +4864,12 @@ mod tests {
         // after `sunflowers`.
         // W4-g38 C8: + `dye plants` (vanilla "Dye Plants",
         // `WorldGen.cs:19981`) after `herbs`.
+        // W4-c33: the faithful `pyramids` moves to its vanilla slot
+        // (`WorldGen.cs:15360`) after `shimmer` (a move, not an addition —
+        // the count stays). KEEP-ONE (matrix-88 §2.9): c33's `water chests`
+        // registration between `chests` and `spider caves` dropped — the
+        // d103 water_chests.rs slot after `surface chests` stands (already
+        // counted above).
         assert_eq!(names.len(), 95);
         let mut sorted = names.clone();
         sorted.sort_unstable();
@@ -4899,17 +4931,23 @@ mod tests {
                 "gravitating sand",
                 "ocean caves",
                 "shimmer",
+                // W4-c33: the faithful Pyramids anchor loop takes its
+                // vanilla slot (`WorldGen.cs:15360`, after Create Ocean
+                // Caves/Shimmer/Clean Up Dirt).
+                "pyramids",
                 "fragile ice",
                 "underground jungle trees",
                 "exposed gems",
                 "jungle shrines",
                 "chests",
+                // W4-c33 KEEP-ONE (matrix-88 §2.9): the c33 water-chests
+                // registration dropped — the d103 slot after `surface
+                // chests` below stands.
                 "spider caves",
                 "gem caves",
                 "moss",
                 "altars",
                 "wet jungle",
-                "pyramids",
                 "pots",
                 "beehives",
                 "hell forts",
@@ -5183,20 +5221,23 @@ mod tests {
     }
 
     /// DW-5.6: the four M5-STRUCT-5 cave-decor steps sit in their vanilla
-    /// positions — `spider caves` + `gem caves` + `moss` between `chests` and
-    /// `altars` (vanilla Underwater Chests `:17245` → Spider Caves `:17356`
-    /// → Gem Caves `:17428` → Moss `:17472` → Jungle Temple `:17701`, with
-    /// the port's `lihzahrd temple` standing in for the temple), and
-    /// `webs and honey` immediately before `mushroom and jungle plants`
-    /// (vanilla Webs And Honey `:19995` → Glowing Mushrooms and Jungle
-    /// Plants `:20122`).
+    /// positions — `spider caves` + `gem caves` + `moss` between the chest
+    /// family and `altars` (vanilla Underwater Chests `:17245` → Spider
+    /// Caves `:17356` → Gem Caves `:17428` → Moss `:17472` → Jungle Temple
+    /// `:17701`, with the port's `lihzahrd temple` standing in for the
+    /// temple; the d103 `water chests` slot sits late over the buried-chest
+    /// core — W4-c33's between-chests registration dropped, matrix-88
+    /// §2.9), and `webs and honey` immediately
+    /// before `mushroom and jungle plants` (vanilla Webs And Honey
+    /// `:19995` → Glowing Mushrooms and Jungle Plants `:20122`).
     #[test]
     fn test_DW_5_6_cave_decor_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        // W4-g37 B2/B3: the chest-family grouping inserts `surface chests` +
-        // `water chests` between `chests` and `spider caves`.
-        assert_eq!(pos("spider caves"), pos("water chests") + 1);
+        // W4-g37 B2/B3 + W4-c33 KEEP-ONE (matrix-88 §2.9): the d103 `water
+        // chests` rides after `surface chests` (the DW-4.4 witness pins that
+        // adjacency); `spider caves` follows `chests` directly here.
+        assert_eq!(pos("spider caves"), pos("chests") + 1);
         assert_eq!(pos("gem caves"), pos("spider caves") + 1);
         assert_eq!(pos("moss"), pos("gem caves") + 1);
         assert_eq!(names[pos("moss") + 1], "altars");

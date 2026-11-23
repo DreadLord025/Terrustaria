@@ -109,6 +109,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "underground jungle trees" => PassMessage::Gen(83),
         // WorldGen.cs:17215.
         "chests" => PassMessage::Gen(32),
+        // WorldGen.cs:17249 (UnderwaterChests).
+        "water chests" => PassMessage::Gen(33),
         // WorldGen.cs:17361.
         "spider caves" => PassMessage::Gen(64),
         // WorldGen.cs:17432 (the same Lang.gen[64] row).

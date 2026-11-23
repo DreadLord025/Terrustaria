@@ -920,8 +920,9 @@ pub(crate) fn pass_stalac(
 }
 
 /// `WorldGen.PlacePot` (`WorldGen.cs:54066-54114`) — the 2x2 seat validation
-/// plus the style frame pair.
-fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bool {
+/// plus the style frame pair. Shared with the pyramid chamber's pot row
+/// (W4-c33).
+pub(crate) fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bool {
     // `:54069-54072` — the remix centre veto (W4-g41 FINAL): the 0.48-0.52
     // x band below `maxTilesY - 220` refuses the pot. The C# sets
     // `flag = false` and keeps scanning, but a false flag returns before
@@ -969,8 +970,15 @@ fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bo
     true
 }
 
-/// `WorldGen.PlaceSmallPile` (`WorldGen.cs:46815-46873`).
-fn place_small_pile(world: &mut World, x: i32, y: i32, pile_style: i32, pile_size: i32) -> bool {
+/// `WorldGen.PlaceSmallPile` (`WorldGen.cs:46815-46873`). Shared with the
+/// pyramid chamber's pile scatter (W4-c33).
+pub(crate) fn place_small_pile(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    pile_style: i32,
+    pile_size: i32,
+) -> bool {
     let frame_y = (pile_size * 18) as i16;
     let frame_x = (pile_style * 18) as i16;
     // `Tile.anyLava` (`Tile.cs:410-415`) — a positive amount AND the lava
@@ -2733,6 +2741,7 @@ mod tests {
             w.tiles.clone()
         };
         assert_eq!(build(0x5B1D), build(0x5B1D), "a == b for the validator pass");
+    }
     // --- W4-d106 R4 witnesses (written NOT run — code-only branch) ----------
 
     /// The Stalac pass is deterministic (a == b on the same seed) over a

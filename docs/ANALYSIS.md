@@ -17164,6 +17164,58 @@ The `num10` (slot-0 main item) dispatcher of `AddBuriedChest`
   (832/4281, `:29303-29306`) вЂ” the port's living trees and pyramids place
   plain style-0 chests, so the style-gated arms have no anchor to read.
 
+### W4-c33d chest-gen FINAL (2026-11-21, code-only — research/154 + /120)
+
+The dispatch census (every `AddBuriedChest` caller) found **no unclaimed
+oasis-chest or underwater-chest arm**: the Oasis pass places no chest (its
+water is Desert-zone; the loot is the flag3 underground-desert chests +
+the 61 music arm), and the Water Chests stocking is complete (the flag5
+pair + all six mains). The only chest-loot arms outside the hook are the
+seed finish-sweeps (`ImproveAllChestContents` `:24716` — ported;
+`PutMonsterVanityInChests` `:24782`, `DoPortalGunInChests` `:2995`,
+`DoErrorWorldFinish` `:1297` — d107 seed scope). Four gate defects fixed:
+
+- **flag12 is STYLE/MAIN based** (`:36176-36178`: kind 21 && (num9 == 13 ||
+  num10 ∈ {159, 65, 158, 2219})), NOT the wall-73 `ctx.sky` probe. The
+  classic IslandHouse chest sits on sunplate walls (`IslandHouse :79222`
+  writes disc wall 82 / sunplate 144), so the old probe missed every
+  faithful house chest and fired on non-sky chests near cloud walls.
+  `stock_chest` computes flag12 and threads it through `stock_band`; the
+  SkyMill/pottery/Cloud/wings rows read it. The flag survives the remix
+  corrupt retype (`:36179-36194`, kind→467) — the main disjunct carries no
+  kind gate (the sky mains survive). `ctx.sky` stays a positional probe
+  (g44's disc-82 arm) but gates no loot row.
+- **The style-pottery rows sit OUTSIDE flag12** (`:37453-37456` kind-21
+  styles 23-27, `:37528-37531` kind-467 style 13 — plain `num9` tests): the
+  locked biome chests (flag10, never flag12) roll the 1/2
+  RemnantsofDevotion 5234 row on their own style; the old flag12 nest
+  dropped every locked-chest draw.
+- **The flag7 mushroom arms land** (`:36151-36153` kind 21 style 32): the
+  mid band's 1/2 ShroomMinecart 4450 + an INDEPENDENT 1/3 MushroomVanity
+  set 4779/4780/4781 (`:36653-36666`); the deep band's EITHER-OR
+  (`:36977-36993`). Both in the `num10 == 0` branch. The g42 mushroom-house
+  site is the future producer; the arm is ready.
+- **The flag5/flag6 extras carry the C# `num10 > 0` gates** (`:36505`/
+  `:36805`/`:36229`): a main-0 style-17 chest rolls no 4425/4460 pair; a
+  main-0 surface chest rolls no flag6 living-tree extras. The flag9 dungeon
+  ladder keeps its family gate (the `DungeonCycle` supplies the main
+  internally — `ev.main_item` is 0 for cycle chests). The deep-arm family
+  extras gate on the family probes (the band-first order stand-in,
+  research/120 §8 — frozen).
+
+Compose: the Water Chests (style 17, flag5) and the IslandHouse sky chests
+(style 13, flag12) are disjoint sites/flags/mains; the sky-LAKE
+(`CloudLake :78539-78912`) places zero chests and the houses pass gates
+`!GenVars.skyLake[i]` (`:17868`). f35's sky-CRATE tails
+(`fishing_crates.rs:610-622`) share the pottery/cloud/wings item family by
+C# design (`Player.cs:9117-9157` vs `WorldGen.cs:37418-37527`) — two
+landings, NOT a dedupe target (different streams/gates); c33 touches no
+fishing file, f35 no `chest_gen.rs`. Witnesses: 3 new + 6 re-derived
+(written not run, code-only lane). The keep-one (research/120 §9) is FINAL:
+KEEP d103 `water_chests.rs` + `buried_chest.rs`, DROP c33
+`pass_underwater_chests` + g37 B3; the stocking carry is c33's whole
+`chest_gen.rs` superset.
+
 ## The flail family (M4-PROJ-3b)
 
 `AI_015_Flails` (`Projectile.cs:43724-44169`) ports as `ai_flail` in

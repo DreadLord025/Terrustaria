@@ -2463,11 +2463,13 @@ pub struct MusicEnv {
     pub meteor: bool,
     /// `SceneMetrics.ZoneGraveyard` (`:12746`).
     pub graveyard: bool,
-    /// `SceneMetrics.ZoneUndergroundDesert` (`Main.cs:12743`) — the
-    /// underground-desert track (61), between the graveyard and the surface
-    /// desert arms. The scene flag rides `SceneMetrics.ZoneUndergroundDesert`
-    /// (the desert zone + below surface + a sandstone/hardened-sand/223 wall
-    /// + no house wall, `SceneMetrics.cs:699`).
+    /// `SceneMetrics.ZoneUndergroundDesert` (`Main.cs:12743`, the track arm
+    /// `:12748-12751`) — the underground-desert track (61), between the
+    /// graveyard and the surface desert arms. The scene flag rides the
+    /// S1-L-1 wall zone (the desert zone + below surface + a
+    /// sandstone/hardened-sand/223 wall + no house wall,
+    /// `SceneMetrics.cs:699`); W4-c33: the arm was constants-off until
+    /// `scene.rs::calculate_wall_zones` carried the wall sets.
     pub underground_desert: bool,
     /// `SceneMetrics.ZoneDesert` (`:12750`).
     pub desert: bool,
@@ -2790,11 +2792,12 @@ impl MusicSystem {
             self.new_music = 53;
             return;
         }
-        // `Main.cs:12743-12746`: the underground desert — `ZoneUndergroundDesert`
-        // → track 61 (the underground-desert theme), between the graveyard and
-        // the surface desert arms. The scene flag is the desert zone below the
-        // surface on a sandstone/hardened-sand/223 wall with no house wall
-        // (`SceneMetrics.cs:699`); the port's `scene.rs` computes it.
+        // `Main.cs:12748-12751`: the underground desert — `ZoneUndergroundDesert`
+        // → track 61, between the graveyard and the surface desert arms.
+        // The scene flag is the desert zone below the surface on a
+        // sandstone/hardened-sand/223 wall with no house wall
+        // (`SceneMetrics.cs:699`); W4-c33: the zone is live since S1-L-1
+        // (`scene.rs::calculate_wall_zones`), so the 61 arm joins.
         if env.underground_desert {
             self.new_music = 61;
             return;
@@ -3552,6 +3555,21 @@ mod tests {
         e.desert = true;
         m.decide_new_music(e);
         assert_eq!(m.new_music, 21);
+        // W4-c33: the UG-desert arm (`Main.cs:12748-12751`) — 61 ahead of
+        // the surface-desert 21 wherever both zones read true, and the
+        // graveyard 53 still outranks it.
+        let mut m = system();
+        let mut e = env(true);
+        e.underground_desert = true;
+        e.desert = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 61);
+        let mut m = system();
+        let mut e = env(true);
+        e.graveyard = true;
+        e.underground_desert = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 53);
         // The jungle surface day is 7, the deep band 54; the snow splits
         // 14 surface / 20 underground.
         let mut m = system();
