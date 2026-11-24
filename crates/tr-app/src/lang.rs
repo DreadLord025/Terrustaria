@@ -278,10 +278,14 @@ pub fn refresh_global_substitutions(app: &crate::app::App) {
 
     // The localized-text producers (`Lang.cs:145,148,166`) resolve their keys
     // through the free `text()` before the lock. `WorldEvilStone` reads
-    // `WorldGen.crimson`, which the port does not persist at world level
-    // (`world_sim/npcs.rs:954`, `shop.rs`) — the corruption stone stays the
-    // documented default until the world-evil flag lands.
-    let evil_name = text("Misc.Ebonstone");
+    // `WorldGen.crimson` — W4-g69 doc-sweep: the LIVE world evil type
+    // (`World.crimson`, the `.wld` flags byte + the `.trwld` v18 tail);
+    // a corruption world keeps Ebonstone, a crimson world reads Crimstone.
+    let evil_name = text(if app.world.crimson {
+        "Misc.Crimstone"
+    } else {
+        "Misc.Ebonstone"
+    });
     values.push(("WorldEvilStone", Substitution::Text(evil_name)));
     let armor_key = if app.settings.reversed_armor_bonuses { "Key.UP" } else { "Key.DOWN" };
     values.push(("ToggleArmorSetBonusKey", Substitution::Text(text(armor_key))));
@@ -550,8 +554,9 @@ mod s1_l12b_tests {
         assert_eq!(sub("InputTriggerUI_FavoriteItem"), Some(Substitution::Text("LeftAlt".into())));
     }
 
-    /// `Lang.cs:145,166` — `WorldEvilStone` (the port's corruption default) and
-    /// `ToggleArmorSetBonusKey` (the reversed-up/down option).
+    /// `Lang.cs:145,166` — `WorldEvilStone` (the live world evil type,
+    /// W4-g69 doc-sweep) and `ToggleArmorSetBonusKey` (the reversed-up/down
+    /// option).
     #[test]
     fn evil_stone_and_armor_key_producers() {
         let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -562,6 +567,10 @@ mod s1_l12b_tests {
         a.settings.reversed_armor_bonuses = true;
         refresh_global_substitutions(&a);
         assert_eq!(sub("ToggleArmorSetBonusKey"), Some(Substitution::Text("UP".into())));
+        // `Lang.cs:145`: a crimson world reads Crimstone.
+        a.world.crimson = true;
+        refresh_global_substitutions(&a);
+        assert_eq!(sub("WorldEvilStone"), Some(Substitution::Text("Crimstone".into())));
     }
 
     /// The refresh covers all 65 producers (`Lang.cs:102-166`): every non-NPC

@@ -1451,6 +1451,37 @@ mod tests {
         crate::lang::init(tr_core::localization::GameCulture::English);
     }
 
+    /// W4-g69 doc-sweep — the Dryad's `WorldGen.crimson` lines
+    /// (`NPC.cs:94038-94080`): pre-boss2 the 1/3 roll picks 332 (crimson)
+    /// over 69 (corruption); the idle ladder's slot 0 picks 333 over 77.
+    /// The live `ctx.crimson` feed (`world_sim/npcs.rs`) drives both.
+    #[test]
+    fn w4_g69_the_dryad_lines_follow_the_world_evil() {
+        init_lang();
+        let dryad = npc(NpcKind::Dryad);
+        let npcs = [dryad];
+        // Pre-boss2, the 1/3 roll hits 0: the crimson line.
+        let mut rng = draws(&[0]);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.crimson = true;
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(332));
+        let mut rng = draws(&[0]);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.crimson = false;
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(69));
+        // Boss2 downed: the idle ladder's slot 0 splits 333 vs 77.
+        let mut rng = draws(&[0, 0, 0, 0, 0, 0, 0]);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.downed_boss2 = true;
+        ctx.crimson = true;
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(333));
+        let mut rng = draws(&[0, 0, 0, 0, 0, 0, 0]);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.downed_boss2 = true;
+        ctx.crimson = false;
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(77));
+    }
+
     /// S1-E-10a — the Merchant's first arm (`NPC.cs:93870-93876`): the
     /// King Slime gate, the 1/3 roll and the life-max band.
     #[test]

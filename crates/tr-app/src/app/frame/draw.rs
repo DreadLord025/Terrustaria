@@ -269,7 +269,7 @@ impl App {
                     world,
                     atlas,
                     lookups,
-                    clouds,
+                    cloud_field,
                     sky,
                     bg_alpha_front,
                     bg_alpha_far,
@@ -317,7 +317,6 @@ impl App {
                     sunflower_wind_counter,
                     sunflower_wind_step,
                     vine_wind_counter,
-                    leaves,
                     items,
                     swing,
                     projectiles,
@@ -366,23 +365,31 @@ impl App {
                     let quantised = (natural_time / 60.0).floor() * 60.0;
                     let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
                     let clock_time = natural_time;
-                    // `SetBackColor`: rain multiplies the sky (and therefore the surface
-                    // sunlight) by `1 - cloudAlpha * 0.9`.
-                    let rain_alpha = rain.visual_alpha();
-                    let rain_dim = (1.0 - rain_alpha * 0.9).max(0.1);
-                    let mut sky_tint = [
-                        sky_tint[0] * rain_dim,
-                        sky_tint[1] * rain_dim,
-                        sky_tint[2] * rain_dim,
-                    ];
-                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
-                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
-                    // into the sky colour before it becomes the tile light.
+                    // `SetBackColor`: rain multiplies the sky (and therefore
+                    // the surface sunlight) by `1 - cloudAlpha * 0.9 * atmo`
+                    // (`Main.cs:63546-63552`, byte-truncated per channel —
+                    // `rain_dim_sky`). W4-g69 doc-sweep: the RAW cloudAlpha,
+                    // the atmo factor and the remix exclusion replaced the
+                    // clamped-visual/no-atmo/0.1-floor stand-in. The atmo
+                    // here is the early atmosphere_factor estimate (the C#
+                    // reads last frame's Main.atmo at SetBackColor; the
+                    // refined self.atmo below re-derives the same value at
+                    // the surface).
+                    let rain_alpha = rain.raw_alpha();
                     let atmo = crate::render::sky::atmosphere_factor(
                         camera.y,
                         world.world_surface,
                         world.width,
                     );
+                    let mut sky_tint = crate::render::sky::rain_dim_sky(
+                        sky_tint,
+                        rain_alpha,
+                        atmo,
+                        world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+                    );
+                    // `Main.instance.HorizonRenderer.ModifyHorizonLight`
+                    // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
+                    // into the sky colour before it becomes the tile light.
                     crate::render::sky::modify_horizon_light(
                         &mut sky_tint,
                         world.moon_phase,
@@ -951,6 +958,24 @@ impl App {
                             crate::proj_lights_a::proj_lights_a(p, mounted_center, self.disco)
                         {
                             self.entity_lights.add(x, y, rgb);
+                        // W4-c39 (the surviving graft, research/114 §1c) —
+                        // `AI_166_Dove`'s lantern light cast
+                        // (`Projectile.cs:47568-47569`): `(1, 0.6, 0.1) *
+                        // (1 - alpha/255)` at the lantern's centre. The AI
+                        // writes it per tick (not the SetDefaults `light`
+                        // slice), so it rides the feed directly. d17's
+                        // in-file `ai_dove` machine skips the light (no pool
+                        // layer); this frame-side seam is c39's unique
+                        // contribution, grafted beside the canonical machine.
+                        if p.kind == crate::projectile::RELEASE_LANTERN {
+                            let num2 = 1.0 - p.alpha as f32 / 255.0;
+                            let cx = (p.pos.x + p.w * 0.5) / TILE_PX;
+                            let cy = (p.pos.y + p.h * 0.5) / TILE_PX;
+                            self.entity_lights.add(
+                                cx as i32,
+                                cy as i32,
+                                [num2, 0.6 * num2, 0.1 * num2],
+                            );
                         }
                     }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):
@@ -1067,10 +1092,13 @@ impl App {
                     // the tile pass and its `AddLight` list feeds the light compute.
                     // Running it unconditionally (not only on world-range rebuilds)
                     // keeps the light feed a pure function of the frame index.
-                    let mut leaf_spawns = Vec::new();
-                    let mut leaf_rng = tr_core::tile_light::FastRandom::new(
-                        (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
-                    );
+                    // W4-g68: the leaf spawns go straight into `App.gore`
+                    // (`Main.gore`) during the tile/foliage passes — no
+                    // intermediate Vec. The `Main.rand` stand-in for the
+                    // draw-side `NewGore*` internals is the bare global
+                    // stream (the C# `DrawTiles_EmitParticles` runs outside
+                    // every SwapRandom block; the per-frame pinning of the
+                    // gate stream stays below in `draw_tiles`).
                     if !crate::env::no_waterfall() {
                         // `Main.screenPosition` / `screenWidth` / `screenHeight`
                         // for both ambience scans and the rain-arm view cull
@@ -1333,7 +1361,11 @@ impl App {
                         wind.wind_grid.set_size(vx1 - vx0, vy1 - vy0);
                         wind.wind_grid.update();
                         if wind.sway_enabled {
-                            if let Some(p) = player.as_ref() {
+                            // `WindGrid.cs:91`: the `!player.active || player.dead`
+                            // head gates — a dead player's corpse drift must not
+                            // stamp gusts (W4-g68 final-phase census fix; the
+                            // active half is the `Some(p)` itself).
+                            if let Some(p) = player.as_ref().filter(|p| !p.dead) {
                                 wind.scan_player(
                                     world,
                                     (p.x, p.y),
@@ -1346,10 +1378,24 @@ impl App {
                         }
                     }
 
-                    // Liquids animate the texture at 8 fps; include the frame in the G6
-                    // key only when the world has any liquid.
+                    // `LiquidRenderer.Update` (`LiquidRenderer.cs:831-847`,
+                    // called once per client update at `Main.cs:17043`): the
+                    // liquid texture clock is WIND-driven — `wind*25 ± 6`
+                    // frames/s for the body/edge rows, a wind-independent
+                    // 0.5 frames/s for the interior waterfall rows. Both
+                    // integer frames ride the G6 key (packed) only when the
+                    // world has any liquid; a calm world advances at 6 fps
+                    // (the old wind-independent `anim_time*8` approximation
+                    // is retired — ANALYSIS "the liquid render-gaps census").
+                    let (liquid_anim_frame, liquid_waterfall_frame) =
+                        self.liquid_clock.update(dt, wind.speed_current);
+                    // The body frame can be NEGATIVE (a west wind below
+                    // -0.24 — the C# single +16 wrap keeps the remainder's
+                    // sign); the low byte of the two's-complement cast keeps
+                    // -15..15 injective, the waterfall frame rides byte 1.
                     let liquid_anim = if *has_liquids {
-                        ((anim_time * 8.0) as u32) & 15
+                        (liquid_anim_frame as u32 & 0xFF)
+                            | ((liquid_waterfall_frame as u32 & 0xFF) << 8)
                     } else {
                         0
                     };
@@ -1568,13 +1614,65 @@ impl App {
                         world.width,
                     );
                     draw_phase("sky");
+                    // `Main.cs:61832-61833`: `Cloud.UpdateCloudParallax` runs
+                    // per draw, right after the camera update — each active
+                    // cloud shifts against the camera-centre X delta by its
+                    // own `GetParallax` fraction (W4-g69).
+                    cloud_field.update_parallax(draw_cam);
+                    // `Main.DrawBG`'s head (`Main.cs:63980-63984`): the
+                    // `resetClouds` latch — `windSpeedCurrent = windSpeedTarget`
+                    // then the full respawn (`Cloud.cs:39-58`).
+                    if cloud_field.reset_pending {
+                        wind.speed_current = wind.speed_target;
+                        let (sw, sh) = (screen.x, screen.y);
+                        let env = crate::cloud::CloudEnv::gather(
+                            world,
+                            Vec2::new(sw, sh),
+                            wind.speed_current,
+                            player.as_ref().map(|p| p.vx).unwrap_or(0.0),
+                            menu.is_some() || front.is_some(),
+                            world.day_rate(),
+                            rain.raw_alpha(),
+                            bg_alpha_front[4],
+                        );
+                        cloud_field.reset_clouds(&env, lookups);
+                        cloud_field.reset_pending = false;
+                    }
+                    // `DrawSurfaceBG`'s `cloudBGAlpha` ramp
+                    // (`Main.cs:59358-59373`) — per draw, gated on
+                    // `!drunkWorldGen && ShouldDrawSurfaceBackground() &&
+                    // screenPosition.Y/16 <= worldSurface + 10` (`:59354`)
+                    // AND `BackgroundEnabled` (`:59356`); the same gate
+                    // chain `draw_sky`'s storm-bank block folds (W4-g69
+                    // deviation fix — the retired 10×-per-tick intensity
+                    // chase is gone). The C# runs it between the distant
+                    // and closer cloud passes; the port runs it at the draw
+                    // head — no pass before the storm banks reads the value.
+                    {
+                        let ramp_view_top = draw_cam.y - screen.y * 0.5;
+                        let ramp_should_draw = !world
+                            .seeds
+                            .contains(tr_core::seeds::SeedFlags::REMIX)
+                            && !(settings.map_enabled
+                                && map.as_ref().is_some_and(|m| m.open));
+                        if !world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK)
+                            && ramp_should_draw
+                            && ramp_view_top <= surface_px + 10.0 * TILE_PX
+                            && settings.background
+                        {
+                            rain.cloud_bg_draw_step(
+                                cloud_field.cloud_bg_active,
+                                world.day_rate(),
+                            );
+                        }
+                    }
                     draw_sky(
                         renderer,
                         draw_cam,
                         bg_zoom,
                         screen,
                         world,
-                        clouds,
+                        cloud_field,
                         sky,
                         stars,
                         surface_px,
@@ -1585,6 +1683,7 @@ impl App {
                         sky_tint,
                         rain.cloud_bg(),
                         settings.background,
+                        settings.map_enabled && map.as_ref().is_some_and(|m| m.open),
                         cave_parallax(settings.parallax_scroll),
                         bg_alpha_front,
                         bg_alpha_far,
@@ -1596,14 +1695,44 @@ impl App {
                         scene_state.shimmer_alpha,
                         &self.ambience.entities,
                         lookups,
+                        // W4-f39: the SlimeSky draws only while active
+                        // (the SkyManager's active list).
+                        self.slime_sky.is_active().then_some(&self.slime_sky),
                         sky_tint,
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        // W4-c39 exec: the PartySky balloons ride the sky
+                        // pass's depth boundaries (research/114 §1e).
+                        &self.event_skies,
+                        // `DrawStarsInBackground`'s head (W4-g69 retire sweep):
+                        // the graveyard/shimmer statics + the RAW cloudAlpha
+                        // for the `:63051` star gate.
+                        scene_state.graveyard_visual_intensity,
+                        scene_state.shimmer_alpha,
+                        rain.raw_alpha(),
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
                     crate::render::screen_fx::draw_darkness_back(renderer, screen, scene_state);
+                    // W4-c39 — the LanternSky draws in the
+                    // `SkyManager.DrawRemainingDepth` slot (after the surface
+                    // layers, before the underground backdrop — the
+                    // depth-sandwich interleave is the ambience pass's own
+                    // machinery, a recorded layering deviation; f40's
+                    // depth-band module is the surviving form at the merge,
+                    // research/114 §1b). The PartySky balloons moved INTO
+                    // draw_sky's depth boundaries (research/114 §1e).
+                    crate::event_skies::draw_lanterns(
+                        renderer,
+                        &self.event_skies,
+                        lookups,
+                        draw_cam,
+                        world_zoom,
+                        screen,
+                        anim_time % 3600.0,
+                        surface_px,
+                    );
                     draw_phase("world");
                     if !reuse_world {
                         tile_stats = draw_tiles(
@@ -1620,6 +1749,7 @@ impl App {
                             &style,
                             &self.entity_lights,
                             anim_time,
+                            (liquid_anim_frame, liquid_waterfall_frame),
                             waterfall,
                             render_player.as_ref(),
                             player_assets,
@@ -1686,7 +1816,13 @@ impl App {
                             *grass_wind_counter,
                             *tree_wind_counter,
                             *sunflower_wind_counter,
-                            &mut leaf_spawns,
+                            // W4-g68: the leaf spawns land in the gore pool
+                            // directly; `Main.rand` is the bare global stream
+                            // (the tile-draw emission runs outside every
+                            // SwapRandom block in the C#).
+                            gore,
+                            self.rngs.global(),
+                            !game_paused_for_specials && !crate::env::no_wind(),
                             *vine_wind_counter,
                             // S1-F-9 slice B: the engine-driven DrawData cases'
                             // inputs (plates 428, party 455, echo sight 541).
@@ -1816,6 +1952,51 @@ impl App {
                         mine_crack_style,
                         mine_crack_target,
                     );
+                    // W4-g68 wiring: `TileDrawing.EmitLiquidDrops`
+                    // (`TileDrawing.cs:7594-7674`, the `Draw` switch arm
+                    // `:688-694`) — the vine-tip/stalactite/shimmer-candle
+                    // drips. Like the crack overlay it rides the per-frame
+                    // world range OUTSIDE the G6-cached tile pass (the
+                    // `WorldFrameKey` is untouched): the C# rolls its
+                    // `Next(num*2)` gate per DRAW, so a cached rebuild
+                    // cadence would starve the drips in a calm world.
+                    // The gate stream is the App's persistent
+                    // `TileDrawing._rand` stand-in (`tile_draw_rand`); the
+                    // spawn internals ride the bare global `Main.rand`
+                    // (outside every SwapRandom block). The g30
+                    // tile-pass-attach contract (UNION-CONTRACT-tilepass
+                    // §5) feeds the same cells once the g-family lands —
+                    // until then the driver rescans the draw area.
+                    // Gate: the `emit_effects` stand-in the leaf arm uses
+                    // (`!game_paused && !TR_NO_WIND`, the A/B switch).
+                    // The exact C# `_isActiveAndNotPaused` is the
+                    // DrawnThisUpdate flag (`FocusHelper.cs:27`), NOT
+                    // `!gamePaused` — the port's stepper already carries
+                    // the flag (`world.rs:90/:688`), but its set-site is
+                    // the draw half's HEAD, so reading it here would be
+                    // vacuously true; the flag-gate reconciliation is the
+                    // d60 wiring wave's contract (ANALYSIS "The wind leaf
+                    // particles", deferred-2).
+                    if !game_paused_for_specials && !crate::env::no_wind() {
+                        let mut water_style =
+                            crate::biome::calculate_water_style(world, *camera) as i32;
+                        if let Some(n) = crate::env::water_style() {
+                            water_style = n.min(14) as i32;
+                        }
+                        crate::render::foliage::emit_liquid_drops_area(
+                            world,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            water_style,
+                            self.scene_metrics.zone_corrupt,
+                            self.scene_metrics.zone_crimson,
+                            self.scene_metrics.zone_hallow,
+                            &mut self.tile_draw_rand,
+                            self.rngs.global(),
+                            gore,
+                        );
+                    }
                     // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
                     // false)`'s pylon / trophy / void-lens passes
                     // (`TileDrawing.cs:423-425`). The sprites ride the
@@ -1849,26 +2030,24 @@ impl App {
                         );
                     }
 
-                    // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
-                    // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
-                    // world-effect range like the rain (world content — under the map
-                    // batches and the interface). `TR_NO_WIND` is the A/B switch for
-                    // the whole wind feature, spawns included.
-                    let wind_ab_on = !crate::env::no_wind();
-                    let drained: Vec<_> = leaf_spawns.drain(..).collect();
-                    for s in drained.into_iter().take_while(|_| wind_ab_on) {
-                        if leaves.len() >= 400 {
-                            break;
-                        }
-                        leaves.push(crate::render::foliage::LeafGore::from_spawn(
-                            s,
-                            &mut leaf_rng,
-                        ));
-                    }
-                    crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
+                    // W4-g68: the leaf gores live in `App.gore` now — the
+                    // foliage/tile passes spawned them during the world
+                    // pass, `Gore_UpdateLeaf` ticks them in the `gores`
+                    // phase (`Main.cs:17971`), and `Main.DrawGore` below
+                    // draws them in the world-effect range like the rain.
+                    // The old private 400-cap `LeafGore` Vec and its
+                    // draw-time tick are retired.
 
                     draw_phase("rain");
-                    rain.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
+                    rain.draw(
+                        renderer,
+                        lookups,
+                        light,
+                        draw_cam,
+                        world_zoom,
+                        screen,
+                        scene_state.shimmer_alpha,
+                    );
                     // `Main.DrawGore` (`Main.cs:62282`, body `:21873-21907`):
                     // the gore pool's front pass between the rain and the
                     // dust, in the same world-effect range (S1-E-4b).
@@ -1884,9 +2063,17 @@ impl App {
                     // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
                     // world-content range as the rain/sand dust.
                     crate::minecart::draw(dust, renderer, lookups, draw_cam, world_zoom, screen);
-                    crate::render::foliage::draw_leaves(
-                        renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
+                    // g67 (transplanted): the rain collision splashes —
+                    // `Main.DrawDust`'s generic path over the `dustWater()`
+                    // family slots (`Rain.cs:122`'s spawns), same
+                    // world-effect range.
+                    crate::rain::draw_splashes(
+                        dust, renderer, lookups, light, draw_cam, world_zoom, screen,
                     );
+                    // The type-76 snowflakes — `Main.DrawDust`'s generic path
+                    // (`Main.cs:38968-39018`), the same world-content range
+                    // (W4-d130).
+                    crate::snow::draw(dust, renderer, lookups, light, draw_cam, world_zoom, screen);
                     // `Main.DrawWires` (`Main.cs:57028-57030`): the wire overlay
                     // rides the tile batch after the liquids, under the
                     // over-wire entities (the port draws it before the
@@ -3082,7 +3269,7 @@ impl App {
                             liquids.active_len(),
                             rain.visual_alpha(),
                             rain.drop_count(),
-                            rain.snow_count(),
+                            crate::minecart::live_type(dust, 76),
                         );
                     }
 
@@ -3315,6 +3502,30 @@ mod s1_p_i53_tests {
         // The next press fires again.
         app.place_down = true;
         assert!(app.buff_cancel_gate());
+    }
+
+    /// W4-g68 final-phase census: the WindGrid scan call site carries the
+    /// `WindGrid.cs:91` dead-player gate — `!player.active || player.dead`
+    /// refuses the stamp (a drifting corpse must not push grass/vines).
+    /// The `active` half is the `Option` itself; the `dead` half is the
+    /// `.filter(|p| !p.dead)` on the scan's player borrow. Source pin (the
+    /// `tiles.rs` include_str convention — the draw pass needs a GPU).
+    #[test]
+    fn w4_g68_the_wind_grid_scan_gates_the_dead_player() {
+        let src = include_str!("draw.rs");
+        let scan = &src[src.find("wind.scan_player(").unwrap()..];
+        let head = &src[..src.find("wind.scan_player(").unwrap()];
+        let borrow = &head[head.rfind("if let Some(p) = player.as_ref()").unwrap()..];
+        assert!(
+            borrow.contains(".filter(|p| !p.dead)"),
+            "the scan's player borrow filters the dead (WindGrid.cs:91)"
+        );
+        // The gate sits INSIDE the sway-enabled arm (the C# ScanPlayers
+        // runs under SettingsEnabled_TilesSwayInWind, WindGrid.cs:35-38).
+        let sway = head.rfind("if wind.sway_enabled").unwrap();
+        let filt = head.rfind(".filter(|p| !p.dead)").unwrap();
+        assert!(sway < filt && filt < head.len(), "the gate order");
+        assert!(scan.starts_with("wind.scan_player("));
     }
 }
 

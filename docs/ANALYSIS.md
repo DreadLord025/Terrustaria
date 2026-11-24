@@ -1874,35 +1874,267 @@ the shell, the patch tunnels).
 
 ## Rain and weather
 
-`rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and
-`Main.UpdateWeather`'s intensity ramp: a weather event has a target (`maxRaining`),
-`cloudAlpha` moves toward it at `0.0005` per 60 Hz tick, and drops spawn per tick with
-`25 * (0.25 + cloudAlpha)` attempts per 1920 px of screen width, capped at
-`Main.maxRain = 750`. A drop spawns only into a tile with no wall and no solid block,
-falls at `(windSpeedCurrent * 18, 14)` px/tick, and dies on solid or wet collision or below
-the view, spawning the water `Dust` frame with 10 % of its velocity. `SetBackColor`'s
-`1 - cloudAlpha * 0.9 * atmo` multiplies the sky colour, which also dims surface sunlight
-via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x40 frames,
-rotated by `atan2(vx, -vy)`, tinted by `Lighting.GetColor` * 0.85.
+`rain.rs` ports `Rain.MakeRain`/`Rain.NewRain`/`Rain.Update`/`Main.DrawRain` verbatim
+(W4-d130) plus `Main.UpdateWeather`'s intensity ramp: a weather event has a target
+(`maxRaining`), `cloudAlpha` moves toward it at `0.0005` per 60 Hz tick, and `MakeRain`
+runs `screenWidth / 1920 * 25 * (0.25 + cloudAlpha)` attempts per tick (the C#'s float
+`i < num` loop, `Rain.cs:47`), with the `NPC.AnyDanger` 0.05 throttle (`:37-45`). Each
+attempt rolls the x-window then the y (`:54-55`), shapes them with the player velocity
+and the `windSpeedCurrent * 15 * 40` lead (`:50-57`), clamps to the world edges and
+gates on open sky (`!SolidTile && wall <= 0`, `:84`); `NewRain` then budgets the FIRST
+inactive slot within `maxRain * cloudAlpha` scaled by gfxQuality (< 0.9), the snow-tile
+suppression `(1 - (count/threshold)^2)` — the threshold is the skyblock-aware
+`SceneMetrics.SnowTileThreshold` (300 when `WorldGen.Skyblock.lowTiles`, else 1500,
+`SceneMetrics.cs:154-163`; the g67 R5 `f8c4b659` fold — `World.skyblock_low_tiles` is
+censused at load/gen by `World::scan_skyblock_low_tiles`, `WorldGen.cs:3210-3218`/
+`:3238-3265`, and rides `RainInputs.skyblock_low_tiles`) — and `atmo^9` (0 below 0.4)
+(`:166-207`), and rolls the
+scale (`1 + Next(-20,21)*0.01`) then the `waterStyle*3 + Next(3)` frame. The fall velocity
+is the LIVE `(windSpeedCurrent * 18, 14) * scale` (`GetRainFallVelocity`, `:91-94`) — the
+old frozen seed-time wind snapshot + sine term is retired. `Rain.Update` (`:96-133`)
+moves the drop and kills it on the real `Collision.SolidCollision`/`WetCollision` 2x2
+probes or below the view; the impact dust's `Next(100) < gfxQuality*100` roll (`:120`)
+fires for ALL THREE kills of the ONE combined `:117` branch — the below-screen kill
+included — and NEVER for the `gameMenu`/`remixWorld` kill-only arms (`:103-116`, which
+only clear `active`). The `+100f` bottom margin is raw world px, unscaled by zoom.
+(W4-d130 reconcile, `docs/research/83-weather-reconcile.md`: the earlier collision-only
+reading was wrong; g67's `006bc04d` reading of `Rain.cs:117-131` is the verified truth.)
+The pool is the C#'s fixed 750 slots (`Main.cs:66801`) — slot
+order IS the draw/update order, never compacted. `DrawRain` (`Main.cs:38800-38826`)
+samples the light at `(int)(pos + 4) >> 4` per axis and tints through the XNA byte chain
+(`GetColor` → `* 0.85` → shimmer `* (1 - shimmerAlpha)`, alpha included), rotated about
+the top-left origin. `SetBackColor`'s `1 - cloudAlpha * 0.9 * atmo` multiplies the sky
+colour, which also dims surface sunlight via `ApplyColorOfTheSkiesToTiles`.
 
 Storms add two pieces from `Main.DrawSurfaceBG`/`Main.SpawnStormLightning`: the
-`cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with a
-`cloudBGAlpha`-style ramp tied to the rain intensity, and heavy rain (> 0.65) throws a
+`cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with
+the C# `cloudBGAlpha` ramp (`Main.cs:59358-59373` — per draw, ±0.0005·dayRate toward 1/0
+by the live `cloudBGActive` overcast machine, W4-g69; the earlier intensity-tied
+stand-in is retired), and heavy rain (> 0.65) throws a
 lightning flash every 5вЂ“15 s. The flash is a 0.38-alpha full-screen white overlay that
 decays over ~11 ticks; there is no bolt geometry or thunder audio yet.
 
-Snow biomes use vanilla's `DustID.Snowflake` (type 76): rain drops are suppressed and the
-ambient snow dust is spawned at `500 * screenWidth/1920` per second (scaled by
-`1 + 2*cloudAlpha`), falling at 2вЂ“5 px/tick with a per-flake sine sway and the storm wind.
-Flakes die on solid or wet tiles and are drawn from `Dust` frame 76 (X = 760, Y = 0/10/20).
+The ambient snowfall is `Main.snowing()` (`Main.cs:13032-13116`), ported verbatim as
+`crate::snow` (W4-d130) — NOT a rain mode: it spawns `Dust` type 76 into the shared pool
+wherever the scene metrics count snow tiles at the surface, storm or no storm. The
+intensity is `pow(count/6000, 4 - 3*cloudAlpha)`, the per-screen budget
+`(int)(500 * viewWidth/4096) * (1 + 2*cloudAlpha)` (the HiDef `maxScreenW`, see (b)
+below), the attempt count `1 + 50*cloudAlpha`,
+and the `Main.snowDust` population gates the loop (`:13057`, a BREAK not a skip). The
+Deerclops-near fades divide the intensity by 20 and the budget by 3 (`:13047-13052`) and
+drop each flake's scale 0.5. The flake recipe branches on `Main.raining`: dry drift is
+`wind + Next(-10,10)*0.1 + wind*15`, storm drift is
+`sqrt(|wind|)*sign(wind)*(cloudAlpha+0.5)*10 + NextFloat()*0.2 - 0.1` with the fall halved
+(`Math.Sign(0) = 0` mirrored). The type-76 AI (`Dust.cs:1745-1763`) plus the shared
+second-chain tails (the `*0.99` drag `:2073`, the rotation rebuild `:2081`, the `-0.01`
+fade `:2127`) ride the shared `UpdateDust` tick; `Main.snowDust` lands on `DustPool`
+(head reset `:428`, `++` per live flake `:1747`). The draw is `DrawDust`'s generic path
+(`Main.cs:38836-39023`) with the ±1000/±1050 cull rect + else-kill
+(`:38832`/`:38847`/`:39020-39022`, the g67b fix), the 8x8 frame at the `(4,4)` origin and
+the full-dark kill. The RNG is the GLOBAL bare-`Main.rand` stand-in
+(`NamedRngs::global()`): `:17238` sits in `Main.Update` BEFORE `DoUpdateInWorld`
+(`:17280` → the `SwapRandom` wrapper `:17732`), so no swap is live at the call — the
+g11 research/83-addendum F1 adjudication (`docs/research/83-weather-reconcile.md` §7);
+the earlier private snow splitmix was WRONG for this site and is retired. The old
+biome-gated rain-rig flake approximation (per-flake sine sway, `snow_cap`) is retired.
 
 First-pass simplifications, as updated by later tasks: the session-local weather
-schedule is **retired** вЂ” M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
+schedule is **retired** — M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
 and the `UpdateTime` start/stop rolls on the shared 60 Hz world tick (see "dayRate
 consumers (M1.4-BG-22)" below); the wind-gusts gap was closed by WEATHER-1 (the
 "gusts" ARE vanilla's `extremeWindCounter` tiered re-rolls plus the proportional
-easing, already ported). Still first-pass: no lightning bolt geometry and no thunder
-audio вЂ” the flash rides WEATHER-1's tiered thunder chain, not a bolt mesh.
+easing, already ported). W4-d130 landed the verbatim rain fall/draw core and
+`Main.snowing()`. Deliberate deviations (W4-d130): (a) the C# runs `Rain.Update` INSIDE
+`DrawRain` per drawn frame (`Main.cs:38819-38822`) and `MakeRain`/`snowing` per
+`Main.Update`; the port keeps the drop/snow sim on the 60 Hz accumulator and the spawn
+on the frame's scene slot — the recorded cadence fold, same as the rest of the weather
+rig. (b) `Main.maxScreenW` in `snow.rs` is the HiDef 4096 (`Main.cs:3709` — the port
+runs HiDef; g11 `13a1c48e`'s pin, folded by the final-phase census). The earlier
+Reach-1920 pin retired FOR THE SNOW BUDGET ONLY — `sand.rs`'s emit budget keeps its
+own recorded 1920 deviation, and `rain.rs`'s spawn rate reads `MaxWorldViewSize.X`
+(`Rain.cs:36`), a different static that IS 1920. (c) the impact splash is g67's REAL
+`Dust.NewDust(..., dustWater())` lane (weather-rain-splash, `40128e5d`/`006bc04d`),
+TRANSPLANTED onto this core by the union-exec (`docs/research/83-weather-reconcile.md`
+§3 EXECUTED): d130's verbatim fall/draw core (fixed 750-slot pool, slot order, the remix
+kill-only arm, the live-wind velocity, the tint chain) + g67's `spawn_splash` DustPool
+recipe, `water_splash_arm` physics and `draw_splashes` draw — g67's compacted-Vec
+`update_drops` was NOT taken wholesale (it lacks the remix arm). The `Next(100)` gate is
+verbatim for ALL THREE `:117` kills (the reconcile fix — the earlier collision-only
+gate was a misreading). See "The rain collision splash (g67, transplanted W4-d130)"
+below for the lane's own deviations. (d) `NewRain`'s depth factor (`Rain.cs:174-175`) is computed-and-discarded in
+the C# (a bare `Math.Max` statement) — ported as a note, no effect. Still first-pass: no
+lightning bolt geometry and no thunder audio — the flash rides WEATHER-1's tiered
+thunder chain, not a bolt mesh.
+
+**Retire-phase co-lane compose (2026-11-21, research/83 §8).** Against
+origin/task/W4-f39 tip `bd5a5a24a` (Phase B, the season/date gates) the
+weather-touching residuals composed onto d130's canonical bodies
+(`22371b4f`): (1) the MUSIC ladder's Slime Rain track-48 arm
+(`Main.cs:12200` `flag24` + `:12654-12657` — `!ZoneGraveyard &&
+(!bloodMoon || dayTime)` + the surface band), between the eclipse 27 and
+the shimmer 91 (`MusicEnv.slime_rain` fed from `World.slime_rain`);
+(2) `StartRain`'s anniversary coin-rain range 25→5 on
+`tenthAnniversaryWorld && !getGoodWorld` (`Main.cs:64663-64667` — the
+luck-0 DRAW COUNT is unchanged, only the denominator); (3)
+`AmbienceServer.ResetSpawnTime`'s anniversary post-divide `/2`
+(`AmbienceServer.cs:133-136` — same `Next(600,7200)` draw, no extra);
+(4) the menu-return `StopSlimeRain` (`Main.cs:48216-48219`) in
+`save_and_quit` AFTER the save — the saved world keeps the live event,
+the menu state carries the `-Next(3024,6048)*100` cooldown on the bare
+global stream; (5) `slime_rain_roll`'s `WorldGen.Skyblock.lowTiles` `/5`
+arm (`Main.cs:64931-64934`, inside the pre-King `/2` half) ACTIVATED —
+f39's tip documented it false (its stand-in never set), the g67 R5 census
+now fills `World.skyblock_low_tiles`. The UpdateTime tick-shapes
+(`update_time`'s sampled-flag ladder, the `:64846` surface gate, the
+clock-before-rain order, `start_slime_rain`'s remix + `<= 50` gates)
+compose-verified EQUAL to f39's tip — no change. f39's season/date lane
+(`tr-core/season.rs`, the `.trwld` v18 downeds, the shop/spawner/loot
+consumers) does NOT overlap d130's files beyond the four gates above —
+the merger keeps f39's bodies for it.
+
+**SEAL (2026-11-21, research/83 §9).** The weather-family close, against
+the co-lane seal tips (g67 `8b9a1ff46`, c39 `7dd785dc5`, f39 `bd5a5a24a`):
+(1) the g67 mutual receipt — g67 renamed research/134 → 146 and published
+its drop-wholesale FINAL; BOTH sides now state the same keep-one (d130's
+rain.rs canonical wholesale, g67's rain.rs + draw.rs census wiring drop,
+ONLY the R5/R6/R7/A2 hash-list crosses — all four folded here, §8/§9.1).
+(2) The c39 EXACT 2-hunk graft (research/114 §13, `8e0946ff`) verified
+still OPEN at the retire tip — the f39-compose had covered the `:64868`
+StopRain arm, not these — then FOLDED verbatim: `Rain::update_time` gains
+the `Main.cs:64825-64831` lanterns-up head clamp (`cloud_bg = 0` BEFORE
+the ladybug drain; the `numClouds` 30 cap outcome-neutral at the 100
+stand-in — the `:64916` second start arm reads the cleared deck), and the
+weather tick's lantern persistence gate is now the FULL
+`LanternsCanPersist` (`LanternNight.cs:49-56` = `!dayTime &&
+LanternsCanStart()` — `LanternGates::from_world` + the seven-conjunct
+AND; the genuine lanterns clear mid-night when a boss/moon/invasion
+conjunct flips, the manual ones persist regardless). The one-word rider
+applied: `world_events::lanterns_can_start` is `pub(crate)` (c39's module
+exports the identical body — one owner at merge). 2 witnesses (c39's
+head-clamp witness ports verbatim; a new tick-level persistence-gate
+witness) WRITTEN NOT RUN. (3) The f39 keep-one re-verified: d130 has zero
+edits to `world_sim/npcs.rs`/`render/sky.rs` since the merge-base — f39's
+SlimeSky bodies, kill-counter refinement and season module stay f39's;
+the five boundary gates are on BOTH branches with identical semantics.
+(4) The WEATHER-FAMILY bible FINAL is research/83 §9.4 — one paragraph,
+one fn owner per body (d130 rain/snow core, f39 slime-rain event half,
+c40 sandstorm, g69 cloud draw, g68 wind sim, c39 lantern grafts), gate
+command `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids`.
+
+**W4-g67 FINAL fn-census (2026-11-21)** — `Rain.cs` is 6 methods + 7 fields; the
+port covers every one: `ClearRain` → `clear_rain` (`rain.rs:325`, the packed-Vec
+`clear()` = deactivate-all), `MakeRain` → `spawn` (`:1052`), `GetRainFallVelocity`
+→ inlined at the spawn (`:1149`, live `wind*18, 14`) and the Eyebrella caller's
+`wind*3, 9` (`world_sim/player.rs:1403`), `Update` → `update_drops` (`:969`, all
+four arms: paused fold / menu `+2000` / remix `+100` / the combined
+solid‖below‖wet kill with the one `Next(100)` gate), `NewRainForced` →
+`new_rain_forced` (`:336`), `NewRain` → the spawn budget block (`:1084-1110`).
+Fields: `position/velocity/scale/rotation/type` ride `Drop`; `active` is the
+packed-Vec membership; **`alpha` is DEAD in the C#** — zero writers/readers
+outside the declaration (script census over `Rain.cs` + `Main.cs`), so its
+omission is faithful, not a gap. Two orchestration notes for the union: the C#
+spawns in `Main.Update` (`:17220-17223`, gated `FocusHelper.AllowRain &&
+cloudAlpha > 0`) and moves the drops in `DrawRain` (`:38819-38822`) — net
+spawn-then-move per cycle; d130's tick keeps that order (`spawn` then
+`update_drops`), g67's tick runs update-then-spawn (superseded — the union keeps
+d130's core wholesale, research/83 §3). The `spawn_acc` cadence and the
+budget-before-attempts early-out are the recorded g67 divergences (research/267
+"Deliberate divergences") — d130's float attempt loop is canonical.
+
+**W4-g67 FINAL visual-overlap census (2026-11-21)** — rain × blizzard ×
+sandstorm, per the C# and both ports:
+
+* **Blizzard.** Vanilla has NO biome gate on `MakeRain` — in a snow biome the
+  rain event still spawns `Rain` drops (the budget only shrinks via the
+  `(1-(snow/threshold)²)` suppression, `Rain.cs:181-182`), while
+  `Main.snowing()` (`:13032-13116`) runs on its own gates (`SnowTileCount > 0 &&
+  SurfaceAtmospherics`, NOT `ZoneRain`) — during a rain event the flake recipe
+  branches on `Main.raining` (`:13092`): the storm drift
+  `sqrt(|wind|)·sign(wind)·(cloudAlpha+0.5)·10` and the fall ×0.5
+  (`:13099-13100`). The blizzard visual is the raw `ZoneRain && ZoneSnow` pair
+  (`SceneState.cs:78`, ported at `scene_scan.rs:532` / `filters.rs:318`).
+  **d130 is canonical** (its `crate::snow` carries the verbatim `:13092` branch,
+  re-read at the tip `snow.rs:213-238`); g67's `snow_mode` biome gate
+  (`rain.rs` tick — snow REPLACES the drops, the `is_snow_biome` surface-kind
+  probe) is the recorded first-pass approximation, retired by the union
+  (research/83 §2 KEEP d130). No g67 code change — the divergence stays written
+  down, not folded.
+* **Sandstorm.** The zone gate is ONE-WAY: `ZoneSandstorm` clears `ZoneRain`
+  (`SceneMetrics.cs:698-703`, ported verbatim at `scene.rs:831-837` with the
+  `zone_sandstorm_suppresses_zone_rain` witness); rain never gates the storm
+  (`Sandstorm.cs` reads only wind — d130's `703370e6` census, re-confirmed).
+  g67's `spawn` reads `zone_rain` (`weather.rs:38`), so a happening storm stops
+  the drop spawns while the event flag/intensity ramp survive — the C# shape.
+* **Wind-slant draw angle.** The drop rotation is
+  `atan2(velocity.X, -velocity.Y)` (`Rain.cs:204`/`:161`) over the LIVE
+  `GetRainFallVelocity` (`wind*18, 14`, `:93`) — the slant IS the wind, no
+  separate draw-angle term; both ports compute it at spawn
+  (`rain.rs` `rot: vel.x.atan2(-vel.y)`) and the WGSL rotates about the
+  top-left origin exactly like XNA's `Vector2.Zero` (`sprite.wgsl:92-97`).
+  Dust rotation is a different lane: `dust.rotation += velocity.X * 0.5`
+  (`Dust.cs:2081`, the 79/268/304 exclusion) — the splash family rotates with
+  its own velocity in the shared tick, and the flying-sand 268 draw pins
+  rotation 0 (`GetVisualRotation`, `sand.rs:367` — the 268 exclusion means the
+  spawn-time 0 never advances). No wind-slant residual on either draw side.
+
+**W4-g67 RETIRE — the WEATHER merger instruction (2026-11-21, FINAL-FINAL).**
+The g67 branch is DONE (fold-source tip `e777b3e2`, retire commits
+`9159c15a`/`5afdb38b`/`52b2ef92`). The union decision stands: **the merger keeps
+d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale EXCEPT the
+folded hunks** (research/267 FINAL-FINAL, re-checked at d130 tip `97ed44f5`).
+d130 `16a792d5` already executed R1–R4 (`is_it_raining` + the five consumers,
+`clear_rain` + the save-and-quit call, the cull rect + else-kill — extended to
+`snow::draw` — and the `new_rain_forced` seam) plus the gameMenu kill-only arm
+(the earlier fold-out divergence is retired). The remaining d130f work-list:
+R5 (the skyblock snow threshold — d130 still reads the unconditional 1500),
+R6's Eyebrella caller, R7 (umbrella), and the 2-hunk fold-addendum for the
+draw commits that POST-DATE the fold (g67 `7aaf66f0` 09:02 > d130 `16a792d5`
+08:55): **A1** — d130's own `ea4863d9` already carried both draw fixes and its
+`rain_tint` dims alpha correctly (XNA `Color * 0.85f` scales A: 216 at full
+light, 162 under shimmer 0.25); g67's `rain_drop_tint` fn body agrees but its
+witness wrongly asserts alpha stays 255 — keep d130's copy + witness verbatim,
+the g67 assertions drop. **A2** — re-pin g67's light-tile geometry witness
+(`w4_g67_draw_rain_light_tile_is_pos_plus_four_shifted`) onto d130's inline
+`light_tile` closure; no code delta. g67's dup-halves carry
+DEPRECATED-BY-UNION banners (`5afdb38b`, comments-only); the unique
+eyebrella/umbrella/skyblock/drop-draw-fix content stays live as fold-source.
+The SEAL phase (2026-11-21) re-verified the d130 tip STILL `97ed44f5d`
+(d130f unlanded — the work-list stands, plus the c39 2-hunk graft), published
+the FINAL fold-source hash-list (R5 `f8c4b659c` / R6 `356a1ac0e` / R7
+`01ba6c7a9` / A2-only `7aaf66f00`), renamed the report 134 → 146 (f11 owns
+134 on origin; 145 double-claimed; d54 has no pushed research/150; 146 =
+max+1 provisional) and added the WEATHER-FAMILY bible (d130 canonical rain/
+snow + f39 slime-rain + c40 sandstorm one-way gate + g69 cloud draw +
+g68 wind/leaves single-owner + the c39 grafts) — all in research/267 (then
+numbered 146).
+
+**W4-g67 SEAL-VERIFY — the 146-collision renumber + the CLOSED mutual receipt
+(2026-11-21).** The report is renamed AGAIN 146 → 247 → **267 FINAL**
+(`267-g67-post-union-folds.md`, full chain 134 → 146 → 247 → 267): d54's
+registry-150 IS now pushed
+(`38bfd1d22`, its §3 predates the 146 wave and has no g67 row), and a fresh
+360-tip registry-150b refresh finds key 146 FOUR-way claimed — g24d
+`146-wg-sounds-final.md` (10:02:44, first-pushed WINS), e20f
+`146-c42-repick-critical.md` (10:22:27), g67 (10:32:09), e19
+`146-aether-biome-census.md` (12:08:42); g67 is the third claimant → loser →
+renames on its own branch (the 150b refresh provisionally took 247, then the
+lowest number ≥237 claimed by no tip — 237–246 all taken: e23/c8/d42/g61/
+g48/f21/g56/c42/g58/d53/g63/f39/d10). d54's REGISTRY-ROUND-3-FINAL
+(research/150 §7, `51a28d09e`) then re-issued 247 to d10 (its post-publish
+246 take lost to e23's reservation) and pinned the g67 chain
+134 → 146 → **267** (§6.2 self-rename reconciliation + §6.3 rename table) —
+267 is the FINAL number; every older 247-numbered citation means this doc.
+The d130 tip advanced `97ed44f5d` → `b8f655708` (research/83 s9 SEALED): its
+s9 records g67's seal tip `8b9a1ff46` verbatim — the mutual receipt is CLOSED
+from BOTH sides, ONE fn owner per body. Every d130f work-list row is closed:
+R5 folded `10ee539da`, R6+R7 folded `df28ea1ac`, A2 receipt `af3ebc1a`+s9,
+A1 NO-OP keep-d130-verbatim, and the c39 2-hunk graft DISCHARGED at
+`ec27d8cfd` (storm-deck head clamp + the full LanternsCanPersist gate, both
+verbatim per c39 research/114 §13). The 4-fold hash-list is CONSUMED — the
+merger drops g67's rain.rs + draw.rs census wiring wholesale and owes
+nothing further; the WEATHER-FAMILY bible FINAL (research/267 + d130 s9.4)
+stands as the family's one ownership map.
 
 ## Biomes
 
@@ -2186,35 +2418,93 @@ Not ported: the eclipse (`Sun3`), the `head == 12` sun (`Sun2` + `Extra_280`), t
 moons (`Moon_Pumpkin`/`Moon_Snow`/`Moon_Smile`) and the title-screen grab-the-sun
 interaction. The first sun pass is always `Color.White` because no eclipse is modelled.
 
-### Clouds and stars (M1.4-BG-11/16)
+### Clouds and stars (M1.4-BG-11/16, W4-g69)
 
-`make_clouds`/`make_stars` port the spawn recipes; `draw_sky` ports the draw passes.
+`make_stars` ports the star spawn recipe; `draw_sky` ports the draw passes.
 
-Clouds: the field is a deterministic stand-in for the live 200-slot array
-(`Cloud.resetClouds`/`addCloud`/`UpdateClouds`, `Cloud.cs:39-293`) вЂ” the original's array
-state (wind-drift integration, the spawn/kill cycle, the spawn-time overlap rejection of
-`Cloud.cs:170-177`) is not simulated. Per-cloud attributes follow `Cloud.addCloud` in its
-RNG order (scale `Next(70,131)В·0.01` clamped 0.7..1.3 with the `Cloud.Update` 1/1.15 nudge
-already applied, rotation `Next(-10,11)В·0.01` clamped В±0.02, the flip coin, spawn heights
-`-0.25h..0.15h` in the 600 px reference screen, and the clear-weather type branches of
-`Cloud.cs:128-139`); the count is the clear-weather steady state `numClouds = 100` (the
-`numCloudsTemp` clamp of `Main.cs:58980-58982`, which the `weatherCounter` jumps drive it
-into). Anchors spread over a world-span band so every camera cuts about `numClouds` of
-them. The draw runs as the three `DrawSurfaceBG` passes in the original order вЂ” distant
-(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) вЂ” with the
-`DrawClouds_*` cY formulas (the closer pass reads the `bgTopY` `BackMountainsStep1`
-leaves, `Main.cs:59808`; the closest the near-mountain setup, `Main.cs:59514`), and the
-screen X is the world anchor minus `Cloud.GetParallax(scale)` (`Cloud.cs:318-338`) of the
-camera pan, the world-space form of `Cloud.UpdateCloudParallax` (`Cloud.cs:295-316`).
-Colour is `Cloud.cloudColor` (`Cloud.cs:227-235`) with the distant pass's
-`OriginalColorsForCloud` pull (`NextHorizonRenderer.cs:254-263`).
+Clouds (W4-g69, `task/W4-g69-weather-clouds-parallax`, code-only): the field is the LIVE
+200-slot pool — `crates/tr-app/src/cloud.rs` (`CloudField`) ports `Cloud.cs:9-451` 1:1
+(`resetClouds`/`addCloud` in its exact RNG order incl. the rain-cloud dark types 18-21 and
+`RollRareCloud`, `Update`'s wind drift `windSpeedCurrent·9·GetParallax·dayRate`
+(`Cloud.cs:391`), alpha ramps, rotation jitter, retire bounds, `UpdateClouds`' bubble pass
+with the `j > 1` quirk and the one-add/one-kill balance, `UpdateCloudParallax`). The
+`Main` walkers ride the shared world tick (`world_sim/weather.rs`): `updateCloudLayer`
+(`Main.cs:13174-13231`, once per tick at `:17226`) and the `numCloudsTemp` walk
+(`Main.cs:58952-59036`, once per dayRate iteration) on the bare `Main.rand` stand-in
+(`NamedRngs::global`), then `Cloud.UpdateClouds` gated on
+`screenPosition.Y < worldSurface·16 + 16` (`Main.cs:17249-17254`). The draw head
+(`app/frame/draw.rs`) runs `UpdateCloudParallax` per draw (`Main.cs:61833`) and the
+`DrawBG` `resetClouds` latch (`Main.cs:63980-63984`, `windSpeedCurrent = windSpeedTarget`
+first). `Cloud.rand` is the C#'s private static stream, pinned to the world seed (the
+`make_stars` precedent). The retired `make_clouds`/`CloudSprite` static stand-in is gone.
 
-Cloud deviations: the wind drift is a constant light wind scaled by `GetParallax` (the
-original integrates `windSpeedCurrentВ·9В·GetParallax` per tick, `Cloud.cs:391`); the storm
-type branch (`Cloud.cs:116-127`) and `RollRareCloud` (`Cloud.cs:140-147`, needs the boss
-flags) are not applied at generation; `globalCloudAlpha` (= `ProcessCloudAlpha В· atmo`) is
-1 because no active skies/`atmo` are modelled; and the `HorizonClouds` shader of
-`NextHorizonRenderer.CloudsEnd` (sun-tinted cloud shading) is not ported.
+The draw runs as the three `DrawSurfaceBG` passes in the original order — distant
+(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) — over the pool in
+slot order with the verbatim bucket gates (scale 1.15f passes BOTH closer and closest, the
+C# double/float edge, `cloud.rs::cloud_in_bucket`), the `DrawClouds_*` cY formulas
+(`cloud_distant_cy`/`cloud_closer_cy`/`cloud_closest_cy`; the closer pass reads the
+`bgTopY` `BackMountainsStep1` leaves, `Main.cs:59808`; the closest the near-mountain setup,
+`Main.cs:59514`), and the screen X straight off `Cloud.position.X`. Colour is the verbatim
+`DrawCloud` byte chain (`render/sky.rs::draw_cloud_color`): `Cloud.cloudColor`
+(`Cloud.cs:227-235`) on `ColorOfTheSkies`, the distant `OriginalColorsForCloud` pull
+(`NextHorizonRenderer.cs:254-263`), the `atmo < 1` byte-truncated dim and the
+`globalCloudAlpha = ProcessCloudAlpha()·atmo` multiply (`Main.cs:59330`; no custom skies
+are active in-world so `ProcessCloudAlpha` clamps 1). The `ShouldDrawSurfaceBackground`
+gate (`Main.cs:59707-59720`) folds the remix seed + the fullscreen map.
+
+Cloud deviations (W4-g69, deviation-fix round): `CloudEnv::gather` reads the LIVE
+`World.crimson` (`WorldGen.crimson`, persisted in the `.wld` flags byte
+`WorldFile.cs:1281/2080` and the `.trwld` v18 tail; generation sets it from
+`GenOptions.crimson`) and `downed_eow` for `NPC.downedBoss2` — the shared flag covers
+both orb bosses (`NPC.cs:79443-79458`'s shared death case 13/14/15/266), so the
+`RollRareCloud` type-36 gate (`Cloud.cs:196`, `downedBoss2 && crimson`) is complete.
+The DOC-SWEEP round (docs/research/117) wired the five small constants-false
+consumers to the live field — the Dryad chat lines (`NPC.cs:94038-94080`), the
+Dryad shop blood-moon seed + 3217/3218 painting splits (`Chest.cs:1571-1594`,
+`:1665-1672`), the angler quest re-roll (`Main.cs:3769-3817`), the EoC loot
+ore/seed split (`Conditions.IsCrimson/CorruptionAndNotExpert`) and the
+`WorldEvilStone` lang token (`Lang.cs:145`) — plus the drunk-world dawn evil flip
+(`Main.cs:65403-65406`, `clock.rs`, no draw). The large consumers (powder
+proj 10/11/463 + `AttemptToConvertNPCToEvil`, `GERunner` spread, mimic 473/474,
+WoF brick 347/140, altar drop 5532/5533, boss-bag open 3319, shimmer decraft
+variant preference, Painter case-11, Guide help-text) stay unported — their
+lanes' rows (117 §2). The `.trwld` v18 tail is a FIVE-block union conflict
+(c43 identity 44 / d109 variants w×h / g69 crimson 1 / g70 forest 16 / g71
+surface 3); g71b's `92-doc-sweep-bg.md` owns the layout, 117 §1 cross-notes the
+crimson byte at C#-order offset 16 (variants last). The drunk-menu type
+override's gen flags stay false in-world. `Rain::change_rain` reads the LIVE
+`CloudField.num_clouds`/`cloud_bg_active` (`Main.cs:64730`'s `cloudBGActive >= 1f ||
+(double)numClouds > 150.0` then `> 100.0` — all three bands reachable; the pinned
+`NUM_CLOUDS_STAND_IN` is retired), and the ×4.25 start arm reads the live
+`cloudBGActive` too (`:64916`). The `cloudBGAlpha` visual ramp is the C# schedule now:
+`Rain::cloud_bg_draw_step` at the draw head, `±0.0005·dayRate` (RAW, no `max(1,…)`)
+per draw toward 1/0 by `cloudBGActive > 0`, inside the `DrawSurfaceBG` gate chain
+(`Main.cs:59354-59373`: `!drunkWorldGen && ShouldDrawSurfaceBackground() &&
+screenPosition.Y/16 <= worldSurface+10` AND `BackgroundEnabled`) — the retired
+10×-per-tick intensity chase is gone (one documented placement deviation: the C#
+ramps between the distant and closer cloud passes, the port at the draw head; no
+pass before the storm banks reads the value). The `HorizonClouds` shader of
+`NextHorizonRenderer.CloudsEnd` (`:323-356` — the sun/moon-tinted cloud shading:
+celestial colour + position, visibility × `1 - cloudBGAlpha`; needs the unported
+`GameShaders.Misc` infrastructure) and the dead `BetterColorsForClouds` (never
+called in 1.4.5.8) are not ported — the passes draw the byte-chain colours directly.
+The old 100 px screen cull is gone — the C# draws every active in-bucket cloud (the
+retire bounds of `Cloud.cs:417-420` keep them near the screen anyway).
+
+Rain-cloud darkening (W4-g69 DOC-SWEEP, docs/research/117 §4): `Cloud.cloudColor`
+(`Cloud.cs:227-235`) carries NO per-cloud rain tint — the darkening is the dark
+storm TYPES 18-21 (`addCloud` `:116-127`, landed) plus the GLOBAL `SetBackColor`
+dim `1 − cloudAlpha·0.9·atmo` (`Main.cs:63546-63552`, byte-truncated, gated
+`cloudAlpha>0 && !remixWorld`). The port's two sky-tint sites ran a divergent
+stand-in (clamped `visual_alpha`, no atmo, no remix exclusion, a 0.1 floor, no
+byte truncation); the shared `render::sky::rain_dim_sky` helper now ports the
+formula verbatim (byte-first truncation + the unchecked `as i32 as u8` wrap for
+over-1 pins) and both sites feed `modify_horizon_light` the RAW alpha. The
+`numCloudsTemp` spawn cadence (`Main.cs:58952-59036`) was re-verified VERBATIM;
+one init deviation: the C# re-rolls `numClouds = Next(200)` at content load
+(`:10876`) after the ctor 200 (`:66839-66840`), the port keeps 200 — the first
+tick's `weatherCounter` jump overwrites it before any in-world draw, and wiring
+the load-time draw would shift the bare global stream every sibling witness pins.
 
 Stars: `make_stars` ports `Star.SpawnStars` (`Star.cs:86-158`) in its RNG order вЂ” count
 `Next(200,400)`, positions in the 1920x1200 design space, `rotation Next(628)В·0.01`,
@@ -2224,7 +2514,7 @@ coins and the 1-in-40 giant-star roll. The original seeds it with
 pins the stream to the world seed so screenshots stay deterministic. `draw_sky` ports
 `DrawStarsInBackground`/`DrawStar` (`Main.cs:63030-63173`): the sky-colour visibility gate
 `255В·(1 в€’ cloudAlphaВ·atmo) в€’ skyR в€’ 25 > 0` (fades the field out across dawn; the
-graveyard dim is not modelled), the greyscale brightness formula, the
+graveyard dim is PORTED at the W4-g69 retire, see the RETIRE UPDATE below), the greyscale brightness formula, the
 `position/1920В·screenWidth + sceneArea.bgTopY` mapping with the frame wrap, and the
 `tex.Size()В·scaleВ·twinkle` draw with `Star.Update`'s rotation/twinkle speeds (the 0.6..1
 twinkle oscillation is sine-approximated around the same centre and range). Two known
@@ -2232,6 +2522,47 @@ deviations: `DrawStar` builds its colour from `default` and assigns only R/G/B
 (`Main.cs:63083-63086`) вЂ” a zero alpha would make every star invisible, so the port draws
 them fully opaque at the computed brightness вЂ” and the per-tick twinkle/rotation advance
 is driven by the pinned animation clock instead of integrated state.
+
+Falling-star VISUAL (W4-g69 DOC-SWEEP census, docs/research/117 §5): the port's
+starfield is STATIC — `StarSprite` carries no `falling`/`hidden`/`fadeIn`/
+`fallSpeed`/`fallTime`, and `draw_sky` derives twinkle/rotation from `anim_time`,
+not integrated `Star.Update`. The C# falling-star chain (`Star.Fall`
+`Star.cs:160-169`, the `Update` falling branch `:173-205`, the `DrawStar` trail
+`Main.cs:63140-63171`, `Star.StarFall` `:62-84`, `NightSetup`'s `starfallBoost`
+`:41-60`, `UpdateStars` `:237-260`, the spawn triggers `Main.cs:17259-17272`/
+`:19865-19871`) is a coherent UNPORTED subsystem — a follow-up lane, not a small
+fix. The falling-star SOUND pair (cases 37/38) is g23b's (dormant); the
+sky-sweep visibility gate is g70b's. Cross-note: the port's star gate
+(`sky.rs:704`) reads `storm` (cloudBGAlpha) where the C# (`Main.cs:63051`) reads
+`cloudAlpha·atmo` — g70b's sky-sweep adds the `cloud_alpha` param; flagged so the
+two lanes don't both rewrite it.
+
+Star-pass RETIRE UPDATE (W4-g69 retire, `99a67f9e`, docs/research/117 §6 SEALED):
+the cross-note above is DISCHARGED — g69 owns the gate fix. New shared helpers in
+`render/sky.rs`: `star_pass_heads` (`Main.cs:63030-63058`) ports the graveyard
+opacity head (`1 − GraveyardVisualIntensity·1.4`, the field dead at ≤ 0 — the
+"not modelled" note is retired), the shimmer sky dim (`colorOfTheSkies *=
+1 − shimmerAlpha`, XNA byte multiply, feeding BOTH the gate and DrawStar), the
+`shimmerAlpha == 1` whole-pass skip (`:62086-62088`), and the gate itself on the
+RAW `cloudAlpha·atmo` with the `remixWorld ||` unconditional arm — the
+cloudBGAlpha stand-in is gone. `draw_star_color` (`Main.cs:63066-63110`) ports
+the full DrawStar colour chain: the per-channel `(int)` truncation before the
+/3 average, the `(double)·1.4` cap-255, `color *= starOpacity`, the shimmer i%3
+channel tint (0→G, 1→B, 2→R; the literal `(1f − num·0f)` = 1; two sequential
+twinkle multiplies), `Color.Lerp` byte lerp and the artificial-false
+`*= 1 − num`. The `artificial: true` shimmer-surface star pass (`:62203`, the
+`*= num` arm) stays unported with its surface pass. DrawStar's skyblock bgTopY
+zero (`worldSurface ≤ 30`, `:63114-63117`) landed inline. `draw_sky` gains
+`graveyard_intensity`/`shimmer_alpha`/`cloud_alpha` params fed from
+`scene_state` + `rain.raw_alpha()`; g70's tip adds a `cloud_alpha` param with
+the SAME name/semantics for its celestial dims — ONE param at the merge. The
+falling-star visual stays UNCLAIMED at every sibling tip → the research/117 §6
+task-seed (five-step port plan; g23's dormant sound pair activates from it).
+The hardmode-V evil flavour also went live this retire (`fd0edd6b6`):
+`initialize_hard_mode` reads `world.crimson` (the C# GERunner reads the
+`WorldGen.crimson` static inside the convert arm, `WorldGen.cs:76304`) —
+the `(seed >> 56) & 1` re-derivation that ignored the UI pick / persisted
+flavour / drunk dawn flip is retired at all three callers.
 
 Screenshot harness: `TR_SHOT` runs pin `dt` to exactly 1/60 (so `anim_time`-driven phases
 land on the same value per frame) and `TR_MOUSE=x,y` pins the OS pointer вЂ” the vanilla
@@ -11643,7 +11974,16 @@ verbatim; `RollLuck(25)` consumes the Rain stream through the loot engine's
 (`Next(75,151)В·100В·100 Г—maxTilesX/4200`, `:64670-64673`) is consumed but not stored вЂ”
 coin projectiles are unported. The cloud-alpha ramps (`cloudAlpha` and the
 `cloudBGAlpha` stand-in) scale by `max(1, day_rate)` (`:61902-61906`,
-`:13187/13205` shapes).
+`:13187/13205` shapes). W4-d130 final: the `cloudAlpha` ramp is the C#'s TWO-arm
+shape (`:61911-61937`) — while raining it chases `maxRaining` in both directions
+with the overshoot snap; while NOT raining it decays toward 0 UNCONDITIONALLY
+(the target is not read; the earlier single clamp-toward-target was
+observation-equal only because `StopRain` zeroes the target). `ChangeRain`'s
+three strength bands (`:64730`), the `IsRainingForever` floor skip and the
+`instant` arm were verified covered — no change.
+W4-g69 deviation fix: the `cloudBGAlpha` ramp is the C# per-draw schedule
+(`Main.cs:59358-59373`, +0.0005 x dayRate RAW - `Rain::cloud_bg_draw_step`
+at the draw head); the tick-side intensity-tied stand-in is retired.
 
 RNG stays per-consumer (the WEATHER-2 convention): Rain's splitmix is the single
 rain-consumer stream (the thunder tiers, the `update_time` rolls, the
@@ -11661,13 +12001,14 @@ Deviations, all deliberate:
   and `WorldGen.GetWorldUpdateRate` (`WorldGen.cs:72020-72028`) only clamps it at 24
   and freeze-gates it. `world_sim/growth.rs:18` passes the literal `1`; never feed it
   `day_rate()`.
-- **The `numClouds` stand-in is pinned at 100** (`NUM_CLOUDS_STAND_IN`, matching
-  `render/sky.rs` `make_clouds`' static `num_clouds = 100.0`): with exactly 100 the
-  `numClouds > 150`/`> 100` ChangeRain bands are dead and only the storm gate
-  (`cloudBGActive >= 1f` в†’ `cloud_bg >= 1.0`) reaches the heavy bands; the same
-  `cloud_bg` stand-in reads the Г—4.25 start arm (`:64916`). The live cloud-count
-  system (`Main.cs:58952-59036`) is unported вЂ” revisit both with the
-  weather-completion row.
+- **RESOLVED (W4-g69 deviation-fix round): the `numClouds` stand-in.** The pinned
+  `NUM_CLOUDS_STAND_IN` (100) is retired — `Rain::change_rain` reads the live
+  `CloudField.num_clouds`/`cloud_bg_active` (`Main.cs:64730`'s `cloudBGActive >= 1f
+  || (double)numClouds > 150.0`, then `> 100.0` — all three bands reachable), and
+  the ×4.25 start arm reads the live `cloudBGActive` (`:64916`). The `cloudBGAlpha`
+  visual ramp moved to the C# per-draw schedule (`Rain::cloud_bg_draw_step`,
+  `Main.cs:59358-59373`, ±0.0005·dayRate RAW inside the `DrawSurfaceBG` gate
+  chain) — see "Clouds and stars (M1.4-BG-11/16, W4-g69)".
 - **`Rain.wind` (the drop drift) is static now.** The retired session schedule was
   its last writer; vanilla's drops read the live `Main.windSpeedCurrent` per tick
   (`:58830-58950` feeds `Wind` directly). The field stays seed-time-fixed until a
@@ -22999,6 +23340,611 @@ Documented deviations, none reachable from the ported runtime surface:
   (both `false` вЂ” the exact runtime state) and
   `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
 
+## The liquid skip/settle surface (W4-g47, 2026-11-21, code-only mode)
+
+The settled-liquid skip/settle semantics (`Liquid.cs`) are ported into
+`crates/tr-core/src/liquid.rs` in three phases, each with written-not-run
+witnesses (code-only mode — no cargo/tests this lane):
+
+- **Phase 1 (`047f37f3`)** — the `quickSettle` flag (`Liquid.cs:35`) and its
+  two `Liquid.Update` arms: the fall's remainder clamp (`:588-591`) and the
+  254 settle-step promotion (`:944-948`), plus the pass-head `quickFall`
+  derivation (`:1056-1068`). The `skipLiquid` tile flag (`Tile.cs:511-521`)
+  and its per-entry gate (`:1096-1104`) / post-fall writes (`:586-587`) /
+  `AddWater` clear (`:1173`) were already landed (anchors `set_skip`).
+- **Phase 2 (`e43fa0bc`)** — `DelWater` (`:1470-1599`): the <2 / <20 / >=20
+  drain rules, the keep-alive (`:1506-1510`), the wake/type bookkeeping, the
+  lava grass-ring conversions, the swap-remove (kill rides, delay does not),
+  and the `CheckAlch`/`CheckLilyPad` tail. The `kill >= 8` retirement sweep's
+  254->255 promotion (`:1109-1119`), the `LiquidBuffer.AddBuffer`/`DelBuffer`
+  counts (`LiquidBuffer.cs:11-27` — the `checkingLiquid` bit, the
+  `maxLiquidBuffer - 2` cap, the swap-remove promotion), the stuck band's
+  10 000-cycle self-clear (`:1131-1149`), and the gfx-quality `quickSettle`
+  override (`Main.cs:17105-17113`). `CheckAlch`/`CheckLilyPad` are public
+  kill-executing seams in `edit/kill.rs` (`WorldGen.cs:45972`/`:59203`);
+  their drops ride `LiquidSystem::drain_edit_kills`.
+- **Phase 3 (`dab3df3d`)** — the force-settle family `QuickWater`/
+  `SettleWaterAt`/`AttemptToMoveLava|Honey|Shimmer` (`:104-433`), panic mode
+  `StartPanic` + the 5-row drain (`:966-1054`), `ReInit` (`:83-102`),
+  `WaterCheck` (`WorldGen.cs:80415-80494`), and the load-settle driver
+  `settle_loaded_world` (`WorldFile.cs:733-764`). The
+  `GetTileData(Tile)`/`CheckWaterDeath`/`CheckLavaDeath` seams
+  (`TileObjectData.cs:5196`/`:5083`/`:5107`) resolve the liquid-death kills.
+  The `edit_kills` drops resolve under the `UpdateLiquid` RNG swap
+  (`WorldGen.cs:71529`) in `world_sim/liquids.rs`.
+
+Documented deviations / deferred items — **re-marked by the W4-g46 RE-FOLD
+(union `e7626b72`..`d95911ce`, research/252's graft order)**: the three
+"NOT ported" deferrals below are now LANDED on the union branch; the g47
+lane's original deferral text is kept struck for the record.
+
+- ~~**Underworld evaporation (`:466-474`) is NOT ported.**~~ **PORTED on the
+  union (W4-g46 graft, research/252 step 2).** `LiquidSystem::underworld_layer`
+  seeds `height - 200` in `new` (runtime-faithful, unguarded `y > layer`,
+  water-only `min(2, liquid)` shed pre-flow, zero-kill `KILL_DEAD`); the fall
+  arm reads the LIVE post-evaporation level (`own_now`), the kill bookkeeping
+  keeps the pre-evap capture. The mass-conservation pins stay out of the band
+  via the `#[cfg(test)] new_flow_fixture` sentinel (`underworld_layer =
+  i32::MAX`, the `tool.rs` convention) — EVERY flow witness uses it; the
+  evaporation witnesses (`liquid_evaporation` ×4 + the re-pinned layer-row
+  boundary in `liquid_merge_cadence`) use `new`. Census deviation 3 FIXED.
+- ~~**`AddWater`'s guards are NOT ported into `add_water`.**~~ **PORTED on the
+  union (W4-g45 round 2 `daa1cdb0` carried per research/252 step 5).** The
+  `:1163` 5-tile border exclusion + the `type != 546` carve-out + the
+  `:1183-1206` inline `CheckLavaDeath`/`CheckWaterDeath` → `KillTile` are on
+  `add_water(&mut World, …)`; the inline kill's `TileKill` queues on
+  `edit_kills` (the LOOT UPGRADE — g45b discarded it). The `:1183` gate reads
+  the port's `generating` field, which IS `isGeneratingOrLoadingWorld` (armed
+  during the LOAD settle too). The ~40 fixtures are embedded (+6,+6) past the
+  border with containment walls; `liquid_addwater_guards` ×10 witness the
+  arms (the inline-death witness asserts the queued record). Census
+  deviation 7 FIXED.
+- ~~**The merger keeps g45's nudge (`World.frame_rng`).**~~ **SUPERSEDED —
+  the union keeps g46's arm + per-consumer `surface_rng`** (research/69 row
+  10 / research/252 step 3): world-seeded `UnifiedRandom`, drawn ONLY on a
+  254 3-cell average, pinned draw-for-draw by
+  `surface_rng_is_the_world_seeded_unified_stream`. g45's three nudge
+  witnesses are RE-PINNED onto it (`w.seed = 35/0`). The 7/5-neighbour extra
+  wake passes (`:748-771`/`:821-836`, g45 `ccfe0b42`) are carried (research/252
+  step 4); the extra-wake witness is re-derived onto the 7-arm fixed-point
+  fixture (the C# 3-cell arm has no extra wakes). Census deviations 5/6
+  FIXED on the union.
+- **`settle_loaded_world` IS wired into the load path (W4-g47 settle wiring,
+  `551c1e7b`).** The hook rides the [`App::new`] tail — the shared boot +
+  `swap_world` construction, the port's `Main.LoadWorld` tail — so a swapped
+  world settles exactly as a booted one. The round-trip pins do NOT move:
+  every `saveglue.rs` fixture is DRY, and a dry world's settle mutates zero
+  tiles, bumps zero revisions and consumes zero `frame_rng` draws (witnessed:
+  `liquid_settle_wiring::the_load_settle_on_a_dry_world_is_a_byte_and_rng_noop`,
+  `saveglue::w4_g47_app_new_on_a_dry_world_moves_no_liquid_bytes`).
+  **Re-pin obligation:** a WET saved world with objects near liquid WILL
+  re-pin `frame_rng` (the kill cascades' `SquareTileFrame` reset rolls) and
+  change its liquid bytes on load — the vanilla behaviour. Any future pin over
+  a wet world must re-derive against the settled state, not the raw file.
+  The load context arms `isGeneratingOrLoadingWorld` (the merge selector takes
+  the `LiquidOverwriteStrip` arm, `Liquid.cs:1329`) + the `waterLine = maxTilesY`
+  pin (`WorldFile.cs:734`, the re-type stays dead); `generatingWorld` stays down;
+  both drop at `:764`. `TR_NO_SETTLE` is the A/B escape hatch; the `TR_POOL`/
+  `TR_SPOUT` staging fixtures opt out (they stage pre-settle liquid the verified
+  S1-G-14 captures need).
+- **The gfx-quality `quickSettle` override (`Main.cs:17105-17113`) IS wired**
+  (census): `gfx_quality.rs::apply` reads `app.liquids.quick_settle()` and
+  restores the full window + single cycle, called every frame at
+  `frame/world.rs:669` (`gfx_quality_apply`). Both it and the budget block
+  (`:17076-17091`) are gated on `!isGeneratingOrLoadingWorld`, so neither fires
+  during the load drain — the driver runs on the `ReInit` stock pair, exactly
+  as the C# load does. **The `Setting_UseReducedMaxLiquids` caps ARE ported
+  (W4-g47 final phase, `d3a30ebf`)**: the settings field
+  (`settings.reduced_max_liquids`, launch-flag-only — `slowliquids=1`,
+  `Main.cs:5079-5083`, no config.json key, default false `:67008`), the
+  `ReInit` 5000 cap (`Liquid.cs:98-101`), the gfx `2500 + 2500 * gfxQuality`
+  budget (`:17080-17083`) + flat-5000 quickSettle override (`:17108-17111`),
+  and the pass-head `numLiquid > 2000` quickFall OR-arm (`:1057-1060`). The
+  MP-only `:1000-1003` cap stays out of scope (census deviation 9). Stock
+  (flag false) is byte-identical to the pre-port behaviour. Witnesses:
+  `gfx_quality::quick_settle_overrides_the_quality_liquid_budgets`,
+  `gfx_quality::reduced_max_liquids_caps_the_quality_and_quick_settle_budgets`,
+  `settings::slowliquids_launch_flag_sets_reduced_max_liquids`,
+  `liquid_settle_wiring::reduced_max_liquids_caps_reinit_at_5000`,
+  `liquid_settle_wiring::reduced_max_liquids_ors_numliquid_over_2000_into_quick_fall`.
+- **The `SettleWaterAt` gen re-type arm (`:178-192`) IS ported (W4-g47 settle
+  wiring)** — gated on `generating`: the classic `waterLine` boundary (`:184-187`)
+  and the remix `lavaLine`/`rockLayer`/`oceanDepths` band (`:182`), honey/shimmer
+  keep their type (`:178`). `set_gen_settle_context` is R-12-5's plumbing seam.
+  **The dungeon re-type (`:188-191`) IS ported (W4-g47 final phase,
+  `d3a30ebf`)** — `GenDungeonContext` (`liquid.rs`): the outer potential-bounds
+  hitboxes (the f24/c30 `create_potential_dungeon_bounds` products, converted
+  from `DualDungeonSetup.dungeons[i].outer`) + the `Main.wallDungeon` base set
+  (`dungeon_features::is_dungeon_wall`) unioned with the dual-dungeon style-wall
+  extensions (`DungeonCrawler.cs:155-181`). STRICT `generatingWorld`-gated; the
+  wall reads the ORIGIN cell (the C# `tile` reference is bound at `:152` —
+  **f25's gen-local copy reads the LANDING cell instead, a deviation the merger
+  reconciles onto this form**). An un-armed context = the C# empty
+  `dungeonGenVars` list, arm dead; the runtime/load settle never arms it. The
+  runtime settle keeps `generating` down; the load settle arms it but the
+  `waterLine` pin keeps the classic arm dead. Witnesses:
+  `liquid_settle_wiring::the_gen_settle_dungeon_arm_retypes_lava_back_to_water`,
+  `...::the_dungeon_arm_needs_bounds_and_wall_and_stays_dead_unarmed`.
+  **`QuickWater`'s `ShimmerRemoveWater` (`:108`/`:138`) IS ported (final
+  phase)** — `WorldGen.cs:34823-34851` (the 150-radius circle, rows
+  `sy-150..=sy+75`, non-shimmer liquid zeroed + tombstone 162 deactivated),
+  STRICT `generatingWorld`-gated (`:34825`), position via
+  `set_gen_shimmer_position` — the gen driver copies the g36-A1 GenVars slot
+  (`gv.shimmer_position`, the `WorldGen.cs:15241` Shimmer-step write); `None`
+  mirrors the `Vector2D.Zero` reset (`:7039`), a corner no-op. Witnesses:
+  `liquid_settle_wiring::shimmer_remove_water_clears_the_circle_but_keeps_shimmer`,
+  `...::shimmer_remove_water_is_dead_on_load_and_without_a_position`.
+  **Still deferred:** the noTraps boulder swap (subsumed by the pass-scoped
+  `tilesIgnoreWater`) and `LiquidInteractionsCleanup` (`generatingWorld &&
+  !skyblock`, strips gen merge tiles 56/659 — f25's gen module carries it).
+- **MP scaling / net change set** (`:987-1004`/`:1151-1156`) stay out of
+  scope (single-player target, census deviation 9/10).
+
+### The runtime settle-pump driver (R-12-5, W4-g47 continuation)
+
+The per-tick driver census: C# `Liquid.UpdateLiquid` (`Liquid.cs:983-1158`)
+is consumed by THREE drivers, and the port now carries all three:
+
+1. **The runtime pump** — `WorldGen.UpdateWorld` (`WorldGen.cs:71526-71534`):
+   `Liquid.skipCount++; if (skipCount > 1) { using
+   (Main.SwapRandom("UpdateLiquid")) Liquid.UpdateLiquid(); skipCount = 0; }`
+   — one pass per two 60 Hz world ticks (30 Hz), wrapped in the named RNG
+   stream. Ported VERBATIM as `LiquidSystem::update_world_tick` (the
+   `skip_count` field is the C# static `Liquid.cs:19`, zeroed by `ReInit`
+   `:85` — a world swap starts a fresh window). The app consumer
+   `world_sim/liquids.rs` now calls the engine driver instead of its own
+   `app.liquid_tick % 2` divider (field REMOVED — the counter's C# home is
+   the Liquid statics, not Main; the old divider never reset on world swap,
+   a phase deviation the driver port fixes). The `SwapRandom` block is the
+   caller's seam: the drained `edit_kills` resolve on `RngKey::UpdateLiquid`
+   (`resolve_liquid_edit_kills`), the exact stream the C# `KillTile` drops
+   draw under the swap; the engine pass itself draws nothing on this lane
+   (the g45/g46 nudge is their seam). The `isGeneratingOrLoadingWorld`
+   early-return (`:71497-71500`) is the frame loop's own gate (worldgen
+   completes before the loop starts). Cadence-identical to the old divider
+   on a fresh boot (both fire on ticks 2, 4, ...); witnesses:
+   `liquid_force_settle::the_update_world_driver_runs_the_pass_every_second_tick`
+   (byte-equal twin vs direct `update` over 40 ticks),
+   `...::re_init_resets_the_driver_divider`. Written, NOT run.
+   Pass-internal census (already landed, re-verified against the driver
+   read): the stride window `curMaxLiquid / cycles` with the `numLiquid`
+   clamp re-walk (`:1069-1105`), the quickFall two-loop shape (`:1083-1105`
+   — delay-10 force + skip-clear vs the skip-honouring normal loop), the
+   `wetCounter >= cycles` tail (`:1106-1149` — the descending `kill >= 8`
+   sweep with the 254→255 promotion, the `num8` buffer promotion with
+   `DelBuffer(0)`'s swap-remove, the ±50 stuck band), and the panic gate
+   (`:1005-1054`). The `:1087` quickFall loop writes `delay = 10` INTO the
+   entry; the port's pass loop passes the local 10 into `update_tile`,
+   whose quickFall arms return it unchanged (`Liquid.cs:483-491`/`:512-521`
+   skip the delay writes under quickFall), and the write-back
+   `self.active[i].delay = delay` persists it — the entry carries 10 out
+   of a quickSettle window exactly as the C# does (the first non-quickFall
+   lava visit flows immediately, no 5-tick re-throttle).
+2. **The load drain** — `settle_loaded_world` (`WorldFile.cs:733-764`),
+   WIRED at `App::new` (g47 `551c1e7b`); calls `update` directly (no
+   skipCount — the C# load loop does the same).
+3. **The gen settle loops** — `WorldGen.cs:16132-16210` /
+   `:21246-21309` (f25's lane; the gen/runtime split contract is recorded
+   in the f25 gen-pass census below).
+
+**The LiquidBuffer driver arm** (census re-verified, R-12-5): the buffer is
+NOT scanned per tick — it drains ONLY inside the `wetCounter >= cycles`
+tail (`Liquid.cs:1120-1130`), budget `num8 = min(numLiquid, numLiquidBuffer)`
+where `numLiquid` is the POST-retirement-sweep count (the C#'s
+`curMaxLiquid - (curMaxLiquid - numLiquid)` algebra). Each promotion clears
+the buffered cell's `checkingLiquid` (`:1127`), calls `AddWater` (which may
+REFUSE — dry/solid/border cells) and `DelBuffer(0)` UNCONDITIONALLY
+(`:1129`), the swap-remove moving the LAST entry into slot 0
+(`LiquidBuffer.cs:22-27`) — so a refused cell still leaves the buffer and
+the head order is LIFO-ish, not FIFO. `AddBuffer` (`LiquidBuffer.cs:11-20`)
+caps at `maxLiquidBuffer - 2` and marks `checkingLiquid` for dedupe; the
+port's `add_water` carries both arms (`:1167-1171` overflow threshold
+`curMaxLiquid - 1`). The ≥90%-full panic gate reads `buffer.len()` per
+update (`:1009-1020`). New witnesses (written, NOT run):
+`liquid_settle::the_promotion_budget_is_the_post_sweep_active_count_clamped_to_the_buffer`
+(the 1→2 budget growth over two cycles + the swap-remove head order),
+`...::the_promotion_delbuffers_even_when_addwater_refuses_the_cell`.
+
+**The f25 gen-pass split contract** (R-12-5 census of `0ed1f3cf` on
+`task/W4-f25`, claims read in `docs/research/12g-f25-settle-liquids.md`):
+f25 owns the GEN side — `worldgen/settle_liquids.rs` (the ocean retype
+sweep `:16137-16146`, the `QuickWater(3)` pre-settle, the 10-round budget
+loop, `ClearPendingLiquid`, `LiquidInteractionsCleanup` with the `:23755`
+up-shimmer quirk) + the pipeline step; g47 owns the RUNTIME side (the
+skipCount pump above, the load drain, the panic/stuck/buffer machinery).
+The shared `Liquid.UpdateLiquid` engine is ONE body — f25's gen-local
+copies dedupe onto the g47 surfaces at the g46c graft (research/252 step 6).
+Carried onto the g47 machinery here (the export surface f25's module
+drives): `tiles_ignore_water`, `world_gen_tiles_ignore_water` (the
+`gen_ignore_water` field + the `kind_solid` fold — the C# pokes the RAW
+`Main.tileSolid` table, so the lift rides the shared read), `set_bubble_solid`,
+`num_liquid_total`, `clear_pending_liquid` (`WorldGen.cs:80496-80513` —
+drops both lists + their checking bits, leaves the skip bits), 
+`liquid_reaction_check`, and the NEW shared driver `gen_settle_loop`
+(`WorldGen.cs:16158-16206` verbatim: WaterCheck → quickSettle up → 10
+rounds × `num3 * 5` budget with the live-count re-raise → WaterCheck
+between rounds → ClearPendingLiquid → quickSettle down; the Part-2 twin
+`:21265-21305` is classic-identical — its only deltas are the
+`getGoodWorldGen` tileSolid[56] poke `:21250-21253`, the absent
+extraLiquid round bump, and the progress fractions). f25's
+`set_generating(remix)` maps onto `set_gen_settle_context` (which arms
+the STRICT `generating_world` too — the fuller C# context; f25's flag
+only armed `generating` + `remix`, so its dungeon/shimmer arms were dead
+by flag as well as by un-armed context — same classic result). The
+context arming stays the GEN DRIVER's job (research/252 step 7:
+`set_gen_settle_context(water_line, lava_line, remix)` +
+`set_gen_shimmer_position(gv.shimmer_position)` + the f24/c30
+`GenDungeonContext`; `edit_kills` drained/discarded at the pass tail —
+records must not leak across the per-pass instance). f25's claimed
+"no RNG draws in the whole pass" holds only for ITS discard-only
+`end_pass`; on the g47 machinery the DelWater grass-ring/lily kills fire
+during gen and ride `edit_kills` (the world-hash RE-DERIVE obligation,
+research/252's witness table — unchanged by this carry). Witnesses
+(written, NOT run): `liquid_gen_driver::world_gen_tiles_ignore_water_lifts_the_door_family`,
+`...::clear_pending_liquid_drops_both_lists_and_their_checking_bits`,
+`...::the_gen_settle_loop_drains_the_lists_and_drops_quick_settle`,
+`...::the_gen_settle_loop_on_a_diffusing_film_still_clears_the_tail`.
+
+**The e21 pump/settle compose** (R-12-5 driver 4): the pump active-gate
+(`Wiring.cs:2043-2125` — the 142/143 registration, the 19-cap, the 2×2
+SkipWire) and `XferWater` (`:475-523` — the type-matched 255-capped
+teleport with the live in-tile re-read) were landed by M7-WIRE/e21, but
+the compose with the settle pump was MISSING: the C# fires
+`WorldGen.SquareTileFrame` after every out transfer (`:512`), on the
+emptied in tile (`:516`) and on the in tail (`:521`), and `TileFrame`
+re-queues every wet cell through `Liquid.AddWater`
+(`WorldGen.cs:81344-81346`, `netMode != 1 && !generatingWorld`) — that is
+how pump-teleported liquid joins the active lists and flows. The port's
+`xfer_water` mutated the tiles and never woke the settle (its doc claimed
+"the port's liquid sim reads the tiles next tick" — false: the sim walks
+its ACTIVE LIST, not the grid). Fixed: `Wiring` queues the touched
+positions (`pump_wakes`, in the C#'s call order — the emptied-in arm
+queues twice, `:516` + `:521`), the app wiring tick drains them into
+`LiquidSystem::wake_around(x, y, 1)` (the 3×3 `TileFrame` walk; the
+dry/solid/checking guards are `AddWater`'s own). The reframe's
+neighbour-frame half is a no-op for pumps (the transfer touches only
+liquid, the bodies keep their frames). The wake is dedupe-safe
+(`checkingLiquid`) and RNG-free. Witnesses (written, NOT run):
+`wiring::tests::the_pump_moves_water_and_adopts_the_type` extended (the
+three wake sites in order + the drain),
+`world_sim::wiring::tests::r_12_5_the_pump_transfer_wakes_the_settle_and_the_water_flows`
+(the full compose: trip → transfer → wake → skipCount pass → the blob
+falls out of the out body).
+
+### The DelWater keep-one (W4-g47 vs W4-g45, for the merger)
+
+Both branches ported `Liquid.DelWater` (`:1470-1599`) independently. **g47's
+`liquid.rs::del_water` is canonical** — keep it, drop g45's. Arm-by-arm:
+
+| Arm (C#) | g47 | g45 | Verdict |
+| --- | --- | --- | --- |
+| `<2` dry + side wakes (`:1478-1498`) | edge-safe probe + chunk marks | edge-safe probe (`2249cf59`), no chunk marks | g47 (superset; adopted g45's probe form) |
+| `<20` drain (`:1499-1505`) | `tile_open` fold, live `here` | `!tile_is_solid` fold | equivalent (`tile_open` == the C# `!nactive \|\| !solid \|\| solidTop`) |
+| `>=20` keep-alive (`:1506-1510`) | `kill=0; return` (no retire) | `return false` (caller skips swap) | equivalent |
+| above-wake + type-clear (`:1511-1518`) | live re-read | live re-read | equivalent |
+| side wakes (`:1519-1528`) | **live re-read** (adopted) | live re-read | g45's form adopted into g47 |
+| lava grass ring (`:1529-1560`) | converts + **chunk-dirty mark** (adopted) | converts + mark | g45's marking adopted into g47 |
+| honey/shimmer re-check (`:1562-1569`) | yes | yes | equivalent |
+| swap-remove (`:1575-1579`) | **INSIDE** `del_water` (self-copy-then-pop) | caller-side (`retire_sweep`: pop-then-copy-if-`l<len`) | equivalent (both match the C# `numLiquid--` then copy `liquid[numLiquid]`; at `l==last` g47 self-copies+pops, g45 just pops — same result). g47 keeps it in one body, so the stuck self-clear and the sweep share it without a second caller |
+| `CheckAlch` tail (`:1580-1583`) | `check_alch` → `edit_kills` (drops resolved) | `check_alch_tile` wrapper (discards drops) | **g47** — the drop records ride `drain_edit_kills` → `resolve_liquid_edit_kills`; g45's wrapper drops the herb loot |
+| `CheckLilyPad` tail (`:1584-1597`) | explicit 3-arm order (adopted) + `edit_kills` | explicit 3-arm order, `check_lily_pad` wrapper (discards drops) | **g47** — same arm order, but keeps the drop seam |
+
+The merger should take g47's `del_water`/`end_pass`/`add_water` wholesale and
+NOT g45's `retire_sweep`/`refill_from_buffer`/`check_alch_tile`/`check_lily_pad`
+wrappers. The decisive difference is the **drop seam**: g47's `Check*` kills
+ride `edit_kills` (the herb/lily-pad loot resolves into item drops through
+`resolve_liquid_edit_kills`, the same path the live liquid tick uses), while
+g45's `check_alch_tile`/`check_lily_pad` wrappers execute the kill but discard
+the drop record — a behavioural loss. The swap-remove shapes are equivalent.
+g45's genuinely-better details (edge probe, live side reads, ring
+chunk-marking, explicit lily arm order) are already folded into g47's body
+(`551c1e7b`). g45's `genRand` nudge + 7/5-neighbour wakes (`ccfe0b42`) are a
+SEPARATE seam (`update_tile`'s averaging arms, not `del_water`) — keep those.
+
+### The g46c graft-union verdict (W4-g47 final phase, cross-note to research/69)
+
+The g46c in-flight graft (on `task/W4-g46-liquid-evaporation`, base
+research/69 `f3b33b92`) MUST adopt this keep-one table. research/69 was
+written against g47 `cfe5f1c9` — BEFORE the settle wiring (`551c1e7b` /
+`ba694653` / `95e9c1ef`) folded g45's details in and BEFORE the final phase
+(`d3a30ebf`) adopted g46's last loot delta. The updated adoption set:
+
+1. **`del_water` = g47 canonical, WHOLESALE** (this branch's tip). research/69
+   row 1's recipe ("g46 body grafted onto g47's skeleton") is SUPERSEDED: the
+   g45 details it wanted (edge probe, live side reads, ring marking, lily arm
+   order) are already in g47's body, and the one remaining g46 delta — the
+   `square_tile_frame_record` loot seam on the grass-ring / lily-reframe arms
+   (row 1's "g47 `square_tile_frame_default` DISCARDS the kill/drop records"
+   cell) — is ADOPTED into g47 at `d3a30ebf` (one `edit_kills` queue, g46's
+   `retire_kills` name dropped per row 1 step 2's own recommendation). g46's
+   `check_alch_tile` wrapper is NOT needed — g47's `edit::check_alch` already
+   returns the record. **Do NOT graft g46's `del_water` body over this one.**
+2. **g45-details-adopted**: `2249cf59` (edge probe), the live side re-reads,
+   the ring chunk-marking, the explicit lily 3-arm order — all in `551c1e7b`.
+   g45's nudge + extra wakes (`ccfe0b42`) stay a separate carry (research/69
+   rows 10/12: g46's `surface_rng` arm wins the stream pick; g45's 7/5-wakes
+   are the one non-superseded g45 item).
+3. **g45b AddWater-guards (`daa1cdb0`/`8e81814e`) are a SEPARATE seam — carry
+   them** (research/69's fixture note said "stays deferred"; that verdict is
+   now stale: g45 round 2 landed the guards WITH the fixture widening). The
+   graft takes g45b's `add_water` guards (the `:1163` border + `type != 546`
+   carve-out + the `:1183-1206` inline death check) onto g47's `add_water`
+   body, with g45b's embedded (+6,+6) fixtures. Two reconciliations: (a) the
+   `:1183` early-return reads `isGeneratingOrLoadingWorld` — g47's field for
+   that flag is `generating` (armed during the LOAD settle too), so g45b's
+   `self.generating` gate is already the right one; (b) g45b's inline
+   `kill_tile` discards the drop record — upgrade it to push the `TileKill`
+   onto `edit_kills` (the same loot-seam argument as the DelWater keep-one).
+4. **g46 evap (`524faa8b`) grafts as research/69 row 9 says** (faithful
+   unguarded `y > height-200`, `new_flow_fixture` sentinel) — g47 never
+   ported evaporation, no conflict.
+5. **The final-phase surfaces g46c must NOT overwrite** (`d3a30ebf`):
+   `reduced_max_liquids` (ReInit cap + pass-head OR-arm + gfx pair),
+   `GenDungeonContext` + `set_gen_dungeon_context` (the `:188-191` arm —
+   ORIGIN wall read; f25's gen-local landing-wall read is the deviation),
+   `set_gen_shimmer_position` + `shimmer_remove_water` (both `QuickWater`
+   arms), and the WIRED load hook (`App::new` → `settle_loaded_world`,
+   research/69 row 8's "stays UNWIRED" is stale — wired at `551c1e7b` with
+   the dry-world no-op proof). f25's gen-local `shimmer_remove_water` /
+   `in_any_potential_dungeon_bounds` copies dedupe onto these LiquidSystem
+   surfaces at the gen-driver graft (research/69 rows 4/5's "keep both"
+   becomes "keep one" — the gen module calls `sys.set_gen_shimmer_position`
+   / `sys.set_gen_dungeon_context` and drops its private copies).
+
+The full graft order, the producer wiring and the witness re-pin table live
+in **`docs/research/252-liquid-merge-order-g46.md`** (the FINAL liquid merge-order
+doc — which branch base, graft steps 1-7, re-pins, gate checklist).
+
+### The g46c RE-FOLD landing record (W4-g46 union, 2026-11-21, code-only)
+
+The graft above EXECUTED on `task/W4-g46-liquid-evaporation` in research/252's
+order (the stale `f57d7bac` union — built against g47 `cfe5f1c9` — was
+replaced, not patched):
+
+| Step | Commit | Scope |
+| --- | --- | --- |
+| 1 base swap + evap/nudge/wakes | `e7626b72` | g47 `95e9c1ef` wholesale (liquid.rs + edit.rs/edit/kill.rs + app/mod WIRED hook + saveglue/env/editing/gfx_quality/liquids); g46 evap (`underworld_layer`/`own_now`/sentinel) + `surface_rng` nudge + g45 7/5-wakes re-grafted; `retire_kills` name DROPPED (`edit_kills` canonical), `check_alch_tile` wrapper dropped (`edit::check_alch` returns the record), g46 `check_lily_pad` pure form replaced by g47's `raw_solid` closure form |
+| 2 g47c final code | `f588d53c` | `d3a30ebf` folded: reduced-liquids (settings/launch/gfx/ReInit/OR-arm), `GenDungeonContext` + ORIGIN-wall dungeon re-type, `ShimmerRemoveWater` both arms, the g46 `square_tile_frame_record` loot seam adoption, 8 witnesses |
+| 3 g45b guards | `16fd6ad7` | `8e81814e` carried: border + 546 carve-out + inline death with the `edit_kills` loot upgrade, `&mut World` ripple (5 app callers + every test), ~40 fixtures (+6,+6)-widened, the g45 witness union (delwater ×5 / nudge ×3 re-pinned / extra-wake re-derived / guards ×10), g46's `TileFrameImportant` case-518 dispatch restored into `square_tile_frame` (the g47 base lacked it — `WorldGen.cs:84966-84968`) |
+| 4 g47d drivers | `d95911ce` | R-12-5 ×4 (`3dbbe3ef`/`d9445fc4`/`4288657c`/`ae688401`): `update_world_tick` + the app divider removal, buffer-arm witnesses, the f25 export surface + `gen_settle_loop`, the e21 `pump_wakes` compose |
+
+Witness count: **102 `#[test]` fns** in the union `liquid.rs` (g47's base +
+final + driver pins, g46's evap/stream/lily pins, g45's cadence/delwater/
+nudge/guard carries — the duplicates dropped per research/252's table). All
+written-not-run; compile-by-inspection only. Steps 6/7 (the f25 gen-module
+dedupe + the f24/c30/g36 producer wiring) stay with the worldgen master
+merge — the export surface + context setters they call are ON this branch;
+the f25 gen-hash RE-DERIVE obligation (research/252 witness table) stands,
+and the gen-side `edit_kills` drain choice must be picked + recorded there.
+The runtime-inert gen-fields contract (research/69 §contract, research/252
+gate 3) holds: `generating`/`generating_world`/`gen_ignore_water`/
+`quick_settle` default false; the context setters are gen-driver-only; the
+load driver arms `generating` but never `generating_world`;
+`underworld_layer` is runtime-faithful; `surface_rng` advances only on a
+254 average.
+
+### The Liquid.cs FULL-FN final census (W4-g47 closeout, SEAL carry `4c81731b`)
+
+The whole decompiled `Liquid.cs` function list (24 members, script-diffed
+against the port's fn list at `dd66fa3a` + the closeout) — the final
+per-fn verdict, nothing left unaccounted:
+
+| C# fn (`Liquid.cs`) | Port home | Verdict |
+| --- | --- | --- |
+| statics + static ctor (`:15-55`/`:1669-1677`) | `LiquidSystem` fields + `MAX_ACTIVE`/`MAX_BUFFER`/`CYCLES` consts | PORTED (instance-per-world instead of statics — the ReInit contract) |
+| `NetSendLiquid` (`:57-67`) + `_netChangeSet`/`_swapNetChangeSet` + the `UpdateLiquid` broadcast tail (`:1151-1156`) | — | OUT OF SCOPE (MP; census deviation 9/10, single-player target) |
+| `tilesIgnoreWater` (`:69-73`) | `tiles_ignore_water` + the `kind_solid` grate/boulder fold | PORTED (`4288657c` export; the pass wraps itself `:986`/`:1157`) |
+| `worldGenTilesIgnoreWater` (`:75-81`) | `world_gen_tiles_ignore_water` + the `gen_ignore_water` `kind_solid` fold | PORTED (`4288657c`) |
+| `ReInit` (`:83-102`) | `re_init` (incl the reduced-liquids 5000 cap) | PORTED |
+| `QuickWater` (`:104-148`) | `quick_water` + `shimmer_remove_water` | PORTED; the `verbose` progress arm + the noTraps boulder swap + `LiquidInteractionsCleanup` ride f25's gen module (cited-dropped here: the boulder swap is subsumed by the pass-scoped ignore, the cleanup is f25's `:23755` carry) |
+| `SettleWaterAt` (`:150-289`) | `settle_water_at` (gen re-type + dungeon arm + ORIGIN wall) | PORTED |
+| `AttemptToMoveHoney/Lava/Shimmer` (`:291-433`) | `attempt_to_move_honey/lava/shimmer` | PORTED (left/right/up/down order, the had-type XOR gate) |
+| `UpdateProgressDisplay` (`:435-447`) | — | UI-ONLY (the `Main.statusText` gen loading bar; no tile effect, no RNG — the port's loader owns its own progress text) |
+| `Update` (`:449-964`) | `update_tile` (+ the fall/row/kill arms) | PORTED — the evap block (`:466-474`) and the Next(30) nudge (`:892-895`) are ON the union (the g46 graft steps 2/3, `e7626b72`); the g45 doc-sweep's LIVE reads (fall `own_now`, down-arm post-burn re-read) sealed onto it |
+| `StartPanic` (`:966-981`) | `start_panic` | PORTED |
+| `UpdateLiquid` (`:983-1158`) | `update` + `end_pass` | PORTED except the MP cycle scaling (`:987-1004`), the MP section-reset (`:1038-1051`), the `Misc.WaterSettled` console line (`:1034`) and the net broadcast (`:1151-1156`) — all MP/console, cited-dropped |
+| `AddWater` (`:1160-1207`) | `add_water` | PORTED — the `:1163` 5-tile border exclusion + `type != 546` carve-out and the `:1183-1206` inline water/lava-death check are ON the union (g45b's guards, `16fd6ad7`, with the `edit_kills` loot upgrade; research/252 step 5) |
+| `UndergroundDesertCheck` (`:1209-1223`) | `underground_desert_check` | PORTED |
+| `LiquidCheck` (`:1225-1309`) | `liquid_check` (the `create_merge_tiles_during_gen` param carried) | PORTED; the down arm's LIVE post-burn reads sealed (`c8908a55` carry); the `WorldGen.cs:22480` gen finalize-sweep CALLER is f25's lane (the fn is here, the gen driver calls it) |
+| `LiquidOverwriteStrip` (`:1311-1323`) | `liquid_overwrite_strip` | PORTED |
+| `CreateLiquidMergeTile` (`:1325-1373`) | `create_liquid_merge_tile` | PORTED with the cited `ReplaceTile` fallback (`KillTile` + forced `PlaceTile`, ANALYSIS above) |
+| `GetLiquidMergeTypes` (`:1375-1443`) | `get_liquid_merge_types` + `get_liquid_change_type` | PORTED |
+| `LavaCheck`/`HoneyCheck`/`ShimmerCheck` (`:1445-1468`) | `lava_check`/`honey_check`/`shimmer_check` | PORTED (the lava desert strip rides `generating && !remix && !dual_dungeons`) |
+| `DelWater` (`:1470-1599`) | `del_water` (canonical, keep-one) | PORTED (the g46 evap-adjacent drained-type `mark_chunk` rides the union re-fold) |
+| `AddGameplaySnapshotComponents` (`:1601-1667`) | — | OUT OF SCOPE (the `StateSnapshot` dev/rollback tooling; no gameplay effect) |
+| instance fields `x/y/kill/delay` (`:45-51`) | `Entry` | PORTED |
+
+`LiquidBuffer.cs` (both fns, `:11-27`): PORTED inside `add_water`/
+`end_pass` (the `maxLiquidBuffer-2` cap, the checking mark, the
+swap-remove promotion — the buffer-arm census, R-12-5 driver 2).
+
+**"LiquidEdge" does not exist** — a full-tree grep of `decompiled/` and
+`decompiled-libs/` finds zero hits. The liquid EDGE surface is
+`LiquidRenderer.InternalPrepareDraw`'s Pass-4 edge flags
+(`LiquidRenderer.cs:161-613`), ported in `liquid_draw.rs`
+(`has_left/right/top/bottom_edge` + the wall levels, the `Cache` struct ≈
+`LiquidCache`/`LiquidDrawCache`). The waterfall-source family
+(`WaterfallManager.cs`: `CheckForWaterfall` `:95`, `FindWaterfalls`
+`:107`, `UpdateFrame` `:257`, both `DrawWaterfall` overloads,
+`StylizeColor`/`GetAlpha`/`TrySparkling`/`AddLight`, `Draw` `:1118`) is
+ported in `waterfall/mod.rs` + `waterfall/draw.rs` (the A4 landing,
+witnessed). **Gaps-list (LiquidRenderer.cs, render-side, NOT liquid.rs
+scope)**: `HasFullWater` (`:799-813`, the `Main.DrawBlack` `:58008`
+background-coverage gate — the port's black-merge in `render/tiles.rs`
+keys on light-zero + wall coverage, no liquid probe), `GetVisibleLiquid`
+(`:815-829`, zero C# callers found in the decompile — dead surface),
+`SetWaveMaskData` (`:854-880`, the `WaterShaderData.cs:166` viscosity
+mask chain — the port's `water_mask.rs` renders its own mask from the
+liquid rects, no per-cell viscosity read), and the wind-driven
+`_frameState` (`Update` `:831-847`: `windSpeedCurrent*25 ± 6` — the port's
+`anim_time*8` clock is wind-INDEPENDENT, a render-cadence deviation).
+All four are draw-side follow-ups, cited here, none blocks the liquid
+SIM merger.
+
+### The honey/shimmer settle specifics (W4-g47 closeout per-liquid census, SEAL carry)
+
+The drivers are NOT water-centric — the per-liquid arms verified against
+`Liquid.Update` (`Liquid.cs:480-566`) arm-for-arm:
+
+- **lava**: `LavaCheck` EVERY visit (`:482`, before the gate), then the
+  `delay < 5` throttle (`:485-490`) — one fall per SIX visits (five
+  throttled + one flow), reset to 0. Port: `update_tile`'s lava arm.
+- **honey**: non-lava cells wake their lava neighbours first (`:495-510`),
+  then `HoneyCheck` EVERY visit (`:513`), then the `delay < 10` throttle
+  (`:516-521`) — one fall per ELEVEN visits. Port: the honey arm.
+- **shimmer**: non-lava/non-honey cells wake their honey neighbours
+  (`:526-541`), then `ShimmerCheck` (`:544`) with **NO delay gate at all**
+  — the C# arm has no `delay++`/return; shimmer flows at the water
+  cadence (one tile per two passes via the down-arm `skipLiquid` pair).
+  Port: the shimmer arm — same shape, no gate. The `delay` field stays 0.
+- **water**: the else-arm wakes shimmer neighbours (`:548-563`), ungated.
+- The neighbour-wake cascade is per-kind EXCLUSIVE (a lava cell never
+  wakes lava neighbours; a honey cell wakes lava but not honey; a shimmer
+  cell wakes lava+honey but not shimmer) — the port's nested else-chain
+  mirrors it exactly.
+- `quickFall` bypasses BOTH gates (`:1083-1090` forces `delay = 10`
+  pre-Update — above both thresholds); the reduced-liquids
+  `numLiquid > 2000` OR-arm feeds the same bypass for all four kinds.
+- The settle drivers (`update_world_tick`, `gen_settle_loop`,
+  `settle_loaded_world`, the panic drain) are kind-agnostic by design —
+  the C# drivers never branch on liquid type; the per-kind behaviour
+  lives entirely in `Update`/`DelWater`/the checks, all ported.
+- The `DelWater` reaction tail is per-kind too (`:1529-1569`): lava →
+  `LavaCheck` + the grass ring, honey → `HoneyCheck` only, shimmer →
+  `ShimmerCheck` only; the port reads the LIVE cell kind post-drain,
+  same arms.
+- The e21 pump transfer is type-locked (`Wiring.cs:501` `b2 == b`) for
+  ALL four kinds — an empty out tile adopts the in type (`:497-499`),
+  including honey/shimmer; the port's `xfer_water` carries the same
+  lock + adoption + the three wakes per transfer regardless of kind.
+
+Closeout witnesses (written, NOT run — SEAL-carried with the §11
+dispositions): `shimmer_falls_every_visit_ungated` (the no-gate proof +
+the zero-delay pin, `liquid_sim`, sentinel-switched + border-re-pinned),
+`quick_fall_bypasses_both_delay_gates` (the lava+honey twins — the
+union's lava-only pin widened under the closeout name,
+`liquid_merge_cadence`). The honey 1-in-11 pin keeps the union's
+`honey_falls_once_every_eleven_visits` (same assertions, the pair
+deduped); the lava six-visit pin is the union's
+`lava_falls_once_every_six_visits` (the g47 machinery it pins is
+identical).
+
+### The liquid render-gaps closure (W4-g47 retire, SEAL carry `a9dba7cf1` via `a4d49b355`)
+
+The FULL-FN census's four draw-side follow-ups, each re-censused against
+the source and closed (code-only — witnesses written, NOT run; the code
+landed on this union in the A9.2 rows 6+7 fold):
+
+- **`HasFullWater` (`LiquidRenderer.cs:799-813`)** — ported as
+  `liquid_draw::has_full_water` over the prepared records (visible +
+  non-surface = full water; out-of-area = the C# out-of-cache `true`).
+  The consumer census: its ONLY caller is `Main.DrawBlack`'s run-break
+  (`Main.cs:58008`), and `DrawBlack` early-returns whenever
+  `TileDrawingBase.DrawOwnBlacks` is true (`:57943`) — the static ctor
+  sets it true (`TileDrawingBase.cs:54`) and the only writer is the dev
+  A/B tooling (`TimeLogger.ABTestFlag`, `TimeLogger.cs:443-453/:712`).
+  The port's merged wall+black path in `render/tiles.rs` IS the
+  DrawOwnBlacks=true default path (per-cell blacks in
+  `DrawSingleTile`/`WallDrawing`), so the gate has NO runtime consumer
+  in the shipped configuration — the query is ported for surface
+  completeness, cited unwired. NOT a sim-merger blocker (unchanged).
+- **`GetVisibleLiquid` (`:815-829`)** — re-grepped `decompiled/` AND
+  `decompiled-libs/`: zero callers. Dead surface, cited-dropped (the
+  research/02 pipeline row's stand-in verdict stands).
+- **`SetWaveMaskData` (`:854-880`) + the viscosity chain** — the data
+  census: `WAVE_MASK_STRENGTH = new byte[5]` (`:891`) is NEVER assigned
+  anywhere in the decompile, so the mask's R/G/A strength channels are
+  all-zero in 1.4.5.8; the only live byte is `VISCOSITY_MASK`
+  (`:892` = {0, 200, 240, 0, 0}) on B. Ported as
+  `liquid_draw::{VISCOSITY_MASK, WAVE_MASK_STRENGTH, WaveMaskCell,
+  wave_mask}` — the `:499-549` fill over the records (the fill gate is
+  `HasVisibleLiquid`, wider than the sprite pass's `IsVisible`; the
+  above-copy `:529-531` runs in the same column-major order; the
+  slot-3/slot-4 rows are byte-identical so the no-solidity distinction
+  cannot change a byte). `LiquidDraw` grows
+  `is_solid`/`is_half_brick`/`has_visible_liquid` for the probes. The
+  GPU consumer (`WaterShaderData.StepLiquids`' viscosity-filter chain,
+  `WaterShaderData.cs:164-182`, WaveQuality >= 3) stays shader-infra
+  scope: the port's `water_mask.rs` coverage mask (M1.4-BG-18 phase 4)
+  is the WaterDistortion input the port models; the per-cell viscosity
+  FILTER is the remaining infra step, cited — the data half is now
+  ported and witnessed.
+- **The wind-driven `_frameState` (`Update`, `:831-847`)** — PORTED and
+  WIRED: `liquid_draw::LiquidAnimClock` (`wind*25 ± 6` frames/s body
+  clock, wind-independent 0.5 frames/s waterfall clock, the single
+  +16 negative wrap then `%16` — a west wind below -0.24 leaves a
+  NEGATIVE frame, `(int)` truncation kept), ticked once per client
+  update in the frame head beside the sway counters
+  (`Main.cs:17043`'s site), stored on `App::liquid_clock`. The two
+  integer frames feed `draw_waters`/`draw_liquids`/`draw_shimmer`
+  (the `src_x == 16` interior rows ride the waterfall frame —
+  `LiquidRenderer.cs:634-641` — the shimmer pass the body frame only,
+  `:697`) and ride the G6 key's existing `anim` slot packed
+  (body frame low byte — the two's-complement cast keeps -15..15
+  injective — waterfall frame byte 1), gated on `has_liquids` exactly
+  as before. The old `anim_time*8`/`anim_time*0.5` derivations are
+  retired: **deliberate behaviour change** (the render-cadence
+  deviation the census cited is fixed): calm air now animates liquid
+  at 6 fps (was 8), wind accelerates/reverses it. Determinism holds:
+  the clock is a pure function of (dt, windSpeedCurrent), both
+  already G6-keyed inputs (`TR_WIND_FORCE` pins it for A/B shots);
+  liquid-free worlds keep the old cache behaviour bit-for-bit.
+  `FocusHelper.PauseLiquidRenderer` (the unfocused pause) has no port
+  analogue — the port has no unfocused-update path. The compile-critical
+  rider rode with it: the `liquid_clock` field on the flow.rs
+  front-end-boot App literal (`bf5fc4ffb`, the second full-App
+  construction site — both App literals covered).
+
+New witnesses (written, NOT run — `liquid_draw::tests`):
+`the_wave_mask_carries_only_the_viscosity_channel` (the four kinds +
+the above-copy + the solid no-copy), `has_full_water_reads_the_visible_non_surface_records`
+(interior true / surface false / dry false / out-of-area true),
+`the_liquid_clock_is_wind_driven_and_wraps_at_sixteen` (calm 6 fps,
+storm 37, the negative west remainder, the wind-independent waterfall
+clock). 3 anchors rows carried (`LiquidAnimClock`, `wave_mask`,
+`has_full_water`).
+
+### The g45d co-lane carry (W4-g47 retire, SEAL carry `2bbadd9bd`/`8d581953`/`c8908a55` via `a4d49b355`)
+
+The g45 doc-sweep's two liquid.rs sim fixes adopted onto the g47 canonical
+base and folded onto this union (research/252 §13's FINAL owner table; both
+were real fidelity gaps in the base body, not lane-specific deltas):
+
+- **The fall arm's LIVE read** (`Liquid.cs:570-575`, g45 `8d581953`):
+  `update_tile`'s down transfer now reads `own_now` (the live cell) after
+  the reaction block, not the `:464` entry snapshot — the side/up merge
+  can zero the checking cell mid-visit and the old pre-read resurrected
+  the consumed units into the cell below. The union already carried
+  `own_now` — ZERO code delta, the comment upgrade only (the base cite
+  `:570-575` + the reaction-consumption case); the g46 evap case rides
+  the same live read.
+  Witness: `the_fall_arm_reads_the_live_post_reaction_level` (lava+water
+  side merge under quickSettle, the fall moves the live 0 —
+  `new_flow_fixture` sentinel, the `add_water(&mut w)` re-pin per the
+  A9 rider).
+- **The down arm's LIVE post-burn reads** (`Liquid.cs:1278-1306`, g45
+  `c8908a55`): `liquid_check` re-reads the cell after the `tileCut` burn
+  before the `:1286` gate + the `:1303` merge-type reads; `flag` stays
+  the pre-kill `:1274` read. The seven cut kinds outside
+  `tileObsidianKill` (444/518/519/549/637/638/711) now drain/merge like
+  the C#. The union carried the SAME stale read — the `2bbadd9bd` hunk
+  landed VERBATIM (the re-fold's stale copy superseded, NOT arm-merged).
+  Witnesses: the 4-pin `liquid_downarm_live` module carried verbatim
+  (ONE copy, sentinel-switched).
+
+The g45 bucket module (`fa96cf32a`, `editing/buckets.rs`) is a
+Player/editing surface — g45 owns it whole; the seal carried it with the
+`mod/use_buckets` pre-melee wire + `bucket_use_tests` restored to ×15
+(the 5 LIQUID-FINAL sponge/stack/bottomless witnesses the partial carry
+had dropped). The g45 shimmer-flow witness (`99a4f8ccf`) drops onto the
+closeout's `shimmer_falls_every_visit_ungated` — the keep-ONE MERGED form
+(the g47 shelf fixture + entry.delay==0 asserts AND the g45 cadence-trace
+asserts ride one pin, per the g45 research/69 A9.2 row 4). Post-fold
+count RE-MEASURED on this tip: **109 `liquid.rs` pins + 2 wiring compose
+pins** (research/252 §15 Seal 4's sealed expectation; §13's 99+2 as
+projected, +10 guards arrived early at re-fold step 3). All written,
+NOT run. 2 anchors rows carried (`the_fall_arm_reads…`,
+`liquid_downarm_live`).
 ### W4-c34 addendum (2026-11-20, code-only mode)
 
 The non-water surface re-verified against `Liquid.cs:449-597`/`:1225-1468`
@@ -23038,6 +23984,143 @@ and completed:
   exemption), the down-arm sub-24 drain + water re-type (`:1290-1298`), the
   water-cell no-burn gate (`:1278`) and the shimmer+lava/honey -> 659 merges
   (`:1395-1426`). The water-flow witnesses are untouched.
+
+### W4-g45 addendum (2026-11-21, code-only mode)
+
+The delay *machinery* around the gates — the retirement lifecycle that the
+per-entry `delay` counter lives in — re-verified against `Liquid.cs:1106-1150`
+/ `:1470-1599` and completed (the gates themselves landed R-11-5/c34):
+
+- **`Liquid.DelWater`** (`Liquid.cs:1470-1599`) is ported as
+  `liquid.rs::del_water`: the sub-2 dry + side wakes (`:1478-1498`), the
+  sub-20 drain (`:1499-1505`), the >=20 keep-alive (`kill = 0`, `:1506-1510`),
+  the above/side wakes (`:1511-1528`), the type reaction on the retired cell
+  plus the lava grass-burn ring (2/23/109/199/477/492 -> 0, 60/70/661/662 ->
+  59, `:1532-1560`), and the alch/lily-pad tail (`:1580-1598`). The tail's
+  `CheckAlch`/`CheckLilyPad` ride new `edit::check_alch_tile` /
+  `edit::check_lily_pad` (`WorldGen.cs:45972-46092` / `:59203-59310`).
+- **The retirement sweep** (`Liquid.cs:1109-1119`) is now the C#'s reverse
+  `DelWater` walk with the 254->255 promotion (`:1113-1116`), replacing the
+  port's plain `kill` filter. **The swap-remove copies `x`/`y`/`kill` but NOT
+  `delay`** (`:1577-1579`): the slot keeps its own delay field, so the moved
+  entry INHERITS the retired cell's throttle counter — the delay-counter
+  lifecycle the gates ride. The stuck window (`:1131-1149`, +/-50 for 10 000
+  cycle-ends -> force-clear with `stuck` up so keep-alive cannot rescue) and
+  the buffer promotion (`:1125-1130`, `checkingLiquid(false)` then `AddWater`
+  with fresh `delay = 0`, `DelBuffer` swap-remove) are ported; `add_water`'s
+  overflow now marks `checkingLiquid` and caps at `maxLiquidBuffer - 2`
+  (`LiquidBuffer.cs:11-20`) with the `curMaxLiquid - 1` active cap (`:1167`).
+- **The `genRand` 254->255 nudge** (`Liquid.cs:892-895`) is now ported in the
+  3-neighbour arm: a settled 254 rolls `WorldGen.genRand.Next(30)` and
+  promotes to 255 on a zero. **RNG census:** the draw rides `World.frame_rng`
+  (the port's `genRand` stand-in — the same stream `SquareTileFrame`'s centre
+  re-roll consumes, `world.rs:54-60`), advances exactly when the C# does
+  (only on a 254), and is the ONLY random draw in the whole liquid engine.
+  Seed 35's first `Next(30)` = 0 (promote), seed 0's = 21 (keep), verified
+  against the `UnifiedRandom` golden peek/next (seed 42: peek -712735937,
+  next 1434747710). This closes research/11 deviation 5.
+- **The extra wake passes** (`Liquid.cs:748-771` / `:821-836`) are ported in
+  the 7/5-neighbour arms: each neighbour is re-queued when the centre differs
+  from the average, run BEFORE the conditional centre write. Post-`set_level`
+  the neighbours all hold `avg`, so the neighbour clause is dead and the pass
+  reduces to the centre-diff test — but it re-queues an already-settled
+  neighbour that `set_level` left unqueued, fixing the queue-order deviation
+  (research/11 deviation 6).
+- **Determinism:** the merge surface stays RNG-free; the single `genRand`
+  nudge is the only draw and is pinned above. The DelWater tail's
+  `SquareTileFrame`/`KillTile` cascades consume `frame_rng` centre re-rolls
+  exactly as the C#'s `SquareTileFrame` does (the same stand-in), and the
+  herb/lily-pad drop rolls ride the discarded `TileKill` event records (the
+  engine is pure — the same deviation as `liquid_check`'s `tileCut` burn).
+- **Witnesses** (`liquid.rs::liquid_delwater` + `liquid_nudge_wakes`, written
+  NOT run): the delay-inheriting swap, the 254->255 sweep promotion, the
+  keep-alive rescue, the lava grass-burn ring, the alch/lily-pad tail, the
+  buffer `checkingLiquid` promotion, the stuck force-clear, the nudge
+  promote/keep/stream-advance pins and the extra-wake re-queue.
+- **Still out of scope (own task seeds):** `quickSettle` (the force-settle
+  family, R-11-7 / W4-g47), panic mode + `QuickWater`/`SettleWaterAt`
+  (R-11-7), and the MP cycle/kill scaling + `_netChangeSet` (module 17).
+  (The `AddWater` guards — research/11 deviation 7 — landed in round 2
+  below.)
+
+### W4-g45 round 2 addendum (2026-11-21, code-only mode) — the AddWater death-guards
+
+The deferred seed above (research/11 deviation 7) is closed: the
+`Liquid.AddWater` census against the landed port found exactly three
+missing pieces — the 5-tile border guard, the `type != 546` carve-out
+(both `Liquid.cs:1163`) and the death-check block (`:1183-1206`). The
+settle-vs-buffer promotion (`:1125-1130`), the `LiquidBuffer.AddBuffer`
+overflow semantics (`LiquidBuffer.cs:11-20`, the `maxLiquidBuffer - 2`
+cap + the `checkingLiquid` mark) and the `DelBuffer` swap-remove were
+already landed (phase 1); there is NO shimmer-specific AddWater — the one
+function serves all four kinds, honey/shimmer riding the `CheckWaterDeath`
+else-arm and lava the `CheckLavaDeath` arm.
+
+- **The guards** (`Liquid.cs:1163`): `x < 5 || y < 5 || x >= maxTilesX - 5
+  || y >= maxTilesY - 5` refuses the outer band before the queue; the
+  solid refusal now reads `tile_is_solid(&t) && t.kind != 546` — the grate
+  is exempt EVEN outside the pass (the stock `Main.tileSolid[546] = true`,
+  `Main.cs:10124`), while the pass-scoped boulder/bubble toggles stay with
+  `tile_is_solid` (S1-L-14). The C# guard reads the stock table at the
+  call site; the port's `ignore_solids` is down only inside `update`, so
+  the two agree at every runtime call.
+- **The death check** (`:1183-1206`): after the queue, an inactive tile or
+  `generating` returns; otherwise lava reads `CheckLavaDeath(tile)`, every
+  other liquid reads `CheckWaterDeath(tile)` — the Tile overloads
+  (`TileObjectData.cs:5083-5119`) that resolve the def from the cell's
+  frames. **Co-lane seam:** those symbols are W4-e11's claim (pushed
+  `1f5a01dd`, NOT in main; its commit names "the `Liquid.cs:1190`
+  settlement kill wiring is the liquid task's seam"); this branch
+  references `tileobject::check_water_death`/`check_lava_death` and rides
+  e11's merge order (the `npc_ai_plantera` union precedent). W4-d114's
+  style-indexed twins (`:5073-5105`) and W4-g47's duplicate draft are NOT
+  touched — at the merge the duplicate definitions dedupe to e11's. A
+  death runs `edit::kill_tile(world, x, y, false)` INLINE (the C# kills
+  before AddWater returns); the cell keeps its liquid (`remove_tile`
+  preserves it) and the queued entry settles on. The drops ride the
+  discarded `TileKill` record — the engine-pure deviation, same as
+  `liquid_check`'s `tileCut` burns. The MP `NetSendLiquid`/`SendData(17)`
+  arms stay unported.
+- **The `&mut World` ripple:** `add_water`/`wake_around`/
+  `refill_from_buffer` take `&mut World` (the inline kill mutates); the
+  four `world_sim/editing.rs` wake sites + the `app/frame.rs` witness call
+  pass `&mut app.world`. The internal `update_tile`/`del_water`/`set_level`
+  callers already held `&mut World`.
+- **The promotion overflow fix** (`:1120-1129`): the C# pins
+  `num8 = min(numLiquid, numLiquidBuffer)` BEFORE the loop and runs it
+  unconditionally — an AddWater that overflows straight back into the
+  buffer still consumes a promotion slot, and the next slot promotes too
+  (the DelBuffer swap can duplicate a buffered cell — the
+  `the_promotion_count_is_pinned_before_the_loop` witness pins the [B, A]
+  quirk). The port's extra `active.len() < cur_max_liquid - 1` loop guard
+  stopped early in that case; removed.
+- **The fixture widening** (the g47 co-lane's documented precondition —
+  its ANALYSIS defers these guards because "the border guard excludes
+  every cell of the 9-wide test fixtures"): every liquid fixture is
+  embedded at (+6,+6) in a world +12/+12 (the `basin`/`floor_world`/
+  `shaft` helpers + the dam/static-row/inline worlds), with containment
+  walls where the original world edges held the pools. The pinned
+  numbers (levels, cadences, mass ledgers, the nudge draws) are unchanged
+  — only the coordinates moved. The DelWater alch witness gained a stone
+  pillar under the herb: in the widened world an open cell below would
+  trigger the >=20 keep-alive (`:1506`) and the tail never ran.
+- **RNG census:** AddWater itself draws NOTHING — the guards, the queue
+  and the death check are RNG-free. The kill cascade consumes
+  `World.frame_rng` (the genRand stand-in) only where the C# rolls:
+  `reframe_area`'s centre reset needs an ACTIVE centre, and the killed
+  cell is inactive — an isolated torch death in an empty neighbourhood
+  advances no draw (witnessed). The `Next(30)` nudge contract is
+  unchanged: still the only draw in the settle engine, still only on a
+  254 (`:892-895`, the phase-2 census).
+- **Witnesses** (`liquid.rs::liquid_addwater_guards`, written NOT run):
+  the border refusal + inner-edge pass, the grate carve-out, the inline
+  torch death, the flag discriminators (torch style 0 vs the water-torch
+  sub-tile 8 at frameY 176 — D_4_S8_A3's false/false beats the base's
+  true/true through the frame decode; plant 3's global-table water/lava
+  split; pile 372's def-beats-global `water_death: false`), the
+  honey/shimmer water-arm ride, the open-cell/generation early returns,
+  the promotion death check, the pre-loop `num8` pin + swap quirk, and
+  the RNG-free census.
 
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
@@ -25256,6 +26339,63 @@ inactive mount; repointed to the Drill (8, a ported row, `Mount.cs:
 1273-1341`). Added the clone-mirror RNG-purity witness above (the 4th
 sim witness). The landed module code (`24a2331d`) audited CORRECT
 against the census — no module change.
+
+## The Eyebrella drip + the umbrella slow-fall (W4-g67 R6/R7 folds, d130 retire phase, 2026-11-21)
+
+Two g67 follow-up player-lane arms folded onto d130 (research/134 R6/R7,
+commits `356a1ac0`/`01ba6c7a`, retire commit `df28ea1a`):
+
+* **R6 — the Eyebrella drip** (`Player.cs:13083-13087` + `:14308-14331`).
+  The `UpdateEquips` tail: head armor slot 0 OR vanity head slot 10 wearing
+  5101 fires `DoEyebrellaRainEffect` and arms `eyebrellaCloud`
+  (`ResetEffects` clears it, `:18461`). The drip ports verbatim: the
+  `netMode==2 || dedServ || mapFullscreen || !FocusHelper.AllowRain` gates
+  fold to `allow_rain` (the caller derives `window_focused && !game_paused
+  && !map_open` — `FocusHelper.cs:57` `AllowRain => GameplayActive`), the
+  `Next(4) != 0` cadence is the LAST short-circuit term (the gates refuse
+  before any draw), the mount head offset + the Velociraptor-54
+  `(-14,0)*Directions` extra, the `MountedCenter - (0, height/2) +
+  ((-0.5+NextFloat())*(width+18), -30)` window, the `InWorld` +
+  `!SolidTile3` (`WorldGen.cs:70474-70485`) + `liquid <= 0` tile gate. The
+  cadence + window draws ride the player's `UpdatePlayers` stream (the C#
+  `Main.rand` inside `Player.Update`); the position QUEUES
+  (`pending_eyebrella_rain`, the sticky-dust convention) and
+  `world_sim/player.rs` drains into `Rain::new_rain_forced` (the g67b seam,
+  the `dead_code` allow lifted) with the live `windSpeedCurrent*3, 9`
+  velocity — the scale + frame draws ride Rain's own stream. The d130
+  adaptation: `new_rain_forced` takes `&RainInputs` (g67 read `&World` +
+  `camera` directly), so the drain gathers the gfx/water-style inputs like
+  `update_rain` does. `GetEffectiveArmor`'s loadout-sharing fallback
+  (`:5690-5710`) has no port (no loadouts) — the slot itself. The
+  `eyebrellaCloud` draw layer (`PlayerDrawLayers.cs:4033`) stays a render
+  seam (the flag is armed/cleared, no cloud sprite yet).
+* **R7 — the umbrella held-item arm** (`Player.ItemCheck_ApplyHoldStyle`,
+  `Player.cs:50476-50498`). The Umbrella (946) / Tragic Umbrella (4707) —
+  the only holdStyle-2 items — at rest (`itemAnimation == 0`) and
+  `!pulley` cap the fall at 2 px/tick unless `controlDown`
+  (`:50494-50497`) and refresh `fallStart` every tick (`:50481-50484`,
+  `flag = !isDisplayDollOrInanimate` — always true for a real player, so
+  umbrella-rest nullifies fall damage). Ported as
+  `Player::umbrella_hold_slow_fall`, called at the `ItemCheck` position in
+  `update_with_grapple` (after the border clamps — `ItemCheck` `:42846` at
+  `:28285`, after `BordersMovement` `:28278`). The `CanVisuallyHoldItem`
+  gate (`:50271`) blocks the `DontHoldItems` mounts {55,56,61}
+  (`Mount.cs:6572-6579`) through `frame_inputs.can_visually_hold`; the
+  `gravDir == -1` mirror (`:50485-50493`) has no ported gravity flip. The
+  draw half — `hold_item_placement`'s style-2 arm in
+  `render/player_layers.rs` — overrides to the overhead placement
+  `position + (width/2 - 16*dir, 22)`, rotation 0 (`:50478-50480`) for the
+  pair; the generic beside-the-head quarter-turn (`:50499-50509`) is kept
+  for any other style-2 item. The useStyle-3 thrust nudge + melee hitbox
+  were already ported (S1-P-i05 above) — no overlap.
+
+**Witnesses (WRITTEN NOT RUN, code-only):** 3 Eyebrella arms (the cadence +
+window + gate-before-draw, the SolidTile3/wet refusal, the head/vanity slot
+arm + ResetEffects clear), 1 umbrella sim arm (the 2 px cap + controlDown
+release + swing/rope/non-umbrella refusals + the rise untouched), 1 render
+arm (the overhead placement both facings + the generic fallback). 12
+`update_with_grapple` test call sites re-pinned (`allow_rain: true`), the
+production tick derives the gate.
 
 ## The draw phase order (S1-B-7, 2026-11-14)
 
@@ -27532,6 +28672,256 @@ Three, all forced by the port's shape:
   defers the strip walk to a background thread
   (`TransformWorldOnBackgroundThread`, `:31721-31742`) and queues the chat/achievement
   follow-up back to the main thread. The port's `start_hardmode` transforms inline
+
+## The Slime Rain event (W4-f39, 2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked. The port was
+verified by re-reading the C# source in ≤100-line windows (`Main.cs:64742-64961`,
+`:65166-65176`, `:65504-65522`, `:48216-48219`, `:52242-52244`; `NPC.cs:5892-5955`,
+`:77902-77924`, `:79080-79096`, `:79405-79410`, `:7022-7029`; `Collision.cs:3455-3488`)
+and by hand-arithmetic on the witness tests (written, not run). The witnesses are the
+`weather_w4_f39.rs` / `npcs_w4_f39.rs` / `npcs_w4_f39_spawns.rs` / `saveglue_w4_f39.rs`
+`#[cfg(test)]` modules (the d129 `#[path]` convention).
+
+S1-E-37 landed the `StartSlimeRain`/`StopSlimeRain` entry points and the morning roll's
+draw shape. W4-f39 re-ports the **UpdateTime slots** and the **sky-fall spawn** to the
+C# statement order, fixing the deviations the census found:
+
+* **The `:64846` surface gate wraps the whole block.** `isThereAWorldSurface` is
+  `worldSurface > 50.0` (`Main.cs:2788`), EXCLUSIVE — the pre-fix port gated the slime
+  clock/roll on nothing (the clock decayed in a surface-less world). The gate now wraps
+  the clock, the rain section and the roll; `start_slime_rain`'s own `:64744` refusal
+  moves from `<= 0.0` to `<= 50.0` and gains the `remixWorld` arm (the port HAS the seed
+  flag now, `SeedFlags::REMIX`).
+* **The clock decays BEFORE the rain section** (`:64848-64863` ahead of `:64864`). The
+  pre-fix port ran the slime clock AFTER `Rain::update_time`; the expiry's
+  `StopSlimeRain` draw now precedes the rain section's draws on `UpdateTime`.
+* **The `:64864`/`:64890` ladder samples its arm ONCE.** The C# reads `Main.raining` at
+  the branch entry; a rain that expires INSIDE `Rain::update_time` (`:64880`) leaves the
+  tick in the raining arm — the start arms and the slime roll (`:64925`, inside the
+  else-if) stay closed until the next tick. The port now samples `was_raining` /
+  `slime_rain` / `lanterns_up` / `next_night_lanterns` at the entry (the lantern statics
+  are read BEFORE `LanternNight.UpdateTime` at `:64965` can move them).
+* **The lantern arms.** `:64868-64871`'s `LanternsUp → StopRain()` (no drain, no strength
+  roll) and `:64890`'s `!slimeRain && !LanternsUp && !NextNightIsLanternNight` gate on the
+  start arms — the pre-fix `Rain::update_time` folded all three to false.
+* **The kill counter's per-death gate** (`NPC.cs:79082`). `DoDeathEvents_AdvanceSlimeRain`
+  re-checks `slimeRain && slimeRainNPC[type] && !AnyNPCs(50)` for EACH death; the pre-fix
+  port checked `!AnyNPCs(50)` once before the loop, so a King spawned by an earlier death
+  in the same tick did not close the gate for later deaths. The check now lives inside
+  the loop. The `slimeRainNPC[1]` filter (`Main.cs:8864`) is the port's `Slime` kind —
+  every colour variant shares vanilla type 1.
+* **The sky-fall spawn** (`Spawner.SlimeRainSpawns`, `NPC.cs:5892-5955`) is re-ported
+  whole: the `position.Y` (TOP, not centre) depth gate, the `nearbyActiveNPCs` slot sum
+  with the 0.65 `slimeRainNPCSlots` discount (`Main.cs:66803`, `NPC.cs:77916-77918`), the
+  `45 + (int)(450f * (nearby/15))` truncated denominator, the `maxTilesX + 10` upper bound
+  (was `-10`), `Collision.SolidTiles(xt-3, xt+3, yt-5, yt+2)` + the `Main.wallHouse`
+  refusal (was folded), and the full four-arm kind chain — `Next(200)==0` → Pinky(-4),
+  `Next(10)==0` → Purple(-7), `Next(5)<2` → Green(-3), else Blue (the pre-fix port folded
+  the Pinky arm and mapped the `Next(10)` arm to Yellow).
+* **The menu-return stop** (`Main.cs:48216-48219`, `DrawMenu`'s `menuMode <= 1 &&
+  slimeRain → StopSlimeRain`). The port's `save_and_quit` is the in-world → menuMode-0
+  transition; the stop runs AFTER the save (the C# saves the live event, then the menu
+  frame stops it), on the bare `Main.rand` stand-in.
+
+**Documented folds (single-difficulty / port-absent systems):** the expert `×0.85`
+denominator and the `Next(7)`/`Next(3)` kind arms (`NPC.cs:5902-5905`/`:5935-5945`), the
+journey spawn-rate slider (`:5906-5913`), the `WorldGen.Skyblock.lowTiles` `/5` roll arm
+(`Main.cs:64931-64934` — `lowTiles` is skyblock-only, `WorldGen.cs:3215`), the
+`FreezeRainPower` gates, and the `netMode`/`SkyManager` arms. The King's `SpawnOnPlayer`
+tile-scan placement stays the S1-D-3g deviation (the port spawns at the player's column
++12, the C# scans a 500×50 off-screen area). The death-path loop split (the counter pass
+ahead of the boss-death `checkDead` pass) means a slime dying in the SAME tick as the King
+still counts — the C# interleaves per-NPC; recorded, not re-homed.
+
+**RNG argument:** the clock walk is RNG-free; the expiry's `StopSlimeRain` draws one
+`Next(3024, 6048)` on `UpdateTime` (the King-death caller draws `UpdateNpcs`, the
+menu-return caller the bare global); the morning roll draws one `Next(num3)` +
+`StartSlimeRain`'s `Next(32400, 54000)`; the sky-fall arm draws `Next(num2)` + the two
+window `Next(min, max)` + the kind chain (`Next(200)`, [`Next(10)`], [`Next(5)`]) on
+`SpawnNPC`. Every witness mirrors the sequence on a cloned `UnifiedRandom` and compares
+the full stream state.
+
+## The season/date gates (W4-f39 Phase B, 2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked. Verified by re-reading
+the C# in ≤100-line windows (`Main.cs:13118-13172`, `:10901-10937`, `:65389-65392`,
+`:65334-65337`, `:64664-64667`, `:65945-65948`; `WorldFile.cs:651-652`, `:1347-1351`,
+`:1386-1387`, `:2334-2340`; `NPC.cs:79210-79238`, `:6371-6379`; `Chest.cs:1558`/`:1655`/
+`:1903`/`:1966`/`:2027`/`:2249`/`:2667`/`:3436-3468`; `AmbienceServer.cs:130-137`;
+`Item.cs:49668-49714`) and hand-arithmetic on the witnesses (written, not run).
+
+**The user-flagged gap.** The port had NO calendar: `Main.halloween`/`Main.xMas` were stood
+in by the endless micro seeds alone, so the Oct/Dec windows never opened. Phase B ports the
+date decisions and wires every constants-off season consumer to the resolved flags.
+
+* **The pure date module** (`tr-core/src/season.rs`): `is_halloween_date` (Oct 10-31 + Nov 1,
+  `Main.cs:13141-13155`, both edges inclusive), `is_xmas_date` (Dec 15-31, `:13123`),
+  `check_xmas`/`check_halloween` (date OR force-today OR force-forever, `:13118-13172`), and
+  `moon_event_temporary_seasons` (`CheckForMoonEventsStartingTemporarySeasons`,
+  `:10901-10937` — wave >= 15 raises the today-flag, the forever seed suppresses its own).
+  Every decision takes a caller-pinned `(month, day)` — the **FixtureClock seam**
+  (`tools/WldFixtureHarness/Shims/FixtureClock.cs` precedent): the wall clock is injected,
+  never read inside the decision. `now_month_day()` is the ONLY runtime read (UTC
+  `SystemTime` → Hinnant `civil_from_days`, the `ui/world_select.rs` conversion). All
+  draw-free — the C# checks compare integers, they consume no `Main.rand`.
+* **The resolved statics** (`World.xmas`/`halloween`/`force_xmas_for_today`/
+  `force_halloween_for_today`): re-derived at every dawn by `World::refresh_seasons`
+  (`Main.cs:65389-65391`, BEFORE `stopMoonEvent` at `:65392` clears the moon state the
+  temporary-season check reads) and at world load (`enter_loaded_world`,
+  `WorldFile.cs:651-652`). The `*Forever` flags are the endless micro seeds
+  (`WorldGen.cs:572-578`). Runtime-only — the C# does not save the resolved flags (they
+  re-derive from the date + the saved force flags).
+* **The dawn seam** (`world_sim/clock.rs::advance_time` gains a `date: (u32, u32)` param):
+  the runtime caller (`advance_time_with_events`) passes `season::now_month_day()`; the
+  witnesses pin any date. The season trio runs in the dawn branch ahead of `stop_moon_event`.
+* **The five seasonal moon-boss downeds** (`World.downed_halloween_king`/`_tree`,
+  `downed_christmas_tree`/`_ice_queen`/`_santank`, `NPC.cs:6371-6379`): the `DoDeathEvents`
+  cases 325/327/344/345/346 (`NPC.cs:79210-79238`) raise them under the RUNNING event's own
+  flag. Persisted: the `.trwld` v18 tail (5 bytes) + the C# `.wld` flags block
+  (`WorldFile.cs:1347-1351`, tail offsets 1893-1897) + the `*ForToday` pair
+  (`WorldFile.cs:1386-1387`, offsets 2002-2003). NOTE: these do NOT gate the season flags —
+  `checkXMas`/`checkHalloween` read only the date + force flags (the task's "unlock" framing
+  is the emote-wheel/help-text readers, `UIEmotesMenu.cs:250-268`/`Main.cs:39752-39757`).
+* **The consumers wired to the resolved flags:** the loot flags (`world_sim/npcs.rs`
+  `LootFlags.halloween`/`xmas`), the heart/star pickup remap (`world_sim/wiring.rs` +
+  `items.rs::seasonal_pickup_kind`, i52), the spawner holiday arms (`SpawnFlags.halloween`/
+  `xmas` — the night zombie ladder `NPC.cs:4727-4735` + `GetBasicSlimeToSpawn` `:5644-5651`),
+  the shop holiday rows (`StockWhen::Halloween`/`Xmas` — the Arms Dealer/Dryad/Clothier/
+  Wizard/Dye Trader/Witch Doctor) and the Princess anniversary block
+  (`StockWhen::Anniversary*`, `Chest.cs:3436-3468`) + her arrival gate
+  (`town_arrival.rs`, `Main.cs:65945-65948`).
+* **The anniversary RNG gates** (date-independent, the seed): the blood-moon roll widens to
+  1-in-6 (`Main.cs:65334-65337`, `clock.rs` — same single `NextDouble`, only the threshold),
+  the coin-rain `RollLuck` range narrows 25→5 (`Main.cs:64664-64667`, `rain.rs::start_rain` —
+  same draw count at luck 0), the ambience `ResetSpawnTime` halves (`AmbienceServer.cs:133-136`,
+  `ambience.rs` — same `Next(600,7200)`, only the post-divide).
+
+**Documented folds:** the `*ForToday` pair is runtime-only in the `.trwld` (the port's moon
+event is itself unsaved, ANALYSIS "The moon-event wave machinery") but IS owned in the C#
+`.wld` round trip (the C# saves it). The Santa shop (index 25, `Chest.cs:2485-2494`'s xmas
+block) has no ported Santa kind yet — the `StockWhen::Xmas` gate is ready for it. The
+holiday spawner kinds (Raven 301, BunnySlimed 303, Ghost 316, the owl/spaceship eyes 317/318,
+the skeleton costumes 322-324, BunnyXmas 337) are unported — the holiday zombie/slime arms
+map to the ported kinds (the S1-D-3z convention). The `netMode == 1` temporary-season skip
+and the change-broadcast (`Misc.StartedVictory*`) are the host/UI seam.
+
+**RNG argument:** the date checks draw NOTHING (integer compares). The anniversary gates
+change a threshold/divisor, never the draw count or order — a same-seed twin with the seed
+forced differs only in state/outcome, never in stream position (the witnesses pin this).
+
+## The W4-f39 closeout (2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked in any closeout
+phase; witnesses WRITTEN NOT RUN, verified by re-reading the C# in ≤100-line windows and
+hand-arithmetic. The atlas budget was measured with the node harness (`tools/atlas_sim.js`),
+not cargo. Five items, one commit each on top of Phase B (`bd5a5a24a`):
+
+* **SlimeSky** (`746bd0037`): `GameContent/Skies/SlimeSky.cs` ported whole as
+  `slime_sky.rs` on the c39 `event_skies.rs` pattern — the `GenerateSlimes` scatter, the
+  generate/reset RNG-order asymmetry (speed-before-texture vs texture-before-speed), the
+  24-wrap frame counter, the surface-line reset/-100 respawn vs the `_isLeaving` drain,
+  and the `Draw` index walk's quirks kept verbatim (ascending depths 1.6..3.35 with
+  break-at-min empty every band ≥ 1.6 — the visible strata are the 1.0 front-row close +
+  the flush; `j < num2` excludes the nearest slime). The byte-truncated tint chain
+  (sky-lift × depth tier × 0.8) pinned in the witnesses. Activation edge-detects
+  `World.slime_rain` at the pause-gated ambience phase (the five Start/StopSlimeRain
+  SkyManager call sites' stand-in, load path covered); the private stream is
+  world-seed-pinned (the c39 deviation). `Sky_Slime_1..4` packed — atlas 8119→8139 px,
+  fits 8192. The draw rides a new depth-sandwich band (`render/bg.rs::draw_sandwich_band`,
+  `AmbiencePass.slime_sky`) threaded through `draw_sky`'s boundaries.
+* **KingSlime spawn-from-rain** (`c786ffb32`): the kill-150 threshold arm
+  (`NPC.cs:79092`) now calls a faithful `NPC.SpawnOnPlayer(plr,50)` port
+  (`spawner.rs::spawn_king_slime_on_player`, `NPC.cs:80475-80633`) instead of the
+  refusing surface-scan stand-in. Kept verbatim: the 500×50 attempts, the `m < 250`
+  `tile[num16, num16]` wall typo, the down-walk's safe-area gate, the King-only `m < 400`
+  `Collision.CanHit` headroom + line-of-sight pair, `HasTileSpawnSpace`,
+  `CheckNotSpawningOnScreen` (with `safeRangeX/Y` RAW as pixels per `:5444` — the ambient
+  helper's `* TILE_PX` is that lane's own deviation, NOT copied), the `flag`/`num10`/
+  `num11` stale-candidate carry across `m` and the `m == 499` relaxation. `SpawnBoss`
+  lands bottom-centre `(x*16+8, y*16)`, targets the player, `timeLeft = 937*20`; the
+  `Announcement.HasAwoken` broadcast rides `NewNPC`'s type-50 arm (`:80787-80790` — the
+  `SpawnBoss` switch's case-50 silence `:80705` is redundant). The scan draws the
+  `UpdateNPCs` stream via copy-out/write-back; the counter flip stays unconditional
+  (`:79093`). The witness rig widened to 400×400 (the 64-wide rig clamped the spawn area
+  shut).
+* **The event music tracks** (`cb9955257`): `flag24 = Main.slimeRain` (`Main.cs:12200`)
+  → SlimeRain 48 at `:12654` (gates `!ZoneGraveyard && (!bloodMoon || dayTime)` + the
+  surface band), seated between the eclipse and the shimmer where the C# chain has it;
+  and the moon-event tail `:12982-12989` (pumpkinMoon→30, snowMoon→32, gate
+  `screenPosition.Y/16 < worldSurface + 10 || remixWorld`) — two plain `if`s AFTER the
+  whole else-if chain that override even the boss pick on the surface band. The port's
+  early-return ladder kept the tail out of reach; `decide_new_music` now wraps
+  `decide_world_music` and runs the tail verbatim (the menu arm returns before it,
+  `:12531`; the music-box override still wins after). `MusicEnv` gains `slime_rain`/
+  `pumpkin_moon`/`snow_moon`/`remix_world`/`moon_tail_band` (the camera-centre →
+  screenPosition top-left conversion documented at the field).
+* **The seasonal emote/help-text gates** (`da058b714`):
+  `emotes.rs::seasonal_boss_emote_gates` ports `UIEmotesMenu.GetEmotesBosses`' five-event
+  tail (`UIEmotesMenu.cs:250-269`) reading the Phase-B World flags;
+  `seasonal_help_text_gate` ports the Guide hints' pure gates (`Main.cs:39752/:39757`,
+  helpText 1155/1156 → `GuideHelpTextSpecific.Help_1155/1156`, Town resource group) for
+  the future helpText machine (unported). **Co-lane hand-off:** this branch's wheel is
+  the flat `EMOTE_COUNT` roster; the gated wheel is W4-g54's `EmoteGates`, whose
+  `from_world` pins the five seasonal flags `false` — at the merge g54 reads the World
+  fields instead (field names identical). No second wheel ported here.
+* **The v18-claim input doc** (this commit): `docs/research/316-f39-v18-claim-input.md`
+  re-receipts registry row #8 at the closeout tip for the g71c union-final merger — the
+  five bytes unchanged (keep-one with c39, union seat [51..56] per 92 §1-FULL.2 A3), the
+  seven truncation-site families re-pinned (+5→+107, the six mid-record cuts re-arm),
+  the `.wld` force-today deference discharged. The closeout adds ZERO persist bytes.
+
+**Documented deviations (closeout):** the SlimeSky activation is an edge-detect at the
+ambience phase, not the five SkyManager call sites (the load path is covered by the
+same edge); the private RNG stream is world-seed-pinned (the c39 event_skies convention).
+The `SpawnOnPlayer` port duplicates `GetSpawnArea`'s arithmetic inline (the full
+`SpawnContext` needs ~24 fields the scan never reads) and inlines the
+`CheckNotSpawningOnScreen` rect test with the RAW safe ranges (the ambient helper's
+`* TILE_PX` stays that lane's deviation). The counter pass still runs BEFORE the
+boss-death `checkDead` pass (the Phase-A recorded deviation — a slime dying in the same
+tick as the King still counts). The music moon tail now overrides the boss pick on the
+surface band — the C# behaviour the early-return ladder had dropped (a behaviour FIX,
+not a deviation). The emote wheel/help-text machine stay unported on this branch (the
+g54 hand-off + the future helpText machine).
+
+## The W4-f39 SEAL (2026-11-21, code-only mode)
+
+**Code-only mode.** The seal (research/320, chain 282→320) adds ZERO code bytes — every item is a
+receipt over already-landed bodies, re-verified at tip `8704691a3` against the co-lane
+tips d130 `b8f65570` / c39 `7dd785dc5` / g48 `2b61530b4`.
+
+* **research/244 → 281 → 316 RENUMBERED** (`fec65992` + registry §9 round 4):
+  first leg — registry-150 first-pushed-wins:
+  g48's `244-c28-18-send-switch.md` first-add 14:30:16 beats this lane's 14:32:01;
+  both postdate the d54 refresh's final sweep, so the §6.3 cutoff rule applies
+  (losers take ≥281 after a fresh sweep — 386 tips / 22 694 rows, 247-300 empty,
+  281 first-free). Second leg — registry §9 UNIFIED FINAL (`b243c7086`, FROZEN
+  §8.1/§8.2): 281/282 are f26's §7.3 assignments, so f39's self-picks re-issue
+  to 316 (input doc, chain supersedes the unexecuted 299 row — 299 FREE) and
+  320 (seal doc). Content-preserving renames; ANALYSIS/ROADMAP/INDEX refs re-pointed.
+* **The d130 mutual receipt** (its research/83 §9): the five boundary gates
+  (music track 48, anniversary StartRain range-5, ResetSpawnTime `/2`, menu-return
+  StopSlimeRain, the slime-roll gates) are composed BOTH-ways — dedupe at merge.
+  The `slime_rain_roll` lowTiles `/5` arm takes **d130's ACTIVATED form**
+  (`World.skyblock_low_tiles`, the g67 R5 census); f39's documented-false stand-in
+  (`weather.rs:420-423`) is superseded, NOT a code gap. d130's zero-edits to
+  `world_sim/npcs.rs`/`render/sky.rs` + the absent `season.rs` re-verified by diff
+  against the merge-base `a725acb04` — the SlimeSky/kill-counter/season bodies stay
+  f39's. f39's audio WRAPPER (the moon tail 30/32) is the surviving audio.rs shape —
+  d130's inline 48-arm dedupes into `decide_world_music`.
+* **The c39 receipt** (its research/114 §16 DONE): the real-date Halloween/Xmas
+  gates are f39 Phase B's (`bd5a5a24a`) — c39 has NO calendar (season.rs absent,
+  grep-empty); its loot flags read the endless micro seeds alone (its
+  `npcs.rs:7004-7011`), f39's resolved `World.halloween`/`xmas` reads (`npcs.rs:968-
+  969`/`:7050`) are the strict superset and win the shared constructions at merge.
+  `LanternGates`/`lanterns_can_start` bodies byte-identical f39↔c39; c39's
+  `pub(crate)` export wins (the d130-graft rider; f39 has zero `world_events.rs`
+  edits since base). The v18 quintet keep-one stays research/316 §1.
+* **The SLIMERAIN-FAMILY bible**: research/320 §5 — d130 owns the weather tick +
+  the activated roll; f39 owns the event bodies (SlimeSky, sky-fall spawns, the
+  kill-counter + King scan, the season module, the emote/help gates, the music
+  wrapper); the persist story is research/316; g54 re-points its five pins; the
+  gate command is the workspace test run (all family witnesses WRITTEN NOT RUN).
 
 ## S1-D-3 вЂ” the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)
 
@@ -32978,10 +34368,10 @@ Deliberate deviations:
   draw RNG stream order.
 - The strip applies NO `GetFinalLight` actuation ghost (the C# reads
   `Lighting.GetColor` raw, `:9081`); fullbright -> White is ported (`:9084`).
-- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) and multi-tile
-  vine (`DrawMultiTileVines` `:8829-8888`) passes are separate C# passes and
-  stay unported (S1-G-1's remaining waves); their cells keep the old inline
-  draw.
+- The reverse-vine (549, `DrawRisingVineStrip` `:9134-9193`) pass landed with
+  W4-g83 and is WIRED into the fused pass (below, the wiring phase); the
+  multi-tile vine (`DrawMultiTileVines` `:8829-8888`) pass is the furniture
+  lane (d57) and stays out — its cells keep the old inline draw.
 - The dark-cell merge still covers unlit vine cells (the port's black-quad
   coverage shape); the C# `DrawBlackHelper` runs inside `DrawSingleTile`,
   which the vine cells never reach - a documented z-order/coverage
@@ -33113,6 +34503,232 @@ Landed shape + wiring contract (tests written, NOT run — code-only mode):
   three nebula families incl. the time-2 step-down (level AND stat add
   lower), the ice frame 3-tick/12-frame wrap + the `<=` half-life boundary,
   the 94/summon witness declines, and the RNG-free reproducibility sweep.
+## The vine draw residuals (W4-g83, 2026-11-21)
+
+The four unclaimed vine-family residual groups left after the S1-G-1a hanging
+strip + the d56 animated-tile draw gate: the **vine-tip variants** (the rising
+seaweed strip + its tip-frame columns), the **jungle thorns** (the underground
+grow arm + the down-merge frame), the **glowing mushroom vines** (the 528
+conversion/grow arms) and the **grow-tops** (the overground vine grow chain).
+All UNWIRED code-only — the natural seams are contested by in-flight siblings
+(`tiles.rs`/`draw.rs` d56-d60, `framing.rs` d109/d110/g48, `growth.rs`
+d102/d106/g42, `drawdata.rs` d62/g34/g79); the ports land in unclaimed modules
+and the wiring is the family's merge step. No RNG stream, frame-cache key or
+fixed-step order changes until wired.
+
+### Phase 1 — the rising-vine draw pass (`render/vines.rs`)
+
+`draw_reverse_vines` / `rising_vine_strip_segments` / `collect_reverse_vine_root`
+port `DrawReverseVines` (`TileDrawing.cs:8903-8914`), `DrawRisingVineStrip`
+(`:9134-9193`) and `CrawlToBottomOfReverseVineAndAddSpecialPoint` (`:764-782`).
+Verbatim differences from the hanging strip, each pinned by a witness:
+- the anchor starts `(x*16+8, startY*16+16+2)` (`:9138`, +16+2 not -2) and
+  walks UP along `(rot - PI/2)` (`:9190`, not `+ PI/2`);
+- the walk runs `num7 > 10` descending (`:9144`, not `< maxTilesY-10`);
+- the exposure gate has NO remix arm — always `num7 < worldSurface` (`:9163`);
+- the grid push is `GetWindGridPush(x, num7, 40, -0.004)` (`:9167`, the
+  40-window / negative force, not 20 / 0.01);
+- the rotation negates the ladder: `num2 * (0 - num4) * cycle` (`:9179`);
+- the origin pivots at the sprite's BOTTOM-centre
+  `(tileWidth/2, halfBrickHeight - tileTop + tileHeight)` (`:9188`);
+- NO glowmask: `:9173` discards the glow out-params (`out var _`).
+The reverse crawl starts AT `j` (`:767`, not `j-1`) and roots at `k-1` (the row
+ABOVE the attachable floor); `torch::top_edge_can_be_attached_to` is lifted to
+`pub` (identical to g28/g30 — keep-one at merge). The `ReverseVineThreads` set
+is `{549}` alone (`TileID.cs:545`). 10 `w4_g83_*` witnesses written not run.
+
+### Phase 2 — the vine lifecycle checks (`tr-core::vine_checks`)
+
+`check_vines` ports `WorldGen.CheckVines` (`WorldGen.cs:84858-84960`): the
+eight-family LAST-write-wins type-conversion ladder (ash 638, mushroom 528,
+hallow 115, jungle 62, corrupt 636, crimson 205, plain 52 [excluded for 382],
+flower 382 — `:84883-84914`) reads the `nactive && !bottomSlope` support above;
+a mismatch converts the cell + `SquareTileFrame`, otherwise the per-type
+support gates kill an unsupported vine (`:84921-84958`). The glowing-mushroom
+arm (70/528 → 528) is the `num4` flag. `can_underwater_plant_grow_here`
+(`:58542-58576`) + `check_underwater_plant` (`:58578-58627`) port the seaweed
+validity (50-border, three full-water cells, sand/same-type support, the
+0/63-69/80-81 wall whitelist) and the TIP-FRAME variants — `frameX` column 0
+(lone), 1-7 (a 549 above, `Next(1,8)*18`) or 7-12 (a 549 below,
+`Next(7,13)*18`), `frameY = 0`. These columns are the rising strip's
+per-segment source frames (`DrawRisingVineStrip` `:9173`). 16 witnesses.
+
+### Phase 3 — the grow-tops + jungle thorns (`tr-core::vine_growth`)
+
+`grow_overground_vines` ports `UpdateWorld_OvergroundTile`'s vine chain
+(`WorldGen.cs:72506-72802`): the plain/flower 2/52/382/192 arm (the wall
+68/65/66/63 + below-wall + remix `Next(5)` flower pick, `:72516-72535`; the
+`num24` budget `:72508-72512` is dead in the C# and not carried), then the
+jungle 60/62/384/226 (the `TooManyJungleVinesNearby` gate on 226), mushroom
+70/528, hallow 109/115, corrupt 23/661/636, crimson 199/662/205 and ash
+633/638 arms — each behind the free-below gate, the 10-row grass look-up and
+`grow_more_vines`' density (`:45586-45621`, the 60 budget ÷5 on a 528 source,
+the LOS-weighted `(j-y)*2`/`*20` accumulation). `too_many_jungle_vines_nearby`
+(`:73189-73212`) is the ±9×±5 clamped box counting active 62, true strictly
+above the cap (default 6). `grow_underground_jungle_thorn` (`:73658-73661`)
+is the underground dispatcher's 69 arm — `GrowSpike(69, 60)` with NO roll; the
+port's overground 69 arm (`growth.rs:843`) sits inside `grass_pass`, which 69
+is not a member of, so it never fires — the genuine arm is the underground
+one. `thorn_down_merge_frame` (`:82043-82066`) ports the thorn down-merge:
+cases 32/352/69/655 fold a matching grass neighbour BELOW into the thorn
+(`down = num`) before the generic block frameset — these are direct `down=num`
+assignments, NOT `TileMergeAttempt` calls, so `tools/GenTileData`'s merge
+parser never emits them and `framing.rs` lacks them. The slope adjustments run
+BEFORE the merge (`:81632-81700` precedes `:82043`), so a sloped grass-below
+cell does not merge. The generic frameset (`framing.rs::RULES`) is re-ported
+verbatim (the table is private to the contested `framing.rs`). 16 witnesses.
+
+Deliberate deviations (all phases): the `Main.netMode == 2`
+`NetMessage.SendData`/`SendTileSquare` sides are MP scope; `SquareTileFrame`
+rides `edit::square_tile_frame_default`; `CopyPaintAndCoating` copies `meta` +
+the extras byte (the `grow_spike` convention). The LitNature shader +
+biomeSight dust stay the standing S1-G-1a deviations. The multi-tile vine
+(`DrawMultiTileVines(:InWind)`) is the furniture lane (d57), out of scope.
+
+Verification: code-only, no compiler invoked; every arm re-read against the
+cited C# windows; 42 witnesses WRITTEN NOT RUN (10 + 16 + 16). The world-hash
+pins are unchanged (no wired behaviour change). Anchors: 3 rows
+(`draw_reverse_vines`, `check_vines`, `grow_overground_vines`).
+
+### Wiring phase — the wire contract + the uncontested small wires
+
+`docs/research/123-vine-wire-contract.md` is the per-fn attach script for the
+four groups, re-derived from the C# call sites and the pushed sibling tips
+(g31 union `c3027a38` §1-§8, d102 `29e8859b`/d106 `e2c2609c`/g42 `d4836bbd`,
+d109 `81894095`/d110 `054e3dc2`/g48 `9e037b7c`, d58/d59 WIRED hunk zones).
+Key corrections to the phase notes:
+
+- **`CheckVines`/`CheckUnderwaterPlant` are framing-dispatch arms, NOT tick
+  arms** — the only C# call sites are `TileFrame`'s non-solid `IsVine` arm
+  (`WorldGen.cs:81375-81378`) and `TileFrameImportant`'s `case 549`
+  (`:84972-84974`). The Rust seam is `edit/kill.rs::square_tile_frame`'s
+  check loop (after the cactus-80 arm), NOT `growth.rs`; the growth tick
+  reaches the checks through `SquareTileFrame` after each vine write. The
+  real wiring cost is threading the caller's rng through
+  `square_tile_frame` (the tip re-rolls consume the ACTIVE `genRand` —
+  contract §2.2). The d102/d106/g42 "contest" on `growth.rs` is three
+  one-line re-exports; the tick-driver insertions (contract §3.2:
+  `grow_overground_vines` at the overground fn tail,
+  `grow_underground_jungle_thorn` after `grow_vine_arm` + deleting the dead
+  overground 69 arm) are add-only, uncontested.
+- **The rising pass IS placeable in the g31-union step map** (contract §1.2):
+  g30's `ReverseVineCrawl` classify arm + g31's `DrainPass::ReverseVines`
+  post step already carry the order; the keep-one binds g30's crawl to
+  `vines::collect_reverse_vine_root` (the forward-arm delegation pattern)
+  and g31's strip maths to `vines::rising_vine_strip_segments`, with g31's
+  `show_invisible`/`IsVisible` shape winning at the d56 keep-one.
+- **The thorn down-merge wires as a 4-line insertion** into
+  `framing.rs::frame_of_variant` after the own-slope match (base `:879`),
+  not a call to `thorn_down_merge_frame` (which retires/rebinds — §4).
+
+LANDED on this branch (the uncontested wires, contract §5-§6):
+
+- The rising-vine pass into the fused tile pass's OWN seams: `tiles.rs`'s
+  case-549 crawl arm (after the live forward `collect_vine_root` caller,
+  before any light gate — the C# switch head `:546-548`), the
+  `vine_cell || reverse_vine_cell` inline skip, and `draw_reverse_vines` at
+  the `draw_vines` tail (`PostDrawTiles` `:429-430`). The 549 cell
+  previously drew inline through `DrawSingleTile` — wrong vs the C#
+  `continue`; now it draws as a rising strip. d58's `:586` chest-map hunk
+  is the only adjacent context (trivial union); d56/d57/d60 have empty
+  `tiles.rs` diffs. The g31-union merge replaces these hunks with the §1.2
+  binds; the 2 source-order witnesses retire with the fused pass.
+- `torch.rs`'s `top_edge_can_be_attached_to` doc made byte-identical to the
+  union-exec keep-one (blob `737d4cf4`) — zero-conflict merge.
+- The ROPE-interplay census (contract §7): natural vines are NOT climbable
+  — `IsVine`+549 and `Main.tileRope` are disjoint (the climbing movement
+  reads `IsRope`/`tileRope` only; `Player.cs`'s only `IsVine` read is the
+  placement-kill gate `:41309`, already ported). The climbing block
+  (`FindPulley` `:19644-19749` + `Update`'s rope block `:26116-26470`,
+  ~460 lines entangled with the movement core) is NOT self-contained
+  small — NOT ported; the census + the attach seam are recorded for the
+  movement family. 2 census witnesses.
+
+Wiring-phase verification: code-only; 4 new witnesses written not run
+(2 tiles.rs source-order + 2 vine_checks census); actual file counts
+vines.rs 20 / vine_checks.rs 17 / vine_growth.rs 16 / tiles.rs 14. The
+world-hash pins stay unchanged (draw-side only).
+
+### Wire phase 2 — the remaining seams EXECUTED (2026-11-21)
+
+The four remaining seams landed on the branch (contract §9, commits
+`885514e1d`/`2325528ce`/`6b9a1d9fa`/`02f4abe9d`/`5ce66d8f3`):
+
+- **The checks ride the framing dispatch** (`edit/kill.rs::square_tile_frame`):
+  `check_underwater_plant` as the case-549 arm BEFORE the tree arms (the
+  frame-important dispatch precedes the non-solid arm, `WorldGen.cs:84972`/
+  `:81353-81359`) and `check_vines` as the non-solid `IsVine` arm after
+  cactus-80 (`:81375-81378`, a `false` return `continue`s). The entry gate
+  admits the vine kinds + 549 explicitly (generated worlds carry no def/flag).
+- **The genRand threading** (the contract §2 cost): the whole
+  `kill_tile`/`square_tile_frame_default`/`_gen`/`actuation_square_frame` +
+  cascade family takes `&mut UnifiedRandom` — the caller's ACTIVE stream
+  (growth `UpdateWorldGen`, liquid `UpdateLiquid` [`WorldGen.cs:71528`],
+  wiring `self.rand`, edit `UpdatePlayers`, npc `UpdateNpcs`, projectile
+  `UpdateProjectiles` via a new pool `gen_rng` param beside the `DropRng`
+  loot object, net the bare global, worldgen a fresh
+  `UnifiedRandom(world.seed)` stand-in). The seaweed tip re-rolls
+  (`:58601`/`:58612`) draw it — NEVER `world.frame_rng` (the variant-reset
+  stream stays separate; the kill.rs twin witness pins the exact prefix).
+- **The port-only `frame_important[vine]` writes DROPPED**
+  (`vine_growth::plant_vine` + `growth.rs::grow_vine_arm`): C# never marks
+  the 8 vine kinds frame-important; the flag mis-routed placed vines away
+  from `reframe_area`'s cosmetic pass.
+- **The grow-tops + jungle-thorn** (contract §3): `grow_overground_vines` at
+  `update_world_overground_tile`'s tail (the C# `:72504` vine chain after the
+  grass/moss arms), `grow_underground_jungle_thorn` after `grow_vine_arm`
+  (`:73658`, no roll), the dead overground-69 arm DELETED. Both draw the
+  caller's `UpdateWorldGen` stream; the growth.rs twin witness pins the
+  genRand position (the tail adds exactly the dye-head + vine-arm draws).
+- **The thorn down-merge** (contract §4): the 4-line `grass_below`/`down=num`
+  insertion in `framing.rs::frame_of_variant` after the own-slope match
+  (the direct assignments GenTileData's merge parser never emits);
+  `thorn_down_merge_frame` kept as the thin witness fixture delegating to
+  the canonical framer (the standalone re-port + private RULES copy dropped).
+- **The g31 keep-one deltas** (contract §1.2/§9.1): `rising_vine_strip_segments`
+  + `draw_reverse_vines` take `show_invisible` and read the FULL `IsVisible`
+  (`TileDrawing.cs:1411-1432`); the final hunk-pair for the g31-side rebind is
+  published in research/123 §9.1.
+
+Standing deviation (recorded per contract §2): `framing.rs::frame_world`
+stays cosmetic-only — the C# `FrameEverything` runs `TileFrame` per cell
+(the checks included), the port's banded-parallel full pass cannot run the
+killing checks; a generated vine that lost its support stands until the
+next edit/growth frame touches it. The worldgen callers' new
+`UnifiedRandom(world.seed)` stand-ins are drawn ONLY by a seaweed tip
+re-roll (none exists in the pinned passes' framing rings), so the
+world-hash pins stay unchanged; the xorshift pass streams are untouched.
+
+Wire-phase-2 verification: code-only; 7 new witnesses written not run
+(2 kill.rs dispatch/stream + 3 growth.rs dispatcher/stream [incl. the
+seam-5 UpdateWorldGen-position twin] + 1 framing.rs down-merge + 1 vines.rs
+full-IsVisible); census 74 file-total (g83 share 52), contract §9.2.
+
+### Retire phase — SEALED (g83d vine-retire, 2026-11-21)
+
+The lane is COMPLETE for its scope; research/123 §10 is the seal: every
+sibling tip re-probed (g42 ADVANCED to `910cc9747` — the GROWTH SEAL +
+FINAL rewrote both growth dispatchers g83 wires into; the §10.2 merge
+script re-binds g83's three insertions onto g42's shape: the vine tail
+between `grass_pass` and the wall arms, the thorn else-if after the
+vine-family arm, the dead-69 deletion a same-deletion union; g31 ADVANCED
+to `9d1e331db` — the `is_visible` keep-one EXECUTED as the promoted
+`tr_render::tile_visibility`, hunk B re-pinned at the retire tip, §10.4;
+d106/g48 advanced with NEW 3-arg `kill_tile` sites — the §10.5 rng-rebind
+census names each site's stream; d102/d109/d110/d56-d60 UNCHANGED). The
+on-branch duplicate RETIRED (§10.3): `vine_growth.rs`'s self-contained
+`grow_more_vines` re-port + its private `IS_VINE`/`in_world`/`can_hit_line`
+helpers dropped onto `growth.rs::grow_more_vines` (lifted `pub(crate)`,
+the same `:45586-45621` port line-for-line; the thin delegate keeps the
+9 density/grow witnesses unchanged). The vine-family merger bible
+(§10.6) + the merger-acceptance checklist (§10.7: the gate command, the
+74-witness name-set census, the stream pins, the 6 anchors rows, the
+keep-one symbol list) are published. The rope family stays out (g82's
+seal `6e5f6b748` pins the pulley gate `is_rope`+`tileRope`, the §7
+disjoint-set witness). World-hash pins unchanged on g83's side; the
+standing deviations stand (the `frame_world` cosmetic-only check-skip,
+LitNature/biomeSight, the MP sends). Code-only; no compiler invoked; the
+deferred gate stays the merge pass's command.
 
 ## The accessory/set-bonus buff-effect block (S1-E-7 wave C, 2026-11-18)
 
@@ -77007,3 +78623,693 @@ c4's registry-144 (f22 renames on its own branch).
 - The f37 latch-repoint hunks (research/241) execute at the f37 merge
   below — the five `shop_mood` → `shopping_settings.price_adjustment`
   sites against the g58-latched canonical.
+## The liquid doc-sweep (W4-g45 lane 24, 2026-11-21)
+
+Branch `task/W4-g45-liquid-lava-honey-delays`, DOC-SWEEP phase continuing
+the guards-DONE tip `8e81814e`. Code-only: no cargo/tests/graphify run, no
+compiler invoked; every witness WRITTEN NOT RUN. The census + the four real
+gaps are recorded in `docs/research/104-doc-sweep-liquid.md`; the cross-lane
+graft instructions in the `docs/research/69-liquid-reconcile.md` ADDENDUM.
+
+### The census verdicts (no-gap items)
+
+- **QuickShimmer does not exist** in the 1.4.5.8 decompilation (zero grep
+  matches over `decompiled/Terraria/**.cs`). The shimmer bulk-settle is
+  `AttemptToMoveShimmer` (`Liquid.cs:387-433`) + `ShimmerCheck`
+  (`:1465-1468`), inside the g47 QuickWater family the UNION keeps.
+- **No liquid "pressure" constant exists** — the model is cellular
+  mass-transfer. The flow-rate constants (maxLiquid 25000 / maxLiquidBuffer
+  50000 / cycles 10 / kill 8 / KILL_DEAD 999 / lava delay 5 / honey delay 10 /
+  the 7/5/4/4/3/2/2 averaging divisors / the sub-3 -1 bias / the >=24 merge
+  gate / the min(2,liquid) evap shed / the gfx-quality `17-10q` and
+  `maxLiquid*(0.25+0.75q)` runtime pair) all verified matching the port
+  (research/104 §1c table).
+- **The honey/crispy-honey merge (c34 owns it) is correctly fed by the g45
+  delay counters**: the reactions run EVERY visit (`LavaCheck`/
+  `HoneyCheck`/`ShimmerCheck` before the delay gate, `Liquid.cs:480-490`
+  /`:511-522`), the delay throttles only the flow. The g45
+  `the_delay_gate_never_throttles_the_merge` pin and c34's
+  `honey_and_lava_merge_into_crisp_honey_once` agree.
+- **e19/f47 own the item-side shimmer physics** (WorldItem.MoveInWorld/
+  UpdateShimmer, the shimmerWet ladder, the repulsion scan, the transform/
+  decraft spawns); neither touches `tr-core/src/liquid.rs`. The liquid-side
+  shimmer arm (`Liquid.cs:542-545`) has NO delay gate — pinned by the new
+  `shimmer_falls_every_visit_like_water` witness (`99a4f8ccf`).
+
+### The four ported gaps
+
+1. **The down-arm LIVE post-burn reads** (`c8908a55d`, `Liquid.cs:1278-1306`).
+   The C# `tile4` is a reference: the merge gate (`:1286`) + merge-type
+   reads (`:1303`) run AFTER the `tileCut` burn (`:1280`). The port's
+   pre-kill copy wrongly refused the drain/merge for the seven cut kinds
+   OUTSIDE `tileObsidianKill` (444/518/519/549/637/638/711 — the generated
+   bitset membership hand-computed). Re-read `down` after `kill_tile`;
+   the container `flag` stays the pre-kill read (`:1274` precedes
+   `:1278`). `liquid_downarm_live` ×4 (the plant-3 witness is
+   obsidianKill and cannot discriminate). **The g46 UNION carries the same
+   bug** — the graft must take this fix (research/69 ADDENDUM A3).
+2. **The bucket/sponge family** (`fa96cf32a`, `Player.cs:46318-46504`) —
+   entirely unported on every lane before this pass. New
+   `world_sim/editing/buckets.rs` (the twelve kinds, the pickup/placement
+   arms, `PutItemInInventoryFromItemUsage`, the five `PlaySound(19)`
+   splashes on the S1-E-21f case-19 seam), wired before the melee arm
+   (`:43575` precedes `:43644`; `damage = -1` never mines/melees/places,
+   the bug-net tick-consume precedent). `bucket_use_tests` ×10.
+3. **The shimmer liquid-side flow pin** (`99a4f8ccf`) — the cadence suite
+   had the shimmer MERGE arms but no FLOW pin; shimmer falls like water at
+   the one-tile-per-two-passes skipLiquid cadence.
+4. **The fall-arm LIVE post-evap read** (`8d581953b`, `Liquid.cs:570-575`)
+   — the down transfer read the pre-evap `start.liquid`, resurrecting the
+   shed units on every fall in the underworld band; read `own_now` after
+   the evaporation block. The g46 UNION already carries this form
+   (`f57d7bacd:832`); g45 catches up + adds the discriminating witness.
+
+### Deliberate stand-ins (the bucket port)
+
+- **The mid-swing zero-stack refusal**: the C# `ItemCheck_UseBuckets` would
+  still fire on a zero stack mid-swing (`sItem` is a reference); the port
+  refuses (a one-action-per-stack floor) and clears the emptied slot at the
+  swing end (`TurnToAir`, `Player.cs:42824-42828`). The C# keeps the kind
+  through the swing too, so the observable difference is one refused action
+  on the last stack's swing tail.
+- **The `noBuilding` gate half** (`:46320`) has no port state — the
+  frozen/webbed CC gate already refuses (the standing `editing.rs`
+  noBuilding note).
+- **The pickup box-sum reads out-of-world cells as absent** (the C#
+  `Main.tile[i,j]` is non-null at the edge); the reach rect can poke past
+  the world edge, so the port probes. A vanilla world's liquid never sits in
+  the 5-tile border, so the box is always in-bounds at runtime.
+- **The bucket splashes ride the player's top-left** (`(int)position.X/Y`),
+  Style 1, on the `UpdatePlayers` stream — the S1-E-21f case-19 playing
+  guard + the one `Next(-10,11)*0.01` pitch draw (`LegacySoundPlayer.cs:871-888`).
+
+### The graft dependency (research/69 ADDENDUM)
+
+The g46 graft-prep UNION (`f57d7bacd`) dropped the g45 round-2 AddWater
+guards (the 5-tile border, the grate-546 carve-out, the inline
+`CheckWaterDeath`/`CheckLavaDeath` kill, the `&mut World` ripple) and
+the (+6,+6) widened fixtures. The graft-union MUST carry them (the g45
+`liquid_addwater_guards` module + the widened `basin`/`floor_world`/
+`shaft` helpers), plus the down-arm fix, the bucket module, the shimmer-flow
+and fall-arm witnesses. The e11 `tileobject::check_water_death`/
+`check_lava_death` seam is a merge-order dependency (e11 not in main yet).
+## The rain collision splash (g67, transplanted W4-d130 union-exec, 2026-11-21, code-only mode)
+
+g67's lane (`task/W4-g67-weather-rain-splash`, code `40128e5d`, docs `006bc04d` —
+the tip census found NO further residuals: `006bc04d` is docs-only on top of the
+code commit) landed the real splash lane on a compacted-Vec rain rig; the W4-d130
+union-exec transplanted its spawn body + physics + draw INTO this branch's
+verbatim core (`docs/research/83-weather-reconcile.md` §3 EXECUTED). The kill
+gate itself was already reconciled (§1 of that doc): ONE combined
+`SolidCollision(position, 2, 2) || position.Y > screenPosition.Y + screenHeight +
+100f || WetCollision(position, 2, 2)` branch (`Rain.cs:117`), ALL THREE kills roll
+the `Next(100) < gfxQuality * 100` gate and spawn one
+`Dust.NewDust(position - velocity, 2, 2, Dust.dustWater())` with eight recipe
+writes; the `remixWorld` kill-only arm (`:110-116`) never rolls — the union KEEPS
+it (g67 had folded it out; `gameMenu` never holds in-world, that fold is safe).
+
+* **Kill chain** (`rain.rs::update_drops`, d130's shape kept) — the fixed
+  750-slot pool in slot order (`Main.rain[i]`, `Main.cs:66801`), the real
+  `Player::solid_collision`/`wet_collision` probes (`Collision.cs:2700-2733`
+  / `:1572-1651`, the half-brick cut, the `maxTilesY - 40` clamp, the liquid
+  surface at `(256-liquid)/32*2`), the `||` short-circuit order kept (the wet
+  probe runs only when dry + on-screen), the below-screen bound at
+  `camera.y + screen.y*0.5/zoom + 100` (RAW world px, no zoom term on the 100).
+  The gate rolls for the below-screen kill too; the dust's own off-screen cull
+  (`Dust.cs:97-101`) decides whether that spawn survives, exactly like the C#.
+  g67's compacted `drops.swap_remove(i)` Vec was NOT taken — slot order is the
+  C#'s draw/update order and `NewRain` takes the first inactive slot.
+* **Spawn** (`rain.rs::spawn_splash`, g67's body verbatim) — `DustPool::new_dust`
+  on Rain's own splitmix stream (`SplitmixRand(&mut self.rng)`, the WEATHER-2
+  per-consumer convention), `dustWater()`'s per-water-style id
+  (`calculate_water_style(world, camera)` — the same live read the drop frame
+  type uses), then the eight writes in C# order: `position.X -= 2`,
+  `position.Y += 2`, `alpha = 38`, `velocity *= 0.1`,
+  `velocity += -velocity * 0.025`, `velocity.Y -= 2`, `scale = 0.6`,
+  `noGravity = true`. The refused sentinel takes the writes
+  (`Main.dust[6000]`, the minecart convention). The type-33/98..105 spawn tweak
+  (`Dust.cs:230-235`: alpha 170, vel ×0.5, Y++) runs inside `new_dust` BEFORE
+  the recipe overwrites alpha/velocity — the C# order.
+* **Physics** (`rain.rs::water_splash_arm`, `Dust.cs:1834-1874`) — the
+  `308 | 33 | 52 | 266 | 98..=105 | 123 | 288` FIRST-ladder if-block: the
+  still-X solid probe + spin/nibble, the 4×4 wet probe (+20 alpha, −0.1 scale),
+  the +2/−0.005 fade pair, the alpha-255 scale zero, the >4 fall clamp, the
+  no-gravity sign-picked ±0.2 spin / +0.03 grow / ×1.05 X / +0.15 sink. It
+  returns `false` (a standalone FIRST-ladder statement), so the shared loop's
+  `:2335` no-gravity tail (×0.92 damp, fadeIn-gated −0.04) runs alongside — the
+  corrected S1-E-3 chain reading. The arm draws NO RNG. Dispatch: the
+  `minecart::tick` hook's else fall-through AFTER the d130 type-76 arm (the
+  213/268/76 arms keep their positions); the arm's own type gate carries the
+  full C# member list.
+* **Draw** (`rain.rs::draw_splashes`, `Main.cs:38836-39018`) — the generic
+  `DrawDust` path over the family slots: the light sample at
+  `(position + 4) / 16` as XNA bytes, `dust_table::get_alpha` (the default
+  formula for the whole family), the `(4, 4)`-origin rotated quad at
+  `get_visual_scale` (the gore `plan_quad` emulation), the `get_color` overlay
+  when the spawn colour is packed non-zero (dead for rain — `default(Color)` —
+  kept verbatim), and the `newColor == Color.Black` kill (`(0,0,0,255)`, NOT
+  alpha-0). The call site sits after `minecart::draw`, before the type-76
+  snow draw, in the fx range (`app/frame/draw.rs`).
+* **Drain** (`world_sim/weather.rs::update_rain`) — `Rain::update` gains the
+  `Option<(&mut DustPool, &SpawnCtx)>` seam alongside the d130 `RainInputs`
+  struct (g67's positional-args shape was NOT taken); the world pass hands
+  `app.dust` + `app.spawn_ctx()`. `None` (the drop-sim tests) keeps the gate
+  rolling with the spawn dropped — the stream shape is identical either way,
+  so the witnesses pin the census without a pool.
+
+**RNG census.** Per collision kill: 1 gate draw (`range(0,100)`, the modulo
+seam) + the `new_dust` default block's 6 draws (`Next(1)`×2 — the min-5 box on
+the 2×2 args, `Next(-20,21)`×2 velocity, `Next(3)` frame row, `Next(-20,21)`
+scale) on Rain's stream; the pressure bands never roll while the first inactive
+slot sits under `0.5 * maxDustToDraw` (the low band resets `dCount`). The gate
+rolls even when the spawn culls/refuses (it sits OUTSIDE `NewDust`); the
+`gameMenu`/`gamePaused`/`generating` guards refuse BEFORE any default draw. The
+physics arm and the draw draw zero.
+`w4_g67_the_splash_draws_ride_rains_stream_in_kill_order` pins 5 kills = 35
+draws + same-seed byte-equality of every pool slot (in SLOT order — the fixed
+pool's walk, g67's compacted kill order adapted).
+
+**Deliberate deviations / drops (each cited at its site):**
+
+* The `gameMenu` (+2000 bound) kill-only arm (`Rain.cs:103-109`) IS ported
+  (g67b `d2dd8989` fold, research/83 §7): `RainInputs.game_menu` carries the
+  flag, the arm moves the drop then kills below `+2000` with NO gate roll,
+  NO splash and NO collision probes. The frame's weather cluster is
+  menu-gated, so production passes the front-state flag for shape — the
+  earlier "no port seam" drop is retired. The `remixWorld` arm (`:110-116`)
+  IS kept — remix holds in-world (the REMIX seed); g67's fold of it was
+  wrong for the union (research/83 §1).
+* The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38832`/`:38847`, the
+  ±1000/±1050 slack box) IS ported (g67b `2c452eddb` fold, research/83 §7):
+  `splash_cull_rect`/`dust_in_cull_rect` carry the world-px geometry, and
+  BOTH draw loops (`draw_splashes` + `snow::draw` — the same `DrawDust`
+  loop covers type 76) apply the `:39020-39022` else-arm DEACTIVATION
+  before the draw. The earlier "documented widening" dropped that kill
+  and was WRONG.
+* `Main.IsItRaining` (`Main.cs:2597`, `cloudAlpha > 0`) — g67b `112d1b20`'s
+  census fix (research/83 §7): `Rain::is_it_raining()` feeds the ambience
+  scheduler's sunny/calm gates (`AmbienceServer.cs:32/:50` — the frame ctx
+  AND the netmodules ctx), the music rain branches
+  (`Main.cs:12859/:12880/:12932/:12973`), the town quiet-sky gate
+  (`:12670/:12674`) and the storm-lightning relaxation
+  (`WorldGen.cs:71871`). The event-flag feeds were wrong through the
+  post-`StopRain` cloud ramp. The fountain scanner
+  (`TileLightScanner.cs:3030`) and the `Lang` Rain substitution
+  (`Lang.cs:141`) read `Main.raining` itself — unchanged.
+* `Rain.ClearRain` (`Rain.cs:22-28`) is wired into `save_and_quit` at the
+  `WorldGen.cs:6672` slot (g67b `5c9398ea` fold): visual-only, the event
+  triple (`raining`/`rainTime`/`maxRaining`) is untouched. `NewRainForced`
+  (`Rain.cs:135-164`) lands as the Eyebrella seam — the
+  `Player.cs:14308-14331` caller IS NOW PORTED (g67 R6 `356a1ac0` fold,
+  research/134, retire phase `df28ea1a`: the `UpdateEquips` arm + the
+  `world_sim/player.rs` drain, the `dead_code` allow lifted).
+  The skyblock `SnowTileThreshold` arm (`SceneMetrics.cs:154-163`, 300
+  low-tiles) IS NOW PORTED (g67 R5 `f8c4b659` fold, retire phase `10ee539d`):
+  `World.skyblock_low_tiles` + `World::scan_skyblock_low_tiles` (the
+  `WorldGen.cs:3210-3218`/`:3238-3265` census at load + gen completion),
+  `scene::snow_tile_threshold`/`desert_tile_threshold`, the `_at` zone arms,
+  and `RainInputs.skyblock_low_tiles` feeds `new_rain`'s snow suppression —
+  the cited gap is closed.
+* The water-surface ripple wording of the task row maps to the splash dust
+  itself: the C# `QueueRipple` family (`WaterShaderData.cs:445-467`) has NO
+  rain caller — its callers are Gore.cs:967 (drips), the player/NPC/projectile
+  wet walks and FakeFishParticle. Rain's surface effect IS the `dustWater()`
+  splash; the wet-probe arm's +20 alpha / −0.1 scale fade is the surface
+  interaction. The distortion-side rain term (`SceneState.cs:129`'s
+  `maxRaining` intensity) already landed with the filter driver.
+* The old stand-in's 0.32 s life / 1-2 particle count / 0.0975 velocity blend
+  are retired — the C# spawns exactly ONE dust per kill and its life is the
+  alpha/scale fade ladder above.
+
+**Witnesses.** g67's 7 `w4_g67_*` witnesses adapted to this branch's pool shape
+(`pin_drop` into fixed slots instead of the compacted-Vec push, quality through
+`RainInputs.gfx_quality` instead of g67's `Rain.gfx_quality` field,
+`drop_count()` instead of `drops.len()`); d130's stand-in-content assertions
+(`splashes` vec) re-pinned to the pool's `splash_count`, the gate/remix
+witnesses keep their stream pins unchanged. The collision witnesses use
+128-tall worlds: the `maxTilesY - 40` scan clamp makes the 64-tall test worlds'
+row-30 floor invisible to the real probes. Code-only mode: **written NOT run,
+no cargo/rustc/rustfmt/tests/graphify invoked** (task directive) — the adapted
+witnesses are owed a compile window before merge.
+
+**g67b-post-union fold (research/83 §7, `16a792d5`).** The d130d union-exec
+censused g67 at `006bc04d`; the branch actually carries four more code
+commits (`d2dd8989`/`5c9398ea`/`2c452eddb`/`112d1b20` — tip `112d1b203`).
+research/134 does NOT exist on the g67 branch (re-fetched, verified); the
+fold-list is the commits themselves. Folded: the menu kill-only arm + the
+MakeRain `:84` menu disjunct, `NewRainForced`, the skyblock-threshold gap
+note, the IsItRaining feeds, the cull-rect + else-kill (both draw loops),
+`ClearRain`. Verified already-present: the AnyDanger throttle, the gfx-cut,
+the live-wind velocity, the clamped probe, the `:64890` start gate (§6).
+NOT taken: g67's `spawn_acc` fractional-rate cadence — d130's per-tick
+float attempt loop is the C# `for (i < num)` ceil-attempts shape. 4 new
+`w4_g67_*` witnesses (menu-arm census, forced-budget 375 cap,
+clear+IsItRaining semantics, cull-rect geometry) WRITTEN NOT RUN.
+
+**RETIRE-PHASE UPDATE (research/83 §8, 2026-11-21).** The "research/134 does
+NOT exist" claim above is SUPERSEDED: g67 pushed `30b39fce` (the 134 file)
+plus three follow-up code commits (`f8c4b659` skyblock / `356a1ac0` Eyebrella
+/ `01ba6c7a` umbrella) and a five-commit final phase (`d0ebe7f0` monitor,
+`a7f92746` fn-census, `7aaf66f0` DrawRain render census, `0dfb1922`
+blizzard/sandstorm/wind-slant census, `e777b3e2` 134-FINAL + the
+KEEP-d130-CANONICAL refresh) — origin tip `e777b3e2c`. The retire phase
+folds R5/R6/R7 (`10ee539d`/`df28ea1a`), verifies R1–R4 already landed by
+`16a792d5`, and compose-verifies g67d's DrawRain re-pin (the light tile +
+XNA byte chain were already canonical here since `ea4863d9`; the
+`rain_light_tile` helper is now extracted + witnessed, `rain_tint` keeps
+d130's name per the union keep-one). g67d's blizzard census CONFIRMS d130's
+`crate::snow` (the `:13092` raining branch) as canonical — g67's `snow_mode`
+gate stays retired; its wind-slant + sandstorm findings match the §5
+cross-note. The full per-item receipt is research/83 §8.
+
+**SEAL UPDATE (research/83 §9, 2026-11-21).** g67's tip moved again:
+`8b9a1ff46` (seal phase 4) — research/134 RENAMED to research/146 (the
+registry sweep: 134 collides f11, 145 double-claimed; 146 provisional,
+renumber at merge), the drop-wholesale FINAL restated, the four-commit
+fold-source hash-list published (R5 `f8c4b659c` / R6 `356a1ac0e` / R7
+`01ba6c7a9` / A2-witness-only `7aaf66f00`). The g67 seal's d130f-monitor
+was written against `97ed44f5d` — every OPEN row it lists is closed by
+this branch's retire phase (`10ee539d`/`df28ea1a`/`af3ebc1a`); the
+BOTH-sides keep-one agreement is mutual (§9.1). The c39 2-hunk graft
+(the storm-deck head clamp + the full LanternsCanPersist gate) was the
+last open ledger — verified OPEN at `af3ebc1a`, folded by the seal
+(§9.2, the "Rain and weather" SEAL paragraph above). No weather fold
+remains open on ANY family lane.
+## The wind leaf particles (W4-g68, 2026-11-20, code-only)
+
+The wind-driven leaf layer now rides the real gore machinery end to end:
+spawn (`TileDrawing.EmitTreeLeaves` `TileDrawing.cs:7779-7891` and
+`EmitLivingTreeLeaf`/`_Below`/`_Sideways` `:7549-7592`), physics
+(`Gore_UpdateLeaf` `Gore.cs:1085-1209`, the S1-E-4 `GorePool::update_leaf`)
+and draw (`Main.DrawGore` `Main.cs:21873-21907`, the S1-E-4b
+`render/gore.rs` pass). CODE-ONLY MODE: no compiler invoked; the 17
+witnesses (8 foliage + 8 tr-core leaf physics + 1 sand wind coupling) are
+WRITTEN NOT RUN.
+
+**The d60-flagged 192-leaf deviation is reconciled.** The W4-d60 census
+(77429fe1) flagged the inline `render/tiles.rs` arm: it gated on
+`wind.sway_enabled` (the C# does NOT), drew the sideways `Next(2)` only
+when the wind pick was non-zero (the C# draws it UNCONDITIONALLY after
+the below-spawn), used a one-cell downwind probe (the C# needs TWO open
+cells), dropped the paint column and never handled type 384. The arm now
+calls the faithful `emit_living_tree_leaf` trio in `render/foliage.rs`
+(the same body d60's unwired `tile_draw_particles.rs` carries — when that
+module lands, the wiring wave dedupes onto one copy):
+
+* the gate is `emit_effects && kind in {192, 384}` then
+  `_rand.Next(leafFrequency / 4) == 0` (`:6848-6855`); 192 sheds gore 910,
+  384 sheds 914;
+* below (`:7558-7569`): the tile under must be non-strict-solid and dry;
+  wind < −0.2 needs (x−1, x−2) open at y+1, wind > 0.2 needs (x+1, x+2);
+  `NewGorePerfect` at `(x*16, y*16+16)`, zero velocity, scale 1;
+* sideways (`:7571-7592`): the unconditional `Next(2)`; `num` = the wind
+  sign above 0.2 else 0 (dead wind probes the tile's OWN cell — a 192
+  block is walk-through, so both gores spawn); the −10 px left-shift
+  quirk; position `(x*16 + 8 + 4*num + num2, y*16 + 8)`;
+* both writes set `Frame.CurrentColumn = tile.color()` (the paint column
+  the `Main.DrawGore` framed source rect reads).
+
+**The private leaf pool is retired.** The old `LeafGore` Vec (400-cap,
+`App.leaves`) with its draw-time `tick_leaves` approximation is deleted:
+its fall/rest math re-derived `Gore_UpdateLeaf` with a simplified probe
+(no liquid-rect intersection, no honey/lava arms, no `DisappearSpeed`
+rows, a floor() tile probe instead of the `(int)x >> 4` shift). Every
+leaf is now a `GorePool` slot: the 600-slot pressure (`Gore.NewGore`'s
+first-inactive scan + refuse sentinel) replaces the 400-cap drain, the
+`gores` phase (`Main.cs:17971`, between NPCs and projectiles) ticks the
+faithful physics, and `Main.DrawGore` draws it with `Gore.GetAlpha` and
+the 32-column paint frame. `App.leaves`, `foliage::draw_leaves`,
+`Lookups::leaf_gores/leaf_sheet/leaf_uv/leaf_frame` are removed (the
+`gore_sheets` map already carries every `Gore_<id>` sheet, 914 included).
+
+**RNG census — two streams kept separate (the d60 precedent).** The gate
+draws (`Next(frequency)`, the 192/384 `Next(maxValue)`, the sideways
+`Next(2)`) ride `TileDrawing._rand` — the port's per-frame pinned
+`FastRandom` stand-in (`sparkle_seed ^ 0x9E37…`, the TILE-DRAW-3
+convention). The `Main.rand` draws ride the App's bare global
+`UnifiedRandom` (`NamedRngs::global`): the C# tile-draw emission runs
+OUTSIDE every `SwapRandom` block (`Main.cs:17811-17812` sits after the
+`UpdateServerOrClient` wrapper closes), so the global stream is the
+faithful home. In C# order: `EmitTreeLeaves`' hallowed height pick
+`Next(0, 28)` (`:7884` — previously mis-rolled on the gate stream), then
+the `NewGoreDirect` ARGUMENT draws `RandomVector2(Main.rand, −2, 2)`
+(two `NextFloat`, X then Y, `Utils.cs:2431-2434`) and the scale roll
+`0.7 + NextFloat()*0.6` (`:7889`), then `NewGore`'s internals
+(`Gore.cs:1327-1328` velocity jitter, the SpecialAI-3 four-draw leaf
+init `:1393-1401`). The `RandomVector2` velocity is DISCARDED by the
+leaf init but its draws still fire (argument evaluation precedes the
+call). `NewGorePerfect` (the living-wood arms) burns the same internals
+then overwrites position/velocity — zero velocity survives.
+
+**Deliberate deviations / deferred seams.**
+* The emission gate `_isActiveAndNotPaused`
+  (`FocusHelper.AllowTileDrawingToEmitEffects`, `TileDrawing.cs:469`)
+  reads `!game_paused && !TR_NO_WIND` — the focus gate is unported; the
+  A/B switch keeps the whole wind feature screenshotable. **The exact C#
+  contract (W4-g68 deferred-2 census): the gate is NOT `!gamePaused`** —
+  `FocusHelper.cs:27` reads `!WorldUpdateStepper.DrawnThisUpdate`, a flag
+  cleared at the top of every world update (`Main.cs:17747`) and set at
+  the END of the first draw after it (`Main.cs:62478`, inside `DoDraw`).
+  So vanilla emits on the FIRST DRAW PER WORLD UPDATE — at 60 Hz update +
+  60 Hz draw that is once per frame; at a 144 Hz display the extra draws
+  emit NOTHING (the flag is already set); during a multi-update catch-up
+  frame only the draws after the LAST update's clear can emit. Pause is
+  orthogonal: a paused game still draws, but `ShouldUpdateWorld` gates
+  the update, so the flag stays set and emission stops — the port's
+  `!game_paused` approximates the steady state, not the mechanism.
+* **The per-rebuild emission cadence — the exact d60 wiring contract
+  (W4-g68 deferred-2; site 1's leaf arm GATED by wiring-3, 2026-11-21).**
+  C# runs the emission bodies from THREE draw-pass
+  sites, each with its own cadence:
+  1. `DrawSingleTile` (`TileDrawing.cs:965-968`): the
+     `_isActiveAndNotPaused && (!Lighting.UpdateEveryFrame ||
+     FastRandom(Main.TileFrameSeed).WithModifier(x,y).Next(4)==0)` gate.
+     `Lighting.UpdateEveryFrame` (`Lighting.cs:77-87`) is FALSE whenever
+     render targets are required (the normal path) — so the quarter-roll
+     normally APPLIES: each tile emits on ~1/4 of the eligible draws.
+     `TileFrameSeed` re-seeds every FIFTH draw (`Main.cs:61719-61723`,
+     `_drawCycleCounter % 5`, `Utils.RandomNextSeed`), so the eligible
+     tile set rotates on a 5-draw cycle. The roll is a THROWAWAY
+     `FastRandom` per tile — it does NOT step `TileDrawing._rand`.
+  2. `DrawGrass`/`DrawAnyDirectionalGrass` (`:8346-8352`, `:8403-8409`)
+     and the two multi-tile-grass-in-wind passes (`:8974-8980`,
+     `:9485-9491`): `flag = _rand.Next(4)==0` — a REAL `_rand` draw per
+     special-point tile per draw, then `_isActiveAndNotPaused & flag`.
+     These ride the `PostDrawTiles(solidLayer: false)` chain
+     (`:414-434`), NOT the G6-cacheable tile range.
+  3. `EmitTreeLeaves` (`:7779-7891`, from `DrawTrees` `:8121/8166/8214`):
+     NO quarter-roll — only `_isActiveAndNotPaused` (`:7781`) plus its
+     own `Next(frequency)` gate (`:7830`). `DrawTrees` also rides
+     `PostDrawTiles` (`:428`).
+  The port fires all three from the G6-cached `draw_tiles` rebuild
+  (`render/tiles.rs` + `foliage.rs`), so the shed cadence is per-REBUILD:
+  a windy world rebuilds every frame (the sway counters ride the key) and
+  the cadence approximates vanilla's; a CALM world caches and emits only
+  on camera/liquid/light changes — vanilla would still shed at
+  1/14000-per-tile-draw in dead calm. `_leafFrequency` itself is ticked
+  per world update in C# (`TilesRenderer.Update()`, `Main.cs:17812`,
+  `TileDrawing.cs:376`); the port re-derives it from the live wind each
+  call (`wind::leaf_frequency`) — same value, no state. **Contract for
+  the d60 wiring wave:** move the emission calls OUT of the cached range
+  into a per-frame pass (the `tile_cracks.rs` precedent, `draw.rs:1198-
+  1206`: per-frame world-range overlay, `WorldFrameKey` untouched), gate
+  site 1 on the throwaway `FastRandom(tile_frame_seed).with_modifier
+  (x,y).next(4)==0` with the 5-draw seed cycle, sites 2/3 on their own
+  gates; the `_rand` stand-in must then become a PERSISTENT stream (C#
+  `TileDrawing._rand` is one `UnifiedRandom` for the renderer's lifetime,
+  `:191` — the port's per-frame `FastRandom` pin is a determinism
+  stand-in, not the C# stream), and the `DrawnThisUpdate` flag needs a
+  port field cleared per world tick / set after the first draw. Do NOT
+  widen the G6 key to force per-frame rebuilds — that re-tiles the whole
+  world every frame (the cache exists to avoid exactly that).
+  **Wiring-3 cadence verify (2026-11-21):** the frequency chain is 1:1 —
+  `wind::leaf_frequency` matches `UpdateLeafFrequency`
+  (`TileDrawing.cs:7719-7771`) band-for-band incl. the ×7, and
+  `emit_tree_leaves`' hallowed /2 → height-10000 → branch ×3 order matches
+  `:7816-7833` exactly (`Main.WindForVisuals` = `windSpeedCurrent`,
+  `Main.cs:2823`, so the live re-derivation equals the per-update tick).
+  The DIVERGENCE found + fixed: the inline 192/384 arm lacked site 1's
+  quarter-roll — the C# wraps the whole `DrawTiles_EmitParticles` call
+  (the leaf arms included) in the throwaway
+  `FastRandom(TileFrameSeed).WithModifier(x,y).Next(4)==0` gate
+  (`:965-968`), so the port shed 4× too often. The arm now carries the
+  gate (the `flame::tile_frame_seed_at` 5-draw-cycle schedule, the
+  throwaway roll never steps `leaf_rng`); the witness pins the gate
+  order + the 1/14000 dead-calm rate + the seed schedule. STILL the
+  d60 wiring wave's: the per-frame pass move (the cached-range cadence
+  deviation above), the persistent `_rand` for the leaf gates (the drip
+  arm's `App.tile_draw_rand` is the precedent), and the DrawnThisUpdate
+  flag gate.
+* ~~`Gore_UpdateLeaf`'s lava arm five-dust puff stays dropped~~ —
+  **WIRED (W4-g68 deferred-1).** `GorePool::update` now takes the
+  `DustPool` + `SpawnCtx` seam (`None` keeps the drop for pool-only
+  consumers); the lava arm rolls its five `Dust.NewDust(position, 3, 3,
+  31, 0, −0.2)` puffs on the SAME `UpdateGores` stage stream via the
+  `DustFromGore` adapter — the C# runs both inside
+  `SwapRandom("UpdateGores")` (`Main.cs:17771-17774`), so no stream split.
+  Six draws per puff (`Dust.cs:170-190`: the 5×5-clamped offsets, two
+  velocity rolls, the frame row, the scale roll; type 31 is in no tweak
+  arm). `gores_phase` hands `App.dust` + `spawn_ctx()` in.
+* ~~`Gore.Width/Height` read the 1f fallback~~ — **WIRED (W4-g68
+  deferred-3).** `GorePool::set_texture_sizes` injects the packed
+  `Gore_<id>` sheet sizes (`App::new` feeds `Lookups.gore_sheets`);
+  `width()/height()` = `scale × (tex/count − 2px padding on multi-cell
+  axes)` (`Gore.cs:44-66` + `SpriteFrame.cs:72-77` — the render-side
+  `source_rect` math was verified 1:1 and now shares
+  `SpriteFrame::source_size`), `aabb_rectangle` truncates the scaled
+  product; absent ids keep the C# unloaded fallbacks. The falling-leaf
+  liquid probe (`:1180`) centres on the sheet half-size. ~~STILL DROPPED:
+  the spawn-time position-adjust arms (`:1384-1388`, `:1407-1420`,
+  `:1433-1440`)~~ — **WIRED (W4-g68 wiring-2, 2026-11-21).** All three
+  arms now ride the same loaded-texture gate (`texture_sizes.get(&type)`
+  IS the C# `TextureAssets.Gore[Type].IsLoaded` test — the App injects
+  the real packed sizes, so the gate is open in-game):
+  * 1225 (`:1384-1388`): X −= `(Width()/2) * Scale` (the INTEGER halving
+    precedes the float cast — `Utils.cs:1301-1316` reads the RAW asset,
+    not the framed cell), Y −= `Height() * Scale / 2f`. No extra draws
+    (the `Next(6)` was already unconditional).
+  * 411-430 (`:1407-1420`): the unloaded-extra-RNG arm — FOUR draws when
+    loaded (`Next(90,150)` vy-scale, `Next(40,90)` vx-scale, `Next(4)*5`
+    type bump, `Next(goreTime/2, goreTime*2)` life) plus a FIFTH
+    (`Next(150,600)`) only when `goreTime == 0`; Y shifts by the FULL
+    height; `sticky = true` overwrites the zero-time chain's false; the
+    type bump can push past 430 (the C#'s own shape — the later
+    `refresh_texture_size` reads the FINAL type). The velocity scales
+    multiply the POST-KICK velocity (the kick draws fired first).
+  * SpecialAI-2 / 825-827 (`:1433-1440`): ONE draw
+    (`Next(goreTime/2, goreTime+1)`), alpha 150, velocity reset to the
+    ARGUMENT (kick discarded), raw-half position adjust; `sticky=false`
+    stays unconditional.
+  The A/B witnesses pin BOTH branches per arm: the loaded spawn's
+  position/velocity/type/life AND the exact stream delta (0 / 4(+1) / 1
+  extra draws vs the unloaded spawn), so a regression that opens the
+  gate without the draws (or vice versa) fails the census. The
+  `goreTime==0` census uses a real `UnifiedRandom` twin — the empty-range
+  `Next(0,0)` life roll STILL consumes a sample (`UnifiedRandom.cs:126-
+  130`), which the VecRng bounds-assert stand-in cannot express.
+* **The remaining tile-draw emission arms (W4-g68 deferred-4 census).**
+  The `:7779-7891` region is exactly `EmitTreeLeaves` — no flower-petal
+  or vine-drip arm hides there. The full `TileDrawing` emission census:
+  the lantern petals / herb blooms / chimney smoke / star clouds /
+  pumpkin tiers / torch smoke / rubble gate are d60's
+  `tile_draw_particles.rs` (unwired, claimed); the danger/spelunker/
+  biome-sight vision dust (`:911-962`, `:8481-8552`) is d56's
+  `animated_tiles.rs` (claimed); the special-point collection is g30's
+  `special_points.rs` (unwired, records `liquid_drop_cells`). The ONE
+  unclaimed body was `EmitLiquidDrops` (`:7594-7674`, the vine-tip /
+  stalactite / shimmer-candle drips, called from the `Draw` switch
+  `:688-694` then `continue`) — now ported UNWIRED as
+  `foliage.rs::emit_liquid_drops`: the wet-tile refusal precedes the
+  `Next(num*2)` gate (60/120/180 by kind 373/374/375+461), the
+  anti-cluster box (x−34..+50, y−100..+300) scans the 600 slots for live
+  `IsDrip` gores, the water-style pick (13/14→706, 12→1147, >1→705+style)
+  then the kind overrides (374→716, 375→717, 709→1383, 461→943 with the
+  corrupt/crimson/hallow tints 1160/1161/1162, LAST zone wins), and the
+  `NewGore` + `velocity *= 0` tail on `Main.rand`. ~~The wiring wave feeds
+  it g30's recorded cells on the reconciled cadence above.~~ **WIRED
+  (W4-g68 wiring wave, 2026-11-21):** `foliage::emit_liquid_drops_area`
+  runs per-frame in `frame/draw.rs` right after the tile-cracks overlay
+  (the same per-frame-world-range precedent — the `WorldFrameKey` is
+  untouched, so the G6 cache keeps its calm-world hits while the drips
+  still roll their `Next(num*2)` gate every DRAW like the C# `Draw`
+  switch). The driver rescans the `draw_tiles` view rect (camera ±
+  screen/2/zoom ±1 tile, clamped 4..max−5 — the C# `GetScreenDrawArea`
+  clamps at `:6558-6573`; the ±4-row/±2-col offscreen margin is the
+  recorded deviation, the wind-grid port's convention) row-major for
+  active 373/374/375/461/709 tiles — the five kinds are non-solid (no
+  `tileSolid` write, no `DrawTileInSolidLayer` row), so the C# arm rides
+  the `solidLayer: false` `Draw` pass and the port's fused scan IS that
+  arm. **The g30 attach-contract still holds:** UNION-CONTRACT-tilepass
+  §5 (d60 row, `task/W4-g31` tip `c3027a38`) binds g30's
+  `SpecialPoints.liquid_drop_cells` (`special_points.rs:110`, recorded at
+  `:394-396` for exactly these kinds) to this body; when the g-family
+  lands on main the wiring wave swaps the rescan for the recorded cells
+  — the body, its RNG order and the per-frame cadence are unchanged
+  either way. **The gate stream is now PERSISTENT:** `App.tile_draw_rand`
+  (`UnifiedRandom`, world-seeded — the `mine_crack_rng` deviation class)
+  is the `TileDrawing._rand` stand-in (`:104/:191`, one stream for the
+  renderer's lifetime); the drip witnesses moved from the per-frame
+  `FastRandom` pin to it. The cached leaf arm's per-frame pin stays as
+  documented until the d60 wiring reconciles it. The emission gate is
+  the leaf arm's `emit_effects` stand-in (`!game_paused && !TR_NO_WIND`);
+  the exact `DrawnThisUpdate` mechanism (the port's stepper flag is set
+  at the draw half's HEAD, `world.rs:688`, so a read inside the draw
+  region would be vacuously true) stays the d60 wiring wave's contract.
+  Water style + the three zone flags come from the live frame state
+  (`calculate_water_style(draw_cam)` + `TR_WATER_STYLE`,
+  `scene_metrics.zone_*`).
+* The desert debris (`Sandstorm.EmitDust`, `sand.rs`) already landed with
+  S1-E-1/E-3; W4-g68 adds the wind-coupling witness (the
+  `sign(wind)*Lerp(0.9,1,|wind|)` drift, the `num13*20` push, the
+  severity scales, the dead-calm refusal) — no behaviour change.
+
+**The d60 G6-contract cross-note (W4-g68 wiring-4, 2026-11-21).** Read
+`origin/task/W4-d60-tile-draw-particles` tip `77429fe1` (the module
+`tile_draw_particles.rs`, 2086 ln, 22 `#[test]`, UNWIRED) against the
+three-site cadence contract above. Verdict per clause:
+* **Site 1 (the throwaway quarter-roll): FOLLOWS.** The module doc
+  (`:18-21`) states the exact gate — `_isActiveAndNotPaused` and
+  (`!Lighting.UpdateEveryFrame` or the per-tile
+  `FastRandom(TileFrameSeed).WithModifier(x,y).Next(4)==0`) — and
+  explicitly assigns it to the CALLER ("the caller owns that gate; this
+  module is the body"). The body's 192/384 arms roll only
+  `Next(leaf_frequency/4)` (`ctx.leaf_frequency / 4`, `:490`), never the
+  quarter-roll — no double-gate, no missing gate. The ANALYSIS diff
+  repeats the obligation verbatim. The port's inline arm now carries
+  the same gate (wiring-3), so the two copies agree at the wiring merge.
+* **Site 2 (the grass passes' REAL `_rand.Next(4)`): SILENT —
+  legitimate deferral, one flag.** The module is the
+  `DrawTiles_EmitParticles` BODY; the four grass-pass call sites
+  (`:8346-8352`, `:8403-8409`, `:8974-8980`, `:9485-9491`) roll
+  `flag = _rand.Next(4)==0` BEFORE the call and pass
+  `_isActiveAndNotPaused & flag` — the module neither ports nor claims
+  those drivers (they are the g31 drain lane's `can_do_dust` seam,
+  UNION-CONTRACT §1.4: "the binding must not re-roll"). No violation in
+  the body; the wiring wave must keep the flag ALREADY-CONSUMED.
+* **Site 3 (EmitTreeLeaves' bare gate): FOLLOWS.** d60's
+  `emit_living_tree_leaf` trio is the same faithful body g68 landed
+  (unconditional sideways `Next(2)`, two-open-cell gate, −10 shift,
+  paint column); the module doc flags the OLD inline deviation for
+  reconciliation — g68 already reconciled it, and the wiring-3
+  quarter-roll now matches d60's caller-owns-gate design. At the merge
+  the two `emit_living_tree_leaf` copies dedupe (g68's is wired; d60's
+  doc says "the wiring wave dedupes onto one copy").
+* **The per-frame pass move / persistent `_rand` / DrawnThisUpdate:
+  SILENT — deferred, not violated.** d60 documents the two-stream
+  census (`rand` = `_rand`, `main_rand` = `Main.rand`) and the
+  caller-owned gate, but says nothing about the G6 cached range, the
+  per-frame move, the persistent stream or the flag mechanism. That is
+  the wiring wave's obligation per its own doc; g68's drip wiring
+  (wiring-1) is the precedent: the per-frame seam beside tile_cracks +
+  `App.tile_draw_rand`.
+* **One factual flag (not a code violation):** d60's module doc
+  (`:75-77`) and ANALYSIS say `EmitLiquidDrops` "is called from
+  `CacheSpecialDraws` (`:693`)" — the C# `:693` call sits in
+  `TileDrawing.Draw` (`:465`, the per-draw tile walk), NOT
+  `CacheSpecialDraws_Part1/Part2` (`:4152`/`:4287`, the
+  `DrawSingleTile` special-point cache helpers). The distinction
+  matters for the cadence: `Draw` runs per draw (the drip gate rolls
+  per draw), while the cache helpers ride the cached tile range. g68's
+  wiring-1 ported the arm at the per-frame seam accordingly; the g30
+  `liquid_drop_cells` attach-contract (UNION-CONTRACT §5) records the
+  cells during the classify walk — the wiring wave must feed them
+  per-frame, not per-rebuild.
+* **Stream-order pins verified against the C#:** the 215 `Next(3)`
+  before the `frameY==0` re-test (`:6780`), the 592/406/452 else-if
+  chain (`:6796-6847`), the 192/384 arms BEFORE the rubble gate
+  (`:6848` vs `:6901` — the 77429fe1 fix), the chimney's
+  `Next(825,828)` type roll then the 1/4→1/2→else scale tiers
+  (`:6820-6832`), the lantern petals' `Next(570,573)` + two ±50%
+  jitters + the 572/571 X shifts (`:6966-6979`), the herb styles'
+  per-style gates (`:9605-9655`) — all match the ported bodies
+  verbatim. No emission-cadence violation found in d60's scope.
+
+Verification: 23 witness tests WRITTEN NOT RUN (no cargo/rustc invoked) —
+`render/foliage.rs` 11 (the dead-wind double shed, the sideways miss, the
+two-open-cell gate, the −10 left shift, the paint column, the liquid
+refusal, the two-stream census with the gate-stream step pin, the paused
+gate, + the 3 drip witnesses: the 706 vine drip with the 15-row/3×-life
+sheet, the kind/water-style/shimmer-zone type overrides, the wet refusal
++ anti-cluster box), `tr-core/gore.rs` 11 (the π/180 sway + wind*4 surface
+term, the underground drop, the collision rest switch, the water drift
+×0.94 + underground zero, honey freeze, lava burn-up, the open-ground
+resume 0.1/0/α+20 (then the same-tick fade point → 21), the 600+255 fade,
++ the lava five-puff seam census (30 stream draws, the 5×5 clamp, the
+−0.2 Y kick), the packed-sheet Width/Height/AABB math, the sheet-half
+fall probe), `sand.rs` 1 (the wind recipe bounds).
+
+## The wind seal (W4-g68, 2026-11-21, code-only) — research/328 SEALED
+
+The g68-side close of the d130 WEATHER-FAMILY bible (research/83 §9.4,
+`b8f655708`): **g68 is the SINGLE wind-flag owner** — `tr-core/wind.rs`'s
+`Wind` is the only integrator of `windSpeedCurrent`/`windSpeedTarget`,
+every family consumer read-only (d130 rain velocity `wind*18,14`, the
+folded g67 Eyebrella drip `wind*3,9`, c40's wind-only Sandstorm severity,
+g68's own leaf cadence `WindForVisuals == windSpeedCurrent`
+`Main.cs:2823`). The full receipts + the wind-family bible live in
+`docs/research/328-g68-wind-seal.md` (registry 328 FINAL per §9.2 —
+renumbered from provisional 247, d10 EXECUTED keeps 247).
+
+**The final-phase missing arms (landed `32ee28ca5` + `2075c3aaa`):** the
+in-flight dirty state at resume was g68's OWN stale work (co-lane probe:
+no live writer, mtimes ~4.5 h old, every hunk cites W4-g68 — NOT an
+alive-advancing foreign co-lane). Adjudicated hunk-by-hunk:
+* **KEPT (wind.rs, g68-unique, hunk-disjoint from d130's `lanterns_up`
+  graft):** (1) the remix branch of `UpdateWindyDayState`
+  (`Main.cs:13021-13027` — remix clears the STORM flag, leaves windy-day
+  alone; non-remix clears windy-day; the old port cleared windy-day
+  unconditionally); (2) `Wind::windy_enough_for_kite_drops`
+  (`Main.cs:2907`, `|windSpeedTarget| >= _maxWind 0.4`, a distinct
+  property from the butterfly gate) **FED** into `spawn_loot`'s live
+  `LootFlags.windy` (was `Default::default()` false — the 8 kite rows
+  `loot_db_gen.rs` were dead); (3) `InAPlaceWithWind`'s `InWorld` skip
+  (`WorldGen.cs:86868` fluff 0 — an out-of-bounds cell is SKIPPED, not a
+  refusal; the old `return false` refused every map-edge probe, the
+  sunflower 2×5 window + the player `wind_here`). 3 witnesses WRITTEN
+  NOT RUN (31 total on the lane, grep-verified — the seal's 33 was an
+  arithmetic slip, the per-file rows sum to 31).
+* **RETIRED (player.rs, the push-chain copy): a c40-DUPLICATE.** c40
+  pushed the SAME `windPushed` chain FIRST (`fa3717be1`/`bdd039802`/
+  `7fc862c91`) as the STRICT SUPERSET (the `Auras.sandstorm_wind` →
+  `AddBuff(194,2)` grant `Player.cs:25556-25559`, the bottle-jump
+  lifecycle, 8 witnesses). The g68 copy had no grant and used
+  `f32::signum()` (±1.0 at ±0.0, never 0 — dead-calm would push +0.06
+  where C# `Math.Sign(0f)=0` pushes nothing; c40's explicit sign is
+  faithful). Keep-one = **c40 CANONICAL** (the `b46556b2d` precedent);
+  the g68 copy's three UNIQUE refinements survive as the exact graft
+  ledger (research/328 §5.1): **G1** the `isLockedToATile`
+  sitting/sleeping gate (`Player.cs:4020-4030`, c40 says "unported
+  constant false"), **G2** the `windPushed` term in BOTH
+  `GetIntendedGroundedFrame` copies (`Mount.cs:4550` — the `:36216`
+  Update site AND `try_landing`; the g68 dirty diff patched only the
+  first), **G3** the walk-cycle rest row (`Player.cs:36250`). Apply at
+  the c40 merge; the retired state is reconstructible from c40's tip +
+  the grafts, nothing lost.
+* **The c40 ONE-WAY gate confirmed** (`SceneMetrics.cs:698-703` re-read:
+  `ZoneSandstorm` clears `ZoneRain`, rain never gates the storm) —
+  already base-landed (`scene.rs:786-790`, the
+  `zone_sandstorm_suppresses_zone_rain` witness). One cite correction
+  for c40: the port comment says `:704-707`, the actual lines are
+  `:698-703` (comment-only). c40's `ResetEffects` cite `:16970` is
+  actually `UpdateDead`; the `ResetEffects` clear is `:18739` (both real
+  C# clears; the `UpdateDead` arm is a c40-lane remainder).
+
+The d130 `lanterns_up` wind.rs graft composes HUNK-DISJOINT (zero shared
+lines, both keep); g67 touches none of g68's four files (wind/foliage/
+gore/sand); the c40c bolt-geometry checkpoint (`5552a3266`, unregistered
+modules) is c40's own remainder, orthogonal to the wind flag. Gate
+command (the merger's verify): `cargo test --workspace -- --skip
+migrates_version_2_kinds_to_item_ids` — judge only by the `test result:
+ok` lines; every witness WRITTEN NOT RUN (code-only, no cargo/rustc
+invoked on this lane).
+
+**The final-phase addendum (research/328 §8, post-seal):** §8.1 closes
+the wind-SYSTEM census — every `UpdateWeather` wind arm (`Main.cs:
+58830-58950`) verified 1:1 against `wind.rs::update_rain`, ONE missing
+arm found + fixed: the WindGrid scan's `WindGrid.cs:91` dead-player
+gate (`f5a65c7da`, `.filter(|p| !p.dead)` on the `draw.rs` borrow — a
+drifting corpse no longer stamps gust cells). The cloud-count tail
+(`:58952-59036`) is the g69 lane's, documented unported; the
+creative-freeze fold + the sway-counter cadence split are pre-existing
+documented deviations. 32 witnesses on the lane (the seal's 33 was an
+arithmetic slip, corrected `08a4c3bb0`; +1 the dead-player pin).
+
+**The addendum's keep-one recommendations (§8.2-§8.5, for the merger):**
+* the wind-PARTICLE census is COMPLETE (§8.2) — all 8 families owned,
+  the one cross-family seam (leaf water-rest drift vs rain spawn)
+  shares the live flag but no stream;
+* the leaf GORE chain (emit → GorePool SpecialAI-3 → update_leaf →
+  front-pass draw) is CLOSED (§8.3); the passStyle TABLE keep-one =
+  **g17's `tr-core/tree.rs::tree_leaf`** (both hallow tables incl
+  style-20 + height_add 5; g68's `tree_leaf_pass_style` twin lacks
+  style-20 and its "unreachable today" comment is wrong — a loaded
+  `.wld` with `hallow_bg_style` 2/3 reaches it); the exact rebind for
+  `foliage.rs:526` is published;
+* the tree-shake interplay (§8.4) composes with the wind shed on
+  cadence/streams/types with NO conflict (g17's loot ladder owns the
+  loot, the FX tail is RNG-free in position);
+* the drip DRIVER keep-one = **the union direct-bind** (g31 §8.5 at
+  `36b5f2d78`, the per-cell CAD arm; g68's `emit_liquid_drops_area`
+  rescan call DROPS at the bind — keeping both double-rolls the gate;
+  the body stays g68's wholesale, the per-drip witnesses survive, the
+  area-driver witness retires with the fn).

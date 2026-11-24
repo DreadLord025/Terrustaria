@@ -743,6 +743,10 @@ pub struct TownOutputs {
     /// draws nothing and `TransformVisuals` is silent for the
     /// waterfowl pairs (the `npc_transform_visuals.rs` census).
     pub waterfowl_takeoff: Option<i32>,
+//!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): the state
+//!   is a cited skip (returns, draws shimmer dust — the dust task's);
+//! * the Old Man 37 / Clothier 54 / Santa 142 (`:53158-53161` +
+//!   the type arms), the Mechanic's owned-proj
     /// W4-f47 — the state-25 emergence visuals (`NPC.cs:53228-53248`),
     /// drained by the wiring onto the dust pool / entity lights (the
     /// module's RNG-free convention: the draws already rode `rng`).

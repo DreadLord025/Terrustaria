@@ -265,6 +265,11 @@ pub(crate) fn finish_drunk_gen(world: &mut World, streams: &mut Streams, opts: &
 /// surface-grass conversion with its plant kills.
 pub(crate) fn finish_get_good_world(world: &mut World, streams: &mut Streams, opts: &GenOptions) {
     let mut rng = streams.pass_rng("FinishGetGoodWorld");
+    // W4-g83 contract §2: the plant kills' framing dispatch threads the
+    // worldgen genRand stand-in (`UnifiedRandom(worldSeed)`, the
+    // `temple.rs::pass_temple_part2` note) — the pass's xorshift stream is a
+    // different generator and stays untouched (the world-hash contract).
+    let mut gen_rng = crate::UnifiedRandom::new(world.seed as i32);
     let (width, height) = (world.width, world.height);
 
     // The cloud-row scan (`:25801-25810`): vanilla walks the rows under the
@@ -423,7 +428,7 @@ pub(crate) fn finish_get_good_world(world: &mut World, streams: &mut Streams, op
                         | TILE_LARGE_PILES2
                         | TILE_DYE_PLANTS
                 ) {
-                    kill_tile(world, m, n - 1, true);
+                    kill_tile(world, m, n - 1, true, &mut gen_rng);
                 }
             }
         }

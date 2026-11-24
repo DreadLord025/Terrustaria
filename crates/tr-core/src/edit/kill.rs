@@ -11,8 +11,9 @@
 use super::{
     after_edit, is_locked_door, liquid_flags, touch, ALCH_SOILS, WALL_UNBREAKABLE,
 };
-use crate::tile::Tile;
+use crate::tile::{LiquidKind, Tile, FLAG_ACTIVE, FLAG_HALF_BRICK};
 use crate::tiledata as td;
+use crate::unified_random::UnifiedRandom;
 use crate::world::World;
 
 /// One object destruction the kill cascade performed — the world-state effect
@@ -270,9 +271,20 @@ const SQUARE_FRAME_ORDER: [(i32, i32); 9] = [
 /// lost a cell or its support, dropping its item. `no_item` mirrors the C#
 /// `noItem` flag (worldgen/replication suppress the drop reporting; the
 /// cascade itself still runs). Returns `None` when nothing was killed.
-pub fn kill_tile(world: &mut World, x: i32, y: i32, no_item: bool) -> Option<TileKill> {
+///
+/// `rng` is the ACTIVE `genRand` (`Main.rand`) stream of the caller's context
+/// (the W4-g83 contract §2 threading — the cascade's framing dispatch runs
+/// `CheckUnderwaterPlant`'s tip re-rolls on it; the growth tick passes the
+/// same stream it handed `update_world_*`).
+pub fn kill_tile(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    no_item: bool,
+    rng: &mut UnifiedRandom,
+) -> Option<TileKill> {
     let mut destroy_object = false;
-    kill_tile_cascading(world, x, y, no_item, &mut destroy_object)
+    kill_tile_cascading(world, x, y, no_item, &mut destroy_object, rng)
 }
 
 /// `WorldGen.SquareTileFrame(i, j, resetFrame: false)` (`Wiring.cs:3212`,
@@ -282,13 +294,23 @@ pub fn kill_tile(world: &mut World, x: i32, y: i32, no_item: bool) -> Option<Til
 /// like the C# `TileFrame` → `Check*` → `destroyObject` chain). The actuated
 /// tile itself stays "active" (the inactive state is a separate bit), so the
 /// cascade treats it as a normal cell.
-pub fn actuation_square_frame(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+///
+/// `rng` is the active `genRand` (`Main.rand`) stream the caller runs under —
+/// the wiring stream for the `DeActive`/`ReActive` tails (`Wiring.cs:3212`/
+/// `:3229` run inside the wiring tick). The W4-g83 seaweed tip re-roll
+/// (`CheckUnderwaterPlant`, contract §2) consumes it, never `frame_rng`.
+pub fn actuation_square_frame(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    rng: &mut UnifiedRandom,
+) -> Vec<ObjectDrop> {
     let mut destroy_object = false;
     let mut kill = TileKill {
         kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
         ..Default::default()
     };
-    square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
+    square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill, rng);
     after_edit(world, x, y);
     kill.object_drops
 }
@@ -299,10 +321,16 @@ pub fn actuation_square_frame(world: &mut World, x: i32, y: i32) -> Vec<ObjectDr
 /// `destroyObject` (the pass-local worldgen flag), the kills' events
 /// discarded (the port's worldgen has no loot side channel — none of the
 /// pass contracts report the objects the checks destroy).
-pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32) {
+///
+/// `rng` is the ACTIVE `genRand` stand-in for the calling context (the W4-g83
+/// contract §2 threading): growth callers pass the same stream they handed
+/// `update_world_*`, the temple passes pass `world.frame_rng` (the worldgen
+/// genRand stand-in — their xorshift pass streams are a different generator,
+/// recorded in ANALYSIS). Only the seaweed tip re-roll draws it.
+pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) {
     let mut destroy_object = false;
     let mut kill = TileKill::default();
-    square_tile_frame(world, x, y, true, &mut destroy_object, &mut kill);
+    square_tile_frame(world, x, y, true, &mut destroy_object, &mut kill, rng);
 }
 
 /// `WorldGen.SquareTileFrame(i, j)` with the default `resetFrame: true`
@@ -310,15 +338,43 @@ pub(crate) fn square_tile_frame_gen(world: &mut World, x: i32, y: i32) {
 /// (`Wiring.cs:1009`, `:1045`, `:1641`-area, `:2385`-area): the 3×3
 /// `TileFrame` walk whose `Check*` chain may pop the tile's object, the
 /// produced drops handed to the app layer.
-pub fn square_tile_frame_default(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+///
+/// `rng` is the ACTIVE `genRand` (`Main.rand`) stream of the caller's context
+/// (the W4-g83 contract 2 threading): growth callers pass the same stream
+/// they handed `update_world_*` (`UpdateWorldGen`), edit callers the edit
+/// stream (`UpdatePlayers`), net replays the bare stream. The seaweed tip
+/// re-roll (`CheckUnderwaterPlant`) consumes it - never `world.frame_rng`,
+/// which stays the variant-reset stream only.
+pub fn square_tile_frame_default(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    rng: &mut UnifiedRandom,
+) -> Vec<ObjectDrop> {
+    square_tile_frame_record(world, x, y, rng).object_drops
+}
+
+/// The same `SquareTileFrame` walk, returning the WHOLE kill record - the
+/// `Liquid.DelWater` tail's reframe arms (`Liquid.cs:1544`/`:1553`/`:1592`)
+/// need the cascade's pots/herbs/piles too, not just the object drops
+/// (W4-g46's seam, adopted by the g47 keep-one - research/69 row 1: the
+/// g47 `square_tile_frame_default` call discarded the loot). The `rng`
+/// threading is W4-g83 contract 2 (the liquid tick passes its UpdateLiquid
+/// stream; the DelWater tail rides the same pass).
+pub fn square_tile_frame_record(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    rng: &mut UnifiedRandom,
+) -> TileKill {
     let mut destroy_object = false;
     let mut kill = TileKill {
         kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
         ..Default::default()
     };
-    square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
+    square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill, rng);
     after_edit(world, x, y);
-    kill.object_drops
+    kill
 }
 
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag
@@ -332,6 +388,7 @@ fn kill_tile_cascading(
     y: i32,
     no_item: bool,
     destroy_object: &mut bool,
+    rng: &mut UnifiedRandom,
 ) -> Option<TileKill> {
     // :63519-63521 (bounds) and :63529-63532 (inactive) — `remove_tile`
     // covers both; the cell keeps its wall and liquid (:63885-63917 clear
@@ -354,7 +411,7 @@ fn kill_tile_cascading(
     if let Some(event) = tree_drop {
         kill.tree_events.push(event);
     }
-    square_tile_frame(world, x, y, no_item, destroy_object, &mut kill);
+    square_tile_frame(world, x, y, no_item, destroy_object, &mut kill, rng);
     // The reframing half of the C# `TileFrame` calls: neighbours re-derive
     // their frames; `frame_important` kinds keep theirs and unsupported
     // torches fall (`reframe_area` = the non-object arm of `TileFrame`).
@@ -461,6 +518,12 @@ fn tree_drop_record(world: &World, x: i32, y: i32) -> Option<TreeDropEvent> {
 /// frame-important object kinds reach `TileFrameImportant`'s `Check*`
 /// routines (:81353-81359, dispatch :84962+). Kills found here run their own
 /// recursive `KillTile` (vanilla's inner `SquareTileFrame` chain).
+///
+/// `rng` is the ACTIVE `genRand` (`Main.rand`) stream of the caller's context
+/// (W4-g83 contract §2): `CheckUnderwaterPlant`'s tip re-rolls (`:58601`/
+/// `:58612`) draw it — the growth tick's `UpdateWorldGen` stream when reached
+/// via a vine/seaweed write, the edit stream via a player edit. The
+/// variant-reset rolls stay on `world.frame_rng` (`reframe_area`).
 fn square_tile_frame(
     world: &mut World,
     x: i32,
@@ -468,6 +531,7 @@ fn square_tile_frame(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
     for (dx, dy) in SQUARE_FRAME_ORDER {
         let (cx, cy) = (x + dx, y + dy);
@@ -493,8 +557,27 @@ fn square_tile_frame(
                 && !important
                 // The cactus rides `TileFrame`'s non-solid arm, not the
                 // frame-important dispatch (`WorldGen.cs:81361-81374`).
-                && cell.kind != 80)
+                && cell.kind != 80
+                // W4-g83: the 8 vine kinds ride the SAME non-solid arm
+                // (`IsVine` → `CheckVines`, `:81375-81378`) — none is
+                // frame-important in C#, so generated vines (no def, no
+                // flag) must still reach the check.
+                && !crate::tileobject::is_vine(cell.kind)
+                // W4-g83: the seaweed 549 IS frame-important
+                // (`Main.cs:7373`) but carries no `TileObjectDef`; a world
+                // whose flag table lacks the bit (pre-boot fixtures) still
+                // routes it to `TileFrameImportant`'s case 549 (`:84972`).
+                && cell.kind != 549)
         {
+            continue;
+        }
+        // W4-g83: `TileFrameImportant`'s `case 549` (`WorldGen.cs:84972-84974`)
+        // — `CheckUnderwaterPlant` runs BEFORE the non-solid arm (the
+        // frame-important dispatch precedes it, `:81353-81359`) and the C#
+        // `return`s after the case. The tip re-rolls draw the caller's ACTIVE
+        // `genRand` stream (`:58601`/`:58612`), threaded per contract §2.
+        if cell.kind == 549 {
+            crate::vine_checks::check_underwater_plant(world, 549, cx, cy, rng);
             continue;
         }
         // `TileFrameImportant`'s tree arms (`WorldGen.cs:85876-85911`):
@@ -506,16 +589,37 @@ fn square_tile_frame(
         if let Some(variant) = crate::tree::TreeVariant::of(cell.kind) {
             match variant {
                 crate::tree::TreeVariant::Palm => {
-                    check_palm_tree(world, cx, cy, no_item, destroy_object, kill)
+                    check_palm_tree(world, cx, cy, no_item, destroy_object, kill, rng)
                 }
-                _ => check_tree(world, cx, cy, variant, no_item, destroy_object, kill),
+                _ => check_tree(world, cx, cy, variant, no_item, destroy_object, kill, rng),
             }
             continue;
         }
         // `TileFrameImportant`'s `case 72` (`WorldGen.cs:85837-85874`): the
         // mushroom tree's support check + the top-cell canopy re-roll.
         if cell.kind == 72 {
-            check_mushroom_tree(world, cx, cy, no_item, destroy_object, kill);
+            check_mushroom_tree(world, cx, cy, no_item, destroy_object, kill, rng);
+            continue;
+        }
+        // `TileFrameImportant`'s `case 518` (`WorldGen.cs:84966-84968`): the
+        // lily pad's settle check (W4-g46's dispatch arm, kept through the
+        // g47 base swap — research/252 gate 2). Like the tree arms it carries
+        // no `destroyObject` guard and `return`s from `TileFrameImportant` —
+        // the pad's kills fold into the record, no plan/kill-loop machinery.
+        // The support walk reads the stock raw table (no liquid pass is
+        // running inside a `TileFrame` cascade).
+        if cell.kind == 518 {
+            if let Some(inner) = check_lily_pad(world, cx, cy, |k| {
+                (k as usize) < td::TILE_COUNT && td::TILE_SOLID.has(k)
+            }, rng) {
+                kill.object_drops.extend(inner.object_drops);
+                kill.events.extend(inner.events);
+                kill.herb_events.extend(inner.herb_events);
+                kill.pile_events.extend(inner.pile_events);
+                kill.tree_events.extend(inner.tree_events);
+                kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
+                kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+            }
             continue;
         }
         // `TileFrame`'s non-solid arm (`WorldGen.cs:81361-81374`): the cactus
@@ -523,7 +627,19 @@ fn square_tile_frame(
         // cosmetic framing — a cactus that lost its sand dies (and the kill
         // ring reaches its neighbours, so the whole plant collapses).
         if cell.kind == 80 {
-            check_cactus(world, cx, cy, no_item, destroy_object, kill);
+            check_cactus(world, cx, cy, no_item, destroy_object, kill, rng);
+            continue;
+        }
+        // W4-g83: `TileFrame`'s non-solid `IsVine` arm
+        // (`WorldGen.cs:81375-81378`) — after the cactus-80 switch arm, before
+        // `TileFrameCosmetic`. `CheckVines` draws NO RNG; a `false` return
+        // (converted or killed) skips the cosmetic framing — the loop's
+        // `continue` is the C# `return`. The conversion's inner
+        // `SquareTileFrame` and the support `KillTile` ride the same caller
+        // stream (`vine_checks::check_vines`).
+        if crate::tileobject::is_vine(cell.kind)
+            && !crate::vine_checks::check_vines(world, cx, cy, cell.kind, rng)
+        {
             continue;
         }
         // `Check*` re-entrancy guard (`WorldGen.destroyObject`, read at
@@ -581,10 +697,10 @@ fn square_tile_frame(
         // holds.
         if guarded {
             *destroy_object = true;
-            kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill);
+            kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill, rng);
             *destroy_object = false;
         } else {
-            kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill);
+            kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill, rng);
         }
         // The check's own tail sound (W4-c14): played at the CHECKED cell
         // after the kill loop (`CheckOrb` `WorldGen.cs:54335-54342`,
@@ -628,7 +744,7 @@ fn square_tile_frame(
                         (rx0, mid_y),
                         (rx1, mid_y),
                     ] {
-                        square_tile_frame(world, mx, my, no_item, destroy_object, kill);
+                        square_tile_frame(world, mx, my, no_item, destroy_object, kill, rng);
                     }
                     d.set(depth);
                 }
@@ -664,9 +780,10 @@ fn kill_plan_cells(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
     for &(mx, my) in cells {
-        if let Some(inner) = kill_tile_cascading(world, mx, my, no_item, destroy_object) {
+        if let Some(inner) = kill_tile_cascading(world, mx, my, no_item, destroy_object, rng) {
             kill.object_drops.extend(inner.object_drops);
             kill.events.extend(inner.events);
             kill.herb_events.extend(inner.herb_events);
@@ -871,7 +988,7 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // bottles 572 and the Dead-Cells display jar 698.
         42 | 270 | 271 | 572 | 581 | 660 | 698 => check_1x2_top(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
-        82 | 83 | 84 => check_alch(world, x, y),
+        82 | 83 | 84 => check_alch_plan(world, x, y),
         93 => check_lamp(world, x, y),
         // `Check2x2`'s default branch (`WorldGen.cs:48397`, dispatch
         // :85653-85659 + :85784-85798 + the 316-318 range guard :85662): the
@@ -933,6 +1050,7 @@ fn check_tree(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
     let Some(cell) = world.tile(x, y) else {
         return;
@@ -958,7 +1076,7 @@ fn check_tree(
         && below != kind
         && ((fx == 0 && fy <= 130) || (fx == 22 && fy <= 130) || (fx == 44 && fy <= 130))
     {
-        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
         // The C#'s later arms read the cleared cell: `KillTile` resets the
         // frames to `-1` (`:63887-63888`).
         fx = -1;
@@ -968,11 +1086,11 @@ fn check_tree(
     // (2) The branch/root row (`:54647-54657`).
     if (22..=44).contains(&fx) && (132..=176).contains(&fy) {
         if !ground_ok {
-            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
             fx = -1;
             fy = -1;
         } else if (fx != 22 || left != kind) && (fx != 44 || right != kind) {
-            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
             fx = -1;
             fy = -1;
         }
@@ -1004,7 +1122,7 @@ fn check_tree(
     if (132..=176).contains(&fy) && (fx == 0 || fx == 66 || fx == 88) {
         let num6 = fy % 66;
         if !ground_ok {
-            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
             fx = -1;
             fy = -1;
         }
@@ -1032,7 +1150,7 @@ fn check_tree(
         || (fx == 44 && (fy == 198 || fy == 220 || fy == 242))
     {
         if right != kind {
-            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
             fx = -1;
             fy = -1;
         }
@@ -1040,12 +1158,12 @@ fn check_tree(
         || (fx == 66 && (fy == 198 || fy == 220 || fy == 242))
     {
         if left != kind {
-            kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+            kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
             fx = -1;
             fy = -1;
         }
     } else if below == -1 {
-        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
         fx = -1;
         fy = -1;
     } else if above != kind && fy < 198 && ((fx != 22 && fx != 44) || fy < 132) {
@@ -1090,7 +1208,7 @@ fn check_tree(
 
     // (7) The frame changed → re-frame the neighbours (`:54773-54779`).
     if fx != fx0 && fy != fy0 && fx0 >= 0 && fy0 >= 0 {
-        tree_ring(world, x, y, no_item, destroy_object, kill);
+        tree_ring(world, x, y, no_item, destroy_object, kill, rng);
     }
 }
 
@@ -1104,6 +1222,7 @@ fn check_palm_tree(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
     let Some(cell) = world.tile(x, y) else {
         return;
@@ -1124,12 +1243,12 @@ fn check_palm_tree(
     let mut fy = fy0;
     // The palm's ground must be sand (`:54377-54384`).
     if below != 53 && below != kind {
-        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
         fx = -1;
         fy = -1;
     }
     if (fx == 66 || fx == 220) && below != 53 {
-        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
         fx = -1;
         fy = -1;
     }
@@ -1151,7 +1270,7 @@ fn check_palm_tree(
     }
     // The frame changed → re-frame the neighbours (`:54393-54399`).
     if fx != fx0 && fy != fy0 && fx0 >= 0 && fy0 >= 0 {
-        tree_ring(world, x, y, no_item, destroy_object, kill);
+        tree_ring(world, x, y, no_item, destroy_object, kill, rng);
     }
 }
 
@@ -1165,6 +1284,7 @@ fn tree_ring(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
     let depth = TREE_DEPTH.with(|d| d.get());
     if depth >= 64 {
@@ -1172,7 +1292,7 @@ fn tree_ring(
     }
     TREE_DEPTH.with(|d| d.set(depth + 1));
     for (mx, my) in [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)] {
-        square_tile_frame(world, mx, my, no_item, destroy_object, kill);
+        square_tile_frame(world, mx, my, no_item, destroy_object, kill, rng);
     }
     TREE_DEPTH.with(|d| d.set(depth));
 }
@@ -1187,8 +1307,9 @@ fn kill_tree_cell(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
-    if let Some(inner) = kill_tile_cascading(world, x, y, no_item, destroy_object) {
+    if let Some(inner) = kill_tile_cascading(world, x, y, no_item, destroy_object, rng) {
         kill.object_drops.extend(inner.object_drops);
         kill.events.extend(inner.events);
         kill.herb_events.extend(inner.herb_events);
@@ -1214,6 +1335,7 @@ fn check_mushroom_tree(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) {
     let Some(cell) = world.tile(x, y) else {
         return;
@@ -1227,7 +1349,7 @@ fn check_mushroom_tree(
     let above = type_at(world, x, y - 1);
     // `:85851-85854`: `num9 != type && num9 != 70` → `KillTile(i, j)`.
     if below != kind && below != 70 {
-        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill, rng);
         return;
     }
     // `:85855-85873`: the top cell's canopy re-roll.
@@ -1251,6 +1373,7 @@ fn check_cactus(
     no_item: bool,
     destroy_object: &mut bool,
     kill: &mut TileKill,
+    rng: &mut UnifiedRandom,
 ) -> bool {
     let is_cactus = |w: &World, x: i32, y: i32| {
         w.tile(x, y).is_some_and(|t| t.active() && t.kind == 80)
@@ -1284,7 +1407,7 @@ fn check_cactus(
             && matches!(t.kind, 53 | 112 | 116 | 234)
     });
     if !base_ok {
-        kill_tree_cell(world, i, j, no_item, destroy_object, kill);
+        kill_tree_cell(world, i, j, no_item, destroy_object, kill, rng);
         return true;
     }
     if i != num2 {
@@ -1294,7 +1417,7 @@ fn check_cactus(
             && !is_cactus(world, i - 1, j)
             && !is_cactus(world, i + 1, j)
         {
-            kill_tree_cell(world, i, j, no_item, destroy_object, kill);
+            kill_tree_cell(world, i, j, no_item, destroy_object, kill, rng);
             return true;
         }
     } else {
@@ -1304,7 +1427,7 @@ fn check_cactus(
             t.active() && matches!(t.kind, 80 | 53 | 112 | 116 | 234)
         });
         if !below_ok {
-            kill_tree_cell(world, i, j, no_item, destroy_object, kill);
+            kill_tree_cell(world, i, j, no_item, destroy_object, kill, rng);
             return true;
         }
     }
@@ -3678,7 +3801,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
 /// `frameY = 0` (:45991) is kept as a gated write (the port's herbs always
 /// carry it). The kill is the single cell; no item spawns here (the per-cell
 /// herb drops are phase 3 — `KillTile_GetItemDrops` :65674-65698).
-fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+fn check_alch_plan(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let herb = *world.tile(x, y)?;
     // :45983-45990 — the support pair.
     let mut flag = world
@@ -3745,6 +3868,121 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         sound: None,
         cues: Vec::new(),
     })
+}
+
+/// `WorldGen.CheckAlch(x, y)` (`WorldGen.cs:45972-46092`) — the direct call
+/// `Liquid.DelWater`'s retirement tail makes (`Liquid.cs:1580-1583`): the
+/// plan's `frameY = 0` / Fireblossom-blink writes land inside
+/// [`check_alch_plan`], the death is the plain unguarded `KillTile`
+/// (:46090). The herb drop rolls ride the returned record's `herb_events`
+/// (the app resolves them with the `Main.rand` stream).
+pub fn check_alch(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRandom) -> Option<TileKill> {
+    let plan = check_alch_plan(world, x, y)?;
+    let mut kill = TileKill::default();
+    let mut destroy_object = false;
+    if let Some(herb) = plan.herb_event {
+        kill.herb_events.push(herb);
+    }
+    kill_plan_cells(world, &plan.cells, false, &mut destroy_object, &mut kill, rng);
+    Some(kill)
+}
+
+/// `WorldGen.CheckLilyPad(x, y)` (`WorldGen.cs:59203-59310`) — the lily pad
+/// 518 floats on the water surface. The DelWater tail calls it with the
+/// pass-scoped solidity toggles still up (`Liquid.cs:1586-1597`), so the
+/// support walk reads them through the raw-table closure the caller passes.
+/// The pad on a non-water liquid dies (:59209-59217); otherwise the column
+/// walk finds the first solid support (:59218-59226, `maxTilesY - 50`
+/// bound), its kind picks the pad's `frameY` row (:59227-59240 — the C#'s
+/// `type == 109 || type == 109` duplicate kept as one arm), and the pad
+/// moves onto the wet cell above (:59251-59267) or sinks onto the dry cell
+/// below (:59268-59291); a pad on an unsupported non-platform open tile
+/// dies (:59292-59299). An unsupported soil kind kills the pad (:59302-59309).
+pub fn check_lily_pad(world: &mut World, x: i32, y: i32, raw_solid: impl Fn(u16) -> bool, rng: &mut UnifiedRandom) -> Option<TileKill> {
+    // :59209 — the type bits alone, no amount gate (live read: the
+    // DelWater drain may have re-typed the cell before this tail).
+    if world.tile(x, y)?.liquid_kind() != LiquidKind::Water {
+        // :59209-59217.
+        return kill_tile(world, x, y, false, rng);
+    }
+    // :59218-59226 — the support walk (`!active || !tileSolid || solidTop`
+    // is the raw-table open test, NOT the nactive fold). The bound stops
+    // the walk AT `maxTilesY - 50` and the soil read still runs on that
+    // row (the C# exits the loop, it does not return); only a null cell
+    // returns early (:59222-59225).
+    let mut num = y;
+    loop {
+        let Some(t) = world.tile(x, num).copied() else {
+            return None;
+        };
+        let open = !t.active() || !raw_solid(t.kind) || td::TILE_SOLID_TOP.has(t.kind);
+        if !open || num >= world.height - 50 {
+            break;
+        }
+        num += 1;
+    }
+    let soil = world.tile(x, num)?.kind;
+    // :59229-59240 — the frameY row per soil kind.
+    let row: i16 = match soil {
+        2 | 477 => 0,
+        109 | 116 => 18,
+        60 => 36,
+        _ => {
+            // :59302-59309 — no row: the pad dies.
+            return kill_tile(world, x, y, false, rng);
+        }
+    };
+    // :59243-59250 — the gated frameY write.
+    if world.tiles[world.index(x, y)].frame_y != row {
+        world.tiles[world.index(x, y)].frame_y = row;
+        touch(world, x, y);
+    }
+    let above = world.tile(x, y - 1).copied();
+    if above.is_some_and(|t| t.liquid > 0 && !t.active()) {
+        // :59251-59267 — the pad rises onto the wet cell above.
+        move_lily_pad(world, x, y, x, y - 1, rng);
+        return None;
+    }
+    if world.tile(x, y).is_some_and(|t| t.liquid != 0) {
+        return None; // :59270-59273 — the LIVE amount (the drain emptied it)
+    }
+    let below = world.tile(x, y + 1).copied().unwrap_or_default();
+    if !below.active() {
+        // :59275-59291 — the pad sinks onto the dry cell below.
+        move_lily_pad(world, x, y, x, y + 1, rng);
+        return None;
+    }
+    if !td::SET_PLATFORMS.has(below.kind)
+        && (!raw_solid(below.kind) || td::TILE_SOLID_TOP.has(below.kind))
+    {
+        // :59292-59299 — the open non-platform support cannot carry the pad.
+        return kill_tile(world, x, y, false, rng);
+    }
+    None
+}
+
+/// `CheckLilyPad`'s move body (`WorldGen.cs:59252-59262` / `:59276-59286`):
+/// the destination takes the pad's kind/frames/paint with a clean slope and
+/// half-brick, the origin deactivates, and the destination reframes with
+/// `SquareTileFrame(resetFrame: false)` — the port's actuation square (the
+/// keep-frame 3×3 walk + reframe; the reset-roll deviation is the documented
+/// `reframe_area` one).
+fn move_lily_pad(world: &mut World, x: i32, y: i32, dx: i32, dy: i32, rng: &mut UnifiedRandom) {
+    let pad = world.tiles[world.index(x, y)];
+    let d = world.index(dx, dy);
+    world.tiles[d].flags |= FLAG_ACTIVE;
+    world.tiles[d].flags &= !FLAG_HALF_BRICK;
+    world.tiles[d].kind = 518;
+    world.tiles[d].frame_x = pad.frame_x;
+    world.tiles[d].frame_y = pad.frame_y;
+    world.tiles[d].set_slope(0);
+    world.tiles[d].set_paint(pad.paint());
+    let o = world.index(x, y);
+    world.tiles[o].flags &= !FLAG_ACTIVE;
+    world.tiles[o].kind = 0;
+    touch(world, x, y);
+    touch(world, dx, dy);
+    actuation_square_frame(world, dx, dy, rng);
 }
 
 /// Clears the active tile at `(x, y)` and keeps the wall and the liquid. The caller is
@@ -3882,6 +4120,18 @@ mod tests {
             let d = ObjectDrop { tile_kind: kind, x: 10, y: 18, item: None };
             assert_eq!(d.spawn_center_px(), (168.0, 296.0), "kind {kind}");
         }
+    // W4-g83: the cascade signatures now thread the ACTIVE genRand stream
+    // (`square_tile_frame`'s `CheckUnderwaterPlant` tip re-rolls). The cascade
+    // witnesses below pin drops/frames, not streams — each drives a fresh
+    // seed-0 stream (the C# tests' `Main.rand` is likewise unseeded noise).
+    fn rng() -> UnifiedRandom {
+        UnifiedRandom::new(0)
+    }
+
+    /// The witness shim: [`kill_tile`] on a fresh seed-0 stream (the cascade
+    /// witnesses pin drops/frames, not the stream position).
+    fn kill_tile_rng(world: &mut World, x: i32, y: i32, no_item: bool) -> Option<TileKill> {
+        kill_tile(world, x, y, no_item, &mut rng())
     }
 
     /// A tree over a dirt ground: a trunk column of `tree::TREE` cells with
@@ -3921,7 +4171,7 @@ mod tests {
     #[test]
     fn BUG_16_the_felled_tree_collapses_whole() {
         let mut w = tree_world(2, 8);
-        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        let kill = kill_tile_rng(&mut w, 10, 19, false).expect("the base dies");
         // Every trunk cell is gone — the trunk does not float.
         for dy in 0..8 {
             assert!(
@@ -3948,7 +4198,7 @@ mod tests {
     #[test]
     fn BUG_16_the_tree_family_comes_from_the_ground() {
         let mut w = tree_world(60, 4);
-        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        let kill = kill_tile_rng(&mut w, 10, 19, false).expect("the base dies");
         assert_eq!(kill.tree_events.len(), 4);
         for event in &kill.tree_events {
             match event {
@@ -3965,7 +4215,7 @@ mod tests {
     #[test]
     fn BUG_16_only_the_canopy_marker_may_drop_an_acorn() {
         let mut w = tree_world(2, 5);
-        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        let kill = kill_tile_rng(&mut w, 10, 19, false).expect("the base dies");
         let markers = kill
             .tree_events
             .iter()
@@ -4000,7 +4250,7 @@ mod tests {
         let i = w.index(10, 20);
         w.tiles[i].kind = 53; // the sand
         // Chop the sand away: the palm above loses its ground.
-        let kill = kill_tile(&mut w, 10, 20, false).expect("the sand dies");
+        let kill = kill_tile_rng(&mut w, 10, 20, false).expect("the sand dies");
         assert!(
             !w.tile(10, 19).unwrap().active(),
             "the palm below the lost sand survived"
@@ -4045,7 +4295,7 @@ mod tests {
     fn S1_P_i30_the_gem_tree_collapses_and_records_the_gem_pair() {
         // Stone 1 is in `SET_CONVERSION_STONE` — the gem ground.
         let mut w = variant_tree_world(583, 1, 5);
-        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        let kill = kill_tile_rng(&mut w, 10, 19, false).expect("the base dies");
         for dy in 0..5 {
             assert!(
                 !w.tile(10, 19 - dy).unwrap().active(),
@@ -4064,7 +4314,7 @@ mod tests {
         }
         // The Amber tree (589) carries its own pair (999, 4857).
         let mut w = variant_tree_world(589, 1, 3);
-        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        let kill = kill_tile_rng(&mut w, 10, 19, false).expect("the base dies");
         assert!(kill.tree_events.iter().all(|e| matches!(
             e,
             TreeDropEvent::Gem { gem: 999, seed: 4857, .. }
@@ -4078,7 +4328,7 @@ mod tests {
     #[test]
     fn S1_P_i30_the_mushroom_tree_collapses_over_the_mushroom_grass() {
         let mut w = variant_tree_world(72, 70, 4);
-        let kill = kill_tile(&mut w, 10, 19, false).expect("the base dies");
+        let kill = kill_tile_rng(&mut w, 10, 19, false).expect("the base dies");
         for dy in 0..4 {
             assert!(
                 !w.tile(10, 19 - dy).unwrap().active(),
@@ -4115,7 +4365,7 @@ mod tests {
         w.compute_column_surface();
         // Break the stone beside the support: the 3x3 frame reaches the top
         // cell, which survives (its below is the 70) and records the roll.
-        let kill = kill_tile(&mut w, 11, 20, false).expect("the stone dies");
+        let kill = kill_tile_rng(&mut w, 11, 20, false).expect("the stone dies");
         assert!(w.tile(10, 19).unwrap().active(), "the top cell survives");
         assert!(
             kill.mushroom_frame_rolls.contains(&(10, 19)),
@@ -4143,7 +4393,7 @@ mod tests {
         let i = w.index(10, 20);
         w.tiles[i].kind = 53; // the sand
         w.compute_column_surface();
-        let kill = kill_tile(&mut w, 10, 20, false).expect("the sand dies");
+        let kill = kill_tile_rng(&mut w, 10, 20, false).expect("the sand dies");
         for dy in 0..4 {
             assert!(
                 !w.tile(10, 19 - dy).unwrap().active(),
@@ -4173,7 +4423,7 @@ mod tests {
         // not sand.
         w.compute_column_surface();
         // Frame the cactus through a neighbour break: it loses the ground test.
-        let kill = kill_tile(&mut w, 11, 20, false).expect("the stone dies");
+        let kill = kill_tile_rng(&mut w, 11, 20, false).expect("the stone dies");
         assert!(!w.tile(10, 19).unwrap().active(), "the cactus dies");
         assert!(kill
             .tree_events
@@ -4287,7 +4537,7 @@ mod tests {
         let mut w = ground_world();
         set_object_cell(&mut w, 10, 19, 21, 0, 0);
         assert!(!can_kill_tile(&w, 10, 20, |_, _| false));
-        assert_eq!(kill_tile(&mut w, 10, 20, true).map(|k| k.kind), Some(1));
+        assert_eq!(kill_tile_rng(&mut w, 10, 20, true).map(|k| k.kind), Some(1));
     }
 
     #[test]
@@ -4308,7 +4558,7 @@ mod tests {
             // `kill_tile` on one of the piece's cells runs its `Check*`
             // routine (`WorldGen.KillTile`'s object dispatch) — the whole
             // piece sweeps.
-            kill_tile(&mut w, ox, oy + def.height - 1, true);
+            kill_tile_rng(&mut w, ox, oy + def.height - 1, true);
             let mut alive = 0;
             for x in ox..ox + def.width {
                 for y in oy..oy + def.height {
@@ -4367,7 +4617,7 @@ mod tests {
         for hit in cells {
             let mut w = object_world();
             assert!(place_item_tile(&mut w, 10, 19, 18, 0, 1));
-            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            let kill = kill_tile_rng(&mut w, hit.0, hit.1, false).unwrap();
             assert_eq!(kill.kind, 18);
             assert_all_gone(&w, &cells);
             let (dx, dy) = expected_drop(&cells, hit, 18);
@@ -4395,7 +4645,7 @@ mod tests {
         for hit in &cells {
             let mut w = object_world();
             assert!(place_item_tile(&mut w, 10, 19, 14, 0, 1));
-            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            let kill = kill_tile_rng(&mut w, hit.0, hit.1, false).unwrap();
             assert_eq!(kill.kind, 14);
             assert_all_gone(&w, &cells);
             let (dx, dy) = expected_drop(&cells, *hit, 14);
@@ -4422,7 +4672,7 @@ mod tests {
         for hit in &cells {
             let mut w = object_world();
             assert!(place_item_tile(&mut w, 10, 19, 21, 0, 1));
-            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            let kill = kill_tile_rng(&mut w, hit.0, hit.1, false).unwrap();
             assert_eq!(kill.kind, 21);
             assert_all_gone(&w, &cells);
             let (dx, dy) = expected_drop(&cells, *hit, 21);
@@ -4445,7 +4695,7 @@ mod tests {
         // that is not the trigger cell.
         let mut w = object_world();
         assert!(place_item_tile(&mut w, 10, 19, 15, 0, 1));
-        let kill = kill_tile(&mut w, 10, 18, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 18, false).unwrap();
         assert_eq!(kill.kind, 15);
         assert_all_gone(&w, &[(10, 18), (10, 19)]);
         assert_eq!(
@@ -4468,7 +4718,7 @@ mod tests {
         for hit in cells {
             let mut w = doorway_world();
             assert!(place_item_tile(&mut w, 10, 18, 10, 0, 1));
-            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            let kill = kill_tile_rng(&mut w, hit.0, hit.1, false).unwrap();
             assert_eq!(kill.kind, 10);
             assert_all_gone(&w, &cells);
             let (dx, dy) = expected_drop(&cells, hit, 10);
@@ -4502,7 +4752,7 @@ mod tests {
             assert!(place_item_tile(&mut w, 10, 18, 10, 0, 1));
             let open_cells = open_the_door(&mut w, false);
             assert_eq!(open_cells, cells.to_vec());
-            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            let kill = kill_tile_rng(&mut w, hit.0, hit.1, false).unwrap();
             assert_eq!(kill.kind, 11);
             assert_all_gone(&w, &open_cells);
             let (dx, dy) = expected_drop(&cells, hit, 11);
@@ -4527,7 +4777,7 @@ mod tests {
         let mut w = doorway_world();
         assert!(place_item_tile(&mut w, 10, 18, 10, 0, 1));
         let open_cells = open_the_door(&mut w, true);
-        let kill = kill_tile(&mut w, 9, 17, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 9, 17, false).unwrap();
         assert_eq!(kill.kind, 11);
         assert_all_gone(&w, &open_cells);
         let (dx, dy) = expected_drop(&open_cells, (9, 17), 11);
@@ -4549,7 +4799,7 @@ mod tests {
         // support test destroys it (:57950-57958).
         let mut w = object_world();
         assert!(place_item_tile(&mut w, 10, 19, 21, 0, 1));
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 1, "the floor block is the hit cell");
         assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
         assert_eq!(kill.object_drops.len(), 1);
@@ -4564,7 +4814,7 @@ mod tests {
         let mut w = object_world();
         assert!(place_item_tile(&mut w, 10, 19, 18, 0, 1));
         assert!(place_item_tile(&mut w, 12, 19, 18, 0, 1));
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 19, false).unwrap();
         assert_all_gone(&w, &[(10, 19), (11, 19)]);
         for x in [12, 13] {
             assert!(w.tile(x, 19).unwrap().active(), "bench B cell ({x}, 19)");
@@ -4590,7 +4840,7 @@ mod tests {
         // chair's cells through `SquareTileFrame` (a placement next to an
         // intact chair does not pop it — its support still exists).
         assert!(place_tile(&mut w, 11, 17, 1));
-        let kill = kill_tile(&mut w, 11, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 11, 19, false).unwrap();
         assert_all_gone(&w, &[(10, 18), (11, 18), (10, 19), (11, 19)]);
         assert!(w.tile(10, 16).unwrap().active(), "chair top floats");
         assert!(w.tile(10, 17).unwrap().active(), "chair bottom floats");
@@ -4605,7 +4855,7 @@ mod tests {
         );
         // The later break: the stone next to the chair — the chair's check
         // runs unguarded now, finds the support gone, and pops it.
-        let kill = kill_tile(&mut w, 11, 17, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 11, 17, false).unwrap();
         assert_eq!(kill.kind, 1);
         assert_all_gone(&w, &[(10, 16), (10, 17)]);
         assert_eq!(
@@ -4625,7 +4875,7 @@ mod tests {
         // the destruction itself always runs.
         let mut w = object_world();
         assert!(place_item_tile(&mut w, 10, 19, 18, 0, 1));
-        let kill = kill_tile(&mut w, 10, 19, true).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 19, true).unwrap();
         assert_eq!(kill.kind, 18);
         assert_all_gone(&w, &[(10, 19), (11, 19)]);
         assert!(kill.object_drops.is_empty());
@@ -4640,7 +4890,7 @@ mod tests {
         let mut w = object_world();
         set_object_cell(&mut w, 5, 19, 18, 0, 0);
         set_object_cell(&mut w, 6, 19, 18, 18, 0);
-        let kill = kill_tile(&mut w, 6, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 6, 19, false).unwrap();
         assert_all_gone(&w, &[(6, 19)]);
         assert!(w.tile(5, 19).unwrap().active(), "guard skips x = 5");
         assert!(kill.object_drops.is_empty(), "no check ran");
@@ -4648,7 +4898,7 @@ mod tests {
         let mut w = object_world();
         set_object_cell(&mut w, 6, 19, 18, 0, 0);
         set_object_cell(&mut w, 7, 19, 18, 18, 0);
-        let kill = kill_tile(&mut w, 7, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 7, 19, false).unwrap();
         assert_all_gone(&w, &[(6, 19), (7, 19)]);
         assert_eq!(kill.object_drops.len(), 1);
     }
@@ -4661,7 +4911,7 @@ mod tests {
         // table is empty for object kinds (`WorldGen.cs:65748-66091`).
         let mut w = object_world();
         set_object_cell(&mut w, 10, 19, 21, 0, 0);
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 19, false).unwrap();
         assert_eq!(kill.kind, 21);
         assert!(w.tile(10, 19).is_some_and(|t| !t.active()));
         assert!(kill.object_drops.is_empty());
@@ -4672,7 +4922,7 @@ mod tests {
         // A non-registry kind breaks as before: one cell, the legacy drop
         // position (the hit cell), no cascade records.
         let mut w = object_world();
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 1);
         assert!(!w.tile(10, 20).unwrap().active());
         assert!(
@@ -4681,9 +4931,9 @@ mod tests {
         );
         assert!(kill.object_drops.is_empty());
         // Inactive and out-of-world cells return None (:63519-63532).
-        assert!(kill_tile(&mut w, 10, 20, false).is_none());
-        assert!(kill_tile(&mut w, -1, 20, false).is_none());
-        assert!(kill_tile(&mut w, 10, 200, false).is_none());
+        assert!(kill_tile_rng(&mut w, 10, 20, false).is_none());
+        assert!(kill_tile_rng(&mut w, -1, 20, false).is_none());
+        assert!(kill_tile_rng(&mut w, 10, 200, false).is_none());
     }
 
     #[test]
@@ -4715,7 +4965,7 @@ mod tests {
             }
         }
         // A neighbour kill on the platform row leaves both intact.
-        let kill = kill_tile(&mut w, 12, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 12, 19, false).unwrap();
         assert_eq!(kill.kind, 19);
         assert!(kill.object_drops.is_empty(), "both sitters supported");
         for x in 10..=11 {
@@ -4726,7 +4976,7 @@ mod tests {
         }
         // Killing the platform under the chest's left column pops the chest;
         // the table keeps its platform.
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 19, false).unwrap();
         assert_all_gone(&w, &[(10, 17), (11, 17), (10, 18), (11, 18)]);
         assert_eq!(kill.object_drops.len(), 1);
         assert_eq!(kill.object_drops[0].tile_kind, 21);
@@ -4734,7 +4984,7 @@ mod tests {
             assert!(w.tile(x, 17).unwrap().active(), "table {x} survives");
         }
         // And the platform's death under a table column pops the table.
-        let kill = kill_tile(&mut w, 15, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 15, 19, false).unwrap();
         assert_all_gone(
             &w,
             &[(14, 17), (15, 17), (16, 17), (14, 18), (15, 18), (16, 18)],
@@ -4757,7 +5007,7 @@ mod tests {
     /// Kills the active block at `(x, y)` — the neighbouring break whose
     /// `SquareTileFrame` pass frames the fixture object.
     fn trigger_at(w: &mut World, x: i32, y: i32) -> TileKill {
-        kill_tile(w, x, y, false).unwrap()
+        kill_tile_rng(w, x, y, false).unwrap()
     }
 
     /// A herb of `kind`/`frame_x` at (10, 19) on a `soil` floor with a stone
@@ -4817,7 +5067,7 @@ mod tests {
         assert!(!kill.object_drops.is_empty(), "the piggy drops item 87");
         // The direct hit kills through the piggy's own check.
         let mut w = piggy_world(true);
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 29);
         assert!(!w.tile(10, 20).unwrap().active(), "the direct hit kills");
     }
@@ -4833,7 +5083,7 @@ mod tests {
         for alch in crate::tileobject::TILE_ALCH {
             w.frame_important[*alch as usize] = true;
         }
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 2, "the dirt block is the hit cell");
         assert!(!w.tile(10, 19).unwrap().active(), "the herb died");
         assert!(kill.object_drops.is_empty());
@@ -4844,7 +5094,7 @@ mod tests {
         for alch in crate::tileobject::TILE_ALCH {
             w.frame_important[*alch as usize] = true;
         }
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 19, false).unwrap();
         assert_eq!(kill.kind, 84);
         assert!(!w.tile(10, 19).unwrap().active());
         assert!(kill.object_drops.is_empty());
@@ -4973,7 +5223,7 @@ mod tests {
         // rides out of the nested kill as an event.
         let mut w = clay_pot_world();
         set_object_cell(&mut w, 10, 18, 83, 0, 0);
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 1, "the floor block is the hit cell");
         assert_all_gone(&w, &[(10, 19), (10, 18)]);
         assert_eq!(
@@ -5040,7 +5290,7 @@ mod tests {
         // the record's `item`.
         for hit in SUNFLOWER_CELLS {
             let mut w = sunflower_world();
-            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            let kill = kill_tile_rng(&mut w, hit.0, hit.1, false).unwrap();
             assert_eq!(kill.kind, 27);
             assert_all_gone(&w, &SUNFLOWER_CELLS);
             let (dx, dy) = expected_drop(&SUNFLOWER_CELLS, hit, 27);
@@ -5067,7 +5317,7 @@ mod tests {
         // (`frameX / 18` mod 2 only) — the style-2 variant checks the same.
         let mut w = sunflower_world();
         set_active(&mut w, 9, 19, 1); // a stone block beside the stem
-        kill_tile(&mut w, 9, 19, false).unwrap();
+        kill_tile_rng(&mut w, 9, 19, false).unwrap();
         for x in [10, 11] {
             assert!(w.tile(x, 19).unwrap().active(), "dirt ground holds");
         }
@@ -5075,7 +5325,7 @@ mod tests {
         for soil in [1u16, 78] {
             let mut w = sunflower_world_with_soil(soil, 0);
             set_active(&mut w, 9, 19, 1);
-            kill_tile(&mut w, 9, 19, false).unwrap();
+            kill_tile_rng(&mut w, 9, 19, false).unwrap();
             assert!(
                 !w.tile(10, 19).unwrap().active(),
                 "soil {soil} refuses the sunflower"
@@ -5086,13 +5336,13 @@ mod tests {
         let soil = w.index(10, 20);
         w.tiles[soil].flags |= crate::tile::FLAG_HALF_BRICK;
         set_active(&mut w, 9, 19, 1);
-        kill_tile(&mut w, 9, 19, false).unwrap();
+        kill_tile_rng(&mut w, 9, 19, false).unwrap();
         assert!(!w.tile(10, 19).unwrap().active(), "half brick ground kills");
 
         // The style-2 sheet column (frames 72/90) passes the same checks.
         let mut w = sunflower_world_with_soil(2, 2);
         set_active(&mut w, 9, 19, 1);
-        kill_tile(&mut w, 9, 19, false).unwrap();
+        kill_tile_rng(&mut w, 9, 19, false).unwrap();
         for (x, y) in SUNFLOWER_CELLS {
             assert!(w.tile(x, y).unwrap().active(), "({x}, {y})");
         }
@@ -5105,7 +5355,7 @@ mod tests {
         // item-63 record spawns (per-cell drops stay empty — 27 is in the
         // empty `KillTile_GetItemDrops` group, :65759+).
         let mut w = sunflower_world();
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 2, "the dirt block is the hit cell");
         assert_all_gone(&w, &SUNFLOWER_CELLS);
         assert_eq!(kill.object_drops.len(), 1);
@@ -5149,7 +5399,7 @@ mod tests {
         // and the event carries the check's trigger cell.
         for hit in POT_CELLS {
             let mut w = pot_world(0);
-            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            let kill = kill_tile_rng(&mut w, hit.0, hit.1, false).unwrap();
             assert_eq!(kill.kind, 28);
             assert_all_gone(&w, &POT_CELLS);
             assert!(kill.object_drops.is_empty(), "no items for tile 28");
@@ -5173,7 +5423,7 @@ mod tests {
         // the same event.
         for style in [0i32, 8, 20] {
             let mut w = pot_world(style);
-            let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+            let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
             assert_eq!(kill.kind, 1);
             assert_all_gone(&w, &POT_CELLS);
             assert_eq!(
@@ -5286,7 +5536,7 @@ mod tests {
             set_object_cell(&mut w, x, 20, 19, 0, 0); // platforms under both
         }
         set_active(&mut w, 9, 19, 1);
-        kill_tile(&mut w, 9, 19, false).unwrap();
+        kill_tile_rng(&mut w, 9, 19, false).unwrap();
         for (x, y) in POT_CELLS {
             assert!(w.tile(x, y).unwrap().active(), "({x}, {y}) on platforms");
         }
@@ -5295,14 +5545,14 @@ mod tests {
         let soil = w.index(10, 20);
         w.tiles[soil].flags |= crate::tile::FLAG_HALF_BRICK;
         set_active(&mut w, 9, 19, 1);
-        kill_tile(&mut w, 9, 19, false).unwrap();
+        kill_tile_rng(&mut w, 9, 19, false).unwrap();
         assert!(!w.tile(10, 19).unwrap().active(), "half brick ground kills");
 
         let mut w = pot_world(0);
         let floor = w.index(10, 20);
         w.tiles[floor].flags |= crate::tile::FLAG_INACTIVE;
         set_active(&mut w, 9, 19, 1);
-        kill_tile(&mut w, 9, 19, false).unwrap();
+        kill_tile_rng(&mut w, 9, 19, false).unwrap();
         assert!(!w.tile(10, 19).unwrap().active(), "actuated ground kills");
     }
 
@@ -5313,7 +5563,7 @@ mod tests {
         // only the loot event leaves; the ANALYSIS entry lands in phase 5.
         for style in [0i32, 25, 31] {
             let mut w = pot_world(style);
-            let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+            let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
             assert_all_gone(&w, &POT_CELLS);
             assert!(kill.object_drops.is_empty(), "style {style}");
             assert_eq!(kill.events.len(), 1, "style {style}");
@@ -5363,7 +5613,7 @@ mod tests {
         }
         // A dead support kills regardless of style (:46898-46902).
         let mut w = pile_1x1_world(2, 0);
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 2);
         assert!(!w.tile(10, 19).unwrap().active(), "lost support kills");
         assert!(kill.object_drops.is_empty(), "no items for tile 185");
@@ -5411,7 +5661,7 @@ mod tests {
         // A lost support column kills; no items for tile 185 (the coin-pile
         // rolls are phase-3 RNG).
         let mut w = pile_2x1_world(2, 0);
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 2);
         assert!(!w.tile(10, 19).unwrap().active());
         assert!(!w.tile(11, 19).unwrap().active());
@@ -5518,7 +5768,7 @@ mod tests {
         // A broken support column kills (:49396-49399 arm); no items for
         // the piles (the empty case group, :65759+).
         let mut w = pile_3x2_world(186, 1, 0);
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.kind, 1);
         for x in 10..=12 {
             for y in 18..=19 {
@@ -5597,7 +5847,7 @@ mod tests {
         for kind in [186u16, 187] {
             let mut w = pile_3x2_world(kind, 1, 0);
             set_active(&mut w, 11, 20, 138);
-            let kill = kill_tile(&mut w, 13, 19, false).unwrap();
+            let kill = kill_tile_rng(&mut w, 13, 19, false).unwrap();
             for x in 10..=12 {
                 for y in 18..=19 {
                     assert!(!w.tile(x, y).unwrap().active(), "kind {kind}");
@@ -5615,7 +5865,7 @@ mod tests {
         // A fully supported pile survives a cascade that merely passes by
         // (a neighbouring block breaks): the check runs and finds nothing.
         let mut w = pile_3x2_world(186, 1, 0);
-        let kill = kill_tile(&mut w, 13, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 13, 19, false).unwrap();
         assert_eq!(kill.kind, 1);
         for x in 10..=12 {
             for y in 18..=19 {
@@ -5669,7 +5919,7 @@ mod tests {
             set_active(&mut w, 10 + dx, 19, 1); // its own support row
         }
         set_active(&mut w, 9, 18, 1);
-        kill_tile(&mut w, 9, 18, false).unwrap();
+        kill_tile_rng(&mut w, 9, 18, false).unwrap();
         for dx in 0..3i32 {
             assert!(
                 w.tile(10 + dx, 18).unwrap().active(),
@@ -5677,7 +5927,7 @@ mod tests {
             );
         }
         // Breaking its support row still kills it.
-        let kill = kill_tile(&mut w, 11, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 11, 19, false).unwrap();
         assert_eq!(kill.kind, 1);
         for dx in 0..3i32 {
             assert!(!w.tile(10 + dx, 18).unwrap().active());
@@ -5874,7 +6124,7 @@ mod tests {
         // The hit bottom-left table cell is two rows below the pot: the pot
         // survives the first framing pass (its support is still alive) and
         // its verdict comes from inside `Check3x2`'s flag-wrapped loop.
-        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 19, false).unwrap();
         assert_eq!(kill.kind, 14);
         assert_all_gone(
             &w,
@@ -5922,7 +6172,7 @@ mod tests {
         // Mine the bench cell that is not the pot's support: the first
         // framing pass anchors the pot (the table arm, :43530-43532), the
         // kill loop's re-frame kills it.
-        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 11, 20, false).unwrap();
         assert_eq!(kill.kind, 18);
         assert_all_gone(&w, &[(10, 20), (11, 20), (10, 19)]);
         assert_eq!(
@@ -5956,7 +6206,7 @@ mod tests {
         // needed — style 0 also accepts 0 via {2,477,109,492}? no: dirt 2 is
         // the style-0 set, so the bare fixture stands.
         set_object_cell(&mut w, 10, 19, 83, 2 * 18, 0);
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_all_gone(&w, &[(10, 19)]);
         assert_eq!(
             kill.herb_events,
@@ -5976,7 +6226,7 @@ mod tests {
         // `noItem` gate suppresses it like the records (:63860-63864).
         let mut w = object_world();
         set_object_cell(&mut w, 10, 19, 84, 0, 0);
-        let kill = kill_tile(&mut w, 10, 20, true).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, true).unwrap();
         assert_all_gone(&w, &[(10, 19)]);
         assert!(kill.herb_events.is_empty());
     }
@@ -5989,7 +6239,7 @@ mod tests {
         let mut w = object_world();
         set_object_cell(&mut w, 10, 19, 185, 576, 18);
         set_object_cell(&mut w, 11, 19, 185, 594, 18);
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_all_gone(&w, &[(10, 19), (11, 19)]);
         assert_eq!(
             kill.pile_events,
@@ -6008,7 +6258,7 @@ mod tests {
         // destruction records only its item drop.
         let mut w = object_world();
         assert!(place_item_tile(&mut w, 10, 19, 18, 0, 1));
-        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        let kill = kill_tile_rng(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.object_drops.len(), 1);
         assert!(kill.pile_events.is_empty());
     }
@@ -6195,7 +6445,7 @@ mod tests {
         // The first hit on any member breaks the whole 2x2 — the C#'s
         // `CheckOrb` integrity scan (`:54200-54213`) re-kills the rest
         // and raises the flags at once (`:54292-54293`).
-        let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
+        let kill = kill_tile_rng(&mut w, 99, 99, true).expect("the break");
         let _ = kill;
         assert!(w.shadow_orb_smashed, "the smash flag");
         assert_eq!(w.shadow_orb_count, 1, "the shared counter");
@@ -6203,7 +6453,7 @@ mod tests {
         assert!(w.orb_smash_notify_pending, "the SMASHING_POPPET notify");
         w.orb_smash_notify_pending = false;
         // A second hit on the already-broken object does not re-flag.
-        let _ = super::kill_tile(&mut w, 100, 100, true);
+        let _ = kill_tile_rng(&mut w, 100, 100, true);
         assert_eq!(
             w.shadow_orb_count, 1,
             "the broken object holds its single count"
@@ -6402,12 +6652,12 @@ mod tests {
         add_shadow_orb(&mut w, 100, 100, false);
         // no_item = false — the drop flows (the frame walk pushes the
         // plan's drop only when the drops are not suppressed).
-        let kill = super::kill_tile(&mut w, 99, 99, false).expect("the break");
+        let kill = kill_tile_rng(&mut w, 99, 99, false).expect("the break");
         let drop = kill.object_drops.first().copied().expect("the drop");
         assert_eq!(drop.item, Some(96), "the forced gun on the first smash");
         // A second orb (the flag now set) rolls the table.
         add_shadow_orb(&mut w, 140, 100, false);
-        let kill2 = super::kill_tile(&mut w, 139, 99, false).expect("the second break");
+        let kill2 = kill_tile_rng(&mut w, 139, 99, false).expect("the second break");
         let drop2 = kill2
             .object_drops
             .first()
@@ -6956,5 +7206,77 @@ mod tests {
         // 48x32: +24/+16.
         assert_eq!(at(391, 10, 18), (184.0, 304.0), "the worm cage");
         assert_eq!(at(705, 10, 18), (184.0, 304.0), "the oasis echo");
+    // ---- W4-g83 wire phase 2: the vine/seaweed checks ride the dispatch ----
+
+    /// W4-g83 wiring witness (contract §2): `square_tile_frame`'s dispatch
+    /// runs `CheckVines` on the non-solid `IsVine` arm after the cactus-80
+    /// arm (`WorldGen.cs:81375-81378`) — a jungle vine under dirt converts
+    /// to the plain vine, an unsupported mushroom vine dies — and the entry
+    /// gate admits both WITHOUT a `frame_important` flag (the generated
+    /// world's shape: C# never marks the 8 vine kinds frame-important).
+    #[test]
+    fn w4_g83_the_vine_check_rides_the_framing_dispatch() {
+        let mut w = World::new("t".into(), 120, 120);
+        assert!(w.frame_important.is_empty(), "no boot flags — the gate exception carries");
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind, flags: FLAG_ACTIVE, ..Default::default() };
+        };
+        // The conversion: 62 under dirt 2 → 52 (the plain arm of the ladder).
+        put(&mut w, 60, 60, 2);
+        put(&mut w, 60, 61, 62);
+        let _ = square_tile_frame_default(&mut w, 60, 61, &mut rng());
+        assert_eq!(w.tile(60, 61).unwrap().kind, 52, "the dispatch converted 62 → 52");
+        // The support kill: 528 under stone 1 dies (no family flag).
+        let mut w2 = World::new("t".into(), 120, 120);
+        let put2 = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind, flags: FLAG_ACTIVE, ..Default::default() };
+        };
+        put2(&mut w2, 60, 60, 1);
+        put2(&mut w2, 60, 61, 528);
+        let _ = square_tile_frame_default(&mut w2, 60, 61, &mut rng());
+        assert!(!w2.tile(60, 61).unwrap().active(), "the dispatch killed the unsupported 528");
+    }
+
+    /// W4-g83 stream witness (contract §2): the case-549 arm's tip re-rolls
+    /// (`WorldGen.cs:58601`/`:58612`) consume the CALLER's active `genRand`
+    /// stream — the twin replay proves the exact draw order (the 549 ABOVE
+    /// is visited first in the row-major 3×3 walk and re-rolls `Next(7,13)`,
+    /// then the centre re-rolls `Next(1,8)`), and `world.frame_rng` (the
+    /// variant-reset stream) is NOT the source: it is seeded differently
+    /// and the frames still match the caller-stream twin.
+    #[test]
+    fn w4_g83_the_seaweed_tip_rerolls_draw_the_callers_genrand() {
+        let mut w = World::new("t".into(), 120, 120);
+        // The 549 frame-important bit (Main.cs:7373, boot_statics) — the
+        // generated world carries it, so `after_edit`'s cosmetic reframe
+        // keeps the tip columns the check wrote.
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[549] = true;
+        // The water column (4 deep so BOTH 549 cells pass the 3-cell gate).
+        for y in 57..=60 {
+            let i = w.index(60, y);
+            w.tiles[i].liquid = 255;
+        }
+        let i = w.index(60, 61);
+        w.tiles[i] = Tile { kind: 53, flags: FLAG_ACTIVE, ..Default::default() };
+        for y in [59, 60] {
+            let i = w.index(60, y);
+            w.tiles[i].kind = 549;
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            w.tiles[i].frame_x = 0; // stale lone columns — both re-roll
+        }
+        // frame_rng seeded DIFFERENTLY: if the tip drew it, the twin mismatch.
+        w.frame_rng = UnifiedRandom::new(999);
+        let mut rng = UnifiedRandom::new(7);
+        let _ = square_tile_frame_default(&mut w, 60, 60, &mut rng);
+        // The twin: the walk visits (60,59) before (60,60) (row-major).
+        let mut twin = UnifiedRandom::new(7);
+        let above_fx = (twin.next_range(7, 13) * 18) as i16; // below-same arm
+        let centre_fx = (twin.next_range(1, 8) * 18) as i16; // above-same arm
+        assert_eq!(w.tile(60, 59).unwrap().frame_x, above_fx, "the above cell's tip");
+        assert_eq!(w.tile(60, 60).unwrap().frame_x, centre_fx, "the centre's tip");
+        assert_eq!(rng, twin, "the dispatch consumed EXACTLY the caller stream's prefix");
     }
 }

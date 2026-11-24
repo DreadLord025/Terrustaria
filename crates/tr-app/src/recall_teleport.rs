@@ -422,7 +422,14 @@ pub(crate) fn spawn_force_clear_area(app: &mut App, floor_x: i32, floor_y: i32) 
                     let idx = app.world.index(i, j);
                     app.world.tiles[idx].flags &= !FLAG_LIQUID_LAVA;
                     app.world.tiles[idx].liquid = 0;
-                    let drops = edit::square_tile_frame_default(&mut app.world, i, j);
+                    // W4-g83: the liquid-wipe wake's framing dispatch rides
+                    // the UpdatePlayers stream (contract §2).
+                    let drops = edit::square_tile_frame_default(
+                        &mut app.world,
+                        i,
+                        j,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
                     let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                     for d in drops {
                         // The Check*'s own Item.NewItem (the sunflower's 63)

@@ -915,6 +915,45 @@ impl SpriteRenderer {
         });
     }
 
+    /// Background-range sprite with an arbitrary rotation origin and an
+    /// explicit blend batch (W4-c39): the event skies' lanterns draw with
+    /// `origin = frame.Size()/2`, `rotation = lantern.Rotation` and an
+    /// additive glow copy (`LanternSky.cs:246-250`), in the sky layer. `pos`
+    /// is the UNROTATED top-left (`anchor − origin` for a C#
+    /// `Draw(position, …, origin, …)` call); the instance pipeline rotates
+    /// about the top-left, so the top-left is shifted by `origin −
+    /// R(rot)·origin` (the [`Self::push_ui_sprite_blend`] convention).
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_back_sprite_origin_rot_blend(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+        origin: [f32; 2],
+        blend: BlendMode,
+    ) {
+        let (s, c) = rot.sin_cos();
+        let tl = [
+            pos[0] + origin[0] - (origin[0] * c - origin[1] * s),
+            pos[1] + origin[1] - (origin[0] * s + origin[1] * c),
+        ];
+        self.back.push(SpriteInstance {
+            pos: tl,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot,
+            paint: 0.0,
+            dye: 0,
+            layer: 0,
+            clip: self.clip.current(),
+            blend: blend as u32,
+        });
+    }
+
     /// `push_sprite_rot` with a `PaintID`: the fragment shader recolors the
     /// texel through the paint table before the light tint multiplies it.
     pub fn push_sprite_paint(

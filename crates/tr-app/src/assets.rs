@@ -292,6 +292,17 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Star_1",
         "Star_2",
         "Star_3",
+        // W4-f39: the SlimeSky's falling-slime sheets
+        // (`SlimeSky.OnLoad`, `SlimeSky.cs:79-83` —
+        // `Images/Misc/Sky_Slime_1..4`; 1/2 the common pair, 3 the 1/30
+        // variant, 4 the 1/60 rare). Measured against the strict-GPU
+        // bound with tools/atlas_sim.js: full gore+mount+font set
+        // 8119 px → 8139 px with the four sheets (14x96, 14x120, 24x152,
+        // 36x152) — fits 8192.
+        "Misc/Sky_Slime_1",
+        "Misc/Sky_Slime_2",
+        "Misc/Sky_Slime_3",
+        "Misc/Sky_Slime_4",
         // The ambient-sky creature sheets (`Images/Backgrounds/Ambience/*`, the
         // textures `Main.Assets.Request`ed by the `AmbientSky` entity classes).
         // `BoneSerpant.xnb` is skipped: `AmbientSky.Spawn` has no BoneSerpent
@@ -519,6 +530,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // (`AssetInitializer.cs:578`), the Beetle orb's 3-frame wing sheet
         // (`DrawPlayer_37_BeetleBuff`, `PlayerDrawLayers.cs:4007-4031`).
         "BeetleOrb",
+        // W4-c39: the lantern-night sky (`LanternSky.cs:79`,
+        // `TextureAssets.Extra[134]`) and the birthday-party balloons
+        // (`PartySky.cs:88`, `Extra[69..71]`) + the town-NPC party hats
+        // (`Main.DrawNPCExtras`, `Main.cs:26922`, `Extra[72]`).
+        "Extra_134",
+        "Extra_69",
+        "Extra_70",
+        "Extra_71",
+        "Extra_72",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -3375,6 +3395,10 @@ pub struct Lookups {
     /// The `Images/Backgrounds/Ambience/*` creature sheets, keyed by the
     /// `Main.Assets.Request` name (`AmbientSky.cs`).
     pub ambience: HashMap<&'static str, AmbienceTex>,
+    /// W4-f39: the SlimeSky's four sheets (`Misc/Sky_Slime_1..4`) as
+    /// atlas UV quads — the sandwich draw reads them beside the ambience
+    /// entities (`render::bg::draw_sandwich_band`).
+    pub slime_sky_sheets: [Option<crate::render::BgTex>; 4],
     /// `Misc/water_0..14` sheets (water styles, lava, honey, shimmer).
     pub liquids: Vec<Option<tr_render::SheetRect>>,
     /// `LiquidSlope_0..14`: 4 diagonal masks (18 px stride) drawn behind slopes.
@@ -3406,14 +3430,11 @@ pub struct Lookups {
     /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
     /// convention the `item_icons` scan uses).
     pub yoyo_sprites: std::collections::HashMap<u16, tr_render::SheetRect>,
-    /// The ambient leaf gores the world's trees can shed: `Gore_910`
-    /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
-    /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
-    pub leaf_gores: [Option<tr_render::SheetRect>; 2],
     /// `TextureAssets.Gore[type]` — one packed sheet per gore id whose
     /// `Images/Gore_<id>` file exists (`AssetInitializer.cs:135-137`), the
     /// `Main.DrawGore` source (`Main.cs:21873-21907`). Includes the leaf
-    /// gores 910/911 (they also ride `leaf_gores` for the foliage pass).
+    /// gores 910/911 (packed via `STATIC_SHEET_NAMES`) and every other
+    /// leaf style (914 &c.) — W4-g68 draws all leaf gores through this map.
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
@@ -3478,6 +3499,15 @@ pub struct Lookups {
     /// (`Main.cs:57248`) — loaded for S1-E-16, the draw is gated on
     /// `Player.hasPaladinShield` (unported).
     pub extra_98: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[134]`: the lantern-night sky's lantern sheet
+    /// (`LanternSky.cs:79`), 3 variants across.
+    pub extra_134: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[69..71]`: the birthday-party balloon sheets
+    /// (`PartySky.cs:88`), each a 3x3 grid.
+    pub extra_balloons: [Option<tr_render::SheetRect>; 3],
+    /// `TextureAssets.Extra[72]`: the town-NPC party-hat strip
+    /// (`Main.DrawNPCExtras`, `Main.cs:26922`), 20 frames across.
+    pub extra_72: Option<tr_render::SheetRect>,
     /// `TextureAssets.FlameRing`: the inferno halo (`Main.cs:64321`), 400×1200
     /// (3 rings of 400×400) — the draw is gated on `Player.inferno`.
     pub flame_ring: Option<tr_render::SheetRect>,
@@ -3972,6 +4002,20 @@ impl Lookups {
                 .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
                 .collect(),
             ambience: HashMap::new(),
+            slime_sky_sheets: std::array::from_fn(|i| {
+                atlas
+                    .sheet(&format!("Misc/Sky_Slime_{}", i + 1))
+                    .map(|r| crate::render::BgTex {
+                        uv: [
+                            r.x as f32 / atlas.width as f32,
+                            r.y as f32 / atlas.height as f32,
+                            (r.x + r.width) as f32 / atlas.width as f32,
+                            (r.y + r.height) as f32 / atlas.height as f32,
+                        ],
+                        w: r.width as f32,
+                        h: r.height as f32,
+                    })
+            }),
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
@@ -4004,7 +4048,6 @@ impl Lookups {
                         .map(|r| (k, r))
                 })
                 .collect(),
-            leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             // Every `Gore_<id>` sheet that made it into the atlas, keyed by
             // the parsed id (`AssetInitializer.cs:135-137` names them
             // `Images/Gore_<l>`) — the same prefix scan as `item_icons`; an
@@ -4078,6 +4121,9 @@ impl Lookups {
             }),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
+            extra_134: atlas.sheet("Extra_134").copied(),
+            extra_balloons: [69, 70, 71].map(|i| atlas.sheet(&format!("Extra_{i}")).copied()),
+            extra_72: atlas.sheet("Extra_72").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
@@ -4840,6 +4886,8 @@ atlas.sheet("NPC_442").copied(),
                 // W4-e21 — the Party Bunny's own 7-row NPC_540 strip (NPC_46
                 // is d34's sheet above).
                 atlas.sheet("NPC_540").copied(),
+                // Doc-sweep lane 36 — the ShimmerSlime's strip.
+                atlas.sheet("NPC_676").copied(),
             ],
 
 
@@ -5205,25 +5253,24 @@ atlas.sheet("NPC_442").copied(),
         let fw = sheet.width / 32;
         let fh = sheet.height / 8;
         if fw == 0 || fh == 0 || row as u32 >= 8 {
+    /// The party-hat strip's `column` cell (`Extra_72`, 20 columns × 1 row,
+    /// `Main.DrawNPCExtras` `Main.cs:26939`): the UV quad plus the cell's
+    /// native size. The 2-px trim (`Width -= 2; Height -= 2`) is the caller's
+    /// (the hat draw's `cell`), so this returns the FULL cell.
+    pub fn party_hat_cell(&self, column: u32) -> Option<([f32; 4], [f32; 2])> {
+        let rect = self.extra_72.as_ref()?;
+        let cell_w = rect.width / 20;
+        let x = column * cell_w;
+        if x + cell_w > rect.width {
             return None;
         }
-        Some(uv_rect(
-            sheet,
-            self.atlas_size,
-            0,
-            row as i32 * fh as i32,
-            fw,
-            fh,
+        Some((
+            uv_rect(rect, self.atlas_size, x as i32, 0, cell_w, rect.height),
+            [cell_w as f32, rect.height as f32],
         ))
     }
 
-    /// The pixel frame size of one leaf cell.
-    pub fn leaf_frame(&self, style: u32) -> Option<(f32, f32)> {
-        let sheet = self.leaf_sheet(style)?;
-        Some((sheet.width as f32 / 32.0, sheet.height as f32 / 8.0))
-    }
-
-    /// UV and frame size of a projectile sprite — `Main.DrawProj`'s
+    /// UV and frame size of a projectile sprite - `Main.DrawProj`'s
     /// `TextureAssets.Projectile[type].Value.Frame(1, Main.projFrames[type], 0,
     /// frame)` (`Main.cs:27929-27943`): the sheet sliced into `frames` equal
     /// rows. `None` when the kind's sheet is not packed (the shuriken fallback

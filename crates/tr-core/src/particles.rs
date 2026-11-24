@@ -215,7 +215,8 @@ pub struct UpdateCtx {
 type WetProbe = Box<dyn Fn(&World, f32, f32, f32, f32) -> bool>;
 
 /// The `Main.dust` pool: 6001 slots (0..6000 scanned, 6000 the sentinel) plus
-/// the three C# statics (`Dust.cs:12-16`).
+/// the three C# statics (`Dust.cs:12-16`) and `Main.snowDust` (`Main.cs:621`,
+/// a Main static the type-76 arm feeds — W4-d130).
 pub struct DustPool {
     slots: Vec<Dust>,
     /// `Dust.dCount` — pool pressure for the cull margin (`Dust.cs:97`); the
@@ -232,6 +233,8 @@ pub struct DustPool {
     /// snowfall budget reads it (`Main.cs:13057`). The shared tick's
     /// `type_chain` 76 arm feeds it through the env delta (W4-d50 wiring,
     /// the d54 ONE-EDIT hunk `84eb739b` — the d130 field union).
+    /// snowfall budget reads it (`Main.cs:13057`). The shared tick's arm
+    /// maintains it (W4-d130).
     pub snow_dust: i32,
     /// The blood gate; `disabled` defaults `true` (`ChildSafety.cs:33`).
     pub child_safety: ChildSafety,
@@ -331,6 +334,9 @@ impl DustPool {
         // (`Main.cs:621`, read at `:13057`); the pool carries it since the
         // W4-d50 wiring (the d130 field union) — the type-76 arm (`:1747`)
         // feeds it through the tick's env delta, the snowfall budget reads it.
+        // (`Main.cs:621`, read at `:13057`); the pool carries it since
+        // W4-d130 — the type-76 arm (`:1747`) feeds it, the snowfall budget
+        // reads it.
         self.lava_bubbles = 0;
         self.sand_storm_count = 0;
         self.snow_dust = 0;

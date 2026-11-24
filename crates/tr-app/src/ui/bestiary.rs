@@ -4346,6 +4346,16 @@ fn draw_info_row(
                 .unwrap_or(40.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // E8 merge: the c10 12-critter portrait tail dropped (d40/c8's arms above).
+        // Doc-sweep lane 36 — the ShimmerSlime's portrait rests the
+        // 2-frame strip's row height over the 24x18 box (the
+        // small-kinds shape).
+        (NpcKind::ShimmerSlime, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 32.0, h, white)
+        }
     }
 }
 

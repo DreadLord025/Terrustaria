@@ -3121,6 +3121,7 @@ pub enum NpcKind {
     /// shimmer target (`NPCID.cs:10120`).
     TownSlimeCopper,
     /// `NPCID.ShimmerSlime` (676, `NPCID.cs:12029`) РІР‚вЂќ the shimmer
+    /// `NPCID.ShimmerSlime` (676, `NPCID.cs:12029`) — the shimmer
     /// transform target of the 15 slime/critter rows
     /// (`ShimmerTransformToNPC`, `NPCID.cs:10470`): 24x18, aiStyle 1,
     /// dmg 20, def 5, 80 HP, scale 1, value 150 copper
@@ -3730,6 +3731,13 @@ pub enum NpcKind {
     /// `:11625-11639`): 40x40, aiStyle 5, dmg 70, def 28, 1000 HP, kb 0.4,
     /// value 600, noGravity, rarity 2. WIRED: `HoverParams::MOTH`.
     Moth,
+    /// (the activation contract, research/151 §3); the 676 light/dust
+    /// arm (`NPC.cs:61128-61150`) is WIRED in `npc_ai_slime` (keep-one
+    /// 144). The HitEffect arm (`:82058-82078`) is the dust lanes'
+    /// (g62 hit / g60 death, the 676 death-half census gap seeded —
+    /// research/151 §2). The 677 Shimmerfly twin is
+    /// W4-c7/c9's pushed claim — NOT landed here (ANALYSIS 121).
+    ShimmerSlime,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -5915,7 +5923,7 @@ impl Npc {
         Some(npc)
     }
 
-    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5958`'s `NewNPC(type)` at
+    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5954`'s `NewNPC(type)` at
     /// the random sky tile): the position is the caller's — the slime
     /// falls through the air under its own gravity. The seed-facing
     /// variation and the variant stats ride the ground ctor's shape.
@@ -9033,6 +9041,8 @@ impl Npc {
             NpcKind::MossHornet => 22,
             NpcKind::Moth => 28,
             NpcKind::CultistDragonHead => 15,
+            // Doc-sweep lane 36 — 676 defense 5 (`NPC.cs:17572`).
+            NpcKind::ShimmerSlime => 5,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -10021,6 +10031,9 @@ impl Npc {
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody4
             | NpcKind::Cyborg => 0.0,
+            // Doc-sweep lane 36 — 676 value `Item.buyPrice(0,0,1,50)` =
+            // 150 copper (`NPC.cs:17575`).
+            NpcKind::ShimmerSlime => 150.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -41806,6 +41819,9 @@ impl Npc {
             // vanilla id — unused by every arm above (the G6 key stays
             // injective).
             // W4-d42 - the vanilla ids 620-624 are free render keys.
+            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (free in
+            // the hash space; the 677 twin is c7/c9's).
+            NpcKind::ShimmerSlime => 676,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -49067,6 +49083,8 @@ mod tests {
     //   NpcKind::Mimic => 363  (g8 pushed id; main owns Mimic@85),
     // MERGE canary (g8 dedupe, rows re-pointed to main's canonical ids):
     pub(super) const ALL_KINDS: [NpcKind; 688] = [
+    // land-K union: + doc-sweep lane 36's ShimmerSlime 676 = 513.
+    pub(super) const ALL_KINDS: [NpcKind; 513] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -49405,6 +49423,7 @@ mod tests {
         NpcKind::IlluminantBat,
         NpcKind::PossessedArmor,
         NpcKind::WyvernTail,
+        // W4-d34 kinds 1-70 coverage wave (phase 1).
         NpcKind::AngryBones,
         NpcKind::CursedSkull,
         NpcKind::OldMan,
@@ -51145,6 +51164,7 @@ mod tests {
         NpcKind::Truffle,
         NpcKind::Steampunker,
         NpcKind::Cyborg,
+        NpcKind::ShimmerSlime,
     ];
 
 
@@ -51525,6 +51545,41 @@ mod tests {
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(b.buff_immune[31], "{kind:?} Confused-immune");
         }
+    }
+
+    /// Doc-sweep lane 36 — the ShimmerSlime 676's `SetDefaults` row
+    /// (`NPC.cs:17566-17578`) through the port's tables: 24x18, aiStyle 1,
+    /// dmg 20, def 5, 80 HP, the class-default kb 1 (the row writes none),
+    /// value 150 copper, NPCHit1/NPCDeath1, the vanilla protocol id, the
+    /// 2-frame strip, and the shimmer-transform resolve now finds the
+    /// kind (the roster gap closed). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_f47ds_the_shimmer_slime_row_matches_the_csharp() {
+        let kind = NpcKind::ShimmerSlime;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 676);
+        assert_eq!(kind.net_id(), 676);
+        assert_eq!(kind.ai_style(), 1);
+        assert_eq!(kind.size(), (24.0, 18.0));
+        assert_eq!(shell.size(), (24.0, 18.0));
+        assert_eq!(kind.contact_damage(), 20);
+        assert_eq!(shell.defense(), 5);
+        assert_eq!(kind.max_hp(), 80);
+        assert_eq!(shell.hp, 80);
+        assert_eq!(shell.knock_back_resist(), 1.0, "the class default, not 0.4");
+        assert_eq!(shell.value(), 150.0);
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(kind.to_u16(), 676);
+        assert_eq!(NpcKind::from_u16(676), Some(kind));
+        assert_eq!(crate::render::entities::npc_rows(676), 2);
+        // The transform chain resolves: the blue slime's release/transform
+        // target 676 now maps to a live kind (the drain's TransformNpc arm).
+        assert_eq!(
+            crate::npc::kind_from_net_id(676),
+            Some((kind, SlimeVariant::Blue))
+        );
+        assert_eq!(tr_core::shimmer::transform_to_npc(1), 676);
     }
 
     /// The bestiary rows: ONE entry per pair — the 1-variants carry the
@@ -60034,6 +60089,8 @@ mod s1_f_3_tests {
             528,
             "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)"
             512,
+            513,
+            "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate) + land-K union's doc-sweep 36 ShimmerSlime 676"
         );
         assert!(
             covered > 43,

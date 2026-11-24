@@ -481,7 +481,9 @@ impl App {
             pumpkin_moon: self.world.pumpkin_moon,
             snow_moon: self.world.snow_moon,
             hard_mode: self.world.hard_mode,
-            is_raining: self.rain.is_raining(),
+            // g67b IsItRaining fix: `AmbienceServer.cs:32/:50` read
+            // `Main.IsItRaining` = `cloudAlpha > 0`, not the event flag.
+            is_raining: self.rain.is_it_raining(),
             is_storming: self.wind.storming,
             happy_windy_day: self.wind.happy_windy_day,
             too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),

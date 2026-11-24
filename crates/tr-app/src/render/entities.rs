@@ -2323,6 +2323,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     // W4-e21 — the Party Bunny's 7-row NPC_540 strip (46 is d34's phase-1
     // row above — the sheet id is deduped).
     540, // the Party Bunny
+    676, // the Shimmer Slime (doc-sweep lane 36)
 ];
 
 /// W4-d37 — the NPCID 211-280 band's own sheets (the vanilla's
@@ -3986,6 +3987,10 @@ pub(crate) fn draw_npcs(
     // the npc.rs adapter's convention). `None` = no world context (the
     // test/UI callers): the enrage gate rests false, expert false.
     empress_ctx: Option<EmpressDrawCtx>,
+    // W4-c39: the party-hat context (`Main.DrawNPCExtras`, `Main.cs:26914`):
+    // `BirthdayParty.PartyIsUp`, the moon phase + day flag (the colour hash)
+    // and the lookups the Extra_72 hat strip rides.
+    party: Option<(bool, u8, bool, &assets::Lookups)>,
 ) -> u32 {
     let mut quads = 0;
     for npc in npcs {
@@ -6991,6 +6996,66 @@ pub(crate) fn draw_npcs(
             r.push_sprite_rot(top_left, size, uv, tint, n.rotation);
         } else {
             r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        }
+        // W4-c39 — the birthday-party hat (`Main.DrawNPCExtras`'s
+        // `!beforeDraw && n.UsesPartyHat()` block, `Main.cs:26914-27188`):
+        // drawn right after the body, in the same light tint, at the
+        // per-type anchor off `n.Bottom`. The colour is the name/slot/moon
+        // hash; the strip is Extra_72's 20-column row.
+        if let Some((party_up, moon_phase, day_time, lookups)) = party {
+            // W4-c39 exec (research/114 §0.3): the DRAW caller supplies the
+            // living half (`n.hp > 0`) — the C# `UpdateNPC`-drawn roster is
+            // implicitly alive; `UsesPartyHat` itself has no life gate.
+            if n.hp > 0 && crate::party_hat::uses_party_hat(n, party_up) {
+                let name = if n.given_name.is_empty() {
+                    crate::lang::npc_name(n.kind.net_id())
+                } else {
+                    n.given_name.clone()
+                };
+                let color = crate::party_hat::party_hat_color(
+                    &name,
+                    n.slot as i32,
+                    moon_phase,
+                    day_time,
+                );
+                if let Some((hat_uv, cell)) = lookups.party_hat_cell(
+                    crate::party_hat::hat_frame_column(color),
+                ) {
+                    let hd = crate::party_hat::hat_draw(n, color, frame_h, cell[0], cell[1]);
+                    // The C# `Draw(value, bottom, rectangle, npcColor *
+                    // Opacity * num8, 0f, origin, n.scale, spriteEffects)`:
+                    // the anchor is `bottom`, the origin the rotation pivot
+                    // (rotation 0 here), the scale `n.scale`. The port's
+                    // world-range push takes a top-left + size, so back the
+                    // origin off and apply the scale.
+                    let draw_size = [hd.cell[0] * hd.scale, hd.cell[1] * hd.scale];
+                    let top_left = [
+                        hd.anchor[0] - hd.origin[0] * hd.scale,
+                        hd.anchor[1] - hd.origin[1] * hd.scale,
+                    ];
+                    // The 2-px trim insets the source rect by 1 px each side
+                    // (the C# `Width -= 2; Height -= 2` keeps the top-left).
+                    let du = (hat_uv[2] - hat_uv[0]) / cell[0];
+                    let dv = (hat_uv[3] - hat_uv[1]) / cell[1];
+                    let trimmed = [
+                        hat_uv[0],
+                        hat_uv[1],
+                        hat_uv[2] - 2.0 * du,
+                        hat_uv[3] - 2.0 * dv,
+                    ];
+                    let huv = flip_uv(trimmed, hd.flip);
+                    // `npcColor * n.Opacity * (1 - shimmerTransparency)`.
+                    let fade = (1.0 - n.shimmer_transparency).max(0.0);
+                    let htint = [tint[0] * fade, tint[1] * fade, tint[2] * fade, tint[3] * fade];
+                    r.push_sprite(
+                        snap_to_screen(top_left, camera, zoom, screen),
+                        draw_size,
+                        huv,
+                        htint,
+                    );
+                    quads += 1;
+                }
+            }
         }
         // The Lunar pillars' glow ghosts (`Main.cs:24177-24233`): each
         // tower's dedicated arm draws FOUR masked copies of its own sheet

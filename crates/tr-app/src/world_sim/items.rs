@@ -819,11 +819,10 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             i += 1;
         }
         // --- `WorldItem.UpdateItem`'s physics half -------------------------
-        // W4-f47 — the shimmered-repulsion pre-pass (`WorldItem.cs:789-848`):
-        // the scan reads the whole live list and arms `repulsion_brake`,
-        // which each drop's MoveInWorld spends on the extra ×0.8 X friction.
-        // RNG-free; runs before the per-drop physics loop.
-        crate::item::ItemDrop::shimmered_repulsion(items);
+        // The shimmered-repulsion scan runs PER-DROP below (the e19 KEEP
+        // slice form per 379 - the C# scan (WorldItem.cs:790-847) runs inside
+        // each drop's MoveInWorld on the LIVE velocities; the f47 whole-list
+        // pre-pass is superseded).
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
@@ -941,12 +940,20 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // grabbed drop skips MoveInWorld entirely (`:425-435`), no scan.
             // The clone re-reads its X afterwards — the scan wrote the slot.
             // (347 §1: e19's keeper half; the g15 skip confirmed, 358 §5.)
+            // `MoveInWorld`'s repulsion scan (`WorldItem.cs:790-847`, the
+            // e19 KEEP form per 379) runs at the head of the movement half,
+            // BEFORE the gravity add - the slice-level pass nudges the
+            // neighbours' live velocities (and this drop's own X) and parks
+            // the `flag` for the ?0.8 tail. A grabbed drop skips MoveInWorld
+            // entirely (`:425-435`), no scan. The clone re-reads its X
+            // afterwards - the scan wrote the slot.
             if !was_grabbed && drop.shimmered {
-                drop.repulsed = crate::item::ItemDrop::repel_shimmered(items, i);
+                drop.repulsion_brake = crate::item::ItemDrop::repel_shimmered(items, i);
                 drop.vel.x = items[i].vel.x;
             }
             drop.update(world, step);
             // Doc-sweep lane 36 — the splash arms (`WorldItem.cs:886-954`
+            // Doc-sweep lane 36 - the splash arms (`WorldItem.cs:886-954`
             // entry / `:965-1033` exit) run INSIDE MoveInWorld in the C#;
             // the port latches them in `update` and drains here, same tick,
             // same slot order, BEFORE the visual-effects draws (`:436` runs
@@ -1310,96 +1317,6 @@ fn try_fill_bucket(
         // `:565-567` — SetDefaults(206), the stack kept.
         drop.kind = 206;
     }
-}
-
-/// `WorldItem.MoveInWorld`'s entry/exit splash burst (`WorldItem.cs:881-1035`,
-/// W4-e19 deferred 4 — the g67 rain-splash contract): the dust family by the
-/// edge's kind flags (lava 35 ×5 → shimmer 308 ×10 with the `Next(6)` colour
-/// switch → honey 152 ×5 → water `dustWater()` ×10), each `Dust.NewDust` at
-/// `(pos.X - 6, pos.Y + height/2 - 8)` with the `width + 12 × 24` box (the
-/// water EXIT arm drops the `- 8`, `:1011`), then the per-family post-writes
-/// and the case-19 play (`SoundID.Splash`, style 4/5 for the shimmer
-/// entry/exit, the default 1 otherwise). All draws ride the `UpdateItems`
-/// stream — the C# runs inside `WorldItem.UpdateItem` under the
-/// `Main.cs:18024` swap. The dust rolls come FIRST (the C# plays the sound
-/// AFTER the loop); the play's own pitch draw follows the attenuation gate
-/// (`audio::play_splash_sound`). `water_style` is `Main.waterStyle` — the
-/// caller feeds the live biome style honouring the `TR_WATER_STYLE` pin
-/// (the f47b keep-one adopt).
-fn item_splash(
-    dust: &mut tr_core::particles::DustPool,
-    ctx: &tr_core::particles::SpawnCtx,
-    world: &tr_core::world::World,
-    water_style: i32,
-    audio: &mut crate::audio::Audio,
-    rng: &mut UnifiedRandom,
-    splash: crate::item::ItemSplash,
-) {
-    use tr_core::particles::Color;
-    // The dust anchor (`:892` etc.): `position.X - 6f`,
-    // `position.Y + height/2 - 8f`; the water exit arm (`:1011`) has no `- 8`.
-    let size = crate::item::SIZE;
-    let water_exit = !splash.lava && !splash.shimmer && !splash.honey && splash.exit;
-    let y_off = if water_exit { size / 2.0 } else { size / 2.0 - 8.0 };
-    let anchor = Vec2::new(splash.pos.x - 6.0, splash.pos.y + y_off);
-    let (w, h) = (size as i32 + 12, 24);
-    // The family: (dust type, count, style). `Dust.dustWater()` reads the
-    // camera's water style (`Main.waterStyle`, the g67 seam).
-    let (ty, n, style) = if splash.lava {
-        (35, 5, 1) // `:944-953`/`:1023-1032`
-    } else if splash.shimmer {
-        (308, 10, if splash.exit { 5 } else { 4 }) // `:890-913`/`:969-992`
-    } else if splash.honey {
-        (152, 5, 1) // `:917-926`/`:996-1005`
-    } else {
-        (tr_core::particles::dust_water(water_style), 10, 1) // `:930-939`/`:1009-1018`
-    };
-    for _ in 0..n {
-        let idx = dust.new_dust(
-            rng, ctx, world, anchor, w, h, ty, 0.0, 0.0, 0, Color::default(), 1.0,
-        );
-        let d = dust.slot_mut(idx);
-        if ty == 35 {
-            // `:946-951` — vel.Y -= 1.5, vel.X *= 2.5, scale 1.3, alpha 100.
-            d.velocity.y -= 1.5;
-            d.velocity.x *= 2.5;
-            d.scale = 1.3;
-            d.alpha = 100;
-            d.no_gravity = true;
-        } else if ty == 308 {
-            // `:892-911` — vel.Y -= 4, vel.X *= 2.5, scale 0.8 (SET, not ×),
-            // noGravity, then the `Next(6)` four-colour switch.
-            d.velocity.y -= 4.0;
-            d.velocity.x *= 2.5;
-            d.scale = 0.8;
-            d.no_gravity = true;
-            d.color = match rng.next_max(6) {
-                0 => Color::new(255, 255, 210, 255),
-                1 => Color::new(190, 245, 255, 255),
-                2 => Color::new(255, 150, 255, 255),
-                _ => Color::new(190, 175, 255, 255),
-            };
-        } else if ty == 152 {
-            // `:919-924` — vel.Y-- (1.0), vel.X *= 2.5, scale 1.3, alpha 100.
-            d.velocity.y -= 1.0;
-            d.velocity.x *= 2.5;
-            d.scale = 1.3;
-            d.alpha = 100;
-            d.no_gravity = true;
-        } else {
-            // `:932-937` — vel.Y -= 4, vel.X *= 2.5, scale *= 0.8 (MULTIPLY),
-            // alpha 100, noGravity.
-            d.velocity.y -= 4.0;
-            d.velocity.x *= 2.5;
-            d.scale *= 0.8;
-            d.alpha = 100;
-            d.no_gravity = true;
-        }
-    }
-    // `:913`/`:926`/`:939`/`:953` — `SoundEngine.PlaySound(19, (int)x, (int)y
-    // [, style])`: the shimmer arms pass 4 (entry) / 5 (exit), the rest the
-    // default style 1. The play gates on attenuation BEFORE its pitch draw.
-    audio.play_splash_sound(style, splash.pos.x as i32 as f32, splash.pos.y as i32 as f32, rng);
 }
 
 /// Spawns the drop left by a broken tile, with a small random pop like
@@ -1816,10 +1733,12 @@ fn spawn_player_drop(
 /// `NextFromList` = `Next(len)` draw per remapped kind, `Utils.cs:1213-1216`),
 /// else halloween AND xMas (one `Next(2)`), else halloween alone (58→1734,
 /// 184→1735 — no draw) then xMas alone (58→1867, 184→1868 — no draw). Every
-/// other kind passes through untouched and draws NOTHING. The flags ride
-/// the port's standing seasonal stand-ins (`Main.halloween`/`Main.xMas` =
-/// the endless micro seeds, `world_sim/npcs.rs`'s loot-flag precedent; the
-/// calendar windows are unported).
+/// other kind passes through untouched and draws NOTHING. W4-f39: the flags
+/// ride the RESOLVED season statics (`Main.halloween`/`Main.xMas` =
+/// `World.halloween`/`xmas`, re-derived at dawn + load from the date windows
+/// + the force flags; the endless micro seeds feed them through
+/// `forceHalloweenForever`/`forceXMasForever`, `world_sim/npcs.rs`'s loot-flag
+/// precedent).
 pub fn seasonal_pickup_kind(
     kind: u16,
     tenth_anniversary: bool,
@@ -2139,6 +2058,8 @@ mod shimmer_tests {
     // draw-census twins live in item.rs's w4_f47ds block).
     // -----------------------------------------------------------------
 
+    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
+
     /// The entry splash (`WorldItem.cs:881-958`): a dry drop falling into
     /// the shimmer pool arms `wetCount = 20` and bursts 10 dust 308 (the
     /// `Next(6)` colour switch) through the shared pool, all on the
@@ -2217,6 +2138,27 @@ mod shimmer_tests {
     fn w4_e19_the_shimmer_entry_splash_bursts_10_dust_308() {
         // Above the pool (rows 18-19), dry, falling — parked at x = 30 tiles
         // (outside the player's grab magnet).
+    }
+
+    // -----------------------------------------------------------------
+    // Keep-one 144 — the e19 lane's pass-level splash witnesses folded
+    // (7d3cb5e3's four, re-pinned at the 16 geometry; the unit-level
+    // draw-census twins live in item.rs's w4_f47ds block).
+    // -----------------------------------------------------------------
+
+    /// The entry splash (`WorldItem.cs:881-958`): a dry drop falling into
+    /// the shimmer pool arms `wetCount = 20` and bursts 10 dust 308 (the
+    /// `Next(6)` colour switch) through the shared pool, all on the
+    /// `UpdateItems` stream. The camera parks at the pool so the spawn
+    /// cull passes.
+    #[test]
+    fn w4_f47k1_the_shimmer_entry_splash_bursts_10_dust_308() {
+        let mut app = shimmer_world();
+        // The full dust budget (the flow_app default is 0 — every spawn
+        // would hit the >90% pressure band's Next(4) refusal).
+        app.gfx_quality.max_dust_to_draw = 6000;
+        // Above the pool (rows 18-19), dry, falling — parked at x = 30
+        // tiles (outside the player's grab magnet).
         app.items.push(ItemDrop::new(
             2, 1, 0, 30.0 * TILE_PX, 16.0 * TILE_PX, 0.0, 2.0, 0.0,
         ));

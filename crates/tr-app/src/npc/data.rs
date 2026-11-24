@@ -1402,6 +1402,10 @@ impl NpcKind {
             NpcKind::VampireBat => 405,
             NpcKind::Vampire => 400,
             NpcKind::VileSpitEoW => 411,
+            // Doc-sweep lane 36 — the ShimmerSlime keeps its vanilla id
+            // (676 is free in the protocol space; the 677 twin is
+            // W4-c7/c9's pushed claim). `NPCID.cs:12029`.
+            NpcKind::ShimmerSlime => 676,
         }
     }
 
@@ -2282,6 +2286,8 @@ impl NpcKind {
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
             793 => NpcKind::Moth,
+            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (`to_u16`).
+            676 => NpcKind::ShimmerSlime,
             _ => return None,
         })
     
@@ -3636,6 +3642,8 @@ impl NpcKind {
             NpcKind::Shimmerfly => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
             NpcKind::BartenderUnconscious => "NPC_Hit_1",
+            // Doc-sweep lane 36 — `SoundID.NPCHit1` (`NPC.cs:17576`).
+            NpcKind::ShimmerSlime => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -4582,6 +4590,8 @@ impl NpcKind {
             // rides the None fall-through).
             }
             NpcKind::BartenderUnconscious => "NPC_Killed_6",
+            // Doc-sweep lane 36 — `SoundID.NPCDeath1` (`NPC.cs:17577`).
+            NpcKind::ShimmerSlime => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -6487,6 +6497,9 @@ impl NpcKind {
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody4
             | NpcKind::CultistDragonTail => 6,
+            // aiStyle 1 — doc-sweep lane 36, the ShimmerSlime
+            // (`NPC.cs:17570`), the shared slime family.
+            NpcKind::ShimmerSlime => 1,
         }
     }
 
@@ -7828,6 +7841,8 @@ impl NpcKind {
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg => {
                 (18.0, 40.0)
             }
+            // Doc-sweep lane 36 — 676 24x18 (`NPC.cs:17568-17569`).
+            NpcKind::ShimmerSlime => (24.0, 18.0),
         }
     }
 
@@ -9730,6 +9745,8 @@ impl NpcKind {
             // (`:11691`).
             NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker => 250,
             NpcKind::Cyborg => 500,
+            // Doc-sweep lane 36 — 676 lifeMax 80 (`NPC.cs:17573`).
+            NpcKind::ShimmerSlime => 80,
         }
     }
 
@@ -10687,6 +10704,8 @@ impl NpcKind {
             | NpcKind::Steampunker
             | NpcKind::Cyborg
             | NpcKind::BartenderUnconscious => 10,
+            // Doc-sweep lane 36 — 676 damage 20 (`NPC.cs:17571`).
+            NpcKind::ShimmerSlime => 20,
         }
     }
 }

@@ -167,7 +167,9 @@ pub fn check_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut UnifiedRandom
         }
         for i in (num6 - 4)..=num2 {
             if cell(world, x, i).is_some_and(|t| t.active() && t.kind == 519) {
-                crate::edit::kill_tile(world, x, i, false);
+                // W4-g83: the cascade rides the caller's ACTIVE genRand
+                // stream (the growth tick's UpdateWorldGen).
+                crate::edit::kill_tile(world, x, i, false, rng);
                 crate::framing::reframe_area(world, x, i, 1, true);
             }
         }
@@ -223,7 +225,8 @@ pub fn grow_cat_tail(world: &mut World, x: i32, j: i32, rng: &mut UnifiedRandom)
     if cell(world, x, num).is_some_and(|t| t.frame_x == 90)
         && cell(world, x, num - 1).is_some_and(|t| t.active() && crate::tileobject::tile_cut(t.kind))
     {
-        crate::edit::kill_tile(world, x, num - 1, false);
+        // W4-g83: the cascade rides the caller's ACTIVE genRand stream.
+        crate::edit::kill_tile(world, x, num - 1, false, rng);
     }
     if cell(world, x, num - 1).is_some_and(|t| t.active()) {
         return;
@@ -299,9 +302,11 @@ pub fn grow_check_seaweed(world: &mut World, x: i32, y: i32, rng: &mut UnifiedRa
     if (here.kind == 549 && here.liquid < 200)
         || cell(world, x, y - 1).is_some_and(|t| t.liquid < 200)
     {
-        // `:58925-58933`: the dry-out kill.
+        // `:58925-58933`: the dry-out kill — the cascade's framing dispatch
+        // (incl. the neighbouring seaweed tips' re-rolls) rides the SAME
+        // active genRand stream (W4-g83 contract §2).
         if here.active() && here.kind == 549 && rng.next_max(2) == 0 {
-            crate::edit::kill_tile(world, x, y, false);
+            crate::edit::kill_tile(world, x, y, false, rng);
         }
         return;
     }

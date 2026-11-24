@@ -457,6 +457,10 @@ pub(crate) fn spawn_shimmered_item(
 
         }
         }/// `Recipe.AddCustomShimmerResult`'s five call sites (`Recipe.cs:2193-2194`,
+    }
+}
+
+/// `Recipe.AddCustomShimmerResult`'s five call sites (`Recipe.cs:2193-2194`,
 /// `:2202-2203`, `:9664-9665`, `:9674-9675`, `:9694`) keyed by the created
 /// item — the port's generated recipe rows carry no `customShimmerResults`
 /// list (`tools/gen_recipes.py` does not extract it yet), so the override
@@ -702,64 +706,14 @@ fn shimmer_tail(app: &mut App, idx: u32) {
     // `:1846` — `WorldItem.ShimmerEffect(base.Center)` (`:1661-1689`): the
     // Item176 cue at the TRUNCATED pixel coords + 20 dust 309 (scale ×1.2,
     // the four-colour `Next(6)` switch). The draws ride `UpdateItems`
-    // (`Main.cs:17779`'s swap — `GetShimmered` runs inside `UpdateItem`).
-    shimmer_effect(app, center);
+    // (`Main.cs:17779`'s swap - `GetShimmered` runs inside `UpdateItem`).
+    // The keeper is the f47 rng_key form (the NPC drain passes UpdateNpcs);
+    // the item chain's stream is UpdateItems (the e19 2-arg copy deduped).
+    shimmer_effect(app, center, crate::app::RngKey::UpdateItems);
     // `:1849-1852` — `stack == 0` → `TurnToAir` (the arm already zeroed the
     // kind/count via `air_out`; the retain sweep drops it).
     if !alive {
         air_out(app, idx);
-    }
-}
-
-/// `WorldItem.ShimmerEffect` (`WorldItem.cs:1661-1689`): `PlaySound(
-/// SoundID.Item176, (int)x, (int)y)` then 20 × `Dust.NewDust(center, 1, 1,
-/// 309)` with `scale *= 1.2f` and the `Next(6)` colour switch (0 →
-/// (255,255,210), 1 → (190,245,255), 2 → (255,150,255), default →
-/// (190,175,255)). The `netMode == 2` arm (`:1663-1667`) is the host's `146`
-/// send — out here (SP port); the cue + dust run on the local client.
-fn shimmer_effect(app: &mut App, center: Vec2) {
-    // The cue: `SoundID.Item176 = new LegacySoundStyle(2, 176)`
-    // (`SoundID.cs:1560`) — case 2's ×0.9 volume + the `Next(-6, 7) * 0.01`
-    // pitch (`sound.rs::item_use_case2`), gated by attenuation FIRST.
-    let idx = crate::soundid::SOUND_STYLES
-        .iter()
-        .position(|s| s.name == "Item176")
-        .expect("Item176 in the generated SoundID table") as u16;
-    app.audio.play_use_sound(
-        idx,
-        center.x as i32 as f32,
-        center.y as i32 as f32,
-        0.0,
-        app.rngs.stream(crate::app::RngKey::UpdateItems),
-    );
-    // The 20 dust: `NewDust(center, 1, 1, 309)` — the 1x1 box pads to 5x5
-    // inside `NewDust` (`Dust.cs:155-162`); the colour switch draws AFTER
-    // the spawn (the C# order: NewDust's own draws, then `Next(6)`).
-    let ctx = app.spawn_ctx();
-    for _ in 0..20 {
-        let slot = app.dust.new_dust(
-            app.rngs.stream(crate::app::RngKey::UpdateItems),
-            &ctx,
-            &app.world,
-            center,
-            1,
-            1,
-            309,
-            0.0,
-            0.0,
-            0,
-            tr_core::particles::Color::default(),
-            1.0,
-        );
-        let d = app.dust.slot_mut(slot);
-        d.scale *= 1.2;
-        let roll = app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(6);
-        d.color = match roll {
-            0 => tr_core::particles::Color::new(255, 255, 210, 255),
-            1 => tr_core::particles::Color::new(190, 245, 255, 255),
-            2 => tr_core::particles::Color::new(255, 150, 255, 255),
-            _ => tr_core::particles::Color::new(190, 175, 255, 255),
-        };
     }
 }
 

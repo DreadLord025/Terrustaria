@@ -454,14 +454,30 @@ impl App {
         // `Player.SavePlayer` + `WorldFile.SaveWorld` (single-player's
         // `Main.netMode == 0` arm) — the port's one save funnel writes the
         // world, the player sidecar and the explored map together.
-        // `Rain.ClearRain` (`:6672`) is visual-only; the save already
-        // snapshotted the live rain into the file payload above.
+        // `Rain.ClearRain` (`WorldGen.cs:6672`, g67b `5c9398ea` fold): the
+        // C# deactivates every drop between the player save and the world
+        // write. It touches only the visual `Main.rain[]` field — the event
+        // triple (`raining`/`rainTime`/`maxRaining`) is untouched, so the
+        // save funnel below still snapshots the live event.
+        self.rain.clear_rain();
         self.save_world();
         // `WorldGen.cs:6676`: `SoundEngine.PlaySound(10)` after the world write.
         self.audio.play_menu("Menu_Open");
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;
+        // W4-f39 (folded, co-lane compose): `Main.cs:48216-48219` (`DrawMenu`):
+        // `menuMode <= 1 && Main.slimeRain → Main.StopSlimeRain()` — the event
+        // ends when the player returns to the main menu. The port's
+        // save-and-quit is the in-world → menuMode-0 transition; the stop runs
+        // AFTER the save (the C# saves the live event, then the menu frame
+        // stops it), so the saved world keeps the running rain and the
+        // menu-side state carries the negative cooldown. The draw rides the
+        // bare Main.rand stand-in (the menu frame is outside every SwapRandom
+        // block).
+        if self.world.slime_rain {
+            crate::world_sim::weather::stop_slime_rain(&mut self.world, self.rngs.global());
+        }
         // `WorldGen.cs:6682`: `Main.menuMode = 0` — back to the main menu
         // (`Main.gameMenu` stays true; the port's `menu.is_some()` is that
         // flag, `frame.rs:256`).
@@ -570,6 +586,11 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    // W4-f39 census witness (written-not-run, code-only lane): the
+    // menu-return StopSlimeRain (Main.cs:48216-48219).
+    #[path = "saveglue_w4_f39.rs"]
+    mod saveglue_w4_f39;
+
     use super::*;
     use crate::app::WorldSections;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -1571,6 +1592,49 @@ mod chest_save_tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
+    /// W4-f39 (folded, co-lane compose) — the menu-return `StopSlimeRain`
+    /// (`Main.cs:48216-48219`): `save_and_quit` stops a live slime rain AFTER
+    /// the save — the saved world keeps the running event, the menu-side
+    /// state carries the negative cooldown (`-Next(3024,6048)*100` on the
+    /// bare global stream). A world with no slime rain draws nothing.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f39_compose_the_menu_return_stops_the_slime_rain_after_the_save() {
+        let world = chest_rig();
+        let dir = scratch("w4-f39-menu-return-slime-stop");
+        let path = dir.join("world.trwld");
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.world.slime_rain = true;
+        app.world.slime_rain_time = 30_000.0;
+        // Twin the bare global stream: the stop's one Next(3024,6048) draw.
+        let mut twin = app.rngs.global().clone();
+        let want = -(twin.next_range(3024, 6048) as f64) * 100.0;
+        app.save_and_quit();
+        assert!(!app.world.slime_rain, "the menu frame stopped the event");
+        assert_eq!(app.world.slime_rain_time, want, "the negative cooldown");
+        assert_eq!(
+            app.world.slime_warning_time,
+            crate::world_sim::weather::SLIME_WARNING_DELAY,
+            "the announcement armed"
+        );
+        // The SAVED world kept the live event (the stop ran after the write).
+        let (saved, _) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert!(saved.slime_rain, "the save snapshotted the running event");
+        assert_eq!(saved.slime_rain_time, 30_000.0);
+        // A second quit (no live slime rain) draws nothing on the global.
+        let state = app.rngs.global().clone();
+        app.save_and_quit();
+        assert_eq!(*app.rngs.global(), state, "the !slimeRain guard draws nothing");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
     #[test]
     fn s1_j_7_the_wld_weather_snapshot_round_trips_through_the_app() {
         // The `.wld` flags block: `SaveWorldFlags:1312-1314` (rain) and
@@ -2043,5 +2107,59 @@ mod chest_save_tests {
         assert!(slayer.conditions[0].completed, "the partial condition rode the quit save");
         assert!(!slayer.completed, "the row stays open");
         crate::test_world_helpers::remove_scratch(&dir);
+    /// W4-g47 — the world-load settle hook (`WorldFile.cs:733-764`) rides
+    /// `App::new` (the shared boot + `swap_world` construction). A suspended
+    /// water blob settles to the floor through the real constructor, and the
+    /// load context drops back to the runtime state. Written, NOT run
+    /// (code-only mode).
+    #[test]
+    fn w4_g47_app_new_settles_a_suspended_blob() {
+        let mut w = World::new("settle".into(), 40, 80);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        // A walled shaft at x=20 (walls x=19/21) down to a floor row at y=70,
+        // so only the down arm runs and the blob lands whole at (20, 69) —
+        // the row-averaging cannot spread it past the walls.
+        for y in 0..=70 {
+            for x in [19, 21] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+            }
+        }
+        for x in 0..40 {
+            let i = w.index(x, 70);
+            w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        let b = w.index(20, 10);
+        w.tiles[b].liquid = 200;
+        w.compute_column_surface();
+        w.compute_chunks();
+        let app = app_for(
+            w,
+            WorldSections::native(tr_core::save::WorldSide::default()),
+            PathBuf::from("settle.trwld"),
+        );
+        assert_eq!(app.world.tiles[app.world.index(20, 10)].liquid, 0, "the origin drained");
+        assert_eq!(app.world.tiles[app.world.index(20, 69)].liquid, 200, "the blob landed");
+        assert!(!app.liquids.quick_settle(), "the load flag dropped");
+        let total: i32 = app.world.tiles.iter().map(|t| t.liquid as i32).sum();
+        assert_eq!(total, 200, "the load settle conserves the mass");
+    }
+
+    /// W4-g47 — the dry-world round-trip guarantee: a dry world's settle is a
+    /// byte no-op, so the save/load pins (`chest_rig` is dry) do not move when
+    /// the hook runs. The constructor leaves the tile grid and the caller-pinned
+    /// `frame_rng` exactly as loaded. Written, NOT run (code-only mode).
+    #[test]
+    fn w4_g47_app_new_on_a_dry_world_moves_no_liquid_bytes() {
+        let w = chest_rig(); // dry — the chest fixture carries no liquid
+        let tiles_before = w.tiles.clone();
+        let app = app_for(
+            w,
+            WorldSections::native(tr_core::save::WorldSide::default()),
+            PathBuf::from("dry.trwld"),
+        );
+        assert_eq!(app.world.tiles, tiles_before, "the dry settle mutated no tile");
+        assert_eq!(app.liquids.active_len(), 0, "nothing woke");
+        assert!(!app.liquids.quick_settle());
     }
 }

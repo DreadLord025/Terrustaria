@@ -3475,6 +3475,7 @@ pub(crate) mod front_flow_tests {
     ) -> App {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
+        let cloud_field = crate::cloud::CloudField::new(world.seed);
         App {
             // The `Main.cs:67229-67236` load reset (strength 0, x/y -1).
             ambient_waterfall: (0.0, -1.0, -1.0),
@@ -3534,7 +3535,7 @@ pub(crate) mod front_flow_tests {
             font_atlas: None,
             world,
             lookups: assets::Lookups::default(),
-            clouds: Vec::new(),
+            cloud_field,
             sky: SkyAssets::default(),
             bg_style: 0,
             bg_delay: 0,
@@ -3751,6 +3752,7 @@ pub(crate) mod front_flow_tests {
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(0),
+            tile_draw_rand: tr_core::UnifiedRandom::new(0),
             place_prev_down: false,
             place_released: false,
             mine_prev_down: false,
@@ -3772,6 +3774,8 @@ pub(crate) mod front_flow_tests {
             gfx_quality: Default::default(),
             world_events: Default::default(),
             debug_shared: Default::default(),
+            event_skies: Default::default(),
+            event_skies_accumulator: 0.0,
             zoom: 1.0,
             zoom_pinned: false,
             debug: false,
@@ -3841,7 +3845,7 @@ pub(crate) mod front_flow_tests {
             has_liquids: false,
             liquids,
             liquid_step: FixedStepper::new(1.0 / 60.0, 8),
-            liquid_tick: 0,
+            liquid_clock: tr_core::liquid_draw::LiquidAnimClock::default(),
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
@@ -3868,12 +3872,12 @@ pub(crate) mod front_flow_tests {
             atmo: 1.0,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),
+            slime_sky: crate::slime_sky::SlimeSky::new(0),
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             vine_wind_counter: 0.0,
-            leaves: Vec::new(),
             gore: tr_core::gore::GorePool::new(),
             entity_lights: crate::entity_lights::EntityLights::default(),
             ess_scale: 1.0,

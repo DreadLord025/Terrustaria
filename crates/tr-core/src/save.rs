@@ -89,6 +89,18 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// retire re-pins the union seat to [57..60] of the SEALED 107-byte
 /// g88h-A3 head — research/263 §6.4 — landed ONCE at the g71c union merge,
 /// forward-only; this port keeps its own end-of-file tail until then.)
+/// v17 appended `NPC.downedFishron` (the case-370 death flag, S1-D-3 W-9).
+/// v18's composed tail (batch-K, 6 bytes): `WorldGen.crimson`
+/// (`WorldFile.cs:1281`'s flags byte - W4-g69: the cloud lane's RollRareCloud
+/// type-36 gate reads the world evil type; a pre-v18 file loads with the
+/// corruption default, `:3507`'s fallback) THEN the five moon-event boss
+/// first-kill flags (`downedHalloweenKing`/`downedHalloweenTree`/
+/// `downedChristmasIceQueen`/`downedChristmasSantank`/`downedChristmasTree`,
+/// `WorldFile.cs:1347-1351`'s rows - the `NPC.cs:79210-79238` death arms
+/// landed, W4-c39 exec per research/114; a pre-v18 file loads all five down).
+/// The full 9-way 106-byte v18 union (research/114 s8) assembles at the
+/// save-family master merge; this branch's two claimants compose in writer
+/// order crimson-first.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -518,6 +530,32 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // pre-v18 file loads with the corruption default (the vanilla's own
     // `WorldFile.cs:3507` fallback).
     w.write_all(&[u8::from(world.crimson)])?;
+    // v18 composed tail (land-K union, 9 bytes): W4-g69 crimson (1) +
+    // W4-c39 moon-boss first-kill quintet (5) + W4-g87 town-pet license
+    // flags (3). MERGER-2a supersedes with the 107-to-115 head at the M-lane.
+    // v18: `WorldGen.crimson` (`WorldFile.cs:1281` flags byte) — W4-g69;
+    // a pre-v18 file loads with the corruption default (`:3507`).
+    w.write_all(&[u8::from(world.crimson)])?;
+    // v18: the five moon-event boss first-kill flags (`WorldFile.cs:1347-1351`,
+    // `NPC.cs:79210-79238` — W4-c39 exec per research/114 §0.2), vanilla order.
+    w.write_all(&[
+        u8::from(world.downed_halloween_king),
+        u8::from(world.downed_halloween_tree),
+        u8::from(world.downed_christmas_ice_queen),
+        u8::from(world.downed_christmas_santank),
+        u8::from(world.downed_christmas_tree),
+    ])?;
+    // v18: the town-pet license world flags (W4-g87) — `NPC.boughtCat`/
+    // `boughtDog`/`boughtBunny` (`WorldFile.cs:1392-1394`), the 4829/4830/4910
+    // Pet License use-unlocks. At the g71c/M-lane union these 3 bytes seat
+    // [57..60] of the SEALED 107-byte v18 head (g88 research/103 §L3-ARBITER A3:
+    // after crimson/moon/underworld, before empress [60] + the g90 books pair
+    // [61..63]; identity 44 B closes the head, W×H dense LAST — research/263 §6.4).
+    w.write_all(&[
+        u8::from(world.bought_cat),
+        u8::from(world.bought_dog),
+        u8::from(world.bought_bunny),
+    ])?;
     Ok(())
 }
 
@@ -933,6 +971,19 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
         world.unlocked_slime_red_spawn = r.u8()? != 0;
         world.unlocked_slime_yellow_spawn = r.u8()? != 0;
         world.unlocked_slime_copper_spawn = r.u8()? != 0;
+    // v18: the composed tail (land-K union, 9 bytes): crimson (W4-g69) +
+    // the five moon-boss flags (W4-c39) + the three pet-license flags (W4-g87);
+    // a pre-v18 file keeps the defaults.
+    if version >= 18 {
+        world.crimson = r.u8()? != 0;
+        world.downed_halloween_king = r.u8()? != 0;
+        world.downed_halloween_tree = r.u8()? != 0;
+        world.downed_christmas_ice_queen = r.u8()? != 0;
+        world.downed_christmas_santank = r.u8()? != 0;
+        world.downed_christmas_tree = r.u8()? != 0;
+        world.bought_cat = r.u8()? != 0;
+        world.bought_dog = r.u8()? != 0;
+        world.bought_bunny = r.u8()? != 0;
     }
     world.revision = 0;
     Ok((world, side))
@@ -1224,6 +1275,10 @@ mod tests {
         // current one (`save.rs` version gate). v18 (the town-pet arrival
         // flags, W4-g87/W4-f43b) is now the current format, so the gate
         // pins 18.
+        // current one (`save.rs` version gate). v18 (the union tail:
+        // WorldGen.crimson W4-g69 + the five moon-boss flags W4-c39 +
+        // the three town-pet flags W4-g87) is now the current format,
+        // so the gate pins 18. MERGER-2a re-seats it at the 107-to-115 head.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
@@ -1316,6 +1371,8 @@ mod tests {
         // (+1: the v17 downedFishron byte rides the flags block's tail;
         // +11: the v18 town-pet arrival flags, W4-g87/W4-f43b.)
         buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 11));
+        // +1 crimson W4-g69 +5 moon-boss W4-c39: the composed v18 tail, 6 bytes.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 6 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1436,6 +1493,9 @@ mod tests {
         // the v17 fishron flag (1) and the v18 town-pet flags (11,
         // W4-g87/W4-f43b — the g87 3-byte claim deduped into f43b's tail).
         let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 11;
+        // the v17 fishron flag (1) and the composed v18 tail (9 bytes:
+        // crimson 1 W4-g69 + moon-boss 5 W4-c39 + pet-license 3 W4-g87).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 9;
         v12.truncate(cur_len - tail - 1);
         // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5)
         // and the v17 fishron flag (1).
@@ -1493,6 +1553,10 @@ mod tests {
     /// v18 `WorldGen.crimson` byte (W4-g69).
     /// v18 town-pet arrival flags (11 bytes, W4-g87/W4-f43b).
     const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 11;
+    /// v18 composed tail (9 bytes): the `WorldGen.crimson` byte (W4-g69) +
+    /// the five moon-boss flag bytes (W4-c39 exec) + the three town-pet
+    /// license flag bytes (W4-g87).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 9;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL - v18_tail_len(buf);
@@ -1691,6 +1755,11 @@ mod tests {
         // byte ride behind the v15 flag (7 bytes).
         v14.truncate(v14.len() - 1 - 5 - 1 - 1);
         v14.truncate(v14.len() - 1 - 5 - 1 - 11);
+        // The v16 style bytes + the v17 fishron byte + the composed v18
+        // tail (crimson 1 W4-g69 + moon-boss 5 W4-c39 + pet-license 3 W4-g87)
+        // ride behind the v15 flag.
+        let mut v14 = buf.clone();
+        v14.truncate(v14.len() - 1 - 5 - 1 - 9);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
@@ -1735,6 +1804,10 @@ mod tests {
         // loads all eleven false — the vanilla's own reset arm.
         let mut v17 = buf.clone();
         v17.truncate(v17.len() - 11);
+        // A pre-v18 file (the 9-byte tail truncated, the version patched)
+        // loads all three false — the vanilla's own reset arm.
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 9);
         v17[8..12].copy_from_slice(&17u32.to_le_bytes());
         let (back, _) = parse(&v17).unwrap();
         assert!(!back.bought_cat, "a pre-v18 file resets boughtCat");
@@ -1748,6 +1821,32 @@ mod tests {
         assert!(!back.unlocked_slime_red_spawn, "pre-v18 resets red");
         assert!(!back.unlocked_slime_yellow_spawn, "pre-v18 resets yellow");
         assert!(!back.unlocked_slime_copper_spawn, "pre-v18 resets copper");
+    }
+
+    /// W4-c39 exec (research/114 §0.2) — the five moon-event boss first-kill
+    /// flags (`NPC.cs:79210-79238`'s death arms) ride the v18 tail; a
+    /// pre-v18 file loads with all five down.
+    #[test]
+    fn w4_c39_the_moon_boss_flags_round_trip_in_v18() {
+        let mut w = World::new("Test".into(), 64, 48);
+        w.downed_halloween_king = true;
+        w.downed_christmas_ice_queen = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.downed_halloween_king, "Pumpking's flag survives");
+        assert!(back.downed_christmas_ice_queen, "the Ice Queen's flag survives");
+        assert!(!back.downed_halloween_tree);
+        assert!(!back.downed_christmas_santank);
+        assert!(!back.downed_christmas_tree);
+        // A pre-v18 file (the 9-byte tail truncated, the version patched)
+        // loads with the flags down.
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 9);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert!(!back.downed_halloween_king, "a pre-v18 file resets the flags");
+        assert!(!back.downed_christmas_ice_queen);
     }
 
     #[test]
@@ -1777,9 +1876,13 @@ mod tests {
         w.crimson = false;
         buf.clear();
         assert!(!parse(&buf).unwrap().0.crimson, "corruption round-trips too");
-        // A v17 file (the last byte truncated, the version patched) loads
+        // A v17 file (the 9-byte tail truncated, the version patched) loads
         // with the default even when the payload's world was crimson.
         buf.truncate(buf.len() - 1);
+        w.crimson = true;
+        buf.clear();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        buf.truncate(buf.len() - 9);
         buf[8..12].copy_from_slice(&17u32.to_le_bytes());
         assert!(!back.crimson, "a pre-v18 file keeps the corruption default");
     }
@@ -1807,6 +1910,8 @@ mod tests {
         // (+1: the v17 downedFishron byte rides the flags block's tail;
         // +11: the v18 town-pet arrival flags, W4-g87/W4-f43b.)
         buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 11));
+        // +1 crimson W4-g69 +5 moon-boss W4-c39: the composed v18 tail, 6 bytes.)
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 6 + 4 * 4 + 4));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);

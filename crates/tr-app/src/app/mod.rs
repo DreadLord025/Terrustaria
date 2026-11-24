@@ -74,9 +74,7 @@ use crate::rain::Rain;
 use crate::registry;
 use crate::render::debug::{DebugCache, StatsAcc};
 use crate::render::entities::{NpcAssets, PlayerAssets, make_npc_assets, make_player_assets};
-use crate::render::sky::{
-    CloudSprite, SkyAssets, StarSprite, make_clouds, make_sky_assets, make_stars,
-};
+use crate::render::sky::{SkyAssets, StarSprite, make_sky_assets, make_stars};
 use crate::render::tiles::{DrawScratch, TileDrawStats};
 use crate::settings;
 use crate::ui;
@@ -141,7 +139,10 @@ pub(crate) struct App {
     /// `SpriteRenderer::new`); `None` without the retail fonts.
     pub(crate) font_atlas: Option<tr_render::FontAtlas>,
     pub(crate) lookups: assets::Lookups,
-    pub(crate) clouds: Vec<CloudSprite>,
+    /// The live cloud field (W4-g69): `Main.cloud[200]` + the `numClouds`
+    /// statics (`crate::cloud::CloudField`), ticked by the world tick and
+    /// drawn by `render/sky.rs`'s three `DrawClouds_*` passes.
+    pub(crate) cloud_field: crate::cloud::CloudField,
     pub(crate) sky: SkyAssets,
     /// `Main.bgStyle`: the biome background style currently being drawn (0 forest,
     /// 2 desert, 4 ocean, 7 snow; the full vanilla table also has 1/3/5/6/8/9/10..14).
@@ -957,6 +958,15 @@ pub(crate) struct App {
     /// the C# seeds it `DateTime.Now.Ticks`; the port seeds the world seed
     /// (determinism rule, ANALYSIS "The tile-crack overlay").
     pub(crate) mine_crack_rng: tr_core::UnifiedRandom,
+    /// `TileDrawing._rand` (`TileDrawing.cs:104`, seeded `:191`): the
+    /// renderer-lifetime gate stream. W4-g68 wiring: the per-frame drip
+    /// emission (`foliage::emit_liquid_drops_area`) rolls its `Next(num*2)`
+    /// gates here — PERSISTENT across frames, unlike the per-frame
+    /// `FastRandom` pin the cached leaf arm still uses (the documented
+    /// determinism stand-in until the d60 wiring reconciles it). The C#
+    /// parameterless ctor is clock-seeded (`UnifiedRandom.cs:18-21`); the
+    /// port seeds the world seed (the `mine_crack_rng` deviation class).
+    pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
     pub(crate) edit_target: Option<(i32, i32)>,
     /// The smart cursor's continuity locks (`SmartCursorHelper`'s two
     /// static `Point?` fields — the M7-SMARTCURSOR-1 app wiring).
@@ -985,6 +995,12 @@ pub(crate) struct App {
     /// `DebugOptions`'s three shared statics (the `94 DevCommands` sync
     /// state, `Testing/DebugOptions.cs:10-14`; W4-g50 re-probe).
     pub(crate) debug_shared: crate::debug_options::DebugOptionsShared,
+    /// W4-c39: the event skies (`LanternSky`/`PartySky`,
+    /// `GameContent/Skies/`) — the lantern-night lanterns and the party
+    /// balloons, activated/deactivated by the schedulers' UpdateTime edges.
+    pub(crate) event_skies: crate::event_skies::EventSkies,
+    /// The event skies' 60 Hz accumulator (the `SkyManager.Update` cadence).
+    pub(crate) event_skies_accumulator: f32,
     /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
     /// the teleport lerp pair, the object-tracking pan and the vestigial
     /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
@@ -1174,10 +1190,17 @@ pub(crate) struct App {
     pub(crate) light_rng_seed: u64,
     pub(crate) anim_time: f32,
     pub(crate) has_liquids: bool,
-    /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz.
+    /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz via
+    /// the engine's `skipCount` driver (`WorldGen.cs:71526-71534`) — the
+    /// counter rides [`LiquidSystem`] itself, the C# static's home.
     pub(crate) liquids: LiquidSystem,
     pub(crate) liquid_step: FixedStepper,
-    pub(crate) liquid_tick: u32,
+    /// `LiquidRenderer._frameState`/`_waterfallFrameState`
+    /// (`LiquidRenderer.cs:831-847`): the wind-driven liquid texture clock,
+    /// advanced once per client update (`Main.cs:17043`) beside the wind
+    /// sway counters. The two integer frames ride the G6 key's `anim` slot
+    /// (packed) and feed `draw_waters`' source rows.
+    pub(crate) liquid_clock: tr_core::liquid_draw::LiquidAnimClock,
     /// `CraftingUI._lastFilter` (`CraftingUI.cs:130`): the station filter the
     /// player's right-click on a crafting station installed
     /// (`Player.GetCraftingFilterForTile`, `Player.cs:33312-33335`, via
@@ -1234,6 +1257,8 @@ pub(crate) struct App {
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
     pub(crate) sand: crate::sand::Sand,
+    // W4-d130 F1: no `snow` field — `Main.snowing()` is a static on the bare
+    // `Main.rand` (the port's `rngs.global()`), not a per-consumer stream.
     /// `Main.dust` (`Main.cs:66985`): the 6001-slot pressure-gated pool —
     /// the wheel sparks and the sandstorm spawn/tick/draw through it
     /// (S1-E-1 phase 2); the `world_sim` drain feeds the cart's queued
@@ -1281,6 +1306,14 @@ pub(crate) struct App {
     /// [`Self::rngs`]`::global()` — the bare-`Main.rand` stand-in
     /// (`Main.cs:17214-17216`), shared with chat commands and menu rolls.
     pub(crate) ambience: crate::ambience::Ambience,
+    /// W4-f39 closeout: the Slime Rain sky (`SlimeSky : CustomSky`,
+    /// `GameContent/Skies/SlimeSky.cs`) — the falling-slime background the
+    /// event's own start/stop edges activate/drain (`Main.cs:64773`/
+    /// `:64813`). Its private stream is world-seed-pinned (the c39
+    /// `event_skies` deviation); the update rides the same pause-gated
+    /// ambience phase as the `AmbientSky` manager (`SkyManager.Update`,
+    /// `Main.cs:17139`).
+    pub(crate) slime_sky: crate::slime_sky::SlimeSky,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -1298,8 +1331,6 @@ pub(crate) struct App {
     /// advances it in the same `TileDrawing.Update` as the sunflower's, so
     /// it rides the same 60 Hz accumulator (S1-G-1).
     pub(crate) vine_wind_counter: f32,
-    /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
-    pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.gore[601]` (`Main.cs:66990`): the gore pool, ticked by
     /// `UpdateWorld_Gores` (`Main.cs:17971-17996`) after the NPCs and before
     /// the projectiles (`:17767-17775`). Its collision probes are injected once
@@ -3118,6 +3149,28 @@ impl App {
     /// (`client_install_world`'s tail is the twin) — exactly one of `front`/`menu`
     /// is ever live (`Review Focus 1`), and in-game neither is.
     pub(crate) fn enter_loaded_world(&mut self) {
+        // W4-f39: `WorldFile.LoadWorld`'s season checks (`WorldFile.cs:651-652`
+        // — `Main.checkXMas()` then `Main.checkHalloween()` at the load head):
+        // the resolved flags re-derive from the wall-clock date + the saved
+        // force flags (the `*Forever` micro seeds, the `*ForToday` pair the
+        // `.wld` carries). Draw-free; the date is the runtime seam.
+        let (month, day) = tr_core::season::now_month_day();
+        self.world.xmas = tr_core::season::check_xmas(
+            month,
+            day,
+            self.world.force_xmas_for_today,
+            self.world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+        );
+        self.world.halloween = tr_core::season::check_halloween(
+            month,
+            day,
+            self.world.force_halloween_for_today,
+            self.world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
+        );
         if self.menu.is_some() {
             self.close_menu();
         }
@@ -3995,7 +4048,7 @@ impl App {
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
         let mut world = world;
-        let clouds = make_clouds(&world, &lookups);
+        let cloud_field = crate::cloud::CloudField::new(world.seed);
         let sky = make_sky_assets(&atlas, &world);
         let stars = make_stars(&world);
         let player_assets = make_player_assets(&atlas);
@@ -4546,10 +4599,14 @@ impl App {
         // brick with full liquid on its right and a clear drop below) so the waterfall
         // overlay can be screenshotted deterministically.
         if let Some((x, y)) = crate::env::spout_xy() {
+            // W4-g83: the dev carve's framing dispatch rides a fresh
+            // world-seed stream (the load-time genRand stand-in — no player
+            // tick exists yet; the cascade draws nothing on a plain carve).
+            let mut dev_rng = tr_core::UnifiedRandom::new(world.seed as i32);
             for j in 1..=14 {
-                edit::kill_tile(&mut world, x, y + j, true);
+                edit::kill_tile(&mut world, x, y + j, true, &mut dev_rng);
             }
-            edit::kill_tile(&mut world, x, y, true);
+            edit::kill_tile(&mut world, x, y, true, &mut dev_rng);
             if edit::place_tile(&mut world, x, y, 1) {
                 if let Some(t) = world.tile_mut(x, y) {
                     t.flags |= tr_core::tile::FLAG_HALF_BRICK;
@@ -4639,7 +4696,13 @@ impl App {
         // it (`rain.rs:524-592`, `wind.rs:294-329`). The world's own flag set
         // is the source, so a remix world's rain starts like vanilla.
         wind.remix_world = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
-        let liquids_sim = LiquidSystem::new(&world);
+        let mut liquids_sim = LiquidSystem::new(&world);
+        // `Main.Setting_UseReducedMaxLiquids` (`slowliquids=1`, applied to
+        // the settings in `main.rs`): the flag rides the liquid system so
+        // `ReInit`'s 5000 cap (`Liquid.cs:98-101`), the pass-head quickFall
+        // OR-arm (`:1057-1060`) and the gfx budgets (`Main.cs:17080-17083`/
+        // `:17108-17111`) all read it. False (stock) changes nothing.
+        liquids_sim.set_reduced_max_liquids(settings.reduced_max_liquids);
         let mut rain = Rain::new(world_seed);
         // `SetOngoingToTemps` (`WorldFile.cs:159-162`): the load applies the
         // save-time snapshot — the rain event comes back, `cloudAlpha` :=
@@ -4784,6 +4847,14 @@ impl App {
         // (`Main.cs:67199`); `frame.rs`'s per-frame sync replaces it from the
         // live settings, so this is only the pre-first-frame value.
         let cursor_mouse_color = settings.mouse_color;
+        // W4-g68: snapshot the packed `Gore_<id>` sheet sizes BEFORE the
+        // struct literal moves `lookups` into its field — the gore pool's
+        // `Width`/`Height` asset seam reads them (`Gore.cs:44-66`).
+        let gore_texture_sizes: std::collections::HashMap<i32, (u32, u32)> = lookups
+            .gore_sheets
+            .iter()
+            .map(|(&id, r)| (id as i32, (r.width, r.height)))
+            .collect();
         let mut app = App {
             window: None,
             talk_npc: None,
@@ -4819,7 +4890,7 @@ impl App {
             atlas: Some(atlas),
             font_atlas,
             lookups,
-            clouds,
+            cloud_field,
             sky,
             // `Main` statics initialise `bgAlphaFrontLayer[0] = bgAlphaFarBackLayer[0] = 1`
             // (forest visible from the start).
@@ -5217,6 +5288,7 @@ impl App {
             mine_crack_style: 0,
             mine_crack_target: None,
             mine_crack_rng: tr_core::UnifiedRandom::new(world_seed as i32),
+            tile_draw_rand: tr_core::UnifiedRandom::new(world_seed as i32),
             edit_target: None,
             smart_cursor: Default::default(),
             smart_cursor_used: false,
@@ -5235,6 +5307,8 @@ impl App {
             gfx_quality: Default::default(),
             world_events: Default::default(),
             debug_shared: Default::default(),
+            event_skies: Default::default(),
+            event_skies_accumulator: 0.0,
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
@@ -5319,7 +5393,7 @@ impl App {
             has_liquids,
             liquids: liquids_sim,
             liquid_step: FixedStepper::new(1.0 / 60.0, 8),
-            liquid_tick: 0,
+            liquid_clock: tr_core::liquid_draw::LiquidAnimClock::default(),
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
@@ -5352,17 +5426,27 @@ impl App {
                 }
                 ambience
             },
+            // W4-f39: the SlimeSky's private stream pins to the world seed
+            // (the C# ctor is clock-seeded; the c39 event_skies deviation).
+            slime_sky: crate::slime_sky::SlimeSky::new(world_seed),
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,
             sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             vine_wind_counter: 0.0,
-            leaves: Vec::new(),
             // `Main.gore = new Gore[601]` (`Main.cs:66990`) — the 600 live
             // slots plus the refuse sentinel; `goreTime` seeds its 600
-            // (`Gore.cs:1507-1510`).
-            gore: tr_core::gore::GorePool::new(),
+            // (`Gore.cs:1507-1510`). W4-g68: the packed `Gore_<id>` sheet
+            // sizes answer the `TextureAssets.Gore[type].IsLoaded` getters
+            // (`Width`/`Height`, `Gore.cs:44-66`) — the falling-leaf liquid
+            // probe centres on the source-rect half-size, not the 1f
+            // fallback.
+            gore: {
+                let mut gore = tr_core::gore::GorePool::new();
+                gore.set_texture_sizes(gore_texture_sizes);
+                gore
+            },
             entity_lights: crate::entity_lights::EntityLights::default(),
             // `Main.cs:66673-66674` — `essScale = 1f; essDir = -1;`.
             ess_scale: 1.0,
@@ -5442,6 +5526,39 @@ impl App {
         app.sandstorm.time_left = app.world.sandstorm_time_left;
         app.sandstorm.severity = app.world.sandstorm_severity;
         app.sandstorm.intended_severity = app.world.sandstorm_intended_severity;
+        // The world-load liquid settle (`IO/WorldFile.cs:733-764`): the C#
+        // runs `QuickWater` + `WaterCheck` + the `quickSettle` drain + a final
+        // `WaterCheck` right after the sections load, before the world goes
+        // live. The port's [`App::new`] is the shared boot + `swap_world`
+        // construction (the `Main.LoadWorld` tail), so the settle rides here
+        // — a swapped world settles exactly as a booted one. `frame_rng` is
+        // already caller-pinned by `load_world` (`world.seed_frame_rng`), so
+        // the settle's `SquareTileFrame` reset rolls draw the same stream the
+        // framing passes seeded; a DRY world consumes zero draws and mutates
+        // zero tiles, leaving every save/load round-trip pin unmoved (the
+        // re-pin obligation for wet worlds is recorded in ANALYSIS, W4-g47).
+        // The merge cues are discarded (the C# `PlayLiquidChangeSound` gate
+        // `!isGeneratingOrLoadingWorld` is false during load); the retirement
+        // / liquid-death kills resolve into item drops through the same seam
+        // the live liquid tick uses.
+        //
+        // The liquid-staging screenshot fixtures (`TR_POOL` fills a settled
+        // rectangle, `TR_SPOUT` builds a suspended fall) stage liquid the C#
+        // load settle would drain — the vanilla captures them mid-flow on the
+        // live tick instead. They opt out here so the verified S1-G-14 pairs
+        // keep their pixels; `TR_NO_SETTLE` is the general A/B escape hatch.
+        let staging = crate::env::pool_rect().is_some() || crate::env::spout_xy().is_some();
+        if !crate::env::no_settle() && !staging {
+            // W4-g83 contract 2: the load settle's framing dispatch draws the
+            // caller-pinned frame_rng (the load-context genRand stand-in, the
+            // W4-g47 pin above) - dry worlds consume zero draws either way.
+            let mut load_rng = app.world.frame_rng.clone();
+            app.liquids.settle_loaded_world(&mut app.world, &mut load_rng);
+            app.world.frame_rng = load_rng;
+            let _ = app.liquids.drain_merge_events();
+            let load_kills = app.liquids.drain_edit_kills();
+            world_sim::editing::resolve_liquid_edit_kills(&mut app, load_kills);
+        }
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
@@ -5708,6 +5825,10 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
     let wall_frame_ms = t_walls.elapsed().as_secs_f32() * 1000.0;
     world.compute_column_surface();
     world.compute_chunks();
+    // `WorldFile.cs:766`: `WorldGen.Skyblock.ScanTiles()` at load — the
+    // low-tiles flag the scene snow/desert thresholds read (W4-g67
+    // `f8c4b659` fold, research/134 R5).
+    world.scan_skyblock_low_tiles();
     // Torches are important tiles; generated saves written before the hotbar existed
     // may lack this bit.
     if world.frame_important.len() > 4 {
@@ -5876,7 +5997,10 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
         for _ in 0..op.n {
             // No player exists at load: `direction` is 1 (right-facing) and
             // no entity can block the door cells.
-            let hit = edit::interact_at(world, op.x, op.y, 1, &|_, _| false);
+            // W4-g83: the dev toggle's door-cleanup dispatch rides a fresh
+            // world-seed stream (the load-time genRand stand-in).
+            let mut dev_rng = tr_core::UnifiedRandom::new(world.seed as i32);
+            let hit = edit::interact_at(world, op.x, op.y, 1, &|_, _| false, &mut dev_rng);
             match hit {
                 edit::TileInteraction::None => {
                     log::info!("TR_TOGGLE {},{} -> none", op.x, op.y)

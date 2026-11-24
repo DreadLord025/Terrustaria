@@ -19,9 +19,13 @@ use tr_core::World;
 /// `UpdateWorldGen` stream (the C#'s `genRand` draws ride whatever
 /// `Main.rand` is active at the trigger; the port's forced path runs inside
 /// the growth phase). Extracted so tests can pin the stream identity without
-/// the `TR_HARDMODE` env pin.
-pub(crate) fn run_hardmode_init(world: &mut World, corruption: bool, rng: &mut UnifiedRandom) {
-    tr_core::spread::initialize_hard_mode(world, corruption, rng);
+/// the `TR_HARDMODE` env pin. W4-g69 retire sweep: the evil flavour is
+/// `world.crimson` read inside `initialize_hard_mode` (the C# `GERunner`
+/// reads the `WorldGen.crimson` static, `WorldGen.cs:76304`) — the old
+/// seed-high-bit `corruption` re-derivation (the `roll_crimson` stand-in)
+/// ignored the UI evil pick and the drunk dawn flip.
+pub(crate) fn run_hardmode_init(world: &mut World, rng: &mut UnifiedRandom) {
+    tr_core::spread::initialize_hard_mode(world, rng);
 }
 
 /// `WorldGen.StartHardmode()` (`WorldGen.cs:31701-31719`) — the whole entry,
@@ -41,12 +45,7 @@ pub(crate) fn start_hardmode(app: &mut App) -> bool {
         return false;
     }
     app.world.hard_mode = true;
-    let corruption = (app.world.seed >> 56) & 1 == 1;
-    run_hardmode_init(
-        &mut app.world,
-        corruption,
-        app.rngs.stream(RngKey::UpdateWorldGen),
-    );
+    run_hardmode_init(&mut app.world, app.rngs.stream(RngKey::UpdateWorldGen));
     crate::chat::broadcast_death_text(
         &mut app.chat,
         &crate::lang::text("LegacyMisc.15"),
@@ -64,8 +63,7 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     let rng = app.rngs.stream(RngKey::UpdateWorldGen);
     if !app.world.hard_mode && crate::env::hardmode_forced() {
         app.world.hard_mode = true;
-        let corruption = (app.world.seed >> 56) & 1 == 1;
-        run_hardmode_init(&mut app.world, corruption, rng);
+        run_hardmode_init(&mut app.world, rng);
     }
     let raining = app.rain.is_raining();
     let day_time = app.world.day_time;
@@ -275,13 +273,13 @@ mod tests {
     #[test]
     fn test_dw_1_1_hardmode_init_draws_the_update_worldgen_stream() {
         let mut app = fresh_app();
-        let corruption = (app.world.seed >> 56) & 1 == 1;
         // The arm's own order (update_growth): the flag flips first, the
-        // runner half draws the phase stream.
+        // runner half draws the phase stream. The evil flavour rides
+        // `world.crimson` (the ctor default false = the corruption world).
         app.world.hard_mode = true;
         {
             let rng = app.rngs.stream(RngKey::UpdateWorldGen);
-            run_hardmode_init(&mut app.world, corruption, rng);
+            run_hardmode_init(&mut app.world, rng);
         }
         assert!(app.world.hard_mode, "the init ran");
         // Twin: a fresh seed-seeded stream through the same call leaves the
@@ -289,7 +287,7 @@ mod tests {
         // nothing else drew from it.
         let mut twin = UnifiedRandom::new(app.world.seed as i32);
         let mut twin_world = big_world();
-        tr_core::spread::initialize_hard_mode(&mut twin_world, corruption, &mut twin);
+        tr_core::spread::initialize_hard_mode(&mut twin_world, &mut twin);
         assert_eq!(
             *app.rngs.stream(RngKey::UpdateWorldGen),
             twin,
@@ -465,5 +463,56 @@ mod tests {
             "the walker seam consumed exactly this prefix of the stream"
         );
         assert_worlds_equal(&app.world, &twin.world);
+    /// W4-g69 retire sweep — the hardmode V's evil flavour reads the LIVE
+    /// `World.crimson` (the C# `GERunner` reads the `WorldGen.crimson` static
+    /// at `WorldGen.cs:76304`), NOT the seed's high bit: a UI-picked crimson
+    /// world on a corruption-rolled seed carves the crimson V, and the drunk
+    /// dawn flip (`Main.cs:65403-65406`) flips the NEXT hardmode init's
+    /// flavour with it. The old `(seed >> 56) & 1` stand-in ignored both.
+    #[test]
+    fn w4_g69_the_hardmode_v_reads_the_live_world_evil() {
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        // A seed whose high bit rolls CORRUPTION (`roll_crimson` false).
+        let seed: u64 = 0x00AB_CDEF_0123_4567;
+        assert!(!tr_core::worldgen::roll_crimson(seed));
+        let grass_world = |crimson: bool| {
+            let mut w = World::new("evil".into(), 400, 300);
+            w.seed = seed;
+            w.crimson = crimson;
+            for x in 0..400 {
+                for y in 100..300 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        kind: if y == 100 { 2 } else { 1 },
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w
+        };
+        let count = |w: &World, kinds: &[u16]| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && kinds.contains(&t.kind))
+                .count()
+        };
+        // The UI-picked crimson world: the evil V is crimson (199/203),
+        // even though the seed's high bit says corruption.
+        let mut w = grass_world(true);
+        let mut rng = UnifiedRandom::new(seed as i32);
+        run_hardmode_init(&mut w, &mut rng);
+        assert!(count(&w, &[199, 203]) > 200, "the crimson V");
+        assert_eq!(count(&w, &[23, 25]), 0, "no corrupt tiles");
+        // The corruption default: the mirror image on the SAME seed.
+        let mut w2 = grass_world(false);
+        let mut rng2 = UnifiedRandom::new(seed as i32);
+        run_hardmode_init(&mut w2, &mut rng2);
+        assert!(count(&w2, &[23, 25]) > 200, "the corrupt V");
+        assert_eq!(count(&w2, &[199, 203]), 0, "no crimson tiles");
+        // The RNG draw order is flavour-independent (the C# reads the static
+        // INSIDE the convert arm, after the wobble roll) — both runs consume
+        // the identical stream prefix.
+        assert_eq!(rng, rng2, "the flavour changes no draw");
     }
 }

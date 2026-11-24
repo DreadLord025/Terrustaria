@@ -178,6 +178,11 @@ fn is_dungeon_wall(wall: u16) -> bool {
 
 /// `DoActuallyNoTraps` (`WorldGen.cs:2641-2705`).
 fn actually_no_traps(world: &mut World, rng: &mut super::Rng, micro: MicroSeedFlags, count: u32) {
+    // W4-g83 contract §2: the spike kills' framing dispatch threads the
+    // worldgen genRand stand-in (`UnifiedRandom(worldSeed)`, the
+    // `temple.rs::pass_temple_part2` note); the pass's xorshift stream stays
+    // untouched (the world-hash contract).
+    let mut gen_rng = crate::UnifiedRandom::new(world.seed as i32);
     let border = 20;
     if count < 4 {
         // `Variations.actuallyNoTrapsForRealIMeanIt` (`:293-303`): every
@@ -185,7 +190,7 @@ fn actually_no_traps(world: &mut World, rng: &mut super::Rng, micro: MicroSeedFl
         for x in 0..world.width {
             for y in 0..world.height {
                 if matches!(kind_at(world, x, y), 48 | 232) {
-                    kill_tile(world, x, y, true);
+                    kill_tile(world, x, y, true, &mut gen_rng);
                 }
             }
         }
@@ -220,7 +225,7 @@ fn actually_no_traps(world: &mut World, rng: &mut super::Rng, micro: MicroSeedFl
                         continue;
                     }
                     let spikes = if wall_at(world, m, n) == 87 { 232u16 } else { 48 };
-                    kill_tile(world, m, n, true);
+                    kill_tile(world, m, n, true, &mut gen_rng);
                     if let Some(t) = world.tile_mut(m, n) {
                         t.kind = spikes;
                         t.flags |= crate::tile::FLAG_ACTIVE;

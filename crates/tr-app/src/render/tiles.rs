@@ -9,7 +9,7 @@ use crate::player::{self, Player};
 use crate::render::entities::{
     draw_npcs, draw_player, flip_uv, ArmorKinds, NpcAssets, PlayerAssets,
 };
-use crate::render::foliage::draw_tree_foliage;
+use crate::render::foliage::{draw_tree_foliage, emit_living_tree_leaf};
 use crate::render::liquids::{draw_tile_liquid_behind, draw_waters, LiquidPass};
 use crate::ui::text::{hud_text, hud_text_width};
 use glam::Vec2;
@@ -284,6 +284,10 @@ pub(crate) fn draw_tiles(
     style: &LightStyle,
     entity_lights: &crate::entity_lights::EntityLights,
     anim_time: f32,
+    // `LiquidRenderer.Update`'s two integer frames (the wind-driven liquid
+    // texture clock, `LiquidRenderer.cs:844-845`) — ticked by the app frame
+    // head, consumed by both liquid passes.
+    liquid_frames: (i32, i32),
     waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
@@ -315,9 +319,16 @@ pub(crate) fn draw_tiles(
     grass_wind_counter: f32,
     tree_wind_counter: f32,
     sunflower_wind_counter: f32,
-    // `EmitTreeLeaves` spawns collected by the foliage pass, drained by the
-    // caller into the leaf particle list.
-    leaf_spawns: &mut Vec<crate::render::foliage::LeafSpawn>,
+    // `EmitTreeLeaves` spawns now go straight into the gore pool (W4-g68):
+    // this is the pool (`Main.gore`) and the `Main.rand` stream the
+    // `NewGore*` internals roll on. The gate draws stay on `leaf_rng`
+    // (the `TileDrawing._rand` stand-in below).
+    gore: &mut tr_core::gore::GorePool,
+    main_rand: &mut tr_core::UnifiedRandom,
+    // `TileDrawing._isActiveAndNotPaused` (`TileDrawing.cs:469`,
+    // `FocusHelper.AllowTileDrawingToEmitEffects`) — the particle-emission
+    // gate; the port reads `!game_paused` (the focus gate is unported).
+    emit_effects: bool,
     // `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
     // strips' own sway counter (S1-G-1).
     vine_wind_counter: f32,
@@ -504,6 +515,7 @@ pub(crate) fn draw_tiles(
             light,
             style,
             anim_time,
+            liquid_frames,
             &liquid_draws,
             LiquidPass::Background,
             water_style,
@@ -610,7 +622,8 @@ pub(crate) fn draw_tiles(
     }
 
     // Main.cs:22320,56951,63390 — behind-tiles NPCs draw before the tile layer
-    // so they appear inside/behind solid tiles (worms, WoF segments).
+    // so they appear inside/behind solid tiles (worms, WoF segments). Town
+    // NPCs never ride this pass, so the party-hat context is None here.
     draw_phase("npcs_behind_tiles");
     // W4-d125: the HallowBoss draw's enrage/expert inputs (the world
     // statics + the player-buff expert mirror, the npc.rs convention).
@@ -633,6 +646,7 @@ pub(crate) fn draw_tiles(
         screen,
         true,
         empress_ctx,
+        None,
     );
 
     scratch.open.clear();
@@ -642,6 +656,15 @@ pub(crate) fn draw_tiles(
     // (`:390-395`).
     let mut vine_roots: Vec<(i32, i32)> = Vec::new();
     let mut vine_roots_seen: std::collections::HashSet<(i32, i32)> =
+        std::collections::HashSet::new();
+    // W4-g83: `TileDrawing._reverseVineRootsPositions` / the
+    // `TileCounterType.ReverseVine` special points (`TileDrawing.cs:121`,
+    // `:764-782`): the seaweed (549) roots, same per-draw rebuild + dedup as
+    // the hanging vines (`ClearSpecialBlockCounts`, `:391`). The g31 union
+    // folds this list into `SpecialPoints.buckets[ReverseVine]` at the
+    // tile-pass wiring (docs/research/123-vine-wire-contract.md §1).
+    let mut reverse_vine_roots: Vec<(i32, i32)> = Vec::new();
+    let mut reverse_vine_roots_seen: std::collections::HashSet<(i32, i32)> =
         std::collections::HashSet::new();
     for ty in y0..=y1 {
         scratch.cur.clear();
@@ -693,6 +716,22 @@ pub(crate) fn draw_tiles(
                         ty,
                         &mut vine_roots_seen,
                         &mut vine_roots,
+                    );
+                }
+                // W4-g83: the switch's `case 549` arm (`TileDrawing.cs:546-
+                // 548`) — `CrawlToBottomOfReverseVineAndAddSpecialPoint`
+                // registers the rising strip's root and `continue`s, exactly
+                // like the vine arm above. Same position: before any
+                // light/draw gate, regardless of cell light.
+                let reverse_vine_cell =
+                    active && crate::render::vines::is_reverse_vine_thread(tile.kind);
+                if reverse_vine_cell {
+                    crate::render::vines::collect_reverse_vine_root(
+                        world,
+                        tx,
+                        ty,
+                        &mut reverse_vine_roots_seen,
+                        &mut reverse_vine_roots,
                     );
                 }
                 let is_tree = active && tree::is_tree(tile.kind);
@@ -960,8 +999,10 @@ pub(crate) fn draw_tiles(
                     continue;
                 }
                 // The vine cells draw in the deferred strip pass below
-                // (`DrawVines`, `TileDrawing.cs:429`) — never inline.
-                if vine_cell {
+                // (`DrawVines`, `TileDrawing.cs:429`) — never inline. The
+                // reverse-vine (549) cells ride `DrawReverseVines` (`:430`,
+                // W4-g83) — the switch's `continue` at `:548`.
+                if vine_cell || reverse_vine_cell {
                     continue;
                 }
                 let Some(tf) = tile_frame else {
@@ -1410,49 +1451,51 @@ pub(crate) fn draw_tiles(
                         &dd,
                     );
                     stats.quads += 1;
-                    // `TileDrawing.cs:6849-6855` + `EmitLivingTreeLeaf`
-                    // (`TileDrawing.cs:7549-7590`): leaf blocks shed leaf gores
-                    // below and downwind at `leafFrequency / 4`.
-                    if tile.kind == 192
-                        && wind.sway_enabled
-                        && leaf_rng.next_range(0, tr_core::wind::leaf_frequency(wind.speed_current) / 4)
+                    // W4-g68: the inline leaf arm is reconciled with the
+                    // faithful `EmitLivingTreeLeaf` body (the W4-d60 flagged
+                    // deviation): no `sway_enabled` gate, the sideways
+                    // `Next(2)` is UNCONDITIONAL, the below-spawn needs two
+                    // open downwind cells in strong wind, the paint column
+                    // rides the gore frame, and type 384 sheds 914.
+                    // `TileDrawing.cs:6848-6855` + `:7549-7592`.
+                    // W4-g68 wiring-3: the site-1 quarter-roll gate
+                    // (`DrawSingleTile`, `:965-968`) — the C# wraps the
+                    // WHOLE `DrawTiles_EmitParticles` call (the 192/384
+                    // arms included) in `_isActiveAndNotPaused &&
+                    // (!Lighting.UpdateEveryFrame || FastRandom(
+                    // Main.TileFrameSeed).WithModifier(x,y).Next(4)==0)`.
+                    // `UpdateEveryFrame` (`Lighting.cs:77-87`) is false
+                    // whenever render targets are required (the normal
+                    // path), so the quarter-roll normally APPLIES: the
+                    // shed rate is frequency/4 × 1/4 per eligible draw,
+                    // and the eligible set rotates on the 5-draw
+                    // TileFrameSeed cycle (`Main.cs:61719-61723` — the
+                    // port's `flame::tile_frame_seed_at` schedule). The
+                    // roll is a THROWAWAY per-tile FastRandom: it does
+                    // NOT step `leaf_rng`.
+                    if emit_effects
+                        && matches!(tile.kind, 192 | 384)
+                        && tr_core::tile_light::FastRandom::new(
+                            tr_core::flame::tile_frame_seed_at(anim_time),
+                        )
+                        .with_modifier(tx, ty)
+                        .next(4)
                             == 0
                     {
-                        let wind_v = wind.speed_current;
-                        // Below: the tile's bottom edge, if open.
-                        let below_open = !world
-                            .tile(tx, ty + 1)
-                            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind) && t.kind != 192)
-                            && world.tile(tx, ty + 1).is_none_or(|t| t.liquid == 0);
-                        if below_open {
-                            leaf_spawns.push(crate::render::foliage::LeafSpawn {
-                                pos: glam::Vec2::new(tx as f32 * 16.0, ty as f32 * 16.0 + 16.0),
-                                style: 910,
-                            });
-                        }
-                        // Sideways downwind (|wind| > 0.2), 1/2 of the rolls.
-                        let sideways = if wind_v > 0.2 {
-                            1
-                        } else if wind_v < -0.2 {
-                            -1
-                        } else {
-                            0
-                        };
-                        if sideways != 0
-                            && leaf_rng.next_range(0, 2) == 0
-                            && !world
-                                .tile(tx + sideways, ty)
-                                .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind) && t.kind != 192)
-                            && world.tile(tx + sideways, ty).is_none_or(|t| t.liquid == 0)
-                        {
-                            let shift = if sideways < 0 { -10 } else { 0 };
-                            leaf_spawns.push(crate::render::foliage::LeafSpawn {
-                                pos: glam::Vec2::new(
-                                    tx as f32 * 16.0 + 8.0 + 4.0 * sideways as f32 + shift as f32,
-                                    ty as f32 * 16.0 + 8.0,
-                                ),
-                                style: 910,
-                            });
+                        let max_value =
+                            tr_core::wind::leaf_frequency(wind.speed_current) / 4;
+                        if leaf_rng.next_range(0, max_value) == 0 {
+                            let leaf_type = if tile.kind == 192 { 910 } else { 914 };
+                            emit_living_tree_leaf(
+                                world,
+                                tx,
+                                ty,
+                                leaf_type,
+                                wind.speed_current,
+                                &mut leaf_rng,
+                                main_rand,
+                                gore,
+                            );
                         }
                     }
                 }
@@ -1500,17 +1543,20 @@ pub(crate) fn draw_tiles(
             wind,
             tree_wind_counter,
             &mut leaf_rng,
-            leaf_spawns,
+            main_rand,
+            gore,
+            emit_effects,
             x0,
             y0,
             x1,
             y1,
         );
     }
-    // `TileDrawing.PostDrawTiles`' `DrawTrees` → `DrawVines` order
-    // (`TileDrawing.cs:428-429`): the vine strips draw right after the tree
-    // canopies (S1-G-1). `DrawReverseVines` (`:430`) and the multi-tile-vine
-    // pass (`:421`) are separate passes, still unported.
+    // `TileDrawing.PostDrawTiles`' `DrawTrees` → `DrawVines` →
+    // `DrawReverseVines` order (`TileDrawing.cs:428-430`): the vine strips
+    // draw right after the tree canopies (S1-G-1), then the rising seaweed
+    // strips (W4-g83, `DrawReverseVines` `:8903-8914`). The multi-tile-vine
+    // pass (`:421`) is the furniture lane (d57 / g31 drains).
     if !vine_roots.is_empty() {
         stats.quads += crate::render::vines::draw_vines(
             r,
@@ -1558,6 +1604,27 @@ pub(crate) fn draw_tiles(
         log::info!("TILEPASS shadow: {}", shadow.summary());
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
+    if !reverse_vine_roots.is_empty() {
+        stats.quads += crate::render::vines::draw_reverse_vines(
+            r,
+            world,
+            lookups,
+            atlas,
+            light,
+            style,
+            anim_time,
+            wind,
+            vine_wind_counter,
+            &reverse_vine_roots,
+            // W4-g83 seam 4: the sight override threads the caller's
+            // `show_invisible_blocks` (the g31 keep-one delta — the strip's
+            // IsVisible read now matches the union's full form).
+            show_invisible_blocks,
+        );
+    }
+    // Main.cs:22320,63305 - normal NPC pass (non-behind-tiles). The party
+    // hats ride it (`Main.DrawNPCExtras`, W4-c39): the colour hash reads the
+    // moon phase + day flag, the strip rides the lookups.
     draw_phase("npcs");
     stats.quads += draw_npcs(
         r,
@@ -1571,6 +1638,7 @@ pub(crate) fn draw_tiles(
         screen,
         false,
         empress_ctx,
+        Some((party_is_up, world.moon_phase, world.day_time, lookups)),
     );
     draw_phase("player");
     if let Some(p) = player {
@@ -1685,6 +1753,7 @@ pub(crate) fn draw_tiles(
             light,
             style,
             anim_time,
+            liquid_frames,
             &liquid_draws,
             LiquidPass::Foreground,
             water_style,
@@ -2411,6 +2480,52 @@ mod tests {
     use super::*;
     use tr_core::wind::Wind;
 
+    /// W4-g68 wiring-3: the site-1 leaf cadence
+    /// (`TileDrawing.cs:965-968` → `:6848-6855`). The C# gates the WHOLE
+    /// `DrawTiles_EmitParticles` call on the THROWAWAY
+    /// `FastRandom(Main.TileFrameSeed).WithModifier(x,y).Next(4)==0`
+    /// quarter-roll (the normal render-target path —
+    /// `Lighting.UpdateEveryFrame` is false, `Lighting.cs:77-87`), THEN
+    /// the 192/384 arms roll `_rand.Next(_leafFrequency/4)`. The port's
+    /// inline arm must carry BOTH gates, the quarter-roll FIRST, and the
+    /// throwaway roll must not step `leaf_rng`.
+    #[test]
+    fn w4_g68_the_leaf_arm_carries_the_site1_quarter_roll() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let arm = &body[body.find("matches!(tile.kind, 192 | 384)").unwrap()..];
+        let arm = &arm[..arm.find("draw_tile_flames").unwrap()];
+        let quarter = arm
+            .find("tile_frame_seed_at(anim_time)")
+            .expect("the throwaway TileFrameSeed quarter-roll");
+        let with_mod = arm.find(".with_modifier(tx, ty)").expect("WithModifier(x,y)");
+        let next4 = arm.find(".next(4)").expect("Next(4)");
+        let freq = arm
+            .find("leaf_frequency(wind.speed_current) / 4")
+            .expect("the frequency/4 gate");
+        assert!(
+            quarter < freq && with_mod < freq && next4 < freq,
+            "the quarter-roll precedes the frequency gate (the C# call-site wrap)"
+        );
+        // The throwaway is a fresh FastRandom — never `leaf_rng` (the
+        // `_rand` stand-in): the C# roll does not step the gate stream.
+        let roll = &arm[arm.find("FastRandom::new(").unwrap()..next4];
+        assert!(
+            !roll.contains("leaf_rng"),
+            "the quarter-roll is THROWAWAY — leaf_rng steps only on the frequency gate"
+        );
+        // The rate census: frequency/4 × 1/4 — at dead calm the C# shed
+        // chance per eligible tile-draw is 1/(14000/4) × 1/4 = 1/14000.
+        assert_eq!(tr_core::wind::leaf_frequency(0.0) / 4, 3500);
+        // The 5-draw seed cycle: the port's schedule advances the seed 12
+        // times per second (60 fps / 5), the flame pass's convention.
+        let s0 = tr_core::flame::tile_frame_seed_at(0.0);
+        let s1 = tr_core::flame::tile_frame_seed_at(1.0 / 12.0);
+        assert_eq!(s1, tr_core::flame::random_next_seed(s0));
+        assert_eq!(tr_core::flame::tile_frame_seed_at(4.9 / 60.0), s0);
+    }
+
     /// S1-G-1f draw-order witness: the back-rope hook sits at the C#
     /// dispatch position — AFTER `DrawSingleTile`'s visibility gates
     /// (`!flag` return `:1014-1017`, `IsVisible` `:983`, the dark-cell
@@ -2546,6 +2661,53 @@ mod tests {
             body.matches("multi_tile_vines::is_multi_tile_vine(tile.kind)").count(),
             2, // the dispatch arm + the flame-overlay gate
         );
+    /// W4-g83 wiring witness: the reverse-vine (549) crawl sits at the C#
+    /// switch position (`TileDrawing.cs:546-548`) — right after the forward
+    /// vine arm (`:536-545`), BEFORE the draw-data dispatch and any
+    /// light/visibility gate (the switch precedes them all), and the cell
+    /// `continue`s inline (`:548`) exactly like the vine arm (`:545`).
+    #[test]
+    fn w4_g83_the_reverse_crawl_rides_the_switch_and_skips_the_inline_draw() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let forward = body
+            .find("vines::collect_vine_root(")
+            .expect("the forward crawl");
+        let reverse = body
+            .find("vines::collect_reverse_vine_root(")
+            .expect("the reverse crawl");
+        let dd = body.find("let dd = if active").expect("the drawdata dispatch");
+        let visible = body.find("stats.visible += 1;").expect("the visibility gate");
+        assert!(forward < reverse, "case 549 follows the vine cases (:546)");
+        assert!(
+            reverse < dd && reverse < visible,
+            "the crawl runs before any draw/light gate (the switch head)"
+        );
+        // The inline skip covers both families — the C# `continue`s.
+        assert!(
+            body.contains("if vine_cell || reverse_vine_cell {"),
+            "the 549 cell never draws through DrawSingleTile (:548)"
+        );
+        // One crawl site, one dedup set — `_reverseVineRootsPositions`.
+        assert_eq!(body.matches("vines::collect_reverse_vine_root(").count(), 1);
+    }
+
+    /// W4-g83 wiring witness: `PostDrawTiles`' nature order — `DrawVines`
+    /// (`TileDrawing.cs:429`) BEFORE `DrawReverseVines` (`:430`), both after
+    /// the tree-canopy pass (`DrawTrees`, `:428`).
+    #[test]
+    fn w4_g83_the_rising_pass_draws_after_the_hanging_pass() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let trees = body.find("draw_tree_foliage(").expect("the canopy pass");
+        let vines = body.find("vines::draw_vines(").expect("the hanging pass");
+        let reverse = body
+            .find("vines::draw_reverse_vines(")
+            .expect("the rising pass");
+        assert!(trees < vines && vines < reverse, "DrawTrees→DrawVines→DrawReverseVines");
+        assert_eq!(body.matches("vines::draw_reverse_vines(").count(), 1);
     }
 
     /// S1-G-1f draw-feed witness: the animator's rows/counters feed the

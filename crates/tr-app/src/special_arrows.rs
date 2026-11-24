@@ -1336,6 +1336,7 @@ mod tests {
             &mut tr_core::UnifiedRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, "the arrow died");
         let star = pool
@@ -1372,6 +1373,7 @@ mod tests {
             &mut tr_core::UnifiedRandom::new(7),
             0,
             true,
+            &mut tr_core::UnifiedRandom::new(0),
         );
         assert!(!pool.slots()[slot].active, "the arrow died");
         let bees: Vec<_> = pool

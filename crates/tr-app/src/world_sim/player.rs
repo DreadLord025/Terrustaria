@@ -670,6 +670,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 .filter(|sl| sl.count > 0)
                 .map(|sl| sl.kind),
         );
+        // W4-f40 (canonical placement, research/114 §1d — c39's duplicate
+        // before-grapple write retired onto this one): `Player.RecalculateLuck`'s
+        // lantern-night term (`Player.cs:29146-29149`, `if (LanternNight.
+        // LanternsUp) luck += 0.3f`). The C# reads the static live inside
+        // `UpdateLuck`; the port snapshots `LanternsUp` once per tick beside
+        // the auras/zones (the flag only flips at the dusk/dawn boundaries
+        // and `UpdateTime`, never mid-player-step), so `update_luck`'s
+        // `recalculate_luck` below reads the same value the C# would. The
+        // +0.3 add itself already lives in `luck.rs::recalculate_luck` (the
+        // M4-EVENT-4 neutral-default input this wires).
+        p.luck_state.lantern_night = crate::world_events::lanterns_up(&app.world_events);
         // The held torch's style (`inventory[selectedItem].createTile == 4`,
         // `Player.cs:17917-17920`).
         p.held_torch_style = app
@@ -1305,6 +1316,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // ride the `UpdatePlayers` stream inline; the two Santank cues
             // queue for the pass-tail drain (the cart-cue batch convention).
             p.update_mount_ability(&app.world, &app.npcs, &mut app.projectiles, rng);
+            // W4-c39 exec (research/114 §1d): the duplicate luck write here
+            // DROPPED — f40's beside-auras/zones placement is canonical (the
+            // single write moved up beside `p.zones`).
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1336,6 +1350,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &mut app.projectiles,
                 &mut app.items,
                 app.local_id as u8,
+                // `FocusHelper.AllowRain && !Main.mapFullscreen`
+                // (`Player.cs:14310`): focused, unpaused, map closed
+                // (g67 `356a1ac0` fold, research/134 R6).
+                app.window_focused && !app.game_paused && !map_open,
             );
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
@@ -1359,6 +1377,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 p.width as i32,
                 p.height as i32,
                 5, // the player's objType (`Collision.SwitchTiles`)
+                // W4-g83: the plate kill's framing dispatch rides the
+                // UpdatePlayers stream (the active genRand of the tick).
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
             if let Some((item, x, y)) = switch.dropped {
                 // `WorldGen.KillTile`'s drop for the broken plate.
@@ -1993,7 +2014,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // own rolls ride the same `UpdatePlayers` stream, so the draw order
             // is the source's (S1-A-10).
             if let Some((wx, wy)) = p.take_sticky_kill() {
-                tr_core::edit::kill_tile(&mut app.world, wx, wy, false);
+                // W4-g83: the cobweb kill's framing dispatch rides the
+                // UpdatePlayers stream (the active genRand of the tick).
+                tr_core::edit::kill_tile(
+                    &mut app.world,
+                    wx,
+                    wy,
+                    false,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             for puff in p.take_sticky_dust() {
                 let idx = app.dust.new_dust(
@@ -2247,6 +2276,34 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &spawn_ctx,
                     &app.world,
                 );
+            // `Player.DoEyebrellaRainEffect` (`Player.cs:14308-14331`): the
+            // queued drip spawns through `Rain.NewRainForced` (`Rain.cs:135-164`)
+            // with the live `windSpeedCurrent * 3, 9` velocity — the scale +
+            // frame draws ride Rain's own stream (the `update_drops`
+            // convention). The gfx/water-style inputs gather like `update_rain`
+            // (g67 `356a1ac0` fold, research/134 R6 — the d130 `RainInputs` seam).
+            if let Some(pos) = p.take_eyebrella_rain() {
+                let drip_inputs = crate::rain::RainInputs {
+                    camera: app.camera,
+                    screen: Vec2::new(app.screen[0] as f32, app.screen[1] as f32),
+                    zoom: app.zoom,
+                    day_rate: 1,
+                    wind_speed_current: app.wind.speed_current,
+                    player_velocity: Vec2::ZERO,
+                    shimmer_alpha: 0.0,
+                    atmo: 1.0,
+                    snow_tile_count: 0,
+                    skyblock_low_tiles: app.world.skyblock_low_tiles,
+                    zone_rain: true,
+                    water_style: crate::biome::calculate_water_style(&app.world, app.camera)
+                        as u32,
+                    any_danger: false,
+                    gfx_quality: app.gfx_quality.quality,
+                    remix_world: false,
+                    game_menu: false,
+                };
+                let vel = Vec2::new(app.wind.speed_current * 3.0, 9.0);
+                app.rain.new_rain_forced(&drip_inputs, pos, vel);
             }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
@@ -5783,4 +5840,35 @@ mod tests {
 
 // balance-close (union shared delimiter)
 }}}})
+    /// W4-c39 — the lantern-night luck term wires live (`Player.cs:29146-29149`):
+    /// `LanternNight.LanternsUp` feeds `luck_state.lantern_night` before the
+    /// tick's `recalculate_luck`, adding 0.3 luck; the lanterns-down tick
+    /// clears it.
+    #[test]
+    fn w4_c39_the_lantern_night_adds_luck_live() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("luck".into(), 40, 200);
+        app.world.compute_column_surface();
+        let mut p = Player::spawn(&app.world);
+        // Underground: the torch scan's surface gate keeps torch_luck at 0,
+        // so the lantern term is the only luck source.
+        p.y = 150.0 * 16.0;
+        app.player = Some(p);
+        // Lanterns up: the tick feeds the flag and the luck gains 0.3.
+        app.world_events.manual_lanterns = true;
+        update_player(&mut app, 1.0 / 60.0);
+        let pl = app.player.as_ref().unwrap();
+        assert!(pl.luck_state.lantern_night, "the flag feeds from LanternsUp");
+        assert!(
+            (pl.luck_state.luck - 0.3).abs() < 1e-4,
+            "the lantern night adds 0.3 luck: {}",
+            pl.luck_state.luck
+        );
+        // Lanterns down: the flag clears and the term drops.
+        app.world_events.manual_lanterns = false;
+        update_player(&mut app, 1.0 / 60.0);
+        let pl = app.player.as_ref().unwrap();
+        assert!(!pl.luck_state.lantern_night);
+        assert!(pl.luck_state.luck.abs() < 1e-4, "the term drops: {}", pl.luck_state.luck);
+    }
 }

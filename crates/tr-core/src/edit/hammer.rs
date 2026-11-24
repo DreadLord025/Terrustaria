@@ -14,6 +14,7 @@
 
 use super::{can_kill_tile, is_locked_door, solid_tile, touch};
 use crate::tiledata as td;
+use crate::unified_random::UnifiedRandom;
 use crate::world::World;
 
 /// `WorldGen.ForbidsSloping` (`WorldGen.cs:80745-80766`): the furniture kinds
@@ -77,6 +78,10 @@ pub fn can_pound_tile(
 /// are discarded like the wiring callers'). The flatten player-push
 /// (`:80785-80796`) is app-side: the caller reads `slope() == 0` after a
 /// `true` return. `noEffects`/`quiet` never vary at the ported call sites.
+///
+/// `rng` is the ACTIVE `genRand` stream of the caller's context (W4-g83
+/// contract §2 — the player pound runs under the `UpdatePlayers` swap); the
+/// reframe's framing dispatch draws its seaweed tip re-rolls on it.
 pub fn slope_tile(
     world: &mut World,
     x: i32,
@@ -84,6 +89,7 @@ pub fn slope_tile(
     slope: u8,
     generating: bool,
     chest_holds_items: impl Fn(i32, i32) -> bool,
+    rng: &mut UnifiedRandom,
 ) -> bool {
     if !can_pound_tile(world, x, y, generating, chest_holds_items) {
         return false;
@@ -94,7 +100,7 @@ pub fn slope_tile(
     if !generating {
         // `:80783` — the 3×3 reframe (the cascade's drops ride the wiring
         // precedent: `let _ = square_tile_frame_default`, ANALYSIS).
-        let _ = super::square_tile_frame_default(world, x, y);
+        let _ = super::square_tile_frame_default(world, x, y, rng);
     } else {
         touch(world, x, y);
     }
@@ -104,13 +110,15 @@ pub fn slope_tile(
 /// `WorldGen.PoundTile(i, j)` (`WorldGen.cs:80805-80838`): the `CanPoundTile`
 /// gate, then the half-brick TOGGLE. The effects mirror [`slope_tile`]; the
 /// un-half player-push (`:80824-80835`) is app-side (the caller reads
-/// `!half_brick()` after a `true` return).
+/// `!half_brick()` after a `true` return). `rng` threads the caller's ACTIVE
+/// `genRand` stream (W4-g83 contract §2, the [`slope_tile`] note).
 pub fn pound_tile(
     world: &mut World,
     x: i32,
     y: i32,
     generating: bool,
     chest_holds_items: impl Fn(i32, i32) -> bool,
+    rng: &mut UnifiedRandom,
 ) -> bool {
     if !can_pound_tile(world, x, y, generating, chest_holds_items) {
         return false;
@@ -120,7 +128,7 @@ pub fn pound_tile(
     world.tiles[i].flags ^= crate::tile::FLAG_HALF_BRICK;
     if !generating {
         // `:80823`.
-        let _ = super::square_tile_frame_default(world, x, y);
+        let _ = super::square_tile_frame_default(world, x, y, rng);
     } else {
         touch(world, x, y);
     }
@@ -427,11 +435,14 @@ pub enum PoundOutcome {
 /// C# (nothing clears `poundRelease` between) and folds away. The net
 /// messages (17's subtypes 7/14/15/23 + `SendTileSquare`) have no port
 /// replication kind yet — ANALYSIS.
+/// `rng` threads the caller's ACTIVE `genRand` stream (W4-g83 contract §2 —
+/// the pound cycle runs under the `UpdatePlayers` swap, `Main.cs:17754`).
 pub fn try_pound_tile(
     world: &mut World,
     x: i32,
     y: i32,
     chest_holds_items: impl Fn(i32, i32) -> bool + Copy,
+    rng: &mut UnifiedRandom,
 ) -> PoundOutcome {
     // `:45975-45985` — the active + poundable gates (the hammer gate is the
     // caller's, `:45976`).
@@ -464,7 +475,7 @@ pub fn try_pound_tile(
     }
     let mut st = Writes::default();
     let slope = |world: &mut World, s: u8, st: &mut Writes| {
-        if slope_tile(world, x, y, s, false, chest_holds_items) {
+        if slope_tile(world, x, y, s, false, chest_holds_items, rng) {
             st.wrote = true;
             if world.tile(x, y).is_some_and(|t| t.slope() == 0) {
                 st.lift = true;
@@ -472,7 +483,7 @@ pub fn try_pound_tile(
         }
     };
     let pound = |world: &mut World, st: &mut Writes| {
-        if pound_tile(world, x, y, false, chest_holds_items) {
+        if pound_tile(world, x, y, false, chest_holds_items, rng) {
             st.wrote = true;
             if world.tile(x, y).is_some_and(|t| !t.half_brick()) {
                 st.lift = true;
@@ -762,6 +773,13 @@ mod tests {
         false
     }
 
+    // W4-g83: the pound family threads the caller's ACTIVE genRand stream
+    // (the reframe's framing dispatch). The witnesses pin slopes/frames, not
+    // streams — a fresh seed-0 stream per call.
+    fn rng() -> UnifiedRandom {
+        UnifiedRandom::new(0)
+    }
+
     /// A lone active stone at (10, 15) in the 32×32 ground fixture's air.
     fn lone(kind: u16) -> World {
         let mut w = ground_world();
@@ -821,22 +839,22 @@ mod tests {
         let mut w = lone(1);
         let i = w.index(10, 15);
         w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
-        assert!(slope_tile(&mut w, 10, 15, 3, false, no_chest));
+        assert!(slope_tile(&mut w, 10, 15, 3, false, no_chest, &mut rng()));
         let t = w.tile(10, 15).unwrap();
         assert!(!t.half_brick());
         assert_eq!(t.slope(), 3);
         // The gate refuses a trap (`:80770`).
         let mut w2 = lone(137);
-        assert!(!slope_tile(&mut w2, 10, 15, 1, false, no_chest));
+        assert!(!slope_tile(&mut w2, 10, 15, 1, false, no_chest, &mut rng()));
         assert_eq!(w2.tile(10, 15).unwrap().slope(), 0);
     }
 
     #[test]
     fn s1_p_i31_pound_tile_toggles_the_half_brick() {
         let mut w = lone(1);
-        assert!(pound_tile(&mut w, 10, 15, false, no_chest));
+        assert!(pound_tile(&mut w, 10, 15, false, no_chest, &mut rng()));
         assert!(w.tile(10, 15).unwrap().half_brick());
-        assert!(pound_tile(&mut w, 10, 15, false, no_chest));
+        assert!(pound_tile(&mut w, 10, 15, false, no_chest, &mut rng()));
         assert!(!w.tile(10, 15).unwrap().half_brick());
     }
 
@@ -949,7 +967,7 @@ mod tests {
             (true, 0),  // half again
         ];
         for (half, slope) in steps {
-            let out = try_pound_tile(&mut w, 10, 15, no_chest);
+            let out = try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
             assert!(matches!(out, PoundOutcome::Pounded { .. }), "{out:?}");
             let t = w.tile(10, 15).unwrap();
             assert_eq!(t.half_brick(), half, "half at slope {slope}");
@@ -967,7 +985,7 @@ mod tests {
         w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
         let mut seen = Vec::new();
         for _ in 0..4 {
-            try_pound_tile(&mut w, 10, 15, no_chest);
+            try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
             seen.push(w.tile(10, 15).unwrap().slope());
         }
         assert_eq!(seen, vec![2, 1, 4, 3]);
@@ -983,7 +1001,7 @@ mod tests {
         w.tiles[i].flags |= crate::tile::FLAG_HALF_BRICK;
         let mut seen = Vec::new();
         for _ in 0..4 {
-            try_pound_tile(&mut w, 10, 15, no_chest);
+            try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
             seen.push(w.tile(10, 15).unwrap().slope());
         }
         assert_eq!(seen, vec![3, 4, 1, 2]);
@@ -993,14 +1011,14 @@ mod tests {
     fn s1_p_i31_the_platform_cycles_slopes_then_half() {
         // `:46008-46054` — the isolated platform: slope 1 → 2 → half → flat.
         let mut w = lone(19);
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert_eq!(w.tile(10, 15).unwrap().slope(), 1);
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert_eq!(w.tile(10, 15).unwrap().slope(), 2);
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         let t = w.tile(10, 15).unwrap();
         assert!(t.half_brick() && t.slope() == 0, "the CanPoundTile arm");
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert!(!w.tile(10, 15).unwrap().half_brick());
     }
 
@@ -1012,9 +1030,9 @@ mod tests {
         let mut w = lone(19);
         let i = w.index(9, 16);
         w.tiles[i].kind = 19; // inactive platform cell
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert_eq!(w.tile(10, 15).unwrap().slope(), 2);
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert_eq!(w.tile(10, 15).unwrap().slope(), 1);
     }
 
@@ -1026,7 +1044,7 @@ mod tests {
         let i = w.index(10, 14);
         w.tiles[i].frame_y = 594;
         w.tiles[i].frame_x = 0;
-        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::LockedDoor);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::LockedDoor);
         let t = w.tile(10, 15).unwrap();
         assert!(!t.half_brick() && t.slope() == 0, "nothing changed");
     }
@@ -1036,7 +1054,7 @@ mod tests {
         // `:46120-46138`.
         let mut w = lone(424);
         for want in [18i16, 36, 0, 18] {
-            assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Framed);
+            assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::Framed);
             assert_eq!(w.tile(10, 15).unwrap().frame_x, want);
         }
     }
@@ -1051,7 +1069,7 @@ mod tests {
         // cycle still lands (the C# never calls CanPoundTile on this arm).
         let mut seen = Vec::new();
         for _ in 0..6 {
-            assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Framed);
+            assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::Framed);
             seen.push(i32::from(w.tile(10, 15).unwrap().frame_x) / 18);
         }
         assert_eq!(seen, vec![2, 4, 1, 3, 5, 0]);
@@ -1060,7 +1078,7 @@ mod tests {
         w.tiles[i].frame_x = 0;
         let mut seen = Vec::new();
         for _ in 0..4 {
-            try_pound_tile(&mut w, 10, 15, no_chest);
+            try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
             seen.push(i32::from(w.tile(10, 15).unwrap().frame_x) / 18);
         }
         assert_eq!(seen, vec![3, 2, 4, 0]);
@@ -1073,11 +1091,11 @@ mod tests {
         // KEEPS (the pad already faces its only support).
         let mut w = lone(442);
         set_active(&mut w, 10, 16, 1);
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert_eq!(w.tile(10, 15).unwrap().frame_x, 0);
         // Add a solid ceiling: case 0 with flag true → num10 = 1 → frameX 22.
         set_active(&mut w, 10, 14, 1);
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert_eq!(w.tile(10, 15).unwrap().frame_x, 22);
         // Remove every support: case 1 (frameX 22) with all flags false →
         // num10 = -1 → the frame keeps.
@@ -1085,7 +1103,7 @@ mod tests {
         w.tiles[i].flags &= !FLAG_ACTIVE;
         let i = w.index(10, 14);
         w.tiles[i].flags &= !FLAG_ACTIVE;
-        try_pound_tile(&mut w, 10, 15, no_chest);
+        try_pound_tile(&mut w, 10, 15, no_chest, &mut rng());
         assert_eq!(w.tile(10, 15).unwrap().frame_x, 22);
     }
 
@@ -1099,9 +1117,14 @@ mod tests {
         assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Consumed);
         let mut w = lone(314);
         assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::TrackHammer);
+        // 470 / 314 — the Consumed seams (`:46004-46007`, `:46056-46062`).
+        for kind in [470u16, 314] {
+            let mut w = lone(kind);
+            assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::Consumed);
+        }
         // A tileHammer kind refuses the pound (`:45981-45985`).
         let mut w = lone(26);
-        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Refused);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::Refused);
     }
 
     #[test]
@@ -1112,13 +1135,13 @@ mod tests {
         // latch still clears app-side, `Player.cs:46310`).
         let mut w = lone(1);
         set_active(&mut w, 10, 14, 21);
-        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::GateRefused);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::GateRefused);
         let t = w.tile(10, 15).unwrap();
         assert!(!t.half_brick() && t.slope() == 0, "nothing changed");
         // The platform cycle refuses the same way (its first SlopeTile).
         let mut w = lone(19);
         set_active(&mut w, 10, 14, 21);
-        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::GateRefused);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()), PoundOutcome::GateRefused);
         assert_eq!(w.tile(10, 15).unwrap().slope(), 0);
     }
 
@@ -1128,18 +1151,18 @@ mod tests {
         // (WorldGen.cs:80824-80835); the cycle's final SlopeTile(0) lifts.
         let mut w = lone(1);
         assert_eq!(
-            try_pound_tile(&mut w, 10, 15, no_chest),
+            try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()),
             PoundOutcome::Pounded { lift: false }
         );
         assert_eq!(
-            try_pound_tile(&mut w, 10, 15, no_chest),
+            try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()),
             PoundOutcome::Pounded { lift: false } // half → slope 1, no flatten
         );
         for _ in 0..3 {
-            try_pound_tile(&mut w, 10, 15, no_chest); // slopes 2, 3, 4
+            try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()); // slopes 2, 3, 4
         }
         assert_eq!(
-            try_pound_tile(&mut w, 10, 15, no_chest),
+            try_pound_tile(&mut w, 10, 15, no_chest, &mut rng()),
             PoundOutcome::Pounded { lift: true } // slope 4 → 0
         );
     }
