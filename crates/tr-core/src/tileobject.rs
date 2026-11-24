@@ -647,6 +647,7 @@ pub fn try_get_tile_bounds(
     }
     // :5191-5193 — the bounds are the object's tile extents.
     Some((bx, by, def.width, def.height))
+}
 /// `TileObjectData.GetTileData(Tile)` (`TileObjectData.cs:5196-5261`) — the
 /// frame-based resolution consumer (W4-d112, S1-F-7 wave B): decodes the
 /// stored `frameX`/`frameY` into a style/alternate pair and walks the def's
@@ -666,8 +667,6 @@ pub fn resolve_tile_def(tile: &Tile) -> Option<&'static TileObjectDef> {
     // shape the synthetic-def witnesses pin). The name stays for the
     // d112 witness set + the framing consumers.
     get_tile_data_for_tile(tile)
-}
-
 }
 
 /// The three `GetStyleOverride` bodies (`TileObjectData.cs:5294-5327`), called

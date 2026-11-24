@@ -86,13 +86,13 @@ pub fn width_arm(width: i32) -> ([(i32, i32); 3], usize, usize) {
     let band = |frac: f64, span: f64| ((w * frac - w * span) as i32, (w * frac + w * span) as i32);
     if width == 4200 {
         // :8197 — the single centre band; :8198-8199 assign maxTilesX twice.
-        ([(band(0.5, 0.25), (width, width), (width, width)], 2, 1))
+        ([band(0.5, 0.25), (width, width), (width, width)], 2, 1)
     } else if width == 6400 {
         // :8209-8210 — the two third-points ± 0.2; :8211 assigns maxTilesX.
-        ([(band(0.334, 0.2), band(0.667, 0.2), (width, width)], 3, 2))
+        ([band(0.334, 0.2), band(0.667, 0.2), (width, width)], 3, 2)
     } else {
         // :8226-8228 — the three quarter-points ± 0.15.
-        ([(band(0.25, 0.15), band(0.5, 0.15), band(0.75, 0.15)], 4, 3))
+        ([band(0.25, 0.15), band(0.5, 0.15), band(0.75, 0.15)], 4, 3)
     }
 }
 

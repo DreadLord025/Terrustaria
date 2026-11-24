@@ -932,9 +932,6 @@ mod tests {
     fn rain_increases_abs_current() {
         let mut dry = Wind::new(7);
 
-    #[test]
-    fn rain_increases_abs_current() {
-        let mut dry = Wind::new(7);
         let mut wet = Wind::new(7);
         let mut wet_negative = Wind::new(7);
         for w in [&mut dry, &mut wet, &mut wet_negative] {

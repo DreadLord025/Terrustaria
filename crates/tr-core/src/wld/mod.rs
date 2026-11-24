@@ -2423,6 +2423,7 @@ mod tests {
         assert_eq!(
             got.unlocked_slime_copper_spawn, want.unlocked_slime_copper_spawn,
             "{context}: unlockedSlimeCopperSpawn"
+        );
         // W4-f39: the seasonal moon-boss downeds + the force-today pair.
         assert_eq!(
             got.downed_halloween_king, want.downed_halloween_king,

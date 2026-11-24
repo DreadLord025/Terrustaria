@@ -89,9 +89,9 @@ impl WaterfallManager {
                 // `WaterfallManager.cs:381`: the view cull reads the raw
                 // `Main.screenPosition`/`screenWidth`, not the scan rectangle.
                 if wf.stop_at_step == 0
-                    || (num14 + num22) as f32 < screen.position[1] / 16.0
-                    || (num13 as f32) < screen.position[0] / 16.0 - 20.0
-                    || (num13 as f32) > (screen.position[0] + screen.width) / 16.0 + 20.0
+                    || ((num14 + num22) as f32) < screen.position[1] / 16.0
+                    || ((num13 as f32)) < screen.position[0] / 16.0 - 20.0
+                    || ((num13 as f32)) > (screen.position[0] + screen.width) / 16.0 + 20.0
                 {
                     continue;
                 }

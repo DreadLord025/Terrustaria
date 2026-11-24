@@ -1664,12 +1664,6 @@ pub fn drop_nothing() -> Box<dyn ItemDropRule> {
 fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
     let f = &info.flags;
 
-        }/// the shared soul gate — not a boss, not in `DontDropDungeonKeysOrSouls`
-/// (`NPCID.cs:10115` — type 23 alone), not the 1/13/14/15/121/535 exclusion
-/// list, hardmode, lifeMax > 1, not friendly, value >= 1, and (outside the
-/// remix seed) the NPC below the rock layer (`position.Y > rockLayer * 16`,
-/// the depth folded into `flags.soul_depth_ok` by the caller; the remix
-/// world drops the depth term, `:1599-1605`).
     let n = &info.npc;
     if n.is_boss || n.dont_drop_keys {
         return false;
@@ -1683,11 +1677,6 @@ fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
         return false;
     }
     f.remix_seed || f.soul_depth_ok
-    match n.kind {
-        1 | 13 | 14 | 15 | 121 | 535 => return false,
-        _ => {}
-    if !info.flags.hard_mode || n.life_max <= 1 || n.friendly || n.value < 1.0 {
-    info.flags.remix_seed || info.flags.soul_depth_ok
 }
 
 /// The pumpkin/frost moon gates' wave-scaled chance denominator
@@ -4099,6 +4088,4 @@ mod s1_e_14_tests {
         }
     }
 
-// balance-close (union shared delimiter)
-}
 }

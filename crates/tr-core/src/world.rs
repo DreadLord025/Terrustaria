@@ -2488,6 +2488,8 @@ mod tests {
         // input (`dd2_won` latches at DD2Event.cs:483 and resets on start).
         w.dd2_won = true;
         assert!(!w.downed_dd2_any());
+    }
+
     /// W4-g51 id-136: `NPC.SetWorldSpecificMonstersByWorldID`
     /// (`NPC.cs:18102-18134`) — the two rows carry DISTINCT bands, every
     /// cell lands in its band's range, and the roll is a pure function of
@@ -2524,6 +2526,8 @@ mod tests {
                 "id {id}: the roll replays"
             );
         }
+    }
+
     /// W4-g67 (folded `f8c4b659`) — `Skyblock.ScanTiles`/`Calculate`'s lowTiles
     /// arm (`WorldGen.cs:3210-3218`/`:3238-3265`): the 40-margin interior active
     /// count over `maxTilesX*maxTilesY`, `< 0.1` AND the skyblock seed.
