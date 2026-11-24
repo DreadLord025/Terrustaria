@@ -1170,6 +1170,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Grasshopper
         | NpcKind::ChatteringTeethBomb
         NpcKind::ArmedZombie => &[],
+        // The Shimmerfly 677 (W4-c9's kind, rowed by W4-g62): the
+        // `DebuffImmunitySets` row `{ 677, SpecificallyImmuneTo: [31] }`
+        // (`NPCID.cs:10015-10021`) — the poisoned-debuff immunity.
+        // W4-d42 - the NPCID 620-624 immunity rows (`NPCID.cs:9395+`).
     }
 }
 

@@ -1767,6 +1767,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // missing file keeps the draw arm's None fallback).
         "NPC_676",
         "NPC_430",
+        // The Shimmerfly (W4-c9's sheet, adopted by W4-g62 with the kind
+        // rowing): its own strip, keyed by the vanilla net id in
+        // `NpcAssets::npc_sheets` (`render/entities.rs`'s SNAIL_SHEETS).
+        // The snail trio's sheets stay c9's (the merge dedupes).
+        "NPC_677",
 ];
 
 
@@ -2725,6 +2730,7 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 187] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 184] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 192] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 197] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 182] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2824,6 +2830,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 197] = [
         // W4-f18 batch 4 — the entry-bearing kinds (the CultistArcherWhite
         // 380 folds onto 379, so it has no slot of its own).
         377, 378, 379, 430,
+        // The Shimmerfly (W4-c9's row, adopted by W4-g62) — appended
+        // last for the same reason. The snail trio stays c9's.
+        677,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -3915,6 +3924,9 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_378").copied(),
                 atlas.sheet("NPC_379").copied(),
                 atlas.sheet("NPC_430").copied(),
+                // The Shimmerfly (W4-c9's row, adopted by W4-g62) — the
+                // new strip (677 four rows).
+                atlas.sheet("NPC_677").copied(),
             ],
 
 

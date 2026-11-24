@@ -1260,6 +1260,16 @@ impl NpcKind {
             // the vanilla types 365-375 ride cs_id/net_id, NOT these).
             // W4-f18 batch 4 — the next-free band 254.. (the vanilla types
             // 377-430 ride cs_id/net_id, NOT these protocol ids).
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62 for the
+            // TRAILCACHE WIDENING's 677→60 row): the vanilla id 677 is a
+            // free protocol slot (the to_u16 scan: the 354+ band above
+            // the landed families is unclaimed), so it keeps its vanilla
+            // id — the AngryNimbus/DungeonSpirit precedent. The snail
+            // trio 359/360/655 stays c9's (the merge dedupes).
+            // W4-d42 - the vanilla ids 620-624 are free protocol slots
+            // (the 108 union plan's VANILLA-FREE band; d42 2d7ac08c3's
+            // rowing, adopted by W4-g62 for the 620→20 trail row — the
+            // rest of the roster stays d42's, the merge dedupes).
         }
     
             // d23's g8/d43-owned rows (MERGE NOTE 5fdb002b): these kinds
@@ -2066,6 +2076,10 @@ impl NpcKind {
             // 11407-11427`.
             // W4-f18 batch 4 — the 254.. band (`to_u16` above).
             // `NPCID.cs:11415-11541`.
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // vanilla id kept (`to_u16` above).
+            // W4-d42 - the vanilla-free band (d42 2d7ac08c3's rowing,
+            // adopted by W4-g62 for the 620→20 trail row).
             _ => return None,
         })
     
@@ -3414,6 +3428,10 @@ impl NpcKind {
             NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Hit_1",
             // Doc-sweep lane 36 — `SoundID.NPCHit1` (`NPC.cs:17576`).
             NpcKind::ShimmerSlime => "NPC_Hit_1",
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // NPCHit1 (`NPC.cs:17587`).
+            NpcKind::Shimmerfly => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -4243,6 +4261,11 @@ impl NpcKind {
             NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Killed_1",
             // Doc-sweep lane 36 — `SoundID.NPCDeath1` (`NPC.cs:17577`).
             NpcKind::ShimmerSlime => "NPC_Killed_1",
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // NPCDeath1 (`NPC.cs:17588`).
+            NpcKind::Shimmerfly => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -4869,6 +4892,11 @@ impl NpcKind {
             // the W3-i11 convention (noGravity AND kb>0 only), so 375 reads
             // false here BY DESIGN (the census doc's note). Its burrow
             // movement is noTileCollide raw integration regardless.
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // `SetDefaults` noGravity row (`NPC.cs:17590`). kb 1 (the
+            // head default — the row writes none), so a strike can push
+            // it; the snail trio's rows stay c9's (the merge dedupes).
+            NpcKind::Shimmerfly => true,
             _ => false,
         }
     }
@@ -5673,6 +5701,9 @@ impl NpcKind {
             // W4-f18 batch 4 — 377 1 (`NPC.cs:13813`), 378 41
             // (`:13827`), 379/380 3 (`:13841`), 430 3 (`:8614`).
             NpcKind::ArmedZombie => 3,
+            // The shimmer transform target (W4-c9's rowing, adopted by
+            // W4-g62) — `NPC.cs:17583`.
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
         }
     }
 
@@ -6846,6 +6877,9 @@ impl NpcKind {
             // W4-f18 batch 4 — 377 14x10 (`NPC.cs:13811-13812`), 378 20x26
             // (`:13825-13826`), 379/380 18x40 (`:13839-13840`), 430 18x40
             // (`:8612-8613`).
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): 677
+            // 10x10 (`NPC.cs:17581-17582`).
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
         }
     }
 
@@ -7184,6 +7218,12 @@ impl NpcKind {
             NpcKind::TurtleJungle => 617,
             NpcKind::BloodNautilus => 618,
             NpcKind::BloodSquid => 619,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
+            // vanilla `NPC.type` id — the AI arm's type gate (the 677
+            // threat scan) and the catch/convert tables read it
+            // (`NPCID.cs:12031`). It has its own bestiary entry (the
+            // populator's `FindEntryByNPCID(677)` info row), so no fold
+            // is needed.
             // W4-d42 - the roster's TRUE vanilla types (the folded kinds
             // keep their own - the AI arms read cs_id; the bestiary
             // folds in entry_for_npc only).
@@ -7318,6 +7358,31 @@ impl NpcKind {
                     _ => u16::MAX,
                 }
             }
+        }
+    }
+
+    /// `NPCID.Sets.TrailCacheLength` (`NPCID.cs:10450`), the FULL
+    /// table: `CreateIntSet(10, 402, 36, 519, 20, 522, 20, 620, 20,
+    /// 677, 60, 685, 10)` — default 10; only four kinds deviate
+    /// (685's explicit 10 IS the default; the max is 677's 60).
+    /// `SetDefaults` reads it at `NPC.cs:8456` and resizes
+    /// `oldPos`/`oldRot` (`:8458-8462`), then zeroes the whole array
+    /// (`:8463-8468`). The port keeps max-size `[Vec2; 60]` storage
+    /// and this logical length (`Npc.trail_len`). W4-g62 follow-up:
+    /// the 677 Shimmerfly (c9's kind) and the 620 GoblinShark (d42's
+    /// kind) are ROWED here — 677→60 (the MAX) and 620→20 — and their
+    /// `update_trails` mode-7 gates widen the same day. Kinds not yet
+    /// rowed (519 SolarGoop / 522 AncientLight / 685 BoundTownSlimeOld)
+    /// fall through to 10 — their wiring lanes add the row here when
+    /// the KIND lands (522 is NOT rowed by d42 either — its 561-630
+    /// band excludes the pillar mob; the cultist lane's).
+    pub fn trail_cache_length(self) -> usize {
+        match self {
+            // 402 — the Stardust Worm Head, 36 slots (`:10450`).
+            NpcKind::StardustWormHead => 36,
+            // 677 — the Shimmerfly, 60 slots: the census MAX (`:10450`).
+            // 620 — the GoblinShark, 20 slots (`:10450`).
+            _ => 10,
         }
     }
 
@@ -8440,6 +8505,10 @@ impl NpcKind {
             // W4-f18 batch 4 — 377 5 (`NPC.cs:13814`), 378 200
             // (`:13828`), 379/380 210 (`:13842`), 430 45 (`:8615`).
             NpcKind::Grasshopper => 5,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // lifeMax 5 (`NPC.cs:17586`).
+            NpcKind::Shimmerfly => 5,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
         }
     }
 
@@ -9282,6 +9351,10 @@ impl NpcKind {
             // W4-f18 batch 4 — 377 0 (`NPC.cs:13812`), 378 120
             // (`:13826`), 379/380 45 (`:13840`), 430 14 (`:8613`).
             NpcKind::Grasshopper => 0,
+            // The Shimmerfly (W4-c9's rowing, adopted by W4-g62):
+            // damage 0 (`NPC.cs:17584`).
+            NpcKind::Shimmerfly => 0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
         }
     }
 }

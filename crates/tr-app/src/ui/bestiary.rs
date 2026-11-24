@@ -2738,6 +2738,9 @@ fn portrait_data(
         (NpcKind::TurtleJungle, _) => (sheet_i, 20.0, 22.0, 20.0, white),
         (NpcKind::BloodNautilus, _) => (sheet_i, 100.0, 100.0, 100.0, white),
         (NpcKind::BloodSquid, _) => (sheet_i, 44.0, 44.0, 44.0, white),
+        // The Shimmerfly (W4-c9's arm, adopted by W4-g62): the portrait
+        // rests the kind's `SetDefaults` box (`NPC.cs:17581-17582`), the
+        // wave-A shape.
         // W4-d42 - the roster's portraits rest the kinds' SetDefaults
         // boxes on their own sheets (the WyvernHead literal-size
         // precedent - the sheets are deferred, the index folds to 0).

@@ -3715,6 +3715,17 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Blood Squid",
+    // The Shimmerfly (W4-c9's entry, adopted by W4-g62 with the kind
+    // rowing): the populator registers it (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
+    // `CountsAsACritter` set — plus the `FindEntryByNPCID(677)`
+    // cavern-spawn info row). The snail trio's entries stay c9's.
+    BestiaryEntryDef {
+        credit_id: "Shimmerfly",
+        net_id: 677,
+        variant: None,
+        quick_unlock: false,
+        name: "Shimmerfly",
     },
     // W4-d42 - the NPCID 620-624 roster's own credits (the
     // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
@@ -3825,6 +3836,7 @@ BestiaryEntryDef {
         variant: None,
         quick_unlock: false,
         name: "Spike Ball",
+    }
     }
     }
     }
@@ -4137,15 +4149,7 @@ BestiaryEntryDef {
         quick_unlock: false,
         name: "Lavafly",
     },
-    BestiaryEntryDef {
-        credit_id: "Shimmerfly",
-        net_id: 677,
-        kind: NpcKind::Shimmerfly,
-        variant: None,
-        quick_unlock: false,
-        name: "Shimmerfly",
-    },
-    BestiaryEntryDef {
+BestiaryEntryDef {
         credit_id: "Maggot",
         net_id: 606,
         kind: NpcKind::Maggot,

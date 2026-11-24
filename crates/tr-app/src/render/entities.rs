@@ -888,6 +888,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(LUCK_CRITTER_SHEETS)
             .chain(TOWN_PET_SHEETS)
             .chain(CRITTER_SHEETS)
+            .chain(SNAIL_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -2607,6 +2608,13 @@ pub(crate) const CRITTER_SHEETS: &[u32] = &[
     365, 366, 367, 374, 375, // batch 3 (the folded 365/375 draw their own)
     377, 378, 379, 380, 430, // batch 4 (the folded 380 draws its own)
 ];
+
+/// The Shimmerfly's sheet (W4-c9's `SNAIL_SHEETS` row, adopted by W4-g62
+/// with the kind rowing): the shimmer target draws its own `NPC_677`
+/// art. Keyed by the vanilla net id ([`NpcKind::net_id`]) in
+/// [`NpcAssets::npc_sheet`]. The snail trio 359/360/655 stays c9's —
+/// at merge the two consts union into c9's four-row SNAIL_SHEETS.
+pub(crate) const SNAIL_SHEETS: &[u32] = &[677];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -5755,6 +5763,21 @@ pub(crate) fn draw_npcs(
             NpcKind::ArmedZombie => {
                 pumpkin_moon_draw(assets.npc_sheet(430), npc_rows(430), n, w, h)
             }
+            // W4-c9 — the Shimmerfly draws its own sheet (`SNAIL_SHEETS`)
+            // at `Main.npcFrameCount[677]` rows (four — `Main.cs:67125`)
+            // with the generic centred anchor. The 677 scale latch
+            // (`Next(75,111) * 0.01f`) rides `n.scale` — `scaled_anchor`
+            // (the BlazingWheel/stardust-cells convention). It rotates
+            // (the whitelist below). The snail trio's arm stays c9's.
+            NpcKind::Shimmerfly => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+                generic_anchor(assets.npc_sheet(620), npc_rows(620), n, w, h)
         let Some(tex) = tex else {
             continue;
         };
@@ -6094,6 +6117,9 @@ pub(crate) fn draw_npcs(
                     // TruffleWorm's airborne tilt (`NPC.cs:71144`) and the
                     // TruffleWormDigger's burrow rotation (`:52201`, the
                     // atan2 + PI/2).
+                    // W4-c9 — the Shimmerfly's `rotation = vx * 0.3` tilt
+                    // (`NPC.cs:34234-34237`). The snail trio's quadrant
+                    // rotation rows stay c9's (the merge dedupes).
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

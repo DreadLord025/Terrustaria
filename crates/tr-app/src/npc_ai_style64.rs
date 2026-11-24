@@ -42,6 +42,8 @@
 //! the solo path runs the scan over the empty list (the style75 solo
 //! fold), and the noGravity/noTileCollide tail is the raw integration.
 //! The wiring step for the trio adds their kinds + the glow feed.
+//! (W4-g62 adopts the c9 rowing + wiring verbatim for the TRAILCACHE
+//! WIDENING's 677→60 row — the merge dedupes.)
 //!
 //! Seam: the module writes only the fields the C# arm writes — velocity,
 //! `ai[0]`/`ai[1]`/`ai[3]`, `localAI[0..3]`, `scale`, `rotation` (677),

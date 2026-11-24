@@ -3894,8 +3894,10 @@ fn invasion_spawn_pick(
 /// applies the spawn capsule; the port's release spawns through the generic
 /// `Npc::new` (the capsule's tile scan is the NPC roster's own spawn logic).
 /// Returns whether a drop-owning spawn happened (the roster only covers the 85
-/// ported kinds — the shimmer slime 676, the shimmered town NPC 677 and the
-/// rainbow slime 681 wait for the M4-NPC roster).
+/// ported kinds — the shimmer slime 676 and the rainbow slime 681 wait
+/// for the M4-NPC roster; the Shimmerfly 677 landed with W4-g62's
+/// trail-kind rowing (the c9 kind adopted), so its bottle/critter
+/// release now spawns).
 pub(crate) fn spawn_shimmer_release(app: &mut App, npc_type: u16, x: f32, y: f32) -> bool {
     // S1-P-i36 repair: the C# `NPC.ReleaseNPC` types live in the vanilla
     // `NPC.type` space (the bestiary NET id) — `NpcKind::from_u16` maps the
@@ -4402,6 +4404,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
         app.next_npc_uid = next;
+    }
+    // W4-g62 — the strike-queued `HitEffect` dust (`NPC.cs:81488`): the
+    // melee/projectile strikes captured their snapshots last frame (the
+    // C# runs HitEffect at STRIKE time, before this UpdateNPCs pass);
+    // the drain replays the LIVE arms on the UpdateNPCs stream through
+    // the verbatim DustPool::new_dust, in slot order, BEFORE the death
+    // retain below drops the dead slots (the wants_gallop_dust queue
+    // precedent; the stream-placement fold is the recorded deviation,
+    // ANALYSIS "The NPC hit-dust lane (W4-g62)").
+    {
+        let mut hits = Vec::new();
+        for n in app.npcs.iter_mut() {
+            hits.append(&mut n.wants_hit_dust);
+        }
+        if !hits.is_empty() {
+            // W4-g62 batch 35 — the 133 eye-pop latch write
+            // (`NPC.cs:86531`) rode the STRIKE ENTRY (right after the
+            // capture, the C# write order); this drain replays only
+            // the dust + the FOUR hit-half gore bodies.
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
+            for s in hits {
+                crate::npc_hit_dust::replay_hit_dust(
+                    &s, rng, &mut app.dust, &mut app.gore, &ctx, &app.world,
+                );
+            }
+        }
     }
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead
@@ -5720,7 +5749,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // live) — it runs here, in slot order, on the
                     // `UpdateNPCs` stream, ahead of the solo `update_rng`
                     // axis (which would only see a one-slot pool). The
-                    // preamble + find_frame + contact tail match `update_rng`.
+                    // preamble + find_frame + contact tail match `update_rng`
+                    // (W4-g62: the tail also carries `update_trails`,
+                    // `NPC.cs:90512` after FindFrame — g60's wave lands
+                    // the SAME call; keep one at merge).
                     // S1-F-13c wiring: the non-75 kinds ride `update_rng_dust`
                     // so the Everscream/Santa dust arms reach the live pool.
                     // W4-c7: the aiStyle-64 fireflies are a POOL step too
@@ -5888,6 +5920,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // pattern, BOTH production call sites): the
                         // crawler groups' slope tail reads the live world.
                         npcs[i].find_frame_world(world);
+                        npcs[i].find_frame();
+                        // `NPC.cs:90512` — the trail shift rides after
+                        // FindFrame on the pooled path too (W4-g62; the
+                        // mode-7 census includes the 416 rider — today's
+                        // 402-only gate makes this a no-op for the family,
+                        // the call keeps the C# order for the widening).
+                        npcs[i].update_trails();
                         npcs[i].contact(player, npcs_rng);
                     }
                     let n = &mut npcs[i];
@@ -8173,6 +8212,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // W4-f18 batch 3 — the DuckWhite2 365's dry landing
                         // → the DuckWhite 364; the TruffleWorm 374's dig
                         // → the TruffleWormDigger 375 (`NPC.cs:34346`).
+                        // W4-c9's snail shimmer Transform(677) drain arm
+                        // (adopted with the Shimmerfly rowing — inert on
+                        // this base: the snail trio stays c9's, nothing
+                        // queues 677 here yet; the merge dedupes).
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
@@ -21706,6 +21749,57 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+
+    /// W4-g62 batch 35 — the 133 eye-pop latch's STRIKE + DRAIN seam
+    /// (`NPC.cs:86529-86533`): the strike entry writes `localAI[0] = 1`
+    /// right after the latched capture (the C# `:86531` order); the
+    /// update_npcs drain spawns the ONE gore 1 through the shared
+    /// `app.gore` pool. A second below-half strike (latch now 1)
+    /// captures unlatched — no second pop.
+    #[test]
+    fn w4_g62_the_drain_latches_the_eye_and_spawns_one_pop() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        let mut eye = Npc::new(NpcKind::WanderingEye, 100.0, 100.0, 1, 0.0);
+        eye.max_hp = 100;
+        eye.hp = 50;
+        eye.local_ai[0] = 0.0;
+        app.npcs.push(eye);
+        // The strike leaves hp 49 (< 50), queues the latched capture
+        // and writes the latch AT STRIKE (the C# `:86531` order).
+        assert!(app.npcs[0].hurt(1, 0.0, 0.0, false, false));
+        assert_eq!(app.npcs[0].wants_hit_dust.len(), 1);
+        assert!(app.npcs[0].wants_hit_dust[0].eye_pop_latched);
+        assert_eq!(app.npcs[0].local_ai[0], 1.0, "the strike wrote the latch");
+        update_npcs(&mut app, 1.0 / 60.0);
+        let pops: Vec<_> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active && g.gore_type == 1)
+            .collect();
+        assert_eq!(pops.len(), 1, "ONE eye-pop gore 1 (`:86532`)");
+        // A second below-half strike: latch already 1 — no second pop.
+        let idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::WanderingEye)
+            .expect("the live eye survives the pass");
+        app.npcs[idx].hurt_cd = 0.0;
+        assert!(app.npcs[idx].hurt(1, 0.0, 0.0, false, false));
+        assert!(!app.npcs[idx].wants_hit_dust[0].eye_pop_latched);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.gore.slots().iter().filter(|g| g.active && g.gore_type == 1).count(),
+            1,
+            "the latch fires exactly once per eye"
+        );
     }
 }
 #[cfg(test)]
