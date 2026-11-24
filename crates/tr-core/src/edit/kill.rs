@@ -897,7 +897,7 @@ fn kill_plan_cells(
 /// overload :70111-70131): an `nactive` (active, non-actuated), solid,
 /// non-solidTop, non-halfBrick, slopeless tile. Out-of-world cells are not
 /// solid (the C# try/catch turns the OOB into `false`).
-pub(crate) fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+pub fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return false;
     };

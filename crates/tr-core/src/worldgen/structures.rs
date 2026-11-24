@@ -4078,6 +4078,12 @@ mod tests {
 }
 
 
+/// `TileID.Hellforge` (`TileID.cs`: 77) — the 3×2 forge the hell houses
+/// host (`WorldGen.cs:60079-60083` routes it through `Place3x2`).
+/// Restored from the coherent parent `f1f03a45e^2:691-693` (the constant
+/// was lost in the union although all call sites survived).
+pub(crate) const TILE_HELLFORGE: u16 = 77;
+
 /// `WorldGen.PlaceTile(i, j, 77)` (`WorldGen.cs:59342-60295`), the slice
 /// the Hellforge pass runs — the g37 B7 PlaceTile route grafted onto this
 /// lane's correctly-ordered pass (research/86 §6.2; g37 research/75 §2.7
@@ -4335,7 +4341,7 @@ fn pile_cluster(world: &mut World, x: i32, y: i32, rng: &mut super::Rng) {
 /// small-pile dirt/snow-wall surface (`width*0.15`). The
 /// `Skyblock.denySomeGeneration` gate rides the step adapter; the
 /// `tileSolid` window rides [`pile_floor`].
-pub(crate) fn pass_piles(
+pub(crate) fn pass_piles_surface_bands(
     world: &mut World,
     world_surface: f64,
     rock_layer: f64,
@@ -5004,8 +5010,8 @@ pub(crate) fn pass_piles(
         };
         let mut a = build();
         let mut b = build();
-        pass_piles(&mut a, 100.0, 300.0, &mut crate::worldgen::noise::Rng(42));
-        pass_piles(&mut b, 100.0, 300.0, &mut crate::worldgen::noise::Rng(42));
+        pass_piles_surface_bands(&mut a, 100.0, 300.0, &mut crate::worldgen::noise::Rng(42));
+        pass_piles_surface_bands(&mut b, 100.0, 300.0, &mut crate::worldgen::noise::Rng(42));
         assert_eq!(a.tiles, b.tiles, "a == b: the pass stream replays");
         assert!(
             a.tiles.iter().any(|t| t.active() && matches!(t.kind, 185 | 186 | 187)),

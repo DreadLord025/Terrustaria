@@ -241,14 +241,14 @@ pub(super) fn try_painting(app: &mut App, x: i32, y: i32, painting_a_wall: bool)
         let applied = if painting_a_wall {
             // The wall order: write → net → effect (`WorldGen.cs:44242-
             // 44250` — the tile twin effects BEFORE the net).
-            if let Some(old) = edit::paint_wall(&mut app.world, x, y, src.paint) {
+            if let Some(old) = edit::paint_wall_opt(&mut app.world, x, y, src.paint) {
                 app.request_edit(x, y, 3, 0);
                 paint_effect(app, x, y, src.paint, old);
                 true
             } else {
                 false
             }
-        } else if let Some(old) = edit::paint_tile(&mut app.world, x, y, src.paint) {
+        } else if let Some(old) = edit::paint_tile_opt(&mut app.world, x, y, src.paint) {
             paint_effect(app, x, y, src.paint, old);
             app.request_edit(x, y, 1, 0);
             true

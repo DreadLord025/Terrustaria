@@ -610,11 +610,11 @@ pub fn get_tile_data(
 /// overload — the frameX/frameY style decode + the `GetStyleOverride`
 /// hook). That overload is W4-d112's claim (`resolve_tile_def`); this walk
 /// takes it as a parameter so the two land independently and the merge
-/// wires `try_get_tile_bounds(world, x, y, resolve_tile_def)` — the C# call
+/// wires `try_get_tile_bounds_with_resolve(world, x, y, resolve_tile_def)` — the C# call
 /// shape. Sole C# consumers: `RichRoomCheckFeedback.cs:228` (consume the
 /// other furniture cells inside the bounds) and `:298` (centre the
 /// room-check particle on the bounds) — housing feedback, unported.
-pub fn try_get_tile_bounds(
+pub fn try_get_tile_bounds_with_resolve(
     world: &World,
     x: i32,
     y: i32,
@@ -1054,7 +1054,7 @@ pub fn check_lava_death(tile: &Tile) -> bool {
 /// truncates toward zero in both languages (negative frames degrade the same
 /// way). The sub-tile null-padding (`addSubTile` :2085-2091) is the port's
 /// (style, def) pair lookup — a null slot keeps the current def, 1:1.
-pub fn resolve_tile_def(tile: &Tile) -> Option<&'static TileObjectDef> {
+pub fn resolve_tile_def_legacy_b(tile: &Tile) -> Option<&'static TileObjectDef> {
     // :5198-5201 — inactive tiles resolve nothing.
     if !tile.active() {
         return None;
@@ -1134,7 +1134,7 @@ fn alternate_in_style_range(
 /// the three override kinds are dense from 0 (`addSubTile(0)` :4973/:4984,
 /// `addSubTile(0/1/2)` :4999/:5005/:5011), so the pair slice index is the C#
 /// list index. A missing slot degrades to `None` (C# throws).
-fn apply_style_override(
+fn apply_style_override_legacy_b(
     tag: GetStyleOverride,
     tile: &Tile,
     current: &'static TileObjectDef,
@@ -1178,7 +1178,7 @@ fn apply_style_override(
 /// three `GetStyleOverride` resolvers (`:5294-5327`) short-circuit it.
 /// Returns the resolved def (the base def when no sub-tile/alternate
 /// matches), or `None` for an unregistered / inactive tile.
-pub fn get_tile_data_for_tile(tile: &Tile) -> Option<&'static TileObjectDef> {
+pub fn get_tile_data_for_tile_legacy_b(tile: &Tile) -> Option<&'static TileObjectDef> {
     if !tile.active() {
         return None;
     }
@@ -1257,12 +1257,12 @@ pub fn get_tile_data_for_tile(tile: &Tile) -> Option<&'static TileObjectDef> {
 /// the resolved def's `WaterDeath` flag, or the global `Main.tileWaterDeath`
 /// table when the def is absent / uses the global liquid checks. An
 /// inactive tile answers false (:5085-5088).
-pub fn check_water_death(tile: &Tile) -> bool {
+pub fn check_water_death_legacy_b(tile: &Tile) -> bool {
     check_liquid_death(tile, false)
 }
 
 /// `TileObjectData.CheckLavaDeath(Tile)` (`TileObjectData.cs:5107-5119`).
-pub fn check_lava_death(tile: &Tile) -> bool {
+pub fn check_lava_death_legacy_b(tile: &Tile) -> bool {
     check_liquid_death(tile, true)
 }
 
@@ -1419,7 +1419,7 @@ pub fn check_liquid_placement(kind: u16, style: i32, tile: &Tile) -> bool {
 /// [`def_for_tile`]. Integer division truncates toward zero in both languages.
 /// The sub-tile null-padding (`addSubTile` :2085-2091) is the port's
 /// (style, def) pair lookup — a null slot keeps the current def, 1:1.
-pub fn resolve_tile_def(tile: &Tile) -> Option<&'static TileObjectDef> {
+pub fn resolve_tile_def_legacy_d(tile: &Tile) -> Option<&'static TileObjectDef> {
     // :5198-5201 — inactive tiles resolve nothing.
     if !tile.active() {
         return None;
@@ -1484,7 +1484,7 @@ pub fn resolve_tile_def(tile: &Tile) -> Option<&'static TileObjectDef> {
 /// POSITIONALLY (C# list index, not style): the generated sub-tile pairs of
 /// the three override kinds are dense from 0, so the pair slice index is the
 /// C# list index. A missing slot degrades to `None` (C# throws).
-fn apply_style_override(
+fn apply_style_override_legacy_d(
     tag: GetStyleOverride,
     tile: &Tile,
     current: &'static TileObjectDef,
@@ -1529,7 +1529,7 @@ fn apply_style_override(
 /// `Main.tileWaterDeath` table; an unregistered kind reads the global table.
 /// Read by `WorldGen.WaterCheck` (`WorldGen.cs:80444`) and `Liquid.AddWater`
 /// (`Liquid.cs:1195`).
-pub fn check_water_death(tile: &Tile) -> bool {
+pub fn check_water_death_legacy_d(tile: &Tile) -> bool {
     if !tile.active() {
         return false;
     }
@@ -1544,7 +1544,7 @@ pub fn check_water_death(tile: &Tile) -> bool {
 /// `Main.tileLavaDeath` (the generated [`crate::tiledata::TILE_LAVA_DEATH`]).
 /// Read by `WorldGen.WaterCheck` (`WorldGen.cs:80439`) and `Liquid.AddWater`
 /// (`Liquid.cs:1190`).
-pub fn check_lava_death(tile: &Tile) -> bool {
+pub fn check_lava_death_legacy_d(tile: &Tile) -> bool {
     if !tile.active() {
         return false;
     }
@@ -1565,7 +1565,7 @@ pub fn tile_cut(kind: u16) -> bool {
 /// [`resolve_tile_def`] is the same C# window (the f25/core port); d106's
 /// duplicate copy dropped (matrix-88 §3.3, research-312 §1.3). The
 /// `CheckLavaDeath`/`CheckWaterDeath` consumers read `resolve_tile_def`.
-pub fn get_tile_data_for_tile(tile: &Tile) -> Option<&'static TileObjectDef> {
+pub fn get_tile_data_for_tile_legacy_d(tile: &Tile) -> Option<&'static TileObjectDef> {
     resolve_tile_def(tile)
 }
 
@@ -3664,12 +3664,12 @@ mod tests {
         // Frames (8,20): one column step (8 >= 8), row loop 20 >= 10 → one
         // step, remainder 10 < 20 → stop. Bounds carry RESOLVED's 2x2.
         set_framed(&mut w, 10, 10, 283, 8, 20);
-        assert_eq!(try_get_tile_bounds(&w, 10, 10, seam), Some((9, 9, 2, 2)));
+        assert_eq!(try_get_tile_bounds_with_resolve(&w, 10, 10, seam), Some((9, 9, 2, 2)));
         // A None resolution short-circuits before any frame math (:5168-5171).
         fn none_seam(_: &Tile) -> Option<&'static TileObjectDef> {
             None
         }
-        assert_eq!(try_get_tile_bounds(&w, 10, 10, none_seam), None);
+        assert_eq!(try_get_tile_bounds_with_resolve(&w, 10, 10, none_seam), None);
     }
 
     // ---- W4-e11: the tile-based GetTileData(Tile) resolution (:5196-5261) ----

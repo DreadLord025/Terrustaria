@@ -614,7 +614,7 @@ fn profile_for_tree(kind: u16) -> Option<GrowTreeSettings> {
 /// The 596/616 `ConvertTreeAndGround` arm (the sakura/willow re-grounding to
 /// a vanilla tree on a grass conversion) is the port's Out — the tree-
 /// conversion machinery is not ported.
-pub(super) fn kill_invalid_tree_above(world: &mut World, i: i32, j: i32, new_floor: u16) {
+pub(crate) fn kill_invalid_tree_above(world: &mut World, i: i32, j: i32, new_floor: u16) {
     if new_floor as usize >= crate::tiledata::TILE_COUNT {
         return;
     }
