@@ -592,6 +592,7 @@ impl App {
         // block).
         if self.world.slime_rain {
             crate::world_sim::weather::stop_slime_rain(&mut self.world, self.rngs.global());
+        }
         // W4-d70: `Main.ClearVisualPostProcessEffects` (`Main.cs:52114-52252`,
         // called at `:48909` on the return to `menuMode = 0`): every active
         // scene filter deactivates. The port's board carries the M1 subset;
@@ -2443,6 +2444,7 @@ mod chest_save_tests {
         assert!(slayer.conditions[0].completed, "the partial condition rode the quit save");
         assert!(!slayer.completed, "the row stays open");
         crate::test_world_helpers::remove_scratch(&dir);
+    }
     /// W4-g47 — the world-load settle hook (`WorldFile.cs:733-764`) rides
     /// `App::new` (the shared boot + `swap_world` construction). A suspended
     /// water blob settles to the floor through the real constructor, and the
