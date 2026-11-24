@@ -1008,6 +1008,12 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// `Projectile.miscText` (`Projectile.cs:432`, reset "" `:792`): the
+    /// tombstone epitaph (`DropTombstone` writes it at the spawn,
+    /// `Player.cs:39135`); the aiStyle-17 placement lands it through
+    /// `Sign.TextSign` (`Projectile.cs:25361`). Every other kind keeps
+    /// the empty default. W4-d2.
+    pub misc_text: String,
 }
 
 impl Default for Projectile {
@@ -1100,6 +1106,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            misc_text: String::new(),
         }
     }
 }
@@ -14691,7 +14698,9 @@ const AI_STYLE_1_RIDERS: [u16; 6] = [
 /// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
 /// in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
+    // W4-d2 — aiStyle 17 joins the wind-eligible set
+    // (`ShouldUseWindPhysics` `Projectile.cs:22118`): the tombstones.
+    matches!(ai_style, 2 | 8 | 17 | 24 | 28 | 29)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -18192,12 +18201,98 @@ impl ProjectilePool {
                                 rng,
                                 local_owner,
                             );
+                        // W4-d2 — `AI()`'s `else if (this.aiStyle == 11)`
+                        // (`Projectile.cs:24371-24500`): the light pets —
+                        // the Shadow Orb 18 + the fairies 72/86/87. The
+                        // fairy head (sprite flip / rotation set / frame
+                        // cycle / the 1-in-6 dust gate), the affirmative
+                        // keep-alive pin (`pet_flags[kind]`), the
+                        // owner-center seek with the 800-px teleport and
+                        // the fairy overshoot cap. The rows keep
+                        // `tileCollide = false` — the arm owns the free
+                        // integration + the direction flip.
+                        11 => {
+                            if crate::projectile_ai_light_pets::LIGHT_PET_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                crate::projectile_ai_light_pets::light_pet_step(
+                                    &mut self.slots[i],
+                                    player.as_deref(),
+                                    rng,
+                                );
+                            }
+                        }
+                        // W4-d2 — `AI()`'s `else if (this.aiStyle == 13)`
+                        // (`Projectile.cs:24636-24829`): the chain weapons
+                        // — the Harpoon 23, the Golem Fist 262, the Boxing
+                        // Glove 271, the Chain Knife 273, the Chain
+                        // Guillotine 481. The outbound flight + the
+                        // per-type distance flips, the return seek + the
+                        // <50 catch, the 262's hitbox burst, the
+                        // itemRotation tail; the movement half is the
+                        // shared 3/13/69/109 blocked-move arm (the return
+                        // WITHOUT a reversal). The player writes ride the
+                        // ChainTick write-back (the FlailTick precedent).
+                        13 => {
+                            if crate::projectile_ai_chain::CHAIN_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                // `player.HeldItem.shoot` (`:22525`) — the
+                                // selected item's shoot, the flail seam's
+                                // snapshot (`:43850`'s selected_shoot).
+                                let held_shoot = flail_inputs.selected_shoot;
+                                let tick = crate::projectile_ai_chain::chain_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    player.as_deref(),
+                                    flail_inputs.control_use_item,
+                                    held_shoot,
+                                    world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+                                );
+                                if let Some(pl) = player.as_deref_mut() {
+                                    if let Some(dir) = tick.facing {
+                                        pl.facing = dir;
+                                    }
+                                    if let Some(rot) = tick.item_rotation {
+                                        pl.item_rotation = rot;
+                                    }
+                                }
+                                if let Some(frames) = tick.dummy_item_time {
+                                    // `SetDummyItemTime(5)` (`:24650`) —
+                                    // the spear-hold seam's write-back
+                                    // (the LAST hold of the tick wins,
+                                    // the C# per-slot overwrite order).
+                                    self.pending_spear_hold = Some(frames);
+                                }
+                            }
                         }
                         // `AI()`'s `else if (this.aiStyle == 7)`
                         // (`Projectile.cs:24230-24233`) ->
                         // `AI_007_GrapplingHooks` — the grappling hooks.
                         // `AI()`'s `else if (this.aiStyle == 40)`
                         // (`Projectile.cs:27780-27783`) -> `AI_040_LeafBlower`.
+                        // W4-d2 — `AI()`'s `else if (this.aiStyle == 17)`
+                        // (`Projectile.cs:25316-25366`): the tombstones
+                        // (43/201-205/527-531). The grounded friction +
+                        // spin + gravity, the FTW dead-roll disarm, the
+                        // local-owner tile-85 placement (CanPlace/Place +
+                        // the Sign epitaph + the Dig thud + Kill), the
+                        // ×−0.75/×−0.7 bounce with the prologue Next(3).
+                        // The arm writes tiles, so it reborrows `world`
+                        // mutably (the ai_ice_block carve-out).
+                        17 => {
+                            if crate::projectile_ai_tombstone::TOMB_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                crate::projectile_ai_tombstone::tombstone_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    rng,
+                                    local_owner,
+                                    world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                );
+                            }
+                        }
                         40 => {
                             // The petal arm draws the pass's threaded stream
                             // (`AI_040_LeafBlower`'s `Main.rand` rolls under
@@ -24988,6 +25083,21 @@ impl ProjectilePool {
                     idx as u16,
                     rng,
                 );
+                // W4-d2 — `StatusNPC`'s chain-weapon debuffs
+                // (`Projectile.cs:11282-11288`, called at `:13580` —
+                // PRE-strike like the dart/flare arms above): the Golem
+                // Fist's 1/3 Confused (31, 60 × (int)(Next(10,21)·0.1) —
+                // the duration roll ONLY on a hit, the double truncation
+                // verbatim) and the Harpoon's unconditional Bleeding
+                // (30, 60 × Next(8,13)).
+                if self.slots[slot].kind == GOLEM_FIST && rng.next_range(0, 3) == 0 {
+                    let t = 60 * ((rng.next_range(10, 21) as f64) * 0.1) as i32;
+                    npcs[idx].buffs.add_buff(31, t);
+                }
+                if self.slots[slot].kind == HARPOON {
+                    let t = 60 * rng.next_range(8, 13);
+                    npcs[idx].buffs.add_buff(30, t);
+                }
                 // S1-P-i28 — `KillOldestJavelin` (`Projectile.cs:13979-13990`,
                 // `:15074-15101`): the bone javelin caps the sticks on one NPC
                 // at 6 — the 6th stick kills the oldest (lowest timeLeft).
@@ -25070,6 +25180,30 @@ impl ProjectilePool {
                     break;
                 }
                 p.penetrate -= 1;
+                // W4-d2 — `Damage_PVE_Inner`'s chain-weapon return arms
+                // (`Projectile.cs:14148-14164`), AFTER the penetrate
+                // decrement and BEFORE the `penetrate == 0` stop (the C#
+                // `keepIterating = false` still runs the aiStyle chain for
+                // THIS hit). The harpoon's own type-23 arm precedes the
+                // generic aiStyle-13 arm in the else-if chain: it returns
+                // only once penetrate is spent (≤ 0), zeroing the outbound
+                // velocity and re-arming penetrate −1; every other chain
+                // kind returns on EVERY landed hit (`ai[0] = 1`).
+                if p.kind == HARPOON {
+                    // `:14148-14159`.
+                    if p.penetrate <= 0 {
+                        if p.ai[0] == 0.0 {
+                            p.vel = Vec2::ZERO;
+                        }
+                        p.penetrate = -1;
+                        p.ai[0] = 1.0;
+                        p.net_update = true;
+                    }
+                } else if proj_data(p.kind).is_some_and(|d| d.ai_style == 13) {
+                    // `:14161-14164`.
+                    p.ai[0] = 1.0;
+                    p.net_update = true;
+                }
                 if p.penetrate == 0 {
                     break;
                 }
@@ -27502,6 +27636,96 @@ mod tests {
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], want, "kind {kind}: the per-type arm");
         }
+    }
+
+    /// W4-d2 — `Damage_PVE_Inner`'s chain-weapon return arms
+    /// (`Projectile.cs:14148-14164`): every landed hit on a melee chain
+    /// (262/271/273/481) arms `ai[0] = 1` AFTER the penetrate decrement;
+    /// the harpoon returns only once its penetrate 3 is spent, zeroing
+    /// the outbound velocity and re-arming penetrate −1.
+    #[test]
+    fn w4_d2_the_chain_hit_arms_the_return_after_the_decrement() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(GOLEM_FIST, npc.x, npc.y, 5.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert!(npc.hp < 10_000, "the fist lands");
+        assert_eq!(pool.slots()[slot].ai[0], 1.0, "the hit arms the return");
+        assert!(pool.slots()[slot].net_update);
+        assert_eq!(pool.slots()[slot].penetrate, -2, "−1 decrements to −2, never 0");
+        assert!(pool.slots()[slot].active, "the penetrating chain survives");
+    }
+
+    /// W4-d2 — the harpoon's type-23 arm (`:14148-14159`): the first two
+    /// hits only decrement (3 → 2 → 1); the third spends it (1 → 0),
+    /// zeroes the outbound velocity, re-arms penetrate −1 and returns —
+    /// the `penetrate == 0` stop never fires (the re-arm precedes it).
+    #[test]
+    fn w4_d2_the_harpoon_returns_on_the_third_hit_and_rearms_penetrate() {
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(HARPOON, npc.x, npc.y, 8.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for hit in 1..=3 {
+            // The local-immunity window (12) blocks re-hits — clear it
+            // between the strikes (the C# test harness convention).
+            pool.local_immunity[slot * 256..(slot + 1) * 256].fill(0);
+            npc.immune[0] = 0;
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+            let p = &pool.slots()[slot];
+            if hit < 3 {
+                assert_eq!(p.ai[0], 0.0, "hit {hit}: still outbound");
+                assert_eq!(p.penetrate, 3 - hit);
+                assert_eq!(p.vel.x, 8.0, "the outbound velocity holds");
+            } else {
+                assert_eq!(p.ai[0], 1.0, "the spent penetrate arms the return");
+                assert_eq!(p.penetrate, -1, "the re-arm precedes the == 0 stop");
+                assert_eq!(p.vel, Vec2::ZERO, "the outbound velocity zeroes");
+                assert!(p.active);
+            }
+        }
+    }
+
+    /// W4-d2 — `StatusNPC`'s chain debuffs (`Projectile.cs:11282-11288`)
+    /// as the RNG-mirror witness: the fist's Next(3) gate fires EVERY
+    /// hit, the Next(10,21) duration ONLY on a gate hit; the harpoon's
+    /// Next(8,13) fires every hit. The mirror consumes the identical
+    /// stream (the rabid-roll pattern) — peek equality pins the order.
+    #[test]
+    fn w4_d2_the_chain_debuff_rolls_mirror_the_unified_stream() {
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let mut mirror = tr_core::UnifiedRandom::new(42);
+        for _ in 0..40 {
+            // The fist: Next(3), then ONLY on 0 the Next(10,21).
+            let gate = rng.next_range(0, 3);
+            assert_eq!(gate, mirror.next_range(0, 3));
+            if gate == 0 {
+                let d = rng.next_range(10, 21);
+                assert_eq!(d, mirror.next_range(10, 21));
+                let ticks = 60 * ((d as f64) * 0.1) as i32;
+                assert!((60..=120).contains(&ticks), "the double truncation: {ticks}");
+            }
+            // The harpoon: the unconditional Next(8,13).
+            let b = rng.next_range(8, 13);
+            assert_eq!(b, mirror.next_range(8, 13));
+            assert!((480..=720).contains(&(60 * b)));
+        }
+        assert_eq!(rng.peek(), mirror.peek(), "RNG streams stay aligned");
     }
 
     #[test]
@@ -33366,6 +33590,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            misc_text: String::new(),
         }
     }
 
@@ -33821,6 +34046,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            misc_text: String::new(),
         }
     }
 
@@ -48447,6 +48673,81 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+
+    /// W4-d2 RETIRE (research/354 §5, chain 283→310-invalid-self→354 per registry §9.2) — the band-11-20 declaration pin:
+    /// every style label 11..=20 appears EXACTLY ONCE as a top-level arm
+    /// of the aiStyle dispatch (the s1_d_4c scan shape, band-scoped).
+    /// The three missing styles (11/13/17) landed on this lane; the
+    /// other seven were armed at base — the band is 10/10 SEALED.
+    #[test]
+    fn w4_d2_retire_the_band_styles_all_have_live_arms() {
+        let src = include_str!("projectile.rs");
+        let start = src
+            .find("match data.ai_style {")
+            .expect("the aiStyle dispatch");
+        let mut counts = std::collections::BTreeMap::new();
+        for line in src[start..].lines().skip(1) {
+            if line == "                        _ => {}" {
+                break;
+            }
+            if let Some(rest) = line.strip_prefix("                        ") {
+                if rest.starts_with(' ') {
+                    continue;
+                }
+                let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if !digits.is_empty()
+                    && rest[digits.len()..].trim_start().starts_with("=>")
+                {
+                    *counts.entry(digits.parse::<u8>().unwrap()).or_insert(0u32) += 1;
+                }
+            }
+        }
+        for style in 11..=20u8 {
+            assert_eq!(
+                counts.get(&style).copied().unwrap_or(0),
+                1,
+                "band style {style} must have exactly one live arm (research/354)"
+            );
+        }
+    }
+
+    /// W4-d2 RETIRE — the landed roster: the 20 kinds this lane rowed
+    /// carry their band styles, and the three kind-gate tables are
+    /// EXACTLY the landed sets (a stray kind added to a gate without a
+    /// row — or vice versa — fails here).
+    #[test]
+    fn w4_d2_retire_the_band_rows_match_the_landed_roster() {
+        let pets = crate::projectile_ai_light_pets::LIGHT_PET_KINDS;
+        assert_eq!(pets, [18, 72, 86, 87]);
+        for k in pets {
+            assert_eq!(proj_data(k).unwrap().ai_style, 11, "kind {k}");
+        }
+        let chains = crate::projectile_ai_chain::CHAIN_KINDS;
+        assert_eq!(chains, [23, 262, 271, 273, 481]);
+        for k in chains {
+            assert_eq!(proj_data(k).unwrap().ai_style, 13, "kind {k}");
+        }
+        let tombs = crate::projectile_ai_tombstone::TOMB_KINDS;
+        assert_eq!(tombs, [43, 201, 202, 203, 204, 205, 527, 528, 529, 530, 531]);
+        for k in tombs {
+            assert_eq!(proj_data(k).unwrap().ai_style, 17, "kind {k}");
+        }
+    }
+
+    /// W4-d2 RETIRE — the 261 BoulderStaffOfEarth stays UNROWED until
+    /// S1-P-i61 lands it (research/354 §2: aiStyle 14, NOT the flail 15;
+    /// the row + the `HandleMovement` ±3 boulder half are the seed's).
+    /// The activation-contract pin: when the seed lands the row, this
+    /// witness flips to the `:3452-3462` row assertion (32×34, style 14,
+    /// penetrate 6, extraUpdates 1) and d18's rowless `<1.5` refusal
+    /// term auto-activates at its merge.
+    #[test]
+    fn w4_d2_retire_261_stays_unrowed_until_the_seed_lands() {
+        assert!(
+            proj_data(261).is_none(),
+            "261 is S1-P-i61's — a row here without the movement half desyncs the band census"
+        );
     }
 }
 

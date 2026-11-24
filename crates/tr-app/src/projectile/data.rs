@@ -200,6 +200,30 @@ pub const CURSED_FLARE: u16 = 1009;
 pub const RAINBOW_FLARE: u16 = 1010;
 /// `ProjectileID.ShimmerFlare` (1011) — aiStyle 33 (`Projectile.cs:9613-9623`).
 pub const SHIMMER_FLARE: u16 = 1011;
+// W4-d2 — the aiStyle-11 light pets (`ProjectileID.cs:590/698/726/728`).
+/// `ProjectileID.ShadowOrb` (18) — the Shadow Orb light pet, aiStyle 11
+/// (`Projectile.cs:993-1007`).
+pub const SHADOW_ORB: u16 = 18;
+/// `ProjectileID.BlueFairy` (72) — aiStyle 11 (`Projectile.cs:1522-1535`).
+pub const BLUE_FAIRY: u16 = 72;
+/// `ProjectileID.PinkFairy` (86) — aiStyle 11 (`Projectile.cs:1674-1687`);
+/// the C# player flag is `redFairy` (`Player.cs:2064`).
+pub const PINK_FAIRY: u16 = 86;
+/// `ProjectileID.GreenFairy` (87) — aiStyle 11 (`Projectile.cs:1688-1701`).
+pub const GREEN_FAIRY: u16 = 87;
+// W4-d2 — the aiStyle-13 chain weapons (`ProjectileID.cs:600/1078/1096/
+// 1100/1516`).
+/// `ProjectileID.Harpoon` (23) — aiStyle 13 (`Projectile.cs:1057-1068`).
+pub const HARPOON: u16 = 23;
+/// `ProjectileID.GolemFist` (262) — aiStyle 13 (`Projectile.cs:3463-3473`).
+pub const GOLEM_FIST: u16 = 262;
+/// `ProjectileID.BoxingGlove` (271) — aiStyle 13 (`Projectile.cs:3567-3577`).
+pub const BOXING_GLOVE: u16 = 271;
+/// `ProjectileID.ChainKnife` (273) — aiStyle 13 (`Projectile.cs:3588-3597`).
+pub const CHAIN_KNIFE: u16 = 273;
+/// `ProjectileID.ChainGuillotine` (481) — aiStyle 13
+/// (`Projectile.cs:5561-5571`).
+pub const CHAIN_GUILLOTINE: u16 = 481;
 /// `ProjectileID.RainbowGlowstick` (1089) — aiStyle 14, no alpha override
 /// (`Projectile.cs:10153-10162`); the disco light rides `ProjLight`
 /// (`:16434-16439`). S1-P-i42.
@@ -1884,6 +1908,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         FROSTBURN_ARROW => 1.0,                // `:2586` (S1-P-i17)
         ICHOR_ARROW => 1.0,                    // `:3645` (S1-P-i17)
         ENCHANTED_BOOMERANG => 0.4,            // `:872`
+        // W4-d2 — the aiStyle-11 light pets' `this.light = 0.9f`
+        // (`Projectile.cs:1000`/`:1529`/`:1681`/`:1695`).
+        SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY => 0.9,
         MUSKET_BALL => 0.5,                    // `:957`
         // S1-P-i42 — the glowstick family's `this.light = 1f`
         // (`Projectile.cs:1334`/`:1362`/`:5493`/`:5859`/`:8351`/`:10160`).
@@ -2013,6 +2040,125 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:828-836` — the shuriken (3): the 22x22 box, aiStyle 2,
             // `penetrate = 4`, the stock 3600 life and the stock `tileCollide`.
             SHURIKEN => (22.0, 22.0, 2, 4, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d2 — the aiStyle-11 light pets. `Projectile.cs:993-1007` (the
+            // Shadow Orb 18): 32x32, aiStyle 11, friendly, `light = 0.9f`,
+            // `alpha = 150`, `tileCollide = false`, `penetrate = -1`,
+            // `timeLeft *= 5` (3600 → 18000), `ignoreWater`, `scale = 0.8f`,
+            // `netImportant`. The fairies below share everything but the box
+            // (18x18) and the alpha (the stock 0).
+            SHADOW_ORB => (
+                32.0,
+                32.0,
+                11,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 150, 0.8),
+            ),
+            // `Projectile.cs:1522-1535` (72) / `:1674-1687` (86) /
+            // `:1688-1701` (87): 18x18, aiStyle 11, friendly, `light = 0.9f`,
+            // `tileCollide = false`, `penetrate = -1`, `timeLeft *= 5`,
+            // `ignoreWater`, `scale = 0.8f`, `netImportant` — NO alpha line
+            // (the stock 0, `:779`).
+            BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY => (
+                18.0,
+                18.0,
+                11,
+                -1,
+                TIME_LEFT_DEFAULT * 5,
+                0,
+                false,
+                false,
+                false,
+                (false, -2, false, -1, 0, 0.8),
+            ),
+            // W4-d2 — the aiStyle-13 chain weapons. `Projectile.cs:1057-
+            // 1068` — the Harpoon (23): 4x4, penetrate 3, alpha 255,
+            // ranged, usesLocalNPCImmunity + localNPCHitCooldown 12.
+            HARPOON => (
+                4.0,
+                4.0,
+                13,
+                3,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (true, 12, false, -1, 255, 1.0),
+            ),
+            // `:3463-3473` — the Golem Fist (262): 30x30, penetrate −1,
+            // alpha 255, melee, extraUpdates 1.
+            GOLEM_FIST => (
+                30.0,
+                30.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `:3567-3577` — the Boxing Glove (271): 20x20, penetrate
+            // −1, alpha 255, melee, scale 1.2f.
+            BOXING_GLOVE => (
+                20.0,
+                20.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.2),
+            ),
+            // `:3588-3597` — the Chain Knife (273): 26x26, penetrate
+            // −1, alpha 255, melee.
+            CHAIN_KNIFE => (
+                26.0,
+                26.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // `:5561-5571` — the Chain Guillotine (481): 22x22,
+            // penetrate −1, alpha 255, melee, extraUpdates 0 (the AI
+            // arm re-arms it 1/2 per state, `:24663-24673`).
+            CHAIN_GUILLOTINE => (
+                22.0,
+                22.0,
+                13,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d2 — the aiStyle-17 tombstones. `Projectile.cs:1258-
+            // 1270` (the Tombstone 43) / `:2872-2936` (the grave markers
+            // 201-205) / `:5971-5983` (the rich gravestones 527-531):
+            // 24x24, aiStyle 17, penetrate −1, the stock 3600 life and
+            // tileCollide. The `knockBack = 12f` line is the SPAWNER's
+            // input convention (the row carries no kb field — the
+            // DropTombstone spawn passes it); the classic-world rows
+            // set NO friendly/hostile (the stock false/false — the
+            // getGoodWorld arm flips both, the spawn seam's FTW gate).
+            43 | 201..=205 | 527..=531 => {
+                (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
@@ -4953,6 +5099,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `netImportant` themselves
             // (`Projectile.cs:5419`/`:9643`/`:9993`).
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // W4-d2 — the aiStyle-11 light pets set `netImportant = true`
+            // (`Projectile.cs:995`/`:1524`/`:1676`/`:1690`).
+            || matches!(kind, SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY)
             // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
             // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
             // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
@@ -5015,6 +5164,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `ignoreWater` themselves
             // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // W4-d2 — the aiStyle-11 light pets' `ignoreWater = true`
+            // (`Projectile.cs:1005`/`:1533`/`:1685`/`:1699`).
+            || matches!(kind, SHADOW_ORB | BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
@@ -5168,6 +5320,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d1 SEAL — `Projectile.cs:5410`: the FlyingKnife's
                     // `melee = true`.
                     | FLYING_KNIFE
+                    // W4-d2 — the aiStyle-13 melee chains (`Projectile.cs:
+                    // 3471`/`:3575`/`:3596`/`:5569`).
+                    | GOLEM_FIST | BOXING_GLOVE | CHAIN_KNIFE | CHAIN_GUILLOTINE
             ),
         ranged: matches!(
             kind,
@@ -5179,6 +5334,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | SHURIKEN | THROWING_KNIFE | SNOWBALL
                 | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL
                 | DD2_BOMB
+                // W4-d2 — the Harpoon's `this.ranged = true`
+                // (`Projectile.cs:1065`).
+                | HARPOON
             // W3-i11 round 2 — the ranged census completion (the player-fired
             // rows the first pass missed; the per-hit ranged crit never fired
             // for them). The Sandgun balls (42/65/68/354,
@@ -5666,6 +5824,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // grid (`Main.cs:33197`'s `Frame(6, 9, frame/9, frame%9)`). The
         // 129 RuneBlast keeps the stock 1 (no `projFrames` override).
         LIBRARIAN_BOOK => 54,
+        // W4-d2 — the fairies' 4-frame sheets (`Main.cs:8578-8580`); the
+        // aiStyle-11 arm's `frameCounter >= 4` / `frame >= 4` cycle
+        // (`Projectile.cs:24385-24394`). The Shadow Orb keeps the stock 1
+        // (no `projFrames[18]` override — its arm spins, never frames).
+        BLUE_FAIRY | PINK_FAIRY | GREEN_FAIRY => 4,
         _ => 1,
     }
 }

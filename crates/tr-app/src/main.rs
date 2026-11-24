@@ -323,6 +323,26 @@ mod projectile_ai_misc;
 // projectile/data.rs; the dispatch arms (14-gate + 33) are wired in
 // projectile.rs::update. Code-only mode — witness tests written not run.
 mod projectile_ai_light_items;
+// W4-d2 — the aiStyle-11 light pets (the Shadow Orb 18 + the fairies
+// 72/86/87): the fairy head, the affirmative keep-alive pin and the
+// owner-center seek (`Projectile.cs:24371-24500`). The rows land in
+// projectile/data.rs; the dispatch arm (11) is wired in
+// projectile.rs::update. Code-only mode — witnesses written not run.
+mod projectile_ai_light_pets;
+// W4-d2 — the aiStyle-13 chain weapons (the Harpoon 23, Golem Fist 262,
+// Boxing Glove 271, Chain Knife 273, Chain Guillotine 481): the outbound
+// flight + per-type distance flips, the return seek + catch, the 262
+// hitbox burst, the itemRotation tail and the shared blocked-move return
+// (`Projectile.cs:24636-24829` + `:19512-19571`). The on-hit return +
+// StatusNPC debuffs ride projectile.rs::damage_pve. Code-only mode.
+mod projectile_ai_chain;
+// W4-d2 — the aiStyle-17 tombstones (43/201-205/527-531): the grounded
+// friction/spin/gravity, the FTW dead-roll disarm, the local-owner
+// tile-85 placement (CanPlace/Place + the Sign epitaph + Kill) and the
+// ×−0.75/×−0.7 bounce (`Projectile.cs:25316-25366` + `:19310-19320`).
+// The death spawn (DropTombstone's launch draws) is wired in death.rs.
+// Code-only mode.
+mod projectile_ai_tombstone;
 // S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
 // 722 aiStyle 150) + the club strike / tee placement / cup scoring,
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the
