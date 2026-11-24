@@ -1392,6 +1392,158 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
             }
+            // W4-e4 — the Flame Waker Boots' / Hellfire Treads' walking
+            // flames (`Player.DoBootsEffect_PlaceFlamesOnTile`,
+            // `Player.cs:14094-14097`): the equip pass queued the gated tile
+            // positions; the FlameWaders orchestra emitter rolls here on the
+            // SAME `UpdatePlayers` stream (the `pending_sticky_dust`
+            // convention — the player tick cannot borrow the App's dust
+            // pool). Movement zero, invoker = the local player.
+            for (fx, fy) in p.take_flame_waders() {
+                let settings = crate::orchestrator_dust::OrchestraSettings {
+                    position: Vec2::new(fx, fy),
+                    movement: Vec2::ZERO,
+                    info: 0,
+                    invoker: app.local_id as u8,
+                };
+                crate::orchestrator_dust::flame_waders(
+                    &settings,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                );
+            }
+            // W4-e1 — the Player.cs dust sites' SECOND batch (the ledger
+            // docs/research/64-dust-sites-player-2.md, the 3-way reconcile
+            // docs/research/141-player-dust-reconcile.md). Each snapshot was
+            // taken at the C# read moment inside the tick; the pure emitters
+            // replay on the `UpdatePlayers` stream in C# EXECUTION order
+            // (not line order), using the SAME disjoint-field borrow pattern
+            // as the sticky drain above (`app.dust` / `app.rngs` /
+            // `&spawn_ctx` / `&app.world` while `p` is live).
+            //
+            // Execution order (Player.Update): hair-dye `:24593` → manaHeat
+            // `:24630` → social-shadow/teleport `:24691-24692` → eye `:25487`
+            // → UpdateEquips' glass-slipper `:14242` (`:25633`) →
+            // UpdateArmorSets' Solar burst `:16389` (`:25685`) → regen
+            // sparkle/crimson `:19273/:19296` (`:25977`) → full-mana `:19555`
+            // (`:25995`) → movement (step sound → fast-run → Lawn Mower
+            // `:20320` (`:20178`, the HorizontalMovement tail) → jump
+            // sound/burst → dash → wall `:21654-21826` → DoubleJumpVisuals
+            // `:21901-22014`, `:26688-:26767`) → CheckDrowning bubble
+            // `:23316` (`:27655`) → splash dust-then-sound (`:27772`) →
+            // FloorVisuals `:23983` (`:28271`). The stoned burst / Vortex
+            // rings / wall / double-jump / drown / splash / floor drains are
+            // f3's (the e1b-141 keep-one, research/141+378) at their slots
+            // below; e1's KEEP lanes drain here.
+            if let Some(b) = p.take_hair_dye_dust() {
+                crate::player_dust2::hair_dye_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_mana_heat_dust() {
+                crate::player_dust2::mana_heat_ambient(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_teleport_visuals_dust() {
+                crate::player_dust2::teleport_visuals(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            // The stoned transition (`:25219-25234`) runs right after
+            // `selectedItemState.Update()` (`:25218`); its 20-puff burst is
+            // f3's `drain_stoned_dust` (the e1b-141 keep-one — e1's duplicate
+            // queue DROPPED), drained at the f3 slot below.
+            if let Some(b) = p.take_yoraiz_eye_dust() {
+                crate::player_dust2::yoraiz_eye_trail(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            for b in p.take_glass_slipper_dust() {
+                crate::player_dust2::glass_slipper_sparkles(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_solar_burst_dust() {
+                crate::player_dust2::solar_shield_burst(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            // The Vortex stealth rings (`:25877/:25887`) are f3's
+            // `drain_vortex_stealth` (the e1b-141 keep-one — e1's ring queue
+            // DROPPED with its vortex-arm-only machine), drained at the f3
+            // stealth slot below.
+            if let Some(b) = p.take_shiny_sparkle_dust() {
+                crate::player_dust2::shiny_stone_sparkle(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_crimson_heal_dust() {
+                crate::player_dust2::crimson_heal_bursts(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_mana_full_dust() {
+                crate::player_dust2::mana_full_burst(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            // W4-e4 — the mount dust drain (`Mount.UpdateFrame`'s per-type
+            // extras + `UpdateEffects`' cases): the unicorn/wolf/witch/
+            // basilisk dash dust, the WoF goat's tile-gated flames and the
+            // minecart/trinket/drill effects. The state machines ran inline
+            // in the player tick; the emitter bodies roll here on the SAME
+            // `UpdatePlayers` stream (the `pending_sticky_dust` convention).
+            // The `&Player` snapshot is the tick-moment one the minecart
+            // anchors read; the requests keep the C# queue order.
+            for req in p.mount.take_mount_dust() {
+                crate::mount_dust::drain_mount_request(
+                    req,
+                    p,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                );
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -1467,11 +1619,31 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // nothing; the attenuation gate still applies.
                 app.audio.play_death_sound(p.x, p.y);
             }
+            // W4-f3 — the petrify-transition burst (`Player.cs:25226-25233`):
+            // the stoned edge queues 20 type-1 puffs + the per-puff `Next(2)`
+            // noGravity roll. The C#'s `PlaySound(0)` (`:25225`) is a cited
+            // seam (the stoned hurt rides `hurt_inner`'s own cue above), so the
+            // drain replays only the dust chain on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_stoned_dust() {
+                crate::player_dust::drain_stoned_dust(app, burst);
+            }
+            // W4-f3 — the Vortex-stealth transition ring (`Player.cs:25872-
+            // 25893`): the stealth machine's `flag11` tick queues the centre;
+            // the drain replays the two Next(2) gates + the RotatedByRandom
+            // spins + the type-229/240 chains. The machine runs at `:25826`
+            // (after the stoned edge `:25228`), so the drain follows the
+            // stoned burst on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_vortex_stealth_dust() {
+                crate::player_dust::drain_vortex_stealth(app, burst);
+            }
             // `Player.SpawnFastRunParticles` (`Player.cs:20214`): the
             // fast-run footstep at the player's top-left position — the
             // case-17 `Main.rand.Next(-10, 11)` pitch roll (`:862`) rides
             // the `UpdatePlayers` stream (the `Main.cs:17754` swap covers
             // `Player.Update`), only after the attenuation gate passed.
+            // HorizontalMovement (`:26688`) runs BEFORE JumpMovement
+            // (`:26744`) — the step sound draws first (the movement-block
+            // order, the 141 reconcile).
             if let Some((sound_type, style, sx, sy)) = p.take_step_sound() {
                 app.audio.play_step_sound(
                     (sound_type, style),
@@ -1480,11 +1652,37 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
-            // S1-E-21f — the extra-jump chain's plays: case 16's one
-            // `Next(-10, 11) * 0.01` pitch (`LegacySoundPlayer.cs:851`) rides
-            // the `UpdatePlayers` stream after the gate; the Fart's Item-16
-            // style play rides wave A's façade (the `GetRandomPitch`
-            // NextFloat on the audio-only stream — variance 0, still drawn).
+            // W4-d51 — the fast-run trail (`Player.cs:20217-20298`): the dust
+            // arm follows the footstep sound on the same stream — the
+            // source's sound-then-dust order inside `SpawnFastRunParticles`
+            // (which runs in `HorizontalMovement`, BEFORE the jump/dash
+            // chains below).
+            if let Some(burst) = p.take_fast_run_dust() {
+                crate::player_dust::drain_fast_run(app, burst);
+            }
+            // W4-e1 — the Lawn Mower puff (20320). MowTheLawn is the TAIL of
+            // HorizontalMovement (`:20176-20179`, inside `:19772`, called
+            // at `:26688`) — it runs AFTER the fast-run particles
+            // (`:19990/:20020`, the step sound above) and BEFORE JumpMovement
+            // (`:26744`)/DashMovement/the wall machines. Its NewDustDirect
+            // draw therefore precedes the jump-chain sounds (the 141
+            // execution order — the earlier placement after the jump sounds
+            // spent the stream out of order).
+            if let Some(b) = p.take_mow_lawn_dust() {
+                crate::player_dust2::mow_lawn_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            // S1-E-21f — the extra-jump chain's plays (JumpMovement `:26744`,
+            // AFTER MowTheLawn): case 16's one `Next(-10, 11) * 0.01` pitch
+            // (`LegacySoundPlayer.cs:851`) rides the `UpdatePlayers` stream
+            // after the gate; the Fart's Item-16 style play rides wave A's
+            // façade (the `GetRandomPitch` NextFloat on the audio-only stream
+            // — variance 0, still drawn).
             if let Some((sx, sy)) = p.take_double_jump_sound() {
                 app.audio.play_double_jump_sound(
                     sx,
@@ -1501,6 +1699,68 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-d51 — the extra-jump chain's dust burst (`Player.cs:
+            // 20818-21012`): the tick snapshotted the box/velocity AFTER the
+            // ascent write; the drain replays the arm's `Dust.NewDust` chain
+            // here, right after the sound drain, so the sound-then-dust draw
+            // order matches the source (the `Main.cs:17754` `UpdatePlayers`
+            // swap covers both). Sandstorm / Blizzard queue no dust.
+            if let Some(burst) = p.take_jump_dust() {
+                crate::player_dust::drain_jump_dust(app, burst);
+            }
+            // W4-d51 — the `DashMovement` dust burst (`Player.cs:21259-21512`):
+            // the trail (active dash) or the start burst, snapshotted at the
+            // C# read moment; no sound rides the dash, so the drain follows
+            // the jump chain's on the same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_dash_dust() {
+                crate::player_dust::drain_dash_dust(app, burst);
+            }
+            // W4-f3 — the wall-climb/wallslide puff (`Player.cs:21654-21826`,
+            // five sites): the wall machines run at `:26758-26765`, right
+            // after `DashMovement` (`:26757`) and before `DoubleJumpVisuals`
+            // (`:26767`); the drain follows the dash dust on the same
+            // `UpdatePlayers` stream. The suppression probe (the Rat climbing
+            // into a ceiling) ran on the tick side.
+            if let Some(burst) = p.take_wall_dust() {
+                crate::player_dust::drain_wall_dust(app, burst);
+            }
+            // W4-f3 — the `DoubleJumpVisuals` trail (`Player.cs:21892-22021`):
+            // the performing-jump arm's per-tick dust, snapshotted at the C#
+            // read moment; the drain follows the dash dust on the same
+            // `UpdatePlayers` stream (the C# runs `DoubleJumpVisuals` at
+            // `:26767`, right after `DashMovement` `:26757`).
+            if let Some(burst) = p.take_double_jump_dust() {
+                crate::player_dust::drain_double_jump_dust(app, burst);
+            }
+            // W4-f3 seal (KEEP-E1 drain order, e1 3245d624) — the wing-glide dust
+            // (`Player.cs:27040-27337`) drains HERE, right after DoubleJumpVisuals
+            // (`:26767`): the glide arm runs inside `WingMovement` (`:26818` →
+            // `:27034`), BEFORE `CheckDrowning` (`:27655`) and the splash
+            // (`:27783`). The old f3 order drained it after the floor dust, a
+            // cross-lane RNG-order deviation. The wings-4 wingFrame machine +
+            // Item13 cadence stay g66's cited seams (the wing lane's).
+            if let Some(burst) = p.take_wing_glide_dust() {
+                crate::player_dust::drain_wing_glide(app, burst);
+            }
+            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
+            // Volume/Pan only — no draws, no stream.
+            if p.take_drown_sound() {
+                app.audio.play_drown_sound();
+            }
+            // W4-f3 seal (KEEP-E1 drain order) — the drowning bubble
+            // (`Player.cs:23283-23316`, `CheckDrowning` `:27655`) drains BEFORE
+            // the splash (`:27783`): the C# runs CheckDrowning before the
+            // WetCollision splash block. The `Next(20)` gate drew on the tick
+            // side; the type-34 puff rides the pool's own wet-probe kill.
+            if let Some((mouth, width)) = p.take_drown_bubble() {
+                crate::player_dust::drain_drown_bubble(app, mouth, width);
+            }
+            // W4-f3 — the liquid entry/exit splash DUST (`Player.cs:27783-27940`):
+            // the C# runs the dust loop BEFORE `PlaySound(19)`, so the drain
+            // precedes the splash sound on the `UpdatePlayers` stream.
+            if let Some(burst) = p.take_splash_dust() {
+                crate::player_dust::drain_splash_dust(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
@@ -1513,10 +1773,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
-            // S1-E-21f — the drowning gasp (`Player.cs:23257`): case 23 is
-            // Volume/Pan only — no draws, no stream.
-            if p.take_drown_sound() {
-                app.audio.play_drown_sound();
+            // W4-f3 — the floor dust (`Player.cs:23790-24043`, `MakeFloorDust`):
+            // the `FloorVisuals` call (`:28271`) queues the floor-tile snapshot;
+            // the drain replays the per-iteration gate rolls + the NewDust chain
+            // on the `UpdatePlayers` stream (the shimmer orchestrator + Item177
+            // cue are cited seams). It drains AFTER the splash sound (`:28271`
+            // follows `:27783`), the e1 execution order.
+            if let Some(burst) = p.take_floor_dust() {
+                crate::player_dust::drain_floor_dust(app, burst);
             }
             // S1-E-21f — the wing flap's Item-32 play (`Player.cs:26850`):
             // wave A's façade, the same stream contract as the Fart.

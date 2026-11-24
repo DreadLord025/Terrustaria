@@ -501,6 +501,14 @@ impl App {
             Some(pair) => pair,
             None => return,
         };
+        // `WorldUpdateStepper.DrawnThisUpdate = true` (`Main.cs:62478`): the
+        // END-of-Draw mark, after the passes ran. The W4-g13 dust emitters read
+        // `FocusHelper.Allow*` (= `!DrawnThisUpdate`) DURING `draw_region`, so
+        // the flag stays clear through the draw and is set here — the C#
+        // position (it was at the draw-half head, which pre-marked the draw).
+        if self.menu.is_none() && self.front.is_none() {
+            self.stepper.drawn_this_update = true;
+        }
         self.tile_stats = tile_stats;
         if self.stats_on {
             self.stats_acc.add(&tile_stats);

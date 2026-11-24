@@ -30,6 +30,14 @@ pub struct RegenState {
     pub mana_regen: i32,
     pub mana_regen_delay: f32,
     pub mana_regen_count: i32,
+    /// W4-e1 — the second-batch dust event counters (the engine records them;
+    /// `player.rs::update_survival` drains them into the dust queues). NOT
+    /// C# fields — the C# spawns inline; the port's queue convention needs the
+    /// event count. `shiny_gate_time` is the `lifeRegenTime` at the sparkle
+    /// gate (`:19271`); `crimson_heal_bursts` counts the crimson heal chunks
+    /// (`:19292-19305`, one 10-dust burst each).
+    pub shiny_gate_time: Option<f32>,
+    pub crimson_heal_bursts: u32,
 }
 
 /// The drain lanes' death attribution — the `PlayerDeathReason.ByOther(N)`
@@ -117,6 +125,14 @@ pub struct RegenInputs {
     pub standing_still: bool,
     /// `grappling[0] >= 0` — hooked onto the grapple system (M2-PHYS-6).
     pub grappling: bool,
+    // — W4-e1 second-batch dust gates —
+    /// `flag` (`:18944-18948`): `shinyStone && IsConsideredStandingStill &&
+    /// itemAnimation == 0`. Gates the regen sparkle (site 19273) and the
+    /// `lifeRegenCount++` (`:19270`).
+    pub shiny_stone_still: bool,
+    /// `crimsonRegen` (`:19292`): each heal chunk spawns a 10-dust burst
+    /// (site 19296).
+    pub crimson_regen: bool,
 }
 
 impl Default for RegenInputs {
@@ -143,6 +159,8 @@ impl Default for RegenInputs {
             moving_x: false,
             standing_still: false,
             grappling: false,
+            shiny_stone_still: false,
+            crimson_regen: false,
         }
     }
 }
@@ -215,10 +233,27 @@ pub fn update_life_regen(
         round_bankers((num3 * (in_.max_life as f32 / 400.0f32 * 0.85f32 + 0.15f32)) as f64) as i32;
     state.life_regen_count += state.life_regen;
     state.life_regen_count += in_.extra_count;
+    // W4-e1 — `:19268-19284`: the shiny-stone still-regen sparkle. `flag`
+    // (shinyStone && still && no item animation) adds one counter tick and
+    // records the gate moment (`lifeRegenTime` at `:19271`); the drain rolls
+    // `Next(30000) < time || Next(30)==0` and spawns the type-55 sparkle
+    // (site 19273). The gate draws ride the UpdatePlayers stream AFTER the
+    // regen chunk loop below — the C# order (`:19271` precedes `:19286`, but
+    // the dust spawn is a visual the port defers to the drain; the counter
+    // increment is the sim half and stays here).
+    if in_.shiny_stone_still && state.life_regen > 0 && *life < in_.max_life {
+        state.life_regen_count += 1;
+        state.shiny_gate_time = Some(state.life_regen_time);
+    }
     while state.life_regen_count >= LIFE_CHUNK {
         state.life_regen_count -= LIFE_CHUNK;
         if *life < in_.max_life {
             *life += 1;
+            // W4-e1 — `:19292-19305`: the crimson heal chunk spawns a 10-dust
+            // burst (site 19296); the engine counts it, the drain replays.
+            if in_.crimson_regen {
+                state.crimson_heal_bursts += 1;
+            }
         }
         if *life > in_.max_life {
             *life = in_.max_life;

@@ -48,10 +48,14 @@
 //!   raise only run on an ACTIVE timer (>= 0).
 //! - `Main.netMode != 1` is constant-true (the port is single-player,
 //!   netMode 0): the shot blocks and the discourage loop always run.
-//! - The dust/gore visuals and the phase sounds (3 / 15) are
-//!   SKIPPED — no dust/gore layer — but every `Main.rand` draw
-//!   they carry is kept in order (see the RNG list above). The
-//!   flamethrower's Item34 loop (`:27493`) queues its play (S1-E-21g).
+//! - The dust VISUALS are W4-e2's second batch (sites 27076/27369/
+//!   27374): the gate drip, the 20-dust hand-off burst and the per-tick
+//!   spin dust spawn through the live `DustPool` (`npc_dust.rs`'s
+//!   shared twins' emitters) on the same stream, argument draws first.
+//!   The gore bodies (144/7/6) stay W4-d55's — their six argument pairs
+//!   are consumed here in order; the phase sounds (3 / 15) stay
+//!   SKIPPED. The flamethrower's Item34 loop (`:27493`) queues its play
+//!   (S1-E-21g).
 //! - `reflectsProjectiles = false` (`:27099`) / `= true` under the
 //!   Mech Queen (`:27330`): the port has no NPC projectile-reflect
 //!   flag; with no Mech Queen the C# value is constant-false, the
@@ -190,9 +194,11 @@ pub fn spazmatism_ai(
     player: &Player,
     rng: &mut UnifiedRandom,
     env: &Style31Env,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     debug_assert_eq!(npc.kind, NpcKind::Spazmatism);
-    ai_body(npc, world, player, rng, env);
+    ai_body(npc, world, player, rng, env, dust, dust_ctx);
     // The C#'s `return`s leave `AI()` only — `NPC.Update`'s
     // `noTileCollide` integration (`:90494-90498`) still runs.
     npc.old_vx = npc.vx;
@@ -211,6 +217,8 @@ fn ai_body(
     player: &Player,
     rng: &mut UnifiedRandom,
     env: &Style31Env,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
 ) {
     let (w, h) = npc.size();
     // `:27017-27020` — the invalid-target retarget.
@@ -257,8 +265,12 @@ fn ai_body(
         npc.rotation = num438;
     }
     // `:27074-27079` — the dust gate: the draw runs EVERY tick, before
-    // the day gate; the dust itself is a documented skip.
-    let _dust_gate = rng.next_max(5) == 0;
+    // the day gate. W4-e2 (site 27076): the passed gate spawns the
+    // type-5 drip on the live pool — the shared twins' emitter.
+    let dust_gate = rng.next_max(5) == 0;
+    crate::npc_dust::twin_drip(
+        dust_gate, npc.x, npc.y, w as i32, h, npc.vx, rng, dust, dust_ctx, world,
+    );
     // `:27080-27089` — the twin-alive despawn discouragement: at night,
     // alive, with the timer under 10, every other active 125/126's
     // `timeLeft - 1` raises ours (`DiscourageDespawn`, `:7258-7265`).
@@ -502,16 +514,19 @@ fn ai_body(
                         let _gy = rng.next_range(-30, 31) as f32 * 0.2;
                     }
                 }
-                for _ in 0..20 {
-                    let _dx = rng.next_range(-30, 31) as f32 * 0.2;
-                    let _dy = rng.next_range(-30, 31) as f32 * 0.2;
-                }
+                // W4-e2 (site 27369): the 20 type-5 dusts spawn on the
+                // live pool — argument pair then internals per dust.
+                crate::npc_dust::twin_spin_burst(
+                    npc.x, npc.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+                );
             }
         }
         // `:27374` — the per-tick spin dust: 2 draws, also on the
-        // transition tick, AFTER the burst.
-        let _dx = rng.next_range(-30, 31) as f32 * 0.2;
-        let _dy = rng.next_range(-30, 31) as f32 * 0.2;
+        // transition tick, AFTER the burst. W4-e2 (site 27374): the
+        // type-5 dust spawns on the live pool.
+        crate::npc_dust::twin_spin_tick(
+            npc.x, npc.y, w as i32, h as i32, rng, dust, dust_ctx, world,
+        );
         // `:27375-27384` — the 0.98 damp with the ±0.1 dead-band.
         npc.vx *= 0.98;
         npc.vy *= 0.98;
@@ -776,6 +791,19 @@ mod tests {
         Style31Env::CLASSIC_SOLO
     }
 
+    /// W4-e2: the tests' scratch dust seam (the `update_rng` permissive
+    /// convention — whole world on-screen, full budget, no cull).
+    fn dctx() -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(4000.0, 4000.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The SetDefaults identity (`NPC.cs:10539-10555`) and the aim's
     /// named-argument atan2 (`:27022`): the bottom-59 anchor, the
     /// integer halves, the +1.57 offset.
@@ -811,7 +839,7 @@ mod tests {
         // Park well outside the band, on the short side.
         n.rotation = aim + 1.0;
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert!(
             (n.rotation - (aim + 1.0 - 0.15)).abs() < 1e-5,
             "the turn steps 0.15 toward the aim: {}",
@@ -826,7 +854,7 @@ mod tests {
         n.vx = 0.0;
         n.vy = 0.0;
         n.rotation = aim + 0.05;
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.rotation, aim, "the snap band lands on the aim");
     }
 
@@ -841,7 +869,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(42);
         let mut witness = rng.clone();
         let _gate = witness.next_max(5);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "exactly one draw, in order");
     }
 
@@ -856,7 +884,7 @@ mod tests {
         let mut n = spaz(60.0 * TILE_PX, 60.0 * TILE_PX);
         let (x0, y0) = (n.x, n.y);
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.vy, -0.04);
         assert_eq!(n.despawn_timer, 10);
         assert_eq!(n.ai, [0.0; 4], "the day gate precedes the phases");
@@ -878,7 +906,7 @@ mod tests {
         // left of the player's centre.
         let mut n = spaz(20.0 * TILE_PX, 60.0 * TILE_PX);
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         let (cx, cy) = (20.0 * TILE_PX + 50.0, 60.0 * TILE_PX + 55.0);
         let (pcx, pcy) = p.center();
         let dx = pcx - 400.0 - cx;
@@ -891,7 +919,7 @@ mod tests {
         // the target is positive, so the accel lands twice.
         n.vx = -0.5;
         n.vy = 0.0;
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert!((n.vx - (-0.5 + 0.8)).abs() < 1e-4, "double-add: {}", n.vx);
     }
 
@@ -905,7 +933,7 @@ mod tests {
         n.ai = [0.0, 0.0, 599.0, 30.0];
         n.target = 0;
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[1], 1.0);
         assert_eq!(n.ai[2], 0.0);
         assert_eq!(n.ai[3], 0.0);
@@ -928,7 +956,7 @@ mod tests {
         let jx = witness.next_range(-40, 41) as f32 * 0.05;
         let jy = witness.next_range(-40, 41) as f32 * 0.05;
         let (cx, cy) = (n.x + 50.0, n.y + 55.0);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "gate + X + Y, in order");
         assert_eq!(n.ai[3], 0.0, "the shot resets the timer");
         assert_eq!(n.wants_hostile_shot.len(), 1);
@@ -952,7 +980,7 @@ mod tests {
         let mut n = spaz(60.0 * TILE_PX, 60.0 * TILE_PX);
         n.ai = [0.0, 1.0, 0.0, 0.0];
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         let speed = (n.vx * n.vx + n.vy * n.vy).sqrt();
         assert!((speed - 13.0).abs() < 1e-3, "speed {speed}");
         assert_eq!(n.ai[1], 2.0);
@@ -962,7 +990,7 @@ mod tests {
         e.ai = [0.0, 1.0, 0.0, 0.0];
         e.hp = e.max_hp * 4 / 10; // 40% — under every band
         let expert = Style31Env { expert: true, ..env() };
-        spazmatism_ai(&mut e, &w, &p, &mut rng, &expert);
+        spazmatism_ai(&mut e, &w, &p, &mut rng, &expert, &mut tr_core::particles::DustPool::new(), &dctx());
         let speed = (e.vx * e.vx + e.vy * e.vy).sqrt();
         assert!((speed - 15.8).abs() < 1e-3, "expert speed {speed}");
     }
@@ -979,18 +1007,18 @@ mod tests {
         n.vx = 10.0;
         n.vy = 0.0;
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.vx, 9.0, "the 8th tick damps 0.9");
         // Before the 8th: the rotation rides the velocity, no damp.
         n.ai = [0.0, 2.0, 0.0, 0.0];
         n.vx = 10.0;
         n.vy = 0.0;
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.vx, 10.0);
         assert!((n.rotation - (0.0f32.atan2(10.0) - 1.57)).abs() < 1e-5);
         // The 42-tick wrap: dash 10 returns to the hover.
         n.ai = [0.0, 2.0, 41.0, 9.0];
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!((n.ai[1], n.ai[2], n.ai[3]), (0.0, 0.0, 0.0));
         assert_eq!(n.target, 255, "ClearTarget on the cycle");
     }
@@ -1005,7 +1033,7 @@ mod tests {
         n.hp = n.max_hp * 39 / 100;
         n.ai = [0.0, 2.0, 12.0, 4.0];
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai, [1.0, 0.0, 0.0, 0.0]);
         assert!(n.net_update);
     }
@@ -1025,7 +1053,7 @@ mod tests {
         let _gate = witness.next_max(5);
         let _d1 = witness.next_range(-30, 31);
         let _d2 = witness.next_range(-30, 31);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "gate + 2 dust draws");
         assert!((n.ai[2] - 0.005).abs() < 1e-6, "the ramp steps 0.005");
         // The transition into phase 2: 52 burst draws + the pair.
@@ -1037,7 +1065,7 @@ mod tests {
         }
         let _d1 = witness.next_range(-30, 31);
         let _d2 = witness.next_range(-30, 31);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[0], 2.0);
         assert_eq!(n.ai[1], 0.0);
         assert_eq!(rng.peek(), witness.peek(), "52 burst + 2, in order");
@@ -1047,7 +1075,7 @@ mod tests {
         let _gate = witness.next_max(5);
         let _d1 = witness.next_range(-30, 31);
         let _d2 = witness.next_range(-30, 31);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.ai[0], 3.0);
         assert_eq!(n.ai[2], 0.0, "the phase-3 entry zeroes the spin");
         assert_eq!(rng.peek(), witness.peek(), "no burst into phase 3");
@@ -1062,7 +1090,7 @@ mod tests {
         let mut n = spaz(60.0 * TILE_PX, 60.0 * TILE_PX);
         n.ai = [3.0, 0.0, 0.0, 0.0];
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.damage_override, Some(75), "(int)(50 * 1.5)");
         assert_eq!(n.defense_override, Some(28), "10 + 18");
         assert_eq!(n.defense(), 28);
@@ -1084,7 +1112,7 @@ mod tests {
         let _gate = witness.next_max(5);
         let jy = witness.next_range(-40, 41) as f32 * 0.01;
         let jx = witness.next_range(-40, 41) as f32 * 0.01;
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "gate + Y + X, in order");
         assert_eq!(n.local_ai[1], 0.0, "the laser resets the timer");
         assert_eq!(n.wants_hostile_shot.len(), 1);
@@ -1120,7 +1148,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(42);
         let mut witness = rng.clone();
         let _gate = witness.next_max(5);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(rng.peek(), witness.peek(), "only the dust gate drew");
         assert_eq!(n.local_ai[1], 8.0, "the timer never advanced");
         assert!(n.wants_hostile_shot.is_empty());
@@ -1136,7 +1164,7 @@ mod tests {
         let mut n = spaz(60.0 * TILE_PX, 60.0 * TILE_PX);
         n.ai = [3.0, 1.0, 0.0, 0.0];
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         let speed = (n.vx * n.vx + n.vy * n.vy).sqrt();
         assert!((speed - 14.0).abs() < 1e-3, "speed {speed}");
         assert_eq!(n.ai[1], 2.0);
@@ -1145,12 +1173,12 @@ mod tests {
         e.ai = [3.0, 2.0, 49.0, 0.0];
         e.vx = 10.0;
         let expert = Style31Env { expert: true, ..env() };
-        spazmatism_ai(&mut e, &w, &p, &mut rng, &expert);
+        spazmatism_ai(&mut e, &w, &p, &mut rng, &expert, &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(e.ai[2], 50.5, "49 + 1 + 0.5");
         assert!((e.vx - 9.3).abs() < 1e-4, "the 0.93 damp: {}", e.vx);
         // The six-dash wrap.
         n.ai = [3.0, 2.0, 79.0, 5.0];
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &env());
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &env(), &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!((n.ai[1], n.ai[2], n.ai[3]), (0.0, 0.0, 0.0));
         assert_eq!(n.target, 255);
     }
@@ -1166,16 +1194,16 @@ mod tests {
         n.despawn_timer = 5;
         let twins = Style31Env { twin_time_lefts: &[300, 120], ..env() };
         let mut rng = UnifiedRandom::new(7);
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &twins);
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &twins, &mut tr_core::particles::DustPool::new(), &dctx());
         // 300 - 1 = 299 raises 5; 120 - 1 = 119 cannot lower it.
         assert_eq!(n.despawn_timer, 299);
         // The -1 sentinel: no active timer, no raise.
         n.despawn_timer = -1;
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &twins);
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &twins, &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.despawn_timer, -1);
         // A healthy timer (>= 10) skips the loop.
         n.despawn_timer = 50;
-        spazmatism_ai(&mut n, &w, &p, &mut rng, &twins);
+        spazmatism_ai(&mut n, &w, &p, &mut rng, &twins, &mut tr_core::particles::DustPool::new(), &dctx());
         assert_eq!(n.despawn_timer, 50);
     }
 }

@@ -1042,16 +1042,52 @@ pub(crate) fn spawn_spark<R: tr_core::particles::DustRng>(
     idx
 }
 
-/// The type-213 `Dust.UpdateDust` pass over the pool's 213 slots, in the C#
-/// source order. Death deactivates the slot (`Dust.cs:449` and passim) — the
-/// pool keeps its 6000 fixed slots.
+/// The per-tick player snapshot the physics chain reads as
+/// `Main.player[Main.myPlayer]` statics (`DustPhysicsEnv`'s player half:
+/// 27/45 `:1679-1686`, 76 `:1749-1756`, 268 `:1799-1806`, 235 `:2091`).
+/// The no-player default is all-zero velocity / dry / the default-constructed
+/// `Player.Center` `(10, 21)` (`Player.cs` ctor, width 20 / height 42 at the
+/// origin — the `dust_physics` module-doc fallback).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DustPlayerSnap {
+    pub vx: f32,
+    pub vy: f32,
+    pub wet: bool,
+    pub center: Vec2,
+}
+
+impl Default for DustPlayerSnap {
+    fn default() -> Self {
+        Self {
+            vx: 0.0,
+            vy: 0.0,
+            wet: false,
+            center: Vec2::new(10.0, 21.0),
+        }
+    }
+}
+
 /// `Main.UpdateWorld_Dust`'s single ported pass (`Main.cs:18045-18047`): the
 /// shared `Dust.UpdateDust` loop (`Dust.cs:420-2423`,
-/// `DustPool::update_dust`) drives the head, the move and the kills, and this
-/// entry dispatches the ported per-type arms — the wheel sparks' 213 (this
-/// file) and the flying sand's 268 (`sand.rs`). ONE pass per frame: the C#
-/// calls `UpdateDust` once, so every active slot integrates exactly once (the
-/// two clients' separate tick loops were the batch-review defect).
+/// `DustPool::update_dust`) drives the head (incl. the `pre_move` shrink/lift
+/// + the canonical inline lava-bubble increment, `:468-476`), the move and
+/// the kills, and the hook is the W4-d50 physics chain
+/// (`tr_core::dust_physics::type_chain`, `:478-2334`) over the
+/// `DustPhysicsEnv` seam — the 213/268 hand-dispatches retired into it
+/// (research/69 §4-6+8). ONE pass per frame: the C# calls `UpdateDust` once,
+/// so every active slot integrates exactly once. The hook's bool is the
+/// SECOND-chain match (`:2130-2334`), suppressing the skeleton's `:2335`
+/// gravity tail exactly as the C#'s else-if does; the FIRST-ladder arms
+/// (213/268 included) return false and take the tail alongside.
+/// Post-pass: the `SandStormCount`/`snowDust` env deltas land on the pool
+/// (the head resets ride `update_dust`, `:428-429` — the d54 ONE-EDIT hunk
+/// `84eb739b` landing shape), and the child-spawn sink drains through the
+/// verbatim `NewDust` allocator (the `wants_*` sink precedent; stream-neutral
+/// for the current consumers — 213/268 spawn no children).
+/// `spawn_ctx` is the child-drain `NewDust` ctx (the App's `spawn_ctx()`);
+/// `light_color` is the `Lighting.GetColor` probe (43's death check,
+/// `:1405`) — the caller passes the bright default until the S1-E-5 sample
+/// seam lands (`dust_physics` module docs).
 pub(crate) fn tick(
     pool: &mut tr_core::particles::DustPool,
     rng: &mut impl tr_core::particles::DustRng,
@@ -1060,9 +1096,25 @@ pub(crate) fn tick(
     screen: Vec2,
     zoom: f32,
     world: &tr_core::World,
-    player_vy: f32,
+    player: DustPlayerSnap,
     show_sandstorm_visuals: bool,
+    spawn_ctx: &tr_core::particles::SpawnCtx,
 ) {
+    // The `Collision` probes bind the landed tr-app ports (the same seam
+    // shape as the pool's `WetProbe`): `Collision.SolidCollision`
+    // (`Collision.cs:2700-2734`) and `WetCollision` (`:1572-1651`).
+    let solid = |pos: Vec2, w: f32, h: f32| {
+        crate::player::Player::solid_collision(world, pos.x, pos.y, w, h)
+    };
+    let wet = |pos: Vec2, w: f32, h: f32| {
+        crate::player::wet_collision(world, pos.x, pos.y, w, h)
+    };
+    // The bright default: 43 never spuriously dies until the real
+    // `Lighting.GetColor` sample rides the light pass (S1-E-5).
+    let light = |_: i32, _: i32| tr_core::particles::Color::WHITE;
+    let mut spawns = Vec::new();
+    let mut sand = 0;
+    let mut snow = 0;
     pool.update_dust(
         &tr_core::particles::UpdateCtx {
             max_dust_to_draw,
@@ -1070,38 +1122,52 @@ pub(crate) fn tick(
             screen_height: screen.y * 0.5 / zoom,
         },
         rng,
-        |d: &mut tr_core::particles::Dust| {
-            if d.dust_type == 213 {
-                // `:1819-1829`: the spark falls.
-                if !d.no_gravity {
-                    d.velocity.y += 0.1;
-                }
-                // `:2071-2072`: the air drag.
-                d.velocity.x *= 0.99;
-                // `:744` + `:2080`: rotation is rebuilt from the dragged velocity.
-                d.rotation = d.velocity.x * 0.5;
-                // `:2083-2124`: the fadeIn ramp — +0.1/tick while the spawn
-                // fadeIn stands (capped at it), then −0.2/tick (it burns out).
-                if d.fade_in > 0.0 && d.fade_in < 100.0 {
-                    d.scale += 0.1;
-                    if d.scale > d.fade_in {
-                        d.fade_in = 0.0;
-                    }
-                } else {
-                    d.scale -= 0.2;
-                }
-            } else if d.dust_type == 268 {
-                crate::sand::type_268_arm(d, show_sandstorm_visuals, player_vy, world);
-            }
-            // Both arms return false: the 213/268 arms are standalone
-            // statements of the C#'s FIRST ladder (between the `:477` move and
-            // the fresh `if (dust.type >= 130 ...)` chain head at `:2127`), so
-            // they do NOT exclude the second chain's final
-            // `else if (type != 304 && noGravity)` tail (`:2335`) — a
-            // no-gravity 213 takes its arm AND the tail, exactly like the C#.
-            false
+        |d: &mut tr_core::particles::Dust, rng: &mut _| {
+            let mut env = tr_core::dust_physics::DustPhysicsEnv {
+                world,
+                show_sandstorm_visuals,
+                player_vx: player.vx,
+                player_vy: player.vy,
+                player_wet: player.wet,
+                player_center: player.center,
+                solid_collision: &solid,
+                wet_collision: &wet,
+                light_color: &light,
+                spawns: &mut spawns,
+                sand_storm_count: &mut sand,
+                snow_dust: &mut snow,
+            };
+            tr_core::dust_physics::type_chain(d, rng, &mut env)
         },
     );
+    // `Dust.SandStormCount` (`:1791`) + `Main.snowDust` (`:1747`): the head
+    // resets zeroed both, so the post-pass landing is the exact count (the
+    // snowfall budget reads `pool.snow_dust`, `Main.cs:13057`).
+    pool.sand_storm_count += sand;
+    pool.snow_dust = snow;
+    // Drain the child `NewDust` requests (159/164/173/160/162): the verbatim
+    // allocator (default Speed/Alpha/Color, Scale=1) then the C#'s post-writes
+    // (`Dust.cs:1086-1088` family): `noGravity = true`, the folded scale. The
+    // sentinel slot is written too on a refusal — the C#'s shape.
+    for s in spawns {
+        let idx = pool.new_dust(
+            rng,
+            spawn_ctx,
+            world,
+            s.position,
+            s.width,
+            s.height,
+            s.dust_type,
+            0.0,
+            0.0,
+            0,
+            tr_core::particles::Color::default(),
+            1.0,
+        );
+        let d = pool.slot_mut(idx);
+        d.no_gravity = true;
+        d.scale = s.scale;
+    }
 }
 
 /// The generic `Main.DrawDust` draw (`Main.cs:39003-39013`) over the pool's
@@ -2323,6 +2389,34 @@ mod tests {
         }
     }
 
+    /// The shared tick under the tests' default snapshot: no player
+    /// (`DustPlayerSnap::default`), the wide-open `spark_ctx` for the child
+    /// drain (the W4-d50 wiring shape; the 213 arm spawns no children).
+    fn tick<R: tr_core::particles::DustRng>(
+        pool: &mut tr_core::particles::DustPool,
+        rng: &mut R,
+        max: i32,
+        camera: Vec2,
+        screen: Vec2,
+        zoom: f32,
+        world: &World,
+        player_vy: f32,
+        show: bool,
+    ) {
+        super::tick(
+            pool,
+            rng,
+            max,
+            camera,
+            screen,
+            zoom,
+            world,
+            DustPlayerSnap { vy: player_vy, ..Default::default() },
+            show,
+            &spark_ctx(),
+        );
+    }
+
     /// Queues one spark at `at` with rotation `rot` and spawns it through a
     /// fresh pool; returns the slot index. The request roll and the drain
     /// share one stream state, exactly like the tick → drain handoff.
@@ -2603,7 +2697,7 @@ mod tests {
             d.scale = 1.0;
         }
         let pos0 = pool.slot(idx).position;
-        crate::minecart::tick(
+        tick(
             &mut pool,
             &mut crate::app::SplitmixRand(&mut rng),
             6000,
@@ -2631,7 +2725,7 @@ mod tests {
             d.scale = 1.0;
             d.velocity = Vec2::new(2.0, 1.0);
         }
-        crate::minecart::tick(
+        tick(
             &mut pool,
             &mut crate::app::SplitmixRand(&mut rng),
             6000,
@@ -2644,6 +2738,44 @@ mod tests {
         );
         let p = pool.slot(idx);
         assert_eq!(p.velocity, Vec2::new(2.0 * 0.99 * 0.92, 0.92), "the drag AND the tail damp run together");
+    }
+
+    /// W4-d50 WIRING — the live tick's chain feeds the counters and the
+    /// pre_move shrink/lift rides the skeleton: a 76 flake bumps
+    /// `pool.snow_dust` (the d54 `84eb739b` env-delta hunk, `Dust.cs:1747`
+    /// + the `:428` head reset), a 268 speck bumps `pool.sand_storm_count`
+    /// (`:1791`), and a 299 spark takes the `:470-471` ×0.96 / −0.01 BEFORE
+    /// the `:477` move (the g13-canonical 35 increment stays single: a 35
+    /// slot counts exactly one).
+    #[test]
+    fn w4_d50_the_wired_tick_lands_the_snow_sand_deltas_and_the_pre_move() {
+        let world = World::new("wire".into(), 64, 64);
+        let mut pool = tr_core::particles::DustPool::new();
+        let mk = |pool: &mut tr_core::particles::DustPool, i: usize, ty: i32| {
+            let d = pool.slot_mut(i);
+            d.active = true;
+            d.dust_type = ty;
+            d.scale = 1.0;
+            d.fade_in = 0.0;
+            d.position = Vec2::new(100.0, 100.0);
+            d.velocity = Vec2::new(0.0, 0.0);
+        };
+        mk(&mut pool, 0, 76);
+        mk(&mut pool, 1, 268);
+        mk(&mut pool, 2, 299);
+        mk(&mut pool, 3, 35);
+        pool.snow_dust = 9; // the head reset must zero it (`:428`)
+        pool.sand_storm_count = 9;
+        tick(&mut pool, &mut tr7(), 6000, Vec2::ZERO, Vec2::new(1600.0, 900.0), 1.0, &world, 0.0, true);
+        assert_eq!(pool.snow_dust, 1, "one live 76 — the env delta lands post-pass");
+        assert_eq!(pool.sand_storm_count, 1, "one live 268 — SandStormCount++");
+        assert_eq!(pool.lava_bubbles, 1, "one live 35 — the canonical inline increment, ONCE");
+        // The 299 pre_move ran BEFORE the move: scale ×0.96 then the chain's
+        // generic burn-out −0.01 (`:2127`); vy lifted −0.01 then the generic
+        // gravity fall +0.1 (`:1827`).
+        let d = pool.slot(2);
+        assert!((d.scale - (0.96 - 0.01)).abs() < 1e-5, "the :470 shrink precedes the burn-out");
+        assert!((d.velocity.y - (-0.01 + 0.1)).abs() < 1e-5, "the :471 lift precedes the fall");
     }
 
     fn s1_e_1_the_ctx_gates_stop_the_spark_drain() {

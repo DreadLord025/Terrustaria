@@ -201,6 +201,11 @@ pub(crate) fn empress_proj_tick(
     // are `tileCollide = false`, so the position integrates the velocity
     // once per sub-step. A killed slot still integrates in the C# (the
     // `Kill()` inside the AI does not skip `Update`'s movement) — verbatim.
+    // S1-P-i57: wet-faithful AS-IS — the `:17476` gate closes the tile pass
+    // for a non-colliding slot, so `UpdatePosition` (`:20439-20446`) adds the
+    // un-scaled `:16765` capture while wet; `pos += vel` matches (the
+    // capture-lag deviation aside). No `wet_velocity` call owed here (the
+    // free-move finding, ANALYSIS "The wetVelocity R-seed refine").
     p.pos += p.vel;
     true
 }

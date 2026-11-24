@@ -2375,6 +2375,37 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if crate::potions::use_potion_item(app, held) {
             return;
         }
+        // W4-e1 — `Player.ItemCheck`'s hair-dye arm (`Player.cs:42858-42865`):
+        // `ItemTimeIsZero && itemAnimation > 0` + `item.hairDye >= 0` applies
+        // the dye (`hairDye = item.hairDye`, the post-processed shader index)
+        // and consumes one. The port's use-press edge stands in for the
+        // ItemTimeIsZero gate (one use per press). The shader index is the
+        // `GameShaders.Hair.GetShaderIdFromItemId` lookup (`Item.cs:48716`);
+        // the team-dye puff gate (`:24270`) reads it against TeamDyeShaderIndex.
+        if let Some(def) = registry::get(held.kind) {
+            if def.hair_dye >= 0 {
+                // `Item.cs:48714-48717`: the Hair Dye Remover (1990, raw
+                // hairDye 0) KEEPS 0 — the post-processing skips it; every
+                // other dye takes the shader index.
+                let shader = if def.hair_dye == 0 {
+                    0
+                } else {
+                    crate::player::hair_dye_shader_index(held.kind)
+                };
+                if let Some(p) = app.player.as_mut() {
+                    p.hair_dye = shader;
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                start_use_timers(app, held);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
         // dropped — the i37 `use_potion_item` seam above owns EVERY drink
         // (the mana potions are `healMana > 0` drinkables, `Item.cs:2680-
@@ -5327,6 +5358,20 @@ pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
         ty as f32 * TILE_PX,
         rng,
     );
+    // `KillWall`'s ten `KillWall_MakeWallDust` calls (`WorldGen.cs:60386-
+    // 60394`) run BETWEEN the sound and the drop. The type chain's
+    // `genRand` rolls ride the `frame_rng` stand-in (borrow snapshot —
+    // the dust body needs `&world`); the spawn blocks ride
+    // `UpdatePlayers` (W4-d54 batch 2).
+    {
+        let ctx = app.spawn_ctx();
+        let mut gen = app.world.frame_rng.clone();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_wall::wall_break_burst(
+            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, wall, 10,
+        );
+        app.world.frame_rng = gen;
+    }
     // `KillWall_DropItems` (`WorldGen.cs:60443-60450`) drops the
     // `KillWall_GetItemDrops` conversion, not a reverse `createWall` lookup:
     // the unsafe dungeon walls drop their SAFE item (7→135, 94→1378, …),
@@ -5400,6 +5445,19 @@ pub(crate) fn place_wall_route(app: &mut App, tx: i32, ty: i32) -> bool {
         && edit::near_friendly_wall(&app.world, tx, ty)
     {
         if let Some(old) = edit::replace_wall(&mut app.world, tx, ty, create_wall) {
+            // `ReplaceWall` (`WorldGen.cs:62545-62551`): the ten
+            // `KillWall_MakeWallDust` calls run BEFORE the sound and the
+            // drop — the opposite order to `KillWall` (W4-d54 batch 2).
+            // The `genRand` type rolls ride the `frame_rng` snapshot.
+            {
+                let ctx = app.spawn_ctx();
+                let mut gen = app.world.frame_rng.clone();
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                crate::world_dust_wall::wall_break_burst(
+                    rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, old, 10,
+                );
+                app.world.frame_rng = gen;
+            }
             // `ReplaceWall` plays the OLD wall's `KillWall_PlaySounds` cue
             // (`WorldGen.cs:62550`) and drops its `KillWall_GetItemDrops`
             // item (`:62551`) — both on the `UpdatePlayers` stream, sound
@@ -5616,6 +5674,11 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             frame_x: t.frame_x,
             frame_y: t.frame_y,
         });
+    // The FULL pre-kill tile — the C# `tile` reference of
+    // `KillTile_MakeTileDust` (`WorldGen.cs:63699-63703` reads it while
+    // the cell is still intact: the liquid, the frames, the ground
+    // scans below it). The clear happens in the drop half.
+    let dust_tile = app.world.tile(tx, ty).filter(|t| t.active()).copied();
     app.queue_map_ring(tx, ty);
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
@@ -5674,6 +5737,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
                 volume,
             );
         }
+    }
+    // `KillTile`'s dust loop (`WorldGen.cs:63699-63703`):
+    // `KillTile_GetTileDustAmount(fail: false, tile)` calls of
+    // `KillTile_MakeTileDust` on the PRE-KILL tile, after the sounds
+    // and before the drops (W4-d54 batch 3). The type chain's genRand
+    // rolls ride the `frame_rng` snapshot; the spawn blocks ride
+    // `UpdatePlayers`.
+    if let Some(t) = &dust_tile {
+        let ctx = app.spawn_ctx();
+        let mut gen = app.world.frame_rng.clone();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_tile::tile_break_burst(
+            rng, &mut gen, app.disco, &mut app.dust, &ctx, &app.world, tx, ty, t, false,
+        );
+        app.world.frame_rng = gen;
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
@@ -7724,6 +7802,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
         ty as f32 * TILE_PX,
         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
     );
+    // `PlaceTile`'s torch/campfire puff (`WorldGen.cs:60283-60289`): on
+    // the unmuted placement of kind 22/140, three type-14 dust AFTER the
+    // sound switch, on the same `UpdatePlayers` stream (W4-d54 batch 2).
+    {
+        let ctx = app.spawn_ctx();
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        crate::world_dust_wall::place_tile_torch_dust(rng, &mut app.dust, &ctx, &app.world, tx, ty, kind);
+    }
     app.request_edit(tx, ty, 1, kind);
     app.world_key = None;
     true
@@ -7926,6 +8012,70 @@ fn resolve_melee_strike(
                 // The kind's hit cue (`NPC.HitSound`) — read before the app
                 // borrows below.
                 let hit_cue = n.kind.hit_sound();
+                // W4-e4 — the Classy Cane gate's NPC reads, captured before
+                // the app borrows below (the `n` borrow ends here).
+                let cane_gate = held.kind == 3351 && n.kind.to_u16() != 488 && n.max_hp > 5;
+                let (cane_ncx, cane_ncy) = n.center();
+                // W4-e4 — the Classy Cane's (3351) coin shower
+                // (`Player.cs:44367-44375`): `nPC.type != 488 && lifeMax > 5`.
+                // The C# runs it AFTER DamageVar (`:44342`) and BEFORE
+                // StatusToNPC (`:44391`). The coin's ARGUMENT draws ride the
+                // `UpdatePlayers` stream in C# initializer order: velocity
+                // X `NextFloat` then Y `NextFloat` (`:44369`), position
+                // `Next(nPC.width)` then `Next(nPC.height)` (`:44370`), then
+                // the stack `1 + RollBadLuck(25)` (`:44370`, the luck roll
+                // BEFORE the spawn). The ClassyCane orchestra body queues
+                // after (its own argument draws roll at the inline call —
+                // editing has direct app access, no pool borrow problem).
+                // Type 488 (the Town Slime's transformed form) has no port
+                // NpcKind row; the gate reads the raw kind id.
+                if cane_gate {
+                    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+                    let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+                    let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    // `:44369` — velocity = ((2 + NextFloat×2)×dir, −2 − NextFloat×2).
+                    let cvx = (2.0 + rng.next_float() * 2.0) * dir as f32;
+                    let cvy = -2.0 - rng.next_float() * 2.0;
+                    // `:44370` — center = nPC.position + (Next(width), Next(height)).
+                    let cx = nx + rng.next_max(bw as i32) as f32;
+                    let cy = ny + rng.next_max(bh as i32) as f32;
+                    // `:44370` — stack = 1 + RollBadLuck(25) (the luck roll).
+                    let stack = 1 + tr_core::loot::roll_bad_luck(rng, luck, 25);
+                    // `Item.RequestNewItem` → `WorldItem.Center = center`
+                    // (`Item.cs:49736`): the 14×14 coin box centred on the
+                    // rolled point. `GrabDelayForAllPlayers` →
+                    // `apply_grab_delay(255)` (`WorldItem.cs:310-313`).
+                    let mut coin = crate::item::ItemDrop::new(
+                        71,
+                        stack.max(1) as u32,
+                        0,
+                        cx - crate::item::SIZE * 0.5,
+                        cy - crate::item::SIZE * 0.5,
+                        cvx,
+                        cvy,
+                        0.0,
+                    );
+                    coin.apply_grab_delay(255);
+                    app.items.push(coin);
+                    // `:44371-44374` — ClassyCane at nPC.Center, movement
+                    // zero, invoker = this player. The emitter runs inline
+                    // (the gore sibling's argument draws + the 7-dust loop
+                    // roll on the same stream, C# order).
+                    let settings = crate::orchestrator_dust::OrchestraSettings {
+                        position: Vec2::new(cane_ncx, cane_ncy),
+                        movement: Vec2::ZERO,
+                        info: 0,
+                        invoker: app.local_id as u8,
+                    };
+                    let ctx = app.spawn_ctx();
+                    crate::orchestrator_dust::classy_cane(
+                        &settings,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &mut app.dust,
+                        &ctx,
+                        &app.world,
+                    );
+                }
                 // `this.StatusToNPC(sItem.type, npcIndex)`
                 // (`Player.cs:44391`, the block `:6502-6617`) — the melee
                 // on-hit debuff infliction runs AFTER the crit/DamageVar

@@ -149,6 +149,38 @@ pub(crate) fn step(
     npcs: &[Npc],
     local_immunity: &[i32],
 ) {
+    // W4-g63 — the dust-free scratch entry (the `ProjectilePool::update`
+    // precedent): the witnesses below run the flight on a scratch pool;
+    // the live sim threads the real pool through [`step_dust`].
+    let mut dust = tr_core::particles::DustPool::new();
+    let ctx = tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: Vec2::ZERO,
+        screen_size: Vec2::new(
+            world.width as f32 * tr_core::TILE_PX,
+            world.height as f32 * tr_core::TILE_PX,
+        ),
+        max_dust_to_draw: 6000,
+    };
+    let mut rng = tr_core::UnifiedRandom::new(0);
+    step_dust(p, world, npcs, local_immunity, &mut rng, &mut dust, &ctx);
+}
+
+/// W4-g63 — the full step with the caller's `UpdateProjectiles` stream +
+/// the live dust pool: the 207's `alpha < 170` 10-point trail
+/// (`:56780-56793`) is RE-ARMED at the head of the homing block. Every
+/// other kind's stream stays untouched (no emitter fires).
+pub(crate) fn step_dust(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    local_immunity: &[i32],
+    rng: &mut dyn tr_core::loot::DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // ---- 1. The hook group above the counter ------------------------------
     // `:55660-55671` — the 242 HighVelocity fade (the 302/438/462/592
     // siblings are other modules' kinds): `num109 = (float)Math.Sqrt(
@@ -183,7 +215,7 @@ pub(crate) fn step(
     // (type == 207 || type == 837)`), so a homing bullet NEVER reaches
     // the generic gravity arm — the steer replaces it.
     if p.kind == CHLOROPHYTE_BULLET {
-        chlorophyte_homing(p, world, npcs);
+        chlorophyte_homing(p, world, npcs, rng, dust, dust_ctx);
     }
 
     // ---- 4. The rotation tail + clamp -------------------------------------
@@ -202,10 +234,26 @@ pub(crate) fn step(
 }
 
 /// The 207's homing block (`Projectile.cs:56778-56887`), in the C#'s own
-/// order: the trail-dust window (SKIPPED — dust-only, `:56780-56793`),
+/// order: the trail-dust window (W4-g63 RE-ARMED, `:56780-56793`),
 /// the speed latch, the alpha fade, the acquire scan, the held-target
 /// validity check and the steer blend.
-fn chlorophyte_homing(p: &mut Projectile, world: &World, npcs: &[Npc]) {
+fn chlorophyte_homing(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    rng: &mut dyn tr_core::loot::DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
+    // `:56780-56793` — W4-g63: the `alpha < 170` 10-point dust-75 trail
+    // RE-ARMED (no explicit draws; the window reads the PRE-fade alpha,
+    // the C# block sits above the `alpha -= 25` at `:56809`).
+    if p.alpha < 170 {
+        crate::projectile_trail_dust::chlorophyte_bullet_trail(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            rng, dust, dust_ctx, world,
+        );
+    }
     // `:56802-56808` — `num185 = (float)Math.Sqrt(vx*vx + vy*vy)`; the
     // first tick latches `localAI[0]` to the launch speed (the steer
     // keeps THAT speed, not the current one).
@@ -327,8 +375,9 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
     let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
     let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
     if !hit_x && !hit_y {
-        p.pos.x = nx;
-        p.pos.y = ny;
+        // S1-P-i57 — the unblocked move rides `:20441`'s wet swap
+        // (`wet_velocity`: the `:17612-17655` drag while wet).
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
         return;
     }
     match p.kind {
@@ -350,8 +399,9 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
                 // The C# `UpdatePosition` (`:20445`) integrates the
                 // POST-bounce velocity on the bounce tick (the typhoon
                 // precedent); the probe's blocked-axis stand-in keeps
-                // the other axis sliding.
-                p.pos += p.vel;
+                // the other axis sliding. S1-P-i57: the wet arm rides
+                // `wet_velocity` (`:20441` — the `:17612-17655` drag).
+                p.pos += crate::projectile_wet::wet_velocity(p, world);
             } else {
                 kill(p);
             }
@@ -404,7 +454,9 @@ fn move_bullet(p: &mut Projectile, world: &World, npcs: &[Npc], local_immunity: 
                 };
                 p.vel = dir * speed;
             }
-            p.pos += p.vel;
+            // S1-P-i57 — the nano-bullet's bounce-tick integrate rides
+            // `:20441`'s wet swap (`wet_velocity`).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
         // Every other special bullet keeps the generic kill-on-tile
         // default arm (`:19849-19853`'s `position += velocity; Kill()`

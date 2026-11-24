@@ -613,6 +613,20 @@ pub(crate) fn reforge_roll(kind: u16, rng: &mut impl PrefixRandom) -> (u16, bool
 // `ParticleOrchestrator` renderer). The sounds play through the existing
 // `Audio::play_use_sound` façade (the audio-only `GetRandomPitch` draw rides
 // `sound_style_random`, never the gameplay stream).
+//
+// THE WIRING-WAVE FOLD (research/66, W4-e4): the FULL `RainbowRodHit` emitter
+// now lives in `orchestrator_dust.rs::rainbow_rod_hit` and owns every IN-WORLD
+// site (the 79 projectile hit/death, the Kaleidoscope tag). The reforge tail
+// KEEPS this count-only drain as its ONE draw path — the two are disjoint by
+// call site, so no site double-draws (the "keep ONE" reconciliation). The
+// count-only form is exact under the documented empty-pool / on-screen
+// assumption: `Dust.NewDust`'s cull (`Dust.cs:97-101`) and pressure bands
+// (`:114-152`) draw NOTHING when the pool is empty and the spawn is on-screen
+// (the reforge anchors at `LocalPlayer.MountedCenter`, always on-screen), so
+// the 272-draw body is the pool-free contract. A pool-aware fold would make
+// the reforge stream occupancy-dependent and re-pin the frozen 602 witness
+// (`the_reforge_tail_consumes_the_cited_draws` + `flow.rs`'s replay), so the
+// tail stays count-only — the recorded deviation (ANALYSIS, S1-P-i45).
 
 /// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`): the unit draw
 /// (`NextVector2Unit`, one `NextFloat`) THEN a second `NextFloat` radius
@@ -648,7 +662,14 @@ fn reforge_new_dust_draws(rng: &mut UnifiedRandom) {
 /// + `NextFloat` fadeIn (`:3483`) + `CloneDust`'s `NewDust` 6 (`:3486`) = 19.
 /// Total 2 + 6×7 + 12×19 = 272 draws (the settings' own circular is drawn by
 /// the caller, `Main.cs:41914`/`:41919`, BEFORE this spawn).
-fn reforge_rainbow_rod_hit_draws(rng: &mut UnifiedRandom) {
+///
+/// KEEP-ONE (the W4-e4 wiring fold, research/66): this count-only drain is
+/// the reforge tail's ONE RainbowRodHit draw path; the full emitter
+/// (`orchestrator_dust.rs::rainbow_rod_hit`) owns the in-world sites only.
+/// The 272 contract holds under the empty-pool / on-screen assumption (the
+/// module note above) — the reforge never culls or hits a pressure band.
+/// `pub(crate)` so the wiring witness can pin the stream equivalence.
+pub(crate) fn reforge_rainbow_rod_hit_draws(rng: &mut UnifiedRandom) {
     rng.next_float(); // :3446 — num
     rng.next_float(); // :3448 — num3
     for _ in 0..6 {

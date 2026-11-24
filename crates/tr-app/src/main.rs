@@ -36,6 +36,7 @@ mod death;
 mod drawdata_cases_a;
 mod drawdata_cases_b;
 mod dust_lights;
+mod dust_lights_b;
 mod dye;
 mod emotes;
 mod env;
@@ -68,6 +69,7 @@ mod net;
 mod npc;
 mod npc_scaling;
 mod npc_chat;
+mod npc_dust;
 mod npc_spatial;
 mod revenge;
 mod npc_ai;
@@ -187,6 +189,9 @@ mod npc_findframe_b;
 mod npc_findframe_mid2;
 mod npc_findframe_c;
 mod npc_findframe_high2;
+// W4-f4 wave E: the 17 unclaimed out-of-HitEffect gore sites (research/211)
+// — UNWIRED standalone machines, the hosts' wiring is the follow-up round.
+mod npc_hit_effect_e;
 mod persist;
 mod grapple;
 mod gore_seam;
@@ -199,6 +204,11 @@ mod hurt_modifiers;
 // Player.cs:6502-6617) — wired at world_sim/editing.rs's pre-strike site.
 mod melee_on_hit;
 mod player;
+// W4-e1: the Player.cs `Dust.NewDust` sites' SECOND batch (the first 26 are
+// W4-d51's `player_dust.rs`). The tick queues the box/velocity snapshot at the
+// C# read moment; this module replays each site on the `UpdatePlayers` stream.
+// Ledger: docs/research/64-dust-sites-player-2.md.
+mod player_dust2;
 mod player_file;
 mod potions;
 mod prefix;
@@ -206,9 +216,16 @@ pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;
 pub(crate) mod id_tables;
 pub(crate) mod world_events;
+mod proj_trail_dust;
 mod projectile;
 mod quick_stack;
 mod debug_options;
+// W4-d53: the projectile-tick `Dust.NewDust` drain lanes — the per-tick arrow
+// trail (Projectile.cs:17036-17077), the stationary Vortex-bolt trail
+// (:17117-17125) and the enchantment-visuals lane (:17290-17467). The tick
+// snapshots the box/velocity/owner flags, this module replays on the
+// UpdateProjectiles stream (the player_dust / pending_proj_sounds convention).
+mod projectile_dust;
 mod projectile_ai001_b;
 mod projectile_ai_frostmoon;
 mod projectile_ai_moonlord;
@@ -251,6 +268,11 @@ mod projectile_special_bullets;
 // the on-hit debuffs. The dispatch claim + the death-hook drain are wired in
 // projectile.rs (module doc + docs/ANALYSIS.md "The thrown consumables").
 mod projectile_ai_thrown;
+// W4-g64 (the d13 machine port, dust-wired) — the aiStyle-124 pet machine
+// (`Projectile.cs:34970-35696`): the home-spot ladder, the frame machines,
+// the 957 ground-bounce column scan and the 650 ore scan + steering tail;
+// the 895/898 flight sparkles + the 650's 204 pair ride proj_trail_dust.
+mod projectile_ai_pets124;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs
@@ -260,19 +282,37 @@ mod projectile_ai_empress;
 // S1-P-i35: the fishing bobber's AI_061 flight/bite machine + the FishingCheck
 // orchestration (the pure roll engine is tr_core::fishing).
 mod projectile_bobber;
+// W4-d53 batch 4 — the generic Update wet machine (Projectile.cs:16786-17007):
+// the wetCount cooldown, the liquid-flag latching, the entry/exit splash edges
+// (the 8 census sites :16851-16987 ride projectile_dust's WetSplash drain).
+mod projectile_wet;
 // S1-P-i06 — the spear family (aiStyle 19, `AI_019_Spears`): the held-spear
 // thrust arm + its extension/retract curve and reach-ahead hitbox, plus the
 // small sub-shot arms (the spore/cloud/bolt/snowflake/flake the spears spawn).
 mod projectile_ai_spear;
+// W4-g63 — the projectile TRAIL dust lane 1 (kinds 1-400): the per-kind
+// trailing/ambient dust arms inside Projectile.AI(), re-armed onto the live
+// DustPool on the UpdateProjectiles stream (research/66; g64 owns 401+, g65
+// the Kill death dust).
+mod projectile_trail_dust;
 mod rain;
 // S1-P-i38: the recall / magic-mirror / ice-mirror / potion-of-return use
 // path — ItemCheck's spawn-recall arms (Player.cs:42976-42999 / :43107-43140 /
 // :43141-43172) + Spawn(RecallFromItem) (:37534-37710) + the spawn-position
 // helpers (:37718-37991). Wired into update_editing (the boss-spawner seam).
 mod recall_teleport;
+// W4-d51: the player-tick `Dust.NewDust` drain lanes — the extra-jump chain
+// (`Player.JumpMovement`, Player.cs:20818-21012) first; the tick queues the
+// box/velocity snapshot, this module replays on the `UpdatePlayers` stream.
+mod player_dust;
 mod regen;
 mod research;
 mod sand;
+// W4-e4: the world dust sites' SECOND batch — ParticleOrchestrator sites
+// 41-61 + Mount sites 1-19 (research/66's claim; d54's first-40 orch lane
+// reserved, WorldGen/Main stay g14/g11-g13). UNWIRED code-only emitters.
+mod orchestrator_dust;
+mod mount_dust;
 mod ambience;
 mod ambient_sound;
 mod capture;
@@ -288,6 +328,14 @@ mod render;
 // 192-leaf reconciliation are the wiring wave (see the module doc +
 // docs/ANALYSIS.md "The tile-draw particle layer (W4-d60)").
 mod tile_draw_particles;
+// W4-g13: Main.cs dust-site batch 3 (sites 17-23 of the 23-site census,
+// docs/research/64-dust-main-sites-claims.md) - the Moon Lord core's dead
+// tentacle-tip puff, the Tavernkeep ale sparkle pair, the world-item coin
+// sparkle and the retro oldDrawWater surface/lava pair. WIRED: the feeds
+// run in app/frame/draw.rs::draw_region outside the G6 cache on
+// rngs.global() (see the module doc + docs/ANALYSIS.md "The Main.cs dust
+// sites, batch 3 (W4-g13)").
+mod main_dust;
 mod spawner;
 mod tag_effects;
 mod settings;
@@ -297,11 +345,20 @@ mod signs;
 mod sound;
 mod soundid;
 mod test_world_helpers;
+mod orch_dust;
+mod orch_dust_boulder;
+mod orch_dust_lightning;
+mod orch_dust_town;
+mod orch_dispatch;
 mod town;
 mod town_arrival;
 mod tracked_sound;
 mod touch_damage;
 mod ui;
+mod world_dust;
+mod world_dust_main;
+mod world_dust_tile;
+mod world_dust_wall;
 mod world_sim;
 mod world_stepper;
 

@@ -15,6 +15,7 @@ pub mod drawdata_anim;
 pub mod drawdata_furniture;
 pub mod dd2;
 pub mod dd2_victory;
+pub mod dust_physics;
 pub mod dust_table;
 pub mod edit;
 pub mod extract;
@@ -63,6 +64,9 @@ pub mod wind;
 pub mod wld;
 pub mod world;
 pub mod worldgen;
+pub mod worldgen_dust;
+pub mod worldgen_dust_tile;
+pub mod worldgen_dust_wall;
 
 pub use tile::Tile;
 pub use unified_random::UnifiedRandom;

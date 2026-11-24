@@ -335,8 +335,10 @@ impl App {
     self.update_items(dt);
     }
 
-    /// `Main.UpdateWorld_Dust` (`Main.cs:18047`): the minecart sparks ride
-    /// this per-frame slot.
+    /// `Main.UpdateWorld_Dust` (`Main.cs:18047`): the whole dust pool rides
+    /// this per-frame slot — the W4-d50 wiring dispatches the per-type
+    /// physics chain (`tr_core::dust_physics::type_chain`) as the shared
+    /// loop's hook (`minecart::tick`).
     fn dust_phase(&mut self, dt: f32) {
     // `Main.UpdateWorld_Dust` (`Main.cs:18047`): the minecart sparks
     // ride this per-frame slot (the same slot the rain/sand dust get in
@@ -354,7 +356,23 @@ impl App {
         tr_core::scene::is_desert_bg_style(self.bg_style),
         self.bg_delay,
     );
-    let player_vy = self.player.as_ref().map_or(0.0, |p| p.vy);
+    // The chain's `Main.player[Main.myPlayer]` snapshot (27/45/76/268/235):
+    // velocity, wet and Center; no player reads the default-constructed
+    // fallback (`DustPlayerSnap::default`, the dust_physics module docs).
+    let player = self.player.as_ref().map_or_else(
+        crate::minecart::DustPlayerSnap::default,
+        |p| {
+            let (cx, cy) = p.center();
+            crate::minecart::DustPlayerSnap {
+                vx: p.vx,
+                vy: p.vy,
+                wet: p.wet,
+                center: Vec2::new(cx, cy),
+            }
+        },
+    );
+    // The child-drain `NewDust` ctx (`Dust.cs:77-98` statics).
+    let spawn_ctx = self.spawn_ctx();
     let dust = &mut self.dust;
     match self.player.as_mut() {
         Some(p) => crate::minecart::tick(
@@ -365,8 +383,9 @@ impl App {
             Vec2::new(sw, sh),
             self.zoom,
             &self.world,
-            player_vy,
+            player,
             show_sand,
+            &spawn_ctx,
         ),
         None => crate::minecart::tick(
             dust,
@@ -376,8 +395,9 @@ impl App {
             Vec2::new(sw, sh),
             self.zoom,
             &self.world,
-            player_vy,
+            player,
             show_sand,
+            &spawn_ctx,
         ),
     }
     }
@@ -720,9 +740,11 @@ impl App {
     /// statements are state-disjoint from them, so the consolidation is a
     /// no-op (the screenshot pairs prove it).
     pub(super) fn draw_half_pre_snapshots(&mut self, dt: f32) {
-    if self.menu.is_none() && self.front.is_none() {
-        self.stepper.drawn_this_update = true;
-    }
+    // `WorldUpdateStepper.DrawnThisUpdate = true` (`Main.cs:62478`) sits at
+    // the END of `DoDraw`, AFTER the draw passes — not at the draw-half head.
+    // The W4-g13 dust emitters read `FocusHelper.Allow*` (= `!DrawnThisUpdate`)
+    // DURING the draw, so the mark must stay clear until the passes finish;
+    // `frame()` sets it right after `draw_region` returns (the C# position).
     if self.is_client() && self.frame_count == 90 {
         if let Some((x, y)) = crate::env::net_edit() {
             self.request_edit(x, y, 0, 0);

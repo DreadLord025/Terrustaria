@@ -234,6 +234,13 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // single-player (`spawn_hostile`).
     let (local_owner, hostile_local) = (app.local_id as u8, !app.is_client());
     let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+    // W4-e3 — the dust seam: the frame's spawn ctx is captured HERE, before
+    // the `rng` mutable borrow (the helper borrows `app` immutably — the
+    // `world_sim/npcs.rs:4191` convention); the live pool is threaded into
+    // the tick closure below. The aiStyle-2/4/5/8 dust arms roll the SAME
+    // `UpdateProjectiles` stream through the verbatim `DustPool::new_dust`
+    // (`Main.cs:17775-17777`'s `SwapRandom` wraps the walk, dust included).
+    let dust_spawn_ctx = app.spawn_ctx();
     // S1-P-i06 — the spear family's owner snapshot (`AI_019_Spears`'s
     // `Main.player[owner]` reads, `Projectile.cs:45859-45868`). The C# reads
     // the live `itemAnimation`/`itemAnimationMax` integers; the port's swing
@@ -332,6 +339,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-d53 batch 4 — `Main.waterStyle` as the wet machine's `dustWater()`
+    // pick reads it (`Projectile.cs:16891`/`:16973`): the draw-pass value
+    // (the g15 items-pass `calculate_water_style` precedent), fed before
+    // the tick so the splash drain resolves the water dust type.
+    let water_style = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
+    app.projectiles.set_water_style(water_style);
+    // W4-g64 (the d13 seam) — `Main.screenWidth` for the aiStyle-124
+    // tentacle's ore-scan distance gate (`Projectile.cs:35577`); the same
+    // swapchain width the dust cull reads (`App::spawn_ctx`).
+    app.projectiles.set_screen_width(sw);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -383,8 +400,18 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(ctx) = golf_ctx {
         app.projectiles.set_golf_context(ctx);
     }
+    // W4-g63 — the trail-dust lane's live seam: the frame's spawn ctx
+    // (`Main.screenPosition/width/height` + the gfx budget) captured
+    // BEFORE the step closure's `&mut app.world`/`&mut app.dust` field
+    // borrows (the `world_sim/npcs.rs` `dust_spawn_ctx` convention).
+    // W4-g64 — the trail-dust lane's live seam (the W4-g63 batch-1 shape):
+    // the frame's spawn ctx (`Main.screenPosition/width/height` + the gfx
+    // budget) captured BEFORE the step closure's `&mut app.world`/`&mut
+    // app.dust` field borrows (the `world_sim/npcs.rs` `dust_spawn_ctx`
+    // convention).
+    let dust_spawn_ctx = app.spawn_ctx();
     app.projectile_step.tick(dt.min(0.25), |_| {
-        app.projectiles.update(
+        app.projectiles.update_dust(
             &mut app.world,
             &mut app.npcs,
             owner,
@@ -395,6 +422,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
             local_owner,
             hostile_local,
+            &mut app.dust,
+            &dust_spawn_ctx,
         );
     });
     app.projectile_step.cap_backlog();
@@ -559,12 +588,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         n.net_update = true;
         app.npcs.push(n);
     }
-    // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
-    // case 19's playing guard refuses BEFORE the one pitch draw, on the
-    // `UpdateProjectiles` stream (the C# plays inline mid-`AI_061`; the port
-    // drains at the pass tail, the S1-E-21c convention).
+    // S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`)
+    // + W4-d53 batch 4's wet-machine edge plays (`:16871`/`:16885`/`:16898`/
+    // `:16912` entry, `:16953`/`:16967`/`:16980`/`:16994` exit — shimmer
+    // styles 4/5, every other arm the default style 1): case 19's playing
+    // guard refuses BEFORE the one pitch draw, on the `UpdateProjectiles`
+    // stream (the C# plays inline mid-walk; the port drains at the pass
+    // tail, the S1-E-21c convention). The splash queue drains AHEAD of the
+    // dust queue: the C# draws the edge's dust THEN plays (the shimmer arm
+    // plays inside the loop), the port's two queues invert that within-edge
+    // order — the recorded queue→drain deviation family (ANALYSIS batch 4;
+    // the per-tick draw COUNT is identical, the interleaving is not).
     for (style, x, y) in app.projectiles.drain_splashes() {
         app.audio.play_splash_sound(style, x, y, rng);
+    }
+    // W4-d53 — the tick's `Dust.NewDust` bursts (`Projectile.cs:16700-16703`
+    // enchantment visuals, `:17036-17077` the arrow trail, `:17117-17125` the
+    // stationary Vortex-bolt puff, `:16843-16996` the wet entry/exit splash):
+    // the pass snapshotted each at the C# read moment; the drain replays the
+    // chain on the SAME `UpdateProjectiles` stream through the live
+    // `DustPool` (the `player_dust` / S1-E-21c queue→drain convention — the
+    // C# draws mid-walk, the port at the tail).
+    for burst in app.projectiles.drain_dust_bursts() {
+        crate::projectile_dust::drain(app, burst);
     }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
@@ -718,6 +764,36 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                     }
                 }
             }
+        }
+    }
+    // W4-e4 — the orchestra request drain (`ParticleOrchestrator.
+    // RequestParticleSpawn` → `SpawnParticlesDirect`,
+    // `ParticleOrchestrator.cs:52-59`/`:162`): the damage/death/tag arms
+    // queued `(kind byte, settings)` this tick; the emitter bodies run
+    // here on the SAME `UpdateProjectiles` stream (`Main.cs:17775`), the
+    // S1-E-21c queue→drain convention (the pool cannot borrow the App's
+    // dust pool mid-walk). The settings' argument draws were consumed
+    // inline at the queue sites; only the emitter internals roll here.
+    // The spawn ctx is the pass-moment one (the cull/pressure gates read
+    // the live camera + quality cap, `App::spawn_ctx`).
+    let orchestra = app.projectiles.drain_orchestra();
+    if !orchestra.is_empty() {
+        let ctx = app.spawn_ctx();
+        let disco = app.disco;
+        let players = [app.player.as_ref()];
+        let rng = app.rngs.stream(crate::app::RngKey::UpdateProjectiles);
+        for (kind, settings) in orchestra {
+            crate::orchestrator_dust::spawn_orchestra(
+                kind,
+                &settings,
+                rng,
+                &mut app.world.frame_rng,
+                disco,
+                &mut app.dust,
+                &ctx,
+                &app.world,
+                &players,
+            );
         }
     }
 }

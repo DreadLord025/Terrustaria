@@ -45,6 +45,7 @@
 
 use glam::Vec2;
 use tr_core::World;
+use tr_core::loot::DropRng;
 
 use crate::projectile::{
     Projectile, BRAIN_SCRAMBLER, DESTROYER_LASER, EYE_LASER, FLOWER_POW_PETAL, FLAMING_WOOD,
@@ -121,6 +122,38 @@ enum Rot {
 /// movement stand-in. `owner` is the owner player's center (the pool's
 /// `Main.player[owner]` channel) — only the skull's homing reads it.
 pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
+    // W4-g63 — the dust-free scratch entry (the `ProjectilePool::update`
+    // precedent): the witnesses below run the flight on a scratch pool;
+    // the live sim threads the real pool through [`ai001_slice_a_dust`].
+    let mut dust = tr_core::particles::DustPool::new();
+    let ctx = tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: Vec2::ZERO,
+        screen_size: Vec2::new(
+            world.width as f32 * tr_core::TILE_PX,
+            world.height as f32 * tr_core::TILE_PX,
+        ),
+        max_dust_to_draw: 6000,
+    };
+    let mut rng = tr_core::UnifiedRandom::new(0);
+    ai001_slice_a_dust(p, world, owner, &mut rng, &mut dust, &ctx);
+}
+
+/// W4-g63 — the full slice-A step with the caller's `UpdateProjectiles`
+/// stream + the live dust pool: the 270 Skull's first-tick burst
+/// (`:56079-56087`) + per-tick trail (`:56678-56685`) and the 325 Flaming
+/// Wood's `alpha == 0` window (`:55172-55190`) are RE-ARMED at their C#
+/// statement positions. Every other kind's stream stays untouched.
+pub(crate) fn ai001_slice_a_dust(
+    p: &mut Projectile,
+    world: &World,
+    owner: Option<(f32, f32)>,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     match p.kind {
         // `:55950` case 14 — no per-type hook at all: the musket ball is
         // a straight bullet (the generic flight's gravity was the bug).
@@ -213,14 +246,22 @@ pub(crate) fn ai001_slice_a(p: &mut Projectile, world: &World, owner: Option<(f3
             p.local_ai[0] += 1.0;
             finish(p, world, false, Gravity::Rest, Rot::Default);
         }
+        SKULL => skull(p, world, owner, rng, dust, dust_ctx),
         FLAMING_WOOD => {
             // `:55164-55196` — `alpha -= 100` clamp 0; the light plot
-            // (`:55171`) and the two dust rolls (`:55175-55189`, the
-            // `Main.rand.Next(3)`/`Next(4)`/`Next(10)`/`Next(5)` draws)
-            // are SKIPPED — dust-only, no state reads them.
+            // (`:55171`) stays skipped.
             p.alpha -= 100;
             if p.alpha < 0 {
                 p.alpha = 0;
+            }
+            // `:55172-55190` — W4-g63: the `alpha == 0` dust window
+            // RE-ARMED (the Next(3)/Next(10)/Next(4)/Next(5) draws ride
+            // the pass's stream at their C# positions).
+            if p.alpha == 0 {
+                crate::projectile_trail_dust::flaming_wood_dust(
+                    &crate::projectile_trail_dust::TrailSlot::of(p),
+                    rng, dust, dust_ctx, world,
+                );
             }
             // `:55191-55195` — `ai[1] = 1f` + `SoundID.Item42`: the
             // trackable custom cue has no legacy-Item facade (the D3
@@ -306,7 +347,14 @@ fn latch_ai1_no_cue(p: &mut Projectile) {
 /// (`:55974`), so the counter rests and the generic gravity never fires;
 /// the shot steers at the player only inside the `30 < ai[1] < 110`
 /// window and accelerates 2%/tick below the speed 18.
-fn skull(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
+fn skull(
+    p: &mut Projectile,
+    world: &World,
+    owner: Option<(f32, f32)>,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // `:56058-56060` — `Player.FindClosest(Center, 1, 1)` then `ai[1]++`.
     // The port has one player: the owner center IS the closest player
     // (the pool's `Main.player[owner]` stand-in). No owner resolved →
@@ -338,19 +386,28 @@ fn skull(p: &mut Projectile, world: &World, owner: Option<(f32, f32)>) {
     if p.vel.length() < 18.0 {
         p.vel *= 1.02;
     }
-    // `:56075-56088` — the first-tick latch; `SoundID.Item8` and the
-    // 10× dust 5 burst are SKIPPED (no rand draw survives).
+    // `:56075-56088` — the first-tick latch; `SoundID.Item8` stays
+    // skipped. W4-g63: the 10× dust 5 burst RE-ARMED (no explicit draws).
     if p.local_ai[0] == 0.0 {
         p.local_ai[0] = 1.0;
+        crate::projectile_trail_dust::skull_first_burst(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            rng, dust, dust_ctx, world,
+        );
     }
     // `:56659-56675` — `alpha = 0` (the fade below it is a no-op for
-    // 270), `frame++` wrapping at 2; the 2× dust 5 (`:56678-56685`)
-    // SKIPPED.
+    // 270), `frame++` wrapping at 2.
     p.alpha = 0;
     p.frame += 1;
     if p.frame > 2 {
         p.frame = 0;
     }
+    // `:56676-56686` — W4-g63: the 2× dust 5 trail RE-ARMED (the
+    // `type == 270` arm; the 837 twin is `ai_book_of_skulls`' kind).
+    crate::projectile_trail_dust::skull_trail(
+        &crate::projectile_trail_dust::TrailSlot::of(p),
+        rng, dust, dust_ctx, world,
+    );
     // 270 falls through the gravity chain to the generic `ai[0] >= 15f`
     // tail (`:57568`), unreachable with the resting counter.
     finish(p, world, false, Gravity::Rest, Rot::Skull);
@@ -435,8 +492,10 @@ fn finish(p: &mut Projectile, world: &World, count_flight: bool, gravity: Gravit
             p.active = false;
             p.time_left = 0;
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — the `ai_style1_flight` swap rides here too (the
+            // replica stays byte-identical): `:20441`'s `wet ? wetVelocity :
+            // velocity` via `wet_velocity` (the `:17612-17655` drag wet).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;

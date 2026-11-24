@@ -188,11 +188,13 @@ pub(crate) fn ai026_a_tick(
         TIKI_SPIRIT => tiki_arm(p, world, &owner, rng),
         _ => flyer_group_arm(p, world, &owner, rng),
     }
-    // `UpdatePosition` (`:19858` → `:20445`): the dry `position +=
-    // velocity` rides every tick — the arms' early returns leave
+    // `UpdatePosition` (`:19858` → `:20439-20446`): the `wet ? wetVelocity :
+    // velocity` integrate rides every tick — the arms' early returns leave
     // `AI_026`, not `Update`, so the integration still runs (the tiki's
-    // `frameCounter <= 6` return `:60047` included).
-    p.pos += p.vel;
+    // `frameCounter <= 6` return `:60047` included). S1-P-i57: the mirror
+    // rides `wet_velocity` (the pets keep `tileCollide = false`, the
+    // `:17476` gate keeps it un-scaled; dry byte-identical).
+    p.pos += crate::projectile_wet::wet_velocity(p, world);
     true
 }
 
@@ -839,7 +841,10 @@ fn wisp_arm(p: &mut Projectile, owner: &OwnerView) {
     }
     p.sprite_direction = p.direction;
     if dist < 10.0 {
-        // `:59885-59897` — the snap.
+        // `:59885-59897` — the snap. The `:59892` `position += velocity` is
+        // AI-internal (the wisp arm runs inside `AI()`, BEFORE the wet
+        // machine) — it keeps the full velocity; only `UpdatePosition`'s
+        // integrate reads `wetVelocity` (S1-P-i57: not a swap site).
         p.vel.x = dx;
         p.vel.y = dy;
         p.rot = p.vel.x * 0.05;

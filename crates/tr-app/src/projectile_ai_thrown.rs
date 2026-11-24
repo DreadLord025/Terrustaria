@@ -110,7 +110,12 @@ pub(crate) fn javelin_friendly_step(p: &mut Projectile, world: &World) {
 /// The kill-on-tile movement stand-in (`HandleMovement`'s default arm
 /// `Projectile.cs:19849-19853`, the `ai_style1_flight`/`kill_step` shape):
 /// integrate one step, die on a solid tile. `tileCollide=false` slots
-/// integrate freely (the stuck javelin).
+/// integrate freely (the stuck javelin). S1-P-i57 swap point 4 — the 3
+/// callers (`javelin_friendly_step`, `bone_javelin_step`, `bee_step`) funnel
+/// through this ONE integrate: the unblocked
+/// step swaps to `wet ? wetVelocity : velocity` (`:20441` via
+/// `projectile_wet::wet_velocity` — the `:17612-17655` drag while wet, the
+/// full velocity dry; the free branch stays un-scaled, the `:17476` gate).
 fn kill_step(p: &mut Projectile, world: &World) {
     if !p.tile_collide {
         p.pos += p.vel;
@@ -125,8 +130,7 @@ fn kill_step(p: &mut Projectile, world: &World) {
         p.active = false;
         p.time_left = 0;
     } else {
-        p.pos.x = nx;
-        p.pos.y = ny;
+        p.pos += crate::projectile_wet::wet_velocity(p, world);
     }
 }
 
@@ -135,7 +139,13 @@ fn kill_step(p: &mut Projectile, world: &World) {
 /// (`:19780-19786`). The 669 Ale-Throwing-Glove dust branch (`flag35`) is a
 /// different kind and stays out. Zero RNG (the `alpha==0` dust `:30191-30207`
 /// is skipped whole, its draws with it).
-pub(crate) fn molotov_step(p: &mut Projectile, world: &World) {
+pub(crate) fn molotov_step(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // `:30168` — `rotation += 0.25 * direction`.
     p.rot += 0.25 * p.direction as f32;
     // `:30171` — `ai[0]++`.
@@ -155,8 +165,14 @@ pub(crate) fn molotov_step(p: &mut Projectile, world: &World) {
         }
         p.vel.x *= 0.99;
     }
-    // `:30189-30221` — the `alpha == 0` dust window (399's single fire dust,
-    // `:30191-30207`) is SKIPPED (no dust layer, its draws with it).
+    // `:30189-30207` — W4-g63: the 399's `alpha == 0` fire dust RE-ARMED
+    // (flag34; the 669's flag35 block is kind > 400, W4-g64's).
+    if p.alpha == 0 && p.kind == MOLOTOV_COCKTAIL {
+        crate::projectile_trail_dust::molotov_fire_dust(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            p.rot, rng, dust, dust_ctx, world,
+        );
+    }
     // `:30222` — `spriteDirection = direction`.
     p.sprite_direction = p.direction;
     // `:30223-30234` — `timeLeft <= 3`: the prime — `tileCollide=false`,
@@ -187,8 +203,9 @@ pub(crate) fn molotov_step(p: &mut Projectile, world: &World) {
             p.alpha = 255;
             p.time_left = 3;
         } else {
-            p.pos.x = nx;
-            p.pos.y = ny;
+            // S1-P-i57 — `:20441`'s wet swap on the unblocked aiStyle-68
+            // move (`wet_velocity`: the `:17612-17655` drag while wet).
+            p.pos += crate::projectile_wet::wet_velocity(p, world);
         }
     } else {
         p.pos += p.vel;
@@ -600,6 +617,23 @@ mod tests {
         World::new("t".into(), 64, 800)
     }
 
+    /// W4-g63 — the scratch dust seam (the `Npc::update_rng` convention):
+    /// a fresh pool + the permissive ctx, so the re-armed molotov fire
+    /// dust always lands. The state censuses below are unchanged.
+    fn scratch_dust(w: &World) -> (tr_core::particles::DustPool, tr_core::particles::SpawnCtx) {
+        (
+            tr_core::particles::DustPool::new(),
+            tr_core::particles::SpawnCtx {
+                game_menu: false,
+                game_paused: false,
+                generating: false,
+                screen_position: Vec2::ZERO,
+                screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+                max_dust_to_draw: 6000,
+            },
+        )
+    }
+
     /// The javelin (507) flies straight for 60 ticks, then falls 0.3/tick with
     /// the 0.98 X decay (`Projectile.cs:57473-57477`).
     #[test]
@@ -628,16 +662,18 @@ mod tests {
         p.pos = Vec2::new(500.0, 500.0);
         p.vel = Vec2::new(4.0, 0.0);
         p.direction = 1;
+        let (mut dust, dctx) = scratch_dust(&w);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
         // alpha starts 255; tick 1/2 no fade (ai[0] < 3), tick 3 fades 40.
-        molotov_step(&mut p, &w);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.alpha, 255, "ai[0]=1 < 3, no fade");
-        molotov_step(&mut p, &w);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.alpha, 255, "ai[0]=2 < 3, no fade");
-        molotov_step(&mut p, &w);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.alpha, 215, "ai[0]=3 fades 40");
         assert!((p.rot - 0.75).abs() < 1e-6, "3 ticks of 0.25 spin");
         for _ in 0..12 {
-            molotov_step(&mut p, &w);
+            molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         }
         // ai[0]=15 now: gravity armed.
         assert!(p.vel.y > 0.0, "tick 15 adds 0.2 gravity");
@@ -651,7 +687,9 @@ mod tests {
         let mut p = proj(MOLOTOV_COCKTAIL);
         p.pos = Vec2::new(500.0, 500.0);
         p.time_left = 3;
-        molotov_step(&mut p, &w);
+        let (mut dust, dctx) = scratch_dust(&w);
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        molotov_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(p.w, 80.0);
         assert_eq!(p.h, 80.0);
         assert_eq!(p.knock_back, 8.0);
