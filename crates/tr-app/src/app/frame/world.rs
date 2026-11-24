@@ -50,12 +50,17 @@ impl App {
     // `Main.DrawInventory`'s shop-close rule (`Main.cs:41784-41787`) — the
     // interface pass closes the shop when the inventory closes.
     self.update_shop_close();
-    for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
-        let target = if i == self.selected { 1.0 } else { 0.75 };
-        if *scale < target {
-            *scale = (*scale + 0.05).min(target);
-        } else if *scale > target {
-            *scale = (*scale - 0.05).max(target);
+    // W4-c46 final — the hotbar scale lerp lives INSIDE `GUIHotbarDrawInner`
+    // (`Main.cs:43604-43611`), which early-returns for the ghost
+    // (`:43588`): the scales freeze while the hardcore ghost flies.
+    if !self.player.as_ref().is_some_and(|p| p.ghost) {
+        for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
+            let target = if i == self.selected { 1.0 } else { 0.75 };
+            if *scale < target {
+                *scale = (*scale + 0.05).min(target);
+            } else if *scale > target {
+                *scale = (*scale - 0.05).max(target);
+            }
         }
     }
     // S1-B-3 — the in-game pause gate (`Main.cs:17194-17201`):

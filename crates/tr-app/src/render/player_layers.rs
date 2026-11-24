@@ -44,6 +44,11 @@ pub(crate) enum PlayerPart {
     Pants,
     Shoes,
     Shirt,
+    /// W4-d115 wiring round — `DrawPlayer_20_NeckAcc`
+    /// (`PlayerDrawLayers.cs:2026-2034`): the `AccNeck[neck]` sprite at
+    /// the torso anchor, between the waist layer and the head
+    /// (`LegacyPlayerRenderer.cs:210-214`).
+    NeckAcc,
     Head,
     EyeWhites,
     Eyes,
@@ -69,7 +74,14 @@ pub(crate) enum PlayerPart {
     FrontShoulderUnder,
     FrontShoulderSleeve,
     FrontShoulderShirt,
+    /// `DrawPlayer_25_Shield` (`PlayerDrawLayers.cs:2954-3024`): the visible
+    /// shield's `Acc_Shield_{slot}` frame — the raised ghosts, the body
+    /// sprite and the parry echo all share the part tag.
+    Shield,
     HeldItem,
+    /// `DrawPlayer_37_BeetleBuff` (`PlayerDrawLayers.cs:4007-4031`): the
+    /// Beetle orb sprites — 5 trail ghosts + 1 body per live orb.
+    BeetleOrb,
 }
 
 /// One drawable sprite produced by a layer builder: position and size in world
@@ -207,6 +219,13 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) body_armor: i16,
     /// `Player.legs` — the leg armor's slot; replaces the pants sprite.
     pub(crate) leg_armor: i16,
+    /// W4-d115 wiring round — `Player.neck` (`Player.cs:1686`): the
+    /// visible neck accessory's slot (−1 = none, 1..14 = `ArmorIDs.Neck`);
+    /// `DrawPlayer_20_NeckAcc` gates `0 < neck < 15`
+    /// (`PlayerDrawLayers.cs:2028`).
+    pub(crate) neck: i32,
+    /// `Player.cNeck` — the neck layer's dye shader (0 = plain).
+    pub(crate) c_neck: u32,
     /// `Player.compositeFrontArm` (`Player.cs:1906`).
     pub(crate) front_arm: CompositeArmState,
     /// `Player.compositeBackArm`.
@@ -238,6 +257,31 @@ pub(crate) struct PlayerCompositeState {
     /// (`Main.cs:44091-44092`), the default (215, 90, 55) reproduces the
     /// former [`HAIR`] constant bit-for-bit.
     pub(crate) hair_color: [f32; 3],
+    /// W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff`
+    /// (`PlayerDrawLayers.cs:4007-4031`): the live orb count, the 3-frame
+    /// wing cycle and the per-orb orbit position/velocity. The layer draws
+    /// only while a Beetle set is worn (`beetleOffense || beetleDefense`)
+    /// and the player is not a shadow draw.
+    pub(crate) beetle_orbs: i32,
+    pub(crate) beetle_frame: i32,
+    pub(crate) beetle_pos: [[f32; 2]; 3],
+    pub(crate) beetle_vel: [[f32; 2]; 3],
+    pub(crate) beetle_set: bool,
+    /// `Player.shield` (`Player.cs:1584`): the visible shield's
+    /// `ArmorIDs.Shield` slot, −1/0 = none (`DrawPlayer_25_Shield`'s
+    /// `<= 0 || >= Count` guard, `PlayerDrawLayers.cs:2956`).
+    pub(crate) shield: i16,
+    /// `Player.shieldRaised` — the −4y lift, the 4 orbiting ghosts and the
+    /// sin pulse (`PlayerDrawLayers.cs:2961-3003`).
+    pub(crate) shield_raised: bool,
+    /// `Player.shieldParryTimeLeft` — the echo's push/fade fraction
+    /// (`/20`, `PlayerDrawLayers.cs:3004-3018`).
+    pub(crate) shield_parry_time_left: i32,
+    /// `Main.GlobalTimeWrappedHourly` — the ghosts' orbit phase and the
+    /// pulse's sine (`PlayerDrawLayers.cs:2980/:2998`).
+    pub(crate) global_time: f32,
+    /// `mount.Cart` — the layer's last-two reverse (`:3020-3023`).
+    pub(crate) cart_mounted: bool,
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -408,6 +452,69 @@ pub(crate) fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
     } else {
         uv
     }
+}
+
+/// W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff`
+/// (`PlayerDrawLayers.cs:4016-4023`): the trail ghost's tint scale
+/// `0.5f - j * 0.1f` applied to every byte channel (`(byte)((float)(int)
+/// channel * num)` — the float product truncated, then the byte wrap).
+pub(crate) fn beetle_ghost_scale(j: u32) -> f32 {
+    0.5 - j as f32 * 0.1
+}
+
+/// The ghost tint (`PlayerDrawLayers.cs:4018-4023`): the base armour-body
+/// colour's BYTES scaled by [`beetle_ghost_scale`] — `(byte)((float)(int)
+/// channel * num)`, the float product truncated then the byte wrap. The
+/// input/output are sRGB bytes (the C# `Color` channels); the draw side
+/// converts to linear when it stamps the sprite.
+pub(crate) fn beetle_ghost_color(base: [u8; 4], j: u32) -> [u8; 4] {
+    let num = beetle_ghost_scale(j);
+    [
+        (base[0] as f32 * num) as u8,
+        (base[1] as f32 * num) as u8,
+        (base[2] as f32 * num) as u8,
+        (base[3] as f32 * num) as u8,
+    ]
+}
+
+/// The BeetleOrb sheet's frame rect (`PlayerDrawLayers.cs:4025`):
+/// `Rectangle(0, Height/3 * beetleFrame + 1, Width, Height/3 - 2)` — the
+/// 3-row wing cycle, 1 px down and 2 px cropped. INTEGER division on the
+/// sheet height (the C# `Height()` is an int).
+pub(crate) fn beetle_orb_uv(tex: &BgTex, frame: i32) -> [f32; 4] {
+    let h = tex.h as i32;
+    let row_h = h / 3;
+    let y0 = row_h * frame + 1;
+    let cell_h = row_h - 2;
+    let du = tex.uv[2] - tex.uv[0];
+    let dv = tex.uv[3] - tex.uv[1];
+    [
+        tex.uv[0],
+        tex.uv[1] + dv * (y0 as f32 / tex.h),
+        tex.uv[0] + du,
+        tex.uv[1] + dv * ((y0 + cell_h) as f32 / tex.h),
+    ]
+}
+
+/// The orb sprite's draw position (`PlayerDrawLayers.cs:4025`/`:4028`):
+/// the integer-truncated player centre + `beetlePos[i]` + the ghost's
+/// `-beetleVel[i] * j` trail offset, minus the origin `(Width/2,
+/// Height/6)` (INTEGER division — the C# `new Vector2(W/2, H/6)`).
+pub(crate) fn beetle_orb_pos(
+    center: [f32; 2],
+    beetle_pos: [f32; 2],
+    beetle_vel: [f32; 2],
+    j: u32,
+    tex: &BgTex,
+) -> [f32; 2] {
+    let origin = [
+        (tex.w as i32 / 2) as f32,
+        (tex.h as i32 / 6) as f32,
+    ];
+    [
+        center[0].trunc() + beetle_pos[0] - beetle_vel[0] * j as f32 - origin[0],
+        center[1].trunc() + beetle_pos[1] - beetle_vel[1] * j as f32 - origin[1],
+    ]
 }
 
 fn tint(c: [f32; 3], part: [f32; 3]) -> [f32; 4] {
@@ -806,6 +913,30 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
             },
         ),
     );
+    // W4-d115 wiring round — 20_NeckAcc (`PlayerDrawLayers.cs:2026-2034`,
+    // `LegacyPlayerRenderer.cs:210-211`: after 19_WaistAcc, before
+    // 21_Head): `AccNeck[neck]` draws the BODY frame at the torso anchor
+    // (`(int)(Position.X − screenX − bodyFrame.Width/2 + width/2)`,
+    // `(int)(Position.Y − screenY + height − bodyFrame.Height + 4)` +
+    // `bodyPosition` + `(bodyFrame.Width/2, bodyFrame.Height/2)` — the
+    // port's 40x56 box collapses it to the plain torso anchor), tinted
+    // `colorArmorBody` (the armor-white light tint), `bodyRotation` (0 —
+    // `ResetEffects` `:37586`, the sleeping pose rotates the whole set
+    // afterwards), `playerEffect` flip. The gate is `neck > 0 && neck <
+    // ArmorIDs.Neck.Count` (`:2028`). The torso sandwich's `torsoOffset`
+    // rides it (the seated drop — the layer sits inside the
+    // TorsoPlus/Minus pair, `:205-215`).
+    if s.neck > 0 && s.neck < crate::id_tables::ARMOR_NECK_COUNT {
+        push_part(
+            &mut out,
+            PlayerPart::NeckAcc,
+            a.acc_neck.get(s.neck as usize).copied().flatten(),
+            |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+            part_pos(s, shift, [0.0, 0.0], 0.0),
+            0.0,
+            tint(s.light, ARMOR_WHITE),
+        );
+    }
     // 21_Head: head, eye whites, eyes, hair — the whole block sits inside
     // the torso sandwich (`LegacyPlayerRenderer.cs:205-225`), so the seated
     // drop rides along.
@@ -1514,10 +1645,193 @@ fn apply_dye(layers: &mut [LayerSprite], s: &PlayerCompositeState) {
             | PlayerPart::FrontArmArmor
             | PlayerPart::FrontShoulderArmor => s.c_body,
             PlayerPart::Pants => s.c_legs,
+            PlayerPart::NeckAcc => s.c_neck,
             PlayerPart::Mount => s.c_mount,
             _ => 0,
         };
     }
+}
+
+/// W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff`
+/// (`PlayerDrawLayers.cs:4007-4031`): per live orb, 5 trail ghosts (j =
+/// 0..4, the tint scaled `0.5 - j*0.1`, the position offset `-beetleVel *
+/// j`) then the full-tint body, all on the 3-frame wing sheet. The gate:
+/// a Beetle set worn and not a shadow draw (the port has no shadow pass,
+/// so the second disjunct folds false). The sprites centre on the
+/// integer-truncated player centre + `beetlePos[i]`, origin `(W/2, H/6)`.
+fn beetle_orb_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
+    let mut out = Vec::new();
+    if !s.beetle_set {
+        return out;
+    }
+    let Some(tex) = a.beetle_orb else {
+        return out;
+    };
+    let uv = beetle_orb_uv(&tex, s.beetle_frame);
+    // `drawinfo.Position` = `player.position + (0, gfxOffY)`
+    // (`LegacyPlayerRenderer.cs:468`), so the orb centre is `Position +
+    // (width/2, height/2)` = the hitbox centre (`origin + (20, 31)`, the
+    // 40x56 art box straddles the 20x42 hitbox at `(-10, -10)`).
+    let center = [s.origin[0] + 20.0, s.origin[1] + 31.0 + s.gfx_off_y];
+    let size = [tex.w, (tex.h as i32 / 3 - 2) as f32];
+    let flip = s.facing < 0.0;
+    for i in 0..s.beetle_orbs.max(0) as usize {
+        let bp = s.beetle_pos[i];
+        let bv = s.beetle_vel[i];
+        // The 5 trail ghosts.
+        for j in 0..5u32 {
+            let ghost = beetle_ghost_color([255, 255, 255, 255], j);
+            let color = [
+                s.light[0] * ghost[0] as f32 / 255.0,
+                s.light[1] * ghost[1] as f32 / 255.0,
+                s.light[2] * ghost[2] as f32 / 255.0,
+                ghost[3] as f32 / 255.0,
+            ];
+            out.push(LayerSprite {
+                part: PlayerPart::BeetleOrb,
+                pos: beetle_orb_pos(center, bp, bv, j, &tex),
+                size,
+                uv: flip_uv(uv, flip),
+                color,
+                rotation: 0.0,
+                dye: 0,
+            });
+        }
+        // The full-tint body.
+        out.push(LayerSprite {
+            part: PlayerPart::BeetleOrb,
+            pos: beetle_orb_pos(center, bp, bv, 0, &tex),
+            size,
+            uv: flip_uv(uv, flip),
+            color: [s.light[0], s.light[1], s.light[2], 1.0],
+            rotation: 0.0,
+            dye: 0,
+        });
+    }
+    out
+}
+
+/// `DrawPlayer_25_Shield` (`PlayerDrawLayers.cs:2954-3024`): the visible
+/// shield's body-frame slice of `Acc_Shield[shield]`, drawn at the body
+/// anchor with the raised pose's −4y lift (`gravDir` is always 1 in the
+/// port). While raised: 4 alpha-0 ghost copies orbit the anchor at radius
+/// `2.5 + 1.5·sin(2π·GlobalTimeWrappedHourly)`, quarter-turn apart, tint
+/// `×(0.45 − 0.15·sin)`; the `sin(π·t)` pulse overlay is built but never
+/// added to the cache in the C# (`:3001-3002`, dead code — skipped);
+/// inside the parry window an echo pushes from the anchor away from the
+/// player centre by `1.5·(parryTimeLeft/20)`, scales `1 + 1.5·fraction`
+/// and fades `×(1 − fraction)`. `bodyPosition`/`bodyRotation` are stock
+/// zero for the alive player (`PlayerDrawSet.cs:1706-1711`); `bodyVect`
+/// is the frame centre (`PlayerDrawSet.cs:1752`), so the anchor collapses
+/// to the 40×56 sheet box at `(x − 10, y − 10 + gfxOffY)` (the `height −
+/// bodyFrame.Height + 4` term). The cart's last-two reverse
+/// (`:3020-3023`) swaps the final two entries. The `cShield` dye has no
+/// port producer — every copy draws plain.
+pub(crate) fn shield_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
+    // `:2956-2959`: `shield <= 0 || shield >= ArmorIDs.Shield.Count` (13).
+    if s.shield <= 0 || s.shield >= 13 {
+        return Vec::new();
+    }
+    let Some(tex) = a.acc_shield[s.shield as usize] else {
+        return Vec::new();
+    };
+    let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
+    // The body anchor: the C#'s `height − bodyFrame.Height + 4` term
+    // (`42 − 56 + 4 = −10`) plus the `bodyFrame/2` origin shift collapses
+    // to the plain 40×56 sheet box at `(x − 10, y − 10 + gfxOffY)` — the
+    // same anchor `part_pos(s, 0)` gives every body part. The
+    // `bodyFrame.Width != texture.Width` re-slice (`:2968-2976`) is a
+    // no-op: every `Acc_Shield_*` strip is 40 px wide like the body frame.
+    let anchor = part_pos(s, 0.0, [0.0, 0.0], 0.0);
+    // The raised lift (`:2960-2964`).
+    let lift = if s.shield_raised { -4.0 } else { 0.0 };
+    let center = [anchor[0] + 20.0, anchor[1] + 28.0 + lift];
+    let uv = |t: &BgTex| flip_uv(player_frame_uv(t, s.body_frame), dir < 0.0);
+    let mut out = Vec::with_capacity(7);
+    if s.shield_raised {
+        // `:2978-2990`: the four ghosts — `colorArmorBody.A = 0`, the RGB
+        // scaled by `0.45 − 0.15·sin(2πt)`; each sits at the anchor plus
+        // `(x, 0).RotatedBy(k/4·2π)`.
+        let num = (s.global_time * std::f32::consts::TAU).sin();
+        let radius = 2.5 + 1.5 * num;
+        let scale = 0.45 - num * 0.15;
+        let ghost = [s.light[0] * scale, s.light[1] * scale, s.light[2] * scale, 0.0];
+        for k in 0..4 {
+            let angle = k as f32 / 4.0 * std::f32::consts::TAU;
+            let (sin, cos) = angle.sin_cos();
+            out.push(LayerSprite {
+                part: PlayerPart::Shield,
+                pos: [center[0] + radius * cos - 20.0, center[1] + radius * sin - 28.0],
+                size: [40.0, 56.0],
+                uv: uv(&tex),
+                color: ghost,
+                rotation: 0.0,
+                dye: 0,
+            });
+        }
+    }
+    // `:2992-2994`: the body sprite, full `colorArmorBody`.
+    out.push(LayerSprite {
+        part: PlayerPart::Shield,
+        pos: [center[0] - 20.0, center[1] - 28.0],
+        size: [40.0, 56.0],
+        uv: uv(&tex),
+        color: [s.light[0], s.light[1], s.light[2], 1.0],
+        rotation: 0.0,
+        dye: 0,
+    });
+    if s.shield_raised {
+        // `:2995-3003`: the pulse overlay — the C# builds the DrawData
+        // (`colorArmorBody2` alpha + RGB `×(0.5 + 0.5·sin(πt))`) but NEVER
+        // `DrawDataCache.Add`s it: the block ends at `:3002` with no Add,
+        // so the vanilla draws nothing here. Ported faithfully as a skip
+        // (the dead-code census, docs/research/98-doc-sweep-shields.md).
+    }
+    if s.shield_raised && s.shield_parry_time_left > 0 {
+        // `:3004-3018`: the parry echo — `num4 = parryTimeLeft / 20`,
+        // `num5 = 1.5·num4`; the anchor pushes away from the player centre
+        // (`drawinfo.Position + Size/2`, the hitbox centre) by `num5`, the
+        // scale grows `1 + num5`, alpha and RGB fade `×(1 − num4)`.
+        let num4 = s.shield_parry_time_left as f32 / 20.0;
+        let num5 = 1.5 * num4;
+        // The hitbox centre relative to the 40×56 box origin: the box sits
+        // at `(x − 10, y − 10)`, the 20×42 hitbox centre at `(x + 10,
+        // y + 21)` — box-local (20, 31).
+        let player_center = [s.origin[0] + 20.0, s.origin[1] + s.gfx_off_y + 31.0];
+        let echo_center = [
+            center[0] + (center[0] - player_center[0]) * num5,
+            center[1] + (center[1] - player_center[1]) * num5,
+        ];
+        let scale = 1.0 + num5;
+        let fade = 1.0 - num4;
+        out.push(LayerSprite {
+            part: PlayerPart::Shield,
+            // The scale grows about the frame centre (bodyVect).
+            pos: [
+                echo_center[0] - 20.0 * scale,
+                echo_center[1] - 28.0 * scale,
+            ],
+            size: [40.0 * scale, 56.0 * scale],
+            uv: uv(&tex),
+            // `:3014-3015`: `A *= (1 − num4)` THEN `color *= (1 − num4)` —
+            // XNA's Color×float scales ALL four channels, so the alpha
+            // lands `(1 − num4)²` while the RGB lands `(1 − num4)`.
+            color: [
+                s.light[0] * fade,
+                s.light[1] * fade,
+                s.light[2] * fade,
+                fade * fade,
+            ],
+            rotation: 0.0,
+            dye: 0,
+        });
+    }
+    // `:3020-3023`: `mount.Cart` reverses the LAST TWO cache entries.
+    if s.cart_mounted && out.len() >= 2 {
+        let n = out.len();
+        out.swap(n - 2, n - 1);
+    }
+    out
 }
 
 /// The full player composition: body, then the held item in its
@@ -1530,9 +1844,10 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
     let body = body_layers(s, a);
     let arms = front_arm_layers(s, a);
     let item = held_item_layers(s);
+    let shield = shield_layers(s, a);
     let mount_back = mount_layer(s, a, false);
     let mount_front = mount_layer(s, a, true);
-    let mut out = Vec::with_capacity(body.len() + arms.len() + item.len() + 2);
+    let mut out = Vec::with_capacity(body.len() + arms.len() + item.len() + shield.len() + 2);
     if let Some(back) = mount_back {
         out.push(back);
     }
@@ -1543,6 +1858,11 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
         }
         WeaponDrawOrder::BehindFrontArm => {
             out.extend(body);
+            // `DrawPlayer_25_Shield` sits after `DrawPlayer_24_Pulley`/
+            // `32_FrontAcc_BackPart` and before the BehindFrontArm held
+            // item (`LegacyPlayerRenderer.cs:228-238`); the port has no
+            // pulley/front-acc layers, so the shield lands right here.
+            out.extend(shield.iter().copied());
             out.extend(item.iter().copied());
         }
         WeaponDrawOrder::OverFrontArm => {}
@@ -1554,6 +1874,9 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
     if let Some(front) = mount_front {
         out.push(front);
     }
+    // W4-f50 deviation 3 — `DrawPlayer_37_BeetleBuff` rides after the mount
+    // front (the layer list's tail, `PlayerDrawLayers.cs` order).
+    out.extend(beetle_orb_layers(s, a));
     apply_dye(&mut out, s);
     out
 }
@@ -2163,8 +2486,13 @@ mod tests {
             armor_legs: [None; 5],
             armor_head_spectre_hood: None,
             armor_head_spectre_mask: None,
+            acc_neck: [None; 15],
             mount_back: [Some(sheet()); crate::mount::MOUNT_COUNT],
             mount_front: [Some(sheet()); crate::mount::MOUNT_COUNT],
+            beetle_orb: None,
+            acc_shield: std::array::from_fn(|slot| {
+                if slot == 0 { None } else { Some(sheet()) }
+            }),
         }
     }
 
@@ -2190,6 +2518,8 @@ mod tests {
             head_armor: -1,
             body_armor: -1,
             leg_armor: -1,
+            neck: -1,
+            c_neck: 0,
             front_arm: CompositeArmState::DISABLED,
             back_arm: CompositeArmState::DISABLED,
             mount: None,
@@ -2202,6 +2532,16 @@ mod tests {
             sleeping: false,
             full_rotation: 0.0,
             hair_color: HAIR,
+            beetle_orbs: 0,
+            beetle_frame: 0,
+            beetle_pos: [[0.0; 2]; 3],
+            beetle_vel: [[0.0; 2]; 3],
+            beetle_set: false,
+            shield: -1,
+            shield_raised: false,
+            shield_parry_time_left: 0,
+            global_time: 0.0,
+            cart_mounted: false,
         }
     }
 
@@ -2410,6 +2750,52 @@ mod tests {
                 PlayerPart::Hair,
             ]
         );
+    }
+
+    /// W4-d115 wiring round — the Acc_Neck layer
+    /// (`DrawPlayer_20_NeckAcc`, `PlayerDrawLayers.cs:2026-2034`): the
+    /// gate is `0 < neck < 15`, the sprite draws the BODY frame at the
+    /// torso anchor between the shirt torso and the head
+    /// (`LegacyPlayerRenderer.cs:208-214`), tinted `colorArmorBody`
+    /// (armor-white × light) and flipped with `playerEffect`; the dye
+    /// rides `cNeck` (`apply_dye`).
+    #[test]
+    fn w4_d115_wiring_the_neck_layer_gates_and_slots_between_torso_and_head() {
+        let mut a = fixture();
+        a.acc_neck[2] = Some(sheet()); // the Cross Necklace's slot
+        let mut s = state();
+        // No neck: nothing draws (the :2028 gate).
+        assert!(!parts(&body_layers(&s, &a)).contains(&PlayerPart::NeckAcc));
+        s.neck = 2;
+        let layers = body_layers(&s, &a);
+        let ps = parts(&layers);
+        let shirt = ps.iter().position(|p| *p == PlayerPart::Shirt).unwrap();
+        let neck = ps.iter().position(|p| *p == PlayerPart::NeckAcc).unwrap();
+        let head = ps.iter().position(|p| *p == PlayerPart::Head).unwrap();
+        assert!(shirt < neck && neck < head, "20_NeckAcc sits 17_Torso < 20 < 21_Head");
+        let layer = &layers[neck];
+        // The torso anchor: the same box position as the shirt torso.
+        let torso = &layers[shirt];
+        assert_eq!(layer.pos, torso.pos, "the body-frame anchor (:2030)");
+        assert_eq!(layer.size, [40.0, 56.0]);
+        // colorArmorBody = the armor-white light tint (state light 1,1,1).
+        assert_eq!(layer.color, [1.0, 1.0, 1.0, 1.0]);
+        // The flip mirrors the UVs (playerEffect, :2030).
+        s.facing = -1.0;
+        let flipped = body_layers(&s, &a);
+        let fl = &flipped[parts(&flipped).iter().position(|p| *p == PlayerPart::NeckAcc).unwrap()];
+        assert!(fl.uv[0] > fl.uv[2], "the left-facing mirror");
+        // Out-of-range slots never draw (the < Count gate).
+        s.neck = 15;
+        assert!(!parts(&body_layers(&s, &a)).contains(&PlayerPart::NeckAcc));
+        s.neck = 0;
+        assert!(!parts(&body_layers(&s, &a)).contains(&PlayerPart::NeckAcc));
+        // The dye rides cNeck through apply_dye.
+        s.neck = 2;
+        s.c_neck = 7;
+        let mut full = assemble_layers(&s, &a);
+        let n = full.iter_mut().find(|l| l.part == PlayerPart::NeckAcc).unwrap();
+        assert_eq!(n.dye, 7, "item.shader = drawinfo.cNeck (:2031)");
     }
 
     #[test]
@@ -3011,6 +3397,61 @@ mod tests {
         assert!((arm.pos[0] - 99.0).abs() < 1e-6, "{:?}", arm.pos);
         assert!((arm.pos[1] - 201.0).abs() < 1e-6, "{:?}", arm.pos);
     }
+
+    #[test]
+    fn w4_f50_the_beetle_orb_layer_draws_five_ghosts_and_a_body_per_orb() {
+        // `DrawPlayer_37_BeetleBuff` (`PlayerDrawLayers.cs:4007-4031`):
+        // per live orb, 5 trail ghosts (the tint scaled 0.5 - j*0.1, the
+        // position offset -beetleVel*j) then the full-tint body. Deviation 3.
+        let orb = BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w: 20.0,
+            h: 60.0,
+        };
+        let a = PlayerAssets {
+            beetle_orb: Some(orb),
+            ..fixture()
+        };
+        let mut s = state();
+        s.beetle_set = true;
+        s.beetle_orbs = 2;
+        s.beetle_frame = 1;
+        s.beetle_pos[0] = [5.0, -3.0];
+        s.beetle_vel[0] = [1.0, 2.0];
+        let out = beetle_orb_layers(&s, &a);
+        // 2 orbs × (5 ghosts + 1 body) = 12 sprites.
+        assert_eq!(out.len(), 12);
+        assert!(out.iter().all(|sp| sp.part == PlayerPart::BeetleOrb));
+        // The frame rect: Height/3 = 20, frame 1 → y0 = 21, cell_h = 18.
+        // v from 21/60 to 39/60.
+        assert!((out[0].uv[1] - 21.0 / 60.0).abs() < 1e-6);
+        assert!((out[0].uv[3] - 39.0 / 60.0).abs() < 1e-6);
+        assert_eq!(out[0].size, [20.0, 18.0]);
+        // The ghost tint scales: j=0 → 0.5, j=4 → 0.1. White base 255 →
+        // (byte)(255*0.5) = 127, (byte)(255*0.1) = 25.
+        assert_eq!(beetle_ghost_color([255, 255, 255, 255], 0), [127, 127, 127, 127]);
+        assert_eq!(beetle_ghost_color([255, 255, 255, 255], 4), [25, 25, 25, 25]);
+        // The body (index 5) keeps the full tint.
+        assert_eq!(out[5].color, [1.0, 1.0, 1.0, 1.0]);
+        // The ghost position offset: -beetleVel*j. Orb 0's j=1 ghost sits
+        // one vel-step behind the body.
+        let body_pos = out[5].pos;
+        let ghost1_pos = out[1].pos;
+        assert!((ghost1_pos[0] - (body_pos[0] - 1.0)).abs() < 1e-6);
+        assert!((ghost1_pos[1] - (body_pos[1] - 2.0)).abs() < 1e-6);
+        // The origin (W/2, H/6) = (10, 10): the body centres on the integer
+        // player centre + beetlePos. origin [100,200] → centre [120,231]
+        // (the hitbox centre, `Position + (width/2, height/2)`).
+        assert!((body_pos[0] - (120.0 + 5.0 - 10.0)).abs() < 1e-6);
+        assert!((body_pos[1] - (231.0 - 3.0 - 10.0)).abs() < 1e-6);
+        // Without the set, nothing draws.
+        s.beetle_set = false;
+        assert!(beetle_orb_layers(&s, &a).is_empty());
+        // Without the sheet, nothing draws.
+        s.beetle_set = true;
+        let a2 = PlayerAssets { beetle_orb: None, ..fixture() };
+        assert!(beetle_orb_layers(&s, &a2).is_empty());
+    }
 }
 
 
@@ -3047,8 +3488,11 @@ mod player_draw_tests {
             armor_legs: [None; 5],
             armor_head_spectre_hood: None,
             armor_head_spectre_mask: None,
+            acc_neck: [None; 15],
             mount_back: std::array::from_fn(|_| None),
             mount_front: std::array::from_fn(|_| None),
+            beetle_orb: None,
+            acc_shield: [None; 13],
         }
     }
 
@@ -3075,6 +3519,8 @@ mod player_draw_tests {
             head_armor: -1,
             body_armor: -1,
             leg_armor: -1,
+            neck: -1,
+            c_neck: 0,
             front_arm: crate::player::CompositeArmState::DISABLED,
             back_arm: crate::player::CompositeArmState::DISABLED,
             c_head: 0,
@@ -3086,6 +3532,16 @@ mod player_draw_tests {
             sleeping: false,
             full_rotation: 0.0,
             hair_color: HAIR,
+            beetle_orbs: 0,
+            beetle_frame: 0,
+            beetle_pos: [[0.0; 2]; 3],
+            beetle_vel: [[0.0; 2]; 3],
+            beetle_set: false,
+            shield: -1,
+            shield_raised: false,
+            shield_parry_time_left: 0,
+            global_time: 0.0,
+            cart_mounted: false,
         }
     }
 
@@ -3218,6 +3674,153 @@ mod player_draw_tests {
             assert!(
                 crate::assets::STATIC_SHEET_NAMES.contains(&name),
                 "C# PlayerDrawLayers.cs:1346-1362/3698-3705 draws Players[skinVar, {name}] — it must be packed into the atlas"
+            );
+        }
+    }
+
+    fn shield_assets() -> PlayerAssets {
+        let mut a = assets_all();
+        a.acc_shield = std::array::from_fn(|slot| {
+            if slot == 0 { None } else { dummy(40.0, 1120.0) }
+        });
+        a
+    }
+
+    /// W4-f48 lane 20 — `DrawPlayer_25_Shield`'s guard + slot
+    /// (`PlayerDrawLayers.cs:2956-2959`): `shield <= 0 || >= 13` draws
+    /// nothing; a live slot draws the body sprite at the plain body anchor
+    /// (the `height − bodyFrame.Height + 4` collapse), full tint.
+    #[test]
+    fn w4_f48_shield_layer_guard_and_body_anchor() {
+        let a = shield_assets();
+        for slot in [-1i16, 0, 13, 99] {
+            let s = PlayerCompositeState { shield: slot, ..state(0, 1.0) };
+            assert!(shield_layers(&s, &a).is_empty(), "slot {slot} draws nothing");
+        }
+        let s = PlayerCompositeState { shield: 1, ..state(0, 1.0) };
+        let out = shield_layers(&s, &a);
+        assert_eq!(out.len(), 1, "the idle shield is one sprite");
+        assert_eq!(out[0].part, PlayerPart::Shield);
+        // The body anchor: origin (1000,1000) — no +4 shift (the C#'s
+        // `42 − 56 + 4 = −10` + the +28 bodyVect cancel to the sheet box).
+        assert_eq!(out[0].pos, [1000.0, 1000.0]);
+        assert_eq!(out[0].size, [40.0, 56.0]);
+        assert_eq!(out[0].color, [1.0, 1.0, 1.0, 1.0]);
+        // Facing −1 mirrors the quad.
+        let sf = PlayerCompositeState { shield: 1, ..state(0, -1.0) };
+        let f = &shield_layers(&sf, &a)[0];
+        assert!(f.uv[0] > f.uv[2], "mirrored quad {:?}", f.uv);
+        // A missing sheet skips (the null-texture guard).
+        let s9 = PlayerCompositeState { shield: 9, ..state(0, 1.0) };
+        let mut a9 = shield_assets();
+        a9.acc_shield[9] = None;
+        assert!(shield_layers(&s9, &a9).is_empty());
+    }
+
+    /// W4-f48 lane 20 — the raised pose (`PlayerDrawLayers.cs:2960-2994`):
+    /// the −4y lift, the four alpha-0 ghosts at radius `2.5 + 1.5·sin(2πt)`
+    /// quarter-turn apart, tint `×(0.45 − 0.15·sin)`. At t = 0 the sine is
+    /// 0: radius 2.5, scale 0.45, ghosts at +x/+y/−x/−y of the lifted
+    /// centre. The pulse overlay is dead code in the C# (no cache Add) —
+    /// 4 ghosts + 1 body = 5 sprites, not 6.
+    #[test]
+    fn w4_f48_shield_raised_lifts_and_orbits_four_ghosts() {
+        let a = shield_assets();
+        let s = PlayerCompositeState {
+            shield: 5,
+            shield_raised: true,
+            global_time: 0.0,
+            ..state(0, 1.0)
+        };
+        let out = shield_layers(&s, &a);
+        assert_eq!(out.len(), 5, "4 ghosts + body, no pulse (dead code)");
+        // The lifted centre: (1020, 1028 − 4) = (1020, 1024).
+        let center = [1020.0f32, 1024.0f32];
+        for (k, (off_x, off_y)) in [(2.5f32, 0.0f32), (0.0, 2.5), (-2.5, 0.0), (0.0, -2.5)]
+            .into_iter()
+            .enumerate()
+        {
+            let g = &out[k];
+            assert_eq!(g.color, [0.45, 0.45, 0.45, 0.0], "ghost {k} alpha-0 tint");
+            assert!((g.pos[0] - (center[0] + off_x - 20.0)).abs() < 1e-3);
+            assert!((g.pos[1] - (center[1] + off_y - 28.0)).abs() < 1e-3);
+        }
+        // The body sprite rides the lift too, full tint.
+        assert_eq!(out[4].pos, [1000.0, 996.0]);
+        assert_eq!(out[4].color, [1.0, 1.0, 1.0, 1.0]);
+        // t = 0.25: sin(π/2) = 1 → radius 4, scale 0.3.
+        let s2 = PlayerCompositeState { global_time: 0.25, ..s };
+        let out2 = shield_layers(&s2, &a);
+        assert!((out2[0].pos[0] - (center[0] + 4.0 - 20.0)).abs() < 1e-3);
+        assert!((out2[0].color[0] - 0.3).abs() < 1e-6, "0.45 − 0.15");
+        assert_eq!(out2[0].color[3], 0.0);
+    }
+
+    /// W4-f48 lane 20 — the parry echo (`PlayerDrawLayers.cs:3004-3018`):
+    /// `num4 = parryTimeLeft/20`, push `×1.5·num4` away from the hitbox
+    /// centre, scale `1 + 1.5·num4`, RGB fade `×(1−num4)`, alpha
+    /// `×(1−num4)²` (the double multiply). At parryTimeLeft 10: num4 0.5,
+    /// num5 0.75, scale 1.75, fade 0.5. The lifted centre (1020, 1024) vs
+    /// the hitbox centre (1020, 1031): the push is (0, −5.25).
+    #[test]
+    fn w4_f48_shield_parry_echo_pushes_scales_and_fades() {
+        let a = shield_assets();
+        let s = PlayerCompositeState {
+            shield: 9,
+            shield_raised: true,
+            shield_parry_time_left: 10,
+            ..state(0, 1.0)
+        };
+        let out = shield_layers(&s, &a);
+        assert_eq!(out.len(), 6, "4 ghosts + body + echo");
+        let echo = &out[5];
+        // Centre (1020, 1024 − 5.25) = (1020, 1018.75); the scaled
+        // top-left = centre − (20, 28)·1.75.
+        assert!((echo.pos[0] - (1020.0 - 35.0)).abs() < 1e-3);
+        assert!((echo.pos[1] - (1018.75 - 49.0)).abs() < 1e-3);
+        assert_eq!(echo.size, [70.0, 98.0]);
+        assert_eq!(echo.color, [0.5, 0.5, 0.5, 0.25]);
+        // No window: no echo (5 sprites).
+        let s0 = PlayerCompositeState { shield_parry_time_left: 0, ..s };
+        assert_eq!(shield_layers(&s0, &a).len(), 5);
+        // Not raised: the echo refuses even with a live window.
+        let su = PlayerCompositeState { shield_raised: false, ..s };
+        assert_eq!(shield_layers(&su, &a).len(), 1);
+    }
+
+    /// W4-f48 lane 20 — the layer slot (`LegacyPlayerRenderer.cs:228-238`):
+    /// `DrawPlayer_25_Shield` sits after the body stack and BEFORE the
+    /// BehindFrontArm held item; the cart's last-two reverse
+    /// (`PlayerDrawLayers.cs:3020-3023`) swaps the final two shield
+    /// entries (body + echo).
+    #[test]
+    fn w4_f48_shield_slots_before_the_held_item_and_cart_reverses() {
+        let mut a = shield_assets();
+        a.acc_shield[1] = dummy(40.0, 1120.0);
+        let mut s = PlayerCompositeState {
+            shield: 1,
+            shield_raised: true,
+            shield_parry_time_left: 10,
+            item_uv: Some([0.0, 0.0, 1.0, 1.0]),
+            item_size: [16.0, 16.0],
+            ..state(0, 1.0)
+        };
+        let out = assemble_layers(&s, &a);
+        let shield_last = out.iter().rposition(|l| l.part == PlayerPart::Shield).unwrap();
+        let item = out.iter().position(|l| l.part == PlayerPart::HeldItem).unwrap();
+        assert!(shield_last < item, "the shield draws before the held item");
+        // The cart reverse: the last two entries (body, echo) swap.
+        let plain = shield_layers(&s, &a);
+        s.cart_mounted = true;
+        let cart = shield_layers(&s, &a);
+        assert_eq!(cart[4], plain[5], "the echo moves ahead of the body");
+        assert_eq!(cart[5], plain[4]);
+        // The packed-sheet census: all twelve strips ride the atlas.
+        for slot in 1..=12 {
+            let name = format!("Acc_Shield_{slot}");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} must be packed"
             );
         }
     }

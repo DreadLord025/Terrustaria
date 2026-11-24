@@ -19,11 +19,25 @@
 //! No dynamic `aiStyle` reassignment to 83 exists. The spawned 379
 //! (CultistArcherBlue) rides aiStyle 3 (`:13860`) and the 439
 //! (CultistBoss) rides aiStyle 84 (`:14216`, `npc_ai_cultist.rs`'s
-//! census) — both are REQUESTS here, not this arm's kinds. The port's
-//! roster has neither 437 nor 438 (`NpcKind::AncientCultist` is the
-//! aiStyle-94 pillar, research/25 deviation 8), so the module lands
-//! UNWIRED (the `npc_ai_style73.rs` precedent); the machine keys on the
-//! vanilla `npc_type` until the roster wave.
+//! census) — both are REQUESTS here, not this arm's kinds.
+//!
+//! ## Wiring (the W4-d31 wiring wave, the d10 activation contract)
+//!
+//! The arm is WIRED on the style axis: `npc.rs::update_rng_dust`'s
+//! `83 =>` arm (the solo path) + the pooled branch in
+//! `world_sim/npcs.rs`'s tick closure (the live route, the style75
+//! precedent). The 437/438 KINDS ride the roster wave (W4-d40
+//! `7fec14aa` rowed the SetDefaults kinds); until they merge no kind has
+//! `ai_style() == 83` and the dispatch is dormant. The sim's
+//! `ritual_link_prepass` re-derives the slot-aligned ai fields from the
+//! stable uids each tick; `resolve_ritual_requests` allocates the spawns
+//! + links + `TabletDestroyed`; the 526 shots spawn owner-re-pinned to
+//! the local id (the C# call sites pass `Main.myPlayer`, the fishron
+//! `spawn_hostile_ai_owned` precedent — the generic drain's 255 would
+//! leave the channel-track tail inert). The death volley rides a side
+//! channel (the dying tablet is culled by the death retain before the
+//! generic shot drain). The 379 archer has no ported kind yet — its
+//! spawn folds to None (the recorded roster-wave gap, ANALYSIS).
 //!
 //! ## The machine
 //!
@@ -100,13 +114,16 @@
 //! cosmetic skip (the style73 precedent — the death burst's draws ride
 //! the death pass when it lands, NOT this arm).
 //!
-//! ## Wiring seams (UNWIRED — the roster wave owns them)
+//! ## Wiring seams (WIRED — the W4-d31 wiring wave, the d10 contract)
 //!
 //! * The pool is slot-aligned (`npcs[me]` is `Main.npc[whoAmI]`, the
 //!   `npc_ai_style37.rs` convention); `ai[0..1]`/`localAI[1..2]` hold
 //!   slot + 1 and `ai[2]` the boss slot + 1 (the port's carrier-link
 //!   convention; the C#'s `ai[2]` holds the RAW slot, `:36842` — the
-//!   wiring's uid translation owns the +1). `active` ≈ `hp > 0`.
+//!   sim's `ritual_link_prepass` owns the uid→slot+1 translation).
+//!   `active` ≈ `hp > 0`; a 0 link is an inactive slot (the wiring
+//!   guards below skip it — behaviour-identical to the C#'s
+//!   inactive-slot reads/writes).
 //! * `Main.netMode` is the single-player 0: every `netMode != 1` arm
 //!   is active.
 //! * The four ritual spawns + the boss spawn ride
@@ -128,8 +145,9 @@
 //!   ported, `world_events.rs:297-301`).
 //!
 //! See docs/ANALYSIS.md "The cultist ritual (W4-d31 aiStyle-83,
-//! code-only)".
-#![allow(dead_code)] // wiring deferred — the kinds + dispatch arm land with the roster wave
+//! code-only)" + research/281 (the RETIRE/FINAL + the cultist-ritual
+//! family declaration).
+#![allow(dead_code)] // the SetDefaults row consts are the census witnesses' pins; the dispatch activates with the roster-wave kinds
 
 use crate::npc::{HostileShotAi, Npc};
 use crate::npc_ai_style37::rotated_by;
@@ -496,34 +514,57 @@ pub fn style83_step(
                 }
             }
         }
-        // `:36793-36804` — the devotee release.
+        // `:36793-36804` — the devotee release. WIRING GUARD (the d31
+        // wiring wave): a 0 link is an INACTIVE slot in the port (the
+        // vec culls the dead; the uid pre-pass writes 0 for a missing
+        // ritual NPC). The C#'s writes to an inactive slot are
+        // unobservable (`SetDefaults` resets on reuse, `NPC.cs:80768`)
+        // — skipping them is behaviour-identical; `TargetClosest` on
+        // an inactive NPC never runs in the C# either (the slot's
+        // `active` gate is the update loop's, the release writes land
+        // on a corpse). Valid links keep the verbatim body.
         if npcs[me].local_ai[0] == 1.0 {
             npcs[me].local_ai[0] = 2.0;
             for k in 0..2 {
-                let d = npcs[me].local_ai[k + 1] as usize - 1;
-                npcs[d].ai[1] = 1.0;
-                npcs[d].net_update = true;
-                let a = npcs[me].ai[k] as usize - 1;
-                npcs[a].ai[3] = 0.0;
-                // `:36801` — TargetClosest() (faceTarget default true).
-                target_closest(&mut npcs[a], world, players, true, 3, ticker);
-                out.retargets.push(a);
-                npcs[a].net_update = true;
+                let d = npcs[me].local_ai[k + 1] as usize;
+                if d > 0 {
+                    let d = d - 1;
+                    npcs[d].ai[1] = 1.0;
+                    npcs[d].net_update = true;
+                }
+                let a = npcs[me].ai[k] as usize;
+                if a > 0 {
+                    let a = a - 1;
+                    npcs[a].ai[3] = 0.0;
+                    // `:36801` — TargetClosest() (faceTarget default true).
+                    target_closest(&mut npcs[a], world, players, true, 3, ticker);
+                    out.retargets.push(a);
+                    npcs[a].net_update = true;
+                }
             }
         }
         // `:36805-36846` — the boss summon.
         if npcs[me].ai[0] != -1.0 && !spawned_this_tick {
             let mut flag94 = true;
             for k in 0..2 {
-                let d = npcs[me].local_ai[k + 1] as usize - 1;
-                // `:36810-36813` — active && type == 438.
-                if npcs[d].hp > 0 && type_of(&npcs[d]) == 438 {
-                    flag94 = false;
+                // WIRING GUARD (the release block's note): a 0 link is
+                // an inactive slot — the C#'s `active && type` test
+                // reads false there, exactly the skip below.
+                let d = npcs[me].local_ai[k + 1] as usize;
+                if d > 0 {
+                    let d = d - 1;
+                    // `:36810-36813` — active && type == 438.
+                    if npcs[d].hp > 0 && type_of(&npcs[d]) == 438 {
+                        flag94 = false;
+                    }
                 }
-                let a = npcs[me].ai[k] as usize - 1;
-                // `:36814-36817` — active && type == 379.
-                if npcs[a].hp > 0 && type_of(&npcs[a]) == 379 {
-                    flag94 = false;
+                let a = npcs[me].ai[k] as usize;
+                if a > 0 {
+                    let a = a - 1;
+                    // `:36814-36817` — active && type == 379.
+                    if npcs[a].hp > 0 && type_of(&npcs[a]) == 379 {
+                        flag94 = false;
+                    }
                 }
             }
             if flag94 {
@@ -1007,5 +1048,72 @@ mod tests {
         assert!(out2.died);
         assert_eq!(pool[1].hp, 0);
         assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the 438 draws nothing");
+    }
+
+    /// W4-d31 wiring wave — the 0-link WIRING GUARDS (the d10 activation
+    /// contract). The port's vec culls the dead, so an unresolved ritual
+    /// link reads 0 (the C#'s inactive slot). The release block and the
+    /// summon scan must SKIP a 0 link (no underflow panic, no write to a
+    /// stranger slot) — behaviour-identical to the C#'s inactive-slot
+    /// semantics. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn the_zero_link_guards_skip_the_inactive_slots() {
+        let w = arena();
+        // A tablet whose ritual links are ALL unresolved (0) — the ritual
+        // four were culled / never spawned. The release request is armed.
+        let mut pool = [tablet(100.0 * 16.0 + 8.0 - 27.0, 30.0 * 16.0 - 27.0)];
+        pool[0].local_ai[3] = 1.0; // the latch spent
+        pool[0].local_ai[0] = 1.0; // the release request armed
+        // ai[0..1] / local_ai[1..2] stay 0 (unresolved).
+        let mut rng = UnifiedRandom::new(83);
+        let out = style83_step(&mut pool, 0, &w, &[cand(1600.0, 480.0)], 437, &tagged_type, false, 0, &mut rng);
+        // The release latch advanced but NO retarget ran (all links 0).
+        assert_eq!(pool[0].local_ai[0], 2.0, "the release latch (:36795)");
+        assert!(out.retargets.is_empty(), "the 0 links skip TargetClosest");
+        // The summon scan reads all-gone (every link inactive) → the boss
+        // summon arms (ONE Next(2) side roll). The 0-link guard must not
+        // panic on the `as usize - 1` underflow.
+        assert_eq!(pool[0].ai[0], -1.0, "the all-gone summon arms");
+        assert_eq!(out.spawns.len(), 1, "the boss spawn");
+        assert_eq!(out.spawns[0].npc_type, 439);
+        assert!(out.tablet_destroyed);
+        // The stream: exactly ONE Next(2) (the side roll), nothing else.
+        let mut mirror = UnifiedRandom::new(83);
+        let _ = mirror.next_max(2);
+        assert_eq!(rng.peek(), mirror.peek(), "the summon's ONE side draw");
+    }
+
+    /// W4-d31 wiring wave — a PARTIALLY resolved link set: one archer link
+    /// alive, the other 0. The release writes only the living archer; the
+    /// summon gate reads the living archer (type 379) and blocks. WRITTEN
+    /// NOT RUN (code-only).
+    #[test]
+    fn the_partial_links_release_only_the_living_slots() {
+        let w = arena();
+        // Pool: tablet 0, one living archer 1 (tagged 379). The second
+        // archer link + both devotee links are 0 (unresolved).
+        let mut pool = [
+            tablet(1600.0, 480.0),
+            devotee(1440.0, 592.0),
+        ];
+        tag(&mut pool[0], 437);
+        tag(&mut pool[1], 379);
+        pool[0].local_ai[3] = 1.0;
+        pool[0].local_ai[0] = 1.0; // the release request
+        pool[0].ai[0] = 2.0; // archer slot 1 + 1 (living)
+        pool[0].ai[1] = 0.0; // the second archer unresolved
+        pool[0].local_ai[1] = 0.0; // devotee 0 unresolved
+        pool[0].local_ai[2] = 0.0; // devotee 1 unresolved
+        pool[1].ai[3] = -1.0;
+        let mut rng = UnifiedRandom::new(83);
+        let out = style83_step(&mut pool, 0, &w, &[cand(1600.0, 480.0)], 437, &tagged_type, false, 0, &mut rng);
+        assert_eq!(pool[0].local_ai[0], 2.0);
+        // Only the living archer (slot 1) retargets; its link drops.
+        assert_eq!(out.retargets, vec![1], "only the living archer");
+        assert_eq!(pool[1].ai[3], 0.0, "the living archer's link dropped");
+        // The living archer (379) blocks the summon.
+        assert!(out.spawns.is_empty(), "the living archer blocks the summon");
+        assert_ne!(pool[0].ai[0], -1.0, "no summon while an archer lives");
+        assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the release draws nothing");
     }
 }

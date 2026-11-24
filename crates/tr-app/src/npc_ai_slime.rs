@@ -169,7 +169,7 @@
 //! the witnesses mirror the cited draws on a cloned stream and compare
 //! the full state (`UnifiedRandom: PartialEq`).
 
-#![allow(dead_code)] // the update_slime wiring swap is the merge step (S1-D-3)
+#![allow(dead_code)] // W4-b1 wired the family arm; the deferred slices' helpers stay
 
 use crate::npc::{Npc, NpcKind, ShimmerSlimeDust};
 use crate::npc_target::{target_closest, TargetCandidate};

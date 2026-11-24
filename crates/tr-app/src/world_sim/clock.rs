@@ -44,6 +44,9 @@ pub(crate) fn advance_time(
             // `UpdateTime_StartNight`'s `NPC.ResetBadgerHatTime()`
             // (`Main.cs:65221`, W4-f35): the two KilledToday latches
             // clear at dusk (`NPC.cs:78939-78943`).
+            // `NPC.ResetBadgerHatTime()` (`Main.cs:65221` → `NPC.cs:78939-
+            // 78943`): the daily EoC/WoF death latches clear at dusk (the
+            // Badger's Hat needs both in ONE day).
             world.eoc_killed_today = false;
             world.wof_killed_today = false;
             // `UpdateTime_StartNight`'s blood-moon roll (`Main.cs:65333-65352`):

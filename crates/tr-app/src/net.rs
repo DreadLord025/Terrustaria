@@ -341,6 +341,14 @@ pub mod id {
     /// sets it + `moneyPing` (`:3450-3454`). The slot gate is `0..=maxNPCs`
     /// (`:3448`, inclusive — unlike 56's `< maxNPCs`).
     pub const NPC_EXTRA_VALUE: u8 = 92;
+    // ---- W4-c27: the entity-state ids (apply/relay arms land with them) ----
+    pub const SET_TIME: u8 = 18; // MessageID.cs:45 / NetMessage.cs:531-536 / MessageBuffer.cs:1290-1298
+    pub const SYNC_PLAYER_ZONE: u8 = 36; // MessageID.cs:83 / NetMessage.cs:933-944 / MessageBuffer.cs:2178-2202
+    pub const ITEM_ANIM: u8 = 41; // MessageID.cs:93 ItemRotationAndAnimation / NetMessage.cs:956-960 / MessageBuffer.cs:2271-2289
+    pub const MANA_EFFECT: u8 = 43; // MessageID.cs:97 / NetMessage.cs:966-969 / MessageBuffer.cs:2307-2324
+    pub const ADD_PLAYER_BUFF_PVP: u8 = 55; // MessageID.cs:123 / NetMessage.cs:1041-1045 / MessageBuffer.cs:2594-2611
+    pub const SYNC_DODGE: u8 = 62; // MessageID.cs:137 / NetMessage.cs:1077-1080 / MessageBuffer.cs:2879-2908
+    pub const PLAYER_STEALTH: u8 = 84; // MessageID.cs:182 / NetMessage.cs:1197-1204 / MessageBuffer.cs:3246-3260
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -776,6 +784,26 @@ pub struct PlayerNet {
     /// pat-arm pose; the port's peer render keeps the flag pair only.
     pub petting: bool,
     pub pet_small: bool,
+    /// `Main.player[id].zone1..5` + `townNPCs`, fed by `36 SyncPlayerZone`
+    /// (`MessageBuffer.cs:2187-2192`). W4-c27.
+    pub zone: PlayerZone,
+    /// `Player.itemRotation`/`itemAnimation`, fed by `41
+    /// ItemRotationAndAnimation` (`MessageBuffer.cs:2281-2282`); `channel`
+    /// re-derived from the selected inventory item (`:2283`). W4-c27.
+    pub item_rotation: f32,
+    pub item_animation: i16,
+    pub channel: bool,
+    /// `Player.hostile`, the `55 AddPlayerBuffPvP` gate's input
+    /// (`MessageBuffer.cs:2599`). Fed by `30 TogglePVP` when that arm lands
+    /// (S1-I-4); until then `false` — the gate refuses, exactly the C#'s
+    /// PvP-off shape. W4-c27.
+    pub hostile: bool,
+    /// `Player.stealth` (`Player.cs:1562`, the C# field default 1f), fed by
+    /// `84 PlayerStealth` (`MessageBuffer.cs:3254`). The port's peer record
+    /// keeps the `Default` 0 until the first sync — same as the local
+    /// `Player` ctor's 0.0 (the shroomite-stealth writers are still unported,
+    /// `npc_target.rs:83`). W4-c27.
+    pub stealth: f32,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -2537,6 +2565,82 @@ pub struct WiredCannonShot {
     pub angle: i16,
     pub ammo: i16,
     pub owner: u8,
+
+        }/// `msg 18 SetTime`'s body (`NetMessage.cs:531-536`): the day flag as one
+/// byte, `(int)Main.time`, then the `Main.sunModY`/`moonModY` offsets — both
+/// `short` (`Main.cs:1185`/`:1187`). The reader is client-only
+/// (`MessageBuffer.cs:1290-1298`, `netMode == 1`).
+pub struct SetTime {
+    pub day_time: bool,
+    /// `Main.time` — the wire is an `int`; the port's clock is the f64 ticks.
+    pub time: i32,
+    pub sun_mod_y: i16,
+    pub moon_mod_y: i16,
+/// `msg 36 SyncPlayerZone`'s body (`NetMessage.cs:933-944`): the player id
+/// then the five `Player.zone1..zone5` BitsBytes (`Player.cs:1364-1372`) and
+/// `(byte)Player.townNPCs`. The host overrides the id to the sender, applies
+/// the bytes and relays (`MessageBuffer.cs:2178-2202`); bit 0 of `zone5` is
+/// `ZoneShimmer` (`Player.cs:3811-3821`) — its false→true edge spawns the
+/// Faelings on the host (`NPC.cs:5957`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PlayerZone {
+    pub zone1: u8,
+    pub zone2: u8,
+    pub zone3: u8,
+    pub zone4: u8,
+    pub zone5: u8,
+    pub town_npcs: u8,
+/// `msg 41 ItemRotationAndAnimation`'s body (`NetMessage.cs:956-960`): the
+/// player id, the `itemRotation` float (`Player.cs:1498`) then
+/// `(short)itemAnimation` (`Player.cs:3014` is an `int`; the writer
+/// truncates). The host forces the id to the sender
+/// (`MessageBuffer.cs:2273-2277`), stores both fields, re-derives `channel`
+/// from the selected item (`:2283`) and relays (`:2286`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ItemAnim {
+    pub rotation: f32,
+    pub animation: i16,
+/// `msg 43 ManaEffect`'s body (`NetMessage.cs:966-969`): the player id then
+/// `(short)number2` — the mana-restore amount `Player.ManaEffect` passes
+/// (`Player.cs:4531-4538`). The host forces the id to the sender
+/// (`MessageBuffer.cs:2309-2313`), the receiver spawns the HealMana text for
+/// anyone but itself (`:2315-2318`) and the host relays (`:2321`).
+pub struct ManaEffect {
+    pub amount: i16,
+/// `msg 51 MiscDataSync`'s body (`NetMessage.cs:1010-1013`): two bytes —
+/// `number` (the subject: a player slot for kinds 1/2, an NPC slot for kind
+/// 4) and `number2`, the kind switch (`MessageBuffer.cs:2490-2528`):
+/// 1 SpawnSkeletron, 2 the Item1 use sound at the player, 3 Sundialing
+/// (host-only), 4 BigMimicSpawnSmoke, 5 the TorchGod bestiary kill
+/// (host-only), 6 Moondialing (host-only). The host forces the subject to
+/// the sender (`:2485-2488`). W4-c27.
+pub struct MiscDataSync {
+/// `msg 55 AddPlayerBuffPvP`'s body (`NetMessage.cs:1041-1045`): the player
+/// id, `(ushort)number2` the buff type and `(int)number3` the time
+/// (`MessageBuffer.cs:2596-2598`). The host applies only when BOTH players
+/// are hostile and `Main.pvpBuff[type]` (`:2599`) and sends it to the TARGET
+/// alone (`:2603`); the client applies only to itself (`:2599`'s second
+/// clause) via `AddBuff(fromNetPvP: true)` (`:2607`, `Player.cs:5287-5290`
+/// skips the time extension). W4-c27.
+pub struct PlayerBuffPvp {
+/// `msg 62 SyncDodge`'s body (`NetMessage.cs:1077-1080`): the player id and
+/// `(byte)number2`, the dodge kind — 1 Ninja, 2 Shadow, 4 BrainOfConfusion,
+/// 5 MysticSash (`MessageBuffer.cs:2887-2902`; 3 is the retired Holy dodge,
+/// no arm). The host forces the id to the sender (`:2883-2886`), runs the
+/// dodge on the subject and relays to the others (`:2903-2906`). Send sites:
+/// `Player.NinjaDodge` (`Player.cs:38163`), `ShadowDodge` (`:38038`),
+/// `BrainOfConfusionDodge` (`:38053`), `DoMysticSashDodge` (`:38115`).
+/// W4-c27.
+pub struct SyncDodge {
+/// `msg 84 PlayerStealth`'s body (`NetMessage.cs:1197-1204`): the player id
+/// then the LIVE `Main.player[id].stealth` float — the writer re-reads the
+/// field, `number2` never crosses the wire. The host forces the id to the
+/// sender (`MessageBuffer.cs:3249-3252`), stores the float (`:3254`) and
+/// relays (`:3257`, re-read on send). Send sites: the shroomite/vortex
+/// stealth transitions (`Player.cs:25753`/`:25800`/`:25843`/`:25869`/
+/// `:44139`/`:44474`). W4-c27.
+pub struct PlayerStealth {
+    pub stealth: f32,
 }
 
 // ===========================================================================
@@ -2736,6 +2840,33 @@ pub enum C2s {
     /// (`WorldItem.cs:1193`); the host accumulates + relays the total
     /// (`MessageBuffer.cs:3455-3459`).
     NpcExtraValue(NpcExtraValue),
+    /// `36 SyncPlayerZone` - a client's zone flags changed (the zone-change
+    /// test `Main.cs:17634`, the 900-tick heartbeat `:64533`;
+    /// `MessageBuffer.cs:2178-2202` forces the id to the sender and relays).
+    PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a client's aimed-item rotation
+    /// (`Player.cs:43693`/`:47374`/`:47380` beside a `13`;
+    /// `MessageBuffer.cs:2271-2289`). W4-c27.
+    ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a client's mana-restore text amount
+    /// (`Player.ManaEffect`'s send, `Player.cs:4534-4537`;
+    /// `MessageBuffer.cs:2307-2324`). W4-c27.
+    ManaEffect(ManaEffect),
+    /// `51 MiscDataSync` - a client's misc request (kinds 1/2/3/6;
+    /// `MessageBuffer.cs:2482-2530`). W4-c27.
+    MiscDataSync(MiscDataSync),
+    /// `55 AddPlayerBuffPvP` - a client applied a PvP debuff to a peer
+    /// (`Player.AddBuff`'s remote branch, `Player.cs:5269-5275`;
+    /// `MessageBuffer.cs:2594-2611`). W4-c27.
+    PlayerBuffPvp(PlayerBuffPvp),
+    /// `62 SyncDodge` - a client's dodge fired (`Player.NinjaDodge`/
+    /// `ShadowDodge`/`BrainOfConfusionDodge`/`DoMysticSashDodge`'s sends;
+    /// `MessageBuffer.cs:2879-2908`). W4-c27.
+    SyncDodge(SyncDodge),
+    /// `84 PlayerStealth` - a client's stealth value changed (the
+    /// shroomite/vortex transitions, `Player.cs:25753` etc.;
+    /// `MessageBuffer.cs:3246-3260`). W4-c27.
+    PlayerStealth(PlayerStealth),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2963,6 +3094,31 @@ pub enum S2c {
     /// by the host (`MessageBuffer.cs:3458`); the client assigns + moneyPings
     /// (`:3450-3454`).
     NpcExtraValue(NpcExtraValue),
+    /// `18 SetTime` - the host's clock (`NetMessage.cs:531-536`; the client
+    /// applies it at `netMode == 1`, `MessageBuffer.cs:1290-1298`). W4-c27.
+    SetTime(SetTime),
+    /// `36 SyncPlayerZone` - a peer's zone flags, relayed by the host
+    /// (`MessageBuffer.cs:2199`). W4-c27.
+    PlayerZone(PlayerZone),
+    /// `41 ItemRotationAndAnimation` - a peer's aimed-item rotation, relayed
+    /// by the host (`MessageBuffer.cs:2286`). W4-c27.
+    ItemAnim(ItemAnim),
+    /// `43 ManaEffect` - a peer's mana-restore text amount, relayed by the
+    /// host (`MessageBuffer.cs:2321`). W4-c27.
+    ManaEffect(ManaEffect),
+    /// `51 MiscDataSync` - the host's misc fan-out (kinds 2/4;
+    /// `MessageBuffer.cs:2498`, `:2512`). W4-c27.
+    MiscDataSync(MiscDataSync),
+    /// `55 AddPlayerBuffPvP` - a PvP debuff aimed at us, sent by the host to
+    /// the target alone (`MessageBuffer.cs:2603`). W4-c27.
+    PlayerBuffPvp(PlayerBuffPvp),
+    /// `62 SyncDodge` - a peer's dodge, relayed by the host
+    /// (`MessageBuffer.cs:2905`). W4-c27.
+    SyncDodge(SyncDodge),
+    /// `84 PlayerStealth` - a peer's stealth value, relayed by the host
+    /// (`MessageBuffer.cs:3257` — the writer re-reads the stored float).
+    /// W4-c27.
+    PlayerStealth(PlayerStealth),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -3079,6 +3235,13 @@ impl C2s {
             Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
             Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
+            Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
+            Self::SyncDodge(_) => id::SYNC_DODGE,
+            Self::PlayerStealth(_) => id::PLAYER_STEALTH,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3233,6 +3396,29 @@ impl C2s {
             }
             // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .u8(z.zone1)
+                .u8(z.zone2)
+                .u8(z.zone3)
+                .u8(z.zone4)
+                .u8(z.zone5)
+                .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation +
+            // (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
+            // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+            Self::MiscDataSync(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+            // (int)number3.
+            Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
+            // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+            Self::SyncDodge(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3473,6 +3659,34 @@ impl C2s {
                 value: r.i32()?,
                 x: r.f32()?,
                 y: r.f32()?,
+
+        })
+        })            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::SYNC_PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                zone1: r.u8()?,
+                zone2: r.u8()?,
+                zone3: r.u8()?,
+                zone4: r.u8()?,
+                zone5: r.u8()?,
+                town_npcs: r.u8()?,
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                rotation: r.f32()?,
+                animation: r.i16()?,
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                amount: r.i16()?,
+            // `MessageBuffer.cs:2484-2489`: two bytes.
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                kind: r.u8()?,
+            // `MessageBuffer.cs:2596-2598`: byte + ushort + int.
+            id::ADD_PLAYER_BUFF_PVP => Self::PlayerBuffPvp(PlayerBuffPvp {
+                time: r.i32()?,
+            // `MessageBuffer.cs:2881-2882`: two bytes.
+            id::SYNC_DODGE => Self::SyncDodge(SyncDodge {
+            // `MessageBuffer.cs:3248-3253`: byte + float.
+            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
+                stealth: r.f32()?,
             }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
@@ -3694,6 +3908,14 @@ impl S2c {
             Self::NpcStrikeAck => id::NPC_STRIKE_ACK,
             Self::UniqueTownNpcInfo(_) => id::UNIQUE_TOWN_NPC_INFO,
             Self::NpcExtraValue(_) => id::NPC_EXTRA_VALUE,
+            Self::SetTime(_) => id::SET_TIME,
+            Self::PlayerZone(_) => id::SYNC_PLAYER_ZONE,
+            Self::ItemAnim(_) => id::ITEM_ANIM,
+            Self::ManaEffect(_) => id::MANA_EFFECT,
+            Self::MiscDataSync(_) => id::MISC_DATA_SYNC,
+            Self::PlayerBuffPvp(_) => id::ADD_PLAYER_BUFF_PVP,
+            Self::SyncDodge(_) => id::SYNC_DODGE,
+            Self::PlayerStealth(_) => id::PLAYER_STEALTH,
         }
     }
 
@@ -3990,6 +4212,36 @@ impl S2c {
             // `NetMessage.cs:1321-1326`: (short)npc, (int)value, float x, y
             // — the host relay carries the accumulated extraValue.
             Self::NpcExtraValue(e) => w.i16(e.npc).i32(e.value).f32(e.x).f32(e.y),
+            // `NetMessage.cs:531-536`: (byte)dayTime + (int)time + sunModY +
+            // moonModY (both `short`, `Main.cs:1185`/`:1187`).
+            Self::SetTime(t) => w
+                .u8(u8::from(t.day_time))
+                .i32(t.time)
+                .i16(t.sun_mod_y)
+                .i16(t.moon_mod_y),
+            // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+            Self::PlayerZone(z) => w
+                .u8(z.player_id)
+                .u8(z.zone1)
+                .u8(z.zone2)
+                .u8(z.zone3)
+                .u8(z.zone4)
+                .u8(z.zone5)
+                .u8(z.town_npcs),
+            // `NetMessage.cs:956-960`: (byte)number + itemRotation +
+            // (short)itemAnimation.
+            Self::ItemAnim(a) => w.u8(a.player_id).f32(a.rotation).i16(a.animation),
+            // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+            Self::ManaEffect(m) => w.u8(m.player_id).i16(m.amount),
+            // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+            Self::MiscDataSync(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+            // (int)number3.
+            Self::PlayerBuffPvp(b) => w.u8(b.player_id).u16(b.buff_type).i32(b.time),
+            // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+            Self::SyncDodge(d) => w.u8(d.player_id).u8(d.kind),
+            // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+            Self::PlayerStealth(s) => w.u8(s.player_id).f32(s.stealth),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -4324,6 +4576,54 @@ impl S2c {
                 velocity_y: r.f32()?,
                 x: r.i32()?,
                 y: r.i32()?,
+            // `MessageBuffer.cs:1290-1298`: byte == 1 day flag + int + 2 shorts.
+            id::SET_TIME => Self::SetTime(SetTime {
+                day_time: r.u8()? == 1,
+                time: r.i32()?,
+                sun_mod_y: r.i16()?,
+                moon_mod_y: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2180-2192`: (byte)id + zone1..5 + townNPCs.
+            id::SYNC_PLAYER_ZONE => Self::PlayerZone(PlayerZone {
+                player_id: r.u8()?,
+                zone1: r.u8()?,
+                zone2: r.u8()?,
+                zone3: r.u8()?,
+                zone4: r.u8()?,
+                zone5: r.u8()?,
+                town_npcs: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2273-2282`: (byte)id + float + (short).
+            id::ITEM_ANIM => Self::ItemAnim(ItemAnim {
+                player_id: r.u8()?,
+                rotation: r.f32()?,
+                animation: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2309-2314`: (byte)id + (short)amount.
+            id::MANA_EFFECT => Self::ManaEffect(ManaEffect {
+                player_id: r.u8()?,
+                amount: r.i16()?,
+            }),
+            // `MessageBuffer.cs:2484-2489`: two bytes.
+            id::MISC_DATA_SYNC => Self::MiscDataSync(MiscDataSync {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:2596-2598`: byte + ushort + int.
+            id::ADD_PLAYER_BUFF_PVP => Self::PlayerBuffPvp(PlayerBuffPvp {
+                player_id: r.u8()?,
+                buff_type: r.u16()?,
+                time: r.i32()?,
+            }),
+            // `MessageBuffer.cs:2881-2882`: two bytes.
+            id::SYNC_DODGE => Self::SyncDodge(SyncDodge {
+                player_id: r.u8()?,
+                kind: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3248-3253`: byte + float.
+            id::PLAYER_STEALTH => Self::PlayerStealth(PlayerStealth {
+                player_id: r.u8()?,
+                stealth: r.f32()?,
             }),
             // `MessageBuffer.cs:3654-3656`: (byte)id, (ushort)buffType,
             // ReadVector2 (two raw floats, `Utils.cs:1392-1395`).
@@ -8381,5 +8681,149 @@ mod tests {
             S2c::WiredCannonShot(d) => assert_eq!(d, c),
             other => panic!("expected 108, got {:?}", other.msg_id()),
         }
+
+        }    // ---- W4-c27: the entity-state ids — byte-verbatim witnesses ----
+    // Each test pins the frame's id byte, the exact C# body bytes
+    // (`NetMessage.cs`'s writer arms) and the decode round trip.
+    fn w4_c27_set_time_round_trips() {
+        // `NetMessage.cs:531-536`: (byte)dayTime + (int)Main.time +
+        // sunModY/moonModY, both `short` (`Main.cs:1185`/`:1187`).
+        let t = SetTime {
+            day_time: false,
+            time: 32_400,
+            sun_mod_y: -120,
+            moon_mod_y: 45,
+        let f = S2c::SetTime(t).encode();
+        assert_eq!(f[2], 18);
+        let mut body = vec![0u8];
+        body.extend_from_slice(&32_400i32.to_le_bytes());
+        body.extend_from_slice(&(-120i16).to_le_bytes());
+        body.extend_from_slice(&45i16.to_le_bytes());
+            S2c::SetTime(d) => assert_eq!(d, t),
+            other => panic!("expected 18, got {:?}", other.msg_id()),
+        // `MessageBuffer.cs:1293`: the day flag is `== 1`, not `!= 0` —
+        // a byte 2 reads as night.
+        let mut body2 = vec![2u8];
+        body2.extend_from_slice(&0i32.to_le_bytes());
+        body2.extend_from_slice(&0i16.to_le_bytes());
+        match S2c::decode(18, &mut NetReader::new(&body2)).expect("decode") {
+            S2c::SetTime(d) => assert!(!d.day_time, "byte 2 is not day"),
+        // Truncated bodies are malformed.
+        assert!(S2c::decode(18, &mut NetReader::new(&[1, 0, 0])).is_none());
+    fn w4_c27_player_zone_round_trips() {
+        // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.
+        // zone5 bit 0 is ZoneShimmer (`Player.cs:3811-3821`).
+        let z = PlayerZone {
+            player_id: 6,
+            zone1: 0b1010_0101,
+            zone2: 0x0F,
+            zone3: 0xF0,
+            zone4: 0x33,
+            zone5: 0b0000_0001,
+            town_npcs: 3,
+        let body = [6, 0b1010_0101, 0x0F, 0xF0, 0x33, 0x01, 3];
+        let f = S2c::PlayerZone(z).encode();
+        assert_eq!(f[2], 36);
+            S2c::PlayerZone(d) => assert_eq!(d, z),
+            other => panic!("expected 36, got {:?}", other.msg_id()),
+        let c = C2s::PlayerZone(z).encode();
+        assert_eq!(c[2], 36);
+            C2s::PlayerZone(d) => assert_eq!(d, z),
+        assert!(C2s::decode(36, &mut NetReader::new(&body[..6])).is_none());
+    fn w4_c27_item_anim_round_trips() {
+        // `NetMessage.cs:956-960`: (byte)number + itemRotation float +
+        // (short)itemAnimation.
+        let a = ItemAnim {
+            player_id: 2,
+            rotation: -1.25,
+            animation: 17,
+        let mut body = vec![2u8];
+        body.extend_from_slice(&(-1.25f32).to_le_bytes());
+        let f = S2c::ItemAnim(a).encode();
+        assert_eq!(f[2], 41);
+            S2c::ItemAnim(d) => assert_eq!(d, a),
+            other => panic!("expected 41, got {:?}", other.msg_id()),
+        let c = C2s::ItemAnim(a).encode();
+        assert_eq!(c[2], 41);
+            C2s::ItemAnim(d) => assert_eq!(d, a),
+        assert!(C2s::decode(41, &mut NetReader::new(&body[..6])).is_none());
+    fn w4_c27_mana_effect_round_trips() {
+        // `NetMessage.cs:966-969`: (byte)number + (short)number2.
+        let m = ManaEffect {
+            amount: -40,
+        let mut body = vec![5u8];
+        body.extend_from_slice(&(-40i16).to_le_bytes());
+        let f = S2c::ManaEffect(m).encode();
+        assert_eq!(f[2], 43);
+            S2c::ManaEffect(d) => assert_eq!(d, m),
+            other => panic!("expected 43, got {:?}", other.msg_id()),
+        let c = C2s::ManaEffect(m).encode();
+        assert_eq!(c[2], 43);
+            C2s::ManaEffect(d) => assert_eq!(d, m),
+        assert!(C2s::decode(43, &mut NetReader::new(&[5])).is_none());
+    fn w4_c27_misc_data_sync_round_trips() {
+        // `NetMessage.cs:1010-1013`: (byte)number + (byte)number2.
+        let d = MiscDataSync {
+            player_id: 3,
+            kind: 6,
+        let f = S2c::MiscDataSync(d).encode();
+        assert_eq!(f[2], 51);
+        assert_eq!(&f[3..], &[3, 6]);
+            S2c::MiscDataSync(x) => assert_eq!(x, d),
+            other => panic!("expected 51, got {:?}", other.msg_id()),
+        let c = C2s::MiscDataSync(d).encode();
+        assert_eq!(c[2], 51);
+        assert_eq!(&c[3..], &[3, 6]);
+            C2s::MiscDataSync(x) => assert_eq!(x, d),
+        assert!(C2s::decode(51, &mut NetReader::new(&[3])).is_none());
+    fn w4_c27_player_buff_pvp_round_trips() {
+        // `NetMessage.cs:1041-1045`: (byte)number + (ushort)number2 +
+        // (int)number3.
+        let b = PlayerBuffPvp {
+            player_id: 1,
+            buff_type: 400,
+            time: 600,
+        let mut body = vec![1u8];
+        body.extend_from_slice(&400u16.to_le_bytes());
+        body.extend_from_slice(&600i32.to_le_bytes());
+        let f = S2c::PlayerBuffPvp(b).encode();
+        assert_eq!(f[2], 55);
+            S2c::PlayerBuffPvp(x) => assert_eq!(x, b),
+            other => panic!("expected 55, got {:?}", other.msg_id()),
+        let c = C2s::PlayerBuffPvp(b).encode();
+        assert_eq!(c[2], 55);
+            C2s::PlayerBuffPvp(x) => assert_eq!(x, b),
+        assert!(C2s::decode(55, &mut NetReader::new(&body[..5])).is_none());
+    fn w4_c27_sync_dodge_round_trips() {
+        // `NetMessage.cs:1077-1080`: (byte)number + (byte)number2.
+        let d = SyncDodge {
+            player_id: 4,
+            kind: 5, // MysticSash (`Player.cs:38115`)
+        let f = S2c::SyncDodge(d).encode();
+        assert_eq!(f[2], 62);
+        assert_eq!(&f[3..], &[4, 5]);
+            S2c::SyncDodge(x) => assert_eq!(x, d),
+            other => panic!("expected 62, got {:?}", other.msg_id()),
+        let c = C2s::SyncDodge(d).encode();
+        assert_eq!(c[2], 62);
+        assert_eq!(&c[3..], &[4, 5]);
+            C2s::SyncDodge(x) => assert_eq!(x, d),
+        assert!(C2s::decode(62, &mut NetReader::new(&[4])).is_none());
+    fn w4_c27_player_stealth_round_trips() {
+        // `NetMessage.cs:1197-1204`: (byte)id + the live stealth float.
+        let s = PlayerStealth {
+            stealth: 0.625,
+        body.extend_from_slice(&0.625f32.to_le_bytes());
+        let f = S2c::PlayerStealth(s).encode();
+        assert_eq!(f[2], 84);
+            S2c::PlayerStealth(x) => assert_eq!(x, s),
+            other => panic!("expected 84, got {:?}", other.msg_id()),
+        let c = C2s::PlayerStealth(s).encode();
+        assert_eq!(c[2], 84);
+            C2s::PlayerStealth(x) => assert_eq!(x, s),
+        assert!(C2s::decode(84, &mut NetReader::new(&body[..4])).is_none());
     }
+
+// balance-close (union shared delimiter)
+}}}}}}}}}}}}}}}}}}}}}}}}}}}}}))))))
 }

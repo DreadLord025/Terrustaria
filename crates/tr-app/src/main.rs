@@ -46,8 +46,13 @@ mod item_lights;
 mod npc_lights;
 mod npc_lights_c;
 mod npc_lights_a;
+mod npc_lights_b;
 mod player_lights;
+mod player_lights_b;
+mod proj_ai_lights;
 mod proj_lights;
+mod proj_lights_a;
+mod tile_lights;
 mod eoc_fight;
 mod input_map;
 mod input_profiles;
@@ -188,6 +193,12 @@ mod npc_ai_style75;
 // CultistTablet 437 / CultistDevote 438, NPC.cs:36757-36925) - the kind
 // rows + the style-axis arm are the roster wave's merge step (the
 // npc_ai_style73 precedent; see the module doc).
+// W4-d31 (research/25 row 83): the cultist-ritual family (the
+// CultistTablet 437 / CultistDevote 438, NPC.cs:36757-36925) - WIRED on
+// the style axis (the d10 activation contract: npc.rs's 83 arm + the
+// world_sim pooled branch + the ritual link/spawn/526-owner-re-pin
+// passes); the 437/438 kinds ride the roster wave (W4-d40 7fec14aa), so
+// the dispatch is dormant until they merge (see the module doc).
 mod npc_ai_style83;
 mod npc_ai_style86;
 // W4-d32 style 87: UNWIRED Big Mimic machine (NPC.cs:37471-37826) -
@@ -331,6 +342,11 @@ mod hurt_modifiers;
 // Player.cs:6502-6617) — wired at world_sim/editing.rs's pre-strike site.
 mod melee_on_hit;
 mod player;
+// W4-d115 lane 19: the dodge family's DRAW maths (LegacyPlayerRenderer
+// :433-467 afterimages + PlayerDrawLayers :2954-3024 shield pulses) —
+// UNWIRED pure functions; the entities.rs draw claims are the follow-up
+// round (the W4-g17 player_gore_c precedent; dust side g17-owned).
+mod player_dodge_draw;
 mod player_file;
 mod potions;
 mod prefix;
@@ -353,6 +369,12 @@ mod projectile_ai_style86;
 mod projectile_ai_style87;
 mod projectile_ai_style89;
 mod projectile_ai_style90;
+// W4-e7 lane 23: the Snapping Stone trio's strike machine
+// (Projectile.TryMakingSnappingStoneStrike, Projectile.cs:14283-14395) +
+// the ParticleOrchestrator draw census — wired at the melee hit
+// (world_sim/editing.rs), the PVE walk (projectile.rs::damage_pve) and the
+// Update_SnappingStone zero-crossing (world_sim/player.rs).
+mod snapping_stone;
 
 
 mod projectile_ai001_a;

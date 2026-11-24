@@ -1663,6 +1663,13 @@ pub fn drop_nothing() -> Box<dyn ItemDropRule> {
 /// the depth term is IGNORED (`:1599-1605`).
 fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
     let f = &info.flags;
+
+        }/// the shared soul gate — not a boss, not in `DontDropDungeonKeysOrSouls`
+/// (`NPCID.cs:10115` — type 23 alone), not the 1/13/14/15/121/535 exclusion
+/// list, hardmode, lifeMax > 1, not friendly, value >= 1, and (outside the
+/// remix seed) the NPC below the rock layer (`position.Y > rockLayer * 16`,
+/// the depth folded into `flags.soul_depth_ok` by the caller; the remix
+/// world drops the depth term, `:1599-1605`).
     let n = &info.npc;
     if n.is_boss || n.dont_drop_keys {
         return false;
@@ -1676,6 +1683,11 @@ fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
         return false;
     }
     f.remix_seed || f.soul_depth_ok
+    match n.kind {
+        1 | 13 | 14 | 15 | 121 | 535 => return false,
+        _ => {}
+    if !info.flags.hard_mode || n.life_max <= 1 || n.friendly || n.value < 1.0 {
+    info.flags.remix_seed || info.flags.soul_depth_ok
 }
 
 /// The pumpkin/frost moon gates' wave-scaled chance denominator
@@ -3273,6 +3285,89 @@ mod tests {
             );
         }
     }
+
+    /// W4-f32 DOC-SWEEP — `Conditions.SoulOfWhateverConditionCanDrop`
+    /// (`Conditions.cs:1579-1612`): the shared soul gate. A worth-dropping
+    /// hardmode hostile below the rock layer passes; bosses, the
+    /// `DontDropDungeonKeysOrSouls` set (23), the 1/13/14/15/121/535
+    /// exclusion list, lifeMax <= 1, friendlies, value < 1 and the
+    /// above-rock-layer band all refuse. The remix seed drops the depth
+    /// term (`:1599-1605`).
+    #[test]
+    fn soul_of_whatever_gate_matches_the_csharp() {
+        // A fresh passing-shape info per check (the rng borrow is exclusive,
+        // so each check owns its own stream — the gate draws nothing).
+        let good = |rng: &mut dyn DropRng| {
+            let mut i = info(rng);
+            i.flags.hard_mode = true;
+            i.flags.soul_depth_ok = true;
+            i.npc.kind = 6; // Eater of Souls — not on the exclusion list
+            i.npc.life_max = 50;
+            i.npc.value = 100.0;
+            i
+        };
+        let mut rng = crate::tile_light::FastRandom::new(1);
+        assert!(
+            soul_of_whatever_can_drop(&good(&mut rng)),
+            "the worth-dropping deep hostile"
+        );
+        // Boss refuses (`:1581`).
+        let mut boss = good(&mut rng);
+        boss.npc.is_boss = true;
+        assert!(!soul_of_whatever_can_drop(&boss));
+        // DontDropDungeonKeysOrSouls (23) refuses (`:1585`).
+        let mut keys = good(&mut rng);
+        keys.npc.dont_drop_keys = true;
+        assert!(!soul_of_whatever_can_drop(&keys));
+        // The exclusion list (`:1589-1597`).
+        for id in [1, 13, 14, 15, 121, 535] {
+            let mut ex = good(&mut rng);
+            ex.npc.kind = id;
+            assert!(!soul_of_whatever_can_drop(&ex), "type {id} excluded");
+        }
+        // Pre-hardmode refuses (`:1601`/`:1606`).
+        let mut pre = good(&mut rng);
+        pre.flags.hard_mode = false;
+        assert!(!soul_of_whatever_can_drop(&pre));
+        // lifeMax <= 1 refuses.
+        let mut critter = good(&mut rng);
+        critter.npc.life_max = 1;
+        assert!(!soul_of_whatever_can_drop(&critter));
+        // Friendly refuses.
+        let mut friendly = good(&mut rng);
+        friendly.npc.friendly = true;
+        assert!(!soul_of_whatever_can_drop(&friendly));
+        // value < 1 refuses.
+        let mut worthless = good(&mut rng);
+        worthless.npc.value = 0.0;
+        assert!(!soul_of_whatever_can_drop(&worthless));
+        // Above the rock layer refuses outside remix (`:1606`).
+        let mut shallow = good(&mut rng);
+        shallow.flags.soul_depth_ok = false;
+        assert!(!soul_of_whatever_can_drop(&shallow));
+        // The remix seed drops the depth term (`:1599-1605`).
+        let mut remix = good(&mut rng);
+        remix.flags.soul_depth_ok = false;
+        remix.flags.remix_seed = true;
+        assert!(soul_of_whatever_can_drop(&remix), "remix ignores the depth");
+        // The zone gates: light needs hallow, night needs corrupt/crimson.
+        let mut light = good(&mut rng);
+        light.flags.zone_hallow = true;
+        assert!(Cond::SoulOfLight.can_drop(&mut light));
+        let mut light_no = good(&mut rng);
+        light_no.flags.zone_hallow = false;
+        assert!(!Cond::SoulOfLight.can_drop(&mut light_no));
+        let mut night = good(&mut rng);
+        night.flags.zone_corrupt = true;
+        assert!(Cond::SoulOfNight.can_drop(&mut night));
+        let mut night_crim = good(&mut rng);
+        night_crim.flags.zone_crimson = true;
+        assert!(Cond::SoulOfNight.can_drop(&mut night_crim));
+        let mut night_no = good(&mut rng);
+        night_no.flags.zone_corrupt = false;
+        night_no.flags.zone_crimson = false;
+        assert!(!Cond::SoulOfNight.can_drop(&mut night_no));
+    }
 }
 
 /// The S1-E-14 phase tests — the four skipped rule classes and the two
@@ -4003,4 +4098,7 @@ mod s1_e_14_tests {
             );
         }
     }
+
+// balance-close (union shared delimiter)
+}
 }

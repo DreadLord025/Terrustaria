@@ -1614,6 +1614,109 @@ pub const ARMOR_SHIELD: &[(i32, &str)] = &[
 /// `ArmorIDs.Shield.Count` (`ArmorIDs.cs`): 13.
 pub const ARMOR_SHIELD_COUNT: i32 = 13;
 
+/// `ImmunityCooldownID` (`ID/ImmunityCooldownID.cs:74-81`) — the seven
+/// per-source hurt-cooldown ids verbatim. `Player.hurtCooldowns` is a
+/// `Count`-sized array (`Player.cs:3160`); `General = -1` rides the
+/// `immune`/`immuneTime` pair instead (`Hurt` `:38208`).
+///
+/// W4-d115 wiring round usage census (C# → port, M4-HAZARD-1 closed —
+/// `Player.hurt_cooldowns` is the ported per-source array):
+/// * `General` −1 — `Hurt`'s default counter; the contact lane
+///   (`:31332`), the hostile-shot lane (`Projectile.cs:14779`) and the
+///   PVP sends (`:10260`/`:44144`, `Projectile.cs:14687`). Port: the
+///   `immune`/`immune_time` pair (+ the `hurt_cd` seconds mirror the
+///   collapsed-lane witnesses keep) — `hurt`/`hurt_with_source` default.
+/// * `TileContactDamage` 0 — spike/block hurt (`:28981`) and the
+///   cactus hurt (`:45723`). Port: `touch_damage.rs` + the Don't Starve
+///   cactus chop (`world_sim/editing.rs`) pass the id; slot 0 gates and
+///   re-arms (not a Retaliate member).
+/// * `BossNoCheese` 1 — the no-cheese contact kinds 396/397/398/400/401
+///   (Moon Lord) + 636 (Empress, `:31335-31348`) and the hostile shots
+///   452/454/455/462 + 871-874/919/923/924 (`Projectile.cs:14782-14796`).
+///   Port: `npc.rs`'s contact + `projectile.rs`'s `damage_player` pick
+///   the id per kind; the hits land THROUGH the General i-frames
+///   (`:38208`'s per-counter flag). The Empress (636) kind + its
+///   `ai[0] 0/10` skip arrive with d125 — the `hurt_cooldown` entry is
+///   the split-contract API it passes `IMMUNITY_BOSS_NO_CHEESE` through.
+/// * `LegacyUnused2` 2 — NO consumer anywhere in the C# (the definition
+///   is the only reference; the retired second legacy counter).
+/// * `WrongBugNet` 3 — the lava-bait bug-net burn (`:44723`). Port:
+///   `bug_net.rs`'s `LavaHurt` arm passes the id (not a Retaliate member).
+/// * `Lava` 4 — the lava hurt (`:27708`, gated `:27679`). Port: the
+///   `update_survival` lava lane passes the id; the `:27679` gate covers
+///   the budget drain AND the hit (not a Retaliate member).
+/// * `PaladinsShield` 5 — the team-share redirect (`:38361`,
+///   `dodgeable: false`). Port: the redirect itself is MP-only and
+///   unported, but the lane's SEMANTICS are table-side: the sole
+///   `ImmuneTimerOnlyLimitsEffects` member — a cooldown-active hit skips
+///   `Hurt`'s `:38210` early-return (damage still lands `:38383`), only
+///   the re-arm (`:38391`'s `== 0`) and the retaliate (`:38401`'s
+///   `& flag`) are limited. `hurt_inner` implements the exemption for
+///   any caller passing the id.
+pub const IMMUNITY_COOLDOWN_ID: &[(i32, &str)] = &[
+    (-1, "General"),
+    (0, "TileContactDamage"),
+    (1, "BossNoCheese"),
+    (2, "LegacyUnused2"),
+    (3, "WrongBugNet"),
+    (4, "Lava"),
+    (5, "PaladinsShield"),
+];
+
+/// `ImmunityCooldownID.Count` (`:81`): 6 — the `hurtCooldowns` array
+/// size (`Player.cs:3160`); General's −1 lives outside it.
+pub const IMMUNITY_COOLDOWN_COUNT: i32 = 6;
+
+/// W4-d115 wiring round — the named ids (`ID/ImmunityCooldownID.cs:74-80`),
+/// the table-side constants the per-counter lanes key on. The
+/// `IMMUNITY_COOLDOWN_ID` table above is the `(id, name)` census; these
+/// are the values the sim passes to `hurt_cooldown` / `Hurt`'s
+/// `cooldownCounter`. `General` (−1) rides the `immune`/`immuneTime`
+/// pair, NOT the array (`Hurt` `:38208`); the other six index
+/// `Player.hurt_cooldowns` directly.
+pub const IMMUNITY_GENERAL: i32 = -1;
+pub const IMMUNITY_TILE_CONTACT_DAMAGE: i32 = 0;
+pub const IMMUNITY_BOSS_NO_CHEESE: i32 = 1;
+pub const IMMUNITY_LEGACY_UNUSED2: i32 = 2;
+pub const IMMUNITY_WRONG_BUG_NET: i32 = 3;
+pub const IMMUNITY_LAVA: i32 = 4;
+pub const IMMUNITY_PALADINS_SHIELD: i32 = 5;
+
+/// `ImmunityCooldownID.Sets.Retaliate` (`:49`) — {General, BossNoCheese,
+/// PaladinsShield}. Consumed at `Hurt`'s retaliate gate (`:38401`); the
+/// port reads the membership from the counter directly in `hurt_inner`
+/// (M4-HAZARD-1 — the S1-C-7 wave B `retaliate_lane` bool is retired,
+/// the counter carries both the gate and the membership).
+pub fn immunity_retaliate(id: i32) -> bool {
+    matches!(id, -1 | 1 | 5)
+}
+
+/// `ImmunityCooldownID.Sets.Counter` (`:50`) — {General, BossNoCheese}.
+/// Consumed at the Solar Flare consume gate (`:38305`,
+/// `ConsumeSolarFlare` — the solar set's dash charges; unported family).
+pub fn immunity_counter(id: i32) -> bool {
+    matches!(id, -1 | 1)
+}
+
+/// `ImmunityCooldownID.Sets.TeamDamageShare` (`:51`) — {General,
+/// BossNoCheese}. Consumed at the Paladin's Shield team-share gate
+/// (`:38338`, `defendedByPaladin && num2 >= 4 && Damage < 9999` —
+/// MP-only, unported).
+pub fn immunity_team_damage_share(id: i32) -> bool {
+    matches!(id, -1 | 1)
+}
+
+/// `ImmunityCooldownID.Sets.ImmuneTimerOnlyLimitsEffects` (`:52`) —
+/// {PaladinsShield}. Consumed at `Hurt`'s early-return (`:38210`): a
+/// cooldown-active PaladinsShield hit still runs the WHOLE body — the
+/// damage lands (`:38383`) — while only the cooldown re-arm (`:38391`'s
+/// `== 0` gate) and the retaliate (`:38401`'s `& flag`) are limited. The
+/// C# `BoolSet` indexer shifts by +1 (`:11-20`) so General's −1 maps to
+/// slot 0 — the port's membership fns need no array.
+pub fn immunity_timer_only_limits_effects(id: i32) -> bool {
+    id == 5
+}
+
 /// `ArmorIDs.Neck` — `(neck_id, const name)` verbatim.
 pub const ARMOR_NECK: &[(i32, &str)] = &[
     (1, "JellyfishNecklace"),
@@ -1634,6 +1737,55 @@ pub const ARMOR_NECK: &[(i32, &str)] = &[
 
 /// `ArmorIDs.Neck.Count` (`ArmorIDs.cs`): 15.
 pub const ARMOR_NECK_COUNT: i32 = 15;
+
+/// W4-d115 wiring round — the `Item.neckSlot` census: EVERY `neckSlot =`
+/// assignment in `Item.cs` (the generated `ItemDef` carries no neck
+/// slot, so the table lives here — the `ARMOR_NECK` convention).
+/// `(item_id, neckSlot, Item.cs line)`:
+/// * 554 Cross Necklace → 2 (`:7992`) — the dodge family's parry item;
+/// * 862 Star Veil → 5 (`:11476`);
+/// * 1158 Pygmy Necklace → 4 (`:14256`);
+/// * 1290 Panic Necklace → 3 (`:15955`);
+/// * 1303 Jellyfish Necklace → 1 (`:16111`);
+/// * 1578 Sweetheart Necklace → 6 (`:18924`);
+/// * 3212 Shark Tooth Necklace → 7 (`:28976`);
+/// * 3224 Worm Scarf → 8 (`:29756`, expert);
+/// * 3809 Apprentice Scarf → 9 (`:33719`);
+/// * 4007 Stinger Necklace → 10 (`:35559`);
+/// * 4038 Molten Charm → 12 (`:35570`);
+/// * 5107 Magiluminescence → 11 (`:40917`);
+/// * 6180 Seraph Necklace → 14 (`:47603`);
+/// * 6187 Crossed Heart Necklace → 13 (`:47640`).
+/// The default is −1 (`Item.cs:227`); the `SetDefaults` epilogue reset
+/// (`:49041`) only re-defaults air items. `ArmorIDs.Neck.Sets.IsAScarf`
+/// = {8, 9} (`ArmorIDs.cs:2289`) — the two scarves, no draw consumer
+/// beyond the shared layer.
+pub const ITEM_NECK_SLOT: &[(u16, i32)] = &[
+    (554, 2),
+    (862, 5),
+    (1158, 4),
+    (1290, 3),
+    (1303, 1),
+    (1578, 6),
+    (3212, 7),
+    (3224, 8),
+    (3809, 9),
+    (4007, 10),
+    (4038, 12),
+    (5107, 11),
+    (6180, 14),
+    (6187, 13),
+];
+
+/// `Item.neckSlot` for an item kind — −1 when the item has no neck
+/// visual (the `Item.cs:227` default). The `UpdateVisibleAccessory`
+/// arm (`Player.cs:36927-36930`) reads it.
+pub fn item_neck_slot(kind: u16) -> i32 {
+    ITEM_NECK_SLOT
+        .iter()
+        .find(|&&(k, _)| k == kind)
+        .map_or(-1, |&(_, s)| s)
+}
 
 /// `ArmorIDs.Face` — `(face_id, const name)` verbatim.
 pub const ARMOR_FACE: &[(i32, &str)] = &[
@@ -2343,5 +2495,54 @@ mod tests {
             "EOWDiggin", "BombFuse",
         ];
         assert_eq!(names, cs_fields, "the SoundID field walk, ctor order");
+
+        }    /// W4-d115 lane 19 — the ImmunityCooldownID table + the four sets
+    /// verbatim (`ID/ImmunityCooldownID.cs:47-82`).
+    fn w4_d115_lane19_the_immunity_cooldown_table_matches_the_csharp() {
+        assert_eq!(IMMUNITY_COOLDOWN_ID.len(), 7, "the seven ids");
+        assert_eq!(IMMUNITY_COOLDOWN_COUNT, 6, "Count excludes General's -1");
+        assert_eq!(IMMUNITY_COOLDOWN_ID[0], (-1, "General"));
+        assert_eq!(IMMUNITY_COOLDOWN_ID[6], (5, "PaladinsShield"));
+        // The array-backed ids are 0..Count (the BoolSet's +1 shift).
+        for &(id, _) in &IMMUNITY_COOLDOWN_ID[1..] {
+            assert!((0..IMMUNITY_COOLDOWN_COUNT).contains(&id));
+        }
+        // Retaliate = {General, BossNoCheese, PaladinsShield} (`:49`).
+        for &(id, _) in IMMUNITY_COOLDOWN_ID {
+            assert_eq!(immunity_retaliate(id), matches!(id, -1 | 1 | 5), "id {id}");
+        // Counter = TeamDamageShare = {General, BossNoCheese} (`:50-51`).
+            assert_eq!(immunity_counter(id), matches!(id, -1 | 1), "id {id}");
+            assert_eq!(immunity_team_damage_share(id), matches!(id, -1 | 1), "id {id}");
+        // ImmuneTimerOnlyLimitsEffects = {PaladinsShield} (`:52`).
+            assert_eq!(immunity_timer_only_limits_effects(id), id == 5, "id {id}");
+        // The port's lane membership census: lava/tile/bug-net are NOT
+        // Retaliate members (their counters never queue a retaliate).
+        assert!(!immunity_retaliate(0), "TileContactDamage");
+        assert!(!immunity_retaliate(3), "WrongBugNet");
+        assert!(!immunity_retaliate(4), "Lava");
+        assert!(!immunity_retaliate(2), "LegacyUnused2 (no C# consumer)");
+    /// W4-d115 wiring round — the `Item.neckSlot` census: all fourteen
+    /// assignments (`Item.cs:7992..:47640`), each slot in 1..15, every
+    /// `ArmorIDs.Neck` slot 1..14 covered exactly once, and the lookup
+    /// defaults −1 for a non-neck item.
+    fn w4_d115_wiring_the_neck_slot_census_covers_every_assignment() {
+        assert_eq!(ITEM_NECK_SLOT.len(), 14, "the fourteen neckSlot assignments");
+        let mut slots: Vec<i32> = ITEM_NECK_SLOT.iter().map(|&(_, s)| s).collect();
+        slots.sort_unstable();
+        assert_eq!(slots, (1..15).collect::<Vec<_>>(), "slots 1..14 exactly once");
+        // The Cross Necklace rides slot 2 (the dodge family's item).
+        assert_eq!(item_neck_slot(554), 2);
+        assert_eq!(item_neck_slot(3224), 8, "the Worm Scarf");
+        assert_eq!(item_neck_slot(6180), 14, "the Seraph Necklace");
+        // Non-neck items default −1 (Item.cs:227).
+        assert_eq!(item_neck_slot(963), -1, "the Black Belt has no neckSlot");
+        assert_eq!(item_neck_slot(0), -1);
+        // Every row's item exists in the registry and is an accessory.
+        for &(kind, _) in ITEM_NECK_SLOT {
+            let d = crate::registry::get(kind).unwrap_or_else(|| panic!("item {kind}"));
+            assert!(d.accessory, "item {kind} is an accessory");
     }
+
+// balance-close (union shared delimiter)
+}}}
 }

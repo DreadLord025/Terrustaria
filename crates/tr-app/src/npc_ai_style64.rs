@@ -44,6 +44,10 @@
 //! The wiring step for the trio adds their kinds + the glow feed.
 //! (W4-g62 adopts the c9 rowing + wiring verbatim for the TRAILCACHE
 //! WIDENING's 677→60 row — the merge dedupes.)
+//! W4-c9's kind-gated Shimmerfly arm + `shimmerfly_threat_views`
+//! pre-pass DEDUPED to this routing at the batch-E merge (keep-one,
+//! research/349 §5); c9's shimmer Transform(677) wiring survives on
+//! the snail adapter + the sim's `wants_transform` drain.
 //!
 //! Seam: the module writes only the fields the C# arm writes — velocity,
 //! `ai[0]`/`ai[1]`/`ai[3]`, `localAI[0..3]`, `scale`, `rotation` (677),

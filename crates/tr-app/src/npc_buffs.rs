@@ -1,3 +1,5 @@
+{
+// balance-open (union shared delimiter)
 //! NPC buff storage and the DoT tick — the `NPC.buffType[20]` / `buffTime[20]`
 //! engine (`NPC.AddBuff`, `NPC.DelBuff`), the per-tick buff block of
 //! `UpdateNPC` (set flags → clear expired → apply DOTs) and the roster's
@@ -891,6 +893,28 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GiantFlyingAntlion
         | NpcKind::FlyingAntlion
         | NpcKind::EyeballFlyingFish => &[],
+        // The dragonflies (W4-d33): all seven share the
+        // `SpecificallyImmuneTo = [31]` (Confused) rows
+        // (`NPCID.cs:9473-9521` — 595 through 601 each carry one; the
+        // c8 crawlers' same-band precedent).
+        NpcKind::BlackDragonfly
+        | NpcKind::BlueDragonfly
+        | NpcKind::GreenDragonfly
+        | NpcKind::OrangeDragonfly
+        | NpcKind::RedDragonfly
+        | NpcKind::YellowDragonfly
+        | NpcKind::GoldDragonfly => &[31],
+        // The fairy critters (W4-d33 wiring): `ImmuneToAllBuffsThatAre
+        // NotWhips = true` + `ImmuneToWhips = true` (`NPCID.cs:9410-
+        // 9433`, 583/584/585 each) — the mask loop is unmodelled, so
+        // they ride `&[]` (the ForceBubble documented gap); the whip
+        // tag gate reads `whip_immune` below. The windy balloon 594:
+        // `SpecificallyImmuneTo = [31]` (`NPCID.cs:9466-9472`).
+        // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+        NpcKind::FairyCritterPink
+        | NpcKind::FairyCritterGreen
+        | NpcKind::FairyCritterBlue => &[],
+        NpcKind::WindyBalloon => &[31],
         // W4-c7: none of 355/358/654/677 has a `DebuffImmunitySets` row
         // (`NPCID.cs:6075+`'s dictionary carries no keys for them) — the
         // C# else-branch's no-immunity (`NPC.cs:17826-17832`).
@@ -1355,6 +1379,12 @@ pub fn whip_immune(kind: NpcKind) -> bool {
             | NpcKind::BoundTownSlimePurple
             | NpcKind::BoundTownSlimeYellow
     )
+
+        }    // MERGE-SIDE (367 s1): the union keeps d34's DungeonGuardian row;
+    // d42's fairy critters 583-585 drop with the d33-owned dups (d33's
+    // kept impl re-adds their `ImmuneToWhips` rows at the small-lanes
+    // splice, `NPCID.cs:9420+`).
+    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman | NpcKind::DungeonGuardian)
 }
 
 impl NpcBuffs {

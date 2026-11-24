@@ -1,3 +1,5 @@
+{{
+// balance-open (union shared delimiter)
 //! The bestiary screen (`UIBestiaryTest.cs`, opened through
 //! `Main.DrawBestiaryIcon`'s inventory button) — the entry grid
 //! (`UIBestiaryEntryGrid`/`UIBestiaryEntryButton`), the per-entry info page
@@ -1695,6 +1697,50 @@ fn portrait_data(
         }
         // E8 merge: the Pufferfish/Orca portraits drop with the kinds
         // (d43 lands later; the NPC_692 census survives, research/144).
+        // W4-d33 — the dragonfly family's portrait: the visible Red 599
+        // card's sheet row height over `Main.npcFrameCount[599]` = 4
+        // (`Main.cs:67141`), the frame width the sheet's own — the
+        // small-kinds rows' shape. The four Hide=true colours never
+        // reach the grid through their own cards (the catalog folds
+        // them onto 599); the arms keep the match exhaustive at the
+        // shared 10x10 box (the wyvern-segment precedent).
+        (NpcKind::RedDragonfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::BlackDragonfly, _)
+        | (NpcKind::BlueDragonfly, _)
+        | (NpcKind::GreenDragonfly, _)
+        | (NpcKind::OrangeDragonfly, _)
+        | (NpcKind::YellowDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        // The Gold 601's own visible card: the same 4-row strip shape.
+        (NpcKind::GoldDragonfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        // W4-d33 wiring — the fairy critters' portraits: their OWN
+        // visible cards' sheet row height over
+        // `Main.npcFrameCount[583..585]` = 4 (`Main.cs:67142`), the
+        // frame width the sheet's own — the dragonfly rows' shape.
+        // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+        (NpcKind::FairyCritterPink, _)
+        | (NpcKind::FairyCritterGreen, _)
+        | (NpcKind::FairyCritterBlue, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d33 wiring — the windy balloon's card draws the
+        // CustomTexturePath single-frame portrait
+        // (`bestiary_custom_portraits`, `NPCID.cs:5232-5239` — the
+        // draw arm returns before the sheet read); the row keeps the
+        // match exhaustive at the 20x20 SetDefaults box.
+        (NpcKind::WindyBalloon, _) => (sheet_i, 20.0, 20.0, 20.0, white),
         // W4-c7 — the firefly family's portraits: the sheet's own row
         // height over `Main.npcFrameCount[type]` (all four 4,
         // `Main.cs:67082`), the frame width the sheet's own — the
@@ -3556,6 +3602,8 @@ fn portrait_data(
                 .unwrap_or(40.0);
             (sheet_i, h, 22.0, h, white)
         }
+    }
+}
 
 /// `UIBestiaryEntryInfoPage`'s content for the selected entry: the
 /// `Portrait_Front` backdrop, the big portrait, the name (tier >= 1), the

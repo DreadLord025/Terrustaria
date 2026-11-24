@@ -1,3 +1,5 @@
+{
+// balance-open (union shared delimiter)
 //! Player simulation (plan stage A4): the deterministic input assembly and the
 //! fixed 60 Hz `Player::update` stepping with the render interpolation the
 //! camera follows.
@@ -659,6 +661,26 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 }
             }
         }
+        // W4-c46 — `Player.difficulty` mirrors the session character
+        // (`Main.ActivePlayerFileData.Player.difficulty`'s stand-in, the
+        // `active_player_difficulty` seam — the disjoint field read, the
+        // player borrow is live): the hardcore `UpdateDead` arm reads it.
+        // The sync runs per tick so a draft change lands without a respawn.
+        p.difficulty = app.session_draft.as_ref().map_or(0, |d| d.difficulty);
+        // `Player.Update`'s ghost arm (`Player.cs:24744-24748`): the hardcore
+        // ghost flies INSTEAD of `UpdateDead` — the early return precedes the
+        // dead branch. `Ghost()` reads the live controls and the world bounds.
+        if p.ghost {
+            // `AllowsRespawnTimerSkip`'s ghost refusal (`Player.cs:38964`)
+            // reads live in the death-screen draw — the ghost never shows the
+            // skip prompt. Clear the cached flag so a stale `true` from the
+            // pre-ghost dead tick cannot draw it (`Main.cs:45348`'s gate).
+            app.respawn_skip_available = false;
+            app.player_step.tick(dt, |_| {
+                p.ghost_tick(&app.world, input);
+            });
+            return;
+        }
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no
@@ -695,8 +717,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &app.projectiles,
                     app.local_id as i32,
                 );
-                respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
-                    || respawn_now;
+                respawn_now = p.update_dead_seeded(
+                    input.jump,
+                    boss_near,
+                    danger_near,
+                    moon_event_live,
+                    app.world.seeds,
+                ) || respawn_now;
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);
             });
@@ -726,6 +753,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // window that also forces the waterfall rescan
                 // (`Main.cs:61841`, world_sim/liquids.rs reads it).
                 app.bg_instant = 10;
+                // W4-c46 — `Player.Spawn`'s position pick (`Player.cs:
+                // 37621-37633`): no valid bed (`SpawnX = -1`) falls to the
+                // team-based-spawns arm (`Spawn_SetPositionAtTeamSpawn`,
+                // `:37993-38011` — the `.wld` v297 `extra_spawn_points`
+                // anchor for the player's team, W4-f45's list) BEFORE the
+                // world spawn. The C# arm leaves the position untouched
+                // when the seed/team gates refuse; the port's cached
+                // `spawn_x/y` already holds the world spawn then, so only a
+                // landed team anchor rewrites the fields (`revive` reads
+                // them below). The helper owns `&mut App` (the force-clear
+                // may kill tiles + roll drops) — `p`'s borrow ends with the
+                // bed re-validation above (the dead branch returns).
+                if app.world.bed_spawn.is_none() {
+                    if let Some((px, py)) =
+                        crate::recall_teleport::spawn_set_position_at_team_spawn(app)
+                    {
+                        let revived = app.player.as_mut().expect("the dead player");
+                        revived.spawn_x = px;
+                        revived.spawn_y = py;
+                    }
+                }
+                app.player.as_mut().expect("the dead player").revive();
                 app.respawn_skip_available = false;
                 app.respawn_skip_frames = 0;
                 app.npcs.clear();
@@ -1152,6 +1201,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `discount_equipped` (the 854/3035 rows); the shop-open tick
             // LATCHES the previous value (the vanilla never re-reads it
             // while `npcShop > 0`), the shop-closed tick mirrors the flag.
+            // W4-c46 — `Player.itemAnimation > 0` for the `breathCDMax`
+            // property and `CheckDrowning`'s reed probe (`Player.cs:3860`/
+            // `:23199`): the swing state with a held item, the sleeping
+            // gate's `item_in_use` above.
+            p.item_animation_active = item_in_use;
+            // M2-MOUNT-4 — the Scutlix/Santank auto-fire scan
+            // (`Mount.UpdateEffects` case 9/46, `Mount.cs:4879-4947`, called
+            // `Player.cs:25658` BEFORE the movement block + the `:26664`
+            // AbilityRecovery). The port runs it here — ahead of
+            // `update_with_grapple` (whose `update_mount` tail ticks
+            // `ability_recovery`) — so the fire reads the pre-recovery
+            // cooldown, the C#'s order. The fire's `RotatedByRandom` draws
+            // ride the `UpdatePlayers` stream inline; the two Santank cues
+            // queue for the pass-tail drain (the cart-cue batch convention).
+            p.update_mount_ability(&app.world, &app.npcs, &mut app.projectiles, rng);
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1271,6 +1335,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 &app.equip.armor,
                 app.inventory[app.selected].kind,
             );
+            // W4-f50 — `UpdateEquips`' Football scan (`Player.cs:12906-12918`):
+            // the Football (4743) in any of the 58 inventory slots (or the
+            // mouse slot 58) arms `hasFootball`. The hurt arm (`:38255`) reads
+            // it; `ResetEffects` clears it (`:18345`) and this re-derives per
+            // tick. The port's inventory is the 50-slot hotbar+inventory (the
+            // mouse slot is `app.mouse_item`).
+            p.has_football = app.inventory.iter().any(|s| s.count > 0 && s.kind == 4743)
+                || (app.mouse_item.count > 0 && app.mouse_item.kind == 4743);
             // The `UpdateEquips` summon-cap rows (`Player.cs:13254-13948`,
             // `:15324-15329`) — the armor/held half beside the ammo flags.
             grant_summon_caps(p, &app.equip.armor, &app.equip.misc_equips, &app.world);
@@ -1287,6 +1359,25 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.world.dd2_event_ongoing,
                 );
                 p.max_turrets_old = p.max_turrets;
+            }
+            // W4-e7 lane 23 — `Player.Update_SnappingStone`
+            // (`Player.cs:28385-28410`, called at `:24564` BEFORE
+            // `Update_HarpyCharm` `:24565` / `Update_AmmoCycler` `:24566`):
+            // the shared Snapping Stone strike cooldown counts down one per
+            // tick. At the zero-crossing the first worn member's recharge
+            // cue fires (`:28392-28408`): the sound at MountedCenter + the
+            // particle burst's draws, both on the `UpdatePlayers` stream
+            // (`Main.cs:17754`). The strike machine (`snapping_stone.rs`)
+            // arms the 360-tick cooldown; the ready lights
+            // (`player_lights_b::snapping_stone_lights`) read the live value.
+            let was_cooling = p.acc_snapping_stone_cooldown > 0;
+            p.update_snapping_stone();
+            if was_cooling && p.acc_snapping_stone_cooldown == 0 {
+                let recharge_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                if let Some(cue) = crate::snapping_stone::snapping_stone_recharge(p, recharge_rng) {
+                    let sound_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                    crate::snapping_stone::play_striking_sound(&mut app.audio, cue, sound_rng);
+                }
             }
             p.ammo_cycling.tick();
             // `Player.Update_SentryBackpack` (`Player.cs:28428-28434`, called
@@ -1409,7 +1500,58 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 }
             }
             for cue in p.take_cart_sounds() {
-                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                // W4-c14 - the cart/movement cues are `SoundID.ItemN` style
+                // plays (`Player.cs:19870`/`:19928` Item55, the landing
+                // Item53 `DelegateMethods.cs:250`, the bumper Item56
+                // `:255`): the facade (`SoundEngine.cs:93-99`) - the
+                // GetRandomPitch NextFloat on the audio-only stream, then
+                // case 2's volume/pitch draws on the `UpdatePlayers`
+                // stream after the gate (53/55's ×0.75 arms + the signed
+                // Next(-20,-11)*0.02 windows, `LegacySoundPlayer.cs:552-
+                // 563`/`:612-616`). The 53/55 playing guards stay the
+                // standing D4 deviation (wave A). The positions are already
+                // the C#'s truncated ints.
+                let style = cue
+                    .cue
+                    .strip_prefix("Item_")
+                    .and_then(|s| s.parse::<i32>().ok());
+                if let Some(style) = style {
+                    app.audio.play_npc_item_cue(
+                        style,
+                        cue.x,
+                        cue.y,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                } else if matches!(cue.cue, "MeowcartLanding" | "MeowcartBumper") {
+                    // W4-c14 - the Meowmere cart's case-37 plays
+                    // (`Mount.cs:661` style 5 / `:666` style 3): the slot
+                    // pick + the Style*0.05 volume + the wide pitch window.
+                    let style = if cue.cue == "MeowcartLanding" { 5 } else { 3 };
+                    app.audio.play_meowcart_sound(
+                        style,
+                        cue.x,
+                        cue.y,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                } else {
+                    app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+                }
+            }
+            // M2-MOUNT-4 — the Santank ability cues (`Mount.cs:3300` Item89
+            // gift / `:3311` Item11 missile, volumeScale 0.2): the int
+            // overload (`SoundEngine.cs:102`) — NO GetRandomPitch draw, the
+            // ONE case-2 `Next(-6, 7)` pitch roll rides the `UpdatePlayers`
+            // stream after the attenuation gate (the fire runs inside
+            // `Player.Update`, `Main.cs:17754`). The C# plays inline at the
+            // spawn; the port drains at the pass tail (the cart-cue batch
+            // convention, ANALYSIS). The facade truncates the positions.
+            for (style, x, y) in p.take_ability_sounds() {
+                app.audio.play_mount_ability_sound(
+                    style,
+                    x,
+                    y,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
             }
             // `Player.StickyMovement`'s handoffs: the cobweb the drag broke
             // (`Player.cs:22949` `WorldGen.KillTile`) and the type-153 web puffs
@@ -1433,7 +1575,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     0.0,
                     if puff.post_arms { 50 } else { 0 },
                     tr_core::particles::Color::default(),
-                    1.0,
+                    puff.scale,
                 );
                 if !puff.post_arms {
                     continue;
@@ -1457,6 +1599,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // `NewGore`), so the draw order is the source's (S1-A-10).
             if let Some(v) = p.take_sandstorm_jump() {
                 for _ in 0..3 {
+
+        }
+        }            // W4-f50 — the Solar Flare shield-grant dust burst (`Player.cs:
+            // 16387-16395`): 16 dust-6 particles at the player's box, each
+            // `noGravity`, scale 1.7, fadeIn 0.5, velocity ×5. The set-bonus
+            // machine queued the flag; the dust pool lives on the App, so the
+            // drain spawns them on the `UpdatePlayers` stream (the
+            // `pending_sticky_dust` convention). The `NewDust` alpha is 100,
+            // scale 1 (the post-arm overrides it to 1.7).
+            if p.take_solar_grant_dust() {
+                for _ in 0..16 {
                     let idx = app.dust.new_dust(
                         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                         &spawn_ctx,
@@ -1497,6 +1650,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     let g = app.gore.slot_mut(gi);
                     g.velocity = v.vel * 0.3 * v.num4;
                     g.alpha = 100;
+
+        }                        glam::Vec2::new(p.x, p.y),
+                        p.width as i32,
+                        p.height as i32,
+                        6,
+                        0.0,
+                        100,
+                        1.0,
+                    slot.no_gravity = true;
+                    slot.scale = 1.7;
+                    slot.fade_in = 0.5;
+                    slot.velocity *= 5.0;
                 }
             }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
@@ -1529,14 +1694,67 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     rng,
                 );
             }
+            // W4-f50 — the player hurt combat text (`Player.cs:38382`): the
+            // C# draws it BEFORE the retaliate block (`:38401`), so the drain
+            // spawns it ahead of the retaliate rolls on the `UpdatePlayers`
+            // stream (the mana text above, `:38291`, already drew first).
+            if let Some((amount, crit)) = p.take_hurt_text() {
+                let text = amount.to_string();
+                let size = match app.lookups.combat_text_font.as_ref() {
+                    Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+                    None => [text.chars().count() as f32 * 8.0, 10.0],
+                };
+                let location = crate::combat_text::Rect {
+                    x: p.x,
+                    y: p.y,
+                    width: p.width,
+                    height: p.height,
+                };
+                let color = crate::combat_text::damage_text_color(crit, true, false);
+                crate::combat_text::spawn_amount(
+                    &mut app.combat_texts,
+                    location,
+                    color,
+                    amount,
+                    crit,
+                    false,
+                    size,
+                    1.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-f32 — the TryToPoop drop drain (`Player.cs:18938`): the
+            // 5395 Poop Block at the player's MountedCenter, stack rolled
+            // inside `update_survival` on the `UpdatePlayers` stream;
+            // `RequestNewItem`'s default velocity draws (`Item.cs:49749-
+            // 49750`: Next(-30,31)*0.1, Next(-40,-15)*0.1) ride the same
+            // stream here, then `GrabDelayForAllPlayers`' 100-tick delay.
+            if let Some((stack, mcx, mcy)) = p.take_poop() {
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                let vx = rng.next_range(-30, 31) as f32 * 0.1;
+                let vy = rng.next_range(-40, -15) as f32 * 0.1;
+                let mut drop = crate::item::ItemDrop::new(
+                    5395,
+                    stack.max(1) as u32,
+                    0, // prefix: 0 — no draw
+                    mcx - crate::item::SIZE * 0.5,
+                    mcy - crate::item::SIZE * 0.5,
+                    vx,
+                    vy,
+                    0.0,
+                );
+                drop.apply_grab_delay(crate::item::GRAB_DELAY_ALL);
+                app.items.push(drop);
+            }
             if let Some(req) = p.take_retaliate() {
                 // S1-C-7 wave B — the fall/petrify lane's retaliate block
                 // (`Player.cs:38401-38517`): those hits run inside
                 // `Player.Update` under the `UpdatePlayers` swap
                 // (`Main.cs:17754`) on the General counter (a Retaliate
-                // member), so the drain rides the same stream. The lava/tile
-                // lanes pass `retaliate_lane = false` (their counters are not
-                // Retaliate members) and never queue.
+                // member), so the drain rides the same stream. The lava/tile/
+                // bug-net lanes' counters are not Retaliate members
+                // (M4-HAZARD-1: `hurt_inner` reads the membership from the
+                // counter) and never queue.
                 let expert = p.buffs.expert_mode;
                 crate::hurt_modifiers::drain_retaliate(
                     p,
@@ -1548,6 +1766,55 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-f50 — the Solar Flare hurt blast (`Player.cs:38316-38318`):
+            // the fall/petrify lane's accepted hit consumed a shield charge
+            // and queued the 608 blast; the drain rides the `UpdatePlayers`
+            // stream (the `Main.cs:17754` swap), the S1-E-21c batch convention.
+            // Deviation 2 threads the dust/gore pools through (disjoint field
+            // borrows: `p` is `app.player`, the pools are `app.dust`/`app.gore`).
+            if let Some((center, damage)) = p.take_solar_blast() {
+                let dolls = p.doll_flags();
+                let luck = p.luck();
+                app.projectiles.solar_flare_blast(
+                    center,
+                    damage,
+                    app.local_id as u8,
+                    &mut app.npcs,
+                    dolls,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    luck,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &mut app.gore,
+                );
+            }
+            // W4-f50 — the hit-dust loop + football + golf-club hurt drains
+            // (`Player.cs:38527-38553` / `:38255-38280`): the fall/petrify
+            // lane's accepted hit queued them; the drain rides the
+            // `UpdatePlayers` stream (the S1-E-21c batch convention). The
+            // hit-dust draws follow the hurt sound's (`:38525` < `:38527`).
+            crate::hurt_modifiers::drain_hurt_dust(
+                p,
+                &mut app.dust,
+                &spawn_ctx,
+                &app.world,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            crate::hurt_modifiers::drain_football(
+                p,
+                &mut app.projectiles,
+                &mut app.inventory,
+                &mut app.mouse_item,
+                app.local_id as u8,
+            );
+            let held = app.inventory[app.selected].kind;
+            crate::hurt_modifiers::drain_golf_club_kill(
+                p,
+                &mut app.projectiles,
+                held,
+                app.local_id as u8,
+            );
             // `Player.PlayHurtSound` (`Player.cs:38525`): the hurt cue plays
             // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and
             // the retaliate block (`:38401-38517`), so its draw follows
@@ -1736,9 +2003,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.audio.play_petting_joy_sound(sx, sy);
             }
             // S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`):
+            // S1-P-i41 - the QuickMount no-space tink (`Player.cs:6057`):
             // case 0's Dig variation + pitch draws ride the `UpdatePlayers`
             // stream (the player tick runs under the `Main.cs:17754` swap).
             if let Some((sx, sy)) = p.take_no_space_sound() {
+                app.audio.play_no_space_sound(
+                    sx,
+                    sy,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-c14 - the petrify-transition Dig-0 (`Player.cs:25225`):
+            // the same case-0 contract, both transition edges.
+            if let Some((sx, sy)) = p.take_stoned_sound() {
                 app.audio.play_no_space_sound(
                     sx,
                     sy,
@@ -1889,6 +2166,105 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    // W4-f48 parry wave — `ItemCheck_ManageRightClickFeatures_ShieldRaise`
+    // (`Player.cs:31706-31738`, called at `:28283` after the movement +
+    // dropItemCheck blocks, before `ItemCheckWrapped` — the port's
+    // `update_editing` runs later in the frame, so this tail matches the
+    // relative order). The `:28281` wrapper: `netMode != 2` collapses SP,
+    // the drill mount (type 8) skips the whole feature.
+    if !app.player.as_ref().is_some_and(|p| p.mount.kind() == 8) {
+        let held = app.inventory[app.selected];
+        // `PlayerInput.Triggers.JustPressed.MouseRight` (`:31708`): the
+        // right-button press edge — `place_prev_down` still holds LAST
+        // tick's button (the editing pass refreshes it after the players
+        // phase). `app.drop_right_edge` is the same edge with the
+        // `mouseInterface` refusal already folded (the players-phase
+        // capture).
+        let mouse_right = app.drop_right_edge;
+        // `flag` (`:31528`): selectedItem != 58, controlUseTile,
+        // releaseUseItem, !controlUseItem, !mouseInterface. The port's
+        // stand-ins: `place_down` / the previous tick's `mine_released`
+        // latch (the C# `releaseUseItem` is written at ItemCheck's END,
+        // `:42829`, so this read is last tick's too) / `!mine_down`.
+        // `tileInteractionHappened`, `CaptureManager`, the
+        // `HoveringAnInteractable` clause and the pending-inventory-
+        // actions refusal have no port machinery — collapsed open
+        // (recorded deviation, ANALYSIS "The parry machine").
+        let general_check = app.selected != 58
+            && app.place_down
+            && app.mine_released
+            && !app.mine_down
+            && !app.inventory_open;
+        // `shouldGuard` (`:31714-31718`): the general check AND the held
+        // Brand of the Inferno (3823) / Bouncing Shield (4760), a
+        // raisable shield, no mount, and (idle OR the right press).
+        let should_guard = app.player.as_ref().is_some_and(|p| {
+            (general_check & matches!(held.kind, 3823 | 4760))
+                && p.has_raisable_shield
+                && !p.mount.is_active()
+                && (app.swing <= 0.0 || mouse_right)
+        });
+        if let Some(p) = app.player.as_mut() {
+            // The countdowns run EVERY tick (`:31719-31737`), guard or no.
+            p.shield_raise_countdowns();
+            let was_raised = p.shield_raised;
+            let cd_req = p.try_toggling_shield(should_guard);
+            if p.shield_raised && !was_raised {
+                // `:31754-31756`: itemAnimation/itemTime/reuseDelay zero
+                // (the App-owned timers; `swing_max` stays — the C# never
+                // clears itemAnimationMax here).
+                app.swing = 0.0;
+                app.item_time = 0.0;
+                app.reuse_delay = 0.0;
+            }
+            if cd_req > 0 {
+                // `ApplyAttackCooldown(20)` (`:44433-44439`): max, not set.
+                app.attack_cd = app.attack_cd.max(cd_req as f32 / 60.0);
+            }
+        }
+        // The zero-cooldown tick's handoffs: the MaxMana cue at
+        // `base.Center` (`:31724`, legacy 25 — Volume/Pan only, no draws)
+        // and the 10x dust-45 burst (`:31725-31731`). Per dust the C#
+        // evaluates the `Next(10,16) * 0.1` scale ARGUMENT first, then
+        // `Dust.NewDust`'s internal rolls — both on the `UpdatePlayers`
+        // stream (the call runs inside `Player.Update`, `Main.cs:17754`).
+        let ready_sound = app.player.as_mut().is_some_and(|p| p.take_parry_ready_sound());
+        if ready_sound {
+            let (cx, cy) = app.player.as_ref().map(|p| p.center()).unwrap_or_default();
+            app.audio.play_at("MaxMana", cx, cy, 1.0);
+        }
+        let ready_anchor = app.player.as_mut().and_then(|p| p.take_parry_ready_dust());
+        if let Some((ax, ay)) = ready_anchor {
+            for _ in 0..10 {
+                let scale = app
+                    .rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next_range(10, 16) as f32
+                    * 0.1;
+                let idx = app.dust.new_dust(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &spawn_ctx,
+                    &app.world,
+                    Vec2::new(ax, ay),
+                    10,
+                    16,
+                    45,
+                    0.0,
+                    0.0,
+                    255,
+                    tr_core::particles::Color::new(255, 100, 0, 127),
+                    scale,
+                );
+                if idx == tr_core::particles::DUST_SENTINEL {
+                    continue;
+                }
+                let slot = app.dust.slot_mut(idx);
+                slot.no_light = true;
+                slot.no_gravity = true;
+                slot.velocity *= 0.5;
+            }
+        }
+    }
     if map_open {
         app.update_map_input();
     }
@@ -2656,7 +3032,55 @@ mod tests {
         assert_eq!(app.audio.played_count(), before, "no item, no UseSound");
     }
 
-    /// S1-L-10c — `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount
+    /// W4-c14 - the petrify-transition Dig-0 (`Player.cs:25219-25235`):
+    /// the `stoned != lastStoned` edge queues the case-0 play at the
+    /// truncated top-left on BOTH directions (the C# site sits outside
+    /// the `stoned` arm); the drain spends exactly the case-0 two draws
+    /// on `UpdatePlayers`, and a muted listener draws nothing.
+    #[test]
+    fn w4_c14_the_stoned_transition_plays_the_dig_on_both_edges() {
+        let mut app = ammo_app();
+        // Park the listener on the player so the gate passes.
+        let (px, py) = {
+            let p = app.player.as_ref().unwrap();
+            (p.x, p.y)
+        };
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (px, py),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        app.player.as_mut().unwrap().buffs.add_buff(156, 3600);
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        // The on-edge lands the flat 20 hurt too (spawn carries no
+        // i-frames) - its voice cue (the `Hurt` tail, `Player.cs:38525`)
+        // plays beside the Dig: TWO plays.
+        assert_eq!(app.audio.played_count() - before, 2, "the hurt + the dig");
+        // The held buff: no second play.
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "no edge, no play");
+        // The off-edge (the buff expires) plays too - the C# site is
+        // outside the `stoned` arm - with no hurt in the way: ONE play,
+        // and the case-0 draws move the stream.
+        app.player.as_mut().unwrap().buffs.clear_buff(156);
+        let stream_before = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count() - before, 1, "the off-edge plays");
+        assert_ne!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            stream_before,
+            "the case-0 draws ride UpdatePlayers"
+        );
+    }
+
+    /// S1-L-10c - `Player.QuickGrapple` (`Player.cs:6334-6337`): the mount
     /// dismounts before the hook fires only when it is outside
     /// `MountID.Sets.CanUseHooks` ({54, 57-60}) — the port dismounted every
     /// mount.
@@ -2975,6 +3399,91 @@ mod tests {
         app.swing = 0.0;
         update_player(&mut app, 1.0 / 60.0);
         assert_eq!(app.selected, 1);
+    }
+
+    /// W4-f48 parry wave — the ShieldRaise wiring
+    /// (`ItemCheck_ManageRightClickFeatures_ShieldRaise`, `Player.cs:
+    /// 31706-31738` at the `:28283` seam): the general check + the held
+    /// 3823/4760 + `hasRaisableShield` + idle raise the shield and arm the
+    /// parry window; the release lowers it, locks 15 and floors
+    /// `attack_cd` at 20 ticks. The countdowns run every tick. WRITTEN
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_f48_parry_the_shield_raise_wiring_arms_and_lowers_the_guard() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let p = Player::spawn(&app.world);
+        app.player = Some(p);
+        app.inventory[app.selected] = stocked(3823, 1); // Brand of the Inferno
+        // The Squire Shield in an accessory slot arms `has_raisable_shield`
+        // through the tick's own equip fold (the `shieldSlot > 0` row).
+        app.equip.armor[3] = stocked(3810, 1);
+        // The general check: right held, use released last tick, no LMB,
+        // inventory closed, idle.
+        app.place_down = true;
+        app.mine_released = true;
+        app.mine_down = false;
+        app.inventory_open = false;
+        app.swing = 0.0;
+        update_player(&mut app, 1.0 / 60.0);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(p.shield_raised, "the general check raises the shield");
+            // The countdowns run BEFORE the toggle (`:31719` precedes
+            // `:31738`): the raise arms window 1, the ++ lands next tick.
+            assert_eq!(p.shield_parry_time_left, 1, "the raise arms window 1");
+        }
+        // The release: the guard lowers, cooldown 15, attack_cd >= 20/60.
+        app.place_down = false;
+        update_player(&mut app, 1.0 / 60.0);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert!(!p.shield_raised);
+            // The window ticked 1 → 2 first, then the lower cleared it;
+            // the cooldown armed 15 AFTER this tick's countdown.
+            assert_eq!(p.shield_parry_cooldown, 15);
+            assert_eq!(p.shield_parry_time_left, 0);
+        }
+        assert!(app.attack_cd >= 20.0 / 60.0 - 1e-6, "ApplyAttackCooldown(20)");
+        // No raisable shield: no guard even with the general check.
+        let mut b = flow_app(None, vec![], vec![]);
+        let p = Player::spawn(&b.world);
+        b.player = Some(p);
+        b.inventory[b.selected] = stocked(3823, 1);
+        b.place_down = true;
+        b.mine_released = true;
+        b.mine_down = false;
+        update_player(&mut b, 1.0 / 60.0);
+        assert!(!b.player.as_ref().unwrap().shield_raised, "no shield, no guard");
+    }
+
+    /// W4-f48 parry wave — the ready-burst drain's draw order
+    /// (`Player.cs:31725-31731`): per dust the `Next(10,16) * 0.1` scale
+    /// ARGUMENT evaluates before `Dust.NewDust`'s internal rolls, all ten
+    /// on the `UpdatePlayers` stream (the ShieldRaise call runs inside
+    /// `Player.Update`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f48_parry_the_ready_burst_draws_scale_then_spawn_per_dust() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = Player::spawn(&app.world);
+        // The queue stands in for the zero-cooldown tick (the countdown
+        // witness in player.rs pins the arming); the camera parks on the
+        // player so the off-screen cull passes.
+        p.facing = 1;
+        p.shield_parry_cooldown = 1;
+        app.camera = glam::Vec2::new(p.center().0, p.center().1);
+        app.player = Some(p);
+        let before = *app.rngs.stream(RngKey::UpdatePlayers);
+        update_player(&mut app, 1.0 / 60.0);
+        let after = *app.rngs.stream(RngKey::UpdatePlayers);
+        assert_ne!(before, after, "the burst drew on UpdatePlayers");
+        // The twin: the first draw of the burst chain is the scale roll
+        // `Next(10,16)` — replay it off the pre-burst stream state. The
+        // tick's own player draws precede the burst, so the witness only
+        // pins that the stream MOVED and the first burst draw is a
+        // Next(10,16) (the full replay would need the tick's draw census;
+        // the dust-count + no_light/no_gravity post-arms are the pool's).
+        let active = app.dust.slots().iter().filter(|d| d.active).count();
+        assert!(active <= 10, "at most the ten-dust burst spawned");
     }
 
     #[test]

@@ -2,6 +2,11 @@
 
 > Wave 1 · researched 2026-11-12 · sources: decompiled (Terraria 1.4.5.8) + crates
 > (Terraria-Rust) + ROADMAP rows M2-COMBAT-1/2, M3-ITEM-4, M3-EQUIP-2/5, M4-DAMAGE
+> **SEALED 2026-11-21 (W4-f50 retire)** — the hurt family is fully censused; the
+> RETIRE section below is the hurt-family bible (the wave-1 MISSING rows for the
+> hurt head are superseded by the W4-f50 addendum + the bible; the non-hurt
+> remainders — the projectile-hit chain, the ranged split, PlayerDeathReason —
+> stay open under their M5-COMBAT seeds). Receipts: `W4-f50-closeout.md`.
 
 ## Scope
 Player-side combat: `Player.Hurt` (the whole inbound damage pipeline),
@@ -207,6 +212,89 @@ Determinism: items 1, 2, 9 and 10 all change RNG draw counts / results on the sh
   cloak/honeycomb), paladin share, beetle orbs, solar flare, combat text. Grouped
   because they share the same insertion point between the endurance step and the
   iframe set (`Player.cs:38305-38516`).
+
+---
+
+## W4-f50 addendum (2026-11-21) — the player hurt REACTIONS (the d116 deferred list)
+
+> Task W4-f50 (branch `task/W4-f50-hurt-reactions`, base a725acb0 = wave-3 complete).
+> The d116 pushed branch ported the `NPC.StrikeNPC_Inner` damage tail and deferred the
+> player-side `Hurt` reactions. This task ported that deferred list. The thorns reflect
+> (S1-C-5) and the bee/star-cloak + honeycomb + brain retaliate block (S1-C-7 wave B)
+> were re-verified FIRST: both already on main, unchanged. The M5-COMBAT-7 row above is
+> now DONE except the paladin share (single-player-unreachable).
+
+### The hurt pipeline, verbatim (C# → port)
+
+| C# site | Step | Port |
+| --- | --- | --- |
+| `Player.cs:38237-38240` | `panic` → `AddBuff(63, 480)` | **NEW** — `hurt_inner`'s head, the `panic` field (1290/1578/6187 arms, `ResetEffects` `:18616`); the buff-63 `moveSpeed++` reader (`:10130-10133`) wired live |
+| `:38241-38244` | `setSquireT2` → `AddBuff(205, 300)` | **NEW** — `hurt_inner`'s head (the T2 triple arms the flag) |
+| `:38245` | `stealth = 1f` | **NEW** — the hurt breaks the stealth. CROSS-NOTE keep-one (f3-canonical): `task/W4-f3-dust-player-3` `4d820f7d` landed the full `update_stealth` machine (`:25733-25899`) + the same hurt write + the default fix 0.0→1f; this write composes 1:1, keep ONE at merge |
+| `:38255-38269` | `hasFootball` → the 861 return + slot clear | **NEW** — queues `pending_football` (hit dir); the drain scans the inventory, spawns 861 `(-hitDir*4, -6)` ai1=1 ai2=stack, clears the slot. The `hasFootball` equip scan (`:12906-12918`) + clear (`:18345`) |
+| `:38271-38280` | the held jousting lance → kill owned 877/878/879 | **NEW** — queues `pending_golf_club_kill`; the drain checks the held kind (4788/4789/4790) + kills the owned lances |
+| `:38281-38290` | the invis strip (`DelBuff(10)`) | **NEW** — `clear_buff(10)`, the no-rescan quirk |
+| `:38305-38320` | `Counter[cooldownCounter] && ConsumeSolarFlare()` → `num2 = (int)(0.8*num2)` + the 608 blast | **NEW** — `consume_solar_flare` (`:56742-56762`), gated on `retaliate_lane` (the Counter set = {General, BossNoCheese}); the 608 blast queues `pending_solar_blast`, the `ProjectilePool::solar_flare_blast` seam walks the 160×160 box + queues Item14 + spawns the burst BODIES (deviation 2: `solar_flare_blast_bodies`, the g64-pattern `BlastRng` adapter, 84 dust + 2 gore; the census stays as the parity oracle) |
+| `:38321-38337` | `beetleDefense && beetleOrbs > 0` → `num2 = (int)((1-0.15*orbs)*num2)`, orb--, the 95-97 ladder | **NEW** — `hurt_inner`, no cooldown gate (every lane) |
+| `:38338-38368` | the paladin team share | **UNPORTED** — single-player-unreachable (the `m != whoAmI` peer scan finds no second team player). FUTURE-WIRE (MP): `PlayerNet.team`/`dead` + `paladin_shield()` landed on d70 `ee4905939` (the DrawPaladinsShield peer loops); the hurt redirect needs the remote players' live life + a peer Hurt path (the MP player-sim, deferred) |
+| `:38382` | `CombatText.NewText(playerRect, DamagedFriendly[Crit], num2, Crit)` | **NEW** — queues `pending_hurt_text`, the drain spawns BEFORE the retaliate block (the C# `:38382` < `:38401` order) |
+| `:38527-38553` | the hit-dust loop (`num2/statLifeMax2*100` particles) | **NEW** — queues `pending_hurt_dust` (hit dir, num2); the drain spawns stoned 1 / frost 135 / bone 26 / default 5 (deviation 4 wires the frost/bone texture-id keys via `apply_armor_sound_and_dust_changes`). `num22` stays 0 (the C# never increments it; the NextFloat draw still consumed) |
+| `:10342-10443` | the Beetle/Solar buff-ladder re-derivation | **NEW** — `rederive_beetle_solar_buffs` (the slot-ordered `DelBuff(j); j--` rescan, the count assignment unconditional, the 98-100 melee rows) |
+| `:16366-16439` / `:16499-16527` / `:16529-16581` | `ApplySetBonus_Solar`/`BeetleDefense`/`BeetleDamage` | **NEW** — the recharge machines at the `UpdateArmorSets` seam (the Solar shield-orbit positions cosmetic, unported; the Beetle orb-orbit PORTED, deviation 3) |
+| `:16358-16364` / `:16441-16497` | the always-counter zeros | **NEW** — `update_armor_sets_always_solar`/`beetle`; the Beetle always-machine now integrates the orb-orbit (deviation 3: the frame cycle, the unused-orb clear, the `Next(-100,101)` jitter pair, the pulls/damp/drag) + the `DrawPlayer_37_BeetleBuff` draw layer |
+
+### RNG order census (the hurt's new draws, per lane)
+
+The combat text's 2 (+1 crit) placement rolls draw BEFORE the retaliate block's
+rolls on every lane (the C# `:38382` < `:38401` order). The hit-dust loop's
+`NextFloat` per particle + the `NewDust` internal draws follow the hurt sound
+(`:38525` < `:38527`). The 608 blast's box-walk crit/DamageVar rolls + the burst
+bodies' 830 draws (252 explicit RotatedByRandom/NextDouble/gore + 578
+`NewDust`/`NewGore` internal, deviation 2) ride the hitting lane's stream at the
+pass tail. The Solar grant-dust burst's 16 `NewDust` chains ride the
+`UpdatePlayers` stream (the set machine runs in `Player.Update`). The set-bonus
+recharge machines draw NOTHING; the Beetle orb-orbit's `Next(-100,101)` pair per
+orb per tick rides `UpdatePlayers` (deviation 3).
+
+### Deviations (ANALYSIS mirror)
+
+- The drain latency (the S1-E-21c batch convention, the `pending_retaliate`
+  precedent): the reactions queue + drain at the hitting pass's tail.
+- The paladin share is single-player-unreachable (NOT ported); the MP
+  future-wire is d70 `ee4905939`'s `PlayerNet.team`/`dead`/`paladin_shield()`
+  + the remote-player life sim (deviation 5).
+- The frost/bone armor dust keys PORTED (deviation 4,
+  `apply_armor_sound_and_dust_changes`); the shader post-arms stay the dye lane.
+- The Solar shield-orbit positions stay cosmetic (unported); the Beetle
+  orb-orbit PORTED (deviation 3) + the `DrawPlayer_37_BeetleBuff` draw layer.
+- The 608 blast's dust/gore burst bodies PORTED (deviation 2,
+  `solar_flare_blast_bodies` through the g64-pattern `BlastRng` adapter); the
+  draw census stays as the stream-parity oracle.
+- The stealth-decay machine is f3-canonical (`4d820f7d`); this branch's
+  `stealth = 1f` hurt write composes 1:1, keep-one at merge (deviation 1).
+
+### Witnesses (WRITTEN NOT RUN — code-only mode)
+
+- `player.rs`: `w4_f50_the_panic_necklace_grants_the_hurt_buff_and_arms_from_all_three_sources`,
+  `w4_f50_the_squire_t2_set_grants_ballista_panic_on_hurt`,
+  `w4_f50_the_hurt_breaks_stealth_and_strips_invisibility`,
+  `w4_f50_the_panic_buff_raises_the_move_speed`,
+  `w4_f50_the_solar_flare_shield_cuts_the_hurt_and_queues_the_blast`,
+  `w4_f50_the_beetle_orbs_cut_the_hurt_by_fifteen_percent_each`,
+  `w4_f50_the_solar_set_recharges_a_shield_every_180_ticks`,
+  `w4_f50_the_beetle_defense_set_recharges_an_orb_every_180_ticks`,
+  `w4_f50_the_beetle_solar_buff_ladder_rederives_the_counts`,
+  `w4_f50_the_hurt_queues_the_combat_text_and_hit_dust`,
+  `w4_f50_the_football_and_golf_club_hurt_arms_queue`,
+  `w4_f50_the_beetle_orb_orbit_integrates_and_draws_the_jitter_pair` (dev 3).
+- `hurt_modifiers.rs`: `w4_f50_the_football_drain_spawns_the_return_and_clears_the_slot`,
+  `w4_f50_the_golf_club_drain_kills_the_owned_lances`,
+  `w4_f50_the_hit_dust_drain_spawns_the_burst`,
+  `w4_f50_the_hit_dust_keys_on_the_frost_and_bone_armor_sets` (dev 4),
+  `w4_f50_the_armor_dust_scan_derives_the_necro_and_frost_sets` (dev 4).
+- `projectile_ai_misc.rs`: `w4_f50_the_608_blast_bodies_spawn_the_census_counts_and_post_arms`,
+  `w4_f50_the_608_blast_bodies_keep_the_census_stream_order` (dev 2).
+- `render/player_layers.rs`: `w4_f50_the_beetle_orb_layer_draws_five_ghosts_and_a_body_per_orb` (dev 3).
 - **DONE re-verification verdicts:** M2-COMBAT-1 — PARTIAL (the math is exact, the
   plumbing is not: no cooldown counters, no floor-1, no dodge). M2-COMBAT-2 —
   PARTIAL (crit/class accessors and the roll are ported and used; the ranged split
@@ -215,3 +303,69 @@ Determinism: items 1, 2, 9 and 10 all change RNG draw counts / results on the sh
   itself says). M4-DAMAGE — PASS for the pure functions, FAIL for the wiring
   (projectile hits). M3-EQUIP-5 — PASS (`stat_defense` is derived per tick from the
   pieces + sets and feeds `reduce_damage`).
+
+---
+
+## RETIRE (2026-11-21) — SEALED + the hurt-family bible
+
+> The W4-f50 retire pass (branch tip **18eeb4f44**, code-only). The five receipts
+> live in `W4-f50-closeout.md` (Panic-63/ladder drop-hunks, the f3-stealth mutual
+> receipt, the g64-608 keep-yours note, the d70-paladin MP task seed, this seal).
+> This bible is the hurt family's single merge lookup: every reaction, its C#
+> site, its port site at 18eeb4f44, its owner and its merge ruling. Line numbers
+> are the f50 tip's own `player.rs` blob (156fc3fec) unless named otherwise.
+
+### The hurt-family bible (C# `Player.Hurt` :38197-38567 → the port)
+
+| Reaction | C# | Port site (f50 tip) | Owner | Merge ruling |
+| --- | --- | --- | --- | --- |
+| creative-godmode swallow | :38203-38206 | `hurt_inner` :4844-4846 | main (M6-CREATIVE-1c) | unchanged |
+| General iframe gate | :38208-38216 | :4850-4855 | main | unchanged (the counter family stays the M5-COMBAT remainder) |
+| dodge block (sash/belt/brain/shadow) | :38214-38236 | :4866-4886 | f48 (re-verified on main) | f48's; f50 composes after it |
+| panic grant `AddBuff(63,480)` | :38237-38240 | :4901-4903 (+ field :1486-1493, equip :6106-6123, clear :6735-6737) | **f50** | keep f50's; DROP f48's copy (closeout Receipt 1 sub-receipt); the inline 63 READER row :7165-7168 folds to f12's DEBUFF_DISPATCH |
+| squire T2 grant `AddBuff(205,300)` | :38241-38244 | :4904-4906 | **f50** | keep f50's; DROP f48's copy; f48's DD2 `add_buff(205,3600)` is a different site, lands clean |
+| stealth break `stealth = 1f` | :38245 | :4907 | **f3** (mutual receipt) | DROP f50's write + spawn default :3024; f3's `update_stealth` machine + 1f spawn canonical |
+| football 861 return | :38255-38269 | queue :4931-4934, `hurt_modifiers.rs::drain_football` :332 | **f50** | keep whole (3 lanes) |
+| golf-club lance kill | :38271-38280 | queue :4939, `drain_golf_club_kill` :385 | **f50** | keep whole (3 lanes) |
+| invis strip `DelBuff(10)` | :38281-38290 | :4940-4947 (the no-rescan quirk) | **f50** | keep (f3 never ported it) |
+| magicCuffs mana restore | :38291-38303 | :4948-4961 | main (S1-C-7 wave A) | unchanged |
+| endurance step | :38304 | :4962-4964 | main | unchanged |
+| Solar Flare ×0.8 + 608 blast | :38305-38320 | :4976-4978, `consume_solar_flare` :4456-4473, `projectile.rs::solar_flare_blast` :23416 | **f50** | keep whole; the burst BODIES `projectile_ai_misc.rs::solar_flare_blast_bodies` :487-593 keep-yours (g64 no-608-row confirmed at 625c449e0); `BlastRng` :595-626 folds into g64's `DustDraw` + the lifted GoreRng impl |
+| Beetle orbs ×(1−0.15·orbs) | :38321-38337 | :4986-4987 (no cooldown gate, every lane) | **f50** | keep |
+| paladin team share | :38338-38368 | UNPORTED (SP-unreachable final, seam note) | **MP lane** | deferred — the task seed (closeout Receipt 4): d70's PlayerNet team/dead/paladin_shield landed, needs the remote life sim + a peer Hurt path + the PaladinsShield counter |
+| hurt combat text | :38382 | queue :5029, drains BEFORE the retaliate block (npcs.rs :4789, player.rs :1467, projectiles.rs :435) | **f50** | keep (the C# :38382 < :38401 order) |
+| retaliate block (brain/star/bee/honeycomb) | :38401-38516 | main (S1-C-7 wave B) | main | unchanged, re-verified |
+| knockback | :38519-38524 | main | main | unchanged |
+| hit-dust loop | :38527-38553 | queue :5127, `drain_hurt_dust` :271 (stoned 1/frost 135/bone 26/default 5) | **f50** | keep; the frost/bone keys ride `apply_armor_sound_and_dust_changes` :4602-4621 (dev 4) |
+| thorns reflect | (StrikeNPC tail) | main (S1-C-5) | main | unchanged, re-verified |
+
+### The per-tick machines (the hurt family's recharge side)
+
+| Machine | C# | Port site | Owner | Merge ruling |
+| --- | --- | --- | --- | --- |
+| buff-ladder re-derivation 95-100/170-172 | :10342-10443 | `rederive_beetle_solar_buffs` :4733-4828 | **g27/f12** | DROP f50's whole copy + call :4642 (closeout Receipt 1 DUP #2); g27 `apply_orb_arm` canonical (blob c6bcb017b) |
+| Solar recharge (180t, cap 3) | :16366-16439 | `apply_set_bonus_solar` :4482-4515 | **f50** | keep; LIFT the wrapper call :7607 to f12's wiring seam post-scan |
+| Beetle Defense recharge | :16499-16527 | `apply_set_bonus_beetle_defense` :4520-4540 | **f50** | keep, same lift |
+| Beetle Damage decay ladder | :16529-16581 | `apply_set_bonus_beetle_damage` :4548-4589 | **f50** | keep, same lift (the melee `beetleCounter += num2` feed :44111-44115 stays the melee lane's) |
+| always-counter zeros | :16358-16364 / :16441-16446 | :4625-4629 / :4666-4670 | **f50** | keep |
+| Beetle orb-orbit + draw layer | :16448-16496 / PlayerDrawLayers.cs:4007-4031 | :4666-4724 + `render/player_layers.rs::beetle_orb_layers` :1587 | **f50** (dev 3) | keep whole (f12's census listed it UNPORTED at ff56e6e51 — superseded by 18eeb4f44) |
+| set-flag lifecycle | :25618-25620 | clears :6352-6354 (pre-scan here) | **f12 merge fix** | move post-scan + the OrbContext live-flag stub replacement |
+| Necro/Frost dust keys | :38167-38186 / :18350-18352 | `apply_armor_sound_and_dust_changes` :4602-4621 | **f50** (dev 4) | keep (the werewolf override folds false, the PlayHurtSound/death-burst keys future wires) |
+| Solar shield-orbit positions | :16403-16428 | UNPORTED (cosmetic) | draw lane | deferred |
+
+### Seal verdicts
+
+- The hurt head + cuts + drains: **f50-canonical**, composed after f48's dodge
+  block, with the f3 stealth write and the f12/g27 buff dispatch deduped per the
+  closeout's ONE-paragraph merger-instruction.
+- The wave-1 port-status rows :80-81/:85-87/:91/:93 (panic/stealth/solar/beetle/
+  paladin/text/dust MISSING) are **superseded** by the addendum + this bible;
+  the paladin row stays MISSING for MP (the task seed).
+- Open remainders OUTSIDE the hurt family (NOT sealed away): M5-COMBAT-2 (the
+  projectile-hit DamageVar/defence chain), M5-COMBAT-4 (the ranged split),
+  M5-COMBAT-5 (PlayerDeathReason), M5-COMBAT-6 (contact DamageVar), the
+  cooldown-counter family + the PVP recompute. Their seeds above stand.
+- Witnesses: 20 `w4_f50_*` fns WRITTEN NOT RUN (the addendum's ledger); the two
+  retargets (panic-speed :16199-16215, ladder :16342-16379) are merge-time work
+  per the closeout; the stealth witness :16173-16197 survives the f3 dedupe
+  unchanged (the joint hurt-head witness).

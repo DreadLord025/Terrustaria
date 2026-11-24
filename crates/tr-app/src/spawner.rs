@@ -129,6 +129,9 @@ pub(crate) const LIGHT_WALLS: [u16; 16] = [
     0, 21, 318, 106, 317, 107, 138, 140, 141, 139, 145, 150, 152, 245, 315, 168,
 ];
 
+/// All fields are `Copy` (world/roster borrows + scalars) — the W4-f32
+/// witnesses twin a ctx to compare luck 0 against a luck feed.
+#[derive(Clone, Copy)]
 pub struct SpawnContext<'a> {
     pub world: &'a World,
     /// Player centre in pixels (`player.Center`).
@@ -144,6 +147,10 @@ pub struct SpawnContext<'a> {
     /// `player.statLifeMax` — `playerHasStartingHealth`'s gate
     /// (`NPC.cs:415`: `<= 100`) halves the torch-zombie denominator.
     pub player_life_max: i32,
+    /// `Spawner.luck` (`NPC.cs:369`: `this.luck = player.luck`) — the
+    /// `RollLuck`/`RollOnlyBadLuck` consumers inside the spawn chain read
+    /// it (W4-f32). No player (headless shots) reads the neutral 0.
+    pub luck: f32,
     /// The scene centre below `Main.UnderworldLayer` (`M6-MUSIC-1`'s
     /// depth band) — the bat-layer selection reads it.
     pub underworld_for_bats: bool,
@@ -277,8 +284,10 @@ impl SpawnArea {
 /// the SpawnNPC stage (the port's bridge stream until S1-A-11). The
 /// seed/FTW/remix/journey/skyblock branches are constants-off until those
 /// seed systems land (M5-SEED-1, M6-CREATIVE-1). The luck tail
-/// (`:924-928`, `RollOnlyBadLuckExtreme`) is out of scope (the spawner has
-/// no luck input yet).
+/// (`:924-928`, `RollOnlyBadLuckExtreme(50)`) reads `ctx.luck`
+/// (W4-f32): at luck >= 0 the roll returns -1 WITHOUT a draw, so the
+/// classic stream is byte-identical; negative luck can shrink the rate
+/// ×0.85 and grow the cap ×1.15.
 pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate {
     let f = &ctx.flags;
     let mut rate = SpawnRate {
@@ -569,6 +578,18 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
                 rate.spawn_friendly = true; // `:918`
                 rate.max_spawns = (rate.max_spawns as f32 as f64 * 0.6) as i32; // `:920`
             }
+        }
+        // The luck tail (`NPC.cs:924-928`): `!spawnFriendly &&
+        // RollOnlyBadLuckExtreme(50) == 0` shrinks the rate ×0.85 and
+        // grows the cap ×1.15. `Luck.cs:53-60`: only NEGATIVE luck draws
+        // (the `NextFloat` gate, then `Next(50 / 10)` = `Next(5)`);
+        // luck >= 0 returns -1 without touching the stream, so the
+        // classic world consumes exactly what it did before (W4-f32).
+        if !rate.spawn_friendly
+            && tr_core::loot::roll_only_bad_luck_extreme(rng, ctx.luck, 50) == 0
+        {
+            rate.spawn_rate = (rate.spawn_rate as f32 * 0.85) as i32; // `:926`
+            rate.max_spawns = (rate.max_spawns as f32 * 1.15) as i32; // `:927`
         }
     }
     rate
@@ -990,8 +1011,12 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> Option<N
 /// - the eye family's `case 0..4` double-spawn (`SpawnNPC(-3X)` AND
 ///   `SpawnNPC(19X)`, NPC.cs:4584-4605) draws its `Next(3)` but returns one
 ///   NPC — the multi-spawn returns land with the pool work;
-/// - `RollOnlyBadLuck`/`RollLuck` run as the plain `Next(n)` (the luck
-///   modifier does not reach the spawn stream);
+/// - `RollOnlyBadLuck`/`RollLuck` now ride `ctx.luck` (W4-f32): the
+///   `GetSpawnRate` tail `:924-928`, the Pinky promotion `:5242`, the
+///   bound Goblin/Wizard `:2084`/`:2088` and the blood-moon 300 pair
+///   `:4618`/`:4623` — at luck 0 every roll degenerates to the same plain
+///   `Next(n)` (byte-identical stream); the goldCritterChance arms stay
+///   constants-off with their unported kinds;
 /// - `GetZombieSettings`' skyblock style-forcing and armed-zombie cut are
 ///   constants-off (M5-SEED-1);
 /// - the skyMob dispatch (`NPC.cs:1354-1412`): the Drone arm consumes the
@@ -1396,11 +1421,14 @@ fn spawn_npc_at(
         if ctx.flags.hard_mode && ctx.flags.blood_moon && rng.next_max(50) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
-        // `:4614-4621`: the two bad-luck 300 blood-moon rolls (53, 536).
-        if ctx.flags.blood_moon && rng.next_max(300) == 0 {
+        // `:4614-4621`: the two bad-luck 300 blood-moon rolls (53, 536) —
+        // `RollOnlyBadLuck(300)` (W4-f32): at luck >= 0 the plain
+        // `Next(300)` (byte-identical to the pre-luck port); negative luck
+        // shrinks the inner range to `Next(Next(150, 300))`.
+        if ctx.flags.blood_moon && tr_core::loot::roll_only_bad_luck(rng, ctx.luck, 300) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
-        if ctx.flags.blood_moon && rng.next_max(300) == 0 {
+        if ctx.flags.blood_moon && tr_core::loot::roll_only_bad_luck(rng, ctx.luck, 300) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
         // `:4623-4627`: a new-moon hardmode 2/3 (104).
@@ -1428,23 +1456,17 @@ fn spawn_npc_at(
             let top = ctx.world.surface_of(x);
             return Npc::spawn_hover(ctx.world, x, top - 2, NpcKind::Drippler);
         }
-        // `:4650-4667`: the snow/ice tile arm — hardmode's 169/155 rolls,
-        // then the Eskimo default (161). W4-d25 STYLE-26 wiring: the 155
-        // roll now spawns the Wolf kind (the aiStyle-26 galloper,
-        // `NPC.cs:10961-10973`) — the zombie stand-in is retired. The
-        // draw ORDER is unchanged (the 1/4 gate, then the 1/3 roll), so
-        // the stream fingerprint is byte-identical; only the spawned
-        // kind differs (the S1-D-3z blood-moon precedent). The 169
-        // (IceTortoise) roll keeps its zombie stand-in — unported. The
-        // `!blood_moon`-for-`!ZoneGraveyard` substitution is the
-        // pre-existing documented deviation (the graveyard flag is
-        // constants-off in the port's spawn ctx).
+        // `:4646-4665`: the snow/ice tile arm — hardmode's 169/155 rolls,
+        // then the Eskimo default (161; all the port's zombie kind).
+        // W4-d25 keep-one (f5f486c7c): the 155 roll's Wolf spawn DROPPED
+        // — d36 owns the canonical Wolf@772 (a11f61850); the zombie
+        // stand-in stands until that lane lands.
         if is_ices_snow(tile_kind) || tile_kind == 162 {
             if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next_max(4) == 0 {
                 return Npc::spawn_zombie(ctx.world, x);
             }
             if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next_max(3) == 0 {
-                return Npc::spawn_zombie_variant(ctx.world, x, NpcKind::Wolf);
+                return Npc::spawn_zombie(ctx.world, x);
             }
             let _ = rng.next_max(2); // the armed-expert split (unmodelled)
             return Npc::spawn_zombie(ctx.world, x);
@@ -1536,12 +1558,13 @@ fn spawn_npc_at(
     // the army falls, one tied goblin waits in the cavern rock —
     // `RollLuck(20) == 0` per spawn tick, `deeperThanRockLayer`, below the
     // `maxTilesY - 210` underworld floor, once per save (the rescue raises
-    // `savedGoblin`).
+    // `savedGoblin`). W4-f32: the roll is the real `Luck.RollLuck` over
+    // `ctx.luck` — at luck 0 it degenerates to the same single `Next(20)`.
     if ctx.bound_goblin_ok
         && !underworld_depth
         && (y as f64 / 16.0) > ctx.world.rock_layer
         && (y as f64 / 16.0) < ctx.world.height as f64 - 210.0
-        && rng.next_max(20) == 0
+        && tr_core::loot::roll_luck(rng, ctx.luck, 20) == 0
     {
         return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::BoundGoblin);
     }
@@ -1554,7 +1577,7 @@ fn spawn_npc_at(
         && !underworld_depth
         && (y as f64 / 16.0) > ctx.world.rock_layer
         && (y as f64 / 16.0) < ctx.world.height as f64 - 210.0
-        && rng.next_max(20) == 0
+        && tr_core::loot::roll_luck(rng, ctx.luck, 20) == 0
     {
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::BoundWizard);
     }
@@ -2461,11 +2484,31 @@ fn spawn_basic_slime(
     } else {
         SlimeVariant::Red
     };
-    let variant = if variant == SlimeVariant::Blue && rng.next_max(180) == 0 {
+    // `Spawner.SpawnNPC`'s Blue-Slime promotion (`NPC.cs:5240-5249`):
+    // the outer gate `FromNetId(Type) == 1` is evaluated ONCE on the
+    // original pick — `RollLuck(180) == 0` → -4 (Pinky), THEN the
+    // anniversary `tenthAnniversaryWorld && RollLuck(180) == 0` → 667
+    // (the Golden Slime — unported, the hit consumes the roll and keeps
+    // the pick, the spawner's unmodelled-outcome pattern). The second
+    // roll runs even when the first promoted to Pinky (the gate read the
+    // ORIGINAL type). Both rolls are the real `Luck.RollLuck` over
+    // `ctx.luck` (W4-f32).
+    let was_blue = variant == SlimeVariant::Blue;
+    let variant = if was_blue && tr_core::loot::roll_luck(rng, ctx.luck, 180) == 0 {
         SlimeVariant::Pinky
     } else {
         variant
     };
+    if was_blue
+        && ctx
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+        && tr_core::loot::roll_luck(rng, ctx.luck, 180) == 0
+    {
+        // 667 has no SlimeVariant — the roll is consumed, the pick stands
+        // (the C# spawns the Golden Slime; the kind lands with its wave).
+    }
     Npc::spawn_slime_variant(ctx.world, x, variant)
 }
 
@@ -2770,6 +2813,7 @@ mod tests {
             town_npcs: 0,
             day_time: day,
             player_life_max: 100,
+            luck: 0.0,
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
@@ -3815,6 +3859,7 @@ mod tests {
             town_npcs: 0,
             day_time: day,
             player_life_max: 100,
+            luck: 0.0,
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
             bound_goblin_ok: false,
@@ -4080,6 +4125,7 @@ mod tests {
                     town_npcs: 0,
                     day_time: false,
                     player_life_max: 100,
+                    luck: 0.0,
                     underworld_for_bats: false,
                     flags: SpawnFlags {
                         moon_event: true,
@@ -4344,6 +4390,7 @@ mod tests {
             town_npcs: 0,
             day_time: true,
             player_life_max: 100,
+            luck: 0.0,
             underworld_for_bats: false,
             flags: SpawnFlags {
                 hard_mode: true,
@@ -5568,138 +5615,106 @@ mod tests {
         assert_eq!((rate.spawn_rate, rate.max_spawns), (600, 5));
     }
 
-    // -----------------------------------------------------------------
-    // W4-d25 STYLE-26 wiring: the snow arm's 155 roll spawns the Wolf
-    // kind (`NPC.cs:4656-4658`), the zombie stand-in retired. WRITTEN,
-    // NOT RUN (code-only mode).
-    // -----------------------------------------------------------------
+    // ---- W4-f32: the spawner's luck consumers (`ctx.luck`, NPC.cs:369) ----
 
-    /// A ground_tall whose spawn column (210) reads an ice-snow tile at
-    /// the spawn row (`TileID.Sets.IcesSnow`, `TileID.cs:561` — 147 is the
-    /// snow block). `spawn_npc_at` reads `tile_kind` at `y / 16` = 295
-    /// (the outcome's spawn row), so the snow tile sits THERE — the arm's
-    /// gate is the spawn-position tile, not the ground far below.
-    fn snow_ground() -> World {
-        let mut w = ground_tall();
-        let i = w.index(210, 295);
-        w.tiles[i].kind = 147;
-        w.tiles[i].flags |= FLAG_ACTIVE;
-        w.compute_column_surface();
-        w.compute_chunks();
-        w
+    #[test]
+    fn f32_spawn_rate_luck_tail_is_a_no_draw_at_zero_and_positive_luck() {
+        // `NPC.cs:924-928` + `Luck.cs:53-60`: RollOnlyBadLuckExtreme returns
+        // -1 WITHOUT a draw when luck >= 0 — the town-block stream and the
+        // rate/cap pair are byte-identical to the pre-luck port.
+        let w = ground();
+        let mut zero = ctx(&w, 20.0 * 16.0, true);
+        zero.town_npcs = 1; // enter the town block (a draw-taking arm)
+        let mut positive = zero;
+        positive.luck = 0.9;
+        let mut a = UnifiedRandom::new(7);
+        let mut b = UnifiedRandom::new(7);
+        let ra = get_spawn_rate(&zero, &mut a);
+        let rb = get_spawn_rate(&positive, &mut b);
+        assert_eq!((ra.spawn_rate, ra.max_spawns), (rb.spawn_rate, rb.max_spawns));
+        assert_eq!(a, b, "luck >= 0 consumes nothing extra in the tail");
     }
 
-    /// The snow arm's kind picks: the 1/4 gate keeps its 169 zombie
-    /// stand-in, the 1/3 roll spawns the Wolf, the fallthrough is the
-    /// Eskimo zombie (`NPC.cs:4650-4667`). The blood-moon substitution
-    /// (the port's `!blood_moon`-for-`!ZoneGraveyard` deviation) gates
-    /// both hardmode rolls off.
     #[test]
-    fn w4_d25_the_snow_arm_spawns_the_wolf_kind() {
-        let w = snow_ground();
-        let c = night_ctx_flags(&w, true, false);
-        let mut wolves = 0;
-        let mut zombies = 0;
-        let mut eyes = 0;
-        let mut other = 0;
-        for seed in 1..4000u64 {
-            match outcome(&c, seed) {
-                Some((NpcKind::Wolf, _)) => wolves += 1,
-                Some((NpcKind::Zombie, _)) => zombies += 1,
-                // The eye gate (:4549) fires BEFORE the snow arm.
-                Some((NpcKind::DemonEye, _)) | Some((NpcKind::WanderingEye, _)) => eyes += 1,
-                Some(_) => other += 1,
-                None => {}
-            }
-        }
-        assert!(wolves > 0, "the 1/3 roll spawns the Wolf");
-        assert!(zombies > 0, "the 169 stand-in + the Eskimo default");
-        assert!(eyes > 0, "the eye gate still fires ahead of the snow arm");
-        assert_eq!(other, 0, "the snow arm never leaves the ladder");
-        // The blood moon gates both hardmode rolls off — no wolves.
-        let blood = night_ctx_flags(&w, true, true);
-        for seed in 1..2000u64 {
-            assert!(
-                !matches!(outcome(&blood, seed), Some((NpcKind::Wolf, _))),
-                "the blood-moon gate holds at seed {seed}"
-            );
-        }
-        // Pre-hardmode: both rolls short-circuit — no wolves either.
-        let soft = night_ctx_flags(&w, false, false);
-        for seed in 1..2000u64 {
-            assert!(
-                !matches!(outcome(&soft, seed), Some((NpcKind::Wolf, _))),
-                "the hardmode gate holds at seed {seed}"
-            );
-        }
-    }
-
-    /// The stream parity: the Wolf replacement changed the spawned
-    /// KIND, not the draw order — the mirror replays the ladder's
-    /// rolls verbatim up to the wolf arm (the S1-D-3z blood-moon
-    /// precedent). On the snow column (hardmode, no blood moon, moon
-    /// phase 1 — the phase-0 2/3 zombie arm at `:4628` would eat the
-    /// wolf seeds), a wolf-producing call spends exactly: the
-    /// `GetZombieSettings` Next(7) (`NPC.cs:1284`), the probe arm's
-    /// Next(100)+Next(400) misses (`:4194`), the eye gate Next(6) miss
-    /// (`:4549` — phase 1 skips the phase-4 twin), the new-moon arm's
-    /// short-circuit (phase != 0, no draw), the hardmode 1/3 Next(3)
-    /// miss (`:4630`), then the snow arm's Next(4) miss + Next(3) hit
-    /// (`:4652`/`:4656`). The ctor draws nothing.
-    #[test]
-    fn w4_d25_the_wolf_replacement_keeps_the_stream_fingerprint() {
-        let mut w = snow_ground();
-        w.moon_phase = 1;
-        let c = night_ctx_flags(&w, true, false);
-        let mut checked = 0;
-        for seed in 1..8000u64 {
-            let mut rng = UnifiedRandom::new(seed as i32);
-            let n = spawn_npc_at(&c, &mut rng, 210, 295 * 16, false, false, false);
-            if !matches!(n.map(|n| n.kind), Some(NpcKind::Wolf)) {
+    fn f32_spawn_rate_bad_luck_shrinks_rate_and_grows_cap() {
+        // Luck -1.0: the gate NextFloat < 1.0 always hits, then
+        // Next(50/10) = Next(5); a seed whose Next(5) is 0 takes the tail:
+        // rate x0.85 (float cast), cap x1.15 (float cast) — `:926-927`.
+        let w = ground();
+        let mut c = ctx(&w, 20.0 * 16.0, true);
+        c.town_npcs = 1;
+        c.luck = -1.0;
+        // Find a seed whose town-block draws leave Next(5) == 0 next AND
+        // leave spawnFriendly clear (the tail's `!spawnFriendly` gate).
+        let mut hit = None;
+        for seed in 0..500i32 {
+            let mut probe = UnifiedRandom::new(seed);
+            let base = get_spawn_rate(&{
+                let mut z = c;
+                z.luck = 0.0;
+                z
+            }, &mut probe);
+            if base.spawn_friendly {
                 continue;
             }
-            let mut mirror = UnifiedRandom::new(seed as i32);
-            let _ = mirror.next_max(7); // GetZombieSettings (:1284)
-            // The probe arm's short-circuit (:4194): a Next(100) hit
-            // skips the Next(400) — flag17 is false at x=210 (the 5%
-            // band), so either way no probe spawns.
-            if mirror.next_max(100) != 0 {
-                let _ = mirror.next_max(400);
+            // After the town block the tail's draws are NextFloat, Next(5).
+            let mut tail = probe.clone();
+            let _gate = tail.next_float();
+            if tail.next_max(5) == 0 {
+                hit = Some((seed, base));
+                break;
             }
-            assert_ne!(mirror.next_max(6), 0, "the eye gate missed (:4549)");
-            assert_ne!(mirror.next_max(3), 0, "the hardmode 1/3 missed (:4630)");
-            assert_ne!(mirror.next_max(4), 0, "the 169 gate missed (:4652)");
-            assert_eq!(mirror.next_max(3), 0, "the 155 roll hit (:4656)");
-            assert_eq!(rng, mirror, "the wolf call spends exactly the ladder's rolls");
-            checked += 1;
         }
-        assert!(checked > 0, "wolf seeds exist for the parity pin");
+        let (seed, base) = hit.expect("a seed with Next(5) == 0");
+        let mut rng = UnifiedRandom::new(seed);
+        let r = get_spawn_rate(&c, &mut rng);
+        assert_eq!(r.spawn_rate, (base.spawn_rate as f32 * 0.85) as i32);
+        assert_eq!(r.max_spawns, (base.max_spawns as f32 * 1.15) as i32);
     }
 
-    /// The frozen A/B (the stand-in replacement contract): 500 ticks of
-    /// the sim's NPC update over a fixed pool — one Wolf at the snow
-    /// column — are deterministic (two runs byte-identical), and the
-    /// Wolf's machine draws NOTHING on the UpdateNPCs stream (the
-    /// style26 census: the 86/155/546 paths are RNG-free).
     #[test]
-    fn w4_d25_the_wolf_pool_run_is_frozen_and_draw_free() {
-        let w = snow_ground();
-        let mut p = crate::player::Player::spawn(&w);
-        p.x = 260.0 * 16.0;
-        // Park the player DEEP underground: the Wolf chases its x but the
-        // boxes never overlap vertically, so the contact pass (the only
-        // RNG draw on the 86/155 path — `damage_var`) never fires and the
-        // 500-tick run stays draw-free. On the surface the Wolf would
-        // reach the player in ~140 ticks and draw contact variance.
-        p.y = 500.0 * 16.0;
-        let run = || -> (Vec<(f32, f32, f32, f32)>, UnifiedRandom) {
-            let mut n = Npc::spawn_zombie_variant(&w, 210, NpcKind::Wolf).expect("the wolf spawns");
-            n.hp = n.max_hp;
-            let mut rng = UnifiedRandom::new(26);
-            let mut trace = Vec::new();
-            for _ in 0..500 {
-                n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
-                trace.push((n.x, n.y, n.vx, n.vy));
+    fn f32_spawn_rate_luck_tail_skipped_when_spawn_friendly() {
+        // `:924`: `!this.spawnFriendly` gates the tail — with the friendly
+        // latch set even luck -1.0 draws NOTHING (the && short-circuit).
+        let w = ground();
+        let mut c = ctx(&w, 20.0 * 16.0, true);
+        // town_npcs >= 3 off-underworld: the else arm sets spawnFriendly
+        // without a draw (`:916-920`, expert constants-off).
+        c.town_npcs = 3;
+        c.luck = -1.0;
+        let mut zero = c;
+        zero.luck = 0.0;
+        let mut a = UnifiedRandom::new(11);
+        let mut b = UnifiedRandom::new(11);
+        let ra = get_spawn_rate(&zero, &mut a);
+        let rb = get_spawn_rate(&c, &mut b);
+        assert!(rb.spawn_friendly);
+        assert_eq!((ra.spawn_rate, ra.max_spawns), (rb.spawn_rate, rb.max_spawns));
+        assert_eq!(a, b, "the friendly latch short-circuits the luck tail");
+    }
+
+    #[test]
+    fn f32_pinky_promotion_is_the_luck_double_roll() {
+        // `NPC.cs:5242` through `Luck.RollLuck(180)` (`Luck.cs:5-16`): at
+        // luck 1.0 the gate always hits and the range SHRINKS to
+        // Next(Next(90, 180)) — three draws (NextFloat, Next(90,180),
+        // Next(inner)); at luck 0 it is the single plain Next(180)
+        // (byte-identical to the pre-luck port).
+        let w = ground_tall(); // width 400, spawn_x 200
+        let mut lucky = ctx(&w, 20.0 * 16.0, true);
+        lucky.luck = 1.0;
+        let plain = ctx(&w, 20.0 * 16.0, true);
+        // The Blue pick needs dist >= 200 from spawn_x — x 0 is exactly
+        // 200 away, so the 1/3 green roll's miss lands Blue (the 1/10
+        // purple arm needs dist > 400, unreachable here).
+        let mut probe_seed = None;
+        for seed in 0..2000i32 {
+            let mut rng = UnifiedRandom::new(seed);
+            if let Some(npc) = spawn_basic_slime(&plain, &mut rng, 0, true) {
+                if npc.slime == SlimeVariant::Blue {
+                    probe_seed = Some(seed);
+                    break;
+                }
             }
             (trace, rng)
         };
@@ -5882,5 +5897,89 @@ mod tests {
             [338u16, 339, 340].into_iter().collect(),
             "the Next(338, 341) band spreads across its three kinds"
         );
+
+        }        let seed = probe_seed.expect("a Blue pick in the sweep");
+        let mut a = UnifiedRandom::new(seed);
+        let mut b = UnifiedRandom::new(seed);
+        let na = spawn_basic_slime(&plain, &mut a, 0, true).unwrap();
+        let nb = spawn_basic_slime(&lucky, &mut b, 0, true).unwrap();
+        assert_eq!(na.slime, SlimeVariant::Blue);
+        assert!(matches!(nb.slime, SlimeVariant::Blue | SlimeVariant::Pinky));
+        // The promotion draw SHAPES, pinned directly on the engine:
+        let mut t0 = UnifiedRandom::new(9);
+        let r0 = tr_core::loot::roll_luck(&mut t0, 0.0, 180);
+        let mut t0b = UnifiedRandom::new(9);
+        assert_eq!(r0, t0b.next_max(180));
+        assert_eq!(t0, t0b, "luck 0 == plain Next(180), one draw");
+        let mut t1 = UnifiedRandom::new(9);
+        let r1 = tr_core::loot::roll_luck(&mut t1, 1.0, 180);
+        let mut t1b = UnifiedRandom::new(9);
+        let _gate = t1b.next_float();
+        let inner = t1b.next_range(90, 180);
+        assert_eq!(r1, t1b.next_range(0, inner));
+        assert_eq!(t1, t1b, "luck 1 == the three-draw shrunk shape");
+        assert!(r1 < 180);
+        // One vs three promotion draws: the twin streams diverge.
+        assert_ne!(a, b, "the luck feeds change the promotion draw shape");
+    fn f32_bound_goblin_roll_rides_luck() {
+        // `NPC.cs:2084`: downedGoblins && RollLuck(20) == 0 — at luck 0 the
+        // arm's roll is the plain Next(20) (byte-identical to the pre-luck
+        // port); at luck 1.0 it is the three-draw shrunk shape. Pin both
+        // on the same post-ladder stream state: find a seed where the
+        // plain arm MISSES, replay the arm's draws, and compare.
+        let mut w = ground();
+        w.rock_layer = 40.0;
+        let mut lucky = ctx(&w, 100.0 * 16.0, true);
+        lucky.bound_goblin_ok = true;
+        lucky.luck = 1.0;
+        let mut plain = lucky;
+        plain.luck = 0.0;
+        // The arm fires on some seed at luck 0 (the plain cadence).
+        let mut fired = false;
+        for seed in 0..3000i32 {
+            let mut rng = UnifiedRandom::new(seed);
+            if let Some(npc) = spawn_npc_at(&plain, &mut rng, 30, 100 * 16, false, false, false) {
+                if npc.kind == NpcKind::BoundGoblin {
+                    fired = true;
+                    // The twin at luck 1.0 consumes a different shape.
+                    let mut lucky_rng = UnifiedRandom::new(seed);
+                    let _ = spawn_npc_at(&lucky, &mut lucky_rng, 30, 100 * 16, false, false, false);
+                    assert_ne!(rng, lucky_rng, "the luck feed changes the roll shape");
+                    break;
+        assert!(fired, "the plain cadence still spawns the bound goblin");
+        // The roll shapes themselves (the engine pin):
+        let mut a = UnifiedRandom::new(9);
+        let r0 = tr_core::loot::roll_luck(&mut a, 0.0, 20);
+        let mut b = UnifiedRandom::new(9);
+        assert_eq!(r0, b.next_max(20));
+        assert_eq!(a, b, "luck 0 == plain Next(20)");
+        let mut c = UnifiedRandom::new(9);
+        let r1 = tr_core::loot::roll_luck(&mut c, 1.0, 20);
+        let mut d = UnifiedRandom::new(9);
+        let _gate = d.next_float();
+        let inner = d.next_range(10, 20);
+        assert_eq!(r1, d.next_range(0, inner));
+        assert_eq!(c, d, "luck 1 == the shrunk three-draw shape");
+    fn f32_blood_moon_bad_luck_roll_shrinks_at_negative_luck() {
+        // `NPC.cs:4618/4623`: RollOnlyBadLuck(300) — negative luck replaces
+        // Next(300) with Next(Next(150, 300)); at luck 0 the stream is the
+        // plain Next(300) (byte-identical to the pre-luck port).
+        let mut a = UnifiedRandom::new(5);
+        let mut b = UnifiedRandom::new(5);
+        let zero = tr_core::loot::roll_only_bad_luck(&mut a, 0.0, 300);
+        let plain = b.next_max(300);
+        assert_eq!(zero, plain, "luck 0 degenerates to the plain roll");
+        assert_eq!(a, b, "and consumes exactly one draw");
+        // Luck -1.0: gate hits, inner Next(150, 300), outer Next(inner).
+        let mut c = UnifiedRandom::new(5);
+        let bad = tr_core::loot::roll_only_bad_luck(&mut c, -1.0, 300);
+        let mut d = UnifiedRandom::new(5);
+        let inner = d.next_range(150, 300);
+        let want = d.next_range(0, inner);
+        assert_eq!(bad, want);
+        assert_eq!(c, d);
     }
+
+// balance-close (union shared delimiter)
+}}}}
 }

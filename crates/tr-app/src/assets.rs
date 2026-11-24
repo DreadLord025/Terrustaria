@@ -346,6 +346,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Player_0_11",
         "Player_0_12",
         "Player_Hair_1",
+        // W4-c46 — `TextureAssets.Ghost` (`Images/Ghost`,
+        // `AssetInitializer.cs:318`): the hardcore ghost's 4-row sheet
+        // (`LegacyPlayerRenderer.DrawGhost`, `:514-524`).
+        "Ghost",
         // The mount sheets of the M2-MOUNT-1 ground set (`MountData`
         // back/front textures, `Mount.cs:696-2567`): the named `Mount_*`
         // sheets plus the `Extra_*` files the C# binds through
@@ -496,6 +500,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // `Extra[260]` white + HSL glow pair (`TileDrawing.cs:9507/:9515`) and
         // the 592 suspended brazier's `GlowMask[294]` (`:9437`).
         "Extra_260",
+        // W4-f50 deviation 3: `TextureAssets.Beetle` = `Images/BeetleOrb`
+        // (`AssetInitializer.cs:578`), the Beetle orb's 3-frame wing sheet
+        // (`DrawPlayer_37_BeetleBuff`, `PlayerDrawLayers.cs:4007-4031`).
+        "BeetleOrb",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -518,6 +526,43 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Armor/Armor_2",
         "Armor/Armor_3",
         "Armor/Armor_4",
+        // W4-d115 wiring round — the Acc_Neck layer family
+        // (`TextureAssets.AccNeck[n]` = `Images/Acc_Neck_{n}`,
+        // `AssetInitializer.cs:223-226`; `ArmorIDs.Neck.Count` = 15,
+        // `ArmorIDs.cs:2325`). Index 0 has no file (the empty slot —
+        // `DrawPlayer_20_NeckAcc` gates `neck > 0`, `PlayerDrawLayers.cs:
+        // 2028`); 1..14 are the fourteen neck accessories (the Cross
+        // Necklace 554 rides slot 2, `Item.cs:7992`). The layer draws the
+        // body frame at the torso anchor (`PlayerDrawLayers.cs:2030`).
+        "Acc_Neck_1",
+        "Acc_Neck_2",
+        "Acc_Neck_3",
+        "Acc_Neck_4",
+        "Acc_Neck_5",
+        "Acc_Neck_6",
+        "Acc_Neck_7",
+        "Acc_Neck_8",
+        "Acc_Neck_9",
+        "Acc_Neck_10",
+        "Acc_Neck_11",
+        "Acc_Neck_12",
+        "Acc_Neck_13",
+        "Acc_Neck_14",
+        // The visible shield strips (`AssetInitializer.cs:219-221`,
+        // `TextureAssets.AccShield[slot]` = `Images/Acc_Shield_{slot}`,
+        // slots 1..12; `DrawPlayer_25_Shield`, PlayerDrawLayers.cs:2954).
+        "Acc_Shield_1",
+        "Acc_Shield_2",
+        "Acc_Shield_3",
+        "Acc_Shield_4",
+        "Acc_Shield_5",
+        "Acc_Shield_6",
+        "Acc_Shield_7",
+        "Acc_Shield_8",
+        "Acc_Shield_9",
+        "Acc_Shield_10",
+        "Acc_Shield_11",
+        "Acc_Shield_12",
         "NPC_1",
         "NPC_22",
         "NPC_21",
@@ -814,6 +859,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_Head_45",
         "Heart",
         "Bubble",
+        // `TextureAssets.Flame` (`AssetInitializer.cs:496`): the lava-budget
+        // meter's flame (`Main.DrawInterface_Resources_Breath`, `Main.cs:43511`).
+        "Flame",
         // `TextureAssets.Hb1`/`Hb2` (`AssetInitializer.cs:404-405`): the
         // ordinary NPC health bar's fill and depleted strips
         // (`Main.DrawHealthBar`, `Main.cs:21909-21990`).
@@ -1608,6 +1656,21 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_137",
         // W4-c3: the WaterBoltMimic's own sheet (the 34/289 rows are
         // d34/d38's above - E8 drop; STYLE10_SHEETS keeps only NPC_694).
+        // W4-d33 — the dragonfly sheets (`DRAGONFLY_SHEETS`).
+        "NPC_595",
+        "NPC_596",
+        "NPC_597",
+        "NPC_598",
+        "NPC_599",
+        "NPC_600",
+        "NPC_601",
+        // W4-d33 wiring — the fairy critters' + the windy balloon's
+        // sheets (`FAIRY_BALLOON_SHEETS`). d42 batch-2/3's rows,
+        // constants-copy (keep-one d37c-E3).
+        "NPC_583",
+        "NPC_584",
+        "NPC_585",
+        "NPC_594",
         "NPC_694",
         // W4-c7 — the firefly family's own sheets (`FIREFLY_SHEETS`).
         "NPC_355",
@@ -2501,6 +2564,130 @@ pub struct AmbienceTex {
 // 12-critter tail dropped - d40/c8's slots above own them) = 328.
 // + W4-d23's 12 portrait slots (175/112/666/516/150/151/152/156/158/159/634/660; the
 // 43/56/101/259/260/48/62/93/121/137/226 sheets already ride the rows above) = 340.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 338] = [
+        1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
+        60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
+        25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
+        11, 12, 13, 14, 15, 20, 18, 19, 38, 227,
+        228, 54, 4, 222, 35, 5, 113, 115, 143, 144,
+        145, 383, 520, 212, 216, 117, 118, 134, 127, 125,
+        126, 262, 266, 267, 26, 27, 28, 111, 471, 105,
+        107, 245, 246, 247, 249, 668, 36, 114, 128, 129,
+        130, 131, 399, 388, 381, 382, 390, 391, 392, 393,
+        394, 395, 491, 492, 552, 553, 554, 555, 556, 557,
+        561, 562, 563, 566, 567, 564, 551, 568, 550, 548,
+        422, 493, 507, 517, 406, 407, 423, 425, 429, 426,
+        427, 420, 421, 409, 410, 411, 415, 416, 417, 418,
+        412, 413, 414, 402, 518, 419, 424, 428, 405, 396,
+        397, 398, 400, 401, 368, 369, 376, 108, 106, 124, 123,
+        353, 354, 441, 588, 589, 633, 663, 207, 208,
+        // The Old One's Army's lane gate (M4-EVENT-18) — appended last so
+        // the earlier slots keep their indexes.
+        549,
+        // The Old One's Army's tier-2/3 families (M4-EVENT-19), appended
+        // after the lane gate so the earlier slots keep their indexes.
+        558, 559, 560, 565, 569, 570, 571,
+        572, 573, 574, 575, 576, 577,
+        // The Desert Djinn (S1-E-5) — appended last so the earlier slots
+        // keep their indexes.
+        533,
+        // The Queen Bee's volley minions (S1-D-3 W-3) — appended last so
+        210, 211,
+        // The Tesla Turret (S1-F-13d) — appended last for the same reason.
+        387,
+        // The small-kinds wiring wave (S1-D-3-wire-smallkinds) - appended
+        // last so the earlier slots keep their indexes.
+        72, 250, 288,
+        // W4-d34 kinds 1-70 coverage wave (phase 1) — appended last so the
+        // earlier slots keep their indexes.
+        31, 34, 37, 43, 46,
+        // W4-d34 kinds 1-70 coverage wave (phase 2) — appended last.
+        39, 40, 41, 47, 48,
+        // W4-d34 kinds 1-70 coverage wave (phase 3) — appended last.
+        56, 57, 61, 62, 63,
+        // W4-d34 kinds 1-70 coverage wave (phase 4) — appended last
+        // (merge-side: 64/69/70 dropped with the g8-owned dups — 367 §1).
+        67, 68,
+        // W4-d38 crossnote — the wave's 35 packed kinds' portrait slots
+        // (research/108 §5's d38 half of the gap close), appended last so
+        // the earlier slots keep their indexes; ENTRIES order (b7..b1).
+        333, 334, 335, 336, 337, 318, 322, 323, 324, 328,
+        302, 303, 304, 316, 317, 297, 298, 299, 300, 301,
+        292, 293, 294, 295, 296, 286, 287, 289, 290, 291,
+        281, 282, 283, 284, 285,
+        // W4-d37 — the NPCID 211-280 band's own bestiary sheets (the 43
+        // visible kinds; the three Hide=true folds 230/236/239 ride their
+        // twin's credit and have no own slot). Appended last so the earlier
+        // slots keep their indexes.
+        217, 218, 219, 220, 221, 224, 226, 229,
+        231, 232, 233, 234, 235, 237, 238, 240,
+        241, 242, 243, 244, 251, 252, 253, 254,
+        255, 256, 257, 258, 259, 260, 268, 269,
+        270, 271, 272, 273, 274, 275, 276, 277,
+        278, 279, 280,
+        // W4-d40 sheets phase — the 22 packed own-entry kinds' portrait
+        // sheets, appended last so the earlier slots keep their indexes.
+        // The Hide-fold kinds (430-436/449-452/455-459/478/488) are NOT
+        // here: their entries fold onto the head (or have no entry), whose
+        // own rows above carry the portrait; their DRAW sheets ride
+        // D40_SHEETS (the texture_net_id vanilla rows). The 16 deferred
+        // own-entry kinds (440/453/460/461/466/467/468/473-477/479/480/
+        // 481/483) are NOT here either: their sheets are deferred, the
+        // portrait rests the SetDefaults box (entry_sheet returns None).
+        // (merge-side: the 465 slot dropped with d40's CrimsonGoldfish dup
+        // port — c4's kept impl lands its own slot at the small-lanes splice.)
+        437, 438, 442, 443, 444, 445, 446, 447, 448, 454,
+        462, 463, 464, 469, 470, 472, 482, 484, 485,
+        486, 487,
+        // W4-d35 sheets phase — the 16 visible packed kinds' portrait
+        // The Hide kinds 96/97/99/100/112 are NOT here: their entries fold
+        // onto the head (95/98/94), whose own rows above carry the
+        // portrait; their DRAW sheets ride D35_SHEETS (the texture_net_id
+        // vanilla rows).
+        73, 74, 75, 77, 78, 82, 83, 93, 94, 95,
+        98, 101, 102, 116, 121, 137,
+        // W4-c3 - appended last so the earlier slots keep their indexes
+        // (the 34/289 dups dropped per E8; d34/d38's slots above own them).
+        694,
+        // W4-c8 - the crawling-critter family, appended last for the same
+        // reason. The digger 375 is Hide=true (no grid card of its own -
+        // it folds onto the TruffleWorm); the 448/484-487 dups dropped
+        // (d40's slots above own them) - 3 new slots.
+        357, 374, 606,
+        // The snail family (W4-c9) - appended last for the same reason
+        // (the 677 + 5 gold dups dropped - c7/d40's slots above).
+        359, 360, 655,
+        // W4-c10 — the waterfowl family's eight sheets, appended last in
+        // `bestiary_npc_sheets`'s exact order (the vec grew 181 → 189).
+        362, 363, 364, 365, 602, 603, 608, 609,
+        // E8 merge: the c10 12-critter slot tail dropped (d40/c8's slots above).
+        // W4-d33 — the dragonfly family's TWO visible bestiary cards: the
+        // Red 599 "Dragonfly" (the five Hide=true colours fold onto it,
+        // `ContentSamples.cs:1043-1047`) + the Gold 601 "Gold Dragonfly".
+        // Appended last for the same reason.
+        599, 601,
+        // W4-d33 wiring — the three fairy critters' OWN visible cards
+        // (583/584/585, no Hide rows — `NPCID.cs:5148-5169`). The windy
+        // balloon 594 takes NO sheet slot: its card draws the
+        // CustomTexturePath portrait (`bestiary_custom_portraits`,
+        // `NPCID.cs:5232-5239` — the 7/10/13 custom rows' precedent).
+        // Appended last for the same reason. d42 batch-2/3's rows,
+        // constants-copy (keep-one d37c-E3).
+        583, 584, 585,
+        // W4-c3 (the style-10 family) — appended last so the earlier slots
+        // W4-c8 — the crawling-critter family, appended last for the same
+        // reason. The digger 375 is Hide=true (no grid card of its own —
+        // it folds onto the TruffleWorm), so only the eight visible
+        // crawlers take sheet slots.
+        // The snail family (W4-c9; the 677 slot deduped to c7's
+        // firefly row — keep-one) — appended last for the same reason.
+        // The gold critters (W4-c9) — appended last for the same reason.
+        // W4-g5 — the two casters' bestiary sheets, appended last so the
+        172, 693,
+        // W4-e26 — the luck critters (E8 keep-one: the Duck 362 dropped
+        // to c10), appended last for the same reason.
+        361, 604, 605,
+    ];
 
 
 
@@ -3057,6 +3244,10 @@ pub struct Lookups {
     pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Flame` (`Images/Flame`, `AssetInitializer.cs:496`): the
+    /// lava-budget meter's flame (`Main.DrawInterface_Resources_Breath`,
+    /// `Main.cs:43511`), 22x22 like the Bubble.
+    pub ui_flame: Option<tr_render::SheetRect>,
     /// `TextureAssets.Hb1` (`Images/HealthBar1`): the health bar's filled
     /// strip (`Main.cs:21988-21990`).
     pub ui_health_bar1: Option<tr_render::SheetRect>,
@@ -3469,6 +3660,7 @@ impl Lookups {
             moon_explosion: MOON_EXPLOSION_SHEETS.map(|name| atlas.sheet(name).copied()),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
+            ui_flame: atlas.sheet("Flame").copied(),
             ui_health_bar1: atlas.sheet("HealthBar1").copied(),
             ui_health_bar2: atlas.sheet("HealthBar2").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
@@ -3848,6 +4040,21 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_470").copied(),
                 atlas.sheet("NPC_472").copied(),
                 atlas.sheet("NPC_482").copied(),
+                // W4-d33 — the dragonfly family's TWO visible bestiary
+                // cards: the Red 599 + Gold 601 strips. The five Hide=true
+                // colours fold onto 599 (no grid card of their own — the
+                // c8 TruffleWormDigger precedent). Appended last so the
+                // earlier slots keep their indexes.
+                atlas.sheet("NPC_599").copied(),
+                atlas.sheet("NPC_601").copied(),
+                // W4-d33 wiring — the three fairy critters' OWN visible
+                // cards (the 583/584/585 strips). The windy balloon 594
+                // draws its CustomTexturePath portrait instead (no
+                // sheet slot — the 7/10/13 custom rows' precedent).
+                // Appended last so the earlier slots keep their indexes.
+                atlas.sheet("NPC_583").copied(),
+                atlas.sheet("NPC_584").copied(),
+                atlas.sheet("NPC_585").copied(),
                 atlas.sheet("NPC_484").copied(),
                 atlas.sheet("NPC_485").copied(),
                 atlas.sheet("NPC_486").copied(),

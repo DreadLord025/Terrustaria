@@ -982,10 +982,12 @@ fn block_type(t: &Tile) -> u8 {
 /// offset (`(256 - liquid) / 32 * 2`, `:1421-1423`) and the solid-floor
 /// exclusion on the gravity-side row (`num4`, `:1409`/`:1416`).
 ///
-/// `grav_dir` is the C#'s (`-1` = the vanilla gravity): the probe sits at the
-/// head for `-1` and at the feet for `1` (the NPCs' call). `include_slopes`
-/// is the C#'s `includeSlopes` — the solid-floor exclusion then also accepts
-/// the sloped blocks.
+/// `grav_dir` is the C#'s parameter: the vanilla player passes its own
+/// `gravDir = 1f` (`Player.cs:1956`, `CheckDrowning` `:23193`), so `1` keeps
+/// the probe at the body TOP (`position.Y - 2`, the head); the `-1` default
+/// lowers it by `Height/2 - 6` (the flipped-gravity arm). The NPCs' calls
+/// also pass `1f`. `include_slopes` is the C#'s `includeSlopes` — the
+/// solid-floor exclusion then also accepts the sloped blocks.
 pub fn drown_collision(
     world: &World,
     pos_x: f32,
@@ -2788,15 +2790,16 @@ mod tests {
     /// block on the gravity-side row does not drown — unless the sloped
     /// blocks count as solid (`includeSlopes`).
     ///
-    /// The gravity-side row is `value3` for the feet probe (the NPCs' call,
-    /// `gravDir = 1`) and `value4 - 1` for the head probe (the player's) —
-    /// the head probe never reaches its own gravity-side row, so the arm is
-    /// exercised through the feet probe.
+    /// The gravity-side row is `value3` for the vanilla `gravDir = 1` probe
+    /// (the player's and the NPCs' calls) and `value4 - 1` for the `-1`
+    /// default (the flipped-gravity arm) — the lowered `-1` probe never
+    /// reaches its own gravity-side row, so the arm is exercised through the
+    /// `1` probe.
     #[test]
     fn the_solid_floor_excludes_the_water_under_it() {
         use tr_core::tile::LiquidKind;
         let mut w = world();
-        // The feet probe at y = 16 reaches row 0 (the scan's first row).
+        // The vanilla `1` probe at y = 16 reaches row 0 (the scan's first row).
         put(&mut w, 10, 0, 1);
         put_water(&mut w, 10, 0, 255, LiquidKind::Water);
         assert!(

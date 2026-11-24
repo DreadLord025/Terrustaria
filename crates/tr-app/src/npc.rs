@@ -1,3 +1,5 @@
+[[
+// balance-open (union shared delimiter)
 // MERGE canary (d33 retire): fn ai_074_hover_charge (empty duplicate signature dropped).
 //! First enemy pass: a hopping blue slime, a flying demon eye and a walking zombie,
 //! modelled on the simplest `NPC.cs` behaviours.
@@ -57,834 +59,834 @@ impl crate::npc_ai_town::TownDoorOps for NoOpTownPetDoors {
 pub enum NpcKind {
     Slime,
     DemonEye,
-    /// `NPCID.WanderingEye` (133) — the same `aiStyle 2` machine, night
+    /// `NPCID.WanderingEye` (133) вЂ” the same `aiStyle 2` machine, night
     /// hardmode spawn (`NPC.cs:4555-4558`).
     WanderingEye,
     Zombie,
     KingSlime,
-    /// `NPCID.Guide` (22) — the first town NPC (`aiStyle 7`): the port's
+    /// `NPCID.Guide` (22) вЂ” the first town NPC (`aiStyle 7`): the port's
     /// walker is the zombie machine minus the chase (the town NPC wanders).
     Guide,
-    /// `NPCID.Skeleton` (21) — the cave walker (`aiStyle 3`, the 15-frame
+    /// `NPCID.Skeleton` (21) вЂ” the cave walker (`aiStyle 3`, the 15-frame
     /// humanoid strip).
     Skeleton,
-    /// `NPCID.UndeadMiner` (44) — the rare cave walker (`aiStyle 3`).
+    /// `NPCID.UndeadMiner` (44) вЂ” the rare cave walker (`aiStyle 3`).
     UndeadMiner,
-    /// `NPCID.CaveBat` (49) — the cave flyer (`aiStyle 14`, the erratic
+    /// `NPCID.CaveBat` (49) вЂ” the cave flyer (`aiStyle 14`, the erratic
     /// flight, 5 frames).
     CaveBat,
-    /// `NPCID.JungleBat` (51) — the jungle flyer (`aiStyle 14`).
+    /// `NPCID.JungleBat` (51) вЂ” the jungle flyer (`aiStyle 14`).
     JungleBat,
-    /// `NPCID.Hellbat` (60) — the underworld flyer (`aiStyle 14`).
+    /// `NPCID.Hellbat` (60) вЂ” the underworld flyer (`aiStyle 14`).
     Hellbat,
-    /// `NPCID.VoodooDemon` (66) — the underworld flyer (`aiStyle 14`).
+    /// `NPCID.VoodooDemon` (66) вЂ” the underworld flyer (`aiStyle 14`).
     VoodooDemon,
-    /// `NPCID.EaterofSouls` (6) — the corruption hover (`aiStyle 5`).
+    /// `NPCID.EaterofSouls` (6) вЂ” the corruption hover (`aiStyle 5`).
     EaterOfSouls,
-    /// `NPCID.Hornet` (42) — the jungle hover (`aiStyle 5`).
+    /// `NPCID.Hornet` (42) вЂ” the jungle hover (`aiStyle 5`).
     Hornet,
-    /// `NPCID.Bunny` (46) — the passive surface critter (`aiStyle 7`, the
+    /// `NPCID.Bunny` (46) вЂ” the passive surface critter (`aiStyle 7`, the
     /// town-critter hop): 18x20, dmg 0, def 0, 5 HP, catchItem 2019,
     /// NPCHit1/NPCDeath1 (`NPC.cs:9336-9347`); `npcFrameCount[46]` = 7
     /// (`Main.cs:67088`). W4-e21: the bunny statue's plain spawn.
     Bunny,
-    /// `NPCID.PartyBunny` (540) — the party bunny: the SAME `SetDefaults`
+    /// `NPCID.PartyBunny` (540) вЂ” the party bunny: the SAME `SetDefaults`
     /// row as 46 (`NPC.cs:9336-9347`), `npcFrameCount[540]` = 7
     /// (`Main.cs:67138`), its own NPC_540 sheet. W4-e21: the bunny statue
     /// spawns it while `BirthdayParty.PartyIsUp` (`Wiring.cs:2304-2307`).
     PartyBunny,
-    /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
+    /// `NPCID.MeteorHead` (23) вЂ” the meteor hover (`aiStyle 5`).
     MeteorHead,
-    /// `NPCID.GoblinThief` (27) — the invasion runner (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinThief` (27) вЂ” the invasion runner (`NPC.cs`: 18Г—38,
     /// aiStyle 3, dmg 12, def 4, 60 HP, kb 0.8, value 100).
     GoblinThief,
-    /// `NPCID.GoblinWarrior` (28) — the invasion fighter (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinWarrior` (28) вЂ” the invasion fighter (`NPC.cs`: 18Г—38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinWarrior,
-    /// `NPCID.GoblinArcher` (111) — the invasion archer (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinArcher` (111) вЂ” the invasion archer (`NPC.cs`: 18Г—38,
     /// aiStyle 3, dmg 25, def 8, 110 HP, kb 0.5, value 150; the arrows
     /// ride the projectile work).
     GoblinArcher,
-    /// `NPCID.GoblinPeon` (26) — the invasion grunt (`NPC.cs`: 18×38,
+    /// `NPCID.GoblinPeon` (26) вЂ” the invasion grunt (`NPC.cs`: 18Г—38,
     /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
     GoblinPeon,
-    /// `NPCID.GoblinSummoner` (471) — the hardmode invasion caster
-    /// (`NPC.cs`: 18×38, aiStyle 3 (the summoner's cast arms ride the
+    /// `NPCID.GoblinSummoner` (471) вЂ” the hardmode invasion caster
+    /// (`NPC.cs`: 18Г—38, aiStyle 3 (the summoner's cast arms ride the
     /// caster work), dmg 80, def 26, 2000 HP, kb 0.15, value 5000;
     /// `GetNPCInvasionGroup`'s 10-point kill).
     GoblinSummoner,
 
-    /// `NPCID.SnowmanGangsta` (143) — the Frost Legion's bottle-thrower
-    /// (`NPC.cs`: 26×40, aiStyle 38 (the speed 3/accel 0.7), dmg 50,
+    /// `NPCID.SnowmanGangsta` (143) вЂ” the Frost Legion's bottle-thrower
+    /// (`NPC.cs`: 26Г—40, aiStyle 38 (the speed 3/accel 0.7), dmg 50,
     /// def 20, 200 HP, kb 0.6, value 400).
     SnowmanGangsta,
-    /// Net 144 = `NPCID.MisterStabby` (`NPCID.cs:10965`) — the kicker
-    /// (`NPC.cs`: 26×40, aiStyle 38 (the default speed 4/accel 1),
+    /// Net 144 = `NPCID.MisterStabby` (`NPCID.cs:10965`) вЂ” the kicker
+    /// (`NPC.cs`: 26Г—40, aiStyle 38 (the default speed 4/accel 1),
     /// dmg 65, def 26, 240 HP, kb 0.6, value 400). The port's kind name
-    /// `SnowBalla` is the pre-existing roster label — the C#'s SnowBalla
+    /// `SnowBalla` is the pre-existing roster label вЂ” the C#'s SnowBalla
     /// is net 145 (the port's `MysterySnowman`); the rename is the
     /// bestiary pass's concern (ANALYSIS "the Frost Legion residuals").
     SnowBalla,
-    /// `NPCID.MysterySnowman` is not a 1.4.5 id — net 145 is
+    /// `NPCID.MysterySnowman` is not a 1.4.5 id вЂ” net 145 is
     /// `NPCID.SnowBalla` (`NPCID.cs:10967`), the snowball
-    /// thrower (`NPC.cs`: 26×40, aiStyle 38 (the speed 3.5/accel 0.8),
+    /// thrower (`NPC.cs`: 26Г—40, aiStyle 38 (the speed 3.5/accel 0.8),
     /// dmg 55, def 22, 220 HP, kb 0.6, value 400). The port's kind name
     /// `MysterySnowman` is the pre-existing roster label (see above).
     MysterySnowman,
-    /// `NPCID.MartianOfficer` (383) — the martian officer (`NPC.cs`: 18×40,
+    /// `NPCID.MartianOfficer` (383) вЂ” the martian officer (`NPC.cs`: 18Г—40,
     /// aiStyle 3, dmg 75, def 50, 300 HP, kb 0.25, value 1200).
     MartianOfficer,
-    /// `NPCID.GrayGrunt` (385) — the martian grunt (`NPC.cs`: 18×40,
+    /// `NPCID.GrayGrunt` (385) вЂ” the martian grunt (`NPC.cs`: 18Г—40,
     /// aiStyle 3, dmg 80, def 30, 750 HP, kb 0, value 600).
     GrayGrunt,
-    /// `NPCID.MartianEngineer` (386) — the martian engineer (`NPC.cs`:
-    /// 18×40, aiStyle 3, dmg 40, def 34, 400 HP, kb 0.4, value 1200).
+    /// `NPCID.MartianEngineer` (386) вЂ” the martian engineer (`NPC.cs`:
+    /// 18Г—40, aiStyle 3, dmg 40, def 34, 400 HP, kb 0.4, value 1200).
     MartianEngineer,
-    /// `NPCID.GigaZapper` (389) — the martian zapper (`NPC.cs`: 18×40,
+    /// `NPCID.GigaZapper` (389) вЂ” the martian zapper (`NPC.cs`: 18Г—40,
     /// aiStyle 3, dmg 75, def 38, 600 HP, kb 0.3, value 1200).
     GigaZapper,
-    /// `NPCID.MartianWalker` (520) — the martian walker (`NPC.cs`: 34×110,
+    /// `NPCID.MartianWalker` (520) вЂ” the martian walker (`NPC.cs`: 34Г—110,
     /// aiStyle 3, dmg 60, def 40, 2000 HP, kb 0).
     MartianWalker,
-    /// `NPCID.MartianProbe` (399) — the Martian Madness trigger (`NPC.cs`:
-    /// 42×72, aiStyle 80, dmg 5, def 5, 500 HP, kb 0, value 0, noGravity,
+    /// `NPCID.MartianProbe` (399) вЂ” the Martian Madness trigger (`NPC.cs`:
+    /// 42Г—72, aiStyle 80, dmg 5, def 5, 500 HP, kb 0, value 0, noGravity,
     /// chaseable false, rarity 1; the escape machine runs
     /// `AI()`'s aiStyle-80 block).
     MartianProbe,
-    /// `NPCID.MartianDrone` (388) — the Martian Madness sky flyer (`NPC.cs`:
-    /// 40×30, aiStyle 74, dmg 60, def 16, 300 HP, kb 0.4, value 1000,
+    /// `NPCID.MartianDrone` (388) вЂ” the Martian Madness sky flyer (`NPC.cs`:
+    /// 40Г—30, aiStyle 74, dmg 60, def 16, 300 HP, kb 0.4, value 1000,
     /// noTileCollide, noGravity, npcSlots 1.5, canGhostHeal false).
     MartianDrone,
-    /// `NPCID.ForceBubble` (384) — the Officer's shield bubble
-    /// (`NPC.cs:13882-13894`: 18×40, aiStyle 72, def 20, 1000 HP; no
-    /// damage/kb/value rows — the head defaults 0/1f/0f
+    /// `NPCID.ForceBubble` (384) вЂ” the Officer's shield bubble
+    /// (`NPC.cs:13882-13894`: 18Г—40, aiStyle 72, def 20, 1000 HP; no
+    /// damage/kb/value rows вЂ” the head defaults 0/1f/0f
     /// (`NPC.cs:8563`/`:8533`/`:8544`); npcSlots 0, noTileCollide,
     /// canGhostHeal false; `AI_072` pins it to the Officer's centre).
     ForceBubble,
-    /// `NPCID.MartianTurret` (387, the "Tesla Turret" — `NPCID.cs:12449`)
-    /// — the Engineer's placed turret (`NPC.cs:13922-13934`: 20×50,
+    /// `NPCID.MartianTurret` (387, the "Tesla Turret" вЂ” `NPCID.cs:12449`)
+    /// вЂ” the Engineer's placed turret (`NPC.cs:13922-13934`: 20Г—50,
     /// aiStyle 73, dmg 10, def 40, 200 HP, kb 0, canGhostHeal false;
     /// `AI_073` warps it in over 120 ticks).
     MartianTurret,
-    /// `NPCID.BrainScrambler` (381) — the martian ground shooter (`NPC.cs`:
-    /// 18×40, aiStyle 3, dmg 50, def 25, 350 HP, kb 0.35, value 1000; the
+    /// `NPCID.BrainScrambler` (381) вЂ” the martian ground shooter (`NPC.cs`:
+    /// 18Г—40, aiStyle 3, dmg 50, def 25, 350 HP, kb 0.35, value 1000; the
     /// stop-and-fire cycle fires the projectile 436).
     BrainScrambler,
-    /// `NPCID.RayGunner` (382) — the martian ground shooter (`NPC.cs`: the
-    /// 381/382 grouped row — 18×40, aiStyle 3, dmg 50, def 25, 350 HP,
+    /// `NPCID.RayGunner` (382) вЂ” the martian ground shooter (`NPC.cs`: the
+    /// 381/382 grouped row вЂ” 18Г—40, aiStyle 3, dmg 50, def 25, 350 HP,
     /// kb 0.35, value 1000; fires the projectile 438 at its speed).
     RayGunner,
-    /// `NPCID.ScutlixRider` (390) — the ray gunner mounted on a Scutlix
-    /// (`NPC.cs:13966-13977`: 18×40, aiStyle 75, dmg 65, def 30, 350 HP,
+    /// `NPCID.ScutlixRider` (390) вЂ” the ray gunner mounted on a Scutlix
+    /// (`NPC.cs:13966-13977`: 18Г—40, aiStyle 75, dmg 65, def 30, 350 HP,
     /// value 1200, npcSlots 0.5; the mount machine carries the carrier
     /// spawn + the 438 ray at the 60/-60 cycle).
     ScutlixRider,
-    /// `NPCID.Scutlix` (391) — the walker carrier (`NPC.cs:13979-13991`:
-    /// 60×40, aiStyle 3, dmg 85, def 30, 600 HP, kb 0.1, value 1200;
+    /// `NPCID.Scutlix` (391) вЂ” the walker carrier (`NPC.cs:13979-13991`:
+    /// 60Г—40, aiStyle 3, dmg 85, def 30, 600 HP, kb 0.1, value 1200;
     /// walks through the walker params 5/0.25/0.7).
     Scutlix,
-    /// `NPCID.MartianSaucer` (392) — the saucer shell (`NPC.cs:13993-14008`:
-    /// 150×80, aiStyle 75, dmg 50, def 100, 100 HP; rides the core and
+    /// `NPCID.MartianSaucer` (392) вЂ” the saucer shell (`NPC.cs:13993-14008`:
+    /// 150Г—80, aiStyle 75, dmg 50, def 100, 100 HP; rides the core and
     /// drives its phase state).
     MartianSaucer,
-    /// `NPCID.MartianSaucerTurret` (393) — the saucer turret
-    /// (`NPC.cs:14009-14024`: 40×16, aiStyle 75, 5000 HP, def 20, dmg 60).
+    /// `NPCID.MartianSaucerTurret` (393) вЂ” the saucer turret
+    /// (`NPC.cs:14009-14024`: 40Г—16, aiStyle 75, 5000 HP, def 20, dmg 60).
     MartianSaucerTurret,
-    /// `NPCID.MartianSaucerCannon` (394) — the saucer cannon
-    /// (`NPC.cs:14025-14044`: 46×36, aiStyle 75, 3500 HP, def 20, dmg 60).
+    /// `NPCID.MartianSaucerCannon` (394) вЂ” the saucer cannon
+    /// (`NPC.cs:14025-14044`: 46Г—36, aiStyle 75, 3500 HP, def 20, dmg 60).
     MartianSaucerCannon,
-    /// `NPCID.FlyingDutchman` (491) — the pirate invasion's ship
-    /// (`NPC.cs:14632-14650`: 350×120, aiStyle 93, dmg 0, def 100, 50 HP,
+    /// `NPCID.FlyingDutchman` (491) вЂ” the pirate invasion's ship
+    /// (`NPC.cs:14632-14650`: 350Г—120, aiStyle 93, dmg 0, def 100, 50 HP,
     /// dontTakeDamage, value 0; the crew's 4 cannons fight for it).
     FlyingDutchman,
-    /// `NPCID.DD2GoblinT1` (552) — the Old One's Army goblin
-    /// (`NPC.cs:13891-13906`: 18×40, aiStyle 107, dmg 18, def 14, 30 HP,
+    /// `NPCID.DD2GoblinT1` (552) вЂ” the Old One's Army goblin
+    /// (`NPC.cs:13891-13906`: 18Г—40, aiStyle 107, dmg 18, def 14, 30 HP,
     /// kb 0.2, value 0, npcSlots 0, lavaImmune).
     DD2GoblinT1,
-    /// `NPCID.DD2GoblinT2` (553) — the tier-2 goblin (170 HP, dmg 46,
+    /// `NPCID.DD2GoblinT2` (553) вЂ” the tier-2 goblin (170 HP, dmg 46,
     /// def 20, the +0.01/+0.2 accel/speed).
     DD2GoblinT2,
-    /// `NPCID.DD2GoblinT3` (554) — the tier-3 goblin (560 HP, dmg 70,
+    /// `NPCID.DD2GoblinT3` (554) вЂ” the tier-3 goblin (560 HP, dmg 70,
     /// def 28, the +0.02/+0.4 accel/speed).
     DD2GoblinT3,
-    /// `NPCID.DD2GoblinBomberT1` (555) — the kobold bomber (`NPC.cs`:
-    /// 18×40, aiStyle 107, dmg 26, def 16, 50 HP; the fuse death).
+    /// `NPCID.DD2GoblinBomberT1` (555) вЂ” the kobold bomber (`NPC.cs`:
+    /// 18Г—40, aiStyle 107, dmg 26, def 16, 50 HP; the fuse death).
     DD2GoblinBomberT1,
-    /// `NPCID.DD2GoblinBomberT2` (556) — the tier-2 bomber (200 HP,
+    /// `NPCID.DD2GoblinBomberT2` (556) вЂ” the tier-2 bomber (200 HP,
     /// dmg 55, def 26).
     DD2GoblinBomberT2,
-    /// `NPCID.DD2GoblinBomberT3` (557) — the tier-3 bomber (700 HP,
+    /// `NPCID.DD2GoblinBomberT3` (557) вЂ” the tier-3 bomber (700 HP,
     /// dmg 75, def 34).
     DD2GoblinBomberT3,
-    /// `NPCID.DD2JavelinstT1` (561) — the javelin thrower (`NPC.cs`:
-    /// 26×52, aiStyle 107, dmg 30, def 18, 60 HP).
+    /// `NPCID.DD2JavelinstT1` (561) вЂ” the javelin thrower (`NPC.cs`:
+    /// 26Г—52, aiStyle 107, dmg 30, def 18, 60 HP).
     DD2JavelinT1,
-    /// `NPCID.DD2JavelinstT2` (562) — the tier-2 javelin (300 HP,
+    /// `NPCID.DD2JavelinstT2` (562) вЂ” the tier-2 javelin (300 HP,
     /// dmg 60, def 28).
     DD2JavelinT2,
-    /// `NPCID.DD2JavelinstT3` (563) — the tier-3 javelin (1000 HP,
+    /// `NPCID.DD2JavelinstT3` (563) вЂ” the tier-3 javelin (1000 HP,
     /// dmg 80, def 38, the 685 spear).
     DD2JavelinT3,
-    /// `NPCID.DD2SkeletonT1` (566) — the etherian skeleton (`NPC.cs`:
-    /// 18×40, aiStyle 107, dmg 18, def 12, 25 HP; materializes in).
+    /// `NPCID.DD2SkeletonT1` (566) вЂ” the etherian skeleton (`NPC.cs`:
+    /// 18Г—40, aiStyle 107, dmg 18, def 12, 25 HP; materializes in).
     DD2SkeletonT1,
-    /// `NPCID.DD2SkeletonT3` (567) — the tier-3 skeleton (480 HP,
+    /// `NPCID.DD2SkeletonT3` (567) вЂ” the tier-3 skeleton (480 HP,
     /// dmg 70, def 22).
     DD2SkeletonT3,
-    /// `NPCID.LunarTowerStardust` (493) — the Stardust Pillar
-    /// (`NPC.cs:14988-15003`: 130×270, aiStyle 94, 20000 HP, dmg 0,
+    /// `NPCID.LunarTowerStardust` (493) вЂ” the Stardust Pillar
+    /// (`NPC.cs:14988-15003`: 130Г—270, aiStyle 94, 20000 HP, dmg 0,
     /// def 20, noGravity, noTileCollide; the pillar's sheet NPC_493 is
-    /// 174x364 — the frame overhangs the box).
+    /// 174x364 вЂ” the frame overhangs the box).
     StardustTower,
     /// `NPCID.TowerNebula` (507).
     NebulaTower,
-    /// `NPCID.TowerSolar` (517) — the Solar Pillar (the same
+    /// `NPCID.TowerSolar` (517) вЂ” the Solar Pillar (the same
     /// `SetDefaults` row as its siblings).
     SolarTower,
-    /// `NPCID.LunarTowerVortex` (422) — the Vortex Pillar: the fourth
+    /// `NPCID.LunarTowerVortex` (422) вЂ” the Vortex Pillar: the fourth
     /// pillar `WorldGen.TriggerLunarApocalypse` spawns
     /// (`WorldGen.cs:86628`'s `{517, 422, 507, 493}` shuffle) and the
-    /// port was missing entirely — the three kinds below drew the
+    /// port was missing entirely вЂ” the three kinds below drew the
     /// Stardust sheet and the vortex had neither kind nor art. Its
     /// internal slot is 146 (112-145 are taken).
     VortexTower,
-    /// `NPCID.DD2LanePortal` (549) — the Old One's Army's lane gate
-    /// (`NPC.cs:16033-16053`: 78×130, aiStyle 106, 5 HP, def 20, damage
+    /// `NPCID.DD2LanePortal` (549) вЂ” the Old One's Army's lane gate
+    /// (`NPC.cs:16033-16053`: 78Г—130, aiStyle 106, 5 HP, def 20, damage
     /// 0, noGravity/noTileCollide/dontTakeDamage, netAlways; `ai[2]`
     /// picks the lane side).
     DD2LanePortal,
-    /// `NPCID.DD2WyvernT1` (558) — the tier-1 etherian wyvern
-    /// (`NPC.cs:16207-16223`: 38×38, aiStyle 108, 60 HP, dmg 30, def 4,
+    /// `NPCID.DD2WyvernT1` (558) вЂ” the tier-1 etherian wyvern
+    /// (`NPC.cs:16207-16223`: 38Г—38, aiStyle 108, 60 HP, dmg 30, def 4,
     /// kb 0.2, noGravity/noTileCollide, netAlways).
     DD2WyvernT1,
-    /// `NPCID.DD2WyvernT2` (559) — the tier-2 wyvern (`:16225-16241`:
-    /// 38×38, aiStyle 108, 180 HP, dmg 75, def 16, kb 0.2).
+    /// `NPCID.DD2WyvernT2` (559) вЂ” the tier-2 wyvern (`:16225-16241`:
+    /// 38Г—38, aiStyle 108, 180 HP, dmg 75, def 16, kb 0.2).
     DD2WyvernT2,
-    /// `NPCID.DD2WyvernT3` (560) — the tier-3 wyvern (`:16243-16259`:
-    /// 38×38, aiStyle 108, 600 HP, dmg 100, def 30, kb 0.05).
+    /// `NPCID.DD2WyvernT3` (560) вЂ” the tier-3 wyvern (`:16243-16259`:
+    /// 38Г—38, aiStyle 108, 600 HP, dmg 100, def 30, kb 0.05).
     DD2WyvernT3,
-    /// `NPCID.DD2DarkMageT3` (565) — the tier-3 Dark Mage
-    /// (`NPC.cs:16463-16479`: 34×62, aiStyle 109, 4000 HP, dmg 90, def 38,
-    /// kb 0, noGravity, netAlways — the T1's 800-HP machine).
+    /// `NPCID.DD2DarkMageT3` (565) вЂ” the tier-3 Dark Mage
+    /// (`NPC.cs:16463-16479`: 34Г—62, aiStyle 109, 4000 HP, dmg 90, def 38,
+    /// kb 0, noGravity, netAlways вЂ” the T1's 800-HP machine).
     DD2DarkMageT3,
-    /// `NPCID.DD2WitherBeastT3` (569) — the tier-3 wither beast
-    /// (`NPC.cs:16326-16342`: 18×40, aiStyle 107, 1400 HP, dmg 80, def 40,
-    /// kb 0.05 — the aura/heal walker).
+    /// `NPCID.DD2WitherBeastT3` (569) вЂ” the tier-3 wither beast
+    /// (`NPC.cs:16326-16342`: 18Г—40, aiStyle 107, 1400 HP, dmg 80, def 40,
+    /// kb 0.05 вЂ” the aura/heal walker).
     DD2WitherBeastT3,
-    /// `NPCID.DD2DrakinT2` (570) — the tier-2 drakin
-    /// (`NPC.cs:16411-16427`: 42×58, aiStyle 107, 900 HP, dmg 60, def 30,
-    /// kb 0 — the stand-and-shoot ranger).
+    /// `NPCID.DD2DrakinT2` (570) вЂ” the tier-2 drakin
+    /// (`NPC.cs:16411-16427`: 42Г—58, aiStyle 107, 900 HP, dmg 60, def 30,
+    /// kb 0 вЂ” the stand-and-shoot ranger).
     DD2DrakinT2,
-    /// `NPCID.DD2DrakinT3` (571) — the tier-3 drakin (`:16428-16444`:
-    /// 42×58, aiStyle 107, 3000 HP, dmg 90, def 40, kb 0).
+    /// `NPCID.DD2DrakinT3` (571) вЂ” the tier-3 drakin (`:16428-16444`:
+    /// 42Г—58, aiStyle 107, 3000 HP, dmg 90, def 40, kb 0).
     DD2DrakinT3,
-    /// `NPCID.DD2KoboldWalkerT2` (572) — the tier-2 kobold walker
-    /// (`NPC.cs:16377-16393`: 18×40, aiStyle 107, 260 HP, dmg 60, def 26,
-    /// kb 0.2 — the lit-kamikaze walker).
+    /// `NPCID.DD2KoboldWalkerT2` (572) вЂ” the tier-2 kobold walker
+    /// (`NPC.cs:16377-16393`: 18Г—40, aiStyle 107, 260 HP, dmg 60, def 26,
+    /// kb 0.2 вЂ” the lit-kamikaze walker).
     DD2KoboldWalkerT2,
-    /// `NPCID.DD2KoboldWalkerT3` (573) — the tier-3 kobold walker
-    /// (`:16394-16410`: 18×40, aiStyle 107, 800 HP, dmg 80, def 32, kb 0.1).
+    /// `NPCID.DD2KoboldWalkerT3` (573) вЂ” the tier-3 kobold walker
+    /// (`:16394-16410`: 18Г—40, aiStyle 107, 800 HP, dmg 80, def 32, kb 0.1).
     DD2KoboldWalkerT3,
-    /// `NPCID.DD2KoboldFlyerT2` (574) — the tier-2 kobold glider
-    /// (`NPC.cs:16481-16497`: 38×38, aiStyle 108, 170 HP, dmg 50, def 16,
-    /// kb 0.4, noGravity/noTileCollide — the dive bomber).
+    /// `NPCID.DD2KoboldFlyerT2` (574) вЂ” the tier-2 kobold glider
+    /// (`NPC.cs:16481-16497`: 38Г—38, aiStyle 108, 170 HP, dmg 50, def 16,
+    /// kb 0.4, noGravity/noTileCollide вЂ” the dive bomber).
     DD2KoboldFlyerT2,
-    /// `NPCID.DD2KoboldFlyerT3` (575) — the tier-3 kobold glider
-    /// (`:16499-16515`: 38×38, aiStyle 108, 580 HP, dmg 80, def 32, kb 0.25).
+    /// `NPCID.DD2KoboldFlyerT3` (575) вЂ” the tier-3 kobold glider
+    /// (`:16499-16515`: 38Г—38, aiStyle 108, 580 HP, dmg 80, def 32, kb 0.25).
     DD2KoboldFlyerT3,
-    /// `NPCID.DD2OgreT2` (576) — the tier-2 ogre (`NPC.cs:16275-16291`:
-    /// 96×124, aiStyle 107, 5000 HP, dmg 70, def 34, kb 0 — the melee
+    /// `NPCID.DD2OgreT2` (576) вЂ” the tier-2 ogre (`NPC.cs:16275-16291`:
+    /// 96Г—124, aiStyle 107, 5000 HP, dmg 70, def 34, kb 0 вЂ” the melee
     /// thrower with the ground pound).
     DD2OgreT2,
-    /// `NPCID.DD2OgreT3` (577) — the tier-3 ogre (`:16292-16308`:
-    /// 96×124, aiStyle 107, 13000 HP, dmg 90, def 40, kb 0).
+    /// `NPCID.DD2OgreT3` (577) вЂ” the tier-3 ogre (`:16292-16308`:
+    /// 96Г—124, aiStyle 107, 13000 HP, dmg 90, def 40, kb 0).
     DD2OgreT3,
-    /// `NPCID.StardustCellBig` (405) — the stardust shard's grown form
-    /// (`NPC.cs:15022-15035`: 44×44, aiStyle 85, dmg 120, def 50, 300 HP,
+    /// `NPCID.StardustCellBig` (405) вЂ” the stardust shard's grown form
+    /// (`NPC.cs:15022-15035`: 44Г—44, aiStyle 85, dmg 120, def 50, 300 HP,
     /// kb 0.3; the aiStyle-85 hover machine).
     StardustCellBig,
-    /// `NPCID.StardustCellSmall` (406) — the stardust shard (`NPC.cs`:
-    /// 22×22, aiStyle 95, dmg 70, def 0; grows into 405 over 300 ticks).
+    /// `NPCID.StardustCellSmall` (406) вЂ” the stardust shard (`NPC.cs`:
+    /// 22Г—22, aiStyle 95, dmg 70, def 0; grows into 405 over 300 ticks).
     StardustCellSmall,
-    /// `NPCID.StardustJellyfishBig` (407) — the stardust floater
-    /// (`NPC.cs:15087-15100`: 40×60, aiStyle 96, dmg 70, def 38, 1500 HP,
+    /// `NPCID.StardustJellyfishBig` (407) вЂ” the stardust floater
+    /// (`NPC.cs:15087-15100`: 40Г—60, aiStyle 96, dmg 70, def 38, 1500 HP,
     /// kb 0.03).
     StardustJellyfishBig,
-    /// `NPCID.NebulaBeast` (423) — the nebula quadruped (`NPC.cs`:
-    /// 50×44, aiStyle 26, dmg 90, def 46, 850 HP, kb 0.2; the 575 shot).
+    /// `NPCID.NebulaBeast` (423) вЂ” the nebula quadruped (`NPC.cs`:
+    /// 50Г—44, aiStyle 26, dmg 90, def 46, 850 HP, kb 0.2; the 575 shot).
     NebulaBeast,
-    /// `NPCID.VortexRifleman` (425) — the vortex rifleman (`NPC.cs`:
-    /// 30×56, aiStyle 3, dmg 100, def 40).
+    /// `NPCID.VortexRifleman` (425) вЂ” the vortex rifleman (`NPC.cs`:
+    /// 30Г—56, aiStyle 3, dmg 100, def 40).
     VortexRifleman,
-    /// `NPCID.VortexSoldier` (429) — the vortex soldier (`NPC.cs`:
-    /// 22×56, aiStyle 3, dmg 90, def 34).
+    /// `NPCID.VortexSoldier` (429) вЂ” the vortex soldier (`NPC.cs`:
+    /// 22Г—56, aiStyle 3, dmg 90, def 34).
     VortexSoldier,
-    /// `NPCID.VortexHunter` (426) — the vortex pillar's shooter
-    /// (`NPC.cs:15214-15247`: 50×62, aiStyle 3, 1000 HP, dmg 100, def 44,
+    /// `NPCID.VortexHunter` (426) вЂ” the vortex pillar's shooter
+    /// (`NPC.cs:15214-15247`: 50Г—62, aiStyle 3, 1000 HP, dmg 100, def 44,
     /// kb 0.3; the 581 battery and the 4/0.6/0.95 walk).
     VortexHunter,
-    /// `NPCID.VortexAlien` (427) — the hive's diver (`NPC.cs`:
-    /// 15226-15235: 40×28, aiStyle 3, 500 HP, dmg 75, def 20, kb 0.5; the
+    /// `NPCID.VortexAlien` (427) вЂ” the hive's diver (`NPC.cs`:
+    /// 15226-15235: 40Г—28, aiStyle 3, 500 HP, dmg 75, def 20, kb 0.5; the
     /// 0.015/0.15 dive, the leap and the 1200-tick `Transform(426)`).
     VortexAlien,
-    /// `NPCID.VortexHeadcrab` (428) — the crawler (`NPC.cs:15215-15222`:
-    /// 24×26, aiStyle 3, 200 HP, dmg 50, def 6, kb 1 (the class default);
+    /// `NPCID.VortexHeadcrab` (428) вЂ” the crawler (`NPC.cs:15215-15222`:
+    /// 24Г—26, aiStyle 3, 200 HP, dmg 50, def 6, kb 1 (the class default);
     /// the rolling rotation and the 300-tick `Transform(427)`).
     VortexHeadcrab,
-    /// `NPCID.NebulaFloater` (420) — the nebula pillar's floater
-    /// (`NPC.cs:15157-15171`: 40×40, aiStyle 97, 1300 HP, dmg 75, def 20,
+    /// `NPCID.NebulaFloater` (420) вЂ” the nebula pillar's floater
+    /// (`NPC.cs:15157-15171`: 40Г—40, aiStyle 97, 1300 HP, dmg 75, def 20,
     /// kb 0.5; the 574 emission + the 480-tick teleport cycle).
     NebulaFloater,
-    /// `NPCID.BrainSuckler` (421) — the nebula leech (`NPC.cs:15130-15143`:
-    /// 44×44, aiStyle 85, 330 HP, dmg 70, def 34, kb 0.5; the aiStyle-85
+    /// `NPCID.BrainSuckler` (421) вЂ” the nebula leech (`NPC.cs:15130-15143`:
+    /// 44Г—44, aiStyle 85, 330 HP, dmg 70, def 34, kb 0.5; the aiStyle-85
     /// hoverer with the <40-px attachment onto the player's Top).
     BrainSuckler,
-    /// `NPCID.Predictor` (424) — the nebula pillar's shooter (`NPC.cs`:
-    /// 15144-15156: 22×56, aiStyle 3, 700 HP, dmg 80, def 30, kb 0.6; the
+    /// `NPCID.Predictor` (424) вЂ” the nebula pillar's shooter (`NPC.cs`:
+    /// 15144-15156: 22Г—56, aiStyle 3, 700 HP, dmg 80, def 30, kb 0.6; the
     /// 573 fan).
     Predictor,
-    /// `NPCID.StardustSpiderBig` (409) — the stardust pillar's spawner
-    /// (`NPC.cs:15061-15075`: 34×42, aiStyle 3, 800 HP, dmg 70, def 40,
+    /// `NPCID.StardustSpiderBig` (409) вЂ” the stardust pillar's spawner
+    /// (`NPC.cs:15061-15075`: 34Г—42, aiStyle 3, 800 HP, dmg 70, def 40,
     /// kb 0.4; its 60-tick cycle spawns the 410 rather than firing).
     StardustSpiderBig,
-    /// `NPCID.StardustSpiderSmall` (410) — the kamikaze spider
-    /// (`NPC.cs:15074-15087`: 22×22, aiStyle 26, 200 HP, dmg 80, def 10,
+    /// `NPCID.StardustSpiderSmall` (410) вЂ” the kamikaze spider
+    /// (`NPC.cs:15074-15087`: 22Г—22, aiStyle 26, 200 HP, dmg 80, def 10,
     /// kb 0.3; the 240-tick burst then self-destruct).
     StardustSpiderSmall,
-    /// `NPCID.StardustSoldier` (411) — the stardust pillar's shooter
-    /// (`NPC.cs:15049-15059`: 22×56, aiStyle 3, 700 HP, dmg 80, def 34,
+    /// `NPCID.StardustSoldier` (411) вЂ” the stardust pillar's shooter
+    /// (`NPC.cs:15049-15059`: 22Г—56, aiStyle 3, 700 HP, dmg 80, def 34,
     /// kb 0.4; the 330-tick cycle's 537).
     StardustSoldier,
-    /// `NPCID.SolarDrakomire` (415) — the solar pillar's mount
-    /// (`NPC.cs:15319-15329`: 60×40, aiStyle 3, 800 HP, dmg 55, def 32,
+    /// `NPCID.SolarDrakomire` (415) вЂ” the solar pillar's mount
+    /// (`NPC.cs:15319-15329`: 60Г—40, aiStyle 3, 800 HP, dmg 55, def 32,
     /// kb 0.2; the 4/0.1/0.95 jump assist, hidden under a rider).
     SolarDrakomire,
-    /// `NPCID.SolarDrakomireRider` (416) — the rider (`NPC.cs:15331-15342`:
-    /// 18×40, aiStyle 75, 800 HP, dmg 80, def 28, kb 0.2; it spawns and
+    /// `NPCID.SolarDrakomireRider` (416) вЂ” the rider (`NPC.cs:15331-15342`:
+    /// 18Г—40, aiStyle 75, 800 HP, dmg 80, def 28, kb 0.2; it spawns and
     /// rides the 415 mount, then `Transform(518)`s when it dies).
     SolarDrakomireRider,
-    /// `NPCID.SolarSroller` (417) — the solar pillar's roller-at (`NPC.cs`
-    /// `:15355-15367`: 46×52, aiStyle 39, 700 HP, dmg 80, def 34, kb 0;
-    /// the ball state's ×1.8 damage and the doubled defense).
+    /// `NPCID.SolarSroller` (417) вЂ” the solar pillar's roller-at (`NPC.cs`
+    /// `:15355-15367`: 46Г—52, aiStyle 39, 700 HP, dmg 80, def 34, kb 0;
+    /// the ball state's Г—1.8 damage and the doubled defense).
     SolarSroller,
-    /// `NPCID.SolarCorite` (418) — the solar pillar's charger
-    /// (`NPC.cs:15368-15380`: 38×38, aiStyle 74, 600 HP, dmg 70, def 26,
+    /// `NPCID.SolarCorite` (418) вЂ” the solar pillar's charger
+    /// (`NPC.cs:15368-15380`: 38Г—38, aiStyle 74, 600 HP, dmg 70, def 26,
     /// kb 0.2; the approach/dash/implosion cycle).
     SolarCorite,
-    /// `NPCID.SolarSolenian` (419) — the solar pillar's walker
-    /// (`NPC.cs:15382-15392`: 22×56, aiStyle 3, 800 HP, dmg 90, def 30,
+    /// `NPCID.SolarSolenian` (419) вЂ” the solar pillar's walker
+    /// (`NPC.cs:15382-15392`: 22Г—56, aiStyle 3, 800 HP, dmg 90, def 30,
     /// kb 0.4; the 6/0.15/0.85 walk).
     SolarSelenian,
-    /// `NPCID.SolarCrawltipedeHead` (412) — the solar tower's crawltipede
-    /// head (`NPC.cs:15265-15281`: 20×20, aiStyle 6, 10000 HP, dmg 120,
+    /// `NPCID.SolarCrawltipedeHead` (412) вЂ” the solar tower's crawltipede
+    /// head (`NPC.cs:15265-15281`: 20Г—20, aiStyle 6, 10000 HP, dmg 120,
     /// def 1000, kb 0, dontTakeDamage; the 30-segment chain).
     SolarCrawltipedeHead,
-    /// `NPCID.SolarCrawltipedeBody` (413) — the chain's bodies (`NPC.cs`
-    /// `:15283-15299`: 20×20, aiStyle 6, 10000 HP, dmg 80, def 1000, kb
+    /// `NPCID.SolarCrawltipedeBody` (413) вЂ” the chain's bodies (`NPC.cs`
+    /// `:15283-15299`: 20Г—20, aiStyle 6, 10000 HP, dmg 80, def 1000, kb
     /// 0, dontCountMe/dontTakeDamage).
     SolarCrawltipedeBody,
-    /// `NPCID.SolarCrawltipedeTail` (414) — the chain's tail (`NPC.cs`:
-    /// 15301-15317: 20×20, aiStyle 6, 10000 HP, dmg 50, def 0, kb 0,
+    /// `NPCID.SolarCrawltipedeTail` (414) вЂ” the chain's tail (`NPC.cs`:
+    /// 15301-15317: 20Г—20, aiStyle 6, 10000 HP, dmg 50, def 0, kb 0,
     /// dontCountMe, `takenDamageMultiplier = 10`).
     SolarCrawltipedeTail,
-    /// `NPCID.StardustWormHead` (402) — the stardust tower's worm head
-    /// (`NPC.cs:15004-15021`: 32×32, aiStyle 6, 1200 HP, dmg 80, def 10,
+    /// `NPCID.StardustWormHead` (402) вЂ” the stardust tower's worm head
+    /// (`NPC.cs:15004-15021`: 32Г—32, aiStyle 6, 1200 HP, dmg 80, def 10,
     /// kb 0, noGravity/noTileCollide, netAlways; the mark fire).
     StardustWormHead,
-    /// `NPCID.SolarSpearman` (518) — the rider's unmounted form
-    /// (`NPC.cs:15343-15353`: 22×56, aiStyle 3, 1000 HP, dmg 80, def 28,
+    /// `NPCID.SolarSpearman` (518) вЂ” the rider's unmounted form
+    /// (`NPC.cs:15343-15353`: 22Г—56, aiStyle 3, 1000 HP, dmg 80, def 28,
     /// kb 0.4; the 5/0.1/0.95 walk).
     SolarSpearman,
-    /// `NPCID.MoonLordHead` (396) — the Moon Lord's eye (`NPC.cs`:
-    /// 14082-14100: 38×56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
+    /// `NPCID.MoonLordHead` (396) вЂ” the Moon Lord's eye (`NPC.cs`:
+    /// 14082-14100: 38Г—56, aiStyle 79, 45000 HP, dmg 0, def 50, kb 0,
     /// boss/hide/netAlways; the `AI_079_MoonLordHead` sequencer).
     MoonLordHead,
-    /// `NPCID.MoonLordHand` (397) — the Moon Lord's hand (`NPC.cs`:
-    /// 14101-14120: 46×66, aiStyle 78, 25000 HP, dmg 0, def 40, kb 0,
+    /// `NPCID.MoonLordHand` (397) вЂ” the Moon Lord's hand (`NPC.cs`:
+    /// 14101-14120: 46Г—66, aiStyle 78, 25000 HP, dmg 0, def 40, kb 0,
     /// boss/hide/netAlways; `AI_078_MoonLordHands`, two of them).
     MoonLordHand,
-    /// `NPCID.MoonLordCore` (398) — the Moon Lord's heart (`NPC.cs`:
-    /// 14120-14140: 46×66, aiStyle 77, 50000 HP, dmg 0, def 70, kb 0,
+    /// `NPCID.MoonLordCore` (398) вЂ” the Moon Lord's heart (`NPC.cs`:
+    /// 14120-14140: 46Г—66, aiStyle 77, 50000 HP, dmg 0, def 70, kb 0,
     /// dontTakeDamage/boss/behindTiles/hide/netAlways; the `AI_077`
     /// hover + the 600-tick death drama).
     MoonLordCore,
-    /// `NPCID.MoonLordFreeEye` (400) — the True Eye of Cthulhu
-    /// (`NPC.cs:14141-14158`: 60×60, aiStyle 81, 100 HP, dmg 60, def 0,
+    /// `NPCID.MoonLordFreeEye` (400) вЂ” the True Eye of Cthulhu
+    /// (`NPC.cs:14141-14158`: 60Г—60, aiStyle 81, 100 HP, dmg 60, def 0,
     /// dontTakeDamage/netAlways; a dying hand or head spawns one).
     MoonLordFreeEye,
-    /// `NPCID.MoonLordLeechBlob` (401) — the Moon Leech Clot (`NPC.cs`:
-    /// 14159-14175: 30×30, aiStyle 82, 400 HP, dmg 0, def 0, hide; it
+    /// `NPCID.MoonLordLeechBlob` (401) вЂ” the Moon Leech Clot (`NPC.cs`:
+    /// 14159-14175: 30Г—30, aiStyle 82, 400 HP, dmg 0, def 0, hide; it
     /// drains 1000 hp from the head, the core and the hands).
     MoonLordLeechBlob,
-    /// `NPCID.CultistBoss` (439) — the Lunar Events' summoner (the port's
-    /// bestiary entry carried the Vortex Pillar's id 422 — corrected
+    /// `NPCID.CultistBoss` (439) вЂ” the Lunar Events' summoner (the port's
+    /// bestiary entry carried the Vortex Pillar's id 422 вЂ” corrected
     /// here and in the catalog; the port ships no NPC_439 sheet, so the
     /// draw stands on NPC_422's art as the documented stand-in) (`NPC.cs`
-    /// `:15172-15189`: 130×270, aiStyle 94, 20000 HP, dmg 0, def 20,
+    /// `:15172-15189`: 130Г—270, aiStyle 94, 20000 HP, dmg 0, def 20,
     /// noGravity, noTileCollide; the ritual + the portal-summon machine).
     AncientCultist,
-    /// `NPCID.DD2Bartender` (550) — the tavernkeeper (`NPC.cs`:
-    /// 18×40, aiStyle 7 town NPC, 250 HP, dmg 10, def 15, kb 0.5).
+    /// `NPCID.DD2Bartender` (550) вЂ” the tavernkeeper (`NPC.cs`:
+    /// 18Г—40, aiStyle 7 town NPC, 250 HP, dmg 10, def 15, kb 0.5).
     DD2Bartender,
-    /// `NPCID.DD2EterniaCrystal` (548) — the Old One's Army's crystal
-    /// (`NPC.cs:15998-16022`: 40×40, aiStyle 105, def 14, 1000 HP,
+    /// `NPCID.DD2EterniaCrystal` (548) вЂ” the Old One's Army's crystal
+    /// (`NPC.cs:15998-16022`: 40Г—40, aiStyle 105, def 14, 1000 HP,
     /// friendly, npcSlots 0, hide; the 180-tick spawn-in shield).
     DD2EterniaCrystal,
-    /// `NPCID.DD2WitherBeastT2` (568) — the Old One's Army's ethereal
-    /// caster-beast (`NPC.cs`: 18×40, aiStyle 107, 500 HP, dmg 50, def 30,
+    /// `NPCID.DD2WitherBeastT2` (568) вЂ” the Old One's Army's ethereal
+    /// caster-beast (`NPC.cs`: 18Г—40, aiStyle 107, 500 HP, dmg 50, def 30,
     /// kb 0.15; the aura + the self-heal + the 683 crystal shots).
     DD2WitherBeast,
-    /// `NPCID.DD2Betsy` (551) — the Old One's Army's dragon boss
-    /// (`NPC.cs:16400-16424`: 190×90, aiStyle 110, 50000 HP, dmg 80,
+    /// `NPCID.DD2Betsy` (551) вЂ” the Old One's Army's dragon boss
+    /// (`NPC.cs:16400-16424`: 190Г—90, aiStyle 110, 50000 HP, dmg 80,
     /// def 38, noGravity, noTileCollide, lavaImmune).
     DD2Betsy,
-    /// `NPCID.DD2DarkMageT1` (564) — the Old One's Army caster (`NPC.cs`
-    /// `:16445-16466`: 34×62, aiStyle 109, 800 HP, dmg 40, def 18, kb 0,
+    /// `NPCID.DD2DarkMageT1` (564) вЂ” the Old One's Army caster (`NPC.cs`
+    /// `:16445-16466`: 34Г—62, aiStyle 109, 800 HP, dmg 40, def 18, kb 0,
     /// noGravity, lavaImmune; the summon/heal/shadowflame casts).
     DD2DarkMage,
-    /// `NPCID.FlyingDutchmanCannon` (492) — the ship's manned cannon
-    /// (`NPC.cs:14651-14666`: 30×30, aiStyle 75, 2000 HP, def 20, dmg 30,
+    /// `NPCID.FlyingDutchmanCannon` (492) вЂ” the ship's manned cannon
+    /// (`NPC.cs:14651-14666`: 30Г—30, aiStyle 75, 2000 HP, def 20, dmg 30,
     /// hide; rides the ship and fires the 240 shots).
     FlyingDutchmanCannon,
-    /// `NPCID.MartianSaucerCore` (395) — the saucer boss
-    /// (`NPC.cs:14045-14060`: 120×90, aiStyle 76, dmg 80, 10000 HP,
+    /// `NPCID.MartianSaucerCore` (395) вЂ” the saucer boss
+    /// (`NPC.cs:14045-14060`: 120Г—90, aiStyle 76, dmg 80, 10000 HP,
     /// def 0, dontTakeDamage, npcSlots 6).
     MartianSaucerCore,
-    /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
+    /// `NPCID.PirateDeckhand` (212) вЂ” the pirate grunt (`NPC.cs`: 18Г—40,
     /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
     PirateDeckhand,
-    /// `NPCID.PirateCaptainsMate` (213) — the pirate bruiser (`NPC.cs`:
-    /// 18×40, aiStyle 3, dmg 50, def 22, 450 HP, kb 0.2, value 1000).
+    /// `NPCID.PirateCaptainsMate` (213) вЂ” the pirate bruiser (`NPC.cs`:
+    /// 18Г—40, aiStyle 3, dmg 50, def 22, 450 HP, kb 0.2, value 1000).
     PirateCaptainsMate,
-    /// `NPCID.PirateArcher` (214) — the pirate archer (`NPC.cs`: 18×40,
+    /// `NPCID.PirateArcher` (214) вЂ” the pirate archer (`NPC.cs`: 18Г—40,
     /// aiStyle 3, dmg 30, def 14, 225 HP, kb 0.3, value 1000; the arrows
     /// ride the projectile work).
     PirateArcher,
-    /// `NPCID.PirateCorsair` (215) — the pirate elite (`NPC.cs`: 18×40,
+    /// `NPCID.PirateCorsair` (215) вЂ” the pirate elite (`NPC.cs`: 18Г—40,
     /// aiStyle 3, dmg 35, def 20, 350 HP, kb 0.35, value 1500).
     PirateCorsair,
-    /// `NPCID.PirateCaptain` (216) — the pirate boss-minion (`NPC.cs`:
-    /// 18×40, aiStyle 3, dmg 70, def 30, 3000 HP, kb 0, value 50000;
+    /// `NPCID.PirateCaptain` (216) вЂ” the pirate boss-minion (`NPC.cs`:
+    /// 18Г—40, aiStyle 3, dmg 70, def 30, 3000 HP, kb 0, value 50000;
     /// `GetNPCInvasionGroup`'s 5-point kill).
     PirateCaptain,
-    /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
+    /// `NPCID.GoblinSorcerer` (29) вЂ” the goblin-invasion caster (`aiStyle 8`:
     /// 18x38, 40 HP).
     GoblinSorcerer,
-    /// `NPCID.Tim` (45) — the deep-cavern caster (`aiStyle 8`, `NPC.cs:9322`:
+    /// `NPCID.Tim` (45) вЂ” the deep-cavern caster (`aiStyle 8`, `NPC.cs:9322`:
     /// 18x40, 200 HP, value 5000).
     Tim,
-    /// `NPCID.DarkCaster` (32) — the dungeon caster (`aiStyle 8`,
+    /// `NPCID.DarkCaster` (32) вЂ” the dungeon caster (`aiStyle 8`,
     /// `NPC.cs:9121`: 18x40, 50 HP).
     DarkCaster,
-    /// `NPCID.FireImp` (24) — the underworld caster (`aiStyle 8`,
+    /// `NPCID.FireImp` (24) вЂ” the underworld caster (`aiStyle 8`,
     /// `NPC.cs:9078`: 18x40, 70 HP, lava-immune).
     FireImp,
-    /// `NPCID.DesertDjinn` (533) — the desert caster (`aiStyle 8`,
+    /// `NPCID.DesertDjinn` (533) вЂ” the desert caster (`aiStyle 8`,
     /// `NPC.cs:14974-14987`: 28x62, 220 HP, damage 40, defense 20, kb 0,
-    /// value 1200; emits light at `base.Top` with colour (0.6, 0.6, 0.3) —
+    /// value 1200; emits light at `base.Top` with colour (0.6, 0.6, 0.3) вЂ”
     /// `Lighting.AddLight(base.Top, 0.6f, 0.6f, 0.3f)`, `NPC.cs:21360`).
     DesertDjinn,
-    /// `NPCID.RuneWizard` (172) — the hardmode cavern caster (`aiStyle 8`,
+    /// `NPCID.RuneWizard` (172) вЂ” the hardmode cavern caster (`aiStyle 8`,
     /// `NPC.cs:11154-11167`: 18x40, 600 HP, damage 200, defense 30, kb 0.3,
     /// value 5000, rarity 4). The alpha ramp (`NPC.cs:20844-20854`) fades
     /// it out over 255 ticks; a strike resets alpha to 0. Fires the 129
     /// RuneBlast (`NPC.cs:21264-21274`). The protocol id is port-local 827
     /// (the vanilla 172 collides with DD2DarkMageT3's port-local slot; the
-    /// RETIRE round moved it off 354 — d37's corridor, research/322).
+    /// RETIRE round moved it off 354 вЂ” d37's corridor, research/322).
     RuneWizard,
-    /// `NPCID.LibrarianSkeleton` (693) — the dungeon book caster (`aiStyle
+    /// `NPCID.LibrarianSkeleton` (693) вЂ” the dungeon book caster (`aiStyle
     /// 8`, `NPC.cs:17723-17735`: 18x40, 70 HP, damage 18, defense 2, kb 0.6,
     /// value 160, npcSlots 2). The localAI clock (`NPC.cs:20839-20842`/
     /// `:20994-21005`/`:21106-21111`) drives the book teleport
     /// (`AI_AttemptToFindTeleportSpotNearBooks`, `:19009-19085`) and the
     /// 1092 book shot (`AI_FindNearbyBook`, `:62308-62364` / `:21248-21263`).
     LibrarianSkeleton,
-    /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
+    /// `NPCID.ChaosBall` (30) вЂ” the caster's sphere (`aiStyle 9`, 16x16,
     /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
     /// folds here (R4 FINAL, research/322: stat-identical rows
     /// `NPC.cs:15699-15713`/`:17403-17417`, one aiStyle-9 arm `:21519`,
     /// one {31} immunity row, one "Chaos Ball" name; the banner split
-    /// 665→177/30→39 is unreachable — both are Hide=true bestiary
+    /// 665в†’177/30в†’39 is unreachable вЂ” both are Hide=true bestiary
     /// exclusions, no kill credit drains).
     ChaosBall,
-    /// `NPCID.BurningSphere` (25) — the Fire Imp's sphere (`aiStyle 9`,
+    /// `NPCID.BurningSphere` (25) вЂ” the Fire Imp's sphere (`aiStyle 9`,
     /// `NPC.cs:9093`).
     BurningSphere,
-    /// `NPCID.WaterSphere` (33) — the Dark Caster's sphere (`aiStyle 9`,
+    /// `NPCID.WaterSphere` (33) вЂ” the Dark Caster's sphere (`aiStyle 9`,
     /// `NPC.cs:9135`).
     WaterSphere,
-    /// `NPCID.Goldfish` (55) — the passive water critter (`aiStyle 16`,
+    /// `NPCID.Goldfish` (55) вЂ” the passive water critter (`aiStyle 16`,
     /// `NPC.cs:9460`: 20x18, 5 HP, damage 0, the flag25 exclusion).
     Goldfish,
-    /// `NPCID.Piranha` (58) — the jungle/deep-water fish (`aiStyle 16`,
+    /// `NPCID.Piranha` (58) вЂ” the jungle/deep-water fish (`aiStyle 16`,
     /// `NPC.cs:9502`: 18x20, 30 HP).
     Piranha,
-    /// `NPCID.Shark` (65) — the ocean fish (`aiStyle 16`, `NPC.cs:9610`:
+    /// `NPCID.Shark` (65) вЂ” the ocean fish (`aiStyle 16`, `NPC.cs:9610`:
     /// 100x24, 300 HP).
     Shark,
-    /// `NPCID.DevourerHead` (7) — the corruption worm's head (`aiStyle 6`,
+    /// `NPCID.DevourerHead` (7) вЂ” the corruption worm's head (`aiStyle 6`,
     /// `NPC.cs:8763`). The body 8 and the tail 9 chain behind it.
     DevourerHead,
-    /// `NPCID.DevourerBody` (8) — the middle segments (`NPC.cs:8792`).
+    /// `NPCID.DevourerBody` (8) вЂ” the middle segments (`NPC.cs:8792`).
     DevourerBody,
-    /// `NPCID.DevourerTail` (9) — the tail segment (`NPC.cs:8821`).
+    /// `NPCID.DevourerTail` (9) вЂ” the tail segment (`NPC.cs:8821`).
     DevourerTail,
-    /// `NPCID.GiantWormHead` (10) — the cavern worm's head (`NPC.cs:8850`).
+    /// `NPCID.GiantWormHead` (10) вЂ” the cavern worm's head (`NPC.cs:8850`).
     GiantWormHead,
-    /// `NPCID.GiantWormBody` (11) — the middle segments (`NPC.cs:8867`).
+    /// `NPCID.GiantWormBody` (11) вЂ” the middle segments (`NPC.cs:8867`).
     GiantWormBody,
-    /// `NPCID.GiantWormTail` (12) — the tail segment (`NPC.cs:8885`).
+    /// `NPCID.GiantWormTail` (12) вЂ” the tail segment (`NPC.cs:8885`).
     GiantWormTail,
-    /// `NPCID.EaterofWorldsHead` (13) — the boss worm's head (`NPC.cs:8903`);
+    /// `NPCID.EaterofWorldsHead` (13) вЂ” the boss worm's head (`NPC.cs:8903`);
     /// the natural spawn waits for the orb-break summon work.
     EaterOfWorldsHead,
-    /// `NPCID.EaterofWorldsBody` (14) — the middle segments (`NPC.cs:8923`).
+    /// `NPCID.EaterofWorldsBody` (14) вЂ” the middle segments (`NPC.cs:8923`).
     EaterOfWorldsBody,
-    /// `NPCID.EaterofWorldsTail` (15) — the tail segment (`NPC.cs:8943`).
+    /// `NPCID.EaterofWorldsTail` (15) вЂ” the tail segment (`NPC.cs:8943`).
     EaterOfWorldsTail,
-    /// `NPCID.WyvernHead` (87) — the sky-serpent's head (`NPC.cs:9939-9956`:
-    /// 32×32, aiStyle 6, 4000 HP, dmg 80, def 10, kb 0, value 10000,
+    /// `NPCID.WyvernHead` (87) вЂ” the sky-serpent's head (`NPC.cs:9939-9956`:
+    /// 32Г—32, aiStyle 6, 4000 HP, dmg 80, def 10, kb 0, value 10000,
     /// npcSlots 5, noGravity/noTileCollide/netAlways; the fixed 14-link
     /// chain `NPC.cs:51156-51190`, the altitude gates `:52053-52078`).
     /// S1-D-3 wyvern: the head machine is `npc_ai_wyvern.rs` (UNWIRED).
     WyvernHead,
-    /// `NPCID.WyvernLegs` (88) — the claw segments at chain indices 1/8
-    /// (`NPC.cs:9957-9974`: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20,
+    /// `NPCID.WyvernLegs` (88) вЂ” the claw segments at chain indices 1/8
+    /// (`NPC.cs:9957-9974`: 32Г—32, aiStyle 6, 4000 HP, dmg 40, def 20,
     /// kb 0, value 10000, dontCountMe; `:51167-51170`).
     WyvernLegs,
-    /// `NPCID.WyvernBody` (89) — the default chain segment (`NPC.cs`:
-    /// 9975-9992: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
-    /// value **2000** — the one segment with a different coin row,
+    /// `NPCID.WyvernBody` (89) вЂ” the default chain segment (`NPC.cs`:
+    /// 9975-9992: 32Г—32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// value **2000** вЂ” the one segment with a different coin row,
     /// dontCountMe).
     WyvernBody,
-    /// `NPCID.WyvernBody2` (90) — the chain segment at index 11 (`NPC.cs`:
-    /// 9993-10010: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// `NPCID.WyvernBody2` (90) вЂ” the chain segment at index 11 (`NPC.cs`:
+    /// 9993-10010: 32Г—32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
     /// value 10000, dontCountMe; `:51171-51173`).
     WyvernBody2,
-    /// `NPCID.WyvernBody3` (91) — the chain segment at index 12 (`NPC.cs`:
-    /// 10011-10028: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// `NPCID.WyvernBody3` (91) вЂ” the chain segment at index 12 (`NPC.cs`:
+    /// 10011-10028: 32Г—32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
     /// value 10000, dontCountMe; `:51174-51176`).
     WyvernBody3,
-    /// `NPCID.WyvernTail` (92) — the chain's tail at index 13 (`NPC.cs`:
-    /// 10029-10046: 32×32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
+    /// `NPCID.WyvernTail` (92) вЂ” the chain's tail at index 13 (`NPC.cs`:
+    /// 10029-10046: 32Г—32, aiStyle 6, 4000 HP, dmg 40, def 20, kb 0,
     /// value 10000, dontCountMe; `:51177-51179`).
     WyvernTail,
-    /// `NPCID.Merchant` (17) — the second town NPC (`NPC.cs:8980`: 18x40,
+    /// `NPCID.Merchant` (17) вЂ” the second town NPC (`NPC.cs:8980`: 18x40,
     /// dmg 10, def 15, 250 HP; the shop index 1 through M4-TOWN-3's
     /// engine; the arrival `SpawnAllowed_Merchant`, `NPC.cs:7175`).
     Merchant,
-    /// `NPCID.Dryad` (20) — the nature town NPC (`NPC.cs:9022`: the town
-    /// twin; the shop index 3; the arrival rides the downedBoss1 gate —
+    /// `NPCID.Dryad` (20) вЂ” the nature town NPC (`NPC.cs:9022`: the town
+    /// twin; the shop index 3; the arrival rides the downedBoss1 gate вЂ”
     /// the boss-downed tracking lands with the boss work).
     Dryad,
-    /// `NPCID.Nurse` (18) — the healer town NPC (`NPC.cs:8994`: the town
-    /// twin; no shop — the heal interaction rides the right-click; the
+    /// `NPCID.Nurse` (18) вЂ” the healer town NPC (`NPC.cs:8994`: the town
+    /// twin; no shop вЂ” the heal interaction rides the right-click; the
     /// arrival `SpawnAllowed_Nurse`, `NPC.cs:7158`).
     Nurse,
-    /// `NPCID.ArmsDealer` (19) — the ammo seller (`NPC.cs:9008`: the town
+    /// `NPCID.ArmsDealer` (19) вЂ” the ammo seller (`NPC.cs:9008`: the town
     /// twin; the shop index 2; the arrival `SpawnAllowed_ArmsDealer`,
-    /// `NPC.cs:7092` — the bullets in the inventory).
+    /// `NPC.cs:7092` вЂ” the bullets in the inventory).
     ArmsDealer,
-    /// `NPCID.Demolitionist` (38) — the explosive seller (`NPC.cs:9211`:
+    /// `NPCID.Demolitionist` (38) вЂ” the explosive seller (`NPC.cs:9211`:
     /// the town twin; the shop index 4; the arrival
-    /// `SpawnAllowed_Demolitionist`, `NPC.cs:7067` — the bombs in the
+    /// `SpawnAllowed_Demolitionist`, `NPC.cs:7067` вЂ” the bombs in the
     /// inventory).
     Demolitionist,
-    /// `NPCID.Painter` (227) — the paint seller (`NPC.cs:11925`: the town
+    /// `NPCID.Painter` (227) вЂ” the paint seller (`NPC.cs:11925`: the town
     /// twin; the shop index 15; the arrival = at least 2 other town NPCs).
     Painter,
-    /// `NPCID.WitchDoctor` (228) — the jungle shaman (`NPC.cs:11942`: the
+    /// `NPCID.WitchDoctor` (228) вЂ” the jungle shaman (`NPC.cs:11942`: the
     /// town twin; the shop index 16; the arrival rides the downedQueenBee
-    /// gate — constants-off until the boss-downed tracking).
+    /// gate вЂ” constants-off until the boss-downed tracking).
     WitchDoctor,
-    /// `NPCID.Clothier` (54) — the tailor (`NPC.cs:9446`: the town twin;
-    /// the shop index 5; the arrival rides the downedSkeletron gate —
+    /// `NPCID.Clothier` (54) вЂ” the tailor (`NPC.cs:9446`: the town twin;
+    /// the shop index 5; the arrival rides the downedSkeletron gate вЂ”
     /// constants-off).
     Clothier,
-    /// `NPCID.TravellingMerchant` (368) — the travelling peddler
+    /// `NPCID.TravellingMerchant` (368) вЂ” the travelling peddler
     /// (`NPC.cs:13673-13686`: the town twin 18x40, dmg 10, def 15, 250 HP,
-    /// kb 0.5, aiStyle 7 — the town walker) who visits for one day on a
+    /// kb 0.5, aiStyle 7 вЂ” the town walker) who visits for one day on a
     /// rolled chance (`Main.cs:65017-65039`) with his own 40-slot stock
     /// (`Chest.SetupTravelShop`, `Chest.cs:1275-1358`) sold through the
     /// shop index 19 (`Chest.cs:2791`). `homeless` every tick and gone at
     /// night (`NPC.cs:53358-53374` -> `WorldGen.UnspawnTravelNPC`,
-    /// `WorldGen.cs:5000`) — M4-TOWN-14.
+    /// `WorldGen.cs:5000`) вЂ” M4-TOWN-14.
     TravellingMerchant,
-    /// `NPCID.Angler` (369) — the quest-giving town NPC (`NPC.cs:13687`:
-    /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 —
+    /// `NPCID.Angler` (369) вЂ” the quest-giving town NPC (`NPC.cs:13687`:
+    /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 вЂ”
     /// the town walker; `npcFrameCount[369]` = 23, `Main.cs:67120`). No
-    /// shop: the quest interaction rides `NPCInteractions.cs:519` —
+    /// shop: the quest interaction rides `NPCInteractions.cs:519` вЂ”
     /// M4-TOWN-15.
     Angler,
-    /// `NPCID.SleepingAngler` (376) — the bound form found on the beach /
+    /// `NPCID.SleepingAngler` (376) вЂ” the bound form found on the beach /
     /// in the ocean (`NPC.cs:13796`: 34x8, aiStyle 0 the bound stand,
-    /// scale 0.9, rarity 1, `npcFrameCount[376]` = 2 — `Main.cs:67121`).
+    /// scale 0.9, rarity 1, `npcFrameCount[376]` = 2 вЂ” `Main.cs:67121`).
     /// `Sets.BoundTownNPCs` (`NPCID.cs:10441`): the talk transforms
     /// 376 -> 369 and raises `savedAngler` (`NPC.cs:19853`).
     SleepingAngler,
-    /// `NPCID.Stylist` (353) — the hair-dye seller (`NPC.cs:13488-13501`:
+    /// `NPCID.Stylist` (353) вЂ” the hair-dye seller (`NPC.cs:13488-13501`:
     /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
-    /// `npcFrameCount[353]` = 23, `Main.cs:67119`) — the shop index 18
-    /// (`Chest.cs:2698`) — M4-TOWN-17.
+    /// `npcFrameCount[353]` = 23, `Main.cs:67119`) вЂ” the shop index 18
+    /// (`Chest.cs:2698`) вЂ” M4-TOWN-17.
     Stylist,
-    /// `NPCID.WebbedStylist` (354) — the spider-cavern tied Stylist
+    /// `NPCID.WebbedStylist` (354) вЂ” the spider-cavern tied Stylist
     /// (`NPC.cs:13502-13516`: 18x34, scale 0.9, aiStyle 0 the bound stand,
-    /// rarity 1, `npcFrameCount[354]` = 1); the talk transforms 354 → 353.
+    /// rarity 1, `npcFrameCount[354]` = 1); the talk transforms 354 в†’ 353.
     WebbedStylist,
-    /// `NPCID.TaxCollector` (441) — the coin collector (`NPC.cs:14704-14717`:
+    /// `NPCID.TaxCollector` (441) вЂ” the coin collector (`NPC.cs:14704-14717`:
     /// the town twin, aiStyle 7; `npcFrameCount[441]` = 25, `Main.cs:67128`)
-    /// — no shop: his tax timer rides the player's coin purse
-    /// (`Main.cs:64994`) — M4-TOWN-17.
+    /// вЂ” no shop: his tax timer rides the player's coin purse
+    /// (`Main.cs:64994`) вЂ” M4-TOWN-17.
     TaxCollector,
-    /// `NPCID.Golfer` (588) — the golf seller (`NPC.cs:16638-16651`: the
+    /// `NPCID.Golfer` (588) вЂ” the golf seller (`NPC.cs:16638-16651`: the
     /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
-    /// `npcFrameCount[588]` = 25, `Main.cs:67142`) — the shop index 22
-    /// (`Chest.cs:3156`) — M4-TOWN-18.
+    /// `npcFrameCount[588]` = 25, `Main.cs:67142`) вЂ” the shop index 22
+    /// (`Chest.cs:3156`) вЂ” M4-TOWN-18.
     Golfer,
-    /// `NPCID.GolferRescue` (589) — the underground-desert tied Golfer
+    /// `NPCID.GolferRescue` (589) вЂ” the underground-desert tied Golfer
     /// (`NPC.cs:16652-16665`: 18x34, aiStyle 0 the bound stand, rarity 1,
-    /// `npcFrameCount[589]` = 13) — `Sets.BoundTownNPCs`
-    /// (`NPCID.cs:10441`); the talk transforms 589 → 588.
+    /// `npcFrameCount[589]` = 13) вЂ” `Sets.BoundTownNPCs`
+    /// (`NPCID.cs:10441`); the talk transforms 589 в†’ 588.
     SleepingGolfer,
-    /// `NPCID.BestiaryGirl` (633) — the bestiary seller (`NPC.cs:17147`:
+    /// `NPCID.BestiaryGirl` (633) вЂ” the bestiary seller (`NPC.cs:17147`:
     /// the town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
-    /// `npcFrameCount[633]` = 23, `Main.cs:67147`) — the shop index 23
-    /// (`Chest.cs:3263`) gates on the bestiary completion — M4-TOWN-19.
+    /// `npcFrameCount[633]` = 23, `Main.cs:67147`) вЂ” the shop index 23
+    /// (`Chest.cs:3263`) gates on the bestiary completion вЂ” M4-TOWN-19.
     Zoologist,
-    /// `NPCID.Princess` (663) — the last town NPC (`NPC.cs:17384-17397`:
-    /// the town twin, aiStyle 7; `npcFrameCount[663]` = 23) — her arrival
+    /// `NPCID.Princess` (663) вЂ” the last town NPC (`NPC.cs:17384-17397`:
+    /// the town twin, aiStyle 7; `npcFrameCount[663]` = 23) вЂ” her arrival
     /// needs EVERY other town NPC present (`Main.cs:65944-65955`); the
-    /// shop index 24 (`Chest.cs:3409`) — M4-TOWN-19.
+    /// shop index 24 (`Chest.cs:3409`) вЂ” M4-TOWN-19.
     Princess,
-    /// `NPCID.DyeTrader` (207) — the dye seller (`NPC.cs:11654-11667`: the
+    /// `NPCID.DyeTrader` (207) вЂ” the dye seller (`NPC.cs:11654-11667`: the
     /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7;
-    /// `npcFrameCount[207]` = 25, `Main.cs:67120`) — the shop index 12
-    /// (`Chest.cs:1120`) — M4-TOWN-20.
+    /// `npcFrameCount[207]` = 25, `Main.cs:67120`) вЂ” the shop index 12
+    /// (`Chest.cs:1120`) вЂ” M4-TOWN-20.
     DyeTrader,
-    /// `NPCID.PartyGirl` (208) — the party starter (`NPC.cs:11668-11681`:
-    /// the town twin; `npcFrameCount[208]` = 23) — the shop index 13
-    /// (`Chest.cs:case 13`) — M4-TOWN-20.
+    /// `NPCID.PartyGirl` (208) вЂ” the party starter (`NPC.cs:11668-11681`:
+    /// the town twin; `npcFrameCount[208]` = 23) вЂ” the shop index 13
+    /// (`Chest.cs:case 13`) вЂ” M4-TOWN-20.
     PartyGirl,
-    /// `NPCID.Wizard` (108) — the magic seller (`NPC.cs:10285-10298`: the
-    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 — the
-    /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) — M4-TOWN-16.
+    /// `NPCID.Wizard` (108) вЂ” the magic seller (`NPC.cs:10285-10298`: the
+    /// town twin 18x40, dmg 10, def 15, 250 HP, kb 0.5, aiStyle 7 вЂ” the
+    /// town walker; `npcFrameCount[108]` = 23, `Main.cs:67094`) вЂ” M4-TOWN-16.
     Wizard,
-    /// `NPCID.BoundWizard` (106) — the tied Wizard awaiting the rescue
+    /// `NPCID.BoundWizard` (106) вЂ” the tied Wizard awaiting the rescue
     /// (`NPC.cs:10257-10270`: 18x40, aiStyle 0 the bound stand, rarity 1,
-    /// `npcFrameCount[106]` = 1) — `Sets.BoundTownNPCs`
-    /// (`NPCID.cs:10441`); the talk transforms 106 → 108.
+    /// `npcFrameCount[106]` = 1) вЂ” `Sets.BoundTownNPCs`
+    /// (`NPCID.cs:10441`); the talk transforms 106 в†’ 108.
     BoundWizard,
-    /// `NPCID.Mechanic` (124) — the wire seller (`NPC.cs:10508-10521`: the
-    /// town twin, aiStyle 7; `npcFrameCount[124]` = 23) — M4-TOWN-16.
+    /// `NPCID.Mechanic` (124) вЂ” the wire seller (`NPC.cs:10508-10521`: the
+    /// town twin, aiStyle 7; `npcFrameCount[124]` = 23) вЂ” M4-TOWN-16.
     Mechanic,
-    /// `NPCID.BoundMechanic` (123) — the tied Mechanic awaiting the rescue
+    /// `NPCID.BoundMechanic` (123) вЂ” the tied Mechanic awaiting the rescue
     /// (`NPC.cs:10493-10507`: 18x34, scale 0.9, aiStyle 0, rarity 1,
-    /// `npcFrameCount[123]` = 1) — `Sets.BoundTownNPCs`; the talk
-    /// transforms 123 → 124.
+    /// `npcFrameCount[123]` = 1) вЂ” `Sets.BoundTownNPCs`; the talk
+    /// transforms 123 в†’ 124.
     BoundMechanic,
-    /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
+    /// `NPCID.EyeofCthulhu` (4) вЂ” the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival). The full
     /// aiStyle-4 phase machine rides M4-BOSS-2b.
     EyeOfCthulhu,
-    /// `NPCID.QueenBee` (222) — the jungle boss (`NPC.cs:11855-11872`:
+    /// `NPCID.QueenBee` (222) вЂ” the jungle boss (`NPC.cs:11855-11872`:
     /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee`
     /// and opens the Witch Doctor's arrival).
     QueenBee,
-    /// `NPCID.Bee` (210) — the Queen Bee's state-1 volley minion
+    /// `NPCID.Bee` (210) вЂ” the Queen Bee's state-1 volley minion
     /// (`NPC.cs:11696-11708`: 12x12, aiStyle 5, dmg 20, def 5, 20 HP,
-    /// kb 0.5, noGravity; no `value` row — the SetDefaults default 0).
+    /// kb 0.5, noGravity; no `value` row вЂ” the SetDefaults default 0).
     /// The type-210/211 branch of `AI_005_EaterOfSouls`
     /// (`NPC.cs:50384-50413`) rides the shared hover core.
     Bee,
-    /// `NPCID.BeeSmall` (211) — the small volley minion
+    /// `NPCID.BeeSmall` (211) вЂ” the small volley minion
     /// (`NPC.cs:11709-11721`: 8x8, aiStyle 5, dmg 15, def 2, 10 HP,
     /// kb 0.5, noGravity; value 0). Shares the Bee's AI branch.
     BeeSmall,
-    /// `NPCID.SkeletronHead` (35) — the dungeon gatekeeper
+    /// `NPCID.SkeletronHead` (35) вЂ” the dungeon gatekeeper
     /// (`NPC.cs:9166-9182`: 80x102, dmg 32, def 10, 4400 HP; the death
     /// sets `downed_skeletron` and opens the Clothier's arrival).
     SkeletronHead,
-    /// `NPCID.ServantofCthulhu` (5) — the EoC minion (`NPC.cs:8717-8727`:
-    /// 20×20, aiStyle 5 (the generic hover, num 5 / num2 0.03
+    /// `NPCID.ServantofCthulhu` (5) вЂ” the EoC minion (`NPC.cs:8717-8727`:
+    /// 20Г—20, aiStyle 5 (the generic hover, num 5 / num2 0.03
     /// `NPC.cs:50299-50301`), damage 12, lifeMax 8, noGravity,
     /// noTileCollide).
     ServantOfCthulhu,
-    /// `NPCID.WallofFlesh` (113) — the underworld wall (`NPC.cs:10342`:
-    /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode —
+    /// `NPCID.WallofFlesh` (113) вЂ” the underworld wall (`NPC.cs:10342`:
+    /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode вЂ”
     /// `WorldGen.StartHardmode()`, `NPC.cs:79485`).
     WallOfFlesh,
-    /// `NPCID.TheHungry` (115) — the wall's minion (`NPC.cs:10363+`:
-    /// 30×30, aiStyle 29, dmg 30, def 10, 240 HP, noGravity,
+    /// `NPCID.TheHungry` (115) вЂ” the wall's minion (`NPC.cs:10363+`:
+    /// 30Г—30, aiStyle 29, dmg 30, def 10, 240 HP, noGravity,
     /// noTileCollide). The AI anchors to the wall's draw band
-    /// (`Main.wofNPCIndex`/`wofDrawArea*` → the World fields) and reads the
+    /// (`Main.wofNPCIndex`/`wofDrawArea*` в†’ the World fields) and reads the
     /// wall's hp for the damage/defense tiers.
     Hungry,
-    /// `NPCID.LeechHead` (117) — the tongue-phase worm head
-    /// (`NPC.cs`: 14×14, aiStyle 6 (the worm engine), dmg 26, def 2,
+    /// `NPCID.LeechHead` (117) вЂ” the tongue-phase worm head
+    /// (`NPC.cs`: 14Г—14, aiStyle 6 (the worm engine), dmg 26, def 2,
     /// 60 HP, noGravity/noTileCollide, behindTiles).
     LeechHead,
-    /// `NPCID.LeechBody` (118) — the worm's link (`NPC.cs`: 14×14,
+    /// `NPCID.LeechBody` (118) вЂ” the worm's link (`NPC.cs`: 14Г—14,
     /// aiStyle 6, dmg 22, def 6, 60 HP).
     LeechBody,
-    /// `NPCID.LeechTail` (119) — the chain's closing link (`NPC.cs:
-    /// 10437-10452`: 14×14, aiStyle 6, dmg 18, def 10, 60 HP,
+    /// `NPCID.LeechTail` (119) вЂ” the chain's closing link (`NPC.cs:
+    /// 10437-10452`: 14Г—14, aiStyle 6, dmg 18, def 10, 60 HP,
     /// noGravity/noTileCollide, behindTiles). W-A2-3: the budget-exhausted
     /// body spawns `type + 1` (`NPC.cs:51357`), and the tail rides the
     /// leader-death list (`NPC.cs:51411`).
     LeechTail,
-    /// `NPCID.TheDestroyer` (134) — the mech worm's head (`NPC.cs:10659-10679`:
-    /// 38×38 scale 1.25, aiStyle 37, dmg 70, def 0, 80000 HP the whole chain
+    /// `NPCID.TheDestroyer` (134) вЂ” the mech worm's head (`NPC.cs:10659-10679`:
+    /// 38Г—38 scale 1.25, aiStyle 37, dmg 70, def 0, 80000 HP the whole chain
     /// shares via realLife, alpha 255 fade-in; S1-D-3-wire-destroyer).
     TheDestroyer,
-    /// `NPCID.TheDestroyerBody` (135) — the mech worm's link (`NPC.cs:10680-10699`:
+    /// `NPCID.TheDestroyerBody` (135) вЂ” the mech worm's link (`NPC.cs:10680-10699`:
     /// dmg 55, def 30, dontCountMe; the laser cadence `AI_037` `:49856-49882`
     /// and the probe launch `HitEffect` `:89266-89285`).
     TheDestroyerBody,
-    /// `NPCID.TheDestroyerTail` (136) — the mech worm's last link
+    /// `NPCID.TheDestroyerTail` (136) вЂ” the mech worm's last link
     /// (`NPC.cs:10700-10719`: dmg 40, def 35, dontCountMe; never fires).
     TheDestroyerTail,
-    /// `NPCID.Probe` (139) — the Destroyer body's launched drone
-    /// (`NPC.cs:10720-10734`: 30×30, aiStyle **5**, dmg 50, def 20, 200 HP,
+    /// `NPCID.Probe` (139) вЂ” the Destroyer body's launched drone
+    /// (`NPC.cs:10720-10734`: 30Г—30, aiStyle **5**, dmg 50, def 20, 200 HP,
     /// noGravity/noTileCollide, kb 0.8; the 120-tick laser `AI_005`'s
     /// type-139 arm `:50593-50641`).
     Probe,
-    /// `NPCID.SkeletronPrime` (127) — the mech skull (`NPC.cs:10556+`,
+    /// `NPCID.SkeletronPrime` (127) вЂ” the mech skull (`NPC.cs:10556+`,
     /// M4-BOSS-8).
     SkeletronPrime,
-    /// `NPCID.Retinazer` (125) — the Twins' laser eye (`NPC.cs:10522+`,
+    /// `NPCID.Retinazer` (125) вЂ” the Twins' laser eye (`NPC.cs:10522+`,
     /// M4-BOSS-9).
     Retinazer,
-    /// `NPCID.Spazmatism` (126) — the Twins' cursed eye (M4-BOSS-9).
+    /// `NPCID.Spazmatism` (126) вЂ” the Twins' cursed eye (M4-BOSS-9).
     Spazmatism,
-    /// `NPCID.Plantera` (262) — the jungle bulb boss (`NPC.cs:12379+`,
+    /// `NPCID.Plantera` (262) вЂ” the jungle bulb boss (`NPC.cs:12379+`,
     /// M4-BOSS-10).
     Plantera,
-    /// `NPCID.FungiSpore` (261) — the mushroom contact hazard
+    /// `NPCID.FungiSpore` (261) вЂ” the mushroom contact hazard
     /// (`SetDefaults` `NPC.cs:12364-12378`: 12x12, aiStyle 50, dmg 80,
     /// def 0, 1 HP, kb 0, npcSlots 0; dies on any tile contact).
-    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    /// S1-D-3-wire-plantera-minions (census В§5 W-8).
     FungiSpore,
-    /// `NPCID.PlanterasHook` (263) — the boss's leash anchor
+    /// `NPCID.PlanterasHook` (263) вЂ” the boss's leash anchor
     /// (`SetDefaults` `NPC.cs:12396-12409`: 40x40, aiStyle 52, dmg 60,
     /// def 24, 4000 HP, dontTakeDamage, noGravity + noTileCollide).
-    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    /// S1-D-3-wire-plantera-minions (census В§5 W-8).
     PlanterasHook,
-    /// `NPCID.PlanterasTentacle` (264) — the phase-2 orbiting bite
+    /// `NPCID.PlanterasTentacle` (264) вЂ” the phase-2 orbiting bite
     /// (`SetDefaults` `NPC.cs:12410-12422`: 24x24, aiStyle 53, dmg 60,
     /// def 20, 1000 HP, noGravity + noTileCollide).
-    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    /// S1-D-3-wire-plantera-minions (census В§5 W-8).
     PlanterasTentacle,
-    /// `NPCID.Spore` (265) — the boss's launched spore (`SetDefaults`
+    /// `NPCID.Spore` (265) вЂ” the boss's launched spore (`SetDefaults`
     /// `NPC.cs:12423-12437`: 18x18, aiStyle 50, dmg 70, def 0, 1 HP,
     /// kb 0, npcSlots 0; flies through tiles).
-    /// S1-D-3-wire-plantera-minions (census §5 W-8).
+    /// S1-D-3-wire-plantera-minions (census В§5 W-8).
     Spore,
-    /// `NPCID.BrainofCthulhu` (266) — the crimson boss (`NPC.cs:12438`:
+    /// `NPCID.BrainofCthulhu` (266) вЂ” the crimson boss (`NPC.cs:12438`:
     /// 160x110, dmg 30, def 14, 1250 HP, dontTakeDamage in the phase 1;
     /// the death sets the downedBoss2 equivalent).
     BrainOfCthulhu,
-    /// `NPCID.Creeper` (267) — the Brain's satellite (`NPC.cs:12456`:
+    /// `NPCID.Creeper` (267) вЂ” the Brain's satellite (`NPC.cs:12456`:
     /// 30x30, dmg 20, def 10, 100 HP).
     Creeper,
-    /// `NPCID.BoundGoblin` (105) — the tied Tinkerer awaiting the rescue
-    /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 — no
+    /// `NPCID.BoundGoblin` (105) вЂ” the tied Tinkerer awaiting the rescue
+    /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 вЂ” no
     /// movement, dmg 10, def 15, 250 HP, kb 0.5, friendly).
     BoundGoblin,
-    /// `NPCID.GoblinTinkerer` (107) — the freed Tinkerer (`SetDefaults`
+    /// `NPCID.GoblinTinkerer` (107) вЂ” the freed Tinkerer (`SetDefaults`
     /// `NPC.cs:10271-10283`: 18x40, aiStyle 7 the town walker, 250 HP,
     /// def 15, kb 0.5).
     GoblinTinkerer,
-    /// `NPCID.Golem` (245) — the BODY (`SetDefaults` `NPC.cs:12163-12177`:
+    /// `NPCID.Golem` (245) вЂ” the BODY (`SetDefaults` `NPC.cs:12163-12177`:
     /// 140x140, aiStyle 45, dmg 72, def 26, 15000 HP, kb 0, boss, value
     /// 15 gold). Its death is the fight's end (`:79346`'s event flag).
     Golem,
-    /// `NPCID.GolemHead` (246) — the attached head (`:12178-12192`: 70x70,
-    /// aiStyle 46, dmg 64, def 20, 25000 HP, the silent death — the head
+    /// `NPCID.GolemHead` (246) вЂ” the attached head (`:12178-12192`: 70x70,
+    /// aiStyle 46, dmg 64, def 20, 25000 HP, the silent death вЂ” the head
     /// detaches rather than dies).
     GolemHead,
-    /// `NPCID.GolemFistLeft` (247) — the lunging fist (`:12193-12206`:
+    /// `NPCID.GolemFistLeft` (247) вЂ” the lunging fist (`:12193-12206`:
     /// 40x30, aiStyle 47, dmg 59, def 28, 10000 HP).
     GolemFistLeft,
-    /// `NPCID.GolemFistRight` (248) — the mirrored fist (the same stats).
+    /// `NPCID.GolemFistRight` (248) вЂ” the mirrored fist (the same stats).
     GolemFistRight,
-    /// `NPCID.GolemHeadFree` (249) — the detached head (`:12207-12220`:
-    /// 70x70, aiStyle 48, dmg 80, def 32, 16000 HP, `dontTakeDamage` —
+    /// `NPCID.GolemHeadFree` (249) вЂ” the detached head (`:12207-12220`:
+    /// 70x70, aiStyle 48, dmg 80, def 32, 16000 HP, `dontTakeDamage` вЂ”
     /// the spawn-shielded free-flying phase).
     GolemHeadFree,
-    /// `NPCID.Deerclops` (668) — the frozen-boss (`SetDefaults`
+    /// `NPCID.Deerclops` (668) вЂ” the frozen-boss (`SetDefaults`
     /// `NPC.cs:17449-17466`: 60x154, aiStyle 123, dmg 20, def 10,
     /// 7000 HP, kb 0, boss, noGravity, noTileCollide, 5 gold).
     Deerclops,
-    /// `NPCID.SkeletronHand` (36) — the Skeletron's tether hand (`aiStyle
+    /// `NPCID.SkeletronHand` (36) вЂ” the Skeletron's tether hand (`aiStyle
     /// 12`, `NPC.cs:9183-9196`: 52x52, dmg 20, def 14, 600 HP, kb 0).
     SkeletronHand,
-    /// `NPCID.WallOfFleshEye` (114) — the WoF's mirror eye (`aiStyle 28`,
+    /// `NPCID.WallOfFleshEye` (114) вЂ” the WoF's mirror eye (`aiStyle 28`,
     /// `NPC.cs:10362-10377`: 100x100, def 0, mirrored life).
     WallOfFleshEye,
-    /// `NPCID.PrimeCannon` (128) — the Prime's bomb limb (`aiStyle 35`,
+    /// `NPCID.PrimeCannon` (128) вЂ” the Prime's bomb limb (`aiStyle 35`,
     /// `NPC.cs:10577-10591`: 52x52, dmg 30, def 23, 7000 HP).
     PrimeCannon,
-    /// `NPCID.PrimeSaw` (129) — the Prime's saw limb (`aiStyle 33`:
+    /// `NPCID.PrimeSaw` (129) вЂ” the Prime's saw limb (`aiStyle 33`:
     /// 56 dmg, def 38, 9000 HP).
     PrimeSaw,
-    /// `NPCID.PrimeVice` (130) — the Prime's vice limb (`aiStyle 34`:
+    /// `NPCID.PrimeVice` (130) вЂ” the Prime's vice limb (`aiStyle 34`:
     /// 52 dmg, def 34, 9000 HP).
     PrimeVice,
-    /// `NPCID.PrimeLaser` (131) — the Prime's laser limb (`aiStyle 36`:
+    /// `NPCID.PrimeLaser` (131) вЂ” the Prime's laser limb (`aiStyle 36`:
     /// 29 dmg, def 20, 6000 HP).
     PrimeLaser,
 
-    // ---- the Pumpkin Moon family (`S1-F-13b`) — 16 kinds whose `SetDefaults`
+    // ---- the Pumpkin Moon family (`S1-F-13b`) вЂ” 16 kinds whose `SetDefaults`
     // rows sit in `NPC.cs:12929-12977` (the 305-314 group), `:12978-12996`
     // (315) and `:13115-13203` (325/326/327/329/330). Their `to_u16`/`from_u16`
-    // ride the VANILLA ids (305-314/315/325/326/327/329/330) — the wave
+    // ride the VANILLA ids (305-314/315/325/326/327/329/330) вЂ” the wave
     // rosters, `MOON_BOSS_SLOTS` and `CheckProgressPumpkinMoon`'s kill points
     // all key on the vanilla `NPC.type`, and these ids sit clear of the
     // 0..188 port-local space (the 78..84 Deerclops/Prime band, `S1-F-1`).
-    /// `NPCID.Scarecrow1` (305) — the scarecrow pair (305, 310): 18x40,
+    /// `NPCID.Scarecrow1` (305) вЂ” the scarecrow pair (305, 310): 18x40,
     /// aiStyle 3, dmg 60, def 18, 500 HP, kb 0.4, value 1200, npcSlots 0.5.
     Scarecrow1,
-    /// `NPCID.Scarecrow2` (306) — the pair (306, 311): dmg 52, def 14,
+    /// `NPCID.Scarecrow2` (306) вЂ” the pair (306, 311): dmg 52, def 14,
     /// 400 HP, kb 0.2, scale 1.05.
     Scarecrow2,
-    /// `NPCID.Scarecrow3` (307) — the pair (307, 312): dmg 78, def 16,
+    /// `NPCID.Scarecrow3` (307) вЂ” the pair (307, 312): dmg 78, def 16,
     /// 600 HP, kb 0.25, scale 0.9.
     Scarecrow3,
-    /// `NPCID.Scarecrow4` (308) — the pair (308, 313): dmg 66, def 14,
+    /// `NPCID.Scarecrow4` (308) вЂ” the pair (308, 313): dmg 66, def 14,
     /// 650 HP, kb 0.35, scale 0.95.
     Scarecrow4,
-    /// `NPCID.Scarecrow5` (309) — the pair (309, 314): dmg 52, def 26,
+    /// `NPCID.Scarecrow5` (309) вЂ” the pair (309, 314): dmg 52, def 26,
     /// 450 HP, kb 0.5, scale 1.1.
     Scarecrow5,
-    /// `NPCID.Scarecrow6` (310) — the 305 twin: the C#'s if-chain gives the
+    /// `NPCID.Scarecrow6` (310) вЂ” the 305 twin: the C#'s if-chain gives the
     /// pair one row.
     Scarecrow6,
-    /// `NPCID.Scarecrow7` (311) — the 306 twin.
+    /// `NPCID.Scarecrow7` (311) вЂ” the 306 twin.
     Scarecrow7,
-    /// `NPCID.Scarecrow8` (312) — the 307 twin.
+    /// `NPCID.Scarecrow8` (312) вЂ” the 307 twin.
     Scarecrow8,
-    /// `NPCID.Scarecrow9` (313) — the 308 twin.
+    /// `NPCID.Scarecrow9` (313) вЂ” the 308 twin.
     Scarecrow9,
-    /// `NPCID.Scarecrow10` (314) — the 309 twin.
+    /// `NPCID.Scarecrow10` (314) вЂ” the 309 twin.
     Scarecrow10,
-    /// `NPCID.HeadlessHorseman` (315) — the wave's flying boss (`aiStyle 26`):
+    /// `NPCID.HeadlessHorseman` (315) вЂ” the wave's flying boss (`aiStyle 26`):
     /// 74x70, dmg 130, def 40, 5000 HP, kb 0, value 10000; npcSlots rides the
     /// class default 1f, so it feeds `MOON_BOSS_SLOTS`'s 1.0. The true
-    /// machine lands on the pending S1-F-13b2 row — Phase 2 routes it to the
+    /// machine lands on the pending S1-F-13b2 row вЂ” Phase 2 routes it to the
     /// closest archetype (ANALYSIS records the stand-in).
     HeadlessHorseman,
-    /// `NPCID.MourningWood` (325) — the walking boss (`aiStyle 57`): 164x154,
+    /// `NPCID.MourningWood` (325) вЂ” the walking boss (`aiStyle 57`): 164x154,
     /// dmg 120, def 34, 14000 HP, kb 0, value 10000, npcSlots 3.
     MourningWood,
-    /// `NPCID.Splinterling` (326) — Splinterling's aiStyle-3 chaser (the wave
+    /// `NPCID.Splinterling` (326) вЂ” Splinterling's aiStyle-3 chaser (the wave
     /// walker): 18x40, dmg 100, def 32, 1200 HP, kb 0.2, value 2000.
     Splinterling,
-    /// `NPCID.Pumpking` (327) — the flying boss (`aiStyle 58`): 100x100,
+    /// `NPCID.Pumpking` (327) вЂ” the flying boss (`aiStyle 58`): 100x100,
     /// dmg 50, def 40, 26000 HP, noGravity + noTileCollide, kb 0, value
     /// 50000, npcSlots 5.
     Pumpking,
-    /// `NPCID.PumpkingBlade` (328) — the Pumpking's scythe blades
+    /// `NPCID.PumpkingBlade` (328) вЂ” the Pumpking's scythe blades
     /// (`aiStyle 59`, `NPCID.cs:11333`): 80x80, dmg 65, def 14, 5000 HP,
     /// kb 0, noGravity + noTileCollide, dontTakeDamage, npcSlots 0,
     /// dontCountMe, value 0 (`NPC.cs:13158-13174`). WIRED by W4-c6: the
@@ -892,21 +894,21 @@ pub enum NpcKind {
     /// `PumpkingCarrier` facts stamped by the sim's carrier pre-pass
     /// through `carrier_uid`) and owns the noTileCollide integration
     /// tail. NOT a
-    /// `pumpkin_moon_defaults` family member — the blade never spawns
+    /// `pumpkin_moon_defaults` family member вЂ” the blade never spawns
     /// from the wave ladder (the carrier's `:33093-33103` init spawns
     /// the pair), so the family-scoped map keeps 328 out (the
     /// `s1_f_13b` outside-the-family pin).
-    /// `NPCID.Hellhound` (329) — the wave's flyer (`aiStyle 26`): 46x30,
+    /// `NPCID.Hellhound` (329) вЂ” the wave's flyer (`aiStyle 26`): 46x30,
     /// dmg 80, def 38, 1800 HP, kb 0.3, value 3000.
     Hellhound,
-    /// `NPCID.Poltergeist` (330) — the wave's ghost (`aiStyle 22`, the
-    /// dwell/dash machine — S1-F-13b2 slice C): 24x44, dmg 90, def 44,
+    /// `NPCID.Poltergeist` (330) вЂ” the wave's ghost (`aiStyle 22`, the
+    /// dwell/dash machine вЂ” S1-F-13b2 slice C): 24x44, dmg 90, def 44,
     /// 1250 HP, noGravity + noTileCollide, alpha 100, kb 0.4, value 4500.
     Poltergeist,
     // ---- The Frost Moon wave family (`S1-F-13c` slice B): the eight kinds
-    // 345-352 (`NPCID.IceQueen` … `NPCID.Flocko`). Their SetDefaults arms are
+    // 345-352 (`NPCID.IceQueen` вЂ¦ `NPCID.Flocko`). Their SetDefaults arms are
     // `NPC.cs:13369-13487`; their `to_u16`/`from_u16` ride the VANILLA ids
-    // (345-352) — the frost wave rosters (`spawner.rs`'s `frost_moon_ladder`),
+    // (345-352) вЂ” the frost wave rosters (`spawner.rs`'s `frost_moon_ladder`),
     // `MOON_BOSS_SLOTS` and `CheckProgressFrostMoon`'s kill points all key on
     // the vanilla `NPC.type`, and these ids sit clear of the 0..188
     // port-local space (the 78..84 Deerclops/Prime band, `S1-F-1`). The
@@ -914,304 +916,304 @@ pub enum NpcKind {
     // `scale`/`alpha`/`boss` row (`NPC.cs:13369-13487`), so they spawn at
     // 1.0/0/false; the aiStyle-60/61/62/63 machines' stand-in routing is the
     // wave arm's documented deviation (ANALYSIS).
-    /// `NPCID.IceQueen` (345) — the wave's flying boss (`aiStyle 60`):
+    /// `NPCID.IceQueen` (345) вЂ” the wave's flying boss (`aiStyle 60`):
     /// 130x140, dmg 120, def 38, 34000 HP, kb 0, value 50000, noGravity +
     /// noTileCollide, npcSlots 5 (`NPC.cs:13369-13385`).
     IceQueen,
-    /// `NPCID.SantaNK1` (346) — the wave's other boss (`aiStyle 61`):
+    /// `NPCID.SantaNK1` (346) вЂ” the wave's other boss (`aiStyle 61`):
     /// 112x140, dmg 120, def 56, 18000 HP, kb 0, value 10000, npcSlots 4;
     /// the AI itself sets noGravity + noTileCollide (`NPC.cs:33684-33685`),
     /// so `SetDefaults` carries neither (`:13386-13399`).
     SantaNK1,
-    /// `NPCID.ElfCopter` (347) — the wave's flyer (`aiStyle 62`): 50x50,
+    /// `NPCID.ElfCopter` (347) вЂ” the wave's flyer (`aiStyle 62`): 50x50,
     /// dmg 60, def 28, 1200 HP, kb 0.4, value 1000, noGravity +
     /// noTileCollide, npcSlots 1.5 (`NPC.cs:13400-13415`).
     ElfCopter,
-    /// `NPCID.Nutcracker` (348) — the wave's aiStyle-3 walker: 28x76,
+    /// `NPCID.Nutcracker` (348) вЂ” the wave's aiStyle-3 walker: 28x76,
     /// dmg 80, def 26, 1800 HP, kb 0.4, value 1500, npcSlots 1.5
     /// (`NPC.cs:13416-13429`).
     Nutcracker,
-    /// `NPCID.NutcrackerSpinning` (349) — the walker's spinning twin
+    /// `NPCID.NutcrackerSpinning` (349) вЂ” the walker's spinning twin
     /// (`aiStyle 3`): 28x76, dmg 100, def 42, 1800 HP, kb 0.1, value 1500,
     /// npcSlots 1.5 (`NPC.cs:13430-13443`).
     NutcrackerSpinning,
-    /// `NPCID.ElfArcher` (350) — the wave's aiStyle-3 shooter: 18x40,
+    /// `NPCID.ElfArcher` (350) вЂ” the wave's aiStyle-3 shooter: 18x40,
     /// dmg 70, def 30, 900 HP, kb 0.45, value 900; npcSlots rides the class
     /// default 1f (`NPC.cs:13444-13456`).
     ElfArcher,
-    /// `NPCID.Krampus` (351) — the wave's aiStyle-3 walker: 18x90, dmg 100,
+    /// `NPCID.Krampus` (351) вЂ” the wave's aiStyle-3 walker: 18x90, dmg 100,
     /// def 40, 2500 HP, kb 0.1, value 3000, npcSlots 1.75
     /// (`NPC.cs:13457-13470`).
     Krampus,
-    /// `NPCID.Flocko` (352) — the wave's flyer (`aiStyle 63`): 54x54,
+    /// `NPCID.Flocko` (352) вЂ” the wave's flyer (`aiStyle 63`): 54x54,
     /// dmg 75, def 8, 450 HP, kb 0.4, value 500, noGravity + noTileCollide,
     /// npcSlots 2 (`NPC.cs:13471-13487`).
     Flocko,
     // ---- S1-D-3ff FindFrame coverage wave A (24 LOW-id kinds) ----
     // The slime group (`FindFrame`'s case 1/16/59/71/81/138/147/183/184/225
     // arm, `NPC.cs:70801-70846`): aiStyle 1, the 8-tick 2-row hop strip.
-    /// `NPCID.MotherSlime` (16, `NPCID.cs:10709`) — the jungle slime
+    /// `NPCID.MotherSlime` (16, `NPCID.cs:10709`) вЂ” the jungle slime
     /// (`SetDefaults` `NPC.cs:8963-8979`): 36x24, dmg 20, def 7, 90 HP,
     /// kb 0.6, value 75, alpha 120, scale 1.25, npcSlots 2.
     MotherSlime,
-    /// `NPCID.LavaSlime` (59, `NPCID.cs:10795`) — the underworld slime
+    /// `NPCID.LavaSlime` (59, `NPCID.cs:10795`) вЂ” the underworld slime
     /// (`NPC.cs:9516-9537`): 24x18, dmg 15, def 10, 50 HP, value 120,
     /// scale 1.1, alpha 50, lavaImmune (the remixWorld override is
-    /// unported — the port has no remix flag).
+    /// unported вЂ” the port has no remix flag).
     LavaSlime,
-    /// `NPCID.DungeonSlime` (71, `NPCID.cs:10819`) — the dungeon slime
+    /// `NPCID.DungeonSlime` (71, `NPCID.cs:10819`) вЂ” the dungeon slime
     /// (`NPC.cs:9697-9713`): 36x24, dmg 30, def 7, 150 HP, kb 0.6,
     /// value 150, alpha 60, scale 1.25, rarity 1, npcSlots 2.
     DungeonSlime,
-    /// `NPCID.CorruptSlime` (81, `NPCID.cs:10839`) — the corruption slime
+    /// `NPCID.CorruptSlime` (81, `NPCID.cs:10839`) вЂ” the corruption slime
     /// (`NPC.cs:9838-9851`): 40x30, dmg 55, def 20, 170 HP, value 400,
     /// alpha 55, scale 1.1.
     CorruptSlime,
-    /// `NPCID.IlluminantSlime` (138, `NPCID.cs:10953`) — the hallow slime
+    /// `NPCID.IlluminantSlime` (138, `NPCID.cs:10953`) вЂ” the hallow slime
     /// (`NPC.cs:10748-10762`): 24x18, dmg 70, def 30, 180 HP, kb 0.85,
     /// value 400, alpha 100, scale 1.05, DeathSound 6.
     IlluminantSlime,
-    /// `NPCID.IceSlime` (147, `NPCID.cs:10971`) — the snow slime
+    /// `NPCID.IceSlime` (147, `NPCID.cs:10971`) вЂ” the snow slime
     /// (`NPC.cs:10847+`): 24x18, dmg 8, def 4, 30 HP, value 50, alpha 50,
     /// coldDamage.
     IceSlime,
-    /// `NPCID.Crimslime` (183, `NPCID.cs:11043`) — the crimson slime
+    /// `NPCID.Crimslime` (183, `NPCID.cs:11043`) вЂ” the crimson slime
     /// (`NPC.cs:11332+`): 40x30, dmg 60, def 26, 200 HP, value 400,
     /// alpha 55, scale 1.1.
     Crimslime,
-    /// `NPCID.SpikedIceSlime` (184, `NPCID.cs:11045`) — the spiked snow
+    /// `NPCID.SpikedIceSlime` (184, `NPCID.cs:11045`) вЂ” the spiked snow
     /// slime (`NPC.cs:11346+`): 24x18, dmg 12, def 8, 60 HP, value 200,
     /// scale 1.1, alpha 50, coldDamage.
     SpikedIceSlime,
-    /// `NPCID.UmbrellaSlime` (225, `NPCID.cs:11127`) — the umbrella slime
+    /// `NPCID.UmbrellaSlime` (225, `NPCID.cs:11127`) вЂ” the umbrella slime
     /// (`NPC.cs:11898+`): 38x26, dmg 10, def 5, 35 HP, kb 0.75, value 200.
     UmbrellaSlime,
     // The eye group (`FindFrame`'s case 2/190-194 arm, `NPC.cs:73994-74059`):
     // aiStyle 2, the 8-tick 2-row strip with the atan2 aim + sprite flip.
-    /// `NPCID.CataractEye` (190, `NPCID.cs:11057`) — the demon-eye variant
+    /// `NPCID.CataractEye` (190, `NPCID.cs:11057`) вЂ” the demon-eye variant
     /// (`NPC.cs:11427-11439`): 30x32, dmg 18, def 4, 65 HP, kb 0.7,
     /// value 75.
     CataractEye,
-    /// `NPCID.SleepyEye` (191, `NPCID.cs:11059`) — (`NPC.cs:11440-11452`):
+    /// `NPCID.SleepyEye` (191, `NPCID.cs:11059`) вЂ” (`NPC.cs:11440-11452`):
     /// 30x32, dmg 16, def 2, 60 HP, kb 0.85, value 75.
     SleepyEye,
-    /// `NPCID.DialatedEye` (192, `NPCID.cs:11061`) — (`NPC.cs:11453-11465`):
+    /// `NPCID.DialatedEye` (192, `NPCID.cs:11061`) вЂ” (`NPC.cs:11453-11465`):
     /// 30x32, dmg 18, def 2, 50 HP, kb 0.8, value 75.
     DialatedEye,
-    /// `NPCID.GreenEye` (193, `NPCID.cs:11063`) — (`NPC.cs:11466-11478`):
+    /// `NPCID.GreenEye` (193, `NPCID.cs:11063`) вЂ” (`NPC.cs:11466-11478`):
     /// 30x32, dmg 20, def 0, 60 HP, kb 0.8, value 75.
     GreenEye,
-    /// `NPCID.PurpleEye` (194, `NPCID.cs:11065`) — (`NPC.cs:11479-11491`):
+    /// `NPCID.PurpleEye` (194, `NPCID.cs:11065`) вЂ” (`NPC.cs:11479-11491`):
     /// 30x32, dmg 14, def 4, 60 HP, kb 0.8, value 75.
     PurpleEye,
     // The walker group (`FindFrame`'s case 3/52/53/132/161/186-189/200/223
     // arm, `NPC.cs:76324-76391`): aiStyle 3, the 3-row walk strip.
-    /// `NPCID.DoctorBones` (52, `NPCID.cs:10781`) — the jungle rare walker
+    /// `NPCID.DoctorBones` (52, `NPCID.cs:10781`) вЂ” the jungle rare walker
     /// (`NPC.cs:9418-9431`): 18x40, dmg 20, def 10, 500 HP, kb 0.5,
     /// value 1000, rarity 2.
     DoctorBones,
-    /// `NPCID.TheGroom` (53, `NPCID.cs:10783`) — the blood-moon rare walker
+    /// `NPCID.TheGroom` (53, `NPCID.cs:10783`) вЂ” the blood-moon rare walker
     /// (`NPC.cs:9432-9445`): 18x40, dmg 14, def 8, 200 HP, kb 0.5,
     /// value 1000, rarity 2.
     TheGroom,
-    /// `NPCID.BaldZombie` (132, `NPCID.cs:10941`) — (`NPC.cs:10633-10645`):
+    /// `NPCID.BaldZombie` (132, `NPCID.cs:10941`) вЂ” (`NPC.cs:10633-10645`):
     /// 18x40, dmg 15, def 5, 40 HP, kb 0.5, value 65.
     BaldZombie,
-    /// `NPCID.ZombieEskimo` (161, `NPCID.cs:10999`) — the snow zombie
+    /// `NPCID.ZombieEskimo` (161, `NPCID.cs:10999`) вЂ” the snow zombie
     /// (`NPC.cs:11017-11029`): 18x40, dmg 16, def 8, 50 HP, kb 0.45,
     /// value 80.
     ZombieEskimo,
-    /// `NPCID.PincushionZombie` (186, `NPCID.cs:11049`) —
+    /// `NPCID.PincushionZombie` (186, `NPCID.cs:11049`) вЂ”
     /// (`NPC.cs:11375-11387`): 18x40, dmg 16, def 8, 50 HP, kb 0.45,
     /// value 65.
     PincushionZombie,
-    /// `NPCID.SlimedZombie` (187, `NPCID.cs:11051`) —
+    /// `NPCID.SlimedZombie` (187, `NPCID.cs:11051`) вЂ”
     /// (`NPC.cs:11388-11400`): 18x40, dmg 13, def 6, 40 HP, kb 0.55,
     /// value 55.
     SlimedZombie,
-    /// `NPCID.SwampZombie` (188, `NPCID.cs:11053`) —
+    /// `NPCID.SwampZombie` (188, `NPCID.cs:11053`) вЂ”
     /// (`NPC.cs:11401-11413`): 18x40, dmg 13, def 8, 45 HP, kb 0.45,
     /// value 80.
     SwampZombie,
-    /// `NPCID.TwiggyZombie` (189, `NPCID.cs:11055`) —
+    /// `NPCID.TwiggyZombie` (189, `NPCID.cs:11055`) вЂ”
     /// (`NPC.cs:11414-11426`): 18x40, dmg 16, def 4, 45 HP, kb 0.55,
     /// value 70.
     TwiggyZombie,
-    /// `NPCID.FemaleZombie` (200, `NPCID.cs:11077`) —
+    /// `NPCID.FemaleZombie` (200, `NPCID.cs:11077`) вЂ”
     /// (`NPC.cs:11559+`): 18x40, dmg 12, def 4, 38 HP, kb 0.6, value 65.
     FemaleZombie,
-    /// `NPCID.ZombieRaincoat` (223, `NPCID.cs:11123`) — the rain zombie
+    /// `NPCID.ZombieRaincoat` (223, `NPCID.cs:11123`) вЂ” the rain zombie
     /// (`NPC.cs:11872+`): 18x40, dmg 16, def 8, 50 HP, kb 0.45, value 70.
     ZombieRaincoat,
-    // S1-D-3z (zombie fighter audit) — the five holiday zombie variants.
+    // S1-D-3z (zombie fighter audit) вЂ” the five holiday zombie variants.
     // All aiStyle 3 (`AI_003_Fighters`), 18x40, the case-3 walk strip
     // (`NPC.cs:76338-76342`), `Main.npcFrameCount` 3 (`Main.cs:67115`/
     // `:67116`/`:67117`). The halloween trio (319-321) carries `scale` rows;
     // the xmas pair (331-332) is the base Zombie's stat twin.
-    /// `NPCID.ZombieDoctor` (319, `NPCID.cs:11315`) — the halloween zombie
+    /// `NPCID.ZombieDoctor` (319, `NPCID.cs:11315`) вЂ” the halloween zombie
     /// (`NPC.cs:13033-13046`): 18x40, dmg 20, def 6, 40 HP, kb 0.6,
     /// value 85, scale 0.9.
     ZombieDoctor,
-    /// `NPCID.ZombieSuperman` (320, `NPCID.cs:11317`) — the halloween zombie
+    /// `NPCID.ZombieSuperman` (320, `NPCID.cs:11317`) вЂ” the halloween zombie
     /// (`NPC.cs:13047-13060`): 18x40, dmg 15, def 8, 60 HP, kb 0.5,
     /// value 105, scale 1.05.
     ZombieSuperman,
-    /// `NPCID.ZombiePixie` (321, `NPCID.cs:11319`) — the halloween zombie
+    /// `NPCID.ZombiePixie` (321, `NPCID.cs:11319`) вЂ” the halloween zombie
     /// (`NPC.cs:13061-13074`): 18x40, dmg 20, def 14, 34 HP, kb 0.3,
     /// value 120, scale 1.1.
     ZombiePixie,
-    /// `NPCID.ZombieXmas` (331, `NPCID.cs:11339`) — the xmas zombie
+    /// `NPCID.ZombieXmas` (331, `NPCID.cs:11339`) вЂ” the xmas zombie
     /// (`NPC.cs:13204-13216`): 18x40, dmg 14, def 6, 45 HP, kb 0.5,
     /// value 60 (the base Zombie's stat twin, no scale row).
     ZombieXmas,
-    /// `NPCID.ZombieSweater` (332, `NPCID.cs:11341`) — the xmas zombie
+    /// `NPCID.ZombieSweater` (332, `NPCID.cs:11341`) вЂ” the xmas zombie
     /// (`NPC.cs:13217-13229`): 18x40, dmg 14, def 6, 45 HP, kb 0.5,
     /// value 60 (the base Zombie's stat twin, no scale row).
     ZombieSweater,
-    // S1-D-3z (zombie fighter audit) — the two blood-moon kinds.
-    /// `NPCID.BloodZombie` (489, `NPCID.cs:11651`) — the blood-moon
+    // S1-D-3z (zombie fighter audit) вЂ” the two blood-moon kinds.
+    /// `NPCID.BloodZombie` (489, `NPCID.cs:11651`) вЂ” the blood-moon
     /// zombie (`NPC.cs:14605-14617`): 18x40, aiStyle 3, dmg 20, def 8,
     /// 75 HP, kb 0.4, NPCHit18/NPCDeath21, value 150. The `num107` cap
     /// is the distance-scaled 489 row (`NPC.cs:58367`, already in
     /// `npc_ai3_speeds.rs`); the moan is the 489/586 `Next(800)` arm
     /// (`NPC.cs:57344`, already in `ambient_sound.rs`). NOT in the
-    /// door-bash `flag24` list (`:59996`) — it bashes, but its `ai[1]`
+    /// door-bash `flag24` list (`:59996`) вЂ” it bashes, but its `ai[1]`
     /// resets on non-blood-moon nights.
     BloodZombie,
-    /// `NPCID.Drippler` (490, `NPCID.cs:11653`) — the blood-moon flyer
+    /// `NPCID.Drippler` (490, `NPCID.cs:11653`) вЂ” the blood-moon flyer
     /// (`NPC.cs:14618-14631`): noGravity, 28x30, aiStyle 22, dmg 28,
     /// def 14, 50 HP, kb 0.6, NPCHit19/NPCDeath22, value 150. The
     /// aiStyle-22 machine's 490 branches ride `npc_ai_drippler.rs`.
     Drippler,
-    // W4-d38 b7 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
-    /// `NPCID.SlimeRibbonWhite` (333) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 7, def 2, 25 HP, kb 1.0, value 25.
+    // W4-d38 b7 вЂ” the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.SlimeRibbonWhite` (333) вЂ” `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 7, def 2, 25 HP, kb 1.0, value 25.
     SlimeRibbonWhite,
-    /// `NPCID.SlimeRibbonYellow` (334) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 6, def 2, 23 HP, kb 1.0, value 25; scale 0.9.
+    /// `NPCID.SlimeRibbonYellow` (334) вЂ” `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 6, def 2, 23 HP, kb 1.0, value 25; scale 0.9.
     SlimeRibbonYellow,
-    /// `NPCID.SlimeRibbonGreen` (335) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 8, def 3, 29 HP, kb 1.0, value 25; scale 1.05.
+    /// `NPCID.SlimeRibbonGreen` (335) вЂ” `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 8, def 3, 29 HP, kb 1.0, value 25; scale 1.05.
     SlimeRibbonGreen,
-    /// `NPCID.SlimeRibbonRed` (336) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 5, def 1, 22 HP, kb 1.0, value 25; scale 0.85.
+    /// `NPCID.SlimeRibbonRed` (336) вЂ” `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 5, def 1, 22 HP, kb 1.0, value 25; scale 0.85.
     SlimeRibbonRed,
-    /// `NPCID.BunnyXmas` (337) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2019.
+    /// `NPCID.BunnyXmas` (337) вЂ” `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2019.
     BunnyXmas,
-    // W4-d38 b6 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
-    /// `NPCID.DemonEyeSpaceship` (318) — `NPC.cs` SetDefaults: 30x32, aiStyle 2, dmg 20, def 4, 60 HP, kb 0.65, value 100.
+    // W4-d38 b6 вЂ” the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.DemonEyeSpaceship` (318) вЂ” `NPC.cs` SetDefaults: 30x32, aiStyle 2, dmg 20, def 4, 60 HP, kb 0.65, value 100.
     DemonEyeSpaceship,
-    /// `NPCID.SkeletonTopHat` (322) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 23, def 0, 115 HP, kb 0.65, value 130.
+    /// `NPCID.SkeletonTopHat` (322) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 23, def 0, 115 HP, kb 0.65, value 130.
     SkeletonTopHat,
-    /// `NPCID.SkeletonAstonaut` (323) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 18, def 10, 65 HP, kb 0.5, value 120.
+    /// `NPCID.SkeletonAstonaut` (323) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 18, def 10, 65 HP, kb 0.5, value 120.
     SkeletonAstonaut,
-    /// `NPCID.SkeletonAlien` (324) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 22, def 10, 70 HP, kb 0.4, value 130; scale 1.05.
+    /// `NPCID.SkeletonAlien` (324) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 22, def 10, 70 HP, kb 0.4, value 130; scale 1.05.
     SkeletonAlien,
-    /// `NPCID.PumpkingBlade` (328) — `NPC.cs` SetDefaults: 80x80, aiStyle 59, dmg 65, def 14, 5000 HP, kb 0.0, value 0; noGravity, noTileCollide, dontTakeDamage.
+    /// `NPCID.PumpkingBlade` (328) вЂ” `NPC.cs` SetDefaults: 80x80, aiStyle 59, dmg 65, def 14, 5000 HP, kb 0.0, value 0; noGravity, noTileCollide, dontTakeDamage.
     PumpkingBlade,
-    // W4-d38 b5 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
-    /// `NPCID.SlimeMasked` (302) — `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 7, def 2, 25 HP, kb 1.0, value 25.
+    // W4-d38 b5 вЂ” the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.SlimeMasked` (302) вЂ” `NPC.cs` SetDefaults: 24x18, aiStyle 1, dmg 7, def 2, 25 HP, kb 1.0, value 25.
     SlimeMasked,
-    /// `NPCID.BunnySlimed` (303) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2019.
+    /// `NPCID.BunnySlimed` (303) вЂ” `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2019.
     BunnySlimed,
-    /// `NPCID.HoppinJack` (304) — `NPC.cs` SetDefaults: 34x28, aiStyle 1, dmg 80, def 20, 175 HP, kb 0.5, value 500; scale 1.1.
+    /// `NPCID.HoppinJack` (304) вЂ” `NPC.cs` SetDefaults: 34x28, aiStyle 1, dmg 80, def 20, 175 HP, kb 0.5, value 500; scale 1.1.
     HoppinJack,
-    /// `NPCID.Ghost` (316) — `NPC.cs` SetDefaults: 24x44, aiStyle 22, dmg 15, def 4, 50 HP, kb 0.5, value 90; noGravity, noTileCollide, alpha 100.
+    /// `NPCID.Ghost` (316) вЂ” `NPC.cs` SetDefaults: 24x44, aiStyle 22, dmg 15, def 4, 50 HP, kb 0.5, value 90; noGravity, noTileCollide, alpha 100.
     Ghost,
-    /// `NPCID.DemonEyeOwl` (317) — `NPC.cs` SetDefaults: 30x32, aiStyle 2, dmg 16, def 6, 75 HP, kb 0.7, value 100.
+    /// `NPCID.DemonEyeOwl` (317) вЂ” `NPC.cs` SetDefaults: 30x32, aiStyle 2, dmg 16, def 6, 75 HP, kb 0.7, value 100.
     DemonEyeOwl,
-    // W4-d38 b4 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
-    /// `NPCID.BirdBlue` (297) — `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2016.
+    // W4-d38 b4 вЂ” the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.BirdBlue` (297) вЂ” `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2016.
     BirdBlue,
-    /// `NPCID.BirdRed` (298) — `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2017.
+    /// `NPCID.BirdRed` (298) вЂ” `NPC.cs` SetDefaults: 14x14, aiStyle 24, dmg 0, def 0, 5 HP, kb 0.8, value 0; catchItem 2017.
     BirdRed,
-    /// `NPCID.Squirrel` (299) — `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2018.
+    /// `NPCID.Squirrel` (299) вЂ” `NPC.cs` SetDefaults: 18x20, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2018.
     Squirrel,
-    /// `NPCID.Mouse` (300) — `NPC.cs` SetDefaults: 14x12, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2003.
+    /// `NPCID.Mouse` (300) вЂ” `NPC.cs` SetDefaults: 14x12, aiStyle 7, dmg 0, def 0, 5 HP, kb 1.0, value 0; catchItem 2003.
     Mouse,
-    /// `NPCID.Raven` (301) — `NPC.cs` SetDefaults: 36x26, aiStyle 17, dmg 12, def 2, 35 HP, kb 0.85, value 50.
+    /// `NPCID.Raven` (301) вЂ” `NPC.cs` SetDefaults: 36x26, aiStyle 17, dmg 12, def 2, 35 HP, kb 0.85, value 50.
     Raven,
-    // W4-d38 b3 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
-    /// `NPCID.TacticalSkeleton` (292) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    // W4-d38 b3 вЂ” the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.TacticalSkeleton` (292) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
     TacticalSkeleton,
-    /// `NPCID.SkeletonCommando` (293) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    /// `NPCID.SkeletonCommando` (293) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
     SkeletonCommando,
-    /// `NPCID.AngryBonesBig` (294) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 34, def 6, 70 HP, kb 0.9, value 130.
+    /// `NPCID.AngryBonesBig` (294) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 34, def 6, 70 HP, kb 0.9, value 130.
     AngryBonesBig,
-    /// `NPCID.AngryBonesBigMuscle` (295) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 28, def 12, 70 HP, kb 0.7, value 130.
+    /// `NPCID.AngryBonesBigMuscle` (295) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 28, def 12, 70 HP, kb 0.7, value 130.
     AngryBonesBigMuscle,
-    /// `NPCID.AngryBonesBigHelmet` (296) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 24, def 14, 120 HP, kb 0.6, value 130.
+    /// `NPCID.AngryBonesBigHelmet` (296) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 24, def 14, 120 HP, kb 0.6, value 130.
     AngryBonesBigHelmet,
-    // W4-d38 b2 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
-    /// `NPCID.DiabolistWhite` (286) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 60, def 10, 250 HP, kb 0.65, value 1500.
+    // W4-d38 b2 вЂ” the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.DiabolistWhite` (286) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 60, def 10, 250 HP, kb 0.65, value 1500.
     DiabolistWhite,
-    /// `NPCID.BoneLee` (287) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 90, def 42, 1000 HP, kb 0.3, value 2000.
+    /// `NPCID.BoneLee` (287) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 90, def 42, 1000 HP, kb 0.3, value 2000.
     BoneLee,
-    /// `NPCID.GiantCursedSkull` (289) — `NPC.cs` SetDefaults: 44x44, aiStyle 10, dmg 60, def 20, 400 HP, kb 0.2, value 150; noGravity, noTileCollide.
+    /// `NPCID.GiantCursedSkull` (289) вЂ” `NPC.cs` SetDefaults: 44x44, aiStyle 10, dmg 60, def 20, 400 HP, kb 0.2, value 150; noGravity, noTileCollide.
     GiantCursedSkull,
-    /// `NPCID.Paladin` (290) — `NPC.cs` SetDefaults: 34x62, aiStyle 3, dmg 100, def 50, 5000 HP, kb 0.0, value 50000.
+    /// `NPCID.Paladin` (290) вЂ” `NPC.cs` SetDefaults: 34x62, aiStyle 3, dmg 100, def 50, 5000 HP, kb 0.0, value 50000.
     Paladin,
-    /// `NPCID.SkeletonSniper` (291) — `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
+    /// `NPCID.SkeletonSniper` (291) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 3, dmg 60, def 28, 400 HP, kb 0.4, value 1000.
     SkeletonSniper,
-    // W4-d38 b1 — the kinds of this batch (vanilla ids, SetDefaults verbatim).
-    /// `NPCID.RaggedCaster` (281) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 40, def 20, 400 HP, kb 0.6, value 1500.
+    // W4-d38 b1 вЂ” the kinds of this batch (vanilla ids, SetDefaults verbatim).
+    /// `NPCID.RaggedCaster` (281) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 40, def 20, 400 HP, kb 0.6, value 1500.
     RaggedCaster,
-    /// `NPCID.RaggedCasterOpenCoat` (282) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 28, 450 HP, kb 0.5, value 1500.
+    /// `NPCID.RaggedCasterOpenCoat` (282) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 28, 450 HP, kb 0.5, value 1500.
     RaggedCasterOpenCoat,
-    /// `NPCID.Necromancer` (283) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 18, 300 HP, kb 0.55, value 1500.
+    /// `NPCID.Necromancer` (283) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 18, 300 HP, kb 0.55, value 1500.
     Necromancer,
-    /// `NPCID.NecromancerArmored` (284) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 24, 450 HP, kb 0.5, value 1500.
+    /// `NPCID.NecromancerArmored` (284) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 35, def 24, 450 HP, kb 0.5, value 1500.
     NecromancerArmored,
-    /// `NPCID.DiabolistRed` (285) — `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 12, 200 HP, kb 0.7, value 1500.
+    /// `NPCID.DiabolistRed` (285) вЂ” `NPC.cs` SetDefaults: 18x40, aiStyle 8, dmg 50, def 12, 200 HP, kb 0.7, value 1500.
     DiabolistRed,
-    /// `NPCID.ZombieElf` (338) — the Frost Moon wave's walker (`aiStyle 3`):
+    /// `NPCID.ZombieElf` (338) вЂ” the Frost Moon wave's walker (`aiStyle 3`):
     /// 18x40, dmg 65, def 18, 600 HP, kb 0.4, value 1200, npcSlots 0.5
     /// (`NPC.cs:13281-13296`).
     ZombieElf,
-    /// `NPCID.ZombieElfBeard` (339) — the 338 sibling: dmg 52, def 24,
+    /// `NPCID.ZombieElfBeard` (339) вЂ” the 338 sibling: dmg 52, def 24,
     /// 700 HP, kb 0.2, scale 1.05 (`NPC.cs:13297-13304`).
     ZombieElfBeard,
-    /// `NPCID.ZombieElfGirl` (340) — the 338 sibling: dmg 78, def 14,
+    /// `NPCID.ZombieElfGirl` (340) вЂ” the 338 sibling: dmg 78, def 14,
     /// 500 HP, kb 0.25, scale 0.9 (`NPC.cs:13305-13312`).
     ZombieElfGirl,
-    /// `NPCID.PresentMimic` (341) — the wave's chest machine (`aiStyle 25`):
+    /// `NPCID.PresentMimic` (341) вЂ” the wave's chest machine (`aiStyle 25`):
     /// 24x24, dmg 100, def 32, 900 HP, kb 0.25, value 2000
     /// (`Item.buyPrice(0, 0, 20)`, `NPC.cs:13314-13326`). The true machine
-    /// lands with the bespoke slice — slice A routes it to the walker
+    /// lands with the bespoke slice вЂ” slice A routes it to the walker
     /// stand-in (ANALYSIS records it).
     PresentMimic,
-    /// `NPCID.GingerbreadMan` (342) — the wave walker (`aiStyle 3`): 18x40,
+    /// `NPCID.GingerbreadMan` (342) вЂ” the wave walker (`aiStyle 3`): 18x40,
     /// dmg 90, def 26, 750 HP, kb 0.2, value 1800 (`NPC.cs:13327-13339`).
     GingerbreadMan,
-    /// `NPCID.Yeti` (343) — the wave's heavy walker (`aiStyle 3`): 38x78,
+    /// `NPCID.Yeti` (343) вЂ” the wave's heavy walker (`aiStyle 3`): 38x78,
     /// dmg 140, def 50, 3500 HP, kb 0, value 3000, npcSlots 2, coldDamage
     /// (`NPC.cs:13340-13354`).
     Yeti,
-    /// `NPCID.Everscream` (344) — the Frost Moon boss (`aiStyle 57`):
+    /// `NPCID.Everscream` (344) вЂ” the Frost Moon boss (`aiStyle 57`):
     /// 172x130, dmg 110, def 38, 13000 HP, kb 0, value 10000, npcSlots 3
     /// (`NPC.cs:13355-13368`). The true machine lands with the bespoke
-    /// slice — slice A routes it to the Mourning Wood hover stand-in.
+    /// slice вЂ” slice A routes it to the Mourning Wood hover stand-in.
     Everscream,
-    /// `NPCID.DukeFishron` (370, `NPCID.cs:11417`) — the ocean boss
+    /// `NPCID.DukeFishron` (370, `NPCID.cs:11417`) вЂ” the ocean boss
     /// (`NPC.cs:13701-13718`): 150x100, aiStyle 69, dmg 100, def 50,
     /// 60000 HP, kb 0, noTileCollide + noGravity, npcSlots 10,
     /// value 25 gold, boss, netAlways. S1-D-3 W-9 wiring: the faithful
     /// `npc_ai_fishron::fishron_ai_step` machine claims the aiStyle-69
     /// axis arm (`AI_069_DukeFishron`, `NPC.cs:48774-49754`).
     DukeFishron,
-    /// `NPCID.DetonatingBubble` (371, `NPCID.cs:11419`) — Fishron's
+    /// `NPCID.DetonatingBubble` (371, `NPCID.cs:11419`) вЂ” Fishron's
     /// hazard (`NPC.cs:13719-13733`): 36x36, aiStyle 70, dmg 100, def 0,
     /// 1 HP, kb 0, noGravity + noTileCollide, alpha 255. The faithful
     /// `npc_ai_style70::ai_style70` arm claims aiStyle 70
     /// (`NPC.cs:34884-34957`).
     DetonatingBubble,
-    /// `NPCID.Sharkron` (372, `NPCID.cs:11421`) — the Sharknado bolt's
+    /// `NPCID.Sharkron` (372, `NPCID.cs:11421`) вЂ” the Sharknado bolt's
     /// shark (`NPC.cs:13734-13747`): 120x24, aiStyle 71, dmg 100,
     /// def 100, 100 HP, kb 0, noGravity, alpha 255. The faithful
     /// `npc_ai_style71::ai_style71` arm claims aiStyle 71
     /// (`NPC.cs:34958-35079`).
     Sharkron,
-    /// `NPCID.Sharkron2` (373, `NPCID.cs:11423`) — the Greater
+    /// `NPCID.Sharkron2` (373, `NPCID.cs:11423`) вЂ” the Greater
     /// Sharknado's rising, swaying shark (`NPC.cs:13748-13761`):
     /// 100x24, dmg 120, the rest of the 372 row.
     Sharkron2,
-    /// `NPCID.BlazingWheel` (72) — the dungeon's ricochet trap
+    /// `NPCID.BlazingWheel` (72) вЂ” the dungeon's ricochet trap
     /// (`aiStyle 21`): 34x34, dmg 24, def 100, 100 HP, kb 0, alpha 100,
     /// behindTiles, noGravity, dontTakeDamage, scale 1.2
     /// (`NPC.cs:9714-9731`). WIRED by the small-kinds wave: the style
@@ -1219,329 +1221,329 @@ pub enum NpcKind {
     /// `collision_move_blazing_wheel`. The protocol id is 353 (the
     /// vanilla 72 slot is the MartianWalker's, `to_u16`'s guard).
     BlazingWheel,
-    /// `NPCID.AngryNimbus` (250) — the rain cloud (`aiStyle 49`): 34x26,
+    /// `NPCID.AngryNimbus` (250) вЂ” the rain cloud (`aiStyle 49`): 34x26,
     /// dmg 50, def 24, 300 HP, kb 0.3, value 300 (`NPC.cs:12221-12233`).
     /// WIRED: the axis' 49 arm rides `npc_ai_style49::nimbus_step`.
     AngryNimbus,
-    /// `NPCID.DungeonSpirit` (288) — the post-Plantera dungeon wisp
+    /// `NPCID.DungeonSpirit` (288) вЂ” the post-Plantera dungeon wisp
     /// (`aiStyle 56`): 20x20, dmg 70, def 30, 200 HP, kb 0.2, value 500,
     /// noTileCollide, noGravity (`NPC.cs:12738-12752`). WIRED: the
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
-    /// `NPCID.AngryBones` (31) — the dungeon walker (`aiStyle 3`): 18x40,
+    /// `NPCID.AngryBones` (31) вЂ” the dungeon walker (`aiStyle 3`): 18x40,
     /// dmg 26, def 8, 80 HP, kb 0.8, value 130, NPCHit2/NPCDeath2
     /// (`NPC.cs:9108-9120`). The `num83` walk group (`NPC.cs:57606`).
     AngryBones,
-    /// `NPCID.CursedSkull` (34) — the dungeon caster-skull (`aiStyle 10`):
+    /// `NPCID.CursedSkull` (34) вЂ” the dungeon caster-skull (`aiStyle 10`):
     /// 26x28, dmg 35, def 6, 40 HP, kb 0.2, value 150, npcSlots 0.75,
     /// noGravity + noTileCollide, NPCHit2/NPCDeath2 (`NPC.cs:9150-9165`).
     /// WIRED: the kind arm rides `npc_ai_style10::style10_ai`.
     CursedSkull,
-    /// `NPCID.OldMan` (37) — the dungeon's town-flagged NPC (`aiStyle 7`):
+    /// `NPCID.OldMan` (37) вЂ” the dungeon's town-flagged NPC (`aiStyle 7`):
     /// 18x40, dmg 10, def 15, 250 HP, kb 0.5, townNPC + friendly,
     /// NPCHit1/NPCDeath1 (`NPC.cs:9197-9210`). The town wander stand-in.
     OldMan,
-    /// `NPCID.ManEater` (43) — the jungle's anchored biter (`aiStyle 13`):
+    /// `NPCID.ManEater` (43) вЂ” the jungle's anchored biter (`aiStyle 13`):
     /// 30x30, dmg 34, def 10, 110 HP, kb 0, value 350, noGravity +
     /// noTileCollide, NPCHit1/NPCDeath1 (`NPC.cs:9293-9307`). The style-13
     /// plant machine is UNWIRED (the wyvern precedent); the identity rows
     /// and the FindFrame arm ship here.
     ManEater,
-    /// `NPCID.Bunny` (46) — the surface critter (`aiStyle 7`): 18x20,
+    /// `NPCID.Bunny` (46) вЂ” the surface critter (`aiStyle 7`): 18x20,
     /// dmg 0, def 0, 5 HP, catchItem 2019, NPCHit1/NPCDeath1
     /// (`NPC.cs:9336-9347`). The catchable arm spawns it friendly with the
     /// 90-tick window (`bug_net::npc_catchable`).
-    /// `NPCID.BoneSerpentHead` (39) — the underworld worm head (`aiStyle 6`):
+    /// `NPCID.BoneSerpentHead` (39) вЂ” the underworld worm head (`aiStyle 6`):
     /// 22x22, dmg 36, def 12, 300 HP, kb 0, value 1200, npcSlots 6, netAlways,
     /// noGravity + noTileCollide, behindTiles, NPCHit2/NPCDeath5
     /// (`NPC.cs:9225-9242`). WIRED: the chain rides the world-sim worm pass
     /// (`AI_006`, the Devourer precedent); the head's 9/0.1 dig tunables
     /// (`NPC.cs:51764-51767`) and the 14..23 budget (`:51319-51321`).
     BoneSerpentHead,
-    /// `NPCID.BoneSerpentBody` (40) — the Bone Serpent's mid link (`aiStyle 6`):
+    /// `NPCID.BoneSerpentBody` (40) вЂ” the Bone Serpent's mid link (`aiStyle 6`):
     /// 22x22, dmg 20, def 18, 300 HP, kb 0, value 1200, netAlways, noGravity +
     /// noTileCollide, behindTiles, dontCountMe, NPCHit2/NPCDeath5
     /// (`NPC.cs:9243-9260`). Hide=true bestiary fold onto the head
     /// (`NPCID.cs:1527-1532`).
     BoneSerpentBody,
-    /// `NPCID.BoneSerpentTail` (41) — the Bone Serpent's tail (`aiStyle 6`):
+    /// `NPCID.BoneSerpentTail` (41) вЂ” the Bone Serpent's tail (`aiStyle 6`):
     /// 22x22, dmg 16, def 18, 300 HP, kb 0, value 1200, netAlways, noGravity +
     /// noTileCollide, behindTiles, dontCountMe, NPCHit2/NPCDeath5
     /// (`NPC.cs:9261-9278`). Hide=true bestiary fold onto the head
     /// (`NPCID.cs:1533-1539`).
     BoneSerpentTail,
-    /// `NPCID.CorruptBunny` (47) — the corruption's bunny fighter (`aiStyle 3`):
+    /// `NPCID.CorruptBunny` (47) вЂ” the corruption's bunny fighter (`aiStyle 3`):
     /// 18x20, dmg 20, def 4, 70 HP, value 500, NPCHit1/NPCDeath1
     /// (`NPC.cs:9348-9359`). The `num83` walk group (`NPC.cs:57606`); the
     /// FindFrame case-46 hop (`:76852`).
     CorruptBunny,
-    /// `NPCID.Harpy` (48) — the sky flyer (`aiStyle 14`): 24x34, dmg 25, def 8,
+    /// `NPCID.Harpy` (48) вЂ” the sky flyer (`aiStyle 14`): 24x34, dmg 25, def 8,
     /// 100 HP, kb 0.6, value 300, NPCHit1/NPCDeath1 (`NPC.cs:9360-9372`).
     /// WIRED: the kind arm rides the faithful `npc_ai_style14::bat_ai`; the
     /// feather shot (`:23416-23436`) is UNWIRED (the module's documented skip).
     Harpy,
-    /// `NPCID.Snatcher` (56) — the jungle plant (`aiStyle 13`): 30x30, dmg 25,
+    /// `NPCID.Snatcher` (56) вЂ” the jungle plant (`aiStyle 13`): 30x30, dmg 25,
     /// def 10, 60 HP, kb 0, value 90, noGravity + noTileCollide,
     /// NPCHit1/NPCDeath1 (`NPC.cs:9474-9488`). UNWIRED: the aiStyle-13 plant
     /// machine needs the anchor tile + `FixExploitManEaters` (the ManEater
-    /// precedent — identity rows ship).
+    /// precedent вЂ” identity rows ship).
     Snatcher,
-    /// `NPCID.CorruptGoldfish` (57) — the corruption's fish fighter
-    /// (`aiStyle 16`): 18x20, dmg 30, def 6, 100 HP, kb 1 (no row — the class
+    /// `NPCID.CorruptGoldfish` (57) вЂ” the corruption's fish fighter
+    /// (`aiStyle 16`): 18x20, dmg 30, def 6, 100 HP, kb 1 (no row вЂ” the class
     /// default `:8533`), value 500, noGravity, NPCHit1/NPCDeath1
     /// (`NPC.cs:9489-9501`). WIRED: the kind arm rides the faithful
     /// `npc_ai_style16::ai_016_step` (the Goldfish machine); the FindFrame
     /// case-57 group (`:74182-74226`).
     CorruptGoldfish,
-    /// `NPCID.Vulture` (61) — the desert flyer (`aiStyle 17`): 36x36, dmg 15,
+    /// `NPCID.Vulture` (61) вЂ” the desert flyer (`aiStyle 17`): 36x36, dmg 15,
     /// def 4, 40 HP, kb 0.8, value 60, NPCHit28/NPCDeath31
     /// (`NPC.cs:9554-9566`). WIRED: the faithful aiStyle-17 perch/flight
     /// machine (`NPC.cs:24022-24152`); the FindFrame case-61 6-row flap
     /// (`:73537-73557`).
     Vulture,
-    /// `NPCID.Demon` (62) — the underworld flyer (`aiStyle 14`): 28x48,
+    /// `NPCID.Demon` (62) вЂ” the underworld flyer (`aiStyle 14`): 28x48,
     /// dmg 32, def 8, 120 HP, kb 0.8, value 300, npcSlots 2, lavaImmune,
     /// NPCHit21/NPCDeath24 (`NPC.cs:9567-9581`). WIRED: the kind arm rides
-    /// the faithful `npc_ai_style14::bat_ai` — the type-62 Demon Sickle shot
+    /// the faithful `npc_ai_style14::bat_ai` вЂ” the type-62 Demon Sickle shot
     /// (`:23437-23457`) drains through `wants_hostile_shot`.
     Demon,
-    /// `NPCID.BlueJellyfish` (63) — the cavern water floater (`aiStyle 18`):
-    /// 26x26, dmg 25, def 4, 34 HP, kb 1 (no row — the class default
+    /// `NPCID.BlueJellyfish` (63) вЂ” the cavern water floater (`aiStyle 18`):
+    /// 26x26, dmg 25, def 4, 34 HP, kb 1 (no row вЂ” the class default
     /// `:8533`), value 100, noGravity, alpha 20, NPCHit25/NPCDeath28
     /// (`NPC.cs:9582-9595`). WIRED: the faithful aiStyle-18 drift machine
     /// (`NPC.cs:24153-24406`); the expert shock arm (`:24164-24203`) is
     /// single-difficulty-off and the per-tick light (`:24209-24220`) is the
     /// documented draw-side skip.
     BlueJellyfish,
-    // W4-d34 merge-side drop (367 §1, d37 tables): PinkJellyfish (64) is
-    // owned by g8@745 — d34@281's duplicate port dropped at the wave-1
+    // W4-d34 merge-side drop (367 В§1, d37 tables): PinkJellyfish (64) is
+    // owned by g8@745 вЂ” d34@281's duplicate port dropped at the wave-1
     // splice; g8 lands the canonical row + wiring.
-    /// `NPCID.Crab` (67) — the ocean shore walker (`aiStyle 3`): 28x20,
-    /// dmg 20, def 10, 40 HP, kb 1 (no row — the class default `:8533`),
+    /// `NPCID.Crab` (67) вЂ” the ocean shore walker (`aiStyle 3`): 28x20,
+    /// dmg 20, def 10, 40 HP, kb 1 (no row вЂ” the class default `:8533`),
     /// value 60, NPCHit1/NPCDeath1 (`NPC.cs:9640-9651`). WIRED: the kind arm
     /// rides the aiStyle-3 walker (`update_skeleton`) at the 67/220/428 slow
     /// cap 0.5 (`NPC.cs:57881-57906`); the FindFrame case-67 6-tick wrap over
     /// the 8-row strip (`:74571-74589`).
     Crab,
-    /// `NPCID.DungeonGuardian` (68) — the dungeon's enraged head
+    /// `NPCID.DungeonGuardian` (68) вЂ” the dungeon's enraged head
     /// (`aiStyle 11`): 80x102, dmg/def/life 9999, kb 0, no value,
     /// noGravity + noTileCollide, NPCHit2/NPCDeath2 (`NPC.cs:9652-9665`).
-    /// WIRED: the kind arm rides `update_skeletron` — the type-68 term of
+    /// WIRED: the kind arm rides `update_skeletron` вЂ” the type-68 term of
     /// the enrage gate (`:21958`) keeps it ALWAYS in the invulnerable 8-px
     /// rush state 2; the first-tick roar latch (`:21943`) already reads
     /// cs_id 68. The sim's hand-spawn pass keys on SkeletronHead, so no
     /// hands spawn (`:21928` excludes 68). ImmuneToAllBuffsThatAreNotWhips +
-    /// ImmuneToWhips (`NPCID.cs:6495-6501`) — the mask rides the documented
+    /// ImmuneToWhips (`NPCID.cs:6495-6501`) вЂ” the mask rides the documented
     /// `&[]` gap, the whip tag rides `whip_immune`.
     DungeonGuardian,
-    // W4-d34 merge-side drops (367 §1, d37 tables): Antlion (69) is owned
-    // by g8@746 and SpikeBall (70) by g8@747 — d34@284/285's duplicate
+    // W4-d34 merge-side drops (367 В§1, d37 tables): Antlion (69) is owned
+    // by g8@746 and SpikeBall (70) by g8@747 вЂ” d34@284/285's duplicate
     // ports dropped at the wave-1 splice; g8 lands the canonical rows +
     // wiring.
-    // ---- W4-d37 — the NPCID 211-280 kinds-coverage band (census 65, 46
+    // ---- W4-d37 вЂ” the NPCID 211-280 kinds-coverage band (census 65, 46
     // missing ids). Every row is the kind's `SetDefaults` block verbatim
     // (the `NPC.cs` cites); the protocol ids ride the port-local 354-399
     // band (`to_u16`), the vanilla `NPC.type` rides `cs_id`/`net_id`. ----
-    /// `NPCID.CochinealBeetle` (217, `NPCID.cs:11111`) — the cavern beetle
+    /// `NPCID.CochinealBeetle` (217, `NPCID.cs:11111`) вЂ” the cavern beetle
     /// (`NPC.cs:11788-11800`): 28x20, aiStyle 3, dmg 20, def 10, 40 HP,
     /// NPCHit1/NPCDeath16, value 60, rarity 1. The `num83` walk cap is the
     /// 1.5f group base (`NPC.cs:57606`, no per-type override).
     CochinealBeetle,
-    /// `NPCID.CyanBeetle` (218, `NPCID.cs:11113`) — the snow beetle
+    /// `NPCID.CyanBeetle` (218, `NPCID.cs:11113`) вЂ” the snow beetle
     /// (`NPC.cs:11801-11813`): the 217 stat twin (28x20, aiStyle 3, dmg 20,
     /// def 10, 40 HP, NPCHit1/NPCDeath16, value 60, rarity 1).
     CyanBeetle,
-    /// `NPCID.LacBeetle` (219, `NPCID.cs:11115`) — the jungle beetle
+    /// `NPCID.LacBeetle` (219, `NPCID.cs:11115`) вЂ” the jungle beetle
     /// (`NPC.cs:11814-11826`): the 217 stat twin (28x20, aiStyle 3, dmg 20,
     /// def 10, 40 HP, NPCHit1/NPCDeath16, value 60, rarity 1).
     LacBeetle,
-    /// `NPCID.SeaSnail` (220, `NPCID.cs:11117`) — the ocean snail
+    /// `NPCID.SeaSnail` (220, `NPCID.cs:11117`) вЂ” the ocean snail
     /// (`NPC.cs:11827-11839`): 28x20, aiStyle 3, dmg 20, def 10, 40 HP,
     /// NPCHit1/NPCDeath1, value 60, rarity 2. The slow 0.5f walk cap
     /// (`NPC.cs:57881-57906`, the 67/220/428 arm).
     SeaSnail,
-    /// `NPCID.Squid` (221, `NPCID.cs:11119`) — the ocean squid
+    /// `NPCID.Squid` (221, `NPCID.cs:11119`) вЂ” the ocean squid
     /// (`NPC.cs:11840-11854`): noGravity, 26x26, aiStyle 18, dmg 20, def 2,
     /// 30 HP, NPCHit1/NPCDeath1, value 100, alpha 20, rarity 1.
     Squid,
-    /// `NPCID.FlyingFish` (224, `NPCID.cs:11125`) — the rain flyer
+    /// `NPCID.FlyingFish` (224, `NPCID.cs:11125`) вЂ” the rain flyer
     /// (`NPC.cs:11885-11897`): 32x18, aiStyle 44, dmg 9, def 4, 20 HP,
     /// NPCHit1/NPCDeath1, kb 0.8, value 300. The faithful style-44 machine
     /// (`npc_ai_style44.rs`) claims the axis arm.
     FlyingFish,
-    /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) — the temple flyer
+    /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) вЂ” the temple flyer
     /// (`NPC.cs:11911-11924`): npcSlots 0.5, 34x50, aiStyle 14, dmg 85,
     /// def 28, 260 HP, NPCHit23/NPCDeath26, kb 0.65, value 400.
     FlyingSnake,
-    /// `NPCID.Pirate` (229, `NPCID.cs:11135`) — the pirate-invasion town
+    /// `NPCID.Pirate` (229, `NPCID.cs:11135`) вЂ” the pirate-invasion town
     /// NPC (`NPC.cs:11953-11966`): townNPC + friendly, 18x40, aiStyle 7,
     /// dmg 10, def 15, 250 HP, NPCHit1/NPCDeath1, kb 0.5.
     Pirate,
-    /// `NPCID.GoldfishWalker` (230, `NPCID.cs:11137`) — the rain critter
+    /// `NPCID.GoldfishWalker` (230, `NPCID.cs:11137`) вЂ” the rain critter
     /// (`NPC.cs:11967-11978`): 18x20, aiStyle 7, dmg 0, def 0, 5 HP,
     /// NPCHit1/NPCDeath1, catchItem 261. Hide=true bestiary draw modifier
-    /// (`NPCID.cs:616-620`) — folds onto the Goldfish (55) credit.
+    /// (`NPCID.cs:616-620`) вЂ” folds onto the Goldfish (55) credit.
     GoldfishWalker,
-    /// `NPCID.HornetFatty` (231, `NPCID.cs:11139`) — the jungle hornet
+    /// `NPCID.HornetFatty` (231, `NPCID.cs:11139`) вЂ” the jungle hornet
     /// variant (`NPC.cs:11979-11992`): 34x32, aiStyle 5, dmg 22, def 16,
     /// 50 HP, NPCHit1/NPCDeath1, kb 0.3, value 200, noGravity. The AI_005
     /// type-231 row: num 3 / num2 0.017 (`NPC.cs:50345-50348`).
     HornetFatty,
-    /// `NPCID.HornetHoney` (232, `NPCID.cs:11141`) — (`NPC.cs:11993-12006`):
+    /// `NPCID.HornetHoney` (232, `NPCID.cs:11141`) вЂ” (`NPC.cs:11993-12006`):
     /// 34x32, aiStyle 5, dmg 28, def 12, 42 HP, NPCHit1/NPCDeath1, kb 0.6,
     /// value 200, noGravity. The AI_005 num 3.5 / num2 0.021 family row.
     HornetHoney,
-    /// `NPCID.HornetLeafy` (233, `NPCID.cs:11143`) — (`NPC.cs:12007-12020`):
+    /// `NPCID.HornetLeafy` (233, `NPCID.cs:11143`) вЂ” (`NPC.cs:12007-12020`):
     /// 34x32, aiStyle 5, dmg 30, def 14, 38 HP, NPCHit1/NPCDeath1, kb 0.45,
     /// value 200, noGravity.
     HornetLeafy,
-    /// `NPCID.HornetSpikey` (234, `NPCID.cs:11145`) — (`NPC.cs:12021-12034`):
+    /// `NPCID.HornetSpikey` (234, `NPCID.cs:11145`) вЂ” (`NPC.cs:12021-12034`):
     /// 34x32, aiStyle 5, dmg 32, def 6, 42 HP, NPCHit1/NPCDeath1, kb 0.55,
     /// value 200, noGravity.
     HornetSpikey,
-    /// `NPCID.HornetStingy` (235, `NPCID.cs:11147`) — (`NPC.cs:12035-12048`):
+    /// `NPCID.HornetStingy` (235, `NPCID.cs:11147`) вЂ” (`NPC.cs:12035-12048`):
     /// 34x32, aiStyle 5, dmg 34, def 4, 38 HP, NPCHit1/NPCDeath1, kb 0.6,
     /// value 200, noGravity.
     HornetStingy,
-    /// `NPCID.JungleCreeper` (236, `NPCID.cs:11149`) — the jungle crawler
+    /// `NPCID.JungleCreeper` (236, `NPCID.cs:11149`) вЂ” the jungle crawler
     /// (`NPC.cs:12049-12062`): 50x20, aiStyle 3, dmg 100, def 28, 400 HP,
     /// NPCHit1/NPCDeath1, kb 0.25, value 1000, npcSlots 0.75. Hide=true
-    /// (`NPCID.cs:2790-2794`) — folds onto the JungleCreeperWall (237) credit.
+    /// (`NPCID.cs:2790-2794`) вЂ” folds onto the JungleCreeperWall (237) credit.
     JungleCreeper,
-    /// `NPCID.JungleCreeperWall` (237, `NPCID.cs:11151`) — the wall-crawling
+    /// `NPCID.JungleCreeperWall` (237, `NPCID.cs:11151`) вЂ” the wall-crawling
     /// twin (`NPC.cs:12063-12077`): noGravity, 36x36, aiStyle 40, dmg 100,
     /// def 28, 400 HP, NPCHit1/NPCDeath1, kb 0.25, value 1000, npcSlots 0.75.
     JungleCreeperWall,
-    /// `NPCID.BlackRecluseWall` (238, `NPCID.cs:11153`) — the spider-nest
+    /// `NPCID.BlackRecluseWall` (238, `NPCID.cs:11153`) вЂ” the spider-nest
     /// wall crawler (`NPC.cs:11044-11058`): noGravity, 36x36, aiStyle 40,
     /// dmg 100, def 40, 350 HP, NPCHit29/NPCDeath32, kb 0.25, value 500,
     /// npcSlots 0.5.
     BlackRecluseWall,
-    /// `NPCID.BloodCrawler` (239, `NPCID.cs:11155`) — the crimson crawler
+    /// `NPCID.BloodCrawler` (239, `NPCID.cs:11155`) вЂ” the crimson crawler
     /// (`NPC.cs:12078-12090`): 50x20, aiStyle 3, dmg 30, def 8, 60 HP,
     /// NPCHit20/NPCDeath23, kb 0.5, value 130. Hide=true
-    /// (`NPCID.cs:2813-2817`) — folds onto the BloodCrawlerWall (240) credit.
+    /// (`NPCID.cs:2813-2817`) вЂ” folds onto the BloodCrawlerWall (240) credit.
     BloodCrawler,
-    /// `NPCID.BloodCrawlerWall` (240, `NPCID.cs:11157`) — the wall-crawling
+    /// `NPCID.BloodCrawlerWall` (240, `NPCID.cs:11157`) вЂ” the wall-crawling
     /// twin (`NPC.cs:12091-12104`): noGravity, 36x36, aiStyle 40, dmg 30,
     /// def 8, 60 HP, NPCHit20/NPCDeath23, kb 0.5, value 130.
     BloodCrawlerWall,
-    /// `NPCID.BloodFeeder` (241, `NPCID.cs:11159`) — the crimson fish
+    /// `NPCID.BloodFeeder` (241, `NPCID.cs:11159`) вЂ” the crimson fish
     /// (`NPC.cs:12105-12118`): npcSlots 0.5, noGravity, 18x20, aiStyle 16,
     /// dmg 50, def 20, 150 HP, NPCHit13/NPCDeath19, value 500.
     BloodFeeder,
-    /// `NPCID.BloodJelly` (242, `NPCID.cs:11161`) — the crimson jellyfish
+    /// `NPCID.BloodJelly` (242, `NPCID.cs:11161`) вЂ” the crimson jellyfish
     /// (`NPC.cs:12119-12132`): noGravity, 26x26, aiStyle 18, dmg 75, def 20,
     /// 150 HP, NPCHit13/NPCDeath19, value 800, alpha 20.
     BloodJelly,
-    /// `NPCID.IceGolem` (243, `NPCID.cs:11163`) — the blizzard mini-boss
+    /// `NPCID.IceGolem` (243, `NPCID.cs:11163`) вЂ” the blizzard mini-boss
     /// (`NPC.cs:12133-12147`): 30x114, aiStyle 3, dmg 60, def 32, 4000 HP,
     /// NPCHit5/NPCDeath7, kb 0.05, value 15000 (`Item.buyPrice(0, 1, 50)`),
     /// coldDamage, rarity 2. The life-scaled walk cap (`NPC.cs:57972-58001`).
     IceGolem,
-    /// `NPCID.RainbowSlime` (244, `NPCID.cs:11165`) — the hallow slime
+    /// `NPCID.RainbowSlime` (244, `NPCID.cs:11165`) вЂ” the hallow slime
     /// (`NPC.cs:12148-12162`): 60x42, aiStyle 1, dmg 85, def 26, 400 HP,
     /// NPCHit1/NPCDeath1, alpha 175, value 2000 (`Item.buyPrice(0, 0, 20)`),
     /// kb 0.3, rarity 1.
     RainbowSlime,
-    /// `NPCID.Eyezor` (251, `NPCID.cs:11179`) — the eclipse walker
+    /// `NPCID.Eyezor` (251, `NPCID.cs:11179`) вЂ” the eclipse walker
     /// (`NPC.cs:12234-12247`): 18x40, aiStyle 3, dmg 50, def 30, 1000 HP,
     /// NPCHit1/NPCDeath2, kb 0.3, value 5000 (`Item.buyPrice(0, 0, 50)`),
     /// rarity 2. The life-scaled walk cap (`NPC.cs:58002-58031`).
     Eyezor,
-    /// `NPCID.Parrot` (252, `NPCID.cs:11181`) — the pirate-invasion flyer
+    /// `NPCID.Parrot` (252, `NPCID.cs:11181`) вЂ” the pirate-invasion flyer
     /// (`NPC.cs:12248-12262`): noGravity, npcSlots 0.5, 32x32, aiStyle 5,
     /// dmg 80, def 12, 100 HP, NPCHit46/NPCDeath48, kb 0.7, value 500. The
     /// AI_005 type-252 row: num 6 / num2 0.1 when the target is hittable,
     /// else num 2 / num2 0.01 (`NPC.cs:50328-50339`).
     Parrot,
-    /// `NPCID.Reaper` (253, `NPCID.cs:11183`) — the eclipse ghost
+    /// `NPCID.Reaper` (253, `NPCID.cs:11183`) вЂ” the eclipse ghost
     /// (`NPC.cs:15450-15465`): noGravity + noTileCollide, 24x44, aiStyle 22,
     /// dmg 80, def 22, 700 HP, NPCHit49/NPCDeath51, alpha 100, value 1500,
     /// kb 0.6. `ImmuneToAllBuffsThatAreNotWhips` (`NPCID.cs:7559-7564`).
     Reaper,
-    /// `NPCID.ZombieMushroom` (254, `NPCID.cs:11185`) — the mushroom walker
+    /// `NPCID.ZombieMushroom` (254, `NPCID.cs:11185`) вЂ” the mushroom walker
     /// (`NPC.cs:12263-12275`): 18x40, aiStyle 3, dmg 40, def 10, 180 HP,
     /// NPCHit1/NPCDeath6, kb 0.4, value 1000.
     ZombieMushroom,
-    /// `NPCID.ZombieMushroomHat` (255, `NPCID.cs:11187`) — the hat variant
+    /// `NPCID.ZombieMushroomHat` (255, `NPCID.cs:11187`) вЂ” the hat variant
     /// (`NPC.cs:12276-12288`): 18x40, aiStyle 3, dmg 38, def 16, 220 HP,
     /// NPCHit1/NPCDeath6, kb 0.3, value 1200.
     ZombieMushroomHat,
-    /// `NPCID.FungoFish` (256, `NPCID.cs:11189`) — the mushroom fish
+    /// `NPCID.FungoFish` (256, `NPCID.cs:11189`) вЂ” the mushroom fish
     /// (`NPC.cs:12289-12303`): noGravity, 26x26, aiStyle 18, dmg 90, def 20,
     /// 140 HP, NPCHit1/NPCDeath6, value 1200, alpha 20, npcSlots 0.3.
     FungoFish,
-    /// `NPCID.AnomuraFungus` (257, `NPCID.cs:11191`) — the mushroom crawler
+    /// `NPCID.AnomuraFungus` (257, `NPCID.cs:11191`) вЂ” the mushroom crawler
     /// (`NPC.cs:12304-12317`): 44x34, aiStyle 3, dmg 38, def 24, 230 HP,
     /// NPCHit1/NPCDeath6, kb 0.3, value 1300, npcSlots 0.3. The cap-2 walk
     /// group (`NPC.cs:57554`).
     AnomuraFungus,
-    /// `NPCID.MushiLadybug` (258, `NPCID.cs:11193`) — the mushroom beetle
+    /// `NPCID.MushiLadybug` (258, `NPCID.cs:11193`) вЂ” the mushroom beetle
     /// (`NPC.cs:12318-12331`): 30x24, aiStyle 3, dmg 60, def 16, 220 HP,
     /// NPCHit45/NPCDeath47, kb 0.3, value 1500, npcSlots 0.3. The cap-3 walk
     /// group (`NPC.cs:57520`).
     MushiLadybug,
-    /// `NPCID.FungiBulb` (259, `NPCID.cs:11195`) — the mushroom spore
+    /// `NPCID.FungiBulb` (259, `NPCID.cs:11195`) вЂ” the mushroom spore
     /// (`NPC.cs:12332-12347`): noGravity + noTileCollide, 20x20, aiStyle 13,
     /// dmg 24, def 4, 90 HP, NPCHit1/NPCDeath1, kb 0, value 350, npcSlots 0.3.
     FungiBulb,
-    /// `NPCID.GiantFungiBulb` (260, `NPCID.cs:11197`) — the giant spore
+    /// `NPCID.GiantFungiBulb` (260, `NPCID.cs:11197`) вЂ” the giant spore
     /// (`NPC.cs:12348-12363`): noGravity + noTileCollide, 36x36, aiStyle 13,
     /// dmg 70, def 20, 300 HP, NPCHit1/NPCDeath1, kb 0, value 1250,
     /// npcSlots 0.3.
     GiantFungiBulb,
-    /// `NPCID.IchorSticker` (268, `NPCID.cs:11213`) — the crimson flyer
+    /// `NPCID.IchorSticker` (268, `NPCID.cs:11213`) вЂ” the crimson flyer
     /// (`NPC.cs:12470-12483`): noGravity, 28x56, aiStyle 22, dmg 55, def 20,
     /// 340 HP, NPCHit13/NPCDeath19, kb 0.6, value 450.
     IchorSticker,
-    /// `NPCID.RustyArmoredBonesAxe` (269, `NPCID.cs:11215`) — the dungeon
+    /// `NPCID.RustyArmoredBonesAxe` (269, `NPCID.cs:11215`) вЂ” the dungeon
     /// armored skeleton (`NPC.cs:12484-12496`): 18x40, aiStyle 3, dmg 70,
     /// def 34, 550 HP, NPCHit2/NPCDeath2, kb 0.3, value 1000. The `num84`
     /// walk cap 2f (`NPC.cs:57744-57747`).
     RustyArmoredBonesAxe,
-    /// `NPCID.RustyArmoredBonesFlail` (270, `NPCID.cs:11217`) —
+    /// `NPCID.RustyArmoredBonesFlail` (270, `NPCID.cs:11217`) вЂ”
     /// (`NPC.cs:12497-12509`): 18x40, aiStyle 3, dmg 55, def 50, 400 HP,
     /// NPCHit2/NPCDeath2, kb 0.2, value 1000. The `num84` walk cap 1f.
     RustyArmoredBonesFlail,
-    /// `NPCID.RustyArmoredBonesSword` (271, `NPCID.cs:11219`) —
+    /// `NPCID.RustyArmoredBonesSword` (271, `NPCID.cs:11219`) вЂ”
     /// (`NPC.cs:12510-12522`): 18x40, aiStyle 3, dmg 70, def 40, 450 HP,
     /// NPCHit2/NPCDeath2, kb 0.25, value 1000. The `num84` walk cap 1.5f.
     RustyArmoredBonesSword,
-    /// `NPCID.RustyArmoredBonesSwordNoArmor` (272, `NPCID.cs:11221`) —
+    /// `NPCID.RustyArmoredBonesSwordNoArmor` (272, `NPCID.cs:11221`) вЂ”
     /// (`NPC.cs:12523-12535`): 18x40, aiStyle 3, dmg 75, def 28, 400 HP,
     /// NPCHit2/NPCDeath2, kb 0.35, value 1000. The `num84` walk cap 3f.
     RustyArmoredBonesSwordNoArmor,
-    /// `NPCID.BlueArmoredBones` (273, `NPCID.cs:11223`) —
+    /// `NPCID.BlueArmoredBones` (273, `NPCID.cs:11223`) вЂ”
     /// (`NPC.cs:12536-12548`): 18x40, aiStyle 3, dmg 45, def 50, 500 HP,
     /// NPCHit2/NPCDeath2, kb 0.15, value 1000. The `num84` walk cap 1.25f.
     BlueArmoredBones,
-    /// `NPCID.BlueArmoredBonesMace` (274, `NPCID.cs:11225`) —
+    /// `NPCID.BlueArmoredBonesMace` (274, `NPCID.cs:11225`) вЂ”
     /// (`NPC.cs:12549-12561`): 18x40, aiStyle 3, dmg 65, def 34, 350 HP,
     /// NPCHit2/NPCDeath2, kb 0.4, value 1000. The `num84` walk cap 3f.
     BlueArmoredBonesMace,
-    /// `NPCID.BlueArmoredBonesNoPants` (275, `NPCID.cs:11227`) —
+    /// `NPCID.BlueArmoredBonesNoPants` (275, `NPCID.cs:11227`) вЂ”
     /// (`NPC.cs:12562-12574`): 18x40, aiStyle 3, dmg 45, def 50, 550 HP,
     /// NPCHit2/NPCDeath2, kb 0.15, value 1000. The `num84` walk cap 3.25f.
     BlueArmoredBonesNoPants,
-    /// `NPCID.BlueArmoredBonesSword` (276, `NPCID.cs:11229`) —
+    /// `NPCID.BlueArmoredBonesSword` (276, `NPCID.cs:11229`) вЂ”
     /// (`NPC.cs:12575-12587`): 18x40, aiStyle 3, dmg 85, def 54, 500 HP,
     /// NPCHit2/NPCDeath2, kb 0.2, value 1000. The `num84` walk cap 2f.
     BlueArmoredBonesSword,
-    /// `NPCID.HellArmoredBones` (277, `NPCID.cs:11231`) —
+    /// `NPCID.HellArmoredBones` (277, `NPCID.cs:11231`) вЂ”
     /// (`NPC.cs:12588-12600`): 18x40, aiStyle 3, dmg 70, def 32, 400 HP,
     /// NPCHit2/NPCDeath2, kb 0.4, value 1000. The `num84` walk cap 2.75f.
     HellArmoredBones,
-    /// `NPCID.HellArmoredBonesSpikeShield` (278, `NPCID.cs:11233`) —
+    /// `NPCID.HellArmoredBonesSpikeShield` (278, `NPCID.cs:11233`) вЂ”
     /// (`NPC.cs:12601-12613`): 18x40, aiStyle 3, dmg 65, def 48, 450 HP,
     /// NPCHit2/NPCDeath2, kb 0.3, value 1000. The `num84` walk cap 1.8f.
     HellArmoredBonesSpikeShield,
-    /// `NPCID.HellArmoredBonesMace` (279, `NPCID.cs:11235`) —
+    /// `NPCID.HellArmoredBonesMace` (279, `NPCID.cs:11235`) вЂ”
     /// (`NPC.cs:12614-12626`): 18x40, aiStyle 3, dmg 40, def 54, 500 HP,
     /// NPCHit2/NPCDeath2, kb 0.2, value 1000. The `num84` walk cap 1.3f.
     HellArmoredBonesMace,
-    /// `NPCID.HellArmoredBonesSword` (280, `NPCID.cs:11237`) —
+    /// `NPCID.HellArmoredBonesSword` (280, `NPCID.cs:11237`) вЂ”
     /// (`NPC.cs:12627-12639`): 18x40, aiStyle 3, dmg 75, def 34, 500 HP,
     /// NPCHit2/NPCDeath2, kb 0.4, value 1000. The `num84` walk cap 2.5f.
     HellArmoredBonesSword,
@@ -1698,31 +1700,31 @@ pub enum NpcKind {
     ArmedZombieSwamp,
 
     // ---- W4-d42: the NPCID 578-630 SetDefaults roster (data-only join;
-    // the protocol ids ride the VANILLA 578-630 slots — the 108 union
-    // plan's vanilla-free band, the d38/d40 precedent — and the vanilla
+    // the protocol ids ride the VANILLA 578-630 slots вЂ” the 108 union
+    // plan's vanilla-free band, the d38/d40 precedent вЂ” and the vanilla
     // types ride `cs_id`/`net_id`/the bestiary). The eight kinds other
     // lanes own are NOT here: 581/587 (c4 style-44), 592/607/615 (c4b
     // style-16), 604/605 (e26b luck), 606 (c8 style-66). ----
-    /// `NPCID.DD2LightningBugT3` (578) — the Old One's Army's tier-3
-    /// lightning bug (`NPC.cs:16536-16553`: 30×24, aiStyle 111, dmg 80,
+    /// `NPCID.DD2LightningBugT3` (578) вЂ” the Old One's Army's tier-3
+    /// lightning bug (`NPC.cs:16536-16553`: 30Г—24, aiStyle 111, dmg 80,
     /// def 36, 500 HP, kb 0.8, noGravity/noTileCollide, npcSlots 0,
-    /// lavaImmune, netAlways; no value row — the head's 0f `:8544`).
+    /// lavaImmune, netAlways; no value row вЂ” the head's 0f `:8544`).
     /// The aiStyle-111 zap machine is UNWIRED (the wyvern precedent).
     DD2LightningBug,
-    /// `NPCID.BartenderUnconscious` (579) — the fallen tavernkeeper
-    /// (`NPC.cs:16554-16568`: 34×8, aiStyle 0 the bound stand, friendly,
+    /// `NPCID.BartenderUnconscious` (579) вЂ” the fallen tavernkeeper
+    /// (`NPC.cs:16554-16568`: 34Г—8, aiStyle 0 the bound stand, friendly,
     /// dmg 10, def 15, 250 HP, kb 0.5, scale 1, rarity 1). The bestiary
-    /// hides it (`NPCID.cs` GetLeinforsEntries `Hide = true`) — the
+    /// hides it (`NPCID.cs` GetLeinforsEntries `Hide = true`) вЂ” the
     /// credit folds onto the Bartender (the SleepingAngler precedent).
     BartenderUnconscious,
-    /// `NPCID.WalkingAntlion` (580) — the underground-desert charger
-    /// (`NPC.cs:14854-14867`: 26×26, aiStyle 3, dmg 25, def 10, 80 HP,
+    /// `NPCID.WalkingAntlion` (580) вЂ” the underground-desert charger
+    /// (`NPC.cs:14854-14867`: 26Г—26, aiStyle 3, dmg 25, def 10, 80 HP,
     /// kb 0.5, value 80, npcSlots 0.8). The walk rides `AI_003_Fighters`'
     /// 508/580/582 lerp machine (`NPC.cs:58139-58202`, ported in
     /// `npc_ai3_speeds.rs`).
     WalkingAntlion,
-    /// `NPCID.LarvaeAntlion` (582) — the desert larva (`NPC.cs:
-    /// 16569-16582`: 18×18, aiStyle 3, dmg 10, def 2, 30 HP, kb 0.75,
+    /// `NPCID.LarvaeAntlion` (582) вЂ” the desert larva (`NPC.cs:
+    /// 16569-16582`: 18Г—18, aiStyle 3, dmg 10, def 2, 30 HP, kb 0.75,
     /// value 40, npcSlots 0.4). The 582 lerp arm (`NPC.cs:58144-58150`:
     /// the 2.25/7 pair, the >2.5 sprint to 3) is ported.
     LarvaeAntlion,
@@ -1973,7 +1975,7 @@ pub enum NpcKind {
     // W4-c3 merge-side E8 drop (329 s3): the CursedSkull/GiantCursedSkull
     // dup variants dropped - d34@267 / d38@289 own the canonical kinds
     // (the enum docs above); c3's machine wires them through the axis.
-    /// `NPCID.WaterBoltMimic` (694, `ID/NPCID.cs:12065`) — the
+    /// `NPCID.WaterBoltMimic` (694, `ID/NPCID.cs:12065`) вЂ” the
     /// dungeon's book mimic (`aiStyle 10`): 44x44, dmg 20, def 4,
     /// 60 HP, DD2_BookStaffCast/NPCDeath52, noGravity + noTileCollide,
     /// value 150, kb 0.2 (`NPC.cs:17737-17751`). WIRED (W4-c3), the
@@ -1984,19 +1986,19 @@ pub enum NpcKind {
     // W4-c4 merge-side E8 dedupe (d37 tables): the FlyingFish variant is
     // d37's above (same id 359); c4's style-44 wiring (the world-sim
     // pre-pass + FindFrame + draw) composes onto it.
-    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11695`) — the
+    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11695`) вЂ” the
     /// hardmode desert swarm's big flap (`aiStyle 44`): 40x31, dmg 34,
     /// def 12, 90 HP, kb 0.3, NPCHit32/NPCDeath35, value 195
     /// (`NPC.cs:14841-14853`). WIRED (W4-c4), the 224 seam.
     GiantFlyingAntlion,
-    /// `NPCID.FlyingAntlion` (581, `NPCID.cs:11839`) — the desert
+    /// `NPCID.FlyingAntlion` (581, `NPCID.cs:11839`) вЂ” the desert
     /// swarm's small flap (`aiStyle 44`): 30x22, dmg 29, def 8, 60 HP,
     /// kb 0.5, NPCHit32/NPCDeath35, value 90, npcSlots 0.8
     /// (`NPC.cs:14868-14880`). WIRED (W4-c4), the 224 seam; the draw's
     /// `num46 = -6` anchor row (`Main.cs:23011-23013`) rides
     /// `npc_anchor_nudge`.
     FlyingAntlion,
-    /// `NPCID.EyeballFlyingFish` (587, `NPCID.cs:11851`) — the blood
+    /// `NPCID.EyeballFlyingFish` (587, `NPCID.cs:11851`) вЂ” the blood
     /// moon's materializing fish (`aiStyle 44`): 32x18, dmg 35, def 18,
     /// 300 HP, kb 0, NPCHit1/NPCDeath1, value 1000, alpha 255, rarity 1
     /// (`NPC.cs:16623-16637`). WIRED (W4-c4), the 224 seam; the
@@ -2005,38 +2007,38 @@ pub enum NpcKind {
     EyeballFlyingFish,
     // W4-c4 merge-side E8 drop: the CorruptGoldfish variant is d34's
     // above (@277); c4's style-16 machine + FindFrame compose onto it.
-    /// `NPCID.Arapaima` (157, `NPCID.cs:10991`) — the jungle's big fish
+    /// `NPCID.Arapaima` (157, `NPCID.cs:10991`) вЂ” the jungle's big fish
     /// (`aiStyle 16`): 74x20, dmg 75, def 30, 200 HP, kb 1 (no row),
     /// NPCHit1/NPCDeath1, value 500, npcSlots 0.5 (`NPC.cs:10989-11002`).
     /// WIRED (W4-c4), the 57 seam; the module's 157 branches (the
     /// asymmetric chase caps `:23774-23802`, the own bob `:23853-23902`,
-    /// the ±0.4 damp exemption `:23957`) ride the vanilla type. The
-    /// protocol id is port-local 406 — the free-port band (the original
+    /// the В±0.4 damp exemption `:23957`) ride the vanilla type. The
+    /// protocol id is port-local 406 вЂ” the free-port band (the original
     /// 237 squatted JungleCreeperWall's reserved cs hole; the vanilla
     /// 157 slot is the BoundWizard's).
     Arapaima,
     // W4-c4 merge-side E8 drop: the BloodFeeder variant is d37's above
     // (@373); c4's style-16 machine + FindFrame compose onto it.
-    /// `NPCID.CrimsonGoldfish` (465, `NPCID.cs:11603`) — the crimson's
+    /// `NPCID.CrimsonGoldfish` (465, `NPCID.cs:11603`) вЂ” the crimson's
     /// goldfish (`aiStyle 16`): 18x20, dmg 31, def 7, 110 HP, kb 1 (no
     /// row), NPCHit1/NPCDeath1, value 500 (`NPC.cs:14483-14495`). The
     /// bestiary display name is "Vicious Goldfish" (`en-US NPCs.json`).
     /// WIRED (W4-c4), the 57 seam. The protocol id keeps the vanilla 465
     /// (free).
     CrimsonGoldfish,
-    /// `NPCID.GoldGoldfish` (592, `NPCID.cs:11861`) — the golden critter
+    /// `NPCID.GoldGoldfish` (592, `NPCID.cs:11861`) вЂ” the golden critter
     /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
     /// NPCDeath1, catchItem 4274, rarity 3 (`NPC.cs:16679-16693`). WIRED
     /// (W4-c4), the 57 seam; the `:23701` critter exclusion keeps it from
     /// chasing. The protocol id keeps the vanilla 592 (free).
     GoldGoldfish,
-    /// `NPCID.Pupfish` (607, `NPCID.cs:11891`) — the desert oasis critter
+    /// `NPCID.Pupfish` (607, `NPCID.cs:11891`) вЂ” the desert oasis critter
     /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
     /// NPCDeath1, catchItem 4373 (`NPC.cs:16795-16808`). WIRED (W4-c4),
     /// the 57 seam; the `:23701` critter exclusion. The protocol id keeps
     /// the vanilla 607 (free).
     Pupfish,
-    /// `NPCID.Dolphin` (615, `NPCID.cs:11907`) — the ocean's leaper
+    /// `NPCID.Dolphin` (615, `NPCID.cs:11907`) вЂ” the ocean's leaper
     /// (`aiStyle 16`): 20x18, dmg 0, def 0, 5 HP, kb 0.5, NPCHit1/
     /// NPCDeath1 (`NPC.cs:16892-16904`). WIRED (W4-c4), the 57 seam; the
     /// module's 615 idle-timer/leap/float machine (`:23572-23697`) is the
@@ -2051,139 +2053,139 @@ pub enum NpcKind {
     // anchors (npc_anchor_nudge) + the NPC_692 sheet census
     // (research/144, atlas-deferred) all stay keyed on the vanilla ids;
     // d43's kind rows re-activate them at its merge.
-    /// `NPCID.Firefly` (355, `ID/NPCID.cs:11387`) — the night-surface
+    /// `NPCID.Firefly` (355, `ID/NPCID.cs:11387`) вЂ” the night-surface
     /// glow critter (`aiStyle 64`): 10x10, dmg 0, def 0, 5 HP, npcSlots
     /// 0.2, noGravity, catchItem 1992 (`NPC.cs:13517-13530`). WIRED by
     /// W4-c7: the world-sim pool pass runs `npc_ai_style64::ai_064_step`
     /// (the threat scan reads the whole pool); the axis' 64 arm owns the
     /// `UpdateCollision` integration tail.
     Firefly,
-    /// `NPCID.LightningBug` (358, `ID/NPCID.cs:11393`) — the jungle/hallow
+    /// `NPCID.LightningBug` (358, `ID/NPCID.cs:11393`) вЂ” the jungle/hallow
     /// night glow critter (`aiStyle 64`): 12x12, the same zero-stat row,
     /// catchItem 2004 (`NPC.cs:13559-13572`).
     LightningBug,
-    /// `NPCID.Lavafly` (654, `ID/NPCID.cs:11985`) — the underworld glow
+    /// `NPCID.Lavafly` (654, `ID/NPCID.cs:11985`) вЂ” the underworld glow
     /// critter (`aiStyle 64`): 10x10, lavaImmune, catchItem 4847
     /// (`NPC.cs:17265-17279`).
     Lavafly,
-        /// `NPCID.Worm` (357, `ID/NPCID.cs:11391`) — the surface crawler
+        /// `NPCID.Worm` (357, `ID/NPCID.cs:11391`) вЂ” the surface crawler
     /// (`aiStyle 66`): 10x4, dmg 0, def 0, 5 HP, npcSlots 0.1, catchItem
     /// 2002, friendly (`NPC.cs:13545-13558`). WIRED by W4-c8: the axis'
     /// 66 arm rides `npc_ai_style66::ai_style66`.
     Worm,
-    /// `NPCID.TruffleWorm` (374, `ID/NPCID.cs:11425`) — the mushroom
+    /// `NPCID.TruffleWorm` (374, `ID/NPCID.cs:11425`) вЂ” the mushroom
     /// bait crawler (`aiStyle 66`): 20x10, npcSlots 0.15, catchItem
     /// 2673, rarity 4, dontTakeDamageFromHostiles, NOT friendly
     /// (`NPC.cs:13762-13776`). The only kind with the 90-tick dig tail
-    /// → `Transform(375)` (`NPC.cs:34342-34346`).
+    /// в†’ `Transform(375)` (`NPC.cs:34342-34346`).
     TruffleWorm,
-    /// `NPCID.TruffleWormDigger` (375, `ID/NPCID.cs:11427`) — the
+    /// `NPCID.TruffleWormDigger` (375, `ID/NPCID.cs:11427`) вЂ” the
     /// transformed TruffleWorm's fleeing digger (`aiStyle 6`, the worm
     /// pass): 10x10, noGravity/noTileCollide/behindTiles, kb 0,
     /// npcSlots 0.15, catchItem 2673, rarity 4 (`NPC.cs:13777-13795`).
-    /// NOT a style-66 kind — only the dig request is that arm's.
+    /// NOT a style-66 kind вЂ” only the dig request is that arm's.
     TruffleWormDigger,
-    /// `NPCID.GoldWorm` (448, `ID/NPCID.cs:11569`) — the gold crawler
+    /// `NPCID.GoldWorm` (448, `ID/NPCID.cs:11569`) вЂ” the gold crawler
     /// (`aiStyle 66`): 10x4, catchItem 2895, rarity 3, friendly
     /// (`NPC.cs:14332-14346`). The family's only `IsGoldCritter` member
-    /// (`ID/NPCID.cs:10126` — the CastLights sparkle gate).
+    /// (`ID/NPCID.cs:10126` вЂ” the CastLights sparkle gate).
     GoldWorm,
-    /// `NPCID.EnchantedNightcrawler` (484, `ID/NPCID.cs:11641`) — the
+    /// `NPCID.EnchantedNightcrawler` (484, `ID/NPCID.cs:11641`) вЂ” the
     /// glowing crawler (`aiStyle 66`): 10x4, catchItem 3191, friendly
     /// (the RANGE row `NPC.cs:14576-14589`). The only kind with the
     /// essScale flicker (`NPC.cs:34255-34259`).
     EnchantedNightcrawler,
-    /// `NPCID.Grubby` (485, `ID/NPCID.cs:11643`) — the 0.25-speed grub
+    /// `NPCID.Grubby` (485, `ID/NPCID.cs:11643`) вЂ” the 0.25-speed grub
     /// (`aiStyle 66`): the 484 row, catchItem 3192 (`NPC.cs:14587`).
     Grubby,
-    /// `NPCID.Sluggy` (486, `ID/NPCID.cs:11645`) — the 0.325-speed grub
+    /// `NPCID.Sluggy` (486, `ID/NPCID.cs:11645`) вЂ” the 0.325-speed grub
     /// (`aiStyle 66`): the 484 row, catchItem 3193 (`NPC.cs:14587`).
     Sluggy,
-    /// `NPCID.Buggy` (487, `ID/NPCID.cs:11647`) — the 0.4-speed grub
+    /// `NPCID.Buggy` (487, `ID/NPCID.cs:11647`) вЂ” the 0.4-speed grub
     /// (`aiStyle 66`): the 484 row, catchItem 3194 (`NPC.cs:14587`).
     Buggy,
-    /// `NPCID.Maggot` (606, `ID/NPCID.cs:11889`) — the graveyard crawler
+    /// `NPCID.Maggot` (606, `ID/NPCID.cs:11889`) вЂ” the graveyard crawler
     /// (`aiStyle 66`): 10x4, catchItem 4363, friendly
     /// (`NPC.cs:16781-16794`).
     Maggot,
-    /// `NPCID.Snail` (359, `NPCID.cs:11395`) — the wall-crawler critter
+    /// `NPCID.Snail` (359, `NPCID.cs:11395`) вЂ” the wall-crawler critter
     /// (`NPC.cs:13573-13586`): 12x12, aiStyle 67, dmg 0, def 0, 5 HP,
-    /// kb 1 (the head default — the row writes none), npcSlots 0.5,
+    /// kb 1 (the head default вЂ” the row writes none), npcSlots 0.5,
     /// noGravity, catchItem 2006. WIRED (W4-c9): the axis' 67 arm rides
-    /// `npc_ai_style67::snail_ai_step` — the 359-only scale roll
+    /// `npc_ai_style67::snail_ai_step` вЂ” the 359-only scale roll
     /// `Next(80,111)` + the integer-half `-2f` resize.
     Snail,
-    /// `NPCID.GlowingSnail` (360, `NPCID.cs:11397`) — the blue-light
+    /// `NPCID.GlowingSnail` (360, `NPCID.cs:11397`) вЂ” the blue-light
     /// snail (`NPC.cs:13587-13600`): 14x14, the 359 stats, catchItem
     /// 2007; the AI's `AddLight(Center, 0.1, 0.2, 0.7)` (`:34387`) rides
     /// the draw-side `EntityLights` feed.
     GlowingSnail,
-    /// `NPCID.MagmaSnail` (655, `NPCID.cs:11987`) — the orange-light,
+    /// `NPCID.MagmaSnail` (655, `NPCID.cs:11987`) вЂ” the orange-light,
     /// lava-immune snail (`NPC.cs:17280-17294`): 14x14, the 359 stats +
     /// lavaImmune, catchItem 4849; the AI's `AddLight(Center, 0.6, 0.3,
     /// 0.1)` (`:34391`) rides the same feed.
     MagmaSnail,
-    /// `NPCID.Shimmerfly` (677, `NPCID.cs:12031`) — the shimmer
+    /// `NPCID.Shimmerfly` (677, `NPCID.cs:12031`) вЂ” the shimmer
     /// transform target of all three snails (`NPCID.cs:10470`'s
     /// `ShimmerTransformToNPC` rows, `GetShimmered` `NPC.cs:91561-91565`
-    /// → `Transform(677)` `:81084`). `NPC.cs:17579-17593`: 10x10,
+    /// в†’ `Transform(677)` `:81084`). `NPC.cs:17579-17593`: 10x10,
     /// aiStyle 64, dmg 0, def 0, 5 HP, npcSlots 0.2, noGravity +
     /// noTileCollide, catchItem 5350. WIRED (W4-c9): the kind-gated 64
     /// axis arm rides `npc_ai_style64::ai_064_step`'s 677 branches (the
     /// solo self-view threat scan; the pooled firefly pass is W4-c7's).
     Shimmerfly,
-    /// `NPCID.GoldBird` (442, `NPCID.cs:11557`) — the gold bird critter
+    /// `NPCID.GoldBird` (442, `NPCID.cs:11557`) вЂ” the gold bird critter
     /// (`NPC.cs:14247-14261`): 14x14, aiStyle 24, dmg 0, def 0, 5 HP,
     /// kb 0.8, npcSlots 0.4, rarity 3, catchItem 2889. WIRED (W4-c9): the
     /// kind-match arm rides `npc_ai_style24::ai_style_24` (the perch/
-    /// startle/flight machine + the tile-collision tail). Shimmer →
+    /// startle/flight machine + the tile-collision tail). Shimmer в†’
     /// Shimmerfly 677 (`NPCID.cs:10470`'s `(442, 677)` row).
     GoldBird,
-    /// `NPCID.GoldGrasshopper` (446, `NPCID.cs:11565`) — the gold
+    /// `NPCID.GoldGrasshopper` (446, `NPCID.cs:11565`) вЂ” the gold
     /// grasshopper critter (`NPC.cs:14303-14317`): 14x10, aiStyle 1,
     /// dmg 0, def 0, 5 HP, kb 1 (the head default), friendly, npcSlots
     /// 0.1, rarity 3, catchItem 2893. WIRED (W4-c9): the kind-match arm
     /// rides `npc_ai_slime::ai_001_slimes`'s 446 branches (the hop cadence
-    /// + the friendly latch). Shimmer → 677 (`(446, 677)`).
+    /// + the friendly latch). Shimmer в†’ 677 (`(446, 677)`).
     GoldGrasshopper,
-    /// `NPCID.GoldMouse` (447, `NPCID.cs:11567`) — the gold mouse critter
+    /// `NPCID.GoldMouse` (447, `NPCID.cs:11567`) вЂ” the gold mouse critter
     /// (`NPC.cs:14318-14331`): 14x12, aiStyle 7, dmg 0, def 0, 5 HP,
     /// kb 1 (the head default), npcSlots 0.25, rarity 3, NPCDeath4,
     /// catchItem 2894. WIRED (W4-c9): the kind-match arm rides
     /// `npc_ai_critter::critter_ai` (the AI_007 wander/hop subset, the
-    /// flag8 mouse row). Shimmer → 677 (`(447, 677)`).
+    /// flag8 mouse row). Shimmer в†’ 677 (`(447, 677)`).
     GoldMouse,
-    /// `NPCID.GoldBunny` (443, `NPCID.cs:11559`) — the gold bunny critter
+    /// `NPCID.GoldBunny` (443, `NPCID.cs:11559`) вЂ” the gold bunny critter
     /// (`NPC.cs:14262-14274`): 18x20, aiStyle 7, dmg 0, def 0, 5 HP,
     /// kb 1 (the head default), rarity 3, catchItem 2890. WIRED (W4-c9):
     /// the kind-match arm rides `npc_ai_critter::critter_ai` (the AI_007
     /// wander/hop subset, the default cap 1 / accel 0.07 bunny row).
-    /// Shimmer → 677 (`(443, 677)`).
+    /// Shimmer в†’ 677 (`(443, 677)`).
     GoldBunny,
-    /// `NPCID.GoldFrog` (445, `NPCID.cs:11563`) — the gold frog critter
+    /// `NPCID.GoldFrog` (445, `NPCID.cs:11563`) вЂ” the gold frog critter
     /// (`NPC.cs:14290-14302`): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
     /// kb 1 (the head default), rarity 3, catchItem 2892. WIRED (W4-c9):
     /// the kind-match arm rides `npc_ai_critter::critter_ai` (the flag10
-    /// frog row — the dry walk; the wet swim override is the documented
-    /// stand-in). Shimmer → 677 (`(445, 677)`).
+    /// frog row вЂ” the dry walk; the wet swim override is the documented
+    /// stand-in). Shimmer в†’ 677 (`(445, 677)`).
     GoldFrog,
-    /// `NPCID.Duck` (362, `ID/NPCID.cs:11401`) — the waterfowl WALKER
+    /// `NPCID.Duck` (362, `ID/NPCID.cs:11401`) вЂ” the waterfowl WALKER
     /// (`aiStyle 7`): 22x26, dmg 0, def 0, 5 HP, catchItem 2122
     /// (`NPC.cs:13613-13624`). W4-c10: the `update_guide` walk stand-in
     /// plus the `AI_007` head's `Transform(type + 1)` takeoff gate
     /// (`NPC.cs:53180-53184`); the swimming form is [`NpcKind::Duck2`].
     Duck,
-    /// `NPCID.Duck2` (363, `ID/NPCID.cs:11403`) — the Duck's swimming
+    /// `NPCID.Duck2` (363, `ID/NPCID.cs:11403`) вЂ” the Duck's swimming
     /// form (`aiStyle 68`): 28x22, the same zero-stat row, catchItem
     /// 2122 (`NPC.cs:13625-13636`). WIRED by W4-c10: the style axis' 68
     /// arm rides `npc_ai_style68::ai_style_68`; the dry landing
     /// transforms back into the walker (`NPC.cs:34758-34761`).
     Duck2,
-    /// `NPCID.DuckWhite` (364, `ID/NPCID.cs:11405`) — the white Duck
+    /// `NPCID.DuckWhite` (364, `ID/NPCID.cs:11405`) вЂ” the white Duck
     /// walker (`aiStyle 7`): 22x26, catchItem 2123
     /// (`NPC.cs:13637-13648`).
     DuckWhite,
-    /// `NPCID.DuckWhite2` (365, `ID/NPCID.cs:11407`) — the white Duck's
+    /// `NPCID.DuckWhite2` (365, `ID/NPCID.cs:11407`) вЂ” the white Duck's
     /// swimming form (`aiStyle 68`): 28x22, catchItem 2123
     /// (`NPC.cs:13649-13660`).
     DuckWhite2,
@@ -2191,84 +2193,84 @@ pub enum NpcKind {
     // (d42's variants above) + the 12-critter tail (Worm -> c8@737, the
     // gold septet + bait tail -> d40's variants above) dropped; the Duck
     // quartet keeps (renumbered 731-734 in to_u16).
-    /// `NPCID.AngryTrapper` (175) — the hardmode jungle man-eater
+    /// `NPCID.AngryTrapper` (175) вЂ” the hardmode jungle man-eater
     /// (`aiStyle 13`): 30x30, dmg 100, def 30, 300 HP, kb 0.25, value 650
     /// (`NPC.cs:11208-11222`). WIRED: the axis' 13 arm. Protocol id 357
     /// (the vanilla 175 slot is DD2DrakinT3's).
     AngryTrapper,
-    /// `NPCID.SolarFlare` (516) — the Solar Pillar's homing flare
+    /// `NPCID.SolarFlare` (516) вЂ” the Solar Pillar's homing flare
     /// (`aiStyle 9`): 26x26, dmg 100, def 0, 1 HP, kb 0, noGravity,
     /// noTileCollide FALSE, alpha 0, HitSound/DeathSound null
     /// (`NPC.cs:15394-15408`). WIRED (W4-d23): the axis' 9 arm (the
     /// one-shot `RotatedByRandom` launch + the per-tick homing steer).
-    /// Unrowed — protocol id 408 (the 400+ free band; the vanilla 516
+    /// Unrowed вЂ” protocol id 408 (the 400+ free band; the vanilla 516
     /// slot is free but the reconcile directive parks unrowed kinds).
     SolarFlare,
-    /// `NPCID.VileSpitEaterOfWorlds` (666) — the Eater of Worlds' spit
+    /// `NPCID.VileSpitEaterOfWorlds` (666) вЂ” the Eater of Worlds' spit
     /// (`aiStyle 9`): the 112 row verbatim (`NPC.cs:17418-17433`), the
     /// ftw `GetAttackDamage_CappedAtMaster(32f)` damage arm. WIRED
-    /// (W4-d23): the axis' 9 arm. Unrowed — protocol id 411 (the 400+
+    /// (W4-d23): the axis' 9 arm. Unrowed вЂ” protocol id 411 (the 400+
     /// free band; the vanilla 666 slot is free).
     VileSpitEoW,
-    /// `NPCID.IceBat` (150) — the snow bat (`aiStyle 14`): 22x22, dmg 18,
+    /// `NPCID.IceBat` (150) вЂ” the snow bat (`aiStyle 14`): 22x22, dmg 18,
     /// def 6, 30 HP, kb 0.8, value 250, NPCHit1/NPCDeath4, coldDamage
     /// (`NPC.cs:10885-10899`). WIRED (W4-d23): the axis' 14 arm (the
-    /// water group). Unrowed — protocol id 401 (the vanilla 150 slot is
+    /// water group). Unrowed вЂ” protocol id 401 (the vanilla 150 slot is
     /// the Angler's; the 400+ free band).
     IceBat,
-    /// `NPCID.Lavabat` (151) — the underworld bat (`aiStyle 14`): 22x22,
+    /// `NPCID.Lavabat` (151) вЂ” the underworld bat (`aiStyle 14`): 22x22,
     /// dmg 50, def 16, 160 HP, kb 0.6, value 400, scale 1.15, lavaImmune,
     /// NPCHit1/NPCDeath4 (`NPC.cs:10900-10915`). WIRED (W4-d23): the
-    /// axis' 14 arm (the water group). Unrowed — protocol id 402 (the
+    /// axis' 14 arm (the water group). Unrowed вЂ” protocol id 402 (the
     /// vanilla 151 slot is the SleepingAngler's; the 400+ free band).
     Lavabat,
-    /// `NPCID.GiantFlyingFox` (152) — the jungle bat (`aiStyle 14`):
+    /// `NPCID.GiantFlyingFox` (152) вЂ” the jungle bat (`aiStyle 14`):
     /// 38x34, dmg 80, def 24, 220 HP, kb 0.65, value 400,
     /// NPCHit1/NPCDeath4 (`NPC.cs:10916-10929`). WIRED (W4-d23): the
-    /// axis' 14 arm (the water group). Unrowed — protocol id 403 (the
+    /// axis' 14 arm (the water group). Unrowed вЂ” protocol id 403 (the
     /// vanilla 152 slot is the BeeSmall's; the 400+ free band).
     GiantFlyingFox,
-    /// `NPCID.RedDevil` (156) — the underworld trident caster (`aiStyle
+    /// `NPCID.RedDevil` (156) вЂ” the underworld trident caster (`aiStyle
     /// 14`): 28x48, dmg 50, def 40, 600 HP, kb 0.5, value 1200,
     /// NPCHit21/NPCDeath24, lavaImmune (`NPC.cs:10974-10988`). WIRED
     /// (W4-d23): the axis' 14 arm (the trident shot 115 `:23458-23484`).
-    /// Unrowed — protocol id 404 (the vanilla 156 slot is the Wizard's;
+    /// Unrowed вЂ” protocol id 404 (the vanilla 156 slot is the Wizard's;
     /// the 400+ free band).
     RedDevil,
-    /// `NPCID.VampireBat` (158) — the eclipse bat (`aiStyle 14`): 22x22,
+    /// `NPCID.VampireBat` (158) вЂ” the eclipse bat (`aiStyle 14`): 22x22,
     /// dmg 60, def 32, 750 HP, kb 0.75, value 5000, NPCHit1/NPCDeath6
     /// (`NPC.cs:15466-15479`). WIRED (W4-d23): the axis' 14 arm (the
     /// surface flee + 7-cap approach `:22899-22970`, the Transform(159)
-    /// `:23346-23355`, the double `ai[1]++` `:23357-23360`). Unrowed —
+    /// `:23346-23355`, the double `ai[1]++` `:23357-23360`). Unrowed вЂ”
     /// protocol id 405 (the vanilla 158 slot is the Mechanic's).
     VampireBat,
-    /// `NPCID.Vampire` (159) — the VampireBat's Transform target
+    /// `NPCID.Vampire` (159) вЂ” the VampireBat's Transform target
     /// (`aiStyle 3`, the fighter walker): 18x40, dmg 80, def 24, 750 HP,
     /// kb 0.4, value 5000, NPCHit1/NPCDeath6 (`NPC.cs:15480-15493`).
     /// WIRED (W4-d23): the walker family (the `npc_ai3_speeds` 159 spin
     /// arm `NPC.cs:57403-57440` was already ported); the >300px
     /// Transform(158) back (`:58843-58851`) rides `wants_transform`.
-    /// Unrowed — protocol id 406 (the vanilla 159 slot is the
-    /// BoundMechanic's). NOT a style-14 member — it lands with the bat.
+    /// Unrowed вЂ” protocol id 406 (the vanilla 159 slot is the
+    /// BoundMechanic's). NOT a style-14 member вЂ” it lands with the bat.
     Vampire,
-    /// `NPCID.SporeBat` (634) — the mushroom bat (`aiStyle 14`): 22x18,
+    /// `NPCID.SporeBat` (634) вЂ” the mushroom bat (`aiStyle 14`): 22x18,
     /// dmg 13, def 2, 16 HP, kb 0.8, value 90, NPCHit1/NPCDeath4
     /// (`NPC.cs:17161-17174`). WIRED (W4-d23): the axis' 14 arm (the
-    /// water group). Unrowed — protocol id 407 (the vanilla 634 slot is
+    /// water group). Unrowed вЂ” protocol id 407 (the vanilla 634 slot is
     /// free but the reconcile directive parks unrowed kinds).
     SporeBat,
-    /// `NPCID.QueenSlimeMinionPurple` (660) — the Queen Slime minion
+    /// `NPCID.QueenSlimeMinionPurple` (660) вЂ” the Queen Slime minion
     /// (`aiStyle 14`): 40x30, dmg 50, def 30, 120 HP, kb 0.8, scale 1,
     /// NPCHit1/NPCDeath1 (`NPC.cs:17338-17350`). WIRED (W4-d23): the
     /// axis' 14 arm (the 0.35/0.3/6/5 approach `:23038-23115`). Unrowed
-    /// — protocol id 409 (the vanilla 660 slot is free; the 400+ band).
+    /// вЂ” protocol id 409 (the vanilla 660 slot is free; the 400+ band).
     QueenSlimeMinionPurple,
-    /// `NPCID.Unicorn` (86, `NPCID.cs:10849`) — the Hallow galloper
+    /// `NPCID.Unicorn` (86, `NPCID.cs:10849`) вЂ” the Hallow galloper
     /// (`aiStyle 26`): 46x42, dmg 65, def 30, 400 HP, kb 0.3, value 1000,
     /// NPCHit12/NPCDeath18 (`NPC.cs:9926-9938`). W4-d25 WIRING: the
     /// axis' 26 arm rides `npc_ai_style26::ai_style26` (the generic
-    /// 6/0.07 walk core — no type branch inside the machine). The rows
-    /// `NPCID.Wolf` (155, `NPCID.cs:10987`) — the hardmode snow-night
+    /// 6/0.07 walk core вЂ” no type branch inside the machine). The rows
+    /// `NPCID.Wolf` (155, `NPCID.cs:10987`) вЂ” the hardmode snow-night
     /// galloper (`aiStyle 26`): 46x30, dmg 65, def 30, 300 HP, kb 0.3,
     /// value 1000, NPCHit1/NPCDeath1 (`NPC.cs:10961-10973`). W4-d25
     /// WIRING: the axis' 26 arm rides `npc_ai_style26::ai_style26`
@@ -2277,7 +2279,7 @@ pub enum NpcKind {
     /// slot is PlanterasTentacle's). The NPC_155 sheet is DEFERRED
     /// (8180 alone fits, but 8217 with NPC_86 overflows the full set).
     Wolf,
-    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) — the sandstorm
+    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) вЂ” the sandstorm
     /// tumbler (`aiStyle 26`): 30x30, dmg 30, def 6, 50 HP, kb 0.8,
     /// value 100, NPCHit11/NPCDeath15 (`NPC.cs:15972-15984`). W4-d25
     /// WIRING: the axis' 26 arm rides `npc_ai_style26::ai_style26`
@@ -2290,41 +2292,41 @@ pub enum NpcKind {
     /// stamps the wind/zone/sibling seams. The NPC_546 sheet is DEFERRED
     /// (the full-set bound with NPC_86/155; the d35 precedent). The
     /// natural sandstorm spawn (`NPC.cs:3949-4018`) is a documented
-    /// remainder — the desert zone-chain family is unported.
+    /// remainder вЂ” the desert zone-chain family is unported.
     Tumbleweed,
-    // W4-d120 — the unclaimed chatter kinds (the claim doc
+    // W4-d120 вЂ” the unclaimed chatter kinds (the claim doc
     // `tools/_d120_claim.md`; the d36/d39/d41/d42/d43 lanes were 0 ahead).
-    /// `NPCID.SantaClaus` (142, `NPCID.cs:10961`) — the seasonal town NPC
+    /// `NPCID.SantaClaus` (142, `NPCID.cs:10961`) вЂ” the seasonal town NPC
     /// (`NPC.cs:10791-10804`): townNPC + friendly, 18x40, aiStyle 7,
     /// dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
     /// `npcFrameCount[142]` = 25 (`Main.cs:67082`), ExtraFramesCount 9
     /// (`NPCID.cs:10464`). The arrival gate (`downedFrost && xMas`) rides
     /// the f43 lane's `town_arrival_pets.rs`.
     SantaClaus,
-    /// `NPCID.Truffle` (160, `NPCID.cs:10997`) — the mushroom town NPC
+    /// `NPCID.Truffle` (160, `NPCID.cs:10997`) вЂ” the mushroom town NPC
     /// (`NPC.cs:11003-11016`): townNPC + friendly, 18x40, aiStyle 7,
     /// dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
     /// `npcFrameCount[160]` = 23, ExtraFramesCount 7. The hardmode
     /// surface-mushroom arrival gate rides the c41 lane.
     Truffle,
-    /// `NPCID.Steampunker` (178, `NPCID.cs:11033`) — the mechanic-boss
+    /// `NPCID.Steampunker` (178, `NPCID.cs:11033`) вЂ” the mechanic-boss
     /// town NPC (`NPC.cs:11252-11265`): townNPC + friendly, 18x40,
     /// aiStyle 7, dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
     /// `npcFrameCount[178]` = 23, ExtraFramesCount 9.
     Steampunker,
-    /// `NPCID.Cyborg` (209, `NPCID.cs:11095`) — the post-Plantera town NPC
+    /// `NPCID.Cyborg` (209, `NPCID.cs:11095`) вЂ” the post-Plantera town NPC
     /// (`NPC.cs:11682-11695`): townNPC + friendly, 18x40, aiStyle 7,
     /// dmg 10, def 30, 500 HP, kb 0.25, NPCHit4/NPCDeath1 (the machine's
     /// own hit cue); `npcFrameCount[209]` = 26, ExtraFramesCount 10.
     Cyborg,
-    /// `NPCID.BartenderUnconscious` (579, `NPCID.cs:11835`) — the bound
+    /// `NPCID.BartenderUnconscious` (579, `NPCID.cs:11835`) вЂ” the bound
     /// Tavernkeep (`NPC.cs:16554-16568`): friendly (NOT townNPC), 34x8,
     /// aiStyle 0, dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath6,
     /// rarity 1; `Sets.BoundTownNPCs` (`NPCID.cs:10441`), the bestiary
     /// draw modifier Hide=true (`NPCID.cs:5178-5184`) folds it onto the
-    /// Tavernkeep's entry. The talk transforms 579 → 550
-    /// (`NPC.cs:19857-19860`) — the wiring lane's arm.
-    /// `NPCID.HallowBoss` (636, `NPCID.cs:11949`) — the Empress of Light
+    /// Tavernkeep's entry. The talk transforms 579 в†’ 550
+    /// (`NPC.cs:19857-19860`) вЂ” the wiring lane's arm.
+    /// `NPCID.HallowBoss` (636, `NPCID.cs:11949`) вЂ” the Empress of Light
     /// (`NPC.cs:17188-17206`): 100x100, aiStyle 120, dmg 80, def 50,
     /// 70000 HP, kb 0, noGravity + noTileCollide, boss, Opacity 0
     /// (alpha 255), dontTakeDamage, npcSlots 16, value 25 gold.
@@ -2334,7 +2336,7 @@ pub enum NpcKind {
     /// day-enrage one-shot rides `damage_override` 9999 + the
     /// `IsDamageDodgeable` 636 arm (`:78752-78753`).
     EmpressOfLight,
-    /// `NPCID.EmpressButterfly` (661, `NPCID.cs:11999`) — the Prismatic
+    /// `NPCID.EmpressButterfly` (661, `NPCID.cs:11999`) вЂ” the Prismatic
     /// Lacewing (`NPC.cs:17351-17365`): 10x10, aiStyle 65, dmg 0, def 0,
     /// 5 HP, noGravity, lavaImmune, catchItem 4961, rarity 4, npcSlots
     /// 0.25. W4-d125: the 661 branch of `AI_065_Butterflies`
@@ -2349,47 +2351,47 @@ pub enum NpcKind {
     // is d37/d42's); the dups stay drop-pending at their pushed ids until
     // the merge keep-one. The vanilla `NPC.type` rides `cs_id`/the
     // bestiary `net_id`.
-    /// `NPCID.Vulture` (61, `NPCID.cs:10799`) — the desert perch-flyer
+    /// `NPCID.Vulture` (61, `NPCID.cs:10799`) вЂ” the desert perch-flyer
     /// (`NPC.cs:9554-9566`): 36x36, aiStyle 17, dmg 15, def 4, 40 HP,
     /// kb 0.8, NPCHit28/NPCDeath31, value 60. WIRED: the axis' 17 arm
     /// rides `npc_ai_style17::ai_style17` (the perch/startle machine).
-    /// `NPCID.BlueJellyfish` (63, `NPCID.cs:10803`) — the cavern jelly
+    /// `NPCID.BlueJellyfish` (63, `NPCID.cs:10803`) вЂ” the cavern jelly
     /// (`NPC.cs:9582-9595`): 26x26, aiStyle 18, dmg 25, def 4, 34 HP,
     /// kb 1 (no row), NPCHit25/NPCDeath28, value 100, alpha 20, noGravity.
     /// WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`.
-    /// `NPCID.PinkJellyfish` (64, `NPCID.cs:10805`) — the pink jelly
+    /// `NPCID.PinkJellyfish` (64, `NPCID.cs:10805`) вЂ” the pink jelly
     /// (`NPC.cs:9596-9609`): 26x26, aiStyle 18, dmg 30, def 6, 70 HP,
     /// kb 1 (no row), NPCHit25/NPCDeath28, value 100, alpha 20, noGravity.
     /// WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`.
     PinkJellyfish,
-    /// `NPCID.Antlion` (69, `NPCID.cs:10815`) — the desert sand-spitter
+    /// `NPCID.Antlion` (69, `NPCID.cs:10815`) вЂ” the desert sand-spitter
     /// (`NPC.cs:9666-9679`): 24x24, aiStyle 19, dmg 10, def 6, 45 HP,
     /// kb 0, NPCHit31/NPCDeath34, value 60, behindTiles. WIRED: the axis'
     /// 19 arm rides `npc_ai_style19::ai_style19` (the SandBall 31 shots).
     Antlion,
-    /// `NPCID.SpikeBall` (70, `NPCID.cs:10817`) — the dungeon trap
+    /// `NPCID.SpikeBall` (70, `NPCID.cs:10817`) вЂ” the dungeon trap
     /// (`NPC.cs:9680-9696`): 34x34, aiStyle 20, dmg 32, def 100, 100 HP,
     /// kb 0, NPCHit1/NPCDeath1, noGravity + noTileCollide + dontTakeDamage,
     /// scale 1.5, npcSlots 0.3, value 0 (no row). WIRED: the axis' 20 arm
     /// rides `npc_ai_style20::ai_style20` (the away-launch bounce).
     SpikeBall,
-    /// `NPCID.Pixie` (75, `NPCID.cs:10827`) — the hallow wisp
+    /// `NPCID.Pixie` (75, `NPCID.cs:10827`) вЂ” the hallow wisp
     /// (`NPC.cs:9772-9785`): 20x20, aiStyle 22, dmg 55, def 20, 150 HP,
     /// kb 0.6, NPCHit5/NPCDeath7, value 350, noGravity. WIRED: the axis'
     /// 22 arm rides `npc_ai_style22::ai_022_arm` (the sparkle/chirp ghost).
-    /// `NPCID.Wraith` (82, `NPCID.cs:10841`) — the hardmode ghost
+    /// `NPCID.Wraith` (82, `NPCID.cs:10841`) вЂ” the hardmode ghost
     /// (`NPC.cs:9852-9878`): 24x44, aiStyle 22, dmg 65, def 16, 160 HP,
     /// kb 0.7, NPCHit54/NPCDeath52, value 500, alpha 100, noGravity +
     /// noTileCollide. WIRED: the axis' 22 arm rides `ai_022_arm`.
-    /// `NPCID.CursedHammer` (83, `NPCID.cs:10843`) — the possessed hammer
+    /// `NPCID.CursedHammer` (83, `NPCID.cs:10843`) вЂ” the possessed hammer
     /// (`NPC.cs:9879-9891`): 40x40, aiStyle 23, dmg 80, def 18, 200 HP,
     /// kb 0.4, NPCHit4/NPCDeath6, value 1000. WIRED: the axis' 23 arm
     /// rides `npc_ai_style23::ai_style23` (the launch/drift/spin).
-    /// `NPCID.EnchantedSword` (84, `NPCID.cs:10845`) — the possessed sword
+    /// `NPCID.EnchantedSword` (84, `NPCID.cs:10845`) вЂ” the possessed sword
     /// (`NPC.cs:9892-9904`): the 83 row verbatim (40x40, aiStyle 23,
     /// dmg 80, def 18, 200 HP, kb 0.4, NPCHit4/NPCDeath6, value 1000).
     /// WIRED: the axis' 23 arm rides `npc_ai_style23::ai_style23`.
-    /// `NPCID.Mimic` (85, `NPCID.cs:10847`) — the chest trap
+    /// `NPCID.Mimic` (85, `NPCID.cs:10847`) вЂ” the chest trap
     /// (`NPC.cs:9905-9925`): 24x24, aiStyle 25, dmg 80, def 30, 500 HP,
     /// kb 0.3, NPCHit4/NPCDeath6, value 100000, rarity 4; the pre-hardmode
     /// fold is dmg 30 / def 12 / 300 HP / value 200. WIRED: the axis' 25
@@ -2397,56 +2399,56 @@ pub enum NpcKind {
     // ---- W4-g8 lane 1 batch 2: the styles 18/22/23/40/41/42 members +
     // the WallCreeper walk pair (the style-40 transform target). E8: the
     // owned kinds' protocol ids ride 748-756 (the dups drop-pending).
-    /// `NPCID.GreenJellyfish` (103, `NPCID.cs:10883`) — the hardmode jelly
+    /// `NPCID.GreenJellyfish` (103, `NPCID.cs:10883`) вЂ” the hardmode jelly
     /// (`NPC.cs:10216-10229`): 26x26, aiStyle 18, dmg 80, def 30, 120 HP,
     /// kb 1 (no row), NPCHit25/NPCDeath28, value 800, alpha 20, noGravity.
     /// WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`.
-    /// `NPCID.Gastropod` (122, `NPCID.cs:10921`) — the hallow snail
+    /// `NPCID.Gastropod` (122, `NPCID.cs:10921`) вЂ” the hallow snail
     /// (`NPC.cs:10479-10492`): 20x20, aiStyle 22, dmg 60, def 22, 220 HP,
     /// kb 0.8, NPCHit1/NPCDeath1, value 600, noGravity. WIRED: the axis'
     /// 22 arm rides `npc_ai_style22::ai_022_arm` (the PinkLaser 84 shot).
-    /// `NPCID.WallCreeper` (164, `NPCID.cs:11005`) — the spider's WALK form
+    /// `NPCID.WallCreeper` (164, `NPCID.cs:11005`) вЂ” the spider's WALK form
     /// (`NPC.cs:11059-11072`): 50x20, aiStyle 3, dmg 30, def 10, 80 HP,
     /// kb 0.25, NPCHit29/NPCDeath32, value 100, npcSlots 0.5. The style-40
     /// WallCreeperWall's `Transform(164)` target (`NPC.cs:29869-29892`).
     WallCreeper,
-    /// `NPCID.WallCreeperWall` (165, `NPCID.cs:11007`) — the spider's WALL
+    /// `NPCID.WallCreeperWall` (165, `NPCID.cs:11007`) вЂ” the spider's WALL
     /// form (`NPC.cs:11073-11087`): 36x36, aiStyle 40, dmg 30, def 10,
     /// 80 HP, kb 0.25, NPCHit29/NPCDeath32, value 100, npcSlots 0.5,
     /// noGravity. WIRED: the axis' 40 arm rides `npc_ai_style40::style40_step`
     /// (the wall-crawl + the walk transform).
     WallCreeperWall,
-    /// `NPCID.IceElemental` (169, `NPCID.cs:11015`) — the snow ghost
+    /// `NPCID.IceElemental` (169, `NPCID.cs:11015`) вЂ” the snow ghost
     /// (`NPC.cs:11113-11127`): 18x40, aiStyle 22, dmg 55, def 20, 200 HP,
     /// kb 0.6, NPCHit5/NPCDeath7, value 1500, noGravity, coldDamage. WIRED:
     /// the axis' 22 arm rides `ai_022_arm` (the FrostBlast 128 shot).
     IceElemental,
-    /// `NPCID.Herpling` (174, `NPCID.cs:11025`) — the crimson hopper
+    /// `NPCID.Herpling` (174, `NPCID.cs:11025`) вЂ” the crimson hopper
     /// (`NPC.cs:11194-11207`): 52x26, aiStyle 41, dmg 65, def 26, 220 HP,
     /// kb 0.3, NPCHit1/NPCDeath1, value 450, npcSlots 1. WIRED: the axis'
     /// 41 arm rides `npc_ai_style41::style41_step`.
     Herpling,
-    /// `NPCID.Derpling` (177, `NPCID.cs:11031`) — the jungle hopper
+    /// `NPCID.Derpling` (177, `NPCID.cs:11031`) вЂ” the jungle hopper
     /// (`NPC.cs:11238-11251`): 58x44, aiStyle 41, dmg 80, def 26, 300 HP,
     /// kb 0.5, NPCHit22/NPCDeath25, value 500, npcSlots 1. WIRED: the axis'
     /// 41 arm rides `npc_ai_style41::style41_step`.
     Derpling,
-    /// `NPCID.CrimsonAxe` (179, `NPCID.cs:11035`) — the possessed axe
+    /// `NPCID.CrimsonAxe` (179, `NPCID.cs:11035`) вЂ” the possessed axe
     /// (`NPC.cs:11266-11278`): the 83 row verbatim (40x40, aiStyle 23,
     /// dmg 80, def 18, 200 HP, kb 0.4, NPCHit4/NPCDeath6, value 1000).
     /// WIRED: the axis' 23 arm rides `npc_ai_style23::ai_style23`.
     CrimsonAxe,
-    /// `NPCID.FloatyGross` (182, `NPCID.cs:11041`) — the crimson ghost
+    /// `NPCID.FloatyGross` (182, `NPCID.cs:11041`) вЂ” the crimson ghost
     /// (`NPC.cs:11316-11331`): 24x62, aiStyle 22, dmg 65, def 18, 240 HP,
     /// kb 0.7, NPCHit1/NPCDeath2, value 500, alpha 100, noGravity +
     /// noTileCollide. WIRED: the axis' 22 arm rides `ai_022_arm`.
     FloatyGross,
-    /// `NPCID.LostGirl` (195, `NPCID.cs:11067`) — the disguised nymph
+    /// `NPCID.LostGirl` (195, `NPCID.cs:11067`) вЂ” the disguised nymph
     /// (`NPC.cs:11492-11505`): 18x40, aiStyle 42, dmg 10, def 30, 250 HP,
     /// kb 0.5, NPCHit1/NPCDeath1, value 2 gold, rarity 2. WIRED: the axis'
     /// 42 arm rides `npc_ai_style42::lost_girl_ai` (the Transform(196)).
     LostGirl,
-    /// `NPCID.Nymph` (196, `NPCID.cs:11069`) — the revealed nymph
+    /// `NPCID.Nymph` (196, `NPCID.cs:11069`) вЂ” the revealed nymph
     /// (`NPC.cs:11506-11519`): 18x40, aiStyle 3, dmg 35, def 16, 300 HP,
     /// kb 0.4, NPCHit1/NPCDeath2, value 2 gold, rarity 2. The LostGirl's
     /// transform target; the aiStyle-3 fighter ladder (the cap-2 group).
@@ -2454,69 +2456,69 @@ pub enum NpcKind {
     // ---- W4-g8 lane 1 batch 3: the CursedSkull (style 10) + the nine
     // aiStyle-14 bat/flyer family members. E8: the owned bats' protocol
     // ids ride 757-760 (the dups drop-pending).
-    /// `NPCID.CursedSkull` (34, `NPCID.cs:10745`) — the dungeon skull
+    /// `NPCID.CursedSkull` (34, `NPCID.cs:10745`) вЂ” the dungeon skull
     /// (`NPC.cs:9150-9165`): 26x28, aiStyle 10, dmg 35, def 6, 40 HP,
     /// kb 0.2, NPCHit2/NPCDeath2, value 150, noGravity + noTileCollide,
     /// npcSlots 0.75. WIRED: the axis' 10 arm rides `npc_ai_style10::style10_ai`.
-    /// `NPCID.Demon` (62, `NPCID.cs:10801`) — the underworld demon
+    /// `NPCID.Demon` (62, `NPCID.cs:10801`) вЂ” the underworld demon
     /// (`NPC.cs:9567-9581`): 28x48, aiStyle 14, dmg 32, def 8, 120 HP,
     /// kb 0.8, NPCHit21/NPCDeath24, value 300, npcSlots 2, lavaImmune.
     /// WIRED: the axis' 14 arm rides `npc_ai_style14::bat_ai` (the sickle).
-    /// `NPCID.GiantBat` (93, `NPCID.cs:10863`) — the cavern bat
+    /// `NPCID.GiantBat` (93, `NPCID.cs:10863`) вЂ” the cavern bat
     /// (`NPC.cs:10047-10060`): 26x20, aiStyle 14, dmg 45, def 16, 100 HP,
     /// kb 0.75, NPCHit1/NPCDeath4, value 400, npcSlots 0.5.
-    /// `NPCID.Slimer` (121, `NPCID.cs:10919`) — the hardmode slime flyer
+    /// `NPCID.Slimer` (121, `NPCID.cs:10919`) вЂ” the hardmode slime flyer
     /// (`NPC.cs:10466-10478`): 40x30, aiStyle 14, dmg 45, def 20, 60 HP,
     /// kb 0.8, NPCHit1/NPCDeath1 (no row), value 0 (no row), alpha 55,
     /// scale 1.1.
-    /// `NPCID.IlluminantBat` (137, `NPCID.cs:10951`) — the hallow bat
+    /// `NPCID.IlluminantBat` (137, `NPCID.cs:10951`) вЂ” the hallow bat
     /// (`NPC.cs:10735-10747`): 26x20, aiStyle 14, dmg 75, def 30, 200 HP,
     /// kb 0.75, NPCHit1/NPCDeath6, value 500.
-    /// `NPCID.IceBat` (150, `NPCID.cs:10977`) — the snow bat
+    /// `NPCID.IceBat` (150, `NPCID.cs:10977`) вЂ” the snow bat
     /// (`NPC.cs:10885-10899`): 22x22, aiStyle 14, dmg 18, def 6, 30 HP,
     /// kb 0.8, NPCHit1/NPCDeath4, value 250, npcSlots 0.5, coldDamage.
-    /// `NPCID.Lavabat` (151, `NPCID.cs:10979`) — the underworld bat
+    /// `NPCID.Lavabat` (151, `NPCID.cs:10979`) вЂ” the underworld bat
     /// (`NPC.cs:10900-10915`): 22x22, aiStyle 14, dmg 50, def 16, 160 HP,
     /// kb 0.6, NPCHit1/NPCDeath4, value 400, npcSlots 0.5, scale 1.15,
     /// lavaImmune.
-    /// `NPCID.GiantFlyingFox` (152, `NPCID.cs:10981`) — the jungle fox
+    /// `NPCID.GiantFlyingFox` (152, `NPCID.cs:10981`) вЂ” the jungle fox
     /// (`NPC.cs:10916-10929`): 38x34, aiStyle 14, dmg 80, def 24, 220 HP,
     /// kb 0.65, NPCHit1/NPCDeath4, value 400, npcSlots 0.5.
-    /// `NPCID.VampireBat` (158, `NPCID.cs:10993`) — the eclipse bat
+    /// `NPCID.VampireBat` (158, `NPCID.cs:10993`) вЂ” the eclipse bat
     /// (`NPC.cs:15466-15479`): 22x22, aiStyle 14, dmg 60, def 32, 750 HP,
     /// kb 0.75, NPCHit1/NPCDeath6, value 5000, npcSlots 2. WIRED: the
-    /// axis' 14 arm rides `bat_ai` — the surface flee + Transform(159)
+    /// axis' 14 arm rides `bat_ai` вЂ” the surface flee + Transform(159)
     /// landed with the W4-g8 machine round (the Vampire census row).
-    /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) — the temple snake
+    /// `NPCID.FlyingSnake` (226, `NPCID.cs:11129`) вЂ” the temple snake
     /// (`NPC.cs:11911-11924`): 34x50, aiStyle 14, dmg 85, def 28, 260 HP,
     /// kb 0.65, NPCHit23/NPCDeath26, value 400, npcSlots 0.5. WIRED: the
-    /// axis' 14 arm rides `bat_ai` — the velocity-sign facing + the 4/2.5
+    /// axis' 14 arm rides `bat_ai` вЂ” the velocity-sign facing + the 4/2.5
     /// approach landed with the W4-g8 machine round.
-    // ---- W4-g8 lane 1 batch 4: the last three ≤230 d22-d33 machine
-    // members — the Squid (style 18) + the Harpy/RedDevil (style 14).
+    // ---- W4-g8 lane 1 batch 4: the last three в‰¤230 d22-d33 machine
+    // members вЂ” the Squid (style 18) + the Harpy/RedDevil (style 14).
     // E8: RedDevil rides 761; Squid/Harpy drop-pending (d37@358/d34@275).
-    /// `NPCID.Squid` (221, `NPCID.cs:11119`) — the ocean squid
+    /// `NPCID.Squid` (221, `NPCID.cs:11119`) вЂ” the ocean squid
     /// (`NPC.cs:11840-11854`): 26x26, aiStyle 18, dmg 20, def 2, 30 HP,
     /// kb 1 (no row), NPCHit1/NPCDeath1, value 100, alpha 20, noGravity,
     /// rarity 1. WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`
     /// (the ink-latch swimmer).
-    /// `NPCID.Harpy` (48, `NPCID.cs:10773`) — the sky harpy
+    /// `NPCID.Harpy` (48, `NPCID.cs:10773`) вЂ” the sky harpy
     /// (`NPC.cs:9360-9372`): 24x34, aiStyle 14, dmg 25, def 8, 100 HP,
     /// kb 0.6, NPCHit1/NPCDeath1, value 300. WIRED: the axis' 14 arm rides
-    /// `npc_ai_style14::bat_ai` — the wet arm + feather shot landed with
+    /// `npc_ai_style14::bat_ai` вЂ” the wet arm + feather shot landed with
     /// the W4-g8 machine round.
-    /// `NPCID.RedDevil` (156, `NPCID.cs:10987`) — the underworld devil
+    /// `NPCID.RedDevil` (156, `NPCID.cs:10987`) вЂ” the underworld devil
     /// (`NPC.cs:10974-10988`): 28x48, aiStyle 14, dmg 50, def 40, 600 HP,
     /// kb 0.5, NPCHit21/NPCDeath24, value 1200, npcSlots 2, lavaImmune.
-    /// WIRED: the axis' 14 arm rides `bat_ai` — the trident shot landed
+    /// WIRED: the axis' 14 arm rides `bat_ai` вЂ” the trident shot landed
     /// with the W4-g8 machine round.
     // ---- W4-g8 machine round 3: the VampireBat's Transform(159) target
-    // — the Vampire 159 census row (unrowed until the machine round).
+    // вЂ” the Vampire 159 census row (unrowed until the machine round).
     // Protocol id 762 (E8 collision fix: the pushed 388 is d37's
     // RustyArmoredBonesAxe; 762 is the first free id above the S4 core
-    // max 766 — 788-790 stay reserved for d39; the vanilla 159 slot is
+    // max 766 вЂ” 788-790 stay reserved for d39; the vanilla 159 slot is
     // the BoundMechanic's).
-    /// `NPCID.Vampire` (159, `NPCID.cs:10995`) — the eclipse vampire, the
+    /// `NPCID.Vampire` (159, `NPCID.cs:10995`) вЂ” the eclipse vampire, the
     /// VampireBat 158's transform form (`NPC.cs:15480-15493`): 18x40,
     /// aiStyle 3, dmg 80, def 24, 750 HP, kb 0.4, NPCHit1/NPCDeath6,
     /// value 5000, npcSlots 2. The `AI_003_Fighters` type-159 branches:
@@ -2524,63 +2526,63 @@ pub enum NpcKind {
     /// ported), the 500-roll moan (`ambient_sound::fighter_ambient_moans`,
     /// already ported) and the >300px Transform(158) return
     /// (`NPC.cs:58843-58852`, the machine round).
-    /// `NPCID.BlackDragonfly` (595, `NPCID.cs:11867`) — the darting
+    /// `NPCID.BlackDragonfly` (595, `NPCID.cs:11867`) вЂ” the darting
     /// critter (`aiStyle 114`, the shared 595-601 row `NPC.cs:16720-16738`):
-    /// 10x10, dmg 0, def 0, 5 HP, kb 1 (the head default — the row writes
+    /// 10x10, dmg 0, def 0, 5 HP, kb 1 (the head default вЂ” the row writes
     /// none), npcSlots 0.25, noGravity, catchItem 4334. WIRED (W4-d33):
     /// the axis' 114 arm rides `npc_ai_style114::style114_step`. The
     /// bestiary credit folds onto RedDragonfly 599 (Hide=true,
     /// `ContentSamples.cs:1043`); debuff-immune to Confused 31
     /// (`NPCID.cs:9473-9479`).
     BlackDragonfly,
-    /// `NPCID.BlueDragonfly` (596, `NPCID.cs:11869`) — the 595 row,
+    /// `NPCID.BlueDragonfly` (596, `NPCID.cs:11869`) вЂ” the 595 row,
     /// catchItem 4335; the same 599 credit fold + 31 immunity.
     BlueDragonfly,
-    /// `NPCID.GreenDragonfly` (597, `NPCID.cs:11871`) — the 595 row,
+    /// `NPCID.GreenDragonfly` (597, `NPCID.cs:11871`) вЂ” the 595 row,
     /// catchItem 4336; the same 599 credit fold + 31 immunity.
     GreenDragonfly,
-    /// `NPCID.OrangeDragonfly` (598, `NPCID.cs:11873`) — the 595 row,
+    /// `NPCID.OrangeDragonfly` (598, `NPCID.cs:11873`) вЂ” the 595 row,
     /// catchItem 4337; the same 599 credit fold + 31 immunity.
     OrangeDragonfly,
-    /// `NPCID.RedDragonfly` (599, `NPCID.cs:11875`) — the 595 row,
+    /// `NPCID.RedDragonfly` (599, `NPCID.cs:11875`) вЂ” the 595 row,
     /// catchItem 4338. The family's bestiary CREDIT: 595/596/597/598/600
     /// are Hide=true (`NPCID.cs:510-543`) and fold here
     /// (`ContentSamples.cs:1043-1047`); 599's own entry is the visible
     /// "Dragonfly" card (`NPCs.json:637`).
     RedDragonfly,
-    /// `NPCID.YellowDragonfly` (600, `NPCID.cs:11877`) — the 595 row,
+    /// `NPCID.YellowDragonfly` (600, `NPCID.cs:11877`) вЂ” the 595 row,
     /// catchItem 4339; the same 599 credit fold (Hide=true,
     /// `NPCID.cs:538-543`) + 31 immunity.
     YellowDragonfly,
-    /// `NPCID.GoldDragonfly` (601, `NPCID.cs:11879`) — the gold critter
+    /// `NPCID.GoldDragonfly` (601, `NPCID.cs:11879`) вЂ” the gold critter
     /// (the same `NPC.cs:16720-16738` row): the 595 stats + rarity 3
     /// (`:16733-16736`), catchItem 4340. `NPCID.Sets.IsGoldCritter`
     /// member (`NPCID.cs:10126`); its OWN visible bestiary card
-    /// "Gold Dragonfly" (`NPCs.json:639` — no Hide row, no credit fold).
+    /// "Gold Dragonfly" (`NPCs.json:639` вЂ” no Hide row, no credit fold).
     GoldDragonfly,
-    /// `NPCID.FairyCritterPink` (583, `NPCID.cs:11843`) — the treasure-
+    /// `NPCID.FairyCritterPink` (583, `NPCID.cs:11843`) вЂ” the treasure-
     /// hunting fairy (`aiStyle 112`, the shared 583-585 row
     /// `NPC.cs:16583-16607`): 18x20, dmg 0, def 0, 5 HP, kb 1 (the head
-    /// default — the row writes none), noGravity, rarity 2, catchItem
+    /// default вЂ” the row writes none), noGravity, rarity 2, catchItem
     /// 4068. WIRED (W4-d33): the axis' 112 arm rides
     /// `npc_ai_style112::style112_step`. Its OWN visible "Pink Fairy"
-    /// card (no Hide row — the `NPCID.cs:5163-5169` draw modifiers only
+    /// card (no Hide row вЂ” the `NPCID.cs:5163-5169` draw modifiers only
     /// shift Position/Direction); whip-immune + the
     /// ImmuneToAllBuffsThatAreNotWhips gap (`NPCID.cs:9410-9417`, d42's
     /// documented deviation carried).
     FairyCritterPink,
-    /// `NPCID.FairyCritterGreen` (584, `NPCID.cs:11845`) — the 583 row,
+    /// `NPCID.FairyCritterGreen` (584, `NPCID.cs:11845`) вЂ” the 583 row,
     /// catchItem 4069 (`NPC.cs:16599`); own "Green Fairy" card, the same
     /// whip immunity.
     FairyCritterGreen,
-    /// `NPCID.FairyCritterBlue` (585, `NPCID.cs:11847`) — the 583 row,
+    /// `NPCID.FairyCritterBlue` (585, `NPCID.cs:11847`) вЂ” the 583 row,
     /// catchItem 4070 (`NPC.cs:16602`); own "Blue Fairy" card, the same
     /// whip immunity.
     FairyCritterBlue,
-    /// `NPCID.WindyBalloon` (594, `NPCID.cs:11865`) — the balloon with a
+    /// `NPCID.WindyBalloon` (594, `NPCID.cs:11865`) вЂ” the balloon with a
     /// slave slime on a string (`aiStyle 113`, `NPC.cs:16707-16719`):
     /// 20x20, dmg 0, def 0, 1 HP, kb 0.3, value 0, noGravity, NO
-    /// HitSound (it only pops — NPCDeath63). WIRED (W4-d33): the axis'
+    /// HitSound (it only pops вЂ” NPCDeath63). WIRED (W4-d33): the axis'
     /// 113 arm rides `npc_ai_style113::style113_step`. Its OWN visible
     /// "Windy Balloon" card (the `NPCID.cs:5232-5239` draw modifiers set
     /// a CustomTexturePath + Scale 0.8, no Hide); Confused-31 immune
@@ -2591,41 +2593,41 @@ pub enum NpcKind {
     // desert family the `NPC.cs:3949-4018` spawn arm picks. The protocol
     // ids ride the next-free 354..362 band (353 BlazingWheel reserved);
     // the vanilla `NPC.type` rides `cs_id`/`net_id` (the bestiary rows).
-    /// `NPCID.Tumbleweed` (546) — the wind-blown debris (`aiStyle 26`,
+    /// `NPCID.Tumbleweed` (546) вЂ” the wind-blown debris (`aiStyle 26`,
     /// `NPC.cs:15972-15984`): 30x30, dmg 30, def 6, 50 HP, kb 0.8,
     /// value 100. The `AI_026_Unicorns` 546 arm (`NPC.cs:62378-62408`'s
     /// separation, `:62565-62579`'s hop + ZoneDesert despawn,
     /// `:62703-62715`'s wind-driven walk, `:62919-62923`'s rotation).
-    /// `NPCID.Vulture` (61) — the desert flyer (`aiStyle 17`,
+    /// `NPCID.Vulture` (61) вЂ” the desert flyer (`aiStyle 17`,
     /// `NPC.cs:9554-9566`): 36x36, dmg 15, def 4, 40 HP, kb 0.8, value 60.
-    /// `NPCID.Antlion` (69) — the desert burrower (`aiStyle 19`,
+    /// `NPCID.Antlion` (69) вЂ” the desert burrower (`aiStyle 19`,
     /// `NPC.cs:9666-9679`): 24x24, dmg 10, def 6, 45 HP, kb 0, value 60,
     /// behindTiles.
-    /// `NPCID.Mummy` (78) — the desert walker (`aiStyle 3`,
+    /// `NPCID.Mummy` (78) вЂ” the desert walker (`aiStyle 3`,
     /// `NPC.cs:9799-9811`): 18x40, dmg 50, def 16, 130 HP, kb 0.6,
     /// value 600. The half-life rage speed row (`NPC.cs:57907-57943`).
-    /// `NPCID.DarkMummy` (79) — the corrupt desert walker (`aiStyle 3`,
+    /// `NPCID.DarkMummy` (79) вЂ” the corrupt desert walker (`aiStyle 3`,
     /// `NPC.cs:9812-9824`): 18x40, dmg 60, def 18, 180 HP, kb 0.5,
-    /// value 700. The rage row's ×1.5 cap (`:57916-57919`).
-    /// `NPCID.BloodMummy` (630) — the crimson desert walker (`aiStyle 3`,
+    /// value 700. The rage row's Г—1.5 cap (`:57916-57919`).
+    /// `NPCID.BloodMummy` (630) вЂ” the crimson desert walker (`aiStyle 3`,
     /// `NPC.cs:17107-17119`): 18x40, dmg 60, def 18, 180 HP, kb 0.5,
-    /// value 700. The rage row's ×1.5 cap (the 79 twin).
-    /// `NPCID.LightMummy` (80) — the hallow desert walker (`aiStyle 3`,
+    /// value 700. The rage row's Г—1.5 cap (the 79 twin).
+    /// `NPCID.LightMummy` (80) вЂ” the hallow desert walker (`aiStyle 3`,
     /// `NPC.cs:9825-9837`): 18x40, dmg 55, def 18, 200 HP, kb 0.55,
     /// value 700.
-    /// `NPCID.WalkingAntlion` (580) — the desert charger (`aiStyle 3`,
+    /// `NPCID.WalkingAntlion` (580) вЂ” the desert charger (`aiStyle 3`,
     /// `NPC.cs:14854-14867`): 26x26, dmg 25, def 10, 80 HP, kb 0.5,
     /// value 80, npcSlots 0.8. The 508/580/582 lerp speed row
     /// (`NPC.cs:58139-58202`).
-    /// `NPCID.FlyingAntlion` (581) — the desert flyer (`aiStyle 44`,
+    /// `NPCID.FlyingAntlion` (581) вЂ” the desert flyer (`aiStyle 44`,
     /// `NPC.cs:14868-14881`): 30x22, dmg 29, def 8, 60 HP, kb 0.5,
     /// value 90, npcSlots 0.8. The `AI_044` 581 arm
     /// (`NPC.cs:30987-31019`'s 0.06/0.02/4/2/40/150 rows).
     // W4-d9 wiring (the d40 7a88c61c/45dbafc3 dragon rows, verbatim): the
-    // Phantasm Dragon's chain — the 490 ritual's aiStyle-89 arm spawns the
+    // Phantasm Dragon's chain вЂ” the 490 ritual's aiStyle-89 arm spawns the
     // head (`Projectile.cs:32350`), the head's `AI_006` arm grows the 30
     // links (`NPC.cs:51191-51228`). The aiStyle-6 machine is UNWIRED for
-    // the family (the wyvern precedent — the kind arm holds row 0).
+    // the family (the wyvern precedent вЂ” the kind arm holds row 0).
     /// `NPCID.CultistDragonHead` (454): 32x32, aiStyle 6, dmg 100, def 15, 10000 HP,
     /// kb 0.0, value 0 (`NPC.cs:14414-14432` SetDefaults arm).
     /// `NPCID.CultistDragonBody1` (455): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
@@ -2638,58 +2640,58 @@ pub enum NpcKind {
     /// kb 0.0, value 0 (`NPC.cs:14452-14470` SetDefaults arm).
     /// `NPCID.CultistDragonTail` (459): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
     /// kb 0.0, value 0 (`NPC.cs:14433-14451` SetDefaults arm).
-    /// `NPCID.AncientCultistSquidhead` (521) — the d41 band's unrowed
+    /// `NPCID.AncientCultistSquidhead` (521) вЂ” the d41 band's unrowed
     /// summon, ported here for the ritual's else-arm (`Projectile.cs:32354`):
     /// 60x60, aiStyle 86, dmg 90, def 30, 2000 HP, kb 0 (`NPC.cs:15768-
     /// 15779`). The aiStyle-86 machine is UNWIRED (the style73 precedent).
     AncientCultistSquidhead,
     // ---- W4-d39 (research/125): the band 351-420's unclaimed kinds ----
     // The checkpoint wave's Firefly (355) / Worm (357) / LightningBug
-    // (358) / Snail (359) variants are DROPPED here — those kinds are
-    // claimed by the pushed c7/c8/c9 lanes (research/125 §2); their
+    // (358) / Snail (359) variants are DROPPED here вЂ” those kinds are
+    // claimed by the pushed c7/c8/c9 lanes (research/125 В§2); their
     // rows live on in commit 024c9877f for the merge wave's keep-one.
-    /// `NPCID.Butterfly` (356, `NPCID.cs:11389`) — the day flutter
+    /// `NPCID.Butterfly` (356, `NPCID.cs:11389`) вЂ” the day flutter
     /// (`NPC.cs:13531-13544`): 10x10, aiStyle 65, dmg 0, def 0, 5 HP,
     /// slots 0.25, noGravity, catchItem 1994 (+ai[2]-1 per tick,
-    /// `:45106` — `bug_net::catch_item` already re-derives it). WIRED:
+    /// `:45106` вЂ” `bug_net::catch_item` already re-derives it). WIRED:
     /// the axis' 65 arm rides `npc_ai_style65::ai_065_step` (the new
     /// module, the type-356 branches of `AI_065_Butterflies`,
     /// `NPC.cs:44896-45119`). Protocol id 817 (research/108 R7's
-    /// port-local 817-826 band — vanilla 356 sits inside d37's pushed
+    /// port-local 817-826 band вЂ” vanilla 356 sits inside d37's pushed
     /// 354-399 protocol corridor).
     Butterfly,
-    /// `NPCID.ScorpionBlack` (366, `NPCID.cs:11409`) — the black desert
+    /// `NPCID.ScorpionBlack` (366, `NPCID.cs:11409`) вЂ” the black desert
     /// critter (`NPC.cs:13661-13672`, the 366/367 shared row): 26x18,
     /// aiStyle 7, dmg 0, def 0, 5 HP, catchItem 2156. Protocol id 818
-    /// (research/108 §3's port-local band). The aiStyle-7 town-critter
+    /// (research/108 В§3's port-local band). The aiStyle-7 town-critter
     /// machine (`npc_ai_town::town_npc_ai`) is UNWIRED for the critter
-    /// band — the kind arm holds the documented wander stand-in
+    /// band вЂ” the kind arm holds the documented wander stand-in
     /// (`update_guide`'s shape, the MartianTurret precedent).
     ScorpionBlack,
-    /// `NPCID.Scorpion` (367, `NPCID.cs:11411`) — the brown desert
+    /// `NPCID.Scorpion` (367, `NPCID.cs:11411`) вЂ” the brown desert
     /// critter (the same `NPC.cs:13661-13672` row): 26x18, aiStyle 7,
     /// dmg 0, def 0, 5 HP, catchItem 2157 (`2156 + type - 366`).
     /// Protocol id 819.
     Scorpion,
-    /// `NPCID.Grasshopper` (377, `NPCID.cs:11431`) — the surface hopper
+    /// `NPCID.Grasshopper` (377, `NPCID.cs:11431`) вЂ” the surface hopper
     /// (`NPC.cs:13811-13824`): 14x10, aiStyle 1, dmg 0, def 0, 5 HP,
     /// friendly, catchItem 2740, slots 0.1. Protocol id 820. Rides the
     /// aiStyle-1 hop stand-in (`update_slime`, the wave-A precedent).
     /// SEAL CORRECTION: `AI_001_Slimes` DOES carry 377 branches
     /// (`NPC.cs:61080` flee flag3, `:61440` the 90-tick friendly
     /// latch, `:61588` the +3 hop charge, `:61684` the 0.9/0.6 hop
-    /// damping + flee-flip + ceiling clamp) — the faithful rows are
-    /// f18's `ai_001_grasshopper` (research/125 §6 keep-one).
+    /// damping + flee-flip + ceiling clamp) вЂ” the faithful rows are
+    /// f18's `ai_001_grasshopper` (research/125 В§6 keep-one).
     Grasshopper,
-    /// `NPCID.ChatteringTeethBomb` (378, `NPCID.cs:11433`) — the blood
+    /// `NPCID.ChatteringTeethBomb` (378, `NPCID.cs:11433`) вЂ” the blood
     /// moon's hopping bomb (`NPC.cs:13825-13838`): 20x26, aiStyle 41,
     /// dmg 120, def 30, 200 HP, kb 0.5, value 450, slots 1. Protocol id
     /// 821. WIRED: the axis' 41 arm rides `npc_ai_style41::style41_step`
-    /// (the faithful S1-D-3 module — the 3-hop cycle, the wet/<64-px
+    /// (the faithful S1-D-3 module вЂ” the 3-hop cycle, the wet/<64-px
     /// arming, the 10-tick fuse + the 160x160 explosion resize; keyed
     /// on `cs_id()` 378, NOT the port-local protocol id).
     ChatteringTeethBomb,
-    /// `NPCID.CultistArcherBlue` (379, `NPCID.cs:11435`) — the dungeon
+    /// `NPCID.CultistArcherBlue` (379, `NPCID.cs:11435`) вЂ” the dungeon
     /// cultist's archer (`NPC.cs:13839-13855`, the 379/380 shared row):
     /// 18x40, aiStyle 3, dmg 45, def 14, 210 HP, kb 0.55, value 1000,
     /// slots 0, lavaImmune, netAlways, chaseable=false. Protocol id
@@ -2697,95 +2699,95 @@ pub enum NpcKind {
     /// precedent); the `AI_003` 379/380 retreat branch (`NPC.cs:56181-
     /// 56214`) + the summoner link are the c1 wiring lane's.
     CultistArcherBlue,
-    /// `NPCID.CultistArcherWhite` (380, `NPCID.cs:11437`) — the white
+    /// `NPCID.CultistArcherWhite` (380, `NPCID.cs:11437`) вЂ” the white
     /// archer (the same `NPC.cs:13839-13855` row). Protocol id 823.
-    /// `Hide = true` (`NPCID.cs:3735`) — NO bestiary entry of its own
+    /// `Hide = true` (`NPCID.cs:3735`) вЂ” NO bestiary entry of its own
     /// (the populator's `GetExclusions`, `BestiaryDatabaseNPCsPopulator.cs:870-886`);
     /// `try_entry_for_npc` folds it onto the blue archer's 379 (the
     /// Sharkron2 precedent), `cs_id` rides the folded net id (the
     /// s1_f_3 invariant).
     CultistArcherWhite,
-    /// `NPCID.Crawdad` (494, `NPCID.cs:11661`) — the cavern crab
+    /// `NPCID.Crawdad` (494, `NPCID.cs:11661`) вЂ” the cavern crab
     /// (`aiStyle 3`, `NPC.cs:14666-14677`): 28x22, dmg 28, def 6, 50 HP,
-    /// kb 1 (the head default — the branch writes no row), value 120,
+    /// kb 1 (the head default вЂ” the branch writes no row), value 120,
     /// NPCHit33/NPCDeath36. The `AI_003_Fighters` charge family
     /// (`NPC.cs:58262-58321`): the 42-px close-range stop into the
-    /// `ai[2]` charge, the ×1.5 charge damage. W4-d41.
+    /// `ai[2]` charge, the Г—1.5 charge damage. W4-d41.
     Crawdad,
-    /// `NPCID.Crawdad2` (495, `NPCID.cs:11663`) — the second cavern crab
-    /// colour (`NPC.cs:14666-14677`'s `type >= 494 && <= 495` group —
+    /// `NPCID.Crawdad2` (495, `NPCID.cs:11663`) вЂ” the second cavern crab
+    /// colour (`NPC.cs:14666-14677`'s `type >= 494 && <= 495` group вЂ”
     /// identical stats). The bestiary credit folds onto 494
     /// (`ContentSamples.cs:1020`); the draw sheet stays NPC_495. W4-d41.
     Crawdad2,
-    /// `NPCID.GiantShelly` (496, `NPCID.cs:11665`) — the cavern snail
+    /// `NPCID.GiantShelly` (496, `NPCID.cs:11665`) вЂ” the cavern snail
     /// (`aiStyle 39`, `NPC.cs:14678-14690`): 28x22, dmg 16, def 12,
     /// 50 HP, kb 0.75, value 120, NPCHit38/NPCDeath41. The style-39
     /// machine's shelly branches (`npc_ai_style39.rs`: the 0.5 walk cap,
-    /// the +2/+4 aggro, the 0.5-tick wind-up, the ×1.5 lunge damage,
-    /// the ×0.75 lunge speed). W4-d41.
+    /// the +2/+4 aggro, the 0.5-tick wind-up, the Г—1.5 lunge damage,
+    /// the Г—0.75 lunge speed). W4-d41.
     GiantShelly,
-    /// `NPCID.GiantShelly2` (497, `NPCID.cs:11667`) — the second cavern
+    /// `NPCID.GiantShelly2` (497, `NPCID.cs:11667`) вЂ” the second cavern
     /// snail colour (`NPC.cs:14678-14690`'s `type >= 496 && <= 497`
-    /// group — identical stats). The bestiary credit folds onto 496
+    /// group вЂ” identical stats). The bestiary credit folds onto 496
     /// (`ContentSamples.cs:1019`); the draw sheet stays NPC_497. W4-d41.
     GiantShelly2,
-    /// `NPCID.Salamander` (498, `NPCID.cs:11669`) — the cavern
+    /// `NPCID.Salamander` (498, `NPCID.cs:11669`) вЂ” the cavern
     /// salamander (`aiStyle 3`, `NPC.cs:14691-14703`): 24x44, dmg 18,
     /// def 10, 65 HP, kb 0.45, value 120, NPCHit50/NPCDeath53. The
     /// `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
     /// 498-506 terms): the 70-tick cadence, the 7-speed spit 572 at
-    /// 14 dmg, the 190-px engage range, the centre −8 aim anchor.
+    /// 14 dmg, the 190-px engage range, the centre в€’8 aim anchor.
     /// W4-d41.
     Salamander,
-    /// `NPCID.Salamander2` (499, `NPCID.cs:11671`) — the second
+    /// `NPCID.Salamander2` (499, `NPCID.cs:11671`) вЂ” the second
     /// salamander colour (`NPC.cs:14691-14703`'s `type >= 498 &&
-    /// <= 506` group — identical stats). The bestiary credit folds onto
+    /// <= 506` group вЂ” identical stats). The bestiary credit folds onto
     /// 499 (`ContentSamples.cs:1021-1025`); the draw sheet stays
     /// NPC_499. W4-d41.
     Salamander2,
-    /// `NPCID.Salamander3` (500, `NPCID.cs:11673`) — the third
+    /// `NPCID.Salamander3` (500, `NPCID.cs:11673`) вЂ” the third
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_500. W4-d41.
     Salamander3,
-    /// `NPCID.Salamander4` (501, `NPCID.cs:11675`) — the fourth
+    /// `NPCID.Salamander4` (501, `NPCID.cs:11675`) вЂ” the fourth
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_501. W4-d41.
     Salamander4,
-    /// `NPCID.Salamander5` (502, `NPCID.cs:11677`) — the fifth
+    /// `NPCID.Salamander5` (502, `NPCID.cs:11677`) вЂ” the fifth
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_502. W4-d41.
     Salamander5,
-    /// `NPCID.Salamander6` (503, `NPCID.cs:11679`) — the sixth
+    /// `NPCID.Salamander6` (503, `NPCID.cs:11679`) вЂ” the sixth
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_503. W4-d41.
     Salamander6,
-    /// `NPCID.Salamander7` (504, `NPCID.cs:11681`) — the seventh
+    /// `NPCID.Salamander7` (504, `NPCID.cs:11681`) вЂ” the seventh
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_504. W4-d41.
     Salamander7,
-    /// `NPCID.Salamander8` (505, `NPCID.cs:11683`) — the eighth
+    /// `NPCID.Salamander8` (505, `NPCID.cs:11683`) вЂ” the eighth
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_505. W4-d41.
     Salamander8,
-    /// `NPCID.Salamander9` (506, `NPCID.cs:11685`) — the ninth
+    /// `NPCID.Salamander9` (506, `NPCID.cs:11685`) вЂ” the ninth
     /// salamander colour (`NPC.cs:14691-14703`). The bestiary credit
     /// folds onto 499; the draw sheet stays NPC_506. W4-d41.
     Salamander9,
-    /// `NPCID.GiantWalkingAntlion` (508, `NPCID.cs:11687`) — the desert
+    /// `NPCID.GiantWalkingAntlion` (508, `NPCID.cs:11687`) вЂ” the desert
     /// antlion charger (`aiStyle 3`, `NPC.cs:14828-14840`): 50x31,
     /// dmg 38, def 16, 110 HP, kb 0.4, value 175, NPCHit31/NPCDeath34.
     /// The `AI_003_Fighters` 508/580/582 lerp machine
     /// (`NPC.cs:58139-58202`): the 2.5/10 base, the speed-tiered
     /// 3.5/90 + 3/70 bumps, the near-ground counter brake, the airborne
-    /// weight ×3. W4-d41.
+    /// weight Г—3. W4-d41.
     GiantWalkingAntlion,
-    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11689`) — the desert
+    /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11689`) вЂ” the desert
     /// antlion swarmer (`aiStyle 44`, `NPC.cs:14841-14853`): 40x31,
     /// dmg 34, def 12, 90 HP, kb 0.3, value 195, NPCHit32/NPCDeath35.
     /// The style-44 swimmer's 509 parameter overrides
     /// (`npc_ai_style44.rs`: the 0.08/0.03 accel, the 4.5/2 caps, the
     /// 40/150 bands, the swarm separation). W4-d41.
-    /// `NPCID.DuneSplicerHead` (510, `NPCID.cs:11691`) — the desert
+    /// `NPCID.DuneSplicerHead` (510, `NPCID.cs:11691`) вЂ” the desert
     /// worm's head (`aiStyle 6`, `NPC.cs:14773-14789`): 34x34, dmg 58,
     /// def 18, 500 HP, kb 0, value 700, noGravity/noTileCollide/
     /// behindTiles, npcSlots 5, NPCHit1/NPCDeath1. The `AI_006_Worms`
@@ -2793,19 +2795,19 @@ pub enum NpcKind {
     /// sandstorm 16/0.35 vs 10/0.25 dig tunables (`:51707-51718`).
     /// W4-d41.
     DuneSplicerHead,
-    /// `NPCID.DuneSplicerBody` (511, `NPCID.cs:11693`) — the desert
+    /// `NPCID.DuneSplicerBody` (511, `NPCID.cs:11693`) вЂ” the desert
     /// worm's body (`aiStyle 6`, `NPC.cs:14790-14808`): 34x34, dmg 54,
     /// def 28, 500 HP, kb 0, value 700, noGravity/noTileCollide/
     /// behindTiles, netAlways/dontCountMe/npcSlots 0. The bestiary
     /// credit folds onto 510 (the head); the draw sheet stays NPC_511.
     /// W4-d41.
     DuneSplicerBody,
-    /// `NPCID.DuneSplicerTail` (512, `NPCID.cs:11695`) — the desert
+    /// `NPCID.DuneSplicerTail` (512, `NPCID.cs:11695`) вЂ” the desert
     /// worm's tail (`aiStyle 6`, `NPC.cs:14809-14827`): 34x34, dmg 50,
     /// def 34, 500 HP, the rest of the 511 row. The bestiary credit
     /// folds onto 510; the draw sheet stays NPC_512. W4-d41.
     DuneSplicerTail,
-    /// `NPCID.TombCrawlerHead` (513, `NPCID.cs:11697`) — the desert
+    /// `NPCID.TombCrawlerHead` (513, `NPCID.cs:11697`) вЂ” the desert
     /// worm's head (`aiStyle 6`, `NPC.cs:14718-14734`): 22x22, dmg 18,
     /// def 0, 60 HP, kb 0, value 130, noGravity/noTileCollide/
     /// behindTiles, npcSlots 4, NPCHit1/NPCDeath1. The `AI_006_Worms`
@@ -2813,84 +2815,84 @@ pub enum NpcKind {
     /// 7/0.1 dig tunables (`:51682-51686`), the underground-desert
     /// surface gate (`:51114-51117`). W4-d41.
     TombCrawlerHead,
-    /// `NPCID.TombCrawlerBody` (514, `NPCID.cs:11699`) — the desert
+    /// `NPCID.TombCrawlerBody` (514, `NPCID.cs:11699`) вЂ” the desert
     /// worm's body (`aiStyle 6`, `NPC.cs:14735-14753`): 22x22, dmg 7,
     /// def 12, 60 HP, kb 0, value 130, noGravity/noTileCollide/
     /// behindTiles, netAlways/dontCountMe/npcSlots 0. The bestiary
     /// credit folds onto 513 (the head); the draw sheet stays NPC_514.
     /// W4-d41.
     TombCrawlerBody,
-    /// `NPCID.TombCrawlerTail` (515, `NPCID.cs:11701`) — the desert
+    /// `NPCID.TombCrawlerTail` (515, `NPCID.cs:11701`) вЂ” the desert
     /// worm's tail (`aiStyle 6`, `NPC.cs:14754-14772`): 22x22, dmg 7,
     /// def 14, 60 HP, the rest of the 514 row. The bestiary credit
     /// folds onto 513; the draw sheet stays NPC_515. W4-d41.
     TombCrawlerTail,
-    /// `NPCID.SolarFlare` (516, `NPCID.cs:11703`) — the solar pillar's
+    /// `NPCID.SolarFlare` (516, `NPCID.cs:11703`) вЂ” the solar pillar's
     /// homing flare (`aiStyle 9`, `NPC.cs:15394-15408`): 26x26, dmg 100,
-    /// def 0, 1 HP, kb 0, noGravity (noTileCollide FALSE — it collides),
+    /// def 0, 1 HP, kb 0, noGravity (noTileCollide FALSE вЂ” it collides),
     /// null sounds, alpha 0. The aiStyle-9 arm's 516 branches
     /// (`NPC.cs:21380-21406`/`:21497-21515`): the alpha ramp, the
     /// RotatedByRandom launch, the collide/proximity self-strike, the
     /// 15-blend homing steer. W4-d41.
-    /// `NPCID.SolarGoop` (519, `NPCID.cs:11709`) — the solar pillar's
+    /// `NPCID.SolarGoop` (519, `NPCID.cs:11709`) вЂ” the solar pillar's
     /// falling fragment (`aiStyle 99`, `NPC.cs:15409-15423`): 26x26,
     /// dmg 120, def 0, 1 HP, kb 0, noGravity (noTileCollide FALSE),
     /// null sounds, alpha 0. The aiStyle-99 arm (`NPC.cs:39927-39990`):
     /// the 0.2 gravity to the 12 cap, the ground-strike 5-tick
     /// HitEffect death. W4-d41.
     SolarGoop,
-    /// `NPCID.AncientLight` (522, `NPCID.cs:11721`) — the cultist's
+    /// `NPCID.AncientLight` (522, `NPCID.cs:11721`) вЂ” the cultist's
     /// light orb (`aiStyle 100`, `NPC.cs:15780-15794`): 26x26, dmg 120,
     /// def 0, 400 HP, kb 0, noGravity/noTileCollide, null sounds,
     /// alpha 0. The aiStyle-100 arm (`NPC.cs:39991-40066`): the
     /// ground-strike latch, the ai[2]/ai[3] launch velocity, the
     /// 60-tick rotation + the 120-tick decay. W4-d41.
     AncientLight,
-    /// `NPCID.AncientDoom` (523, `NPCID.cs:11723`) — the cultist's doom
+    /// `NPCID.AncientDoom` (523, `NPCID.cs:11723`) вЂ” the cultist's doom
     /// orb (`aiStyle 101`, `NPC.cs:15795-15812`): 42x42, dmg 30, def 0,
     /// 500 HP, kb 0, noGravity/noTileCollide, alpha 255, chaseable
     /// false, canGhostHeal false, NPCHit1/NPCDeath6. The aiStyle-101
     /// arm (`NPC.cs:40067-40146`): the 120-tick scale/alpha ramp, the
     /// 420-tick 4-spoke 593 burst, the boss-link orphan death. W4-d41.
     AncientDoom,
-    /// `NPCID.DesertGhoul` (524, `NPCID.cs:11725`) — the desert ghoul
+    /// `NPCID.DesertGhoul` (524, `NPCID.cs:11725`) вЂ” the desert ghoul
     /// (`aiStyle 3`, `NPC.cs:14882-14919`): 24x44, dmg 50, def 26,
     /// 180 HP, kb 0.6, value 500, npcSlots 0.5, NPCHit37/NPCDeath40.
     /// The `AI_003_Fighters` cap-2 group (`NPC.cs:57554-57579`).
     /// W4-d41.
     DesertGhoul,
-    /// `NPCID.DesertGhoulCorruption` (525, `NPCID.cs:11727`) — the
+    /// `NPCID.DesertGhoulCorruption` (525, `NPCID.cs:11727`) вЂ” the
     /// corrupt ghoul (`NPC.cs:14897-14903`): the 524 row +70 HP, +4 def,
-    /// +10 dmg, −0.1 kb, +150 value (250 HP, 30 def, 60 dmg, kb 0.5,
+    /// +10 dmg, в€’0.1 kb, +150 value (250 HP, 30 def, 60 dmg, kb 0.5,
     /// value 650). W4-d41.
     DesertGhoulCorruption,
-    /// `NPCID.DesertGhoulCrimson` (526, `NPCID.cs:11729`) — the crimson
+    /// `NPCID.DesertGhoulCrimson` (526, `NPCID.cs:11729`) вЂ” the crimson
     /// ghoul (`NPC.cs:14904-14910`): the 524 row +40 HP, +6 def, +14 dmg,
-    /// −0.1 kb, +150 value (220 HP, 32 def, 64 dmg, kb 0.5, value 650).
+    /// в€’0.1 kb, +150 value (220 HP, 32 def, 64 dmg, kb 0.5, value 650).
     /// W4-d41.
     DesertGhoulCrimson,
-    /// `NPCID.DesertGhoulHallow` (527, `NPCID.cs:11731`) — the hallowed
+    /// `NPCID.DesertGhoulHallow` (527, `NPCID.cs:11731`) вЂ” the hallowed
     /// ghoul (`NPC.cs:14911-14917`): the 524 row +120 HP, +6 def, +4 dmg,
-    /// −0.2 kb, +250 value (300 HP, 32 def, 54 dmg, kb 0.4, value 750).
+    /// в€’0.2 kb, +250 value (300 HP, 32 def, 54 dmg, kb 0.4, value 750).
     /// W4-d41.
     DesertGhoulHallow,
-    /// `NPCID.DesertLamiaLight` (528, `NPCID.cs:11733`) — the light
+    /// `NPCID.DesertLamiaLight` (528, `NPCID.cs:11733`) вЂ” the light
     /// lamia (`aiStyle 3`, `NPC.cs:14920-14932`): 24x44, dmg 52, def 28,
     /// 350 HP, kb 0.35, value 600, NPCHit1/NPCDeath1. The
     /// `AI_003_Fighters` cap-3 group (`NPC.cs:57520-57553`). W4-d41.
     DesertLamiaLight,
-    /// `NPCID.DesertLamiaDark` (529, `NPCID.cs:11735`) — the dark lamia
-    /// (`NPC.cs:14920-14932`'s `type >= 528 && <= 529` group — identical
+    /// `NPCID.DesertLamiaDark` (529, `NPCID.cs:11735`) вЂ” the dark lamia
+    /// (`NPC.cs:14920-14932`'s `type >= 528 && <= 529` group вЂ” identical
     /// stats). W4-d41.
     DesertLamiaDark,
-    /// `NPCID.DesertScorpionWalk` (530, `NPCID.cs:11737`) — the sand
+    /// `NPCID.DesertScorpionWalk` (530, `NPCID.cs:11737`) вЂ” the sand
     /// poacher's walker form (`aiStyle 3`, `NPC.cs:14933-14945`):
     /// 50x20, dmg 66, def 24, 320 HP, kb 0.5, value 600,
     /// NPCHit13/NPCDeath19. The `AI_003_Fighters` cap-2 group
     /// (`NPC.cs:57554-57579`); the wall-stick transform into 531
     /// (`:58875-58905`). W4-d41.
     DesertScorpionWalk,
-    /// `NPCID.DesertScorpionWall` (531, `NPCID.cs:11739`) — the sand
+    /// `NPCID.DesertScorpionWall` (531, `NPCID.cs:11739`) вЂ” the sand
     /// poacher's wall form (`aiStyle 40`, `NPC.cs:14946-14959`):
     /// 36x36, dmg 66, def 24, 320 HP, kb 0.5, value 600, noGravity,
     /// NPCHit13/NPCDeath19. The aiStyle-40 wall-crawler
@@ -2899,139 +2901,139 @@ pub enum NpcKind {
     /// credit folds onto 530 (`ContentSamples.cs:1038`); the draw sheet
     /// stays NPC_531. W4-d41.
     DesertScorpionWall,
-    /// `NPCID.DesertBeast` (532, `NPCID.cs:11741`) — the basilisk
+    /// `NPCID.DesertBeast` (532, `NPCID.cs:11741`) вЂ” the basilisk
     /// (`aiStyle 3`, `NPC.cs:14960-14973`): 32x31, dmg 65, def 34,
     /// 270 HP, kb 0.3, value 800, npcSlots 0.75, NPCHit1/NPCDeath1.
     /// The `AI_003_Fighters` carrier group (`NPC.cs:58232-58237`:
     /// the 5/0.15/0.98 row). W4-d41.
     DesertBeast,
-    /// `NPCID.DemonTaxCollector` (534, `NPCID.cs:11745`) — the tortured
+    /// `NPCID.DemonTaxCollector` (534, `NPCID.cs:11745`) вЂ” the tortured
     /// soul (`aiStyle 3`, `NPC.cs:15813-15828`): 18x40, dmg 14, def 20,
     /// 400 HP, kb 0.3, value 0, lavaImmune, netAlways, rarity 2,
     /// NPCHit1/NPCDeath1. The humanoid FindFrame group
     /// (`NPC.cs:68615`); the purification-powder transform into the
     /// Tax Collector 441 (`Projectile.cs:14728-14733`). W4-d41.
     DemonTaxCollector,
-    /// `NPCID.SlimeSpiked` (535, `NPCID.cs:11747`) — the spiked slime
+    /// `NPCID.SlimeSpiked` (535, `NPCID.cs:11747`) вЂ” the spiked slime
     /// (`aiStyle 1`, `NPC.cs:15829-15842`): 24x18, dmg 14, def 5,
     /// 50 HP, scale 1.1, value 40, NPCHit1/NPCDeath1. The slime hop
     /// machine + the 2-row hop strip (`NPC.cs:70818-70846`). W4-d41.
     SlimeSpiked,
-    /// `NPCID.TheBride` (536, `NPCID.cs:11749`) — the blood-moon bride
+    /// `NPCID.TheBride` (536, `NPCID.cs:11749`) вЂ” the blood-moon bride
     /// (`aiStyle 3`, `NPC.cs:15843-15856`): 18x40, dmg 14, def 8,
     /// 200 HP, kb 0.5, value 1000, rarity 2, NPCHit1/NPCDeath2. The
     /// walker FindFrame group (`NPC.cs:76344-76391`). W4-d41.
     TheBride,
-    /// `NPCID.SandSlime` (537, `NPCID.cs:11751`) — the sand slime
+    /// `NPCID.SandSlime` (537, `NPCID.cs:11751`) вЂ” the sand slime
     /// (`aiStyle 1`, `NPC.cs:15857-15872`): 30x24, dmg 15, def 5,
     /// 50 HP, kb 0.7, value 75, alpha 50, color (255,250,0,0)*0.2,
     /// npcSlots 2, NPCHit1/NPCDeath1. The slime hop machine + the
     /// 3-row hop strip (`NPC.cs:70818-70846`). W4-d41.
     SandSlime,
-    /// `NPCID.SquirrelRed` (538, `NPCID.cs:11753`) — the red squirrel
+    /// `NPCID.SquirrelRed` (538, `NPCID.cs:11753`) вЂ” the red squirrel
     /// critter (`aiStyle 7`, `NPC.cs:15873-15884`): 18x20, dmg 0,
     /// def 0, 5 HP, catchItem 3563, NPCHit1/NPCDeath1. The town-critter
     /// walker + the 6-row hop strip (`NPC.cs:76459-76512`). W4-d41.
     SquirrelRed,
-    /// `NPCID.SquirrelGold` (539, `NPCID.cs:11755`) — the gold squirrel
+    /// `NPCID.SquirrelGold` (539, `NPCID.cs:11755`) вЂ” the gold squirrel
     /// critter (`aiStyle 7`, `NPC.cs:15885-15897`): 18x20, dmg 0,
     /// def 0, 5 HP, catchItem 3564, rarity 3, NPCHit1/NPCDeath1. The
     /// gold-critter bestiary fold (`BestiaryDatabaseNPCsPopulator.cs:716`:
-    /// {539→[299,538]}). W4-d41.
+    /// {539в†’[299,538]}). W4-d41.
     SquirrelGold,
-    /// `NPCID.PartyBunny` (540, `NPCID.cs:11757`) — the party bunny
+    /// `NPCID.PartyBunny` (540, `NPCID.cs:11757`) вЂ” the party bunny
     /// critter (`aiStyle 7`, `NPC.cs:9336-9347`'s 46/303/337/540 group):
     /// 18x20, dmg 0, def 0, 5 HP, catchItem 2019, NPCHit1/NPCDeath1.
     /// The town-critter walker + the 7-row hop strip
     /// (`NPC.cs:76857-76904`). W4-d41.
-    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) — the angry tumbler
+    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) вЂ” the angry tumbler
     /// (`aiStyle 26`, `NPC.cs:15972-15984`): 30x30, dmg 30, def 6,
     /// 50 HP, kb 0.8, value 100, NPCHit11/NPCDeath15. The
     /// `AI_026_Unicorns` wind-driven walk (`NPC.cs:62703-62716`: the
     /// 4 + wind*3 cap, the 0.05 accel, the 0.92 turnaround), the
     /// rotation tail (`:62919-62923`), the desert despawn gate
     /// (`:62570-62580`). W4-d41.
-    /// `NPCID.Frog` (361, `NPCID.cs:11399`) — the jungle critter
+    /// `NPCID.Frog` (361, `NPCID.cs:11399`) вЂ” the jungle critter
     /// (`NPC.cs:13601-13612`): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
-    /// kb 1 (the head default — the row writes none), value 0,
+    /// kb 1 (the head default вЂ” the row writes none), value 0,
     /// catchItem 2121. DATA-ONLY (W4-e26): the aiStyle-7 town machine
     /// (~2600 lines, research/25 row 7 APPROXIMATE) is its own wave;
     /// the kind + stats land so the catch/release chain resolves.
     /// E8 keep-one EXECUTED (research/108): e26 owns the Frog; the wire
-    /// id moves 361→744 (d37's Pirate owns proto 361), cs/net stay 361.
+    /// id moves 361в†’744 (d37's Pirate owns proto 361), cs/net stay 361.
     /// The Duck 362 variant DROPPED to c10 (the waterfowl family's
-    /// canonical owner, SEAL S1 — its walker/swim rows + Transform
+    /// canonical owner, SEAL S1 вЂ” its walker/swim rows + Transform
     /// chain land there; e26 keeps only the Frog + the ladybug pair).
     Frog,
-    /// `NPCID.LadyBug` (604, `NPCID.cs:11885`) — the luck critter
+    /// `NPCID.LadyBug` (604, `NPCID.cs:11885`) вЂ” the luck critter
     /// (`NPC.cs:16763-16780`): 10x10, aiStyle 115, dmg 0, def 0, 5 HP,
     /// kb 1, npcSlots 0.25, noGravity, catchItem 4361. WIRED (W4-e26):
     /// the axis' 115 arm rides `npc_ai_style115::ai_115_step`; the
     /// `CheckActive` 604/605 window (`NPC.cs:77930-77938`) and the
     /// `checkDead` kill (`:78056-78059`) feed the luck seams.
     LadyBug,
-    /// `NPCID.GoldLadyBug` (605, `NPCID.cs:11887`) — the gold luck
+    /// `NPCID.GoldLadyBug` (605, `NPCID.cs:11887`) вЂ” the gold luck
     /// critter (the same `NPC.cs:16763-16780` row): 10x10, aiStyle 115,
     /// the 604 stats + rarity 3, catchItem 4362; the gold flag doubles
     /// the luck windows (`LadyBugKilled`/`LadyBugLuck`'s `type == 605`).
     /// `NPCID.Sets.IsGoldCritter` member (`NPCID.cs:10126`).
     GoldLadyBug,
     // ---- W4-g10 NPC kind AXIS WIRING lane 3 (vanilla ids 461-697): the
-    // town PETS — the `NPCID.Sets.IsTownPet` roster (`NPCID.cs:10118`:
+    // town PETS вЂ” the `NPCID.Sets.IsTownPet` roster (`NPCID.cs:10118`:
     // 637/638/656/670/678-684). Every one is `aiStyle 7` in `SetDefaults`
     // and rides the landed pet-aware `npc_ai_town::town_npc_ai` machine
     // (the `is_town_pet`/`is_town_slime` gates + `pet_idle_animation`);
     // the axis' kind-guarded `7 if is_town_pet` arm claims them (the
-    // frost-mob kind-guard precedent — the 21 housed town kinds keep
+    // frost-mob kind-guard precedent вЂ” the 21 housed town kinds keep
     // their own routing until the W4-b3 lane lands). `housingCategory 1`
     // (`town.rs::housing_category` already keys these net ids).
-    /// `NPCID.TownCat` (637, `NPCID.cs:11951`) — the town cat
+    /// `NPCID.TownCat` (637, `NPCID.cs:11951`) вЂ” the town cat
     /// (`SetDefaults` `NPC.cs:17207-17225`, the 637/638 shared arm):
     /// 18x20 (the 637-only height override `:17213-17216`), aiStyle 7,
     /// dmg 10, def 15, 250 HP, kb 0.5, townNPC + friendly,
     /// housingCategory 1; `npcFrameCount[637]` = 28 (`Main.cs:67082`),
     /// `ExtraFramesCount` 18 (`NPCID.cs:10464`), AttackFrameCount 0.
     TownCat,
-    /// `NPCID.TownDog` (638, `NPCID.cs:11953`) — the town dog (the same
+    /// `NPCID.TownDog` (638, `NPCID.cs:11953`) вЂ” the town dog (the same
     /// 637/638 arm, the 28-height base): 18x28, aiStyle 7, dmg 10,
     /// def 15, 250 HP, kb 0.5; `npcFrameCount[638]` = 28,
     /// `ExtraFramesCount` 11.
     TownDog,
-    /// `NPCID.TownBunny` (656, `NPCID.cs:11989`) — the town bunny
+    /// `NPCID.TownBunny` (656, `NPCID.cs:11989`) вЂ” the town bunny
     /// (`NPC.cs:17295-17309`): 18x20, aiStyle 7, dmg 10, def 15,
     /// 250 HP, kb 0.5; `npcFrameCount[656]` = 27, `ExtraFramesCount` 20.
     TownBunny,
-    /// `NPCID.TownSlimeBlue` (670, `NPCID.cs:12017`) — the first town
+    /// `NPCID.TownSlimeBlue` (670, `NPCID.cs:12017`) вЂ” the first town
     /// slime (`NPC.cs:17481-17495`): 18x20, aiStyle 7, dmg 10, def 15,
     /// 250 HP, kb 0.5; `npcFrameCount[670]` = 14, `ExtraFramesCount` 6.
-    /// `NPCID.Sets.IsTownSlime` (`NPCID.cs:10119`) — NOT the 701-707
+    /// `NPCID.Sets.IsTownSlime` (`NPCID.cs:10119`) вЂ” NOT the 701-707
     /// shimmer-slime band (those are `ShimmerSlime` variants, unported).
     TownSlimeBlue,
-    /// `NPCID.TownSlimeGreen` (678, `NPCID.cs:12033`) — the 678-684
+    /// `NPCID.TownSlimeGreen` (678, `NPCID.cs:12033`) вЂ” the 678-684
     /// shared arm (`NPC.cs:17594-17608`): the same 18x20 / aiStyle 7 /
     /// 250-HP row as 670; `npcFrameCount[678]` = 14.
     TownSlimeGreen,
-    /// `NPCID.TownSlimeOld` (679, `NPCID.cs:12035`) — the elder slime.
+    /// `NPCID.TownSlimeOld` (679, `NPCID.cs:12035`) вЂ” the elder slime.
     TownSlimeOld,
-    /// `NPCID.TownSlimePurple` (680, `NPCID.cs:12037`) — the purple
+    /// `NPCID.TownSlimePurple` (680, `NPCID.cs:12037`) вЂ” the purple
     /// slime (the `Slimefors` easter-egg target, `NPC.cs:52974-52976`,
     /// already keyed by net id in `npc_ai_town`).
     TownSlimePurple,
-    /// `NPCID.TownSlimeRainbow` (681, `NPCID.cs:12039`) — the rainbow
+    /// `NPCID.TownSlimeRainbow` (681, `NPCID.cs:12039`) вЂ” the rainbow
     /// slime (the party-gated arrival).
     TownSlimeRainbow,
-    /// `NPCID.TownSlimeRed` (682, `NPCID.cs:12041`) — the red slime.
+    /// `NPCID.TownSlimeRed` (682, `NPCID.cs:12041`) вЂ” the red slime.
     TownSlimeRed,
-    /// `NPCID.TownSlimeYellow` (683, `NPCID.cs:12043`) — the yellow
+    /// `NPCID.TownSlimeYellow` (683, `NPCID.cs:12043`) вЂ” the yellow
     /// slime.
     TownSlimeYellow,
-    /// `NPCID.TownSlimeCopper` (684, `NPCID.cs:12045`) — the copper
+    /// `NPCID.TownSlimeCopper` (684, `NPCID.cs:12045`) вЂ” the copper
     /// slime, the 678-684 shared arm's last member (`NPC.cs:17594-17608`):
     /// the same 18x20 / aiStyle 7 / 250-HP row; `npcFrameCount[684]` = 14,
     /// `ExtraFramesCount` 6. The `CanConvertIntoCopperSlimeTownNPC`
     /// shimmer target (`NPCID.cs:10120`).
     TownSlimeCopper,
-    /// `NPCID.ShimmerSlime` (676, `NPCID.cs:12029`) — the shimmer
+    /// `NPCID.ShimmerSlime` (676, `NPCID.cs:12029`) вЂ” the shimmer
     /// transform target of the 15 slime/critter rows
     /// (`ShimmerTransformToNPC`, `NPCID.cs:10470`): 24x18, aiStyle 1,
     /// dmg 20, def 5, 80 HP, scale 1, value 150 copper
@@ -3040,383 +3042,383 @@ pub enum NpcKind {
     /// doc-sweep lane 36 row: the roster gap left every `-> 676`
     /// transform a no-op. The AI rides the shared aiStyle-1 stand-in
     /// (`update_slime`) until b1's `ai_001_slime_family` adapter lands
-    /// (the activation contract, research/151 §3); the 676 light/dust
+    /// (the activation contract, research/151 В§3); the 676 light/dust
     /// arm (`NPC.cs:61128-61150`) is WIRED in `npc_ai_slime` (keep-one
     /// 144). The HitEffect arm (`:82058-82078`) is the dust lanes'
-    /// (g62 hit / g60 death, the 676 death-half census gap seeded —
-    /// research/151 §2). The 677 Shimmerfly twin is
-    /// W4-c7/c9's pushed claim — NOT landed here (ANALYSIS 121).
+    /// (g62 hit / g60 death, the 676 death-half census gap seeded вЂ”
+    /// research/151 В§2). The 677 Shimmerfly twin is
+    /// W4-c7/c9's pushed claim вЂ” NOT landed here (ANALYSIS 121).
     ShimmerSlime,
-    /// `NPCID.Firefly` (355, `NPCID.cs:11387`) — the night critter
+    /// `NPCID.Firefly` (355, `NPCID.cs:11387`) вЂ” the night critter
     /// (`aiStyle 64`): 10x10, dmg 0, def 0, 5 HP, noGravity, catchItem
     /// 1992 (`NPC.cs:13517-13530`). W4-f18: the faithful
     /// `npc_ai_style64::ai_064_step` arm claims aiStyle 64.
-    /// `NPCID.Butterfly` (356, `NPCID.cs:11389`) — the day critter
+    /// `NPCID.Butterfly` (356, `NPCID.cs:11389`) вЂ” the day critter
     /// (`aiStyle 65`): 10x10, dmg 0, def 0, 5 HP, noGravity, catchItem
     /// 1994 + the colour style (`NPC.cs:13531-13544`). W4-f18: the
     /// faithful `npc_ai_style65::ai_065_step` arm claims aiStyle 65.
-    /// `NPCID.Worm` (357, `NPCID.cs:11391`) — the rain critter
+    /// `NPCID.Worm` (357, `NPCID.cs:11391`) вЂ” the rain critter
     /// (`aiStyle 66`): 10x4, dmg 0, def 0, 5 HP, friendly, catchItem
     /// 2002 (`NPC.cs:13545-13558`). W4-f18: the faithful
     /// `npc_ai_style66::ai_style66` arm claims aiStyle 66.
-    /// `NPCID.LightningBug` (358, `NPCID.cs:11393`) — the hallow night
+    /// `NPCID.LightningBug` (358, `NPCID.cs:11393`) вЂ” the hallow night
     /// critter (`aiStyle 64`): 12x12, dmg 0, def 0, 5 HP, noGravity,
     /// catchItem 2004 (`NPC.cs:13559-13572`). W4-f18: the aiStyle-64
     /// arm (the Firefly's machine, the teal glow branch).
-    /// `NPCID.Snail` (359, `NPCID.cs:11395`) — the cavern critter
+    /// `NPCID.Snail` (359, `NPCID.cs:11395`) вЂ” the cavern critter
     /// (`aiStyle 67`): 12x12, dmg 0, def 0, 5 HP, noGravity, catchItem
     /// 2006 (`NPC.cs:13573-13586`). W4-f18: the faithful
     /// `npc_ai_style67::snail_ai_step` arm claims aiStyle 67.
-    /// `NPCID.GlowingSnail` (360, `NPCID.cs:11397`) — the mushroom critter
+    /// `NPCID.GlowingSnail` (360, `NPCID.cs:11397`) вЂ” the mushroom critter
     /// (`aiStyle 67`): 14x14, dmg 0, def 0, 5 HP, noGravity, catchItem
     /// 2007, the blue glow (`NPC.cs:13587-13600`). W4-f18: the aiStyle-67
     /// arm (the Snail's machine, the 0.6 speed + blue-light branch).
-    /// `NPCID.Frog` (361, `NPCID.cs:11399`) — the jungle critter
+    /// `NPCID.Frog` (361, `NPCID.cs:11399`) вЂ” the jungle critter
     /// (`aiStyle 7`, the town-critter path): 12x10, dmg 0, def 0, 5 HP,
     /// catchItem 2121 (`NPC.cs:13601-13612`). W4-f18: the faithful
     /// `npc_ai_town_critter::town_critter_step` arm claims aiStyle 7.
-    /// `NPCID.Duck` (362, `NPCID.cs:11401`) — the surface waterfowl
+    /// `NPCID.Duck` (362, `NPCID.cs:11401`) вЂ” the surface waterfowl
     /// (`aiStyle 7`, the town-critter path): 22x26, dmg 0, def 0, 5 HP,
     /// catchItem 2122 (`NPC.cs:13613-13624`). W4-f18: the aiStyle-7
     /// town-critter arm; the Duck2 363's dry-landing transform target.
-    /// `NPCID.Duck2` (363, `NPCID.cs:11403`) — the swimming waterfowl
+    /// `NPCID.Duck2` (363, `NPCID.cs:11403`) вЂ” the swimming waterfowl
     /// (`aiStyle 68`): 28x22, dmg 0, def 0, 5 HP, catchItem 2122
     /// (`NPC.cs:13625-13636`). Hide=true (the bestiary folds onto the
     /// Duck 362). W4-f18: the faithful `npc_ai_style68::ai_style_68` arm
     /// claims aiStyle 68; the dry landing transforms to the Duck 362.
-    /// `NPCID.DuckWhite` (364, `NPCID.cs:11405`) — the white surface
+    /// `NPCID.DuckWhite` (364, `NPCID.cs:11405`) вЂ” the white surface
     /// waterfowl (`aiStyle 7`, the town-critter path): 22x26, dmg 0,
     /// def 0, 5 HP, catchItem 2123 (`NPC.cs:13637-13648`). W4-f18: the
     /// aiStyle-7 town-critter arm; the DuckWhite2 365's transform target.
-    /// `NPCID.DuckWhite2` (365, `NPCID.cs:11407`) — the white swimming
+    /// `NPCID.DuckWhite2` (365, `NPCID.cs:11407`) вЂ” the white swimming
     /// waterfowl (`aiStyle 68`): 28x22, dmg 0, def 0, 5 HP, catchItem
     /// 2123 (`NPC.cs:13649-13660`). Hide=true (the bestiary folds onto
     /// the DuckWhite 364). W4-f18: the aiStyle-68 arm; the dry landing
     /// transforms to the DuckWhite 364.
-    /// `NPCID.ScorpionBlack` (366, `NPCID.cs:11409`) — the black desert
+    /// `NPCID.ScorpionBlack` (366, `NPCID.cs:11409`) вЂ” the black desert
     /// critter (`aiStyle 7`, the town-critter path): 26x18, dmg 0, def 0,
     /// 5 HP, catchItem 2156 (`NPC.cs:13661-13672`). W4-f18: the aiStyle-7
     /// town-critter arm.
-    /// `NPCID.Scorpion` (367, `NPCID.cs:11411`) — the desert critter
+    /// `NPCID.Scorpion` (367, `NPCID.cs:11411`) вЂ” the desert critter
     /// (`aiStyle 7`, the town-critter path): 26x18, dmg 0, def 0, 5 HP,
     /// catchItem 2157 (`NPC.cs:13661-13672`, the shared 366/367 arm).
     /// W4-f18: the aiStyle-7 town-critter arm.
-    /// `NPCID.TruffleWorm` (374, `NPCID.cs:11425`) — the mushroom bait
+    /// `NPCID.TruffleWorm` (374, `NPCID.cs:11425`) вЂ” the mushroom bait
     /// critter (`aiStyle 66`): 20x10, dmg 0, def 0, 5 HP, catchItem 2673,
     /// rarity 4, dontTakeDamageFromHostiles (`NPC.cs:13762-13776`).
     /// W4-f18: the aiStyle-66 arm; the 90-tick approach digs into the
     /// TruffleWormDigger 375 (`npc_ai_style66`'s transform seam).
-    /// `NPCID.TruffleWormDigger` (375, `NPCID.cs:11427`) — the burrowing
+    /// `NPCID.TruffleWormDigger` (375, `NPCID.cs:11427`) вЂ” the burrowing
     /// form (`aiStyle 6`, the lone worm head): 10x10, dmg 0, def 0, 5 HP,
     /// kb 0, noGravity/noTileCollide/behindTiles, catchItem 2673, rarity 4
     /// (`NPC.cs:13777-13795`). Hide=true (the bestiary folds onto the
     /// TruffleWorm 374). W4-f18: the AI_006 digger arm (the inverted aim,
     /// `NPC.cs:51861-51865`); is_worm() true but NOT is_worm_head() (the
-    /// StardustWormHead lone-minion precedent — no chain).
-    /// `NPCID.Grasshopper` (377, `NPCID.cs:11415`) — the surface critter
+    /// StardustWormHead lone-minion precedent вЂ” no chain).
+    /// `NPCID.Grasshopper` (377, `NPCID.cs:11415`) вЂ” the surface critter
     /// (`aiStyle 1`, the slime hop machine's grasshopper branches): 14x10,
     /// dmg 0, def 0, 5 HP, friendly, catchItem 2740 (`NPC.cs:13811-13824`).
     /// W4-f18: the faithful `npc_ai_slime::ai_001_slimes` arm claims
     /// aiStyle 1 (the 377 flee/friendly-latch/ceiling-clamp rows).
-    /// `NPCID.ChatteringTeethBomb` (378, `NPCID.cs:11417`) — the blood-moon
+    /// `NPCID.ChatteringTeethBomb` (378, `NPCID.cs:11417`) вЂ” the blood-moon
     /// explosive (`aiStyle 41`): 20x26, dmg 120, def 30, 200 HP, value 450,
     /// kb 0.5 (`NPC.cs:13825-13838`). W4-f18: the faithful
     /// `npc_ai_style41::style41_step` arm claims aiStyle 41 (the fuse +
     /// the 160x160 explosion burst).
-    /// `NPCID.CultistArcherBlue` (379, `NPCID.cs:11433`) — the dungeon
+    /// `NPCID.CultistArcherBlue` (379, `NPCID.cs:11433`) вЂ” the dungeon
     /// cultist shooter (`aiStyle 3`): 18x40, dmg 45, def 14, 210 HP,
     /// value 1000, kb 0.55, lavaImmune, chaseable false, netAlways
     /// (`NPC.cs:13839-13855`). W4-f18: the AI_003 shooter block (the
     /// 80-tick cooldown, the 81 arrow, 40 dmg, the |dx|*0.1 aim lift).
-    /// `NPCID.CultistArcherWhite` (380, `NPCID.cs:11435`) — the white
+    /// `NPCID.CultistArcherWhite` (380, `NPCID.cs:11435`) вЂ” the white
     /// dungeon cultist shooter (`aiStyle 3`, the shared 379/380 arm):
     /// 18x40, dmg 45, def 14, 210 HP, value 1000, kb 0.55, lavaImmune,
     /// chaseable false, netAlways (`NPC.cs:13839-13855`). Hide=true (the
     /// bestiary folds onto the CultistArcherBlue 379). W4-f18: the same
     /// AI_003 shooter block.
-    /// `NPCID.ArmedZombie` (430, `NPCID.cs:11541`) — the blood-moon
+    /// `NPCID.ArmedZombie` (430, `NPCID.cs:11541`) вЂ” the blood-moon
     /// charge zombie (`aiStyle 3`): 18x40, dmg 14, def 6, 45 HP, value 60,
     /// kb 0.5, NPCDeath2 (`NPC.cs:8612-8624`). W4-f18: the aiStyle-3
     /// charge family (`npc_ai3_speeds::apply_ladder`'s 430-436 arm) via
     /// `walker_step_fighter`; the FindFrame charge rows 3/4/5/6.
     /// noTileCollide, catchItem 5350. ROWED by W4-g62 (the TRAILCACHE
-    /// WIDENING's 677→60 MAX row needs the kind; the c9 2042d77f1
-    /// rowing adopted verbatim — the snail trio 359/360/655 stays
+    /// WIDENING's 677в†’60 MAX row needs the kind; the c9 2042d77f1
+    /// rowing adopted verbatim вЂ” the snail trio 359/360/655 stays
     /// c9's, the merge dedupes). WIRED here: the kind-gated 64 axis
     /// arm rides `npc_ai_style64::ai_064_step`'s 677 branches (the
     /// solo self-view threat scan; the pooled firefly pass is W4-c7's).
     /// `NPCID.GoblinShark` (620) - `NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961)`:
     /// 34x58, aiStyle 107, dmg 70, def 30,
     /// 5000 HP, kb 0.0, value 7500.
-    /// ROWED by W4-g62 (the TRAILCACHE WIDENING's 620→20 row needs the
-    /// kind; the d42 2d7ac08c3 rowing adopted verbatim — the rest of
+    /// ROWED by W4-g62 (the TRAILCACHE WIDENING's 620в†’20 row needs the
+    /// kind; the d42 2d7ac08c3 rowing adopted verbatim вЂ” the rest of
     /// the 578-630 roster stays d42's, the merge dedupes). aiStyle 107
     /// is UNWIRED on this base (the MartianTurret/wyvern precedent):
     /// the idle stand-in, d42's own dispatch shape.
-    /// `NPCID.WaterBoltMimic` (694) — Water Bolt Mimic (`aiStyle 10`):
+    /// `NPCID.WaterBoltMimic` (694) вЂ” Water Bolt Mimic (`aiStyle 10`):
     /// 44x44, dmg 20, def 4, 60 HP, kb 0.2,
     /// value 150.0, noGravity (`NPC.cs:17737-17751`). W4-d43.
-    /// `NPCID.PalworldCattivaDistressed` (695) — Cattiva (`aiStyle 127`):
+    /// `NPCID.PalworldCattivaDistressed` (695) вЂ” Cattiva (`aiStyle 127`):
     /// 18x18, dmg 0, def 15, 250 HP, kb 0.5,
     /// value 0.0, friendly (`NPC.cs:17752-17765`). W4-d43.
     PalworldCattivaDistressed,
-    /// `NPCID.PalworldFoxsparksDistressed` (696) — Foxparks (`aiStyle 127`):
+    /// `NPCID.PalworldFoxsparksDistressed` (696) вЂ” Foxparks (`aiStyle 127`):
     /// 18x18, dmg 0, def 15, 250 HP, kb 0.5,
     /// value 0.0, friendly (`NPC.cs:17766-17779`). W4-d43.
     PalworldFoxsparksDistressed,
-    /// `NPCID.OwlMimic` (689) — Owl (`aiStyle 24`):
+    /// `NPCID.OwlMimic` (689) вЂ” Owl (`aiStyle 24`):
     /// 18x34, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17667-17679`). W4-d43.
     OwlMimic,
-    /// `NPCID.StatueMimic` (690) — Statue (`aiStyle 126`):
+    /// `NPCID.StatueMimic` (690) вЂ” Statue (`aiStyle 126`):
     /// 28x38, dmg 40, def 10, 400 HP, kb 0.0,
     /// value 0.0, dontTakeDamage, immortal (`NPC.cs:17680-17695`). W4-d43.
     StatueMimic,
-    /// `NPCID.MossZombie` (691) — Moss Zombie (`aiStyle 3`):
+    /// `NPCID.MossZombie` (691) вЂ” Moss Zombie (`aiStyle 3`):
     /// 18x40, dmg 18, def 10, 60 HP, kb 0.45,
     /// value 80.0 (`NPC.cs:17696-17708`). W4-d43.
     MossZombie,
-    /// `NPCID.Orca` (692) — Orca (`aiStyle 16`):
+    /// `NPCID.Orca` (692) вЂ” Orca (`aiStyle 16`):
     /// 120x34, dmg 50, def 20, 400 HP, kb 0.7,
     /// value 10000.0, noGravity (`NPC.cs:17709-17722`). W4-d43.
     Orca,
-    /// `NPCID.LibrarianSkeleton` (693) — Librarian Skeleton (`aiStyle 8`):
+    /// `NPCID.LibrarianSkeleton` (693) вЂ” Librarian Skeleton (`aiStyle 8`):
     /// 18x40, dmg 18, def 2, 70 HP, kb 0.6,
     /// value 160.0 (`NPC.cs:17723-17736`). W4-d43.
-    /// `NPCID.TownSlimeCopper` (684) — Squire Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimeCopper` (684) вЂ” Squire Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
-    /// `NPCID.BoundTownSlimeOld` (685) — Old Shaking Chest (`aiStyle 1`):
+    /// `NPCID.BoundTownSlimeOld` (685) вЂ” Old Shaking Chest (`aiStyle 1`):
     /// 30x28, dmg 0, def 10, 250 HP, kb 0.3,
     /// value 0.0, friendly (`NPC.cs:17609-17623`). W4-d43.
     BoundTownSlimeOld,
-    /// `NPCID.BoundTownSlimePurple` (686) — Clumsy Balloon Slime (`aiStyle 125`):
+    /// `NPCID.BoundTownSlimePurple` (686) вЂ” Clumsy Balloon Slime (`aiStyle 125`):
     /// 20x20, dmg 0, def 0, 1 HP, kb 0.3,
     /// value 0.0, noGravity (`NPC.cs:17624-17639`). W4-d43.
     BoundTownSlimePurple,
-    /// `NPCID.BoundTownSlimeYellow` (687) — Mystic Frog (`aiStyle 7`):
+    /// `NPCID.BoundTownSlimeYellow` (687) вЂ” Mystic Frog (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17640-17652`). W4-d43.
     BoundTownSlimeYellow,
-    /// `NPCID.Pufferfish` (688) — Pufferfish (`aiStyle 16`):
+    /// `NPCID.Pufferfish` (688) вЂ” Pufferfish (`aiStyle 16`):
     /// 32x16, dmg 0, def 0, 5 HP, kb 0.5,
     /// value 0.0, noGravity (`NPC.cs:17653-17666`). W4-d43.
     Pufferfish,
-    /// `NPCID.TownSlimeOld` (679) — Elder Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimeOld` (679) вЂ” Elder Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
-    /// `NPCID.TownSlimePurple` (680) — Clumsy Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimePurple` (680) вЂ” Clumsy Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
-    /// `NPCID.TownSlimeRainbow` (681) — Diva Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimeRainbow` (681) вЂ” Diva Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
-    /// `NPCID.TownSlimeRed` (682) — Surly Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimeRed` (682) вЂ” Surly Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
-    /// `NPCID.TownSlimeYellow` (683) — Mystic Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimeYellow` (683) вЂ” Mystic Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
-    /// `NPCID.YellowCockatiel` (674) — Yellow Cockatiel (`aiStyle 24`):
+    /// `NPCID.YellowCockatiel` (674) вЂ” Yellow Cockatiel (`aiStyle 24`):
     /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17538-17551`). W4-d43.
     YellowCockatiel,
-    /// `NPCID.GrayCockatiel` (675) — Gray Cockatiel (`aiStyle 24`):
+    /// `NPCID.GrayCockatiel` (675) вЂ” Gray Cockatiel (`aiStyle 24`):
     /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17552-17565`). W4-d43.
     GrayCockatiel,
-    /// `NPCID.ShimmerSlime` (676) — Shimmer Slime (`aiStyle 1`):
+    /// `NPCID.ShimmerSlime` (676) вЂ” Shimmer Slime (`aiStyle 1`):
     /// 24x18, dmg 20, def 5, 80 HP, kb 1.0,
     /// value 150.0 (`NPC.cs:17566-17578`). W4-d43.
-    /// `NPCID.Shimmerfly` (677) — Faeling (`aiStyle 64`):
+    /// `NPCID.Shimmerfly` (677) вЂ” Faeling (`aiStyle 64`):
     /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0, noGravity (`NPC.cs:17579-17593`). W4-d43.
-    /// `NPCID.TownSlimeGreen` (678) — Cool Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimeGreen` (678) вЂ” Cool Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17594-17608`). W4-d43.
-    /// `NPCID.Stinkbug` (669) — Stinkbug (`aiStyle 115`):
+    /// `NPCID.Stinkbug` (669) вЂ” Stinkbug (`aiStyle 115`):
     /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0, noGravity (`NPC.cs:17467-17480`). W4-d43.
     Stinkbug,
-    /// `NPCID.TownSlimeBlue` (670) — Nerdy Slime (`aiStyle 7`):
+    /// `NPCID.TownSlimeBlue` (670) вЂ” Nerdy Slime (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17481-17495`). W4-d43.
-    /// `NPCID.ScarletMacaw` (671) — Scarlet Macaw (`aiStyle 24`):
+    /// `NPCID.ScarletMacaw` (671) вЂ” Scarlet Macaw (`aiStyle 24`):
     /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17496-17509`). W4-d43.
     ScarletMacaw,
-    /// `NPCID.BlueMacaw` (672) — Blue Macaw (`aiStyle 24`):
+    /// `NPCID.BlueMacaw` (672) вЂ” Blue Macaw (`aiStyle 24`):
     /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17510-17523`). W4-d43.
     BlueMacaw,
-    /// `NPCID.Toucan` (673) — Toucan (`aiStyle 24`):
+    /// `NPCID.Toucan` (673) вЂ” Toucan (`aiStyle 24`):
     /// 14x14, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17524-17537`). W4-d43.
     Toucan,
-    /// `NPCID.PirateGhost` (662) — Pirate's Curse (`aiStyle 122`):
+    /// `NPCID.PirateGhost` (662) вЂ” Pirate's Curse (`aiStyle 122`):
     /// 18x40, dmg 75, def 22, 500 HP, kb 0.2,
     /// value 0.0, noGravity (`NPC.cs:17367-17383`). W4-d43.
     PirateGhost,
-    /// `NPCID.TorchGod` (664) — The Torch God (`aiStyle 0`):
+    /// `NPCID.TorchGod` (664) вЂ” The Torch God (`aiStyle 0`):
     /// 0x0, dmg 0, def 0, 20 HP, kb 1.0,
     /// value 0.0, boss (`NPC.cs:17398-17402`). W4-d43.
     TorchGod,
-    /// `NPCID.ChaosBallTim` (665) — Chaos Ball (`aiStyle 9`):
+    /// `NPCID.ChaosBallTim` (665) вЂ” Chaos Ball (`aiStyle 9`):
     /// 16x16, dmg 20, def 0, 1 HP, kb 0.0,
     /// value 0.0, noGravity (`NPC.cs:17403-17417`). W4-d43.
     ChaosBallTim,
-    /// `NPCID.VileSpitEaterOfWorlds` (666) — Vile Spit (`aiStyle 9`):
+    /// `NPCID.VileSpitEaterOfWorlds` (666) вЂ” Vile Spit (`aiStyle 9`):
     /// 16x16, dmg 65, def 0, 1 HP, kb 0.0,
     /// value 0.0, noGravity (`NPC.cs:17418-17433`). W4-d43.
     VileSpitEaterOfWorlds,
-    /// `NPCID.GoldenSlime` (667) — Golden Slime (`aiStyle 1`):
+    /// `NPCID.GoldenSlime` (667) вЂ” Golden Slime (`aiStyle 1`):
     /// 24x18, dmg 5, def 5, 300 HP, kb 1.4,
     /// value 1500.0 (`NPC.cs:17434-17448`). W4-d43.
     GoldenSlime,
-    /// `NPCID.QueenSlimeBoss` (657) — Queen Slime (`aiStyle 121`):
+    /// `NPCID.QueenSlimeBoss` (657) вЂ” Queen Slime (`aiStyle 121`):
     /// 114x100, dmg 60, def 26, 18000 HP, kb 0.0,
     /// value 60000.0, boss (`NPC.cs:17310-17325`). W4-d43.
     QueenSlimeBoss,
-    /// `NPCID.QueenSlimeMinionBlue` (658) — Crystal Slime (`aiStyle 1`):
+    /// `NPCID.QueenSlimeMinionBlue` (658) вЂ” Crystal Slime (`aiStyle 1`):
     /// 24x18, dmg 40, def 35, 150 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17326-17337`). W4-d43.
     QueenSlimeMinionBlue,
-    /// `NPCID.QueenSlimeMinionPink` (659) — Bouncy Slime (`aiStyle 1`):
+    /// `NPCID.QueenSlimeMinionPink` (659) вЂ” Bouncy Slime (`aiStyle 1`):
     /// 24x18, dmg 40, def 35, 150 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17326-17337`). W4-d43.
     QueenSlimeMinionPink,
-    /// `NPCID.QueenSlimeMinionPurple` (660) — Heavenly Slime (`aiStyle 14`):
+    /// `NPCID.QueenSlimeMinionPurple` (660) вЂ” Heavenly Slime (`aiStyle 14`):
     /// 40x30, dmg 50, def 30, 120 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17338-17350`). W4-d43.
-    /// `NPCID.EmpressButterfly` (661) — Prismatic Lacewing (`aiStyle 65`):
+    /// `NPCID.EmpressButterfly` (661) вЂ” Prismatic Lacewing (`aiStyle 65`):
     /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0, noGravity (`NPC.cs:17351-17366`). W4-d43.
     EmpressButterfly,
-    /// `NPCID.GemBunnyAmber` (652) — Amber Bunny (`aiStyle 7`):
+    /// `NPCID.GemBunnyAmber` (652) вЂ” Amber Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
     GemBunnyAmber,
-    /// `NPCID.HellButterfly` (653) — Hell Butterfly (`aiStyle 65`):
+    /// `NPCID.HellButterfly` (653) вЂ” Hell Butterfly (`aiStyle 65`):
     /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0, noGravity (`NPC.cs:17250-17264`). W4-d43.
     HellButterfly,
-    /// `NPCID.Lavafly` (654) — Lavafly (`aiStyle 64`):
+    /// `NPCID.Lavafly` (654) вЂ” Lavafly (`aiStyle 64`):
     /// 10x10, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0, noGravity (`NPC.cs:17265-17279`). W4-d43.
-    /// `NPCID.MagmaSnail` (655) — Magma Snail (`aiStyle 67`):
+    /// `NPCID.MagmaSnail` (655) вЂ” Magma Snail (`aiStyle 67`):
     /// 14x14, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0, noGravity (`NPC.cs:17280-17294`). W4-d43.
-    /// `NPCID.TownBunny` (656) — Bunny (`aiStyle 7`):
+    /// `NPCID.TownBunny` (656) вЂ” Bunny (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17295-17309`). W4-d43.
-    /// `NPCID.GemBunnyTopaz` (647) — Topaz Bunny (`aiStyle 7`):
+    /// `NPCID.GemBunnyTopaz` (647) вЂ” Topaz Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
     GemBunnyTopaz,
-    /// `NPCID.GemBunnySapphire` (648) — Sapphire Bunny (`aiStyle 7`):
+    /// `NPCID.GemBunnySapphire` (648) вЂ” Sapphire Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
     GemBunnySapphire,
-    /// `NPCID.GemBunnyEmerald` (649) — Emerald Bunny (`aiStyle 7`):
+    /// `NPCID.GemBunnyEmerald` (649) вЂ” Emerald Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
     GemBunnyEmerald,
-    /// `NPCID.GemBunnyRuby` (650) — Ruby Bunny (`aiStyle 7`):
+    /// `NPCID.GemBunnyRuby` (650) вЂ” Ruby Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
     GemBunnyRuby,
-    /// `NPCID.GemBunnyDiamond` (651) — Diamond Bunny (`aiStyle 7`):
+    /// `NPCID.GemBunnyDiamond` (651) вЂ” Diamond Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
     GemBunnyDiamond,
-    /// `NPCID.GemSquirrelEmerald` (642) — Emerald Squirrel (`aiStyle 7`):
+    /// `NPCID.GemSquirrelEmerald` (642) вЂ” Emerald Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
     GemSquirrelEmerald,
-    /// `NPCID.GemSquirrelRuby` (643) — Ruby Squirrel (`aiStyle 7`):
+    /// `NPCID.GemSquirrelRuby` (643) вЂ” Ruby Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
     GemSquirrelRuby,
-    /// `NPCID.GemSquirrelDiamond` (644) — Diamond Squirrel (`aiStyle 7`):
+    /// `NPCID.GemSquirrelDiamond` (644) вЂ” Diamond Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
     GemSquirrelDiamond,
-    /// `NPCID.GemSquirrelAmber` (645) — Amber Squirrel (`aiStyle 7`):
+    /// `NPCID.GemSquirrelAmber` (645) вЂ” Amber Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
     GemSquirrelAmber,
-    /// `NPCID.GemBunnyAmethyst` (646) — Amethyst Bunny (`aiStyle 7`):
+    /// `NPCID.GemBunnyAmethyst` (646) вЂ” Amethyst Bunny (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17238-17249`). W4-d43.
     GemBunnyAmethyst,
-    /// `NPCID.TownCat` (637) — Cat (`aiStyle 7`):
+    /// `NPCID.TownCat` (637) вЂ” Cat (`aiStyle 7`):
     /// 18x20, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17207-17225`). W4-d43.
-    /// `NPCID.TownDog` (638) — Dog (`aiStyle 7`):
+    /// `NPCID.TownDog` (638) вЂ” Dog (`aiStyle 7`):
     /// 18x28, dmg 10, def 15, 250 HP, kb 0.5,
     /// value 0.0, townNPC (`NPC.cs:17207-17225`). W4-d43.
-    /// `NPCID.GemSquirrelAmethyst` (639) — Amethyst Squirrel (`aiStyle 7`):
+    /// `NPCID.GemSquirrelAmethyst` (639) вЂ” Amethyst Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
     GemSquirrelAmethyst,
-    /// `NPCID.GemSquirrelTopaz` (640) — Topaz Squirrel (`aiStyle 7`):
+    /// `NPCID.GemSquirrelTopaz` (640) вЂ” Topaz Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
     GemSquirrelTopaz,
-    /// `NPCID.GemSquirrelSapphire` (641) — Sapphire Squirrel (`aiStyle 7`):
+    /// `NPCID.GemSquirrelSapphire` (641) вЂ” Sapphire Squirrel (`aiStyle 7`):
     /// 18x20, dmg 0, def 0, 5 HP, kb 1.0,
     /// value 0.0 (`NPC.cs:17226-17237`). W4-d43.
     GemSquirrelSapphire,
-    /// `NPCID.RockGolem` (631) — Rock Golem (`aiStyle 3`):
+    /// `NPCID.RockGolem` (631) вЂ” Rock Golem (`aiStyle 3`):
     /// 36x48, dmg 85, def 35, 1000 HP, kb 0.1,
     /// value 25000.0 (`NPC.cs:17120-17133`). W4-d43.
     RockGolem,
-    /// `NPCID.MaggotZombie` (632) — Maggot Zombie (`aiStyle 3`):
+    /// `NPCID.MaggotZombie` (632) вЂ” Maggot Zombie (`aiStyle 3`):
     /// 18x40, dmg 14, def 6, 45 HP, kb 0.5,
     /// value 60.0 (`NPC.cs:17134-17146`). W4-d43.
     MaggotZombie,
-    /// `NPCID.SporeBat` (634) — Spore Bat (`aiStyle 14`):
+    /// `NPCID.SporeBat` (634) вЂ” Spore Bat (`aiStyle 14`):
     /// 22x18, dmg 13, def 2, 16 HP, kb 0.8,
     /// value 90.0 (`NPC.cs:17161-17174`). W4-d43.
-    /// `NPCID.SporeSkeleton` (635) — Spore Skeleton (`aiStyle 3`):
+    /// `NPCID.SporeSkeleton` (635) вЂ” Spore Skeleton (`aiStyle 3`):
     /// 18x40, dmg 20, def 8, 60 HP, kb 0.5,
     /// value 100.0 (`NPC.cs:17175-17187`). W4-d43.
     SporeSkeleton,
-    /// `NPCID.HallowBoss` (636) — Empress of Light (`aiStyle 120`):
+    /// `NPCID.HallowBoss` (636) вЂ” Empress of Light (`aiStyle 120`):
     /// 100x100, dmg 80, def 50, 70000 HP, kb 0.0,
     /// value 250000.0, noGravity, boss, dontTakeDamage (`NPC.cs:17188-17206`). W4-d43.
     HallowBoss,
     // ---- W4-d36 census batch 0 (d37-R7 re-pin: band 767-816, b0 rides
     // 767-771; research/108 R7 `a341daa12` supersedes the E4 762-811 note).
-    /// `NPCID.ToxicSludge` (141) — W4-d36 census (`NPC.cs` SetDefaults
+    /// `NPCID.ToxicSludge` (141) вЂ” W4-d36 census (`NPC.cs` SetDefaults
     /// case 141, `:10776-10790`): 34x28, aiStyle 1, dmg 50, def 18, 150 HP,
     /// kb 0.8, value 400, alpha 55, scale 1.1.
     ToxicSludge,
-    /// `NPCID.Penguin` (148) — W4-d36 census (`NPC.cs` SetDefaults
+    /// `NPCID.Penguin` (148) вЂ” W4-d36 census (`NPC.cs` SetDefaults
     /// case 148, `:10861-10872`): 16x34, aiStyle 7, dmg 0, def 0, 5 HP,
     /// kb 1.0 (the head default, no row), value 0, catchItem 2205.
     Penguin,
-    /// `NPCID.PenguinBlack` (149) — W4-d36 census (`NPC.cs` SetDefaults
+    /// `NPCID.PenguinBlack` (149) вЂ” W4-d36 census (`NPC.cs` SetDefaults
     /// case 149, `:10873-10884`): the 148 row verbatim.
     PenguinBlack,
-    /// `NPCID.GiantTortoise` (153) — W4-d36 census (`NPC.cs` SetDefaults
+    /// `NPCID.GiantTortoise` (153) вЂ” W4-d36 census (`NPC.cs` SetDefaults
     /// case 153, `:10930-10944`): 46x32, aiStyle 39, dmg 80, def 30, 470 HP,
     /// kb 0.3, value 500. WIRED: `update_tortoise` rides the faithful
     /// `npc_ai_style39::style39_step` (the SolarSroller wrapper's shape).
     GiantTortoise,
-    /// `NPCID.IceTortoise` (154) — W4-d36 census (`NPC.cs` SetDefaults
+    /// `NPCID.IceTortoise` (154) вЂ” W4-d36 census (`NPC.cs` SetDefaults
     /// case 154, `:10945-10960`): 46x32, aiStyle 39, dmg 55, def 28, 400 HP,
     /// kb 0.3, value 450, coldDamage.
     IceTortoise,
-    /// `NPCID.Wolf` (155) — W4-d36 E4 (`NPC.cs` SetDefaults case 155,
+    /// `NPCID.Wolf` (155) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case 155,
     /// `:10961-10973`): 46x30, aiStyle 26, dmg 65, def 30, 300 HP,
     /// kb 0.3, value 1000, NPCHit1/NPCDeath1. WIRED: the aiStyle-26
-    /// machine (`npc_ai_unicorn::unicorn_step` — the 155 hop-over
+    /// machine (`npc_ai_unicorn::unicorn_step` вЂ” the 155 hop-over
     /// `:62558` + the 0.95 turnaround `:62621`). FindFrame case 155
     /// (`:74311-74373`) over the 13-row strip (`Main.cs:67082`).
     /// The hit/death dust arm (`NPC.cs:87717-87737`) is the gore/dust
     /// wave's remainder.
-    /// `NPCID.Frankenstein` (162) — W4-d36 E4b (`NPC.cs` SetDefaults case
+    /// `NPCID.Frankenstein` (162) вЂ” W4-d36 E4b (`NPC.cs` SetDefaults case
     /// 162, `:15424-15436`): 18x40, aiStyle 3, dmg 65, def 18, 350 HP,
     /// kb 0.3, value 600, NPCHit1/NPCDeath2. WIRED: the aiStyle-3 walker
     /// family (`update_skeleton` on the ladder's cap-2 group `:57554`).
@@ -3426,48 +3428,48 @@ pub enum NpcKind {
     /// `:57356` own 500-roll) are the ambient wave's remainder.
     Frankenstein,
     // ---- W4-d36 E4 batch 2 (the remaining fighters at R7-band slots
-    // 774-776; 159 Vampire is g8-claimed — their pushed tip's
-    // `Vampire => 388`, machine round 3 — skipped).
-    /// `NPCID.BlackRecluse` (163) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    // 774-776; 159 Vampire is g8-claimed вЂ” their pushed tip's
+    // `Vampire => 388`, machine round 3 вЂ” skipped).
+    /// `NPCID.BlackRecluse` (163) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case
     /// 163, `:11030-11043`): 50x20, aiStyle 3, dmg 90, def 40, 350 HP,
     /// kb 0.25, value 500, npcSlots 0.5, NPCHit29/NPCDeath32. WIRED: the
     /// walker family (the cap-2 group `:57554`); FindFrame case 163
     /// (`:73227-73267`) over the 8-row strip. The bestiary credit folds
-    /// onto 238 BlackRecluseWall (`ContentSamples.cs:1036`, Hide=true —
+    /// onto 238 BlackRecluseWall (`ContentSamples.cs:1036`, Hide=true вЂ”
     /// d37's kind; the fold row carries the wall crawler's credit).
     /// The expert web volley (`:29849`/`:58855`) is the documented
     /// remainder (expert difficulty + the hostile-shot seam).
     BlackRecluse,
-    /// `NPCID.SwampThing` (166) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// `NPCID.SwampThing` (166) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case
     /// 166, `:15437-15449`): 18x40, aiStyle 3, dmg 70, def 26, 450 HP,
     /// kb 0.2, value 1000, NPCHit1/NPCDeath2. WIRED: the walker family
     /// (the cap-3 group `:57520`) + the `:55938-55971` dwell arm (the
-    /// 240-roll `ai[2]` window, the CanHit/justHit break, the ×0.9
+    /// 240-roll `ai[2]` window, the CanHit/justHit break, the Г—0.9
     /// standstill); FindFrame case 166 (`:75618-75664`) over the 13-row
     /// strip (the idle 0..5 band, the walk 7..12 band, the air row 6).
     SwampThing,
-    /// `NPCID.UndeadViking` (167) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// `NPCID.UndeadViking` (167) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case
     /// 167, `:11088-11100`): 18x40, aiStyle 3, dmg 24, def 10, 70 HP,
     /// kb 0.5, value 200, NPCHit2/NPCDeath2. WIRED: the walker family
     /// (the num83 group base 1.5 `:57606`); FindFrame's humanoid-group
     /// case list (`:68572`) over the 15-row strip, the air row 0
     /// (`:69647` lists 167). The ambient moan is the `:57340` 1000-roll.
     UndeadViking,
-    // ---- W4-d36 E4 batch 3 (the doc-110 §1 definitive table:
-    // CorruptPenguin 168→777, PigronCorruption 170→778, PigronHallow
-    // 171→779, PigronCrimson 180→783, FaceMonster 181→784; 780 stays
-    // free — the hover trio's 781/782 are fixed).
-    /// `NPCID.CorruptPenguin` (168) — W4-d36 E4 (`NPC.cs` SetDefaults
+    // ---- W4-d36 E4 batch 3 (the doc-110 В§1 definitive table:
+    // CorruptPenguin 168в†’777, PigronCorruption 170в†’778, PigronHallow
+    // 171в†’779, PigronCrimson 180в†’783, FaceMonster 181в†’784; 780 stays
+    // free вЂ” the hover trio's 781/782 are fixed).
+    /// `NPCID.CorruptPenguin` (168) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 168, `:11101-11112`): 16x34, aiStyle 3, dmg 20, def 4, 70 HP,
     /// NO kb row (the head's 1f default `:8533`), value 500,
     /// NPCHit1/NPCDeath1. WIRED: the walker family (the num83 group base
     /// 1.5 `:57606`); FindFrame case 148/149/168 (`:76392-76457`) over
-    /// the 12-row strip — 168 never rolls the localAI[0] colour band
+    /// the 12-row strip вЂ” 168 never rolls the localAI[0] colour band
     /// (`:53162` names 148/149 only), so its rows ride band 0. The
     /// blood-moon penguin Transform (`:91960`) + the `:60205` close-range
     /// dash are the documented remainders.
     CorruptPenguin,
-    /// `NPCID.PigronCorruption` (170) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// `NPCID.PigronCorruption` (170) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 170, `:11128-11140`): 44x36, aiStyle 2, dmg 70, def 16,
     /// 210 HP, kb 0.5, value 2000, NPCHit27/NPCDeath30. WIRED: the
     /// pigron machine's OWN 170/171/180 arm (`AI_002_FloatingEye`,
@@ -3476,18 +3478,18 @@ pub enum NpcKind {
     /// vy*0.1*direction tilt + the 4/2.5 speed caps. FindFrame case
     /// 170/171/180 (`:73418-73432`) over the 14-row strip.
     PigronCorruption,
-    /// `NPCID.PigronHallow` (171) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// `NPCID.PigronHallow` (171) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 171, `:11141-11153`): the Corruption pigron's stat row
     /// VERBATIM (44x36, aiStyle 2, dmg 70, def 16, 210 HP, kb 0.5,
-    /// value 2000, NPCHit27/NPCDeath30) — the three variants share the
+    /// value 2000, NPCHit27/NPCDeath30) вЂ” the three variants share the
     /// machine; only the hit-effect dust colour (16 vs 54) and the
     /// bestiary biome differ.
     PigronHallow,
-    /// `NPCID.PigronCrimson` (180) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// `NPCID.PigronCrimson` (180) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 180, `:11279-11291`): the same shared row (44x36, aiStyle 2,
     /// dmg 70, def 16, 210 HP, kb 0.5, value 2000, NPCHit27/NPCDeath30).
     PigronCrimson,
-    /// `NPCID.FaceMonster` (181) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// `NPCID.FaceMonster` (181) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case
     /// 181, `:11292-11314`): 18x44, aiStyle 3, dmg 25, def 10, 70 HP,
     /// kb 0.4, value 200, NPCHit1/NPCDeath2. WIRED: the walker family
     /// (the num83 group base 1.5 `:57606`; the remixWorld 3.75 row
@@ -3495,58 +3497,58 @@ pub enum NpcKind {
     /// unported seed's remainder); FindFrame's humanoid-group case list
     /// (`:68574`) over the 16-row strip, the air row 1 (`:69647` does
     /// NOT list 181). The moan is its OWN `:57360` 500-roll, case 29
-    /// style 8 — LIVE (`fighter_ambient_moans`).
+    /// style 8 вЂ” LIVE (`fighter_ambient_moans`).
     FaceMonster,
-    // ---- W4-d36 E4 batch 4 (the doc-110 §1 definitive table's next four:
-    // SnowFlinx 185→785, ArmoredViking 197→786, Lihzahrd 198→787,
-    // LihzahrdCrawler 199→788).
-    /// `NPCID.SnowFlinx` (185) — W4-d36 E4 (`NPC.cs` SetDefaults case 185,
+    // ---- W4-d36 E4 batch 4 (the doc-110 В§1 definitive table's next four:
+    // SnowFlinx 185в†’785, ArmoredViking 197в†’786, Lihzahrd 198в†’787,
+    // LihzahrdCrawler 199в†’788).
+    /// `NPCID.SnowFlinx` (185) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case 185,
     /// `:11361-11374`): 28x28, aiStyle 3, dmg 26, def 12, 70 HP, kb 1.1,
-    /// value 200, NPCHit1/NPCDeath1, coldDamage (no port slot field — the
+    /// value 200, NPCHit1/NPCDeath1, coldDamage (no port slot field вЂ” the
     /// IceTortoise note). WIRED: the walker family (the num83 group base
     /// 1.5 `:57606`) + the air-roll arm (`:58820-58831`: grounded zeroes
     /// rotation + localAI[0]; airborne with the hit latch localAI[0]==1
     /// rolls `vx * 0.05`; the latch is the `StrikeNPC_Inner` write
-    /// `:81364-81367`). The strong-hit knockback ×1.5 (`:81449-81452`)
+    /// `:81364-81367`). The strong-hit knockback Г—1.5 (`:81449-81452`)
     /// rides `damage::knock_back_npc`'s type row. FindFrame's humanoid-
     /// group case list (`:68575`) over the 12-row strip, the air row 1
     /// (`:69647` does NOT list 185). The hit/death dust + gore 240
     /// (`:89674-89689`) are the gore/dust wave's remainder.
     SnowFlinx,
-    /// `NPCID.ArmoredViking` (197) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// `NPCID.ArmoredViking` (197) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case
     /// 197, `:11520-11532`): 18x40, aiStyle 3, dmg 50, def 28, 280 HP,
     /// kb 0.45, value 500, NPCHit2/NPCDeath2. WIRED: the walker family
     /// (the cap-2 group `:57554`); FindFrame's humanoid-group case list
     /// (`:68577`) over the 15-row strip, the air row 0 (`:69647` lists
-    /// 197 — the UndeadViking shape). The moan is the `:57340` 1000-roll
+    /// 197 вЂ” the UndeadViking shape). The moan is the `:57340` 1000-roll
     /// (197 IS in the list); the door bash rides the `:59996` flag24 list
     /// (197 listed). The death gore 257/43/212 (`:88551-88558`) is the
     /// gore/dust wave's remainder.
     ArmoredViking,
-    /// `NPCID.Lihzahrd` (198) — W4-d36 E4 (`NPC.cs` SetDefaults case 198,
+    /// `NPCID.Lihzahrd` (198) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case 198,
     /// `:11533-11545`): 18x40, aiStyle 3, dmg 38, def 20, 400 HP, kb 0.4,
     /// value 650, NPCHit26/NPCDeath29. WIRED: the walker family (the
     /// num83 group base 1.5 `:57606`) + the form switch (`:57027-57030`:
     /// at life <= lifeMax * 0.55 the host Transform(199)s into the
-    /// crawler — the `wants_transform` post-tick drain, the style75
+    /// crawler вЂ” the `wants_transform` post-tick drain, the style75
     /// one-tick fold). FindFrame's humanoid-group case list (`:68578`)
     /// over the 16-row strip, the air row 1 (`:69647` does NOT list 198).
     /// The bestiary credit FOLDS onto 199's name (`ContentSamples.cs:1052`,
-    /// 199 Hide=true `NPCID.cs:2577-2582`) — the entry emits at net 198
+    /// 199 Hide=true `NPCID.cs:2577-2582`) вЂ” the entry emits at net 198
     /// keyed on "LihzahrdCrawler" (the BlackRecluse 238 precedent). The
     /// IdleSounds 1000-roll (`:90103-90106`, style Next(36,38)) is the
     /// unported IdleSounds wave's remainder; the hit/death dust + gores
     /// 258-260 (`:86807-86824`) the gore/dust wave's.
     Lihzahrd,
-    /// `NPCID.LihzahrdCrawler` (199) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// `NPCID.LihzahrdCrawler` (199) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 199, `:11546-11558`): 42x30, aiStyle 3, dmg 60, def 30,
     /// 400 HP, kb 0, value 650, NPCHit26/NPCDeath29. WIRED: the walker
     /// family on the ladder's OWN 199 arm (`:57486-57519`: cap 4, accel
-    /// 0.1, the grounded ×0.8 over-brake AND counter-drift brake).
+    /// 0.1, the grounded Г—0.8 over-brake AND counter-drift brake).
     /// FindFrame case 199 (`:75030-75068`) over the 8-row strip: the
     /// 0..3 intro band (+1 clock, >6 advance), the 3..7 walk band (|vx|
     /// clock, >12 advance, wrap at 8 back to 3), airborne holds the walk
-    /// row. The bestiary row is Hide=true (`NPCID.cs:2577-2582`) — the
+    /// row. The bestiary row is Hide=true (`NPCID.cs:2577-2582`) вЂ” the
     /// credit folds onto the 198 entry; the DRAW sheet stays 199
     /// (`texture_net_id`'s own row, the BlackRecluse 163 precedent). The
     /// cs_id hand row keeps 199 so the ladder's type arm stays live (the
@@ -3555,13 +3557,13 @@ pub enum NpcKind {
     /// unported fighter obstacle-scan remainder (the scan is zombie-
     /// family scoped today).
     LihzahrdCrawler,
-    // ---- W4-d36 E4 batch 5 (the SEAL batch — the doc-110 §1 table with
-    // the Lead v640 ID CORRECTION: HeadacheSkeleton 201→789,
-    // MisassembledSkeleton 202→790, PantlessSkeleton 203→795 (NOT the
-    // VOID 791 — d37 reserves it for Crab), SpikedJungleSlime 204→796
-    // (NOT the VOID 792 — d37 reserves it for DungeonGuardian), IcyMerman
-    // 206→794. 791/792 are ALREADY IN MAIN via d34).
-    /// `NPCID.HeadacheSkeleton` (201) — W4-d36 E4 (`NPC.cs` SetDefaults
+    // ---- W4-d36 E4 batch 5 (the SEAL batch вЂ” the doc-110 В§1 table with
+    // the Lead v640 ID CORRECTION: HeadacheSkeleton 201в†’789,
+    // MisassembledSkeleton 202в†’790, PantlessSkeleton 203в†’795 (NOT the
+    // VOID 791 вЂ” d37 reserves it for Crab), SpikedJungleSlime 204в†’796
+    // (NOT the VOID 792 вЂ” d37 reserves it for DungeonGuardian), IcyMerman
+    // 206в†’794. 791/792 are ALREADY IN MAIN via d34).
+    /// `NPCID.HeadacheSkeleton` (201) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 201, `:11572-11584`): 18x40, aiStyle 3, dmg 20, def 12,
     /// 55 HP, kb 0.5, value 130, NPCHit2/NPCDeath2. WIRED: the walker
     /// family on the num83 group's OWN 1.1 cap (`:57625-57628`) + the
@@ -3572,7 +3574,7 @@ pub enum NpcKind {
     /// `:59996` flag24 list (201 listed). The death gores 265/267/43/44
     /// (`:88569-88578`) are the gore/dust wave's remainder.
     HeadacheSkeleton,
-    /// `NPCID.MisassembledSkeleton` (202) — W4-d36 E4 (`NPC.cs`
+    /// `NPCID.MisassembledSkeleton` (202) вЂ” W4-d36 E4 (`NPC.cs`
     /// SetDefaults case 202, `:11585-11597`): 18x40, aiStyle 3, dmg 18,
     /// def 8, 65 HP, kb 0.5, value 120, NPCHit2/NPCDeath2. WIRED: the
     /// walker family on the num83 group's OWN 0.9 cap (`:57629-57632`).
@@ -3581,22 +3583,22 @@ pub enum NpcKind {
     /// ride the same lists (202 in both). The death gores 268/43/44
     /// (`:88579-88587`) are the gore/dust wave's remainder.
     MisassembledSkeleton,
-    /// `NPCID.PantlessSkeleton` (203) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// `NPCID.PantlessSkeleton` (203) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 203, `:11598-11610`): 18x40, aiStyle 3, dmg 22, def 8,
     /// 60 HP, kb 0.5, value 110, NPCHit2/NPCDeath2. WIRED: the walker
     /// family on the num83 group's OWN 1.2 cap (`:57633-57636`).
     /// FindFrame's humanoid-group case list (`:68581`) over the 16-row
-    /// strip, the air row 1 (`:69647` does NOT list 203 — the Lead's
+    /// strip, the air row 1 (`:69647` does NOT list 203 вЂ” the Lead's
     /// row-0 correction). The moan + door bash ride the same lists
     /// (203 in both). The death gores 269/43/266 (`:88588-88596`) are
     /// the gore/dust wave's remainder.
     PantlessSkeleton,
-    /// `NPCID.SpikedJungleSlime` (204) — W4-d36 E4 (`NPC.cs` SetDefaults
+    /// `NPCID.SpikedJungleSlime` (204) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults
     /// case 204, `:11611-11624`): 24x18, aiStyle 1, dmg 28, def 8,
     /// 65 HP, scale 1.15, alpha 50, value 300, NPCHit1/NPCDeath1, NO
     /// kb row (the head's 1f default, `:8533`). WIRED: the aiStyle-1
     /// hop machine (`update_slime`, the wave-A routing). FindFrame's
-    /// slime-group case list (`:70810`) over the 2-row strip — the
+    /// slime-group case list (`:70810`) over the 2-row strip вЂ” the
     /// wave-A bridge. The `AI_001` shooter block (`:61386-61439`: the
     /// flag3-true row + the 80-tick expert five-spike fan / the 65-tick
     /// classic lob, the 176 JungleSpike at dmg 13) rides the pure
@@ -3605,17 +3607,17 @@ pub enum NpcKind {
     /// death dust 4 (`:85010-85026`, the (149,208,104) tint) is the
     /// gore/dust wave's remainder.
     SpikedJungleSlime,
-    /// `NPCID.IcyMerman` (206) — W4-d36 E4 (`NPC.cs` SetDefaults case
+    /// `NPCID.IcyMerman` (206) вЂ” W4-d36 E4 (`NPC.cs` SetDefaults case
     /// 206, `:11640-11653`): 18x40, aiStyle 3, dmg 60, def 30, 280 HP,
     /// kb 0.5, value 500, NPCHit1/NPCDeath1, coldDamage (no port slot
-    /// field — the IceTortoise note). WIRED: the shooter block
+    /// field вЂ” the IceTortoise note). WIRED: the shooter block
     /// (`update_martian_shooter`, the pirate/martian precedent): the
     /// 50-tick stop timer (`:59131-59134`), the 7-speed 177 IcewaterSpit
     /// at dmg 37 (`:59219-59222`/`:59408-59411`/`:59462-59465`), the
-    /// centre −10 spawn anchor (`:59284-59287`), the default 1/0.07/0.8
+    /// centre в€’10 spawn anchor (`:59284-59287`), the default 1/0.07/0.8
     /// walk (`:59717-59719`). FindFrame case 206 (`:76060-76098`) over
     /// the 20-row strip: the grounded facing flip, the ai[2] attack-row
-    /// hold, the walk band rows 6..19 (|vx|×3 clock, >6 advance), the
+    /// hold, the walk band rows 6..19 (|vx|Г—3 clock, >6 advance), the
     /// air row 0. The frost pair {44,324} immunity (`NPCID.cs:7284-
     /// 7290`); NOT in either AI_003 moan list. The flag8-false row
     /// (`:57072`) rides the zombie-scoped fighter-scan remainder; the
@@ -3625,19 +3627,19 @@ pub enum NpcKind {
     IcyMerman,
     // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
     // R7-band slots 781/782/793, ascending vanilla order).
-    /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
+    /// `NPCID.Crimera` (173) вЂ” W4-d36 (`NPC.cs` SetDefaults case 173,
     /// `:11168-11193`): 30x30, aiStyle 5, dmg 22, def 8, 40 HP, kb 0.5,
-    /// value 90, noGravity (NO noTileCollide row — it bounces ×0.4,
+    /// value 90, noGravity (NO noTileCollide row вЂ” it bounces Г—0.4,
     /// `:50659-50661`). WIRED: `HoverParams::CRIMERA`.
     Crimera,
-    /// `NPCID.MossHornet` (176) — W4-d36 (`NPC.cs` SetDefaults case 176,
+    /// `NPCID.MossHornet` (176) вЂ” W4-d36 (`NPC.cs` SetDefaults case 176,
     /// `:11223-11237`): 34x32, aiStyle 5, dmg 70, def 22, 220 HP, kb 0.5,
     /// value 600, noGravity. WIRED: `HoverParams::MOSS_HORNET` (flag5
-    /// TRUE — `:50447` excludes 173/6/42/231-235/94/139/619, not 176).
+    /// TRUE вЂ” `:50447` excludes 173/6/42/231-235/94/139/619, not 176).
     /// The stinger volley (`:50754-50810`, proj 55 dmg 30) is the
-    /// documented remainder — the hostile-shot seam, the Probe precedent.
+    /// documented remainder вЂ” the hostile-shot seam, the Probe precedent.
     MossHornet,
-    /// `NPCID.Moth` (205) — W4-d36 (`NPC.cs` SetDefaults case 205,
+    /// `NPCID.Moth` (205) вЂ” W4-d36 (`NPC.cs` SetDefaults case 205,
     /// `:11625-11639`): 40x40, aiStyle 5, dmg 70, def 28, 1000 HP, kb 0.4,
     /// value 600, noGravity, rarity 2. WIRED: `HoverParams::MOTH`.
     Moth,
@@ -3850,6 +3852,10 @@ pub struct Npc {
     pub max_hp: i32,
     pub on_ground: bool,
     pub facing: i32,
+    /// The retired `update_slime` stand-in's sin-timer cadence — carried
+    /// as spawn data only since W4-b1 (the faithful aiStyle-1 machine
+    /// reads `ai[0]`, `npc_ai_slime`).
+    #[allow(dead_code)] // W4-b1: no reader left after the stand-in retirement
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
@@ -4174,7 +4180,10 @@ pub struct Npc {
     /// DesertDjinnCurse (damage 0, knockback 1, zero velocity) after the
     /// update pass (the `wants_sphere` borrow-safe shape).
     pub wants_djinn_curse: Vec<(f32, f32, f32)>,
-    /// `ai[3]`: x position while descending through water, for the bounce flip.
+    /// `ai[3]`: x position while descending through water, for the bounce
+    /// flip — the retired `update_slime` stand-in's private mirror; the
+    /// faithful machine writes `ai[3]` directly (W4-b1).
+    #[allow(dead_code)] // W4-b1: no reader left after the stand-in retirement
     wet_x: f32,
     /// `NPC.ai[0..4]` — the EoC phase machine's state
     /// (`ai[0]` the phase, `ai[1]` the sub-state, `ai[2]` the timer,
@@ -4707,6 +4716,21 @@ pub struct Npc {
     /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
     /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
     pub wants_transform: Option<i32>,
+    /// W4-d31 style83 wiring — the cultist tablet's ritual spawn/link
+    /// requests (`NPC.cs:36773-36791` the ritual four, `:36840-36844`
+    /// the boss + `TabletDestroyed`). The pooled arm queues the whole
+    /// `Style83Out` (shots already drained to `wants_hostile_shot_ai`);
+    /// the sim's `resolve_ritual_requests` pass allocates the spawns,
+    /// records the stable uids and runs the ritual-delay reset.
+    pub wants_ritual: Option<crate::npc_ai_style83::Style83Out>,
+    /// W4-d31 style83 wiring — the tablet's four ritual links as STABLE
+    /// uids in spawn order (0 archer, 1/2 devotees, 3 archer — the C#'s
+    /// `ai[0..1]`/`localAI[1..2]` hold slot+1, `NPC.cs:36782`/`:36787`;
+    /// the port's vec compacts, so the uid carries the link — the Moon
+    /// Lord parts' convention). The boss link rides `carrier_uid`. The
+    /// per-tick `ritual_link_prepass` translates them back to the
+    /// slot-aligned ai fields the machine reads. 0 = unresolved.
+    pub ritual_uids: [u32; 4],
     /// `GetShimmered`'s statue arm (`NPC.cs:91550-91560`, the W4-c9 snail
     /// shimmer gate): `NPC.noSpawnCycle = true` + `active = false`. The
     /// adapter despawns through the timer seam (the silent retain) and
@@ -6291,6 +6315,8 @@ impl Npc {
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
+            wants_ritual: None,
+            ritual_uids: [0; 4],
             wants_spawn_no_cycle: false,
             shimmerfly_threat_views: Vec::new(),
             snail_no_gravity: true,
@@ -7151,6 +7177,25 @@ impl Npc {
             NpcKind::GiantFlyingAntlion => 0.3,
             NpcKind::FlyingAntlion => 0.5,
             NpcKind::EyeballFlyingFish => 0.0,
+            // The dragonflies (W4-d33): the shared 595-601 row writes NO
+            // knockBackResist (`NPC.cs:16720-16738`), so the head's 1f
+            // stands (`NPC.cs:8533` — the ForceBubble / W4-e26 precedent).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 1.0,
+            // The fairy critters (W4-d33 wiring): the shared 583-585 row
+            // writes NO knockBackResist (`NPC.cs:16583-16607`), so the
+            // head's 1f stands (the dragonfly row's precedent). The windy
+            // balloon: kb 0.3 (`NPC.cs:16714`). d42 batch-2/3's rows,
+            // constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => 1.0,
+            NpcKind::WindyBalloon => 0.3,
             // W4-c7 — the firefly family writes NO knockBackResist row
             // (`NPC.cs:13517-13530`/`:13559-13572`/`:17265-17279`/
             // `:17579-17593`), so the class default 1f stands (`:8533`) —
@@ -8157,6 +8202,21 @@ impl Npc {
             NpcKind::GiantFlyingAntlion => 12,
             NpcKind::FlyingAntlion => 8,
             NpcKind::EyeballFlyingFish => 18,
+            // The dragonflies (W4-d33): defense 0 each (`NPC.cs:16727`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 0,
+            // The fairy critters + the windy balloon (W4-d33 wiring):
+            // defense 0 each (`NPC.cs:16589` / `:16713`). d42 batch-2/3's
+            // rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => 0,
             // W4-c7 — the firefly family's `defense = 0` rows
             // (`NPC.cs:13523`/`:13565`/`:17271`/`:17585`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0,
@@ -9108,6 +9168,23 @@ impl Npc {
             NpcKind::GiantFlyingAntlion => 195.0,
             NpcKind::FlyingAntlion => 90.0,
             NpcKind::EyeballFlyingFish => 1000.0,
+            // The dragonflies (W4-d33): the row writes no value — the
+            // head's 0f stands (`NPC.cs:8544`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 0.0,
+            // The fairy critters (W4-d33 wiring): the row writes no value
+            // — the head's 0f stands (`NPC.cs:8544`); the windy balloon
+            // value 0 (`NPC.cs:16717`). d42 batch-2/3's rows,
+            // constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => 0.0,
             // W4-c7 — the firefly family writes no value row (the head's
             // `value = 0f`, `NPC.cs:8544`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 0.0,
@@ -9468,6 +9545,60 @@ impl Npc {
     /// `NPC.cs:51307`), so it keeps its own life.
     pub fn has_carrier(&self) -> bool {
         self.kind.shares_carrier_life() && self.worm_id != 0 && self.seg_index > 0
+    }
+
+    /// `NPC.boss` (`NPC.cs:6513`'s per-type `SetDefaults` rows) for the
+    /// ported boss roster — the `NPCLoot` soul gate's `info.npc.boss`
+    /// (`Conditions.cs:1581`), the `LegacyHack_IsABoss` trophy rows
+    /// (`ItemDropDatabase.cs:878-908`) and `DoDeathEvents`' boss tail
+    /// (`NPC.cs:79505-79513`) all read it. W4-f32 DOC-SWEEP census: the
+    /// C#'s 23 `this.boss = true` sites are 21 `SetDefaults` kinds —
+    /// 4 (:8716), 35 (:9180), 50 (:9389), 113 (:10358), 125 (:10535),
+    /// 126 (:10552), 127 (:10570), 134 (:10676), 222 (:11868),
+    /// 245 (:12176), 262 (:12393), 266 (:12452), 370 (:13716),
+    /// 395 (:14061 — the MARTIAN SAUCER CORE is a boss), 396 (:14097),
+    /// 397 (:14116), 398 (:14136), 439 (:14227), 636 (:17202),
+    /// 657 (:17323), 664 (:17401, the Torch God — unported),
+    /// 668 (:17460) — plus the DYNAMIC `DropEoWLoot` latch (:78425-78428:
+    /// the last EoW segment sets `boss = true` before `NPCLoot`, so the
+    /// head's row is NOT a static `SetDefaults` boss). The DD2 bosses
+    /// (551/564/565/576/577) and the Dutchman (491) do NOT set it (their
+    /// trophies are unconditional `Common` rows,
+    /// `ItemDropDatabase.cs:903-908`). The port's `boss` field is only
+    /// wired for Duke Fishron / King Slime today, so this helper is the
+    /// faithful per-kind read the loot/death paths use (the field's
+    /// general migration is the S1-D-3p follow-up). The dynamic arms are
+    /// NOT kind reads: the Twins' surviving-half demotion
+    /// (`DoDeathEvents_BeforeLoot`, `NPC.cs:78916-78923`) and the EoW
+    /// last-segment latch are documented gaps (research/74). The Moon
+    /// parts (396/397) are bosses in `SetDefaults` but their ported
+    /// deaths are ALL bypass kills (`moon_despawn_kill` — the strike
+    /// death restores the hover, the orphan/despawn kills skip
+    /// `NPCLoot`), so the death loop's tail refuses them on that flag
+    /// and no boss-tail draw ever fires for a part.
+    pub fn is_boss_kind(&self) -> bool {
+        matches!(
+            self.kind,
+            NpcKind::KingSlime
+                | NpcKind::EyeOfCthulhu
+                | NpcKind::BrainOfCthulhu
+                | NpcKind::QueenBee
+                | NpcKind::SkeletronHead
+                | NpcKind::WallOfFlesh
+                | NpcKind::TheDestroyer
+                | NpcKind::SkeletronPrime
+                | NpcKind::Retinazer
+                | NpcKind::Spazmatism
+                | NpcKind::Plantera
+                | NpcKind::Golem
+                | NpcKind::DukeFishron
+                | NpcKind::MartianSaucerCore
+                | NpcKind::AncientCultist
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordHead
+                | NpcKind::MoonLordHand
+                | NpcKind::Deerclops
+        )
     }
 
     /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81387-81475`): the
@@ -9875,6 +10006,14 @@ impl Npc {
             // (`:20189-20192`) were SKIPPED by the kind-arm entry (no rng),
             // desyncing the UpdateNPCs stream every tick.
             4 => self.update_eye_of_cthulhu(world, player, rng, dust, dust_ctx, gore),
+            // `if (this.aiStyle == 1) { this.AI_001_Slimes(); return; }`
+            // (`NPC.cs:19945-19949`; the machine `:60341-61723`). W4-b1
+            // slime wiring: the ten wave-A kinds ride the faithful pure
+            // core (`npc_ai_slime::ai_001_slimes`, the A1-4 re-port); the
+            // sin-timer `update_slime` stand-in is retired (audit 54 §1).
+            // The arm's draws (81/147/184 gates + the 184 shooter jitters,
+            // the module header census) ride the caller's UpdateNPCs stream.
+            1 => self.ai_001_slime_family(world, player, rng),
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
             // (`NPC.cs:20802-20806`).
             // W4-d35 (C): the 94 data-only kinds skip the
@@ -10261,6 +10400,13 @@ impl Npc {
             // stamps the 546 wind/zone seams (the Tumbleweed lands with
             // its own commit). The caller owns the gravity + collision
             // tail (`gallop_move_tail`, the npc_ai_unicorn convention).
+            // Unicorn (86) rides the verbatim
+            // draws no `Main.rand` on this path). The caller owns the
+            // gravity + collision tail (`gallop_move_tail`, the
+            // npc_ai_unicorn convention). KEEP-ONE (f5f486c7c): the Wolf
+            // proto-355 + the Tumbleweed 546 DROPPED here — d36/d41 own
+            // those kinds; when they land, this arm extends kind-gated
+            // to their machines (ONE 26 arm, no second dispatch).
             26 => match self.kind {
                 NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
                     crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
@@ -10315,6 +10461,7 @@ impl Npc {
             14 => {
                 self.update_cave_bat(world, player, rng);
             }
+                NpcKind::Unicorn => self.ai_026_gallop_family(world, player),
             // `else if (this.aiStyle == 27)` (`NPC.cs:25635-26052`) —
             // S1-D-3 W-1: the Wall of Flesh rides the faithful
             // `npc_ai_style27::style27_step` (the one-time init, the band
@@ -10387,6 +10534,16 @@ impl Npc {
                 self.x += self.vx;
                 self.y += self.vy;
             }
+            // `else if (this.aiStyle == 73)` (`NPC.cs:35102-35217`) — the
+            // MartianTurret 387, the style's only user (W4-c11). The
+            // faithful `npc_ai_style73::style73_step` claims the axis: the
+            // materialize fade + the four-draw shot cycle ride the pure
+            // module; this arm owns the post-`AI()` tail — the turret is
+            // noGravity/noTileCollide FALSE (`SetDefaults` 387 writes
+            // neither, `:13922-13934`), so the depth-scaled 0.3 gravity +
+            // the 10 fall cap apply (`:90465-90472`), then UpdateCollision
+            // (the spore family's blocked-axis fold, `:92538-92544`).
+            73 => self.ai_073_martian_turret(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 30)` (`NPC.cs:26405-27014`) -
             // the Retinazer (125), the style's only user. S1-D-3
             // wire-retinazer: the faithful machine lives in
@@ -10930,6 +11087,11 @@ impl Npc {
                         // E8 merge: the c9 kind-gated 64 arm dropped - c7's plain 64
             // arm below claims all four fireflies (the solo wrapper + the
             // sim pool pass own the 677 threat scan; the c9 adapter retired).
+            // W4-c9's kind-gated `64 if Shimmerfly` arm DEDUPED to c7's
+            // pooled `64 =>` claim below (keep-one, research/349 §5 —
+            // the sim's slot-ordered pool subsumes the solo threat-view
+            // pre-pass; the shimmer Transform(677) wiring survives on
+            // the snail adapter + the sim drain).
             // `else if (this.aiStyle == 67)` (`NPC.cs:34348-34622`) — the
             // snail wall-crawler family (359/360/655, W4-c9). The faithful
             // `npc_ai_style67::snail_ai_step` claims the axis; the adapter
@@ -11043,6 +11205,26 @@ impl Npc {
             // so the duplicate never ran (the S1-D-4c dead-arm purge). The
             // `ai_066_crawler_family` body stays (it is the c8 record; the
             // c10 `ai_066_crawler` superset is the live route).
+            // `else if (this.aiStyle == 66)` (`NPC.cs:34253-34347`) — the
+            // crawling critters (357/374/448/484-487/606). W4-c8: the
+            // faithful `npc_ai_style66::ai_style66` arm claims the style
+            // (the S1-D-3 code-only port wired). The arm needs no sibling
+            // pool (the dig proximity scan reads the PLAYERS only), so the
+            // solo path is the live route — the sim's tick closure runs
+            // `update_rng_dust` and drains the light/Transform requests at
+            // the slot turn. The integration tail is the family arm's own
+            // (the depth-scaled gravity + the ground UpdateCollision
+            // stand-in).
+            66 => self.ai_066_crawler_family(world, player, rng),
+            // `else if (this.aiStyle == 64)` (`NPC.cs:34019-34248`) — the
+            // firefly family (355/358/654/677). W4-c7: the SOLO path runs
+            // the faithful `ai_064_step` with an empty sibling view (the
+            // 677 threat scan sees only the player); the SIM's pooled
+            // path (`world_sim/npcs.rs`'s tick closure) hands it the
+            // slot-ordered pool so the scan's f32 sums keep their order.
+            // The arm is pure velocity — the integration tail is the
+            // shared `ai_064_integrate` (the `UpdateCollision`/raw split).
+            64 => self.update_rng_style64_solo(world, player, rng),
             // W4-d31 axis census (research/25 rows 76-82): the faithful
             // per-kind machines claim their styles — the S1-D-2 migration
             // step for the saucer/Moon-Lord/probe band. The machines are
@@ -11098,6 +11280,18 @@ impl Npc {
             85 => match self.kind {
                 NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
                 NpcKind::BrainSuckler => self.update_brain_suckler(world, player, rng),
+                // Batch-E merge obligation (research/348 §2 G2, the 367
+                // §2 Lead-flag): d40's roster wave rows DeadlySphere 467
+                // onto aiStyle 85 — WITHOUT this guard the first 467 tick
+                // would hit the `_ => unreachable!` below (the PANIC
+                // HAZARD). The kind is NOT rowed on this branch (d40 is
+                // not in batch-E), so the arm cannot be spelled here yet
+                // — this documented obligation stands in its place: at
+                // the d40 merge, EXTEND this match with
+                // `NpcKind::DeadlySphere => {}` (the empty-arm stand-in,
+                // the d40 precedent) until the row-85 verbatim audit
+                // ports the C# 467 branch (`NPC.cs:36930-37220`'s third
+                // member). Do NOT delete this note before that arm lands.
                 _ => unreachable!("no other ported kind carries aiStyle 85"),
             },
             // W4-d32 axis census (research/25 row 93): the Flying
@@ -11677,6 +11871,88 @@ impl Npc {
             self.y += self.vy;
         }
         self.on_ground = self.collide_y && self.vy >= 0.0;
+
+        }    /// The SOLO aiStyle-83 step (`NPC.cs:36757-36925`) for a bare
+    /// `update_rng` caller (the W4-d31 wiring wave, the style75 solo
+    /// precedent): the faithful `style83_step` over a ONE-slot pool (no
+    /// siblings — the ritual links read unresolved, the module's wiring
+    /// guards skip them). The SIM's pooled path (the aiStyle-83 arm in
+    /// `world_sim/npcs.rs`'s tick closure) is the live route; this wrapper
+    /// queues the out-requests (`wants_ritual` / `wants_hostile_shot_ai`)
+    /// for the caller to drain. The 437/438 kinds ride the roster wave
+    /// (W4-d40 `7fec14aa`) — until they land no kind reaches this arm.
+    fn update_rng_style83_solo(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+    ) {
+        let cand = crate::npc_target::session_candidate(player);
+        let npc_type = self.kind.cs_id() as i32;
+        let just_hit = self.just_hit;
+        let mut pool = [self.clone()];
+        let out = crate::npc_ai_style83::style83_step(
+            &mut pool,
+            0,
+            &[cand],
+            npc_type,
+            &|n: &Npc| n.kind.cs_id() as i32,
+            just_hit,
+            rng,
+        *self = pool[0].clone();
+        self.drain_style83_out(out);
+    /// Land a `Style83Out` on this NPC (the solo queue — the sim's pooled
+    /// path drains the same requests with the full pool seams): the 526
+    /// shots ride `wants_hostile_shot_ai` (the C# call sites pass
+    /// `Main.myPlayer`, the sim's ritual drain re-pins the owner — the
+    /// fishron `spawn_hostile_ai_owned` precedent); the spawn/link/
+    /// tablet_destroyed requests queue on `wants_ritual`. `out.died`: the
+    /// module already set hp = 0 (the death pass owns the HitEffect +
+    /// deactivation pair); `out.light` is the draw-side feed's
+    /// (`app/frame/draw.rs`'s style-83 arm, the style72 precedent).
+    fn drain_style83_out(&mut self, mut out: crate::npc_ai_style83::Style83Out) {
+        self.wants_hostile_shot_ai.append(&mut out.shots);
+        let _ = out.light.take();
+        self.wants_ritual = Some(out);
+    /// The aiStyle-83 family's post-`AI()` movement tail (`NPC.UpdateNPC`,
+    /// `NPC.cs:90465-90498`) — the W4-d31 wiring wave. The tablet 437 is
+    /// noGravity + noTileCollide (`NPC.cs:14189-14190`): the dead-band X
+    /// snap (`:90473-90476`) then the raw integration (`:90494-90498`, the
+    /// style-56 arm's shape). The devotee 438 writes NEITHER flag
+    /// (`:14195-14211`): the 0.4 gravity + the 8 fall cap (`:90465-90472`,
+    /// the zombie's GRAVITY/MAX_FALL rows) then the tile collision
+    /// (`UpdateCollision`, `:90490-90492` — the port's `collides_rect`
+    /// axis stand-in, the zombie integration's shape minus the fighter
+    /// scan's jump fallback: the devotee has no obstacle scan). RNG-free.
+    pub(crate) fn style83_movement_tail(&mut self, world: &World) {
+        // `:90473-90476` — the dead-band X snap (double compare), both kinds.
+        if self.kind.cs_id() == 437 {
+            // `:90496-90498` — the stamps + the raw integration.
+            self.old_x = self.x;
+            self.old_y = self.y;
+            self.old_direction = self.facing;
+            self.integrate_no_tile_collide();
+            return;
+        // The devotee: gravity + the fall cap (`:90465-90472`).
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        // `UpdateCollision`'s axis integration (the zombie stand-in shape,
+        // `NPC.cs:92523-92608`): the blocked X axis zeroes the velocity,
+        // the blocked Y axis snaps to the floor/ceiling.
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
     }
 
     /// `NPC.Transform(int newType, ...)` (`NPC.cs:81084-81114`) with the
@@ -12165,20 +12441,17 @@ impl Npc {
     }
 
     /// W4-d25 STYLE-26 wiring: the aiStyle-26 galloper arm — the Unicorn
-    /// (86), the Wolf (155) and the Tumbleweed (546) ride
-    /// `npc_ai_style26::ai_style26` (`AI_026_Unicorns`,
+    /// (86) rides `npc_ai_style26::ai_style26` (`AI_026_Unicorns`,
     /// `NPC.cs:62366-62924`; the 86 path has NO type branch — the generic
-    /// 6/0.07 core; the 155 path adds the hop-over `:62558-62564` + the
-    /// 0.95 turnaround damping `:62621-62631`; the 546 path adds the
-    /// separation/wind-cap/desert-gate/rotation tail). RNG-free by
-    /// construction: the machine's only draws are the 315/423 arms (the
-    /// other modules'), so the caller's stream is untouched. The seam
-    /// feeds the session player as slot 0 (the S1-D-3p convention),
-    /// ticker 0 (the `EverLastingTicker` stand-in, the zombie convention);
-    /// the 546-only wind/zone/sibling inputs ride the sim pre-pass stamps
-    /// (the `twin_time_lefts` carrier convention). The chirp is 546-only;
-    /// the `wants_sound` drain is wired for all three (the 86/155 paths
-    /// emit nothing).
+    /// 6/0.07 core). RNG-free by construction: the machine's only draws
+    /// are the 315/423 arms (the other modules'), so the caller's stream
+    /// is untouched. The seam feeds the session player as slot 0 (the
+    /// S1-D-3p convention), ticker 0 (the `EverLastingTicker` stand-in,
+    /// the zombie convention). KEEP-ONE (f5f486c7c): the Wolf/Tumbleweed
+    /// kinds + their 546-only carrier pre-pass DROPPED (d36/d41 own
+    /// them); the 86 path never reads the wind/zone/sibling inputs, so
+    /// the ctx carries the module-fixture defaults. The `wants_sound`
+    /// drain stays wired (the 86 path emits nothing).
     fn ai_026_gallop_family(&mut self, world: &World, player: &Player) {
         // `Entity.wet` (`Collision.WetCollision`) — the walk gate's wet
         // conjunct (`NPC.cs:62618`) and the case-86 sprite latch read
@@ -12187,24 +12460,17 @@ impl Npc {
         self.wet = is_wet(world, self.x, self.y, w, h);
         let players = [crate::npc_target::session_candidate(player)];
         // The 546-only ctx inputs (`wind_speed_target` / `zone_desert` /
-        // `zone_sandstorm` / `siblings`) ride the sim pre-pass stamps (the
-        // `twin_time_lefts` carrier convention — the AI's `&World` borrow
-        // cannot reach `app.wind` / `app.scene_metrics` / the pool). The
-        // pre-pass stamps the session player's live desert/sandstorm
-        // zones + `Main.windSpeedTarget` + the same-type sibling scan
-        // before each tick. The 86/155 paths never read them; outside the
-        // sim they keep the ctor defaults (the module ctx fixture).
-        // The sibling list is cloned out of `self` first — the ctx borrows
-        // it while the machine takes `self` mutably (the Retinazer twin
-        // list precedent, `ai_030_retinazer`).
-        let siblings = self.gallop_siblings.clone();
+        // `zone_sandstorm` / `siblings`) are never read on the 86 path —
+        // the module ctx fixture defaults stand (the keep-one drop
+        // f5f486c7c removed the Tumbleweed pre-pass + carrier fields;
+        // d41's splice owns the live stamps).
         let ctx = crate::npc_ai_style26::Ai26Ctx {
             players: &players,
             ticker: 0,
-            wind_speed_target: self.gallop_wind_speed_target,
-            zone_desert: self.gallop_zone_desert,
-            zone_sandstorm: self.gallop_zone_sandstorm,
-            siblings: &siblings,
+            wind_speed_target: 0.0,
+            zone_desert: true,
+            zone_sandstorm: false,
+            siblings: &[],
         };
         let ty = self.kind.cs_id() as i32;
         let fx = crate::npc_ai_style26::ai_style26(ty, self, world, &ctx);
@@ -12677,6 +12943,79 @@ impl Npc {
         }
     }
 
+    /// W4-b1 wiring — the aiStyle-1 adapter (the `ai_069_fishron` shape):
+    /// the live `Npc` rides the faithful pure core
+    /// (`npc_ai_slime::ai_001_slimes`, `AI_001_Slimes`, `NPC.cs:60341-61723`)
+    /// which writes its fields directly; this seam owns ONLY what the pure
+    /// arm cannot: the ctx feed (the session player as slot 0, expert off
+    /// the player buff — the style31 convention — netMode 0, ticker 0, the
+    /// `EverLastingTicker` zombie stand-in), the fresh `WetCollision` probe
+    /// (the module header: the wiring feeds the carried Entity flags OR
+    /// probes at the site), the `SlimeEffects` drain (the -999 freeze's
+    /// `frameCounter = 0` + the 184 spike shots on the `wants_hostile_shot`
+    /// seam) and the generic `UpdateNPC` tail the C# runs AFTER `AI()`:
+    /// `slime_gravity` = `UpdateNPC_UpdateGravity`'s slime rows
+    /// (`NPC.cs:90878-90955`, the honey/shimmer merges), the `vy += gravity`
+    /// + cap (`:90465-90472`), the ±0.005 vx snap (`:90473-90476`) and the
+    /// `UpdateCollision` stand-in (`integrate_flyer_collision` — the
+    /// oldVelocity capture + collideX/Y latches the NEXT tick's machine
+    /// reads, `:92538-92540`). RNG: every arm draw (the 81/147/184 gates +
+    /// the 184 shooter jitters, the module census) rides the caller's
+    /// stream inside the core.
+    fn ai_001_slime_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let (w, h) = self.size();
+        // `Collision.WetCollision` (`Collision.cs:1572-1651`) — the probe
+        // the C#'s `UpdateCollision` ran last tick (`NPC.cs:93063-93075`);
+        // the module header sanctions the at-site probe.
+        let (wet, honey_wet, shimmer_wet) =
+            crate::npc_ai_slime::wet_collision(world, self.x, self.y, w as i32, h as i32);
+        // The carried Entity flag the integration's wet halving reads
+        // (the `update_cave_bat` convention).
+        self.wet = wet;
+        let ctx = crate::npc_ai_slime::SlimeCtx {
+            players: &[cand],
+            expert_mode: player.buffs.expert_mode,
+            net_mode: 0,
+            ticker: 0,
+            wet,
+            honey_wet,
+            shimmer_wet,
+        };
+        let fx = crate::npc_ai_slime::ai_001_slimes(self, world, &ctx, rng);
+        // The -999 balloon freeze's frameCounter reset (`:61049`).
+        if fx.reset_frame_counter {
+            self.frame_counter = 0.0;
+        }
+        // The 184 spike volleys (`:61188`/`:61207`, type 174, dmg 9, kb 0)
+        // on the established hostile-shot drain.
+        for s in fx.shots {
+            self.wants_hostile_shot
+                .push((s.kind as u16, s.x, s.y, s.vx, s.vy, s.damage));
+        }
+        // The port's spriteDirection sync (the AI_001 arm writes only
+        // `direction`; the draw mirrors it — the wave-A find_frame arm
+        // snaps spriteDirection only for the unported 302/304 kinds).
+        self.sprite_dir = self.facing;
+        // `NPC.cs:90465-90472` — the gravity apply + cap AFTER the AI.
+        let (gravity, max_fall) = crate::npc_ai_slime::slime_gravity(
+            self.y,
+            world.width,
+            world.world_surface,
+            wet,
+            honey_wet,
+            shimmer_wet,
+        );
+        self.vy = (self.vy + gravity).min(max_fall);
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `:90490-90492` — UpdateCollision (the blocked-axis stand-in with
+        // the oldVelocity capture + the collideX/Y latches).
+        self.integrate_flyer_collision(world);
+    }
+
     /// S1-D-3 W-9 wiring — the aiStyle-70 adapter: the Detonating Bubble's
     /// faithful arm (`npc_ai_style70::ai_style70`, `NPC.cs:34884-34957`).
     /// RNG census (the module's, preserved): the `target == 255` init draws
@@ -13059,6 +13398,21 @@ impl Npc {
         self.wet = is_wet(world, self.x, self.y, w, h);
         let cand = crate::npc_target::session_candidate(player);
         let players = [crate::npc_ai_style24::Style24Player {
+    /// W4-c9 — the GoldBird (442) through the faithful
+    /// `npc_ai_style24::ai_style_24` (`NPC.cs:25313-25537`). The module is
+    /// velocity-only (the perch/startle/descend/flight state machine, the
+    /// ground probe, the wet tail); this wrapper feeds the single session
+    /// player + the carried collide flags and runs the tile-collision
+    /// integration the C#'s `UpdateNPC` tail applies (the bird has
+    /// noTileCollide false; noGravity rides the module's per-state write —
+    /// perched false → the depth-scaled gravity, flight true → none). The
+    /// poop gate's `RollOnlyBadLuckExtreme(50)` draws only for a
+    /// negative-luck player (the port's session luck is 0 → no draw); the
+    /// 1080 BirdDroppings shot drains into `wants_hostile_shot`. The
+    /// W4-d38 `update_bird` precedent, re-ported on this branch.
+    fn update_gold_bird(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        let p = crate::npc_ai_style24::Style24Player {
             candidate: cand,
             luck: player.luck(),
             is_cenx: self.player_is_cenx,
@@ -13439,6 +13793,30 @@ impl Npc {
     /// rolls the LIVE pool on the caller's `UpdateNPCs` stream (the
     /// S1-F-13c threading).
     fn ai_112_fairy(
+)    fn ai_074_hover_charge(
+    /// W4-c11 wiring — the aiStyle-73 adapter: the MartianTurret 387's
+    /// faithful arm (`npc_ai_style73::style73_step`, `NPC.cs:35102-35217`).
+    /// The session player is the slot-0 candidate (the S1-D-3p convention),
+    /// `netMode` folds 0 (single-player host), difficulty 1.0 (the port's
+    /// single-difficulty classic), ticker 0 (the `EverLastingTicker` is not
+    /// plumbed) and `justHit` rides the one-tick `self.just_hit` flag (the
+    /// style-55 convention — NOT the hurt_cd cooldown). The shot request
+    /// queues on `wants_hostile_shot` (the sim's spawn drain resolves the
+    /// 435 row); the light is the draw-side feed's (`app/frame/draw.rs`,
+    /// the ForceBubble precedent); the fade's dust ring is ACTIVATED by
+    /// the retire phase — `turret_materialize_ring` (the W4-e2 batch-6
+    /// STAGED emitter adopted verbatim, keep-one) draws the eight
+    /// `Dust.NewDust` internals in C# order on the caller's `UpdateNPCs`
+    /// stream through the live pool (the Everscream S1-F-13c precedent;
+    /// research/356 §3).
+    /// The tail: `SetDefaults` 387 writes no noGravity/noTileCollide
+    /// (`:13922-13934`), so `UpdateNPC` runs the depth-scaled gravity
+    /// (`:90465-90472` + `UpdateNPC_UpdateGravity` `:90877-90936` — the
+    /// `body_gravity` port, the style-72 arm's precedent) then
+    /// `UpdateCollision` — folded to the blocked-axis collision with the
+    /// `collideX/Y` latches (the spore family's `:92538-92544` fold; the
+    /// turret never walks, so the slope/stair tails stay inert).
+    fn ai_073_martian_turret(
         &mut self,
         world: &World,
         player: &Player,
@@ -14435,6 +14813,65 @@ impl Npc {
         // The off-world guard (the worm pass's framework shape).
         if self.y > world.height as f32 * TILE_PX + 200.0 {
             self.hp = 0;
+
+        }        let just_hit = self.just_hit;
+        let out = crate::npc_ai_style73::style73_step(
+            self,
+            world,
+            &[cand],
+            0,
+            self.kind.cs_id() as i32,
+            just_hit,
+            1.0,
+            rng,
+        );
+        if let Some(s) = out.shot {
+            // `:35215` — the 435 bolt: kb 0, the difficulty-remapped
+            // damage; the sim's drain spawns it through the data row.
+            self.wants_hostile_shot.push((
+                crate::projectile::MARTIAN_TURRET_BOLT,
+                s.x,
+                s.y,
+                s.vx,
+                s.vy,
+                s.damage,
+            ));
+        }
+        // The fade pins `frameCounter = 0` / `frame.Y = 0` (`:35129-35130`)
+        // BEFORE `FindFrame` runs — the counter field is private to this
+        // module's siblings, so the pin lands here on the fade ticks.
+        // The ring itself (`:35157`/`:35162`) draws the eight pool
+        // internals on THIS stream, after the plan, before the arm's
+        // early return propagates (the C#'s ring precedes the AddLight).
+        if let Some(plan) = out.materialize_dust {
+            self.frame_counter = 0.0;
+            let (cx, cy) = self.center();
+            crate::npc_ai_style73::turret_materialize_ring(
+                cx, cy, &plan.placements, rng, dust, dust_ctx, world,
+            );
+        // `NPC.cs:90465-90472` — the depth-scaled gravity + the fall cap
+        // (the style-72 tail's shape; 387 has no per-type gravity arm).
+        self.vy = (self.vy
+            + crate::npc_ai_golem::body_gravity(self.y, world.width as i32, world.world_surface))
+        .min(10.0);
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        // `UpdateCollision`'s dry move (`:92538-92544`, the spore fold):
+        // the blocked axes zero the velocity and latch collideX/Y.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        let (w, h) = self.size();
+        let nx = self.x + self.vx;
+        self.collide_x = crate::player::collides_rect(world, nx, self.y, w, h);
+        if self.collide_x {
+        } else {
+            self.x = nx;
+        let ny = self.y + self.vy;
+        self.collide_y = crate::player::collides_rect(world, self.x, ny, w, h);
+        if self.collide_y {
+            self.vy = 0.0;
+            self.y = ny;
         }
     }
 
@@ -14460,12 +14897,13 @@ impl Npc {
         dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         match self.kind {
-            // S1-D-3ff wave A: the nine LOW-id slimes ride the same
-            // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
-            // for every slime type — the per-type rows are stats only),
-            // the five demon-eye variants the aiStyle-2 chase, and the
-            // ten zombie variants the aiStyle-3 walker (the documented
-            // stand-in routing, the pumpkin wave's precedent).
+            // W4-b1: the ten wave-A slimes ride the aiStyle-1 axis above
+            // (`ai_001_slime_family` → the faithful `npc_ai_slime` core);
+            // `ai_style()` maps these kinds unconditionally, so the
+            // fallthrough never reaches them (the aiStyle-27/28/29 marker
+            // precedent). The five demon-eye variants ride the aiStyle-2
+            // chase and the ten zombie variants the aiStyle-3 walker (the
+            // documented stand-in routing, the pumpkin wave's precedent).
             NpcKind::Slime
             | NpcKind::MotherSlime
             | NpcKind::LavaSlime
@@ -14489,6 +14927,9 @@ impl Npc {
             // machine whole, the shots land with the wiring swap).
             | NpcKind::SpikedJungleSlime
             | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
+            | NpcKind::UmbrellaSlime => {
+                unreachable!("aiStyle 1 rides the style axis (W4-b1 slime wiring)")
+            }
             NpcKind::DemonEye
             | NpcKind::WanderingEye
             | NpcKind::CataractEye
@@ -14954,11 +15395,14 @@ impl Npc {
                 unreachable!("aiStyle 72 rides the style axis (S1-D-3-wire-smallkinds)")
             }
             // The Tesla Turret: aiStyle 73's warp-in machine
-            // (`NPC.cs:35102-35216` — the 120-tick teleport-in alpha ramp,
-            // then the aim/fire cycle). The Engineer's placement arm
-            // (`NPC.cs:59004-59030`) and the machine ride a LATER wave —
-            // the stand-in holds still.
-            NpcKind::MartianTurret => {}
+            // (`NPC.cs:35102-35216`) is WIRED by W4-c11 (the axis' 73 arm
+            // runs `npc_ai_style73::style73_step` + the gravity/collision
+            // tail) — this kind arm is unreachable through `update_rng`
+            // (the stand-in retired). The Engineer's placement arm
+            // (`NPC.cs:59004-59030`) rides the invasion wave.
+            NpcKind::MartianTurret => {
+                unreachable!("aiStyle 73 rides the style axis (W4-c11)")
+            }
             // The pirate ship: aiStyle 93 rides the style axis
             // (W4-d32 — the `update_flying_dutchman` machine is
             // UNCHANGED, the axis arm above calls it); its cannons'
@@ -15087,6 +15531,11 @@ impl Npc {
             NpcKind::StardustCellSmall => self.update_stardust_cell(world, player, rng),
             NpcKind::StardustJellyfishBig => self.update_stardust_jellyfish(world, player, rng),
             NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
+            // The big cell: aiStyle 85 rides the style axis (W4-d32 —
+            // `NPC.cs:36930-37220`) — this arm is unreachable.
+            NpcKind::StardustCellBig => {
+                unreachable!("aiStyle 85 rides the style axis (W4-d32)")
+            }
             // W4-d25: aiStyle 26 rides the style axis (the M4-EVENT-9
             // stand-in routes unchanged through the 26 arm) — this arm
             // is an unreachable marker (the S1-D-3 W-1 precedent).
@@ -15509,12 +15958,12 @@ impl Npc {
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
                 unreachable!("aiStyle 26 rides the style axis (W4-d25)")
             }
-            // W4-d25 STYLE-26 wiring: the Unicorn (86) + the Wolf (155)
-            // + the Tumbleweed (546) ride the axis' 26 arm
-            // (`ai_026_gallop_family` → `npc_ai_style26::ai_style26`) —
-            // these arms are unreachable through `update_rng` (the
-            // S1-D-3 W-1 precedent).
-            NpcKind::Unicorn | NpcKind::Wolf | NpcKind::Tumbleweed => {
+            // W4-d25 STYLE-26 wiring: the Unicorn (86) rides the axis'
+            // 26 arm (`ai_026_gallop_family` → `npc_ai_style26::ai_style26`)
+            // — this arm is unreachable through `update_rng` (the
+            // S1-D-3 W-1 precedent). The Wolf/Tumbleweed arms DROPPED
+            // per the keep-one note f5f486c7c (d36/d41 own them).
+            NpcKind::Unicorn => {
                 unreachable!("aiStyle 26 rides the style axis (W4-d25 STYLE-26 wiring)")
             // Wolf rides the shared 155/329 hop-over (`:62558`) and its
             // own 0.95 turnaround arm (`:62621-62631`); the pumpkin-moon
@@ -16223,6 +16672,43 @@ impl Npc {
             // `NPC.cs:16569-16582` - the aiStyle-3 walk rides the C#
             // ladder's own per-type arm (`npc_ai3_speeds.rs`).
             NpcKind::LarvaeAntlion => self.update_zombie(world, player, dt),
+            // The dragonflies (W4-d33): claimed by the aiStyle-114 axis
+            // above — these arms keep the kind match exhaustive and route
+            // direct-kind callers to the same machine (the fishron /
+            // W4-e26 ladybug precedent).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => self.ai_114_dragonfly(world, player, rng),
+            // The fairy critters + the windy balloon (W4-d33 wiring):
+            // claimed by the aiStyle-112/113 axis above — these arms keep
+            // the kind match exhaustive and route direct-kind callers to
+            // the same machines (the dragonfly precedent). The axis path
+            // never reaches here (the style match claims 112/113 first);
+            // the fairy adapter needs the live dust pool, so the direct
+            // route builds the permissive scratch pair (the solo
+            // `update_rng` convention).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => {
+                let mut dust = tr_core::particles::DustPool::new();
+                let ctx = tr_core::particles::SpawnCtx {
+                    game_menu: false,
+                    game_paused: false,
+                    generating: false,
+                    screen_position: glam::Vec2::ZERO,
+                    screen_size: glam::Vec2::new(
+                        world.width as f32 * TILE_PX,
+                        world.height as f32 * TILE_PX,
+                    ),
+                    max_dust_to_draw: 6000,
+                };
+                self.ai_112_fairy(world, player, rng, &mut dust, &ctx);
+            }
+            NpcKind::WindyBalloon => self.ai_113_balloon(world, player, rng),
             // W4-c7 — the firefly family (355/358/654/677, aiStyle 64):
             // the world-sim pool pass runs `ai_064_step` (the 677 threat
             // scan reads the whole pool), so these arms are unreachable
@@ -18298,27 +18784,16 @@ impl Npc {
             // The Tesla Turret: `case 387` (`NPC.cs:71663-71696`) — the
             // firing machine (`ai[0] > 0`) accelerates the accumulator
             // (+1 more at ai[0] >= 20, +1 at >= 40) and steps the 2-row
-            // strip every 10; idle steps every 15.
+            // strip every 10; idle steps every 15. W4-c11: delegated to
+            // the pure pair fn (the BlazingWheel precedent).
             NpcKind::MartianTurret => {
-                if self.ai[0] > 0.0 {
-                    self.frame_counter += 1.0;
-                    if self.ai[0] >= 20.0 {
-                        self.frame_counter += 1.0;
-                    }
-                    if self.ai[0] >= 40.0 {
-                        self.frame_counter += 1.0;
-                    }
-                    if self.frame_counter >= 10.0 {
-                        self.frame_counter = 0.0;
-                        self.frame = (self.frame + 1) % 2;
-                    }
-                } else {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 15.0 {
-                        self.frame_counter = 0.0;
-                        self.frame = (self.frame + 1) % 2;
-                    }
-                }
+                let (row, counter) = crate::npc_ai_style73::turret_find_frame(
+                    self.frame,
+                    self.frame_counter,
+                    self.ai[0],
+                );
+                self.frame = row;
+                self.frame_counter = counter;
             }
             // The rider: `case 390` (`NPC.cs:71779-71805`) — the row is
             // purely `ai[2]`-driven (the aim octant 1..5 the AI writes:
@@ -26378,97 +26853,22 @@ impl Npc {
         }
     }
 
-    fn update_slime(&mut self, world: &World, player: &mut Player, _dt: f32) {
-        // W4-d33 wiring — `AI_001_Slimes`' balloon-slave leash
-        // (`NPC.cs:61046-61052`): `ai[0] == -999` pins frame 0, zeroes
-        // the counter + rotation and RETURNS — the leashed slime never
-        // hops (the balloon's ride pass owns its position/velocity).
-        // The release (`:81806`'s ai[0] = 0) frees it.
-        if self.ai[0] == -999.0 {
-            self.frame = 0;
-            self.frame_counter = 0.0;
-            self.rotation = 0.0;
-            return;
-        }
-        // S1-D-3ff: the wave-A slimes ride this machine on their OWN
-        // `SetDefaults` boxes (the C# arm reads `base.width/height`).
-        // `kind.size()` — NOT `self.size()` — keeps the base Slime's
-        // unscaled 24x18 box (the variant scale rides the draw only).
-        let (w, h) = self.kind.size();
-        let (pcx, _) = player.center();
-        let (cx, _) = self.center();
-        self.hop_timer -= 1.0 / 60.0;
-        let near = (pcx - cx).abs() < 60.0 * TILE_PX;
-        if self.on_ground && self.hop_timer <= 0.0 && near {
-            self.facing = if pcx >= cx { 1 } else { -1 };
-            self.sprite_dir = self.facing;
-            self.vx = self.facing as f32 * 1.4;
-            self.vy = -4.2;
-            self.on_ground = false;
-            self.hop_timer = 1.0 + (self.anim * 7.0).sin().abs() * 0.5;
-        }
-        // `NPC.UpdateNPC_Gravity`: water lowers gravity and the fall cap.
-        let wet = is_wet(world, self.x, self.y, w, h);
-        if wet {
-            self.vy = (self.vy + 0.2).min(7.0);
-        } else {
-            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
-        }
-
-        let nx = self.x + self.vx;
-        if !collides_rect(world, nx, self.y, w, h) {
-            self.x = nx;
-        } else {
-            self.vx = -self.vx * 0.4;
-        }
-        let ny = self.y + self.vy;
-        let mut collide_y = false;
-        if !collides_rect(world, self.x, ny, w, h) {
-            self.y = ny;
-            self.on_ground = false;
-        } else if self.vy > 0.0 {
-            let ty = ((ny + h) / TILE_PX).floor() as i32;
-            self.y = ty as f32 * TILE_PX - h;
-            self.vy = 0.0;
-            self.on_ground = true;
-            self.vx *= 0.6;
-            collide_y = true;
-        } else if self.vy < 0.0 {
-            let ty = (ny / TILE_PX).floor() as i32;
-            self.y = (ty + 1) as f32 * TILE_PX;
-            self.vy = 0.0;
-            collide_y = true;
-        }
-        // `AI_001_Slimes` water tail: pushed up every tick, with a small bounce when
-        // it touches the floor or the surface, so slimes bob at the water line.
-        if wet {
-            if collide_y {
-                self.vy = -2.0;
-            }
-            if self.vy < 0.0 && self.wet_x == self.x {
-                self.facing = -self.facing;
-                self.sprite_dir = self.facing;
-                self.hop_timer = 200.0 / 60.0;
-            }
-            if self.vy > 0.0 {
-                self.wet_x = self.x;
-            }
-            if self.vy > 2.0 {
-                self.vy *= 0.9;
-            }
-            self.vy -= 0.5;
-            if self.vy < -4.0 {
-                self.vy = -4.0;
-            }
-        }
-        if self.vx != 0.0 {
-            self.facing = if self.vx > 0.0 { 1 } else { -1 };
-            self.sprite_dir = self.facing;
-        }
-        if self.y > world.height as f32 * TILE_PX + 200.0 {
-            self.hp = 0;
-        }
-    }
+    // W4-b1: `update_slime` (the S1-D-3ff sin-timer hop stand-in) is
+    // RETIRED — the aiStyle-1 axis claims the ten wave-A kinds above and
+    // delegates to the faithful `npc_ai_slime::ai_001_slimes`
+    // (`ai_001_slime_family`). The defect catalogue (the invented
+    // `hop_timer` cadence, the 1.4/-4.2 hop pair, the 60-tile aggro gate,
+    // the 0.4/8 gravity pair, the -vx*0.4 wall bounce and the *0.6 landing
+    // brake — NONE of it in the C# arm) lives in the module header +
+    // audit 54 §1 (`docs/research/54-audit-slime-eye.md`). The
+    // `update_wof`/`update_hungry` retirement precedent (S1-D-3 W-1).
+    // Batch-E merge note: W4-d33's balloon-slave -999 leash lived in
+    // the retired stand-in's head; it is NOT lost — the faithful
+    // `npc_ai_slime::ai_001_slimes` carries the verbatim freeze
+    // (`NPC.cs:61046-61052`: frame 0 + frameCounter 0 + rotation 0 +
+    // RETURN, the `SlimeEffects::reset_frame_counter` drain), and
+    // the sim's style-113 ride pass owns the leashed slime's
+    // position/velocity (the d33 wiring).
 
     fn update_eye(&mut self, world: &World, player: &mut Player, _dt: f32) {
         // S1-D-3ff: the five eye variants share the 30x32 box, but read
@@ -37304,6 +37704,49 @@ impl Npc {
                 } else {
                     player.hurt_cd <= 0.0
                 };
+                // `Player.cs:31332-31349` — the per-kind counter pick:
+                // `specialHitSetter` starts General; the Moon Lord family
+                // (396 head / 397 hand / 398 core / 400 free eye / 401 leech
+                // blob) rides BossNoCheese. The Empress (636, `:31342-31348`,
+                // with its ai[0] 0/10 no-contact skip) arrives with d125's
+                // kind — the counter API (`hurt_cooldown`) is the
+                // split-contract entry it will pass `IMMUNITY_BOSS_NO_CHEESE`
+                // through (M4-HAZARD-1).
+                let cooldown_counter = if matches!(
+                    self.kind,
+                    NpcKind::MoonLordHead
+                        | NpcKind::MoonLordHand
+                        | NpcKind::MoonLordCore
+                        | NpcKind::MoonLordFreeEye
+                        | NpcKind::MoonLordLeechBlob
+                ) {
+                    crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+                    crate::id_tables::IMMUNITY_GENERAL
+                // `Player.cs:31392-31396` — `flag4 = !this.immune`, or the
+                // per-counter `hurtCooldowns[specialHitSetter] == 0` when the
+                // lane is array-backed: the PRE-hit immunity gates the
+                // thorns arms (`:31397-31418`), so a contact that dodges
+                // (`Hurt` runs after, `:31423`) still reflects. The General
+                // arm keeps the port's `hurt_cd` seconds mirror beside the
+                // C# flag (the collapsed-lane witness contract).
+                let pre_hit_not_immune =
+                    if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+                        !player.immune && player.hurt_cd <= 0.0
+                    } else {
+                        player.hurt_cooldowns[cooldown_counter as usize] == 0
+                    };
+                // `Player.cs:31366-31381` — the parry verdict rides BEFORE
+                // the thorns arms: `flag3 = CanParryAgainst(rect, npcRect,
+                // velocity)`; on a parry the reflect multiplier pins at 2
+                // (`num = 2f`), the knockback halves to 5, `flag = false`
+                // skips `Hurt` and `flag2 = true` skips `StatusFromNPC`.
+                // The enemy centre is the C# `Rectangle.Center` integer
+                // arithmetic (`(int)position.X + width/2`, `:31356`).
+                let parry = player.can_parry_against(
+                    self.x as i32 + w as i32 / 2,
+                    self.vx,
+                    self.vy,
+                );
                 // `Player.cs:31397-31410`: the contact bounces the thorns
                 // back — `thorns` scales the NPC's own damage (2x on the
                 // Turtle set), the Cactus set adds its flat 15.
@@ -37312,7 +37755,16 @@ impl Npc {
                 // carries the varied contact damage (`num3`, `:31387`) and
                 // runs BEFORE `Hurt` — a dodged hit reflects too.
                 if pre_hit_not_immune && dmg > 0 && !self.dont_take_damage {
-                    let reflect = player.thorns_damage(dmg);
+                    // On a parry the multiplier is 2 REGARDLESS of the
+                    // thorns sources (`num = 2f`, `:31377`) — a shield
+                    // parry reflects even with no thorns armed; the
+                    // Cactus flat 15 still rides (`:31406-31418`).
+                    let reflect = if parry {
+                        ((dmg as f32 * 2.0) as i32).min(1000)
+                            + if player.cactus_thorns { 15 } else { 0 }
+                    } else {
+                        player.thorns_damage(dmg)
+                    };
                     if reflect > 0 {
                         let (ncx, _) = self.center();
                         let dir = if ncx < player.x + crate::player::WIDTH * 0.5 {
@@ -37321,8 +37773,9 @@ impl Npc {
                             1.0
                         };
                         // The C# knocks the NPC away from the player
-                        // (`-num2`, knockback 10).
-                        self.hurt(reflect, ncx, 10.0 * dir, false, player.buffs.expert_mode);
+                        // (`-num2`, knockback 10 — 5 on a parry, `:31378`).
+                        let kb = if parry { 5.0 } else { 10.0 };
+                        self.hurt(reflect, ncx, kb * dir, false, player.buffs.expert_mode);
                     }
                 }
                 // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
@@ -37342,6 +37795,30 @@ impl Npc {
                     } else {
                         player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
                     }
+
+        }                // elsewhere (unchanged). M4-HAZARD-1: the counter-carrying
+                // entry — the boss lanes land THROUGH the General i-frames.
+                // `flag` is false on a parry (W4-f48, `:31379`) — the shield
+                // eats the hit whole.
+                if dmg > 0 && !parry {
+                    player.hurt_cooldown(
+                        dmg,
+                        cx,
+                        rng,
+                        self.is_damage_dodgeable(),
+                        cooldown_counter,
+                    );
+                }
+                // `Player.cs:31427-31431` — the parry tail: the collision
+                // immunity window (60 with the Cross Necklace's
+                // `longInvince`, else 30) through the strike-counted
+                // `GiveImmuneTimeForCollisionAttack`, then the
+                // ParryDamageBuff grant `AddBuff(198, 300)` — the next
+                // melee strike ×5s (`:44307-44312`).
+                if parry {
+                    player.give_immune_time_for_collision_attack(
+                        if player.long_invince { 60 } else { 30 },
+                    player.buffs.add_buff(198, 300);
                 }
             }
         }
@@ -37707,6 +38184,23 @@ impl Npc {
             NpcKind::Necromancer => 283,
             NpcKind::NecromancerArmored => 284,
             NpcKind::DiabolistRed => 285,
+            // The dragonflies (W4-d33): the vanilla ids — unused by every
+            // arm above (the G6 key stays injective).
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
+            // The fairy critters + the windy balloon (W4-d33 wiring): the
+            // vanilla ids — unused by every arm above (the G6 key stays
+            // injective). d42 batch-2/3's rows, constants-copy (keep-one
+            // d37c-E3).
+            NpcKind::FairyCritterPink => 583,
+            NpcKind::FairyCritterGreen => 584,
+            NpcKind::FairyCritterBlue => 585,
+            NpcKind::WindyBalloon => 594,
             // The snail family + its shimmer target (W4-c9): the vanilla
             // ids — unused by every arm above (the G6 key stays injective).
             // E8 merge renumber: the snail pair rides 740/741 (the
@@ -39669,6 +40163,94 @@ mod tests {
     }
 
     #[test]
+    fn w4_f48_parry_contact_eats_the_hit_reflects_double_and_grants_198() {
+        // `Update_NPCCollision`'s parry lane (`Player.cs:31366-31431`):
+        // `flag3` skips `Hurt` (`flag = false`), pins the reflect at 2x
+        // with knockback 5, then grants the 60/30 collision window +
+        // `AddBuff(198, 300)`.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.hp = 10_000;
+        bat.max_hp = 10_000;
+        bat.vx = -1.0; // moving toward the player's facing side
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0; // overlapping, the bat centre RIGHT of the player
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        p.time_since_last_immune_get = 10000;
+        p.shield_parry_time_left = 5;
+        let hp0 = p.hp;
+        let bat_hp0 = bat.hp;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert_eq!(p.hp, hp0, "the parry eats the hit (flag = false)");
+        // The reflect: 2x the VARIED contact damage (±15% band), capped.
+        let reflected = bat_hp0 - bat.hp;
+        assert!(
+            (34..=46).contains(&reflected),
+            "2x the varied 20 lands (got {reflected})"
+        );
+        // The 30-tick window + the no-blink flag + buff 198 for 300.
+        assert!(p.immune && p.immune_no_blink);
+        assert_eq!(p.immune_time, 30);
+        let i = p.buffs.find_buff_index(198).expect("the parry grants 198");
+        assert_eq!(p.buffs.buff_time[i], 300);
+    }
+
+    #[test]
+    fn w4_f48_parry_contact_window_doubles_to_60_with_long_invince() {
+        // `Player.cs:31429`: `GiveImmuneTimeForCollisionAttack(longInvince
+        // ? 60 : 30)` — the Cross Necklace's second consumer.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.vx = -1.0;
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0;
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        p.time_since_last_immune_get = 10000;
+        p.shield_parry_time_left = 5;
+        p.long_invince = true;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert_eq!(p.immune_time, 60, "the Cross Necklace doubles the parry window");
+    }
+
+    #[test]
+    fn w4_f48_parry_contact_without_the_window_lands_the_hit_normally() {
+        // No parry window: the vanilla lane — `Hurt` runs, no 198 grant,
+        // no reflect without thorns.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.hp = 10_000;
+        bat.max_hp = 10_000;
+        bat.vx = -1.0;
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0;
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        let hp0 = p.hp;
+        let bat_hp0 = bat.hp;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert!(p.hp < hp0, "the hit lands without the shield window");
+        assert_eq!(bat.hp, bat_hp0, "no thorns, no reflect");
+        assert!(p.buffs.find_buff_index(198).is_none(), "no parry, no 198");
+    }
+
+    #[test]
     fn s1_c_1_dw_2_1_npc_is_damage_dodgeable_table() {
         // `NPC.IsDamageDodgeable` (`NPC.cs:78744-78753`): the Skeletron heads
         // — `case 35` (`NPCID.SkeletronHead`) and `case 127`
@@ -39699,6 +40281,127 @@ mod tests {
             let n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert!(n.is_damage_dodgeable(), "{kind:?} defaults true");
         }
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the contact
+    /// counter pick (`Player.cs:31332-31349`): the Moon Lord family
+    /// (396/397/398/400/401) rides BossNoCheese and lands THROUGH the
+    /// General i-frames on its own `hurt_cooldowns` slot; a plain NPC
+    /// keeps General and is swallowed by the same window. The thorns
+    /// flag4 (`:31392-31396`) reads the lane's own pre-hit state.
+    #[test]
+    fn w4_d115_m4_hazard_the_moon_lord_contact_lands_through_the_general_iframes() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // Every Moon Lord kind picks BossNoCheese (`:31335-31341`).
+        for kind in [
+            NpcKind::MoonLordHead,
+            NpcKind::MoonLordHand,
+            NpcKind::MoonLordCore,
+            NpcKind::MoonLordFreeEye,
+            NpcKind::MoonLordLeechBlob,
+        ] {
+            let mut n = Npc::new(kind, 32.0, 16.0, 1, 0.0);
+            n.damage_override = Some(20);
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = n.x;
+            player.y = n.y;
+            player.hp = 10_000;
+            player.max_hp = 10_000;
+            player.stat_defense = 0;
+            // A live General window (a prior contact hit armed it).
+            player.immune = true;
+            player.immune_time = 600;
+            player.hurt_cd = 10.0;
+            let hp0 = player.hp;
+            let mut rng = UnifiedRandom::new(9);
+            n.contact(&mut player, &mut rng);
+            assert!(
+                player.hp < hp0,
+                "{kind:?}: the BossNoCheese contact lands through the i-frames"
+            );
+            assert!(
+                player.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize] > 0,
+                "{kind:?}: the lane's own slot re-armed (:38391-38393)"
+            );
+            assert_eq!(player.immune_time, 600, "the General window untouched");
+            // The second contact inside the boss window is swallowed.
+            let hp1 = player.hp;
+            n.contact(&mut player, &mut rng);
+            assert_eq!(player.hp, hp1, "{kind:?}: one hit per boss window");
+        }
+        // The contrast: a plain NPC keeps General (`:31332`) — the same
+        // live window swallows its contact.
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = bat.x;
+        player.y = bat.y;
+        player.hp = 10_000;
+        player.max_hp = 10_000;
+        player.immune = true;
+        player.immune_time = 600;
+        player.hurt_cd = 10.0;
+        let hp0 = player.hp;
+        let mut rng = UnifiedRandom::new(9);
+        bat.contact(&mut player, &mut rng);
+        assert_eq!(player.hp, hp0, "the General contact is swallowed");
+        assert_eq!(player.hurt_cooldowns, [0; 6], "no array write on General");
+    }
+
+    /// W4-d115 wiring round (M4-HAZARD-1, WRITTEN NOT RUN) — the boss
+    /// lane's thorns flag4 (`Player.cs:31392-31396`): with the General
+    /// window live but the BossNoCheese slot free, the PRE-hit flag holds
+    /// and the thorns reflect even though the General lane would refuse;
+    /// with the boss slot running, flag4 is false and nothing reflects.
+    #[test]
+    fn w4_d115_m4_hazard_the_boss_lane_thorns_flag_reads_its_own_counter() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut head = Npc::new(NpcKind::MoonLordHead, 32.0, 16.0, 1, 0.0);
+        head.damage_override = Some(20);
+        head.hp = 10_000;
+        head.max_hp = 10_000;
+        let mut player = crate::player::Player::spawn(&w);
+        player.buffs.add_buff(14, 3600); // the Thorns Potion
+        player.update(&w, crate::player::PlayerInput::default());
+        assert!(player.thorns > 0.0);
+        // Re-pin the overlap after the fold tick (the spawn fall moved it).
+        player.x = head.x;
+        player.y = head.y;
+        // General live, boss slot free: the reflect fires.
+        player.immune = true;
+        player.immune_time = 600;
+        player.hurt_cd = 10.0;
+        let head_hp = head.hp;
+        let mut rng = UnifiedRandom::new(9);
+        head.contact(&mut player, &mut rng);
+        assert!(head.hp < head_hp, "flag4 held: the thorns bit back");
+        // Boss slot running: flag4 false, no reflect on the second touch.
+        let head_hp = head.hp;
+        head.hurt_cd = 0.0; // the NPC's own melee cooldown must not gate
+        head.contact(&mut player, &mut rng);
+        assert_eq!(head.hp, head_hp, "flag4 false: no reflect inside the boss window");
     }
 
     #[test]
@@ -44376,6 +45079,12 @@ mod tests {
     // `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     // `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     // the new arm), then this array's length.
+    /// The full `NpcKind` roster in declaration order (the enum at
+    /// `npc.rs:31-686`: 240 kinds - the 8 slime colours are `SlimeVariant`,
+    /// not kinds). The driver for
+    /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
+    /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
+    /// the new arm), then this array's length.
     // Wave-1 splice pin (367 s1): 497 = 489 (spine 488 + c3's 694) +
     // W4-c4's 8 (GiantFlyingAntlion 509 / FlyingAntlion 581 /
     // EyeballFlyingFish 587 / Arapaima 406 / CrimsonGoldfish 465 (c4's
@@ -45087,7 +45796,701 @@ mod tests {
         NpcKind::PantlessSkeleton,
         NpcKind::SpikedJungleSlime,
         NpcKind::IcyMerman,
+    ]    pub(super) const ALL_KINDS: [NpcKind; 528] = [
+        NpcKind::Slime,
+        NpcKind::DemonEye,
+        NpcKind::WanderingEye,
+        NpcKind::Zombie,
+        NpcKind::KingSlime,
+        NpcKind::Guide,
+        NpcKind::Skeleton,
+        NpcKind::UndeadMiner,
+        NpcKind::CaveBat,
+        NpcKind::JungleBat,
+        NpcKind::Hellbat,
+        NpcKind::VoodooDemon,
+        NpcKind::EaterOfSouls,
+        NpcKind::Hornet,
+        NpcKind::MeteorHead,
+        NpcKind::GoblinThief,
+        NpcKind::GoblinWarrior,
+        NpcKind::GoblinArcher,
+        NpcKind::GoblinPeon,
+        NpcKind::GoblinSummoner,
+        NpcKind::SnowmanGangsta,
+        NpcKind::SnowBalla,
+        NpcKind::MysterySnowman,
+        NpcKind::MartianOfficer,
+        NpcKind::GrayGrunt,
+        NpcKind::MartianEngineer,
+        NpcKind::GigaZapper,
+        NpcKind::MartianWalker,
+        NpcKind::MartianProbe,
+        NpcKind::MartianDrone,
+        NpcKind::ForceBubble,
+        NpcKind::MartianTurret,
+        NpcKind::BrainScrambler,
+        NpcKind::RayGunner,
+        NpcKind::ScutlixRider,
+        NpcKind::Scutlix,
+        NpcKind::MartianSaucer,
+        NpcKind::MartianSaucerTurret,
+        NpcKind::MartianSaucerCannon,
+        NpcKind::FlyingDutchman,
+        NpcKind::DD2GoblinT1,
+        NpcKind::DD2GoblinT2,
+        NpcKind::DD2GoblinT3,
+        NpcKind::DD2GoblinBomberT1,
+        NpcKind::DD2GoblinBomberT2,
+        NpcKind::DD2GoblinBomberT3,
+        NpcKind::DD2JavelinT1,
+        NpcKind::DD2JavelinT2,
+        NpcKind::DD2JavelinT3,
+        NpcKind::DD2SkeletonT1,
+        NpcKind::DD2SkeletonT3,
+        NpcKind::StardustTower,
+        NpcKind::NebulaTower,
+        NpcKind::SolarTower,
+        NpcKind::VortexTower,
+        NpcKind::DD2LanePortal,
+        NpcKind::DD2WyvernT1,
+        NpcKind::DD2WyvernT2,
+        NpcKind::DD2WyvernT3,
+        NpcKind::DD2DarkMageT3,
+        NpcKind::DD2WitherBeastT3,
+        NpcKind::DD2DrakinT2,
+        NpcKind::DD2DrakinT3,
+        NpcKind::DD2KoboldWalkerT2,
+        NpcKind::DD2KoboldWalkerT3,
+        NpcKind::DD2KoboldFlyerT2,
+        NpcKind::DD2KoboldFlyerT3,
+        NpcKind::DD2OgreT2,
+        NpcKind::DD2OgreT3,
+        NpcKind::StardustCellBig,
+        NpcKind::StardustCellSmall,
+        NpcKind::StardustJellyfishBig,
+        NpcKind::NebulaBeast,
+        NpcKind::VortexRifleman,
+        NpcKind::VortexSoldier,
+        NpcKind::VortexHunter,
+        NpcKind::VortexAlien,
+        NpcKind::VortexHeadcrab,
+        NpcKind::NebulaFloater,
+        NpcKind::BrainSuckler,
+        NpcKind::Predictor,
+        NpcKind::StardustSpiderBig,
+        NpcKind::StardustSpiderSmall,
+        NpcKind::StardustSoldier,
+        NpcKind::SolarDrakomire,
+        NpcKind::SolarDrakomireRider,
+        NpcKind::SolarSroller,
+        NpcKind::SolarCorite,
+        NpcKind::SolarSelenian,
+        NpcKind::SolarCrawltipedeHead,
+        NpcKind::SolarCrawltipedeBody,
+        NpcKind::SolarCrawltipedeTail,
+        NpcKind::StardustWormHead,
+        NpcKind::SolarSpearman,
+        NpcKind::MoonLordHead,
+        NpcKind::MoonLordHand,
+        NpcKind::MoonLordCore,
+        NpcKind::MoonLordFreeEye,
+        NpcKind::MoonLordLeechBlob,
+        NpcKind::AncientCultist,
+        NpcKind::DD2Bartender,
+        NpcKind::DD2EterniaCrystal,
+        NpcKind::DD2WitherBeast,
+        NpcKind::DD2Betsy,
+        NpcKind::DD2DarkMage,
+        NpcKind::FlyingDutchmanCannon,
+        NpcKind::MartianSaucerCore,
+        NpcKind::PirateDeckhand,
+        NpcKind::PirateCaptainsMate,
+        NpcKind::PirateArcher,
+        NpcKind::PirateCorsair,
+        NpcKind::PirateCaptain,
+        NpcKind::GoblinSorcerer,
+        NpcKind::Tim,
+        NpcKind::DarkCaster,
+        NpcKind::FireImp,
+        NpcKind::DesertDjinn,
+        NpcKind::ChaosBall,
+        NpcKind::BurningSphere,
+        NpcKind::WaterSphere,
+        NpcKind::Goldfish,
+        NpcKind::Piranha,
+        NpcKind::Shark,
+        NpcKind::DevourerHead,
+        NpcKind::DevourerBody,
+        NpcKind::DevourerTail,
+        NpcKind::GiantWormHead,
+        NpcKind::GiantWormBody,
+        NpcKind::GiantWormTail,
+        NpcKind::EaterOfWorldsHead,
+        NpcKind::EaterOfWorldsBody,
+        NpcKind::EaterOfWorldsTail,
+        NpcKind::Merchant,
+        NpcKind::Dryad,
+        NpcKind::Nurse,
+        NpcKind::ArmsDealer,
+        NpcKind::Demolitionist,
+        NpcKind::Painter,
+        NpcKind::WitchDoctor,
+        NpcKind::Clothier,
+        NpcKind::TravellingMerchant,
+        NpcKind::Angler,
+        NpcKind::SleepingAngler,
+        NpcKind::Stylist,
+        NpcKind::WebbedStylist,
+        NpcKind::TaxCollector,
+        NpcKind::Golfer,
+        NpcKind::SleepingGolfer,
+        NpcKind::Zoologist,
+        NpcKind::Princess,
+        NpcKind::DyeTrader,
+        NpcKind::PartyGirl,
+        NpcKind::Wizard,
+        NpcKind::BoundWizard,
+        NpcKind::Mechanic,
+        NpcKind::BoundMechanic,
+        NpcKind::EyeOfCthulhu,
+        NpcKind::QueenBee,
+        NpcKind::Bee,
+        NpcKind::BeeSmall,
+        NpcKind::SkeletronHead,
+        NpcKind::ServantOfCthulhu,
+        NpcKind::WallOfFlesh,
+        NpcKind::Hungry,
+        NpcKind::LeechHead,
+        NpcKind::LeechBody,
+        NpcKind::LeechTail,
+        NpcKind::TheDestroyer,
+        NpcKind::TheDestroyerBody,
+        NpcKind::TheDestroyerTail,
+        NpcKind::Probe,
+        NpcKind::SkeletronPrime,
+        NpcKind::Retinazer,
+        NpcKind::Spazmatism,
+        NpcKind::Plantera,
+        NpcKind::BrainOfCthulhu,
+        NpcKind::Creeper,
+        NpcKind::BoundGoblin,
+        NpcKind::GoblinTinkerer,
+        NpcKind::Golem,
+        NpcKind::GolemHead,
+        NpcKind::GolemFistLeft,
+        NpcKind::GolemFistRight,
+        NpcKind::GolemHeadFree,
+        NpcKind::Deerclops,
+        NpcKind::SkeletronHand,
+        NpcKind::WallOfFleshEye,
+        NpcKind::PrimeCannon,
+        NpcKind::PrimeSaw,
+        NpcKind::PrimeVice,
+        NpcKind::PrimeLaser,
+        NpcKind::Scarecrow1,
+        NpcKind::Scarecrow2,
+        NpcKind::Scarecrow3,
+        NpcKind::Scarecrow4,
+        NpcKind::Scarecrow5,
+        NpcKind::Scarecrow6,
+        NpcKind::Scarecrow7,
+        NpcKind::Scarecrow8,
+        NpcKind::Scarecrow9,
+        NpcKind::Scarecrow10,
+        NpcKind::HeadlessHorseman,
+        NpcKind::MourningWood,
+        NpcKind::Splinterling,
+        NpcKind::Pumpking,
+        NpcKind::Hellhound,
+        NpcKind::Poltergeist,
+        NpcKind::IceQueen,
+        NpcKind::SantaNK1,
+        NpcKind::ElfCopter,
+        NpcKind::Nutcracker,
+        NpcKind::NutcrackerSpinning,
+        NpcKind::ElfArcher,
+        NpcKind::Krampus,
+        NpcKind::Flocko,
+        NpcKind::MotherSlime,
+        NpcKind::LavaSlime,
+        NpcKind::DungeonSlime,
+        NpcKind::CorruptSlime,
+        NpcKind::IlluminantSlime,
+        NpcKind::IceSlime,
+        NpcKind::Crimslime,
+        NpcKind::SpikedIceSlime,
+        NpcKind::UmbrellaSlime,
+        NpcKind::CataractEye,
+        NpcKind::SleepyEye,
+        NpcKind::DialatedEye,
+        NpcKind::GreenEye,
+        NpcKind::PurpleEye,
+        NpcKind::DoctorBones,
+        NpcKind::TheGroom,
+        NpcKind::BaldZombie,
+        NpcKind::ZombieEskimo,
+        NpcKind::PincushionZombie,
+        NpcKind::SlimedZombie,
+        NpcKind::SwampZombie,
+        NpcKind::TwiggyZombie,
+        NpcKind::FemaleZombie,
+        NpcKind::ZombieRaincoat,
+        NpcKind::ZombieDoctor,
+        NpcKind::ZombieSuperman,
+        NpcKind::ZombiePixie,
+        NpcKind::ZombieXmas,
+        NpcKind::ZombieSweater,
+        NpcKind::BloodZombie,
+        NpcKind::Drippler,
+        NpcKind::SlimeRibbonWhite,
+        NpcKind::SlimeRibbonYellow,
+        NpcKind::SlimeRibbonGreen,
+        NpcKind::SlimeRibbonRed,
+        NpcKind::BunnyXmas,
+        NpcKind::DemonEyeSpaceship,
+        NpcKind::SkeletonTopHat,
+        NpcKind::SkeletonAstonaut,
+        NpcKind::SkeletonAlien,
+        NpcKind::PumpkingBlade,
+        NpcKind::SlimeMasked,
+        NpcKind::BunnySlimed,
+        NpcKind::HoppinJack,
+        NpcKind::Ghost,
+        NpcKind::DemonEyeOwl,
+        NpcKind::BirdBlue,
+        NpcKind::BirdRed,
+        NpcKind::Squirrel,
+        NpcKind::Mouse,
+        NpcKind::Raven,
+        NpcKind::TacticalSkeleton,
+        NpcKind::SkeletonCommando,
+        NpcKind::AngryBonesBig,
+        NpcKind::AngryBonesBigMuscle,
+        NpcKind::AngryBonesBigHelmet,
+        NpcKind::DiabolistWhite,
+        NpcKind::BoneLee,
+        NpcKind::GiantCursedSkull,
+        NpcKind::Paladin,
+        NpcKind::SkeletonSniper,
+        NpcKind::RaggedCaster,
+        NpcKind::RaggedCasterOpenCoat,
+        NpcKind::Necromancer,
+        NpcKind::NecromancerArmored,
+        NpcKind::DiabolistRed,
+        NpcKind::ZombieElf,
+        NpcKind::ZombieElfBeard,
+        NpcKind::ZombieElfGirl,
+        NpcKind::PresentMimic,
+        NpcKind::GingerbreadMan,
+        NpcKind::Yeti,
+        NpcKind::Everscream,
+        NpcKind::FungiSpore,
+        NpcKind::PlanterasHook,
+        NpcKind::PlanterasTentacle,
+        NpcKind::Spore,
+        NpcKind::DukeFishron,
+        NpcKind::DetonatingBubble,
+        NpcKind::Sharkron,
+        NpcKind::Sharkron2,
+        NpcKind::BlazingWheel,
+        NpcKind::AngryNimbus,
+        NpcKind::DungeonSpirit,
+        NpcKind::WyvernHead,
+        NpcKind::WyvernLegs,
+        NpcKind::WyvernBody,
+        NpcKind::WyvernBody2,
+        NpcKind::WyvernBody3,
+        NpcKind::GoblinScout,
+        NpcKind::Bird,
+        NpcKind::Pixie,
+        NpcKind::ArmoredSkeleton,
+        NpcKind::Mummy,
+        NpcKind::DarkMummy,
+        NpcKind::LightMummy,
+        NpcKind::Wraith,
+        NpcKind::CursedHammer,
+        NpcKind::EnchantedSword,
+        NpcKind::Mimic,
+        NpcKind::Unicorn,
+        NpcKind::GiantBat,
+        NpcKind::Corruptor,
+        NpcKind::DiggerHead,
+        NpcKind::DiggerBody,
+        NpcKind::DiggerTail,
+        NpcKind::SeekerHead,
+        NpcKind::SeekerBody,
+        NpcKind::SeekerTail,
+        NpcKind::Clinger,
+        NpcKind::AnglerFish,
+        NpcKind::GreenJellyfish,
+        NpcKind::Werewolf,
+        NpcKind::Clown,
+        NpcKind::SkeletonArcher,
+        NpcKind::VileSpit,
+        NpcKind::TheHungryII,
+        NpcKind::ChaosElemental,
+        NpcKind::Slimer,
+        NpcKind::Gastropod,
+        NpcKind::IlluminantBat,
+        NpcKind::PossessedArmor,
+        NpcKind::WyvernTail,
+        NpcKind::AngryBones,
+        NpcKind::CursedSkull,
+        NpcKind::OldMan,
+        NpcKind::ManEater,
+        NpcKind::Bunny,
+        NpcKind::BoneSerpentHead,
+        NpcKind::BoneSerpentBody,
+        NpcKind::BoneSerpentTail,
+        NpcKind::CorruptBunny,
+        NpcKind::Harpy,
+        NpcKind::Snatcher,
+        NpcKind::CorruptGoldfish,
+        NpcKind::Vulture,
+        NpcKind::Demon,
+        NpcKind::BlueJellyfish,
+        NpcKind::Crab,
+        NpcKind::DungeonGuardian,
+        NpcKind::CochinealBeetle,
+        NpcKind::CyanBeetle,
+        NpcKind::LacBeetle,
+        NpcKind::SeaSnail,
+        NpcKind::Squid,
+        NpcKind::FlyingFish,
+        NpcKind::FlyingSnake,
+        NpcKind::Pirate,
+        NpcKind::GoldfishWalker,
+        NpcKind::HornetFatty,
+        NpcKind::HornetHoney,
+        NpcKind::HornetLeafy,
+        NpcKind::HornetSpikey,
+        NpcKind::HornetStingy,
+        NpcKind::JungleCreeper,
+        NpcKind::JungleCreeperWall,
+        NpcKind::BlackRecluseWall,
+        NpcKind::BloodCrawler,
+        NpcKind::BloodCrawlerWall,
+        NpcKind::BloodFeeder,
+        NpcKind::BloodJelly,
+        NpcKind::IceGolem,
+        NpcKind::RainbowSlime,
+        NpcKind::Eyezor,
+        NpcKind::Parrot,
+        NpcKind::Reaper,
+        NpcKind::ZombieMushroom,
+        NpcKind::ZombieMushroomHat,
+        NpcKind::FungoFish,
+        NpcKind::AnomuraFungus,
+        NpcKind::MushiLadybug,
+        NpcKind::FungiBulb,
+        NpcKind::GiantFungiBulb,
+        NpcKind::IchorSticker,
+        NpcKind::RustyArmoredBonesAxe,
+        NpcKind::RustyArmoredBonesFlail,
+        NpcKind::RustyArmoredBonesSword,
+        NpcKind::RustyArmoredBonesSwordNoArmor,
+        NpcKind::BlueArmoredBones,
+        NpcKind::BlueArmoredBonesMace,
+        NpcKind::BlueArmoredBonesNoPants,
+        NpcKind::BlueArmoredBonesSword,
+        NpcKind::HellArmoredBones,
+        NpcKind::HellArmoredBonesSpikeShield,
+        NpcKind::HellArmoredBonesMace,
+        NpcKind::HellArmoredBonesSword,
+        NpcKind::TargetDummy,
+        NpcKind::GraniteFlyer,
+        NpcKind::EnchantedNightcrawler,
+        NpcKind::Grubby,
+        NpcKind::Sluggy,
+        NpcKind::Buggy,
+        NpcKind::Worm,
+        NpcKind::TruffleWorm,
+        NpcKind::TruffleWormDigger,
+        NpcKind::MothronEgg,
+        NpcKind::MothronSpawn,
+        NpcKind::Medusa,
+        NpcKind::GreekSkeleton,
+        NpcKind::GraniteGolem,
+        NpcKind::BigMimicCorruption,
+        NpcKind::BigMimicCrimson,
+        NpcKind::BigMimicHallow,
+        NpcKind::BigMimicJungle,
+        NpcKind::Mothron,
+        NpcKind::DeadlySphere,
+        NpcKind::DrManFly,
+        NpcKind::ThePossessed,
+        NpcKind::CrimsonPenguin,
+        NpcKind::ShadowFlameApparition,
+        NpcKind::Fritz,
+        NpcKind::Nailhead,
+        NpcKind::CrimsonBunny,
+        NpcKind::Psycho,
+        NpcKind::CultistDragonBody3,
+        NpcKind::CultistDragonBody4,
+        NpcKind::CultistDragonTail,
+        NpcKind::Butcher,
+        NpcKind::CreatureFromTheDeep,
+        NpcKind::BoneThrowingSkeleton4,
+        NpcKind::SkeletonMerchant,
+        NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody1,
+        NpcKind::CultistDragonBody2,
+        NpcKind::GoldMouse,
+        NpcKind::GoldWorm,
+        NpcKind::BoneThrowingSkeleton,
+        NpcKind::BoneThrowingSkeleton2,
+        NpcKind::BoneThrowingSkeleton3,
+        NpcKind::GoldBird,
+        NpcKind::GoldBunny,
+        NpcKind::GoldButterfly,
+        NpcKind::GoldFrog,
+        NpcKind::GoldGrasshopper,
+        NpcKind::Duck,
+        NpcKind::Duck2,
+        NpcKind::DuckWhite,
+        NpcKind::DuckWhite2,
+        NpcKind::ArmedZombieTwiggy,
+        NpcKind::ArmedZombieCenx,
+        NpcKind::CultistTablet,
+        NpcKind::CultistDevote,
+        NpcKind::CultistBossClone,
+        NpcKind::ArmedZombie,
+        NpcKind::ArmedZombieEskimo,
+        NpcKind::ArmedZombiePincussion,
+        NpcKind::ArmedZombieSlimed,
+        NpcKind::ArmedZombieSwamp,
+        NpcKind::DD2LightningBug,
+        NpcKind::BartenderUnconscious,
+        NpcKind::WalkingAntlion,
+        NpcKind::LarvaeAntlion,
+        NpcKind::ZombieMerman,
+        NpcKind::TorchZombie,
+        NpcKind::ArmedTorchZombie,
+        NpcKind::GoldGoldfishWalker,
+        NpcKind::Seagull,
+        NpcKind::Seagull2,
+        NpcKind::Grebe,
+        NpcKind::Grebe2,
+        NpcKind::Rat,
+        NpcKind::Owl,
+        NpcKind::WaterStrider,
+        NpcKind::GoldWaterStrider,
+        NpcKind::ExplosiveBunny,
+        NpcKind::Turtle,
+        NpcKind::TurtleJungle,
+        NpcKind::BloodNautilus,
+        NpcKind::BloodSquid,
+        NpcKind::GoblinShark,
+        NpcKind::BloodEelHead,
+        NpcKind::BloodEelBody,
+        NpcKind::BloodEelTail,
+        NpcKind::Gnome,
+        NpcKind::SeaTurtle,
+        NpcKind::Seahorse,
+        NpcKind::GoldSeahorse,
+        NpcKind::Dandelion,
+        NpcKind::IceMimic,
+        NpcKind::BloodMummy,
+        NpcKind::WaterBoltMimic,
+        NpcKind::GiantFlyingAntlion,
+        NpcKind::FlyingAntlion,
+        NpcKind::EyeballFlyingFish,
+        NpcKind::Arapaima,
+        NpcKind::CrimsonGoldfish,
+        NpcKind::GoldGoldfish,
+        NpcKind::Pupfish,
+        NpcKind::Dolphin,
+        NpcKind::Firefly,
+        NpcKind::LightningBug,
+        NpcKind::Lavafly,
+        NpcKind::Shimmerfly,
+        NpcKind::Maggot,
+        NpcKind::Snail,
+        NpcKind::GlowingSnail,
+        NpcKind::MagmaSnail,
+        NpcKind::AngryTrapper,
+        NpcKind::SolarFlare,
+        NpcKind::SporeBat,
+        NpcKind::QueenSlimeMinionPurple,
+        NpcKind::IceBat,
+        NpcKind::Lavabat,
+        NpcKind::GiantFlyingFox,
+        NpcKind::RedDevil,
+        NpcKind::VampireBat,
+        NpcKind::Vampire,
+        NpcKind::VileSpitEoW,
+        NpcKind::Wolf,
+        NpcKind::Tumbleweed,
+        NpcKind::SantaClaus,
+        NpcKind::Truffle,
+        NpcKind::Steampunker,
+        NpcKind::Cyborg,
+        NpcKind::EmpressOfLight,
+        NpcKind::PrismaticLacewing,
+        NpcKind::RuneWizard,
+        NpcKind::LibrarianSkeleton,
+        NpcKind::PinkJellyfish,
+        NpcKind::Antlion,
+        NpcKind::SpikeBall,
+        NpcKind::WallCreeper,
+        NpcKind::WallCreeperWall,
+        NpcKind::IceElemental,
+        NpcKind::Herpling,
+        NpcKind::Derpling,
+        NpcKind::CrimsonAxe,
+        NpcKind::FloatyGross,
+        NpcKind::LostGirl,
+        NpcKind::Nymph,
+        NpcKind::BlackDragonfly,
+        NpcKind::BlueDragonfly,
+        NpcKind::GreenDragonfly,
+        NpcKind::OrangeDragonfly,
+        NpcKind::RedDragonfly,
+        NpcKind::YellowDragonfly,
+        NpcKind::GoldDragonfly,
+        NpcKind::FairyCritterPink,
+        NpcKind::FairyCritterGreen,
+        NpcKind::FairyCritterBlue,
+        NpcKind::WindyBalloon,
+        NpcKind::PartyBunny,
+        NpcKind::AncientCultistSquidhead,
+        NpcKind::Butterfly,
+        NpcKind::ScorpionBlack,
+        NpcKind::Scorpion,
+        NpcKind::Frog,
+        NpcKind::Grasshopper,
+        NpcKind::ChatteringTeethBomb,
+        NpcKind::CultistArcherBlue,
+        NpcKind::CultistArcherWhite,
+        NpcKind::Crawdad,
+        NpcKind::Crawdad2,
+        NpcKind::GiantShelly,
+        NpcKind::GiantShelly2,
+        NpcKind::Salamander,
+        NpcKind::Salamander2,
+        NpcKind::Salamander3,
+        NpcKind::Salamander4,
+        NpcKind::Salamander5,
+        NpcKind::Salamander6,
+        NpcKind::Salamander7,
+        NpcKind::Salamander8,
+        NpcKind::Salamander9,
+        NpcKind::GiantWalkingAntlion,
+        NpcKind::DuneSplicerHead,
+        NpcKind::DuneSplicerBody,
+        NpcKind::DuneSplicerTail,
+        NpcKind::TombCrawlerHead,
+        NpcKind::TombCrawlerBody,
+        NpcKind::TombCrawlerTail,
+        NpcKind::SolarGoop,
+        NpcKind::AncientLight,
+        NpcKind::AncientDoom,
+        NpcKind::DesertGhoul,
+        NpcKind::DesertGhoulCorruption,
+        NpcKind::DesertGhoulCrimson,
+        NpcKind::DesertGhoulHallow,
+        NpcKind::DesertLamiaLight,
+        NpcKind::DesertLamiaDark,
+        NpcKind::DesertScorpionWalk,
+        NpcKind::DesertScorpionWall,
+        NpcKind::DesertBeast,
+        NpcKind::DemonTaxCollector,
+        NpcKind::SlimeSpiked,
+        NpcKind::TheBride,
+        NpcKind::SandSlime,
+        NpcKind::SquirrelRed,
+        NpcKind::SquirrelGold,
+        NpcKind::LadyBug,
+        NpcKind::GoldLadyBug,
+        NpcKind::TownCat,
+        NpcKind::TownDog,
+        NpcKind::TownBunny,
+        NpcKind::TownSlimeBlue,
+        NpcKind::TownSlimeGreen,
+        NpcKind::TownSlimeOld,
+        NpcKind::TownSlimePurple,
+        NpcKind::TownSlimeRainbow,
+        NpcKind::TownSlimeRed,
+        NpcKind::TownSlimeYellow,
+        NpcKind::TownSlimeCopper,
+        NpcKind::ShimmerSlime,
+        NpcKind::RockGolem,
+        NpcKind::MaggotZombie,
+        NpcKind::SporeSkeleton,
+        NpcKind::HallowBoss,
+        NpcKind::GemSquirrelAmethyst,
+        NpcKind::GemSquirrelTopaz,
+        NpcKind::GemSquirrelSapphire,
+        NpcKind::GemSquirrelEmerald,
+        NpcKind::GemSquirrelRuby,
+        NpcKind::GemSquirrelDiamond,
+        NpcKind::GemSquirrelAmber,
+        NpcKind::GemBunnyAmethyst,
+        NpcKind::GemBunnyTopaz,
+        NpcKind::GemBunnySapphire,
+        NpcKind::GemBunnyEmerald,
+        NpcKind::GemBunnyRuby,
+        NpcKind::GemBunnyDiamond,
+        NpcKind::GemBunnyAmber,
+        NpcKind::HellButterfly,
+        NpcKind::QueenSlimeBoss,
+        NpcKind::QueenSlimeMinionBlue,
+        NpcKind::QueenSlimeMinionPink,
+        NpcKind::EmpressButterfly,
+        NpcKind::PirateGhost,
+        NpcKind::TorchGod,
+        NpcKind::ChaosBallTim,
+        NpcKind::VileSpitEaterOfWorlds,
+        NpcKind::GoldenSlime,
+        NpcKind::Stinkbug,
+        NpcKind::ScarletMacaw,
+        NpcKind::BlueMacaw,
+        NpcKind::Toucan,
+        NpcKind::YellowCockatiel,
+        NpcKind::GrayCockatiel,
+        NpcKind::BoundTownSlimeOld,
+        NpcKind::BoundTownSlimePurple,
+        NpcKind::BoundTownSlimeYellow,
+        NpcKind::Pufferfish,
+        NpcKind::OwlMimic,
+        NpcKind::StatueMimic,
+        NpcKind::MossZombie,
+        NpcKind::Orca,
+        NpcKind::PalworldCattivaDistressed,
+        NpcKind::PalworldFoxsparksDistressed,
+        NpcKind::ToxicSludge,
+        NpcKind::Penguin,
+        NpcKind::PenguinBlack,
+        NpcKind::GiantTortoise,
+        NpcKind::IceTortoise,
+        NpcKind::Frankenstein,
+        NpcKind::BlackRecluse,
+        NpcKind::SwampThing,
+        NpcKind::UndeadViking,
+        NpcKind::Crimera,
+        NpcKind::MossHornet,
+        NpcKind::Moth,
+        NpcKind::CorruptPenguin,
+        NpcKind::PigronCorruption,
+        NpcKind::PigronHallow,
+        NpcKind::PigronCrimson,
+        NpcKind::FaceMonster,
+        NpcKind::SnowFlinx,
+        NpcKind::ArmoredViking,
+        NpcKind::Lihzahrd,
+        NpcKind::LihzahrdCrawler,
+        NpcKind::HeadacheSkeleton,
+        NpcKind::MisassembledSkeleton,
+        NpcKind::PantlessSkeleton,
+        NpcKind::SpikedJungleSlime,
+        NpcKind::IcyMerman,
     ];;;
+        // W4-g5 — the two unclaimed aiStyle-8 casters.
+        // The luck critters (W4-e26, E8 keep-one): the Frog + the ladybug
+        // pair; the Duck dropped to c10 (the waterfowl owner, SEAL S1).
+    ];
+
 
     #[test]
     fn the_protocol_id_space_round_trips_every_kind() {
@@ -48092,19 +49495,25 @@ mod tests {
     /// `:17579-17593`), through the port's tables — the small-kinds pin's
     /// shape. The four are aiStyle 64 with damage/defense/value 0, lifeMax
     /// 5, noGravity, the class-default kb 1f (no row written), NPCHit1/
-    /// NPCDeath1 cues, the 10x10 box (the Lightning Bug's 12x12) and the
-    /// vanilla ids kept in the protocol space. WRITTEN, NOT RUN
-    /// (code-only mode).
+    /// NPCDeath1 cues, the 10x10 box (the Lightning Bug's 12x12). The
+    /// protocol ids ride the E8 renumber EXECUTED at the batch-E merge
+    /// (research/350 §3: Firefly 735 / LightningBug 736 — c3's CursedSkull
+    /// owns port-local 355 here); Lavafly/Shimmerfly keep 654/677. The
+    /// cs_id seams never move (R1). WRITTEN, NOT RUN (code-only mode).
     #[test]
     fn w4_c7_the_firefly_defaults_match_the_csharp_rows() {
-        // (kind, vanilla type, w, h)
+        // (kind, vanilla type, post-E8 protocol id, w, h)
         let rows = [
             (NpcKind::Firefly, 772u16, 10.0, 10.0),
             (NpcKind::LightningBug, 358, 12.0, 12.0),
             (NpcKind::Lavafly, 654, 10.0, 10.0),
             (NpcKind::Shimmerfly, 677, 10.0, 10.0),
+            (NpcKind::Firefly, 355u16, 735u16, 10.0, 10.0),
+            (NpcKind::LightningBug, 358, 736, 12.0, 12.0),
+            (NpcKind::Lavafly, 654, 654, 10.0, 10.0),
+            (NpcKind::Shimmerfly, 677, 677, 10.0, 10.0),
         ];
-        for (kind, ty, w, h) in rows {
+        for (kind, ty, proto, w, h) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
             assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
             assert_eq!(kind.ai_style(), 64, "{kind:?} aiStyle");
@@ -48344,6 +49753,79 @@ mod tests {
                 assert!(k.frame < 4, "{kind:?} row {} of 4", k.frame);
             }
         }
+    }
+
+    /// W4-c8 — the crawling-critter family's `SetDefaults` rows pin
+    /// against the C# (`NPC.cs:13545-13558` / `:13762-13776` /
+    /// `:13777-13795` / `:14332-14346` / `:14576-14589` / `:16781-16794`),
+    /// through the port's tables — the small-kinds pin's shape. WRITTEN,
+    /// NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_the_crawler_defaults_match_the_csharp_rows_batch_e() {
+        // (kind, vanilla type, aiStyle, w, h, kb)
+        let rows = [
+            (NpcKind::Worm, 357u16, 66u8, 10.0, 4.0, 1.0f32),
+            (NpcKind::TruffleWorm, 374, 66, 20.0, 10.0, 1.0),
+            (NpcKind::TruffleWormDigger, 375, 6, 10.0, 10.0, 0.0),
+            (NpcKind::GoldWorm, 448, 66, 10.0, 4.0, 1.0),
+            (NpcKind::EnchantedNightcrawler, 484, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Grubby, 485, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Sluggy, 486, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Buggy, 487, 66, 10.0, 4.0, 1.0),
+            (NpcKind::Maggot, 606, 66, 10.0, 4.0, 1.0),
+        ];
+        for (kind, ty, ai, w, h, kb) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage");
+            assert_eq!(shell.defense(), 0, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, 5, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), 0.0, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+            // The catchable arm (`NPC.cs:17851-17855` + `Main.cs:9326-
+            // 9418`): the eight crawlers are npcCatchable (374 included —
+            // the row writes no friendly, the arm sets it); the digger
+            // 375 is NOT in the set → friendly false, no immunity window.
+            if kind == NpcKind::TruffleWormDigger {
+                assert!(!shell.friendly, "375 is not npcCatchable");
+                assert_eq!(shell.catchable_immunity, 0);
+                assert!(shell.behind_tiles, ":13790 behindTiles");
+                assert!(kind.no_gravity(), ":13787 noGravity");
+                // The Hide=true bestiary fold (`NPCID.cs:3714-3718`): the
+                // net id rides the TruffleWorm's entry; the DRAW sheet
+                // stays 375 (`texture_net_id`).
+                assert_eq!(kind.net_id(), 374, "the bestiary fold");
+                assert_eq!(crate::render::entities::texture_net_id(kind), 375);
+            } else {
+                assert!(shell.friendly, "{kind:?} the catchable arm");
+                assert_eq!(shell.catchable_immunity, 90);
+                assert!(!shell.behind_tiles);
+                assert!(!kind.no_gravity(), "the crawlers walk on gravity");
+                assert_eq!(kind.net_id(), ty as i32);
+            }
+        }
+        // The frame budgets (`Main.cs:67082-67153`, the module's
+        // FRAME_COUNTS pin): 357/448/484/606 two rows, the rest four.
+        for (ty, rows) in [
+            (357u16, 2u32), (374, 4), (375, 4), (448, 2), (484, 2),
+            (485, 4), (486, 4), (487, 4), (606, 2),
+        ] {
+            assert_eq!(crate::render::entities::npc_rows(ty), rows, "net {ty}");
+        }
+        // The catchItem ladder (`bug_net::catch_item`, `NPC.cs:13556`/
+        // `:13773`/`:13792`/`:14343`/`:14587`/`:16792`).
+        assert_eq!(crate::bug_net::catch_item(357, 0.0), 2002);
+        assert_eq!(crate::bug_net::catch_item(374, 0.0), 2673);
+        assert_eq!(crate::bug_net::catch_item(375, 0.0), 2673);
+        assert_eq!(crate::bug_net::catch_item(448, 0.0), 2895);
+        assert_eq!(crate::bug_net::catch_item(484, 0.0), 3191);
+        assert_eq!(crate::bug_net::catch_item(487, 0.0), 3194);
+        assert_eq!(crate::bug_net::catch_item(606, 0.0), 4363);
     }
 
     /// W4-c8 — the family's `FindFrame` cases (`NPC.cs:71109-71155` +
@@ -53790,6 +55272,8 @@ mod s1_f_3_tests {
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
             297,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf + E4b's Frankenstein + E4 batch 2's three fighters + E4 batch 3's five (CorruptPenguin/pigron trio/FaceMonster) + E4 batch 4's four (SnowFlinx/ArmoredViking/Lihzahrd/LihzahrdCrawler) + E4 batch 5's five SEAL kinds (bone trio/SpikedJungleSlime/IcyMerman), L-B gate)"
+            528,
+            "every decodable kind resolves (the wire roster's size - 508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them), L-B gate)"
         );
         assert!(
             covered > 43,
@@ -57611,6 +59095,11 @@ mod s1_d_2_tests {
         (NpcKind::ChatteringTeethBomb, 41),
         (NpcKind::CultistArcherBlue, 3),
         (NpcKind::CultistArcherWhite, 3),
+        (NpcKind::GoldWorm, 66),
+        (NpcKind::EnchantedNightcrawler, 66),
+        (NpcKind::Grubby, 66),
+        (NpcKind::Sluggy, 66),
+        (NpcKind::Buggy, 66),
         // The luck critters (W4-e26, E8 keep-one): Frog aiStyle 7
         // (`NPC.cs:13605`), the ladybug pair aiStyle 115 (`:16767`).
         // The Duck dropped to c10 (the waterfowl owner, SEAL S1).
@@ -59421,6 +60910,19 @@ mod s1_f_13c_wire_tests {
         n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
     }
 
+    /// W4-c11 witness 2 — the Tesla Turret's hold-still stand-in is
+    /// retired: the kind-match arm panics (the axis' 73 claim owns the
+    /// machine), the Everscream precedent's guard.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_c11_the_turret_stand_in_is_retired() {
+        let w = tr_core::World::new("t".into(), 200, 120);
+        let mut p = crate::player::Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::MartianTurret, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
     /// The shot rows exist: the drained kinds resolve through `proj_data`
     /// (the data-carrying spawn lands them; without the rows the requests
     /// silently dropped — the W1-1 finding's second half).
@@ -60606,11 +62108,15 @@ mod s1_f_13d_tests {
         assert!(!crate::npc_buffs::whip_immune(NpcKind::ForceBubble));
     }
 
-    /// The AI stand-ins hold still: neither kind moves nor fires until
-    /// its machine lands with the AI wave (the Officer's spawn arm
-    /// `NPC.cs:56222-56249` / the Engineer's placement `:59004-59030`).
+    /// W4-c11 wiring witness — the Tesla Turret's aiStyle-73 machine is
+    /// LIVE through `update_rng` (the axis' 73 claim): the 120-tick
+    /// materialize fade holds the ghost (alpha 255, dontTakeDamage, no
+    /// shot), the 121st tick latches solid, and the shot cycle fires the
+    /// 435 bolt at the classic 35 damage — queued on `wants_hostile_shot`
+    /// for the sim's drain. The gravity/collision tail keeps the turret
+    /// planted on the surface (no walking — the X decay snaps to zero).
     #[test]
-    fn s1_f_13d_the_stand_ins_hold_still() {
+    fn w4_c11_the_turret_warp_fires_through_the_axis() {
         let mut w = tr_core::World::new("t".into(), 200, 120);
         for x in 0..200 {
             for y in 100..120 {
@@ -60636,12 +62142,1370 @@ mod s1_f_13d_tests {
             let (x0, y0) = (n.x, n.y);
             for _ in 0..120 {
                 n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &dust_ctx(&w));
+
+        }
+        }        // Planted on the surface: feet at the tile row 100.
+        let mut n = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let (x0, y0) = (n.x, n.y);
+        // The fade: 120 ticks of ghost, no shot, the frame pinned.
+        for _ in 0..120 {
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[1], 120.0, ":35119 the fade increments");
+        assert_eq!(n.alpha, 0, "the last fade tick's ramp: (1-60/60)*255 = 0");
+        assert!(n.dont_take_damage, ":35128");
+        assert!(n.wants_hostile_shot.is_empty(), "the fade never fires");
+        assert_eq!((n.x, n.y), (x0, y0), "the turret holds its plant");
+        // The latch tick: solid, hittable, opaque.
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 121.0, ":35170-35174 the one-shot latch");
+        assert!(!n.dont_take_damage, ":35176");
+        assert_eq!(n.alpha, 0, ":35177");
+        // The latch tick already climbed ai[0] to 1; 59 more ticks reach
+        // the 60 trigger and fire (the shot tick re-arms to -120).
+        for _ in 0..59 {
+        assert_eq!(n.wants_hostile_shot.len(), 1, "the ai[0]==60 shot");
+        let (kind, sx, sy, _, _, dmg) = n.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::MARTIAN_TURRET_BOLT, "type 435");
+        assert_eq!(dmg, 35, "classic GetAttackDamage_ForProjectiles(35, 28)");
+        // The muzzle: Centre - (0, 10) — the plant never moved.
+        assert_eq!((sx, sy), (x0 + 10.0, y0 + 25.0 - 10.0), ":35197");
+        assert_eq!(n.ai[0], -120.0, ":35194 the post-shot re-arm");
+        assert_eq!((n.x, n.y), (x0, y0), "still planted after the shot");
+        assert_eq!(n.vx, 0.0);
+        assert_eq!(n.vy, 0.0, "the collision tail zeroes the fall");
+    }
+
+    /// W4-c11 retire witness — the materialize ring is ACTIVATED on the
+    /// live pool: one `update_rng_dust` fade tick spawns EIGHT type-226
+    /// dusts through the caller's stream (the e2 STAGED emitter adopted
+    /// into `npc_ai_style73::turret_materialize_ring`), the latch tick
+    /// spawns NONE, and the stream consumption equals the mirrored
+    /// eight-dust pool replay (the adapter draws nothing else on fade
+    /// ticks — the arm's early return precedes the shot cycle).
+    #[test]
+    fn w4_c11_the_fade_ring_draws_on_the_live_pool() {
+        let mut w = tr_core::World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
-            assert_eq!(n.x, x0, "{kind:?} stand-in holds its x");
-            assert_eq!(n.y, y0, "{kind:?} stand-in holds its y");
-            assert_eq!(n.vx, 0.0);
-            assert_eq!(n.vy, 0.0);
-            assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
+        }
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * TILE_PX;
+        player.y = 95.0 * TILE_PX;
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(200.0 * TILE_PX, 120.0 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut n = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        // One fade tick: ai[1] 0 → 1, the ring's eight spawns.
+        n.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        let live: Vec<usize> = (0..16).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(live.len(), 8, "the fade tick spawns the eight-dust ring");
+        for &i in &live {
+            assert_eq!(dust.slot(i).dust_type, 226);
+            assert!(dust.slot(i).no_gravity);
+            assert_eq!(dust.slot(i).velocity, Vec2::ZERO);
+        }
+        // The mirror: the same tick on a twin pool/stream — the plan at
+        // ai[1] = 1, the eight verbatim NewDust replays. No other draws.
+        let mut mdust = tr_core::particles::DustPool::new();
+        let mut mrng = UnifiedRandom::new(7);
+        let plan = crate::npc_ai_style73::turret_materialize_dust_plan(
+            1.0, (n.x + 10.0, n.y + 25.0),
+        );
+        crate::npc_ai_style73::turret_materialize_ring(
+            n.x + 10.0, n.y + 25.0, &plan.placements, &mut mrng, &mut mdust, &ctx, &w,
+        );
+        for &i in &live {
+            assert_eq!(dust.slot(i).position, mdust.slot(i).position);
+            assert_eq!(dust.slot(i).scale, mdust.slot(i).scale);
+        }
+        assert_eq!(rng.next(), mrng.next(), "the fade tick draws ONLY the ring");
+        // Run the fade out to the latch on a fresh turret: the LAST fade
+        // tick (119 → 120) still rings; the latch tick (120 → 121) spawns
+        // NOTHING and draws NOTHING (the solid arm's idle climb is
+        // RNG-free; the shot cycle is 60 ticks away; the player is far —
+        // contact never fires). The stream pin is the WHOLE-state
+        // equality against an untouched twin (UnifiedRandom: PartialEq).
+        let mut n2 = Npc::new(NpcKind::MartianTurret, 100.0 * TILE_PX, 100.0 * TILE_PX - 50.0, 1, 0.0);
+        n2.hp = n2.max_hp;
+        n2.ai[1] = 119.0;
+        let mut dust2 = tr_core::particles::DustPool::new();
+        let mut rng2 = UnifiedRandom::new(11);
+        n2.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        assert_eq!(n2.ai[1], 120.0);
+        let live2: Vec<usize> = (0..16).filter(|&i| dust2.slot(i).active).collect();
+        assert_eq!(live2.len(), 8, "the last fade tick still rings");
+        let frozen = rng2.clone();
+        n2.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng2, &mut dust2, &ctx);
+        assert_eq!(n2.ai[1], 121.0);
+        let live3: Vec<usize> = (0..16).filter(|&i| dust2.slot(i).active).collect();
+        assert_eq!(live3.len(), 8, "still exactly the last fade tick's ring");
+        assert_eq!(rng2, frozen, "the latch tick draws NOTHING");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 25 slice).
+// WRITTEN, NOT RUN (code-only mode). 25 chest family: PresentMimic 341
+// LANDED + WIRED (S1-D-3 W-6, the kind-gated axis arm) -> verify-only;
+// Mimic 85 / IceMimic 629 MISSING -> ported verbatim in
+// npc_ai_style25.rs (UNWIRED, the module's own witnesses).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style25_census_tests {
+    use super::*;
+
+    /// The axis claims style 25 exactly once (the kind-gated
+    /// PresentMimic arm); the kind arm is the unreachable marker.
+    #[test]
+    fn w4_d25_the_axis_claims_style_25_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "25" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 25 claimed once");
+        assert!(src.contains("aiStyle 25's PresentMimic rides the style axis (S1-D-3 W-6)"));
+    }
+
+    /// The 25 claim is LIVE and draw-free: a disguised PresentMimic
+    /// tick through `update_rng` runs the frost module's idle arm —
+    /// the one-time +8 nudge + the forced ai[3] = 1 — and consumes NO
+    /// rand (`NPC.cs:25538-25630` has no `Next`; the walker tail is
+    /// the port's rand-free integration).
+    #[test]
+    fn w4_d25_the_present_mimic_rides_the_25_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.world_surface = 300.0;
+        w.snow_moon = true;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::PresentMimic, 100.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(25);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.x, 100.0 * TILE_PX + 8.0, "the one-time nudge (:25543)");
+        assert_eq!(n.ai[3], 1.0, "the 341 override (:25558-25561)");
+        assert_eq!(n.ai[0], 0.0, "the far untouched present stays disguised");
+        assert_eq!(rng, witness, "the mimic tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 26 slice).
+// WRITTEN, NOT RUN (code-only mode). 26 unicorn/galloper family
+// (`NPC.cs:25631-25634` → `AI_026_Unicorns` `:62366-62924`), SEVEN
+// vanilla members: the FOUR landed kinds (HeadlessHorseman 315 /
+// Hellhound 329 on `npc_ai_unicorn::unicorn_step`, StardustSpiderSmall
+// 410 / NebulaBeast 423 on their M4-EVENT-9 stand-ins) ride the
+// axis claim UNCHANGED (verify-only); the Unicorn 86 is WIRED (the
+// `w4_d25_style26_wiring_tests` module below). KEEP-ONE (f5f486c7c):
+// the Wolf 155 + the Tumbleweed 546 DROPPED — d36/d41 own them.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style26_census_tests {
+    use super::*;
+
+    /// A flat stone floor at row 100 (the `npc_ai_unicorn` tests' shape).
+    fn ground26() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.pumpkin_moon = true;
+        w
+    }
+
+    /// The axis claims style 26 exactly once; the four kind arms are
+    /// the unreachable markers (the S1-D-3 W-1 precedent).
+    #[test]
+    fn w4_d25_the_axis_claims_style_26_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "26" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 26 claimed once");
+        // The three kind arms carry the retirement marker (the
+        // 315/329 pair shares one arm) + this witness's own literal.
+        assert_eq!(
+            src.matches("aiStyle 26 rides the style axis (W4-d25)").count(),
+            4,
+            "315/329 + 410 + 423 kind arms are unreachable markers"
+        );
+    }
+
+    /// The kind-match arms are retired: calling `update_kind_ai`
+    /// directly on a style-26 kind panics (the Everscream precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_the_horseman_kind_arm_is_retired() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::HeadlessHorseman, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// Verify-only A/B: the axis routing is behaviour-identical to the
+    /// retired kind-arm routing — a Hellhound tick through `update_rng`
+    /// matches the same preamble + `unicorn_step` + tail run directly
+    /// (state AND stream), so the census moved the dispatch, not the
+    /// machine (S1-F-13b2/S1-D-4 W-10 unchanged).
+    #[test]
+    fn w4_d25_the_hellhound_rides_the_26_axis_unchanged() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut a = Npc::new(NpcKind::Hellhound, 60.0 * TILE_PX, 100.0 * TILE_PX - 30.0, 1, 0.0);
+        a.hp = a.max_hp;
+        let mut b = a.clone();
+        let mut rng_a = UnifiedRandom::new(26);
+        let mut rng_b = rng_a.clone();
+        // The axis path.
+        a.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng_a);
+        // The retired kind-arm path, spelled out (the `update_rng_dust`
+        // preamble + the gfxOffY decay + the machine + the tail).
+        b.update_preamble(1.0 / 60.0);
+        b.gfx_off_y =
+            crate::npc_ai_unicorn_b::gfx_off_y_decay(b.gfx_off_y, b.vx, b.step_speed);
+        crate::npc_ai_unicorn::unicorn_step(&mut b, &w, &p, &mut rng_b);
+        b.just_hit = false;
+        b.find_frame();
+        b.contact(&mut p, &mut rng_b);
+        assert_eq!((a.x, a.y, a.vx, a.vy), (b.x, b.y, b.vx, b.vy));
+        assert_eq!(a.ai, b.ai);
+        assert_eq!((a.facing, a.sprite_dir, a.frame), (b.facing, b.sprite_dir, b.frame));
+        assert_eq!(a.unicorn_stuck_x, b.unicorn_stuck_x);
+        assert_eq!(rng_a, rng_b, "the routing moves no draw");
+    }
+
+    /// The 410 stand-in rides the axis unchanged: the 240-tick fuse
+    /// fires the three-538 burst + the self-destruct with exactly SIX
+    /// `NextFloat` draws in the C# order (`NPC.cs:62489`, vx then vy
+    /// per shot) — the stream mirror pins the draw count/order.
+    #[test]
+    fn w4_d25_the_spider_burst_rides_the_26_axis_with_six_draws() {
+        let w = World::new("t".into(), 200, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 20.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::StardustSpiderSmall, 60.0 * TILE_PX, 50.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 239.0; // this tick increments to 240 → armed
+        let mut rng = UnifiedRandom::new(26);
+        let mut probe = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "the self-destruct (:62491-62493)");
+        assert_eq!(n.wants_hostile_shot.len(), 3, "the three-538 burst");
+        for s in &n.wants_hostile_shot {
+            assert_eq!(s.0, 538);
+            assert_eq!(s.5, 50);
+        }
+        // The mirror: (NextFloat-0.5)*2 then -4-10*NextFloat, x3.
+        for _ in 0..3 {
+            let _vx = (probe.next_float() - 0.5) * 2.0;
+            let _vy = -4.0 - 10.0 * probe.next_float();
+        }
+        assert_eq!(rng, probe, "exactly the six burst draws, in order");
+    }
+
+    /// The 423 stand-in rides the axis unchanged and draw-free on the
+    /// idle tick: `ai[1]` climbs, no charge inside the 180-tick gate,
+    /// the walker is RNG-free — the stream is untouched.
+    #[test]
+    fn w4_d25_the_nebula_beast_idle_rides_the_26_axis_draw_free() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::NebulaBeast, 60.0 * TILE_PX, 100.0 * TILE_PX - 44.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 1.0, "the idle counter (:62544)");
+        assert_eq!(n.ai[2], 0.0, "no charge before the 180-tick gate");
+        assert!(n.wants_hostile_shot.is_empty());
+        assert_eq!(rng, witness, "the idle tick draws nothing");
+    }
+}
+
+// =====================================================================
+// W4-d25 — STYLE-26 WIRING witnesses (the Unicorn 86).
+// WRITTEN, NOT RUN (code-only mode). The kind lands with its
+// SetDefaults rows (mirroring d35 batch C 6ed8c22f verbatim), the
+// axis' 26 arm rides `ai_026_gallop_family` →
+// `npc_ai_style26::ai_style26` + the gravity/collision tail. KEEP-ONE
+// (f5f486c7c): the Wolf proto-355 + the Tumbleweed 546 (and the snow
+// arm's Wolf spawn + the 546 sim pre-pass) DROPPED — d36/d41 own
+// them. The 315/329/410/423 routes are UNCHANGED (the census module
+// above re-pins them).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style26_wiring_tests {
+    use super::*;
+
+    /// A flat stone floor at row 100 (the census module's shape).
+    fn ground26() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        for x in 0..200 {
+            for y in 100..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w
+    }
+
+    /// The SetDefaults rows through the port's tables (`NPC.cs:9926-9938`),
+    /// the kind<->u16 round-trip (440 the d35-mirrored Unicorn slot), the
+    /// sound rows, the DebuffImmunitySets (`NPCID.cs:6599` null) and the
+    /// bestiary entry (`BestiaryDatabaseNPCsPopulator.cs:1650`, the en-US
+    /// `NPCs.json:432` name). The Wolf/Tumbleweed rows dropped per the
+    /// keep-one note f5f486c7c (d36/d41 own them).
+    #[test]
+    fn w4_d25_wiring_the_galloper_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, protocol id, w, h, dmg, def, life, kb, value)
+        for (kind, ty, proto, w, h, dmg, def, life, kb, value) in [
+            (NpcKind::Unicorn, 86u16, 440u16, 46.0, 42.0, 65, 30, 400, 0.3f32, 1000.0f32),
+        ] {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), 26, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} proto");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decode");
+            // No alpha/noGravity/noTileCollide/behindTiles rows — the
+            // gravity + tile-collide walkers.
+            assert_eq!(shell.alpha, 0, "{kind:?} alpha");
+            assert!(!kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!kind.behind_tiles(), "{kind:?} behindTiles");
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, ty as i32, "{kind:?} net");
+        }
+        assert_eq!(NpcKind::Unicorn.hit_sound(), Some("NPC_Hit_12"));
+        assert_eq!(NpcKind::Unicorn.death_sound(), Some("NPC_Killed_18"));
+        for kind in [NpcKind::Unicorn] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune.iter().all(|&i| !i), "{kind:?} null entry");
+        }
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Unicorn, SlimeVariant::Blue).name,
+            "Unicorn"
+        );
+    }
+
+    /// The Unicorn's live axis tick: the generic 6/0.07 walk accel
+    /// (`NPC.cs:62717-62739` — no 155 damping, no 546 wind), the wet
+    /// stamp, the caller-owned gravity/collision tail and the
+    /// `unicorn_stuck_x` end-of-tick latch. RNG-free: the machine takes
+    /// no stream and the tick draws nothing (the module's census).
+    #[test]
+    fn w4_d25_wiring_the_unicorn_rides_the_26_axis_draw_free() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        // Far (>200 px) and BELOW the unicorn's centre: no proximity
+        // clear, no directionY<0 jump-probe pollution (the unicorn
+        // module's fixture convention).
+        p.x = 150.0 * TILE_PX;
+        p.y = 98.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Unicorn, 60.0 * TILE_PX, 100.0 * TILE_PX - 42.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.on_ground = true;
+        n.sprite_dir = 1;
+        n.target = 0;
+        n.old_target = 0;
+        n.unicorn_stuck_x = n.x - 1.0; // moved last tick: no stuck arm
+        let mut rng = UnifiedRandom::new(26);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.vx, 0.07, "the generic accel (:62735)");
+        assert!(!n.wet, "the dry floor");
+        // The tail: gravity 0.4 applied, the floor latch holds the body.
+        assert_eq!(n.y, 100.0 * TILE_PX - 42.0, "the floor latch");
+        assert_eq!(n.vy, 0.0);
+        assert!(n.on_ground);
+        assert_eq!(n.x, 60.0 * TILE_PX + 0.07, "the walk integrated");
+        assert_eq!(n.unicorn_stuck_x, n.x, "the end-of-tick latch (:92605)");
+        assert!(n.wants_sound.is_empty(), "the chirp is 546-only");
+        assert_eq!(rng, witness, "the wired tick draws nothing");
+    }
+
+    /// The kind-match arms are retired: calling `update_kind_ai`
+    /// directly on a galloper panics (the census module's precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_wiring_the_galloper_kind_arms_are_retired() {
+        let w = ground26();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::Unicorn, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// `FindFrame`'s `case 86` (`NPC.cs:74404-74464`): the grounded/wet
+    /// sprite latch (±2 deadband), the air row 15, the idle 0, the
+    /// |vx|<3 slow walk over rows 1..8 (>=6 counter) and the gallop over
+    /// rows 9..14 (>=10 counter) — all inside the 16-row strip
+    /// (`Main.npcFrameCount[86]` = 16).
+    #[test]
+    fn w4_d25_wiring_the_unicorn_frames_walk_the_csharp_rows() {
+        let mut n = Npc::new(NpcKind::Unicorn, 0.0, 0.0, 1, 0.0);
+        // The sprite latch: |vx| > 2 faces the motion, inside the
+        // deadband the direction stands (:74405-74418).
+        n.vx = 3.0;
+        n.facing = -1;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, 1, "the rightward gallop faces right");
+        n.vx = 1.0;
+        n.find_frame();
+        assert_eq!(n.sprite_dir, -1, "the deadband keeps the direction");
+        // The air row (:74420-74424).
+        n.vy = -2.0;
+        n.find_frame();
+        assert_eq!(n.frame, 15);
+        assert_eq!(n.frame_counter, 0.0);
+        // The idle (:74426-74430).
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0);
+        // The slow walk: |vx| = 2 -> counter 2/tick, >=6 advances every
+        // 3 ticks; from row 0 the first advance lands on 1, the >=9
+        // wrap snaps to 1 (:74432-74448).
+        n.vx = 2.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..9 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 0, 1, 1, 1, 2, 2, 2, 3]);
+        n.frame = 8;
+        n.frame_counter = 5.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "the >=9 wrap snaps to 1");
+        // The gallop: |vx| = 5 -> counter 5/tick, >=10 advances every 2
+        // ticks; the <=8 floor snaps into the 9..14 band
+        // (:74450-74463).
+        n.vx = 5.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the first tick holds (5 < 10)");
+        n.find_frame();
+        assert_eq!(n.frame, 9, "the <=8 floor snaps to 9");
+        n.frame = 14;
+        n.frame_counter = 6.0;
+        n.find_frame();
+        assert_eq!(n.frame, 9, "the >=15 wrap snaps to 9");
+    }
+
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 27 slice).
+// WRITTEN, NOT RUN (code-only mode). 27 Wall of Flesh: the style's ONLY
+// member (113, `NPC.cs:10347`) — LANDED + WIRED (S1-D-3 W-1, the
+// faithful `npc_ai_style27::style27_step` behind `ai_027_wof_family`)
+// -> VERIFY-ONLY: the machine is unchanged; these witnesses re-pin the
+// axis claim + the classic draw census through the LIVE routing.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style27_census_tests {
+    use super::*;
+
+    /// The axis claims style 27 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_27_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "27" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 27 claimed once");
+        assert!(src.contains("aiStyle 27 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// The kind arm is retired: `update_kind_ai` on the wall panics.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d25_the_wof_kind_arm_is_retired() {
+        let w = World::new("t".into(), 200, 400);
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::WallOfFlesh, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// Verify-only: the classic draw census rides the LIVE axis arm —
+    /// tick 1 draws `Next(1000)` + `Next(200)` (the roar, forced by the
+    /// pre-seeded cadence counter, `NPC.cs:25717-25719`) and emits the
+    /// ONE-TIME init (2 eyes + 11 Hungries, `:26041-26051`); tick 2
+    /// draws ONLY `Next(1000)` (the cadence reset keeps the roar gate
+    /// shut) and re-emits NOTHING. getGood/expert false: no other draws.
+    #[test]
+    fn w4_d25_the_wof_roar_and_one_shot_init_ride_the_27_axis() {
+        let w = World::new("t".into(), 200, 400);
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::WallOfFlesh, 100.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.local_ai[3] = 2000.0; // forces the roar on tick 1
+        let mut rng = UnifiedRandom::new(27);
+        let mut probe = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let d1 = probe.next_max(1000);
+        let d2 = probe.next_max(200);
+        assert!(d1 < 1000); // the mirror consumed both draws
+        assert_eq!(n.local_ai[3], -(d2 as f32), "the roar reset (:25719)");
+        assert_eq!(rng, probe, "tick 1: exactly the two roar draws");
+        assert_eq!(n.local_ai[0], 2.0, "the one-time init latch (:26042)");
+        assert_eq!(n.wof_spawns.len(), 13, "2 eyes + 11 Hungries, once");
+        assert_eq!(n.wof_spawns[0].npc_type, 114);
+        assert_eq!(n.wof_spawns[0].ai0, 1.0, "the top eye (:26044)");
+        assert_eq!(n.wof_spawns[1].ai0, -1.0, "the bottom eye (:26045)");
+        for i in 0..11 {
+            assert_eq!(n.wof_spawns[2 + i].npc_type, 115);
+            assert_eq!(
+                n.wof_spawns[2 + i].ai0,
+                i as f32 * 0.1 - 0.05,
+                "the Hungry ai0 ladder (:26048)"
+            );
+        }
+        // Tick 2: the cadence is negative — only the Next(1000) gate
+        // draw fires; the init never re-emits.
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let _d1b = probe.next_max(1000);
+        assert_eq!(rng, probe, "tick 2: exactly the one gate draw");
+        assert_eq!(n.local_ai[3], 1.0 - d2 as f32, "no second roar");
+        assert_eq!(n.wof_spawns.len(), 13, "no re-spawn (the W-1 fix)");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 28 slice).
+// WRITTEN, NOT RUN (code-only mode). 28 WoF Eye: the style's ONLY member
+// (114, `NPC.cs:10365`) — LANDED + WIRED (S1-D-3 W-1, the faithful
+// `npc_ai_style28::style28_step` behind `ai_028_wof_eye_family`) ->
+// VERIFY-ONLY: the machine is unchanged; RNG-free by construction (the
+// arm's `NPC.cs:26053-26208` block carries no `Next`).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style28_census_tests {
+    use super::*;
+
+    /// The axis claims style 28 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_28_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "28" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 28 claimed once");
+        assert!(src.contains("aiStyle 28 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// Verify-only: the eye mirrors the wall through the LIVE axis arm
+    /// and draws NOTHING — the literal X copy + the direction mirror
+    /// (`NPC.cs:26066-26068`), the life mirror (`:26061-26064`), the
+    /// INT band midpoint with the ±1 snap (`:26069-26083`): band
+    /// 1000..1600 → midpoint 1300; the top eye (ai0 = 1) rides
+    /// (1300 + 1000)/2 − 100/2 = 1100.
+    #[test]
+    fn w4_d25_the_eye_mirrors_the_wall_on_the_28_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.wof_present = true;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
+        w.wof_x = 1000.0;
+        w.wof_dir = -1;
+        w.wof_draw_top = 1000;
+        w.wof_draw_bottom = 1600;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 50.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::WallOfFleshEye, 500.0, 1100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 1.0; // the top eye
+        let mut rng = UnifiedRandom::new(28);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.x, 1000.0, "the literal position.X copy (:26066)");
+        assert_eq!(n.facing, -1, "the wall direction mirror (:26067)");
+        assert_eq!(n.sprite_dir, -1, "spriteDirection = direction (:26068)");
+        assert_eq!(n.hp, 8000, "the life mirror (:26063)");
+        assert_eq!(n.y, 1100.0, "the INT band midpoint + the snap (:26069-26083)");
+        assert_eq!(n.vy, 0.0, "inside the ±1 band the velocity zeroes");
+        assert_eq!(rng, witness, "the eye tick draws nothing");
+        // The wall's death deactivates the eye (:26055-26059).
+        w.wof_present = false;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "no wall → the eye deactivates");
+        assert_eq!(rng, witness, "still draw-free");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 29 slice).
+// WRITTEN, NOT RUN (code-only mode). 29 Hungry: the style's ONLY member
+// (115, `NPC.cs:10382`) — LANDED + WIRED (S1-D-3 W-1, the faithful
+// `npc_ai_style29::style29_step` behind `ai_029_hungry_family`) ->
+// VERIFY-ONLY: the machine is unchanged; the W-1d AddLight tail
+// (`NPC.cs:26403`) lands on the draw-side feed (`npc_lights`' Hungry
+// row, the CenterTruncated anchor) in this slice. RNG-free by
+// construction (the arm carries no `Next`).
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style29_census_tests {
+    use super::*;
+
+    /// The axis claims style 29 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 W-1).
+    #[test]
+    fn w4_d25_the_axis_claims_style_29_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "29" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 29 claimed once");
+        assert!(src.contains("aiStyle 29 rides the style axis (S1-D-3 W-1)"));
+    }
+
+    /// Verify-only: the Hungry rides the LIVE axis arm draw-free — the
+    /// INTEGER half-width anchor (`NPC.cs:26280`, odd width 101 → 50),
+    /// the per-tick damage reset + the f64 hp ladder (`:26223-26250`),
+    /// the aim/sprite writes (`:26393-26402`), the strike-tick justHit
+    /// BEFORE the wall gate (`:26211-26219`) and the no-wall death.
+    #[test]
+    fn w4_d25_the_hungry_rides_the_29_axis_draw_free() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.wof_present = true;
+        w.wof_life = 8000;
+        w.wof_life_max = 8000;
+        w.wof_x = 1000.0;
+        w.wof_width = 101; // odd: the INTEGER half is 50, anchor 1050
+        w.wof_draw_top = 1000;
+        w.wof_draw_bottom = 1600;
+        let mut p = Player::spawn(&w);
+        p.x = 1200.0;
+        p.y = 1279.0;
+        let mut n = Npc::new(NpcKind::Hungry, 1050.0, 1300.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 0.5; // the band row: y2 = 1000 + 600*0.5 = 1300
+        let mut rng = UnifiedRandom::new(29);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        // Full hp: the damage reset, NO defense write, the approach.
+        assert_eq!(n.damage_override, None, "damage = defDamage (:26223)");
+        assert_eq!(n.defense(), 10, "the classic high tier writes no defense");
+        assert_eq!(n.vx, 0.1, "the aim (145, -15) accelerates +0.1 (:26305)");
+        assert_eq!(n.sprite_dir, 1, "the right-aim sprite flip (:26395)");
+        assert_eq!(n.rotation, (-15.0f64).atan2(145.0) as f32, "(:26396)");
+        assert_eq!(rng, witness, "the hungry tick draws nothing");
+        // The <50% tier through the live seam: 60 dmg / def 30.
+        w.wof_life = 3920;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.damage_override, Some(60), "(:26227/:26253)");
+        assert_eq!(n.defense(), 30, "(:26228)");
+        assert_eq!(rng, witness, "still draw-free");
+        // The strike tick: justHit arms the recoil BEFORE the gate, and
+        // the no-wall death still lands (:26211-26219). The update tail
+        // clears the flag (:90516).
+        w.wof_present = false;
+        n.just_hit = true;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[1], 10.0, "the recoil precedes the gate (:26211)");
+        assert_eq!(n.hp, 0, "no wall → the Hungry deactivates (:26217)");
+        assert!(!n.just_hit, "the tail cleared the strike flag (:90516)");
+        assert_eq!(rng, witness, "the whole census is draw-free");
+    }
+}
+
+// =====================================================================
+// W4-d25 — the aiStyles 23-30 axis census witnesses (style 30 slice).
+// WRITTEN, NOT RUN (code-only mode). 30 Retinazer: the style's ONLY
+// member (125, `NPC.cs:10526`) — LANDED + WIRED (S1-D-3
+// wire-retinazer, the faithful `npc_ai_style30::retinazer_ai`; the
+// mislabeled `update_retinazer` retired) -> VERIFY-ONLY: the machine is
+// unchanged. RNG census: the every-tick `Next(5)` dust gate
+// (`:26460`) fires BEFORE the day flee (`:26486-26491`), so even the
+// flee tick draws exactly once.
+// =====================================================================
+#[cfg(test)]
+mod w4_d25_style30_census_tests {
+    use super::*;
+
+    /// The axis claims style 30 exactly once; the kind arm is the
+    /// unreachable marker (S1-D-3 wire-retinazer).
+    #[test]
+    fn w4_d25_the_axis_claims_style_30_once() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        let mut count = 0u32;
+        for line in body.lines() {
+            let t = line.trim_start();
+            let Some(head) = t.split("=>").next() else { continue };
+            let head = head.split(" if ").next().unwrap_or(head);
+            if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                continue;
+            }
+            for tok in head.split('|') {
+                if tok.trim() == "30" {
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 1, "aiStyle 30 claimed once");
+        assert!(src.contains("aiStyle 30 rides the style axis (S1-D-3)"));
+    }
+
+    /// Verify-only: the Retinazer's day flee rides the LIVE axis arm —
+    /// the rise 0.04/tick + `EncourageDespawn(10)` (`NPC.cs:26488-26489`)
+    /// and EXACTLY ONE `Next(5)` draw: the dust gate (`:26460`) runs
+    /// before the flee return, the machine's dash/laser draws never
+    /// fire on this path. The integration tail still runs (the C#'s
+    /// `return` leaves `AI()` only).
+    #[test]
+    fn w4_d25_the_retinazer_day_flee_rides_the_30_axis_with_one_draw() {
+        let mut w = World::new("t".into(), 200, 400);
+        w.day_time = true;
+        let mut p = Player::spawn(&w);
+        p.x = 150.0 * TILE_PX;
+        p.y = 90.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::Retinazer, 60.0 * TILE_PX, 40.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.despawn_timer = 600;
+        let mut rng = UnifiedRandom::new(30);
+        let mut probe = rng.clone();
+        let (x0, y0) = (n.x, n.y);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        let _gate = probe.next_max(5);
+        assert_eq!(rng, probe, "exactly the one dust-gate draw (:26460)");
+        assert_eq!(n.vy, -0.04, "the flee rise (:26488)");
+        assert_eq!(n.despawn_timer, 10, "EncourageDespawn(10) (:26489)");
+        assert_eq!(n.y, y0 - 0.04, "the noTileCollide integration tail");
+        assert_eq!(n.x, x0, "no horizontal steer on the flee");
+        assert!(n.wants_hostile_shot.is_empty(), "the flee fires nothing");
+    }
+}
+
+/// W4-d31 (research/25 rows 75-83, code-only — WRITTEN NOT RUN): the
+/// aiStyle-75..82 axis census. The band's machines were already ported
+/// (the style75 module WIRED by S1-D-3-wire-saucer; the saucer core
+/// audited by S1-D-3-aistyle76; the Moon Lord family by M4-EVENT-10 +
+/// the S1-D-3 audit; the probe by M4-EVENT-4b); this round claims the
+/// styles on the axis (the S1-D-2 migration step) and pins the census.
+/// aiStyle 83 (the cultist ritual, `NPC.cs:36757-36925`) is the band's
+/// only MISSING family — the faithful unwired module is
+/// `npc_ai_style83.rs` (the style73 precedent); the 437/438 kinds wait
+/// on the roster wave.
+#[cfg(test)]
+mod w4_d31_axis_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: every ported kind in the 75-82 band carries its
+    /// `SetDefaults` aiStyle row (the citations are the
+    /// `this.aiStyle = N;` lines in `NPC.cs`).
+    #[test]
+    fn w4_d31_the_band_kinds_carry_their_csharp_styles() {
+        let rows: &[(NpcKind, u8)] = &[
+            // aiStyle 75 — the six mount riders (`NPC.cs:13973`, :14000,
+            // :14018, :14035, :14655, :15338).
+            (NpcKind::ScutlixRider, 75),
+            (NpcKind::MartianSaucer, 75),
+            (NpcKind::MartianSaucerTurret, 75),
+            (NpcKind::MartianSaucerCannon, 75),
+            (NpcKind::FlyingDutchmanCannon, 75),
+            (NpcKind::SolarDrakomireRider, 75),
+            // aiStyle 76 — the saucer core 395 (`NPC.cs:14052`).
+            (NpcKind::MartianSaucerCore, 76),
+            // aiStyles 77/78/79 — the Moon Lord core/hand/head
+            // (`NPC.cs:14127`/`:14108`/`:14089`).
+            (NpcKind::MoonLordCore, 77),
+            (NpcKind::MoonLordHand, 78),
+            (NpcKind::MoonLordHead, 79),
+            // aiStyle 80 — the Martian Probe 399 (`NPC.cs:14069`).
+            (NpcKind::MartianProbe, 80),
+            // aiStyles 81/82 — the True Eye 400 / the Leech Clot 401
+            // (`NPC.cs:14146`/`:14166`).
+            (NpcKind::MoonLordFreeEye, 81),
+            (NpcKind::MoonLordLeechBlob, 82),
+        ];
+        for &(kind, style) in rows {
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
+        }
+        // aiStyle 83 — the cultist ritual (CultistTablet 437 /
+        // CultistDevote 438, `NPC.cs:14183`/`:14202`). The W4-d31 wiring
+        // wave claims the axis (the `83 =>` arm in `update_rng_dust` + the
+        // pooled `world_sim/npcs.rs` branch, the d10 activation contract).
+        // The 437/438 KINDS ride the roster wave (W4-d40 `7fec14aa`): until
+        // they land no ported kind has style 83 and the arm is dormant;
+        // once they merge, exactly those two kinds claim it. This census
+        // pins the wiring contract merge-safely — any style-83 kind must be
+        // one of the ritual pair (no stray kind may claim the axis).
+        for k in ALL_KINDS.iter().filter(|k| k.ai_style() == 83) {
+            assert!(
+                k.cs_id() == 437 || k.cs_id() == 438,
+                "{k:?} claims aiStyle 83 but is not the CultistTablet/Devote"
+            );
+        }
+    }
+
+    /// The frozen-behaviour A/B + the RNG census (the
+    /// `s1_d_2_the_style_axis_keeps_the_hover_behaviour` precedent): the
+    /// axis-routed arm must produce the exact pre-axis state sequence —
+    /// the kind match's old bodies called the SAME machines with the
+    /// same args. The streams must stay bit-equal too: the 76/80/82
+    /// arms draw NOTHING at arm level (`NPC.cs:36071-36519` /
+    /// `:36532-36624` / `:36629-36756` — the clot's dust rings are the
+    /// documented visual skip), the 77/78/79/81 machines carry the
+    /// S1-D-3 roar/storm censuses (their own witnesses live in
+    /// `s1_d_3_moonlord_rng_witnesses`).
+    #[test]
+    fn w4_d31_the_axis_claims_keep_the_machine_behaviour_and_stream() {
+        let w = ground();
+        for kind in [
+            NpcKind::MartianSaucerCore,
+            NpcKind::MoonLordCore,
+            NpcKind::MoonLordHand,
+            NpcKind::MoonLordHead,
+            NpcKind::MartianProbe,
+            NpcKind::MoonLordFreeEye,
+            NpcKind::MoonLordLeechBlob,
+        ] {
+            let mut player_a = Player::spawn(&w);
+            let mut player_b = Player::spawn(&w);
+            let mut axis = Npc::new(kind, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+            axis.hp = axis.max_hp;
+            // The Moon Lord parts need their carrier link alive (the
+            // sim pre-pass owns it; both paths read the same fields).
+            axis.moon_core_alive = true;
+            axis.carrier_x = 32.0 * TILE_PX;
+            axis.carrier_y = 22.0 * TILE_PX;
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(75);
+            let mut rng_b = UnifiedRandom::new(75);
+            for tick in 0..120 {
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // The pre-axis arm, verbatim (the kind match's old bodies).
+                match kind {
+                    NpcKind::MartianSaucerCore => legacy.update_saucer_core(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordCore => legacy.update_moon_lord_core(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordHand => legacy.update_moon_lord_hand(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordHead => legacy.update_moon_lord_head(&w, &player_b, &mut rng_b),
+                    NpcKind::MartianProbe => legacy.update_martian_probe(&w, &player_b),
+                    NpcKind::MoonLordFreeEye => legacy.update_true_eye(&w, &player_b, &mut rng_b),
+                    NpcKind::MoonLordLeechBlob => legacy.update_moon_leech_blob(&w, &player_b),
+                    _ => unreachable!(),
+                }
+                legacy.find_frame();
+                legacy.contact(&mut player_b, &mut rng_b);
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                for i in 0..4 {
+                    assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "{kind:?} ai[{i}] @{tick}");
+                }
+                assert_eq!(axis.hp, legacy.hp, "{kind:?} hp @{tick}");
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "{kind:?} rot @{tick}");
+                assert_eq!(rng_a.peek(), rng_b.peek(), "{kind:?} stream @{tick}");
+            }
+        }
+    }
+
+    /// The zero-draw censuses, direct: a full saucer-core scan cycle
+    /// (600 ticks through every band), the probe's hover/detect/escape
+    /// and the clot's 90-tick glide consume NO `Main.rand` — the arms
+    /// have no draw sites (`NPC.cs:36071-36519`/`:36532-36624`/
+    /// `:36629-36756`; the clot's `Dust.NewDust` rings are the
+    /// documented visual skip, the style73 precedent).
+    #[test]
+    fn w4_d31_the_76_80_82_arms_draw_nothing() {
+        let w = ground();
+        let p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(83);
+        let mut core = Npc::new(NpcKind::MartianSaucerCore, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.wants_scutlix = true; // the init latch spent (no crew request)
+        for _ in 0..600 {
+            core.update_saucer_core(&w, &p, &mut rng);
+        }
+        assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the 76 scan cycle is draw-free");
+        let mut probe = Npc::new(NpcKind::MartianProbe, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        probe.hp = probe.max_hp;
+        for _ in 0..300 {
+            probe.update_martian_probe(&w, &p);
+        }
+        assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the 80 machine is draw-free");
+        let mut clot = Npc::new(NpcKind::MoonLordLeechBlob, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        clot.hp = clot.max_hp;
+        for _ in 0..90 {
+            clot.update_moon_leech_blob(&w, &p);
+        }
+        assert!(clot.wants_moon_leech, "the 90-tick glide ends in the drain request");
+        assert_eq!(rng.peek(), UnifiedRandom::new(83).peek(), "the 82 arm is draw-free");
+    }
+
+    /// The kind-match stand-ins are retired: calling `update_kind_ai`
+    /// directly on a band kind panics (the Everscream/ScutlixRider
+    /// precedent's guard) — the axis owns the dispatch.
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d31_the_saucer_core_kind_arm_is_retired() {
+        let w = ground();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::MartianSaucerCore, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+
+    /// W4-d31 wiring wave — the style-83 movement tail (`NPC.UpdateNPC`,
+    /// `NPC.cs:90465-90498`). The devotee 438 writes NEITHER noGravity nor
+    /// noTileCollide (`:14195-14211`), so it takes the 0.4 gravity + the 8
+    /// fall cap + the tile collision. The tail keys the tablet branch on
+    /// `cs_id() == 437`; every other kind (the placeholder here) takes the
+    /// devotee gravity+collision path. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d31_the_devotee_movement_tail_falls_and_lands() {
+        let w = ground(); // dirt at y = 30 (480 px)
+        // A devotee-shaped placeholder (22×40) above the ground, at rest.
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n.size_override = Some((22.0, 40.0));
+        n.vx = 0.0;
+        n.vy = 0.0;
+        // One tail tick: gravity 0.4 added, the box falls 0.4 px (free air).
+        n.style83_movement_tail(&w);
+        assert_eq!(n.vy.to_bits(), 0.4f32.to_bits(), "the 0.4 gravity (:90467)");
+        assert_eq!(n.y.to_bits(), 300.4f32.to_bits(), "the free-air integration");
+        assert!(!n.on_ground);
+        // Run to the ground: the box's bottom (y + 40) reaches 480 → the
+        // floor snap lands it at y = 440, vy zeroed, on_ground true.
+        for _ in 0..600 {
+            n.style83_movement_tail(&w);
+        }
+        assert_eq!(n.y, 440.0, "the floor snap (ty*16 - h)");
+        assert_eq!(n.vy, 0.0);
+        assert!(n.on_ground, "the landing sets on_ground");
+        // The fall cap: a long drop never exceeds the 8 fall speed.
+        let mut n2 = Npc::new(NpcKind::Zombie, 100.0, 0.0, 1, 0.0);
+        n2.size_override = Some((22.0, 40.0));
+        for _ in 0..100 {
+            n2.style83_movement_tail(&w);
+            assert!(n2.vy <= 8.0, "the 8 fall cap (:90468-90471)");
+        }
+    }
+
+    /// W4-d31 wiring wave — the tablet 437's raw integration branch
+    /// (noGravity + noTileCollide, `NPC.cs:14189-14190`): the dead-band X
+    /// snap then the position add, NO gravity, NO tile interaction. The
+    /// tail keys this branch on `cs_id() == 437`; the placeholder cannot
+    /// reach it pre-merge, so this pins the devotee-path dead-band snap
+    /// (shared by both kinds, `:90473-90476`) instead. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d31_the_movement_tail_dead_band_x_snap() {
+        let w = ground();
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n.size_override = Some((22.0, 40.0));
+        n.vx = 0.004; // inside the ±0.005 dead band
+        n.style83_movement_tail(&w);
+        assert_eq!(n.vx, 0.0, "the dead-band X snap (:90473-90476)");
+        // Outside the band: the velocity survives.
+        let mut n2 = Npc::new(NpcKind::Zombie, 100.0, 300.0, 1, 0.0);
+        n2.size_override = Some((22.0, 40.0));
+        n2.vx = 0.01;
+        n2.style83_movement_tail(&w);
+        assert_eq!(n2.vx.to_bits(), 0.01f32.to_bits(), "outside the band keeps vx");
+    }
+}
+
+/// W4-d32 (research/25 row 85, code-only — WRITTEN NOT RUN): the
+/// aiStyle-85 axis census. The band's two ported machines (the
+/// StardustCellBig 405 / BrainSuckler 421 PARTIAL stand-ins) move from
+/// the kind match to the axis arm — machines UNCHANGED (verify-only,
+/// the W4-d31 76-82 precedent); the row-85 verbatim audit stays open.
+/// The census's third kind, DeadlySphere 467 (`NPC.cs:15560-15573`),
+/// has no `NpcKind` yet — the roster wave.
+#[cfg(test)]
+mod w4_d32_style85_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: the 85-band kinds carry their `SetDefaults` aiStyle
+    /// rows (`this.aiStyle = 85;` at `NPC.cs:15026` (405), `:15134`
+    /// (421), `:15564` (467)); the 467 gap is the census's unported
+    /// third member.
+    #[test]
+    fn w4_d32_s85_the_band_kinds_carry_their_csharp_styles() {
+        assert_eq!(NpcKind::StardustCellBig.ai_style(), 85);
+        assert_eq!(NpcKind::BrainSuckler.ai_style(), 85);
+        assert_eq!(NpcKind::StardustCellBig.cs_id(), 405);
+        assert_eq!(NpcKind::BrainSuckler.cs_id(), 421);
+        assert!(
+            !ALL_KINDS.iter().any(|k| k.cs_id() == 467),
+            "no kind claims the DeadlySphere 467 until the roster wave"
+        );
+        assert!(
+            ALL_KINDS.iter().filter(|k| k.ai_style() == 85).count() == 2,
+            "exactly the two ported kinds ride aiStyle 85"
+        );
+    }
+
+    /// The frozen-behaviour A/B + stream parity (the
+    /// `w4_d31_the_axis_claims_keep_the_machine_behaviour_and_stream`
+    /// precedent): the axis-routed arm must produce the exact pre-axis
+    /// state sequence — the kind match's old bodies called the SAME
+    /// machines with the same args.
+    #[test]
+    fn w4_d32_s85_the_axis_claim_keeps_the_machine_behaviour_and_stream() {
+        let w = ground();
+        for kind in [NpcKind::StardustCellBig, NpcKind::BrainSuckler] {
+            let mut player_a = Player::spawn(&w);
+            let mut player_b = Player::spawn(&w);
+            let mut axis = Npc::new(kind, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+            axis.hp = axis.max_hp;
+            let mut legacy = axis.clone();
+            let mut rng_a = UnifiedRandom::new(85);
+            let mut rng_b = UnifiedRandom::new(85);
+            for tick in 0..120 {
+                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+                // The pre-axis arms, verbatim (the kind match's old bodies).
+                match kind {
+                    NpcKind::StardustCellBig => legacy.update_stardust_cell_big(&w, &player_b),
+                    NpcKind::BrainSuckler => legacy.update_brain_suckler(&w, &player_b, &mut rng_b),
+                    _ => unreachable!(),
+                }
+                legacy.find_frame();
+                legacy.contact(&mut player_b, &mut rng_b);
+                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
+                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
+                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
+                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
+                for i in 0..4 {
+                    assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "{kind:?} ai[{i}] @{tick}");
+                }
+                assert_eq!(axis.hp, legacy.hp, "{kind:?} hp @{tick}");
+                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
+                assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "{kind:?} rot @{tick}");
+                assert_eq!(rng_a.peek(), rng_b.peek(), "{kind:?} stream @{tick}");
+            }
+        }
+    }
+
+    /// The zero-draw census: both stand-in machines consume NO
+    /// `Main.rand` at arm level — `update_stardust_cell_big` takes no
+    /// stream at all and `update_brain_suckler`'s `_rng` is unused (the
+    /// PARTIAL stand-ins' documented shape; the verbatim C# arm
+    /// `NPC.cs:36930-37220` also draws nothing — TargetClosest and
+    /// Collision.CanHit are deterministic, the 421 attachment latch is
+    /// a scan, not a roll).
+    #[test]
+    fn w4_d32_s85_the_stand_in_arms_draw_nothing() {
+        let w = ground();
+        let p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(467);
+        let mut cell = Npc::new(NpcKind::StardustCellBig, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        cell.hp = cell.max_hp;
+        for _ in 0..300 {
+            cell.update_stardust_cell_big(&w, &p);
+        }
+        let mut suckler = Npc::new(NpcKind::BrainSuckler, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        suckler.hp = suckler.max_hp;
+        for _ in 0..300 {
+            suckler.update_brain_suckler(&w, &p, &mut rng);
+        }
+        assert_eq!(rng.peek(), UnifiedRandom::new(467).peek(), "the 85 stand-ins are draw-free");
+    }
+
+    /// The kind-match stand-ins are retired: calling `update_kind_ai`
+    /// directly on a band kind panics (the W4-d31 guard precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d32_s85_the_suckler_kind_arm_is_retired() {
+        let w = ground();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::BrainSuckler, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+}
+
+/// W4-d32 style 93 (research/25 row 93, code-only): the Flying
+/// Dutchman's axis claim — the S1-D-2 migration step. The ported
+/// machine (`update_flying_dutchman`, `NPC.cs:38858-38967`'s arm) is
+/// UNCHANGED verify-only; the row-93 verbatim audit stays open (the
+/// stand-in's documented deviations: the `wants_scutlix` init latch
+/// stands in for `localAI[0]`, `crew_cannons` for the ai-slot crew
+/// scan, `ai[0]` for `localAI[3]`'s 64-cycle, the missing sprite
+/// flip + the 228 wake dusts). These witnesses pin the SEAM, not the
+/// audit. WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d32_style93_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: `this.aiStyle = 93;` has exactly ONE assignment
+    /// (`NPC.cs:14637`, the type-491 row `:14632-14650`); the ported
+    /// FlyingDutchman carries it and no other kind does. The cannons
+    /// 492 ride aiStyle 75 (`NPC.cs:14655` region — the mount axis).
+    #[test]
+    fn w4_d32_s93_the_band_kind_carries_its_csharp_style() {
+        assert_eq!(NpcKind::FlyingDutchman.ai_style(), 93);
+        assert_eq!(NpcKind::FlyingDutchman.cs_id(), 491);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+        assert!(
+            ALL_KINDS.iter().filter(|k| k.ai_style() == 93).count() == 1,
+            "exactly the ship rides aiStyle 93"
+        );
+    }
+
+    /// The frozen-behaviour A/B + stream parity (the
+    /// `w4_d32_s85_the_axis_claim_keeps_the_machine_behaviour_and_stream`
+    /// precedent): the axis-routed arm must produce the exact
+    /// pre-axis state sequence — the kind match's old body called
+    /// the SAME machine with the same args.
+    #[test]
+    fn w4_d32_s93_the_axis_claim_keeps_the_machine_behaviour_and_stream() {
+        let w = ground();
+        let mut player_a = Player::spawn(&w);
+        let mut player_b = Player::spawn(&w);
+        let mut axis = Npc::new(NpcKind::FlyingDutchman, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        axis.hp = axis.max_hp;
+        axis.crew_cannons = 4; // the crew-alive stand-in (the sim links the real cannons)
+        let mut legacy = axis.clone();
+        let mut rng_a = UnifiedRandom::new(93);
+        let mut rng_b = UnifiedRandom::new(93);
+        for tick in 0..120 {
+            axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
+            // The pre-axis arm, verbatim (the kind match's old body).
+            legacy.update_flying_dutchman(&w, &player_b, &mut rng_b);
+            legacy.find_frame();
+            legacy.contact(&mut player_b, &mut rng_b);
+            assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "x @{tick}");
+            assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "y @{tick}");
+            assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "vx @{tick}");
+            assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "vy @{tick}");
+            for i in 0..4 {
+                assert_eq!(axis.ai[i].to_bits(), legacy.ai[i].to_bits(), "ai[{i}] @{tick}");
+            }
+            assert_eq!(axis.hp, legacy.hp, "hp @{tick}");
+            assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "rot @{tick}");
+            assert_eq!(
+                axis.wants_dutchman_drop.is_some(),
+                legacy.wants_dutchman_drop.is_some(),
+                "drop @{tick}"
+            );
+            assert_eq!(rng_a.peek(), rng_b.peek(), "stream @{tick}");
+            // The drop request drains identically (the sim's seam).
+            axis.wants_dutchman_drop = None;
+            legacy.wants_dutchman_drop = None;
+        }
+    }
+
+    /// The kind-match stand-in is retired: calling `update_kind_ai`
+    /// directly on the ship panics (the W4-d31 guard precedent).
+    #[test]
+    #[should_panic(expected = "rides the style axis")]
+    fn w4_d32_s93_the_ship_kind_arm_is_retired() {
+        let w = ground();
+        let mut p = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::FlyingDutchman, 0.0, 0.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(0);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+    }
+}
+
+/// W4-d32 RETIRE/SEAL (research/348, code-only): the band 85-93 FINAL
+/// census pins. The band is CLAIM-COMPLETE — 85/93 axis-claimed here
+/// (machines frozen verify-only, the verbatim audits open), 86-92
+/// ported UNWIRED (`npc_ai_style86..92.rs`, zero call sites), the
+/// kinds rowed on d40 `8fe1d6d31` (467/472-479/483/488) + base
+/// (405/421/491/492); 521 unrowed. The merge fix-list: the wiring
+/// wave's 86-92 axis arms + the 467→85 panic-hazard match extension
+/// (d40 rows DeadlySphere onto the 85 arm whose `_` is `unreachable!`
+/// here). Cross-lane: d30 research/281 §3a mutual DISJOINT, d31
+/// keep-both frictions only, g65-Kill-309 compose (the 240 shell's
+/// death dust is g65's, the request is the inherited 75 seam).
+/// WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d32_seal_tests {
+    use super::*;
+    use super::tests::ALL_KINDS;
+
+    /// SEAL (research/348 §2a/§4): the band's axis census is exact at
+    /// this tip — 85 carries exactly the two PARTIAL stand-in kinds,
+    /// 93 exactly the ship, the cannons ride 75, and NO kind carries
+    /// 86-92 (the d40 rows are the roster wave's, the modules UNWIRED).
+    #[test]
+    fn w4_d32_seal_the_band_axis_census_is_exact() {
+        let s85: Vec<_> = ALL_KINDS.iter().filter(|k| k.ai_style() == 85).collect();
+        assert_eq!(s85.len(), 2, "405 + 421 only (467 is d40's row)");
+        assert_eq!(NpcKind::StardustCellBig.ai_style(), 85);
+        assert_eq!(NpcKind::BrainSuckler.ai_style(), 85);
+        let s93: Vec<_> = ALL_KINDS.iter().filter(|k| k.ai_style() == 93).collect();
+        assert_eq!(s93.len(), 1, "the ship only");
+        assert_eq!(NpcKind::FlyingDutchman.cs_id(), 491);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+        for style in 86..=92u8 {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.ai_style() == style),
+                "style {style} stays unrowed until the d40 merge"
+            );
+        }
+    }
+
+    /// SEAL (research/348 §3c): the g65 "Kill-309" is projectile 309
+    /// FrostBlastFriendly (`Projectile.cs:75347-75361`, the drain arm
+    /// `projectile_death_dust.rs:1100`), NPC 309 is Scarecrow5 (aiStyle
+    /// 3) — three id spaces, zero overlap with the band. The band's
+    /// only projectile seam is the 492 cannon's 240 CannonballHostile
+    /// shell (`NPC.cs:35771-35785` → `style75_step`'s request); its
+    /// Kill dust is g65's 240 arm (`Projectile.cs:75855-75894`), not
+    /// d32's. Pin both consts so no future census folds the axes.
+    #[test]
+    fn w4_d32_seal_the_g65_kill_309_and_the_240_shell_are_other_id_spaces() {
+        assert_eq!(crate::projectile::FROST_BLAST_FRIENDLY, 309);
+        assert_eq!(NpcKind::Scarecrow5.cs_id(), 309);
+        assert_eq!(NpcKind::Scarecrow5.ai_style(), 3);
+        assert_ne!(NpcKind::Scarecrow5.ai_style(), 93);
+        assert_eq!(crate::projectile::DUTCHMAN_SHELL, 240);
+        // The shell's request rides the inherited aiStyle-75 seam
+        // (`npc_ai_style75.rs`'s 492 block pushes kind 240); the band
+        // claims no projectile style and pushes no Kill dust.
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+    }
+
+    /// SEAL (research/348 §2b/G2/G4): the unwired band kinds stay
+    /// unrowed HERE — d40's 467/472-479/483/488 rows and the 521
+    /// roster gap are the merge-time census. The G2 hazard is pinned
+    /// by absence: no kind reaches the 85 arm's `unreachable!` at
+    /// this tip; the d40 merge MUST extend the match first.
+    #[test]
+    fn w4_d32_seal_the_unwired_band_kinds_stay_unrowed_here() {
+        for id in [467u16, 472, 473, 474, 475, 476, 477, 478, 479, 483, 488, 521] {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.cs_id() == id),
+                "cs_id {id} is the roster wave's row, not this tip's"
+            );
         }
     }
 
@@ -63031,12 +65895,625 @@ mod w4_d35_g_tests {
     }
 }
 
+
+/// W4-d33 (research/25 rows 95-127, code-only — WRITTEN NOT RUN): the
+/// aiStyle-95..127 axis census. The band splits four ways:
+/// * PORTED kinds: 95/96/97 (the stardust/nebula trio, `npc.rs`),
+///   105-110 (the DD2 family), 123 (the Deerclops) — pinned below;
+/// * PORTED UNWIRED machine: 120 (the Empress of Light,
+///   `npc_ai_empress.rs` — no `NpcKind` yet, the S1-D-3 empress census);
+/// * MISSING families: 99-104, 111-119, 121, 122, 125-127 — the faithful
+///   unwired modules land one style per commit (the style73 precedent);
+/// * DEAD arms: 98 (`NPC.cs:39620-39926`, the ~300-line swimmer) and 124
+///   (`AI_124_ElderSlimeChest`, `:43683-43686`, the one-line gravity fall)
+///   — NO `SetDefaults` row assigns either style (the whole-tree census
+///   of `this.aiStyle = 98;` / `= 124;` hits only `Projectile.cs` — a
+///   different machine in projectile space). No kind can ride them; the
+///   census documents them, nothing ports (research/25 row 98's "MISSING
+///   (dead code)" verdict, re-verified).
+#[cfg(test)]
+mod w4_d33_axis_census_tests {
+    use super::*;
+    use super::tests::{ground, ALL_KINDS};
+
+    /// The census: every ported kind in the 95-127 band carries its
+    /// `SetDefaults` aiStyle row (the citations are the
+    /// `this.aiStyle = N;` lines in `NPC.cs`).
+    #[test]
+    fn w4_d33_the_band_kinds_carry_their_csharp_styles() {
+        let rows: &[(NpcKind, u8)] = &[
+            // aiStyle 95/96/97 — the CellSmall 406 / Jellyfish 407 /
+            // NebulaFloater 420 (`NPC.cs:15040`/`:15091`/`:15161`).
+            (NpcKind::StardustCellSmall, 95),
+            (NpcKind::StardustJellyfishBig, 96),
+            (NpcKind::NebulaFloater, 97),
+            // aiStyle 105/106 — the crystal 548 / the lane portal 549
+            // (`NPC.cs:16002`/`:16040`).
+            (NpcKind::DD2EterniaCrystal, 105),
+            (NpcKind::DD2LanePortal, 106),
+            // aiStyle 107 — the 19 ported walkers of the C#'s 20
+            // (`NPC.cs:16061-16435` + `:16957`; the 20th, the GoblinShark
+            // 620, has no roster row — the census gap below).
+            (NpcKind::DD2GoblinT1, 107),
+            (NpcKind::DD2GoblinT2, 107),
+            (NpcKind::DD2GoblinT3, 107),
+            (NpcKind::DD2GoblinBomberT1, 107),
+            (NpcKind::DD2GoblinBomberT2, 107),
+            (NpcKind::DD2GoblinBomberT3, 107),
+            (NpcKind::DD2JavelinT1, 107),
+            (NpcKind::DD2JavelinT2, 107),
+            (NpcKind::DD2JavelinT3, 107),
+            (NpcKind::DD2SkeletonT1, 107),
+            (NpcKind::DD2SkeletonT3, 107),
+            (NpcKind::DD2WitherBeastT3, 107),
+            (NpcKind::DD2DrakinT2, 107),
+            (NpcKind::DD2DrakinT3, 107),
+            (NpcKind::DD2KoboldWalkerT2, 107),
+            (NpcKind::DD2KoboldWalkerT3, 107),
+            (NpcKind::DD2OgreT2, 107),
+            (NpcKind::DD2OgreT3, 107),
+            (NpcKind::DD2WitherBeast, 107),
+            // aiStyle 108 — the five diving flyers (`NPC.cs:16211`,
+            // :16229, :16247, :16485, :16503).
+            (NpcKind::DD2WyvernT1, 108),
+            (NpcKind::DD2WyvernT2, 108),
+            (NpcKind::DD2WyvernT3, 108),
+            (NpcKind::DD2KoboldFlyerT2, 108),
+            (NpcKind::DD2KoboldFlyerT3, 108),
+            // aiStyle 109 — the Dark Mage T1/T3 (`NPC.cs:16452`/`:16470`).
+            (NpcKind::DD2DarkMage, 109),
+            (NpcKind::DD2DarkMageT3, 109),
+            // aiStyle 110 — Betsy 551 (`NPC.cs:16524`).
+            (NpcKind::DD2Betsy, 110),
+            // aiStyle 112 — the fairy critters 583-585 (`NPC.cs:16587`,
+            // the shared row; W4-d33 wiring).
+            (NpcKind::FairyCritterPink, 112),
+            (NpcKind::FairyCritterGreen, 112),
+            (NpcKind::FairyCritterBlue, 112),
+            // aiStyle 113 — the windy balloon 594 (`NPC.cs:16711`;
+            // W4-d33 wiring).
+            (NpcKind::WindyBalloon, 113),
+            // aiStyle 123 — the Deerclops 668 (`NPC.cs:17453`).
+            (NpcKind::Deerclops, 123),
+        ];
+        for &(kind, style) in rows {
+            assert_eq!(kind.ai_style(), style, "{kind:?} aiStyle");
+        }
+    }
+
+    /// The census gaps: the MISSING families have no ported kind — the
+    /// unwired modules key on the vanilla `npc_type` until the roster
+    /// wave (the style73 precedent). 98/124 are the DEAD arms (no
+    /// `SetDefaults` user anywhere in the tree); 120's machine is ported
+    /// unwired (`npc_ai_empress.rs`) but the HallowBoss 636 kind is not
+    /// in the roster.
+    #[test]
+    fn w4_d33_the_missing_styles_have_no_kind() {
+        // 114 left the list with the dragonfly roster (W4-d33's wiring:
+        // the five 595-599 kinds claim the style; 600/601 follow).
+        // 112/113 left with the fairy/balloon wiring (the 583-585 +
+        // 594 kinds claim them through the ai_style AXIS arms).
+        for style in [98u8, 99, 100, 101, 102, 103, 104, 111, 115, 116, 117, 118, 119, 120, 121, 122, 124, 125, 126, 127] {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.ai_style() == style),
+                "no kind claims aiStyle {style} until the roster wave"
+            );
+        }
+        // The 107 band's 20th C# user (the GoblinShark 620,
+        // `NPC.cs:16957`) is the one walker the roster lacks — the
+        // `update_dd2_goblin` family covers 19 of 20 (research/25 row
+        // 107's "PORTED (19 of 20 types)" verdict).
+        assert!(!ALL_KINDS.iter().any(|k| k.cs_id() == 620));
+    }
+
+    /// The zero-draw census, direct: the aiStyle-95 growth arm
+    /// (`NPC.cs:39384-39429`) draws NOTHING at arm level in the port —
+    /// the 226-dust ring (`:39403-39427`) is the documented visual skip
+    /// (`update_stardust_cell`'s deviation note), and the growth/transform
+    /// path has no other `Main.rand` site. 301 ticks through the whole
+    /// ramp + the Transform(405) leave the stream untouched.
+    #[test]
+    fn w4_d33_the_95_arm_draws_nothing() {
+        let w = ground();
+        let p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(95);
+        let mut cell = Npc::new(NpcKind::StardustCellSmall, 30.0 * TILE_PX, 20.0 * TILE_PX, 1, 0.0);
+        cell.hp = cell.max_hp;
+        for _ in 0..301 {
+            cell.update_stardust_cell(&w, &p);
+        }
+        assert_eq!(cell.kind, NpcKind::StardustCellBig, "the 300-tick Transform(405)");
+        assert_eq!(rng.peek(), UnifiedRandom::new(95).peek(), "the 95 arm is draw-free");
+    }
+}
+
+#[cfg(test)]
+mod w4_d33_dragonfly_tests {
+    //! W4-d33 — the dragonfly roster wiring (595-601). Every row pins
+    //! verbatim to the C# (`NPC.cs:16720-16738`, the shared 595-601
+    //! `SetDefaults` row). WRITTEN, NOT RUN (code-only mode); the W4-e26
+    //! luck-critter stat-pin precedent.
+    use super::*;
+    use super::tests::ground;
+
+    /// The seven kinds' `SetDefaults` row through the port's tables.
+    #[test]
+    fn w4_d33_the_dragonfly_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BlackDragonfly, 595u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::BlueDragonfly, 596, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GreenDragonfly, 597, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::OrangeDragonfly, 598, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::RedDragonfly, 599, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::YellowDragonfly, 600, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GoldDragonfly, 601, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            // `net_id` reads the bestiary entry — the five Hide=true
+            // colours fold onto the visible 599 card; only the Red 599
+            // and the Gold 601 keep their own net id (the wyvern-segment
+            // fold precedent).
+            let net = if matches!(kind, NpcKind::RedDragonfly | NpcKind::GoldDragonfly) {
+                ty as i32
+            } else {
+                599
+            };
+            assert_eq!(kind.net_id(), net, "{kind:?} net id (the credit fold)");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb (head 1f)");
+            assert_eq!(shell.value(), value, "{kind:?} value (head 0f)");
+            assert_eq!(shell.scale, 1.0, "{kind:?} scale (no row)");
+            assert_eq!(shell.alpha, 0, "{kind:?} alpha (no row)");
+            assert!(kind.no_gravity(), "{kind:?} noGravity (`:16732`)");
+            assert!(!shell.behind_tiles, "{kind:?} no behindTiles row");
+        }
+        // The sounds: NPCHit1 / NPCDeath1 each (`:16729-16730`).
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+            NpcKind::GoldDragonfly,
+        ] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+    }
+
+    /// The protocol ids keep their vanilla slots (free in the port-local
+    /// space) and round-trip; the render key stays injective.
+    #[test]
+    fn w4_d33_the_dragonfly_protocol_ids_round_trip() {
+        for (kind, id) in [
+            (NpcKind::BlackDragonfly, 595u16),
+            (NpcKind::BlueDragonfly, 596),
+            (NpcKind::GreenDragonfly, 597),
+            (NpcKind::OrangeDragonfly, 598),
+            (NpcKind::RedDragonfly, 599),
+            (NpcKind::YellowDragonfly, 600),
+            (NpcKind::GoldDragonfly, 601),
+        ] {
+            assert_eq!(kind.to_u16(), id, "{kind:?} proto");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
+            assert_eq!(
+                crate::npc::kind_from_net_id(id as i32).map(|(k, _)| k),
+                Some(kind),
+                "{kind:?} net-id resolution (the catch/release chain)"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                id,
+                "{kind:?} draw sheet is its own NPC_<id>"
+            );
+        }
+    }
+
+    /// The catch/convert chain: the baits 4334-4340 (`NPC.cs:16737`'s
+    /// `type - 595 + 4334`) and the makeNPC release items resolve back
+    /// to the kinds; the release plan keeps the type (no variant roll).
+    #[test]
+    fn w4_d33_the_dragonfly_catch_and_release_chain_resolves() {
+        for ty in 595..=601 {
+            assert_eq!(crate::bug_net::catch_item(ty, 0.0), ty - 595 + 4334, "{ty}");
+            assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
+            assert_eq!(crate::registry::make_npc((ty - 595 + 4334) as u16), ty as u16);
+        }
+        let mut rng = UnifiedRandom::new(7);
+        for ty in 595..=601 {
+            let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
+        }
+        // The wild-critter friendly window: the catchable arm
+        // (`NPC.cs:17851-17855`) spawns friendly with 90 ticks.
+        let n = Npc::new(NpcKind::BlackDragonfly, 0.0, 0.0, 1, 0.0);
+        assert!(n.friendly, "the catchable spawn is friendly");
+        assert_eq!(n.catchable_immunity, 90);
+        assert_eq!(n.release_owner, 255);
+    }
+
+    /// The bestiary: the five Hide=true colours fold their kill credit
+    /// onto the visible Red 599 "Dragonfly" card
+    /// (`ContentSamples.cs:1043-1047`); each keeps its own net id for
+    /// the catch/release chain. The Gold 601 keeps its OWN visible card.
+    #[test]
+    fn w4_d33_the_dragonfly_bestiary_credits_fold_onto_599() {
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.credit_id, "RedDragonfly", "{kind:?} credit");
+            assert_eq!(e.net_id, 599, "{kind:?} the visible card");
+            assert_eq!(e.name, "Dragonfly", "{kind:?} display name");
+            assert!(!e.quick_unlock, "{kind:?} rides the kill ladder");
+        }
+        // The Gold 601's own card (no fold — the GoldLadyBug precedent).
+        let gold = crate::bestiary::entry_for_npc(NpcKind::GoldDragonfly, SlimeVariant::Blue);
+        assert_eq!(gold.credit_id, "GoldDragonfly");
+        assert_eq!(gold.net_id, 601);
+        assert_eq!(gold.name, "Gold Dragonfly");
+        // The two visible cards' sheet slots exist (the 599/601 strips).
+        assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&599));
+        assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&601));
+        // The hidden colours take NO grid sheet slot of their own.
+        for id in [595u16, 596, 597, 598, 600] {
+            assert!(!crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
+        }
+    }
+
+    /// The debuff-immunity rows: all seven carry the Confused-31
+    /// immunity (`NPCID.cs:9473-9521`), nothing else.
+    #[test]
+    fn w4_d33_the_dragonflies_are_confused_immune_only() {
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+            NpcKind::GoldDragonfly,
+        ] {
+            let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(buffs.buff_immune[31], "{kind:?} Confused-immune");
+            assert!(!buffs.buff_immune[20], "{kind:?} not poison-immune");
+            assert!(!buffs.buff_immune[24], "{kind:?} not on-fire-immune");
+        }
+    }
+
+    /// The wired axis: a full `update` tick steps each kind without
+    /// panicking, stays inside the 4-row strip, and the first tick
+    /// latches the centre anchor + the launch (`NPC.cs:47718-47728`).
+    #[test]
+    fn w4_d33_the_dragonflies_ride_the_wired_114_axis() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(595);
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+            NpcKind::GoldDragonfly,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            // The session player is far (>150 px) — no threat flee on
+            // the first tick, so the launch + dart run clean. The scan
+            // cooldown is armed (the module's `fly()` convention) so the
+            // first tick's re-perch roll cannot move the anchor.
+            player.x = 60.0 * TILE_PX;
+            n.local_ai[1] = 5.0;
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.local_ai[0], 1.0, "{kind:?} the first-tick latch");
+            assert_eq!(n.ai[0], 1.0, "{kind:?} the dart state");
+            assert_eq!(n.ai[2], 20.0 * TILE_PX + 5.0, "{kind:?} anchor X");
+            assert_eq!(n.ai[3], 10.0 * TILE_PX + 5.0, "{kind:?} anchor Y");
+            assert!(n.net_update, "{kind:?} the launch nets");
+            for _ in 0..120 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(n.frame < 4, "{kind:?} row {} of 4", n.frame);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod w4_d33_fairy_balloon_tests {
+    //! W4-d33 wiring — the fairy critters (583-585, aiStyle 112) + the
+    //! windy balloon (594, aiStyle 113) roster wiring. Every row pins
+    //! verbatim to the C# (`NPC.cs:16583-16607` the shared fairy row,
+    //! `:16707-16719` the balloon row). WRITTEN, NOT RUN (code-only
+    //! mode); the dragonfly stat-pin precedent.
+    use super::*;
+    use super::tests::ground;
+
+    /// The four kinds' `SetDefaults` rows through the port's tables.
+    #[test]
+    fn w4_d33_the_fairy_balloon_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::FairyCritterPink, 583u16, 112u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::FairyCritterGreen, 584, 112, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::FairyCritterBlue, 585, 112, 18.0, 20.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::WindyBalloon, 594, 113, 20.0, 20.0, 0, 0, 1, 0.3, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id (no fold)");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(shell.scale, 1.0, "{kind:?} scale (no row)");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!shell.behind_tiles, "{kind:?} no behindTiles row");
+        }
+        // The sounds: NPCHit1/NPCDeath1 for the fairies
+        // (`NPC.cs:16591-16592`); the balloon NO HitSound + NPCDeath63
+        // (`:16716` — it only pops).
+        for kind in [
+            NpcKind::FairyCritterPink,
+            NpcKind::FairyCritterGreen,
+            NpcKind::FairyCritterBlue,
+        ] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        assert_eq!(NpcKind::WindyBalloon.hit_sound(), None, "the balloon only pops");
+        assert_eq!(
+            NpcKind::WindyBalloon.death_sound(),
+            Some("NPC_Killed_63"),
+            "NPCDeath63 (`SoundID.cs:1377`)"
+        );
+    }
+
+    /// The protocol ids ride d42's port-local band (359/360/361/368 —
+    /// the keep-one d37c-E3 constants-copy) and round-trip; the DRAW
+    /// sheets + net-id resolution ride the TRUE vanilla types.
+    #[test]
+    fn w4_d33_the_fairy_balloon_protocol_ids_round_trip() {
+        for (kind, proto, vanilla) in [
+            (NpcKind::FairyCritterPink, 359u16, 583u16),
+            (NpcKind::FairyCritterGreen, 360, 584),
+            (NpcKind::FairyCritterBlue, 361, 585),
+            (NpcKind::WindyBalloon, 368, 594),
+        ] {
+            assert_eq!(kind.to_u16(), proto, "{kind:?} proto (d42's band)");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decode");
+            assert_eq!(
+                crate::npc::kind_from_net_id(vanilla as i32).map(|(k, _)| k),
+                Some(kind),
+                "{kind:?} net-id resolution (the catch/release chain)"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                vanilla,
+                "{kind:?} draw sheet is its own NPC_<vanilla>"
+            );
+        }
+    }
+
+    /// The fairies' catch/convert chain: the baits 4068/4069/4070
+    /// (`NPC.cs:16596-16602`), the release plan's ai[2]=2 +
+    /// TargetClosest writes (`:80117-80126`), the catch verdict's
+    /// ai[2]>1 refusal (`Player.cs:44728-44734`). The balloon is NOT
+    /// catchable (`Main.cs:9326-9418` has no 594 row) and carries no
+    /// catch item.
+    #[test]
+    fn w4_d33_the_fairy_catch_and_release_chain_resolves() {
+        for (ty, item) in [(583, 4068), (584, 4069), (585, 4070)] {
+            assert_eq!(crate::bug_net::catch_item(ty, 0.0), item, "{ty}");
+            assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
+            assert_eq!(crate::registry::make_npc(item as u16), ty as u16);
+        }
+        let mut rng = UnifiedRandom::new(7);
+        for ty in [583, 584, 585] {
+            let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
+            assert_eq!(plan.ai2, Some(2.0), "the released-glow state (`:80122`)");
+            assert!(plan.target_closest, "`:80123`");
+        }
+        // The verdict: ai[2] <= 1 catches, the released glow refuses
+        // (`Player.cs:44728-44734`).
+        assert_eq!(
+            crate::bug_net::catch_verdict(1991, 4068, 583, 0.0, 0.0, 0.0),
+            crate::bug_net::CatchVerdict::Catch
+        );
+        assert_eq!(
+            crate::bug_net::catch_verdict(1991, 4068, 583, 2.0, 0.0, 0.0),
+            crate::bug_net::CatchVerdict::Skip
+        );
+        // The balloon: no catch item, not catchable.
+        assert_eq!(crate::bug_net::catch_item(594, 0.0), 0);
+        assert!(!crate::bug_net::npc_catchable(594));
+        // The wild-critter friendly window (`NPC.cs:17851-17855`).
+        let n = Npc::new(NpcKind::FairyCritterPink, 0.0, 0.0, 1, 0.0);
+        assert!(n.friendly, "the catchable spawn is friendly");
+        assert_eq!(n.catchable_immunity, 90);
+        let b = Npc::new(NpcKind::WindyBalloon, 0.0, 0.0, 1, 0.0);
+        assert!(!b.friendly, "the balloon is not a catchable critter");
+        assert_eq!(b.catchable_immunity, 0);
+    }
+
+    /// The bestiary: all four keep their OWN visible cards (no Hide
+    /// rows, no credit fold — `NPCID.cs:5148-5169`/`:5232-5239`); the
+    /// three fairy sheets take grid slots, the balloon rides its
+    /// CustomTexturePath portrait (no sheet slot).
+    #[test]
+    fn w4_d33_the_fairy_balloon_bestiary_cards_are_their_own() {
+        for (kind, ty, name) in [
+            (NpcKind::FairyCritterPink, 583, "Pink Fairy"),
+            (NpcKind::FairyCritterGreen, 584, "Green Fairy"),
+            (NpcKind::FairyCritterBlue, 585, "Blue Fairy"),
+            (NpcKind::WindyBalloon, 594, "Windy Balloon"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, ty, "{kind:?} own net id");
+            assert_eq!(e.kind, kind, "{kind:?} no fold");
+            assert_eq!(e.name, name, "{kind:?} display name (NPCs.json)");
+            assert!(!e.quick_unlock);
+        }
+        for id in [583u16, 584, 585] {
+            assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
+        }
+        assert!(
+            !crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&594),
+            "the balloon's card is the custom portrait, not a sheet slot"
+        );
+        for name in ["NPC_583", "NPC_584", "NPC_585", "NPC_594"] {
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name),
+                "{name} is never packed into the atlas"
+            );
+        }
+        assert_eq!(crate::render::entities::npc_rows(583), 4);
+        assert_eq!(crate::render::entities::npc_rows(594), 1);
+    }
+
+    /// The immunity rows: the fairies are whip-immune
+    /// (`NPCID.cs:9410-9433`'s ImmuneToWhips; the
+    /// ImmuneToAllBuffsThatAreNotWhips mask stays the documented gap);
+    /// the balloon is Confused-31 immune only (`:9466-9472`).
+    #[test]
+    fn w4_d33_the_fairy_balloon_immunity_rows() {
+        for kind in [
+            NpcKind::FairyCritterPink,
+            NpcKind::FairyCritterGreen,
+            NpcKind::FairyCritterBlue,
+        ] {
+            assert!(crate::npc_buffs::whip_immune(kind), "{kind:?} whip-immune");
+            let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!buffs.buff_immune[31], "{kind:?} no SpecificallyImmuneTo row");
+        }
+        assert!(!crate::npc_buffs::whip_immune(NpcKind::WindyBalloon));
+        let b = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::WindyBalloon);
+        assert!(b.buff_immune[31], "the balloon Confused-immune");
+        assert!(!b.buff_immune[20], "not poison-immune");
+    }
+
+    /// The wired axis: a full `update_rng` tick routes each fairy onto
+    /// `style112_step` (the spawn-hop latch + the centre anchor,
+    /// `NPC.cs:48112-48152`) and the balloon onto `style113_step` (the
+    /// first tick's colour roll + slave spawn request,
+    /// `:47890-47913`); the FindFrame arms stay inside their strips.
+    #[test]
+    fn w4_d33_the_fairies_balloon_ride_the_wired_112_113_axis() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        player.x = 60.0 * TILE_PX;
+        let mut rng = UnifiedRandom::new(583);
+        for kind in [
+            NpcKind::FairyCritterPink,
+            NpcKind::FairyCritterGreen,
+            NpcKind::FairyCritterBlue,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.local_ai[0], 1.0, "{kind:?} the launch latch");
+            assert_eq!(n.ai[0], 20.0 * TILE_PX + 9.0, "{kind:?} anchor X");
+            assert_eq!(n.ai[1], 10.0 * TILE_PX + 10.0, "{kind:?} anchor Y");
+            for _ in 0..120 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(n.frame < 4, "{kind:?} row {} of 4", n.frame);
+            }
+        }
+        // The balloon: the first tick rolls the colour + raises the
+        // slave spawn request; the FindFrame case pins sprite_dir 1
+        // and the raw ai[2] column.
+        let mut b = Npc::new(NpcKind::WindyBalloon, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        b.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(b.local_ai[0], 1.0, "the first-tick latch");
+        assert!((1.0..=7.0).contains(&b.ai[2]), "the colour roll 1..7");
+        assert!(b.wants_balloon_slave.is_some(), "the slave spawn request");
+        assert!(b.net_update, "the first tick nets");
+        assert_eq!(b.sprite_dir, 1, "case 594's spriteDirection");
+        assert_eq!(b.frame, b.ai[2] as u32, "the raw colour column");
+    }
+}
+/// W4-c7 SEAL (research/350 §3/§6) — the d37 E8 roster receipts, pinned
+/// against the CURRENT tip. The E8 renumber (Firefly 355→735,
+/// LightningBug 358→736) is MERGE-TIME work (the 108 merge order); this
+/// witness pins the as-pushed state + the seams that must NOT move
+/// (cs_id, the bestiary net ids, the sheet keys — R1's seam evidence).
+/// WRITTEN, NOT RUN (code-only mode — no compiler invoked).
+#[cfg(test)]
+mod w4_c7_seal_roster_tests {
+    use super::*;
+
+    /// research/350 §3 — the E8 renumber EXECUTED at the batch-E merge
+    /// (c3's CursedSkull owns port-local 355 here): Firefly rides 735,
+    /// LightningBug 736; Lavafly/Shimmerfly keep 654/677. The cs_id hand
+    /// rows NEVER move (R1's seam evidence); the Shimmerfly 677 is
+    /// CANONICAL-c7 (c9's duplicate drops at merge — E8 c9 table), so
+    /// `from_u16(677)` decodes to c7's kind and the G6 key stays injective.
+    #[test]
+    fn w4_c7_seal_the_roster_e8_receipts_hold() {
+        // (kind, post-E8 protocol id, cs_id — never moves)
+        let rows = [
+            (NpcKind::Firefly, 735u16, 355u16),
+            (NpcKind::LightningBug, 736, 358),
+            (NpcKind::Lavafly, 654, 654),
+            (NpcKind::Shimmerfly, 677, 677),
+        ];
+        for (kind, proto, cs) in rows {
+            assert_eq!(kind.to_u16(), proto, "{kind:?} post-E8 protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} round-trip");
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs_id never moves (R1)");
+            // The frame strips: Main.npcFrameCount[355/358/654/677] = 4
+            // (Main.cs:67082, machine-counted; the 677's pixel-wrap quirk
+            // still reads a 4-row sheet).
+            assert_eq!(
+                crate::render::entities::npc_rows(crate::render::entities::texture_net_id(kind)),
+                4,
+                "{kind:?} frame rows"
+            );
+        }
+        // The Shimmerfly canonical-owner pin: 677 decodes to c7's kind
+        // (c9's duplicate row drops at the 108 merge, E8 c9 table).
+        assert_eq!(NpcKind::from_u16(677), Some(NpcKind::Shimmerfly));
+        // The style axis: all four claim 64 (the pooled sim arm subsumes
+        // c9's kind-gated arm at merge — c9's 109 §4e compose).
+        for (kind, _, _) in rows {
+            assert_eq!(kind.ai_style(), 64, "{kind:?} aiStyle");
+        }
+        // The freed as-pushed slots: 355 decodes to c3's CursedSkull
+        // (its port-local claim), 358 is free again.
+        assert_eq!(NpcKind::from_u16(355), Some(NpcKind::CursedSkull));
+        assert_eq!(NpcKind::from_u16(358), None);
+    }
+}
+
 /// W4-c9 — the snail wall-crawler family's wiring witnesses: the aiStyle-67
-/// axis arm (`ai_067_snail`) + the kind-gated aiStyle-64 Shimmerfly arm
-/// (`ai_064_shimmerfly`) through the FULL `update_rng` step (the preamble,
-/// the axis dispatch, the movement tail, find_frame). Code-only mode: the
-/// witnesses are written, not run. The pure machines' own 17+19 witnesses
-/// live in `npc_ai_style67.rs` / `npc_ai_style64.rs`.
+/// axis arm (`ai_067_snail`) through the FULL `update_rng` step (the
+/// preamble, the axis dispatch, the movement tail, find_frame). The
+/// Shimmerfly's 64 routing deduped to c7's pooled claim at the batch-E
+/// merge (keep-one, research/349 §5) — the 677 witnesses below ride that
+/// routing (the behaviour is the same faithful `ai_064_step`). Code-only
+/// mode: the witnesses are written, not run. The pure machines' own 17+19
+/// witnesses live in `npc_ai_style67.rs` / `npc_ai_style64.rs`.
 #[cfg(test)]
 mod w4_c9_snail_wiring_tests {
     use super::*;
@@ -63083,10 +66560,13 @@ mod w4_c9_snail_wiring_tests {
             assert_eq!(kind.contact_damage(), 0, "{kind:?} damage 0");
             assert!(kind.no_gravity(), "{kind:?} the SetDefaults noGravity row");
         }
+        // cs_id never moves (R1): 359/360/655.
+        assert_eq!(NpcKind::Snail.cs_id(), 359);
+        assert_eq!(NpcKind::GlowingSnail.cs_id(), 360);
+        assert_eq!(NpcKind::MagmaSnail.cs_id(), 655);
         assert_eq!(NpcKind::Snail.size(), (12.0, 12.0));
         assert_eq!(NpcKind::GlowingSnail.size(), (14.0, 14.0));
         assert_eq!(NpcKind::MagmaSnail.size(), (14.0, 14.0));
-        assert_eq!(NpcKind::Shimmerfly.size(), (10.0, 10.0));
     }
 
     /// The 359 scale roll through the full step: ONE `Next(80,111)` draw
@@ -63301,7 +66781,6 @@ mod w4_c9_snail_wiring_tests {
             (NpcKind::Snail, 359u16, 6u32),
             (NpcKind::GlowingSnail, 360, 6),
             (NpcKind::MagmaSnail, 655, 6),
-            (NpcKind::Shimmerfly, 677, 4),
         ] {
             assert_eq!(crate::render::entities::texture_net_id(kind), id);
             assert_eq!(crate::render::entities::npc_rows(id), rows);
@@ -63327,7 +66806,7 @@ mod w4_c9_snail_wiring_tests {
             (NpcKind::GoldFrog, 7, 445),
         ] {
             assert_eq!(kind.ai_style(), style, "{kind:?}");
-            assert_eq!(kind.to_u16(), id, "{kind:?} keeps its vanilla slot");
+            assert_eq!(kind.to_u16(), id, "{kind:?} post-E8 protocol id");
             assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decodes");
             assert_eq!(kind.cs_id() as i32, id as i32, "{kind:?} cs_id");
             assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax 5");
@@ -66242,6 +69721,23 @@ mod w4_g8_kind_wire_1_tests {
             (NpcKind::RedDragonfly, 599, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::YellowDragonfly, 600, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::GoldDragonfly, 601, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+
+        ]
+        }
+        }
+        }
+        }mod w4_e26_luck_critter_tests {
+    //! W4-e26 — the luck critter roster wiring (E8 keep-one EXECUTED:
+    //! the Frog + the ladybug pair; the Duck 362 dropped to c10, the
+    //! waterfowl family's canonical owner — research/108 E8/SEAL S1).
+    //! Every row pins verbatim to the C# (`NPC.cs:13601-13612` Frog,
+    //! `:16763-16780` the ladybug pair). WRITTEN, NOT RUN (code-only
+    //! mode); the W4-d35 / W4-c9 stat-pin precedent.
+    /// The three kinds' `SetDefaults` rows through the port's tables.
+    fn w4_e26_the_luck_critter_setdefaults_rows_match_the_csharp() {
+            (NpcKind::Frog, 361u16, 7u8, 12.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::LadyBug, 604, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GoldLadyBug, 605, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -66260,6 +69756,7 @@ mod w4_g8_kind_wire_1_tests {
                 599
             };
             assert_eq!(kind.net_id(), net, "{kind:?} net id (the credit fold)");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
             assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
             assert_eq!(kind.size(), (w, h), "{kind:?} size");
             assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
@@ -68343,4 +71840,7 @@ mod w4_e26_luck_critter_tests {
         assert_eq!(n.wants_hit_dust.len(), 2);
     }
 }
+
+// balance-close (union shared delimiter)
+}}}}}}}}}})))
 }

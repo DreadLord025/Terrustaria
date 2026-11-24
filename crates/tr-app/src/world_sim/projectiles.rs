@@ -410,6 +410,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // pattern).
     let frame_665 = app.tile_anim.tile_frame[665];
     app.projectiles.set_tile_frame_665(frame_665);
+    // W4-c19 round 3 — `Main.mouseTextColor` as the 590 TruffleSpore's flicker
+    // reads it (`Projectile.cs:34221`); the draw-pass pulse owns the value
+    // (the `set_disco` precedent — the step reads what the last draw left).
+    app.projectiles.set_mouse_text_color(app.mouse_text_color);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and
@@ -530,6 +534,35 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(p) = app.player.as_mut() {
         crate::hurt_modifiers::drain_dismount(p, &app.world);
     }
+    // W4-f50 — the player hurt combat text (`Player.cs:38382`): the C# draws
+    // it BEFORE the retaliate block (`:38401`), so the drain spawns it ahead
+    // of the retaliate rolls on the `UpdateProjectiles` stream.
+    if let Some((amount, crit)) = app.player.as_mut().and_then(|p| p.take_hurt_text()) {
+        let text = amount.to_string();
+        let size = match app.lookups.combat_text_font.as_ref() {
+            Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+            None => [text.chars().count() as f32 * 8.0, 10.0],
+        };
+        let p = app.player.as_mut().unwrap();
+        let location = crate::combat_text::Rect {
+            x: p.x,
+            y: p.y,
+            width: p.width,
+            height: p.height,
+        };
+        let color = crate::combat_text::damage_text_color(crit, true, false);
+        crate::combat_text::spawn_amount(
+            &mut app.combat_texts,
+            location,
+            color,
+            amount,
+            crit,
+            false,
+            size,
+            1.0,
+            rng,
+        );
+    }
     if let Some(req) = app.player.as_mut().and_then(|p| p.take_retaliate()) {
         let expert = app.player.as_ref().is_some_and(|p| p.buffs.expert_mode);
         crate::hurt_modifiers::drain_retaliate(
@@ -542,6 +575,71 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             rng,
         );
     }
+    // W4-f50 — the Solar Flare hurt blast (`Player.cs:38316-38318`): the
+    // accepted hostile shot consumed a shield charge and queued the 608
+    // blast; the C# spawns + Kills it inline under the `UpdateProjectiles`
+    // swap (`Main.cs:17775`), the port drains at the pass tail on the same
+    // stream (the S1-E-21c batch convention).
+    if let Some((center, damage)) = app.player.as_mut().and_then(|p| p.take_solar_blast()) {
+        let dolls = app.player.as_ref().map_or((false, false), |p| p.doll_flags());
+        let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+        let blast_ctx = app.spawn_ctx();
+        app.projectiles.solar_flare_blast(
+            center,
+            damage,
+            app.local_id as u8,
+            &mut app.npcs,
+            dolls,
+            rng,
+            luck,
+            &mut app.dust,
+            &blast_ctx,
+            &app.world,
+            &mut app.gore,
+        );
+    }
+    // W4-f50 — the hit-dust loop + football + golf-club hurt drains
+    // (`Player.cs:38527-38553` / `:38255-38280`): the accepted hostile shot
+    // queued them; the port drains at the pass tail on the `UpdateProjectiles`
+    // stream (the S1-E-21c batch convention).
+    if let Some(p) = app.player.as_mut() {
+        let ctx = app.spawn_ctx();
+        crate::hurt_modifiers::drain_hurt_dust(
+            p,
+            &mut app.dust,
+            &ctx,
+            &app.world,
+            rng,
+        );
+    }
+    if let Some(p) = app.player.as_mut() {
+        crate::hurt_modifiers::drain_football(
+            p,
+            &mut app.projectiles,
+            &mut app.inventory,
+            &mut app.mouse_item,
+            app.local_id as u8,
+        );
+    }
+    if let Some(p) = app.player.as_mut() {
+        let held = app.inventory[app.selected].kind;
+        crate::hurt_modifiers::drain_golf_club_kill(
+            p,
+            &mut app.projectiles,
+            held,
+            app.local_id as u8,
+        );
+    }
+    // W4-c19 round 3 — the rand-gated AI-arm light intents
+    // (`Projectile.cs:30378` typhoon / `:34226` spore / `:47846`/`:48011`
+    // whips): the arms took their gate draws on the `UpdateProjectiles`
+    // stream mid-walk and queued the lights in slot + sub-step order; the
+    // drain appends them into the ONE `EntityLights` pair here (the
+    // `item_lights.rs` named-stream precedent — the e6-rule exception, the
+    // draw-pass feed stays pure). No RNG: the append is stream-neutral.
+    for (x, y, rgb) in app.projectiles.drain_ai_lights() {
+        app.entity_lights.add(x, y, rgb);
+    }
     // S1-E-21 wave C — the landed strikes' `NPC.HitSound` plays
     // (`NPC.cs:81544-81553` via `Projectile.Damage` `Projectile.cs:13649`):
     // the case-3 volume arms + the `Main.rand.Next(-10, 11) * 0.01` pitch
@@ -550,6 +648,29 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // the port drains at the pass tail (ANALYSIS, S1-E-21c).
     for (cue, x, y) in app.projectiles.drain_npc_hit_sounds() {
         app.audio.play_npc_hit_sound(cue, x, y, rng);
+    }
+    // W4-f32 — the projectile-side Lucky Coin proc's drops
+    // (`Projectile.cs:13685-13697`): the six rolls (the Next(5) gate, the
+    // denomination pair, the DISCARDED Next(1, 11), the velocity pair) were
+    // drawn inline mid-walk on the `UpdateProjectiles` stream; the pool
+    // queued the fully-rolled drop (it cannot borrow app.items). The spawn
+    // itself draws NOTHING — the explicit velocity skips `Item.NewItem`'s
+    // spread draws (`Item.cs:49738-49740`) and prefix 0 draws nothing, so
+    // the pass-tail placement is stream-exact (the drain convention).
+    // Stack 1 (the C# discards its stack roll), `WorldItem.Center = center`
+    // centres the 14x14 box on the NPC (`Item.cs:49736`).
+    for (coin, ncx, ncy, vx, vy) in app.projectiles.drain_lucky_coin_drops() {
+        let drop = crate::item::ItemDrop::new(
+            coin,
+            1,
+            0,
+            ncx - crate::item::SIZE * 0.5,
+            ncy - crate::item::SIZE * 0.5,
+            vx,
+            vy,
+            0.0,
+        );
+        app.items.push(drop);
     }
     // S1-E-21h — the projectile-family cue plays (the AI arms' first-tick
     // latches, the boomerang whoosh, the missile hum, the bomb blast): the
@@ -579,6 +700,16 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, volume_scale, rng);
         }
+    }
+    // W4-e7 lane 23 — the Snapping Stone strike family's queued cues
+    // (`TryMakingSnappingStoneStrike`'s particle-body + owner-side plays,
+    // `Projectile.cs:14355`/`:14363`/`:14383-14394`): the PVE walk queued
+    // them mid-hit (the pool cannot borrow the audio); they drain here on
+    // the SAME `UpdateProjectiles` stream (`Main.cs:17775`), the S1-E-21c
+    // queue→drain convention. The case-2 draws defer to this tail (the
+    // recorded ANALYSIS deviation); the particle dust draws ran inline.
+    for sound in app.projectiles.drain_striking_sounds() {
+        crate::snapping_stone::play_striking_sound(&mut app.audio, sound, rng);
     }
     // `NewProjectile`'s `TryUpdateChannel` (`Projectile.cs:11097-11100`):
     // the local spawns of this tick track the cancel key's expected type —
@@ -1409,6 +1540,83 @@ mod s1_e_21h_sound_stream_tests {
 }
 
 #[cfg(test)]
+mod w4_c19_ai_light_drain_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::app::RngKey;
+    use crate::projectile::TYPHOON;
+    use tr_core::UnifiedRandom;
+
+    /// W4-c19 round 3 witness (written, NOT run): the typhoon's rand-gated
+    /// light intents drain into the ONE `EntityLights` pair at the pass tail
+    /// — the gate draws ride `UpdateProjectiles` ONLY (the `item_lights`
+    /// named-stream precedent), every other stage stream stays pristine,
+    /// and the intents land in slot + sub-step order with the C# colour.
+    #[test]
+    fn the_typhoon_intents_drain_into_the_entity_lights_pair() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // Muted: any spawn-cue play draws nothing (the s1_e_21h precedent),
+        // so the stream witness sees ONLY the gate + dust-ring draws.
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        // Past the 10-sub-step gate: the 30x30 box at (32, 32) centres on
+        // (47, 47) → tile (2, 2) inside the 8x8 fixture world.
+        let slot = app
+            .projectiles
+            .spawn_with_data_ai_owned(TYPHOON, 0, 32.0, 32.0, 0.0, 0.0, 40, 5.0, 0.0, 0.0)
+            .expect("a free slot");
+        app.projectiles.slots_mut()[slot].local_ai[1] = 10.0;
+        update_projectiles(&mut app, 1.0 / 60.0);
+        // The drain emptied the pool seam.
+        assert!(app.projectiles.drain_ai_lights().is_empty());
+        // The lights: swap the pair, then read the frame's sources. Every
+        // intent is the typhoon's (0.1, 0.4, 0.6) at the truncated centre.
+        app.entity_lights.end_frame();
+        let lights = app.entity_lights.visible();
+        assert!(!lights.is_empty(), "at least one gate taken on seed 0");
+        for l in lights {
+            assert_eq!(l.rgb, [0.1, 0.4, 0.6]);
+        }
+        // The twin: replay the three sub-steps' gate draws (the taken
+        // branches add the 6 × (NextDouble, Next(3,8)) dust-ring pairs).
+        let mut twin = UnifiedRandom::new(0);
+        let mut taken = 0;
+        for _ in 0..3 {
+            if twin.next_range(0, 3) == 0 {
+                taken += 1;
+                for _ in 0..6 {
+                    let _ = twin.next_double();
+                    let _ = twin.next_range(3, 8);
+                }
+            }
+        }
+        assert_eq!(lights.len(), taken, "one light per taken gate");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateProjectiles),
+            twin,
+            "the gate + dust-ring draws, nothing else"
+        );
+        for key in RngKey::ALL {
+            if key == RngKey::UpdateProjectiles {
+                continue;
+            }
+            assert!(
+                !app.rngs.is_created(key) || *app.rngs.stream(key) == UnifiedRandom::new(0),
+                "{} stayed pristine",
+                key.name()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod summon_fixture_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
@@ -1851,5 +2059,40 @@ mod w4_d9_ritual_spawn_drain_tests {
             .expect("the 521 resolved through kind_from_net_id");
         assert_eq!((squid.x, squid.y), (30.0, 20.0));
         assert_eq!(squid.hp, 2000, "the squidhead's lifeMax");
+
+        }
+        }/// W4-f32 — the projectile-side Lucky Coin proc's pass-tail drain
+/// (`Projectile.cs:13685-13697` → `drain_lucky_coin_drops`). WRITTEN NOT RUN
+/// (code-only mode). The six rolls ride the `UpdateProjectiles` stream
+/// inline mid-walk; the drain spawns the `ItemDrop` (stack 1, prefix 0, the
+/// explicit velocity) and draws NOTHING — the `UpdateItems` stream stays
+/// pristine (the explicit velocity skips `Item.NewItem`'s spread draws,
+/// `Item.cs:49738-49740`).
+mod f32_lucky_coin_drain_tests {
+    use crate::app::RngKey;
+    fn f32_the_lucky_coin_drain_spawns_the_drop_draw_free() {
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A pre-rolled proc intent (the pool's mid-walk rolls are pinned by
+        // `f32_lucky_coin_proj_tests`): silver 72 at (60, 40), vx 4, vy -2.
+        app.projectiles.push_lucky_coin_drop_for_test((72, 60.0, 40.0, 4.0, -2.0));
+        assert_eq!(app.items.len(), 1, "the drain spawned the coin");
+        let coin = &app.items[0];
+        assert_eq!(coin.kind, 72);
+        assert_eq!(coin.count, 1, "stack 1 — the C# discards its Next(1, 11)");
+        assert_eq!(coin.prefix, 0);
+        // `WorldItem.Center = center` — the 14x14 box centred on the NPC.
+        assert!((coin.pos.x - (60.0 - crate::item::SIZE * 0.5)).abs() < 1e-5);
+        assert!((coin.pos.y - (40.0 - crate::item::SIZE * 0.5)).abs() < 1e-5);
+        assert!((coin.vel.x - 4.0).abs() < 1e-5);
+        assert!((coin.vel.y - -2.0).abs() < 1e-5);
+        assert_eq!(coin.phase, 0.0, "the explicit-velocity spawn draws no phase");
+        // The spawn drew nothing: the item stream is still the pristine seed.
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateItems),
+            tr_core::UnifiedRandom::new(0),
+            "the drain is draw-free"
+        );
+        // The queue emptied (a second tick spawns nothing new).
+        assert_eq!(app.items.len(), 1, "the drain consumed the intent");
     }
 }

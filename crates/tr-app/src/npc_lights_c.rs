@@ -85,6 +85,7 @@
 //! `DelegateMethods.cs:726-741`), so the abort paths are unreachable
 //! here but kept verbatim.
 
+use glam::Vec2;
 use tr_core::world::World;
 
 use crate::npc::{Npc, NpcKind};
@@ -160,28 +161,18 @@ fn plot_line(
     true
 }
 
-/// `DelegateMethods.CastLightOpen` (`DelegateMethods.cs:726-741`):
-/// bounds + null gate (false, abort), then lights only an OPEN tile;
-/// always returns true once in bounds (the open-test gates the light,
-/// not the return). The open-test is `:736` verbatim: `!active() ||
-/// inActive() || tileSolidTop[type] || !tileSolid[type]`.
+/// `DelegateMethods.CastLightOpen` — the ONE delegate copy is W4-e8's
+/// `tile_lights.rs::cast_light_open` (`DelegateMethods.cs:726-741`, the
+/// merger keep-one per research/366 §1 f8 row); this adapter only folds
+/// the DD2 colour into the `CastLightEnv` (the C# sets `v3_1` before
+/// `Utils.PlotTileLine`; `v2_1`/`f_1` are unread by CastLightOpen).
 fn cast_light_open(world: &World, x: i32, y: i32, rgb: [f32; 3], out: &mut Vec<Light>) -> bool {
-    if x < 0 || x >= world.width || y < 0 || y >= world.height {
-        return false; // `:728-731`
-    }
-    let Some(t) = world.tile(x, y) else {
-        return false; // `:732-735` — unreachable in bounds (the port's
-                      // `World::tile` yields a default inactive tile,
-                      // `world.rs:1303-1309`); kept for the C# shape.
+    let env = crate::tile_lights::CastLightEnv {
+        rgb,
+        origin: Vec2::ZERO,
+        range: 0.0,
     };
-    if !t.active()
-        || t.inactive()
-        || tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
-        || !tr_core::tiledata::TILE_SOLID.has(t.kind)
-    {
-        out.push((x, y, rgb)); // `:738`
-    }
-    true
+    crate::tile_lights::cast_light_open(world, x, y, &env, out)
 }
 
 /// `Utils.PlotTileLine(Top, Bottom, width, CastLightOpen)`

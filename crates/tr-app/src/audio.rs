@@ -445,6 +445,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     // (`Main.cs:43083`); `SoundID.Chat = 24` (`SoundID.cs:70`), the
     // `Sounds/Chat` cue (`LegacySoundPlayer.cs:202`, case 24 `:957-962`).
     ("Chat", 24),
+    // W4-f48 parry wave — `SoundEngine.PlaySound(25, base.Center)` on the
+    // shield-parry cooldown's zero tick (`Player.cs:31724`); legacy id 25
+    // is the MaxMana cue (`SoundID.MaxMana = 25`, `LegacySoundPlayer.cs`
+    // case 25 — `SoundInstanceMaxMana`, Volume/Pan only, no draws).
+    ("MaxMana", 25),
     // `SoundEngine.PlaySound(40)` — the capture camera's shutter
     // (`CaptureInterface.cs:1592`); `SoundID.Camera = 40` (`SoundID.cs:102`),
     // the `Sounds/Camera` cue (`LegacySoundPlayer.cs:210`, case 40 `:1359`).
@@ -460,6 +465,13 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_53", 2),
     ("Item_55", 2),
     ("Item_56", 2),
+    // W4-c14 - the Pogo Stick's hop cue (`SoundID.Item168`,
+    // `Player.cs:19784`/`:20764`; `Sounds/Item_168.xnb`).
+    ("Item_168", 2),
+    // W4-c14 - the Meowcart's case-37 slot pair (`LegacySoundPlayer.cs:1328`
+    // `Next(57, 59)`; `Mount.cs:661`/`:666` play legacy id 37).
+    ("Item_57", 37),
+    ("Item_58", 37),
     // S1-E-21 wave A — the item-use family: every `Sounds/Item_<style>.xnb`
     // an `Item.UseSound` row names (`itemdata.rs::use_sound` →
     // `soundid.rs::SOUND_STYLES`, `SoundID.cs:1384-1582`'s
@@ -533,6 +545,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_84", 2),
     ("Item_85", 2),
     ("Item_88", 2),
+    // W4-c14 M2-MOUNT-4 — the Santank gift-box drop cue
+    // (`Mount.cs:3300`, `SoundID.Item89` — `Sounds/Item_89.xnb`).
+    ("Item_89", 2),
     ("Item_90", 2),
     ("Item_92", 2),
     ("Item_95", 2),
@@ -976,6 +991,13 @@ pub struct Audio {
     /// `NPC.cs:24853-24856`); no ported Pixie kind yet — the seam is
     /// table-complete for the future kind.
     pixie_slot: Option<rodio::Sink>,
+    /// W4-c14 doc-sweep — the `SoundInstanceItem[SoundID.ItemSoundCount]`
+    /// slots (`LegacySoundPlayer.cs:72`, 211 entries `SoundID.cs:1595`):
+    /// case 2's 53/55/159 playing guards read them (`:559`/`:583`) and a
+    /// fresh play stops + re-creates the slot (`:590-593`/`:607`); the
+    /// stack-allowed styles (`:595-605`) never write a slot. A map over the
+    /// styles the port plays (the `npc_killed_slots` precedent).
+    item_slots: HashMap<usize, rodio::Sink>,
 }
 
 impl Audio {
@@ -1084,6 +1106,7 @@ impl Audio {
             mech_slots: [None],
             roar_slots: [None, None, None],
             pixie_slot: None,
+            item_slots: HashMap::new(),
         }
     }
 
@@ -1391,6 +1414,15 @@ impl Audio {
     /// `style.volume` (`:369-436` precedes the scale), and the scale multiplies
     /// the case-2 volume AFTER the tweak — exactly the C# order. `1.0` is the
     /// no-scale default every other caller passes.
+    /// W4-e7 lane 23 — [`Self::play_use_sound`] with the C# call's
+    /// `volumeScale` argument (`SoundEngine.cs:88-99` passes
+    /// `type.Volume * volumeScale` into the engine; the legacy player's
+    /// `soundEffectInstance.Volume *= volumeScale`, `LegacySoundPlayer.cs:1411`,
+    /// multiplies AFTER the attenuation walk). The Snapping Stone strike
+    /// family's 0.08/0.5 scales ride it (`snapping_stone.rs`); every other
+    /// caller keeps the 1.0 wrapper above. The draw order is unchanged:
+    /// the `GetRandomPitch` NextFloat, the attenuation gate, then case 2's
+    /// `Main.rand` roll — the scale only touches the final gain.
     pub fn play_use_sound_scaled(
         &mut self,
         style_index: u16,
@@ -1398,6 +1430,7 @@ impl Audio {
         y: f32,
         pitch_offset: f32,
         call_volume_scale: f32,
+        volume_scale: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
         let style = &crate::soundid::SOUND_STYLES[style_index as usize];
@@ -1406,6 +1439,55 @@ impl Audio {
         let draw = self.sound_style_random.next_float();
         let pitch_offset =
             pitch_offset + sound::get_random_pitch(style.pitch_variance, draw);
+        // The façade's volumeScale is `type.Volume * 1` (`SoundEngine.cs:99`)
+        // — the style volume rides INSIDE `play_item_style`'s case gain
+        // (W4-e7 keep-one: passing it here too would double it against the
+        // `gain *= volume_scale` tail, `LegacySoundPlayer.cs:1411`).
+        self.play_item_style(style_index, x, y, pitch_offset, 1.0, rng)
+    }
+
+    /// M2-MOUNT-4 (W4-c14) — the Santank ability cues (`Mount.cs:3300`
+    /// Item89 / `:3311` Item11): `SoundEngine.PlaySound(SoundID.ItemN.SoundId,
+    /// (int)x, (int)y, SoundID.ItemN.Style, 0.2f)` — the INT overload
+    /// (`SoundEngine.cs:102-108`), so NO `GetRandomPitch` NextFloat (the
+    /// style façade `:93-99` is NOT the caller here), pitchOffset 0, and
+    /// volumeScale 0.2 rides `LegacySoundPlayer.cs:1411` AFTER the case-2
+    /// tweak. The case-2 body is the shared [`Self::play_item_style`]: the
+    /// 11/89 default arm draws ONE `Next(-6, 7) * 0.01` (`:632`) on the
+    /// caller's stream (the fire runs inside `Player.Update` under the
+    /// `Main.cs:17754` `UpdatePlayers` swap), only after the attenuation
+    /// gate; the default instance arm stops + re-creates the style slot
+    /// (`:589-594` — neither style is on the stack-allowed list `:595-605`).
+    /// The positions are the C#'s truncated ints (the caller truncates).
+    pub fn play_mount_ability_sound(
+        &mut self,
+        style_num: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let idx = crate::soundid::SOUND_STYLES
+            .iter()
+            .position(|s| s.sound_id == 2 && s.style == style_num)?;
+        self.play_item_style(idx as u16, x, y, 0.0, 0.2, rng)
+    }
+
+    /// The shared `LegacySoundPlayer.PlaySound` case-2/case-42 body
+    /// (`LegacySoundPlayer.cs:360-1415`): the attenuation gate, the case
+    /// tweak + pitch draw, the bank resolve, the emit and the instance-slot
+    /// bookkeeping. `volume_scale` is the LegacySoundPlayer argument — the
+    /// style façade passes `type.Volume` (the `SoundEngine.cs:99` product),
+    /// the int overload passes the caller's raw scale (the mount cues' 0.2).
+    fn play_item_style(
+        &mut self,
+        style_index: u16,
+        x: f32,
+        y: f32,
+        pitch_offset: f32,
+        volume_scale: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let style = &crate::soundid::SOUND_STYLES[style_index as usize];
         // The attenuation gate first — the C# walks the position/volume
         // checks (`:369-436`) before the type switch draws anything.
         if sound::play_sound(
@@ -1413,13 +1495,13 @@ impl Audio {
             x,
             y,
             self.listener,
-            style.volume,
+            volume_scale,
         )
         .is_none()
         {
             return None;
         }
-        let (cue, volume_scale, pitch) = if style.sound_id == 42 {
+        let (cue, mut gain, pitch) = if style.sound_id == 42 {
             // Case 42 (`:1376-1381`): no volume tweak, no pitch switch —
             // only the caller's offset, clamped at `:1410`.
             let base = style.trackable.expect("trackable style carries an asset");
@@ -1428,15 +1510,31 @@ impl Audio {
             } else {
                 format!("{base}_0")
             };
-            (cue, style.volume, pitch_offset.clamp(-1.0, 1.0))
+            (cue, volume_scale, pitch_offset.clamp(-1.0, 1.0))
         } else {
             debug_assert_eq!(style.sound_id, 2, "item-use styles are the id-2 family");
+            // W4-c14 doc-sweep — the 53/55/159 playing guards
+            // (`LegacySoundPlayer.cs:559-562`/`:583-586`): while the slot's
+            // instance is Playing the play returns null BEFORE the pitch
+            // draw (the `npc_hit_case3` 57-guard precedent). Headless no
+            // slot ever plays, so the guard never trips (the case-28
+            // witness precedent).
+            let playing = self
+                .item_slots
+                .get(&(style.style as usize))
+                .is_some_and(|s| !s.empty());
+            if sound::item_case2_playing_guard(style.style, playing) {
+                return None;
+            }
             let mut roll = |lo: i32, hi: i32| rng.next_range(lo, hi);
             let (num, tweak, pitch) = sound::item_use_case2(style.style, &mut roll);
             let cue = format!("Item_{num}");
             (
                 cue,
-                style.volume * tweak,
+                // `:1411` — the case tweak rides num2, the volumeScale
+                // multiplies AFTER (the façade's scale is style.volume,
+                // the mount int-overload's is 0.2).
+                volume_scale * tweak,
                 (pitch + pitch_offset).clamp(-1.0, 1.0),
             )
         };
@@ -1455,6 +1553,27 @@ impl Audio {
         // instance volume AFTER the case tweak (the gate above read the
         // unscaled `style.volume`).
         self.emit(name, x, y, volume_scale * call_volume_scale, pitch);
+        // `soundEffectInstance.Volume *= volumeScale` (`LegacySoundPlayer.cs:1411`,
+        // W4-e7) — the caller's scale multiplies the case gain (the tweak is
+        // already folded into `gain` above; the 1.0 façade wrapper keeps every
+        // pre-W4-e7 play byte-identical).
+        gain *= volume_scale;
+        let sink = self.emit(name, x, y, gain, pitch);
+        // W4-c14 doc-sweep — the case-2 instance pool (`:580-607`): the
+        // guarded styles 53/55/159 and the default arm stop the slot's old
+        // instance and re-create it; the stack-allowed list (`:595-605`:
+        // 9/10/24/26/34/43/103/156/162/205) never touches a slot (the old
+        // sound keeps playing — the fresh-source behaviour the port had).
+        if style.sound_id == 2
+            && !matches!(style.style, 9 | 10 | 24 | 26 | 34 | 43 | 103 | 156 | 162 | 205)
+        {
+            let idx = style.style as usize;
+            if let Some(old) = self.item_slots.remove(&idx) {
+                old.stop();
+            }
+            if let Some(sink) = sink {
+                self.item_slots.insert(idx, sink);
+        }
         Some(name)
     }
 
@@ -2518,7 +2637,36 @@ impl Audio {
         }
     }
 
-    /// S1-E-21i — one door open/close play (`WorldGen.OpenDoor`
+    /// W4-c14 - one Meowcart play (`Mount.MeowcartLandingSound`
+    /// `Mount.cs:659-662`: `PlaySound(37, x, y, 5)`; `MeowcartBumperSound`
+    /// `:664-667`: `PlaySound(37, x, y, 3)`). The int overload
+    /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat.
+    ///
+    /// Case 37 (`LegacySoundPlayer.cs:1326-1336`): the `Next(57, 59)` slot
+    /// pick (`Item_57`/`Item_58`), the `Style * 0.05` volume scale (the
+    /// non-starGame arm) and the `Next(-40, 41) * 0.01` pitch - TWO draws
+    /// on the caller's `UpdatePlayers` stream (the cart ride runs in
+    /// `Player.Update`, `Main.cs:17754`), only AFTER the attenuation gate
+    /// passed. Returns the cue played; `None` when the gate refused.
+    pub fn play_meowcart_sound(
+        &mut self,
+        style: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound::play_sound(37, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (slot, volume, pitch) =
+            sound::meowcart_case37(style, &mut |lo, hi| rng.next_range(lo, hi));
+        let cue = if slot == 57 { "Item_57" } else { "Item_58" };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-E-21i - one door open/close play (`WorldGen.OpenDoor`
     /// `WorldGen.cs:37727`: `PlaySound(8, i * 16, j * 16)`; `CloseDoor`
     /// `:31908`: `PlaySound(9, ...)` — both success-only). The int overload
     /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat.
@@ -4398,6 +4546,51 @@ mod tests {
         // advances it (the C#'s `LegacySoundStyle.Random`, unobservable seed).
         let second = audio.play_issue_report_notify();
         assert!(second.is_some());
+
+        }    /// M2-MOUNT-4 (W4-c14) — the Santank ability cues' RNG/volume contract
+    /// (`Mount.cs:3300` Item89 / `:3311` Item11): the INT overload
+    /// (`SoundEngine.cs:102`) consumes NO `GetRandomPitch` NextFloat (the
+    /// audio-only stream stays untouched), the attenuation gate precedes
+    /// the ONE case-2 `Next(-6, 7)` pitch draw (`LegacySoundPlayer.cs:632`),
+    /// and the 0.2 volumeScale rides `:1411` after the tweak (both styles
+    /// have tweak 1.0 and volume 1.0, so the final gain is 0.2× the gate's).
+    fn m4_the_santank_cues_draw_one_pitch_roll_and_no_style_random() {
+        use tr_core::unified_random::UnifiedRandom;
+        // The bank join: Item_89 was the gap (88/90 present, 89 absent).
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Item_89"));
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Item_11"));
+        // A muted play draws NOTHING (`:369-372` precedes the switch) and
+        // never touches the audio-only style stream.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(11);
+        let peek = rng.peek();
+        assert_eq!(audio.play_mount_ability_sound(89, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted play consumes no gameplay draw");
+        // An audible play: exactly ONE Next(-6, 7) on the passed stream —
+        // the same value a bare draw produces (the default case-2 window).
+        let mut witness = UnifiedRandom::new(11);
+        let want_pitch = witness.next_range(-6, 7) as f32 * 0.01;
+        let cue = audio.play_mount_ability_sound(89, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Item_89"));
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        assert!(want_pitch.abs() <= 0.06, "the default window ±0.06");
+        // The missile cue rides the same shape.
+        let _ = witness.next_range(-6, 7);
+        let cue = audio.play_mount_ability_sound(11, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("Item_11"));
+        // The int overload consumes NO GetRandomPitch draw: two plays from
+        // a fresh Audio leave the audio-only stream at its seed (the style
+        // façade would advance it once per play).
+        let mut rng = UnifiedRandom::new(3);
+        let _ = audio.play_mount_ability_sound(89, 0.0, 0.0, &mut rng);
+        let _ = audio.play_mount_ability_sound(11, 0.0, 0.0, &mut rng);
+        let mut fresh = tr_core::unified_random::UnifiedRandom::new(1);
+        assert_eq!(
+            audio.sound_style_random.peek(),
+            fresh.peek(),
+            "the int overload never draws the style stream"
     }
 
     /// S1-E-21a — the NPC hit/death cue families: the sound id 3 (the hits)
@@ -4816,7 +5009,93 @@ mod tests {
         }
     }
 
-    /// S1-E-21e — the fighter moans' RNG contract: the moan arms' rolls ride
+    /// W4-c14 - the Meowcart case-37 contract (`Mount.cs:659-667`,
+    /// `LegacySoundPlayer.cs:1326-1336`): TWO draws per play - the
+    /// `Next(57, 59)` slot pick then the `Next(-40, 41)` pitch - on the
+    /// caller's stream after the gate; the style scales the volume
+    /// (5 × 0.05 landing / 3 × 0.05 bumper); a muted play draws nothing.
+    #[test]
+    fn w4_c14_the_meowcart_case37_draws_the_slot_then_the_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(57, 59);
+        let _ = witness.next_range(-40, 41);
+        let cue = audio
+            .play_meowcart_sound(5, 0.0, 0.0, &mut rng)
+            .expect("audible");
+        assert_eq!(cue, if slot == 57 { "Item_57" } else { "Item_58" });
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // The case maths: the slot window, the volume scale, the pitch window.
+        let mut roll = UnifiedRandom::new(3);
+        let (slot, volume, pitch) =
+            sound::meowcart_case37(5, &mut |lo, hi| roll.next_range(lo, hi));
+        assert!((57..59).contains(&slot));
+        assert!((volume - 0.25).abs() < 1e-6, "5 * 0.05");
+        assert!(pitch.abs() <= 0.40 + 1e-6);
+        let (_, volume, _) = sound::meowcart_case37(3, &mut |_, _| 57);
+        assert!((volume - 0.15).abs() < 1e-6, "3 * 0.05");
+        // Muted: draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_meowcart_sound(5, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+        // Both slot assets resolve to the legacy id 37.
+        for name in ["Item_57", "Item_58"] {
+            assert_eq!(sound_type(name), 37, "{name}");
+        }
+    }
+
+    /// W4-c14 doc-sweep — the 53/55/159 playing guards
+    /// (`LegacySoundPlayer.cs:559-562`/`:583-586`) refuse a fresh play while
+    /// the slot's instance is live, BEFORE the case-2 pitch draw. Headless
+    /// (no output device) no slot ever plays, so a second cart-rattle play
+    /// still draws — the engine's fresh-instance behaviour (the case-28
+    /// witness precedent). The guard's refusal path is pinned by feeding a
+    /// live slot directly.
+    #[test]
+    fn w4_c14_the_cart_rattle_guard_refuses_while_the_slot_is_live() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Headless: the 55 rattle plays twice, one case-2 draw each (the
+        // slot never fills without a device, so the guard never trips).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-20, -11);
+        let _ = witness.next_range(-20, -11);
+        assert_eq!(audio.play_npc_item_cue(55, 0.0, 0.0, &mut rng), Some("Item_55"));
+        assert_eq!(audio.play_npc_item_cue(55, 0.0, 0.0, &mut rng), Some("Item_55"));
+        assert_eq!(rng.peek(), witness.peek(), "two rattles, two pitch draws");
+        // The refusal path, pinned through the pure guard decision (the
+        // `mech_case28`/`npc_hit_case3` precedent): a LIVE 53/55/159 slot
+        // refuses; every other style plays regardless of its slot.
+        for style in [53, 55, 159] {
+            assert!(sound::item_case2_playing_guard(style, true), "{style} refuses live");
+            assert!(!sound::item_case2_playing_guard(style, false), "{style} plays idle");
+        }
+        for style in [1, 24, 37, 56, 168] {
+            assert!(!sound::item_case2_playing_guard(style, true), "{style} never guards");
+        }
+        // A live slot's read is the `!sink.empty()` predicate the facade uses.
+        assert!(
+            !audio.item_slots.get(&55).is_some_and(|s| !s.empty()),
+            "headless the slot stays empty/absent, the guard reads not-playing"
+        );
+        // A muted rattle is draw-free (the gate precedes the guard + draw).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_item_cue(55, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// S1-E-21e - the fighter moans' RNG contract: the moan arms' rolls ride
     /// the caller's stream (`UpdateNPCs`, `Main.cs:17767`), and each legacy
     /// case's slot/pitch draws run AFTER the attenuation gate on the SAME
     /// stream (`LegacySoundPlayer.cs:369-436`'s prologue precedes the
@@ -5372,4 +5651,7 @@ fn ambience_wind_volume(env: &MusicEnv) -> Option<f32> {
     }
     let v = (num7.min(1.0)) * 0.9 * env.atmo.powi(4);
     Some(v)
+
+// balance-close (union shared delimiter)
+})
 }

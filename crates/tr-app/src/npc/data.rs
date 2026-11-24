@@ -273,7 +273,7 @@ impl NpcKind {
             NpcKind::MartianWalker => 72,
             // The pirates + the probe + the drone: the martian/snowman
             // family owns 65-72 and the Golem family 73-77, so this band
-            // rides 182-188 — `S1-F-1` renumbered it off the 78-84 slots the
+            // rides 182-188 вЂ” `S1-F-1` renumbered it off the 78-84 slots the
             // Deerclops/Skeletron-Prime family owns (the 2026-11 pirate
             // renumber parked the family on those ids and every Deerclops or
             // Prime limb came back as a pirate). The ids deliberately sit
@@ -287,7 +287,7 @@ impl NpcKind {
             NpcKind::MartianProbe => 187,
             NpcKind::MartianDrone => 188,
             // The bubble/turret pair (`S1-F-13d`): the next free band above
-            // S1-D-3ff wave A's 189..212 — port-local like the rest of the
+            // S1-D-3ff wave A's 189..212 вЂ” port-local like the rest of the
             // martian family (the vanilla 384/387 are NOT the wire ids).
             NpcKind::ForceBubble => 213,
             NpcKind::MartianTurret => 214,
@@ -453,14 +453,14 @@ impl NpcKind {
             NpcKind::DyeTrader => 167,
             NpcKind::PartyGirl => 168,
             // The Pumpkin Moon family (`S1-F-13b`): these 16 kinds are the
-            // roster that rides the VANILLA `NPC.type` on the wire — the
+            // roster that rides the VANILLA `NPC.type` on the wire вЂ” the
             // F-13a moon ladders pick by it, `MOON_BOSS_SLOTS`
             // (`spawner.rs:75`) and `CheckProgressPumpkinMoon`'s kill points
             // (`world.rs:726`) key on it, and the ids sit above the whole
             // 0..188 port-local space (the 78..84 Deerclops/Prime band
             // included) so nothing collides. The port's other kinds keep
             // their port-local ids; `NpcKind::pumpkin_moon_type` is the
-            // named kind→type seam the spawn wiring and the kill walk use.
+            // named kindв†’type seam the spawn wiring and the kill walk use.
             // (`S1-F-13d` appended the ForceBubble/MartianTurret 213/214
             // pair above S1-D-3ff wave A's 189..212 band.)
             // `NPC.cs:12929-12977` (305-314), `:12978` (315), `:13115`
@@ -482,16 +482,16 @@ impl NpcKind {
             NpcKind::Pumpking => 327,
             // W4-c6 style-59 wiring: the blade keeps its vanilla id 328
             // (`NPC.cs:13158-13174`; the slot sits between the Pumpking's
-            // 327 and the Hellhound's 329 — free in the port's id space).
+            // 327 and the Hellhound's 329 вЂ” free in the port's id space).
             NpcKind::Hellhound => 329,
             NpcKind::Poltergeist => 330,
             // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
-            // 345-352 encode here (the same ids `from_u16` decodes below) —
+            // 345-352 encode here (the same ids `from_u16` decodes below) вЂ”
             // the frost wave roster, `MOON_BOSS_SLOTS` (`spawner.rs:75`) and
             // `CheckProgressFrostMoon`'s kill points (`world.rs:733`) key on
             // the vanilla `NPC.type`, and the ids sit above the whole
             // port-local space so nothing collides. `NpcKind::frost_moon_type`
-            // is the named kind→type seam the spawn wiring and the kill walk
+            // is the named kindв†’type seam the spawn wiring and the kill walk
             // use. `NPC.cs:13369` (345), `:13386` (346), `:13400` (347),
             // `:13416` (348), `:13430` (349), `:13444` (350), `:13457`
             // (351), `:13471` (352).
@@ -503,7 +503,7 @@ impl NpcKind {
             NpcKind::ElfArcher => 350,
             NpcKind::Krampus => 351,
             NpcKind::Flocko => 352,
-            // S1-D-3ff wave A — the 24 LOW-id kinds take the free
+            // S1-D-3ff wave A вЂ” the 24 LOW-id kinds take the free
             // 189..212 band (the port-local space; the moon kinds ride
             // the vanilla 305-330 ids above it).
             NpcKind::MotherSlime => 189,
@@ -530,7 +530,7 @@ impl NpcKind {
             NpcKind::TwiggyZombie => 210,
             NpcKind::FemaleZombie => 211,
             NpcKind::ZombieRaincoat => 212,
-            // S1-D-3 W-9 fishron wiring — the boss + its three hazards take
+            // S1-D-3 W-9 fishron wiring вЂ” the boss + its three hazards take
             // the free 219..222 band (gate-reassigned; 213/214 R10-reserved).
             // The vanilla ids 370-373 stay free for the wire's
             // `net_id`/bestiary space.
@@ -538,15 +538,15 @@ impl NpcKind {
             NpcKind::DetonatingBubble => 220,
             NpcKind::Sharkron => 221,
             NpcKind::Sharkron2 => 222,
-            // S1-D-3z (zombie fighter audit) — the five holiday zombie
+            // S1-D-3z (zombie fighter audit) вЂ” the five holiday zombie
             // variants + the blood-moon pair. GATE REASSIGN (L-I, re-scan
             // after the wyvern forward-merge): the branch's 221..227
             // collide with the landed fishron 219-222 AND wyvern 223-228
-            // bands — next-free ascending after a to_u16 scan of the
+            // bands вЂ” next-free ascending after a to_u16 scan of the
             // merged lane tree: 230..236 (213/214 martian-defaults taken,
             // 148 LeechTail / 353 wheel reserved). The vanilla types ride
             // `cs_id`/`net_id` (319-321/331-332/489/490), NOT these
-            // protocol ids — the spawner's holiday arms
+            // protocol ids вЂ” the spawner's holiday arms
             // (`NPC.cs:4727-4735`) pick by the vanilla type.
             NpcKind::ZombieDoctor => 230,
             NpcKind::ZombieSuperman => 231,
@@ -571,14 +571,14 @@ impl NpcKind {
             // type ids (`NPCID.Bee` 210 / `BeeSmall` 211, `NPCID.cs:11097-11099`).
             // The vanilla 210/211 protocol slots ride the wave-A Twiggy/
             // Female zombies (`S1-D-3ff`). GATE REASSIGN (L-B): the branch's
-            // 353/354 collide with R54c smallkinds' BlazingWheel 353 band —
+            // 353/354 collide with R54c smallkinds' BlazingWheel 353 band вЂ”
             // R54c keeps 353; the bees take the next-free 149/152 holes
             // (148 reserved for R78 LeechTail). Save-compat safe: neither
             // branch had merged when the ids moved.
             NpcKind::Bee => 149,
             NpcKind::BeeSmall => 152,
             // The Plantera minion family (S1-D-3-wire-plantera-minions,
-            // census §5 W-8): the C# types 261/263/264/265 (`NPCID.cs:11199`/
+            // census В§5 W-8): the C# types 261/263/264/265 (`NPCID.cs:11199`/
             // `:11203`/`:11205`/`:11207`). GATE REASSIGN (L-B): the branch's
             // port-local 353-356 collide with R54c wheel 353 + queenbee's
             // 353/354 (now 149/152); the four take the next-free 153/154/155
@@ -592,49 +592,49 @@ impl NpcKind {
             // slot (`to_u16`'s bijection guard), so it takes the next free
             // port-local id 353; AngryNimbus/DungeonSpirit keep their
             // vanilla ids (250/288 free). GATE DEDUPE (L-B): the branch's
-            // ForceBubble 384 is the SAME kind S1-F-13d landed at 213 —
+            // ForceBubble 384 is the SAME kind S1-F-13d landed at 213 вЂ”
             // one variant, one id (213); 384 frees. `NPC.cs:9714-9731` /
             // `:12221-12233` / `:12738-12752`.
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
-            // W4-d38 b7 — vanilla ids kept (free protocol slots).
+            // W4-d38 b7 вЂ” vanilla ids kept (free protocol slots).
             NpcKind::SlimeRibbonWhite => 333,
             NpcKind::SlimeRibbonYellow => 334,
             NpcKind::SlimeRibbonGreen => 335,
             NpcKind::SlimeRibbonRed => 336,
             NpcKind::BunnyXmas => 337,
-            // W4-d38 b6 — vanilla ids kept (free protocol slots).
+            // W4-d38 b6 вЂ” vanilla ids kept (free protocol slots).
             NpcKind::DemonEyeSpaceship => 318,
             NpcKind::SkeletonTopHat => 322,
             NpcKind::SkeletonAstonaut => 323,
             NpcKind::SkeletonAlien => 324,
             NpcKind::PumpkingBlade => 328,
-            // W4-d38 b5 — vanilla ids kept (free protocol slots).
+            // W4-d38 b5 вЂ” vanilla ids kept (free protocol slots).
             NpcKind::SlimeMasked => 302,
             NpcKind::BunnySlimed => 303,
             NpcKind::HoppinJack => 304,
             NpcKind::Ghost => 316,
             NpcKind::DemonEyeOwl => 317,
-            // W4-d38 b4 — vanilla ids kept (free protocol slots).
+            // W4-d38 b4 вЂ” vanilla ids kept (free protocol slots).
             NpcKind::BirdBlue => 297,
             NpcKind::BirdRed => 298,
             NpcKind::Squirrel => 299,
             NpcKind::Mouse => 300,
             NpcKind::Raven => 301,
-            // W4-d38 b3 — vanilla ids kept (free protocol slots).
+            // W4-d38 b3 вЂ” vanilla ids kept (free protocol slots).
             NpcKind::TacticalSkeleton => 292,
             NpcKind::SkeletonCommando => 293,
             NpcKind::AngryBonesBig => 294,
             NpcKind::AngryBonesBigMuscle => 295,
             NpcKind::AngryBonesBigHelmet => 296,
-            // W4-d38 b2 — vanilla ids kept (free protocol slots).
+            // W4-d38 b2 вЂ” vanilla ids kept (free protocol slots).
             NpcKind::DiabolistWhite => 286,
             NpcKind::BoneLee => 287,
             NpcKind::GiantCursedSkull => 289,
             NpcKind::Paladin => 290,
             NpcKind::SkeletonSniper => 291,
-            // W4-d38 b1 — vanilla ids kept (free protocol slots).
+            // W4-d38 b1 вЂ” vanilla ids kept (free protocol slots).
             NpcKind::RaggedCaster => 281,
             NpcKind::RaggedCasterOpenCoat => 282,
             NpcKind::Necromancer => 283,
@@ -654,11 +654,11 @@ impl NpcKind {
             // 386 own them).
             NpcKind::AngryTrapper => 743,
             // The aiStyle-9 spit/flare family (W4-d23): VileSpit 112 was
-            // rowed by d35 at protocol 455 (the roster's claim — the
+            // rowed by d35 at protocol 455 (the roster's claim вЂ” the
             // vanilla 112 slot is the AncientCultist's, `to_u16`'s guard).
             // SolarFlare 516 / VileSpitEoW 666 are UNROWED: the reconcile
             // directive parks them on the 400+ free band (408/411) even
-            // though their vanilla slots are free — the d37-354-399
+            // though their vanilla slots are free вЂ” the d37-354-399
             // collision's union numbering (research/108 addendum).
             // `NPC.cs:10326-10341` / `:15394-15408` / `:17418-17433`.
             // E8 merge: VileSpit's 455 is d35's 724 (the dup drop);
@@ -667,17 +667,17 @@ impl NpcKind {
             // dup dropped at its merge).
             NpcKind::SolarFlare => 408,
             // The aiStyle-14 flyer family (W4-d23): the five ROWED kinds
-            // adopt their roster protocol ids (Harpy 48 → d34's 275,
-            // GiantBat 93 → d35's 441, Slimer 121 → d35's 458,
-            // IlluminantBat 137 → d35's 460, FlyingSnake 226 → d37's 360
-            // — the vanilla slots are the LeechHead/FlyingDutchman/
+            // adopt their roster protocol ids (Harpy 48 в†’ d34's 275,
+            // GiantBat 93 в†’ d35's 441, Slimer 121 в†’ d35's 458,
+            // IlluminantBat 137 в†’ d35's 460, FlyingSnake 226 в†’ d37's 360
+            // вЂ” the vanilla slots are the LeechHead/FlyingDutchman/
             // StardustCellBig/SolarDrakomireRider/WyvernBody2's, `to_u16`'s
             // bijection guard). The nine UNROWED kinds take the 400+ free
-            // band (Demon 62 → 400, IceBat 150 → 401, Lavabat 151 → 402,
-            // GiantFlyingFox 152 → 403, RedDevil 156 → 404, VampireBat
-            // 158 → 405, Vampire 159 → 406, SporeBat 634 → 407,
-            // QueenSlimeMinionPurple 660 → 409) even where the vanilla
-            // slot is free (634/660) — the d37-354-399 collision's union
+            // band (Demon 62 в†’ 400, IceBat 150 в†’ 401, Lavabat 151 в†’ 402,
+            // GiantFlyingFox 152 в†’ 403, RedDevil 156 в†’ 404, VampireBat
+            // 158 в†’ 405, Vampire 159 в†’ 406, SporeBat 634 в†’ 407,
+            // QueenSlimeMinionPurple 660 в†’ 409) even where the vanilla
+            // slot is free (634/660) вЂ” the d37-354-399 collision's union
             // numbering (research/108 addendum). `NPC.cs:9360-9372` /
             // `:9567-9581` / `:10047-10060` / `:10466-10478` /
             // `:10735-10747` / `:10885-10929` / `:10974-10988` /
@@ -696,7 +696,7 @@ impl NpcKind {
             // Scutlix/saucer band (87-92 above). GATE REASSIGN (L-C): the
             // branch's 213-218 band TRIPLE-collides with R10 martian
             // 213/214 (keeps, earliest push) + R50 fishron 219-222 + R55
-            // destroyer 216-218 — the six take the next-free 223-228
+            // destroyer 216-218 вЂ” the six take the next-free 223-228
             // (148 reserved R78 LeechTail). Save-compat safe: the branch
             // had not merged when the ids moved. The vanilla `NPC.type`
             // rides the bestiary entry (`net_id` 87, the segments fold
@@ -845,7 +845,7 @@ impl NpcKind {
             NpcKind::WyvernTail => 228,
             // W4-d34 kinds 1-70 coverage wave: the port-local 266..280 band
             // (free in to_u16/from_u16 AND render_key; the vanilla types ride
-            // cs_id/net_id, NOT these protocol ids — the S1-F-1 separation).
+            // cs_id/net_id, NOT these protocol ids вЂ” the S1-F-1 separation).
             NpcKind::AngryBones => 266,
             NpcKind::CursedSkull => 267,
             NpcKind::OldMan => 268,
@@ -861,18 +861,18 @@ impl NpcKind {
             NpcKind::Vulture => 278,
             NpcKind::Demon => 279,
             NpcKind::BlueJellyfish => 280,
-            // W4-d34 merge-side moves (367 §1, d37 tables): Crab 282→791,
-            // DungeonGuardian 283→792; the PinkJellyfish/Antlion/SpikeBall
+            // W4-d34 merge-side moves (367 В§1, d37 tables): Crab 282в†’791,
+            // DungeonGuardian 283в†’792; the PinkJellyfish/Antlion/SpikeBall
             // dups dropped (g8 owns 745-747). 281-285 cleared for d38.
             NpcKind::Crab => 791,
             NpcKind::DungeonGuardian => 792,
-            // W4-d37 — the NPCID 211-280 kinds-coverage band (census 65, 46
+            // W4-d37 вЂ” the NPCID 211-280 kinds-coverage band (census 65, 46
             // missing ids). The vanilla ids 217-280 collide with the landed
             // port-local bands (217/218 destroyer, 219-222 fishron, 223-228
             // wyvern, 230-236 zombies, 250 nimbus), so the 46 take the next
             // free port-local band 354-399 (above the 353 BlazingWheel; the
             // vanilla `NPC.type` rides `cs_id`/`net_id`, NOT these protocol
-            // ids — the S1-F-1 renumber precedent). Save-compat safe: the
+            // ids вЂ” the S1-F-1 renumber precedent). Save-compat safe: the
             // band is free on main (to_u16 scan, 0 dups).
             NpcKind::CochinealBeetle => 354,
             NpcKind::CyanBeetle => 355,
@@ -920,14 +920,14 @@ impl NpcKind {
             NpcKind::HellArmoredBonesSpikeShield => 397,
             NpcKind::HellArmoredBonesMace => 398,
             NpcKind::HellArmoredBonesSword => 399,
-            // W4-d42 — the NPCID 578-630 roster rides its VANILLA ids
+            // W4-d42 вЂ” the NPCID 578-630 roster rides its VANILLA ids
             // (protocol == NPCID, the d38/d40 vanilla-free precedent; the
-            // 108 union plan §3: protocol space >=489 is free on the union,
+            // 108 union plan В§3: protocol space >=489 is free on the union,
             // so 578-630 need no renumber). The port-local 354-404 band the
-            // first pass used COLLIDED with d37's 354-399 (108 §2a) — lifted.
+            // first pass used COLLIDED with d37's 354-399 (108 В§2a) вЂ” lifted.
             // The eight kinds other lanes own are NOT here: 581/587 (c4
             // style-44), 592/607/615 (c4b style-16), 604/605 (e26b luck),
-            // 606 (c8 style-66) — their ids stay free for those branches.
+            // 606 (c8 style-66) вЂ” their ids stay free for those branches.
             NpcKind::DD2LightningBug => 578,
             NpcKind::BartenderUnconscious => 579,
             NpcKind::WalkingAntlion => 580,
@@ -960,8 +960,8 @@ impl NpcKind {
             NpcKind::Dandelion => 628,
             NpcKind::IceMimic => 629,
             NpcKind::BloodMummy => 630,
-            // W4-c10 — the waterfowl family keeps its vanilla ids (362-365/
-            // 602/603/608/609 are free in the protocol space — a to_u16 scan
+            // W4-c10 вЂ” the waterfowl family keeps its vanilla ids (362-365/
+            // 602/603/608/609 are free in the protocol space вЂ” a to_u16 scan
             // of the tree shows no arm on them). `NPCID.cs:11401-11407`/
             // `:11881-11895`.
             // E8 merge (d37 tables): the Duck quartet rides 731-734
@@ -982,12 +982,12 @@ impl NpcKind {
             // is the WyvernLegs' port-local slot above (`to_u16`'s
             // bijection guard). Its original port-local 354 HARD-collided
             // d37's pushed CochinealBeetle 354 (and d23/d42/g8 claim 354
-            // too) — RETIRED on this branch: the row adopts d37's
+            // too) вЂ” RETIRED on this branch: the row adopts d37's
             // FlyingFish id 359 (its frozen 354-399 band, research/108
-            // §3; the dup-check verdict keeps ONE FlyingFish at 359/cs
-            // 224 with c4's world-sim wiring — the identical arm dedupes
+            // В§3; the dup-check verdict keeps ONE FlyingFish at 359/cs
+            // 224 with c4's world-sim wiring вЂ” the identical arm dedupes
             // at merge). 509/581/587 keep their vanilla ids (free on
-            // every pushed tip — tools/_w4c4_proto_census.js).
+            // every pushed tip вЂ” tools/_w4c4_proto_census.js).
             // `NPC.cs:11885-11897` / `:14841-14853` / `:14868-14880` /
             // `:16623-16637`.
             // E8 merge: FlyingFish 359 is d37's arm above (identical-id
@@ -999,14 +999,14 @@ impl NpcKind {
             // 57 is the GoblinThief's port-local slot above and the
             // Arapaima's 157 is the BoundWizard's (`to_u16`'s bijection
             // guard). Their original port-local 229/237 squatted the 108
-            // §3 reserved cs-owned holes (the Pirate's/JungleCreeperWall's
-            // vanilla types — now also claimed by d125's EmpressOfLight/
+            // В§3 reserved cs-owned holes (the Pirate's/JungleCreeperWall's
+            // vanilla types вЂ” now also claimed by d125's EmpressOfLight/
             // PrismaticLacewing), so they take the free-port band 405/406
             // (above d37's frozen 354-399 + d42's pushed 354-404, below
-            // d35's 108 §3 renumber target 429-461; free on ALL 354 pushed
-            // tips — tools/_w4c4_proto_census.js). 241/465/592/607/615/
+            // d35's 108 В§3 renumber target 429-461; free on ALL 354 pushed
+            // tips вЂ” tools/_w4c4_proto_census.js). 241/465/592/607/615/
             // 688/692 keep their vanilla ids; BloodFeeder 241 is the
-            // dup-check's merge-retire (d37's 373 survives — the row
+            // dup-check's merge-retire (d37's 373 survives вЂ” the row
             // stays until the merge dedupe). `NPC.cs:9489-9501` /
             // `:10989-11002` / `:12105-12118` / `:14483-14495` /
             // `:16679-16693` / `:16795-16808` / `:16892-16904` /
@@ -1020,8 +1020,8 @@ impl NpcKind {
             NpcKind::GoldGoldfish => 592,
             NpcKind::Pupfish => 607,
             NpcKind::Dolphin => 615,
-            // W4-c7 — the firefly family keeps its vanilla ids (355/358/
-            // 654/677 are free in the protocol space — a to_u16 scan of
+            // W4-c7 вЂ” the firefly family keeps its vanilla ids (355/358/
+            // 654/677 are free in the protocol space вЂ” a to_u16 scan of
             // the merged tree shows no arm on them). `NPCID.cs:11387`/
             // `:11393`/`:11985`/`:12031`.
             // E8 merge renumber (d37 tables): 355/358 are d37's
@@ -1031,9 +1031,9 @@ impl NpcKind {
             NpcKind::LightningBug => 736,
             NpcKind::Lavafly => 654,
             NpcKind::Shimmerfly => 677,
-            // W4-c8 — the crawling-critter family keeps its vanilla ids
+            // W4-c8 вЂ” the crawling-critter family keeps its vanilla ids
             // (357/374/375/448/484-487/606 are free in the protocol space
-            // — a to_u16 scan of the tree shows no arm on them).
+            // вЂ” a to_u16 scan of the tree shows no arm on them).
             // `NPCID.cs:11391`/`:11425`/`:11427`/`:11569`/`:11641-11647`/
             // `:11889`.
             // E8 merge (d37 tables): Worm/TruffleWorm/TruffleWormDigger
@@ -1049,7 +1049,7 @@ impl NpcKind {
             // The snail wall-crawler family + its shimmer target (W4-c9):
             // the vanilla ids 359/360/655/677 are free protocol slots (the
             // to_u16 scan: the 354+ band above the landed families is
-            // unclaimed), so they keep their vanilla ids — the
+            // unclaimed), so they keep their vanilla ids вЂ” the
             // AngryNimbus/DungeonSpirit precedent.
             // E8 merge (d37 tables): Snail/GlowingSnail ride 740/741
             // (d37's FlyingFish/FlyingSnake own the vanilla slots;
@@ -1059,25 +1059,25 @@ impl NpcKind {
             NpcKind::Snail => 740,
             NpcKind::GlowingSnail => 741,
             NpcKind::MagmaSnail => 655,
-            // W4-c10 roster tail — the twelve critters keep their vanilla
-            // ids (357/442-448/484-487 are free in the protocol space — a
+            // W4-c10 roster tail вЂ” the twelve critters keep their vanilla
+            // ids (357/442-448/484-487 are free in the protocol space вЂ” a
             // to_u16 scan of the tree shows no arm on them).
             // `NPCID.cs:11391`/`:11557-11569`/`:11641-11647`.
             // E8 merge: the 12-critter tail dropped - Worm rides c8@737,
             // the gold septet + the bait tail are d40's rows above (the
             // dup drops; c10's wiring composes onto the canonical kinds).
             // W4-d25 STYLE-26 wiring: the Unicorn mirrors W4-d35 batch C
-            // (6ed8c22f) verbatim — protocol 440 (the vanilla 86 slot is
+            // (6ed8c22f) verbatim вЂ” protocol 440 (the vanilla 86 slot is
             // the RayGunner's; the merge keep-one). The Wolf's vanilla
             // 155 is PlanterasTentacle's protocol slot, so it takes the
             // next-free port-local 355 (353 BlazingWheel, 354
             // WebbedStylist; 355/356 free across the co-lanes).
             NpcKind::Wolf => 772,
             // W4-d25 STYLE-26 wiring (commit 2): the Tumbleweed keeps its
-            // vanilla id 546 (free across the co-lanes — g10 carries only
+            // vanilla id 546 (free across the co-lanes вЂ” g10 carries only
             // the lang_tables display name, no NpcKind).
             NpcKind::Tumbleweed => 546,
-            // W4-d120 — the unclaimed chatter kinds' port-local band
+            // W4-d120 вЂ” the unclaimed chatter kinds' port-local band
             // (the claim doc `tools/_d120_claim.md`; the vanilla
             // 142/160/178/209 collide with the crawltipede/Stylist/
             // kobold/SwampZombie slots above, 579 is free but the family
@@ -1086,36 +1086,36 @@ impl NpcKind {
             NpcKind::Truffle => 242,
             NpcKind::Steampunker => 243,
             NpcKind::Cyborg => 244,
-            // W4-d125 empress wiring — research/108 R4/E8 renumber EXECUTED
+            // W4-d125 empress wiring вЂ” research/108 R4/E8 renumber EXECUTED
             // (the d37 roster-master reconcile): 229/237 were reserved-cs
-            // hole squats (229 Pirate — d37-owned; 237 JungleCreeperWall).
-            // EmpressOfLight 229→636 RESTORES protocol==cs (its OWN vanilla
-            // id, `NPCID.cs:11949`); PrismaticLacewing 237→742 keeps the
+            // hole squats (229 Pirate вЂ” d37-owned; 237 JungleCreeperWall).
+            // EmpressOfLight 229в†’636 RESTORES protocol==cs (its OWN vanilla
+            // id, `NPCID.cs:11949`); PrismaticLacewing 237в†’742 keeps the
             // small-lane block contiguous (cs 661 rides `cs_id`/ENTRIES).
             NpcKind::EmpressOfLight => 636,
             NpcKind::PrismaticLacewing => 742,
-            // W4-g5 — the two unclaimed aiStyle-8 casters. The RuneWizard's
+            // W4-g5 вЂ” the two unclaimed aiStyle-8 casters. The RuneWizard's
             // vanilla 172 collides with DD2DarkMageT3's port-local 172, so
-            // it takes a port-local id; the RETIRE round moved it 354 → 827
+            // it takes a port-local id; the RETIRE round moved it 354 в†’ 827
             // (research/322: 354 squats d37's CochinealBeetle corridor
             // 354-399, the research/108 E2 kinds-lane rule; 827 is above
             // d39's pushed 817-823 band + the R7 817-826 pin). The
             // LibrarianSkeleton's 693 is free (vanilla).
             NpcKind::RuneWizard => 827,
             NpcKind::LibrarianSkeleton => 693,
-            // W4-g8 lane 1 batch 1 — the d22-d33 UNWIRED machines' kinds.
+            // W4-g8 lane 1 batch 1 вЂ” the d22-d33 UNWIRED machines' kinds.
             // E8 EXECUTED (d37 research/108 S0-S4, the g8 move-table): the
             // 17 OWNED kinds renumber to the port-local 745-761 band (the
-            // 354-387 corridor is d37/d42's — g8 was the squatter); the 17
+            // 354-387 corridor is d37/d42's вЂ” g8 was the squatter); the 17
             // DUPLICATE kinds keep their pushed ids as DROP-PENDING rows
             // (the canonical owners d34/d35/d37 land via their lanes; the
-            // keep-one drops the g8 row at merge — the axis wirings ALL
+            // keep-one drops the g8 row at merge вЂ” the axis wirings ALL
             // stay, the machine-wiring lane's whole point). The vanilla
             // `NPC.type` rides `cs_id`/the bestiary `net_id` unchanged.
             NpcKind::PinkJellyfish => 745, // E8: 356 -> 745 (cs 64)
             NpcKind::Antlion => 746, // E8: 357 -> 746 (cs 69)
             NpcKind::SpikeBall => 747, // E8: 358 -> 747 (cs 70)
-            // W4-g8 lane 1 batch 2 — E8: the owned kinds move to 748-756.
+            // W4-g8 lane 1 batch 2 вЂ” E8: the owned kinds move to 748-756.
             NpcKind::WallCreeper => 748, // E8: 366 -> 748 (cs 164)
             NpcKind::WallCreeperWall => 749, // E8: 367 -> 749 (cs 165)
             NpcKind::IceElemental => 750, // E8: 368 -> 750 (cs 169)
@@ -1125,18 +1125,18 @@ impl NpcKind {
             NpcKind::FloatyGross => 754, // E8: 372 -> 754 (cs 182)
             NpcKind::LostGirl => 755, // E8: 373 -> 755 (cs 195)
             NpcKind::Nymph => 756, // E8: 374 -> 756 (cs 196)
-            // W4-g8 lane 1 batch 3 — E8: the owned bats move to 757-760.
-            // W4-g8 lane 1 batch 4 — E8: RedDevil moves to 761.
-            // W4-g8 machine round 3 — the Vampire 159 census row (the
+            // W4-g8 lane 1 batch 3 вЂ” E8: the owned bats move to 757-760.
+            // W4-g8 lane 1 batch 4 вЂ” E8: RedDevil moves to 761.
+            // W4-g8 machine round 3 вЂ” the Vampire 159 census row (the
             // VampireBat's Transform target). E8 COLLISION FIX: the pushed
             // 388 is d37's RustyArmoredBonesAxe (the 354-399 corridor); the
             // Vampire takes 762, the first free id above the S4 CORE max
             // 766 (d37 SEAL fbb948172 line 1408-1411: only 762 + 788-789
             // were free in d36's old band; 788-790 are RESERVED for d39's
-            // 3 unclaimed kinds — `_d37_seal_final.json` carries no 762).
+            // 3 unclaimed kinds вЂ” `_d37_seal_final.json` carries no 762).
             // The dragonflies (W4-d33): the vanilla ids 595-601 are free
             // protocol slots (the to_u16 scan: no arm above rides them),
-            // so they keep their vanilla ids — the W4-e26 ladybug
+            // so they keep their vanilla ids вЂ” the W4-e26 ladybug
             // precedent. The c10 swim-forms 603/609 stay clear.
             NpcKind::BlackDragonfly => 595,
             NpcKind::BlueDragonfly => 596,
@@ -1147,7 +1147,7 @@ impl NpcKind {
             NpcKind::GoldDragonfly => 601,
             // The fairy critters + the windy balloon (W4-d33 wiring): the
             // constants-copy of d42 batch-2/3's wire rows (86182c57f /
-            // 44f007096 — the 359/360/361/368 port-local band). KEEP-ONE
+            // 44f007096 вЂ” the 359/360/361/368 port-local band). KEEP-ONE
             // (d37c-E3): the union keeps d42's numbering verbatim; the
             // vanilla types 583-585/594 ride cs_id/net_id below (the
             // dragonfly wiring kept its free vanilla slots; these four
@@ -1156,23 +1156,23 @@ impl NpcKind {
             NpcKind::FairyCritterGreen => 584,
             NpcKind::FairyCritterBlue => 585,
             NpcKind::WindyBalloon => 594,
-            // W4-e21 — the bunny statue's pair (46/540): the next-free
+            // W4-e21 вЂ” the bunny statue's pair (46/540): the next-free
             // port-local holes above the wyvern band (the vanilla 46 is
             // the WallOfFlesh's protocol slot, 540 is free but the pair
             // keeps one band). `NPC.cs:9336-9347`.
             NpcKind::PartyBunny => 237,
-            // W4-f42 — the sandstorm debris + desert family: the next-free
+            // W4-f42 вЂ” the sandstorm debris + desert family: the next-free
             // 354..362 band (353 BlazingWheel reserved; the vanilla types
             // ride cs_id/net_id, the bestiary rows).
             // W4-d9 wiring (the d40 7a88c61c/45dbafc3 dragon rows, verbatim):
             // CultistDragonHead..Tail keep their vanilla ids (free in the
-            // protocol space). The 521 squidhead (the d41 band, unrowed —
+            // protocol space). The 521 squidhead (the d41 band, unrowed вЂ”
             // ported here from `NPC.cs:15768-15779`) keeps 521 too.
             NpcKind::AncientCultistSquidhead => 521,
-            // W4-d39 (research/125 §3 + 108 R7): the band 351-420's
+            // W4-d39 (research/125 В§3 + 108 R7): the band 351-420's
             // unclaimed kinds take the port-local 817-826 corridor
             // (R7 re-pin; the original 781-804 guidance was superseded
-            // by the R4-R6 small-lane moves) — vanilla 356 sits inside
+            // by the R4-R6 small-lane moves) вЂ” vanilla 356 sits inside
             // d37's pushed 354-399 protocol band, so vanilla-free
             // numbering is NOT available here.
             NpcKind::Butterfly => 817,
@@ -1182,14 +1182,14 @@ impl NpcKind {
             NpcKind::ChatteringTeethBomb => 821,
             NpcKind::CultistArcherBlue => 822,
             NpcKind::CultistArcherWhite => 823,
-            // W4-d41 — the cavern crawdads/shellies keep their vanilla ids
+            // W4-d41 вЂ” the cavern crawdads/shellies keep their vanilla ids
             // (494-497 are free in the wire space; the pumpkin/frost
             // precedent). `NPCID.cs:11661-11667`.
             NpcKind::Crawdad => 494,
             NpcKind::Crawdad2 => 495,
             NpcKind::GiantShelly => 496,
             NpcKind::GiantShelly2 => 497,
-            // W4-d41 — the nine salamander colours keep their vanilla ids
+            // W4-d41 вЂ” the nine salamander colours keep their vanilla ids
             // (498-506 free in the wire space). `NPCID.cs:11669-11685`.
             NpcKind::Salamander => 498,
             NpcKind::Salamander2 => 499,
@@ -1200,21 +1200,21 @@ impl NpcKind {
             NpcKind::Salamander7 => 504,
             NpcKind::Salamander8 => 505,
             NpcKind::Salamander9 => 506,
-            // W4-d41 — the antlions + the Dune Splicer chain keep their
+            // W4-d41 вЂ” the antlions + the Dune Splicer chain keep their
             // vanilla ids (508-512 free in the wire space).
             // `NPCID.cs:11687-11695`.
             NpcKind::GiantWalkingAntlion => 508,
             NpcKind::DuneSplicerHead => 510,
             NpcKind::DuneSplicerBody => 511,
             NpcKind::DuneSplicerTail => 512,
-            // W4-d41 — the Tomb Crawler chain + the solar fragments keep
+            // W4-d41 вЂ” the Tomb Crawler chain + the solar fragments keep
             // their vanilla ids (513-516/519 free in the wire space).
             // `NPCID.cs:11697-11709`.
             NpcKind::TombCrawlerHead => 513,
             NpcKind::TombCrawlerBody => 514,
             NpcKind::TombCrawlerTail => 515,
             NpcKind::SolarGoop => 519,
-            // W4-d41 — the ancient orbs + the desert ghouls keep their
+            // W4-d41 вЂ” the ancient orbs + the desert ghouls keep their
             // vanilla ids (522-526 free in the wire space).
             // `NPCID.cs:11721-11729`.
             NpcKind::AncientLight => 522,
@@ -1222,7 +1222,7 @@ impl NpcKind {
             NpcKind::DesertGhoul => 524,
             NpcKind::DesertGhoulCorruption => 525,
             NpcKind::DesertGhoulCrimson => 526,
-            // W4-d41 — the hallowed ghoul + the lamias + the sand
+            // W4-d41 вЂ” the hallowed ghoul + the lamias + the sand
             // poachers keep their vanilla ids (527-531 free in the wire
             // space). `NPCID.cs:11731-11739`.
             NpcKind::DesertGhoulHallow => 527,
@@ -1230,7 +1230,7 @@ impl NpcKind {
             NpcKind::DesertLamiaDark => 529,
             NpcKind::DesertScorpionWalk => 530,
             NpcKind::DesertScorpionWall => 531,
-            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // W4-d41 вЂ” the basilisk + the tortured soul + the slimes +
             // the bride keep their vanilla ids (532/534-537 free in the
             // wire space). `NPCID.cs:11741-11751`.
             NpcKind::DesertBeast => 532,
@@ -1238,23 +1238,23 @@ impl NpcKind {
             NpcKind::SlimeSpiked => 535,
             NpcKind::TheBride => 536,
             NpcKind::SandSlime => 537,
-            // W4-d41 — the critters + the tumbler keep their vanilla ids
+            // W4-d41 вЂ” the critters + the tumbler keep their vanilla ids
             // (538-540/546 free in the wire space). `NPCID.cs:11753-11769`.
             NpcKind::SquirrelRed => 538,
             NpcKind::SquirrelGold => 539,
             // The luck critters (W4-e26, E8 keep-one EXECUTED): the Frog
             // takes the d37-E8 small-lane slot 744 (its vanilla proto 361
-            // is contested by d37's Pirate@361 — research/108 E1/E8, the
+            // is contested by d37's Pirate@361 вЂ” research/108 E1/E8, the
             // 731-744 band; cs_id/net_id stay 361, only the wire id moves,
-            // branch-only so no landed save wrote it — the S1-F-1 gate).
+            // branch-only so no landed save wrote it вЂ” the S1-F-1 gate).
             // The Duck 362 row DROPS to c10 (the canonical waterfowl owner,
-            // E8/SEAL keep-one → c10@731); the ladybug pair 604/605 stays
-            // e26's (the d42 ownership flip, research/108 S1 — d42 dropped
+            // E8/SEAL keep-one в†’ c10@731); the ladybug pair 604/605 stays
+            // e26's (the d42 ownership flip, research/108 S1 вЂ” d42 dropped
             // its rows at 49346dba6). 604/605 are free protocol slots.
             NpcKind::Frog => 744,
             NpcKind::LadyBug => 604,
             NpcKind::GoldLadyBug => 605,
-            // W4-g10 lane 3 — the town pets ride their VANILLA ids (the
+            // W4-g10 lane 3 вЂ” the town pets ride their VANILLA ids (the
             // pumpkin/frost precedent): 637/638/656/670/678-684 are all
             // free in the protocol space (the port-local bands stop at
             // 353) and the housing/bestiary/`net_id` consumers key on the
@@ -1280,30 +1280,30 @@ impl NpcKind {
             NpcKind::TownSlimeRed => 682,
             NpcKind::TownSlimeYellow => 683,
             NpcKind::TownSlimeCopper => 684,
-            // Doc-sweep lane 36 — the ShimmerSlime keeps its vanilla id
+            // Doc-sweep lane 36 вЂ” the ShimmerSlime keeps its vanilla id
             // (676 is free in the protocol space; the 677 twin is
             // W4-c7/c9's pushed claim). `NPCID.cs:12029`.
             NpcKind::ShimmerSlime => 676,
-            // W4-f18 first-20 port — the critters take the next-free
+            // W4-f18 first-20 port вЂ” the critters take the next-free
             // port-local band 237.. (229 free but kept as a gap; 230-236
             // are the holiday zombies + blood-moon pair). The vanilla
             // types ride cs_id/net_id (355-360), NOT these protocol ids.
-            // W4-f18 batch 2 — the critters take the next-free band 242..
+            // W4-f18 batch 2 вЂ” the critters take the next-free band 242..
             // (the vanilla types 360-364 ride cs_id/net_id, NOT these).
-            // W4-f18 batch 3 — the critters take the next-free band 247..
+            // W4-f18 batch 3 вЂ” the critters take the next-free band 247..
             // (250/288 are the AngryNimbus/DungeonSpirit's port-local ids;
             // the vanilla types 365-375 ride cs_id/net_id, NOT these).
-            // W4-f18 batch 4 — the next-free band 254.. (the vanilla types
+            // W4-f18 batch 4 вЂ” the next-free band 254.. (the vanilla types
             // 377-430 ride cs_id/net_id, NOT these protocol ids).
             // The Shimmerfly (W4-c9's rowing, adopted by W4-g62 for the
-            // TRAILCACHE WIDENING's 677→60 row): the vanilla id 677 is a
+            // TRAILCACHE WIDENING's 677в†’60 row): the vanilla id 677 is a
             // free protocol slot (the to_u16 scan: the 354+ band above
             // the landed families is unclaimed), so it keeps its vanilla
-            // id — the AngryNimbus/DungeonSpirit precedent. The snail
+            // id вЂ” the AngryNimbus/DungeonSpirit precedent. The snail
             // trio 359/360/655 stays c9's (the merge dedupes).
             // W4-d42 - the vanilla ids 620-624 are free protocol slots
             // (the 108 union plan's VANILLA-FREE band; d42 2d7ac08c3's
-            // rowing, adopted by W4-g62 for the 620→20 trail row — the
+            // rowing, adopted by W4-g62 for the 620в†’20 trail row вЂ” the
             // rest of the roster stays d42's, the merge dedupes).
             NpcKind::YellowCockatiel => 674,
             NpcKind::GrayCockatiel => 675,
@@ -1339,7 +1339,7 @@ impl NpcKind {
             NpcKind::MaggotZombie => 632,
             NpcKind::SporeSkeleton => 635,
             NpcKind::HallowBoss => 773,
-            // W4-d36 census batch 0 — the d37-R7 re-pin band 767-816
+            // W4-d36 census batch 0 вЂ” the d37-R7 re-pin band 767-816
             // (research/108 R7 `a341daa12`; the E4 762-811 draft's head
             // collided c4's Arapaima@762 + d120's towns 763-766, R5/R6;
             // doc-109's 731-768 collided the small-lane 731-761). The
@@ -1349,33 +1349,33 @@ impl NpcKind {
             NpcKind::PenguinBlack => 769,
             NpcKind::GiantTortoise => 770,
             NpcKind::IceTortoise => 771,
-            // W4-d36 E4 — the Wolf (155) at the next R7-band slot.
-            // W4-d36 E4b — Frankenstein (162) at the next R7-band slot
-            // (159 Vampire is g8-claimed — their pushed tip's
-            // `Vampire => 388`, machine round 3 — skipped).
+            // W4-d36 E4 вЂ” the Wolf (155) at the next R7-band slot.
+            // W4-d36 E4b вЂ” Frankenstein (162) at the next R7-band slot
+            // (159 Vampire is g8-claimed вЂ” their pushed tip's
+            // `Vampire => 388`, machine round 3 вЂ” skipped).
             NpcKind::Frankenstein => 780,
-            // W4-d36 E4 batch 2 — the remaining fighters at the next
+            // W4-d36 E4 batch 2 вЂ” the remaining fighters at the next
             // R7-band slots (ascending vanilla order).
             NpcKind::BlackRecluse => 774,
             NpcKind::SwampThing => 775,
             NpcKind::UndeadViking => 776,
-            // W4-d36 E4 batch 3 — the doc-110 §1 definitive table
+            // W4-d36 E4 batch 3 вЂ” the doc-110 В§1 definitive table
             // (780 stays free; the hover trio's 781/782 are fixed).
             NpcKind::CorruptPenguin => 777,
             NpcKind::PigronCorruption => 778,
             NpcKind::PigronHallow => 779,
             NpcKind::PigronCrimson => 783,
             NpcKind::FaceMonster => 784,
-            // W4-d36 E4 batch 4 — the doc-110 §1 definitive table's next
+            // W4-d36 E4 batch 4 вЂ” the doc-110 В§1 definitive table's next
             // four (ascending vanilla order).
             NpcKind::SnowFlinx => 785,
             NpcKind::ArmoredViking => 786,
             NpcKind::Lihzahrd => 787,
             NpcKind::LihzahrdCrawler => 788,
-            // W4-d36 E4 batch 5 (the SEAL batch) — the doc-110 §1 table
+            // W4-d36 E4 batch 5 (the SEAL batch) вЂ” the doc-110 В§1 table
             // with the Lead v640 ID CORRECTION: the d37 tables reserve
-            // 791→Crab / 792→DungeonGuardian (both ALREADY IN MAIN via
-            // d34), so doc-110's old 791/792 assignments are VOID —
+            // 791в†’Crab / 792в†’DungeonGuardian (both ALREADY IN MAIN via
+            // d34), so doc-110's old 791/792 assignments are VOID вЂ”
             // PantlessSkeleton jumps to 795 and SpikedJungleSlime to
             // 796 (verified free: no to_u16 arm carries them).
             NpcKind::HeadacheSkeleton => 789,
@@ -1383,7 +1383,7 @@ impl NpcKind {
             NpcKind::PantlessSkeleton => 795,
             NpcKind::SpikedJungleSlime => 796,
             NpcKind::IcyMerman => 794,
-            // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
+            // W4-d36 census batch 1 вЂ” the aiStyle-5 hover trio at their
             // R7-band slots (ascending vanilla order, the b0 convention).
             NpcKind::Crimera => 781,
             NpcKind::MossHornet => 782,
@@ -1574,7 +1574,7 @@ impl NpcKind {
             75 => NpcKind::GolemFistLeft,
             76 => NpcKind::GolemFistRight,
             77 => NpcKind::GolemHeadFree,
-            // 78-84: the Deerclops/Skeletron-Prime family — the band the
+            // 78-84: the Deerclops/Skeletron-Prime family вЂ” the band the
             // pirates vacated in the `S1-F-1` renumber (`from_u16` resolved
             // these ids to the pirates before it, which is how a saved
             // Deerclops came back as a Pirate Deckhand).
@@ -1601,7 +1601,7 @@ impl NpcKind {
             166 => NpcKind::Princess,
             167 => NpcKind::DyeTrader,
             168 => NpcKind::PartyGirl,
-            // The pirates + the probe + the drone — the `S1-F-1` renumber
+            // The pirates + the probe + the drone вЂ” the `S1-F-1` renumber
             // (`to_u16` above): the family moved off the 78-84
             // Deerclops/Skeletron-Prime band to the contiguous 182-188.
             182 => NpcKind::PirateDeckhand,
@@ -1611,13 +1611,13 @@ impl NpcKind {
             186 => NpcKind::PirateCaptain,
             187 => NpcKind::MartianProbe,
             188 => NpcKind::MartianDrone,
-            // The bubble/turret pair (`S1-F-13d`) — `NPC.cs:13882` (384)
+            // The bubble/turret pair (`S1-F-13d`) вЂ” `NPC.cs:13882` (384)
             // and `:13922` (387) ride the port-local 213/214.
             213 => NpcKind::ForceBubble,
             214 => NpcKind::MartianTurret,
             // The Pumpkin Moon family (`S1-F-13b`): the vanilla ids
             // 305-314/315/325/326/327/329/330 decode here (the same ids
-            // `to_u16` encodes above) — they sit above the whole port-local
+            // `to_u16` encodes above) вЂ” they sit above the whole port-local
             // space, so no decode arm below ever sees them.
             // `NPC.cs:12929-12977` (305-314), `:12978` (315), `:13115`
             // (325), `:13129` (326), `:13142` (327), `:13175` (329),
@@ -1640,7 +1640,7 @@ impl NpcKind {
             329 => NpcKind::Hellhound,
             330 => NpcKind::Poltergeist,
             // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
-            // 345-352 decode here (the same ids `to_u16` encodes above) —
+            // 345-352 decode here (the same ids `to_u16` encodes above) вЂ”
             // they sit above the whole port-local space, so no decode arm
             // below ever sees them. The 338-344 band lands on a separate
             // task row. `NPC.cs:13369` (345), `:13386` (346), `:13400`
@@ -1678,12 +1678,12 @@ impl NpcKind {
             210 => NpcKind::TwiggyZombie,
             211 => NpcKind::FemaleZombie,
             212 => NpcKind::ZombieRaincoat,
-            // S1-D-3 W-9 fishron wiring — the gate-reassigned 219..222 decode arms (`to_u16` above).
+            // S1-D-3 W-9 fishron wiring вЂ” the gate-reassigned 219..222 decode arms (`to_u16` above).
             219 => NpcKind::DukeFishron,
             220 => NpcKind::DetonatingBubble,
             221 => NpcKind::Sharkron,
             222 => NpcKind::Sharkron2,
-            // S1-D-3z — the holiday zombie band + blood-moon pair decode
+            // S1-D-3z вЂ” the holiday zombie band + blood-moon pair decode
             // here (the same ids `to_u16` encodes above; GATE REASSIGN
             // L-I re-scan post-wyvern: 230..236 next-free; fishron
             // 219-222 + wyvern 223-228 landed). `NPC.cs:13033-13074`
@@ -1705,7 +1705,7 @@ impl NpcKind {
             342 => NpcKind::GingerbreadMan,
             343 => NpcKind::Yeti,
             344 => NpcKind::Everscream,
-            // The Queen Bee's volley minions (S1-D-3 W-3) — the gate-
+            // The Queen Bee's volley minions (S1-D-3 W-3) вЂ” the gate-
             // reassigned 149/152 holes (`to_u16` above; the vanilla 210/211
             // slots ride the wave-A Twiggy/Female zombies; 353 stays R54c's).
             149 => NpcKind::Bee,
@@ -1719,47 +1719,47 @@ impl NpcKind {
             // The small-kinds wiring wave: 353 is the BlazingWheel's
             // port-local id (the vanilla 72 slot is the MartianWalker's);
             // 250/288 keep their vanilla ids (`to_u16` above). ForceBubble
-            // decodes at S1-F-13d's 213 (gate dedupe — the branch's 384 freed).
+            // decodes at S1-F-13d's 213 (gate dedupe вЂ” the branch's 384 freed).
             353 => NpcKind::BlazingWheel,
             250 => NpcKind::AngryNimbus,
             288 => NpcKind::DungeonSpirit,
-            // W4-d38 b7 — decode at the vanilla ids.
+            // W4-d38 b7 вЂ” decode at the vanilla ids.
             333 => NpcKind::SlimeRibbonWhite,
             334 => NpcKind::SlimeRibbonYellow,
             335 => NpcKind::SlimeRibbonGreen,
             336 => NpcKind::SlimeRibbonRed,
             337 => NpcKind::BunnyXmas,
-            // W4-d38 b6 — decode at the vanilla ids.
+            // W4-d38 b6 вЂ” decode at the vanilla ids.
             318 => NpcKind::DemonEyeSpaceship,
             322 => NpcKind::SkeletonTopHat,
             323 => NpcKind::SkeletonAstonaut,
             324 => NpcKind::SkeletonAlien,
             328 => NpcKind::PumpkingBlade,
-            // W4-d38 b5 — decode at the vanilla ids.
+            // W4-d38 b5 вЂ” decode at the vanilla ids.
             302 => NpcKind::SlimeMasked,
             303 => NpcKind::BunnySlimed,
             304 => NpcKind::HoppinJack,
             316 => NpcKind::Ghost,
             317 => NpcKind::DemonEyeOwl,
-            // W4-d38 b4 — decode at the vanilla ids.
+            // W4-d38 b4 вЂ” decode at the vanilla ids.
             297 => NpcKind::BirdBlue,
             298 => NpcKind::BirdRed,
             299 => NpcKind::Squirrel,
             300 => NpcKind::Mouse,
             301 => NpcKind::Raven,
-            // W4-d38 b3 — decode at the vanilla ids.
+            // W4-d38 b3 вЂ” decode at the vanilla ids.
             292 => NpcKind::TacticalSkeleton,
             293 => NpcKind::SkeletonCommando,
             294 => NpcKind::AngryBonesBig,
             295 => NpcKind::AngryBonesBigMuscle,
             296 => NpcKind::AngryBonesBigHelmet,
-            // W4-d38 b2 — decode at the vanilla ids.
+            // W4-d38 b2 вЂ” decode at the vanilla ids.
             286 => NpcKind::DiabolistWhite,
             287 => NpcKind::BoneLee,
             289 => NpcKind::GiantCursedSkull,
             290 => NpcKind::Paladin,
             291 => NpcKind::SkeletonSniper,
-            // W4-d38 b1 — decode at the vanilla ids.
+            // W4-d38 b1 вЂ” decode at the vanilla ids.
             281 => NpcKind::RaggedCaster,
             282 => NpcKind::RaggedCasterOpenCoat,
             283 => NpcKind::Necromancer,
@@ -1907,11 +1907,11 @@ impl NpcKind {
             278 => NpcKind::Vulture,
             279 => NpcKind::Demon,
             280 => NpcKind::BlueJellyfish,
-            // W4-d34 merge-side moves (367 §1): Crab@791 / DungeonGuardian@792
+            // W4-d34 merge-side moves (367 В§1): Crab@791 / DungeonGuardian@792
             // (the 281-285 squat cleared for d38's anchor band).
             791 => NpcKind::Crab,
             792 => NpcKind::DungeonGuardian,
-            // W4-d37 — the NPCID 211-280 band's port-local protocol ids
+            // W4-d37 вЂ” the NPCID 211-280 band's port-local protocol ids
             // (`to_u16` above; the vanilla 217-280 collide with the landed
             // bands). 354-399, free on main.
             354 => NpcKind::CochinealBeetle,
@@ -1960,7 +1960,7 @@ impl NpcKind {
             397 => NpcKind::HellArmoredBonesSpikeShield,
             398 => NpcKind::HellArmoredBonesMace,
             399 => NpcKind::HellArmoredBonesSword,
-            // W4-d42 — the NPCID 578-630 roster's VANILLA ids (`to_u16`
+            // W4-d42 вЂ” the NPCID 578-630 roster's VANILLA ids (`to_u16`
             // above; the 108 union plan's vanilla-free band). 581/587/592/
             // 604/605/606/607/615 stay free for c4/c4b/e26b/c8.
             578 => NpcKind::DD2LightningBug,
@@ -1995,7 +1995,7 @@ impl NpcKind {
             628 => NpcKind::Dandelion,
             629 => NpcKind::IceMimic,
             630 => NpcKind::BloodMummy,
-            // W4-c10 — the waterfowl family's vanilla ids (`to_u16` above).
+            // W4-c10 вЂ” the waterfowl family's vanilla ids (`to_u16` above).
             // E8 merge: 731-734 (the 362-365 slots are d37's); the
             // Seagull/Grebe + Rat..BloodMummy band are d42's arms above.
             731 => NpcKind::Duck,
@@ -2006,7 +2006,7 @@ impl NpcKind {
             // 355/289 dup arms dropped per the d37 E8 tables (d34/d38 own).
             694 => NpcKind::WaterBoltMimic,
             // W4-c4 (the style-44 swimmers): 359 is the FlyingFish's
-            // port-local id — d37's frozen-band row ADOPTED here (the
+            // port-local id вЂ” d37's frozen-band row ADOPTED here (the
             // original 354 is retired: d37's CochinealBeetle owns it);
             // 509/581/587 keep their vanilla ids (`to_u16` above).
             // E8 merge: 359 decodes at d37's arm above (identical-id).
@@ -2016,7 +2016,7 @@ impl NpcKind {
             // W4-c4 (the style-16 swimmers): 405/406 are the
             // CorruptGoldfish/Arapaima port-local ids (the vanilla 57/157
             // slots are the GoblinThief's/BoundWizard's; the original
-            // 229/237 squatted the reserved cs-owned holes — renumbered
+            // 229/237 squatted the reserved cs-owned holes вЂ” renumbered
             // to the free-port band, `to_u16` above); 241/465/592/607/
             // 615/688/692 keep their vanilla ids.
             // E8 merge drops: 405/241/688/692 (d34/d37/d43 own).
@@ -2025,13 +2025,13 @@ impl NpcKind {
             592 => NpcKind::GoldGoldfish,
             607 => NpcKind::Pupfish,
             615 => NpcKind::Dolphin,
-            // W4-c7 — the firefly family's vanilla ids (`to_u16` above).
+            // W4-c7 вЂ” the firefly family's vanilla ids (`to_u16` above).
             // E8 merge renumber: 735/736 (the 355/358 slots are d37's).
             735 => NpcKind::Firefly,
             736 => NpcKind::LightningBug,
             654 => NpcKind::Lavafly,
             677 => NpcKind::Shimmerfly,
-            // W4-c8 — the crawling-critter family's vanilla ids (`to_u16`
+            // W4-c8 вЂ” the crawling-critter family's vanilla ids (`to_u16`
             // above).
             // E8 merge: 737/738/739 (the 357/374/375 slots are d37's);
             // the 448/484-487 dups dropped (d40's decode arms above).
@@ -2046,31 +2046,31 @@ impl NpcKind {
             740 => NpcKind::Snail,
             741 => NpcKind::GlowingSnail,
             655 => NpcKind::MagmaSnail,
-            // W4-c10 roster tail — the twelve critters' vanilla ids
+            // W4-c10 roster tail вЂ” the twelve critters' vanilla ids
             // (`to_u16` above).
             // E8 merge: the 12-critter tail dropped (c8/d40's arms above).
             // W4-d25 STYLE-26 wiring (the to_u16 rows above).
             772 => NpcKind::Wolf,
             546 => NpcKind::Tumbleweed,
-            // W4-d120 — the chatter kinds' port-local band (`to_u16` above).
+            // W4-d120 вЂ” the chatter kinds' port-local band (`to_u16` above).
             241 => NpcKind::SantaClaus,
             242 => NpcKind::Truffle,
             243 => NpcKind::Steampunker,
             244 => NpcKind::Cyborg,
-            // W4-d125 empress wiring (`to_u16` above — the 108 R4/E8
+            // W4-d125 empress wiring (`to_u16` above вЂ” the 108 R4/E8
             // renumber: 636 protocol==cs, 742 the small-lane block).
             636 => NpcKind::EmpressOfLight,
             742 => NpcKind::PrismaticLacewing,
-            // W4-g5 — the two unclaimed aiStyle-8 casters (`to_u16` above).
+            // W4-g5 вЂ” the two unclaimed aiStyle-8 casters (`to_u16` above).
             827 => NpcKind::RuneWizard,
             693 => NpcKind::LibrarianSkeleton,
-            // W4-g8 lane 1 batch 1 — E8 EXECUTED: the owned kinds decode
+            // W4-g8 lane 1 batch 1 вЂ” E8 EXECUTED: the owned kinds decode
             // from 745-761; the DROP-PENDING dups keep their pushed ids
             // until the merge keep-one (see `to_u16`'s E8 note).
             745 => NpcKind::PinkJellyfish, // E8: 356 -> 745
             746 => NpcKind::Antlion, // E8: 357 -> 746
             747 => NpcKind::SpikeBall, // E8: 358 -> 747
-            // W4-g8 lane 1 batch 2 — E8: the owned kinds decode 748-756.
+            // W4-g8 lane 1 batch 2 вЂ” E8: the owned kinds decode 748-756.
             748 => NpcKind::WallCreeper, // E8: 366 -> 748
             749 => NpcKind::WallCreeperWall, // E8: 367 -> 749
             750 => NpcKind::IceElemental, // E8: 368 -> 750
@@ -2080,10 +2080,10 @@ impl NpcKind {
             754 => NpcKind::FloatyGross, // E8: 372 -> 754
             755 => NpcKind::LostGirl, // E8: 373 -> 755
             756 => NpcKind::Nymph, // E8: 374 -> 756
-            // W4-g8 lane 1 batch 3 — E8: the owned bats decode 757-760.
-            // W4-g8 lane 1 batch 4 — E8: RedDevil decodes from 761.
-            // W4-g8 machine round 3 — the Vampire 159 census row (E8
-            // COLLISION FIX: 388 is d37's RustyArmoredBonesAxe; 762 —
+            // W4-g8 lane 1 batch 3 вЂ” E8: the owned bats decode 757-760.
+            // W4-g8 lane 1 batch 4 вЂ” E8: RedDevil decodes from 761.
+            // W4-g8 machine round 3 вЂ” the Vampire 159 census row (E8
+            // COLLISION FIX: 388 is d37's RustyArmoredBonesAxe; 762 вЂ”
             // 788-790 stay reserved for d39's 3 unclaimed kinds).
             // The dragonflies (W4-d33): the vanilla ids kept (`to_u16`
             // above).
@@ -2100,11 +2100,11 @@ impl NpcKind {
             584 => NpcKind::FairyCritterGreen,
             585 => NpcKind::FairyCritterBlue,
             594 => NpcKind::WindyBalloon,
-            // W4-e21 — the bunny pair's port-local holes (`to_u16` above).
+            // W4-e21 вЂ” the bunny pair's port-local holes (`to_u16` above).
             237 => NpcKind::PartyBunny,
-            // W4-f42 — the sandstorm debris + desert family (`to_u16`'s
+            // W4-f42 вЂ” the sandstorm debris + desert family (`to_u16`'s
             // 354..362 band).
-            // W4-d9 wiring: the vanilla ids (`to_u16` above) — the d40
+            // W4-d9 wiring: the vanilla ids (`to_u16` above) вЂ” the d40
             // dragon rows + the ported 521 squidhead.
             521 => NpcKind::AncientCultistSquidhead,
             // W4-d39: the port-local 817+ band (`to_u16` above, 108 R7).
@@ -2115,12 +2115,12 @@ impl NpcKind {
             821 => NpcKind::ChatteringTeethBomb,
             822 => NpcKind::CultistArcherBlue,
             823 => NpcKind::CultistArcherWhite,
-            // W4-d41 — the cavern crawdads/shellies (`to_u16` above).
+            // W4-d41 вЂ” the cavern crawdads/shellies (`to_u16` above).
             494 => NpcKind::Crawdad,
             495 => NpcKind::Crawdad2,
             496 => NpcKind::GiantShelly,
             497 => NpcKind::GiantShelly2,
-            // W4-d41 — the nine salamander colours (`to_u16` above).
+            // W4-d41 вЂ” the nine salamander colours (`to_u16` above).
             498 => NpcKind::Salamander,
             499 => NpcKind::Salamander2,
             500 => NpcKind::Salamander3,
@@ -2130,36 +2130,36 @@ impl NpcKind {
             504 => NpcKind::Salamander7,
             505 => NpcKind::Salamander8,
             506 => NpcKind::Salamander9,
-            // W4-d41 — the antlions + the Dune Splicer chain (`to_u16`).
+            // W4-d41 вЂ” the antlions + the Dune Splicer chain (`to_u16`).
             508 => NpcKind::GiantWalkingAntlion,
             510 => NpcKind::DuneSplicerHead,
             511 => NpcKind::DuneSplicerBody,
             512 => NpcKind::DuneSplicerTail,
-            // W4-d41 — the Tomb Crawler chain + the solar fragments.
+            // W4-d41 вЂ” the Tomb Crawler chain + the solar fragments.
             513 => NpcKind::TombCrawlerHead,
             514 => NpcKind::TombCrawlerBody,
             515 => NpcKind::TombCrawlerTail,
             519 => NpcKind::SolarGoop,
-            // W4-d41 — the ancient orbs + the desert ghouls.
+            // W4-d41 вЂ” the ancient orbs + the desert ghouls.
             522 => NpcKind::AncientLight,
             523 => NpcKind::AncientDoom,
             524 => NpcKind::DesertGhoul,
             525 => NpcKind::DesertGhoulCorruption,
             526 => NpcKind::DesertGhoulCrimson,
-            // W4-d41 — the hallowed ghoul + the lamias + the sand poachers.
+            // W4-d41 вЂ” the hallowed ghoul + the lamias + the sand poachers.
             527 => NpcKind::DesertGhoulHallow,
             528 => NpcKind::DesertLamiaLight,
             529 => NpcKind::DesertLamiaDark,
             530 => NpcKind::DesertScorpionWalk,
             531 => NpcKind::DesertScorpionWall,
-            // W4-d41 — the basilisk + the tortured soul + the slimes +
+            // W4-d41 вЂ” the basilisk + the tortured soul + the slimes +
             // the bride.
             532 => NpcKind::DesertBeast,
             534 => NpcKind::DemonTaxCollector,
             535 => NpcKind::SlimeSpiked,
             536 => NpcKind::TheBride,
             537 => NpcKind::SandSlime,
-            // W4-d41 — the critters + the tumbler.
+            // W4-d41 вЂ” the critters + the tumbler.
             538 => NpcKind::SquirrelRed,
             539 => NpcKind::SquirrelGold,
             // The luck critters (W4-e26, E8 keep-one EXECUTED): the Frog
@@ -2169,7 +2169,7 @@ impl NpcKind {
             744 => NpcKind::Frog,
             604 => NpcKind::LadyBug,
             605 => NpcKind::GoldLadyBug,
-            // W4-g10 lane 3 — the town pets decode at their vanilla ids
+            // W4-g10 lane 3 вЂ” the town pets decode at their vanilla ids
             // (`to_u16` above; `NPCID.cs:11951`/`:11953`/`:11989`/
             // `:12017`/`:12033-12043`).
             637 => NpcKind::TownCat,
@@ -2193,21 +2193,21 @@ impl NpcKind {
             682 => NpcKind::TownSlimeRed,
             683 => NpcKind::TownSlimeYellow,
             684 => NpcKind::TownSlimeCopper,
-            // Doc-sweep lane 36 — the ShimmerSlime's vanilla id (`to_u16`).
+            // Doc-sweep lane 36 вЂ” the ShimmerSlime's vanilla id (`to_u16`).
             676 => NpcKind::ShimmerSlime,
-            // W4-f18 first-20 port — the critters' 237.. band (`to_u16`
+            // W4-f18 first-20 port вЂ” the critters' 237.. band (`to_u16`
             // above). `NPCID.cs:11387-11395`.
-            // W4-f18 batch 2 — the critters' 242.. band (`to_u16` above).
+            // W4-f18 batch 2 вЂ” the critters' 242.. band (`to_u16` above).
             // `NPCID.cs:11397-11405`.
-            // W4-f18 batch 3 — the critters' 247.. band (`to_u16` above;
+            // W4-f18 batch 3 вЂ” the critters' 247.. band (`to_u16` above;
             // 250/288 are the AngryNimbus/DungeonSpirit's). `NPCID.cs:
             // 11407-11427`.
-            // W4-f18 batch 4 — the 254.. band (`to_u16` above).
+            // W4-f18 batch 4 вЂ” the 254.. band (`to_u16` above).
             // `NPCID.cs:11415-11541`.
             // The Shimmerfly (W4-c9's rowing, adopted by W4-g62): the
             // vanilla id kept (`to_u16` above).
             // W4-d42 - the vanilla-free band (d42 2d7ac08c3's rowing,
-            // adopted by W4-g62 for the 620→20 trail row).
+            // adopted by W4-g62 for the 620в†’20 trail row).
             674 => NpcKind::YellowCockatiel,
             675 => NpcKind::GrayCockatiel,
             669 => NpcKind::Stinkbug,
@@ -2242,7 +2242,7 @@ impl NpcKind {
             632 => NpcKind::MaggotZombie,
             635 => NpcKind::SporeSkeleton,
             773 => NpcKind::HallowBoss,
-            // W4-d36 census batch 0 — the R7 767-band decode (the foreign
+            // W4-d36 census batch 0 вЂ” the R7 767-band decode (the foreign
             // stash's `NpcKind::X => NpcKind::X` generator bug FIXED:
             // the match scrutinee is the u16 id, the arm is id => kind).
             767 => NpcKind::ToxicSludge,
@@ -2250,25 +2250,25 @@ impl NpcKind {
             769 => NpcKind::PenguinBlack,
             770 => NpcKind::GiantTortoise,
             771 => NpcKind::IceTortoise,
-            // W4-d36 E4 — the Wolf's decode arm.
-            // W4-d36 E4b — Frankenstein's decode arm.
+            // W4-d36 E4 вЂ” the Wolf's decode arm.
+            // W4-d36 E4b вЂ” Frankenstein's decode arm.
             780 => NpcKind::Frankenstein,
-            // W4-d36 E4 batch 2 — the fighters' decode arms.
+            // W4-d36 E4 batch 2 вЂ” the fighters' decode arms.
             774 => NpcKind::BlackRecluse,
             775 => NpcKind::SwampThing,
             776 => NpcKind::UndeadViking,
-            // W4-d36 E4 batch 3 — the doc-110 §1 table's decode arms.
+            // W4-d36 E4 batch 3 вЂ” the doc-110 В§1 table's decode arms.
             777 => NpcKind::CorruptPenguin,
             778 => NpcKind::PigronCorruption,
             779 => NpcKind::PigronHallow,
             783 => NpcKind::PigronCrimson,
             784 => NpcKind::FaceMonster,
-            // W4-d36 E4 batch 4 — the doc-110 §1 table's decode arms.
+            // W4-d36 E4 batch 4 вЂ” the doc-110 В§1 table's decode arms.
             785 => NpcKind::SnowFlinx,
             786 => NpcKind::ArmoredViking,
             787 => NpcKind::Lihzahrd,
             788 => NpcKind::LihzahrdCrawler,
-            // W4-d36 E4 batch 5 — the SEAL batch's decode arms (the Lead
+            // W4-d36 E4 batch 5 вЂ” the SEAL batch's decode arms (the Lead
             // v640 correction: 791/792 stay d37-reserved, 795/796 take
             // the PantlessSkeleton / SpikedJungleSlime).
             789 => NpcKind::HeadacheSkeleton,
@@ -2276,7 +2276,7 @@ impl NpcKind {
             795 => NpcKind::PantlessSkeleton,
             796 => NpcKind::SpikedJungleSlime,
             794 => NpcKind::IcyMerman,
-            // W4-d36 census batch 1 — the hover trio's decode arms.
+            // W4-d36 census batch 1 вЂ” the hover trio's decode arms.
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
             793 => NpcKind::Moth,
@@ -3987,6 +3987,9 @@ impl NpcKind {
             NpcKind::Crimera
             | NpcKind::MossHornet
             | NpcKind::Moth => "NPC_Hit_1",
+            // W4-g5 — the two casters' `HitSound` rows: `SoundID.NPCHit2`
+            // (`NPC.cs:11162`/`:17729`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Hit_2",
             _ => return None,
         })
     }
@@ -4946,6 +4949,9 @@ impl NpcKind {
             NpcKind::Crimera
             | NpcKind::MossHornet
             | NpcKind::Moth => "NPC_Killed_1",
+            // W4-g5 — the two casters' `DeathSound` rows: `SoundID.NPCDeath2`
+            // (`NPC.cs:11163`/`:17730`).
+            NpcKind::RuneWizard | NpcKind::LibrarianSkeleton => "NPC_Killed_2",
             _ => return None,
         })
     }
@@ -5225,6 +5231,24 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion
             | NpcKind::FlyingAntlion
             | NpcKind::EyeballFlyingFish => true,
+            // The dragonflies (W4-d33): the `SetDefaults` noGravity row
+            // (`NPC.cs:16732`). kb 1 (the head default — the row writes
+            // none), so a strike can push them; the aiStyle-114 arm owns
+            // the flight.
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => true,
+            // The fairy critters + the windy balloon (W4-d33 wiring): the
+            // `SetDefaults` noGravity rows (`NPC.cs:16605` / `:16718`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => true,
             // W4-c7 — the firefly family's `noGravity = true` rows
             // (`NPC.cs:13528`/`:13570`/`:17276`/`:17590`); all four keep
             // the class-default kb 1, so the Y-pop selector reaches them.
@@ -5981,6 +6005,25 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion
             | NpcKind::FlyingAntlion
             | NpcKind::EyeballFlyingFish => 44,
+            // The dragonflies (W4-d33) — aiStyle 114 (`NPC.cs:16725`, the
+            // shared 595-601 row): `AI_114_Dragonflies`
+            // (`NPC.cs:47716-47886`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 114,
+            // The fairy critters (W4-d33 wiring) — aiStyle 112
+            // (`NPC.cs:16587`, the shared 583-585 row): `AI_112_FairyCritter`
+            // (`NPC.cs:48088-48650`). The windy balloon — aiStyle 113
+            // (`NPC.cs:16711`): `AI_113_WindyBalloon` (`:47888-48065`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => 112,
+            NpcKind::WindyBalloon => 113,
             // aiStyle 64 — W4-c7, the firefly family: `NPC.cs:13521` (355),
             // `:13563` (358), `:17269` (654), `:17583` (677) — the four
             // `this.aiStyle = 64;` rows of the SetDefaults census.
@@ -7259,6 +7302,24 @@ impl NpcKind {
             NpcKind::EyeballFlyingFish => (32.0, 18.0),
             NpcKind::GiantFlyingAntlion => (40.0, 31.0),
             NpcKind::FlyingAntlion => (30.0, 22.0),
+            // The dragonflies (W4-d33): 10x10 each (`NPC.cs:16723-16724`,
+            // the shared 595-601 row).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => (10.0, 10.0),
+            // The fairy critters (W4-d33 wiring): 18x20 each
+            // (`NPC.cs:16585-16586`, the shared 583-585 row); the windy
+            // balloon 20x20 (`:16709-16710` — the aiStyle-113 arm scales
+            // the box to the slave each tick). d42 batch-2/3's rows,
+            // constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => (18.0, 20.0),
+            NpcKind::WindyBalloon => (20.0, 20.0),
             // W4-c7 — the firefly family's boxes: 355/654/677 10x10
             // (`NPC.cs:13519-13520`/`:17267-17268`/`:17581-17582`), 358
             // 12x12 (`:13561-13562`).
@@ -7997,6 +8058,33 @@ impl NpcKind {
             // keep their own - the AI arms read cs_id; the bestiary
             // folds in entry_for_npc only).
             NpcKind::BloodMummy => 630,
+            // The dragonflies (W4-d33): the vanilla `NPC.type` ids — the
+            // bug-net catch tables (`bug_net::catch_item`'s 595-601 row),
+            // the AI arms' type gates and the statue rosters read them
+            // (`NPCID.cs:11867-11875`). The four Hide=true colours fold
+            // their bestiary CREDIT onto 599 (`entry_for_npc`), but each
+            // keeps its own type here — the e26 ladybug / c8 crawler
+            // precedent.
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
+            NpcKind::YellowDragonfly => 600,
+            NpcKind::GoldDragonfly => 601,
+            // The fairy critters + the windy balloon (W4-d33 wiring): the
+            // TRUE vanilla types — the bug-net catch tables
+            // (`bug_net::catch_item`'s 583/584/585 rows), the AI arms' type
+            // gates and the release chain read them (`NPCID.cs:11843-11847`
+            // / `:11865`). None of the four folds (all three fairies are
+            // VISIBLE cards — the `NPCID.cs:5148-5169` draw modifiers carry
+            // Position/Direction, no Hide; the balloon has its own card
+            // with a CustomTexturePath, `:5232-5239`). d42 batch-2/3's
+            // hand rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink => 583,
+            NpcKind::FairyCritterGreen => 584,
+            NpcKind::FairyCritterBlue => 585,
+            NpcKind::WindyBalloon => 594,
             // W4-c8 — the crawling-critter family's vanilla `NPC.type`
             // ids (the AI arm's per-type gates read them):
             // `NPCID.cs:11391`/`:11425`/`:11427`/`:11569`/`:11641-11647`/
@@ -9134,6 +9222,21 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion => 90,
             NpcKind::FlyingAntlion => 60,
             NpcKind::EyeballFlyingFish => 300,
+            // The dragonflies (W4-d33): lifeMax 5 each (`NPC.cs:16728`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 5,
+            // The fairy critters (W4-d33 wiring): lifeMax 5 each
+            // (`NPC.cs:16590`); the windy balloon lifeMax 1 (`:16715`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue => 5,
+            NpcKind::WindyBalloon => 1,
             // W4-c7 — the firefly family's `lifeMax = 5` rows
             // (`NPC.cs:13524`/`:13566`/`:17272`/`:17586`).
             NpcKind::Firefly | NpcKind::LightningBug | NpcKind::Lavafly | NpcKind::Shimmerfly => 5,
@@ -10046,6 +10149,21 @@ impl NpcKind {
             NpcKind::GiantFlyingAntlion => 34,
             NpcKind::FlyingAntlion => 29,
             NpcKind::EyeballFlyingFish => 35,
+            // The dragonflies (W4-d33): damage 0 each (`NPC.cs:16726`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly
+            | NpcKind::YellowDragonfly
+            | NpcKind::GoldDragonfly => 0,
+            // The fairy critters (W4-d33 wiring): damage 0 each
+            // (`NPC.cs:16588`); the windy balloon damage 0 (`:16712`).
+            // d42 batch-2/3's rows, constants-copy (keep-one d37c-E3).
+            NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::WindyBalloon => 0,
             // W4-c7 — the firefly family's `damage = 0` rows
             // (`NPC.cs:13522`/`:13564`/`:17270`/`:17584`) — the 677 threat
             // scan's own `damage > 0` gate excludes them from each other.

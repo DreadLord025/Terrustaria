@@ -9,7 +9,8 @@
 //! of lists.
 //!
 //! Ported here: `WorldItem.UpdateItem_VisualEffects`'s RNG-free `AddLight`
-//! arms (`WorldItem.cs:1295-1648`). The `Main.rand`-drawing flicker arms and
+//! arms (`WorldItem.cs:1295-1648`) and `UpdateShimmer`'s shimmered glow
+//! (`WorldItem.cs:482`, W4-g20 — [`shimmer_light`]). The `Main.rand`-drawing flicker arms and
 //! the `Main.essScale` fragment arms (`:1206-1293`) live in
 //! [`crate::item_lights`] and feed the same list from the fixed step (their
 //! draws ride the `UpdateItems` stream); the dust-gated arms (116, 501 and
@@ -142,6 +143,31 @@ pub(crate) fn shine_light(p: &crate::player::Player) -> Option<(i32, i32, [f32; 
     }
     let (cx, cy) = p.center();
     Some((cx as i32 / 16, cy as i32 / 16, [0.8, 0.95, 1.0]))
+}
+
+/// `WorldItem.UpdateShimmer`'s shimmered glow (`WorldItem.cs:482`, W4-g20):
+/// `Lighting.AddLight(base.Center, (1f - shimmerTime) * 0.8f, …)` — a white
+/// light that fades as the transformed drop's ramp dries back to 0. The
+/// `AddLight(Vector2, …)` overload truncates the quotient per axis
+/// (`Lighting.cs:140-143`, `XAnchor::Center`). RNG-free: the `Next(30)` dust
+/// branch ahead of it (`:459-481`) is skipped wholesale (the shimmer dust
+/// pass is not ported), so this feeds from the frame pass beside
+/// [`item_light`] without touching the `UpdateItems` stream.
+pub(crate) fn shimmer_light(
+    shimmered: bool,
+    shimmer_time: f32,
+    pos: Vec2,
+    size: f32,
+) -> Option<(i32, i32, [f32; 3])> {
+    if !shimmered {
+        return None;
+    }
+    let v = (1.0 - shimmer_time) * 0.8;
+    Some((
+        tile_x(pos, size, XAnchor::Center),
+        tile_y(pos, size, XAnchor::Center),
+        [v, v, v],
+    ))
 }
 
 /// `WorldItem.UpdateItem_VisualEffects` (`WorldItem.cs:1204-1649`): the
@@ -533,6 +559,39 @@ mod tests {
         let (x2, _, _) = item_light(&def(1970), Vec2::new(-20.0, -20.0), 16.0, false, &params())
             .expect("1970 lights");
         assert_eq!(x2, 0);
+    }
+
+    /// W4-g20 — `WorldItem.UpdateShimmer`'s `:482` glow: only a shimmered
+    /// drop emits, the white amount is `(1 - shimmerTime) * 0.8` and the
+    /// anchor is the `AddLight(Vector2, …)` quotient truncation.
+    #[test]
+    fn w4_g20_the_shimmered_glow_fades_with_the_ramp() {
+        // Not shimmered → no light, whatever the ramp says.
+        assert!(shimmer_light(false, 0.5, Vec2::ZERO, 14.0).is_none());
+        // Fresh transform (`shimmerTime = 1`, `:632`/`:1837`) → fully dark.
+        let (x, y, rgb) = shimmer_light(true, 1.0, Vec2::new(160.0, 176.0), 14.0)
+            .expect("a shimmered drop always emits");
+        assert_eq!((x, y), (10, 11)); // center (167, 183), `(int)(v/16f)`
+        assert_eq!(rgb, [0.0, 0.0, 0.0]);
+        // Dried back to 0 → the full 0.8 white.
+        let rgb = shimmer_light(true, 0.0, Vec2::ZERO, 14.0).unwrap().2;
+        assert_eq!(rgb, [0.8, 0.8, 0.8]);
+        // Mid-ramp → the linear fade, all three channels equal.
+        let rgb = shimmer_light(true, 0.5, Vec2::ZERO, 14.0).unwrap().2;
+        assert_eq!(rgb, [(1.0 - 0.5f32) * 0.8; 3]);
+    }
+
+    /// W4-g20 — the glow's anchor truncates the QUOTIENT (`Lighting.cs:142`),
+    /// not the coordinate: a negative centre floors, unlike the torch arm's
+    /// `(int)Center.X / 16` (`:154`).
+    #[test]
+    fn w4_g20_the_shimmered_glow_floors_negative_centres() {
+        // pos -20 + 7 = centre -13; `(int)(-13/16f)` = 0 (trunc toward zero).
+        let (x, y, _) = shimmer_light(true, 0.0, Vec2::new(-20.0, -20.0), 14.0).unwrap();
+        assert_eq!((x, y), (0, 0));
+        // centre -17 → -17/16f = -1.0625 → (int) = -1 (not -2, not 0).
+        let (x, y, _) = shimmer_light(true, 0.0, Vec2::new(-24.0, -24.0), 14.0).unwrap();
+        assert_eq!((x, y), (-1, -1));
     }
 
     #[test]

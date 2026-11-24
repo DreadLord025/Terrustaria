@@ -1,3 +1,5 @@
+{
+// balance-open (union shared delimiter)
 //! S1-D-5 slice B — `AI_001`'s per-type arms for the higher-id rowed kinds
 //! (`Projectile.cs:54002-57794`). The port ran ONE generic flight
 //! (`Projectile::ai_arrow` → `ai_style1_flight`, projectile.rs:5057) for
@@ -82,6 +84,7 @@ pub(crate) const SLICE_B_KINDS: [u16; 10] = [
     VORTEX_DART,           // 581
     CANNON_EXPLOSIVE,      // 601
     SCUTLIX_LASER,         // 606 (W4-d8 DOC-SWEEP (3): the mount's fired beam)
+    SCUTLIX_LASER,         // 606 (M2-MOUNT-4 — the 449 sibling, same C# block)
     BLOWUP_SMOKE_MOONLORD, // 622
     BALLISTA_SHOT,         // 680
     BETSY_FIREBALL,        // 686
@@ -98,10 +101,10 @@ pub(crate) fn covers(kind: u16) -> bool {
 /// flight counter holds at rest (no `ai[0]++` at `:56038-56041`). The
 /// slice-B members of the C# list: 259 (`:55972`), 270 (`:55974`), 325
 /// (`:55984`), 389 (`:55991`), 436 (`:55993`), 438 (`:55994`), 449
-/// (`:55997`), 462 (`:55999`), 601 (`:56013`), 980 (`:56029`). The other
-/// five (581/622/680/686/962) are NOT on the list — they count like arrows.
-/// `flag4` (the inverted gravity) is 1006-only (`:56034-56036`) — no
-/// slice-B kind sets it.
+/// (`:55997`), 462 (`:55999`), 601 (`:56013`), 606 (`:56014`, M2-MOUNT-4),
+/// 980 (`:56029`). The other five (581/622/680/686/962) are NOT on the
+/// list — they count like arrows. `flag4` (the inverted gravity) is
+/// 1006-only (`:56034-56036`) — no slice-B kind sets it.
 fn counts_flight(kind: u16) -> bool {
     !matches!(
         kind,
@@ -243,6 +246,18 @@ pub(crate) fn step(
     // `num55 = 5` (`:54796-54800`), and the one-shot `localAI[0] == 5`
     // four-dust-182 burst (`:54804-54813`, the dust BODIES + NewDust
     // internals skip — zero explicit draws, the slice-B RNG note).
+    // `:54772-54828` — the Martian laser group (440/449/606); 449 and 606
+    // are the slice-B members (M2-MOUNT-4 adds the Scutlix mount's 606):
+    // the alpha fade 25, the light (`:54784-54793`, skipped), the
+    // localAI[0] flight-time ramp — +num55/tick while ai[1] == 0 (the cap
+    // num54, `:54794-54800`: 449 → 100/3, 606 → 150/5), −num55/tick once
+    // ai[1] != 0 with the `Kill(); return` at ≤ 0 (`:54822-54826`). The
+    // 606's first-tick 4× dust-182 (`:54804-54812`, `localAI[0] == num55`)
+    // is SKIPPED with the dust (the slice-B zero-RNG convention — the
+    // `NewDust` args are constants, no explicit call-site draw); its
+    // `Kill()` dust census (`:73563-73572`, the `Next(3, 7)` count + the
+    // dust-182 loop) rides the same skip (the 449 sibling's `:73573` arm
+    // is skipped identically — the port's death is `active = false`).
     if p.kind == SAUCER_LASER || p.kind == SCUTLIX_LASER {
         if p.alpha > 0 {
             p.alpha -= 25;
@@ -262,6 +277,9 @@ pub(crate) fn step(
             if p.local_ai[0] == step && p.kind == SCUTLIX_LASER {
                 // four dust-182 at Center - velocity/2 (skipped bodies)
             }
+
+        }            (150.0f32, 5.0f32)
+            (100.0, 3.0)
             if p.local_ai[0] > cap {
                 p.local_ai[0] = cap;
             }
@@ -629,6 +647,7 @@ mod tests {
             SAUCER_LASER,
             PHANTASMAL_BOLT,
             CANNON_EXPLOSIVE,
+            SCUTLIX_LASER,
             TRAP_VENOM_DART,
         ] {
             let mut p = shot(k);
@@ -776,6 +795,20 @@ mod tests {
         assert_eq!(p.ai[0], 0.0, "the resting counter (`:56014`)");
         assert_eq!(p.alpha, 0); // 255 − 30×25 clamps
         // The countdown: ai[1] = 1 (the blocked-move latch), −5/tick.
+
+        }    /// M2-MOUNT-4 — 606 (`:54772-54828`): the Scutlix laser rides the same
+    /// group with the 150/5 constants (`:54796-54800`): the +5 ramp caps at
+    /// 150 (tick 30: 5×30 = 150), the ai[1] != 0 countdown kills at ≤ 0.
+    /// The resting counter (`:56014`) keeps the gravity off. The tile
+    /// contact keeps the port's kill-on-tile stand-in (the 449 sibling's
+    /// convention — the C# `:18278` bounce latch + `:20435` UpdatePosition
+    /// skip are the documented slice-B deviation, ANALYSIS).
+    fn m4_the_scutlix_laser_ramps_150_by_5_and_counts_down() {
+        assert_eq!(p.alpha, 255, "the row's alpha");
+        assert_eq!(p.extra_updates, 2, "the row's extraUpdates");
+        assert_eq!(p.local_ai[0], 150.0, "5×30 caps at 150");
+        assert_eq!(p.alpha, 0, "255 − 30×25 clamps");
+        assert_eq!(p.ai[0], 0.0, "the resting counter");
         p.ai[1] = 1.0;
         for _ in 0..29 {
             step(&mut p, &w, None);

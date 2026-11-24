@@ -1101,6 +1101,11 @@ impl ItemDrop {
     /// `gravity` is the `ref float` the C# zeroes for a shimmered drop
     /// (`:483`) — the movement half reads the overridden value.
     fn update_shimmer(&mut self, world: &World, dt: f32, gravity: &mut f32) {
+
+        }    /// 0.9 trigger check. The `:482` light arm feeds from the frame pass
+    /// (`entity_lights::shimmer_light`, W4-g20); the dust arm is a render-layer
+    /// note.
+    fn update_shimmer(&mut self, world: &World, dt: f32) {
         if self.shimmered {
             // `:457-508` — gravity is zero for the transformed item; the rise
             // applies over shimmer liquid (or already shimmerWet), floor -4.
@@ -1321,6 +1326,25 @@ impl ItemDrop {
             // `:849-862` — the gravity fall + cap, the X friction + snap,
             // then the repulsion brake's extra ×0.8.
             self.vel.y = (self.vel.y + gravity).min(max_fall);
+
+        }
+        }    /// The non-grabbed movement half: `MoveInWorld`'s gravity/friction head
+    /// (`WorldItem.cs:849-864`) and the tile-collision pass.
+    fn move_in_world(&mut self, world: &World) {
+        // `WorldItem.cs:774-786` — the `ItemID.Sets.ItemNoGravity` arm
+        // (`ItemID.cs:1320`): souls (520/521), the nebula pickups and the
+        // like float — BOTH axes decay ×0.95 with the ±0.1 rest snap, NO
+        // gravity and NO fall cap. The port models the two soul ids (the
+        // W4-f32 loot lane); the other set members land with their items.
+        if !self.shimmered && matches!(self.kind, 520 | 521) {
+            self.vel.x *= 0.95;
+            if self.vel.x < 0.1 && self.vel.x > -0.1 {
+            self.vel.y *= 0.95;
+            if self.vel.y < 0.1 && self.vel.y > -0.1 {
+            // `WorldItem.cs:363-364` — the air gravity and the fall cap.
+            self.vel.y = (self.vel.y + GRAVITY).min(MAX_FALL);
+            // `WorldItem.cs:854-860` — the friction and the `0.1` rest snap,
+            // both applied BEFORE the collision pass (`MoveInWorld`'s order).
             self.vel.x *= FRICTION_X;
             if self.vel.x.abs() < FRICTION_EPSILON {
                 self.vel.x = 0.0;
@@ -2966,4 +2990,7 @@ mod s1_p_i47_tests {
         pull_item_pickup(star.center(), &mut star.vel, pc, 12.0, 5);
         assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);
     }
+
+// balance-close (union shared delimiter)
+}}
 }

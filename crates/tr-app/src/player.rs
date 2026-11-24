@@ -59,7 +59,9 @@ const CART_MOUNT_BUFF: i32 = 118;
 const CART_MOUNT_HEIGHT: f32 = 52.0;
 /// `Player.breathMax`; `breath` is in ticks.
 pub const BREATH_MAX: i32 = 200;
-/// `Player.breathCDMax`: ticks between breath decrements.
+/// `Player.breathCDMax`'s base (`Player.cs:3859`): ticks between breath
+/// decrements before the Breathing Reed ×2 / Diving Helm ×6 property arms
+/// (`breath_cd_max`, `Player.cs:3855-3869`).
 const BREATH_CD: i32 = 7;
 
 /// The extra-jump options (`Player.hasJumpOption_*` / `canJumpAgain_*` /
@@ -590,6 +592,9 @@ pub(crate) struct StickyDust {
     /// `noGravity` tail. Only the type-153 honey puffs carry it; the type-30
     /// web puff (`Collision.cs:3403`) is a bare `NewDust`.
     pub(crate) post_arms: bool,
+    /// The `NewDust` Scale argument — 1.0 for the sticky family, 1.2 for
+    /// `CheckDrowning`'s bubble (`Player.cs:23316`).
+    pub(crate) scale: f32,
 }
 
 /// W4-f42 — one tick's `DoubleJumpVisuals` sandstorm arm
@@ -1008,6 +1013,24 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.difficulty` (`Player.cs:1654`): 0 softcore / 1 mediumcore /
+    /// 2 hardcore / 3 journey. `UpdateDead`'s hardcore arm (`:17044-17053`)
+    /// reads it; the session feeds `active_player_difficulty` at spawn
+    /// (the `App::new`/`enter_loaded_world` seam).
+    pub difficulty: u8,
+    /// `Player.ghost` (`Player.cs:1350`): the hardcore dead player keeps
+    /// flying after the timer expires (`UpdateDead` `:17053`, `Ghost()`
+    /// `:6715-6849`). The C# never clears it in SP — a hardcore death is
+    /// permanent until the world reload; the port's `revive` keeps it too.
+    pub ghost: bool,
+    /// `Player.ghostFrame`/`ghostFrameCounter` (`Player.cs:1352-1354`): the
+    /// 4-row ghost sheet animator — 8 ticks per frame (`Ghost()` `:6803-6819`).
+    pub ghost_frame: i32,
+    ghost_frame_counter: i32,
+    /// `Player.immuneAlpha` (`Player.cs:1502`): the death/immunity fade the
+    /// ghost draw's `GetImmuneAlpha` reads (`:54162-54181`). `UpdateDead`
+    /// adds 2 per tick capped at 255 (`:17022-17026`); `Ghost()` zeroes it.
+    pub immune_alpha: i32,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
     /// the facing-inheritance gate reads (`:77749`). The stealth armour
@@ -1247,8 +1270,22 @@ pub struct Player {
     pub ignore_water: bool,
     /// `Player.accFlipper` (`Player.cs`): the flipper grant the water mounts
     /// share (`:9888`/`:9893`/`:9898`/`:9903`/`:9908`); `ResetEffects` clears
-    /// (`:18361`).
+    /// (`:18361`). The swim-ascent arms read it (`JumpMovement` `:20637`/
+    /// `:20681`); the Flipper 187 (`:15101-15104`), the Diving Gear family
+    /// (`:15198-15262`), the frog boots (`:14426-14438`), the Flipper buff
+    /// 109 (`:10168-10172`), the wet float grant (`UpdateEquips`
+    /// `:13016-13019`) and the merman transformation (`:25583`) re-grant.
     pub acc_flipper: bool,
+    /// `Player.accDivingHelm` (`Player.cs`): the Diving Helmet 268
+    /// (`GrantArmorBenefits` `:13249-13252`) and the Diving Gear family
+    /// 394/1860/1861 (`:15201`/`:15238`/`:15252`) arm it; `ResetEffects`
+    /// clears (`:18331`). `breathCDMax` ×6 reads it (`:3864-3867`).
+    pub acc_diving_helm: bool,
+    /// `Player.itemAnimation > 0` — the sim feeds the swing state each tick
+    /// (the `mana_regen_item_in_use` convention). The `breathCDMax` property
+    /// and `CheckDrowning`'s reed probe gate on `itemAnimation == 0`
+    /// (`Player.cs:3860`/`:23199`).
+    pub item_animation_active: bool,
     /// `Player.canFloatInWater` (`Player.cs:1086`): the Water Strider's
     /// (buff 265) float grant (`:9895-9898`) or the mount item 4404
     /// (`GrantArmorBenefits` `:13265-13267`); `ResetEffects` clears
@@ -1552,6 +1589,57 @@ pub struct Player {
     /// clinging (W4-f3); the airborne body row 3 (`:36552`), the wall-jump
     /// (`:20778`), the rest gates (`:26057`/`:26777`/`:26859`) and the Rat's
     /// frame machine (`Mount.cs:3603-3606`) read it.
+    /// `Player.shield` (`Player.cs:1584`): the visible shield's
+    /// `ArmorIDs.Shield` slot (−1 = none). `ResetVisibleAccessories`
+    /// (`:31134`, called from `Player.Update` `:25624`) clears it per tick;
+    /// `UpdateVisibleAccessories` (`:36753-36833`, from `PlayerFrame`
+    /// `:35770` while alive) re-derives it: the equipped shieldSlot rows,
+    /// the eocDash/raised fallbacks (`:36762-36777`) and the held-4760
+    /// override (`:36806-36810`, slot 9 = BouncingShield). The draw layer
+    /// `DrawPlayer_25_Shield` reads it (`PlayerDrawLayers.cs:2954-3024`).
+    pub shield: i16,
+    /// `Player.hasRaisableShield` (`Player.cs:3128`): any equipped wearable
+    /// with `shieldSlot > 0` (`GrantArmorBenefits` `:13123-13126`) or the
+    /// held Bouncing Shield 4760 with no live 866 (`UpdateEquips`
+    /// `:13075-13078`). `ResetEffects` `:18611` clears it per tick.
+    pub has_raisable_shield: bool,
+    /// `Player.shieldParryTimeLeft` (`Player.cs:3132`): the 20-tick parry
+    /// window (`SHIELD_PARRY_DURATION` `:3122`). `TryTogglingShield`
+    /// (`:31750-31753`) arms 1 on the raise (only with the cooldown spent);
+    /// `ItemCheck_ManageRightClickFeatures_ShieldRaise` (`:31734-31737`)
+    /// pre-increments it and clears past 20.
+    pub shield_parry_time_left: i32,
+    /// `Player.shield_parry_cooldown` (`Player.cs:3134`): the 15-tick lock
+    /// `TryTogglingShield` arms on the lower (`:31760`); the ShieldRaise
+    /// head counts it down (`:31719-31733`) and the zero tick plays the
+    /// MaxMana cue (legacy 25) + the 10x dust-45 burst.
+    pub shield_parry_cooldown: i32,
+    /// `Player.parryDamageBuff` (`Player.cs:2422`): buff 198's flag
+    /// (`UpdateBuffs` `:11855-11858`). The contact-lane parry grants the
+    /// buff (`:31430`); the next melee strike ×5s and consumes it
+    /// (`ProcessHitAgainstNPC` `:44307-44312`). `ResetEffects` `:18698`.
+    pub parry_damage_buff: bool,
+    /// The ShieldRaise zero-cooldown tick's MaxMana cue request (legacy
+    /// sound 25, `Player.cs:31724`) — the `pending_mana_effect` convention:
+    /// the tick queues it, the world-sim drain plays it at `base.Center`.
+    pending_parry_ready_sound: bool,
+    /// The ShieldRaise zero-cooldown tick's 10x dust-45 burst
+    /// (`Player.cs:31725-31731`) — the fully-formed spawn request (the
+    /// centre anchor + the `direction` offset); the drain rolls the
+    /// `Next(10,16) * 0.1` scale per dust on the `UpdatePlayers` stream.
+    pending_parry_ready_dust: Option<(f32, f32)>,
+    /// `Player._timeSinceLastImmuneGet` (`Player.cs:1432`): counts up once
+    /// per `Player.Update` tick (`:24663-24667`, capped at 10000);
+    /// `GiveImmuneTimeForCollisionAttack` (`:20496-20504`) resets it to 0.
+    time_since_last_immune_get: i32,
+    /// `Player._immuneStrikes` (`Player.cs:1434`): consecutive close-together
+    /// collision-immunity grants — `GiveImmuneTimeForCollisionAttack`
+    /// increments it within the 20-tick window (else resets to 1) and
+    /// refuses the grant at 3 (`:20496-20505`).
+    immune_strikes: i32,
+    /// `Player.sliding` (`Player.cs`): the slope/ice slide pose (body row 3 in
+    /// the air). No port source sets it yet, so the arm is coded but
+    /// unreachable.
     pub sliding: bool,
     /// `Player.sandStorm` (`Player.cs:36298`): the Sandstorm-in-a-Bottle dash
     /// pose (leg row 0, body row 6, a 4-tick turn cadence).
@@ -1573,6 +1661,24 @@ pub struct Player {
     /// (`Item.legSlot`). The Moon Lord carve-out (`140`) and the sitting
     /// carve-out (`217`) read it; `0` = the default legs sheet.
     pub legs_armor: i32,
+    /// `Player.neck` (`Player.cs:1686`, init −1): the visible neck
+    /// accessory's `Item.neckSlot` (`ArmorIDs.Neck`, 1..14). W4-d115
+    /// wiring round — the Acc_Neck layer family's sim half:
+    /// `ResetVisibleAccessories` (`:31135`, called from `ResetEffects`
+    /// `:25624`) clears it to −1 each tick, `UpdateVisibleAccessories`
+    /// (`:36753-36805`, called from `PlayerFrame` `:35770` while alive)
+    /// re-derives it: the LAST visible slot with `neckSlot > 0` wins
+    /// (`UpdateVisibleAccessory` `:36927-36930` — functional slots 3..10
+    /// gated `!hideVisibleAccessory[i]`, then vanity slots 13..20
+    /// unconditionally). The draw layer (`DrawPlayer_20_NeckAcc`,
+    /// `PlayerDrawLayers.cs:2026-2034`) gates `0 < neck < 15`.
+    pub neck: i32,
+    /// `Player.cNeck` (`Player.cs:2938`): the neck layer's dye shader —
+    /// `UpdateItemDye`'s `neckSlot` arm (`:9683-9686`) stamps the slot's
+    /// dye; the port derives it beside `neck` (the hidden functional
+    /// slot's early-return `:9628-9631` keeps its dye out, the vanity
+    /// slot's dye overrides).
+    pub c_neck: u32,
     /// The held-item half of `PlayerFrame()` - the C# reads
     /// `inventory[selectedItem]` directly, the port feeds the summary in from
     /// the app before the tick (`world_sim/player.rs`).
@@ -1754,14 +1860,30 @@ pub struct Player {
     /// `UpdateImmunity`'s tail (`Player.cs:18887-18893`) decrements every
     /// positive slot once per tick.
     pub hurt_cooldowns: [i32; 6],
+    /// `Player.hurtCooldowns` (`Player.cs:3160`): the per-source immunity
+    /// counters, `new int[ImmunityCooldownID.Count]` — six slots indexed by
+    /// the `IMMUNITY_*` ids 0..5 (`id_tables.rs`; General's −1 lives OUTSIDE
+    /// the array on the `immune`/`immune_time` pair, `Hurt` `:38208`).
+    /// M4-HAZARD-1: the boss/hazard lanes (BossNoCheese, TileContactDamage,
+    /// WrongBugNet, Lava, PaladinsShield) gate and re-arm on their OWN slot,
+    /// so they land THROUGH the General i-frames (`:38208-38212`). The
+    /// collapsed `hurt_cd` stays as the General lane's seconds mirror (the
+    /// existing witnesses' contract); this array is the C#'s own state.
+    /// Writers: `Hurt`'s per-counter arm (`:38391-38393`, only while the slot
+    /// is 0), `SetImmuneTimeForAllTypes` (`:38017-38020`, all six) and the
+    /// `UpdateImmunity` decay (`:18887-18893`). `Spawn` never clears it (the
+    /// C# field census: no respawn write) — the counters ride through death.
+    pub hurt_cooldowns: [i32; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize],
     /// The dodge-family flags (`Player.blackBelt`/`mysticSashDodge`/
     /// `brainOfConfusionItem`/`shadowDodge`/`longInvince`, `Player.cs:1178-
     /// 1184,2402`): armed per tick in the fold from items 963/984
     /// (`:15060`/`:15064`), 6189 (`:14633`), 3223 (`:15087` — the C# carries
     /// the `Item` reference, the port's bool is the armed-flag equivalent) and
     /// buff 59 (`:10075-10077`); `long_invince` arms from the Star Veil 862
-    /// (`:15147`, S1-C-7 wave B) — its other sources (6187 et al.) ride later
-    /// waves. `ResetEffects` clears them every
+    /// (`:15147`, S1-C-7 wave B), the Cross Necklace 554 (`:15587-15590`)
+    /// and the Crossed Heart Necklace 6187 (`:14625-14628`, W4-f48); the
+    /// Seraph Necklace 6180 (`:14590`) rides a later wave with its unported
+    /// `accHarpyCharm`/`accSeraphNecklace` halves. `ResetEffects` clears them every
     /// frame (`:18440/:18617/:18661-18662`/`:18719`) and the `Hurt` roll block
     /// (`:38214-38241`) consumes them.
     pub black_belt: bool,
@@ -1769,6 +1891,24 @@ pub struct Player {
     pub brain_of_confusion: bool,
     pub shadow_dodge: bool,
     pub long_invince: bool,
+    /// `Player.onHitDodge` (`Player.cs:1170`): the Hallowed / Ancient
+    /// Hallowed set bonus's strike-grant flag ("Holy Protection" — buff 59's
+    /// display name, `Terraria.Localization.Content.en-US.Game.json`
+    /// `BuffName.ShadowDodge`). `ArmorSetBonuses.Benefits.Hallowed`
+    /// (`ArmorSetBonuses.cs:231-234`) and `HallowedSummoner`'s second half
+    /// (`:225-229`) arm it per tick; `ResetEffects` clears it (`:18443`).
+    /// `Player.OnHit` (`:6938-6941`) grants buff 59 for 1800 ticks while
+    /// `shadowDodgeTimer == 0` — the buff arms `shadow_dodge` through the
+    /// buff scan (`:10074-10077`) and the next `Hurt` dodges. W4-d115.
+    pub on_hit_dodge: bool,
+    // `Player.panic` (`Player.cs:1154`) — the field + the hurt grant
+    // (`:38237-38240`) + the 1290/1578/6187 equip arms + the `ResetEffects`
+    // clear (`:18616`) are f50-canonical (SHIELDS RETIRE keep-one, receipt
+    // 51eefdf84, `task/W4-f50-hurt-reactions`); the buff-63 `moveSpeed++`
+    // reader (`:10130-10133`) is f12-canonical (`DEBUFF_DISPATCH`,
+    // `buff_frame_wiring.rs`). This branch keeps its dodge block + the
+    // 1578 `honey_comb` / 6187 `long_invince` fold halves + the DD2
+    // crystal-lane `add_buff(205, 3600)` only.
     /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
     /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
     /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
@@ -1882,15 +2022,82 @@ pub struct Player {
     pub snake_cloak_override: bool,
     pub honey_comb: bool,
     pub strong_bees: bool,
+    /// `Player.panic` (`Player.cs:1154`): the Panic Necklace family's hurt
+    /// reaction flag — an accepted hit grants buff 63 (Panic!, `Hurt`
+    /// `:38237-38240`, `AddBuff(63, 480)`). Armed by the Panic Necklace 1290
+    /// (`:14892-14895`), the Sweetheart Necklace 1578 (`:15076-15080`) and the
+    /// Crossed Heart Necklace 6187 (`:14625-14628`); `ResetEffects` clears it
+    /// (`:18616`) and the equip rows re-arm per tick. W4-f50 (the d116
+    /// deferred hurt-reaction list, ANALYSIS wave B "Deferred families").
+    pub panic: bool,
+    /// W4-f50 — the Solar Flare / Beetle armor-set hurt-reaction state
+    /// (`Player.cs:896-912`/`:2816`). `set_solar`/`beetle_defense`/
+    /// `beetle_offense` are the completed-set flags (`ApplySetBonus_Solar`
+    /// `:16366`, `ApplySetBonus_BeetleDefense` `:16499`,
+    /// `ApplySetBonus_BeetleDamage` `:16529`); the orb/shield counts and
+    /// counters drive the hurt reductions (`Hurt` `:38305-38337`) and the
+    /// per-tick recharge machines. `ResetEffects` zeroes `beetle_orbs`/
+    /// `beetle_buff`/`solar_shields` (`:18501-18505`); the `Player.Update`
+    /// head clears the three set flags (`:25618-25620`).
+    pub set_solar: bool,
+    pub solar_shields: i32,
+    pub solar_counter: i32,
+    pub beetle_defense: bool,
+    pub beetle_offense: bool,
+    pub beetle_orbs: i32,
+    pub beetle_counter: f32,
+    pub beetle_countdown: i32,
+    pub beetle_buff: bool,
+    /// W4-f50 deviation 3 — `Player.beetlePos`/`beetleVel` (`Player.cs:964-
+    /// 966`, `Vector2[3]`): the orb-orbit positions the
+    /// `UpdateArmorSets_Always_Beetle` machine integrates
+    /// (`:16458-16496`) and `DrawPlayer_37_BeetleBuff` draws
+    /// (`PlayerDrawLayers.cs:4007-4031`). The per-orb `Next(-100,101)`
+    /// velocity jitter pair rides the `UpdatePlayers` stream.
+    pub beetle_pos: [Vec2; 3],
+    pub beetle_vel: [Vec2; 3],
+    /// `Player.beetleFrame`/`beetleFrameCounter` (`Player.cs:968-970`):
+    /// the 3-frame wing cycle — the counter pins at 1, so the frame
+    /// advances EVERY tick while a Beetle set is worn (`:16448-16457`).
+    pub beetle_frame: i32,
+    pub beetle_frame_counter: i32,
+    /// `Player.hasFootball` (`Player.cs:12906-12918`): the Football (4743)
+    /// in the inventory arms it; `ResetEffects` clears it (`:18345`). The
+    /// hurt arm (`:38255-38269`) spawns the 861 return + clears the slot.
+    /// W4-f50.
+    pub has_football: bool,
+    /// W4-f50 deviation 4 — `Player.boneArmor`/`frostArmor` (`Player.cs:
+    /// 1376`/`:1378`): the Necro/Frost texture-id sets
+    /// `ApplyArmorSoundAndDustChanges` derives (`:38167-38186`);
+    /// `ResetEffects` clears both (`:18350`/`:18352`). The hit-dust loop
+    /// keys on them (`:38538-38547`: frost 135 / bone 26); the
+    /// `PlayHurtSound` arms (`:38684-38693`) and the death burst
+    /// (`:39041-39052`) are the future wires.
+    pub bone_armor: bool,
+    pub frost_armor: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
     pub shadow_dodge_timer: i32,
+    /// `Player.shadowDodgeCount` (`Player.cs:1166`): the shadow-dodge
+    /// afterimage spread — DRAW-owned. Full-tree writer census (W4-d115
+    /// wiring round): the field declaration `Player.cs:1166` is the ONLY
+    /// `shadowDodgeCount` mention in Player.cs — no dodge proc sets it
+    /// (Holy Protection/Titanium ride the buff-59 grant `:6938-6941`, the
+    /// brain rides the animation counter `:38049`); the sole writer is
+    /// `LegacyPlayerRenderer.cs:433-448` (±1 per DRAW frame, cap 30 /
+    /// floor 0, keyed on the buff-scan `shadowDodge` flag `:10076`;
+    /// `ResetEffects` never touches it). The port's writer is
+    /// `App::step_dodge_draw_counters` at the draw seam (`app/frame/
+    /// draw.rs`), stepping through `player_dodge_draw::
+    /// step_shadow_dodge_count` — the sim tick never steps it.
+    pub shadow_dodge_count: f32,
     /// `Player.brainOfConfusionDodgeAnimationCounter` (`Player.cs:1158`): the
     /// 300-tick animation window a brain dodge opens (`:38049`); decayed in
     /// `ResetEffects` (`:18794-18797`), zeroed on death (`UpdateDead`,
-    /// `:16932`). No render consumer yet — carried for state parity (the
-    /// S1-A-9 dead-slot convention).
+    /// `:16932`). The ghost-ring maths are ported in `player_dodge_draw`
+    /// (`LegacyPlayerRenderer.cs:455-467`, W4-d115 lane 19); the draw pass
+    /// consumes it through `draw_dodge_afterimages` (the wiring round).
     pub brain_of_confusion_dodge_animation_counter: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
@@ -2017,6 +2224,10 @@ pub struct Player {
     rocket_time_max: i32,
     pub rocket_delay: i32,
     rocket_delay2: i32,
+    /// W4-c14 - `Player.rocketSoundDelay` (`Player.cs:2752`): the rocket
+    /// cue's own cadence (`:26884-26896` arms it 30/15 per vanity tier,
+    /// `:26903-26905` ticks it down once per flight tick).
+    rocket_sound_delay: i32,
     /// `Player.rocketBoots` (`Player.cs:2756`): the boots tier
     /// (`TR_BOOTS=<1..5>` pins it).
     pub rocket_boots: i32,
@@ -2032,6 +2243,14 @@ pub struct Player {
     pub desert_dash: bool,
     pub fairy_boots: bool,
     pub hellfire_treads: bool,
+    /// W4-c14 doc-sweep - `Player.vanityRocketBoots` (`Player.cs:2760`): the
+    /// VISUAL boots tier the rocket cue picks its sound from
+    /// (`:26886`/`:2691`). The functional equip rows set it equal to
+    /// `rocketBoots` (`:14420`/`:15023`/`:15222`/`:15380-15400`); the vanity
+    /// pass (`UpdateBootVisualEffects`, `:36704-36751`) re-derives it from
+    /// the visible boot and the Red's Leggings 668 sets tier 6
+    /// (`:13088-13091`). ResetEffects clears it (`:18354`), the mount block
+    /// zeroes it (`:26630`).
     /// `Player.canRocket` / `rocketRelease` (`Player.cs:2762,2752`): the
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
@@ -2332,16 +2551,77 @@ pub struct Player {
     /// velocity BEFORE the knockback `:38519`) and the drain
     /// (`hurt_modifiers::drain_retaliate`, the `world_sim` seams) rolls the
     /// block on the hit lane's stream — the `pending_mana_effect` convention.
-    /// The C# gates on the PRE-hit `flag` (not immune) AND the Retaliate-set
-    /// membership of the cooldown counter; `hurt_inner`'s `retaliate_lane`
-    /// carries the membership (the lava/tile lanes pass false).
+    /// The C# gates on the PRE-hit `flag` (the per-counter not-immune
+    /// state) AND the Retaliate-set membership of the cooldown counter;
+    /// `hurt_inner` reads both from the counter (M4-HAZARD-1 — the
+    /// lava/tile/bug-net lanes are not members).
     pending_retaliate: Option<crate::hurt_modifiers::RetaliateRequest>,
+    /// W4-f50 — the Solar Flare hurt blast request (`Player.cs:38316-38318`):
+    /// `(center, damage)` — the 608 projectile spawns at the player's center
+    /// with `(int)(150 * meleeDamage)` damage, kb 15, then immediately
+    /// `Kill()`s (its aiStyle-117 `Damage()` walks the 160×160 box). The
+    /// spawn + box walk need the projectile pool + NPC list, so `hurt_inner`
+    /// queues it and the world-sim drain resolves it (the `pending_retaliate`
+    /// convention). `None` when no charge was consumed.
+    pending_solar_blast: Option<((f32, f32), i32)>,
+    /// W4-f50 — the Solar Flare shield-grant dust burst flag
+    /// (`Player.cs:16387-16395`): 16 dust-6 particles at the player's box
+    /// (noGravity, scale 1.7, fadeIn 0.5, velocity ×5). The dust pool lives
+    /// on the App, so the set-bonus machine queues the flag and the
+    /// world-sim drain spawns them (the `pending_sticky_dust` convention).
+    pending_solar_grant_dust: bool,
+    /// W4-f50 — the player hurt combat-text request (`Player.cs:38382`):
+    /// `(amount, crit)` — `CombatText.NewText(playerRect, DamagedFriendly[ Crit],
+    /// num2, Crit)`. The C# draws it BEFORE the retaliate block (`:38401`),
+    /// so the drain spawns it ahead of the retaliate rolls on the hit lane's
+    /// stream. The caller owns `Main.combatText` (the `pending_mana_effect`
+    /// convention). `None` when no hit landed.
+    pending_hurt_text: Option<(i32, bool)>,
+    /// W4-f50 — the hit-dust loop request (`Player.cs:38527-38553`):
+    /// `(hit_direction, num2)` — the `statLife > 0` dust burst, `num2 /
+    /// statLifeMax2 * 100` particles keyed to the armor set (stoned 1 /
+    /// frost 135 / bone 26 / default 5). The dust pool lives on the App, so
+    /// the tick queues it and the world-sim drain spawns them (the
+    /// `pending_sticky_dust` convention). `None` when the hit killed.
+    pending_hurt_dust: Option<(i32, i32)>,
+    /// W4-f50 — the football hurt request (`Player.cs:38255-38269`): the
+    /// `hasFootball` flag — the drain scans the inventory for the Football
+    /// (4743) and spawns the 861 return at the player's center with
+    /// `(-hitDirection * 4, -6)`, damage 0, ai1 = 1, ai2 = stack, then
+    /// clears the slot. The projectile pool + inventory live on the App.
+    pending_football: Option<i32>,
+    /// W4-f50 — the golf-club hurt request (`Player.cs:38271-38280`): the
+    /// held item is a jousting lance (4788/4789/4790) — the drain kills
+    /// every owned 877/878/879 projectile. The pool lives on the App.
+    pending_golf_club_kill: bool,
+    /// W4-f32 — `Player.TryToPoop`'s Poop Block drop (`Player.cs:18896-
+    /// 18940`): the toilet-sitting digestion roll fired inside
+    /// `UpdateLifeRegen` (`:19237-19240`) and the stack rolled on the
+    /// `UpdatePlayers` stream; the drain spawns the 5395 at the player's
+    /// `MountedCenter` with `GrabDelayForAllPlayers` (the
+    /// `pending_switch_trip` convention — `update_survival` has no item
+    /// pool). `(stack, centre_x, centre_y)`.
+    pub pending_poop: Option<(i32, f32, f32)>,
+    /// W4-f32 — `PlayerSittingHelper.GetSittingTargetInfo`'s `IsAToilet`
+    /// extra info (`PlayerSittingHelper.cs:166-180`): the seat is a toilet
+    /// (tile 497, or chair 15's frameY/40 == 1/20 styles). `sit_down`'s
+    /// caller sets it; `sit_up` clears it. `TryToPoop`'s gate
+    /// (`Player.cs:19237`: `sitting.isSitting && details.IsAToilet`).
+    pub sitting_on_toilet: bool,
     /// S1-C-7 wave B: the dismount-on-hit request (`Player.cs:38396-38400`) —
     /// the damage source was a projectile of `ProjectileID.Sets.
     /// DismountsPlayersOnHit` (`ProjectileID.cs:546`, {877, 878, 879}) and a
     /// mount is active. `Mount.TryDismount` needs `&World`, so the tick hands
     /// the request over (the `pending_switch_trip` convention).
     pending_dismount: bool,
+    /// W4-d115 — the `62 SyncDodge` send queue (`Player.NinjaDodge`'s
+    /// `NetMessage.SendData(62, -1, -1, null, whoAmI, 1f)`,
+    /// `Player.cs:38161-38164`, and the Shadow `:38038` / Brain `:38053` /
+    /// Sash `:38115` twins): the handlers run inside the sim lanes, so the
+    /// send hands over to the net tick (the `pending_hurt_sound`
+    /// convention). The net-apply path (`apply_net_dodge`, W4-c27) never
+    /// queues — the C# reader does not re-send (`MessageBuffer.cs:2887-2902`).
+    pending_dodge_sends: Vec<u8>,
     /// S1-P-i41 — the Chillet mount's `SoundID.PalChillet` play
     /// (`Mount.SetMount` `Mount.cs:6283-6286`, `SoundEngine.PlaySound(
     /// SoundID.PalChillet, mountedPlayer.Center)`): `(position.X,
@@ -2370,6 +2650,11 @@ pub struct Player {
     /// case-0 Dig play draws its variation + pitch on the `UpdatePlayers`
     /// stream (the `play_place_sound` contract).
     pending_no_space_sound: Option<(f32, f32)>,
+    /// W4-c14 - the petrify-transition Dig-0 (`Player.cs:25225`:
+    /// `SoundEngine.PlaySound(0, (int)position.X, (int)position.Y)` on the
+    /// `stoned != lastStoned` edge, BOTH directions): `(x, y)` - the case-0
+    /// variation + pitch draws ride the drain's `UpdatePlayers` stream.
+    pending_stoned_sound: Option<(f32, f32)>,
     /// S1-P-i41 — the third-fail `PlayerNoSpaceTeleport` request
     /// (`Player.cs:6061-6066`): the forced dismount ran, the tick owns
     /// `&World` for the spot scan (`TeleportHelpers.FindClosestTeleportSpotNoSpace`).
@@ -2389,6 +2674,12 @@ pub struct Player {
     /// The tick's queued minecart cues (Item53/55/56), drained into
     /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
     pending_cart_sounds: Vec<crate::minecart::CartCue>,
+    /// M2-MOUNT-4 — the tick's queued Santank ability cues (style 89 gift /
+    /// 11 missile, `Mount.cs:3300`/`:3311`), drained into
+    /// `App::audio::play_mount_ability_sound` on the `UpdatePlayers` stream
+    /// (the `pending_cart_sounds` convention). `(style, x, y)` — the raw
+    /// float positions; the facade truncates like the C#'s int args.
+    pending_ability_sounds: Vec<(i32, f32, f32)>,
     /// The tick's queued sticky dust: the `Collision.StickyTiles` type-30 web
     /// puff (`Collision.cs:3401`) and `StickyMovement`'s type-153 honey puffs
     /// (`:23036-23080`). The C# calls `Dust.NewDust` inline; the port queues the
@@ -2626,6 +2917,31 @@ pub struct Player {
     /// `Player.accSharpBarb` (`Player.cs:1224`): 6160 Sharp Barb (`:14501`) —
     /// +1 ammo damage on arrows (`:53548`).
     pub acc_sharp_barb: bool,
+    // W4-e7 DOC-SWEEP lane 23 — the Snapping Stone accessory trio
+    // (`Player.cs:1226-1232`): the three flags + the shared strike cooldown.
+    // The ready lights (`:24571-24585`, `player_lights_b::snapping_stone_lights`)
+    // read `accSnappingStoneLightUp` = `cooldown == 0`. The strike machine
+    // (`Projectile.TryMakingSnappingStoneStrike`, `Projectile.cs:14283-14395`,
+    // the 360-tick cooldown setter `:14316`) lives in `snapping_stone.rs` —
+    // the flags/cooldown/lights land here, the strike arms the cooldown.
+    /// `Player.accSnappingStone` (`Player.cs:1226`): 6167 Snapping Stone
+    /// (`:14494-14496`) — the ranged strike (`Projectile.cs:13401-13404`).
+    /// `ResetEffects` clears it (`:18476`).
+    pub acc_snapping_stone: bool,
+    /// `Player.accPyroclast` (`Player.cs:1228`): 6178 Pyroclast
+    /// (`:14580-14583`, alongside `magmaStone`) — the melee strike
+    /// (`Player.cs:44338-44341`, `Projectile.cs:13397-13400`).
+    /// `ResetEffects` clears it (`:18477`).
+    pub acc_pyroclast: bool,
+    /// `Player.accArmletOfRuin` (`Player.cs:1230`): 6179 Armlet of Ruin
+    /// (`:14584-14587`, alongside `accWickedArmlet`) — the summon strike
+    /// (`Projectile.cs:13405-13408`). `ResetEffects` clears it (`:18478`).
+    pub acc_armlet_of_ruin: bool,
+    /// `Player.accSnappingStoneCooldown` (`Player.cs:1232`, int default 0):
+    /// the shared 360-tick strike lockout (`Projectile.cs:14316`), decremented
+    /// by `Update_SnappingStone` (`Player.cs:28385-28410`). NOT cleared by
+    /// `ResetEffects` — a countdown (the `accSentryBackpackGrabCooldown` shape).
+    pub acc_snapping_stone_cooldown: i32,
     // S1-P-i35 — the fishing family (`Player.cs:1088-1102` region).
     /// `Player.fishingSkill` (`Player.cs:1092`): the +15 Fishing potion
     /// (buff 121, `UpdateBuffs` `:10146-10149`), the Angler armor pieces
@@ -3040,6 +3356,11 @@ impl Player {
             // default hair tint (215, 90, 55).
             hair: 0,
             hair_color: [215, 90, 55],
+            difficulty: 0,
+            ghost: false,
+            ghost_frame: 0,
+            ghost_frame_counter: 0,
+            immune_alpha: 0,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -3205,6 +3526,15 @@ impl Player {
             right_timer: 0,
             instant_movement_accumulated_x: 0.0,
             shield_raised: false,
+            shield: -1,
+            has_raisable_shield: false,
+            shield_parry_time_left: 0,
+            shield_parry_cooldown: 0,
+            parry_damage_buff: false,
+            pending_parry_ready_sound: false,
+            pending_parry_ready_dust: None,
+            time_since_last_immune_get: 10000,
+            immune_strikes: 0,
             sliding: false,
             sand_storm: false,
             carpet_frame: -1,
@@ -3213,6 +3543,8 @@ impl Player {
             carpet_time: 0,
             carpet_frame_counter: 0.0,
             legs_armor: 0,
+            neck: -1,
+            c_neck: 0,
             frame_inputs: FrameInputs::default(),
             melee_npc_hit_cooldown: std::collections::HashMap::new(),
             wet: false,
@@ -3308,11 +3640,14 @@ impl Player {
             mana_regen_item_in_use: false,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
+            // `Player.cs:3160` — the field initializer zeroes all six slots.
+            hurt_cooldowns: [0; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize],
             black_belt: false,
             mystic_sash_dodge: false,
             brain_of_confusion: false,
             shadow_dodge: false,
             long_invince: false,
+            on_hit_dodge: false,
             magic_cuffs: false,
             gold_ring: false,
             discount_equipped: false,
@@ -3333,7 +3668,25 @@ impl Player {
             snake_cloak_override: false,
             honey_comb: false,
             strong_bees: false,
+            panic: false,
+            set_solar: false,
+            solar_shields: 0,
+            solar_counter: 0,
+            beetle_defense: false,
+            beetle_offense: false,
+            beetle_orbs: 0,
+            beetle_counter: 0.0,
+            beetle_countdown: 0,
+            beetle_buff: false,
+            beetle_pos: [Vec2::ZERO; 3],
+            beetle_vel: [Vec2::ZERO; 3],
+            beetle_frame: 0,
+            beetle_frame_counter: 0,
+            has_football: false,
+            bone_armor: false,
+            frost_armor: false,
             shadow_dodge_timer: 0,
+            shadow_dodge_count: 0.0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
             breath_cd: 0,
@@ -3360,6 +3713,7 @@ impl Player {
             rocket_time_max: 7,
             rocket_delay: 0,
             rocket_delay2: 0,
+            rocket_sound_delay: 0,
             rocket_boots: 0,
             vanity_rocket_boots: 0,
             sail_dash: false,
@@ -3371,6 +3725,8 @@ impl Player {
             rocket_release: false,
             merman: false,
             acc_merman: false,
+            acc_diving_helm: false,
+            item_animation_active: false,
             time_since_last_dash_started: 0,
             cart_mount: 13,
             release_grappling_hooks: false,
@@ -3458,16 +3814,27 @@ impl Player {
             pending_mana_effect: None,
             pending_heal_effect: None,
             pending_retaliate: None,
+            pending_solar_blast: None,
+            pending_solar_grant_dust: false,
+            pending_hurt_text: None,
+            pending_hurt_dust: None,
+            pending_football: None,
+            pending_golf_club_kill: false,
+            pending_poop: None,
+            sitting_on_toilet: false,
             pending_dismount: false,
+            pending_dodge_sends: Vec::new(),
             pending_chillet_sound: None,
             pending_petting_joy_sound: None,
             pending_pet_achievement: false,
             pending_no_space_sound: None,
+            pending_stoned_sound: None,
             pending_no_space_teleport: false,
             pending_force_clear: None,
             spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
             pending_sparks: Vec::new(),
             pending_cart_sounds: Vec::new(),
+            pending_ability_sounds: Vec::new(),
             pending_sticky_dust: Vec::new(),
             pending_sandstorm_jump: None,
             pending_jump_dust: None,
@@ -3524,6 +3891,12 @@ impl Player {
             vampire_burning_in_sunlight: false,
             has_molten_quiver: false,
             acc_sharp_barb: false,
+            // W4-e7 lane 23 — the Snapping Stone trio's spawn defaults
+            // (`Player.cs:1226-1232`: bools false, the int cooldown 0).
+            acc_snapping_stone: false,
+            acc_pyroclast: false,
+            acc_armlet_of_ruin: false,
+            acc_snapping_stone_cooldown: 0,
             // S1-P-i35 — the fishing family's spawn defaults.
             fishing_skill: 0,
             crate_potion: false,
@@ -3704,6 +4077,7 @@ impl Player {
     /// `PlayerSittingHelper.SitUp` (`:89-102`).
     pub fn sit_up(&mut self) {
         self.sitting = false;
+        self.sitting_on_toilet = false; // W4-f32 — the toilet detail dies with the seat
         self.offset_for_seat = (0.0, 0.0);
         self.seat_pos_offset = (0.0, 0.0);
         self.seat_y_offset = 0;
@@ -3954,6 +4328,16 @@ impl Player {
         self.pending_hurt_sound.take()
     }
 
+    /// W4-d115 — takes the queued `62 SyncDodge` sends (the dodge handlers'
+    /// `NetMessage.SendData(62, .., whoAmI, kind)`, `Player.cs:38038/:38053/
+    /// :38115/:38163`). The net tick drains them through the `C2s`/`S2c`
+    /// `SyncDodge` wires (the `take_hurt_sound` convention); the net-apply
+    /// path (`apply_net_dodge`) never queues, so a relayed dodge is not
+    /// re-sent (the C# reader, `MessageBuffer.cs:2887-2902`, does not send).
+    pub(crate) fn take_dodge_sends(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.pending_dodge_sends)
+    }
+
     /// Takes the queued death cue (`Player.PlayDeathSound`,
     /// `Player.cs:38868`).
     pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
@@ -4033,9 +4417,16 @@ impl Player {
     }
 
     /// S1-P-i41 — takes the QuickMount no-space tink (`Player.cs:6057`) —
+    /// S1-P-i41 - takes the QuickMount no-space tink (`Player.cs:6057`) -
     /// `(x, y)`, the truncated position; the case-0 draws ride the drain.
     pub(crate) fn take_no_space_sound(&mut self) -> Option<(f32, f32)> {
         self.pending_no_space_sound.take()
+    }
+
+    /// W4-c14 - takes the petrify-transition Dig-0 (`Player.cs:25225`) -
+    /// `(x, y)`, the truncated position; the case-0 draws ride the drain.
+    pub(crate) fn take_stoned_sound(&mut self) -> Option<(f32, f32)> {
+        self.pending_stoned_sound.take()
     }
 
     /// S1-P-i41 — takes the third-fail no-space teleport request
@@ -4107,10 +4498,54 @@ impl Player {
         self.pending_retaliate.take()
     }
 
+    /// W4-f50 — takes the Solar Flare hurt blast request (`Player.cs:38316-
+    /// 38318`): `(center, damage)` for the 608 spawn + immediate Kill. The
+    /// caller owns the projectile pool + NPC list (`world_sim` drain).
+    pub(crate) fn take_solar_blast(&mut self) -> Option<((f32, f32), i32)> {
+        self.pending_solar_blast.take()
+    }
+
+    /// W4-f50 — takes the Solar Flare shield-grant dust burst flag
+    /// (`Player.cs:16387-16395`). The caller owns the dust pool.
+    pub(crate) fn take_solar_grant_dust(&mut self) -> bool {
+        std::mem::take(&mut self.pending_solar_grant_dust)
+    }
+
+    /// W4-f50 — takes the player hurt combat-text request (`Player.cs:38382`):
+    /// `(amount, crit)`. The caller owns `Main.combatText`.
+    pub(crate) fn take_hurt_text(&mut self) -> Option<(i32, bool)> {
+        self.pending_hurt_text.take()
+    }
+
+    /// W4-f50 — takes the hit-dust loop request (`Player.cs:38527-38553`):
+    /// `(hit_direction, num2)`. The caller owns the dust pool.
+    pub(crate) fn take_hurt_dust(&mut self) -> Option<(i32, i32)> {
+        self.pending_hurt_dust.take()
+    }
+
+    /// W4-f50 — takes the football hurt request (`Player.cs:38255-38269`):
+    /// the hit direction. The caller owns the projectile pool + inventory.
+    pub(crate) fn take_football(&mut self) -> Option<i32> {
+        self.pending_football.take()
+    }
+
+    /// W4-f50 — takes the golf-club hurt request (`Player.cs:38271-38280`).
+    /// The caller owns the projectile pool.
+    pub(crate) fn take_golf_club_kill(&mut self) -> bool {
+        std::mem::take(&mut self.pending_golf_club_kill)
+    }
+
     /// S1-C-7 wave B: takes the dismount-on-hit request (`Player.cs:38396-
     /// 38400`) — the caller owns `&World` (`try_dismount`).
     pub(crate) fn take_dismount_request(&mut self) -> bool {
         std::mem::take(&mut self.pending_dismount)
+    }
+
+    /// W4-f32: takes the TryToPoop drop request (`Player.cs:18938`) —
+    /// `(stack, centre_x, centre_y)`; the caller spawns the 5395 with
+    /// `GrabDelayForAllPlayers` (the item pool is the sim's).
+    pub(crate) fn take_poop(&mut self) -> Option<(i32, f32, f32)> {
+        self.pending_poop.take()
     }
 
     /// Takes the tick's queued spark spawn requests (the `Main.dust`
@@ -4370,14 +4805,38 @@ impl Player {
         // `PlayerSpawnContext.ReviveFromDeath` arm lands 180 (the port's
         // respawn is always the death revive; the 60 arm rides the other
         // `PlayerSpawnContext`s).
+        // `Player.Spawn`'s revive life (`Player.cs:37596-37611`): the arm
+        // fires ONLY while `statLife <= 0` — a living spawn keeps its life.
+        // The pool is `max(statLifeMax, statLifeMax2)` — the port's single
+        // `max_hp` is the effective max — and the life is `max(pool / 2,
+        // 100)`. A fresh 100-life character revives FULL; the `spawnMax`
+        // Journey arm (`:37606-37610`) has no port counterpart. The breath
+        // refill (`:37605`) rides the same arm.
+        if self.hp <= 0 {
+            self.hp = (self.max_hp / 2).max(100);
+            self.breath = BREATH_MAX;
+        }
+        // `:37589`: `lavaTime = lavaMax` — the spawn refills the lava budget
+        // unconditionally (the Lava Charm family's 420 ticks).
+        self.lava_time = self.lava_max;
+        // `:37612-37615` + `:37661-37672`: the i-frames — `immune = true`
+        // and the `PlayerSpawnContext.ReviveFromDeath` arm lands 180 (the
+        // port's respawn is always the death revive; the 60 arm rides the
+        // other `PlayerSpawnContext`s — `recall_teleport::spawn_recall`).
+        // `immuneNoBlink` gates on `!hostile` (`:37669-37672`).
         self.immune = true;
         self.immune_time = 180;
-        self.immune_no_blink = true;
+        self.immune_no_blink = !self.hostile;
         self.hurt_cd = 0.0;
+        // M4-HAZARD-1 writer census: the C# `Spawn` never writes
+        // `hurtCooldowns` (the field's only mentions are `Player.cs:3160`
+        // decl, `:18887-18891` decay, `:27679` lava gate, `:31395` thorns
+        // flag, `:38017-38019` all-types, `:38208/:38391-38393` Hurt) — the
+        // per-source counters ride through death untouched, exactly like
+        // the source. No clear here.
         // `UpdateDead`'s brain-counter zero (`Player.cs:16932`): the death tail
         // clears the animation window with the rest of the per-life state.
         self.brain_of_confusion_dodge_animation_counter = 0;
-        self.breath = BREATH_MAX;
         self.breath_cd = 0;
         self.regen = RegenState::default();
         self.dot_death = None;
@@ -4425,12 +4884,20 @@ impl Player {
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
         self.pending_retaliate = None;
+        self.pending_solar_blast = None;
+        self.pending_solar_grant_dust = false;
+        self.pending_hurt_text = None;
+        self.pending_hurt_dust = None;
+        self.pending_football = None;
+        self.pending_golf_club_kill = false;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
         self.pending_flap_sound = None;
+        self.pending_stoned_sound = None;
         self.pending_dismount = false;
+        self.pending_dodge_sends.clear();
         // `Player.spawn`/`Spawn` never resets `stickyBreak` (`Player.cs:1966` —
         // the only writers are `StickyMovement`'s own four sites), so the port
         // keeps the counter across a revive too.
@@ -4466,6 +4933,9 @@ impl Player {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
+        // `Player.KillMe`'s fade reset (`Player.cs:38911`): the death fade
+        // climbs from 0 (the ChildSafety 255 arm is gore-only, unported).
+        self.immune_alpha = 0;
         // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
         let _ = self.dismount(world, true);
         // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
@@ -4473,9 +4943,12 @@ impl Player {
         self.pending_death_sound = Some("Player_Killed");
     }
 
-    /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
-    /// a boss hinders the respawn, x1.5 in expert. The FTW-multiplier x2 and
-    /// the master-mode path stay with M5-SEED-1 / the master difficulty.
+    /// `Player.GetRespawnTime` (`Player.cs:39060-39093`): 600 base, +600 when
+    /// a boss hinders the respawn (the caller gates that on `netMode != 0 &&
+    /// !pvp`, `:39064-39067` — single-player keeps the base), x1.5 in expert
+    /// (`:39072-39075`). The FTW-multiplier x2 (`:39076-39091`, also
+    /// multiplayer-only) and the master-mode path stay with M5-SEED-1 / the
+    /// master difficulty.
     pub fn get_respawn_time(boss_near: bool, expert: bool) -> i32 {
         let mut time = 600;
         if boss_near {
@@ -4536,8 +5009,8 @@ impl Player {
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
-    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
-    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The `ghost`
+    /// branch refuses the skip (`:38964-38967`); `pvpDeath` has no port lane.
     pub fn allows_respawn_timer_skip(
         &self,
         boss_near: bool,
@@ -4547,15 +5020,47 @@ impl Player {
         !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near || moon_event_live)
     }
 
-    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    /// The `ghost` half of the skip gate (`Player.cs:38964`); the `pvpDeath`
+    /// twin (`:38968`) has no port lane and stays false.
     fn ghost_like(&self) -> bool {
+        self.ghost
+    }
+
+    /// `Main.surviveHardcoreDeath` (`Main.cs:2638-2647`): the Don't-Starve ×
+    /// 10th-anniversary crossover lets a hardcore death revive — unless For
+    /// the Worthy is also on. Every other seed combination keeps the ghost.
+    fn survive_hardcore_death(seeds: tr_core::seeds::SeedFlags) -> bool {
+        seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE)
+            && seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            && !seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
+    }
+
+    /// `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`)'s stat half:
+    /// ONLY inside `Main.surviveHardcoreDeath` does
+    /// `statLifeMax = Math.Max(statLifeMax - 60, 0)` run (`:38779` — the
+    /// floor is 0; the −60 does NOT touch the plain ghost death). Returns
+    /// true when the character survives (`statLifeMax > 0`, `:38780-38784`
+    /// — the caller fires `AchievementsHelper.NotifyProgressionEvent(35)`,
+    /// EXTRA_LIFE); false means `KillMeForGood` (`:38786` — the App-side
+    /// file deletion, `death.rs::hardcore_permadeath`).
+    pub fn hardcore_death_penalty(&mut self, seeds: tr_core::seeds::SeedFlags) -> bool {
+        if Self::survive_hardcore_death(seeds) {
+            self.max_hp = (self.max_hp - 60).max(0);
+            if self.max_hp > 0 {
+                return true;
+            }
+        }
         false
     }
 
     /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
-    /// player should respawn now.
+    /// player should respawn now. `seeds` feeds the hardcore arm's
+    /// `Main.surviveHardcoreDeath` crossover gate (`:17044`).
+    /// `Player.UpdateDead`'s visible-accessory clear (`Player.cs:16937` →
+    /// `ResetVisibleAccessories` `:31134`): the dead tick drops the visible
+    /// shield (the `PlayerFrame` re-derive never runs while dead).
     pub fn update_dead(
         &mut self,
         jump: bool,
@@ -4563,7 +5068,21 @@ impl Player {
         danger_near: bool,
         moon_event_live: bool,
     ) -> bool {
+        self.update_dead_seeded(jump, boss_near, danger_near, moon_event_live, tr_core::seeds::SeedFlags::none())
+    }
+
+    /// The seeded form — the world-sim caller passes `World.seeds`; the bare
+    /// callers keep the no-seed default (the crossover gate stays false).
+    pub fn update_dead_seeded(
+        &mut self,
+        jump: bool,
+        boss_near: bool,
+        danger_near: bool,
+        moon_event_live: bool,
+        seeds: tr_core::seeds::SeedFlags,
+    ) -> bool {
         self.dead_time += 1;
+        self.shield = -1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
         self.hp = 0;
         // `Player.cs:17017`: the dead tick drops the channel.
@@ -4579,7 +5098,9 @@ impl Player {
         // reset, exactly like the source).
         self.potion_delay = 0;
         self.mana_potion_delay = 0;
-        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+        // `Player.cs:17023-17027`: the death fade climbs 2 per tick to 255
+        // (the ghost draw's `GetImmuneAlpha` and the death text read it).
+        self.immune_alpha = (self.immune_alpha + 2).min(255);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
         // budget zeroes while dead — the pool stays until AI_062's dead-owner
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
@@ -4589,6 +5110,21 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // `Player.cs:17044-17066`: the hardcore arm — `difficulty == 2 &&
+        // (statLifeMax <= 0 || !Main.surviveHardcoreDeath)` drains the timer
+        // ONLY while it is positive (`:17047-17050`), then latches `ghost`
+        // (`:17053`, `myPlayer` — the port's single player). No revive, no
+        // skip: the ghost flies until the world reloads. Everyone else
+        // decrements unconditionally and revives at 0 (`:17057-17065`).
+        if self.difficulty == 2 && (self.max_hp <= 0 || !Self::survive_hardcore_death(seeds)) {
+            if self.respawn_timer > 0 {
+                self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+            } else {
+                self.ghost = true;
+            }
+            return false;
+        }
+        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
@@ -4596,6 +5132,117 @@ impl Player {
             return true;
         }
         self.respawn_timer <= 0
+    }
+
+    /// `Player.Ghost` (`Player.cs:6715-6849`): the hardcore dead player's
+    /// free flight — the 7 px/s cap with the 0.2 acceleration and the ×0.9
+    /// opposite-direction brake, the ±0.1 dead-band snap, the 8-tick frame
+    /// animator (4 rows), and the 640 px world-margin clamps (`Main.leftWorld`
+    /// etc. are 0 / width×16 — the `:6822-6847` arms). The controls ride the
+    /// live input (the C# copies `PlayerInput.Triggers` after zeroing).
+    /// `ResetEffects`/`ResetVisibleAccessories` are the per-tick clears the
+    /// living tick already runs — the port's dead branch does not re-derive
+    /// equipment, so the flight needs no stat state (the immune flag clears).
+    pub fn ghost_tick(&mut self, world: &World, input: PlayerInput) {
+        self.immune = false;
+        self.immune_alpha = 0;
+        self.control_up = input.up;
+        self.control_left = input.left;
+        self.control_down = input.down;
+        self.control_right = input.right;
+        self.control_jump = input.jump;
+        // `:6737-6766`: the vertical flight — up/jump ascend, down descends,
+        // the ±0.1 band snaps to rest, everything else brakes ×0.9.
+        let num = 7.0f32;
+        let num2 = 0.2f32;
+        if self.control_up || self.control_jump {
+            if self.vy > 0.0 {
+                self.vy *= 0.9;
+            }
+            self.vy -= num2;
+            if self.vy < -num {
+                self.vy = -num;
+            }
+        } else if self.control_down {
+            if self.vy < 0.0 {
+                self.vy *= 0.9;
+            }
+            self.vy += num2;
+            if self.vy > num {
+                self.vy = num;
+            }
+        } else if self.vy < -0.1 || self.vy > 0.1 {
+            self.vy *= 0.9;
+        } else {
+            self.vy = 0.0;
+        }
+        // `:6767-6796`: the horizontal twin.
+        if self.control_left && !self.control_right {
+            if self.vx > 0.0 {
+                self.vx *= 0.9;
+            }
+            self.vx -= num2;
+            if self.vx < -num {
+                self.vx = -num;
+            }
+        } else if self.control_right && !self.control_left {
+            if self.vx < 0.0 {
+                self.vx *= 0.9;
+            }
+            self.vx += num2;
+            if self.vx > num {
+                self.vx = num;
+            }
+        } else if self.vx < -num2 || self.vx > num2 {
+            self.vx *= 0.9;
+        } else {
+            self.vx = 0.0;
+        }
+        // `:6797`: `position += velocity` — no collision, the ghost passes
+        // through tiles.
+        self.prev_x = self.x;
+        self.prev_y = self.y;
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:6798-6819`: the facing follows the velocity sign; the frame
+        // counter ticks every call and rolls the 4-row sheet every 8.
+        self.ghost_frame_counter += 1;
+        if self.vx < 0.0 {
+            self.facing = -1;
+        } else if self.vx > 0.0 {
+            self.facing = 1;
+        }
+        if self.ghost_frame_counter >= 8 {
+            self.ghost_frame_counter = 0;
+            self.ghost_frame += 1;
+            if self.ghost_frame >= 4 {
+                self.ghost_frame = 0;
+            }
+        }
+        // `:6820-6847`: the 640 px margins. `leftWorld`/`topWorld` are 0,
+        // `rightWorld`/`bottomWorld` the world pixel bounds (`Main.cs:66786-
+        // 66789`'s load-time rebind); the top clamp keeps a −0.1 upward drift.
+        let num3 = 640.0f32;
+        if self.x < num3 {
+            self.x = num3;
+            self.vx = 0.0;
+        }
+        let max_x = world.width as f32 * TILE_PX - num3 - self.width;
+        if self.x > max_x {
+            self.x = max_x;
+            self.vx = 0.0;
+        }
+        if self.y < num3 {
+            self.y = num3;
+            if self.vy < -0.1 {
+                self.vy = -0.1;
+            }
+        }
+        let max_y = world.height as f32 * TILE_PX - num3 - self.height;
+        if self.y > max_y {
+            self.y = max_y;
+            self.vy = 0.0;
+        }
     }
 
     /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
@@ -4946,7 +5593,43 @@ impl Player {
         // `:28981`, fall/petrify `:25223/:25352/:25370`); the projectile lane
         // (`Projectile.cs:14868`, also `Crit: false`) carries its type through
         // `hurt_with_source` for the dismount-on-hit gate (`:38396-38400`).
-        self.hurt_inner(amount, from_x, true, rng, dodgeable, false, None, true)
+        // The default `cooldownCounter = -1` (`:38197`) is General.
+        self.hurt_inner(
+            amount,
+            from_x,
+            true,
+            rng,
+            dodgeable,
+            false,
+            None,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
+    }
+
+    /// The counter-carrying `Hurt` entry (`Player.cs:38197`'s
+    /// `cooldownCounter` parameter): the boss/hazard lanes pass their
+    /// `ImmunityCooldownID` (the `IMMUNITY_*` constants, `id_tables.rs`) and
+    /// gate/re-arm on their own `hurt_cooldowns` slot — the M4-HAZARD-1
+    /// split-contract entry d125's Empress contact uses
+    /// (`IMMUNITY_BOSS_NO_CHEESE`). `hurt` above is the General default.
+    pub(crate) fn hurt_cooldown(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        cooldown_counter: i32,
+    ) -> bool {
+        self.hurt_inner(
+            amount,
+            from_x,
+            true,
+            rng,
+            dodgeable,
+            false,
+            None,
+            cooldown_counter,
+        )
     }
 
     /// The projectile-source `Hurt` (`PlayerDeathReason.ByProjectile`,
@@ -4962,6 +5645,29 @@ impl Player {
         dodgeable: bool,
         source_projectile: u16,
     ) -> bool {
+        self.hurt_with_source_cooldown(
+            amount,
+            from_x,
+            rng,
+            dodgeable,
+            source_projectile,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
+    }
+
+    /// The counter-carrying projectile-source `Hurt`
+    /// (`Projectile.cs:14868`'s `num` cooldownCounter — the `Damage_EVP`
+    /// BossNoCheese shot kinds, `:14779-14796`): identical to
+    /// [`Player::hurt_with_source`] plus the lane's counter.
+    pub(crate) fn hurt_with_source_cooldown(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dodgeable: bool,
+        source_projectile: u16,
+        cooldown_counter: i32,
+    ) -> bool {
         self.hurt_inner(
             amount,
             from_x,
@@ -4970,7 +5676,7 @@ impl Player {
             dodgeable,
             false,
             Some(source_projectile),
-            true,
+            cooldown_counter,
         )
     }
 
@@ -4981,12 +5687,20 @@ impl Player {
     /// RETIRE compose keeps d78's verbatim array write; the BossNoCheese
     /// lane is live, so a cross-dodge arms its window too). The dodge
     /// handlers pass the 120/80 pair
+    /// C#) and ALL SIX per-cooldown slots (`:38017-38020`, the M4-HAZARD-1
+    /// array — a dodge's i-frames cover every source, boss lanes included).
+    /// `hurt_cd` keeps mirroring the General window in seconds for the
+    /// collapsed-lane witnesses. The dodge handlers pass the 120/80 pair
     /// directly; `iframes_for` (the normal-hurt window) is not involved.
     /// `pub(crate)`: the Strange Brew's bonus i-frames (`ApplyLifeAndOrMana`,
     /// `Player.cs:51912-51915`) call it from `potions.rs` (S1-P-i37).
     pub(crate) fn set_immune_time_for_all_types(&mut self, time: i32) {
         self.immune = true;
         self.immune_time = time;
+        // `Player.cs:38017-38020` — the unconditional all-slot write.
+        for cd in self.hurt_cooldowns.iter_mut() {
+            *cd = time;
+        }
         self.hurt_cd = time as f32 / 60.0;
         // `Player.cs:38017-38020` — the per-cooldown array rides the same
         // write (the RETIRE compose: d78's verbatim loop — the array is
@@ -4997,11 +5711,117 @@ impl Player {
         }
     }
 
-    /// `Player.ShadowDodge` (`Player.cs:38023-38042`) minus the NetMessage:
-    /// the 120/80 immunity, buff 59 deleted by the same single-pass `for` with
-    /// `DelBuff`'s compaction (`:38030-38040`), the Hallowed set-bonus
-    /// cooldown armed (`PutHallowedArmorSetBonusOnCooldown` `:38037-38039` —
-    /// it keeps the 30 s buff-59 cycle from re-granting).
+    /// `Player.CanParryAgainst` (`Player.cs:31437-31444`), verbatim: the
+    /// parry window is live, the enemy centre lies on the facing side
+    /// (`Math.Sign(enemyRect.Center.X - blockingPlayerRect.Center.X) ==
+    /// direction`), the enemy is moving, and the player is NOT already
+    /// immune. Both centres ride the C# `Rectangle` integer arithmetic —
+    /// the caller truncates the positions (`(int)position.X`) and halves
+    /// the int widths; `Math.Sign` answers 0 on an exact tie.
+    pub fn can_parry_against(&self, enemy_center_x: i32, enemy_vx: f32, enemy_vy: f32) -> bool {
+        let player_center_x = self.x as i32 + self.width as i32 / 2;
+        let d = enemy_center_x - player_center_x;
+        let sign = if d > 0 { 1 } else if d < 0 { -1 } else { 0 };
+        if self.shield_parry_time_left > 0
+            && sign == self.facing
+            && (enemy_vx != 0.0 || enemy_vy != 0.0)
+        {
+            return !self.immune;
+        }
+        false
+    }
+
+    /// `Player.GiveImmuneTimeForCollisionAttack` (`Player.cs:20494-20511`),
+    /// verbatim: the strike counter climbs while grants land within 20
+    /// ticks of each other (else resets to 1); at 3 strikes the grant is
+    /// refused; otherwise the window lands only if not already immune or
+    /// the new window is at least as long. `immuneNoBlink = true` rides
+    /// with it (no blink flash on collision i-frames). The port's
+    /// `hurt_cd` carries the window in seconds (the collapsed lane).
+    pub(crate) fn give_immune_time_for_collision_attack(&mut self, time: i32) {
+        if self.time_since_last_immune_get <= 20 {
+            self.immune_strikes += 1;
+        } else {
+            self.immune_strikes = 1;
+        }
+        self.time_since_last_immune_get = 0;
+        if self.immune_strikes < 3 && (!self.immune || self.immune_time <= time) {
+            self.immune = true;
+            self.immune_no_blink = true;
+            self.immune_time = time;
+            self.hurt_cd = time as f32 / 60.0;
+        }
+    }
+
+    /// `Player.TryTogglingShield` (`Player.cs:31741-31764`), minus the
+    /// `ApplyAttackCooldown(20)` write (the port's `attack_cd` lives on the
+    /// App — the ShieldRaise caller folds the max there): the raise arms
+    /// the 20-tick parry window ONLY with the cooldown spent and zeroes
+    /// the use timers; the lower locks 15 ticks and clears the window.
+    /// Returns the attack-cooldown request (20 on the lower, 0 otherwise)
+    /// so the caller can `attack_cd = max(attack_cd, req / 60)`.
+    pub(crate) fn try_toggling_shield(&mut self, should_guard: bool) -> i32 {
+        if should_guard == self.shield_raised {
+            return 0;
+        }
+        self.shield_raised = should_guard;
+        if self.shield_raised {
+            if self.shield_parry_cooldown == 0 {
+                self.shield_parry_time_left = 1;
+            }
+            // `:31754-31756` — itemAnimation/itemTime/reuseDelay zero;
+            // the App-owned timers clear in the caller.
+            0
+        } else {
+            self.shield_parry_cooldown = 15;
+            self.shield_parry_time_left = 0;
+            20 // `ApplyAttackCooldown(20)` (`:31762`, `:44433-44439`).
+        }
+    }
+
+    /// The ShieldRaise per-tick countdowns (`Player.cs:31719-31737`): the
+    /// cooldown decrements and its zero tick queues the MaxMana cue + the
+    /// 10x dust-45 burst at the shield-side anchor; the parry window
+    /// pre-increments and clears past `SHIELD_PARRY_DURATION` (20).
+    /// `SoundEngine.PlaySound(25, base.Center)` (`:31724`) queues for the
+    /// world-sim drain (the `pending_mana_effect` convention); the dust
+    /// anchor is `Center + (direction * 6 + (direction == -1 ? -10 : 0),
+    /// -14)` (`:31727`).
+    pub(crate) fn shield_raise_countdowns(&mut self) {
+        if self.shield_parry_cooldown > 0 {
+            self.shield_parry_cooldown -= 1;
+            if self.shield_parry_cooldown == 0 {
+                self.pending_parry_ready_sound = true;
+                let (cx, cy) = self.center();
+                let dx = self.facing as f32 * 6.0 + if self.facing == -1 { -10.0 } else { 0.0 };
+                self.pending_parry_ready_dust = Some((cx + dx, cy - 14.0));
+            }
+        }
+        if self.shield_parry_time_left > 0 {
+            self.shield_parry_time_left += 1;
+            if self.shield_parry_time_left > 20 {
+                self.shield_parry_time_left = 0;
+            }
+        }
+    }
+
+    /// Takes the ShieldRaise ready-cue request (`Player.cs:31724`).
+    pub(crate) fn take_parry_ready_sound(&mut self) -> bool {
+        std::mem::replace(&mut self.pending_parry_ready_sound, false)
+    }
+
+    /// Takes the ShieldRaise ready-burst anchor (`Player.cs:31725-31731`).
+    pub(crate) fn take_parry_ready_dust(&mut self) -> Option<(f32, f32)> {
+        self.pending_parry_ready_dust.take()
+    }
+
+    /// `Player.ShadowDodge` (`Player.cs:38023-38044`): the 120/80 immunity,
+    /// buff 59 deleted by the same single-pass `for` with `DelBuff`'s
+    /// compaction (`:38030-38036`), the Hallowed set-bonus cooldown armed
+    /// (`PutHallowedArmorSetBonusOnCooldown` `:38041-38044` — it keeps the
+    /// 30 s buff-59 cycle from re-granting). The `SendData(62, .., 2f)` tail
+    /// (`:38038`) queues at the `Hurt` caller (`hurt_inner`'s shadow arm) —
+    /// the 62 reader shares this handler and never re-sends (W4-c27/W4-d115).
     fn do_shadow_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
         for i in 0..crate::buffs::MAX_BUFFS {
@@ -5012,33 +5832,98 @@ impl Player {
         self.shadow_dodge_timer = 1800;
     }
 
-    /// `Player.BrainOfConfusionDodge` (`Player.cs:38046-38055`) minus the
-    /// NetMessage: the 120/80 immunity, the 300-tick animation window and the
-    /// brain's own cooldown buff 321 (240 ticks — the roll's
-    /// `FindBuffIndex(321)` gate).
+    /// `Player.BrainOfConfusionDodge` (`Player.cs:38046-38055`): the 120/80
+    /// immunity, the 300-tick animation window and the brain's own cooldown
+    /// buff 321 (240 ticks — the roll's `FindBuffIndex(321)` gate). The
+    /// `SendData(62, .., 4f)` tail (`:38053`) queues at the `Hurt` caller
+    /// (`hurt_inner`'s brain arm) — the 62 reader shares this handler and
+    /// never re-sends (W4-c27/W4-d115).
     fn brain_of_confusion_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
         self.brain_of_confusion_dodge_animation_counter = 300;
         self.buffs.add_buff(321, 240);
     }
 
-    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38059`): the 120/80
-    /// immunity; the 50x dust + gore burst is deferred to S1-E-1.
+    /// `Player.OnHit`'s Hallowed arm (`Player.cs:6938-6941`): `if (this.
+    /// onHitDodge && this.shadowDodgeTimer == 0) this.AddBuff(59, 1800)` —
+    /// the "Holy Protection" strike-grant. The buff arms `shadow_dodge`
+    /// through the buff scan (`:10074-10077`) and the next `Hurt` dodges
+    /// deterministically; `ShadowDodge` strips the buff and sets the 1800
+    /// cooldown, so the grant cannot re-fire until it decays. The arm is
+    /// RNG-free. The other `OnHit` arms (titanium storm `:6928-6937`, regen
+    /// `:6942-6945`, stardust/petal/crystal-leaf) are unported families;
+    /// the statue/Mimic `flag` only gates the titanium arm, not this one.
+    /// W4-d115.
+    pub(crate) fn on_hit_dodge_grant(&mut self) {
+        if self.on_hit_dodge && self.shadow_dodge_timer == 0 {
+            self.buffs.add_buff(59, 1800);
+        }
+    }
+
+    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38117`): the 120/80
+    /// immunity; the 50x dust + gore burst is deferred to S1-E-1 (the W4-g17
+    /// wave-C port). The `SendData(62, .., 5f)` tail (`:38113-38116`) queues
+    /// at the `Hurt` caller (`hurt_inner`'s sash arm) — the 62 reader shares
+    /// this handler and never re-sends (W4-c27/W4-d115).
     fn do_mystic_sash_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
-    /// `Player.NinjaDodge` (`Player.cs:38119-38121`): the 120/80 immunity; the
-    /// 100x dust + gore burst is deferred to S1-E-1.
+    /// `Player.NinjaDodge` (`Player.cs:38119-38165`): the 120/80 immunity; the
+    /// 100x dust + gore burst is deferred to S1-E-1 (the W4-g17 wave-C port).
+    /// The `SendData(62, .., 1f)` tail (`:38161-38164`) queues at the `Hurt`
+    /// caller (`hurt_inner`'s belt arm) — the 62 reader shares this handler
+    /// and never re-sends (W4-c27/W4-d115).
     fn ninja_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
-    /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
+    /// The `62 SyncDodge` reader's switch on ourselves
+    /// (`MessageBuffer.cs:2887-2902`): kind 1 Ninja, 2 Shadow, 4
+    /// BrainOfConfusion, 5 MysticSash — four independent `if`s in the C#
+    /// order (3, the retired Holy dodge, has no arm; any other kind falls
+    /// through). The send-back inside each handler is the SEND path's
+    /// (S1-I-4), not the reader's — the reader never re-sends. W4-c27.
+    pub(crate) fn apply_net_dodge(&mut self, kind: u8) {
+        if kind == 1 {
+            self.ninja_dodge(); // `:2889`
+        }
+        if kind == 2 {
+            self.do_shadow_dodge(); // `:2893`
+        }
+        if kind == 4 {
+            self.brain_of_confusion_dodge(); // `:2897`
+        }
+        if kind == 5 {
+            self.do_mystic_sash_dodge(); // `:2901`
+        }
+    }
+
+    /// `LegacyPlayerRenderer.DrawPlayerFull`'s counter step
+    /// (`LegacyPlayerRenderer.cs:433-448`) — the DRAW-owned writer of
+    /// `shadowDodgeCount`: +1 while the buff-scan `shadowDodge` flag is
+    /// armed (cap 30), −1 otherwise (floor 0), once per rendered frame.
+    /// Writer census (W4-d115 wiring round): the C# field has NO sim
+    /// writer — `Player.cs:1166` is the only Player.cs mention; the dodge
+    /// procs arm the FLAG (`:10076` buff 59) or the brain counter
+    /// (`:38049`), never the count. The port calls this from the draw
+    /// orchestrator (`App::draw_region`, before the render clone), NOT
+    /// from the fixed step — `update`/`respawn` never touch the field.
+    pub fn step_shadow_dodge_draw_counter(&mut self) {
+        self.shadow_dodge_count = crate::player_dodge_draw::step_shadow_dodge_count(
+            self.shadow_dodge_count,
+            self.shadow_dodge,
+        );
+    }
+
+    /// `Player.UpdateImmunity` (`Player.cs:18856-18894`): the i-frame
     /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
     /// the `immuneAlpha` blinkVisual half is draw-side and stays out.
     /// (R-03-5's port; the dodge handlers above write the same fields via
     /// `SetImmuneTimeForAllTypes`, so both windows decay through here.)
+    /// M4-HAZARD-1: the tail loop (`:18887-18893`) decrements EVERY
+    /// `hurtCooldowns` slot one per tick, independent of the `immune` flag —
+    /// the per-source counters run down while the General window is live.
     pub fn update_immunity(&mut self) {
         if self.immune {
             self.immune_time -= 1;
@@ -5050,6 +5935,7 @@ impl Player {
         // W4-d125: `UpdateImmunity`'s per-counter tail
         // (`Player.cs:18887-18893`): every positive `hurtCooldowns` slot
         // decrements once per tick (the BossNoCheese lane's window).
+        // `Player.cs:18887-18893` — outside the `if (this.immune)` block.
         for cd in self.hurt_cooldowns.iter_mut() {
             if *cd > 0 {
                 *cd -= 1;
@@ -5088,6 +5974,385 @@ impl Player {
         total
     }
 
+    /// `Player.ConsumeSolarFlare` (`Player.cs:56742-56762`): the Solar Flare
+    /// set's hurt shield — consumes one shield charge, deletes the 170-172
+    /// buff rows, re-grants the lower-tier buff (`170 + shields - 1`, 5 ticks)
+    /// while charges remain, and zeroes the recharge counter. Returns `true`
+    /// when a charge was consumed (the `Hurt` ×0.8 gate, `:38305`). W4-f50.
+    pub fn consume_solar_flare(&mut self) -> bool {
+        if self.set_solar && self.solar_shields > 0 {
+            self.solar_shields -= 1;
+            // `:56747-56753`: delete every 170-172 buff slot. The C# loops
+            // `DelBuff(i)` with NO rescan; `clear_buff` matches that shape.
+            for id in 170..=172 {
+                self.buffs.clear_buff(id);
+            }
+            // `:56754-56757`: `solarShields > 0 && whoAmI == Main.myPlayer`
+            // (always true single-player) → `AddBuff(170 + shields - 1, 5)`.
+            if self.solar_shields > 0 {
+                self.buffs.add_buff(170 + self.solar_shields - 1, 5);
+            }
+            self.solar_counter = 0;
+            return true;
+        }
+        false
+    }
+
+    /// `Player.ApplySetBonus_Solar` (`Player.cs:16366-16439`): the Solar
+    /// Flare set's per-tick bonus — `endurance += 0.12`, `setSolar = true`,
+    /// the shield recharge (one charge per 180 ticks, cap 3, the 170-172
+    /// buff ladder) and the dash-type grant. The shield-orbit positions
+    /// (`solarShieldPos`/`Vel`, `:16403-16428`) are cosmetic and unported;
+    /// the 16-dust grant burst (`:16387-16395`) queues for the world-sim
+    /// drain (the `pending_retaliate` convention). W4-f50.
+    pub fn apply_set_bonus_solar(&mut self) {
+        self.endurance += 0.12;
+        self.set_solar = true;
+        self.solar_counter += 1;
+        let num = 180;
+        if self.solar_counter >= num {
+            // `:16374-16383`: delete the 170-171 rows while 0 < shields < 3.
+            if self.solar_shields > 0 && self.solar_shields < 3 {
+                for id in 170..=171 {
+                    self.buffs.clear_buff(id);
+                }
+            }
+            if self.solar_shields < 3 {
+                // `:16386`: `AddBuff(170 + solarShields, 5)`.
+                self.buffs.add_buff(170 + self.solar_shields, 5);
+                // `:16387-16395`: the 16-dust grant burst (dust 6, noGravity,
+                // scale 1.7, fadeIn 0.5, velocity ×5) — queued for the drain.
+                self.pending_solar_grant_dust = true;
+                self.solar_counter = 0;
+            } else {
+                self.solar_counter = num;
+            }
+        }
+        // `:16429-16438`: the dash latch — `dashDelay >= 0` clears the dash
+        // state; `solarShields > 0 || (solarDashing && dashDelay < 0)` arms
+        // `dashType = 3`. The port's `solar_dashing` is unported (the dash
+        // machine is the melee lane's), so the second disjunct folds false.
+        if self.dash_delay >= 0 {
+            // solarDashing / solarDashConsumedFlare = false (no port fields).
+        }
+        if self.solar_shields > 0 {
+            self.dash_type = 3;
+        }
+    }
+
+    /// `Player.ApplySetBonus_BeetleDefense` (`Player.cs:16499-16527`): the
+    /// Beetle Scale Mail's per-tick bonus — `beetleDefense = true`, the orb
+    /// recharge (one orb per 180 ticks, cap 3, the 95-97 buff ladder). W4-f50.
+    pub fn apply_set_bonus_beetle_defense(&mut self) {
+        self.beetle_defense = true;
+        self.beetle_counter += 1.0;
+        let num = 180.0;
+        if self.beetle_counter < num {
+            return;
+        }
+        // `:16508-16517`: delete the 95-96 rows while 0 < orbs < 3.
+        if self.beetle_orbs > 0 && self.beetle_orbs < 3 {
+            for id in 95..=96 {
+                self.buffs.clear_buff(id);
+            }
+        }
+        if self.beetle_orbs < 3 {
+            // `:16520`: `AddBuff(95 + beetleOrbs, 5)`.
+            self.buffs.add_buff(95 + self.beetle_orbs, 5);
+            self.beetle_counter = 0.0;
+        } else {
+            self.beetle_counter = num;
+        }
+    }
+
+    /// `Player.ApplySetBonus_BeetleDamage` (`Player.cs:16529-16581`): the
+    /// Beetle Shell's per-tick bonus — `beetleOffense = true`, the damage-orb
+    /// decay (`beetleCounter -= 3 + beetleCountdown/20`, `beetleCountdown++`)
+    /// and the 98-100 buff ladder by the counter's tier (400/1600/5200). The
+    /// melee-hit `beetleCounter += num2` feed (`:44111-44115`) is the melee
+    /// lane's (unported here — the counter only decays). W4-f50.
+    pub fn apply_set_bonus_beetle_damage(&mut self) {
+        let mut num = 0;
+        self.beetle_offense = true;
+        self.beetle_counter -= 3.0;
+        // `:16534`: `beetleCounter -= this.beetleCountdown / 20` — C# int/int
+        // division (the countdown is an int), truncated before the subtract.
+        self.beetle_counter -= (self.beetle_countdown / 20) as f32;
+        self.beetle_countdown += 1;
+        if self.beetle_counter < 0.0 {
+            self.beetle_counter = 0.0;
+        }
+        let num2 = 400.0;
+        let num3 = 1200.0;
+        let num4 = 3600.0;
+        if self.beetle_counter > num2 + num3 + num4 + num3 {
+            self.beetle_counter = num2 + num3 + num4 + num3;
+        }
+        if self.beetle_counter > num2 + num3 + num4 {
+            self.buffs.add_buff(100, 5);
+            num = 3;
+        } else if self.beetle_counter > num2 + num3 {
+            self.buffs.add_buff(99, 5);
+            num = 2;
+        } else if self.beetle_counter > num2 {
+            self.buffs.add_buff(98, 5);
+            num = 1;
+        }
+        if num < self.beetle_orbs {
+            self.beetle_countdown = 0;
+        } else if num > self.beetle_orbs {
+            self.beetle_counter += 200.0;
+        }
+        if num == self.beetle_orbs || self.beetle_orbs <= 0 {
+            return;
+        }
+        // `:16574-16580`: delete the 98-100 rows that are not the new tier.
+        for id in 98..=100 {
+            if id != 97 + num {
+                self.buffs.clear_buff(id);
+            }
+        }
+    }
+
+    /// W4-f50 deviation 4 — `Player.ApplyArmorSoundAndDustChanges`
+    /// (`Player.cs:38167-38186`): the effective armour texture ids (the
+    /// vanity slot 10/11/12 overrides the functional 0/1/2 when its slot
+    /// id is >= 0), the werewolf override (38/21/20), then the Necro
+    /// (head 75 or 7, body 7, legs 7) and Frost (head 46, body 27, legs 26)
+    /// set flags. The werewolf half reads `wereWolf || forceWerewolf` and
+    /// `!hideWolf` — those fields are the unported werewolf family (the
+    /// Moon Charm 861 / Celestial Shell 3110 / Moon Charm 485 grants,
+    /// `:15137`/`:15405`/`:15184` + the buff-28 arm `:11893-11910`), so the
+    /// override folds false here (documented). The `GetEffectiveArmor`
+    /// loadout-share (`:5690-5710`) folds to the slot itself (no loadouts).
+    pub fn apply_armor_sound_and_dust_changes(&mut self) {
+        let slot_id = |kind: u16, f: fn(&crate::itemdata::ItemDef) -> i16| {
+            crate::registry::get(kind).map_or(-1, f)
+        };
+        // The vanity slot's id overrides the functional one when >= 0.
+        let head_v = slot_id(self.equipped[10], |d| d.head_slot);
+        let body_v = slot_id(self.equipped[11], |d| d.body_slot);
+        let legs_v = slot_id(self.equipped[12], |d| d.leg_slot);
+        let num = if head_v >= 0 { head_v } else { slot_id(self.equipped[0], |d| d.head_slot) };
+        let num2 = if body_v >= 0 { body_v } else { slot_id(self.equipped[1], |d| d.body_slot) };
+        let num3 = if legs_v >= 0 { legs_v } else { slot_id(self.equipped[2], |d| d.leg_slot) };
+        // The werewolf override folds false (the family is unported).
+        // `:38178-38185` — the Necro and Frost texture-id sets.
+        if (num == 75 || num == 7) && num2 == 7 && num3 == 7 {
+            self.bone_armor = true;
+        }
+        if num2 == 27 && num == 46 && num3 == 26 {
+            self.frost_armor = true;
+        }
+    }
+
+    /// `Player.UpdateArmorSets_Always_Solar` (`Player.cs:16358-16364`): the
+    /// counter zero when the set is not worn. W4-f50.
+    pub fn update_armor_sets_always_solar(&mut self) {
+        if !self.set_solar {
+            self.solar_counter = 0;
+        }
+    }
+
+    /// W4-f50 — the Beetle/Solar hurt-reaction tick (`Player.cs:16304-16312`
+    /// `UpdateArmorSets` + the `UpdateBuffs` buff-ladder arms `:10342-10443`):
+    /// the buff-ladder re-derivation (the counts + the 98-100 melee rows),
+    /// then the completed set's recharge machine and the always-counter
+    /// zeros. The port runs this at the `UpdateArmorSets` seam inside
+    /// `update_with_grapple` (after the set flags re-arm in the armor-set
+    /// match) — the C# runs the ladder in `UpdateBuffs` and the machines in
+    /// `UpdateArmorSets`, both inside `Player.Update`; the re-derivation is
+    /// idempotent per tick, so the relative order of the count reads is
+    /// preserved.
+    pub fn update_beetle_solar_sets(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
+        self.rederive_beetle_solar_buffs();
+        if self.set_solar {
+            self.apply_set_bonus_solar();
+        }
+        if self.beetle_defense {
+            self.apply_set_bonus_beetle_defense();
+        }
+        if self.beetle_offense {
+            self.apply_set_bonus_beetle_damage();
+        }
+        self.update_armor_sets_always_beetle(rng);
+        self.update_armor_sets_always_solar();
+        // W4-f50 deviation 4 — `UpdateArmorSets`' tail
+        // (`Player.cs:16312`): the Necro/Frost texture-id scan.
+        self.apply_armor_sound_and_dust_changes();
+    }
+
+    /// `Player.UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`):
+    /// the counter zero when neither Beetle set is worn, then the 3-frame
+    /// wing cycle, the unused-orb position clear and the orb-orbit
+    /// integration (deviation 3). The per-orb `Next(-100,101)` velocity
+    /// jitter pair draws from the passed stream (the `UpdatePlayers`
+    /// swap — `Player.Update` runs under `Main.cs:17754`); the test
+    /// wrapper's scratch stream stands in for gear-less players.
+    pub fn update_armor_sets_always_beetle(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
+        if !self.beetle_defense && !self.beetle_offense {
+            self.beetle_counter = 0.0;
+            return;
+        }
+        // `:16448-16457` — the frame counter pins at 1, so the frame
+        // advances every tick (0→1→2→0).
+        self.beetle_frame_counter += 1;
+        if self.beetle_frame_counter >= 1 {
+            self.beetle_frame_counter = 0;
+            self.beetle_frame += 1;
+            if self.beetle_frame > 2 {
+                self.beetle_frame = 0;
+            }
+        }
+        // `:16458-16462` — the unused orbs' positions zero.
+        for i in self.beetle_orbs.max(0) as usize..3 {
+            self.beetle_pos[i] = Vec2::ZERO;
+        }
+        // `:16463-16496` — the orbit integration, per live orb.
+        for j in 0..self.beetle_orbs.max(0) as usize {
+            self.beetle_pos[j] += self.beetle_vel[j];
+            // `:16466-16467` — the jitter pair, X then Y.
+            self.beetle_vel[j].x += rng.next_range(-100, 101) as f32 * 0.005;
+            self.beetle_vel[j].y += rng.next_range(-100, 101) as f32 * 0.005;
+            let mut x = self.beetle_pos[j].x;
+            let mut y = self.beetle_pos[j].y;
+            let mut num = (x * x + y * y).sqrt();
+            if num > 100.0 {
+                // `:16471-16479` — the far pull: 20/num, the 10-part blend.
+                num = 20.0 / num;
+                x *= 0.0 - num;
+                y *= 0.0 - num;
+                let num2 = 10;
+                self.beetle_vel[j].x =
+                    (self.beetle_vel[j].x * (num2 - 1) as f32 + x) / num2 as f32;
+                self.beetle_vel[j].y =
+                    (self.beetle_vel[j].y * (num2 - 1) as f32 + y) / num2 as f32;
+            } else if num > 30.0 {
+                // `:16480-16488` — the near pull: 10/num, the 20-part blend.
+                num = 10.0 / num;
+                x *= 0.0 - num;
+                y *= 0.0 - num;
+                let num3 = 20;
+                self.beetle_vel[j].x =
+                    (self.beetle_vel[j].x * (num3 - 1) as f32 + x) / num3 as f32;
+                self.beetle_vel[j].y =
+                    (self.beetle_vel[j].y * (num3 - 1) as f32 + y) / num3 as f32;
+            }
+            // `:16489-16494` — the speed damp past 2.
+            x = self.beetle_vel[j].x;
+            y = self.beetle_vel[j].y;
+            if (x * x + y * y).sqrt() > 2.0 {
+                self.beetle_vel[j] *= 0.9;
+            }
+            // `:16495` — the player-velocity drag.
+            self.beetle_pos[j] -= Vec2::new(self.vx, self.vy) * 0.25;
+        }
+    }
+
+    /// W4-f50 — the Beetle/Solar buff-ladder re-derivation (`Player.cs:10342-
+    /// 10443`): the slot-ordered `UpdateBuffs` arms that pin the 95-100/170-172
+    /// buffs at 5 ticks and set `beetleOrbs`/`solarShields` to the tier, with
+    /// the mismatch ladder (a lower tier deletes the slot + rescans, a higher
+    /// tier deletes the lower rows) and the set-flag gate (without the set the
+    /// count zeroes and the buff is deleted). The 98-100 melee damage/speed
+    /// rows (`0.1 * orbs`) fold here too.
+    pub fn rederive_beetle_solar_buffs(&mut self) {
+        // The C# `for (int j = 0; j < maxBuffs; j++)` chain with the
+        // `DelBuff(j); j--` rescan: a delete leaves the NET index unchanged
+        // (the compaction shifts the later buffs left, the `j--` cancels the
+        // loop's `j++`), so the shifted-in slot re-runs. The count assignment
+        // (`beetleOrbs = num8`) runs UNCONDITIONALLY — even after a mismatch
+        // delete — and the set-flag check may delete the (shifted) slot again.
+        let mut j = 0i32;
+        while (j as usize) < crate::buffs::MAX_BUFFS {
+            let ju = j as usize;
+            let buff = self.buffs.buff_type[ju];
+            if buff <= 0 || self.buffs.buff_time[ju] <= 0 {
+                j += 1;
+                continue;
+            }
+            // Each `DelBuff(j); j--` decrements the loop index; the loop's
+            // `j++` at the tail nets one advance per non-deleted slot.
+            let mut deletes = 0i32;
+            match buff {
+                // `:10342-10376` — the Beetle Defense ladder (95-97).
+                95..=97 => {
+                    self.buffs.buff_time[ju] = 5;
+                    let num8 = 1 + buff - 95;
+                    if self.beetle_orbs > 0 && self.beetle_orbs != num8 {
+                        if self.beetle_orbs > num8 {
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
+                        } else {
+                            for id in 95..=(95 + num8 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    self.beetle_orbs = num8;
+                    if !self.beetle_defense {
+                        self.beetle_orbs = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    } else {
+                        self.beetle_buff = true;
+                    }
+                }
+                // `:10377-10407` — the Solar Flare ladder (170-172).
+                170..=172 => {
+                    self.buffs.buff_time[ju] = 5;
+                    let num9 = 1 + buff - 170;
+                    if self.solar_shields > 0 && self.solar_shields != num9 {
+                        if self.solar_shields > num9 {
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
+                        } else {
+                            for id in 170..=(170 + num9 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    self.solar_shields = num9;
+                    if !self.set_solar {
+                        self.solar_shields = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    }
+                }
+                // `:10408-10443` — the Beetle Damage ladder (98-100).
+                98..=100 => {
+                    let num10 = 1 + buff - 98;
+                    if self.beetle_orbs > 0 && self.beetle_orbs != num10 {
+                        if self.beetle_orbs > num10 {
+                            self.buffs.del_buff(ju);
+                            deletes += 1;
+                        } else {
+                            for id in 98..=(98 + num10 - 1) {
+                                self.buffs.clear_buff(id);
+                            }
+                        }
+                    }
+                    self.beetle_orbs = num10;
+                    self.melee_damage += 0.1 * self.beetle_orbs as f32;
+                    self.melee_speed_bonus += 0.1 * self.beetle_orbs as f32;
+                    if !self.beetle_offense {
+                        self.beetle_orbs = 0;
+                        self.buffs.del_buff(ju);
+                        deletes += 1;
+                    } else {
+                        self.beetle_buff = true;
+                    }
+                }
+                _ => {}
+            }
+            // The C# `for` tail: `j++` after the arm's `j--` per delete.
+            j += 1 - deletes;
+            if j < 0 {
+                j = 0;
+            }
+        }
+    }
+
     pub(crate) fn hurt_inner(
         &mut self,
         amount: i32,
@@ -5097,7 +6362,7 @@ impl Player {
         dodgeable: bool,
         crit: bool,
         source_projectile: Option<u16>,
-        retaliate_lane: bool,
+        cooldown_counter: i32,
     ) -> bool {
         self.hurt_inner_cooldown(
             amount, from_x, knock_back, rng, dodgeable, crit, source_projectile,
@@ -5146,10 +6411,39 @@ impl Player {
             if self.hurt_cooldowns[cooldown_counter as usize] > 0 || self.hp <= 0 {
                 return false;
             }
+
+        }        // M4-HAZARD-1 — the per-source gate (`Player.cs:38208`):
+        //        : hurtCooldowns[cooldownCounter] <= 0`.
+        // General rides the `immune`/`immune_time` pair; the six array lanes
+        // read their OWN slot, so a boss/hazard hit lands THROUGH the General
+        // i-frames while its own counter is free. `hurt_cd` stays the
+        // collapsed General lane's seconds mirror (the existing witnesses'
+        // contract — the dodge-window tests clear it directly), so the
+        // General arm keeps it beside the C# flag.
+        let flag = if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+            !self.immune && self.hurt_cd <= 0.0
+            self.hurt_cooldowns[cooldown_counter as usize] <= 0
+        };
+        // `Player.cs:38210-38212`: the early-return skips ONLY when the
+        // counter is NOT an `ImmuneTimerOnlyLimitsEffects` member.
+        // PaladinsShield (5) is the set's sole member (`ImmunityCooldownID.cs:
+        // 52`): a cooldown-active shield hit runs the whole body — the DAMAGE
+        // STILL LANDS (`:38383`); only the cooldown re-arm (`:38391`'s `== 0`
+        // gate) and the retaliate (`:38401`'s `& flag`) are limited. The
+        // `flag2` remote-player arm is MP-only (`whoAmI != myPlayer && !pvp`)
+        // and collapses false in the single-player port.
+        if !flag
+            && !crate::id_tables::immunity_timer_only_limits_effects(cooldown_counter)
+        {
+            return false;
         }
-        // The dodge roll block (`Player.cs:38214-38241`), slotted after the
-        // cooldown early-return (the port's `hurt_cd`-gate IS the C# `flag`
-        // for the General counter) and before the defense reduction.
+        // `Player.Hurt`'s dead gate: the port's `hp <= 0` refusal (the C#
+        // callers gate `!dead`; the fall/petrify lanes reach `Hurt` alive).
+        if self.hp <= 0 {
+        }
+        // The dodge roll block (`Player.cs:38214-38236`), slotted after the
+        // per-counter gate (the `flag` above IS the C# `:38208` state) and
+        // before the defense reduction.
         // `whoAmI == Main.myPlayer` collapses in the single-player port. The
         // roll order is sash -> belt -> brain -> shadow; each `Next` draws
         // only while its source is armed and the previous source did not
@@ -5160,10 +6454,24 @@ impl Player {
         if dodgeable {
             if self.mystic_sash_dodge && rng.next_range(0, 10) == 0 {
                 self.do_mystic_sash_dodge();
+                // `Player.DoMysticSashDodge`'s tail (`Player.cs:38113-38116`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 5f)` — the
+                // queue drains in the net tick; the 62 reader shares the
+                // handler and never re-sends (W4-c27/W4-d115). This closes
+                // the family's send census: kinds 1/2/4/5 all queue at their
+                // `Hurt` arms.
+                self.pending_dodge_sends.push(5);
                 return false;
             }
             if self.black_belt && rng.next_range(0, 10) == 0 {
                 self.ninja_dodge();
+                // `Player.NinjaDodge`'s tail (`Player.cs:38161-38164`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 1f)` — the
+                // send queues for the net tick (the `pending_hurt_sound`
+                // convention). It sits at the HURT caller, not inside the
+                // handler: `apply_net_dodge` (the 62 reader, W4-c27) shares
+                // the handler and must not re-send. W4-d115.
+                self.pending_dodge_sends.push(1);
                 return false;
             }
             if self.brain_of_confusion
@@ -5171,13 +6479,53 @@ impl Player {
                 && self.buffs.find_buff_index(321).is_none()
             {
                 self.brain_of_confusion_dodge();
+                // `Player.BrainOfConfusionDodge`'s `whoAmI == Main.myPlayer`
+                // tail (`Player.cs:38050-38054`): the buff-321 add rides in
+                // the handler, the `SendData(62, .., 4f)` (`:38053`) queues
+                // here — the 62 reader shares the handler and never re-sends
+                // (W4-c27/W4-d115, the belt arm's convention).
+                self.pending_dodge_sends.push(4);
                 return false;
             }
             if self.shadow_dodge {
                 self.do_shadow_dodge();
+                // `Player.ShadowDodge`'s tail (`Player.cs:38038`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 2f)` — the
+                // `whoAmI != Main.myPlayer` early-return (`:38026-38029`)
+                // folds to the local player here; the queue drains in the
+                // net tick. The 62 reader shares the handler and never
+                // re-sends (W4-c27/W4-d115).
+                self.pending_dodge_sends.push(2);
                 return false;
             }
         }
+        // W4-f50 — the hurt-head reactions (`Player.cs:38237-38245`), after
+        // the dodge block and BEFORE the defense reduction: the Panic
+        // Necklace family's buff 63 (`AddBuff(63, 480)`, `:38237-38240`) and
+        // the Squire T2 set's Ballista Panic buff 205 (`AddBuff(205, 300)`,
+        // `:38241-38244`), then the stealth break (`stealth = 1f`, `:38245` —
+        // a hit always breaks the stealth). CROSS-NOTE (keep-one,
+        // f3-canonical): `task/W4-f3-dust-player-3` `4d820f7d` landed the
+        // FULL stealth-decay machine (`update_stealth`, `Player.cs:25733-
+        // 25899`: the Psycho-Knife/Shroomite/Vortex chain + the `stealth = 1f`
+        // fallback) and the SAME hurt write at this site, plus the field
+        // default fix 0.0 → C# 1f (`:1562`). This write composes 1:1 with
+        // that machine (same value, same post-dodge site, unconditional) —
+        // at merge keep ONE copy; the machine + the default fix are f3's,
+        // this branch does not duplicate them.
+        if self.panic {
+            self.buffs.add_buff(63, 480);
+        }
+        if self.set_squire_t2 {
+            self.buffs.add_buff(205, 300);
+        }
+        self.stealth = 1.0;
+        // W4-f48 retire receipt (SHIELDS RETIRE keep-one, 51eefdf84): the
+        // panic-63 + squire-205 grants above are the ONE f50-canonical copy;
+        // f48 keeps only its dodge block lane and the separate DD2
+        // crystal-lane `add_buff(205, 3600)` in the equip fold. A dodged hit
+        // grants nothing (the early returns); the d123/f36 DD2 lanes carried
+        // no hurt-grant copy (censused).
         // `Player.Hurt`'s defense reduction (the classic
         // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2). The
         // incoming raw damage stays the C# `num` (`Player.cs:38246`) — the
@@ -5197,8 +6545,32 @@ impl Player {
         let raw = amount;
         let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         let raw = if crit { raw * 2 } else { raw };
+        // W4-f50 — the football hurt arm (`Player.cs:38255-38269`): with
+        // `hasFootball` armed, the drain scans the inventory for the Football
+        // (4743) and spawns the 861 return at the player's center with
+        // `(-hitDirection * 4, -6)`, damage 0, ai1 = 1, ai2 = stack, then
+        // clears the slot. The projectile pool + inventory live on the App,
+        // so the tick queues the hit direction (the `pending_retaliate`
+        // convention). The hit direction is the knockback dir.
+        if self.has_football {
+            let hit_dir = if self.x + self.width * 0.5 >= from_x { 1 } else { -1 };
+            self.pending_football = Some(hit_dir);
+        }
+        // W4-f50 — the golf-club hurt arm (`Player.cs:38271-38280`): the held
+        // item is a jousting lance (4788/4789/4790) — the drain kills every
+        // owned 877/878/879 projectile. The held item + pool live on the App,
+        // so the tick queues the flag and the drain checks the held kind.
+        self.pending_golf_club_kill = true;
+        // W4-f50 — the invis strip (`Player.cs:38281-38290`): a hurt clears
+        // the Invisibility buff (10) from every slot. The C# loops `DelBuff(k)`
+        // with NO rescan; `clear_buff` matches that shape (the compacted-in
+        // slot is skipped, the same quirk). Runs BEFORE the cuffs arm
+        // (`:38291`).
+        if self.invis {
+            self.buffs.clear_buff(10);
+        }
         // `Player.Hurt`'s magicCuffs arm (`Player.cs:38291-38303`): after the
-        // invis strip (`:38281-38290`, unported) and BEFORE the endurance step
+        // invis strip (`:38281-38290`) and BEFORE the endurance step
         // (`:38304`) — `num3 = (int)(num * 1f)` is the raw damage (crit-doubled
         // at `:38248-38251`; every ported caller passes `crit = false`, the
         // single-player C# lanes all do), the
@@ -5214,19 +6586,83 @@ impl Player {
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
+        // W4-f50 — the Solar Flare shield (`Player.cs:38305-38320`): the
+        // Counter-set gate (`ImmunityCooldownID.Sets.Counter` = {General,
+        // BossNoCheese}, `ImmunityCooldownID.cs:50`) — the port's
+        // `retaliate_lane` carries the membership (the contact/projectile/
+        // fall/petrify lanes pass true, the lava/tile lanes false; the
+        // PaladinsShield-only difference from the Retaliate set is
+        // unreachable single-player). On a consumed charge
+        // `num2 = (int)(0.8 * num2)`; the 608 blast spawn + immediate Kill
+        // needs the projectile pool + NPC list, so it queues for the
+        // world-sim drain (the `pending_retaliate` convention).
+        let mut amount = amount;
+        if retaliate_lane && self.consume_solar_flare() {
+            amount = (0.800000011920929f32 * amount as f32) as i32;
+            self.pending_solar_blast = Some((self.center(), (150.0 * self.melee_damage) as i32));
+        }
+        // W4-f50 — the Beetle Defense orbs (`Player.cs:38321-38337`):
+        // `num2 = (int)((1 - 0.15 * beetleOrbs) * num2)`, one orb consumed,
+        // the 95-97 buff rows deleted and the lower-tier buff re-granted
+        // (`95 + orbs - 1`, 5 ticks) while orbs remain, `beetleCounter = 0`.
+        // No cooldown-set gate (the C# runs it on every lane).
+        if self.beetle_defense && self.beetle_orbs > 0 {
+            amount = ((1.0 - 0.15 * self.beetle_orbs as f32) * amount as f32) as i32;
+            self.beetle_orbs -= 1;
+            for id in 95..=97 {
+                self.buffs.clear_buff(id);
+            }
+            if self.beetle_orbs > 0 {
+                self.buffs.add_buff(95 + self.beetle_orbs - 1, 5);
+            }
+            self.beetle_counter = 0.0;
+        }
+        // W4-f50 deviation 5 — the paladin team share (`Player.cs:38338-
+        // 38368`) is SINGLE-PLAYER-UNREACHABLE and stays unported here. The
+        // gate: `defendedByPaladin && TeamDamageShare[cooldownCounter] &&
+        // num2 >= 4 && Damage < 9999`; the block scans the 255 players for
+        // the nearest OTHER `CanDefendWithPaladinsShield(this.team)` peer
+        // (`:38188-38195`: active && !dead && hasPaladinShield && team > 0
+        // && team == otherTeam && life > 25% max), cuts `num2` to
+        // `(int)(num2 * 0.75)` and redirects `(int)(num2 * 0.25)` to that
+        // peer via `Hurt(ByOther(20), .., PaladinsShield, dodgeable: false)`
+        // when it is the local player within `PaladinsShieldRange` (800,
+        // `:57100`). In single-player the only player is `whoAmI ==
+        // Main.myPlayer`, so the `m != whoAmI` scan finds no peer and the
+        // block no-ops. FUTURE-WIRE (MP): the `PlayerNet.team`/`dead` fields
+        // + `PlayerNet::paladin_shield()` landed on `task/W4-d70-moonlord-
+        // shake-screens` `ee4905939` (the DrawPaladinsShield peer loops,
+        // `Main.cs:57205-57231`); the hurt-side redirect needs the remote
+        // players' live `statLife`/`statLifeMax2` + a `Hurt` path on the
+        // peer (the port does not simulate remote equips/life — the d70
+        // deviation), so the share stays deferred until the MP player-sim
+        // lands. The `defendedByPaladin` buff-43 flag is ported
+        // (`buff_effects_misc.rs:675`); the `TeamDamageShare` set =
+        // {General, BossNoCheese} (`ImmunityCooldownID.cs:51`).
         // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
         // truncation can drive a hit to 0; the C# lifts it back to 1 (which
         // also selects the 20-tick immunity window below, not 40).
         let amount = amount.max(1);
         self.hp = (self.hp - amount).max(0);
-        // `Player.Hurt`'s immunity window (`Player.cs:38382-38385`):
+        // W4-f50 — the player hurt combat text (`Player.cs:38382`):
+        // `CombatText.NewText(playerRect, Crit ? DamagedFriendlyCrit :
+        // DamagedFriendly, num2, Crit)`. The C# draws it BEFORE the retaliate
+        // block (`:38401`), so the drain spawns it ahead of the retaliate
+        // rolls on the hit lane's stream. The caller owns `Main.combatText`
+        // (the `pending_mana_effect` convention).
+        self.pending_hurt_text = Some((amount, crit));
+        // `Player.Hurt`'s immunity window (`Player.cs:38382-38394`):
         // `int num7 = (pvp ? 8 : ((num2 != 1.0) ? (this.longInvince ? 80 : 40)
-        // : (this.longInvince ? 40 : 20)));` then, on the General lane,
-        // `this.immune = true; this.immuneTime = num7;`. The write lands on
-        // the same `immune`/`immuneTime` fields the dodge handlers arm, so
-        // `UpdateImmunity` (`:18856-18869`) runs the window down. PVP 8 is
-        // unreachable in single-player. `hurt_cd` keeps carrying the window
-        // in seconds for the single collapsed damage lane.
+        // : (this.longInvince ? 40 : 20)));` then the per-counter write:
+        // General (`:38386-38390`) arms `immune`/`immuneTime` — the same
+        // fields the dodge handlers write, so `UpdateImmunity`
+        // (`:18856-18894`) runs the window down; every other counter
+        // (`:38391-38393`) re-arms its OWN array slot with num7, and ONLY
+        // while the slot is exactly 0 — a cooldown-active PaladinsShield hit
+        // lands its damage but never extends the running counter (the `|
+        // flag2` remote arm is MP-only). PVP 8 is unreachable in
+        // single-player. `hurt_cd` keeps mirroring the General window in
+        // seconds for the collapsed-lane witnesses.
         let iframes = tr_core::damage::iframes_for(amount, false, self.long_invince);
         if cooldown_counter == COOLDOWN_GENERAL {
             self.immune = true;
@@ -5245,6 +6681,10 @@ impl Player {
             if self.hurt_cooldowns[cooldown_counter as usize] == 0 {
                 self.hurt_cooldowns[cooldown_counter as usize] = iframes;
             }
+
+        }        if cooldown_counter == crate::id_tables::IMMUNITY_GENERAL {
+        } else if self.hurt_cooldowns[cooldown_counter as usize] == 0 {
+            self.hurt_cooldowns[cooldown_counter as usize] = iframes;
         }
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
@@ -5261,18 +6701,19 @@ impl Player {
         }
         // `Player.cs:38401`: `(whoAmI == Main.myPlayer && ImmunityCooldownID.
         // Sets.Retaliate[cooldownCounter]) & flag` — `flag` is the PRE-hit
-        // not-immune state (`:38208`), which holds for every hit that reaches
-        // this tail. The Retaliate set is {General, BossNoCheese,
-        // PaladinsShield} (`ImmunityCooldownID.cs:49`); the port's collapsed
-        // lane keeps the membership through `retaliate_lane` — the contact
-        // and projectile lanes (General/BossNoCheese) and the fall/petrify
-        // defaults pass true, the lava (`Lava`, `:27708`) and tile-contact
-        // (`TileContactDamage`, `:28981`) lanes pass false (NOT members —
-        // vanilla lava/spike hits never retaliate). The block needs the NPC
-        // list + projectile pool + the hit lane's RNG: `hurt_modifiers::
-        // drain_retaliate` rolls it at the `world_sim` seams with the final
-        // post-floor damage (the C# `num2` after `:38378-38381`).
-        if retaliate_lane {
+        // per-counter state (`:38208`, captured above). The Retaliate set is
+        // {General, BossNoCheese, PaladinsShield} (`ImmunityCooldownID.cs:
+        // 49`); M4-HAZARD-1 reads the membership from the counter itself
+        // (`id_tables::immunity_retaliate`) — the lava (`Lava`), tile-contact
+        // (`TileContactDamage`) and bug-net (`WrongBugNet`) lanes are NOT
+        // members (vanilla lava/spike hits never retaliate). A
+        // cooldown-active PaladinsShield hit reaches here with flag false
+        // (the `:38210` skip exemption) and queues nothing. The block needs
+        // the NPC list + projectile pool + the hit lane's RNG:
+        // `hurt_modifiers::drain_retaliate` rolls it at the `world_sim` seams
+        // with the final post-floor damage (the C# `num2` after
+        // `:38378-38381`).
+        if crate::id_tables::immunity_retaliate(cooldown_counter) && flag {
             // The hit-moment snapshot: the C# block runs BEFORE `Hurt`'s own
             // knockback (`:38519-38524`), so the dart's `velocity * 0.3`, the
             // stars' aim and the bees' spawn read the pre-knockback state.
@@ -5317,6 +6758,22 @@ impl Player {
             self.fall_start = (self.y / TILE_PX) as i32;
             self.on_ground = false;
         }
+        // W4-f50 — the hit-dust loop (`Player.cs:38527-38553`): on a surviving
+        // hit (`statLife > 0`), `num2 / statLifeMax2 * 100` particles burst
+        // from the player's box, keyed to the armor set (stoned 1 / frost 135
+        // / bone 26 / default 5). The dust pool lives on the App, so the tick
+        // queues `(hitDirection, num2)` and the world-sim drain spawns them
+        // (the `pending_sticky_dust` convention). The hit direction is the
+        // knockback dir (0 when the pop was suppressed — the C# `hitDirection`
+        // argument, which the fall/petrify lanes pass 0).
+        if self.hp > 0 {
+            let hit_dir = if knock_back {
+                if self.x + self.width * 0.5 >= from_x { 1 } else { -1 }
+            } else {
+                0
+            };
+            self.pending_hurt_dust = Some((hit_dir, amount));
+        }
         true
     }
 
@@ -5331,8 +6788,17 @@ impl Player {
         let cx = self.x + self.width * 0.5;
         // The landing hit keeps `Hurt`'s default `dodgeable = true` — a
         // black-belt dodge eats fall damage in the vanilla (research S1-C-1
-        // §1.4).
-        self.hurt_inner(amount, cx, false, rng, true, false, None, true)
+        // §1.4). General counter (`Player.cs:25370`'s default).
+        self.hurt_inner(
+            amount,
+            cx,
+            false,
+            rng,
+            true,
+            false,
+            None,
+            crate::id_tables::IMMUNITY_GENERAL,
+        )
     }
 
     /// `Player.tileRangeX` (`Player.cs:2496`, `DefaultTileRangeX = 5` at
@@ -5566,6 +7032,49 @@ impl Player {
         self.composite_back.rotation *= -1.0;
         self.composite_front.rotation *= -1.0;
         self.item_rotation *= -1.0;
+
+        }    /// `Player.accSnappingStoneLightUp` (`Player.cs:3391-3400`): the getter
+    /// is `accSnappingStoneCooldown == 0` — the ready lights
+    /// (`:24571-24585`) gate on it. (The setter's `!value ? 60 : 0` arm has
+    /// no port caller — the strike machine arms the cooldown to 360 directly,
+    /// `snapping_stone.rs`, `Projectile.cs:14316`.)
+    pub fn acc_snapping_stone_light_up(&self) -> bool {
+        self.acc_snapping_stone_cooldown == 0
+    /// `Player.Update_SnappingStone` (`Player.cs:28385-28410`): the shared
+    /// strike cooldown counts down one per tick; at 0 the recharge cue fires
+    /// (the first worn trio member wins — `accSnappingStone` → Item30,
+    /// `accPyroclast` → Item20, `accArmletOfRuin` → Item28, each with its
+    /// `ParticleOrchestrator` recharge burst). Called from the world-sim
+    /// player pass at the `:24564` position (before `Update_HarpyCharm`
+    /// `:24565` / `Update_AmmoCycler` `:24566`).
+    ///
+    /// W4-e7 lane 23: the countdown lands verbatim. The strike machine
+    /// (`snapping_stone.rs::try_making_snapping_stone_strike`) now arms the
+    /// 360-tick cooldown, so the countdown runs in play; the recharge SOUND +
+    /// particle burst at the zero-crossing are wired at the world-sim call
+    /// site (`world_sim/player.rs`, `snapping_stone::snapping_stone_recharge`
+    /// replays the burst's draws + returns the cue). The C# plays at
+    /// `MountedCenter` with the style façade's pitch/volume arguments
+    /// (`:28396` Item30 `-0.9f, 0.08f`; `:28401` Item20 default; `:28406`
+    /// Item28 `-0.9f, 0.08f`). This method keeps the countdown alone — the
+    /// zero-crossing cue is the caller's (it needs the audio + RNG borrows).
+    pub fn update_snapping_stone(&mut self) {
+        if self.acc_snapping_stone_cooldown <= 0 {
+        self.acc_snapping_stone_cooldown -= 1;
+        if self.acc_snapping_stone_cooldown == 0 {
+            // `:28394-28408`: the recharge cue + particle burst (the first
+            // worn member wins). The world-sim caller fires it at this
+            // zero-crossing (`snapping_stone::snapping_stone_recharge`); this
+            // method keeps the countdown alone (the audio/RNG borrows live
+            // at the call site).
+    /// `Player.MountedCenter` (`Player.cs:3335-3343`):
+    /// `position + (width/2, BaseHeight/2 + HeightOffsetHitboxCenter)`. The
+    /// port has no `HeightOffsetBoost`/`HeightOffsetHitboxCenter`/mount
+    /// offsets (no mounts yet), so both fold to 0 and the vector equals
+    /// `center()` — kept as its own accessor so the flail chain anchor cites
+    /// the C# point and survives the mount port.
+    pub fn mounted_center(&self) -> (f32, f32) {
+        self.center()
     }
 
     /// `Player.MountedTop` (`Player.cs:3349-3360`):
@@ -5872,6 +7381,22 @@ impl Player {
     pub fn extra_accessory_slots_to_show(&self) -> i32 {
         i32::from(self.can_demon_heart_accessory_be_shown())
             + i32::from(self.can_master_mode_accessory_be_shown())
+    /// W4-c14 doc-sweep - `Player.UpdateBootVisualEffects`
+    /// (`Player.cs:36704-36751`): the boot kind -> VISUAL rocket tier. Only
+    /// the tier-setting arms land (the rocket cue reads the tier); the
+    /// `CancelAllBootRunVisualEffects` dash flags (`sailDash`/`coldDash`/
+    /// `desertDash`/`fairyBoots`/`hellfireTreads`, `:36664-36671`) and the
+    /// Hermes-54 cancel are run-particle visual seams. `None` = the kind
+    /// sets no visual tier (the C# switch falls through).
+    fn boot_visual_tier(kind: u16) -> Option<i32> {
+        match kind {
+            128 => Some(1),          // `:36708-36710` Rocket Boots
+            405 | 898 | 3993 => Some(2), // `:36714-36718` Spectre/Lightning + `:36745-36749` Fairy
+            1862 => Some(3),         // `:36724-36727` Frostspark
+            5000 => Some(4),         // `:36728-36731` Terraspark
+            4874 => Some(5),         // `:36719-36723` Hellfire Treads
+            _ => None,
+        }
     }
 
     /// `Player.UpdateEquips`' functional-accessory loop (`Player.cs:12946-12952`):
@@ -5921,6 +7446,15 @@ impl Player {
                 continue;
             }
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
+            // W4-c14 doc-sweep - `ApplyEquipFunctional`'s visible-boot half
+            // (`Player.cs:14378-14380`): `UpdateBootVisualEffects` runs only
+            // when the slot is NOT hidden. The functional grant below is
+            // unconditional (the C# switch sits outside the gate).
+            if !self.hide_visible_accessory[m] {
+                if let Some(tier) = Self::boot_visual_tier(kind) {
+                    self.vanity_rocket_boots = tier;
+                }
+            }
             self.apply_equip_functional(m, kind);
         }
         // `UpdateEquips`' luck tail (`Player.cs:13050-13069`, W4-e26): the
@@ -5942,8 +7476,45 @@ impl Player {
         if self.has_luck_lucky_horseshoe {
             self.luck_state.equipment_based_luck_bonus += 0.05; // `:13062-13065`
         }
+        // W4-c14 doc-sweep - `UpdateEquips`' vanity-accessory loop
+        // (`Player.cs:13009-13015` -> `ApplyEquipVanity` `:14197` ->
+        // `UpdateBootVisualEffects` `:14234`): the slots 13..20 re-derive the
+        // visual boot tier from the SOCIAL accessory (no hide gate on this
+        // loop). The other `ApplyEquipVanity` grants (shader/wings/merman/
+        // bobber/voice) stay draw seams; only the rocket-cue tier lands.
+        for n in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(n) {
+                continue;
+            }
+            if let Some(tier) = Self::boot_visual_tier(self.equipped[n]) {
+                self.vanity_rocket_boots = tier;
+            }
+        }
+        // W4-c14 doc-sweep - `Player.cs:13088-13091`: the Red's Leggings 668
+        // in the leg armour slot (2) OR its vanity slot (12) sets the visual
+        // rocket tier 6 (the bee-costume rocket cue, Item24 cadence 15).
+        // `GetEffectiveArmor` collapses to `equipped[slot]` (no loadouts).
+        // This runs AFTER the accessory loops, so it wins like the C#.
+        if self.equipped[2] == 668 || self.equipped[12] == 668 {
+            self.vanity_rocket_boots = 6;
+        }
+        // The luck tail's last flag (W4-e26 supersedes c14's subset note):
+        // ONE +0.05 `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` —
+        // the flag the Lucky Coin family arms (855/3034/3035); two rings
+        // still add 0.05 once.
         if self.has_lucky_coin {
             self.luck_state.equipment_based_luck_bonus += 0.05; // `:13066-13069`
+        }
+        // `UpdateEquips`' held-Bouncing-Shield row (`Player.cs:13075-13078`):
+        // `HeldItem.type == 4760 && ownedProjectileCounts[866] < 1` arms
+        // `hasRaisableShield` — the shield in hand IS raisable until its
+        // thrown projectile is live. `held_item_kind` is the pre-tick
+        // snapshot (`world_sim/player.rs`), the recount ran at the
+        // `UpdateProjectileCaches` seam.
+        if self.held_item_kind == 4760
+            && self.owned_projectile_counts.get(866).copied().unwrap_or(0) < 1
+        {
+            self.has_raisable_shield = true;
         }
         // `Player.UpdateEquips`' tail (`Player.cs:13097-13100`):
         // `mount.UpdateAfterEquips(this)` — the Velociraptor's selective-fly
@@ -6235,6 +7806,7 @@ impl Player {
                 self.cancel_boot_run_visuals();
                 self.fairy_boots = true;
                 self.vanity_rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:14420` (W4-c14 doc-sweep)
             }
             // The Sand Boots (`:14422-14425`): 6f plus the desert-run flag
             // (the sand-floor 1.75x rides the floor-modifier chain).
@@ -6248,6 +7820,29 @@ impl Player {
             128 => {
                 self.rocket_boots = 1;
                 self.vanity_rocket_boots = 1;
+                self.vanity_rocket_boots = 1; // `:15023` (W4-c14 doc-sweep)
+            }
+            // W4-c46 — the Flipper (`Player.cs:15101-15104`): `accFlipper`.
+            187 => self.acc_flipper = true,
+            // W4-c46 — the Diving Gear family (`:15198-15202` 394,
+            // `:15235-15247` 1860, `:15248-15262` 1861): flipper + helm;
+            // the Arctic row also arms the ice skates (the light arms are
+            // the AddLight lanes).
+            394 | 1860 => {
+                self.acc_flipper = true;
+                self.acc_diving_helm = true;
+            1861 => {
+                self.ice_skate = true;
+            // W4-c46 — the frog boots (`:14426-14431` Frog Flipper 3994,
+            // `:14432-14438` Frog Gear 3995): the auto-jump / +1.6 / +10
+            // safe-fall row plus `accFlipper` (3995 also +2 spiked boots).
+            3994 | 3995 => {
+                self.auto_jump = true;
+                self.jump_speed_boost += 1.6;
+                self.extra_fall += 10;
+                if kind == 3995 {
+                    self.spiked_boots += 2;
+                }
             }
             // The Spectre Boots (`:15219-15223` - tier 2).
             405 => {
@@ -6255,12 +7850,14 @@ impl Player {
                 self.rocket_boots = 2;
                 self.cancel_boot_run_visuals();
                 self.vanity_rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:15222` (W4-c14 doc-sweep)
             }
             // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
             // +8% move).
             898 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:15380` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
                 self.cancel_boot_run_visuals();
                 self.vanity_rocket_boots = 2;
@@ -6270,6 +7867,7 @@ impl Player {
             1862 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 3;
+                self.vanity_rocket_boots = 3; // `:15386` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
                 self.ice_skate = true;
                 self.cancel_boot_run_visuals();
@@ -6279,6 +7877,7 @@ impl Player {
             5000 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 4;
+                self.vanity_rocket_boots = 4; // `:15393` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
                 self.ice_skate = true;
                 // The Terraspark row (`:15168-15174`): the water/fire walk
@@ -6294,6 +7893,7 @@ impl Player {
                 self.cancel_boot_run_visuals();
                 self.vanity_rocket_boots = 5;
                 self.hellfire_treads = true;
+                self.vanity_rocket_boots = 5; // `:15400` (W4-c14 doc-sweep)
             }
             _ if Self::wing_slot(kind as i32) > 0 => {
                 // `:15593-15602`: the accessory's `wingSlot` is both the
@@ -6530,6 +8130,14 @@ impl Player {
             // `discountEquipped` alone — the shop-price lane's writer
             // (W4-f37).
             854 => self.discount_equipped = true,
+            // W4-f48 — the Cross Necklace 554 (`ApplyEquipFunctional`
+            // `Player.cs:15587-15590`): the bare `longInvince = true` — the
+            // accepted hit's immunity window doubles (40→80, 1-damage 20→40,
+            // `Hurt` `:38385`, the `iframes_for` pair the port already feeds)
+            // and the dodge handlers' `SetImmuneTimeForAllTypes` reads the
+            // same flag (120/80, `:38025`). `ResetEffects` clears it
+            // (`:18719`, the dodge-family clears above).
+            554 => self.long_invince = true,
             // The Lucky Coin family (`Player.cs:14975-14996`): 855 Lucky
             // Coin arms `hasLuckyCoin` + `hasLuck_LuckyCoin`; 3033 Gold Ring
             // arms `goldRing` alone; 3034 Coin Ring arms goldRing + the
@@ -6618,7 +8226,13 @@ impl Player {
                 self.acc_wicked_armlet = true;
             }
             6157 => self.acc_snake_band = true,
-            6179 => self.acc_wicked_armlet = true,
+            // Armlet of Ruin 6179 (`:14584-14587`): accWickedArmlet +
+            // accArmletOfRuin (W4-e7 lane 23 — the summon-strike flag; the
+            // strike `Projectile.cs:13405-13408` is `snapping_stone.rs`).
+            6179 => {
+                self.acc_wicked_armlet = true;
+                self.acc_armlet_of_ruin = true;
+            }
             // (Resync keep-one: the 6182 Wicked Claws arm lives in the i12
             // Titan-Glove block above — armlet + autoReuseGlove + meleeSpeed,
             // the C#-complete `:14600-14604` set. This block's old copy
@@ -6626,22 +8240,45 @@ impl Player {
             6183 => self.acc_silver_bracer = true,
             // Honey Comb 1132 (`:15072-15075`).
             1132 => self.honey_comb = true,
-            // Panic Necklace 1578 (`:15076-15080`): the honeycomb + `panic`.
-            // The port has no `panic` field — the hurt buff `AddBuff(63,
-            // 480)` (`:38237-38240`) stays deferred (ANALYSIS, wave B).
-            1578 => self.honey_comb = true,
+            // Sweetheart/Panic Necklace 1578 (`:15076-15080`): the honeycomb
+            // + `panic`. W4-f50 wired the `panic` field — the hurt buff
+            // `AddBuff(63, 480)` (`:38237-38240`) runs in `hurt_inner`.
+            // SHIELDS RETIRE keep-one (receipt 51eefdf84): this f50 arm is
+            // the ONE copy — f48's honeycomb-only 1578 + long_invince-only
+            // 6187 halves are its subsets (the full 6187 panic+longInvince
+            // arm rides below).
+            1578 => {
+                self.honey_comb = true;
+                self.panic = true;
+            }
             // Stinger Necklace 6184 (`:14611-14615`): the honeycomb
             // (`accPoisonBarb`/`accHoneyedBarb` are unported families).
             6184 => self.honey_comb = true,
+            // W4-f50 — the panic family's other two sources: the bare Panic
+            // Necklace 1290 (`Player.cs:14892-14895`) and the Crossed Heart
+            // Necklace 6187 (`:14625-14628`, panic + longInvince).
+            1290 => self.panic = true,
+            6187 => {
+                self.panic = true;
+                self.long_invince = true;
+            }
             // S1-P-i10 + i37 keep-both (M1 re-sync): the Catalyst Band grants
             // BOTH flags — `Player.cs:14615-14619`: `accPoisonBarb`, `pStone`,
             // `catalystBand`. Magma Stone 1322 (`:15336-15339`): the bare flag;
             // the OnFire3 infliction is `melee_on_hit.rs` (`:6552-6566`).
             1322 => self.magma_stone = true,
             // Pyroclast 6178 (`:14580-14583`): magmaStone + accPyroclast
-            // (the snapping-stone strike `:44338-44341` is an unported
-            // projectile family — only the flag half lands here).
-            6178 => self.magma_stone = true,
+            // (W4-e7 lane 23 — the melee-strike flag; the strike
+            // `Player.cs:44338-44341` / `Projectile.cs:13397-13400` is
+            // `snapping_stone.rs`, wired at the melee hit + the PVE walk).
+            6178 => {
+                self.magma_stone = true;
+                self.acc_pyroclast = true;
+            }
+            // Snapping Stone 6167 (`:14494-14496`, W4-e7 lane 23): the bare
+            // ranged-strike flag (the strike `Projectile.cs:13401-13404` is
+            // `snapping_stone.rs`, wired at the PVE walk).
+            6167 => self.acc_snapping_stone = true,
             // Catalyst Band 6185 (`:14615-14619`): catalystBand + pStone +
             // accPoisonBarb (the AcceleratePoisons infliction is
             // `melee_on_hit.rs`, `:6536-6539`; the Stone family's third
@@ -6764,17 +8401,11 @@ impl Player {
         // the slot's buff grant is the state change.
     }
 
-    /// Direct health loss with no knockback or i-frames, used by drowning and fall
-    /// damage (`statLife -= ...` in `Player.cs`).
-    fn lose_health(&mut self, amount: i32) {
-        if self.hp <= 0 {
-            return;
-        }
-        self.hp = (self.hp - amount).max(0);
-        self.hurt_cd = self.hurt_cd.max(0.8);
-        // No ramp reset here: the C# direct `statLife -=` paths (drowning, fall
-        // damage) leave `lifeRegenTime` untouched.
-    }
+    // W4-c46: `lose_health` was removed — its only caller was
+    // `CheckDrowning`, whose C# source (`Player.cs:23261-23263`) writes
+    // `lifeRegenTime = 0f; statLife -= 2` with NO `immuneTime` write; the
+    // old `hurt_cd.max(0.8)` forcing was the S1-E-13b deviation. The drain
+    // now lives inline in `check_drowning`.
 
     /// `UpdateDyes` (`Player.cs:9587-9614`): the per-tick dye cache, refilled
     /// after the `ResetEffects` clears and before the `UpdateEquips` grants
@@ -6866,6 +8497,14 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // W4-f50 — `Player.Update`'s Beetle/Solar set-flag clears
+        // (`Player.cs:25618-25620`): `beetleDefense`/`beetleOffense`/`setSolar`
+        // reset here (after the buff timer head, before `UpdateArmorSets`
+        // `:25685` re-arms them from the worn set). The buff-scan arms
+        // (`:10342-10443`) read the flags to gate the orb counts.
+        self.beetle_defense = false;
+        self.beetle_offense = false;
+        self.set_solar = false;
         // `Player.Update` → `UpdateImmunity` (`Player.cs:25456`): the spawn
         // i-frames count down before the AI.
         self.update_immunity();
@@ -6885,6 +8524,13 @@ impl Player {
         self.time_since_last_dash_started += 1;
         if self.time_since_last_dash_started >= 300 {
             self.time_since_last_dash_started = 300;
+        }
+        // `Player.cs:24663-24667`: the collision-immunity age counter ticks
+        // and caps at 10000 — `GiveImmuneTimeForCollisionAttack`
+        // (`:20496-20504`) reads the 20-tick window and resets it on grant.
+        self.time_since_last_immune_get += 1;
+        if self.time_since_last_immune_get >= 10000 {
+            self.time_since_last_immune_get = 10000;
         }
         // `Player.cs:24761-24764`: every resting tick recovers 2 hover
         // fatigue — the read is the PREVIOUS tick's velocity (the head runs
@@ -7119,6 +8765,12 @@ impl Player {
                 honey_wet: self.honey_wet,
                 lava_wet: self.lava_wet,
                 shimmer_wet: self.shimmer_wet,
+                // W4-c46 — the live transformation flags feed the rebase
+                // (the C# reads the previous tick's state here — the
+                // transformation runs later in `Update`, `:25577`; the
+                // absorbed-state writers are S1-E-16, default false).
+                shimmering: self.shimmering,
+                merman: self.merman,
                 ..WetStaticsFlags::default()
             };
             let (g, mf, jh, js) =
@@ -7135,6 +8787,12 @@ impl Player {
         }
         self.move_speed = 1.0;
         self.strongest_move_speed_debuff = 1.0;
+        // `Player.Update`'s `ResetVisibleAccessories` call (`Player.cs:25624`
+        // → `:31134`): the visible shield slot clears per tick; the
+        // `PlayerFrame`-time `update_visible_shield` re-derives it. The other
+        // slots (handon/back/waist/…) have no port consumers yet — only the
+        // shield row lands (W4-f48 lane 20).
+        self.shield = -1;
         // `Player.cs:24371-24374`: a mounted cart keeps `onWrongGround` across
         // the tick (the on-track check below rewrites it); everyone else
         // clears it at the defaults.
@@ -7160,6 +8818,9 @@ impl Player {
         // re-grant them per tick.
         self.can_float_in_water = false;
         self.acc_flipper = false;
+        // W4-c46 — `ResetEffects`' `accDivingHelm = false` (`Player.cs:18331`):
+        // the helm rows re-grant per tick (`:13251`/`:15201`/`:15238`/`:15252`).
+        self.acc_diving_helm = false;
         self.no_items = false;
         self.cursed = false;
         // `Player.cs:18455`: `empressBrooch = false`.
@@ -7232,6 +8893,13 @@ impl Player {
         // them per tick from the worn slots.
         self.magma_stone = false;
         self.catalyst_band = false;
+        // W4-e7 lane 23 — `ResetEffects`' Snapping Stone trio clears
+        // (`Player.cs:18476-18478`): the three flags re-grant per tick from
+        // the worn slots (`apply_equip_functional` 6167/6178/6179). The
+        // cooldown is NOT cleared — a countdown (`Update_SnappingStone`).
+        self.acc_snapping_stone = false;
+        self.acc_pyroclast = false;
+        self.acc_armlet_of_ruin = false;
         self.crimson_regen = false;
         // W4-d6 residual — `ResetEffects`' Spectre pair (`Player.cs:18723-
         // 18724`): the `armor_sets.rs` seam re-grants them per tick.
@@ -7325,6 +8993,27 @@ impl Player {
         self.snake_cloak_override = false;
         self.honey_comb = false;
         self.strong_bees = false;
+        // W4-f50 — `ResetEffects`' `panic = false` (`Player.cs:18616`): the
+        // Panic Necklace rows (1290/1578/6187) re-arm it per tick.
+        self.panic = false;
+        // W4-f50 — `ResetEffects`' Beetle/Solar orb clears (`Player.cs:18501-
+        // 18505`): `beetleOrbs = 0`, `beetleBuff = false`, `solarShields = 0`.
+        // The buff-scan arms (`:10342-10443`) re-derive the counts from the
+        // live 95-100/170-172 buffs each tick; the set flags clear at the
+        // `Player.Update` head (`:25618-25620`) and re-arm in `UpdateArmorSets`.
+        self.beetle_orbs = 0;
+        self.beetle_buff = false;
+        self.solar_shields = 0;
+        // W4-f50 — `ResetEffects`' `hasFootball = false` (`Player.cs:18345`):
+        // the `UpdateEquips` inventory scan (`:12906-12918`) re-arms it from
+        // the live Football (4743) slots.
+        self.has_football = false;
+        // W4-f50 deviation 4 — `ResetEffects`' `boneArmor = false` /
+        // `frostArmor = false` (`Player.cs:18350`/`:18352`): the
+        // `ApplyArmorSoundAndDustChanges` texture-id scan re-derives them
+        // per tick at the `UpdateArmorSets` seam (`:16312`).
+        self.bone_armor = false;
+        self.frost_armor = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
@@ -7443,6 +9132,25 @@ impl Player {
         self.black_belt = false;
         self.mystic_sash_dodge = false;
         self.long_invince = false;
+        // W4-d115 wiring round — `ResetVisibleAccessories`' neck clear
+        // (`Player.cs:25624` → `:31135`, `neck = -1`) and `UpdateDyes`'
+        // `cNeck = 0` (`:9590`): the Acc_Neck layer's per-tick reset;
+        // `update_visible_neck_accessory` re-derives both in PlayerFrame.
+        self.neck = -1;
+        self.c_neck = 0;
+        // W4-d115 — `ResetEffects`' `onHitDodge = false` (`Player.cs:18443`):
+        // the Hallowed set rows re-arm it in `apply_armor_set_bonuses`.
+        self.on_hit_dodge = false;
+        // `:18616`: `panic = false` is f50-canonical (SHIELDS RETIRE
+        // keep-one, receipt 51eefdf84) — the clear rides f50's field.
+        // `ResetEffects`' parry-machine clears (W4-f48 parry wave):
+        // `hasRaisableShield = false` (`:18611`) — the shield-slot rows and
+        // the held-4760 arm re-derive; `parryDamageBuff = false` (`:18698`)
+        // — the buff-198 scan re-arms. `shieldRaised`/the two parry timers
+        // are NOT reset here (no C# reset site — they persist across ticks
+        // through the ShieldRaise machine).
+        self.has_raisable_shield = false;
+        self.parry_damage_buff = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
@@ -7477,6 +9185,21 @@ impl Player {
             if let Some(def) = crate::registry::get(kind) {
                 self.stat_defense += def.defense as i32;
             }
+            // `GrantArmorBenefits`' `shieldSlot > 0` row (`Player.cs:
+            // 13123-13126`): any equipped shield arms `hasRaisableShield`.
+            // The port's registry carries no `shieldSlot` field — the
+            // eleven `Item.SetDefaults` rows are the id list (`Item.cs`
+            // :3250/:6039/:12218/:19122/:28645/:33727/:35509/:35515/
+            // :47589/:47620/:47647): Cobalt 156, Obsidian 397, Paladin's
+            // 938, Ankh 1613, EoC 3097, Squire 3810, Frozen 3997, Hero
+            // 3998, Royal Guard Harness 6177, Silver 6183, Restoration
+            // 6188.
+            if matches!(
+                kind,
+                156 | 397 | 938 | 1613 | 3097 | 3810 | 3997 | 3998 | 6177 | 6183 | 6188
+            ) {
+                self.has_raisable_shield = true;
+            }
             // The piece's own damage/crit/speed row (`GrantArmorBenefits`'
             // `switch (armorPiece.type)`, `Player.cs:13126-13950`).
             if let Some(piece) = tr_core::armor_sets::armor_stats(kind) {
@@ -7501,6 +9224,12 @@ impl Player {
             // 5591-5593 (the Lava Angler set) each +5 fishing skill.
             if matches!(kind, 2367 | 2368 | 2369 | 5591 | 5592 | 5593) {
                 self.fishing_skill += 5;
+            }
+            // W4-c46 — `GrantArmorBenefits`' Diving Helmet row
+            // (`Player.cs:13249-13252`): the head piece 268 arms
+            // `accDivingHelm` (the `breathCDMax` ×6, `:3864-3867`).
+            if kind == 268 {
+                self.acc_diving_helm = true;
             }
             // `GrantArmorBenefits`' `switch (armorPiece.type)` rows that touch
             // `manaCost` (`Player.cs:13118-13760`): the Magic Hat and Wizard
@@ -7678,6 +9407,22 @@ impl Player {
             // `tr-core` SET_STATS) already applied above.
             (2757, 2758, 2759) => {
                 self.set_vortex = true;
+
+        }            // W4-f50 — the Solar Flare triple (`ArmorSetBonuses.cs:479`,
+            // `Benefits.Solar` `:37-40`): arms `setSolar`. The recharge
+            // machine (`ApplySetBonus_Solar` `Player.cs:16366-16439`) runs
+            // after the buff re-derivation below (it reads the shield count).
+            (2763, 2764, 2765) => {
+                self.set_solar = true;
+            // W4-f50 — the Beetle set's two body variants (`ArmorSetBonuses.cs:
+            // 419-420`, head 2199 + legs 2202 shared): the Scale Mail (2201)
+            // is `BeetleDefense` (`:317-320`), the Shell (2200) is
+            // `BeetleDamage` (`:322-325`). The recharge machines run after the
+            // buff re-derivation below (they read the orb count).
+            (2199, 2201, 2202) => {
+                self.beetle_defense = true;
+            (2199, 2200, 2202) => {
+                self.beetle_offense = true;
             }
             _ => {}
         }
@@ -7743,12 +9488,22 @@ impl Player {
                 }
                 // `:9952-9955` — Swiftness (3): `moveSpeed += 0.25f`.
                 3 => self.move_speed += 0.25,
+                // W4-f50 — `:10130-10133`: Panic! (63): `moveSpeed++`. The
+                // hurt-head grants it (`:38239`); this is its per-tick reader
+                // (the `buff_effects.rs` pure-table row, now wired live).
+                63 => self.move_speed += 1.0,
                 // S1-P-i29 — `:10134-10137`: Mining (104) `pickSpeed -= 0.25f`
                 // (the port's positive bonus convention: a lower pickSpeed
                 // mines faster).
                 104 => self.pick_speed_bonus += 0.25,
                 // `:9956-9959` — Gills (4): `CheckDrowning` inverts the probe.
                 4 => self.gills = true,
+                // W4-c46 — `:10168-10172` — Flipper (109): `ignoreWater` +
+                // `accFlipper` (the Merfolk buff's swim grant).
+                109 => {
+                    self.ignore_water = true;
+                    self.acc_flipper = true;
+                }
                 // `:9964-9967` — ManaRegeneration (6): `manaRegenBuff = true`.
                 6 => self.mana_regen_buff = true,
                 // `:9968-9976` — MagicPower (7): `magicDamage += 0.2f` (the
@@ -7811,11 +9566,28 @@ impl Player {
                 160 => self.dazed = true,
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
-                // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10075-
-                // 10077`): the Hallowed set's buff 59 arms `shadowDodge` for
-                // the tick; the buff is granted by the set bonus's
-                // `onHitDodge` scan, which is an armor-set row (out of scope).
+                // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10074-
+                // 10077`): buff 59 ("Holy Protection") arms `shadowDodge` for
+                // the tick. The buff is granted by the Hallowed set's
+                // `OnHit` arm (`:6938-6941`, W4-d115 — `on_hit_dodge_grant`).
                 59 => self.shadow_dodge = true,
+                // W4-d115 lane 19 — `Player.cs:9940-9947`: buff 321
+                // (BrainOfConfusionBuff, the brain dodge's own 240-tick
+                // cooldown) grants +10 crit to all three non-summon
+                // classes and +0.10 minion damage (`int num = 10;
+                // meleeCrit/rangedCrit/magicCrit += num; minionDamage +=
+                // num / 100f`). Per-slot adds like the C# chain (the
+                // dodge gate keeps one live slot, but the scan matches
+                // the source). The aura's NPC-confuse half is the
+                // RETALIATE block (`:38403-38431`, `hurt_modifiers::
+                // drain_retaliate` — Confused 31 on nearby hostiles +
+                // the dart 565), NOT this buff.
+                321 => {
+                    self.melee_crit += 10;
+                    self.ranged_crit += 10;
+                    self.magic_crit += 10;
+                    self.minion_damage += 0.1;
+                }
                 // `:10138-10141` — Heartreach (105): `lifeMagnet = true`
                 // (S1-P-i52 — the heart grab-range bonus + the 15/5 pull).
                 105 => self.life_magnet = true,
@@ -7865,6 +9637,11 @@ impl Player {
                 // one snowflake/spark; the buff re-affirms the flag per tick.
                 312 => self.cool_whip_buff = true,
                 365 => self.cob_whip_buff = true,
+                // `:10130-10133`: Panic (63) `moveSpeed++` — RETIRED here
+                // (SHIELDS RETIRE keep-one): f12-canonical, the
+                // `DEBUFF_DISPATCH` 63 arm (`buff_frame_wiring.rs` /
+                // `buff_effects.rs`, task/W4-f12-buff-frame-wiring). Two
+                // dispatches would grant +2 moveSpeed/tick (f12's ruling).
                 // `:10306-10312` — `BuffID.DryadsWard`: `statDefense += 8`,
                 // `lifeRegen += 6` (the regen half has no consumer yet) and
                 // `thorns += 0.5` while under 1.
@@ -7975,6 +9752,9 @@ impl Player {
                 // `:11843-11846` — buff 205 (Ballista Panic): the Ballista's
                 // reload caps (`Projectile.cs:68563-68570`).
                 205 => self.ballista_panic = true,
+                // `:11855-11858` — buff 198 (ParryDamageBuff): the contact
+                // parry's ×5 next-melee flag (`:44307-44312` consumes it).
+                198 => self.parry_damage_buff = true,
                 // `:10276-10280`: buff 120 (Stinky) — the `talkNPC = -1`
                 // dialogue half is not ported; the luck −0.25 flag is.
                 120 => self.luck_state.stinky = true,
@@ -8036,6 +9816,17 @@ impl Player {
         if self.chilled {
             self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.75);
         }
+        // `Player.cs:25955-25962`: the raised shield caps the move speed at
+        // 1/3 (the strongest debuff wins) and halves a grounded |vx| > 3.
+        // The sibling `slowOgreSpit` (:25931-25938) / `dazed` (:25939-25942)
+        // / `burned` (:25943-25946) 1/3-and-0.5 caps are unported rows —
+        // only the shield arm lands here (W4-f48 lane 20).
+        if self.shield_raised {
+            self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(1.0 / 3.0);
+            if self.vy == 0.0 && self.vx.abs() > 3.0 {
+                self.vx /= 2.0;
+            }
+        }
         if self.webbed {
             // `:11866-11872`: velocity zeroed (airborne keeps a 1e-6 fall),
             // jump height 0, gravity 0 — the player hangs in the web.
@@ -8075,6 +9866,8 @@ impl Player {
         self.desert_dash = false;
         self.fairy_boots = false;
         self.hellfire_treads = false;
+        // W4-c14 doc-sweep - `:18354`: `vanityRocketBoots = 0` clears with
+        // the gameplay tier; the equip rows + the vanity pass re-arm it.
         self.no_knockback = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
@@ -8100,6 +9893,13 @@ impl Player {
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
         self.update_equips();
+        // W4-c46 — `UpdateEquips`' wet float grant (`Player.cs:13016-13019`):
+        // `base.wet && ShouldFloatInWater` arms `accFlipper` (the swim-ascent
+        // trigger the Water Strider / float family rides). The port's `wet`
+        // is water-only (the recorded Phase-4 split).
+        if self.wet && self.should_float_in_water() {
+            self.acc_flipper = true;
+        }
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -8201,6 +10001,25 @@ impl Player {
         // `stealth = 1f` fallback. Runs after `UpdateArmorSets` (`:25685`)
         // granted the set flags and before the Mana Sickness tail (`:25900`).
         self.update_stealth();
+        // W4-f50 — the Beetle/Solar hurt-reaction machines (`Player.cs:16304-
+        // 16312` `UpdateArmorSets`): the buff-ladder re-derivation (the
+        // `UpdateBuffs` arms `:10342-10443`) + the completed set's recharge
+        // machine + the always-counter zeros. The set flags re-armed in the
+        // armor-set match above; the counts re-derive from the live buffs
+        // before the machines read them (the C# order: `UpdateBuffs` →
+        // `UpdateArmorSets`, both inside `Player.Update`). Deviation 3: the
+        // orb-orbit's `Next(-100,101)` pair draws from the tick's stream.
+        self.update_beetle_solar_sets(rng);
+        // W4-d115 — `Player.cs:25705-25708`: `if (this.shadowDodge && !this.
+        // onHitDodge) this.ClearBuff(59)` — right after `UpdateArmorSets`
+        // (`:25685`, the f50 machines above are its tail). A buff-59 granted
+        // WITHOUT the Hallowed set (debug/net) is stripped the same tick the
+        // set comes off; with the set armed the buff survives until
+        // `ShadowDodge` deletes it. The flag itself stays armed for this
+        // tick (the C# clears it in `ResetEffects`).
+        if self.shadow_dodge && !self.on_hit_dodge {
+            self.buffs.clear_buff(59);
+        }
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
@@ -8227,13 +10046,31 @@ impl Player {
         // player merman; the flight gates read it (`CanUseWingAbilities`
         // `:3994`, `WingAirLogicTweaks` `:26496`). The port folds the C#'s
         // `base.wet` (WetCollision, any liquid) + `!lavaWet` into the
-        // water/honey/shimmer union. The `releaseJump`/`wings = 0`/`accFlipper`
-        // /`AddBuff(34)` siblings are the swim/visual families (out of flight
-        // scope); `accMerman` clears at the reset above (`:25598`).
+        // water/honey/shimmer union. `accMerman` clears at the reset above
+        // (`:25598`); the swim siblings ride the W4-c46 block below.
         let merman_wet = (self.wet || self.honey_wet || self.shimmer_wet)
             && !self.lava_wet
             && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
         self.merman = self.acc_merman && merman_wet;
+        // W4-c46 — the transformation's siblings (`Player.cs:25580-25584`):
+        // `releaseJump = true`, `wings = 0` (the port's `wings_logic`/
+        // `has_wings` pair), `accFlipper = true` and `AddBuff(34, 2)` (the
+        // Merfolk buff — the buff-table arm rides the grant, no effect row).
+        if self.merman {
+            self.release_jump = true;
+            self.wings_logic = 0;
+            self.has_wings = false;
+            self.acc_flipper = true;
+            self.buffs.add_buff(34, 2);
+        }
+        // `Player.cs:25714-25717`: the raised shield grants +20 defense —
+        // after the equip pass (`UpdateEquips` `:25633`), before the floor
+        // below. `shieldRaised` toggles in ItemCheck (`:28283`, after
+        // `Player.Update`), so this reads the previous tick's guard state,
+        // exactly like the C#.
+        if self.shield_raised {
+            self.stat_defense += 20;
+        }
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -8283,6 +10120,14 @@ impl Player {
         }
         if self.pinned_rocket_boots > self.rocket_boots {
             self.rocket_boots = self.pinned_rocket_boots;
+            // W4-c14 doc-sweep - the pin stands in for the equip row, which
+            // sets both tiers equal (`Player.cs:14420` etc.). This block runs
+            // AFTER `update_equips`, so a vanity producer that already set a
+            // tier this tick (the social-slot boot, the Red's Leggings 668
+            // tier 6) WINS - the pin only fills an unset vanity tier.
+            if self.vanity_rocket_boots == 0 {
+                self.vanity_rocket_boots = self.pinned_rocket_boots;
+            }
         }
         if self.pinned_dash != 0 {
             self.dash_type = self.pinned_dash;
@@ -8445,6 +10290,7 @@ impl Player {
         if self.cart_mounted {
             self.run_slowdown = 0.2; // `:26625`
             self.rocket_boots = 0; // `:26628`
+            self.vanity_rocket_boots = 0; // `:26630` (W4-c14 doc-sweep)
             self.wings_logic = 0; // `:26631-26633` (`wings = 0` has no port field)
             self.max_run_speed = CART_RUN_SPEED; // `:26652` mount.RunSpeed
             self.acc_run_speed = CART_DASH_SPEED; // `:26653` mount.DashSpeed
@@ -8624,9 +10470,20 @@ impl Player {
                     self.full_rotation = 0.0;
                 }
                 // `Player.cs:20766-20767`: the ground jump; the landing re-arm
-                // follows (`:20755-20758` — `RefreshDoubleJumps`). `:20678`
+                // follows (`:20755-20758` - `RefreshDoubleJumps`). `:20678`
                 // sets `justJumped` on the grounded trigger. `:20749-20750`:
                 // the trigger disarms the rocket (it re-arms midair).
+                // W4-c14 - `:20762-20764`: the Pogo Stick's (43) ground jump
+                // plays Item168 at the CENTRE before the velocity writes
+                // (the `pending_cart_sounds` drain, the hop arm above).
+                if self.mount.is_active() && self.mount.kind() == 43 {
+                    let (cx, cy) = self.center();
+                    self.pending_cart_sounds.push(crate::minecart::CartCue {
+                        cue: "Item_168",
+                        x: cx,
+                        y: cy,
+                    });
+                }
                 self.just_jumped = true;
                 self.can_rocket = false;
                 self.rocket_release = false;
@@ -8644,10 +10501,53 @@ impl Player {
                     self.jump = 0;
                 } else {
                     self.vy = -self.jump_speed;
-                    self.jump -= 1;
+                    // W4-c46 — `Player.cs:20656-20667`: the merman's held
+                    // jump refreshes the swim window (`swimTime <= 10 → 30`)
+                    // INSTEAD of decrementing the boost — the infinite
+                    // merman ascent; everyone else burns the counter.
+                    if self.merman
+                        && (!self.mount.is_active()
+                            || !crate::mount::is_cart(self.mount.kind()))
+                    {
+                        if self.swim_time <= 10 {
+                            self.swim_time = 30;
+                        }
+                    } else {
+                        self.jump -= 1;
+                    }
                 }
-            } else if self.in_water {
-                self.vy = -2.0;
+            } else if released
+                && self.wet
+                && self.acc_flipper
+                && (!self.mount.is_active() || !crate::mount::is_cart(self.mount.kind()))
+            {
+                // W4-c46 — the swim ascent, `Player.cs:20637`/`:20670`/
+                // `:20681-20688`/`:20760-20767`: `flag2 = wet && accFlipper`,
+                // `flag3 = !mount.Active || !mount.Cart` — the `flag2 &
+                // flag3` term enters the jump branch on the release edge
+                // (the outer `releaseJump` gate, `:20670`), `flag4` arms
+                // `swimTime = 30` once, and the `(velocity.Y == 0 | flag4)`
+                // arm assigns the FULL wet jump statics (`-jumpSpeed` =
+                // −6.01, `jump = jumpHeight` = 30, `Player.cs:24429-24430`)
+                // — the held boost then sustains the ascent. The old
+                // `vy = -2.0` stand-in had no C# counterpart (research/03
+                // S9 — the −2f sites `:21716`/`:50491` are the Rat wall
+                // climb and the umbrella hold, not a swim rule).
+                if self.swim_time == 0 {
+                    self.swim_time = 30;
+                }
+                // `:20749-20754`: the branch's shared rocket disarm + tilt
+                // level; `:20755-20758`: the rest/slide double-jump refill.
+                self.can_rocket = false;
+                self.rocket_release = false;
+                if !self.on_track {
+                    self.full_rotation = 0.0;
+                }
+                if self.vy == 0.0 || self.sliding {
+                    self.refresh_double_jumps();
+                }
+                self.vy = -self.jump_speed;
+                self.jump = self.jump_height;
             } else if self.jump == 0
                 && released
                 && self.can_jump_again.iter().any(|&c| c)
@@ -8863,16 +10763,17 @@ impl Player {
         if !grappling {
             self.hover_dampening();
         }
-        self.vy = self.vy.max(if in_liquid {
-            -(MAX_FALL / 3.0)
-        } else {
-            -MAX_FALL
-        });
+        // W4-c46 (research/03 S9): the old `vy.max(-(MAX_FALL/3))` upward
+        // clamp in liquid had NO C# counterpart — the plain arm (gravDir 1,
+        // `Player.cs:27363-27376`) caps only the DESCENT at `maxFallSpeed`;
+        // the flipped-gravity mirror (`:27378-27391`) caps the ascent, but
+        // the port has no gravity flip. The clamp capped the flipper/merman
+        // swim ascent (−6.01) to −3.33; it is removed with the swim port.
 
         // `Player.cs:28093-28161`: the `Minecart.TrackCollision` slot — it runs
         // before the integration because it snaps Y itself and rewrites the
         // velocity (pitfall §10.3: X moves in the integration below).
-        let _was_on_track = self.on_track; // `:28091` `flag32` — the off-rail JumpingSound delegate is empty (see below)
+        let was_on_track = self.on_track; // `:28093` `flag32` - the off-rail JumpingSound delegate (the fart carts' Item16, see below)
         self.on_track = false; // `:28092`
         let mut hit_switch_flag = false; // `flag33`
         if self.cart_mounted {
@@ -8930,18 +10831,47 @@ impl Player {
                 self.full_rotation_origin = ((WIDTH / 2.0), body_h as f32);
             }
             // `:28117-28119`: the riding-off-rail `MinecartJumpingSound`
-            // delegate is EMPTY in C# (`DelegateMethods.cs:244-248`) — the
-            // `was_on_track` && !on_track edge plays nothing.
-            if flags.landing {
-                // `Minecart.cs:809-813`: the landing check —
-                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
-                // with the pre-call position and rotation captured above.
-                minecart::minecart_landing_sound(
+            // delegate - EMPTY for the base cart (`DelegateMethods.cs:244-
+            // 246`); W4-c14: the Fart/Terra-Fart carts (51/53) play Item16
+            // (`JumpingSoundFart`, `:308-312`) at the POST-call position.
+            if was_on_track && !self.on_track && matches!(self.cart_mount, 51 | 53) {
+                minecart::minecart_jumping_sound_fart(
                     &mut self.pending_cart_sounds,
-                    pre_pos,
+                    pos,
                     WIDTH as i32,
                     body_h,
                 );
+            }
+            if flags.landing {
+                // `Minecart.cs:809-813`: the landing check -
+                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
+                // with the pre-call position and rotation captured above.
+                // W4-c14: the fart carts' delegate plays Item16 THEN
+                // Item53 (`LandingSoundFart`, `DelegateMethods.cs:314-319`);
+                // the Meowmere cart (33) plays the case-37 style-5 cue
+                // (`Mount.MeowcartLandingSound`, `Mount.cs:659-662`).
+                if matches!(self.cart_mount, 51 | 53) {
+                    minecart::minecart_landing_sound_fart(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else if self.cart_mount == 33 {
+                    minecart::meowcart_landing_sound(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else {
+                    minecart::minecart_landing_sound(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                }
                 minecart::wheel_sparks(
                     &mut self.pending_sparks,
                     &mut self.spark_rng,
@@ -8965,12 +10895,32 @@ impl Player {
                 }
                 // `:28140`: `MinecartBumperSound` → Item56, at the
                 // post-TrackCollision position (`base.position`, pre-integration).
-                minecart::minecart_bumper_sound(
-                    &mut self.pending_cart_sounds,
-                    pos,
-                    WIDTH as i32,
-                    body_h,
-                );
+                // W4-c14: the Meowmere cart (33) plays the case-37 style-3
+                // cue instead (`Mount.MeowcartBumperSound`, `Mount.cs:664-667`);
+                // the fart carts play Item16 THEN Item56 (`BumperSoundFart`,
+                // `DelegateMethods.cs:321-326`).
+                if self.cart_mount == 33 {
+                    minecart::meowcart_bumper_sound(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else if matches!(self.cart_mount, 51 | 53) {
+                    minecart::minecart_bumper_sound_fart(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else {
+                    minecart::minecart_bumper_sound(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                }
             }
             if flags.hit_switch() {
                 hit_switch_flag = true; // `:28138-28140`
@@ -9020,6 +10970,7 @@ impl Player {
         }
 
         // `Player.cs:25219-25234`: the tick petrification lands, a flat hit —
+        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit -
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
         // The transition (either direction) queues the 20-puff type-1 burst
         // (`:25226-25233`); the C#'s `PlaySound(0)` (`:25225`) is a cited seam
@@ -9036,6 +10987,25 @@ impl Player {
                 width: self.width,
                 height: self.height,
             });
+
+        }        // `Player.cs:25219`: the transition gate — BOTH edges run the sound
+        // (W4-c14), only the entering edge runs the Hurt.
+            if stoned && !self.last_stoned {
+                // `Player.cs:25223` — the default General counter.
+                self.hurt_inner(
+                    20,
+                    cx,
+                    false,
+                    rng,
+                    true,
+                    None,
+                    crate::id_tables::IMMUNITY_GENERAL,
+                );
+            // W4-c14 - `:25225`: the transition's Dig-0 plays on BOTH edges
+            // (the C# site sits outside the `stoned` arm), at the truncated
+            // top-left; the case-0 draws ride the drain. The 20 dust 1
+            // (`:25226-25233`) are the visual seam.
+            self.pending_stoned_sound = Some((self.x.trunc(), self.y.trunc()));
         }
         self.last_stoned = stoned;
 
@@ -9095,7 +11065,17 @@ impl Player {
                 let dmg = (fell - 2) * 20;
                 if dmg > 0 {
                     let cx = self.x + self.width * 0.5;
-                    self.hurt_inner(dmg, cx, false, rng, true, false, None, true);
+                    // `Player.cs:25352` — the default General counter.
+                    self.hurt_inner(
+                        dmg,
+                        cx,
+                        false,
+                        rng,
+                        true,
+                        false,
+                        None,
+                        crate::id_tables::IMMUNITY_GENERAL,
+                    );
                     self.hurt_cd = 0.0;
                 }
             } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
@@ -9244,6 +11224,62 @@ impl Player {
         }
     }
 
+    /// W4-d115 wiring round — the Acc_Neck layer family's sim half:
+    /// `Player.UpdateVisibleAccessories` (`Player.cs:36753-36805`)'s neck
+    /// arm. The functional loop (slots 3..10, `IsItemSlotUnlockedAndUsable`
+    /// gated, `!hideVisibleAccessory[i]` at `:36790-36793`) then the vanity
+    /// loop (slots 13..20, unconditional `:36795-36805`) each call
+    /// `UpdateVisibleAccessory`, whose `neckSlot > 0` arm (`:36927-36930`)
+    /// overwrites `neck` — LAST visible slot wins. `ItemIsVisuallyIncompatible`
+    /// (`:36835-36858`) never rejects a neck item (its five gates read
+    /// shield/back/shoe/balloon slots only). The dye mirrors `UpdateItemDye`'s
+    /// neck arm (`:9683-9686`) with the hidden-functional early-return
+    /// (`:9628-9631` — a neck item is never a wing/934/4341/5126/4563/1987,
+    /// so `flag = isNotInVanitySlot & isSetToHidden` skips its dye); the
+    /// vanity slot's dye overrides. `ResetEffects`' `ResetVisibleAccessories`
+    /// (`:25624` → `:31135`) clears `neck = -1` each tick and `UpdateDyes`
+    /// (`:9590`) zeroes `cNeck` — the port clears both at the fold head.
+    fn update_visible_neck_accessory(&mut self) {
+        // The per-slot fold: (slot, dye-slot index, hidden-gate). The
+        // functional slots read `hide_visible_accessory[slot]`; the vanity
+        // slots (13..20 → dye index slot−10) never hide (`:36795-36805`
+        // has no hide gate, `UpdateItemDye`'s `isSetToHidden` is
+        // `hideVisibleAccessory[num]` but `isNotInVanitySlot` is false).
+        let mut pick = |kind: u16, dye_kind: u16, hidden_functional: bool, neck: &mut i32, c: &mut u32| {
+            let slot = crate::id_tables::item_neck_slot(kind);
+            if slot > 0 {
+                *neck = slot;
+                if !hidden_functional {
+                    *c = dye::shader_id_for(dye_kind);
+                }
+            }
+        };
+        let mut neck = -1;
+        let mut c_neck = 0;
+        for i in 3..10 {
+            if !self.is_item_slot_unlocked_and_usable(i) {
+                continue;
+            }
+            let kind = self.equipped[i];
+            if kind == 0 {
+                continue;
+            }
+            pick(kind, self.dye_slots[i], self.hide_visible_accessory[i], &mut neck, &mut c_neck);
+        }
+        for j in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(j) {
+                continue;
+            }
+            let kind = self.equipped[j];
+            if kind == 0 {
+                continue;
+            }
+            pick(kind, self.dye_slots[j - 10], false, &mut neck, &mut c_neck);
+        }
+        self.neck = neck;
+        self.c_neck = c_neck;
+    }
+
     /// `PlayerFrame()` (`Player.cs:35755-36647`) — the legs and body rows of
     /// every pose. The chain order is the vanilla one: the swim window, the
     /// mount animator (`flag7` plus `DoesNotOverrideLegFrames`), the leg rows,
@@ -9261,6 +11297,14 @@ impl Player {
     /// pulley/rope item (`pulley`) and the raised shield (`shield_raised`).
     fn update_frames(&mut self, world: &World) {
         let held = self.frame_inputs;
+        // W4-d115 wiring round — `PlayerFrame`'s visible-accessory call
+        // (`Player.cs:35768-35771`): `if (!dead) UpdateVisibleAccessories()`.
+        // The port's neck half re-derives `neck`/`c_neck` here; the rest
+        // of the family (wings/shoe/waist/shield/face/balloon/back) waits
+        // for its draw layers (the Acc_Neck census, ANALYSIS).
+        if !self.dead {
+            self.update_visible_neck_accessory();
+        }
         // `:35947-35949`: `PlayerFrame` re-derives the fast-run footstep cue
         // every frame — the default is the legacy Run (17, style -1, cooldown
         // 9); the Moon Lord legs (140) swap in the Item-24 click at cooldown 6
@@ -9577,6 +11621,76 @@ impl Player {
             self.apply_item_composite_arms(&held);
         } else {
             self.apply_hold_composite_arms(&held);
+        }
+        // `PlayerFrame`'s `!dead` visible-accessory pass (`Player.cs:35768-
+        // 35771` → `UpdateVisibleAccessories` `:36753-36833`): only the
+        // shield slot has a port consumer (`DrawPlayer_25_Shield`), so the
+        // port derives just that row — AFTER the composite arms above (the
+        // C# `ItemIsVisuallyIncompatible` reads `compositeBackArm.enabled`).
+        if !self.dead {
+            self.update_visible_shield();
+        }
+    }
+
+    /// `UpdateVisibleAccessories`' shield rows (`Player.cs:36762-36777`,
+    /// `:36790-36793` → `UpdateVisibleAccessory` `:36923-36926`,
+    /// `:36806-36810`), shield-only: the equipped `shieldSlot` rows scan
+    /// slots 3..10 (the vanity slots 13..20 have no port loadout), the
+    /// eocDash/raised fallbacks fill an unset slot ahead of the visible
+    /// pass, and the held Bouncing Shield (4760, no live 866) overrides to
+    /// slot 9. `ItemIsVisuallyIncompatible`'s shield arms (`:36837-36843`):
+    /// an enabled composite back arm or a held food hides the worn shield.
+    /// The `cShield` dye fallback (`:36765-36768`) has no port dye-slot
+    /// consumer — the shield draws plain (recorded, ANALYSIS).
+    fn update_visible_shield(&mut self) {
+        // `Item.shieldSlot` per id (`Item.cs:3250/:6039/:12218/:19122/
+        // :28645/:33727/:35509/:35515/:47589/:47620/:47647` — the same
+        // eleven rows the raisable-shield list reads).
+        fn shield_slot(kind: u16) -> i16 {
+            match kind {
+                156 => 1,  // Cobalt Shield
+                938 => 2,  // Paladin's Shield
+                397 => 3,  // Obsidian Shield
+                1613 => 4, // Ankh Shield
+                3097 => 5, // Shield of Cthulhu
+                3810 => 6, // Squire's Shield
+                3997 => 7, // Frozen Shield
+                3998 => 8, // Hero's Shield
+                6183 => 10, // Silver Shield
+                6177 => 11, // Royal Guard Harness
+                6188 => 12, // Restoration Shield
+                _ => -1,
+            }
+        }
+        for m in 3..10 {
+            if !self.is_item_slot_unlocked_and_usable(m) {
+                continue;
+            }
+            let slot = shield_slot(self.equipped[m]);
+            // `:36762-36777`: the eocDash / raised fallbacks — they fill an
+            // unset shield slot BEFORE the visibility gate, so a hidden
+            // accessory still guards while raised.
+            if (self.eoc_dash > 0 || self.shield_raised) && self.shield == -1 && slot != -1 {
+                self.shield = slot;
+            }
+            // `ItemIsVisuallyIncompatible` (`:36837-36843`), shield arms.
+            if slot > 0
+                && (self.composite_back.enabled
+                    || crate::sortdata::IS_FOOD.get(self.held_item_kind))
+            {
+                continue;
+            }
+            // `:36790-36793` → `UpdateVisibleAccessory` `:36923-36926`.
+            if !self.hide_visible_accessory[m] && slot > 0 {
+                self.shield = slot;
+            }
+        }
+        // `:36806-36810`: the held Bouncing Shield draws slot 9 until its
+        // thrown 866 is live (`ownedProjectileCounts[866] < 1`).
+        if self.held_item_kind == 4760
+            && self.owned_projectile_counts.get(866).copied().unwrap_or(0) < 1
+        {
+            self.shield = 9;
         }
     }
 
@@ -9914,8 +12028,9 @@ impl Player {
     /// (the Water Strider's buff-265 grant, `:9897`, or the flippers/merman)
     /// while not holding down; mounted, only the Water Strider's mount (37)
     /// floats. The buff arm now grants `can_float_in_water`, so the pose arm
-    /// is reachable.
-    fn should_float_in_water(&self) -> bool {
+    /// is reachable. `pub(crate)` so the Kazzymodus wing light's
+    /// `ShouldDrawWingsThatAreAlwaysAnimated` gate reads it (`player_lights_b`).
+    pub(crate) fn should_float_in_water(&self) -> bool {
         if self.can_float_in_water && !self.control_down {
             if self.mount.is_active() {
                 return self.mount.kind() == 37;
@@ -12139,6 +14254,7 @@ impl Player {
             self.run_slowdown = 0.2;
         }
         self.rocket_boots = 0;
+        self.vanity_rocket_boots = 0; // `:26630` (W4-c14 doc-sweep)
         if !self.mount.can_use_wings() {
             self.has_wings = false;
             self.wings_logic = 0;
@@ -12184,6 +14300,238 @@ impl Player {
         if self.mount.kind() == 8 {
             self.mount.update_drill();
         }
+    }
+
+    /// M2-MOUNT-4 (W4-c14) — the Scutlix (9) / Santank (46) auto-fire ability:
+    /// `Mount.UpdateEffects` case 9/46 (`Mount.cs:4879-4947`), the per-tick
+    /// target scan + aim + fire. The C# runs it at `Player.cs:25658` (inside
+    /// `UpdateEquips`, BEFORE the movement block); the port's `update_mount`
+    /// folds the UpdateEffects head + the `:26623` stat block into one call
+    /// (the standing order deviation), so this scan rides the world-sim
+    /// player pass right after `update_with_grapple` — the same
+    /// `UpdatePlayers` stream, the fire draws ride it (`Main.cs:17754`).
+    ///
+    /// The scan: the nearest chaseable NPC within 850 px inside the facing
+    /// cone (±60°) with a clear `CanHitLine`; on a hit the cooldown gate
+    /// (9: `== 0`; 46: `% 10 == 0`) fires `AimAbility` + (at cooldown 0)
+    /// `StopAbilityCharge` + `UseAbility`; else it aims + charges. No target
+    /// clears the charge + resets the head. The Santank jump flag
+    /// (`:4882-4884`) is already armed by `update_mount` (keep-one).
+    ///
+    /// `UseAbility` (`Mount.cs:3254-3338`) cases 9/46 spawn through the pool
+    /// (the top-left convention — `NewProjectile` centres, `Projectile.cs:
+    /// 10876-10877`); the Santank's two cues queue on the tick's ability-cue
+    /// list (the `pending_cart_sounds` convention) — the drain plays them on
+    /// the same stream. The Scutlix spawns no cue. The aiStyle-1 spawn
+    /// velocity clamp (`:10895-10902`) never fires for these speeds (14/12).
+    pub fn update_mount_ability(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        pool: &mut ProjectilePool,
+        rng: &mut tr_core::UnifiedRandom,
+    ) {
+        if !self.mount.is_active() || !matches!(self.mount.kind(), 9 | 46) {
+            return;
+        }
+        let center = Vec2::new(self.center().0, self.center().1);
+        // `:4886-4919` — the nearest-target scan.
+        let mut target = center;
+        let mut found = false;
+        let mut best = 1500.0f32;
+        for n in npcs {
+            if !n.can_be_chased_by() {
+                continue;
+            }
+            let nc = crate::projectile::npc_center(n);
+            let v = nc - center;
+            let dist = v.length();
+            // `:4900` — inside 850 AND (closer than the held target OR none
+            // held yet). The `(vector - center).Length() > num3` term is the
+            // held target's distance; `best` tracks it (the C# re-measures
+            // `vector` each pass — identical while `vector` is the last
+            // accepted centre).
+            if dist < 850.0 && ((target - center).length() > dist && dist < best || !found) {
+                // `:4902-4911` — the facing cone: |angle| <= 60° facing
+                // right, >= 120° facing left (the C#'s radian thresholds).
+                let mut in_cone = true;
+                let ang = v.to_angle().abs();
+                if self.facing == 1 && (ang as f64) > 1.047197594907988 {
+                    in_cone = false;
+                } else if self.facing == -1 && (ang as f64) < 2.0943951461045853 {
+                    in_cone = false;
+                }
+                let (nw, nh) = n.size();
+                // `:4912` — `CanHitLine(center, 0, 0, npc.position, w, h) &
+                // flag3` (the bitwise & evaluates both; the port short-
+                // circuits the line test only when the cone already failed
+                // — no draws either way).
+                if in_cone
+                    && crate::projectile::can_hit_line(
+                        world, center.x, center.y, 0.0, 0.0, n.x, n.y, nw, nh,
+                    )
+                {
+                    best = dist;
+                    target = nc;
+                    found = true;
+                }
+            }
+        }
+        if found {
+            // `:4922-4926` — the fire cadence gate.
+            let mut fire = self.mount.ability_cooldown() == 0;
+            if self.mount.kind() == 46 {
+                fire = self.mount.ability_cooldown() % 10 == 0;
+            }
+            if fire {
+                // `:4929-4934` — aim, stop-charge (only at cooldown 0), fire.
+                let (_, facing) =
+                    self.mount
+                        .aim_ability(center, target, self.facing, self.vx);
+                self.facing = facing;
+                if self.mount.ability_cooldown() == 0 {
+                    self.mount.stop_ability_charge();
+                }
+                self.mount_use_ability(target, pool, rng);
+            } else {
+                // `:4938-4939` — aim + charge.
+                let (_, facing) =
+                    self.mount
+                        .aim_ability(center, target, self.facing, self.vx);
+                self.facing = facing;
+                self.mount.set_ability_charging(true);
+            }
+        } else {
+            // `:4944-4945` — no target: drop the charge, reset the head.
+            self.mount.set_ability_charging(false);
+            self.mount.reset_head_position();
+        }
+    }
+
+    /// `Mount.UseAbility` (`Mount.cs:3254-3338`) cases 9/46 — the fire. The
+    /// `Main.myPlayer == whoAmI` gates (`:3260`/`:3292`) always hold in the
+    /// single-player port. `target` is the scan's locked NPC centre (the
+    /// C#'s `mousePosition` argument), NOT the cursor.
+    fn mount_use_ability(
+        &mut self,
+        target: Vec2,
+        pool: &mut ProjectilePool,
+        rng: &mut tr_core::UnifiedRandom,
+    ) {
+        let center = Vec2::new(self.center().0, self.center().1);
+        match self.mount.kind() {
+            9 => {
+                // `:3264-3288` — the Scutlix laser pair.
+                let target = self.mount.clamp_to_dead_zone(center, target);
+                // `:3266-3268` — the bottom-centre anchor.
+                let anchor = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                let row = crate::mount::mount_data(9).expect("the Scutlix row");
+                let idx = ((self.mount.frame_extra() - 6) * 2) as usize;
+                for i in 0..2 {
+                    let eye = crate::mount::SCUTLIX_EYE_POSITIONS[idx + i];
+                    // `:3273-3281` — the eye position: Y adds the row's
+                    // yOffset, X mirrors by facing and adds xOffset.
+                    let mut pos = Vec2::new(0.0, anchor.y + eye.y + row.y_offset as f32);
+                    if self.facing == -1 {
+                        pos.x = anchor.x - eye.x - row.x_offset as f32;
+                    } else {
+                        pos.x = anchor.x + eye.x + row.x_offset as f32;
+                    }
+                    // `:3282-3284` — Normalize (NOT SafeNormalize) × 14.
+                    let vel = (target - pos).normalize_or_zero() * 14.0;
+                    // `:3286-3287` — the spawn rides one velocity step ahead.
+                    pos += vel;
+                    // `NewProjectile` centres (`Projectile.cs:10876-10877`):
+                    // the 606's 5×5 half-box subtracts.
+                    let _ = pool.spawn_with_data_ai_owned(
+                        crate::projectile::SCUTLIX_LASER,
+                        0,
+                        pos.x - 2.5,
+                        pos.y - 2.5,
+                        vel.x,
+                        vel.y,
+                        150,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                }
+            }
+            46 => {
+                // `:3294-3301` — the gift box, only inside the cooldown-10
+                // window. The driver fires every 10 ticks (40/30/20/10/0);
+                // the cooldown-0 fire runs StopAbilityCharge FIRST (back to
+                // 40), so the gift rides the cooldown-10 fire — one gift
+                // per 40-tick cycle, the C#'s order.
+                if self.mount.ability_cooldown() <= 10 {
+                    // `:3297` — Centre + (width * -direction, 26).
+                    let gift = center
+                        + Vec2::new(self.width * -self.facing as f32, 26.0);
+                    // `:3298` — (0, -4).RotatedByRandom(0.1): TWO NextDouble
+                    // draws, left first.
+                    let vel = crate::bow_launch::rotated_by_random(
+                        Vec2::new(0.0, -4.0),
+                        0.10000000149011612,
+                        rng,
+                    );
+                    // The 930's 14×14 half-box subtracts.
+                    let _ = pool.spawn_with_data_ai_owned(
+                        crate::projectile::SANTANK_MOUNT_ROCKET,
+                        0,
+                        gift.x - 7.0,
+                        gift.y - 7.0,
+                        vel.x,
+                        vel.y,
+                        120,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+                    // `:3300` — Item89 at the gift position, volumeScale 0.2
+                    // (the int overload — no GetRandomPitch draw).
+                    self.pending_ability_sounds.push((89, gift.x, gift.y));
+                }
+                // `:3302-3311` — the missile barrage, every fire.
+                let target = self.mount.clamp_to_dead_zone(center, target);
+                // `:3305-3308` — the muzzle: bottom-centre + width*direction
+                // in X, -12 in Y.
+                let anchor = Vec2::new(self.x + self.width * 0.5, self.y + self.height);
+                let muzzle = Vec2::new(
+                    anchor.x + self.width * self.facing as f32,
+                    anchor.y - 12.0,
+                );
+                // `:3309` — SafeNormalize(Zero) × 12 THEN RotatedByRandom(0.2)
+                // (TWO more NextDouble draws).
+                let vel = crate::bow_launch::rotated_by_random(
+                    crate::bow_launch::safe_normalize(target - muzzle, Vec2::ZERO) * 12.0,
+                    0.20000000298023224,
+                    rng,
+                );
+                // The 14's 4×4 half-box subtracts.
+                let _ = pool.spawn_with_data_ai_owned(
+                    crate::projectile::MUSKET_BALL,
+                    0,
+                    muzzle.x - 2.0,
+                    muzzle.y - 2.0,
+                    vel.x,
+                    vel.y,
+                    100,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+                // `:3311` — Item11 at the muzzle, volumeScale 0.2.
+                self.pending_ability_sounds.push((11, muzzle.x, muzzle.y));
+            }
+            _ => {}
+        }
+    }
+
+    /// Takes the tick's queued mount-ability cues (the Santank Item89/Item11
+    /// style plays, `Mount.cs:3300`/`:3311`) — the caller owns the audio
+    /// device (the `take_cart_sounds` convention).
+    pub(crate) fn take_ability_sounds(&mut self) -> Vec<(i32, f32, f32)> {
+        std::mem::take(&mut self.pending_ability_sounds)
     }
 
     /// The flight section (`Player.cs:26745-27359`): the budget zeroing,
@@ -12267,7 +14615,44 @@ impl Player {
         if flag19 {
             self.wing_movement();
         }
-        // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // S1-E-21f - `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).
+        // W4-c14 - the wings-4 (jetpack) sound arm (`:29471-29480`): while
+        // flapping or mid-jump the rocketDelay2 cadence plays Item13 every
+        // 60 ticks (the frame table + the dust are visual seams). The C#
+        // decrements INSIDE the arm; the `:26907` per-tick decrement runs
+        // again below - both, verbatim.
+        if self.wings_logic == 4 && (flag19 || self.jump > 0) {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                self.pending_cart_sounds.push(crate::minecart::CartCue {
+                    cue: "Item_13",
+                    x: self.x,
+                    y: self.y,
+                });
+                self.rocket_delay2 = 60;
+            }
+        }
+        // W4-c14 - the wings-45 (Celestial Starboard) sound arm
+        // (`:30165-30174`): `ShouldDrawWingsThatAreAlwaysAnimated`
+        // (`:30737-30748`: airborne, ungrappled, not water-floating, the
+        // mount allows wings) + budget left: Item24 every 30 ticks.
+        if self.wings_logic == 45
+            && self.vy != 0.0
+            && !self.grappling_active
+            && (!self.wet || !self.should_float_in_water())
+            && self.mount.can_use_wings()
+            && self.wing_time > 0.0
+        {
+            self.rocket_delay2 -= 1;
+            if self.rocket_delay2 <= 0 {
+                self.pending_cart_sounds.push(crate::minecart::CartCue {
+                    cue: "Item_24",
+                    x: self.x,
+                    y: self.y,
+                });
+                self.rocket_delay2 = 30;
+            }
+        }
         // The port runs the DEFAULT arm's frame machine (`:30448-30526`:
         // num35 = 4, num36 = 4, num37 = 0, num38 = 0, num39 = 1 — the
         // wings-43/48/32 constants and the hover wings' own tables are visual
@@ -12353,12 +14738,39 @@ impl Player {
                     // `:26875-26882`: tier 1 cadence 30, tiers 2/3/4/5 15.
                     self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
                 }
-                // `:26884-26896`: the rocketSoundDelay cue (Item13/Item24 per
-                // vanity tier) is an audio seam — the port's rocket sound
-                // rides the S1-E-21 family, not this block.
+                // W4-c14 - `:26884-26896`: the rocketSoundDelay cue - the
+                // VANITY tier picks the cue (1/5 Item13 cadence 30,
+                // 2/3/4/6 Item24 cadence 15). W4-c14 doc-sweep: the vanity
+                // producer lands (`vanity_rocket_boots` - the equip rows set
+                // both tiers equal, `Player.cs:14420`/`:15023`/`:15222`/
+                // `:15380-15400`, the vanity pass `UpdateBootVisualEffects`
+                // `:36704-36751` re-derives it, the Red's Leggings 668 sets
+                // tier 6 `:13088-13091`), so the cue reads the vanity tier
+                // like the C#. The play queues on the movement-cue drain
+                // (the Item55 convention).
+                if self.rocket_sound_delay <= 0 {
+                    let cue = match self.vanity_rocket_boots {
+                        1 | 5 => Some(("Item_13", 30)),
+                        2 | 3 | 4 | 6 => Some(("Item_24", 15)),
+                        _ => None,
+                    };
+                    if let Some((cue, delay)) = cue {
+                        self.rocket_sound_delay = delay;
+                        self.pending_cart_sounds.push(crate::minecart::CartCue {
+                            cue,
+                            x: self.x,
+                            y: self.y,
+                        });
+                    }
+                }
             } else {
                 self.can_rocket = false;
             }
+        }
+        // W4-c14 - `:26903-26905`: the rocket cue cadence ticks once per
+        // flight tick, before the flame cadence below.
+        if self.rocket_sound_delay > 0 {
+            self.rocket_sound_delay -= 1;
         }
         // `:26907-26910`: the flame cadence delay ticks every tick.
         if self.rocket_delay2 > 0 {
@@ -12488,6 +14900,21 @@ impl Player {
                     vy: self.vy,
                     facing: self.facing,
                 });
+                // W4-c14 - the wings-4 glide sound (`Player.cs:27149-27156`,
+                // inside the `velocity.Y > 0` dust block): the rocketDelay2
+                // cadence plays Item13 every 60 ticks while gliding (the
+                // per-wing dust rolls stay visual seams).
+                if self.wings_logic == 4 {
+                    self.rocket_delay2 -= 1;
+                    if self.rocket_delay2 <= 0 {
+                        self.pending_cart_sounds.push(crate::minecart::CartCue {
+                            cue: "Item_13",
+                            x: self.x,
+                            y: self.y,
+                        });
+                        self.rocket_delay2 = 60;
+                    }
+                }
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
@@ -12870,7 +15297,34 @@ impl Player {
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
     /// tails close the chain (`:20059-20087`).
     fn horizontal_movement(&mut self, input: PlayerInput) {
-        // `Player.cs:19779`: the fast-run threshold — halfway between the
+        // W4-c14 - `Player.cs:19782-19793`: the Pogo Stick's (mount 43)
+        // grounded hop - control key held, resting, jump not held: the
+        // Item168 cue at the CENTRE (`base.Center`, the Vector2 facade
+        // truncates), then the half-speed hop and the early return. The
+        // port queues the cue on the `pending_cart_sounds` drain (the
+        // Item55 convention - the drain's facade truncates too).
+        if (self.control_left || self.control_right)
+            && self.mount.is_active()
+            && self.mount.kind() == 43
+            && self.vy == 0.0
+            && !self.control_jump
+        {
+            let (cx, cy) = self.center();
+            self.pending_cart_sounds.push(crate::minecart::CartCue {
+                cue: "Item_168",
+                x: cx,
+                y: cy,
+            });
+            let mut hop = 5.01 * 0.5; // `Player.jumpSpeed` static × gravDir 1
+            if hop < 2.0 {
+                hop = 2.0;
+            }
+            self.vy = -(hop + 0.01);
+            self.jump = 15; // `Player.jumpHeight` - the STATIC 15 (`:19791`)
+            self.full_rotation = 0.0;
+            return;
+        }
+        // `Player.cs:19779`: the fast-run threshold - halfway between the
         // boot top speed and the base run speed.
         let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
         // `Player.cs:19818-19833`: the boost applies before any input reads
@@ -13571,11 +16025,33 @@ impl Player {
     }
 
     /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath only
+    /// `Player.hasBreathingReed` (`Player.cs:4136-4150`): the held item is
+    /// the Breathing Reed (186) — on a mount only when the mount holds items
+    /// (`MountID.Sets.DontHoldItems` = 55/56/61, `MountID.cs:46`).
+    fn has_breathing_reed(&self) -> bool {
+        if self.held_item_kind != 186 {
+            return false;
+        }
+        if self.mount.is_active() {
+            return !matches!(self.mount.kind(), 55 | 56 | 61);
+        true
+    /// `Player.breathCDMax` (`Player.cs:3855-3869`): 7 base; the held
+    /// Breathing Reed doubles it while no item animation runs (`:3860`),
+    /// the Diving Helm accessory sextuples it (`:3864`) — both stack (42).
+    pub fn breath_cd_max(&self) -> i32 {
+        let mut num = BREATH_CD;
+        if self.has_breathing_reed() && !self.item_animation_active {
+            num *= 2;
+        if self.acc_diving_helm {
+            num *= 6;
+        num
+    /// `Player.CheckDrowning` (`Player.cs:23191-23317`): the breath only
     /// drains while the **head** is under the water — the C#'s
     /// `Collision.DrownCollision` probe (`:23193`), not the "any water"
     /// stand-in the port used before S1-E-13b. The drain's shape is the
-    /// C#'s: the breath counter (`breathCD`) reaches `breathCDMax` (7) before
-    /// a tick is taken, and the refill is 3 ticks per tick out of the water.
+    /// C#'s: the breath counter (`breathCD`) reaches `breathCDMax` (the
+    /// property — 7 base, reed ×2, helm ×6) before a tick is taken, and
+    /// the refill is 3 ticks per tick out of the water.
     ///
     /// The C#'s accessory arms (the Merman armour 250/4275, the breathing
     /// reed, the shimmering and the mount 4) have no ported counterparts
@@ -13585,15 +16061,55 @@ impl Player {
     fn check_drowning(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         // `this.gravDir` is -1 for the vanilla gravity — the probe sits at the
         // head; the NPCs' call passes 1 (the feet).
+
+        }    /// The fish-bowl head arm (`GetEffectiveArmor(0)` 250/4275 forces the
+    /// probe true, `:23194-23198`), the reed snorkel probe (`:23199-23224`)
+    /// and the Gills buff (4) arm (`:23226-23229`) are ported; the
+    /// `shimmering` absorbed-state clear (`:23230-23233`) rides the port's
+    /// flag, the mount-4 turtle clear (`:23234-23237`) reads the live mount,
+    /// and `accMerman` (`:23240-23247`) hands the drowning player to the
+    /// merman state instead of draining. The breath-zero gasp (`:23255-
+    /// 23258`) queues once on the 1→0 edge; the −2 damage is the direct
+    /// `statLife -= 2` (`:23263`) — NO `immuneTime` write — with the
+    /// `lifeRegenTime = 0f` reset (`:23261`) and the `ByOther(1)` drowning
+    /// attribution on the kill (`:23268`). The bubble tail (`:23283-23316`)
+    /// draws `Next(20)` even when the dust culls (S1-A-10).
+        // `Player.cs:23193`: the player passes `this.gravDir` — the vanilla
+        // value is 1f (`Player.cs:1956`), NOT the probe's −1f default (that
+        // default serves the flipped-gravity arm; the NPCs' calls pass 1f
+        // explicitly). The port has no gravity flip, so the probe sits at
+        // `position.Y − 2` (the body top) with the floor row at `value3`.
         let mut drowning = crate::collision::drown_collision(
             world,
             self.x,
             self.y,
             self.width as i32,
             self.body_height() as i32,
-            -1.0,
+            1.0,
             false,
         );
+        // `:23194-23198`: the Fish Bowl 250 / Gold Goldfish Bowl 4275 head
+        // forces the drowning flag (`GetEffectiveArmor(0)` — the slot itself,
+        // no loadouts).
+        if matches!(self.equipped[0], 250 | 4275) {
+            drowning = true;
+        }
+        // `:23199-23224`: the held reed's snorkel probe — the tile at the
+        // reed tip; dry and non-solid clears the flag. `gravDir == 1f` keeps
+        // `num2 = 0` and `-44f` ABOVE the position (`:23205-23209`).
+        if self.has_breathing_reed() && !self.item_animation_active {
+            let num = ((self.x + self.width / 2.0 + 6.0 * self.facing as f32) / 16.0) as i32;
+            let num3 = ((self.y - 44.0) / 16.0) as i32;
+            if let Some(t) = world.tile(num, num3) {
+                if t.liquid < 128
+                    && (!t.active()
+                        || !td::TILE_SOLID.has(t.kind)
+                        || td::TILE_SOLID_TOP.has(t.kind))
+                {
+                    drowning = false;
+                }
+            }
+        }
         // `Player.cs:23226-23229`: the Gills buff flips the probe — only the
         // For-the-Worthy seed keeps a drain (in the dry).
         if self.gills {
@@ -13602,9 +16118,29 @@ impl Player {
                 .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
             drowning = good_world && !drowning;
         }
+        // `:23230-23233`: the absorbed `shimmering` state never drowns.
+        // `shimmerWet` alone does NOT clear the flag (the C# tests
+        // `shimmering`, not `shimmerWet`); the absorbed-state writers stay
+        // with S1-E-16 (the shimmer-emergence work), the gate reads the field.
+        if self.shimmering {
+            drowning = false;
+        }
+        // `:23234-23237`: the Turtle mount (4) never drowns.
+        if self.mount.is_active() && self.mount.kind() == 4 {
+            drowning = false;
+        }
+        // `:23240-23247`: `accMerman` (the shell grant) turns the drowning
+        // player merman and swallows the drain (`Main.myPlayer` — the port's
+        // single player).
+        if self.acc_merman {
+            if drowning {
+                self.merman = true;
+            }
+            drowning = false;
+        }
         if drowning {
             self.breath_cd += 1;
-            if self.breath_cd >= BREATH_CD {
+            if self.breath_cd >= self.breath_cd_max() {
                 self.breath_cd = 0;
                 self.breath -= 1;
                 // `Player.cs:23255-23258`: the breath-zero gasp —
@@ -13614,8 +16150,18 @@ impl Player {
                     self.pending_drown_sound = true;
                 }
                 if self.breath <= 0 {
+                    // `:23261`: the ramp resets; `:23263`: the direct −2 —
+                    // the C# writes NO immuneTime here (the port's
+                    // `lose_health` hurt_cd forcing was the deviation).
+                    self.regen.life_regen_time = 0.0;
                     self.breath = 0;
-                    self.lose_health(2);
+                    self.hp = (self.hp - 2).max(0);
+                    if self.hp <= 0 {
+                        // `:23265-23269`: `KillMe(ByOther(1), 10.0, 0)` —
+                        // the drowning attribution the death pass resolves
+                        // (`DeathText.Drowned_*`, `Lang.cs:1060`).
+                        self.dot_death = Some(DotDeath::Drowned);
+                    }
                 }
             }
         } else {
@@ -13631,6 +16177,29 @@ impl Player {
             let mouth = Vec2::new(self.x + 12.0 * self.facing as f32, self.y + 4.0);
             self.pending_drown_bubble = Some((mouth, self.width));
         }
+        // `:23283-23316`: the bubble tail — `!flag || Next(20) != 0 ||
+        // lavaWet || honeyWet` returns; the C#'s `||` short-circuits, so the
+        // draw happens ONLY while drowning (and never in lava/honey). The
+        // dust spawns at `(position.X + 12*direction, position.Y + 4)` —
+        // `num4 = 0` for the vanilla gravDir (`:23287-23292`) — with the
+        // reed's `(-2*direction, -58)` lift (`:23293-23296`); the mount
+        // MouthPosition arms (52/54) have no ported mouth seam. `NewDust`
+        // (`:23316`): width−8 × 8, type 34, scale 1.2.
+        if !drowning || rng.next_range(0, 20) != 0 || self.lava_wet || self.honey_wet {
+            return;
+        let mut bx = self.x + 12.0 * self.facing as f32;
+        let mut by = self.y + 4.0;
+        if self.has_breathing_reed() {
+            bx += -2.0 * self.facing as f32;
+            by += -58.0;
+        self.pending_sticky_dust.push(StickyDust {
+            pos: Vec2::new(bx, by),
+            kind: 34,
+            w: self.width as i32 - 8,
+            h: 8,
+            post_arms: false,
+            scale: 1.2,
+        });
     }
 
     /// `Player.StickyMovement` (`Player.cs:22910-23087`): the cobweb (51) /
@@ -13676,6 +16245,7 @@ impl Player {
                 w: 16,
                 h: 16,
                 post_arms: false,
+                scale: 1.0,
             });
         }
         let tile_type = world.tile(num3, num4).map_or(0, |t| t.kind as i32);
@@ -13769,6 +16339,7 @@ impl Player {
             w: 4,
             h: 16,
             post_arms: true,
+            scale: 1.0,
         };
         self.pending_sticky_dust.push(honey(num4));
         // `:23048-23064`: the row below, gated on `type == 229` and the body
@@ -13828,6 +16399,37 @@ impl Player {
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
+            // W4-f32 — `UpdateLifeRegen`'s toilet arm (`Player.cs:19237-
+            // 19240`): `sitting.isSitting && details.IsAToilet` fires
+            // `TryToPoop` (`:18896-18940`). The tier ladder 207→206→26
+            // (`:18911-18922`), the `DelBuff` (`:18926`) and the
+            // `RollOnlyBadLuckExtreme(10)` stack boost all run here; the
+            // 5395 spawn drains through `pending_poop` (the item pool is
+            // the caller's). The `whoAmI == Main.myPlayer` gate always
+            // holds (single player).
+            if self.sitting && self.sitting_on_toilet {
+                let tier = [207, 206, 26]
+                    .iter()
+                    .find_map(|&bt| self.buffs.find_buff_index(bt).map(|slot| (bt, slot)));
+                let fed_tier = tier.map(|(bt, slot)| (bt, self.buffs.buff_time[slot]));
+                let tipsy = self.buffs.find_buff_index(25).is_some();
+                if let Some(stack) = crate::luck::try_to_poop_stack(
+                    rng,
+                    self.luck(),
+                    self.well_fed,
+                    tipsy,
+                    fed_tier,
+                ) {
+                    // `DelBuff(num3)` (`:18926`) — the C# removes the tier
+                    // BEFORE the clamp/roll; the slot clear draws nothing,
+                    // so the port folds it after the roll (same stream).
+                    if let Some((_, slot)) = tier {
+                        self.buffs.del_buff(slot);
+                    }
+                    let (mcx, mcy) = self.mounted_center();
+                    self.pending_poop = Some((stack, mcx, mcy));
+                }
+            }
             update_mana_regen(
                 &mut self.regen,
                 &in_,
@@ -13841,45 +16443,68 @@ impl Player {
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
         // the original frame (`Player.cs:27630-27761` > `:25977`): a DoT kill
         // this tick wins over the lava hit.
-        // `Player.cs:27681-27722`: the lava timer. Standing in lava drains one
-        // tick of the immunity budget per frame; only when it is empty does the
-        // 80-damage hit land (and grant On Fire for 420). Out of the lava the
-        // budget refills up to `lavaMax` — the Lava Charm family's 420 ticks.
-        // `Player.cs:27676`: `flag25 && !lavaImmune` — ObsidianSkin (buff 1)
-        // keeps the flag true, so the drain/hit arm is skipped AND `flag26`
-        // stays true (the budget refills while standing in lava).
+        // `Player.cs:27673-27722`: the lava timer. W4-c46 — the C#'s `flag26`
+        // starts TRUE and clears ONLY on the `flag25 && !lavaImmune` entry
+        // (`:27676-27678`), so the budget refills (+1/tick, `:27716-27722`)
+        // out of lava AND while lava-immune in it (ObsidianSkin, buff 1);
+        // a non-immune lava stand NEVER refills — the old `else` arm refilled
+        // through the hit-cooldown ticks (the deviation). Standing in lava
+        // drains one tick of the immunity budget per frame; only when it is
+        // empty does the 80-damage hit land (and grant On Fire for 420).
+        let mut lava_refill = true;
         if self.in_lava && !self.lava_immune {
-            if self.lava_time > 0 {
-                self.lava_time -= 1;
-            } else if self.hurt_cd <= 0.0 {
-                let cx = self.x + self.width * 0.5;
-                // `Player.cs:27687-27707`: the hit's damage/burn pair —
-                // 80/420 classic, halved by the Ash Wood set
-                // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
-                // `:27694-27702`, S1-C-12 wave D). The remix-world
-                // variants (`:27689-27693`, `:27696-27699`) and the
-                // `lavaRose` halves (`:27703-27707`) have no port fields
-                // and stay out (ANALYSIS "S1-C-12 wave D").
-                let (mut num79, mut num80) = (80, 420);
-                if self.ash_wood_bonus {
-                    num79 /= 2;
-                    num80 -= 210;
-                }
-                // The lava hit rolls the dodge block like any `Hurt` — the
-                // stream rides in from the `UpdatePlayers` stage through the
-                // update chain, `dodgeable` keeps `Hurt`'s default `true`
-                // (research S1-C-1 §1.4). `Crit: false` and the
-                // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) — Lava
-                // is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so
-                // the S1-C-7 wave B retaliate lane stays off.
-                if self.hurt_inner(num79, cx, true, rng, true, false, None, false) {
-                    // The Hurt return `num81 > 0.0` gates the OnFire grant
-                    // (`Player.cs:27709-27711`). `AddBuff` applies the expert
-                    // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
-                    self.buffs.add_buff(24, num80);
+            lava_refill = false;
+            // `Player.cs:27679`: `hurtCooldowns[ImmunityCooldownID.Lava] <= 0`
+            // gates the WHOLE arm — the budget drain AND the hit (M4-HAZARD-1:
+            // the Lava lane's own slot, not the General window; a contact
+            // hit's i-frames no longer pause the lava budget; a live cooldown
+            // skips the drain too, the W4-c46 census).
+            if self.hurt_cooldowns[crate::id_tables::IMMUNITY_LAVA as usize] <= 0 {
+                if self.lava_time > 0 {
+                    self.lava_time -= 1;
+                } else {
+                    let cx = self.x + self.width * 0.5;
+                    // `Player.cs:27687-27707`: the hit's damage/burn pair —
+                    // 80/420 classic, halved by the Ash Wood set
+                    // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
+                    // `:27694-27702`, S1-C-12 wave D). The remix-world
+                    // variants (`:27689-27693`, `:27696-27699`) and the
+                    // `lavaRose` halves (`:27703-27707`) have no port fields
+                    // and stay out (ANALYSIS "S1-C-12 wave D").
+                    let (mut num79, mut num80) = (80, 420);
+                    if self.ash_wood_bonus {
+                        num79 /= 2;
+                        num80 -= 210;
+                    }
+                    // The lava hit rolls the dodge block like any `Hurt` — the
+                    // stream rides in from the `UpdatePlayers` stage through the
+                    // update chain, `dodgeable` keeps `Hurt`'s default `true`
+                    // (research S1-C-1 §1.4). `Crit: false` and the
+                    // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) —
+                    // Lava is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:
+                    // 49`), so the counter-based retaliate gate never queues.
+                    if self.hurt_inner(
+                        num79,
+                        cx,
+                        true,
+                        rng,
+                        true,
+                        false,
+                        None,
+                        crate::id_tables::IMMUNITY_LAVA,
+                    ) {
+                        // The Hurt return `num81 > 0.0` gates the OnFire grant
+                        // (`Player.cs:27709-27711`). `AddBuff` applies the expert
+                        // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
+                        self.buffs.add_buff(24, num80);
+                    }
                 }
             }
-        } else if self.lava_time < self.lava_max {
+        }
+        // `Player.cs:27716-27719`: `if (flag26 && lavaTime < lavaMax)
+        // lavaTime++` — outside the counter gate, so the refill only rides
+        // the not-in-lava (or lava-immune) state.
+        if lava_refill && self.lava_time < self.lava_max {
             self.lava_time += 1;
         }
         if self.lava_time > self.lava_max {
@@ -13970,12 +16595,16 @@ impl Player {
         // rides `height − 10` while on tracks — the cart sprite owns the bottom
         // 10 px (pitfall §10.9).
         let col_h = if self.on_track { body_h - 10.0 } else { body_h };
-        // Player.cs:28085-28092: allThrough = controlDown, then
-        // lag31 |= gravDir == -1 | cart-mount | GoingDownWithGrapple | pulley
+        // Player.cs:28085-28092: 
+allThrough = controlDown, then
+        // 
+lag31 |= gravDir == -1 | cart-mount | GoingDownWithGrapple | pulley
         // and that arm sets BOTH true. The cart always falls through platforms;
         // a downward grapple pull (GoingDownWithGrapple, :22655-22658) and
         // the pulley do too. The port keeps gravDir = 1; the down key feeds
-        // allThrough only (lag31 stays false unless a force is on).
+        // 
+allThrough only (
+lag31 stays false unless a force is on).
         // (M3 sync: the collision width is the LIVE ody_w - the mount's
         // PlayerSize delegates resize it, S1-P-i41.)
         let (fall_through, fall2) =
@@ -14115,6 +16744,17 @@ impl Player {
             h ^= (self.hair_color[1] as u32) << 12;
             h ^= (self.hair_color[2] as u32) << 4;
         }
+        // W4-d115 wiring round: the dodge afterimages' pixel inputs —
+        // the shadow counter steps ±1 per draw frame
+        // (`LegacyPlayerRenderer.cs:433-448`) and the brain ring reads the
+        // sim counter; both change the ghosts' pixels inside the cached
+        // world range, so they ride the key. The per-frame alpha rolls'
+        // frame-count term is mixed in by the draw orchestrator while
+        // the shadow counter is live (the vine-grid gate convention: a
+        // ghost-free frame keeps the pre-wiring key bit-for-bit).
+        h ^= self.shadow_dodge_count.to_bits().wrapping_mul(0x51ED_2701);
+        h ^= (self.brain_of_confusion_dodge_animation_counter as u32)
+            .wrapping_mul(0x85EB_CA77);
         // The mount's animator state feeds the mount sprites' pixels
         // (`Mount.Draw`'s frame rect + the per-frame player offset).
         if self.mount.is_active() {
@@ -15160,7 +17800,7 @@ mod tests {
             true,
             false,
             None,
-            true,
+            crate::id_tables::IMMUNITY_GENERAL,
         );
         assert_eq!(p.hp, 70, "the cut, not the raw 40");
         // A 1-damage hit past 25% endurance truncates to 0, then the
@@ -15176,7 +17816,7 @@ mod tests {
             true,
             false,
             None,
-            true,
+            crate::id_tables::IMMUNITY_GENERAL,
         );
         assert_eq!(p.hp, 69, "the sub-one hit floors to 1, not 0");
     }
@@ -15202,7 +17842,7 @@ mod tests {
             true,
             false,
             None,
-            true
+            crate::id_tables::IMMUNITY_GENERAL
         ));
         assert_eq!(p.hp, 99, "the hit lands for the floored 1, not 0");
         assert!(
@@ -18153,7 +20793,7 @@ mod tests {
             true,
             true, // Crit
             None,
-            true
+            crate::id_tables::IMMUNITY_GENERAL
         ));
         assert_eq!(p.hp, hp - 15, "num2 used the pre-crit Damage");
         assert_eq!(p.mana, 40, "the cuffs restore the crit-doubled num");
@@ -18292,6 +20932,780 @@ mod tests {
     }
 
     #[test]
+    fn w4_f50_the_panic_necklace_grants_the_hurt_buff_and_arms_from_all_three_sources() {
+        // `Player.Hurt`'s panic arm (`Player.cs:38237-38240`): an accepted
+        // hit with `panic` armed grants buff 63 (Panic!) for 480 ticks. The
+        // three sources — 1290 (`:14892-14895`), 1578 (`:15076-15080`) and
+        // 6187 (`:14625-14628`, + longInvince) — all arm the flag; the
+        // `ResetEffects` clear (`:18616`) re-folds.
+        for kind in [1290u16, 1578, 6187] {
+            let mut p = player_with_accessory(kind);
+            assert!(p.panic, "kind {kind} arms panic");
+            p.hurt_cd = 0.0;
+            p.immune = false;
+            assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+            let slot = p.buffs.find_buff_index(63).expect("the hurt grants Panic!");
+            assert_eq!(p.buffs.buff_time[slot], 480, "AddBuff(63, 480)");
+        }
+        let p = player_with_accessory(6187);
+        assert!(p.long_invince, "the Crossed Heart Necklace arms longInvince");
+        // The 1578 keeps its honeycomb (the retaliate family, unchanged).
+        let p = player_with_accessory(1578);
+        assert!(p.honey_comb && p.panic);
+        // Without a source the flag clears and the hurt grants nothing.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1290;
+        p.update(&w, PlayerInput::default());
+        assert!(p.panic);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.panic, "the ResetEffects clear (:18616)");
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.buffs.find_buff_index(63).is_none(), "no panic, no buff");
+    }
+
+    #[test]
+    fn w4_f50_the_squire_t2_set_grants_ballista_panic_on_hurt() {
+        // `Player.Hurt`'s setSquireT2 arm (`Player.cs:38241-38244`): an
+        // accepted hit grants buff 205 (Ballista Panic) for 300 ticks. The
+        // T2 triple (3800/3801/3802) arms the flag; the buff's own reader
+        // (`ballista_panic`, `:11843-11846`) re-derives per tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 3800;
+        p.equipped[1] = 3801;
+        p.equipped[2] = 3802;
+        p.update(&w, PlayerInput::default());
+        assert!(p.set_squire_t2, "the Squire T2 triple arms the flag");
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        let slot = p.buffs.find_buff_index(205).expect("the hurt grants Ballista Panic");
+        assert_eq!(p.buffs.buff_time[slot], 300, "AddBuff(205, 300)");
+    }
+
+    #[test]
+    fn w4_f50_the_hurt_breaks_stealth_and_strips_invisibility() {
+        // `Player.Hurt`'s stealth break (`Player.cs:38245`, `stealth = 1f`)
+        // and invis strip (`:38281-38290`, `DelBuff(10)` on every slot).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shroomite_stealth = true;
+        p.stealth = 0.3;
+        p.invis = true;
+        p.buffs.add_buff(10, 600);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.stealth, 1.0, "the hit breaks the stealth (:38245)");
+        assert!(p.buffs.find_buff_index(10).is_none(), "the invis buff is stripped (:38281)");
+        // A refused hit (iframes) breaks neither — the C# returns early.
+        let mut q = Player::spawn(&w);
+        q.stealth = 0.3;
+        q.invis = true;
+        q.buffs.add_buff(10, 600);
+        q.immune = true;
+        assert!(!q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.stealth, 0.3, "the refused hit leaves the stealth");
+        assert!(q.buffs.find_buff_index(10).is_some(), "the refused hit keeps the invis");
+    }
+
+    #[test]
+    fn w4_f50_the_panic_buff_raises_the_move_speed() {
+        // `Player.UpdateBuffs`' Panic! reader (`Player.cs:10130-10133`):
+        // `moveSpeed++` per live slot. The hurt-head grants the buff; the
+        // next tick's scan folds the +1 into the run-speed merge.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        let base = p.move_speed;
+        p.buffs.add_buff(63, 480);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            (p.move_speed - (base + 1.0)).abs() < 1e-4,
+            "the Panic! buff adds moveSpeed++ (base {base}, got {})",
+            p.move_speed
+        );
+    }
+
+    #[test]
+    fn w4_f50_the_solar_flare_shield_cuts_the_hurt_and_queues_the_blast() {
+        // `Player.Hurt`'s Solar Flare arm (`Player.cs:38305-38320`): a
+        // consumed charge cuts `num2` to `(int)(0.8 * num2)` and queues the
+        // 608 blast at the player's center with `(int)(150 * meleeDamage)`.
+        // `ConsumeSolarFlare` (`:56742-56762`) drops one shield, deletes the
+        // 170-172 rows, re-grants the lower tier and zeroes the counter.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_solar = true;
+        p.solar_shields = 2;
+        p.melee_damage = 1.0;
+        p.buffs.add_buff(171, 5); // the 2-shield tier
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        // 20 damage, no defense/endurance → num2 = 20 → 0.8*20 = 16.
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 16, "the shield cuts 20 → 16 (:38307)");
+        assert_eq!(p.solar_shields, 1, "one charge consumed");
+        assert_eq!(p.solar_counter, 0, "the counter zeroes (:56758)");
+        assert!(p.buffs.find_buff_index(171).is_none(), "the old tier deleted");
+        assert!(p.buffs.find_buff_index(170).is_some(), "the lower tier re-granted (:56756)");
+        let (center, damage) = p.take_solar_blast().expect("the blast queues");
+        assert_eq!(center, p.center());
+        assert_eq!(damage, 150, "(int)(150 * meleeDamage) (:38316)");
+        assert!(p.take_solar_blast().is_none(), "the request is a one-shot");
+        // No charge → no cut, no blast.
+        let mut q = Player::spawn(&w);
+        q.set_solar = true;
+        q.solar_shields = 0;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        let qhp = q.hp;
+        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, qhp - 20, "no charge, no cut");
+        assert!(q.take_solar_blast().is_none());
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_orbs_cut_the_hurt_by_fifteen_percent_each() {
+        // `Player.Hurt`'s Beetle Defense arm (`Player.cs:38321-38337`):
+        // `num2 = (int)((1 - 0.15 * beetleOrbs) * num2)`, one orb consumed,
+        // the 95-97 rows deleted + the lower tier re-granted, counter zeroed.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.beetle_orbs = 3;
+        p.buffs.add_buff(97, 5); // the 3-orb tier
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        let hp = p.hp;
+        // 20 damage → (1 - 0.45)*20 = 11.
+        assert!(p.hurt(20, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.hp, hp - 11, "3 orbs cut 20 → 11 (:38323)");
+        assert_eq!(p.beetle_orbs, 2, "one orb consumed");
+        assert_eq!(p.beetle_counter, 0.0, "the counter zeroes (:38336)");
+        assert!(p.buffs.find_buff_index(97).is_none(), "the old tier deleted");
+        assert!(p.buffs.find_buff_index(96).is_some(), "the lower tier re-granted (:38334)");
+        // No orbs → no cut.
+        let mut q = Player::spawn(&w);
+        q.beetle_defense = true;
+        q.beetle_orbs = 0;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        let qhp = q.hp;
+        assert!(q.hurt(20, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, qhp - 20, "no orbs, no cut");
+    }
+
+    #[test]
+    fn w4_f50_the_solar_set_recharges_a_shield_every_180_ticks() {
+        // `ApplySetBonus_Solar` (`Player.cs:16366-16439`): endurance +0.12,
+        // `setSolar`, one shield per 180 ticks (cap 3), the 170-172 buff
+        // ladder, `dashType = 3` while shields remain. The always-machine
+        // (`:16358-16364`) zeroes the counter when the set is not worn.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2763;
+        p.equipped[1] = 2764;
+        p.equipped[2] = 2765;
+        // 180 ticks of recharge → the first shield.
+        for _ in 0..180 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.set_solar, "the Solar triple arms setSolar");
+        assert!(p.solar_shields >= 1, "a shield recharges after 180 ticks");
+        assert!(p.endurance >= 0.12, "the endurance +0.12 row");
+        assert_eq!(p.dash_type, 3, "the dash-type grant (:16437)");
+        assert!(p.buffs.find_buff_index(170).is_some(), "the 1-shield buff");
+        // The counter zeroes without the set.
+        p.equipped[0] = 0;
+        p.equipped[1] = 0;
+        p.equipped[2] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.set_solar);
+        assert_eq!(p.solar_counter, 0, "the always-machine zeroes (:16362)");
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_defense_set_recharges_an_orb_every_180_ticks() {
+        // `ApplySetBonus_BeetleDefense` (`Player.cs:16499-16527`): one orb
+        // per 180 ticks (cap 3), the 95-97 buff ladder. The Shell (2200) is
+        // the damage variant (`ApplySetBonus_BeetleDamage` `:16529-16581`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[0] = 2199;
+        p.equipped[1] = 2201; // the Scale Mail (defense)
+        p.equipped[2] = 2202;
+        for _ in 0..180 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.beetle_defense, "the Scale Mail arms beetleDefense");
+        assert!(p.beetle_orbs >= 1, "an orb recharges after 180 ticks");
+        assert!(p.buffs.find_buff_index(95).is_some(), "the 1-orb buff");
+        // The Shell arms the offense flag instead.
+        let mut q = Player::spawn(&w);
+        q.equipped[0] = 2199;
+        q.equipped[1] = 2200; // the Shell (damage)
+        q.equipped[2] = 2202;
+        q.update(&w, PlayerInput::default());
+        assert!(q.beetle_offense, "the Shell arms beetleOffense");
+        assert!(!q.beetle_defense);
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_solar_buff_ladder_rederives_the_counts() {
+        // `Player.UpdateBuffs`' Beetle/Solar arms (`Player.cs:10342-10443`):
+        // the 95-100/170-172 buffs pin at 5 ticks and set the orb/shield
+        // count to the tier; without the set flag the count zeroes and the
+        // buff is deleted. The 98-100 melee rows add `0.1 * orbs`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.buffs.add_buff(97, 5); // the 3-orb tier
+        p.rederive_beetle_solar_buffs();
+        assert_eq!(p.beetle_orbs, 3, "the 97 buff sets 3 orbs");
+        assert!(p.beetle_buff);
+        // Without the set the orbs zero and the buff is deleted.
+        let mut q = Player::spawn(&w);
+        q.beetle_defense = false;
+        q.buffs.add_buff(97, 5);
+        q.rederive_beetle_solar_buffs();
+        assert_eq!(q.beetle_orbs, 0, "no set, no orbs");
+        assert!(q.buffs.find_buff_index(97).is_none(), "the buff is deleted");
+        // The Solar ladder.
+        let mut r = Player::spawn(&w);
+        r.set_solar = true;
+        r.buffs.add_buff(172, 5); // the 3-shield tier
+        r.rederive_beetle_solar_buffs();
+        assert_eq!(r.solar_shields, 3, "the 172 buff sets 3 shields");
+        // The damage ladder's melee rows.
+        let mut s = Player::spawn(&w);
+        s.beetle_offense = true;
+        s.buffs.add_buff(100, 5); // the 3-orb damage tier
+        let md = s.melee_damage;
+        s.rederive_beetle_solar_buffs();
+        assert_eq!(s.beetle_orbs, 3);
+        assert!(
+            (s.melee_damage - (md + 0.3)).abs() < 1e-4,
+            "the 98-100 melee row adds 0.1 * orbs (:10431)"
+        );
+    }
+
+    #[test]
+    fn w4_f50_the_hurt_queues_the_combat_text_and_hit_dust() {
+        // `Player.Hurt`'s combat text (`Player.cs:38382`) + hit-dust loop
+        // (`:38527-38553`): an accepted surviving hit queues `(num2, crit)`
+        // for the text and `(hitDirection, num2)` for the dust. A killing
+        // hit queues the text but no dust (`statLife > 0` gate).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(p.take_hurt_text(), Some((10, false)), "the text queues num2");
+        let (hit_dir, num2) = p.take_hurt_dust().expect("the dust queues");
+        assert_eq!(num2, 10);
+        // The player's center < from_x (p.x + 100) → hit_dir = -1.
+        assert_eq!(hit_dir, -1);
+        assert!(p.take_hurt_text().is_none(), "the text is a one-shot");
+        assert!(p.take_hurt_dust().is_none(), "the dust is a one-shot");
+        // A killing hit queues the text but no dust.
+        let mut q = Player::spawn(&w);
+        q.hp = 5;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(q.hp, 0);
+        assert!(q.take_hurt_text().is_some(), "the killing hit still queues the text");
+        assert!(q.take_hurt_dust().is_none(), "no dust on a killing hit");
+    }
+
+    #[test]
+    fn w4_f50_the_football_and_golf_club_hurt_arms_queue() {
+        // `Player.Hurt`'s football arm (`Player.cs:38255-38269`) queues the
+        // hit direction when `hasFootball` is armed; the golf-club arm
+        // (`:38271-38280`) always queues (the drain checks the held kind).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.has_football = true;
+        p.hurt_cd = 0.0;
+        p.immune = false;
+        assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(p.take_football().is_some(), "the football queues");
+        assert!(p.take_golf_club_kill(), "the golf-club flag queues");
+        // Without the football flag, no football request.
+        let mut q = Player::spawn(&w);
+        q.has_football = false;
+        q.hurt_cd = 0.0;
+        q.immune = false;
+        assert!(q.hurt(10, q.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert!(q.take_football().is_none(), "no football flag, no request");
+    }
+
+    #[test]
+    fn w4_f50_the_beetle_orb_orbit_integrates_and_draws_the_jitter_pair() {
+        // `UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`): the
+        // frame cycle advances every tick, the unused orbs' positions zero,
+        // and each live orb integrates pos += vel, the Next(-100,101) jitter
+        // pair (X then Y), the far/near pulls, the speed damp and the
+        // player-velocity drag. Deviation 3.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.beetle_defense = true;
+        p.beetle_orbs = 2;
+        p.beetle_pos[0] = Vec2::new(10.0, 0.0);
+        p.beetle_vel[0] = Vec2::new(1.0, 0.0);
+        p.beetle_pos[2] = Vec2::new(50.0, 50.0); // unused → zeroed
+        p.vx = 4.0;
+        p.vy = 0.0;
+        // A counting stream: the jitter pair draws Next(-100,101) twice per
+        // live orb (X then Y). Here we assert the DRAW COUNT + order.
+        struct CountRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl tr_core::loot::DropRng for CountRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                0
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let mut rng = CountRng { ranges: Vec::new() };
+        p.update_armor_sets_always_beetle(&mut rng);
+        // 2 live orbs × the X/Y jitter pair = 4 Next(-100,101) draws.
+        assert_eq!(
+            rng.ranges,
+            vec![(-100, 101), (-100, 101), (-100, 101), (-100, 101)],
+            "the jitter pair per live orb, X then Y (:16466-16467)"
+        );
+        // The frame advanced (0 → 1) and the counter reset.
+        assert_eq!(p.beetle_frame, 1);
+        assert_eq!(p.beetle_frame_counter, 0);
+        // The unused orb's position zeroed.
+        assert_eq!(p.beetle_pos[2], Vec2::ZERO);
+        // Orb 0: pos += vel (10+1, 0), jitter 0, no pull (len 11 < 30), no
+        // damp (vel len 1 < 2), then the drag -vx*0.25 = -1 → x = 10.
+        assert_eq!(p.beetle_pos[0], Vec2::new(10.0, 0.0));
+        // Without a set the counter zeroes and nothing draws.
+        let mut q = Player::spawn(&w);
+        q.beetle_counter = 5.0;
+        let mut rng2 = CountRng { ranges: Vec::new() };
+        q.update_armor_sets_always_beetle(&mut rng2);
+        assert_eq!(q.beetle_counter, 0.0);
+        assert!(rng2.ranges.is_empty(), "no set → no orbit draws");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_arms_long_invince_and_clears() {
+        // `ApplyEquipFunctional` 554 (`Player.cs:15587-15590`): the bare
+        // `longInvince = true`; `ResetEffects` clears it (`:18719`) and the
+        // fold re-arms per tick.
+        let p = player_with_accessory(554);
+        assert!(p.long_invince, "the Cross Necklace arms longInvince (:15589)");
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.update(&w, PlayerInput::default());
+        assert!(p.long_invince);
+        p.equipped[3] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.long_invince, "the clear re-folds without the source");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_doubles_the_accepted_hurt_window() {
+        // `Hurt`'s `num7` (`Player.cs:38385`): damage != 1 → 80 : 40, exactly
+        // 1 → 40 : 20 — the port's `iframes_for` already reads `long_invince`;
+        // this pins the EQUIP source through the full hurt.
+        let w = ground_world();
+        let mut plain = Player::spawn(&w);
+        let mut cross = player_with_accessory(554);
+        assert!(plain.hurt(20, plain.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(plain.immune_time, 40);
+        assert!(cross.hurt(20, cross.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(cross.immune_time, 80, "the doubled normal window");
+        assert!((cross.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+        // The exactly-1 lane: 20 → 40.
+        plain.immune = false;
+        plain.hurt_cd = 0.0;
+        cross.immune = false;
+        cross.hurt_cd = 0.0;
+        assert!(plain.hurt(1, plain.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(plain.immune_time, 20);
+        assert!(cross.hurt(1, cross.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+        assert_eq!(cross.immune_time, 40, "the doubled 1-damage window");
+    }
+
+    #[test]
+    fn w4_f48_the_cross_necklace_lifts_the_dodge_pair_to_120_without_draws() {
+        // The dodge handlers' `SetImmuneTimeForAllTypes(longInvince ? 120 :
+        // 80)` (`Player.cs:38025`) reads the same flag; the necklace itself
+        // draws NOTHING (the belt's `Next(10)` stays the only roll).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.equipped[4] = 963;
+        p.update(&w, PlayerInput::default());
+        assert!(p.long_invince && p.black_belt);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(rng.draws, vec![(0, 10)], "the necklace adds no draw");
+        assert!(
+            (p.hurt_cd - 120.0 / 60.0).abs() < 1e-4,
+            "the long-invince dodge window"
+        );
+    }
+
+    #[test]
+    fn w4_f48_the_necklace_fold_halves_survive_the_panic_keep_one() {
+        // `ApplyEquipFunctional`: 1578 honeycomb + panic (`Player.cs:
+        // 15076-15080`), 6187 longInvince + panic (`:14625-14628`).
+        // SHIELDS RETIRE keep-one (receipt 51eefdf84): the `panic` halves
+        // + the 1290 arm + the `ResetEffects` clear are f50-canonical —
+        // this witness pins THIS branch's surviving fold halves only
+        // (1578 honey_comb / 6187 long_invince). f50's three-source
+        // witness (`w4_f50_the_panic_necklace_grants_the_hurt_buff_and_
+        // arms_from_all_three_sources`) owns the panic assertions.
+        let p = player_with_accessory(1578);
+        assert!(p.honey_comb, "the Sweetheart keeps the bees (f48's half)");
+        let p = player_with_accessory(6187);
+        assert!(p.long_invince, "the Crossed Heart's window half (f48's)");
+    }
+
+    #[test]
+    fn w4_f48_a_dodged_hit_draws_only_the_belt_roll() {
+        // The dodge block's early returns (`Player.cs:38214-38241`): a
+        // belt dodge skips everything after it — the f50-canonical
+        // reaction head (panic 63 / squire 205 grants, receipt 51eefdf84)
+        // sits AFTER the returns, so a dodged hit grants nothing and the
+        // necklace adds no RNG draw of its own. RETARGETED (SHIELDS
+        // RETIRE): the old grant assertions ride f50's head witness; this
+        // keeps f48's own lane — the roll order + the draw census.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 1290;
+        p.equipped[4] = 963;
+        p.update(&w, PlayerInput::default());
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(50, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(rng.draws, vec![(0, 10)], "one belt draw, nothing else");
+        // The next accepted hit takes the belt's failed roll and lands.
+        expire_dodge_window(&mut p);
+        let mut rng = DodgeRng::with_rolls(&[5]);
+        assert!(p.hurt(50, p.x + 100.0, &mut rng, true));
+        assert_eq!(rng.draws, vec![(0, 10)]);
+    }
+
+    #[test]
+    fn w4_f48_parry_can_parry_against_reads_window_facing_motion_and_immunity() {
+        // `CanParryAgainst` (`Player.cs:31437-31444`): all four gates —
+        // the live window, the enemy centre on the facing side, a moving
+        // enemy, and NOT already immune.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.facing = 1;
+        let cx = p.x as i32 + p.width as i32 / 2;
+        // No window: never a parry.
+        assert!(!p.can_parry_against(cx + 30, 1.0, 0.0));
+        p.shield_parry_time_left = 1;
+        assert!(p.can_parry_against(cx + 30, 1.0, 0.0), "facing + moving + window");
+        // Behind the player: `Math.Sign` mismatch.
+        assert!(!p.can_parry_against(cx - 30, 1.0, 0.0));
+        // Exactly centred: `Math.Sign(0) == 0 != direction`.
+        assert!(!p.can_parry_against(cx, 1.0, 0.0));
+        // A stationary enemy never parries (velocity == Vector2.Zero).
+        assert!(!p.can_parry_against(cx + 30, 0.0, 0.0));
+        // Vertical-only motion counts (velocity != Zero).
+        assert!(p.can_parry_against(cx + 30, 0.0, -2.0));
+        // Already immune: the parry refuses (the i-frames own the hit).
+        p.immune = true;
+        assert!(!p.can_parry_against(cx + 30, 1.0, 0.0));
+    }
+
+    #[test]
+    fn w4_f48_parry_try_toggling_shield_arms_and_locks_the_windows() {
+        // `TryTogglingShield` (`Player.cs:31741-31764`): the raise arms
+        // window 1 ONLY with the cooldown spent; the lower locks 15,
+        // clears the window and requests `ApplyAttackCooldown(20)`; a
+        // same-state call is a no-op.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert!(p.shield_raised);
+        assert_eq!(p.shield_parry_time_left, 1);
+        // Idempotent: re-raising changes nothing.
+        p.shield_parry_time_left = 7;
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert_eq!(p.shield_parry_time_left, 7, "the no-op keeps the window");
+        // The lower: cooldown 15, window cleared, attack-cooldown 20.
+        assert_eq!(p.try_toggling_shield(false), 20);
+        assert!(!p.shield_raised);
+        assert_eq!(p.shield_parry_cooldown, 15);
+        assert_eq!(p.shield_parry_time_left, 0);
+        // A raise DURING the cooldown arms no window.
+        assert_eq!(p.try_toggling_shield(true), 0);
+        assert_eq!(p.shield_parry_time_left, 0, "the cooldown blocks the window");
+    }
+
+    #[test]
+    fn w4_f48_parry_the_shield_raise_countdowns_tick_the_two_windows() {
+        // `ItemCheck_ManageRightClickFeatures_ShieldRaise` (`Player.cs:
+        // 31719-31737`): the cooldown decrements to 0 (cue + dust queued
+        // on the zero tick), the window pre-increments and clears past 20.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.facing = -1;
+        p.try_toggling_shield(true); // window 1
+        p.try_toggling_shield(false); // cooldown 15, window 0
+        p.try_toggling_shield(true); // raised, cooldown 15, window stays 0
+        for _ in 0..14 {
+            p.shield_raise_countdowns();
+        }
+        assert_eq!(p.shield_parry_cooldown, 1);
+        assert!(!p.take_parry_ready_sound(), "no cue before the zero tick");
+        p.shield_raise_countdowns(); // the zero tick
+        assert_eq!(p.shield_parry_cooldown, 0);
+        assert!(p.take_parry_ready_sound(), "the MaxMana cue queues");
+        let (dx, dy) = p.take_parry_ready_dust().expect("the burst anchor");
+        let (cx, cy) = p.center();
+        // direction -1: `direction * 6 + (-10)` = -16, y -14.
+        assert!((dx - (cx - 16.0)).abs() < 1e-4);
+        assert!((dy - (cy - 14.0)).abs() < 1e-4);
+        // The window: 1 → 2 … → 20 → 0 (20 ticks live, `> 20` clears).
+        p.shield_parry_time_left = 1;
+        for _ in 0..19 {
+            p.shield_raise_countdowns();
+        }
+        assert_eq!(p.shield_parry_time_left, 20);
+        p.shield_raise_countdowns();
+        assert_eq!(p.shield_parry_time_left, 0, "past SHIELD_PARRY_DURATION");
+    }
+
+    #[test]
+    fn w4_f48_parry_give_immune_time_counts_strikes_and_refuses_the_third() {
+        // `GiveImmuneTimeForCollisionAttack` (`Player.cs:20494-20511`):
+        // grants within 20 ticks climb the strike counter; the third is
+        // refused; a longer window replaces a shorter one; a gap > 20
+        // resets the counter.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.immune = false;
+        p.immune_time = 0;
+        p.time_since_last_immune_get = 10000;
+        p.give_immune_time_for_collision_attack(30);
+        assert!(p.immune && p.immune_no_blink);
+        assert_eq!(p.immune_time, 30);
+        assert_eq!(p.immune_strikes, 1);
+        // Second grant inside the window: a LONGER window replaces.
+        p.give_immune_time_for_collision_attack(60);
+        assert_eq!(p.immune_time, 60);
+        assert_eq!(p.immune_strikes, 2);
+        // Third: refused outright (the anti-cheese cap).
+        p.give_immune_time_for_collision_attack(60);
+        assert_eq!(p.immune_strikes, 3);
+        assert_eq!(p.immune_time, 60, "the third grant lands nothing");
+        // A shorter window never shrinks a live one.
+        p.immune_strikes = 0;
+        p.give_immune_time_for_collision_attack(30);
+        assert_eq!(p.immune_time, 60, "!immune || immuneTime <= time");
+        // The age counter: > 20 ticks resets the strikes to 1.
+        p.time_since_last_immune_get = 21;
+        p.immune = false;
+        p.give_immune_time_for_collision_attack(30);
+        assert_eq!(p.immune_strikes, 1, "the gap resets the counter");
+        assert_eq!(p.immune_time, 30);
+        // The per-tick age climb + 10000 cap (`:24663-24667`).
+        p.time_since_last_immune_get = 9999;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.time_since_last_immune_get, 10000, "the cap holds");
+    }
+
+    #[test]
+    fn w4_f48_parry_the_shield_slots_and_held_4760_arm_raisable() {
+        // `GrantArmorBenefits` `shieldSlot > 0` (`Player.cs:13123-13126`)
+        // + the held-Bouncing-Shield row (`:13075-13078`); `ResetEffects`
+        // `:18611` clears per tick.
+        for kind in [156u16, 397, 938, 1613, 3097, 3810, 3997, 3998, 6177, 6183, 6188] {
+            let p = player_with_accessory(kind);
+            assert!(p.has_raisable_shield, "shield {kind} arms raisable");
+        }
+        // A non-shield accessory does not.
+        let p = player_with_accessory(554);
+        assert!(!p.has_raisable_shield);
+        // The held 4760 with no live 866 projectile.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.held_item_kind = 4760;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_raisable_shield, "the shield in hand is raisable");
+        // A live thrown shield (866) blocks it. The standalone `update`
+        // zeroes the recount inputs (`ResetProjectileCaches`), so the
+        // blocked branch drives the equip fold directly on a live count
+        // (the sim's `UpdateProjectileCaches` seam supplies it).
+        p.has_raisable_shield = false;
+        p.owned_projectile_counts[866] = 1;
+        p.update_equips();
+        assert!(!p.has_raisable_shield, "the thrown shield is out");
+        // The clear re-folds without any source.
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.has_raisable_shield);
+    }
+
+    #[test]
+    fn w4_f48_parry_buff_198_arms_the_damage_flag_and_clears() {
+        // `UpdateBuffs` `:11855-11858` sets `parryDamageBuff`; the
+        // `ResetEffects` `:18698` clear re-folds per tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(198, 300);
+        p.update(&w, PlayerInput::default());
+        assert!(p.parry_damage_buff, "buff 198 arms the flag");
+        let i = p.buffs.find_buff_index(198).unwrap();
+        p.buffs.buff_time[i] = 1;
+        p.update(&w, PlayerInput::default()); // ticks to 0, purged
+        p.update(&w, PlayerInput::default());
+        assert!(!p.parry_damage_buff, "the expiry folds the flag back");
+    }
+
+    /// W4-f48 lane 20 — `UpdateVisibleAccessories`' shield rows
+    /// (`Player.cs:36762-36777/:36790-36793/:36923-36926/:36806-36810`):
+    /// the equipped shieldSlot ids map to their `ArmorIDs.Shield` slots,
+    /// the per-tick reset re-folds, hide/composite-back/food gates refuse
+    /// the visible row (but not the raised fallback), and the held 4760
+    /// overrides to slot 9 until its 866 is live.
+    #[test]
+    fn w4_f48_visible_shield_slot_derives_from_the_equipped_rows() {
+        let w = ground_world();
+        let pairs = [
+            (156u16, 1i16), (938, 2), (397, 3), (1613, 4), (3097, 5),
+            (3810, 6), (3997, 7), (3998, 8), (6183, 10), (6177, 11), (6188, 12),
+        ];
+        for (kind, slot) in pairs {
+            let mut p = Player::spawn(&w);
+            p.equipped[3] = kind;
+            p.update(&w, PlayerInput::default());
+            assert_eq!(p.shield, slot, "shield {kind} draws slot {slot}");
+        }
+        // No shield: the reset holds −1.
+        let mut p = Player::spawn(&w);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1);
+        // The hide tick refuses the visible row…
+        p.equipped[3] = 156;
+        p.hide_visible_accessory[3] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1, "hidden accessory draws nothing");
+        // …but the raised fallback fills the slot ahead of the gate.
+        p.shield_raised = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1, "the raised fallback beats the hide tick");
+        p.shield_raised = false;
+        // The eocDash fallback too.
+        p.eoc_dash = 5;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1);
+        p.eoc_dash = 0;
+        // A held food hides the worn shield (`ItemIsVisuallyIncompatible`).
+        p.hide_visible_accessory[3] = false;
+        p.held_item_kind = 353; // cooked fish? — IsFood row
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, -1, "food in hand hides the shield");
+        p.held_item_kind = 0;
+        // The held Bouncing Shield overrides to slot 9.
+        p.held_item_kind = 4760;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 9);
+        // A live thrown 866 drops the override back to the worn slot.
+        p.owned_projectile_counts[866] = 1;
+        p.update_frames(&w);
+        assert_eq!(p.shield, 1, "the thrown shield is out — the worn row returns");
+        p.owned_projectile_counts[866] = 0;
+        p.held_item_kind = 0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shield, 1);
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_grants_20_defense_per_tick() {
+        // `Player.cs:25714-25717`: `shieldRaised` adds +20 AFTER the equip
+        // pass, before the defense floor (`:25927-25930`). The flag itself
+        // is not a ResetEffects clear — ItemCheck owns the toggle — so it
+        // persists across the fold until lowered.
+        let mut p = player_with_accessory(156); // Cobalt Shield, +1 defense
+        let base = p.stat_defense;
+        assert_eq!(base, 1);
+        p.shield_raised = true;
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base + 20, "the raised shield grants +20");
+        // The grant re-folds per tick (statDefense resets in ResetEffects).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base + 20, "no accumulation");
+        p.shield_raised = false;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base, "the lower folds it back");
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_caps_the_move_speed_at_one_third() {
+        // `Player.cs:25955-25957`: `strongestMoveSpeedDebuff = min(1/3)` —
+        // the strongest debuff wins, and the run-speed merge (`:26004-26009`)
+        // multiplies the accessory moveSpeed adds by it too.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shield_raised = true;
+        p.update(&w, PlayerInput::default());
+        assert!((p.strongest_move_speed_debuff - 1.0 / 3.0).abs() < 1e-6);
+        assert!((p.move_speed - 1.0 / 3.0).abs() < 1e-6);
+        // A moveSpeed buff adds BEFORE the merge — the shield cap rides
+        // the raised value, it does not replace it. RETARGETED (SHIELDS
+        // RETIRE): the old Panic-63 doubling rides f12's wiring witness
+        // (`w4_f12_closeout_panic_63_grants_move_speed_once_through_the_
+        // wiring`) — the inline 63 arm is dropped here (f12-canonical);
+        // Swiftness 3 (+0.25, `:10049-10052`) proves the same multiply.
+        p.buffs.add_buff(3, 480);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.25 / 3.0).abs() < 1e-6, "the cap multiplies");
+        // The lower restores the full buffed speed.
+        p.shield_raised = false;
+        p.update(&w, PlayerInput::default());
+        assert!((p.strongest_move_speed_debuff - 1.0).abs() < 1e-6);
+        assert!((p.move_speed - 1.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_halves_a_fast_grounded_run() {
+        // `Player.cs:25958-25961`: grounded (`velocity.Y == 0`) with
+        // `|velocity.X| > 3` halves vx — BEFORE HorizontalMovement's
+        // friction (the grounded no-input arm subtracts runSlowdown 0.2).
+        let (w, mut p) = settled();
+        p.shield_raised = true;
+        p.vx = 6.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        // 6 → 3 (the halve) → 2.8 (the friction).
+        assert!((p.vx - 2.8).abs() < 1e-4, "halved then frictioned: {}", p.vx);
+        // The boundary: exactly 3 is NOT > 3 — no halve, friction only.
+        p.vx = 3.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.vx - 2.8).abs() < 1e-4);
+        // Airborne: the halve refuses (vy != 0); the airborne friction is
+        // half the grounded one (0.1).
+        p.vx = 6.0;
+        p.vy = -2.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.vx - 5.9).abs() < 1e-4, "no halve airborne: {}", p.vx);
+    }
+
+    #[test]
     fn the_godmode_power_swallows_hits_death_and_refills() {
         // `GodmodePower` -> `Player.creativeGodMode` (`Player.cs:25493-25497`);
         // `Hurt` returns 0 before the iframes (`:38203-38206`) and `KillMe`
@@ -18360,7 +21774,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, crate::id_tables::IMMUNITY_GENERAL));
         assert_eq!(p.vx, 0.0, "the shield eats the knockback");
         // Without the shield: the knockback lands.
         let mut p = player_with_accessory(0);
@@ -18368,7 +21782,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         let from = p.x + 100.0;
-        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, true));
+        assert!(p.hurt_inner(10, from, true, &mut tr_core::UnifiedRandom::default(), true, false, None, crate::id_tables::IMMUNITY_GENERAL));
         assert!(p.vx != 0.0);
     }
 
@@ -19531,6 +22945,10 @@ mod tests {
         assert_eq!(p.hp, 100, "a 10-tile fall must not hurt");
     }
 
+    /// The drain cadence with no i-frame interference: the −2 lands exactly
+    /// once per `breathCDMax` frames (`Player.cs:23251-23263`) and writes NO
+    /// `hurt_cd` (the old `lose_health` forcing was the deviation). The
+    /// meter is driven by hand so the standing regen cannot mask the drain.
     #[test]
     fn drowning_drains_breath_and_damages() {
         let mut w = ground_world();
@@ -19543,16 +22961,36 @@ mod tests {
         }
         w.spawn_y = 44;
         let mut p = Player::spawn(&w);
-        for _ in 0..1500 {
+        // Settle on the pool floor first (the fall + the wet entry).
+        for _ in 0..300 {
             p.update(&w, PlayerInput::default());
         }
         assert!(p.in_water);
-        assert_eq!(p.breath, 0, "breath {}", p.breath);
-        assert!(p.hp < 100, "drowning should hurt, hp {}", p.hp);
+        assert!(p.on_ground, "settled on the floor, y={}", p.y);
+        // 70 ticks of the drain: 10 drains × −2, the meter re-armed each
+        // tick so the cadence is the only variable. Driven through
+        // `check_drowning` directly — the standing regen cannot mask it.
+        let hp0 = p.hp;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        for _ in 0..70 {
+            p.breath = 0;
+            p.check_drowning(&w, &mut rng);
+        }
+        assert_eq!(p.breath, 0);
+        assert_eq!(p.hp, hp0 - 20, "exactly −2 per 7-frame drain");
+        assert_eq!(p.hurt_cd, 0.0, "no i-frame write on the drain");
+        // A breath-zero kill records ByOther(1) (`:23268`).
+        p.hp = 2;
+        p.breath = 1;
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.hp, 0);
+        assert_eq!(p.dot_death, Some(DotDeath::Drowned));
     }
 
     /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath follows
-    /// `Collision.DrownCollision` — the **head** probe, not "any water".
+    /// `Collision.DrownCollision` — the probe at the vanilla `gravDir = 1f`
+    /// position (`position.Y - 2`, the top of the body), not "any water".
     #[test]
     fn the_breath_drains_only_while_the_head_is_under() {
         let pool = |rows: std::ops::Range<i32>| {
@@ -19565,10 +23003,10 @@ mod tests {
             }
             w
         };
-        // The player stands on the ground (row 60): the feet at 960, the head
-        // probe at [931, 943].
+        // The player stands on the ground (row 60): the feet at 960, the
+        // probe at [916, 928] (`position.Y - 2`, `gravDir = 1f`).
         // A shallow pool (row 59 only) — the water's surface is at 944, so
-        // the head stays dry and the breath is untouched.
+        // the probe stays dry and the breath is untouched.
         let mut w = pool(59..60);
         let mut p = Player::spawn(&w);
         p.x = 10.0 * 16.0 + 8.0;
@@ -19577,7 +23015,7 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         assert_eq!(p.breath, BREATH_MAX, "the head stays dry");
-        // A deep pool — the head goes under and the breath runs down.
+        // A deep pool — the probe goes under and the breath runs down.
         let mut w = pool(50..60);
         let mut p = Player::spawn(&w);
         p.x = 10.0 * 16.0 + 8.0;
@@ -19590,6 +23028,574 @@ mod tests {
             "the head is under the water, breath {}",
             p.breath
         );
+    }
+
+    // ---- W4-c46: the breath/drown/swim witnesses ---------------------------
+
+    /// `Player.breathCDMax` (`Player.cs:3855-3869`): 7 base; the held reed
+    /// ×2 only while `itemAnimation == 0`; the helm ×6 — both stack to 42.
+    #[test]
+    fn w4_c46_breath_cd_max_is_the_reed_helm_property() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.breath_cd_max(), 7);
+        // The reed doubles only while held AND idle.
+        p.held_item_kind = 186;
+        assert_eq!(p.breath_cd_max(), 14);
+        p.item_animation_active = true;
+        assert_eq!(p.breath_cd_max(), 7, "mid-swing: no reed bonus");
+        p.item_animation_active = false;
+        // The helm sextuples; reed + helm stack.
+        p.acc_diving_helm = true;
+        assert_eq!(p.breath_cd_max(), 84, "14 × 6");
+        p.held_item_kind = 0;
+        assert_eq!(p.breath_cd_max(), 42, "7 × 6");
+        // A DontHoldItems mount (55/56/61) refuses the reed (`:4142-4145`).
+        p.held_item_kind = 186;
+        p.mount.set_mount(55, false);
+        assert!(p.mount.is_active());
+        assert_eq!(p.breath_cd_max(), 42, "the Rat holds no reed");
+    }
+
+    /// The drain cadence rides the property: a helm slows the breath loss
+    /// ×6 (`Player.cs:23251` reads `breathCDMax`). Both players settle first,
+    /// then drain from a full meter for exactly 420 ticks — driven through
+    /// `check_drowning` directly so the standing regen cannot mask it.
+    #[test]
+    fn w4_c46_the_helm_slows_the_breath_drain() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut bare = Player::spawn(&w);
+        let mut helm = Player::spawn(&w);
+        helm.equipped[0] = 268; // the Diving Helmet head piece
+        for _ in 0..300 {
+            bare.update(&w, PlayerInput::default());
+            helm.update(&w, PlayerInput::default());
+        }
+        assert!(bare.on_ground && helm.on_ground);
+        assert!(helm.acc_diving_helm, "the helm row grants (:13251)");
+        bare.breath = BREATH_MAX;
+        bare.breath_cd = 0;
+        helm.breath = BREATH_MAX;
+        helm.breath_cd = 0;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        for _ in 0..420 {
+            bare.check_drowning(&w, &mut rng);
+            helm.check_drowning(&w, &mut rng);
+        }
+        // 420 ticks: bare loses 60 breath (420/7), helm 10 (420/42).
+        assert_eq!(bare.breath, BREATH_MAX - 60);
+        assert_eq!(helm.breath, BREATH_MAX - 10);
+    }
+
+    /// The drowning −2 is a direct `statLife -= 2` with NO i-frame write
+    /// (`Player.cs:23261-23263`): the ramp resets, `hurt_cd` stays untouched,
+    /// and the kill records the `ByOther(1)` drowning attribution. Driven
+    /// through `check_drowning` directly on a settled, submerged player.
+    #[test]
+    fn w4_c46_the_drown_damage_writes_no_iframes() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.in_water && p.on_ground);
+        p.breath = 1;
+        p.breath_cd = 6;
+        p.hp = 2;
+        p.regen.life_regen_time = 500.0;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 0);
+        assert_eq!(p.hp, 0, "the −2 lands");
+        assert_eq!(p.hurt_cd, 0.0, "NO immuneTime write (:23263)");
+        assert_eq!(p.regen.life_regen_time, 0.0, "the ramp resets (:23261)");
+        assert_eq!(p.dot_death, Some(DotDeath::Drowned), "ByOther(1) (:23268)");
+        assert!(p.take_drown_sound(), "the 1→0 gasp edge");
+    }
+
+    /// The reed snorkel probe (`Player.cs:23199-23224`): the tile 44 px ABOVE
+    /// the position, 6 px toward the facing — dry and non-solid clears the
+    /// drowning flag even fully submerged.
+    #[test]
+    fn w4_c46_the_reed_snorkel_reaches_the_air() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.held_item_kind = 186;
+        // Settle under the water first (the probe row is wet).
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.wet && p.on_ground);
+        // The snorkel tip: x + width/2 + 6*facing, y − 44. With the player
+        // at row ~57 (y ≈ 918), the tip sits at row ~54 — carve an air pocket
+        // there (liquid 0) and the probe clears.
+        let tx = ((p.x + p.width / 2.0 + 6.0 * p.facing as f32) / 16.0) as i32;
+        let ty = ((p.y - 44.0) / 16.0) as i32;
+        let i = w.index(tx, ty);
+        w.tiles[i].liquid = 0;
+        p.breath = 100;
+        p.breath_cd = 6;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 103, "the snorkel breathes (+3 refill)");
+        // A SOLID tile at the tip keeps the drowning (the `!tileSolid` gate).
+        // The reed doubles breathCDMax to 14, so arm the counter at 13.
+        w.tiles[i].liquid = 255;
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        p.breath_cd = 13;
+        p.breath = 100;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 99, "the solid tip blocks the snorkel");
+    }
+
+    /// The fish-bowl head (`Player.cs:23194-23198`): 250/4275 forces the
+    /// drowning flag even in the dry.
+    #[test]
+    fn w4_c46_the_fish_bowl_drowns_on_land() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(!p.wet);
+        p.equipped[0] = 250;
+        p.breath_cd = 6;
+        p.breath = 100;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 99, "the Fish Bowl drowns in the dry");
+        p.equipped[0] = 4275;
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 98, "the Gold Goldfish Bowl too");
+    }
+
+    /// The absorbed-shimmer clear (`Player.cs:23230-23233`) and the Turtle
+    /// mount clear (`:23234-23237`): both swallow the drowning flag even
+    /// with the Fish Bowl forcing it. `shimmerWet` alone does NOT clear it.
+    #[test]
+    fn w4_c46_the_shimmering_and_turtle_never_drown() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.equipped[0] = 250; // force the flag even in the dry
+        p.breath_cd = 6;
+        p.breath = 100;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        // shimmerWet alone keeps the drain (`shimmering`, not `shimmerWet`).
+        p.shimmer_wet = true;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 99, "shimmerWet alone does not clear");
+        // The absorbed state clears it.
+        p.shimmering = true;
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 102, "shimmering breathes (+3)");
+        p.shimmering = false;
+        p.shimmer_wet = false;
+        // The Turtle mount (4) clears it.
+        p.mount.set_mount(4, false);
+        p.breath_cd = 6;
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 105, "the Turtle never drowns (+3)");
+    }
+
+    /// The bubble tail's RNG census (`Player.cs:23283`): `!flag || Next(20)
+    /// != 0 || lavaWet || honeyWet` — the draw happens ONLY while drowning;
+    /// a dry tick draws NOTHING, and a `Next(20) == 0` queues the type-34
+    /// bubble at `(x + 12*direction, y + 4)` with the reed lift.
+    #[test]
+    fn w4_c46_the_bubble_draws_only_while_drowning() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Dry: no draw at all.
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        let untouched = rng.clone();
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(rng, untouched, "the dry tick draws nothing");
+        // Drowning (fish bowl): find a seed whose first Next(20) is 0.
+        let mut seed = 0;
+        while tr_core::UnifiedRandom::new(seed).next_max(20) != 0 {
+            seed += 1;
+        }
+        p.equipped[0] = 250;
+        p.facing = 1;
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        p.check_drowning(&w, &mut rng);
+        let bubbles = p.take_sticky_dust();
+        assert_eq!(bubbles.len(), 1, "the Next(20)==0 bubble");
+        assert_eq!(bubbles[0].kind, 34);
+        assert_eq!(bubbles[0].pos, Vec2::new(p.x + 12.0, p.y + 4.0));
+        assert_eq!((bubbles[0].w, bubbles[0].h), (p.width as i32 - 8, 8));
+        assert!((bubbles[0].scale - 1.2).abs() < 1e-6);
+        // The reed lifts the bubble (−2*direction, −58) (`:23293-23296`).
+        // The lift checks ONLY `hasBreathingReed`; the snorkel clear
+        // (`:23199`) also needs no item animation — mid-swing the snorkel is
+        // down, so the fish-bowl drowning (and the bubble) survives on dry
+        // ground. Without the animation the dry-air tip would clear the flag.
+        p.held_item_kind = 186;
+        p.item_animation_active = true;
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        p.check_drowning(&w, &mut rng);
+        let bubbles = p.take_sticky_dust();
+        assert_eq!(bubbles.len(), 1);
+        assert_eq!(bubbles[0].pos, Vec2::new(p.x + 10.0, p.y - 54.0));
+        // lavaWet/honeyWet refuse the bubble AFTER the draw (`:23283`).
+        p.honey_wet = true;
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        p.check_drowning(&w, &mut rng);
+        assert!(p.take_sticky_dust().is_empty(), "honeyWet: no bubble");
+        let mut expect = tr_core::UnifiedRandom::new(seed);
+        expect.next_max(20);
+        assert_eq!(rng, expect, "the draw still happened");
+    }
+
+    /// The swim ascent (`Player.cs:20637-20767`): wet + accFlipper on the
+    /// release edge arms `swimTime = 30` and assigns the FULL wet jump
+    /// statics (−6.01 / 30) — NOT the old −2.0 stand-in. Driven through the
+    /// jump block directly on a settled, submerged player (the velocity is
+    /// read before the tick's gravity integration).
+    #[test]
+    fn w4_c46_the_flipper_swim_uses_the_wet_jump_statics() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 187; // the Flipper
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.wet && p.acc_flipper && p.on_ground);
+        assert_eq!(p.jump_height, 30);
+        assert!((p.jump_speed - 6.01).abs() < 1e-5);
+        // Park mid-pool (row 50): no floor under the feet, so the ascent
+        // velocity survives the collision. The swim branch needs the PRESS
+        // edge (`controlJump && releaseJump`, `:20670`) while airborne —
+        // the ground jump would fire first on a grounded player.
+        p.y = 50.0 * 16.0;
+        p.vy = 1.0;
+        p.on_ground = false;
+        p.jump = 0;
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert_eq!(p.swim_time, 29, "flag4 arms the window (30, then the frame tick)");
+        // The ascent velocity: −6.01 + the tick's 0.2 gravity.
+        assert!((p.vy - -5.81).abs() < 1e-3, "the full wet ascent: {}", p.vy);
+        assert_eq!(p.jump, 30, "the hold boost arms");
+        // Without the flipper the wet player does NOT swim (no −2 stand-in).
+        let mut q = Player::spawn(&w);
+        for _ in 0..300 {
+            q.update(&w, PlayerInput::default());
+        }
+        assert!(q.wet && !q.acc_flipper);
+        q.y = 50.0 * 16.0;
+        q.vy = 1.0;
+        q.on_ground = false;
+        q.jump = 0;
+        q.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert_eq!(q.swim_time, 0, "no flipper: no swim window");
+        assert!(q.vy > 0.0, "no flipper: keeps sinking, vy {}", q.vy);
+    }
+
+    /// The merman's held jump refreshes the swim window instead of burning
+    /// the boost (`Player.cs:20656-20667`) — the infinite ascent. The player
+    /// is parked mid-pool (above the floor) so the held boost keeps firing.
+    #[test]
+    fn w4_c46_the_merman_held_jump_refreshes_the_swim_window() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 497; // Neptune's Shell → accMerman
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.merman, "the wet shell turns merman");
+        assert!(p.acc_flipper, "the transformation grants the flipper (:25583)");
+        assert!(p.buffs.find_buff_index(34).is_some(), "AddBuff(34, 2) (:25584)");
+        // Park mid-pool (row 50) — no floor under the feet, no ceiling above.
+        p.y = 50.0 * 16.0;
+        p.on_ground = false;
+        p.jump = 5;
+        p.swim_time = 8;
+        p.vy = -3.0;
+        for _ in 0..20 {
+            p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        }
+        assert_eq!(p.jump, 5, "the merman boost never burns: {}", p.jump);
+        assert!(p.swim_time > 10, "the window keeps refreshing: {}", p.swim_time);
+        assert!(p.vy < 0.0, "still ascending: {}", p.vy);
+        // The accMerman drowning hand-off (`:23240-23247`): no breath drain.
+        p.breath = 100;
+        p.breath_cd = 6;
+        let mut rng = tr_core::UnifiedRandom::new(1);
+        p.check_drowning(&w, &mut rng);
+        assert_eq!(p.breath, 103, "the merman never drowns (+3 refill)");
+    }
+
+    /// The respawn life arm fires ONLY at `statLife <= 0`
+    /// (`Player.cs:37596`): a living spawn keeps its life; the dead revive
+    /// halves the pool floored at 100 and refills the lava budget.
+    #[test]
+    fn w4_c46_the_living_spawn_keeps_its_life() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = Player::spawn(&w);
+        p.max_hp = 400;
+        p.hp = 150;
+        p.lava_max = 420;
+        p.lava_time = 0;
+        p.respawn();
+        assert_eq!(p.hp, 150, "the living spawn keeps its life");
+        assert_eq!(p.lava_time, 420, "lavaTime = lavaMax (:37589)");
+        p.hp = 0;
+        p.respawn();
+        assert_eq!(p.hp, 200, "the dead revive halves the pool");
+        // immuneNoBlink gates on !hostile (`:37669-37672`).
+        assert!(p.immune_no_blink);
+        p.hostile = true;
+        p.hp = 0;
+        p.respawn();
+        assert!(!p.immune_no_blink, "hostile: no blink suppress");
+    }
+
+    /// W4-c46 — `UpdateDead`'s hardcore arm (`Player.cs:17044-17053`): a
+    /// difficulty-2 death drains the timer ONLY while positive, then latches
+    /// `ghost` — no revive, no jump skip (`AllowsRespawnTimerSkip`'s ghost
+    /// gate, `:38964`). The Don't-Starve × anniversary crossover
+    /// (`Main.surviveHardcoreDeath`, `Main.cs:2638-2647`) revives instead —
+    /// unless For the Worthy is also on.
+    #[test]
+    fn w4_c46_the_hardcore_death_latches_the_ghost() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.difficulty = 2;
+        p.start_death(&w, false, false);
+        p.respawn_timer = 3;
+        for _ in 0..3 {
+            assert!(!p.update_dead(false, false, false, false));
+        }
+        assert_eq!(p.respawn_timer, 0);
+        assert!(!p.ghost, "the drain ticks do not latch yet");
+        // The next tick latches the ghost — and never revives.
+        assert!(!p.update_dead(false, false, false, false));
+        assert!(p.ghost);
+        assert!(p.dead, "the ghost stays dead");
+        // The ghost refuses the skip even past the lockout.
+        p.dead_time = 200;
+        assert!(!p.allows_respawn_timer_skip(false, false, false));
+        // A jump press never revives a ghost.
+        for _ in 0..10 {
+            assert!(!p.update_dead(true, false, false, false));
+        }
+        assert_eq!(p.respawn_timer, 0, "the ghost's timer stays at 0");
+        // Softcore keeps the plain revive.
+        let mut q = Player::spawn(&w);
+        q.start_death(&w, false, false);
+        q.respawn_timer = 1;
+        assert!(q.update_dead(false, false, false, false));
+        // The crossover seed pair revives a hardcore death.
+        let mut r = Player::spawn(&w);
+        r.difficulty = 2;
+        r.start_death(&w, false, false);
+        r.respawn_timer = 1;
+        let crossover = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY,
+        );
+        assert!(r.update_dead_seeded(false, false, false, false, crossover));
+        assert!(!r.ghost);
+        // For the Worthy cancels the crossover.
+        let mut s = Player::spawn(&w);
+        s.difficulty = 2;
+        s.start_death(&w, false, false);
+        s.respawn_timer = 1;
+        let ftw = crossover | tr_core::seeds::SeedFlags::FOR_THE_WORTHY;
+        assert!(!s.update_dead_seeded(false, false, false, false, ftw));
+        assert!(!s.ghost, "the timer drained to 0, the ghost latches next tick");
+        assert!(!s.update_dead_seeded(false, false, false, false, ftw));
+        assert!(s.ghost);
+        // The dead tick's fade climbs 2/tick to 255 (`:17023-17027`).
+        let mut t = Player::spawn(&w);
+        t.start_death(&w, false, false);
+        assert_eq!(t.immune_alpha, 0, "KillMe resets the fade (:38911)");
+        for _ in 0..200 {
+            t.update_dead(false, false, false, false);
+        }
+        assert_eq!(t.immune_alpha, 255);
+    }
+
+    /// W4-c46 final — `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`)'s
+    /// stat half: ONLY inside the survive crossover does the −60 statLifeMax
+    /// run (floor 0); a positive remainder returns true (EXTRA_LIFE fires at
+    /// the App layer), 0 or no crossover returns false (KillMeForGood).
+    #[test]
+    fn w4_c46_the_hardcore_penalty_drains_60_only_inside_the_crossover() {
+        let w = ground_world();
+        let crossover = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY,
+        );
+        // No crossover: the pool is UNTOUCHED, the character dies for good.
+        let mut p = Player::spawn(&w);
+        p.max_hp = 400;
+        assert!(!p.hardcore_death_penalty(tr_core::seeds::SeedFlags::none()));
+        assert_eq!(p.max_hp, 400, "no −60 outside the crossover (:38777)");
+        // Crossover: −60, positive remainder survives.
+        assert!(p.hardcore_death_penalty(crossover));
+        assert_eq!(p.max_hp, 340);
+        // The floor is 0 (`Math.Max(statLifeMax - 60, 0)`, :38779): 40 → 0,
+        // and 0 means KillMeForGood even inside the crossover.
+        let mut q = Player::spawn(&w);
+        q.max_hp = 40;
+        assert!(!q.hardcore_death_penalty(crossover));
+        assert_eq!(q.max_hp, 0, "the 0 floor, no negative pool");
+        // Exactly 60 lands on 0 — no survive at the boundary.
+        let mut r = Player::spawn(&w);
+        r.max_hp = 60;
+        assert!(!r.hardcore_death_penalty(crossover));
+        assert_eq!(r.max_hp, 0);
+        // FTW cancels the crossover — the pool stays, death for good.
+        let mut s = Player::spawn(&w);
+        s.max_hp = 500;
+        let ftw = crossover | tr_core::seeds::SeedFlags::FOR_THE_WORTHY;
+        assert!(!s.hardcore_death_penalty(ftw));
+        assert_eq!(s.max_hp, 500);
+    }
+
+    /// W4-c46 — `Player.Ghost` (`Player.cs:6715-6849`): the 0.2 acceleration
+    /// toward the ±7 cap, the ×0.9 opposite brake, the ±0.1 dead-band snap,
+    /// the 8-tick 4-row animator and the 640 px world-margin clamps.
+    #[test]
+    fn w4_c46_the_ghost_flight_caps_brakes_and_clamps() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.ghost = true;
+        p.x = 1600.0;
+        p.y = 1600.0;
+        // Ascend: 40 ticks of up reaches the −7 cap (0.2/tick).
+        for _ in 0..40 {
+            p.ghost_tick(&w, PlayerInput { up: true, ..Default::default() });
+        }
+        assert!((p.vy - -7.0).abs() < 1e-4, "the ascent cap: {}", p.vy);
+        assert!(p.y < 1600.0);
+        // Release inside the ±0.1 band snaps to rest.
+        p.vy = 0.05;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.vy, 0.0, "the dead-band snap");
+        // The opposite-direction brake: down while ascending ×0.9 first.
+        p.vy = -4.0;
+        p.ghost_tick(&w, PlayerInput { down: true, ..Default::default() });
+        assert!((p.vy - (-4.0 * 0.9 + 0.2)).abs() < 1e-4, "brake then accel");
+        // The frame animator: 8 ticks per row, 4 rows.
+        p.ghost_frame = 0;
+        p.ghost_frame_counter = 0;
+        for _ in 0..8 {
+            p.ghost_tick(&w, PlayerInput::default());
+        }
+        assert_eq!(p.ghost_frame, 1);
+        for _ in 0..24 {
+            p.ghost_tick(&w, PlayerInput::default());
+        }
+        assert_eq!(p.ghost_frame, 0, "the 4-row wrap");
+        // The left margin clamp (640 px) zeroes the velocity.
+        p.x = 630.0;
+        p.vx = -3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.x, 640.0);
+        assert_eq!(p.vx, 0.0);
+        // The top clamp keeps the −0.1 drift.
+        p.y = 630.0;
+        p.vy = -5.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.y, 640.0);
+        assert!((p.vy - -0.1).abs() < 1e-5);
+        // The right/bottom margins read the world bounds − 640 − the box.
+        p.x = 200.0 * 16.0;
+        p.vx = 3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.x, 200.0 * 16.0 - 640.0 - p.width);
+        p.y = 200.0 * 16.0;
+        p.vy = 3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.y, 200.0 * 16.0 - 640.0 - p.height);
+        // The facing follows the velocity sign (`:6805-6811`).
+        p.vx = 0.0;
+        p.ghost_tick(&w, PlayerInput { right: true, ..Default::default() });
+        assert_eq!(p.facing, 1);
+        p.ghost_tick(&w, PlayerInput { left: true, ..Default::default() });
+        assert_eq!(p.facing, -1);
+    }
+
+    /// W4-c46 — the lava budget's `flag26` semantics (`Player.cs:27673-27722`):
+    /// a non-immune lava stand NEVER refills (the old else-arm refilled
+    /// through the hit-cooldown ticks); the drain sits INSIDE the cooldown
+    /// gate; a lava-immune stand DOES refill.
+    #[test]
+    fn w4_c46_the_lava_budget_refills_only_when_open() {
+        let w = ground_world();
+        let mut rng = tr_core::UnifiedRandom::default();
+        let mut p = Player::spawn(&w);
+        p.max_hp = 500;
+        p.hp = 500;
+        p.lava_max = 420;
+        p.lava_time = 10;
+        p.in_lava = true;
+        p.lava_wet = true;
+        // A live hurt cooldown skips the drain AND the refill.
+        p.hurt_cd = 1.0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 10, "the cooldown gates the drain");
+        // The cooldown free: the drain runs, no refill.
+        p.hurt_cd = 0.0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 9);
+        // The budget empty: the hit lands, still no refill.
+        p.lava_time = 0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 0, "the hit tick does not refill");
+        assert!(p.hp < 500, "the 80-damage hit landed");
+        // Lava-immune in lava: the budget refills (flag26 stays true).
+        p.lava_immune = true;
+        p.lava_time = 10;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 11, "immune: the budget refills in lava");
+        // Out of lava: the refill runs for everyone.
+        p.in_lava = false;
+        p.lava_wet = false;
+        p.lava_immune = false;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 12);
     }
 
     #[test]
@@ -20930,7 +24936,185 @@ mod tests {
         unreachable!()
     }
 
-    /// DW-3.2 — the landing burst (`Minecart.cs:809-813` via the Phase-1
+    /// W4-c14 - the rocket cadence cue (`Player.cs:26884-26896` +
+    /// `:26903-26905`): the first fuel tick queues the tier's Item cue at
+    /// the top-left and arms rocketSoundDelay (30 tier 1 / 15 tiers 2-4,
+    /// the same tick's decrement brings it to 29/14); the held thrust
+    /// stays silent until the cadence expires. W4-c14 doc-sweep: the cue
+    /// reads the VANITY tier (the producer lands - the pin/equip rows set
+    /// both tiers equal, so this witness's pinned tiers drive it unchanged).
+    #[test]
+    fn w4_c14_the_rocket_cue_rides_its_own_cadence() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // Arm the midair trigger state: fuel, the release latch, canRocket.
+        // The PIN survives ResetEffects' per-tick `rocket_boots = 0` clear
+        // (`:18760`-area; the `:26628` re-grant reads it). `jump = 1` keeps
+        // the held-jump branch out of the extra-jump chain.
+        p.pinned_rocket_boots = 1;
+        p.rocket_boots = 1;
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.jump = 1;
+        p.vy = 2.0; // airborne
+        p.on_ground = false;
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the first fuel tick plays");
+        assert_eq!(cues[0].cue, "Item_13", "tier 1 -> Item13");
+        assert_eq!(p.rocket_sound_delay, 29, "30 armed, one tick spent");
+        // The held thrust: the cadence blocks replays.
+        for _ in 0..10 {
+            p.update(
+                &w,
+                PlayerInput {
+                    jump: true,
+                    ..Default::default()
+                },
+            );
+            assert!(p.take_cart_sounds().is_empty(), "the cadence blocks");
+        }
+        // Tier 2 arms 15 (14 after the same tick's decrement).
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.pinned_rocket_boots = 2;
+        p.rocket_boots = 2;
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.jump = 1;
+        p.vy = 2.0;
+        p.on_ground = false;
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].cue, "Item_24", "tier 2 -> Item24");
+        assert_eq!(p.rocket_sound_delay, 14);
+    }
+
+    /// W4-c14 doc-sweep - the vanity-rocket producer
+    /// (`Player.cs:2760`/`:14420`/`:15023`/`:15222`/`:15380-15400` +
+    /// `UpdateBootVisualEffects` `:36704-36751` + the Red's Leggings 668
+    /// `:13088-13091`): the equip rows set BOTH tiers equal, the social
+    /// slot re-derives the visual tier, and tier 6 plays the Item24 cue.
+    /// The cue arm reads `vanity_rocket_boots`, so a divergent vanity tier
+    /// picks its OWN cue while the gameplay tier stays the thrust source.
+    #[test]
+    fn w4_c14_the_vanity_rocket_tier_produces_the_cue() {
+        let w = ground_world();
+        // The functional equip rows set both tiers equal.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 128; // Rocket Boots -> tier 1
+        p.update_equips();
+        assert_eq!(p.rocket_boots, 1);
+        assert_eq!(p.vanity_rocket_boots, 1, "the equip row sets both equal");
+        p.equipped[3] = 4874; // Hellfire Treads -> tier 5
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 5);
+        // The Red's Leggings 668 (leg slot 2) sets tier 6 AFTER the loops.
+        p.equipped[2] = 668;
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 6, "the bee-costume tier 6");
+        assert_eq!(p.rocket_boots, 5, "the gameplay tier is untouched");
+        // The social slot (13) re-derives the visual tier (no hide gate).
+        let mut p = Player::spawn(&w);
+        p.equipped[13] = 1862; // Frostspark in the vanity slot -> tier 3
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 3, "the vanity pass re-derives");
+        assert_eq!(p.rocket_boots, 0, "no functional grant from the social slot");
+        // The cue reads the VANITY tier: the Red's Leggings 668 sets tier 6
+        // AFTER the pin re-arms tier 1, so the cue plays Item24 cadence 15
+        // while the gameplay tier stays 1 (the thrust source). The 668 row
+        // re-arms every tick, so the divergence survives reset_effects.
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.pinned_rocket_boots = 1; // the gameplay thrust tier
+        p.equipped[2] = 668; // the Red's Leggings -> vanity tier 6
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.jump = 1;
+        p.vy = 2.0;
+        p.on_ground = false;
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert_eq!(p.rocket_boots, 1, "the gameplay tier stays the thrust source");
+        assert_eq!(p.vanity_rocket_boots, 6, "the 668 row wins the visual tier");
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].cue, "Item_24", "vanity tier 6 -> Item24");
+        assert_eq!(p.rocket_sound_delay, 14, "cadence 15, one tick spent");
+    }
+
+    /// W4-c14 - the Pogo Stick's (mount 43) hop cue (`Player.cs:19782-19793`):
+    /// a direction key held while grounded with jump free queues Item168 at
+    /// the CENTRE and takes the half-speed hop (the early return - no run
+    /// accel that tick); the ground jump (`:20762-20764`) plays it too.
+    #[test]
+    fn w4_c14_the_pogo_hop_and_jump_queue_item168_at_the_centre() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(43, false), "the pogo equips");
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground, "landed first");
+        let (cx, cy) = p.center();
+        p.update(
+            &w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the hop plays once");
+        assert_eq!(cues[0].cue, "Item_168");
+        assert_eq!((cues[0].x, cues[0].y), (cx, cy), "the centre position");
+        assert!(p.vy < 0.0, "the hop lifted");
+        // (`jump = 15` is written by the hop, then the same tick's
+        // jump-released branch clears it - `Player.cs:21026`, the C# order.)
+        // The ground jump (jump held on a resting tick) plays it too.
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(43, false));
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the ground jump plays once");
+        assert_eq!(cues[0].cue, "Item_168");
+    }
+
+    /// DW-3.2 - the landing burst (`Minecart.cs:809-813` via the Phase-1
     /// `TrackFlags::landing`): a real fall onto a rail queues the Item53 cue
     /// and exactly 10 sparks at the pre-call magnet point, with the
     /// pre-call rotation (`Player.cs:28110-28111` sets the emitter statics
@@ -22018,13 +26202,15 @@ mod tests {
 
     /// Runs the dodge window out the way `UpdateImmunity` does in the C# —
     /// the dodge's `SetImmuneTimeForAllTypes` writes `immune`/`immuneTime`
-    /// (R-03-5's ported fields, now gating `hurt_inner`'s General flag), so a
-    /// next hit in these tests needs the expired window, not just a cleared
-    /// `hurt_cd`.
+    /// (R-03-5's ported fields, now gating `hurt_inner`'s General flag) AND
+    /// all six `hurtCooldowns` slots (M4-HAZARD-1, `Player.cs:38017-38020`),
+    /// so a next hit in these tests needs the expired window on every lane,
+    /// not just a cleared `hurt_cd`.
     fn expire_dodge_window(p: &mut Player) {
         p.immune = false;
         p.immune_time = 0;
         p.hurt_cd = 0.0;
+        p.hurt_cooldowns = [0; crate::id_tables::IMMUNITY_COOLDOWN_COUNT as usize];
     }
 
     #[test]
@@ -22087,6 +26273,22 @@ mod tests {
         assert!(p.hp < hp);
     }
 
+    /// W4-d115 — the Mystic Arts Sash dodge queues the `62 SyncDodge`
+    /// kind-5 send (`Player.cs:38113-38116`); the reader never re-sends.
+    /// With this the family's send census is complete: kinds 1/2/4/5.
+    #[test]
+    fn w4_d115_sash_dodge_queues_the_kind_5_send() {
+        let mut p = dodge_player_with(&[6189]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the sash dodges");
+        assert_eq!(rng.draws, vec![(0, 10)]);
+        assert_eq!(p.take_dodge_sends(), vec![5], "kind 5 = MysticSash (:38115)");
+        expire_dodge_window(&mut p);
+        p.apply_net_dodge(5);
+        assert!(p.immune);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
+    }
+
     #[test]
     fn s1_c_1_dw_1_2_belt_roll_dodges_on_next_10_zero() {
         // `blackBelt && Main.rand.Next(10) == 0` -> `NinjaDodge()`
@@ -22104,6 +26306,37 @@ mod tests {
         let mut rng = DodgeRng::with_rolls(&[1]);
         assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
         assert!(p.hp < hp);
+    }
+
+    /// W4-d115 — the Black Belt / Master Ninja Gear dodge queues the
+    /// `62 SyncDodge` kind-1 send (`Player.NinjaDodge`'s tail,
+    /// `Player.cs:38161-38164`); the 62 reader (`apply_net_dodge`, W4-c27)
+    /// shares the handler and never re-sends. Both 963 and 984 arm the belt.
+    #[test]
+    fn w4_d115_ninja_dodge_queues_the_kind_1_send_and_the_reader_does_not() {
+        for kind in [963u16, 984] {
+            let mut p = dodge_player_with(&[kind]);
+            assert!(p.take_dodge_sends().is_empty(), "nothing queued pre-hit");
+            let mut rng = DodgeRng::with_rolls(&[0]);
+            assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodges");
+            assert_eq!(rng.draws, vec![(0, 10)], "exactly the belt Next(10)");
+            assert_eq!(p.take_dodge_sends(), vec![1], "kind 1 = NinjaDodge (:38163)");
+            assert!(p.take_dodge_sends().is_empty(), "the take is one-shot");
+            // The reader's own-id apply runs the SAME handler but queues no
+            // send (the C# reader does not SendData, `MessageBuffer.cs:2889`).
+            expire_dodge_window(&mut p);
+            p.apply_net_dodge(1);
+            assert!(p.immune, "the reader still arms the i-frames");
+            assert!(
+                p.take_dodge_sends().is_empty(),
+                "the net-apply path never re-sends"
+            );
+        }
+        // A missed roll lands the hit and queues nothing.
+        let mut p = dodge_player_with(&[963]);
+        let mut rng = DodgeRng::with_rolls(&[1]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.take_dodge_sends().is_empty(), "no dodge, no send");
     }
 
     #[test]
@@ -22184,6 +26417,113 @@ mod tests {
         assert_eq!(rng.draws, vec![(0, 10)]);
     }
 
+    /// W4-d115 lane 19 — the full four-source stacking order
+    /// (`Player.cs:38216-38235`): sash → belt → brain → shadow, each
+    /// `Next` drawn ONLY while its source is armed and no earlier
+    /// source dodged; shadow (the deterministic tail) draws nothing.
+    /// All four armed + a never-hitting stream draws exactly
+    /// `[(0,10), (0,10), (0,6)]` and the shadow fallback then catches
+    /// the hit with zero further draws.
+    #[test]
+    fn w4_d115_lane19_the_four_source_stack_rolls_sash_belt_brain_then_shadow_falls_back() {
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        p.buffs.add_buff(59, 1800);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 armed the shadow tail");
+        let hp = p.hp;
+        // Rolls 1,1,1 miss all three Nexts; the shadow tail dodges.
+        let mut rng = DodgeRng::with_rolls(&[1, 1, 1]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow fallback");
+        assert_eq!(
+            rng.draws,
+            vec![(0, 10), (0, 10), (0, 6)],
+            "sash Next(10) -> belt Next(10) -> brain Next(6), shadow draws none"
+        );
+        assert_eq!(p.hp, hp, "the shadow dodge kept the hp");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2 = ShadowDodge");
+        assert_eq!(p.shadow_dodge_timer, 1800, "the Hallowed cooldown armed");
+    }
+
+    /// W4-d115 lane 19 — the cumulative dodge chance the roll order
+    /// implies (`Player.cs:38216-38235`): each miss multiplies through,
+    /// so belt+brain alone is `1 − (9/10)(5/6) = 1/4`, the three rolled
+    /// sources `1 − (9/10)(9/10)(5/6) = 0.325`, and the shadow tail
+    /// makes the four-source stack 100% while buff 59 lives. Verified
+    /// on the port's actual gate chain by walking the roll tree.
+    #[test]
+    fn w4_d115_lane19_the_stacked_dodge_chance_is_cumulative_not_additive() {
+        // Belt alone: 1/10.
+        let mut hit = 0;
+        for roll in 0..10 {
+            let mut p = dodge_player_with(&[963]);
+            let mut rng = DodgeRng::with_rolls(&[roll]);
+            if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                hit += 1;
+            }
+        }
+        assert_eq!(hit, 9, "belt: 9/10 hits land");
+        // Belt + brain: the brain roll only happens on the belt miss.
+        let mut hit = 0;
+        for belt in 0..10 {
+            for brain in 0..6 {
+                let mut p = dodge_player_with(&[963, 3223]);
+                let mut rng = DodgeRng::with_rolls(&[belt, brain]);
+                if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                    hit += 1;
+                }
+            }
+        }
+        // 60 combinations, 45 land: 1 − 0.75 = the cumulative 25%.
+        assert_eq!(hit, 45, "belt+brain: 1 − (9/10)(5/6) = 1/4 dodge");
+        // Sash + belt + brain: 600 combinations, 405 land (0.675).
+        let mut hit = 0;
+        for sash in 0..10 {
+            for belt in 0..10 {
+                for brain in 0..6 {
+                    let mut p = dodge_player_with(&[6189, 963, 3223]);
+                    let mut rng = DodgeRng::with_rolls(&[sash, belt, brain]);
+                    if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                        hit += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(hit, 405, "three sources: 1 − (9/10)^2(5/6) = 0.325 dodge");
+        // The shadow tail closes the gap: every miss dodges.
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        p.buffs.add_buff(59, 1800);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        let mut rng = DodgeRng::with_rolls(&[9, 9, 5]);
+        assert!(
+            !p.hurt(20, p.x + 100.0, &mut rng, true),
+            "the four-source stack dodges 100% while buff 59 lives"
+        );
+    }
+
+    /// W4-d115 lane 19 — the brain's buff-321 gate sits AFTER its
+    /// `Next(6)` in the C# `&&` chain (`:38226`), so an armed brain
+    /// with 321 active still consumes the draw and the SHADOW tail
+    /// behind it still fires — the gate skips the brain dodge, not the
+    /// rest of the chain.
+    #[test]
+    fn w4_d115_lane19_the_brain_gate_skips_only_the_brain_not_the_shadow_tail() {
+        let mut p = dodge_player_with(&[3223]);
+        p.buffs.add_buff(59, 1800);
+        p.buffs.add_buff(321, 240);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow tail dodges");
+        assert_eq!(rng.draws, vec![(0, 6)], "the brain draw still happened");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2, not 4");
+        // The 321 buff was NOT re-added (the gated dodge never ran).
+        let count = p.buffs.active_types().iter().filter(|&&b| b == 321).count();
+        assert_eq!(count, 1, "one 321 slot — the gated dodge added none");
+    }
+
     #[test]
     fn s1_c_1_dw_1_3_dodge_sets_the_80_tick_window_and_leaves_hp() {
         // The handlers' `SetImmuneTimeForAllTypes(longInvince ? 120 : 80)`
@@ -22225,6 +26565,32 @@ mod tests {
         assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
     }
 
+    /// W4-d115 — the Brain of Confusion dodge queues the `62 SyncDodge`
+    /// kind-4 send (`Player.cs:38053`); the buff-321 gate still draws the
+    /// `Next(6)` but a gated dodge queues nothing, and the reader never
+    /// re-sends.
+    #[test]
+    fn w4_d115_brain_dodge_queues_the_kind_4_send_only_on_a_dodge() {
+        let mut p = dodge_player_with(&[3223]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodges");
+        assert_eq!(rng.draws, vec![(0, 6)]);
+        assert_eq!(p.take_dodge_sends(), vec![4], "kind 4 = BrainOfConfusion (:38053)");
+        // Buff 321 now active: the roll is still drawn (C# && order) but the
+        // dodge is gated, the hit lands and nothing queues.
+        expire_dodge_window(&mut p);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true), "buff 321 gates the dodge");
+        assert_eq!(rng.draws, vec![(0, 6)], "the draw happened anyway");
+        assert!(p.take_dodge_sends().is_empty(), "no dodge, no send");
+        // The reader's kind-4 apply runs the handler, queues no send.
+        expire_dodge_window(&mut p);
+        p.buffs.clear_buff(321);
+        p.apply_net_dodge(4);
+        assert!(p.immune);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
+    }
+
     #[test]
     fn s1_c_1_dw_1_3_shadow_dodge_bookkeeping_runs_exactly_once() {
         // `ShadowDodge` (`:38023-38042`): buff 59 deleted, the Hallowed
@@ -22239,6 +26605,29 @@ mod tests {
         assert_eq!(p.buffs.find_buff_index(59), None, "buff 59 deleted");
         assert_eq!(p.shadow_dodge_timer, 1800);
         assert!((p.hurt_cd - 80.0 / 60.0).abs() < 1e-4);
+    }
+
+    /// W4-d115 — the ShadowDodge queues the `62 SyncDodge` kind-2 send
+    /// (`Player.cs:38038`); the dodge is deterministic (no roll) and the
+    /// reader's kind-2 apply never re-sends.
+    #[test]
+    fn w4_d115_shadow_dodge_queues_the_kind_2_send_without_a_roll() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 1800);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow dodge");
+        assert!(rng.draws.is_empty(), "the shadow dodge draws nothing");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2 = ShadowDodge (:38038)");
+        assert!(p.take_dodge_sends().is_empty(), "the take is one-shot");
+        // The reader's kind-2 apply runs the handler, queues no send.
+        expire_dodge_window(&mut p);
+        p.apply_net_dodge(2);
+        assert!(p.immune);
+        assert_eq!(p.shadow_dodge_timer, 1800);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
     }
 
     #[test]
@@ -22368,6 +26757,514 @@ mod tests {
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 299);
         p.respawn();
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 0);
+    }
+
+    /// W4-d115 lane 19 — the buff-321 scan arm (`Player.cs:9940-9947`):
+    /// a brain dodge's own cooldown buff grants +10 crit ×3 + 0.10
+    /// minion damage every tick it lives, and the per-tick reset drops
+    /// them when it expires. The NPC-confuse aura is the RETALIATE
+    /// block's job (`:38403-38431`, `drain_retaliate`), not this buff's.
+    #[test]
+    fn w4_d115_lane19_the_brain_dodge_buff_grants_crit_and_minion_damage() {
+        let mut p = dodge_player_with(&[3223]);
+        // Baseline after the equip fold: crit 4, minion 1.0.
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.minion_damage - 1.0).abs() < 1e-6);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the brain dodges");
+        assert!(p.buffs.find_buff_index(321).is_some(), "the dodge armed 321");
+        // The next tick's scan grants the stats on top of the reset.
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.melee_crit, 14, "+10 (:9943)");
+        assert_eq!(p.ranged_crit, 14, "+10 (:9944)");
+        assert_eq!(p.magic_crit, 14, "+10 (:9945)");
+        assert!((p.minion_damage - 1.1).abs() < 1e-6, "+0.10 (:9946)");
+        // The buff expires: the reset drops the grants back to base.
+        p.buffs.clear_buff(321);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.melee_crit, 4);
+        assert!((p.minion_damage - 1.0).abs() < 1e-6);
+    }
+
+    /// W4-d115 lane 19 — `shadowDodgeCount` is DRAW-owned
+    /// (`LegacyPlayerRenderer.cs:433-448` is its only writer): the sim
+    /// tick and the respawn never touch it (`Player.cs:1166` has no
+    /// other write site; `ResetEffects`/`UpdateDead` carry no clear).
+    #[test]
+    fn w4_d115_lane19_the_shadow_dodge_count_is_draw_owned_not_sim_owned() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shadow_dodge_count = 17.0;
+        p.shadow_dodge = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shadow_dodge_count, 17.0, "the sim tick never steps it");
+        p.respawn();
+        assert_eq!(p.shadow_dodge_count, 17.0, "the respawn never clears it");
+        // The renderer's step is the ported pure fn (player_dodge_draw).
+        assert_eq!(
+            crate::player_dodge_draw::step_shadow_dodge_count(p.shadow_dodge_count, true),
+            18.0
+        );
+    }
+
+    /// W4-d115 wiring round — the writer census as a witness: NO dodge
+    /// proc writes `shadowDodgeCount` (`Player.cs:1166` is the field's
+    /// only Player.cs mention). All four handlers (the Hurt arms and the
+    /// 62 net-apply) plus the Holy Protection strike-grant leave a
+    /// pre-set count untouched; only the draw step moves it.
+    #[test]
+    fn w4_d115_wiring_no_dodge_proc_writes_the_shadow_count() {
+        // The four Hurt dodge arms: sash 5 / belt 1 / brain 4 / shadow 2.
+        for (kind, item) in [(5u8, 6189u16), (1, 963), (4, 3223)] {
+            let mut p = dodge_player_with(&[item]);
+            p.shadow_dodge_count = 9.0;
+            let mut rng = DodgeRng::with_rolls(&[0, 0, 0, 0]);
+            assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "kind {kind} dodges");
+            assert_eq!(p.shadow_dodge_count, 9.0, "kind {kind}: the proc never writes it");
+            // The 62 reader shares the handler — same census.
+            p.apply_net_dodge(kind);
+            assert_eq!(p.shadow_dodge_count, 9.0, "kind {kind}: the net-apply neither");
+        }
+        // The shadow arm (buff 59) and the Holy Protection strike-grant.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(59, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 arms the FLAG (:10076)");
+        p.shadow_dodge_count = 9.0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow dodge fires");
+        assert_eq!(p.shadow_dodge_count, 9.0, "ShadowDodge never writes the count");
+        let mut p = dodge_player_with(&[]);
+        p.on_hit_dodge = true;
+        p.shadow_dodge_count = 9.0;
+        p.on_hit_dodge_grant(); // the :6938-6941 buff-59 grant
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        assert_eq!(p.shadow_dodge_count, 9.0, "the grant arms the flag, not the count");
+        // The DRAW step is the only writer: +1 armed, −1 disarmed.
+        p.step_shadow_dodge_draw_counter();
+        assert_eq!(p.shadow_dodge_count, 10.0);
+        p.shadow_dodge = false;
+        p.step_shadow_dodge_draw_counter();
+        assert_eq!(p.shadow_dodge_count, 9.0);
+    }
+
+    /// W4-d115 wiring round — source census: outside the test module the
+    /// ONLY `self.shadow_dodge_count =` write in player.rs is the draw
+    /// step method (the renderer's `:433-448` port); the sim tick and the
+    /// respawn carry no write, matching the C#'s single-writer field.
+    /// (The needle is split so this witness's own literals do not count.)
+    #[test]
+    fn w4_d115_wiring_the_draw_step_is_the_fields_only_sim_side_writer() {
+        let src = include_str!("player.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        let needle = concat!("self.shadow_dodge_count", " =");
+        let writes: Vec<_> = body.match_indices(needle).collect();
+        assert_eq!(writes.len(), 1, "exactly one write site outside the tests");
+        let tail = &body[writes[0].0..];
+        assert!(
+            tail.starts_with(concat!(
+                "self.shadow_dodge_count",
+                " = crate::player_dodge_draw::step_shadow_dodge_count("
+            )),
+            "the write is the draw step (LegacyPlayerRenderer.cs:433-448)"
+        );
+        // The step method lives OUTSIDE `update`/`respawn` — it is called
+        // from the draw orchestrator (witnessed in tiles.rs's scan).
+        let method = body.find("pub fn step_shadow_dodge_draw_counter").unwrap();
+        assert!(method < writes[0].0, "the write sits inside the step method");
+    }
+
+    /// W4-d115 wiring round — the ghosts' pixel inputs ride the G6 key:
+    /// a counter step or a brain-window tick invalidates the cached
+    /// world range (the ghosts draw inside it).
+    #[test]
+    fn w4_d115_wiring_the_dodge_counters_ride_the_render_key() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let base = p.render_key();
+        p.shadow_dodge_count = 1.0;
+        assert_ne!(p.render_key(), base, "the shadow counter rides the key");
+        p.shadow_dodge_count = 0.0;
+        p.brain_of_confusion_dodge_animation_counter = 300;
+        assert_ne!(p.render_key(), base, "the brain counter rides the key");
+        p.brain_of_confusion_dodge_animation_counter = 0;
+        assert_eq!(p.render_key(), base, "a ghost-free player keeps the old key");
+    }
+
+    // ---- W4-d115 wiring round: M4-HAZARD-1, the per-source hurtCooldowns ----
+    // (WRITTEN NOT RUN — code-only mode. Every assert cites the C# line.)
+
+    /// M4-HAZARD-1 — the boss lane lands THROUGH the General i-frames
+    /// (`Player.cs:38208`): `flag = (counter == General) ? !immune :
+    /// hurtCooldowns[counter] <= 0`. A General hit arms `immune`/
+    /// `immuneTime` (`:38386-38390`); the BossNoCheese hit reads only its
+    /// own slot, lands, and re-arms slot 1 with num7 (`:38391-38393`) —
+    /// the General window is untouched. A second boss hit inside its own
+    /// 40-tick window is swallowed (`:38210`, BossNoCheese is not an
+    /// ImmuneTimerOnlyLimitsEffects member).
+    #[test]
+    fn w4_d115_m4_hazard_the_boss_lane_lands_through_the_general_iframes() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stat_defense = 0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        // The General hit arms the 40-tick window.
+        assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
+        assert!(p.immune);
+        assert_eq!(p.immune_time, 40);
+        assert_eq!(p.hurt_cooldowns, [0; 6], "General writes no array slot");
+        let hp = p.hp;
+        // The boss hit lands through it and arms slot 1 only.
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+        assert_eq!(p.hp, hp - 20, "the boss damage landed through the i-frames");
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize],
+            40,
+            "num7 = 40 on the lane's own slot (:38391-38393)"
+        );
+        assert_eq!(p.immune_time, 40, "the General window is untouched");
+        assert!(p.immune);
+        // The second boss hit inside its own window is swallowed.
+        let hp = p.hp;
+        assert!(!p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+        assert_eq!(p.hp, hp);
+        // The General hit is still swallowed by its own window.
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true));
+        // Both windows decay one per tick (`UpdateImmunity`,
+        // `:18860` + `:18887-18893` — the array loop is OUTSIDE the
+        // `if (immune)` block, so the boss slot runs down regardless).
+        p.update_immunity();
+        assert_eq!(p.immune_time, 39);
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_BOSS_NO_CHEESE as usize],
+            39
+        );
+        for _ in 0..39 {
+            p.update_immunity();
+        }
+        assert!(!p.immune, "the General window expired");
+        assert_eq!(p.hurt_cooldowns, [0; 6], "the boss slot expired with it");
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+    }
+
+    /// M4-HAZARD-1 — the dodge's `SetImmuneTimeForAllTypes` covers EVERY
+    /// lane (`Player.cs:38017-38020`): the belt dodge writes all six slots
+    /// with the 80-tick pair, so boss/lava/tile/bug-net hits are all
+    /// swallowed inside the dodge window — and all land once it expires.
+    #[test]
+    fn w4_d115_m4_hazard_the_dodge_window_covers_every_lane() {
+        let mut p = dodge_player_with(&[963]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the belt dodges");
+        assert_eq!(p.immune_time, 80);
+        assert_eq!(p.hurt_cooldowns, [80; 6], "the all-types write (:38017-38020)");
+        let hp = p.hp;
+        for counter in [
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE,
+            crate::id_tables::IMMUNITY_LAVA,
+            crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            crate::id_tables::IMMUNITY_WRONG_BUG_NET,
+        ] {
+            assert!(
+                !p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter),
+                "counter {counter} is covered by the dodge window"
+            );
+        }
+        assert_eq!(p.hp, hp);
+        // The decay runs every slot down; at expiry every lane lands again.
+        for _ in 0..80 {
+            p.update_immunity();
+        }
+        assert!(!p.immune);
+        assert_eq!(p.hurt_cooldowns, [0; 6]);
+        let mut rng = DodgeRng::with_rolls(&[1]); // the belt misses
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE
+        ));
+    }
+
+    /// M4-HAZARD-1 — the PaladinsShield semantics (`Player.cs:38210` +
+    /// `ImmunityCooldownID.cs:52`): the sole ImmuneTimerOnlyLimitsEffects
+    /// member skips the early-return, so a cooldown-active hit STILL DEALS
+    /// ITS DAMAGE (`:38383`); only the re-arm (`:38391`'s `== 0` gate) and
+    /// the retaliate (`:38401`'s `& flag`) are limited. A non-member lane
+    /// (Lava) with a live counter is swallowed outright.
+    #[test]
+    fn w4_d115_m4_hazard_paladins_shield_damage_lands_while_the_cooldown_runs() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.stat_defense = 0;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        let shield = crate::id_tables::IMMUNITY_PALADINS_SHIELD;
+        // The first shield hit lands and arms slot 5 with 40.
+        assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, shield));
+        assert_eq!(p.hurt_cooldowns[shield as usize], 40);
+        assert!(!p.immune, "the shield lane never touches the General pair");
+        assert!(p.take_retaliate().is_some(), "flag held: the first hit retaliates");
+        // The second hit inside the window: damage STILL lands, the
+        // counter does NOT extend, no retaliate queues (flag false).
+        let hp = p.hp;
+        assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, shield));
+        assert_eq!(p.hp, hp - 20, "the damage lands through the live counter");
+        assert_eq!(
+            p.hurt_cooldowns[shield as usize],
+            40,
+            "the == 0 gate refuses the re-arm (:38391)"
+        );
+        assert!(
+            p.take_retaliate().is_none(),
+            "the :38401 & flag gates the retaliate off"
+        );
+        // The contrast: a live LAVA counter swallows the hit outright
+        // (Lava is not an ImmuneTimerOnlyLimitsEffects member).
+        assert!(p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_LAVA
+        ));
+        let hp = p.hp;
+        assert!(!p.hurt_cooldown(
+            20,
+            p.x + 100.0,
+            &mut rng,
+            true,
+            crate::id_tables::IMMUNITY_LAVA
+        ));
+        assert_eq!(p.hp, hp, "the lava lane's early-return holds (:38210)");
+    }
+
+    /// M4-HAZARD-1 — the retaliate gate reads the counter's set membership
+    /// (`Player.cs:38401`, `ImmunityCooldownID.cs:49`): General and
+    /// BossNoCheese queue on an accepted hit; Lava, TileContactDamage and
+    /// WrongBugNet never do (not Retaliate members).
+    #[test]
+    fn w4_d115_m4_hazard_the_retaliate_gate_reads_the_counter_membership() {
+        let w = ground_world();
+        let mut rng = DodgeRng::with_rolls(&[]);
+        for counter in [
+            crate::id_tables::IMMUNITY_GENERAL,
+            crate::id_tables::IMMUNITY_BOSS_NO_CHEESE,
+        ] {
+            let mut p = Player::spawn(&w);
+            assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter));
+            assert!(
+                p.take_retaliate().is_some(),
+                "counter {counter} is a Retaliate member"
+            );
+        }
+        for counter in [
+            crate::id_tables::IMMUNITY_LAVA,
+            crate::id_tables::IMMUNITY_TILE_CONTACT_DAMAGE,
+            crate::id_tables::IMMUNITY_WRONG_BUG_NET,
+        ] {
+            let mut p = Player::spawn(&w);
+            assert!(p.hurt_cooldown(20, p.x + 100.0, &mut rng, true, counter));
+            assert!(
+                p.take_retaliate().is_none(),
+                "counter {counter} is NOT a Retaliate member"
+            );
+        }
+    }
+
+    /// M4-HAZARD-1 — the lava budget gates on its OWN counter
+    /// (`Player.cs:27679`): the drain/hit arm reads
+    /// `hurtCooldowns[Lava] <= 0`, NOT the General window — a contact
+    /// hit's i-frames no longer pause the budget. While the Lava counter
+    /// runs, neither the drain nor the hit fires, and the budget does not
+    /// refill in lava (`flag26`, `:27674/:27716`).
+    #[test]
+    fn w4_d115_m4_hazard_the_lava_budget_gates_on_its_own_counter() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.lava_max = 420;
+        p.lava_time = 5;
+        p.hp = 500;
+        p.max_hp = 500;
+        // The General window is LIVE — the budget still drains (the C#
+        // gate reads only the Lava slot).
+        p.immune = true;
+        p.immune_time = 600;
+        p.hurt_cd = 10.0;
+        p.in_lava = true;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 4, "the drain ignores the General i-frames");
+        // Empty the budget: the hit lands despite the General window and
+        // arms the Lava slot with 40.
+        p.lava_time = 0;
+        let hp = p.hp;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[1]));
+        assert_eq!(p.hp, hp - 80, "the lava hit lands through the i-frames");
+        assert_eq!(
+            p.hurt_cooldowns[crate::id_tables::IMMUNITY_LAVA as usize],
+            40
+        );
+        assert!(p.buffs.find_buff_index(24).is_some(), "OnFire granted");
+        // Inside the Lava window: no drain, no hit, no refill.
+        p.lava_time = 5;
+        let hp = p.hp;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 5, "the counter gates the drain off (:27679)");
+        assert_eq!(p.hp, hp, "no second hit inside the Lava window");
+        // Out of the lava the budget refills (flag26 true, :27716).
+        p.in_lava = false;
+        p.update_survival(&w, &mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p.lava_time, 6, "the refill rides the not-in-lava state");
+    }
+
+    /// M4-HAZARD-1 — the respawn census: the C# `Spawn` never writes
+    /// `hurtCooldowns` (the field's only mentions are the `:3160` decl,
+    /// the `:18887-18893` decay, the `:27679` lava gate, the `:31395`
+    /// thorns flag, the `:38017-38019` all-types write and the
+    /// `:38208/:38391-38393` Hurt arms) — the counters ride through death
+    /// untouched, while the General pair re-arms its 180-tick revive
+    /// window (`:37658-37666`).
+    #[test]
+    fn w4_d115_m4_hazard_the_counters_ride_through_death_untouched() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hurt_cooldowns = [11, 22, 33, 44, 55, 66];
+        p.start_death(&w, false, false);
+        p.respawn();
+        assert_eq!(
+            p.hurt_cooldowns,
+            [11, 22, 33, 44, 55, 66],
+            "Spawn carries no array write (the C# field census)"
+        );
+        assert!(p.immune, "the revive arms the General window");
+        assert_eq!(p.immune_time, 180);
+        assert_eq!(p.hurt_cd, 0.0, "the collapsed mirror clears on respawn");
+    }
+
+    /// M4-HAZARD-1 — source census: outside the test module the array's
+    /// writers are exactly the four C# sites — the spawn initializer
+    /// (`:3160`), the `UpdateImmunity` decay (`:18887-18893`), the
+    /// `SetImmuneTimeForAllTypes` all-slot write (`:38017-38020`) and
+    /// `Hurt`'s per-counter re-arm (`:38391-38393`). The respawn body
+    /// carries none. (Needles split so this witness's own literals do
+    /// not count.)
+    #[test]
+    fn w4_d115_m4_hazard_the_array_writer_census_matches_the_csharp() {
+        let src = include_str!("player.rs");
+        let body = &src[..src.find("#[cfg(test)]").unwrap()];
+        // The respawn body: from its signature to the next method.
+        let respawn = body.find("pub fn respawn(&mut self)").unwrap();
+        let respawn_end = body[respawn + 10..].find("\n    pub ").unwrap() + respawn + 10;
+        let respawn_body = &body[respawn..respawn_end];
+        assert!(
+            !respawn_body.contains(concat!("hurt_", "cooldowns")),
+            "Spawn never writes the array (the C# field census)"
+        );
+        // The decay loop lives inside update_immunity.
+        let ui = body.find("pub fn update_immunity").unwrap();
+        let ui_end = body[ui + 10..].find("\n    pub ").unwrap() + ui + 10;
+        assert!(
+            body[ui..ui_end].contains(concat!("for cd in self.hurt_", "cooldowns.iter_mut()")),
+            "the :18887-18893 decay loop"
+        );
+        // The all-types write lives inside set_immune_time_for_all_types.
+        let st = body.find("fn set_immune_time_for_all_types").unwrap();
+        let st_end = body[st + 10..].find("\n    pub ").unwrap() + st + 10;
+        assert!(
+            body[st..st_end].contains(concat!("*cd = ", "time;")),
+            "the :38017-38020 all-slot write"
+        );
+        // Hurt's re-arm is the == 0-gated per-counter write.
+        assert!(body.contains(concat!(
+            "} else if self.hurt_",
+            "cooldowns[cooldown_counter as usize] == 0 {"
+        )));
+    }
+
+    /// W4-d115 wiring round — the Acc_Neck sim half: the Cross Necklace
+    /// 554 arms `neck = 2` (`Item.cs:7992` → `UpdateVisibleAccessory`
+    /// `:36927-36930`), the LAST visible slot wins (`:36755-36805`'s two
+    /// loops), the hide flag drops the functional slot, the vanity slot
+    /// overrides unconditionally, and the per-tick reset clears to −1
+    /// when the item comes off (`ResetVisibleAccessories` `:31135`).
+    #[test]
+    fn w4_d115_wiring_the_neck_slot_rederives_from_the_visible_slots() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.neck, -1, "the spawn default (Player.cs:1686)");
+        p.equipped[3] = 554; // the Cross Necklace, neckSlot 2
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "554 → neckSlot 2 (Item.cs:7992)");
+        // A second neck item in a later slot wins (last-write, :36929).
+        p.equipped[4] = 3212; // Shark Tooth Necklace, neckSlot 7
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 7, "the later slot overwrites (:36927-36930)");
+        // Hiding the later slot falls back to the earlier one.
+        p.hide_visible_accessory[4] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "the hidden slot is skipped (:36790)");
+        // The vanity slot (13..20) overrides unconditionally (:36795-36805).
+        p.equipped[13] = 1303; // Jellyfish Necklace, neckSlot 1
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 1, "the vanity loop runs after the functional one");
+        // Taking everything off resets to −1 (ResetVisibleAccessories).
+        p.equipped = [0; 20];
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, -1, "the per-tick reset clears (:31135)");
+        // A non-neck accessory never arms the layer.
+        p.equipped[3] = 963; // the Black Belt — no neckSlot
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, -1);
+    }
+
+    /// W4-d115 wiring round — the neck dye mirrors `UpdateItemDye`'s
+    /// neck arm (`Player.cs:9683-9686`): the visible slot's dye stamps
+    /// `cNeck`, the hidden functional slot's early-return (`:9628-9631`)
+    /// keeps its dye out, the vanity slot's dye overrides.
+    #[test]
+    fn w4_d115_wiring_the_neck_dye_follows_the_visible_slot() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.dye_slots[3] = 1007; // Red Dye (the update_dye_cache witness's kind)
+        p.update(&w, PlayerInput::default());
+        let dyed = p.c_neck;
+        assert!(dyed != 0, "the visible slot's dye stamps cNeck (:9685)");
+        // Hidden: the dye stays out (the :9628-9631 early-return).
+        p.hide_visible_accessory[3] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.c_neck, 0, "the hidden functional slot keeps its dye out");
+        assert_eq!(p.neck, -1, "and the layer itself hides");
+        // The vanity slot's dye overrides even while the functional hides.
+        p.equipped[13] = 554;
+        p.dye_slots[3] = 1015; // Blue Dye on the vanity slot (13 − 10 = 3)
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "the vanity neck shows");
+        assert!(p.c_neck != 0 && p.c_neck != dyed, "the vanity dye overrides");
     }
 
     // -- S1-P-i41: mount item use + data witnesses ---------------------------
@@ -23484,6 +28381,156 @@ mod summon_tests {
         let mut q = Player::spawn(&w);
         assert!(q.set_mount(10, false));
         assert!(q.mount.allow_direction_change());
+    }
+
+    // --- M2-MOUNT-4 witnesses (WRITTEN NOT RUN — code-only lane) ------------
+
+    /// A chaseable Zombie centred at (cx, cy) — the scan's target stand-in
+    /// (the `npc_centered` convention, projectile.rs).
+    fn ability_npc(cx: f32, cy: f32) -> Npc {
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, 0.0, 0.0, 1, 0.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let (nw, nh) = n.size();
+        n.x = cx - nw * 0.5;
+        n.y = cy - nh * 0.5;
+        n
+    }
+
+    /// `Mount.UpdateEffects` case 46 (`Mount.cs:4879-4947`): the Santank
+    /// fires the missile every 10 cooldown ticks and the gift only inside
+    /// the cooldown-10 window (one gift per 40-tick cycle); each fire draws
+    /// FOUR NextDoubles (gift 2 + missile 2) or TWO (missile only), and
+    /// queues the Item11 cue every fire + the Item89 cue on the gift fire.
+    #[test]
+    fn m4_the_santank_scan_fires_the_missile_every_ten_and_the_gift_every_forty() {
+        let w = World::new("t".into(), 200, 200); // open air — CanHitLine clear
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(46, false));
+        let npcs = [ability_npc(1900.0, 810.0)]; // 300 px right, inside the cone
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        // The fresh mount floors the cooldown at 40 (`set_mount`): the first
+        // scan fires (40 % 10 == 0), missile only (40 > 10), then re-arms?
+        // No — StopAbilityCharge only at cooldown 0, so the cooldown stays
+        // 40 until ability_recovery ticks it. Drive the recovery between
+        // scans (the fixed-step order: scan → … → recovery).
+        let mut missiles = 0;
+        let mut gifts = 0;
+        for tick in 0..80 {
+            let before = pool.slots().iter().filter(|s| s.active).count();
+            p.update_mount_ability(&w, &npcs, &mut pool, &mut rng);
+            let spawned: Vec<_> = pool
+                .slots()
+                .iter()
+                .filter(|s| s.active)
+                .skip(before)
+                .map(|s| s.kind)
+                .collect();
+            // The fire ticks are cooldown 40/30/20/10/0 → every 10th tick.
+            if tick % 10 == 0 {
+                assert!(spawned.contains(&14), "tick {tick}: the missile fires");
+                missiles += 1;
+                if tick % 40 == 30 {
+                    // cooldown 10 at tick 30/70 — the gift window.
+                    assert!(spawned.contains(&930), "tick {tick}: the gift fires");
+                    gifts += 1;
+                }
+            } else {
+                assert!(spawned.is_empty(), "tick {tick}: no fire between");
+            }
+            p.mount.ability_recovery();
+        }
+        assert_eq!(missiles, 8, "80 ticks / 10");
+        assert_eq!(gifts, 2, "one gift per 40-tick cycle");
+        // The cues: one Item11 per fire + one Item89 per gift.
+        let cues = p.take_ability_sounds();
+        assert_eq!(cues.iter().filter(|c| c.0 == 11).count(), 8);
+        assert_eq!(cues.iter().filter(|c| c.0 == 89).count(), 2);
+    }
+
+    /// `Mount.UseAbility` case 9 (`Mount.cs:3264-3288`): the Scutlix fires
+    /// TWO 606 lasers per fire (cooldown 0 only — the 20-tick cycle), from
+    /// the eye pair keyed by frameExtra, each one velocity step ahead of
+    /// its eye; NO cue. The fresh mount floors the cooldown at 20
+    /// (`set_mount`), so the first fire lands at tick 20.
+    #[test]
+    fn m4_the_scutlix_scan_fires_two_lasers_per_twenty_tick_cycle() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(9, false));
+        let npcs = [ability_npc(1900.0, 800.0)]; // straight right → band 8
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        let mut fires = 0;
+        for tick in 0..60 {
+            let before = pool.slots().iter().filter(|s| s.active).count();
+            p.update_mount_ability(&w, &npcs, &mut pool, &mut rng);
+            let spawned: Vec<_> = pool
+                .slots()
+                .iter()
+                .filter(|s| s.active)
+                .skip(before)
+                .map(|s| s.kind)
+                .collect();
+            // The cooldown runs 20→0 over ticks 0..19; the fire lands when
+            // it reads 0 (tick 20), then StopAbilityCharge re-arms 20.
+            if tick > 0 && tick % 20 == 0 {
+                assert_eq!(
+                    spawned.iter().filter(|&&k| k == 606).count(),
+                    2,
+                    "tick {tick}: the eye pair"
+                );
+                fires += 1;
+            } else {
+                assert!(spawned.is_empty(), "tick {tick}: the cooldown gates");
+            }
+            p.mount.ability_recovery();
+        }
+        assert_eq!(fires, 2, "ticks 20 + 40");
+        assert!(p.take_ability_sounds().is_empty(), "the Scutlix plays no cue");
+        // The lasers fly at speed 14 toward the target (the band-8 eyes).
+        let laser = pool.slots().iter().find(|s| s.active && s.kind == 606).unwrap();
+        assert!((laser.vel.length() - 14.0).abs() < 0.001, "speed 14");
+        assert!(laser.vel.x > 0.0, "aimed right at the target");
+    }
+
+    /// `Mount.UpdateEffects` case 9/46's no-target arm (`Mount.cs:4942-4946`):
+    /// an empty scan clears the charge and resets the head; a target outside
+    /// the facing cone never locks.
+    #[test]
+    fn m4_the_scan_resets_the_head_without_a_target() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 1600.0;
+        p.y = 800.0;
+        p.facing = 1;
+        assert!(p.set_mount(9, false));
+        let mut pool = ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(5);
+        // A target BEHIND the facing (left, outside the ±60° cone): no lock.
+        let behind = [ability_npc(1300.0, 800.0)];
+        p.mount.set_ability_charging(true);
+        p.update_mount_ability(&w, &behind, &mut pool, &mut rng);
+        assert!(!p.mount.ability_charging(), "the no-target arm clears the charge");
+        assert!(pool.slots().iter().all(|s| !s.active), "no fire");
+        // A target beyond 850 px: no lock either.
+        let far = [ability_npc(2600.0, 800.0)];
+        p.mount.set_ability_charging(true);
+        p.update_mount_ability(&w, &far, &mut pool, &mut rng);
+        assert!(!p.mount.ability_charging());
+        // An in-cone target locks + aims (the charging else-arm at a non-zero
+        // cooldown): the aim arms, the charge stays.
+        let near = [ability_npc(1900.0, 800.0)];
+        p.update_mount_ability(&w, &near, &mut pool, &mut rng);
+        assert!(p.mount.ability_charging(), "the cooldown-20 else-arm charges");
+        assert_eq!(p.mount.frame_extra(), 8, "the straight-right band");
     }
 }
 
@@ -25667,5 +30714,54 @@ mod w4_f3_carpet_tests {
         let b = p.take_floor_dust().expect("FloorVisuals queues on the landing tick");
         assert!(b.falling, "the head capture survives the collision (the 20-dust burst)");
         assert_eq!(b.kind, 147, "the snow floor");
+
+        }
+        }    // W4-e7 DOC-SWEEP lane 23 — the Snapping Stone accessory trio
+    // (`Player.cs:1226-1232`, `:14494-14496`/`:14580-14587`, `:18476-18478`,
+    // `:24564`/`:28385-28410`, `:3391-3396`). WRITTEN NOT RUN (code-only).
+    /// The three grant rows: 6167 → accSnappingStone, 6178 → magmaStone +
+    /// accPyroclast, 6179 → accWickedArmlet + accArmletOfRuin.
+    fn w4_e7_the_snapping_stone_trio_grants_its_flags() {
+        assert!(!p.acc_snapping_stone && !p.acc_pyroclast && !p.acc_armlet_of_ruin);
+        // Snapping Stone 6167 (`:14494-14496`): the bare flag.
+        p.equipped[3] = 6167;
+        assert!(p.acc_snapping_stone, "6167 grants accSnappingStone (:14495)");
+        assert!(!p.acc_pyroclast && !p.acc_armlet_of_ruin);
+        // Pyroclast 6178 (`:14580-14583`): magmaStone + accPyroclast.
+        p.equipped[3] = 6178;
+        assert!(p.magma_stone && p.acc_pyroclast, "6178 grants both (:14581-14582)");
+        assert!(!p.acc_snapping_stone, "the old flag clears (:18476)");
+        // Armlet of Ruin 6179 (`:14584-14587`): accWickedArmlet + accArmletOfRuin.
+        p.equipped[3] = 6179;
+        assert!(p.acc_wicked_armlet && p.acc_armlet_of_ruin, "6179 grants both (:14585-14586)");
+        assert!(!p.acc_pyroclast, "the old flag clears (:18477)");
+    /// `ResetEffects` clears all three flags (`:18476-18478`) — taking the
+    /// accessory off drops them; the cooldown is NOT cleared (a countdown,
+    /// the `accSentryBackpackGrabCooldown` shape — `Player::update` never
+    /// touches it; the world-sim pass ticks it via `update_snapping_stone`).
+    fn w4_e7_the_snapping_stone_flags_clear_but_the_cooldown_persists() {
+        assert!(p.acc_snapping_stone);
+        p.acc_snapping_stone_cooldown = 200;
+        assert!(!p.acc_snapping_stone, "the flag clears (:18476)");
+        // The cooldown is NOT reset by ResetEffects nor ticked by
+        // `Player::update` (the countdown rides the world-sim pass).
+        assert_eq!(p.acc_snapping_stone_cooldown, 200, "the countdown persists");
+    /// `Update_SnappingStone` (`:28385-28410`): the cooldown decrements one
+    /// per tick and stops at 0 (the `<= 0` early return); the light-up getter
+    /// (`:3391-3396`) is `cooldown == 0`.
+    fn w4_e7_the_snapping_stone_cooldown_counts_down_to_the_light_up() {
+        p.acc_snapping_stone_cooldown = 3;
+        assert!(!p.acc_snapping_stone_light_up(), "cooling");
+        p.update_snapping_stone();
+        assert_eq!(p.acc_snapping_stone_cooldown, 2);
+        assert_eq!(p.acc_snapping_stone_cooldown, 1);
+        assert!(!p.acc_snapping_stone_light_up());
+        assert_eq!(p.acc_snapping_stone_cooldown, 0);
+        assert!(p.acc_snapping_stone_light_up(), "recharged (:3395)");
+        // The `<= 0` early return: a further tick never goes negative.
+        assert_eq!(p.acc_snapping_stone_cooldown, 0, "the early return (:28387)");
     }
+
+// balance-close (union shared delimiter)
+}}}}}}}}}}}}}}}}
 }

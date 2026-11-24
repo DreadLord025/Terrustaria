@@ -87,7 +87,9 @@ fn player_mana(p: &Player) -> (i32, i32) {
 /// `ClassicPlayerResourcesDisplaySet.Draw` (line 26): life, then mana.
 ///
 /// `camera`/`zoom` are only used by the breath bubbles, which follow the player rather
-/// than the fixed screen anchor.
+/// than the fixed screen anchor. `inventory_open`/`options_open`/`fancy_ui` feed the
+/// breath meter's anchor walk (`Main.cs:43422-43438`).
+#[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -96,12 +98,18 @@ pub fn draw(
     camera: Vec2,
     zoom: f32,
     pulse: UiPulse,
+    inventory_open: bool,
+    options_open: bool,
+    fancy_ui: bool,
 ) {
     let Some(p) = player else { return };
-    // `Player.ghost` is not modelled by `tr_app::Player`; there is no ghost state to
-    // early-return on yet (see report).
+    // `Player.ghost` gates the breath/lava meters only (`Main.cs:43440`/
+    // `:43476`); the hearts/mana draw for the ghost too (the C# resource set
+    // has no dead/ghost early-return — `ClassicPlayerResourcesDisplaySet`).
     draw_life(r, lookups, screen, p, pulse);
-    draw_breath(r, lookups, screen, p, camera, zoom);
+    draw_breath(
+        r, lookups, screen, p, camera, zoom, inventory_open, options_open, fancy_ui,
+    );
     draw_mana(r, lookups, screen, p, pulse);
 }
 
@@ -205,7 +213,62 @@ fn draw_life(
     }
 }
 
-/// Breath bubbles above the player's head while submerged (moved from `ui::mod`).
+/// `Main.DrawInterface_Resources_Breath`'s per-bubble visual
+/// (`Main.cs:43446-43465`): a full bubble (value >= i*per) is grey 255 /
+/// scale 1; a partial one ramps `num4 = (value - (i-1)*per)/per`, grey
+/// `(int)(30 + 225*num4)` floored at 30, scale `num4/4 + 0.75` floored at
+/// 0.75. `i` is 1-based. Shared by the breath bubbles (per 20) and the lava
+/// flames (per `lavaMax/10`).
+pub fn breath_bubble_visual(value: i32, i: i32, per: i32) -> (i32, f32) {
+    if value >= i * per {
+        return (255, 1.0);
+    }
+    let num4 = (value - (i - 1) * per) as f32 / per as f32;
+    let grey = ((30.0 + 225.0 * num4) as i32).max(30);
+    let scale = (num4 / 4.0 + 0.75).max(0.75);
+    (grey, scale)
+}
+
+/// `Main.DrawInterface_Resources_Breath`'s anchor walk (`Main.cs:43421-43438`):
+/// `player.Top + (0, gfxOffY)`, the open-inventory drop (`height - 20` when
+/// `screenHeight < 1000`), the world→screen zoom transform, the `-100` lift
+/// when the inventory is closed (or the screen is tall), then the
+/// options/fancy-UI re-anchor. Returns the screen-space anchor the bubble
+/// row hangs from. `UIScale`'s `/ Main.UIScale` (`:43431`) cancels the
+/// `UIScaleMatrix` batch the C# draws in — the port's whole HUD is unscaled
+/// (the S1-H-3 deviation, ANALYSIS "UI scale"), so the anchor stays raw.
+pub fn breath_meter_anchor(
+    p: &Player,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    inventory_open: bool,
+    options_open: bool,
+    fancy_ui: bool,
+) -> Vec2 {
+    let mut v = Vec2::new(p.x + PLAYER_WIDTH * 0.5, p.y + p.gfx_off_y);
+    if inventory_open && screen.y < 1000.0 {
+        v.y += p.height - 20.0;
+    }
+    v = (v - camera) * zoom + screen * 0.5;
+    if !inventory_open || screen.y >= 1000.0 {
+        v.y -= 100.0;
+    }
+    if options_open || fancy_ui {
+        v = Vec2::new(screen.x * 0.5, screen.y * 0.5 + 236.0);
+        if fancy_ui {
+            v.y = screen.y - 64.0;
+        }
+    }
+    v
+}
+
+/// `Main.DrawInterface_Resources_Breath` (`Main.cs:43406-43513`): the breath
+/// bubbles above the player's head while submerged, and the lava flames
+/// while the lava budget drains. The dead player draws nothing (`:43409`);
+/// the `flag` suppression (`:43413-43420`) hides the bubbles while the lava
+/// budget is below max AND (in lava OR breath full); the ghost gate
+/// (`:43440`/`:43476`) rides the hardcore-ghost lane's `Player.ghost`.
 fn draw_breath(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -213,33 +276,67 @@ fn draw_breath(
     p: &Player,
     camera: Vec2,
     zoom: f32,
+    inventory_open: bool,
+    options_open: bool,
+    fancy_ui: bool,
 ) {
-    if p.breath >= BREATH_MAX {
+    // `:43409-43412`: the dead early-return.
+    if p.dead {
         return;
     }
-    let Some(bubble) = lookups.hud_uv(lookups.ui_bubble.as_ref()) else {
+    // `:43413-43420`: the lava-suppression flag.
+    let lava_draining = p.lava_time < p.lava_max;
+    let flag = lava_draining && (p.lava_wet || p.breath == BREATH_MAX);
+    let anchor = breath_meter_anchor(
+        p, camera, zoom, screen, inventory_open, options_open, fancy_ui,
+    );
+    // `:43440-43475`: the breath bubbles — `breath < breathMax && !ghost &&
+    // !flag`, one per 20 breath, the `i > 10` wrap (`-260 x, +26 y`).
+    if p.breath < BREATH_MAX && !p.ghost && !flag {
+        if let Some(bubble) = lookups.hud_uv(lookups.ui_bubble.as_ref()) {
+            let (bw, bh) = sheet_size(lookups.ui_bubble.as_ref());
+            let per = 20;
+            let count = BREATH_MAX / per;
+            for i in 1..=count {
+                let (grey, scale) = breath_bubble_visual(p.breath, i, per);
+                let (wrap_x, wrap_y) = if i > 10 { (-260.0, 26.0) } else { (0.0, 0.0) };
+                let x = anchor.x + 26.0 * (i - 1) as f32 + wrap_x - 125.0;
+                let y = anchor.y + 32.0 + (bh - bh * scale) * 0.5 + wrap_y;
+                let t = grey as f32 / 255.0;
+                // `Color(num2, num2, num2, num2)` (`:43473`) — alpha rides grey.
+                r.push_ui_sprite([x, y], [bw * scale, bh * scale], bubble, [t, t, t, t]);
+            }
+        }
+    }
+    // `:43476-43512`: the lava flames — `(lavaTime < lavaMax && !ghost) & flag`.
+    if !((lava_draining && !p.ghost) & flag) {
+        return;
+    }
+    let Some(flame) = lookups.hud_uv(lookups.ui_flame.as_ref()) else {
         return;
     };
-    let psx = (p.x + PLAYER_WIDTH * 0.5 - camera.x) * zoom + screen.x * 0.5;
-    let psy = (p.y - camera.y) * zoom + screen.y * 0.5;
-    let bx = psx - 125.0;
-    let by = psy - 100.0;
-    for i in 1..=10 {
-        let ratio = ((p.breath as f32 - (i - 1) as f32 * 20.0) / 20.0).clamp(0.0, 1.0);
-        let (grey, scale) = if p.breath >= i * 20 {
-            (255.0f32, 1.0f32)
-        } else {
-            (
-                (30.0 + 225.0 * ratio).max(30.0),
-                (ratio / 4.0 + 0.75).max(0.75),
-            )
-        };
-        let size = 22.0 * scale;
-        let x = bx + 26.0 * (i - 1) as f32;
-        let y = by + (22.0 - size) * 0.5;
-        let t = grey / 255.0;
-        r.push_ui_sprite([x, y], [size, size], bubble, [t, t, t, 1.0]);
+    let (fw, fh) = sheet_size(lookups.ui_flame.as_ref());
+    // `num7 = lavaMax / 10` (`:43480`); the gate above guarantees lavaMax > 0.
+    let per = p.lava_max / 10;
+    if per <= 0 {
+        return;
     }
+    let count = p.lava_max / per;
+    for j in 1..=count {
+        let (grey, scale) = breath_bubble_visual(p.lava_time, j, per);
+        let (wrap_x, wrap_y) = if j > 10 { (-260.0, 26.0) } else { (0.0, 0.0) };
+        let x = anchor.x + 26.0 * (j - 1) as f32 + wrap_x - 125.0;
+        let y = anchor.y + 32.0 + (fh - fh * scale) * 0.5 + wrap_y;
+        let t = grey as f32 / 255.0;
+        // The C# source rect is `Rectangle(0, 0, Bubble.Width(), Bubble.Height())`
+        // (`:43511`) — Flame and Bubble are both 22x22, so the whole flame sheet.
+        r.push_ui_sprite([x, y], [fw * scale, fh * scale], flame, [t, t, t, t]);
+    }
+}
+
+/// The native pixel size of a HUD sheet (0x0 when absent).
+fn sheet_size(rect: Option<&tr_render::SheetRect>) -> (f32, f32) {
+    rect.map_or((0.0, 0.0), |s| (s.width as f32, s.height as f32))
 }
 
 /// `ClassicPlayerResourcesDisplaySet.DrawMana` (lines 125-180).
@@ -742,6 +839,61 @@ mod s1_e_6_tests {
         owned[69] = true;
         let names = banner_hover_names(&owned);
         assert_eq!(names.len(), 1, "{names:?}");
+    }
+
+    /// W4-c46 — `Main.DrawInterface_Resources_Breath`'s per-bubble visual
+    /// (`Main.cs:43446-43465`): full bubbles are 255/1.0, the partial one
+    /// ramps grey `30 + 225*num4` and scale `num4/4 + 0.75`, both floored.
+    /// Written NOT run (code-only mode).
+    #[test]
+    fn w4_c46_the_breath_bubble_visual_ramps_grey_and_scale() {
+        // A full bubble (breath >= i*20).
+        assert_eq!(breath_bubble_visual(200, 10, 20), (255, 1.0));
+        assert_eq!(breath_bubble_visual(200, 1, 20), (255, 1.0));
+        // The boundary: breath == i*20 is still full.
+        assert_eq!(breath_bubble_visual(20, 1, 20), (255, 1.0));
+        // A half bubble: num4 = 0.5 → grey (int)(30+112.5) = 142, scale 0.875.
+        assert_eq!(breath_bubble_visual(10, 1, 20), (142, 0.875));
+        // An empty bubble: num4 = 0 → grey 30, scale 0.75 (the floors).
+        assert_eq!(breath_bubble_visual(0, 1, 20), (30, 0.75));
+        // Below the floor (negative num4): both clamp.
+        assert_eq!(breath_bubble_visual(0, 2, 20), (30, 0.75));
+        // The lava flames share the helper with per = lavaMax/10 (420 → 42):
+        // a half-drained budget's 5th flame is full, the 6th empty (num4 = 0).
+        assert_eq!(breath_bubble_visual(210, 5, 42), (255, 1.0));
+        assert_eq!(breath_bubble_visual(210, 6, 42), (30, 0.75));
+        // A quarter into the 6th flame: num4 = 0.25 → grey 86, scale 0.8125.
+        assert_eq!(breath_bubble_visual(220, 6, 42), (86, 0.8125));
+    }
+
+    /// W4-c46 — the breath meter's anchor walk (`Main.cs:43421-43438`): the
+    /// closed-inventory `-100` lift, the open-inventory `< 1000` drop
+    /// (`height - 20`), and the options/fancy-UI re-anchors. Written NOT run.
+    #[test]
+    fn w4_c46_the_breath_anchor_walks_the_inventory_and_options_arms() {
+        let w = tr_core::World::new("breath".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.x = 100.0;
+        p.y = 200.0;
+        p.gfx_off_y = 3.0;
+        let camera = Vec2::new(0.0, 0.0);
+        let screen = Vec2::new(800.0, 600.0);
+        // Closed inventory: Top + gfxOffY, zoomed, then -100.
+        let a = breath_meter_anchor(&p, camera, 1.0, screen, false, false, false);
+        assert_eq!(a, Vec2::new(100.0 + PLAYER_WIDTH * 0.5 + 400.0, 203.0 + 300.0 - 100.0));
+        // Open inventory on a short screen: + (height - 20), no -100 lift.
+        let a = breath_meter_anchor(&p, camera, 1.0, screen, true, false, false);
+        assert_eq!(a.y, 203.0 + p.height - 20.0 + 300.0);
+        // Open inventory on a TALL screen (>= 1000): the lift returns, no drop.
+        let tall = Vec2::new(800.0, 1000.0);
+        let a = breath_meter_anchor(&p, camera, 1.0, tall, true, false, false);
+        assert_eq!(a.y, 203.0 + 500.0 - 100.0);
+        // The options window re-anchors to the screen centre + 236.
+        let a = breath_meter_anchor(&p, camera, 1.0, screen, false, true, false);
+        assert_eq!(a, Vec2::new(400.0, 300.0 + 236.0));
+        // A fancy-UI state (the bestiary) anchors to screenHeight - 64.
+        let a = breath_meter_anchor(&p, camera, 1.0, screen, false, true, true);
+        assert_eq!(a, Vec2::new(400.0, 600.0 - 64.0));
     }
 }
 

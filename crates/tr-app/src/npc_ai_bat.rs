@@ -1,3 +1,5 @@
+{
+// balance-open (union shared delimiter)
 //! The aiStyle-8 caster family — `NPC.AI()`'s `if (this.aiStyle == 8)` block
 //! (`NPC.cs:20817-21376`). Despite the task slug ("bat/flyer family"), the C#'s
 //! aiStyle 8 is the **teleporting caster** machine — the bats (49/51/60) ride
@@ -139,6 +141,9 @@ fn dungeon_wall_gated(kind: NpcKind) -> bool {
             | NpcKind::NecromancerArmored
             | NpcKind::DiabolistRed
             | NpcKind::DiabolistWhite
+            // W4-g5 — the LibrarianSkeleton (693) joins the dungeon-wall group
+            // (`NPC.cs:18960`; the keep-one absorbed its d43 gate).
+            | NpcKind::LibrarianSkeleton
     )
     matches!(kind, NpcKind::DarkCaster | NpcKind::LibrarianSkeleton)
 }
@@ -684,6 +689,7 @@ pub fn ai_style_8_step(
     // `:21011-21050` — the 283/284, 172, 533, 281/282 trigger arms, in the
     // C#'s if-else order. W4-d38 ports the dungeon-caster arms (281-286);
     // the Rune Wizard (172) stays deferred (no kind).
+    // the Rune Wizard (172) is W4-g5's (ported just below), no longer deferred.
     if npc.kind == NpcKind::Necromancer || npc.kind == NpcKind::NecromancerArmored {
         // `:21011-21022` — the five 50-spaced triggers wind the 30-tick
         // windup; the 450 counter jumps to 700 (the teleport feeds 650).
@@ -713,6 +719,7 @@ pub fn ai_style_8_step(
         if npc.ai[0] >= 450.0 {
             npc.ai[0] = 700.0;
         }
+    }
     } else if npc.kind == NpcKind::DesertDjinn {
         // `:21031-21038` — the single 180 trigger winds the 181-tick volley.
         if flag5 && npc.ai[0] == 180.0 {

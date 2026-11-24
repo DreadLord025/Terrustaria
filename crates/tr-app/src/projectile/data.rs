@@ -397,6 +397,10 @@ pub const EYE_FIRE: u16 = 101;
 /// (`Projectile.cs:2752-2763`: 6x6, aiStyle 23, friendly + hostile, trap,
 /// penetrate -1, extraUpdates 2).
 pub const FLAMES_TRAP: u16 = 188;
+/// `ProjectileID.MartianTurretBolt` (435) — the Martian Turret's bolt
+/// (`Projectile.cs:5056-5063`: 10x10, aiStyle 1, hostile, ignoreWater;
+/// the aiStyle-73 shot request, `npc_ai_style73::TurretBolt`).
+pub const MARTIAN_TURRET_BOLT: u16 = 435;
 /// `ProjectileID.BrainScramblerBolt` (436) — the Scrambler's ray
 /// (`NPC.cs`'s `num412`/`:26640`).
 pub const BRAIN_SCRAMBLER: u16 = 436;
@@ -409,6 +413,14 @@ pub const SAUCER_DEATHRAY: u16 = 447;
 pub const SAUCER_MISSILE: u16 = 448;
 /// `ProjectileID.SaucerLaser` (449) — the turret's rays.
 pub const SAUCER_LASER: u16 = 449;
+/// `ProjectileID.ScutlixLaser` (606) — the Scutlix mount's eye lasers
+/// (`Projectile.cs:6530-6541`: 5×5, aiStyle 1, friendly, alpha 255,
+/// extraUpdates 2, timeLeft 600, ignoreWater). M2-MOUNT-4.
+pub const SCUTLIX_LASER: u16 = 606;
+/// `ProjectileID.SantankMountRocket` (930) — the Santank mount's gift-box
+/// rocket (`Projectile.cs:8817-8825`: 14×14, aiStyle 16, friendly,
+/// penetrate -1, ranged). M2-MOUNT-4.
+pub const SANTANK_MOUNT_ROCKET: u16 = 930;
 /// `ProjectileID.SaucerScrap` (450) — the shell's missiles.
 pub const SAUCER_SCRAP: u16 = 450;
 /// `ProjectileID.BrainScramblerShot` (436) — the martian ground shooter's
@@ -996,6 +1008,16 @@ pub const ICE_BOOMERANG: u16 = 113;
 /// the per-axis wall bounce that does NOT arm the return (`:19550-19560`)
 /// and the 0.3 spin (`:39556-39559`).
 pub const LIGHT_DISC: u16 = 106;
+/// `ProjectileID.BouncingShield` (866, `Projectile.cs:8312-8324`) — the
+/// Bouncing Shield item 4760's thrown shot (W4-f48 lane 20): 30×30,
+/// aiStyle 3, `penetrate = 5`, melee, `extraUpdates = 1`, `light = 0.15`,
+/// `usesLocalNPCImmunity` + `localNPCHitCooldown = -1`. The outbound leg
+/// never counts `ai[1]` (`:39027-39030`); the homing seek runs on
+/// `localAI[0]` ∈ [10, 360] (`:39220-39259`), the return seek is 16/1.2
+/// (`:39427-39431`), the rotation tracks the velocity (`:39560-39568`)
+/// and the on-hit store decays ×0.8 (`:13443-13445`) with its own
+/// penetrate spend (`:14077-14104`, the generic `:14125` excludes it).
+pub const BOUNCING_SHIELD: u16 = 866;
 /// The yoyo family (`Projectile.cs:6013-6093` + `:9483-9490` — every row is
 /// 16×16 with `DefaultToYoyo()`, aiStyle 99; the AI is `AI_099_2_Yoyos`
 /// `:67733-68105`). The counterweight projectiles 556-561/1079 share the style
@@ -1030,6 +1052,13 @@ pub const CASCADE_EXPLOSION: u16 = 1125;
 pub const CRYSTAL_SHARD_MELEE: u16 = 1134;
 pub const EYE_OF_CTHULHU_DASH: u16 = 1130;
 pub const KRAKEN_WAVE: u16 = 1135;
+/// The Snapping Stone trio's strike effect projectiles (W4-e7 lane 23,
+/// `ProjectileID.cs:2796`/`:2816`/`:2818`) — `TryMakingSnappingStoneStrike`
+/// (`Projectile.cs:14318`/`:14322`/`:14327`) spawns them at the extra
+/// targets; `snapping_stone.rs` owns the strike machine.
+pub const SNAPPING_STONE_EFFECT: u16 = 1121;
+pub const SNAPPING_STONE_MELEE_EFFECT: u16 = 1131;
+pub const SNAPPING_STONE_SUMMON_EFFECT: u16 = 1132;
 /// `ProjectileID.HiveFive` (999, the 1.4.4 yoyo — `Projectile.cs:9483-9490`).
 pub const HIVE_FIVE: u16 = 999;
 /// `ProjectileID.LightsBane` (974) — the Light's Bane sword's slash wave
@@ -1747,6 +1776,34 @@ pub const SPARKLE_GUITAR: u16 = 856;
 /// `ProjectileID.StarCannonStar` (955, `ProjectileID.cs:2464`) — the Star
 /// Cannon's shot (aiStyle 5, `penetrate = -1`, `alpha = 50`).
 pub const STAR_CANNON_STAR: u16 = 955;
+// W4-f48 — the star-cloak family (`Player.Hurt`'s retaliate block spawns
+// them, `Player.cs:38432-38481`; the overrides resolve LAST-wins starVeil
+// 725 → beeCloak 724 → manaCloak 723 → snakeCloak 1133). All five share one
+// `SetDefaults` arm (`Projectile.cs:7646-7658`) and one aiStyle-5 AI branch
+// (`:23845-23856/:23914-23927/:23988-24031`).
+/// `ProjectileID.ManaCloakStar` (723) — the Mana Cloak's star; the magic-hit
+/// proc (`Projectile.cs:13831-13852`) spawns it with `ai2 = 1` (the
+/// fall-through + star-drop half, unported families — cited in the AI arm).
+pub const MANA_CLOAK_STAR: u16 = 723;
+/// `ProjectileID.BeeCloakStar` (724) — the Bee Cloak's star.
+pub const BEE_CLOAK_STAR: u16 = 724;
+/// `ProjectileID.StarVeilStar` (725) — the Star Veil's star (the W4-f48 item).
+pub const STAR_VEIL_STAR: u16 = 725;
+/// `ProjectileID.StarCloakStar` (726) — the plain Star Cloak's star.
+pub const STAR_CLOAK_STAR: u16 = 726;
+/// `ProjectileID.SnakeBandStarCloakTinkerStar` (1133) — the Serpent's Coil's
+/// star (the snakeCloak override).
+pub const SNAKE_CLOAK_STAR: u16 = 1133;
+/// The five cloak-star kinds, one row / one AI branch
+/// (`Projectile.cs:7646`/`:23845`). The 503 Holy star shares the AI branch's
+/// kind list but not the row; it rides the i17 slice.
+pub const CLOAK_STARS: [u16; 5] = [
+    MANA_CLOAK_STAR,
+    BEE_CLOAK_STAR,
+    STAR_VEIL_STAR,
+    STAR_CLOAK_STAR,
+    SNAKE_CLOAK_STAR,
+];
 /// `ProjectileID.LastPrism` (633) — the channel holder (aiStyle 75,
 /// 14x18, `penetrate = -1`, `tileCollide = false`).
 pub const LAST_PRISM: u16 = 633;
@@ -2192,6 +2249,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         DESTROYER_LASER => 0.75,               // `:1878`
         ICE_BOOMERANG => 0.4,                  // `:2020`
         LIGHT_DISC => 0.4,                     // `:1944` (S1-P-i08)
+        BOUNCING_SHIELD => 0.15,               // `:8314` (W4-f48 lane 20)
         UNHOLY_TRIDENT => 0.5,                 // `:2029`
         UNHOLY_TRIDENT_HOSTILE => 0.5,         // `:2044`
         SWORD_BEAM => 0.5,                     // `:2054`
@@ -2237,6 +2295,62 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         987..=993 => 1.0,
         _ => 0.0,
     }
+}
+
+/// `Projectile.hostile`'s `SetDefaults` slice (W4-c19, the `:17341`
+/// enchantment gate census): the reset false (`Projectile.cs:764`) and the
+/// per-type `this.hostile = true` writes — the FULL 179-kind list, frozen
+/// verbatim from the `SetDefaults` ladder (the multi-type arms' every kind
+/// included: the 99/727/1013/1014/1053-1055/1057 boulder family `:1833`,
+/// the 578/579/813 ritual trio `:6282`, the 673/674 pair `:7207`).
+///
+/// The only RUNTIME writes are the two bomb-death flips — aiStyle 49's
+/// `ai[0] == -2` (`:28247`) and the 281's `ai[0] == -2` (`:75798`) — and
+/// both kinds are classless bombs (`melee`/`ranged` false), so they can
+/// never reach the `(melee || ranged)`-gated mount light this census
+/// serves; the kind-derived flag is exact for every consumer.
+pub(crate) fn set_defaults_hostile(kind: u16) -> bool {
+    matches!(
+        kind,
+        12 | 31 | 38 | 39 | 40 | 43 | 44 | 55 | 56 | 67 | 71 | 75 | 81 | 82 | 83 | 84
+            | 96 | 98 | 99 | 100 | 101 | 102 | 108 | 109 | 110 | 115 | 128 | 129 | 164
+            | 174 | 176 | 177 | 179 | 180 | 184 | 185 | 186 | 188 | 201 | 202 | 203
+            | 204 | 205 | 240 | 241 | 257 | 258 | 259 | 264 | 270 | 275 | 276 | 277
+            | 288 | 290 | 291 | 292 | 293 | 299 | 300 | 302 | 303 | 325 | 327 | 329
+            | 345 | 346 | 347 | 348 | 349 | 350 | 351 | 352 | 384 | 385 | 386 | 435
+            | 436 | 437 | 438 | 447 | 448 | 449 | 450 | 452 | 454 | 455 | 456 | 462
+            | 464 | 465 | 466 | 467 | 468 | 471 | 472 | 490 | 498 | 501 | 508 | 526
+            | 537 | 538 | 539 | 540 | 572 | 573 | 574 | 575 | 576 | 577 | 578 | 579
+            | 580 | 581 | 592 | 593 | 596 | 605 | 629 | 654 | 655 | 657 | 658 | 662
+            | 670 | 671 | 672 | 673 | 674 | 675 | 676 | 681 | 682 | 683 | 685 | 686
+            | 687 | 713 | 719 | 727 | 763 | 811 | 812 | 813 | 814 | 836 | 871 | 872
+            | 873 | 874 | 909 | 919 | 920 | 921 | 922 | 923 | 926 | 961 | 962 | 965
+            | 980 | 1001 | 1002 | 1005 | 1007 | 1013 | 1014 | 1021 | 1048 | 1049
+            | 1053 | 1054 | 1055 | 1057 | 1073 | 1078 | 1091 | 1092
+    )
+}
+
+/// `Projectile.noEnchantments`'s `SetDefaults` slice (W4-c19): the reset
+/// false (`Projectile.cs:794`) and the four `this.noEnchantments = true`
+/// writes — the 480 dart (`:5559`), the 1121/1131/1132 Dead Cells flint
+/// helpers (`:10501`/`:10621`/`:10633`). NO runtime writes anywhere in
+/// `Projectile.cs`; the kind-derived flag is exact.
+pub(crate) fn set_defaults_no_enchantments(kind: u16) -> bool {
+    matches!(kind, 480 | 1121 | 1131 | 1132)
+}
+
+/// `Projectile.noEnchantmentVisuals`'s `SetDefaults` slice (W4-c19): the
+/// reset false (`Projectile.cs:795`) and the 21 `this.noEnchantmentVisuals
+/// = true` writes — the outer `Update` gate (`:16700`) that skips
+/// `UpdateEnchantmentVisuals` wholesale. The 1128 arm writes it twice
+/// (`:10575`/`:10578`, a verbatim source quirk); the set is the same.
+/// NO runtime writes; the kind-derived flag is exact.
+pub(crate) fn set_defaults_no_enchantment_visuals(kind: u16) -> bool {
+    matches!(
+        kind,
+        181 | 228 | 229 | 344 | 399 | 401 | 504 | 566 | 611 | 669 | 697 | 698 | 709
+            | 732 | 933 | 954 | 979 | 1100 | 1108 | 1128 | 1129
+    )
 }
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
@@ -2861,6 +2975,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 true,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:5056-5063` — the Martian Turret's bolt (435):
+            // 10x10, aiStyle 1, hostile, ignoreWater (the overlay below);
+            // the stock penetrate 1 (`:774`), timeLeft 3600 (`:787`),
+            // tileCollide (`:775`) — the arm writes no override. The
+            // aiStyle-73 shot's carrier (W4-c11).
+            MARTIAN_TURRET_BOLT => (
+                10.0,
+                10.0,
+                1,
+                1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:5064-5071` — the Scrambler's bolt (436): 10x10,
             // aiStyle 1, hostile, ignoreWater. (`SCRAMBLER_SHOT` is the
             // same-id alias — S1-D-5 deleted its duplicate arm.) The
@@ -2921,6 +3052,38 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:1826-1837` — the laser: 5x5, aiStyle 1,
             // extraUpdates 1, timeLeft 600.
             SAUCER_LASER => (5.0, 5.0, 1, 1, 600, 1, true, false, false, RESET_STATE),
+            // M2-MOUNT-4 — `Projectile.cs:6530-6541` — the Scutlix mount's
+            // laser (606): 5x5, aiStyle 1, friendly, alpha 255,
+            // extraUpdates 2, timeLeft 600, ignoreWater; the stock
+            // penetrate 1 (`:774`) / tileCollide (`:775`) stand.
+            SCUTLIX_LASER => (
+                5.0,
+                5.0,
+                1,
+                1,
+                600,
+                2,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // M2-MOUNT-4 — `Projectile.cs:8817-8825` — the Santank mount's
+            // gift-box rocket (930): 14x14, aiStyle 16, friendly,
+            // penetrate -1, ranged; the stock tileCollide (`:775`) /
+            // timeLeft 3600 (`:787`) stand.
+            SANTANK_MOUNT_ROCKET => (
+                14.0,
+                14.0,
+                16,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                RESET_STATE,
+            ),
             // `Projectile.cs:1839-1848` — the scrap: 14x14, aiStyle 14,
             // penetrate -1, timeLeft 360.
             SAUCER_SCRAP => (14.0, 14.0, 14, -1, 360, 0, true, false, false, RESET_STATE),
@@ -3385,6 +3548,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 RESET_STATE,
+            ),
+            // `:8312-8324` — the Bouncing Shield (866, W4-f48 lane 20):
+            // 30×30, aiStyle 3, friendly, `penetrate = 5`, melee (the
+            // census below), `extraUpdates = 1`, `usesLocalNPCImmunity` +
+            // `localNPCHitCooldown = -1` (one hit per NPC per throw); the
+            // stock 3600 life / tileCollide; `light = 0.15` rides
+            // `set_defaults_light`.
+            BOUNCING_SHIELD => (
+                30.0,
+                30.0,
+                3,
+                5,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                false,
+                (true, -1, false, -1, 0, 1.0),
             ),
             // The flail family (`DefaultToFlail` `:10753-10762` — aiStyle 15,
             // `penetrate = -1`, melee, the local-immunity pair 10 via the
@@ -4115,6 +4296,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `TheEyeOfCthulhuDash` (`:10596-10608`): 100×100, aiStyle 210,
             // `timeLeft = 600`, `penetrate = -1`, local-immunity −1.
             EYE_OF_CTHULHU_DASH => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
+            // W4-e7 lane 23 — the Snapping Stone strike effects
+            // (`Projectile.cs:10491-10503` / `:10611-10623` /
+            // `:10624-10635`): 10×10, aiStyle 0 (the `:778` reset — no AI
+            // arm), the stock `penetrate = 1` (`:774`), `tileCollide =
+            // false`, `timeLeft = 2`, local-immunity 60. The class flags
+            // ride the census below (1121 ranged, 1131 melee, 1132 none);
+            // `noEnchantments`/`hide` have no port field (draw/enchant-
+            // only, the `hide` convention). The strike spawns them at the
+            // extra targets (`snapping_stone.rs`, `:14339-14345` — the
+            // melee arm flips 1131's class by the owner's crit comparison).
+            SNAPPING_STONE_EFFECT | SNAPPING_STONE_MELEE_EFFECT | SNAPPING_STONE_SUMMON_EFFECT => {
+                (10.0, 10.0, 0, 1, 2, 0, false, false, false, (true, 60, false, -1, 0, 1.0))
+            }
             // `CrystalShardMelee` (`:10636-10650`): 6×6, aiStyle 24,
             // `penetrate = 1`, `timeLeft = 600`, idStatic-20.
             CRYSTAL_SHARD_MELEE => (6.0, 6.0, 24, 1, 600, 0, false, false, false, RESET_STATE),
@@ -5441,6 +5635,20 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // aiStyle 5, `penetrate = -1`, `alpha = 50`, ranged (`light = 1f`
             // dropped).
             STAR_CANNON_STAR => (18.0, 18.0, 5, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 50, 1.0)),
+            // W4-f48 — `Projectile.cs:7646-7658`: the five cloak stars
+            // (723/724/725/726/1133) share ONE arm: 24x24, aiStyle 5,
+            // friendly, `penetrate = 2`, `alpha = 50`, `tileCollide = false`
+            // (the AI arms it at `Center.Y > ai[1]`, `:23853-23856`),
+            // `usesLocalNPCImmunity` + `localNPCHitCooldown = 10`.
+            // `armorPenetration = 25` (`:7657`) has no `ProjData` field — the
+            // retaliate drain sets it through `set_armor_penetration` (the
+            // gun_launch precedent). No damage-class flag (the stock false
+            // trio — the C# arm sets none).
+            MANA_CLOAK_STAR | BEE_CLOAK_STAR | STAR_VEIL_STAR | STAR_CLOAK_STAR
+            | SNAKE_CLOAK_STAR => (
+                24.0, 24.0, 5, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 10, false, -1, 50, 1.0),
+            ),
             // The spear family (S1-P-i06, aiStyle 19 — `DefaultToSpear`
             // `Projectile.cs:10720-10730`: friendly, `penetrate = -1`,
             // `tileCollide = false`, melee, `ownerHitCheck`, `usesOwnerLight`,
@@ -6024,6 +6232,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // S1-E-21h d76 DOC-SWEEP — `Projectile.cs:10085`: the Bird
             // Droppings (1080) sets `ignoreWater = true`.
             || kind == BIRD_DROPPINGS,
+            // M2-MOUNT-4 — `Projectile.cs:6540`: the Scutlix laser (606)
+            // sets `ignoreWater = true`.
+            || kind == SCUTLIX_LASER,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -6100,6 +6311,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // the recorded gap (the spore cloud 228 and the Thunder
                     // Spear's bolt 732 join the melee census).
                     | CHLOROPHYTE_ORB | CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT
+                    // W4-f48 lane 20 — the Bouncing Shield (866, `:8320`).
+                    | BOUNCING_SHIELD
+                    // W4-e7 lane 23 — the Snapping Stone melee effect
+                    // (1131, `:10620`); the strike's crit-comparison flip
+                    // (`:14343-14345`) overwrites the slot flags at spawn.
+                    | SNAPPING_STONE_MELEE_EFFECT
             ),
         ranged: matches!(
             kind,
@@ -6128,6 +6345,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | 42 | 65 | 68 | 354 | 85 | 117 | 469 | 485 | 495 | 819
                 | 133..=144 | 338..=341 | 615 | 630 | 705 | 714 | 715..=718 | 932
                 | 776..=801 | 803..=810
+            // M2-MOUNT-4 — the Santank gift-box rocket (930,
+            // `Projectile.cs:8824` sets ranged).
+                | SANTANK_MOUNT_ROCKET
             // The hostile snowmen's shots (109/110, `:1976`/`:1989`) — the
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
@@ -6138,6 +6358,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d4 — `Projectile.cs:2787`: the Mechanical Piranha (190)
             // sets `ranged = true`.
                 | MECHANICAL_PIRANHA
+            // W4-e7 lane 23 — the Snapping Stone ranged effect (1121,
+            // `:10500`); the summon effect 1132 sets NO class (`:10624-10635`).
+                | SNAPPING_STONE_EFFECT
         ),
         magic: matches!(
             kind,
@@ -6501,6 +6724,8 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         102 => 2,
         206 => 5,
         254 => 5,
+        // W4-c11 — `Main.cs:8532`: the Martian Turret bolt's 4-frame sheet.
+        435 => 4,
         436 => 4,
         447 => 4,
         448 => 3,
@@ -7019,6 +7244,31 @@ mod tests {
         for k in (146..=149u16).chain(1015..=1017) {
             assert!(spawnable.contains(&k), "kind {k} packs");
         }
+    /// W4-e7 lane 23 — the Snapping Stone strike effect rows
+    /// (`Projectile.cs:10491-10503`/`:10611-10635`): 10×10, aiStyle 0,
+    /// stock penetrate 1, tileCollide false, timeLeft 2, local-immunity 60;
+    /// 1121 ranged, 1131 melee, 1132 no class. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_e7_the_snapping_stone_effect_rows_match_set_defaults() {
+        for k in [SNAPPING_STONE_EFFECT, SNAPPING_STONE_MELEE_EFFECT, SNAPPING_STONE_SUMMON_EFFECT] {
+            let d = proj_data(k).expect("the strike effect row");
+            assert_eq!((d.w, d.h), (10.0, 10.0), "kind {k} (:10493-10494)");
+            assert_eq!(d.ai_style, 0, "kind {k} — the :778 reset, no AI arm");
+            assert_eq!(d.penetrate, 1, "kind {k} — the stock :774");
+            assert_eq!(d.time_left, 2, "kind {k} (:10499)");
+            assert!(!d.tile_collide, "kind {k} (:10495)");
+            assert!(d.uses_local_immunity, "kind {k} (:10497)");
+            assert_eq!(d.local_hit_cooldown, 60, "kind {k} (:10498)");
+            assert!(!d.uses_id_static_immunity, "kind {k}");
+            assert_eq!(d.alpha, 0, "kind {k} — the stock :779");
+            assert_eq!(d.scale, 1.0, "kind {k} — the stock :785");
+        }
+        assert_eq!(proj_data(SNAPPING_STONE_EFFECT).unwrap().ranged, true, "(:10500)");
+        assert_eq!(proj_data(SNAPPING_STONE_EFFECT).unwrap().melee, false);
+        assert_eq!(proj_data(SNAPPING_STONE_MELEE_EFFECT).unwrap().melee, true, "(:10620)");
+        assert_eq!(proj_data(SNAPPING_STONE_MELEE_EFFECT).unwrap().ranged, false);
+        let summon = proj_data(SNAPPING_STONE_SUMMON_EFFECT).unwrap();
+        assert!(!summon.melee && !summon.ranged && !summon.magic, "(:10624-10635) sets none");
     }
     /// W4-g2 reconciliation — the four sibling rows the first census missed
     /// (`163-projectile-rowless-kinds-w4-g2.md` "Recorded gaps"): the melee
@@ -7249,5 +7499,32 @@ mod tests {
         for kind in [1059, 1065, 1074, 1075, 1076, 1101, 1102, 491] {
             assert!(proj_data(kind).is_none(), "kind {kind} stays rowless (task-seed)");
         }
+
+        }    /// W4-c11 witness — `Projectile.cs:5056-5063`: the Martian Turret's
+    /// bolt (435) is 10x10, aiStyle 1, hostile, `ignoreWater = true`, with
+    /// the stock penetrate 1 (`:774`), tileCollide (`:775`), timeLeft 3600
+    /// (`:787`) and extraUpdates 0 — the arm writes no override. The
+    /// aiStyle-73 shot (`npc_ai_style73::TurretBolt`) spawns through
+    /// `spawn_hostile`, which reads exactly this row.
+    fn the_martian_turret_bolt_row_matches_the_csharp() {
+        let d = proj_data(MARTIAN_TURRET_BOLT).expect("the 435 row");
+        assert_eq!((d.w, d.h), (10.0, 10.0), ":5058-5059");
+        assert_eq!(d.ai_style, 1, ":5060");
+        assert!(d.ignore_water, ":5062");
+        assert_eq!(d.penetrate, 1, ":774 stock");
+        assert!(d.tile_collide, ":775 stock");
+        assert_eq!(d.time_left, 3600, ":787 stock");
+        assert_eq!(d.extra_updates, 0);
+        assert!(!d.arrow && !d.trap, "the arm sets neither");
+        assert_eq!(d.alpha, 0, ":779 stock");
+        assert_eq!(d.scale, 1.0, ":785 stock");
+        // `Main.projFrames[435] = 4` (`Main.cs:8532`) — the sheet slices 4.
+        assert_eq!(proj_frames(MARTIAN_TURRET_BOLT), 4);
+        // The Scrambler twin (436) shares the shape but is a distinct row
+        // (its ignoreWater stays the documented S1-D-5 derivation gap).
+        assert_ne!(proj_data(MARTIAN_TURRET_BOLT), proj_data(BRAIN_SCRAMBLER));
     }
+
+// balance-close (union shared delimiter)
+}
 }

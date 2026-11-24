@@ -1045,6 +1045,37 @@ mod tests {
         );
     }
 
+    /// W4-c46 final — `GUIHotbarDrawInner`'s ghost early-return
+    /// (`Main.cs:43588`: `playerInventory || LocalPlayer.ghost || spectating
+    /// >= 0`): the hardcore ghost freezes the hotbar scale lerp (it lives
+    /// inside the function, `:43604-43611`) and refuses the hotbar hit-test
+    /// (`:43616-43623`'s hover/click sits after the return). Written NOT run
+    /// (code-only mode).
+    #[test]
+    fn w4_c46_the_ghost_freezes_the_hotbar_and_refuses_its_hits() {
+        let mut app = in_world_app();
+        app.selected = 0;
+        app.hotbar_scales[1] = 0.0;
+        app.player.as_mut().unwrap().ghost = true;
+        app.frame();
+        assert_eq!(
+            app.hotbar_scales[1], 0.0,
+            "the ghost's GUIHotbarDrawInner returns before the scale lerp"
+        );
+        // The closed-hotbar hit-test refuses too (slot 0's rect at (20,20)).
+        app.mouse_pos = Vec2::new(30.0, 30.0);
+        assert!(app.slot_at_mouse().is_none(), "no hotbar hover for the ghost");
+        // The living player keeps both (the lerp advances, the hit lands).
+        app.player.as_mut().unwrap().ghost = false;
+        app.frame();
+        assert!(
+            (app.hotbar_scales[1] - 0.05).abs() < 1e-6,
+            "the living hotbar animates"
+        );
+        app.hotbar_scales[0] = 1.0;
+        assert_eq!(app.slot_at_mouse(), Some(0), "the living hotbar is hoverable");
+    }
+
     /// DW-1.4 — the focus pause (`Main.cs:17128-17141`): an unfocused window
     /// freezes the world unless `SettingPlayWhenUnfocused`
     /// (`FocusHelper.cs:137-138`) holds.

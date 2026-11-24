@@ -88,7 +88,9 @@ pub(crate) fn rotated_by(v: Vec2, radians: f64) -> Vec2 {
 /// `Utils.RotatedByRandom(maxRadians)` (`Utils.cs:1697-1700`):
 /// `RotatedBy(NextDouble() * max - NextDouble() * max)` — TWO draws, left
 /// operand first, the double subtraction, then the float-cos/sin spin.
-fn rotated_by_random(v: Vec2, max_radians: f64, rng: &mut UnifiedRandom) -> Vec2 {
+/// `pub(crate)`: the mount ability fire (`Mount.cs:3298`/`:3309`, M2-MOUNT-4)
+/// rolls the same shape on the `UpdatePlayers` stream.
+pub(crate) fn rotated_by_random(v: Vec2, max_radians: f64, rng: &mut UnifiedRandom) -> Vec2 {
     let angle = rng.next_double() * max_radians - rng.next_double() * max_radians;
     rotated_by(v, angle)
 }
