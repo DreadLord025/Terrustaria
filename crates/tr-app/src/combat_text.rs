@@ -48,6 +48,11 @@ pub const HEAL_MANA: [u8; 4] = [100, 100, 255, 255];
 /// + S1-P-i54's QuickHeal).
 pub const HEAL_LIFE: [u8; 4] = [100, 255, 100, 255];
 
+/// `CombatText.LifeRegenNegative` — `new Color(255, 140, 40, 255)`
+/// (`CombatText.cs:230`); `NPC.GetHurtByDebuff`'s DoT text spawns with it
+/// (`NPC.cs:91879`, the `153 NPCDebuffDamage` net arm).
+pub const LIFE_REGEN_NEGATIVE: [u8; 4] = [255, 140, 40, 255];
+
 /// The bar sheets decode at their retail 36x12 size
 /// (`TextureAssets.Hb1`/`Hb2` = `Images/HealthBar1|2`, `AssetInitializer.cs:404-405`).
 pub const BAR_WIDTH: f32 = 36.0;

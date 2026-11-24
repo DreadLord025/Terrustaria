@@ -1701,6 +1701,7 @@ impl App {
                             self.map_style,
                             self.bestiary_open,
                             self.bestiary_selected,
+                            &self.bestiary_ui,
                             &self.bestiary,
                             &mut self.chat,
                             &self.emotes,
@@ -1800,6 +1801,12 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // W4-g50: the 91-synced emote anchors resolve
+                            // against the local slot, the peer snapshots
+                            // and the projectile pool.
+                            self.local_id,
+                            &self.remote_players,
+                            &self.projectiles,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after

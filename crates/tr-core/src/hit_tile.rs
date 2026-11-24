@@ -137,6 +137,27 @@ impl HitTile {
         }
     }
 
+    /// `HitTile.ClearThisTile(x, y)` (`HitTile.cs:101-113`): every slot at the
+    /// cell clears and prunes — the `17` reader's client tail
+    /// (`HitTile.ClearAllTilesAtThisLocation`, `MessageBuffer.cs:1160-1163`,
+    /// the local player's book is the port's single one).
+    pub fn clear_this_tile(
+        &mut self,
+        x: i32,
+        y: i32,
+        tile_active: impl Fn(i32, i32) -> bool,
+        wall_at: impl Fn(i32, i32) -> u16,
+    ) {
+        for i in 0..=MAX_HITTILES {
+            let num = self.order[i];
+            let obj = self.data[num];
+            if obj.x == x && obj.y == y {
+                self.clear(i);
+                self.prune(&tile_active, &wall_at);
+            }
+        }
+    }
+
     /// `HitTile.HitObject` (`HitTile.cs:159-179`): the existing slot for
     /// the cell, or the buffer slot prepared for it.
     pub fn hit_object(&mut self, x: i32, y: i32, hit_type: i32) -> usize {

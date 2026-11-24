@@ -5,35 +5,56 @@ pub mod achievements;
 pub mod bars;
 pub(crate) mod bestiary;
 pub(crate) mod bestiary_draw_offsets;
+pub(crate) mod bestiary_hover;
+pub(crate) mod bestiary_screen;
+pub(crate) mod bestiary_screen_draw;
+pub mod buttons;
 pub(crate) mod emotes;
 pub mod framework;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
+pub mod chrome_elements;
 pub mod clipboard;
 pub(crate) mod chest;
 pub mod chrome;
 pub(crate) mod coin_slot;
 pub mod color;
 pub mod crafting;
+pub mod creative_powers;
+pub mod creative_display;
+pub mod creative_items;
 pub mod cursor;
+pub mod debug_items;
+pub mod elements;
 pub mod ingame_options;
 pub mod housing;
+pub mod images;
 pub mod inventory;
+pub mod item_collection;
+pub mod keybinding_rows;
 pub mod keyboard;
 pub mod minimap;
 pub mod notifications;
 pub(crate) mod npc_chat;
 pub mod panel;
+pub mod particles;
 pub mod pointer;
+pub mod progress;
+pub mod resource_packs;
 pub mod resources;
 pub mod save_list;
+pub mod search_bar;
 pub mod sliders;
 pub mod select_hit;
 pub mod slot;
+pub mod sortable;
 pub mod text;
+pub mod text_box;
+pub mod text_panels;
 pub mod tooltip;
 pub mod uistate;
+pub mod workshop_rows;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;
@@ -680,6 +701,7 @@ pub fn draw_hud(
     map_style: i32,
     bestiary_open: bool,
     bestiary_selected: Option<usize>,
+    bestiary_ui: &bestiary_screen::BestiaryUi,
     kill_tracker: &tr_core::bestiary::WorldBestiary,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
@@ -716,6 +738,12 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // W4-g50: the `91`-synced emote bubbles anchor on peer players /
+    // projectiles (`DeserializeNetAnchor`, `EmoteBubble.cs:100-109`) — the
+    // local slot, the peer snapshots and the projectile pool resolve them.
+    emote_local_id: u32,
+    emote_remote_players: &std::collections::HashMap<u32, crate::net::PlayerNet>,
+    emote_projectiles: &crate::projectile::ProjectilePool,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -777,7 +805,21 @@ pub fn draw_hud(
     // bubbles ride the world→UI transform (`GameViewMatrix.ZoomMatrix`,
     // `Main.cs:46455-46459`), so the pass takes the player + camera/zoom,
     // not a pre-baked screen position.
-    emotes::draw(r, lookups, screen, emotes_state, player, camera, zoom, mouse_pos, pulse);
+    emotes::draw(
+        r,
+        lookups,
+        screen,
+        emotes_state,
+        player,
+        camera,
+        zoom,
+        mouse_pos,
+        pulse,
+        emote_local_id,
+        emote_remote_players,
+        npcs,
+        emote_projectiles,
+    );
 
     // `DrawInterface_1_1_DrawEmoteBubblesInWorld`'s tail
     // (`Main.cs:46460-46464`): the hovered town NPC's chat bubble rides
@@ -789,7 +831,10 @@ pub fn draw_hud(
     // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
     // `:276-283`; the sign half is unported).
     if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+        // The Dryad's status button (`DryadPurification`, W4-g49) draws only
+        // while the talk NPC is the Dryad.
+        let dryad_status = npc_chat::dryad_status_active(npcs, talk_npc);
+        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos, dryad_status);
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
@@ -822,7 +867,7 @@ pub fn draw_hud(
     // bestiary covers the interface while open (the state's draw replaces
     // the HUD behind it).
     if bestiary_open {
-        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_ui, bestiary_selected, mouse_pos);
         // The bestiary is a fancy-UI state: `DrawInterface_12_IngameFancyUI`
         // (`Main.cs:46148-46158`) returns false for it, stopping the layer loop
         // before layer 36's cursor. `IngameFancyUI.Draw` draws the cursor itself

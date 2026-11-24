@@ -1440,6 +1440,9 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     expert,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
+                // W4-c28: the brain's Confused AddBuff queued its net
+                // intent (`NPC.cs:89932-89935`/`:89979`) — drain here.
+                app.drain_npc_buff_sends();
             }
             // `Player.PlayHurtSound` (`Player.cs:38525`): the hurt cue plays
             // at the `Hurt` TAIL — after the cuffs' mana text (`:38291`) and
@@ -2900,7 +2903,7 @@ mod tests {
         let style = crate::soundid::SOUND_STYLES
             [crate::item::initial_use_sound(3001).unwrap().0 as usize];
         let mut roll = |lo: i32, hi: i32| expect.next_range(lo, hi);
-        let _ = crate::sound::item_use_case2(style.style, &mut roll);
+        let _ = crate::sound::item_use_case2(style.style, app.music_pitch, &mut roll);
         let expected_delay = expect.next_range(2400, 4201);
         let expected_heal = expect.next_range(70, 121);
         let expected_iframe_roll = expect.next_float();

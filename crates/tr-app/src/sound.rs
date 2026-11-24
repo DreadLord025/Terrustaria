@@ -264,7 +264,7 @@ pub fn mech_case28(playing_0: bool, rng: &mut dyn FnMut(i32, i32) -> i32) -> Opt
 /// Not modelled (the port's standing D4 deviation): the per-style instance
 /// stop/re-create (`:580-606`) and the 53/55/159 playing guards — the port
 /// spawns a fresh source per play.
-pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32, f32, f32) {
+pub fn item_use_case2(style: i32, music_pitch: f32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32, f32, f32) {
     let mut num = style;
     let mut tweak = 1.0f32; // the num2 multipliers
     // `:517-535` — the per-style volume ifs.
@@ -316,11 +316,11 @@ pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32,
         _ => rng(-6, 7) as f32 * 0.01,
     };
     // `:635-639` — the music-box styles play at the music pitch; `:640-643`
-    // — style 169 drops 0.8. (No item-use row names 26/35/47/169 today; the
-    // arms are ported so the table cannot drift silently.)
+    // — style 169 drops 0.8. W4-g49: `Main.musicPitch` now has a port field
+    // (`App.music_pitch`, the `58` client store) — the caller passes it.
     if num == 26 || num == 35 || num == 47 {
         tweak *= 0.75;
-        pitch = 0.0; // Main.musicPitch — the port's music pitch stand-in
+        pitch = music_pitch; // `Main.musicPitch` (`:638`)
     }
     if num == 169 {
         pitch -= 0.8;
@@ -781,7 +781,7 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
         i += 1;
         1 // remap roll 1 → style 18
     };
-    let (num, tweak, pitch) = item_use_case2(1, &mut roll);
+    let (num, tweak, pitch) = item_use_case2(1, 0.0, &mut roll);
     assert_eq!(num, 18);
     assert_eq!(tweak, 1.0);
     assert!((pitch - 1.0 * 0.01).abs() < 1e-6);
@@ -792,7 +792,7 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
             assert_eq!((lo, hi), (-6, 7), "style {style}'s default pitch window");
             0
         };
-        let (num, tweak, pitch) = item_use_case2(style, &mut roll);
+        let (num, tweak, pitch) = item_use_case2(style, 0.0, &mut roll);
         assert_eq!(num, style);
         assert!((tweak - want).abs() < 1e-6, "style {style}");
         assert_eq!(pitch, 0.0);
@@ -802,7 +802,7 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
         assert_eq!((lo, hi), (-50, 51));
         -50
     };
-    let (num, tweak, pitch) = item_use_case2(156, &mut roll);
+    let (num, tweak, pitch) = item_use_case2(156, 0.0, &mut roll);
     assert_eq!(num, 156);
     assert!((tweak - 0.6).abs() < 1e-6);
     assert!((pitch - (-50.0 * 0.002)).abs() < 1e-6);
@@ -810,8 +810,26 @@ fn s1_e_21a_item_use_case2_remaps_style1_and_tweaks_the_volume() {
     // 176 → 0.9.
     for (style, want) in [(123, 0.5f32), (116, 0.5), (129, 0.6), (124, 0.65), (125, 0.65), (176, 0.9)] {
         let mut roll = |_: i32, _: i32| 0;
-        let (_, tweak, _) = item_use_case2(style, &mut roll);
+        let (_, tweak, _) = item_use_case2(style, 0.0, &mut roll);
         assert!((tweak - want).abs() < 1e-6, "style {style}");
+    }
+}
+
+/// W4-g49 `58 InstrumentSound`'s music-pitch fold
+/// (`LegacySoundPlayer.cs:635-639`): the 26/35/47 music styles take
+/// `Main.musicPitch` as the instance pitch (the default-arm draw still
+/// runs first, `:632`) and ×0.75 volume.
+#[test]
+fn w4_g49_music_styles_play_at_the_music_pitch() {
+    for style in [26, 35, 47] {
+        let mut roll = |lo: i32, hi: i32| {
+            assert_eq!((lo, hi), (-6, 7), "the default pitch draw still runs");
+            3
+        };
+        let (num, tweak, pitch) = item_use_case2(style, 0.45, &mut roll);
+        assert_eq!(num, style);
+        assert!((tweak - 0.75).abs() < 1e-6, "style {style} ×0.75 (`:637`)");
+        assert_eq!(pitch, 0.45, "Main.musicPitch overwrites the draw (`:638`)");
     }
 }
 

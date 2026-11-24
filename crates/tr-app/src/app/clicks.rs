@@ -1082,13 +1082,39 @@ impl App {
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
         let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        // The Dryad's status button (`DryadPurification`, W4-g49) — the second
+        // interaction, hover index 1 while its condition holds.
+        let dryad_status = ui::npc_chat::dryad_status_active(&self.npcs, self.talk_npc);
+        let dryad_rect = ui::npc_chat::dryad_status_button_rect(&self.lookups, screen, &self.npc_chat_text);
+        let hovered = if ui::in_rect(self.mouse_pos, rect) {
+            0
+        } else if dryad_status && ui::in_rect(self.mouse_pos, dryad_rect) {
+            1
+        } else {
+            -1
+        };
         // `:157-160` — the hover-change tick (no gamepad in the port, so
         // the `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
             crate::chest::play_menu_sound(self, 12);
         }
         self.npc_chat_last_hovered = hovered;
+        if hovered == 1 && self.ui_left_press {
+            self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
+            // `DryadPurification.Interact` (`NPCInteractions.cs:121-130`):
+            // the portrait hop (unported), sound 12, then the world-status
+            // report from the `57` census store. The pure-world achievement
+            // (`HandleSpecialEvent(27)`) rides the achievement lane.
+            crate::chest::play_menu_sound(self, 12);
+            let (text, _pure) = crate::lang::dryad_world_status_dialog(
+                &self.world.name,
+                self.world_evil_good,
+                self.world_evil_evil,
+                self.world_evil_blood,
+            );
+            self.npc_chat_text = text; // `:125` — `Main.npcChatText = …`
+            return;
+        }
         if hovered == 0 && self.ui_left_press {
             self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
             // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
@@ -1103,32 +1129,160 @@ impl App {
 
     /// The bestiary screen's clicks: the inventory button that opens it
     /// (`Main.cs:42455-42462` — `SetTalkNPC(-1)`/`npcChatCornerItem = 0` have
-    /// no port counterpart), then the grid cards and the Back panel while it
-    /// is open. Consumes the press on every hit.
+    /// no port counterpart), then the screen's controls while it is open —
+    /// the Back panel, the page buttons, the sort/filter toggles + their
+    /// option grids, the search bar and the grid cards
+    /// (`UIBestiaryTest.cs:381-495`). Consumes the press on every hit.
     pub(crate) fn handle_bestiary_clicks(&mut self) {
         let left = self.ui_left_press;
-        if !left {
+        let right = self.ui_right_press;
+        if !left && !right {
             return;
         }
         if self.bestiary_open {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
+            let mouse = self.mouse_pos;
+            // The search box's right-click (`SearchBox_OnRightClick:230-237`):
+            // clear (forced) + start taking input.
+            let bar = ui::bestiary_screen::search_bar_rect(screen);
+            let (button, box_rect, cancel) = ui::bestiary_screen::search_pieces(bar);
+            if right && crate::ui::in_rect(mouse, box_rect) {
+                self.bestiary_ui.search.right_click();
+                self.bestiary_ui.on_search_changed("", &self.bestiary, screen);
+                self.bestiary_selected = None;
+                self.ui_right_press = false;
+            }
+            // `Update`'s outside-click close (`:239-246`): a left/right
+            // press with no bar child hovered ends the input latch.
+            let any_child = crate::ui::in_rect(mouse, button)
+                || crate::ui::in_rect(mouse, box_rect)
+                || crate::ui::in_rect(mouse, cancel);
+            self.bestiary_ui
+                .search
+                .update_outside_click(left, right, any_child);
+            if !left {
+                return;
+            }
             // The Back panel closes the screen (`MakeExitButton` ->
-            // `Click_GoBack`); the inventory stays closed, like the source's
-            // `IngameFancyUI` return.
-            if ui::bestiary::back_hit(screen, self.mouse_pos) {
+            // `Click_GoBack:381-392`, sound 11); the inventory stays closed,
+            // like the source's `IngameFancyUI` return.
+            if ui::bestiary::back_hit(screen, mouse) {
+                self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
                 self.bestiary_open = false;
                 self.bestiary_selected = None;
                 self.ui_left_press = false;
                 return;
             }
-            // A card opens its info page (`Click_SelectEntryButton`).
-            if let Some(idx) = ui::bestiary::card_at(screen, self.mouse_pos) {
+            // The option grid overlays the space: its buttons take the
+            // click first; a click on the panel itself closes it
+            // (`Click_CloseSortingGrid`/`Click_CloseFilteringGrid:418-452`).
+            match self.bestiary_ui.options {
+                ui::bestiary_screen::OptionsGrid::Sorting => {
+                    if let Some(step) = ui::bestiary_screen::sort_step_at(screen, mouse) {
+                        self.audio.play("Menu_Tick"); // `GroupOptionButton.LeftMouseDown:255`
+                        self.bestiary_ui.click_sort_option(step as i32, &self.bestiary, screen);
+                        self.bestiary_selected = None; // `UpdateBestiaryContents` deselects
+                        self.ui_left_press = false;
+                        return;
+                    }
+                    if ui::bestiary_screen::options_panel_hit(screen, mouse, self.bestiary_ui.options) {
+                        self.bestiary_ui.close_options_on_panel_click(&self.bestiary, screen);
+                        self.bestiary_selected = None;
+                        self.ui_left_press = false;
+                        return;
+                    }
+                }
+                ui::bestiary_screen::OptionsGrid::Filtering => {
+                    if let Some(i) = ui::bestiary_screen::filter_at_cursor(screen, mouse, &self.bestiary) {
+                        self.audio.play("Menu_Tick");
+                        self.bestiary_ui.click_filter_option(i, &self.bestiary, screen);
+                        self.bestiary_selected = None;
+                        self.ui_left_press = false;
+                        return;
+                    }
+                    if ui::bestiary_screen::options_panel_hit(screen, mouse, self.bestiary_ui.options) {
+                        self.bestiary_ui.close_options_on_panel_click(&self.bestiary, screen);
+                        self.bestiary_selected = None;
+                        self.ui_left_press = false;
+                        return;
+                    }
+                }
+                ui::bestiary_screen::OptionsGrid::None => {}
+            }
+            // The top strip's controls (`AddBackAndForwardButtons` /
+            // `AddSortAndFilterButtons`).
+            let (back, forward) = ui::bestiary_screen::page_buttons_rects(screen);
+            if crate::ui::in_rect(mouse, back) {
+                self.bestiary_ui.page(-1, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            if crate::ui::in_rect(mouse, forward) {
+                self.bestiary_ui.page(1, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            // The wrapped search bar (`UIWrappedSearchBar.cs:106`/`:135-136`/
+            // `:149`): the magnifier/box toggle the input latch, the cancel
+            // clears (sound 11) or ticks (sound 12). The pieces were
+            // resolved above (the right-click arm). The bar appends AFTER
+            // the sort/filter buttons (`BuildPage:102-112` then `:147`), so
+            // it takes the overlapping magnifier column first.
+            if crate::ui::in_rect(mouse, cancel) {
+                let sound = self.bestiary_ui.search.cancel_click();
+                self.audio.play(if sound == 11 { "Menu_Close" } else { "Menu_Tick" });
+                let contents = self.bestiary_ui.search.search_string.clone();
+                self.bestiary_ui.on_search_changed(&contents, &self.bestiary, screen);
+                self.bestiary_selected = None;
+                self.ui_left_press = false;
+                return;
+            }
+            if crate::ui::in_rect(mouse, button) || crate::ui::in_rect(mouse, box_rect) {
+                // `Click_SearchArea:222-228`: the target's parent is the box
+                // for the cancel button (handled above) — the magnifier and
+                // the panel itself toggle.
+                self.bestiary_ui.search.search_area_click(false);
+                self.ui_left_press = false;
+                return;
+            }
+            let (sort_btn, filter_btn) = ui::bestiary_screen::sort_filter_buttons_rects(screen);
+            if crate::ui::in_rect(mouse, sort_btn) {
+                self.bestiary_ui.toggle_sorting(&self.bestiary, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            if crate::ui::in_rect(mouse, filter_btn) {
+                self.bestiary_ui.toggle_filtering(&self.bestiary, screen);
+                self.ui_left_press = false;
+                return;
+            }
+            // The info-page scrollbar's thumb (`UIScrollbar.LeftMouseDown`,
+            // `UIScrollbar.cs:126-143`): a grab/jump on the bar takes the
+            // press before the grid cards (the bar rides over the info
+            // page's reserved column). W4-e23 remainder.
+            if self.bestiary_info_scrollbar_press(screen, mouse) {
+                self.ui_left_press = false;
+                return;
+            }
+            // A card opens its info page (`Click_SelectEntryButton:473-490`).
+            if let Some(idx) = ui::bestiary::grid_slot_at(screen, mouse)
+                .and_then(|slot| self.bestiary_ui.entry_at_slot(slot))
+            {
+                // `FillInfoForEntry` clears the list (`:113`) — the new
+                // entry's page starts unscrolled.
+                if self.bestiary_selected != Some(idx) {
+                    self.bestiary_ui.info_scroll = 0.0;
+                    self.bestiary_ui.info_scroll_drag = None;
+                }
                 self.bestiary_selected = Some(idx);
                 self.ui_left_press = false;
                 return;
             }
             return;
+        }
+        if !left {
+            return; // the closed-screen arms below are left-click only
         }
         // The inventory button (`DrawBestiaryIcon`'s click arm): open the
         // bestiary, close the inventory (`IngameFancyUI.OpenUIState`).
@@ -1136,6 +1290,10 @@ impl App {
             self.inventory_open = false;
             self.bestiary_open = true;
             self.bestiary_selected = None;
+            // `OnOpenPage` (`UIBestiaryTest.cs:63-66`): the open rebuilds
+            // the working set.
+            let (sw, sh) = self.screen_size();
+            self.bestiary_ui.on_open(&self.bestiary, Vec2::new(sw, sh));
             self.ui_left_press = false;
             return;
         }
@@ -1197,6 +1355,83 @@ impl App {
                 self.ui_left_press = false;
             }
         }
+    }
+
+    /// The bestiary info page's wheel scroll (`UIBestiaryTest.ScrollWheel`,
+    /// `UIBestiaryTest.cs:846-850` → `UIBestiaryEntryInfoPage.UpdateScrollbar`,
+    /// `:59-65`): `ViewPosition -= scrollWheelValue`, clamped by the
+    /// scrollbar's `SetView` (`UIScrollbar.cs:72-78`). `delta` is in notches
+    /// (positive = wheel up); one notch is `WHEEL_STEP` px, the shared
+    /// `char_select` convention. W4-e23 remainder (the scrollbar thumb).
+    pub(crate) fn scroll_bestiary_info(&mut self, delta: f32) {
+        if !self.bestiary_open {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let content_h = self.bestiary_info_content_height(screen);
+        let page = ui::bestiary::info_page_rect(&ui::bestiary::panel_rect(screen));
+        let view_h = ui::bestiary::info_page_view_height(page);
+        let wheel = delta * ui::char_select::WHEEL_STEP;
+        let moved = ui::bestiary::info_page_scroll(self.bestiary_ui.info_scroll, wheel);
+        let (_, pos) = ui::bestiary::info_page_set_view(view_h, content_h, moved);
+        self.bestiary_ui.info_scroll = pos;
+    }
+
+    /// The info page's total content height for the current selection —
+    /// the scrollbar's `maxViewSize` (`UIList.GetTotalHeight`,
+    /// `UIList.cs:63-66`). Needs the renderer's font metrics for the
+    /// wrapped flavor row; a headless frame (no renderer yet) reads 0.
+    fn bestiary_info_content_height(&self, screen: Vec2) -> f32 {
+        let Some(r) = self.renderer.as_ref() else {
+            return 0.0;
+        };
+        ui::bestiary::info_page_content_height(
+            r,
+            &self.lookups,
+            screen,
+            &self.bestiary,
+            self.bestiary_selected,
+        )
+    }
+
+    /// The info-page scrollbar's press (`UIScrollbar.LeftMouseDown`,
+    /// `UIScrollbar.cs:126-143`): a grab on the handle latches the drag
+    /// offset, a track press jumps the view. Returns `true` when the press
+    /// was the bar's (the caller consumes it). W4-e23 remainder.
+    pub(crate) fn bestiary_info_scrollbar_press(&mut self, screen: Vec2, mouse: Vec2) -> bool {
+        let content_h = self.bestiary_info_content_height(screen);
+        let page = ui::bestiary::info_page_rect(&ui::bestiary::panel_rect(screen));
+        let view_h = ui::bestiary::info_page_view_height(page);
+        let (view, pos) =
+            ui::bestiary::info_page_set_view(view_h, content_h, self.bestiary_ui.info_scroll);
+        let bar = ui::bestiary::info_page_scrollbar_rect(page, 20.0);
+        let Some((new_pos, drag)) =
+            ui::bestiary::info_page_scrollbar_press(bar, view, content_h, pos, mouse)
+        else {
+            return false;
+        };
+        self.bestiary_ui.info_scroll = new_pos;
+        self.bestiary_ui.info_scroll_drag = drag;
+        true
+    }
+
+    /// The info-page scrollbar's drag frame (`UIScrollbar.DrawSelf`,
+    /// `UIScrollbar.cs:109-112`): while `_isDragging` the position follows
+    /// the pointer with the latched offset. Called once per frame while the
+    /// bestiary is open and the left button is held.
+    pub(crate) fn bestiary_info_scrollbar_drag(&mut self, screen: Vec2, mouse_y: f32) {
+        let Some(offset) = self.bestiary_ui.info_scroll_drag else {
+            return;
+        };
+        let content_h = self.bestiary_info_content_height(screen);
+        let page = ui::bestiary::info_page_rect(&ui::bestiary::panel_rect(screen));
+        let view_h = ui::bestiary::info_page_view_height(page);
+        let (view, _) =
+            ui::bestiary::info_page_set_view(view_h, content_h, self.bestiary_ui.info_scroll);
+        let bar = ui::bestiary::info_page_scrollbar_rect(page, 20.0);
+        self.bestiary_ui.info_scroll =
+            ui::panel::scrollbar_drag_value(bar, view, content_h, offset, mouse_y);
     }
 
     /// The achievements menu's clicks (`UIAchievementsMenu`'s
@@ -1497,13 +1732,18 @@ impl App {
                     Some(ui::chrome::PvpClick::ToggleHostile) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
                         self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
-                        if let Some(p) = self.player.as_mut() {
+                        let hostile = if let Some(p) = self.player.as_mut() {
                             p.hostile = !p.hostile;
-                        }
-                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)` —
-                        // the PVP-state broadcast. M6-NET's message table has
-                        // no 30 (`net.rs`); the local flip is the whole effect
-                        // in SP (ANALYSIS).
+                            p.hostile
+                        } else {
+                            false
+                        };
+                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)`
+                        // (`Main.cs:42694`) — W4-c28: the send trigger now
+                        // rides the flip (the role match is SendData's own
+                        // netMode gate; SP drops it). The host apply/relay +
+                        // chat are g48's lane.
+                        self.send_toggle_pvp(hostile);
                     }
                     Some(ui::chrome::PvpClick::SetTeam(i)) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
@@ -1513,7 +1753,12 @@ impl App {
                         }
                         // `:42765-42770`: `SendData(157)` in MP, else the
                         // team-based-spawns respawn in SP (`teamBasedSpawnsSeed`
-                        // is not ported — no team spawn seeds yet).
+                        // is not ported — no team spawn seeds yet). W4-c28:
+                        // the send DECISION rides the team set; the `157` id
+                        // parks until d97's `TEAM_CHANGE_FROM_UI` codec merges
+                        // (a `45` stand-in would skip the `b == 157` team-spawn
+                        // tail — not faithful). The host apply is g49's lane.
+                        self.send_team_change(i as u8);
                     }
                     None => {}
                 }
@@ -2037,6 +2282,7 @@ impl App {
             is_a_shop_item: false,
             prefix: 0,
             stack: 0,
+            value: None,
         });
         if slot >= 40 {
             return; // past the chest's slot window
@@ -2398,6 +2644,9 @@ impl App {
         let Some(wc) = self.world_chests.get_mut(idx) else {
             return;
         };
+        // W4-c28: the pre-pass snapshot for the `32` diff (`ChestUI.cs:813-819`
+        // sends one 32 per changed slot after the bulk transfer).
+        let before = wc.slots.clone();
         let favs = self.favorite_slots.clone();
         let fav = move |i: usize| favs.contains(&i);
         let Some(p) = self.player.as_mut() else {
@@ -2471,6 +2720,10 @@ impl App {
             }
         }
         *self.rngs.global() = rng;
+        // W4-c28: the bulk-transfer `32` fan-out — one per changed slot
+        // (`ChestUI.cs:813-819`'s post-pass loop; LootAll/DepositAll send
+        // per-fill inline, the port diffs the whole pass — same slot set).
+        self.send_chest_item_diff(idx as i32, &before);
     }
 
     /// `ChestUI.cs:304-306` → `ItemSorting.SortChest` (`ItemSorting.cs:1629-1653`)
@@ -2486,6 +2739,9 @@ impl App {
         let Some(wc) = self.world_chests.get_mut(idx) else {
             return;
         };
+        // W4-c28: the pre-sort snapshot for the `32` stamp diff
+        // (`ItemSorting.cs:1658-1678`).
+        let before = wc.slots.clone();
         let mult = match self.player.as_ref() {
             Some(p) => [
                 p.melee_damage,
@@ -2496,6 +2752,9 @@ impl App {
             None => [1.0; 4],
         };
         crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        // `ItemSorting.cs:1669-1678` — the withSync `32` per changed slot
+        // (netMode 1 + a world chest open; the helper gates both).
+        self.send_chest_item_diff(idx as i32, &before);
     }
 
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
@@ -2509,6 +2768,8 @@ impl App {
             // `inv[slot] = player.GetItem(inv[slot], QuickTransferFromSlot)`;
             // consumes the click (the action-0 movement does not run).
             chest::quick_transfer_from_slot(self, abs);
+            // `:808` — the ctx-3 shift-take's `32` (world chests only).
+            self.send_chest_item(chest_idx as i32, abs);
             return;
         }
         // The busy gates (S1-P-i48): `LeftClick` `:922-926` /
@@ -2539,6 +2800,8 @@ impl App {
             // chest transfer's tail (`ItemSlot.cs:1119`, S1-H-9; ctx 3).
             self.coin_slot
                 .force_slot_state(abs as i32, 3, target.kind, target.count);
+            // `:1014` — the ctx-3 left-click's `32` (W4-c28 container cadence).
+            self.send_chest_item(chest_idx as i32, abs);
         }
         if right_held {
             // `RightClick`'s ctx-3 swap block (`ItemSlot.cs:1658-1697`,
@@ -2558,6 +2821,9 @@ impl App {
                                 .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
                             self.stack_split = 30; // `:2007`
                             self.ui_right_press = false; // `:2008`
+                            // The ctx-3 `32` tail (`ItemSlot.cs:1750`'s
+                            // right-click send covers the swap arms too).
+                            self.send_chest_item(chest_idx as i32, abs);
                         }
                     }
                     return;
@@ -2569,13 +2835,16 @@ impl App {
                 {
                     // `:1685-1697` — `SwapEquip` on the press edge. The
                     // chest-source favourite clear has no port key space
-                    // (the favourites are grid-positional); the
-                    // `SendData(32)` MP tail (`:3359-3362`) is unported.
+                    // (the favourites are grid-positional).
                     if self.ui_right_press {
                         let mut item = target;
                         if self.swap_equip_click(None, &mut item) {
                             chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, item);
                         }
+                        // `:3359-3362` — SwapEquip's ctx-3 `32` tail (fires
+                        // on the attempt, success or not — the C# sends
+                        // after the swap ladder unconditionally).
+                        self.send_chest_item(chest_idx as i32, abs);
                     }
                     return;
                 }
@@ -2669,6 +2938,8 @@ impl App {
         chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, s);
         self.coin_slot
             .force_slot_state(abs as i32, 3, s.kind, s.count);
+        // `:1750` — the ctx-3 right-click split's `32` (W4-c28).
+        self.send_chest_item(chest_idx as i32, abs);
     }
 
     /// Applies a menu action (start singleplayer, host on a port, join a server).
@@ -6009,6 +6280,7 @@ mod s1_p_i44_shop_click_tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 12,
+            value: None,
         }];
         app.mouse_pos = SHOP_SLOT_0;
         app.keys.insert(KeyCode::ShiftLeft);

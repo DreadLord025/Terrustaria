@@ -513,6 +513,93 @@ pub(crate) fn start_invasion_in(
     true
 }
 
+/// `NPCID.Sets.MPAllowedEnemies` (`NPCID.cs:10458`): the boss types a client
+/// may summon through `61 SpawnBossInvader` (`MessageBuffer.cs:2748`).
+const MP_ALLOWED_ENEMIES: [i32; 17] = [
+    4, 13, 50, 126, 125, 134, 127, 128, 131, 129, 130, 222, 245, 266, 370, 657, 668,
+];
+
+/// `NPC.SpawnOnPlayer` (`NPC.cs:80475-80633`) for the `61` reader: the
+/// MPAllowedEnemies boss spawn at the player. The 245 Golem's altar scan, the
+/// 370 Fishron's bobber scan and the 398 Moon Lord arm are the special cases;
+/// the rest ride the generic `GetSpawnArea` candidate scan.
+///
+/// Deviations (ANALYSIS "Net apply arms (W4-g49)"): the scan is the port's
+/// simplified surface placement (the `spawn_eye_of_cthulhu` precedent — the
+/// 500×50 off-screen candidate fidelity is the M4-BOSS polish follow-up); the
+/// 245 altar scan / 370 bobber scan / 398 Moon Lord and the `SpawnBoss`
+/// mecha-mayhem + `timeLeft *= 20` tails are unported; the `Announcement.
+/// HasAwoken` broadcast rides the port's literal stand-in.
+pub(crate) fn spawn_on_player(app: &mut App, plr: u8, npc_type: i32) {
+    if !MP_ALLOWED_ENEMIES.contains(&npc_type) {
+        return;
+    }
+    // The subject player: slot 0 is the host, the peers ride remote_players.
+    let (px, py) = if plr == 0 {
+        match app.player.as_ref() {
+            Some(p) => p.center(),
+            None => return,
+        }
+    } else {
+        match app.remote_players.get(&(plr as u32)) {
+            Some(p) => (p.x + crate::player::WIDTH * 0.5, p.y + crate::player::HEIGHT * 0.5),
+            None => return,
+        }
+    };
+    let Some(kind) = boss_kind_of(npc_type) else {
+        return; // the kind is unported (Betsy 657, the 128-131 bosses)
+    };
+    if app.npcs.iter().any(|n| n.kind == kind && n.hp > 0) {
+        return; // `NPC.AnyNPCs` — the boss is already up
+    }
+    let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
+    let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
+    let boss = match kind {
+        NpcKind::KingSlime => Npc::spawn_king_slime(&app.world, xt),
+        NpcKind::EyeOfCthulhu => Npc::spawn_eye_of_cthulhu(&app.world, px, py),
+        NpcKind::EaterOfWorldsHead | NpcKind::TheDestroyer => {
+            let mut h = Npc::spawn_worm_head(&app.world, xt, yt, kind);
+            h.hp = h.max_hp;
+            h.worm_left = if kind == NpcKind::EaterOfWorldsHead { 65 } else { 80 };
+            Some(h)
+        }
+        _ => {
+            let mut b = Npc::new(kind, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+    };
+    let Some(mut boss) = boss else {
+        return;
+    };
+    boss.target = plr as i32;
+    boss.net_update = true;
+    app.npcs.push(boss);
+    // `NPC.SpawnBoss`' `Announcement.HasAwoken` broadcast (`NPC.cs:80703`).
+    let name = crate::lang::npc_name(npc_type);
+    let text = crate::lang::text_args("Announcement.HasAwoken", &[name]);
+    crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_BOSS_OR_EVENT);
+}
+
+/// The `61` selector's vanilla boss type → the port kind. `None` = unported.
+fn boss_kind_of(npc_type: i32) -> Option<NpcKind> {
+    Some(match npc_type {
+        4 => NpcKind::EyeOfCthulhu,
+        13 => NpcKind::EaterOfWorldsHead,
+        50 => NpcKind::KingSlime,
+        125 => NpcKind::Retinazer,
+        126 => NpcKind::Spazmatism,
+        127 => NpcKind::SkeletronPrime,
+        134 => NpcKind::TheDestroyer,
+        222 => NpcKind::QueenBee,
+        245 => NpcKind::Golem,
+        266 => NpcKind::BrainOfCthulhu,
+        370 => NpcKind::DukeFishron,
+        668 => NpcKind::Deerclops,
+        _ => return None,
+    })
+}
+
 /// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
 /// `Shop(17, 1)`, `Shop(19, 2)` … `Shop(107, 6)` — the port keeps the
 /// vanilla indices). `None` = no shop (the Guide).
@@ -2689,6 +2776,9 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         invasion_warning(app);
         app.world.invasion_type = 0;
         app.world.invasion_delay = 0;
+        // W4-g52 audit — the invasion end's `SendData(7)` (`Main.cs:64356-64359`,
+        // `netMode == 2`): the cleared invasionType reaches the clients.
+        app.net_world_repush();
         return;
     }
     if app.world.invasion_x == app.world.spawn_x as f64 {
@@ -3270,7 +3360,7 @@ fn spawn_dd2_from_gate(app: &mut App, sx: f32, sy: f32, left_gate: bool) -> Vec<
 
 /// The reverse of `nid_of`'s ported rows — the pool's port kinds back to the
 /// vanilla ids the rolls' caps count (`CountNPCS`).
-fn dd2_pool_id(kind: NpcKind) -> Option<u16> {
+pub(crate) fn dd2_pool_id(kind: NpcKind) -> Option<u16> {
     let id = match kind {
         NpcKind::DD2GoblinT1 => 552,
         NpcKind::DD2GoblinT2 => 553,
@@ -4045,6 +4135,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // earns its sight. RNG-free (the set insert + the achievement
     // hook). The kill tracker's entries are untouched — the critter
     // bestiary unlocks ride the SIGHT providers (the W4-c8 census).
+    // W4-c8 sweep (the e23 compose) — `Main.BestiaryTracker.Sights.
+    // ScanWorldForFinds()` (`Main.cs:17912-17915`, under `netMode != 1` —
+    // the port folds true): the critter proximity scan runs BEFORE the
+    // `UpdateNPC` loop (`:17948-17952`), so a critter that despawns this
+    // tick still earns its sight. RNG-free (the set insert + the
+    // achievement hook). The kill tracker's entries are untouched — the
+    // critter bestiary unlocks ride the SIGHT providers (the c37 gate
+    // table's Critter/GoldCritter arms).
     crate::bestiary::scan_world_for_critter_sights(app);
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
@@ -5431,6 +5529,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     ty as f32 * TILE_PX,
                     app.rngs.stream(RngKey::UpdateNpcs),
                 );
+                // `NPC.cs:60067-60070` — the host's `netMode == 2` door-open
+                // `SendData(19, …, 0, x, y, direction)`. W4-c28: the send
+                // decision rides the opened door; the `19` id parks until
+                // d90's `DOOR_TOGGLE` codec (the host apply is g48's lane).
+                app.send_door_toggle(0, tx, ty, dir);
                 app.world_key = None;
             }
             // The opening's cleanup kills' drops (`open_door`'s
@@ -14567,6 +14670,58 @@ mod worm_tests {
         }
         w.compute_column_surface();
         w
+    }
+
+    /// W4-e23 final 3 (the W4-c8 sweep compose) — `ScanWorldForFinds`
+    /// (`NPCWasNearPlayerTracker.cs:102-130`): a critter within the
+    /// player's 300×200-inflated hitbox registers its sight; a far one
+    /// does not; a non-critter (the zombie — lifeMax > 5) never does; a
+    /// dead critter is inactive; the insert is idempotent. The port's
+    /// roster critter today is the Goldfish 55 (the c8 crawler kinds
+    /// join when their ENTRIES rows land). WRITTEN, NOT RUN (code-only).
+    #[test]
+    fn w4_e23_the_critter_sight_scan_registers_proximity_once() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = Player::spawn(&app.world);
+        player.x = 40.0;
+        player.y = 40.0;
+        app.player = Some(player);
+        // A Goldfish 100 px right of the player — inside the inflated box.
+        let mut near = Npc::new(NpcKind::Goldfish, 140.0, 40.0, 1, 0.0);
+        near.hp = near.max_hp;
+        // A Goldfish 2000 px away — outside.
+        let mut far = Npc::new(NpcKind::Goldfish, 2040.0, 40.0, 1, 0.0);
+        far.hp = far.max_hp;
+        // A zombie near — NOT a critter (lifeMax > 5).
+        let mut zombie = Npc::new(NpcKind::Zombie, 150.0, 40.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        app.npcs = vec![near, far, zombie];
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert!(app.bestiary.was_seen_near_player("Goldfish"), "the near critter");
+        assert!(!app.bestiary.was_seen_near_player("Zombie"), "not a critter");
+        // Idempotent: a second scan adds nothing new.
+        let count = app.bestiary.sights.len();
+        crate::bestiary::scan_world_for_critter_sights(&mut app);
+        assert_eq!(app.bestiary.sights.len(), count, "the set insert dedups");
+        // The kill tracker is untouched — sights are the credit.
+        assert_eq!(app.bestiary.kills.get_kill_count("Goldfish"), 0);
+        // The Goldfish entry now reads tier 4 through the sight provider.
+        let fish = crate::bestiary::ENTRIES.iter().find(|e| e.net_id == 55).unwrap();
+        assert_eq!(
+            crate::bestiary::unlock_state_gate(fish, &app.bestiary),
+            tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
+        );
+        // A dead critter never registers (the active gate).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        let mut p2 = Player::spawn(&app2.world);
+        p2.x = 40.0;
+        p2.y = 40.0;
+        app2.player = Some(p2);
+        let mut dead = Npc::new(NpcKind::Goldfish, 140.0, 40.0, 1, 0.0);
+        dead.hp = 0;
+        app2.npcs = vec![dead];
+        crate::bestiary::scan_world_for_critter_sights(&mut app2);
+        assert!(!app2.bestiary.was_seen_near_player("Goldfish"), "the dead one is inactive");
     }
 
     #[test]

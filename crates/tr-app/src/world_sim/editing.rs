@@ -5529,7 +5529,7 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 /// anchor refuses the break. The C#'s `type > 0` half is implied — the
 /// store only holds real stacks. (M3-CHEST-UI landed the store; the
 /// refusal is live — S1-P-i43 retired the stale "stays empty" note.)
-fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
+pub(crate) fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     move |x, y| {
         app.world_chests
             .iter()
@@ -5791,6 +5791,145 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     app.world_key = None;
 }
 
+/// The replicated break of the `17 TileManipulation` reader
+/// (`MessageBuffer.cs:1157-1163`, W4-g48): the same `kill_tile` cascade +
+/// `KillTile_PlaySounds` + drop resolution as [`break_tile`], WITHOUT the
+/// single-player-only tails — the C# reader runs no achievement notify
+/// (`WorldGen.cs:63881-63884` gates `netMode != 2`, the local-mining notify is
+/// `Player.cs`'s), no `request_edit` (the 17 relay is the caller's), no plate
+/// release (the reader's kill is the plain `KillTile`). The message handler
+/// runs outside every `SwapRandom` (`Main.cs:16895`'s NpcStrike precedent),
+/// so every draw rides the bare global stream. `spawn_drops` is the
+/// `Main.netMode != 1` gate (`WorldGen.cs:63860`): the host spawns the loot,
+/// the client receives it as `21` messages instead.
+pub(crate) fn replicated_break(app: &mut App, tx: i32, ty: i32, no_item: bool, spawn_drops: bool) {
+    let hit = app
+        .world
+        .tile(tx, ty)
+        .filter(|t| t.active())
+        .map(|t| HitCell {
+            x: tx,
+            y: ty,
+            kind: t.kind,
+            frame_x: t.frame_x,
+            frame_y: t.frame_y,
+        });
+    let Some(hit) = hit else {
+        return;
+    };
+    // `MapUpdateQueue.Add(num150, num151)` (`MessageBuffer.cs:1153`) — the
+    // single tile (the kill's `TileFrame` head queues its ring in the
+    // cascade).
+    if app.settings.map_enabled {
+        if let Some(m) = app.map.as_mut() {
+            app.map_queue.add_tile(m, tx, ty);
+        }
+    }
+    // `KillTile_PlaySounds` (`WorldGen.cs:63556-63559`): `!dedServ` — the
+    // listen-server host plays, a dedicated server would not (the port is
+    // always a listen host).
+    let sounds = edit::kill_tile_sound(hit.kind, hit.frame_x, false);
+    let (px, py) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+    for cue in [sounds.primary, sounds.extra, sounds.shatter]
+        .into_iter()
+        .flatten()
+    {
+        if let Some((name, volume)) = kill_cue(cue) {
+            app.audio.play_at(name, px, py, volume);
+        }
+    }
+    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, no_item) else {
+        return;
+    };
+    // The chest/dresser store close (`Chest.DestroyChest`,
+    // `WorldGen.cs:62506`/:62514 through `CheckTileBreakability2`): the same
+    // silent close as `break_tile` (`Chest.cs:640-643`).
+    let wide: i32 = match hit.kind {
+        21 | 467 => 2,
+        88 => 3,
+        _ => 0,
+    };
+    if wide > 0 {
+        let anchor_x = hit.x - i32::from(hit.frame_x) / 18 % wide;
+        let anchor_y = hit.y - i32::from(hit.frame_y) / 18;
+        if let Some(idx) = crate::chest::find_chest(&app.world_chests, anchor_x, anchor_y) {
+            crate::chest::remove_chest(&mut app.world_chests, idx);
+            if let Some(p) = app.player.as_mut() {
+                if p.chest == idx as i32 {
+                    p.chest = crate::bank::CHEST_CLOSED;
+                }
+            }
+        }
+    }
+    // The drop resolution (`KillTile_DropItems` + the cascade records) — the
+    // reader has no held item, so no staff bonus / axe power. `noItem`
+    // (`:1185`'s kind 4) skips the hit cell's own drop
+    // (`WorldGen.cs:63860-63864`); the cascade records still run. The client
+    // (`spawn_drops == false`) resolves nothing — the loot arrives as `21`.
+    if spawn_drops {
+        let ctx = drop_ctx(app);
+        let (drops, portals) = {
+            let main_rng = app.rngs.global();
+            break_drop_events(
+                &kill,
+                &app.world,
+                if no_item { None } else { Some(hit) },
+                false,
+                0,
+                main_rng,
+                &ctx,
+            )
+        };
+        for (id, count, x, y) in drops {
+            let rng = app.rngs.global();
+            spawn_item_drop(&mut app.items, rng, id, count, x, y);
+        }
+        for (px, py) in portals {
+            let _ = app.projectiles.spawn_with_data(
+                518,
+                px as f32 * TILE_PX + 16.0,
+                py as f32 * TILE_PX + 16.0,
+                0.0,
+                -12.0,
+                0,
+                0.0,
+            );
+        }
+    }
+    for (px, py) in &kill.palm_frame_rolls {
+        let mut gen_stream =
+            tr_core::tile_light::FastRandom::new(app.rngs.global().next() as u64);
+        let frame_x = (gen_stream.next_range(7, 10) * 22) as i16;
+        if let Some(cell) = app.world.tile_mut(*px, *py) {
+            cell.frame_x = frame_x;
+        }
+    }
+    for (mx, my) in &kill.mushroom_frame_rolls {
+        let mut gen_stream =
+            tr_core::tile_light::FastRandom::new(app.rngs.global().next() as u64);
+        let frame_y = (gen_stream.next(3) * 18) as i16;
+        if let Some(cell) = app.world.tile_mut(*mx, *my) {
+            cell.frame_x = 18;
+            cell.frame_y = frame_y;
+        }
+    }
+    app.liquids.wake_around(&app.world, tx, ty, 3);
+    // The falling check (`WorldGen.TileFrame`, `WorldGen.cs:81380`).
+    if let Some(fall) = tr_core::falling::check_falling(&app.world, tx, ty - 1) {
+        if let Some(t) = app.world.tile_mut(tx, ty - 1) {
+            *t = Default::default();
+        }
+        let _ = app.projectiles.spawn_falling(
+            fall.tile_kind,
+            fall.proj_kind,
+            fall.damage,
+            fall.x,
+            fall.y,
+        );
+    }
+    app.world_key = None;
+}
+
 /// The world/player inputs the drop resolvers read. Every C# flag with no
 /// port state defaults to `false` (`Main.expertMode/dontStarveWorld` — the
 /// world modes are not persisted yet; remix/getGood/tenth/vampire never reach
@@ -5838,7 +5977,7 @@ pub(crate) struct DropCtx {
 }
 
 /// Builds [`DropCtx`] from the app state at the break moment.
-fn drop_ctx(app: &App) -> DropCtx {
+pub(crate) fn drop_ctx(app: &App) -> DropCtx {
     let (player_hurt, torches) = match &app.player {
         Some(p) => (
             p.hp < p.max_hp,
@@ -5894,12 +6033,12 @@ fn drop_ctx(app: &App) -> DropCtx {
 /// The hit cell's drop-relevant state, captured before the kill clears the
 /// tile (the C# `tileCache` of `KillTile_GetItemDrops`, `WorldGen.cs:63964`).
 #[derive(Clone, Copy)]
-struct HitCell {
-    x: i32,
-    y: i32,
-    kind: u16,
-    frame_x: i16,
-    frame_y: i16,
+pub(crate) struct HitCell {
+    pub x: i32,
+    pub y: i32,
+    pub kind: u16,
+    pub frame_x: i16,
+    pub frame_y: i16,
 }
 
 /// The item drops of one `kill_tile` result: the hit cell's per-cell
@@ -5911,7 +6050,7 @@ struct HitCell {
 /// Portal projectile requests. Free of `App` — the RNG streams come in as
 /// parameters (`genRand` = the seeded `FastRandom` stand-in, `Main.rand` =
 /// the caller's `UnifiedRandom` stage stream).
-fn break_drop_events(
+pub(crate) fn break_drop_events(
     kill: &edit::TileKill,
     world: &World,
     hit: Option<HitCell>,
@@ -7806,6 +7945,12 @@ fn resolve_melee_strike(
                         &mut app.npcs[idx].buffs,
                         status_rng,
                     );
+                    // W4-c28: `NPC.AddBuff`'s net branches
+                    // (`NPC.cs:89932-89935` client `53`, `:89979-89982`
+                    // host `54`) — the buff engine queued each accepted
+                    // (type, time) pair; the drain picks the wire by role
+                    // at the hit site (the C# sends inline at AddBuff).
+                    app.drain_npc_buff_sends();
                     // `if (this.meleeEnchant == 6) num2 = (int)((float)
                     // num2 * Player.GetNanoFlaskDamageBoost())`
                     // (`Player.cs:44396-44399`, `:44423-44426`) — the
@@ -7929,8 +8074,10 @@ fn resolve_melee_strike(
                     );
                 }
                 // A joining client's strike goes to the host as `28`
-                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
-                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx);
+                // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`);
+                // the landed damage folds into the pending-damage entry
+                // (`AddStrikeDamage`, `NPC.cs:81383`, W4-g51 id-162).
+                app.send_npc_strike(idx, dmg, kb, crit, pcx >= nx, if landed { dmg } else { 0 });
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81544-81553`) — the kind's own hit cue through
                 // the faithful case-3 path (S1-E-21 wave C): the volume

@@ -2324,6 +2324,11 @@ pub struct Npc {
     /// `MessageBuffer.cs:1636-1646` + `NPC.cs:90287-90311`). Zero on the host
     /// and in single-player, so nothing single-player-rendered moves.
     pub net_offset: Vec2,
+    /// `NPC.lastPortalColorIndex` (`NPC.cs`): the portal-gun's color latch
+    /// — the `100` reader flips the parity then `Teleport(style 4)` stores
+    /// the wire value (`MessageBuffer.cs:3605`, `NPC.cs:81048`; W4-g50).
+    /// The portal FX draw is unported; the field rides for the net apply.
+    pub last_portal_color_index: i16,
     /// Accumulated daylight burn time — RETIRED by S1-D-3z (the zombie
     /// fighter audit): the C# `AI_003_Fighters` has no daylight damage, so
     /// the zombie's dawn "burn" was removed in favour of `EncourageDespawn`
@@ -4129,6 +4134,7 @@ impl Npc {
                     _ => 1.0,
                 }),
             net_offset: Vec2::ZERO,
+            last_portal_color_index: 0,
             burn: 0.0,
             wants_minion: false,
             wants_door_bash: None,

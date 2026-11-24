@@ -563,6 +563,77 @@ pub fn difficulty_text(difficulty: u8) -> (String, [u8; 4]) {
     }
 }
 
+/// `DrawSelf`'s play-time string (`UICharacterListItem.cs:376-378`):
+/// `num5 = Days*24 + Hours`, zero-padded to two digits when under 10, then
+/// `playTime.ToString("\:mm\:ss")` — `"HH:MM:SS"` with the hours riding past
+/// 24 into the day count. The port pins `00:00:00` (no play-time tracking,
+/// the documented disposition); this is the source's formatter for the
+/// tracking's landing.
+#[allow(dead_code)] // the draw pins PLAYTIME_TEXT until play-time tracking lands
+pub fn playtime_text(total_seconds: u64) -> String {
+    let days = total_seconds / 86_400;
+    let hours = (total_seconds % 86_400) / 3_600;
+    let minutes = (total_seconds % 3_600) / 60;
+    let seconds = total_seconds % 60;
+    let num5 = days * 24 + hours; // `:377`
+    let pad = if num5 < 10 { "0" } else { "" }; // `:378`
+    format!("{pad}{num5}:{minutes:02}:{seconds:02}")
+}
+
+// --- UICharacterListItem's missing halves (W4-d81 census row 17) ----------------
+//
+// The card geometry/colours/labels/hit table/draw are landed above; these port
+// CompareTo, the rename-finish trim and the unplayable-name prefix.
+
+/// `CompareTo` (`UICharacterListItem.cs:285-292`): another card compares by
+/// `_orderInList` — the ctor's insertion index (`:49`, `:65`), the list's
+/// build order, NOT the favourite/LastPlayed chain (that is
+/// `UICharacterSelect.UpdatePlayersList`, [`sort_players`]).
+pub fn compare_card_order(a: usize, b: usize) -> std::cmp::Ordering {
+    a.cmp(&b) // `:289`
+}
+
+/// `OnFinishedSettingName` (`UICharacterListItem.cs:208-214`): the keyboard's
+/// result is `name.Trim()` (`:210`) before `PlayerFileData.Rename` — C#
+/// `string.Trim` strips Unicode whitespace both ends, like Rust's `trim`.
+/// The rename itself + `menuMode = 10` + re-open are App flow (`:211-213`).
+pub fn renamed_player_name(keyboard_result: &str) -> String {
+    keyboard_result.trim().to_string() // `:210`
+}
+
+/// `StatusID.Search.GetName` (`ID/StatusID.cs:25-32` over
+/// `IdDictionary.Create<StatusID, int>`, `ReLogic.Reflection/IdDictionary.cs:
+/// 84-94` — the public static int fields' names keyed by value). `GetName`
+/// throws on an unknown id (`IdDictionary.cs:45`); the port maps only the
+/// seven declared ids and returns `None` otherwise.
+pub fn load_status_name(status: i32) -> Option<&'static str> {
+    Some(match status {
+        0 => "Ok",                // `StatusID.cs:25`
+        1 => "LaterVersion",      // `:26`
+        2 => "UnknownError",      // `:27`
+        3 => "EmptyFile",         // `:28`
+        4 => "DecryptionError",   // `:29`
+        5 => "BadSectionPointer", // `:30`
+        6 => "BadFooter",         // `:31`
+        _ => return None,
+    })
+}
+
+/// `DrawSelf`'s name line (`UICharacterListItem.cs:324-330`): an Ok
+/// `loadStatus` draws the plain name in White; anything else prefixes
+/// `"(" + StatusID.Search.GetName(loadStatus) + ") "` (`:328`) and draws Gray.
+/// Returns `(text, is_gray)`; the draw already picks [`GRAY`] on `!playable`
+/// but carries no prefix yet (every entry is Ok today, save_list).
+#[allow(dead_code)] // no .plr loadStatus reader yet (every entry is Ok)
+pub fn card_name_text(name: &str, load_status: i32) -> (String, bool) {
+    if load_status == 0 {
+        (name.to_string(), false) // `:323-324`, Color.White
+    } else {
+        let status = load_status_name(load_status).unwrap_or("");
+        (format!("({status}) {name}"), true) // `:327-328`, Color.Gray
+    }
+}
+
 /// The hover-label table (`:140-194`): the `UI.*` string a hovered button
 /// shows. The favourite arm flips (`:147-154`) and the delete arm is the
 /// favourited gate's label (`:174-184`) — drawn on the right-hand
@@ -1684,5 +1755,56 @@ mod tests {
         assert!(wheel_target(&l, 8, Vec2::new(500.0, 400.0)));
         assert!(wheel_target(&l, 8, over_bar(400.0)));
         assert!(!wheel_target(&l, 8, Vec2::new(500.0, 830.0)));
+    }
+
+    // --- W4-d81 batch 7: UICharacterListItem (census row 17) --------------------
+    // Written in code-only mode — NOT RUN here. Hand-derived from
+    // `UICharacterListItem.cs:208-214`, `:285-292`, `:324-330`, `:376-378`,
+    // `ID/StatusID.cs:25-32`.
+
+    #[test]
+    fn the_card_order_and_rename_trim_match_the_source() {
+        // `CompareTo` (`:285-292`) rides `_orderInList`, the ctor index.
+        assert_eq!(compare_card_order(0, 1), std::cmp::Ordering::Less);
+        assert_eq!(compare_card_order(3, 3), std::cmp::Ordering::Equal);
+        assert_eq!(compare_card_order(5, 2), std::cmp::Ordering::Greater);
+        // `OnFinishedSettingName` (`:210`): `name.Trim()` both ends.
+        assert_eq!(renamed_player_name("  Bob  "), "Bob");
+        assert_eq!(renamed_player_name("\tAlice\n"), "Alice");
+        assert_eq!(renamed_player_name(""), "");
+    }
+
+    #[test]
+    fn the_unplayable_name_prefixes_the_status() {
+        // `StatusID` (`ID/StatusID.cs:25-32`): the seven field names.
+        assert_eq!(load_status_name(0), Some("Ok"));
+        assert_eq!(load_status_name(1), Some("LaterVersion"));
+        assert_eq!(load_status_name(3), Some("EmptyFile"));
+        assert_eq!(load_status_name(6), Some("BadFooter"));
+        assert_eq!(load_status_name(7), None); // GetName would throw
+        // `DrawSelf` (`:324-330`): Ok -> plain White; else "(Status) name" Gray.
+        assert_eq!(card_name_text("Bob", 0), ("Bob".to_string(), false));
+        assert_eq!(
+            card_name_text("Bob", 1),
+            ("(LaterVersion) Bob".to_string(), true)
+        );
+        assert_eq!(
+            card_name_text("Alice", 3),
+            ("(EmptyFile) Alice".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn the_playtime_formatter_rides_days_into_hours() {
+        // `:376-378`: num5 = Days*24 + Hours, "0"-padded under 10, then
+        // ToString("\:mm\:ss").
+        assert_eq!(playtime_text(0), "00:00:00");
+        assert_eq!(playtime_text(3_661), "01:01:01");
+        assert_eq!(playtime_text(35_999), "09:59:59"); // still padded
+        assert_eq!(playtime_text(36_000), "10:00:00"); // pad drops at 10
+        // 1 day + 2 h + 3 m + 4 s -> 26:03:04 (`Days*24 + Hours`).
+        assert_eq!(playtime_text(86_400 + 7_200 + 180 + 4), "26:03:04");
+        // 10 days -> 240 hours, no wrap.
+        assert_eq!(playtime_text(864_000), "240:00:00");
     }
 }

@@ -14,6 +14,8 @@ pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
 pub(crate) mod net_npc_sync;
+pub(crate) mod net_apply;
+pub(crate) mod net_player_sync;
 pub(crate) mod netglue;
 pub(crate) mod netmodules;
 pub(crate) mod net_proj_sync;
@@ -290,6 +292,11 @@ pub(crate) struct App {
     /// (`IngameOptions.Open`, `IngameOptions.cs:56`).
     pub(crate) ingame_options: crate::ui::ingame_options::IngameOptions,
     pub(crate) bestiary_selected: Option<usize>,
+    /// The `UIBestiaryTest` working-set state (W4-e23): the filter/sort
+    /// engine, the page offset, the option-grid latch and the search bar
+    /// (`ui::bestiary_screen::BestiaryUi`). Rebuilt on open
+    /// (`OnOpenPage:63-66`) and on every contents change.
+    pub(crate) bestiary_ui: crate::ui::bestiary_screen::BestiaryUi,
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
     pub(crate) chat: chat::ChatMonitor,
@@ -490,6 +497,22 @@ pub(crate) struct App {
     pub(crate) net_npcs: HashMap<u32, crate::npc::Npc>,
     /// Set when the npc store changed and `self.npcs` must be rebuilt.
     pub(crate) net_npcs_dirty: bool,
+    /// `NPC.pendingDamages` (`NPC.cs:6159`, `new List<PendingDamage>()` at
+    /// `:95178`) — the CLIENT's predicted-strike queue the `162 DamageNPCAck`
+    /// pops FIFO (`NPC.AckDamage`, `:90703-90713`). A client strike pushes
+    /// an entry (`PushPendingDamage`, `:90672-90685`), the landed damage
+    /// folds in (`AddStrikeDamage`, `:90687-90693`), and the `23` reader
+    /// subtracts the pending sum from the wire life (`GetPendingDamage`,
+    /// `:90715-90727`, `MessageBuffer.cs:1668-1676`). W4-g51 id-162.
+    pub(crate) net_pending_damages: Vec<crate::app::net_npc_sync::PendingDamage>,
+    /// `Player.tileEntityAnchor` (`Player.cs:2912`,
+    /// `DataStructures/PlayerInteractionAnchor.cs`) for every player slot —
+    /// the `122 RequestTileEntityInteraction` Set/Clear store
+    /// (`MessageBuffer.cs:3942-3977`). Keyed by player id →
+    /// `(interactEntityID, X, Y)`; absent = `Clear()` (-1). The host's
+    /// `TileEntity.IsOccupied` scan (`TileEntity.cs:221-234`) reads it.
+    /// W4-g51 FINAL id-122.
+    pub(crate) net_te_anchors: HashMap<u8, (i32, i32, i32)>,
     /// S1-I-4d: the per-NPC `netSpam` throttle state keyed by the stable
     /// `Npc.uid` (`NPC.cs:6133-6149`). The C# keeps it on the NPC; the port's
     /// Vec compacts on death, so the state rides the uid, not the index.
@@ -541,10 +564,23 @@ pub(crate) struct App {
     pub(crate) net_item_last: HashMap<i16, net::ItemState>,
     /// The client's `22 ItemOwner` reservations: slot → (reserver, hold ticks).
     pub(crate) net_reserved: HashMap<i16, (u8, u32)>,
-    /// The client's last-sent `13 PlayerState` — the change-driven send test.
+    /// The client's last-sent `13 PlayerState` — the port's render-extension
+    /// change test (position/anim/hp ride the wire body, not the C# clone).
     pub(crate) net_ps_last: net::PlayerState,
-    /// The heartbeat counter for the `13` cadence (`net_tick` calls).
-    pub(crate) net_beat: u32,
+    /// W4-c28: `Main.clientPlayer`'s port — the clone `TrySyncingInput` /
+    /// `TrySyncingMyPlayer` compare against (`Main.cs:17545-17703`,
+    /// `Player.cs:6852-6916`), updated by the `clientClone` tail.
+    pub(crate) net_client_clone: crate::app::net_player_sync::ClientClone,
+    /// W4-c28: the clone's `5`-diff reference — `(wire slot → (kind, stack,
+    /// prefix, favorited))` (`Item.IsNetStateDifferent`'s four fields,
+    /// `Player.clientCloneItem` `Player.cs:54517-54523`).
+    pub(crate) net_clone_items: HashMap<i16, (u16, u32, u16, bool)>,
+    /// W4-c28: the CLIENT's `Main.netPlayCounter` (`Main.cs:64522-64526`):
+    /// ++ per 60 Hz tick, wrap `> 3600`; `%420` → `13`, `%900` → `36/16/40`.
+    pub(crate) net_client_counter: u32,
+    /// W4-c28: the pending `PlayerSend` outbox the 60 Hz client cadence fills
+    /// (`net_player_sync`); `net_tick` drains it through the existing wires.
+    pub(crate) net_player_outbox: Vec<crate::app::net_player_sync::PlayerSend>,
     /// `Main.netPlayCounter` (`Main.cs:64557`): the host's per-tick server
     /// counter, wrapping at 3600 (`Main.cs:64558-64562`).
     pub(crate) net_play_counter: u32,
@@ -737,6 +773,9 @@ pub(crate) struct App {
     /// The world-event schedulers' state (S1-F-14): `LanternNight`,
     /// `BirthdayParty` and `CultistRitual`'s delay machine.
     pub(crate) world_events: crate::world_events::WorldEvents,
+    /// `DebugOptions`'s three shared statics (the `94 DevCommands` sync
+    /// state, `Testing/DebugOptions.cs:10-14`; W4-g50 re-probe).
+    pub(crate) debug_shared: crate::debug_options::DebugOptionsShared,
     /// The C#'s draw-time camera state (`Main.cs:463`/`:477`/`:1097-1099`):
     /// the teleport lerp pair, the object-tracking pan and the vestigial
     /// `DebugCameraPan` accumulator. S1-B-4 moved the camera update to the
@@ -1062,6 +1101,20 @@ pub(crate) struct App {
     pub(crate) invasion_progress_display_left: i32,
     pub(crate) invasion_progress_alpha: f32,
     pub(crate) invasion_progress_near: bool,
+    /// `Main.musicPitch` (`Main.cs:697`, reset 0f `:66720`): the music-box /
+    /// instrument pitch the `58 InstrumentSound` client arm stores
+    /// (`MessageBuffer.cs:2666`) and the case-2 music styles read back
+    /// (`LegacySoundPlayer.cs:638`). W4-g49.
+    pub(crate) music_pitch: f32,
+    /// `WorldGen.tGood/tEvil/tBlood` (`WorldGen.cs:4180-4184`, the world-evil
+    /// census percentages): the `57 Unknown57` client store
+    /// (`MessageBuffer.cs:2634-2636`). Transient census (recomputed by
+    /// `WorldGen.CountTiles` `:71156-71169`, not .wld-saved) — the App-field
+    /// standing-in for the WorldGen statics. The Dryad world-status report
+    /// (`Lang.GetDryadWorldStatusDialog`, `Lang.cs:251-293`) reads them. W4-g49.
+    pub(crate) world_evil_good: u8,
+    pub(crate) world_evil_evil: u8,
+    pub(crate) world_evil_blood: u8,
     /// The placed tombstones' epitaphs keyed by the tile anchor
     /// (vanilla stores the text in the projectile's `miscText` and then the
     /// tile render reads it — `Projectile.miscText`).
@@ -1728,6 +1781,7 @@ impl App {
                     is_a_shop_item: false,
                     prefix: 0,
                     stack: 0,
+                    value: None,
                 };
             }
         }
@@ -2315,6 +2369,13 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // `NPC.SetWorldSpecificMonstersByWorldID` (`WorldFile.cs:771`, the
+        // world-load tail): the cavern roster rolls from the world id. The
+        // net client's install runs the same tail (`WorldFile.LoadWorld`'s
+        // `Netplay.Connection.State != 10` arm skips it there, but the
+        // client's `136` join push overwrites the grid verbatim right
+        // after — the roll is harmless and keeps SP/host 1:1).
+        self.world.set_world_specific_monsters();
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -2622,6 +2683,60 @@ impl App {
     pub(crate) fn keyboard_character(&mut self, c: char) {
         if let Some(FrontScreen::Keyboard(session)) = self.front.as_mut() {
             ui::keyboard::write_str(&mut session.state, &c.to_string());
+        }
+    }
+
+    /// The bestiary search bar's text input (`UISearchBar.DrawSelf:145-167`):
+    /// while `IsWritingText`, `Main.GetInputText` edits `actualContents`
+    /// every frame and `SetContents` fires `OnSearchContentsChanged` →
+    /// `UpdateBestiaryContents`. The port appends the character through the
+    /// bar's 50-unit cap (`SearchBar::set_contents`) and rebuilds.
+    pub(crate) fn bestiary_search_character(&mut self, c: char) {
+        let contents = {
+            let bar = &mut self.bestiary_ui.search;
+            if !bar.bar.is_writing_text {
+                return;
+            }
+            let next = format!("{}{}", bar.bar.actual_contents, c);
+            bar.set_contents(&next, false);
+            bar.search_string.clone()
+        };
+        let (sw, sh) = self.screen_size();
+        self.bestiary_ui
+            .on_search_changed(&contents, &self.bestiary, Vec2::new(sw, sh));
+        self.bestiary_selected = None;
+    }
+
+    /// The physical Backspace while the search bar writes —
+    /// `Utils.TrimLastCharacter` through the same contents path
+    /// (`UITextBox.Backspace:56-62`, the tail-drop form).
+    pub(crate) fn bestiary_search_backspace(&mut self) {
+        let contents = {
+            let bar = &mut self.bestiary_ui.search;
+            if !bar.bar.is_writing_text {
+                return;
+            }
+            let next = crate::ui::search_bar::trim_last_character(&bar.bar.actual_contents);
+            bar.set_contents(&next, false);
+            bar.search_string.clone()
+        };
+        let (sw, sh) = self.screen_size();
+        self.bestiary_ui
+            .on_search_changed(&contents, &self.bestiary, Vec2::new(sw, sh));
+        self.bestiary_selected = None;
+    }
+
+    /// Enter/Escape while the search bar writes — both toggle the input
+    /// latch off (`UISearchBar.DrawSelf:156-164`); Escape does NOT close
+    /// the screen while writing. Returns `true` when the key was consumed.
+    pub(crate) fn bestiary_search_end_input(&mut self) -> bool {
+        let bar = &mut self.bestiary_ui.search;
+        if bar.bar.is_writing_text {
+            bar.bar.toggle_taking_text();
+            bar.sync_focus_border();
+            true
+        } else {
+            false
         }
     }
 
@@ -3729,6 +3844,7 @@ impl App {
                     None
                 }
             }),
+            bestiary_ui: crate::ui::bestiary_screen::BestiaryUi::default(),
             chat: {
                 // `TR_CHAT` opens the chat for the screenshot runs
                 // (the vanilla state opens on Enter only).
@@ -3841,6 +3957,8 @@ impl App {
             net_dropped: false,
             net_npcs: HashMap::new(),
             net_npcs_dirty: false,
+            net_pending_damages: Vec::new(),
+            net_te_anchors: HashMap::new(),
             net_npc_states: HashMap::new(),
             net_npc_outbox: Vec::new(),
             net_npc_despawns: Vec::new(),
@@ -3856,7 +3974,10 @@ impl App {
             net_item_last: HashMap::new(),
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
-            net_beat: 0,
+            net_client_clone: crate::app::net_player_sync::ClientClone::default(),
+            net_clone_items: HashMap::new(),
+            net_client_counter: 0,
+            net_player_outbox: Vec::new(),
             net_play_counter: 0,
             last_item_update: 0,
             net_npc_slots: Vec::new(),
@@ -3933,6 +4054,7 @@ impl App {
             camera_state: Default::default(),
             gfx_quality: Default::default(),
             world_events: Default::default(),
+            debug_shared: Default::default(),
             zoom: 1.0,
             zoom_pinned: crate::env::zoom_pinned(),
             debug: crate::env::debug(),
@@ -4072,6 +4194,10 @@ impl App {
             invasion_progress_display_left: 0,
             invasion_progress_alpha: 0.0,
             invasion_progress_near: false,
+            music_pitch: 0.0,
+            world_evil_good: 0,
+            world_evil_evil: 0,
+            world_evil_blood: 0,
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: crate::env::dev_throw(),
@@ -5782,6 +5908,7 @@ mod s1_p_i44_tests {
             is_a_shop_item: false,
             prefix: 0,
             stack: 2,
+            value: None,
         });
         let slot = app.shop_stock.len() - 1;
         assert!(app.buy_shop_item(slot));

@@ -64,11 +64,13 @@ pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
     rows
 }
 
-/// The interaction row count the port renders: only `CloseChat`
-/// (`NPCInteractions.cs:271-287`, `Condition() => true`) — the shop /
-/// happiness / housing / … buttons are deferred (module header), so
-/// `_neededInteractionLines = ceil(1 / 4) = 1` (`NPCChatPanel.cs:174`,
-/// `AllowedInteractionsPerLine = 4` `:30`).
+/// The interaction row count the port renders: `CloseChat`
+/// (`NPCInteractions.cs:271-287`, `Condition() => true`) plus the Dryad's
+/// `DryadPurification` status button (`NPCInteractions.cs:105-131`, W4-g49 —
+/// the `57` census display consumer). Both fit one row
+/// (`_neededInteractionLines = ceil(2 / 4) = 1`, `NPCChatPanel.cs:174`,
+/// `AllowedInteractionsPerLine = 4` `:30`); the shop / happiness / housing /
+/// … buttons stay deferred (module header).
 const INTERACTION_LINES: usize = 1;
 
 /// The panel's box (`NPCChatPanel.cs:65-68` via the selection half's
@@ -80,20 +82,63 @@ pub(crate) fn panel_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f
     [base.x as f32, base.y as f32, base.w as f32, h as f32]
 }
 
+/// The `DryadPurification` button's condition (`NPCInteractions.cs:107-114`):
+/// the talk NPC is the Dryad (type 20) and the Stardew bit cannot play. The
+/// port has no `CanDryadPlayStardewAnimation` (the cola/Stardew override is
+/// deferred, module header), so the gate folds to the type check — the same
+/// fold the selection half's `player_has_cola` ladder keeps.
+pub(crate) fn dryad_status_active(npcs: &[crate::npc::Npc], talk_npc: Option<usize>) -> bool {
+    talk_npc.is_some_and(|i| {
+        npcs.get(i).is_some_and(|n| n.kind == crate::npc::NpcKind::Dryad)
+    })
+}
+
 /// The Close button's hit rect (`NPCChatPanel.cs:93-117`): the row origin
 /// is `panelArea.BottomLeft() + (30, -22·lines + max(0, 2·(lines−1)) − 4)`,
 /// the rect 22 tall and as wide as the label measured at scale 0.9
 /// (shrunk to fit 260 px, `:113-117`).
 pub(crate) fn close_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
+    button_rect(lookups, screen, chat_text, &crate::lang::inter(52), 0)
+}
+
+/// The `DryadPurification` status button's hit rect — the SECOND interaction
+/// (`NPCInteractions.cs:518` registers it after `CloseChat` `:515`), so its
+/// row index is 1: `rectangle.X += rectangle.Width + 30` (`NPCChatPanel.cs:135`)
+/// past the Close button.
+pub(crate) fn dryad_status_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
+    let close = close_button_rect(lookups, screen, chat_text);
+    button_rect_at(lookups, &crate::lang::inter(49), close[0] + close[2] + 30.0, close[1])
+}
+
+/// One interaction button's rect at row index `idx` (`DrawButtons`
+/// `NPCChatPanel.cs:93-117`): the first button sits at the row origin, each
+/// next one `width + 30` to the right (`:135`).
+fn button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str, label: &str, idx: usize) -> [f32; 4] {
     let panel = panel_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52); // `CloseChat.GetText` (`NPCInteractions.cs:280`)
-    let w0 = text::ui_font_width(lookups, &label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
-    let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
     let il = INTERACTION_LINES as f32;
-    let x = panel[0] + 30.0;
+    let x0 = panel[0] + 30.0;
     let y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
-    // `:117` — `rectangle.Width = (int)(stringSize.X * num4)`.
-    [x, y, (w0 * shrink).trunc(), 22.0]
+    // Walk the preceding buttons' widths (`:135`'s advance).
+    let mut x = x0;
+    for prev in 0..idx {
+        let prev_label = if prev == 0 { crate::lang::inter(52) } else { crate::lang::inter(49) };
+        let w = label_width(lookups, &prev_label);
+        x += w + 30.0;
+    }
+    button_rect_at(lookups, label, x, y)
+}
+
+/// The label's drawn width at scale 0.9, shrunk to fit 260 px
+/// (`NPCChatPanel.cs:112-117`).
+fn label_width(lookups: &Lookups, label: &str) -> f32 {
+    let w0 = text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+    let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
+    (w0 * shrink).trunc()
+}
+
+/// The rect at an explicit row origin (`:97`/`:117`).
+fn button_rect_at(lookups: &Lookups, label: &str, x: f32, y: f32) -> [f32; 4] {
+    [x, y, label_width(lookups, label), 22.0]
 }
 
 /// One crop of a sheet pushed at 1:1 — the panel's `ChatBack` splices draw
@@ -131,6 +176,7 @@ pub(crate) fn draw_panel(
     chat_text: &str,
     pulse: UiPulse,
     mouse: Vec2,
+    dryad_status: bool,
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
     let panel = panel_rect(lookups, screen, chat_text);
@@ -174,6 +220,12 @@ pub(crate) fn draw_panel(
         );
     }
     draw_close_button(r, lookups, screen, chat_text, pulse, mouse);
+    // The Dryad's status button (`DryadPurification`, W4-g49) — the second
+    // interaction, drawn only while its condition holds.
+    if dryad_status {
+        let rect = dryad_status_button_rect(lookups, screen, chat_text);
+        draw_interaction_button(r, lookups, &crate::lang::inter(49), rect, pulse, mouse);
+    }
     super::in_rect(mouse, panel)
 }
 
@@ -192,7 +244,20 @@ fn draw_close_button(
     mouse: Vec2,
 ) {
     let rect = close_button_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52);
+    draw_interaction_button(r, lookups, &crate::lang::inter(52), rect, pulse, mouse);
+}
+
+/// One interaction button's draw (`DrawButtons`, `NPCChatPanel.cs:98-133`):
+/// the shared label maths the Close button and the Dryad status button
+/// (W4-g49) both ride.
+fn draw_interaction_button(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    label: &str,
+    rect: [f32; 4],
+    pulse: UiPulse,
+    mouse: Vec2,
+) {
     let hovered = super::in_rect(mouse, rect);
     let b = (pulse.text * 255.0) as i32;
     let chat_color = [
@@ -208,7 +273,7 @@ fn draw_close_button(
         [0.0, 0.0, 0.0, 1.0]
     };
     let scale = if hovered { 1.2 } else { 0.9 };
-    let w0 = text::ui_font_width(lookups, &label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+    let w0 = text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
     let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
     let mut px = rect[0];
     if hovered {
@@ -234,7 +299,7 @@ fn draw_close_button(
             scale * shrink,
             &[],
             shadow,
-            &label,
+            label,
         );
     }
     text::draw_border_string(
@@ -246,7 +311,7 @@ fn draw_close_button(
         scale * shrink,
         &[],
         chat_color,
-        &label,
+        label,
     );
 }
 

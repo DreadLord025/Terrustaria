@@ -31,6 +31,7 @@ pub mod localization;
 pub mod loot;
 pub mod map;
 pub mod mapdata;
+pub mod minecart;
 pub mod particles;
 pub mod save;
 pub mod scene;

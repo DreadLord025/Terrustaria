@@ -385,6 +385,8 @@ const L8B_PINNED_ADDITIONS = [
   'Extra_301', 'Extra_302',
 ];
 let L8B_STATIC, L8B_ADDITIONS, L8B_REMOVED;
+// batch-J variant note: the branch may be merged-and-deleted (the W4 worktrees
+// prune their remotes); that scenario collapses to the current STATIC list.
 try {
   const l8bSrc = execSync('git show origin/task/S1-L-8b-mount-data:crates/tr-app/src/assets.rs',
     { cwd: path.join(__dirname, '..'), maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }).toString();

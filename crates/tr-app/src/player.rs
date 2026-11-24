@@ -1451,6 +1451,15 @@ pub struct Player {
     /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
     /// hearts at speed 15 / acc 5 (`:34949-34952`).
     pub life_magnet: bool,
+    /// `Player.nebulaLevelLife` / `nebulaLevelMana` / `nebulaLevelDamage`
+    /// (`Player.cs:924-930`, `nebulaMaxLevel = 3` `:922`): the nebula
+    /// booster tiers — `NebulaLevelup` (`:57030-57059`) clamps each +1 to
+    /// 0..3 and grants the tier buff (`type + level - 1`, 480 ticks); the
+    /// `102` client arm calls it (W4-g50). The buff-effect consumers
+    /// (`UpdateBuffs_NebulaBuffs` `:10446-10456`) ride the buff census.
+    pub nebula_level_life: i32,
+    pub nebula_level_mana: i32,
+    pub nebula_level_damage: i32,
     /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
     /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
     /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
@@ -1493,6 +1502,12 @@ pub struct Player {
     /// `:16932`). No render consumer yet — carried for state parity (the
     /// S1-A-9 dead-slot convention).
     pub brain_of_confusion_dodge_animation_counter: i32,
+    /// `Player.wireOperationsCooldown` (`Player.cs:2868`): the Grand Design /
+    /// Multicolor Wrench use gate (`:52075`), decayed in `ResetEffects`
+    /// (`:18798-18801`); the `110` bill clears it (`MessageBuffer.cs:3805`,
+    /// W4-g50). The multi-tool use path is unported — carried for the net
+    /// apply and state parity.
+    pub wire_operations_cooldown: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
     /// `:18789`). `Hurt` (`:38203`), `KillMe` (`:38809`) and
@@ -1831,6 +1846,15 @@ pub struct Player {
     /// damage path queues (`Player.cs:38525`) — the caller owns the audio
     /// device, so the Player hands the cue over.
     pending_hurt_sound: Option<&'static str>,
+    /// W4-c28: `Player.Hurt`'s client send tail (`Player.cs:38369-38377`):
+    /// the accepted hurt queues `(knockback_13, hp, max_hp)` — the 13 is
+    /// gated on `!noKnockback && hitDirection != 0 && (!mount.Active ||
+    /// !mount.Cart)` (`:38371`), the 16 is unconditional on the tail. The
+    /// hp pair is the PRE-subtraction `statLife` (the send runs at `:38375`,
+    /// before `statLife -= num2` at `:38383`). The netglue drain pushes the
+    /// `PlayerSend`s into the client outbox (`SendPlayerHurt`'s 102 is
+    /// unported — M6-NET-5).
+    pending_hurt_net: Option<(bool, i32, i32)>,
     /// `Player.PlayDeathSound` (`Player.cs:38715-38744`): the death cue
     /// `Player.KillMe` queues (`Player.cs:38868`).
     pending_death_sound: Option<&'static str>,
@@ -2036,6 +2060,22 @@ pub struct Player {
     // armour's ranged knockback scale (`Main.cs:20342-20345`).
     pub shroomite_stealth: bool,
     pub stealth: f32,
+    /// `Player.emoteTime` (`Player.cs:792`): the close-players overlay's
+    /// emote-icon window — the `91` reader sets 360 on a player anchor
+    /// (`MessageBuffer.cs:3421`), `Player.Update` decrements it
+    /// (`Player.cs:24456-24459`). The overlay draw is unported; the field
+    /// rides for the net apply (W4-g50).
+    pub emote_time: i32,
+    /// `Player.lastPortalColorIndex` (`Player.cs`): the portal-gun's color
+    /// latch — the `96` reader flips the parity then `Teleport(style 4)`
+    /// stores the wire value (`MessageBuffer.cs:3549`, `Player.cs:37477`;
+    /// W4-g50). The portal FX draw is unported; the field rides for the net
+    /// apply and the NPC twin's parity source.
+    pub last_portal_color_index: i16,
+    /// `Player.portalPhysicsFlag` (`Player.cs:3000`): the style-4 teleport
+    /// arms it (`:37479`); landing or a jump clears it (`:25648-25651`).
+    /// The `_portalPhysicsTime` consumer is unported (W4-g50).
+    pub portal_physics: bool,
     // `Player.spaceGun` (`Player.cs`): the mana row's exemption
     // (`Main.cs:20917`).
     pub space_gun: bool,
@@ -2753,6 +2793,9 @@ impl Player {
             has_lucky_coin: false,
             mana_magnet: false,
             life_magnet: false,
+            nebula_level_life: 0,
+            nebula_level_mana: 0,
+            nebula_level_damage: 0,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
             star_cloak: false,
@@ -2764,6 +2807,7 @@ impl Player {
             strong_bees: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
+            wire_operations_cooldown: 0,
             breath: BREATH_MAX,
             breath_cd: 0,
             creative_god_mode: false,
@@ -2859,6 +2903,7 @@ impl Player {
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
             pending_hurt_sound: None,
+            pending_hurt_net: None,
             pending_death_sound: None,
             run_sound_delay: 0,
             // `Player.cs:35947-35949` — the default until `PlayerFrame` runs.
@@ -2908,6 +2953,9 @@ impl Player {
             pet_flags: [false; PROJ_COUNT],
             shroomite_stealth: false,
             stealth: 0.0,
+            emote_time: 0,
+            last_portal_color_index: 0,
+            portal_physics: false,
             space_gun: false,
             shadow_armor: false,
             crimson_regen: false,
@@ -3320,6 +3368,14 @@ impl Player {
         self.pending_hurt_sound.take()
     }
 
+    /// W4-c28: takes the queued `Hurt` client-send tail
+    /// (`Player.cs:38369-38377`) — `(knockback_13, hp, max_hp)`, the hp pair
+    /// PRE-subtraction. The netglue drain maps it through
+    /// `net_player_sync::hurt_sends` into the client outbox.
+    pub(crate) fn take_hurt_net(&mut self) -> Option<(bool, i32, i32)> {
+        self.pending_hurt_net.take()
+    }
+
     /// Takes the queued death cue (`Player.PlayDeathSound`,
     /// `Player.cs:38868`).
     pub(crate) fn take_death_sound(&mut self) -> Option<&'static str> {
@@ -3646,6 +3702,7 @@ impl Player {
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
         self.pending_retaliate = None;
+        self.pending_hurt_net = None;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
         self.pending_splash_sound = None;
@@ -4245,6 +4302,27 @@ impl Player {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
 
+    /// The `62 SyncDodge` reader's switch on ourselves
+    /// (`MessageBuffer.cs:2887-2902`): kind 1 Ninja, 2 Shadow, 4
+    /// BrainOfConfusion, 5 MysticSash — four independent `if`s in the C#
+    /// order (3, the retired Holy dodge, has no arm; any other kind falls
+    /// through). The send-back inside each handler is the SEND path's
+    /// (S1-I-4), not the reader's — the reader never re-sends. W4-c27.
+    pub(crate) fn apply_net_dodge(&mut self, kind: u8) {
+        if kind == 1 {
+            self.ninja_dodge(); // `:2889`
+        }
+        if kind == 2 {
+            self.do_shadow_dodge(); // `:2893`
+        }
+        if kind == 4 {
+            self.brain_of_confusion_dodge(); // `:2897`
+        }
+        if kind == 5 {
+            self.do_mystic_sash_dodge(); // `:2901`
+        }
+    }
+
     /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
     /// countdown — `immune` clears at 0 and `immuneNoBlink` rides with it;
     /// the `immuneAlpha` blinkVisual half is draw-side and stays out.
@@ -4381,6 +4459,17 @@ impl Player {
         // `Player.cs:38304`: the endurance step — `(int)((1 - endurance) *
         // damage)` after the defense reduction.
         let amount = ((1.0 - self.endurance) * amount as f32) as i32;
+        // `Player.Hurt`'s client tail (`Player.cs:38369-38377`): netMode 1 +
+        // local + !quiet — the knockback-gated 13 FIRST, then the 16 with the
+        // PRE-subtraction statLife (the C# sends before `statLife -= num2`
+        // at `:38383`). The port's Player has no netMode/whoAmI — the queue
+        // rides every accepted hurt and the netglue drain gates on the role
+        // (the `pending_hurt_sound` convention). The mount/cart clause is the
+        // knockback gate's own (`:38519` shape).
+        let knockback_13 = !self.no_knockback
+            && knock_back
+            && (!self.mount.is_active() || !crate::mount::is_cart(self.mount.kind()));
+        self.pending_hurt_net = Some((knockback_13, self.hp, self.max_hp));
         // `Player.cs:38378-38381`: the `num2 < 1 -> 1` floor. The endurance
         // truncation can drive a hit to 0; the C# lifts it back to 1 (which
         // also selects the 20-tick immunity window below, not 40).
@@ -4564,6 +4653,43 @@ impl Player {
 
     pub fn center(&self) -> (f32, f32) {
         (self.x + self.width * 0.5, self.y + self.height * 0.5)
+    }
+
+    /// `Player.NebulaLevelup` (`Player.cs:57030-57059`, W4-g50): the nebula
+    /// booster pickup's tier bump. The `whoAmI != Main.myPlayer` guard
+    /// (`:57032`) folds to the caller — the `102` client arm only calls it
+    /// on the local player. The existing tier buffs (`type..type+2`) are
+    /// deleted first (`:57037-57043`), then the matching level clamps +1 to
+    /// 0..3 (`nebulaMaxLevel`, `:922`) and the tier buff `type + level - 1`
+    /// grants for 480 ticks (`:57036`).
+    pub fn nebula_levelup(&mut self, buff_type: i32) {
+        let time = 480;
+        // `for i < maxBuffs: if buffType[i] in [type, type+3) DelBuff(i--)`.
+        let mut i = 0;
+        while i < crate::buffs::MAX_BUFFS {
+            let t = self.buffs.buff_type[i];
+            if t >= buff_type && t < buff_type + 3 {
+                self.buffs.del_buff(i);
+            } else {
+                i += 1;
+            }
+        }
+        match buff_type {
+            173 => {
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs
+                    .add_buff(buff_type + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
     }
 
     /// `Entity.Bottom` (`Entity.cs:122-132`):
@@ -5701,6 +5827,11 @@ impl Player {
         if self.mana_potion_delay > 0 {
             self.mana_potion_delay -= 1;
         }
+        // `Player.Update`'s emote-window clock (`Player.cs:24456-24459`):
+        // one tick off the `91`-set 360 while it runs (W4-g50).
+        if self.emote_time > 0 {
+            self.emote_time -= 1;
+        }
         // The `flag9` pStone latch (`Player.cs:25477`): snapshotted BEFORE
         // `ResetEffects` (`:25491`) clears it; the post-`UpdateEquips` change
         // check (`:25640-25643`) rescales the live buff-21 timer.
@@ -5901,6 +6032,10 @@ impl Player {
                 honey_wet: self.honey_wet,
                 lava_wet: self.lava_wet,
                 shimmer_wet: self.shimmer_wet,
+                // W4-g50: the `96` portal teleport arms the flag
+                // (`Player.cs:37479`); the rebase reads it like the C#
+                // (`:24380-24382`'s maxFallSpeed 35).
+                portal_physics: self.portal_physics,
                 ..WetStaticsFlags::default()
             };
             let (g, mf, jh, js) =
@@ -6207,6 +6342,11 @@ impl Player {
         self.long_invince = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
+        }
+        // `ResetEffects`' wire-operations cooldown (`Player.cs:18798-18801`,
+        // W4-g50): one tick off the Grand Design / Multicolor Wrench gate.
+        if self.wire_operations_cooldown > 0 {
+            self.wire_operations_cooldown -= 1;
         }
         // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
         // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
@@ -7032,6 +7172,12 @@ impl Player {
         // decay timers + `RecalculateLuck`, after the buff effects derived
         // stinky/luckPotion/kiteLuckLevel above and before movement.
         self.update_luck(world);
+        // `Player.cs:25648-25651` (W4-g50): landing or a jump clears the
+        // portal-physics flag the `96` teleport armed (`:37479`). The
+        // `_portalPhysicsTime` consumer (`:25652-25655`) is unported.
+        if self.vy == 0.0 || self.control_jump {
+            self.portal_physics = false;
+        }
         // `Player.cs:26004-26009`: the run-speed merge runs AFTER `UpdateEquips`
         // (`:25633`) - the accessory/prefix `moveSpeed` adds ride the debuff
         // multiply too. `oldStyleParkour` (the `:26007` gate) is unported

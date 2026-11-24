@@ -28,6 +28,36 @@ impl App {
     self.handle_minimap_clicks();
     self.handle_fullmap_ping();
     self.handle_bestiary_clicks();
+    // The bestiary info-page scrollbar's drag frame (`UIScrollbar.DrawSelf`,
+    // `UIScrollbar.cs:109-112`): while the thumb is grabbed and the left
+    // button is held, the view follows the pointer. W4-e23 remainder.
+    if self.bestiary_open && self.mine_down && self.bestiary_ui.info_scroll_drag.is_some() {
+        let (sw, sh) = self.screen_size();
+        self.bestiary_info_scrollbar_drag(Vec2::new(sw, sh), self.mouse_pos.y);
+    }
+    // The bestiary's hover-sound ticks (W4-e23 remainder 4): the
+    // `GroupOptionButton.DrawSelf:212-223` / `UIImageButton.MouseOver:61`
+    // per-hover `PlaySound(12)` edges, once per open frame.
+    if self.bestiary_open {
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let options = self.bestiary_ui.options;
+        let at = self.bestiary_ui.at;
+        let fired = crate::ui::bestiary_hover::tick(
+            &mut self.bestiary_ui.hover_sounds,
+            screen,
+            self.mouse_pos,
+            options,
+            &self.bestiary,
+            &self.bestiary_ui.working,
+            at,
+        );
+        if fired {
+            self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+        }
+    } else {
+        self.bestiary_ui.hover_sounds.reset();
+    }
     // The town-chatter panel's Close button + hover tick
     // (`NPCChatPanel.DrawButtons`, `NPCChatPanel.cs:88-162`) — the press
     // is consumed before the chest/crafting/inventory handlers see it.
@@ -358,6 +388,12 @@ impl App {
     // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
     // runs after the entity half, never before it.
     self.phase("time");
+    // `CreditsRollEvent.UpdateTime` (`Main.cs:64968` →
+    // `CreditsRollEvent.cs:35-38`): one decrement per UpdateTime call,
+    // independent of the day rate — the C# runs UpdateTime even while
+    // the creative freeze holds `Main.time` (dayRate 0), so the tick
+    // sits OUTSIDE the port's rate gate (W4-g51 id-140).
+    self.world.tick_credits_roll();
     if !crate::env::day_pinned() {
         // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
         // `:1441`): the powers' multiplier folds into the clock tick

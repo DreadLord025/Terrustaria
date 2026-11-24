@@ -753,10 +753,13 @@ pub trait TownDoorOps {
     fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool;
     /// `WorldGen.CloseDoor(x, y)` (`WorldGen.cs:31810`).
     fn close_door(&mut self, x: i32, y: i32) -> bool;
-    /// `WorldGen.ShiftTallGate(x, y, closing)` — UNPORTED in tr-core
-    /// (no `shift_tall_gate` yet); the wiring's impl returns false
-    /// until it lands (the cited skip: tall gates 388/389 never
-    /// open/close, the arm takes the all-fail flip).
+    /// `WorldGen.ShiftTallGate(x, y, closing)` — the canonical body is
+    /// `tr_core::edit::shift_tall_gate` (W4-c42 `edit/shift.rs`, the
+    /// research/95 §3 union-exec, landed on this lane for the net-19
+    /// reader). The NPC-bash drain re-point (the real box-overlap
+    /// closure, `wire_skips: None`, cues drained on UpdateNpcs) is g4's
+    /// merge work — until it lands the wiring's impl returns false (the
+    /// arm takes the all-fail flip).
     fn shift_tall_gate(&mut self, x: i32, y: i32, closing: bool) -> bool;
 }
 

@@ -4337,6 +4337,128 @@ pub fn kill_progress(entry: &BestiaryEntryDef, kills: &KillTracker) -> (i32, i32
     )
 }
 
+/// One provider's evaluation. `entry_quick` is the entry factory's
+/// boss-rule flag (`BestiaryEntry.cs:37-41`), ORed onto the Common
+/// provider's own `quickUnlock` argument.
+fn eval_gate(
+    gate: crate::bestiary_data::Gate,
+    entry_quick: bool,
+    tracker: &WorldBestiary,
+) -> UnlockState {
+    use crate::bestiary_data::Gate;
+    match gate {
+        Gate::Common { credit_net, quick } => {
+            // `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
+            // (`:36-43`): the ladder over the CREDIT's kill count — the
+            // fold rows read the boss's credit (`GetKillCountNeeded:21-34`
+            // resolves the same credit's banner chain).
+            let credit = credit_id_for_net(credit_net);
+            let full = tr_core::bestiary::kills_needed_for(credit_net);
+            get_unlock_state_by_kill_count(
+                tracker.kills.get_kill_count(credit),
+                entry_quick || quick,
+                full,
+            )
+        }
+        Gate::Town { credit_net } => {
+            // `TownNPCUICollectionInfoProvider.cs:14-20`: chatted → 4.
+            if tracker.was_chat_with(credit_id_for_net(credit_net)) {
+                UnlockState::CanShowDropsWithDropRates
+            } else {
+                UnlockState::NotKnownAtAll
+            }
+        }
+        Gate::Critter { credit_net } => {
+            // `CritterUICollectionInfoProvider.cs:14-20`: sighted → 4.
+            if tracker.was_seen_near_player(credit_id_for_net(credit_net)) {
+                UnlockState::CanShowDropsWithDropRates
+            } else {
+                UnlockState::NotKnownAtAll
+            }
+        }
+        Gate::GoldCritter { credit_net, peers } => {
+            // `GoldCritterUICollectionInfoProvider.cs:21-75` (the W4-c8
+            // census, folded onto the c37 gate table by the e23 compose):
+            // max(own sight, the normal peers' sights) (`:23-37`), then
+            // the any-gold-seen collection gate (`:42-52`).
+            let sight = |net: i32| {
+                // `GetUnlockStateForCritter` (`:68-75`).
+                if tracker.was_seen_near_player(credit_id_for_net(net)) {
+                    UnlockState::CanShowDropsWithDropRates
+                } else {
+                    UnlockState::NotKnownAtAll
+                }
+            };
+            let mut state = sight(credit_net);
+            for &peer in peers {
+                state = state.max(sight(peer));
+            }
+            if state == UnlockState::NotKnownAtAll {
+                return state; // `:42-45`
+            }
+            // `TryFindingOneGoldCritterThatIsAlreadyUnlocked` (`:56-66`):
+            // any `NPCID.Sets.GoldCrittersCollection` member seen opens
+            // the display; else the whole entry reads tier 0 (`:46-52`).
+            let any_gold = crate::bestiary_data::GOLD_CRITTERS_COLLECTION
+                .iter()
+                .any(|&net| sight(net) > UnlockState::NotKnownAtAll);
+            if any_gold {
+                state
+            } else {
+                UnlockState::NotKnownAtAll
+            }
+        }
+        Gate::Highest(gates) => {
+            // `HighestOfMultipleUICollectionInfoProvider.cs:17-31`: the
+            // max over the sub-providers (the entry flag rides each
+            // Common half — the C# bakes it into the provider ctor).
+            gates
+                .iter()
+                .map(|g| eval_gate(*g, entry_quick, tracker))
+                .max()
+                .unwrap_or(UnlockState::NotKnownAtAll)
+        }
+    }
+}
+
+/// `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds[netId]`
+/// (`ContentSamples.cs:862-873` + `ModifyNPCIds`): the port's roster rows
+/// carry the credit ids verbatim; an id without a row (the unported
+/// override targets) falls back to the raw net id's name lookup the same
+/// way the roster does — `None` keeps the caller on the default ladder.
+pub(crate) fn credit_id_for_net(net_id: i32) -> &'static str {
+    ENTRIES
+        .iter()
+        .find(|e| e.net_id == net_id)
+        .map(|e| e.credit_id)
+        .unwrap_or("")
+}
+
+/// batch-J (e23/c37) gate-based provider dispatch, kept beside main's
+/// kill-count [`unlock_state`] and the generic-sight [`unlock_state_world`]:
+/// the data-driven `bestiary_data::gate` table is the C# populator's
+/// override walk (`BestiaryDatabaseNPCsPopulator.cs:649-730`).
+pub fn unlock_state_gate(entry: &BestiaryEntryDef, tracker: &WorldBestiary) -> UnlockState {
+    eval_gate(
+        crate::bestiary_data::gate(entry.net_id),
+        entry.quick_unlock,
+        tracker,
+    )
+}
+
+/// batch-J (e23/c37) completion over the gate providers (kept beside main's
+/// kill-count [`completion_percent`] and [`completion_percent_world`]).
+pub fn completion_percent_gate(tracker: &WorldBestiary) -> f32 {
+    if ENTRIES.is_empty() {
+        return 1.0;
+    }
+    let seen = ENTRIES
+        .iter()
+        .filter(|e| unlock_state_gate(e, tracker).known())
+        .count();
+    seen as f32 / ENTRIES.len() as f32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4771,4 +4893,566 @@ mod tests {
         assert!(ENTRIES.iter().any(|e| e.net_id == 328),
             "GAP-3: the port carries the Hide kind's entry (vanilla has none)");
     }
+
+    /// W4-c37: the whole roster reads UNKNOWN on a fresh world — the
+    /// research/30 #4 witness (the old default-0 denominator reported
+    /// tier 4 for 164 of the entries with zero kills).
+    #[test]
+    fn w4_c37_a_fresh_world_knows_nothing() {
+        let tracker = WorldBestiary::new();
+        for e in ENTRIES {
+            assert_eq!(
+                unlock_state_gate(e, &tracker),
+                UnlockState::NotKnownAtAll,
+                "{} must start locked",
+                e.credit_id
+            );
+        }
+        assert_eq!(completion_percent_gate(&tracker), 0.0);
+    }
+
+    /// W4-c37: the Skeletron head's Highest-of-two
+    /// (`BestiaryDatabaseNPCsPopulator.cs:677`): the Clothier's chat OR
+    /// the head's own quick-unlock kill.
+    #[test]
+    fn w4_c37_skeletron_unlocks_by_chat_or_kill() {
+        let head = ENTRIES.iter().find(|e| e.net_id == 35).unwrap();
+        let mut by_chat = WorldBestiary::new();
+        by_chat.set_was_chat_with_directly("Clothier");
+        assert_eq!(
+            unlock_state_gate(head, &by_chat),
+            UnlockState::CanShowDropsWithDropRates
+        );
+        let mut by_kill = WorldBestiary::new();
+        by_kill.kills.register_kill("SkeletronHead");
+        assert_eq!(
+            unlock_state_gate(head, &by_kill),
+            UnlockState::CanShowDropsWithDropRates
+        );
+        assert_eq!(
+            unlock_state_gate(head, &WorldBestiary::new()),
+            UnlockState::NotKnownAtAll
+        );
+    }
+
+    /// W4-c37: the boss-rule flag census — every `SetDefaults` boss and
+    /// every `ShouldBeCountedAsBossForBestiary` id in the roster carries
+    /// `quick_unlock: true`; the non-boss enemies carry false
+    /// (`BestiaryEntry.cs:37-41`). The DD2 mini-boss overrides
+    /// (`BestiaryDatabaseNPCsPopulator.cs:679-682`) ride the gate table,
+    /// not the factory flag.
+    #[test]
+    fn w4_c37_the_boss_flag_matches_the_csharp_boss_rows() {
+        for e in ENTRIES {
+            let boss = crate::bestiary_data::set_defaults_boss(e.net_id)
+                || crate::bestiary_data::counted_as_boss_for_bestiary(e.net_id);
+            assert_eq!(e.quick_unlock, boss, "{} boss flag", e.credit_id);
+        }
+    }
+
+    /// W4-c37: the critter rows ride the SIGHT provider
+    /// (`CritterUICollectionInfoProvider.cs:14-20`) — the Goldfish 55 and
+    /// the Etherian Portal 549 (`CountsAsACritter`, `NPC.cs:6887-6897`).
+    #[test]
+    fn w4_c37_the_critter_rows_unlock_by_sight() {
+        let mut tracker = WorldBestiary::new();
+        let fish = ENTRIES.iter().find(|e| e.net_id == 55).unwrap();
+        tracker.kills.register_kill("Goldfish");
+        assert_eq!(unlock_state_gate(fish, &tracker), UnlockState::NotKnownAtAll);
+        tracker.set_was_seen_directly("Goldfish");
+        assert_eq!(
+            unlock_state_gate(fish, &tracker),
+            UnlockState::CanShowDropsWithDropRates
+        );
+    }
+
+    /// W4-c37: the minion folds read the BOSS's credit with quick-unlock
+    /// (`BestiaryDatabaseNPCsPopulator.cs:683-702`) — one Creeper kill
+    /// credits BrainofCthulhu, and the Creeper's own entry jumps to 4.
+    #[test]
+    fn w4_c37_the_minion_folds_read_the_boss_credit() {
+        let mut tracker = WorldBestiary::new();
+        let creeper = ENTRIES.iter().find(|e| e.net_id == 267).unwrap();
+        let brain = ENTRIES.iter().find(|e| e.net_id == 266).unwrap();
+        tracker.kills.register_kill("BrainofCthulhu");
+        assert_eq!(
+            unlock_state_gate(creeper, &tracker),
+            UnlockState::CanShowDropsWithDropRates
+        );
+        assert_eq!(
+            unlock_state_gate(brain, &tracker),
+            UnlockState::CanShowDropsWithDropRates
+        );
+        // A kill under the minion's OWN credit does nothing (the C#
+        // provider reads the boss's persistent id).
+        let mut t2 = WorldBestiary::new();
+        t2.kills.register_kill("Creeper");
+        assert_eq!(unlock_state_gate(creeper, &t2), UnlockState::NotKnownAtAll);
+    }
+
+    /// W4-c37: the override table beats the formula — the Eater of Worlds
+    /// head's bulk would read 5, the `FillNpcRarities` row pins 3
+    /// (`ContentSamples.cs:1239`); the Eternia Crystal's fresh-Main sample
+    /// (1000 HP / 14 defense, `NPC.cs:16003-16004`) reads 3 — the runtime
+    /// post-Golem 5000/20 row would read 4.
+    #[test]
+    fn w4_c37_the_override_rows_beat_the_formula() {
+        let eow = ENTRIES.iter().find(|e| e.net_id == 13).unwrap();
+        assert_eq!(crate::bestiary_data::rarity_stars(eow), 3);
+        let crystal = ENTRIES.iter().find(|e| e.net_id == 548).unwrap();
+        assert_eq!(crate::bestiary_data::rarity_stars(crystal), 3);
+        // The Lava Slime's sample keeps the non-remix 50/15/10 row
+        // (`NPC.cs:9518-9523`) -> 1 star, same as the remix row's result.
+        let lava = ENTRIES.iter().find(|e| e.net_id == 59).unwrap();
+        assert_eq!(crate::bestiary_data::rarity_stars(lava), 1);
+        // The 170/180/171 trio rides the 3-star row, not the 2-star one
+        // (`ContentSamples.cs:1194-1196`).
+        assert_eq!(crate::bestiary_data::stars_override(170), Some(3));
+        assert_eq!(crate::bestiary_data::stars_override(180), Some(3));
+        assert_eq!(crate::bestiary_data::stars_override(171), Some(3));
+        // The seven rows the first data pass dropped are back.
+        for id in [47, 57, 168, 464, 465, 470] {
+            assert_eq!(crate::bestiary_data::stars_override(id), Some(3));
+        }
+        assert_eq!(crate::bestiary_data::stars_override(301), Some(2));
+    }
+
+    /// W4-c37: the whole-roster star census — every entry's
+    /// `NpcBestiaryRarityStars` value, derived from the C# (`FillNpcRarities`
+    /// override rows `ContentSamples.cs:1106-1242` first, else the
+    /// `GetNPCBestiaryRarityStarsCount` formula over the Classic
+    /// `SetDefaults` sample with the fresh-Main progression flags false).
+    /// 249 rows: 50x1 / 121x2 / 46x3 / 23x4 / 9x5.
+    #[test]
+    fn w4_c37_the_star_census() {
+        const EXPECTED: &[(i32, i32)] = &[
+            (1, 1),   // BlueSlime
+            (-3, 1),  // GreenSlime
+            (-4, 4),  // Pinky
+            (-5, 1),  // BabySlime
+            (-6, 1),  // BlackSlime
+            (-7, 1),  // PurpleSlime
+            (-8, 1),  // RedSlime
+            (-9, 3),  // YellowSlime
+            (2, 1),   // DemonEye
+            (3, 1),   // Zombie
+            (16, 2),  // MotherSlime
+            (50, 2),  // KingSlime
+            (4, 2),   // EyeofCthulhu
+            (52, 5),  // DoctorBones
+            (53, 5),  // TheGroom
+            (59, 1),  // LavaSlime
+            (71, 4),  // DungeonSlime
+            (81, 2),  // CorruptSlime
+            (115, 2), // TheHungry
+            (117, 1), // LeechHead
+            (5, 1),   // ServantofCthulhu
+            (132, 1), // BaldZombie
+            (133, 2), // WanderingEye
+            (22, 1),  // Guide
+            (21, 1),  // Skeleton
+            (44, 3),  // UndeadMiner
+            (49, 1),  // CaveBat
+            (51, 1),  // JungleBat
+            (60, 2),  // Hellbat
+            (66, 3),  // VoodooDemon
+            (6, 1),   // EaterofSouls
+            (42, 1),  // Hornet
+            (210, 1), // Bee
+            (211, 1), // BeeSmall
+            (23, 2),  // MeteorHead
+            (29, 2),  // GoblinSorcerer
+            (45, 5),  // Tim
+            (32, 1),  // DarkCaster
+            (24, 2),  // FireImp
+            (138, 2), // IlluminantSlime
+            (147, 1), // IceSlime
+            (161, 2), // ZombieEskimo
+            (183, 2), // Crimslime
+            (184, 2), // SpikedIceSlime
+            (186, 1), // PincushionZombie
+            (187, 1), // SlimedZombie
+            (188, 1), // SwampZombie
+            (189, 1), // TwiggyZombie
+            (190, 1), // CataractEye
+            (191, 1), // SleepyEye
+            (192, 1), // DialatedEye
+            (193, 1), // GreenEye
+            (194, 1), // PurpleEye
+            (200, 1), // FemaleZombie
+            (223, 2), // ZombieRaincoat
+            (319, 3), // ZombieDoctor
+            (320, 3), // ZombieSuperman
+            (321, 3), // ZombiePixie
+            (331, 3), // ZombieXmas
+            (332, 3), // ZombieSweater
+            (489, 1), // BloodZombie
+            (490, 2), // Drippler
+            (225, 2), // UmbrellaSlime
+            (533, 2), // DesertDjinn
+            (30, 1),  // ChaosBall
+            (25, 1),  // BurningSphere
+            (33, 1),  // WaterSphere
+            (55, 1),  // Goldfish
+            (58, 1),  // Piranha
+            (65, 2),  // Shark
+            (7, 2),   // DevourerHead
+            (10, 1),  // GiantWormHead
+            (87, 3),  // WyvernHead
+            (17, 1),  // Merchant
+            (20, 3),  // Dryad
+            (18, 1),  // Nurse
+            (19, 1),  // ArmsDealer
+            (38, 1),  // Demolitionist
+            (227, 2), // Painter
+            (228, 2), // WitchDoctor
+            (54, 2),  // Clothier
+            (368, 3), // TravellingMerchant
+            (369, 2), // Angler
+            (108, 3), // Wizard
+            (124, 2), // Mechanic
+            (353, 2), // Stylist
+            (441, 5), // TaxCollector
+            (588, 2), // Golfer
+            (633, 5), // BestiaryGirl
+            (663, 5), // Princess
+            (207, 2), // DyeTrader
+            (208, 4), // PartyGirl
+            (222, 3), // QueenBee
+            (35, 3),  // SkeletronHead
+            (113, 4), // WallofFlesh
+            (134, 4), // TheDestroyer
+            (127, 4), // SkeletronPrime
+            (125, 4), // Retinazer
+            (126, 4), // Spazmatism
+            (261, 2), // FungiSpore
+            (262, 4), // Plantera
+            (263, 3), // PlanterasHook
+            (264, 2), // PlanterasTentacle
+            (265, 2), // Spore
+            (266, 3), // BrainofCthulhu
+            (267, 2), // Creeper
+            (305, 2), // Scarecrow1
+            (306, 2), // Scarecrow2
+            (307, 2), // Scarecrow3
+            (308, 2), // Scarecrow4
+            (309, 2), // Scarecrow5
+            (310, 2), // Scarecrow6
+            (311, 2), // Scarecrow7
+            (312, 2), // Scarecrow8
+            (313, 2), // Scarecrow9
+            (314, 2), // Scarecrow10
+            (315, 3), // HeadlessHorseman
+            (325, 3), // MourningWood
+            (326, 2), // Splinterling
+            (327, 4), // Pumpking
+            (329, 3), // Hellhound
+            (330, 2), // Poltergeist
+            (338, 2), // ZombieElf
+            (339, 2), // ZombieElfBeard
+            (340, 2), // ZombieElfGirl
+            (341, 2), // PresentMimic
+            (342, 2), // GingerbreadMan
+            (343, 3), // Yeti
+            (344, 3), // Everscream
+            (345, 4), // IceQueen
+            (346, 3), // SantaNK1
+            (347, 2), // ElfCopter
+            (348, 3), // Nutcracker
+            (349, 3), // NutcrackerSpinning
+            (350, 2), // ElfArcher
+            (351, 3), // Krampus
+            (352, 2), // Flocko
+            (27, 1),  // GoblinThief
+            (28, 2),  // GoblinWarrior
+            (111, 1), // GoblinArcher
+            (26, 1),  // GoblinPeon
+            (471, 4), // GoblinSummoner
+            (143, 2), // SnowmanGangsta
+            (144, 2), // MisterStabby
+            (145, 2), // SnowBalla
+            (383, 2), // MartianOfficer
+            (385, 2), // GrayGrunt
+            (386, 2), // MartianEngineer
+            (389, 2), // GigaZapper
+            (520, 3), // MartianWalker
+            (399, 4), // MartianProbe
+            (388, 2), // MartianDrone
+            (381, 2), // BrainScrambler
+            (382, 2), // RayGunner
+            (390, 2), // ScutlixRider
+            (391, 2), // Scutlix
+            (392, 2), // MartianSaucer
+            (393, 3), // MartianSaucerTurret
+            (394, 3), // MartianSaucerCannon
+            (395, 4), // MartianSaucerCore
+            (387, 2), // MartianTurret
+            (491, 4), // FlyingDutchman
+            (492, 3), // FlyingDutchmanCannon
+            (552, 1), // DD2GoblinT1
+            (553, 2), // DD2GoblinT2
+            (554, 2), // DD2GoblinT3
+            (555, 2), // DD2GoblinBomberT1
+            (556, 2), // DD2GoblinBomberT2
+            (557, 2), // DD2GoblinBomberT3
+            (561, 2), // DD2JavelinstT1
+            (562, 2), // DD2JavelinstT2
+            (563, 2), // DD2JavelinstT3
+            (566, 1), // DD2SkeletonT1
+            (567, 2), // DD2SkeletonT3
+            (564, 2), // DD2DarkMageT1
+            (551, 4), // DD2Betsy
+            (568, 2), // DD2WitherBeastT2
+            (550, 2), // DD2Bartender
+            (548, 2), // DD2EterniaCrystal
+            (549, 1), // DD2LanePortal
+            (558, 1), // DD2WyvernT1
+            (559, 2), // DD2WyvernT2
+            (560, 2), // DD2WyvernT3
+            (565, 3), // DD2DarkMageT3
+            (569, 2), // DD2WitherBeastT3
+            (570, 2), // DD2DrakinT2
+            (571, 3), // DD2DrakinT3
+            (572, 2), // DD2KoboldWalkerT2
+            (573, 2), // DD2KoboldWalkerT3
+            (574, 2), // DD2KoboldFlyerT2
+            (575, 2), // DD2KoboldFlyerT3
+            (576, 3), // DD2OgreT2
+            (577, 3), // DD2OgreT3
+            (439, 4), // AncientCultist
+            (493, 4), // StardustTower
+            (507, 4), // NebulaTower
+            (517, 4), // SolarTower
+            (422, 4), // VortexTower
+            (405, 2), // StardustCellBig
+            (406, 2), // StardustCellSmall
+            (407, 2), // StardustJellyfishBig
+            (423, 2), // NebulaBeast
+            (425, 2), // VortexRifleman
+            (429, 2), // VortexSoldier
+            (426, 2), // VortexHunter
+            (427, 2), // VortexAlien
+            (420, 2), // NebulaFloater
+            (421, 2), // BrainSuckler
+            (409, 2), // StardustSpiderBig
+            (410, 2), // StardustSpiderSmall
+            (411, 2), // StardustSoldier
+            (415, 2), // SolarDrakomire
+            (416, 2), // SolarDrakomireRider
+            (417, 2), // SolarSroller
+            (418, 2), // SolarCorite
+            (412, 3), // SolarCrawltipedeHead
+            (413, 3), // SolarCrawltipedeBody
+            (414, 3), // SolarCrawltipedeTail
+            (402, 2), // StardustWormHead
+            (518, 2), // SolarSpearman
+            (419, 2), // SolarSelenian
+            (424, 2), // Predictor
+            (428, 2), // VortexHeadcrab
+            (396, 5), // MoonLordHead
+            (397, 4), // MoonLordHand
+            (398, 5), // MoonLordCore
+            (400, 2), // MoonLordFreeEye
+            (401, 2), // MoonLordLeechBlob
+            (212, 2), // PirateDeckhand
+            (213, 2), // PirateCaptainsMate
+            (214, 2), // PirateArcher
+            (215, 2), // PirateCorsair
+            (216, 3), // PirateCaptain
+            (245, 4), // Golem
+            (370, 5), // DukeFishron
+            (372, 2), // Sharkron
+            (128, 3), // PrimeCannon
+            (129, 3), // PrimeSaw
+            (130, 3), // PrimeVice
+            (131, 3), // PrimeLaser
+            (114, 3), // WallofFleshEye
+            (36, 2),  // SkeletronHand
+            (668, 3), // Deerclops
+            (107, 3), // GoblinTinkerer
+            (13, 3),  // EaterofWorldsHead
+            (72, 2),  // BlazingWheel
+            (250, 3), // AngryNimbus
+            (288, 2), // DungeonSpirit
+            (384, 2), // ForceBubble
+        ];
+        assert_eq!(EXPECTED.len(), ENTRIES.len());
+        for (e, &(net, stars)) in ENTRIES.iter().zip(EXPECTED) {
+            assert_eq!(e.net_id, net, "census order");
+            assert_eq!(
+                crate::bestiary_data::rarity_stars(e),
+                stars,
+                "{} stars",
+                e.credit_id
+            );
+        }
+    }
+
+    /// W4-c37: the star formula (`ContentSamples.cs:1245-1306`) — the
+    /// rarity bump, the boss +0.5, the `damage + defense + lifeMax/4`
+    /// bulk ladder, the 5-cap and the int truncation.
+    #[test]
+    fn w4_c37_the_star_formula_pins() {
+        use crate::bestiary_data::stars_from_stats;
+        // A plain enemy: 1 + 0 bulk -> 1 star (BlueSlime 7+2+25/4 = 35).
+        assert_eq!(stars_from_stats(0, false, 7, 2, 25), 1);
+        // The >50 bulk step: DevourerHead 31+2+100/4 = 58 -> 2.
+        assert_eq!(stars_from_stats(0, false, 31, 2, 100), 2);
+        // Rarity 2 adds 1.5 on top of the base 2: Pinky 5+5+150/4 = 47
+        // (no bulk step) -> 4.5 truncated to 4.
+        assert_eq!(stars_from_stats(2, false, 5, 5, 150), 4);
+        // The boss +0.5 lands before the cap: 1 + 0.5 + 3.5 (>10000 bulk)
+        // = 5 (Duke Fishron 100+50+60000/4 = 15150).
+        assert_eq!(stars_from_stats(0, true, 100, 50, 60000), 5);
+        // Rarity 4 (Tim): 1+4+2.5 = 7.5 capped to 5 before the bulk.
+        assert_eq!(stars_from_stats(4, false, 20, 4, 200), 5);
+        // The >50 bulk step: CorruptSlime 55+20+170/4 = 117 -> 2;
+        // FireImp 30+16+70/4 = 63 -> 2 as well.
+        assert_eq!(stars_from_stats(0, false, 55, 20, 170), 2);
+        assert_eq!(stars_from_stats(0, false, 30, 16, 70), 2);
+    }
+
+    /// W4-c37: the threshold pins — the ladder's full count is the banner
+    /// chain's `KillsToBanner` (default 50, `ItemID.cs:1303-1304`), and
+    /// the ½/⅕ steps land on the C#'s integer divisions.
+    #[test]
+    fn w4_c37_the_threshold_pins() {
+        // BlueSlime: banner 69 -> item 1683 -> default 50; 1/10/25/50.
+        assert_eq!(tr_core::bestiary::kills_needed_for(1), 50);
+        // Tim: rarity-4 wizard, banner 177 -> item 2986 -> 10 kills;
+        // the steps are 1 / 2 / 5 / 10 (`GetUnlockStateByKillCount:50-76`).
+        assert_eq!(tr_core::bestiary::kills_needed_for(45), 10);
+        let tim = ENTRIES.iter().find(|e| e.net_id == 45).unwrap();
+        let mut t = WorldBestiary::new();
+        for _ in 0..2 {
+            t.kills.register_kill("Tim");
+        }
+        assert_eq!(unlock_state_gate(tim, &t), UnlockState::CanShowStats);
+        for _ in 0..3 {
+            t.kills.register_kill("Tim");
+        }
+        assert_eq!(
+            unlock_state_gate(tim, &t),
+            UnlockState::CanShowDropsWithoutDropRates
+        );
+        for _ in 0..5 {
+            t.kills.register_kill("Tim");
+        }
+        assert_eq!(
+            unlock_state_gate(tim, &t),
+            UnlockState::CanShowDropsWithDropRates
+        );
+        // DD2GoblinT1: banner 258 -> item 3838 -> 1000 kills; the fifth
+        // step is 200, the half 500.
+        assert_eq!(tr_core::bestiary::kills_needed_for(552), 1000);
+        // The DD2 Dark Mage T3 override (`:679`): quick-unlock on the
+        // first kill even though the factory flag is false (not a boss).
+        let mage = ENTRIES.iter().find(|e| e.net_id == 565).unwrap();
+        assert!(!mage.quick_unlock);
+        let mut t2 = WorldBestiary::new();
+        t2.kills.register_kill("DD2DarkMageT3");
+        assert_eq!(
+            unlock_state_gate(mage, &t2),
+            UnlockState::CanShowDropsWithDropRates
+        );
+    }
+
+    /// W4-c37: the town rows ride the CHAT provider, not the kill ladder
+    /// (`TownNPCUICollectionInfoProvider.cs:14-20`) — kills never unlock
+    /// the Guide; one chat jumps straight to tier 4.
+    #[test]
+    fn w4_c37_the_town_rows_unlock_by_chat_not_kills() {
+        let mut tracker = WorldBestiary::new();
+        let guide = ENTRIES.iter().find(|e| e.credit_id == "Guide").unwrap();
+        for _ in 0..100 {
+            tracker.kills.register_kill("Guide");
+        }
+        assert_eq!(unlock_state_gate(guide, &tracker), UnlockState::NotKnownAtAll);
+        tracker.set_was_chat_with_directly("Guide");
+        assert_eq!(
+            unlock_state_gate(guide, &tracker),
+            UnlockState::CanShowDropsWithDropRates
+        );
+    }
+
+    /// W4-e23 final 3 — the UI dispatch compose-verify: the screen's
+    /// unlock reads (`unlock_state`) and the completion bar
+    /// (`completion_percent`) both ride the WorldBestiary through the
+    /// c37 gate dispatch, so a critter SIGHT moves the bar exactly like
+    /// a kill of a non-critter entry (the c8 sweep's
+    /// `completion_percent_world` semantics, already the port's shape).
+    /// WRITTEN, NOT RUN.
+    #[test]
+    fn w4_e23_the_completion_counts_critter_sights() {
+        let mut tracker = WorldBestiary::new();
+        assert_eq!(completion_percent_gate(&tracker), 0.0);
+        tracker.set_was_seen_directly("Goldfish");
+        assert_eq!(
+            completion_percent_gate(&tracker),
+            1.0 / ENTRIES.len() as f32,
+            "one critter sight moves the bar"
+        );
+        // Kills of the critter credit do NOT move it (the sight provider).
+        let mut t2 = WorldBestiary::new();
+        for _ in 0..50 {
+            t2.kills.register_kill("Goldfish");
+        }
+        assert_eq!(completion_percent_gate(&t2), 0.0);
+    }
+
+    /// W4-e23 final 3 (the W4-c8 census compose) — the GoldWorm's gold
+    /// provider (`GoldCritterUICollectionInfoProvider.cs:21-75`) folded
+    /// onto the c37 gate table: the state is max(own sight, the 357
+    /// peer's sight) — the populator's peer list `{448: [357]}`
+    /// (`BestiaryDatabaseNPCsPopulator.cs:715`) — but the entry stays
+    /// tier 0 until ANY gold-critter-collection member has been seen
+    /// (`:46-52`). The 448 row awaits the c8 roster wave; the gate eval
+    /// is exercised directly. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_e23_the_gold_worm_gate_gates_on_any_gold_critter_seen() {
+        use crate::bestiary_data::Gate;
+        let gate = crate::bestiary_data::gate(448);
+        assert_eq!(
+            gate,
+            Gate::GoldCritter { credit_net: 448, peers: &[357] },
+            "the populator's dictionary row"
+        );
+        let mut tracker = WorldBestiary::new();
+        // Nothing seen: locked.
+        assert_eq!(eval_gate(gate, false, &tracker), UnlockState::NotKnownAtAll);
+        // The NORMAL peer's sight alone is not enough — the collection
+        // gate holds the entry at 0 (the C# :46-52 early return). The
+        // 357 credit resolves through ENTRIES once the c8 row lands;
+        // today credit_id_for_net(357) is "" so the peer arm is inert —
+        // the OWN sight carries the same max path.
+        tracker.set_was_seen_directly("GoldWorm");
+        assert_eq!(
+            eval_gate(gate, false, &tracker),
+            UnlockState::CanShowDropsWithDropRates,
+            "the own sight + any gold seen (itself) = tier 4"
+        );
+        // A non-peer gold member's sight does NOT carry the state — the
+        // gate opens but max(own, 357) is still 0.
+        let mut t3 = WorldBestiary::new();
+        t3.set_was_seen_directly("GoldFrog");
+        assert_eq!(
+            eval_gate(gate, false, &t3),
+            UnlockState::NotKnownAtAll,
+            "the gate opens but neither 448 nor 357 was seen"
+        );
+        // The collection table is the C#'s 14 ids in order.
+        assert_eq!(
+            crate::bestiary_data::GOLD_CRITTERS_COLLECTION,
+            &[443, 442, 592, 593, 444, 601, 445, 446, 605, 447, 627, 613, 448, 539]
+        );
+        // The 539 row carries TWO peers (`:716`).
+        assert_eq!(
+            crate::bestiary_data::gate(539),
+            Gate::GoldCritter { credit_net: 539, peers: &[299, 538] }
+        );
+        // The critter-twin folds read HighestOfMultiple over two sights.
+        assert!(matches!(crate::bestiary_data::gate(362), Gate::Highest(_)));
+    }
+
+
 }

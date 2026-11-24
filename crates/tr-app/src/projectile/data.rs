@@ -1260,6 +1260,13 @@ pub const GOLF_BALL: u16 = 721;
 /// false, ignoreWater, penetrate -1, hide (`Projectile.cs:7636-7645`).
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
+/// `ProjectileID.StardewJumino` (995) — the dryad's Stardew animation
+/// (`Projectile.cs:9446-9457`): 240x104, aiStyle 192, friendly, penetrate
+/// -1, tileCollide false, ignoreWater, netImportant, `timeLeft *= 5`.
+/// Spawned by `NPC.HaveDryadDoStardewAnimation` (`NPC.cs:19226`, W4-g51
+/// id-144). The AI_192 frame machine + the Stardew draw are the animation
+/// lane's.
+pub const STARDEW_JUMINO: u16 = 995;
 
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
@@ -4228,6 +4235,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:9446-9457` — the Stardew Jumino animation
+            // (995): 240x104, aiStyle 192, friendly, penetrate -1,
+            // tileCollide false, ignoreWater (the overlay), netImportant
+            // (the overlay), `timeLeft *= 5` (3600 -> 18000). The dryad's
+            // `HaveDryadDoStardewAnimation` spawns it (`NPC.cs:19226`,
+            // W4-g51 id-144); the AI_192 frame machine + the Stardew draw
+            // (`Main.cs:28170-28173`) are the animation lane's.
+            STARDEW_JUMINO => {
+                (240.0, 104.0, 192, -1, 5 * TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
+            }
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {
@@ -4396,7 +4413,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-g51 id-144 — `Projectile.cs:9448`: the Stardew Jumino
+            // animation sets `netImportant = true`.
+            || kind == STARDEW_JUMINO,
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,
@@ -4501,7 +4521,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 146-149 blocks — and `DefaultToSpray` `:10701` for
             // 1015-1017). The 145 row's dropped alpha/ignoreWater is the
             // pre-existing M3-ITEM-6 deviation (its row comment), unchanged.
-            || matches!(kind, 146..=149 | 1015..=1017),
+            || matches!(kind, 146..=149 | 1015..=1017)
+            // W4-g51 id-144 — `Projectile.cs:9455`: the Stardew Jumino
+            // animation sets `ignoreWater = true`.
+            || kind == STARDEW_JUMINO,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4815,6 +4838,41 @@ pub fn can_run_whip_hit_effects(minion: bool, sentry: bool, kind: u16) -> bool {
     minion || sentry || MINION_SHOT.contains(&kind) || SENTRY_SHOT.contains(&kind)
 }
 
+/// `Main.projHostile` (`Main.cs:6612-6619`): the init loop stamps every kind
+/// whose `SetDefaults(i).hostile` is true (`Projectile.cs:697-10673`, the
+/// `hostile = false` reset `:764`). The loop runs in
+/// `Initialize_AlmostEverything` BEFORE any world load, with the seed flags
+/// still false (`Main.cs:66532-66536`'s static-ctor defaults), so the
+/// seed-gated writes — 12's `Main.remixWorld` (`Projectile.cs:929-932`), 43 /
+/// 201-205 / 527-531's `Main.getGoodWorld` (`:1265-1269`, `:2879-2936`,
+/// `:5978-5982`) — never land in the table. The 173 kinds below are the
+/// unconditional `this.hostile = true` arms, verbatim (S1-I-1 W4-d93: the
+/// `27` host read gate, `MessageBuffer.cs:1725-1728`).
+pub const PROJ_HOSTILE: &[u16] = &[
+    31, 38, 39, 40, 44, 55, 56, 67, 71, 75, 81, 82,
+    83, 84, 96, 98, 99, 100, 101, 102, 108, 109, 110, 115,
+    128, 129, 164, 174, 176, 177, 179, 180, 184, 185, 186, 188,
+    240, 241, 257, 258, 259, 264, 270, 275, 276, 277, 288, 290,
+    291, 292, 293, 299, 300, 302, 303, 325, 326, 327, 328, 329,
+    345, 346, 347, 348, 349, 350, 351, 352, 384, 385, 386, 435,
+    436, 437, 438, 447, 448, 449, 450, 452, 454, 455, 456, 462,
+    464, 465, 466, 467, 468, 471, 472, 490, 498, 501, 508, 537,
+    538, 539, 540, 572, 573, 574, 575, 576, 577, 578, 579, 580,
+    581, 592, 593, 596, 605, 629, 654, 655, 657, 658, 662, 670,
+    671, 672, 673, 674, 675, 676, 681, 682, 683, 685, 686, 687,
+    713, 719, 727, 763, 811, 812, 813, 814, 836, 871, 872, 873,
+    874, 909, 919, 920, 921, 922, 923, 926, 961, 962, 965, 980,
+    1001, 1002, 1005, 1007, 1013, 1014, 1021, 1048, 1049, 1053, 1054, 1055,
+    1057, 1073, 1078, 1091, 1092,
+];
+
+/// `Main.projHostile[type]` — the `27` host gate's hostile-kind test
+/// (`MessageBuffer.cs:1725`). An unlisted kind reads false, exactly like the
+/// C# array's untouched entries.
+pub fn proj_hostile(kind: u16) -> bool {
+    PROJ_HOSTILE.contains(&kind)
+}
+
 /// `ItemID.Sets.SummonerWeaponThatScalesWithAttackSpeed` (`ID/ItemID.cs:497`):
 /// the 18 whip items — `ApplyItemAnimation` (`Player.cs:4474-4476`) scales
 /// their swing by `summonerWeaponSpeedBonus * whipUseTimeMultiplier`.
@@ -5027,9 +5085,211 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
     }
 }
 
+/// `Main.projPet` (`Main.cs:8728-8852`) — the pet/light-pet projectile set.
+/// The `SendData(27)` relay's flag3 section-cull exemption reads it
+/// (`NetMessage.cs:1777`); the whole 125-row census lands verbatim (the
+/// array is zero-initialised and only these writes set it true — the other
+/// `Main.projPet[` reads in Player/Projectile/MessageBuffer are consumers).
+pub const fn proj_pet(kind: u16) -> bool {
+    matches!(
+        kind,
+        111 | 112
+            | 127
+            | 175
+            | 191
+            | 192
+            | 193
+            | 194
+            | 197
+            | 198
+            | 199
+            | 200
+            | 208
+            | 209
+            | 210
+            | 211
+            | 236
+            | 266
+            | 268
+            | 269
+            | 313
+            | 314
+            | 317
+            | 319
+            | 324
+            | 334
+            | 353
+            | 373
+            | 375
+            | 380
+            | 387
+            | 388
+            | 390
+            | 391
+            | 392
+            | 393
+            | 394
+            | 395
+            | 398
+            | 407
+            | 423
+            | 492
+            | 499
+            | 533
+            | 613
+            | 623
+            | 625
+            | 626
+            | 627
+            | 628
+            | 653
+            | 701
+            | 702
+            | 703
+            | 755
+            | 758
+            | 759
+            | 764
+            | 765
+            | 774
+            | 815
+            | 816
+            | 817
+            | 821
+            | 825
+            | 831
+            | 833
+            | 834
+            | 835
+            | 854
+            | 858
+            | 859
+            | 860
+            | 864
+            | 875
+            | 881
+            | 882
+            | 883
+            | 884
+            | 885
+            | 886
+            | 887
+            | 888
+            | 889
+            | 890
+            | 891
+            | 892
+            | 893
+            | 894
+            | 895
+            | 896
+            | 897
+            | 898
+            | 899
+            | 900
+            | 901
+            | 934
+            | 946
+            | 951
+            | 956
+            | 957
+            | 958
+            | 959
+            | 960
+            | 963
+            | 970
+            | 994
+            | 998
+            | 1003
+            | 1004
+            | 1018
+            | 1022
+            | 1027
+            | 1046
+            | 1050
+            | 1056
+            | 1090
+            | 1093
+            | 1094
+            | 1095
+            | 1096
+            | 1112
+            | 1113
+            | 1118
+            | 1119
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// S1-I-1 W4-d93: the `Main.projHostile` census pin — the 173 kinds are
+    /// the unconditional `this.hostile = true` arms of `SetDefaults`
+    /// (`Projectile.cs:697-10673`) plus the 326..328 range arm (`:4193-4212`);
+    /// the seed-gated writes (12 remix `:929-932`, 43 / 201-205 / 527-531
+    /// getGoodWorld `:1265-1269`, `:2872-2936`, `:5978-5982`) never land in
+    /// the table because the init loop (`Main.cs:6612-6619`) runs before any
+    /// world load with the seed flags false (`Main.cs:66531-66536`).
+    #[test]
+    fn the_proj_hostile_table_matches_the_set_defaults_census() {
+        assert_eq!(PROJ_HOSTILE.len(), 173);
+        let mut sorted = PROJ_HOSTILE.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), 173, "no duplicate kinds");
+        assert_eq!(sorted, PROJ_HOSTILE, "the table is ascending");
+        // The seed-gated kinds read false — the table's whole point.
+        for k in [12, 43, 201, 202, 203, 204, 205, 527, 528, 529, 530, 531] {
+            assert!(
+                !proj_hostile(k),
+                "seed-gated kind {k} is not hostile at init"
+            );
+        }
+        // The range arm's three kinds all land (`:4193` covers 326..=328).
+        for k in [326, 327, 328] {
+            assert!(proj_hostile(k), "range-arm kind {k}");
+        }
+        // The multi-kind arms: the boulder trap family (`:1833`) and the
+        // cannonball pair (`:7925`).
+        for k in [99, 727, 1013, 1014, 1053, 1054, 1055, 1057, 811, 814] {
+            assert!(proj_hostile(k), "multi-kind arm {k}");
+        }
+        // Friendly staples read false (the `hostile = false` reset `:764`).
+        for k in [0, 1, 2, 14, 602, 651, 1006] {
+            assert!(!proj_hostile(k), "friendly kind {k}");
+        }
+        // An out-of-range kind reads false, like the untouched array tail.
+        assert!(!proj_hostile(u16::MAX));
+    }
+
+    /// W4-g52 — the `Main.projPet` census (`Main.cs:8728-8852`): all 125
+    /// `= true` write sites, and nothing else. The boundary kinds pin the
+    /// gaps (12 is flag3 by its own type test, NOT a pet; 72/18/500/650 are
+    /// the `Player.cs:48561` companion special-cases, not `projPet` rows).
+    #[test]
+    fn w4_g52_proj_pet_matches_the_main_census() {
+        const ROWS: &[u16] = &[
+            111, 112, 127, 175, 191, 192, 193, 194, 197, 198, 199, 200, 208, 209, 210, 211, 236,
+            266, 268, 269, 313, 314, 317, 319, 324, 334, 353, 373, 375, 380, 387, 388, 390, 391,
+            392, 393, 394, 395, 398, 407, 423, 492, 499, 533, 613, 623, 625, 626, 627, 628, 653,
+            701, 702, 703, 755, 758, 759, 764, 765, 774, 815, 816, 817, 821, 825, 831, 833, 834,
+            835, 854, 858, 859, 860, 864, 875, 881, 882, 883, 884, 885, 886, 887, 888, 889, 890,
+            891, 892, 893, 894, 895, 896, 897, 898, 899, 900, 901, 934, 946, 951, 956, 957, 958,
+            959, 960, 963, 970, 994, 998, 1003, 1004, 1018, 1022, 1027, 1046, 1050, 1056, 1090,
+            1093, 1094, 1095, 1096, 1112, 1113, 1118, 1119,
+        ];
+        assert_eq!(ROWS.len(), 125, "the census grep count (Main.cs)");
+        for k in 0..=1200u16 {
+            assert_eq!(
+                proj_pet(k),
+                ROWS.contains(&k),
+                "projPet[{k}] vs Main.cs:8728-8852"
+            );
+        }
+        assert!(!proj_pet(12), "type 12 is flag3 by its own arm, not projPet");
+        assert!(!proj_pet(72) && !proj_pet(18) && !proj_pet(500) && !proj_pet(650));
+    }
 
     #[test]
     fn the_damage_class_flags_match_the_set_defaults_census() {

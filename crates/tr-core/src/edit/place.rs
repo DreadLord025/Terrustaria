@@ -126,6 +126,63 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
     place_tile(world, x, y, kind)
 }
 
+/// `WorldGen.PlaceObject` (`WorldGen.cs:51425-51445`) — the net `79`
+/// reader's placement seam (`MessageBuffer.cs:3209`, `mute: false`): the
+/// `TileID.Count` gate, then `TileObject.CanPlace` + the forced `random`
+/// (`objectData.random = random`, `:51435`) + `TileObject.Place`; a placed
+/// object re-frames its square (`SquareTileFrame(x, y)`, `:51438`). The
+/// `mute: false` Dig cue (`:51441`) is app-scope — the caller plays it.
+/// `true` = the object landed (the C# returns true even when `Place`
+/// itself refused after `CanPlace` passed — `:51444` returns unconditionally
+/// once `CanPlace` succeeded; the port keeps that shape). W4-g49.
+pub fn place_object(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    kind: u16,
+    style: i32,
+    random: i32,
+    dir: i32,
+) -> bool {
+    // `:51427-51430` — `type >= TileID.Count` refuses.
+    if kind as usize >= crate::tiledata::TILE_COUNT {
+        return false;
+    }
+    let Some(def) = crate::tileobject::def_for_tile(kind) else {
+        return false; // `CanPlace`'s null-data refusal (`TileObject.cs:178-181`)
+    };
+    // The `Main.rand` / randomCache seam — the `place_item_tile` precedent:
+    // the stream is taken out for the read-only `can_place` and restored.
+    let mut rand = std::mem::take(&mut world.place_rng);
+    let instance = crate::tileobject::can_place(
+        world,
+        x,
+        y,
+        def,
+        style,
+        dir,
+        None,
+        &mut rand,
+        world.tile_object_random_cache,
+    );
+    world.place_rng = rand;
+    let Some(mut instance) = instance else {
+        return false; // `:51431-51434`
+    };
+    instance.random = random; // `:51435` — the forced roll overrides CanPlace's
+    let landed = crate::tileobject::place(world, &instance);
+    if landed {
+        // `:51438` — `SquareTileFrame(x, y)` (resetFrame: true default);
+        // `reframe_area` leaves `frame_important` tiles intact (DW-1.6).
+        framing::reframe_area(world, x, y, 2, true);
+    }
+    // The C# returns `true` unconditionally once `CanPlace` passed (`:51444`);
+    // the port returns the `Place`-success flag instead — the sole caller (the
+    // net `79` arm) ignores the C# return and needs the flag for the
+    // `mute: false` Dig cue (`:51439-51442`). Behaviour-identical for it.
+    landed
+}
+
 /// `WorldGen.PlaceTile`'s torch arm (`WorldGen.cs:59798-59842`) plus the
 /// liquid gate ahead of the write (`:59454-59467`): the torch family writes
 /// `frameY = 22 * style` (`:59839`) — the style column `CheckTorch` preserves
@@ -378,6 +435,50 @@ fn place_platform(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     true
 }
 
+/// `WorldGen.PlaceChest(x, y, type, notNearOtherChests, style)`'s tile-write
+/// half (`WorldGen.cs:57813-57845`): the boulder-support refusal (`:57816-57819`),
+/// then `TileObject.CanPlace`/`Place` (`:57820-57829`). Returns the placed
+/// object's TOP-LEFT coords — the `Chest.CreateChest(objectData.xCoord,
+/// objectData.yCoord)` inputs (`:57830`) — or `None` for the C# `-1` refusal.
+/// The `notNearOtherChests` flag is `false` at every `34` host call site
+/// (`MessageBuffer.cs:2003/:2045/:2080`), so the `NearOtherChests` gate
+/// (`:57823-57826`) never fires there; the chest-store creation and the net
+/// sends are app-scope (the `34 ChestUpdates` host arm, W4-g52).
+pub fn place_chest(world: &mut World, x: i32, y: i32, kind: u16, style: i32) -> Option<(i32, i32)> {
+    // `:57816-57819` — a boulder under either support column refuses. The C#
+    // reads `Main.tile[…].type` directly (no `active` test); an inactive cell's
+    // type is 0, which is not a boulder, so the port's kind read matches.
+    let boulder_below = |w: &World, cx: i32| {
+        w.tile(cx, y + 1)
+            .is_some_and(|t| td::SET_BOULDERS.has(t.kind))
+    };
+    if boulder_below(world, x) || boulder_below(world, x + 1) {
+        return None;
+    }
+    let def = crate::tileobject::def_for_tile(kind)?;
+    // `TileObject.CanPlace(x, y, type, style, 1, out objectData)` (`:57820`) —
+    // dir 1, the world's placement stream + stickiness cache (the
+    // `place_item_tile` registry-route precedent, S1-F-7b).
+    let mut rand = std::mem::take(&mut world.place_rng);
+    let instance = crate::tileobject::can_place(
+        world,
+        x,
+        y,
+        def,
+        style,
+        1,
+        None,
+        &mut rand,
+        world.tile_object_random_cache,
+    );
+    world.place_rng = rand;
+    let instance = instance?;
+    if !crate::tileobject::place(world, &instance) {
+        return None;
+    }
+    Some((instance.x_coord, instance.y_coord))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)
@@ -388,6 +489,23 @@ mod tests {
     };
     use super::*;
     use crate::tile::FLAG_ACTIVE;
+
+    /// W4-g52 — `WorldGen.PlaceChest`'s tile-write half (`WorldGen.cs:
+    /// 57813-57845`): the boulder-support refusal and the top-left return the
+    /// `Chest.CreateChest` call reads.
+    #[test]
+    fn w4_g52_place_chest_returns_the_top_left_and_refuses_boulders() {
+        let mut w = object_world();
+        // Target (14,19), origin (0,1) → top-left (14,18), support row 20.
+        assert_eq!(place_chest(&mut w, 14, 19, 21, 0), Some((14, 18)));
+        assert!(w.tile(14, 18).is_some_and(|t| t.active() && t.kind == 21));
+        assert!(w.tile(15, 19).is_some_and(|t| t.active() && t.kind == 21));
+        // A boulder under either support column refuses (`:57816-57819`).
+        let bi = w.index(20, 20);
+        w.tiles[bi].kind = 138; // `TileID.Sets.Boulders`
+        assert_eq!(place_chest(&mut w, 20, 19, 21, 0), None);
+        assert!(!w.tile(20, 18).is_some_and(|t| t.active() && t.kind == 21));
+    }
 
     #[test]
     fn break_then_place_round_trips_a_tile() {
