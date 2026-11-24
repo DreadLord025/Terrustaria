@@ -47230,3 +47230,54 @@ the app route (one item consumed, the clicked column stands).
   (`projectile.rs`), and the existing witness
   `the_piranha_row_and_alpha_fade` already pins every field + the −50
   fade — no new witness needed.
+## The projectile aiStyles 41-50 band (W4-d5, research/156 + 361)
+
+Five MISSING styles ported as UNWIRED pure modules (the `npc_ai_style25`
+pre-wiring precedent — module consts, NOT `proj_data` rows, so the
+dispatch fall-through stays unarmed until the wiring step):
+`projectile_ai_style41.rs` (FlowerPetal 221, `Projectile.cs:27784-27792`
++ the `:3076` spawn scale roll), `projectile_ai_style42.rs` (CrystalLeaf
+226, `:27793-27859` — the INTEGER-half orbit placement, the Manhattan-700
+scan, the `GetChaseResults(2160)` interception, RNG-free),
+`projectile_ai_style43.rs` (CrystalLeafShot 227, `:27860-27892` + the
+`:74524-74533` Kill cue), `projectile_ai_style46.rs` (RainbowFront/Back
+250/251, `:28107-28199`, RNG-free), `projectile_ai_style49.rs`
+(ExplosiveBunny 281, `:28243-28322` + `:18833-18860` + `:75749-75803`).
+The verify-only five (44/45/47/48/50) are ARMED on main; their nine
+rowless kinds (F1/F4/F5/F6) are rowed + armed on g2's pushed lane.
+
+Deliberate deviations / compose decisions (research/361):
+
+- **The style-43 dust census is SUPERSEDED, not kept** — the W4-e3
+  STAGED emitter contract (research/231 §7 row d5) executed on this
+  branch: `crystal_leaf_burst_227` runs the verbatim `DustPool::new_dust`
+  internals then the POST-spawn `velocity += base.velocity *
+  NextFloat()` (`:27870-27873`), ×8. The former bare 8-float loop is
+  gone; the draw ORDER changed from "8 floats" to "internals + 1 float,
+  ×8" — the C#-faithful form (the kept-draws census was the pre-pool
+  stand-in). Merger keep-one with e3's `style43_crystal_leaf_burst_227`
+  (`projectile_dust.rs:1707`) + the `ProjDustRng` adapter.
+- **The 227 Kill hook is cue-only** — its 15× dust-157 bodies + blends
+  ride the g65 death drain (`projectile_death_dust.rs`'s 227 arm); the
+  former 15-float census dropped (the g65-Kill-309 compose, single
+  roller).
+- **The 281 Kill gore census exists on BOTH d5 and g65** (draw-for-draw
+  identical, pinned by
+  `w4_d5_s49_the_g65_compose_census_is_stream_identical`): at the merge
+  it drops from ONE side only — prefer g65's loops (d5's `bunny_kill` is
+  the state host: cues + resize + Damage intent); g65 keeps the dust
+  bodies. The tick-3 fuse spark's dust is g63's STAGED `bunny_burst`
+  (activation at the row+dispatch wiring); d5's 3-draw gore census is
+  the single roller until g16's `tombstone_landing_gore` body lands.
+- The particle-orchestrator request (style 43) is render state — skipped;
+  `leaf_shot_hue` ports the colour chain byte-exact for the wiring draw.
+  The id-6 sound-drain façade is a wiring follow-up (the drain plays ids
+  0/2 only). The F2 dead-twin `ai_style2` 162|281 ladder is a faithful
+  mirror of the DEAD C# `AI_002` 281 branch — kept.
+- The band's ONLY unclaimed residue: d5's six rows (221/226/227/250/251/
+  281) + five dispatch arms + the player-side `crystalLeaf`/
+  `crystalLeafCooldown` fields (buff 60's pet flag already lands).
+
+Code-only: 31 witnesses WRITTEN NOT RUN (no cargo/rustc/tests/rustfmt/
+graphify invoked); C# re-read in ≤100-line windows, streams hand-derived
+on cloned `UnifiedRandom`. research/361 SEALED.

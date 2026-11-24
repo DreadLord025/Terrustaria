@@ -15581,6 +15581,7 @@ pub(crate) fn safe_normalize_default(v: Vec2, default_value: Vec2) -> Vec2 {
 /// `Utils.ChaseResults` (`Utils.cs:634-643`) — the intercept solve's output.
 /// `pub(crate)`: the aiStyle-25 RainbowBoulder smart-bounce jump reuses the
 /// solve (`projectile_ai_boulder`, W4-d3).
+/// `pub(crate)`: W4-d5's aiStyle-42 crystal-leaf interception reads it.
 pub(crate) struct ChaseResults {
     pub(crate) interception_time: f32,
     pub(crate) chaser_velocity: Vec2,
@@ -15590,6 +15591,8 @@ pub(crate) struct ChaseResults {
 /// aiStyle-66 dash arms aim with. `None` is the C#'s `default` return
 /// (`interceptionHappens == false`). `pub(crate)`: the aiStyle-25
 /// RainbowBoulder jump reuses it (`projectile_ai_boulder`, W4-d3).
+/// (`interceptionHappens == false`). `pub(crate)`: W4-d5's aiStyle-42
+/// crystal-leaf shot (the 12×180 interception, `Projectile.cs:27849`).
 pub(crate) fn get_chase_results(
     chaser_position: Vec2,
     chaser_speed: f32,
