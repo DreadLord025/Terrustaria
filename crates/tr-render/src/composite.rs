@@ -45,6 +45,7 @@ impl TargetCompositor {
                 layer: 0,
                 clip: crate::clip::NO_CLIP,
                 blend: 0,
+                sort: [0, 0],
             }),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });

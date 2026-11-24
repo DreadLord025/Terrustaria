@@ -959,6 +959,7 @@ impl SpriteRenderer {
             layer: 0,
             clip: self.clip.current(),
             blend: blend as u32,
+            sort: [0, 0],
         });
     }
 

@@ -205,7 +205,7 @@ pub fn is_tile_biome_sightable(type_cache: u16, remix_world: bool) -> Option<[u8
 ///   — like danger.
 /// The hit results feed [`vision_changer_light`]; this module never rolls
 /// RNG itself.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VisionDust {
     /// The `Dust.NewDust` type (60 danger / 204 spelunker / 267 biome).
     pub dust_type: i32,
@@ -964,9 +964,9 @@ mod tests {
     fn light_override_cracked_bricks_breathe_and_restore_alpha() {
         for k in [481u16, 482, 483] {
             // t = 0.375 → sin(π/2) = 1 → factor ≈1.15: the f32 products
-            // round to 115.0 / 230.0 / 287.5 before the byte truncation
-            // (100→115, 200→230, 250→287).
-            assert_eq!(light_override(k, 0, 0, false, [100, 200, 250, 77], 225, 0.375, false), [115, 230, 287, 77]);
+            // round to 115.0 / 230.0 / 287.5; xna_scale_color casts through
+            // i32 then u8, so 287 wraps to 31 (100→115, 200→230, 250→31).
+            assert_eq!(light_override(k, 0, 0, false, [100, 200, 250, 77], 225, 0.375, false), [115, 230, 31, 77]);
             // t = 1.125 → sin(3π/2) = -1 → factor 0.85: 100→85, 200→170, 250→212.
             assert_eq!(light_override(k, 0, 0, false, [100, 200, 250, 9], 225, 1.125, false), [85, 170, 212, 9]);
             // t = 0 → factor 1 → identity.

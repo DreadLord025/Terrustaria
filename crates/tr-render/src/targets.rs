@@ -436,7 +436,7 @@ pub fn render_to_targets(
     };
     // One `layerTarget.UpdateContent(callback)` — clear + position record +
     // the render callback against the layer view.
-    let update = |f: &mut RenderTargetFamily, layer: SceneLayer| {
+    let mut update = |f: &mut RenderTargetFamily, layer: SceneLayer| {
         f.layer_mut(layer)
             .update_content(device, queue, camera_center, osr, |view, cam| {
                 render_layer(layer, view, cam);
@@ -1272,10 +1272,14 @@ mod tests {
                 SceneLayer::Water,
             ]
         );
-        // The pending swap applied: background now holds the old swap target.
-        assert_eq!(f.background.position(), swap_before);
+        // The pending swap applied, then Main.cs:57313 re-checked and
+        // re-rendered the swapped-in background (it was still offscreen), so
+        // its position is the render position - the same one water gets from
+        // the identical camera/osr (proving the re-render happened).
+        assert_eq!(f.background.position(), f.water.position());
+        assert_ne!(f.background.position(), swap_before);
         assert!(!f.background_swap_pending());
-        // (bg_before is now in background_swap.)
+        // (bg_before is now in background_swap, which is not re-rendered.)
         assert_eq!(f.background_swap.position(), bg_before);
     }
 
