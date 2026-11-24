@@ -45,9 +45,13 @@ impl App {
     // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
     // and inventory handlers and consumes the press when a chest
     // slot, the shift transfer or a chest tile took it.
-    if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
+    if !self.handle_chest_clicks() && !self.handle_crafting_clicks() && !self.handle_journey_clicks() {
         self.handle_inventory_clicks();
     }
+    // The Journey menu's per-frame tail (W4-c24): the animation tick, the
+    // hover cues and the close rules (`CreativeUI.Update`/`Draw`,
+    // `Main.cs:17497`/`:45643-45664`).
+    self.journey_tick();
     // `Main.cs:62466-62473` — the stack-split decay, after the
     // interface's MouseUI pass.
     self.decay_stack_split();
@@ -99,6 +103,16 @@ impl App {
     /// filter's `RecipeFilterHack` gate).
     fn world_step_head(&mut self) {
     self.game_update_count = self.game_update_count.wrapping_add(1);
+    // `Main.UpdateCreativeGameModeOverride` (`Main.cs:16847` → `:17294-
+    // 17305`): once per game update, the Journey difficulty slider's
+    // strength becomes `Main._gameModeDifficultyOverride`; outside a
+    // Journey world it clears (the world's own GameMode answers). The
+    // port's Journey stand-in is the session difficulty (the same one
+    // `journey_available` reads — a Journey character only joins a
+    // Journey world, `UIWorldSelect.cs:177-180`).
+    self.game_mode_difficulty_override = self
+        .creative_powers
+        .game_mode_difficulty_override(self.active_player_difficulty() == 3);
     // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
     // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
     self.stepper.drawn_this_update = false;
@@ -131,6 +145,10 @@ impl App {
     // trash cell (`Main.DrawInventory`'s `ItemSlot.Handle` sites).
     let over_ui_slot = self.slot_at_mouse().is_some()
         || self.coin_ammo_at_mouse().is_some()
+        // S1-W4-g81 residuals — the wiring radial's petal hover writes
+        // `player.mouseInterface = true` (`WiresUI.cs:499`); the port's
+        // draw-side state folds into the same suppression stand-in.
+        || self.wires_radial.hovering
         || (self.inventory_open && {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
@@ -478,8 +496,15 @@ impl App {
     let rng = self.rngs.global();
     let step = &mut self.tile_anim_step;
     let animator = &mut self.tile_anim;
+    // W4-g34: `AnimateTiles`' trailing `AnimateTiles_CritterCages()`
+    // (`Main.cs:19303`) — same 60 Hz tick, same `Main.rand` stream, gated
+    // on the `Main.critterCage` proximity flag the tile draw raised last
+    // frame (`TileDrawing.cs:474` clears it at the non-solid pass head).
+    let cage_anim = &mut self.cage_anim;
+    let critter_cage = self.critter_cage;
     step.tick(dt, |_| {
         animator.animate_tiles(wind, rng, false);
+        cage_anim.animate(critter_cage, rng);
     });
     step.cap_backlog();
     }

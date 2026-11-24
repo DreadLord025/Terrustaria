@@ -11,6 +11,7 @@
 //! `bed_spawn_valid`/`check_bed_spawn` are `pub(crate) use`-re-exported so
 //! `player.rs`/`world_sim/player.rs` stay unchanged.
 
+use glam::Vec2;
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, edit};
 
@@ -19,7 +20,7 @@ use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::registry;
 
-use super::super::items::spawn_item_drop;
+use super::super::items::spawn_item_drop_px;
 
 /// The right-click interaction hook (the port's `TileInteractionsUse`):
 /// dispatches the world interaction at `(tx, ty)` through
@@ -203,6 +204,91 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     true
 }
 
+/// W4-c36 DOC-SWEEP — the locked Lihzahrd door's key pay + unlock
+/// (`Player.cs:32798-32834` + `WorldGen.UnlockDoor` `WorldGen.cs:37599-37627`):
+/// the inventory scan (grid + coins + ammo — the C# `for < 58`, no trash
+/// slot) pays one Temple Key 1141, then `UnlockDoor` walks up to the door's
+/// frameY-594 top cell, plays `SoundID.Unlock` (22) at `(i*16, top*16+16)`,
+/// shifts the three locked cells' frameY by +54 (the unlocked frames) and
+/// fires progression 22 → TEMPLE_RAIDER. The `!flag9 && useVoidBag()`
+/// fallback scans bank4 with the same pay/unlock shape. The dust burst
+/// (4× Dust 11 per cell, `:37621-37624`) has no port layer here — the
+/// standing tile-edit dust deviation; the MP `52` client send (`:32812`)
+/// rides the same unported door-sync gap as the chest key walks.
+fn try_unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
+    // `:32799-32813` — the inventory key scan. The pay lands first, the
+    // unlock after the slot borrow releases (`unlock_door` takes the app).
+    let mut paid = false;
+    for slot in app
+        .inventory
+        .iter_mut()
+        .chain(app.equip.coins.iter_mut())
+        .chain(app.equip.ammo.iter_mut())
+    {
+        if slot.kind == 1141 && slot.count > 0 {
+            slot.count -= 1;
+            if slot.count == 0 {
+                *slot = crate::item::EMPTY_SLOT;
+            }
+            paid = true;
+            break;
+        }
+    }
+    if paid {
+        unlock_door(app, tx, ty);
+        return;
+    }
+    // `:32816-32834` — the void-bag bank4 fallback.
+    if crate::chest::use_void_bag(app) {
+        let mut vault_paid = false;
+        if let Some(p) = app.player.as_mut() {
+            for slot in p.banks[3].iter_mut() {
+                if slot.kind == 1141 && slot.count > 0 {
+                    slot.count -= 1;
+                    if slot.count == 0 {
+                        *slot = crate::item::EMPTY_SLOT;
+                    }
+                    vault_paid = true;
+                    break;
+                }
+            }
+        }
+        if vault_paid {
+            unlock_door(app, tx, ty);
+        }
+    }
+}
+
+/// `WorldGen.UnlockDoor` (`WorldGen.cs:37599-37627`): the frameY-594 top
+/// walk (a cell above 594 or the world edge aborts), the sound-22 cue, the
+/// +54 frameY shift on the door's three cells and progression 22.
+fn unlock_door(app: &mut App, i: i32, j: i32) {
+    let mut num = j;
+    loop {
+        let Some(t) = app.world.tile(i, num) else { return };
+        if t.frame_y == 594 {
+            break;
+        }
+        num -= 1;
+        let Some(t) = app.world.tile(i, num) else { return };
+        if t.frame_y < 594 || num <= 0 {
+            return;
+        }
+    }
+    // `:37613` — `PlaySound(22, i * 16, num * 16 + 16)`.
+    app.audio
+        .play_at("Unlock", i as f32 * 16.0, num as f32 * 16.0 + 16.0, 1.0);
+    for k in num..=num + 2 {
+        if let Some(t) = app.world.tile_mut(i, k) {
+            t.frame_y += 54;
+        }
+        app.world.mark_chunk(i, k);
+    }
+    app.world.revision = app.world.revision.wrapping_add(1);
+    // `:37627` — TEMPLE_RAIDER.
+    let _ = app.notify_progression_net(22);
+}
+
 pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // S1-P-i55 — the golf tee's right-click arm (`TileInteractionsUse`'s
     // `type == 494` branch, `Player.cs:32342-32354`): EVERY owned golf ball
@@ -358,6 +444,39 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                 crate::signs::open_sign(app, idx as i32); // `:32706`
             }
         }
+    // The `Main.tileSign` arm (`TileInteractionsUse`, `Player.cs:32693-
+    // 32724`, W4-f22): the re-click closes the open sign, single player
+    // opens the record (sound 10 + the dialog), the MP client asks with
+    // `46`. Every sign tile consumes the click. The arm sits between the
+    // bed (`:32654-32692`) and the clock (`:32725`) in the C# chain — the
+    // sign kinds have no registry def, so it reads the kind literals like
+    // the altar does.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && matches!(t.kind, 55 | 85 | 425 | 573))
+    {
+        return crate::signs::try_open_sign_at_cursor(
+            app,
+            glam::Vec2::new(tx as f32 * 16.0 + 8.0, ty as f32 * 16.0 + 8.0),
+        );
+    }
+    // W4-c36 DOC-SWEEP — the locked Lihzahrd door arm (`TileInteractionsUse`'s
+    // `type == 10` branch, `Player.cs:32792-32836`): `WorldGen.IsLockedDoor`
+    // (`:69191-69197`, tile 10, frameY 594-646, frameX < 54) + a Temple Key
+    // 1141 in the 58-slot inventory scan (`:32799-32813`) — the key pays,
+    // `WorldGen.UnlockDoor` (`:37599-37627`) shifts the three locked cells
+    // down 54 frameY and fires progression 22 (TEMPLE_RAIDER). The void-bag
+    // fallback (`:32816-32834`) scans bank4 with the same shape. The C#'s
+    // `flag2 = true` consumes the click either way; the port's dispatcher
+    // would answer `DoorBlocked` (open_door refuses the locked frames), so
+    // the arm runs BEFORE `interact_at` and consumes on a locked door.
+    if app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && t.kind == 10 && (594..=646).contains(&t.frame_y) && t.frame_x < 54)
+    {
+        try_unlock_temple_door(app, tx, ty);
         return true;
     }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
@@ -502,7 +621,8 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         edit::TileInteraction::HitSwitch { x, y } => {
             // `Player.cs:32174-32178`: the used tile is a lever (132), a
             // switch (136) or a timer (144) — `Wiring.HitSwitch` fires and
-            // the click is consumed.
+            // the click is consumed. The §8.1 stamp first.
+            crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
             app.wiring.hit_switch(&mut app.world, *x, *y);
             // S1-E-21i — the Mech-28 click (`Wiring.cs:285`/`:310`/`:375`):
             // the pitch draw rides the `UpdatePlayers` stream — the tile
@@ -514,7 +634,41 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
             }
+            // W4-c42 — the wired door cues ride the same UpdatePlayers
+            // stream (the C# plays inside the trip's WorldGen body).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            for (n, x, y, d) in app.wiring.take_door_echoes() {
+                app.send_door_toggle(n, x, y, d);
+            }
             app.send_hit_switch(*x, *y); // `:32178`/`:32226`/`:32340`
+            app.world_key = None;
+            return true;
+        }
+        edit::TileInteraction::MonolithToggle { x, y } => {
+            // `Player.cs:32271-32277` (W4-c42 final — the g78 research/76
+            // contested-seam request): `flag2 = true` + `PlaySound(28,
+            // myX*16, myY*16, 0)` + `GamepadEnableGrappleCooldown()` +
+            // `WorldGen.SwitchMonolith(myX, myY)`. The Mech-28 pitch draw
+            // rides the UpdatePlayers stream (the tile-use precedent);
+            // the flip runs the kept wired body with `running == false`
+            // (the use path's SkipWire tail is inert).
+            app.audio.play_switch_click(
+                *x as f32 * TILE_PX,
+                *y as f32 * TILE_PX,
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            if let Some(p) = app.player.as_mut() {
+                p.gamepad_enable_grapple_cooldown(); // `:32275`
+            }
+            app.wiring.use_switch_monolith(&mut app.world, *x, *y);
             app.world_key = None;
             return true;
         }
@@ -821,11 +975,13 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             }
         }
     }
-    for (id, x, y) in drops {
+    for (id, px, py) in drops {
         // The tile-interaction drops ride the `UpdatePlayers` stream (the
-        // interaction runs in `Player.ItemCheck`, `Main.cs:17754`).
+        // interaction runs in `Player.ItemCheck`, `Main.cs:17754`). The
+        // positions are PIXELS — the C# `Item.NewItem` rect centre (the g78
+        // FIX-ONCE, `ObjectDrop::spawn_center_px`).
         let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-        spawn_item_drop(&mut app.items, rng, id, 1, x, y);
+        spawn_item_drop_px(&mut app.items, rng, id, 1, Vec2::new(px, py));
     }
     app.world_key = None;
     true
@@ -858,10 +1014,12 @@ fn within_snapping_range(p: &crate::player::Player, tx: i32, ty: i32, distance: 
 /// door/dial cue and the drop spawns. `None` = no interaction (fall-through
 /// to the place path); a blocked door or a refused dial yields no cue
 /// (vanilla plays `PlaySound(8/:9)`/`SoundID.Item4` only on the fired paths),
-/// while the click still counts as consumed.
+/// while the click still counts as consumed. The drop positions are PIXELS
+/// — the C# `Item.NewItem` rect centre (`ObjectDrop::spawn_center_px`, the
+/// g78 FIX-ONCE).
 fn interaction_events(
     result: edit::TileInteraction,
-) -> Option<(Option<&'static str>, Vec<(u16, i32, i32)>)> {
+) -> Option<(Option<&'static str>, Vec<(u16, f32, f32)>)> {
     let (cue, object_drops) = match result {
         edit::TileInteraction::None => return None,
         edit::TileInteraction::DoorOpened { object_drops } => (Some("Door_Opened"), object_drops),
@@ -883,6 +1041,9 @@ fn interaction_events(
         // The switch trip is consumed in `interact_tile` ahead of this
         // mapping — no cue, no drops.
         edit::TileInteraction::HitSwitch { .. } => (None, Vec::new()),
+        // The monolith toggle is consumed in `interact_tile` ahead of this
+        // mapping (its Mech-28 plays there) — no cue, no drops.
+        edit::TileInteraction::MonolithToggle { .. } => (None, Vec::new()),
         edit::TileInteraction::ChairSit { .. } => (None, Vec::new()),
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::BedSleep { .. } => (None, Vec::new()),
@@ -913,7 +1074,12 @@ fn interaction_events(
     };
     let events = object_drops
         .iter()
-        .filter_map(|d| registry::tile_drop(d.tile_kind, 0).map(|id| (id, d.x, d.y)))
+        .filter_map(|d| {
+            registry::tile_drop(d.tile_kind, 0).map(|id| {
+                let (px, py) = d.spawn_center_px();
+                (id, px, py)
+            })
+        })
         .collect();
     Some((cue, events))
 }
@@ -1655,7 +1821,9 @@ mod tests {
         })
         .unwrap();
         assert_eq!(cue, Some("Door_Opened")); // PlaySound(8), WorldGen.cs:37732
-        assert_eq!(events, vec![(25, 10, 18)]); // GetDoorItem(0) = 25
+        // GetDoorItem(0) = 25; the 16x16 door rect centre (10*16+8, 18*16+8)
+        // — the g78 FIX-ONCE (`ObjectDrop::spawn_center_px`).
+        assert_eq!(events, vec![(25, 168.0, 296.0)]);
 
         let (cue, events) = interaction_events(TileInteraction::DoorClosed {
             object_drops: vec![],
@@ -1676,7 +1844,8 @@ mod tests {
         })
         .unwrap();
         assert_eq!(cue, None);
-        assert_eq!(events, vec![(32, 10, 17)]);
+        // The cleanup table drop: the 32x32 rect centre (10*16+16, 17*16+16).
+        assert_eq!(events, vec![(32, 176.0, 288.0)]);
     }
 
     // ---- W4-e28: the Crystal Ball / Ammo Box station buffs -----------------
@@ -2406,6 +2575,131 @@ mod tests {
             app.projectiles.slots().iter().filter(|p| p.active).count(),
             1,
             "the dead anchor frees the spawn"
+    /// W4-c42 FINAL (the g78 research/76 contested-seam request): the
+    /// Echo Monolith 657's RIGHT-CLICK use arm (`Player.cs:32271-32277`) —
+    /// `PlaySound(28)` + `GamepadEnableGrappleCooldown` (3 ticks) +
+    /// `SwitchMonolith`: the 2×3 body flips frameY ±54 (the e21 nine-kind
+    /// gate's kept body), the click is consumed, the frames toggle back on
+    /// the second use. The SceneMetrics lit-row gate (frameY ≥ 54) is the
+    /// g78 consumer — this pins the flip that feeds it. WRITTEN NOT RUN.
+    #[test]
+    fn c42_the_monolith_right_click_flips_the_body_and_arms_the_grapple_cooldown() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 64, 64);
+        // The unlit 2×3 Echo Monolith body at columns 10/11, rows 18-20
+        // (the g78 placement witness's grid: frameX 0/18, frameY 0/18/36).
+        for row in 0..3i32 {
+            for col in 0..2i32 {
+                let i = w.index(10 + col, 18 + row);
+                w.tiles[i] = Tile {
+                    kind: 657,
+                    frame_x: (col * 18) as i16,
+                    frame_y: (row * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        // A non-anchor cell click (the C# decodes the anchor from frames).
+        assert!(interact_tile(&mut app, 11, 19), "the click is consumed");
+        for row in 0..3i32 {
+            for col in 0..2i32 {
+                assert_eq!(
+                    app.world.tile(10 + col, 18 + row).unwrap().frame_y,
+                    (row * 18 + 54) as i16,
+                    "the lit row (the SceneMetrics frameY>=54 gate feeds)"
+                );
+            }
+        }
+        assert_eq!(
+            app.player.as_ref().unwrap().quick_grapple_cooldown,
+            3,
+            "GamepadEnableGrappleCooldown armed 3"
+        );
+        // The second use flips back (frameY >= 54 → −54).
+        assert!(interact_tile(&mut app, 10, 18));
+        for row in 0..3i32 {
+            assert_eq!(app.world.tile(10, 18 + row).unwrap().frame_y, (row * 18) as i16);
+        }
+        // No wiring flood ran: the skip set is untouched (the use path's
+        // `Wiring.running` tail is inert, `WorldGen.cs:51137`).
+        assert!(app.wiring.take_door_cues().is_empty());
+    }
+    /// W4-c36 DOC-SWEEP — the locked Lihzahrd door (`Player.cs:32792-32834`
+    /// + `WorldGen.UnlockDoor` `:37599-37627`): a Temple Key pays, the three
+    /// locked cells shift +54 frameY, TEMPLE_RAIDER completes; no key keeps
+    /// the door locked and consumes the click; the void-bag bank4 fallback
+    /// pays from the vault. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_the_temple_key_unlocks_the_lihzahrd_door() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 80, 200);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        // The locked door column at x 40: frameY 594/612/630 (the C#
+        // `IsLockedDoor` band), frameX 0.
+        for (dy, fy) in [(0, 594i16), (1, 612), (2, 630)] {
+            let i = w.index(40, 30 + dy);
+            w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: fy, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important[10] = true;
+        w.compute_column_surface();
+        app.world = w;
+        let mut p = Player::spawn(&app.world);
+        p.x = 40.0 * 16.0;
+        p.y = 31.0 * 16.0;
+        app.player = Some(p);
+        // No key: the click is consumed, the door stays locked, no credit.
+        assert!(interact_tile(&mut app, 40, 31));
+        assert_eq!(app.world.tile(40, 30).unwrap().frame_y, 594);
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "no key, no unlock"
+        );
+        // The key in the grid pays one and unlocks all three cells.
+        app.inventory[3] = ItemSlot { kind: 1141, name: "Temple Key", count: 2, prefix: 0 };
+        assert!(interact_tile(&mut app, 40, 31));
+        assert_eq!(app.inventory[3].count, 1, "one key paid");
+        for (dy, fy) in [(0, 648i16), (1, 666), (2, 684)] {
+            assert_eq!(app.world.tile(40, 30 + dy).unwrap().frame_y, fy, "+54 shift");
+        }
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "progression 22 completes the row"
+        );
+        // The unlocked door no longer matches IsLockedDoor — the key arm
+        // does not run again (the normal open_door dispatcher owns it now).
+        // The row is already completed, so a hypothetical re-fire would be
+        // invisible — the key count is the observable.
+        let _ = interact_tile(&mut app, 40, 31);
+        assert_eq!(app.inventory[3].count, 1, "no second pay on the unlocked door");
+        // The void-bag fallback: a fresh locked column, no inventory key,
+        // the bag + a bank4 key pay from the vault.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = World::new("t".into(), 80, 200);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        for (dy, fy) in [(0, 594i16), (1, 612), (2, 630)] {
+            let i = w.index(40, 30 + dy);
+            w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: fy, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important[10] = true;
+        w.compute_column_surface();
+        app.world = w;
+        let mut p = Player::spawn(&app.world);
+        p.x = 40.0 * 16.0;
+        p.y = 31.0 * 16.0;
+        p.banks[3][0] = ItemSlot { kind: 1141, name: "Temple Key", count: 1, prefix: 0 };
+        app.player = Some(p);
+        app.inventory[0] = ItemSlot { kind: 4131, name: "Void Bag", count: 1, prefix: 0 };
+        assert!(interact_tile(&mut app, 40, 31));
+        assert_eq!(app.player.as_ref().unwrap().banks[3][0].count, 0, "the vault key paid");
+        assert_eq!(app.world.tile(40, 30).unwrap().frame_y, 648);
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "the fallback fires the same progression"
         );
     }
 }

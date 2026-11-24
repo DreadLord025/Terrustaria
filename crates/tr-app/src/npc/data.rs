@@ -1078,6 +1078,7 @@ impl NpcKind {
             // the lang_tables display name, no NpcKind).
             NpcKind::Tumbleweed => 546,
             // W4-d120 РІР‚вЂќ the unclaimed chatter kinds' port-local band
+            // W4-d120 — the unclaimed chatter kinds' port-local band
             // (the claim doc `tools/_d120_claim.md`; the vanilla
             // 142/160/178/209 collide with the crawltipede/Stylist/
             // kobold/SwampZombie slots above, 579 is free but the family
@@ -2053,6 +2054,7 @@ impl NpcKind {
             772 => NpcKind::Wolf,
             546 => NpcKind::Tumbleweed,
             // W4-d120 РІР‚вЂќ the chatter kinds' port-local band (`to_u16` above).
+            // W4-d120 — the chatter kinds' port-local band (`to_u16` above).
             241 => NpcKind::SantaClaus,
             242 => NpcKind::Truffle,
             243 => NpcKind::Steampunker,
@@ -3122,6 +3124,8 @@ impl NpcKind {
             | NpcKind::Dolphin => "NPC_Hit_1",
             // W4-e21 — the bunny pair: `SoundID.NPCHit1` (`NPC.cs:9344`).
             NpcKind::Bunny | NpcKind::PartyBunny => "NPC_Hit_1",
+            // W4-e21 — PartyBunny (540) hit sound NPC_Hit_1; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => "NPC_Hit_1",
             NpcKind::DevourerHead => "NPC_Hit_1",
             NpcKind::GiantWormHead => "NPC_Hit_1",
             NpcKind::Merchant => "NPC_Hit_1",
@@ -3696,7 +3700,6 @@ impl NpcKind {
             NpcKind::ArmedTorchZombie => "NPC_Hit_1",
             NpcKind::GoldGoldfishWalker => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
-            // W4-d42 - the roster's HitSound rows.
             NpcKind::Seagull => "NPC_Hit_1",
             NpcKind::Seagull2 => "NPC_Hit_1",
             // W4-d42 - the roster's HitSound rows.
@@ -4059,6 +4062,8 @@ impl NpcKind {
             | NpcKind::Dolphin => "NPC_Killed_1",
             // W4-e21 — the bunny pair: `SoundID.NPCDeath1` (`NPC.cs:9345`).
             NpcKind::Bunny | NpcKind::PartyBunny => "NPC_Killed_1",
+            // W4-e21 — PartyBunny (540) death sound NPC_Killed_1; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => "NPC_Killed_1",
             NpcKind::DevourerHead => "NPC_Killed_1",
             NpcKind::GiantWormHead => "NPC_Killed_1",
             NpcKind::Merchant => "NPC_Killed_1",
@@ -5673,6 +5678,8 @@ impl NpcKind {
             | NpcKind::TownSlimeRed
             | NpcKind::TownSlimeYellow
             | NpcKind::TownSlimeCopper => 7,
+            // W4-e21 — PartyBunny (540) aiStyle 7; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 7,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :14978, :15690
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp | NpcKind::DesertDjinn => 8,
             // aiStyle 8 - NPC.cs:9083, :9125, :9326, :11158, :14978, :15690, :17727
@@ -7091,6 +7098,8 @@ impl NpcKind {
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => (20.0, 18.0),
             // W4-e21 — the bunny pair: 18x20 (`NPC.cs:9338-9339`).
             NpcKind::Bunny | NpcKind::PartyBunny => (18.0, 20.0),
+            // W4-e21 — PartyBunny (540) 18x20 box; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => (18.0, 20.0),
             // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
             // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => (22.0, 22.0),
@@ -8117,6 +8126,7 @@ impl NpcKind {
             // W4-e21 — the bunny pair's vanilla `NPC.type` (`NPCID.cs:10769`/
             // `:11757`): the statue drain's `NPC.MechSpawn` group reads these
             // (the bunny group {46, 540, 303, 337}, `NPC.cs:7443-7449`).
+            // W4-e21 — PartyBunny (540) vanilla NPC.type 540; Bunny (46) is the d34 arm above.
             NpcKind::PartyBunny => 540,
             // The Plantera minion family (S1-D-3-wire-plantera-minions):
             // `NPCID.FungiSpore` 261 / `PlanterasHook` 263 /
@@ -9039,6 +9049,8 @@ impl NpcKind {
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 5,
             // W4-e21 — the bunny pair: lifeMax 5 (`NPC.cs:9343`).
             NpcKind::Bunny | NpcKind::PartyBunny => 5,
+            // W4-e21 — PartyBunny (540) lifeMax 5; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 5,
             // The worms: the segment HP per family (`:8763`/`:8850`/`:8903`).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 100,
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 30,
@@ -9960,6 +9972,8 @@ impl NpcKind {
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 0,
             // W4-e21 — the bunny pair: damage 0 (`NPC.cs:9341`).
             NpcKind::Bunny | NpcKind::PartyBunny => 0,
+            // W4-e21 — PartyBunny (540) contact damage 0; Bunny (46) is the d34 arm above.
+            NpcKind::PartyBunny => 0,
             // The worms: the head hits hardest, the tail softest
             // (`:8763`'s 31/16/13, `:8850`'s 8/4/4, `:8903`'s 22/13/11).
             NpcKind::DevourerHead => 31,
@@ -10644,6 +10658,7 @@ impl NpcKind {
             NpcKind::Moth => 70,
             NpcKind::CultistDragonHead => 100,
             | NpcKind::CultistDragonBody4
+            | NpcKind::Cyborg => 10,
         }
     }
 }

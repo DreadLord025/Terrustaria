@@ -626,7 +626,7 @@ pub(crate) fn quick_stack(
 /// `shoot`-hook and pet-buff arms have no port fields (`ItemDef` carries no
 /// `shoot` id / vanity-light pet sets) — a cited inert slice. The Restock
 /// demand gate's reader (`ChestUI.cs:908`).
-fn only_need_one_in_inventory(kind: u16) -> bool {
+pub(crate) fn only_need_one_in_inventory(kind: u16) -> bool {
     if matches!(
         kind,
         1522 | 1523

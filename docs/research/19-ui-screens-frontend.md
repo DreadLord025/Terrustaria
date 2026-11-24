@@ -333,22 +333,28 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
    `menuMode == 1000000` page). `card_hit`/`elements` still offer the Play
    button for an invalid/mismatched card, as the C# does — the click is what
    rejects.
-2. ~~**`ANALYSIS.md:2120-2124` is stale**~~ **CLOSED (REFRESH 2026-11-21,
-   W4-d85 FINAL)** — the P6 bullet now reads "STALE — closed (S1-J-5 +
-   W4-f22)": the reader/writer exist and the renames landed f22. The
-   `flow.rs`/`mod.rs` notices are corrected on f22's tip (`6916265d5`);
-   this branch's base still carries them until the f22 merge.
-3. ~~**`PORT_MAP.md:180` is stale**~~ **CLOSED (REFRESH 2026-11-21,
-   W4-d85 FINAL)** — the save_list row now reads "done (the `.plr`
-   reader/writer exist — S1-J-5; the card renames landed W4-f22…)";
-   the `:697` fix-note row already carried the correction.
-4. ~~**Rename writes nothing.**~~ **FIXED on f22 (REFRESH 2026-11-21)** —
-   `0da19e92a` lands `KeyboardTail::Rename` → `rename_player_file` (the
-   `.plr` name-field splice + `.bak`) and `KeyboardTail::WorldRename` →
-   `rename_world` (the `.trwld` header splice), with `rename_index`
-   carrying the clicked card; the "Renaming is not ported yet" notice is
-   gone on that tip. This branch's base keeps the notice until the f22
-   merge (research/144 §2's family table).
+2. ~~**`ANALYSIS.md:2120-2124` is stale**~~ **Closed (W4-f22 + S1-J-5;
+   confirmed W4-d85 FINAL refresh 2026-11-21)** — the "No `.plr`
+   reader/writer" bullet now records the live reader/writer and the rename
+   read-modify-write; `flow.rs`'s `KeyboardTail::Rename` doc and the
+   user-visible notice are gone (the rename writes, see deviation 4).
+3. ~~**`PORT_MAP.md:180` is stale**~~ **Closed (W4-f22; confirmed W4-d85
+   FINAL refresh 2026-11-21)** — the save_list row now reads "done (the
+   `.plr` reader/writer exist — S1-J-5; the card renames landed W4-f22…)",
+   and a new row maps the rename chain (`PlayerFileData.Rename`/
+   `WorldFileData.Rename` -> `rename_player_file`/`rename_world`/the
+   keyboard tails).
+4. ~~**Rename writes nothing.**~~ **Fixed (W4-f22, research/19 M1; confirmed
+   W4-d85 FINAL refresh 2026-11-21 — `0da19e92a`/`6916265d5`).**
+   `KeyboardTail::Rename` runs `player_file::rename_player_file` (the `.plr`
+   name-field splice + `.bak`, `PlayerFileData.cs:207-214` +
+   `InternalSavePlayerFile:54730-54733`) and the new `KeyboardTail::WorldRename`
+   runs `save_list::rename_world` (the `.trwld` header splice,
+   `WorldGen.RenameWorldCallBack:6727-6753`); both re-list through the reopen.
+   `KeyboardSession.rename_index` carries `this._data`. The "Renaming is not
+   ported yet" notice is gone. ANALYSIS "The card renames (W4-f22)" records
+   the four deviations (stem kept, session arm, front_hint failure notice,
+   synchronous mode-10).
 5. **World metadata stand-ins**: no GameMode (every entry Classic →
    `CanWorldBeJoinedByActivePlayer`'s Journey gate is vacuous, `save_list.rs:426-433`),
    favourites are a `<world>.trfav` sidecar (`Main.LocalFavoriteData` has no
@@ -457,12 +463,10 @@ written in ROADMAP/ANALYSIS/PORT_MAP.
 
 S — small (single file / one table)
 
-- ~~**S1. Fix the three stale doc claims**~~ **DONE (REFRESH 2026-11-21,
-  W4-d85 FINAL)** — the ANALYSIS P6 bullet + the PORT_MAP save_list row
-  corrected on THIS branch (the f22 tip `6916265d5` corrected its own
-  copies alongside M1); the `flow.rs`/`mod.rs` notices are corrected on
-  f22's tip (the rename writes there). The three claims are closed
-  family-wide once f22 merges.
+- ~~**S1. Fix the three stale doc claims**~~ **DONE (W4-f22 + W4-d85 FINAL
+  refresh 2026-11-21)** — the ANALYSIS P6 bullet, the PORT_MAP save_list row
+  and the `flow.rs`/`mod.rs` notices are corrected (the rename writes now);
+  the three claims are closed family-wide.
 - ~~**S2. Gate Play on validity.**~~ **DONE 2026-11-13** (`S1-H-10`):
   `world_select::rejection_key` + `flow.rs::world_play_click` reproduce
   `IsValid` + `TryMovingToRejectionMenuIfNeeded` (`UIWorldListItem.cs:362`,
@@ -490,14 +494,15 @@ S — small (single file / one table)
 
 M — medium
 
-- ~~**M1. `.plr` rename read-modify-write**~~ **DONE on f22 (REFRESH
-  2026-11-21)** — `0da19e92a` + `6916265d5` on
-  `task/W4-f22-ui-screens-4`: `player_file::rename_player_file` (the
-  decrypt → name-field splice at offset 24 → re-encrypt, the `.bak`
-  copy), `save_list::rename_world` (the `.trwld` header splice),
-  `KeyboardTail::Rename`/`WorldRename` + `KeyboardSession.rename_index`,
-  the session stand-in's `player_name`/`session_draft` rename; 11
-  witnesses written not run. Closes deviation 4 on that tip.
+- ~~**M1. `.plr` rename read-modify-write**~~ **DONE (W4-f22, code-only;
+  confirmed W4-d85 FINAL refresh 2026-11-21 — `0da19e92a` + `6916265d5`)** —
+  `player_file::rename_player_file` (the decrypt → name-field splice at
+  offset 24 → re-encrypt, the `.bak` copy), `save_list::rename_world` (the
+  `.trwld` header splice), `KeyboardTail::Rename`/`WorldRename` +
+  `KeyboardSession.rename_index`, `app/session.rs::rename_player_entry`/
+  `rename_world_entry` (the session stand-in's `player_name`/`session_draft`
+  rename); closes deviation 4. ANALYSIS "The card renames (W4-f22)"; 11
+  witnesses written not run.
 - ~~**M2. The creator's Randomize/Copy/Paste arms**~~ **DONE (REFRESH
   2026-11-21): S1-H-11 (`242177718`, in base)** — deviation 7 already
   records the fix: `click_at` routes all six buttons,

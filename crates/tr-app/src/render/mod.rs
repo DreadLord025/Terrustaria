@@ -72,6 +72,7 @@ pub(crate) mod tile_draw_pass;
 pub(crate) mod tile_pass;
 pub(crate) mod tiles;
 pub(crate) mod vines;
+pub(crate) mod wire_kite;
 pub(crate) mod wires;
 
 /// A decoded sprite rect on the atlas: pixel size plus the normalised UV quad.

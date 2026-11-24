@@ -136,12 +136,27 @@ pub(crate) fn advance_time_with_events(
     if was_day && !app.world.day_time && eclipse_was_up {
         let _ = app.notify_progression_net(3);
     }
+    // W4-c36 — `UpdateTime_StartNight`'s natural blood-moon start fires
+    // progression 4 beside the flag set (`Main.cs:65348-65353`: the
+    // NotifyProgressionEvent + the Lang.misc[8] broadcast the caller rides).
+    // No shipped row listens on id 4 (`AchievementInitializer` never calls
+    // `Create(4)`) — the wire is the faithful no-op, like the C#'s.
+    if blood_moon_started {
+        let _ = app.notify_progression_net(4);
+    }
     if !was_day && app.world.day_time {
         if blood_moon_was_up {
             let _ = app.notify_progression_net(5);
         }
         // `Main.cs:65374`'s dawn row.
         let _ = app.notify_progression_net(1);
+        // W4-c36 — `UpdateTime_StartDay`'s natural eclipse start fires
+        // progression 2 right after the flag set (`Main.cs:65420-65425`),
+        // before the Lang.misc[20] broadcast. No shipped row listens on
+        // id 2 either — the faithful no-op wire.
+        if eclipse_started {
+            let _ = app.notify_progression_net(2);
+        }
     }
     // The event schedulers' draws ride the same UpdateTime stream the
     // boundary rolls consumed (S1-A-10: one stream, the C#'s

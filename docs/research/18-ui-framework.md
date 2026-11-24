@@ -238,6 +238,9 @@ the rows keep their historical text with the refresh verdict appended.
 | `UITextWrappingTest` | 14 | none | **SCOPE-OUT (REFRESH: d86 18c)** — test-only harness, research/38's UNDOCUMENTED-ABSENCE now recorded |
 | `UIManageControls` | 20 | `ui/manage_controls.rs` + `input_profiles.rs` (d86 `21fab7274`) | **PORTED (REFRESH)** — the screen state machine + the profile data; rows cite d83's `keybinding_rows.rs` |
 | `UIWorldLoad` | 16 | `ui/world_load.rs` (S1-E-17, first-class `FrontScreen::WorldLoad`) | ~~PARTIAL — verify no screen is lost~~ **PORTED (REFRESH: d86 `19641e25f` re-verified in depth)** — nothing was folded into world_select/save_list; the row was stale |
+| `UIManageControls` | 20 | `ui/manage_controls.rs` + `input_profiles.rs` (d86 `21fab7274`) | **PORTED (REFRESH)** — the screen state machine + the profile data; rows cite d83's `keybinding_rows.rs`; `input_map.rs` keeps the 14+6 bind DATA for the input pass |
+| `AWorkshopPublishInfoState` (+ForResourcePack/ForWorld) | — | `ui/workshop_publish_info.rs` (d86) | data/state half PORTED (d86); Steam I/O excluded with Social/** (research/18c pair decision) |
+| `UIWorldLoad` | 16 | `ui/world_load.rs` (S1-E-17, first-class `FrontScreen::WorldLoad`) | ~~PARTIAL — verify no screen is lost~~ **PORTED (REFRESH: d86 `19641e25f` re-verified in depth against UIWorldLoad.cs:16-137)** — nothing was folded into world_select/save_list; the row was stale; deferrals recorded (drunk Main.rand arms, gameTips, F5 debug scope-out, gamepad squiggle) |
 | `NewCraftingUI` | 21 | `crafting.rs` | PORTED (immediate) |
 | `UICharacterSelect/UICharacterCreation/UIWorldSelect/UIWorldCreation/UIVirtualKeyboard/UIAchievementsMenu/UIBestiaryTest/UIEmotesMenu` | — | `char_*`, `world_*`, `keyboard.rs`, `achievements.rs`, `bestiary.rs`, `emotes.rs` | PORTED |
 

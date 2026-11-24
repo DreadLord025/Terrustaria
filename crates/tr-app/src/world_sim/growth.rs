@@ -69,26 +69,94 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     }
     let raining = app.rain.is_raining();
     let day_time = app.world.day_time;
+    // W4-d119 — the mid-game relocation driver rides `WorldGen.UpdateWorld`'s
+    // head (`WorldGen.cs:71550-71551`), AFTER the liquid pass and BEFORE the
+    // growth loops, on the same `UpdateWorldGen` stream. Each relocated NPC
+    // fires NO_HOBO (8) once the borrow releases (`SpawnTownNPC:5460`).
+    let mut relocated = 0u32;
     app.growth_step.tick(dt.min(0.25), |_| {
+        // `WorldGen.UpdateWorld`'s head statics (`WorldGen.cs:71535-71549`,
+        // W4-d119 phase 2): the rate-0 early return gates the homeless-spawn
+        // timeout decay (once per call while positive) and the
+        // `npcSpawnPeriod = 20 * GetWorldUpdateRate()` re-arm. The port runs
+        // the growth pass at the day rate 1, so the period is 20.
+        if app.creative_powers.time_rate() > 0.0 {
+            if app.town_spawn.homeless_spawn_timeout > 0 {
+                app.town_spawn.homeless_spawn_timeout -= 1;
+            }
+            app.town_spawn.npc_spawn_period = 20;
+        }
+        // `WorldGen.UpdatePrioritizedTownNPC` (`:71627-71641`): the first
+        // homeless town NPC with an expired timer becomes the prioritized type.
+        crate::town_rehome::update_prioritized_town_npc(&app.npcs, &mut app.town_arrival);
+        // `WorldGen.CheckForHousesNearAPlayer` (`:71643-71674`): 300 house-wall
+        // picks around the player; the first runs the relocation-only
+        // `SpawnTownNPC(x, y, canSpawnNewTownNPC: false)`.
+        let player_center = app.player.as_ref().map(|p| p.center());
+        if crate::town_rehome::check_for_houses_near_a_player(
+            &app.world,
+            &mut app.npcs,
+            &mut app.town_rooms,
+            &mut app.town_arrival,
+            player_center,
+            false,
+            rng,
+        )
+        .is_some()
+        {
+            relocated += 1;
+        }
         let world = &mut app.world;
-        // The port has no freeze-time power and runs at the day rate 1
-        // (`Main.desiredWorldTilesUpdateRate` = `dayRate`).
+        // W4-c24c — `GetWorldUpdateRate` (`WorldGen.cs:72020-72028`):
+        // `min(desiredWorldTilesUpdateRate, 24)`, 0 while FreezeTime is on.
+        // The desired rate is `UpdateTimeRate`'s num (`Main.cs:6210-6220`):
+        // the ModifyTimeRate target ×5 while every player sleeps, 0 frozen;
+        // the dial fast-forward keeps the tiles at 1 (`:6204`). The port's
+        // `World::day_rate` carries the 60/5/1 shape — the 60 arm maps to the
+        // desired 1, the 5 arm to target×5, the 1 arm to the target.
+        let freeze = app.creative_powers.toggle(crate::creative::PowerId::FreezeTime);
+        let target = app.creative_powers.slider(crate::creative::PowerId::TimeRate) as i32;
+        let day_rate = match world.day_rate() {
+            60 => 1, // the dial arm (`:6204`)
+            5 => target * 5, // the all-asleep ×5 (`:6213`)
+            _ => target,
+        };
         // `WorldGen.UpdateWorld`'s infection flag (`WorldGen.cs:71502-71507`):
         // the journey `StopBiomeSpreadPower` freezes the evil/hallow spread.
         let allowed_to_spread = app.creative_powers.allowed_to_spread_infections();
+        // W4-d119 escalation 1 — the `TrySpawningTownNPC` walker seam
+        // (`WorldGen.cs:72497`/`:73807`): the growth walkers' inactive-tile
+        // arms push `(x, y)` spawn-requests onto the shared queue (the gate
+        // + its ONE conditional Next(4) ride this `UpdateWorldGen` stream,
+        // inline with the picks exactly like the C#); the drain below runs
+        // the full `SpawnTownNPC` per request after the mutable pass.
+        let mut walker = tr_core::growth::TownSpawnWalker {
+            invasion_type: app.world.invasion_type,
+            eclipse: app.world.eclipse,
+            npc_spawn_delay: &mut app.town_spawn.npc_spawn_delay,
+            npc_spawn_period: app.town_spawn.npc_spawn_period,
+            requests: &mut app.town_spawn_requests,
+        };
         // The shell-pile arm's weather inputs: the live rain intensity and
         // the wind speed (`Main.maxRaining`/`Main.windSpeedCurrent`).
-        tr_core::growth::update_world(
+        tr_core::growth::update_world_ts(
             world,
-            1,
+            day_rate,
             raining,
-            false,
+            freeze,
             allowed_to_spread,
             day_time,
             app.rain.max_raining(),
             app.wind.speed_current,
             rng,
+            Some(&mut walker),
         );
+        // `:71536-71540`: rate 0 returns BEFORE every loop — the port's
+        // hardUpdateWorld surrogate picks ride the same gate (the C# calls
+        // it from inside those loops).
+        if tr_core::growth::world_update_rate(day_rate, freeze) == 0 {
+            return;
+        }
         // `hardUpdateWorld`'s spread arms ride the same picks (the port
         // runs them unconditionally — the hardmode gate waits for
         // M5-HARDFORCE; `downedPlantBoss` false = the full rate).
@@ -112,6 +180,37 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         }
     });
     app.growth_step.cap_backlog();
+    // The relocation NO_HOBO notifications after the mutable pass (the borrow
+    // seam — `notify_progression_net` needs `&mut App`; one per move-in,
+    // `WorldGen.cs:5460`).
+    for _ in 0..relocated {
+        let _ = app.notify_progression_net(8);
+    }
+    // W4-d119 escalation 1 — drain the walkers' `TrySpawningTownNPC` queue:
+    // each request runs the full `SpawnTownNPC` (`WorldGen.cs:74878`'s inline
+    // call, deferred to this `UpdateWorldGen` slot). The NO_HOBO events fire
+    // after the borrow releases (the same seam).
+    let requests = std::mem::take(&mut app.town_spawn_requests);
+    if !requests.is_empty() {
+        let player = app
+            .player
+            .as_ref()
+            .map(|p| (p.x, p.y, crate::player::WIDTH, crate::player::HEIGHT));
+        let nohobo = crate::town_spawn::drain_town_spawn_requests(
+            &requests,
+            &mut app.world,
+            &mut app.npcs,
+            &mut app.town_rooms,
+            &mut app.town_arrival,
+            &mut app.town_spawn,
+            player,
+            false,
+            &mut app.chat,
+        );
+        for _ in 0..nohobo {
+            let _ = app.notify_progression_net(8);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -254,6 +353,116 @@ mod tests {
             *app.rngs.stream(RngKey::UpdateWorldGen),
             stream,
             "the growth group consumed exactly this prefix of the stream"
+        );
+        assert_worlds_equal(&app.world, &twin.world);
+    }
+
+    /// W4-c24c — `GetWorldUpdateRate` (`WorldGen.cs:72020-72028`): FreezeTime
+    /// zeroes the rate, and `UpdateWorld`'s `:71536-71540` early return skips
+    /// EVERY loop — the growth phase draws nothing from the stream (the
+    /// hardUpdateWorld surrogate picks ride the same gate). The unfrozen
+    /// twin at the same seed draws the normal prefix.
+    #[test]
+    fn w4_c24c_freeze_time_stops_the_growth_loops() {
+        let mut frozen = fresh_app();
+        frozen.creative_powers.set(
+            crate::creative::PowerId::FreezeTime,
+            crate::creative::PowerState::Toggle(true),
+        );
+        let pristine = UnifiedRandom::new(frozen.world.seed as i32);
+        update_growth(&mut frozen, 1.0 / 60.0);
+        assert_eq!(
+            *frozen.rngs.stream(RngKey::UpdateWorldGen),
+            pristine,
+            "rate 0 returns before every loop (:71537-71540)"
+        );
+        // The ModifyTimeRate slider scales the loops (`:6210`'s num): x24
+        // draws more than x1 on the same seed (the pick counts scale).
+        let mut fast = fresh_app();
+        fast.creative_powers.set(
+            crate::creative::PowerId::TimeRate,
+            crate::creative::PowerState::Slider(24.0),
+        );
+        let before = *fast.rngs.stream(RngKey::UpdateWorldGen);
+        update_growth(&mut fast, 1.0 / 60.0);
+        assert_ne!(
+            *fast.rngs.stream(RngKey::UpdateWorldGen),
+            before,
+            "the unfrozen x24 loops draw"
+        );
+        // The frozen world's tiles never moved.
+        let untouched = fresh_app();
+        assert_worlds_equal(&frozen.world, &untouched.world);
+    }
+
+    /// W4-d119 escalation 1 — the walker seam rides the phase's
+    /// `UpdateWorldGen` stream: with the period armed to 1 (and FreezeTime on
+    /// so the head's `npcSpawnPeriod = 20` re-arm is skipped, the rate-0 gate),
+    /// every inactive-tile pick runs the `TrySpawningTownNPC` gate (the wall-0
+    /// cells fire with no draw), the requests queue fills, and the drain runs
+    /// the full `SpawnTownNPC` per request. The twin drives the same prefix by
+    /// hand through `update_world_ts` + the gate, proving the draw counts match.
+    #[test]
+    fn the_walker_seam_queues_and_drains_on_the_phase_stream() {
+        let freeze = |app: &mut crate::app::App| {
+            app.creative_powers.set(
+                crate::creative::PowerId::FreezeTime,
+                crate::creative::PowerState::Toggle(true),
+            );
+            app.town_spawn.npc_spawn_period = 1;
+        };
+        let mut app = fresh_app();
+        freeze(&mut app);
+        update_growth(&mut app, 1.0 / 60.0);
+        // The gate fired on the inactive picks: the queue drained (empty now)
+        // and the counter reset per fire.
+        assert!(app.town_spawn_requests.is_empty(), "the drain emptied the queue");
+        assert_eq!(app.town_spawn.npc_spawn_delay, 0);
+
+        // The twin: the same picks through the seam, counting the pushes.
+        let mut twin = fresh_app();
+        freeze(&mut twin);
+        let raining = twin.rain.is_raining();
+        let day_time = twin.world.day_time;
+        let allowed = twin.creative_powers.allowed_to_spread_infections();
+        let mut stream = UnifiedRandom::new(twin.world.seed as i32);
+        let mut delay = 0;
+        let mut requests: Vec<(i32, i32)> = Vec::new();
+        {
+            let mut walker = tr_core::growth::TownSpawnWalker {
+                invasion_type: twin.world.invasion_type,
+                eclipse: twin.world.eclipse,
+                npc_spawn_delay: &mut delay,
+                npc_spawn_period: 1,
+                requests: &mut requests,
+            };
+            tr_core::growth::update_world_ts(
+                &mut twin.world,
+                1,
+                raining,
+                false,
+                allowed,
+                day_time,
+                twin.rain.max_raining(),
+                twin.wind.speed_current,
+                &mut stream,
+                Some(&mut walker),
+            );
+        }
+        let sx = stream.next_range(10, twin.world.width - 10);
+        let sy = stream.next_range(twin.world.rock_layer as i32, twin.world.height - 40);
+        tr_core::spread::hard_update_world(
+            &mut twin.world,
+            sx,
+            sy,
+            false,
+            allowed,
+            &mut stream,
+        );
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateWorldGen),
+            stream,
+            "the walker seam consumed exactly this prefix of the stream"
         );
         assert_worlds_equal(&app.world, &twin.world);
     }

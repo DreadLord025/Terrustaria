@@ -364,6 +364,60 @@ fn dye_left_click(held: &mut ItemSlot, target: &mut ItemSlot, held_dye: bool) ->
     }
 }
 
+/// [`App::slot_at_mouse`]'s body over disjoint fields — the draw pass's
+/// field destructure holds `renderer`/`lookups` mutably, so a whole-`self`
+/// method call there would conflict (the S1-W4-g81 seal); the free form
+/// reads only the three fields the hit test needs.
+pub(crate) fn slot_at_mouse_fields(
+    m: Vec2,
+    inventory_open: bool,
+    hotbar_scales: &[f32; HOTBAR],
+) -> Option<usize> {
+    if inventory_open {
+        let s = 0.85;
+        let i = ((m.x - 20.0) / (56.0 * s)).floor() as i32;
+        let j = ((m.y - 20.0) / (56.0 * s)).floor() as i32;
+        if !(0..10).contains(&i) || !(0..5).contains(&j) {
+            return None;
+        }
+        let lx = m.x - 20.0 - i as f32 * 56.0 * s;
+        let ly = m.y - 20.0 - j as f32 * 56.0 * s;
+        if lx > 52.0 * s || ly > 52.0 * s {
+            return None;
+        }
+        Some((i + j * 10) as usize)
+    } else {
+        // `GUIHotbarDrawInner` (`Main.cs:43614-43639`): same per-slot geometry
+        // as the draw pass — row `y` `(int)(20 + 22 * (1 - scale))`, x advance
+        // `(int)(Width * scale) + 4`, hover size the untruncated `Width * scale`
+        // (`ui::slot::closed_hotbar_metrics`).
+        let mut x = 20.0;
+        for i in 0..HOTBAR {
+            let sc = hotbar_scales[i].clamp(0.75, 1.0);
+            let (y, advance, size) = ui::slot::closed_hotbar_metrics(sc);
+            if m.x >= x && m.x <= x + size && m.y >= y && m.y <= y + size {
+                return Some(i);
+            }
+            x += advance;
+        }
+        None
+    }
+}
+
+/// [`App::coin_ammo_at_mouse`]'s body over disjoint fields (the draw
+/// pass's destructure holds `lookups` — the S1-W4-g81 seal's free form).
+pub(crate) fn coin_ammo_at_mouse_fields(
+    mouse: Vec2,
+    inventory_open: bool,
+    bestiary_open: bool,
+    cell: f32,
+) -> Option<(i32, usize)> {
+    if !inventory_open || bestiary_open {
+        return None;
+    }
+    ui::inventory::coin_ammo_hit(mouse, cell)
+}
+
 impl App {
     /// The slot under the cursor, using the same geometry as `draw_hud`.
     pub(crate) fn slot_at_mouse(&self) -> Option<usize> {
@@ -403,6 +457,11 @@ impl App {
             }
             None
         }
+        slot_at_mouse_fields(
+            self.mouse_pos,
+            self.inventory_open,
+            &self.hotbar_scales,
+        )
     }
 
     /// The shop grid's cell under the cursor — `Main.DrawInventory`'s shop
@@ -423,11 +482,12 @@ impl App {
     /// `Main.DrawInventory`'s rows (`Main.cs:41752-41782`) through the shared
     /// `ui::inventory::coin_ammo_hit` geometry. Closed inventory: nothing.
     pub(crate) fn coin_ammo_at_mouse(&self) -> Option<(i32, usize)> {
-        if !self.inventory_open || self.bestiary_open {
-            return None;
-        }
-        let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
-        ui::inventory::coin_ammo_hit(self.mouse_pos, cell)
+        coin_ammo_at_mouse_fields(
+            self.mouse_pos,
+            self.inventory_open,
+            self.bestiary_open,
+            self.lookups.ui_back.map_or(52.0, |b| b.width as f32),
+        )
     }
 
     /// The [`chest::Source`] under the cursor for the shift-transfer arms: the
@@ -592,6 +652,14 @@ impl App {
     /// `RightClick` ladder's vanity swap (`:1678-1684`) or the shared paced
     /// pickup split.
     fn equip_slot_click(&mut self, context: i32, idx: usize, left: bool, right_edge: bool) {
+        // `OverrideLeftClick`'s cursor-3 arm (`ItemSlot.cs:745-756`): the
+        // equip contexts are `canLoadoutShareAt`, so Alt+click toggles the
+        // loadout share (`ToggleLoadoutShare`, `:879-889`) and consumes the
+        // press before the movement arms (`LeftClick:922-926` returns on it).
+        if left && self.cursor_override == CURSOR_FAVORITE {
+            self.toggle_loadout_share(context, idx);
+            return;
+        }
         // `LeftClick`'s busy gate (`ItemSlot.cs:922-926`): while an item
         // animation or the use cooldown runs, the press does nothing (the
         // `OverrideLeftClick` half rides the cursor-override arms above).
@@ -682,6 +750,16 @@ impl App {
             }
         }
         self.set_equip_cell(context, idx, target);
+        // `ItemSlot.cs:955-975` (and the action-2/3/4/5 twins `:1039/:1102/
+        // :1143/:1205`): after the transfer, a NON-EMPTY equipment cell fires
+        // `HandleOnEquip(player, inv[slot], context)` — the slot's new content
+        // and the live arrays (W4-c36). Contexts 25/27 (the loadout rows) have
+        // no port system.
+        if target.count > 0
+            && matches!(context, 8 | 9 | 10 | 11 | 12 | 16 | 17 | 33)
+        {
+            crate::app::achievement_hooks::handle_on_equip(self, target, context);
+        }
     }
 
     /// `ItemSlot.TryItemSwap` + `AfterItemSwap` (`ItemSlot.cs:1901-2009`)
@@ -734,6 +812,40 @@ impl App {
                 std::mem::swap(item, &mut self.equip.misc_equips[slot]);
             }
         }
+        // W4-c36 — `SwapEquip`'s achievement tails (`ItemSlot.cs:3297/:3307/
+        // :3317/:3355`): the dye swap fires ctx 12, the grapple ctx 16, the
+        // mount ctx 17, the armour swap the vanity/accessory-derived context.
+        // The minecart/light-pet/vanity-pet arms carry NO hook (`:3321-3347`).
+        match target {
+            SwapTarget::Dye(slot) => {
+                let after = self.equip.dye[slot];
+                crate::app::achievement_hooks::handle_on_equip(self, after, 12);
+            }
+            SwapTarget::Misc(4) => {
+                let after = self.equip.misc_equips[4];
+                crate::app::achievement_hooks::handle_on_equip(self, after, 16);
+            }
+            SwapTarget::Misc(3) => {
+                let after = self.equip.misc_equips[3];
+                crate::app::achievement_hooks::handle_on_equip(self, after, 17);
+            }
+            SwapTarget::Armor(slot) => {
+                // `:3350`: `num = accessory ? (vanity ? 11 : 10) : (vanity ? 9 : 8)`.
+                let after = self.equip.armor[slot];
+                let d = registry::get(after.kind);
+                let (accessory, vanity) =
+                    d.map_or((false, false), |d| (d.accessory, d.vanity));
+                let ctx = if accessory {
+                    if vanity { 11 } else { 10 }
+                } else if vanity {
+                    9
+                } else {
+                    8
+                };
+                crate::app::achievement_hooks::handle_on_equip(self, after, ctx);
+            }
+            SwapTarget::Misc(_) => {}
+        }
         if let Some(idx) = ctx0_index {
             self.favorite_slots.retain(|&f| f != idx);
         }
@@ -764,6 +876,12 @@ impl App {
         }
         self.equip.armor.swap(slot, real);
         self.audio.play("Grab"); // `:1879` — `SoundEngine.PlaySound(7)`
+        // `:1880-1897` (W4-c36): the vanity cell's NEW content (post-swap)
+        // fires `HandleOnEquip(player, inv[slot], context)` when non-empty.
+        let after = self.equip.armor[slot];
+        if after.count > 0 {
+            crate::app::achievement_hooks::handle_on_equip(self, after, context);
+        }
     }
 
     /// `MinimapFrameManager.DrawTo` -> `MinimapFrame.Update`
@@ -1071,31 +1189,40 @@ impl App {
 
     /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
     /// `NPCChatPanel.cs:88-162`): the hover edge plays sound 12
-    /// (`:157-160`) and the Close button's press (`:150-154`) runs
-    /// `CloseChat.Interact` → `Main.CloseNPCChatOrSign`
-    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`) — the talk
-    /// latch clears, `npcChatText` empties, sound 11 plays and
-    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`). The other
-    /// interaction buttons (shop/happiness/housing/…) are deferred —
+    /// (`:157-160`) and a button's press (`:150-154`) runs its
+    /// `interaction.Interact()`. The port's live interactions: index 0
+    /// `CloseChat` → `Main.CloseNPCChatOrSign` (`NPCInteractions.cs:
+    /// 283-286`, `Main.cs:40680-40692` — the sign half closes too, W4-f22)
+    /// and index 1 the sign's `OpenSign` toggle (`NPCInteractions.cs:
+    /// 31-41` — `Main.editSign` ? `SubmitSignText` :
+    /// `IngameFancyUI.OpenVirtualKeyboard(1)`). The other interaction
+    /// buttons (shop/happiness/housing/…) are deferred —
     /// docs/ANALYSIS.md "Town chatter UI (S1-E-10b)".
     pub(crate) fn handle_npc_chat_clicks(&mut self) {
-        if self.talk_npc.is_none() {
-            // `DrawButtons` only runs while the panel draws — `_lastHovered`
-            // keeps its value across a close (the next open's hover-change
-            // edge, `:157-160`, reads it).
+        let sign_open = self.player.as_ref().is_some_and(|p| p.sign >= 0);
+        if self.talk_npc.is_none() && !sign_open {
+            // `CanHoldConversation` (`NPCChatPanel.cs:276-283`): the panel
+            // only draws (and clicks) while talking OR a sign is open.
+            // `_lastHovered` keeps its value across a close (the next
+            // open's hover-change edge, `:157-160`, reads it).
             return;
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
-        let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        let labels = ui::npc_chat::interactions(sign_open, self.sign_editing());
+        let rects =
+            ui::npc_chat::interaction_rects(&self.lookups, screen, &self.npc_chat_text, &labels);
+        let hovered = rects
+            .iter()
+            .position(|r| ui::in_rect(self.mouse_pos, *r))
+            .map_or(-1, |i| i as i32);
         // `:157-160` — the hover-change tick (no gamepad in the port, so
         // the `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
             crate::chest::play_menu_sound(self, 12);
         }
         self.npc_chat_last_hovered = hovered;
-        if hovered == 0 && self.ui_left_press {
+        if hovered >= 0 && self.ui_left_press {
             self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
             // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
             // `CloseSign(quiet: true)` (W4-e10 — no cue from the sign
@@ -1109,6 +1236,30 @@ impl App {
             self.shop_mood = 1.0;
             crate::chest::play_menu_sound(self, 11);
             self.npc_chat_last_hovered = -1;
+            match hovered {
+                0 => {
+                    // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
+                    // `CloseSign(quiet: true)` + `SetTalkNPC(-1)` + the
+                    // text clear + sound 11 + the panel's `Close` reset
+                    // (`NPCChatPanel.cs:265-269`).
+                    crate::signs::close_sign(self, true); // `:40682`
+                    self.talk_npc = None; // `:40683`
+                    self.npc_chat_text.clear(); // `:40685`
+                    crate::chest::play_menu_sound(self, 11); // `:40688`
+                    self.npc_chat_last_hovered = -1;
+                }
+                1 => {
+                    // `Actions.OpenSign.Interact` (`NPCInteractions.cs:
+                    // 31-41`): the edit toggle.
+                    if self.sign_editing() {
+                        let text = self.sign_edit_text().to_string();
+                        crate::signs::submit_sign_text(self, &text); // `:35`
+                    } else {
+                        crate::signs::open_sign_keyboard(self); // `:39`
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -2565,6 +2716,20 @@ impl App {
                 // `SendData(4)` in MP (`:41250-41253/:41276-41279`) — the
                 // player-info packet carries no hideMisc/superCart field in
                 // the port's `net.rs`, so the flip stays local (ANALYSIS).
+        // `Main.DrawLoadoutButtons`' click arm (`Main.cs:41965-41978`): a left
+        // press-edge on a loadout button switches the set. The buttons draw
+        // only on the equipment page (`EquipPage == 0`, `Main.cs:41394`), and
+        // sit right of the armour column, so they are probed before the slots.
+        if left && self.inventory_open && self.equip_page == 0 {
+            let (sw, sh) = self.screen_size();
+            let base_y = ui::inventory::equip_page_base_y(sh, self.main_m_h());
+            if let Some(i) =
+                ui::loadout::button_hit(sw, base_y, [self.mouse_pos.x, self.mouse_pos.y])
+            {
+                // `TrySwitchingLoadout` plays the 12 cue + consumes the press
+                // itself (`Player.cs:5671-5673`); the press is already consumed
+                // at the head of this handler.
+                self.try_switching_loadout(i);
                 return;
             }
         }
@@ -2995,6 +3160,17 @@ impl App {
         // The cursor-9 shift-click — `OverrideLeftClick` (`ItemSlot.cs:813-850`)
         // → `ChestUI.TryPlacingInChest(justCheck: false)` (`:846`).
         if left && self.cursor_override == CURSOR_TO_CHEST {
+            // The Journey research arm (`ItemSlot.cs:815-820`): swap into
+            // the sacrifice slot, sound 7, sacrifice what fits.
+            if self.journey_research_shift_active() {
+                if let Some(slot) = self.slot_at_mouse() {
+                    if slot < crate::item::INV {
+                        self.journey_shift_sacrifice(slot);
+                    }
+                }
+                self.ui_left_press = false;
+                return true;
+            }
             // The reforge menu's cursor-9 arm (`ItemSlot.cs:821-836`): the
             // stack splits one item into the empty reforge slot, a single
             // item swaps (`Utils.Swap`, sound 7).
@@ -3102,6 +3278,12 @@ impl App {
                 self.ui_right_press = false;
                 return true;
             }
+            // The sign read/edit open (`Player.cs:32693-32724`, W4-f22):
+            // the same open-inventory right-click route the chests ride.
+            if crate::signs::try_open_sign_at_cursor(self, world_pos) {
+                self.ui_right_press = false;
+                return true;
+            }
         }
         false
     }
@@ -3145,9 +3327,44 @@ impl App {
                     return;
                 }
             }
+            // `ItemSlot.cs:616-619` + `:752-756`: the equip contexts
+            // (8/9/10/11/12) are `canLoadoutShareAt`, not `canFavoriteAt` —
+            // Alt+hover lights the same cursor-3, and the click toggles the
+            // loadout share (`ToggleLoadoutShare`) instead of the favourite.
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            let cell = self.lookups.ui_back.map_or(52.0, |b| b.width as f32);
+            if let Some((ctx, idx)) = ui::inventory::equip_cell_at(
+                self.mouse_pos,
+                screen,
+                self.main_m_h(),
+                self.equip_page,
+                cell,
+            ) {
+                if self.equip_cell(ctx, idx).count > 0
+                    && ui::loadout::can_loadout_share_at(ctx)
+                {
+                    self.cursor_override = CURSOR_FAVORITE;
+                    return;
+                }
+            }
         }
         let chest = self.open_container();
         if !shift_in_use(self) {
+            return;
+        }
+        // The Journey research menu's ctx-0 arm (`ItemSlot.cs:659-665`):
+        // while the research page shows, any non-air non-favorited grid slot
+        // lights the transfer cursor (9) — before the reforge/chest arms.
+        if self.journey_research_shift_active() {
+            if let Some(slot) = self.slot_at_mouse() {
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && !self.is_favorite(slot)
+                {
+                    self.cursor_override = CURSOR_TO_CHEST;
+                }
+            }
             return;
         }
         // `Main.InReforgeMenu`'s ctx-0 arm (`ItemSlot.cs:666-672`): a
@@ -5460,6 +5677,105 @@ mod tests {
         assert!(!app.debug_commands_open);
         assert!(app.debug_commands_search.is_empty());
         assert_eq!(app.debug_commands_scroll, 0.0);
+    }
+
+    /// W4-g55 — a left press-edge on a loadout button switches the set
+    /// (`Main.DrawLoadoutButtons:41975-41977` → `Player.TrySwitchingLoadout`).
+    /// At the headless 1280x720 the buttons sit at x 1236, y 174/210/246.
+    #[test]
+    fn w4_g55_a_loadout_button_click_switches_the_set() {
+        let mut app = inv_app();
+        app.equip_page = 0;
+        // The live set (loadout 0) wears an Iron Helmet; loadout 1 stores an
+        // Ancient Iron Helmet.
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        // Click button 1 (centre 1252, 226).
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
+        assert_eq!(app.equip.armor[0].kind, 954, "loadout 1's head is live");
+        assert_eq!(
+            app.player.as_ref().unwrap().loadouts[0].armor[0].kind,
+            90,
+            "the old head stored in loadout 0"
+        );
+        // Clicking the active button again is a no-op (same index).
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
+    }
+
+    /// W4-g55 — the loadout buttons draw only on the equipment page; on the
+    /// misc page (`EquipPage == 2`) the same coordinates hit no button.
+    #[test]
+    fn w4_g55_the_loadout_buttons_are_equipment_page_only() {
+        let mut app = inv_app();
+        app.equip_page = crate::ui::inventory::EQUIP_PAGE_MISC;
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        app.mouse_pos = Vec2::new(1252.0, 226.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(
+            app.player.as_ref().unwrap().current_loadout_index,
+            0,
+            "no switch on the misc page"
+        );
+    }
+
+    /// W4-g55 — `ToggleLoadoutShare` (`ItemSlot.cs:879-912`): the toggle flips
+    /// the live share flag, and turning it ON clears the same slot's share in
+    /// every stored loadout AND disables the share hint
+    /// (`DisableLoadoutShareHint`, `:886` → `Player.cs:394-401`); a non-share
+    /// context refuses.
+    #[test]
+    fn w4_g55_toggle_loadout_share_flips_and_clears_the_stored_sets() {
+        let mut app = inv_app();
+        app.equip.armor[0] = slot(90, 1);
+        // Loadout 1 already shares the head slot.
+        app.player.as_mut().unwrap().loadouts[1].set_shared(0, true);
+        // The hint starts on (the static-ctor default, `Player.cs:412`).
+        assert!(app.settings.show_loadout_share_hint);
+        // Toggle ON: the live flag sets, the stored share clears, the hint
+        // disables (`ItemSlot.cs:886`).
+        assert!(app.toggle_loadout_share(8, 0));
+        assert!(app.equip_slot_shared(8, 0));
+        assert!(!app.player.as_ref().unwrap().loadouts[1].is_shared(0));
+        assert!(!app.settings.show_loadout_share_hint, "the turn-ON arm disabled the hint");
+        // Toggle OFF: the live flag clears; the hint stays off (the C# only
+        // disables on turn-ON, never re-enables).
+        assert!(app.toggle_loadout_share(8, 0));
+        assert!(!app.equip_slot_shared(8, 0));
+        assert!(!app.settings.show_loadout_share_hint);
+        // The dye context (12) maps to bit 20 + idx.
+        app.equip.dye[1] = slot(1007, 1);
+        assert!(app.toggle_loadout_share(12, 1));
+        assert!(app.equip_slot_shared(12, 1));
+        // A non-share context (the grid, 0) refuses.
+        assert!(!app.toggle_loadout_share(0, 0));
+    }
+
+    /// W4-g55 — `UsingOrReusingItem`'s `pendingItemReuse` half (`Player.cs:4074`,
+    /// the `:5663` gate): a set latch refuses the loadout swap even with the
+    /// swing/reuse/channel timers clear; clearing it lets the swap run.
+    #[test]
+    fn w4_g55_pending_item_reuse_blocks_the_loadout_swap() {
+        let mut app = inv_app();
+        app.equip.armor[0] = slot(90, 1);
+        app.player.as_mut().unwrap().loadouts[1].armor[0] = slot(954, 1);
+        // The timers are clear, but the pendingItemReuse latch is set.
+        app.swing = 0.0;
+        app.reuse_delay = 0.0;
+        app.pending_item_reuse = true;
+        assert!(!app.try_switching_loadout(1), "the latch refuses the swap");
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 0);
+        // Clearing the latch lets the swap run.
+        app.pending_item_reuse = false;
+        assert!(app.try_switching_loadout(1));
+        assert_eq!(app.player.as_ref().unwrap().current_loadout_index, 1);
     }
 
     /// M7-UI-2b — the coin (ctx 1) and ammo (ctx 2) rows became click

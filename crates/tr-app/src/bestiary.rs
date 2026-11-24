@@ -3767,6 +3767,41 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Maggot",
     },
+    // W4-d120 — AddTownNPCs_Manual (BestiaryDatabaseNPCsPopulator.cs:814-
+    // 822): the four town kinds' TownNPC entries; the names ride the
+    // en-US NPCs.json rows (`NPCName.<const>`).
+    BestiaryEntryDef {
+        credit_id: "SantaClaus",
+        net_id: 142,
+        kind: NpcKind::SantaClaus,
+        variant: None,
+        quick_unlock: false,
+        name: "Santa Claus",
+    },
+    BestiaryEntryDef {
+        credit_id: "Truffle",
+        net_id: 160,
+        kind: NpcKind::Truffle,
+        variant: None,
+        quick_unlock: false,
+        name: "Truffle",
+    },
+    BestiaryEntryDef {
+        credit_id: "Steampunker",
+        net_id: 178,
+        kind: NpcKind::Steampunker,
+        variant: None,
+        quick_unlock: false,
+        name: "Steampunker",
+    },
+    BestiaryEntryDef {
+        credit_id: "Cyborg",
+        net_id: 209,
+        kind: NpcKind::Cyborg,
+        variant: None,
+        quick_unlock: false,
+        name: "Cyborg",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

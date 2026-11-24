@@ -17,6 +17,53 @@ use crate::player::{Player, collides_rect};
 pub(crate) const GRAVITY: f32 = 0.4;
 pub(crate) const MAX_FALL: f32 = 8.0;
 
+/// `GameDifficultyData.LinearCurve.Sample` (`GameDifficultyData.cs:35-55`)
+/// — the bracket scan, the zero-span guard returns `key.output`, else
+/// `(value - key.input) * num2 / num + key.output` (the operation order
+/// kept). The `npc_ai_style74` module carries the same helper for its own
+/// curves; this copy keeps the stat-scale seam dependency-free.
+fn linear_curve_sample(keys: &[(f32, f32)], value: f32) -> f32 {
+    let mut key = keys[0];
+    let mut key2 = key;
+    for k in keys {
+        key2 = *k;
+        if value <= key2.0 {
+            break;
+        }
+        key = key2;
+    }
+    let num = key2.0 - key.0;
+    let num2 = key2.1 - key.1;
+    if num == 0.0 {
+        return key.1;
+    }
+    (value - key.0) * num2 / num + key.1
+}
+
+/// `Utils.Remap` with the default `clamped = true` (`Utils.cs:345-348`) —
+/// the `ScaleStats_ByDifficulty_Tweaks` tail's two products (`NPC.cs:
+/// 18471-18474`).
+fn remap_clamped(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let t = ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
+    to_min + (to_max - to_min) * t
+}
+
+/// `NPC.GetNPCInvasionGroup` (`NPC.cs:78297-78412`) — the invasion-group
+/// id the tweaks tail reads (`:18450`): 1 goblins, 2 frost legion, 3
+/// pirates, 4 martians, -1 frost moon, -2 pumpkin moon, -3 DD2, 0 none.
+fn invasion_group(npc_id: u16) -> i32 {
+    match npc_id {
+        26..=29 | 111 | 471 | 472 => 1,
+        143..=145 => 2,
+        212..=216 | 252 | 491 | 492 | 662 => 3,
+        381..=383 | 385..=391 | 394 | 395 | 520 => 4,
+        338..=352 => -1,
+        305..=315 | 325..=327 | 329 | 330 => -2,
+        547..=578 => -3,
+        _ => 0,
+    }
+}
+
 /// `Collision.WetCollision` (simplified): any water tile overlapping the body.
 pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     let x0 = (x / TILE_PX).floor() as i32;
@@ -1240,6 +1287,7 @@ pub enum NpcKind {
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
     /// `NPCID.AngryBones` (31) РІР‚вЂќ the dungeon walker (`aiStyle 3`): 18x40,
+    /// `NPCID.AngryBones` (31) — the dungeon walker (`aiStyle 3`): 18x40,
     /// dmg 26, def 8, 80 HP, kb 0.8, value 130, NPCHit2/NPCDeath2
     /// (`NPC.cs:9108-9120`). The `num83` walk group (`NPC.cs:57606`).
     AngryBones,
@@ -2305,6 +2353,9 @@ pub enum NpcKind {
     // W4-d120 РІР‚вЂќ the unclaimed chatter kinds (the claim doc
     // `tools/_d120_claim.md`; the d36/d39/d41/d42/d43 lanes were 0 ahead).
     /// `NPCID.SantaClaus` (142, `NPCID.cs:10961`) РІР‚вЂќ the seasonal town NPC
+    // W4-d120 — the unclaimed chatter kinds (the claim doc
+    // `tools/_d120_claim.md`; the d36/d39/d41/d42/d43 lanes were 0 ahead).
+    /// `NPCID.SantaClaus` (142, `NPCID.cs:10961`) — the seasonal town NPC
     /// (`NPC.cs:10791-10804`): townNPC + friendly, 18x40, aiStyle 7,
     /// dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
     /// `npcFrameCount[142]` = 25 (`Main.cs:67082`), ExtraFramesCount 9
@@ -2312,17 +2363,20 @@ pub enum NpcKind {
     /// the f43 lane's `town_arrival_pets.rs`.
     SantaClaus,
     /// `NPCID.Truffle` (160, `NPCID.cs:10997`) РІР‚вЂќ the mushroom town NPC
+    /// `NPCID.Truffle` (160, `NPCID.cs:10997`) — the mushroom town NPC
     /// (`NPC.cs:11003-11016`): townNPC + friendly, 18x40, aiStyle 7,
     /// dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
     /// `npcFrameCount[160]` = 23, ExtraFramesCount 7. The hardmode
     /// surface-mushroom arrival gate rides the c41 lane.
     Truffle,
     /// `NPCID.Steampunker` (178, `NPCID.cs:11033`) РІР‚вЂќ the mechanic-boss
+    /// `NPCID.Steampunker` (178, `NPCID.cs:11033`) — the mechanic-boss
     /// town NPC (`NPC.cs:11252-11265`): townNPC + friendly, 18x40,
     /// aiStyle 7, dmg 10, def 15, 250 HP, kb 0.5, NPCHit1/NPCDeath1;
     /// `npcFrameCount[178]` = 23, ExtraFramesCount 9.
     Steampunker,
     /// `NPCID.Cyborg` (209, `NPCID.cs:11095`) РІР‚вЂќ the post-Plantera town NPC
+    /// `NPCID.Cyborg` (209, `NPCID.cs:11095`) — the post-Plantera town NPC
     /// (`NPC.cs:11682-11695`): townNPC + friendly, 18x40, aiStyle 7,
     /// dmg 10, def 30, 500 HP, kb 0.25, NPCHit4/NPCDeath1 (the machine's
     /// own hit cue); `npcFrameCount[209]` = 26, ExtraFramesCount 10.
@@ -4036,6 +4090,9 @@ pub struct Npc {
     /// sets `ai[3] = num57`, `:60064`) + the `Door_Opened` cue. The tall
     /// gate (388) `ShiftTallGate` is PORTED (W4-g24) — the drain shifts it
     /// (`edit::shift_tall_gate`) + the pitched-8 cue, refusal `ai[3]`.
+    /// `edit::shift_tall_gate` (gate 388, W4-g4 via the research/95 §3
+    /// re-point); a refusal sets `ai[3] = num57` (`:60064`/`:60077`) + the
+    /// `Door_Opened` cue.
     pub wants_door_bash: Option<(i32, i32, i32, bool)>,
     /// The King Slime's minion batch count (`AI_015` `:44233`'s
     /// `rand(1, 4)` damage spawn / `:85689`'s `rand(4) + 4` death spawn).
@@ -4962,6 +5019,26 @@ pub struct Npc {
     pub wants_obstruct: bool,
     pub wants_moon_leech: bool,
     pub wants_dutchman_crew: bool,
+    /// `NPC.difficulty` (`NPC.cs:6249`) — the strength the spawn-time
+    /// `ScaleStats` sampled (`Main.Difficulty`, the Journey slider's
+    /// override included). The port's stats are kind-level constants, so
+    /// the scale lands once per NPC (the `difficulty_scaled` latch) and
+    /// this carries the sampled strength for the AI's live reads
+    /// (`GetAttackDamage_ScaledByDifficulty` etc.).
+    pub difficulty: f32,
+    /// The one-shot `ScaleStats` latch — the port's spawn-time scale runs
+    /// at the NPC's first sim tick (the C# runs it inside `NewNPC`,
+    /// `NPC.cs:80796`); true once scaled, so a later slider move does not
+    /// re-scale the live NPC (the C# scales at spawn only).
+    pub difficulty_scaled: bool,
+    /// The difficulty-scaled contact damage (`ScaleStats_ByDifficulty`'s
+    /// `GetAttackDamage_ScaledByDifficulty`, `NPC.cs:18178`) — `None` keeps
+    /// the kind's classic constant. The AI's own `damage_override` writes
+    /// still win (the C#'s per-tick `this.damage` rewrites).
+    pub difficulty_damage: Option<i32>,
+    /// The difficulty-scaled knockback resist (`:18179`) — `None` keeps
+    /// the kind's classic constant.
+    pub difficulty_kb: Option<f32>,
 }
 
 /// The 2-D rotation helper for the Dutchman's drop offsets
@@ -6587,12 +6664,238 @@ impl Npc {
             wants_obstruct: false,
             wants_moon_leech: false,
             wants_dutchman_crew: false,
+            // `NPC.difficulty`'s `SetDefaults` reset (`NPC.cs:8510` family):
+            // the classic 1.0 until `ScaleStats` samples `Main.Difficulty`.
+            difficulty: 1.0,
+            difficulty_scaled: false,
+            difficulty_damage: None,
+            difficulty_kb: None,
         }
     }
 
     pub fn center(&self) -> (f32, f32) {
         let (w, h) = self.size();
         (self.x + w * 0.5, self.y + h * 0.5)
+    }
+
+    /// `NPC.ScaleStats` + `ScaleStats_ByDifficulty` (`NPC.cs:18146-18181`)
+    /// at the Journey difficulty slider's strength: the life/damage/
+    /// knockback curves (`GameDifficultyData.cs:83-86`) sample the
+    /// strength, then the per-kind tweaks (`ScaleStats_ByDifficulty_Tweaks`,
+    /// `:18183-18475`) remap the life/damage again. The port's stats are
+    /// kind-level constants, so the scaled life lands on `max_hp`/`hp` and
+    /// the scaled damage/knockback on the `difficulty_*` seams the live
+    /// reads consult. The documented skips (ANALYSIS W4-c24): the
+    /// `ScaleStats_ForExpertHardmode` pass (`:18151-18154`, the strength
+    /// >= 2 && hardmode arm), the money-curve value scale (`:18176`), the
+    /// getGoodWorld tweaks arms (`:18188-18216`) and the >= Expert
+    /// defense/scale arms inside the tweaks. The
+    /// `ScaleStats_ByPlayerCount` pass (`:18156-18159`) is the identity
+    /// at the port's single player (`GetActivePlayerCount` returns 1 at
+    /// `netMode == 0`, `:18493-18498`; `GetStatScalingFactors`' loop
+    /// `for i = 1; i < 1` never runs, balance 1, `:18722-18739`).
+    pub fn scale_stats_by_difficulty(&mut self, strength: f32) {
+        self.difficulty = strength;
+        // The `ScaleStats` gate (`:18148`): `NeedsExpertScaling[type] ||
+        // (lifeMax > 5 && damage != 0 && !friendly && !townNPC)`. The
+        // port's town residents are the `is_town_resident` set; the
+        // NeedsExpertScaling set (`NPCID.cs:10447`: 25/30/665/33/112/666/
+        // 261/265/371/516/519/397/396/398/491) — its ported kinds are the
+        // spheres, the spore pair, the bubble, the Moon Lord parts and
+        // the Pirate Ship (491), which scale even at 0 damage; the
+        // unported ids (665/112/666/516/519) are inert.
+        let base_damage = if self.kind == NpcKind::Slime {
+            self.slime.stats().damage
+        } else {
+            self.kind.contact_damage()
+        };
+        // The `ProjectileNPC` set (`NPCID.cs:10448`: 25/30/665/33/112/666/
+        // 261/265/371/516/519) — its ported kinds skip the life curve
+        // (`:18173-18177`) and the < 6 floor (`:18160`); the damage and
+        // knockback curves still run.
+        let projectile_npc = matches!(
+            self.kind,
+            NpcKind::BurningSphere
+                | NpcKind::ChaosBall
+                | NpcKind::WaterSphere
+                | NpcKind::FungiSpore
+                | NpcKind::Spore
+                | NpcKind::DetonatingBubble
+        );
+        let needs_expert = projectile_npc
+            || matches!(
+                self.kind,
+                NpcKind::MoonLordHead
+                    | NpcKind::MoonLordHand
+                    | NpcKind::MoonLordCore
+                    | NpcKind::FlyingDutchman
+            );
+        let town = self.kind.is_town_resident();
+        if !(needs_expert || (self.max_hp > 5 && base_damage != 0 && !self.friendly && !town)) {
+            return;
+        }
+        // `ScaleStats_ByDifficulty` (`:18171-18181`): the life curve
+        // (Journey 0.5 → 0.5, Legendary 4 → 4 — a straight line through
+        // Classic 1 → 1, `GameDifficultyData.cs:83`), the damage curve
+        // (0.5 → 0.5, Master 3 → 3, Legendary 4 → 5.3333335, `:84`), the
+        // knockback curve (Classic 1 → 1, Master 3 → 0.8, `:86`).
+        let life_mult = linear_curve_sample(&[(0.5, 0.5), (4.0, 4.0)], strength);
+        let dmg_mult = linear_curve_sample(&[(0.5, 0.5), (3.0, 3.0), (4.0, 5.3333335)], strength);
+        let kb_mult = linear_curve_sample(&[(1.0, 1.0), (3.0, 0.8)], strength);
+        if !projectile_npc {
+            self.max_hp = (self.max_hp as f32 * life_mult) as i32; // `:18175`
+        }
+        let scaled_damage = (base_damage as f32 * dmg_mult) as i32; // `:18178`
+        let scaled_kb = self.knock_back_resist() * kb_mult; // `:18179`
+        // `ScaleStats_ByDifficulty_Tweaks` (`:18183-18475`): the per-kind
+        // life/master/damage remaps. The ported kinds' rows (the boss
+        // families + the invasion groups); the unported kinds' rows are
+        // inert.
+        let (num2, num3, num) = self.difficulty_tweaks(strength);
+        // `:18471-18474`: `1f * Remap(d,1,2,1,num2) * Remap(d,2,3,1,num3)`,
+        // the life banker's-rounded; `1f * Remap(d,1,2,1,num)` the damage.
+        let num4 = 1.0f32 * remap_clamped(strength, 1.0, 2.0, 1.0, num2 as f32)
+            * remap_clamped(strength, 2.0, 3.0, 1.0, num3 as f32);
+        self.max_hp = tr_core::damage::round_bankers((self.max_hp as f32 * num4) as f64) as i32;
+        let num5 = 1.0f32 * remap_clamped(strength, 1.0, 2.0, 1.0, num as f32);
+        self.difficulty_damage =
+            Some(tr_core::damage::round_bankers((scaled_damage as f32 * num5) as f64) as i32);
+        self.difficulty_kb = Some(scaled_kb);
+        // `:18160-18163`: the lifeMax < 6 floor (the non-projectile kinds).
+        if !projectile_npc && self.max_hp < 6 {
+            self.max_hp = 6;
+        }
+        self.hp = self.max_hp; // `:18164` `this.life = this.lifeMax`
+    }
+
+    /// `ScaleStats_ByDifficulty_Tweaks`' per-kind (life num2, master
+    /// num3, damage num) factors (`NPC.cs:18183-18475`) — the ported
+    /// kinds' rows; the unported kinds' rows are inert. The C# holds the
+    /// three in `double` (`:18185-18187`), so the products stay f64 here
+    /// and narrow once at the Remap casts (`:18471`/`:18473`). The
+    /// invasion-group tail (`:18450-18470`) overrides num2/num for the
+    /// -1/-2 groups; the DD2 tail (`:18446-18449`) only cuts num3.
+    fn difficulty_tweaks(&self, strength: f32) -> (f64, f64, f64) {
+        let mut life = 1.0f64; // num2
+        let mut master = 1.0f64; // num3
+        let mut dmg = 1.0f64; // num
+        const REDUCTION: f64 = 0.85; // `NPC.CommonMasterBossLifeReduction` (`:95269`)
+        let id = self.kind.cs_id();
+        match id {
+            // The volley bees (210/211): num2 0.6, num 0.6 (`:18218-18223`);
+            // the defense Remap is the documented skip.
+            210 | 211 => { life = 0.6000000000000001; dmg = 0.6; }
+            // The Servant (5): num2 0.75 (`:18224-18228`).
+            5 => { life = 0.75; master *= REDUCTION; }
+            // The EoC (4): num2 0.65 (`:18229-18233`).
+            4 => { life = 0.65; master *= REDUCTION; }
+            // The EoW family (13-15): num2 0.7, num ×1.1/×0.8/×0.8
+            // (`:18234-18255`); the >= Expert scale/defense arms are the
+            // documented skip.
+            13..=15 => {
+                life = 0.7;
+                master *= REDUCTION;
+                dmg *= if id == 13 { 1.1 } else { 0.8 };
+            }
+            // The Brain of Cthulhu + Creeper (266/267): num2 0.85, num ×0.9
+            // (`:18256-18265`).
+            266 | 267 => { life = 0.85; master *= REDUCTION; dmg *= 0.9; }
+            // King Slime (50): num2 0.7, num 0.8 (`:18266-18271`).
+            50 => { life = 0.7; master *= REDUCTION; dmg = 0.8; }
+            // The Goblin Summoner (471): num2 0.85 (`:18272-18275`).
+            471 => { life = 0.85; }
+            // The Shadowflame Apparition (472): num2 0.85, num 0.8
+            // (`:18276-18280`).
+            472 => { life = 0.85; dmg = 0.8; }
+            // The Pirate Ship's cannon (492): num2 0.85 (`:18281-18284`).
+            492 => { life = 0.85; }
+            // The saucer turret/cannon/core (393-395): num2 0.85
+            // (`:18285-18288`).
+            393..=395 => { life = 0.85; }
+            // The Queen Bee (222): num2 0.7, num 0.9 (`:18289-18294`).
+            222 => { life = 0.7; master *= REDUCTION; dmg = 0.9; }
+            // Skeletron (35): num 1.1 (`:18295-18299`).
+            35 => { master *= REDUCTION; dmg = 1.1; }
+            // The Skeletron Hand (36): num2 1.3, num 1.1 (`:18300-18305`).
+            36 => { life = 1.3; master *= REDUCTION; dmg = 1.1; }
+            // The Deerclops (668): num2 0.85 (`:18306-18310`).
+            668 => { life = 0.85; master *= REDUCTION; }
+            // The Wall of Flesh + Eye (113/114): num2 0.7, num 1.5
+            // (`:18311-18320`); the >= Expert defense arm is the skip.
+            113 | 114 => { life = 0.7; master *= REDUCTION; dmg = 1.5; }
+            // The Hungry (115): num2 0.7 (`:18321-18328`).
+            115 => { life = 0.7; }
+            // The Hungry II (116): num2 0.7 (`:18329-18332`).
+            116 => { life = 0.7; }
+            // The Leech family (117-119): num2 0.8 (`:18333-18336`).
+            117..=119 => { life = 0.8; }
+            // The Destroyer (134-136): num2 0.75, num ×2/×0.85/×0.85
+            // (`:18347-18367`); the >= Expert scale ×1.05 is a draw-side
+            // scale the port's hitbox does not model (recorded).
+            134..=136 => {
+                life = 0.75;
+                master *= REDUCTION;
+                dmg *= if id == 134 { 2.0 } else { 0.85 };
+            }
+            // The Probe (139): num2 0.75, num 0.8 (`:18368-18376`) — NO
+            // num3 cut.
+            139 => { life = 0.75; dmg = 0.8; }
+            // Skeletron Prime + limbs (125-131): num2 0.75, num 0.85
+            // (`:18377-18388`).
+            125..=131 => { life = 0.75; master *= REDUCTION; dmg = 0.85; }
+            // Plantera (262): num2 0.7, num 1.15 (`:18389-18394`).
+            262 => { life = 0.7; master *= REDUCTION; dmg = 1.15; }
+            // Plantera's Tentacle (264): num 1.15 (`:18395-18399`).
+            264 => { master *= REDUCTION; dmg = 1.15; }
+            // Golem (245-249): num2 0.75, num 0.8 (`:18405-18410`).
+            245..=249 => { life = 0.75; master *= REDUCTION; dmg = 0.8; }
+            // Duke Fishron (370): num2 0.65, num 0.7 (`:18411-18416`).
+            370 => { life = 0.65; master *= REDUCTION; dmg = 0.7; }
+            // The bubble + the sharkrons (371-373): num2 0.75 except the
+            // bubble, num 0.75 (`:18417-18424`) — NO num3 cut.
+            371..=373 => {
+                if id != 371 {
+                    life = 0.75;
+                }
+                dmg = 0.75;
+            }
+            // The cultist (439/440) / the towers (454-459/522/523):
+            // num2 0.75 except 522, num 0.75 (`:18425-18433`).
+            439 | 440 | 454..=459 | 522 | 523 => {
+                if id != 522 {
+                    life = 0.75;
+                    master *= REDUCTION;
+                }
+                dmg = 0.75;
+            }
+            // The Moon Lord parts (396-398): num2 0.75, num 0.75
+            // (`:18434-18439`).
+            396..=398 => { life = 0.75; master *= REDUCTION; dmg = 0.75; }
+            // Betsy (551): num2 0.75, num 0.65 (`:18440-18445`).
+            551 => { life = 0.75; master *= REDUCTION; dmg = 0.65; }
+            _ => {}
+        }
+        // The DD2 tail (`:18446-18449`): the Old One's Army set
+        // (`NPCID.cs:10432`) cuts num3 only.
+        if matches!(id, 548 | 549 | 551..=578) {
+            master *= REDUCTION;
+        }
+        // The invasion-group tail (`:18450-18470`): the pumpkin/frost
+        // bosses num2 0.65 / num3 ×0.85 / num 0.75, the other -1/-2
+        // invasion kinds num2 0.75 / num 0.75 (no num3 cut).
+        let group = invasion_group(id);
+        if group == -2 || group == -1 {
+            match id {
+                315 | 325 | 327 | 344 | 345 | 346 => {
+                    life = 0.65;
+                    master *= REDUCTION;
+                    dmg = 0.75;
+                }
+                _ => { life = 0.75; dmg = 0.75; }
+            }
+        }
+        let _ = strength; // the >= Expert defense/scale arms are the skip
+        (life, master, dmg)
     }
 
     /// `NPC.knockBackResist` — `StrikeNPC_Inner`'s soft-cap chain input
@@ -6603,6 +6906,10 @@ impl Npc {
     pub fn knock_back_resist(&self) -> f32 {
         // The style-39 machine's live write wins (S1-D-4 W-10).
         if let Some(kb) = self.kb_resist_override {
+            return kb;
+        }
+        // The difficulty-scaled value (`ScaleStats_ByDifficulty:18179`).
+        if let Some(kb) = self.difficulty_kb {
             return kb;
         }
         if self.kind == NpcKind::Slime {
@@ -7337,6 +7644,9 @@ impl Npc {
             // d35 (C).
             NpcKind::Unicorn | NpcKind::Wolf => 0.3,
             NpcKind::Tumbleweed => 0.8,
+            // W4-e21 — PartyBunny 540 writes no knockBackResist row, so the
+            // class default 1f stands (Bunny 46 is d34's arm above).
+            NpcKind::PartyBunny => 1.0,
             // W4-d120 — SetDefaults knockBackResist rows: 142/160/178/579
             // 0.5 (`NPC.cs:10803`/`:11015`/`:11264`/`:16565`), 209 0.25
             // (`:11693`).
@@ -7833,6 +8143,8 @@ impl Npc {
             NpcKind::GoldGoldfish | NpcKind::Pupfish | NpcKind::Dolphin => 0,
             // W4-e21 — the bunny pair: defense 0 (`NPC.cs:9342`).
             NpcKind::Bunny | NpcKind::PartyBunny => 0,
+            // W4-e21 — the PartyBunny (540): defense 0 (Bunny is d34's arm).
+            NpcKind::PartyBunny => 0,
             // The worms: the head 2/0/2, the body 6/4/4, the tail 10/6/8.
             NpcKind::DevourerHead => 2,
             NpcKind::DevourerBody => 6,
@@ -8801,6 +9113,8 @@ impl Npc {
             // head's `value = 0f`, `NPC.cs:8544`; the catch item 2019
             // rides the critter-catch work).
             NpcKind::Bunny | NpcKind::PartyBunny => 0.0,
+            // W4-e21 — PartyBunny 540: no value row (Bunny is d34's arm).
+            NpcKind::PartyBunny => 0.0,
             // The worms: the per-segment coin value (`:8763`'s 140, `:8850`'s
             // 40, `:8903`'s 800 — the body/tail rows carry the same value).
             NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 140.0,
@@ -9581,6 +9895,7 @@ impl Npc {
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody4
+            | NpcKind::Cyborg => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -13030,7 +13345,10 @@ impl Npc {
             rotation: self.rotation,
             alpha: self.alpha as i32,
             chaseable: self.chaseable,
-            damage: self.damage_override.unwrap_or(self.kind.contact_damage()),
+            damage: self
+                .damage_override
+                .or(self.difficulty_damage)
+                .unwrap_or(self.kind.contact_damage()),
             defense: self.defense(),
             life: self.hp,
             life_max: self.max_hp,
@@ -14661,6 +14979,118 @@ impl Npc {
                 2.0
             } else {
                 4.0
+    /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
+    /// for every style the axis has not claimed yet. D-3 migrates one family
+    /// at a time into the axis above; this match shrinks as they land.
+    // S1-D-4c dead-arm purge (census §2d): a duplicate kind arm never runs —
+    // the FIRST arm wins and the compiler only warns, so a wiring edit to the
+    // dead arm silently no-ops (the DD2Bartender town-group duplicate and the
+    // saucer trio duplicate were purged here). One live arm per kind: a
+    // duplicate is a hard error, the `to_u16` guard's precedent (S1-F-1).
+    #[deny(unreachable_patterns)]
+    fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
+        match self.kind {
+            // S1-D-3ff wave A: the nine LOW-id slimes ride the same
+            // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
+            // for every slime type — the per-type rows are stats only),
+            // the five demon-eye variants the aiStyle-2 chase, and the
+            // ten zombie variants the aiStyle-3 walker (the documented
+            // stand-in routing, the pumpkin wave's precedent).
+            NpcKind::Slime
+            | NpcKind::MotherSlime
+            | NpcKind::LavaSlime
+            | NpcKind::DungeonSlime
+            | NpcKind::CorruptSlime
+            | NpcKind::IlluminantSlime
+            | NpcKind::IceSlime
+            | NpcKind::Crimslime
+            | NpcKind::SpikedIceSlime
+            | NpcKind::UmbrellaSlime => self.update_slime(world, player, dt),
+            NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::CataractEye
+            | NpcKind::SleepyEye
+            | NpcKind::DialatedEye
+            | NpcKind::GreenEye
+            | NpcKind::PurpleEye => self.update_eye(world, player, dt),
+            NpcKind::Zombie
+            | NpcKind::DoctorBones
+            | NpcKind::TheGroom
+            | NpcKind::BaldZombie
+            | NpcKind::ZombieEskimo
+            | NpcKind::PincushionZombie
+            | NpcKind::SlimedZombie
+            | NpcKind::SwampZombie
+            | NpcKind::TwiggyZombie
+            | NpcKind::FemaleZombie
+            | NpcKind::ZombieRaincoat
+            // S1-D-3z — the holiday zombies ride the same aiStyle-3 walker
+            // (the C#'s `AI_003_Fighters` is one arm per style; the per-type
+            // rows are stats + the `num107` cap, `NPC.cs:58322-58401`).
+            | NpcKind::ZombieDoctor
+            | NpcKind::ZombieSuperman
+            | NpcKind::ZombiePixie
+            | NpcKind::ZombieXmas
+            | NpcKind::ZombieSweater
+            // S1-D-3z — the Blood Zombie (489) rides the same aiStyle-3
+            // walker (`NPC.cs:14609`); its `num107` cap is the
+            // distance-scaled 489 row (`npc_ai3_speeds.rs:550`).
+            | NpcKind::BloodZombie => self.update_zombie(world, player, dt),
+            NpcKind::Guide
+            | NpcKind::DD2Bartender
+            | NpcKind::Merchant
+            | NpcKind::Dryad
+            | NpcKind::Nurse
+            | NpcKind::ArmsDealer
+            | NpcKind::Demolitionist
+            | NpcKind::Painter
+            | NpcKind::WitchDoctor
+            | NpcKind::Clothier
+            | NpcKind::TravellingMerchant
+            | NpcKind::Angler
+            | NpcKind::Wizard
+            | NpcKind::Mechanic
+            | NpcKind::Stylist
+            | NpcKind::TaxCollector
+            | NpcKind::Golfer
+            | NpcKind::Zoologist
+            | NpcKind::Princess
+            | NpcKind::DyeTrader
+            | NpcKind::PartyGirl
+            | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
+            // W4-e21 — the bunny pair (46/540, aiStyle 7): the town-critter
+            // hop rides the port's aiStyle-7 walker stand-in (`update_guide`,
+            // the Guide precedent); the faithful `AI_007_TownEntities`
+            // TownCritter arm (`NPC.cs:53730-53760`/`:54191-54194`) is the
+            // M4-NPC critter wave's (ANALYSIS "The bunny statue's pair").
+            NpcKind::Bunny | NpcKind::PartyBunny => self.update_guide(world, dt),
+            | NpcKind::GoblinTinkerer
+            // W4-d120 — the four town kinds ride the town-wander stand-in
+            // (the M4-TOWN roster's shape; the faithful aiStyle-7 machine
+            // is `npc_ai_town.rs`, the b3 lane).
+            | NpcKind::SantaClaus
+            | NpcKind::Truffle
+            | NpcKind::Steampunker
+            | NpcKind::Cyborg => self.update_guide(world, dt),
+            NpcKind::QueenBee => {
+                unreachable!("aiStyle 43 rides the style axis (S1-D-3 W-3)")
+            }
+            // The volley bees ride the aiStyle-5 family axis above
+            // (`ai_005_hover_family`'s type-210/211 branch).
+            NpcKind::Bee | NpcKind::BeeSmall => {
+                unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
+            }
+            // B-1: the expert seam — the port is single-difficulty (the
+            // classic solo stand-in, the style31 CLASSIC_SOLO precedent);
+            // hard_mode is NOT expertMode (research/51 S1).
+            NpcKind::SkeletronHead => self.update_skeletron(world, player, rng, false),
+            NpcKind::SkeletronHand => self.update_skeletron_hand(world, player, false),
+            // S1-D-3 W-1: the WoF family's aiStyles 27/28/29 ride the
+            // style axis above (the faithful modules); `ai_style()` maps
+            // these kinds unconditionally, so the fallthrough never
+            // reaches them (the aiStyle-5/9/57 marker precedent).
+            NpcKind::WallOfFleshEye => {
+                unreachable!("aiStyle 28 rides the style axis (S1-D-3 W-1)")
             }
         };
         // `:59086-59089` — the cooldown countdown.
@@ -26295,6 +26725,254 @@ impl Npc {
                         }
                     }
                 }
+        }
+        // `:43365-43382` — the body scale: the hp drives the size (the
+        // C#'s `num9`). `:43368-43371` — `life <= 0` returns BEFORE the
+        // scale write (the port no longer scales a corpse — K-4).
+        if self.hp <= 0 {
+            return;
+        }
+        let num9 = (self.hp as f32 / self.max_hp as f32 * 0.5 + 0.75) * num * num2;
+        if num9 != self.scale || flag {
+            // `:43378-43379` — `(int)(98f * scale)` / `(int)(92f * scale)`:
+            // the C# truncates the box to whole pixels (K-4 int class).
+            let new_w = (98.0 * num9) as i32 as f32;
+            let new_h = (92.0 * num9) as i32 as f32;
+            // The C#'s recentre (`:43375-43381`): the bottom-centre stays
+            // put (`position += (width/2, height)` then `-= (new/2, new)`).
+            self.x += w * 0.5 - new_w * 0.5;
+            self.y += h - new_h;
+            self.scale = num9;
+            self.size_override = Some((new_w, new_h));
+        }
+        // `:43387-43393` — the minion batches: every 5 % of the hp the King
+        // Slime spawns 1-3 slimes. `:43388` — `!(life + num10 < ai[3])`
+        // returns: the batch fires on a STRICT cross of the 5 % window.
+        let num10 = (self.max_hp as f32 * 0.05) as i32;
+        if !((self.hp + num10) < self.ai[3] as i32) {
+            return;
+        }
+        self.ai[3] = self.hp as f32;
+        // `:43393` — the ONE batch-count draw. The per-minion draws
+        // (`:43396-43407`: position x/y, the expert kind roll, velocity
+        // x/y, `ai[0]`) resolve in the drain (`world_sim/npcs.rs`) at the
+        // same `UpdateNPCs` stream position — K-2 (S1-A-10 census: 1 +
+        // 5×count classic draws per batch).
+        let count = rng.next_range(1, 4);
+        self.wants_minion = true;
+        self.wants_minion_batch = count as u32;
+    }
+
+    /// The contact overlap test (`contact`'s AABB) as a pure read —
+    /// `Player.StatusFromNPC`'s call site (`Player.cs:31425`) runs the
+    /// per-NPC debuff rolls on the same touch branch.
+    pub fn touches(&self, player: &Player) -> bool {
+        let (w, h) = self.size();
+        self.x < player.x + crate::player::WIDTH
+            && self.x + w > player.x
+            && self.y < player.y + crate::player::HEIGHT
+            && self.y + h > player.y
+    }
+
+    /// `AI_007_TownNPCs`'s walk subset (`NPC.cs:10586+`): the town NPC
+    /// wanders on the ground, turns at the walls/ledges, jumps the
+    /// one-tile obstacles. The chase/doors/talk arms land with their
+    /// systems.
+    fn update_guide(&mut self, world: &World, _dt: f32) {
+        // W4-e21: the kind's own box — every town NPC is 18x40 (the Guide's
+        // size, unchanged), but the bunny pair riding this stand-in is 18x20
+        // (`NPC.cs:9338-9339`), so the collision reads `self.kind.size()`.
+        let (w, h) = self.kind.size();
+        // The wander: a walking pace with the random turn every few
+        // seconds (`ai[3]`'s idle timer shape).
+        self.anim += 1.0;
+        // The deterministic turn: every 240 ticks the wander flips (the
+        // per-NPC randomness rides the shared streams' order).
+        if self.anim % 240.0 < 1.0 {
+            self.facing = -self.facing;
+            self.sprite_dir = self.facing;
+        }
+        self.vx = self.facing as f32 * 0.5;
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else if self.on_ground {
+            self.vy = -6.2;
+            self.on_ground = false;
+        } else {
+            self.vx = 0.0;
+        }
+
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
+    }
+
+    /// W4-c10 — the waterfowl WALKERS (362/364/602/608, aiStyle 7): the
+    /// `AI_007_TownEntities` head's takeoff gate (`NPC.cs:53180-53184`) —
+    /// `(type == 362 || 364 || 602 || 608) && Main.netMode != 1 &&
+    /// (velocity.Y > 4f || velocity.Y < -4f || base.wet)` transforms into
+    /// the swimming form (`Transform(this.type + 1)`, the default ai
+    /// arguments 0) and RETURNS. The C# reads `base.wet` latched by the
+    /// previous tick's `UpdateCollision`; the port re-derives it here
+    /// (the `update_swimmer` convention, `npc.rs`'s `is_wet` pass). The
+    /// walk itself rides the town stand-in (`update_guide` — the port's
+    /// documented aiStyle-7 routing until the `npc_ai_town.rs`
+    /// migration); the full `AI_007` body's other gates (the shimmer
+    /// state 25, the resting-spot scan, the flee ladder) are that
+    /// module's wiring step.
+    fn waterfowl_walker_step(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        // `:53180-53184` — the takeoff gate (the port runs netMode 0).
+        if self.vy > 4.0 || self.vy < -4.0 || self.wet {
+            let old_ty = self.kind.cs_id() as i32;
+            let new_kind = match self.kind {
+                NpcKind::Duck => NpcKind::Duck2,
+                NpcKind::DuckWhite => NpcKind::DuckWhite2,
+                NpcKind::Seagull => NpcKind::Seagull2,
+                NpcKind::Grebe => NpcKind::Grebe2,
+                _ => unreachable!("only the waterfowl walkers reach this arm"),
+            };
+            // `NPC.Transform(type + 1)` with the default ai0..3 = 0
+            // (`NPC.cs:81084-81114`): the bottom-anchored reposition, the
+            // SetDefaults swap, TargetClosest, the integer life rescale.
+            self.transform_to_kind(world, player, new_kind);
+            // W4-c10 sweep — `TransformVisuals` (`NPC.cs:81136` →
+            // `:80963-81033`): the waterfowl takeoff pairs match NO arm
+            // — visually silent, zero draws (the census verdict,
+            // `npc_transform_visuals.rs`). The explicit call keeps the
+            // seam for the merge.
+            let cue = crate::npc_transform_visuals::transform_visuals(
+                old_ty, old_ty + 1, 28, 22, rng,
+            );
+            debug_assert_eq!(cue, None, "the waterfowl takeoff is silent");
+            return;
+        }
+        self.update_guide(world, dt);
+    }
+
+    /// `AI_003_Fighters` for the skeleton family (`NPC.cs:10586+`): the
+    /// cave walkers chase the player through the framework's walker step
+    /// with the vanilla-cited tunables — the 15-frame strip rides the same
+    /// accumulator (the frame wraps over `Main.npcFrameCount[21] = 15`,
+    /// `Main.cs:67082`).
+    fn update_skeleton(&mut self, world: &World, player: &mut Player, _dt: f32) {
+        // S1-D-3p (walker migration): the shared selection at the C#
+        // position (`NPC.cs:57369`) replaces the ad-hoc dx-sign facing and
+        // the invented 80×40-tile aggro window — `walker_step_fighter`
+        // keeps the S1-D-3 ladder (the aiStyle-3 kinds ride the C#'s
+        // per-type accel/brake, `NPC.cs:57403-58401`) and the direct-write
+        // fallback byte-identical.
+        crate::npc_ai::walker_step_fighter(
+            self,
+            world,
+            player,
+            crate::npc_ai::WalkerParams {
+                // The C#'s per-type cap (`AI_003_Fighters`, the `num83` /
+                // `num107` / cap-2 / cap-3 groups, `NPC.cs:57520-58374`):
+                // the skeleton 1.5, the undead miner 1.0, the pirate
+                // deckhand 2.0 and the pirate captain's mate 3.0. The jump
+                // -6.2 stays; the aggro box is gone (the C# gates the chase
+                // on the despawn-discouragement arm, not a distance box).
+                speed: self
+                    .kind
+                    .ai3_walk_speed()
+                    .expect("the cave walkers' aiStyle-3 cap"),
+                jump: -6.2,
+                // The fighter core ignores the box (the C# gates the chase
+                // on the despawn-discouragement arm, `NPC.cs:57336`); the
+                // values stay ONLY for the non-aiStyle-3 fallback — the
+                // Present Mimic's documented aiStyle-25 walker stand-in
+                // (`npc.rs`'s dispatch note) keeps its legacy step.
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The frame: the same accumulator as the zombie's, wrapping over
+        // the 15-frame strip.
+        self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            self.frame = (self.frame + 1) % 15;
+        }
+    }
+
+    /// `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) — the Frost
+    /// Legion trio. The constant hop cycle (`velocity.Y = -6f` per beat,
+    /// the every-third `ai[0] > 2f` beat → `-8.2f` + `ai[1]++`), the
+    /// per-type speed/accel pair (`num551`/`num552`: the Gangsta 3/0.7,
+    /// the Stabby (net 144) 4/1, the Balla (net 145) 3.5/0.8 — the
+    /// defaults 4/1), the stuck flip (`localAI[2]` = the previous
+    /// `position.X`, the port's
+    /// `frost_stuck_x`) with the 60-tick no-retarget cooldown, the walk
+    /// acceleration `direction * num552 * 0.01` and the `num551` clamp.
+    /// The type arms: the Gangsta's 120-tick bottle throw (the hostile
+    /// `BulletSnowman` 110 at 12×spriteDirection, 25 dmg, `timeLeft = 300`
+    /// behind `AI_GlobalFiringDistanceCheck`), the Stabby's post-3-hops
+    /// 200-tick pause (`ai[1] >= 3f` → the vx decay + the reset), the
+    /// Balla's 16-tick windup into the aimed `SnowBallHostile` 109
+    /// (35 dmg, speed 10 at the player's top-centre). The `confused`
+    /// resets (`:29012-29015`/`:29123-29128`) read the buff engine's
+    /// Confused (31) directly — the C# latches `this.confused` from the
+    /// same buff scan (`NPC.cs:92029-92032`; the `npc_target.rs` shape).
+    fn update_frost_legion(&mut self, world: &World, player: &mut Player, _dt: f32) {
+        let _ = world;
+        let (mut num551, mut num552) = (4.0f32, 1.0f32);
+        if self.kind == NpcKind::SnowmanGangsta {
+            num551 = 3.0;
+            num552 = 0.7;
+        }
+        if self.kind == NpcKind::MysterySnowman {
+            num551 = 3.5;
+            num552 = 0.8;
+        }
+        let confused = self.buffs.find_buff_index(31).is_some();
+        let (pcx, pcy) = player.center();
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        // `TargetClosest()` (`NPC.cs:29092`/`:29040`/`:29056`): the facing
+        // follows the player's side; the sprite rides it.
+        fn target_closest(n: &mut Npc, pcx: f32, cx: f32) {
+            n.facing = if pcx >= cx { 1 } else { -1 };
+            n.sprite_dir = n.facing;
+        }
+        // `NPC.AI_GlobalFiringDistanceCheck` (`NPC.cs:55835-55841`):
+        // `Utils.CenteredRectangle(targetPos.ToPoint(), Main.MaxWorldViewSize)`
+        // (`Utils.cs:947-950` — the int-truncated centre, the 1920×1200
+        // size from `Main.cs:66714`), `Inflate(-50, -50)` → the 1820×1100
+        // box at `(centre - 910, centre - 550)`, then `Rectangle.Contains`
+        // on the shooter's `ToPoint()` — the half-open `[left, left+width)`
+        // test over the truncated coordinates.
+        let firing_distance = |sx: f32, sy: f32| -> bool {
+            let (sx, sy) = (sx as i32, sy as i32);
+            let (px, py) = (pcx as i32, pcy as i32);
+            sx >= px - 910 && sx < px + 910 && sy >= py - 550 && sy < py + 550
+        };
+        let player_alive = player.hp > 0;
+
+        // The Gangsta's throw arm (`:29009-29032`) — independent of the
+        // hop core below.
+        if self.kind == NpcKind::SnowmanGangsta {
+            self.ai[2] += 1.0;
+            // The confused reset (`:29012-29015`).
+            if confused {
+                self.ai[2] = 0.0;
             }
             // `case 182` (`NPC.cs:74827-74884`): the FloatyGross's ghost
             // flap — the same ghost arm as 82 (the vx*0.1 tilt, the 6-tick
@@ -33108,6 +33786,95 @@ impl Npc {
                         self.vx += (tx - self.vx) * 0.1;
                         self.vy += (ty - self.vy) * 0.1;
                     }
+        if self.x < player.x + crate::player::WIDTH
+            && self.x + w > player.x
+            && self.y < player.y + crate::player::HEIGHT
+            && self.y + h > player.y
+        {
+            let (cx, _) = self.center();
+            // `Player.Update_NPCCollision`'s EoC shield hit
+            // (`Player.cs:21049-21116`): while `dash == 2 && eocDash > 0` the
+            // dash deals 30 x meleeDamage with knockback 9, ends itself
+            // (`dashDelay = 30`), bounces the player back, and grants the
+            // 4-tick collision immunity. The vanilla hitbox is expanded by 8
+            // and offset by half the velocity (the plain overlap stands in);
+            // the crit roll (4% base) waits for the combat rng pass.
+            if player.dash == 2 && player.eoc_dash > 0 {
+                let dmg = (30.0 * player.melee_damage) as i32;
+                self.hurt(dmg, cx, 9.0, false, player.buffs.expert_mode);
+                player.eoc_dash = 10;
+                player.dash_delay = 30;
+                let dir = if player.vx != 0.0 {
+                    player.vx.signum() as i32
+                } else {
+                    player.facing
+                };
+                player.vx = -(dir as f32) * 9.0;
+                player.vy = -4.0;
+                player.on_ground = false;
+                player.hurt_cd = player.hurt_cd.max(4.0 / 60.0);
+                return;
+            }
+            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact);
+            // the 0-damage kinds (the Goldfish) never hurt either (the
+            // vanilla `damage > 0` gate).
+            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact;
+            // the M4-TOWN-4's gate loss fixed here — the Merchant's dmg 10
+            // reached the hurt path until this).
+            if !matches!(
+                self.kind,
+                NpcKind::Guide
+                    | NpcKind::Merchant
+                    | NpcKind::Dryad
+                    | NpcKind::Nurse
+                    | NpcKind::ArmsDealer
+                    | NpcKind::Demolitionist
+                    | NpcKind::Painter
+                    | NpcKind::WitchDoctor
+                    | NpcKind::Clothier
+                    | NpcKind::TravellingMerchant
+                    | NpcKind::Angler
+                    | NpcKind::SleepingAngler
+                    | NpcKind::Wizard
+                    | NpcKind::BoundWizard
+                    | NpcKind::Mechanic
+                    | NpcKind::BoundMechanic
+                    | NpcKind::Stylist
+                    | NpcKind::WebbedStylist
+                    | NpcKind::TaxCollector
+                    | NpcKind::Zoologist
+                    | NpcKind::Princess
+                    | NpcKind::DyeTrader
+                    | NpcKind::PartyGirl
+                    | NpcKind::EyeOfCthulhu
+                    | NpcKind::BoundGoblin
+                    | NpcKind::GoblinTinkerer
+                    // W4-d34: the Old Man is friendly — never contact-damages.
+                    | NpcKind::OldMan
+                    // W4-d37 — the Pirate (229) is a friendly town NPC
+                    // (`NPC.cs:11955-11956`); the goldfish critter (230) is
+                    // 0-damage (the `dmg > 0` gate below already refuses it).
+                    | NpcKind::Pirate
+                    // W4-d120 — the four town kinds + the bound Tavernkeep
+                    // are friendly: never contact-damage.
+                    | NpcKind::SantaClaus
+                    | NpcKind::Truffle
+                    | NpcKind::Steampunker
+                    | NpcKind::Cyborg
+            ) {
+                let base_dmg = if self.kind == NpcKind::Slime {
+                    self.slime.stats().damage
+                } else {
+                    self.damage_override
+                        .or(self.difficulty_damage)
+                        .unwrap_or_else(|| self.kind.contact_damage())
+                };
+                // Player.cs:31387 — `Main.DamageVar((float)npc.damage * damageMultiplier, 0f - luck)`.
+                // S1-C-5: contact damage rolls variance with the player's luck inverted.
+                // The `Main.rand` draws ride the caller's `UnifiedRandom` stream
+                // (the `DropRng` impl, `unified_random.rs`).
+                let dmg = if base_dmg > 0 {
+                        tr_core::damage::damage_var(rng, base_dmg as f32, -player.luck_state.luck)
                 } else {
                     num4 = 3;
                     let (dx, dy) = (bx - cx, by - cy);
@@ -38968,6 +39735,18 @@ impl Npc {
             NpcKind::CultistDragonBody3 => 457,
             NpcKind::CultistDragonBody4 => 458,
             NpcKind::CultistDragonTail => 459,
+            // W4-e21 — PartyBunny 540's render-key term: the port-local
+            // protocol id 237 (Bunny 46 keeps d34's 270 above; `cs_id` stays
+            // the real 46/540 for the caps). 229/237 collision-free per e21.
+            NpcKind::PartyBunny => 237,
+            // W4-d120 — the chatter kinds' G6 keys: the port-local band
+            // (the vanilla 160/178 collide with the Stylist/kobold arms
+            // above; 142/209/579 are free but the family keeps one band —
+            // the wyvern precedent; RE-KEYED to 245-248 at the merge - 241-244 are d37-owned in main). Injective either way.
+            NpcKind::SantaClaus => 245,
+            NpcKind::Truffle => 246,
+            NpcKind::Steampunker => 247,
+            NpcKind::Cyborg => 248,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -38998,6 +39777,15 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
     let mut h = npcs.len() as u32;
     for n in npcs {
         h = h.wrapping_mul(31).wrapping_add(n.render_key());
+        // W4-g78 wiring — the debuff-tint chain (`GetNPCColorTintedByBuffs`,
+        // `NPC.cs:91024-91141`) now tints the NPC draw colour at the
+        // `entities.rs` colour site (`Main.cs:22939`), so the tint-relevant
+        // buff bar is a draw input inside the cached world range: two
+        // frames differing only in an NPC's midas/ichor/poison/… state must
+        // not share a cached range (the d70 `moon_lord_strength` key-widen
+        // precedent). `tint_key` is zero for a clean bar, so buff-free
+        // worlds keep the pre-wiring key bit-for-bit.
+        h = h.wrapping_mul(31).wrapping_add(crate::npc_hunter_tint::tint_key(n));
     }
     h
 }
@@ -46634,6 +47422,8 @@ mod tests {
         NpcKind::SpikedJungleSlime,
         NpcKind::IcyMerman,
     ]    pub(super) const ALL_KINDS: [NpcKind; 528] = [
+    // + W4-e21's PartyBunny 540 = 513.
+    pub(super) const ALL_KINDS: [NpcKind; 517] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -46972,6 +47762,7 @@ mod tests {
         NpcKind::IlluminantBat,
         NpcKind::PossessedArmor,
         NpcKind::WyvernTail,
+        // W4-d34 kinds 1-70 coverage wave (phase 1).
         NpcKind::AngryBones,
         NpcKind::CursedSkull,
         NpcKind::OldMan,
@@ -47154,6 +47945,9 @@ mod tests {
         NpcKind::VileSpitEoW,
         NpcKind::Wolf,
         NpcKind::Tumbleweed,
+        // W4-e21 — the Party Bunny (540); Bunny 46 is d34's row above.
+        NpcKind::PartyBunny,
+        // W4-d120 — the unclaimed chatter kinds.
         NpcKind::SantaClaus,
         NpcKind::Truffle,
         NpcKind::Steampunker,
@@ -60161,6 +60955,13 @@ mod s1_d_2_tests {
             rng.peek(),
             witness.peek(),
             "climb + jitter X + jitter Y, nothing else (:50761/:50784-50785)"
+            covered + sentinel,
+            517,
+            "every decodable kind resolves (the wire roster's size - 512 (508 (spine 488 + c3's 694 + c4's 8 + c7's 4 + c8's 4 + c9's 3) + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 / DuckWhite2 734 renumbered per the d37 tables; the Seagull/Grebe pairs + the 12-critter tail dropped - d42/d40/c8 own them)) + W4-e21's PartyBunny 540 (Bunny 46 is in the spine) + W4-d120's 4 new chatter kinds (SantaClaus/Truffle/Steampunker/Cyborg; BartenderUnconscious 579 is d42-owned), L-B gate)"
+        );
+        assert!(
+            covered > 43,
+            "the fallback lifted the coverage past the hand table"
         );
         assert_eq!(npc.wants_hostile_shot.len(), 1, "the stinger fired");
         let (kind, _sx, _sy, svx, _svy, dmg) = npc.wants_hostile_shot[0];
@@ -63190,6 +63991,238 @@ mod w4_d25_style26_census_tests {
         w.pumpkin_moon = true;
         w
     }
+    /// Every ported kind's vanilla `NPCID` -> its `SetDefaults` aiStyle,
+    /// extracted mechanically from the 1.4.5.8 decompile (the compound
+    /// `this.type` conditions evaluated per id). The pin for the axis's
+    /// first dispatch key: `NpcKind::ai_style` must carry the C#'s row.
+    const CS_STYLES: &[(NpcKind, u8)] = &[
+        (NpcKind::Slime, 1),
+        (NpcKind::DemonEye, 2),
+        (NpcKind::WanderingEye, 2),
+        (NpcKind::Zombie, 3),
+        (NpcKind::KingSlime, 15),
+        (NpcKind::Guide, 7),
+        (NpcKind::Skeleton, 3),
+        (NpcKind::UndeadMiner, 3),
+        (NpcKind::CaveBat, 14),
+        (NpcKind::JungleBat, 14),
+        (NpcKind::Hellbat, 14),
+        (NpcKind::VoodooDemon, 14),
+        (NpcKind::EaterOfSouls, 5),
+        (NpcKind::Hornet, 5),
+        (NpcKind::MeteorHead, 5),
+        (NpcKind::ServantOfCthulhu, 5),
+        (NpcKind::GoblinThief, 3),
+        (NpcKind::GoblinWarrior, 3),
+        (NpcKind::GoblinArcher, 3),
+        (NpcKind::GoblinPeon, 3),
+        (NpcKind::GoblinSummoner, 3),
+        (NpcKind::SnowmanGangsta, 38),
+        (NpcKind::SnowBalla, 38),
+        (NpcKind::MysterySnowman, 38),
+        (NpcKind::EyeOfCthulhu, 4),
+        (NpcKind::BrainOfCthulhu, 54),
+        (NpcKind::Creeper, 55),
+        (NpcKind::QueenBee, 43),
+        (NpcKind::Bee, 5),
+        (NpcKind::BeeSmall, 5),
+        (NpcKind::SkeletronHead, 11),
+        (NpcKind::SkeletronHand, 12),
+        (NpcKind::SkeletronPrime, 32),
+        (NpcKind::Retinazer, 30),
+        (NpcKind::Spazmatism, 31),
+        (NpcKind::Plantera, 51),
+        (NpcKind::Golem, 45),
+        (NpcKind::GolemHead, 46),
+        (NpcKind::GolemHeadFree, 48),
+        (NpcKind::Deerclops, 123),
+        (NpcKind::WallOfFlesh, 27),
+        (NpcKind::TheDestroyer, 37),
+        (NpcKind::TheDestroyerBody, 37),
+        (NpcKind::TheDestroyerTail, 37),
+        (NpcKind::Probe, 5),
+        (NpcKind::MartianProbe, 80),
+        (NpcKind::MartianDrone, 74),
+        (NpcKind::ScutlixRider, 75),
+        (NpcKind::MartianSaucerCore, 76),
+        (NpcKind::MartianSaucer, 75),
+        (NpcKind::FlyingDutchman, 93),
+        (NpcKind::DD2DarkMage, 109),
+        (NpcKind::DD2Betsy, 110),
+        (NpcKind::DD2EterniaCrystal, 105),
+        (NpcKind::DD2LanePortal, 106),
+        (NpcKind::StardustTower, 94),
+        (NpcKind::AncientCultist, 84),
+        (NpcKind::MoonLordCore, 77),
+        (NpcKind::MoonLordHand, 78),
+        (NpcKind::MoonLordHead, 79),
+        (NpcKind::MoonLordFreeEye, 81),
+        (NpcKind::DevourerHead, 6),
+        (NpcKind::GiantWormHead, 6),
+        (NpcKind::EaterOfWorldsHead, 6),
+        (NpcKind::LeechHead, 6),
+        (NpcKind::SolarCrawltipedeHead, 6),
+        (NpcKind::StardustWormHead, 6),
+        (NpcKind::GoblinSorcerer, 8),
+        (NpcKind::Tim, 8),
+        (NpcKind::DarkCaster, 8),
+        (NpcKind::FireImp, 8),
+        (NpcKind::ChaosBall, 9),
+        (NpcKind::BurningSphere, 9),
+        (NpcKind::WaterSphere, 9),
+        (NpcKind::Goldfish, 16),
+        (NpcKind::Piranha, 16),
+        (NpcKind::Shark, 16),
+        // W4-c4 (the style-16 swimmers): the nine kinds' aiStyle rows
+        // (`NPC.cs:9494`/`:10995`/`:12111`/`:14488`/`:16684`/`:16800`/
+        // `:16897`/`:17658`/`:17714`).
+        (NpcKind::CorruptGoldfish, 16),
+        (NpcKind::Arapaima, 16),
+        (NpcKind::BloodFeeder, 16),
+        (NpcKind::CrimsonGoldfish, 16),
+        (NpcKind::GoldGoldfish, 16),
+        (NpcKind::Pupfish, 16),
+        (NpcKind::Dolphin, 16),
+        // E8 merge: Pufferfish/Orca rows drop with the kinds (d43).
+        (NpcKind::BoundGoblin, 0),
+        (NpcKind::BoundWizard, 0),
+        (NpcKind::BoundMechanic, 0),
+        (NpcKind::SleepingAngler, 0),
+        (NpcKind::WebbedStylist, 0),
+        (NpcKind::SleepingGolfer, 0),
+        (NpcKind::Scarecrow1, 3),
+        (NpcKind::Scarecrow10, 3),
+        (NpcKind::Splinterling, 3),
+        (NpcKind::HeadlessHorseman, 26),
+        (NpcKind::Hellhound, 26),
+        (NpcKind::MourningWood, 57),
+        (NpcKind::Pumpking, 58),
+        (NpcKind::Poltergeist, 22),
+        // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
+        (NpcKind::BloodZombie, 3),
+        (NpcKind::Drippler, 22),
+        // W4-d38 b7.
+        (NpcKind::SlimeRibbonWhite, 1),
+        (NpcKind::SlimeRibbonYellow, 1),
+        (NpcKind::SlimeRibbonGreen, 1),
+        (NpcKind::SlimeRibbonRed, 1),
+        (NpcKind::BunnyXmas, 7),
+        // W4-d38 b6.
+        (NpcKind::DemonEyeSpaceship, 2),
+        (NpcKind::SkeletonTopHat, 3),
+        (NpcKind::SkeletonAstonaut, 3),
+        (NpcKind::SkeletonAlien, 3),
+        (NpcKind::PumpkingBlade, 59),
+        // W4-d38 b5.
+        (NpcKind::SlimeMasked, 1),
+        (NpcKind::BunnySlimed, 7),
+        (NpcKind::HoppinJack, 1),
+        (NpcKind::Ghost, 22),
+        (NpcKind::DemonEyeOwl, 2),
+        // W4-d38 b4.
+        (NpcKind::BirdBlue, 24),
+        (NpcKind::BirdRed, 24),
+        (NpcKind::Squirrel, 7),
+        (NpcKind::Mouse, 7),
+        (NpcKind::Raven, 17),
+        // W4-d38 b3.
+        (NpcKind::TacticalSkeleton, 3),
+        (NpcKind::SkeletonCommando, 3),
+        (NpcKind::AngryBonesBig, 3),
+        (NpcKind::AngryBonesBigMuscle, 3),
+        (NpcKind::AngryBonesBigHelmet, 3),
+        // W4-d38 b2.
+        (NpcKind::DiabolistWhite, 8),
+        (NpcKind::BoneLee, 3),
+        (NpcKind::GiantCursedSkull, 10),
+        (NpcKind::Paladin, 3),
+        (NpcKind::SkeletonSniper, 3),
+        // W4-d38 b1.
+        (NpcKind::RaggedCaster, 8),
+        (NpcKind::RaggedCasterOpenCoat, 8),
+        (NpcKind::Necromancer, 8),
+        (NpcKind::NecromancerArmored, 8),
+        (NpcKind::DiabolistRed, 8),
+        (NpcKind::ZombieElf, 3),
+        (NpcKind::ZombieElfBeard, 3),
+        (NpcKind::ZombieElfGirl, 3),
+        (NpcKind::PresentMimic, 25),
+        (NpcKind::GingerbreadMan, 3),
+        (NpcKind::Yeti, 3),
+        (NpcKind::Everscream, 57),
+        // The wyvern family (S1-D-3 wyvern, `NPC.cs:9945`/`:9962`/
+        // `:9980`/`:9998`/`:10016`/`:10034`).
+        (NpcKind::WyvernHead, 6),
+        (NpcKind::WyvernLegs, 6),
+        (NpcKind::WyvernBody, 6),
+        (NpcKind::WyvernBody2, 6),
+        (NpcKind::WyvernBody3, 6),
+        // W4-d35 (A).
+        (NpcKind::GoblinScout, 3),
+        (NpcKind::Bird, 24),
+        (NpcKind::Pixie, 22),
+        (NpcKind::ArmoredSkeleton, 3),
+        (NpcKind::Mummy, 3),
+        // W4-d35 (B).
+        (NpcKind::DarkMummy, 3),
+        (NpcKind::LightMummy, 3),
+        (NpcKind::Wraith, 22),
+        (NpcKind::CursedHammer, 23),
+        (NpcKind::EnchantedSword, 23),
+        // W4-d35 (C).
+        (NpcKind::Mimic, 25),
+        (NpcKind::Unicorn, 26),
+        (NpcKind::GiantBat, 14),
+        (NpcKind::Corruptor, 5),
+        (NpcKind::DiggerHead, 6),
+        // W4-d35 (D).
+        (NpcKind::DiggerBody, 6),
+        (NpcKind::DiggerTail, 6),
+        (NpcKind::SeekerHead, 6),
+        (NpcKind::SeekerBody, 6),
+        (NpcKind::SeekerTail, 6),
+        // W4-d35 (E).
+        (NpcKind::Clinger, 13),
+        (NpcKind::AnglerFish, 16),
+        (NpcKind::GreenJellyfish, 18),
+        (NpcKind::Werewolf, 3),
+        (NpcKind::Clown, 3),
+        // W4-d35 (F).
+        (NpcKind::SkeletonArcher, 3),
+        (NpcKind::VileSpit, 9),
+        (NpcKind::TheHungryII, 2),
+        (NpcKind::ChaosElemental, 3),
+        (NpcKind::Slimer, 14),
+        // W4-d35 (G).
+        (NpcKind::Gastropod, 22),
+        (NpcKind::IlluminantBat, 14),
+        (NpcKind::PossessedArmor, 3),
+        (NpcKind::WyvernTail, 6),
+        // W4-c3 (the style-10 family, `NPC.cs:17741`; the 34/289 rows are
+        // d34/d38's above - E8 dedupe).
+        (NpcKind::WaterBoltMimic, 10),
+        // W4-c10 roster tail — the twelve critters (`NPC.cs:13549`,
+        // `:14251`/`:14266`/`:14279`/`:14294`/`:14307`/`:14322`/`:14336`,
+        // the `:14580` range row).
+        (NpcKind::Worm, 66),
+        (NpcKind::GoldBird, 24),
+        (NpcKind::GoldBunny, 7),
+        (NpcKind::GoldButterfly, 65),
+        (NpcKind::GoldFrog, 7),
+        (NpcKind::GoldGrasshopper, 1),
+        (NpcKind::GoldMouse, 7),
+        (NpcKind::GoldWorm, 66),
+        (NpcKind::EnchantedNightcrawler, 66),
+        (NpcKind::Grubby, 66),
+        (NpcKind::Sluggy, 66),
+        (NpcKind::Buggy, 66),
+        // W4-d120 — the chatter kinds (`NPC.cs:10797`/`:11009`/`:11258`/
+        // `:11688` aiStyle 7; `:16560` aiStyle 0).
+        (NpcKind::SantaClaus, 7),
+        (NpcKind::Truffle, 7),
+        (NpcKind::Steampunker, 7),
+        (NpcKind::Cyborg, 7),
+    ];
 
     /// The axis claims style 26 exactly once; the four kind arms are
     /// the unreachable markers (the S1-D-3 W-1 precedent).
@@ -71506,6 +72539,146 @@ mod w4_d25_style30_census_tests {
         assert_eq!(n.y, y0 - 0.04, "the noTileCollide integration tail");
         assert_eq!(n.x, x0, "no horizontal steer on the flee");
         assert!(n.wants_hostile_shot.is_empty(), "the flee fires nothing");
+    }
+}
+
+/// W4-c24 — the Journey difficulty slider's `NPC.ScaleStats` port
+/// (`NPC.cs:18146-18181` + the tweaks `:18183-18475`, the curves
+/// `GameDifficultyData.cs:83-86`). The pinned numbers ride the f32
+/// emulation of the C#'s exact operation order (the Remap casts, the
+/// banker's `Math.Round`).
+#[cfg(test)]
+mod w4_c24_difficulty_scale_tests {
+    use super::*;
+
+    fn npc(kind: NpcKind) -> Npc {
+        let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n
+    }
+
+    /// The demon eye at the slider's ends: Journey 0.5 halves life and
+    /// damage (60→30, 18→9); Master 3.0 triples them (60→180, 18→54) and
+    /// the knockback curve bends 0.8→0.64 (`GameDifficultyData.cs:86`).
+    #[test]
+    fn w4_c24_the_demon_eye_scales_at_the_slider_ends() {
+        let mut n = npc(NpcKind::DemonEye);
+        n.scale_stats_by_difficulty(0.5);
+        assert_eq!(n.max_hp, 30);
+        assert_eq!(n.hp, 30);
+        assert_eq!(n.difficulty_damage, Some(9));
+        assert_eq!(n.difficulty_kb, Some(0.8)); // below Classic the kb is 1.0
+        assert_eq!(n.difficulty, 0.5);
+        let mut m = npc(NpcKind::DemonEye);
+        m.scale_stats_by_difficulty(3.0);
+        assert_eq!(m.max_hp, 180);
+        assert_eq!(m.difficulty_damage, Some(54));
+        assert_eq!(m.difficulty_kb, Some(0.8f32 * 0.8f32));
+    }
+
+    /// The EoC's boss tweaks (`NPC.cs:18229-18233`): num2 0.65, num3
+    /// ×0.85. At Master 3.0: life 8400 × 0.65 × 0.85 = 4641, damage
+    /// 45 × 1 = 45. At the slider's 0.75 cache (strength 2.25): 3941/33.
+    #[test]
+    fn w4_c24_the_eye_of_cthulhu_boss_tweaks_land() {
+        let mut n = npc(NpcKind::EyeOfCthulhu);
+        n.scale_stats_by_difficulty(3.0);
+        assert_eq!(n.max_hp, 4641);
+        assert_eq!(n.difficulty_damage, Some(45));
+        let mut m = npc(NpcKind::EyeOfCthulhu);
+        m.scale_stats_by_difficulty(2.25);
+        assert_eq!(m.max_hp, 3941);
+        assert_eq!(m.difficulty_damage, Some(33));
+    }
+
+    /// King Slime (`:18266-18271`, num2 0.7 / num 0.8) at Expert 2.0:
+    /// life 4000 × 0.7 = 2800, damage 80 × 0.8 = 64. Skeletron
+    /// (`:18295-18299`, num2 1 / num 1.1): 8800 × 1 = 8800, 64 × 1.1
+    /// banker's-rounded to 70. The hand (`:18300-18305`, num2 1.3):
+    /// 1200 × 1.3 = 1560, 40 × 1.1 = 44.
+    #[test]
+    fn w4_c24_the_king_slime_and_skeletron_rows() {
+        let mut k = npc(NpcKind::KingSlime);
+        k.scale_stats_by_difficulty(2.0);
+        assert_eq!(k.max_hp, 2800);
+        assert_eq!(k.difficulty_damage, Some(64));
+        let mut s = npc(NpcKind::SkeletronHead);
+        s.scale_stats_by_difficulty(2.0);
+        assert_eq!(s.max_hp, 8800);
+        assert_eq!(s.difficulty_damage, Some(70));
+        let mut h = npc(NpcKind::SkeletronHand);
+        h.scale_stats_by_difficulty(2.0);
+        assert_eq!(h.max_hp, 1560);
+        assert_eq!(h.difficulty_damage, Some(44));
+    }
+
+    /// The Probe's row (`:18368-18376`) has NO num3 cut: at Master 3.0
+    /// life 600 × 0.75 × 1 = 450 (NOT ×0.85), damage 150 × 0.8 = 120.
+    /// The Destroyer head (`:18347-18367`, num ×2.0): 240000 × 0.75 ×
+    /// 0.85 = 153000, 210 × 2 = 420.
+    #[test]
+    fn w4_c24_the_probe_keeps_its_master_life_the_destroyer_doubles() {
+        let mut p = npc(NpcKind::Probe);
+        p.scale_stats_by_difficulty(3.0);
+        assert_eq!(p.max_hp, 450);
+        assert_eq!(p.difficulty_damage, Some(120));
+        let mut d = npc(NpcKind::TheDestroyer);
+        d.scale_stats_by_difficulty(3.0);
+        assert_eq!(d.max_hp, 153000);
+        assert_eq!(d.difficulty_damage, Some(420));
+    }
+
+    /// The ProjectileNPC set (`NPCID.cs:10448`) skips the life curve and
+    /// the < 6 floor (`NPC.cs:18160`/`:18173`): the Detonating Bubble
+    /// keeps its 1 hp at Expert while the damage/knockback seams still
+    /// arm (0 damage × the 0.75 tweak stays 0).
+    #[test]
+    fn w4_c24_the_bubble_keeps_its_one_life() {
+        let mut b = npc(NpcKind::DetonatingBubble);
+        b.scale_stats_by_difficulty(2.0);
+        assert_eq!(b.max_hp, 1);
+        assert_eq!(b.hp, 1);
+        assert_eq!(b.difficulty_damage, Some(0));
+        assert_eq!(b.difficulty_kb, Some(0.0));
+    }
+
+    /// The Servant's row (`:18224-18228`, num2 0.75, num3 ×0.85) plus
+    /// the < 6 floor path: at Expert life 16 × 0.75 = 12, damage
+    /// 24 × 1 = 24; at Master 24 × 0.75 × 0.85 = 15.3 → banker's 15.
+    #[test]
+    fn w4_c24_the_servant_row_and_the_life_floor() {
+        let mut s = npc(NpcKind::ServantOfCthulhu);
+        s.scale_stats_by_difficulty(2.0);
+        assert_eq!(s.max_hp, 12);
+        assert_eq!(s.difficulty_damage, Some(24));
+        let mut m = npc(NpcKind::ServantOfCthulhu);
+        m.scale_stats_by_difficulty(3.0);
+        assert_eq!(m.max_hp, 15);
+        assert_eq!(m.difficulty_damage, Some(36));
+        // The floor: a shrunken 8-hp eye at Journey 0.5 lands 4 → 6.
+        let mut e = npc(NpcKind::DemonEye);
+        e.max_hp = 8;
+        e.scale_stats_by_difficulty(0.5);
+        assert_eq!(e.max_hp, 6);
+        assert_eq!(e.hp, 6);
+    }
+
+    /// The gate (`:18148`): a town resident never scales — the Guide
+    /// keeps its stats and the seams stay `None` at Master strength.
+    /// The volley bee's row (`:18218-18223`, num2 0.6 / num 0.6, NO
+    /// num3 cut): at Expert 40 × 0.6 = 24 life, 40 × 0.6 = 24 damage.
+    #[test]
+    fn w4_c24_the_town_gate_and_the_bee_row() {
+        let mut g = npc(NpcKind::Guide);
+        let hp = g.max_hp;
+        g.scale_stats_by_difficulty(3.0);
+        assert_eq!(g.max_hp, hp);
+        assert_eq!(g.difficulty_damage, None);
+        assert_eq!(g.difficulty_kb, None);
+        let mut b = npc(NpcKind::Bee);
+        b.scale_stats_by_difficulty(2.0);
+        assert_eq!(b.max_hp, 24);
+        assert_eq!(b.difficulty_damage, Some(24));
     }
 }
 

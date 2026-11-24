@@ -706,6 +706,38 @@ mod tests {
         assert_eq!(extractinator_mode(0), -1);
     }
 
+    /// W4-e20 research-71 §6 follow-up — the Poop-Block mode-4 note
+    /// GENERALISES: EVERY extractable input kind always yields
+    /// (`item_type > 0`), so the wired consume (`Wiring.cs:2573-2578`,
+    /// `--stack <= 0` → air) is draw-independent for ALL kinds, not just
+    /// 5395. Modes 2/3/5/6 end in unconditional fallbacks (bait/moss/honey/
+    /// sand); mode 4 in the dirt fallback (`ExtractinatorHelper.cs:285-288`);
+    /// modes 0/1 fall through the whole miss chain into the UNCONDITIONAL
+    /// ore `else` (`:460-487`). Only mode −1 returns −1 (the non-input skip).
+    /// Sweep every input kind × both block types × both hardmode states.
+    #[test]
+    fn every_extractable_kind_always_yields_the_consume_is_draw_independent() {
+        let inputs = [
+            424u16, 1103, 3347, 2337, 2338, 2339, 4354, 4389, 4377, 4378,
+            5127, 5128, 5395, 1124, 4090, 173,
+        ];
+        for &item in &inputs {
+            for block in [219u16, 642] {
+                for hard in [false, true] {
+                    for seed in 0..300u64 {
+                        let (kind, stack) = mode(item, block, hard, seed);
+                        assert!(kind > 0, "item {item} block {block} hard {hard} seed {seed}: {kind}");
+                        assert!(stack >= 1, "the stack never drops below 1");
+                    }
+                }
+            }
+        }
+        // The mirror: a non-input NEVER yields (the scan skips it, no consume).
+        for seed in 0..100u64 {
+            assert_eq!(mode(2, 219, false, seed).0, -1);
+        }
+    }
+
     #[test]
     fn trader_matches_one_for_one_and_respects_stack() {
         assert_eq!(chlorophyte_trade(12, 1), Some((699, 1)));

@@ -1105,7 +1105,10 @@ pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 
             .tile(x, y)
             .is_some_and(|t| (36..72).contains(&i32::from(t.frame_x)))
         {
-            let _ = app.achievements.notify_custom("Peek");
+            // W4-c36: the row-targeted `GetCondition("I_AM_LOOT", "Peek")
+            // .Complete()` (`AchievementsHelper.cs:346-348`) — the broadcast
+            // form would also close any future "Peek" row.
+            let _ = app.achievements.complete_condition("I_AM_LOOT", "Peek");
         }
         10 // `:33242`
     } else {
@@ -1309,6 +1312,13 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 }
                 play_menu_sound(app, 11); // `:33108`
             } else {
+                // W4-c36 — `:33112-33115`: the client's open request arms
+                // the rigged-chest death window before the `31` send.
+                if crate::app::netglue::is_rigged(&app.world, ox, oy) {
+                    if let Some(p) = app.player.as_mut() {
+                        p.deadmans_chest_death_frames = 600;
+                    }
+                }
                 client.send(&crate::net::C2s::ChestOpenRequest(
                     crate::net::ChestOpenRequest {
                         x: ox as i16,
@@ -1331,12 +1341,19 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // (`WorldGen.IsChestRigged`, `WorldGen.cs:35746-35753`: tile 467,
         // `frameX / 36 == 4`) trips `Wiring.HitSwitch` at the CLICKED cell
         // (`myX, myY`, not the origin) and announces `59` — after the
-        // open/close branch, on every resolved container (S1-P-i43). The
-        // `_framesLeftEligibleForDeadmansChestDeathAchievement = 600`
-        // death-achievement window has no port tracker (the achievement
-        // needs the player-death wiring; recorded deviation).
+        // open/close branch, on every resolved container (S1-P-i43).
+        // W4-c36: the 600-tick death-achievement window (`:33257`) arms on
+        // the trip; `KillMe`'s test fires DIE_TO_DEAD_MANS_CHEST (`death.rs`).
         if crate::app::netglue::is_rigged(&app.world, ox, oy) {
+            // The §8.1 stamp: the rigged trip can shift a wired door family.
+            crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
             app.wiring.hit_switch(&mut app.world, x, y);
+            // W4-c36 — `:33257`: the 600-tick death-achievement window arms
+            // on the trip; `KillMe`'s test (`:38826-38828`) fires
+            // DIE_TO_DEAD_MANS_CHEST while it runs (`death.rs`).
+            if let Some(p) = app.player.as_mut() {
+                p.deadmans_chest_death_frames = 600;
+            }
             // The Mech-28 click the trip queues (`Wiring.cs:339`) rides the
             // `UpdatePlayers` stream — the tile use runs in
             // `Player.ItemCheck` (`Main.cs:17754`), the doors.rs precedent.
@@ -1346,6 +1363,19 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                     py as f32,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                 );
+            }
+            // W4-c42 — the rigged chest's wired door cues (same stream).
+            for (open, px, py) in app.wiring.take_door_cues() {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // The §8.2 echoes: SP discards (the netMode-0 return).
+            for (n, x, y, d) in app.wiring.take_door_echoes() {
+                app.send_door_toggle(n, x, y, d);
             }
             app.send_hit_switch(x, y); // `:33256`
             app.world_key = None;

@@ -142,6 +142,10 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // 0.35 walk cap applies until some player crosses 120 max life (S1-L-2).
     let any_player_120 = app.player.as_ref().is_some_and(|p| p.max_hp >= 120);
     app.wind.any_player_120_life = any_player_120;
+    // `FreezeWindDirectionAndStrength.Enabled` (`Main.cs:58854`): the walk
+    // gate — the drift toward the target still runs while frozen
+    // (`Wind::update_rain`'s `frozen` early-return sits after the drift).
+    app.wind.frozen = app.creative_powers.freeze_wind();
     // The crossing samples: the Deerclops's midnight (`Main.cs:65121`'s
     // `num4 < 16200 && time >= 16200`) and the night bookend's dusk
     // (`Main.cs:65230`'s `UpdateTime_StartDay` at 32400).
@@ -152,6 +156,12 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // strength-change detector for the `SendData(7)` re-push.
     let mut old_max_raining = app.rain.max_raining();
     let mut max_raining_changed = false;
+    // The homeless-arrival NO_HOBO count (W4-d119 phase 2) — fired after
+    // the tick closure (the `notify_progression_net` &mut App seam).
+    let mut homeless_events = 0u32;
+    // `Main.cs:65043`'s `Main.netMode != 1` gate — the whole homeless block
+    // is server/single-player only (computed before the field destructure).
+    let not_client = !app.is_client();
     let App {
         world_tick_step,
         world,
@@ -162,6 +172,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         ..
     } = app;
     world_tick_step.tick(dt, |_| {
+        // `FreezeRainPower.Enabled` (`Main.cs:64866`/`:64893` read the manager
+        // live per arm; the port snapshots per step like the other inputs).
+        rain.set_freeze_rain(app.creative_powers.freeze_rain());
         // (1) `Main.cs:58739`: `currentDayRateIteration == 0` — thunder once.
         // M6-AUDIO-1: the strike returns its cue and position
         // (`Main.cs:58752-58761`), played here against the current listener.
@@ -352,8 +365,57 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
                 );
             }
         }
+        // (7b) `Main.cs:65043-65062`: the HOMELESS arrival/departure pair,
+        // right after the travel block (W4-d119 phase 2). The departure
+        // runs at night / past 48600; the arrival rolls
+        // `Next(27000/dayRate) == 0` over the first half of the day, gated
+        // on `!IsFastForwardingTime() && GetWorldUpdateRate() > 0` — the
+        // roll AND the whole `SpawnHomelessNPC` body ride `UpdateTime`.
+        // The NO_HOBO notifications accumulate and fire after the closure
+        // (the `notify_progression_net` borrow seam, the growth precedent).
+        if not_client && (!world.day_time || world.time > 48600.0) {
+            crate::town_spawn::unspawn_homeless_npc(
+                &mut app.npcs,
+                app.player.as_ref(),
+                &mut app.chat,
+            );
+        } else if not_client
+            && world.day_time
+            && world.time < 27000.0
+            && !world.is_fast_forwarding()
+            // `GetWorldUpdateRate() > 0` (`WorldGen.cs:72020-72030`): the
+            // FreezeTime power / a zero time-rate slider stop it.
+            && app.creative_powers.time_rate() > 0.0
+        {
+            // `:65052-65057`: `num8 = max(dayRate, 1)`,
+            // `maxValue = (int)(27000.0 / num8)`, `Next(maxValue) == 0`.
+            let num8 = world.day_rate().max(1);
+            let max_value = (27000.0 / num8 as f64) as i32;
+            if app
+                .rngs
+                .stream(crate::app::RngKey::UpdateTime)
+                .next_max(max_value)
+                == 0
+            {
+                homeless_events += crate::town_spawn::spawn_homeless_npc(
+                    world,
+                    &mut app.npcs,
+                    &mut app.town_rooms,
+                    &mut app.town_arrival,
+                    &mut app.town_spawn,
+                    app.player.as_ref(),
+                    app.rngs.stream(crate::app::RngKey::UpdateTime),
+                    &mut app.chat,
+                );
+            }
+        }
     });
     world_tick_step.cap_backlog();
+    // The homeless-arrival NO_HOBO rows (`WorldGen.cs:5460`/`:5780`), after
+    // the mutable pass releases the field borrows.
+    for _ in 0..homeless_events {
+        let _ = app.notify_progression_net(8);
+    }
     // (6) The Deerclops arm (`Main.cs:65121-65134`): the tick that steps
     // past 16200 while raining; the roll + the player gates ride
     // `deerclops_roll`, the spawn `SpawnOnPlayer`'s shape.
@@ -602,7 +664,7 @@ pub(crate) fn spawn_travel_npc(
             let ty = (n.y / tr_core::TILE_PX) as i32;
             // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
             if let Some(h) =
-                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), n.kind.net_id())
+                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), n.kind.net_id(), false)
             {
                 homes.push((i, h));
             }
@@ -826,7 +888,12 @@ mod tests {
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
-        app.wind.frozen = true; // no windCounter walk: only the drift moves current
+        // No windCounter walk: only the drift moves current — the freeze
+        // POWER is the source now (the tick copies it into `wind.frozen`).
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeWind,
+            crate::creative::PowerState::Toggle(true),
+        );
         arm_sandstorm(&mut app, 10_000);
         update_world_tick(&mut app, STEP);
         assert!(
@@ -864,7 +931,10 @@ mod tests {
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
-        app.wind.frozen = true;
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeWind,
+            crate::creative::PowerState::Toggle(true),
+        );
         arm_sandstorm(&mut app, 10_000);
         update_world_tick(&mut app, STEP);
         assert!(app.wind.speed_current < 0.6);
@@ -1293,7 +1363,11 @@ mod tests {
         // S1-L-2). The port folds the 255-player scan to its single player.
         let mut app = flow_app(None, vec![], vec![]);
         app.world.world_surface = 200.0;
-        app.wind.frozen = true; // observe the flag, not the walk
+        // Observe the flag, not the walk — the freeze power is the source.
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeWind,
+            crate::creative::PowerState::Toggle(true),
+        );
         app.wind.any_player_120_life = true;
         let mut low = crate::player::Player::spawn(&app.world);
         low.max_hp = 100;

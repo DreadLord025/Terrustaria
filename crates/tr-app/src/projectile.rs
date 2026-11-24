@@ -1086,6 +1086,10 @@ pub struct Projectile {
     /// velocity skips `Item.NewItem`'s scatter pair, `Item.cs:49738-49741`,
     /// and `prefix: 0` rolls nothing).
     pub(crate) wants_coin_drop: Option<(f32, f32, f32, f32)>,
+    /// W4-c36 — the lava-fishing achievement intent (`Projectile.cs:20798-
+    /// 20801`, `HandleSpecialEvent(19)` → GO_LAVA_FISHING "Do"): the world
+    /// sim drains it into the manager (the `wants_splash` pattern).
+    pub wants_lava_fishing_achievement: bool,
 }
 
 impl Default for Projectile {
@@ -1184,6 +1188,7 @@ impl Default for Projectile {
             wants_duke_spawn: false,
             misc_text: String::new(),
             wants_coin_drop: None,
+            wants_lava_fishing_achievement: false,
         }
     }
 }
@@ -13342,6 +13347,13 @@ impl Projectile {
             self.draw_yoyo(r, lookups, light, camera, zoom, screen, owner_hand);
             return;
         }
+        // S1-W4-g81 residuals — the Wire Kite (651) draws through its own
+        // over-wire ghost pass (`render/wire_kite.rs`, the frame's
+        // post-`draw_wires` slot — `Main.CacheProjDraws` routes drawLayer
+        // 5 out of the main walk, `Main.cs:38177-38178`).
+        if self.kind == crate::projectile::WIRE_KITE {
+            return;
+        }
         // `Main.DrawProj`'s per-type switch routes 974 to its own drawer
         // ahead of the generic emit (`Main.cs:28143-28144` →
         // `DrawProj_LightsBane`, `:27455-27495`) — the only projectile the
@@ -18943,6 +18955,21 @@ pub struct ProjectilePool {
     /// form keeps the slot struct Copy-cheap and the borrow simple).
     /// `None` outside the window; the per-tick Colliding reads `None`.
     custom_hitbox: Option<crate::lightning_generator::MultiPointHitbox>,
+    /// S1-W4-g81 residuals — the Wire Kite's per-tick owner snapshot
+    /// (`Main.player[owner]` + `Main.MouseWorld` + the right-press pair,
+    /// `Projectile.cs:35699-35745`). The world-sim pass sets it before
+    /// `update` (the `set_bobber_inputs` precedent); `None` keeps the
+    /// aiStyle-125 arm inert (the pool-only tests).
+    kite_ctx: Option<(crate::projectile_ai_kite::KiteOwner, Vec2, bool)>,
+    /// The kite arm's queued owner writes (`KiteTick`), drained by the
+    /// world-sim pass after `update` (the golf `PlayerWrites` shape).
+    kite_ticks: Vec<(usize, crate::projectile_ai_kite::KiteTick)>,
+    /// `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`):
+    /// `(ps, pe)` per dying local kite with `localAI[0] == 1`. The world
+    /// sim drains them; the apply is UNPORTED ON THIS BRANCH (c42 owns
+    /// it — the compose verdict, research/382), so the drain drops them
+    /// with the documented note; the merger swaps in the f11 §8.4b hunk.
+    pending_mass_wire_ops: Vec<((i32, i32), (i32, i32))>,
 }
 
 impl Default for ProjectilePool {
@@ -19165,7 +19192,7 @@ impl ProjectilePool {
         staff: u16,
         staff_item: u16,
         owner: u8,
-    ) {
+    ) -> bool {
         // `:51703-51724` — the two pet pairs die outright when their staff is
         // re-used: the first pair kills BOTH its kinds, the second
         // cross-kills (a used 1094 kills the 1113s and vice versa).
@@ -19278,9 +19305,12 @@ impl ProjectilePool {
                 s.active = false;
                 s.time_left = 0;
             }
-            // `:51826-51829` — the 9-slot achievement is unported (no
-            // achievement system); the C# `return`s here either way.
-            return;
+            // `:51826-51829` — W4-c36: the 9-slot achievement
+            // (`num + num2 >= 9f`, the accumulated minion slots + the
+            // staff's required slots) — the caller fires
+            // `HandleSpecialEvent(6)` → YOU_AND_WHAT_ARMY's "Spawn".
+            // The C# `return`s here either way.
+            return total + required >= 9.0;
         }
         // `:51832-51850` — the non-sacrificable tail: every owned projectile
         // of THIS shoot kind dies on a re-use (the sentry staves' own
@@ -19299,6 +19329,9 @@ impl ProjectilePool {
                 s.time_left = 0;
             }
         }
+        // The non-sacrificable tail carries no 9-slot hook (the C# `return`s
+        // inside the sacrificable arm, `:51830`).
+        false
     }
 
     /// `Player.UpdateMaxTurrets` (`Player.cs:53061-53090`): while the wipable
@@ -19389,6 +19422,9 @@ impl ProjectilePool {
             gore_pool: None,
             digtoise_digs: Vec::new(),
             custom_hitbox: None,
+            kite_ctx: None,
+            kite_ticks: Vec::new(),
+            pending_mass_wire_ops: Vec::new(),
         }
     }
 
@@ -19575,6 +19611,20 @@ impl ProjectilePool {
     /// the world sim plays each on the `UpdateProjectiles` stream.
     pub fn drain_splashes(&mut self) -> Vec<(i32, f32, f32)> {
         std::mem::take(&mut self.pending_splashes)
+    }
+
+    /// W4-c36 — the lava-fishing achievement drain (`Projectile.cs:20798-
+    /// 20801`): true when any bobber's `FishingCheck` fired the condition
+    /// this pass; the world sim completes GO_LAVA_FISHING's "Do".
+    pub fn drain_lava_fishing_achievement(&mut self) -> bool {
+        let mut fired = false;
+        for s in self.slots.iter_mut() {
+            if s.wants_lava_fishing_achievement {
+                s.wants_lava_fishing_achievement = false;
+                fired = true;
+            }
+        }
+        fired
     }
 
     /// S1-P-i35 — the bobber death hook's catch drain
@@ -21018,6 +21068,30 @@ impl ProjectilePool {
     /// `update` (the `drain_mark_spawns` shape).
     pub fn drain_golf_effects(&mut self) -> Vec<crate::projectile_ai_golf::GolfEffect> {
         std::mem::take(&mut self.golf_effects)
+    }
+
+    /// S1-W4-g81 residuals — the Wire Kite's per-tick context setter: the
+    /// world-sim pass builds `(KiteOwner, mouse_world, right_press)` from
+    /// the App (the pool cannot borrow the player mid-slot).
+    pub fn set_kite_context(
+        &mut self,
+        ctx: Option<(crate::projectile_ai_kite::KiteOwner, Vec2, bool)>,
+    ) {
+        self.kite_ctx = ctx;
+    }
+
+    /// The kite arm's queued owner writes, drained by the world-sim pass
+    /// after `update` (the golf `PlayerWrites` shape).
+    pub fn drain_kite_ticks(&mut self) -> Vec<(usize, crate::projectile_ai_kite::KiteTick)> {
+        std::mem::take(&mut self.kite_ticks)
+    }
+
+    /// `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`),
+    /// drained by the world-sim pass. The apply is UNPORTED ON THIS
+    /// BRANCH (c42's `mass_wire_operation` is the merger keep-one,
+    /// research/382) — the drain drops them with the note.
+    pub fn drain_mass_wire_ops(&mut self) -> Vec<((i32, i32), (i32, i32))> {
+        std::mem::take(&mut self.pending_mass_wire_ops)
     }
 
     /// `rng` is the shared item stream (`Main.rand`'s analogue): the whip
@@ -23789,6 +23863,26 @@ impl ProjectilePool {
                         // retarget reads `Main.npc` and the owner gate.
                         129 => {
                             self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref())
+                        }
+                        // S1-W4-g81 residuals — the Wire Kite's aiStyle-125
+                        // placement machine (`Projectile.cs:35697-35833`):
+                        // owner-local, rides the cursor while the channel
+                        // holds, the release arms the mass-op flag + Kill.
+                        // The context is the pass's snapshot (the pool
+                        // cannot borrow the player); `None` keeps the slot
+                        // held (the orphan convention).
+                        125 => {
+                            if self.slots[i].owner == local_owner {
+                                if let Some((ko, mouse_world, right_press)) = self.kite_ctx {
+                                    let tick = crate::projectile_ai_kite::ai_wire_kite(
+                                        &mut self.slots[i],
+                                        ko,
+                                        mouse_world,
+                                        right_press,
+                                    );
+                                    self.kite_ticks.push((i, tick));
+                                }
+                            }
                         }
                         // S1-D-5: the duplicate `1 => ai_arrow`, `3 =>
                         // ai_boomerang`, `14 => ai_spear`, `16 => ai_bomb`
@@ -26714,6 +26808,17 @@ impl ProjectilePool {
                     .map(|p| p.set_apprentice_t3)
                     .unwrap_or(false);
                 self.kill_sound_cue(i, apprentice_t3);
+                    // S1-W4-g81 residuals — `Kill()`'s type-651 arm
+                    // (`Projectile.cs:72051-72067`): the released kite
+                    // queues its mass-wire operation (the world sim
+                    // drains it; the apply is c42's at the merge,
+                    // research/382 — dropped here with the note).
+                    if let Some(op) =
+                        crate::projectile_ai_kite::kill_mass_wire_op(&self.slots[i])
+                    {
+                        self.pending_mass_wire_ops.push(op);
+                    }
+                }
                 self.spawn_inferno_blast(i);
                 // W4-f20 F3 — `Kill()`'s 709 half of the 459/709 arm
                 // (`Projectile.cs:73372-73388`): the Sky Dragon's Fury
@@ -35083,6 +35188,14 @@ impl ProjectilePool {
             p.kind,
             cooldown_counter,
         );
+        // W4-c36 — `Projectile.cs:14872-14879`: a trap projectile's player
+        // hit arms `trapDebuffSource` (the `KillMe` WATCH_YOUR_STEP test,
+        // `Player.cs:38822-38825`); the death itself fires the event 4 hook
+        // there too — the port's death seam (`death.rs::on_player_death`)
+        // reads the flag, so the immediate-death arm needs no second site.
+        if proj_data(p.kind).is_some_and(|d| d.trap) {
+            player.trap_debuff_source = true;
+        }
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }
@@ -45417,6 +45530,7 @@ mod phasmal_projectile_tests {
             wants_duke_spawn: false,
             misc_text: String::new(),
             wants_coin_drop: None,
+            wants_lava_fishing_achievement: false,
         }
     }
 
@@ -45985,6 +46099,7 @@ mod ritual_projectile_tests {
             wants_duke_spawn: false,
             misc_text: String::new(),
             wants_coin_drop: None,
+            wants_lava_fishing_achievement: false,
         }
     }
 
@@ -55156,6 +55271,34 @@ mod use_path_tests {
         let hornet = spawn_minion(&mut pool, HORNET, 300.0);
         pool.free_up_pets_and_minions(&p, 373, 2364, 0);
         assert!(!pool.slots[hornet].active, "the over-budget minion dies");
+    }
+
+    /// W4-c36 — the 9-slot achievement test (`Player.cs:51826-51829`):
+    /// `num + num2 >= 9f` — the accumulated minion slots plus the staff's
+    /// required 1 — returns true for the caller's YOU_AND_WHAT_ARMY hook.
+    #[test]
+    fn w4_c36_the_nine_slot_test_rides_the_free_up_return() {
+        let mut pool = ProjectilePool::new();
+        let w = world();
+        let mut p = player(&w);
+        p.max_minions = 10;
+        // Eight 1-slot minions + the staff's 1 = 9 → the hook fires.
+        for i in 0..8 {
+            spawn_minion(&mut pool, HORNET, 100.0 + i as f32 * 20.0);
+        }
+        assert!(pool.free_up_pets_and_minions(&p, 266, 1309, 0));
+        // Seven + 1 = 8 → no hook.
+        let mut pool = ProjectilePool::new();
+        for i in 0..7 {
+            spawn_minion(&mut pool, HORNET, 100.0 + i as f32 * 20.0);
+        }
+        assert!(!pool.free_up_pets_and_minions(&p, 266, 1309, 0));
+        // The non-sacrificable tail never fires the hook.
+        let mut pool = ProjectilePool::new();
+        for i in 0..12 {
+            spawn_minion(&mut pool, HORNET, 100.0 + i as f32 * 20.0);
+        }
+        assert!(!pool.free_up_pets_and_minions(&p, 9999, 9999, 0));
     }
 
     /// DW-6.2 — the ordering: the C# insertion sort (`Player.cs:51736-51747`)

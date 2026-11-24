@@ -32,6 +32,10 @@ pub use kill::{
     square_tile_frame_default, BulbSummonEvent, HerbEvent, KillSounds, ObjectDrop,
     PileLootEvent, PotEvent, SoundCue, TileKill, TreeDropEvent,
 };
+mod shift;
+// W4-c42 batch 2 — the wired trapdoor/tall-gate shifts (`WorldGen.cs:51447-
+// 51596`/`:51723-51775`), the `HitWireSingle` arms `Wiring.cs:1440-1460` call.
+pub use shift::{shift_tall_gate, shift_trapdoor};
 pub(crate) use kill::{
     remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope,
     solid_tile_allow_left_slope, solid_tile_allow_right_slope, solid_tile_allow_top_slope,
@@ -147,6 +151,134 @@ pub fn kill_actuator(world: &mut World, x: i32, y: i32) -> bool {
     true
 }
 
+/// `WorldGen.paintTile` (`WorldGen.cs:44110-44132`): the active tile's paint
+/// colour becomes `color`. Returns false on a null/inactive cell or when the
+/// colour already matches (`b == color`, `:44118-44121`). The C#'s
+/// `paintEffect` dust (`:44122-44125`) and the `NetMessage.SendData(63)`
+/// broadcast (`:44127-44130`) are app-side — the core writes the colour only.
+pub fn paint_tile(world: &mut World, x: i32, y: i32, color: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    if t.paint() == color {
+        return false;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].set_paint(color);
+    true
+}
+
+/// `WorldGen.paintWall` (`WorldGen.cs:44230-44252`): the wall's paint colour
+/// becomes `color`. Returns false on a null/wall-less cell or when the colour
+/// already matches (`b == color`, `:44238-44241`). The C#'s `paintEffect` dust
+/// (`:44247-44250`) and the `NetMessage.SendData(64)` broadcast (`:44243-44246`)
+/// are app-side.
+pub fn paint_wall(world: &mut World, x: i32, y: i32, color: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.wall == 0 {
+        return false;
+    }
+    if world.wall_paint(x, y) == color {
+        return false;
+    }
+    world.set_wall_paint(x, y, color);
+    true
+}
+
+/// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44180`): the active tile's
+/// Glow/Echo coating bits. `paint_coat_id` 0 clears both (only when at least
+/// one is set), 1 sets Glow (`fullbrightBlock`), 2 sets Echo (`invisibleBlock`);
+/// any other id returns false (`default:` arm). The id-0/id-2 arms re-frame the
+/// 3×3 neighbourhood (`SquareTileFrame(x, y, resetFrame: false)`, `:44153`/
+/// `:44168`); the id-1 arm does not. The C#'s `paintCoatEffect` dust
+/// (`:44175-44178`) and the `NetMessage.SendData(63, …, 1f)` broadcast
+/// (`:44171-44174`) are app-side.
+pub fn paint_coat_tile(world: &mut World, x: i32, y: i32, paint_coat_id: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    let glow = t.fullbright_block();
+    let echo = world.invisible_block(x, y);
+    match paint_coat_id {
+        0 => {
+            if !glow && !echo {
+                return false;
+            }
+            let i = world.index(x, y);
+            world.tiles[i].flags &= !crate::tile::FLAG_FULLBRIGHT;
+            world.set_invisible_block(x, y, false);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        1 => {
+            if glow {
+                return false;
+            }
+            let i = world.index(x, y);
+            world.tiles[i].flags |= crate::tile::FLAG_FULLBRIGHT;
+        }
+        2 => {
+            if echo {
+                return false;
+            }
+            world.set_invisible_block(x, y, true);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// `WorldGen.paintCoatWall` (`WorldGen.cs:44182-44228`): the wall's Glow/Echo
+/// coating bits. `paint_coat_id` 0 clears both (only when at least one is set),
+/// 1 sets Glow (`fullbrightWall`), 2 sets Echo (`invisibleWall`); any other id
+/// returns false. The id-0/id-2 arms re-frame the 3×3 neighbourhood
+/// (`SquareWallFrame(x, y, resetFrame: false)`, `:44201`/`:44216`); the id-1 arm
+/// does not. The C#'s `paintCoatEffect` dust (`:44223-44226`) and the
+/// `NetMessage.SendData(64, …, 1f)` broadcast (`:44219-44222`) are app-side.
+pub fn paint_coat_wall(world: &mut World, x: i32, y: i32, paint_coat_id: u8) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if t.wall == 0 {
+        return false;
+    }
+    let glow = world.fullbright_wall(x, y);
+    let echo = world.invisible_wall(x, y);
+    match paint_coat_id {
+        0 => {
+            if !glow && !echo {
+                return false;
+            }
+            world.set_fullbright_wall(x, y, false);
+            world.set_invisible_wall(x, y, false);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        1 => {
+            if glow {
+                return false;
+            }
+            world.set_fullbright_wall(x, y, true);
+        }
+        2 => {
+            if echo {
+                return false;
+            }
+            world.set_invisible_wall(x, y, true);
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        _ => return false,
+    }
+    true
+}
+
 /// The result of the right-click interaction dispatcher: what the click did,
 /// and every object destruction its cleanup kills performed (the port of
 /// vanilla's `Item.NewItem` side effects — `WorldGen.cs:86508` and peers).
@@ -197,10 +329,18 @@ pub enum TileInteraction {
     /// emission follow the frame.
     CandleToggled,
     /// `Player.cs:32174-32178`: the used tile is a lever (132), a switch
-    /// (136) or a timer (144) — `Wiring.HitSwitch` fires and the click is
+    /// (136) or a timer (144) - `Wiring.HitSwitch` fires and the click is
     /// consumed. The wiring itself is app-side (the core has no wiring
     /// state), so the interaction carries the cell.
     HitSwitch { x: i32, y: i32 },
+    /// `Player.cs:32271-32277` (W4-c42 final, the g78 research/76 contested
+    /// seam request): the used tile is one of the nine monolith kinds
+    /// (410/480/509/657/658/720/721/725/733) - `PlaySound(28)` +
+    /// `GamepadEnableGrappleCooldown` + `WorldGen.SwitchMonolith(myX, myY)`.
+    /// The flip is app-side (`Wiring::use_switch_monolith` over the wired
+    /// path's kept body - the e21 nine-kind gate); the interaction carries
+    /// the cell like `HitSwitch`.
+    MonolithToggle { x: i32, y: i32 },
     /// The chair sit decoded (`PlayerSittingHelper.GetSittingTargetInfo`'s
     /// case 15, `PlayerSittingHelper.cs:163-182`): the seat world position is
     /// the chair's bottom-centre shifted `targetDirection * 6` px, the
@@ -359,6 +499,14 @@ pub fn interact_at(
             buff_type,
             buff_time,
         };
+    // The monolith family (`Player.cs:32271-32277`, W4-c42 final — the g78
+    // research/76 request): the nine kinds flip via `SwitchMonolith` on
+    // right-click. The C# chain sits after the fountain (207) arm and
+    // before the party box (455); neither has a port arm, so the literal
+    // test lands here beside the switch family (the same pre-registry
+    // shape — 657's def carries `Interaction::None`).
+    if matches!(t.kind, 410 | 480 | 509 | 657 | 658 | 720 | 721 | 725 | 733) {
+        return TileInteraction::MonolithToggle { x: i, y: j };
     }
     // The dial branches (`Player.cs:32636-32653`): the C# chain tests
     // `Main.tile[myX, myY].type` literals here. The port's registry has no
@@ -582,13 +730,13 @@ pub fn interact_at(
                 // retry with the opposite direction. After a validate-kill
                 // the cell no longer has kind 10 (`KillTile` resets `type`,
                 // `WorldGen.cs:63915`), so the cleanup path skips the retry.
-                if open_door(world, i, j, direction, &mut drops) {
+                if open_door(world, i, j, direction, &mut drops, None) {
                     return TileInteraction::DoorOpened {
                         object_drops: drops,
                     };
                 }
                 if world.tile(i, j).is_some_and(|t| t.kind == 10)
-                    && open_door(world, i, j, -direction, &mut drops)
+                    && open_door(world, i, j, -direction, &mut drops, None)
                 {
                     return TileInteraction::DoorOpened {
                         object_drops: drops,
@@ -597,7 +745,7 @@ pub fn interact_at(
                 TileInteraction::DoorBlocked {
                     object_drops: drops,
                 }
-            } else if close_door(world, i, j, false, cell_blocked, &mut drops) {
+            } else if close_door(world, i, j, false, cell_blocked, &mut drops, None) {
                 // The open-door branch (`Player.cs:32857-32864`).
                 TileInteraction::DoorClosed {
                     object_drops: drops,
@@ -1184,12 +1332,20 @@ pub fn shift_tall_gate(
 /// validate-cleanup helper and the cut/drip sweep in the opening column.
 /// `drops` collects the object destructions of those kills (vanilla's
 /// `Item.NewItem` side effects). `false` = refused, door cells untouched.
+/// `wire_skips` collects the `Wiring.SkipWire` cells of the `:37717-37725`
+/// block (the caller passes `Some` only while `Wiring.running`, the C#
+/// `Main.netMode != 1 && Wiring.running` gate; the interaction/NPC callers
+/// pass `None`). The wired caller inserts them into its skip set after the
+/// call (order-identical: the C# skips precede the writes and the trailing
+/// reframe reads no skip state). The Option shape is f11's §1 seam, adopted
+/// by the research/95 union-exec (W4-c42).
 pub fn open_door(
     world: &mut World,
     i: i32,
     j: i32,
     direction: i32,
     drops: &mut Vec<ObjectDrop>,
+    wire_skips: Option<&mut Vec<(i32, i32)>>,
 ) -> bool {
     // The per-cell null-init guards (:37634-37644) are managed-Tile engine
     // noise; the port reads through `World::tile`'s `Option` instead.
@@ -1270,7 +1426,15 @@ pub fn open_door(
             }
         }
     }
-    // `Wiring.SkipWire` ×6 (:37721-37729) — no wiring in the port.
+    // `Wiring.SkipWire` ×6 (:37717-37725) — the `Wiring.running`-gated block;
+    // the wired caller collects them through `wire_skips` (the §1 Option
+    // seam), the interaction path has no running flood.
+    if let Some(skips) = wire_skips {
+        for dy in 0..3 {
+            skips.push((num6, num + dy));
+            skips.push((num6 + 1, num + dy));
+        }
+    }
     let num8 = num4 % 36 * 54; // :37731 — the open door's style row
     // `SoundEngine.PlaySound(8, i*16, j*16)` (:37732) — app-side, via
     // `TileInteraction::DoorOpened`.
@@ -1376,10 +1540,15 @@ pub fn shift_tall_gate(
 /// `WorldGen.CloseDoor` (`WorldGen.cs:31805-31907`): turns the open door
 /// (tile 11) covering `(i, j)` back into the closed door (tile 10) at the
 /// hinge column the open frames encode. `forced` skips the `Collision.
-/// EmptyTile` occupancy gate (the wired caller, `Wiring.cs:1463`); the port
-/// has no wiring so the interaction path always sends `false`. `cell_blocked`
-/// is the player/NPC overlap check of `EmptyTile` (`Collision.cs:1359` —
-/// with `ignoreTiles: true` the tile check is skipped, entities are not).
+/// EmptyTile` occupancy gate (the wired caller, `Wiring.cs:1463`); the
+/// interaction path sends `false`. `cell_blocked` is the player/NPC overlap
+/// check of `EmptyTile` (`Collision.cs:1359` — with `ignoreTiles: true` the
+/// tile check is skipped, entities are not). `wire_skips` collects the
+/// `Wiring.SkipWire` cells of the `:31895-31899` block (the caller passes
+/// `Some` only while `Wiring.running`; the f11 §1 Option seam, adopted by
+/// the research/95 union-exec — the C# skips precede the trailing reframe,
+/// which reads no skip state, so collecting them out and inserting after
+/// the call is order-identical).
 pub fn close_door(
     world: &mut World,
     i: i32,
@@ -1387,6 +1556,7 @@ pub fn close_door(
     forced: bool,
     cell_blocked: &dyn Fn(i32, i32) -> bool,
     drops: &mut Vec<ObjectDrop>,
+    wire_skips: Option<&mut Vec<(i32, i32)>>,
 ) -> bool {
     let Some(tile) = world.tile(i, j) else {
         return false;
@@ -1473,7 +1643,14 @@ pub fn close_door(
             }
         }
     }
-    // `Wiring.SkipWire` ×3 (:31893-31898) — no wiring in the port.
+    // `Wiring.SkipWire` ×3 (:31895-31899) — the `Wiring.running`-gated block;
+    // the wired caller collects them through `wire_skips` (the §1 Option
+    // seam), the interaction path has no running flood.
+    if let Some(skips) = wire_skips {
+        for dy in 0..3i32 {
+            skips.push((num2, num3 + dy));
+        }
+    }
     // The trailing `WorldGen.TileFrame` 3x4 loop (:31900-31905).
     ensure_frame_important(world, 10);
     framing::reframe_area(world, num2, num3, 2, false);
@@ -1489,6 +1666,7 @@ pub fn close_door(
 /// returns `false` without killing (`WorldGen.InWorld`, `:9688`).
 /// `pub`: the campfire light toggle (`wiring::try_toggle_light`) shares it.
 pub fn validate_tile_square(
+pub(crate) fn validate_tile_square(
     world: &mut World,
     x: i32,
     y: i32,
@@ -1763,6 +1941,77 @@ mod tests {
         assert!(w.tile(10, 20).unwrap().active());
         assert_eq!(break_wall(&mut w, 10, 20), None);
         assert_eq!(w.tile(10, 20).unwrap().wall, WALL_UNBREAKABLE);
+    }
+
+    // ---- W4-g79: the paint/coating world writes ----------------------------
+
+    /// `WorldGen.paintTile` (`WorldGen.cs:44110-44132`): an active tile takes
+    /// the colour; a same-colour repaint and an inactive cell refuse.
+    #[test]
+    fn w4_g79_paint_tile_writes_the_colour_and_refuses_a_repaint() {
+        let mut w = ground_world();
+        assert!(paint_tile(&mut w, 10, 20, 1), "the unpainted floor takes Red");
+        assert_eq!(w.tile(10, 20).unwrap().paint(), 1);
+        assert!(!paint_tile(&mut w, 10, 20, 1), "the same colour refuses");
+        assert!(paint_tile(&mut w, 10, 20, 30), "Negative over Red lands");
+        assert_eq!(w.tile(10, 20).unwrap().paint(), 30);
+        // An inactive cell (above the floor) refuses.
+        assert!(!paint_tile(&mut w, 10, 15, 1));
+    }
+
+    /// `WorldGen.paintWall` (`WorldGen.cs:44230-44252`): a walled cell takes
+    /// the colour; a wall-less cell and a same-colour repaint refuse.
+    #[test]
+    fn w4_g79_paint_wall_writes_the_colour_and_needs_a_wall() {
+        let mut w = ground_world();
+        let i = w.index(10, 15);
+        w.tiles[i].wall = 4;
+        assert!(paint_wall(&mut w, 10, 15, 9), "the wood wall takes Blue");
+        assert_eq!(w.wall_paint(10, 15), 9);
+        assert!(!paint_wall(&mut w, 10, 15, 9), "the same colour refuses");
+        // A wall-less cell refuses even when active.
+        assert!(!paint_wall(&mut w, 10, 20, 1));
+    }
+
+    /// `WorldGen.paintCoatTile` (`WorldGen.cs:44134-44180`): the Glow (1) and
+    /// Echo (2) bits set once, the clear (0) arm needs at least one bit, and an
+    /// unknown id refuses. The Glow bit rides the tile flag, the Echo bit the
+    /// extras byte.
+    #[test]
+    fn w4_g79_paint_coat_tile_sets_glow_and_echo_then_clears() {
+        let mut w = ground_world();
+        assert!(paint_coat_tile(&mut w, 10, 20, 1), "Glow lands");
+        assert!(w.tile(10, 20).unwrap().fullbright_block());
+        assert!(!paint_coat_tile(&mut w, 10, 20, 1), "Glow already set refuses");
+        assert!(paint_coat_tile(&mut w, 10, 20, 2), "Echo lands beside Glow");
+        assert!(w.invisible_block(10, 20));
+        assert!(paint_coat_tile(&mut w, 10, 20, 0), "the clear arm takes both");
+        assert!(!w.tile(10, 20).unwrap().fullbright_block());
+        assert!(!w.invisible_block(10, 20));
+        assert!(!paint_coat_tile(&mut w, 10, 20, 0), "nothing left to clear");
+        assert!(!paint_coat_tile(&mut w, 10, 20, 3), "an unknown id refuses");
+        // An inactive cell refuses every id.
+        assert!(!paint_coat_tile(&mut w, 10, 15, 1));
+    }
+
+    /// `WorldGen.paintCoatWall` (`WorldGen.cs:44182-44228`): the wall's Glow
+    /// and Echo bits set once and clear together; a wall-less cell refuses.
+    #[test]
+    fn w4_g79_paint_coat_wall_sets_glow_and_echo_then_clears() {
+        let mut w = ground_world();
+        let i = w.index(10, 15);
+        w.tiles[i].wall = 4;
+        assert!(paint_coat_wall(&mut w, 10, 15, 1), "Glow lands on the wall");
+        assert!(w.fullbright_wall(10, 15));
+        assert!(!paint_coat_wall(&mut w, 10, 15, 1), "Glow already set refuses");
+        assert!(paint_coat_wall(&mut w, 10, 15, 2), "Echo lands beside Glow");
+        assert!(w.invisible_wall(10, 15));
+        assert!(paint_coat_wall(&mut w, 10, 15, 0), "the clear arm takes both");
+        assert!(!w.fullbright_wall(10, 15));
+        assert!(!w.invisible_wall(10, 15));
+        assert!(!paint_coat_wall(&mut w, 10, 15, 0), "nothing left to clear");
+        // A wall-less cell refuses.
+        assert!(!paint_coat_wall(&mut w, 10, 20, 1));
     }
 
     // ---- Phase 2 (DW-2.1 / DW-2.4): the item-use placement route -----------
@@ -2174,12 +2423,39 @@ mod tests {
         }
         let mut drops = Vec::new();
         assert!(shift_tall_gate(&mut w, 10, 18, false, false, &no_blocker, &mut drops));
+    /// W4-g4 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
+    /// zombie door-bash drain's gate-388 open, re-pointed at the c42
+    /// canonical body (research/95 §3 witness union — the richest unit
+    /// pin: open/close round-trip + blocked refusal + forced bypass +
+    /// non-gate refusal). The 1×5 style-0 object at column 10, rows
+    /// 14..18; frameY on the real placement grid (the [18,16,16,16,18]
+    /// coordinate-heights prefix + 2px padding → 0/20/38/56/74).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g4_shift_tall_gate_opens_the_closed_gate() {
+        let mut w = doorway_world();
+        for (k, y) in (14..=18).enumerate() {
+            set_active(&mut w, 10, y, 388);
+            let fy = [0i16, 20, 38, 56, 74][k];
+            w.tile_mut(10, y).unwrap().frame_y = fy;
+        }
+        let mut drops = Vec::new();
+        let mut cues = Vec::new();
+        assert!(shift_tall_gate(
+            &mut w, 10, 18, false, false, &no_blocker, &mut drops, None, &mut cues
+        ));
         for y in 14..=18 {
             let t = w.tile(10, y).unwrap();
             assert!(t.active() && t.kind == 389, "gate row {y} opens to 389");
         }
         // The open gate shifts back to closed (388) with `closing: true`.
         assert!(shift_tall_gate(&mut w, 10, 18, true, false, &no_blocker, &mut drops));
+        // The cue queues at the ADJUSTED top centre (`:51762`).
+        assert_eq!(cues, vec![(true, 10 * 16 + 16, 14 * 16 + 16)]);
+        // The open gate shifts back to closed (388) with `closing: true`.
+        assert!(shift_tall_gate(
+            &mut w, 10, 18, true, false, &no_blocker, &mut drops, None, &mut cues
+        ));
         for y in 14..=18 {
             assert_eq!(w.tile(10, y).unwrap().kind, 388, "gate row {y} closes");
         }
@@ -2192,6 +2468,19 @@ mod tests {
         assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
         // A non-gate cell refuses outright.
         assert!(!shift_tall_gate(&mut w, 12, 18, false, false, &no_blocker, &mut drops));
+        assert!(!shift_tall_gate(
+            &mut w, 10, 18, false, false, &blocked, &mut drops, None, &mut cues
+        ));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
+        // `forced` skips the occupancy gate.
+        assert!(shift_tall_gate(
+            &mut w, 10, 18, false, true, &blocked, &mut drops, None, &mut cues
+        ));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
+        // A non-gate cell refuses outright.
+        assert!(!shift_tall_gate(
+            &mut w, 12, 18, false, false, &no_blocker, &mut drops, None, &mut cues
+        ));
     }
 
     #[test]
@@ -2203,7 +2492,7 @@ mod tests {
         w.tile_mut(10, 17).unwrap().set_paint(3);
         w.tile_mut(10, 18).unwrap().set_paint(5);
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(drops.is_empty());
         let row_paint = [3u8, 5, 0]; // cache rows (:37676-37690)
         for (k, y, fy) in [(0usize, 17i32, 0i16), (1, 18, 18), (2, 19, 36)] {
@@ -2230,7 +2519,7 @@ mod tests {
         let mut w = closed_door_world();
         w.tile_mut(10, 17).unwrap().set_paint(3);
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None));
         for (y, fy) in [(17i32, 0i16), (18, 18), (19, 36)] {
             let hinge = w.tile(9, y).unwrap();
             assert!(hinge.active() && hinge.kind == 11, "hinge row {y}");
@@ -2263,7 +2552,8 @@ mod tests {
                 click.1,
                 false,
                 &no_blocker,
-                &mut drops
+                &mut drops,
+                None
             ));
             assert!(drops.is_empty());
             let written: Vec<_> = (0..3)
@@ -2288,7 +2578,7 @@ mod tests {
         let mut w = doorway_world();
         open_the_door(&mut w, true);
         let mut drops = Vec::new();
-        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops));
+        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None));
         for dy in 0..3i32 {
             let hinge = w.tile(10, 17 + dy).unwrap();
             assert!(hinge.active() && hinge.kind == 10, "left hinge row {dy}");
@@ -2340,7 +2630,7 @@ mod tests {
             set_active(&mut w, 11, y, 1);
         }
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(drops.is_empty());
         for y in 17..=19 {
             let t = w.tile(10, y).unwrap();
@@ -2353,7 +2643,7 @@ mod tests {
         }
         // The opposite direction's column is free — the open succeeds there
         // (the dispatcher-level retry is DW-4.1's test).
-        assert!(open_door(&mut w, 10, 18, -1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops, None));
     }
 
     #[test]
@@ -2363,7 +2653,7 @@ mod tests {
         let mut w = closed_door_world();
         set_active(&mut w, 11, 18, 3); // kind 3 ∈ Main.tileCut
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(drops.is_empty()); // a cut plant carries no object drop
         let t = w.tile(11, 18).unwrap();
         assert!(t.active() && t.kind == 11);
@@ -2378,9 +2668,9 @@ mod tests {
         open_the_door(&mut w, false);
         let blocked = |x: i32, y: i32| x == 10 && y == 18;
         let mut drops = Vec::new();
-        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops));
+        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops, None));
         assert!(w.tile(10, 18).unwrap().kind == 11, "door stays open");
-        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops));
+        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops, None));
         assert!(w.tile(10, 18).unwrap().kind == 10, "forced closes");
     }
 
@@ -2389,11 +2679,11 @@ mod tests {
         // Cross-kind calls refuse without touching the world (:37645/:31818).
         let mut w = closed_door_world();
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 40, 40, 1, &mut drops)); // out of bounds
-        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops));
+        assert!(!open_door(&mut w, 40, 40, 1, &mut drops, None)); // out of bounds
+        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops, None));
         let mut w2 = doorway_world();
         open_the_door(&mut w2, false);
-        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops));
+        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops, None));
     }
 
     #[test]
@@ -2405,7 +2695,7 @@ mod tests {
             set_object_cell(&mut w, 10, 17 + dy, 10, 0, fy);
         }
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 17, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 17, 1, &mut drops, None));
         for dy in 0..3i32 {
             let t = w.tile(10, 17 + dy).unwrap();
             assert_eq!(t.frame_y, 54 + dy as i16 * 18, "style row {dy}");
@@ -2424,7 +2714,7 @@ mod tests {
         let broken = w.index(10, 19);
         w.tiles[broken] = crate::tile::Tile::default();
         let mut drops = Vec::new();
-        assert!(!open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops, None));
         for y in 17..=19 {
             assert!(!w.tile(10, y).unwrap().active(), "row {y} cleaned up");
         }
@@ -2591,7 +2881,7 @@ mod tests {
             t.wall = 0; // no wall behind the door anywhere
         }
         let mut drops = Vec::new();
-        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops, None));
         assert!(w.tile(10, 17).unwrap().kind == 11);
     }
 

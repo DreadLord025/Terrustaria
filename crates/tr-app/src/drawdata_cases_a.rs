@@ -51,8 +51,11 @@
 //! - `case 637`'s `glowTexture = GetTileDrawTexture(...)` (the per-tile
 //!   painted sheet) and `case 184` column 220's `Main.DiscoR/G/B` colour are
 //!   engine state the port does not route here; their rects still port.
-//! - `case 564`'s unconditional `addFrY = 0` (`:6112`) is ALREADY applied by
-//!   `drawdata.rs`'s 564 arm — this pass must not apply it twice.
+//! - `case 564`'s unconditional `addFrY = 0` (`:6112`) rides THIS pass's
+//!   `add_fr_y_delta` (W4-g34): the first switch keeps `tileFrame * 36` so
+//!   the glow rect (`:6109`) reads the pre-clear row, then the delta zeroes
+//!   it — the C# order. The old port folded the clear into `drawdata.rs` and
+//!   the rect lost the animation row (d63 batch 4 / d64 R15 deviation).
 //! - `Main.mouseTextColor` (cases 656/701/564) is the UI text pulse; the
 //!   port passes 255 (the steady full-bright value) until the pulse rides in.
 //! - `Main.martianLight` is 0 outside the Martian Madness event (not
@@ -135,8 +138,10 @@ pub const VIOLET_MOSS_GLOW: [u8; 4] = [150, 0, 250, 0];
 /// `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`): active, in
 /// `Main.tileSolid`, not in `Main.tileSolidTop`, not half-brick, slope 0 and
 /// not actuated-inactive. A null tile (outside the array) is `true`; the
-/// port's `World::tile` returns `None` there, matching.
-fn solid_tile(world: &World, x: i32, y: i32) -> bool {
+/// port's `World::tile` returns `None` there, matching. The `noDoors`
+/// parameter defaults to `false` (case 4's probe, `TileDrawing.cs:4672`,
+/// passes nothing), so the door clause is not consulted here.
+pub fn solid_tile(world: &World, x: i32, y: i32) -> bool {
     let Some(t) = world.tile(x, y) else {
         return true;
     };
@@ -281,8 +286,9 @@ pub fn sea_oats_add_fr_y(world: &World, x: i32, y: i32, fy: i32, beach_distance:
 /// `mouse_text_color` is `Main.mouseTextColor` (255 steady) and
 /// `martian_light` is `Main.martianLight` (0 outside the event).
 ///
-/// `case 564`'s `addFrY = 0` (`:6112`) is intentionally NOT returned — the
-/// first switch's port already folds it (`drawdata.rs` case 564).
+/// `case 564`'s `addFrY = 0` (`:6112`) rides the returned `add_fr_y_delta`
+/// (W4-g34): the rect reads the pre-clear `add_fr_y` the first switch left
+/// (`tileFrame * 36`), then the delta zeroes it — the C# order.
 #[allow(clippy::too_many_arguments)]
 pub fn glow_switch(
     kind: u16,
@@ -342,13 +348,21 @@ pub fn glow_switch(
         // `case 580` (:6100-6104): butterfly jar, (225, 110, 110, 0).
         580 => out.glow = Some(GlowData { mask: 289, src: rect_anim_y(fx, height), color: [225, 110, 110, 0] }),
         // `case 564` (:6105-6113): GlowMask 267 below frame column 36,
-        // (200, 200, 200, 0) * text pulse; the trailing `addFrY = 0` is
-        // already applied by drawdata.rs's 564 arm (see module docs).
+        // (200, 200, 200, 0) * text pulse. The rect reads the PRE-clear
+        // `addFrY` (`tileFrame * 36`, the first switch's 217/218/564 arm);
+        // the trailing `addFrY = 0` (:6112) rides the delta below, applied
+        // AFTER the rect is built — W4-g34 deviation fix (d63 batch 4 /
+        // d64 R15): the old port folded the clear into the first switch and
+        // the rect lost the animation row.
         564 => {
             if fx < 36 {
                 let v = (200.0 * pulse) as u8;
                 out.glow = Some(GlowData { mask: 267, src: rect_anim_y(fx, height), color: [v, v, v, 0] });
             }
+            // :6112 — unconditional `addFrY = 0`; the delta zeroes whatever
+            // the first switch left (the C# assigns, it does not subtract a
+            // fixed row, so this is `-add_fr_y`).
+            out.add_fr_y_delta = (-add_fr_y) as i16;
         }
         // `case 184` (:6114-6151): LongMoss columns pick the moss glow,
         // rect uses the RAW frame (no addFr*). Column 220 is the disco
@@ -916,12 +930,21 @@ mod tests {
         let mut d = draw_data(656, 0, 0, 0, 0, 0, false);
         let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 128, 0.0).unwrap();
         assert_eq!(g.color, [128, 128, 128, 0]);
-        // 564: (200,200,200,0) * pulse below column 36; none at/above 36;
-        // the first switch already zeroed addFrY (no double reset).
+        // 564: (200,200,200,0) * pulse below column 36; none at/above 36.
+        // W4-g34: the first switch keeps tileFrame*36, the glow rect reads it
+        // pre-clear, then the pass's delta zeroes addFrY (the C# order).
         let (d, g) = dd(564, 0, 0, 18, 0);
-        assert_eq!(d.add_fr_y, 0);
+        assert_eq!(d.add_fr_y, 0); // tile_frame 0 -> 0, delta 0
         assert_eq!(g.unwrap().color, [200, 200, 200, 0]);
         assert!(dd(564, 0, 0, 36, 0).1.is_none());
+        // With a live animation row the rect carries it but the draw clears.
+        let t = tile_of(564, 18, 0);
+        let w = World::new("t".into(), 64, 64);
+        let mut d = draw_data(564, 0, 0, 18, 0, 3, false);
+        assert_eq!(d.add_fr_y, 108); // first switch: 3 * 36
+        let g = apply_cases_a(&mut d, &w, &t, 0, 0, [255; 4], 255, 0.0).unwrap();
+        assert_eq!(g.src[1], 108); // rect y = fy + pre-clear addFrY
+        assert_eq!(d.add_fr_y, 0); // :6112 clear via the delta
         // 638: 75% lerp toward the cell colour, height minus half-brick.
         let mut t = tile_of(638, 0, 0);
         t.flags |= FLAG_HALF_BRICK;
@@ -1179,5 +1202,40 @@ mod tests {
         // fx 32767 / 1998 = 16 → addFrX -31968, addFrY 576 (dressers).
         let (d, _) = dd(88, 0, 0, 32767, 0);
         assert_eq!((d.add_fr_x, d.add_fr_y), (-31968, 576));
+    }
+
+    /// W4-g34 deviation-fix witness (WRITTEN NOT RUN — code-only mode):
+    /// `solid_tile` is the FULL `WorldGen.SolidTile` (`WorldGen.cs:70111-
+    /// 70132`) — the case-4 probe now feeds from it (`render/tiles.rs`), so
+    /// the half-brick / slope / inactive / null clauses all veto. Kind 1
+    /// (StoneBlock) is solid and not solid-top.
+    #[test]
+    fn solid_tile_is_the_full_worldgen_predicate() {
+        use tr_core::tile::FLAG_INACTIVE;
+        let mut w = World::new("t".into(), 64, 64);
+        // A null tile (outside the array) is true (:70115-70118).
+        assert!(solid_tile(&w, -1, -1));
+        // An inactive (air) cell is false.
+        assert!(!solid_tile(&w, 10, 10));
+        // A plain solid block is true.
+        put(&mut w, 10, 9, 1);
+        assert!(solid_tile(&w, 10, 9));
+        // Half-brick vetoes (:70119).
+        let i = w.index(10, 9);
+        w.tiles[i].flags |= FLAG_HALF_BRICK;
+        assert!(!solid_tile(&w, 10, 9));
+        w.tiles[i].flags &= !FLAG_HALF_BRICK;
+        // Slope vetoes.
+        w.tiles[i].set_slope(1);
+        assert!(!solid_tile(&w, 10, 9));
+        w.tiles[i].set_slope(0);
+        // Actuated-inactive vetoes.
+        w.tiles[i].flags |= FLAG_INACTIVE;
+        assert!(!solid_tile(&w, 10, 9));
+        w.tiles[i].flags &= !FLAG_INACTIVE;
+        assert!(solid_tile(&w, 10, 9));
+        // A solid-top kind (platform 19) vetoes even when active.
+        put(&mut w, 11, 9, 19);
+        assert!(!solid_tile(&w, 11, 9));
     }
 }

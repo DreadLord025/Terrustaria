@@ -100,6 +100,11 @@ const fn lunar_chainsaw(id: u16, name: &'static str, projectile: u16) -> ItemDef
         paint_coating: 0,
         use_sound: Some(148),
         use_sound_pitch: 0.0,
+        expert: false,
+        has_vanity_effects: false,
+        tile_wand: -1,
+        not_ammo: false,
+        extractinator_consumable: false,
     }
 }
 
@@ -188,6 +193,11 @@ static ITEM_CORRECTIONS: [ItemDef; 5] = [
             // — SOUND_STYLES index 168 (`SoundID.cs:1426`, ctor order).
             use_sound: Some(168),
             use_sound_pitch: 0.0,
+            expert: false,
+            has_vanity_effects: false,
+            tile_wand: -1,
+            not_ammo: false,
+            extractinator_consumable: false,
         },
 ];
 

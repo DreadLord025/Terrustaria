@@ -136,6 +136,57 @@ pub struct PlayerFile {
     /// `builderAccStatus[11] == 0` property, save `:54778` / load `:55242`).
     /// The builder-toggle half of the pair; the use arm sets both.
     pub using_biome_torches: bool,
+    /// `Player.creativeTracker.ItemSacrifices`' `(persistentId, count)` pairs
+    /// (`ItemsSacrificedUnlocksTracker.cs:157-169`), the Journey research the
+    /// `.plr` carries (`Player.cs:54911`/`:55696-55699`). The W4-f44 seam's
+    /// shape — the tracker hydrates through `research::load_pairs`.
+    pub research: Vec<(String, i32)>,
+    /// The Journey per-player creative powers (`CreativePowerManager
+    /// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): Godmode (id 5),
+    /// FarPlacementRange (id 11), SpawnRate (id 14). The W4-f44 seam's
+    /// shape — the App hydrates them on Play.
+    pub powers: CreativePowersSave,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, `Deserialize:55722`'s
+    /// `Utils.Clamp(.., 0, Loadouts.Length - 1)`). The port clamps to 0..2.
+    pub current_loadout_index: usize,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `Deserialize:55723-55726`):
+    /// the three stored equipment sets. Files below release 262 (and the
+    /// port's inc1/inc2 truncation retries) carry none — they load as three
+    /// fresh `EquipmentLoadout()`s, exactly the C# `else` (no read) arm.
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+}
+
+/// The Journey per-player creative powers (`CreativePowerManager
+/// .LoadToPlayer`, `CreativePowerManager.cs:197-215`): `GodmodePower` id 5
+/// (`CreativePowers.cs:692-728`), `FarPlacementRangePower` id 11
+/// (`:730-767`), `SpawnRateSliderPerPlayerPower` id 14 (`:1573-1737`).
+/// The W4-f44 seam's shape.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CreativePowersSave {
+    pub godmode: bool,
+    pub far_placement: bool,
+    /// The raw [0,1] `_sliderCurrentValueCache` (`:1719`).
+    pub spawn_rate: f32,
+}
+
+impl Default for CreativePowersSave {
+    /// The read-side reset state (`CreativePowerManager.cs:211-214` →
+    /// `ResetDataForNewPlayer`): Godmode false, FarPlacement true
+    /// (`CreativePowers.cs:736`), SpawnRate 0.5 (`:1580`'s
+    /// `_sliderDefaultValue`).
+    fn default() -> Self {
+        CreativePowersSave { godmode: false, far_placement: true, spawn_rate: 0.5 }
+    }
+}
+
+impl CreativePowersSave {
+    /// The *writer's* fresh default — the live manager state a Classic
+    /// session saves (`CreativePowers.cs:707`/`:746`/`:1719`'s
+    /// `_sliderCurrentValueCache` at its ctor 0, not the reset default).
+    /// The W4-f44 seam's `written_fresh`.
+    pub fn written_fresh() -> Self {
+        CreativePowersSave { godmode: false, far_placement: false, spawn_rate: 0.0 }
+    }
 }
 
 #[derive(Debug)]
@@ -312,6 +363,12 @@ fn read_player_fields(
     if version > 326 {
         return Err(PlayerFileError::LaterVersion(version));
     }
+    // The Journey research pairs (`Player.cs:55696-55699`'s creativeTracker
+    // block) — collected here, carried on the PlayerFile below.
+    let mut research: Vec<(String, i32)> = Vec::new();
+    // The per-player creative powers (`CreativePowerManager.LoadToPlayer`,
+    // `:55706-55709`) — the W4-f44 seam's `powers` field.
+    let mut powers = CreativePowersSave::default();
     let name = r.cs_string().ok_or(PlayerFileError::Truncated("name"))?;
     let difficulty = r.u8().ok_or(PlayerFileError::Truncated("difficulty"))?; // gate 17
     let _play_time = r.u64().ok_or(PlayerFileError::Truncated("playtime"))?; // gate 138
@@ -410,6 +467,10 @@ fn read_player_fields(
         }
         *slot = (id, stack, prefix);
     }
+    // `Player.Loadouts` / `CurrentLoadoutIndex` — read at >= 262 below; files
+    // below that (and the inc1/inc2 retries) keep three fresh sets, index 0.
+    let mut current_loadout_index = 0usize;
+    let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
     // --- the post-inventory tail the old subset never reached -------------
     // miscEquips + miscDyes: 5 x (equip id/prefix, dye id/prefix)
     // (`:55420-55447`, gates 117/136 both true here).
@@ -457,6 +518,10 @@ fn read_player_fields(
             is_favorite,
             revision,
             None, // the inc1 files stop before the voice pair
+            research,
+            powers,
+            current_loadout_index,
+            loadouts,
         ));
     }
     // --- S1-J-5 increment 2: buffs through hideInfo (`:55578-55623`) ------
@@ -517,6 +582,10 @@ fn read_player_fields(
             is_favorite,
             revision,
             None, // the inc2 files stop before the voice pair
+            research,
+            powers,
+            current_loadout_index,
+            loadouts,
         ));
     }
     // --- S1-J-5 increment 3: the Deserialize tail (`:55624-55762`) --------
@@ -565,14 +634,18 @@ fn read_player_fields(
         // creativeTracker.Load -> CreativeUnlocksTracker.Load
         // (`CreativeUnlocksTracker.cs:14-17`) -> ItemsSacrificedUnlocksTracker
         // .Load (`ItemsSacrificedUnlocksTracker.cs:171-186`): the >= 282 bool
-        // then the (string, i32) sacrifice pairs. Consumed and dropped.
+        // then the (string, i32) sacrifice pairs — the Journey research
+        // counts (`Player.cs:55696-55699`). The pairs ride the PlayerFile
+        // (the W4-f44 seam's `research` field); the tracker hydrates from
+        // them on Play (`research::load_pairs`).
         if version >= 282 {
             r.boolean().ok_or(PlayerFileError::Truncated("sacrFlag"))?;
         }
         let n = r.i32().ok_or(PlayerFileError::Truncated("sacrCount"))?;
         for _ in 0..n {
-            r.cs_string().ok_or(PlayerFileError::Truncated("sacrKey"))?;
-            r.i32().ok_or(PlayerFileError::Truncated("sacrVal"))?;
+            let key = r.cs_string().ok_or(PlayerFileError::Truncated("sacrKey"))?;
+            let val = r.i32().ok_or(PlayerFileError::Truncated("sacrVal"))?;
+            research.push((key, val));
         }
     }
     if version >= 214 {
@@ -592,6 +665,8 @@ fn read_player_fields(
         // (`CreativePowers.cs:705-707`/`:744-746` shape), SpawnRate (14) one
         // f32 (`:1717-1719` shape). An unknown id BREAKS the loop in the C#
         // (`:203-206`) — mirror that instead of guessing a payload size.
+        // The values ride the PlayerFile's `powers` field (the W4-f44 seam);
+        // the App hydrates them on Play.
         loop {
             let more = r.boolean().ok_or(PlayerFileError::Truncated("powerFlag"))?;
             if !more {
@@ -599,11 +674,16 @@ fn read_player_fields(
             }
             let id = r.u16().ok_or(PlayerFileError::Truncated("powerId"))?;
             match id {
-                5 | 11 => {
-                    r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
+                5 => {
+                    powers.godmode = r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
+                }
+                11 => {
+                    powers.far_placement =
+                        r.boolean().ok_or(PlayerFileError::Truncated("powerBool"))?;
                 }
                 14 => {
-                    r.f32().ok_or(PlayerFileError::Truncated("powerSlider"))?;
+                    powers.spawn_rate =
+                        r.f32().ok_or(PlayerFileError::Truncated("powerSlider"))?;
                 }
                 _ => break, // `CreativePowerManager.cs:203-206`
             }
@@ -616,18 +696,42 @@ fn read_player_fields(
         // CurrentLoadoutIndex + the three loadouts (`:55720-55727`);
         // EquipmentLoadout.Deserialize (`EquipmentLoadout.cs:47-61`):
         // 20 armor + 10 dye x (type, stack, prefix[, favorited >= 322])
-        // then Hide[10] bools.
-        r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
-        for _ in 0..3 {
-            for _ in 0..30 {
-                read_item_triple(r, "loadoutItem")?;
-                if version >= 322 {
+        // then Hide[10] bools. The index clamps to 0..2 (`Utils.Clamp`,
+        // `:55722`); a type at/above ItemID.Count turns the slot to air
+        // (`Item.DeserializeFrom:49930-49933`).
+        let idx = r.i32().ok_or(PlayerFileError::Truncated("loadoutIdx"))?;
+        current_loadout_index = idx.clamp(0, 2) as usize;
+        for loadout in loadouts.iter_mut() {
+            for slot in 0..30 {
+                let id = r.i32().ok_or(PlayerFileError::Truncated("loadoutItem"))?;
+                let stack = r.i32().ok_or(PlayerFileError::Truncated("loadoutStack"))?;
+                let prefix = r.u8().ok_or(PlayerFileError::Truncated("loadoutPrefix"))?;
+                let favorited = if version >= 322 {
                     r.boolean()
-                        .ok_or(PlayerFileError::Truncated("loadoutFav"))?;
+                        .ok_or(PlayerFileError::Truncated("loadoutFav"))?
+                } else {
+                    false
+                };
+                let item = if id <= 0 || id >= ITEM_ID_COUNT || stack <= 0 {
+                    crate::item::EMPTY_SLOT
+                } else {
+                    crate::item::ItemSlot {
+                        kind: id as u16,
+                        name: crate::registry::name(id as u16),
+                        count: stack as u32,
+                        prefix: prefix as u16,
+                    }
+                };
+                if slot < crate::inv::ARMOR {
+                    loadout.armor[slot] = item;
+                } else {
+                    loadout.dye[slot - crate::inv::ARMOR] = item;
                 }
+                loadout.set_shared(slot, favorited);
             }
-            for _ in 0..10 {
-                r.boolean()
+            for hide in loadout.hide.iter_mut() {
+                *hide = r
+                    .boolean()
                     .ok_or(PlayerFileError::Truncated("loadoutHide"))?;
             }
         }
@@ -681,6 +785,10 @@ fn read_player_fields(
         Some((voice_variant, voice_pitch_offset)),
         unlocked_biome_torches,
         using_biome_torches,
+        research,
+        powers,
+        current_loadout_index,
+        loadouts,
     ))
 }
 
@@ -718,6 +826,16 @@ fn finish_player_file(
         )
     });
     let voice_variant = voice_variant.clamp(1, 4);
+    research: Vec<(String, i32)>,
+    powers: CreativePowersSave,
+    current_loadout_index: usize,
+    loadouts: [crate::loadout::EquipmentLoadout; 3],
+) -> PlayerFile {
+    let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
+    // `CreativePowerManager.LoadToPlayer` (`CreativePowerManager.cs:211-214`):
+    // after the load the C# RESETS the powers for non-Journey characters
+    // (`difficulty != 3` → `ResetDataForNewPlayer`, the ctor defaults).
+    let powers = if difficulty != 3 { CreativePowersSave::default() } else { powers };
     PlayerFile {
         name,
         difficulty,
@@ -742,6 +860,10 @@ fn finish_player_file(
         voice_pitch_offset,
         unlocked_biome_torches,
         using_biome_torches,
+        research,
+        powers,
+        current_loadout_index,
+        loadouts,
     }
 }
 
@@ -849,6 +971,13 @@ fn read_legacy_port_subset(
         voice_pitch_offset: 0.0,
         unlocked_biome_torches,
         using_biome_torches,
+        // The legacy subset stops before the creativeTracker block — no
+        // research pairs (the port-only shim, ANALYSIS).
+        research: Vec::new(),
+        powers: CreativePowersSave::default(),
+        // The 279 subset predates loadouts (release 262) — three fresh sets.
+        current_loadout_index: 0,
+        loadouts: Default::default(),
     })
 }
 
@@ -893,6 +1022,56 @@ pub struct PlayerFileWrite {
     /// `Player.UsingBiomeTorches` (`Player.cs:54778`) — the builder-toggle
     /// half (`builderAccStatus[11] == 0`); the use arm sets both.
     pub using_biome_torches: bool,
+    /// The Journey research pairs (`:54911` -> `ItemsSacrificedUnlocksTracker
+    /// .Save`, `ItemsSacrificedUnlocksTracker.cs:157-169`): the
+    /// `(persistentId, count)` strings the creativeTracker block carries.
+    /// The W4-f44 seam's shape — a fresh character has none (the default).
+    pub research: Vec<(String, i32)>,
+    /// The Journey per-player creative powers (`:54913` ->
+    /// `CreativePowerManager.SaveToPlayer`, `CreativePowerManager.cs:183-195`).
+    /// Defaults to [`CreativePowersSave::written_fresh`] — the live manager
+    /// state a Classic session saves (the W4-f44 seam's writer default).
+    pub powers: CreativePowersSave,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`, `Serialize:54919`).
+    /// The caller passes the live index; a fresh character is 0.
+    pub current_loadout_index: usize,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`, `Serialize:54920-54923`):
+    /// the three stored equipment sets, each `EquipmentLoadout.Serialize`
+    /// (`EquipmentLoadout.cs:31-45`). A fresh character carries three empty
+    /// sets — the 310-zero-byte block the golden fixture pins.
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+}
+
+impl Default for PlayerFileWrite {
+    /// The fresh-vanilla defaults (`Player` ctor + the field initializers) —
+    /// the W4-f44 seam's default split: the writer's fresh state carries no
+    /// research pairs; a fresh character is on loadout 0 with three empty sets.
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            difficulty: 0,
+            skin_variant: 0,
+            hair: 0,
+            life: 100,
+            life_max: 100,
+            mana: 20,
+            mana_max: 20,
+            hair_color: [0; 3],
+            skin_color: [0; 3],
+            eye_color: [0; 3],
+            shirt_color: [0; 3],
+            undershirt_color: [0; 3],
+            pants_color: [0; 3],
+            shoe_color: [0; 3],
+            inventory: [(0, 0, 0); 58],
+            inv_favorites: 0,
+            last_saved_binary: 0,
+            research: Vec::new(),
+            powers: CreativePowersSave::written_fresh(),
+            current_loadout_index: 0,
+            loadouts: Default::default(),
+        }
+    }
 }
 
 /// The `SavePlayer` mirror (`Player.cs:54736-54742`): release 326, the
@@ -1068,10 +1247,15 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     w.i32(0); // `:54910` golferScoreAccumulated (`Player.cs:1912`, default 0)
               // `:54911` creativeTracker.Save -> CreativeUnlocksTracker.Save
               // (`CreativeUnlocksTracker.cs:9-12`) -> ItemsSacrificedUnlocksTracker.Save
-              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag then the
-              // sacrifice-pair count — a fresh tracker has none.
+              // (`ItemsSacrificedUnlocksTracker.cs:157-169`): the literal `false` flag,
+              // the sacrifice-pair count, then the (persistentId, count) pairs — the
+              // Journey research the caller carries (a fresh tracker has none).
     w.boolean(false);
-    w.i32(0);
+    w.i32(file.research.len() as i32);
+    for (key, count) in &file.research {
+        w.cs_string(key);
+        w.i32(*count);
+    }
     // `:54912` SaveTemporaryItemSlotContents (`Player.cs:54935-54959`): one
     // BitsByte over mouseItem / CreativeMenu.GetItemByIndex(0) / guideItem /
     // reforgeItem IsAir — the port models none of the four global slots, so
@@ -1081,39 +1265,41 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     // (`CreativePowerManager.cs:183-195`): for each registered power that is
     // IPersistentPerPlayerContent, `true` + the u16 id + its Save. The
     // registration order (`Initialize`, `:86-105`) gives GodmodePower id 5
-    // (`IsEnabledForPlayer(Main.myPlayer)`, `CreativePowers.cs:705-707` —
-    // fresh false), FarPlacementRangePower id 11 (`:744-746` — fresh false),
-    // SpawnRateSliderPerPlayerPower id 14 (`_sliderCurrentValueCache`,
-    // `:1717-1719` — fresh 0f). Then the `false` terminator.
+    // (`IsEnabledForPlayer(Main.myPlayer)`, `CreativePowers.cs:705-707`),
+    // FarPlacementRangePower id 11 (`:744-746`), SpawnRateSliderPerPlayerPower
+    // id 14 (`_sliderCurrentValueCache`, `:1717-1719`). Then the `false`
+    // terminator. The values ride the caller's `powers` field.
     w.boolean(true);
     w.u16(5);
-    w.boolean(false);
+    w.boolean(file.powers.godmode);
     w.boolean(true);
     w.u16(11);
-    w.boolean(false);
+    w.boolean(file.powers.far_placement);
     w.boolean(true);
     w.u16(14);
-    w.f32(0.0);
+    w.f32(file.powers.spawn_rate);
     w.boolean(false);
     // `:54914-54918` the super-cart BitsByte: bit0 unlockedSuperCart
     // (`Player.cs:2052`, default false), bit1 enabledSuperCart
     // (`Player.cs:2054`, default **true**) → 0b10 = 2.
     w.u8(2);
-    w.i32(0); // `:54919` CurrentLoadoutIndex (`Player.cs:3207`, default 0)
-              // `:54920-54923` Loadouts[3].Serialize (`Player.cs:3200-3204`;
-              // `EquipmentLoadout.cs:31-45`): Armor[20] + Dye[10] each
-              // Item.Serialize(writeFavorite: true) = (type, stack, prefix, favorited)
-              // — fresh `Item()`s are (0, 0, 0, false) (`EquipmentLoadout.cs:14-19`) —
-              // then Hide[10] bools, all false.
-    for _ in 0..3 {
-        for _ in 0..30 {
-            w.i32(0);
-            w.i32(0);
-            w.u8(0);
-            w.boolean(false);
+    // `:54919` CurrentLoadoutIndex (`Player.cs:3207`); `:54920-54923`
+    // Loadouts[3].Serialize (`Player.cs:3200-3204`; `EquipmentLoadout.cs:31-45`):
+    // Armor[20] + Dye[10] each Item.Serialize(writeFavorite: true) =
+    // (type, stack, prefix, favorited) — a fresh `Item()` is (0, 0, 0, false)
+    // (`EquipmentLoadout.cs:14-19`) — then Hide[10] bools. The live sets ride
+    // the caller's carrier; three empty sets reproduce the golden 310-zero block.
+    w.i32(file.current_loadout_index as i32);
+    for loadout in &file.loadouts {
+        for slot in 0..30 {
+            let item = loadout.item_at(slot);
+            w.i32(item.kind as i32);
+            w.i32(item.count as i32);
+            w.u8(item.prefix.min(u8::MAX as u16) as u8);
+            w.boolean(loadout.is_shared(slot));
         }
-        for _ in 0..10 {
-            w.boolean(false);
+        for hide in loadout.hide {
+            w.boolean(hide);
         }
     }
     // W4-e10 — `:54924` (byte)voiceVariant / `:54925` voicePitchOffset: the
@@ -1208,6 +1394,52 @@ pub fn kill_player_files(path: &Path) {
             }
         }
     }
+/// `PlayerFileData.Rename` (`IO/PlayerFileData.cs:207-214`) for a card the
+/// port has no live `Player` for: the trimmed name lands on the stored
+/// character and `Player.SavePlayer` re-writes the file. The vanilla mutates
+/// `Player.name` then serializes the WHOLE live player; the port models only
+/// the card state, so the write is a read-modify-write splice: decrypt
+/// (`LoadPlayer:55073-55076`), replace ONLY `Serialize`'s first field
+/// (`Player.cs:54752`'s name string — the byte right after the 4-byte
+/// release + the 20-byte `FileMetadata`), keep every other byte (including
+/// the unmodelled tail the writer would default), re-encrypt with the
+/// write-side PKCS7 envelope (`:54734-54742`). The `.bak` copy is
+/// `InternalSavePlayerFile:54730-54733` — the previous file before the
+/// overwrite. `Player.GetFileData` skips files that cannot load
+/// (`Player.cs:55862-55881`), so the read gate runs first.
+pub fn rename_player_file(path: &Path, new_name: &str) -> Result<(), PlayerFileError> {
+    let raw = std::fs::read(path)?;
+    let plain = cbc_decrypt(&raw);
+    // The load gate: a file the listing would skip cannot be renamed either.
+    read_player_bytes(&plain)?;
+    let spliced = rename_plaintext_name(&plain, new_name)
+        .ok_or(PlayerFileError::Truncated("rename name field"))?;
+    // `InternalSavePlayerFile:54730-54733`: `FileUtilities.Copy(path, path +
+    // ".bak")` when the file exists — it does (the read above succeeded).
+    let mut bak = path.as_os_str().to_os_string();
+    bak.push(".bak");
+    std::fs::write(PathBuf::from(bak), &raw)?;
+    std::fs::write(path, cbc_encrypt(&spliced))?;
+    Ok(())
+}
+
+/// The name-field splice [`rename_player_file`] runs: `Serialize`'s first
+/// field (`Player.cs:54752`) sits at offset 24 — the `i32` release
+/// (`InternalSavePlayerFile:54738`) plus the 20-byte `FileMetadata`
+/// (`FileMetadata.cs:22-27`: u64 magic + u32 revision + u64 favorites). The
+/// 7-bit-length-prefixed string is replaced whole; every later byte keeps
+/// its value. `None` when the field cannot be walked (a truncated file).
+fn rename_plaintext_name(plain: &[u8], new_name: &str) -> Option<Vec<u8>> {
+    let mut r = Reader::new(plain);
+    r.skip(4 + 20)?;
+    let name_start = r.pos();
+    r.cs_string()?;
+    let name_end = r.pos();
+    let mut w = Writer::new();
+    w.bytes(&plain[..name_start]);
+    w.cs_string(new_name);
+    w.bytes(&plain[name_end..]);
+    Some(w.into_inner())
 }
 
 #[cfg(test)]
@@ -1272,7 +1504,87 @@ mod tests {
             voice_pitch_offset: 0.0,
             unlocked_biome_torches: false,
             using_biome_torches: false,
+            research: Vec::new(),
+            powers: crate::player_file::CreativePowersSave::written_fresh(),
+            current_loadout_index: 0,
+            loadouts: Default::default(),
         }
+    }
+
+    // --- The card rename (research/19 M1, W4-f22) -----------------------------
+
+    #[test]
+    fn rename_rewrites_only_the_name_field_and_baks_the_previous_file() {
+        // `PlayerFileData.Rename` (`IO/PlayerFileData.cs:207-214`): the name
+        // lands, `Player.SavePlayer` re-writes, `InternalSavePlayerFile:54730-
+        // 54733` copies the previous file to `.bak`. Every OTHER field keeps
+        // its value — the splice never re-defaults the unmodelled tail.
+        let dir = crate::test_world_helpers::test_scratch("plr-rename");
+        let path = dir.join("Belsin.plr");
+        write_player_file(&path, &sample()).unwrap();
+        let before = read_player_file(&path).unwrap();
+        rename_player_file(&path, "Zephyra").unwrap();
+        let after = read_player_file(&path).unwrap();
+        assert_eq!(after.name, "Zephyra");
+        // The rest of the card state is untouched.
+        assert_eq!(after.difficulty, before.difficulty);
+        assert_eq!(after.hair, before.hair);
+        assert_eq!(after.inventory, before.inventory);
+        assert_eq!(after.inv_favorites, before.inv_favorites);
+        assert_eq!(after.hair_color, before.hair_color);
+        assert_eq!(after.revision, before.revision);
+        // The `.bak` is the pre-rename file (`:54732`).
+        let bak = dir.join("Belsin.plr.bak");
+        assert_eq!(read_player_file(&bak).unwrap().name, "Belsin");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_splice_keeps_every_byte_past_the_name_field() {
+        // The plaintext witness: only `Serialize`'s first field changes; the
+        // bytes before it (release + FileMetadata) and after it (the whole
+        // remaining Serialize walk) are byte-identical.
+        let plain = serialize_plaintext(&sample());
+        let spliced = rename_plaintext_name(&plain, "A Much Longer Name Than Before").unwrap();
+        let mut r = Reader::new(&plain);
+        r.skip(4 + 20).unwrap();
+        let name_start = r.pos();
+        r.cs_string().unwrap();
+        let name_end = r.pos();
+        assert_eq!(&spliced[..name_start], &plain[..name_start]);
+        let mut r2 = Reader::new(&spliced);
+        r2.skip(4 + 20).unwrap();
+        assert_eq!(r2.cs_string().unwrap(), "A Much Longer Name Than Before");
+        let tail_start = r2.pos();
+        assert_eq!(&spliced[tail_start..], &plain[name_end..]);
+        // A truncated buffer refuses instead of mis-splicing.
+        assert!(rename_plaintext_name(&plain[..25], "X").is_none());
+    }
+
+    #[test]
+    fn rename_refuses_a_file_the_listing_would_skip() {
+        // `Player.GetFileData`'s null-on-failure skip (`Player.cs:55862-55881`)
+        // gates the rename too — garbage is not renamed, nothing is written.
+        let dir = crate::test_world_helpers::test_scratch("plr-rename-bad");
+        let path = dir.join("junk.plr");
+        std::fs::write(&path, b"unreadable").unwrap();
+        assert!(rename_player_file(&path, "X").is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"unreadable");
+        assert!(!dir.join("junk.plr.bak").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rename_round_trips_a_multibyte_name_through_the_7bit_length() {
+        // The keyboard allows any text (`Lang.menu[45]`, no charset gate); a
+        // >127-byte name exercises the multi-byte 7-bit length prefix on both
+        // the write (`Writer::cs_string`) and the read walk.
+        let long = "Ы".repeat(80); // 160 UTF-8 bytes -> a 2-byte length prefix
+        let plain = serialize_plaintext(&sample());
+        let spliced = rename_plaintext_name(&plain, &long).unwrap();
+        let file = read_player_bytes(&spliced).unwrap();
+        assert_eq!(file.name, long);
+        assert_eq!(file.inventory, sample().inventory);
     }
 
     #[test]
@@ -1678,6 +1990,12 @@ mod tests {
             voice_pitch_offset: 0.0,
             unlocked_biome_torches: false,
             using_biome_torches: false,
+            research: Vec::new(),
+            powers: CreativePowersSave::written_fresh(),
+            // The harness's player is on loadout 0 with three empty sets —
+            // the golden fixture's 310-zero-byte loadout block.
+            current_loadout_index: 0,
+            loadouts: Default::default(),
         };
         let plain = serialize_plaintext(&file);
         let fixture_raw = include_bytes!("../../../assets/test/golden.plr");
@@ -1919,5 +2237,69 @@ mod tests {
             b'h', 0, b'3', 0, b'y', 0, b'_', 0, b'g', 0, b'U', 0, b'y', 0, b'Z', 0,
         ];
         assert_eq!(ENCRYPTION_KEY, expected);
+    }
+
+    /// W4-g55 — the three loadouts + the index round-trip through the
+    /// release-326 `Serialize`/`Deserialize` (`Player.cs:54919-54923` /
+    /// `:55720-55727`, `EquipmentLoadout.cs:31-61`): a stored armor piece, a
+    /// dye, a share flag and a hide flag all survive, and the index clamps.
+    #[test]
+    fn w4_g55_the_loadouts_round_trip_through_the_plr() {
+        let mut file = sample();
+        file.current_loadout_index = 2;
+        // Loadout 1 stores an Iron Helmet (armor 0) + Red Dye (dye 0), shares
+        // the head (bit 0) and hides accessory 3.
+        file.loadouts[1].armor[0] = crate::item::ItemSlot {
+            kind: 90,
+            name: crate::registry::name(90),
+            count: 1,
+            prefix: 0,
+        };
+        file.loadouts[1].dye[0] = crate::item::ItemSlot {
+            kind: 1007,
+            name: crate::registry::name(1007),
+            count: 1,
+            prefix: 0,
+        };
+        file.loadouts[1].set_shared(0, true);
+        file.loadouts[1].hide[3] = true;
+        let bytes = write_player_bytes(&file);
+        let read = read_player_bytes(&cbc_decrypt(&bytes)).unwrap();
+        assert_eq!(read.current_loadout_index, 2);
+        assert_eq!(read.loadouts[1].armor[0].kind, 90);
+        assert_eq!(read.loadouts[1].dye[0].kind, 1007);
+        assert!(read.loadouts[1].is_shared(0), "the head share flag survived");
+        assert!(!read.loadouts[1].is_shared(20), "the dye share stayed off");
+        assert!(read.loadouts[1].hide[3]);
+        assert!(!read.loadouts[1].hide[4]);
+        // The other two sets stay empty.
+        assert_eq!(read.loadouts[0], crate::loadout::EquipmentLoadout::default());
+        assert_eq!(read.loadouts[2], crate::loadout::EquipmentLoadout::default());
+    }
+
+    /// W4-g55 — `Deserialize:55722` clamps the index to `0..Loadouts.Length-1`;
+    /// an out-of-range stored index reads back clamped, not raw.
+    #[test]
+    fn w4_g55_the_loadout_index_clamps_on_read() {
+        let mut file = sample();
+        file.current_loadout_index = 7; // out of range — the writer stores it raw
+        let bytes = write_player_bytes(&file);
+        let read = read_player_bytes(&cbc_decrypt(&bytes)).unwrap();
+        assert_eq!(read.current_loadout_index, 2, "Utils.Clamp(.., 0, 2)");
+    }
+
+    /// W4-g55 — a fresh character's loadout block is the golden 310-zero-byte
+    /// shape: three empty sets, index 0 (`EquipmentLoadout.cs:14-19`). The
+    /// full-file byte parity with the C# fixture is pinned by
+    /// `golden_plr_writer_matches_the_csharp_fixture_byte_for_byte`.
+    #[test]
+    fn w4_g55_a_fresh_character_loadout_block_is_all_zero() {
+        let plain = serialize_plaintext(&sample());
+        // The loadout index sits 4 bytes before the 930-byte loadout block,
+        // which ends 13 bytes before the plaintext end (voice 1 + pitch 4 +
+        // refunds 4 + dialogues 4 = 13).
+        let block_start = plain.len() - 13 - 930;
+        assert_eq!(&plain[block_start - 4..block_start], &[0, 0, 0, 0]);
+        assert_eq!(&plain[block_start..block_start + 930], &[0u8; 930][..]);
     }
 }

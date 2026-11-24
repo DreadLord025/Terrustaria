@@ -978,6 +978,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (Confused) (`NPCID.cs:9169`).
         NpcKind::Unicorn | NpcKind::Wolf => &[],
         NpcKind::Tumbleweed => &[31],
+        // W4-e21 — PartyBunny (540) debuff immunity: C# NPCID.cs:9127-9131 gives
+        // {31} (identical to Bunny 46, d34's arm above). The merged PartyBunny
+        // variant needs its own arm for match exhaustiveness; the e21 "no
+        // DebuffImmunitySets row" claim is corrected against the source here.
+        NpcKind::PartyBunny => &[31],
         // W4-d120 — all five carry `SpecificallyImmuneTo {31}` (the
         // Confused debuff; `NPCID.cs`'s DebuffImmunitySets rows for
         // 142/160/178/209/579).
@@ -1288,6 +1293,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::Crimera => &[31],
         NpcKind::MossHornet
         | NpcKind::Moth => &[20, 31],
+        => &[31],
     }
 }
 

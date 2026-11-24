@@ -271,8 +271,9 @@ pub fn is_a_hammer_target(kind: u16) -> bool {
 // `edit::wall` (the i33 copy) — it reads the FULL `Main.wallHouse` table
 // (`wall_house`, 279 members, `Main.cs:9741-9789`/`:10353-10577`), which is
 // the table `Player.cs:45924` actually reads; the i31 copy used the narrower
-// `housing::is_house_wall` room-check subset (recorded deviation, corrected
-// at the gate). The finder below rides the same full table.
+// housing subset (recorded deviation, corrected at the gate). The finder
+// below rides the same full table. Since the g44e dedupe (W4-d119)
+// `housing::is_house_wall` delegates to this table too — one copy, all gates.
 
 /// `Player.ItemCheck_UseMiningTools_TryFindingWallToHammer`
 /// (`Player.cs:45832-45906`): the wall cell the hammer's wall pass targets.
@@ -380,12 +381,21 @@ pub enum PoundOutcome {
     /// the fail tick (the Dig 0 cue) plays and `poundRelease` is KEPT (the
     /// C# returns before the `:46310` clear).
     LockedDoor,
-    /// `:46004-46007` (470 DisplayDoll `TEDisplayDoll.TryChangePose`) /
-    /// `:46056-46062` (314 `Minecart.FrameTrack(pound: true)`): the latch is
-    /// consumed; the port has neither behaviour half (the doll's TE payload
-    /// is discarded, `tile_entities.rs`; the track-switch tables are
-    /// unported, `minecart.rs`) — recorded seams, ANALYSIS.
+    /// `:46004-46007` (470 DisplayDoll `TEDisplayDoll.TryChangePose`): the
+    /// latch is consumed; the port has no behaviour half (the doll's TE
+    /// payload is discarded, `tile_entities.rs`) — recorded seam, ANALYSIS.
     Consumed,
+    /// `:46056-46062` (314 `Minecart.FrameTrack(x, y, pound: true)` — mute
+    /// FALSE): the track hammer cycle. The tables live app-side
+    /// (`tr-app/src/minecart.rs::frame_track_hammer`, the M2-PHYS-7 module);
+    /// the app runs the pound branch, and on the `(pound & flag4) && !mute`
+    /// condition (`Minecart.cs:1163-1166`) the `KillTile(fail: true)` 314
+    /// slice — the Item52 cue (`WorldGen.cs:66531-66533`) + the
+    /// `SquareTileFrame` wake (`:63735`) whose case-314 `TileFrameImportant`
+    /// arm refits with `FrameTrack(pound: false)` (`:85290-85294`). The latch
+    /// clears either way (`:46310`); the C# bool only feeds the SP-discarded
+    /// `netMode == 1` SendData (`:46058-46061`). Research-71 §3b.4.
+    TrackHammer,
     /// `:46063-46238` — the frame-only arms (137 trap orientation, 424 wire
     /// pipe, 442 pressure pad): the frame write lands, NO sound plays (the
     /// C# arms carry only `SendTileSquare`).
@@ -524,10 +534,10 @@ pub fn try_pound_tile(
         return outcome(&st);
     }
     if tile.kind == 314 {
-        // `:46056-46062` — `Minecart.FrameTrack(x, y, pound: true)`
-        // (`Minecart.cs:943+`): the track-switch machinery is unported
-        // (`minecart.rs` module doc) — seam.
-        return PoundOutcome::Consumed;
+        // `:46056-46062` — `Minecart.FrameTrack(x, y, pound: true)` (mute
+        // false): the app seam owns the tables (`frame_track_hammer`) and the
+        // fail-kill slice; research-71 §3b.4.
+        return PoundOutcome::TrackHammer;
     }
     if tile.kind == 137 {
         // `:46063-46119` — the trap/dart orientation cycle.
@@ -1081,11 +1091,14 @@ mod tests {
 
     #[test]
     fn s1_p_i31_the_special_seams_consume_without_change() {
-        // 470 / 314 — the Consumed seams (`:46004-46007`, `:46056-46062`).
-        for kind in [470u16, 314] {
-            let mut w = lone(kind);
-            assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Consumed);
-        }
+        // 470 — the Consumed seam (`:46004-46007`, the doll's TE payload is
+        // unported). 314 rides its own TrackHammer seam now (research-71
+        // §3b.4 — the app owns `frame_track_hammer`); the core hands it off
+        // WITHOUT touching the frames.
+        let mut w = lone(470);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Consumed);
+        let mut w = lone(314);
+        assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::TrackHammer);
         // A tileHammer kind refuses the pound (`:45981-45985`).
         let mut w = lone(26);
         assert_eq!(try_pound_tile(&mut w, 10, 15, no_chest), PoundOutcome::Refused);

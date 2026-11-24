@@ -804,11 +804,15 @@ pub(crate) fn angler_turn_in(app: &mut App, angler_idx: usize) -> bool {
         app.world.angler_quest_finished = true;
         app.world.angler_quest_turned_in = true;
         // `AchievementsHelper.HandleAnglerService` (`:40260`,
-        // `AchievementsHelper.cs:411-418`): SERVANT_IN_TRAINING (the `Finish`
-        // flag) and the four `Finish` counters. The rows share the condition
-        // name `Finish`, so the one `notify_custom_int` dispatch advances all
-        // four (`matches_kind` keys on the name).
-        let _ = app.achievements.notify_custom("Finish");
+        // `AchievementsHelper.cs:411-418`): SERVANT_IN_TRAINING's `Finish`
+        // flag completes by name (W4-c36 — the C# `GetCondition(row,
+        // "Finish").Complete()`), then the four `Finish` counters each take
+        // `Value++`; the rows share the condition name `Finish`, so the one
+        // `notify_custom_int` dispatch advances all four (`matches_kind`
+        // keys on the name — the four `Value++` lines' faithful fold).
+        let _ = app
+            .achievements
+            .complete_condition("SERVANT_IN_TRAINING", "Finish");
         let _ = app.achievements.notify_custom_int("Finish", 1);
     }
     true
@@ -828,15 +832,39 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
     // exclusions do not cover 369, but the port's town NPCs carry no mood
     // rows for him yet, so the plain 1.0 stands).
     let adjustment = 1.0f32;
-    // `DropAnglerAccByMissing`'s inventory scan (`Player.cs:56590-56594`):
-    // the port's one inventory (the armor/bank/loadout scans are
-    // constants-off — the port carries neither).
-    let owned: Vec<u16> = app
+    // `DropAnglerAccByMissing`'s scan (`Player.cs:56590-56627`): the inventory
+    // (`:56590-56594`), the armor (`:56595-56599`), the four banks
+    // (`:56600-56619`) and the three stored loadouts' Armor (`:56620-56627`,
+    // W4-g55 loadout-rest). Each non-air slot removes its row (and families)
+    // from the reward pool — the loadout scan reads `Loadouts[num].Armor`
+    // only (the Dye arrays are not scanned, `:56622`).
+    let mut owned: Vec<u16> = app
         .inventory
         .iter()
         .filter(|s| s.kind != 0 && s.count > 0)
         .map(|s| s.kind)
         .collect();
+    owned.extend(
+        app.equip
+            .armor
+            .iter()
+            .filter(|s| s.kind != 0 && s.count > 0)
+            .map(|s| s.kind),
+    );
+    if let Some(p) = app.player.as_ref() {
+        for bank in p.banks.iter() {
+            owned.extend(bank.iter().filter(|s| s.kind != 0 && s.count > 0).map(|s| s.kind));
+        }
+        for loadout in p.loadouts.iter() {
+            owned.extend(
+                loadout
+                    .armor
+                    .iter()
+                    .filter(|s| s.kind != 0 && s.count > 0)
+                    .map(|s| s.kind),
+            );
+        }
+    }
     // The turn-in is the player's item-use interaction (`Player.ItemCheck`
     // under the `UpdatePlayers` swap) — the reward rolls ride
     // `stream(UpdatePlayers)`.
@@ -1163,6 +1191,16 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         app.world.moon_phase as u32,
     );
     app.shop_npc = Some(idx);
+    // W4-c36 — `Player.SetTalkNPC`'s achievement gate (`Player.cs:4391-4394`):
+    // a housed, non-bound town NPC whose `PriceAdjustment <= 0.82f` fires
+    // HandleSpecialEvent(20) → TALK_TO_NPC_AT_MAX_HAPPINESS ("Do"). The
+    // port's shop-open is the talk seam; the mood multiplier is the
+    // PriceAdjustment stand-in (`ShopHelper.GetShoppingSettings`).
+    if app.npcs[idx].home.is_some() && mood.multiplier <= 0.82 {
+        let _ = app
+            .achievements
+            .complete_condition("TALK_TO_NPC_AT_MAX_HAPPINESS", "Do");
+    }
     if !same_shop {
         app.shop_sellback.clear();
     }
@@ -5521,6 +5559,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     let player = &mut app.player;
+    // `NPC.ScaleStats` (`NPC.cs:18146-18169`) at spawn: the Journey
+    // difficulty slider's strength (`Main._gameModeDifficultyOverride`,
+    // `Main.cs:17294-17305`) scales the fresh NPC's life/damage/knockback
+    // through the `GameDifficultyData` curves. The port's NPC stats are
+    // kind-level constants read live (`max_hp`/`contact_damage`/
+    // `knock_back_resist`), so the scale lands once per NPC at its first
+    // tick — the `difficulty_scaled` latch keeps it from compounding.
+    // The classic 1.0 strength is the identity (the curves sample 1.0 at
+    // Classic), so the scale is skipped there — a non-Journey world stays
+    // byte-identical (the determinism invariant).
+    if let Some(strength) = app.game_mode_difficulty_override {
+        for n in app.npcs.iter_mut() {
+            if !n.difficulty_scaled {
+                if strength != 1.0 {
+                    n.scale_stats_by_difficulty(strength);
+                }
+                n.difficulty_scaled = true;
+            }
+        }
+    }
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
     // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the
     // shared `Main.dust` pool + its `SpawnCtx` — both App fields the
@@ -6688,7 +6746,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `:3347`): collected by the scan below, sent once the `app.wiring`/
     // `app.world` borrows (and the `player` borrow) release.
     let mut switch_sends: Vec<(i32, i32)> = Vec::new();
+    // The §8.2 echoes (f11 §8.2 drain re-point): collected per NPC in play
+    // order, sent once the `app.wiring` borrow releases (the `switch_sends`
+    // precedent — `send_door_toggle` needs `&self.net`). SP's `Off` arm is
+    // the same discard; in MP the echo reaches the wire from this site.
+    let mut door_echo_sends: Vec<(i32, i32, i32, i32)> = Vec::new();
     {
+        // The §8.1 stamp (parts form — the loop below re-borrows npcs):
+        // an NPC-tripped plate can shift a wired trapdoor/gate.
+        app.wiring.set_entity_boxes(
+            crate::world_sim::wiring::collect_entity_boxes(
+                app.player.as_ref(),
+                &app.npcs,
+                &app.remote_players,
+            ),
+        );
         let mut wiring = &mut app.wiring;
         let world = &mut app.world;
         let audio = &mut app.audio;
@@ -6722,6 +6794,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             for (px, py) in wiring.take_switch_clicks() {
                 audio.play_switch_click(px as f32, py as f32, npcs_rng);
             }
+            // W4-c42 — the NPC-tripped wired door cues: the same UpdateNPCs
+            // stream (the C# plays inside the trip's WorldGen body).
+            for (open, px, py) in wiring.take_door_cues() {
+                audio.play_door_sound(open, px as f32, py as f32, npcs_rng);
+            }
+            // The §8.2 echoes: drained per NPC (play order), sent below.
+            door_echo_sends.extend(wiring.take_door_echoes());
         }
     }
     // The `59` sends after the last `player` borrow (`Collision.cs:3304`).
@@ -6730,6 +6809,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // precedent at the pass tail) so the mutable borrow ends here.
     for (x, y) in switch_sends {
         app.send_hit_switch(x, y);
+    }
+    for (n, x, y, d) in door_echo_sends {
+        app.send_door_toggle(n, x, y, d);
     }
     // S1-D-3z (zombie fighter audit) — `AI_003_Fighters`' door-bash drain
     // (`NPC.cs:59990-60086`): the obstacle scan
@@ -6749,6 +6831,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // tall gate (388) `ShiftTallGate` is PORTED (W4-g24) — the drain
     // shifts it + the pitched-8 cue on the same stream, refusal `ai[3]`
     // (ANALYSIS "The zombie fighter audit").
+    // tall gate (388) `ShiftTallGate` (W4-g4, re-pointed at the c42
+    // canonical body per research/95 §3) shifts the gate to its open kind
+    // (389) on the same stream; a refusal sets `ai[3] = num57` (`:60077`).
     for i in 0..app.npcs.len() {
         let Some((tx, ty, dir, open)) = app.npcs[i].wants_door_bash.take() else {
             continue;
@@ -6810,7 +6895,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let kind = app.world.tile(tx, ty).map(|t| t.kind);
         if kind == Some(10) {
             let mut drops = Vec::new();
-            let opened = tr_core::edit::open_door(&mut app.world, tx, ty, dir, &mut drops);
+            // `None`: no wiring flood runs on the NPC stage (the C#
+            // `Wiring.running` gate is false here — the §1 Option seam).
+            let opened = tr_core::edit::open_door(&mut app.world, tx, ty, dir, &mut drops, None);
             if !opened {
                 // `:60062-60066` — the refusal: the idle counter jumps to
                 // num57 (60 for the zombie family), blocking the chase
@@ -6853,6 +6940,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // overlap (the `close_door` convention).
         if kind == Some(388) {
             let mut drops = Vec::new();
+        // `:60072-60084` — the tall gate (388) `ShiftTallGate` (W4-g4: the
+        // S1-D-3z stand-in retired; the research/95 §3 re-point contract).
+        // The gate shifts to its open kind (389); a refusal sets
+        // `ai[3] = num57` like the door's. The occupancy gate is
+        // `Collision.EmptyTile(ignoreTiles: true)` — the player/NPC box
+        // overlap (the `close_door` convention; this closure is the
+        // reference implementation for the §8.1 entity-half seam).
+        if kind == Some(388) {
+            let mut drops = Vec::new();
+            let mut cues = Vec::new();
             let player = app.player.as_ref();
             let npcs = &app.npcs;
             let cell_blocked = |cx: i32, cy: i32| -> bool {
@@ -6880,6 +6977,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 false,
                 &cell_blocked,
                 &mut drops,
+                // `None`: no wiring flood runs on the NPC stage (the C#
+                // `Wiring.running` gate is false here — the §1 Option seam).
+                None,
+                &mut cues,
             );
             if !shifted {
                 // `:60075-60079` — the refusal: the idle counter jumps to
@@ -6924,6 +7025,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             for d in drops {
 
         }            for d in res.object_drops {
+                app.world_key = None;
+            }
+            // `WorldGen.cs:51762` — `SoundEngine.PlaySound(8)` at the
+            // ADJUSTED top: the canonical body queues the cue; drain it on
+            // the UpdateNpcs stream (the §3 contract — NOT g4's old
+            // hit-cell position, the cue carries the anchor centre).
+            for (open, px, py) in cues {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(RngKey::UpdateNpcs),
+                );
+            }
+            for d in drops {
                 if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
                     crate::world_sim::items::spawn_item_drop(
                         &mut app.items,
@@ -7142,15 +7258,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 n.kind.net_id(),
             ));
         }
+        let mut homed = 0;
         for (i, tx, ty, net_id) in asking {
             // `ScoreRoom`'s `ignoreNPC` — the asking NPC is not an occupant.
+            // `NPC.unlockedTruffleSpawn` has no ported field yet (no Truffle
+            // kind), so the special-conditions gate reads false.
             if let Some((hx, hy)) =
-                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id)
+                crate::town::quick_find_home(world, npcs, tx, ty, Some(i), net_id, false)
             {
-                // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
-                // the home assigns, the homeless flag clears.
+                // `QuickFindHome`'s success arm (`WorldGen.cs:5776-5780`):
+                // homeTileX/Y = bestX/bestY, homeless = false,
+                // homelessDespawn = false, NotifyProgressionEvent(8).
                 npcs[i].home = Some((hx, hy));
+                npcs[i].homeless_despawn = false;
+                homed += 1;
             }
+        }
+        // The NO_HOBO notifications after the mutable pass (the borrow seam
+        // — `notify_progression_net` needs `&mut App`; one per move-in,
+        // `WorldGen.cs:5780`).
+        for _ in 0..homed {
+            let _ = app.notify_progression_net(8);
         }
     }
     // `Main.UpdateTime_SpawnTownNPCs` (`Main.cs:65542-66116`, M4-TOWN-1b):
@@ -7166,15 +7294,86 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     {
         // `:65763-65784` — the five SpawnAllowed_* flags read the inventory.
         // The Party Girl's roll is `Main.rand.Next(40) == 0`, drawn ONCE PER
-        // CHECK — the C# draws it after `UpdateNpcsSpawnsTownNPCs`'s
-        // `checkForSpawns >= 7200` early-return (`Main.cs:65550-65554`), so
-        // the draw gates on the same boundary (the counter increments
+        // CHECK — the C# draws it after `UpdateTime_SpawnTownNPCs`'s
+        // `checkForSpawns >= 7200/rate` early-return (`Main.cs:65550-65554`),
+        // so the draw gates on the same boundary (the counter increments
         // inside `update_time_spawn_town_npcs`; the pre-increment value
         // predicts whether this tick is a check). The `UpdateTime_SpawnTownNPCs`
         // identity runs under the `UpdateTime` swap (`Main.cs:65542`,
         // called `:65153`).
-        let party_roll = app.town_arrival.check_for_spawns + 1 >= 7200
-            && app.rngs.stream(RngKey::UpdateTime).next_max(40) == 0;
+        //
+        // W4-d119 phase 2b — `GetWorldUpdateRate()` (`WorldGen.cs:72020-72030`):
+        // `min(desiredWorldTilesUpdateRate, 24)`, 0 under FreezeTime. The
+        // port's desired rate is the creative time-rate slider folded with
+        // the all-asleep x5 (`Main.UpdateTimeRate`, `Main.cs:6199-6224` —
+        // the dial fast-forward pins it to 1, `:6204`); the check interval
+        // is `7200 / rate` and a zero rate skips the whole function.
+        let rate = if app.world.is_fast_forwarding() {
+            1
+        } else {
+            let slider = app.creative_powers.time_rate();
+            if slider <= 0.0 {
+                0
+            } else {
+                let base = slider as i32;
+                if app.world.all_players_asleep { base * 5 } else { base }
+            }
+        }
+        .min(24);
+        let is_check = rate > 0
+            && app.town_arrival.check_for_spawns + 1 >= 7200 / rate;
+        let party_roll =
+            is_check && app.rngs.stream(RngKey::UpdateTime).next_max(40) == 0;
+        // W4-d119 — the home-LOSS half of mid-game relocation: on the same
+        // 7200-tick check boundary, `Main.UpdateTime_SpawnTownNPCs` runs
+        // `WorldGen.QuickFindHome(k)` on every housed resident that is not the
+        // Travelling Merchant (368) / Old Man (37) / Skeleton Merchant (453)
+        // and not already homeless (`Main.cs:65607-65614`). A destroyed room
+        // re-scans: QuickFindHome either re-homes the NPC at a new scored spot
+        // or sets `homeless = true` (`WorldGen.cs:5785`/`:5790`). The port's
+        // `home` Option models homeless as `None`, so a failed scan clears it.
+        let mut rehomed = 0;
+        if is_check {
+            let world = &app.world;
+            let npcs = &mut app.npcs;
+            // Snapshot the asking set first: the room scan reads the whole NPC
+            // list (occupancy), so the mutable writes run after the reads.
+            let mut asking: Vec<(usize, i32, i32, i32)> = Vec::new();
+            for (i, n) in npcs.iter().enumerate() {
+                let id = n.kind.net_id();
+                if !n.kind.is_town_npc() || n.home.is_none() || matches!(id, 368 | 37 | 453) {
+                    continue;
+                }
+                let (hx, hy) = n.home.unwrap();
+                // `QuickFindHome`'s outer guard (`WorldGen.cs:5736`): an
+                // out-of-range home tile makes the whole call a NO-OP — the
+                // NPC keeps its home, it does NOT go homeless. Only an
+                // in-range home whose scan fails unhouses (`:5785`/`:5790`).
+                if hx <= 10 || hy <= 10 || hx >= world.width - 10 || hy >= world.height {
+                    continue;
+                }
+                asking.push((i, hx, hy, id));
+            }
+            for (i, hx, hy, id) in asking {
+                // `QuickFindHome(k)` scans around the NPC's own home tile.
+                match crate::town::quick_find_home(world, npcs, hx, hy, Some(i), id, false) {
+                    Some((nx, ny)) => {
+                        npcs[i].home = Some((nx, ny));
+                        npcs[i].homeless_despawn = false;
+                        rehomed += 1;
+                    }
+                    None => {
+                        // `:5785`/`:5790`: the room is gone — homeless.
+                        npcs[i].home = None;
+                    }
+                }
+            }
+        }
+        // NO_HOBO per re-home (`WorldGen.cs:5780`), after the mutable pass
+        // releases the `npcs` borrow (`notify_progression_net` needs `&mut App`).
+        for _ in 0..rehomed {
+            let _ = app.notify_progression_net(8);
+        }
         let max_hp = app.player.as_ref().map_or(0, |p| p.max_hp);
         let residents = app
             .npcs
@@ -7182,6 +7381,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .filter(|n| n.hp > 0 && n.kind.is_town_resident())
             .count() as i32;
         let no_dyes: [crate::item::ItemSlot; 0] = [];
+        // `Main.GetBestiaryProgressReport()` (`Main.cs:65770`) — the
+        // Zoologist's `CompletionPercent >= 0.1f` gate (W4-d119 phase 2b).
+        let bestiary_completion = crate::bestiary::completion_percent(&app.bestiary.kills);
         let chosen = {
             let ctx = crate::town_arrival::ArrivalContext {
                 world: &app.world,
@@ -7190,6 +7392,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 max_hp,
                 party_roll,
                 residents,
+                world_update_rate: rate,
+                bestiary_completion,
+                // `BirthdayParty.GenuineParty` (`Main.cs:65795`) — flag8's
+                // first term for the TownSlimeGreen 678 gate (W4-d119 seal).
+                // NOT `party_is_up`: a manual monolith party does not open it.
+                genuine_party: app.world_events.genuine_party,
             };
             // `WorldGen.IsThereASpawnablePrioritizedTownNPC`: every ladder arm
             // needs its room ready, and the port's rooms are found by the same
@@ -7206,9 +7414,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             if let Some(player) = app.player.as_ref() {
                 let xt = (player.x / TILE_PX) as i32;
                 let yt = (player.y / TILE_PX) as i32;
-                if let Some((hx, hy)) =
-                    crate::town::quick_find_home(&app.world, &app.npcs, xt, yt, None, kind.net_id())
-                {
+                if let Some((hx, hy)) = crate::town::quick_find_home(
+                    &app.world,
+                    &app.npcs,
+                    xt,
+                    yt,
+                    None,
+                    kind.net_id(),
+                    false,
+                ) {
                     // `WorldGen.SpawnTownNPC`'s relocation arm
                     // (`WorldGen.cs:5428` `FindNPCLookingForHomeThatCanMoveIn`
                     // → `:5453-5463`): an already-live homeless NPC of this
@@ -7231,10 +7445,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         app.npcs.push(n);
                         // `WorldGen.cs:5576`: the arrival fires NO_HOBO
                         // (progression 8) — the Truffle's IT_CAN_TALK (18,
-                        // `:5580`) waits on a ported Truffle kind, and
-                        // REAL_ESTATE_AGENT (17, `:5671`) on the full
-                        // `CheckAchievement_RealEstateAndTownSlimes` roster.
+                        // `:5580`) waits on the d120 Truffle kind's merge
+                        // (NOTIFY-SYNC (4): the kind IS on d120 4b17a2cf1;
+                        // the notify hunk is published in research/30).
                         let _ = app.notify_progression_net(8);
+                        // W4-c36 DOC-SWEEP — `WorldGen.cs:5609`: the
+                        // successful arrival runs the roster check
+                        // (REAL_ESTATE_AGENT 17 / ALL_TOWN_SLIMES 26). The
+                        // port's roster is partial — the check is faithful
+                        // but unreachable until the missing kinds land
+                        // (`achievement_hooks.rs`'s module note).
+                        crate::app::achievement_hooks::check_real_estate_and_town_slimes(app);
                     }
                 }
             }
@@ -7348,6 +7569,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 let add = p.on_lady_bug_killed((ncx, ncy), gold);
                 app.rain.add_lady_bug_rain_boost(add);
             }
+        // W4-c36 — the wave-15 hooks (`NPC.cs:78569-78572` frost → progression
+        // 14 ICE_SCREAM, `:78703-78706` pumpkin → 15 BALEFUL_HARVEST): the
+        // walk returns true when the advance lands on wave 15.
+        if app.world.report_frost_moon_kill(npc.kind.to_u16()) {
+            let _ = app.notify_progression_net(14);
+        }
+        if app.world.report_pumpkin_moon_kill(npc.kind.to_u16()) {
+            let _ = app.notify_progression_net(15);
         }
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
@@ -7465,6 +7694,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 } else if !npc.moon_despawn_kill {
                     app.world.downed_moon_lord = true;
                     app.world.lunar_apocalypse_is_up = false;
+                    // W4-c36 DOC-SWEEP — `NPC.cs:79398-79402` (case 398's
+                    // tail): `if (Main.getGoodWorld)` fires progression 30
+                    // (BOULDER_LORD). `Main.getGoodWorld` is the For The
+                    // Worthy seed bit (`WorldGen.cs:11118`).
+                    if app.world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY) {
+                        let _ = app.notify_progression_net(30);
+                    }
                 }
             }
             NpcKind::NebulaTower => {
@@ -9423,6 +9659,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let spawn_cycle_skipped = std::mem::replace(&mut app.npc_no_spawn_cycle, false);
     if !spawn_cycle_skipped && app.npcs.len() < 200 && app.npc_timer <= 0.0 {
         let mut rng = app.rngs.stream(RngKey::SpawnNpc);
+        // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:344-363`): the Journey
+        // spawn-rate power's exact-zero cache blocks the WHOLE spawn call
+        // — the slime-rain pre-roll included (`:294-304`'s gate wraps both).
+        // The port's one player; the dead gate rides the ctx below.
+        let journey_mode = app.active_player_difficulty() == 3;
+        let journey_spawns_disabled =
+            journey_mode && app.creative_powers.spawn_rate_disabled();
+        let journey_spawn_rate = app.creative_powers.spawn_rate_multiplier();
         // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
         // — the pre-roll before the regular spawner (`:296-302`'s call
         // order): the depth/crowd gates (the player below
@@ -9432,7 +9676,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (the bounds, the y band `[worldSurface x 0.3, worldSurface]`,
         // the 7x8 solid-rect scan — the house-wall arm folds), the kind
         // table (Blue; `Next(10)==0` Yellow; `Next(5) < 2` Green).
-        if app.world.slime_rain {
+        if app.world.slime_rain && !journey_spawns_disabled {
             if let Some(player) = app.player.as_ref() {
                 let (pcx, pcy) = player.center();
                 let view_w = spawner::S_WIDTH as f32;
@@ -9449,7 +9693,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     && (pcy as f64) <= app.world.world_surface * 16.0 + (view_h * 0.5) as f64
                     && nearby <= 15.0
                 {
-                    let denom = 45.0 + 450.0 * (nearby / 15.0);
+                    let mut denom = 45.0 + 450.0 * (nearby / 15.0);
+                    // `Main.expertMode`'s ×0.85 (`NPC.cs:5902-5905`) is
+                    // constants-off (the port is single-difficulty classic).
+                    // `Main.IsJourneyMode` (`:5906-5913`): the spawn-rate
+                    // power divides the denominator by the remapped factor.
+                    if journey_mode {
+                        denom = (denom / journey_spawn_rate) as i32 as f32;
+                    }
                     // `Main.rand.Next(num2) != 0 → return` (`NPC.cs:5914`).
                     if rng.next_max(denom as i32) == 0 {
                         // `Next(num3, maxValue)` / `Next(minValue, maxValue2)`
@@ -9501,9 +9752,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
-        // blocks the attempt (the journey and Moon Lord gates have no
-        // sources yet).
+        // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:344-363`): a dead player
+        // blocks the attempt, and the Journey exact-zero cache blocks it
+        // too (`:350-357`, the `journey_spawns_disabled` snapshot above).
+        // The Moon Lord gate has no source yet.
         // `NPC.CountNPCS(id)`'s scan source (`NPC.cs:7982-7995`): the active
         // roster's vanilla types — the moon ladders' per-kind cap gates
         // (`CountNPCS(id) < cap`) read it per arm.
@@ -9514,7 +9766,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .map(|n| n.kind.to_u16())
             .collect();
         let ctx = app.player.as_ref().and_then(|player| {
-            if player.dead {
+            if player.dead || journey_spawns_disabled {
                 return None;
             }
             let (pcx, pcy) = player.center();
@@ -9580,6 +9832,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
                     moon_event: app.world.pumpkin_moon || app.world.snow_moon,
+                    // The Journey spawn-rate power (`NPC.cs:762-770`): the
+                    // per-attempt snapshot the GetSpawnRate arm reads.
+                    journey_mode,
+                    journey_spawns_disabled,
+                    journey_spawn_rate,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
@@ -11285,6 +11542,14 @@ mod tests {
         // Arm the vanilla arrival gate: the C# checks every 7200 ticks
         // (`Main.cs:65548-65555`), so the next update is a check.
         app.town_arrival.check_for_spawns = 7199;
+        // The DyeTrader's `num40 >= 4` term (`Main.cs:65860-65863`, W4-d119
+        // phase 2b): seed three more residents beside the Guide.
+        for kind in [NpcKind::Merchant, NpcKind::Nurse, NpcKind::ArmsDealer] {
+            let mut n = Npc::new(kind, 32.0, 100.0, 1, 0.0);
+            n.home = Some((2, 6));
+            n.hp = n.max_hp;
+            app.npcs.push(n);
+        }
         // The party roll draws `Next(40)` from stream(UpdateTime) — seed
         // the streams so the roll is deterministic for the fixture.
         app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
@@ -11310,6 +11575,7 @@ mod tests {
         // Arm the vanilla arrival gate: the C# checks every 7200 ticks
         // (`Main.cs:65548-65555`), so the next update is a check.
         app.town_arrival.check_for_spawns = 7199;
+        // The `num40 >= 4` roster is already seeded above (W4-d119 phase 2b).
         // The party roll draws `Next(40)` from stream(UpdateTime) — seed
         // the streams so the roll is deterministic for the fixture.
         app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
@@ -20663,6 +20929,55 @@ mod moon_lord_tests {
         assert_eq!(alive_parts, 0, "the parts fall with their core");
     }
 
+    /// W4-c36 DOC-SWEEP — `NPC.checkDead`'s case-398 tail
+    /// (`NPC.cs:79398-79402`): a Moon Lord core killed by a strike (no
+    /// despawn/part-clear flags) raises `downedMoonlord` AND, on a For The
+    /// Worthy world (`Main.getGoodWorld`, `WorldGen.cs:11118`), fires
+    /// progression 30 → BOULDER_LORD. A classic world raises the flag but
+    /// never fires; the despawn kill raises neither. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c36_the_ftw_moon_lord_kill_fires_boulder_lord() {
+        let boulder_done = |app: &App| {
+            app.achievements
+                .list
+                .iter()
+                .any(|a| a.name == "BOULDER_LORD" && a.completed)
+        };
+        // The For The Worthy world: the strike death fires 30.
+        let (mut app, _player) = app_player();
+        app.world.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        // ai[0] = 2 skips the drama latch (`:78074-78078`'s once-guard) —
+        // the drama's own end passes through to the death events.
+        core.ai[0] = 2.0;
+        core.hp = 0;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_moon_lord, "the flag raises");
+        assert!(boulder_done(&app), "the FTW kill fires progression 30");
+        // The classic world: the flag raises, no progression.
+        let (mut app, _player) = app_player();
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.ai[0] = 2.0;
+        core.hp = 0;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_moon_lord);
+        assert!(!boulder_done(&app), "no getGoodWorld, no BOULDER_LORD");
+        // The despawn kill raises neither (the `:41504` bypass).
+        let (mut app, _player) = app_player();
+        app.world.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.ai[0] = 2.0;
+        core.hp = 0;
+        core.moon_despawn_kill = true;
+        app.npcs.push(core);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.downed_moon_lord, "the despawn ride skips the flag");
+        assert!(!boulder_done(&app), "and the progression");
+    }
+
     #[test]
     fn the_leech_blob_keeps_its_own_head() {
         // `AI_082`'s anchor (`NPC.cs:36630-36640`): the clot resolves its
@@ -23837,6 +24152,51 @@ mod dw3_tests {
         );
         assert_eq!(after_b, twin_b, "no bash draw outside the graveyard");
     }
+
+    /// W4-g4 — the door-bash drain's tall-gate arm (`NPC.cs:60072-60084`,
+    /// `WorldGen.ShiftTallGate`), re-pointed at the c42 canonical
+    /// `edit::shift_tall_gate` (research/95 §3): a queued bash with
+    /// `open = true` on a closed tall gate (388) shifts it to the open kind
+    /// (389); the request drains. The S1-D-3z stand-in (no shift) is
+    /// retired. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g4_the_door_bash_drain_shifts_the_tall_gate() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        world.day_time = false;
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // A closed tall gate (388) at column 30, rows 115-119 (the 1×5
+        // style-0 object). Re-derived to the REAL placement frames for the
+        // c42 canonical alternate-0 decode: frameY = the coordinate-heights
+        // prefix WITH the 2px sheet padding ([18,16,16,16,18]+2 →
+        // 0/20/38/56/74, the c42 wiring witness's steps). g4's padding-free
+        // fixture (0/18/34/50/66) also resolves its hit cell under the
+        // kept body's heights-only row walk, but it is not a frame the
+        // game ever writes — pinned to the true grid here.
+        for (k, y) in (115..=119).enumerate() {
+            let i = app.world.index(30, y);
+            let fy = [0i16, 20, 38, 56, 74][k];
+            app.world.tiles[i] = Tile { kind: 388, frame_x: 0, frame_y: fy, ..Default::default() };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut zombie = Npc::new(NpcKind::Zombie, 28.0 * 16.0, 116.0 * 16.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        zombie.wants_door_bash = Some((30, 118, 1, true));
+        app.npcs.push(zombie);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].wants_door_bash.is_none(), "the request drained");
+        assert_eq!(
+            app.world.tile(30, 118).map(|t| t.kind),
+            Some(389),
+            "the tall gate shifted to its open kind (389)"
+        );
+    }
 }
 
 /// S1-D-3 W-9 fishron wiring — the dispatch/spawn/RNG witnesses.
@@ -24134,6 +24494,48 @@ mod fishron_wiring_tests {
         let s = sharks[0];
         assert_eq!(s.ai[3], -1.5, "the rise preset");
         assert!(s.ai[2] > 0.0, "the sway amplitude = the cloud width");
+    }
+
+    /// W4-g55 loadout-rest — `DropAnglerAccByMissing`'s loadout scan
+    /// (`Player.cs:56620-56627`): a stored loadout's Armor removes its row
+    /// (and families) from the reward pool exactly like an owned inventory
+    /// item — the scan reads `Loadouts[num].Armor` only (the Dye arrays are
+    /// not scanned, `:56622`). The `give_angler_reward` caller collects the
+    /// inventory + armor + banks + the three stored sets' Armor into
+    /// `owned_ids`; this witness pins the loadout half through the same
+    /// `remove_acc_options` filter the reward roll reads.
+    #[test]
+    fn w4_g55_the_angler_pool_drops_a_stored_loadout_accessory() {
+        // A stored 3721 (Terraspark Boots) in loadout 1's armor removes the
+        // boot family (2373/2374/2375) from the pool — the same family rule
+        // an owned inventory 3721 applies (`Player.cs:56655-56659`).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.player.as_mut().unwrap().loadouts[1].armor[3] = crate::item::ItemSlot {
+            kind: 3721, name: crate::registry::name(3721), count: 1, prefix: 0,
+        };
+        // The caller's owned-ids collection (the loadout half): the stored
+        // armor's non-air kinds feed the same filter the inventory does.
+        let owned: Vec<u16> = app
+            .player
+            .as_ref()
+            .unwrap()
+            .loadouts
+            .iter()
+            .flat_map(|l| l.armor.iter())
+            .filter(|s| s.kind != 0 && s.count > 0)
+            .map(|s| s.kind)
+            .collect();
+        assert_eq!(owned, vec![3721], "the stored boot is the only owned id");
+        let mut pool: Vec<u16> = vec![2373, 2374, 2375, 3120, 5139];
+        for id in &owned {
+            crate::angler::remove_acc_options_for_test(&mut pool, *id);
+        }
+        assert!(
+            pool.iter().all(|v| !matches!(v, 2373 | 2374 | 2375)),
+            "the stored 3721 removed the boot family from the reward pool"
+        );
+        assert!(pool.contains(&3120), "the unrelated rows stay");
     }
 }
 

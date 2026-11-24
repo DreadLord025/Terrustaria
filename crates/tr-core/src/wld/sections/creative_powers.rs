@@ -33,7 +33,7 @@
 //! an id: powers the port has not ported (freeze rain/wind, the difficulty
 //! slider) are simply absent from the caller's list.
 //!
-//! ## The slider values are remapped here, not stored verbatim
+//! The slider values are remapped here, not stored verbatim
 //! The two slider records' payload is `ASharedSliderPower._sliderCurrentValue
 //! Cache` — a float in **[0,1]** (`ModifyTimeRate.Save:967`,
 //! `DifficultySliderPower.Save:1162`) that the C# turns into its gameplay
@@ -42,11 +42,13 @@
 //! `(int)Math.Round(Utils.Remap(cache, 0, 1, 1, 24))`, so cache 0.5 is **x12**
 //! and cache 1 is **x24**; the difficulty slider's is at `:1018-1027`). The
 //! port's state owner (`tr_app::creative::PowerState::Slider`) carries that
-//! *derived* quantity — the time rate 1..24 — so the codec remaps in both
-//! directions and this module is the only place that knows the two
-//! representations differ. The difficulty record rides the file verbatim
-//! because the port has no difficulty power to remap it onto
-//! (`creative.rs::PERSISTENT_POWERS`' `port: None`).
+//! *derived* quantity — the time rate 1..24, the difficulty strength
+//! 0.5..3 — so the codec remaps in both directions and this module is the
+//! only place that knows the two representations differ. The difficulty
+//! inverse picks the cache whose forward remap reads back the same
+//! quantised strength (the C# only ever writes the cache the slider held;
+//! the port stores the strength, so the inverse is the seam's own
+//! canonical pick — documented in `tr_app::creative`).
 
 use super::{SectionData, SectionPayload};
 use crate::binio::{Reader, Writer};
@@ -108,31 +110,67 @@ fn remap(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> 
 const TIME_RATE_MIN: f32 = 1.0;
 const TIME_RATE_MAX: f32 = 24.0;
 
-/// The wire cache → the ported value for the id's slider payload
-/// (`ModifyTimeRate.Load:970-975`'s `UpdateInfoFromSliderValueCache` call).
-/// `None` = the id's payload rides the file verbatim (a toggle, or the
-/// unported difficulty slider).
-fn slider_from_wire(id: u16, cache: f32) -> Option<f32> {
-    (id == 8).then(|| {
-        // `(int)Math.Round(Utils.Remap(cache, 0, 1, 1, 24))` — banker's
-        // rounding, the C# `Math.Round` (`damage::round_bankers`).
-        round_bankers(f64::from(remap(
-            cache,
-            0.0,
-            1.0,
-            TIME_RATE_MIN,
-            TIME_RATE_MAX,
-        ))) as f32
-    })
+/// `DifficultySliderPower.UpdateInfoFromSliderValueCache`
+/// (`CreativePowers.cs:1018-1028`): the two-segment remap + the
+/// banker's-rounded 1/20 quantisation. Shared with the state owner
+/// (`tr_app::creative::difficulty_strength_from_cache` delegates here so
+/// the wire and the UI derive the same strength).
+pub fn difficulty_strength_from_cache(cache: f32) -> f32 {
+    let strength = if cache <= 0.33 {
+        remap(cache, 0.0, 0.33, 0.5, 1.0)
+    } else {
+        remap(cache, 0.33, 1.0, 1.0, 3.0)
+    };
+    // `(float)Math.Round(strength * 20f) / 20f` — the product is f32 in
+    // the C#, the round banker's (`damage::round_bankers`).
+    round_bankers(f64::from(strength * 20.0)) as f32 / 20.0
 }
 
-/// The ported value → the wire cache (`ModifyTimeRate.Save:967`'s inverse:
-/// the cache whose `UpdateInfoFromSliderValueCache` reads back as `rate`).
-fn slider_to_wire(id: u16, value: f32) -> f32 {
-    if id == 8 {
-        return remap(value, TIME_RATE_MIN, TIME_RATE_MAX, 0.0, 1.0);
+/// The inverse of [`difficulty_strength_from_cache`]: the canonical cache
+/// whose forward remap quantises to `strength`. The C# writes the cache the
+/// slider held; the port stores the derived strength, so the seam picks the
+/// segment's un-remapped midpoint of the strength's 1/20 cell (clamped into
+/// the segment). A strength of exactly 1.0 sits on the segment seam — the
+/// lower segment's end (0.33) is the pick, matching `Click_Normal`'s cache.
+fn difficulty_cache_from_strength(strength: f32) -> f32 {
+    if strength <= 1.0 {
+        remap(strength, 0.5, 1.0, 0.0, 0.33)
+    } else {
+        remap(strength, 1.0, 3.0, 0.33, 1.0)
     }
-    value
+}
+
+/// The wire cache → the ported value for the id's slider payload
+/// (`ModifyTimeRate.Load:970-975` / `DifficultySliderPower.Load:1167-1171`'s
+/// `UpdateInfoFromSliderValueCache` calls). `None` = the id's payload rides
+/// the file verbatim (a toggle).
+fn slider_from_wire(id: u16, cache: f32) -> Option<f32> {
+    match id {
+        8 => Some(
+            // `(int)Math.Round(Utils.Remap(cache, 0, 1, 1, 24))` — banker's
+            // rounding, the C# `Math.Round` (`damage::round_bankers`).
+            round_bankers(f64::from(remap(
+                cache,
+                0.0,
+                1.0,
+                TIME_RATE_MIN,
+                TIME_RATE_MAX,
+            ))) as f32,
+        ),
+        12 => Some(difficulty_strength_from_cache(cache)),
+        _ => None,
+    }
+}
+
+/// The ported value → the wire cache (`ModifyTimeRate.Save:967` /
+/// `DifficultySliderPower.Save:1162`'s inverse: the cache whose
+/// `UpdateInfoFromSliderValueCache` reads back as the ported value).
+fn slider_to_wire(id: u16, value: f32) -> f32 {
+    match id {
+        8 => remap(value, TIME_RATE_MIN, TIME_RATE_MAX, 0.0, 1.0),
+        12 => difficulty_cache_from_strength(value),
+        _ => value,
+    }
 }
 
 /// What an id's payload is on the wire: the toggle's `bool` or the slider's
@@ -492,10 +530,10 @@ mod tests {
 
     #[test]
     fn test_DW_6_3_an_unported_vanilla_id_round_trips_through_the_codec() {
-        // Freeze-rain (9), freeze-wind (10) and the difficulty slider (12) are
-        // per-world content in Vanilla, so the codec decodes them — the port's
-        // *state* has no power for them, which is `tr-app`'s decision, not the
-        // format's (the writer would re-emit them if the caller carried them).
+        // Freeze-rain (9) and freeze-wind (10) are per-world toggles; the
+        // difficulty slider (12) decodes its cache into the derived strength
+        // (`UpdateInfoFromSliderValueCache:1018-1028`) — cache 0.33 is the
+        // segment seam, strength 1.0.
         let bytes = section(&[
             bool_record(9, true),
             bool_record(10, true),
@@ -508,7 +546,7 @@ mod tests {
                 records: vec![
                     bool_record(9, true),
                     bool_record(10, true),
-                    f32_record(12, 0.33)
+                    f32_record(12, 1.0)
                 ],
             })
         );
@@ -516,24 +554,41 @@ mod tests {
     }
 
     #[test]
-    fn test_DW_7_6_the_difficulty_slider_cache_rides_the_file_verbatim() {
-        // "difficulty likewise": `DifficultySliderPower.Save:1162` writes the
-        // same [0,1] cache (derived into `StrengthMultiplierToGiveNPCs` at
-        // `UpdateInfoFromSliderValueCache:1018-1027`), but the port carries no
-        // difficulty power, so there is no ported quantity to remap onto and
-        // the record must ride the file byte-exact — inventing a strength
-        // would corrupt the vanilla bytes on the next save.
+    fn test_DW_7_6_the_difficulty_slider_cache_remaps_to_the_strength() {
+        // `DifficultySliderPower.Save:1162` writes the [0,1] cache;
+        // `Load:1167-1171` derives `StrengthMultiplierToGiveNPCs`
+        // (`UpdateInfoFromSliderValueCache:1018-1028`). Cache 0.75 →
+        // Remap(0.33,1,1,3) = 2.2537313 → *20 = 45.07 → round 45 → 2.25.
         let bytes = section(&[f32_record(12, 0.75)]);
-        assert_eq!(&bytes[3..7], &0.75f32.to_le_bytes(), "the raw cache");
+        assert_eq!(&bytes[3..7], &0.75f32.to_le_bytes(), "the raw cache on the wire");
         let (back, pos) = read_at(&bytes);
         assert_eq!(
             back,
             Some(WldCreativePowers {
-                records: vec![f32_record(12, 0.75)],
+                records: vec![f32_record(12, 2.25)],
             }),
-            "id 12 is not remapped: the cache is the value the file carries"
+            "id 12 decodes into the quantised strength"
         );
         assert_eq!(pos, bytes.len());
+        // The write inverse: the strength's canonical cache — the segment's
+        // un-remap (0.33 + 0.67 * (2.25-1)/2 = 0.74875), whose forward remap
+        // reads back the same 2.25.
+        let mut bag = SectionData::default();
+        bag.creative_powers.records = vec![f32_record(12, 2.25)];
+        let mut w = Writer::new();
+        write(&mut w, &bag, VER);
+        let out = w.into_inner();
+        let cache = f32::from_le_bytes(out[3..7].try_into().unwrap());
+        assert!((cache - 0.74875).abs() < 1e-6, "the canonical cache: {cache}");
+        assert_eq!(difficulty_strength_from_cache(cache), 2.25);
+        // The endpoints: strength 0.5 ↔ cache 0, strength 3 ↔ cache 1.
+        assert_eq!(difficulty_strength_from_cache(0.0), 0.5);
+        assert_eq!(difficulty_strength_from_cache(1.0), 3.0);
+        assert_eq!(slider_to_wire(12, 0.5), 0.0);
+        assert_eq!(slider_to_wire(12, 3.0), 1.0);
+        // The seam strength 1.0 picks the lower segment's end (0.33) —
+        // `Click_Normal`'s cache (`CreativePowers.cs:1063`).
+        assert!((slider_to_wire(12, 1.0) - 0.33).abs() < 1e-6);
     }
 
     #[test]

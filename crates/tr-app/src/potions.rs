@@ -63,6 +63,7 @@
 use tr_core::UnifiedRandom;
 
 use crate::app::App;
+use crate::buffs::BuffSlots;
 use crate::item::ItemSlot;
 use crate::player::Player;
 use crate::registry::{self, ItemDef};
@@ -271,10 +272,24 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
     let slots: Vec<(i32, i32)> = (0..crate::buffs::MAX_BUFFS)
         .filter(|&i| p.buffs.buff_type[i] > 0 && p.buffs.buff_time[i] > 0)
         .map(|i| (p.buffs.buff_type[i], p.buffs.buff_time[i]))
+/// every other world 18000 (`:12116`).
+fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) {
+    update_hunger_buffs_slots(&mut p.buffs, dont_starve, remix);
+}
+
+/// The slot-level keep-one of `UpdateHungerBuffs` (S1-E-7 wave F): the
+/// per-tick frame call site (`buff_effects_frame.rs`, `Player.cs:12046`)
+/// runs the SAME ladder on `BuffSlots` — no second copy of the expiry
+/// logic. The emote/sound requests the frame adds are gated on the same
+/// pre-expiry timers this ladder reads.
+pub fn update_hunger_buffs_slots(slots: &mut BuffSlots, dont_starve: bool, remix: bool) {
+    let live: Vec<(i32, i32)> = (0..crate::buffs::MAX_BUFFS)
+        .filter(|&i| slots.buff_type[i] > 0 && slots.buff_time[i] > 0)
+        .map(|i| (slots.buff_type[i], slots.buff_time[i]))
         .collect();
-    for (bt, time) in slots {
+    for (bt, time) in live {
         // Re-find by type: an earlier AddBuff may have compacted the slot.
-        let Some(slot) = p.buffs.find_buff_index(bt) else {
+        let Some(slot) = slots.find_buff_index(bt) else {
             continue;
         };
         match bt {
@@ -282,7 +297,7 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
                 if time <= 2 {
                     // `:12108-12117`: remix AND dontStarve → 28800, else 18000.
                     let t = if remix && dont_starve { 28800 } else { 18000 };
-                    p.buffs.add_buff(333, t);
+                    slots.add_buff(333, t);
                 }
                 if !dont_starve {
                     // Re-find AFTER the add: `AddBuff(333)`'s fed-state
@@ -291,8 +306,8 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
                     // writes `buffTime[i]` on whatever now occupies `i`,
                     // the port's type re-find lands the same zeroing on the
                     // live 332 when it survived (the dontStarve arm).
-                    if let Some(s) = p.buffs.find_buff_index(332) {
-                        p.buffs.buff_time[s] = 0; // `:12120-12123`
+                    if let Some(s) = slots.find_buff_index(332) {
+                        slots.buff_time[s] = 0; // `:12120-12123`
                     }
                 }
             }
@@ -303,16 +318,17 @@ fn update_hunger_buffs(p: &mut Player, dont_starve: bool, remix: bool) -> bool {
                     // UNPOSITIONED, the case-42 trackable (one variation,
                     // no gameplay draw; the façade NextFloat audio-only).
                     hungry = true;
+                    slots.add_buff(334, 5); // `:12131`/`:12135` (both arms 5)
                 }
                 if !dont_starve {
-                    if let Some(s) = p.buffs.find_buff_index(333) {
-                        p.buffs.buff_time[s] = 0; // `:12140-12143`
+                    if let Some(s) = slots.find_buff_index(333) {
+                        slots.buff_time[s] = 0; // `:12140-12143`
                     }
                 }
             }
             334 => {
                 if !dont_starve {
-                    p.buffs.buff_time[slot] = 0; // `:12145-12148`
+                    slots.buff_time[slot] = 0; // `:12145-12148`
                 }
             }
             _ => {}
@@ -519,8 +535,13 @@ pub fn use_potion_item(app: &mut App, held: ItemSlot) -> bool {
     }
     if drowning {
         // HandleSpecialEvent(25) → DRINK_BOTTLED_WATER_WHILE_DROWNING "Use"
-        // (`AchievementsHelper.cs:370-372`).
-        let _ = app.achievements.notify_custom("Use");
+        // (`AchievementsHelper.cs:370-372`). W4-c36: the C# names ONE row's
+        // condition (`GetCondition(row, "Use").Complete()`), never a
+        // flag-wide broadcast — the old `notify_custom("Use")` also closed
+        // STAR_POWER/GET_A_LIFE/TOPPED_OFF/… on a drowned sip.
+        let _ = app
+            .achievements
+            .complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use");
     }
     true
 }
@@ -772,7 +793,12 @@ pub fn quick_heal(app: &mut App) -> bool {
     // `:5535-5542`: `CanConsumeConsumableItem` is true → stack--, TurnToAir.
     loc.consume(app);
     if drowning {
-        let _ = app.achievements.notify_custom("Use");
+        // `:5543-5546` → HandleSpecialEvent(25), the row-targeted form
+        // (`AchievementsHelper.cs:370-372`, W4-c36 — the quick-heal sip must
+        // not close the other "Use" rows).
+        let _ = app
+            .achievements
+            .complete_condition("DRINK_BOTTLED_WATER_WHILE_DROWNING", "Use");
     }
     true
 }
@@ -905,6 +931,7 @@ fn spawn_heal_text(app: &mut App, amount: i32) {
 /// bare-`Main.rand` stand-in (`app.rngs.global()`, the S1-A-11 §4
 /// click convention), NOT the UpdatePlayers swap.
 pub(crate) fn spawn_heal_text_on(app: &mut App, amount: i32, rng: &mut tr_core::UnifiedRandom) {
+pub(crate) fn spawn_heal_text(app: &mut App, amount: i32) {
     let Some(p) = app.player.as_ref() else {
         return;
     };

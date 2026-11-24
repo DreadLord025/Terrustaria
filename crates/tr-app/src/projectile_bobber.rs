@@ -414,6 +414,14 @@ fn fishing_check(p: &mut Projectile, world: &World, inputs: &BobberInputs, rng: 
                 // S1-E-21h d75 part 2 — the sonar bite cues (`:20746-20751`/
                 // `:20762-20766`): the popup stays a skipped draw seam.
                 sonar_bite_cues(p, inputs.sonar_potion, res.rolled_item, res.rolled_enemy);
+                // W4-c36 — `:20798-20801`: the lava-fishing achievement
+                // queues for the world-sim drain (the pool carries no
+                // manager — the `wants_splash` convention).
+                if res.lava_fishing_achievement {
+                    p.wants_lava_fishing_achievement = true;
+                }
+                // The sonar popup + cue (`:20746-20751`/`:20762-20766`) are
+                // skipped draw/audio seams (module doc); the flag rides.
             }
         }
     }

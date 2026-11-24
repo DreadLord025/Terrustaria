@@ -505,6 +505,15 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Menu_Open", 10),
     ("Menu_Close", 11),
     ("Menu_Tick", 12),
+    // W4-c24 — the Journey research cues (`SoundID.Research = 63` /
+    // `ResearchComplete = 64`, `SoundID.cs:148/:150`): the sacrifice thunk
+    // picks `SoundResearch[Next(1, 4)]` (`LegacySoundPlayer.cs:480-492`), the
+    // completion chime is `SoundResearch[0]` (`:493-502`); the bank loads
+    // `Sounds/Research_0..3` (`:188-191`).
+    ("Research_0", 64),
+    ("Research_1", 63),
+    ("Research_2", 63),
+    ("Research_3", 63),
     // `SoundEngine.PlaySound(24)` — the town-NPC talk open
     // (`Main.cs:43083`); `SoundID.Chat = 24` (`SoundID.cs:70`), the
     // `Sounds/Chat` cue (`LegacySoundPlayer.cs:202`, case 24 `:957-962`).
@@ -1011,6 +1020,10 @@ const TRACKED_CUES: &[&str] = &[
     // — the secret-seed unlock cue (`WorldGen.SecretSeed.Enable`,
     // `WorldGen.cs:539`, W4-g24).
     "menu_accept",
+    // W4-f12 — `SoundID.Hungry` (`SoundID.cs:1711`,
+    // `CreateTrackable("hungry")`): the 333-expiry cue the `UpdateBuffs`
+    // frame's hunger ladder plays (`Player.cs:12138`).
+    "hungry",
 ];
 
 /// The `Sounds/Custom/` trackables the item-use wave names
@@ -1191,6 +1204,7 @@ fn sound_type(cue: &str) -> u32 {
         .or_else(|| {
         (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PROJ_CUSTOM_CUES.contains(&cue) || UI_CUSTOM_CUES.contains(&cue)).then_some(42)
         (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PLAYER_VOICE_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || TRACKED_CUES.contains(&cue) || UI_CUSTOM_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }

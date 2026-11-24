@@ -138,6 +138,9 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
 | **Dangerous-tile outline / `GetTileOutlineInfo` :4478** | highlight overlay | none | **MISSING** (debug feature) |
 | **`Draw_LiquidBehindTile` / submerged vertex tints :3824-4152, :4145** | water mask behind sloped cells + shimmer tint | `render/liquids.rs::draw_tile_liquid_behind` + `liquid_behind_spout_refused` | **PARTIAL** — the shimmer vertex tint is called out in ROADMAP :188-189 as open. **W4-g75 final-sweep census + retire-contract wiring (2026-11-21, folded into g73):** the `:3858` refusal chain's `CheckForWaterfall` arm — `tileCache.halfBrick() && (num3 > 160 || num > 160) && waterfallManager.CheckForWaterfall(tileX, tileY)` (a spouting half-brick suppresses its own behind-water so the fall reads clean) — is now WIRED as `liquid_behind_spout_refused` (the `:3835-3844` type-379 bubble exclusion on `num3`/`num` verbatim; the manager handle rides `draw_tiles`' existing `waterfall` seam). The `inActive()` half of the same refusal is owned by the g80 actuator lane (`liquid_behind_refused`, af6cd44f — that commit leaves the spout clause as a recorded deviation; the halves compose by OR at the family merge). 3 witnesses written not run. |
 | **Master trophy / pylon / void lens / critter cage** | dedicated passes | `render/pylons.rs` (S1-G-1 wave D) | **PORTED** (trophy/pylon/lens; critter cage stays MISSING — `DrawSpecialTilesLegacy`) |
+| **Vision-changer light floors** — `DrawSingleTile` :897-963 + `DrawAnimatedTile_AdjustForVisionChangers` :8481-8552 (Dangersense/Spelunker/BiomeSight) + the 3 predicates (`IsTileDangerous` :4435-4467, `Main.IsTileSpelunkable`/`IsTileBiomeSightable` `Main.cs:21783-21818`) | per-tile R/G/B byte floors behind the 4 potion flags + the dust rolls (Next 30/60/480) | d56 `tr-render::animated_tiles` (`vision_changer_light`/`is_tile_dangerous`/`is_tile_spelunkable`/`is_tile_biome_sightable`, UNWIRED); the `render/tiles.rs` consumer is the d56 wiring merge | **PORTED-UNWIRED** (d56) — the flags are live (`player.rs` find_treasure/biome_sight/detect_creature; f12 wires danger_sense); census research/76 |
+| **SpelunkerProjectileHelper** — `SpelunkerProjectileHelper.cs:6-67` (the 473 glowstick ore-spot dust layer, distinct from the vision floors) | the 10-tick dedupe-clear + the ±30 window + the Add&&Next(4) 204-dust spawn | `tr-app/src/spelunker_helper.rs` + the attach-ready arms `projectile_ai_light_items.rs` (W4-g78 wiring: the d9 bitset keep-one + `spot_in_range` + `SpelunkerSpot`; the dispatch swap is the contested seam, research/77 §1) | **PORTED, attach-contract published** — census research/76 |
+| **Hunter NPC tint** — `NPC.GetNPCColorTintedByBuffs` :91024-91141 + `buffColor` :90986-90993 (`Main.DrawNPC` :22939) + the black-out scan :22922-22938 | the 14-arm debuff tint chain + the Hunter floor (friendly green / hostile red) | `tr-app/src/npc_hunter_tint.rs` + the `render/entities.rs` colour site + the G6 `npc.rs::render_key` widen (W4-g78 wiring: the debuff arms + black-out WIRED; the Hunter-floor threading is the contested seam, research/77 §2) | **WIRED (debuff arms + black-out)** — census research/76 |
 
 ## Tests
 
@@ -236,6 +239,16 @@ disco arms 160/692 (`Main.DiscoR/G/B`), tile 83's texture override, 323's frond-
    domain". TILE-DRAW-4 is marked DONE on an unprovable equivalence. Severity:
    **pixel / determinism of screenshots**, and it defeats the C#'s one-draw-per-tile
    caching (per-tile cost now scales with painted pixels).
+   **W4-g79 update (2026-11-20, code-only)**: the residuals AROUND the recolor landed —
+   the pass-selection ladder `Main.ConvertPaintIdToTileShaderIndex` (`Main.cs:58677-58696`,
+   `drawdata.rs::convert_paint_id_to_tile_shader_index`: illuminant 31 → pass 0, negative
+   30 → 43 walls / 42 tiles, grass 1..12 → +27), the pre-258 Illuminant→Glow load
+   conversion (`WorldFile.cs:2807-2825`, `wld/mod.rs`), and the paint-preview lookup
+   chain (`Player.FindPaintOrCoating` + `TryFindingPaintInplayerInventory` wired into
+   the smart-cursor seam; `Main.TryGetAmmo`'s brush/roller preview record ported
+   unwired — its `DrawInterface_40_InteractItemIcon` draw site is unported). The
+   recolor equivalence itself is untouched — ANALYSIS "Tile paint draw residuals
+   (W4-g79)".
 10. **Tile colour lookup** — C# `GetFinalLight` (:4358-4402) = `(tileLight*tint)/255`
    truncating multiply, then `fullbrightBlock` → White, else `inActive` → `actColor`
    (RGB × 0.4), else `ShouldTileShine` (:4404-4433) → `Main.shine`. The port folds this

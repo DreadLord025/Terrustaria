@@ -415,6 +415,21 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_274",
         "Extra_290",
         "Extra_291",
+        // W4-g55: the loadout-button sheet (`TextureAssets.Extra[259]`,
+        // `Main.DrawLoadoutButtons:41950`) — a 3x3 grid (frameX = idle/active/
+        // hover, frameY = the loadout index).
+        "Extra_259",
+        // W4-g55: the loadout-share corner badges (`ItemSlot.cs:2733-2746`):
+        // Extra_310..312 = "this live item is shared FROM loadout 1/2/3"
+        // (`num18 = CurrentLoadoutIndex`), Extra_313..315 = "this air slot is
+        // filled BY a shared item from loadout 1/2/3" (`num16 =
+        // sharedFromLoadout`). Single-frame sheets drawn at the slot corner.
+        "Extra_310",
+        "Extra_311",
+        "Extra_312",
+        "Extra_313",
+        "Extra_314",
+        "Extra_315",
         // S1-L-8b: the `TextureAssets.GlowMask` strips the mount rows name —
         // SpookyWood 283 (`Mount.cs:1980`), WoF goat 284 (`:2095`), LavaShark
         // 285 (`:2187`), Bat 370 (`:2474`). They load as `Images/Glow_{id}`
@@ -883,6 +898,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
         "Extra_255",
         "Extra_256",
+        // S1-W4-g81 residuals: the builder-toggle column's sheets —
+        // `TextureAssets.InfoIcon[13]` the hover ring (`Main.cs:47566`),
+        // `blockReplaceIcon[0]` (`UI/BlockReplace_0`, `AssetInitializer.cs:477`)
+        // and `Extra[211]` the torch-swap icon (`Main.cs:42573`).
+        "UI/InfoIcon_13",
+        "UI/BlockReplace_0",
+        "Extra_211",
         "UI/Cursor_0",
         "UI/Cursor_1",
         // The cursor-override sheets (`Main.cs:45285-45309`): 3 favourite,
@@ -973,13 +995,41 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/ChestCraft_3",
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
+        // The Journey menu (W4-c24): the powers-menu toggle button + hover
+        // border (`CreativeUI.cs:77-78`), the power-strip icons
+        // (`CreativePowersHelper.GetIconImage:103`) and the research window's
+        // slot plate / piston strip / cog trio (`UICreativeInfiniteItemsDisplay
+        // .cs:219-230`, `:320-322`).
+        "UI/Creative/Journey_Toggle",
+        "UI/Creative/Journey_Toggle_MouseOver",
+        "UI/Creative/Infinite_Powers",
+        "UI/Creative/Infinite_Tabs_B",
+        "UI/Creative/Research_Slots",
+        "UI/Creative/Research_FramedPistons",
+        "UI/Creative/Research_GearA",
+        "UI/Creative/Research_GearB",
+        "UI/Creative/Research_GearC",
+        // The piston spark (`UICreativeInfiniteItemsDisplay.cs:219`) and the
+        // BLUE search magnifier (`UIWrappedSearchBar.cs:97` — the duplication
+        // window keeps the Blue theme).
+        "UI/Creative/Research_Spark",
+        "UI/Bestiary/Button_Search",
         "Text_Back",
+        // W4-f28: the yoyo tooltip's OneDropLogo (`TextureAssets.OneDropLogo`,
+        // `AssetInitializer.cs:310` — `Images/OneDropLogo`): the 5-copy
+        // shadow + tinted logo the tooltip draws over the yoyo row's " "
+        // placeholder (`Main.cs:20408-20439`).
+        "OneDropLogo",
         // S1-E-10b: the town-chatter bubble (`TextureAssets.Chat`,
         // `Main.DrawNPCChatBubble` `Main.cs:43158`) and the dialogue
         // panel's back splices (`TextureAssets.ChatBack`,
         // `NPCChatPanel.cs:71-72`; `AssetInitializer.cs:563-565`).
         "Chat",
         "Chat_Back",
+        // W4-f22: the placed-sign bubble (`TextureAssets.Chat2`,
+        // `Main.DrawInterface_19_SignTileBubble` `Main.cs:45739-45760`;
+        // `AssetInitializer.cs:564`).
+        "Chat2",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -2178,6 +2228,24 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // S1-W4-g81 residuals: the wiring-UI sheets. `TextureAssets.WireUi[0..12]`
+    // loads as `Images/UI/Wires_<i>` (`AssetInitializer.cs:299-302`) — the
+    // multicolor wrench's radial petals (`WiresUI.WiresRadial`,
+    // `WiresUI.cs:266-281`/`:438-453`) and the kite ghost's actuator stamp
+    // (`WireUi[11]`, `Main.cs:31665+`); `TextureAssets.BuilderAcc` is
+    // `Images/UI/BuilderIcons` (`:303`) — the cursor-area channel badges
+    // (`WiresUI.cs:531-535`) and the builder-toggle column
+    // (`Main.DrawBuilderAccToggles`, `Main.cs:47384`).
+    for i in 0..12u16 {
+        let name = format!("UI/Wires_{i}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
+    if let Ok(img) = load_png(dir, "UI/BuilderIcons", SheetLayout::Raw) {
+        images.push(img);
+    }
+
     // The tile-side glow sheets of `DrawSingleTile_Flames`
     // (`TileDrawing.cs:2684-2825`, `:3463-3491`): `TextureAssets.GlowMask`
     // loads as `Images/Glow_{id}` (`AssetInitializer.cs:352-354`) and the
@@ -2609,6 +2677,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 338] = [
 
         ]pub const BESTIARY_NPC_SHEET_IDS: [u16; 328] = [
 pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
+// + W4-e21's Party Bunny 540 portrait slot (46 is d34's phase-1 slot above)
+// = 329.
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 329] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -2736,6 +2807,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         // the earlier slots keep their indexes. The segments fold onto
         // the head's credit (no own slots).
         454, 521,
+        // W4-e21 — the Party Bunny (540) portrait slot, appended last so the
+        // earlier slots keep their indexes (46 is d34's phase-1 slot above).
+        540,
     ];
 
 
@@ -3267,6 +3341,25 @@ pub struct Lookups {
     /// (`Main.cs:41260-41264`, W4-g21 batch 2 host 59).
     pub extra_255: Option<tr_render::SheetRect>,
     pub extra_256: Option<tr_render::SheetRect>,
+    /// `Images/UI/InfoIcon_13` (`TextureAssets.InfoIcon[13]`): the
+    /// builder-toggle column's hover ring (`Main.cs:47566`). S1-W4-g81.
+    pub info_icon_13: Option<tr_render::SheetRect>,
+    /// `Images/UI/BlockReplace_0` (`TextureAssets.blockReplaceIcon[0]`,
+    /// `AssetInitializer.cs:477`): the block-replacer toggle's 3-frame
+    /// sheet (`Main.cs:42533-42534`). S1-W4-g81.
+    pub block_replace_0: Option<tr_render::SheetRect>,
+    /// `Images/Extra_211` (`TextureAssets.Extra[211]`): the torch-biome
+    /// swap toggle's 4-frame sheet (`Main.cs:42573-42574`). S1-W4-g81.
+    pub extra_211: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[259]`: the loadout-button sheet
+    /// (`Main.DrawLoadoutButtons`, `Main.cs:41950`) — `Frame(3, 3, frameX, i)`,
+    /// frameX 0 idle / 1 active / 2 hover-overlay, frameY the loadout index.
+    pub extra_259: Option<tr_render::SheetRect>,
+    /// `TextureAssets.Extra[310..=315]`: the loadout-share corner badges
+    /// (`ItemSlot.cs:2733-2746`). Index 0..2 = the live-item badges
+    /// (`Clamp(310 + CurrentLoadoutIndex, 310, 312)`), index 3..5 = the
+    /// shared-ghost badges (`Clamp(313 + sharedFromLoadout, 313, 315)`).
+    pub loadout_share_badges: [Option<tr_render::SheetRect>; 6],
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
     pub extra_49: Option<tr_render::SheetRect>,
@@ -3320,10 +3413,23 @@ pub struct Lookups {
     /// (`Main.cs:45285-45309`), indexed by the override id minus 3 with the
     /// 4/5 gap collapsed — see [`Lookups::cursor_override`]. W4-e19.
     pub cursor_overrides: [Option<tr_render::SheetRect>; 6],
+    /// `Images/UI/Wires_0..11` (`TextureAssets.WireUi`,
+    /// `AssetInitializer.cs:299-302`): the wiring radial's petals/glyphs and
+    /// the kite ghost's actuator stamp (`[11]`). S1-W4-g81 residuals.
+    pub wire_ui: [Option<tr_render::SheetRect>; 12],
+    /// `Images/UI/BuilderIcons` (`TextureAssets.BuilderAcc`,
+    /// `AssetInitializer.cs:303`): the cursor-area channel badges + the
+    /// builder-toggle column. S1-W4-g81 residuals.
+    pub builder_acc: Option<tr_render::SheetRect>,
     /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
     pub ui_inv_bg13: Option<tr_render::SheetRect>,
+    /// `Images/OneDropLogo` (`TextureAssets.OneDropLogo`,
+    /// `AssetInitializer.cs:310`): the yoyo tooltip's logo — the 5-copy
+    /// shadow + tinted draw over the yoyo row's " " placeholder
+    /// (`Main.cs:20408-20439`).
+    pub one_drop_logo: Option<tr_render::SheetRect>,
     /// `Inventory_Back3`: misc-equip slot frame (`ItemSlot.cs:2280`).
     pub ui_back3: Option<tr_render::SheetRect>,
     /// `Inventory_Back4`: reforge/guide/crafting slot frame (`ItemSlot.cs:2286`).
@@ -3398,6 +3504,34 @@ pub struct Lookups {
     pub ui_infinite_icons: Option<tr_render::SheetRect>,
     /// `UI/Creative/Infinite_Tabs_B_2`: the filter-strip button frames.
     pub ui_infinite_tabs_b2: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Journey_Toggle`: the powers-menu toggle button
+    /// (`CreativeUI.cs:77`).
+    pub ui_journey_toggle: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Journey_Toggle_MouseOver`: its hover border
+    /// (`CreativeUI.cs:78`).
+    pub ui_journey_toggle_hover: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Infinite_Powers`: the 21x1 power-icon strip
+    /// (`CreativePowersHelper.cs:90-104`).
+    pub ui_infinite_powers: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Infinite_Tabs_B`: the BLUE filter-strip frames
+    /// (`UICreativeItemsInfiniteFilteringOptions.cs:46` — the duplication
+    /// window keeps the default Blue theme, unlike crafting's Cyan).
+    pub ui_infinite_tabs_b: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_Slots`: the research window's slot plate
+    /// (`UICreativeInfiniteItemsDisplay.cs:221`).
+    pub ui_research_slots: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_FramedPistons`: the 1x9 piston frame strip
+    /// (`UICreativeInfiniteItemsDisplay.cs:229-230`).
+    pub ui_research_pistons: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Research_GearA/B/C`: the research cogs, big → small
+    /// (`UICreativeInfiniteItemsDisplay.cs:320-322`).
+    pub ui_research_gears: [Option<tr_render::SheetRect>; 3],
+    /// `UI/Creative/Research_Spark`: the piston particle
+    /// (`UICreativeInfiniteItemsDisplay.cs:219`).
+    pub ui_research_spark: Option<tr_render::SheetRect>,
+    /// `UI/Bestiary/Button_Search`: the BLUE-theme search magnifier
+    /// (`UIWrappedSearchBar.cs:97` — the duplication window's search bar).
+    pub ui_search_icon_blue: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Button_Search_2`: the search-bar icon button
     /// (`UIWrappedSearchBar.cs:100`).
     pub ui_search_icon: Option<tr_render::SheetRect>,
@@ -3470,6 +3604,10 @@ pub struct Lookups {
     /// `AssetInitializer.cs:565`): the dialogue panel's top/bottom
     /// splices (`NPCChatPanel.cs:71-72`).
     pub ui_chat_back: Option<tr_render::SheetRect>,
+    /// `Images/Chat2` (`TextureAssets.Chat2`, `AssetInitializer.cs:564`):
+    /// the placed-sign bubble (`Main.DrawInterface_19_SignTileBubble`,
+    /// `Main.cs:45739-45760`). W4-f22.
+    pub ui_sign_bubble: Option<tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -3758,6 +3896,13 @@ impl Lookups {
             extra_305: atlas.sheet("Extra_305").copied(),
             extra_255: atlas.sheet("Extra_255").copied(),
             extra_256: atlas.sheet("Extra_256").copied(),
+            info_icon_13: atlas.sheet("UI/InfoIcon_13").copied(),
+            block_replace_0: atlas.sheet("UI/BlockReplace_0").copied(),
+            extra_211: atlas.sheet("Extra_211").copied(),
+            extra_259: atlas.sheet("Extra_259").copied(),
+            loadout_share_badges: std::array::from_fn(|i| {
+                atlas.sheet(&format!("Extra_{}", 310 + i)).copied()
+            }),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),
             flame_ring: atlas.sheet("FlameRing").copied(),
@@ -3772,8 +3917,11 @@ impl Lookups {
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
             cursor_overrides: [3, 6, 7, 8, 9, 10]
                 .map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
+            wire_ui: std::array::from_fn(|i| atlas.sheet(&format!("UI/Wires_{i}")).copied()),
+            builder_acc: atlas.sheet("UI/BuilderIcons").copied(),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
+            one_drop_logo: atlas.sheet("OneDropLogo").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
             ui_back4: atlas.sheet("Inventory_Back4").copied(),
             ui_back5: atlas.sheet("Inventory_Back5").copied(),
@@ -3810,6 +3958,19 @@ impl Lookups {
             }),
             ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
+            ui_journey_toggle: atlas.sheet("UI/Creative/Journey_Toggle").copied(),
+            ui_journey_toggle_hover: atlas.sheet("UI/Creative/Journey_Toggle_MouseOver").copied(),
+            ui_infinite_powers: atlas.sheet("UI/Creative/Infinite_Powers").copied(),
+            ui_infinite_tabs_b: atlas.sheet("UI/Creative/Infinite_Tabs_B").copied(),
+            ui_research_slots: atlas.sheet("UI/Creative/Research_Slots").copied(),
+            ui_research_pistons: atlas.sheet("UI/Creative/Research_FramedPistons").copied(),
+            ui_research_gears: [
+                atlas.sheet("UI/Creative/Research_GearA").copied(),
+                atlas.sheet("UI/Creative/Research_GearB").copied(),
+                atlas.sheet("UI/Creative/Research_GearC").copied(),
+            ],
+            ui_research_spark: atlas.sheet("UI/Creative/Research_Spark").copied(),
+            ui_search_icon_blue: atlas.sheet("UI/Bestiary/Button_Search").copied(),
             ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
             ui_emote_button: atlas.sheet("UI/Emotes").copied(),
             ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
@@ -4481,6 +4642,9 @@ atlas.sheet("NPC_442").copied(),
                 atlas.sheet("NPC_203").copied(),
                 atlas.sheet("NPC_204").copied(),
                 atlas.sheet("NPC_206").copied(),
+                // W4-e21 — the Party Bunny's own 7-row NPC_540 strip (NPC_46
+                // is d34's sheet above).
+                atlas.sheet("NPC_540").copied(),
             ],
 
 
@@ -4496,6 +4660,7 @@ atlas.sheet("NPC_442").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_chat_bubble: atlas.sheet("Chat").copied(),
             ui_chat_back: atlas.sheet("Chat_Back").copied(),
+            ui_sign_bubble: atlas.sheet("Chat2").copied(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
@@ -5578,6 +5743,23 @@ mod tests {
             );
             assert!(w > 0.0 && h > 0.0);
         }
+    }
+
+    /// W4-f28 — the yoyo tooltip's OneDropLogo packs
+    /// (`TextureAssets.OneDropLogo`, `AssetInitializer.cs:310`): the sheet
+    /// the 5-copy shadow + tinted draw reads (`Main.cs:20408-20439`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_f28_the_one_drop_logo_packs() {
+        assert!(
+            STATIC_SHEET_NAMES.contains(&"OneDropLogo"),
+            "the static half must name the sheet"
+        );
+        let (_, lookups) = content_lookups();
+        let sheet = lookups
+            .one_drop_logo
+            .expect("Images/OneDropLogo must pack for the yoyo tooltip");
+        assert!(sheet.width > 0 && sheet.height > 0, "the logo has a size");
     }
 
     /// S1-G-12b: the FULL sheet set — the current enumeration PLUS the two

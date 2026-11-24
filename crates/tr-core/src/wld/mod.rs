@@ -268,6 +268,13 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
     let sections = load_sections(table)?;
 
     world.frame_important = std::mem::take(&mut table.importance);
+    // `WorldFile.LoadWorld_LastMinuteFixes` (`WorldFile.cs:1854-1860`): a
+    // pre-258 file still stores Illuminant as paint id 31 — the load converts
+    // it to the Glow-coating bits before anything draws or lights the world
+    // (W4-g79; the tile pass reads `fullbright_block`, not paint 31).
+    if version < 258 {
+        convert_illuminant_paint_to_new_field(&mut world);
+    }
     // `WorldFile.cs:730`: `CheckSavedOreTiers` runs after a successful load —
     // a pre-216 file (or a -1 quartet) re-derives the four metals from the
     // tiles. `spawnTileY` keeps the file's value (`LoadWorldFlags:2069`); the
@@ -278,6 +285,30 @@ fn parse_table(table: &mut SectionTable<'_>) -> Result<LoadedWorld> {
         sections,
         version,
     })
+}
+
+/// `WorldFile.ConvertIlluminantPaintToNewField` (`WorldFile.cs:2807-2825`):
+/// the pre-258 Illuminant paint (id 31) becomes the Glow coating —
+/// `if (tile.active() && tile.color() == 31) { tile.color(0);
+/// tile.fullbrightBlock(true); }` and the wall arm WITHOUT the active gate
+/// (`if (tile.wallColor() == 31) { tile.wallColor(0); tile.fullbrightWall(true); }`).
+/// The walk is column-major like the C#'s `for i in maxTilesX { for j in
+/// maxTilesY }`; the port's row-major grid makes the visit order irrelevant
+/// (every tile is independent). The tile paint lives in `Tile.meta`, the wall
+/// paint + Glow-wall bit in the sparse `World.extras` byte (`0x80`).
+fn convert_illuminant_paint_to_new_field(world: &mut World) {
+    for idx in 0..world.tiles.len() {
+        let tile = &mut world.tiles[idx];
+        if tile.active() && tile.paint() == 31 {
+            tile.set_paint(0);
+            tile.flags |= FLAG_FULLBRIGHT;
+        }
+        let extras = world.extras_at(idx);
+        if extras & 0x1f == 31 {
+            // wallColor(0) keeps the coating bits, fullbrightWall(true) adds 0x80.
+            world.set_extras_at(idx, (extras & !0x1f) | 0x80);
+        }
+    }
 }
 
 /// `WorldFile.CheckSavedOreTiers` (`WorldFile.cs:794-849`): when any of the
@@ -3558,6 +3589,133 @@ mod tests {
         assert_eq!(world.ore_tiers.cobalt, 0);
         assert_eq!(world.ore_tiers.mythril, 0);
         assert_eq!(world.ore_tiers.adamantite, 0);
+    }
+
+    /// W4-g79: a synthetic file whose tile section is the caller's bytes —
+    /// the `synthetic_file` shape with a hand-built tile payload (the
+    /// Illuminant fixtures need paint-31 records the shared fixture lacks).
+    fn synthetic_file_tiles(
+        version: i32,
+        importance: &[usize],
+        count: usize,
+        present: usize,
+        tiles: &[u8],
+    ) -> Vec<u8> {
+        let mut file = Vec::new();
+        file.extend_from_slice(&version.to_le_bytes());
+        if version >= 135 {
+            file.extend_from_slice(&[0u8; 20]);
+        }
+        file.extend_from_slice(&(present as i16).to_le_bytes());
+        let ptr_at = file.len();
+        file.extend_from_slice(&vec![0u8; 4 * present]);
+        file.extend_from_slice(&(count as u16).to_le_bytes());
+        file.extend(importance_bitmap(importance, count));
+        let mut pointers = [0usize; 11];
+        pointers[0] = file.len();
+        file.extend(header_section(version));
+        pointers[1] = file.len();
+        file.extend_from_slice(tiles);
+        pointers[2] = file.len();
+        for (i, chunk) in empty_section_chunks(version, present)
+            .into_iter()
+            .enumerate()
+        {
+            file.extend(chunk);
+            pointers[3 + i] = file.len();
+        }
+        for (i, p) in pointers.iter().take(present).enumerate() {
+            file[ptr_at + 4 * i..ptr_at + 4 * i + 4].copy_from_slice(&(*p as i32).to_le_bytes());
+        }
+        file.push(1);
+        file.extend(cs_string("TileFixture"));
+        file.extend_from_slice(&3i32.to_le_bytes());
+        file
+    }
+
+    #[test]
+    fn w4_g79_pre_258_illuminant_paint_converts_to_the_glow_coatings() {
+        // `WorldFile.cs:2807-2825` via `LoadWorld_LastMinuteFixes`
+        // (`:1854-1860`, `version < 258`): tile paint 31 on an ACTIVE tile
+        // becomes paint 0 + fullbrightBlock; wall paint 31 becomes 0 +
+        // fullbrightWall with NO active gate. Records (the `tile_section`
+        // encoding): col 0 = active stone painted 31, wall 5 painted 31
+        // behind an active stone, wall 5 painted 31 on an empty cell, a
+        // normal paint-9 wall; cols 1..7 air.
+        let mut tiles = Vec::new();
+        tiles.extend_from_slice(&[0x03, 0x01, 0x08, 1, 31]); // active stone, paint 31
+        // Active stone painted 31 + wall 5 painted 31: b4 = 0x07 (b1 +
+        // active + wall), b1 = 0x01, b2 = 0x18 (tile paint | wall paint);
+        // payload order kind, tile paint, wall, wall paint
+        // (`LoadWorldTiles:2550-2592`).
+        tiles.extend_from_slice(&[0x07, 0x01, 0x18, 1, 31, 5, 31]);
+        tiles.extend_from_slice(&[0x05, 0x01, 0x10, 5, 31]); // empty cell, wall paint 31
+        tiles.extend_from_slice(&[0x05, 0x01, 0x10, 5, 9]); // wall paint 9 stays
+        tiles.extend_from_slice(&[0x40, 0x01]); // air x2 (y 4..5)
+        for _ in 1..8 {
+            tiles.extend_from_slice(&[0x80, 5, 0]);
+        }
+        let data = synthetic_file_tiles(250, &[2, 144], 160, 11, &tiles);
+        let world = parse(&data).expect("v250 loads");
+        let t0 = world.tiles[world.index(0, 0)];
+        assert_eq!(t0.paint(), 0, "tile.color(0)");
+        assert!(t0.fullbright_block(), "tile.fullbrightBlock(true)");
+        // The wall arm runs even when the cell's tile is active (`:2819`
+        // has no `tile.active()` conjunct).
+        assert_eq!(world.wall_paint(0, 1), 0);
+        assert!(world.fullbright_wall(0, 1));
+        assert!(world.tiles[world.index(0, 1)].active());
+        // The empty cell's wall converts too.
+        assert_eq!(world.wall_paint(0, 2), 0);
+        assert!(world.fullbright_wall(0, 2));
+        // A non-31 paint is untouched.
+        assert_eq!(world.wall_paint(0, 3), 9);
+        assert!(!world.fullbright_wall(0, 3));
+    }
+
+    #[test]
+    fn w4_g79_the_conversion_keeps_the_other_coating_bits_and_skips_inactive_tiles() {
+        // The direct body (`WorldFile.cs:2811-2823`): the tile arm's
+        // `tile.active()` gate and the wall arm's bit-preserving writes.
+        let mut world = World::new("Illuminant".into(), 4, 4);
+        let i = world.index(0, 0);
+        world.tiles[i].kind = 1;
+        world.tiles[i].flags |= FLAG_ACTIVE;
+        world.tiles[i].set_paint(31);
+        // An INACTIVE tile keeps its paint 31 (the C# never writes it).
+        let j = world.index(1, 0);
+        world.tiles[j].set_paint(31);
+        // Wall paint 31 with the Echo-wall bit already set: the conversion
+        // clears only the 5 paint bits and adds 0x80.
+        world.set_wall_paint(2, 0, 31);
+        world.set_invisible_wall(2, 0, true);
+        convert_illuminant_paint_to_new_field(&mut world);
+        assert_eq!(world.tiles[i].paint(), 0);
+        assert!(world.tiles[i].fullbright_block());
+        assert_eq!(world.tiles[j].paint(), 31, "inactive: no conversion");
+        assert!(!world.tiles[j].fullbright_block());
+        assert_eq!(world.wall_paint(2, 0), 0);
+        assert!(world.fullbright_wall(2, 0));
+        assert!(world.invisible_wall(2, 0), "the Echo bit survives");
+    }
+
+    #[test]
+    fn w4_g79_a_258_plus_file_does_not_convert_paint_31() {
+        // The gate is `WorldFile._versionNumber < 258` (`:1856`): a modern
+        // file's records load verbatim even if a foreign writer stored 31.
+        let mut tiles = Vec::new();
+        tiles.extend_from_slice(&[0x03, 0x01, 0x08, 1, 31]);
+        tiles.extend_from_slice(&[0x05, 0x01, 0x10, 5, 31]);
+        tiles.extend_from_slice(&[0x80, 3, 0]); // air x4 (y 2..5)
+        for _ in 1..8 {
+            tiles.extend_from_slice(&[0x80, 5, 0]);
+        }
+        let data = synthetic_file_tiles(VER, &[2, 144], 160, 11, &tiles);
+        let world = parse(&data).expect("v326 loads");
+        assert_eq!(world.tiles[world.index(0, 0)].paint(), 31);
+        assert!(!world.tiles[world.index(0, 0)].fullbright_block());
+        assert_eq!(world.wall_paint(0, 1), 31);
+        assert!(!world.fullbright_wall(0, 1));
     }
 
     #[test]

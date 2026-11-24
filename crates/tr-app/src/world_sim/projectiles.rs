@@ -494,6 +494,32 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // BEFORE the step closure's `&mut app.world`/`&mut app.dust` field
     // borrows (the `world_sim/npcs.rs` `dust_spawn_ctx` convention).
     let dust_spawn_ctx = app.spawn_ctx();
+    // S1-W4-g81 residuals — the Wire Kite's per-tick context
+    // (`Projectile.cs:35699-35745`): the owner snapshot + `Main.MouseWorld`
+    // (`screenPosition + MouseScreen`, the same math the yoyo aim reads) +
+    // the right-press conjunction (`Main.mouseRight &&
+    // Main.mouseRightRelease`, `:35710`). The C# re-latches the release
+    // flag at the END of every interface draw (`Main.cs:62458-62465`), so
+    // within one update the conjunction is the press-after-release edge —
+    // `place_prev_down` holds the previous tick's button (the projectile
+    // pass runs before `update_editing` refreshes it, the `drop_right_edge`
+    // ordering precedent).
+    let kite_ctx = app.player.as_ref().map(|p| {
+        (
+            crate::projectile_ai_kite::KiteOwner {
+                refuse: p.no_items || p.cced() || p.dead,
+                channel: p.channel,
+                direction: p.facing,
+                vel_x: p.vx,
+            },
+            Vec2::new(
+                app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+                app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+            ),
+            app.place_down && !app.place_prev_down,
+        )
+    });
+    app.projectiles.set_kite_context(kite_ctx);
     app.projectile_step.tick(dt.min(0.25), |_| {
         app.projectiles.update_dust(
             &mut app.world,
@@ -542,6 +568,33 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-f11 — the Grand Design's release-death mass-wire apply
+    // (`Projectile.cs:72051-72067` → `Wiring.MassWireOperation`): the
+    // ACTIVATION CONTRACT for the d13 union (research/235). d13's pool
+    // Kill hook queues `(owner, ps, pe)` (`take_mass_wire_ops`) and parks
+    // them on `app.pending_mass_wire_ops` at THIS seam; the merge wave
+    // drains them right here through the f11 apply. SEAL RE-TARGET
+    // (research/133 §8.4): the union calls the c42-MOVED copy
+    // `crate::world_sim::wiring::mass_wire_operation` (this module drops
+    // per §4a) and the direct drain REPLACES d13's park line — the
+    // buffer field drops, one drain shape, never both:
+    //   for (owner, psx, psy, pex, pey) in app.projectiles.take_mass_wire_ops() {
+    //       if owner as u32 != app.local_id { continue; } // the Kill gate
+    //       crate::world_sim::wiring::mass_wire_operation(
+    //           app, (psx, psy), (pex, pey),
+    //           app.wire_tool_mode,                  // RAW ToolMode (:3241)
+    //           crate::app::RngKey::UpdateProjectiles, // the Kill's stage
+    //       );
+    //   }
+    // (Batch-H: the `drop_rng` param is LANDED on the c42-moved fn per
+    // §8.4(a); g81's own `drain_mass_wire_ops` 2-tuple seam dedupes to d13's
+    // pool shape at the d13 union — 382 §3/§4.)
+    // The f11 half is READY: `mass_wire_operation` now takes the caller's
+    // stage stream (`drop_rng` — the d13 stream note closed); the mode is
+    // UNMASKED (the kite does not strip the Actuator bit — only the 3625
+    // click arm masks, `Player.cs:46908`); no cooldown gate (the Kill hook
+    // has none). The pool seam itself is d13's unmerged code — nothing
+    // drains on this branch yet (the documented deferral, both sides).
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-
@@ -994,6 +1047,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         if app.items.len() > 300 {
             app.items.remove(0);
         }
+    // W4-c36 — the lava-fishing achievement drain (`Projectile.cs:20798-
+    // 20801`): `HandleSpecialEvent(19)` → GO_LAVA_FISHING's "Do".
+    if app.projectiles.drain_lava_fishing_achievement() {
+        let _ = app.achievements.complete_condition("GO_LAVA_FISHING", "Do");
     }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
@@ -1201,7 +1258,8 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
             crate::projectile_ai_golf::GolfEffect::CupScored { hit_location, chat, cue } => {
                 // `Wiring.HitSwitch` + `SendData(59)` (`GolfHelper.cs:105-
-                // 106`) — the cup's tile trip.
+                // 106`) — the cup's tile trip. The §8.1 stamp first.
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
                 app.wiring.hit_switch(&mut app.world, hit_location.0, hit_location.1);
                 app.send_hit_switch(hit_location.0, hit_location.1);
                 // The trip's Mech-28 clicks ride the same stream (the
@@ -1212,6 +1270,19 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                         py as f32,
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                     );
+                }
+                // W4-c42 — the cup trip's wired door cues (same stream).
+                for (open, px, py) in app.wiring.take_door_cues() {
+                    app.audio.play_door_sound(
+                        open,
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                    );
+                }
+                // The §8.2 echoes: SP discards (the netMode-0 return).
+                for (n, x, y, d) in app.wiring.take_door_echoes() {
+                    app.send_door_toggle(n, x, y, d);
                 }
                 if let Some(text) = chat {
                     app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
@@ -1230,7 +1301,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             crate::projectile_ai_golf::GolfEffect::PadProbe { pos, old_pos, w, h } => {
                 // `Collision.SwitchTiles(..., 4)` (`Projectile.cs:20367`)
                 // — the projectile pressure-pad call. The switch sends
-                // ride the outcome (`Collision.cs:3304` et al.).
+                // ride the outcome (`Collision.cs:3304` et al.). The §8.1
+                // stamp first (the trip can shift a wired trapdoor/gate).
+                crate::world_sim::wiring::stamp_wiring_entity_boxes(app);
                 let outcome = crate::collision::switch_tiles(
                     &mut app.wiring,
                     &mut app.world,
@@ -1253,6 +1326,19 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
                         py as f32,
                         app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
                     );
+                }
+                // W4-c42 — the pad probe's wired door cues (same stream).
+                for (open, px, py) in app.wiring.take_door_cues() {
+                    app.audio.play_door_sound(
+                        open,
+                        px as f32,
+                        py as f32,
+                        app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
+                    );
+                }
+                // The §8.2 echoes: SP discards (the netMode-0 return).
+                for (n, x, y, d) in app.wiring.take_door_echoes() {
+                    app.send_door_toggle(n, x, y, d);
                 }
             }
             crate::projectile_ai_golf::GolfEffect::PlayerWrites {
@@ -1569,6 +1655,54 @@ mod w4_d4_death_drop_tests {
                 key.name()
             );
         }
+    // S1-W4-g81 residuals — the Wire Kite's owner writes
+    // (`Projectile.cs:35825-35832`), drained after the walk (the golf
+    // `PlayerWrites` shape): ChangeDir(Sign(velocity.X)), heldProj,
+    // SetDummyItemTime(2), itemRotation = 0, and the right-click kill's
+    // Main.blockMouse.
+    for (slot, tick) in app.projectiles.drain_kite_ticks() {
+        if let Some(p) = app.player.as_mut() {
+            if let Some(dir) = tick.facing {
+                p.facing = dir;
+            }
+            if tick.held_proj {
+                p.held_proj = slot as i32;
+            }
+            if tick.zero_item_rotation {
+                p.item_rotation = 0.0;
+            }
+        }
+        if let Some(frames) = tick.dummy_item_time {
+            // `SetDummyItemTime(2)` — the swing/item timers re-arm to 2
+            // ticks so the held kite never starts a new use (the spear
+            // hold's write-back precedent).
+            app.swing = frames as f32 / 60.0;
+            app.item_time = frames as f32 / 60.0;
+        }
+        if tick.block_mouse {
+            app.block_mouse = true;
+        }
+    }
+    // `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067` →
+    // `Wiring.MassWireOperation`): the DIRECT DRAIN (f11 research/133
+    // §8.4b, executed at the batch-H c42×g81 compose per research/382 §4).
+    // RAW ToolMode (`Wiring.cs:3241` — the kite does NOT strip the Actuator
+    // bit; that mask is the 3625 arm's, `Player.cs:46908`), no cooldown
+    // gate (the Kill hook has none), `RngKey::UpdateProjectiles` (the
+    // Kill's stage, `Main.cs:17775`). The owner gate already ran at the
+    // queue site (`kill_mass_wire_op`'s `p.owner != 0` refusal — the SP
+    // `owner == local_id` fold, g81's 2-tuple shape). ONE drain shape:
+    // at the d13 union this seam dedupes to d13's 5-tuple pool shape
+    // (research/382 §3 — d13's pool seam is the keep-one; the apply call
+    // here is the same c42 fn either way).
+    for (ps, pe) in app.projectiles.drain_mass_wire_ops() {
+        crate::world_sim::wiring::mass_wire_operation(
+            app,
+            ps,
+            pe,
+            app.wire_tool_mode,
+            crate::app::RngKey::UpdateProjectiles,
+        );
     }
 }
 

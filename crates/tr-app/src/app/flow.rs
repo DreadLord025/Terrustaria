@@ -109,19 +109,33 @@ pub(crate) struct KeyboardSession {
     pub(crate) request: ui::keyboard::Request,
     pub(crate) state: ui::keyboard::KeyboardState,
     pub(crate) back: Option<FrontScreen>,
-    /// Which submit tail runs — the rename notice (Task 6) or the character
-    /// creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
+    /// Which submit tail runs — the card renames (research/19 M1) or the
+    /// character creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
     /// `UICharacterCreation.cs:1659-1689`; `Click_NamingAndCreating` ->
     /// `OnFinishedNamingAndCreating` -> `FinishCreatingCharacter`, `:1668-1702`).
     pub(crate) tail: KeyboardTail,
+    /// The card index the rename tails write back to — `RenameButtonClick`'s
+    /// `this._data` (`UICharacterListItem.cs:196-206`, `UIWorldListItem.cs:
+    /// 415-425`): the keyboard belongs to ONE card, so the submit does not
+    /// search the list by name (`App.players`/`App.worlds` index). `None` on
+    /// every non-rename session.
+    pub(crate) rename_index: Option<usize>,
 }
 
 /// The keyboard's on-submit behaviour (`UIVirtualKeyboard.cs:86`'s event pair).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum KeyboardTail {
-    /// The card renames: the port has no `.plr` writer, so Submit notices
-    /// (Task 6's documented deviation).
+    /// The character-card rename (`UICharacterListItem.OnFinishedSettingName`,
+    /// `:208-214`): the trimmed name lands through `PlayerFileData.Rename`
+    /// (`IO/PlayerFileData.cs:207-214` — the `.plr` read-modify-write,
+    /// research/19 M1), then `OpenCharacterSelectUI` re-lists.
     Rename,
+    /// The world-card rename (`UIWorldListItem.OnFinishedSettingName`,
+    /// `:427-432`): the trimmed name lands through `WorldFileData.Rename` ->
+    /// `WorldGen.RenameWorld` (`IO/WorldFileData.cs:444-453`,
+    /// `WorldGen.cs:6721-6753` — the world file's header rewrite), then the
+    /// rename callback's `menuMode = 6` reopens the world select.
+    WorldRename,
     /// `Click_Naming` (`:1659-1666`): the name lands in the draft, the
     /// creation screen returns.
     Name,
@@ -145,6 +159,13 @@ pub(crate) enum KeyboardTail {
     /// `ChestUI.RenameChestCancel` + `Close(quiet: true)` — both tails land
     /// back in gameplay.
     ChestRename,
+    /// The sign editor (`IngameFancyUI.cs:136-145`): submit runs
+    /// `Main.SubmitSignText` + `Close(quiet: true)` (`Main.cs:40694-40704`
+    /// — sound 12, `Sign.TextSign`, the netMode-1 `47` send), cancel runs
+    /// `Main.InputTextSignCancel` + `Close(quiet: true)` (`:19817-19826` —
+    /// the cancel cache parks the live text, `npcChatText` re-reads the
+    /// stored record). Both tails land back in gameplay. W4-f22.
+    SignEdit,
     /// The debug commands list's search bar (`UIWrappedSearchBar.cs:171-197`):
     /// submit runs `SubmitVirtualText` (`SetContents(text.Trim())` +
     /// `GoBackFromVirtualKeyboard` — `SetState(this)` restores the list),
@@ -427,6 +448,9 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
+    /// `UIVirtualKeyboard._cancelCacheSign` (`App.sign_cancel_cache`) — the
+    /// sign context's `CanRestore` read (`:504-515`). W4-f22.
+    pub(crate) sign_cancel_cache: &'a str,
     /// The Advanced tab's Everything-icon glitch state
     /// (`App.world_advanced_glitch` — the `ProvideUIElement` closure).
     pub(crate) everything_glitch: ui::world_creation_advanced::EverythingGlitch,
@@ -647,8 +671,12 @@ impl FrontScreenBehaviours for FrontScreen {
                 // layer by default (`ShowGamepadHints` is false without a
                 // gamepad), the 50-key grid under `TR_VK_GRID=1` (Review
                 // Focus 6). `frame_count` is the caret's
-                // `UITextBox._frameCount`.
-                let l = ui::keyboard::layout(d.screen, d.vk_grid);
+                // `UITextBox._frameCount`. The sign context parks the
+                // textbox/label off-screen (`:176`) and its bottom row
+                // follows the cancel cache (`CanRestore`, `:504-515`).
+                let can_restore = session.request.context.editing_sign()
+                    && !d.sign_cancel_cache.is_empty();
+                let l = ui::keyboard::layout(d.screen, d.vk_grid, session.request.context);
                 ui::keyboard::draw(
                     d.renderer,
                     d.lookups,
@@ -658,6 +686,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.vk_grid,
                     d.mouse,
                     d.frame_count,
+                    can_restore,
                 );
             }
             FrontScreen::WorldLoad(state) => {
@@ -778,8 +807,8 @@ impl FrontScreenBehaviours for FrontScreen {
                     // opens over the card's name — `Lang.menu[45]` "Enter
                     // Character Name:", `allowEmpty: true`, the ctor's
                     // 20-character cap (`:199`, `UIVirtualKeyboard.cs:159`).
-                    // There is no `.plr` writer to rename into (spec §9.4),
-                    // so Submit stays the not-ported notice (Task 6's flow).
+                    // Submit runs `OnFinishedSettingName`'s `.plr` rename
+                    // (`KeyboardTail::Rename`, research/19 M1).
                     Some(ui::char_select::CardAction::Rename(i)) => {
                         let name = app
                             .players
@@ -796,6 +825,11 @@ impl FrontScreenBehaviours for FrontScreen {
                             },
                             FrontScreen::CharSelect,
                         );
+                        // `this._data` rides the session — the submit writes
+                        // back to THIS card, not a name search.
+                        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+                            session.rename_index = Some(i);
+                        }
                         None
                     }
                     // `DeleteButtonClick` (`:242-254`): parks the target, then
@@ -1272,7 +1306,7 @@ impl FrontScreenBehaviours for FrontScreen {
                             .get(i)
                             .map(|w| w.name.clone())
                             .unwrap_or_default();
-                        app.open_keyboard(
+                        app.open_keyboard_with_tail(
                             ui::keyboard::Request {
                                 label: ui::keyboard::enter_world_name(),
                                 initial: name,
@@ -1280,8 +1314,14 @@ impl FrontScreenBehaviours for FrontScreen {
                                 max_length: 27,
                                 context: ui::keyboard::Context::Text,
                             },
-                            FrontScreen::WorldSelect,
+                            Some(FrontScreen::WorldSelect),
+                            KeyboardTail::WorldRename,
                         );
+                        // `this._data` rides the session (`UIWorldListItem.cs:
+                        // 415-425`) — the submit rewrites THIS world's header.
+                        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+                            session.rename_index = Some(i);
+                        }
                         None
                     }
                     // `DeleteButtonClick` (`:346-358`): parks the target, then
@@ -1338,6 +1378,17 @@ impl FrontScreenBehaviours for FrontScreen {
                     return None;
                 };
                 match click {
+                let can_restore = session.request.context.editing_sign()
+                    && !app.sign_cancel_cache.is_empty();
+                let l = ui::keyboard::layout(screen, app.vk_grid, session.request.context);
+                match ui::keyboard::click_at(
+                    &session.state,
+                    &l,
+                    app.vk_grid,
+                    mouse,
+                    session.request.context,
+                    can_restore,
+                ) {
                     ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
                     // The shift button: `(keyState != Shift) ? Shift : Default`
                     // (`:250-254`).
@@ -1361,6 +1412,19 @@ impl FrontScreenBehaviours for FrontScreen {
                     }
                     // `PressSpace` writes without the Shift unlatch (`:491-502`).
                     ui::keyboard::Click::Space => ui::keyboard::write_str(&mut session.state, " "),
+                    // The sign newline key (`:462-467`): sound 12 +
+                    // `_textBox.Write("\n")` — no Shift unlatch, no submit.
+                    ui::keyboard::Click::Newline => {
+                        app.audio.play("Menu_Tick");
+                        ui::keyboard::write_str(&mut session.state, "\n");
+                    }
+                    // The restore key (`:476-484`): sound 12 +
+                    // `RestoreCanceledInput(1)` — the cache returns to the
+                    // box and empties (the row rebuilds without it).
+                    ui::keyboard::Click::Restore => {
+                        app.audio.play("Menu_Tick");
+                        crate::signs::restore_canceled_sign_input(app);
+                    }
                     // The backspace key pops (`:392-397`).
                     ui::keyboard::Click::Backspace => session.state.backspace(),
                     // The desktop pair's handler checks the validation first
@@ -1505,7 +1569,10 @@ impl FrontScreenBehaviours for FrontScreen {
             // `Main.GetInputText` edits its text every frame
             // (`UIVirtualKeyboard.cs:750-788`), Enter submits through
             // `CanSubmit` (`:763-766`) and Escape runs the cancel
-            // (`:771-774`'s `TryEscapingMenu`).
+            // (`:771-774`'s `TryEscapingMenu`). The SIGN context's Enter
+            // appends a newline instead (`:751-754` — `text += "\n"`, the
+            // multi-line sign edit); the submit rides the Save button or
+            // the dialog's Save interaction.
             FrontScreen::Keyboard(_) => {
                 if let Some(text) = event.text.as_ref() {
                     for ch in text.chars() {
@@ -1518,7 +1585,11 @@ impl FrontScreenBehaviours for FrontScreen {
                     PhysicalKey::Code(KeyCode::Backspace) => app.keyboard_backspace(),
                     PhysicalKey::Code(KeyCode::Escape) => app.keyboard_cancel(),
                     PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
-                        app.keyboard_enter()
+                        if app.sign_editing() {
+                            app.keyboard_character('\n'); // `:751-754`
+                        } else {
+                            app.keyboard_enter();
+                        }
                     }
                     _ => {}
                 }
@@ -1955,6 +2026,42 @@ impl App {
             FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
             _ => None,
         };
+        // `UICharacterListItem.PlayGame` (`:256-261`) → `SelectPlayer`: the
+        // card's `.plr` is the active player. The port's CharPlay was
+        // routing-only (spec §9.4); the Journey research counts ride the
+        // same file (`Player.cs:54911`'s creativeTracker block), so the
+        // card's file is read here and its research pairs hydrate the
+        // tracker — the W4-f44 seam's `PlayerFile.research` shape. The
+        // favourites hydrate too (BUG-03's card→session half).
+        if let FlowClick::CharPlay(i) = click {
+            if let Some(path) = self.players.get(i).and_then(|p| p.path.clone()) {
+                if let Ok(file) = crate::player_file::read_player_file(&path) {
+                    self.research.load_pairs(&file.research);
+                    self.hydrate_favorites(file.inv_favorites);
+                    self.player_name = file.name.clone();
+                    // The per-player powers hydrate the registry
+                    // (`CreativePowerManager.LoadToPlayer`'s effect).
+                    self.creative_powers.set(
+                        crate::creative::PowerId::Godmode,
+                        crate::creative::PowerState::Toggle(file.powers.godmode),
+                    );
+                    self.creative_powers.set(
+                        crate::creative::PowerId::FarPlacementRange,
+                        crate::creative::PowerState::Toggle(file.powers.far_placement),
+                    );
+                    self.creative_powers.set(
+                        crate::creative::PowerId::SpawnRate,
+                        crate::creative::PowerState::Slider(file.powers.spawn_rate),
+                    );
+                    self.journey.spawn_rate_cache = file.powers.spawn_rate;
+                    // The session difficulty stand-in follows the card
+                    // (`Main.ActivePlayerFileData.Player.difficulty`).
+                    if let Some(draft) = self.session_draft.as_mut() {
+                        draft.difficulty = file.difficulty;
+                    }
+                }
+            }
+        }
         // `UIWorldListItem.PlayGame` (`:360-374`) → `Main.LoadWorld`: the
         // card's file is parked on the App, and the flow's launch arm closes
         // both screens. The frame loop performs the swap at the next boundary
@@ -2824,6 +2931,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             })
         };
         let fronts = [
@@ -3198,10 +3306,70 @@ pub(crate) mod front_flow_tests {
         let c0 = ui::world_select::card_layout(l.list, 0, false);
         app.mouse_pos = centre(c0.rename);
         front_press(&mut app);
-        assert!(
-            matches!(app.front, Some(FrontScreen::Keyboard(_))),
-            "Rename opens the world-naming keyboard"
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("Rename opens the world-naming keyboard");
+        };
+        // `UIWorldListItem.cs:419`: `Lang.menu[48]`, the card's name,
+        // `allowEmpty: true`, the 27 cap; `this._data` rides the session.
+        assert_eq!(session.request.label, ui::keyboard::enter_world_name());
+        assert_eq!(session.request.initial, "W1");
+        assert!(session.request.allow_empty);
+        assert_eq!(session.request.max_length, 27);
+        assert_eq!(session.tail, KeyboardTail::WorldRename);
+        assert_eq!(session.rename_index, Some(0));
+        assert_eq!(session.back, Some(FrontScreen::WorldSelect));
+    }
+
+    #[test]
+    fn world_rename_submit_rewrites_the_file_and_reopens_the_select() {
+        // `OnFinishedSettingName` (`UIWorldListItem.cs:427-432`) ->
+        // `WorldGen.RenameWorldCallBack` (`WorldGen.cs:6727-6753`): the header
+        // name is rewritten, the callback's sound 10 + `menuMode = 6` reopen
+        // the world select, whose `OnActivate` re-list reads the new name.
+        let dir = crate::test_world_helpers::test_scratch("flow-world-rename");
+        let path = dir.join("w1.trwld");
+        tr_core::save::save(
+            &path,
+            &World::new("W1".into(), 8, 8),
+            &tr_core::save::WorldSide::default(),
+        )
+        .unwrap();
+        let mut w = world_entry("W1");
+        w.path = Some(path.clone());
+        let request = ui::keyboard::Request {
+            label: ui::keyboard::enter_world_name(),
+            initial: "W1".into(),
+            allow_empty: true,
+            max_length: 27,
+            context: ui::keyboard::Context::Text,
+        };
+        let state = ui::keyboard::KeyboardState::new(&request);
+        let mut app = flow_app(
+            Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
+                request,
+                state,
+                back: Some(FrontScreen::WorldSelect),
+                tail: KeyboardTail::WorldRename,
+                rename_index: Some(0),
+            }))),
+            vec![],
+            vec![w],
         );
+        app.keyboard_character('Z');
+        let before = app.audio.played_count();
+        app.keyboard_submit();
+        assert_eq!(app.front, Some(FrontScreen::WorldSelect));
+        assert!(app.menu.is_none(), "the invariant holds");
+        assert!(
+            app.audio.played_count() >= before + 2,
+            "the submit cue (10) + the rename callback's cue (10, :473)"
+        );
+        // The file's header carries the trimmed typed name; the stem stays.
+        let raw = std::fs::read(&path).unwrap();
+        let (world, _) = tr_core::save::parse(&raw).unwrap();
+        assert_eq!(world.name, "W1Z");
+        assert!(path.exists(), "the file keeps its stem");
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 
     #[test]
@@ -3312,6 +3480,9 @@ pub(crate) mod front_flow_tests {
             ambient_waterfall: (0.0, -1.0, -1.0),
             ambient_lavafall: (0.0, -1.0, -1.0),
             ambient_lava: (0.0, -1.0, -1.0),
+        let mut app = App {
+            ambient_waterfall: (0.0, 0.0, 0.0),
+            ambient_lavafall: (0.0, 0.0, 0.0),
             ambient_counter: 0.0,
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
@@ -3341,7 +3512,10 @@ pub(crate) mod front_flow_tests {
             banners: crate::banners::BannerSystem::default(),
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
+            town_spawn: crate::town_spawn::TownSpawnStatics::default(),
+            town_spawn_requests: Vec::new(),
             reuse_delay: 0.0,
+            pending_item_reuse: false,
             window: None,
             gpu: None,
             renderer: None,
@@ -3376,6 +3550,12 @@ pub(crate) mod front_flow_tests {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            sign_cancel_cache: String::new(),
+            sign_text_blinker: crate::ui::chest::TextBlinker::default(),
+            sign_hover: -1, // `Main.cs:67189`
+            sign_bubble: false,
+            sign_x: 0,
+            sign_y: 0,
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             npc_no_spawn_cycle: false,
@@ -3406,6 +3586,9 @@ pub(crate) mod front_flow_tests {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
+            game_mode_difficulty_override: None,
+            research: crate::research::ResearchTracker::default(),
+            journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]
             debug_panel: tr_debug::Panel::new(),
             favorite_slots: Vec::new(),
@@ -3423,6 +3606,10 @@ pub(crate) mod front_flow_tests {
             // back into `equip_page` every frame.
             equip_page_selected: 0,
             dye_swap_counter: 0,
+            equip_share_flags: 0,
+            loadout_change_time: f32::NEG_INFINITY,
+            loadout_mouse_over: -1,
+            loadout_clone: crate::loadout::LoadoutClone::default(),
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
@@ -3535,7 +3722,19 @@ pub(crate) mod front_flow_tests {
             pointer_ms: 0.0,
             pointer_event: None,
             mouse_pos: Vec2::ZERO,
+            // S1-W4-g81 residuals — the WiresUI state the App::new ctor
+            // carries (`WiresUI.cs:23`/`:92-95` — the static ctor seeds
+            // ToolMode = Red; the radial starts closed), mirrored here so
+            // the test ctor matches (the two-literal census, the c42
+            // fold-133 wire_tool_mode precedent).
+            wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
+            wires_radial: ui::wires_ui::WiresRadial::default(),
             cursor: ui::cursor::CursorState::default(),
+            // S1-W4-g81 residuals — the held-tool cursor-icon latch +
+            // the 10-frame cache (`Main.cs:2411-2415`), both start off.
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,
@@ -3628,6 +3827,8 @@ pub(crate) mod front_flow_tests {
             master_color_dir: 1.0,
             disco: [255, 0, 0],
             disco_style: 0,
+            master_color: 1.0,
+            master_color_dir: 1,
             light_rng_seed: 1,
             anim_time: 0.0,
             has_liquids: false,
@@ -3638,6 +3839,8 @@ pub(crate) mod front_flow_tests {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
+            cage_anim: tr_core::critter_cage_anim::CritterCageAnimator::new(),
+            critter_cage: false,
             wiring: tr_core::wiring::Wiring::new(),
             golf_state: tr_core::golf_state::GolfState::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -3699,7 +3902,12 @@ pub(crate) mod front_flow_tests {
             summon_shot: false,
             world_key: None,
             hell_black_box_bottom: 0.0,
-        }
+        };
+        // W4-g34 union (research/197 §4): the ctor warm-up twin — the same
+        // fresh-clone form as `App::new` (seed 1, this harness's stand-in
+        // seed; the live `rngs` stream stays untouched).
+        app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(1));
+        app
     }
 
     #[test]
@@ -3764,6 +3972,10 @@ pub(crate) mod front_flow_tests {
                 voice_pitch_offset: 0.0,
                 unlocked_biome_torches: false,
                 using_biome_torches: false,
+                research: Vec::new(),
+                powers: crate::player_file::CreativePowersSave::written_fresh(),
+                current_loadout_index: 0,
+                loadouts: Default::default(),
             },
         )
         .unwrap();
@@ -4465,6 +4677,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             }))),
             vec![entry("Bob", false)],
             vec![],
@@ -4497,6 +4710,9 @@ pub(crate) mod front_flow_tests {
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 20);
         assert_eq!(session.back, Some(FrontScreen::CharSelect));
+        // `this._data` rides the session — the submit writes card 0.
+        assert_eq!(session.rename_index, Some(0));
+        assert_eq!(session.tail, KeyboardTail::Rename);
         // The state seeds from the request (`UIVirtualKeyboard.cs:429-433`) —
         // a non-empty start stays Default.
         assert_eq!(session.state.text, "Bob");
@@ -4510,7 +4726,7 @@ pub(crate) mod front_flow_tests {
         // `_cancelAction` -> `GoBackHere` (`:214-216`): the reopen, no notice.
         let mut app = keyboard_app();
         let (sw, sh) = app.screen_size();
-        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false, ui::keyboard::Context::Text);
         app.mouse_pos = Vec2::new(
             l.cancel[0] + l.cancel[2] * 0.5,
             l.cancel[1] + l.cancel[3] * 0.5,
@@ -4522,13 +4738,31 @@ pub(crate) mod front_flow_tests {
     }
 
     #[test]
-    fn keyboard_submit_reopens_with_the_not_ported_notice() {
-        // The rename tail (`:205-213`) reopens the screen; the port's rename
-        // itself is the notice (no save-file writer, spec §9.4).
+    fn keyboard_submit_renames_the_card_and_reopens() {
+        // The rename tail (`UICharacterListItem.OnFinishedSettingName`,
+        // `:208-214`): the trimmed name lands on the parked card
+        // (`rename_index` — `this._data`), then `OpenCharacterSelectUI`
+        // reopens. The seam write itself:
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Bob", false)],
+            vec![],
+        );
+        app.rename_player_entry(Some(0), "  Bobby  ".trim());
+        assert_eq!(app.players[0].name, "Bobby", "the trimmed name lands");
+        assert!(app.front_hint.is_none(), "the rename writes, no notice");
+        // The full submit tail: the keyboard closes back to the char select
+        // (the re-list rebuilds the disk-less fake from `TR_FAKE_CHARS`, the
+        // same shape as the fake erase — the disk-backed rename persists
+        // through the `.plr` write, witnessed in `player_file::tests`).
         let mut app = keyboard_app();
+        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+            session.rename_index = Some(0);
+            session.state.text = "Bobby".into();
+        }
         app.keyboard_submit();
         assert_eq!(app.front, Some(FrontScreen::CharSelect));
-        assert!(app.front_hint.is_some(), "the submit tail notices");
+        assert!(app.menu.is_none(), "the invariant holds");
     }
 
     #[test]
@@ -4549,6 +4783,7 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
+                rename_index: None,
             }))),
             vec![],
             vec![],
@@ -4625,12 +4860,13 @@ pub(crate) mod front_flow_tests {
                 state,
                 back: None,
                 tail: KeyboardTail::ChestRename,
+                rename_index: None,
             }))),
             vec![],
             vec![],
         );
         let (sw, sh) = app.screen_size();
-        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false, ui::keyboard::Context::Chest);
         app.mouse_pos = Vec2::new(
             l.submit[0] + l.submit[2] * 0.5,
             l.submit[1] + l.submit[3] * 0.5,

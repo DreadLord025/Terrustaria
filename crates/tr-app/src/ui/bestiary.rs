@@ -2858,6 +2858,52 @@ fn portrait_data(
         (NpcKind::JungleCreeper | NpcKind::BloodCrawler, _) => {
             let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(20.0);
             (sheet_i, h, 50.0, 20.0, white)
+        // W4-d120 — the four town kinds' portraits rest the town twin's
+        // 48x38 box (the Merchant precedent); the bound Tavernkeep folds
+        // onto the Tavernkeep's entry (never drawn alone) — its arm keeps
+        // the match exhaustive at the flat 34x8 box.
+        (NpcKind::SantaClaus | NpcKind::Truffle | NpcKind::Steampunker | NpcKind::Cyborg, _) => {
+            (sheet_i, 48.0, 38.0, 48.0, white)
+        }
+        (NpcKind::BartenderUnconscious, _) => (sheet_i, 8.0, 34.0, 8.0, white),
+    }
+}
+
+/// `UIBestiaryEntryInfoPage`'s content for the selected entry: the
+/// `Portrait_Front` backdrop, the big portrait, the name (tier >= 1), the
+/// stat rows (tier >= 2 — `Stat_HP`/`Stat_Attack`/`Stat_Defense`/
+/// `Stat_Knockback`/`Stat_Copper`), the kill progress and the drop lines
+/// (rates only from tier 4).
+fn draw_info_page(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    tracker: &tr_core::bestiary::WorldBestiary,
+    idx: usize,
+    mouse: Vec2,
+) {
+    let panel = panel_rect(screen);
+    let entry = &crate::bestiary::ENTRIES[idx];
+    let state = crate::bestiary::unlock_state_world(entry, tracker);
+    if let Some(portrait_bg) = lookups.ui_bestiary_portrait {
+        // The portrait card left of the info (the pretty-portrait mode's
+        // 72 px card scaled up).
+        let size = 216.0;
+        let px = panel[0] + 24.0;
+        let py = panel[1] + 60.0;
+        let inner = [px + 2.0, py + 2.0, size - 4.0, size - 4.0];
+        // The portrait card's inner container is `OverflowHidden` too
+        // (`UIBestiaryNPCEntryPortrait.cs:20-28`), and its icon draws with
+        // `isPortrait: true` (`:56`) — the `PortraitScale` /
+        // `PortraitPositionX-YOverride` arms of the offset table.
+        r.push_clip(inner);
+        if let Some(back) = lookups.ui_bestiary_slot_back {
+            push_whole(r, lookups, &back, inner, [1.0; 4]);
+        }
+        if state.known() {
+            draw_portrait(r, lookups, entry, inner, true);
+        } else if let Some(locked) = lookups.ui_bestiary_locked {
+            push_whole(r, lookups, &locked, inner, [0.15; 4]);
         }
         (NpcKind::BartenderUnconscious, _) => {
             let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 16.0).unwrap_or(40.0);

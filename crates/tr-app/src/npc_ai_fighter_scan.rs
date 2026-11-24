@@ -64,6 +64,11 @@
 //!   `edit::shift_tall_gate`); the gate-388 bash's shift + refusal
 //!   (`ai[3] = num57`) + the pitched-8 cue ride the `world_sim/npcs.rs`
 //!   drain on the UpdateNPCs stream.
+//! - `WorldGen.ShiftTallGate` (`:60074`) — NOW PORTED (W4-g4, re-pointed at
+//!   the c42 canonical `tr_core::edit::shift_tall_gate` per research/95
+//!   §3): the gate-388 bash shifts the gate to its open kind (389) in the
+//!   drain; a refusal sets `ai[3] = num57` (`:60077`). The bash still
+//!   counts `ai[1] += 2` and plays the thud.
 //! - The step-up's `gfxOffY`/`stepSpeed` writes land on the NPC fields,
 //!   but the render pass does not read `gfx_off_y` yet and the decay
 //!   (`npc_ai_unicorn_b.rs:285`'s helper) is unwired — the lift itself
@@ -535,6 +540,8 @@ pub(crate) fn fighter_obstacle_scan_g(
                 // (`:60077`).
                 // `ShiftTallGate` is PORTED (W4-g24) — the drain shifts it
                 // and plays the pitched 8; the bash counted +2 above.
+                // `ShiftTallGate` rides `edit::shift_tall_gate` in the drain
+                // (W4-g4); a refusal sets `ai[3] = num57` (`:60077`).
             }
         } else {
             // `:60089-60203` — the probe jump ladder.

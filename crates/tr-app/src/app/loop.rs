@@ -251,6 +251,32 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
+                        // The Journey search box's text input
+                        // (`UISearchBar.DrawSelf`, `UISearchBar.cs:145-167`:
+                        // `Main.GetInputText` while `IsWritingText`) — the
+                        // port's chat-style `event.text` seam. Enter/Escape
+                        // stop the input (`:156-164`), Backspace trims, the
+                        // printable text appends (the 50-char cap,
+                        // `UISearchBar.cs:63`).
+                        if self.journey.search_writing {
+                            match code {
+                                KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Escape => {
+                                    self.journey.search_writing = false;
+                                }
+                                KeyCode::Backspace => {
+                                    self.journey.search.pop();
+                                }
+                                _ => {}
+                            }
+                            if let Some(text) = event.text.as_ref() {
+                                for ch in text.chars() {
+                                    if !ch.is_control() && self.journey.search.chars().count() < 50 {
+                                        self.journey.search.push(ch);
+                                    }
+                                }
+                            }
+                            return;
+                        }
                         // `Main.chatRelease && !drawingPlayerChat` →
                         // `OpenPlayerChat` (`Main.cs:18268-18287`): Enter
                         // opens the chat.
@@ -411,6 +437,12 @@ impl ApplicationHandler for App {
                     ) {
                         self.scroll_debug_loadouts(d.round() as i32);
                     }
+                    return;
+                }
+                // The Journey duplication grid's list scroll (W4-c24) —
+                // `UIList.ScrollWheel` (`UIList.cs:107-114`), before the
+                // hotbar cycle claims the notch.
+                if self.journey_wheel(d.round() as i32) {
                     return;
                 }
                 // `UIList.ScrollWheel` through `UserInterface.Update`'s wheel
@@ -610,6 +642,25 @@ impl ApplicationHandler for App {
                             // the machine's `LastClicked` compares.
                             let hit = self.front_hit();
                             if pressed {
+                                // `IngameFancyUI.Draw`'s `GUIChatDraw` arm
+                                // (`:212-215`): the sign dialog keeps drawing
+                                // (and clicking — `DrawButtons`' inline
+                                // `mouseLeft && mouseLeftRelease`,
+                                // `NPCChatPanel.cs:150-154`) while the ctx-1
+                                // keyboard is up. The dialog's Save/Close
+                                // take the press before the keyboard's own
+                                // click table (the rects never overlap —
+                                // the dialog sits at y≈100, the keys at
+                                // y≈270+). W4-f22.
+                                if self.sign_editing() {
+                                    self.ui_left_press = true;
+                                    self.handle_npc_chat_clicks();
+                                    let consumed = !self.ui_left_press;
+                                    self.ui_left_press = false;
+                                    if consumed {
+                                        return;
+                                    }
+                                }
                                 if !self.pointer.clicks_disabled() {
                                     self.pointer_event = self.pointer.press(
                                         now,
@@ -1058,6 +1109,10 @@ impl App {
                     // (`Player.cs:5017-5020`): `CloseSign()` — the latch
                     // clears, the chat text empties, `PlaySound(11)`
                     // (`:33537`); the press is consumed (no toggle).
+                } else if self.player.as_ref().is_some_and(|p| p.sign >= 0) {
+                    // `Player.ToggleInv`'s sign arm (`Player.cs:5017-5020`):
+                    // `CloseSign()` — sound 11, the dialog closes, no
+                    // inventory toggle (W4-f22).
                     crate::signs::close_sign(self, false);
                 } else {
                     self.inventory_open = !self.inventory_open;
@@ -1097,6 +1152,9 @@ impl App {
                 log::info!("light mode: {}", self.light_mode.label());
             }
             KeyCode::F9 => self.save_world(),
+            // `ToggleCreativeMenu` (`PlayerInput.cs:2087`, default `C`) →
+            // `Player.ToggleCreativeMenu` (`Player.cs:5091-5105`).
+            KeyCode::KeyC => self.toggle_creative_menu_key(),
             _ if self.is_map_bound(crate::input_map::MapAction::Full, code) => {
                 // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`) on
                 // `Main.cMapFull` (`Main.cs:67192`, default `M`): the key only

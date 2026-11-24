@@ -96,6 +96,26 @@ pub(crate) fn repoint(app: &mut App, tx: i32, ty: i32, mouse: (f32, f32)) -> Opt
             .map(|pr| (pr.grapple_center.x, pr.grapple_center.y))
             .collect::<Vec<_>>(),
     );
+    // `SmartCursorHelper.cs:177-191` — the item-type gate BEFORE the
+    // inventory scan: no paint lookup for anything but the four tools.
+    // `HeldItem => inventory[selectedItem]` (`Player.cs:3853`) — an emptied
+    // slot is `SetDefaults(0)` air, so the count gate is the port's IsAir.
+    let held_kind = app.inventory[app.selected].kind;
+    let (paint_lookup, paint_coating_lookup) =
+        if matches!(held_kind, 1071 | 1543 | 1072 | 1544) && app.inventory[app.selected].count > 0 {
+            match crate::item::find_paint_or_coating(&app.inventory, &app.equip) {
+                Some(s) => {
+                    let d = crate::registry::get(s.kind);
+                    (
+                        d.map_or(0, |d| d.paint as u32),
+                        d.map_or(0, |d| d.paint_coating as u32),
+                    )
+                }
+                None => (0, 0),
+            }
+        } else {
+            (0, 0)
+        };
     let lookup = Lookup {
         grapple_targets,
         item: item_port(app),
@@ -111,11 +131,13 @@ pub(crate) fn repoint(app: &mut App, tx: i32, ty: i32, mouse: (f32, f32)) -> Opt
             // `Main.remixWorld` — no port state (the M5-SEED-2 arm).
             remix_world: false,
         },
-        paint_lookup: 0,
-        paint_coating_lookup: 0,
-        // `TryFindingPaintInplayerInventory` (`SmartCursorHelper.cs:177-191`)
-        // — the inventory scan is app-side and unported: the paint steps
-        // stand down until it lands.
+        // `TryFindingPaintInplayerInventory` (`SmartCursorHelper.cs:177-191`,
+        // called at `:93`): only the held brush/roller reads the inventory —
+        // `Player.FindPaintOrCoating` (`Player.cs:41927-41944`)'s pick fills
+        // both lookups (`coatingLookup = item.paintCoating; paintLookup =
+        // item.paint`), every other held kind keeps 0/0 (W4-g79).
+        paint_lookup,
+        paint_coating_lookup,
         smart_blocks_enabled: app.settings.smart_blocks,
         // `Player.SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:333`)
         // — the port's settings do not carry the toggle yet; the default
@@ -124,7 +146,10 @@ pub(crate) fn repoint(app: &mut App, tx: i32, ty: i32, mouse: (f32, f32)) -> Opt
         // `Player.controlUseItem` — the continuity lock's held-button
         // condition.
         use_item_held: app.place_down || app.mine_down,
-        tool_mode: 0,
+        // `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`) — the multicolor
+        // wrench's channel bitfield, owned by the App since S1-W4-g81
+        // (the radial's petal clicks XOR it, `ui/wires_ui.rs`).
+        tool_mode: app.wire_tool_mode,
         actuation_rod_lock: false,
         actuation_rod_lock_setting: false,
         using_gamepad: false,
@@ -263,6 +288,78 @@ mod tests {
             repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
             None,
             "the runtime state off: no re-point"
+        );
+    }
+
+    #[test]
+    fn w4_g79_the_brush_lookup_repoints_at_the_unpainted_floor() {
+        // `TryFindingPaintInplayerInventory` (`SmartCursorHelper.cs:93`/
+        // `:177-191`): the held Paintbrush 1071 + Red Paint 1073 in the ammo
+        // row fills paint_lookup = 1, so `Step_PaintBrush` (`:727-770`)
+        // re-points at the closest block whose paint differs — the floor
+        // row the mouse sits on. Without the paint the step stands down
+        // (`:729`'s both-zero gate) and nothing else re-points a brush.
+        let mut app = wiring_app();
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1071,
+            name: "Paintbrush",
+            count: 1,
+            prefix: 0,
+        };
+        assert_eq!(
+            repoint(&mut app, 35, 40, (35.0 * 16.0 + 8.0, 40.0 * 16.0 + 8.0)),
+            None,
+            "no paint selected: the brush step refuses"
+        );
+        app.equip.ammo[0] = ItemSlot { kind: 1073, name: "Red Paint", count: 99, prefix: 0 };
+        assert_eq!(
+            repoint(&mut app, 35, 40, (35.0 * 16.0 + 8.0, 40.0 * 16.0 + 8.0)),
+            Some((35, 40)),
+            "the unpainted floor cell needs the paint"
+        );
+        // Paint the target cell red: the step no longer claims it, and the
+        // closest other floor cell wins instead.
+        let i = app.world.index(35, 40);
+        app.world.tiles[i].set_paint(1);
+        assert_eq!(
+            repoint(&mut app, 35, 40, (35.0 * 16.0 + 8.0, 40.0 * 16.0 + 8.0)),
+            Some((34, 40)),
+            "the painted cell is skipped; the first closest neighbour wins"
+        );
+    }
+
+    #[test]
+    fn w4_g79_the_glow_coating_lookup_and_the_non_tool_gate() {
+        // The coating half (`SmartCursorHelper.cs:186-189`): Glow Paint
+        // 4668 fills paint_coating_lookup = 1 and the brush claims every
+        // block without the Glow bit. A non-tool held kind never scans
+        // (`:182`'s four-id gate) even with paint stocked.
+        let mut app = wiring_app();
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1543,
+            name: "Spectre Paintbrush",
+            count: 1,
+            prefix: 0,
+        };
+        app.equip.ammo[2] = ItemSlot { kind: 4668, name: "Glow Paint", count: 99, prefix: 0 };
+        assert_eq!(
+            repoint(&mut app, 35, 40, (35.0 * 16.0 + 8.0, 40.0 * 16.0 + 8.0)),
+            Some((35, 40)),
+            "the un-Glowed floor needs the coating"
+        );
+        let i = app.world.index(35, 40);
+        app.world.tiles[i].flags |= tr_core::tile::FLAG_FULLBRIGHT;
+        assert_eq!(
+            repoint(&mut app, 35, 40, (35.0 * 16.0 + 8.0, 40.0 * 16.0 + 8.0)),
+            Some((34, 40)),
+            "the Glow-coated cell is skipped"
+        );
+        // The torch does not read the paint inventory (`:182`).
+        app.inventory[app.selected] = ItemSlot { kind: 8, name: "Torch", count: 1, prefix: 0 };
+        assert_eq!(
+            repoint(&mut app, 35, 41, (35.0 * 16.0 + 8.0, 41.0 * 16.0 + 8.0)),
+            Some((35, 39)),
+            "the torch step still runs its own re-point"
         );
     }
 
