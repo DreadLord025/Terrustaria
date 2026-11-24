@@ -125,20 +125,10 @@ impl FindFrameKind {
 /// `frame.Y / num` (the row), `frameCounter`, `spriteDirection`,
 /// `rotation` (the truffle worm's spin, `NPC.cs:71125`/`:71144`) and
 /// `localAI[0]` (the truffle worm's `-2f` pin, `NPC.cs:71122`). The
-/// wiring step copies them to/from `Npc`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct FrameState {
-    /// `frame.Y / num` — the sheet row.
-    pub row: u32,
-    /// `NPC.frameCounter`.
-    pub counter: f32,
-    /// `NPC.spriteDirection` (±1).
-    pub sprite_dir: i32,
-    /// `NPC.rotation`.
-    pub rotation: f32,
-    /// `NPC.localAI[0]` — only the truffle worm (374) writes it.
-    pub local_ai0: f32,
-}
+/// wiring step copies them to/from `Npc`. Wave C's identical field set
+/// is the SAME type: the scorpion arm delegates to
+/// `npc_findframe_c::scorpion_scuttle`, so this is the keep-one dedupe.
+pub use crate::npc_findframe_c::FrameState;
 
 /// The per-tick inputs the arms read: `velocity`, `direction` and the
 /// archers'/armed zombies' `ai[2]` (the bow-draw frame / the swing
