@@ -415,7 +415,7 @@ fn cavinator(world: &mut World, rng: &mut Rng, i: i32, j: i32, steps: i32, rock_
         vx = vx.clamp(num3 as f64 - 0.5, num3 as f64 + 0.5);
         vy = vy.clamp(0.0, 2.0);
     }
-    if steps > 0 && (cy as i32) as f64 < rock_layer + 50.0 {
+    if steps > 0 && ((cy as i32) as f64) < rock_layer + 50.0 {
         cavinator(world, rng, cx as i32, cy as i32, steps - 1, rock_layer);
     }
 }

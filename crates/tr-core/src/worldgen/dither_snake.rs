@@ -1,52 +1,28 @@
-//! `DitherSnake` (`GameContent/Biomes/DitherSnake.cs:10-199`) — the ordered
-//! list of [`ControlLine`] segments that forms the dual-dungeon's painted
-//! spine, plus the border/room queries the dungeon layout reads.
-//!
-//! W4-f24 lane B (the gated `Dual Dungeons Dither Snake` pass,
-//! `WorldGen.cs:14755`). The C# `DitherSnake : List<DungeonControlLine>`
-//! links each line to its neighbours on `Add` (`:16-26`) and walks those
-//! links in `GetLineContaining`/`SetTangents`; the port keeps a `Vec` and
-//! models the links as neighbour indices (the order `Add` builds), so the
-//! walks become index steps. `GetLineContaining`'s depth-3 recursion is
-//! unrolled into a bounded loop (same arms, same order).
-//!
-//! The statics `CircleTestPoints` (12 unit vectors at 30° steps) and
-//! `ExtraBuffer` (`1/cos(π/6)`) are the C# static ctor (`:193-198`); they
-//! are computed once here as consts-by-fn (the trig is deterministic).
-//!
-//! UNWIRED until B6: pure geometry over the line list, no RNG draw, no
-//! tile write — both classic world-hash pins stay; `a == b` untouched.
-
-use super::dungeon_bounds::DungeonBounds;
-use super::dungeon_control_line::{adjust_tangents, ControlLine, SnakeStyle};
-use super::snake_math::{lerp, remap, Vec2};
-use crate::world::World;
-
-//! The dual-dungeons dither snake (W4-c30) — the port of
+//! The dual-dungeons dither snake (W4-c30) тАФ the port of
 //! `DitherSnake.cs:10-199` (the control-line chain + the border/room
 //! queries), `DitherSnakePass.cs:13-145` (the snake builder, the paint
 //! driver and the 4x4 Bayer matrix), `DungeonControlLine.cs:9-285` (the
 //! per-line paint + the tangent/self-intersection machinery), plus the
 //! setup slices the pass consumes: the dual-dungeon style lists
 //! (`DungeonCrawler.cs:111-127` over `DungeonGenerationStyles.cs`'s
-//! statics — the paint-relevant fields only), `CreatePotentialDungeonBounds`
+//! statics тАФ the paint-relevant fields only), `CreatePotentialDungeonBounds`
 //! (`DungeonUtils.cs:2067-2087` with `DungeonBounds.cs`'s clamped
 //! setters/hitbox) and the Reset dual block (`WorldGen.cs:11441-11466`).
 //!
 //! Structure mapping: the C#'s `DitherSnake : List<DungeonControlLine>`
 //! with per-line `Prev`/`Next` object links becomes a `Vec<ControlLine>`
-//! whose neighbours are `index ± 1` (the `Add` override links consecutive
+//! whose neighbours are `index ┬▒ 1` (the `Add` override links consecutive
 //! entries only, `DitherSnake.cs:16-26`); `Style` identity comparisons
-//! (`==` on the shared statics) become the `StyleId` enum's equality — the
+//! (`==` on the shared statics) become the `StyleId` enum's equality тАФ the
 //! style-0 entry is one per dungeon colour, so two lists' style-0 entries
 //! never meet inside one snake. The per-pass `genRand` is the port's
 //! isolated `pass_rng("Dual Dungeons Dither Snake")` stream (the recorded
-//! per-pass deviation — a classic world never runs the pass).
+//! per-pass deviation тАФ a classic world never runs the pass).
 
 // The border/room query half (`position_along_snake`, the circle/line
 // border tests, `room_position_inside_border`, `is_circle_inside_border_
 // with_style`) has no consumer until the dual-dungeon crawler lands
-// (W4-c32+) — the paint driver exercises the rest. Kept compiled and
+// (W4-c32+) тАФ the paint driver exercises the rest. Kept compiled and
 // citation-complete, dead-code-silenced until the crawler wires them.
 #![allow(dead_code)]
 
@@ -55,7 +31,7 @@ use super::Rng;
 use crate::tile::{Tile, FLAG_ACTIVE};
 use crate::world::World;
 
-/// `DitherSnakePass._bayerDither` (`DitherSnakePass.cs:135-144`) — the 4x4
+/// `DitherSnakePass._bayerDither` (`DitherSnakePass.cs:135-144`) тАФ the 4x4
 /// ordered-dither matrix, indexed `[x % 4, y % 4]` with the row-major
 /// literal below (the C# `new double[4,4]` initializer is row-major).
 pub(crate) const BAYER_DITHER: [[f64; 4]; 4] = [
@@ -75,7 +51,7 @@ pub(crate) mod wall_tiers {
     pub const TEMPLE: i32 = 5;
 }
 
-/// The style identity of one `DungeonGenerationStyleData` entry — the
+/// The style identity of one `DungeonGenerationStyleData` entry тАФ the
 /// fields `DungeonControlLine.Paint`/`SkipPaintForEdge` read. The C#
 /// compares `Style` by reference (the shared statics); the port compares
 /// this enum. `Dungeon0` carries the rolled colour's brick/wall pair
@@ -83,7 +59,7 @@ pub(crate) mod wall_tiers {
 /// `DungeonCrawler.cs:63-92`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StyleId {
-    /// `GetCurrentDungeonStyle` — tier Dungeon(3), EdgeDither false.
+    /// `GetCurrentDungeonStyle` тАФ tier Dungeon(3), EdgeDither false.
     Dungeon0(DungeonColor),
     /// `DungeonGenerationStyles.Cavern` (`:307-351`).
     Cavern,
@@ -99,8 +75,8 @@ pub(crate) enum StyleId {
     Desert,
     /// `DungeonGenerationStyles.Hallow` (`:553-593`).
     Hallow,
-    /// `DungeonGenerationStyles.Temple` (`:760-797`) — a `TempleStyleData`
-    /// whose initializer sets no tier, so the field default −1
+    /// `DungeonGenerationStyles.Temple` (`:760-797`) тАФ a `TempleStyleData`
+    /// whose initializer sets no tier, so the field default тИТ1
     /// (`DungeonGenerationStyleData.cs:13`) stands.
     Temple,
 }
@@ -120,7 +96,7 @@ pub(crate) struct SnakeStyle {
 
 impl SnakeStyle {
     fn of(id: StyleId) -> SnakeStyle {
-        // The statics' (Style, tier, tile, wall, EdgeDither) quintuples —
+        // The statics' (Style, tier, tile, wall, EdgeDither) quintuples тАФ
         // DungeonGenerationStyles.cs anchors on each arm.
         let (brick_tile, brick_wall, tier, edge_dither) = match id {
             StyleId::Dungeon0(c) => (c.brick_tile(), c.brick_wall(), wall_tiers::DUNGEON, false),
@@ -138,8 +114,8 @@ impl SnakeStyle {
 }
 
 /// `DungeonCrawler.SetupDungeonGenVarVariables`'s dual-dungeon style lists
-/// (`DungeonCrawler.cs:111-127`): dungeon 0 walks Cavern → the world's evil
-/// → Jungle → the colour style; dungeon 1 walks Snow → Desert → Hallow →
+/// (`DungeonCrawler.cs:111-127`): dungeon 0 walks Cavern тЖТ the world's evil
+/// тЖТ Jungle тЖТ the colour style; dungeon 1 walks Snow тЖТ Desert тЖТ Hallow тЖТ
 /// Temple. The classic single-entry list (`:129-132`) never reaches the
 /// snake pass (it is dualDungeons-gated).
 pub(crate) fn dual_style_list(current_dungeon: i32, crimson: bool, color: DungeonColor) -> Vec<SnakeStyle> {
@@ -161,119 +137,7 @@ pub(crate) enum SnakeOrientation {
     Bottom,
 }
 
-/// `DitherSnake.ExtraBuffer` (`DitherSnake.cs:197`) — `1/cos(π/6)`.
-fn extra_buffer() -> f64 {
-    1.0 / (std::f64::consts::PI / 6.0).cos()
-}
-
-/// `DitherSnake.CircleTestPoints` (`:195-196`) — `UnitX.RotatedBy(2π·i/12)`
-/// for i in 0..12.
-fn circle_test_points() -> [Vec2; 12] {
-    let mut pts = [Vec2::ZERO; 12];
-    for (i, p) in pts.iter_mut().enumerate() {
-        *p = Vec2::UNIT_X.rotated_by(std::f64::consts::TAU * i as f64 / 12.0, Vec2::ZERO);
-    }
-    pts
-}
-
-/// `DitherSnake` (`DitherSnake.cs:10-199`).
-#[derive(Clone, Debug, Default)]
-pub(crate) struct DitherSnake {
-    pub lines: Vec<ControlLine>,
-}
-
-impl DitherSnake {
-    pub fn new() -> Self {
-        DitherSnake { lines: Vec::new() }
-    }
-
-    /// `DitherSnake.Add(DungeonControlLine)` (`:16-26`) — set the line's
-    /// `Index` to the current count and append (the C# also wires
-    /// `Next`/`Prev`; the port's neighbour indices are implicit in the
-    /// append order, so no explicit link write is needed).
-    pub fn add(&mut self, mut line: ControlLine) {
-        line.index = self.lines.len();
-        self.lines.push(line);
-    }
-
-    pub fn first(&self) -> &ControlLine {
-        &self.lines[0]
-    }
-
-    pub fn last(&self) -> &ControlLine {
-        &self.lines[self.lines.len() - 1]
-    }
-
-    /// `GetClosestLineTo(Vector2D)` (`:28-42`) — the line whose centre is
-    /// nearest (strict `<`, so the first wins ties).
-    pub fn closest_line_to(&self, pos: Vec2) -> usize {
-        let mut result = 0;
-        let mut best = f64::MAX;
-        for (i, line) in self.lines.iter().enumerate() {
-            let d = Vec2::distance(line.center(), pos);
-            if d < best {
-                result = i;
-                best = d;
-            }
-        }
-        result
-    }
-
-    /// `GetLineContaining(Vector2D, initialGuess, depth)` (`:44-63`) — walk
-    /// the neighbour links while the point projects behind the current
-    /// line's start (→ prev) or end (→ next); depth 3 gives up (None). The
-    /// C# recursion is a bounded loop here (max 3 hops, same arm order).
-    pub fn line_containing(&self, pos: Vec2, initial_guess: Option<usize>) -> Option<usize> {
-        let mut guess = initial_guess.unwrap_or_else(|| self.closest_line_to(pos));
-        for _ in 0..3 {
-            let line = &self.lines[guess];
-            if Vec2::dot(pos - line.start, line.start_tangent) < 0.0 {
-                if let Some(pi) = guess.checked_sub(1) {
-                    guess = pi;
-                    continue;
-                }
-            }
-            if Vec2::dot(pos - line.end, line.end_tangent) < 0.0 {
-                if guess + 1 < self.lines.len() {
-                    guess += 1;
-                    continue;
-                }
-            }
-            return Some(guess);
-        }
-        None
-    }
-
-    /// `GetPositionAlongSnake(Vector2D)` (`:65-73`) — the containing line's
-    /// index plus its normalized progress (0.5 when the point can't paint).
-    pub fn position_along_snake(&self, pos: Vec2) -> f64 {
-        let Some(li) = self.line_containing(pos, None) else {
-            // The C# dereferences a null line here (a point outside every
-            // capsule); the port returns the closest index + 0.5 — the
-            // dungeon layout never queries such a point (cited adaptation).
-            return self.closest_line_to(pos) as f64 + 0.5;
-        };
-        let line = &self.lines[li];
-        let progress = match line.can_paint(&self.lines, pos.x as i32, pos.y as i32) {
-            Some((_, p)) => p,
-            None => 0.5,
-        };
-        li as f64 + progress
-    }
-
-    /// `IsCircleInsideBorderWithStyle(style, center, radius)` (`:75-83`) —
-    /// the closest line must carry the style, then the matching-style test.
-    pub fn circle_inside_border_with_style(
-        &self,
-        style: usize,
-        center: Vec2,
-        radius: i32,
-        safe_distance: f64,
-    ) -> bool {
-        let li = self.closest_line_to(center);
-        if self.lines[li].style == style {
-            return self.circle_inside_border_matching_style(li, center, radius, safe_distance);
-/// The C# `Vector2D` (double pair) — only the operations the snake family
+/// The C# `Vector2D` (double pair) тАФ only the operations the snake family
 /// uses (`Vector2D.cs`: Length :70-73, Dot :194-197, Cross :204-207, Lerp
 /// :222-225/:432-435, Normalize :294-300; `Utils.cs`: SafeNormalize
 /// :1846-1853, RotatedBy :1686-1695, ToPoint :1822-1825).
@@ -303,7 +167,7 @@ impl Vec2D {
         self.x * o.y - self.y * o.x
     }
 
-    /// `Vector2D.Normalize` (`:294-300`) — the reciprocal-sqrt multiply,
+    /// `Vector2D.Normalize` (`:294-300`) тАФ the reciprocal-sqrt multiply,
     /// NOT a divide (bit-exactness with the C# expression order).
     fn normalize(self) -> Vec2D {
         let n = 1.0 / (self.x * self.x + self.y * self.y).sqrt();
@@ -320,7 +184,7 @@ impl Vec2D {
         }
     }
 
-    /// `Utils.RotatedBy` (`Utils.cs:1686-1695`) — rotate about `center`.
+    /// `Utils.RotatedBy` (`Utils.cs:1686-1695`) тАФ rotate about `center`.
     fn rotated_by(self, radians: f64, center: Vec2D) -> Vec2D {
         let (c, s) = (radians.cos(), radians.sin());
         let v = self - center;
@@ -332,7 +196,7 @@ impl Vec2D {
         Vec2D::new(lerp(self.x, o.x, t), lerp(self.y, o.y, t))
     }
 
-    /// `Utils.ToPoint` (`Utils.cs:1822-1825`) — the `(int)` truncation.
+    /// `Utils.ToPoint` (`Utils.cs:1822-1825`) тАФ the `(int)` truncation.
     fn to_point(self) -> (i32, i32) {
         (self.x as i32, self.y as i32)
     }
@@ -359,7 +223,7 @@ impl std::ops::Neg for Vec2D {
     }
 }
 
-/// `operator *(Vector2D, Vector2D)` (`Vector2D.cs:384-389`) — componentwise.
+/// `operator *(Vector2D, Vector2D)` (`Vector2D.cs:384-389`) тАФ componentwise.
 impl std::ops::Mul for Vec2D {
     type Output = Vec2D;
     fn mul(self, o: Vec2D) -> Vec2D {
@@ -387,7 +251,7 @@ pub(crate) fn lerp(a: f64, b: f64, t: f64) -> f64 {
 }
 
 /// `Utils.Remap` with `clamped: true` (`Utils.cs:350-353` +
-/// `GetLerpValue` `:730-758` — the clamp arms, then the unclamped fraction).
+/// `GetLerpValue` `:730-758` тАФ the clamp arms, then the unclamped fraction).
 fn remap(v: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
     let t = if from_min < from_max {
         if v < from_min {
@@ -408,10 +272,10 @@ fn remap(v: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 
 }
 
 /// One `DungeonControlLine` (`DungeonControlLine.cs:9-285`). `Index` is the
-/// snake-vec position; `Prev`/`Next` are `index − 1`/`index + 1` (the `Add`
+/// snake-vec position; `Prev`/`Next` are `index тИТ 1`/`index + 1` (the `Add`
 /// override chains consecutive lines only). The normals/cross-tangent are
 /// cached by `Paint(Rectangle)`/`IsSelfIntersecting` in the C#; the port
-/// recomputes them per query (a pure function of the tangents — same
+/// recomputes them per query (a pure function of the tangents тАФ same
 /// values, no stored-state drift).
 #[derive(Clone, Debug)]
 pub(crate) struct ControlLine {
@@ -421,11 +285,11 @@ pub(crate) struct ControlLine {
     pub end_tangent: Vec2D,
     pub start_radius: f64,
     pub end_radius: f64,
-    /// `NormalizedLineDirection` — `SafeNormalize(UnitX)` in the ctor
+    /// `NormalizedLineDirection` тАФ `SafeNormalize(UnitX)` in the ctor
     /// (`:66-68`).
     pub direction: Vec2D,
     pub style: SnakeStyle,
-    /// `ProgressionStage` (`:64`) — the style-band index the builder passes.
+    /// `ProgressionStage` (`:64`) тАФ the style-band index the builder passes.
     pub progression_stage: i32,
     pub curve_line: bool,
 }
@@ -455,7 +319,7 @@ impl ControlLine {
         }
     }
 
-    /// `Center` (`:51`) — `(End + Start) / 2.0`.
+    /// `Center` (`:51`) тАФ `(End + Start) / 2.0`.
     fn center(&self) -> Vec2D {
         (self.end + self.start) / 2.0
     }
@@ -473,7 +337,7 @@ impl ControlLine {
         self.start_tangent.cross(self.end_tangent)
     }
 
-    /// `CanPaint` (`:78-115`) — returns `(distance, normalizedLineProgress)`
+    /// `CanPaint` (`:78-115`) тАФ returns `(distance, normalizedLineProgress)`
     /// or `None` when the point belongs to a neighbour line. `has_prev`/
     /// `has_next` stand in for the C#'s null link tests.
     fn can_paint(
@@ -511,7 +375,7 @@ impl ControlLine {
         Some((distance, num6))
     }
 
-    /// `GetStyleWithDitheredTransition` (`:157-171`) — the Bayer-ordered
+    /// `GetStyleWithDitheredTransition` (`:157-171`) тАФ the Bayer-ordered
     /// blend across a style change. The caller hands the neighbour styles
     /// (the C# reads `Prev.Style`/`Next.Style`).
     fn style_with_dithered_transition(
@@ -543,7 +407,7 @@ impl ControlLine {
         self.style
     }
 
-    /// `IsSelfIntersecting` (`:235-247`) — the normals' cross-division
+    /// `IsSelfIntersecting` (`:235-247`) тАФ the normals' cross-division
     /// test against the end radii.
     fn is_self_intersecting(&self) -> bool {
         let (sn, en) = (self.start_normal(), self.end_normal());
@@ -557,7 +421,7 @@ impl ControlLine {
         true
     }
 
-    /// `AdjustTangentsToPreventSelfIntersection` (`:249-268`) — the local
+    /// `AdjustTangentsToPreventSelfIntersection` (`:249-268`) тАФ the local
     /// half; the neighbour writes ride [`DitherSnake::adjust_tangents`].
     /// Returns `(changed, new_start, new_end)`.
     fn adjust_tangents(&self) -> (bool, Vec2D, Vec2D) {
@@ -569,7 +433,7 @@ impl ControlLine {
         (true, st, et)
     }
 
-    /// `IsInsideBorder` (`:270-277`) — `BorderWidth` 4 (`:39`).
+    /// `IsInsideBorder` (`:270-277`) тАФ `BorderWidth` 4 (`:39`).
     fn is_inside_border(&self, x: i32, y: i32, has_prev: bool, has_next: bool, safe: f64) -> bool {
         match self.can_paint(x, y, has_prev, has_next) {
             Some((distance, progress)) => {
@@ -595,7 +459,7 @@ impl ControlLine {
         self.start.lerp(self.end, along) + dir * num * offset
     }
 
-    /// `Paint(int, int)` (`:117-155`) — the tile write: ClearEverything →
+    /// `Paint(int, int)` (`:117-155`) тАФ the tile write: ClearEverything тЖТ
     /// active brick + style wall, then the unbreakable-wall 350 band (the
     /// `wallColor` tier byte, +16 on the inner 2 px). `safe` is
     /// `DungeonControlLine.NormalizedDistanceSafeFromDither`.
@@ -625,7 +489,7 @@ impl ControlLine {
             return;
         }
         let i = world.index(x, y);
-        // `Tile.ClearEverything` (`Tile.cs:110-121`) — every header resets,
+        // `Tile.ClearEverything` (`Tile.cs:110-121`) тАФ every header resets,
         // so the wall paint/coating extras byte clears too.
         world.tiles[i] = Tile {
             kind: style.brick_tile,
@@ -649,10 +513,10 @@ impl ControlLine {
         }
     }
 
-    /// `Paint(Rectangle)` (`:217-233`) — CacheNormals, the start/end point
+    /// `Paint(Rectangle)` (`:217-233`) тАФ CacheNormals, the start/end point
     /// union inflated by `(int)max(radius)`, intersected with the bounds,
     /// then the column-major tile walk. `bounds` is the outer potential
-    /// dungeon hitbox; `None` = `Rectangle.Empty` (no hitbox — the C#
+    /// dungeon hitbox; `None` = `Rectangle.Empty` (no hitbox тАФ the C#
     /// intersect empties and the loops never run).
     #[allow(clippy::too_many_arguments)]
     fn paint_rect(
@@ -675,7 +539,7 @@ impl ControlLine {
         // `Rectangle.Union` of the two 1x1 point rects, `Inflate((int)num)`.
         let (mut l, mut t) = (sx.min(ex) - num as i32, sy.min(ey) - num as i32);
         let (mut r, mut b) = (sx.max(ex) + num as i32, sy.max(ey) + num as i32);
-        // `Rectangle.Intersect` — the empty case leaves the loops vacuous.
+        // `Rectangle.Intersect` тАФ the empty case leaves the loops vacuous.
         l = l.max(bl);
         t = t.max(bt);
         r = r.min(br);
@@ -688,10 +552,10 @@ impl ControlLine {
     }
 }
 
-/// `DungeonControlLine.SkipPaintForEdge` (`:173-215`) — the edge fade:
+/// `DungeonControlLine.SkipPaintForEdge` (`:173-215`) тАФ the edge fade:
 /// inside the safe band nothing skips; outside it the non-dither styles
 /// hard-cut at 0.25, the dither styles Bayer-skip, then the four RNG
-/// frays (`NextFloat ≤ 0.95·(1−num)`, `Next(3) != 0` under 3/32,
+/// frays (`NextFloat тЙд 0.95┬╖(1тИТnum)`, `Next(3) != 0` under 3/32,
 /// `Next(2) == 0` under 1/8, `Next(4) == 0` under 5/32). `NextFloat`'s
 /// port convention is `next_f64` (the recorded fraction stand-in).
 fn skip_paint_for_edge(
@@ -736,19 +600,19 @@ fn skip_paint_for_edge(
     false
 }
 
-/// `DitherSnake` (`DitherSnake.cs:10-199`) — the linked chain as a vec.
+/// `DitherSnake` (`DitherSnake.cs:10-199`) тАФ the linked chain as a vec.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DitherSnake {
     pub lines: Vec<ControlLine>,
 }
 
 impl DitherSnake {
-    /// The `Add` override (`:16-26`) — index = position, links consecutive.
+    /// The `Add` override (`:16-26`) тАФ index = position, links consecutive.
     pub fn add(&mut self, line: ControlLine) {
         self.lines.push(line);
     }
 
-    /// `GetClosestLineTo` (`:28-42`) — the first strictly-closest centre.
+    /// `GetClosestLineTo` (`:28-42`) тАФ the first strictly-closest centre.
     fn closest_line_to(&self, pos: Vec2D) -> usize {
         let mut result = 0;
         let mut num = f64::MAX;
@@ -762,7 +626,7 @@ impl DitherSnake {
         result
     }
 
-    /// `GetLineContaining` (`:44-63`) — the depth-3 tangent walk; `None`
+    /// `GetLineContaining` (`:44-63`) тАФ the depth-3 tangent walk; `None`
     /// at depth 3. `guess` defaults to the closest line.
     fn line_containing(&self, pos: Vec2D, guess: Option<usize>, depth: i32) -> Option<usize> {
         let guess = guess.unwrap_or_else(|| self.closest_line_to(pos));
@@ -779,7 +643,7 @@ impl DitherSnake {
         Some(guess)
     }
 
-    /// `GetPositionAlongSnake` (`:65-73`) — index + progress, the failed
+    /// `GetPositionAlongSnake` (`:65-73`) тАФ index + progress, the failed
     /// CanPaint falling back to 0.5. (The C# dereferences a null
     /// lineContaining unguarded; the depth-3 walk cannot return null for
     /// a point the closest-line guess starts from with < 3 lines of drift,
@@ -809,31 +673,9 @@ impl DitherSnake {
         false
     }
 
-    /// `IsCircleInsideBorderWithMatchingStyle(nearbyLine, center, radius)`
-    /// (`:85-103`) — all 12 buffered circle points must land in a line of
-    /// the same style and inside its border.
-    pub fn circle_inside_border_matching_style(
-        &self,
-        nearby: usize,
-        center: Vec2,
-        radius: i32,
-        safe_distance: f64,
-    ) -> bool {
-        let num = radius as f64 * extra_buffer();
-        let nearby_style = self.lines[nearby].style;
-        for p in circle_test_points() {
-            let point = center + p * num;
-            let Some(li) = self.line_containing(point, Some(nearby)) else {
-                return false;
-            };
-            if self.lines[li].style != nearby_style {
-                return false;
-            }
-            let (px, py) = point.to_point();
-            if !self.lines[li].is_inside_border(&self.lines, px, py, safe_distance) {
-    /// `IsCircleInsideBorderWithMatchingStyle` (`:85-103`) — the 12 test
+    /// `IsCircleInsideBorderWithMatchingStyle` (`:85-103`) тАФ the 12 test
     /// points on the `ExtraBuffer`-inflated circle (`:193-198`:
-    /// `1/cos(π/6)`), each walked from the nearby line.
+    /// `1/cos(╧А/6)`), each walked from the nearby line.
     pub fn is_circle_inside_border_with_matching_style(
         &self,
         nearby: usize,
@@ -844,7 +686,7 @@ impl DitherSnake {
         let num = radius as f64 * (1.0 / (std::f64::consts::PI / 6.0).cos());
         let style = self.lines[nearby].style.id;
         for i in 0..12 {
-            // `CircleTestPoints[i]` — UnitX rotated by 2π·i/12 (`:195-196`).
+            // `CircleTestPoints[i]` тАФ UnitX rotated by 2╧А┬╖i/12 (`:195-196`).
             let point = Vec2D::UNIT_X.rotated_by(std::f64::consts::PI * 2.0 * i as f64 / 12.0, Vec2D::ZERO);
             let p = center + point * num;
             let Some(idx) = self.line_containing(p, Some(nearby), 0) else {
@@ -861,36 +703,8 @@ impl DitherSnake {
         true
     }
 
-    /// `GetRoomPositionInsideBorder(line, normalizedDistanceAlong,
-    /// normalizedDistanceFrom, roomRadius, out orientation)` (`:105-139`) —
-    /// try the offset room position, shrinking the offset ×0.8 up to four
-    /// times until it fits the border; classify Top/Center/Bottom against
-    /// the ±1 offset extremes, else fall back to the line centre.
-    pub fn room_position_inside_border(
-        &self,
-        li: usize,
-        normalized_distance_along: f64,
-        mut normalized_distance_from: f64,
-        room_radius: i32,
-        safe_distance: f64,
-    ) -> (Vec2, SnakeOrientation) {
-        let line = &self.lines[li];
-        let target = Vec2::lerp(line.start, line.end, normalized_distance_along);
-        let p_neg = line.potential_room_position(normalized_distance_along, -1.0, room_radius, safe_distance);
-        let p_pos = line.potential_room_position(normalized_distance_along, 1.0, room_radius, safe_distance);
-        let (target2, target3) = if p_neg.y < p_pos.y { (p_neg, p_pos) } else { (p_pos, p_neg) };
-        for _ in 0..4 {
-            let candidate =
-                line.potential_room_position(normalized_distance_along, normalized_distance_from, room_radius, safe_distance);
-            if self.circle_inside_border_matching_style(li, candidate, room_radius, safe_distance) {
-                let d = Vec2::distance(candidate, target);
-                let d2 = Vec2::distance(candidate, target2);
-                let d3 = Vec2::distance(candidate, target3);
-                let orientation = if d < d2 && d < d3 {
-                    SnakeOrientation::Center
-                } else if d2 < d3 {
-    /// `GetRoomPositionInsideBorder` (`:105-139`) — the four shrinking
-    /// attempts (×0.8), the Top/Center/Bottom classification against the
+    /// `GetRoomPositionInsideBorder` (`:105-139`) тАФ the four shrinking
+    /// attempts (├Ч0.8), the Top/Center/Bottom classification against the
     /// two extreme offsets, the centre fallback.
     pub fn room_position_inside_border(
         &self,
@@ -919,9 +733,6 @@ impl DitherSnake {
                 } else {
                     SnakeOrientation::Bottom
                 };
-                return (candidate, orientation);
-            }
-            normalized_distance_from *= 0.8;
                 return (p3, orientation);
             }
             from *= 0.8;
@@ -929,30 +740,7 @@ impl DitherSnake {
         (line.center(), SnakeOrientation::Center)
     }
 
-    /// `SetTangents()` (`:141-152`) — the first line's start tangent is its
-    /// direction; each interior joint averages the two directions
-    /// (SafeNormalize default Zero) and shares the negated tangent; the
-    /// last line's end tangent is the negation of its direction.
-    pub fn set_tangents(&mut self) {
-        let n = self.lines.len();
-        if n == 0 {
-            return;
-        }
-        self.lines[0].start_tangent = self.lines[0].normalized_line_direction;
-        for i in 0..n - 1 {
-            let avg = (self.lines[i].normalized_line_direction
-                + self.lines[i + 1].normalized_line_direction)
-                .safe_normalize(Vec2::ZERO);
-            self.lines[i + 1].start_tangent = avg;
-            self.lines[i].end_tangent = -avg;
-        }
-        self.lines[n - 1].end_tangent = -self.lines[n - 1].normalized_line_direction;
-    }
-
-    /// `AdjustTangentsToPreventSelfIntersection()` (`:154-171`) — up to 100
-    /// sweeps; each sweep adjusts every self-intersecting line and stops
-    /// early when a full sweep changes nothing.
-    /// `SetTangents` (`:141-152`) — the averaged joint tangents; the last
+    /// `SetTangents` (`:141-152`) тАФ the averaged joint tangents; the last
     /// line's end tangent is `-direction`.
     pub fn set_tangents(&mut self) {
         let n = self.lines.len();
@@ -966,16 +754,14 @@ impl DitherSnake {
         self.lines[n - 1].end_tangent = -self.lines[n - 1].direction;
     }
 
-    /// `AdjustTangentsToPreventSelfIntersection` (`:154-171`) — up to 100
+    /// `AdjustTangentsToPreventSelfIntersection` (`:154-171`) тАФ up to 100
     /// sweeps until no line changes; the neighbour writes (`Prev.End =
-    /// −Start`, `Next.Start = −End`, `DungeonControlLine.cs:257-266`)
+    /// тИТStart`, `Next.Start = тИТEnd`, `DungeonControlLine.cs:257-266`)
     /// apply only when the link exists, the local tangent only then too.
     pub fn adjust_tangents_to_prevent_self_intersection(&mut self) {
         for _ in 0..100 {
             let mut changed = false;
             for i in 0..self.lines.len() {
-                if adjust_tangents(&mut self.lines, i) {
-                    changed = true;
                 let (did, st, et) = self.lines[i].adjust_tangents();
                 if !did {
                     continue;
@@ -996,22 +782,7 @@ impl DitherSnake {
         }
     }
 
-    /// `IsLineInsideBorder(from, to, halfWidth)` (`:173-181`) — both offset
-    /// edges (the perpendicular ±halfWidth) must stay inside.
-    pub fn line_inside_border_half_width(
-        &self,
-        from: Vec2,
-        to: Vec2,
-        half_width: i32,
-        safe_distance: f64,
-    ) -> bool {
-        let offset = (to - from)
-            .safe_normalize(Vec2::UNIT_X)
-            .rotated_by(std::f64::consts::FRAC_PI_2, Vec2::ZERO)
-            * half_width as f64;
-        if self.line_inside_border(from + offset, to + offset, safe_distance) {
-            return self.line_inside_border(from - offset, to - offset, safe_distance);
-    /// `IsLineInsideBorder(from, to, halfWidth)` (`:173-181`) — the two
+    /// `IsLineInsideBorder(from, to, halfWidth)` (`:173-181`) тАФ the two
     /// offset rails of the half-width band.
     pub fn is_line_inside_border_width(
         &self,
@@ -1030,108 +801,7 @@ impl DitherSnake {
         false
     }
 
-    /// `IsLineInsideBorder(from, to)` (`:183-191`) — plot the integer line
-    /// (`Utils.PlotLine`, jump=true) and require every cell to land in a
-    /// border line; the walk stops at the first failure.
-    pub fn line_inside_border(&self, from: Vec2, to: Vec2, safe_distance: f64) -> bool {
-        let (x0, y0) = from.to_point();
-        let (x1, y1) = to.to_point();
-        let mut guess = self.closest_line_to(from);
-        let mut ok = true;
-        plot_line_bool(x0, y0, x1, y1, |x, y| {
-            let pos = Vec2::new(x as f64, y as f64);
-            match self.line_containing(pos, Some(guess)) {
-                Some(li) => {
-                    guess = li;
-                    self.lines[li].is_inside_border(&self.lines, x, y, safe_distance)
-                }
-                None => false,
-            }
-        }, &mut ok);
-        ok
-    }
-}
-
-/// `Utils.PlotLine(Point, Point, TileActionAttempt, jump=true)`
-/// (`Utils.cs:2233-2292`) — the Bresenham walk that stops at the first
-/// `false` plot. The port's `desert_entrances::plot_line` plots every cell
-/// (void callback); this variant carries the early-exit the border query
-/// needs. `ok` is set false when a plot returns false.
-fn plot_line_bool(
-    x0: i32,
-    y0: i32,
-    x1: i32,
-    y1: i32,
-    mut plot: impl FnMut(i32, i32) -> bool,
-    ok: &mut bool,
-) {
-    if x0 == x1 && y0 == y1 {
-        *ok = plot(x0, y0);
-        return;
-    }
-    let steep = (y1 - y0).abs() > (x1 - x0).abs();
-    let (mut ax0, mut ay0, mut ax1, mut ay1) = (x0, y0, x1, y1);
-    if steep {
-        std::mem::swap(&mut ax0, &mut ay0);
-        std::mem::swap(&mut ax1, &mut ay1);
-    }
-    let num = (ax1 - ax0).abs();
-    let num2 = (ay1 - ay0).abs();
-    let mut num3 = num / 2;
-    let mut num4 = ay0;
-    let num5 = if ax0 < ax1 { 1 } else { -1 };
-    let num6 = if ay0 < ay1 { 1 } else { -1 };
-    let mut i = ax0;
-    while i != ax1 {
-        let (px, py) = if steep { (num4, i) } else { (i, num4) };
-        if !plot(px, py) {
-            *ok = false;
-            return;
-        }
-        num3 -= num2;
-        if num3 >= 0 {
-            i += num5;
-            continue;
-        }
-        num4 += num6;
-        // jump=true: no second plot (Utils.cs:2275-2288).
-        num3 += num;
-        i += num5;
-    }
-}
-
-/// `DungeonSide.Left`/`Right` (`DungeonSide.cs:13-15`).
-const DUNGEON_SIDE_LEFT: i32 = -1;
-
-/// `DitherSnakePass.CalculateDungeonDitherSnake`
-/// (`DitherSnakePass.cs:44-133`) — build the snake's control lines over the
-/// dungeon's outer potential bounds. `dungeon_side` is the C#
-/// `GenVars.CurrentDungeonGenVars.dungeonSide` (−1 Left / +1 Right);
-/// `dungeon_location` its `dungeonLocation`; `styles` the
-/// `dungeonGenerationStyles` list (the dual quad, B5); `safe_distance` the
-/// `NormalizedDistanceSafeFromDither` (`WorldGen.cs:11465`). `rng` is the
-/// pass stream (`WorldGen.genRand`) — the two `NextDouble` radius walks
-/// (`:100-101`) are its only draws.
-pub(crate) fn calculate_dungeon_dither_snake(
-    rng: &mut super::Rng,
-    max_tiles_x: i32,
-    outer: &DungeonBounds,
-    dungeon_side: i32,
-    dungeon_location: i32,
-    style_count: usize,
-    safe_distance: f64,
-) -> DitherSnake {
-    let mut snake = DitherSnake::new();
-    // `:50-51`: num = maxTilesX/4200, num2 = (int)(20·num).
-    let num = max_tiles_x as f64 / 4200.0;
-    let num2 = (20.0 * num) as i32;
-    let count = style_count as i32;
-    // `:53-62`: the normalized grid + the radius envelope.
-    let num3 = 1.0 / (num2 - 1) as f64;
-    let num4 = 1.0 / (count - 1) as f64;
-    let num5 = outer.height() as f64 / count as f64;
-    let num6 = 1.0 - safe_distance;
-    /// `IsLineInsideBorder(from, to)` (`:183-191`) — the Bresenham walk
+    /// `IsLineInsideBorder(from, to)` (`:183-191`) тАФ the Bresenham walk
     /// (`Utils.PlotLine`, `jump: true`) carrying the containing-line guess
     /// forward; any failed cell aborts. The port's shared `plot_line`
     /// (`desert_entrances.rs`) plots without a return value, so this keeps
@@ -1190,18 +860,73 @@ pub(crate) fn calculate_dungeon_dither_snake(
 }
 
 /// `DitherSnakePass.CalculateDungeonDitherSnake` (`DitherSnakePass.cs:44-133`)
-/// — the serpentine control-point walk: `num2 = (int)(20·maxTilesX/4200)`
+/// тАФ the serpentine control-point walk: `num2 = (int)(20┬╖maxTilesX/4200)`
 /// columns per style band, the row direction flipping per band and with
 /// the dungeon side, the two radius random-walks (`NextDouble` lerp within
-/// ±num13 of the running radii), the row-0 dungeon-location clamp, the
-/// turnaround arcs (`num9 = 0.05` steps to < 0.5 — ten f64 accumulations:
-/// 0.05, 0.1, 0.15000000000000002, … 0.49999999999999994 < 0.5, the tenth
-/// 0.5499… stops; the C# loop draws the same ten), the
-/// `1 − num10` x-squash), then SetTangents + the ±UnitX end pins + the
+/// ┬▒num13 of the running radii), the row-0 dungeon-location clamp, the
+/// turnaround arcs (`num9 = 0.05` steps to < 0.5 тАФ ten f64 accumulations:
+/// 0.05, 0.1, 0.15000000000000002, тАж 0.49999999999999994 < 0.5, the tenth
+/// 0.5499тАж stops; the C# loop draws the same ten), the
+/// `1 тИТ num10` x-squash), then SetTangents + the ┬▒UnitX end pins + the
 /// self-intersection sweeps. The `progress.Set` calls are the boundary
 /// feed's business (no draw). `bounds` = (X, Y, Width, Height) of the
 /// outer potential dungeon bounds.
 #[allow(clippy::too_many_arguments)]
+fn extra_buffer() -> f64 {
+    1.0 / (std::f64::consts::PI / 6.0).cos()
+}
+
+fn circle_test_points() -> [Vec2; 12] {
+    let mut pts = [Vec2::ZERO; 12];
+    for (i, p) in pts.iter_mut().enumerate() {
+        *p = Vec2::UNIT_X.rotated_by(std::f64::consts::TAU * i as f64 / 12.0, Vec2::ZERO);
+    }
+    pts
+}
+
+fn plot_line_bool(
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    mut plot: impl FnMut(i32, i32) -> bool,
+    ok: &mut bool,
+) {
+    if x0 == x1 && y0 == y1 {
+        *ok = plot(x0, y0);
+        return;
+    }
+    let steep = (y1 - y0).abs() > (x1 - x0).abs();
+    let (mut ax0, mut ay0, mut ax1, mut ay1) = (x0, y0, x1, y1);
+    if steep {
+        std::mem::swap(&mut ax0, &mut ay0);
+        std::mem::swap(&mut ax1, &mut ay1);
+    }
+    let num = (ax1 - ax0).abs();
+    let num2 = (ay1 - ay0).abs();
+    let mut num3 = num / 2;
+    let mut num4 = ay0;
+    let num5 = if ax0 < ax1 { 1 } else { -1 };
+    let num6 = if ay0 < ay1 { 1 } else { -1 };
+    let mut i = ax0;
+    while i != ax1 {
+        let (px, py) = if steep { (num4, i) } else { (i, num4) };
+        if !plot(px, py) {
+            *ok = false;
+            return;
+        }
+        num3 -= num2;
+        if num3 >= 0 {
+            i += num5;
+            continue;
+        }
+        num4 += num6;
+        // jump=true: no second plot (Utils.cs:2275-2288).
+        num3 += num;
+        i += num5;
+    }
+}
+
 pub(crate) fn calculate_dungeon_dither_snake(
     rng: &mut Rng,
     max_tiles_x: i32,
@@ -1226,25 +951,10 @@ pub(crate) fn calculate_dungeon_dither_snake(
     let num10 = remap(num, 1.0, 2.0, 1.0, 1.5);
     let num11 = num7 + num5 / 2.0 * num10;
     let num12 = num7;
-    // `:63-64`: the grid origin + extent inside the bounds.
-    let grid_origin = Vec2::new(outer.x() as f64 + num11, outer.y() as f64 + num12);
-    let grid_extent = Vec2::new(
-        outer.width() as f64 - num11 * 2.0,
-        outer.height() as f64 - num12 * 2.0,
-    );
-    // `:65`: the per-step radius clamp.
-    let num13 = (num7 - num8).min(grid_extent.x * num3 / 2.0);
-    let mut start_radius = num7;
-    let mut start = Vec2::ZERO;
-    let num14 = num2 * count;
-    let num15 = num14 / count;
-    let mut num16 = num7;
-    let mut num17 = num7;
-    let mut i = 0i32;
     let origin = Vec2D::new(bx as f64 + num11, by as f64 + num12);
     let extent = Vec2D::new(bw as f64 - num11 * 2.0, bh as f64 - num12 * 2.0);
     let num13 = (num7 - num8).min(extent.x * num3 / 2.0);
-    // `_ = dungeonGenerationStyles[0]` (`:66`) — a read, no effect.
+    // `_ = dungeonGenerationStyles[0]` (`:66`) тАФ a read, no effect.
     let mut start_radius = num7;
     let mut start = Vec2D::ZERO;
     let num14 = num2 * count;
@@ -1257,8 +967,6 @@ pub(crate) fn calculate_dungeon_dither_snake(
         let num19 = i / num2;
         let mut num20 = num3 * num18 as f64;
         let y = num4 * num19 as f64;
-        // `:80-88`: the serpentine direction (flip on odd rows, mirror x).
-        let mut num21 = if dungeon_side == DUNGEON_SIDE_LEFT { 1 } else { -1 };
         let mut num21 = if dungeon_side_left { 1 } else { -1 };
         if num19 % 2 == 1 {
             num21 *= -1;
@@ -1266,42 +974,13 @@ pub(crate) fn calculate_dungeon_dither_snake(
         if num21 < 0 {
             num20 = 1.0 - num20;
         }
-        let mut point = grid_origin + grid_extent * Vec2::new(num20, y);
         let mut point = origin + extent * Vec2D::new(num20, y);
         if i == 0 {
             start = point;
             i += 1;
             continue;
         }
-        // `:95-99`: the first row snaps to the dungeon location when the
-        // grid point falls on the wrong side of it.
-        if num19 == 0 && (point.x - dungeon_location as f64) * num21 as f64 < 0.0 {
-            start = Vec2::new(dungeon_location as f64, point.y);
-            i += 1;
-            continue;
-        }
-        // `:100-103`: the two NextDouble radius walks + the y jitter.
-        num16 = lerp((num16 - num13).max(num8), (num16 + num13).min(num7), rng.next_f64());
-        num17 = lerp((num17 - num13).max(num8), (num17 + num13).min(num7), rng.next_f64());
-        let num22 = (num16 + num17) / 2.0;
-        point.y += (num16 - num17) / 2.0;
-        let num23 = i / num15;
-        snake.add(ControlLine::new(0, start, point, start_radius, num22, num23, num23 as usize));
-        start = point;
-        start_radius = num22;
-        // `:109-125`: the row-end curve back to the next row's start.
-        if num18 == num2 - 1 && num19 != count - 1 {
-            let anchor = point;
-            let center = Vec2::lerp(anchor, anchor + grid_extent * Vec2::new(0.0, num4), 0.5);
-            let mut num24 = num9;
-            while num24 < 0.5 {
-                let mut curved = anchor.rotated_by(std::f64::consts::TAU * num24 * num21 as f64, center);
-                curved.x = lerp(curved.x, center.x, 1.0 - num10);
-                let mut line = ControlLine::new(0, start, curved, start_radius, num22, num23, num23 as usize);
-                line.curve_line = true;
-                snake.add(line);
-                start = curved;
-        if num19 == 0 && (point.x - dungeon_location as f64) * num21 as f64 < 0.0 {
+        if num19 == 0 && (point.x - dungeon_location as f64) * (num21 as f64) < 0.0 {
             start = Vec2D::new(dungeon_location as f64, point.y);
             i += 1;
             continue;
@@ -1337,13 +1016,6 @@ pub(crate) fn calculate_dungeon_dither_snake(
         }
         i += 1;
     }
-    // `:127-131`: the tangents + the dungeon-side end caps + the
-    // self-intersection sweep.
-    snake.set_tangents();
-    let num25 = if dungeon_side == DUNGEON_SIDE_LEFT { 1 } else { -1 };
-    let n = snake.lines.len();
-    snake.lines[0].start_tangent = Vec2::UNIT_X * num25 as f64;
-    snake.lines[n - 1].end_tangent = Vec2::UNIT_X * num25 as f64;
     snake.set_tangents();
     let num25 = if dungeon_side_left { 1.0 } else { -1.0 };
     let last = snake.lines.len() - 1;
@@ -1353,54 +1025,8 @@ pub(crate) fn calculate_dungeon_dither_snake(
     snake
 }
 
-/// `DitherSnakePass.GenerateDungeonDitherSnake`
-/// (`DitherSnakePass.cs:33-42`) — paint every line into the dungeon's outer
-/// bounds hitbox. `rng` is the pass stream (the edge-dither rarity rolls).
-pub(crate) fn generate_dungeon_dither_snake(
-    world: &mut World,
-    rng: &mut super::Rng,
-    snake: &mut DitherSnake,
-    styles: &[SnakeStyle],
-    outer: &DungeonBounds,
-    safe_distance: f64,
-) {
-    let bounds = outer.hitbox();
-    for i in 0..snake.lines.len() {
-        let mut line = snake.lines[i];
-        line.paint_rect(world, rng, &snake.lines, styles, bounds, safe_distance);
-        snake.lines[i] = line;
-    }
-}
-
-/// `DitherSnakePass.ApplyPass` (`DitherSnakePass.cs:22-31`) — the two
-/// dungeons' snakes: dungeon 0 over progress [0, 0.5), dungeon 1 over
-/// [0.5, 1]. Each calculates then paints its own snake into its own outer
-/// bounds. The port runs the two halves back-to-back (the progress window
-/// is loading-screen-only, no behavioural role). `dungeons` carries the
-/// per-dungeon (outer bounds, side, location, style count) the producer
-/// chain (B5) publishes; `safe_distance` is the world-wide
-/// `NormalizedDistanceSafeFromDither`.
-pub(crate) fn apply_dither_snake_pass(
-    world: &mut World,
-    rng: &mut super::Rng,
-    dungeons: &[DitherSnakeDungeon],
-    styles: &[SnakeStyle],
-    safe_distance: f64,
-) -> Vec<DitherSnake> {
-    let mut snakes = Vec::new();
-    for d in dungeons {
-        let mut snake = calculate_dungeon_dither_snake(
-            rng,
-            world.width,
-            &d.outer,
-            d.dungeon_side,
-            d.dungeon_location,
-            d.style_count,
-            safe_distance,
-        );
-        generate_dungeon_dither_snake(world, rng, &mut snake, styles, &d.outer, safe_distance);
 /// `DitherSnakePass.GenerateDungeonDitherSnake` (`DitherSnakePass.cs:33-42`)
-/// — paint every line over the outer bounds' hitbox.
+/// тАФ paint every line over the outer bounds' hitbox.
 fn generate_dungeon_dither_snake(
     world: &mut World,
     rng: &mut Rng,
@@ -1416,16 +1042,16 @@ fn generate_dungeon_dither_snake(
     }
 }
 
-/// The Reset dual block's dither constant (`WorldGen.cs:11465` →
-/// `GenVars.cs:305-315` → `DungeonControlLine.NormalizedDistanceSafeFromDither`):
-/// `1 − 0.075·maxTilesY/1200`.
+/// The Reset dual block's dither constant (`WorldGen.cs:11465` тЖТ
+/// `GenVars.cs:305-315` тЖТ `DungeonControlLine.NormalizedDistanceSafeFromDither`):
+/// `1 тИТ 0.075┬╖maxTilesY/1200`.
 pub(crate) fn normalized_distance_safe_from_dither(max_tiles_y: i32) -> f64 {
     1.0 - 0.075 * (max_tiles_y as f64 / 1200.0)
 }
 
 /// The Reset dungeon-location draw (`WorldGen.cs:11441-11447` /
-/// `:11454-11461`): left = `Next(leftBeachEnd + 50, (int)(maxTilesX·0.2))`,
-/// right = `Next((int)(maxTilesX·0.8), rightBeachStart − 50)`
+/// `:11454-11461`): left = `Next(leftBeachEnd + 50, (int)(maxTilesX┬╖0.2))`,
+/// right = `Next((int)(maxTilesX┬╖0.8), rightBeachStart тИТ 50)`
 /// (`dungeonBeachPadding` 50, `GenVars.cs:452`).
 pub(crate) fn roll_dungeon_location(
     rng: &mut Rng,
@@ -1443,13 +1069,13 @@ pub(crate) fn roll_dungeon_location(
 
 /// `DungeonUtils.CreatePotentialDungeonBounds` (`DungeonUtils.cs:2067-2087`)
 /// with the crawler's call args (`DungeonCrawler.cs:109`: percentInMiddle
-/// 0.1f, percentOnEdges 0.05f) — the outer bounds only (the inner bounds
+/// 0.1f, percentOnEdges 0.05f) тАФ the outer bounds only (the inner bounds
 /// have no snake consumer). `percentOnTop` defaults to
 /// `(worldSurface + 10)/maxTilesY` (no `DungeonEntranceIsUnderground` seed
-/// in the port), `percentOnBottom` to `(UnderworldLayer − 10)/maxTilesY`
-/// (`Main.cs:2790`: maxTilesY − 200). Returns the bounds as the C#
-/// `DungeonBounds` exposes them — (X, Y, Width, Height) with
-/// Width = Right − Left, Height = Bottom − Top (`DungeonBounds.cs:33-39`) —
+/// in the port), `percentOnBottom` to `(UnderworldLayer тИТ 10)/maxTilesY`
+/// (`Main.cs:2790`: maxTilesY тИТ 200). Returns the bounds as the C#
+/// `DungeonBounds` exposes them тАФ (X, Y, Width, Height) with
+/// Width = Right тИТ Left, Height = Bottom тИТ Top (`DungeonBounds.cs:33-39`) тАФ
 /// plus the hitbox the `CalculateHitbox` degenerate-expand produces
 /// (`DungeonBounds.cs:310-322`), as inclusive (left, top, right, bottom).
 pub(crate) fn create_potential_dungeon_bounds(
@@ -1475,7 +1101,7 @@ pub(crate) fn create_potential_dungeon_bounds(
     };
     let num4 = (max_tiles_y as f64 * percent_on_top) as i32;
     let num5 = (max_tiles_y as f64 * percent_on_bottom) as i32;
-    // The clamped setters (`DungeonBounds.cs:53-99` — MathHelper.Clamp then
+    // The clamped setters (`DungeonBounds.cs:53-99` тАФ MathHelper.Clamp then
     // the (int) truncation; the values here are already integral).
     let clamp_x = |v: i32| v.clamp(10, max_tiles_x - 10);
     let clamp_y = |v: i32| v.clamp(10, max_tiles_y - 10);
@@ -1496,7 +1122,7 @@ pub(crate) fn create_potential_dungeon_bounds(
     ((l, t, r - l, b - t), Some((l, t, r - 1, b - 1)))
 }
 
-/// `DitherSnakePass.ApplyPass` (`DitherSnakePass.cs:22-31`) — dungeon 0
+/// `DitherSnakePass.ApplyPass` (`DitherSnakePass.cs:22-31`) тАФ dungeon 0
 /// calculates + paints, then dungeon 1. The port's step adapter supplies
 /// the per-dungeon (styles, bounds, side, location) tuples the Reset/Dunes
 /// setup drew; the C#'s `progress.Set` fractions ride the boundary feed.
@@ -1525,102 +1151,10 @@ pub(crate) fn apply_dither_snake_pass(
     snakes
 }
 
-/// The per-dungeon inputs `ApplyPass` reads from
-/// `GenVars.CurrentDungeonGenVars` (`DitherSnakePass.cs:25-30`): the outer
-/// potential bounds, the side, the location and the style-list count.
-#[derive(Clone, Debug)]
-pub(crate) struct DitherSnakeDungeon {
-    pub outer: DungeonBounds,
-    pub dungeon_side: i32,
-    pub dungeon_location: i32,
-    pub style_count: usize,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn snake_two() -> DitherSnake {
-        let mut s = DitherSnake::new();
-        s.add(ControlLine::new(0, Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), 10.0, 10.0, 0, 0));
-        s.add(ControlLine::new(0, Vec2::new(10.0, 0.0), Vec2::new(20.0, 0.0), 10.0, 10.0, 0, 0));
-        s.set_tangents();
-        s
-    }
-
-    /// `Add` reindexes and `SetTangents` averages the joint
-    /// (`DitherSnake.cs:16-26/:141-152`).
-    #[test]
-    fn w4_f24_add_reindexes_and_set_tangents() {
-        let s = snake_two();
-        assert_eq!(s.lines[0].index, 0);
-        assert_eq!(s.lines[1].index, 1);
-        // Straight collinear segments: every tangent is +X.
-        assert_eq!(s.lines[0].start_tangent, Vec2::UNIT_X);
-        assert_eq!(s.lines[0].end_tangent, -Vec2::UNIT_X);
-        assert_eq!(s.lines[1].start_tangent, Vec2::UNIT_X);
-        assert_eq!(s.lines[1].end_tangent, -Vec2::UNIT_X);
-    }
-
-    /// `GetClosestLineTo` picks the nearer centre; `GetLineContaining`
-    /// walks to the segment that owns the point (`:28-63`).
-    #[test]
-    fn w4_f24_closest_and_containing() {
-        let s = snake_two();
-        assert_eq!(s.closest_line_to(Vec2::new(15.0, 1.0)), 1);
-        assert_eq!(s.closest_line_to(Vec2::new(5.0, 1.0)), 0);
-        assert_eq!(s.line_containing(Vec2::new(15.0, 0.0), None), Some(1));
-        assert_eq!(s.line_containing(Vec2::new(5.0, 0.0), None), Some(0));
-    }
-
-    /// `ExtraBuffer` is 1/cos(π/6) and the 12 circle points are unit
-    /// vectors (`DitherSnake.cs:193-198`).
-    #[test]
-    fn w4_f24_circle_statics() {
-        let b = extra_buffer();
-        assert!((b - 1.1547005383792515).abs() < 1e-12);
-        let pts = circle_test_points();
-        assert_eq!(pts.len(), 12);
-        for p in pts {
-            assert!((p.length() - 1.0).abs() < 1e-12);
-        }
-        assert!((pts[0].x - 1.0).abs() < 1e-12 && pts[0].y.abs() < 1e-12);
-    }
-
-    /// The bool PlotLine stops at the first false plot
-    /// (`Utils.cs:2256-2291`).
-    #[test]
-    fn w4_f24_plot_line_bool_early_exit() {
-        let mut visited = Vec::new();
-        let mut ok = true;
-        plot_line_bool(0, 0, 5, 0, |x, y| {
-            visited.push((x, y));
-            x < 2
-        }, &mut ok);
-        assert!(!ok);
-        assert_eq!(visited, vec![(0, 0), (1, 0), (2, 0)]);
-    }
-
-    /// `CalculateDungeonDitherSnake` builds a non-empty snake with the
-    /// dungeon-side end caps and consumes exactly two NextDouble draws per
-    /// non-skipped grid point (`DitherSnakePass.cs:44-133`). The a == b
-    /// replay pins the determinism (the radius walks ride the pass stream).
-    #[test]
-    fn w4_f24_calculate_snake_is_deterministic() {
-        let mut outer = DungeonBounds::new(4200, 1200);
-        // A right-side dungeon's outer bounds (CreatePotentialDungeonBounds
-        // shape, DungeonUtils.cs:2079-2084): x in [0.51·W, W-0.05·W].
-        outer.set_bounds(2142, 100, 3990, 1030);
-        let safe = 1.0 - 0.075 * (1200.0 / 1200.0);
-        let build = || {
-            let mut rng = crate::worldgen::noise::Rng::from_seed(42);
-            calculate_dungeon_dither_snake(&mut rng, 4200, &outer, 1, 3990, 4, safe)
-        };
-        let a = build();
-        let b = build();
-        assert!(!a.lines.is_empty());
-        assert_eq!(a.lines.len(), b.lines.len());
-        for (la, lb) in a.lines.iter().zip(b.lines.iter()) {
     /// The Bayer matrix is the C# row-major literal, verbatim
     /// (`DitherSnakePass.cs:137-143`).
     #[test]
@@ -1632,7 +1166,7 @@ mod tests {
     }
 
     /// The style quintuples against `DungeonGenerationStyles.cs`'s statics
-    /// (the anchors on each arm) — the fields `Paint`/`SkipPaintForEdge` read.
+    /// (the anchors on each arm) тАФ the fields `Paint`/`SkipPaintForEdge` read.
     #[test]
     fn the_style_table_matches_the_csharp_statics() {
         let s = SnakeStyle::of(StyleId::Cavern);
@@ -1649,7 +1183,7 @@ mod tests {
         assert_eq!((s.brick_tile, s.brick_wall, s.tier, s.edge_dither), (396, 187, 0, false));
         let s = SnakeStyle::of(StyleId::Hallow);
         assert_eq!((s.brick_tile, s.brick_wall, s.tier, s.edge_dither), (117, 28, 4, true));
-        // TempleStyleData sets no tier — the −1 field default stands
+        // TempleStyleData sets no tier тАФ the тИТ1 field default stands
         // (`DungeonGenerationStyleData.cs:13`).
         let s = SnakeStyle::of(StyleId::Temple);
         assert_eq!((s.brick_tile, s.brick_wall, s.tier, s.edge_dither), (226, 87, -1, false));
@@ -1658,7 +1192,7 @@ mod tests {
     }
 
     /// The dual lists (`DungeonCrawler.cs:111-127`): dungeon 0 walks
-    /// Cavern → evil → Jungle → colour; dungeon 1 Snow → Desert → Hallow →
+    /// Cavern тЖТ evil тЖТ Jungle тЖТ colour; dungeon 1 Snow тЖТ Desert тЖТ Hallow тЖТ
     /// Temple; the evil arm follows `WorldGen.crimson`.
     #[test]
     fn the_dual_style_lists_follow_the_crawler() {
@@ -1677,7 +1211,7 @@ mod tests {
     }
 
     /// `ApplyPass`'s snake store (`DitherSnakePass.cs:26/:29`): one snake
-    /// per dungeon, dungeon 0 first — the a == b determinism over the
+    /// per dungeon, dungeon 0 first тАФ the a == b determinism over the
     /// stored control chains.
     #[test]
     fn the_pass_stores_one_snake_per_dungeon() {
@@ -1712,7 +1246,7 @@ mod tests {
     }
 
     /// `NormalizedDistanceSafeFromDither` (`WorldGen.cs:11465`):
-    /// `1 − 0.075·maxTilesY/1200` — 0.925 on the default 1200-high world.
+    /// `1 тИТ 0.075┬╖maxTilesY/1200` тАФ 0.925 on the default 1200-high world.
     #[test]
     fn the_safe_constant_matches_the_reset_draw() {
         assert_eq!(normalized_distance_safe_from_dither(1200), 1.0 - 0.075);
@@ -1720,23 +1254,23 @@ mod tests {
     }
 
     /// The bounds math (`DungeonUtils.cs:2067-2087` + the clamped setters):
-    /// on a 4200×1200 world with worldSurface 300, the left dungeon spans
-    /// x 210..1889 — the C# float literals matter: `(0.5 − 0.05f)` is
-    /// 0.44999999925494194, ×4200 = 1889.9999968… → (int) 1889 — y 310..990
-    /// ((300+10)/1200·1200, (1200−210)/1200·1200).
+    /// on a 4200├Ч1200 world with worldSurface 300, the left dungeon spans
+    /// x 210..1889 тАФ the C# float literals matter: `(0.5 тИТ 0.05f)` is
+    /// 0.44999999925494194, ├Ч4200 = 1889.9999968тАж тЖТ (int) 1889 тАФ y 310..990
+    /// ((300+10)/1200┬╖1200, (1200тИТ210)/1200┬╖1200).
     #[test]
     fn the_potential_bounds_match_the_csharp_clamps() {
         let ((x, y, w, h), hitbox) = create_potential_dungeon_bounds(4200, 1200, 300.0, true);
         assert_eq!((x, y, w, h), (210, 310, 1679, 680));
         assert_eq!(hitbox, Some((210, 310, 1888, 989)));
         let ((x, y, w, h), _) = create_potential_dungeon_bounds(4200, 1200, 300.0, false);
-        // Right: (0.5+0.05f)·4200 = 2310.0000031… → 2310 .. 4200 − 210 = 3990.
+        // Right: (0.5+0.05f)┬╖4200 = 2310.0000031тАж тЖТ 2310 .. 4200 тИТ 210 = 3990.
         assert_eq!((x, y, w, h), (2310, 310, 1680, 680));
     }
 
     /// `CanPaint`'s interior algebra on an axis-aligned line
     /// (`DungeonControlLine.cs:78-115`): start (0,0), end (10,0), tangents
-    /// ±UnitX — a point mid-line at distance 3 has progress 0.5 and
+    /// ┬▒UnitX тАФ a point mid-line at distance 3 has progress 0.5 and
     /// distance 3; before the start (no prev) it clamps to progress 0.
     #[test]
     fn can_paint_matches_the_line_algebra() {
@@ -1754,16 +1288,16 @@ mod tests {
         let (d, p) = line.can_paint(5, 3, true, true).unwrap();
         assert_eq!(p, 0.5);
         assert_eq!(d, 3.0);
-        // Before the start with a prev → not ours.
+        // Before the start with a prev тЖТ not ours.
         assert!(line.can_paint(-1, 0, true, true).is_none());
-        // Without a prev → the endpoint clamp, distance = |value|.
+        // Without a prev тЖТ the endpoint clamp, distance = |value|.
         let (d, p) = line.can_paint(-3, 4, false, true).unwrap();
         assert_eq!((d, p), (5.0, 0.0));
     }
 
     /// The border query (`IsInsideBorder`, `:270-277`): distance <
-    /// lerp(radius)·safe − 4. With radius 10 and safe 0.925 the border is
-    /// 5.25 — distance 3 inside, distance 6 outside.
+    /// lerp(radius)┬╖safe тИТ 4. With radius 10 and safe 0.925 the border is
+    /// 5.25 тАФ distance 3 inside, distance 6 outside.
     #[test]
     fn the_border_uses_the_safe_band_minus_four() {
         let style = SnakeStyle::of(StyleId::Cavern);
@@ -1782,7 +1316,7 @@ mod tests {
     }
 
     /// `SetTangents` (`DitherSnake.cs:141-152`): the joint tangent is the
-    /// safe-normalized direction sum; the last end tangent is −direction.
+    /// safe-normalized direction sum; the last end tangent is тИТdirection.
     #[test]
     fn set_tangents_averages_the_joints() {
         let style = SnakeStyle::of(StyleId::Cavern);
@@ -1791,7 +1325,7 @@ mod tests {
         snake.add(ControlLine::new(Vec2D::new(10.0, 0.0), Vec2D::new(10.0, 10.0), 5.0, 5.0, 0, style));
         snake.set_tangents();
         assert_eq!(snake.lines[0].start_tangent, Vec2D::UNIT_X);
-        // (UnitX + UnitY).SafeNormalize = (√2/2, √2/2).
+        // (UnitX + UnitY).SafeNormalize = (тИЪ2/2, тИЪ2/2).
         let j = snake.lines[0].end_tangent;
         assert!((j.x + std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-15);
         assert!((j.y + std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-15);
@@ -1801,7 +1335,7 @@ mod tests {
 
     /// The builder's a == b determinism: the same seed and args produce the
     /// same control points, radii and tangents (`DitherSnakePass.cs:44-133`
-    /// — the two `NextDouble` walks and the arc chain).
+    /// тАФ the two `NextDouble` walks and the arc chain).
     #[test]
     fn the_builder_is_deterministic_for_a_seed() {
         let styles = dual_style_list(0, false, DungeonColor::Blue);
@@ -1819,22 +1353,14 @@ mod tests {
             assert_eq!(la.end_radius, lb.end_radius);
             assert_eq!(la.start_tangent, lb.start_tangent);
             assert_eq!(la.end_tangent, lb.end_tangent);
-        }
-        // The dungeon-side end caps: right side (num25 = -1) -> -UnitX.
-        assert_eq!(a.lines[0].start_tangent, -Vec2::UNIT_X);
-        assert_eq!(a.last().end_tangent, -Vec2::UNIT_X);
-        // Every line's style index is in the 4-style quad range.
-        assert!(a.lines.iter().all(|l| l.style < 4));
-    }
-}
             assert_eq!(la.progression_stage, lb.progression_stage);
             assert_eq!(la.curve_line, lb.curve_line);
         }
-        // 20 columns × 4 bands = 80 iterations, minus the row-0 clamp skips
-        // and plus 3 turnaround arcs × 10 segments − 3 consumed iterations.
+        // 20 columns ├Ч 4 bands = 80 iterations, minus the row-0 clamp skips
+        // and plus 3 turnaround arcs ├Ч 10 segments тИТ 3 consumed iterations.
         // The exact count is a function of the location clamp; assert the
-        // shape invariants instead: ≥ 4 lines, one per band minimum, the
-        // end pins ±UnitX (side Left → +1).
+        // shape invariants instead: тЙе 4 lines, one per band minimum, the
+        // end pins ┬▒UnitX (side Left тЖТ +1).
         assert!(a.lines.len() >= 4);
         assert_eq!(a.lines[0].start_tangent, Vec2D::UNIT_X);
         assert_eq!(a.lines.last().unwrap().end_tangent, Vec2D::UNIT_X);
@@ -1868,7 +1394,7 @@ mod tests {
         let band = a.tiles.iter().filter(|t| t.wall == 350).count();
         assert!(band > 0, "the unbreakable band paints ({band})");
         // A 350-band cell carries the tier byte in the wall paint
-        // (`wallColor((byte)num5)`) — JungleBoss 2 (+16 on the inner 2px).
+        // (`wallColor((byte)num5)`) тАФ JungleBoss 2 (+16 on the inner 2px).
         let painted = a
             .tiles
             .iter()
@@ -1883,8 +1409,8 @@ mod tests {
     }
 
     /// The location rolls (`WorldGen.cs:11443/:11447`): left draws inside
-    /// [leftBeachEnd+50, 0.2·width), right inside [0.8·width,
-    /// rightBeachStart−50).
+    /// [leftBeachEnd+50, 0.2┬╖width), right inside [0.8┬╖width,
+    /// rightBeachStartтИТ50).
     #[test]
     fn the_location_rolls_stay_in_their_bands() {
         for seed in [1u64, 7, 42, 0x0CEA] {

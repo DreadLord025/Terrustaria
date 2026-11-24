@@ -1486,44 +1486,6 @@ pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
 ];
 
 // --- special-seed pass pruning ----------------------------------------------
-
-/// `WorldGen.DisablePassesForSpecialSeeds` (`WorldGen.cs:22493-22509`): when
-/// `SecretSeed.dualDungeons` is enabled, twelve passes are `Disable()`d — the
-/// second dungeon replaces the ice/desert/jungle/temple/evil biomes and the
-/// shimmer, so their passes must not run. The C# compares `GenPass.Name`
-/// against the `GenPassNameID` constants; the strings below are the port's
-/// `Step::vanilla` values for those constants (`ID/GenPassNameID.cs:239-325`),
-/// which is where the two vocabularies meet.
-///
-/// One of the twelve has no executed step in the port yet (`Shimmer`);
-/// listing it keeps the table 1:1 with the C# so a future step cannot
-/// silently un-prune itself. `Larva` (`GenPassNameID.BeeLarvaInBeehives`)
-/// gained its executed step with W4-d105 lane 5 #45 — the prune now skips
-/// a real step.
-/// Three of the twelve have no executed step in the port yet (`Generate Ice
-/// Biome`, `Larva` — `GenPassNameID.BeeLarvaInBeehives` — and `Shimmer`);
-/// listing them keeps the table 1:1 with the C# so a future step cannot
-/// silently un-prune itself.
-///
-/// W4-d107 name fix: the C# compares `GenPassNameID.IceBiome`, whose value is
-/// `"Generate Ice Biome"` (`ID/GenPassNameID.cs:239`) — NOT `"Ice"`, which is
-/// `GenPassNameID.FragileIceOverIceBiomeWater` (`:280`). The first landing
-/// pruned the port's `fragile ice` step by mistake; the C# leaves fragile ice
-/// enabled under dualDungeons, so the port must too.
-pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
-    // W4-d101 pass 8: `GenPassNameID.IceBiome` IS "Generate Ice Biome"
-    // (`GenPassNameID.cs:239`) — the `:12312` biome generator this lane
-    // ports. The pre-pass-8 table said "Ice", which is
-    // `FragileIceOverIceBiomeWater` (`:280`, the `:16667` pass the C# does
-    // NOT prune) — corrected to the C# string now that the real step
-    // exists.
-    "Generate Ice Biome",      // GenPassNameID.IceBiome            "Generate Ice Biome"
-    "Generate Ice Biome",      // GenPassNameID.IceBiome            (:239)
-    "Generate Ice Biome",      // GenPassNameID.IceBiome            (:239)
-/// One of the twelve has no executed step in the port yet (`Larva` —
-/// `GenPassNameID.BeeLarvaInBeehives`); listing it keeps the table 1:1 with
-/// the C# so a future step cannot silently un-prune itself. (`Shimmer`
-/// joined the executed chain in W4-d102 pass 6.)
 pub(crate) const DUAL_DUNGEON_DISABLED_PASSES: [&str; 12] = [
     // W4-d101 pass 8: `GenPassNameID.IceBiome` IS "Generate Ice Biome"
     // (`GenPassNameID.cs:239`) — the `:12312` biome generator this lane
@@ -5952,7 +5914,6 @@ impl GenerationRunner {
                 EXECUTED_PIPELINE[self.cursor].vanilla,
                 self.opts.micro_flags,
                 self.opts.flags,
-            )
             ) || pass_registration_gate_closed(
                 EXECUTED_PIPELINE[self.cursor].vanilla,
                 self.opts.micro_flags,

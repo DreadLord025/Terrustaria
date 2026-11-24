@@ -786,7 +786,7 @@ pub fn shimmer_clean_up(
             // kind — the C# reads Main.tile[j,i].type fresh each time.
             let dx = (j - cx).abs() as f64;
             let dy = (i - cy).abs() as f64;
-            if (dx * dx + dy * dy).sqrt() as i32 < num {
+            if ((dx * dx + dy * dy).sqrt() as i32) < num {
                 let kind = world.tile(j, i).map_or(0, |t| t.kind);
                 if kind == 22 || kind == 204 {
                     if let Some(cell) = world.tile_mut(j, i) {
@@ -819,7 +819,7 @@ pub fn shimmer_clean_up(
             let y_stretch = if (i as f64) > cy as f64 { 1.2 } else { 1.4 };
             let jx = (j - cx).abs() as f64 * (1.0 + rng.next_f64() * 0.02);
             let jy = (i - cy).abs() as f64 * y_stretch * (1.0 + rng.next_f64() * 0.02);
-            if (jx * jx + jy * jy).sqrt() as i32 < num2 {
+            if ((jx * jx + jy * jy).sqrt() as i32) < num2 {
                 if world.tile(j, i).is_some_and(|t| t.kind == 162) {
                     if let Some(cell) = world.tile_mut(j, i) {
                         cell.flags &= !FLAG_ACTIVE;
