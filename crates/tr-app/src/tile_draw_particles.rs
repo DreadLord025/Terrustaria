@@ -1956,7 +1956,8 @@ mod tests {
         let mut w = world();
         w.world_surface = 10.0;
         put(&mut w, 50, 50, 1, 0, 0);
-        w.tiles[w.index(50, 50)].wall = 1; // stone wall blocks wind
+        let idx = w.index(50, 50);
+        w.tiles[idx].wall = 1; // stone wall blocks wind
         let mut rand = ScriptRand::new().with(&[0, 1]); // N1200, N2 -> 1 (count 2)
         let (out, _, _, _) = run(&w, 50, 50, &ctx(), &mut rand, 1);
         assert_eq!(rand.log, vec!["N1200", "N2"]);

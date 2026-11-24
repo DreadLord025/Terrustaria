@@ -1857,7 +1857,7 @@ pub(crate) fn ai_ice_whip_slicer(
     world: &World,
     npcs: &[Npc],
     immune: &[i32],
-    player: Option<&mut crate::player::Player>,
+    mut player: Option<&mut crate::player::Player>,
     local_owner: u8,
     rng: &mut dyn DropRng,
 ) -> bool {
