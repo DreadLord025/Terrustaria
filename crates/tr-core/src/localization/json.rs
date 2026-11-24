@@ -30,8 +30,7 @@ impl LanguageManager {
                 let key = format!("{category}.{name}");
                 if !self.update_text_value(&key, value) && can_create_categories {
                     let english = self.active_culture == Some(GameCulture::DEFAULT);
-                    self.localized_texts
-                        .insert(key.clone(), LocalizedText::new(&key, value, english));
+                    self.insert_text(key.clone(), LocalizedText::new(&key, value, english));
                     self.category_grouped_keys
                         .entry(category.clone())
                         .or_default()

@@ -6932,6 +6932,358 @@ Deviations: the chat UI landed with S1-E-10b (below); the port's
 `ConditionalDialogue` (the pending-dialogue half, `NPC.cs:6539`) is not
 ported; the C#'s `nextDialogue` branch (`:93768-93771`) comes with it.
 
+### W4-d120 re-pin (2026-11-21, code-only mode)
+
+The ladder was re-verified line-by-line against `NPC.cs:93766-94821` and
+re-pinned; **code-only mode** — no compiler/tests invoked, the new census
+witnesses are written not run.
+
+- **The flag renames**: the presence scan's ids were always the C#'s
+  (`:93831-93854`), but four fields were misnamed — 160 is the TRUFFLE
+  (`flag10`, not the Party Girl), 229 the PIRATE (`flag12`, not the
+  Zoologist), 208 the PARTY GIRL (`flag14`), 353 the STYLIST (`flag15`).
+  The Dryad's 238 / Clothier's 237 / Tinkerer's 309 / Painter's 251 /
+  Dye Trader's 260 neighbour lines now gate on the right neighbours.
+- **The real Party Girl (208) ladder** (`:94410-94456`): `Next(7)` UP
+  FRONT (before the event text), then the DD2/male/Stylist gates, then
+  the seven fixed lines 265/266/267/269/270/271/272 (268 is the male-gate
+  line, not a switch arm). The old port carried the Truffle's (160,
+  `:94302-94341`) ladder here; the Truffle kind is unported, so that
+  ladder has no consumer yet.
+- **The new arms**: the Stylist (353, `:94614-94749` — the moon-phase
+  fixed band 5/4 + the `StylistChatter` rows), the Tavernkeep (550,
+  `:94784-94787` → `Lang.BartenderChat`, `Lang.cs:331-338` — the T3-first
+  tier line), the Sleeping Golfer (589), the Bound Goblin (105 → dialog
+  120), the Bound Mechanic (123 → 156) and the Webbed Stylist (354 →
+  `Next(315, 319)`).
+- **The two pick directions** (`LanguageManager.cs:392-411`): the
+  `SelectRandom` chatter picks the REVERSE index (`--num == index`:
+  index 0 answers the LAST matching row), the `FindAll` mixed arms
+  (Nurse/Tinkerer/Mechanic/Stylist) the FORWARD row (`array[num - k]`).
+  The tr-core registry keeps the Dictionary's INSERTION order
+  (`text_order`) because the order is behaviour. The count draw ALWAYS
+  fires — even `Next(0)` advances the stream (`UnifiedRandom.cs:140`).
+- **The event census** (`:94860-94895`): the 1/3 roll fires only while
+  the event is active (`&&` short-circuit); the party's
+  `HasNoPartyText` gate (`NPCID.cs:10461`: 441/453) sits AFTER the roll;
+  an empty category pick declines the event and the next event rolls.
+  The Tax Collector's `(roll == 0) & flag` arms use the NON-short-circuit
+  `&` — all four `Next(6)` draws fire even with every neighbour absent.
+- **The live triggers** (`talk_to_npc`): the graveyard zone, the party,
+  the rain-not-storm, the happy windy day, the storm, the lanterns, the
+  Moon Lord and the DD2 T3 latches all read live App state now; the
+  player feeds (`statDefense`, `Player.head` vanity/armor headSlot,
+  `NormalizedLuck` ±cap ratio, `Player.Male` via the session draft's
+  cloth style, `anglerQuestFinished`) replaced the stubs. `Main.raining`
+  reads the LIVE `Rain` latch (`world.raining` only mirrors it at save).
+- **The FreeCakeDialogue** (`ConditionalDialogue.cs:51-66` — the only
+  registered conditional): the talk arm consumes the `NPC.freeCake`
+  latch a natural party sets (`BirthdayParty.cs:106`), gifts the cake
+  (3750, `QuickSpawnItem` → the inventory slot walk, overflow drop at
+  the player centre), then draws the `Cake{Next(1,4)}` text. The 10-tick
+  `CheckDialogue` refresh (`NPC.cs:90519-90532`) collapses to the talk
+  (the condition is the world-level latch, not per-NPC state). EVERY
+  dusk clears the latch (`Main.cs:65222`); `world_clear` clears it too
+  (`WorldGen.cs:6945`).
+- **Remaining deviations**: the Old Man (37), Truffle (160), Steampunker
+  (178), Pirate (229), Cyborg (209), Skeleton Merchant (453), Santa
+  (142), the unconscious Bartender (579) and the town pets/slime arms
+  (`:94804-94819`) have no ported kinds — their ladder arms wait for the
+  kinds; `Main.remixWorld` and `WorldGen.crimson` stay false (the port
+  carries no world-evil flag); the cake gift's `newAndShiny`/pickup-sound
+  side effects ride the port's existing pickup seams, not the talk.
+
+### W4-d120 kind census + the remaining GetChat arms (2026-11-21, code-only mode)
+
+The directive's "kinds WITH rows" census, read off the PUSHED branches
+(`git rev-list a725acb0..origin/<lane>`), not memory:
+
+- **d35 (71-140, eb0f1005, 8 ahead)**: 33 kinds landed — NONE has a
+  `GetChat` arm (the Werewolf 104 / Clown 109 etc. are enemies; the C#
+  ladder `NPC.cs:93766-94821` carries no case for any of them). The
+  Truffle 160 is NOT in d35's band — it sits in d36's 141-210 lane.
+- **d34 (1-70, 4012a7f3, 2 ahead)**: the **OldMan 37** kind + identity
+  rows ARE claimed and pushed (phase 1, protocol id 268) — d120 ports
+  NO OldMan rows; only its `GetChat` arm (`:94017-94037`) lands here.
+- **d37 (211-280, 750d8e44, 1 ahead)**: the **Pirate 229** kind IS
+  claimed (protocol id 361, the `is_town_npc_like` extension included) —
+  only its `GetChat` arm (`:94569-94609`) lands here.
+- **d40 (421-490, 8fe1d6d3, 12 ahead)**: the **SkeletonMerchant 453**
+  kind IS claimed at its VANILLA protocol id 453 (batch 10;
+  `is_town_npc_like` carries the `NPC.cs:6860` row, the ctor friendly
+  flag, the humanoid FindFrame arm) — only its `GetChat` arm
+  (`:94762-94775`) lands here.
+- **d36 (141-210) / d39 (351-420) / d41 (491-560) / d42 (561-630) /
+  d43 (631-697)**: 0 ahead — the SantaClaus 142, Truffle 160,
+  Steampunker 178, Cyborg 209 and BartenderUnconscious 579 kinds are
+  UNCLAIMED. d120 ports the small SetDefaults rows itself (the claim
+  doc `tools/_d120_claim.md`, pushed FIRST): the five town kinds +
+  their `GetChat` arms, 3 kinds per commit.
+- **f43 (79a037f5)** owns the town pets 637/638/656 + the town slimes
+  670/678-684 SPAWN arms (`town_arrival_pets.rs`, id-keyed, unwired);
+  its census §Port-gaps-2 assigns the pet/slime ENUM rows to d43 —
+  d120 leaves those kinds and their `:94804-94819` arms to the
+  d43/f43 wiring lane. **c41**'s two pushed commits are docs-only
+  (the town-gate witnesses) — no kind claims there.
+
+The five new kinds' protocol ids ride the port-local 241-245 band
+(free in `to_u16`/`from_u16`/`render_key` on main AND on every pushed
+sibling — the d34 266-275, d37 354-399, d35 429-461, d40 430-488
+bands all clear it). cs_id/net_id keep the vanilla types. The
+SetDefaults rows are verbatim (`NPC.cs:10791-10804` Santa,
+`:11003-11016` Truffle, `:11252-11265` Steampunker, `:11682-11695`
+Cyborg — NPCHit4/500 HP/def 30/kb 0.25, `:16554-16568` the
+unconscious Bartender — 34x8, aiStyle 0, NPCDeath6, rarity 1); all
+five carry `SpecificallyImmuneTo {31}` (`NPCID.cs`'s
+DebuffImmunitySets rows). The bestiary entries follow
+`AddTownNPCs_Manual` (`BestiaryDatabaseNPCsPopulator.cs:809-831`);
+579 is `Hide = true` (`NPCID.cs:5178-5184`) — it folds onto the
+Tavernkeep's row (the Sleeping Angler precedent).
+
+Deliberate deviations (this slice):
+
+1. **The housing-PLACEMENT set stays narrow** — the four town kinds
+   join `is_town_resident()` (the save/resident-count set, the
+   M4-TOWN-19 Zoologist/Princess precedent) and `is_town_npc_like()`
+   (the C# `townNPC` flag's talk/melee/net consumers) and so
+   `is_friendly()`, but NOT `is_town_npc()` (the narrow
+   `quick_find_home` placement set): the arrival-ladder gates +
+   housing placement are the c41/f43/d118 lanes' surgery. The
+   unconscious Bartender 579 is a bound transient (NOT `townNPC` in
+   the C#) — it joins only `is_friendly()`'s bound list; its
+   talk-gate (`Main.cs:43047`'s explicit `579`) rides the same
+   pre-existing bound-form gap as 105/106/123/354/376/589 (the
+   `is_town_npc_like` gate the talk arm reads).
+2. **Sheets deferred** — NPC_142/160/178/209/579 are NOT packed: the
+   skyline atlas stands at 8115 px (main set) / 8119 px (full set)
+   against the 8192 bound (`tools/atlas_sim.js` re-measured); the
+   ~1100-px town strips do not fit (the wyvern/d35 precedent). The
+   draw arms read `npc_sheet` → None → skip; the bestiary portraits
+   rest the SetDefaults box.
+3. **The AI arms**: Santa/Truffle/Steampunker/Cyborg ride the
+   `update_guide` town-wander stand-in (the M4-TOWN roster's shape;
+   the faithful aiStyle-7 machine is `npc_ai_town.rs`, the b3 lane);
+   BartenderUnconscious holds still (aiStyle 0, the bound-form
+   precedent — the 579→550 talk transform is the wiring lane's).
+4. **The `npc_add_height` town list** gains the five kinds (the C#
+   `townNPC && ai[0] == 5` sitting row, `Main.cs:22169-22181`); the
+   Steampunker's `num = 2f` row (`:22064` region) and the
+   unconscious Bartender's `num = -2f` (`:22152-22155`) are carried.
+5. **The SkeletonMerchant chat arm's category pick** is the C#'s
+   `Language.RandomFromCategory` (`LanguageManager.cs:413-419` — the
+   FORWARD `keys[Next(count)]` index over `_categoryGroupedKeys`),
+   NOT the reverse `SelectRandom` the other mixed arms' chatter rows
+   use; the Cyborg's `FindAll` row IS forward (`array4[num12 - 5]`).
+   The Santa/Truffle/Steampunker ladders draw their fixed-band
+   `Next(3)/(6)/(5)` UP FRONT, before `HasSpecialEventText`
+   (`:94280`/`:94304`/`:94344`) — the Party Girl precedent.
+6. **The Pirate's mixed arm draws FIRST** (`:94571-94573`:
+   `Next(6 + FindAll length)` before the event text), the
+   `!Player.Male` gate rides `Next(5)`, and the fixed band skips 276
+   (273/274/275/277/278/279).
+
+### W4-d120 final census (2026-11-21, code-only mode) — GetChat complete + the sibling cross-notes
+
+The FULL `NPC.GetChat` census (`NPC.cs:93766-94821`, every arm read
+against `crates/tr-app/src/npc_chat.rs` + the pushed f38/f41/g58 diffs):
+
+- **All 40 arms accounted for** (39 type cases + the `IsTownSlime` set
+  arm). The 36 type cases 17/18/19/20/37/38/54/105/107/106/108/123/
+  124/22/142/160/178/207/208/209/227/228/229/354/353/368/376/369/453/
+  441/579/550/589/588/633/663 were ported by the re-pin + arms A/B/C;
+  the LAST four (637/638/656 pets + the `IsTownSlime` arm
+  `:94816-94819`) land in arms D — type-keyed until d43/f43 merge.
+  The pet filters are DOT-LESS (`CatChatter.Chatter` matches
+  `Chatter_1/2/3`, `Lang.cs:360-373` — the `BloodMoonFishing` shape);
+  `Lang.GetSlimeType`'s colour words (`:375-406`) feed
+  `Slime<Colour>Chatter.Chatter` (`:408-411`). The slime colour is the
+  recorded Blue default until d43's `SlimeVariant` kinds arrive (the
+  port's `Npc.slime` field carries no town-slime colours yet).
+- **The happiness-mood lines are NOT GetChat arms** (the g58/f38 naming
+  census): the mood report rides `Player.SetTalkNPC`'s
+  `currentShoppingSettings` latch + the `ReportHappiness` BUTTON
+  (`NPCInteractions.cs:289-312`, g58 P2) and the homeless text rides
+  `RequestHome` (`:314-368`, `TownNPCMood_<Name>.NoHome` + the
+  Zoologist `Transformed` suffix + the pet/slime category overrides +
+  the Truffle's `HousingRequirements_Truffle` tail) — g58's lane, not
+  the ladder. The only in-ladder mood-adjacent line is the Dryad's
+  cola override (`:94012-94015`, ported).
+- **f38 vs f41 union**: both branches carry the SAME
+  `check_dialogue`/`cake_chat` block (f41 = f38's + the gift-before-
+  text draw-order note, research/70 §3). d120's `talk_to_npc` already
+  drains the gift side effects BEFORE the Cake text draw (the
+  `the_party_girl_gifts_the_cake_then_draws_the_text` +
+  `a_full_inventory_overflows_the_cake_to_a_world_drop` witnesses pin
+  the order) — the merger keeps ONE copy of the block (f41's comment
+  superset) and d120's talk seam; no behaviour conflict.
+- **g58's zoologist re-pin**: g58 D2 moves the lycantrope predicate to
+  `happiness::should_bestiary_girl_be_lycantrope` (shared with the
+  mood report's `Transformed` suffix). d120's inline copy
+  (`npc_chat.rs` zoologist) is the SAME predicate (`NPC.cs:93753-
+  93764`) — the merger keeps g58's shared-fn call; no behaviour
+  conflict.
+
+**The sign-half compose verify (f22b, `NPCChatPanel-sign`)** — f22's
+`ui/npc_chat.rs` diff read against `NPCChatPanel.cs` line-by-line:
+
+- `interactions(sign_open, edit_sign)` = Close (`inter[52]`) + the
+  sign's Edit/Save toggle (`inter[48]`/`[47]`, `OpenSign.GetText`
+  `NPCInteractions.cs:22-29`) — matches the registry order (Close
+  registered `:515`, OpenSign `:516`) and `PrepareInteractions`'
+  Condition filter (`:164-175`). VERIFIED.
+- `interaction_rects`' per-button walk (x += width + 30, `:135`; the
+  `num % 4 == 0` reset, `:103-107`; the 260-px shrink `:113-117`) —
+  VERIFIED for the ≤4-button rows the port renders. The C#'s row
+  reset also steps y (`num / 4 * 22`, `:106`) and
+  `_neededInteractionLines = ceil(count/4)` (`:174`) grows the panel;
+  f22 keeps `INTERACTION_LINES = 1` — correct while only Close+Sign
+  render, but the Shop/Happiness/Home rows (g58/f38's buttons) push
+  the count past 4: the merger must make the line count DYNAMIC
+  (`ceil(labels.len()/4)`) and add the y-step. Recorded for the
+  panel-merge lane; no d120 edit (f22 owns the file half). The exact
+  2-hunk patch against f22's tip `be73b87b5` is PUBLISHED in the retire
+  note (research/143 §1 — the dynamic `interaction_lines` fn +
+  `panel_rect`'s live-count parameter, and `interaction_rects`' y-step).
+- The caret (`DrawText :236-262`): f22 gates `edit_sign &&
+  !lines.is_empty()`, measures the last line at scale 1, advances the
+  20-frame `TextBlinker` (the `ChestUI.cs:175-179` shape = the panel's
+  own `++count >= 20` toggle `:254-258`), draws "|" at state on —
+  VERIFIED. The IME composition half (`:242-253`) is recorded
+  unported (f22's note). One C# nuance: the panel's blinker fields
+  are per-panel state (`:20-22`), f22 threads the chest editor's
+  `TextBlinker` type — same maths, the instance is the caller's.
+- `CanHoldConversation` (`:276-283`: talkNPC < 0 → sign != -1) and
+  the sign-open `allowRichText = false` path (`:38`, the
+  `DrawBorderStringFourWay` branch `:232`) — f22's phase B wires the
+  sign gate; d120's text-only panel keeps the rich-text branch (the
+  talk case). VERIFIED consistent.
+
+**The shop-button chain (census complete)** — `GetChat` answers the
+talk line (`Main.cs:43081-43082`); the SHOP is a panel interaction
+(`OpenShop`, `NPCInteractions.cs:44-77`): label `Lang.inter[28]` =
+"Shop" (the Painter's second row `Shop(227, 25, "GameUI.PainterDecor")`
+`:512` labels "Decor"), `Interact` → `Main.OpenShop(shopIndex)`
+(`Main.cs:40459-40467`: playerInventory, stackSplit 9999, npcChatText
+CLEARED, SetNPCShopIndex, SetupShop, sound 12 — ZERO draws in the
+chain). d120 lands the claimed kinds' registry rows in
+`shop_index_for_kind` (Santa 9 / Truffle 10 / Steampunker 11 / Cyborg
+14, `:496-501`) + the cs_id-keyed Pirate 17 / SkeletonMerchant 20
+twins; the stock for 9/10/11/14 is d122's pushed `shop.rs` cases
+(`Chest.cs:2091-2135`/`:2360`), the Tavernkeep 21 row stays d122's
+(no duplicate). The port's `try_open_town_shop_at_cursor` drains the
+same OpenShop effects (the cursor-open stand-in); the BUTTON row is
+the panel lane's (f22's `interaction_rects` generalizes it). The
+no-shop set: Nurse 18 / OldMan 37 / Guide 22 / TaxCollector 441 /
+Angler 369 / the bound forms / the pets+slimes. The full 25-row
+registry (`Initialize`, `:488-512`): 17→1, 19→2, 20→3, 38→4, 54→5,
+107→6, 108→7, 124→8, 142→9, 160→10, 178→11, 207→12, 208→13, 209→14,
+227→15, 228→16, 229→17, 353→18, 368→19, 453→20, 550→21, 588→22,
+633→23, 663→24, 227→25 (decor).
+
+**The BartenderUnconscious 579 spawn census (the d41 cross-note)** —
+the C# spawn arm is `NPC.SpawnAnNPC`'s else-if (`NPC.cs:1656-1659`):
+`!NPC.savedBartender && DD2Event.ReadyToFindBartender &&
+!NPC.AnyNPCs(579) && Main.rand.Next(80) == 0 && !this.waterTile` →
+`SpawnNPC(spawnTileX*16+8, spawnTileY*16, 579)` (the `SpawnNPC`
+wrapper `:5238-5267` → `NewNPC` with the natural-spawn source; the
+slime-1 rerolls `:5240-5250` never fire for 579). The gate reads:
+`ReadyToFindBartender => NPC.downedBoss2` (`DD2Event.cs:87` — the
+EoW/BoC down, NOT a DD2-invasion flag). Chain position (tab-depth
+census): the arm is a TOP-LEVEL else-if of `SpawnAnNPC`'s big ladder
+(3 tabs, `:1656`) — the sibling AFTER the wall-244 marble-critter
+block (`:1584`, whose inner `spawnTileY > worldSurface` gate `:1597`
+holds the surface-critter chain) and BEFORE the spider-wall arm
+(`:1660`); it fires on ANY spawn tile the earlier arms declined
+(no biome gate of its own beyond `!waterTile`). The draw is the BARE
+`Main.rand.Next(80)` (no RollLuck), and `savedBartender` raises on
+the 550 TRANSFORM — the talk's `AI_000_TransformBoundNPC(i, 550)`
+(`:19857-19860`) runs `Transform(550)` THEN
+`AI_007_TownEntities_UpdateSavedStates` (`:44884-44894`), whose
+switch case 550 sets the flag (`NPC.cs:52934-52963`, the set at
+`:52959-52961`); the same update also runs per-tick from the town AI
+(`:53185`), so a housed Tavernkeep keeps it raised. Not on the 579
+spawn. The bound 579 also skips
+`TargetClosest` (`:19864-19868`) and floats in liquid (`:19869+`,
+the Sleeping Angler twin). d41's pushed tip is a CLAIM only
+(4ed22f0b3, band 491-560, "DD2 band 548-560 mine") — 579 is OUTSIDE
+that band (d42's 561-630); d42's tip is a non-compiling WIP
+checkpoint (88df58090). d120 owns the 579 KIND + chat arm (the claim
+doc); the SPAWN arm + the 579→550 talk transform stay the wiring
+lane's (c41/f43's town-spawn surgery or d42's kind lane) — this
+census is the cross-note for whichever lands it. NO spawn code in
+d120 (the directive's scope: census + cross-note).
+
+**The d36 collision keep-one note (for the d37c matrix)** — the
+SantaClaus 142 / Truffle 160 / Steampunker 178 kinds: d120's claim
+(dad8db3d9, 2026-11-21 05:48 +0200, pushed) PREDATES d36's claim
+(65e481f96, 06:03 +0200, an EMPTY commit — no files, no census doc).
+d36's band claim (141-210, port-local proto 731-780 per research/108)
+covers the three types, but d120's kinds A commit (2891b0bd8, 06:27)
+already carries the verbatim SetDefaults rows + protocol band 241-243
++ bestiary/town-flag/frame/netglue joins + the witnesses. KEEP-ONE:
+**d120's rows are the landed truth** (claimed first, code pushed);
+d36 must SKIP 142/160/178 in its census (like its own c4b-157 /
+d23b-175 skips) and renumber its remaining ~47 kinds into 731+
+without the three. The Cyborg 209 is ALSO d120's (241-245 band) —
+d36's band ends at 210, so 209 is inside it too: skip it as well.
+The BartenderUnconscious 579 is outside d36's band (no collision).
+Protocol-space note: d120's 241-245 band is free in
+`to_u16`/`from_u16`/`render_key` on main + every pushed sibling (the
+claim doc's census — no `=> 241..245` arm exists on any of them);
+research/108's §3 plan (d37's reconcile, 05:31) predates d120's
+claim and lists 237-249 among the base roster's "reserved holes —
+cs-owned, never reassign". The matrix must RESOLVE that tension:
+d120's five kinds sit in that hole (241-245) with the claim-first
+right (dad8db3d9 05:48 < d36's 06:03 empty claim; the kinds code
+2891b0bd8/e4e400629 pushed). The keep-one resolution: add the d120
+block (5 kinds, proto 241-245, cs 142/160/178/209/579) to the union
+plan's "keep untouched" list and strike 241-245 from the reserved
+holes (237-240/246-249 stay reserved). If the matrix instead holds
+the holes sacred, d120's band renumbers to the 731+ port-local
+corridor AHEAD of d36's block (the d35 renumber precedent — five
+`to_u16`/`from_u16` arms + the witness pins, cs_id/net_id unchanged);
+either way the KINDS stay d120's, only the protocol ids move.
+
+### W4-d120 RETIRE (2026-11-21, code-only mode) — GetChat-40 COMPLETE + the lane hand-offs
+
+The retire pass (research/143, the lane tips re-read from origin):
+
+- **GetChat COMPLETE — all 40 arms accounted** (36 type cases + arms D's
+  pets 637/638/656 + the `IsTownSlime` set arm). The declaration + the
+  per-arm roster: research/143 §4. The happiness/homeless lines are
+  BUTTONS (g58), the shop is the OpenShop button (d120's registry rows
+  landed) — no ladder gaps remain. The selection ladder needs NO
+  further ports; the remaining chatter scope is other lanes' (the
+  panel buttons f22c/g58/f38, the 579 spawn arm, the d43/f43 kinds).
+- **The f22c dynamic-gap patch published** (research/143 §1): the exact
+  2-hunk diff against f22 tip `be73b87b5` — `INTERACTION_LINES` →
+  `interaction_lines(count) = count.div_ceil(4)` (`NPCChatPanel.cs:174`),
+  `panel_rect` takes the live count (`chat_box_height` already carries
+  the `:68` growth), `interaction_rects` adds the `num/4*22` y-step
+  (`:106`). Count ≤ 4 keeps today's pixels exactly. No d120 code edit —
+  f22 owns the sign-aware file (d120's copy is the pre-sign text-only
+  version, unchanged).
+- **The d43 slime colour words are ALREADY wired** (research/143 §2):
+  d43's tip is 0 ahead of main (claim-only, no SlimeVariant town kinds);
+  d120's arm keys on the vanilla type (`is_town_slime(ty)` +
+  `slime_chat_colour`'s full `Lang.GetSlimeType` switch, all eight words
+  witness-pinned) — the moment f43's license arms spawn a kind with
+  cs_id 670/678-684 the correct `Slime<Colour>Chatter` answers with ZERO
+  d120 edits. The port's wild-slime `SlimeVariant` enum
+  (`npc/data.rs:14-24`) is NOT the town vehicle (no Old/Rainbow/Copper).
+- **The 579 spawn contract published** (research/143 §3, for d42b / the
+  spawn lane): the full arm (`NPC.cs:1656-1659` — tab-depth, the
+  short-circuit gate order, the bare `Next(80)`, the Bottom-anchored
+  34×8 placement), the 579→550 talk transform
+  (`AI_000_TransformBoundNPC` → `UpdateSavedStates` case 550 raises
+  `savedBartender`, the bottom-anchored hp-ratio Transform + homeless
+  home), the port's rescue-fn/cadence precedents, and the NEW collision:
+  d42 batch 1 (`3836a2d1a` 06:46) re-lands the 579 kind AFTER d120's
+  claim-first push (`e4e400629` 06:28) — the d37c matrix keeps d120's
+  row (protocol 245), d42's 579 hunks drop at the merge (its other
+  578/580-582 kinds untouched). d41 stays claim-only 491-560 (579
+  outside); the spawn arm is unclaimed on every pushed tip.
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”
