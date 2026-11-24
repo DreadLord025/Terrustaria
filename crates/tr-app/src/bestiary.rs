@@ -4270,6 +4270,11 @@ pub fn try_entry_for_npc(
         // OWN ENTRIES entry net 375 for the cs_id fallback, the
         // ForceBubble precedent; mirroring it here would break the
         // s1_f_3 cs_id==net gate.)
+        // W4-c6 style-59 wiring: the blade's bestiary draw modifiers are
+        // Hide=true (`NPCID.cs:3398-3403`) — the credit folds onto the
+        // Pumpking (the fishron-hazard precedent). The DRAW sheet stays
+        // NPC_328 through `texture_net_id`'s own row.
+        NpcKind::PumpkingBlade => NpcKind::Pumpking,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -4416,6 +4421,14 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // Bubble precedent; its own ENTRIES entry + cs_id 375 stand for
         // the not-catchable friendly/immunity gate).
         NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
+        // W4-c6 style-59 wiring: the blade's Hide=true draw modifiers
+        // (`NPCID.cs:3398-3403`) — no entry of its own; the credit folds
+        // onto the Pumpking (the ForceBubble/fishron-hazard precedent).
+        // The populator DOES attach invasion-spawn info to entry 328
+        // (`BestiaryDatabaseNPCsPopulator.cs:1655`) — the entry exists in
+        // the vanilla DB but is hidden from the grid; the port's fold
+        // keeps the credit on the boss row like every Hide=true rider.
+        NpcKind::PumpkingBlade => NpcKind::Pumpking,
         other => other,
     };
     ENTRIES

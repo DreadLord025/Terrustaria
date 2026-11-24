@@ -472,6 +472,10 @@ pub const GREEK_FIRE_1: u16 = 326;
 pub const GREEK_FIRE_2: u16 = 327;
 /// `ProjectileID.GreekFire3` (328) — the Greek fire's third size.
 pub const GREEK_FIRE_3: u16 = 328;
+/// `ProjectileID.FlamingScythe` (329, `Projectile.cs:4215-4225`) — the
+/// Pumpking blade's volley shot (W4-c6 style-59): 80x80, aiStyle 56,
+/// hostile, penetrate -1, no tile collide, timeLeft 420, light 0.25.
+pub const FLAMING_SCYTHE: u16 = 329;
 /// `ProjectileID.Skull` (270, `Projectile.cs:3558-3566`) — the Skeletron
 /// head's spin shot (the expert mode's fired skull).
 pub const SKULL: u16 = 270;
@@ -1645,6 +1649,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         BALL_OF_FROST => 0.8,                  // `:3364`
         MAGNET_SPHERE_BALL => 0.5,             // `:3376`
         GOLEM_EYE_BEAM => 0.3,                 // `:3436`
+        FLAMING_SCYTHE => 0.25,                // `:4219` (W4-c6 style-59)
         CHRISTMAS_HOOK => 0.5,                 // `:4256`
         MINI_RETINA_LASER => 0.75,             // `:4736`
         ANTI_GRAVITY_HOOK => 0.7,              // `:5186`
@@ -2180,6 +2185,23 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (false, -2, false, -1, 0, 1.0),
+            ),
+            // `Projectile.cs:4215-4225` — the Flaming Scythe (329, W4-c6
+            // style-59): 80x80, aiStyle 56 (the spin flight, `:28845-28866`),
+            // hostile, `penetrate = -1`, `tileCollide = false`,
+            // `timeLeft = 420`; the `light = 0.25f` rides
+            // `set_defaults_light` below.
+            FLAMING_SCYTHE => (
+                80.0,
+                80.0,
+                56,
+                -1,
+                420,
+                0,
+                false,
+                false,
+                false,
+                RESET_STATE,
             ),
             // `Projectile.cs:9199-9206` — the ice chunk: 16x16, aiStyle 1,
             // `penetrate = -1`, `extraUpdates = 2`, `timeLeft = 220`,

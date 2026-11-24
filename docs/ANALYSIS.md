@@ -24890,16 +24890,82 @@ recorded seam as the 57/58 arms — boundary-tick divergence only). The
 the `SendData(28)` net arm is the wiring's fan-out. The `ai[1]` slot
 clamp is the caller's (the seam's `None` = missing/inactive/non-58).
 
-**Wiring deferred** (the `npc_ai_style21.rs` precedent): no
-`NpcKind::PumpkingBlade` exists (the Pumpking itself rides the hover
-stand-in on main), so there is no style-59 dispatch arm to claim. The
-follow-up needs: the kind row + defaults table, the aiStyle-axis claim,
-the carrier-slot resolution + the `PumpkingCarrier` feed, the
-`BladeShot` spawn drain (329's own aiStyle-56 arm is S1-D-4 territory),
-the two carrier-side `NewNPC` spawns (`:33093-33103` — keep the ORDER:
-blade −1 first, blade +1 second with `ai[3] = 150`, `NewNPC`'s
-Bottom placement `:80770`), the chain draw (`Main.cs:22669-22700`) and
-the death cue/credit resolution.
+**Wiring — Phase 1 landed (W4-c6 style-59, 2026-11-20, code-only mode).**
+`NpcKind::PumpkingBlade` (328) rides the roster with the verbatim
+`SetDefaults` row through the port's piecewise tables (`npc.rs`'s
+kb/defense/value arms, `npc/data.rs`'s to_u16/from_u16/ai_style/size/
+max_hp/contact_damage/sound/no_gravity rows, `npc_buffs.rs`'s
+{20,24,31,323} immunity row `NPCID.cs:8002-8008`, the `dontTakeDamage`
+ctor row). The aiStyle axis claims 59 (`npc.rs`'s `update_rng_dust`
+match): the SOLO path passes `None` (no pool) — the blade damps +
+despawns; the shot queues on `wants_hostile_shot_ai` (the ai0/ai1 seam),
+and the noGravity/noTileCollide integration tail runs the raw add. The
+kind arm is an `unreachable!` marker (the ForceBubble precedent). The
+bestiary credit FOLDS onto the Pumpking (Hide=true, `NPCID.cs:3398-3403`)
+— `cs_id` rides the folded net id 327 (the s1_f_3 invariant, the
+fishron-hazard L-B precedent), while `texture_net_id` keeps the DRAW
+sheet NPC_328 (packed via `PUMPKING_BLADE_SHEET`). The wave-ladder family
+map keeps 328 OUT (the blade spawns only from the carrier's init); the
+boss-cap row weighs 0 (`npcSlots = 0f`).
+
+**Wiring — Phase 2 landed (W4-c6 style-59, 2026-11-20, code-only mode).**
+The carrier feed: `world_sim/npcs.rs`'s tick-start pre-pass (the
+ForceBubble host pre-pass's shape) resolves each living blade's
+`carrier_uid` to the current Pumpking slot (`:33203`'s active + aiStyle-58
+gate — 327 is the style's only kind), keeps the `ai[1]` slot write-through
+aligned (`:33201`; -1 when the link is gone) and stamps
+`Npc::pumpking_blade_carrier` with the centre/top/`ai[1]`/`ai[3]` facts; a
+link-less net blade falls back to the first living Pumpking (the Moon
+Lord family scan's shape). ORDER DEVIATION: the C# reads the carrier at
+the blade's own slot turn; the port stamps at tick start — a carrier
+whose slot is later reads its previous-tick centre (the one-tick lag the
+carrier write-through family already carries). The pair spawn: the
+aiStyle-58 init arm (`npc_ai_pumpkin_boss.rs`, `:33087-33104`) raises
+`Npc::wants_blade_pair`; the sim's drain (the ForceBubble drain's shape)
+spawns LEFT `ai[0] = -1` first, RIGHT `ai[0] = 1` + `ai[3] = 150` second,
+Bottom-placed at the carrier's TRUNCATED centre (`NewNPC`, `:80770`),
+uid-linked, target copied, `timeLeft = 937` (`:80772`, `activeTime = 750`
+`:95186`). ORDER DEVIATION: the drain runs after the tick — the placement
+reads the carrier's POST-integration centre and the blades' first AI tick
+is the NEXT tick. The two `NewNPC` calls draw no `Main.rand` outside the
+`getGoodWorld` variant roll (`:80752`, constants-off) — stream-exact. The
+`BladeShot` drain centres the 329 on the ai0/ai1 lane
+(`NewProjectile`'s half-extent subtract, `Projectile.cs:10876-10877` —
+the fishron-bolt precedent; every other ai-lane requester keeps its
+convention). The FlamingScythe row lands in `proj_data`
+(`Projectile.cs:4215-4225`: 80×80, aiStyle 56, hostile, penetrate −1,
+`tileCollide = false`, `timeLeft = 420`, light 0.25 via
+`set_defaults_light`) with the aiStyle-56 dispatch arm
+(`projectile.rs::ai_flaming_scythe`, `:28845-28866`): the one-tick
+`localAI[0]` latch copies ai0/ai1 → rotation/spriteDirection, the
+STRICTLY-<16 Manhattan ×1.05 spin-up, the vx-sign direction (0 → +1), the
+POST-spin-up speed × 0.025 × direction rotation and the free-move
+`kill_step` tail (`:20445`). RNG-free. The death cue rides the existing
+`death_sound()` dead-pass batch (the row's NPC_Killed_1 = NPCDeath1,
+`npc/data.rs`'s Phase-1 row) — the module's pitch-roll note is satisfied
+by that seam. 2 sim witnesses (`w4_c6_the_pumpking_init_drains_the_blade_pair`,
+`w4_c6_the_blade_volley_drains_a_centred_flaming_scythe`) written NOT run.
+
+**Wiring — Phase 3 landed (W4-c6 style-59, 2026-11-20, code-only mode).**
+The chain draw (`Main.cs:22669-22700`): `render/entities.rs`'s
+`pumpking_blade_chain` computes the two link centres + rotations — start
+(position.X + width·0.5 − 5·ai[0], position.Y + 20), link 0's 92-px step
+along (dx − 200·ai[0], dy + 130) toward the carrier centre −30 Y, the
+half-step origin advance (`:22696-22697`), link 1's 60-px step along
+(dx − 50·ai[0], dy + 80); each rotation is atan2(dy, dx) − the **1.57f
+literal**. NO max-1 length floor (the C# has none — a zero vector reads
+NaN in both). The draw block runs AHEAD of the blade's body quad (the
+C#'s order), one FULL `PumpkingArm` sheet per link, centred, light-tinted
+AT THE LINK POINT (`Lighting.GetColor((int)x/16, (int)(y/16f))`). The
+carrier resolves through the pre-pass's `ai[1]` slot write-through with
+the C#'s INTEGER `width / 2` centres (`:22674-22675`); the -1 sentinel
+reads the (0,0) empty-slot centre (the C#'s inactive-NPC read — no active
+gate). `PumpkingArm` joins `STATIC_SHEET_NAMES` (the M4-NPC-3v packing
+audit pins it). 1 geometry witness
+(`w4_c6_the_blade_chain_steps_92_then_60_from_the_advanced_origin`)
+written NOT run. The carrier's own PumpkingCloak draw
+(`Main.cs:22662-22668`, type 327) stays the aiStyle-58 wiring's follow-up
+— NOT this task's window.
 
 **Verification status — tests written, NOT run (code-only mode,
 2026-11-19).** No cargo/rustc/rustfmt invoked. The port was verified by

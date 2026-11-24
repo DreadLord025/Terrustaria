@@ -3600,6 +3600,10 @@ fn npc_seed(
         crate::npc::NpcKind::MourningWood
         | crate::npc::NpcKind::Pumpking
         | crate::npc::NpcKind::Poltergeist
+        // W4-c6 style-59 wiring: the blade (328, noGravity/noTileCollide)
+        // rides the hover ctor like its carrier — the net state overwrites
+        // the position below; the carrier link rebuilds through the sim's
+        // pre-pass (the wyvern segments' net shape).
         // S1-D-3z — the Drippler (490, noGravity aiStyle 22) rides the
         // hover ctor like the Poltergeist.
         // W4-d38 b1 — the flyers ride the hover ctor.

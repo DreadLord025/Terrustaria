@@ -455,6 +455,9 @@ impl NpcKind {
             NpcKind::MourningWood => 325,
             NpcKind::Splinterling => 326,
             NpcKind::Pumpking => 327,
+            // W4-c6 style-59 wiring: the blade keeps its vanilla id 328
+            // (`NPC.cs:13158-13174`; the slot sits between the Pumpking's
+            // 327 and the Hellhound's 329 — free in the port's id space).
             NpcKind::Hellhound => 329,
             NpcKind::Poltergeist => 330,
             // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
@@ -1286,6 +1289,7 @@ impl NpcKind {
             325 => NpcKind::MourningWood,
             326 => NpcKind::Splinterling,
             327 => NpcKind::Pumpking,
+            // W4-c6 style-59 wiring: the blade's vanilla id (`to_u16`).
             329 => NpcKind::Hellhound,
             330 => NpcKind::Poltergeist,
             // The Frost Moon family (`S1-F-13c` slice B): the vanilla ids
@@ -2835,6 +2839,10 @@ impl NpcKind {
             // The aiStyle-9 spit/flare family (W4-d23): 112/666/516 all
             // carry `HitSound = null` (`NPC.cs:10334`/`:17426`/`:15402`) —
             // no hit cue (the `_ => return None` fallthrough).
+            // W4-c6 style-59 wiring: 328 `SoundID.NPCHit1` (`NPC.cs:13166`,
+            // `SoundID.cs:1257` = (3, 1)). The blade is `dontTakeDamage`,
+            // so the cue only plays on a force-kill path — the row is
+            // carried for the census.
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -3470,6 +3478,12 @@ impl NpcKind {
             // (`NPC.cs:10335`/`:17427`); 516 `DeathSound = null`
             // (`:15403`) — the `_ => return None` fallthrough.
             NpcKind::VileSpit | NpcKind::VileSpitEoW => "NPC_Killed_9",
+            // W4-c6 style-59 wiring: 328 `SoundID.NPCDeath1` (`NPC.cs:13167`,
+            // `SoundID.cs:1315` = (4, 1)) — the despawn's `checkDead` plays
+            // it (`:78186-78194`); the one `Next(-10,11) * 0.01` pitch roll
+            // (`LegacySoundPlayer.cs:693`) rides the death-sound batch on
+            // the `UpdateNpcs` stream (`world_sim/npcs.rs`'s dead pass,
+            // the S1-E-21c convention — NOT the style-59 arm).
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -3696,6 +3710,9 @@ impl NpcKind {
             // kb 0.2 (`NPC.cs:17747-17750`); the 34/289 rows are
             // d34/d38's below (E8 keep-both).
             | NpcKind::WaterBoltMimic
+            // W4-c6 style-59 wiring: the blade's `noGravity = true`
+            // (`NPC.cs:13168`; kb 0, `:13170`).
+            | NpcKind::PumpkingBlade
             | NpcKind::Piranha
             | NpcKind::Shark => true,
             // The Hungry (115, `NPC.cs:10388`) — knockBackResist 1.1, so its
@@ -4113,6 +4130,8 @@ impl NpcKind {
             NpcKind::MourningWood | NpcKind::Everscream => 57,
             // aiStyle 58 - NPC.cs:13146
             NpcKind::Pumpking => 58,
+            // aiStyle 59 - NPC.cs:13162 (W4-c6 style-59 wiring: the
+            // Pumpking's blade, the style's only member — the census).
             // aiStyle 60 - NPC.cs:13373 (`S1-F-13c` slice B)
             NpcKind::IceQueen => 60,
             // aiStyle 61 - NPC.cs:13390
@@ -5104,6 +5123,8 @@ impl NpcKind {
             NpcKind::HeadlessHorseman => (74.0, 70.0),
             NpcKind::MourningWood => (164.0, 154.0),
             NpcKind::Pumpking => (100.0, 100.0),
+            // W4-c6 style-59 wiring: the blade's 80x80 box
+            // (`NPC.cs:13160-13161`).
             NpcKind::Hellhound => (46.0, 30.0),
             NpcKind::Poltergeist => (24.0, 44.0),
             // The Frost Moon family, slice A (`S1-F-13c`): the 338-340 group
@@ -5771,6 +5792,14 @@ impl NpcKind {
             NpcKind::Snail => 359,
             NpcKind::GlowingSnail => 360,
             NpcKind::MagmaSnail => 655,
+            // W4-c6 style-59 wiring — NO hand row for the blade: its
+            // bestiary entry is Hide=true (`NPCID.cs:3398-3403`'s draw
+            // modifiers) and folds onto the Pumpking in
+            // `try_entry_for_npc`, so the net-id fallback reads the folded
+            // 327 — the s1_f_3 cs_id==net_id invariant (the fishron
+            // hazards' L-B gate fix, the destroyer precedent). The vanilla
+            // type 328 rides `to_u16`/`texture_net_id`; the machine reads
+            // its own kind (the aiStyle-59 axis).
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -6318,6 +6347,8 @@ impl NpcKind {
             NpcKind::MourningWood => 14000,
             NpcKind::Splinterling => 1200,
             NpcKind::Pumpking => 26000,
+            // W4-c6 style-59 wiring: the blade's `lifeMax = 5000`
+            // (`NPC.cs:13165`).
             NpcKind::Hellhound => 1800,
             NpcKind::Poltergeist => 1250,
             // S1-D-3ff wave A — the `SetDefaults` lifeMax rows: 16 90
@@ -6977,6 +7008,8 @@ impl NpcKind {
             NpcKind::MourningWood => 120,
             NpcKind::Splinterling => 100,
             NpcKind::Pumpking => 50,
+            // W4-c6 style-59 wiring: the blade's `damage = 65`
+            // (`NPC.cs:13163`).
             NpcKind::Hellhound => 80,
             NpcKind::Poltergeist => 90,
             // S1-D-3ff wave A — the `SetDefaults` damage rows: 16 20

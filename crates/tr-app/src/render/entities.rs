@@ -236,6 +236,11 @@ pub(crate) struct NpcAssets {
     /// sheets' own alpha instead (an alpha-0 tint draws nothing there).
     pub(crate) prime_eyes: Option<BgTex>,
     pub(crate) bone_laser: Option<BgTex>,
+    /// `Images/PumpkingArm` — the Pumpking blade's chain link
+    /// (`Main.cs:22669-22700`): two full-sheet quads from the blade's
+    /// (centre-X − 5·ai[0], y+20) toward the carrier's centre −30, the
+    /// 92/60-length steps with the atan2 − 1.57f rotation.
+    pub(crate) pumpking_arm: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -840,12 +845,14 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(MANEATER_SHEETS)
             .chain(SPIT_FLARE_SHEETS)
             .chain(FLYER14_SHEETS)
+            .chain(PUMPKING_BLADE_SHEET)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
             .collect(),
         prime_eyes: npc_tex(atlas, "Bone_Eyes"),
         bone_laser: npc_tex(atlas, "Bone_Laser"),
+        pumpking_arm: npc_tex(atlas, "PumpkingArm"),
         skeleton: npc_tex(atlas, "NPC_21"),
         undead_miner: npc_tex(atlas, "NPC_44"),
         cave_bat: npc_tex(atlas, "NPC_49"),
@@ -1620,6 +1627,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // TruffleWorm (Hide=true), but its DRAW sheet is its own NPC_375
         // (the fishron-hazard precedent). The eight crawlers ride cs_id.
         NpcKind::TruffleWormDigger => 375,
+        // W4-c6 style-59 wiring: the blade's bestiary credit folds onto the
+        // Pumpking (Hide=true), but its DRAW sheet is its own NPC_328
+        // (`TextureAssets.Npc[328]`) — the fishron-hazard / ForceBubble
+        // precedent. `net_id()` would read the folded 327, so the explicit
+        // row keeps the blade on its own art.
+        NpcKind::PumpkingBlade => 328,
         _ => kind.net_id() as u16,
     }
 }
@@ -1651,6 +1664,47 @@ const PILLAR_SHEETS: &[u32] = &[
     426, 427, 428, 429, // the vortex pillar's mobs
     518, // the solar spear-man
 ];
+
+/// W4-c6 style-59 — the Pumpking blade's two-link chain geometry
+/// (`Main.cs:22669-22700`). Returns the two link quads' (centre X,
+/// centre Y, rotation): from (position.X + width·0.5 − 5·ai[0],
+/// position.Y + 20), link 0 steps 92 px along (dx − 200·ai[0], dy + 130)
+/// toward the carrier's centre −30 Y; link 1 steps 60 px along
+/// (dx − 50·ai[0], dy + 80) from the HALF-ADVANCED point (`:22696-22697`
+/// moves the origin a further half-step after link 0's draw). Each
+/// rotation is `atan2(dy, dx) − 1.57f` (the literal). `carrier` is the
+/// linked slot's centre — `None` reads (0, 0), the C#'s inactive-NPC
+/// slot read (`Main.npc[(int)ai[1]]` has NO active gate; the pre-pass's
+/// -1 sentinel clamps to the empty slot 0).
+fn pumpking_blade_chain(n: &Npc, carrier: Option<(f32, f32)>) -> [(f32, f32, f32); 2] {
+    let (w, _h) = n.size();
+    let (ccx, ccy) = carrier.unwrap_or((0.0, 0.0));
+    let mut vx = n.x + w * 0.5 - 5.0 * n.ai[0];
+    let mut vy = n.y + 20.0;
+    let mut out = [(0.0f32, 0.0f32, 0.0f32); 2];
+    for (i, slot) in out.iter_mut().enumerate() {
+        let (side, down, len) = if i == 0 {
+            (200.0, 130.0, 92.0)
+        } else {
+            (50.0, 80.0, 60.0)
+        };
+        let dx = ccx - vx - side * n.ai[0];
+        let dy = ccy - 30.0 - vy + down;
+        // `92f / (float)Math.Sqrt(...)` — NO max-1 floor (a zero-length
+        // vector reads NaN in the C# too — kept verbatim).
+        let scale = len / (dx * dx + dy * dy).sqrt();
+        vx += dx * scale;
+        vy += dy * scale;
+        *slot = (vx, vy, dy.atan2(dx) - 1.57);
+        if i == 0 {
+            // `:22696-22697` — the half-step advance before link 1 (the
+            // origin ends 1.5× the 92-step from the start).
+            vx += dx * scale / 2.0;
+            vy += dy * scale / 2.0;
+        }
+    }
+    out
+}
 
 /// The Destroyer's segments + the Probe (S1-D-3-wire-destroyer): the
 /// vanilla sheets keyed by their net ids (the head's NPC_134 rides the
@@ -2057,6 +2111,12 @@ pub(crate) const FLYER14_SHEETS: &[u32] = &[
     634, // the Spore Bat
     660, // the Queen Slime minion
 ];
+
+/// W4-c6 style-59 wiring: the Pumpking blade's own sheet
+/// (`TextureAssets.Npc[328]`), keyed by the vanilla net id in
+/// [`NpcAssets::npc_sheet`] — the bestiary credit folds onto the Pumpking
+/// (Hide=true) but the DRAW sheet is its own (the fishron-hazard precedent).
+pub(crate) const PUMPKING_BLADE_SHEET: &[u32] = &[328];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -4708,6 +4768,15 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-c6 style-59 wiring: the blade draws its OWN NPC_328 sheet
+            // (`TextureAssets.Npc[328]`, `Main.npcFrameCount[328]` = 1,
+            // `Main.cs:67116` col 9) at the generic centred anchor — the
+            // pumpkin arm's shape. The visual spin is the rotation (the
+            // whitelist below) + the two-link PumpkingArm chain draw
+            // (`Main.cs:22669-22700`, `pumpking_blade_chain` below the
+            // body arm — drawn ahead of the body quad, as the C#).
+                pumpkin_moon_draw(assets.npc_sheet(328), npc_rows(328), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -4832,6 +4901,126 @@ pub(crate) fn draw_npcs(
         // dropped with d40's dup port — c4's kept impl re-adds it at the
         // small-lanes splice). The draw consumes the ONE gate.
         if n.rotation != 0.0 && npc_rotation_allowed(n.kind) {
+        // W4-c6 style-59 wiring — the blade's two-link PumpkingArm chain
+        // (`Main.cs:22669-22700`, drawn AHEAD of the generic body quad).
+        // Each link is the FULL sheet, centred on its point, rotated
+        // atan2 − 1.57f, tinted by the light AT THE LINK (not the body).
+        // `carrier` resolves through `ai[1]`'s slot (the pre-pass's
+        // write-through); the -1 sentinel reads the (0,0) empty-slot
+        // centre — the C#'s inactive-NPC slot read (no active gate on
+        // `Main.npc[(int)ai[1]]`).
+        if n.kind == NpcKind::PumpkingBlade {
+            if let Some(arm) = assets.pumpking_arm.as_ref() {
+                let carrier = if n.ai[1] >= 0.0 {
+                    npcs.get(n.ai[1] as usize).map(|c| {
+                        let (cw, ch) = c.size();
+                        // `position.X + (float)(width / 2)` — the C#'s
+                        // INTEGER division inside the cast (`:22674`).
+                        (c.x + (cw as i32 / 2) as f32, c.y + (ch as i32 / 2) as f32)
+                    })
+                } else {
+                    None
+                };
+                for (lx, ly, rot) in pumpking_blade_chain(n, carrier) {
+                    let atx = (lx / TILE_PX) as i32;
+                    let aty = (ly / TILE_PX) as i32;
+                    let ac = style.shade(light.get(atx, aty), atx, aty, anim_time);
+                    let center = snap_to_screen([lx, ly], camera, zoom, screen);
+                    let (hw, hh) = (arm.w * 0.5, arm.h * 0.5);
+                    let (s, co) = rot.sin_cos();
+                    let top_left =
+                        [center[0] - hw * co + hh * s, center[1] - hw * s - hh * co];
+                    r.push_sprite_rot(top_left, [arm.w, arm.h], arm.uv, ac, rot);
+                    quads += 1;
+                }
+            }
+        }
+        if n.rotation != 0.0
+            && matches!(
+                n.kind,
+                NpcKind::DemonEye
+                    | NpcKind::WanderingEye
+                    | NpcKind::GolemFistLeft
+                    | NpcKind::GolemFistRight
+                    | NpcKind::Goldfish
+                    | NpcKind::Piranha
+                    | NpcKind::Shark
+                    | NpcKind::CaveBat
+                    | NpcKind::JungleBat
+                    | NpcKind::Hellbat
+                    | NpcKind::VoodooDemon
+                    | NpcKind::DevourerHead
+                    | NpcKind::DevourerBody
+                    | NpcKind::DevourerTail
+                    | NpcKind::GiantWormHead
+                    | NpcKind::GiantWormBody
+                    | NpcKind::GiantWormTail
+                    | NpcKind::EaterOfWorldsHead
+                    | NpcKind::EaterOfWorldsBody
+                    | NpcKind::EaterOfWorldsTail
+                    // The wyvern chain (`AI_006`'s `:51878` follower /
+                    // `:52201` head rotations — the same atan2 tilt).
+                    | NpcKind::WyvernHead
+                    | NpcKind::WyvernLegs
+                    | NpcKind::WyvernBody
+                    | NpcKind::WyvernBody2
+                    | NpcKind::WyvernBody3
+                    | NpcKind::WyvernTail
+                    // The saucer family (`Main.cs:24586-24612`) rotates
+                    // about its CENTRE (the `origin = halfSize` draw point
+                    // — the quad the anchors computed sits at that centre,
+                    // the turret's 8 px lower), and the drone rides the
+                    // velocity's folded rotation (`NPC.cs:35220-35229`).
+                    | NpcKind::MartianSaucer
+                    | NpcKind::MartianSaucerTurret
+                    | NpcKind::MartianSaucerCannon
+                    | NpcKind::MartianSaucerCore
+                    | NpcKind::MartianDrone
+                    // The Prime family (`AI_032`'s `rotation = velocity.X / 15`
+                    // and its limbs' dock/aim rotations, `NPC.cs:27689`/
+                    // `:28151`/`:28350`/`:28656`/`:28891`): the head rolls
+                    // with its drift and the limbs aim their "up" along the
+                    // dock or the player.
+                    | NpcKind::SkeletronPrime
+                    | NpcKind::PrimeCannon
+                    | NpcKind::PrimeSaw
+                    | NpcKind::PrimeVice
+                    | NpcKind::PrimeLaser
+                    // The Skeletron hand's dock/strike aim (`AI()`'s
+                    // aiStyle-12 rotation writes, `NPC.cs:22500`/
+                    // `:22508`/`:22559` — B-1 H8, the prime-limb v2
+                    // precedent).
+                    | NpcKind::SkeletronHand
+                    // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
+                    // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
+                    // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
+                    | NpcKind::DD2Betsy
+                    // The Destroyer family (`AI_037`'s follower snap +
+                    // velocity tilt, `NPC.cs:50021-50033`/`:50206`) and the
+                    // Probe's sprite-aim (`AI_005` `:50633-50641`).
+                    | NpcKind::TheDestroyer
+                    | NpcKind::TheDestroyerBody
+                    | NpcKind::TheDestroyerTail
+                    | NpcKind::Probe
+                    // S1-D-3 W-9 fishron wiring — the boss's charge aim /
+                    // spin rotation (`AI_069`'s rotation tracking,
+                    // `NPC.cs:48888-48975`) and the Sharkron pair's dash
+                    // tilt (`NPC.cs:35018-35022`/`:35073-35077`).
+                    | NpcKind::DukeFishron
+                    | NpcKind::Sharkron
+                    | NpcKind::Sharkron2
+                    // The small-kinds wiring wave: the BlazingWheel's spin
+                    // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
+                    // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
+                    | NpcKind::BlazingWheel
+                    | NpcKind::DungeonSpirit
+                    // W4-c6 style-59 wiring: the blade's hover/dive/sweep
+                    // aim rotation (`npc_ai_style59`'s atan2 + 1.57 writes,
+                    // `NPC.cs:33294-33297`/`:33304`/`:33341`) — the C#'s
+                    // generic draw rotates by `npc.rotation`
+                    // (`Main.cs:26632`).
+            )
+        {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight
@@ -5592,6 +5781,21 @@ mod anchor_tests {
         ] {
             assert!(packed(name), "{name} is asked for by the Moon Lord's parts");
         }
+        // W4-c6 style-59 wiring: the blade's draw arm asks `npc_sheet(328)`
+        // — the packing list must carry it (the M4-NPC-3v audit, blade
+        // edition).
+        for &id in PUMPKING_BLADE_SHEET {
+            let name = format!("NPC_{id}");
+            assert!(
+                packed(&name),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
+        }
+        // The blade's chain-draw sheet (`Main.cs:22693`).
+        assert!(
+            packed("PumpkingArm"),
+            "PumpkingArm is asked for by the blade's chain draw but never packed"
+        );
         // Every lunar kind must resolve to a sheet the pillar set carries —
         // `npc_sheet(texture_net_id(kind))` is the draw's only source.
         // W4-d40: the bound is 429 (the lunar vanilla band's last id,
@@ -5677,6 +5881,58 @@ mod anchor_tests {
         hb.ai[2] = 1.0;
         let parts = ml_extra_parts(&hb, None, None, Some(base));
         assert_eq!(parts[0].1, [hx - 94.0, hy - 42.0], "(120 - 26, 42)");
+    }
+
+    /// W4-c6 style-59 — the blade's chain geometry (`Main.cs:22669-22700`):
+    /// the start (x + 40 − 5·ai[0], y + 20), link 0's 92-step along
+    /// (dx − 200·ai[0], dy + 130), the half-step advance, link 1's 60-step
+    /// along (dx − 50·ai[0], dy + 80) from the advanced origin, and the
+    /// atan2 − 1.57f LITERAL rotations. A `None` carrier reads the (0,0)
+    /// empty-slot centre. WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c6_the_blade_chain_steps_92_then_60_from_the_advanced_origin() {
+        // The left blade (ai[0] = -1) at (100, 100): the 80×80 box's
+        // start is (100 + 40 + 5, 120) = (145, 120). The carrier centre
+        // sits at (545, 250): dx = 400, dy = 250 − 30 − 120 = 100.
+        let mut n = bare(NpcKind::PumpkingBlade);
+        n.ai[0] = -1.0;
+        let links = pumpking_blade_chain(&n, Some((545.0, 250.0)));
+        // Link 0: dx = 400 − 200·(−1) = 600, dy = 100 + 130 = 230.
+        let len0 = (600.0f32 * 600.0 + 230.0 * 230.0).sqrt();
+        let s0 = 92.0 / len0;
+        let (x0, y0) = (145.0 + 600.0 * s0, 120.0 + 230.0 * s0);
+        assert!((links[0].0 - x0).abs() < 1e-3, "x0 {}", links[0].0);
+        assert!((links[0].1 - y0).abs() < 1e-3, "y0 {}", links[0].1);
+        let want_rot0 = 230.0f32.atan2(600.0) - 1.57;
+        assert!((links[0].2 - want_rot0).abs() < 1e-6);
+        assert!(
+            (links[0].2 - (230.0f32.atan2(600.0) - std::f32::consts::FRAC_PI_2)).abs()
+                > 1e-4,
+            "1.57f is not π/2"
+        );
+        // The half-advanced origin (:22696-22697): + (dx·s0/2, dy·s0/2).
+        let (ox, oy) = (x0 + 600.0 * s0 / 2.0, y0 + 230.0 * s0 / 2.0);
+        // Link 1: dx = 545 − ox − 50·(−1), dy = 250 − 30 − oy + 80.
+        let dx1 = 545.0 - ox + 50.0;
+        let dy1 = 300.0 - oy;
+        let s1 = 60.0 / (dx1 * dx1 + dy1 * dy1).sqrt();
+        assert!((links[1].0 - (ox + dx1 * s1)).abs() < 1e-3);
+        assert!((links[1].1 - (oy + dy1 * s1)).abs() < 1e-3);
+        assert!((links[1].2 - (dy1.atan2(dx1) - 1.57)).abs() < 1e-6);
+        // The right blade mirrors the side terms (start x 135, the −200
+        // and −50 pushes flip sign).
+        n.ai[0] = 1.0;
+        let links_r = pumpking_blade_chain(&n, Some((545.0, 250.0)));
+        let dx0r = 545.0 - 135.0 - 200.0;
+        let s0r = 92.0 / (dx0r * dx0r + 230.0 * 230.0).sqrt();
+        assert!((links_r[0].0 - (135.0 + dx0r * s0r)).abs() < 1e-3);
+        // No carrier: the empty-slot (0,0) centre — dx = −145 + 200 = 55
+        // for the left blade, dy = −30 − 120 + 130 = −20.
+        n.ai[0] = -1.0;
+        let links_n = pumpking_blade_chain(&n, None);
+        let sn = 92.0 / (55.0f32 * 55.0 + 20.0 * 20.0).sqrt();
+        assert!((links_n[0].0 - (145.0 + 55.0 * sn)).abs() < 1e-3);
+        assert!((links_n[0].1 - (120.0 - 20.0 * sn)).abs() < 1e-3);
     }
 
     #[test]

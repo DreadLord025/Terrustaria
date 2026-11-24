@@ -830,6 +830,18 @@ pub enum NpcKind {
     /// dmg 50, def 40, 26000 HP, noGravity + noTileCollide, kb 0, value
     /// 50000, npcSlots 5.
     Pumpking,
+    /// `NPCID.PumpkingBlade` (328) — the Pumpking's scythe blades
+    /// (`aiStyle 59`, `NPCID.cs:11333`): 80x80, dmg 65, def 14, 5000 HP,
+    /// kb 0, noGravity + noTileCollide, dontTakeDamage, npcSlots 0,
+    /// dontCountMe, value 0 (`NPC.cs:13158-13174`). WIRED by W4-c6: the
+    /// aiStyle axis' 59 arm runs `npc_ai_style59::ai_style59` (the
+    /// `PumpkingCarrier` facts stamped by the sim's carrier pre-pass
+    /// through `carrier_uid`) and owns the noTileCollide integration
+    /// tail. NOT a
+    /// `pumpkin_moon_defaults` family member — the blade never spawns
+    /// from the wave ladder (the carrier's `:33093-33103` init spawns
+    /// the pair), so the family-scoped map keeps 328 out (the
+    /// `s1_f_13b` outside-the-family pin).
     /// `NPCID.Hellhound` (329) — the wave's flyer (`aiStyle 26`): 46x30,
     /// dmg 80, def 38, 1800 HP, kb 0.3, value 3000.
     Hellhound,
@@ -2947,6 +2959,23 @@ pub struct Npc {
     /// (`NPC.cs:41229-41232`), the leech blob at the head
     /// (`NPC.cs:36630-36640`). 0 = no carrier.
     pub carrier_uid: u32,
+    /// W4-c6 style-59 wiring: the blade's resolved carrier facts — the
+    /// sim's pre-pass reads the linked Pumpking slot (`carrier_uid`, the
+    /// C#'s `Main.npc[(int)MathHelper.Clamp(ai[1], 0f, 199f)]`,
+    /// `NPC.cs:33201`) and stamps the centre/top/ai facts here ahead of the
+    /// slot loop (the ForceBubble host pre-pass's shape). `None` = the
+    /// slot is missing/inactive/not aiStyle 58 — the `:33203` gate's
+    /// damp + despawn. The solo `update_rng` path keeps `None` (no pool).
+    pub pumpking_blade_carrier: Option<crate::npc_ai_style59::PumpkingCarrier>,
+    /// W4-c6 style-59 wiring: the Pumpking's one-time blade-pair spawn
+    /// request (`NPC.cs:33087-33104`'s `ai[0] == 0` init arm) — the sim
+    /// drains it after the tick, spawns the two 328s Bottom-placed at the
+    /// carrier's truncated centre (`NewNPC`, `NPC.cs:80770`), links each
+    /// through `carrier_uid` (the C#'s `ai[1] = whoAmI`) and copies the
+    /// carrier's post-`TargetClosest` target (the ForceBubble drain's
+    /// shape). The right blade carries the 150-tick `ai[3]` phase lead
+    /// (`:33101`).
+    pub wants_blade_pair: bool,
     /// The saucer core's crew spawn request (`AI`'s aiStyle-76 init arm:
     /// the 4 guns + the shell, `NPC.cs:36071-36092`) — the sim resolves.
     pub wants_saucer_crew: bool,
@@ -4305,6 +4334,8 @@ impl Npc {
             dont_take_damage_from_hostiles: matches!(
                 kind,
                 NpcKind::TruffleWorm | NpcKind::TruffleWormDigger
+                // W4-c6 style-59 wiring: the blade's `dontTakeDamage = true`
+                // row (`NPC.cs:13171`) — only the carrier-gone despawn ends it.
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -4406,6 +4437,10 @@ impl Npc {
             carrier_y: -1.0,
             uid: 0,
             carrier_uid: 0,
+            // W4-c6 style-59 wiring: the sim's carrier pre-pass stamps the
+            // blade's linked-Pumpking facts; the ctor starts link-less.
+            pumpking_blade_carrier: None,
+            wants_blade_pair: false,
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
@@ -4872,6 +4907,8 @@ impl Npc {
             NpcKind::MourningWood => 0.0,
             NpcKind::Splinterling => 0.2,
             NpcKind::Pumpking => 0.0,
+            // W4-c6 style-59 wiring: the blade's `knockBackResist = 0f`
+            // (`NPC.cs:13170`).
             NpcKind::Hellhound => 0.3,
             NpcKind::Poltergeist => 0.4,
             // The Frost Moon family (`S1-F-13c` slice B): 345/346's 0
@@ -5574,6 +5611,8 @@ impl Npc {
             NpcKind::MourningWood => 34,
             NpcKind::Splinterling => 32,
             NpcKind::Pumpking => 40,
+            // W4-c6 style-59 wiring: the blade's `defense = 14`
+            // (`NPC.cs:13164`).
             NpcKind::Hellhound => 38,
             NpcKind::Poltergeist => 44,
             // The Frost Moon family (`S1-F-13c` slice B): 345 38
@@ -6263,6 +6302,9 @@ impl Npc {
             NpcKind::HeadlessHorseman | NpcKind::MourningWood => 10000.0,
             NpcKind::Splinterling => 2000.0,
             NpcKind::Pumpking => 50000.0,
+            // W4-c6 style-59 wiring: the blade writes NO value row — the
+            // field default 0f stands (`NPC.cs:6521`, the row
+            // `:13158-13174` never writes it).
             NpcKind::Hellhound => 3000.0,
             NpcKind::Poltergeist => 4500.0,
             // The Frost Moon family (`S1-F-13c` slice B): 345 50000
@@ -7406,6 +7448,54 @@ impl Npc {
             }
             58 if self.kind == NpcKind::Pumpking => {
                 crate::npc_ai_pumpkin_boss::pumpking_step(self, world, player, rng)
+            }
+            // `else if (this.aiStyle == 59)` (`NPC.cs:33198-33373`) — the
+            // Pumpking's scythe blades (328), the style's only user.
+            // W4-c6 style-59 wiring: the faithful pure core
+            // (`npc_ai_style59::ai_style59`) claims the axis. The carrier
+            // link is the sim's pre-pass fact (`pumpking_blade_carrier`,
+            // resolved through `carrier_uid` ahead of the slot loop — the
+            // ForceBubble precedent); the SOLO path (a test's bare
+            // `update_rng`) has no pool, so the carrier is `None` and the
+            // arm damps + despawns (`:33203-33218`). RNG-free by
+            // construction (the module's census — no `Next`/`NextFloat`).
+            59 => {
+                let cand = crate::npc_target::session_candidate(player);
+                let carrier = self.pumpking_blade_carrier;
+                let shot = crate::npc_ai_style59::ai_style59(
+                    self,
+                    world,
+                    &[cand],
+                    carrier.as_ref(),
+                    world.day_time,
+                    0,
+                );
+                if let Some(s) = shot {
+                    // `:33230` — the Flaming Scythe (329) rides the ai0/ai1
+                    // seam (`rotation`/`spriteDirection`, the saucer
+                    // deathray's shape); the sim's drain spawns it after
+                    // the tick.
+                    self.wants_hostile_shot_ai.push(HostileShotAi {
+                        kind: s.kind as u16,
+                        x: s.x,
+                        y: s.y,
+                        vx: s.vx,
+                        vy: s.vy,
+                        damage: s.damage,
+                        ai0: s.ai0,
+                        ai1: s.ai1,
+                        scale: None,
+                    });
+                }
+                // The carrier-gone despawn (`:33206-33216`) set hp 0 — the
+                // death retain owns the deactivation; the movement tail
+                // skips the dead slot (the C#'s `active = false` mid-AI).
+                if self.hp > 0 {
+                    // `NPC.UpdateNPC`'s movement tail (`NPC.cs:90490-90498`):
+                    // noGravity + noTileCollide (`NPC.cs:13168-13169`) — the
+                    // raw position add, no gravity term, no UpdateCollision.
+                    self.integrate_no_tile_collide();
+                }
             }
             // S1-F-13c wiring: the IceQueen (345, aiStyle 60) and the SantaNK1
             // (346, aiStyle 61) — the whole arms (`NPC.cs:33374-33680` /
@@ -9760,6 +9850,15 @@ impl Npc {
             NpcKind::MourningWood | NpcKind::Pumpking => {
                 unreachable!("aiStyles 57/58 ride the style axis (S1-F-13b2)")
             }
+            // W4-c6 style-59 wiring: the blade's machine rides the axis'
+            // 59 arm above (`npc_ai_style59::ai_style59` — the carrier
+            // facts come from the sim's pre-pass, which reads the sibling
+            // Pumpking slot); the arm owns the noTileCollide integration
+            // tail — this kind arm is unreachable through `update_rng`
+            // (the ForceBubble precedent, S1-D-3-wire-smallkinds).
+            NpcKind::PumpkingBlade => {
+                unreachable!("aiStyle 59 rides the style axis (W4-c6 style-59 wiring)")
+            }
             // ---- the Frost Moon family (`S1-F-13c` slice A): the first 7
             // wave kinds ride alive. The five aiStyle-3 walkers ride the
             // walker family on the C#'s per-type speed rows
@@ -11292,6 +11391,16 @@ impl Npc {
             // `SetFrameSize` 0 (`Main.npcFrameCount[259]` = 4 / `[260]` = 2
             // are the sheet's row counts, never advanced).
             NpcKind::FungiBulb | NpcKind::GiantFungiBulb => {}
+            // W4-c6 style-59 wiring: the blade has NO `FindFrame` case
+            // (`NPC.cs:66705-77291` — the nearest is the carrier's case
+            // 327 `:72296`) and the post-switch tail covers aiStyle 39
+            // only (`:77292`): `Main.npcFrameCount[328]` = 1
+            // (`Main.cs:67116` col 9), the single frame never advances
+            // from this path — the visual spin is the rotation + the
+            // chain draw (`Main.cs:22669-22700`).
+            NpcKind::PumpkingBlade => {
+                self.frame = 0;
+            }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
             // own — the shared town body's rows stand.
@@ -25904,6 +26013,9 @@ impl Npc {
             NpcKind::MourningWood => 325,
             NpcKind::Splinterling => 326,
             NpcKind::Pumpking => 327,
+            // W4-c6 style-59 wiring: the blade's protocol id 328 (the
+            // vanilla slot — free between the Pumpking and the Hellhound;
+            // the G6 render key stays injective).
             NpcKind::Hellhound => 329,
             NpcKind::Poltergeist => 330,
             // The Frost Moon family (`S1-F-13c` slice B): the vanilla type
@@ -31546,7 +31658,7 @@ mod tests {
     }
 
     /// The full `NpcKind` roster in declaration order (the enum at
-    /// `npc.rs:31-686`: 240 kinds - the 8 slime colours are `SlimeVariant`,
+    /// `npc.rs:31-686`: 271 kinds - the 8 slime colours are `SlimeVariant`,
     /// not kinds). The driver for
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
@@ -31569,7 +31681,8 @@ mod tests {
         // + W4-c10's 4 waterfowl (Duck 731 / Duck2 732 / DuckWhite 733 /
     // DuckWhite2 734 - the d37-table renumber; the Seagull/Grebe pairs +
     // the 12-critter tail dropped - d42/d40/c8's rows own them) = 512.
-    pub(super) const ALL_KINDS: [NpcKind; 523] = [
+    
+    pub(super) pub(super) const ALL_KINDS: [NpcKind; 523] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -31777,7 +31890,6 @@ mod tests {
         NpcKind::Pumpking,
         NpcKind::Hellhound,
         NpcKind::Poltergeist,
-        // The Frost Moon wave family (`S1-F-13c` slice B).
         NpcKind::IceQueen,
         NpcKind::SantaNK1,
         NpcKind::ElfCopter,
@@ -31810,52 +31922,43 @@ mod tests {
         NpcKind::TwiggyZombie,
         NpcKind::FemaleZombie,
         NpcKind::ZombieRaincoat,
-        // S1-D-3z — the holiday zombie variants.
         NpcKind::ZombieDoctor,
         NpcKind::ZombieSuperman,
         NpcKind::ZombiePixie,
         NpcKind::ZombieXmas,
         NpcKind::ZombieSweater,
-        // S1-D-3z — the blood-moon pair.
         NpcKind::BloodZombie,
         NpcKind::Drippler,
-        // W4-d38 b7.
         NpcKind::SlimeRibbonWhite,
         NpcKind::SlimeRibbonYellow,
         NpcKind::SlimeRibbonGreen,
         NpcKind::SlimeRibbonRed,
         NpcKind::BunnyXmas,
-        // W4-d38 b6.
         NpcKind::DemonEyeSpaceship,
         NpcKind::SkeletonTopHat,
         NpcKind::SkeletonAstonaut,
         NpcKind::SkeletonAlien,
         NpcKind::PumpkingBlade,
-        // W4-d38 b5.
         NpcKind::SlimeMasked,
         NpcKind::BunnySlimed,
         NpcKind::HoppinJack,
         NpcKind::Ghost,
         NpcKind::DemonEyeOwl,
-        // W4-d38 b4.
         NpcKind::BirdBlue,
         NpcKind::BirdRed,
         NpcKind::Squirrel,
         NpcKind::Mouse,
         NpcKind::Raven,
-        // W4-d38 b3.
         NpcKind::TacticalSkeleton,
         NpcKind::SkeletonCommando,
         NpcKind::AngryBonesBig,
         NpcKind::AngryBonesBigMuscle,
         NpcKind::AngryBonesBigHelmet,
-        // W4-d38 b2.
         NpcKind::DiabolistWhite,
         NpcKind::BoneLee,
         NpcKind::GiantCursedSkull,
         NpcKind::Paladin,
         NpcKind::SkeletonSniper,
-        // W4-d38 b1.
         NpcKind::RaggedCaster,
         NpcKind::RaggedCasterOpenCoat,
         NpcKind::Necromancer,
@@ -31868,92 +31971,73 @@ mod tests {
         NpcKind::GingerbreadMan,
         NpcKind::Yeti,
         NpcKind::Everscream,
-        // The Plantera minion family (S1-D-3-wire-plantera-minions).
         NpcKind::FungiSpore,
         NpcKind::PlanterasHook,
         NpcKind::PlanterasTentacle,
         NpcKind::Spore,
-        // S1-D-3 W-9 fishron wiring.
         NpcKind::DukeFishron,
         NpcKind::DetonatingBubble,
         NpcKind::Sharkron,
         NpcKind::Sharkron2,
-        // The small-kinds wiring wave (S1-D-3-wire-smallkinds) —
-        // ForceBubble already listed above (S1-F-13d's variant, gate dedupe).
         NpcKind::BlazingWheel,
         NpcKind::AngryNimbus,
         NpcKind::DungeonSpirit,
-        // The wyvern family (S1-D-3 wyvern).
         NpcKind::WyvernHead,
         NpcKind::WyvernLegs,
         NpcKind::WyvernBody,
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
-        // W4-d35 (A): the 73/74/75/77/78 data-wave kinds.
         NpcKind::GoblinScout,
         NpcKind::Bird,
         NpcKind::Pixie,
         NpcKind::ArmoredSkeleton,
         NpcKind::Mummy,
-        // W4-d35 (B): the 79/80/82/83/84 data-wave kinds.
         NpcKind::DarkMummy,
         NpcKind::LightMummy,
         NpcKind::Wraith,
         NpcKind::CursedHammer,
         NpcKind::EnchantedSword,
-        // W4-d35 (C): the 85/86/93/94/95 data-wave kinds.
         NpcKind::Mimic,
         NpcKind::Unicorn,
         NpcKind::GiantBat,
         NpcKind::Corruptor,
         NpcKind::DiggerHead,
-        // W4-d35 (D): the 96/97/98/99/100 data-wave kinds.
         NpcKind::DiggerBody,
         NpcKind::DiggerTail,
         NpcKind::SeekerHead,
         NpcKind::SeekerBody,
         NpcKind::SeekerTail,
-        // W4-d35 (E): the 101/102/103/104/109 data-wave kinds.
         NpcKind::Clinger,
         NpcKind::AnglerFish,
         NpcKind::GreenJellyfish,
         NpcKind::Werewolf,
         NpcKind::Clown,
-        // W4-d35 (F): the 110/112/116/120/121 data-wave kinds.
         NpcKind::SkeletonArcher,
         NpcKind::VileSpit,
         NpcKind::TheHungryII,
         NpcKind::ChaosElemental,
         NpcKind::Slimer,
-        // W4-d35 (G): the 122/137/140 data-wave kinds.
         NpcKind::Gastropod,
         NpcKind::IlluminantBat,
         NpcKind::PossessedArmor,
         NpcKind::WyvernTail,
-        // W4-d34 kinds 1-70 coverage wave (phase 1).
         NpcKind::AngryBones,
         NpcKind::CursedSkull,
         NpcKind::OldMan,
         NpcKind::ManEater,
         NpcKind::Bunny,
-        // W4-d34 kinds 1-70 coverage wave (phase 2).
         NpcKind::BoneSerpentHead,
         NpcKind::BoneSerpentBody,
         NpcKind::BoneSerpentTail,
         NpcKind::CorruptBunny,
         NpcKind::Harpy,
-        // W4-d34 kinds 1-70 coverage wave (phase 3).
         NpcKind::Snatcher,
         NpcKind::CorruptGoldfish,
         NpcKind::Vulture,
         NpcKind::Demon,
         NpcKind::BlueJellyfish,
-        // W4-d34 kinds 1-70 coverage wave (phase 4; merge-side: Crab/
-        // DungeonGuardian kept @791/792, the PinkJellyfish/Antlion/SpikeBall
-        // dups dropped — g8 owns 745-747, 367 §1).
         NpcKind::Crab,
         NpcKind::DungeonGuardian,
-        // W4-d37 — the NPCID 211-280 band (census 65, 46 kinds).
         NpcKind::CochinealBeetle,
         NpcKind::CyanBeetle,
         NpcKind::LacBeetle,
@@ -32000,149 +32084,114 @@ mod tests {
         NpcKind::HellArmoredBonesSpikeShield,
         NpcKind::HellArmoredBonesMace,
         NpcKind::HellArmoredBonesSword,
-        // W4-d40: TargetDummy.
         NpcKind::TargetDummy,
-        // W4-d40: GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy.
         NpcKind::GraniteFlyer,
         NpcKind::EnchantedNightcrawler,
         NpcKind::Grubby,
         NpcKind::Sluggy,
         NpcKind::Buggy,
-        // The crawling-critter family (W4-c8; the GoldWorm/Enchanted-
-        // Nightcrawler/Grubby/Sluggy/Buggy dups dropped - d40's rows above).
         NpcKind::Worm,
         NpcKind::TruffleWorm,
         NpcKind::TruffleWormDigger,
-        // W4-d40: MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem.
         NpcKind::MothronEgg,
         NpcKind::MothronSpawn,
         NpcKind::Medusa,
         NpcKind::GreekSkeleton,
         NpcKind::GraniteGolem,
-        // W4-d40: BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron.
         NpcKind::BigMimicCorruption,
         NpcKind::BigMimicCrimson,
         NpcKind::BigMimicHallow,
         NpcKind::BigMimicJungle,
         NpcKind::Mothron,
-        // W4-d40: DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition.
         NpcKind::DeadlySphere,
         NpcKind::DrManFly,
         NpcKind::ThePossessed,
         NpcKind::CrimsonPenguin,
         NpcKind::ShadowFlameApparition,
-        // W4-d40: Fritz, Nailhead, CrimsonBunny, CrimsonGoldfish, Psycho.
         NpcKind::Fritz,
         NpcKind::Nailhead,
         NpcKind::CrimsonBunny,
         NpcKind::Psycho,
-        // W4-d40: CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep.
         NpcKind::CultistDragonBody3,
         NpcKind::CultistDragonBody4,
         NpcKind::CultistDragonTail,
         NpcKind::Butcher,
         NpcKind::CreatureFromTheDeep,
-        // W4-d40: BoneThrowingSkeleton4, SkeletonMerchant, CultistDragonHead, CultistDragonBody1, CultistDragonBody2.
         NpcKind::BoneThrowingSkeleton4,
         NpcKind::SkeletonMerchant,
         NpcKind::CultistDragonHead,
         NpcKind::CultistDragonBody1,
         NpcKind::CultistDragonBody2,
-        // W4-d40: GoldMouse, GoldWorm, BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3.
         NpcKind::GoldMouse,
         NpcKind::GoldWorm,
         NpcKind::BoneThrowingSkeleton,
         NpcKind::BoneThrowingSkeleton2,
         NpcKind::BoneThrowingSkeleton3,
-        // W4-d40: GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper.
         NpcKind::GoldBird,
         NpcKind::GoldBunny,
         NpcKind::GoldButterfly,
         NpcKind::GoldFrog,
         NpcKind::GoldGrasshopper,
-        // W4-c10 - the waterfowl family (the Duck quartet; the Seagull/
-        // Grebe pairs dropped - d42's rows above own them).
         NpcKind::Duck,
         NpcKind::Duck2,
         NpcKind::DuckWhite,
         NpcKind::DuckWhite2,
-        // E8 merge: the c10 12-critter ALL_KINDS tail dropped (d40/c8's rows).
-        // W4-d40: ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone.
         NpcKind::ArmedZombieTwiggy,
         NpcKind::ArmedZombieCenx,
         NpcKind::CultistTablet,
         NpcKind::CultistDevote,
         NpcKind::CultistBossClone,
-        // W4-d40: ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp.
         NpcKind::ArmedZombie,
         NpcKind::ArmedZombieEskimo,
         NpcKind::ArmedZombiePincussion,
         NpcKind::ArmedZombieSlimed,
         NpcKind::ArmedZombieSwamp,
-        // W4-d42 - the NPCID 578-582 roster.
         NpcKind::DD2LightningBug,
         NpcKind::BartenderUnconscious,
         NpcKind::WalkingAntlion,
         NpcKind::LarvaeAntlion,
-        // W4-d42 - the NPCID 583-587 roster.
         NpcKind::ZombieMerman,
-        // W4-d42 - the NPCID 590-594 roster.
         NpcKind::TorchZombie,
         NpcKind::ArmedTorchZombie,
         NpcKind::GoldGoldfishWalker,
-        // W4-d42 - the NPCID 595-599 roster.
-        // W4-d42 - the NPCID 600-604 roster.
         NpcKind::Seagull,
         NpcKind::Seagull2,
-        // W4-d42 - the NPCID 605-609 roster.
         NpcKind::Grebe,
         NpcKind::Grebe2,
-        // W4-d42 - the NPCID 610-614 roster.
         NpcKind::Rat,
         NpcKind::Owl,
         NpcKind::WaterStrider,
         NpcKind::GoldWaterStrider,
         NpcKind::ExplosiveBunny,
-        // W4-d42 - the NPCID 615-619 roster.
         NpcKind::Turtle,
         NpcKind::TurtleJungle,
         NpcKind::BloodNautilus,
         NpcKind::BloodSquid,
-        // W4-d42 - the NPCID 620-624 roster.
         NpcKind::GoblinShark,
         NpcKind::BloodEelHead,
         NpcKind::BloodEelBody,
         NpcKind::BloodEelTail,
         NpcKind::Gnome,
-        // W4-d42 - the NPCID 625-629 roster.
         NpcKind::SeaTurtle,
         NpcKind::Seahorse,
         NpcKind::GoldSeahorse,
         NpcKind::Dandelion,
         NpcKind::IceMimic,
-        // W4-d42 - the NPCID 630-630 roster.
         NpcKind::BloodMummy,
-        // W4-c3 (the style-10 family; the 34/289 dups dropped per E8).
         NpcKind::WaterBoltMimic,
-        // W4-c4 - the style-44 swimmers (FlyingFish is d37's row above).
         NpcKind::GiantFlyingAntlion,
         NpcKind::FlyingAntlion,
         NpcKind::EyeballFlyingFish,
-        // W4-c4 - the style-16 swimmers (CorruptGoldfish/BloodFeeder are
-        // d34/d37's rows above; Pufferfish/Orca land with d43).
         NpcKind::Arapaima,
         NpcKind::CrimsonGoldfish,
         NpcKind::GoldGoldfish,
         NpcKind::Pupfish,
         NpcKind::Dolphin,
-        // The firefly family (W4-c7).
         NpcKind::Firefly,
         NpcKind::LightningBug,
         NpcKind::Lavafly,
         NpcKind::Shimmerfly,
         NpcKind::Maggot,
-        // The snail wall-crawler family (W4-c9; the Shimmerfly + 5 gold
-        // dups dropped - c7/d40's rows above own them).
         NpcKind::Snail,
         NpcKind::GlowingSnail,
         NpcKind::MagmaSnail,
@@ -32157,7 +32206,7 @@ mod tests {
         NpcKind::VampireBat,
         NpcKind::Vampire,
         NpcKind::VileSpitEoW,
-    ];
+    ];;
 
 
 
@@ -37271,6 +37320,8 @@ mod s1_f_3_tests {
                 " UNION ",
                 "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d23's six man-eaters + W4-d23's three spit/flare kinds + W4-d23's fourteen flyer-family kinds, union=512+11=523 verified against ALL_KINDS/to_u16/from_u16 row counts)"
             )
+            271,
+            "every decodable kind resolves (the wire roster's size - 271 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-c6's PumpkingBlade)"
         );
         assert!(
             covered > 43,
@@ -40935,6 +40986,7 @@ mod s1_d_2_tests {
         (NpcKind::Hellhound, 26),
         (NpcKind::MourningWood, 57),
         (NpcKind::Pumpking, 58),
+        // W4-c6 style-59 wiring: the blade (`NPC.cs:13162`).
         (NpcKind::Poltergeist, 22),
         // S1-D-3z — the blood-moon pair (`NPC.cs:14609`/`:14623`).
         (NpcKind::BloodZombie, 3),
@@ -47510,5 +47562,111 @@ mod w4_d23_style14_wiring_tests {
                 assert_eq!(rng_a, rng_b, "{kind:?} tick {tick} RNG stream parity");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod w4_c6_style59_tests {
+    use super::*;
+    use super::tests::ground;
+
+    /// W4-c6 Phase 1 — the blade's `SetDefaults` row (`NPC.cs:13158-13174`)
+    /// through the port's piecewise tables, the small-kinds pin's shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c6_the_blade_defaults_match_the_csharp_row() {
+        let n = Npc::new(NpcKind::PumpkingBlade, 0.0, 0.0, 1, 0.0);
+        assert_eq!(NpcKind::PumpkingBlade.to_u16(), 328, "the vanilla id");
+        assert_eq!(NpcKind::from_u16(328), Some(NpcKind::PumpkingBlade));
+        assert_eq!(NpcKind::PumpkingBlade.ai_style(), 59, "NPC.cs:13162");
+        assert_eq!(NpcKind::PumpkingBlade.size(), (80.0, 80.0), ":13160-13161");
+        assert_eq!(n.size(), (80.0, 80.0));
+        assert_eq!(NpcKind::PumpkingBlade.contact_damage(), 65, ":13163");
+        assert_eq!(n.defense(), 14, ":13164");
+        assert_eq!(NpcKind::PumpkingBlade.max_hp(), 5000, ":13165");
+        assert_eq!(n.hp, 5000);
+        assert_eq!(n.knock_back_resist(), 0.0, ":13170");
+        assert!(NpcKind::PumpkingBlade.no_gravity(), ":13168");
+        assert!(n.dont_take_damage, ":13171");
+        assert_eq!(n.value(), 0.0, "no value row — the 0f default (:6521)");
+        assert_eq!(n.scale, 1.0, "no scale row");
+        assert_eq!(n.alpha, 0, "no alpha row");
+        assert_eq!(
+            NpcKind::PumpkingBlade.hit_sound(),
+            Some("NPC_Hit_1"),
+            "SoundID.NPCHit1 (:13166)"
+        );
+        assert_eq!(
+            NpcKind::PumpkingBlade.death_sound(),
+            Some("NPC_Killed_1"),
+            "SoundID.NPCDeath1 (:13167)"
+        );
+        // The debuff row = the carrier's {20, 24, 31, 323}
+        // (`NPCID.cs:8002-8008`).
+        let b = crate::npc_buffs::NpcBuffs::for_kind(NpcKind::PumpkingBlade);
+        for id in [20usize, 24, 31, 323] {
+            assert!(b.buff_immune[id], "immune {id}");
+        }
+        // The frame count: `Main.npcFrameCount[328]` = 1 (`Main.cs:67116`
+        // col 9) — the verbatim table and the draw sheet agree.
+        assert_eq!(crate::render::entities::npc_rows(328), 1, "Main.cs:67116 col 9");
+        assert_eq!(
+            crate::render::entities::texture_net_id(NpcKind::PumpkingBlade),
+            328,
+            "the DRAW sheet is its own NPC_328"
+        );
+    }
+
+    /// W4-c6 Phase 1 — the bestiary credit folds onto the Pumpking
+    /// (Hide=true, `NPCID.cs:3398-3403`), so `cs_id` rides the folded net
+    /// id 327 (the s1_f_3 invariant, the fishron-hazard L-B precedent);
+    /// the wave-ladder family map keeps 328 OUT (the blade spawns only
+    /// from the carrier's init, `NPC.cs:33093-33103`), and the boss-cap
+    /// row weighs 0 (`npcSlots = 0f`, `:13172`). WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c6_the_blade_folds_its_credit_and_stays_out_of_the_wave_map() {
+        let e = crate::bestiary::entry_for_npc(NpcKind::PumpkingBlade, SlimeVariant::Blue);
+        assert_eq!(e.kind, NpcKind::Pumpking, "the Hide=true fold");
+        assert_eq!(e.net_id, 327);
+        assert_eq!(NpcKind::PumpkingBlade.cs_id(), 327, "the folded net id");
+        assert_eq!(NpcKind::PumpkingBlade.net_id(), 327);
+        // The family map: 328 decodes as a KIND but not as a wave pick.
+        assert_eq!(NpcKind::PumpkingBlade.pumpkin_moon_type(), None);
+        assert_eq!(NpcKind::moon_wave_kind(328), None);
+        // The boss-cap row: live, but 0-weight.
+        assert_eq!(crate::spawner::moon_boss_slots(328), Some(0.0));
+        let mut live = Npc::new(NpcKind::PumpkingBlade, 0.0, 0.0, 1, 0.0);
+        live.hp = live.max_hp;
+        assert_eq!(crate::spawner::moon_boss_cap_count(&[live]), 0.0);
+        // The kill points: no 328 case (`NPC.cs:78658-78682`).
+        let mut w = tr_core::World::new("t".into(), 40, 40);
+        w.start_pumpkin_moon();
+        w.report_pumpkin_moon_kill(328);
+        assert_eq!((w.wave_number, w.wave_kills), (1, 0.0));
+    }
+
+    /// W4-c6 Phase 1 — the axis claims style 59: the SOLO path (no pool)
+    /// passes `None`, so the blade damps ×0.9 and despawns (hp 0) on its
+    /// first tick — the `:33203-33218` gate. The kind arm is unreachable
+    /// through `update_rng` (the ForceBubble precedent). WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c6_the_axis_claims_style59_and_the_solo_blade_despawns() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::PumpkingBlade, 1000.0, 400.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = -1.0;
+        n.vx = 10.0;
+        n.vy = -5.0;
+        let mut rng = UnifiedRandom::new(9);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.sprite_dir, 1, "-(int)ai[0] (:33202)");
+        assert_eq!(n.vx, 9.0, "the ×0.9 damp (:33204-33205)");
+        assert_eq!(n.vy, -4.5);
+        assert_eq!(n.hp, 0, "life = -1 / active = false → hp 0");
+        assert_eq!(n.frame, 0, "the single frame never advances");
+        assert!(n.wants_hostile_shot_ai.is_empty(), "no carrier, no volley");
+        assert_eq!(rng, witness, "the arm draws NO rng (the module census)");
     }
 }

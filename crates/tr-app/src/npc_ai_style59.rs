@@ -88,19 +88,23 @@
 //! a `UnifiedRandom` state across 600 ticks through every state
 //! (written, not run — code-only mode).
 //!
-//! Wiring deferred (the `npc_ai_style21.rs` / S1-D-3 aiStyle-21
-//! precedent): the port's roster has no `NpcKind::PumpkingBlade` yet
-//! (the Pumpking itself rides the hover stand-in, `npc.rs`'s
-//! `NpcKind::Pumpking` arm), so `npc.rs`'s kind dispatch has no style-59
-//! arm to claim. This module is the pure port + the minimal seam: the
-//! carrier facts arrive as [`PumpkingCarrier`] (the sim resolves the
-//! `ai[1]` slot link — the C# reads `Main.npc[(int)MathHelper.Clamp(
-//! ai[1], 0f, 199f)]`, `Main.maxNPCs = 200`, `InitData.cs:9`), the shot
-//! is RETURNED as [`BladeShot`] for the sim's projectile spawn drain
-//! (the `wants_servant` shape), and the despawn is the port's `hp = 0`
-//! convention. See docs/ANALYSIS.md "The Pumpking blade arm (S1-D-3
-//! aiStyle-59)".
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+//! Wiring (W4-c6 style-59, 2026-11-20): `NpcKind::PumpkingBlade` (328)
+//! rides the roster; `npc.rs`'s aiStyle axis claims the 59 arm (the
+//! solo path passes `None` — no pool — and the blade damps + despawns).
+//! The SIM's carrier pre-pass (`world_sim/npcs.rs`, the ForceBubble
+//! host pre-pass's shape) resolves the `ai[1]` slot link through
+//! `carrier_uid` and stamps [`PumpkingCarrier`] into
+//! `Npc::pumpking_blade_carrier` ahead of the slot loop — the C# reads
+//! `Main.npc[(int)MathHelper.Clamp(ai[1], 0f, 199f)]` (`NPC.cs:33201`,
+//! `Main.maxNPCs = 200`, `InitData.cs:9`). The shot is RETURNED as
+//! [`BladeShot`] and queued on the `wants_hostile_shot_ai` seam (the
+//! sim's projectile spawn drain), and the despawn is the port's `hp = 0`
+//! convention. The carrier's own pair spawn (`:33087-33104`) rides the
+//! carrier-feed pass. See docs/ANALYSIS.md "The Pumpking blade arm
+//! (S1-D-3 aiStyle-59)".
+// The verbatim row constants below are census pins (the port's piecewise
+// tables carry the live rows) — referenced by the module's tests only.
+#![allow(dead_code)]
 
 use crate::npc::Npc;
 use crate::npc_target::{target_closest, TargetCandidate};
@@ -453,13 +457,11 @@ mod tests {
         }
     }
 
-    /// A blade-shaped NPC: the roster has no PumpkingBlade kind yet, so
-    /// the fixture rides a placeholder kind with the C#'s 80×80 box
-    /// (`NPC.cs:13160-13161`) through `size_override`, the left-blade
-    /// spawn payload (`ai[0] = -1`, `NPC.cs:33094`) and target 0.
+    /// A blade-shaped NPC: the W4-c6 roster kind with the C#'s 80×80 box
+    /// (`NPC.cs:13160-13161`), the left-blade spawn payload (`ai[0] = -1`,
+    /// `NPC.cs:33094`) and target 0.
     fn blade(x: f32, y: f32) -> Npc {
-        let mut n = Npc::new(NpcKind::Zombie, x, y, 1, 0.0);
-        n.size_override = Some((80.0, 80.0));
+        let mut n = Npc::new(NpcKind::PumpkingBlade, x, y, 1, 0.0);
         n.ai[0] = -1.0;
         n.ai[1] = 7.0; // the carrier slot link (resolved by the caller)
         n.target = 0;
